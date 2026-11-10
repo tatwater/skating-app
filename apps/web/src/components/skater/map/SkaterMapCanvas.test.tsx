@@ -9,6 +9,8 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { getFunctionName } from 'convex/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { BOARD_NOON } from '@/test/boardNow';
+
 // ── The fake map ──────────────────────────────────────────────────────────────────────────────
 
 type Handler = (e?: unknown) => void;
@@ -54,6 +56,7 @@ class FakeMap {
   zoomOut = vi.fn();
   resize = vi.fn();
   removed = false;
+  styleLoaded = false;
 
   constructor(options: Record<string, unknown>) {
     this.options = options;
@@ -72,13 +75,26 @@ class FakeMap {
     );
   }
   fire(event: string, e?: unknown) {
+    // MapLibre's style is writable from the moment it fires `load`, which is also when the shell
+    // hands the map to `onLoad` to add its layers.
+    if (event === 'load') this.styleLoaded = true;
     for (const h of this.handlers.get(event) ?? []) h(e);
+  }
+  /**
+   * Every style write goes through MapLibre's `_checkLoaded`, which **throws** before `load` and on
+   * a removed map — it does not no-op. Modeled here because that throw is the theme-switch crash:
+   * the switch re-creates the map, and anything that wrote paint in the same commit landed on the
+   * new, unloaded one and took the whole app to the crash screen.
+   */
+  private checkLoaded() {
+    if (!this.styleLoaded) throw new Error('Style is not done loading.');
   }
   controls: unknown[] = [];
   addControl(control: unknown) {
     this.controls.push(control);
   }
   addSource(id: string, spec: { data?: unknown }) {
+    this.checkLoaded();
     this.sources.set(id, spec.data);
   }
   addLayer(spec: {
@@ -87,6 +103,7 @@ class FakeMap {
     paint?: Record<string, unknown>;
     filter?: unknown;
   }) {
+    this.checkLoaded();
     this.layers.set(spec.id, {
       layout: { ...spec.layout },
       paint: { ...spec.paint },
@@ -100,14 +117,17 @@ class FakeMap {
     return this.sources.has(id) ? { setData: (d: unknown) => this.sources.set(id, d) } : undefined;
   }
   setLayoutProperty(id: string, key: string, value: unknown) {
+    this.checkLoaded();
     const layer = this.layers.get(id);
     if (layer) layer.layout[key] = value;
   }
   setPaintProperty(id: string, key: string, value: unknown) {
+    this.checkLoaded();
     const layer = this.layers.get(id);
     if (layer) layer.paint[key] = value;
   }
   setFilter(id: string, filter: unknown) {
+    this.checkLoaded();
     const layer = this.layers.get(id);
     if (layer) layer.filter = filter;
   }
@@ -149,6 +169,7 @@ class FakeMap {
   }
   remove() {
     this.removed = true;
+    this.styleLoaded = false;
   }
 }
 
@@ -282,7 +303,7 @@ function seed() {
   results.set('gpsActivities:listTracksForBody', { tracks: [] });
   results.set('bounties:listOpen', [{ waterBodyId: 'crystal' }, { waterBodyId: 'crystal' }]);
   results.set('reports:recentCountsForBodies', {
-    crystal: { count: 1, capped: false, newestSkateEndTime: Date.now() - 1000 },
+    crystal: { count: 1, capped: false, newestSkateEndTime: BOARD_NOON - 1000 },
   });
 }
 
@@ -320,7 +341,11 @@ async function mount(spec = lakeMapSpec('mascoma'), handlers = {}) {
 }
 
 beforeEach(() => {
-  vi.useFakeTimers({ shouldAdvanceTime: true });
+  // Pinned to the boards' "today", not the runner's: the label asks whether a report's instant
+  // falls on the same local date as `now`, so an unpinned clock makes this file's fixtures read
+  // "today" all day and a weekday for the first hours after local midnight. The rollover test
+  // below sets its own instant on top of this.
+  vi.useFakeTimers({ now: BOARD_NOON, shouldAdvanceTime: true });
   FakeMap.instances = [];
   results.clear();
   queryArgs.clear();

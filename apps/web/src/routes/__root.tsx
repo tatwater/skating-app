@@ -9,6 +9,7 @@ import { type ReactNode, useEffect } from 'react';
 import { AppProviders } from '../components/AppProviders';
 import { AuthGate } from '../components/AuthGate';
 import { RouteAnalytics } from '../components/RouteAnalytics';
+import { RoutePrefetch } from '../components/RoutePrefetch';
 import { CrashScreen } from '../components/skater/CrashScreen';
 import { NotFoundRoute } from '../components/skater/SkaterShell';
 import { isConfigured } from '../lib/env';
@@ -55,6 +56,7 @@ function RootDocument({ children }: { children: ReactNode }) {
       <body>
         <AppProviders>
           <RouteAnalytics />
+          <RoutePrefetch />
           <AuthGate>{children}</AuthGate>
         </AppProviders>
         <Scripts />

@@ -780,3 +780,309 @@ Recorded at close-out (2026-11-07). Telegraphic; the commits carry the detail.
   now says to serve it with `serve --cors`. What remains is the upload (the roadmap row).
 - **Waiting on the founder:** the "Weather at" default (whole lake or the bay in view); whether a reading's
   coordinates are redacted on a public report.
+
+### 8.1 After the merge: the restack dropped ten fixes (#100)
+
+The founder's two hands-on passes on 2026-11-07 produced fifteen fix commits on the local
+`phase-b03-skater-web` branch, *after* #98's tip. The stack was then restacked onto
+`phase-b03-skater-web-4`: that branch took the When-section rework and the report-flow batch and left the
+other ten behind, on a branch the notes had by then marked STALE. #95–#98 merged without them, so the dev
+deployment ran the pre-test build. #100 replays them onto main.
+
+- **The one that showed: Explore drew no map.** `maplibre-gl.css` declares `.maplibregl-map { position:
+  relative }` and rides the lazy canvas chunk, so it loads *after* the app's sheet — one class against one
+  class, later wins. A container asking for `absolute inset-0` returns to normal flow with its insets
+  ignored, measures zero tall, and MapLibre sizes its canvas from `height || 300`: a 300 px strip at the
+  top of an 840×744 pane. The map still loads, still fires `load`, still reports a viewport, so the sidebar
+  list populates normally and nothing errors. Both B03 canvases carried it; the console's two did not.
+  All four now take one exported `MAP_CONTAINER_CLASS`, and `MapContainer.stories.tsx` measures it in a
+  browser with MapLibre's stylesheet loaded — jsdom has neither a cascade nor layout, so no unit test can
+  see this. Flip the constant back and it fails at height 0.
+- **Three of the ten needed a real merge**, because main had moved under them: `MapMarksLayer` had gained a
+  hazard-pin *peek* (the fade under imagery) where the lost commit added the *hover plate* — both are kept;
+  `LakeSidebar`'s story still asserted the credits at the sidebar foot after main moved them to the map
+  chip; and `EndTimePanel`'s extra `Math.min(ms, floorToMinute(now))` was redundant once `clampToWindow`
+  absorbed the minute floor.
+- **Reviewing recovered commits is not reviewing merged ones.** These were written against a tree that no
+  longer exists, so they were reviewed again as a batch against the main they now land on — ten further
+  findings, each fixed with a test. Two were real: the returning-load hold (`BootScreen`) never escalated
+  to the offline screen the way `FirstLoadSplash` did, so a load with no socket held on skeletons forever;
+  and `refileToFootprintBody` moved `waterBodyId` while leaving `subAreaId`/`subAreaName` stamped from the
+  lake the pin had just left, so a card could read "Mascoma — Far Bay".
+- **The map palette redesign is held back as one unit** (the roadmap's deferred row). Its second half
+  conflicts in nine places with the filled depth bands that landed in #98, and three founder calls are
+  open. Its first half is tokens-only, so shipping it alone would add four unused keys to
+  `packages/design` — a package the kit thread owns.
+- **The lesson for the next restack:** a branch that is about to be abandoned should be diffed against its
+  replacement by *content*, not by commit count. `git cherry` is useless once a branch has been
+  squash-merged (every patch-id differs), which is what hid this; what found it was grepping main for each
+  fix's own marker — `MAP_CONTAINER_CLASS`, `--size-sidebar`, `gli-boot`, `orderAccessPutIns`.
+
+### 8.2 Latest's filter column was a segment too narrow
+
+The founder's live test found "Great" cropped off the right edge of the Quality row. The column was
+the boards' 17 rem (272 px). A `ToggleGroup` segment is `whitespace-nowrap`, so `flex-auto` cannot
+shrink one below its own label — `min-width: auto` floors it at the text — and the row therefore
+does not compress, it spills, which the aside's `overflow-y: auto` turns into a sideways scrollbar
+nobody goes looking for. The column is now 18.5 rem (296 px).
+
+**Chasing the number found a second thing: the web app never fetches its typeface.** The first
+measurement said the row wanted 285.3 px; a measurement with the webfont loaded said 273.5. Both
+were right. `--family-sans` is `Saira, system-ui, sans-serif`, and the only place Saira is fetched
+for web is `.storybook/preview-head.html`. The app's root links one stylesheet, `app.css`, and
+neither it, `kit.css` nor the design package's generated CSS carries an `@font-face` — so the
+skater web app has been rendering in `system-ui` since B03 shipped, while every story renders in
+Saira. That is why the founder's screen cropped the row harder than a story does, and it means
+every measurement story in the kit has been validating a face the app does not serve. Whether the
+app should load Saira is the founder's call (it is a visual change on every screen, and a Google
+Fonts dependency); 296 px was chosen to clear both faces so this fix does not depend on the answer.
+
+The column and the `BootScreen` skeleton standing in for it now read one `--size-latest-filters`,
+the way `BootMapPage` already shares `--size-sidebar` with the real sidebar. They have to agree: a
+skeleton a different width from the page it becomes would slide the feed sideways the moment the
+first query lands. `Latest.stories` measures both segment rows against the column's edge, so the
+next label that outgrows it fails in the browser project instead of on the founder's screen — after
+awaiting Saira by name, because Storybook fetches it with `display=swap` and the two faces differ
+by 12 px on this row, which is the whole margin under test (Greptile, #101).
+
+Same shape as the `--size-sidebar` widening recorded above: a row of nowrap boxes in a fixed column
+is a measurement, not a judgment, and jsdom has no layout to make it.
+
+### 8.3 The map palette: light has no headroom (#102)
+
+The map's water and shore were Phase 01's `#3a6ea5` and `#9ecae1` in *both* modes, neither a token.
+The founder settled it on 2026-11-09: a listed body is drawn in the bathymetric ramp rather than in
+ice — band 0 is the water, band 0's index line is the shore — so an unchosen lake and a chosen
+lake's shallows are the same color and opening a lake *reveals* depth instead of repainting the
+water. Ice is left to the things that aren't water. Three things the build found:
+
+**Protomaps' `white` earth is `#ffffff`, which is the skater light field exactly.** The map pane had
+no edge against the sidebar at all; the lakes floated on the page. The land became a token,
+`map-earth`, placed a fraction of the way in lightness from the field to band 0 — `MAP_EARTH_SPLIT`,
+the founder's rule, and the single number the whole basemap hangs on. It was the midpoint on
+2026-11-09, which put it at `#1d2022` dark and `#eff3f6` light; **the founder's live read on
+2026-11-10 was that the midpoint is muddy in both themes**, so the split is a quarter and the land
+resolves to `#0f1114` dark and `#f6f9fd` light — darker in dark, lighter in light. What that buys is
+a map that reads as one surface with the page; what it spends is the pane's own edge, which falls
+from 1.24:1 to 1.08:1 against the field in dark (1.11:1 → 1.06:1 in light). `primitives.test.ts`
+derives the four literals from the fraction, so a third pass is one number and an edit to the field
+or to band 0 can't quietly leave the land behind.
+
+**The flavor has a `background` field as well as `earth`.** Protomaps keys its viewport-wide
+background layer on the former, so overriding `earth` alone left light painting `#ffffff` behind
+everything — invisible to every test (nothing rendered a basemap), visible on first paint and on
+every pan past the tiles, in the one mode the token was added for. A background layer ignores its
+source and covers the viewport: it is the first thing you see and the last thing a unit test knows
+about.
+
+**A softening sized for one palette is a hazard in the next.** The shore's zoom curve faded it to
+.55 below z7 so a region of lakes wasn't a region of outlines — correct when the shore was bright
+ice. Against band 0's index line on the new land it measured 1.43:1 in light and 1.71:1 in dark,
+under the file's own floor, and the app opens at `INITIAL_ZOOM` 6.5 — *below* `farZoom` — so that
+dim value is what the region view actually paints. The guard missed it by measuring the shore
+undimmed, an opacity the region map never uses. `far` is .9 now, which is all light can afford.
+
+**Still open.** Light's band 0 (`#dde8f0`, L 0.925) sits a hair under the field (L 1.0), so the
+midpoint land lands between two near-identical values: the water reads 1.11:1 against the land, and
+a mark's ground halo over water reads the same — and that halo exists under D34 to lift a pin off
+whatever it lands on, which is usually water, not land. Dark is comfortable throughout (1.56 /
+2.50 / 1.56). Closing it means moving a founder-signed color — light's band 0, or the land off the
+midpoint — so it is a call, not a fix.
+
+### 8.4 CI was red every evening, and it was pointing at a product bug (D243, D244)
+
+#102 failed CI at 00:18 UTC on five tests in `GlobalSearch`, `latestViews` and `ProfilePage` — none
+of them in the map-palette code that PR touched, and all five green on the laptop that pushed them.
+The three runs before it, at 22:42, 23:03 and 23:10 UTC, had passed.
+
+The cause is that the cards' clock words are calendar-based, not elapsed-based. `panelTime`'s
+`daysBetween` floors both instants with `setHours(0, 0, 0, 0)`, so a fixture backdated N hours from
+a live `Date.now()` falls off "Today" once the runner's clock reads earlier than N:00:
+
+| fixture | reads "Today" until the local hour is |
+| --- | --- |
+| `NOW - 2 * HOUR` (the `Today` assertions) | 00:00–01:59 |
+| `NOW - 5 * HOUR` (`Also from … · 5 h`) | 00:00–04:59 |
+
+Which makes the window **00:00–05:00 UTC** — and 7 PM–midnight Eastern *is* 00:00–05:00 UTC. The
+founder's working hours were the broken window, every night, on any branch. It reproduced exactly:
+at 03:21 UTC only the five-hour fixture failed; under `TZ=America/Sao_Paulo` at 01:01 local, three
+failed on #102's head and none after the fix.
+
+Three things the build found while fixing it:
+
+**The convention already existed, six times.** `lakeModel`, `reportCalendar`,
+`PhoneInstrumentStrip`, `panelTime`, `profileModel` and `SignOutGuard` each re-derived "Saturday 16
+January 2027 — the boards' today" as a local constant. Only the files that missed it broke. It is
+now `apps/web/src/test/boardNow.ts`, and the date has to stay **frozen** rather than "today at
+noon": `profileModel` asserts `dayKicker(NOW - 3 * DAY, NOW)` is `'Wednesday'`, which holds only
+when today is a Saturday.
+
+**Pinning fixtures is not enough.** `GlobalSearch.tsx:185`, `SkaterMapCanvas.tsx:147` and
+`InViewList.tsx:178` each read the clock themselves rather than taking `now` as a prop, so a pinned
+fixture disagrees with the component by months. Two bigger hammers were tried and rejected with
+numbers: pinning the clock in `setup.ts` for every unit test failed **118** of them (the sheet's
+IndexedDB, photo-pipeline and reconnect suites drive real async work that a faked clock starves),
+and faking the timers rather than just `Date` cost a debounce flake in `GlobalSearch` that passed in
+isolation and failed under full-suite load — the same green-here-red-on-CI shape as §8.2.
+`pinBoardClock()` fakes `Date` alone, per file, only where a calendar label is asserted.
+
+**`SkaterMapCanvas` was already faking its timers — without an instant.**
+`useFakeTimers({ shouldAdvanceTime: true })` and no `now` leaves `Date.now()` on the runner's real
+clock, so that file had the identical latent bug behind a fake that looked like a fix. Pinning is
+the instant, not the fake, and the guard refuses to accept the one for the other.
+
+And the flake was pointing at something real (D244): because `ageLabel` demanded the same calendar
+day, a report that ended at 11 PM read "Fri" to anyone looking at 12:30 AM — ninety minutes old. It
+now counts hours across midnight, with the boundary pinned deliberately in `panelTime.test.ts`
+rather than sampled at whatever hour CI runs.
+
+**A pinned fixture is not a pinned test (Greptile, #103).** The first cut of this fix pinned
+`ProfilePage`'s fixtures and left the component reading the clock at `ProfilePage.tsx:73`. It went
+green — because `dayLabel` treats a future instant as "Today" by design (clock skew), and a 2027
+fixture is two months ahead of the present. The assertion was testing the skew branch, not "today",
+and would have started failing on **17 January 2027**. Proved by moving the anchor six years into
+the past, where the test fails, and again after pinning, where it passes.
+
+Checking for others the same way turned up none: `SignOutGuard` and `latestViews` inject `now` and
+hardcode their fixture instants, so they are deterministic already. It did show that four files
+mix the shared anchor with hardcoded `2027` literals (`panelTime`'s `at()` helper,
+`reportCalendar`, `sheetParts`, `SignOutGuard`'s `openedAtMs`) — correct today, but coupled to the
+anchor's year, so moving the anchor would break them confusingly. Left as follow-up.
+
+**What the coverage review added.** Three gaps, found by asking what the existing tests *don't*
+discriminate:
+
+1. **Nothing exercised the zone argument.** `recentReportsLabel` and `labelSlug` take a
+   `timeZone` so the viewer's zone decides the day, and every test of both sat mid-afternoon,
+   where New York and UTC agree on the date — so the argument did no visible work and dropping it
+   would not have failed anything. Now one instant (9 PM Saturday in New York, already Sunday in
+   UTC) reads `1 report Sat` with the zone and `1 report today` without. Verified by deleting the
+   `timeZone` pass-through: both new tests go red.
+2. **The 25-hour day.** On the Sunday the clocks go back, two reports a full 24 hours apart share
+   a local date. The labels group by date, so both count — `2 reports today` in New York, `1` in
+   UTC, from the same two instants. A 24-hour window would have split them silently.
+3. **The clock-skew branch, pinned on purpose.** `dayLabel` reads a future instant as "Today",
+   which is deliberate for a fast device clock and is also exactly how an unpinned test looks
+   pinned — the ProfilePage trap above. Pinned now in `panelTime.test.ts` with that failure named.
+
+And the static guard got a dynamic half: CI re-runs the web unit project in a zone **computed from
+the current UTC hour** so local time is always ~01:00, inside the window that broke #102, instead
+of hoping a run lands there. 35 s, and verified to catch the original bug: restoring
+`latestFixtures`' live clock turns that step red at local 01:46.
+
+**What the dynamic half found nine hours later (2026-11-10).** The step above went green on its own
+PR at local 01:57 and then turned main red at `f5d070a0` — on two `accessModel` tests neither #103
+nor #102 touched. The cause is a *second* way a clock word goes wrong, and it is not the live clock
+this section is about: `ACCESS_NOW` was a fixed UTC instant, and `accessModel` calls `reportWhen`
+without a `timeZone`, so the weekday is formatted in the **runner's** zone. `Date.UTC(2027, 0, 16,
+16, 52)` is Saturday in Hanover and Sunday 3:52 AM at UTC+11, so `reported Thu` read `reported
+Fri`. It predated the anchor; #103 pointed the fixture at `BOARD_NOW_NH` and so carried it
+forward. The fix is one line — the local-parts `BOARD_NOON`, per D243's amendment — and it was
+verified in six zones from UTC+14 to UTC−11.
+
+The lesson is about the probe, not the fixture. **One zone per run cannot show both classes**, and
+which class it shows depends on the hour CI happens to run:
+
+| Zone | Picked when | Live clock (class 1) | Date-line shift (class 2) |
+| --- | --- | --- | --- |
+| UTC−3 (`Etc/GMT+3`) | CI at 05:00 UTC | caught | **missed** |
+| UTC+11 (`Etc/GMT-11`) | CI at 14:00 UTC | caught | caught |
+
+#103 merged at 04:57 UTC and drew UTC−3, which shifts no dates at all; the push to main ran at
+14:03 UTC, drew UTC+11, and failed. So the step now runs three zones: the computed 01:00 one for
+class 1, and `Etc/GMT-14` / `Etc/GMT+11` — UTC+14 and UTC−11, which bracket every real zone — for
+class 2. Both brackets are load-bearing, and each was shown to be: with the bug reintroduced, the
+16:52 UTC instant fails only at UTC+14, while the mirror case (a 02:00 UTC Saturday) fails only at
+UTC−11. Three runs, about 105 s.
+
+### 8.5 A theme switch crashed the app: readiness is state, the map is a ref
+
+The founder's live test: in light mode, pick **Dark** from the account menu and the app lands on the
+crash screen. Pressing either *Try again* or *Reload the page* completes the switch, so the theme
+itself was never the problem — the transition was, exactly once.
+
+A theme switch re-creates the MapLibre instance (the basemap style is built per flavor; `useMapCanvas`
+has done it that way since A02) and the skater canvas derives `palette` from the same flavor. So one
+render changes both, and the paint effect that follows `palette` has its dependencies changed in the
+*very commit* where the shell's cleanup removes the old map and the shell's body builds the new one.
+That effect gated on `mapRef.current` and `loaded` — and those two disagree in that window:
+
+- `mapRef.current` is mutated *during* the commit, so by the time the effect body runs it is already
+  the new map, whose style has not loaded.
+- `loaded` is React state, so the body reads the value from the render that scheduled it: `true`,
+  about a map that no longer exists.
+
+The guard therefore passed and `setPaintProperty` landed on an unloaded style. MapLibre's
+`_checkLoaded` **throws** there — `Style is not done loading.` — rather than no-opping, the throw came
+out of a passive effect, and `Sentry.ErrorBoundary` turned it into the crash screen. A retry re-rendered
+after `load` had fired, which is why both buttons "worked".
+
+The fix is one accessor, `MapCanvas.liveMap()`: the live map if its style can take a write, else `null`,
+with readiness held in a ref the same commit updates so it can never be stale about the map it answers
+for. Every imperative effect in all four canvases now gates on it — a style write is never guarded by
+state — and the accessor *replaces* `loaded` in their dependency lists rather than joining it: it takes
+a fresh identity whenever readiness changes, so listing it alone is what re-runs them (and so re-applies
+the whole spec) once the new map is ready. `loaded` keeps only the job it is safe for, the React gate on
+what *renders* over the map.
+
+Readiness itself is keyed on the loaded map rather than on a boolean, so a `load` that ever landed in
+the same React batch as the teardown's reset cannot settle back on `true` and leave the accessor holding
+its old identity — which would hand the new instance no spec, no filters and no sources, silently. Two
+instances are never the same object.
+
+The admin lake editor had the same pair one layer out: it handed `useImageryReveal` `mapRef.current` and
+`loaded` as props, and that hook adds and removes its own source and layer. There the two disagreed a
+commit later rather than sooner — the render that saw `loaded` drop also saw the *new* map in the ref, so
+the reveal's teardown ran against the instance the shell had already removed. It takes `liveMap()` now,
+which is also what leaves `loaded` with no imperative caller at all.
+
+**Why no test caught it:** `SkaterMapCanvas.test` already had *re-applies everything on a theme switch*,
+but its fake map's `setPaintProperty` silently no-opped on an unknown layer, so the one call that
+mattered was swallowed. The fake now models `_checkLoaded` — every style write throws before `load` and
+after `remove` — and that existing test fails without the fix. `mapCanvas.test` pins the contract
+itself: across a flavor change a caller is handed `null`, never the new map before it has loaded.
+
+The general shape, worth remembering past this phase: **a React-state flag is never a safe guard for a
+ref that the same commit rewrites.** Where a ref and a flag describe one object, the flag belongs in a
+ref beside it.
+
+### 8.4 What §8.3 cost the winter imagery, and two CI reds that were nobody's diff
+
+Greptile's read of §8.3 found the one place where publishing `null` is not the same as publishing a
+map nobody may write to. `useFreezeUpFrame` keeps its lanes — a raster source and layer per date —
+in refs that deliberately **outlive** the effect that mounted them, because tying a lane's lifetime
+to a cleanup is the remove-then-add shape that blanked the map. Its own comment named the contract:
+*"a map that is genuinely re-created arrives here as `loaded` going false, which the reconciler
+already handles."* It did handle it — by dropping every lane — but the first line of the reconciler
+was `if (!map) return`, so once the shell stopped publishing an unloaded instance, a re-created map
+arrived as no map at all and that was the single path that *kept* its bookkeeping. The replacement
+map then matched the unchanged frame key against a lane recorded on the dead instance, `show()`
+found no layer there and returned, and the February photograph was simply gone until the skater
+scrubbed to another date. No error.
+
+`drop()` now takes the map optionally and the drop-all branch covers `!map`: with no instance to
+take a lane off, forgetting it is the whole job. That is the same correction as §8.3 one level up —
+bookkeeping about an instance is only true of that instance.
+
+**The red CI on #104 was not #104's.** Two tests on main fail on a loaded or oddly-zoned runner, and
+the second was hidden behind the first (the time-zone step runs three zones in one loop and stops at
+the first non-zero exit):
+
+- `GlobalSearch`'s *once per query* asserted an analytics **effect** immediately after a `findBy*`.
+  Testing Library's `asyncWrapper` turns the act environment *off* for that wait, so the debounce's
+  state update commits outside `act` and React flushes its passive effects in a scheduler task that
+  the single `setTimeout(0)` drain after the wait is not guaranteed to outlast. Pure load decides
+  it: green alone, red under a full suite, which is why it hit the normal step here and the
+  zone-shifted step on main. It waits for the event itself now, then holds it to one across a
+  further render of the same term — stronger than what it replaced, not weaker. `pinBoardClock`'s
+  comment blamed fake timers for this; corrected, since leaving them real never fixed it.
+- `sheetSlotFills` anchored its fixtures to 16:52 **UTC** while `PhotoSorter` groups a pool by each
+  photo's **local date** and its line names the result ("on two lakes" against "over two days"). On
+  a UTC+9 runner that instant reads 01:52 local, which put the 3-hours-ago photo on the previous day
+  and changed the copy. It is `BOARD_NOON` now — the zone-naive constant `boardNow.ts` prescribes
+  for exactly this, with half a day of headroom either side.
+
+Both are the same lesson as the one above in a different register: a test that reads a clock, or a
+flag, from somewhere other than the thing it is asserting about will be right until something else
+decides the timing.

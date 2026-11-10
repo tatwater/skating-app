@@ -20,7 +20,7 @@
 import type { BBox } from '@skating/core';
 import maplibregl from 'maplibre-gl';
 import { Protocol } from 'pmtiles';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { FoldedAttributionControl } from './mapAttribution';
 import { boundsToViewport, buildMapStyle, type MapFlavor, zoomForViewport } from './waterMap';
 
@@ -78,11 +78,43 @@ export interface MapCanvasOptions {
  */
 let pmtilesUsers = 0;
 
+/**
+ * The class every MapLibre container in this app wears — **a height and a width, never a position**.
+ *
+ * MapLibre's own stylesheet declares `.maplibregl-map { position: relative }`, and it is loaded
+ * with the canvas chunk, so it lands *after* the app's sheet. Both selectors are one class, so the
+ * later one wins: an `absolute inset-0` container is silently turned back into a static-flow box
+ * with `inset` doing nothing, which leaves it `height: 0`. MapLibre then sizes its canvas from
+ * `getBoundingClientRect().height || 300` and the map draws a 300 px strip, or nothing at all.
+ * Nothing errors, so the only symptom is a blank map.
+ *
+ * `size-full` asks for the same box without touching `position`, so the rule has nothing to
+ * override. The pane around it (`MapPane`, `relative isolate overflow-hidden`) is what positions it.
+ */
+export const MAP_CONTAINER_CLASS = 'size-full';
+
 export interface MapCanvas {
   containerRef: React.RefObject<HTMLDivElement | null>;
   mapRef: React.RefObject<maplibregl.Map | null>;
-  /** True once `load` has fired — every `setData` effect has to wait for it. */
+  /** True once `load` has fired — what *renders* over the map waits on this. */
   loaded: boolean;
+  /**
+   * The live map if its style is ready to be written to, else `null`.
+   *
+   * **Every effect that touches the map imperatively must gate on this, never on `mapRef.current`
+   * plus `loaded`** (B03 §8.3). `loaded` is React state, so an effect body reads the value from the
+   * render that scheduled it — while `mapRef` is mutated during the commit. A theme switch changes
+   * `flavor` *and* the caller's palette in one render, so the cleanup that removes the old map and
+   * the body that builds the new one both run in a commit where `loaded` still says `true`: a style
+   * write in that window lands on a map whose style has not loaded and MapLibre throws
+   * `Style is not done loading.`, which the error boundary turns into the crash screen. Reading
+   * readiness from a ref the same commit updates keeps the two in step.
+   *
+   * This is a caller's whole dependency: it takes a new identity whenever readiness changes, which
+   * is what re-runs their effect — and so re-applies everything — once the new map is ready. Listing
+   * `loaded` beside it is redundant.
+   */
+  liveMap: () => maplibregl.Map | null;
 }
 
 /**
@@ -108,7 +140,27 @@ export function useMapCanvas(options: MapCanvasOptions): MapCanvas {
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
-  const [loaded, setLoaded] = useState(false);
+  /**
+   * The map that has fired `load`, **as state** rather than a boolean, so `liveMap` can key on it.
+   *
+   * A boolean would collapse: a `load` landing in the same React batch as the cleanup's reset — a
+   * synchronous style, or a caller firing it inside the effect — would settle back on `true`, the
+   * memo below would keep its identity and no caller effect would re-run, leaving the new instance
+   * with no spec, no filters and no sources and no error anywhere. Two instances are never the same
+   * object, so keying on the map itself cannot collapse that way.
+   */
+  const [loadedMap, setLoadedMap] = useState<maplibregl.Map | null>(null);
+  const loaded = loadedMap !== null;
+  // The same fact again, in a ref so it is true of `mapRef.current` *now* and not of whichever map
+  // was live when the current render was scheduled — it is what closes the window between a `load`
+  // and the re-render it schedules. See `MapCanvas.liveMap`.
+  const styleLoadedRef = useRef(false);
+  // A fresh identity per readiness change, so `liveMap` is a caller's whole dependency: it both reads
+  // the map and re-runs their effect once a new one can take a write.
+  const liveMap = useMemo(
+    () => () => (loadedMap !== null && styleLoadedRef.current ? mapRef.current : null),
+    [loadedMap],
+  );
   const lastViewRef = useRef<{ center: [number, number]; zoom: number } | null>(null);
 
   // Both callbacks are read through refs so a caller can close over current state without the map
@@ -205,18 +257,20 @@ export function useMapCanvas(options: MapCanvasOptions): MapCanvas {
       // nobody is looking at. That was never possible while the map was a fixed `75vh` block; now
       // that its height comes from the flex layout, it is one unsettled frame away.
       map.resize();
+      styleLoadedRef.current = true;
       // Frame the caller's bounds before anything reads the viewport, so the first query is scoped to
       // what the user will actually be looking at rather than to the pre-fit view.
       if (fitBounds && !lastViewRef.current)
         map.fitBounds(fitBounds, { padding: 24, animate: false });
       onLoadRef.current(map);
-      setLoaded(true);
+      setLoadedMap(map);
       syncViewport(); // first query, framed on the initial view
     });
     map.on('moveend', syncViewport);
 
     return () => {
-      setLoaded(false);
+      styleLoadedRef.current = false;
+      setLoadedMap(null);
       map.remove();
       mapRef.current = null;
       attributionRef.current = null;
@@ -231,5 +285,5 @@ export function useMapCanvas(options: MapCanvasOptions): MapCanvas {
     attributionRef.current?.setExtraAttribution(extraAttribution);
   }, [extraAttribution]);
 
-  return { containerRef, mapRef, loaded };
+  return { containerRef, mapRef, loaded, liveMap };
 }

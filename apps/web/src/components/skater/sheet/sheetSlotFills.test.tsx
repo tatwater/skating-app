@@ -71,6 +71,7 @@ vi.mock('./InstrumentMap', async () => {
   };
 });
 
+import { BOARD_NOON } from '@/test/boardNow';
 import { HazardSheetHost } from '../actions/HazardSheetHost';
 import { AnotherReport, addAnotherVisit, addDifferentLake } from './AnotherReport';
 import { ConsoleModeProvider, useConsoleMode } from './ConsoleMode';
@@ -83,7 +84,18 @@ import { PhotoTileMenu } from './PhotoTileMenu';
 import { carryHazard, StackedHazard } from './StackedHazard';
 import { SheetContainerProvider } from './sheetSlots';
 
-const NOW = Date.UTC(2027, 0, 16, 16, 52);
+/**
+ * ⚠ **Noon in the runner's own zone, not the NH instant** (`BOARD_NOON`, not `BOARD_NOW_NH`).
+ *
+ * `PhotoSorter` groups a pool into tabs by each photo's **local date**, and its line names the
+ * result ("on two lakes" against "over two days"), so the fixtures below — `NOW - 3 h` and
+ * `NOW - 1 h` — have to land on the same local date as `NOW`. Pinned to 16:52 UTC this file read
+ * 01:52 local on a UTC+9 runner, which put the 3-hours-ago photo on the day before and turned CI
+ * red in exactly the window `boardNow.ts` describes. Noon leaves ~12 h of headroom either side.
+ * Nothing here asserts an absolute clock or calendar string, so the zone-naive constant is the
+ * right one.
+ */
+const NOW = BOARD_NOON;
 let seq = 0;
 const mint = () => `m-${++seq}`;
 const POLY = {

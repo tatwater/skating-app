@@ -21,9 +21,23 @@ const byId = (id: string) => {
 };
 
 describe('putInCards', () => {
-  it('draws core’s recommended way in first, then the rest in the server’s order', () => {
+  it('draws the whole list in core’s order, the recommended way in at the top', () => {
     expect(cards.map((c) => c.id)).toEqual(['launch', 'beach', 'ramp', 'dam', 'shaker', 'knox']);
     expect(cards.filter((c) => c.recommended).map((c) => c.id)).toEqual(['launch']);
+  });
+
+  /**
+   * The fixture arrives in core's order already, so the assertion above cannot tell the two rules
+   * apart. Shuffled, it can: the list is **sorted**, not "best first then whatever arrived".
+   */
+  it('re-orders rows the server hands over in another order', () => {
+    const shuffled = {
+      ...MASCOMA_ACCESS,
+      putIns: [...MASCOMA_ACCESS.putIns].reverse(),
+    } as AccessData;
+    const out = putInCards(shuffled, 'web', ACCESS_NOW);
+    expect(out.map((c) => c.id)).toEqual(['launch', 'beach', 'ramp', 'knox', 'shaker', 'dam']);
+    expect(out.filter((c) => c.recommended).map((c) => c.id)).toEqual(['launch']);
   });
 
   it('demotes a blocked launch but never hides it', () => {

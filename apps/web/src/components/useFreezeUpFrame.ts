@@ -203,24 +203,35 @@ export function useFreezeUpFrame({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
 
-    /** Take a lane down completely. Only ever called on a lane nobody is looking at. */
+    /**
+     * Take a lane down completely. Only ever called on a lane nobody is looking at.
+     *
+     * ⚠ **Every map call is optional, because the map may already be gone.** A lane is a layer and a
+     * source *on one instance*, and a theme switch replaces the instance — so when there is no map
+     * to take it off, forgetting the lane is the whole job, and it is not optional: a record of a
+     * lane on a dead instance is what makes the reconciler below skip mounting the frame on the
+     * live one (`show` finds no layer and returns, so the picture is simply gone, B03 §8.4).
+     */
     const drop = (lane: FreezeUpLane) => {
       const mounted = lanesRef.current[lane];
       if (!mounted) return;
       clearTimeout(mounted.revealTimer);
       clearTimeout(mounted.hideTimer);
-      map.off('sourcedata', mounted.onSourceData);
+      map?.off('sourcedata', mounted.onSourceData);
       // Order matters: a source with a layer still attached throws on removal.
-      if (map.getLayer(mounted.layerId)) map.removeLayer(mounted.layerId);
-      if (map.getSource(mounted.sourceId)) map.removeSource(mounted.sourceId);
+      if (map?.getLayer(mounted.layerId)) map.removeLayer(mounted.layerId);
+      if (map?.getSource(mounted.sourceId)) map.removeSource(mounted.sourceId);
       lanesRef.current[lane] = null;
       recencyRef.current = recencyRef.current.filter((index) => index !== lane);
       if (shownRef.current === lane) shownRef.current = null;
     };
 
-    if (!loaded || !baseUrl || !key || !season) {
+    // **No map is a reason to forget the lanes, not a reason to leave them.** This read `!map` with
+    // an early return above `drop`, which made "the map went away" the one path that kept its
+    // bookkeeping — and a re-created map is handed to us as no map at all for a commit (the shell
+    // publishes the instance only while its style can take a write, B03 §8.3).
+    if (!map || !loaded || !baseUrl || !key || !season) {
       for (let lane = 0; lane < lanesRef.current.length; lane++) drop(lane);
       return;
     }
@@ -367,7 +378,8 @@ export function useFreezeUpFrame({
   // fired whenever that object's *identity* changed, which tore both lanes down and rebuilt from
   // scratch — reintroducing the blank this hook exists to remove, on any caller that does not hand us
   // a stable ref. A ref's identity is not a fact about the map. A map that is genuinely re-created
-  // arrives here as `loaded` going false, which the reconciler already handles.
+  // arrives at the reconciler above as `loaded` going false *and* `mapRef.current` going null, and
+  // it drops every lane on either — which is what makes this cleanup the unmount path only.
   // biome-ignore lint/correctness/useExhaustiveDependencies: unmount only — see above.
   useEffect(() => {
     const lanes = lanesRef.current;

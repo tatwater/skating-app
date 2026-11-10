@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { mapPalette } from '@/components/skater/map/mapPalette';
 import { useTheme } from '@/components/theme-provider';
 import { env } from '@/lib/env';
-import { useMapCanvas } from '@/lib/mapCanvas';
+import { MAP_CONTAINER_CLASS, useMapCanvas } from '@/lib/mapCanvas';
 import { DEMO_PMTILES_URL, INITIAL_CENTER, INITIAL_ZOOM, MAP_FLAVORS } from '@/lib/waterMap';
 import {
   EMPTY,
@@ -55,7 +55,7 @@ export default function InstrumentMapCanvas({
   const onMapRef = useRef(onMap);
   onMapRef.current = onMap;
 
-  const { containerRef, mapRef, loaded } = useMapCanvas({
+  const { containerRef, liveMap } = useMapCanvas({
     pmtilesUrl: env.pmtilesUrl || DEMO_PMTILES_URL,
     worldPmtilesUrl: env.worldPmtilesUrl,
     flavor,
@@ -70,7 +70,7 @@ export default function InstrumentMapCanvas({
         id: 'instrument-lake-fill',
         type: 'fill',
         source: INSTRUMENT_SOURCES.lake,
-        paint: { 'fill-color': palette.water.fill, 'fill-opacity': palette.water.fillOpacity },
+        paint: { 'fill-color': palette.water.fill, 'fill-opacity': 1 },
       });
       map.addLayer({
         id: 'instrument-lake-line',
@@ -95,26 +95,26 @@ export default function InstrumentMapCanvas({
   const boundsKey = JSON.stringify(bounds);
 
   useEffect(() => {
-    const map = mapRef.current;
-    if (!loaded || map === null) return;
+    const map = liveMap();
+    if (map === null) return;
     const set = (id: string, data: unknown) =>
       (map.getSource(id) as maplibregl.GeoJSONSource | undefined)?.setData(data as never);
     set(INSTRUMENT_SOURCES.lake, lake);
     set(INSTRUMENT_SOURCES.track, track);
-  }, [loaded, mapRef, lake, track]);
+  }, [liveMap, lake, track]);
 
   useEffect(() => {
-    onMapRef.current?.(loaded ? mapRef.current : null);
+    onMapRef.current?.(liveMap());
     return () => onMapRef.current?.(null);
-  }, [loaded, mapRef]);
+  }, [liveMap]);
 
   // A lake picked after the map loaded: frame it.
   // biome-ignore lint/correctness/useExhaustiveDependencies: bounds compare by their serialized key.
   useEffect(() => {
-    const map = mapRef.current;
-    if (!loaded || map === null || bounds === null) return;
+    const map = liveMap();
+    if (map === null || bounds === null) return;
     map.fitBounds(bounds, { padding: FIT_PADDING, animate: false });
-  }, [loaded, mapRef, boundsKey]);
+  }, [liveMap, boundsKey]);
 
-  return <div ref={containerRef} data-slot="instrument-canvas" className="absolute inset-0" />;
+  return <div ref={containerRef} data-slot="instrument-canvas" className={MAP_CONTAINER_CLASS} />;
 }

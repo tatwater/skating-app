@@ -6,7 +6,7 @@ import {
 } from '@skating/core';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-
+import { BOARD_NOW_NH } from '@/test/boardNow';
 import {
   areaFact,
   axisLine,
@@ -28,7 +28,7 @@ const FT = 0.3048;
 const ACRE = 4046.8564224;
 const TZ = 'America/New_York';
 // Saturday 16 January 2027, 11:52 AM in Enfield — the boards' "today".
-const NOW = Date.UTC(2027, 0, 16, 16, 52);
+const NOW = BOARD_NOW_NH;
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 

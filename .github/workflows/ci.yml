@@ -77,6 +77,42 @@ jobs:
       - name: Test (with coverage)
         run: pnpm test
 
+      # The suite must not care what hour it runs at, and for a while it did. #102 went red at
+      # 00:18 UTC on five calendar-label tests that were green on the author's laptop (D243): the
+      # labels bucket by *local date*, so a fixture backdated from a live clock falls off "Today"
+      # in the first hours after local midnight — and 7 PM–midnight Eastern is 00:00–05:00 UTC,
+      # so the author's whole working evening was CI's broken window.
+      #
+      # `packages/guards/src/testClock.test.ts` is the static half: it stops a new fixture or
+      # calendar-asserting test from reading the live clock. This is the dynamic half, and it takes
+      # three zones because there are two ways a clock word goes wrong and one zone cannot show
+      # both. Note that `Etc/GMT+N` is UTC−N, the sign inverted, so an east-positive offset O maps
+      # to `Etc/GMT-O`.
+      #
+      # 1. **A live clock.** A fixture backdated N hours from `Date.now()` falls off "Today" once
+      #    the local hour reads under N:00, which is what reddened #102 at 00:18 UTC. Shown by the
+      #    zone computed from the *current UTC hour* so local time is always ~01:00, rather than
+      #    hoping CI happens to run in that window.
+      # 2. **A pinned instant with a local-date label.** `reportWhen` and `daysBetween` read the
+      #    *runner's* date, so a fixture fixed at a UTC instant still names a different weekday
+      #    either side of the date line. `Etc/GMT-14` and `Etc/GMT+11` bracket every real zone
+      #    (UTC+14 to UTC−11), so a label that only holds near Hanover fails in one of them.
+      #
+      # Class 2 needs the extremes, not the hour: the 01:00 zone at 05:00 UTC is UTC−3, which
+      # shifts no dates at all, and that is exactly how `accessModel.test.ts` passed its own PR and
+      # then turned main red at `f5d070a0` nine hours later, when the computed zone was UTC+11.
+      #
+      # The unit project only: it is the fixture-heavy half and costs under a minute, where the
+      # story project needs another Chromium pass. Invoked through vitest rather than `pnpm test`
+      # so turbo replays nothing.
+      - name: Test the web suite again at 1 AM local, and at both ends of the date line
+        run: |
+          ONE_AM=$(node -e 'let o=((1-new Date().getUTCHours())%24+24)%24; if (o>12) o-=24; console.log(o>=0?`Etc/GMT-${o}`:`Etc/GMT+${-o}`)')
+          for ZONE in "$ONE_AM" Etc/GMT-14 Etc/GMT+11; do
+            echo "Re-running the web unit project in $ZONE — local time $(TZ="$ZONE" date +%H:%M)"
+            TZ="$ZONE" pnpm --filter @skating/web exec vitest run --project unit
+          done
+
       - name: Upload coverage
         if: always()
         uses: actions/upload-artifact@v4

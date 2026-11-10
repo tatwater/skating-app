@@ -14,6 +14,8 @@ vi.mock('@/lib/analytics', async (load) => ({
   useAnalytics: () => ({ capture: fakes.capture }),
 }));
 
+import { BOARD_NOON } from '@/test/boardNow';
+import { pinBoardClock } from '@/test/pinBoardClock';
 import {
   GlobalSearch,
   recentArgs,
@@ -50,6 +52,8 @@ beforeEach(() => {
   useSearchStore.setState({ owner: null, recents: [] });
 });
 afterEach(() => useChromeStore.setState({ overlay: null }));
+
+pinBoardClock();
 
 describe('useSearchOwnerBinding', () => {
   it('binds the recents to the signed-in account once Clerk has loaded', () => {
@@ -92,7 +96,7 @@ describe('GlobalSearch', () => {
   });
 
   it('searches lakes, bays and skaters, then opens a pick and records it without the text', async () => {
-    const now = Date.now();
+    const now = BOARD_NOON;
     fakes.queries.set('waterBodies:searchByName', [lake, bay]);
     fakes.queries.set('profiles:searchProfiles', [person]);
     fakes.queries.set('reports:recentCardsForBodies', [
@@ -152,11 +156,25 @@ describe('GlobalSearch', () => {
     fakes.queries.set('profiles:searchProfiles', []);
     act(() => useChromeStore.getState().setOverlay('search'));
     render(<GlobalSearch />);
-    fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'mud pond' } });
+    const box = await screen.findByRole('combobox');
+    fireEvent.change(box, { target: { value: 'mud pond' } });
     await screen.findByText(/No lakes, bays, or skaters match “mud pond”/);
     expect(screen.getByText(/Click it on the Explore map/)).toBeInTheDocument();
-    const sent = fakes.capture.mock.calls.filter(([name]) => name === 'search_no_results');
-    expect(sent).toEqual([['search_no_results', { query_length_bucket: '6-11' }]]);
+
+    // ⚠ **The plate is a render; the event is an effect, so it lands a commit later.** And
+    // `findBy*` turns the act environment *off* for the wait (Testing Library's `asyncWrapper`),
+    // so the debounce's state update commits outside `act`: React then flushes passive effects in
+    // its own scheduler task, which the one `setTimeout(0)` drain that follows the wait is not
+    // guaranteed to outlast. Asserting the capture straight after the text is therefore a race
+    // against React's flush — green on a quiet machine, red under a full-suite load, which is how
+    // it turned CI red with nothing to do with the code under review (#104).
+    const sent = () => fakes.capture.mock.calls.filter(([name]) => name === 'search_no_results');
+    await waitFor(() => expect(sent()).toHaveLength(1));
+    // Once per *query*: the effect keys on the term, so further renders of the same one send
+    // nothing. Trailing space, so the text changes while the trimmed query does not.
+    fireEvent.change(box, { target: { value: 'mud pond ' } });
+    await act(async () => {});
+    expect(sent()).toEqual([['search_no_results', { query_length_bucket: '6-11' }]]);
   });
 
   it('keeps the last results up while the next query loads', async () => {

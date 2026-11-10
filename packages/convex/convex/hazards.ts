@@ -42,6 +42,7 @@ import {
   isPassageMarker,
   isProvisional,
   isValidHazardShape,
+  nearestBodyForPoint,
   nearestLandmarkWithin,
   promotionTargetFor,
   rankPromotionCandidates,
@@ -54,7 +55,13 @@ import {
 import { ConvexError, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
-import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
+import {
+  internalMutation,
+  type MutationCtx,
+  mutation,
+  type QueryCtx,
+  query,
+} from './_generated/server';
 import {
   assertCanPostHazards,
   getCurrentProfile,
@@ -64,7 +71,12 @@ import {
 } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { recomputeBodySummary } from './lib/bodySummary';
-import { resolveHazardSurvivor, tryAutoMerge, unmergeHazard } from './lib/hazardMerge';
+import {
+  refreshMergedFootprint,
+  resolveHazardSurvivor,
+  tryAutoMerge,
+  unmergeHazard,
+} from './lib/hazardMerge';
 import { HAZARD_GEOMETRY_KINDS, HAZARD_TYPES_VALIDATOR } from './lib/hazardValidators';
 import { liveLandmarksForBody } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
@@ -74,6 +86,7 @@ import { takeCappedResult } from './lib/scan';
 import { activateOnEvidence } from './lib/standing';
 import { bbox, geoJson, literals } from './lib/validators';
 import { resolveSubAreaForPoint } from './subAreas';
+import { listedBodiesNearCoord } from './waterBodies';
 
 /**
  * The hazard body of an authoring call, minus the water body.
@@ -1084,3 +1097,129 @@ export async function loadVisibleHazard(
   const hazard = await resolveHazardSurvivor(ctx, hazardId);
   return isUserVisibleHazard(hazard) ? hazard : null;
 }
+
+// ── Repair: a pin filed under the wrong lake ──────────────────────────────────────────────────
+
+/**
+ * How far from a hazard's footprint center a body may be and still be a candidate.
+ *
+ * **Bounded on purpose** (CLAUDE.md: bound every corpus-wide read). Convex has no projection, so
+ * `listedBodiesNearCoord`'s box reads each candidate's whole document, `polygon` included — the
+ * A06d parking pass spent 105 GB and disabled the deployment by accepting the default margin.
+ * 300 m is the same parking-approach buffer coord→lake resolution uses, and a hazard's center is
+ * on the water by construction, so it is already generous.
+ */
+const REFILE_MARGIN_M = 300;
+
+/**
+ * File a hazard under the body its footprint is actually on.
+ *
+ * **The repair for a pin that disagrees with itself.** A hazard carries both a footprint and a
+ * `waterBodyId`, and nothing has ever checked that the two agree. When they don't, the pin draws in
+ * the right place — the map reads its geometry — while everything that reasons about *which lake
+ * this is* reads the id: the card names the wrong lake, the lake's own hazard list omits a pin
+ * drawn on it, and opening the card used to fly the camera to a body the skater never clicked.
+ * (`strayHazardFit` in the web app stops the flight; it does not make the row true.)
+ *
+ * Internal, and `apply` defaults to false: it reports what it would do and changes nothing until
+ * asked, because "move this pin to another lake" is not a thing to run speculatively over a corpus.
+ *
+ * Both bodies' summaries are recomputed when it moves — the one that is losing the pin as much as
+ * the one gaining it, or the old lake keeps counting a hazard it no longer has — and the bay stamp
+ * is re-resolved against the new lake, since every other field derived from the body would
+ * otherwise still describe the old one.
+ */
+export const refileToFootprintBody = internalMutation({
+  args: { hazardId: v.id('hazards'), apply: v.optional(v.boolean()) },
+  handler: async (ctx, { hazardId, apply = false }) => {
+    const hazard = await ctx.db.get(hazardId);
+    if (!hazard) throw new ConvexError('Hazard not found');
+
+    // The footprint's box center stands for the pin, as it does for the drawer's place line.
+    const center = {
+      lat: (hazard.bbox.minLat + hazard.bbox.maxLat) / 2,
+      lng: (hazard.bbox.minLng + hazard.bbox.maxLng) / 2,
+    };
+    const byId = await listedBodiesNearCoord(ctx, center, REFILE_MARGIN_M);
+    const matchId = nearestBodyForPoint(
+      center,
+      [...byId.values()].map((b) => ({
+        ref: b._id,
+        polygon: b.polygon as unknown as Polygon | MultiPolygon,
+        surfaceAreaSqM: b.surfaceAreaSqM ?? 0,
+      })),
+      REFILE_MARGIN_M,
+    );
+
+    const was = hazard.waterBodyId;
+    const wasName = (await ctx.db.get(was))?.name ?? null;
+    // No listed body under the pin is not a license to guess: leave the row alone and say so.
+    if (matchId === null)
+      return { moved: false as const, reason: 'no-body-at-footprint', was, wasName };
+    if (matchId === was) return { moved: false as const, reason: 'already-correct', was, wasName };
+
+    const now = { was, wasName, now: matchId, nowName: byId.get(matchId)?.name ?? null };
+    if (!apply) return { moved: false as const, reason: 'dry-run', ...now };
+
+    // **The shape is re-clipped against the lake it is moving to.** `clippedFootprint` and `bbox`
+    // are both derived from the body's polygon at create (`insertHazard`), so a refile that moved
+    // only the id would leave the pin wearing the old lake's shape. Two ways that goes wrong, and
+    // the repair's own case is the first: a pin filed under a distant body never overlapped it, so
+    // no clip was stored and the halo is the *whole* footprint — once it is on the real lake, that
+    // circle crosses the shore it should have been trimmed at. The other way is worse: a pin that
+    // was legitimately near the old lake's shore carries a polygon clipped to *that* shoreline, and
+    // every reader prefers a stored clip to the live footprint.
+    //
+    // So move the id first, then let `refreshMergedFootprint` rebuild the shape against the lake the
+    // row now names. It is the one function that already answers "what is this hazard's footprint":
+    // the union of every drawing folded into this pin when it is a merge survivor, the pin's own
+    // drawing when nothing is folded in, clipped to the body either way, with the bbox taken from
+    // the same polygon it stores. Rebuilding from `hazard.geometry` here instead would be right for
+    // a lone pin and silently wrong for a survivor — it would overwrite the union with the
+    // survivor's own circle and drop every other reporter's warned ice off the map and out of the
+    // proximity check, which is a hazard's warning area shrinking with nobody saying so (D3).
+    //
+    // **The bay stamp moves with the lake too.** `subAreaId`/`subAreaName` were resolved at create
+    // against the *old* body's bays (`insertHazard`), so carrying them over would have the card say
+    // "Far Pond — North Bay" with North Bay a bay of Mascoma. Re-resolved the same way the write
+    // path resolves it — at the center of the bbox the re-clip just stored, because that is where
+    // the create path measures it — and cleared when the new lake has no bay under the pin:
+    // `undefined` in a patch removes the field, which is what "in no named bay" means.
+    //
+    // **Every row that moves gets all of it**, which is why this is a helper rather than three
+    // patches on the survivor. The pins folded into this one are hidden from every list, so it is
+    // tempting to move only their id — but `unmergeHazard` restores one as a standalone, visible
+    // pin and refreshes only the *survivor*. A folded pin left half-moved would come back carrying
+    // the old lake's clip and the old lake's bay: the same disagreement between a pin and its lake
+    // that this repair exists to end, waiting for a moderator to trigger it.
+    const refile = async (row: Doc<'hazards'>) => {
+      await ctx.db.patch(row._id, { waterBodyId: matchId });
+      const moved = await ctx.db.get(row._id);
+      if (moved) await refreshMergedFootprint(ctx, moved);
+      const reclipped = (await ctx.db.get(row._id)) ?? row;
+      const subArea = await resolveSubAreaForPoint(ctx, matchId, {
+        lat: (reclipped.bbox.minLat + reclipped.bbox.maxLat) / 2,
+        lng: (reclipped.bbox.minLng + reclipped.bbox.maxLng) / 2,
+      });
+      await ctx.db.patch(row._id, {
+        subAreaId: subArea?.subAreaId,
+        subAreaName: subArea?.subAreaName,
+      });
+    };
+
+    const chain = await ctx.db
+      .query('hazards')
+      .withIndex('by_merged_into', (q) => q.eq('mergedIntoHazardId', hazardId))
+      .collect();
+    await refile(hazard);
+    for (const folded of chain) await refile(folded);
+    // Both ends: the lake losing the pin stops counting it, the lake gaining it starts.
+    await recomputeBodySummary(ctx, was);
+    await recomputeBodySummary(ctx, matchId);
+    // Standing (A07b), as the create path does it: the lake now carries a hazard somebody drew on
+    // it, and a dormant body yields to that evidence. Gated and idempotent, so a pin that moves
+    // between two active lakes changes nothing.
+    await activateOnEvidence(ctx, matchId, 'hazard');
+    return { moved: true as const, reason: 'refiled', ...now };
+  },
+});

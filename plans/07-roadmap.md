@@ -796,7 +796,7 @@ lack of signal.*
 - The founder's device pass of the sheet on the Android preview build (every door; offline; the silhouette picker) — and `convex dev --once` before it (`contentRevisions`, `author_delete`)
 
 ## Phase B03 — The skater web app
-🟢 **Complete** 2026-11-07 · PRs #95–#98 · [plan](./phases/B03-skater-web.md) · D237 D238 D239 D240 D241 D242
+🟢 **Complete** 2026-11-07 · PRs #95–#98, #100, #104 · [plan](./phases/B03-skater-web.md) · D237 D238 D239 D240 D241 D242 D243 D244
 
 The skater-facing web app rebuilt on the kit and the tokens: the seven route pages of *Gli · Web app ·
 Review 3* (157 boards) — Explore with the lake sidebar and the re-skinned map, Latest, the New report sheet
@@ -809,6 +809,15 @@ route-level boundaries. Built by one governor and parallel agents in their own w
 skater explores lakes, reads peers' reports, and posts their own from a browser that matches the boards.*
 
 #### Deferred
+- 🟢 **The map palette redesign** — PR #102. The water and shore were Phase 01's `#3a6ea5` in *both* modes,
+  neither a token. The founder's three calls (2026-11-09): a listed body is drawn in the bathymetric ramp,
+  not in ice — band 0 for the water, band 0's index line for the shore, so opening a lake reveals the deeper
+  bands rather than repainting it; the map's land is a token (`map-earth`) halfway in lightness between the
+  skater field and band 0, because Protomaps' `white` earth is `#ffffff`, the field exactly; and no alpha in
+  the water, which the first call settles. Ice is left to the track, the put-ins, the walk in and the
+  suggested crossing. **Open:** light has no headroom — water fill 1.11:1 on the land, a mark's halo over
+  water 1.11:1 — because light's band 0 sits a hair under the field. Renders in
+  `skating-b03-map-palette/.claude/map-palette-v2/` → B03 §2
 - ❓ **Session replay** — off at launch (the D235 test keeps it so); waits on the L12 legal pass → the plan's §4.2 posture
 - ⚪ **Garmin connection** — shown disabled, "Coming soon" (the D24 amendment); GPX import takes its place
 - ⚪ **The GPX trust downgrade** — imported GPX ships *fully trusted*, a deliberate temporary D24 exception for the early testers (founder, 2026-11-07, D239); revert to seed-and-author-only once Garmin or another native import path lands → the plan's §6 Q5

@@ -22,7 +22,7 @@
  *    repo-wide guard would quietly reacquire the original bug.
  *
  * Check 2 recognizes a relative path that climbs out of the package, in either spelling: one
- * literal (`resolve(__dirname, '../../..')`, the shape all four guards use) or one argument per
+ * literal (`resolve(__dirname, '../../..')`, the shape all five guards use) or one argument per
  * level (`join(dir, '..', '..', '..')`, the shape the repo's other filesystem-reading tests use).
  * It is a lint, not a proof: a test that escaped via `process.cwd()`, an absolute path, a template
  * literal or a double-quoted string would pass it. It is here to catch the honest mistake —
@@ -145,7 +145,7 @@ describe('the repo-wide guards cannot be served from cache', () => {
       [...source.matchAll(CLIMB)].some((m) => levelsClimbed(m[0] as string) > 1);
 
     for (const climbsOut of [
-      "const REPO = resolve(__dirname, '../../..');", // the shape all four guards use
+      "const REPO = resolve(__dirname, '../../..');", // the shape all five guards use
       "const REPO = resolve(__dirname, '..', '..', '..');", // the same climb, one arg per level
       "readFileSync(join(import.meta.dirname, '..', '..', '..', 'plans', '05.md'));",
       "readFileSync(new URL('../../../plans/06-data-model.md', import.meta.url));",

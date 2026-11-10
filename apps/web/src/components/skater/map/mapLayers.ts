@@ -45,6 +45,7 @@ import {
   contourColorByBand,
   contourWidthByBand,
   type MapPalette,
+  shoreOpacityByZoom,
 } from './mapPalette';
 import type { MapOverlayName, SpecLayer } from './mapSpec';
 
@@ -125,21 +126,10 @@ export function waterFillColor(palette: MapPalette, depthGroundBodyId: string | 
 }
 
 export function waterFillOpacity(
-  palette: MapPalette,
-  depthGroundBodyId: string | null,
   /** The lake a satellite picture is painted over: its fill stands down so the picture shows (D81). */
   underImageryBodyId: string | null = null,
 ): unknown[] {
-  return withAccessDim([
-    'case',
-    ['==', ['get', '_id'], underImageryBodyId ?? ''],
-    0,
-    ['==', ['get', 'inactive'], true],
-    0.18,
-    ['==', ['get', '_id'], depthGroundBodyId ?? ''],
-    1,
-    palette.water.fillOpacity,
-  ]);
+  return withAccessDim(['case', ['==', ['get', '_id'], underImageryBodyId ?? ''], 0, 1]);
 }
 
 /**
@@ -183,7 +173,7 @@ export function skaterLayers(palette: MapPalette, withContours: boolean): LayerS
       source: SOURCES.water,
       paint: {
         'fill-color': waterFillColor(palette, null) as never,
-        'fill-opacity': waterFillOpacity(palette, null) as never,
+        'fill-opacity': waterFillOpacity() as never,
       },
     },
   ];
@@ -210,13 +200,13 @@ export function skaterLayers(palette: MapPalette, withContours: boolean): LayerS
     });
   }
   layers.push(
-    // The imagery reveal's loading wash (A06e): its own layer, animated alone.
+    // The imagery reveal's loading wash (A06e): its own layer, animated alone, in the lit ice.
     {
       id: IMAGERY_LOADING_LAYER_ID,
       type: 'fill',
       source: SOURCES.water,
       filter: MATCH_NONE as never,
-      paint: { 'fill-color': palette.water.outline, 'fill-opacity': 0 },
+      paint: { 'fill-color': palette.accent, 'fill-opacity': 0 },
     },
   );
   if (withContours) {
@@ -237,6 +227,7 @@ export function skaterLayers(palette: MapPalette, withContours: boolean): LayerS
     });
   }
   layers.push(
+    // The shore: ice at rest, a gray hairline on an inactive body, soft at region zooms.
     {
       id: 'water-outline',
       type: 'line',
@@ -245,10 +236,10 @@ export function skaterLayers(palette: MapPalette, withContours: boolean): LayerS
         'line-color': [
           'case',
           ['==', ['get', 'inactive'], true],
-          palette.inactive.outline,
-          palette.water.outline,
+          palette.inactive.shore,
+          palette.water.shore,
         ] as never,
-        'line-opacity': withAccessDim(1) as never,
+        'line-opacity': shoreOpacityByZoom(withAccessDim) as never,
         'line-width': 1,
       },
     },
@@ -310,7 +301,7 @@ export function skaterLayers(palette: MapPalette, withContours: boolean): LayerS
         'text-optional': true,
       },
       paint: {
-        'text-color': palette.places.label,
+        'text-color': palette.places.landmark,
         'text-halo-color': palette.places.halo,
         'text-halo-width': 1.4,
       },

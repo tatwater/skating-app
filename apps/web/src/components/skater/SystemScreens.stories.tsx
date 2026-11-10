@@ -108,12 +108,12 @@ export const OfflineOverExplore: Story = {
     <SkaterPair height="20rem">
       {() => (
         <div className="relative flex h-full">
-          <div className="w-[27.5rem] shrink-0 border-0 border-r border-solid border-line bg-bg" />
+          <div className="w-(--size-sidebar) shrink-0 border-0 border-r border-solid border-line bg-bg" />
           <div className="flex-1 bg-raise" />
           <OfflinePlate
             since={AT}
             onRetry={() => {}}
-            className="absolute top-(--space-4) left-[calc(27.5rem+(100%-27.5rem)/2)] -translate-x-1/2"
+            className="absolute top-(--space-4) left-[calc(var(--size-sidebar)+(100%-var(--size-sidebar))/2)] -translate-x-1/2"
           />
         </div>
       )}

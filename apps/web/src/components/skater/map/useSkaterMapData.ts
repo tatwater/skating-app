@@ -7,6 +7,7 @@ import {
   isRegionOffscreen,
   landmarkLabelFeatures,
   mapFilters,
+  resolvePutInName,
   SUB_AREA_MIN_RENDER_ZOOM,
   viewerDriveTime,
   weatherDimmedBodyIds,
@@ -22,6 +23,7 @@ import {
   buildLakeLabels,
   hazardMarksFrom,
   type LabelableBody,
+  labelAnchor,
   labelCountIds,
   mergeHazards,
   reportCountsByBody,
@@ -164,15 +166,26 @@ export function useSkaterMapData({
     () => withWalkLabels(approachesToFeatureCollection(putIns ?? [])),
     [putIns],
   );
+  // The name every other surface shows for a launch: OSM's if OSM had one, else core's deterministic
+  // compass label ("North launch"). Most of the corpus is unnamed — Mascoma has five launches and two
+  // names — and passing the stored name straight through left those marks with nothing to say, so
+  // hovering them did nothing at all while their named neighbors answered. `resolvePutInName` exists
+  // so no surface renders a blank where a label was available; the map was the one that didn't ask.
+  const putInInterior = focusBody ? labelAnchor(focusBody as unknown as LabelableBody) : undefined;
+  const interiorKey = putInInterior ? `${putInInterior.lat},${putInInterior.lng}` : '';
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the point's value, not its identity.
   const putInMarks = useMemo<PutInMarkModel[]>(
     () =>
-      (focusId ? (putIns ?? []) : []).map((p, i) => ({
-        id: `${i}:${p.coord.lat},${p.coord.lng}`,
-        lng: p.coord.lng,
-        lat: p.coord.lat,
-        ...(p.name ? { name: p.name } : {}),
-      })),
-    [focusId, putIns],
+      (focusId ? (putIns ?? []) : []).map((p, i) => {
+        const name = resolvePutInName(p.name, p.coord, putInInterior);
+        return {
+          id: `${i}:${p.coord.lat},${p.coord.lng}`,
+          lng: p.coord.lng,
+          lat: p.coord.lat,
+          ...(name ? { name } : {}),
+        };
+      }),
+    [focusId, putIns, interiorKey],
   );
   const landmarkFeatures = useMemo(
     () => (focusId && landmarks ? landmarkLabelFeatures(landmarks, putIns ?? []) : EMPTY_FEATURES),

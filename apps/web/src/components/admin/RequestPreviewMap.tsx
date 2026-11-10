@@ -1,7 +1,7 @@
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect } from 'react';
 import { env } from '../../lib/env';
-import { useMapCanvas } from '../../lib/mapCanvas';
+import { MAP_CONTAINER_CLASS, useMapCanvas } from '../../lib/mapCanvas';
 import { addReviewLayers, type ReviewPoints, showReview } from '../../lib/reviewMarkers';
 import { DEMO_PMTILES_URL, MAP_FLAVORS, PIN_HALO_COLOR } from '../../lib/waterMap';
 import { useTheme } from '../theme-provider';
@@ -20,7 +20,7 @@ export function RequestPreviewMap({ review }: { review: ReviewPoints | null }) {
   const { resolvedTheme } = useTheme();
   const flavor = resolvedTheme === 'dark' ? MAP_FLAVORS.dark : MAP_FLAVORS.light;
   const pinHalo = PIN_HALO_COLOR[flavor];
-  const { containerRef, mapRef, loaded } = useMapCanvas({
+  const { containerRef, liveMap } = useMapCanvas({
     pmtilesUrl: env.pmtilesUrl || DEMO_PMTILES_URL,
     worldPmtilesUrl: env.worldPmtilesUrl,
     flavor,
@@ -29,16 +29,16 @@ export function RequestPreviewMap({ review }: { review: ReviewPoints | null }) {
     onLoad: (map) => addReviewLayers(map, pinHalo),
   });
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: mapRef is a ref; the review is the trigger.
   useEffect(() => {
-    if (!loaded || !mapRef.current) return;
-    showReview(mapRef.current, review, { zoom: 13 });
-  }, [loaded, review]);
+    const map = liveMap();
+    if (map === null) return;
+    showReview(map, review, { zoom: 13 });
+  }, [liveMap, review]);
 
   return (
     <section
       ref={containerRef}
-      className="h-full w-full"
+      className={MAP_CONTAINER_CLASS}
       data-testid="request-preview-map"
       aria-label="Map of the request’s spot"
     />

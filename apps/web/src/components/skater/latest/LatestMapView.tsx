@@ -60,7 +60,7 @@ export function MapBanner({
     <div
       role="status"
       data-slot="latest-map-banner"
-      className="absolute top-(--space-4) left-[calc(27.5rem+var(--space-4))] z-(--z-raised) flex max-w-[calc(100%-27.5rem-6rem)] items-center gap-(--space-3) border border-solid border-line2 bg-panel py-(--space-1_5) pr-(--space-1_5) pl-(--space-3) text-assist text-fg1 shadow-plate max-md:hidden"
+      className="absolute top-(--space-4) left-[calc(var(--size-sidebar)+var(--space-4))] z-(--z-raised) flex max-w-[calc(100%-var(--size-sidebar)-6rem)] items-center gap-(--space-3) border border-solid border-line2 bg-panel py-(--space-1_5) pr-(--space-1_5) pl-(--space-3) text-assist text-fg1 shadow-plate max-md:hidden"
     >
       <FontAwesomeIcon icon={faTemperatureLow} aria-hidden="true" className="h-3.5 text-acc" />
       <span className="min-w-0 truncate">{line}</span>

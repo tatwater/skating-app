@@ -2,8 +2,16 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { themeMaps } from './maps';
-import { deltaE, hexToOklch, inGamut, toNativeColor, withAlpha } from './oklch';
-import { overlays, primitives } from './primitives';
+import {
+  contrastOklch,
+  deltaE,
+  hexToOklch,
+  inGamut,
+  solveForContrast,
+  toNativeColor,
+  withAlpha,
+} from './oklch';
+import { MAP_EARTH_SPLIT, overlays, primitives } from './primitives';
 import { colorSpecs } from './semantic';
 
 /** The audited palette, as audited (the conversion's input, kept for provenance). */
@@ -62,5 +70,59 @@ describe('admin dark is the audit', () => {
       const audited = auditByName[spec.audit] as string;
       expect(toNativeColor(colors[key as keyof typeof colors]), key).toBe(rgbaOf(audited));
     }
+  });
+});
+
+/**
+ * The map's land sits `MAP_EARTH_SPLIT` of the way, in lightness, from the skater field it is framed
+ * against to the shallowest water drawn on it: the pane parts from the sidebar by that fraction of
+ * the step the water then takes away from the land, in both modes. The split was the midpoint
+ * (founder, 2026-11-09) and is a quarter from 2026-11-10 — the midpoint read muddy in both themes.
+ *
+ * Derived from the fraction rather than restated, so the split is the single edit a second pass
+ * needs: move `MAP_EARTH_SPLIT` and this fails with the lightness to paste into `primitives.ts`.
+ * It also holds the other way round — an edit to the field or to band 0 can't quietly leave the
+ * land where it was.
+ */
+describe('the map earth is MAP_EARTH_SPLIT of the way from the field to band 0', () => {
+  it.each([
+    ['dark', 'void', 'depth-dark-0', 'map-earth-dark'],
+    ['light', 'skater-light-bg', 'depth-light-0', 'map-earth-light'],
+  ] as const)('%s', (_mode, field, water, earth) => {
+    const from = primitives[field].l;
+    const split = from + (primitives[water].l - from) * MAP_EARTH_SPLIT;
+    expect(primitives[earth].l).toBeCloseTo(split, 4);
+    // A whisper of the depth ramp's hue and no more: snow in shade. Enough that the whole basemap
+    // solves off a cold land, far too little to read as a blue in its own right.
+    expect(primitives[earth].h).toBe(245);
+    expect(primitives[earth].c).toBeGreaterThan(0);
+    expect(primitives[earth].c).toBeLessThan(0.012);
+  });
+});
+
+/**
+ * Water the map has nothing to say about sits halfway, in contrast against the land, between that
+ * land and the water it can speak for — so an unlisted pond is always the quieter of the two, in
+ * either mode. It has to be a different color from band 0 at all: the basemap paints its own water
+ * under ours, and the access dim is a halved opacity, so matching colors made the dim a no-op
+ * (#102). Held here so a move to the land or to the ramp carries it rather than stranding it.
+ */
+describe('unlisted water is halfway between the land and the water we know', () => {
+  it.each([
+    ['dark', 'map-earth-dark', 'depth-dark-0', 'map-water-inactive-dark'],
+    ['light', 'map-earth-light', 'depth-light-0', 'map-water-inactive-light'],
+  ] as const)('%s', (_mode, earth, band0, unlisted) => {
+    const land = primitives[earth];
+    const half = 1 + (contrastOklch(primitives[band0], land) - 1) / 2;
+    const solved = solveForContrast(
+      { l: land.l, c: 0, h: 0 },
+      land,
+      half,
+      land.l > 0.5 ? 'darker' : 'lighter',
+    );
+    expect(primitives[unlisted].l).toBeCloseTo(solved.l, 4);
+    // Gray, never ice (Review 2): nothing receded carries the app's hue.
+    expect(primitives[unlisted].c).toBe(0);
+    expect(primitives[unlisted]).not.toEqual(primitives[band0]);
   });
 });

@@ -1,7 +1,8 @@
 import { seasonOf, seasonStartMs } from '@skating/core';
 import { convexTest } from 'convex-test';
+import type { Polygon } from 'geojson';
 import { describe, expect, test } from 'vitest';
-import { api } from './_generated/api';
+import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
 
@@ -1730,5 +1731,366 @@ describe('creation recomputes the SURVIVOR body’s card (Greptile P1, 2026-08-1
 
     expect(survivorCard?.topHazardTypes).toEqual(['open_water']);
     expect(loserCard?.topHazardTypes ?? []).toEqual([]);
+  });
+});
+
+/**
+ * The repair for a pin that disagrees with itself: a hazard whose footprint is on one lake while
+ * its `waterBodyId` names another. Dev shipped one — a pin drawn on Mascoma filed under an unnamed
+ * body two states away — and nothing in the write path had ever checked the two agree.
+ */
+describe('hazards.refileToFootprintBody', () => {
+  /** Degrees of latitude per meter, for placing a point a known distance off a shore. */
+  const DEG_PER_M = 1 / 111_320;
+
+  async function squareBody(
+    t: ReturnType<typeof convexTest>,
+    { name, lat, lng, half = 0.01 }: { name: string; lat: number; lng: number; half?: number },
+  ): Promise<Id<'waterBodies'>> {
+    const externalId = `way/${name.replace(/\s+/g, '-')}`;
+    const polygon = {
+      type: 'Polygon' as const,
+      coordinates: [
+        [
+          [lng - half, lat - half],
+          [lng + half, lat - half],
+          [lng + half, lat + half],
+          [lng - half, lat + half],
+          [lng - half, lat - half],
+        ],
+      ],
+    };
+    const body = {
+      name,
+      type: 'lakePond' as const,
+      source: 'osm' as const,
+      externalId,
+      osmId: externalId,
+      polygon,
+      bbox: { minLat: lat - half, minLng: lng - half, maxLat: lat + half, maxLng: lng + half },
+      centroid: { lat, lng },
+      surfaceAreaSqM: 1e6,
+    };
+    const id = (await t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        ...body,
+        searchText: name,
+        dedupStatus: 'clean' as const,
+        createdAt: Date.now(),
+      }),
+    )) as Id<'waterBodies'>;
+    // The A01 cell rows import builds are what `listedBodiesNearCoord` reads; a hand-inserted body
+    // is unreachable from any spatial lookup.
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [body] });
+    return id;
+  }
+
+  /** A pin on `onLake`'s water, but filed under `filedUnder`. */
+  async function strayHazard(
+    t: ReturnType<typeof convexTest>,
+    filedUnder: Id<'waterBodies'>,
+    at: { lat: number; lng: number },
+    extra: { clippedFootprint?: Polygon; mergedIntoHazardId?: Id<'hazards'>; who?: string } = {},
+  ) {
+    const author = (await seedUser(t, extra.who ?? 'author')).id;
+    return t.run((ctx) =>
+      ctx.db.insert('hazards', {
+        ...(extra.clippedFootprint ? { clippedFootprint: extra.clippedFootprint } : {}),
+        ...(extra.mergedIntoHazardId ? { mergedIntoHazardId: extra.mergedIntoHazardId } : {}),
+        waterBodyId: filedUnder,
+        type: 'open_water' as const,
+        geometryKind: 'point_radius' as const,
+        geometry: { type: 'Point' as const, coordinates: [at.lng, at.lat] },
+        radiusMeters: 40,
+        bbox: {
+          minLat: at.lat - 0.0002,
+          minLng: at.lng - 0.0002,
+          maxLat: at.lat + 0.0002,
+          maxLng: at.lng + 0.0002,
+        },
+        status: 'active' as const,
+        moderationStatus: 'visible' as const,
+        healingState: 'none' as const,
+        confirmCount: 0,
+        goneCount: 0,
+        snowHidden: false,
+        photoIds: [],
+        createdByUserId: author,
+        createdAt: Date.now(),
+        firstReportedAt: Date.now(),
+        lastConfirmedAt: Date.now(),
+      }),
+    );
+  }
+
+  test('refiles a pin to the lake its footprint is on', async () => {
+    const t = harness();
+    const here = await squareBody(t, { name: 'Mascoma', lat: 43.61, lng: -72.13 });
+    const elsewhere = await squareBody(t, { name: 'Far Pond', lat: 42.61, lng: -73.87 });
+    const hazardId = await strayHazard(t, elsewhere, { lat: 43.61, lng: -72.13 });
+
+    const out = await t.mutation(internal.hazards.refileToFootprintBody, { hazardId, apply: true });
+    expect(out).toMatchObject({ moved: true, reason: 'refiled', was: elsewhere, now: here });
+    expect(await t.run((ctx) => ctx.db.get(hazardId))).toMatchObject({ waterBodyId: here });
+  });
+
+  test('the pin is re-clipped to the lake it lands on: the halo stops at the new shore', async () => {
+    const t = harness();
+    const here = await squareBody(t, { name: 'Mascoma', lat: 43.61, lng: -72.13 });
+    const elsewhere = await squareBody(t, { name: 'Far Pond', lat: 42.61, lng: -73.87 });
+    // 10 m inside Mascoma's east shore, so the 40 m footprint reaches ~30 m past it. Filed under a
+    // lake 150 km away, it never overlapped anything at create, so no clip was ever stored — the
+    // halo is the whole circle, and refiling the id alone would draw it straight over dry land.
+    const eastShore = -72.13 + 0.01;
+    const lngPerM = DEG_PER_M / Math.cos((43.61 * Math.PI) / 180);
+    const hazardId = await strayHazard(t, elsewhere, { lat: 43.61, lng: eastShore - 10 * lngPerM });
+    const before = await t.run((ctx) => ctx.db.get(hazardId));
+    expect(before?.clippedFootprint).toBeUndefined();
+
+    await t.mutation(internal.hazards.refileToFootprintBody, { hazardId, apply: true });
+
+    const after = await t.run((ctx) => ctx.db.get(hazardId));
+    expect(after?.waterBodyId).toBe(here);
+    // Clipped now, and the stored bbox — the index prefilter and the drawn halo are one shape —
+    // stops at the shore instead of running 30 m past it.
+    expect(after?.clippedFootprint).toBeDefined();
+    expect(after?.bbox.maxLng).toBeLessThanOrEqual(eastShore + 1e-9);
+  });
+
+  test('a clip from the old lake is cleared, not carried onto the new one', async () => {
+    const t = harness();
+    const here = await squareBody(t, { name: 'Mascoma', lat: 43.61, lng: -72.13 });
+    const elsewhere = await squareBody(t, { name: 'Far Pond', lat: 42.61, lng: -73.87 });
+    // The worse case: the pin was near Far Pond's shore once, so it carries a polygon clipped to
+    // *that* shoreline. Every reader prefers a stored clip to the live footprint, so carrying it
+    // over would draw a 150 km-away shoreline's shape on Mascoma.
+    const staleClip: Polygon = {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [-73.871, 42.609],
+          [-73.869, 42.609],
+          [-73.869, 42.611],
+          [-73.871, 42.611],
+          [-73.871, 42.609],
+        ],
+      ],
+    };
+    // Well inside Mascoma, so the footprint needs no clip at all there.
+    const hazardId = await strayHazard(
+      t,
+      elsewhere,
+      { lat: 43.61, lng: -72.13 },
+      {
+        clippedFootprint: staleClip,
+      },
+    );
+
+    await t.mutation(internal.hazards.refileToFootprintBody, { hazardId, apply: true });
+
+    const after = await t.run((ctx) => ctx.db.get(hazardId));
+    expect(after?.waterBodyId).toBe(here);
+    expect(after?.clippedFootprint).toBeUndefined();
+    // And the bbox is the footprint's own, not the old lake's clip — 150 km of latitude apart.
+    expect(after?.bbox.minLat).toBeGreaterThan(43.6);
+  });
+
+  test('a merge survivor keeps every folded-in pin’s warned ice, and they move with it', async () => {
+    const t = harness();
+    const here = await squareBody(t, { name: 'Mascoma', lat: 43.61, lng: -72.13 });
+    const elsewhere = await squareBody(t, { name: 'Far Pond', lat: 42.61, lng: -73.87 });
+    const lngPerM = DEG_PER_M / Math.cos((43.61 * Math.PI) / 180);
+    // Two reporters, 100 m apart on Mascoma, both filed under Far Pond; the second folded into the
+    // first. On a survivor, `clippedFootprint` is the *union* of both drawings — so a refile that
+    // rebuilt the shape from the survivor's own circle would quietly un-warn the other 100 m.
+    const survivor = await strayHazard(t, elsewhere, { lat: 43.61, lng: -72.13 });
+    const foldedLng = -72.13 + 100 * lngPerM;
+    const folded = await strayHazard(
+      t,
+      elsewhere,
+      { lat: 43.61, lng: foldedLng },
+      { mergedIntoHazardId: survivor, who: 'other' },
+    );
+
+    await t.mutation(internal.hazards.refileToFootprintBody, {
+      hazardId: survivor,
+      apply: true,
+    });
+
+    const after = await t.run((ctx) => ctx.db.get(survivor));
+    expect(after?.waterBodyId).toBe(here);
+    // The stored shape still reaches the folded pin: its halo and the proximity check are one
+    // polygon, so a bbox that stopped at the survivor's own 40 m would be ice nobody is warned about.
+    expect(after?.bbox.maxLng).toBeGreaterThanOrEqual(foldedLng);
+    // And the folded pin moved too — `unmergeHazard` recomputes on its own `waterBodyId`, so left
+    // behind it would come back filed under the lake this repair just corrected.
+    expect(await t.run((ctx) => ctx.db.get(folded))).toMatchObject({ waterBodyId: here });
+  });
+
+  test('a folded-in pin separated after the repair comes back whole, on the new lake', async () => {
+    const t = harness();
+    const here = await squareBody(t, { name: 'Mascoma', lat: 43.61, lng: -72.13 });
+    const elsewhere = await squareBody(t, { name: 'Far Pond', lat: 42.61, lng: -73.87 });
+    const lngPerM = DEG_PER_M / Math.cos((43.61 * Math.PI) / 180);
+    // The folded pin sits 10 m inside Mascoma's east shore, so its own 40 m footprint needs a clip
+    // there — and it carries one from Far Pond's shoreline, 150 km away. Hidden while merged, so
+    // nothing reads it; `unmergeHazard` is what makes it a visible pin again.
+    const eastShore = -72.13 + 0.01;
+    const survivor = await strayHazard(t, elsewhere, { lat: 43.61, lng: -72.13 });
+    const staleClip: Polygon = {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [-73.871, 42.609],
+          [-73.869, 42.609],
+          [-73.869, 42.611],
+          [-73.871, 42.611],
+          [-73.871, 42.609],
+        ],
+      ],
+    };
+    const folded = await strayHazard(
+      t,
+      elsewhere,
+      { lat: 43.61, lng: eastShore - 10 * lngPerM },
+      { mergedIntoHazardId: survivor, clippedFootprint: staleClip, who: 'other' },
+    );
+
+    await t.mutation(internal.hazards.refileToFootprintBody, {
+      hazardId: survivor,
+      apply: true,
+    });
+    // A moderator separates it afterwards. `unmergeHazard` refreshes only the survivor, so whatever
+    // the repair left on this row is what a skater now sees.
+    const mod = await seedUser(t, 'mod', { role: 'moderator' });
+    await mod.as.mutation(api.hazards.unmerge, {
+      hazardId: folded,
+      reason: 'These are two separate leads.',
+    });
+
+    const back = await t.run((ctx) => ctx.db.get(folded));
+    expect(back?.mergedIntoHazardId).toBeUndefined();
+    expect(back?.waterBodyId).toBe(here);
+    // Its own shape, clipped to Mascoma — not Far Pond's polygon, and not an untrimmed circle
+    // reaching 30 m past the shore it is now beside.
+    expect(back?.clippedFootprint).toBeDefined();
+    expect(back?.bbox.minLat).toBeGreaterThan(43.6);
+    expect(back?.bbox.maxLng).toBeLessThanOrEqual(eastShore + 1e-9);
+  });
+
+  test('says nothing until asked: a dry run reports the move and writes nothing', async () => {
+    const t = harness();
+    const here = await squareBody(t, { name: 'Mascoma', lat: 43.61, lng: -72.13 });
+    const elsewhere = await squareBody(t, { name: 'Far Pond', lat: 42.61, lng: -73.87 });
+    const hazardId = await strayHazard(t, elsewhere, { lat: 43.61, lng: -72.13 });
+
+    const out = await t.mutation(internal.hazards.refileToFootprintBody, { hazardId });
+    expect(out).toMatchObject({ moved: false, reason: 'dry-run', was: elsewhere, now: here });
+    expect(await t.run((ctx) => ctx.db.get(hazardId))).toMatchObject({ waterBodyId: elsewhere });
+  });
+
+  test('leaves a pin that already agrees with itself alone', async () => {
+    const t = harness();
+    const here = await squareBody(t, { name: 'Mascoma', lat: 43.61, lng: -72.13 });
+    const hazardId = await strayHazard(t, here, { lat: 43.61, lng: -72.13 });
+
+    const out = await t.mutation(internal.hazards.refileToFootprintBody, { hazardId, apply: true });
+    expect(out).toMatchObject({ moved: false, reason: 'already-correct', was: here });
+  });
+
+  test('refuses to guess when no listed body is under the footprint', async () => {
+    const t = harness();
+    const elsewhere = await squareBody(t, { name: 'Far Pond', lat: 42.61, lng: -73.87 });
+    // Well clear of every shore: 2 km north of nothing at all.
+    const hazardId = await strayHazard(t, elsewhere, {
+      lat: 43.61 + 2000 * DEG_PER_M,
+      lng: -72.13,
+    });
+
+    const out = await t.mutation(internal.hazards.refileToFootprintBody, { hazardId, apply: true });
+    expect(out).toMatchObject({ moved: false, reason: 'no-body-at-footprint', was: elsewhere });
+    expect(await t.run((ctx) => ctx.db.get(hazardId))).toMatchObject({ waterBodyId: elsewhere });
+  });
+
+  test('the lake it leaves stops listing it and the lake it joins starts', async () => {
+    const t = harness();
+    const here = await squareBody(t, { name: 'Mascoma', lat: 43.61, lng: -72.13 });
+    const elsewhere = await squareBody(t, { name: 'Far Pond', lat: 42.61, lng: -73.87 });
+    const hazardId = await strayHazard(t, elsewhere, { lat: 43.61, lng: -72.13 });
+
+    await t.mutation(internal.hazards.refileToFootprintBody, { hazardId, apply: true });
+    const onHere = await t.query(api.hazards.listForBody, { waterBodyId: here });
+    const onElsewhere = await t.query(api.hazards.listForBody, { waterBodyId: elsewhere });
+    expect(onHere.map((h) => h._id)).toContain(hazardId);
+    expect(onElsewhere.map((h) => h._id)).not.toContain(hazardId);
+  });
+
+  /** A named bay of `parent`, square, around `at`. */
+  async function bay(
+    t: ReturnType<typeof convexTest>,
+    parent: Id<'waterBodies'>,
+    { name, lat, lng, half = 0.002 }: { name: string; lat: number; lng: number; half?: number },
+  ) {
+    const mod = (await seedUser(t, `mod-${name}`, { role: 'moderator' })).id;
+    return t.run((ctx) =>
+      ctx.db.insert('waterBodySubAreas', {
+        waterBodyId: parent,
+        name,
+        searchText: name,
+        polygon: {
+          type: 'Polygon' as const,
+          coordinates: [
+            [
+              [lng - half, lat - half],
+              [lng + half, lat - half],
+              [lng + half, lat + half],
+              [lng - half, lat + half],
+              [lng - half, lat - half],
+            ],
+          ],
+        },
+        bbox: { minLat: lat - half, minLng: lng - half, maxLat: lat + half, maxLng: lng + half },
+        centroid: { lat, lng },
+        surfaceAreaSqM: 1e5,
+        displayScore: 1,
+        minVisibleZoom: 10,
+        createdByUserId: mod,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }),
+    );
+  }
+
+  /**
+   * The bay stamp is derived from the body, so it has to move with it. Carrying it over left the
+   * card saying "Far Pond — North Bay" with North Bay a bay of the lake the pin just left.
+   */
+  test('clears a bay stamp that belonged to the lake it left', async () => {
+    const t = harness();
+    await squareBody(t, { name: 'Mascoma', lat: 43.61, lng: -72.13 });
+    const elsewhere = await squareBody(t, { name: 'Far Pond', lat: 42.61, lng: -73.87 });
+    const hazardId = await strayHazard(t, elsewhere, { lat: 43.61, lng: -72.13 });
+    const stale = await bay(t, elsewhere, { name: 'Far Bay', lat: 42.61, lng: -73.87 });
+    await t.run((ctx) => ctx.db.patch(hazardId, { subAreaId: stale, subAreaName: 'Far Bay' }));
+
+    await t.mutation(internal.hazards.refileToFootprintBody, { hazardId, apply: true });
+    const row = await t.run((ctx) => ctx.db.get(hazardId));
+    expect(row?.subAreaId).toBeUndefined();
+    expect(row?.subAreaName).toBeUndefined();
+  });
+
+  test('re-stamps the bay of the lake it joins', async () => {
+    const t = harness();
+    const here = await squareBody(t, { name: 'Mascoma', lat: 43.61, lng: -72.13 });
+    const elsewhere = await squareBody(t, { name: 'Far Pond', lat: 42.61, lng: -73.87 });
+    const hazardId = await strayHazard(t, elsewhere, { lat: 43.61, lng: -72.13 });
+    const cove = await bay(t, here, { name: 'Shaker Cove', lat: 43.61, lng: -72.13 });
+
+    await t.mutation(internal.hazards.refileToFootprintBody, { hazardId, apply: true });
+    expect(await t.run((ctx) => ctx.db.get(hazardId))).toMatchObject({
+      waterBodyId: here,
+      subAreaId: cove,
+      subAreaName: 'Shaker Cove',
+    });
   });
 });

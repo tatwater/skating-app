@@ -40,6 +40,50 @@
 @custom-variant data-vertical (&:where([data-orientation="vertical"]));
 
 /*
+ * The skater sidebar's width — the view column beside the persistent region map (B03 §1.8), and
+ * the inset cards that take its place.
+ *
+ * Here rather than in `@skating/design` on purpose: it is a layout dimension of one surface of one
+ * app, not a token the console shares, and the design package is owned by the kit thread. Promote
+ * it into `sizes.ts` the day the console grows a column of the same name.
+ *
+ * **29.5 rem, widened from the boards' 27.5 rem (2026-11-07, founder).** At 440 px the lake's four
+ * tabs overflowed their rail by 26 px — *Getting there* was clipped — and the Report-a-hazard /
+ * Post-a-bounty pair had 7 px of air between them. 472 px is the first width where the tab rail
+ * fits with room to spare, and it gives each of those buttons 16 px back. `LakeSidebar.stories`
+ * measures the rail, so a label that outgrows the column fails there rather than on a lake.
+ */
+:root {
+  --size-sidebar: 29.5rem;
+}
+
+/*
+ * Latest's filter column — the left column of `LatestFrame`, and the skeleton `BootScreen` draws
+ * in its place. A variable rather than a literal in both, because they have to agree: the boot
+ * screen's columns are what the page settles into, and a filter column that changed width on load
+ * would shift the feed under the reader's eye. Same reasoning as `--size-sidebar` above, which
+ * `BootMapPage` shares with the real one.
+ *
+ * **18.5 rem, widened from the boards' 17 rem (2026-11-08, founder).** At 272 px the Quality
+ * segment spilled and "Great" was cropped. The segments are `whitespace-nowrap`, so flex can't
+ * shrink one below its own label: the row either fits or spills.
+ *
+ * The row wants two different widths, because the page and its stories are not set in the same
+ * face. `--family-sans` is `Saira, system-ui, sans-serif`, and **only Storybook fetches Saira**
+ * (`.storybook/preview-head.html`) — the app links one stylesheet, `app.css`, which carries no
+ * `@font-face`, so every skater screen renders in `system-ui` today. Measured: Quality wants
+ * 273.5 px in Saira and ~285 in the system stack, Posted 261.1 and ~268. 272 is under all four,
+ * which is why the founder's screen cropped it harder than a story would.
+ *
+ * 296 px clears both faces — 22.5 px of air in Saira, ~11 in the system stack — so this width
+ * holds whichever way the missing-webfont question is settled. `Latest.stories` measures both
+ * rows with Saira loaded, so a label that outgrows the column fails there rather than on the page.
+ */
+:root {
+  --size-latest-filters: 18.5rem;
+}
+
+/*
  * Semantic theme tokens, single-sourced from @skating/design (themes.ts) — the web analog
  * of the mobile Tamagui bridge (D7). Two first-class themes (D34): `:root` is the
  * high-contrast bright-outdoor default (light); `.dark` is evening mode. The literal hex

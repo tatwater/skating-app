@@ -6,6 +6,8 @@ import { convexReact, fakes, resetFakes } from '../testMocks';
 
 vi.mock('convex/react', () => convexReact);
 
+import { BOARD_NOON } from '@/test/boardNow';
+import { pinBoardClock } from '@/test/pinBoardClock';
 import { ProfilePage } from './ProfilePage';
 
 beforeAll(() => {
@@ -15,7 +17,7 @@ beforeAll(() => {
   })) as never;
 });
 
-const NOW = Date.now();
+const NOW = BOARD_NOON;
 const POST: PostCardData = {
   postId: 'post1',
   title: 'Bumpy by the beach, better past the point',
@@ -106,6 +108,12 @@ beforeEach(() => {
   });
   fakes.queries.set('profiles:getPublicProfile', publicProfile());
 });
+
+// `ProfilePage` reads the clock itself (ProfilePage.tsx:73) and hands it to the cards, so pinning
+// the fixtures alone left the two disagreeing: `NOW` sat in 2027 while the component sat in the
+// real present, and `dayLabel` returned "Today" only because it reads a *future* instant as today
+// (clock skew). The assertion would have started failing on 17 January 2027 (Greptile, #103).
+pinBoardClock();
 
 describe('someone else’s profile', () => {
   it('shows the header, the counts, the badges and the reports, behind ph-no-capture', () => {
@@ -289,6 +297,21 @@ describe('your own profile', () => {
             }
           : undefined,
     );
+  });
+
+  /**
+   * The crash `/u/<your own handle>` shipped with. `useQueries` keys its subscription on the
+   * object's identity, so building one inline re-subscribed on every render and React stopped the
+   * loop at "Too many re-renders" — the page became the crash screen. Only a profile with bounties
+   * had entries to re-subscribe, which is why it was your own page and nobody else's, and why the
+   * old mock (which only answered the queries) kept the suite green through it.
+   */
+  it('holds one bounty-detail subscription across re-renders, not one per render', () => {
+    const view = page('kdonovan');
+    expect(screen.getByText('Your bounties')).toBeInTheDocument();
+    view.rerender(<ProfilePage username="kdonovan" onNavigate={navigate} />);
+    view.rerender(<ProfilePage username="kdonovan" onNavigate={navigate} />);
+    expect(fakes.unstableQueries).toBe(0);
   });
 
   it('edits, says who sees it, and lists your bounties', async () => {
@@ -482,7 +505,7 @@ describe('a moderator’s view', () => {
     fakes.queries.set('profiles:current', {
       _id: 'p1',
       role: 'moderator',
-      deletionRequestedAt: Date.now(),
+      deletionRequestedAt: BOARD_NOON,
     });
     page();
     expect(screen.queryByRole('region', { name: 'Moderator tools' })).toBeNull();

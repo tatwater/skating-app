@@ -189,7 +189,63 @@ describe('MapMarksLayer', () => {
     expect(screen.getByText('Shakoma Beach')).toBeInTheDocument();
     fireEvent.pointerLeave(screen.getByRole('img', { name: 'Put-in: Shakoma Beach' }));
     expect(screen.queryByText('Shakoma Beach')).toBeNull();
+    // A nameless marker answers too. It used to answer with nothing at all, which on a lake where
+    // most launches are unnamed (Mascoma: five, two named) read as half the pins being broken.
     fireEvent.pointerEnter(screen.getByRole('img', { name: 'Put-in' }));
+    expect(screen.getByText('Unnamed')).toBeInTheDocument();
+  });
+
+  it('shows a hazard’s own line on hover — the pins that most need a word before a click', () => {
+    const { map } = fakeMap();
+    render(
+      <MapMarksLayer
+        map={map}
+        labels={[]}
+        putIns={[]}
+        hazards={[hazard({ id: 'h', hazardType: 'open_water' })]}
+        onOpenHazard={vi.fn()}
+      />,
+    );
+    const mark = screen.getByRole('button', { name: /^Hazard: / });
+    fireEvent.pointerEnter(mark);
+    expect(screen.getByText('Hazard')).toBeInTheDocument();
+    expect(screen.getByText('Open water / lead')).toBeInTheDocument();
+    fireEvent.pointerLeave(mark);
+    expect(screen.queryByText('Open water / lead')).toBeNull();
+  });
+
+  it('an unconfirmed hazard says so, and never that it is probably fine (D3)', () => {
+    const { map } = fakeMap();
+    render(
+      <MapMarksLayer
+        map={map}
+        labels={[]}
+        putIns={[]}
+        hazards={[hazard({ id: 'h', hazardType: 'open_water', provisional: true })]}
+        onOpenHazard={vi.fn()}
+      />,
+    );
+    fireEvent.pointerEnter(screen.getByRole('button', { name: /^Hazard: / }));
+    const plate = document.querySelector('[data-slot="map-hover-plate"]') as HTMLElement;
+    expect(plate.textContent).toContain('Not yet confirmed');
+    expect(plate.textContent).not.toMatch(/safe|fine|clear|ok\b/i);
+  });
+
+  it('the plate opens on keyboard focus too — a hazard mark is a button', () => {
+    const { map } = fakeMap();
+    render(
+      <MapMarksLayer
+        map={map}
+        labels={[]}
+        putIns={[]}
+        hazards={[hazard({ id: 'h' })]}
+        onOpenHazard={vi.fn()}
+      />,
+    );
+    const mark = screen.getByRole('button', { name: /^Hazard: / });
+    fireEvent.focus(mark);
+    expect(document.querySelector('[data-slot="map-hover-plate"]')).not.toBeNull();
+    fireEvent.blur(mark);
     expect(document.querySelector('[data-slot="map-hover-plate"]')).toBeNull();
   });
 

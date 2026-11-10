@@ -1,5 +1,5 @@
 import { validateStyleMin } from '@maplibre/maplibre-gl-style-spec';
-import { DEPTH_BAND_EDGES_FT } from '@skating/core';
+import { DEPTH_BAND_EDGES_FT, withAccessDim } from '@skating/core';
 import { describe, expect, it } from 'vitest';
 import { CONTOUR_LAYER_ID, CONTOUR_SOURCE_ID } from '@/lib/contourMap';
 import { BANDS_LAYER_ID, BANDS_SOURCE_LAYER } from '@/lib/depthBands';
@@ -18,9 +18,9 @@ import {
   bandFillColor,
   contourColorByBand,
   contourWidthByBand,
-  mapGround,
   mapMarkVars,
   mapPalette,
+  shoreOpacityByZoom,
 } from './mapPalette';
 import { SPEC_LAYERS } from './mapSpec';
 
@@ -188,23 +188,39 @@ describe('filters and paint', () => {
       p.depth.fills[0],
       p.water.fill,
     ]);
-    expect(JSON.stringify(waterFillOpacity(p, null))).toContain('""');
+    // The water is the depth ramp's own value, opaque; only the inactive gray is a wash, and it
+    // carries its own alpha — so the layer's opacity stays 1 either way.
+    expect(JSON.stringify(waterFillOpacity())).toContain('""');
+    expect(p.water.fill).toBe(p.depth.fills[0]);
+    expect(p.water.fill).toMatch(/^#[0-9a-f]{6}$/);
+    // The inactive gray is opaque too, and a different color from band 0 — the basemap paints its
+    // own water under ours, so a translucent gray over a matching blue stayed blue (#102).
+    expect(p.inactive.fill).toMatch(/^#[0-9a-f]{6}$/);
+    expect(p.inactive.fill).not.toBe(p.water.fill);
   });
 
   it('stands the fill down for the lake under a satellite picture, and only that lake (D81)', () => {
-    const p = mapPalette('dark');
-    const [, base] = waterFillOpacity(p, null, 'm') as [string, unknown[]];
-    expect(base.slice(0, 3)).toEqual(['case', ['==', ['get', '_id'], 'm'], 0]);
-    const [, none] = waterFillOpacity(p, null) as [string, unknown[]];
-    expect(none.slice(0, 3)).toEqual(['case', ['==', ['get', '_id'], ''], 0]);
+    const [, base] = waterFillOpacity('m') as [string, unknown[]];
+    expect(base).toEqual(['case', ['==', ['get', '_id'], 'm'], 0, 1]);
+    const [, none] = waterFillOpacity() as [string, unknown[]];
+    expect(none).toEqual(['case', ['==', ['get', '_id'], ''], 0, 1]);
+  });
+
+  it('softens the shore by zoom, under the access dim', () => {
+    const outline = skaterLayers(mapPalette('dark'), true).find(
+      (l) => l.id === 'water-outline',
+    ) as {
+      paint: Record<string, unknown>;
+    };
+    expect(outline.paint['line-opacity']).toEqual(shoreOpacityByZoom(withAccessDim));
+    expect(JSON.stringify(outline.paint['line-opacity'])).toContain('"zoom"');
   });
 });
 
-describe('mapPalette', () => {
-  it('takes the ground from the basemap itself', () => {
-    expect(mapGround('dark')).toBe('#1f1f1f');
-    expect(mapPalette('dark').ground).toBe('#1f1f1f');
-    expect(mapPalette('white').ground).toBe(mapGround('white'));
+describe('mapPalette, as the layers read it', () => {
+  it('sets the label shadow from the field, stronger on light', () => {
+    expect(mapMarkVars('dark')).toMatchObject({ '--map-ground': '#0f1114' });
+    expect(String((mapMarkVars('white') as Record<string, string>)['--lab-sh'])).toContain('95%');
   });
 
   it('resolves seven bands of fill, line and index from the tokens', () => {
@@ -216,17 +232,6 @@ describe('mapPalette', () => {
       }
     }
     expect(mapPalette('dark').depth.fills[0]).toBe('#294157');
-  });
-
-  it('draws the suggested crossing in ice, never green (D3)', () => {
-    const p = mapPalette('dark');
-    expect(p.hazard.passage).toBe(p.track);
-    expect(p.hazard.danger).not.toBe(p.hazard.passage);
-  });
-
-  it('sets the label shadow from the field, stronger on light', () => {
-    expect(mapMarkVars('dark')).toMatchObject({ '--map-ground': '#1f1f1f' });
-    expect(String((mapMarkVars('white') as Record<string, string>)['--lab-sh'])).toContain('95%');
   });
 });
 

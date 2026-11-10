@@ -7215,3 +7215,70 @@ sharing a view means sharing the lake link.
 
 **Related:** D166, D199, D240; B03 §1.
 
+## D243 — The test clock is a pinned instant, not the runner's (amends D40)
+**Decided** 2026-11-09. The cards' clock words are **calendar**-based: `panelTime`'s `daysBetween`
+floors both instants with `setHours(0, 0, 0, 0)`, so "Today" and a row's `3 h` corner each require
+the item to fall on the same *local date* as `now`. A fixture that backdates a live `Date.now()` by
+N hours therefore stops saying "Today" once the runner's clock reads earlier than N:00, and says a
+weekday instead. That turned CI red on #102 at 00:18 UTC with five failures in `GlobalSearch`,
+`latestViews` and `ProfilePage` — none of them in the code that PR touched. The window is not
+incidental: **7 PM–midnight Eastern is 00:00–05:00 UTC**, so a live-clock suite is green on the
+founder's laptop and red on a UTC runner for the whole of an evening's work.
+
+**Every fixture, story and calendar-asserting test anchors on `apps/web/src/test/boardNow.ts`** —
+Saturday 16 January 2027, the boards' "today", which six files had already each re-derived.
+`BOARD_NOON` is built from local parts, so it reads as noon in any zone; `BOARD_NOW_NH` is the
+absolute instant for code that takes the zone as an argument. The date is **frozen, not "today at
+noon"**, because weekday labels are asserted outright (`dayKicker(NOW - 3 * DAY, NOW)` is
+`'Wednesday'`, true only when today is a Saturday).
+
+**Pinning fixtures is not enough where a component reads the clock itself** — `GlobalSearch`,
+`SkaterMapCanvas`'s label clock, Explore's `InViewList`. A pinned fixture against a live component
+clock disagrees with it by months. Those tests call `pinBoardClock()`, which fakes **`Date` only**:
+pinning the clock globally in `setup.ts` failed 118 tests (the sheet's IndexedDB, photo-pipeline and
+reconnect suites drive real async work that a faked clock starves), and faking the timers in
+`GlobalSearch` alone cost a debounce flake that passed in isolation and failed under full-suite
+load. Pinning is about the *instant*, not the fake: `useFakeTimers({ shouldAdvanceTime: true })`
+with no `now` — `SkaterMapCanvas`'s former state — leaves `Date.now()` live and is the same bug.
+
+`packages/guards/src/testClock.test.ts` holds it: shared fixtures and stories may not read the live
+clock at all, and no calendar-asserting app test may either unless it pins the clock for its whole
+suite. It carries a reason per exemption, and floors so it cannot pass without having looked.
+
+**A pinned fixture against a live component clock passes for the wrong reason, and then stops.**
+`dayLabel` reads a *future* instant as "Today" (clock skew, by design), so `ProfilePage` — which
+reads the clock at `ProfilePage.tsx:73` — went green on a 2027 fixture while the component sat in
+the real present, and would have begun failing on **17 January 2027**. A fixture ahead of the
+runner's clock is not a pinned test; it is an unpinned one with a two-month head start. Hence the
+rule is "pins the clock", not "avoids `Date.now()`", and the pin must cover the **whole suite** —
+one `it` setting its own instant says nothing about its neighbours, and `SkaterMapCanvas.test.tsx`
+legitimately holds both a suite-wide pin and a per-test one (Greptile, #103).
+
+**A pinned instant pins the clock, not the day** — amended 2026-11-10, after this decision's own
+guard turned main red at `f5d070a0`. `accessFixtures`' `ACCESS_NOW` was a fixed UTC instant
+(`Date.UTC(2027, 0, 16, 16, 52)`, Saturday 11:52 AM in Hanover) and `accessModel` labels its times
+with `reportWhen` **without** passing a `timeZone`, so the weekday comes out of the *runner's*
+zone. That instant is Saturday from UTC−11 to about UTC+7 and Sunday beyond it, so `reported Thu`
+became `reported Fri` at UTC+11 — nothing to do with the live clock this decision is about, and
+invisible to every zone the founder or a UTC runner sits in. So the rule has a second half:
+**a fixture whose label reads the local date anchors on `BOARD_NOON`, built from local parts; only
+a fixture that passes its zone explicitly may use `BOARD_NOW_NH`.** Choosing between them is
+choosing whether the *day* is pinned, and pointing `ACCESS_NOW` at the absolute anchor preserved a
+bug that predated the anchor entirely.
+
+**Related:** D3, D40, D236; B03 §8.4.
+
+## D244 — A row's corner counts hours across midnight (B03, amends D237)
+**Decided** 2026-11-09. `ageLabel`'s hour branch used to require `diff < DAY` **and** the same
+calendar day, so a report that ended at 11 PM read **"Fri"** to anyone looking at 12:30 AM —
+ninety minutes old, cornered as though it were days old, on the one signal the card exists to carry
+(D3: age is confidence, and a stale-looking fresh report understates what a skater knows). The
+calendar condition is dropped: anything under 24 hours is counted in hours, whatever the date.
+
+The day *words* stay calendar-true — `dayLabel` still says "Yesterday" and `whenLabel` still says
+"Fri · 11:00 PM" for that same report, which is the honest answer to "which day". Only the corner,
+whose job is the age, changed. Found while fixing D243: the midnight flake was pointing at a real
+product bug, and `panelTime.test.ts` now pins the boundary deliberately rather than leaving it to
+be sampled at whatever hour CI happens to run.
+
+**Related:** D3, D237, D243.

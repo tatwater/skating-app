@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-
+import { BOARD_NOON } from '@/test/boardNow';
 import {
   type BountyDetail,
   bountyCards,
@@ -11,7 +11,7 @@ import {
   trustMark,
 } from './profileModel';
 
-const NOW = new Date(2027, 0, 16, 12, 0).getTime(); // Saturday
+const NOW = BOARD_NOON; // Saturday
 const DAY = 86_400_000;
 
 describe('dates', () => {

@@ -8,7 +8,8 @@ import { LatestPhoneBar } from '../phone/LatestPhoneBar';
 import { useIsMidWidth } from '../phone/usePhoneLayout';
 
 /**
- * Latest's three columns (board 4.1): filters left (272), the feed center (640), Recommended and
+ * Latest's three columns (board 4.1): filters left (`--size-latest-filters`, 296 — widened from
+ * the boards' 272 so the Quality segment fits), the feed center (640), Recommended and
  * *Wanted near you* right (300), centered with 40 between. Each column scrolls on its own, so the
  * feed's scroll is the feed column's and nothing else's — which is what lets a report open as a
  * **drawer from the right** over a scrim on the whole page (4.5–4.7) while the feed under it keeps
@@ -59,7 +60,7 @@ export function LatestFrame({
         <aside
           aria-label="Filters"
           className={cn(
-            'h-full min-h-0 w-[17rem] shrink-0 overflow-y-auto pt-(--space-7) pb-(--space-14)',
+            'h-full min-h-0 w-(--size-latest-filters) shrink-0 overflow-y-auto pt-(--space-7) pb-(--space-14)',
             pane === 'filters' ? phoneColumn : 'max-md:hidden',
           )}
         >

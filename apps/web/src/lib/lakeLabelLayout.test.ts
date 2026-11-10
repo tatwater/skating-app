@@ -298,6 +298,33 @@ describe('labelSlug', () => {
     ).toBe('1 report · Tuesday');
   });
 
+  /**
+   * One instant, two zones, two slugs. Every other case here sits mid-afternoon, where the
+   * viewer's zone and UTC agree on the date and the `timeZone` argument does no visible work.
+   */
+  it('reads the day in the viewer’s zone, so one report can be today or Saturday', () => {
+    const sundayMorningNY = Date.UTC(2027, 0, 17, 14, 0); // Sun 17 Jan, 9 AM in New York
+    const saturdayEveningNY = Date.UTC(2027, 0, 17, 2, 0); // Sat 16 Jan, 9 PM in New York
+
+    expect(
+      labelSlug({
+        inactive: false,
+        recent: recent(1, saturdayEveningNY),
+        now: sundayMorningNY,
+        timeZone: tz,
+      }),
+    ).toBe('1 report · Saturday');
+
+    expect(
+      labelSlug({
+        inactive: false,
+        recent: recent(1, saturdayEveningNY),
+        now: sundayMorningNY,
+        timeZone: 'UTC',
+      }),
+    ).toBe('1 report · today');
+  });
+
   it('says "5+" when the read was capped, so a busy lake isn’t undercounted', () => {
     expect(labelSlug({ inactive: false, recent: recent(5, now, true), now, timeZone: tz })).toBe(
       '5+ reports · today',

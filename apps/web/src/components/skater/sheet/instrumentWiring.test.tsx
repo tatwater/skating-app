@@ -11,6 +11,8 @@ const h = vi.hoisted(() => ({ map: null as unknown, loaded: true }));
 vi.mock('maplibre-gl/dist/maplibre-gl.css', () => ({}));
 vi.mock('@/components/theme-provider', () => ({ useTheme: () => ({ resolvedTheme: 'light' }) }));
 vi.mock('@/lib/mapCanvas', () => ({
+  // The real one: the container's class is the module's rule, not the hook's (`MapContainer.stories`).
+  MAP_CONTAINER_CLASS: 'size-full',
   useMapCanvas: (options: { onLoad: (map: unknown) => void }) => {
     if (h.map === null) {
       h.map = {
@@ -22,7 +24,12 @@ vi.mock('@/lib/mapCanvas', () => ({
       };
       options.onLoad(h.map);
     }
-    return { containerRef: { current: null }, mapRef: { current: h.map }, loaded: h.loaded };
+    return {
+      containerRef: { current: null },
+      mapRef: { current: h.map },
+      loaded: h.loaded,
+      liveMap: () => (h.loaded ? h.map : null),
+    };
   },
 }));
 
