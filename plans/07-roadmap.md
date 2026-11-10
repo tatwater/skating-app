@@ -796,7 +796,7 @@ lack of signal.*
 - The founder's device pass of the sheet on the Android preview build (every door; offline; the silhouette picker) — and `convex dev --once` before it (`contentRevisions`, `author_delete`)
 
 ## Phase B03 — The skater web app
-🟢 **Complete** 2026-11-07 · PRs #95–#98, #100, #104 · [plan](./phases/B03-skater-web.md) · D237 D238 D239 D240 D241 D242 D243 D244
+🟢 **Complete** 2026-11-07 · PRs #95–#104 · [plan](./phases/B03-skater-web.md) · D237 D238 D239 D240 D241 D242 D243 D244
 
 The skater-facing web app rebuilt on the kit and the tokens: the seven route pages of *Gli · Web app ·
 Review 3* (157 boards) — Explore with the lake sidebar and the re-skinned map, Latest, the New report sheet

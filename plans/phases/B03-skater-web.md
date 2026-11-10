@@ -1,9 +1,10 @@
 # Phase B03 — The skater web app
 
-> **Status:** complete, 2026-11-07. PRs #95–#98 are merged to main. The build model held: one governor and
-> parallel agents in their own worktrees, cut from main on `phase-b03-skater-web`. What the build found is
-> §8; the deferred and owed rows live in the roadmap entry (`07-roadmap.md`, Phase B03). Mocks: Paper
-> *Gli · Web app · Review 3* (157 boards), rules in `skating-mockups/skater-web/README.md`.
+> **Status:** complete, 2026-11-07. PRs #95–#98 built it; #100–#104 are the close-out and the live-test
+> fixes that followed, and §8 is their record. The build model held: one governor and parallel agents in
+> their own worktrees, cut from main on `phase-b03-skater-web`. The deferred and owed rows live in the
+> roadmap entry (`07-roadmap.md`, Phase B03). Mocks: Paper *Gli · Web app · Review 3* (157 boards), rules
+> in `skating-mockups/skater-web/README.md`.
 
 It covers the seven route pages of *Gli · Web app · Review 3* (157 boards,
 `skating-mockups/skater-web/boards-all.tsv`), built on the kit (`apps/web/src/components/kit/`, merged with
