@@ -403,7 +403,7 @@ describe('useFreezeUpFrame — the reveal floor', () => {
 });
 
 /**
- * A theme switch re-creates the MapLibre instance (B03 §8.3), so these drive what the hook is
+ * A theme switch re-creates the MapLibre instance (B03 §8.5), so these drive what the hook is
  * handed across one: the live map, then no map at all for a commit, then a different map — with the
  * same frame selected the whole way through, because the skater did not touch the scrubber.
  */
