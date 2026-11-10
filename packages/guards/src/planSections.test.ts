@@ -1,5 +1,5 @@
 /**
- * A phase doc's `### N.M` sections are unique and in order.
+ * A phase doc's numbered sections (`### N.M`, `### §N.M —`) are unique and in order.
  *
  * **Why this exists.** PR #104's branch was rebased onto a main that had grown two new sections in
  * `B03-skater-web.md`, and the rebase renumbered the branch's own §8.3 to §8.5 — correctly. The
@@ -35,9 +35,50 @@ function files(dir: string, ext: string[]): string[] {
   });
 }
 
-/** Every `### N.M` heading of a phase doc, in the order it appears. */
+/**
+ * Every numbered section of a phase doc, in the order it appears, as the doc writes it: `8.5` for
+ * `### 8.5 Title` (B03), `§2.4` for `### §2.4 — Title` (A06c, A08, …), and `§9.1` for a
+ * `- §9.1 Title` item under a `### §9 —` workstream heading (A10 numbers its workstreams that way).
+ *
+ * The `§` stays on the number because the two forms are two registers, not two spellings of one: a
+ * doc can number its outline `1.1` and its workstreams `§1.1` side by side (A05c does), so they are
+ * counted and ordered apart. Missing the `§` form is how this guard once read A08 as having no
+ * sections at all, and so skipped every citation into it.
+ */
 function sectionNumbers(body: string): string[] {
-  return [...body.matchAll(/^#{2,4}\s+(\d+\.\d+)\s+\S/gm)].map((m) => m[1] as string);
+  return [...body.matchAll(/^(?:#{2,4}[ \t]+(§?\d+\.\d+)|- (§\d+\.\d+))[ \t]+\S/gm)].map(
+    (m) => (m[1] ?? m[2]) as string,
+  );
+}
+
+/** `§2.4` → `§`, `8.5` → `` — which register a section number belongs to. */
+const register = (n: string) => (n.startsWith('§') ? '§' : '');
+
+/** `B03 §8.5`, `A06c §2.5` — a phase token and a section, as the code comments write them. */
+const CITATION = /\b([A-Z]\d{2}[a-z]?)\s+§(\d+\.\d+)/g;
+
+/**
+ * Every citation in `source` that does not resolve, as a sentence. A citation's `§` is how the code
+ * marks a pointer, so `B03 §8.5` resolves to either register's `8.5`. A phase with no doc is not this
+ * guard's business; a phase whose doc has no numbered section the guard can read is — that is a
+ * parser that has stopped seeing the doc, and it would otherwise pass every citation silently.
+ */
+function brokenCitations(
+  source: string,
+  where: string,
+  byPhase: ReadonlyMap<string, ReadonlySet<string>>,
+): string[] {
+  const broken: string[] = [];
+  for (const [, phase, section] of source.matchAll(CITATION)) {
+    const sections = byPhase.get(phase as string);
+    if (!sections) continue;
+    if (sections.size === 0) {
+      broken.push(`${where} cites ${phase} §${section}, but no numbered section in its doc parses`);
+    } else if (!sections.has(section as string) && !sections.has(`§${section}`)) {
+      broken.push(`${where} cites ${phase} §${section}, which does not exist`);
+    }
+  }
+  return broken;
 }
 
 const phaseDocs = files(PHASES, ['.md']).map((path) => ({
@@ -64,25 +105,25 @@ describe('a phase doc’s numbered sections', () => {
     }
   });
 
-  test('numbers only ever go up', () => {
+  test('numbers only ever go up, within each register', () => {
     const value = (n: string) => {
-      const [major, minor] = n.split('.').map(Number) as [number, number];
+      const [major, minor] = n.replace('§', '').split('.').map(Number) as [number, number];
       return major * 1000 + minor;
     };
     for (const doc of phaseDocs) {
-      const numbers = sectionNumbers(doc.body);
-      const backwards = numbers.filter(
-        (n, i) => i > 0 && value(n) <= value(numbers[i - 1] as string),
-      );
-      expect(backwards, `${doc.name} goes backwards at these sections`).toEqual([]);
+      const all = sectionNumbers(doc.body);
+      for (const reg of ['', '§']) {
+        const numbers = all.filter((n) => register(n) === reg);
+        const backwards = numbers.filter(
+          (n, i) => i > 0 && value(n) <= value(numbers[i - 1] as string),
+        );
+        expect(backwards, `${doc.name} goes backwards at these sections`).toEqual([]);
+      }
     }
   });
 });
 
 describe('a §N.M pointer in the code', () => {
-  /** `B03 §8.5`, `A06c §3.2` — a phase token and a section, as the code comments write them. */
-  const CITATION = /\b([A-Z]\d{2}[a-z]?)\s+§(\d+\.\d+)/g;
-
   const sources = ['apps/web/src', 'apps/mobile/src', 'packages']
     .map((d) => join(REPO, d))
     .filter((d) => {
@@ -104,18 +145,61 @@ describe('a §N.M pointer in the code', () => {
   );
 
   test('resolves to a section that exists in that phase’s doc', () => {
-    const broken: string[] = [];
-    for (const path of sources) {
-      const body = readFileSync(path, 'utf8');
-      for (const [, phase, section] of body.matchAll(CITATION)) {
-        const sections = byPhase.get(phase as string);
-        // A phase with no doc here is not this test's business.
-        if (!sections || sections.size === 0) continue;
-        if (!sections.has(section as string)) {
-          broken.push(`${relative(REPO, path)} cites ${phase} §${section}, which does not exist`);
-        }
-      }
-    }
+    const broken = sources.flatMap((path) =>
+      brokenCitations(readFileSync(path, 'utf8'), relative(REPO, path), byPhase),
+    );
     expect(broken).toEqual([]);
+  });
+});
+
+describe('sectionNumbers', () => {
+  test('reads both heading forms, keeping the § on the number', () => {
+    const doc = ['## §1 — Part', '### §1.1 — Read path', '### 1.2 Outline', '#### §2.4 — Deep'];
+    expect(sectionNumbers(doc.join('\n'))).toEqual(['§1.1', '1.2', '§2.4']);
+  });
+
+  test('reads a workstream’s `- §N.M` items, but not a bold or plain list item', () => {
+    const doc = ['### §9 — Offline', '- §9.1 The queue', '- **§9.1 as built**', '- 9.2 A list'];
+    expect(sectionNumbers(doc.join('\n'))).toEqual(['§9.1']);
+  });
+
+  test('skips what is not a numbered section', () => {
+    const doc = [
+      '# 1.1 A title, not a section',
+      '##### 1.1 Too deep',
+      '## §6 — One level',
+      '#### §2.4a — A lettered sub-part',
+      '### 1.1',
+      'Prose that says ### 1.1 midline',
+    ];
+    expect(sectionNumbers(doc.join('\n'))).toEqual([]);
+  });
+});
+
+describe('brokenCitations', () => {
+  const byPhase = new Map<string, Set<string>>([
+    ['A08', new Set(['§1.1', '§2.4'])],
+    ['B03', new Set(['8.5'])],
+    ['A99', new Set()],
+  ]);
+
+  test('a citation resolves to either register', () => {
+    expect(brokenCitations('A08 §2.4, B03 §8.5', 'f.ts', byPhase)).toEqual([]);
+  });
+
+  test('a missing section is broken', () => {
+    expect(brokenCitations('see A08 §3.1', 'f.ts', byPhase)).toEqual([
+      'f.ts cites A08 §3.1, which does not exist',
+    ]);
+  });
+
+  test('a cited doc with no readable section is loud, not skipped', () => {
+    expect(brokenCitations('A99 §1.1', 'f.ts', byPhase)).toEqual([
+      'f.ts cites A99 §1.1, but no numbered section in its doc parses',
+    ]);
+  });
+
+  test('a phase with no doc is not this guard’s business', () => {
+    expect(brokenCitations('Z01 §1.1', 'f.ts', byPhase)).toEqual([]);
   });
 });

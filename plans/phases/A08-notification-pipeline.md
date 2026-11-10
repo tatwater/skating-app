@@ -440,54 +440,6 @@ first, then notifies **once, on the winner**. That's the same idea as D81 below,
 
 ---
 
-## §5 — Settle before you send (D81)
-
-*Lettered E because it arrived after the first pass; it **sequences with B**, since it changes the shape
-every producer is written to.*
-
-### §5.1 — Route every producer through the queue
-
-Six insert sites write `notifications` directly today — `ratings.ts:140`, `reports.ts:448`,
-`bounties.ts:662` and `:760`, plus the two in the flush. Under D81 the first four become `enqueue`
-calls, and the flush becomes the only thing that inserts.
-
-A **`SETTLE_MS` of 60 seconds** for actor-triggered notifications. The founder's instinct was "a few
-seconds", and a few seconds is the *real* window — a misclick is corrected almost immediately. Sixty is
-recommended anyway because the flush cron already ticks once a minute (`crons.ts:13`), so anything
-shorter buys nothing measurable: effective latency is 0–60s either way. Sixty covers the slower version
-of the same mistake — reading the hazard properly, realizing you voted wrong, fixing it.
-
-Coalescing keys on `(recipient, target, kind)`, so five thumbs inside a minute become one *"5 people
-found this helpful"* rather than five rows. That is the same `coalesceKey` shape the report buckets
-already use.
-
-### §5.2 — What "still true?" means, per type
-
-The flush loads the trigger and drops the row if it no longer holds:
-
-| Type | Deliver only if |
-|---|---|
-| `report_rated` (thumb) | the rating row still exists **with the same verdict** |
-| `report_rated` (corroboration) | the corroborating report is still `visible` |
-| `report_commented` | the comment still exists and is `visible` |
-| `hazard_confirmation` | the lifecycle state is still the one that triggered it (§2.2) |
-| `bounty_request` / `bounty_fulfilled` | the bounty is still in the state that triggered it |
-
-A dropped row is deleted, not retried: the thing that would have made it true again is a *new* action,
-which enqueues its own row.
-
-**The flip-flop case falls out for free.** Helpful → unhelpful → helpful inside one window is a single
-queue row (coalesced) whose trigger re-reads as `helpful` at flush ⇒ exactly one notification. Helpful →
-unhelpful ⇒ the row is dropped, and the author is never told about a thumb that isn't there.
-
-### §5.3 — Where it doesn't apply
-
-The digest and `activity_detected` already wait far longer than any settle window — to 8pm and to the
-pending sweep respectively — so they inherit the re-check (§2.4a's dedup is the same idea at hours rather
-than seconds) and need no debounce of their own.
-
----
-
 ## §3 — Per-user digest timing
 
 Today: `DIGEST_HOUR = 20`, `DIGEST_TIMEZONE = 'America/New_York'` (`notifications.ts:36–37`), applied
@@ -592,6 +544,54 @@ There is no user-visible symptom to wait for, so the trigger is cost: **~1,000 p
 report whose fan-out spans more than a handful of pages. Below that, the walk is one page and this index
 is machinery guarding nothing. Building it *before* the inbox would be optimizing a pipeline whose
 output nobody can see.
+
+---
+
+## §5 — Settle before you send (D81)
+
+*Lettered E because it arrived after the first pass; it **sequences with B**, since it changes the shape
+every producer is written to.*
+
+### §5.1 — Route every producer through the queue
+
+Six insert sites write `notifications` directly today — `ratings.ts:140`, `reports.ts:448`,
+`bounties.ts:662` and `:760`, plus the two in the flush. Under D81 the first four become `enqueue`
+calls, and the flush becomes the only thing that inserts.
+
+A **`SETTLE_MS` of 60 seconds** for actor-triggered notifications. The founder's instinct was "a few
+seconds", and a few seconds is the *real* window — a misclick is corrected almost immediately. Sixty is
+recommended anyway because the flush cron already ticks once a minute (`crons.ts:13`), so anything
+shorter buys nothing measurable: effective latency is 0–60s either way. Sixty covers the slower version
+of the same mistake — reading the hazard properly, realizing you voted wrong, fixing it.
+
+Coalescing keys on `(recipient, target, kind)`, so five thumbs inside a minute become one *"5 people
+found this helpful"* rather than five rows. That is the same `coalesceKey` shape the report buckets
+already use.
+
+### §5.2 — What "still true?" means, per type
+
+The flush loads the trigger and drops the row if it no longer holds:
+
+| Type | Deliver only if |
+|---|---|
+| `report_rated` (thumb) | the rating row still exists **with the same verdict** |
+| `report_rated` (corroboration) | the corroborating report is still `visible` |
+| `report_commented` | the comment still exists and is `visible` |
+| `hazard_confirmation` | the lifecycle state is still the one that triggered it (§2.2) |
+| `bounty_request` / `bounty_fulfilled` | the bounty is still in the state that triggered it |
+
+A dropped row is deleted, not retried: the thing that would have made it true again is a *new* action,
+which enqueues its own row.
+
+**The flip-flop case falls out for free.** Helpful → unhelpful → helpful inside one window is a single
+queue row (coalesced) whose trigger re-reads as `helpful` at flush ⇒ exactly one notification. Helpful →
+unhelpful ⇒ the row is dropped, and the author is never told about a thumb that isn't there.
+
+### §5.3 — Where it doesn't apply
+
+The digest and `activity_detected` already wait far longer than any settle window — to 8pm and to the
+pending sweep respectively — so they inherit the re-check (§2.4a's dedup is the same idea at hours rather
+than seconds) and need no debounce of their own.
 
 ---
 
