@@ -966,3 +966,28 @@ And the static guard got a dynamic half: CI re-runs the web unit project in a zo
 the current UTC hour** so local time is always ~01:00, inside the window that broke #102, instead
 of hoping a run lands there. 35 s, and verified to catch the original bug: restoring
 `latestFixtures`' live clock turns that step red at local 01:46.
+
+**What the dynamic half found nine hours later (2026-11-10).** The step above went green on its own
+PR at local 01:57 and then turned main red at `f5d070a0` — on two `accessModel` tests neither #103
+nor #102 touched. The cause is a *second* way a clock word goes wrong, and it is not the live clock
+this section is about: `ACCESS_NOW` was a fixed UTC instant, and `accessModel` calls `reportWhen`
+without a `timeZone`, so the weekday is formatted in the **runner's** zone. `Date.UTC(2027, 0, 16,
+16, 52)` is Saturday in Hanover and Sunday 3:52 AM at UTC+11, so `reported Thu` read `reported
+Fri`. It predated the anchor; #103 pointed the fixture at `BOARD_NOW_NH` and so carried it
+forward. The fix is one line — the local-parts `BOARD_NOON`, per D243's amendment — and it was
+verified in six zones from UTC+14 to UTC−11.
+
+The lesson is about the probe, not the fixture. **One zone per run cannot show both classes**, and
+which class it shows depends on the hour CI happens to run:
+
+| Zone | Picked when | Live clock (class 1) | Date-line shift (class 2) |
+| --- | --- | --- | --- |
+| UTC−3 (`Etc/GMT+3`) | CI at 05:00 UTC | caught | **missed** |
+| UTC+11 (`Etc/GMT-11`) | CI at 14:00 UTC | caught | caught |
+
+#103 merged at 04:57 UTC and drew UTC−3, which shifts no dates at all; the push to main ran at
+14:03 UTC, drew UTC+11, and failed. So the step now runs three zones: the computed 01:00 one for
+class 1, and `Etc/GMT-14` / `Etc/GMT+11` — UTC+14 and UTC−11, which bracket every real zone — for
+class 2. Both brackets are load-bearing, and each was shown to be: with the bug reintroduced, the
+16:52 UTC instant fails only at UTC+14, while the mirror case (a 02:00 UTC Saturday) fails only at
+UTC−11. Three runs, about 105 s.
