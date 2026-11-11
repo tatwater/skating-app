@@ -712,7 +712,8 @@ export const update = mutation({
     // **An edit changes the card's inputs, so the card is recomputed (A06c §5).** `skateEndTime` and
     // `skateQuality` are both patched above and both feed the summary directly: re-dating a report
     // can move it in or out of the 14-day window, and re-rating it moves the D86 mean. Without this
-    // the card would be wrong until the six-hourly sweep — and the module doc for
+    // the card would be wrong until the sweep next reached it (which, now that it reads only due
+    // cards, may be never) — and the module doc for
     // `lib/bodySummary.ts` claims the write paths are "exact by construction rather than
     // exact-until-a-path-is-missed", which was untrue for exactly this path.
     //

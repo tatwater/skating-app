@@ -31,6 +31,7 @@
  */
 
 import { revealBelowQuorum } from './profileReveal';
+import { currentSeason, seasonEndMs } from './season';
 import { SKATE_QUALITIES, type SkateQuality } from './types';
 
 /**
@@ -40,6 +41,40 @@ import { SKATE_QUALITIES, type SkateQuality } from './types';
  * number nobody can keep in step. If this needs to diverge later it should diverge loudly.
  */
 export const SUMMARY_RECENT_DAYS = 14;
+
+/** `SUMMARY_RECENT_DAYS` in milliseconds — the width of the window a card counts reports over. */
+export const SUMMARY_WINDOW_MS = SUMMARY_RECENT_DAYS * 86_400_000;
+
+/**
+ * The first instant a report still counts toward a card computed at `now`: a report is in the
+ * window while `skateEndTime >= summaryWindowStart(now)`, and leaves it at `skateEndTime +
+ * SUMMARY_WINDOW_MS + 1`.
+ */
+export function summaryWindowStart(now: number): number {
+  return now - SUMMARY_WINDOW_MS;
+}
+
+/**
+ * **When the passage of time next changes a card computed at `now`**, or `null` when it never will.
+ *
+ * A card's report half is the reports in the window that fall in the current season. Time moves
+ * that set in exactly two ways — a report ages out of the window, or the season turns — and never
+ * adds to it: a report enters the window only by being written, and every write recomputes the card.
+ * So given the end times of the reports the recompute read, the card is fixed until the earliest of
+ * the oldest one leaving and the season's end, and with no reports at all, time cannot change it
+ * (the hazard half has no clock — an active hazard stays on the card until a write archives it).
+ *
+ * Conservative by construction: every report read counts, including ones the card filters out (a
+ * hidden report, last season's report in early July), because an early refresh costs one recompute
+ * and a late one leaves a stale card. Always later than `now`, so a sweep that refreshes everything
+ * due at `now` cannot pick the same card up again in the same pass.
+ */
+export function summaryRefreshAt(skateEndTimes: readonly number[], now: number): number | null {
+  if (skateEndTimes.length === 0) return null;
+  let at = seasonEndMs(currentSeason(now));
+  for (const t of skateEndTimes) at = Math.min(at, t + SUMMARY_WINDOW_MS + 1);
+  return Math.max(at, now + 1);
+}
 
 /** How many hazard types a card names before it stops being glanceable. */
 export const SUMMARY_MAX_HAZARD_TYPES = 3;

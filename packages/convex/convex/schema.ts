@@ -1500,6 +1500,30 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index('by_state', ['state']),
 
+  /**
+   * **When each map summary card next changes by the passage of time** — the work list of the
+   * summary sweep (`waterBodies.sweepDueBodySummaries`).
+   *
+   * A card (`waterBodies.summary`) changes on a write — every one recomputes it — or when a report
+   * ages out of the 14-day window or the season turns, which no write marks. The sweep used to page
+   * every body in the corpus (~25,000 documents, polygons included, ~84 MB a tick) to find the ~200
+   * with a card; it now reads only the rows here that are due. One row per body whose card holds a
+   * report, kept by `recomputeBodySummary` in the same transaction as the card it describes
+   * (`summaryRefreshAt`), and deleted when time can no longer change the card.
+   *
+   * **A table of its own rather than a field and index on `waterBodies`**, for three reasons: the
+   * field is required here, so `by_refresh_at` holds only rows that mean something (an optional
+   * field's index is not sparse — every body without it would sort first); adding it needed no
+   * widen-and-backfill on a 25,000-row table of polygons; and the due read touches rows of two
+   * numbers instead of body documents, before it fetches the few bodies actually due.
+   */
+  bodySummaryRefreshes: defineTable({
+    waterBodyId: v.id('waterBodies'),
+    refreshAt: v.number(),
+  })
+    .index('by_water_body', ['waterBodyId'])
+    .index('by_refresh_at', ['refreshAt']),
+
   // The water-body spatial index (A01) — one row per grid cell a *listed* body's bbox covers, at the
   // ladder level `indexLevelFor` picks (see `lib/cellIndex` / `@skating/core`'s `spatialCells`).
   // Replaces `@convex-dev/geospatial`, whose per-row *point* and read-∝-`maxResults` query shape

@@ -54,6 +54,7 @@ One line per table: what it's for, and the decision or phase that made it. Group
 | `landmarkSourceBaselines` | what each catalog source (`vt.osm`, `ny.gnis`) read on the complete landmark loads this deployment accepted — the bar a later load must clear before it retires a catalog row; one row per accepted load, the newest is the bar — D202 |
 | `waterBodyRequests` | a skater asking for a body: activate, admit (resolved live against 3DHP), restore, contest access, takedown, and — the sub-area queue — name a bay; and a place a report named that no map has, filed by the report write — D179, D201, D202 |
 | `adminAreas` · `adminAreaCells` | town / county / state polygons and their cells, for the place a point resolves to — Phase 05 |
+| `bodySummaryRefreshes` | when each body's map summary card next changes by the passage of time — a report aging out of the window, the season turning; the summary sweep reads only the due rows, kept beside every card write |
 | `regionStats` | per-state deciles of area, depth, elevation — the comparison basis for generated captions — D70 |
 | `bathymetryCoverage` | which bodies have contour tiles and whose credit line to render — A06b |
 | `imageryIngestSeasons` | the season watch's verdict, one row per season: when the ice watch opened and why (with the settings that decided it), the first 20 °F sentinel night, winter region-wide, the end; the staff-email queue; whether imagery was started — D149, D161, D212–D214 |

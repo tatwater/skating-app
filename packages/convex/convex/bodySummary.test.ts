@@ -1,7 +1,7 @@
-import { SUMMARY_RECENT_DAYS, summaryHasCard } from '@skating/core';
+import { SUMMARY_RECENT_DAYS, SUMMARY_WINDOW_MS, summaryHasCard } from '@skating/core';
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
-import { describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { recomputeBodySummary } from './lib/bodySummary';
@@ -261,6 +261,234 @@ describe('waterBodies.sweepAllBodySummaries', () => {
 
     // Convex serializes an absent optional as `null` across the `t.run` boundary.
     expect(await summaryOf(t, waterBodyId)).toBeNull();
+  });
+});
+
+describe('the due sweep — bodySummaryRefreshes', () => {
+  // A fixed mid-winter clock, so a season boundary cannot fall inside a window by accident. Only
+  // `Date` is faked: convex-test schedules with real timers.
+  const NOW = Date.UTC(2027, 0, 20, 12);
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const refreshRows = (t: ReturnType<typeof convexTest>) =>
+    t.run((ctx) => ctx.db.query('bodySummaryRefreshes').collect());
+
+  /** Run the full walk once, so the tick reads only due rows from here on. */
+  const backfill = (t: ReturnType<typeof convexTest>) =>
+    t.action(internal.waterBodies.sweepAllBodySummaries, {});
+
+  /** A card that says something the body's reports do not — a recompute would overwrite it. */
+  const plantStaleCard = (t: ReturnType<typeof convexTest>, id: Id<'waterBodies'>) =>
+    t.run((ctx) =>
+      ctx.db.patch(id, {
+        summary: { recentReportCount: 9, topHazardTypes: ['thin_ice'], updatedAt: NOW - DAY_MS },
+      }),
+    );
+
+  test('a recompute records when the card next changes; no report in the window, no row', async () => {
+    const t = convexTest(schema, modules);
+    const busy = await seedBody(t);
+    const oldest = NOW - 10 * DAY_MS;
+    await seedReport(t, busy, NOW - 2 * DAY_MS);
+    await seedReport(t, busy, oldest);
+    // Hidden reports count too: an early refresh is cheap, a late one is a stale card.
+    await seedReport(t, busy, NOW - 3 * DAY_MS, { hidden: true });
+    const hazardOnly = await seedBody(t);
+    await seedHazard(t, hazardOnly, 'thin_ice');
+
+    await t.run((ctx) => recomputeBodySummary(ctx, busy));
+    await t.run((ctx) => recomputeBodySummary(ctx, hazardOnly));
+
+    const rows = await refreshRows(t);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ waterBodyId: busy, refreshAt: oldest + SUMMARY_WINDOW_MS + 1 });
+    // A hazard card has no clock: it changes only when a write archives the hazard.
+    expect((await summaryOf(t, hazardOnly))?.topHazardTypes).toEqual(['thin_ice']);
+
+    // A second recompute with nothing new leaves one row, unchanged.
+    await t.run((ctx) => recomputeBodySummary(ctx, busy));
+    expect(await refreshRows(t)).toEqual(rows);
+  });
+
+  test('a card ages out on the tick at its refresh time, and not before', async () => {
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+    const skated = NOW - 10 * DAY_MS;
+    await seedReport(t, waterBodyId, skated, { skateQuality: 'great' });
+    await t.run((ctx) => recomputeBodySummary(ctx, waterBodyId));
+    await backfill(t);
+    expect((await summaryOf(t, waterBodyId))?.recentReportCount).toBe(1);
+    const refreshAt = skated + SUMMARY_WINDOW_MS + 1;
+
+    vi.setSystemTime(refreshAt - 1);
+    expect(await t.action(internal.waterBodies.sweepDueBodySummaries, {})).toEqual({
+      mode: 'due',
+      refreshed: 0,
+      batches: 1,
+    });
+    expect((await summaryOf(t, waterBodyId))?.recentReportCount).toBe(1);
+
+    vi.setSystemTime(refreshAt);
+    expect(await t.action(internal.waterBodies.sweepDueBodySummaries, {})).toMatchObject({
+      mode: 'due',
+      refreshed: 1,
+    });
+    const summary = await summaryOf(t, waterBodyId);
+    expect(summary?.recentReportCount).toBe(0);
+    expect(summary?.latestReportAt).toBeUndefined();
+    // Nothing left that time can change: the row is gone and the next tick reads nothing.
+    expect(await refreshRows(t)).toEqual([]);
+  });
+
+  test('the season turning is a refresh time of its own', async () => {
+    const t = convexTest(schema, modules);
+    const lateJune = Date.UTC(2027, 5, 28, 12);
+    vi.setSystemTime(lateJune);
+    const waterBodyId = await seedBody(t);
+    await seedReport(t, waterBodyId, lateJune - DAY_MS);
+    await t.run((ctx) => recomputeBodySummary(ctx, waterBodyId));
+    await backfill(t);
+    const seasonEnd = Date.UTC(2027, 6, 1);
+    expect((await refreshRows(t))[0]?.refreshAt).toBe(seasonEnd);
+
+    vi.setSystemTime(seasonEnd);
+    await t.action(internal.waterBodies.sweepDueBodySummaries, {});
+    // Still inside the 14-day window, but last season's — a card must not carry it into the next.
+    expect((await summaryOf(t, waterBodyId))?.recentReportCount).toBe(0);
+  });
+
+  /**
+   * The point of the table: a tick reads the due rows and the bodies they name, nothing else. The
+   * two stale cards below would be rewritten by any recompute, so their surviving untouched is the
+   * proof neither body was read.
+   */
+  test('the tick recomputes only due cards — a card not yet due, or with no row, is never read', async () => {
+    const t = convexTest(schema, modules);
+    const due = await seedBody(t);
+    const notDue = await seedBody(t);
+    const noRow = await seedBody(t);
+    await backfill(t);
+    for (const id of [due, notDue, noRow]) await plantStaleCard(t, id);
+    await t.run(async (ctx) => {
+      await ctx.db.insert('bodySummaryRefreshes', { waterBodyId: due, refreshAt: NOW - 1 });
+      await ctx.db.insert('bodySummaryRefreshes', { waterBodyId: notDue, refreshAt: NOW + DAY_MS });
+    });
+
+    expect(await t.action(internal.waterBodies.sweepDueBodySummaries, {})).toEqual({
+      mode: 'due',
+      refreshed: 1,
+      batches: 1,
+    });
+    expect((await summaryOf(t, due))?.recentReportCount).toBe(0);
+    expect((await summaryOf(t, notDue))?.recentReportCount).toBe(9);
+    expect((await summaryOf(t, noRow))?.recentReportCount).toBe(9);
+    // The due body had no report, so its row went with the recompute; the other is untouched.
+    expect((await refreshRows(t)).map((r) => r.waterBodyId)).toEqual([notDue]);
+  });
+
+  test('a batch takes at most its size, oldest first, and the tick drains every batch', async () => {
+    const t = convexTest(schema, modules);
+    await backfill(t);
+    const ids: Id<'waterBodies'>[] = [];
+    for (let i = 0; i < 5; i++) {
+      const id = await seedBody(t);
+      ids.push(id);
+      await plantStaleCard(t, id);
+      await t.run((ctx) =>
+        ctx.db.insert('bodySummaryRefreshes', { waterBodyId: id, refreshAt: NOW - 10 + i }),
+      );
+    }
+    const first = await t.mutation(internal.waterBodies.refreshDueBodySummaries, { batchSize: 2 });
+    expect(first).toEqual({ refreshed: 2, more: true });
+    expect((await summaryOf(t, ids[0] as Id<'waterBodies'>))?.recentReportCount).toBe(0);
+    expect((await summaryOf(t, ids[2] as Id<'waterBodies'>))?.recentReportCount).toBe(9);
+
+    const rest = await t.action(internal.waterBodies.sweepDueBodySummaries, {});
+    expect(rest).toMatchObject({ mode: 'due', refreshed: 3 });
+    for (const id of ids) expect((await summaryOf(t, id))?.recentReportCount).toBe(0);
+  });
+
+  test('the first tick on a deployment without the backfill walks every card, once', async () => {
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+    // A card written before the table existed: stale, and with no row to bring it up.
+    await seedReport(t, waterBodyId, NOW - (SUMMARY_RECENT_DAYS + 2) * DAY_MS);
+    await plantStaleCard(t, waterBodyId);
+    const fresh = await seedBody(t);
+    await seedReport(t, fresh, NOW - DAY_MS);
+    await t.run((ctx) =>
+      ctx.db.patch(fresh, { summary: { recentReportCount: 0, topHazardTypes: [], updatedAt: 0 } }),
+    );
+
+    const first = await t.action(internal.waterBodies.sweepDueBodySummaries, {});
+    expect(first).toMatchObject({ mode: 'walk', refreshed: 2 });
+    expect((await summaryOf(t, waterBodyId))?.recentReportCount).toBe(0);
+    expect((await summaryOf(t, fresh))?.recentReportCount).toBe(1);
+    // The walk filled the table for the card that holds a report.
+    expect((await refreshRows(t)).map((r) => r.waterBodyId)).toEqual([fresh]);
+    const runs = await t.run((ctx) => ctx.db.query('importRuns').collect());
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({
+      kind: 'body_summary_backfill',
+      campaignId: 'body-summary-refresh-backfill',
+      status: 'succeeded',
+    });
+
+    expect(await t.action(internal.waterBodies.sweepDueBodySummaries, {})).toMatchObject({
+      mode: 'due',
+    });
+    expect(await t.run((ctx) => ctx.db.query('importRuns').collect())).toHaveLength(1);
+  });
+
+  test('a walk still running is trusted for a while, then walked again', async () => {
+    const t = convexTest(schema, modules);
+    await backfill(t);
+    await t.run(async (ctx) => {
+      const [run] = await ctx.db.query('importRuns').collect();
+      if (!run) throw new Error('expected the walk’s run row');
+      await ctx.db.patch(run._id, { status: 'running', startedAt: NOW - 60_000 });
+    });
+    expect(await t.query(internal.waterBodies.summaryBackfillState, {})).toBe('running');
+    expect(await t.action(internal.waterBodies.sweepDueBodySummaries, {})).toMatchObject({
+      mode: 'due',
+    });
+
+    vi.setSystemTime(NOW + 3 * 60 * 60 * 1000);
+    expect(await t.query(internal.waterBodies.summaryBackfillState, {})).toBe('needed');
+    expect(await t.action(internal.waterBodies.sweepDueBodySummaries, {})).toMatchObject({
+      mode: 'walk',
+    });
+    expect(await t.query(internal.waterBodies.summaryBackfillState, {})).toBe('done');
+  });
+
+  test('duplicate rows for one body fold into one, and a missing body clears its row', async () => {
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+    await seedReport(t, waterBodyId, NOW - DAY_MS);
+    await t.run(async (ctx) => {
+      await ctx.db.insert('bodySummaryRefreshes', { waterBodyId, refreshAt: 1 });
+      await ctx.db.insert('bodySummaryRefreshes', { waterBodyId, refreshAt: 2 });
+    });
+    await t.run((ctx) => recomputeBodySummary(ctx, waterBodyId));
+    const rows = await refreshRows(t);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.refreshAt).toBe(NOW - DAY_MS + SUMMARY_WINDOW_MS + 1);
+
+    await t.run((ctx) => ctx.db.delete(waterBodyId));
+    await t.run((ctx) =>
+      ctx.db.patch(rows[0]?._id as Id<'bodySummaryRefreshes'>, { refreshAt: NOW - 1 }),
+    );
+    await backfill(t);
+    expect(await t.action(internal.waterBodies.sweepDueBodySummaries, {})).toMatchObject({
+      refreshed: 1,
+    });
+    expect(await refreshRows(t)).toEqual([]);
   });
 });
 

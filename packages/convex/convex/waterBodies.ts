@@ -72,6 +72,7 @@ import type { LineString, MultiPolygon, Polygon } from 'geojson';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import {
+  type ActionCtx,
   internalAction,
   internalMutation,
   internalQuery,
@@ -6596,18 +6597,18 @@ export async function setIncludedByRequestImpl(
 }
 
 /**
- * Sweep stale map summaries (A06c Workstream 5).
+ * One page of the **full** map-card walk (A06c Workstream 5) — the backfill and the repair, no
+ * longer the cron's tick.
  *
  * **The counts decay with no write to hang the decay on.** Every other path that touches
  * `summary` is an event — a report created, a hazard archived, a moderator hiding something — but a
- * report simply *aging out* of the 14-day window is not an event anywhere in the system. Without
- * this tick, a lake that was busy in January still shows January's card in March, which is the exact
- * failure mode A06c §5.4 named: a card carrying last season's numbers into a month when the lake is open
- * water.
+ * report simply *aging out* of the 14-day window is not an event anywhere in the system. The hourly
+ * cron (`sweepDueBodySummaries`) catches that from `bodySummaryRefreshes`; this walk is what fills
+ * that table for cards written before it existed, since every recompute here records its card's
+ * next refresh.
  *
- * Walks only bodies that **have** a summary, which is the small minority — the whole point of A06c §5.3 is
- * that most of the corpus carries none — so this is cheap despite running over the corpus. It pages,
- * because "the small minority" is a claim about today and not a guarantee.
+ * Recomputes only bodies that **have** a summary, but reads every body to find them — ~25,000
+ * documents, polygons included, ~84 MB. That is why it is no longer the six-hourly tick.
  */
 export const sweepBodySummaries = internalMutation({
   args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
@@ -6633,32 +6634,167 @@ export const sweepBodySummaries = internalMutation({
   },
 });
 
+/** The campaign id the full walk records under — its `succeeded` row marks the backfill done. */
+export const SUMMARY_BACKFILL_CAMPAIGN = 'body-summary-refresh-backfill';
+
 /**
- * The cron entry point: sweep every page of summaries in one go.
- *
- * An action rather than a mutation because it pages, and Convex allows exactly one paginated query
- * per function — the same constraint `regionStats:recompute` works around the same way.
+ * How long a `running` backfill row is trusted before the hourly tick treats it as a dead action
+ * and walks again. A full walk is ~500 pages of 50 — minutes, not an hour.
  */
-export const sweepAllBodySummaries = internalAction({
+const SUMMARY_BACKFILL_STALE_MS = 2 * 60 * 60 * 1000;
+
+/** Bodies the due sweep recomputes per transaction — the same byte budget as the walk's page. */
+const DUE_SUMMARY_BATCH = 50;
+
+/**
+ * One batch of the due sweep: recompute every card whose `bodySummaryRefreshes.refreshAt` has
+ * passed, oldest first.
+ *
+ * **Reads only what is due.** One range on `by_refresh_at` — bounded below as well as above, though
+ * `refreshAt` is required and no row can lack it — then one body per due row. A tick where no
+ * report has aged out reads nothing but an empty index range. Each recompute moves its row past
+ * `now` or deletes it (`summaryRefreshAt` is always later than `now`), so a batch never returns the
+ * same row twice and the loop above it terminates.
+ */
+export const refreshDueBodySummaries = internalMutation({
+  args: { batchSize: v.optional(v.number()) },
+  handler: async (ctx, { batchSize }) => {
+    const numItems = Math.min(200, Math.max(1, batchSize ?? DUE_SUMMARY_BATCH));
+    const now = Date.now();
+    const due = await ctx.db
+      .query('bodySummaryRefreshes')
+      .withIndex('by_refresh_at', (q) => q.gte('refreshAt', 0).lte('refreshAt', now))
+      .take(numItems);
+    for (const row of due) await recomputeBodySummary(ctx, row.waterBodyId, now);
+    return { refreshed: due.length, more: due.length === numItems };
+  },
+});
+
+/** Whether the full walk has filled `bodySummaryRefreshes` on this deployment. */
+export const summaryBackfillState = internalQuery({
   args: {},
-  handler: async (ctx): Promise<{ swept: number; pages: number }> => {
+  handler: async (ctx): Promise<'done' | 'running' | 'needed'> => {
+    const runs = await ctx.db
+      .query('importRuns')
+      .withIndex('by_campaign', (q) => q.eq('campaignId', SUMMARY_BACKFILL_CAMPAIGN))
+      .order('desc')
+      .take(20);
+    if (runs.some((run) => run.status === 'succeeded')) return 'done';
+    const latest = runs[0];
+    if (latest?.status === 'running' && Date.now() - latest.startedAt < SUMMARY_BACKFILL_STALE_MS) {
+      return 'running';
+    }
+    return 'needed';
+  },
+});
+
+/**
+ * Walk every page of the corpus, recomputing every card — recorded as the backfill run.
+ *
+ * Shared by the manual action and the cron's first tick on a deployment that has never run it, so
+ * there is one walk and one run row however it was started.
+ */
+async function walkAllBodySummaries(ctx: ActionCtx): Promise<{ swept: number; pages: number }> {
+  const runId = await ctx.runMutation(internal.importRuns.start, {
+    kind: 'body_summary_backfill',
+    label: 'map summary cards: full walk (fills the refresh table)',
+    campaignId: SUMMARY_BACKFILL_CAMPAIGN,
+    deployment: process.env.CONVEX_CLOUD_URL ?? 'unknown',
+    isProd: !(process.env.CONVEX_CLOUD_URL ?? '').includes('agile-bee-397'),
+    stages: [
+      {
+        name: 'walk',
+        detail:
+          'sweepBodySummaries — every body with a summary is recomputed and its next refresh recorded',
+      },
+    ],
+  });
+  try {
     let cursor: string | undefined;
     let isDone = false;
     let swept = 0;
+    let scanned = 0;
     let pages = 0;
     // 24,953 bodies at 50 a page is ~500 pages, so the ceiling is a runaway guard rather than a
-    // budget — it must sit above a full walk or the sweep would silently stop half way.
+    // budget — it must sit above a full walk or the walk would silently stop half way.
     while (!isDone && pages < 2000) {
-      const page: { cursor: string; isDone: boolean; swept: number } = await ctx.runMutation(
-        internal.waterBodies.sweepBodySummaries,
-        cursor === undefined ? {} : { cursor },
-      );
+      const page: { cursor: string; isDone: boolean; swept: number; scanned: number } =
+        await ctx.runMutation(
+          internal.waterBodies.sweepBodySummaries,
+          cursor === undefined ? {} : { cursor },
+        );
       cursor = page.cursor;
       isDone = page.isDone;
       swept += page.swept;
+      scanned += page.scanned;
       pages++;
     }
+    await ctx.runMutation(internal.importRuns.finish, {
+      runId,
+      status: isDone ? 'succeeded' : 'failed',
+      counts: [
+        { name: 'scanned', value: scanned },
+        { name: 'swept', value: swept },
+        { name: 'pages', value: pages },
+      ],
+      ...(isDone ? {} : { error: `stopped at the ${pages}-page guard before the last page` }),
+    });
     return { swept, pages };
+  } catch (err) {
+    await ctx.runMutation(internal.importRuns.finish, {
+      runId,
+      status: 'failed',
+      error: err instanceof Error ? err.message : String(err),
+      notes: ['Partial walk — re-run; every recompute is idempotent.'],
+    });
+    throw err;
+  }
+}
+
+/**
+ * The full walk, by hand: `pnpm exec convex run waterBodies:sweepAllBodySummaries`.
+ *
+ * The backfill for `bodySummaryRefreshes` (the hourly tick also runs it once on its own, on a
+ * deployment with no `succeeded` walk), and the repair if the table is ever suspected of missing a
+ * card. An action because it pages, and Convex allows exactly one paginated query per function —
+ * the same constraint `regionStats:recompute` works around the same way.
+ */
+export const sweepAllBodySummaries = internalAction({
+  args: {},
+  handler: async (ctx): Promise<{ swept: number; pages: number }> => walkAllBodySummaries(ctx),
+});
+
+/**
+ * The cron entry point: refresh the cards that time has changed — **and only those.**
+ *
+ * Until the full walk has succeeded once on this deployment, cards written before
+ * `bodySummaryRefreshes` existed have no row, and a due-only sweep would never age them out. So the
+ * first tick walks everything (recording the run that marks the backfill done), a tick that finds
+ * that walk still running sweeps what is already due, and every tick after reads only due rows.
+ */
+export const sweepDueBodySummaries = internalAction({
+  args: {},
+  handler: async (ctx): Promise<{ mode: 'walk' | 'due'; refreshed: number; batches: number }> => {
+    const state = await ctx.runQuery(internal.waterBodies.summaryBackfillState, {});
+    if (state === 'needed') {
+      const { swept, pages } = await walkAllBodySummaries(ctx);
+      return { mode: 'walk', refreshed: swept, batches: pages };
+    }
+    let refreshed = 0;
+    let batches = 0;
+    let more = true;
+    // Each batch moves every row it read past `now`, so this ends; the guard is for a bug, not a
+    // budget — 200 batches is 10,000 cards due in one hour, fifty times today's whole set.
+    while (more && batches < 200) {
+      const batch: { refreshed: number; more: boolean } = await ctx.runMutation(
+        internal.waterBodies.refreshDueBodySummaries,
+        {},
+      );
+      refreshed += batch.refreshed;
+      more = batch.more;
+      batches++;
+    }
+    return { mode: 'due', refreshed, batches };
   },
 });
 

@@ -55,7 +55,9 @@ export type ImportRunKind =
   | 'standing_seed'
   | 'standing_rollover'
   /** `scripts/etl load-landmarks` — the named places a body is steered by (D202). */
-  | 'landmark_seed';
+  | 'landmark_seed'
+  /** `waterBodies:sweepAllBodySummaries` — the full map-card walk that fills the refresh table. */
+  | 'body_summary_backfill';
 
 /** A named tally. Each loader names its own; see the table comment for why they aren't columns. */
 export interface RunCount {

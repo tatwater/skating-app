@@ -618,6 +618,10 @@ export const IMPORT_RUN_KINDS = [
   // by (D202). Its own kind because it writes its own table and fails in its own way: a landmark with
   // no body is a scope boundary (the ocean, a pond below the floor), never a fault.
   'landmark_seed',
+  // convex waterBodies:sweepAllBodySummaries — the full walk over every map summary card, which fills
+  // `bodySummaryRefreshes`. Its `succeeded` row is what tells the hourly sweep the table is complete
+  // and it may read only the due rows from then on.
+  'body_summary_backfill',
 ] as const;
 
 /**

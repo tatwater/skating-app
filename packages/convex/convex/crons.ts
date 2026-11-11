@@ -308,14 +308,19 @@ crons.interval(
 crons.interval('refresh nws alerts', { minutes: 15 }, internal.weatherAlerts.refreshAlerts, {});
 
 /**
- * Map summary cards (A06c §5). Six-hourly because the only thing this catches is *time* — a report
- * aging out of the 14-day window, or a season boundary — and neither is urgent to the hour. Every
- * event-driven change to a card already happens synchronously on the write that caused it.
+ * Map summary cards (A06c §5). The only thing this catches is *time* — a report aging out of the
+ * 14-day window, or a season boundary; every event-driven change to a card already happens
+ * synchronously on the write that caused it.
+ *
+ * **Reads only the cards that are due** (`bodySummaryRefreshes`), so a tick costs what has aged
+ * out since the last one — usually an empty index range — rather than a walk of the whole corpus
+ * (~84 MB a tick at six-hourly, ~10 GB a month, before this). That is also why it is hourly now: a
+ * card that has lost a report says so within the hour, for a handful of small function calls a day.
  */
 crons.interval(
   'sweep body summaries',
-  { hours: 6 },
-  internal.waterBodies.sweepAllBodySummaries,
+  { hours: 1 },
+  internal.waterBodies.sweepDueBodySummaries,
   {},
 );
 
