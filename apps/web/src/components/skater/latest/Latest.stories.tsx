@@ -5,7 +5,7 @@ import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { Button } from '../../kit/button';
 import { resolvePx } from '../../kit/measure';
-import { must } from '../../kit/storyKit';
+import { faceLoaded, must } from '../../kit/storyKit';
 import { PanelDrawer } from '../panels/PanelDrawer';
 import { BOARD_NOW, CARD_PAT, POST_ANA, REPORT_PAT } from '../panels/panelFixtures';
 import { ReportPanelView } from '../panels/ReportPanelView';
@@ -245,16 +245,10 @@ export const Default: Story = {
     // shrink one below its own label — the row either fits or spills, and only a layout engine can
     // say which, so this is measured here rather than in jsdom.
     //
-    // Load the face before measuring, or this reads whatever is on screen mid-swap: Saira is a
-    // webfont with `display=swap`, and the system stack it swaps from wants ~285 px for the
-    // Quality row against Saira's 273.5 — a 12 px swing, which is the whole margin under test.
-    // `fonts.ready` alone can resolve before a face is even requested (see `skeleton.stories`), so
-    // ask for this one by the name it registers under (Fontsource's `Saira Variable`) first. A
-    // name nothing registers resolves to no faces rather than failing, so count them: an empty
-    // list means the measurement below would be taken in the fallback.
-    const saira = await document.fonts.load('600 0.6875rem "Saira Variable"', 'Good or better');
-    await expect(saira.length).toBeGreaterThan(0);
-    await document.fonts.ready;
+    // Load the segment's face before measuring, or this reads whatever is on screen mid-swap:
+    // Saira is a webfont with `display=swap`, and the system stack it swaps from wants ~285 px for
+    // the Quality row against Saira's 273.5 — a 12 px swing, which is the whole margin under test.
+    await faceLoaded(good, 'Good or better');
     const column = must(dark?.querySelector<HTMLElement>('[data-slot="latest-filters"]'));
     const rows = [...column.querySelectorAll<HTMLElement>('[data-slot="toggle-group"]')];
     await expect(rows).toHaveLength(2);

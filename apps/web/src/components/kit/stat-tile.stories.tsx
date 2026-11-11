@@ -4,7 +4,7 @@ import { expect, userEvent, waitFor, within } from 'storybook/test';
 
 import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { StatGrid, StatTile, Value } from './stat-tile';
-import { must, rootPx } from './storyKit';
+import { faceLoaded, must, rootPx } from './storyKit';
 
 const meta = {
   title: 'Kit/Stat tile',
@@ -26,17 +26,6 @@ type Story = StoryObj<typeof meta>;
 
 const part = (root: ParentNode, slot: string) =>
   must(root.querySelector<HTMLElement>(`[data-slot="${slot}"]`));
-
-/** The mono face the value is set in, loaded — `ch` and digit advances are the loaded face's. */
-async function monoLoaded(el: Element) {
-  const { fontWeight, fontSize } = getComputedStyle(el);
-  // A family nothing registers resolves to no faces, silently: count them, or `ch` is the
-  // fallback's and the assertions measure a face no reader gets.
-  const faces = await document.fonts.load(`${fontWeight} ${fontSize} "Martian Mono Variable"`, '0');
-  await expect(faces.length).toBeGreaterThan(0);
-  await document.fonts.load(`300 ${fontSize} "Martian Mono Variable"`, '0');
-  await document.fonts.ready;
-}
 
 /** The value's ink ends where its box ends, less the tracking after the last digit. */
 function figureInkRight(figure: HTMLElement): number {
@@ -91,7 +80,7 @@ export const ValueWithUnit: Story = {
     const value = part(canvasElement, 'value');
     const figure = part(value, 'value-figure');
     const unit = part(value, 'value-unit');
-    await monoLoaded(figure);
+    await faceLoaded(figure);
     // 7 px at the 16 px base, ink to ink.
     const want = 7 * (rootPx() / 16);
     const gap = unit.getBoundingClientRect().left - figureInkRight(figure);
@@ -171,7 +160,7 @@ export const Loading: Story = {
   play: async ({ canvasElement }) => {
     const loading = must(canvasElement.querySelector<HTMLElement>('[data-pair="loading"]'));
     const real = must(canvasElement.querySelector<HTMLElement>('[data-pair="real"]'));
-    await monoLoaded(part(real, 'value-figure'));
+    await faceLoaded(part(real, 'value-figure'));
     await expect(loading).toHaveAttribute('aria-busy', 'true');
     await expect(real).not.toHaveAttribute('aria-busy');
     // The label is known; it stays.
@@ -247,8 +236,8 @@ export const NothingMoves: Story = {
   play: async ({ canvasElement }) => {
     const tile = part(canvasElement, 'stat-tile');
     const after = must(canvasElement.querySelector<HTMLElement>('[data-after]'));
-    await document.fonts.load(`500 1rem "Martian Mono Variable"`, '0');
-    await document.fonts.ready;
+    // The skeleton holds the value's box in the value's own `ch`: measure it in the loaded face.
+    await faceLoaded(part(tile, 'skeleton'));
     const before = [tile.getBoundingClientRect().height, after.getBoundingClientRect().top];
     await userEvent.click(within(canvasElement).getByRole('button', { name: 'Load' }));
     await waitFor(() => expect(tile.querySelector('[data-slot="value"]')).not.toBeNull());
@@ -411,7 +400,7 @@ export const FourUp: Story = {
     for (const q of quads) {
       await expectUnbrokenRules(part(q, 'stat-grid'), 2);
       const figure = part(q, 'value-figure');
-      await monoLoaded(figure);
+      await faceLoaded(figure);
       const unit = part(q, 'value-unit');
       const gap = unit.getBoundingClientRect().left - figureInkRight(figure);
       await expect(Math.abs(gap - 7 * (rootPx() / 16))).toBeLessThanOrEqual(JUNCTION_TOLERANCE_PX);

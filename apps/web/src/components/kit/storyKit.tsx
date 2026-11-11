@@ -110,6 +110,21 @@ export function must<T>(el: T | null | undefined): T {
   return el;
 }
 
+/**
+ * Loads the face `el` is set in — its own weight, size and lead family, which is the name the
+ * app's copy of the face registers under — and fails unless a face loaded, so text measured next
+ * is the face readers get. `fonts.ready` alone can resolve before a face is even requested, and
+ * `fonts.load` resolves to no faces, silently, for a family nothing registers: either way the
+ * measurement would be taken in the fallback.
+ */
+export async function faceLoaded(el: Element, text = '0'): Promise<void> {
+  const { fontWeight, fontSize, fontFamily } = getComputedStyle(el);
+  const lead = fontFamily.split(',')[0]?.trim() ?? '';
+  const faces = await document.fonts.load(`${fontWeight} ${fontSize} ${lead}`, text);
+  await expect(faces.length).toBeGreaterThan(0);
+  await document.fonts.ready;
+}
+
 /** The root font size in px: what a rem token resolves against. */
 export function rootPx(): number {
   return parseFloat(getComputedStyle(document.documentElement).fontSize);

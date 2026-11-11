@@ -846,7 +846,7 @@ the way `BootMapPage` already shares `--size-sidebar` with the real sidebar. The
 skeleton a different width from the page it becomes would slide the feed sideways the moment the
 first query lands. `Latest.stories` measures both segment rows against the column's edge, so the
 next label that outgrows it fails in the browser project instead of on the founder's screen — after
-awaiting Saira by name, because Storybook fetches it with `display=swap` and the two faces differ
+awaiting the segment's own face, because Saira loads with `display=swap` and the two faces differ
 by 12 px on this row, which is the whole margin under test (Greptile, #101).
 
 Same shape as the `--size-sidebar` widening recorded above: a row of nowrap boxes in a fixed column
