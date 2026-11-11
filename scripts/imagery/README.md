@@ -14,7 +14,7 @@ where the hosting call and its one condition live.
 
 ---
 
-## ⚠ Six ways to get this wrong, each of which costs money
+## ⚠ Seven ways to get this wrong, each of which costs money
 
 **Read this before running any `fly` command in this directory.** The first five are cases where the
 obvious command is the wrong one — in #2, it is the command flyctl itself recommends — the failure is
@@ -155,6 +155,28 @@ Reach for `shared-cpu-8x` before reaching for RAM if this ever needs to be faste
 
 ⚠ **Do not read the plan's "28.9s tiling on this granule" as a Fly figure.** That was measured
 locally, at four threads to imitate `shared-cpu-4x`. A shared vCPU is not four of your cores.
+
+### ⚠ 7. A STAC item's bbox is not its swath — and the gap fails deterministically
+
+The `bbox` is the rectangle around the footprint; at a swath edge the footprint is a wedge filling
+half of it (`s2:nodata_pixel_percentage` ≈ 56% on the case that found this). A body inside the
+rectangle but outside the wedge was never photographed: every pixel under it is nodata, `--skip-blank`
+tiles nothing, and the packer's empty-set guard — correctly — refuses to ship an empty archive. The
+job exits 1 for doing the right thing, and it does it again on the next pass of the same orbit.
+
+That is how **every pass of one orbit over tile 18TWR failed** from the live job's first poll
+(2026-11-07) until 2026-11-11, one "1 satellite cut failed" email per day: the only corpus body under
+that tile's bbox is Lac Saint-François, entirely in the nodata half on that orbit (its `classHist`
+read 3.65 M pixels, all class 0). Twelve S1D granules in the same backlog were the same geometry at
+47–49°N.
+
+`fetch_masks` now clips the reveal masks against the item's **footprint geometry** (densified with
+`-segmentize` before reprojection, so Web Mercator does not bow the wedge's edge) and takes the
+nothing-to-cut path when no body survives — the same claim as "no corpus bodies under this granule",
+recorded in the empty marker's `reason`. Bodies that survive even partially proceed unfiltered; the
+tiler's per-pixel nodata handling already renders their unimaged halves transparent. The packer's
+guard stays: with the swath case decided from geometry up front, an empty tile directory is once
+again only ever a broken tiler.
 
 ### How to check you did not do any of these
 
@@ -445,7 +467,12 @@ Every one of these was run against a real granule before it was written down —
 3. **Rasterize the masks** onto exactly that grid.
 4. **Distance transform** (`gdal_proximity`) — this is the feather, and it is a true ramp by ground
    distance rather than a blur.
-5. **Distance → alpha** via a `gdaldem color-relief` two-stop ramp.
+5. **Distance → alpha** via a `gdaldem color-relief` ramp — **smootherstep** (6t⁵−15t⁴+10t³),
+   sampled at 17 stops, not a straight line. A linear fade has a slope discontinuity at each end,
+   and the eye amplifies exactly that kink (Mach banding) into a visible ring where the fade begins
+   and a hard rim where it lands on the basemap. Smootherstep's first and second derivatives are
+   zero at both ends, so the same 240 ground meters of feather leaves the lake and meets the map
+   imperceptibly (founder call, 2026-11-11: the linear fade read as harsh).
 6. **Tile, pack and convert** — `gdal raster tile` writes the whole z7–z14 pyramid as a WEBP tile
    directory, `tiles-to-mbtiles.py` packs it into MBTiles, `pmtiles convert` finishes.
 
@@ -557,7 +584,7 @@ R2_BUCKET=skating-imagery
 ```
 
 `--stage` is load-bearing — see
-[Five ways to get this wrong](#-six-ways-to-get-this-wrong-each-of-which-costs-money).
+[Seven ways to get this wrong](#-seven-ways-to-get-this-wrong-each-of-which-costs-money).
 
 Values come from the **bucket-scoped** R2 API token (Cloudflare dashboard → R2 → Manage API Tokens).
 The account endpoint and key pair are the same ones the basemap uses; they are recorded locally in
@@ -677,7 +704,7 @@ fly machine list --app skating-imagery   # empty between runs
 fly status --app skating-imagery
 ```
 
-See [Five ways to get this wrong](#-six-ways-to-get-this-wrong-each-of-which-costs-money) for what
+See [Seven ways to get this wrong](#-seven-ways-to-get-this-wrong-each-of-which-costs-money) for what
 a non-empty list means and how to clear it.
 
 ## Local development, no Fly involved
@@ -704,7 +731,7 @@ If that ever stops working, the host-neutrality claim has quietly stopped being 
 - ~~**VM sizing.** `shared-cpu-4x` / 8 GB is a guess, not a measurement.~~ **Settled 2026-08-24:**
   measured against Fly's billing dashboard, `FLY_VM_MEMORY` now defaults to 2048 and `GDAL_CACHEMAX`
   is pinned so the block cache does not shrink with it. See
-  [Five ways to get this wrong](#-six-ways-to-get-this-wrong-each-of-which-costs-money). `fly.toml`'s
+  [Seven ways to get this wrong](#-seven-ways-to-get-this-wrong-each-of-which-costs-money). `fly.toml`'s
   `[[vm]]` block was moved to `2gb` to match, and is still ignored by `fly machine run` — see trap 5.
 - **Where buffered geometries come from.** A Convex read per job, or a pre-baked GeoJSON the caller
   stages. The second keeps this container's only network dependencies the granule store and R2, which

@@ -309,6 +309,49 @@ fetch_masks() {
     "$src" \
     || die "could not read masks from ${base}.fgb"
 
+  # ## ⚠ The bbox is not the swath — bodies the bbox contains can still be unphotographed
+  #
+  # A STAC item's `bbox` is the rectangle around its footprint, and at a swath edge the footprint is
+  # a wedge filling half of it (`s2:nodata_pixel_percentage` ≈ 56% on the case below). A body inside
+  # the rectangle but outside the wedge was never imaged: every pixel under it is nodata, so
+  # `--skip-blank` tiles nothing and the packer's empty-set guard — which must stay, it is what stops
+  # a broken tiler shipping silence — fails the whole job. That is how **every pass of one orbit over
+  # tile 18TWR failed, deterministically,** from the season's first poll until 2026-11-11: the only
+  # body under that tile's bbox is Lac Saint-François, and on that orbit it sits entirely in the
+  # nodata half (classHist read 3.65 M pixels, all class 0).
+  #
+  # So decide *here*, from the footprint geometry itself: clip the reveal masks against it, and if
+  # nothing survives this granule imaged no corpus body — which is the "nothing to cut" claim, not a
+  # failure. Bodies that survive even partially proceed unfiltered: membership stays the bbox clip,
+  # and the per-pixel nodata handling in the tiler already renders their unimaged halves transparent.
+  #
+  # `-segmentize` densifies the footprint's long edges before reprojection — a 1°-long chord bowed by
+  # Web Mercator would otherwise move the wedge's edge by enough to misjudge a body sitting on it.
+  # `select` + `-e`: a missing geometry has to exit nonzero HERE. A plain construction writes
+  # `"geometry": null` with exit 0, and the die below never fires — the job then dies two commands
+  # later as "could not clip", pointing the diagnosis at the clip instead of at the item.
+  jq -ce 'select(.geometry != null) | {type: "Feature", properties: {}, geometry: .geometry}' \
+    granule.json > footprint.geojson \
+    || die "no footprint geometry on $GRANULE_ID"
+  ogr2ogr -f GeoJSON -s_srs EPSG:4326 -t_srs EPSG:3857 -segmentize 0.01 \
+    footprint-3857.geojson footprint.geojson \
+    || die "footprint reprojection failed"
+  stage swath_check ogr2ogr -f GeoJSON swath-masks.geojson \
+    -clipsrc footprint-3857.geojson masks.geojson \
+    || die "could not clip masks against the imaged footprint"
+  # Same rule as MASK_COUNT: "no count" is a read failure, never zero.
+  SWATH_COUNT="$(jq '[.features[] | select(.geometry != null)] | length' swath-masks.geojson)" || true
+  [[ "$SWATH_COUNT" =~ ^[0-9]+$ ]] \
+    || die "no feature count from the footprint clip — refusing to report 'nothing to cut' on a read failure"
+  rm -f footprint.geojson footprint-3857.geojson swath-masks.geojson
+  if [[ "$SWATH_COUNT" -eq 0 ]]; then
+    log "all $MASK_COUNT intersecting bodies lie outside the imaged footprint"
+    NOTHING_REASON="the imaged footprint misses every corpus body"
+    MASK_COUNT=0
+    return 0
+  fi
+  log "bodies inside the imaged footprint: $SWATH_COUNT of $MASK_COUNT"
+
   # The water polygons — the same bodies, unbuffered, holes intact. See `build_zones`.
   #
   # ⚠ **This clip can return FEWER features than the reveal clip, and that is correct.** The reveal is
@@ -435,15 +478,33 @@ build_alpha() {
   #    `gdaldem color-relief` rather than `gdal raster calc`, deliberately: calc needs muparser, which
   #    this GDAL build does not carry ("Dialect 'muparser' is not supported by this GDAL build"), and
   #    `gdal_calc.py` needs the Python bindings the -small image may not ship. color-relief is core
-  #    C++ with neither dependency, and a two-stop ramp linearly interpolated *is* the feather.
+  #    C++ with neither dependency, and a piecewise-linear ramp *is* the feather.
+  #
+  #    ## The curve is smootherstep, not a straight line
+  #
+  #    A linear fade has a slope discontinuity at each end — alpha goes from flat to falling in a
+  #    single pixel — and the eye amplifies exactly that kind of kink (Mach banding), which is what
+  #    read as a harsh cut-off at the lake's edge. `smootherstep` (6t⁵−15t⁴+10t³) has zero first AND
+  #    second derivative at both ends: the fade leaves full opacity imperceptibly, drops through the
+  #    middle, and lands on the basemap imperceptibly. Same total feather width (`FEATHER_M` is
+  #    untouched, it travels in the bake sidecar); only the shape changes.
+  #
+  #    color-relief interpolates linearly *between stops*, so the curve is sampled at 17 stops — the
+  #    worst-case gap to the true quintic over 16 segments is under one alpha step of 255.
   #
   #    No `nv` entry. `gdal_proximity -nodata` sets the *fill value* for pixels past maxdist but does
   #    not flag them as nodata, so color-relief warns "Input dataset has no nodata value. Ignoring
   #    'nv' entry" on every single job. It is redundant anyway: the fill is `feather_projected`, which
-  #    is precisely where the ramp already reaches zero. Confirmed against a real run — distance spans
-  #    exactly 0→333.6 and the alpha it produces spans 0→255. Dropping it costs nothing and keeps a
-  #    fan-out's logs free of a warning that would train everyone to ignore warnings.
-  printf '%s\n' '0 255 255 255' "$feather_projected 0 0 0" > ramp.txt
+  #    is precisely where the ramp already reaches zero (the last stop). Dropping it costs nothing and
+  #    keeps a fan-out's logs free of a warning that would train everyone to ignore warnings.
+  awk -v F="$feather_projected" 'BEGIN{
+    n = 16;
+    for (i = 0; i <= n; i++) {
+      t = 1 - i / n;                                 # 1 at the lake edge, 0 at the feather end
+      a = int(255 * t*t*t * (t * (t*6 - 15) + 10) + 0.5);
+      printf "%.3f %d %d %d\n", F * i / n, a, a, a;
+    }
+  }' > ramp.txt
   gdaldem color-relief dist.tif ramp.txt alpha_rgb.tif -co COMPRESS=DEFLATE -q \
     || die "gdaldem color-relief failed"
   gdal_translate -q -b 1 -ot Byte -co COMPRESS=DEFLATE alpha_rgb.tif alpha.tif \
@@ -535,6 +596,8 @@ build_subzones() {
 
 # Where the zone polygons are read from. Always true positions — see `resolve_geocode`.
 ZONE_SOURCE=water.geojson
+# Why a `MASK_COUNT` of zero, for the empty marker and the log — the bbox case or the footprint case.
+NOTHING_REASON="no corpus bodies under this granule"
 GEOCODE_JSON=null
 GEOCODE_ARGS=()
 
@@ -781,8 +844,8 @@ measure_ndsi() {
 mark_nothing_to_cut() {
   local key="cuts/${FRAME_SEASON}/${GRANULE_ID}.empty.json"
   jq -n --arg granuleId "$GRANULE_ID" --arg season "$FRAME_SEASON" \
-    --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    '{granuleId: $granuleId, season: $season, at: $at, reason: "no corpus bodies under this granule"}' \
+    --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg reason "$NOTHING_REASON" \
+    '{granuleId: $granuleId, season: $season, at: $at, reason: $reason}' \
     > nothing-to-cut.json || die "could not write the nothing-to-cut record"
   rclone --config "$RCLONE_CONF" copyto nothing-to-cut.json "r2:${R2_BUCKET}/${key}" \
     --s3-no-check-bucket || die "could not record nothing-to-cut at ${key}"
@@ -795,7 +858,7 @@ transform_granule() {
   # only land, or Québec, or ocean. Exiting non-zero would light up a fan-out with red for jobs that
   # did exactly the right thing, and the noise would hide a real failure.
   if [[ "$MASK_COUNT" -eq 0 ]]; then
-    log "no corpus bodies under this granule — nothing to cut"
+    log "$NOTHING_REASON — nothing to cut"
     mark_nothing_to_cut
     return 0
   fi
@@ -1096,7 +1159,7 @@ transform_granule() {
     --argjson bands "$BANDS" \
     --argjson stageMs "$STAGE_JSON" \
     --argjson totalMs "$(( $(now_ms) - RUN_STARTED_MS ))" \
-    --argjson pixels "$(( ( ${MAXX%.*} - ${MINX%.*} ) / 14 * ( ${MAXY%.*} - ${MINY%.*} ) / 14 ))" \
+    --argjson pixels "$(( ( ${MAXX%.*} - ${MINX%.*} ) / WARP_RES * ( ${MAXY%.*} - ${MINY%.*} ) / WARP_RES ))" \
     --arg vmSize "${FLY_VM_SIZE_LABEL:-unknown}" \
     --argjson feather "$FEATHER_M" \
     --argjson erosionM "$EROSION_M" \
@@ -1149,7 +1212,7 @@ transform_granule() {
 transform_sar() {
   fetch_masks
   if [[ "$MASK_COUNT" -eq 0 ]]; then
-    log "no corpus bodies under this pass — nothing to cut"
+    log "$NOTHING_REASON — nothing to cut"
     mark_nothing_to_cut
     return 0
   fi
