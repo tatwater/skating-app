@@ -6643,6 +6643,12 @@ export const SUMMARY_BACKFILL_CAMPAIGN = 'body-summary-refresh-backfill';
  */
 const SUMMARY_BACKFILL_STALE_MS = 2 * 60 * 60 * 1000;
 
+/**
+ * How long after a failed walk the tick waits before walking again — the old six-hourly cadence,
+ * so a walk that keeps failing costs what the old sweep did rather than six times it.
+ */
+const SUMMARY_BACKFILL_RETRY_MS = 6 * 60 * 60 * 1000;
+
 /** Bodies the due sweep recomputes per transaction — the same byte budget as the walk's page. */
 const DUE_SUMMARY_BATCH = 50;
 
@@ -6670,10 +6676,13 @@ export const refreshDueBodySummaries = internalMutation({
   },
 });
 
-/** Whether the full walk has filled `bodySummaryRefreshes` on this deployment. */
+/**
+ * Whether the full walk has filled `bodySummaryRefreshes` on this deployment: `done`, `running`
+ * (a walk started recently), `backoff` (the last walk failed recently), or `needed`.
+ */
 export const summaryBackfillState = internalQuery({
   args: {},
-  handler: async (ctx): Promise<'done' | 'running' | 'needed'> => {
+  handler: async (ctx): Promise<'done' | 'running' | 'backoff' | 'needed'> => {
     const runs = await ctx.db
       .query('importRuns')
       .withIndex('by_campaign', (q) => q.eq('campaignId', SUMMARY_BACKFILL_CAMPAIGN))
@@ -6681,8 +6690,15 @@ export const summaryBackfillState = internalQuery({
       .take(20);
     if (runs.some((run) => run.status === 'succeeded')) return 'done';
     const latest = runs[0];
-    if (latest?.status === 'running' && Date.now() - latest.startedAt < SUMMARY_BACKFILL_STALE_MS) {
+    const now = Date.now();
+    if (latest?.status === 'running' && now - latest.startedAt < SUMMARY_BACKFILL_STALE_MS) {
       return 'running';
+    }
+    if (
+      latest?.status === 'failed' &&
+      now - (latest.finishedAt ?? latest.startedAt) < SUMMARY_BACKFILL_RETRY_MS
+    ) {
+      return 'backoff';
     }
     return 'needed';
   },
@@ -6770,7 +6786,8 @@ export const sweepAllBodySummaries = internalAction({
  * Until the full walk has succeeded once on this deployment, cards written before
  * `bodySummaryRefreshes` existed have no row, and a due-only sweep would never age them out. So the
  * first tick walks everything (recording the run that marks the backfill done), a tick that finds
- * that walk still running sweeps what is already due, and every tick after reads only due rows.
+ * that walk still running — or failed within the last six hours — sweeps what is already due, and
+ * every tick after a successful walk reads only due rows.
  */
 export const sweepDueBodySummaries = internalAction({
   args: {},

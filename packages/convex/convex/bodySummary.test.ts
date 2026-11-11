@@ -446,7 +446,7 @@ describe('the due sweep — bodySummaryRefreshes', () => {
     expect(await t.run((ctx) => ctx.db.query('importRuns').collect())).toHaveLength(1);
   });
 
-  test('a walk still running is trusted for a while, then walked again', async () => {
+  test('a walk still running is trusted for a while, a failed one waits, then it walks again', async () => {
     const t = convexTest(schema, modules);
     await backfill(t);
     await t.run(async (ctx) => {
@@ -459,7 +459,19 @@ describe('the due sweep — bodySummaryRefreshes', () => {
       mode: 'due',
     });
 
-    vi.setSystemTime(NOW + 3 * 60 * 60 * 1000);
+    // A walk that failed waits out the old six-hourly cadence before it is tried again.
+    await t.run(async (ctx) => {
+      const [run] = await ctx.db.query('importRuns').collect();
+      if (!run) throw new Error('expected the walk’s run row');
+      await ctx.db.patch(run._id, { status: 'failed', finishedAt: NOW });
+    });
+    vi.setSystemTime(NOW + 5 * 60 * 60 * 1000);
+    expect(await t.query(internal.waterBodies.summaryBackfillState, {})).toBe('backoff');
+    expect(await t.action(internal.waterBodies.sweepDueBodySummaries, {})).toMatchObject({
+      mode: 'due',
+    });
+
+    vi.setSystemTime(NOW + 7 * 60 * 60 * 1000);
     expect(await t.query(internal.waterBodies.summaryBackfillState, {})).toBe('needed');
     expect(await t.action(internal.waterBodies.sweepDueBodySummaries, {})).toMatchObject({
       mode: 'walk',
