@@ -923,6 +923,101 @@ describe('the season rollover', () => {
     }
   });
 
+  test('a saved put-in keeps a body active; a hidden or suppressed one does not (D245)', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const idle = await seedBody(t, 'osm/idle');
+    const official = await seedBody(t, 'osm/official');
+    await mod.as.mutation(api.putIns.setOfficial, {
+      waterBodyId: official,
+      coord: { lat: 0.9, lng: 0.1 },
+    });
+    // A mapped launch from the access pass — the shape ~1,250 of dev's active bodies were kept on.
+    const mapped = await seedBody(t, 'osm/mapped');
+    // A launch a moderator hid: the visible row stays, a hidden row at its coordinate suppresses it.
+    const suppressed = await seedBody(t, 'osm/suppressed');
+    // Only a hide, no launch at all — a moderator's "not a put-in" is not a put-in.
+    const hiddenOnly = await seedBody(t, 'osm/hidden-only');
+    await t.run(async (ctx) => {
+      for (const [waterBodyId, externalId] of [
+        [mapped, 'node/1'],
+        [suppressed, 'node/2'],
+      ] as const) {
+        await ctx.db.insert('putIns', {
+          waterBodyId,
+          coord: { lat: 0.2, lng: 0.2 },
+          source: 'osm',
+          status: 'visible',
+          externalId,
+          createdAt: Date.now(),
+        });
+      }
+    });
+    for (const waterBodyId of [suppressed, hiddenOnly]) {
+      await mod.as.mutation(api.putIns.hide, {
+        waterBodyId,
+        coord: { lat: 0.2, lng: 0.2 },
+        reason: 'Private driveway',
+      });
+    }
+
+    const dry = await t.mutation(internal.standing.demoteInactiveBodies, { season: SEASON });
+    expect(dry).toMatchObject({
+      applied: false,
+      demoted: 3,
+      kept: { retained: 2 },
+      retainedBy: { activity: 0, curated: 0, favorited: 0, put_in: 2 },
+    });
+    await t.mutation(internal.standing.demoteInactiveBodies, { season: SEASON, apply: true });
+    for (const id of [official, mapped]) {
+      expect(standingOf((await get(t, id)) as Doc<'waterBodies'>).standing).toBe('active');
+    }
+    for (const id of [idle, suppressed, hiddenOnly]) {
+      expect(standingOf((await get(t, id)) as Doc<'waterBodies'>)).toMatchObject({
+        standing: 'dormant',
+        reason: 'inactive',
+      });
+    }
+  });
+
+  test('the run row tallies what kept each body, first reason first', async () => {
+    const t = harness();
+    const fan = await seedUser(t, 'fan');
+    await seedBody(t, 'osm/idle');
+    await seedBody(t, 'osm/boosted', { curatedBoost: 0.3 });
+    const favoritedWithPutIn = await seedBody(t, 'osm/fav-putin');
+    await fan.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: favoritedWithPutIn });
+    const putInOnly = await seedBody(t, 'osm/putin-only');
+    await t.run(async (ctx) => {
+      for (const waterBodyId of [favoritedWithPutIn, putInOnly]) {
+        await ctx.db.insert('putIns', {
+          waterBodyId,
+          coord: { lat: 0.2, lng: 0.2 },
+          source: 'official',
+          status: 'visible',
+          createdAt: Date.now(),
+        });
+      }
+    });
+
+    const result = await t.action(internal.standing.runStandingRollover, { season: SEASON });
+    expect(result).toMatchObject({
+      scanned: 4,
+      demoted: 1,
+      retained: 3,
+      // The favorite outranks the put-in, so `put_in` counts only the body nothing else kept.
+      retainedBy: { activity: 0, curated: 1, favorited: 1, put_in: 1 },
+    });
+    const [run] = await t.run((ctx) => ctx.db.query('importRuns').collect());
+    expect(run?.counts).toEqual(
+      expect.arrayContaining([
+        { name: 'wouldDemote', value: 1 },
+        { name: 'retainedBy.put_in', value: 1 },
+        { name: 'retainedBy.favorited', value: 1 },
+      ]),
+    );
+  });
+
   test('the action records a run row, and the daily gate runs it once per season', async () => {
     const t = harness();
     await seedBody(t, 'osm/never');

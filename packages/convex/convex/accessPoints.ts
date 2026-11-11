@@ -457,8 +457,9 @@ export const matchAndImportPutIns = internalMutation({
     // otherwise re-read and re-derive the same set six times inside one batch.
     for (const waterBodyId of touchedBodies) await recomputeAccessKind(ctx, waterBodyId);
     // Standing (A07b): a body the access pass just found a way onto qualifies for the active map —
-    // the same rule the seed applies. Only on a *new* launch, so a re-run of the pass over bodies the
-    // rollover has since shelved does not un-shelve them by re-stamping the same OSM slipway.
+    // the same rule the seed applies. Only on a *new* launch: re-stamping the same OSM slipway is not
+    // new evidence. (Since D245 the rollover keeps a body with a saved launch, so what this guards is
+    // a body shelved while its only launch was hidden — a re-run must not bring it back over the hide.)
     for (const waterBodyId of newlyAccessible) await activateOnEvidence(ctx, waterBodyId, 'put_in');
 
     return {

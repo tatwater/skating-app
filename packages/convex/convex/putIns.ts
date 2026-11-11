@@ -317,7 +317,8 @@ export const setOfficial = mutation({
     });
     // Standing (A07b, founder call): an official put-in on a dormant body brings it back — a human
     // saying "you can get on the ice here" is evidence of access, and access is what the seed
-    // partitions on. Then the retention clock runs: a put-in alone does not *keep* a body active.
+    // partitions on. And it keeps the body active through the July rollover for as long as it is
+    // saved and not hidden (D245, reversing D177's "a put-in alone does not keep a body active").
     await activateOnEvidence(ctx, waterBodyId, 'put_in');
     // The body's denormalized `accessKind` is derived from its visible put-ins, so every mutation
     // that changes that set owes it a recompute (PR #43 review). A fresh `official` marker carries no

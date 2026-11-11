@@ -1,3 +1,4 @@
+import fc from 'fast-check';
 import { describe, expect, test } from 'vitest';
 import { MIN_VISIBLE_ZOOM_FLOOR, minVisibleZoomFor } from './display';
 import { seasonStartMs } from './season';
@@ -8,8 +9,10 @@ import {
   inactivityCutoffMs,
   isActive,
   isReachable,
+  RETENTION_REASONS,
   reactivatesOnEvidence,
   retainsActive,
+  retentionReason,
   type StandingInput,
   standingOf,
   standingReasonLabel,
@@ -139,23 +142,98 @@ describe('the retention rule', () => {
 
   test('activity inside the window retains; at the cutoff retains; before it does not', () => {
     const cutoff = inactivityCutoffMs(season);
-    expect(retainsActive({ lastActivityAt: cutoff, favorited: false }, season)).toBe(true);
-    expect(retainsActive({ lastActivityAt: cutoff + 1, favorited: false }, season)).toBe(true);
-    expect(retainsActive({ lastActivityAt: cutoff - 1, favorited: false }, season)).toBe(false);
+    expect(
+      retainsActive({ lastActivityAt: cutoff, favorited: false, hasPutIn: false }, season),
+    ).toBe(true);
+    expect(
+      retainsActive({ lastActivityAt: cutoff + 1, favorited: false, hasPutIn: false }, season),
+    ).toBe(true);
+    expect(
+      retainsActive({ lastActivityAt: cutoff - 1, favorited: false, hasPutIn: false }, season),
+    ).toBe(false);
   });
 
   test('never skated does not retain', () => {
-    expect(retainsActive({ favorited: false }, season)).toBe(false);
+    expect(retainsActive({ favorited: false, hasPutIn: false }, season)).toBe(false);
   });
 
   test('a positive curated boost or any favorite retains regardless of activity', () => {
-    expect(retainsActive({ curatedBoost: 0.3, favorited: false }, season)).toBe(true);
-    expect(retainsActive({ favorited: true }, season)).toBe(true);
+    expect(retainsActive({ curatedBoost: 0.3, favorited: false, hasPutIn: false }, season)).toBe(
+      true,
+    );
+    expect(retainsActive({ favorited: true, hasPutIn: false }, season)).toBe(true);
+  });
+
+  test('a saved put-in retains regardless of activity (D245)', () => {
+    expect(retainsActive({ favorited: false, hasPutIn: true }, season)).toBe(true);
+    const cutoff = inactivityCutoffMs(season);
+    expect(
+      retainsActive({ lastActivityAt: cutoff - 1, favorited: false, hasPutIn: true }, season),
+    ).toBe(true);
+  });
+
+  test('the reason is the first that holds: use, boost, favorite, put-in', () => {
+    const cutoff = inactivityCutoffMs(season);
+    const everything = {
+      lastActivityAt: cutoff,
+      curatedBoost: 0.3,
+      favorited: true,
+      hasPutIn: true,
+    };
+    expect(retentionReason(everything, season)).toBe('activity');
+    expect(retentionReason({ ...everything, lastActivityAt: cutoff - 1 }, season)).toBe('curated');
+    expect(
+      retentionReason({ ...everything, lastActivityAt: undefined, curatedBoost: 0 }, season),
+    ).toBe('favorited');
+    expect(
+      retentionReason({ favorited: false, hasPutIn: true, lastActivityAt: cutoff - 1 }, season),
+    ).toBe('put_in');
+    expect(retentionReason({ favorited: false, hasPutIn: false }, season)).toBeNull();
+  });
+
+  test('property: retains iff some reason holds, and a put-in or favorite always retains', () => {
+    const cutoff = inactivityCutoffMs(season);
+    fc.assert(
+      fc.property(
+        fc.option(
+          fc.integer({ min: cutoff - 10 * 365 * 86_400_000, max: cutoff + 365 * 86_400_000 }),
+          {
+            nil: undefined,
+          },
+        ),
+        fc.option(fc.double({ min: -1, max: 1, noNaN: true }), { nil: undefined }),
+        fc.boolean(),
+        fc.boolean(),
+        (lastActivityAt, curatedBoost, favorited, hasPutIn) => {
+          const input = { lastActivityAt, curatedBoost, favorited, hasPutIn };
+          const reason = retentionReason(input, season);
+          const expected =
+            (lastActivityAt !== undefined && lastActivityAt >= cutoff) ||
+            (curatedBoost ?? 0) > 0 ||
+            favorited ||
+            hasPutIn;
+          expect(retainsActive(input, season)).toBe(expected);
+          expect(reason !== null).toBe(expected);
+          if (reason !== null) expect(RETENTION_REASONS).toContain(reason);
+          if (hasPutIn || favorited) expect(reason).not.toBeNull();
+          // `put_in` is reported only when nothing ahead of it holds — the tally's promise.
+          if (reason === 'put_in') {
+            expect(favorited).toBe(false);
+            expect((curatedBoost ?? 0) > 0).toBe(false);
+            expect(lastActivityAt !== undefined && lastActivityAt >= cutoff).toBe(false);
+          }
+        },
+      ),
+    );
   });
 
   test('a zero or negative boost is not a decision to keep', () => {
-    expect(retainsActive({ curatedBoost: 0, favorited: false }, season)).toBe(false);
-    expect(retainsActive({ curatedBoost: -0.2, favorited: false }, season)).toBe(false);
+    expect(retainsActive({ curatedBoost: 0, favorited: false, hasPutIn: false }, season)).toBe(
+      false,
+    );
+    expect(retainsActive({ curatedBoost: -0.2, favorited: false, hasPutIn: false }, season)).toBe(
+      false,
+    );
   });
 });
 

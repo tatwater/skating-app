@@ -5753,7 +5753,9 @@ never recommended"): `none` is simply one dormancy reason.
 - **Or a standing decision:** a positive `curatedBoost`, or anyone's favorite (*"if you favorited it,
   you know something we don't"*).
 - **Not** a put-in — *"having a put-in should not rescue an unskated body"* — and not
-  `includedByRequest`: admission is not retention.
+  `includedByRequest`: admission is not retention. **Amended 2026-10-17 (D245):** a saved put-in
+  now retains. The founder reversed the put-in half on seeing that the rollover would shelve the
+  ~1,250 bodies the seed kept on their put-ins; `includedByRequest` still does not retain.
 
 **The seed (option b)** partitions the stored corpus once by evidence of *access or use*: a put-in, a
 boost, any human attachment, an admission by request, a user-drawn origin, or a mention in the design
@@ -7641,3 +7643,38 @@ product bug, and `panelTime.test.ts` now pins the boundary deliberately rather t
 be sampled at whatever hour CI happens to run.
 
 **Related:** D3, D237, D243.
+
+## D245 — A saved put-in keeps a body active through the standing rollover (B01 review)
+
+*Minted on the `fix/standing-putins-summary-sweep` branch as D228; renumbered on porting into B01,
+because D228–D231 belong to Phase B02.*
+
+**2026-10-17, founder call, reversing the put-in half of D177:** *"We should not make bodies dormant
+if they have saved put-ins … we should change the logic."* The July rollover now keeps an active
+body with at least one saved put-in, as it keeps a curated boost or a favorite.
+
+**Why:** the seed (D177, option b) kept every body with evidence of *access or use*, and a put-in
+was most of it — on dev, ~1,250 of the ~1,412 active bodies were kept on a put-in and nothing else.
+D177's rollover counted only *use*, so the first live July would have shelved all of them: the seed
+undone on a timer, a year after it ran, with no new evidence about any of those lakes. A way onto
+the ice that we have saved is a reason to keep pushing a lake, and the rollover now agrees with the
+seed that made the active set.
+
+**What counts as saved** (`hasSavedPutIn`): a `visible` `putIns` row — an operator's `official`
+marker, an `osm` launch from the access pass, a persisted `derived` one — that no moderator's hidden
+coordinate suppresses (the `isSuppressed` rule every put-in reader applies). That is narrower than
+the seed's test, which counted any `putIns` row, hidden ones included: a hide is a moderator saying
+"not a way in", and a body whose every launch is hidden is not kept on them. Report-derived markers
+are not saved (they are clustered from reports at read time); their reports retain the body while
+they are inside the window. The read is one bounded index read per body (≤ 25 rows), like the
+favorite probe beside it.
+
+**The tally:** the rollover's dry run and its run row report `retainedBy` — the first reason that
+held, in the order use, curated boost, favorite, put-in — so `retainedBy.put_in` is exactly the
+bodies only a put-in kept. Run it dry before the first live July.
+
+Unchanged: a put-in placed or imported on a dormant body still re-activates it (D177), and
+`includedByRequest` still does not retain.
+
+**Related:** D176, D177, D178, A06d, [`phase-A07b`](./phases/A07b-corpus-by-request.md),
+[`docs/corpus-lifecycle.md`](../docs/corpus-lifecycle.md).

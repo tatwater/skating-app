@@ -33,6 +33,7 @@ import { syncCellsForParent } from '../subAreas';
 import { writeAudit } from './audit';
 import { syncWaterBodyCells } from './cellIndex';
 import { isListed } from './listing';
+import { isSuppressed } from './putInSuppression';
 import { bodyWeatherCell } from './sampling';
 import { richnessFor, scoreFields } from './scoring';
 
@@ -103,6 +104,47 @@ export async function anyFavorite(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>)
     .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
     .first();
   return row !== null;
+}
+
+/**
+ * Rows of a body's `putIns` the rollover reads to answer `hasSavedPutIn` — a read bound, not a
+ * claim about the world. A body with more stored rows than this is a body people plainly get onto,
+ * and is treated as having one (below).
+ */
+const PUT_IN_ROWS_READ = 25;
+
+/**
+ * Does this body have a **saved put-in** — a stored launch the map would draw (D245)?
+ *
+ * A `visible` `putIns` row (an operator's `official` marker, an `osm` launch from the access pass, a
+ * persisted `derived` one) that no moderator's `hidden` coordinate suppresses. The hide is read the
+ * way every other reader of put-ins reads it (`isSuppressed`): **a hide is a coordinate, not a
+ * status**, so filtering on `status` alone would keep a body on a launch a moderator has said is not
+ * a way in.
+ *
+ * **The seed counted any `putIns` row** (`bodyAttachmentKind`), including those hidden rows. The
+ * difference is deliberate and small: a hidden row is a moderator's "not a put-in", and the only
+ * bodies it changes are ones whose every stored launch a moderator has hidden. Report-derived
+ * markers are not *saved* — `listForBody` clusters them from reports at read time — and a body
+ * whose only way in is a derived marker is retained by those reports for as long as they are inside
+ * the window, like any other use.
+ *
+ * One index read of at most `PUT_IN_ROWS_READ` rows, so the cost per body is constant — the season
+ * cron asks this of every active body. A body that fills the read is answered `true`: past that many
+ * rows, there is a launch somewhere, and retaining is the cheap direction to be wrong in (a person
+ * shelves it by hand; a wrongly shelved lake waits for a report).
+ */
+export async function hasSavedPutIn(
+  ctx: QueryCtx,
+  waterBodyId: Id<'waterBodies'>,
+): Promise<boolean> {
+  const rows = await ctx.db
+    .query('putIns')
+    .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
+    .take(PUT_IN_ROWS_READ);
+  if (rows.length === PUT_IN_ROWS_READ) return true;
+  const hidden = rows.filter((r) => r.status === 'hidden');
+  return rows.some((r) => r.status === 'visible' && !isSuppressed(r.coord, hidden));
 }
 
 // ── The shared write ───────────────────────────────────────────────────────────────────────────

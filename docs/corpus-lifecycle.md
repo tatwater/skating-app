@@ -9,7 +9,7 @@ actually reach.
 > **Who this is for.** A skater who found a lake marked *Inactive* and wants to know why (and what
 > to do about it); a moderator deciding whether to shelve or restore one; a developer meeting the
 > `standing` field for the first time. The decision record is
-> [`plans/01-decisions.md`](../plans/01-decisions.md) (**D176–D179**) and the engineering record is
+> [`plans/01-decisions.md`](../plans/01-decisions.md) (**D176–D179**, **D245**) and the engineering record is
 > [`plans/phases/A07b-corpus-by-request.md`](../plans/phases/A07b-corpus-by-request.md).
 
 ---
@@ -43,8 +43,8 @@ filtered: if you went looking, you find it.
 ## Why a lake goes dormant
 
 **Nobody has been on it in three seasons.** Each July, every active lake with no report, no recorded
-skate and no hazard since the start of the season three back — and no curated boost, and nobody's
-favorite — is set dormant. Three is the number because a lake can miss a warm winter and a lazy one
+skate and no hazard since the start of the season three back — and no curated boost, nobody's
+favorite, and no saved put-in — is set dormant. Three is the number because a lake can miss a warm winter and a lazy one
 and still be somewhere people skate. This is the only transition a machine makes on its own, and it
 is the cheapest one to undo (below).
 
@@ -87,6 +87,10 @@ that lake, the ruling stays.
 
 **Favoriting** a dormant lake does not activate it, but it does *retain* it: a favorite is a person
 saying the lake matters, and the July pass leaves a favorited lake alone.
+
+**A saved put-in** — a launch from the map data or one a moderator placed — both brings a lake back
+and keeps it: the July pass leaves a lake with a put-in alone, because that is the evidence the first
+pass kept it on (below). A launch a moderator has hidden doesn't count.
 
 ---
 

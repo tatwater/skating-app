@@ -318,6 +318,11 @@ dry, then `--apply` as campaign `standing-seed-20260916` (run row `succeeded`), 
 | Already inactive, skipped | 8 |
 | Active per state | NY 345 · VT 106 · NH 238 · ME 401 · MA 358 |
 
+**The rollover would have undone most of this (D245, 2026-10-17).** The 1,377 "attached" were
+overwhelmingly put-ins, and D177's rollover did not count a put-in as retention — so the first live
+July would have shelved them. The rollover now keeps a body with a saved (visible, unsuppressed)
+put-in, and its run row tallies `retainedBy.put_in`.
+
 **The first dry run found three matcher defects**, fixed before anything was applied
 (`d6d70e1`, `fd6615c9` — both in PR #64): the gazetteer's `region` is where the *posters* are,
 not the water — a Vermont list discusses Lake George, Lake Placid, Saranac and Sebago, all four
