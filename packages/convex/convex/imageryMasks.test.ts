@@ -19,12 +19,19 @@ const modules = import.meta.glob('./**/*.*s');
 /** A square body. `areaSqM` is what decides whether it clears the corpus floor. */
 async function seedBody(
   t: ReturnType<typeof convexTest>,
-  { name = 'Test Lake', lat = 44, lng = -72, half = 0.01, areaSqM = 1e6 } = {},
+  {
+    name = 'Test Lake',
+    lat = 44,
+    lng = -72,
+    half = 0.01,
+    areaSqM = 1e6,
+    type = 'lakePond' as 'lakePond' | 'wetland',
+  } = {},
 ): Promise<Id<'waterBodies'>> {
   return (await t.run((ctx) =>
     ctx.db.insert('waterBodies', {
       name,
-      type: 'lakePond' as const,
+      type,
       source: 'osm' as const,
       externalId: `way/${name.replace(/\s+/g, '-')}`,
       polygon: {
@@ -91,6 +98,19 @@ describe('listForImageryMask', () => {
     expect(masks).toHaveLength(0);
     expect(belowFloor).toBe(1);
     expect(scanned).toBe(1);
+  });
+
+  test('an unnamed 18-acre wetland is below the floor, exactly as the import would rule', async () => {
+    const t = convexTest(schema, modules);
+    // Above the 5-acre general floor but far under UNNAMED_WETLAND_MIN_ACRES (50) — in the corpus
+    // only if the wetland rule never fires. It never fired here until 2026-11-11: the bake's
+    // belongsInCorpus call omitted `type`, so isWetlandClass(undefined) read every wetland as open
+    // water and the archive revealed wetlands the map never lists (found east of Mascoma Lake).
+    await seedBody(t, { name: '', areaSqM: 18 * 4046.8564224, type: 'wetland' });
+
+    const { masks, belowFloor } = await run(t);
+    expect(masks).toHaveLength(0);
+    expect(belowFloor).toBe(1);
   });
 
   test('excludes a hidden put-in, so a suppressed coordinate cannot pull the reveal out to it', async () => {
