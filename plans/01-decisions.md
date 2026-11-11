@@ -7678,3 +7678,30 @@ Unchanged: a put-in placed or imported on a dormant body still re-activates it (
 
 **Related:** D176, D177, D178, A06d, [`phase-A07b`](./phases/A07b-corpus-by-request.md),
 [`docs/corpus-lifecycle.md`](../docs/corpus-lifecycle.md).
+
+## D246 — The season page counts the active bodies the season's bake missed (B01)
+
+**2026-11-11, founder call.** `/admin/season` carries a **bake staleness counter**: how many active
+corpus bodies are missing from this season's imagery bake, with the re-bake command beside it. The
+same comparison read the other way — bodies in the bake that have since gone dormant or been
+removed — rides the same card, so one surface answers both "who is not getting imagery" and "who is
+still getting it for free".
+
+**Why:** the reveal masks and the search plan are baked once per season (A06i), and the cutter clips
+against that artifact — so a body that joins or rejoins the corpus after the bake (an approved
+*activate*, *admit* or *restore*) silently gets no imagery for the rest of the season, and a body
+shelved after the bake keeps being cut. Both happened in the first live month: two unnamed ponds
+near Mascoma went dormant in the 2026-10-16 inactivity sweep and were still being revealed a month
+later, and the fix (PR #107's corpus pre-filter work) only holds until the next corpus change. The
+counter makes the drift visible where the *Start imagery* button already lives; the re-bake stays a
+deliberate act (`bake-masks --upload`, then `publish-search-plan` — the poll's interlock needs
+both). Automating the re-bake was considered and declined for now: `bake-masks` is a local CLI
+doing heavy geometry, so automation means a credentialed CI job, which is new infrastructure for a
+drift this counter makes visible for a day's work.
+
+**The read:** the bake sidecar already records its body count and the bake date; the counter needs
+the active-corpus count at read time and the bake's member list for the two set differences. How
+the member list is read (the `.fgb` is in R2, not Convex) is a build choice for the Seasons
+workstream — a baked id manifest beside the sidecar is the obvious shape.
+
+**Related:** D213, D214, A06i, [`phase-B01`](./phases/B01-admin-console.md) §5.6.

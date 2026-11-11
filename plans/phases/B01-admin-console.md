@@ -330,6 +330,13 @@ from `moderationActions` and `importRuns`. `/admin/season/$season` is any past s
 same shape, plus the watch replay. Settings and reset stay admin (D213). A season record table
 (per-season rollups) is a build choice (§7, question 6).
 
+**Added 2026-11-11 (D246).** The imagery card carries a **bake staleness counter**: active bodies
+missing from this season's bake (an *activate*, *admit* or *restore* approved after bake day gets
+no imagery until a re-bake), and the reverse — baked bodies since shelved, which keep being cut for
+free. Both counts sit beside the bake's date, with the re-bake pair (`bake-masks --upload`,
+`publish-search-plan`) named right there; zero-zero draws quiet. D246 holds the why and the read's
+open build choice (the bake's member list lives in R2, not Convex).
+
 ### §5.7 — People
 
 Search as today, plus browse lists: moderators and admins, suspended (with *until*), banned,
