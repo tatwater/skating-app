@@ -480,17 +480,23 @@ build_alpha() {
   #    `gdal_calc.py` needs the Python bindings the -small image may not ship. color-relief is core
   #    C++ with neither dependency, and a piecewise-linear ramp *is* the feather.
   #
-  #    ## The curve is smootherstep, not a straight line
+  #    ## The curve is smoothstep, not a straight line — and cubic, not quintic, deliberately
   #
   #    A linear fade has a slope discontinuity at each end — alpha goes from flat to falling in a
   #    single pixel — and the eye amplifies exactly that kind of kink (Mach banding), which is what
-  #    read as a harsh cut-off at the lake's edge. `smootherstep` (6t⁵−15t⁴+10t³) has zero first AND
-  #    second derivative at both ends: the fade leaves full opacity imperceptibly, drops through the
-  #    middle, and lands on the basemap imperceptibly. Same total feather width (`FEATHER_M` is
-  #    untouched, it travels in the bake sidecar); only the shape changes.
+  #    read as a harsh cut-off at the lake's edge. `smoothstep` (3t²−2t³) has zero first derivative
+  #    at both ends: the fade leaves full opacity imperceptibly, drops through the middle, and lands
+  #    on the basemap imperceptibly.
+  #
+  #    The quintic (`smootherstep`) was tried first and rejected on a render (founder, 2026-11-11):
+  #    flattening the ends even harder concentrates the change so tightly mid-ramp that the *visible*
+  #    band narrows and reads steep again. The cubic's peak slope is 25% gentler (1.5/F vs 1.875/F),
+  #    so more of the feather's width shows visible change. Chosen against six variants over the real
+  #    2025-12-22 Mascoma ice frame, together with `SENTINEL_MASK_METERS` 30/420 (see imageryMask.ts);
+  #    `FEATHER_M` itself travels in the bake sidecar, so this file owns only the shape.
   #
   #    color-relief interpolates linearly *between stops*, so the curve is sampled at 17 stops — the
-  #    worst-case gap to the true quintic over 16 segments is under one alpha step of 255.
+  #    worst-case gap to the true cubic over 16 segments is under one alpha step of 255.
   #
   #    No `nv` entry. `gdal_proximity -nodata` sets the *fill value* for pixels past maxdist but does
   #    not flag them as nodata, so color-relief warns "Input dataset has no nodata value. Ignoring
@@ -501,7 +507,7 @@ build_alpha() {
     n = 16;
     for (i = 0; i <= n; i++) {
       t = 1 - i / n;                                 # 1 at the lake edge, 0 at the feather end
-      a = int(255 * t*t*t * (t * (t*6 - 15) + 10) + 0.5);
+      a = int(255 * t*t * (3 - 2*t) + 0.5);
       printf "%.3f %d %d %d\n", F * i / n, a, a, a;
     }
   }' > ramp.txt

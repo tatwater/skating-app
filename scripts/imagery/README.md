@@ -448,8 +448,9 @@ at 99.5%) and prints the figure on every run. `pnpm convex-dev --once` is the fi
 
 ### What the bake does *not* produce
 
-**The feather.** `SENTINEL_MASK_METERS` is `{solid: 60, feather: 240}`; only the 60 m solid core is
-geometry. The 240 m ramp is applied in the container as a distance transform against the rasterised
+**The feather.** `SENTINEL_MASK_METERS` is `{solid: 30, feather: 420}` (60/240 until 2026-11-11,
+re-set against renders of the real Mascoma ice frame); only the 30 m solid core is
+geometry. The 420 m ramp is applied in the container as a distance transform against the rasterised
 mask, where ground distance is measurable in pixels and a ramp is one operation. Baking it into
 geometry would mean either a second ring (a step, not a ramp) or dozens of them — which is the
 stacked-opacity approach `imageryMask`'s own module note records as tried and abandoned.
@@ -467,12 +468,14 @@ Every one of these was run against a real granule before it was written down —
 3. **Rasterize the masks** onto exactly that grid.
 4. **Distance transform** (`gdal_proximity`) — this is the feather, and it is a true ramp by ground
    distance rather than a blur.
-5. **Distance → alpha** via a `gdaldem color-relief` ramp — **smootherstep** (6t⁵−15t⁴+10t³),
-   sampled at 17 stops, not a straight line. A linear fade has a slope discontinuity at each end,
-   and the eye amplifies exactly that kink (Mach banding) into a visible ring where the fade begins
-   and a hard rim where it lands on the basemap. Smootherstep's first and second derivatives are
-   zero at both ends, so the same 240 ground meters of feather leaves the lake and meets the map
-   imperceptibly (founder call, 2026-11-11: the linear fade read as harsh).
+5. **Distance → alpha** via a `gdaldem color-relief` ramp — **smoothstep** (3t²−2t³), sampled at
+   17 stops, not a straight line. A linear fade has a slope discontinuity at each end, and the eye
+   amplifies exactly that kink (Mach banding) into a visible ring where the fade begins and a hard
+   rim where it lands on the basemap. Smoothstep's first derivative is zero at both ends, so the
+   fade leaves the lake and meets the map imperceptibly. Cubic rather than quintic, deliberately:
+   the quintic concentrated the change so tightly mid-ramp that the visible band read steep again
+   (founder calls, 2026-11-11, chosen against six variants on the real Mascoma ice frame alongside
+   the 30/420 buffer re-set).
 6. **Tile, pack and convert** — `gdal raster tile` writes the whole z7–z14 pyramid as a WEBP tile
    directory, `tiles-to-mbtiles.py` packs it into MBTiles, `pmtiles convert` finishes.
 
