@@ -135,11 +135,14 @@ function paperForm(token: string, r: Resolved): string {
   if (token.startsWith('line-height.') || token.startsWith('opacity.')) {
     return `${Math.round(Number(css) * 1000) / 10}%`;
   }
+  // The stack's lead is the web app's Fontsource registration (`Saira Variable`); Paper names the
+  // same face plainly, so compare the face, not the delivery.
   if (token.startsWith('font-family.'))
     return `"${css
       .split(',')[0]
       ?.trim()
-      .replace(/^["']|["']$/g, '')}"`;
+      .replace(/^["']|["']$/g, '')
+      .replace(/ Variable$/, '')}"`;
   return css;
 }
 

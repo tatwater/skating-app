@@ -76,10 +76,18 @@ export const fontSize = {
   }),
 } as const satisfies Record<Surface, Record<FontSizeKey, Length>>;
 
-/** Families. Saira for everything typeset; Martian Mono for every value that aligns. */
+/**
+ * Families. Saira for everything typeset; Martian Mono for every value that aligns.
+ *
+ * Each stack leads with the name the web app's copy of the face registers under: `apps/web`
+ * self-hosts both through Fontsource's variable packages, which declare their `@font-face` as
+ * `Saira Variable` and `Martian Mono Variable`. The face's own name comes next, for whatever loads
+ * it under that name (Paper, the mocks) — never ahead of the served file, or a machine with the
+ * face installed locally would render something other than what every reader gets.
+ */
 export const fontFamily = {
-  sans: ['Saira', 'system-ui', 'sans-serif'],
-  mono: ['Martian Mono', 'ui-monospace', 'Menlo', 'monospace'],
+  sans: ['Saira Variable', 'Saira', 'system-ui', 'sans-serif'],
+  mono: ['Martian Mono Variable', 'Martian Mono', 'ui-monospace', 'Menlo', 'monospace'],
 } as const;
 
 /** Weights. 800 is the wordmark only. */

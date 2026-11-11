@@ -30,8 +30,11 @@ const part = (root: ParentNode, slot: string) =>
 /** The mono face the value is set in, loaded — `ch` and digit advances are the loaded face's. */
 async function monoLoaded(el: Element) {
   const { fontWeight, fontSize } = getComputedStyle(el);
-  await document.fonts.load(`${fontWeight} ${fontSize} "Martian Mono"`, '0');
-  await document.fonts.load(`300 ${fontSize} "Martian Mono"`, '0');
+  // A family nothing registers resolves to no faces, silently: count them, or `ch` is the
+  // fallback's and the assertions measure a face no reader gets.
+  const faces = await document.fonts.load(`${fontWeight} ${fontSize} "Martian Mono Variable"`, '0');
+  await expect(faces.length).toBeGreaterThan(0);
+  await document.fonts.load(`300 ${fontSize} "Martian Mono Variable"`, '0');
   await document.fonts.ready;
 }
 
@@ -244,7 +247,7 @@ export const NothingMoves: Story = {
   play: async ({ canvasElement }) => {
     const tile = part(canvasElement, 'stat-tile');
     const after = must(canvasElement.querySelector<HTMLElement>('[data-after]'));
-    await document.fonts.load(`500 1rem "Martian Mono"`, '0');
+    await document.fonts.load(`500 1rem "Martian Mono Variable"`, '0');
     await document.fonts.ready;
     const before = [tile.getBoundingClientRect().height, after.getBoundingClientRect().top];
     await userEvent.click(within(canvasElement).getByRole('button', { name: 'Load' }));

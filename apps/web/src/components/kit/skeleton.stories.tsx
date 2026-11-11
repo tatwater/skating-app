@@ -150,7 +150,7 @@ export const Stat: Story = {
     // `ch` is the loaded face's: load the value's own face first (`fonts.ready` alone can resolve
     // before the face is even requested, and the fallback's digits are a different width).
     const { fontWeight, fontSize } = getComputedStyle(real);
-    await document.fonts.load(`${fontWeight} ${fontSize} "Martian Mono"`, '0');
+    await document.fonts.load(`${fontWeight} ${fontSize} "Martian Mono Variable"`, '0');
     await document.fonts.ready;
     await expectSameBox(skeleton, real, 'stat');
   },

@@ -604,8 +604,8 @@ export const nativeTokens = {
     px: 1,
   },
   fontFamily: {
-    sans: ['Saira', 'system-ui', 'sans-serif'],
-    mono: ['Martian Mono', 'ui-monospace', 'Menlo', 'monospace'],
+    sans: ['Saira Variable', 'Saira', 'system-ui', 'sans-serif'],
+    mono: ['Martian Mono Variable', 'Martian Mono', 'ui-monospace', 'Menlo', 'monospace'],
   },
   fontWeight: {
     light: 300,

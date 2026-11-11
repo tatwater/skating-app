@@ -838,6 +838,8 @@ Saira. That is why the founder's screen cropped the row harder than a story does
 every measurement story in the kit has been validating a face the app does not serve. Whether the
 app should load Saira is the founder's call (it is a visual change on every screen, and a Google
 Fonts dependency); 296 px was chosen to clear both faces so this fix does not depend on the answer.
+*Settled 2026-11-10 (founder): the app self-hosts both faces through Fontsource's variable
+packages, imported by `app.css`, and Storybook now loads the same files — no Google fetch remains.*
 
 The column and the `BootScreen` skeleton standing in for it now read one `--size-latest-filters`,
 the way `BootMapPage` already shares `--size-sidebar` with the real sidebar. They have to agree: a
