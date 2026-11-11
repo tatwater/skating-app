@@ -15,9 +15,9 @@
  * Role model unchanged (D37): `member < moderator < admin`.
  *
  * **Per-person grants (D227).** A few rows need more than a role: the role is necessary, not
- * sufficient, and the person must also hold a named grant stored on their profile. Invoices in the
- * cost ledger are the first — being an admin does not let you edit them; an admin who holds
- * `canEditLedger` can. Such a row names its `grant`, and every check below (and the server's
+ * sufficient, and the person must also hold a named grant stored on their profile. The cost ledger
+ * (its invoices and rates) is the first — being an admin does not let you edit it; an admin who
+ * holds `canEditLedger` can. Such a row names its `grant`, and every check below (and the server's
  * `requireCapability` / `hasCapability`) reads it, so a grant row is still one row in one map.
  */
 
@@ -154,7 +154,7 @@ export const CAPABILITIES = {
   'machinery.ledger': granted(
     'admin',
     'canEditLedger',
-    'Add, change and delete invoices, and give or take that right from another admin (D227).',
+    'Edit the cost ledger (invoices and rates), and give or take that right from another admin (D227).',
   ),
 
   // ── Season ────────────────────────────────────────────────────────────────────────────────────

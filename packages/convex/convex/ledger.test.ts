@@ -1,5 +1,5 @@
 /**
- * Invoice editing (D227): a per-person grant on an admin, given and taken only by a holder, never left
+ * Ledger editing (D227): a per-person grant on an admin, given and taken only by a holder, never left
  * with no holder, cleared by a demotion, seeded for the founder, undoable (D226), and read on the
  * People page.
  */
@@ -115,7 +115,7 @@ describe('ledger.grantEditor', () => {
     expect(await newestOn(t, other.id)).toMatchObject({
       action: 'grant_ledger_editor',
       actorId: founder.id,
-      reason: 'Can edit invoices',
+      reason: 'Can edit the ledger',
     });
 
     // And now they can give it on.
@@ -131,10 +131,10 @@ describe('ledger.grantEditor', () => {
     const admin = await seedUser(t, 'admin', 'admin');
     const other = await seedUser(t, 'other', 'admin');
     await expect(admin.as.mutation(api.ledger.grantEditor, { userId: other.id })).rejects.toThrow(
-      /given invoice editing/i,
+      /given ledger editing/i,
     );
     await expect(admin.as.mutation(api.ledger.grantEditor, { userId: admin.id })).rejects.toThrow(
-      /given invoice editing/i,
+      /given ledger editing/i,
     );
     expect((await profile(t, other.id))?.canEditLedger).toBeUndefined();
     expect((await profile(t, admin.id))?.canEditLedger).toBeUndefined();
@@ -167,7 +167,7 @@ describe('ledger.grantEditor', () => {
     ).rejects.toThrow(/not active/i);
     await expect(
       founder.as.mutation(api.ledger.grantEditor, { userId: founder.id }),
-    ).rejects.toThrow(/already edit invoices/i);
+    ).rejects.toThrow(/already edit the ledger/i);
   });
 
   test('a holder on their way out loses the write', async () => {
@@ -202,7 +202,7 @@ describe('ledger.revokeEditor', () => {
 
     // And now they cannot act on it.
     await expect(other.as.mutation(api.ledger.grantEditor, { userId: other.id })).rejects.toThrow(
-      /given invoice editing/i,
+      /given ledger editing/i,
     );
   });
 
@@ -213,7 +213,7 @@ describe('ledger.revokeEditor', () => {
 
     await expect(
       founder.as.mutation(api.ledger.revokeEditor, { userId: founder.id, reason: 'step down' }),
-    ).rejects.toThrow(/last person who can edit invoices/i);
+    ).rejects.toThrow(/last person who can edit the ledger/i);
 
     await founder.as.mutation(api.ledger.grantEditor, { userId: other.id });
     await founder.as.mutation(api.ledger.revokeEditor, {
@@ -246,7 +246,7 @@ describe('ledger.revokeEditor', () => {
     const admin = await seedUser(t, 'admin', 'admin');
     await expect(
       founder.as.mutation(api.ledger.revokeEditor, { userId: admin.id, reason: 'x' }),
-    ).rejects.toThrow(/cannot edit invoices/i);
+    ).rejects.toThrow(/cannot edit the ledger/i);
   });
 
   test('refuses a profile that no longer exists, either way', async () => {
@@ -356,7 +356,7 @@ describe('a demotion clears it (D227)', () => {
 
     await expect(
       admin.as.mutation(api.admin.revokeRole, { userId: founder.id, reason: 'x' }),
-    ).rejects.toThrow(/last person who can edit invoices/i);
+    ).rejects.toThrow(/last person who can edit the ledger/i);
     await expect(
       admin.as.mutation(api.admin.grantRole, {
         userId: founder.id,
@@ -432,7 +432,7 @@ describe('undo (D226)', () => {
 
     await expect(
       admin.as.mutation(api.undo.run, { actionId: grant._id, reason: 'no' }),
-    ).rejects.toThrow(/given invoice editing/i);
+    ).rejects.toThrow(/given ledger editing/i);
     const forAdmin = await admin.as.query(api.moderation.listActions, {
       targetType: 'user',
       targetId: other.id,

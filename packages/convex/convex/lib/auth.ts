@@ -186,7 +186,7 @@ export async function requireCapability(
 
 /** What a caller who holds the role but not the grant is told. */
 const GRANT_REQUIRED: Record<Grant, string> = {
-  canEditLedger: 'Only an admin who has been given invoice editing can do this',
+  canEditLedger: 'Only an admin who has been given ledger editing can do this',
 };
 
 /**

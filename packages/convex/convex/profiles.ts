@@ -1136,7 +1136,7 @@ export const getAdmin = query({
         createdAt: a.createdAt,
       })),
       openFlagCount: openFlags.length,
-      // Invoice editing (D227) — only an admin can hold it, so the row exists only on an admin, and
+      // Ledger editing (D227) — only an admin can hold it, so the row exists only on an admin, and
       // only for a viewer who can change it: an admin who holds it and is not on their way out
       // (`machinery.ledger`, the server's gate). Anyone else gets neither the row nor who holds it.
       // `lastLedgerEditor` says why a holder's revoke is refused before anyone presses it.

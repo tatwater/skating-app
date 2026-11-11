@@ -1,5 +1,5 @@
 /**
- * Who may edit invoices in the cost ledger (D227): a per-person grant on an admin's profile.
+ * Who may edit the ledger in the cost ledger (D227): a per-person grant on an admin's profile.
  *
  * The rules, in one place, so the forward mutations (`ledger.grantEditor`, `ledger.revokeEditor`),
  * their undos (`undoHandlersCorpus.ts`), the seed (`ledger.seedEditor`) and the role changes in
@@ -8,7 +8,7 @@
  * - **Only an admin holds it.** The grant is given only to an admin, and `machinery.ledger` needs the
  *   admin role as well as the grant, so a flag left on anyone else is inert.
  * - **Only a holder gives or takes it.** The gate is `requireCapability(ctx, 'machinery.ledger')`, the
- *   same capability that edits an invoice.
+ *   same capability that edits an invoice or a rate.
  * - **Never no editor.** Taking it from the last person who can act on it is refused — so a holder
  *   can step down only once another admin holds it, and the last holder can't be demoted out of
  *   admin until someone else is given it.
@@ -71,10 +71,10 @@ export async function isLastLedgerEditor(
 }
 
 export const LAST_EDITOR_MESSAGE =
-  'They are the last person who can edit invoices; give another admin invoice editing first';
+  'They are the last person who can edit the ledger; give another admin ledger editing first';
 
 /**
- * Give `userId` invoice editing. `actor` is the admin holding it (already gated by the caller), or
+ * Give `userId` ledger editing. `actor` is the admin holding it (already gated by the caller), or
  * `null` when the system seeds it. The reason is optional: giving something does not ask why (D226).
  */
 export async function grantLedgerEditorImpl(
@@ -85,7 +85,7 @@ export async function grantLedgerEditorImpl(
   const target = await ctx.db.get(userId);
   if (!target) throw new ConvexError('User not found');
   if (target.role !== 'admin') {
-    throw new ConvexError('Only an admin can be given invoice editing');
+    throw new ConvexError('Only an admin can be given ledger editing');
   }
   if (
     target.status === 'banned' ||
@@ -95,7 +95,7 @@ export async function grantLedgerEditorImpl(
   ) {
     throw new ConvexError('This account is not active');
   }
-  if (target.canEditLedger === true) throw new ConvexError('They can already edit invoices');
+  if (target.canEditLedger === true) throw new ConvexError('They can already edit the ledger');
 
   await ctx.db.patch(userId, { canEditLedger: true });
   await writeAudit(ctx, {
@@ -103,13 +103,13 @@ export async function grantLedgerEditorImpl(
     action: 'grant_ledger_editor',
     targetType: 'user',
     targetId: userId,
-    reason: reason?.trim() || 'Can edit invoices',
+    reason: reason?.trim() || 'Can edit the ledger',
     ...(seeded ? { metadata: { seeded: true } } : {}),
   });
 }
 
 /**
- * Take invoice editing from `userId` (a holder; yourself included, while another holder remains). A
+ * Take ledger editing from `userId` (a holder; yourself included, while another holder remains). A
  * reason is required: taking something away asks why (D226).
  */
 export async function revokeLedgerEditorImpl(
@@ -120,7 +120,7 @@ export async function revokeLedgerEditorImpl(
   if (reason.trim().length === 0) throw new ConvexError('A reason is required');
   const target = await ctx.db.get(userId);
   if (!target) throw new ConvexError('User not found');
-  if (target.canEditLedger !== true) throw new ConvexError('They cannot edit invoices');
+  if (target.canEditLedger !== true) throw new ConvexError('They cannot edit the ledger');
   await takeLedgerGrant(ctx, actor, target, reason.trim(), {});
 }
 

@@ -106,7 +106,7 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
   },
   grant_role: { undo: setPrev, takesAway: always, capability: 'people.role' },
   revoke_role: { undo: setPrev, takesAway: always, capability: 'people.role' },
-  // Invoice editing (D227): only a holder gives or takes it, so only a holder undoes either. Giving it
+  // Ledger editing (D227): only a holder gives or takes it, so only a holder undoes either. Giving it
   // asks no reason; taking it does — so undoing a grant asks why, and undoing a revoke does not.
   grant_ledger_editor: {
     undo: inverse('revoke_ledger_editor'),

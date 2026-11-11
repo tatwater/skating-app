@@ -285,6 +285,13 @@ of Strava's post-Nov-2024 terms** killed the pull model:
 See [`phases/08-native-capture.md`](./phases/08-native-capture.md) and L7 in
 [`08-legal-feasibility-checklist.md`](./08-legal-feasibility-checklist.md) for the full read.
 
+### Amendment (2026-11-06, B01 skater web) — Garmin is designed in, disabled at launch; GPX takes its place
+The founder wants a Garmin skate as a starting point for a new report, and considers it an important feature, but it
+will not ship with the MVP: the adapter still waits on its partner application and terms review. So the design shows
+Garmin **disabled, marked "Coming soon"**, on New report's Which Lake? view and in Settings › Reports and tracks, and
+**GPX import** is the working way in until then. Connected accounts at launch means Strava alone, through its push
+(`activity:write`) as above. Strava and Garmin appear with their official marks, not lettered tiles.
+
 ## D25 — Units, edits, comment depth (housekeeping)
 **Decided.** (a) Store **metric internally, display imperial** (US crowd).
 (b) Report edits are **last-write-wins** with `updatedAt` — no version history in v1.
@@ -7049,6 +7056,16 @@ Moderator), modifiable only by admins who already have the permission to edit in
 initially, only I would see the option to grant it to another admin. But if I grant it to another
 admin, only then should they see the ability to grant it to other admins."
 
+**Widened 2026-10-19, founder call.** The grant covers the whole ledger, not only its invoices:
+"Yes to widening the permission, and yes backdated rates should reprice all days since. … All
+admins should be able to view."
+
+- **Can edit the ledger** — invoices *and* rates. A rate is versioned from an effective date (a new
+  price is a new version, never an overwrite); one effective in the past **reprices every metered
+  day since**, and the change's audit row records the days it touched and the dollars before and
+  after. Every admin reads the ledger, its rates and both histories; an admin without the grant
+  sees no form, no edit affordance, and — as below — nothing of who holds it.
+
 - **A per-person grant**, `canEditLedger` on the profile, not a role: being an admin does not let
   you add, change or delete an invoice. It is one row of D217's map, `machinery.ledger` — the admin
   role **and** the grant (a capability row may now name a per-person `grant` the server and the
@@ -7082,7 +7099,7 @@ each time the few change.
 
 **Related:** D37, D62, D217, D219, D226.
 
-*(D228–D231 are minted in other trees and arrive when they merge.)*
+*(D228–D231 are minted in Phase B02's tree and arrive when it merges.)*
 
 ## D232 — Colors are authored once, in OKLCH; every consumer's format is generated (B01)
 

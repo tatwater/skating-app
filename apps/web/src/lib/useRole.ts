@@ -34,7 +34,7 @@ export function useRole(): {
   /**
    * Whether to draw a control gated by `capability` (D217): the same map the server gates on, with
    * the same read/write split, and the per-person grants a row may need on top of the role (D227's
-   * invoice editing). The console asks this, not the role.
+   * ledger editing). The console asks this, not the role.
    */
   can: (capability: Capability) => boolean;
 } {

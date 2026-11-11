@@ -313,7 +313,7 @@ export const MODERATION_ACTIONS = [
   'dismiss_flag',
   'grant_role',
   'revoke_role',
-  // Gave or took invoice editing in the cost ledger (D227): a per-person grant on an admin, given only
+  // Gave or took ledger editing in the cost ledger (D227): a per-person grant on an admin, given only
   // by an admin who holds it. A demotion out of admin writes its own `revoke_ledger_editor` first.
   'grant_ledger_editor',
   'revoke_ledger_editor',

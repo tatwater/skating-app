@@ -224,14 +224,14 @@ handler; a map pane when the item has a place.
 | Kind | Handler |
 | --- | --- |
 | Safety flag | The content (or the person's recent reports), the flagger's note, the weather that night beside the claim, prior occurrences; actions: dismiss, action, hide, remove, restrict posting, suspend, ban — the last three open the person inline |
-| Access report | The lake, every reporter's note, the prior ruling if disputed; mark none / confirm open / clear, with a reason |
-| Request (five kinds) | What exists today on Requests: the body or the 3DHP candidate, askers, note, *look up again*; approve/decline; approve performs the verb (D179) |
+| Access report | The lake, every reporter's note, the prior ruling if disputed; *no public access* (its reason asked in a dialog when chosen) / *confirm accessible* / *clear the accessible ruling* |
+| Request (five kinds) | What exists today on Requests: the body or the 3DHP candidate, askers, note, *look up again* (only where no candidate matched); approve/decline; approve performs the verb (D179) |
 | Place ask (bay, landmark) | The point on the map, lookalikes (D202), *same place*; **draw** opens the body console in bay-mode or landmark-mode with the ask attached; saving approves and returns |
 | Drawn body | The polygon over the basemap and aerial, overlap with known bodies; approve, reject, or *merge into* |
 | Content flag | The content in place; dismiss, action, hide, remove, **restore** (new: `setModerationStatus('visible')` exists, no UI does) |
 | Flag on a user | Links to the person; posting permission, suspend, ban inline |
 | Flag on a photo | **New verb needed** — photos have no moderation axis today (§7, question 9) |
-| Support ticket | The ticket with its context, the submitter as a link, **a note and a reply** (new; today assign and resolve leave no trail) |
+| Support ticket | The ticket with its context, the submitter as a link, **a note and a reply** (new; today assign and resolve leave no trail); **no assignee** — anyone pitches in (founder, 2026-10-19); a reply is sent from `SUPPORT_FROM_EMAIL` (support@gli.app until the domain is bought) |
 
 "Colleague decided this" locks every item (generalize `useReviewWatch`). An item leaves the list
 on decision; the Decided tab keeps the record.
@@ -452,6 +452,70 @@ resolution, support volume) — here, not on the overview. The Open-Meteo meter 
   audit feed arriving, list states, the moderator's console, the `?` key sheet). All 31 V5 pages
   are in Paper; the first import is on an archive page. Corpus, Machinery, Season and Instruments
   are mocked just before their workstreams.
+  **Review 3 (2026-10-18/19).** The founder's third read (184 comments) moved the console to its own
+  Paper file, *Gli · Admin console*, one row per rail item (the old file had reached Paper's size
+  limit); what changed is in the admin-variants README, *Review 3 in Paper*. The calls that bind the
+  build: **keys** — no number keys or J/K; Tab between panels, ↑↓ within one, type-ahead in a list;
+  ⏎ or Space on a list item opens it *and moves focus into the right pane*, and single-letter action
+  keys act only while that pane has focus, so typing in a list never fires an action; ⌘K and
+  G-then-a-letter go anywhere; ⇧⏎ returns to the queue. **Green is sparing** — success stays the
+  quiet state. **Ledger editing** covers rates as well as invoices, a backdated rate reprices every
+  day since, and every admin reads the ledger (D227, widened). **Changed after posting** lists a
+  report when its author edits a claim field (thickness, surface, the where) an hour or more after
+  posting, or after anyone else commented, voted or flagged; rewording never lists it, and listing
+  never flags or hides. **Expert** stays the derived trust class's tag. Staff in the mocks are
+  Sarah Berman and Matt Steinberg. **The Overview splits into two tabs (2026-10-19):** *Home* is what
+  needs a person (the stats, the four lane cards, then cost beside the audit feed); *Metrics* is how
+  staff are keeping up (open and oldest flags, time to resolve, open support tickets by day) and
+  whether people are showing up (the season pulse, accounts, sign-ins, contributors, vantage, the
+  most-reported bodies, coverage by state). Its instruments move out of Tuning, which keeps only how
+  things are calculated; the sentinel lows leave the Overview (Season has them). Metrics' top stats
+  are the last seven days (or now); everything under them is the season. **What Metrics needs that
+  doesn't exist yet:** *signed in* and *came back* (on two days or more of the last seven) need a
+  one-row-per-person-per-day sign-in record (`pushTokens.lastSeenAt` keeps only the latest open);
+  *open support tickets by day* needs a queue-depth rollup like `flag_queue_depth`
+  (`support_volume` counts only opened); per-state comments, photos, kudos and contributors widen
+  `state_coverage`; and `active_contributors` widens (founder, 2026-10-19) from report and hazard
+  authors to anyone who posted a report, hazard, comment or photo — kudos and thumbs are reactions
+  and count only as *signed in*. Home's cost reads by service (hosting, Anthropic · TypeSafe summed
+  as *AI*, Fly as *compute*, then each free tier against its ceiling), and its by-month bars are
+  always the last three full months and this one; the ledger has the rest. The weather-strip coverage figure goes back to Tuning,
+  since it tunes the strip's window. "Reports from the email groups" waits on either half of the
+  bridge (Q8). **The live mark** (the feed's and the status bar's): hover shows *Last checked* to the
+  second, a spinner and *Checking* while a request is in flight; quiet past three times the expected
+  interval, it goes hollow, reads *Not live* and offers a refresh. Which Convex signal stands in for
+  "checked" is settled in the build. **The Inbox pass (2026-10-19)** set rules for every board:
+  filter tabs carry no counts (a filter menu's options keep theirs); a list's filter bar sits 10 px
+  in; the action bar floats at its pane's foot, tight to its buttons, 8 px clear of the status bar
+  and both sides; a button's key is its label's letter (Admit A, Decline D, Same place S, Draw in
+  Body B, Approve as new A, Reject R, Resolve R, Retract R, No public access N; ⌘⏎ still sends); a
+  bare age reads "4 d ago"; access rulings say *accessible*, never *open*; the App link moves to the
+  rail above the viewer's avatar; a sheet's scrim covers the rail and the status bar; map embeds pan
+  and zoom inside their body's reach. A pane head's *History →* named no place: an item's history
+  (D226) lives on its own page — the report's in Reports, the body's in the Body console, the
+  person's in People — so the link names that page. A lookalike has no outer radius, as built
+  (`landmarkAskLookalikes`): the nearest same-named place on the lake that the same-place rule
+  doesn't already merge, shown with its distance. **The second pass (2026-10-24)** added: every
+  button in an action bar rests alike (none looks primary until focused or armed); a one-action
+  bar (Open in Body, Resolve) spans its pane with the button grown to fill it; a pane head never
+  repeats what the pane shows (no asker's name over the ask list, no "Flag" or occurrence count
+  over the flag and author blocks); a table sorts by clicking a column heading (lit, with its
+  arrow; a search ranks by match), not a sort menu; a focused boxed input brightens a step, never
+  to white; a support ticket's reply spans the thread column with *Send reply* inside it, under a
+  fixed edge-to-edge rule, and *Resolve* is the side column's own bar; an access alert's life is a
+  strip map (evenly spaced events, the line's weight the alert's state, days on the line) so any
+  number of confirmations fits. A report's vantage is on the ice, from shore or secondhand —
+  nothing else. **The third pass (2026-10-25)** added: a pane head writes its age out ("4 days
+  ago"; list rows keep "4 d"); whoever took an action goes on its own line under it (a person
+  lockup), never after a "·" on the action's line; a link on a list row sits in the row's
+  bottom-right corner, clear of its chips; a tooltip's dotted rule hugs its text. Machinery's
+  lanes put the Cost ledger second, under Health. **Machinery's first pass (2026-10-25)** added: an
+  action bar never carries an explaining line — a button's tooltip says what it does, on hover and
+  focus; a run history's foot is Run now with a key or nothing, its strip spans the sheet, and it
+  filters to failed runs; the cost ledger lands everyone on its invoices, and a holder edits by
+  clicking a month's cell (filled: edit, empty: add); Rates is a sheet over the ledger, with Change
+  rate a second, narrower sheet on top. The Body console and the round trip await their
+  first read.
 - **Wireframes first.** Before any React, a static HTML mockup per mode in
   `skating-mockups/admin-console/` (the A10 pattern), rendered dark at 1440 × 900 and reviewed.
   **v1 exists (2026-10-12):** eight pages (`overview`, `inbox`, `corpus`, `body`, `machinery`,
@@ -599,6 +663,100 @@ per workstream unless two are small enough to share one; the roadmap entry flips
 
 Tests land with each (D40): Vitest for the keyboard, palette and capability models, `convex-test`
 for every new query, mutation and index, `fast-check` for the rollup's season bucketing.
+
+## Component kit checklist (2026-11-06)
+
+The founder's call (2026-11-06): the kit is tracked here, not in Linear. One row per kit component,
+admin-first, in `apps/web/src/components/kit/`. shadcn's raw installs stay in `components/ui/` as
+the base; a kit file re-skins one and is what everything imports. Sources: the 57-pattern map in
+`skating-mockups/web-stack-research/shadcn-vs-designs.md` (its `#n` and its `R…` rule references
+are used below) and `plans/research/web-frontend-stack-2026-10-30.md` §2.
+
+**Rules for every row:**
+
+- **Tokens only** (D232). Semantic tokens from `@skating/design`; no raw color, and px only for
+  borders, hairlines, radii and fixed-stroke drawing (D233). Pressable things take
+  `radius.control` (admin 0, skater 2 px); containers take `radius.container` (square on both);
+  keyboard hints take `radius.key` (3 px); people and dots take `radius.full`.
+- **Props, not Convex.** A kit component never calls a Convex hook; routes and surface
+  compositions (`components/admin/*`, `components/skater/*`) fetch and pass data down.
+- **A four-up story for every component** (all four surface × mode maps), each story a board state
+  and a Vitest test. **Junction tests** (`kit/measure.ts`, D234) wherever the component sets space
+  between content: a label to its edge, a heading to its content, a key inside its button.
+- **Loading states reserve final dimensions**, so nothing shifts as content fills.
+- **`prefers-reduced-motion`** honored by every transition, with timing from the motion tokens.
+- **Base UI, never Radix**; after every `shadcn add`, swap lucide for FontAwesome Sharp and declare
+  any new direct dependency.
+- **Status:** ✅ in the kit with its story and tests · 🟡 in progress · ⚪ not started.
+
+### Re-skinned shadcn atoms
+
+| Component | Status | Built from | Surfaces | Rules it breaks or follows |
+|---|---|---|---|---|
+| Button (+ `nav` chip variant) | ✅ | shadcn Button | both | 10 px caps, tracked; focus and hover = the corner-dot primary look (R3#1); destructive outlined at rest, red on hover or armed (two-press); no underlined link variant (R2#3); no press nudge; equal heights and the arrow pad as variants, not JS (#22, #23; D233, D234) |
+| Kbd / KbdGroup | ✅ | shadcn Kbd | both | Mono, `radius.key`; dim, lit and go (ice) states; never makes its button taller (R9#2); an input's ⏎ shows only while it has focus (R14#3) (#7) |
+| Badge | ✅ | shadcn Badge | both | Square, not pill; solid dim/amber/red/lit; two states = two badges, never a bullet inside one (R14#4); a live LED has no box; green sparing (#42) |
+| Avatar (+ group) | ✅ | shadcn Avatar | both | Circles for people (R1); the top bar's faces never include the viewer; reconcile with `components/Avatar.tsx` (#5, #43) |
+| Tooltip | ✅ | shadcn Tooltip | both | Not inverted: g1/g2 plate, g4 edge, kicker title, no arrow, square; **never in navigation** (R11#1); the trigger's dotted rule hugs the text (#27) |
+| Tabs | ✅ | shadcn Tabs | both | Joined boxes, the chosen one filled; no pill, no shadow; rich run tabs allowed; no tooltips in a tab row (#16) |
+| ToggleGroup (filter tabs, segmented) | ✅ | shadcn ToggleGroup | both | **No counts on filter tabs** (R4–7); a key hint sits on a two-way toggle's inactive option (R9#15); choices are never "A · B · C" text (R2#10) (#14, #17) |
+| Switch | ✅ | shadcn Switch | admin | 20 × 10 with a 6 px knob, `radius.toggle`; disabled is dashed with no knob, not faded (R13#4); a layer row is Switch + label + Kbd as one control (#36) |
+| RadioGroup | ✅ | shadcn Radio Group | admin | Whole-row items; a chosen cell lights the whole cell (R8); picking moves the pick, only the bar's button applies it (#37) |
+| Checkbox (+ Checkbox Group) | ✅ | shadcn Checkbox + Base UI Checkbox Group | admin | Square 14 px, FontAwesome check; "restore all" parent state (#38) |
+| Slider | ✅ | shadcn Slider | both | A grippy rectangular thumb, not a ringed knob; ticks drawn by us (Base UI has no marks); align `FreezeUpScrubber` (#39) |
+| Select | ✅ | shadcn Select | both | Underline trigger, not boxed (R14#2); FontAwesome Sharp Regular angle-down (#30) |
+| Input + InputGroup + Field | ✅ | shadcn Input, Input Group, Field | both | **The underline input is the standard** (R14#2): placeholder g5, white rule on focus, no ring; autosave meta (typing, saving, saved, not saved) (#32) |
+| Textarea | ✅ | shadcn Textarea | admin | Boxed; focus brightens the edge to g6, never white, no ring (R4–7) (#33) |
+| DropdownMenu | ✅ | shadcn Dropdown Menu | both | Square, g1 plate, g4 edge, 30 px rows, 12 px text; no check or shortcut columns unless used (#29) |
+| Popover | ✅ | shadcn Popover | both | Square container; hosts the Bodies lookup (no ice: not a mode), the Filter menu and the month grid (#10, #15, #31) |
+| ButtonGroup | ✅ | shadcn Button Group | admin | Joined, shared edge, square: split buttons, the map's zoom pair, a cron's buttons (#24) |
+| Table | ✅ | shadcn Table + TanStack Table | admin | No forced overflow wrapper; a row washes only if it's clickable (R3#3); dotted rows under a solid head rule; sort by clicking a heading (R4–7); rules unbroken, in CSS (R8); 20 px outer cells (#19) |
+| Resizable | ✅ | shadcn Resizable (react-resizable-panels v4) | admin | Widths in a cookie read on the server, so nothing shifts on load; panes stack below `lg` (research §5) |
+| Toast | ✅ | shadcn Toast (Base UI Toast) | both | Bottom-left at the rail's edge, over the status bar; Undo with ⌘Z, a countdown and a 2 px time bar, 10 s (D226); swipe and stack motion subdued (#44) |
+| AlertDialog (the reason dialog) | ✅ | shadcn Alert Dialog | admin | **Not Dialog.** A reason only when something is taken away; restore and approve ask nothing (D226, R4–7); armed two-press, typed confirmation, server refusal; ⌘⏎ confirms; no blur, no ×, no zoom; `ReasonDialog` moves onto it (#45) |
+| Sheet | ✅ | shadcn Sheet | both | Scrim over `main` only, no blur; no default × (the head carries Close + Esc); fixed width per sheet; stacked sheets; never the floating bar (R8) (#26, #46) |
+| Dialog (viewer modal, inset card) | ✅ | shadcn Dialog | admin | Viewer: scrim over everything, ←/→, inset 32 px (#47). Inset card: portaled into the inspector with focus trapped, the map live beside it (R14#10) (#48) |
+| Collapsible | ✅ | shadcn Collapsible | admin | FontAwesome chevrons (#49) |
+| ScrollArea | ✅ | shadcn Scroll Area | both | Thumb visible in a still render; replaces `trimFades` (#50) |
+| Separator | ✅ | shadcn Separator | admin | The status bar's vertical rule (#6) |
+| Combobox with chips | ✅ | shadcn Combobox (Base UI chips) | admin | Aliases with free-text create; verify Base UI supports it, else Autocomplete + custom chips (#35) |
+| Chart | ✅ | shadcn Chart (Recharts v3) | both | `--chart-*` mapped to the grayscale + meaning accents; hover hairline + plate (R3#6); nothing clips at the edge; unbroken gridlines (R11#9) (#53) |
+| Skeleton | ✅ | shadcn Skeleton | both | Holds the final box exactly; no shimmer under reduced motion |
+| Drawer | ✅ | shadcn Drawer | skater | The mobile bottom sheet; verify it's Base UI Drawer, not `vaul`, before adding |
+
+### Base UI primitives shadcn doesn't wrap
+
+| Component | Status | Built from | Surfaces | Rules it breaks or follows |
+|---|---|---|---|---|
+| Meter | ✅ | Base UI Meter | admin | The 4 px quota bar, one height everywhere (R3); amber and red at thresholds; `role=meter`, not Progress (#40) |
+| NumberField | ✅ | Base UI Number Field | admin | The input holds only its number, the unit hangs outside (R10#4); steppers hidden, arrow keys kept, scrub off; the saved value shows only on changed rows (R10#5) (#34) |
+| Toolbar (the action bar) | ✅ | Base UI Toolbar | admin | `role=toolbar`, arrows between buttons; every button rests alike, the focused or armed one takes the primary look; no explaining line or reason input (R4–7); a one-action bar's button is outlined (R11#4) (#25) |
+| Command palette (⌘K) | ✅ | Base UI Autocomplete in a Dialog | admin | Not shadcn Command: cmdk pulls Radix and fights server-side Convex search; always-open list; keys only on the selected row; ⇥ to actions; ice edge (a transient mode, R9#12) (#9) |
+
+### Custom, no primitive
+
+| Component | Status | Built from | Surfaces | Rules it breaks or follows |
+|---|---|---|---|---|
+| App shell (rail, top bar, status bar, panes) | ✅ | custom: CSS grid + Router layout routes | admin | Not shadcn Sidebar: the rail never collapses and takes no ⌘B (#1) |
+| Rail item + count badge | ✅ | custom: Router `<Link>` + Badge + Avatar | admin | No tooltips in navigation (R11#1); the count is a square mono badge, gray/amber/red; on = white edge + glow; app links open a new tab (#2) |
+| Top bar parts: season tape, search trigger, colleague faces | ✅ | custom + Tooltip + Avatar | admin | The search is a button dressed as an underline input (R14#2); the tape's marks get real tooltips, not `title` (#3, #4, #5) |
+| Status bar + key registry | ✅ | custom + Kbd + Separator | admin | Keys per page and per focus; a key a button already wears isn't repeated (R12); the lamp's pulse respects reduced motion (#6) |
+| Go-mode + hotkey layer | ✅ | custom, behind one `lib/keys.ts` | admin | `G` then a letter anywhere; letters act only in the focused pane (R3); no J/K, no number keys; composites' own arrow keys never leak to the page (#8, #56) |
+| Lanes sidebar | ✅ | custom: Router links + roving focus | admin | Picks *which list*; facets never go here (R4–7); no tooltips (#11) |
+| Selectable middle list | ✅ | custom listbox (roving tabindex) + ScrollArea | admin | Type-ahead; ⏎/Space opens and moves focus to the right pane (R3); the wash only on interactive rows (R3#3); a locked row at half opacity; the decided list 32 px below (#12) |
+| List-end tab | ✅ | custom (measured SVG or clip-path) | admin | Not shadcn Empty: an empty list still says what it is (R1); replaces `drawEndMarks` (#13) |
+| Section slug (section title) | ✅ | custom typography | both | A heading sits 12 px over its content (junction-tested); the count replaces the square terminal (R14#5) (#18) |
+| Stat tile + value-with-unit | ✅ | custom (from `admin/adminUi.tsx` `StatTile`) | admin | Not Card; a unit 7 px from its value with no space character, in the gray slot (R8, R3#5); replaces `unitGaps` (#21) |
+| Grid lists (key/value, history with Undo, invoices) | ✅ | custom CSS grid | admin | Rules unbroken across column gaps (R8): dividers are padding, never margin (R9#5) (#20) |
+| Plates / cards | ✅ | custom (corner ticks) | admin | Chosen = a 1 px border, never a thick top edge (R9#7); `radius.container` (#55) |
+| Notes and banners | ✅ | custom | admin | A 2 px left rule, no fill, gray/amber/red; the "decided while you looked" lock banner (#52) |
+| Log + run error block | ✅ | ScrollArea + custom lines | admin | The live line on a white rule; a failing line red-washed; Follow + Copy split (#50, #51) |
+| Map controls (layer rack, zoom pair, scale, mode bar, hover plate) | ✅ | custom MapLibre controls + Switch, ButtonGroup, Kbd | admin | Scale on the map (R12#4); UI 56 px up (R13#5); the mode bar in ice; one hover plate per board where hover is the point (R14#1); real geography (R11#5) (#28, #54) |
+| Matrix and trace charts (temperature matrix, season traces, sparkbars, LED segments, stage bar) | ✅ | custom SVG / CSS grid | admin | The temperature scale tokens; ice only for water and transient modes (R9#12, D223); translucent marks bound for Paper need `rgba()` fills (#41, #53) |
+| Mobile bar | ⚪ | custom nav + ToggleGroup chips | admin | A later phase (#57) |
+
+**Count:** 51 components: 30 re-skinned shadcn atoms, 4 Base UI primitives, 17 custom. Button is
+the only one done.
 
 ## §9 — Decisions minted
 

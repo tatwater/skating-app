@@ -78,8 +78,8 @@ export const userSearch = query({
  * `role` and audits `grant_role` with the prior role. Idempotent (re-granting the same role still
  * records the decision).
  *
- * Moving an admin down to moderator also clears their invoice editing (D227, `lib/ledgerEditors.ts`),
- * and is refused while they are the last person who can edit invoices.
+ * Moving an admin down to moderator also clears their ledger editing (D227, `lib/ledgerEditors.ts`),
+ * and is refused while they are the last person who can edit the ledger.
  *
  * Self-targeting is refused, same as `revokeRole` — `grantRole(self, 'moderator')` is a *demotion*
  * dressed as a grant, and it would let the last admin strip their own admin rights (locking support,
@@ -106,7 +106,7 @@ export async function grantRoleImpl(
   const target = await ctx.db.get(userId);
   if (!target) throw new ConvexError('User not found');
 
-  // An admin moved down to moderator loses invoice editing with the role (D227), audited first.
+  // An admin moved down to moderator loses ledger editing with the role (D227), audited first.
   await clearLedgerGrantOnDemotion(ctx, actor, target, role);
   await ctx.db.patch(userId, { role });
   await writeAudit(ctx, {
@@ -124,7 +124,7 @@ export async function grantRoleImpl(
 /**
  * Revoke all elevated roles back to `member` (D37 — **admin-only**). Guards against an admin revoking
  * **their own** role (which could lock the last admin out). Audits `revoke_role` with the prior role.
- * An admin's invoice editing goes with the role (D227), and the last editor can't be revoked.
+ * An admin's ledger editing goes with the role (D227), and the last editor can't be revoked.
  */
 export const revokeRole = mutation({
   args: { userId: v.id('profiles'), reason: v.string() },
@@ -145,7 +145,7 @@ export async function revokeRoleImpl(
   const target = await ctx.db.get(userId);
   if (!target) throw new ConvexError('User not found');
 
-  // Leaving admin takes invoice editing with it (D227), audited first; refused for the last editor.
+  // Leaving admin takes ledger editing with it (D227), audited first; refused for the last editor.
   await clearLedgerGrantOnDemotion(ctx, actor, target, 'member');
   await ctx.db.patch(userId, { role: 'member' });
   await writeAudit(ctx, {

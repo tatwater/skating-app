@@ -1,9 +1,10 @@
 /**
- * The cost ledger (D219) — for now, who may edit its invoices (D227).
+ * The cost ledger (D219) — for now, who may edit it: its invoices and its rates (D227).
  *
- * Invoice editing is a per-person grant on an admin's profile, given and taken on the People page by
- * an admin who already holds it; the rules live in `lib/ledgerEditors.ts`. The invoice rows and
- * their mutations land with Machinery (B01 §5.5) and gate on the same `machinery.ledger` capability.
+ * Ledger editing is a per-person grant on an admin's profile, given and taken on the People page by
+ * an admin who already holds it; the rules live in `lib/ledgerEditors.ts`. The invoice and rate rows
+ * and their mutations land with Machinery (B01 §5.5) and gate on the same `machinery.ledger`
+ * capability.
  */
 
 import { normalizeUsername } from '@skating/core';
@@ -12,7 +13,7 @@ import { internalMutation, mutation } from './_generated/server';
 import { requireCapability } from './lib/auth';
 import { grantLedgerEditorImpl, revokeLedgerEditorImpl } from './lib/ledgerEditors';
 
-/** Give an admin invoice editing. The caller must hold it; giving asks no reason (D226). */
+/** Give an admin ledger editing. The caller must hold it; giving asks no reason (D226). */
 export const grantEditor = mutation({
   args: { userId: v.id('profiles'), reason: v.optional(v.string()) },
   handler: async (ctx, { userId, reason }) => {
@@ -22,7 +23,7 @@ export const grantEditor = mutation({
 });
 
 /**
- * Take invoice editing from an admin — yourself included, once another admin holds it. Refused for
+ * Take ledger editing from an admin — yourself included, once another admin holds it. Refused for
  * the last editor, so the ledger always has one. Taking away asks a reason (D226).
  */
 export const revokeEditor = mutation({
@@ -34,7 +35,7 @@ export const revokeEditor = mutation({
 });
 
 /**
- * Seed the first invoice editor (D227: Teagan, from the start) — `@admin1` on dev at this branch's
+ * Seed the first ledger editor (D227: Teagan, from the start) — `@admin1` on dev at this branch's
  * first push there, and `@teagan` on prod after the founder's admin role is set by hand at first
  * init. Idempotent: an existing holder is left alone and no row is written. The audit row has no
  * actor: the system gave it.
@@ -58,7 +59,7 @@ export const seedEditor = internalMutation({
     if (profile.canEditLedger === true) return { seeded: false };
     await grantLedgerEditorImpl(ctx, null, {
       userId: profile._id,
-      reason: 'The first invoice editor, seeded',
+      reason: 'The first ledger editor, seeded',
       seeded: true,
     });
     return { seeded: true };

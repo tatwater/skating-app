@@ -1,5 +1,5 @@
 /**
- * Undo handlers for roles, invoice editing, access alerts, approaches, posted rules, known features, recurrence and
+ * Undo handlers for roles, ledger editing, access alerts, approaches, posted rules, known features, recurrence and
  * hazard merges (D226, B01 §11). Composed into `UNDO_HANDLERS` by `undoHandlers.ts`; the shapes are
  * `undoTypes.ts`'s.
  *
@@ -57,7 +57,7 @@ const undoRoleChange: UndoHandler = {
   run: (call) => restoreRole(call, priorRoleOf(call.row) as Role),
 };
 
-// ── Invoice editing (D227): grant ↔ revoke ────────────────────────────────────────────────────────
+// ── Ledger editing (D227): grant ↔ revoke ────────────────────────────────────────────────────────
 
 /**
  * grant_ledger_editor → taken again. Through the revoke's own helper, so the last-editor rule holds:
