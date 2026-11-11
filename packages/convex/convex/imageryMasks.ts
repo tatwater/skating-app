@@ -80,10 +80,13 @@ export const listForImageryMask = internalQuery({
 
       // The import's own predicate rather than a copied threshold — `listNeedingElevation` documents
       // why a parameterised floor drifts out of sync within hours of somebody changing the real rule.
+      // ⚠ `type` included: without it `isWetlandClass(undefined)` is false, so the unnamed-wetland
+      // size rule could never fire and the bake revealed marshes the import rule excludes.
       if (
         !belongsInCorpus({
           name: body.name ?? '',
           surfaceAreaSqM: body.surfaceAreaSqM ?? 0,
+          type: body.type,
           includedByRequest: body.includedByRequest,
         })
       ) {

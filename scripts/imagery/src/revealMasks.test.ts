@@ -247,17 +247,18 @@ describe('maskFeatureFor', () => {
   });
 
   it('uses the Sentinel buffer, not the aerial one', () => {
-    // The two tiers differ ~3× (60 m vs 20 m). A 10 m buffer is one Sentinel pixel, so picking the
-    // aerial constant here would render as no reveal margin at all.
-    expect(SENTINEL_MASK_METERS.solid).toBe(60);
+    // A 10 m buffer is one Sentinel pixel, so picking the aerial constant here would render as no
+    // reveal margin at all. 30 m since 2026-11-11 (60 before): the solid core shrank when the fade
+    // lengthened to 420 m — see SENTINEL_MASK_METERS' own note.
+    expect(SENTINEL_MASK_METERS.solid).toBe(30);
     const polygon = squareAt(BURLINGTON.lat, BURLINGTON.lng);
     const outcome = maskFeatureFor({ waterBodyId: 'w1', polygon });
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
-    // ~60 m at 44°N is ~0.00054° of latitude; assert it grew by clearly more than the 20 m aerial
-    // buffer would have (~0.00018°) and less than an order of magnitude beyond.
+    // ~30 m at 44°N is ~0.00027° of latitude; assert it grew by more than the 20 m aerial buffer
+    // would have (~0.00018°) and less than an order of magnitude beyond.
     const grew = bboxOf(polygon).minLat - bboxOf(outcome.feature.geometry).minLat;
-    expect(grew).toBeGreaterThan(0.0004);
+    expect(grew).toBeGreaterThan(0.0002);
     expect(grew).toBeLessThan(0.001);
   });
 });

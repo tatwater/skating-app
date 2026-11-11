@@ -8,7 +8,7 @@
  * unchanged, which is the point: the web client and this archive must agree about what a reveal
  * covers, and two implementations of a geodesic buffer are two chances to disagree by meters.
  *
- * **The feather is not here.** `SENTINEL_MASK_METERS.feather` is 240 m of ramp outside this shape,
+ * **The feather is not here.** `SENTINEL_MASK_METERS.feather` is 420 m of ramp outside this shape,
  * and it is applied in the container as a distance transform against the rasterised mask — where
  * ground distance is measurable in pixels and a ramp is one operation. Baking it into *geometry*
  * would mean either a second buffered ring (a step, not a ramp) or dozens of them, which is the

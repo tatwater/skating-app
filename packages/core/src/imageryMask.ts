@@ -47,7 +47,14 @@ export const IMAGERY_LAYER_ID = 'imagery-raster';
  * fade over the next 50-100 m."* 80 m splits that range.
  */
 export const AERIAL_MASK_METERS = { solid: 20, feather: 80 } as const;
-export const SENTINEL_MASK_METERS = { solid: 60, feather: 240 } as const;
+/**
+ * Re-set the same way on 2026-11-11, against six variants rendered over the real 2025-12-22 Mascoma
+ * ice frame: 60/240 with the fade's new smoothstep curve read as a tight rim, and the founder chose
+ * 30 m solid + a 420 m fade — less unfaded shore, and a melt long enough to watch happen. Changing
+ * either number is a **re-bake** (`bake-masks --upload`, then `publish-search-plan`): the solid
+ * buffer is baked into the reveal geometry and the feather rides the mask sidecar to the cutter.
+ */
+export const SENTINEL_MASK_METERS = { solid: 30, feather: 420 } as const;
 
 /** The pieces of a body's access that the reveal has to cover, alongside the water itself. */
 export interface ImageryMaskInput {
