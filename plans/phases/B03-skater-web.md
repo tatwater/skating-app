@@ -838,13 +838,15 @@ Saira. That is why the founder's screen cropped the row harder than a story does
 every measurement story in the kit has been validating a face the app does not serve. Whether the
 app should load Saira is the founder's call (it is a visual change on every screen, and a Google
 Fonts dependency); 296 px was chosen to clear both faces so this fix does not depend on the answer.
+*Settled 2026-11-10 (founder): the app self-hosts both faces through Fontsource's variable
+packages, imported by `app.css`, and Storybook now loads the same files — no Google fetch remains.*
 
 The column and the `BootScreen` skeleton standing in for it now read one `--size-latest-filters`,
 the way `BootMapPage` already shares `--size-sidebar` with the real sidebar. They have to agree: a
 skeleton a different width from the page it becomes would slide the feed sideways the moment the
 first query lands. `Latest.stories` measures both segment rows against the column's edge, so the
 next label that outgrows it fails in the browser project instead of on the founder's screen — after
-awaiting Saira by name, because Storybook fetches it with `display=swap` and the two faces differ
+awaiting the segment's own face, because Saira loads with `display=swap` and the two faces differ
 by 12 px on this row, which is the whole margin under test (Greptile, #101).
 
 Same shape as the `--size-sidebar` widening recorded above: a row of nowrap boxes in a fixed column

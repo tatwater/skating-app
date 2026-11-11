@@ -10,7 +10,7 @@ import {
   resolvePx,
   sameColor,
 } from './measure';
-import { KICKER, must, PSEUDO_STATES, StateMatrix } from './storyKit';
+import { faceLoaded, KICKER, must, PSEUDO_STATES, StateMatrix } from './storyKit';
 import { ToggleGroup, ToggleGroupItem } from './toggle-group';
 
 const meta = {
@@ -104,6 +104,9 @@ export const KeyHint: Story = {
       getComputedStyle(must(el.querySelector('[data-slot="toggle-group-hint"]'))).visibility;
     await expect(cap(a)).toBe('hidden');
     await expect(cap(b)).toBe('visible');
+    // Both faces in before the first width, or a late swap reads as the row changing width.
+    await faceLoaded(a, 'A on top');
+    await faceLoaded(must(b.querySelector<HTMLElement>('[data-slot="toggle-group-hint"]')), 'B');
     const width = canvasElement
       .querySelector('[data-slot="toggle-group"]')
       ?.getBoundingClientRect().width;

@@ -147,11 +147,21 @@ export const TextTrigger: Story = {
     // The box is one 1.1 line plus the 1 px pad and the 1 px rule — the rule hugs the text.
     const size = parseFloat(style.fontSize);
     await expect(trigger.getBoundingClientRect().height).toBeCloseTo(size * 1.1 + 2, 0);
-    await userEvent.hover(trigger);
-    const tip = await waitFor(() => must(popup()));
-    await expect(tip.querySelector('[data-slot="tooltip-title"]')).toBeNull();
-    await userEvent.unhover(trigger);
-    await waitFor(() => expect(popup()).toBeNull());
+    // The plate names its own face: it portals to `body`, and the app's `body` is the legacy
+    // `system-ui` (Storybook's is the kit's, which would hide an inherited face), so give `body`
+    // a face the plate must not take.
+    const bodyFace = document.body.style.fontFamily;
+    document.body.style.fontFamily = 'serif';
+    try {
+      await userEvent.hover(trigger);
+      const tip = await waitFor(() => must(popup()));
+      await expect(getComputedStyle(tip).fontFamily).toMatch(/Saira/);
+      await expect(tip.querySelector('[data-slot="tooltip-title"]')).toBeNull();
+      await userEvent.unhover(trigger);
+      await waitFor(() => expect(popup()).toBeNull());
+    } finally {
+      document.body.style.fontFamily = bodyFace;
+    }
   },
 };
 

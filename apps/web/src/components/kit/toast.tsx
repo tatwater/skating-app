@@ -309,9 +309,10 @@ const ExpandedContext = createContext(false);
 
 /** The plate, the stripe's ink per tone (the toast's `data-type`), the stack and the motion. */
 const ROOT = [
-  // The plate.
+  // The plate — in the kit's face by name, since it portals to `body` (legacy `system-ui`).
   'absolute bottom-0 left-0 w-full overflow-hidden select-none',
   'rounded-container border border-solid border-line2 bg-plate-solid shadow-actbar',
+  'font-(family-name:--family-sans)',
   'outline-none focus-visible:shadow-focus',
   '[--stripe:var(--fg2)] data-[type=lit]:[--stripe:var(--fg)]',
   'data-[type=warn]:[--stripe:var(--warn)] data-[type=bad]:[--stripe:var(--bad)]',

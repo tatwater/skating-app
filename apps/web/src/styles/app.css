@@ -11,6 +11,17 @@
 @import "@skating/design/tokens.css";
 @import "@skating/design/tailwind.css";
 
+/*
+ * The kit's two faces, self-hosted (founder, 2026-11-10): Saira for everything typeset, Martian
+ * Mono for every value that aligns. Fontsource's variable packages — one weight axis per face
+ * (Saira 100–900, Martian Mono 100–800), split by `unicode-range`, so a Latin page fetches one
+ * file of each. They register as `Saira Variable` / `Martian Mono Variable`, which is the name
+ * `--family-sans` / `--family-mono` lead with. Storybook loads this file too, so the stories that
+ * measure text measure these exact files; nothing fetches a face from Google.
+ */
+@import "@fontsource-variable/saira";
+@import "@fontsource-variable/martian-mono";
+
 /* The kit's shared mechanics (optical spacing, `lit:` / `pressed:`, corner dots) — `kit.css`. */
 @import "./kit.css";
 
@@ -68,16 +79,16 @@
  * segment spilled and "Great" was cropped. The segments are `whitespace-nowrap`, so flex can't
  * shrink one below its own label: the row either fits or spills.
  *
- * The row wants two different widths, because the page and its stories are not set in the same
- * face. `--family-sans` is `Saira, system-ui, sans-serif`, and **only Storybook fetches Saira**
- * (`.storybook/preview-head.html`) — the app links one stylesheet, `app.css`, which carries no
- * `@font-face`, so every skater screen renders in `system-ui` today. Measured: Quality wants
- * 273.5 px in Saira and ~285 in the system stack, Posted 261.1 and ~268. 272 is under all four,
- * which is why the founder's screen cropped it harder than a story would.
+ * The width was measured under both faces, because when it was set only Storybook fetched Saira
+ * and every skater screen rendered in `system-ui`. Quality wants 273.5 px in Saira and ~285 in
+ * the system stack, Posted 261.1 and ~268; 272 is under all four, which is why the founder's
+ * screen cropped it harder than a story would. 296 px clears both — 22.5 px of air in Saira, ~11
+ * in the system stack.
  *
- * 296 px clears both faces — 22.5 px of air in Saira, ~11 in the system stack — so this width
- * holds whichever way the missing-webfont question is settled. `Latest.stories` measures both
- * rows with Saira loaded, so a label that outgrows the column fails there rather than on the page.
+ * Since 2026-11-10 the app self-hosts Saira (the Fontsource import at the top of this file), so
+ * the Saira figures are the ones readers get; the system-stack margin now covers only the moment
+ * before the face arrives (`font-display: swap`). `Latest.stories` measures both rows with the
+ * same file loaded, so a label that outgrows the column fails there rather than on the page.
  */
 :root {
   --size-latest-filters: 18.5rem;

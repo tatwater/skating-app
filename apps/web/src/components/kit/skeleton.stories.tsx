@@ -4,7 +4,7 @@ import { expect, spyOn, userEvent, waitFor, within } from 'storybook/test';
 
 import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { Skeleton, SkeletonBlock, SkeletonRow, SkeletonStat, SkeletonText } from './skeleton';
-import { KICKER, must } from './storyKit';
+import { faceLoaded, KICKER, must } from './storyKit';
 
 const meta = {
   title: 'Kit/Skeleton',
@@ -147,11 +147,9 @@ export const Stat: Story = {
   ),
   play: async ({ canvasElement }) => {
     const { skeleton, real } = pair(canvasElement);
-    // `ch` is the loaded face's: load the value's own face first (`fonts.ready` alone can resolve
-    // before the face is even requested, and the fallback's digits are a different width).
-    const { fontWeight, fontSize } = getComputedStyle(real);
-    await document.fonts.load(`${fontWeight} ${fontSize} "Martian Mono"`, '0');
-    await document.fonts.ready;
+    // `ch` is the loaded face's: load the value's own face first (the fallback's digits are a
+    // different width).
+    await faceLoaded(real);
     await expectSameBox(skeleton, real, 'stat');
   },
 };
