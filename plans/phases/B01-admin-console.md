@@ -623,6 +623,36 @@ The questions as asked, kept for the record:
 15. **Mobile.** Confirm the bar: reachable everywhere, optimized nowhere; the map editor view-only
     on phones.
 
+### The founder's calls before slice one (2026-11-10)
+
+Asked while the branch was readied for the first slice (§12.7). **The calls:**
+
+1. **Transition navigation is rail option (a):** the rail carries the modes as they are built, plus
+   a temporary **Legacy** group for the old pages still standing. A mode that lands takes its old
+   pages out of Legacy (§12.7's progressive replacement); the group goes with the last of them.
+2. **Metrics lands only what can't be backfilled.** B01-1 adds the two write paths whose history is
+   lost for every day they don't run — the per-day sign-in record and the support queue-depth
+   rollup. The widenings (`state_coverage` per state, `active_contributors` to anyone who posted)
+   wait.
+3. **Saira and Martian Mono go app-wide**, self-hosted through `@fontsource-variable`, in a
+   standalone PR to main ahead of B01-1 — not a console-only load.
+4. **The console's map uses the same token system** under `data-surface="admin"`, expressed as
+   the boards' look.
+5. **Typed console analytics events are deferred.** Pageviews, with the `surface: 'admin'` stamp
+   PostHog already applies (D240), suffice for now.
+6. **The sweep branch is ported here, then retires.** `fix/standing-putins-summary-sweep`'s three
+   commits — a saved put-in keeps a body active through the rollover, the map-card sweep reads only
+   the cards that are due, and a failed backfill walk waits six hours — land on this branch. The
+   put-in decision, D228 on that branch, is **D245** here: D228–D231 belong to Phase B02.
+
+**Pondered, not decided: Reports may become *Content*** (founder, 2026-11-10 — a direction, not a
+decision). The mode now called Reports may be renamed **Content**: the full library of everything
+people generate — posts, reports and hazards, comments, photos, and later perhaps events,
+announcements and a marketplace — for exploring, grouping, filtering, searching, correcting,
+amending and hiding. **The Inbox stays the one place** for flags, contradictions and asks that need
+a moderator to act promptly. Slice one builds neither mode, and the rail's Legacy group bakes in no
+name for it; the D# is minted when the mode is built and the name firms up.
+
 ## §8 — Workstreams (firmed up 2026-10-12; order is the founder's call 13)
 
 Wireframes come first (§6, a static HTML mockup per mode, reviewed before React). Then, one PR
@@ -755,8 +785,8 @@ are used below) and `plans/research/web-frontend-stack-2026-10-30.md` §2.
 | Matrix and trace charts (temperature matrix, season traces, sparkbars, LED segments, stage bar) | ✅ | custom SVG / CSS grid | admin | The temperature scale tokens; ice only for water and transient modes (R9#12, D223); translucent marks bound for Paper need `rgba()` fills (#41, #53) |
 | Mobile bar | ⚪ | custom nav + ToggleGroup chips | admin | A later phase (#57) |
 
-**Count:** 51 components: 30 re-skinned shadcn atoms, 4 Base UI primitives, 17 custom. Button is
-the only one done.
+**Count:** 51 components: 30 re-skinned shadcn atoms, 4 Base UI primitives, 17 custom. Fifty are
+done; the mobile bar waits for a later phase.
 
 ## §9 — Decisions minted
 
@@ -767,7 +797,7 @@ merge and sub-areas; no split), D222 (discipline: no mute; photos' moderation ax
 blue means a transient mode; go-mode; the temperature scale; *bodies*), D224 (a clouded pass shown
 to skaters, per frame, from the Imagery tab). D225 (Reports, a ninth mode; in-context
 moderator controls kept) and D226 (undo for every operator action; a reason only when something is
-taken away). **Added 2026-10-16:** D227 (invoices edited by named people — Teagan from the start — not a role). **Refined 2026-10-17:** D227's grant is a row on an admin's People page that only a holder sees and changes; never no holder; a demotion clears it.
+taken away). **Added 2026-10-16:** D227 (invoices edited by named people — Teagan from the start — not a role). **Refined 2026-10-17:** D227's grant is a row on an admin's People page that only a holder sees and changes; never no holder; a demotion clears it. **Ported 2026-11-10:** D245 (a saved put-in keeps a body active through the standing rollover; minted on the sweep branch as D228, §7).
 
 ## §10 — Season statistics: the options (picked 2026-10-12: all of tiers 1 and 2)
 
