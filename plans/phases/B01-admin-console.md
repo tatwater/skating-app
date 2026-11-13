@@ -758,6 +758,32 @@ Asked by the integration's report. **The calls:**
 draw — a deliberate deviation from the boards, by the founder's call. It sits 16 px tall in the
 wordmark's old 32 px head with the same bottom gap, so nothing below it moved.
 
+### The governor's rulings at the Bodies integration (2026-11-13)
+
+Made while B01-3 built the Bodies list and the Body console; the founder may overturn any of them.
+
+1. **Completeness is the founder's ten** — outline, name, access, depth, elevation, wind, put-ins,
+   lots, landmarks, bathymetry, in that order — one rule in `@skating/core` (`bodyCompleteness`),
+   which the list and the console both read. A fact no read serves yet is *unknown*: drawn dashed,
+   never counted, never named in the *Missing …* note.
+2. **"Opened recently" is this browser only**; **"Changed this week"** is any moderator action on
+   the body or its bays, landmarks or put-ins.
+3. **The Class facet offers "Lake or pond" as one option**, as the class is stored. **F** opens the
+   filter from the list's tools, never from inside the rows (where letters type ahead).
+4. **Add-a-bay tiles hand off to the old editor** until the console's bay mode exists.
+5. **A mapped launch's "where" is the nearest landmark's real name.**
+6. **Remove on the landmark card stays "Not available yet"**, as does every tool entry point not
+   built: it says so on hover, focus and press, and does nothing else.
+7. **The Standing tab keeps the saved put-ins lane** (D245).
+8. **The Hazards tab opens on the current season even when empty**; a past season is shown only
+   by choosing it (the Overview's rule). The chosen winter lives in the lit address
+   (`winter:<year>`, `hazard:<year>.<id>`), so the map and the list show one winter.
+9. **Bodies is gated on `body.read`**, the capability map's line for reading a body; the list's
+   standing lanes are served by `standing.listLane` (`corpus.read`), the same moderator line.
+10. **The skater app's `InsetCard` stays unmerged** with the kit's for now (owed, below).
+11. **`/admin/water/$id` stays standing, with no redirect,** until the tools that still say *Not
+    available yet* exist; the console's empty slots and the bay tiles link to it.
+
 ## §8 — Workstreams (firmed up 2026-10-12; order is the founder's call 13)
 
 Wireframes come first (§6, a static HTML mockup per mode, reviewed before React). Then, one PR
@@ -867,7 +893,7 @@ are used below) and `plans/research/web-frontend-stack-2026-10-30.md` §2.
 
 | Component | Status | Built from | Surfaces | Rules it breaks or follows |
 |---|---|---|---|---|
-| Meter | ✅ | Base UI Meter | admin | The 4 px quota bar, one height everywhere (R3); amber and red at thresholds; `role=meter`, not Progress (#40) |
+| Meter | ✅ | Base UI Meter | admin | The 4 px quota bar, one height everywhere (R3); amber and red at thresholds; `role=meter`, not Progress (#40); the white gate tick (`markTone="lit"`) and `value={null}` for *not measured* — an empty track, no fill, no meter role (B01-3: Imagery's gates; ThresholdMeter folded in) |
 | NumberField | ✅ | Base UI Number Field | admin | The input holds only its number, the unit hangs outside (R10#4); steppers hidden, arrow keys kept, scrub off; the saved value shows only on changed rows (R10#5) (#34) |
 | Toolbar (the action bar) | ✅ | Base UI Toolbar | admin | `role=toolbar`, arrows between buttons; every button rests alike, the focused or armed one takes the primary look; no explaining line or reason input (R4–7); a one-action bar's button is outlined (R11#4) (#25) |
 | Command palette (⌘K) | ✅ | Base UI Autocomplete in a Dialog | admin | Not shadcn Command: cmdk pulls Radix and fights server-side Convex search; always-open list; keys only on the selected row; ⇥ to actions; ice edge (a transient mode, R9#12) (#9) |
@@ -890,15 +916,30 @@ are used below) and `plans/research/web-frontend-stack-2026-10-30.md` §2.
 | Plates / cards | ✅ | custom (corner ticks) | admin | Chosen = a 1 px border, never a thick top edge (R9#7); `radius.container` (#55) |
 | Notes and banners | ✅ | custom | admin | A 2 px left rule, no fill, gray/amber/red; the "decided while you looked" lock banner (#52) |
 | Log + run error block | ✅ | ScrollArea + custom lines | admin | The live line on a white rule; a failing line red-washed; Follow + Copy split (#50, #51) |
-| Map controls (layer rack, zoom pair, scale, mode bar, hover plate) | ✅ | custom MapLibre controls + Switch, ButtonGroup, Kbd | admin | Scale on the map (R12#4); UI 56 px up (R13#5); the mode bar in ice; one hover plate per board where hover is the point (R14#1); real geography (R11#5) (#28, #54) |
-| Matrix and trace charts (temperature matrix, season traces, sparkbars, LED segments, stage bar) | ✅ | custom SVG / CSS grid | admin | The temperature scale tokens; ice only for water and transient modes (R9#12, D223); translucent marks bound for Paper need `rgba()` fills (#41, #53) |
+| Map controls (layer rack, zoom pair, scale, mode bar, hover plate) | ✅ | custom MapLibre controls + Switch, ButtonGroup, Kbd | admin | Scale on the map (R12#4); UI 56 px up (R13#5); the mode bar in ice; one hover plate per board where hover is the point (R14#1); real geography (R11#5) (#28, #54); the plate's `caption` line (B01-3) |
+| Matrix and trace charts (temperature matrix, season traces, sparkbars, LED segments, stage bar) | ✅ | custom SVG / CSS grid | admin | The temperature scale tokens; ice only for water and transient modes (R9#12, D223); translucent marks bound for Paper need `rgba()` fills (#41, #53); `LedStrip` is the one segment strip — the Bodies list's and the Body console's candidates folded in (B01-3): a 5 px `row` size, a `tall` size, per-segment `on / off / unknown` (unknown dashed, never counted) |
 | Mobile bar | ⚪ | custom nav + ToggleGroup chips | admin | A later phase (#57) |
-| Map key (`map-key`) | ✅ | custom; promoted from the skater map (B01-2) | both | A slim bar on the map's bottom edge; lists only what the map draws; a name is a noun for what the mark is, never a word about the ice (D3); scrolls at phone width, never wraps; `MAP_FOOT_ROOM` lifts the foot controls over it |
-| Map marks (`map-marks`) | ✅ | custom SVG; promoted from the skater map (B01-2) | both | Put-in, lot, photo and hazard in its three tones — the key's glyphs and the Body boards' marks are one drawing; `HazardTone` is the marks' own type |
+| Map key (`map-key`) | ✅ | custom; promoted from the skater map (B01-2) | both | A slim bar on the map's bottom edge; lists only what the map draws; a name is a noun for what the mark is, never a word about the ice (D3); scrolls at phone width, never wraps; `MAP_FOOT_ROOM` lifts the foot controls over it; every landmark kind, sample points and proposals as kinds (B01-3) |
+| Map marks (`map-marks`) | ✅ | custom SVG; promoted from the skater map (B01-2) | both | Put-in, lot, photo and hazard in its three tones — the key's glyphs and the Body boards' marks are one drawing; `HazardTone` is the marks' own type; `PlaceMark` for each landmark kind, a sample point and a proposal (B01-3: the frame's place marks and the Places tab's landmark mark folded in); `fade` for a hover elsewhere (`opacity-fade`), a hazard never below half (D3) |
+| Map graticule (`map-graticule`, `graticule`) | ✅ | custom SVG + a pure layout | admin | True parallels and meridians at a round step, faint, labeled at the pane's edges clear of the chrome (Review 13 #5) (B01-3, from the Body console) |
+| Filter chips (`filter-chip`) | ✅ | custom | admin | `FilterChip` (the facet as a kicker, the option, its own ×), `FilterChipRow`, `FilterCount` — a list's applied filters (B01-3, from Bodies 5.2) |
+| Facet menu (`facet-menu`) | ✅ | custom, inside a kit Popover | admin | Facets as rows of square options with counts (a filter *menu* keeps its counts); two-way keys, one tab stop (B01-3, Bodies 5.2) |
+| Search mark (`search-mark`) | ✅ | custom | both | What matched, marked in place: the ice mark ground and a 1 px ice underline; case- and accent-blind (B01-3, Bodies 5.3) |
+| Table group row (`table-group-row`) | ✅ | custom on Table | admin | A divider row inside a table: a kicker and its count over a `line2` rule, never washed (B01-3, Bodies 5.3) |
+| Record lockup (`record-lockup`) | ✅ | custom | admin | A record's kind over its name, folding to one line over a rule once the panel scrolls (Review 12 #8) (B01-3, the Body console) |
+| Bullet list (`bullet-list`) | ✅ | custom listbox | admin | A short list of things to open on hollow bullets, the open one lit; one tab stop, type-ahead (B01-3, *Asked of this body*) |
+| Inset card (`inset-card`) | ✅ | custom | admin | A task over the inspector, the pane dimmed behind it and the map live (Review 14's `.icard`); the head is one Back control with its Esc (B01-3, Places' landmark card). The skater app's own `InsetCard` is not merged yet (owed) |
+| Person lockup (`person-lockup`) | ✅ | custom on Avatar | admin | A person's circle, real name, then @handle (B01-3) |
+| Unavailable button (`unavailable-button`) | ✅ | custom on Button + Tooltip + Toast | admin | A tool's entry point not built yet, drawn as the board draws it: *Not available yet* on hover, focus and press, nothing else; focusable (B01-3) |
+| Entry tile (`entry-tile`) | ✅ | custom | admin | The way-in tile: a glyph (square, or a `wide` gesture), its name in caps, a sub-line, its key; `what` makes it a not-yet entry point; disabled for a viewer without the capability. Access's tile and Shape's bay ways are this one piece (B01-3) |
+| Radio cell (`radio-cell`) | ✅ | custom on Base UI Radio | admin | A value you can pick as a boxed table cell; the one in use wears *Now*; the unit on `gap.unit` (B01-3, Water's depth ladder) |
+| Lane timeline (`lane-timeline`) | ✅ | custom | admin | One lane per thing that holds, on a time axis, each span with its arrowhead or stop (B01-3, Standing) |
+| Sortable rows (`sortable-rows`) | ✅ | custom | admin | Rows that reorder by a grip, by pointer or keys (B01-3, Links' staff links) |
+| Day strips (`day-strips`) | ✅ | custom SVG | admin | A few series on one day axis, stacked, each a baseline with its days (B01-3, Hazards' winters) |
 | Search parts (`search-parts`) | ✅ | custom on Base UI Autocomplete; promoted from `GlobalSearch` (B01-2) | both | `FootKey` (one dim cap per key), `SearchGroupLabel` (`plate` / `palette` looks, optional count and rule), `SearchStatus` (spinner, else the caller's note); the rows stay each list's own; one popover plate (`POPOVER_PLATE`) so the two can't drift |
 
-**Count:** 54 components: 30 re-skinned shadcn atoms, 4 Base UI primitives, 20 custom. Fifty-three
-are done; the mobile bar waits for a later phase.
+**Count:** 70 components: 30 re-skinned shadcn atoms, 4 Base UI primitives, 36 custom (B01-3 added
+sixteen). Sixty-nine are done; the mobile bar waits for a later phase.
 
 **Kit extensions (B01-3, 2026-11-13)** — the B01-2 owed list, built on `b01-3-kit` and carried with
 B01-3, and what the Overview adopted:
@@ -2410,6 +2451,10 @@ Raised by the builders as kit candidates or gaps; each is the governor's to prom
 - **`AppShell`**: the search label truncates at 1440 (*Jump to a body or a pers…*), and the
   season tape overlaps the search under about 1,000 px.
 
+- **The skater app's `InsetCard`** (`components/skater/panels/`, with `useCardMechanics`) and the
+  kit's console `InsetCard` (B01-3) are two pieces for one idea; merging them is owed (the
+  governor's ruling at the Bodies integration, §7).
+
 **Known bug, skater territory (owed, not B01-2):** client-side navigation from a skater page to an
 old admin page leaves `data-surface="skater"` on `<html>` — the old page wants it absent, and no
 shell on that path takes it off.
@@ -2595,8 +2640,9 @@ Shape, its Names/Places/Access/Water tabs, and its Imagery/Hazards/Standing/Link
   is partial, the town and the others, and completeness as stored (core's ten); its history is
   `bodyConsole.history`. A rejected body, which `waterBodies.get` doesn't serve, is drawn from its
   row with a line that the full preview isn't available.
-- **Where a body opens.** Until the Body console lands, the preview's action (and ⏎) opens the body
-  in the old editor, *Open in the editor →* — never a link to a page that isn't there.
+- **Where a body opens.** In the list's own PR, before the Body console exists, the preview's action
+  (and ⏎) opens the body in the old editor, *Open in the editor →* — never a link to a page that
+  isn't there. The console's frame points it at the console (*Open in Body*, below).
 - **Every read's states.** Skeletons while on their way; a failure said in its own place with *Try
   again* (the kit `RetryNote`: a live region mounted before its words, so it is announced;
   *Trying again…* until the fresh answer; focus kept in the note when it empties). The counts and the
@@ -2801,6 +2847,216 @@ and removed bodies; askers and intake reasons on the preview's asks; `moreTowns`
 state; `bodies.rowsByIds`; a light completeness read; the bathymetry search record; town lines; and
 the four writes (`setAliases` with `moderatorAliases` and `setClass`; choosing a depth source and
 filing a survey; the imagery pass override; editing a feature's shape).
+
+### The Body console (B01-3, integrated)
+
+**B01-3 (2026-11-13): Bodies — the library and the Body console, integrated.** Five builders (the
+kit extensions, the Bodies list, the console's frame with Shape, Names/Places/Access/Water,
+Imagery/Hazards/Standing/Links), cherry-picked serially onto `b01-3` off the kit branch.
+
+- **Bodies mounts at `/admin/bodies`** and each body's console at `/admin/body/$id`; the rail's
+  Bodies (G then B) stays lit inside a body. *Open in Body* carries the list's own address as
+  `from`, and the console's way back defaults to the list. Home's most-reported rows, the audit
+  feed's body rows and the palette's bodies now open the Body console; the old editor stays
+  standing for the tools not built.
+- **What the pages read today.** The list's reads are above (*The Bodies list*). *Opened recently*,
+  which the console writes, has no server lane:
+  each body by id (`waterBodies.get`), drawn as the body carries it, nothing narrowing or ordering
+  it. The console reads the server too (the frame, Shape and the eight tabs, BS7–BS15): stored
+  completeness (`bodies.preview`'s `complete`, core's ten — no stored answer reads *Not recorded
+  yet*), the body's family history (`bodyConsole.history`, a capped read heads "Latest N" and says
+  more exists), `consoleExtras` (towns, the outline's trust, touching bodies drawn as neighbors),
+  bays' provenance, places, landmarks' provenance and proposers, the ruling's history by verb,
+  `hasBathymetry`, `retentionForBody` and `dailyHazards` (a day's known count as bars, its unknown
+  part said in words — "at least N, some unknown", never clear — and each archived hazard one mark
+  on the day it was first reported, from the archived list). Controls whose write doesn't exist yet
+  are drawn and say *Not available yet*.
+- **One read layer, one failure note, one boundary** (the fold of the three wiring branches).
+  `components/admin/reads/consoleReads.ts` is the console's only read layer, shared by the Bodies
+  list (its counts and preview) and the Body console: `useConsoleReads` /
+  `useConsoleReadSet` over one `useQueries` keyed on values; each read loading, a `ReadFailure` or
+  its value, never a throw; one registry of paused reads, so *Try again* lets go of a read in every
+  holder — frame, tab, the tab's map, and Imagery's archive (`useExternalRead`) — and the server
+  runs it once afresh; from *Try again* to the fresh answer the read is a *pending* failure (the
+  note says *Trying again…*), so the old failure never flashes back; Sentry hears a failure once by
+  the read's identity (the client hands back a fresh `Error` each time it is asked, so the frame's
+  `WeakSet` re-reported on every render) and again only after the read recovers. The failure note
+  is the kit `RetryNote` (a live region mounted before its words, `aria-disabled` while pending,
+  focus kept when it empties), drawn through `ReadNote` (`reads/`). The list's paginated read stays
+  on Convex's paginated hook, run in a small reader under the kit `ReadBoundary` that hands its pages
+  up, so the page — and its failure note — is drawn once outside the boundary: the note is mounted in
+  every state, holds as *Trying again…* while the boundary resets and the first page reloads, and
+  keeps focus on its own region when it empties (the kit's rule, as in the console). `TabBoundary` (the
+  kit `ReadBoundary`) is the one boundary around a tab, reset by another body or tab. Kit moves:
+  `RetryNote`, `ReadBoundary`, `EntryTile` and `UnavailableButton` (with Shape), `UnavailableField`
+  and `UNAVAILABLE` (once, beside it), `Section`'s capped count and `warn` chip, `DayStrips` with
+  first-report marks, a caption and an undrawn unknown part that keeps its words (replacing the old
+  strips), and one `listWords` (`lib/words`).
+- **Server requests — one list, from the list and the three wiring branches.** All accepted for the
+  follow-up server PR (the governor, 2026-11-14), none built before #112 merges; until then each
+  page says what it can't do rather than drawing it.
+  1. **Search across standings** (`bodies.listPage` answering the other lanes, e.g. an `otherThan`
+     lane): board 5.3's "Dormant 4" group and its tally are not drawn until it lands.
+  2. **`bodies.preview.asks[]`: the number of askers and the intake reasons** — the board's
+     "asked by 3" and *Intake · name conflict* / *OSM vs NHD*. (The preview now counts every open
+     ask, `askCount`, and says "Newest 20 of N" when its list is partial.)
+  3. **`bodies.preview.moreTowns` as `{ name, state }`** — a border body's "Also in" names towns
+     without their state.
+  4. **`bodies.rowsByIds`** — *Opened recently* draws only what `waterBodies.get` carries.
+  5. **`SEARCH_MIN_CHARS` in core** — the list keeps a copy of the server's 2 for what it draws.
+  6. **A row-and-facts read for a rejected or removed body, with when and why it left** — the
+     list's preview of a rejected body is its row and a line; the console's removed page reads the
+     audit row for how it left.
+  7. **`capped` / `more` flags** on `corpusPlaceNames.openForBody` and
+     `corpusRequests.openBayRequestsForBody` — at their cap the console treats each as stopped short,
+     never whole. (`bodyConsole.landmarkProposers` and `bayProvenance` now cover every proposal and
+     bay their tabs list — the server's last fix before #112 merged.)
+  8. **`bodyConsole.history`: capping only over the targets a verb applies to, and a body-only
+     option** — a verb read on a large family can come back capped though the body's own rows fit.
+  9. **A light completeness read, or `complete` in `consoleExtras`** — the frame reads
+     `bodies.preview` (reports up to 1,000, asks, towns) for one stored answer.
+  10. **Neighbor names and simplified outlines in `consoleExtras`** — the touching bodies are read
+      one `waterBodies.get` each (outline and all) for a name and a dashed line.
+  11. **`dailyHazards`: counting through the end of the caller's UTC day, opening its window at the
+      season's start (1 July, not 1 October), and following a merge as `waterBodies.get` does** —
+      `retentionForBody` too. Today a September hazard is listed but on no strip, so the strip says
+      no *Today* over a list.
+  12. **A bathymetry search record** — what was searched for contours, and where (Water says *Not
+      recorded yet*).
+  13. **Town lines for the Names map** — the boundaries' geometry; the map draws no town lines.
+  14. **`dailyHazards.days[]`: `reported`** — of a day's `count`, how many are hazards with no
+      recorded end first reported that day. The strip's marks come from the archived list, which
+      the tab reads for the winter on screen only, so last winter beside an empty one (and a winter
+      whose archived list failed) draws no marks and says so; with `reported`, every winter is
+      marked from its one day-by-day read. (BS15's deferred honest end — the hazard writers stamping
+      when a hazard left the lake — then turns an archived hazard's mark into bars for its span.)
+- **Where the mock and the code differ** (each a founder call; the code stands until ruled):
+  the list's state tabs carry no counts (the board's do), completeness is out of ten (the boards'
+  twelve), and the ask kicker is *Bay name · Inbox* (the board's raw `name_bay`); the frame's
+  *Trusted* carries a second line (how it came to be trusted) the board doesn't draw, and Merge
+  stays when the touching test couldn't run or stopped short, with its note; Names and Water draw
+  extra *Not recorded yet* lines on their ladders (each catalog's own claims, the other sources'
+  depths); Names' Location comes from `bodyConsole.places`, where the board draws it; Hazards' quiet
+  winter heads *No open reports · N archived* (the board's *All voted gone*), and over a list the
+  strip's *Today* line is hidden (open founder question); Standing's favorites read "1,000+" past
+  the read's cap.
+- **The hazard strip — ruled by the founder, 2026-11-14** (it closes the question of last winter's
+  unknown part). A hazard whose end isn't recorded — every archived hazard today — draws **one mark,
+  on the day it was first reported, and nothing after**, never a stack of "unknown" days; a hazard
+  whose span is known (an open one, through today; later, an archived one with a stamped end) draws
+  a bar for each day it was on the lake. A caption under the strips, present whenever a mark is
+  drawn, says what a mark is and that how long the hazard stayed isn't recorded. A day's words say
+  *first reported*, never ended, and pass the all-clear test; the server's `unknown` is still said
+  for the day (an unknown-only day draws nothing but keeps its words on an unseen target) and in
+  the strip's summary. A day draws the server's `count` less its marks as bars, so it never draws
+  fewer known hazards than the count. The marks are one per archived hazard in the archived list
+  (`hazards.listForBody` with `includeArchived`), on its first report's UTC day; the tab reads that
+  list for the winter on screen only, so last winter beside an empty winter draws no marks — its
+  `count` as bars, its unknown in words — under a note that says the day isn't marked for that
+  winter (server request 14). Property-tested: each hazard with no recorded end yields exactly one
+  mark, on its first-report day; no day draws fewer than `count`; the caption is there whenever a
+  mark is.
+- **Wording the mock did not supply.** The list's ask words, all in
+  `components/admin/bodies/askWords.ts`: request kinds *Activation*, *Admission*, *Restoration*,
+  *Access contested*, *Takedown*, *Landmark name*; what a nameless request asks for — *Make it
+  active*, *Add it to the map*, *Bring it back*, *Reopen its access*, *Take it down*, *Name a bay*,
+  *Name a landmark*; a flag's reason — *Dangerously false ice report*, *Spam*, *Harassment*,
+  *Inappropriate*, *Rated unhelpful*, *No public access*, *Other*; the kicker *Flag · Inbox*. The
+  Hazards words, all in `tabs/hazards/hazardsWords.ts` and held by its test to never say gone,
+  clear, healed, resolved, safe or fine about the lake: *No hazard reports on record* (never "no
+  hazards"), *No open reports · N archived*, *At least N reported on the lake, M unknown*, *N
+  reported on the lake, M first reported this day*, *M unknown: archived, may still have been on
+  the lake*, *N days with hazard reports, M first reports with no recorded end, K with some
+  unknown*; the strip's caption, *A bright mark is the day a hazard with no recorded end was first
+  reported. How long it stayed on the lake isn't recorded; the days after it are not a reading of
+  the ice.*; *N archived reports have no recorded end. Each is marked on the day it was first
+  reported; from then on, every day counts them as unknown: each hazard may still have been on
+  the lake.*, and on a strip without marks *… Each is counted on the day it was first reported,
+  but that day isn't marked for this winter; …*; *The count stopped short of every hazard
+  reported; each day is at least what it shows*, *No reports counted; the count stopped short*,
+  *The record for … begins …*, *Archived this winter*, *Gone votes* and the counted, attributed
+  "N skaters voted it gone". The failure lines: *Couldn't read this list*, *Counts couldn't be
+  read*, *Couldn't read this body*, *This body couldn't be read*, *Couldn't read the history*,
+  *Reports, completeness and asks couldn't be read*, *Couldn't read …* (a tab's list of what
+  failed), *Couldn't be read* (in place), *{Tab} couldn't be shown*, *The map couldn't be drawn*,
+  *The map couldn't read …*, *Try again*, *Trying again…*; and *The full preview isn't available
+  for a rejected body*, *More history exists than is shown here.*, *Latest N*, *Record begins 1
+  Oct* (Metrics' words).
+- **States no board draws yet:** the console's removed and merged pages ("This body was merged into
+  X", a link, no redirect); every failure note and its pending state; the map's failure notice in
+  its foot; *Record begins* before 1 October; the unknown and capped notes (a floor, "at least N",
+  "Latest N"); the hazard strip's first-report marks and their caption, and a winter drawn without
+  marks under its note; the list's preview of a rejected body.
+- **Owed** (accepted, 2026-11-14): **a design question for the founder — a hazard the map cannot
+  show.** A hazard whose footprint can't be grown (malformed geometry, a buffer error) is drawn
+  nowhere on the map (core's rule: "nowhere rather than somewhere wrong"), while the list counts it,
+  so the map can show fewer hazards than the list. Also owed: Imagery builds its freeze-up timeline
+  three times (inspector, dock, map); the four tabs' write wrappers and clock hooks are copies of
+  `useTabAction`'s and each other's; a failed archived read over a list says so only inside the
+  collapsed group; every Hazards open reads the body's whole archived history (`includeArchived`);
+  the Hazards, Imagery and Standing views' own notes are still drawn only in their failed branch —
+  they hold as *Trying again…* through a retry, but mount with their words (so they aren't
+  announced as reliably as a region mounted before them) and leave with the fresh answer, so focus
+  that was on *Try again* drops to the page. Fixed since: the leap-year axis (every winter on one
+  1 October – 31 March axis with a slot for 29 February, property-tested), the hourly skeleton (a
+  winter keeps its last answer through the hour's turn, drawn against the hour it was read for, so
+  a held winter never reads the new day as clear), the list's notes (one read layer, mounted live
+  regions, *Trying again…*, focus kept), and *Trying again…* on the tabs-b views' notes
+  (Imagery's archive holds its own wait, since the registry keeps none for a reader outside
+  Convex).
+- **The map contract settled before any tab landed.** Adopted from the tab builders: a `proposal`
+  mark; `approach` and `dimension` lines and a `measure` label (a dimension is drawn in pixels with
+  fixed ticks); a footprint's `field` — the hazard dot field, dimmed by freshness and a step further
+  while unconfirmed, floored at .24 so a stale hazard fades and is never removed (D3, fast-checked);
+  a `raster` item for an imagery pass, adopted into `items` rather than a separate list so the rack,
+  the merge and the lit rule hold it, and painted by the skater app's own reveal
+  (`useFreezeUpFrame`, its frame now asking only for the key); a plate `caption`; a tab `Dock` in a
+  foot slot; and `useData(bodyId, lit)`, so Imagery follows the chosen band and Hazards the chosen
+  winter. Every style write still waits on the live map; the map's projection math moved to
+  `lib/mapSurface.ts`.
+- **Duplicates merged:** three LED strips into the kit's `LedStrip`; the frame's place marks and
+  the Places tab's landmark mark into `PlaceMark`; Access's entry tile and Shape's bay tiles into
+  `EntryTile`; `ThresholdMeter` into the kit `Meter`'s lit tick (with a not-measured state).
+- **Tokens taken up:** `gap.section` (the tabs' section gap), `gap.unit` (value to unit),
+  `gap.segment` (the LED strip), `opacity.fade` (a mark stepping back for a hover). The rest of the
+  builders' literals are each component's own dimensions.
+- **What the integration found:** the tabs' copies of the frame's contract were verbatim, so
+  removing them was mechanical; the frame's tab registration became generic over a tab's data; a
+  test that pinned an unbuilt slot to *Water* now builds a Shape-only registry; the Hazards tab
+  held its winter in local state, which its map could not see — the winter moved into the lit
+  address; a promoted proposal glyph drawn as SVG text leaked a "?" into the map key's words, and
+  is drawn as a path.
+- **What is verified about the map, and what isn't.** The dot field, dimension lines, measure
+  labels, proposals, the captioned plate, the fade on a plate and the foot slot are asserted on the
+  SVG still (`Admin/Body/Map contract`); the layer order, the live-map gating of every write
+  (against a fake map that throws before `load`) and the palette are unit-tested. The live MapLibre
+  canvas — and the imagery raster on it — can't run in the automated browser (its tiles answer only
+  a local dev address) and wasn't driven.
+
+### The Bodies server register (owed to the server agent)
+
+Every seam the B01-3 builders raised against `packages/convex` and `packages/core`; what the server
+built against each is the table above. Nothing here blocks a merge: each block draws *Not recorded
+yet* (or the fact as unknown) until its read lands.
+
+| # | Ask | For | Status |
+|---|---|---|---|
+| BS1 | `bodies.listPage` — paged, server-sorted and filtered, a denormalized library row per body, indexes, search by standing, state, class and ids | The Active and All lanes, sorting and facets beyond a held lane | 🟢 server |
+| BS2 | Lane counts | The lanes sidebar's counts | 🟢 server |
+| BS3 | Facet counts | The facet menu's counts | 🟢 server |
+| BS4 | `bodies.preview` — reports this season and all-time, asks, the town | The list's preview | 🟢 server |
+| BS5 | Completeness in core (`bodyCompleteness`, on the server branch) and stored per body; the client module (`components/admin/body/completeness.ts`) is replaced by it | Both pages; the list's completeness column and facet | 🟢 server |
+| BS6 | The starting page size | The list | 🟢 server |
+| BS7 | `waterBodies.consoleExtras` — towns, `hasBathymetry`, `outlineTrustedSince`, `touchingBodyIds` | The console's identity list, completeness's bathymetry, neighbors on the map | 🟢 server |
+| BS8 | `subAreas.listForBody` with `createdAt` / `createdVia`; a body-scoped history read that includes its sub-areas, landmarks and put-ins | Shape's bays; the console's history; *Changed this week* | 🟢 server |
+| BS9 | Names: `setAliases`, `setClass` and class claims, per-catalog name claims unfolded | The Names tab's writes | ⚪ deferred (after #110) |
+| BS10 | Places: `adminAreas.placesForBody`; the asker on landmark requests; a landmark's `createdAt` / `createdBy` | The Places tab | 🟢 server |
+| BS11 | Water: `depthCandidates` + `chooseDepthSource`; `bathymetryState` + `fileBathymetrySurvey` | The Water tab | 🟡 server: `hasBathymetry` only; the rest deferred (after #110) |
+| BS12 | `listActions` filtered by action, indexed | Access's ruling history, the tabs' receipts | 🟡 server: the index and `bodyConsole.history`; `listActions` deferred |
+| BS13 | Imagery: `imagery.setPassOverride` + `overridesForBody` | The Imagery tab's call on a pass | ⚪ deferred (after #110) |
+| BS14 | Standing: `standing.retentionForBody` | The Standing tab's lane timeline | 🟢 server |
+| BS15 | Hazards: `hazards.dailyOnLakeForBody`; the watch's opening date | The Hazards tab's winters and day strips | 🟢 server |
+| BS16 | `bodyFeatures.updateShape` | Editing a known feature's footprint | ⚪ deferred (after #110) |
 
 ### The Bodies reads the pages asked for (B01-3c, the second server follow-up)
 
