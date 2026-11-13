@@ -275,10 +275,12 @@ export const collect = internalQuery({
       accessAlerts: accessAlerts,
       accessAlertVotes: accessAlertVotes,
       accessPhotos: accessPhotos,
-      contentFlags: flags,
+      // Which moderator decided is the console's, not theirs: the requester-facing reads leave it
+      // out, and so does this.
+      contentFlags: flags.map(({ resolvedByUserId: _resolver, ...flag }) => flag),
       // The catalog's answer to an `admit` is the catalog's polygon, not something they said: named,
       // not copied — a lake outline can be most of a document.
-      waterBodyRequests: requests.map(({ candidate, ...rest }) => ({
+      waterBodyRequests: requests.map(({ candidate, decidedByUserId: _decider, ...rest }) => ({
         ...rest,
         ...(candidate
           ? {

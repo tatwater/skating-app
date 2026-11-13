@@ -1509,11 +1509,14 @@ the People page and the skater screens that reach it are owed (the roadmap's reg
   core, `accessAlertVoteControls`; web has a render test, the phone has no render harness and was
   not device-tested). **No client reaches the retractions yet** (the register).
 - **The export carries what a person filed.** `dataExport.collect` now includes their flags (only
-  ones a person filed — a system flag names someone who filed nothing) and their requests (the
-  catalog's polygon named, not copied); access alerts, their votes and hazard confirmations were
-  already in. A retracted one erased at 30 days leaves nothing there.
+  ones a person filed — a system flag names someone who filed nothing; a flag from before `origin`
+  existed reads as the system's, the rule the flag notifications use) and their requests (the
+  catalog's polygon named, not copied), without which moderator decided either; access alerts,
+  their votes and hazard confirmations were already in. A retracted one erased at 30 days leaves
+  nothing there.
 - **No pointer to an erased Report.** A put-in the pre-D62 purge made from a Report's point keeps its
-  place and coordinate on the community record and loses only its `originReportId`.
+  place and coordinate on the community record and loses only its `originReportId`; a landmark
+  proposal the Report's `where` filed stays the author's request and loses its `reportId`.
 
 ## Ruled out
 

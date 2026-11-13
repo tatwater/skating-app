@@ -160,64 +160,69 @@ export function AccessSection({
         )
       ) : null}
 
-      {alerts.map((alert) => (
-        <YStack
-          key={alert.id}
-          gap="$1"
-          padding="$2"
-          borderWidth={1}
-          borderColor="$border"
-          borderRadius="$2"
-        >
-          <Text fontWeight="600">
-            {ACCESS_REASON_LABELS[alert.reason as AccessReason] ?? 'Access problem'} —{' '}
-            {nameFor(alert)}
-            {alert.official ? ' (confirmed by a moderator)' : ''}
-          </Text>
-          {alert.note ? <Paragraph color="$foregroundMuted">{alert.note}</Paragraph> : null}
-          {/* A pin takes no votes — except its author's own "it's open" (D248). */}
-          {accessAlertVoteControls(alert).open ? (
-            <XStack gap="$2">
-              {accessAlertVoteControls(alert).stillBlocked ? (
-                <Button
-                  size="$2"
-                  chromeless
-                  borderWidth={1}
-                  borderColor="$border"
-                  disabled={busy === alert.id}
-                  onPress={async () => {
-                    setBusy(alert.id);
-                    try {
-                      await vote({ accessAlertId: alert.id, verdict: 'still_blocked' });
-                    } finally {
-                      setBusy(null);
-                    }
-                  }}
-                >
-                  <Text>Still blocked</Text>
-                </Button>
-              ) : null}
-              <Button
-                size="$2"
-                chromeless
-                borderWidth={1}
-                borderColor="$border"
-                disabled={busy === alert.id}
-                onPress={async () => {
-                  setBusy(alert.id);
-                  try {
-                    await vote({ accessAlertId: alert.id, verdict: 'open' });
-                  } finally {
-                    setBusy(null);
-                  }
-                }}
-              >
-                <Text>It's open</Text>
-              </Button>
-            </XStack>
-          ) : null}
-        </YStack>
-      ))}
+      {alerts.map((alert) => {
+        // A pin takes no votes — except its author's own "it's open" (D248).
+        const votes = accessAlertVoteControls(alert);
+        return (
+          <YStack
+            key={alert.id}
+            gap="$1"
+            padding="$2"
+            borderWidth={1}
+            borderColor="$border"
+            borderRadius="$2"
+          >
+            <Text fontWeight="600">
+              {ACCESS_REASON_LABELS[alert.reason as AccessReason] ?? 'Access problem'} —{' '}
+              {nameFor(alert)}
+              {alert.official ? ' (confirmed by a moderator)' : ''}
+            </Text>
+            {alert.note ? <Paragraph color="$foregroundMuted">{alert.note}</Paragraph> : null}
+            {votes.stillBlocked || votes.open ? (
+              <XStack gap="$2">
+                {votes.stillBlocked ? (
+                  <Button
+                    size="$2"
+                    chromeless
+                    borderWidth={1}
+                    borderColor="$border"
+                    disabled={busy === alert.id}
+                    onPress={async () => {
+                      setBusy(alert.id);
+                      try {
+                        await vote({ accessAlertId: alert.id, verdict: 'still_blocked' });
+                      } finally {
+                        setBusy(null);
+                      }
+                    }}
+                  >
+                    <Text>Still blocked</Text>
+                  </Button>
+                ) : null}
+                {votes.open ? (
+                  <Button
+                    size="$2"
+                    chromeless
+                    borderWidth={1}
+                    borderColor="$border"
+                    disabled={busy === alert.id}
+                    onPress={async () => {
+                      setBusy(alert.id);
+                      try {
+                        await vote({ accessAlertId: alert.id, verdict: 'open' });
+                      } finally {
+                        setBusy(null);
+                      }
+                    }}
+                  >
+                    <Text>It's open</Text>
+                  </Button>
+                ) : null}
+              </XStack>
+            ) : null}
+          </YStack>
+        );
+      })}
     </Section>
   );
 }

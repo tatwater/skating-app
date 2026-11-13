@@ -326,6 +326,17 @@ async function eraseReport(ctx: MutationCtx, report: Doc<'reports'>, photos: Pho
     .withIndex('by_origin_report', (q) => q.eq('originReportId', report._id))
     .take(100);
   for (const putIn of putIns) await ctx.db.patch(putIn._id, { originReportId: undefined });
+  // A landmark proposal the Report's `where` filed keeps its own life (it is a request, theirs to
+  // retract), and loses its pointer to the Report. One person's requests, bounded.
+  const requests = await ctx.db
+    .query('waterBodyRequests')
+    .withIndex('by_requester_created', (q) => q.eq('requesterId', report.authorId))
+    .take(1000);
+  for (const request of requests) {
+    if (request.reportId === report._id) {
+      await ctx.db.patch(request._id, { reportId: undefined });
+    }
+  }
   const joins = await ctx.db
     .query('reportSubAreas')
     .withIndex('by_report', (q) => q.eq('reportId', report._id))

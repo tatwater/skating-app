@@ -286,6 +286,7 @@ describe('collect — what a bundle carries', () => {
     const data = await t.query(internal.dataExport.collect, { userId: user.id });
     expect(data.contentFlags.map((f) => f._id)).toEqual([flagId]);
     expect(data.contentFlags[0]?.note).toBe('a new gate with a padlock');
+    expect(data.contentFlags[0]).not.toHaveProperty('resolvedByUserId');
     expect(JSON.stringify(data)).not.toContain('system note');
     expect(data.waterBodyRequests).toEqual([
       expect.objectContaining({

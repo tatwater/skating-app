@@ -110,6 +110,9 @@ describe('retraction until decided', () => {
     expect(alertRetractionByAuthor('active', true)).toBe('confirmed');
     expect(alertRetractionByAuthor('resolved', false)).toBe('closed');
     expect(alertRetractionByAuthor('expired', false)).toBe('closed');
+    // Closed is closed, pinned once or not — e.g. the author's own "it's open" settled the pin.
+    expect(alertRetractionByAuthor('resolved', true)).toBe('closed');
+    expect(alertRetractionByAuthor('expired', true)).toBe('closed');
     expect(alertRetractionByAuthor('retracted', true)).toBe('already');
   });
 });

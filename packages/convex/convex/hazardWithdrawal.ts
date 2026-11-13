@@ -43,7 +43,9 @@ export const HAZARD_WITHDRAW_REFUSALS = {
   feature:
     'A moderator made this hazard a permanent feature of the lake, so it is a shared record now and stays up.',
   joined:
-    'This hazard has been combined with other skaters’ reports of the same spot, so it is a shared record now and stays up.',
+    // Not "other skaters'": merge and recurrence don't look at who posted, so the others may be the
+    // author's own pins from another day or season.
+    'This hazard has been combined with other reports of the same spot, so it is a shared record now and stays up.',
   unknown: 'This hazard has too many confirmations to check, so it stays up.',
 } as const;
 

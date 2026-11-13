@@ -47,7 +47,7 @@ export interface AccessAlertModel {
   /** "reported Thu · 3:15 PM" (when it was filed). */
   when: string;
   note: string | null;
-  /** A moderator pinned it: no votes, it stands until they release it. */
+  /** A moderator pinned it: no votes but its author's "It's open"; it stands until released. */
   official: boolean;
   /**
    * The viewer posted it. On a pinned alert its author alone keeps "It's open": their own word that

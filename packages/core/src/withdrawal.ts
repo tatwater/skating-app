@@ -102,7 +102,9 @@ export function alertRetractionByAuthor(
   everPinned: boolean,
 ): 'retract' | 'already' | keyof typeof RETRACT_REFUSALS {
   if (status === 'retracted') return 'already';
+  // Closed first: a resolved or expired alert has nothing to retract, pinned once or not — and the
+  // pin's refusal ("if it has cleared, mark it open") would be wrong advice on a claim already over.
+  if (status === 'resolved' || status === 'expired') return 'closed';
   if (status === 'official' || everPinned) return 'confirmed';
-  if (status === 'active') return 'retract';
-  return 'closed';
+  return 'retract';
 }

@@ -328,6 +328,8 @@ describe('an access alert', () => {
     // "It's over" always is.
     await skater.as.mutation(api.accessAlerts.vote, { accessAlertId: alertId, verdict: 'open' });
     expect(await get(t, alertId)).toMatchObject({ status: 'resolved' });
+    // Closed now: nothing to retract, and no "mark it open" advice on a claim already over.
+    await expect(retract()).rejects.toThrow(literally(RETRACT_REFUSALS.closed));
   });
 
   test('a pin a moderator undid does not count; a closed alert has nothing to retract', async () => {

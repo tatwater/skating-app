@@ -359,7 +359,9 @@ export const retract = mutation({
     // turn an author's final withdrawal into a moderator's (and so a pinnable) one.
     if (alert.status === 'retracted') return;
     if (!isModerator) {
-      const rule = alertRetractionByAuthor(alert.status, await everPinned(ctx, alert._id));
+      // The history is read only where it can change the answer: a live community claim.
+      const pinnedOnce = alert.status === 'active' && (await everPinned(ctx, alert._id));
+      const rule = alertRetractionByAuthor(alert.status, pinnedOnce);
       if (rule === 'already') return;
       if (rule !== 'retract') throw new ConvexError(RETRACT_REFUSALS[rule]);
     }
