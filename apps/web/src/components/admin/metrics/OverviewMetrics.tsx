@@ -38,6 +38,8 @@ export type OverviewMetricsProps = Omit<ComponentProps<'div'>, 'children'> & {
   coverage: CoverageData;
   /** A pulse day to show hovered from the start — a board's drawn hover, for stories. */
   pulseActive?: number | null;
+  /** Opens a most-reported row's body; the page says where (the route supplies the path). */
+  onOpenBody?: ((bodyId: string) => void) | undefined;
 };
 
 export function OverviewMetrics({
@@ -49,6 +51,7 @@ export function OverviewMetrics({
   showingUp,
   coverage,
   pulseActive,
+  onOpenBody,
   className,
   ...props
 }: OverviewMetricsProps) {
@@ -60,7 +63,13 @@ export function OverviewMetrics({
     >
       <div className="mt-(--space-2_5) grid grid-cols-2 gap-x-[2.75rem]">
         <KeepingUp data={keepingUp} days={days} now={now} />
-        <ShowingUp data={showingUp} days={days} timeZone={timeZone} pulseActive={pulseActive} />
+        <ShowingUp
+          data={showingUp}
+          days={days}
+          timeZone={timeZone}
+          pulseActive={pulseActive}
+          onOpenBody={onOpenBody}
+        />
       </div>
       <CoverageByState data={coverage} />
     </div>

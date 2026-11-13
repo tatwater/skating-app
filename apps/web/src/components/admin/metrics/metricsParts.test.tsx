@@ -1,5 +1,6 @@
 import { render, screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import userEvent from '@testing-library/user-event';
+import { describe, expect, it, vi } from 'vitest';
 
 import { ChartLegend } from './ChartLegend';
 import { CoverageByState, ListedBodiesBar } from './CoverageByState';
@@ -129,6 +130,21 @@ describe('Showing up', () => {
     );
     expect(container.querySelectorAll('[data-slot="vantage-segment"]')).toHaveLength(0);
     expect(screen.getByRole('img').querySelector('i')?.className).toContain('bg-line');
+  });
+
+  it('opens the chosen body, and rows stay plain without a handler', async () => {
+    const rows = [
+      { bodyId: 'w1', name: 'Mascoma Lake', reports: 7, photos: 12, people: 4, lastReportAt: 0 },
+      { bodyId: 'w2', name: 'Crystal Lake', reports: 3, photos: 9, people: 2, lastReportAt: 0 },
+    ];
+    const onOpenBody = vi.fn();
+    const { unmount } = render(<MostReported rows={rows} onOpenBody={onOpenBody} />);
+    expect(screen.getByText('Crystal Lake').closest('tr')).toHaveAttribute('data-clickable');
+    await userEvent.click(screen.getByText('Crystal Lake'));
+    expect(onOpenBody).toHaveBeenCalledExactlyOnceWith('w2');
+    unmount();
+    render(<MostReported rows={rows} />);
+    expect(screen.getByText('Crystal Lake').closest('tr')).not.toHaveAttribute('data-clickable');
   });
 
   it('dates the last report in the reader’s zone', () => {

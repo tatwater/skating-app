@@ -441,14 +441,20 @@ function mostColumns(timeZone: string | undefined) {
   ]);
 }
 
-/** The season's most-reported bodies, most first (the read ranks them). */
+/**
+ * The season's most-reported bodies, most first (the read ranks them). A row opens its body
+ * (`onOpenBody` — the Body console, by the governor's ruling; the page supplies where that is).
+ */
 export function MostReported({
   rows,
   timeZone,
+  onOpenBody,
 }: {
   /** `null` before a read ranks the season's bodies. */
   rows: MostReportedRow[] | null;
   timeZone?: string;
+  /** Opens a row's body; without it, rows are plain and never wash. */
+  onOpenBody?: ((bodyId: string) => void) | undefined;
 }) {
   const begins = useRecordBegins();
   const columns = useMemo(() => mostColumns(timeZone), [timeZone]);
@@ -465,6 +471,7 @@ export function MostReported({
       stickyHeader={false}
       className="px-0"
       empty={begins ?? (rows === null ? NOT_RECORDED : 'No reports this season')}
+      onRowClick={onOpenBody ? (row) => onOpenBody(row.original.bodyId) : undefined}
     />
   );
 }
@@ -476,6 +483,7 @@ export function ShowingUp({
   days,
   timeZone,
   pulseActive,
+  onOpenBody,
   className,
 }: {
   data: ShowingUpData;
@@ -483,6 +491,8 @@ export function ShowingUp({
   timeZone?: string;
   /** A pulse day to show hovered from the start (a board's drawn hover). */
   pulseActive?: number | null;
+  /** Opens a most-reported row's body. */
+  onOpenBody?: ((bodyId: string) => void) | undefined;
   className?: string;
 }) {
   return (
@@ -499,7 +509,7 @@ export function ShowingUp({
         <VantageSplit counts={data.vantage} />
       </Section>
       <Section title="Most-reported" end={<SpanTag>This season</SpanTag>}>
-        <MostReported rows={data.mostReported} timeZone={timeZone} />
+        <MostReported rows={data.mostReported} timeZone={timeZone} onOpenBody={onOpenBody} />
       </Section>
     </div>
   );

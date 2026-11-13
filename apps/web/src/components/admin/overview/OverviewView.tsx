@@ -59,6 +59,8 @@ export type OverviewViewProps = {
   support: boolean;
   linkTo?: LinkTo;
   onOpenTarget?: (target: FeedTarget) => void;
+  /** Opens a body (Metrics' most-reported rows); the route says where. */
+  onOpenBody?: (bodyId: string) => void;
   onRefresh?: () => void;
 };
 
@@ -72,6 +74,7 @@ export function OverviewView({
   support,
   linkTo,
   onOpenTarget,
+  onOpenBody,
   onRefresh,
 }: OverviewViewProps) {
   const span = useMemo(() => metricsWindow(season, now), [season, now]);
@@ -137,7 +140,13 @@ export function OverviewView({
             panel: (
               <div data-slot="metrics-scroll" className="flex min-h-0 flex-1 flex-col">
                 <ScrollArea className="min-h-0 flex-1" gutter={false}>
-                  <OverviewMetrics days={span.days} opensOn={span.opensOn} now={now} {...metrics} />
+                  <OverviewMetrics
+                    days={span.days}
+                    opensOn={span.opensOn}
+                    now={now}
+                    onOpenBody={onOpenBody}
+                    {...metrics}
+                  />
                 </ScrollArea>
               </div>
             ),

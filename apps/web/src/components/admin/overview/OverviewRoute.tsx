@@ -46,6 +46,10 @@ export function OverviewRoute() {
         const path = feedTargetPath(target);
         if (path !== null) void navigate({ to: path });
       }}
+      onOpenBody={(id) => {
+        const path = consolePathFor({ kind: 'body', id });
+        if (path !== null) void navigate({ to: path });
+      }}
       onRefresh={() => window.location.reload()}
     />
   );

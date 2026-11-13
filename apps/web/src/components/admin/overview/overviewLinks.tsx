@@ -13,6 +13,7 @@ export type OverviewTarget =
   | { kind: 'machinery' }
   | { kind: 'people'; list?: 'staff' | 'new' | 'suspended' | 'banned' | 'leaving' }
   | { kind: 'ledger' }
+  | { kind: 'body'; id: string }
   | { kind: 'audit'; type: string; id: string };
 
 /** Turns a target into the element a link renders as (its props and children are merged in). */
@@ -31,6 +32,8 @@ export function overviewHref(to: OverviewTarget): string {
       return to.list ? `/admin/people?list=${to.list}` : '/admin/people';
     case 'ledger':
       return '/admin/machinery/ledger';
+    case 'body':
+      return `/admin/body/${encodeURIComponent(to.id)}`;
     case 'audit':
       return auditHref(to.type, to.id);
   }

@@ -38,6 +38,9 @@ export function consolePathFor(to: OverviewTarget): string | null {
       return '/admin/imports';
     case 'people':
       return '/admin/users';
+    case 'body':
+      // The Body console, until it lands: the old body editor.
+      return `/admin/water/${encodeURIComponent(to.id)}`;
     case 'ledger':
       // No page holds the ledger until Machinery lands; Home draws no link to it while cost is unread.
       return null;

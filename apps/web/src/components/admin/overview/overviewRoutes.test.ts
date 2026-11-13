@@ -40,6 +40,7 @@ describe('Home’s links, until the new modes land', () => {
     { kind: 'machinery' },
     { kind: 'people' },
     ...PEOPLE_LISTS.map((list) => ({ kind: 'people', list }) as const),
+    { kind: 'body', id: 'k1/7' },
   ];
 
   it.each(targets)('sends %o to an old page still standing', (target) => {
@@ -54,6 +55,10 @@ describe('Home’s links, until the new modes land', () => {
     expect(consolePathFor({ kind: 'inbox', lane: 'placesAsked' })).toBe('/admin/water/requests');
     expect(consolePathFor({ kind: 'corpus', task: 'placeNames' })).toBe('/admin/water/place-names');
     expect(consolePathFor({ kind: 'corpus', task: 'duplicates' })).toBe('/admin/water/review');
+  });
+
+  it('opens a most-reported body in the old body editor, the id escaped', () => {
+    expect(consolePathFor({ kind: 'body', id: 'k1/7' })).toBe('/admin/water/k1%2F7');
   });
 
   it('has no page for the ledger yet', () => {
