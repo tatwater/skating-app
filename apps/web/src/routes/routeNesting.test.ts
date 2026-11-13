@@ -16,9 +16,11 @@ import { describe, expect, it } from 'vitest';
  * — and invisible in every other test, since each page renders fine in isolation. Hence a test on
  * the file layout itself rather than on any component.
  *
- * The check follows one import hop, because a route file is allowed to bind a layout component
- * instead of owning the outlet: `admin.tsx` is a two-line binding and the real `<Outlet/>` lives in
- * `components/admin/AdminLayout`.
+ * The check follows the bound component's imports, because a route file is allowed to bind a layout
+ * component instead of owning the outlet: `admin.tsx` is a two-line binding to `AdminRoot`, which
+ * picks between two shells (the console and the old gate and sidebar) and owns no outlet itself.
+ * A component without its own `<Outlet/>` passes only if **every** local component it renders does
+ * — a shell switch whose one branch dropped the outlet would otherwise pass on the other's.
  */
 
 const ROUTES_DIR = dirname(fileURLToPath(import.meta.url));
@@ -33,18 +35,50 @@ function childrenOf(file: string): string[] {
   return routeFiles.filter((f) => f !== file && f.startsWith(prefix));
 }
 
-/** The route's own source, plus the source of the component it binds (one hop, if local). */
-function renderedSources(file: string): string[] {
-  const source = readFileSync(resolve(ROUTES_DIR, file), 'utf8');
-  const component = source.match(/component:\s*(\w+)/)?.[1];
-  if (!component) return [source];
+const SRC_DIR = resolve(ROUTES_DIR, '..');
 
-  const importPath = source.match(
-    new RegExp(`import\\s*\\{[^}]*\\b${component}\\b[^}]*\\}\\s*from\\s*'([^']+)'`),
+/** A local import's file — relative or `@/` — or undefined for a package. */
+function localFile(fromFile: string, spec: string): string | undefined {
+  const base = spec.startsWith('@/')
+    ? resolve(SRC_DIR, spec.slice(2))
+    : spec.startsWith('.')
+      ? resolve(dirname(fromFile), spec)
+      : undefined;
+  return base === undefined ? undefined : `${base}.tsx`;
+}
+
+/** The file `name` is imported from in `source` (read from `file`), if it's a local one. */
+function importedFrom(file: string, source: string, name: string): string | undefined {
+  const spec = source.match(
+    new RegExp(`import\\s*\\{[^}]*\\b${name}\\b[^}]*\\}\\s*from\\s*'([^']+)'`),
   )?.[1];
-  if (!importPath?.startsWith('.')) return [source];
+  return spec === undefined ? undefined : localFile(file, spec);
+}
 
-  return [source, readFileSync(resolve(ROUTES_DIR, `${importPath}.tsx`), 'utf8')];
+/**
+ * Whether `file` renders an outlet: its own, or — up to `depth` hops down — one in every local
+ * component it renders as JSX.
+ */
+function rendersOutlet(file: string, depth: number): boolean {
+  const source = readFileSync(file, 'utf8');
+  if (source.includes('<Outlet')) return true;
+  if (depth === 0) return false;
+  const rendered = [...new Set([...source.matchAll(/<([A-Z]\w*)/g)].map((m) => m[1] as string))];
+  const children = rendered
+    .map((name) => importedFrom(file, source, name))
+    .filter((f): f is string => f !== undefined);
+  return children.length > 0 && children.every((f) => rendersOutlet(f, depth - 1));
+}
+
+/** Whether the route file renders its children: its own outlet, or the component it binds. */
+function routeRendersOutlet(file: string): boolean {
+  const path = resolve(ROUTES_DIR, file);
+  const source = readFileSync(path, 'utf8');
+  if (source.includes('<Outlet')) return true;
+  const component = source.match(/component:\s*(\w+)/)?.[1];
+  if (!component) return false;
+  const bound = importedFrom(path, source, component);
+  return bound !== undefined && rendersOutlet(bound, 2);
 }
 
 describe('route nesting', () => {
@@ -58,7 +92,7 @@ describe('route nesting', () => {
 
   it.each(parents)('%s renders an Outlet for its children', (file) => {
     expect(
-      renderedSources(file).some((src) => src.includes('<Outlet')),
+      routeRendersOutlet(file),
       `${file} is the parent of ${childrenOf(file).join(', ')} but renders no <Outlet/>, so those ` +
         `routes match the URL and never mount. Rename it to ${file.replace(/\.tsx$/, '.index.tsx')} ` +
         'to make them siblings, or render an <Outlet/> if it really is a layout.',
