@@ -62,8 +62,12 @@ export function withdrawnAtOf(type: Erasable, doc: ErasableDoc): number | undefi
       // A Post every member of which its author deleted and the sweep has since erased: the author
       // withdrew all of it, Report by Report (the clients delete Reports, never a whole Post), and
       // each waited out its own 30 days and its own holds. What is left is the Post's own words, due
-      // now unless the Post itself is held. Members leave `reportIds` only by erasure.
-      return post.reportIds.length === 0 ? EMPTIED : undefined;
+      // now unless the Post itself is held. Members leave `reportIds` only by erasure, and an
+      // emptied Post is down (its last member's deletion took it down); a shown one never reads as
+      // withdrawn, whatever its list says.
+      return post.reportIds.length === 0 && post.moderationStatus !== 'visible'
+        ? EMPTIED
+        : undefined;
     }
     case 'comment': {
       const comment = doc as Doc<'comments'>;
@@ -125,6 +129,17 @@ export async function hasStandingVerdictOn(
   return verdict !== null;
 }
 
+/** Whether a verdict or an undecided flag stands on the Post a Report belongs to. */
+async function reportsPostIsHeld(ctx: QueryCtx, reportId: string): Promise<boolean> {
+  const id = ctx.db.normalizeId('reports', reportId);
+  const report = id ? await ctx.db.get(id) : null;
+  if (report?.postId === undefined) return false;
+  return (
+    (await hasStandingVerdictOn(ctx, 'post', report.postId)) ||
+    (await hasOpenFlag(ctx, 'post', report.postId))
+  );
+}
+
 /** What holds a withdrawn item back from erasure: a standing verdict, or an undecided flag. */
 export async function isHeld(ctx: QueryCtx, type: Erasable, targetId: string): Promise<boolean> {
   switch (type) {
@@ -139,7 +154,16 @@ export async function isHeld(ctx: QueryCtx, type: Erasable, targetId: string): P
         (await hasOpenFlag(ctx, 'post', targetId))
       );
     }
-    case 'report':
+    case 'report': {
+      // A verdict or a complaint on its Post is about what the Post shows — this Report's words and
+      // photos among them — so it holds the member as evidence too (the cascade is the Post's
+      // verdict, not one of the member's own).
+      if (await reportsPostIsHeld(ctx, targetId)) return true;
+      return (
+        (await hasStandingVerdictOn(ctx, 'report', targetId)) ||
+        (await hasOpenFlag(ctx, 'report', targetId))
+      );
+    }
     case 'comment':
     case 'hazard':
       return (
@@ -188,13 +212,14 @@ export async function holdMoved(
   targetId: string,
   now: number = Date.now(),
 ): Promise<void> {
-  if (
-    targetType === 'report' ||
-    targetType === 'post' ||
-    targetType === 'comment' ||
-    targetType === 'hazard' ||
-    targetType === 'accessAlert'
-  ) {
-    await refreshEraseClock(ctx, targetType, targetId, now);
+  if (!isErasable(targetType)) return;
+  await refreshEraseClock(ctx, targetType, targetId, now);
+  // A Post's hold is its members' too (`isHeld`), so they follow it.
+  if (targetType === 'post') {
+    const id = ctx.db.normalizeId('posts', targetId);
+    const post = id ? await ctx.db.get(id) : null;
+    for (const reportId of post?.reportIds ?? []) {
+      await refreshEraseClock(ctx, 'report', reportId, now);
+    }
   }
 }

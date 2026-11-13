@@ -289,6 +289,22 @@ describe('an access alert', () => {
     expect(await get(t, alertId)).toMatchObject({ status: 'official' });
   });
 
+  test('a pin placed after the author\'s "it\'s open" holds until the author says it again', async () => {
+    const { t, skater, other, alertId, pin } = await alertSetup();
+    await skater.as.mutation(api.accessAlerts.vote, { accessAlertId: alertId, verdict: 'open' });
+    expect(await get(t, alertId)).toMatchObject({ status: 'resolved' });
+    await pin();
+    // Anyone else's vote leaves the pin where the moderator put it.
+    await other.as.mutation(api.accessAlerts.vote, {
+      accessAlertId: alertId,
+      verdict: 'still_blocked',
+    });
+    expect(await get(t, alertId)).toMatchObject({ status: 'official' });
+    // The author's own word, said again, releases it.
+    await skater.as.mutation(api.accessAlerts.vote, { accessAlertId: alertId, verdict: 'open' });
+    expect(await get(t, alertId)).toMatchObject({ status: 'resolved' });
+  });
+
   test('anyone else\'s "it\'s open" on a pinned alert still does nothing', async () => {
     const { t, other, alertId, pin } = await alertSetup();
     await pin();
@@ -328,6 +344,25 @@ describe('an access alert', () => {
         reason: 'x',
       }),
     ).rejects.toThrow(/retracted/);
+    // Nor released back into the community lifecycle.
+    await expect(
+      mod.as.mutation(api.accessAlerts.setOfficial, {
+        accessAlertId: alertId,
+        official: false,
+        reason: 'x',
+      }),
+    ).rejects.toThrow(/retracted/);
+    expect(await get(t, alertId)).toMatchObject({ status: 'retracted' });
+  });
+
+  test("a moderator's second retraction can't turn the author's final one into a moderator's", async () => {
+    const { t, skater, mod, alertId } = await alertSetup();
+    await skater.as.mutation(api.accessAlerts.retract, { accessAlertId: alertId });
+    await mod.as.mutation(api.accessAlerts.retract, { accessAlertId: alertId, reason: 'bogus' });
+    expect(await get(t, alertId)).toMatchObject({
+      retractedByUserId: skater.id,
+      eraseAt: T0 + WITHDRAWN_ERASE_MS,
+    });
   });
 
   test("a moderator's own retraction is unchanged, pinned or not, and starts no clock", async () => {

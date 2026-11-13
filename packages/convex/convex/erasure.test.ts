@@ -346,6 +346,10 @@ describe('a comment', () => {
         reason: 'spam',
       }),
     ).rejects.toThrow(/not found/);
+    // And nobody answers it.
+    await expect(
+      other.as.mutation(api.comments.create, { reportId, parentCommentId: parent, body: 'what?' }),
+    ).rejects.toThrow(/not found/);
     // The author's export holds none of it.
     const bundle = await t.query(internal.dataExport.collect, { userId: author.id });
     expect(JSON.stringify(bundle)).not.toContain('mean words');
@@ -454,30 +458,61 @@ describe('a report', () => {
     );
   });
 
-  test('its Post goes after its last Report, and is held by its own verdict until overturned', async () => {
+  test("one tick's erasures of one author settle their photos together, against what still stands", async () => {
+    const { t, author, waterBodyId } = await setup();
+    const { reportIds, photoIds } = await seedPost(t, author.id, waterBodyId, 3);
+    const [a, b, stays] = reportIds as [Id<'reports'>, Id<'reports'>, Id<'reports'>];
+    const [shared, own] = photoIds as [Id<'photos'>, Id<'photos'>];
+    // The Report that stays carries the first one's photo too.
+    await t.run(async (ctx) => {
+      const row = await ctx.db.get(stays);
+      await ctx.db.patch(stays, { photoIds: [...(row?.photoIds ?? []), shared] });
+    });
+    await author.as.mutation(api.reports.remove, { reportId: a });
+    await author.as.mutation(api.reports.remove, { reportId: b });
+    advance(31 * DAY);
+    const result = await sweep(t);
+    expect(result.erased.report).toBe(2);
+    expect(await get(t, a)).toBeNull();
+    expect(await get(t, b)).toBeNull();
+    // Only the erased Reports held this one: it goes with them.
+    expect(await get(t, own)).toBeNull();
+    // Still on a standing Report: kept, and no longer pointing at the erased one.
+    const kept = await get(t, shared);
+    expect(kept).not.toBeNull();
+    expect(kept?.reportId).toBeUndefined();
+    expect(kept?.caption).toBe('the inlet 0');
+  });
+
+  test('a verdict on its Post holds the Report as evidence; the Post goes after its last Report', async () => {
     const { t, author, mod, waterBodyId } = await setup();
-    const { postId, reportIds } = await seedPost(t, author.id, waterBodyId, 1, 'rude title');
+    const { postId, reportIds } = await seedPost(t, author.id, waterBodyId, 1, 'a slur');
+    const [reportId] = reportIds as [Id<'reports'>];
     await mod.as.mutation(api.moderation.setModerationStatus, {
       targetType: 'post',
       targetId: postId,
       status: 'hidden',
-      reason: 'a slur in the title',
+      reason: 'a slur in the notes',
     });
-    await author.as.mutation(api.reports.remove, { reportId: reportIds[0] as Id<'reports'> });
+    await author.as.mutation(api.reports.remove, { reportId });
+    expect((await get(t, reportId))?.eraseAt).toBeUndefined();
     advance(31 * DAY);
     await sweep(t);
-    expect(await get(t, reportIds[0] as string)).toBeNull();
-    // The Post keeps its words while its verdict stands.
-    expect(await get(t, postId)).toMatchObject({ title: 'Morey at dawn', reportIds: [] });
+    // The Post's verdict judged what the Post showed — this Report's words among them.
+    expect(await get(t, reportId)).toMatchObject({ notes: 'a slur 0' });
+    expect(await get(t, postId)).toMatchObject({ title: 'Morey at dawn' });
     await mod.as.mutation(api.moderation.overturnVerdict, {
       targetType: 'post',
       targetId: postId,
       reason: 'on appeal',
     });
+    expect((await get(t, reportId))?.eraseAt).toBe(Date.now());
     await sweep(t);
+    expect(await get(t, reportId)).toBeNull();
     expect(await get(t, postId)).toBeNull();
     const bundle = await t.query(internal.dataExport.collect, { userId: author.id });
     expect(JSON.stringify(bundle)).not.toContain('Morey at dawn');
+    expect(JSON.stringify(bundle)).not.toContain('a slur');
   });
 
   test('a Post its author deleted waits for every member, and every member for its own hold', async () => {

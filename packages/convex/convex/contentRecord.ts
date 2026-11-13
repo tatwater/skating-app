@@ -10,7 +10,7 @@ import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
 import { internalMutation, type MutationCtx, type QueryCtx, query } from './_generated/server';
 import { requireCapability } from './lib/auth';
-import { authorDeletedAtOf } from './lib/authorDeletion';
+import { authorDeletedAtOf, WITHDRAWABLE_TABLE } from './lib/authorDeletion';
 import {
   movesVerdict,
   replayVerdicts,
@@ -18,7 +18,6 @@ import {
   type VerdictTargetType,
 } from './lib/contentVerdicts';
 import { holdMoved } from './lib/eraseClock';
-import { MODERATION_TABLE } from './moderation';
 
 /** Rows per list on the record — a person's standing verdicts and recent deletions are a handful. */
 const RECORD_LIMIT = 100;
@@ -37,7 +36,8 @@ async function loadTarget(
   targetType: VerdictTargetType,
   targetId: string,
 ): Promise<ContentDoc | null> {
-  const id = ctx.db.normalizeId(MODERATION_TABLE[targetType], targetId);
+  // A verdict's targets are exactly what an author can withdraw (`lib/authorDeletion`).
+  const id = ctx.db.normalizeId(WITHDRAWABLE_TABLE[targetType], targetId);
   return id ? ((await ctx.db.get(id)) as ContentDoc | null) : null;
 }
 

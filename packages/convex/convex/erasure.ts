@@ -58,7 +58,25 @@ const ERASE_REASON: Record<Erasable, string> = {
   accessAlert: 'Erased 30 days after its author retracted it',
 };
 
-type Eraser = (ctx: MutationCtx, doc: ErasableDoc, now: number) => Promise<void>;
+/**
+ * Photos an erased item carried, settled once the tick's erasures are done (`erasePhotos`): whether
+ * one is still referenced takes a scan of everything its uploader posted, so a tick reads that once
+ * per uploader, after every row of theirs it erases is gone — not once per item, which for a page of
+ * one person's deletions would read their whole history a hundred times in one transaction.
+ */
+interface PhotoWork {
+  uploaderId: Id<'profiles'>;
+  photoIds: readonly Id<'photos'>[];
+  /** The erased Report the photos hung from, whose back-link a kept photo loses. */
+  fromReport?: Id<'reports'>;
+}
+
+type Eraser = (
+  ctx: MutationCtx,
+  doc: ErasableDoc,
+  now: number,
+  photos: PhotoWork[],
+) => Promise<void>;
 
 /**
  * Who erases each kind, in the order a tick runs them: a Post after its members (a Post is held
@@ -72,8 +90,8 @@ type Eraser = (ctx: MutationCtx, doc: ErasableDoc, now: number) => Promise<void>
  */
 const ERASERS: Record<Erasable, Eraser | null> = {
   comment: (ctx, doc, now) => eraseComment(ctx, doc as Doc<'comments'>, now),
-  hazard: (ctx, doc) => eraseHazard(ctx, doc as Doc<'hazards'>),
-  report: (ctx, doc, now) => eraseReport(ctx, doc as Doc<'reports'>, now),
+  hazard: (ctx, doc, _now, photos) => eraseHazard(ctx, doc as Doc<'hazards'>, photos),
+  report: (ctx, doc, _now, photos) => eraseReport(ctx, doc as Doc<'reports'>, photos),
   post: (ctx, doc) => erasePost(ctx, doc as Doc<'posts'>),
   contentFlag: (ctx, doc) => ctx.db.delete((doc as Doc<'contentFlags'>)._id),
   waterBodyRequest: (ctx, doc) => ctx.db.delete((doc as Doc<'waterBodyRequests'>)._id),
@@ -134,6 +152,7 @@ export const eraseDue = internalMutation({
     const size = pageSizeFor(pageSize);
     const now = Date.now();
     const erased: Partial<Record<Erasable, number>> = {};
+    const photos: PhotoWork[] = [];
     let held = 0;
     let more = false;
     for (const kind of ERASED_KINDS) {
@@ -152,7 +171,7 @@ export const eraseDue = internalMutation({
         // The refresh read the row again; erase what is stored now.
         const current = (await ctx.db.get(doc._id)) as ErasableDoc | null;
         if (!current || withdrawnAtOf(kind, current) === undefined) continue;
-        await eraser(ctx, current, now);
+        await eraser(ctx, current, now, photos);
         await writeAudit(ctx, {
           action: 'erase',
           targetType: kind,
@@ -163,6 +182,9 @@ export const eraseDue = internalMutation({
         erased[kind] = (erased[kind] ?? 0) + 1;
       }
     }
+    // After every row they hung from is gone, so each uploader's reference scan runs once and no
+    // longer counts any of this tick's erased rows.
+    await erasePhotos(ctx, photos);
     if (more) {
       await ctx.scheduler.runAfter(0, internal.erasure.eraseDue, {
         ...(pageSize !== undefined ? { pageSize } : {}),
@@ -208,38 +230,40 @@ async function eraseComment(ctx: MutationCtx, comment: Doc<'comments'>, now: num
 }
 
 /**
- * Photos an erased item carried: deleted with their blobs unless something else of the uploader's
- * still references them (the one rule `lib/photoOrphans` keeps for every destructive path). A photo
- * kept — still referenced, or its blob could not be deleted, or the reference scan could not answer —
- * loses its link back and, unless still referenced, everything that says anything about a person.
+ * Photos the tick's erased items carried: deleted with their blobs unless something else of the
+ * uploader's still references them (the one rule `lib/photoOrphans` keeps for every destructive
+ * path). A photo kept — still referenced, or its blob could not be deleted, or the reference scan
+ * could not answer — loses its link back and, unless still referenced, everything that says anything
+ * about a person. One reference scan per uploader, read after all of the tick's erasures.
  */
-async function erasePhotos(
-  ctx: MutationCtx,
-  uploaderId: Id<'profiles'>,
-  photoIds: readonly Id<'photos'>[],
-  fromReport?: Id<'reports'>,
-) {
-  if (photoIds.length === 0) return;
-  const referenced = await referencedPhotoIds(ctx, uploaderId);
-  for (const photoId of photoIds) {
-    const photo = await ctx.db.get(photoId);
-    if (!photo) continue;
-    const unlink =
-      fromReport !== undefined && photo.reportId === fromReport ? { reportId: undefined } : {};
-    if (referenced?.has(photoId)) {
-      if (Object.keys(unlink).length > 0) await ctx.db.patch(photoId, unlink);
-      continue;
+async function erasePhotos(ctx: MutationCtx, work: readonly PhotoWork[]) {
+  const byUploader = new Map<string, Set<string> | null>();
+  for (const { uploaderId, photoIds, fromReport } of work) {
+    if (photoIds.length === 0) continue;
+    if (!byUploader.has(uploaderId)) {
+      byUploader.set(uploaderId, await referencedPhotoIds(ctx, uploaderId));
     }
-    if (referenced !== null && (await deletePhotoAndBlobs(ctx, photo))) continue;
-    // Kept: the scan couldn't answer, or a blob outlived the attempt. The row stays as the only
-    // pointer to its blobs (the orphan sweep retries), and stops being a record of anything.
-    await ctx.db.patch(photoId, {
-      ...unlink,
-      caption: undefined,
-      takenAt: undefined,
-      coord: undefined,
-      placeOnMap: false,
-    });
+    const referenced = byUploader.get(uploaderId) ?? null;
+    for (const photoId of photoIds) {
+      const photo = await ctx.db.get(photoId);
+      if (!photo) continue;
+      const unlink =
+        fromReport !== undefined && photo.reportId === fromReport ? { reportId: undefined } : {};
+      if (referenced?.has(photoId)) {
+        if (Object.keys(unlink).length > 0) await ctx.db.patch(photoId, unlink);
+        continue;
+      }
+      if (referenced !== null && (await deletePhotoAndBlobs(ctx, photo))) continue;
+      // Kept: the scan couldn't answer, or a blob outlived the attempt. The row stays as the only
+      // pointer to its blobs (the orphan sweep retries), and stops being a record of anything.
+      await ctx.db.patch(photoId, {
+        ...unlink,
+        caption: undefined,
+        takenAt: undefined,
+        coord: undefined,
+        placeOnMap: false,
+      });
+    }
   }
 }
 
@@ -274,7 +298,7 @@ async function eraseRevisions(ctx: MutationCtx, targetType: 'report' | 'post', t
  * is gone — `listByReport` answers `[]`), ratings and flags on it, bounties it answered (their
  * readers already skip a Report that isn't there).
  */
-async function eraseReport(ctx: MutationCtx, report: Doc<'reports'>, _now: number) {
+async function eraseReport(ctx: MutationCtx, report: Doc<'reports'>, photos: PhotoWork[]) {
   for (const hazardId of report.hazardIdsCreated) {
     const hazard = await ctx.db.get(hazardId);
     if (hazard?.originReportId === report._id) {
@@ -303,8 +327,9 @@ async function eraseReport(ctx: MutationCtx, report: Doc<'reports'>, _now: numbe
   await eraseRevisions(ctx, 'report', report._id);
 
   await ctx.db.delete(report._id);
-  // After the row is gone, so the reference scan no longer counts this Report's own list.
-  await erasePhotos(ctx, report.authorId, report.photoIds, report._id);
+  // Settled at the end of the tick, after the row is gone, so the reference scan no longer counts
+  // this Report's own list.
+  photos.push({ uploaderId: report.authorId, photoIds: report.photoIds, fromReport: report._id });
 
   if (report.postId !== undefined) {
     const post = await ctx.db.get(report.postId);
@@ -337,7 +362,7 @@ async function erasePost(ctx: MutationCtx, post: Doc<'posts'>) {
  * or it could not have been withdrawn — stay theirs. The Report it was drawn in, if that still
  * stands, stops listing it.
  */
-async function eraseHazard(ctx: MutationCtx, hazard: Doc<'hazards'>) {
+async function eraseHazard(ctx: MutationCtx, hazard: Doc<'hazards'>, photos: PhotoWork[]) {
   const own = await ctx.db
     .query('hazardConfirmations')
     .withIndex('by_hazard_and_user', (q) =>
@@ -354,7 +379,7 @@ async function eraseHazard(ctx: MutationCtx, hazard: Doc<'hazards'>) {
     }
   }
   await ctx.db.delete(hazard._id);
-  await erasePhotos(ctx, hazard.createdByUserId, hazard.photoIds);
+  photos.push({ uploaderId: hazard.createdByUserId, photoIds: hazard.photoIds });
 }
 
 // ── The clocks' backfill ───────────────────────────────────────────────────────────────────────

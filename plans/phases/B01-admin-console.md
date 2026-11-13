@@ -1470,7 +1470,8 @@ the People page and the skater screens that reach it are owed (the roadmap's reg
   it), an access alert filed from it is unlinked, its point events stay (a delta, a reason, the
   Report's id and a time — no content), and its Post drops it and re-derives its album, sort key and
   search words; a **Post** goes after its last member (held while any member is stored), with its
-  words and revisions; a **hazard** its row, photos and its author's own vote; a retracted
+  words and revisions — and a verdict or an open flag on a Post holds its members too, since it
+  judged what the Post showed; a **hazard** its row, photos and its author's own vote; a retracted
   **request** or **flag** its row. **Access alerts** run the clock with no eraser — a founder call
   (the register). The clock is `WITHDRAWN_ERASE_DAYS`, a sibling of the account grace pinned equal
   to it, because the codebase names each promise it states.

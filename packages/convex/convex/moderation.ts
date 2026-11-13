@@ -55,7 +55,7 @@ const ACTION_FOR_STATUS = {
  * target and writes one `hide` / `remove` / `restore` audit row with the required reason. A no-op
  * status change (already at `status`) still records the action — the moderator asserted a decision.
  */
-export const MODERATION_TABLE = {
+const MODERATION_TABLE = {
   report: 'reports',
   post: 'posts',
   comment: 'comments',

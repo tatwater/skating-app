@@ -66,10 +66,15 @@ import { literals } from './lib/validators';
 /** Free text has to be bounded somewhere; this is a sentence about a gate, not an essay. */
 export const MAX_ALERT_NOTE_LENGTH = 500;
 
-/** Recompute one alert from its full vote set and persist the result. Returns the new row. */
+/**
+ * Recompute one alert from its full vote set and persist the result. Returns the new row.
+ * `authorsWordCounts: false` derives it as if no one had posted it, so the author's standing "it's
+ * open" does not settle it (see `vote`).
+ */
 async function recomputeAlert(
   ctx: MutationCtx,
   alert: Doc<'accessAlerts'>,
+  authorsWordCounts = true,
 ): Promise<Doc<'accessAlerts'>> {
   const rows = await ctx.db
     .query('accessAlertVotes')
@@ -80,7 +85,12 @@ async function recomputeAlert(
     verdict: r.verdict,
     observedAt: r.observedAt,
   }));
-  const next = deriveAccessAlertLifecycle(alert, votes, seasonEndMs(alert.season));
+  const { createdByUserId: _, ...anonymous } = alert;
+  const next = deriveAccessAlertLifecycle(
+    authorsWordCounts ? alert : anonymous,
+    votes,
+    seasonEndMs(alert.season),
+  );
   await ctx.db.patch(alert._id, {
     status: next.status,
     expiresAt: next.expiresAt,
@@ -265,7 +275,11 @@ export const vote = mutation({
       });
     }
 
-    const next = await recomputeAlert(ctx, alert);
+    // On a pinned alert the author's word counts only when it is the author voting now: an "it's
+    // open" they said before a moderator pinned it — or pinned it again after they released it — is
+    // not a word about that pin, and must not release it the next time anyone else votes.
+    const authorsTurn = alert.status !== 'official' || alert.createdByUserId === profile._id;
+    const next = await recomputeAlert(ctx, alert, authorsTurn);
     // The author's own "it's open" releases a moderator's pin (founder ruling, 2026-11-13): the
     // reporter saw it plowed. The release is on the record, so the moderator who pinned it sees it
     // and can pin it again if it still stands.
@@ -322,6 +336,9 @@ export const retract = mutation({
     if (!isAuthor && !isModerator) {
       throw new ConvexError('Only the author or a moderator can retract an alert');
     }
+    // Already retracted: nothing left to retract, by anyone — a moderator's second word must not
+    // turn an author's final withdrawal into a moderator's (and so a pinnable) one.
+    if (alert.status === 'retracted') return;
     if (!isModerator) {
       const rule = alertRetractionByAuthor(alert.status);
       if (rule === 'already') return;
@@ -389,13 +406,14 @@ export async function setOfficialImpl(
   const alert = await ctx.db.get(accessAlertId);
   if (!alert) throw new ConvexError('Access alert not found');
   if (reason.trim().length === 0) throw new ConvexError('A reason is required');
-  // The author's retraction is final (D248): no moderator pins a withdrawn claim back up.
-  if (
-    official &&
-    alert.status === 'retracted' &&
-    alert.retractedByUserId === alert.createdByUserId
-  ) {
-    throw new ConvexError('Its author retracted this alert, so it can’t be pinned.');
+  // The author's retraction is final (D248): no moderator puts a withdrawn claim back up — not by
+  // pinning it, and not by releasing it, which would put it back in the community lifecycle.
+  if (alert.status === 'retracted' && alert.retractedByUserId === alert.createdByUserId) {
+    throw new ConvexError(
+      official
+        ? 'Its author retracted this alert, so it can’t be pinned.'
+        : 'Its author retracted this alert, so it can’t be released.',
+    );
   }
 
   if (official) {

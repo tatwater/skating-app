@@ -74,7 +74,8 @@ export const create = mutation({
     let parent: Doc<'comments'> | null = null;
     if (args.parentCommentId !== undefined) {
       parent = await ctx.db.get(args.parentCommentId);
-      if (!parent || parent.reportId !== args.reportId) {
+      // An erased comment's placeholder is nobody's words to answer (D248).
+      if (!parent || parent.reportId !== args.reportId || parent.erasedAt !== undefined) {
         throw new ConvexError('Parent comment not found');
       }
       // 2-level cap (D25): a reply's parent must itself be top-level. A well-behaved client already
