@@ -46,18 +46,6 @@ function reduceMotion() {
   return () => spy.mockRestore();
 }
 
-/** Within a quarter pixel on both axes. */
-async function expectSameBox(a: Element, b: Element, what: string) {
-  const ra = a.getBoundingClientRect();
-  const rb = b.getBoundingClientRect();
-  await expect(Math.abs(ra.width - rb.width), `${what} width`).toBeLessThanOrEqual(
-    JUNCTION_TOLERANCE_PX,
-  );
-  await expect(Math.abs(ra.height - rb.height), `${what} height`).toBeLessThanOrEqual(
-    JUNCTION_TOLERANCE_PX,
-  );
-}
-
 /** A loading region beside its loaded twin: skeleton on the left, content on the right. */
 function Pair({ skeleton, real }: { skeleton: ReactNode; real: ReactNode }) {
   return (
@@ -74,6 +62,31 @@ const pair = (root: HTMLElement) => ({
   skeleton: must(root.querySelector<HTMLElement>('[data-pair="skeleton"] > *')),
   real: must(root.querySelector<HTMLElement>('[data-pair="real"] > *')),
 });
+
+/**
+ * The pair's two boxes agree, measured the story-flake-safe way: both faces loaded first (a
+ * skeleton's `ch` and a text's advance both depend on the face, and the fallback's run ~13 px
+ * apart on a short label), then a fresh query and one synchronous read on every try, compared as
+ * numbers within a quarter pixel — never a node held across an await, never one read.
+ */
+async function expectPairSame(root: HTMLElement, what: string) {
+  const loading = pair(root);
+  await faceLoaded(loading.real);
+  await faceLoaded(loading.skeleton);
+  await waitFor(() => {
+    const { skeleton, real } = pair(root);
+    const a = skeleton.getBoundingClientRect();
+    const b = real.getBoundingClientRect();
+    if (
+      Math.abs(a.width - b.width) > JUNCTION_TOLERANCE_PX ||
+      Math.abs(a.height - b.height) > JUNCTION_TOLERANCE_PX
+    ) {
+      throw new Error(
+        `${what}: skeleton ${a.width} × ${a.height} px, real ${b.width} × ${b.height} px`,
+      );
+    }
+  });
+}
 
 /** The wash: one lift of the ink, at the surface's control radius, and never announced. */
 export const Wash: Story = {
@@ -99,10 +112,9 @@ export const TextRun: Story = {
     />
   ),
   play: async ({ canvasElement }) => {
-    const { skeleton, real } = pair(canvasElement);
-    await expectSameBox(skeleton, real, 'row text');
+    await expectPairSame(canvasElement, 'row text');
     // It paints only the cap-height band inside the line box.
-    const style = getComputedStyle(skeleton);
+    const style = getComputedStyle(pair(canvasElement).skeleton);
     await expect(style.backgroundClip).toBe('content-box');
     await expect(parseFloat(style.paddingTop)).toBeGreaterThan(0);
   },
@@ -121,11 +133,11 @@ export const Paragraph: Story = {
     />
   ),
   play: async ({ canvasElement }) => {
-    const { skeleton, real } = pair(canvasElement);
+    await expectPairSame(canvasElement, 'paragraph');
     // Three lines either side.
+    const { skeleton, real } = pair(canvasElement);
     const line = resolvePx(real, '1lh');
     await expect(Math.round(real.getBoundingClientRect().height / line)).toBe(3);
-    await expectSameBox(skeleton, real, 'paragraph');
     const lines = [...skeleton.querySelectorAll<HTMLElement>('[data-slot="skeleton"]')];
     await expect(lines).toHaveLength(3);
     const last = must(lines[2]).getBoundingClientRect().width;
@@ -146,14 +158,8 @@ export const Stat: Story = {
     />
   ),
   play: async ({ canvasElement }) => {
-    const { skeleton, real } = pair(canvasElement);
-    // `ch` is the loaded face's: load the value's own face first (the fallback's digits are a
-    // different width). The skeleton holds no text, so its `ch` re-resolves only when the browser
-    // gets round to the font-load invalidation — on a starved runner that can land after the
-    // first read (CI once measured it 13 px narrow). Wait for the boxes themselves (§12.5).
-    await faceLoaded(real);
-    await faceLoaded(skeleton);
-    await waitFor(() => expectSameBox(skeleton, real, 'stat'));
+    // `ch` is the loaded face's, and so are the value's digits: both faces load before any read.
+    await expectPairSame(canvasElement, 'stat');
   },
 };
 
@@ -172,8 +178,8 @@ export const Row: Story = {
     />
   ),
   play: async ({ canvasElement }) => {
-    const { skeleton, real } = pair(canvasElement);
-    await expectSameBox(skeleton, real, 'row');
+    await expectPairSame(canvasElement, 'row');
+    const { skeleton } = pair(canvasElement);
     await expect(skeleton.getBoundingClientRect().height).toBeCloseTo(
       resolvePx(skeleton, 'var(--size-td)'),
       1,
@@ -190,8 +196,7 @@ export const MapBlock: Story = {
     />
   ),
   play: async ({ canvasElement }) => {
-    const { skeleton, real } = pair(canvasElement);
-    await expectSameBox(skeleton, real, 'map');
+    await expectPairSame(canvasElement, 'map');
   },
 };
 
