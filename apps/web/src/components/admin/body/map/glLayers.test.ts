@@ -8,11 +8,29 @@ import {
   OUTLINE_STYLES,
   tokenVar,
 } from './bodyMapPalette';
-import { glLayerIds, glLayers, LINE_SOURCE, OUTLINE_SOURCE } from './glLayers';
+import { DOT_SOURCE, glLayerIds, glLayers, LINE_SOURCE, OUTLINE_SOURCE } from './glLayers';
 import { BODY_MAP_LAYERS } from './mapDescriptors';
 
 describe('glLayers', () => {
   const ids = glLayerIds();
+
+  it('draws the hazards’ dot fields over the fills and under every line, each dot at its own strength', () => {
+    const dots = ids.indexOf('body-console-field-dots');
+    expect(dots).toBeGreaterThan(ids.indexOf('body-console-fill-body'));
+    expect(dots).toBeLessThan(ids.indexOf('body-console-outline-bay'));
+    const layer = glLayers(bodyMapPalette('dark')).find((l) => l.id === 'body-console-field-dots');
+    expect(layer).toMatchObject({ type: 'circle', source: DOT_SOURCE });
+    expect((layer as { paint: Record<string, unknown> }).paint['circle-opacity']).toEqual([
+      'get',
+      'opacity',
+    ]);
+  });
+
+  it('draws the approach as a dashed line, and leaves the dimension line to the pixels', () => {
+    expect(ids).toContain('body-console-line-approach');
+    expect(ids).not.toContain('body-console-line-dimension');
+    expect(LINE_STYLES.approach.dash).not.toBeNull();
+  });
 
   it('draws fills first, bays under the shore, and the lit item last', () => {
     expect(ids[0]).toBe('body-console-fill-footprint');
@@ -28,9 +46,9 @@ describe('glLayers', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it('reads only its two sources', () => {
+  it('reads only its three sources', () => {
     for (const l of glLayers(null)) {
-      expect([OUTLINE_SOURCE, LINE_SOURCE]).toContain((l as { source: string }).source);
+      expect([OUTLINE_SOURCE, LINE_SOURCE, DOT_SOURCE]).toContain((l as { source: string }).source);
     }
   });
 

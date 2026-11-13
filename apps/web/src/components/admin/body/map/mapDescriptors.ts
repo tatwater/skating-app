@@ -55,7 +55,14 @@ export type MapLineStyle =
   /** A skated path. */
   | 'track'
   /** A thin rule from a mark to whatever names it. */
-  | 'leader';
+  | 'leader'
+  /** The walk from a lot to its put-in, as routed (Access): the skater drawer's dashed walk. */
+  | 'approach'
+  /**
+   * A survey's dimension line along one side of the body's box (Water), with a tick across each
+   * end — what decides whether one weather point is enough. Pair it with a `measure` label.
+   */
+  | 'dimension';
 
 /**
  * A point's face. A landmark wears its kind (`@skating/core`'s `LANDMARK_KINDS` — a settlement is
@@ -70,7 +77,12 @@ export type MapPointMark =
   | 'healing'
   | 'passage'
   | 'feature'
-  | 'photo';
+  | 'photo'
+  /**
+   * A skater's proposed landmark (Places): a dashed square with a question mark, since a proposal
+   * has no kind until a moderator gives it one.
+   */
+  | 'proposal';
 
 /** How a label is set. */
 export type MapLabelStyle =
@@ -79,7 +91,9 @@ export type MapLabelStyle =
   /** A town's name beside a town line: spaced caps, quieter. */
   | 'town'
   /** A place's name beside its mark: sentence case. */
-  | 'place';
+  | 'place'
+  /** A dimension line's length ("4.9 KM"), set into the line: spaced mono caps, quiet. */
+  | 'measure';
 
 interface MapItemBase {
   /**
@@ -95,6 +109,21 @@ export interface MapOutline extends MapItemBase {
   kind: 'outline';
   geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon;
   style: MapOutlineStyle;
+  /**
+   * A footprint drawn as a hazard's **dot field** (Hazards) instead of a flat plate: dots across
+   * the footprint in the hazard's tone, dimmed by `freshness` — **a stale hazard fades and is never
+   * removed** (D3) — and a step further while `provisional` (no second witness yet). A known body
+   * feature (`known`) draws at full strength: it has no clock. Only a `footprint` carries one.
+   */
+  field?: MapHazardField;
+}
+
+/** What a footprint's dot field says: how fresh, which tone, and whether anyone confirmed it. */
+export interface MapHazardField {
+  freshness: 'fresh' | 'aging' | 'stale' | 'known';
+  /** `healing` is the amber *healing, still unsafe*; `hazard` is the warning red. */
+  tone: 'hazard' | 'healing';
+  provisional: boolean;
 }
 
 export interface MapLine extends MapItemBase {
@@ -112,6 +141,8 @@ export interface MapPoint extends MapItemBase {
   name?: string;
   /** The hover plate's kicker ("Island · OSM"); without it the plate shows the name alone. */
   hoverKicker?: string;
+  /** A last line on the plate, under the name ("Windy and Copernicus open here"). */
+  caption?: string;
 }
 
 export interface MapLabel extends MapItemBase {
@@ -127,7 +158,24 @@ export interface MapLabel extends MapItemBase {
   angle?: number;
 }
 
-export type MapItem = MapOutline | MapLine | MapPoint | MapLabel;
+/**
+ * One archived satellite pass, drawn as the Aerial layer (Imagery): the picture the skater app's
+ * imagery reveal paints (`useFreezeUpFrame`), a quiet raster under the outline — never over it. One
+ * per scene; the frame draws the first it is handed.
+ */
+export interface MapRaster extends MapItemBase {
+  kind: 'raster';
+  layer: 'aerial';
+  /** The frame's object key in the imagery archive. */
+  key: string;
+  granuleId: string;
+  band: string;
+  capturedAt: string;
+  /** The archive's season (`winter-2026-27`), for the picture's credit; `null` while unread. */
+  season: string | null;
+}
+
+export type MapItem = MapOutline | MapLine | MapPoint | MapLabel | MapRaster;
 
 /** What a tab wants drawn, beside what the frame always draws. */
 export interface BodyMapScene {

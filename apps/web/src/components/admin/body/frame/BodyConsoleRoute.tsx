@@ -118,7 +118,23 @@ export function BodyConsoleRoute({ registry = BODY_TAB_REGISTRY }: { registry?: 
               onScene={setTabScene}
             />
           )}
-          <BodyMap bbox={data.bbox} scene={scene} resetKey={tab} mode={mode} />
+          <BodyMap
+            bbox={data.bbox}
+            scene={scene}
+            resetKey={tab}
+            mode={mode}
+            foot={
+              slot.Dock === undefined ? undefined : (
+                <TabWiring
+                  key={slot.key}
+                  Wiring={slot.Dock}
+                  bodyId={bodyId}
+                  lit={search.lit ?? null}
+                  onLitChange={onLitChange}
+                />
+              )
+            }
+          />
         </>
       }
       tabPanel={
@@ -157,7 +173,7 @@ function TabSceneProbe({
   lit: string | null;
   onScene: (scene: BodyMapScene | null) => void;
 }) {
-  const data = map.useData(bodyId);
+  const data = map.useData(bodyId, lit);
   const scene = useMemo(
     () => (data === undefined ? null : map.describe(data, lit)),
     [data, lit, map],

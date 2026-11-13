@@ -1,3 +1,4 @@
+import { fieldDots, fieldOpacity } from './hazardField';
 import {
   BODY_MAP_LAYERS,
   type BodyMapLayer,
@@ -10,6 +11,7 @@ import {
   type MapOutlineStyle,
   type MapPoint,
   type MapPointMark,
+  type MapRaster,
 } from './mapDescriptors';
 
 /**
@@ -21,6 +23,10 @@ import {
  * - **The rack decides what shows.** An item is drawn only while its layer is on; a layer no item
  *   belongs to is *disabled* — kept in the rack, faded, inert.
  * - **One lit item**, from the URL (`?lit=`), drawn bright whatever its layer's style.
+ * - **A hazard's footprint is its dot field** (`field`), never a plate: dots in its tone, dimmed by
+ *   freshness and never removed (`hazardField.ts`). A dimension line and its ticks are drawn over
+ *   the map in screen pixels, so its ticks keep their length at every zoom. A raster (an imagery
+ *   pass) goes under everything the console draws.
  */
 
 export type LayerSwitches = Readonly<Record<BodyMapLayer, boolean>>;
@@ -66,10 +72,22 @@ export function layersInUse(items: readonly MapItem[]): ReadonlySet<BodyMapLayer
 /** One feature per outline or line, carrying its id and whether it is lit. */
 type Props = { id: string; style: string; lit: boolean };
 
+/** One dot of a hazard's field: its footprint's id, its tone and how strongly it draws. */
+export type DotProps = { id: string; tone: 'hazard' | 'healing'; opacity: number; lit: boolean };
+
+/** The outline style a field footprint is drawn under: no fill, no line — only its dots (and lit). */
+export const FIELD_STYLE = 'field';
+
 export interface DrawnScene {
   /** Outlines and lines for the map's own layers (MapLibre, or the still). */
   outlines: GeoJSON.FeatureCollection<GeoJSON.Polygon | GeoJSON.MultiPolygon, Props>;
   lines: GeoJSON.FeatureCollection<GeoJSON.LineString, Props>;
+  /** The hazards' dot fields, every footprint's dots in one collection. */
+  dots: GeoJSON.FeatureCollection<GeoJSON.Point, DotProps>;
+  /** Dimension lines, drawn over the map in pixels with a tick across each end. */
+  dimensions: readonly MapLine[];
+  /** The imagery pass under everything, if the Aerial layer is on and a tab handed one. */
+  raster: MapRaster | null;
   /** Marks and labels over the map, in the order they draw (later on top). */
   points: readonly MapPoint[];
   labels: readonly MapLabel[];
@@ -85,6 +103,7 @@ export const LINE_ORDER: readonly MapLineStyle[] = [
   'townLine',
   'divider',
   'mouth',
+  'approach',
   'track',
   'leader',
 ];
@@ -100,7 +119,10 @@ export function drawScene(scene: BodyMapScene, layers: LayerSwitches): DrawnScen
     scene.lit != null && shown.some((i) => i.id === scene.lit) ? (scene.lit as string) : null;
 
   const outlines = shown.filter((i): i is MapOutline => i.kind === 'outline');
-  const lines = shown.filter((i): i is MapLine => i.kind === 'line' && i.path.length >= 2);
+  const allLines = shown.filter((i): i is MapLine => i.kind === 'line' && i.path.length >= 2);
+  const lines = allLines.filter((l) => l.style !== 'dimension');
+  const dimensions = allLines.filter((l) => l.style === 'dimension');
+  const raster = shown.find((i): i is MapRaster => i.kind === 'raster') ?? null;
   const points = shown.filter((i): i is MapPoint => i.kind === 'point');
   const labels = shown.filter((i): i is MapLabel => i.kind === 'label');
 
@@ -116,9 +138,28 @@ export function drawScene(scene: BodyMapScene, layers: LayerSwitches): DrawnScen
         .map((o) => ({
           type: 'Feature',
           geometry: o.geometry,
-          properties: { id: o.id, style: o.style, lit: o.id === lit },
+          properties: {
+            id: o.id,
+            style: o.field !== undefined ? FIELD_STYLE : o.style,
+            lit: o.id === lit,
+          },
         })),
     },
+    dots: {
+      type: 'FeatureCollection',
+      features: outlines.flatMap((o) => {
+        const field = o.field;
+        if (field === undefined) return [];
+        const opacity = fieldOpacity(field);
+        return fieldDots(o.geometry).map((at) => ({
+          type: 'Feature' as const,
+          geometry: { type: 'Point' as const, coordinates: [at[0], at[1]] },
+          properties: { id: o.id, tone: field.tone, opacity, lit: o.id === lit },
+        }));
+      }),
+    },
+    dimensions,
+    raster,
     lines: {
       type: 'FeatureCollection',
       features: lines.map((l) => ({

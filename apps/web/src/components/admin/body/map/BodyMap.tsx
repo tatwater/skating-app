@@ -1,11 +1,10 @@
-import { useMemo, useState } from 'react';
-
+import { type ReactNode, useMemo, useState } from 'react';
+import { type BBoxLike, fitCamera, stillSurface } from '@/lib/mapSurface';
 import { BodyMapPane } from './BodyMapPane';
 import { BodyMapStill } from './BodyMapStill';
 import type { BodyMapMode } from './bodyMapPalette';
 import { drawScene, layerSwitches, rackRows } from './bodyScene';
 import type { BodyMapLayer, BodyMapScene } from './mapDescriptors';
-import { type BBoxLike, fitCamera, stillSurface } from './mapSurface';
 import { FIT_PADDING, useBodyMapCanvas } from './useBodyMapCanvas';
 
 /**
@@ -21,6 +20,8 @@ type Common = {
   scene: BodyMapScene;
   /** A new key (the open tab) puts the rack back to the scene's own layers. */
   resetKey: string;
+  /** What the open tab mounts at the map's foot (its dock). */
+  foot?: ReactNode;
   className?: string;
 };
 
@@ -47,6 +48,7 @@ export function BodyMap({
   scene,
   resetKey,
   mode,
+  foot,
   className,
 }: Common & { mode: BodyMapMode }) {
   const { drawn, rack, onLayerChange } = useRack(scene, resetKey);
@@ -63,6 +65,7 @@ export function BodyMap({
       onZoomOut={canvas.zoomOut}
       atMinZoom={canvas.atMinZoom}
       atMaxZoom={canvas.atMaxZoom}
+      foot={foot}
     />
   );
 }
@@ -75,6 +78,7 @@ export function BodyMapStillView({
   width,
   height,
   hoverId,
+  foot,
   className,
 }: Common & { width: number; height: number; hoverId?: string | null }) {
   const { drawn, rack, onLayerChange } = useRack(scene, resetKey);
@@ -95,6 +99,7 @@ export function BodyMapStillView({
       onZoomOut={() => setZoomStep((z) => z - 1)}
       atMinZoom={zoomStep <= -1}
       hoverId={hoverId ?? null}
+      foot={foot}
     />
   );
 }

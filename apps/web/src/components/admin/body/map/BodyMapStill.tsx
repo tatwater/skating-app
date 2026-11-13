@@ -1,4 +1,7 @@
+import type { MapSurface } from '@/lib/mapSurface';
 import {
+  FIELD_DOT_RADIUS,
+  FIELD_TONES,
   LINE_STYLES,
   LIT_STYLE,
   OUTLINE_STYLES,
@@ -6,7 +9,6 @@ import {
   tokenVar,
 } from './bodyMapPalette';
 import type { DrawnScene } from './bodyScene';
-import type { MapSurface } from './mapSurface';
 
 /**
  * The console map's outlines and lines drawn as SVG over the map's land, from the same scene and
@@ -41,7 +43,8 @@ export function BodyMapStill({ surface, drawn }: { surface: MapSurface; drawn: D
       {/* Fills first, then every line — MapLibre's order, so the body's water never covers a bay. */}
       {drawn.outlines.features.map((f) => {
         const base = OUTLINE_STYLES[f.properties.style as keyof typeof OUTLINE_STYLES];
-        if (base.fill === null) return null;
+        // A field footprint has no plate: its dots are the drawing.
+        if (base === undefined || base.fill === null) return null;
         return (
           <path
             key={`fill:${f.properties.id}`}
@@ -56,6 +59,7 @@ export function BodyMapStill({ surface, drawn }: { surface: MapSurface; drawn: D
         const spec = f.properties.lit
           ? LIT_STYLE
           : OUTLINE_STYLES[f.properties.style as keyof typeof OUTLINE_STYLES];
+        if (spec === undefined) return null;
         return (
           <path
             key={f.properties.id}
@@ -67,6 +71,24 @@ export function BodyMapStill({ surface, drawn }: { surface: MapSurface; drawn: D
             stroke={tokenVar(spec.line)}
             strokeWidth={spec.width}
             strokeDasharray={dashOf(spec)}
+          />
+        );
+      })}
+      {/* The hazards' dot fields, under the lines — the GL order. */}
+      {drawn.dots.features.map((f, i) => {
+        const [x, y] = f.geometry.coordinates;
+        const p = surface.project([x ?? 0, y ?? 0]);
+        return (
+          <circle
+            // biome-ignore lint/suspicious/noArrayIndexKey: a field's dots are positional
+            key={`dot:${f.properties.id}:${i}`}
+            data-slot="body-map-dot"
+            data-id={f.properties.id}
+            cx={p.x.toFixed(1)}
+            cy={p.y.toFixed(1)}
+            r={FIELD_DOT_RADIUS}
+            fill={tokenVar(FIELD_TONES[f.properties.tone])}
+            fillOpacity={f.properties.opacity}
           />
         );
       })}

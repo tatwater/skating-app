@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MASCOMA_BOUNDS, MASCOMA_SCENE } from '../frame/bodyFixtures';
 import { adminToken } from './bodyMapPalette';
 import { DEFAULT_LAYERS, drawScene } from './bodyScene';
-import { LINE_SOURCE, OUTLINE_SOURCE } from './glLayers';
+import { DOT_SOURCE, LINE_SOURCE, OUTLINE_SOURCE } from './glLayers';
 
 /**
  * The console map's MapLibre half, against a fake map that behaves as MapLibre does where it bit the
@@ -141,7 +141,7 @@ describe('useBodyMapCanvas', () => {
     shell.onLoad?.(map);
     shell.live = true;
     rerender(<Harness mode="dark" />);
-    expect([...map.sources.keys()]).toEqual([OUTLINE_SOURCE, LINE_SOURCE]);
+    expect([...map.sources.keys()]).toEqual([OUTLINE_SOURCE, LINE_SOURCE, DOT_SOURCE]);
     expect(map.layers.has('body-console-outline-body')).toBe(true);
     expect(map.minZoom).toBeCloseTo(map.zoom - 1.5, 6);
     expect(map.maxZoom).toBe(17);

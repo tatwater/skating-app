@@ -49,7 +49,24 @@ export const LINE_STYLES: Readonly<Record<MapLineStyle, StrokeSpec>> = {
   townLine: { fill: null, line: 'fg3', width: HAIR, dash: [8, 3, 1, 3] },
   track: { fill: null, line: 'fg2', width: 1.5, dash: null },
   leader: { fill: null, line: 'fg2', width: HAIR, dash: null },
+  // The walk from a lot to its put-in: the skater drawer's dash, in the console's gray ink.
+  approach: { fill: null, line: 'fg1', width: 1.5, dash: [2, 2] },
+  // A survey's dimension line, quiet: drawn over the map in pixels, its ticks a fixed length.
+  dimension: { fill: null, line: 'fg3', width: HAIR, dash: null },
 };
+
+/**
+ * A hazard's dot field, by tone: the warning red, or the amber of *healing, still unsafe* — the
+ * console's one use of either on the map, since both mean what they say. How strongly a field
+ * draws is its freshness (`hazardField.ts`), never its color.
+ */
+export const FIELD_TONES: Readonly<Record<'hazard' | 'healing', AdminColorToken>> = {
+  hazard: 'bad',
+  healing: 'warn',
+};
+
+/** A field dot's radius, px: the board's cells at the body's zoom. */
+export const FIELD_DOT_RADIUS = 1.6;
 
 /** What a lit outline or line becomes: the bright ink, a step heavier, a lift inside. */
 export const LIT_STYLE: StrokeSpec = { fill: 'lift-08', line: 'fg', width: 2, dash: null };
@@ -78,6 +95,7 @@ export interface BodyMapPalette {
   outline: Record<MapOutlineStyle, ResolvedStroke>;
   line: Record<MapLineStyle, ResolvedStroke>;
   lit: ResolvedStroke;
+  field: Record<'hazard' | 'healing', string>;
 }
 
 function resolve(mode: BodyMapMode, spec: StrokeSpec): ResolvedStroke {
@@ -104,5 +122,9 @@ export function bodyMapPalette(mode: BodyMapMode): BodyMapPalette {
     outline: resolveAll(mode, OUTLINE_STYLES),
     line: resolveAll(mode, LINE_STYLES),
     lit: resolve(mode, LIT_STYLE),
+    field: {
+      hazard: adminToken(mode, FIELD_TONES.hazard),
+      healing: adminToken(mode, FIELD_TONES.healing),
+    },
   };
 }

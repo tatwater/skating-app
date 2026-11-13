@@ -138,3 +138,117 @@ describe('drawScene', () => {
     expect(drawn.labels.map((l) => l.text)).toEqual(['Mascoma North', 'Mascoma South']);
   });
 });
+
+describe('the contract’s later members', () => {
+  const footprint = (id: string, field?: MapItem extends infer _ ? object : never) => ({
+    kind: 'outline' as const,
+    id,
+    layer: 'hazards' as const,
+    geometry: square,
+    style: 'footprint' as const,
+    ...(field ?? {}),
+  });
+
+  it('draws a footprint with a field as dots, never a plate, a stale one faded but there', () => {
+    const scene: BodyMapScene = {
+      items: [
+        footprint('hazard:h', {
+          field: { freshness: 'stale', tone: 'hazard', provisional: false },
+        }),
+        footprint('footprint:f'),
+      ],
+    };
+    const drawn = drawScene(scene, layerSwitches({ hazards: true }));
+    const styles = drawn.outlines.features.map((f) => [f.properties.id, f.properties.style]);
+    expect(styles).toContainEqual(['hazard:h', 'field']);
+    expect(styles).toContainEqual(['footprint:f', 'footprint']);
+    expect(drawn.dots.features.length).toBeGreaterThan(0);
+    for (const dot of drawn.dots.features) {
+      expect(dot.properties).toMatchObject({ id: 'hazard:h', tone: 'hazard' });
+      expect(dot.properties.opacity).toBeGreaterThan(0);
+    }
+  });
+
+  it('hides a field with its layer, as any item', () => {
+    const scene: BodyMapScene = {
+      items: [
+        footprint('hazard:h', {
+          field: { freshness: 'fresh', tone: 'healing', provisional: true },
+        }),
+      ],
+    };
+    expect(drawScene(scene, layerSwitches({ hazards: false })).dots.features).toHaveLength(0);
+  });
+
+  it('takes dimension lines off the map’s own layers, to be drawn in pixels', () => {
+    const scene: BodyMapScene = {
+      items: [
+        {
+          kind: 'line',
+          id: 'dim:ew',
+          layer: 'samples',
+          path: [
+            [0, 0],
+            [1, 0],
+          ],
+          style: 'dimension',
+        },
+        {
+          kind: 'line',
+          id: 'walk:a',
+          layer: 'putIns',
+          path: [
+            [0, 0],
+            [1, 1],
+          ],
+          style: 'approach',
+        },
+        {
+          kind: 'label',
+          id: 'dim:ew:len',
+          layer: 'samples',
+          at: [0.5, 0],
+          text: '4.9 KM',
+          style: 'measure',
+        },
+      ],
+    };
+    const drawn = drawScene(scene, layerSwitches({ samples: true }));
+    expect(drawn.dimensions.map((d) => d.id)).toEqual(['dim:ew']);
+    expect(drawn.lines.features.map((f) => f.properties.style)).toEqual(['approach']);
+    expect(drawn.labels.map((l) => l.style)).toEqual(['measure']);
+  });
+
+  it('hands the map the first imagery pass while the Aerial layer is on, and none while it’s off', () => {
+    const scene: BodyMapScene = {
+      items: [
+        {
+          kind: 'raster',
+          id: 'pass:tc.g1',
+          layer: 'aerial',
+          key: 'winter-2026-27/g1-visual.pmtiles',
+          granuleId: 'g1',
+          band: 'tc',
+          capturedAt: '2026-12-01T15:00:00Z',
+          season: 'winter-2026-27',
+        },
+      ],
+      layers: { aerial: true },
+    };
+    expect(drawScene(scene, layerSwitches(scene.layers)).raster?.granuleId).toBe('g1');
+    expect(drawScene(scene, layerSwitches({ aerial: false })).raster).toBeNull();
+    // A pass puts the Aerial layer in use, so its switch is live in the rack.
+    expect(
+      rackRows(scene.items, layerSwitches(scene.layers)).find((r) => r.layer === 'aerial'),
+    ).toMatchObject({ on: true, available: true });
+  });
+
+  it('draws a proposal as a mark the key names', () => {
+    const scene: BodyMapScene = {
+      items: [
+        { kind: 'point', id: 'proposal:p', layer: 'marks', at: [0.5, 0.5], mark: 'proposal' },
+      ],
+    };
+    expect(drawScene(scene, DEFAULT_LAYERS).keyKinds).toEqual(['proposal']);
+  });
+});

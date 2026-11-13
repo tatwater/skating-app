@@ -12,10 +12,14 @@ import { BODY_TABS, type BodyTabKey } from './bodySearch';
  * - **`Wiring`** — a small component that takes {@link BodyTabProps} (at least `{ bodyId }`), reads
  *   its own data, and renders the tab's props-only view. It draws only inside the inspector, under
  *   the tab grid; it never touches the map.
- * - **`map`** (optional) — the tab's drawing, as data: `useData(bodyId)` reads what the drawing
- *   needs (the same Convex reads its wiring makes; the client dedupes them to one subscription) and
+ * - **`map`** (optional) — the tab's drawing, as data: `useData(bodyId, lit)` reads what the drawing
+ *   needs (the same Convex reads its wiring makes; the client dedupes them to one subscription) —
+ *   following the lit item when what to read depends on it (a chosen band, a chosen winter) — and
  *   `describe(data, lit)` is a **pure function** from that data to a {@link BodyMapScene}. The frame
  *   draws the scene over its own (the outline, the bays, the marks, the access points).
+ * - **`Dock`** (optional) — a component the frame mounts in the slot at the map's foot, over the
+ *   key (Imagery's passes and band). It takes the same props as `Wiring`, and is the one place a
+ *   tab draws on the map pane; it never touches the map itself.
  *
  * A slot with no `Wiring` draws the tab's *Not built yet* state, so the grid always holds nine and
  * the URL can name any of them. Tabs are registered at integration, by adding them to
@@ -37,7 +41,8 @@ export interface BodyTabProps {
  * tab with nothing to read), since the frame re-draws whenever its identity moves.
  */
 export interface BodyTabMap<D> {
-  useData: (bodyId: string) => D | undefined;
+  /** The drawing's data; `lit` is the lit item (`?lit=`), for a read that follows it. */
+  useData: (bodyId: string, lit: string | null) => D | undefined;
   describe: (data: D, lit: string | null) => BodyMapScene;
 }
 
@@ -50,6 +55,8 @@ export interface BodyTabSlot {
   /** The tab's drawing. Absent: the frame draws its own scene alone. */
   // biome-ignore lint/suspicious/noExplicitAny: each tab has its own data; the frame only threads it from `useData` to `describe`.
   map?: BodyTabMap<any>;
+  /** What the tab mounts at the map's foot. Absent: the foot holds the key alone. */
+  Dock?: ComponentType<BodyTabProps>;
 }
 
 export const BODY_TAB_LABELS: Record<BodyTabKey, string> = {
@@ -65,7 +72,7 @@ export const BODY_TAB_LABELS: Record<BodyTabKey, string> = {
 };
 
 /** One tab's registration: its wiring and, if it draws, its map. */
-export type BodyTabRegistration = Pick<BodyTabSlot, 'Wiring' | 'map'>;
+export type BodyTabRegistration = Pick<BodyTabSlot, 'Wiring' | 'map' | 'Dock'>;
 
 export type BodyTabRegistry = Readonly<Record<BodyTabKey, BodyTabSlot>>;
 

@@ -1,5 +1,5 @@
 import type { LayerSpecification } from 'maplibre-gl';
-import type { BodyMapPalette } from './bodyMapPalette';
+import { type BodyMapPalette, FIELD_DOT_RADIUS } from './bodyMapPalette';
 import { LINE_ORDER, OUTLINE_ORDER } from './bodyScene';
 
 /**
@@ -7,12 +7,14 @@ import { LINE_ORDER, OUTLINE_ORDER } from './bodyScene';
  * tested without a canvas. Two GeoJSON sources (the scene's outlines and its lines, `drawScene`'s
  * collections) and one layer per style, because a dash can't follow a feature's property:
  *
- * fills (the body's water, footprints) → outline lines in `OUTLINE_ORDER` (bays under the shore)
- * → lines in `LINE_ORDER` → the lit item's line, last, over everything.
+ * fills (the body's water, footprints) → the hazards' dot fields → outline lines in
+ * `OUTLINE_ORDER` (bays under the shore) → lines in `LINE_ORDER` → the lit item's line, last, over
+ * everything. A dot's opacity is its own (`hazardField.ts`: dimmed by freshness, never zero).
  */
 
 export const OUTLINE_SOURCE = 'body-console-outlines';
 export const LINE_SOURCE = 'body-console-lines';
+export const DOT_SOURCE = 'body-console-dots';
 
 /** Every layer id this module adds, in order — what a re-paint walks. */
 export function glLayerIds(): string[] {
@@ -36,6 +38,24 @@ export function glLayers(palette: BodyMapPalette | null): LayerSpecification[] {
       });
     }
   }
+  layers.push({
+    id: 'body-console-field-dots',
+    type: 'circle',
+    source: DOT_SOURCE,
+    paint: palette
+      ? {
+          'circle-radius': FIELD_DOT_RADIUS,
+          'circle-color': [
+            'match',
+            ['get', 'tone'],
+            'healing',
+            palette.field.healing,
+            palette.field.hazard,
+          ] as never,
+          'circle-opacity': ['get', 'opacity'] as never,
+        }
+      : {},
+  });
   for (const style of OUTLINE_ORDER) {
     const p = palette?.outline[style];
     layers.push({

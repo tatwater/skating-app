@@ -341,6 +341,8 @@ type MapHoverPlateProps = Omit<ComponentProps<'div'>, 'title'> & {
   at: { x: number; y: number } | null;
   /** The kicker line ("Island · OSM"). */
   title?: ReactNode;
+  /** A last line under the name, quieter ("Windy and Copernicus open here"). */
+  caption?: ReactNode;
   /** How far up and right of the point the plate's corner sits, px (clear of the mark). */
   offset?: number;
 };
@@ -349,6 +351,7 @@ type MapHoverPlateProps = Omit<ComponentProps<'div'>, 'title'> & {
 function MapHoverPlate({
   at,
   title,
+  caption,
   offset = 12,
   className,
   style,
@@ -382,6 +385,14 @@ function MapHoverPlate({
       >
         {children}
       </span>
+      {caption != null && (
+        <span
+          data-slot="map-hover-plate-caption"
+          className="text-assist leading-none whitespace-nowrap text-fg3"
+        >
+          {caption}
+        </span>
+      )}
     </div>
   );
 }

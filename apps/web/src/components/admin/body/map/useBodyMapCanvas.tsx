@@ -2,13 +2,14 @@ import type maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { useFreezeUpFrame } from '@/components/useFreezeUpFrame';
 import { env } from '@/lib/env';
 import { MAP_CONTAINER_CLASS, useMapCanvas } from '@/lib/mapCanvas';
+import { type BBoxLike, fitCamera, type MapSurface, type Padding } from '@/lib/mapSurface';
 import { DEMO_PMTILES_URL, MAP_FLAVORS } from '@/lib/waterMap';
 import { type BodyMapMode, bodyMapPalette } from './bodyMapPalette';
 import type { DrawnScene } from './bodyScene';
-import { glLayers, LINE_SOURCE, OUTLINE_SOURCE } from './glLayers';
-import { type BBoxLike, fitCamera, type MapSurface, type Padding } from './mapSurface';
+import { DOT_SOURCE, glLayers, LINE_SOURCE, OUTLINE_SOURCE } from './glLayers';
 
 /**
  * The console map's own MapLibre instance (B03's recorded call: the skater map and the console map
@@ -89,6 +90,7 @@ export function useBodyMapCanvas({
     onLoad: (map) => {
       map.addSource(OUTLINE_SOURCE, { type: 'geojson', data: drawnRef.current.outlines });
       map.addSource(LINE_SOURCE, { type: 'geojson', data: drawnRef.current.lines });
+      map.addSource(DOT_SOURCE, { type: 'geojson', data: drawnRef.current.dots });
       for (const layer of glLayers(paletteRef.current)) map.addLayer(layer);
       // Framed inside the chrome's room, then held there: one step and a half out, no further.
       const canvas = map.getContainer();
@@ -109,6 +111,9 @@ export function useBodyMapCanvas({
     (map.getSource(LINE_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData(
       drawn.lines ?? EMPTY,
     );
+    (map.getSource(DOT_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData(
+      drawn.dots ?? EMPTY,
+    );
   }, [drawn, liveMap]);
 
   // The paint, on the live map only — a mode change re-creates the map, and this re-applies.
@@ -122,6 +127,8 @@ export function useBodyMapCanvas({
       }
     }
   }, [palette, liveMap]);
+
+  useRaster(liveMap, drawn.raster);
 
   const surface = useLiveSurface(liveMap);
 
@@ -137,6 +144,25 @@ export function useBodyMapCanvas({
     atMinZoom: map !== null && zoom <= map.getMinZoom() + 1e-6,
     atMaxZoom: map !== null && zoom >= map.getMaxZoom() - 1e-6,
   };
+}
+
+/**
+ * The imagery pass (Imagery's lit pass) on the live map: the skater app's own reveal
+ * (`useFreezeUpFrame` — two-lane leapfrog, no blank between dates, gated on its source's own
+ * tiles), anchored under the basemap's roads and so under every line the console draws. The ref
+ * it reads is the live map or nothing, re-read every render, so a re-created map is never written
+ * to before it can take a write; while the map is down the hook forgets its lanes.
+ */
+function useRaster(liveMap: () => maplibregl.Map | null, raster: DrawnScene['raster']): void {
+  const live = liveMap();
+  const ref = useRef<maplibregl.Map | null>(live);
+  ref.current = live;
+  useFreezeUpFrame({
+    mapRef: ref,
+    loaded: live !== null,
+    frame: raster === null ? null : { key: raster.key },
+    season: raster?.season ?? null,
+  });
 }
 
 /**

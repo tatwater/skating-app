@@ -184,7 +184,8 @@ export function useFreezeUpFrame({
 }: {
   mapRef: { current: maplibregl.Map | null };
   loaded: boolean;
-  frame: IndexedFrame | null;
+  /** The pass to paint: only its archive key is read (the console hands no more than that). */
+  frame: Pick<IndexedFrame, 'key'> | null;
   season: string | null;
   slot?: FreezeUpSlot;
 }): void {
