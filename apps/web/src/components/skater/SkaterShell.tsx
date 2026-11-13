@@ -3,14 +3,13 @@ import { api } from '@skating/convex/api';
 import { deviceTimeZone, timezoneToSync } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { type ReactNode, useEffect } from 'react';
+import { useIsPhone } from '@/lib/usePhoneLayout';
 import { useOpenSync } from '../../lib/useOpenSync';
-
 import { SheetHostContext } from './chrome';
 import { useSearchOwnerBinding } from './GlobalSearch';
 import { NotFoundScreen } from './NotFoundScreen';
 import { OfflineOverPage } from './OfflineBoundary';
 import { PhoneChrome } from './phone/PhoneChrome';
-import { useIsPhone } from './phone/usePhoneLayout';
 import { SkaterFrame } from './SkaterFrame';
 import { SkaterTopBar } from './SkaterTopBar';
 import { useSkaterSurface } from './useSkaterSurface';

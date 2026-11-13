@@ -26,6 +26,7 @@ vi.mock('../../theme-provider', () => ({
   useTheme: () => ({ theme: 'system', setTheme: vi.fn(), resolvedTheme: 'dark' }),
 }));
 
+import { PHONE_QUERY, useIsPhone } from '@/lib/usePhoneLayout';
 import { GlobalSearch } from '../GlobalSearch';
 import { LatestFrame } from '../latest/LatestFrame';
 import { LatestPhoneBar } from './LatestPhoneBar';
@@ -33,7 +34,6 @@ import { PhoneChrome } from './PhoneChrome';
 import { closesLake, PhoneLakeDrawer, snapName } from './PhoneLakeDrawer';
 import { PhoneMenuSheet } from './PhoneMenuSheet';
 import { PhoneSearchView } from './PhoneSearchView';
-import { PHONE_QUERY, useIsPhone } from './usePhoneLayout';
 
 /** A `matchMedia` whose phone query answers `phone.matches`, and can say it changed. */
 function stubMedia() {

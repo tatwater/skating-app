@@ -17,7 +17,7 @@ vi.mock('./phone/PhoneChrome', () => ({
   PhoneChrome: ({ live }: { live: boolean }) => <nav>phone chrome{live ? ' live' : ''}</nav>,
 }));
 const phone = vi.hoisted(() => ({ value: false }));
-vi.mock('./phone/usePhoneLayout', () => ({ useIsPhone: () => phone.value }));
+vi.mock('@/lib/usePhoneLayout', () => ({ useIsPhone: () => phone.value }));
 
 import { NotFoundRoute, SkaterShell, useAppOpenSync } from './SkaterShell';
 

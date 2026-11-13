@@ -2,11 +2,10 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faXmark } from '@fortawesome/sharp-light-svg-icons';
 import { useRouter } from '@tanstack/react-router';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { useIsPhone } from '@/lib/usePhoneLayout';
 import { type PhoneDrawerSnap, useChromeStore } from '@/stores/chromeStore';
 import { DRAWER_SNAP_POINTS, Drawer, DrawerContent, DrawerTitle } from '../../kit/drawer';
 import { blockingModalOpen } from '../chrome';
-
-import { useIsPhone } from './usePhoneLayout';
 
 /**
  * A lake on a phone (boards 9.2–9.4): the lake's sidebar, unchanged, inside the kit Drawer over the

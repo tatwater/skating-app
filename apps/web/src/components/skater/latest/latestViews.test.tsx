@@ -1,9 +1,9 @@
 import type { FeedCardData, FeedFilters } from '@skating/core';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { MID_QUERY } from '@/lib/usePhoneLayout';
 import { CARD_PAT } from '../panels/panelFixtures';
 import { polyfillAnimate } from '../panels/panelTestMocks';
-import { MID_QUERY } from '../phone/usePhoneLayout';
 import { FeedColumn, type FeedColumnProps } from './FeedColumn';
 import { FilterColumn } from './FilterColumn';
 import { LatestFrame } from './LatestFrame';
