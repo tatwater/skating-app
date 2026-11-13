@@ -3,7 +3,7 @@ import { type KeyboardEvent, type ReactNode, useId, useRef, useState } from 'rea
 import { cn } from '@/lib/utils';
 
 /**
- * **Kit candidate** — a short list of things to open, each on a hollow bullet (The Table's
+ * A short list of things to open, each on a hollow bullet (The Table's
  * vocabulary, §6): a kicker over its title, a line under. The open one is lit — the selection
  * wash, the bright rule down its left edge, the bullet filled. Where the kit's `MiddleList` is a
  * pane-sized queue, this sits inside a panel among other blocks (*Asked of this body*).

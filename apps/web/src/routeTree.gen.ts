@@ -41,6 +41,7 @@ import { Route as SkaterSettingsIndexRouteImport } from './routes/_skater.settin
 import { Route as SkaterSettingsSectionRouteImport } from './routes/_skater.settings.$section'
 import { Route as SkaterUUsernameRouteImport } from './routes/_skater.u.$username'
 import { Route as SkaterWaterIdRouteImport } from './routes/_skater.water.$id'
+import { Route as AdminBodyIdRouteImport } from './routes/admin.body.$id'
 import { Route as AdminUsersIndexRouteImport } from './routes/admin.users.index'
 import { Route as AdminUsersIdRouteImport } from './routes/admin.users.$id'
 import { Route as AdminWaterIndexRouteImport } from './routes/admin.water.index'
@@ -209,6 +210,11 @@ const SkaterWaterIdRoute = SkaterWaterIdRouteImport.update({
   path: '/water/$id',
   getParentRoute: () => SkaterRoute,
 } as any)
+const AdminBodyIdRoute = AdminBodyIdRouteImport.update({
+  id: '/body/$id',
+  path: '/body/$id',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminUsersIndexRoute = AdminUsersIndexRouteImport.update({
   id: '/users/',
   path: '/users/',
@@ -281,6 +287,7 @@ export interface FileRoutesByFullPath {
   '/settings/$section': typeof SkaterSettingsSectionRoute
   '/u/$username': typeof SkaterUUsernameRoute
   '/water/$id': typeof SkaterWaterIdRoute
+  '/admin/body/$id': typeof AdminBodyIdRoute
   '/admin/users/$id': typeof AdminUsersIdRoute
   '/admin/water/$id': typeof AdminWaterIdRoute
   '/admin/water/place-names': typeof AdminWaterPlaceNamesRoute
@@ -320,6 +327,7 @@ export interface FileRoutesByTo {
   '/settings/$section': typeof SkaterSettingsSectionRoute
   '/u/$username': typeof SkaterUUsernameRoute
   '/water/$id': typeof SkaterWaterIdRoute
+  '/admin/body/$id': typeof AdminBodyIdRoute
   '/admin/users/$id': typeof AdminUsersIdRoute
   '/admin/water/$id': typeof AdminWaterIdRoute
   '/admin/water/place-names': typeof AdminWaterPlaceNamesRoute
@@ -363,6 +371,7 @@ export interface FileRoutesById {
   '/_skater/settings/$section': typeof SkaterSettingsSectionRoute
   '/_skater/u/$username': typeof SkaterUUsernameRoute
   '/_skater/water/$id': typeof SkaterWaterIdRoute
+  '/admin/body/$id': typeof AdminBodyIdRoute
   '/admin/users/$id': typeof AdminUsersIdRoute
   '/admin/water/$id': typeof AdminWaterIdRoute
   '/admin/water/place-names': typeof AdminWaterPlaceNamesRoute
@@ -406,6 +415,7 @@ export interface FileRouteTypes {
     | '/settings/$section'
     | '/u/$username'
     | '/water/$id'
+    | '/admin/body/$id'
     | '/admin/users/$id'
     | '/admin/water/$id'
     | '/admin/water/place-names'
@@ -445,6 +455,7 @@ export interface FileRouteTypes {
     | '/settings/$section'
     | '/u/$username'
     | '/water/$id'
+    | '/admin/body/$id'
     | '/admin/users/$id'
     | '/admin/water/$id'
     | '/admin/water/place-names'
@@ -487,6 +498,7 @@ export interface FileRouteTypes {
     | '/_skater/settings/$section'
     | '/_skater/u/$username'
     | '/_skater/water/$id'
+    | '/admin/body/$id'
     | '/admin/users/$id'
     | '/admin/water/$id'
     | '/admin/water/place-names'
@@ -738,6 +750,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SkaterWaterIdRouteImport
       parentRoute: typeof SkaterRoute
     }
+    '/admin/body/$id': {
+      id: '/admin/body/$id'
+      path: '/body/$id'
+      fullPath: '/admin/body/$id'
+      preLoaderRoute: typeof AdminBodyIdRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/users/': {
       id: '/admin/users/'
       path: '/users'
@@ -848,6 +867,7 @@ interface AdminRouteChildren {
   AdminSupportRoute: typeof AdminSupportRoute
   AdminTuningRoute: typeof AdminTuningRoute
   AdminIndexRoute: typeof AdminIndexRoute
+  AdminBodyIdRoute: typeof AdminBodyIdRoute
   AdminUsersIdRoute: typeof AdminUsersIdRoute
   AdminWaterIdRoute: typeof AdminWaterIdRoute
   AdminWaterPlaceNamesRoute: typeof AdminWaterPlaceNamesRoute
@@ -870,6 +890,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminSupportRoute: AdminSupportRoute,
   AdminTuningRoute: AdminTuningRoute,
   AdminIndexRoute: AdminIndexRoute,
+  AdminBodyIdRoute: AdminBodyIdRoute,
   AdminUsersIdRoute: AdminUsersIdRoute,
   AdminWaterIdRoute: AdminWaterIdRoute,
   AdminWaterPlaceNamesRoute: AdminWaterPlaceNamesRoute,

@@ -1,22 +1,27 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import type { CSSProperties } from 'react';
 import { expect } from 'storybook/test';
-
-import { computedColor, sameColor } from '@/components/kit/measure';
-import { faceLoaded, must } from '@/components/kit/storyKit';
-
-import { MASCOMA_BOUNDS } from '../../frame/bodyFixtures';
-import { fitCamera, stillSurface } from '../mapSurface';
+import { fitCamera, stillSurface } from '@/lib/mapSurface';
 import { graticuleLayout, type Rect } from './graticule';
 import { MapGraticule } from './map-graticule';
-import { PLACE_KEY_LABELS, PlaceMark, type PlaceMarkKind } from './place-marks';
+import { PLACE_KEY_LABELS, PlaceMark, type PlaceMarkKind } from './map-marks';
+import { computedColor, sameColor } from './measure';
+import { faceLoaded, must } from './storyKit';
+
+/** Mascoma Lake's bounds (the Body console boards' lake): real geography for the drawing. */
+const MASCOMA_BOUNDS = {
+  maxLat: 43.6497901,
+  maxLng: -72.1206902,
+  minLat: 43.6061979,
+  minLng: -72.1819521,
+};
 
 /**
  * Kit candidates from the Body console's map (board 5.4.1): the graticule labeled at a pane's edges,
  * and the place marks. Each in all four maps.
  */
 const meta = {
-  title: 'Admin/Body/Kit candidates/Map graticule',
+  title: 'Kit/MapGraticule',
   component: MapGraticule,
   parameters: { layout: 'padded' },
 } satisfies Meta<typeof MapGraticule>;

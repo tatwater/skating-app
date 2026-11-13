@@ -25,8 +25,7 @@ import { coordText, OutlineStill } from './OutlineStill';
  * The preview pane (boards 5.1–5.3, right): the body the list has open, read before it's opened
  * in full — its outline, its lockup (class and place, the name, area, depth, elevation), its
  * reports this season and all-time, how complete its record is, what's asked of it, and what
- * changed last. One action at its foot: open the body (⏎) — *Open in the editor →* until the Body
- * console lands, then *Open in Body →*.
+ * changed last. One action at its foot: *Open in Body →* (⏎), to the body's console.
  *
  * Each block draws what its read returned and nothing else: a block whose read doesn't exist yet
  * (`null`) is left out, never drawn as a zero; a read on its way holds its block's shape, and a read
@@ -122,8 +121,8 @@ export function BodyPreview({
   );
 }
 
-/** Where the list opens a body, in words: the old editor, until the Body console lands. */
-export const OPEN_LABEL = 'Open in the editor';
+/** Where the list opens a body, in words: its Body console. */
+export const OPEN_LABEL = 'Open in Body';
 
 function OpenLabel({ label }: { label: string }) {
   return (

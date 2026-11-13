@@ -1,8 +1,15 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { MASCOMA_BOUNDS } from '../frame/bodyFixtures';
 import { fitCamera, stillSurface } from './mapSurface';
+
+/** Mascoma Lake's bounds (the Body console boards' lake): real geography for the drawing. */
+const MASCOMA_BOUNDS = {
+  maxLat: 43.6497901,
+  maxLng: -72.1206902,
+  minLat: 43.6061979,
+  minLng: -72.1819521,
+};
 
 const PAD = { top: 30, right: 70, bottom: 90, left: 175 };
 

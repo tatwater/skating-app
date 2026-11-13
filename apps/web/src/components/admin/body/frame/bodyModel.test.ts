@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { missingSentence, summarizeCompleteness } from '../completeness';
 import { BODY_NOW, MASCOMA_HISTORY, MASCOMA_RECORD } from './bodyFixtures';
 import {
   acresText,
@@ -8,17 +9,19 @@ import {
   bodyFigures,
   bodyHistory,
   bodyIdentity,
-  completeness,
   dayMonth,
   firstName,
   historyTime,
   lengthText,
-  missingSentence,
   ringsText,
   statusDate,
 } from './bodyModel';
 
-const ctx = { history: MASCOMA_HISTORY, hasBathymetry: false, towns: null };
+const COUNTS = { putIns: 2, lots: 1, landmarks: 7, hasContours: false };
+const ctx = { history: MASCOMA_HISTORY, counts: COUNTS, towns: null };
+/** The identity's completeness under some counts (and the record's own fields). */
+const itemsOf = (record = MASCOMA_RECORD, counts: Partial<typeof COUNTS> | object = {}) =>
+  bodyIdentity(record, { ...ctx, counts: { ...COUNTS, ...counts } }).completeness;
 
 describe('the lockup', () => {
   it('draws the boards’ figures for Mascoma', () => {
@@ -55,33 +58,35 @@ describe('the lockup', () => {
 
 describe('completeness', () => {
   it('reads Mascoma as 9 / 10, missing only bathymetry, on the Water tab', () => {
-    const items = completeness(MASCOMA_RECORD, false);
+    const items = itemsOf();
     expect(items).toHaveLength(10);
-    expect(items.filter((i) => i.state === 'present')).toHaveLength(9);
-    expect(missingSentence(items)).toBe('Missing bathymetry');
+    expect(summarizeCompleteness(items).have).toBe(9);
+    expect(missingSentence(summarizeCompleteness(items).missing)).toBe('Missing bathymetry');
     expect([...attentionTabs(items)]).toEqual(['water']);
   });
 
-  it('never counts posted rules or sample points', () => {
-    const keys = completeness(MASCOMA_RECORD, true).map((i) => i.key);
+  it('is the founder’s ten: never posted rules or sample points', () => {
+    const keys = itemsOf().map((i) => i.field);
     expect(keys).not.toContain('postedRules');
     expect(keys).not.toContain('samplePoints');
   });
 
   it('draws an unknown part as neither there nor missing', () => {
-    const items = completeness(MASCOMA_RECORD, null);
-    expect(items.find((i) => i.key === 'bathymetry')?.state).toBe('unknown');
-    expect(missingSentence(items)).toBeNull();
+    const items = itemsOf(MASCOMA_RECORD, { hasContours: null });
+    expect(items.find((i) => i.field === 'bathymetry')?.state).toBe('unknown');
+    expect(missingSentence(summarizeCompleteness(items).missing)).toBeNull();
     expect(attentionTabs(items).size).toBe(0);
   });
 
-  it('lists what is missing as a sentence', () => {
-    const items = completeness(
-      { ...MASCOMA_RECORD, name: ' ', type: 'unclassified', elevationM: undefined },
-      false,
+  it('lists what is missing as a sentence, each part flagging its own tab', () => {
+    const items = itemsOf(
+      { ...MASCOMA_RECORD, name: ' ', elevationM: undefined },
+      { lots: 0, landmarks: 0 },
     );
-    expect(missingSentence(items)).toBe('Missing name, class, elevation and bathymetry');
-    expect([...attentionTabs(items)].sort()).toEqual(['names', 'water']);
+    expect(missingSentence(summarizeCompleteness(items).missing)).toBe(
+      'Missing a name, elevation, a lot, a landmark and bathymetry',
+    );
+    expect([...attentionTabs(items)].sort()).toEqual(['access', 'names', 'places', 'water']);
   });
 });
 
@@ -146,7 +151,7 @@ describe('the identity list', () => {
         activatedAt: undefined,
         shorelineM: undefined,
       },
-      { history: [], hasBathymetry: null, towns: null },
+      { history: [], counts: { ...COUNTS, hasContours: null }, towns: null },
     );
     expect(bare.access).toBeNull();
     expect(bare.boost).toEqual({ value: 0, note: null });

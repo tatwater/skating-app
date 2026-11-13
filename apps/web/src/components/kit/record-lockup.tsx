@@ -3,7 +3,7 @@ import { type ComponentProps, type ReactNode, type RefObject, useEffect, useStat
 import { cn } from '@/lib/utils';
 
 /**
- * **Kit candidate** — a record's lockup at the head of its panel: what kind of thing it is (the
+ * A record's lockup at the head of its panel: what kind of thing it is (the
  * kicker) over its name (the display word), and the **scroll-fold** (Review 12 #8): once the panel
  * scrolls, the lockup folds to the name and its kind on one line over a rule that stays, so a
  * scrolled panel keeps its subject's name. The figures under it are the panel's to scroll away.

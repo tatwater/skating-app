@@ -8,6 +8,7 @@ import {
 } from '@skating/core';
 
 import { type AuditAction, type AuditTarget, actionLabel } from '../../shell/actionLabels';
+import { COMPLETENESS_TABS, type CompletenessItem, completenessItems } from '../completeness';
 import type { BodyTabKey } from './bodySearch';
 
 /**
@@ -40,6 +41,7 @@ export type BodyRecord = Pick<
   | 'fetchProfileM'
   | 'curatedBoost'
   | 'publicAccess'
+  | 'accessKind'
   | 'reviewStatus'
   | 'dedupStatus'
   | 'removedAt'
@@ -170,69 +172,20 @@ export function bodyFigures(b: BodyRecord): Figure[] {
 
 // ── Completeness ─────────────────────────────────────────────────────────────────────────────
 
-export type CompletenessState = 'present' | 'missing' | 'unknown';
-
-export interface CompletenessItem {
-  key: string;
-  /** Lowercase, for the note's sentence ("Missing bathymetry"). */
-  label: string;
-  /** The tab that holds this part of the record — where its amber square goes. */
-  tab: BodyTabKey;
-  state: CompletenessState;
-}
-
 /**
- * **What every body should have** (Review 13 #6) — ten things, so Mascoma reads 9 / 10 with only
- * its bathymetry missing. Posted rules are optional and weather sample points default to the
- * interior point, so neither counts. `hasBathymetry` is `null` until a read can say (a seam); an
- * unknown item is neither lit nor listed as missing.
+ * The tabs whose part of the record is missing something: each wears the amber square. Read from
+ * the shared rule (`../completeness`); an unknown part never flags a tab.
  */
-export function completeness(b: BodyRecord, hasBathymetry: boolean | null): CompletenessItem[] {
-  const has = (v: unknown) =>
-    (v === undefined || v === null ? 'missing' : 'present') as CompletenessState;
-  return [
-    { key: 'name', label: 'name', tab: 'names', state: b.name.trim() ? 'present' : 'missing' },
-    {
-      key: 'class',
-      label: 'class',
-      tab: 'names',
-      state: b.type === 'unclassified' ? 'missing' : 'present',
-    },
-    { key: 'outline', label: 'outline', tab: 'shape', state: has(b.polygon) },
-    { key: 'area', label: 'area', tab: 'shape', state: has(b.surfaceAreaSqM) },
-    { key: 'shoreline', label: 'shoreline', tab: 'shape', state: has(b.shorelineM) },
-    { key: 'fetch', label: 'fetch', tab: 'shape', state: has(b.fetchProfileM) },
-    {
-      key: 'depth',
-      label: 'depth',
-      tab: 'water',
-      state: b.meanDepthM !== undefined || b.maxDepthM !== undefined ? 'present' : 'missing',
-    },
-    { key: 'elevation', label: 'elevation', tab: 'water', state: has(b.elevationM) },
-    { key: 'wind', label: 'wind', tab: 'water', state: has(b.windRose) },
-    {
-      key: 'bathymetry',
-      label: 'bathymetry',
-      tab: 'water',
-      state: hasBathymetry === null ? 'unknown' : hasBathymetry ? 'present' : 'missing',
-    },
-  ];
-}
-
-/** "Missing bathymetry", "Missing depth and bathymetry", "Missing wind, depth and bathymetry". */
-export function missingSentence(items: readonly CompletenessItem[]): string | null {
-  const missing = items.filter((i) => i.state === 'missing').map((i) => i.label);
-  if (missing.length === 0) return null;
-  const list =
-    missing.length === 1
-      ? missing[0]
-      : `${missing.slice(0, -1).join(', ')} and ${missing[missing.length - 1]}`;
-  return `Missing ${list}`;
-}
-
-/** The tabs whose part of the record is missing something: each wears the amber square. */
 export function attentionTabs(items: readonly CompletenessItem[]): ReadonlySet<BodyTabKey> {
-  return new Set(items.filter((i) => i.state === 'missing').map((i) => i.tab));
+  return new Set(items.filter((i) => i.state === 'missing').map((i) => COMPLETENESS_TABS[i.field]));
+}
+
+/** What the page counted beside the body, for the ten; `null` where no read serves it yet. */
+export interface CompletenessCounts {
+  putIns: number | null;
+  lots: number | null;
+  landmarks: number | null;
+  hasContours: boolean | null;
 }
 
 // ── Identity ─────────────────────────────────────────────────────────────────────────────────
@@ -288,12 +241,12 @@ export function bodyIdentity(
   b: BodyRecord,
   {
     history,
-    hasBathymetry,
+    counts,
     towns,
     timeZone,
   }: {
     history: readonly HistoryAction[];
-    hasBathymetry: boolean | null;
+    counts: CompletenessCounts;
     towns: string[] | null;
     timeZone?: string;
   },
@@ -351,7 +304,17 @@ export function bodyIdentity(
     name: waterBodyDisplayName(b.name),
     kind: waterBodyClassLabel(b.type),
     figures: bodyFigures(b),
-    completeness: completeness(b, hasBathymetry),
+    completeness: completenessItems({
+      polygon: b.polygon,
+      name: b.name,
+      publicAccess: b.publicAccess ?? null,
+      accessKind: b.accessKind ?? null,
+      maxDepthM: b.maxDepthM,
+      meanDepthM: b.meanDepthM,
+      elevationM: b.elevationM,
+      windRose: b.windRose,
+      ...counts,
+    }),
     boost: { value: b.curatedBoost ?? 0, note: boostNote },
     standing: standingView,
     access,

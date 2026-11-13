@@ -14,8 +14,8 @@ import { CONSOLE_MODES, LEGACY_PAGES } from './consoleNav';
  * searched on the server as the operator types (nothing is filtered in the browser but the
  * console's own short list of places). Each group shows only what the viewer may open (D217).
  *
- * Until the Body console and People land, a body opens the old lake editor and a person the old
- * user page — the pages that hold them today.
+ * A body opens its Body console; until People lands, a person opens the old user page — the page
+ * that holds them today.
  */
 
 /** How long typing rests before the server is asked. */
@@ -135,7 +135,7 @@ export function ConsolePalette({
       loading={loading}
       placeholder="Find a body, a person or a page"
       onSelect={(item) => {
-        if (item.id.startsWith('body:')) onGo({ to: `/admin/water/${item.id.slice(5)}` });
+        if (item.id.startsWith('body:')) onGo({ to: `/admin/body/${item.id.slice(5)}` });
         else if (item.id.startsWith('person:')) onGo({ to: `/admin/users/${item.id.slice(7)}` });
         else onGo({ to: item.id });
         setQuery('');

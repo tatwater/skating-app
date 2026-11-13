@@ -34,13 +34,13 @@ export type BodyConsoleSearch = {
 };
 
 /**
- * Where `from` may point. The Bodies list is the console's own home for bodies; until it lands, the
- * old find-a-lake page is where a body is looked up, and a link from there returns there.
+ * Where `from` may point. The Bodies list is the console's own home for bodies; the old find-a-lake
+ * page still links here while it stands, and a link from there returns there.
  */
 export const RETURN_PATHS = ['/admin/bodies', '/admin/water'] as const;
 
-/** Where the place control and ⇧⏎ go when no `from` came with the link. */
-export const DEFAULT_RETURN = '/admin/water';
+/** Where the place control and ⇧⏎ go when no `from` came with the link: the Bodies list. */
+export const DEFAULT_RETURN = '/admin/bodies';
 
 /** A lit address: a lower-camel kind, a colon, an id of word characters, dots and dashes. */
 const LIT = /^[a-z][a-zA-Z]{0,31}:[A-Za-z0-9_.-]{1,128}$/;

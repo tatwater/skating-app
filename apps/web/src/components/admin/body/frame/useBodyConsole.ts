@@ -3,12 +3,10 @@ import type { Id } from '@skating/convex/dataModel';
 import { polygonBBox } from '@skating/core';
 import { useQuery } from 'convex/react';
 import { useMemo } from 'react';
-
+import type { BBoxLike } from '@/lib/mapSurface';
 import { useRole } from '@/lib/useRole';
-
 import { type BodyMapBaseInput, bodyMapBase } from '../map/bodyMapBase';
 import type { BodyMapScene } from '../map/mapDescriptors';
-import type { BBoxLike } from '../map/mapSurface';
 import {
   attentionTabs,
   type BodyAsk,
@@ -26,7 +24,8 @@ import type { BodyTabKey } from './bodySearch';
  * nothing new is asked of the server: the body, its bays, its landmarks, its put-ins and lots, what
  * is asked of it (bay requests, the email place names, landmark proposals) and its audit history.
  * What no read serves yet — the towns a body lies in, whether it has bathymetry — is `null` (not
- * recorded), and is drawn as absent; each is a seam request.
+ * recorded), and is drawn as absent; each is a seam request. Completeness is the shared rule's
+ * (`../completeness`), from the body and the counts these reads give.
  */
 
 /** How many audit rows History reads (the server's own cap is the bound). */
@@ -113,7 +112,14 @@ export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleDa
 
   const identity = bodyIdentity(body, {
     history,
-    hasBathymetry: null,
+    // The ten's counts from the reads above; no read says whether contours were drawn yet.
+    counts: {
+      putIns: putIns === undefined ? null : putIns.filter((p) => p.coord).length,
+      lots: access === undefined ? null : access.parking.length,
+      landmarks:
+        landmarks === undefined ? null : landmarks.filter((l) => l.removedAt === undefined).length,
+      hasContours: null,
+    },
     towns: null,
     ...(timeZone !== undefined ? { timeZone } : {}),
   });

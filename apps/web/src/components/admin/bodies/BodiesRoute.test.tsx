@@ -67,8 +67,19 @@ vi.mock('convex/react', async () => {
 vi.mock('@tanstack/react-router', () => ({
   useSearch: () => mocks.search,
   useNavigate: () => mocks.navigate,
-  Link: ({ to, children, ...props }: { to: string; children?: ReactNode }) => (
-    <a href={to} {...props}>
+  useRouterState: ({ select }: { select: (s: { location: { href: string } }) => unknown }) =>
+    select({ location: { href: '/admin/bodies?lane=dormant' } }),
+  Link: ({
+    to,
+    search,
+    children,
+    ...props
+  }: {
+    to: string;
+    search?: { from?: string };
+    children?: ReactNode;
+  }) => (
+    <a href={to} data-from={search?.from} {...props}>
       {children}
     </a>
   ),
@@ -668,15 +679,18 @@ describe('the preview', () => {
       'aria-valuenow',
       '9',
     );
-    expect(
-      within(pane())
-        .getByText(/Open in the editor/)
-        .closest('a'),
-    ).toHaveAttribute('href', `/admin/water/${ID}`);
+    const link = within(pane())
+      .getByText(/Open in Body/)
+      .closest('a');
+    expect(link).toHaveAttribute('href', `/admin/body/${ID}`);
+    expect(link).toHaveAttribute('data-from', '/admin/bodies?lane=dormant');
     act(() => pane().focus());
     await userEvent.keyboard('{Enter}');
-    // The Body console isn't here yet: the body opens in the old editor, never a page that isn't.
-    expect(mocks.navigate).toHaveBeenLastCalledWith({ to: `/admin/water/${ID}` });
+    expect(mocks.navigate).toHaveBeenLastCalledWith({
+      to: `/admin/body/${ID}`,
+      // The list's own address rides along, so the console's way back finds it as it was.
+      search: { from: '/admin/bodies?lane=dormant' },
+    });
   });
 
   it('skips the history for a viewer who can’t read the audit', () => {
@@ -780,7 +794,7 @@ describe('the preview', () => {
     expect(
       within(pane()).getByText('The full preview isn’t available for a rejected body.'),
     ).toBeInTheDocument();
-    expect(within(pane()).queryByText(/Open in the editor/)).toBeNull();
+    expect(within(pane()).queryByText(/Open in Body/)).toBeNull();
     act(() => pane().focus());
     await userEvent.keyboard('{Enter}');
     expect(mocks.navigate).not.toHaveBeenCalled();

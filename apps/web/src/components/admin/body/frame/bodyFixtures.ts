@@ -112,14 +112,14 @@ export const MASCOMA_HISTORY: readonly HistoryAction[] = [
 
 export const MASCOMA_IDENTITY: BodyIdentity = bodyIdentity(MASCOMA_RECORD, {
   history: MASCOMA_HISTORY,
-  hasBathymetry: false,
+  counts: { putIns: 2, lots: 1, landmarks: 7, hasContours: false },
   towns: ['Enfield, NH', 'Lebanon, NH'],
 });
 
 /** As the app reads it today: no read says the towns or the bathymetry yet. */
 export const MASCOMA_IDENTITY_AS_READ: BodyIdentity = bodyIdentity(MASCOMA_RECORD, {
   history: MASCOMA_HISTORY,
-  hasBathymetry: null,
+  counts: { putIns: 2, lots: 1, landmarks: 7, hasContours: null },
   towns: null,
 });
 

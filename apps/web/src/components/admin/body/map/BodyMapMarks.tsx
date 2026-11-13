@@ -1,18 +1,25 @@
 import type { ReactNode } from 'react';
 
-import { HazardMark, LotMark, PhotoMark, PutInMark } from '@/components/kit/map-marks';
-import { cn } from '@/lib/utils';
+import { MAP_KEY_ORDER, MapKey, type MapKeyKind } from '@/components/kit/map-key';
+import {
+  HazardMark,
+  LotMark,
+  type MarkState,
+  PhotoMark,
+  PLACE_KEY_LABELS,
+  PlaceMark,
+  type PlaceMarkKind,
+  PutInMark,
+} from '@/components/kit/map-marks';
 
-import { PLACE_KEY_LABELS, PlaceMark, type PlaceMarkKind } from './kit-candidates/place-marks';
 import type { MapPointMark } from './mapDescriptors';
 
 /**
- * Every point face the console map can draw, at mark size and at key size — the kit's put-in, lot,
- * hazard and photo marks, and the place marks (a kit candidate) for everything else. One table, so
- * the map and its key can never draw a kind two ways.
+ * Every point face the console map can draw, from the kit's marks (`kit/map-marks`: the put-in,
+ * lot, hazard and photo faces, and the place plates for every landmark kind, a sample point and a
+ * proposal), and the kit's key (`kit/map-key`) for the bar along the foot. One table, so the map
+ * and its key can never draw a kind two ways.
  */
-
-type MarkState = { dim?: boolean; highlight?: boolean; glyph?: boolean };
 
 const KIT: Partial<Record<MapPointMark, (s: MarkState) => ReactNode>> = {
   putIn: (s) => <PutInMark {...s} />,
@@ -43,52 +50,21 @@ export const POINT_KEY_LABELS: Record<MapPointMark, string> = {
   photo: 'Photo',
 };
 
-/** The key's order, whatever order the scene hands its kinds in: access first, then places. */
-const KEY_ORDER: readonly MapPointMark[] = [
-  'putIn',
-  'lot',
-  'island',
-  'beach',
-  'bridge',
-  'dam',
-  'waterway',
-  'settlement',
-  'establishment',
-  'point',
-  'bay',
-  'narrows',
-  'marina',
-  'lighthouse',
-  'other',
-  'sample',
-  'hazard',
-  'feature',
-  'healing',
-  'passage',
-  'photo',
-];
-
-/** The kinds a key lists, ordered, with a word drawn once (a feature and a hazard share one). */
-export function keyEntries(
-  kinds: readonly MapPointMark[],
-): { mark: MapPointMark; label: string }[] {
-  const seen = new Set<string>();
-  const out: { mark: MapPointMark; label: string }[] = [];
-  for (const mark of KEY_ORDER) {
-    if (!kinds.includes(mark)) continue;
-    const label = POINT_KEY_LABELS[mark];
-    if (seen.has(label)) continue;
-    seen.add(label);
-    out.push({ mark, label });
-  }
-  return out;
+/** The key's kind for a face: a known feature is listed as a hazard (one word, drawn once). */
+function keyKind(mark: MapPointMark): MapKeyKind {
+  return mark === 'feature' ? 'hazard' : mark;
 }
 
-/**
- * The map's key: the kit `MapKey`'s bar (the same slot, classes and foot room), listing every kind
- * the map is drawing, place kinds included. Local until `kit/map-key` takes the place kinds — a
- * seam request; the classes are the kit's, so the swap is a one-line change.
- */
+/** The kinds a key lists, in the kit key's order, each word once. */
+export function keyEntries(kinds: readonly MapPointMark[]): { mark: MapKeyKind; label: string }[] {
+  const wanted = new Set(kinds.map(keyKind));
+  return MAP_KEY_ORDER.filter((k) => wanted.has(k)).map((mark) => ({
+    mark,
+    label: (POINT_KEY_LABELS as Record<string, string>)[mark] ?? mark,
+  }));
+}
+
+/** The map's key: the kit's bar on the console's foot ground, listing every kind the map draws. */
 export function BodyMapKey({
   kinds,
   className,
@@ -96,32 +72,5 @@ export function BodyMapKey({
   kinds: readonly MapPointMark[];
   className?: string;
 }) {
-  const entries = keyEntries(kinds);
-  if (entries.length === 0) return null;
-  return (
-    <ul
-      data-slot="map-key"
-      // biome-ignore lint/a11y/noRedundantRoles: `list-none` strips the implied list role in Safari/VoiceOver; saying it back keeps the key a named list there.
-      role="list"
-      aria-label="Map key"
-      className={cn(
-        'absolute inset-x-0 bottom-0 z-(--z-map-control) m-0 flex h-7.5 list-none items-center gap-(--space-3) px-(--space-3)',
-        'border-0 border-t border-solid border-line bg-map-foot',
-        'text-kick leading-none font-medium tracking-rail whitespace-nowrap text-fg2 uppercase',
-        'overflow-x-auto [scrollbar-width:none]',
-        className,
-      )}
-    >
-      {entries.map(({ mark, label }) => (
-        <li
-          key={mark}
-          data-key={mark}
-          className="inline-flex shrink-0 items-center gap-(--space-1_5)"
-        >
-          <PointFace mark={mark} glyph />
-          {label}
-        </li>
-      ))}
-    </ul>
-  );
+  return <MapKey kinds={[...new Set(kinds.map(keyKind))]} className={className ?? 'bg-map-foot'} />;
 }

@@ -1,9 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { MASCOMA_BOUNDS } from '../../frame/bodyFixtures';
-import { fitCamera, stillSurface } from '../mapSurface';
-import { FIT_PADDING } from '../useBodyMapCanvas';
+import { fitCamera, stillSurface } from '@/lib/mapSurface';
 import {
   formatLatitude,
   formatLongitude,
@@ -14,6 +12,16 @@ import {
   type Rect,
   stepDecimals,
 } from './graticule';
+
+/** Mascoma Lake's bounds (the Body console boards' lake): real geography for the drawing. */
+const MASCOMA_BOUNDS = {
+  maxLat: 43.6497901,
+  maxLng: -72.1206902,
+  minLat: 43.6061979,
+  minLng: -72.1819521,
+};
+/** The Body console's framing room (its rack, dock and key). */
+const FIT_PADDING = { top: 30, right: 70, bottom: 90, left: 175 };
 
 /** Board 5.4.1's map: 656 × 830, framed on Mascoma as the console frames it. */
 const surface = stillSurface(656, 830, fitCamera(MASCOMA_BOUNDS, 656, 830, FIT_PADDING));

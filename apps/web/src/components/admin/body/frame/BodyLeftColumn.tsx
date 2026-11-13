@@ -1,18 +1,18 @@
-import { type ReactNode, useRef } from 'react';
+import { type ReactNode, useId, useRef } from 'react';
 
 import { Avatar } from '@/components/kit/avatar';
 import { Badge, Tag } from '@/components/kit/badge';
+import { BulletList } from '@/components/kit/bullet-list';
 import { HistoryList, HistoryRow, KeyValueList, KeyValueRow } from '@/components/kit/grid-list';
+import { RecordLockup, useScrollFold } from '@/components/kit/record-lockup';
 import { Section } from '@/components/kit/section-slug';
 import { Skeleton } from '@/components/kit/skeleton';
 import { Slider } from '@/components/kit/slider';
+import { LedStrip } from '@/components/kit/trace-chart';
 import { cn } from '@/lib/utils';
-
+import { completenessSegments, missingSentence, summarizeCompleteness } from '../completeness';
 import type { BodyAsk, BodyIdentity, HistoryEntry } from './bodyModel';
-import { historyTime, missingSentence } from './bodyModel';
-import { BulletList } from './kit-candidates/bullet-list';
-import { RecordLockup, useScrollFold } from './kit-candidates/record-lockup';
-import { SegmentMeter } from './kit-candidates/segment-meter';
+import { historyTime } from './bodyModel';
 
 /**
  * The Body console's left column (§5.4): the body's lockup, its figures, how complete its record
@@ -148,9 +148,9 @@ function Figures({
   onBoostCommit: ((value: number) => void) | undefined;
 }) {
   const shown = identity.figures.filter((f) => f.value !== null);
-  const items = identity.completeness;
-  const present = items.filter((i) => i.state === 'present').length;
-  const missing = missingSentence(items);
+  const completeId = useId();
+  const complete = summarizeCompleteness(identity.completeness);
+  const missing = missingSentence(complete.missing);
   return (
     <div
       data-slot="body-figures"
@@ -172,22 +172,26 @@ function Figures({
           ))}
         </dl>
       )}
-      <SegmentMeter
-        className="mt-(--space-1)"
-        label={`Complete · ${present} / ${items.length}`}
-        segments={items.map((i) =>
-          i.state === 'present' ? 'on' : i.state === 'missing' ? 'off' : 'unknown',
-        )}
+      <div
+        data-slot="body-complete"
+        className="mt-(--space-1) flex min-w-0 flex-col gap-(--space-1_5)"
       >
+        <span
+          id={completeId}
+          className="text-kick leading-none font-medium tracking-kick text-fg3 uppercase"
+        >
+          Complete · {complete.have} / {complete.of}
+        </span>
+        <LedStrip full aria-labelledby={completeId} segments={completenessSegments(complete)} />
         {missing !== null && (
           <p
             data-slot="body-missing"
-            className="m-0 border border-solid border-warn-line bg-warn-tint px-(--space-2_5) py-(--space-2) text-assist leading-list text-warn"
+            className="mx-(--space-0_5) my-0 border border-solid border-warn-line bg-warn-tint px-(--space-2_5) py-(--space-2) text-assist leading-list text-warn"
           >
             {missing}
           </p>
         )}
-      </SegmentMeter>
+      </div>
       <div data-slot="body-boost" className="mt-(--space-1) flex flex-col gap-(--space-2)">
         <Slider
           label="Map boost"

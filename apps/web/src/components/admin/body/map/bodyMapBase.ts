@@ -1,5 +1,5 @@
 import { type LandmarkKind, pointInPolygon, representativePoint } from '@skating/core';
-import { PLACE_KEY_LABELS } from './kit-candidates/place-marks';
+import { PLACE_KEY_LABELS } from '@/components/kit/map-marks';
 import type { BodyMapScene, LngLat, MapItem } from './mapDescriptors';
 
 /**

@@ -44,6 +44,7 @@ describe('validateBodySearch', () => {
     expect(bodyTabOf({})).toBe('shape');
     expect(bodyTabOf({ tab: 'links' })).toBe('links');
     expect(returnPathOf({})).toBe(DEFAULT_RETURN);
+    expect(DEFAULT_RETURN).toBe('/admin/bodies');
     expect(returnPathOf({ from: '/admin/bodies?x=1' })).toBe('/admin/bodies?x=1');
   });
 });
