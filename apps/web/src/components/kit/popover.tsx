@@ -29,6 +29,14 @@ function PopoverClose(props: PopoverPrimitive.Close.Props) {
   return <PopoverPrimitive.Close data-slot="popover-close" {...props} />;
 }
 
+/**
+ * The popover's plate: square, the panel ground, a `line2` edge, the plate shadow. Exported for a
+ * popup that isn't a Popover's (search's list is Base UI Autocomplete's own popup, anchored to its
+ * input), so the two plates can't drift apart.
+ */
+const POPOVER_PLATE =
+  'rounded-container border border-solid border-line2 bg-panel shadow-plate font-(family-name:--family-sans) text-fg outline-none';
+
 type PopoverContentProps = PopoverPrimitive.Popup.Props &
   Pick<PopoverPrimitive.Positioner.Props, 'align' | 'alignOffset' | 'side' | 'sideOffset'> &
   Pick<PopoverPrimitive.Portal.Props, 'container'> & {
@@ -62,8 +70,7 @@ function PopoverContent({
           data-slot="popover-content"
           className={cn(
             'flex max-h-(--available-height) max-w-(--available-width) flex-col overflow-hidden',
-            'rounded-container border border-solid border-line2 bg-panel shadow-plate',
-            'font-(family-name:--family-sans) text-fg outline-none',
+            POPOVER_PLATE,
             'transition-opacity duration-(--duration-fast) ease-standard',
             'data-starting-style:opacity-0 data-ending-style:opacity-0',
             className,
@@ -161,6 +168,7 @@ function PopoverFooter({ className, ...props }: ComponentProps<'div'>) {
 }
 
 export {
+  POPOVER_PLATE,
   Popover,
   PopoverBody,
   PopoverClose,

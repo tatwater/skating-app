@@ -1,11 +1,14 @@
 import * as tokens from '@skating/design/tokens';
 import tokensCss from '@skating/design/tokens.css?raw';
 import type { Decorator } from '@storybook/react-vite';
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
+
+import { cn } from '../src/lib/utils';
 
 /**
  * The bench's two theme axes (D232): the toolbar picks one surface × mode for the whole preview,
- * and the opt-in four-up renders a story in all four maps at once.
+ * the opt-in four-up renders a story in all four maps at once, and a pair renders one surface's
+ * dark and light side by side.
  */
 
 export type Surface = tokens.Surface;
@@ -88,6 +91,108 @@ export function FourUp({ children }: { children: () => ReactNode }) {
         </section>
       ))}
     </div>
+  );
+}
+
+/** Where a pair goes two-up: from `lg`, from `xl`, or never (dark over light). */
+export type PairColumns = 'lg' | 'xl' | 'one';
+
+const PAIR_COLUMNS: Record<PairColumns, string> = {
+  lg: 'lg:grid-cols-2',
+  xl: 'xl:grid-cols-2',
+  one: '',
+};
+
+export interface ThemePairProps {
+  /** The one surface both quads render on. */
+  surface: Surface;
+  /**
+   * Renders a quad. It gets the quad's mode and its element — a portal container, so a plate
+   * stays in its own theme — and runs once the element exists.
+   */
+  children: (mode: Mode, container: HTMLElement) => ReactNode;
+  /**
+   * A fixed-height stage — positioned, clipped, unpadded — for a screen or an overlay's frame.
+   * Without one, each quad is a padded column that grows with its content.
+   */
+  height?: string;
+  /** Label each quad with its surface and mode, as the four-up does. */
+  heading?: boolean;
+  /** Where the pair goes two-up. `xl` unless said. */
+  columns?: PairColumns;
+  /** More classes on each quad: a story's own padding or alignment. */
+  className?: string;
+}
+
+/**
+ * One surface's dark and light, side by side — for a composition that only ever renders on one
+ * surface, so the other surface's maps are the kit four-up's business, not its own. Each quad is a
+ * scoped theme on the bench's scoped token copy; the dark one carries `.dark` too, for the legacy
+ * `dark:` variant (a story that wants the root out of it sets the toolbar to light).
+ */
+export function ThemePair({
+  surface,
+  children,
+  height,
+  heading = false,
+  columns = 'xl',
+  className,
+}: ThemePairProps) {
+  ensureScopedTokens();
+  return (
+    <div
+      className={cn('grid grid-cols-1 gap-px bg-line', PAIR_COLUMNS[columns])}
+      data-theme-pair={surface}
+    >
+      {tokens.MODES.map((mode) => (
+        <PairQuad
+          key={mode}
+          surface={surface}
+          mode={mode}
+          height={height}
+          heading={heading}
+          className={className}
+        >
+          {children}
+        </PairQuad>
+      ))}
+    </div>
+  );
+}
+
+function PairQuad({
+  surface,
+  mode,
+  height,
+  heading,
+  className,
+  children,
+}: Omit<ThemePairProps, 'columns'> & { mode: Mode }) {
+  const [el, setEl] = useState<HTMLElement | null>(null);
+  return (
+    <section
+      ref={setEl}
+      {...{ [SCOPE_ATTR]: '' }}
+      data-surface={surface}
+      data-mode={mode}
+      aria-label={`${SURFACE_LABEL[surface]} ${mode}`}
+      style={height === undefined ? undefined : { height }}
+      className={cn(
+        'min-w-0 bg-bg font-(family-name:--family-sans) text-fg',
+        height === undefined
+          ? 'flex flex-col gap-heading p-gutter'
+          : 'relative isolate overflow-hidden',
+        mode === 'dark' && 'dark',
+        className,
+      )}
+    >
+      {heading && (
+        <h2 className="self-start text-kick leading-none font-semibold tracking-kick text-fg3 uppercase">
+          {SURFACE_LABEL[surface]} · {MODE_LABEL[mode]}
+        </h2>
+      )}
+      {el !== null && children(mode, el)}
+    </section>
   );
 }
 

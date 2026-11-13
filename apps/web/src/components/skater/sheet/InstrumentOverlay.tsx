@@ -7,7 +7,7 @@ import {
 } from '@skating/core';
 import type { Feature, FeatureCollection, Geometry, Position } from 'geojson';
 import { useEffect, useId, useState } from 'react';
-import { HazardMark, LotMark, MARK_BOX, PhotoMark, PutInMark } from '../map/MapMarks';
+import { HazardMark, LotMark, MARK_BOX, PhotoMark, PutInMark } from '../../kit/map-marks';
 import type { ConsoleMode } from './ConsoleMode';
 import {
   type InstrumentMark,

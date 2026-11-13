@@ -143,9 +143,18 @@ describe('THEME_INIT_SCRIPT', () => {
       expect(at('/lakes/abc').getAttribute('data-surface')).toBe('skater');
     });
 
-    it.each(['/admin', '/admin/inbox'])('leaves the attribute absent under %s', (path) => {
-      document.documentElement.setAttribute('data-surface', 'skater');
-      expect(at(path).hasAttribute('data-surface')).toBe(false);
+    it.each(['/admin/flags', '/admin/water/review'])(
+      'leaves the attribute absent on an old admin page (%s)',
+      (path) => {
+        document.documentElement.setAttribute('data-surface', 'skater');
+        expect(at(path).hasAttribute('data-surface')).toBe(false);
+      },
+    );
+
+    // The full table, against the console's own predicate, is `oldShellPredicate.test.tsx`'s.
+    it.each(['/admin', '/admin/inbox'])('states the console surface on %s', (path) => {
+      document.documentElement.removeAttribute('data-surface');
+      expect(at(path).getAttribute('data-surface')).toBe('admin');
     });
 
     it('treats a path that only starts with "admin" as a skater path', () => {

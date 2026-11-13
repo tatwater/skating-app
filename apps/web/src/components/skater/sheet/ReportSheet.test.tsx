@@ -22,7 +22,7 @@ const h = vi.hoisted(() => ({
   notKept: false,
   phone: false,
 }));
-vi.mock('../phone/usePhoneLayout', () => ({ useIsPhone: () => h.phone }));
+vi.mock('@/lib/usePhoneLayout', () => ({ useIsPhone: () => h.phone }));
 
 vi.mock('@/lib/sheetStore', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/sheetStore')>()),

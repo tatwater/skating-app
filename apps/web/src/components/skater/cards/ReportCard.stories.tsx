@@ -69,7 +69,7 @@ export const Rows: Story = {
     </SkaterPair>
   ),
   play: async ({ canvasElement }) => {
-    const quad = must(canvasElement.querySelector<HTMLElement>('[data-skater-pair] > section'));
+    const quad = must(canvasElement.querySelector<HTMLElement>('[data-theme-pair] > section'));
     const cards = within(quad).getAllByRole('link');
     await expect(cards).toHaveLength(3);
     // Square cards; the last row has no rule under it.
@@ -106,7 +106,7 @@ export const Post: Story = {
     </SkaterPair>
   ),
   play: async ({ canvasElement }) => {
-    const quad = must(canvasElement.querySelector<HTMLElement>('[data-skater-pair] > section'));
+    const quad = must(canvasElement.querySelector<HTMLElement>('[data-theme-pair] > section'));
     const post = within(quad).getByRole('article');
     await expect(
       within(post).getByRole('heading', { name: 'Two stops on the way home' }),

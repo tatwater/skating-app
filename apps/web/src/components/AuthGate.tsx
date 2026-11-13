@@ -8,6 +8,7 @@ import { authZoneTarget } from '../lib/authZone';
 import { type BootZone, bootCookieString, readBootZone } from '../lib/boot';
 import { useSheetOwnerBinding } from '../lib/sheetOwner';
 import { AppShell } from './AppShell';
+import { isConsolePath, usesOldShell } from './admin/shell/consoleNav';
 import { BootScreen } from './skater/BootScreen';
 import { FirstLoadHold, FirstLoadSplash } from './skater/OfflineBoundary';
 
@@ -16,15 +17,6 @@ import { FirstLoadHold, FirstLoadSplash } from './skater/OfflineBoundary';
  * so it renders bare in every auth state: no shell, and no redirect into an auth zone.
  */
 const GOOGLE_PHOTOS_CALLBACK = '/google-photos/callback';
-
-/**
- * The one area still drawn inside the old `AppShell`: the admin console. B03's retirement of the
- * old shell is otherwise complete — Latest replaced `/feed` (now only a redirect to `/latest`) and
- * `/post` is only a redirect into `?post=`. Everything else (`/`, `/latest`, `/water/…`, the
- * cards, profile, settings, about, and a path no route matches) renders bare: the skater layout or
- * the screen brings its own chrome.
- */
-const OLD_SHELL_TREES = ['/admin'];
 
 /**
  * Whether the router matched nothing: the root's `notFoundComponent` is about to render, and it
@@ -36,19 +28,25 @@ export function isNotFound(state: { matches: ReadonlyArray<{ _notFound?: boolean
   return state.matches.some((m) => m._notFound === true);
 }
 
-/** Whether `pathname` still sits in the old `AppShell` — the admin console's tree. */
-export function usesOldShell(pathname: string): boolean {
-  return OLD_SHELL_TREES.some((tree) => pathname === tree || pathname.startsWith(`${tree}/`));
-}
+/**
+ * Whether `pathname` still sits in the old `AppShell`: an old admin page still standing. B03's
+ * retirement of the old shell is otherwise complete — Latest replaced `/feed` (now only a redirect
+ * to `/latest`) and `/post` is only a redirect into `?post=` — and B01's console replaces the admin
+ * pages one mode at a time, narrowing this as each lands (`admin/shell/consoleNav.ts`, which holds
+ * the list and says what else the same answer decides). Everything else (`/`, `/latest`,
+ * `/water/…`, the cards, profile, settings, about, the console's own pages, and a path no route
+ * matches) renders bare: the skater layout, the console or the screen brings its own chrome.
+ */
+export { usesOldShell };
 
 /**
  * Web counterpart to mobile's `Stack.Protected` gate (D26/D45), driven by the *same* pure
  * `resolveAuthRoute` (shared in `@skating/core`, D7). It resolves the auth/provisioning
  * state from Clerk + the reactive `profiles.current` query, then — because the web is
  * path-based — redirects the user into the right zone when they're in the wrong one. In the
- * signed-in-and-provisioned (`app`) state only the admin console (`usesOldShell`) is
- * wrapped in the old `AppShell`; the skater pages, the 404 and the auth/onboarding/re-ack pages
- * render bare. We hold while loading or mid-redirect so we never flash the wrong surface; the
+ * signed-in-and-provisioned (`app`) state only the old admin pages (`usesOldShell`) are
+ * wrapped in the old `AppShell`; the skater pages, the console, the 404 and the
+ * auth/onboarding/re-ack pages render bare. We hold while loading or mid-redirect so we never flash the wrong surface; the
  * hold turns into the offline screen if the socket never opens.
  *
  * **What the hold looks like depends on whether this is a cold start** (`lib/boot.ts`). The first
@@ -93,12 +91,13 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   if (bare) return <>{children}</>;
   if (route === 'loading' || target) {
-    // Only the skater shell has a boot shape; the console keeps its own hold (`AdminLayout`).
+    // Only the skater shell has a boot shape; the console — old pages and new — keeps its own hold
+    // (each admin shell's gate), so every `/admin` path gets the splash here, not skater skeletons.
     //
     // Either hold escalates to the first-load offline screen (8.12) when the socket never opens:
     // the profile query is what `loading` is waiting for, so without it a returning load with no
     // network holds on skeletons forever, with nothing said and nothing to retry.
-    return booted === 'app' && !usesOldShell(pathname) ? (
+    return booted === 'app' && !isConsolePath(pathname) ? (
       <FirstLoadHold>
         <BootScreen pathname={pathname} />
       </FirstLoadHold>

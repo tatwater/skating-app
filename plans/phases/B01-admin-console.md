@@ -699,6 +699,40 @@ land; the third came out of the #108 review. **The calls:**
    Part A (final) lands in #108; Parts B (the verdict record), C (the erasure) and D (retraction)
    land together in the next PR.
 
+### The governor's rulings at the Overview's integration (2026-11-13)
+
+Made while B01-2 integrated Home, Metrics and the shell; the founder may overturn any of them.
+
+1. **"Open flags" counts `reviewing` everywhere.** A flag a moderator has opened but not decided
+   is still open — on Home's Inbox card, the heads row, and Metrics' *Open flags* and *Oldest open
+   flag*. The server reads that count today in more than one place; unifying them on one
+   definition is owed to the server agent (the B01-2 server register, §12.8).
+2. **The oldest open flag turns red at 72 hours — provisionally** (`OLDEST_FLAG_BAD_HOURS`), until
+   the founder reviews it with real queue data.
+3. **A most-reported row clicks through to that body's Body console** (the old lake editor until
+   the Body console lands).
+4. **The old dashboard lives at `/admin/dashboard`, under Legacy,** until Instruments and Machinery
+   are built and carry what it draws (the queue tiles, app health, the base map's provenance, the
+   recent actions). The Overview took `/admin`; nothing the old page showed is out of reach.
+
+### The founder's calls on the B01-2 integration (2026-11-13)
+
+Asked by the integration's report. **The calls:**
+
+1. **From 1 July to 1 October the Overview shows the new season, empty.** *"We should show empty
+   new season state from Jul 1 -> Oct 1. The user should have to explicitly choose a previous
+   season in order to see its data."* The season's identity flips on 1 July with the data season
+   (D63); its chart window still starts 1 October (the call above); between the two the window is
+   empty and every season-ranged block says when the season's record begins — the watch *Waiting,
+   counting nights from 1 Oct*, every other block *Record begins 1 Oct* — and nothing about the
+   ice (D3). This reverses the integration's first rule, which kept the previous 1 October through
+   the summer. A past season is reached only by choosing it; no chooser is built until the reads
+   behind it exist (M10 in the B01-2 server register, §12.8).
+2. **B01-2 ships as one PR, its size accepted:** *"this size is fine for the goal we set out to
+   accomplish in this PR."* The review boundary is the console shell and its first page.
+3. **The dim lamp stands for *not live*** until the kit's live `Badge` and `StatusLamp` have a
+   hollow state (the kit extensions owed, §12.8).
+
 ## §8 — Workstreams (firmed up 2026-10-12; order is the founder's call 13)
 
 Wireframes come first (§6, a static HTML mockup per mode, reviewed before React). Then, one PR
@@ -833,9 +867,25 @@ are used below) and `plans/research/web-frontend-stack-2026-10-30.md` §2.
 | Map controls (layer rack, zoom pair, scale, mode bar, hover plate) | ✅ | custom MapLibre controls + Switch, ButtonGroup, Kbd | admin | Scale on the map (R12#4); UI 56 px up (R13#5); the mode bar in ice; one hover plate per board where hover is the point (R14#1); real geography (R11#5) (#28, #54) |
 | Matrix and trace charts (temperature matrix, season traces, sparkbars, LED segments, stage bar) | ✅ | custom SVG / CSS grid | admin | The temperature scale tokens; ice only for water and transient modes (R9#12, D223); translucent marks bound for Paper need `rgba()` fills (#41, #53) |
 | Mobile bar | ⚪ | custom nav + ToggleGroup chips | admin | A later phase (#57) |
+| Map key (`map-key`) | ✅ | custom; promoted from the skater map (B01-2) | both | A slim bar on the map's bottom edge; lists only what the map draws; a name is a noun for what the mark is, never a word about the ice (D3); scrolls at phone width, never wraps; `MAP_FOOT_ROOM` lifts the foot controls over it |
+| Map marks (`map-marks`) | ✅ | custom SVG; promoted from the skater map (B01-2) | both | Put-in, lot, photo and hazard in its three tones — the key's glyphs and the Body boards' marks are one drawing; `HazardTone` is the marks' own type |
+| Search parts (`search-parts`) | ✅ | custom on Base UI Autocomplete; promoted from `GlobalSearch` (B01-2) | both | `FootKey` (one dim cap per key), `SearchGroupLabel` (`plate` / `palette` looks, optional count and rule), `SearchStatus` (spinner, else the caller's note); the rows stay each list's own; one popover plate (`POPOVER_PLATE`) so the two can't drift |
 
-**Count:** 51 components: 30 re-skinned shadcn atoms, 4 Base UI primitives, 17 custom. Fifty are
-done; the mobile bar waits for a later phase.
+**Count:** 54 components: 30 re-skinned shadcn atoms, 4 Base UI primitives, 20 custom. Fifty-three
+are done; the mobile bar waits for a later phase.
+
+**The kit review's first batch (§12.7), as integrated in B01-2 (2026-11-13):**
+
+| Candidate | Outcome |
+|---|---|
+| `useIsPhone` | Moved to `lib/usePhoneLayout.ts` with `useIsMidWidth`, on one media-query store (`lib/mediaQuery.ts`) shared with `useCoarsePointer` — surface-neutral, so `lib`, not the kit |
+| `SkaterPair` | One `ThemePair` in `.storybook/theme.tsx`, parameterized by surface, beside the four-up and its one token copy; `SkaterPair` is that pair bound to the skater surface |
+| The grouped-autocomplete search | Its shared parts promoted as `search-parts` (above); the lists stay each caller's |
+| The map key and its marks | Promoted as `map-key` and `map-marks` (above) — not on §12.7's list; the Body boards draw them |
+| `InsetCard` (+ `useCardMechanics`) | **Deferred** to the Body console, whose landmark editor, *Drop a Landmark* and *Link a Lot* are its first console uses |
+| `ReportCard` | **Deferred** to the Body console's reports, then Inbox and Reports |
+| `CodeInput` | **Deferred** until a console board needs it; none in slice one does |
+| `INK_PRIMARY` | **Ruled out:** the surfaces' primaries deliberately differ, so one shared constant would be wrong for one of them |
 
 ## §9 — Decisions minted
 
@@ -1295,6 +1345,90 @@ history starts on merge day; the reads and the tiles come with the Metrics tab.
   submitter's account — so the day backfill never replays it. One edge stays: `support.resolve`
   re-stamps `resolvedAt` when a resolved ticket is resolved again, which would count it open on the
   days between; nothing in the console does that today.
+
+**B01-2 (2026-11-13): the shell, Overview Home and Metrics, integrated.** Four builders (kit
+promotions, the shell, Home, Metrics) cut from `eb1f7242`, cherry-picked serially onto `b01-2` off
+the phase branch at `519cc1c8`.
+
+- **The Overview mounts at `/admin`** in the console shell, Home | Metrics as a validated `?tab=`
+  (Home is no param). Home reads what exists — `console.overview` (Inbox, People),
+  `waterBodies.reviewQueueCounts` (Corpus's intake rows), `moderation.listActions` (the feed) —
+  and every block no read serves is drawn *Not recorded yet*: the season's four tiles, cost (no
+  Ledger link), Machinery (no Health link), all of Metrics. The Corpus rows nothing counts yet
+  (chord re-fits, place names, the pre-ice pass, enrichment) are left out, never zeroed. No
+  fixture reaches the app: `fixturesStayInStories.test.ts` fails on any non-story importer.
+- **Links go to the old pages until each mode lands**, as the palette does: every Inbox lane,
+  Corpus task, People list and audit target type maps to an old page still standing, and a test
+  holds each to the old-shell predicate. The ledger has no page yet.
+- **The old dashboard moved to `/admin/dashboard`** (the governor's ruling, §7), in
+  `OLD_SHELL_TREES`, the init script's copy and the Legacy menu; the old sidebar's Overview line
+  is the way back.
+- **Found at integration:** #108's fix round made `appealsOpen` a capped `Count`, and Home was
+  built on the bare number (fixed at the pick); `admin.tsx` binding `AdminRoot`, which picks a
+  shell and owns no outlet, failed the route-nesting guard, which now follows a shell switch and
+  requires an outlet on *every* branch; Metrics runs taller than a 900 px screen and the shell's
+  main area doesn't scroll, so the tab scrolls under the page head. **From 1 July to 30
+  September** (the founder's call, §7) the page shows the new season, empty: Home's four season
+  tiles and Metrics' season-ranged sections say when the record begins, and the now and
+  this-week stats are unchanged. The shell's lamp now speaks
+  the live mark's words (*Convex live / checking / not live*); *not live* is the dim lamp until the
+  kit has a hollow state (below).
+- **Seam review of `lib/theme.ts`:** the init script's old-page list is compared to
+  `OLD_SHELL_TREES` by importing the real constant and parsing the real script, and the script is
+  run over every old tree, a page under each and the near-misses — dropping one tree from the
+  script alone fails it, and so does writing `admin` on a skater path. Skater paths behave as
+  before: `skater` everywhere outside `/admin`, the `.dark` sync unchanged.
+
+### The B01-2 server register (owed to the server agent)
+
+Every seam request the B01-2 builders raised against `packages/convex` and `packages/core`, and
+the two undo fixes the executor's final review of #108 found (U1, U2). Nothing here blocks a merge: each block draws *Not recorded yet* until its read lands, then swaps its
+`null` for the read.
+
+| # | Ask | For | Status |
+|---|---|---|---|
+| S1 | `machinery.overviewJobs` — the jobs that need a look first (stalled, failed, late, retried, then a few ok), how many more and whether they're all ok | Home › Machinery card, the heads row's *needs a hand*, the status bar | ⚪ |
+| S2 | `ledger.overviewCost` — this season's total and its invoiced/metered split, each service's amount and free-tier meter, the last three full months and this one by hosting/AI/compute | Home › cost strip, *Cost · this season*, *By month* | ⚪ |
+| S3 | `seasonWatch.homeSummary`, moderator-readable — the watch (waiting/open/closed, sentinels), winter region-wide, imagery state, the first skate | Home › the season's four tiles | ⚪ |
+| S4 | `console.overview` additions — `inbox.medianAgeMs`; `people.totalUsers`; the Corpus counts no read has (chord re-fits across bodies, place names, the pre-ice pass's date, awaiting enrichment, the last campaign); dedup groups counted as decisions, not rows | Home › Inbox foot, People's *N users*, Corpus rows | ⚪ |
+| S5 | The audit feed: a `targetLabel` on each `listActions` row (the body's or person's name), and machine-run events (cron and run outcomes) in the same feed as `system` | Home › audit feed | ⚪ |
+| S6 | One definition of *open flags* that includes `reviewing`, used by every count (§7, the governor's ruling 1) | Home, Metrics | ⚪ |
+| M1 | Keeping up, now — open flags (all, safety), the oldest open flag (when, which body), open tickets and the oldest | Metrics › Keeping up's stats | ⚪ |
+| M2 | Keeping up, the season — `flag_time_to_resolution_h` for the last 7 days and the season, the flag queue per day (`flag_oldest_open_age_h`, `flag_queue_depth`), support's resolution histogram and `support_queue_depth` per day | Metrics › the oldest-flag chart, both histograms, open support tickets | ⚪ |
+| M3 | Showing up, the week — reports and their people, accounts added and total, signed in and on two days or more (`signInDays`), contributors and first-timers | Metrics › Showing up's stats | ⚪ |
+| M4 | The daily strips — reports, comments, kudos, photos, hazards, new accounts, signed in, contributors per season day (1 October on), each with its total and spread; comments and photos as **backfillable** rollups | Metrics › *Each day* | ⚪ |
+| M5 | The vantage rollup — the season's reports by `observedFrom`, and those stating none | Metrics › *Reports by vantage* | ⚪ |
+| M6 | Most-reported — via the §10 tier-2 per-body rollup: reports, photos, distinct people, last report | Metrics › *Most-reported* (rows open the Body console, §7 ruling 3) | ⚪ |
+| M7 | Coverage by state — listed bodies once each, and per state: bodies, reports, comments, photos, kudos, contributors | Metrics › *Coverage by state* | ⚪ |
+| M8 | A moderator-level metrics capability — the tab reads today's admin-only rollups; a moderator sees Metrics without support (PII, D37) | Metrics for moderators | ⚪ |
+| M10 | A season chooser in the Overview's own content (not the rail or any sidebar navigation), and every season-ranged read taking the season as an argument (M2, M4–M7, S3; S2's season total). The founder's call (§7): a past season is shown only when chosen. The client is ready: `OverviewView` takes `season`, `metricsWindow(season, now)` draws a past season whole, and Metrics and the season tiles draw whatever window and facts they're handed | The Overview, both tabs | ⚪ |
+| M9 | A by-time index on `reportRatings` for kudos (the founder, 2026-11-13: kudos are positive reactions; *helpful* counts; a thumbs-down never subtracts) | M4's kudos strip, M7's kudos column | ⚪ |
+| H1 | A moderator-readable season-tape summary — the watch's opening and the day count, so the tape can wear its *Day N* badge and its marks | The shell's season tape | ⚪ |
+| H2 | A colleague-presence read — who else is in the console now | The top bar's faces | ⚪ |
+| H3 | An optional audit-row id returned by every operator mutation | Undo's toast and History linking a write to its row | ⚪ |
+| H4 | Suspend and ban refuse the last ledger holder — D227's *never no holder* holds through discipline as well as demotion (the governor's ruling) | People, D227 | ⚪ |
+| U1 | A Post's restore records the auto-hidden state in its `prev` snapshot, and its undo puts it back — today undoing a moderator's restore of an auto-hidden Post (all its Reports hidden) loses that record, and restoring one of its Reports afterwards no longer brings the Post back. The true-inverse rule of the landmark-restore fix (founder-ratified 2026-11-13): a restore records what it clears | Undo (D226), Post moderation | ⚪ |
+| U2 | History's *undone by* link on a Post can point at a Report's row instead of the Post's own undo row (`lib/undo.ts`). Nothing reads the link yet; a pre-wiring fix before the History panel does | Undo's History panel | ⚪ |
+
+### Kit extensions owed (B01-2)
+
+Raised by the builders as kit candidates or gaps; each is the governor's to promote (§12.3).
+
+- **A hollow state** for the live `Badge` and `StatusLamp` — the live mark and the status bar's
+  *not live* draw it locally (or as the dim lamp) until then.
+- **`StatGrid ruled={false}`** — a strip of stats without the column rules.
+- **A display-word component** — the page word (*Overview*) and the column heads share its type.
+- **`RowLink`'s in-row size** — the 18 px chip that fits a 22 px row, now local to Home.
+- **`Chart`'s quiet tone** — the context-bar gray (`--line2`) the kit's tones stop short of.
+- **`Sparkbars` shared hover** — one hairline and one plate across a stack of strips.
+- **`ChartLegend` and `ChartNote`** — Metrics' legend and empty-chart note, kit candidates (cost's
+  spend chart already borrows the note).
+- **`AppShell`**: the search label truncates at 1440 (*Jump to a body or a pers…*), and the
+  season tape overlaps the search under about 1,000 px.
+
+**Known bug, skater territory (owed, not B01-2):** client-side navigation from a skater page to an
+old admin page leaves `data-surface="skater"` on `<html>` — the old page wants it absent, and no
+shell on that path takes it off.
 
 ## Ruled out
 

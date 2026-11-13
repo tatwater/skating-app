@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useState } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
+import { computedColor, sameColor } from '../kit/measure';
 import { must } from '../kit/storyKit';
 import { GlobalSearchView } from './GlobalSearchView';
 import type { SearchGroup } from './searchModel';
@@ -52,7 +53,9 @@ function Open({
 export const Results: Story = {
   args: {} as never,
   render: () => (
-    <SkaterPair>{(_, c) => <Open groups={RESULTS} query="ma" container={c} />}</SkaterPair>
+    <SkaterPair height="34rem">
+      {(_, c) => <Open groups={RESULTS} query="ma" container={c} />}
+    </SkaterPair>
   ),
   play: async ({ canvasElement }) => {
     for (const q of canvasElement.querySelectorAll<HTMLElement>('[data-theme-scope]')) {
@@ -62,6 +65,13 @@ export const Results: Story = {
       );
       await expect(kickers).toEqual(['Lakes', 'Bays', 'Skaters']);
       await expect(getComputedStyle(p).borderRadius).toBe('0px');
+      // The kit popover's plate: the panel ground inside a `line2` edge.
+      await expect(getComputedStyle(p).backgroundColor).toEqual(
+        sameColor(computedColor(p, 'var(--panel)')),
+      );
+      await expect(getComputedStyle(p).borderTopColor).toEqual(
+        sameColor(computedColor(p, 'var(--line2)')),
+      );
       await expect(p.getBoundingClientRect().width).toBe(520);
       // Centered under the field (Review 3).
       const field = must(
@@ -82,7 +92,9 @@ export const Results: Story = {
 export const Recent: Story = {
   args: {} as never,
   render: () => (
-    <SkaterPair>{(_, c) => <Open groups={RECENTS} query="" container={c} />}</SkaterPair>
+    <SkaterPair height="34rem">
+      {(_, c) => <Open groups={RECENTS} query="" container={c} />}
+    </SkaterPair>
   ),
   play: async ({ canvasElement }) => {
     const p = await waitFor(() => must(plate(canvasElement)));

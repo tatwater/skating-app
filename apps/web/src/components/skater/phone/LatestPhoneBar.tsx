@@ -1,11 +1,9 @@
 import { useEffect } from 'react';
-
+import { useIsPhone } from '@/lib/usePhoneLayout';
 import { cn } from '@/lib/utils';
 import { type LatestPhonePane, useChromeStore } from '@/stores/chromeStore';
-
 import { ToggleGroup, ToggleGroupItem } from '../../kit/toggle-group';
 import { useEscapeToClose } from '../lake/lakeNav';
-import { useIsPhone } from './usePhoneLayout';
 
 /**
  * Latest on a phone (board 9.7) shows one column at a time: the reports, the filters, or

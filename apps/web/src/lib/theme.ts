@@ -15,7 +15,8 @@ import { isThemePreference, type ThemeName, type ThemePreference } from '@skatin
  *   `prefers-color-scheme` block scoped to `:root:not([data-mode])`, so `system` is expressed by
  *   *removing* the attribute, never by writing a third value.
  * - **`data-mode="light" | "dark"`** states an override and wins over the media query.
- * - The **`.dark` class stays in sync with the resolved mode** until the old `/admin` UI retires:
+ * - The **`.dark` class stays in sync with the resolved mode** until the last old `/admin` page
+ *   retires (on the console's own pages too, so a hop to an old page never paints the wrong mode):
  *   the pre-B01 Tailwind styles and Clerk's appearance switch key off it, and they have no
  *   media-query fallback — which is why `system` still needs the init script below even though
  *   the token sheet would handle it alone.
@@ -70,9 +71,12 @@ export function applyThemePreference(
  * two literals. Wrapped in try/catch because a theme must never be the thing that crashes the
  * page (cookies can be disabled; `matchMedia` is absent in some embedders).
  *
- * It also states the surface: `data-surface="skater"` everywhere but under `/admin`, where the
- * attribute is removed — the old admin pages don't read the tokens yet, and absent keeps their
- * look. The skater shell re-states it after hydration.
+ * It also states the surface: `data-surface="admin"` on the console's own pages, removed on the
+ * old admin pages still standing (they don't read the tokens, and absent keeps their look), and
+ * `skater` everywhere else. Each shell re-states its own after hydration. The old pages' list is a
+ * copy of `OLD_SHELL_TREES` (`components/admin/shell/consoleNav.ts`) — a string constant can't
+ * import it — and `oldShellPredicate.test.tsx` fails if the two disagree; when a mode lands, both
+ * narrow together.
  */
 export const THEME_INIT_SCRIPT = `(function () {
   try {
@@ -85,7 +89,14 @@ export const THEME_INIT_SCRIPT = `(function () {
       : window.matchMedia('(prefers-color-scheme: dark)').matches;
     root.classList.toggle('dark', dark);
     var path = location.pathname;
-    if (path === '/admin' || path.indexOf('/admin/') === 0) root.removeAttribute('data-surface');
-    else root.setAttribute('data-surface', 'skater');
+    var under = function (tree) { return path === tree || path.indexOf(tree + '/') === 0; };
+    var oldTrees = ['/admin/dashboard', '/admin/flags', '/admin/users', '/admin/water',
+      '/admin/features', '/admin/recurrence', '/admin/ice-calibration', '/admin/seasons',
+      '/admin/support', '/admin/tuning', '/admin/imports'];
+    var old = false;
+    for (var i = 0; i < oldTrees.length; i++) if (under(oldTrees[i])) old = true;
+    if (!under('/admin')) root.setAttribute('data-surface', 'skater');
+    else if (old) root.removeAttribute('data-surface');
+    else root.setAttribute('data-surface', 'admin');
   } catch (e) {}
 })();`;

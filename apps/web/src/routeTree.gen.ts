@@ -23,6 +23,7 @@ import { Route as SkaterIndexRouteImport } from './routes/_skater.index'
 import { Route as SkaterLatestRouteImport } from './routes/_skater.latest'
 import { Route as SkaterSettingsRouteImport } from './routes/_skater.settings'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
+import { Route as AdminDashboardRouteImport } from './routes/admin.dashboard'
 import { Route as AdminFeaturesRouteImport } from './routes/admin.features'
 import { Route as AdminFlagsRouteImport } from './routes/admin.flags'
 import { Route as AdminIceCalibrationRouteImport } from './routes/admin.ice-calibration'
@@ -115,6 +116,11 @@ const SkaterSettingsRoute = SkaterSettingsRouteImport.update({
 const AdminIndexRoute = AdminIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminDashboardRoute = AdminDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminFeaturesRoute = AdminFeaturesRouteImport.update({
@@ -251,6 +257,7 @@ export interface FileRoutesByFullPath {
   '/sign-up': typeof SignUpRoute
   '/latest': typeof SkaterLatestRoute
   '/settings': typeof SkaterSettingsRouteWithChildren
+  '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/features': typeof AdminFeaturesRoute
   '/admin/flags': typeof AdminFlagsRoute
   '/admin/ice-calibration': typeof AdminIceCalibrationRoute
@@ -287,6 +294,7 @@ export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/latest': typeof SkaterLatestRoute
+  '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/features': typeof AdminFeaturesRoute
   '/admin/flags': typeof AdminFlagsRoute
   '/admin/ice-calibration': typeof AdminIceCalibrationRoute
@@ -328,6 +336,7 @@ export interface FileRoutesById {
   '/sign-up': typeof SignUpRoute
   '/_skater/latest': typeof SkaterLatestRoute
   '/_skater/settings': typeof SkaterSettingsRouteWithChildren
+  '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/features': typeof AdminFeaturesRoute
   '/admin/flags': typeof AdminFlagsRoute
   '/admin/ice-calibration': typeof AdminIceCalibrationRoute
@@ -370,6 +379,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/latest'
     | '/settings'
+    | '/admin/dashboard'
     | '/admin/features'
     | '/admin/flags'
     | '/admin/ice-calibration'
@@ -406,6 +416,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-up'
     | '/latest'
+    | '/admin/dashboard'
     | '/admin/features'
     | '/admin/flags'
     | '/admin/ice-calibration'
@@ -446,6 +457,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/_skater/latest'
     | '/_skater/settings'
+    | '/admin/dashboard'
     | '/admin/features'
     | '/admin/flags'
     | '/admin/ice-calibration'
@@ -586,6 +598,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/admin/'
       preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/dashboard': {
+      id: '/admin/dashboard'
+      path: '/dashboard'
+      fullPath: '/admin/dashboard'
+      preLoaderRoute: typeof AdminDashboardRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/features': {
@@ -799,6 +818,7 @@ const SkaterRouteWithChildren =
   SkaterRoute._addFileChildren(SkaterRouteChildren)
 
 interface AdminRouteChildren {
+  AdminDashboardRoute: typeof AdminDashboardRoute
   AdminFeaturesRoute: typeof AdminFeaturesRoute
   AdminFlagsRoute: typeof AdminFlagsRoute
   AdminIceCalibrationRoute: typeof AdminIceCalibrationRoute
@@ -819,6 +839,7 @@ interface AdminRouteChildren {
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
+  AdminDashboardRoute: AdminDashboardRoute,
   AdminFeaturesRoute: AdminFeaturesRoute,
   AdminFlagsRoute: AdminFlagsRoute,
   AdminIceCalibrationRoute: AdminIceCalibrationRoute,

@@ -1,8 +1,9 @@
 import { contrastOklch, hexToOklch, withAlpha } from '@skating/design/tokens';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { mapEarth, mapListedWater, winterFlavor } from '@/lib/winterFlavor';
+import { SkaterPair } from '../storySupport';
 import { mapPalette, SHORE_OPACITY_BY_ZOOM } from './mapPalette';
-import { SkaterPair } from './mapStill';
+import { STILL_PAIR } from './mapStill';
 
 /**
  * The basemap's palette as a plate. The live map needs tiles, so this is where the flavor can be
@@ -144,5 +145,5 @@ function Plate({ mode }: { mode: 'dark' | 'light' }) {
  * color six times over.
  */
 export const WinterFlavorPlate: Story = {
-  render: () => <SkaterPair>{(mode) => <Plate mode={mode} />}</SkaterPair>,
+  render: () => <SkaterPair {...STILL_PAIR}>{(mode) => <Plate mode={mode} />}</SkaterPair>,
 };

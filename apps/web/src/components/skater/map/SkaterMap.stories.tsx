@@ -7,6 +7,7 @@ import { type BandFeatureProperties, lakeBands } from '@/lib/depthBands';
 import { FoldedAttributionControl } from '@/lib/mapAttribution';
 import { OSM_ATTRIBUTION } from '@/lib/waterMap';
 import { DEFAULT_MAP_LAYERS, useSkaterMapStore } from '@/stores/skaterMapStore';
+import { SkaterPair } from '../storySupport';
 import bandsStub from './fixtures/depthBands.stub.json';
 import { LakeLabel } from './LakeLabel';
 import { MapDockControls } from './MapDockControls';
@@ -14,7 +15,7 @@ import { MapMarksLayer } from './MapMarksLayer';
 import type { HazardMarkModel, LakeLabelModel } from './mapDerive';
 import { mapPalette } from './mapPalette';
 import { DOCK_CONTROLS, type DockControls } from './mapSpec';
-import { MapStill, SkaterPair, type StillView, stillBands } from './mapStill';
+import { MapStill, STILL_PAIR, type StillView, stillBands } from './mapStill';
 import { MASCOMA_INTERIOR, MASCOMA_PUT_INS, MASCOMA_RINGS, NEARBY_RINGS } from './mapStoryData';
 import {
   MASCOMA_APPROACH,
@@ -148,7 +149,7 @@ const dockProps = {
 /** 1.1 — nothing chosen: the lakes in view, labeled. */
 export const NothingChosen: Story = {
   render: () => (
-    <SkaterPair>
+    <SkaterPair {...STILL_PAIR}>
       {(mode) => (
         <MapStill mode={mode} view={AREA} water={ALL_WATER}>
           {(map) => (
@@ -210,7 +211,7 @@ export const NothingChosen: Story = {
  */
 export const LakeChosen: Story = {
   render: () => (
-    <SkaterPair>
+    <SkaterPair {...STILL_PAIR}>
       {(mode) => (
         <MapStill
           mode={mode}
@@ -261,7 +262,7 @@ export const LakeChosen: Story = {
  */
 export const HazardPeekOverImagery: Story = {
   render: () => (
-    <SkaterPair>
+    <SkaterPair {...STILL_PAIR}>
       {(mode) => (
         <MapStill mode={mode} view={LAKE} water={[{ rings: MASCOMA_RINGS, selected: true }]}>
           {(map) => (
@@ -311,7 +312,7 @@ const MASCOMA_LEGEND = lakeBands(
  */
 export const Bands: Story = {
   render: () => (
-    <SkaterPair>
+    <SkaterPair {...STILL_PAIR}>
       {(mode) => (
         <MapStill
           mode={mode}
@@ -381,7 +382,7 @@ export const Bands: Story = {
  */
 export const EveryLayer: Story = {
   render: () => (
-    <SkaterPair>
+    <SkaterPair {...STILL_PAIR}>
       {(mode) => (
         <MapStill
           mode={mode}
@@ -442,7 +443,7 @@ export const EveryLayer: Story = {
 /** 3.16 — the layers menu, opened on a press. */
 export const MapLayers: Story = {
   render: () => (
-    <SkaterPair>
+    <SkaterPair {...STILL_PAIR}>
       {(mode) => (
         <MapStill mode={mode} view={LAKE} water={[{ rings: MASCOMA_RINGS, selected: true }]}>
           {() => (
@@ -479,7 +480,7 @@ export const ReturnToTheRegion: Story = {
     useSkaterMapStore.setState({ awayFromRegion: true });
   },
   render: () => (
-    <SkaterPair>
+    <SkaterPair {...STILL_PAIR}>
       {(mode) => (
         <MapStill mode={mode} view={AREA} water={[]}>
           {() => (
@@ -501,7 +502,7 @@ export const ReturnToTheRegion: Story = {
 /** The label lockups on their own, every state, with the mirror. */
 export const Labels: Story = {
   render: () => (
-    <SkaterPair>
+    <SkaterPair {...STILL_PAIR}>
       {() => (
         <div
           className="relative h-[120px] w-[960px]"
@@ -609,7 +610,7 @@ const CREDITS_VIEW: StillView = {
  */
 export const Credits: Story = {
   render: () => (
-    <SkaterPair>
+    <SkaterPair {...STILL_PAIR}>
       {(mode) => (
         <div className="flex flex-wrap gap-3">
           {[false, true].map((open) => (

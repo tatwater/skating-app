@@ -10,7 +10,7 @@ import { PanelDrawer } from '../panels/PanelDrawer';
 import { BOARD_NOW, CARD_PAT, POST_ANA, REPORT_PAT } from '../panels/panelFixtures';
 import { ReportPanelView } from '../panels/ReportPanelView';
 import { StoryRouter } from '../panels/storyRouter';
-import { SkaterPair } from '../storySupport';
+import { pairQuads, SkaterPair } from '../storySupport';
 import { FeedColumn, type FeedColumnProps } from './FeedColumn';
 import { ChangeHomeLabel, FilterColumn } from './FilterColumn';
 import { LatestFrame } from './LatestFrame';
@@ -52,9 +52,7 @@ const MATCH = {
   asOfDayMs: NOW - 24 * HOUR,
 };
 
-const quads = (root: HTMLElement) => [
-  ...root.querySelectorAll<HTMLElement>('[data-skater-pair] > section'),
-];
+const quads = (root: HTMLElement) => pairQuads(root);
 
 const PAT: PostCardData = {
   postId: 'post-pat',

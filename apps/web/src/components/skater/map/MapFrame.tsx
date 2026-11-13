@@ -1,10 +1,8 @@
 import { type ReactNode, useState } from 'react';
-
+import { MAP_FOOT_ROOM } from '@/components/kit/map-key';
 import { cn } from '@/lib/utils';
 import { effectiveMapSpec, useSkaterMapStore } from '@/stores/skaterMapStore';
-
 import { MapFloatContext } from './MapFloat';
-import { MAP_FOOT_ROOM } from './MapKey';
 import { SkaterMap } from './SkaterMap';
 
 /**

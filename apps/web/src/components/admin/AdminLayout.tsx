@@ -69,7 +69,10 @@ interface NavItem {
   exact?: boolean;
 }
 const NAV: NavItem[] = [
-  { to: '/admin', label: 'Dashboard', exact: true },
+  // The console's Overview took `/admin`; the old dashboard stands at `/admin/dashboard` until the
+  // modes that replace it land, and the Overview line is the way back to the console.
+  { to: '/admin', label: 'Overview', exact: true },
+  { to: '/admin/dashboard', label: 'Dashboard' },
   { to: '/admin/flags', label: 'Flags' },
   { to: '/admin/users', label: 'Users' },
   { to: '/admin/water', label: 'Water bodies' },

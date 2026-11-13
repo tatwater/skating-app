@@ -5,7 +5,7 @@ import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { Button } from '../../kit/button';
 import { computedColor, sameColor } from '../../kit/measure';
 import { must } from '../../kit/storyKit';
-import { SkaterPair } from '../storySupport';
+import { pairQuads, SkaterPair } from '../storySupport';
 import { INK_PRIMARY } from '../styles';
 import { BountyPanelView } from './BountyPanelView';
 import { CommentThreadView } from './CommentThread';
@@ -39,9 +39,7 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-const quads = (root: HTMLElement) => [
-  ...root.querySelectorAll<HTMLElement>('[data-skater-pair] > section'),
-];
+const quads = (root: HTMLElement) => pairQuads(root);
 const cardOf = (root: ParentNode) => root.querySelector<HTMLElement>('[data-slot="inset-card"]');
 
 /** The card once it's past its starting style: it mounts transparent, then fades in. */

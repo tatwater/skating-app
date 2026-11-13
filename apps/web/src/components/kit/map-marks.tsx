@@ -1,27 +1,30 @@
 import type { ComponentProps, ReactNode } from 'react';
+
 import { cn } from '@/lib/utils';
-import type { HazardTone } from './mapDerive';
 
 /**
- * The public app's point marks (Review 2): 14–16 px squares, each with a 2 px halo in the map's
- * ground color (`--map-ground`), so it lifts off the basemap and the depth fill alike. Mock
- * `chrome.js` `putIn` and `hazardMark`. Drawn on a box centered on the point, so a parent places the
- * point, not a corner. Every map that draws a point draws one of these, and the map key draws the
- * same faces small (`glyph`), so a key entry is the mark itself.
+ * The kit's map marks, on both surfaces: 14–16 px squares, each with a 2 px halo in the map's
+ * ground color (`--map-ground`), so it lifts off the basemap and the depth fill alike. Drawn on a
+ * box centered on the point, so a parent places the point, not a corner. Every map that draws a
+ * point draws one of these, and the map key (`map-key`) draws the same faces small (`glyph`), so a
+ * key entry is the mark itself. Pure SVG: no map library, no data.
  */
 
+/** A hazard's face: a warning, one healing over, or a crossing somebody reported. */
+type HazardTone = 'danger' | 'healing' | 'passage';
+
 /** The box every mark draws in, centered on its point: room for the selection brackets. */
-export const MARK_BOX = 34;
+const MARK_BOX = 34;
 const H = MARK_BOX / 2;
 
 /** A key glyph's size, px — the admin key's 12 px. */
-export const KEY_GLYPH = 12;
+const KEY_GLYPH = 12;
 
 const BRACKETS = 'M-16 -9 v-7 h7 M9 -16 h7 v7 M16 9 v7 h-7 M-9 16 h-7 v-7';
 
 type MarkSvgProps = Omit<ComponentProps<'svg'>, 'children' | 'viewBox'>;
 
-export interface MarkState {
+interface MarkState {
   /** Recede behind a mark that is chosen — never below half, so it still reads as one (D3). */
   dim?: boolean;
   /** The mark being pointed at: corner brackets around it. */
@@ -178,4 +181,13 @@ function HazardMark({
   );
 }
 
-export { HazardMark, LotMark, PhotoMark, PutInMark };
+export {
+  HazardMark,
+  type HazardTone,
+  KEY_GLYPH,
+  LotMark,
+  MARK_BOX,
+  type MarkState,
+  PhotoMark,
+  PutInMark,
+};

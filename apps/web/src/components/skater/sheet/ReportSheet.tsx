@@ -50,9 +50,9 @@ import {
   useSheetResend,
 } from '@/lib/sheetStore';
 import { useConnection } from '@/lib/useConnection';
+import { useIsPhone } from '@/lib/usePhoneLayout';
 import { cn } from '@/lib/utils';
 import { PhoneInstrumentStrip } from '../phone/PhoneInstrumentStrip';
-import { useIsPhone } from '../phone/usePhoneLayout';
 import { ConsoleModeProvider } from './ConsoleMode';
 import { InstrumentPane } from './InstrumentPane';
 import { LakeNameSearch } from './LakeNameSearch';

@@ -1,6 +1,8 @@
+import { POPOVER_PLATE } from '../kit/popover';
+
 /**
- * Class lists the skater compositions share, all tokens. Both are **kit promotion candidates**
- * (B03 §1.0): they exist here only because no kit piece draws them yet.
+ * Class lists the skater compositions share, all tokens. `INK_PRIMARY` is the skater surface's own
+ * primary; `PLATE` is the kit popover's skin, named here for the compositions that lay it on.
  */
 
 /**
@@ -13,7 +15,6 @@ export const INK_PRIMARY =
 
 /**
  * A plate that isn't a kit Popover's (search's list is Base UI Autocomplete's own popup, anchored to
- * its input): the kit popover's exact skin — square, panel ground, `line2` edge, the plate shadow.
+ * its input): the kit popover's own skin, so the two can't drift apart.
  */
-export const PLATE =
-  'rounded-container border border-solid border-line2 bg-panel shadow-plate font-(family-name:--family-sans) text-fg outline-none';
+export const PLATE = POPOVER_PLATE;

@@ -1,11 +1,9 @@
 import type { ReactNode } from 'react';
-
+import { useIsMidWidth } from '@/lib/usePhoneLayout';
 import { cn } from '@/lib/utils';
 import { useChromeStore } from '@/stores/chromeStore';
-
 import { PanelDrawerHost } from '../panels/PanelDrawer';
 import { LatestPhoneBar } from '../phone/LatestPhoneBar';
-import { useIsMidWidth } from '../phone/usePhoneLayout';
 
 /**
  * Latest's three columns (board 4.1): filters left (`--size-latest-filters`, 296 — widened from

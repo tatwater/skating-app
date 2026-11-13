@@ -1,9 +1,10 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
+import { SkaterPair } from '../storySupport';
 import { ChipLink } from './ChipLink';
 import { CodeFlow } from './CodeFlow';
 import { SystemStage } from './SystemStage';
-import { fakeAuthClient, SkaterPair, stageGlobals } from './storyFrame';
+import { AUTH_PAIR, fakeAuthClient, stageGlobals } from './storyFrame';
 
 const meta = {
   title: 'Skater/Sign-in/Code flow',
@@ -143,7 +144,7 @@ export const SignInUnknownEmail: Story = {
 
 /** The card in skater dark and light, side by side: the code step, refused. */
 export const Pair: Story = {
-  render: (args) => <SkaterPair>{() => <CodeFlow {...args} />}</SkaterPair>,
+  render: (args) => <SkaterPair {...AUTH_PAIR}>{() => <CodeFlow {...args} />}</SkaterPair>,
   play: async ({ canvasElement }) => {
     const [dark] = within(canvasElement).getAllByRole('region');
     await waitFor(() => expect(within(dark as HTMLElement).getByRole('textbox')).toBeVisible());
