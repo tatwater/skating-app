@@ -6,78 +6,33 @@
  * hold on both surfaces; a skater composition only ever renders on the skater surface, so its
  * stories put dark and light side by side and leave the admin maps to the kit (B03 §5).
  */
-import tokensCss from '@skating/design/tokens.css?raw';
-import { type ReactNode, useState } from 'react';
-
 import regionDark from '@/assets/basemap/region-dark.png';
 import regionLight from '@/assets/basemap/region-light.png';
 import { cn } from '@/lib/utils';
 
-import { SCOPE_ATTR, scopedTokensCss } from '../../../.storybook/theme';
+import { ThemePair, type ThemePairProps } from '../../../.storybook/theme';
 import type { NotificationRowModel } from './notificationRows';
 import type { SearchGroup } from './searchModel';
 
-export type Mode = 'dark' | 'light';
+export type { Mode } from '../../../.storybook/theme';
 
-function ensureScopedTokens(): void {
-  // The same sheet (and marker) the bench's four-up injects, so the two never double up.
-  if (document.querySelector('style[data-kit-scoped-tokens]')) return;
-  const style = document.createElement('style');
-  style.setAttribute('data-kit-scoped-tokens', '');
-  style.textContent = scopedTokensCss(tokensCss);
-  document.head.append(style);
+/**
+ * The bench's pair on the skater surface: dark and light side by side. With a `height`, each quad
+ * is a fixed stage (a screen, an overlay's frame); without one, a padded column under its own
+ * heading if `heading` asks for it.
+ */
+export function SkaterPair(props: Omit<ThemePairProps, 'surface'>) {
+  return <ThemePair surface="skater" {...props} />;
 }
 
 /**
- * Dark and light, side by side, each a scoped skater theme. `children` gets the quad's mode and its
- * element (a portal container, so a plate stays in its own theme). The dark quad carries `.dark`
- * for the legacy variant the logo uses; the story sets the toolbar to light so the root doesn't.
+ * A pair's two quads, dark then light — and a failed test, never a loop over nothing, when the
+ * story didn't render the pair.
  */
-export function SkaterPair({
-  children,
-  height = '34rem',
-}: {
-  children: (mode: Mode, container: HTMLElement | null) => ReactNode;
-  height?: string;
-}) {
-  ensureScopedTokens();
-  return (
-    <div className="grid grid-cols-1 gap-px bg-line xl:grid-cols-2" data-skater-pair="">
-      {(['dark', 'light'] as const).map((mode) => (
-        <Quad key={mode} mode={mode} height={height}>
-          {children}
-        </Quad>
-      ))}
-    </div>
-  );
-}
-
-function Quad({
-  mode,
-  height,
-  children,
-}: {
-  mode: Mode;
-  height: string;
-  children: (mode: Mode, container: HTMLElement | null) => ReactNode;
-}) {
-  const [el, setEl] = useState<HTMLElement | null>(null);
-  return (
-    <section
-      ref={setEl}
-      {...{ [SCOPE_ATTR]: '' }}
-      data-surface="skater"
-      data-mode={mode}
-      aria-label={`Skater ${mode}`}
-      style={{ height }}
-      className={cn(
-        'relative isolate min-w-0 overflow-hidden bg-bg font-(family-name:--family-sans) text-fg',
-        mode === 'dark' && 'dark',
-      )}
-    >
-      {el !== null && children(mode, el)}
-    </section>
-  );
+export function pairQuads(root: ParentNode): HTMLElement[] {
+  const quads = [...root.querySelectorAll<HTMLElement>('[data-theme-pair] > section')];
+  if (quads.length !== 2) throw new Error(`Expected the pair's two quads; found ${quads.length}.`);
+  return quads;
 }
 
 /** The region picture, as `RegionBackdrop` will draw it: one per theme, chosen at paint. */

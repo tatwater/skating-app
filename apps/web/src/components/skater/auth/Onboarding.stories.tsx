@@ -1,11 +1,12 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 import { RISK_ACK_COPY } from '../../../lib/riskAck';
+import { SkaterPair } from '../storySupport';
 import { OnboardingForm } from './OnboardingForm';
 import type { OnboardingRefusal } from './onboarding';
 import { ReackForm } from './ReackForm';
 import { SystemStage } from './SystemStage';
-import { SkaterPair, stageGlobals } from './storyFrame';
+import { AUTH_PAIR, stageGlobals } from './storyFrame';
 
 const meta = {
   title: 'Skater/Sign-in/Onboarding',
@@ -121,7 +122,7 @@ export const UsernameNotAllowed: Story = {
 /** The form in skater dark and light, side by side, ready. */
 export const Pair: Story = {
   args: { initial: READY },
-  render: (args) => <SkaterPair>{() => <OnboardingForm {...args} />}</SkaterPair>,
+  render: (args) => <SkaterPair {...AUTH_PAIR}>{() => <OnboardingForm {...args} />}</SkaterPair>,
 };
 
 /**

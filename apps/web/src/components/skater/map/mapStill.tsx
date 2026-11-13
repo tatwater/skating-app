@@ -1,5 +1,4 @@
 import { depthBandIndex } from '@skating/core';
-import tokensCss from '@skating/design/tokens.css?raw';
 import { type ReactNode, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { MapPane } from '@/components/kit/map-controls';
 import { CONTOUR_OPACITY } from '@/lib/contourMap';
@@ -9,57 +8,27 @@ import {
   PROVISIONAL_OPACITY_SCALE,
 } from '@/lib/hazardMap';
 import { mapEarth } from '@/lib/waterMap';
+import type { Mode, ThemePairProps } from '../../../../.storybook/theme';
 import type { ProjectingMap } from './MapMarksLayer';
 import { DEPTH_INDEX_INTERVAL_FT, mapMarkVars, mapPalette } from './mapPalette';
 import type { Ring } from './mapStoryData';
 import type { StoryContour, StoryHazard } from './mapStoryDepth';
 
 /**
- * Story support (not a story): the skater surface in both modes, and a still map to lay the real
- * marks, labels and dock over — MapLibre needs WebGL and tiles, so the stories draw the water from
- * the dev outlines in SVG and hand `MapMarksLayer` a projection, exactly the seam the app's
- * canvas uses. Every GL layer the canvas paints has a still here, in the palette's own colors at
+ * Story support (not a story): how the skater pair frames a still (`STILL_PAIR`), and a still map
+ * to lay the real marks, labels and dock over — MapLibre needs WebGL and tiles, so the stories draw
+ * the water from the dev outlines in SVG and hand `MapMarksLayer` a projection, exactly the seam
+ * the app's canvas uses. Every GL layer the canvas paints has a still here, in the palette's own colors at
  * `skaterLayers`' widths, dashes and opacities, so a color nobody can see in a story doesn't exist.
  * Nothing in the app imports this file.
  */
 
-type Mode = 'dark' | 'light';
-const SCOPE = 'data-theme-scope';
-
-/** The bench's scoped token copy (the same one its four-up injects), so two modes sit side by side. */
-function useScopedTokens() {
-  useLayoutEffect(() => {
-    if (document.querySelector('style[data-kit-scoped-tokens]')) return;
-    const style = document.createElement('style');
-    style.setAttribute('data-kit-scoped-tokens', '');
-    style.textContent = tokensCss.replaceAll(':root', `[${SCOPE}]`);
-    document.head.append(style);
-  }, []);
-}
-
-/** A story on the skater surface in dark, then light: the composition's two real themes. */
-export function SkaterPair({ children }: { children: (mode: Mode) => ReactNode }) {
-  useScopedTokens();
-  return (
-    <div className="grid grid-cols-1 gap-px bg-line">
-      {(['dark', 'light'] as const).map((mode) => (
-        <section
-          key={mode}
-          {...{ [SCOPE]: '' }}
-          data-surface="skater"
-          data-mode={mode}
-          aria-label={`Skater ${mode}`}
-          className="flex flex-col gap-3 bg-bg p-4 font-(family-name:--family-sans) text-fg"
-        >
-          <h2 className="text-kick leading-none font-semibold tracking-kick text-fg3 uppercase">
-            Skater · {mode === 'dark' ? 'Dark' : 'Light'}
-          </h2>
-          {children(mode)}
-        </section>
-      ))}
-    </div>
-  );
-}
+/** How the stills sit in the skater pair: headed, dark over light, a tighter pad than the gutter. */
+export const STILL_PAIR = {
+  heading: true,
+  columns: 'one',
+  className: 'p-4',
+} as const satisfies Partial<ThemePairProps>;
 
 export interface StillView {
   /** West, south, east, north. */

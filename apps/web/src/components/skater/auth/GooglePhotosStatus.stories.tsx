@@ -1,7 +1,8 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, within } from 'storybook/test';
+import { SkaterPair } from '../storySupport';
 import { type GooglePhotosState, GooglePhotosStatus } from './GooglePhotosCallback';
-import { SkaterPair } from './storyFrame';
+import { AUTH_PAIR } from './storyFrame';
 
 const meta = {
   title: 'Skater/Sign-in/Google Photos pop-up',
@@ -21,7 +22,7 @@ const STATES: GooglePhotosState[] = ['opening', 'declined', 'failed', 'signedOut
  */
 export const FourStates: Story = {
   render: () => (
-    <SkaterPair>
+    <SkaterPair {...AUTH_PAIR}>
       {() => (
         <div className="grid w-full grid-cols-2 gap-6">
           {STATES.map((state) => (

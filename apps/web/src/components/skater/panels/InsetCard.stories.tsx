@@ -54,9 +54,7 @@ export const Loading: Story = {
     </SkaterPair>
   ),
   play: async ({ canvasElement }) => {
-    for (const quad of canvasElement.querySelectorAll<HTMLElement>(
-      '[data-skater-pair] > section',
-    )) {
+    for (const quad of canvasElement.querySelectorAll<HTMLElement>('[data-theme-pair] > section')) {
       const card = await shownCard(quad);
       // Cards are square; only what you press is rounded.
       await expect(getComputedStyle(card).borderRadius).toBe('0px');
