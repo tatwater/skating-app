@@ -299,7 +299,7 @@ export const vote = mutation({
         action: 'author_resolve_access_alert',
         targetType: 'accessAlert',
         targetId: accessAlertId,
-        reason: 'The person who reported it marked it open again',
+        reason: 'The person who reported it said it has cleared, which released the pin',
         metadata: {
           waterBodyId: alert.waterBodyId,
           alertReason: alert.reason,

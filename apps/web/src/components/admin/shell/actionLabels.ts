@@ -80,7 +80,9 @@ const VERB: Record<AuditAction, string> = {
   pin_access_alert: 'Pinned an access alert',
   unpin_access_alert: 'Unpinned an access alert',
   retract_access_alert: 'Retracted an access alert',
-  author_resolve_access_alert: 'The reporter marked an access alert open again',
+  // The skater's own button, quoted: "open" alone would read as the alert reopened, when their word
+  // closed it and released the pin.
+  author_resolve_access_alert: 'The reporter said “It’s open” on a pinned access alert',
   set_posted_access: 'Set the posted rules',
   set_satellite_imagery: 'Set the satellite link',
   set_public_access: 'Ruled on public access',

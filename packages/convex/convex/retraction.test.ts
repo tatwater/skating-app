@@ -282,7 +282,7 @@ describe('an access alert', () => {
     });
     expect(history[0]).toMatchObject({
       action: 'author_resolve_access_alert',
-      reason: 'The person who reported it marked it open again',
+      reason: 'The person who reported it said it has cleared, which released the pin',
       actor: expect.objectContaining({ userId: skater.id }),
     });
     // The moderator can pin it again if it still stands.

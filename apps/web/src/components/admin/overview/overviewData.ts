@@ -309,7 +309,7 @@ const ACTION_WORDS: Record<AuditAction, string> = {
   pin_access_alert: 'Pinned access alert',
   unpin_access_alert: 'Unpinned access alert',
   retract_access_alert: 'Retracted access alert',
-  author_resolve_access_alert: 'Marked their alert open',
+  author_resolve_access_alert: 'Said “It’s open” on their pinned alert',
   set_posted_access: 'Set posted rules',
   set_satellite_imagery: 'Set satellite link',
   set_public_access: 'Ruled public access',
@@ -354,7 +354,7 @@ const TARGET_WORDS: Record<AuditTarget, string> = {
 
 /**
  * Staff are named by first name (the boards' rule); a skater acting on their own — an
- * `author_delete`, or marking their own access alert open — is named in full.
+ * `author_delete`, or their "It's open" on their own pinned access alert — is named in full.
  */
 function actorName(row: ActionRow): string | null {
   if (row.actor === null) return null;

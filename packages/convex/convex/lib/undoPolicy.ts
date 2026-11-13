@@ -129,7 +129,7 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
   author_resolve_access_alert: {
     undo: {
       kind: 'none',
-      why: 'The person who reported it marked it open again. Pin it again if it still stands.',
+      why: 'The person who reported it said it has cleared. Pin it again if it still stands.',
     },
     takesAway: never,
     capability: 'access.alert',

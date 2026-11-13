@@ -156,7 +156,7 @@ describe('the audit feed', () => {
     expect(author?.actor).toBe('Rob Tremblay');
   });
 
-  it('names a skater marking their own alert open in full, and the erasure as the machine', () => {
+  it('names a skater saying “It’s open” on their own alert in full, and the erasure as the machine', () => {
     const [resolved, erased] = feedFromActions([
       row({
         id: 'd',
@@ -167,10 +167,9 @@ describe('the audit feed', () => {
       row({ id: 'e', actor: null, action: 'erase', targetType: 'comment' }),
     ]);
     expect(resolved?.actor).toBe('Rob Tremblay');
-    expect(resolved?.action).toBe('Marked their alert open');
+    expect(resolved?.action).toBe('Said “It’s open” on their pinned alert');
     expect(erased?.actor).toBeNull();
     expect(erased?.action).toBe('Erased');
-    expect(actionWords('overturn_verdict')).toBe('Overturned verdict');
   });
 
   it('falls back to the username, and — for a verb this build has no words for — the verb in words', () => {
@@ -193,5 +192,6 @@ describe('the audit feed', () => {
     expect(actionWords('promote_landmark')).toBe('Promoted landmark');
     expect(actionWords('create_sub_area')).toBe('Drew sub-area');
     expect(actionWords('set_lake_depth')).toBe('Set depth');
+    expect(actionWords('overturn_verdict')).toBe('Overturned verdict');
   });
 });
