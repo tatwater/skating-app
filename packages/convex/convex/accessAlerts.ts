@@ -34,9 +34,11 @@ import {
   accessAlertExpiryFor,
   accessAlertIsLive,
   accessAlertKindOf,
+  alertRetractionByAuthor,
   currentSeason,
   deriveAccessAlertLifecycle,
   isMinor,
+  RETRACT_REFUSALS,
   seasonEndMs,
   seasonOf,
 } from '@skating/core';
@@ -58,6 +60,7 @@ import {
   ACCESS_ALERT_VERDICTS,
   ACCESS_REASONS,
 } from './lib/enums';
+import { refreshEraseClock } from './lib/eraseClock';
 import { literals } from './lib/validators';
 
 /** Free text has to be bounded somewhere; this is a sentence about a gate, not an essay. */
@@ -262,7 +265,28 @@ export const vote = mutation({
       });
     }
 
-    return recomputeAlert(ctx, alert);
+    const next = await recomputeAlert(ctx, alert);
+    // The author's own "it's open" releases a moderator's pin (founder ruling, 2026-11-13): the
+    // reporter saw it plowed. The release is on the record, so the moderator who pinned it sees it
+    // and can pin it again if it still stands.
+    if (alert.status === 'official' && next.status === 'resolved') {
+      await ctx.db.patch(accessAlertId, { pinnedByUserId: undefined });
+      await writeAudit(ctx, {
+        actorId: profile._id,
+        action: 'author_resolve_access_alert',
+        targetType: 'accessAlert',
+        targetId: accessAlertId,
+        reason: 'The person who reported it marked it open again',
+        metadata: {
+          waterBodyId: alert.waterBodyId,
+          alertReason: alert.reason,
+          prev: { status: alert.status, pinnedByUserId: alert.pinnedByUserId ?? null },
+        },
+        createdAt: now,
+      });
+      return (await ctx.db.get(accessAlertId)) as Doc<'accessAlerts'>;
+    }
+    return next;
   },
 });
 
@@ -277,6 +301,14 @@ export const vote = mutation({
  * The author may retract their own; a moderator may retract anyone's. Never a delete — the row is the
  * record that something was claimed and withdrawn, which is what makes a pattern of bad claims
  * visible.
+ *
+ * **The author's retraction is a withdrawal until the claim is acted on** (D248): only a live
+ * community claim (`active`). A moderator's pin is the claim acted on, so it is refused after one; a
+ * resolved, expired or already retracted alert has nothing left to retract. "It's over" is a
+ * different statement from "it never was", and that one is always the author's: their own `open`
+ * vote resolves the alert, pinned or not. A moderator's own retraction is a moderator's verdict and
+ * is unchanged. The author's retraction is final and starts the 30-day erasure clock; a retracted
+ * alert reads exactly as before — it leaves every live read, and nothing says the way is clear.
  */
 export const retract = mutation({
   args: { accessAlertId: v.id('accessAlerts'), reason: v.optional(v.string()) },
@@ -290,12 +322,21 @@ export const retract = mutation({
     if (!isAuthor && !isModerator) {
       throw new ConvexError('Only the author or a moderator can retract an alert');
     }
+    if (!isModerator) {
+      const rule = alertRetractionByAuthor(alert.status);
+      if (rule === 'already') return;
+      if (rule !== 'retract') throw new ConvexError(RETRACT_REFUSALS[rule]);
+    }
 
+    const now = Date.now();
     await ctx.db.patch(accessAlertId, {
       status: 'retracted',
       retractedByUserId: profile._id,
+      retractedAt: now,
       expiresAt: undefined,
     });
+    // Only an author's own retraction is a withdrawal with a clock (`lib/eraseClock`).
+    await refreshEraseClock(ctx, 'accessAlert', accessAlertId, now);
 
     if (isModerator && !isAuthor) {
       await writeAudit(ctx, {
@@ -348,6 +389,14 @@ export async function setOfficialImpl(
   const alert = await ctx.db.get(accessAlertId);
   if (!alert) throw new ConvexError('Access alert not found');
   if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+  // The author's retraction is final (D248): no moderator pins a withdrawn claim back up.
+  if (
+    official &&
+    alert.status === 'retracted' &&
+    alert.retractedByUserId === alert.createdByUserId
+  ) {
+    throw new ConvexError('Its author retracted this alert, so it can’t be pinned.');
+  }
 
   if (official) {
     await ctx.db.patch(accessAlertId, {
