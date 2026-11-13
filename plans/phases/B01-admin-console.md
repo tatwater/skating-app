@@ -660,6 +660,23 @@ amending and hiding. **The Inbox stays the one place** for flags, contradictions
 a moderator to act promptly. Slice one builds neither mode, and the rail's Legacy group bakes in no
 name for it; the D# is minted when the mode is built and the name firms up.
 
+### The founder's calls on Metrics (2026-11-13)
+
+Asked by the Overview's Metrics build; they govern the Metrics read queries when they land.
+**The calls:**
+
+1. **The Metrics season window starts 1 October.** The data season resets on 1 July, and only for
+   data cleanliness; the season as any skater thinks of it starts in late fall — the watch opens
+   1 October, and ice rarely comes before November. The dashboard shows the watch, so the Metrics
+   charts' season window runs from 1 October, not from the data season's 1 July.
+2. **Kudos are positive reactions, and *helpful* counts as one.** Reports keep thumbs up and down
+   for helpfulness, and the door stays open for social-style reactions on posts later, kudos being
+   the easy starter. A thumbs-up (*helpful*) is a kudos; a thumbs-down is not an anti-kudos and
+   never lowers a post's kudos count. So the Metrics kudos strip reads the count of positive
+   reactions — today the helpful ratings in `reportRatings`, which needs a by-time index to read by
+   day (backfillable, so it waits for the reads) — and the metric is named and shaped for positive
+   reactions in general, so later reaction kinds join it without a rename.
+
 ## §8 — Workstreams (firmed up 2026-10-12; order is the founder's call 13)
 
 Wireframes come first (§6, a static HTML mockup per mode, reviewed before React). Then, one PR
