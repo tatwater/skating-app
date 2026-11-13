@@ -22,7 +22,7 @@ import { ConvexError } from 'convex/values';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { writeAudit } from './audit';
-import { isSuspendedNow } from './auth';
+import { hasCapability, isSuspendedNow } from './auth';
 
 type Profile = Doc<'profiles'>;
 
@@ -31,6 +31,34 @@ type Profile = Doc<'profiles'>;
  * stays bounded however the table grows.
  */
 const ADMIN_READ_LIMIT = 500;
+
+/**
+ * May `viewer` learn who holds ledger editing (D227)? Only an admin who holds it and is not on their
+ * way out — the same viewer the People row is drawn for, since anyone else "gets neither the row nor
+ * who holds it". Every read that could name a holder asks this.
+ */
+export function seesLedgerGrants(
+  viewer: Pick<Profile, 'role' | 'canEditLedger' | 'deletionRequestedAt'>,
+): boolean {
+  return hasCapability(viewer, 'machinery.ledger') && !isLeaving(viewer);
+}
+
+/** The audit rows that say who was given, or lost, ledger editing. */
+const LEDGER_GRANT_ACTIONS: ReadonlySet<string> = new Set([
+  'grant_ledger_editor',
+  'revoke_ledger_editor',
+]);
+
+/**
+ * `rows` without the ledger-grant rows, unless `viewer` may see who holds it. A grant row names its
+ * holder by its target, so a history that showed it to anyone would undo the People row's secrecy.
+ */
+export function withoutLedgerGrantsFor<R extends { action: string }>(
+  viewer: Pick<Profile, 'role' | 'canEditLedger' | 'deletionRequestedAt'>,
+  rows: R[],
+): R[] {
+  return seesLedgerGrants(viewer) ? rows : rows.filter((r) => !LEDGER_GRANT_ACTIONS.has(r.action));
+}
 
 /** Holds the grant and the role it needs (D227). The capability check is `hasCapability`. */
 export function isLedgerEditor(profile: Pick<Profile, 'role' | 'canEditLedger'>): boolean {

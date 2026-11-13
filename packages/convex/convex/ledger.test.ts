@@ -446,7 +446,7 @@ describe('undo (D226)', () => {
     expect(undoRow).toMatchObject({ action: 'grant_ledger_editor', undoesActionId: revoke._id });
   });
 
-  test('only a holder undoes either, and History offers it only to a holder', async () => {
+  test('only a holder undoes either, and History shows it only to a holder', async () => {
     const t = convexTest(schema, modules);
     const founder = await editor(t, 'founder');
     const admin = await seedUser(t, 'admin', 'admin');
@@ -461,7 +461,8 @@ describe('undo (D226)', () => {
       targetType: 'user',
       targetId: other.id,
     });
-    expect(forAdmin[0]?.undo.state).toBe('unavailable');
+    // Not offered, and not shown: a grant row names its holder, which only a holder learns (D227).
+    expect(forAdmin.find((a) => a.id === grant._id)).toBeUndefined();
     const forFounder = await founder.as.query(api.moderation.listActions, {
       targetType: 'user',
       targetId: other.id,
@@ -519,6 +520,40 @@ describe('profiles.getAdmin: the People row (D227)', () => {
     const other = await seedUser(t, 'other', 'admin');
     const view = await leaving.as.query(api.profiles.getAdmin, { userId: other.id });
     for (const key of ROW) expect(view).not.toHaveProperty(key);
+  });
+
+  test('History names a holder only to a holder: grant rows are left out for everyone else', async () => {
+    const t = convexTest(schema, modules);
+    const founder = await editor(t, 'founder');
+    const other = await seedUser(t, 'other', 'admin');
+    const admin = await seedUser(t, 'admin', 'admin');
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await founder.as.mutation(api.ledger.grantEditor, { userId: other.id });
+    await founder.as.mutation(api.ledger.revokeEditor, { userId: other.id, reason: 'not needed' });
+
+    const LEDGER = ['grant_ledger_editor', 'revoke_ledger_editor'];
+    const onOther = async (viewer: { as: T }) => ({
+      people: (
+        (await viewer.as.query(api.profiles.getAdmin, { userId: other.id }))?.recentActions ?? []
+      ).map((a) => a.action),
+      history: (
+        await viewer.as.query(api.moderation.listActions, {
+          targetType: 'user',
+          targetId: other.id,
+        })
+      ).map((a) => a.action),
+      feed: (await viewer.as.query(api.moderation.listActions, {})).map((a) => a.action),
+    });
+
+    const seen = await onOther(founder);
+    expect(seen.people).toEqual(expect.arrayContaining(LEDGER));
+    expect(seen.history).toEqual(expect.arrayContaining(LEDGER));
+    for (const viewer of [admin, mod]) {
+      const view = await onOther(viewer);
+      for (const list of [view.people, view.history, view.feed]) {
+        for (const action of LEDGER) expect(list).not.toContain(action);
+      }
+    }
   });
 
   test('a moderator or member has no row at all', async () => {

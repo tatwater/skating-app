@@ -23,6 +23,7 @@ import { recomputeBodySummary } from './lib/bodySummary';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import { MODERATION_ACTIONS, MODERATION_STATUSES, MODERATION_TARGET_TYPES } from './lib/enums';
 import { closeFlag } from './lib/flagResolution';
+import { withoutLedgerGrantsFor } from './lib/ledgerEditors';
 import { refreshPostLatestSkateEnd, refreshPostSearchText } from './lib/postSync';
 import { mirrorReportSubAreas } from './lib/reportSubAreas';
 import { type UndoState, undoState } from './lib/undo';
@@ -797,8 +798,10 @@ export const listActions = query({
       rows = await ctx.db.query('moderationActions').order('desc').take(limit);
     }
 
+    // Who holds ledger editing is for holders only (D227), in History as on the People row.
+    const visible = withoutLedgerGrantsFor(viewer, rows);
     const filtered =
-      args.action !== undefined ? rows.filter((r) => r.action === args.action) : rows;
+      args.action !== undefined ? visible.filter((r) => r.action === args.action) : visible;
     return Promise.all(filtered.map((a) => toActionView(ctx, viewer, a)));
   },
 });

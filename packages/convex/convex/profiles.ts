@@ -55,7 +55,7 @@ import {
 import { publicAuthor } from './lib/authorView';
 import { NOTIFICATION_PREF_DEFAULTS, NOTIFICATION_PREF_KEYS } from './lib/enums';
 import { loadFeedViewer, toPostCard } from './lib/feedCards';
-import { isLastLedgerEditor } from './lib/ledgerEditors';
+import { isLastLedgerEditor, seesLedgerGrants, withoutLedgerGrantsFor } from './lib/ledgerEditors';
 import { DIGEST_TIMEZONE } from './lib/notificationQueue';
 import { loadBlockedAuthorIds, profileAccess } from './lib/reportVisibility';
 import { trustClassFor } from './lib/reputation';
@@ -1150,7 +1150,7 @@ export const getAdmin = query({
             bountyPoints: target.bountyPoints ?? 0,
           }
         : {}),
-      recentActions: recentActions.map((a) => ({
+      recentActions: withoutLedgerGrantsFor(viewer, recentActions).map((a) => ({
         id: a._id,
         action: a.action,
         reason: a.reason,
@@ -1161,7 +1161,7 @@ export const getAdmin = query({
       // only for a viewer who can change it: an admin who holds it and is not on their way out
       // (`machinery.ledger`, the server's gate). Anyone else gets neither the row nor who holds it.
       // `lastLedgerEditor` says why a holder's revoke is refused before anyone presses it.
-      ...(target.role === 'admin' && hasCapability(viewer, 'machinery.ledger') && !isLeaving(viewer)
+      ...(target.role === 'admin' && seesLedgerGrants(viewer)
         ? {
             ledgerEditor: target.canEditLedger === true,
             lastLedgerEditor: await isLastLedgerEditor(ctx, target),
