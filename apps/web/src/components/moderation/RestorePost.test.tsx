@@ -1,8 +1,9 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { ConvexError } from 'convex/values';
 import { describe, expect, test, vi } from 'vitest';
 import { RestorePostView } from './RestorePost';
-import { id, MIXED, NOTHING, PLAIN } from './restorePostFixtures';
+import { id, MIXED, NEEDS_A_CHOICE, NOTHING, PLAIN } from './restorePostFixtures';
 
 const dialog = () => screen.queryByRole('dialog');
 
@@ -57,11 +58,37 @@ describe('RestorePostView', () => {
       <RestorePostView
         choices={PLAIN}
         onRestore={async () => {
-          throw new Error('refused');
+          throw new ConvexError(NEEDS_A_CHOICE);
         }}
-        error="Every report in this post was hidden or removed on its own. Choose at least one report to restore with it."
       />,
     );
-    expect(screen.getByRole('alert')).toHaveTextContent(/Choose at least one report/);
+    await userEvent.click(screen.getByRole('button', { name: 'Restore post' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(NEEDS_A_CHOICE);
+  });
+
+  test('a ticked Report that leaves the list leaves the choice and the count', async () => {
+    const onRestore = vi.fn(async () => {});
+    const { rerender } = render(<RestorePostView choices={MIXED} onRestore={onRestore} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Restore post' }));
+    const box = within(await waitFor(() => dialog() ?? Promise.reject(new Error('closed'))));
+    const [hidden, removed] = box.getAllByRole('checkbox') as [HTMLElement, HTMLElement];
+    await userEvent.click(hidden);
+    await userEvent.click(removed);
+    expect(box.getByRole('button', { name: 'Restore with 2 reports' })).toBeEnabled();
+
+    // Someone else restored the hidden one on its own: it is visible now, and off the list.
+    const members = MIXED.members.map((m) =>
+      m.reportId === id('r_hidden')
+        ? { ...m, status: 'visible' as const, standing: 'visible' as const }
+        : m,
+    );
+    rerender(<RestorePostView choices={{ ...MIXED, members }} onRestore={onRestore} />);
+    await userEvent.click(box.getByRole('button', { name: 'Restore with 1 report' }));
+    expect(onRestore).toHaveBeenCalledWith([id('r_removed')]);
+  });
+
+  test('a Post that is up already offers no restore', () => {
+    render(<RestorePostView choices={{ ...PLAIN, postStatus: 'visible' }} onRestore={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Restore post' })).toBeDisabled();
   });
 });

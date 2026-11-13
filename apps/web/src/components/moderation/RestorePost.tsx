@@ -23,12 +23,6 @@ export type PostRestoreChoices = NonNullable<
 >;
 type Member = PostRestoreChoices['members'][number];
 
-/** The server's own wording, kept here only for the case it can't be asked (nothing restorable). */
-const NEEDS_A_CHOICE =
-  'Every report in this post was hidden or removed on its own. Choose at least one report to restore with it.';
-const UNRESTORABLE =
-  "Every report in this post was deleted by its author, so the post can't be restored.";
-
 const VERB: Record<string, string> = {
   hide: 'Hidden',
   remove: 'Removed',
@@ -66,33 +60,46 @@ function whyDown(m: Member): string {
  * why it is down — with **nothing pre-selected** (each takedown was a decision; bringing one back
  * is a conscious override), Reports their author deleted shown but not choosable, and the confirm
  * carrying the count. The server refuses an empty restore whatever this shows, so a race or another
- * client never leaves a Post up with nothing in it.
+ * client never leaves a Post up with nothing in it; its refusal is shown in its own words.
  *
  * The view is pure (stories and tests drive it with props); `RestorePost` wires it to the server.
  */
 export function RestorePostView({
   choices,
   onRestore,
-  error,
 }: {
   choices: PostRestoreChoices;
   /** Restore the Post, with these Reports when any are chosen. Resolves when the server answers. */
   onRestore: (reportIds: Id<'reports'>[]) => Promise<void>;
-  /** The server's refusal, verbatim, when a restore was turned down. */
-  error?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [chosen, setChosen] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  // The server's refusal of the last attempt, verbatim; cleared by the next one, or by opening or
+  // closing the chooser, so a stale refusal never sits under a fresh choice.
+  const [error, setError] = useState<string | null>(null);
+
+  const rows = choices.members.filter(
+    (m) => m.standing === 'choose' || m.standing === 'author_deleted',
+  );
+  // Only what can still be chosen: the members are live, so a ticked Report someone else restored
+  // in the meantime leaves the list, and must leave the choice and the count with it.
+  const choosable = new Set<string>(
+    rows.filter((m) => m.standing === 'choose').map((m) => m.reportId),
+  );
+  const picked = chosen.filter((id) => choosable.has(id));
+  const count = picked.length;
 
   const restore = async (ids: Id<'reports'>[]) => {
     setBusy(true);
+    setError(null);
     try {
       await onRestore(ids);
       setOpen(false);
       setChosen([]);
-    } catch {
-      // Refused: the caller shows the server's words (`error`), and the choice stays as it was.
+    } catch (err) {
+      // Refused: say why in the server's words, and keep the choice as it was.
+      setError(errorText(err));
     } finally {
       setBusy(false);
     }
@@ -100,17 +107,17 @@ export function RestorePostView({
 
   const press = () => {
     if (choices.plainRestoreBringsBack) void restore([]);
-    else setOpen(true);
+    else {
+      setError(null);
+      setOpen(true);
+    }
   };
-
-  const rows = choices.members.filter(
-    (m) => m.standing === 'choose' || m.standing === 'author_deleted',
-  );
-  const count = chosen.length;
 
   return (
     <>
-      <Button size="sm" onClick={press} disabled={busy}>
+      {/* A Post that is up already has nothing to restore: a press would only write a no-op row
+          that overtakes the real restore's undo. */}
+      <Button size="sm" onClick={press} disabled={busy || choices.postStatus === 'visible'}>
         Restore post
       </Button>
       {error && !open ? (
@@ -122,18 +129,17 @@ export function RestorePostView({
         open={open}
         onOpenChange={(next) => {
           setOpen(next);
+          setError(null);
           if (!next) setChosen([]);
         }}
       >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Restore this post</DialogTitle>
-            <DialogDescription>
-              {choices.restorable ? NEEDS_A_CHOICE : UNRESTORABLE}
-            </DialogDescription>
+            <DialogDescription>{choices.prompt}</DialogDescription>
           </DialogHeader>
           <DialogBody>
-            <CheckboxGroup value={chosen} onValueChange={(value) => setChosen(value as string[])}>
+            <CheckboxGroup value={picked} onValueChange={(value) => setChosen(value as string[])}>
               {rows.map((m) => (
                 <CheckboxRow
                   key={m.reportId}
@@ -160,7 +166,7 @@ export function RestorePostView({
                 size="sm"
                 variant="primary"
                 disabled={count === 0 || busy}
-                onClick={() => void restore(chosen as Id<'reports'>[])}
+                onClick={() => void restore(picked as Id<'reports'>[])}
               >
                 {`Restore with ${count} ${count === 1 ? 'report' : 'reports'}`}
               </Button>
@@ -180,26 +186,18 @@ export function RestorePostView({
 export function RestorePost({ postId, reason }: { postId: Id<'posts'>; reason: string }) {
   const choices = useQuery(api.moderation.postRestoreChoices, { postId });
   const setStatus = useMutation(api.moderation.setModerationStatus);
-  const [error, setError] = useState<string | null>(null);
   if (!choices) return null;
   return (
     <RestorePostView
       choices={choices}
-      error={error}
       onRestore={async (reportIds) => {
-        setError(null);
-        try {
-          await setStatus({
-            targetType: 'post',
-            targetId: postId,
-            status: 'visible',
-            reason,
-            ...(reportIds.length > 0 ? { withReportIds: reportIds } : {}),
-          });
-        } catch (err) {
-          setError(errorText(err));
-          throw err;
-        }
+        await setStatus({
+          targetType: 'post',
+          targetId: postId,
+          status: 'visible',
+          reason,
+          ...(reportIds.length > 0 ? { withReportIds: reportIds } : {}),
+        });
       }}
     />
   );

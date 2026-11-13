@@ -10,11 +10,19 @@ const MOD = { userId: 'p_mod', username: 'sarah', displayName: 'Sarah Berman' };
 
 export const id = (s: string) => s as Id<'reports'>;
 
+/** The server's `POST_RESTORE_NEEDS_A_CHOICE`, as the query hands it over. */
+export const NEEDS_A_CHOICE =
+  'Every report in this post was hidden or removed on its own. Choose at least one report to restore with it.';
+/** The server's `POST_UNRESTORABLE`. */
+const UNRESTORABLE =
+  "Every report in this post was deleted by its author, so the post can't be restored.";
+
 /** Hidden by its own hide: a plain restore brings a Report back, so no chooser opens. */
 export const PLAIN: PostRestoreChoices = {
   postStatus: 'hidden',
   plainRestoreBringsBack: true,
   restorable: true,
+  prompt: null,
   members: [
     {
       reportId: id('r_returns'),
@@ -32,6 +40,7 @@ export const MIXED: PostRestoreChoices = {
   postStatus: 'removed',
   plainRestoreBringsBack: false,
   restorable: true,
+  prompt: NEEDS_A_CHOICE,
   members: [
     {
       reportId: id('r_hidden'),
@@ -65,6 +74,7 @@ export const NOTHING: PostRestoreChoices = {
   postStatus: 'removed',
   plainRestoreBringsBack: false,
   restorable: false,
+  prompt: UNRESTORABLE,
   members: [
     {
       reportId: id('r_gone1'),

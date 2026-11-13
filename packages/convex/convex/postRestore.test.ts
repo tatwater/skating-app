@@ -215,10 +215,57 @@ describe('restoring a Post with chosen Reports', () => {
     const memberRow = await newestOn(t, 'report', r1);
     expect(memberRow).toMatchObject({
       action: 'restore',
-      metadata: { priorStatus: 'removed', newStatus: 'visible', cascadedFromPostId: postId },
+      metadata: {
+        priorStatus: 'removed',
+        newStatus: 'visible',
+        cascadedFromPostId: postId,
+        chosen: true,
+      },
     });
     const postRow = await newestOn(t, 'post', postId);
-    expect(postRow.metadata.cascaded).toEqual([{ id: r1, from: 'removed', to: 'visible' }]);
+    expect(postRow.metadata.cascaded).toEqual([
+      { id: r1, from: 'removed', to: 'visible', chosen: true },
+    ]);
+  });
+
+  test('its undo leaves a Report hidden on its own as its own: a plain restore still asks', async () => {
+    // The undo's row on the member names the Post, like the Post's own hide would; without the
+    // mark it carries, the next plain restore would bring back a Report a moderator hid on its own.
+    const { t, mod, postId, reportIds, set } = await setup();
+    const [r1, r2] = reportIds as [Id<'reports'>, Id<'reports'>];
+    for (const id of reportIds) await set('report', id, 'hidden'); // the last one hides the Post
+    await set('post', postId, 'visible', [r1]);
+    const restore = await newestOn(t, 'post', postId);
+    await mod.as.mutation(api.undo.run, { actionId: restore._id, reason: 'not yet' });
+    expect([await statusOf(t, postId), await statusOf(t, r1)]).toEqual(['hidden', 'hidden']);
+
+    const choices = await mod.as.query(api.moderation.postRestoreChoices, { postId });
+    expect(choices?.plainRestoreBringsBack).toBe(false);
+    expect(choices?.prompt).toBe(POST_RESTORE_NEEDS_A_CHOICE);
+    expect(choices?.members.map((m) => [m.reportId, m.standing])).toEqual([
+      [r1, 'choose'],
+      [r2, 'choose'],
+    ]);
+    await expect(set('post', postId, 'visible')).rejects.toThrow(
+      literally(POST_RESTORE_NEEDS_A_CHOICE),
+    );
+
+    // Its redo is still the exact inverse, and still marks the member as chosen.
+    const undo = await newestOn(t, 'post', postId);
+    await mod.as.mutation(api.undo.run, { actionId: undo._id });
+    expect([await statusOf(t, postId), await statusOf(t, r1)]).toEqual(['visible', 'visible']);
+    expect((await newestOn(t, 'report', r1)).metadata.chosen).toBe(true);
+  });
+
+  test('refuses a choice on a Post that is up already', async () => {
+    // Restored as the Post's, by a row whose undo has nothing to put the Post back to, the chosen
+    // Report could be undone neither on the Post nor on its own.
+    const { t, postId, reportIds, set } = await setup();
+    const [r1, r2] = reportIds as [Id<'reports'>, Id<'reports'>];
+    await set('report', r2, 'hidden');
+    expect(await statusOf(t, postId)).toBe('visible');
+    await expect(set('post', postId, 'visible', [r2])).rejects.toThrow(/already up/);
+    expect([await statusOf(t, r1), await statusOf(t, r2)]).toEqual(['visible', 'hidden']);
   });
 
   test('its undo puts the Post and every chosen Report back exactly', async () => {
@@ -275,6 +322,7 @@ describe('restoring a Post with chosen Reports', () => {
     await expect(set('post', postId, 'visible')).rejects.toThrow(literally(POST_UNRESTORABLE));
     const choices = await mod.as.query(api.moderation.postRestoreChoices, { postId });
     expect(choices?.restorable).toBe(false);
+    expect(choices?.prompt).toBe(POST_UNRESTORABLE);
     expect(choices?.members.map((m) => m.standing)).toEqual(['author_deleted', 'author_deleted']);
   });
 });
