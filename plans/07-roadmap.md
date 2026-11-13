@@ -826,6 +826,7 @@ knows what needs them, does it where they found it, and watches the machinery wo
 - Static wireframes per mode (`skating-mockups/admin-console/`, dark, 1440 × 900) reviewed before React
 - The dev inbox seed (§8 §2) — the founder's OK is given; the examples are the build's to invent
 - `planConventions.test.ts` accepts the `B` era (done in this phase's first commit)
+- The Post-restore chooser on mobile — the server refuses an empty Post restore and takes chosen Reports (2026-11-13); the web chooser is `components/moderation/RestorePost`, the phone has none yet (and no restore of a Post today)
 
 ## Phase B03 — The skater web app
 🟢 **Complete** 2026-11-07 · PRs #95–#104 · [plan](./phases/B03-skater-web.md) · D237 D238 D239 D240 D241 D242 D243 D244

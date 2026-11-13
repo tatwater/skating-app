@@ -660,10 +660,10 @@ amending and hiding. **The Inbox stays the one place** for flags, contradictions
 a moderator to act promptly. Slice one builds neither mode, and the rail's Legacy group bakes in no
 name for it; the D# is minted when the mode is built and the name firms up.
 
-### The founder's calls on Metrics (2026-11-13)
+### The founder's calls of 2026-11-13
 
-Asked by the Overview's Metrics build; they govern the Metrics read queries when they land.
-**The calls:**
+The first two were asked by the Overview's Metrics build and govern its read queries when they
+land; the third came out of the #108 review. **The calls:**
 
 1. **The Metrics season window starts 1 October.** The data season resets on 1 July, and only for
    data cleanliness; the season as any skater thinks of it starts in late fall — the watch opens
@@ -676,6 +676,19 @@ Asked by the Overview's Metrics build; they govern the Metrics read queries when
    reactions — today the helpful ratings in `reportRatings`, which needs a by-time index to read by
    day (backfillable, so it waits for the reads) — and the metric is named and shaped for positive
    reactions in general, so later reaction kinds join it without a rename.
+3. **A Post is never shown with none of its Reports** (the #108 review). D186 says a Post requires
+   a Report; the Report→Post direction already kept that, and the Post→ direction now does too: a
+   Post is never stored visible unless at least one member is visible after the same mutation,
+   decided before anything is written. A restore that would bring a Post back empty is **refused
+   with a message**; an undo that would is refused too and points at Restore — **undo stays a pure
+   inverse and never takes choices**. Restore instead takes a **choice of Reports to bring back
+   with the Post**, in one mutation, each with its own row naming the Post, so the restore's undo
+   is still the exact inverse. The chooser lists the Post's Reports — what each is, why it is down
+   — with nothing pre-selected, since each takedown was a decision and bringing one back is a
+   conscious override. **Reports their author deleted are never restored through a Post** (the
+   2026-09-21 call: people control what they shared); they are shown, not choosable, and a Post
+   whose every Report its author deleted can't be restored. (A moderator's per-Report restore of an
+   author-deleted Report is untouched by this call.)
 
 ## §8 — Workstreams (firmed up 2026-10-12; order is the founder's call 13)
 
