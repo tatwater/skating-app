@@ -145,7 +145,8 @@ export function seasonTape(
         at: frac(ghost),
         kind: 'ghost',
         title: last.source === 'field' ? 'Last winter’s first skate' : 'Last winter’s first report',
-        detail: `${keyDayMonth(lastKey)}${last.body ? ` · ${last.body}` : ''}`,
+        // A staff date stands in only for a season with no on-ice report, and says so.
+        detail: `${keyDayMonth(lastKey)}${last.body ? ` · ${last.body}` : ''}${last.source === 'field' ? ' · recorded by staff' : ''}`,
       });
     }
   }

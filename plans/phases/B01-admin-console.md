@@ -896,7 +896,7 @@ merge and sub-areas; no split), D222 (discipline: no mute; photos' moderation ax
 blue means a transient mode; go-mode; the temperature scale; *bodies*), D224 (a clouded pass shown
 to skaters, per frame, from the Imagery tab). D225 (Reports, a ninth mode; in-context
 moderator controls kept) and D226 (undo for every operator action; a reason only when something is
-taken away). **Added 2026-10-16:** D227 (invoices edited by named people — Teagan from the start — not a role). **Refined 2026-10-17:** D227's grant is a row on an admin's People page that only a holder sees and changes; never no holder; a demotion clears it. **Ported 2026-11-10:** D245 (a saved put-in keeps a body active through the standing rollover; minted on the sweep branch as D228, §7). **Added 2026-11-13:** D249 (the season flips on 1 July, its Metrics window opens on 1 October, empty between), D250 (kudos are positive reactions), D251 (a flag under review is open), D252 (discipline never leaves the ledger without an editor).
+taken away). **Added 2026-10-16:** D227 (invoices edited by named people — Teagan from the start — not a role). **Refined 2026-10-17:** D227's grant is a row on an admin's People page that only a holder sees and changes; never no holder; a demotion clears it. **Ported 2026-11-10:** D245 (a saved put-in keeps a body active through the standing rollover; minted on the sweep branch as D228, §7). **Added 2026-11-13:** D249 (the season flips on 1 July, its Metrics window opens on 1 October, empty between), D250 (kudos are positive reactions), D251 (a flag under review is open), D252 (discipline never leaves the ledger without an editor), D253 (what a contribution is), D254 (the sign-in record keeps the current season and one past), D255 (a body's completeness is ten things).
 
 ## §10 — Season statistics: the options (picked 2026-10-12: all of tiers 1 and 2)
 
@@ -1332,7 +1332,7 @@ history starts on merge day; the reads and the tiles come with the Metrics tab.
   writes nothing, and two racing opens conflict under OCC and settle on one row. A suspended account
   counts (it did sign in); a pending or finished deletion records nothing, and finalization erases
   the rows (D33). *Signed in*, *on two days or more* and the season's per-day line read `by_day`.
-  **Open:** no retention bound yet. Rows grow with people × days, about a season's worth is what
+  **Settled (D254):** the current season and one past season are kept; earlier days are swept daily. **Was open:** no retention bound. Rows grow with people × days, about a season's worth is what
   Metrics reads, and a per-person record kept forever is a privacy question (`bountyGateEvents`
   keeps 180 days for the same reason) — the founder's call when the reads land, with the day counts
   rolled into `metricSnapshots` first if the rows are to be pruned.
@@ -1379,6 +1379,31 @@ the phase branch at `519cc1c8`.
   script alone fails it, and so does writing `admin` on a skater path. Skater paths behave as
   before: `skater` everywhere outside `/admin`, the `.dark` sync unchanged.
 
+**B01-3 (2026-11-13): the Overview's server reads, and the page reading them.** Server and web on
+one branch (`b01-3-server`).
+
+- **The reads:** `console.overview` (the median open item as an instant the client ages, total users
+  from a rollup), `console.corpusCounts` (duplicates as decisions, chord re-fits, place names, the last
+  run — its own query so a flag filed doesn't re-read body outlines), `machinery.overviewJobs` (only
+  the jobs a record can tell; the untracked crons are counted in *more* and never called ok),
+  `console.systemFeed` (the machine's rows, actor-less), `seasonWatch.tape` and `.homeSummary`
+  (moderator-readable; no site sampling), `metrics.keepingUp` / `.showingUp` / `.coverage` (every
+  one taking the season), `console.heartbeat` and `.colleagues`.
+- **The season's distinct figures** come from a walk (`seasonReach`), one page per transaction,
+  writing `season_reach` and `most_reported` once at the end. Its tally travels as a scheduled
+  function's arguments, so it is bounded (8,192 ids a set, 15,000 in all, 1,000 bodies); a figure past
+  that reads as not recorded.
+- **What still says *Not recorded yet*:** cost (no invoice or rate rows exist), the pre-ice pass (no
+  record of when it was done), enrichment (nothing indexes what a body lacks), a strip before the walk
+  has run, a figure whose read stopped short, and new accounts until every day of the season has a
+  rollup row.
+- **Contract:** a job's time and the season's dates arrive as instants and record days and are written
+  on the client in the reader's zone; first skated is the first on-ice report, a staff date only for a
+  season without one and marked as staff's (the founder's call); imagery reads *Ended* once the
+  watch's own close is recorded.
+- **Open on the next server round:** H4's call sites in `moderation.ts` and its undo (D252's rule is
+  built), the feed's target names, H3, U1, U2 — all in files the author-deletion PR is rewriting.
+
 ### The B01-2 server register (owed to the server agent)
 
 Every seam request the B01-2 builders raised against `packages/convex` and `packages/core`, and
@@ -1387,28 +1412,28 @@ the two undo fixes the executor's final review of #108 found (U1, U2). Nothing h
 
 | # | Ask | For | Status |
 |---|---|---|---|
-| S1 | `machinery.overviewJobs` — the jobs that need a look first (stalled, failed, late, retried, then a few ok), how many more and whether they're all ok | Home › Machinery card, the heads row's *needs a hand*, the status bar | ⚪ |
-| S2 | `ledger.overviewCost` — this season's total and its invoiced/metered split, each service's amount and free-tier meter, the last three full months and this one by hosting/AI/compute | Home › cost strip, *Cost · this season*, *By month* | ⚪ |
-| S3 | `seasonWatch.homeSummary`, moderator-readable — the watch (waiting/open/closed, sentinels), winter region-wide, imagery state, the first skate | Home › the season's four tiles | ⚪ |
-| S4 | `console.overview` additions — `inbox.medianAgeMs`; `people.totalUsers`; the Corpus counts no read has (chord re-fits across bodies, place names, the pre-ice pass's date, awaiting enrichment, the last campaign); dedup groups counted as decisions, not rows | Home › Inbox foot, People's *N users*, Corpus rows | ⚪ |
-| S5 | The audit feed: a `targetLabel` on each `listActions` row (the body's or person's name), and machine-run events (cron and run outcomes) in the same feed as `system` | Home › audit feed | ⚪ |
-| S6 | One definition of *open flags* that includes `reviewing`, used by every count (§7, the governor's ruling 1) | Home, Metrics | ⚪ |
-| M1 | Keeping up, now — open flags (all, safety), the oldest open flag (when, which body), open tickets and the oldest | Metrics › Keeping up's stats | ⚪ |
-| M2 | Keeping up, the season — `flag_time_to_resolution_h` for the last 7 days and the season, the flag queue per day (`flag_oldest_open_age_h`, `flag_queue_depth`), support's resolution histogram and `support_queue_depth` per day | Metrics › the oldest-flag chart, both histograms, open support tickets | ⚪ |
-| M3 | Showing up, the week — reports and their people, accounts added and total, signed in and on two days or more (`signInDays`), contributors and first-timers | Metrics › Showing up's stats | ⚪ |
-| M4 | The daily strips — reports, comments, kudos, photos, hazards, new accounts, signed in, contributors per season day (1 October on), each with its total and spread; comments and photos as **backfillable** rollups | Metrics › *Each day* | ⚪ |
-| M5 | The vantage rollup — the season's reports by `observedFrom`, and those stating none | Metrics › *Reports by vantage* | ⚪ |
-| M6 | Most-reported — via the §10 tier-2 per-body rollup: reports, photos, distinct people, last report | Metrics › *Most-reported* (rows open the Body console, §7 ruling 3) | ⚪ |
-| M7 | Coverage by state — listed bodies once each, and per state: bodies, reports, comments, photos, kudos, contributors | Metrics › *Coverage by state* | ⚪ |
-| M8 | A moderator-level metrics capability — the tab reads today's admin-only rollups; a moderator sees Metrics without support (PII, D37) | Metrics for moderators | ⚪ |
-| M10 | A season chooser in the Overview's own content (not the rail or any sidebar navigation), and every season-ranged read taking the season as an argument (M2, M4–M7, S3; S2's season total). The founder's call (§7): a past season is shown only when chosen. The client is ready: `OverviewView` takes `season`, `metricsWindow(season, now)` draws a past season whole, and Metrics and the season tiles draw whatever window and facts they're handed | The Overview, both tabs | ⚪ |
-| M9 | A by-time index on `reportRatings` for kudos (the founder, 2026-11-13: kudos are positive reactions; *helpful* counts; a thumbs-down never subtracts) | M4's kudos strip, M7's kudos column | ⚪ |
-| H1 | A moderator-readable season-tape summary — the watch's opening and the day count, so the tape can wear its *Day N* badge and its marks | The shell's season tape | ⚪ |
-| H2 | A colleague-presence read — who else is in the console now | The top bar's faces | ⚪ |
-| H3 | An optional audit-row id returned by every operator mutation | Undo's toast and History linking a write to its row | ⚪ |
-| H4 | Suspend and ban refuse the last ledger holder — D227's *never no holder* holds through discipline as well as demotion (the governor's ruling, D252) | People, D227 | ⚪ |
-| U1 | A Post's restore records the auto-hidden state in its `prev` snapshot, and its undo puts it back — today undoing a moderator's restore of an auto-hidden Post (all its Reports hidden) loses that record, and restoring one of its Reports afterwards no longer brings the Post back. The true-inverse rule of the landmark-restore fix (founder-ratified 2026-11-13): a restore records what it clears | Undo (D226), Post moderation | ⚪ |
-| U2 | History's *undone by* link on a Post can point at a Report's row instead of the Post's own undo row (`lib/undo.ts`). Nothing reads the link yet; a pre-wiring fix before the History panel does | Undo's History panel | ⚪ |
+| S1 | `machinery.overviewJobs` — the jobs that need a look first (stalled, failed, late, retried, then a few ok), how many more and whether they're all ok | Home › Machinery card, the heads row's *needs a hand*, the status bar | 🟢 B01-3 |
+| S2 | `ledger.overviewCost` — this season's total and its invoiced/metered split, each service's amount and free-tier meter, the last three full months and this one by hosting/AI/compute | Home › cost strip, *Cost · this season*, *By month* | ⚪ no ledger rows yet |
+| S3 | `seasonWatch.homeSummary`, moderator-readable — the watch (waiting/open/closed, sentinels), winter region-wide, imagery state, the first skate | Home › the season's four tiles | 🟢 B01-3 |
+| S4 | `console.overview` additions — `inbox.medianAgeMs`; `people.totalUsers`; the Corpus counts no read has (chord re-fits across bodies, place names, the pre-ice pass's date, awaiting enrichment, the last campaign); dedup groups counted as decisions, not rows | Home › Inbox foot, People's *N users*, Corpus rows | 🟢 B01-3 (pre-ice pass, enrichment: no record) |
+| S5 | The audit feed: a `targetLabel` on each `listActions` row (the body's or person's name), and machine-run events (cron and run outcomes) in the same feed as `system` | Home › audit feed | 🟡 B01-3: machine rows; target names wait |
+| S6 | One definition of *open flags* that includes `reviewing`, used by every count (§7, the governor's ruling 1) | Home, Metrics | 🟢 B01-3 (D251) |
+| M1 | Keeping up, now — open flags (all, safety), the oldest open flag (when, which body), open tickets and the oldest | Metrics › Keeping up's stats | 🟢 B01-3 |
+| M2 | Keeping up, the season — `flag_time_to_resolution_h` for the last 7 days and the season, the flag queue per day (`flag_oldest_open_age_h`, `flag_queue_depth`), support's resolution histogram and `support_queue_depth` per day | Metrics › the oldest-flag chart, both histograms, open support tickets | 🟢 B01-3 |
+| M3 | Showing up, the week — reports and their people, accounts added and total, signed in and on two days or more (`signInDays`), contributors and first-timers | Metrics › Showing up's stats | 🟢 B01-3 |
+| M4 | The daily strips — reports, comments, kudos, photos, hazards, new accounts, signed in, contributors per season day (1 October on), each with its total and spread; comments and photos as **backfillable** rollups | Metrics › *Each day* | 🟢 B01-3 |
+| M5 | The vantage rollup — the season's reports by `observedFrom`, and those stating none | Metrics › *Reports by vantage* | 🟢 B01-3 |
+| M6 | Most-reported — via the §10 tier-2 per-body rollup: reports, photos, distinct people, last report | Metrics › *Most-reported* (rows open the Body console, §7 ruling 3) | 🟢 B01-3 |
+| M7 | Coverage by state — listed bodies once each, and per state: bodies, reports, comments, photos, kudos, contributors | Metrics › *Coverage by state* | 🟢 B01-3 |
+| M8 | A moderator-level metrics capability — the tab reads today's admin-only rollups; a moderator sees Metrics without support (PII, D37) | Metrics for moderators | 🟢 B01-3 |
+| M10 | A season chooser in the Overview's own content (not the rail or any sidebar navigation), and every season-ranged read taking the season as an argument (M2, M4–M7, S3; S2's season total). The founder's call (§7): a past season is shown only when chosen. The client is ready: `OverviewView` takes `season`, `metricsWindow(season, now)` draws a past season whole, and Metrics and the season tiles draw whatever window and facts they're handed | The Overview, both tabs | 🟡 B01-3: reads take the season, ?season= routes it; no chooser yet |
+| M9 | A by-time index on `reportRatings` for kudos (the founder, 2026-11-13: kudos are positive reactions; *helpful* counts; a thumbs-down never subtracts) | M4's kudos strip, M7's kudos column | 🟢 B01-3 (D250) |
+| H1 | A moderator-readable season-tape summary — the watch's opening and the day count, so the tape can wear its *Day N* badge and its marks | The shell's season tape | 🟢 B01-3 |
+| H2 | A colleague-presence read — who else is in the console now | The top bar's faces | 🟢 B01-3 |
+| H3 | An optional audit-row id returned by every operator mutation | Undo's toast and History linking a write to its row | ⚪ waits on the deletion PR |
+| H4 | Suspend and ban refuse the last ledger holder — D227's *never no holder* holds through discipline as well as demotion (the governor's ruling, D252) | People, D227 | 🟡 B01-3: the rule (D252); call sites wait on the deletion PR |
+| U1 | A Post's restore records the auto-hidden state in its `prev` snapshot, and its undo puts it back — today undoing a moderator's restore of an auto-hidden Post (all its Reports hidden) loses that record, and restoring one of its Reports afterwards no longer brings the Post back. The true-inverse rule of the landmark-restore fix (founder-ratified 2026-11-13): a restore records what it clears | Undo (D226), Post moderation | ⚪ waits on the deletion PR |
+| U2 | History's *undone by* link on a Post can point at a Report's row instead of the Post's own undo row (`lib/undo.ts`). Nothing reads the link yet; a pre-wiring fix before the History panel does | Undo's History panel | ⚪ waits on the deletion PR |
 
 ### Kit extensions owed (B01-2)
 

@@ -165,7 +165,7 @@ describe('seasonTape with the watch’s record', () => {
     expect(tape.marks.map((m) => m.detail)).toEqual([
       '5 Oct · the region’s bodies',
       '14 Oct · Day 10 of the watch',
-      '20 Dec',
+      '20 Dec · recorded by staff',
     ]);
     expect(tape.marks[2]?.title).toBe('Last winter’s first skate');
   });

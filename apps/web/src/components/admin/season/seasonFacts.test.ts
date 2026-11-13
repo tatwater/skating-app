@@ -186,6 +186,7 @@ describe('seasonFromSummary — the server’s days and instants, in the reader�
     expect(facts.firstSkate).toEqual({
       at: day(10, 8),
       body: 'Crystal Lake',
+      byStaff: true,
       lastWinter: { at: 99, body: 'Kezar Lake' },
     });
   });
@@ -201,5 +202,25 @@ describe('seasonFromSummary — the server’s days and instants, in the reader�
     expect(
       seasonFromSummary({ ...SUMMARY, firstSkate: { first: null, lastWinter: null } }).firstSkate,
     ).toEqual({ at: null, body: null, lastWinter: null });
+  });
+});
+
+describe('a first skate staff recorded', () => {
+  it('says so, so a staff date is never read as a report', () => {
+    expect(firstSkateWords({ at: day(10, 8), body: 'Crystal Lake', byStaff: true })).toEqual({
+      value: '8 Nov',
+      tone: 'default',
+      sub: 'Crystal Lake · recorded by staff',
+    });
+    expect(firstSkateWords({ at: day(10, 8), body: null, byStaff: true }).sub).toBe(
+      'Recorded by staff',
+    );
+    expect(
+      firstSkateWords({
+        at: null,
+        body: null,
+        lastWinter: { at: day(11, 6, 2025), body: 'Low Plains', byStaff: true },
+      }).sub,
+    ).toBe('Last winter 6 Dec · Low Plains · recorded by staff');
   });
 });

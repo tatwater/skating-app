@@ -187,9 +187,17 @@ export interface FirstSkate {
   /** This season's first report from on the ice, if any. */
   at: number | null;
   body: string | null;
+  /**
+   * The date was entered by staff, not reported: a season with no on-ice report at all (the launch
+   * season, skated before the app could record it). A report always wins over it.
+   */
+  byStaff?: boolean;
   /** Last winter's, for comparison while this one has none. */
-  lastWinter?: { at: number; body: string } | null;
+  lastWinter?: { at: number; body: string; byStaff?: boolean } | null;
 }
+
+/** The words a staff-entered date carries, so it is never read as a report. */
+export const BY_STAFF = 'recorded by staff';
 
 export function firstSkateWords(first: FirstSkate): {
   value: string;
@@ -197,9 +205,17 @@ export function firstSkateWords(first: FirstSkate): {
   sub: string;
 } {
   const last = first.lastWinter
-    ? `Last winter ${dayMonthOf(first.lastWinter.at)} · ${first.lastWinter.body}`
+    ? `Last winter ${dayMonthOf(first.lastWinter.at)} · ${first.lastWinter.body}${first.lastWinter.byStaff ? ` · ${BY_STAFF}` : ''}`
     : '';
   if (first.at === null) return { value: '—', tone: 'dim', sub: last };
+  if (first.byStaff) {
+    const said = first.body ? `${first.body} · ${BY_STAFF}` : BY_STAFF;
+    return {
+      value: dayMonthOf(first.at),
+      tone: 'default',
+      sub: said.charAt(0).toUpperCase() + said.slice(1),
+    };
+  }
   return { value: dayMonthOf(first.at), tone: 'default', sub: first.body ?? last };
 }
 
@@ -237,12 +253,14 @@ export function seasonFromSummary(summary: HomeSummary): {
         : {
             at: first.first === null ? null : skateAt(first.first),
             body: first.first?.body ?? null,
+            ...(first.first?.source === 'field' ? { byStaff: true } : {}),
             lastWinter:
               first.lastWinter === null
                 ? null
                 : {
                     at: skateAt(first.lastWinter),
                     body: first.lastWinter.body ?? 'A body since removed',
+                    ...(first.lastWinter.source === 'field' ? { byStaff: true } : {}),
                   },
           },
   };

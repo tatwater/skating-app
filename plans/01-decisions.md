@@ -7860,3 +7860,58 @@ and ban paths, and in the undo that puts a suspension or ban back, land after th
 rewriting those files.
 
 **Related:** D37, D226, D227, [`phase-B01`](./phases/B01-admin-console.md) §7.
+
+## D253 — A contribution is an original, top-level piece of data that still stands (B01)
+
+**2026-11-13, founder call.** "My definition of a contribution is an original thought/piece of data
+that is top-level discoverable within its domain. So like a report is top-level in the newsfeed, a
+hazard is top-level in a body, a temporary blockage is top-level in a put-in. But a comment is just
+chatter on a report that may or may not hold value." And: "reporting that a put-in or parking area is
+temporarily out of commission or that a body of water isn't accessible to the public or things like
+that absolutely should count as contributions."
+
+- **Counts:** a report; a hazard; an access alert; a "not publicly accessible" report (the
+  `no_public_access` flag on a body); a put-in a person added; a request about the corpus (add or
+  activate a body); a proposed bay or landmark name.
+- **Does not count:** comments, hazard confirmations and alert votes, ratings and kudos, photos (they
+  belong to a report), and flags on other people's content.
+- **Only while it stands:** an item its author withdrew or retracted, or a moderator removed, hid,
+  declined or dismissed, does not count.
+- Defined once — `CONTRIBUTION_KINDS` and `contributionStands` in `@skating/core` — and read by every
+  contributors figure: Metrics' contributors and first-timers, the daily strip, the season's
+  contributors and Coverage's per-state column, and the older `active_contributors` rollup. A report
+  is dated by its skate's end (the date every report count uses), every other kind by when it was made.
+  By state, only reports are attributed: the other kinds sit on bodies, put-ins and lots that can span
+  states.
+
+**Why:** a contributors figure answers "who is adding to what the app knows"; chatter and votes on
+someone else's data are participation, not contribution, and a withdrawn item added nothing that
+remains.
+
+**Related:** D17, D50, D186, D248, D250, [`phase-B01`](./phases/B01-admin-console.md) §7.
+
+## D254 — The sign-in record keeps the current season and one past season (B01)
+
+**2026-11-13, founder call.** "One past season seems like it should be fine." `signInDays` keeps every
+day from the previous season's 1 July on; a daily sweep (`analyticsRollup.pruneSignInDays`, riding the
+client-signal prune, bounded per transaction) erases the rest. The `signed_in` day counts the rollup
+already wrote outlive the rows.
+
+**Why:** the record is one person's behavior; the current season's figures and a chosen past season
+are what the console reads, and nothing reads further back.
+
+**Related:** D33, D62, D249, [`phase-B01`](./phases/B01-admin-console.md) §12.8.
+
+## D255 — A body's completeness is ten things, defined once (B01)
+
+**2026-11-13, the founder's list** (Review 13). Ten things count, in this order: **outline, name,
+access, depth, elevation, wind, put-ins, lots, landmarks, bathymetry** — the mock notes' twelve,
+minus posted rules (optional: most bodies rightly have none) and weather sample points (they default
+to the interior point, so every body has them). `bodyCompleteness` in `@skating/core` returns
+`{ have, of: 10, missing }` in that order from the body's fields and three counts beside it; the pages
+adopt it at integration, and storing it per body is a later server batch.
+
+**Why:** two page builders guessed at it and guessed differently; one rule makes every page count the
+same ten.
+
+**Related:** D60, D72, D202, [`phase-B01`](./phases/B01-admin-console.md) §5.4.
