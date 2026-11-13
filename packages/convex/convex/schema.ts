@@ -3945,9 +3945,9 @@ export default defineSchema({
     /** When it was retracted, by its author or a moderator (`retractedByUserId` says which). */
     retractedAt: v.optional(v.number()),
     /**
-     * When an alert its author retracted is due for erasure — 30 days on, unless an open flag holds
-     * it (D248, `lib/erasure`). Set and cleared like the content tables' clock; nothing erases an
-     * alert yet (the eraser waits on a founder call). Absent ⇒ not due.
+     * When an alert its author retracted is due for erasure — 30 days on, unless an open flag or a
+     * moderator's standing verdict holds it (D248, `erasure.ts`). Set and cleared like the content
+     * tables' clock. Absent ⇒ not due.
      */
     eraseAt: v.optional(v.number()),
   })
@@ -3955,7 +3955,8 @@ export default defineSchema({
      * The two per-lake reads, and the status prefix is the point (PR #43 review). `kind` sits between
      * status and the clock (A10-3) so each kind is capped in its own range — see `kind` above.
      *
-     * An alert row is never deleted — expiring flips a status — so a lake accumulates them across
+     * An alert row is never deleted by settling — expiring flips a status, and only an author's own
+     * retraction is erased (D248) — so a lake accumulates them across
      * seasons for ever. These replaced bare `by_water_body` / `by_parking_area` indexes, over which a
      * capped read took the *oldest* rows and only then filtered for liveness: after two winters that
      * is a page of expired rows and a locked gate nobody is told about. The bug was that the cap got

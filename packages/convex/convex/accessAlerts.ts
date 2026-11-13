@@ -69,7 +69,7 @@ import {
   ACCESS_ALERT_VERDICTS,
   ACCESS_REASONS,
 } from './lib/enums';
-import { refreshEraseClock } from './lib/eraseClock';
+import { refreshEraseClock, withdrawnAtOf } from './lib/eraseClock';
 import { literals } from './lib/validators';
 
 /** Free text has to be bounded somewhere; this is a sentence about a gate, not an essay. */
@@ -353,8 +353,8 @@ async function everPinned(ctx: QueryCtx, accessAlertId: Id<'accessAlerts'>): Pro
  * vote resolves the alert, pinned or not. A moderator's own retraction is a moderator's verdict and
  * is unchanged. The author's retraction is final and starts the 30-day erasure clock; a retracted
  * alert reads exactly as before — it leaves every live read, and nothing says the way is clear.
- * A moderator retracting an alert its author already retracted records a verdict on it instead of
- * moving it (`contentVerdicts`, kind `retracted`): the row stays as its author left it.
+ * A moderator retracting an alert its author already retracted, with a reason, records a verdict on
+ * it instead of moving it (`contentVerdicts`, kind `retracted`): the row stays as its author left it.
  */
 export const retract = mutation({
   args: { accessAlertId: v.id('accessAlerts'), reason: v.optional(v.string()) },
@@ -373,15 +373,18 @@ export const retract = mutation({
       // a pattern of bad claims — and it holds the alert from erasure until a moderator overturns it
       // (founder call, 2026-11-13). The row stays exactly as its author left it: a second retraction
       // must never turn the author's final withdrawal into a moderator's (and so a pinnable) one.
-      const authorWithdrew = alert.retractedByUserId === alert.createdByUserId;
-      if (isModerator && !isAuthor && authorWithdrew) {
+      // A verdict takes a reason, as every verdict does: a bare retract (the lake page's button,
+      // which sends none) that lands just after the author's own is not a decision about them.
+      const verdictReason = reason?.trim() ?? '';
+      const authorWithdrew = withdrawnAtOf('accessAlert', alert) !== undefined;
+      if (isModerator && !isAuthor && authorWithdrew && verdictReason.length > 0) {
         const now = Date.now();
         const actionId = await writeAudit(ctx, {
           actorId: profile._id,
           action: 'retract_access_alert',
           targetType: 'accessAlert',
           targetId: accessAlertId,
-          reason: reason?.trim() || 'Kept an alert its author retracted, as a record',
+          reason: verdictReason,
           metadata: {
             waterBodyId: alert.waterBodyId,
             alertReason: alert.reason,
@@ -401,7 +404,10 @@ export const retract = mutation({
       // Anything else: nothing left to retract.
       return;
     }
-    if (!isModerator) {
+    // On their own alert a moderator is its author, and takes back what they posted by the author's
+    // rule — a pin someone else made of it is a shared record (D248) — so the clock and the record
+    // never disagree about whose withdrawal it was.
+    if (isAuthor) {
       // The history is read only where it can change the answer: a live community claim.
       const pinnedOnce = alert.status === 'active' && (await everPinned(ctx, alert._id));
       const rule = alertRetractionByAuthor(alert.status, pinnedOnce);
@@ -785,10 +791,11 @@ export const MY_ALERTS_SCAN = 500;
  * there would cache a copy per viewer and re-run them per viewer on every alert change.
  *
  * Read by `(author, status)`, each live status capped on its own and `active` bounded by its clock
- * as the per-lake reads are, so **the cap bounds their live alerts, not their history**: alert rows
- * are never deleted, and the sheet's condition chips file them too, so a cap over every row they ever
- * filed would push a pin (which never expires) out behind the settled rows filed since — and a
- * status-only range would spend it on lapsed rows the sweep has not reached. Which body an alert
+ * as the per-lake reads are, so **the cap bounds their live alerts, not their history**: settled alert
+ * rows are kept (only an author's own retraction is erased, D248), and the sheet's condition chips
+ * file them too, so a cap over every row they ever filed would push a pin (which never expires) out
+ * behind the settled rows filed since — and a status-only range would spend it on lapsed rows the
+ * sweep has not reached. Which body an alert
  * annotates is `alertAnnotatesBody`, the shared read's own rule. Signed out, or none of their own: `[]`.
  */
 export const myAlertIdsForBody = query({

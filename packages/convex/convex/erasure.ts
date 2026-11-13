@@ -80,14 +80,13 @@ type Eraser = (
 
 /**
  * Who erases each kind, in the order a tick runs them: a Post after its members (a Post is held
- * while a member is still stored), a member after the comments under it are sorted out. `null` is a
- * kind whose clock runs but nothing erases yet — the sweep never reads its range (none today).
+ * while a member is still stored), a member after the comments under it are sorted out.
  *
  * **An alert its author retracted follows the same 30 days** (founder call, 2026-11-13: "follow the
  * 30-day pattern"). A moderator who wants one kept as evidence of a pattern of bad claims records a
  * verdict on it (a retraction on the withdrawn alert), which holds it like any held content.
  */
-const ERASERS: Record<Erasable, Eraser | null> = {
+const ERASERS: Record<Erasable, Eraser> = {
   comment: (ctx, doc, now) => eraseComment(ctx, doc as Doc<'comments'>, now),
   hazard: (ctx, doc, _now, photos) => eraseHazard(ctx, doc as Doc<'hazards'>, photos),
   report: (ctx, doc, _now, photos) => eraseReport(ctx, doc as Doc<'reports'>, photos),
@@ -98,7 +97,7 @@ const ERASERS: Record<Erasable, Eraser | null> = {
 };
 
 /** The kinds the sweep erases, in order. */
-export const ERASED_KINDS = (Object.keys(ERASERS) as Erasable[]).filter((k) => ERASERS[k] !== null);
+export const ERASED_KINDS = Object.keys(ERASERS) as Erasable[];
 
 /** The due rows of one kind — every row the range returns is work. Bounded below: the index is not sparse. */
 function dueRows(ctx: MutationCtx, kind: Erasable, now: number, size: number) {
@@ -156,7 +155,6 @@ export const eraseDue = internalMutation({
     let more = false;
     for (const kind of ERASED_KINDS) {
       const eraser = ERASERS[kind];
-      if (!eraser) continue;
       const due = (await dueRows(ctx, kind, now, size)) as ErasableDoc[];
       if (due.length >= size) more = true;
       for (const doc of due) {

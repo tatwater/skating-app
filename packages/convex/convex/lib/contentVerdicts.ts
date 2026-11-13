@@ -9,7 +9,8 @@
  * - **A verdict is a top-level hide or remove by a moderator** — on content still up, or on content
  *   its author already deleted (then the content stays as the deletion left it, and the verdict is
  *   the record). A Post's cascade onto its members and a derived Post hide are consequences, not
- *   verdicts of their own.
+ *   verdicts of their own. On an access alert the one verdict is a moderator's retraction recorded
+ *   on an alert its author already retracted (`accessAlerts.retract`).
  * - **It stands until a moderator reverses it** — a restore (a Post's restore that brings back a
  *   Report the moderator chose included), an undo, or (on content its author has since deleted) an
  *   overturn. The author deleting the content does not clear it.

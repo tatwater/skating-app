@@ -1482,8 +1482,8 @@ the People page and the skater screens that reach it are owed (the roadmap's reg
   judged what the Post showed; a **hazard** its row, photos and its author's own vote; a retracted
   **request** or **flag** its row; an **access alert its author retracted** its row and the author's
   own vote (other skaters' votes stay theirs; a moderator's retraction of a live alert is not on the
-  clock). A moderator keeps a withdrawn alert as evidence by retracting it again: on an alert its
-  author already retracted that records a verdict (`contentVerdicts`, kind `retracted`) instead of
+  clock). A moderator keeps a withdrawn alert as evidence by retracting it again with a reason: on an
+  alert its author already retracted that records a verdict (`contentVerdicts`, kind `retracted`) instead of
   moving the row, holds it, shows on the People record, and is ended by `overturnVerdict` (under
   the alert lever, `access.alert`). The clock is `WITHDRAWN_ERASE_DAYS`, a sibling of the account grace pinned equal
   to it, because the codebase names each promise it states.

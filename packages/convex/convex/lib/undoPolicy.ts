@@ -108,9 +108,14 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
   // An overturn takes a verdict off a person's record; putting it back is a new verdict, with its
   // own reason, not an undo (D248).
   overturn_verdict: {
-    undo: { kind: 'none', why: 'To put the verdict back, record it again with Hide or Remove.' },
+    undo: {
+      kind: 'none',
+      why: 'To put the verdict back, record it again: Hide or Remove, or Retract on an alert.',
+    },
     takesAway: never,
-    capability: 'content.moderate',
+    // The lever the overturn itself takes: an alert's is the alert lever (`moderation.overturnVerdict`).
+    capability: (targetType) =>
+      targetType === 'accessAlert' ? 'access.alert' : 'content.moderate',
   },
   // Erased is gone: nothing is left to put back (D248).
   erase: {

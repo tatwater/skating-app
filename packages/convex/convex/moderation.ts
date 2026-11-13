@@ -35,7 +35,7 @@ import {
 } from './lib/contentVerdicts';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import { MODERATION_ACTIONS, MODERATION_STATUSES, MODERATION_TARGET_TYPES } from './lib/enums';
-import { refreshEraseClock, withdrawnAtOf } from './lib/eraseClock';
+import { ERASABLE, refreshEraseClock, withdrawnAtOf } from './lib/eraseClock';
 import { closeFlag } from './lib/flagResolution';
 import { withoutLedgerGrantsFor } from './lib/ledgerEditors';
 import { refreshPostLatestSkateEnd, refreshPostSearchText } from './lib/postSync';
@@ -801,17 +801,15 @@ export const overturnVerdict = mutation({
     reason: v.string(),
   },
   handler: async (ctx, args) => {
-    // An alert's verdict is the alert lever's, as its retraction and pin are.
-    const actor = await requireCapability(
-      ctx,
-      args.targetType === 'accessAlert' ? 'access.alert' : 'content.moderate',
-    );
+    // An alert's verdict is the alert lever's, as its retraction and pin are. Each gate is spelled
+    // as a literal so the D217 guard (`capabilityGates.test.ts`) reads both.
+    const actor =
+      args.targetType === 'accessAlert'
+        ? await requireCapability(ctx, 'access.alert')
+        : await requireCapability(ctx, 'content.moderate');
     const reason = args.reason.trim();
     if (reason.length === 0) throw new ConvexError('A reason is required');
-    const targetId = ctx.db.normalizeId(
-      args.targetType === 'accessAlert' ? 'accessAlerts' : MODERATION_TABLE[args.targetType],
-      args.targetId,
-    );
+    const targetId = ctx.db.normalizeId(ERASABLE[args.targetType], args.targetId);
     const target = targetId ? await ctx.db.get(targetId) : null;
     if (!target) throw new ConvexError('Target not found');
     const withdrawn =

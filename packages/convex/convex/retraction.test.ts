@@ -665,6 +665,61 @@ describe('an access alert', () => {
     await expect(overturn(mod.as)).rejects.toThrow(/still has this up/);
   });
 
+  test("a moderator's bare retract after the author's own records nothing; the author's list skips a moderator's", async () => {
+    const { t, skater, mod, alertId } = await alertSetup();
+    const putInId = await t.run(async (ctx) => (await ctx.db.get(alertId))?.putInId);
+    if (putInId === undefined) throw new Error('expected a launch alert');
+    const theirs = await skater.as.mutation(api.accessAlerts.create, {
+      targetType: 'put_in',
+      putInId,
+      reason: 'gate_locked',
+    });
+    await mod.as.mutation(api.accessAlerts.retract, { accessAlertId: theirs, reason: 'bogus' });
+    await skater.as.mutation(api.accessAlerts.retract, { accessAlertId: alertId });
+    // The lake page's button sends no reason: a stale click on a claim its author just withdrew is
+    // not a verdict on them, and the clock runs on.
+    await mod.as.mutation(api.accessAlerts.retract, { accessAlertId: alertId });
+    await mod.as.mutation(api.accessAlerts.retract, { accessAlertId: alertId, reason: '   ' });
+    expect(await get(t, alertId)).toMatchObject({
+      retractedByUserId: skater.id,
+      eraseAt: T0 + WITHDRAWN_ERASE_MS,
+    });
+    expect(await t.run((ctx) => ctx.db.query('contentVerdicts').collect())).toEqual([]);
+    const record = await mod.as.query(api.contentRecord.personContentRecord, {
+      userId: skater.id,
+    });
+    expect(record.verdicts).toEqual([]);
+    // Only their own withdrawal; the moderator's retraction of their other alert is not theirs.
+    expect(record.deleted.map((d) => d.targetId)).toEqual([alertId]);
+  });
+
+  test('a moderator retracting their own alert does so by the author rule', async () => {
+    const { t, mod, waterBodyId } = await alertSetup();
+    const putInId = await t.run((ctx) =>
+      ctx.db.insert('putIns', {
+        waterBodyId,
+        coord: { lat: 0.5, lng: 0.5 },
+        source: 'osm' as const,
+        status: 'visible' as const,
+        createdAt: Date.now(),
+      }),
+    );
+    const own = await mod.as.mutation(api.accessAlerts.create, {
+      targetType: 'put_in',
+      putInId,
+      reason: 'not_plowed',
+    });
+    await mod.as.mutation(api.accessAlerts.setOfficial, {
+      accessAlertId: own,
+      official: true,
+      reason: 'confirmed by the town',
+    });
+    await expect(
+      mod.as.mutation(api.accessAlerts.retract, { accessAlertId: own, reason: 'x' }),
+    ).rejects.toThrow(literally(RETRACT_REFUSALS.confirmed));
+    expect(await get(t, own)).toMatchObject({ status: 'official' });
+  });
+
   test("a moderator's own retraction is unchanged, pinned or not, and starts no clock", async () => {
     const { t, mod, alertId, pin } = await alertSetup();
     await pin();
