@@ -76,7 +76,7 @@ function SegmentMeter({ segments, label, children, className, ...props }: Segmen
           ))}
         </span>
       </div>
-      {children != null && <div className="mx-[0.125rem]">{children}</div>}
+      {children != null && <div className="mx-(--space-0_5)">{children}</div>}
     </div>
   );
 }
