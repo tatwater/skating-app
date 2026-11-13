@@ -1126,9 +1126,9 @@ export const tape = query({
  * - `imagery` — not started, running, paused, or **ended** once the watch has closed (from the
  *   record); the granules cut (landed and empty); when the newest frame was indexed and when it was
  *   captured. When the cutter was pinned is not recorded.
- * - `firstSkate` — the season's first skate and last winter's: the date staff entered for it when
- *   there is one (`seasonFieldDates`), else the first visible report from on the ice from 1 October.
- *   `null` when the bounded look can't say.
+ * - `firstSkate` — the season's first skate and last winter's: the first visible report from on the
+ *   ice from 1 October; only for a season with none, the date staff entered (`seasonFieldDates`,
+ *   `source: 'field'`). `null` when the bounded look can't say.
  */
 export const homeSummary = query({
   args: { season: v.optional(v.number()) },
@@ -1277,18 +1277,21 @@ async function fieldFirstSkate(ctx: QueryCtx, season: number): Promise<SkateMark
 }
 
 /**
- * A season's first skate (the founder's default, 2026-11-13): the date staff entered when there is
- * one, else the first visible on-ice report from 1 October. `unknown` when the report look ran out.
+ * A season's first skate (the founder, 2026-11-13: "I think we should rely on a first actual
+ * report"): the first visible on-ice report from 1 October. The date staff entered on the Seasons
+ * page is used only when the season has no on-ice report at all — the launch season, when someone
+ * skated before the app could record it — and is marked as staff's. A report always wins.
+ * `unknown` when the report look ran out before it could say there is none.
  */
 async function firstSkate(
   ctx: QueryCtx,
   season: number,
   now: number,
 ): Promise<SkateMark | 'none' | 'unknown'> {
-  const field = await fieldFirstSkate(ctx, season);
-  if (field !== null) return field;
   const report = await firstOnIce(ctx, season, now);
-  return typeof report === 'object' ? { source: 'report', ...report } : report;
+  if (typeof report === 'object') return { source: 'report', ...report };
+  if (report === 'unknown') return 'unknown';
+  return (await fieldFirstSkate(ctx, season)) ?? 'none';
 }
 
 async function firstSkateSummary(ctx: QueryCtx, season: number, now: number) {

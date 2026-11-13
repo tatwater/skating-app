@@ -3227,7 +3227,10 @@ export default defineSchema({
     .index('by_water_body_name', ['waterBodyId', 'kind', 'status', 'nameKey'])
     // Every `admit` that resolved to the same catalog feature — the sibling set a decision closes.
     // `eq()` only: the field is optional and the index is not sparse.
-    .index('by_candidate_external_id', ['candidateExternalId', 'status']),
+    .index('by_candidate_external_id', ['candidateExternalId', 'status'])
+    // ── B01 server reads: what a contribution is (D253) ──
+    // A request to add or activate a body, or a proposed name, is a contribution: read by time.
+    .index('by_created_at', ['createdAt']),
 
   contentFlags: defineTable({
     flaggerId: v.id('profiles'),
@@ -3274,7 +3277,12 @@ export default defineSchema({
     // index is keyed by status first so the rollup reads only terminal rows in the day's range —
     // `actioned`/`dismissed` accumulate forever, and a scan of all of them would grow without bound.
     .index('by_created_at', ['createdAt'])
-    .index('by_status_resolved_at', ['status', 'resolvedAt']),
+    .index('by_status_resolved_at', ['status', 'resolvedAt'])
+    // ── B01 server reads: what a contribution is (D253) ──
+    // A "not publicly accessible" report is a contribution; no other flag is. One reason by time
+    // for the day and season reads, and one person's of that reason for *first-time*.
+    .index('by_reason_created', ['reason', 'createdAt'])
+    .index('by_flagger_reason_created', ['flaggerId', 'reason', 'createdAt']),
 
   moderationActions: defineTable({
     /**
@@ -3700,7 +3708,11 @@ export default defineSchema({
     // reference scan (A03 / `lib/photoOrphans`). Without it the sweep would have to scan the whole
     // table to decide whether one person's photo is referenced, and the alternative it would fall
     // back to is deleting it.
-    .index('by_created_by', ['createdByUserId']),
+    .index('by_created_by', ['createdByUserId'])
+    // ── B01 server reads: what a contribution is (D253) ──
+    // A put-in a person placed (`official`) is a contribution: one source's put-ins by time, so the
+    // derived markers the clustering writes in bulk are never read for it.
+    .index('by_source_created', ['source', 'createdAt']),
 
   /**
    * Where the car goes (A06d / D72) — modeled apart from `putIns`, and many-to-many with bodies.
@@ -3910,7 +3922,10 @@ export default defineSchema({
     // A departing user's alerts (A03/D62), and the author-side half of the orphan-photo scan.
     .index('by_author', ['createdByUserId'])
     // Offline-flush dedup (A10 §9.1) — `eq()` only, the optional-index rule.
-    .index('by_idempotency_key', ['idempotencyKey']),
+    .index('by_idempotency_key', ['idempotencyKey'])
+    // ── B01 server reads: what a contribution is (D253) ──
+    // An alert is a contribution (unless retracted): the day and season reads range it by time.
+    .index('by_created_at', ['createdAt']),
 
   /**
    * Photos of an access point (A06d Workstream 4 / D88) — *"is this the right dirt road"*.
@@ -4109,6 +4124,11 @@ export default defineSchema({
    * days or more* of the last seven, and *Signed in* per day through the season. It is a behavioral
    * record, so it carries the profile id and the day and nothing else, and account deletion erases
    * it (D33). Forward-only by nature: an open leaves no other trace to rebuild it from.
+   *
+   * **Kept for the current season and one past season** (the founder, 2026-11-13; D254): enough for
+   * this season's figures and a past season chosen on the Overview, and no longer a record of a
+   * person kept forever. `analyticsRollup.pruneSignInDays` erases every day before the previous
+   * season's 1 July, daily; the rollups' own `signed_in` day counts outlive the rows.
    */
   signInDays: defineTable({
     userId: v.id('profiles'),

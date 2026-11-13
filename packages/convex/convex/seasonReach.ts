@@ -30,6 +30,7 @@
  */
 
 import {
+  contributionStands,
   POSITIVE_REACTION_KINDS,
   positiveReactionOf,
   resolveSeason,
@@ -70,7 +71,18 @@ export const BODY_CAP = 1_000;
 export const MOST_REPORTED_ROWS = 20;
 
 /** The sources, in walk order. */
-export const STAGES = ['reports', 'comments', 'kudos', 'photos', 'hazards', 'signIns'] as const;
+export const STAGES = [
+  'reports',
+  'comments',
+  'kudos',
+  'photos',
+  'hazards',
+  'alerts',
+  'publicAccess',
+  'putIns',
+  'requests',
+  'signIns',
+] as const;
 type Stage = (typeof STAGES)[number];
 
 /** One state's season: counts, and its contributors as an id set while walking. */
@@ -247,10 +259,13 @@ async function walkPage(
         if (r.postId !== undefined) w.addTo(w.sets.posts, r.postId, 'posts');
         const vantage = r.observedFrom ?? 'unstated';
         t.vantage[vantage] = (t.vantage[vantage] ?? 0) + 1;
-        w.contributor(r.authorId);
         const code = stateOf(r);
         w.state(code).reports++;
-        w.statePerson(code, r.authorId);
+        // A report its author withdrew is counted nowhere as a contribution (D253).
+        if (contributionStands.report(r)) {
+          w.contributor(r.authorId);
+          w.statePerson(code, r.authorId);
+        }
         const body = w.body(r.waterBodyId);
         if (body !== undefined) {
           body.reports++;
@@ -274,10 +289,8 @@ async function walkPage(
       for (const c of counted) {
         t.counts.comments++;
         w.addTo(w.sets.commented, c.reportId, 'commented');
-        w.contributor(c.authorId);
-        const code = stateOf(reports.get(c.reportId) ?? null);
-        w.state(code).comments++;
-        w.statePerson(code, c.authorId);
+        // A comment is chatter on a report, not a contribution (D253): counted, never a contributor.
+        w.state(stateOf(reports.get(c.reportId) ?? null)).comments++;
       }
       return { tally: w.pack(), isDone: page.isDone, continueCursor: page.continueCursor };
     }
@@ -329,7 +342,55 @@ async function walkPage(
       for (const h of page.page) {
         t.counts.hazards++;
         w.addTo(w.sets.hazardBodies, h.waterBodyId, 'hazardBodies');
-        w.contributor(h.createdByUserId);
+        if (contributionStands.hazard(h)) w.contributor(h.createdByUserId);
+      }
+      return { tally: w.pack(), isDone: page.isDone, continueCursor: page.continueCursor };
+    }
+    // The other kinds of contribution (D253): each adds its standing authors, nothing else. They
+    // sit on bodies, put-ins and lots, which can span states, so only reports are counted by state.
+    case 'alerts': {
+      const page = await ctx.db
+        .query('accessAlerts')
+        .withIndex('by_created_at', (q) => q.gte('createdAt', span.from).lt('createdAt', span.to))
+        .paginate(opts);
+      for (const a of page.page) {
+        if (contributionStands.accessAlert(a)) w.contributor(a.createdByUserId);
+      }
+      return { tally: w.pack(), isDone: page.isDone, continueCursor: page.continueCursor };
+    }
+    case 'publicAccess': {
+      const page = await ctx.db
+        .query('contentFlags')
+        .withIndex('by_reason_created', (q) =>
+          q.eq('reason', 'no_public_access').gte('createdAt', span.from).lt('createdAt', span.to),
+        )
+        .paginate(opts);
+      for (const f of page.page) {
+        if (contributionStands.noPublicAccess(f)) w.contributor(f.flaggerId);
+      }
+      return { tally: w.pack(), isDone: page.isDone, continueCursor: page.continueCursor };
+    }
+    case 'putIns': {
+      const page = await ctx.db
+        .query('putIns')
+        .withIndex('by_source_created', (q) =>
+          q.eq('source', 'official').gte('createdAt', span.from).lt('createdAt', span.to),
+        )
+        .paginate(opts);
+      for (const p of page.page) {
+        if (contributionStands.putIn(p) && p.createdByUserId !== undefined) {
+          w.contributor(p.createdByUserId);
+        }
+      }
+      return { tally: w.pack(), isDone: page.isDone, continueCursor: page.continueCursor };
+    }
+    case 'requests': {
+      const page = await ctx.db
+        .query('waterBodyRequests')
+        .withIndex('by_created_at', (q) => q.gte('createdAt', span.from).lt('createdAt', span.to))
+        .paginate(opts);
+      for (const r of page.page) {
+        if (contributionStands.corpusRequest(r)) w.contributor(r.requesterId);
       }
       return { tally: w.pack(), isDone: page.isDone, continueCursor: page.continueCursor };
     }

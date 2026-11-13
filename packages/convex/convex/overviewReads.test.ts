@@ -717,8 +717,8 @@ describe('the day pulse rollup', () => {
     expect(await readSnapshot(t, 'positive_reactions', TODAY)).toEqual(
       expect.objectContaining({ scalar: 1, meta: { helpful: 1 } }),
     );
-    // Ada reported, Bo commented, Cy filed a hazard (her withdrawn comment doesn't count).
-    expect((await readSnapshot(t, 'daily_contributors', TODAY))?.scalar).toBe(3);
+    // Ada reported and Cy filed a hazard; Bo only commented, and a comment is not a contribution.
+    expect((await readSnapshot(t, 'daily_contributors', TODAY))?.scalar).toBe(2);
   });
 
   test('sign-ins are written only from the day their record began', async () => {
@@ -762,6 +762,204 @@ describe('the day pulse rollup', () => {
     expect(jobs.filter((j) => j.name.includes('rollupPulseDayJob')).map((j) => j.args[0])).toEqual([
       { date: '2026-11-11' },
     ]);
+  });
+});
+
+// ── What a contribution is (D253) ───────────────────────────────────────────────────────────────
+
+describe('contributions — one rule for every contributors figure', () => {
+  /** One of each kind that counts, by `who`, made at `at`. */
+  async function contributeEverything(
+    t: T,
+    who: Record<'alert' | 'access' | 'putIn' | 'request', Id<'profiles'>>,
+    body: Id<'waterBodies'>,
+    at: number,
+  ) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert('accessAlerts', {
+        targetType: 'put_in',
+        waterBodyId: body,
+        reason: 'road_closed',
+        kind: 'blocker',
+        createdByUserId: who.alert,
+        createdAt: at,
+        season: 2026,
+        status: 'active',
+        confirmCount: 0,
+        denyCount: 0,
+      } as never);
+      await ctx.db.insert('contentFlags', {
+        flaggerId: who.access,
+        targetType: 'waterbody' as const,
+        targetId: body,
+        reason: 'no_public_access' as const,
+        status: 'open' as const,
+        createdAt: at,
+      });
+      await ctx.db.insert('putIns', {
+        waterBodyId: body,
+        coord: { lat: 0.5, lng: 0.5 },
+        source: 'official' as const,
+        status: 'visible' as const,
+        createdByUserId: who.putIn,
+        createdAt: at,
+      } as never);
+      await ctx.db.insert('waterBodyRequests', {
+        kind: 'activate' as const,
+        status: 'open' as const,
+        requesterId: who.request,
+        coord: { lat: 43.6, lng: -72.1 },
+        createdAt: at,
+      });
+    });
+  }
+
+  test('an alert, a not-accessible report, a placed put-in and a corpus request each count', async () => {
+    const t = harness();
+    const body = await seedBody(t, 'Mascoma Lake');
+    const who = {
+      alert: (await seedUser(t, 'al')).id,
+      access: (await seedUser(t, 'ac')).id,
+      putIn: (await seedUser(t, 'pu')).id,
+      request: (await seedUser(t, 're')).id,
+    };
+    await contributeEverything(t, who, body, NOW - HOUR);
+    await t.mutation(internal.analyticsRollup.rollupPulseDayJob, { date: TODAY });
+    expect((await readSnapshot(t, 'daily_contributors', TODAY))?.scalar).toBe(4);
+    await t.mutation(internal.analyticsRollup.rollupActivityJob, {});
+    expect((await readSnapshot(t, 'active_contributors', TODAY))?.scalar).toBe(4);
+  });
+
+  test('nothing withdrawn, retracted, removed, declined or dismissed counts', async () => {
+    const t = harness();
+    const body = await seedBody(t, 'Mascoma Lake');
+    const a = await seedUser(t, 'a');
+    await seedReport(t, a.id, body, NOW - HOUR, { authorDeletedAt: NOW });
+    await seedReport(t, a.id, body, NOW - HOUR, { moderationStatus: 'removed' });
+    await t.run(async (ctx) => {
+      await ctx.db.insert('accessAlerts', {
+        targetType: 'put_in',
+        waterBodyId: body,
+        reason: 'road_closed',
+        kind: 'blocker',
+        createdByUserId: a.id,
+        createdAt: NOW - HOUR,
+        season: 2026,
+        status: 'retracted',
+        confirmCount: 0,
+        denyCount: 0,
+      } as never);
+      await ctx.db.insert('contentFlags', {
+        flaggerId: a.id,
+        targetType: 'waterbody' as const,
+        targetId: body,
+        reason: 'no_public_access' as const,
+        status: 'dismissed' as const,
+        createdAt: NOW - HOUR,
+      });
+      await ctx.db.insert('waterBodyRequests', {
+        kind: 'admit' as const,
+        status: 'declined' as const,
+        requesterId: a.id,
+        coord: { lat: 43.6, lng: -72.1 },
+        createdAt: NOW - HOUR,
+      });
+      // Not contributions at all: a takedown request, a spam flag, a derived put-in.
+      await ctx.db.insert('waterBodyRequests', {
+        kind: 'takedown' as const,
+        status: 'open' as const,
+        requesterId: a.id,
+        coord: { lat: 43.6, lng: -72.1 },
+        createdAt: NOW - HOUR,
+      });
+      await ctx.db.insert('putIns', {
+        waterBodyId: body,
+        coord: { lat: 0.5, lng: 0.5 },
+        source: 'derived' as const,
+        status: 'visible' as const,
+        createdByUserId: a.id,
+        createdAt: NOW - HOUR,
+      } as never);
+    });
+    await seedFlag(t, a.id, 'report', 'r1', { createdAt: NOW - HOUR });
+    await t.mutation(internal.analyticsRollup.rollupPulseDayJob, { date: TODAY });
+    expect((await readSnapshot(t, 'daily_contributors', TODAY))?.scalar).toBe(0);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    expect((await mod.as.query(api.metrics.showingUp, {})).showingUp.week.contributors).toEqual({
+      people: 0,
+      firstTime: 0,
+    });
+  });
+
+  test('a first contribution is the first that stands: a withdrawn report before it is not one', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const body = await seedBody(t, 'Mascoma Lake');
+    const a = await seedUser(t, 'a');
+    await seedReport(t, a.id, body, NOW - 60 * DAY, { authorDeletedAt: NOW - 59 * DAY });
+    await seedReport(t, a.id, body, NOW - DAY);
+    expect((await mod.as.query(api.metrics.showingUp, {})).showingUp.week.contributors).toEqual({
+      people: 1,
+      firstTime: 1,
+    });
+  });
+
+  test('first-time is not recorded when a kind’s first rows are all withdrawn', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const body = await seedBody(t, 'Mascoma Lake');
+    const a = await seedUser(t, 'a');
+    for (let i = 0; i < 10; i++) {
+      await seedReport(t, a.id, body, NOW - (90 - i) * DAY, { authorDeletedAt: NOW });
+    }
+    await seedReport(t, a.id, body, NOW - DAY);
+    expect((await mod.as.query(api.metrics.showingUp, {})).showingUp.week.contributors).toBeNull();
+  });
+
+  test('the season walk counts every kind once per person, and only reports by state', async () => {
+    const t = harness();
+    const body = await seedBody(t, 'Mascoma Lake');
+    const who = {
+      alert: (await seedUser(t, 'al')).id,
+      access: (await seedUser(t, 'ac')).id,
+      putIn: (await seedUser(t, 'pu')).id,
+      request: (await seedUser(t, 're')).id,
+    };
+    await contributeEverything(t, who, body, NOW - 3 * DAY);
+    await walkReach(t);
+    const reach = (await readSnapshot(t, 'season_reach', TODAY))?.meta as {
+      people: { contributors: number };
+      states: Record<string, unknown>;
+    };
+    expect(reach.people.contributors).toBe(4);
+    expect(reach.states).toEqual({});
+  });
+});
+
+// ── The sign-in record's retention (D254) ───────────────────────────────────────────────────────
+
+describe('pruneSignInDays — the current season and one past', () => {
+  test('erases every day before the previous season’s 1 July, and keeps that day on', async () => {
+    const t = harness();
+    const a = await seedUser(t, 'a');
+    await t.run(async (ctx) => {
+      for (const day of ['2024-06-30', '2025-06-30', '2025-07-01', '2026-11-13']) {
+        await ctx.db.insert('signInDays', { userId: a.id, day, firstAt: NOW });
+      }
+    });
+    expect(await t.mutation(internal.analyticsRollup.pruneSignInDays, {})).toEqual({
+      deleted: 2,
+      keepFrom: '2025-07-01',
+    });
+    const left = await t.run((ctx) => ctx.db.query('signInDays').collect());
+    expect(left.map((r) => r.day).sort()).toEqual(['2025-07-01', '2026-11-13']);
+  });
+
+  test('rides the daily client-signal prune', async () => {
+    const t = harness();
+    await t.mutation(internal.analyticsRollup.pruneClientSignals, {});
+    const jobs = await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
+    expect(jobs.some((j) => j.name.includes('pruneSignInDays'))).toBe(true);
   });
 });
 
@@ -837,12 +1035,14 @@ describe('the season’s reach', () => {
         capped: [],
       }),
     );
+    // By state, contributors are the reports' authors: Ada and Bo reported from NH; Cy only
+    // commented there.
     expect((reach.states as Record<string, unknown>).NH).toEqual({
       reports: 2,
       comments: 2,
       photos: 2,
       kudos: 2,
-      contributors: 3,
+      contributors: 2,
     });
     const ranked = (await readSnapshot(t, 'most_reported', TODAY))?.meta as {
       rows: Array<{ bodyId: string; reports: number; photos: number; people: number }>;
@@ -1063,9 +1263,10 @@ describe('metrics.showingUp', () => {
     const w = (await mod.as.query(api.metrics.showingUp, {})).showingUp.week;
     // Cy's (five days ago), Bo's (two) and Ada's (today); Ada's hidden one never counts.
     expect(w.reports).toEqual({ count: 3, people: 3 });
-    // Ada, Bo, Cy and Dee. Bo's first contribution (a hazard three days ago) and Dee's are this
-    // week; Ada's reports go back to September and Cy commented on the 4th.
-    expect(w.contributors).toEqual({ people: 4, firstTime: 2 });
+    // Ada, Bo, Cy and Dee. Bo's first contribution (a hazard three days ago), Cy's (her report on
+    // the 8th — her comment on the 4th was chatter, not a contribution) and Dee's are this week;
+    // Ada's reports go back to September.
+    expect(w.contributors).toEqual({ people: 4, firstTime: 3 });
   });
 
   test('accounts: not recorded until the total is; sign-ins: not until the record covers the week', async () => {
@@ -1205,7 +1406,7 @@ describe('metrics.coverage', () => {
     c = (await mod.as.query(api.metrics.coverage, {})).coverage;
     expect(c.states).toEqual([
       { state: 'VT', bodies: 70, reports: 1, comments: 0, photos: 0, kudos: 0, contributors: 1 },
-      { state: 'NH', bodies: 60, reports: 2, comments: 2, photos: 2, kudos: 2, contributors: 3 },
+      { state: 'NH', bodies: 60, reports: 2, comments: 2, photos: 2, kudos: 2, contributors: 2 },
     ]);
   });
 });
@@ -1329,7 +1530,7 @@ describe('seasonWatch.tape and seasonWatch.homeSummary — for moderators', () =
     });
   });
 
-  test('first skated prefers the date staff entered, with its body or place', async () => {
+  test('first skated is the first on-ice report; a staff date only for a season with none', async () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');
     const ada = await seedUser(t, 'ada');
@@ -1343,14 +1544,16 @@ describe('seasonWatch.tape and seasonWatch.homeSummary — for moderators', () =
         enteredBy: mod.id,
         enteredAt: NOW,
       });
+      // An earlier staff date this season: the report still wins.
       await ctx.db.insert('seasonFieldDates', {
         season: 'winter-2026-27',
         kind: 'first_skated',
-        date: '2026-11-08',
+        date: '2026-11-01',
         waterBodyId: crystal,
         enteredBy: mod.id,
         enteredAt: NOW,
       });
+      // Last winter has no on-ice report: its staff date stands in, marked as staff's.
       await ctx.db.insert('seasonFieldDates', {
         season: 'winter-2025-26',
         kind: 'first_skated',
@@ -1362,7 +1565,7 @@ describe('seasonWatch.tape and seasonWatch.homeSummary — for moderators', () =
     });
     const home = await mod.as.query(api.seasonWatch.homeSummary, {});
     expect(home.firstSkate).toEqual({
-      first: { source: 'field', day: '2026-11-08', body: 'Crystal Lake' },
+      first: { source: 'report', at: NOW - 2 * DAY, body: 'Crystal Lake' },
       lastWinter: { source: 'field', day: '2025-12-06', body: 'Low Plains' },
     });
   });

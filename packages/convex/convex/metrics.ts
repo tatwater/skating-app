@@ -34,9 +34,9 @@ import { v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
 import { hasCapability, requireCapability } from './lib/auth';
+import { contributorsBetween, firstContributionAt } from './lib/contributions';
 import { accountsTotal, latestMetric, latestMetricIn, metricOverDays } from './lib/metricReads';
 import { flagBodyId, readOpenFlags } from './lib/openFlags';
-import { isCountedComment } from './lib/pulse';
 
 /** Past this many open flags, *Open flags* is not recorded rather than a floor. */
 const OPEN_FLAG_CAP = 1_000;
@@ -299,7 +299,7 @@ export const showingUp = query({
         : { added: added.length, total: total.count };
 
     const signedIn = await weekSignIns(ctx, week.days);
-    const contributors = reportsCapped ? null : await weekContributors(ctx, week, weekReports);
+    const contributors = await weekContributors(ctx, week);
 
     // ── The season ───────────────────────────────────────────────────────────────────────────
     const daily = Object.fromEntries(
@@ -363,50 +363,22 @@ async function weekSignIns(
 }
 
 /**
- * *Contributors* this week — anyone who posted a visible report (by skate end), a hazard or a
- * visible comment, the pulse's rule — and how many of them contributed for the first time: their
- * earliest report, hazard and comment of any kind all fall inside the week.
+ * *Contributors* this week — anyone with a standing contribution in it (`lib/contributions`, D253) —
+ * and how many contributed for the first time: their earliest standing contribution of any kind is
+ * in the week. `null` when a read stopped short, past {@link FIRST_TIME_CAP} people, or when
+ * someone's first contribution can't be told.
  */
 async function weekContributors(
   ctx: QueryCtx,
   week: { from: number; to: number },
-  reports: readonly Doc<'reports'>[],
 ): Promise<{ people: number; firstTime: number } | null> {
-  const hazards = await ctx.db
-    .query('hazards')
-    .withIndex('by_created_at', (q) => q.gte('createdAt', week.from).lt('createdAt', week.to))
-    .take(WEEK_CAP + 1);
-  const comments = await ctx.db
-    .query('comments')
-    .withIndex('by_created_at', (q) => q.gte('createdAt', week.from).lt('createdAt', week.to))
-    .take(WEEK_CAP + 1);
-  if (hazards.length > WEEK_CAP || comments.length > WEEK_CAP) return null;
-  const people = new Set<Id<'profiles'>>([
-    ...reports.map((r) => r.authorId),
-    ...hazards.map((h) => h.createdByUserId),
-    ...comments.filter(isCountedComment).map((c) => c.authorId),
-  ]);
-  if (people.size > FIRST_TIME_CAP) return null;
+  const { people, capped } = await contributorsBetween(ctx, week.from, week.to, WEEK_CAP);
+  if (capped || people.size > FIRST_TIME_CAP) return null;
   let firstTime = 0;
   for (const id of people) {
-    const firstReport = await ctx.db
-      .query('reports')
-      .withIndex('by_author', (q) => q.eq('authorId', id))
-      .first();
-    const firstHazard = await ctx.db
-      .query('hazards')
-      .withIndex('by_author_created', (q) => q.eq('createdByUserId', id))
-      .first();
-    const firstComment = await ctx.db
-      .query('comments')
-      .withIndex('by_author', (q) => q.eq('authorId', id))
-      .first();
-    const earliest = Math.min(
-      firstReport?.createdAt ?? Number.POSITIVE_INFINITY,
-      firstHazard?.createdAt ?? Number.POSITIVE_INFINITY,
-      firstComment?.createdAt ?? Number.POSITIVE_INFINITY,
-    );
-    if (earliest >= week.from) firstTime++;
+    const first = await firstContributionAt(ctx, id);
+    if (first === 'unknown') return null;
+    if (first !== null && first >= week.from) firstTime++;
   }
   return { people: people.size, firstTime };
 }

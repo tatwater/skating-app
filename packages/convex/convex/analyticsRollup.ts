@@ -40,6 +40,7 @@ import {
   rate,
   reportStripState,
   seasonOf,
+  signInRetentionFrom,
   standingOf,
   wasOpenDuring,
 } from '@skating/core';
@@ -47,6 +48,7 @@ import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
 import { internalMutation, type MutationCtx } from './_generated/server';
+import { contributorsBetween } from './lib/contributions';
 import { isListed } from './lib/listing';
 import { writeMetricSnapshot } from './lib/metrics';
 import { readOpenFlags } from './lib/openFlags';
@@ -301,30 +303,13 @@ async function rollupDay(ctx: MutationCtx, date: string): Promise<void> {
  * unwritten (read as *not recorded*, never as a day nobody came).
  *
  * Its own transaction (`rollupPulseDayJob`), beside `rollupDay`'s: each day job stays one day's
- * scans. A contributor is anyone who posted a visible report that skated this day, a hazard or a
- * visible comment.
+ * scans. A contributor is anyone with a standing contribution this day (`lib/contributions`, D253):
+ * a report whose skate ended on it, or a hazard, an access alert, a "not publicly accessible" report,
+ * a put-in placed or a corpus request made on it. Comments are not contributions.
  */
 async function rollupPulseDay(ctx: MutationCtx, date: string): Promise<void> {
   const from = metricDayStart(date);
   const to = from + DAY_MS;
-  const reports = await capped(
-    ctx.db
-      .query('reports')
-      .withIndex('by_moderation_and_skate_end_time', (q) =>
-        q.eq('moderationStatus', 'visible').gte('skateEndTime', from).lt('skateEndTime', to),
-      )
-      .take(DAY_SCAN_CAP),
-    DAY_SCAN_CAP,
-    `pulse reports on ${date}`,
-  );
-  const hazards = await capped(
-    ctx.db
-      .query('hazards')
-      .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to))
-      .take(DAY_SCAN_CAP),
-    DAY_SCAN_CAP,
-    `pulse hazards on ${date}`,
-  );
   const comments = (
     await capped(
       ctx.db
@@ -374,12 +359,13 @@ async function rollupPulseDay(ctx: MutationCtx, date: string): Promise<void> {
     meta: countBy(kinds),
   });
 
-  const contributors = new Set<string>([
-    ...reports.map((r) => r.authorId as string),
-    ...hazards.map((h) => h.createdByUserId as string),
-    ...comments.map((c) => c.authorId as string),
-  ]);
-  await writeMetricSnapshot(ctx, 'daily_contributors', date, { scalar: contributors.size });
+  const contributors = await contributorsBetween(ctx, from, to, DAY_SCAN_CAP);
+  if (contributors.capped) {
+    console.warn(
+      `analyticsRollup: contributors on ${date} hit the ${DAY_SCAN_CAP}-row scan cap — computed from a partial slice.`,
+    );
+  }
+  await writeMetricSnapshot(ctx, 'daily_contributors', date, { scalar: contributors.people.size });
 
   // Sign-ins are forward-only (B01-1): a day before the record's first row was never measured.
   const firstRecorded = await ctx.db.query('signInDays').withIndex('by_day').first();
@@ -444,29 +430,20 @@ async function rollupDistributions(ctx: MutationCtx, now: number): Promise<void>
 async function rollupActivity(ctx: MutationCtx, now: number): Promise<void> {
   const date = metricDay(now);
 
-  // Distinct authors across reports AND hazards in the trailing window — one person who did both is
-  // one contributor, which is why this is a set union and not the sum of two counts.
+  // Distinct people with a standing contribution in the trailing window — the one rule every
+  // contributors figure reads (D253): a person who did two kinds is one contributor.
   const since = now - ACTIVE_CONTRIBUTOR_DAYS * DAY_MS;
-  const recentReports = await capped(
-    ctx.db
-      .query('reports')
-      .withIndex('by_created_at', (q) => q.gte('createdAt', since))
-      .take(WINDOW_SCAN_CAP),
+  const { people: contributors, capped: contributorsCapped } = await contributorsBetween(
+    ctx,
+    since,
+    now + 1,
     WINDOW_SCAN_CAP,
-    'recent reports (active contributors)',
   );
-  const recentHazards = await capped(
-    ctx.db
-      .query('hazards')
-      .withIndex('by_created_at', (q) => q.gte('createdAt', since))
-      .take(WINDOW_SCAN_CAP),
-    WINDOW_SCAN_CAP,
-    'recent hazards (active contributors)',
-  );
-  const contributors = new Set<string>([
-    ...recentReports.map((r) => r.authorId as string),
-    ...recentHazards.map((h) => h.createdByUserId as string),
-  ]);
+  if (contributorsCapped) {
+    console.warn(
+      `analyticsRollup: active contributors hit the ${WINDOW_SCAN_CAP}-row scan cap — computed from a partial slice.`,
+    );
+  }
   await writeMetricSnapshot(ctx, 'active_contributors', date, { scalar: contributors.size });
 
   const bounties = await capped(
@@ -808,7 +785,32 @@ export const pruneClientSignals = internalMutation({
       .withIndex('by_created_at', (q) => q.lt('createdAt', cutoff))
       .take(DAY_SCAN_CAP);
     for (const row of stale) await ctx.db.delete(row._id);
+    // The sign-in record's retention rides this daily prune (D254): its own transaction.
+    await ctx.scheduler.runAfter(0, internal.analyticsRollup.pruneSignInDays, {});
     return { deleted: stale.length };
+  },
+});
+
+/**
+ * `signInDays` retention (the founder, 2026-11-13; D254): the current season and one past season
+ * are kept — "one past season seems like it should be fine" — and every day before the previous
+ * season's 1 July is erased. A page per transaction: a full page schedules the next, so a backlog
+ * drains in one run without any one transaction reading past the cap. The day range carries its
+ * lower bound, as every range over this index does.
+ */
+export const pruneSignInDays = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const keepFrom = signInRetentionFrom(Date.now());
+    const stale = await ctx.db
+      .query('signInDays')
+      .withIndex('by_day', (q) => q.gte('day', '0000-01-01').lt('day', keepFrom))
+      .take(DAY_SCAN_CAP);
+    for (const row of stale) await ctx.db.delete(row._id);
+    if (stale.length === DAY_SCAN_CAP) {
+      await ctx.scheduler.runAfter(0, internal.analyticsRollup.pruneSignInDays, {});
+    }
+    return { deleted: stale.length, keepFrom };
   },
 });
 
