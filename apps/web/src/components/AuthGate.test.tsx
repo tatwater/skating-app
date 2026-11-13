@@ -218,14 +218,19 @@ describe('the hold while auth resolves', () => {
     },
   );
 
-  it('stays the splash under the console, which holds its own way', () => {
-    // biome-ignore lint/suspicious/noDocumentCookie: jsdom has no Cookie Store API; the gate reads and writes document.cookie
-    document.cookie = bootCookieString('app');
-    mocks.auth = { isLoaded: false, isSignedIn: false };
-    mocks.pathname = '/admin/water/review';
-    render(<AuthGate>page</AuthGate>);
-    expect(screen.getByText('splash')).toBeInTheDocument();
-  });
+  // An old page and the new console alike: neither is the skater shell, so neither gets its
+  // skeletons — the narrowed old-shell predicate must not leak the console into the boot screen.
+  it.each(['/admin/water/review', '/admin'])(
+    'stays the splash under the console (%s), which holds its own way',
+    (path) => {
+      // biome-ignore lint/suspicious/noDocumentCookie: jsdom has no Cookie Store API; the gate reads and writes document.cookie
+      document.cookie = bootCookieString('app');
+      mocks.auth = { isLoaded: false, isSignedIn: false };
+      mocks.pathname = path;
+      render(<AuthGate>page</AuthGate>);
+      expect(screen.getByText('splash')).toBeInTheDocument();
+    },
+  );
 
   it('is never drawn over the Google Photos callback, which renders bare in every state', () => {
     // biome-ignore lint/suspicious/noDocumentCookie: jsdom has no Cookie Store API; the gate reads and writes document.cookie
@@ -273,11 +278,13 @@ describe('the boot cookie the gate writes', () => {
 });
 
 describe('usesOldShell', () => {
-  it.each(['/admin', '/admin/water/review'])('keeps %s in the old shell', (path) => {
+  it.each(['/admin/flags', '/admin/water/review'])('keeps %s in the old shell', (path) => {
     expect(usesOldShell(path)).toBe(true);
   });
 
   it.each([
+    '/admin',
+    '/admin/',
     '/',
     '/water/abc',
     '/lakes',
