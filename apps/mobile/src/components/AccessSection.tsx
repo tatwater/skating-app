@@ -44,6 +44,8 @@ export function AccessSection({
     waterBodyId,
     ...(subAreaId !== undefined ? { subAreaId } : {}),
   });
+  // Which of these alerts are the viewer's own: asked apart, so the shared read stays one copy.
+  const mine = useQuery(api.accessAlerts.myAlertIdsForBody, { waterBodyId });
   const vote = useMutation(api.accessAlerts.vote);
   const createAlert = useMutation(api.accessAlerts.create);
   const [busy, setBusy] = useState<string | null>(null);
@@ -162,7 +164,10 @@ export function AccessSection({
 
       {alerts.map((alert) => {
         // A pin takes no votes — except its author's own "it's open" (D248).
-        const votes = accessAlertVoteControls(alert);
+        const votes = accessAlertVoteControls({
+          official: alert.official,
+          isOwn: (mine ?? []).includes(alert.id),
+        });
         return (
           <YStack
             key={alert.id}

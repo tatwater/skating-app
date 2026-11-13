@@ -485,18 +485,10 @@ export interface AccessAlertView {
   expiresAt?: number;
   confirmCount: number;
   denyCount: number;
-  /**
-   * The viewer posted it. Their own "it's open" settles it even on a pin (D248), so the clients show
-   * them that control where everyone else sees none. Absent for anyone else, and signed out.
-   */
-  isOwn?: true;
 }
 
-function toView(alert: Doc<'accessAlerts'>, viewerId?: Id<'profiles'>): AccessAlertView {
+function toView(alert: Doc<'accessAlerts'>): AccessAlertView {
   return {
-    ...(viewerId !== undefined && alert.createdByUserId === viewerId
-      ? { isOwn: true as const }
-      : {}),
     id: alert._id,
     targetType: alert.targetType,
     putInId: alert.putInId,
@@ -615,8 +607,6 @@ export async function loadLiveAlertsForBody(
   ctx: QueryCtx,
   waterBodyId: Id<'waterBodies'>,
   now: number = Date.now(),
-  /** Who is reading, so each of their own alerts says so (`isOwn`). */
-  viewerId?: Id<'profiles'>,
 ): Promise<AccessAlertView[]> {
   // Capped for the same reason the parking read is (see `MAX_ACCESS_ROWS_PER_BODY`): alerts are
   // user-generated, so "how many can one lake have" is not a number we control.
@@ -703,7 +693,7 @@ export async function loadLiveAlertsForBody(
     .sort((a, b) =>
       a.status === b.status ? b.createdAt - a.createdAt : a.status === 'official' ? -1 : 1,
     )
-    .map((alert) => toView(alert, viewerId));
+    .map(toView);
 }
 
 /** Public: live access alerts for a body. Returns `[]` for an unknown body. */
@@ -712,8 +702,50 @@ export const listForBody = query({
   handler: async (ctx, { waterBodyId }): Promise<AccessAlertView[]> => {
     const body = await ctx.db.get(waterBodyId);
     if (!body) return [];
+    return loadLiveAlertsForBody(ctx, waterBodyId);
+  },
+});
+
+/** How many of one person's alerts `myAlertIdsForBody` reads — far past anyone's. */
+const MY_ALERTS_SCAN = 500;
+
+/**
+ * The viewer's own live alerts on this body — the one viewer-specific fact the access drawer needs
+ * (D248): on a pinned alert its author alone keeps "It's open". Kept out of `accessForBody` and
+ * `listForBody` on purpose: those are the lake page's shared reads, and reading the signed-in person
+ * there would cache a copy per viewer and re-run them per viewer on every alert change. Bounded by one
+ * person's alerts (`by_author`), newest first. An alert on a lot counts on every body the lot
+ * serves, as the shared read shows it. Signed out, or none of their own: `[]`.
+ */
+export const myAlertIdsForBody = query({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }): Promise<Id<'accessAlerts'>[]> => {
     const viewer = await getCurrentProfile(ctx);
-    return loadLiveAlertsForBody(ctx, waterBodyId, Date.now(), viewer?._id);
+    if (!viewer) return [];
+    const mine = await ctx.db
+      .query('accessAlerts')
+      .withIndex('by_author', (q) => q.eq('createdByUserId', viewer._id))
+      .order('desc')
+      .take(MY_ALERTS_SCAN);
+    const ids: Id<'accessAlerts'>[] = [];
+    for (const alert of mine) {
+      if (alert.status !== 'active' && alert.status !== 'official') continue;
+      if (alert.waterBodyId === waterBodyId) {
+        ids.push(alert._id);
+        continue;
+      }
+      if (alert.parkingAreaId === undefined) continue;
+      const link = await ctx.db
+        .query('parkingAreaBodies')
+        .withIndex('by_parking_area_water_body', (q) =>
+          q
+            .eq('parkingAreaId', alert.parkingAreaId as Id<'parkingAreas'>)
+            .eq('waterBodyId', waterBodyId),
+        )
+        .unique();
+      if (link) ids.push(alert._id);
+    }
+    return ids;
   },
 });
 

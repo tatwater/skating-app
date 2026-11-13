@@ -1504,10 +1504,13 @@ the People page and the skater screens that reach it are owed (the roadmap's reg
   alerts (the author's retraction only while a live community claim no moderator ever pinned — read
   from the history, bounded, an undone pin not counting; a moderator's unchanged; an author-retracted
   alert can't be pinned or released back). The author's own `open` resolves their alert, pinned or
-  not, releasing the pin with an `author_resolve_access_alert` history row; the alert view now says
-  `isOwn`, and **both clients show the author "It's open" on their own pinned alert** (one rule in
-  core, `accessAlertVoteControls`; web has a render test, the phone has no render harness and was
-  not device-tested). **No client reaches the retractions yet** (the register).
+  not, releasing the pin with an `author_resolve_access_alert` history row; **both clients show the
+  author "It's open" on their own pinned alert** (one rule in core, `accessAlertVoteControls`; web
+  has a render test, the phone has no render harness and was not device-tested). Which alerts are
+  the viewer's comes from its own small query (`accessAlerts.myAlertIdsForBody`, bounded by the
+  author index), never from `accessForBody` or `listForBody`: those are the lake page's shared reads,
+  and reading the viewer there would cache a copy per person and re-run per person on every alert
+  change. **No client reaches the retractions yet** (the register).
 - **The export carries what a person filed.** `dataExport.collect` now includes their flags (only
   ones a person filed — a system flag names someone who filed nothing; a flag from before `origin`
   existed reads as the system's, the rule the flag notifications use) and their requests (the

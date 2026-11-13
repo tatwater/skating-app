@@ -350,16 +350,76 @@ describe('an access alert', () => {
     expect(await get(t, alertId)).toMatchObject({ status: 'retracted' });
   });
 
-  test('the alert view tells its author it is theirs, and nobody else', async () => {
+  test('the shared reads are the same for every viewer; the author learns which are theirs apart', async () => {
     const { t, skater, other, waterBodyId, alertId } = await alertSetup();
-    const mine = await skater.as.query(api.accessAlerts.listForBody, { waterBodyId });
-    expect(mine).toEqual([expect.objectContaining({ id: alertId, isOwn: true })]);
-    const theirs = await other.as.query(api.accessAlerts.listForBody, { waterBodyId });
-    expect(theirs[0]?.isOwn).toBeUndefined();
-    const anonymous = await t.query(api.accessPoints.accessForBody, { waterBodyId });
-    expect(anonymous.alerts[0]?.isOwn).toBeUndefined();
-    const viaAccess = await skater.as.query(api.accessPoints.accessForBody, { waterBodyId });
-    expect(viaAccess.alerts[0]?.isOwn).toBe(true);
+    // The lake page's shared reads carry nothing about who is looking.
+    for (const read of [
+      (as: typeof skater.as) => as.query(api.accessAlerts.listForBody, { waterBodyId }),
+      (as: typeof skater.as) => as.query(api.accessPoints.accessForBody, { waterBodyId }),
+    ]) {
+      expect(await read(skater.as)).toEqual(await read(other.as));
+      expect(await read(skater.as)).toEqual(await read(t as unknown as typeof skater.as));
+    }
+    expect(await skater.as.query(api.accessAlerts.myAlertIdsForBody, { waterBodyId })).toEqual([
+      alertId,
+    ]);
+    expect(await other.as.query(api.accessAlerts.myAlertIdsForBody, { waterBodyId })).toEqual([]);
+    expect(await t.query(api.accessAlerts.myAlertIdsForBody, { waterBodyId })).toEqual([]);
+    // An alert on a lot counts on every lake the lot serves, as the shared read shows it there.
+    const otherLake = await t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        name: 'Second Pond',
+        searchText: 'Second Pond',
+        type: 'lakePond' as const,
+        source: 'osm' as const,
+        polygon: {
+          type: 'Polygon' as const,
+          coordinates: [
+            [
+              [2, 2],
+              [2, 3],
+              [3, 3],
+              [3, 2],
+              [2, 2],
+            ],
+          ],
+        },
+        bbox: { minLat: 2, minLng: 2, maxLat: 3, maxLng: 3 },
+        centroid: { lat: 2.5, lng: 2.5 },
+        dedupStatus: 'clean' as const,
+        createdAt: Date.now(),
+      }),
+    );
+    const lotId = await t.run(async (ctx) => {
+      const id = await ctx.db.insert('parkingAreas', {
+        coord: { lat: 0.5, lng: 0.5 },
+        source: 'osm' as const,
+        status: 'visible' as const,
+        amenities: [],
+        createdAt: Date.now(),
+      });
+      for (const body of [waterBodyId, otherLake]) {
+        await ctx.db.insert('parkingAreaBodies', {
+          parkingAreaId: id,
+          waterBodyId: body,
+          inferred: false,
+          createdAt: Date.now(),
+        });
+      }
+      return id;
+    });
+    const lotAlert = await skater.as.mutation(api.accessAlerts.create, {
+      targetType: 'parking_area',
+      parkingAreaId: lotId,
+      reason: 'not_plowed',
+    });
+    expect(
+      await skater.as.query(api.accessAlerts.myAlertIdsForBody, { waterBodyId: otherLake }),
+    ).toEqual([lotAlert]);
+    await skater.as.mutation(api.accessAlerts.retract, { accessAlertId: lotAlert });
+    // Closed alerts are not offered a vote, so they are not listed.
+    await skater.as.mutation(api.accessAlerts.retract, { accessAlertId: alertId });
+    expect(await skater.as.query(api.accessAlerts.myAlertIdsForBody, { waterBodyId })).toEqual([]);
   });
 
   test('retracted by its author, it reads as before, starts its clock, and no moderator pins it back', async () => {

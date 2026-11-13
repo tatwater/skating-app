@@ -155,16 +155,11 @@ describe('AccessTab', () => {
   });
 
   it('offers a pinned alert\'s author "It\'s open", and nobody else any vote', () => {
-    const pinned = (isOwn: boolean) => ({
+    fakes.queries.set('accessPoints:accessForBody', {
       ...MASCOMA_ACCESS,
-      alerts: MASCOMA_ACCESS.alerts.map((a) => ({
-        ...a,
-        status: 'official',
-        official: true,
-        ...(isOwn ? { isOwn: true } : {}),
-      })),
+      alerts: MASCOMA_ACCESS.alerts.map((a) => ({ ...a, status: 'official', official: true })),
     });
-    fakes.queries.set('accessPoints:accessForBody', pinned(false));
+    fakes.queries.set('accessAlerts:myAlertIdsForBody', []);
     const { unmount } = tab();
     let beach = card('Shakoma Beach');
     expect(within(beach).getByText(/confirmed by a moderator/)).toBeTruthy();
@@ -172,7 +167,7 @@ describe('AccessTab', () => {
     expect(within(beach).queryByRole('button', { name: 'Still blocked' })).toBeNull();
     unmount();
 
-    fakes.queries.set('accessPoints:accessForBody', pinned(true));
+    fakes.queries.set('accessAlerts:myAlertIdsForBody', ['alert-snow']);
     tab();
     beach = card('Shakoma Beach');
     expect(within(beach).queryByRole('button', { name: 'Still blocked' })).toBeNull();

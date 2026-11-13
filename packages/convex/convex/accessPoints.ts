@@ -59,7 +59,7 @@ import {
 import { loadLiveAlertsForBody } from './accessAlerts';
 import { MAX_ACCESS_ROWS_PER_BODY, MAX_PUT_IN_ROWS_SCANNED } from './lib/accessLimits';
 import { writeAudit } from './lib/audit';
-import { getCurrentProfile, requireCapability, requireContributor } from './lib/auth';
+import { requireCapability, requireContributor } from './lib/auth';
 import { ACCESS_ALERT_TARGETS, ACCESS_AMENITIES, APPROACH_KINDS } from './lib/enums';
 import { assertOwnedPhotos, resolvePhotoUrls } from './lib/photoAccess';
 import { activateOnEvidence } from './lib/standing';
@@ -793,8 +793,7 @@ export const accessForBody = query({
     // Alerts on launches and lots this answer does not contain are noise in the bay view; the lake
     // view keeps every one.
     const inAnswer = new Set<string>([...live.map((r) => r._id), ...referenced.keys()]);
-    const viewer = await getCurrentProfile(ctx);
-    const alerts = (await loadLiveAlertsForBody(ctx, waterBodyId, Date.now(), viewer?._id)).filter(
+    const alerts = (await loadLiveAlertsForBody(ctx, waterBodyId)).filter(
       (a) =>
         bayPolygon === null ||
         (a.putInId !== undefined && inAnswer.has(a.putInId)) ||

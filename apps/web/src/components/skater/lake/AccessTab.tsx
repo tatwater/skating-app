@@ -62,13 +62,15 @@ export function AccessTab({ waterBodyId, subAreaId, onReportProblem }: AccessTab
     access !== undefined && access.putIns.length === 0 ? { waterBodyId: lakeId } : 'skip',
   );
   const profile = useQuery(api.profiles.current, {});
+  // Which of these alerts are the viewer's own: asked apart, so the shared read stays one copy.
+  const mine = useQuery(api.accessAlerts.myAlertIdsForBody, { waterBodyId: lakeId });
   const createAlert = useMutation(api.accessAlerts.create);
   const [shown, setShown] = useState(PUT_INS_PAGE);
 
   const platform = detectPlatform();
   const cards = useMemo(
-    () => (access ? putInCards(access, platform, Date.now()) : []),
-    [access, platform],
+    () => (access ? putInCards(access, platform, Date.now(), new Set(mine ?? [])) : []),
+    [access, platform, mine],
   );
   const derived = useMemo(
     () => (markers ? derivedPutIns(markers, platform, Date.now()) : []),
