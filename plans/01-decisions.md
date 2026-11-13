@@ -7820,4 +7820,19 @@ Post should not have to leave the flow to restore a Report first.
    Everyone else's votes work as before. The author's *retraction* ("it never existed") is still
    refused once a moderator has pinned; their *resolution* ("it's over") is always allowed.
 
+**2026-11-13, two more rulings** (on what the build held for a call):
+
+9. **A pin joined to other people's records is a shared record, and stays up.** A hazard folded
+   together with other skaters' pins by merge, counted in a cross-season pattern, or made a
+   permanent feature by a moderator can't be withdrawn by its author — the same principle as
+   another skater confirming it — and the refusal says so in plain words.
+10. **A past pin counts as acted on.** If a moderator ever pinned an access alert, its author can no
+    longer retract it ("this never existed") even after the pin is released: a moderator confirmed
+    it existed. It is read from the alert's history, not its current status (a pin a moderator
+    undid does not count). The author's "it's open" stays available, as always — and both clients
+    now offer it to the author on their own pinned alert.
+
+Still the founder's call: whether an alert its author retracted is erased at 30 days (its clock
+runs; nothing erases it yet).
+
 **Related:** D3, D17, D33, D50, D58, D62, D65, D73, D179, D186, D226, D247, [`phase-B01`](./phases/B01-admin-console.md) §7.

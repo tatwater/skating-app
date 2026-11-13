@@ -708,6 +708,12 @@ land; the third came out of the #108 review. **The calls:**
    are either disputed or have no interactions at all." And **an alert's author's "it's open" wins**
    over a moderator's pin — a skater reports an unplowed lot, a moderator pins it, the skater later
    sees it plowed; resolved, never retracted, with a history entry so the moderator can re-pin.
+7. **What the build held, ruled** (D248): a hazard joined to others' records — merged, counted in a
+   cross-season pattern, or made a permanent feature — is a shared record and stays up; and **a
+   past pin counts as acted on**: once a moderator pinned an alert, its author can't retract it even
+   after the pin is released, though their "it's open" always stands. A verdict or open flag on a
+   Post holding its member Reports is accepted as built. Erasing an author-retracted alert is still
+   open.
 
 ### The governor's rulings at the Overview's integration (2026-11-13)
 
@@ -1483,24 +1489,31 @@ the People page and the skater screens that reach it are owed (the roadmap's reg
   fulfilled state and its answer list skips the gone Report; notifications already delivered to
   others stay in their inbox. Two things copy a Report's content and stay, per call 5: a hazard
   derived from a located sighting carries the sighting's words in its description ("Seen, not
-  skated: …"), and stored put-in rows from the pre-D62 purge (`putIns.originReportId`) carry a
-  Report's coordinate — nothing reads that link today.
+  skated: …") — the hazard's own words now, withdrawable with it; and a put-in the pre-D62 purge
+  made from a Report's point keeps that coordinate as an access point, its link to the Report cleared
+  at erasure.
 - **Hazard withdrawal (call 6).** `hazardWithdrawal.withdraw`: the author, while no other skater's
   latest vote is `still_there` or `healing_unsafe` (a property test over any votes). The pin leaves
   as never posted — moderation `removed`, lifecycle untouched, so nothing reads it as healed — and is
-  final. Refused, and owed a founder call: a merge tombstone, a survivor that absorbed pins, a member
-  of a cross-season pattern; also a pin promoted to a permanent feature (a moderator made it the
-  lake's).
+  final. Refused for good (call 7): a merge tombstone, a survivor that absorbed pins, a member of a
+  cross-season pattern, and a pin promoted to a permanent feature — each a shared record now, and
+  the refusal says so.
 - **Retraction (Part D).** Requests (`corpusRequests.retract`, while open; approve and decline then
   say the asker withdrew it), flags (`contentFlags.retract`, while open or picked up; not one the
   system filed or has counted again for others; it leaves the queue and stops holding content), and
-  alerts (the author's retraction only while a live community claim; a moderator's unchanged; an
-  author-retracted alert can't be pinned back). The author's own `open` resolves their alert, pinned
-  or not, releasing the pin with an `author_resolve_access_alert` history row. **No client reaches any
-  of these yet**, and both clients hide the vote buttons on a pinned alert, so the author's "it's
-  open" there needs a client change too (the register).
-- **Found on the way.** `dataExport.collect` carries none of the flags or requests a person filed —
-  theirs, and "everything about you" omits them; not changed here.
+  alerts (the author's retraction only while a live community claim no moderator ever pinned — read
+  from the history, bounded, an undone pin not counting; a moderator's unchanged; an author-retracted
+  alert can't be pinned or released back). The author's own `open` resolves their alert, pinned or
+  not, releasing the pin with an `author_resolve_access_alert` history row; the alert view now says
+  `isOwn`, and **both clients show the author "It's open" on their own pinned alert** (one rule in
+  core, `accessAlertVoteControls`; web has a render test, the phone has no render harness and was
+  not device-tested). **No client reaches the retractions yet** (the register).
+- **The export carries what a person filed.** `dataExport.collect` now includes their flags (only
+  ones a person filed — a system flag names someone who filed nothing) and their requests (the
+  catalog's polygon named, not copied); access alerts, their votes and hazard confirmations were
+  already in. A retracted one erased at 30 days leaves nothing there.
+- **No pointer to an erased Report.** A put-in the pre-D62 purge made from a Report's point keeps its
+  place and coordinate on the community record and loses only its `originReportId`.
 
 ## Ruled out
 
