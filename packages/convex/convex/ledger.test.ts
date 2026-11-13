@@ -532,7 +532,7 @@ describe('profiles.getAdmin: the People row (D227)', () => {
     await founder.as.mutation(api.ledger.revokeEditor, { userId: other.id, reason: 'not needed' });
 
     const LEDGER = ['grant_ledger_editor', 'revoke_ledger_editor'];
-    const onOther = async (viewer: { as: T }) => ({
+    const onOther = async (viewer: Awaited<ReturnType<typeof seedUser>>) => ({
       people: (
         (await viewer.as.query(api.profiles.getAdmin, { userId: other.id }))?.recentActions ?? []
       ).map((a) => a.action),
