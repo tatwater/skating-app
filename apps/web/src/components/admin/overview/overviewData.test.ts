@@ -156,6 +156,23 @@ describe('the audit feed', () => {
     expect(author?.actor).toBe('Rob Tremblay');
   });
 
+  it('names a skater marking their own alert open in full, and the erasure as the machine', () => {
+    const [resolved, erased] = feedFromActions([
+      row({
+        id: 'd',
+        action: 'author_resolve_access_alert',
+        targetType: 'accessAlert',
+        actor: { userId: 'r', username: 'rtremblay', displayName: 'Rob Tremblay' },
+      }),
+      row({ id: 'e', actor: null, action: 'erase', targetType: 'comment' }),
+    ]);
+    expect(resolved?.actor).toBe('Rob Tremblay');
+    expect(resolved?.action).toBe('Marked their alert open');
+    expect(erased?.actor).toBeNull();
+    expect(erased?.action).toBe('Erased');
+    expect(actionWords('overturn_verdict')).toBe('Overturned verdict');
+  });
+
   it('falls back to the username, and — for a verb this build has no words for — the verb in words', () => {
     const [r] = feedFromActions([
       row({

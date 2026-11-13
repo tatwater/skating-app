@@ -13,6 +13,14 @@ describe('actionLabel', () => {
     expect(actionLabel('decline_request', 'waterBodyRequest')).toBe('Declined a request');
   });
 
+  it('says what became of withdrawn content, and who marked an alert open', () => {
+    expect(actionLabel('erase', 'comment')).toBe('Erased a comment');
+    expect(actionLabel('overturn_verdict', 'report')).toBe('Overturned the verdict on a report');
+    expect(actionLabel('author_resolve_access_alert', 'accessAlert')).toBe(
+      'The reporter marked an access alert open again',
+    );
+  });
+
   it('never shows a code name or a placeholder', () => {
     for (const [a, t] of [
       ['ban', 'user'],

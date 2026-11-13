@@ -266,6 +266,8 @@ const ACTION_WORDS: Record<AuditAction, string> = {
   remove: 'Removed',
   restore: 'Restored',
   author_delete: 'Deleted their own',
+  overturn_verdict: 'Overturned verdict',
+  erase: 'Erased',
   ban: 'Banned',
   suspend: 'Suspended',
   unban: 'Reinstated',
@@ -307,6 +309,7 @@ const ACTION_WORDS: Record<AuditAction, string> = {
   pin_access_alert: 'Pinned access alert',
   unpin_access_alert: 'Unpinned access alert',
   retract_access_alert: 'Retracted access alert',
+  author_resolve_access_alert: 'Marked their alert open',
   set_posted_access: 'Set posted rules',
   set_satellite_imagery: 'Set satellite link',
   set_public_access: 'Ruled public access',
@@ -350,13 +353,13 @@ const TARGET_WORDS: Record<AuditTarget, string> = {
 };
 
 /**
- * Staff are named by first name (the boards' rule); the author of an `author_delete` is a skater,
- * named in full.
+ * Staff are named by first name (the boards' rule); a skater acting on their own — an
+ * `author_delete`, or marking their own access alert open — is named in full.
  */
 function actorName(row: ActionRow): string | null {
   if (row.actor === null) return null;
   const full = row.actor.displayName.trim() || row.actor.username;
-  if (row.action === 'author_delete') return full;
+  if (row.action === 'author_delete' || row.action === 'author_resolve_access_alert') return full;
   return full.split(/\s+/u)[0] ?? full;
 }
 
