@@ -2,7 +2,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSpinnerThird } from '@fortawesome/sharp-regular-svg-icons';
 import type { ComponentProps } from 'react';
 
-import { Badge } from '@/components/kit/badge';
+import { Badge, type BadgeTone } from '@/components/kit/badge';
 import { Button } from '@/components/kit/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/kit/popover';
 import { cn } from '@/lib/utils';
@@ -24,6 +24,12 @@ import { clockSeconds, type LiveState } from './overviewModel';
  */
 
 const WORDS: Record<LiveState, string> = { live: 'Live', checking: 'Checking', off: 'Not live' };
+
+/** The kit's live badge: lit while live, dim while checking, hollow (`off`) when not live. */
+const TONE = { live: 'default', checking: 'dim', off: 'off' } as const satisfies Record<
+  LiveState,
+  BadgeTone
+>;
 
 type LiveMarkProps = Omit<ComponentProps<'button'>, 'children'> & {
   state: LiveState;
@@ -64,8 +70,7 @@ export function LiveMark({
         )}
         {...props}
       >
-        {/* The kit's live badge: lit while live, dim while checking, hollow (`off`) when not live. */}
-        <Badge variant="live" tone={state === 'live' ? 'default' : state === 'off' ? 'off' : 'dim'}>
+        <Badge variant="live" tone={TONE[state]}>
           {WORDS[state]}
         </Badge>
       </PopoverTrigger>

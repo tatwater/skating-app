@@ -227,6 +227,23 @@ describe('OverviewPage', () => {
     const head = screen.getByRole('region', { name: 'Needs a hand' });
     expect(head.querySelectorAll('[data-slot="badge"]')).toHaveLength(2);
   });
+
+  it('sets the word in the kit’s page type, its box the type’s own height', () => {
+    render(
+      <OverviewPage
+        value="home"
+        onValueChange={() => {}}
+        tabs={[{ value: 'home', label: 'Home', panel: null }]}
+      />,
+    );
+    const word = screen.getByRole('heading', { level: 1, name: 'Overview' });
+    expect(word).toHaveAttribute('data-slot', 'page-word');
+    // The tabs sit on the word's foot only while its line is its type: a merge that drops the
+    // leading (the kit's base one precedes its size) lets the word ride half a line higher.
+    expect(word.className.split(' ')).toEqual(
+      expect.arrayContaining(['text-disp-lg', 'leading-none']),
+    );
+  });
 });
 
 describe('LiveMark', () => {
@@ -240,6 +257,18 @@ describe('LiveMark', () => {
     expect(screen.getByText('Refresh the page to catch up')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Refresh' }));
     expect(onRefresh).toHaveBeenCalledOnce();
+  });
+
+  it('wears the kit’s live badge: lit while live, dim while checking, hollow when not live', () => {
+    for (const [state, tone] of [
+      ['live', 'default'],
+      ['checking', 'dim'],
+      ['off', 'off'],
+    ] as const) {
+      const { unmount } = render(<LiveMark state={state} lastCheckedAt={null} />);
+      expect(document.querySelector('[data-slot="badge"]')).toHaveAttribute('data-tone', tone);
+      unmount();
+    }
   });
 
   it('shows the spinner while checking, and no time before it has ever heard', async () => {
@@ -286,6 +315,18 @@ describe('the status bar’s integration points', () => {
     ).toEqual([]);
     render(<OverviewLamp state="live" />);
     expect(screen.getByText('Convex live')).toBeInTheDocument();
+  });
+
+  it('lights the lamp in the live mark’s three states: lit, still, hollow', () => {
+    for (const [state, lamp] of [
+      ['live', 'live'],
+      ['checking', 'idle'],
+      ['off', 'off'],
+    ] as const) {
+      const { unmount } = render(<OverviewLamp state={state} />);
+      expect(screen.getByRole('status')).toHaveAttribute('data-state', lamp);
+      unmount();
+    }
   });
 });
 

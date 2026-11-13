@@ -54,7 +54,13 @@ export function OverviewPage<V extends string>({
       {...props}
     >
       <div data-slot="overview-head" className="flex min-w-0 items-end gap-(--space-4_5)">
-        <DisplayWord data-slot="page-word" render={(props) => <h1 {...props} />}>
+        <DisplayWord
+          data-slot="page-word"
+          render={(wordProps) => <h1 {...wordProps} />}
+          // The word's box is its type's height, so the tabs sit on its foot. Restated here
+          // because the kit's base `leading-none` precedes its size and tailwind-merge drops it.
+          className="leading-none"
+        >
           {title}
         </DisplayWord>
         <TabsList aria-label={`${title} tabs`} className="mb-px">

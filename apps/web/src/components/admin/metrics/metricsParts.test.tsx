@@ -13,7 +13,7 @@ import {
   RECORDED_COVERAGE,
 } from './metricsFixtures';
 import { metricsNotRecorded } from './metricsModel';
-import { AgeValue, DayTick, SeasonNotOpen } from './metricsParts';
+import { AgeValue, ColumnHead, DayTick, SeasonNotOpen } from './metricsParts';
 import { MostReported, ShowingUpStats, VantageSplit } from './ShowingUp';
 
 describe('ChartLegend', () => {
@@ -37,6 +37,20 @@ describe('ChartLegend', () => {
       'Hours waiting',
       'Safety',
     ]);
+  });
+});
+
+describe('ColumnHead', () => {
+  it('is a second-level heading in the kit’s column type, over its rule', () => {
+    render(<ColumnHead id="keeping-up">Keeping up</ColumnHead>);
+    const head = screen.getByRole('heading', { level: 2, name: 'Keeping up' });
+    expect(head).toHaveAttribute('data-slot', 'metrics-column-head');
+    expect(head).toHaveAttribute('id', 'keeping-up');
+    // The rule sits a fixed gap under the caps only while the line is the type's own height: a
+    // merge that drops the leading (the kit's base one precedes its size) pushes it down.
+    expect(head.className.split(' ')).toEqual(
+      expect.arrayContaining(['text-logo', 'leading-none', 'border-line2']),
+    );
   });
 });
 

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 
 import { StatusLamp, StatusText } from '@/components/kit/status-bar';
 import type { ConnectionStatus } from '@/lib/useConnection';
@@ -76,14 +76,13 @@ const LAMP_WORDS: Record<LiveState, string> = {
   off: 'Convex not live',
 };
 
-/**
- * The connection lamp, in the live mark's states: lit while live, still while checking, hollow
- * (`off`) when not live — the same three the live mark draws.
- */
+/** Lit while live, still while checking, hollow (`off`) when not live — the live mark's three. */
+const LAMP_STATE = { live: 'live', checking: 'idle', off: 'off' } as const satisfies Record<
+  LiveState,
+  NonNullable<ComponentProps<typeof StatusLamp>['state']>
+>;
+
+/** The connection lamp, in the live mark's states. */
 export function OverviewLamp({ state }: { state: LiveState }) {
-  return (
-    <StatusLamp state={state === 'live' ? 'live' : state === 'off' ? 'off' : 'idle'}>
-      {LAMP_WORDS[state]}
-    </StatusLamp>
-  );
+  return <StatusLamp state={LAMP_STATE[state]}>{LAMP_WORDS[state]}</StatusLamp>;
 }

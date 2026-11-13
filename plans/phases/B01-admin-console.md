@@ -731,7 +731,8 @@ Asked by the integration's report. **The calls:**
 2. **B01-2 ships as one PR, its size accepted:** *"this size is fine for the goal we set out to
    accomplish in this PR."* The review boundary is the console shell and its first page.
 3. **The dim lamp stands for *not live*** until the kit's live `Badge` and `StatusLamp` have a
-   hollow state (the kit extensions owed, §12.8).
+   hollow state (the kit extensions owed, §12.8). *Resolved in B01-3:* both have it, and the live
+   mark and the lamp wear it (the kit extensions table, under the component kit checklist).
 
 ### The founder's call on the console's mark (2026-11-13)
 
@@ -899,6 +900,19 @@ B01-3, and what the Overview adopted:
 | `LifeStrip` | ✅ | An item's life as a strip map | — |
 | The top bar's search and tape | ✅ | Never truncate the search or run the tape over it | The shell |
 | Tokens: `btn-row`, `avatar-xl`; the gaps `section`, `unit` (7 px), `segment` (3 px); the fade opacity; a token catalog story read off the registry | ✅ | — | — |
+
+**Owed to the kit, found reviewing the adoption (2026-11-13):**
+
+- **`DisplayWord` loses its `leading-none`.** Its base sets the leading before the size variant
+  (`text-disp-lg` / `text-logo`), and tailwind-merge drops a leading set before a font size (the
+  rule `Button` already follows), so the word takes the inherited 1.5 line: the page word grows
+  10 px and a column head's rule drops 7.5 px. `OverviewPage` and `ColumnHead` restate
+  `leading-none` until the kit moves it after the size; its stories never measured the line.
+- **`Logo` ignores the system mode.** It reads only a stated `data-mode`, and with none it draws
+  the white mark — but `system` is expressed by *removing* `data-mode` (`lib/theme.ts`), and the
+  token sheet's default is light, so on a light OS the console rail's mark is white on white. It
+  wants the `:root:not([data-mode])` + `prefers-color-scheme` branch `RegionBackdrop` and
+  `SystemStage` use.
 
 **The kit review's first batch (§12.7), as integrated in B01-2 (2026-11-13):**
 
