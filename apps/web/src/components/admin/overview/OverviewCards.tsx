@@ -162,12 +162,23 @@ const JOB: Record<JobState, { dot: StatusDotTone; tone: ValueTone; word: string 
   never: { dot: 'hollow', tone: 'dim', word: 'not run' },
 };
 
-export function MachineryCard({ data, ...props }: CardProps<MachineryCardData>) {
+export function MachineryCard({
+  data,
+  ...props
+}: Omit<CardProps<MachineryCardData>, 'data'> & { data: MachineryCardData | null | undefined }) {
   // The status is a column of its own, right-aligned; the time a fixed column after it, wide
   // enough for a weekday and a time ("Sat 22:14").
   const columns = 'minmax(0, 1fr) auto 4.75rem';
   if (data === undefined)
     return <CountCard title="Machinery" columns={columns} loadingRows={8} {...props} />;
+  // No read serves the jobs yet: say so, with no link to a health page that doesn't exist.
+  if (data === null) {
+    return (
+      <CountCard title="Machinery" columns={columns} {...props}>
+        <CountFoot data-slot="machinery-absent">Not recorded yet</CountFoot>
+      </CountCard>
+    );
+  }
   return (
     <CountCard title="Machinery" columns={columns} {...props}>
       {data.jobs.map((job) => {

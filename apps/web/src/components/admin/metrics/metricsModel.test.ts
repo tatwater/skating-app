@@ -12,11 +12,14 @@ import {
   hourTicks,
   instantLabel,
   medianPhrase,
+  metricsNotRecorded,
   OLDEST_FLAG_BAD_HOURS,
   oldestFlagTone,
+  PULSE_KEYS,
   perThousand,
   pulseSub,
   pulseTicks,
+  seasonWindowDays,
   shortAge,
   stateInk,
   sumBuckets,
@@ -246,5 +249,59 @@ describe('words', () => {
     expect(stateInk('VT')).toBe('var(--fg)');
     expect(stateInk('MA')).toBe('var(--line)');
     expect(stateInk('QC')).toBe('var(--line)');
+  });
+});
+
+describe('the season window (from 1 October)', () => {
+  const DAY = 86_400_000;
+
+  it('runs from the latest 1 October through today', () => {
+    const days = seasonWindowDays(Date.UTC(2027, 0, 16, 16, 52));
+    expect(days[0]).toBe('2026-10-01');
+    expect(days.at(-1)).toBe('2027-01-16');
+    expect(days).toHaveLength(108);
+  });
+
+  it('is one day on 1 October, and opens a new season that day', () => {
+    expect(seasonWindowDays(Date.UTC(2026, 9, 1, 0, 0))).toEqual(['2026-10-01']);
+    expect(seasonWindowDays(Date.UTC(2026, 8, 30, 23, 59)).at(0)).toBe('2025-10-01');
+  });
+
+  it('always starts on a 1 October, ends today, and skips or repeats no day', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: Date.UTC(2020, 0, 1), max: Date.UTC(2040, 0, 1) }), (now) => {
+        const days = seasonWindowDays(now);
+        expect(days[0]?.slice(5)).toBe('10-01');
+        expect(days.at(-1)).toBe(new Date(now).toISOString().slice(0, 10));
+        expect(days.length).toBeLessThanOrEqual(366);
+        for (let i = 1; i < days.length; i++) {
+          expect(Date.parse(`${days[i]}T00:00:00Z`) - Date.parse(`${days[i - 1]}T00:00:00Z`)).toBe(
+            DAY,
+          );
+        }
+      }),
+    );
+  });
+});
+
+describe('metricsNotRecorded', () => {
+  it('reads nothing: every figure null, every series a null per day, no rows', () => {
+    const days = ['2026-10-01', '2026-10-02', '2026-10-03'];
+    const { keepingUp, showingUp, coverage } = metricsNotRecorded(days, { support: true });
+    expect(keepingUp.openFlags).toBeNull();
+    expect(keepingUp.resolvedWeek).toBeNull();
+    expect(keepingUp.resolveSeason).toBeNull();
+    expect(keepingUp.queueByDay).toEqual([null, null, null]);
+    expect(keepingUp.support).toEqual({
+      open: null,
+      oldestOpenedAt: null,
+      resolveSeason: null,
+      depthByDay: [null, null, null],
+    });
+    expect(Object.values(showingUp.week)).toEqual([null, null, null, null]);
+    for (const key of PULSE_KEYS) expect(showingUp.pulse[key]).toBeNull();
+    expect(showingUp.vantage).toBeNull();
+    expect(showingUp.mostReported).toBeNull();
+    expect(coverage).toEqual({ listedBodies: null, states: [] });
   });
 });

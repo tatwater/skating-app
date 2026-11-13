@@ -20,6 +20,7 @@ import {
   dayTitle,
   instantLabel,
   type MostReportedRow,
+  NOT_RECORDED,
   PULSE_KEYS,
   PULSE_LABELS,
   type PulseKey,
@@ -31,7 +32,7 @@ import {
   type VantageCounts,
   vantageSegments,
 } from './metricsModel';
-import { ColumnHead, SpanTag } from './metricsParts';
+import { ColumnHead, SpanTag, UnrecordedTile } from './metricsParts';
 
 /**
  * Overview › Metrics, the right column: whether people are showing up. The top stats are the last
@@ -39,7 +40,6 @@ import { ColumnHead, SpanTag } from './metricsParts';
  */
 
 const KICK = 'text-kick leading-none font-medium tracking-head text-fg3 uppercase';
-const NOT_RECORDED = 'Not recorded yet';
 
 // ── The stats ────────────────────────────────────────────────────────────────────────────────
 
@@ -47,22 +47,30 @@ export function ShowingUpStats({ week }: { week: ShowingUpData['week'] }) {
   const { reports, accounts, signedIn, contributors } = week;
   return (
     <StatGrid columns={4}>
-      <StatTile
-        key="reports"
-        label="Reports"
-        value={reports.count}
-        unit="this week"
-        sub={reports.people > 0 ? `By ${plural(reports.people, 'person', 'people')}` : undefined}
-      />
-      <StatTile
-        key="accounts"
-        label="User accounts"
-        value={accounts.added}
-        unit="new this week"
-        sub={`${accounts.total.toLocaleString('en-US')} total`}
-      />
+      {reports === null ? (
+        <UnrecordedTile key="reports" label="Reports" />
+      ) : (
+        <StatTile
+          key="reports"
+          label="Reports"
+          value={reports.count}
+          unit="this week"
+          sub={reports.people > 0 ? `By ${plural(reports.people, 'person', 'people')}` : undefined}
+        />
+      )}
+      {accounts === null ? (
+        <UnrecordedTile key="accounts" label="User accounts" />
+      ) : (
+        <StatTile
+          key="accounts"
+          label="User accounts"
+          value={accounts.added}
+          unit="new this week"
+          sub={`${accounts.total.toLocaleString('en-US')} total`}
+        />
+      )}
       {signedIn === null ? (
-        <StatTile key="signed" label="Signed in" value="—" tone="dim" sub={NOT_RECORDED} />
+        <UnrecordedTile key="signed" label="Signed in" />
       ) : (
         <StatTile
           key="signed"
@@ -74,15 +82,19 @@ export function ShowingUpStats({ week }: { week: ShowingUpData['week'] }) {
           }
         />
       )}
-      <StatTile
-        key="contributors"
-        label="Contributors"
-        value={contributors.people}
-        unit="this week"
-        sub={
-          contributors.firstTime > 0 ? `${contributors.firstTime} for the first time` : undefined
-        }
-      />
+      {contributors === null ? (
+        <UnrecordedTile key="contributors" label="Contributors" />
+      ) : (
+        <StatTile
+          key="contributors"
+          label="Contributors"
+          value={contributors.people}
+          unit="this week"
+          sub={
+            contributors.firstTime > 0 ? `${contributors.firstTime} for the first time` : undefined
+          }
+        />
+      )}
     </StatGrid>
   );
 }
@@ -333,7 +345,15 @@ const VANTAGE_INK: Record<keyof typeof VANTAGE_LABELS, string> = {
  * How the season's reports saw the ice: one bar split by vantage, then each vantage's count. Reports
  * from before vantage was asked state none; they are drawn hollow, and only when there are some.
  */
-export function VantageSplit({ counts }: { counts: VantageCounts }) {
+export function VantageSplit({ counts }: { counts: VantageCounts | null }) {
+  if (counts === null) {
+    return (
+      <div data-slot="vantage" data-unrecorded="" className="flex flex-col gap-(--space-2_5)">
+        <i aria-hidden="true" className="block h-[1.375rem] bg-line" />
+        <span className="text-assist leading-none text-fg3">{NOT_RECORDED}</span>
+      </div>
+    );
+  }
   const segments = vantageSegments(counts);
   const total = segments.reduce((sum, s) => sum + s.count, 0);
   return (
@@ -418,11 +438,18 @@ function mostColumns(timeZone: string | undefined) {
 }
 
 /** The season's most-reported bodies, most first (the read ranks them). */
-export function MostReported({ rows, timeZone }: { rows: MostReportedRow[]; timeZone?: string }) {
+export function MostReported({
+  rows,
+  timeZone,
+}: {
+  /** `null` before a read ranks the season's bodies. */
+  rows: MostReportedRow[] | null;
+  timeZone?: string;
+}) {
   const table = useTable({
     features: mostFeatures,
     columns: mostColumns(timeZone),
-    data: rows,
+    data: rows ?? [],
     getRowId: (row) => row.bodyId,
   });
   return (
@@ -431,7 +458,7 @@ export function MostReported({ rows, timeZone }: { rows: MostReportedRow[]; time
       inset
       stickyHeader={false}
       className="px-0"
-      empty="No reports this season"
+      empty={rows === null ? NOT_RECORDED : 'No reports this season'}
     />
   );
 }

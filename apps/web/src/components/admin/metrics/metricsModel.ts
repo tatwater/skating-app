@@ -1,4 +1,4 @@
-import { HOUR_BUCKETS, OBSERVED_FROM, type ObservedFrom } from '@skating/core';
+import { HOUR_BUCKETS, metricDayRange, OBSERVED_FROM, type ObservedFrom } from '@skating/core';
 
 /**
  * Overview › Metrics: the shapes the tab is drawn from, and the arithmetic between a read's rows and
@@ -232,25 +232,28 @@ export type FlagQueueDay = {
 
 /** The support half of Keeping up. `null` for a viewer who may not read support (PII, D37). */
 export type SupportMetrics = {
-  /** Tickets open now (`open` and `in_progress`). */
-  open: number;
+  /** Tickets open now (`open` and `in_progress`); `null` until a read counts them. */
+  open: number | null;
   /** When the oldest of them was filed; `null` with none open. */
   oldestOpenedAt: number | null;
-  /** `support_time_to_resolution_h` summed over the season (eight `HOUR_BUCKETS`). */
-  resolveSeason: number[];
+  /** `support_time_to_resolution_h` summed over the season (eight `HOUR_BUCKETS`); `null` unread. */
+  resolveSeason: number[] | null;
   /** `support_queue_depth`'s `meta` per season day; `null` before the record began. */
   depthByDay: Array<Partial<Record<SupportCategory, number>> | null>;
 };
 
 export type KeepingUpData = {
-  /** Flags open now: every one, and the safety lane's. */
-  openFlags: { total: number; safety: number };
+  /**
+   * Flags open now: every one, and the safety lane's. `null` until a read serves the queue as it
+   * stands — and then the oldest open flag isn't known either.
+   */
+  openFlags: { total: number; safety: number } | null;
   /** The oldest open flag — when it was filed and the body it is about — or `null` with none open. */
   oldestOpenFlag: { openedAt: number; where: string | null } | null;
-  /** `flag_time_to_resolution_h` summed over the last seven days (eight buckets). */
-  resolvedWeek: number[];
-  /** `flag_time_to_resolution_h` summed over the season. */
-  resolveSeason: number[];
+  /** `flag_time_to_resolution_h` summed over the last seven days (eight buckets); `null` unread. */
+  resolvedWeek: number[] | null;
+  /** `flag_time_to_resolution_h` summed over the season; `null` unread. */
+  resolveSeason: number[] | null;
   /** The flag queue per season day; `null` for a day no rollup measured. */
   queueByDay: Array<FlagQueueDay | null>;
   support: SupportMetrics | null;
@@ -348,14 +351,16 @@ export type MostReportedRow = {
 export type ShowingUpData = {
   /** The top stats: the last seven days. A `null` stat isn't recorded yet. */
   week: {
-    reports: { count: number; people: number };
-    accounts: { added: number; total: number };
+    reports: { count: number; people: number } | null;
+    accounts: { added: number; total: number } | null;
     signedIn: { people: number; twoDaysOrMore: number } | null;
-    contributors: { people: number; firstTime: number };
+    contributors: { people: number; firstTime: number } | null;
   };
   pulse: Record<PulseKey, PulseSeries | null>;
-  vantage: VantageCounts;
-  mostReported: MostReportedRow[];
+  /** `null` until a read rolls the season's vantage up. */
+  vantage: VantageCounts | null;
+  /** `null` until a read ranks the season's bodies. */
+  mostReported: MostReportedRow[] | null;
 };
 
 /** One state's row. A `null` count is a column no write path records yet. */
@@ -371,8 +376,11 @@ export type StateCoverageRow = {
 };
 
 export type CoverageData = {
-  /** Listed bodies across the region, each counted once (a border body is in two states' rows). */
-  listedBodies: number;
+  /**
+   * Listed bodies across the region, each counted once (a border body is in two states' rows);
+   * `null` until a read serves coverage, with no state rows.
+   */
+  listedBodies: number | null;
   states: StateCoverageRow[];
 };
 
@@ -395,3 +403,59 @@ export const STATE_INK: Record<string, string> = {
 };
 
 export const stateInk = (code: string): string => STATE_INK[code] ?? 'var(--line)';
+
+// ── Nothing read yet ─────────────────────────────────────────────────────────────────────────
+
+/** The words every unread figure says, beside a dash. */
+export const NOT_RECORDED = 'Not recorded yet';
+
+/**
+ * The tab before any of its reads exist: every figure `null`, every series a run of `null` days,
+ * no rows. Drawn, each section says *Not recorded yet* where its marks would be — never a zero,
+ * which is a measured zero. The page mounts this until the reads land, then swaps a part at a time.
+ *
+ * `support` is whether the viewer may read support at all (PII, D37): without it the support half
+ * is left out, as it is with real data.
+ */
+export function metricsNotRecorded(
+  days: readonly DayKey[],
+  { support }: { support: boolean },
+): { keepingUp: KeepingUpData; showingUp: ShowingUpData; coverage: CoverageData } {
+  const unread = <T>(): Array<T | null> => days.map(() => null);
+  return {
+    keepingUp: {
+      openFlags: null,
+      oldestOpenFlag: null,
+      resolvedWeek: null,
+      resolveSeason: null,
+      queueByDay: unread<FlagQueueDay>(),
+      support: support
+        ? { open: null, oldestOpenedAt: null, resolveSeason: null, depthByDay: unread() }
+        : null,
+    },
+    showingUp: {
+      week: { reports: null, accounts: null, signedIn: null, contributors: null },
+      pulse: Object.fromEntries(PULSE_KEYS.map((key) => [key, null])) as Record<
+        PulseKey,
+        PulseSeries | null
+      >,
+      vantage: null,
+      mostReported: null,
+    },
+    coverage: { listedBodies: null, states: [] },
+  };
+}
+
+/**
+ * The Metrics season window (the founder, 2026-11-13): from the latest 1 October on or before
+ * `now`'s metric day, through that day, as UTC metric day keys, oldest first. 1 October is when the
+ * watch opens; the data season's 1 July reset is not the charts' window.
+ */
+export function seasonWindowDays(now: number): DayKey[] {
+  const today = new Date(now);
+  const year = today.getUTCMonth() >= 9 ? today.getUTCFullYear() : today.getUTCFullYear() - 1;
+  const start = Date.UTC(year, 9, 1);
+  const todayStart = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  const count = Math.round((todayStart - start) / (24 * HOUR)) + 1;
+  return metricDayRange(now, count);
+}

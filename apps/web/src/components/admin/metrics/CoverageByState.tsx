@@ -11,7 +11,13 @@ import { Section } from '@/components/kit/section-slug';
 import { DataTable, type TableColumnMeta } from '@/components/kit/table';
 import { cn } from '@/lib/utils';
 
-import { type CoverageData, perThousand, type StateCoverageRow, stateInk } from './metricsModel';
+import {
+  type CoverageData,
+  NOT_RECORDED,
+  perThousand,
+  type StateCoverageRow,
+  stateInk,
+} from './metricsModel';
 import { SpanTag } from './metricsParts';
 
 /**
@@ -98,11 +104,18 @@ export function ListedBodiesBar({ data }: { data: CoverageData }) {
       <span className={KICK}>Listed bodies</span>
       <div
         role="img"
-        aria-label={data.states
-          .map((s) => `${STATE_NAMES[s.state] ?? s.state} ${s.bodies.toLocaleString('en-US')}`)
-          .join(', ')}
+        aria-label={
+          data.listedBodies === null
+            ? NOT_RECORDED
+            : data.states
+                .map(
+                  (s) => `${STATE_NAMES[s.state] ?? s.state} ${s.bodies.toLocaleString('en-US')}`,
+                )
+                .join(', ')
+        }
         className="flex h-(--space-4) gap-[0.125rem]"
       >
+        {data.listedBodies === null && <i className="block flex-1 bg-line" />}
         {data.states
           .filter((s) => s.bodies > 0)
           .map((s) => (
@@ -115,8 +128,13 @@ export function ListedBodiesBar({ data }: { data: CoverageData }) {
             />
           ))}
       </div>
-      <span className="text-right font-(family-name:--family-mono) text-row leading-none font-medium text-fg tabular-nums">
-        {data.listedBodies.toLocaleString('en-US')}
+      <span
+        className={cn(
+          'text-right font-(family-name:--family-mono) text-row leading-none font-medium tabular-nums',
+          data.listedBodies === null ? 'text-fg3' : 'text-fg',
+        )}
+      >
+        {data.listedBodies === null ? '—' : data.listedBodies.toLocaleString('en-US')}
       </span>
     </div>
   );
@@ -133,7 +151,7 @@ export function CoverageByState({ data }: { data: CoverageData }) {
           inset
           stickyHeader={false}
           className="px-0"
-          empty="No listed bodies"
+          empty={data.listedBodies === null ? NOT_RECORDED : 'No listed bodies'}
         />
       </div>
     </Section>

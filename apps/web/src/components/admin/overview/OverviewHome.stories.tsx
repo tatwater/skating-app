@@ -128,6 +128,34 @@ export const Loading: Story = {
 };
 
 /**
+ * As the app mounts it today: the reads that exist (the Inbox, Corpus and People counts, the
+ * feed), and every block no read serves yet — the season's four, cost, Machinery — saying so.
+ */
+export const NotReadYet: Story = {
+  name: 'Not read yet',
+  args: {
+    data: {
+      ...HOME,
+      watch: null,
+      winter: null,
+      imagery: null,
+      firstSkate: null,
+      cost: null,
+      machinery: null,
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    await faceLoaded(slot(canvasElement, 'page-word'));
+    await expect(page.getAllByText('Not recorded yet')).toHaveLength(8);
+    await expect(page.getByText('Spend by month lands here')).toBeVisible();
+    await expect(page.queryByRole('link', { name: /Ledger|Health/ })).toBeNull();
+    // The rest of the page stands as it does with every read.
+    await expect(page.getByText('19 open')).toBeVisible();
+  },
+};
+
+/**
  * The page fits the screen: the lower half runs to the page's foot and the feed scrolls inside it,
  * so the frame never scrolls.
  */

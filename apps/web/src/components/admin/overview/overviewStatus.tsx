@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 
 import { StatusLamp, StatusText } from '@/components/kit/status-bar';
+import type { ConnectionStatus } from '@/lib/useConnection';
 
 import type { CorpusCardData, InboxCardData, MachineryCardData } from './overviewData';
 import type { LiveState } from './overviewModel';
@@ -19,7 +20,8 @@ export function overviewStatus({
   corpus,
 }: {
   inbox?: InboxCardData | undefined;
-  machinery?: MachineryCardData | undefined;
+  /** `null` until a read serves the jobs: the bar then names no machinery trouble. */
+  machinery?: MachineryCardData | null | undefined;
   corpus?: CorpusCardData | undefined;
 }): ReactNode[] {
   const groups: ReactNode[] = [];
@@ -58,6 +60,14 @@ export function overviewStatus({
     groups.push(<StatusText key="pass">pre-ice pass not run</StatusText>);
   }
   return groups;
+}
+
+/**
+ * The connection, in the live mark's states: a Convex subscription is live exactly while its socket
+ * is, so *Checking* is the socket reconnecting and *Not live* is the connection given up for lost.
+ */
+export function liveStateOf(status: ConnectionStatus): LiveState {
+  return status === 'online' ? 'live' : status === 'connecting' ? 'checking' : 'off';
 }
 
 const LAMP_WORDS: Record<LiveState, string> = {

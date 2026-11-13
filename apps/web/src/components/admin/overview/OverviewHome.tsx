@@ -3,6 +3,7 @@ import {
   FirstSkatedTile,
   IceWatchTile,
   ImageryTile,
+  NOT_RECORDED,
   WinterTile,
 } from '@/components/admin/season/SeasonTiles';
 import type {
@@ -38,15 +39,20 @@ import { type LinkTo, OverviewLinkProvider } from './overviewLinks';
  * router stays the integrator's.
  */
 
+/**
+ * Each block's view model: `undefined` while its read loads (the block holds its place), `null`
+ * where no read serves it yet (the block says *Not recorded yet* — the season's four, cost and
+ * Machinery until their reads land).
+ */
 export interface OverviewHomeData {
-  watch?: IceWatch | undefined;
-  winter?: RegionWinter | undefined;
-  imagery?: ImageryState | undefined;
-  firstSkate?: FirstSkate | undefined;
-  cost?: CostData | undefined;
+  watch?: IceWatch | null | undefined;
+  winter?: RegionWinter | null | undefined;
+  imagery?: ImageryState | null | undefined;
+  firstSkate?: FirstSkate | null | undefined;
+  cost?: CostData | null | undefined;
   inbox?: InboxCardData | undefined;
   corpus?: CorpusCardData | undefined;
-  machinery?: MachineryCardData | undefined;
+  machinery?: MachineryCardData | null | undefined;
   people?: PeopleCardData | undefined;
   feed?: readonly FeedRow[] | undefined;
 }
@@ -94,12 +100,16 @@ export function OverviewHome({
           <WinterTile data={data.winter} />
           <ImageryTile data={data.imagery} />
           <FirstSkatedTile data={data.firstSkate} />
-          <StatTile
-            label="Cost · this season"
-            value={data.cost?.total ?? '$0.00'}
-            sub={data.cost?.totalSub ?? 'Loading'}
-            loading={data.cost === undefined}
-          />
+          {data.cost === null ? (
+            <StatTile label="Cost · this season" {...NOT_RECORDED} />
+          ) : (
+            <StatTile
+              label="Cost · this season"
+              value={data.cost?.total ?? '$0.00'}
+              sub={data.cost?.totalSub ?? 'Loading'}
+              loading={data.cost === undefined}
+            />
+          )}
         </section>
 
         <div data-slot="overview-cards" className={cn(COLUMNS, 'items-start')}>
@@ -113,7 +123,10 @@ export function OverviewHome({
           {/* The board's 26 px between the services and the months. */}
           <div className="col-span-2 flex min-h-0 min-w-0 flex-col gap-[1.625rem]">
             <CostSection data={data.cost} />
-            <MonthlySpend months={data.cost?.months} className="flex-1" />
+            <MonthlySpend
+              months={data.cost === null ? null : data.cost?.months}
+              className="flex-1"
+            />
           </div>
           <AuditFeed
             rows={data.feed}

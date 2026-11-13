@@ -28,13 +28,14 @@ import {
   hourTicks,
   type KeepingUpData,
   medianPhrase,
+  NOT_RECORDED,
   oldestFlagTone,
   RESOLVE_BUCKETS,
   SUPPORT_CATEGORIES,
   type SupportCategory,
   shortAge,
 } from './metricsModel';
-import { AgeValue, ChartNote, ColumnHead, DayTick } from './metricsParts';
+import { AgeValue, ChartNote, ColumnHead, DayTick, UnrecordedTile } from './metricsParts';
 
 /**
  * Overview › Metrics, the left column: how staff are keeping up. The top stats are the last seven
@@ -57,16 +58,22 @@ const noneRecorded = <T,>(series: ReadonlyArray<T | null>) => series.every((v) =
 export function KeepingUpStats({ data, now }: { data: KeepingUpData; now: number }) {
   const { openFlags, oldestOpenFlag, resolvedWeek, support } = data;
   const oldestAge = oldestOpenFlag === null ? null : now - oldestOpenFlag.openedAt;
-  const resolved = resolvedWeek.reduce((sum, n) => sum + n, 0);
   return (
     <StatGrid columns={support === null ? 3 : 4}>
-      <StatTile
-        key="open"
-        label="Open flags"
-        value={openFlags.total}
-        sub={openFlags.safety > 0 ? `${openFlags.safety} safety` : undefined}
-      />
-      {oldestAge === null ? (
+      {openFlags === null ? (
+        <UnrecordedTile key="open" label="Open flags" />
+      ) : (
+        <StatTile
+          key="open"
+          label="Open flags"
+          value={openFlags.total}
+          sub={openFlags.safety > 0 ? `${openFlags.safety} safety` : undefined}
+        />
+      )}
+      {/* With the queue unread, "nothing open" would be a guess. */}
+      {openFlags === null ? (
+        <UnrecordedTile key="oldest" label="Oldest open flag" />
+      ) : oldestAge === null ? (
         <StatTile key="oldest" label="Oldest open flag" value="—" tone="dim" sub="Nothing open" />
       ) : (
         <StatTile
@@ -77,14 +84,21 @@ export function KeepingUpStats({ data, now }: { data: KeepingUpData; now: number
           sub={oldestOpenFlag?.where ?? undefined}
         />
       )}
-      <StatTile
-        key="resolved"
-        label="Flags resolved"
-        value={resolved}
-        unit="this week"
-        sub={medianPhrase(resolvedWeek) ?? undefined}
-      />
-      {support !== null && (
+      {resolvedWeek === null ? (
+        <UnrecordedTile key="resolved" label="Flags resolved" />
+      ) : (
+        <StatTile
+          key="resolved"
+          label="Flags resolved"
+          value={resolvedWeek.reduce((sum, n) => sum + n, 0)}
+          unit="this week"
+          sub={medianPhrase(resolvedWeek) ?? undefined}
+        />
+      )}
+      {support !== null && support.open === null && (
+        <UnrecordedTile key="tickets" label="Open tickets" />
+      )}
+      {support !== null && support.open !== null && (
         <StatTile
           key="tickets"
           label="Open tickets"
@@ -237,18 +251,18 @@ export function ResolveHistogram({
   title: string;
   /** What each bar counts, for the hover plate ("Flags"). */
   noun: string;
-  /** The season's eight-bucket `HOUR_BUCKETS` histogram. */
-  buckets: readonly number[];
+  /** The season's eight-bucket `HOUR_BUCKETS` histogram; `null` before a read serves it. */
+  buckets: readonly number[] | null;
   /** The tallest bar of every histogram beside this one, so side-by-side bars compare. */
   scaleMax?: number;
 }) {
-  const counts = foldResolveBuckets(buckets);
+  const counts = foldResolveBuckets(buckets ?? []);
   const total = counts.reduce((sum, n) => sum + n, 0);
   const rows = RESOLVE_BUCKETS.map((bucket, i) => ({ bucket, n: counts[i] ?? 0 }));
   const config: ChartConfig = { n: { label: noun, tone: 'muted' } };
   const ticks = countTicks(Math.max(scaleMax ?? 0, ...counts));
   return (
-    <Section title={title} count={total}>
+    <Section title={title} {...(buckets !== null && { count: total })}>
       <div className="relative">
         <ChartContainer config={config} className="h-[10.625rem]">
           <BarChart
@@ -265,7 +279,11 @@ export function ResolveHistogram({
             <ChartTooltip />
           </BarChart>
         </ChartContainer>
-        {total === 0 && <ChartNote title="None resolved this season" />}
+        {buckets === null ? (
+          <ChartNote title="Time to resolve lands here" detail={NOT_RECORDED} />
+        ) : (
+          total === 0 && <ChartNote title="None resolved this season" />
+        )}
       </div>
     </Section>
   );
@@ -365,8 +383,8 @@ export function KeepingUp({
 }) {
   // The two histograms share one scale, so a flag bar and a ticket bar compare at a glance.
   const tallest = Math.max(
-    ...foldResolveBuckets(data.resolveSeason),
-    ...(data.support === null ? [] : foldResolveBuckets(data.support.resolveSeason)),
+    ...foldResolveBuckets(data.resolveSeason ?? []),
+    ...(data.support === null ? [] : foldResolveBuckets(data.support.resolveSeason ?? [])),
   );
   return (
     <div

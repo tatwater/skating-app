@@ -17,7 +17,13 @@ import {
   RECORDED_KEEPING_UP,
   RECORDED_SHOWING_UP,
 } from './metricsFixtures';
-import type { KeepingUpData, PulseKey, PulseSeries, ShowingUpData } from './metricsModel';
+import {
+  type KeepingUpData,
+  metricsNotRecorded,
+  type PulseKey,
+  type PulseSeries,
+  type ShowingUpData,
+} from './metricsModel';
 import { OverviewMetrics } from './OverviewMetrics';
 import { ShowingUp } from './ShowingUp';
 
@@ -222,6 +228,37 @@ export const Quiet: Story = {
     await expect(canvas.getByText('Nothing open')).toBeVisible();
     await expect(canvas.getAllByText('None resolved this season')).toHaveLength(2);
     await expect(canvas.getByText('No reports this season')).toBeVisible();
+  },
+};
+
+/**
+ * The tab as the app mounts it before any Metrics read exists: every figure a dash and *Not
+ * recorded yet*, every chart its empty frame and a note — no zero anywhere, since a zero is
+ * measured.
+ */
+export const NotReadYet: Story = {
+  name: 'Not read yet',
+  args: metricsNotRecorded(BOARD_DAYS, { support: true }),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    for (const label of ['Open flags', 'Oldest open flag', 'Flags resolved', 'Open tickets']) {
+      const tile = must(
+        canvas.getByText(label, { selector: '[data-slot="stat-label"]' }).parentElement,
+      );
+      await expect(tile).toHaveTextContent('—Not recorded yet');
+    }
+    await expect(canvas.getAllByText('Time to resolve lands here')).toHaveLength(2);
+    await expect(canvas.getByText('The flag queue lands here')).toBeVisible();
+    await expect(canvas.queryByText('Nothing open')).toBeNull();
+    await expect(canvas.queryByText('None resolved this season')).toBeNull();
+    await expect(canvas.queryByText('No reports this season')).toBeNull();
+    await expect(canvas.queryByText('No listed bodies')).toBeNull();
+    // The stats, vantage, most-reported and coverage each say it in words.
+    await expect(canvas.getAllByText('Not recorded yet').length).toBeGreaterThanOrEqual(11);
+    // No stat says a number.
+    for (const value of canvasElement.querySelectorAll('[data-slot="value"]')) {
+      await expect(value).toHaveTextContent('—');
+    }
   },
 };
 

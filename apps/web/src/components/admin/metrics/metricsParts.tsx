@@ -1,8 +1,9 @@
 import type { ComponentProps, ReactNode } from 'react';
 
+import { StatTile } from '@/components/kit/stat-tile';
 import { cn } from '@/lib/utils';
 
-import { type AgePart, type DayKey, dayLabel } from './metricsModel';
+import { type AgePart, type DayKey, dayLabel, NOT_RECORDED } from './metricsModel';
 
 /**
  * The small pieces every Metrics section shares: the two column heads, the "This season" tag at a
@@ -53,6 +54,11 @@ export function ChartNote({ title, detail }: { title: ReactNode; detail?: ReactN
       {detail != null && <span className="text-mono-sm leading-none text-fg3">{detail}</span>}
     </div>
   );
+}
+
+/** A stat no read serves yet: a dash in the dim ink, and why — never a zero. */
+export function UnrecordedTile({ label }: { label: string }) {
+  return <StatTile label={label} value="—" tone="dim" sub={NOT_RECORDED} />;
 }
 
 /** A unit in a value's gray slot, 7 px from its figure, as the kit's `Value` sets one. */

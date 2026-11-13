@@ -7,6 +7,7 @@ import { Section } from '@/components/kit/section-slug';
 import { StatTile } from '@/components/kit/stat-tile';
 import { cn } from '@/lib/utils';
 
+import { ChartNote } from '../metrics/metricsParts';
 import { RowLink } from './CountCard';
 import { type CostData, type CostMonth, dollars } from './overviewData';
 import { monthName } from './overviewModel';
@@ -20,10 +21,20 @@ import { monthName } from './overviewModel';
 // ── This season, by service ──────────────────────────────────────────────────────────────────
 
 type CostSectionProps = Omit<ComponentProps<'section'>, 'title' | 'children'> & {
-  data: CostData | undefined;
+  /** `undefined` while it loads; `null` until a read serves the ledger (no link to a ledger yet). */
+  data: CostData | null | undefined;
 };
 
 export function CostSection({ data, className, ...props }: CostSectionProps) {
+  if (data === null) {
+    return (
+      <Section title="Cost · this season" data-slot="cost-section" className={className} {...props}>
+        <p data-slot="cost-absent" className="m-0 text-assist leading-none text-fg3">
+          Not recorded yet
+        </p>
+      </Section>
+    );
+  }
   return (
     <Section
       title="Cost · this season"
@@ -108,7 +119,8 @@ function SpendLegend() {
 const monthTotal = (m: CostMonth) => m.hosting + m.ai + m.compute;
 
 type MonthlySpendProps = Omit<ComponentProps<'section'>, 'title' | 'children'> & {
-  months: readonly CostMonth[] | undefined;
+  /** `undefined` while it loads; `null` until a read serves the ledger. */
+  months: readonly CostMonth[] | null | undefined;
 };
 
 /**
@@ -127,7 +139,10 @@ export function MonthlySpend({ months, className, ...props }: MonthlySpendProps)
       className={cn('min-h-0', className)}
       {...props}
     >
-      <div className="flex min-h-[3.75rem] flex-1 flex-col">
+      <div className="relative flex min-h-[3.75rem] flex-1 flex-col">
+        {months === null && (
+          <ChartNote title="Spend by month lands here" detail="Not recorded yet" />
+        )}
         <ChartContainer
           config={SPEND}
           // The chart's bands are the label columns plus half a gap each side, so the bars line up

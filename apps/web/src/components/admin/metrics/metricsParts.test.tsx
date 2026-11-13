@@ -6,10 +6,12 @@ import { CoverageByState, ListedBodiesBar } from './CoverageByState';
 import { KeepingUpStats } from './KeepingUp';
 import {
   BOARD_COVERAGE,
+  BOARD_DAYS,
   BOARD_KEEPING_UP,
   METRICS_NOW,
   RECORDED_COVERAGE,
 } from './metricsFixtures';
+import { metricsNotRecorded } from './metricsModel';
 import { AgeValue, DayTick } from './metricsParts';
 import { MostReported, ShowingUpStats, VantageSplit } from './ShowingUp';
 
@@ -199,5 +201,45 @@ describe('Coverage by state', () => {
     const row = screen.getByText('QC').closest('tr') as HTMLElement;
     // Six count columns and the rate: every one a dash.
     expect(within(row).getAllByText('—')).toHaveLength(6);
+  });
+});
+
+describe('the tab before its reads exist', () => {
+  const unread = metricsNotRecorded(BOARD_DAYS, { support: true });
+
+  it('says every stat is not recorded, and guesses no "nothing open"', () => {
+    render(<KeepingUpStats data={unread.keepingUp} now={METRICS_NOW} />);
+    expect(screen.getAllByText('Not recorded yet')).toHaveLength(4);
+    expect(screen.queryByText('Nothing open')).toBeNull();
+    for (const value of document.querySelectorAll('[data-slot="value"]')) {
+      expect(value).toHaveTextContent('—');
+    }
+  });
+
+  it('draws the week unread on the right too', () => {
+    render(<ShowingUpStats week={unread.showingUp.week} />);
+    expect(screen.getAllByText('Not recorded yet')).toHaveLength(4);
+  });
+
+  // The two tables' unread list-end tabs measure their face (`document.fonts`), which jsdom lacks:
+  // the Not read yet story checks them in a browser.
+  it('draws vantage and the listed bodies as unread, never as zero', () => {
+    render(
+      <>
+        <VantageSplit counts={unread.showingUp.vantage} />
+        <ListedBodiesBar data={unread.coverage} />
+      </>,
+    );
+    expect(screen.getByText('Not recorded yet')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Not recorded yet' })).toBeInTheDocument();
+    expect(screen.getByText('—')).toBeInTheDocument();
+    expect(screen.queryByText('0')).toBeNull();
+  });
+
+  it('leaves the support half out for a viewer who may not read it', () => {
+    const modView = metricsNotRecorded(BOARD_DAYS, { support: false });
+    expect(modView.keepingUp.support).toBeNull();
+    render(<KeepingUpStats data={modView.keepingUp} now={METRICS_NOW} />);
+    expect(screen.queryByText('Open tickets')).toBeNull();
   });
 });
