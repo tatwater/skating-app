@@ -715,6 +715,24 @@ Made while B01-2 integrated Home, Metrics and the shell; the founder may overtur
    are built and carry what it draws (the queue tiles, app health, the base map's provenance, the
    recent actions). The Overview took `/admin`; nothing the old page showed is out of reach.
 
+### The founder's calls on the B01-2 integration (2026-11-13)
+
+Asked by the integration's report. **The calls:**
+
+1. **From 1 July to 1 October the Overview shows the new season, empty.** *"We should show empty
+   new season state from Jul 1 -> Oct 1. The user should have to explicitly choose a previous
+   season in order to see its data."* The season's identity flips on 1 July with the data season
+   (D63); its chart window still starts 1 October (the call above); between the two the window is
+   empty and every season-ranged block says when the season's record begins — the watch *Waiting,
+   counting nights from 1 Oct*, every other block *Record begins 1 Oct* — and nothing about the
+   ice (D3). This reverses the integration's first rule, which kept the previous 1 October through
+   the summer. A past season is reached only by choosing it; no chooser is built until the reads
+   behind it exist (M10 in the B01-2 server register, §12.8).
+2. **B01-2 ships as one PR, its size accepted:** *"this size is fine for the goal we set out to
+   accomplish in this PR."* The review boundary is the console shell and its first page.
+3. **The dim lamp stands for *not live*** until the kit's live `Badge` and `StatusLamp` have a
+   hollow state (the kit extensions owed, §12.8).
+
 ## §8 — Workstreams (firmed up 2026-10-12; order is the founder's call 13)
 
 Wireframes come first (§6, a static HTML mockup per mode, reviewed before React). Then, one PR
@@ -1349,7 +1367,10 @@ the phase branch at `519cc1c8`.
   built on the bare number (fixed at the pick); `admin.tsx` binding `AdminRoot`, which picks a
   shell and owns no outlet, failed the route-nesting guard, which now follows a shell switch and
   requires an outlet on *every* branch; Metrics runs taller than a 900 px screen and the shell's
-  main area doesn't scroll, so the tab scrolls under the page head. The shell's lamp now speaks
+  main area doesn't scroll, so the tab scrolls under the page head. **From 1 July to 30
+  September** (the founder's call, §7) the page shows the new season, empty: Home's four season
+  tiles and Metrics' season-ranged sections say when the record begins, and the now and
+  this-week stats are unchanged. The shell's lamp now speaks
   the live mark's words (*Convex live / checking / not live*); *not live* is the dim lamp until the
   kit has a hollow state (below).
 - **Seam review of `lib/theme.ts`:** the init script's old-page list is compared to
@@ -1380,6 +1401,7 @@ the two undo fixes the executor's final review of #108 found (U1, U2). Nothing h
 | M6 | Most-reported — via the §10 tier-2 per-body rollup: reports, photos, distinct people, last report | Metrics › *Most-reported* (rows open the Body console, §7 ruling 3) | ⚪ |
 | M7 | Coverage by state — listed bodies once each, and per state: bodies, reports, comments, photos, kudos, contributors | Metrics › *Coverage by state* | ⚪ |
 | M8 | A moderator-level metrics capability — the tab reads today's admin-only rollups; a moderator sees Metrics without support (PII, D37) | Metrics for moderators | ⚪ |
+| M10 | A season chooser in the Overview's own content (not the rail or any sidebar navigation), and every season-ranged read taking the season as an argument (M2, M4–M7, S3; S2's season total). The founder's call (§7): a past season is shown only when chosen. The client is ready: `OverviewView` takes `season`, `metricsWindow(season, now)` draws a past season whole, and Metrics and the season tiles draw whatever window and facts they're handed | The Overview, both tabs | ⚪ |
 | M9 | A by-time index on `reportRatings` for kudos (the founder, 2026-11-13: kudos are positive reactions; *helpful* counts; a thumbs-down never subtracts) | M4's kudos strip, M7's kudos column | ⚪ |
 | H1 | A moderator-readable season-tape summary — the watch's opening and the day count, so the tape can wear its *Day N* badge and its marks | The shell's season tape | ⚪ |
 | H2 | A colleague-presence read — who else is in the console now | The top bar's faces | ⚪ |
