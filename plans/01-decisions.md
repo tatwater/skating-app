@@ -7106,6 +7106,17 @@ admins should be able to view."
 role models. A grant only a holder can pass on keeps it to "a select few" without a code change
 each time the few change.
 
+**Amended 2026-11-13 (founder call, #108 review) — the secrecy is row-hiding, not an absolute.**
+"Sees nothing of who holds it" above means the server never hands a non-holder a row that names a
+holder: not the People row, and not the grant and revoke rows in any history read (`getAdmin`'s
+recent actions, `listActions` by target, by actor and the unfiltered feed — all through
+`withoutLedgerGrantsFor`). Two one-way leaks remain and are accepted: a non-holder may deduce that
+a grant or revoke happened (History marks another row on that person *overtaken* by a row they
+cannot see), and the last-holder refusal ("They are the last person who can edit the ledger…") can
+name the holder to whoever triggers it. In the founder's words, "We all know each other anyway."
+A review measures this decision against row-hiding — a holder-naming row on a non-holder's wire is
+a defect; an inference from a gap or a refusal is not.
+
 **Related:** D37, D62, D217, D219, D226.
 
 *(D228–D231 are minted in Phase B02's tree and arrive when it merges.)*
