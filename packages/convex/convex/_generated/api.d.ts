@@ -94,6 +94,7 @@ import type * as lib_photoOrphans from "../lib/photoOrphans.js";
 import type * as lib_postSync from "../lib/postSync.js";
 import type * as lib_putInSuppression from "../lib/putInSuppression.js";
 import type * as lib_r2 from "../lib/r2.js";
+import type * as lib_readBudget from "../lib/readBudget.js";
 import type * as lib_recurrence from "../lib/recurrence.js";
 import type * as lib_reportSubAreas from "../lib/reportSubAreas.js";
 import type * as lib_reportVisibility from "../lib/reportVisibility.js";
@@ -242,6 +243,7 @@ declare const fullApi: ApiFromModules<{
   "lib/postSync": typeof lib_postSync;
   "lib/putInSuppression": typeof lib_putInSuppression;
   "lib/r2": typeof lib_r2;
+  "lib/readBudget": typeof lib_readBudget;
   "lib/recurrence": typeof lib_recurrence;
   "lib/reportSubAreas": typeof lib_reportSubAreas;
   "lib/reportVisibility": typeof lib_reportVisibility;

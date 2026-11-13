@@ -190,6 +190,12 @@ const sweep = async (t: T) => {
 const advance = (ms: number) => vi.setSystemTime(Date.now() + ms);
 const get = (t: T, id: string) =>
   t.run((ctx) => ctx.db.get(id as never)) as Promise<Record<string, unknown> | null>;
+/** How many items of a kind the sweep erased, across every pass it took. */
+async function erasedCount(t: T, kind: string) {
+  return (await t.run((ctx) => ctx.db.query('moderationActions').collect())).filter(
+    (r) => r.action === 'erase' && r.targetType === kind,
+  ).length;
+}
 async function historyOn(t: T, targetId: string) {
   return (await t.run((ctx) => ctx.db.query('moderationActions').collect())).filter(
     (r) => r.targetId === targetId,
@@ -447,8 +453,8 @@ describe('a report', () => {
 
     await author.as.mutation(api.reports.remove, { reportId: gone });
     advance(31 * DAY);
-    const result = await sweep(t);
-    expect(result.erased.report).toBe(1);
+    await sweep(t);
+    expect(await erasedCount(t, 'report')).toBe(1);
     // The landmark proposal it filed stays the author's request, without its pointer.
     expect(await get(t, proposal)).toMatchObject({ name: 'Long Point', status: 'open' });
     expect((await get(t, proposal))?.reportId).toBeUndefined();
@@ -509,8 +515,8 @@ describe('a report', () => {
     await author.as.mutation(api.reports.remove, { reportId: a });
     await author.as.mutation(api.reports.remove, { reportId: b });
     advance(31 * DAY);
-    const result = await sweep(t);
-    expect(result.erased.report).toBe(2);
+    await sweep(t);
+    expect(await erasedCount(t, 'report')).toBe(2);
     expect(await get(t, a)).toBeNull();
     expect(await get(t, b)).toBeNull();
     // Only the erased Reports held this one: it goes with them.
@@ -544,6 +550,8 @@ describe('a report', () => {
       targetId: postId,
       reason: 'on appeal',
     });
+    // The Post's members follow its hold in a job of their own.
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
     expect((await get(t, reportId))?.eraseAt).toBe(Date.now());
     await sweep(t);
     expect(await get(t, reportId)).toBeNull();

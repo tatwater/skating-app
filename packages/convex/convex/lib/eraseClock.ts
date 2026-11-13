@@ -19,8 +19,10 @@
  */
 
 import { nextEraseAt, WITHDRAWN_ERASE_MS } from '@skating/core';
+import { internal } from '../_generated/api';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
+import { ROW_MAX, ReadBudget } from './readBudget';
 
 /** Everything a person can take back, by its audit target type, with its table. */
 export const ERASABLE = {
@@ -103,85 +105,86 @@ export function withdrawnAtOf(type: Erasable, doc: ErasableDoc): number | undefi
  */
 const EMPTIED = -WITHDRAWN_ERASE_MS;
 
-/** Whether an undecided flag — open, or picked up — stands on this target. Two `first()` reads. */
-export async function hasOpenFlag(
+/**
+ * What deciding an item's hold reads, at worst: a standing-verdict check and two flag checks per
+ * target it consults (a Report consults its Post's too). Only `first()` existence checks on an exact
+ * index prefix — complete answers, each one row.
+ */
+const DIRECT_HOLD = ROW_MAX.verdict + 2 * ROW_MAX.contentFlag;
+export const HOLD_COST: Record<Erasable, number> = {
+  report: 2 * DIRECT_HOLD,
+  post: DIRECT_HOLD,
+  comment: DIRECT_HOLD,
+  hazard: DIRECT_HOLD,
+  accessAlert: DIRECT_HOLD,
+  contentFlag: 0,
+  waterBodyRequest: 0,
+};
+
+/** A standing verdict or an undecided flag (open, or picked up) on this target. Complete. */
+async function directHold(
   ctx: QueryCtx,
-  targetType: Doc<'contentFlags'>['targetType'],
+  budget: ReadBudget,
+  targetType: Doc<'contentVerdicts'>['targetType'],
   targetId: string,
 ): Promise<boolean> {
-  for (const status of ['open', 'reviewing'] as const) {
-    const flag = await ctx.db
-      .query('contentFlags')
-      .withIndex('by_target_status_reason', (q) =>
-        q.eq('targetType', targetType).eq('targetId', targetId).eq('status', status),
+  const verdict = await budget.one('verdict', () =>
+    ctx.db
+      .query('contentVerdicts')
+      .withIndex('by_target_standing', (q) =>
+        q.eq('targetType', targetType).eq('targetId', targetId).eq('standing', true),
       )
-      .first();
+      .first(),
+  );
+  if (verdict) return true;
+  for (const status of ['open', 'reviewing'] as const) {
+    const flag = await budget.one('contentFlag', () =>
+      ctx.db
+        .query('contentFlags')
+        .withIndex('by_target_status_reason', (q) =>
+          q.eq('targetType', targetType).eq('targetId', targetId).eq('status', status),
+        )
+        .first(),
+    );
     if (flag) return true;
   }
   return false;
 }
 
-/** Whether a moderator's verdict stands on this item — the evidence a deletion can't take away. */
-export async function hasStandingVerdictOn(
+/**
+ * What holds a withdrawn item back from erasure: a standing verdict, or an undecided flag. Reads at
+ * most {@link HOLD_COST} for its kind; `postHeld` passes in a Report's Post's hold when the caller
+ * already has it.
+ */
+export async function isHeld(
   ctx: QueryCtx,
-  targetType: Doc<'contentVerdicts'>['targetType'],
-  targetId: string,
+  budget: ReadBudget,
+  type: Erasable,
+  doc: ErasableDoc,
+  known: { postHeld?: boolean } = {},
 ): Promise<boolean> {
-  const verdict = await ctx.db
-    .query('contentVerdicts')
-    .withIndex('by_target_standing', (q) =>
-      q.eq('targetType', targetType).eq('targetId', targetId).eq('standing', true),
-    )
-    .first();
-  return verdict !== null;
-}
-
-/** Whether a verdict or an undecided flag stands on the Post a Report belongs to. */
-async function reportsPostIsHeld(ctx: QueryCtx, reportId: string): Promise<boolean> {
-  const id = ctx.db.normalizeId('reports', reportId);
-  const report = id ? await ctx.db.get(id) : null;
-  if (report?.postId === undefined) return false;
-  return (
-    (await hasStandingVerdictOn(ctx, 'post', report.postId)) ||
-    (await hasOpenFlag(ctx, 'post', report.postId))
-  );
-}
-
-/** What holds a withdrawn item back from erasure: a standing verdict, or an undecided flag. */
-export async function isHeld(ctx: QueryCtx, type: Erasable, targetId: string): Promise<boolean> {
   switch (type) {
     case 'post': {
-      // A Post goes after its members: one still stored is held by its own clock, and the Post's
+      // A Post goes after its members: one still listed is held by its own clock, and the Post's
       // words wait for it (the member's erasure refreshes the Post's clock).
-      const id = ctx.db.normalizeId('posts', targetId);
-      const post = id ? await ctx.db.get(id) : null;
-      if (post && post.reportIds.length > 0) return true;
-      return (
-        (await hasStandingVerdictOn(ctx, 'post', targetId)) ||
-        (await hasOpenFlag(ctx, 'post', targetId))
-      );
+      if ((doc as Doc<'posts'>).reportIds.length > 0) return true;
+      return directHold(ctx, budget, 'post', doc._id);
     }
     case 'report': {
       // A verdict or a complaint on its Post is about what the Post shows — this Report's words and
       // photos among them — so it holds the member as evidence too (the cascade is the Post's
       // verdict, not one of the member's own).
-      if (await reportsPostIsHeld(ctx, targetId)) return true;
-      return (
-        (await hasStandingVerdictOn(ctx, 'report', targetId)) ||
-        (await hasOpenFlag(ctx, 'report', targetId))
-      );
+      const postId = (doc as Doc<'reports'>).postId;
+      if (postId !== undefined) {
+        const postHeld = known.postHeld ?? (await directHold(ctx, budget, 'post', postId));
+        if (postHeld) return true;
+      }
+      return directHold(ctx, budget, 'report', doc._id);
     }
     case 'comment':
     case 'hazard':
-      return (
-        (await hasStandingVerdictOn(ctx, type, targetId)) ||
-        (await hasOpenFlag(ctx, type, targetId))
-      );
     case 'accessAlert':
-      return (
-        (await hasStandingVerdictOn(ctx, 'accessAlert', targetId)) ||
-        (await hasOpenFlag(ctx, 'accessAlert', targetId))
-      );
+      return directHold(ctx, budget, type, doc._id);
     case 'contentFlag':
     case 'waterBodyRequest':
       // Nothing files a verdict or a flag on a flag or a request.
@@ -189,47 +192,92 @@ export async function isHeld(ctx: QueryCtx, type: Erasable, targetId: string): P
   }
 }
 
+/** A Post's own hold as its members read it — a verdict or an undecided flag on the Post. */
+export function postHoldOf(ctx: QueryCtx, budget: ReadBudget, postId: Id<'posts'>) {
+  return directHold(ctx, budget, 'post', postId);
+}
+
+/** The clock `doc` should carry now, given what holds it. Writes nothing. */
+export async function clockOf(
+  ctx: QueryCtx,
+  budget: ReadBudget,
+  type: Erasable,
+  doc: ErasableDoc,
+  now: number,
+  known: { postHeld?: boolean } = {},
+): Promise<number | undefined> {
+  const withdrawnAt = withdrawnAtOf(type, doc);
+  const held = withdrawnAt !== undefined && (await isHeld(ctx, budget, type, doc, known));
+  return nextEraseAt({ withdrawnAt, held, current: doc.eraseAt, now });
+}
+
 /**
- * Bring one item's clock to what its withdrawal and its holds say now, and return it. Idempotent:
- * a running clock is never pushed later, and a write happens only when the value changes.
+ * Bring one item's clock (as `doc` holds it, read in this transaction) to what its withdrawal and its
+ * holds say now, and return it. Idempotent: a running clock is never pushed later, and a write happens
+ * only when the value changes. `alongside` rides in the same patch — a caller re-deriving the row's
+ * other fields writes once.
  */
+export async function refreshClockOf(
+  ctx: MutationCtx,
+  budget: ReadBudget,
+  type: Erasable,
+  doc: ErasableDoc,
+  now: number,
+  known: { postHeld?: boolean } = {},
+  alongside?: Record<string, unknown>,
+): Promise<number | undefined> {
+  const next = await clockOf(ctx, budget, type, doc, now, known);
+  if (next !== doc.eraseAt || alongside !== undefined) {
+    budget.touch(type);
+    await ctx.db.patch(doc._id as Id<(typeof ERASABLE)[Erasable]>, {
+      ...alongside,
+      eraseAt: next,
+    });
+  }
+  return next;
+}
+
+/** The same, by id: reads the row first. */
 export async function refreshEraseClock(
   ctx: MutationCtx,
   type: Erasable,
   targetId: string,
   now: number = Date.now(),
+  budget: ReadBudget = new ReadBudget(),
 ): Promise<number | undefined> {
   const id = ctx.db.normalizeId(ERASABLE[type], targetId);
-  const doc = id ? ((await ctx.db.get(id)) as ErasableDoc | null) : null;
+  if (!id) return undefined;
+  const doc = (await budget.one(type, () => ctx.db.get(id))) as ErasableDoc | null;
   if (!doc) return undefined;
-  const withdrawnAt = withdrawnAtOf(type, doc);
-  const held = withdrawnAt !== undefined && (await isHeld(ctx, type, targetId));
-  const next = nextEraseAt({ withdrawnAt, held, current: doc.eraseAt, now });
-  if (next !== doc.eraseAt) {
-    await ctx.db.patch(doc._id as Id<(typeof ERASABLE)[Erasable]>, { eraseAt: next });
-  }
-  return next;
+  return refreshClockOf(ctx, budget, type, doc, now);
 }
 
 /**
  * A hold on something moved — a flag filed, closed or retracted on it, a verdict recorded or ended.
  * If that something is an item a person can withdraw, its clock follows. Targets nothing can
  * withdraw (a lake, a photo, a person) are left alone.
+ *
+ * A Post's hold is its members' too (`isHeld`), and up to ten members' checks don't fit beside the
+ * caller's own reads, so they follow in `erasure.refreshMemberClocks`, a few a transaction. Until it
+ * runs nothing is unsafe: the sweep re-reads every hold, the Post's included, before it erases.
  */
 export async function holdMoved(
   ctx: MutationCtx,
   targetType: string,
   targetId: string,
   now: number = Date.now(),
+  budget: ReadBudget = new ReadBudget(),
 ): Promise<void> {
   if (!isErasable(targetType)) return;
-  await refreshEraseClock(ctx, targetType, targetId, now);
-  // A Post's hold is its members' too (`isHeld`), so they follow it.
-  if (targetType === 'post') {
-    const id = ctx.db.normalizeId('posts', targetId);
-    const post = id ? await ctx.db.get(id) : null;
-    for (const reportId of post?.reportIds ?? []) {
-      await refreshEraseClock(ctx, 'report', reportId, now);
-    }
+  if (targetType !== 'post') {
+    await refreshEraseClock(ctx, targetType, targetId, now, budget);
+    return;
+  }
+  const id = ctx.db.normalizeId('posts', targetId);
+  const post = id ? await budget.one('post', () => ctx.db.get(id)) : null;
+  if (!post) return;
+  await refreshClockOf(ctx, budget, 'post', post, now);
+  if (post.reportIds.length > 0) {
+    await ctx.scheduler.runAfter(0, internal.erasure.refreshMemberClocks, { postId: post._id });
   }
 }
