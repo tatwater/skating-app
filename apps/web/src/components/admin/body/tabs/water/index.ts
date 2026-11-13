@@ -1,8 +1,7 @@
 /**
- * Body › Water, by the tab contract: the props-only view, the wiring (`{ bodyId }`), and the pure
- * map drawing. The tab never touches the map.
+ * Body › Water, by the tab contract: the registration the frame takes (`WATER_TAB`: the wiring and
+ * the map), the props-only view stories render, and the pure scene. The tab never touches the map.
  */
-export { WaterTab } from './WaterTab';
+export { useWaterData, WATER_TAB, WaterTab } from './WaterTab';
 export { WaterView, type WaterViewProps } from './WaterView';
-export type { WaterMapBox, WaterMapDrawing, WaterMapPoint } from './waterMap';
-export { type WaterData, waterMapDrawing } from './waterModel';
+export { type WaterData, waterMapScene } from './waterModel';

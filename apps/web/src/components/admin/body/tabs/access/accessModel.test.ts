@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { BOARD_TODAY, MASCOMA_ACCESS } from './accessFixtures';
 import {
   accessFrom,
-  accessMapDrawing,
+  accessMapScene,
   dayCount,
   daysSince,
   rulingOf,
@@ -134,8 +134,8 @@ describe('accessFrom', () => {
   });
 });
 
-describe('accessMapDrawing', () => {
-  it('draws put-ins, lots and walks, the lit one marked', () => {
+describe('accessMapScene', () => {
+  it('adds each routed walk, and keeps a lit put-in or lot the frame draws', () => {
     const data = {
       ...MASCOMA_ACCESS,
       putIns: MASCOMA_ACCESS.putIns.map((p, i) =>
@@ -143,23 +143,29 @@ describe('accessMapDrawing', () => {
           ? {
               ...p,
               approach: [
-                { lat: 1, lng: 1 },
-                { lat: 2, lng: 2 },
+                { lat: 1, lng: 2 },
+                { lat: 3, lng: 4 },
               ],
             }
           : p,
       ),
     };
-    const d = accessMapDrawing(data, 'put-in:pi-dam');
-    expect(d.points.filter((p) => p.mark === 'put-in')).toHaveLength(6);
-    expect(d.points.filter((p) => p.mark === 'lot')).toHaveLength(5);
-    expect(d.lines).toEqual([
-      { id: 'approach:pi-dam', style: 'approach', path: data.putIns[3]?.approach, lit: true },
+    const scene = accessMapScene(data, 'putIn:pi-dam');
+    expect(scene.items).toEqual([
+      {
+        kind: 'line',
+        id: 'approach:pi-dam',
+        layer: 'putIns',
+        style: 'approach',
+        path: [
+          [2, 1],
+          [4, 3],
+        ],
+      },
     ]);
-    expect(d.lit).toBe('put-in:pi-dam');
-    expect(accessMapDrawing(data, 'ruling').lit).toBeNull();
-    expect(accessMapDrawing(data, 'lot:lot-smith').points.find((p) => p.lit)?.label).toMatch(
-      /^Smith Pond/,
-    );
+    expect(scene.lit).toBe('putIn:pi-dam');
+    expect(accessMapScene(data, 'lot:lot-smith').lit).toBe('lot:lot-smith');
+    expect(accessMapScene(data, 'publicAccess:ruling').lit).toBeNull();
+    expect(accessMapScene(MASCOMA_ACCESS, null)).toEqual({ items: [], lit: null });
   });
 });

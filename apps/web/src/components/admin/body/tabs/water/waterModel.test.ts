@@ -10,7 +10,7 @@ import {
   samplingNote,
   sourceWords,
   waterFrom,
-  waterMapDrawing,
+  waterMapScene,
 } from './waterModel';
 
 describe('depthOf', () => {
@@ -114,35 +114,38 @@ describe('sampling', () => {
   });
 });
 
-describe('waterMapDrawing', () => {
-  it('draws the interior point with its plate, and the box’s two spans', () => {
-    const d = waterMapDrawing(MASCOMA_WATER, 'sample:interior');
-    expect(d.points).toEqual([
-      {
-        id: 'sample:interior',
-        mark: 'sample-point',
-        at: MASCOMA_WATER.sampling.interior,
-        label: 'Interior point',
-        caption: 'Weather samples here',
-        lit: true,
-      },
+describe('waterMapScene', () => {
+  it('adds the interior point and the box’s two spans, with Samples on', () => {
+    const scene = waterMapScene(MASCOMA_WATER, 'sample:interior');
+    expect(scene.items.map((i) => i.id)).toEqual([
+      'sample:interior',
+      'dimension:ew',
+      'measure:ew',
+      'dimension:ns',
+      'measure:ns',
     ]);
-    expect(d.boxes).toEqual([{ id: 'bbox', box: MASCOMA_BBOX, ew: '4.9 KM', ns: '4.9 KM' }]);
-    expect(d.lit).toBe('sample:interior');
+    expect(scene.items[0]).toMatchObject({
+      kind: 'point',
+      mark: 'sample',
+      layer: 'samples',
+      at: [-72.136005675, 43.617368284786984],
+      name: 'Interior point',
+    });
+    expect(scene.items[2]).toMatchObject({ text: '4.9 km', style: 'measure' });
+    expect(scene.items[4]).toMatchObject({ text: '4.9 km', angle: -90 });
+    expect(scene.lit).toBe('sample:interior');
+    expect(scene.layers).toEqual({ samples: true });
   });
 
-  it('draws a hand-set grid in place of the interior point; nothing without either', () => {
-    const d = waterMapDrawing(CHAMPLAIN_WATER, 'depth:osm_tag');
-    expect(d.points.map((p) => p.label)).toEqual([
-      'Sample point 1',
-      'Sample point 2',
-      'Sample point 3',
-    ]);
-    expect(d.lit).toBeNull();
-    const none = waterMapDrawing(
+  it('leaves a hand-set grid to the frame, keeping its lit point; nothing without either', () => {
+    const scene = waterMapScene(CHAMPLAIN_WATER, 'sample:2');
+    expect(scene.items.some((i) => i.kind === 'point')).toBe(false);
+    expect(scene.lit).toBe('sample:2');
+    expect(waterMapScene(CHAMPLAIN_WATER, 'depth:osm_tag').lit).toBeNull();
+    const none = waterMapScene(
       { ...MASCOMA_WATER, box: null, sampling: { ...MASCOMA_WATER.sampling, interior: null } },
       null,
     );
-    expect(none).toEqual({ points: [], boxes: [], lit: null });
+    expect(none).toEqual({ items: [], lit: null, layers: { samples: true } });
   });
 });

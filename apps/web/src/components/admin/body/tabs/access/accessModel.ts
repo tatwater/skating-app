@@ -9,7 +9,9 @@ import {
   type PublicAccessVerdict,
 } from '@skating/core';
 
-import type { AccessMapDrawing, AccessMapLine, AccessMapPoint, LatLng } from './accessMap';
+import type { TabMapItem, TabMapScene } from '../names/mapDescriptors';
+
+type LatLng = { lat: number; lng: number };
 
 /**
  * The Access tab's data: the public-access ruling with what stood before it, the put-ins by who
@@ -212,47 +214,38 @@ export function accessFrom(
   };
 }
 
-/** The lit-item ids Access answers to. */
+/**
+ * The lit-item ids Access answers to, in `?lit=`'s grammar and the frame's words: a put-in and a
+ * lot as the frame's map addresses them, and the ruling.
+ */
 export const litId = {
-  putIn: (id: string) => `put-in:${id}`,
+  putIn: (id: string) => `putIn:${id}`,
   lot: (id: string) => `lot:${id}`,
-  ruling: 'ruling',
+  ruling: 'publicAccess:ruling',
 };
 
-/** What Access asks the map to draw. */
-export function accessMapDrawing(data: AccessData, lit: string | null): AccessMapDrawing {
-  const points: AccessMapPoint[] = [
-    ...data.putIns.map(
-      (p): AccessMapPoint => ({
-        id: litId.putIn(p.id),
-        mark: 'put-in',
-        source: p.source,
-        at: p.at,
-        label: p.name,
-        lit: lit === litId.putIn(p.id),
-      }),
-    ),
-    ...data.lots.map(
-      (l): AccessMapPoint => ({
-        id: litId.lot(l.id),
-        mark: 'lot',
-        at: l.at,
-        label: l.name,
-        lit: lit === litId.lot(l.id),
-      }),
-    ),
-  ];
-  const lines: AccessMapLine[] = data.putIns.flatMap((p) =>
+/**
+ * What Access asks the map to draw beyond the frame's own (which draws the put-ins and lots as
+ * `putIn:<id>` and `lot:<id>`): each routed walk from a lot to its put-in. The lit item is kept when
+ * it is on the map — a put-in or lot the frame draws.
+ */
+export function accessMapScene(data: AccessData, lit: string | null): TabMapScene {
+  const items: TabMapItem[] = data.putIns.flatMap((p): TabMapItem[] =>
     p.approach
       ? [
           {
+            kind: 'line',
             id: `approach:${p.id}`,
-            style: 'approach' as const,
-            path: p.approach,
-            lit: lit === litId.putIn(p.id),
+            layer: 'putIns',
+            style: 'approach',
+            path: p.approach.map((c) => [c.lng, c.lat] as const),
           },
         ]
       : [],
   );
-  return { points, lines, lit: points.some((p) => p.lit) ? lit : null };
+  const onMap =
+    lit !== null &&
+    (data.putIns.some((p) => litId.putIn(p.id) === lit) ||
+      data.lots.some((l) => litId.lot(l.id) === lit));
+  return { items, lit: onMap ? lit : null };
 }

@@ -1,13 +1,35 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { useMutation, useQuery } from 'convex/react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 
 import { useRole } from '@/lib/useRole';
 
+import type { BodyTabProps, BodyTabRegistration } from '../names/tabContract';
 import { useTabAction } from '../names/useTabAction';
 import { PlacesView } from './PlacesView';
-import { landmarkRows, type PlacesData, placeAsks } from './placesModel';
+import { landmarkRows, type PlacesData, placeAsks, placesMapScene } from './placesModel';
+
+/**
+ * The Places tab's data — the landmarks with their provenance, the bays they fall in, the emailed
+ * names and the skaters' proposals — memoized on the reads, so the map's `useData` keeps its
+ * identity until one changes. The bays aren't waited on: without them a landmark has no bay yet.
+ */
+export function usePlacesData(bodyId: string): PlacesData | undefined {
+  const waterBodyId = bodyId as Id<'waterBodies'>;
+  const landmarks = useQuery(api.landmarks.listForEditor, { waterBodyId });
+  const bays = useQuery(api.subAreas.listForBody, { waterBodyId });
+  const names = useQuery(api.corpusPlaceNames.openForBody, { waterBodyId });
+  const proposals = useQuery(api.corpusRequests.openLandmarkRequestsForBody, { waterBodyId });
+  return useMemo<PlacesData | undefined>(() => {
+    if (landmarks === undefined || names === undefined || proposals === undefined) return undefined;
+    const bayNames = bays ? new Map(bays.map((b) => [b._id as string, b.name])) : null;
+    return {
+      asks: placeAsks(names, proposals.proposals),
+      landmarks: landmarkRows(landmarks, bayNames),
+    };
+  }, [landmarks, bays, names, proposals]);
+}
 
 /**
  * Body › Places, wired. Reads: the landmarks with their provenance (`landmarks.listForEditor`),
@@ -19,24 +41,11 @@ import { landmarkRows, type PlacesData, placeAsks } from './placesModel';
  * `corpus.placeNames`); answering a proposal with the landmark already there or declining it
  * (`corpusRequests.approve` / `decline`, `inbox.request`). The map tools are task modes, not built.
  */
-export function PlacesTab({
-  bodyId,
-  lit = null,
-  onLitChange,
-  hovered = null,
-  onHoverChange,
-}: {
-  bodyId: string;
-  lit?: string | null;
-  onLitChange?: (id: string | null) => void;
-  hovered?: string | null;
-  onHoverChange?: (id: string | null) => void;
-}) {
-  const waterBodyId = bodyId as Id<'waterBodies'>;
-  const landmarks = useQuery(api.landmarks.listForEditor, { waterBodyId });
-  const bays = useQuery(api.subAreas.listForBody, { waterBodyId });
-  const names = useQuery(api.corpusPlaceNames.openForBody, { waterBodyId });
-  const proposals = useQuery(api.corpusRequests.openLandmarkRequestsForBody, { waterBodyId });
+export function PlacesTab({ bodyId, lit = null, onLitChange }: BodyTabProps) {
+  const data = usePlacesData(bodyId);
+  // A row's hover washes its row; the frame's contract has no hovered item yet to carry it to the
+  // marker (a contract request), so it stays the view's.
+  const [hovered, setHovered] = useState<string | null>(null);
   const update = useMutation(api.landmarks.update);
   const fileAsSpelling = useMutation(api.corpusPlaceNames.fileAsSpelling);
   const dismiss = useMutation(api.corpusPlaceNames.dismiss);
@@ -44,15 +53,6 @@ export function PlacesTab({
   const decline = useMutation(api.corpusRequests.decline);
   const { act, actInDialog } = useTabAction();
   const { can } = useRole();
-
-  const data = useMemo<PlacesData | undefined>(() => {
-    if (landmarks === undefined || names === undefined || proposals === undefined) return undefined;
-    const bayNames = bays ? new Map(bays.map((b) => [b._id as string, b.name])) : null;
-    return {
-      asks: placeAsks(names, proposals.proposals),
-      landmarks: landmarkRows(landmarks, bayNames),
-    };
-  }, [landmarks, bays, names, proposals]);
 
   const nameOf = (id: string) => data?.landmarks.find((l) => l.id === id)?.name ?? 'the landmark';
   const askName = (id: string) => data?.asks.find((a) => a.id === id)?.name ?? '';
@@ -63,7 +63,7 @@ export function PlacesTab({
       lit={lit}
       onLitChange={onLitChange}
       hovered={hovered}
-      onHoverChange={onHoverChange}
+      onHoverChange={setHovered}
       canPlace={can('body.places')}
       onEditLandmark={
         can('body.places')
@@ -143,3 +143,9 @@ export function PlacesTab({
     />
   );
 }
+
+/** The Places tab's registration in the frame's registry. */
+export const PLACES_TAB: BodyTabRegistration<PlacesData> = {
+  Wiring: PlacesTab,
+  map: { useData: usePlacesData, describe: placesMapScene },
+};

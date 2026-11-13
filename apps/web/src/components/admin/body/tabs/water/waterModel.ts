@@ -7,7 +7,9 @@ import {
   spansMultipleSampleCells,
 } from '@skating/core';
 
-import type { LatLng, WaterMapDrawing, WaterMapPoint } from './waterMap';
+import type { TabMapItem, TabMapScene } from '../names/mapDescriptors';
+
+type LatLng = { lat: number; lng: number };
 
 /**
  * The Water tab's data: depth as a ladder of sources (each offering a mean, a max or both, the one
@@ -196,39 +198,73 @@ export const litId = {
   depth: (source: DepthSource) => `depth:${source}`,
 };
 
-/** What Water asks the map to draw. */
-export function waterMapDrawing(data: WaterData, lit: string | null): WaterMapDrawing {
-  const { sampling } = data;
-  const points: WaterMapPoint[] =
-    sampling.points !== null
-      ? sampling.points.map((at, i) => ({
-          id: litId.point(i),
-          mark: 'sample-point',
-          at,
-          label: `Sample point ${i + 1}`,
-          caption: 'Weather samples here',
-          lit: lit === litId.point(i),
-        }))
-      : sampling.interior !== null
-        ? [
-            {
-              id: litId.interior,
-              mark: 'sample-point',
-              at: sampling.interior,
-              label: 'Interior point',
-              caption: 'Weather samples here',
-              lit: lit === litId.interior,
-            },
-          ]
-        : [];
-  const box = data.box;
-  const spans = box ? spansKm(box) : null;
-  return {
-    points,
-    boxes:
-      box && spans
-        ? [{ id: 'bbox', box, ew: `${spans.ew.toFixed(1)} KM`, ns: `${spans.ns.toFixed(1)} KM` }]
-        : [],
-    lit: points.some((p) => p.lit) ? lit : null,
-  };
+/**
+ * What Water asks the map to draw beyond the frame's own (which draws hand-set sample points as
+ * `sample:<i>`): the interior point a body samples at by default, and the body's box as a survey's
+ * two dimension lines with their lengths — what decides whether one point is enough. Water opens
+ * with the Samples layer on, as its board does.
+ */
+export function waterMapScene(data: WaterData, lit: string | null): TabMapScene {
+  const items: TabMapItem[] = [];
+  const { sampling, box } = data;
+  if (sampling.points === null && sampling.interior !== null) {
+    items.push({
+      kind: 'point',
+      id: litId.interior,
+      layer: 'samples',
+      at: [sampling.interior.lng, sampling.interior.lat],
+      mark: 'sample',
+      name: 'Interior point',
+      hoverKicker: 'Weather samples here',
+    });
+  }
+  if (box !== null) {
+    const spans = spansKm(box);
+    const midLng = (box.minLng + box.maxLng) / 2;
+    const midLat = (box.minLat + box.maxLat) / 2;
+    items.push(
+      {
+        kind: 'line',
+        id: 'dimension:ew',
+        layer: 'samples',
+        style: 'dimension',
+        path: [
+          [box.minLng, box.minLat],
+          [box.maxLng, box.minLat],
+        ],
+      },
+      {
+        kind: 'label',
+        id: 'measure:ew',
+        layer: 'samples',
+        at: [midLng, box.minLat],
+        text: `${spans.ew.toFixed(1)} km`,
+        style: 'measure',
+      },
+      {
+        kind: 'line',
+        id: 'dimension:ns',
+        layer: 'samples',
+        style: 'dimension',
+        path: [
+          [box.minLng, box.minLat],
+          [box.minLng, box.maxLat],
+        ],
+      },
+      {
+        kind: 'label',
+        id: 'measure:ns',
+        layer: 'samples',
+        at: [box.minLng, midLat],
+        text: `${spans.ns.toFixed(1)} km`,
+        style: 'measure',
+        angle: -90,
+      },
+    );
+  }
+  const onMap =
+    lit !== null &&
+    (items.some((i) => i.id === lit) ||
+      (sampling.points ?? []).some((_, i) => litId.point(i) === lit));
+  return { items, lit: onMap ? lit : null, layers: { samples: true } };
 }

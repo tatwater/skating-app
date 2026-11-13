@@ -6,7 +6,9 @@ import {
   type WaterBodyClass,
 } from '@skating/core';
 
-import type { LatLng, NamesMapDrawing } from './namesMap';
+import type { LngLat, MapItem, TabMapScene } from './mapDescriptors';
+
+type LatLng = { lat: number; lng: number };
 
 /**
  * The Names tab's data, from the body's record: the name ladder (every catalog's spelling, the
@@ -178,25 +180,99 @@ export function countryOf(code: string | null): string | null {
   return code in STATE_NAMES ? 'United States' : null;
 }
 
-/** What Names asks the map to draw: the town lines and, when there are any, their key. */
-export function namesMapDrawing(data: NamesData, lit: string | null): NamesMapDrawing {
-  const lines = (data.place.townLines ?? []).map((l) => ({
-    id: `town-line:${l.id}`,
-    style: 'town-line' as const,
-    path: l.path,
-    faces: l.faces,
-    lit: lit === `town-line:${l.id}`,
-  }));
+/**
+ * The lit-item ids Names answers to, in `?lit=`'s grammar (a lower-camel kind, a colon, an id of
+ * word characters): a rung or an alias by its place in its list, a class by its key, a town line by
+ * its id.
+ */
+export const litId = {
+  name: (index: number) => `name:${index}`,
+  alias: (index: number) => `alias:${index}`,
+  cls: (cls: WaterBodyClass) => `class:${cls}`,
+  townLine: (id: string) => `townLine:${id}`,
+};
+
+/** How far each town's name sits off its line, either side: about a block, in meters. */
+export const TOWN_NAME_OFFSET_M = 140;
+
+const M_PER_DEG = 111_320;
+
+/**
+ * Where a line's two towns are named: facing each other across the middle of its longest run, each
+ * {@link TOWN_NAME_OFFSET_M} off the line, the text along the run (degrees clockwise from east,
+ * turned to read left to right). The first town is on the run's left (its north or west side).
+ */
+export function townNames(
+  path: readonly LatLng[],
+): { left: LngLat; right: LngLat; angle: number } | null {
+  let best: [LatLng, LatLng] | null = null;
+  let bestLen = 0;
+  for (let i = 1; i < path.length; i++) {
+    const a = path[i - 1] as LatLng;
+    const b = path[i] as LatLng;
+    const cos = Math.cos((((a.lat + b.lat) / 2) * Math.PI) / 180);
+    const len = Math.hypot((b.lng - a.lng) * cos, b.lat - a.lat);
+    if (len > bestLen) {
+      bestLen = len;
+      best = [a, b];
+    }
+  }
+  if (best === null || bestLen === 0) return null;
+  const [a, b] = best;
+  // Measured at the run's middle, so the run reads the same whichever end it was drawn from.
+  const cos = Math.cos((((a.lat + b.lat) / 2) * Math.PI) / 180);
+  // East and north in meters along the run, then its angle on screen (y down: clockwise from east).
+  let dx = (b.lng - a.lng) * cos;
+  let dy = b.lat - a.lat;
+  if (dx < 0) {
+    dx = -dx;
+    dy = -dy;
+  }
+  const angle = (-Math.atan2(dy, dx) * 180) / Math.PI;
+  const norm = Math.hypot(dx, dy);
+  // The left-hand normal of a run read west to east points north.
+  const nx = -dy / norm;
+  const ny = dx / norm;
+  const off = TOWN_NAME_OFFSET_M / M_PER_DEG;
+  const mid = { lng: (a.lng + b.lng) / 2, lat: (a.lat + b.lat) / 2 };
   return {
-    lines,
-    key: lines.length > 0 ? [{ mark: 'town-line', label: 'Town line', tag: 'TIGER' }] : [],
-    lit: lines.some((l) => l.lit) ? lit : null,
+    left: [mid.lng + (nx * off) / cos, mid.lat + ny * off],
+    right: [mid.lng - (nx * off) / cos, mid.lat - ny * off],
+    angle,
   };
 }
 
-/** The lit-item ids this tab answers to: `name:<value>`, `alias:<value>`, `class:<cls>`. */
-export const litId = {
-  name: (value: string) => `name:${value}`,
-  alias: (value: string) => `alias:${value}`,
-  cls: (cls: WaterBodyClass) => `class:${cls}`,
-};
+/**
+ * What Names asks the map to draw beyond the frame's own: each town line that crosses the body,
+ * with its two towns named either side. A lit row that isn't on the map lights nothing there.
+ */
+export function namesMapScene(data: NamesData, lit: string | null): TabMapScene {
+  const items: MapItem[] = [];
+  for (const line of data.place.townLines ?? []) {
+    const id = litId.townLine(line.id);
+    items.push({
+      kind: 'line',
+      id,
+      layer: 'outline',
+      style: 'townLine',
+      path: line.path.map((p) => [p.lng, p.lat] as const),
+    });
+    const names = townNames(line.path);
+    if (names === null) continue;
+    for (const [side, at, text] of [
+      ['l', names.left, line.faces[0]],
+      ['r', names.right, line.faces[1]],
+    ] as const) {
+      items.push({
+        kind: 'label',
+        id: `townName:${line.id}.${side}`,
+        layer: 'outline',
+        at,
+        text,
+        style: 'town',
+        angle: names.angle,
+      });
+    }
+  }
+  return { items, lit: lit !== null && items.some((i) => i.id === lit) ? lit : null };
+}

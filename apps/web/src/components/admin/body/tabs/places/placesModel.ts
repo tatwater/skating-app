@@ -1,6 +1,8 @@
 import { LANDMARK_KIND_LABELS, type LandmarkKind } from '@skating/core';
 
-import type { LatLng, PlacesMapDrawing, PlacesMapPoint } from './placesMap';
+import type { TabMapItem, TabMapScene } from '../names/mapDescriptors';
+
+type LatLng = { lat: number; lng: number };
 
 /**
  * The Places tab's data: what is asked of the body's places (the community's email names and the
@@ -198,10 +200,16 @@ export function acres(sqm: number): string {
   return (sqm / 4046.8564224).toFixed(1);
 }
 
-/** The lit-item ids Places answers to. */
+/**
+ * The lit-item ids Places answers to, in `?lit=`'s grammar and the frame's words: a landmark as
+ * the frame's map addresses it, and an ask as the left column's *Asked of this body* links it.
+ */
 export const litId = {
   landmark: (id: string) => `landmark:${id}`,
-  ask: (id: string) => `ask:${id}`,
+  placeName: (id: string) => `placeName:${id}`,
+  landmarkAsk: (requestId: string) => `landmarkAsk:${requestId}`,
+  ask: (ask: PlaceAsk) =>
+    ask.kind === 'place-name' ? `placeName:${ask.id}` : `landmarkAsk:${ask.id}`,
 };
 
 /** The landmark a lit id selects, when it is one of the live ones. */
@@ -211,47 +219,29 @@ export function selectedLandmark(data: PlacesData | undefined, lit: string | nul
   return data.landmarks.find((l) => l.id === id) ?? null;
 }
 
-/** What Places asks the map to draw. */
-export function placesMapDrawing(
-  data: PlacesData,
-  lit: string | null,
-  hovered: string | null = null,
-): PlacesMapDrawing {
-  const points: PlacesMapPoint[] = [
-    ...data.landmarks.map(
-      (l): PlacesMapPoint => ({
-        id: litId.landmark(l.id),
-        mark: 'landmark',
-        kind: l.kind,
-        at: l.point,
-        label: l.name,
-        slug: [kindWord(l.kind).toUpperCase(), ...l.catalogs].join(' · '),
-        lit: lit === litId.landmark(l.id),
-        hovered: hovered === litId.landmark(l.id),
-      }),
-    ),
-    ...data.asks.flatMap((a): PlacesMapPoint[] =>
-      a.kind === 'proposal'
-        ? [
-            {
-              id: litId.ask(a.id),
-              mark: 'proposal',
-              at: a.point,
-              label: a.name,
-              lit: lit === litId.ask(a.id),
-              hovered: hovered === litId.ask(a.id),
-            },
-          ]
-        : [],
-    ),
-  ];
-  const onMap = (id: string | null) => (id !== null && points.some((p) => p.id === id) ? id : null);
-  return {
-    points,
-    key: points.some((p) => p.mark === 'proposal')
-      ? [{ mark: 'proposal', label: 'Proposed by a skater' }]
+/**
+ * What Places asks the map to draw beyond the frame's own (which draws every live landmark as
+ * `landmark:<id>`): each skater's proposal as proposed, a dashed `?` at its point. The lit item is
+ * kept when it is on the map — a landmark the frame draws, or a proposal drawn here.
+ */
+export function placesMapScene(data: PlacesData, lit: string | null): TabMapScene {
+  const items: TabMapItem[] = data.asks.flatMap((a): TabMapItem[] =>
+    a.kind === 'proposal'
+      ? [
+          {
+            kind: 'point',
+            id: litId.landmarkAsk(a.id),
+            layer: 'marks',
+            at: [a.point.lng, a.point.lat],
+            mark: 'proposal',
+            name: a.name,
+            hoverKicker: 'Proposed by a skater',
+          },
+        ]
       : [],
-    lit: onMap(lit),
-    hovered: onMap(hovered),
-  };
+  );
+  const onMap =
+    lit !== null &&
+    (items.some((i) => i.id === lit) || data.landmarks.some((l) => litId.landmark(l.id) === lit));
+  return { items, lit: onMap ? lit : null };
 }

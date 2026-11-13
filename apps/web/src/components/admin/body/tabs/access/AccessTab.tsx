@@ -6,9 +6,16 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { useRole } from '@/lib/useRole';
 
+import type { BodyTabProps, BodyTabRegistration } from '../names/tabContract';
 import { useTabAction } from '../names/useTabAction';
 import { AccessView } from './AccessView';
-import { accessFrom, type RulingAction, rulingOf } from './accessModel';
+import {
+  type AccessData,
+  accessFrom,
+  accessMapScene,
+  type RulingAction,
+  rulingOf,
+} from './accessModel';
 
 /**
  * Body › Access, wired. Reads: the body's record (the ruling, the posted rule), its access in one
@@ -19,7 +26,12 @@ import { accessFrom, type RulingAction, rulingOf } from './accessModel';
  * reason), and a mapped launch made official or hidden (`putIns.setOfficial` / `hide`,
  * `body.access`). Placing put-ins and lots, linking a lot and the posted-rules editor are task modes.
  */
-export function AccessTab({ bodyId, lit = null }: { bodyId: string; lit?: string | null }) {
+/**
+ * The Access tab's data — the record's ruling and posted rule, the access read, the landmarks for
+ * where a launch is, and the ruling's audit rows — memoized on the reads, so the map's `useData`
+ * keeps its identity until one changes.
+ */
+export function useAccessData(bodyId: string): AccessData | undefined {
   const waterBodyId = bodyId as Id<'waterBodies'>;
   const { can } = useRole();
   const result = useQuery(api.waterBodies.get, { waterBodyId });
@@ -31,14 +43,8 @@ export function AccessTab({ bodyId, lit = null }: { bodyId: string; lit?: string
       ? { targetType: 'waterbody', targetId: bodyId, action: 'set_public_access', limit: 20 }
       : 'skip',
   );
-  const setPublicAccess = useMutation(api.waterBodies.setPublicAccess);
-  const setOfficial = useMutation(api.putIns.setOfficial);
-  const hide = useMutation(api.putIns.hide);
-  const { act, actInDialog } = useTabAction();
-  const now = useDayClock();
-
   const body = result?.available ? result.body : undefined;
-  const data = useMemo(() => {
+  return useMemo(() => {
     if (body === undefined || access === undefined) return undefined;
     const latest = rulings === undefined ? undefined : ((rulings[0] as RulingAction) ?? null);
     return accessFrom(
@@ -48,6 +54,17 @@ export function AccessTab({ bodyId, lit = null }: { bodyId: string; lit?: string
       landmarks ?? null,
     );
   }, [body, access, rulings, landmarks]);
+}
+
+export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
+  const waterBodyId = bodyId as Id<'waterBodies'>;
+  const { can } = useRole();
+  const data = useAccessData(bodyId);
+  const setPublicAccess = useMutation(api.waterBodies.setPublicAccess);
+  const setOfficial = useMutation(api.putIns.setOfficial);
+  const hide = useMutation(api.putIns.hide);
+  const { act, actInDialog } = useTabAction();
+  const now = useDayClock();
 
   const target = { targetType: 'waterbody' as const, targetId: bodyId };
   const ruled = (v: PublicAccessVerdict | null) =>
@@ -106,3 +123,9 @@ function useDayClock(): number {
   }, []);
   return now;
 }
+
+/** The Access tab's registration in the frame's registry. */
+export const ACCESS_TAB: BodyTabRegistration<AccessData> = {
+  Wiring: AccessTab,
+  map: { useData: useAccessData, describe: accessMapScene },
+};

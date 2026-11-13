@@ -21,7 +21,7 @@ import { usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
 import { sayUnavailable, UnavailableButton } from '../access/kit-candidates/unavailable-button';
 import { ReasonAsk } from '../access/ReasonAsk';
-import { LoadingSection, TabBody } from '../names/tabParts';
+import { LIT_ROW, LoadingSection, litAttr, TabBody } from '../names/tabParts';
 import { LandmarkMark } from './kit-candidates/landmark-mark';
 import { PersonLockup } from './kit-candidates/person-lockup';
 import { LandmarkCard, type LandmarkEdit } from './LandmarkCard';
@@ -40,8 +40,9 @@ import {
 /**
  * Body › Places (board 5.4.3), the default view: what is asked of the body's places, then its
  * landmarks — the list reads as the map's key, and a row selects its landmark, which opens on the
- * inset card (board 5.4.3 | Landmark). The lit item is the frame's (controlled), as is the hovered
- * row ↔ marker.
+ * inset card (board 5.4.3 | Landmark). The lit item is the frame's (controlled): a landmark, or an
+ * ask the left column linked. A row's hover is the view's own until the frame's contract carries a
+ * hovered item to its marker (a contract request).
  *
  * Every control is drawn only when its handler is passed (the wiring passes one only for a viewer
  * with the capability). The map tools — placing a name, adding a proposal, dropping, moving or
@@ -120,6 +121,7 @@ export function PlacesView({
                 <AskRow
                   key={ask.id}
                   ask={ask}
+                  lit={lit}
                   landmarks={data.landmarks}
                   canPlace={canPlace}
                   onFileAsSpelling={onFileAsSpelling}
@@ -244,6 +246,7 @@ function LandmarkListRow({
 
 function AskRow({
   ask,
+  lit,
   landmarks,
   canPlace,
   onFileAsSpelling,
@@ -252,13 +255,18 @@ function AskRow({
   onDecline,
 }: {
   ask: PlaceAsk;
+  lit: string | null;
   landmarks: readonly LandmarkRow[];
   canPlace: boolean;
 } & Pick<PlacesViewProps, 'onFileAsSpelling' | 'onDismissName' | 'onSamePlace' | 'onDecline'>) {
   return (
     <li
       data-slot="ask"
-      className="flex flex-col gap-(--space-1) border-0 border-b border-dotted border-line py-(--space-2_5) first:pt-0 last:border-b-0 last:pb-0"
+      {...litAttr(lit, litId.ask(ask))}
+      className={cn(
+        'flex flex-col gap-(--space-1) border-0 border-b border-dotted border-line py-(--space-2_5) first:pt-0 last:border-b-0 last:pb-0',
+        LIT_ROW,
+      )}
     >
       <span className="flex items-baseline justify-between gap-(--space-3) whitespace-nowrap">
         <span className="truncate text-body leading-list text-fg">“{ask.name}”</span>
@@ -295,7 +303,7 @@ function AskActions({
   onDismissName,
   onSamePlace,
   onDecline,
-}: Parameters<typeof AskRow>[0]) {
+}: Omit<Parameters<typeof AskRow>[0], 'lit'>) {
   const [why, setWhy] = useState<CorpusNameDismissReason>('not_a_place');
   const buttons =
     ask.kind === 'place-name'

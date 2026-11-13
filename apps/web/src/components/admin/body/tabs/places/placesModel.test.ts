@@ -8,11 +8,12 @@ import {
   formatPoint,
   kindWord,
   landmarkRows,
+  litId,
   type PlaceNameAsk,
   type ProposalAsk,
   parseExternalId,
   placeAsks,
-  placesMapDrawing,
+  placesMapScene,
   selectedLandmark,
 } from './placesModel';
 
@@ -154,21 +155,36 @@ describe('selection and the map', () => {
     expect(selectedLandmark(undefined, 'landmark:lm-upper')).toBeNull();
   });
 
-  it('draws every landmark and proposal, the lit and hovered ones marked, with the proposal’s key', () => {
-    const d = placesMapDrawing(MASCOMA_PLACES, 'landmark:lm-upper', 'landmark:lm-dam');
-    expect(d.points).toHaveLength(17);
-    const upper = d.points.find((p) => p.id === 'landmark:lm-upper');
-    expect(upper).toMatchObject({ lit: true, hovered: false, slug: 'TOWN · OSM · GNIS' });
-    expect(d.points.find((p) => p.id === 'landmark:lm-dam')).toMatchObject({ hovered: true });
-    expect(d.points.find((p) => p.mark === 'proposal')).toMatchObject({ id: 'ask:ask-flats' });
-    expect(d.key).toEqual([{ mark: 'proposal', label: 'Proposed by a skater' }]);
-    expect([d.lit, d.hovered]).toEqual(['landmark:lm-upper', 'landmark:lm-dam']);
+  it('adds each proposal as proposed, and keeps a lit landmark the frame draws', () => {
+    const scene = placesMapScene(MASCOMA_PLACES, 'landmark:lm-upper');
+    expect(scene.items).toEqual([
+      {
+        kind: 'point',
+        id: 'landmarkAsk:ask-flats',
+        layer: 'marks',
+        at: [-72.1787, 43.6468],
+        mark: 'proposal',
+        name: 'the flats by the dam',
+        hoverKicker: 'Proposed by a skater',
+      },
+    ]);
+    expect(scene.lit).toBe('landmark:lm-upper');
+    expect(placesMapScene(MASCOMA_PLACES, 'landmarkAsk:ask-flats').lit).toBe(
+      'landmarkAsk:ask-flats',
+    );
   });
 
-  it('has no key without a proposal, and lights nothing that isn’t on the map', () => {
-    const d = placesMapDrawing({ asks: [], landmarks: MASCOMA_PLACES.landmarks }, 'ask:x');
-    expect(d.key).toEqual([]);
-    expect(d.lit).toBeNull();
-    expect(d.hovered).toBeNull();
+  it('lights nothing that isn’t on the map: an emailed name, a gone landmark', () => {
+    expect(placesMapScene(MASCOMA_PLACES, 'placeName:ask-narrows').lit).toBeNull();
+    expect(placesMapScene(MASCOMA_PLACES, 'landmark:gone').lit).toBeNull();
+    expect(placesMapScene({ asks: [], landmarks: [] }, null)).toEqual({ items: [], lit: null });
+  });
+
+  it('addresses each ask the way the left column links it', () => {
+    const [name, proposal] = MASCOMA_PLACES.asks as [PlaceNameAsk, ProposalAsk];
+    expect([litId.ask(name), litId.ask(proposal)]).toEqual([
+      'placeName:ask-narrows',
+      'landmarkAsk:ask-flats',
+    ]);
   });
 });

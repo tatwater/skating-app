@@ -6,9 +6,10 @@ import {
   countryOf,
   nameRungs,
   namesFromBody,
-  namesMapDrawing,
+  namesMapScene,
   otherClasses,
   stateName,
+  townNames,
 } from './namesModel';
 
 describe('nameRungs', () => {
@@ -127,22 +128,75 @@ describe('the location’s words', () => {
   });
 });
 
-describe('namesMapDrawing', () => {
-  it('draws each town line with its two towns, keyed, and lights the one named', () => {
-    const drawing = namesMapDrawing(MASCOMA_NAMES, 'town-line:lebanon-enfield');
-    expect(drawing.lines.map((l) => [l.id, l.faces, l.lit])).toEqual([
-      ['town-line:canaan-enfield', ['Canaan', 'Enfield'], false],
-      ['town-line:lebanon-enfield', ['Lebanon', 'Enfield'], true],
+describe('namesMapScene', () => {
+  it('draws each town line with its two towns either side, and lights the one named', () => {
+    const scene = namesMapScene(MASCOMA_NAMES, 'townLine:lebanon-enfield');
+    expect(scene.items.map((i) => [i.kind, i.id])).toEqual([
+      ['line', 'townLine:canaan-enfield'],
+      ['label', 'townName:canaan-enfield.l'],
+      ['label', 'townName:canaan-enfield.r'],
+      ['line', 'townLine:lebanon-enfield'],
+      ['label', 'townName:lebanon-enfield.l'],
+      ['label', 'townName:lebanon-enfield.r'],
     ]);
-    expect(drawing.key).toEqual([{ mark: 'town-line', label: 'Town line', tag: 'TIGER' }]);
-    expect(drawing.lit).toBe('town-line:lebanon-enfield');
+    expect(scene.items[1]).toMatchObject({ text: 'Canaan', style: 'town', layer: 'outline' });
+    expect(scene.items[0]).toMatchObject({
+      style: 'townLine',
+      path: [[-72.0617, 43.62544], expect.anything(), expect.anything()],
+    });
+    expect(scene.lit).toBe('townLine:lebanon-enfield');
   });
 
-  it('draws nothing, and no key, until the boundary read lands; a lit row off the map is not lit', () => {
-    const drawing = namesMapDrawing(
+  it('draws nothing until the boundary read lands; a lit row off the map is not lit there', () => {
+    const scene = namesMapScene(
       { ...MASCOMA_NAMES, place: { ...MASCOMA_NAMES.place, townLines: null } },
-      'alias:Mascoma',
+      'alias:0',
     );
-    expect(drawing).toEqual({ lines: [], key: [], lit: null });
+    expect(scene).toEqual({ items: [], lit: null });
   });
 });
+
+describe('townNames', () => {
+  it('faces the two towns across the longest run, the left one north of a west–east line', () => {
+    const t = must(
+      townNames([
+        { lat: 43, lng: -72.2 },
+        { lat: 43, lng: -72.1 },
+        { lat: 43.001, lng: -72.1 },
+      ]),
+    );
+    expect(t.angle).toBeCloseTo(0, 5);
+    expect(t.left[1]).toBeGreaterThan(43);
+    expect(t.right[1]).toBeLessThan(43);
+    expect(t.left[0]).toBeCloseTo(-72.15, 5);
+  });
+
+  it('reads a line left to right whichever way it was drawn, and gives up on a point', () => {
+    const east = must(
+      townNames([
+        { lat: 43, lng: -72 },
+        { lat: 43.01, lng: -72.01 },
+      ]),
+    );
+    const west = must(
+      townNames([
+        { lat: 43.01, lng: -72.01 },
+        { lat: 43, lng: -72 },
+      ]),
+    );
+    expect(east.angle).toBeCloseTo(west.angle, 5);
+    expect(east.angle).toBeGreaterThan(0);
+    expect(townNames([{ lat: 1, lng: 1 }])).toBeNull();
+    expect(
+      townNames([
+        { lat: 1, lng: 1 },
+        { lat: 1, lng: 1 },
+      ]),
+    ).toBeNull();
+  });
+});
+
+function must<T>(v: T | null): T {
+  if (v === null) throw new Error('missing');
+  return v;
+}

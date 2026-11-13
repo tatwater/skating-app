@@ -86,10 +86,10 @@ export function NamesView({
         ) : (
           data.aliases.length > 0 && (
             <ul className="flex flex-wrap gap-(--space-1_5)">
-              {data.aliases.map((a) => (
+              {data.aliases.map((a, i) => (
                 <li
                   key={a}
-                  {...litAttr(lit, litId.alias(a))}
+                  {...litAttr(lit, litId.alias(i))}
                   className={cn(
                     'inline-flex h-badge items-center bg-raise px-[0.6em] text-assist text-fg1',
                     LIT_ROW,
@@ -129,7 +129,7 @@ function NameSection({
             // biome-ignore lint/suspicious/noArrayIndexKey: the ladder's order is its identity
             key={`${i}:${rung.value}`}
             data-slot="name-rung"
-            {...litAttr(lit, litId.name(rung.value))}
+            {...litAttr(lit, litId.name(i))}
             className={cn(
               'grid grid-cols-[1.125rem_minmax(0,1fr)_auto] items-start gap-x-(--space-2)',
               'border-0 border-b border-dotted border-line py-(--space-2) first:pt-0 last:border-b-0 last:pb-0',
