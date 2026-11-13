@@ -67,6 +67,15 @@ const TONE_VARS: Record<ChartTone, string> = {
   water: 'var(--acc)',
 };
 
+/**
+ * A tone's color — the very value the container gives `--chart-<tone>` and so the marks in that
+ * tone. A legend beside a chart (`ChartLegend`) takes its swatches from here, so a swatch can never
+ * read a different gray from its bars.
+ */
+function chartToneColor(tone: ChartTone): string {
+  return TONE_VARS[tone];
+}
+
 type ChartSeries = {
   /** The series' name, as the hover plate says it ("This winter"). */
   label: ReactNode;
@@ -465,4 +474,5 @@ export {
   type ChartTooltipContentProps,
   ChartXAxis,
   ChartYAxis,
+  chartToneColor,
 };

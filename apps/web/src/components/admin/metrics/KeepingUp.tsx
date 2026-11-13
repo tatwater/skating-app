@@ -10,6 +10,7 @@ import {
   ChartTooltip,
   ChartXAxis,
   ChartYAxis,
+  chartToneColor,
 } from '@/components/kit/chart';
 import { ChartLegend, ChartNote, type LegendItem } from '@/components/kit/chart-legend';
 import { Section } from '@/components/kit/section-slug';
@@ -128,10 +129,15 @@ const OLDEST_CONFIG: ChartConfig = {
  */
 const FLAG_HEADROOM = 5.5;
 
+// The swatches read the chart's own tones, so a legend can't drift from its marks.
 const OLDEST_LEGEND: LegendItem[] = [
-  { label: 'Hours waiting', ink: 'var(--fg)', mark: 'line' },
-  { label: 'Open flags', ink: 'var(--line2)' },
-  { label: 'Safety', ink: 'var(--bad)' },
+  {
+    label: 'Hours waiting',
+    ink: chartToneColor(OLDEST_CONFIG.hours?.tone ?? 'lead'),
+    mark: 'line',
+  },
+  { label: 'Open flags', ink: chartToneColor(OLDEST_CONFIG.standard?.tone ?? 'quiet') },
+  { label: 'Safety', ink: chartToneColor(OLDEST_CONFIG.safety?.tone ?? 'bad') },
 ];
 
 type DotProps = { cx?: number; cy?: number; index?: number; value?: unknown };
@@ -288,13 +294,6 @@ export function ResolveHistogram({
 
 // ── Open support tickets ─────────────────────────────────────────────────────────────────────
 
-const TICKET_INK: Record<SupportCategory, string> = {
-  bug: 'var(--fg2)',
-  account: 'var(--fg3)',
-  other: 'var(--line2)', // the chart's quiet tone
-  safety: 'var(--bad)',
-};
-
 const TICKET_LABEL: Record<SupportCategory, string> = {
   bug: 'Bug',
   account: 'Account',
@@ -308,6 +307,11 @@ const TICKET_CONFIG: ChartConfig = {
   other: { label: 'Other', tone: 'quiet' },
   safety: { label: 'Safety', tone: 'bad' },
 };
+
+/** The swatches read the chart's own tones (`chartToneColor`), so a legend can't drift from its bars. */
+const TICKET_INK = Object.fromEntries(
+  SUPPORT_CATEGORIES.map((c) => [c, chartToneColor(TICKET_CONFIG[c]?.tone ?? 'faint')]),
+) as Record<SupportCategory, string>;
 
 export const TICKET_LEGEND: LegendItem[] = SUPPORT_CATEGORIES.map((c) => ({
   label: TICKET_LABEL[c],

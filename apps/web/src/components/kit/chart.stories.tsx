@@ -13,7 +13,9 @@ import {
   ChartTooltip,
   ChartXAxis,
   ChartYAxis,
+  chartToneColor,
 } from './chart';
+import { ChartLegend } from './chart-legend';
 import { computedColor, resolvePx, sameColor } from './measure';
 import { KICKER, must } from './storyKit';
 
@@ -449,6 +451,39 @@ export const QuietTone: Story = {
     const chart = must(canvasElement.querySelector<HTMLElement>('[data-slot="chart"]'));
     await expect(chart.style.getPropertyValue('--chart-quiet')).toBe('var(--line2)');
     await expect(chart.style.getPropertyValue('--color-standard')).toBe('var(--chart-quiet)');
+  },
+};
+
+/**
+ * A legend's swatches read the colors the bars do: each item's ink is `chartToneColor` of its
+ * series' tone, so the two can't drift.
+ */
+export const LegendMatchesBars: Story = {
+  args: { config: OPEN_FLAGS, children: null },
+  render: () => (
+    <div className="flex flex-col gap-heading">
+      <ChartLegend
+        items={Object.entries(OPEN_FLAGS).map(([, s]) => ({
+          label: String(s.label),
+          ink: chartToneColor(s.tone),
+        }))}
+      />
+      <Queue />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    await drawn(canvasElement, BAR);
+    const fills = await paints(() => qa(canvasElement, BAR), 'fill', 'the bars');
+    const swatches = () => [
+      ...canvasElement.querySelectorAll<HTMLElement>('[data-slot="chart-legend-swatch"]'),
+    ];
+    await steady(() => expect(swatches()).toHaveLength(Object.keys(OPEN_FLAGS).length));
+    for (const swatch of swatches()) {
+      await expect(fills).toContainEqual(sameColor(getComputedStyle(swatch).backgroundColor));
+    }
+    for (const tone of ['lead', 'muted', 'faint', 'quiet', 'warn', 'bad', 'water'] as const) {
+      await expect(chartToneColor(tone)).toMatch(/^var\(--/);
+    }
   },
 };
 
