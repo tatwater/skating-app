@@ -6,7 +6,7 @@ import {
   type WaterBodyClass,
 } from '@skating/core';
 
-import type { LngLat, MapItem, TabMapScene } from './mapDescriptors';
+import type { BodyMapScene, LngLat, MapItem } from '../../map/mapDescriptors';
 
 type LatLng = { lat: number; lng: number };
 
@@ -246,7 +246,7 @@ export function townNames(
  * What Names asks the map to draw beyond the frame's own: each town line that crosses the body,
  * with its two towns named either side. A lit row that isn't on the map lights nothing there.
  */
-export function namesMapScene(data: NamesData, lit: string | null): TabMapScene {
+export function namesMapScene(data: NamesData, lit: string | null): BodyMapScene {
   const items: MapItem[] = [];
   for (const line of data.place.townLines ?? []) {
     const id = litId.townLine(line.id);

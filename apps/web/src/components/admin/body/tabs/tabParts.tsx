@@ -4,17 +4,12 @@ import { SkeletonText } from '@/components/kit/skeleton';
 import { cn } from '@/lib/utils';
 
 /**
- * What the four inspector tabs (Names, Places, Access, Water) share and the kit doesn't: the
- * column their sections stack in, the place a section holds while its read is on its way, and the
- * lit-item wash. One-off to the Body console's tabs — the frame builder may fold these into its
- * own pane, which is a move, not a rewrite.
+ * What the Body console's inspector tabs share and the kit doesn't: the column their sections
+ * stack in, the place a section holds while its read is on its way, and the lit-item wash.
  */
 
-/**
- * The gap between an inspector's sections: the boards' 30 px `.blk` margin (body-v5.html). No
- * spacing token holds 30 px (`space-7` is 28, `space-8` is 32); named here so one token replaces it.
- */
-export const BLOCK_GAP = 'gap-[1.875rem]';
+/** The gap between an inspector's sections: the boards' 30 px `.blk` (the `gap.section` token). */
+export const BLOCK_GAP = 'gap-section';
 
 /** A tab's column of sections, ending on its spacing (a block never ends on a rule). */
 export function TabBody({ className, ...props }: ComponentProps<'div'>) {

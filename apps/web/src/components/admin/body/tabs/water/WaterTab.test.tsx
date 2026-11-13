@@ -16,7 +16,7 @@ vi.mock('convex/react', async () => {
 import { api } from '@skating/convex/api';
 import { getFunctionName } from 'convex/server';
 
-import { stubJsdomAnimations } from '../names/jsdomStubs';
+import { stubJsdomAnimations } from '../jsdomStubs';
 import { WaterTab } from './WaterTab';
 
 beforeAll(stubJsdomAnimations);

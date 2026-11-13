@@ -7,7 +7,7 @@ import {
   spansMultipleSampleCells,
 } from '@skating/core';
 
-import type { TabMapItem, TabMapScene } from '../names/mapDescriptors';
+import type { BodyMapScene, MapItem } from '../../map/mapDescriptors';
 
 type LatLng = { lat: number; lng: number };
 
@@ -204,8 +204,8 @@ export const litId = {
  * two dimension lines with their lengths — what decides whether one point is enough. Water opens
  * with the Samples layer on, as its board does.
  */
-export function waterMapScene(data: WaterData, lit: string | null): TabMapScene {
-  const items: TabMapItem[] = [];
+export function waterMapScene(data: WaterData, lit: string | null): BodyMapScene {
+  const items: MapItem[] = [];
   const { sampling, box } = data;
   if (sampling.points === null && sampling.interior !== null) {
     items.push({

@@ -4,7 +4,7 @@ import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 import { computedColor, sameColor } from '@/components/kit/measure';
 import { faceLoaded, must } from '@/components/kit/storyKit';
 
-import { InspectorFrame } from '../names/tabStoryFrame';
+import { InspectorFrame } from '../tabStoryFrame';
 import { AccessView } from './AccessView';
 import { BOARD_TODAY, MASCOMA_ACCESS, NO_ACCESS } from './accessFixtures';
 

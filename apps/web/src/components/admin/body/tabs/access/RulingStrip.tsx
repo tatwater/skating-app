@@ -1,5 +1,5 @@
 import type { PublicAccessVerdict } from '@skating/core';
-import { dayMonthYear } from '../names/tabParts';
+import { dayMonthYear } from '../tabParts';
 import { PersonLockup } from '../places/kit-candidates/person-lockup';
 import { dayCount, daysSince, type Person, verdictWords } from './accessModel';
 

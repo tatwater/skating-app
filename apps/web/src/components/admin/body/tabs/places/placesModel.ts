@@ -1,6 +1,6 @@
 import { LANDMARK_KIND_LABELS, type LandmarkKind } from '@skating/core';
 
-import type { TabMapItem, TabMapScene } from '../names/mapDescriptors';
+import type { BodyMapScene, MapItem } from '../../map/mapDescriptors';
 
 type LatLng = { lat: number; lng: number };
 
@@ -224,8 +224,8 @@ export function selectedLandmark(data: PlacesData | undefined, lit: string | nul
  * `landmark:<id>`): each skater's proposal as proposed, a dashed `?` at its point. The lit item is
  * kept when it is on the map — a landmark the frame draws, or a proposal drawn here.
  */
-export function placesMapScene(data: PlacesData, lit: string | null): TabMapScene {
-  const items: TabMapItem[] = data.asks.flatMap((a): TabMapItem[] =>
+export function placesMapScene(data: PlacesData, lit: string | null): BodyMapScene {
+  const items: MapItem[] = data.asks.flatMap((a): MapItem[] =>
     a.kind === 'proposal'
       ? [
           {

@@ -72,7 +72,12 @@ export const BODY_TAB_LABELS: Record<BodyTabKey, string> = {
 };
 
 /** One tab's registration: its wiring and, if it draws, its map. */
-export type BodyTabRegistration = Pick<BodyTabSlot, 'Wiring' | 'map' | 'Dock'>;
+export interface BodyTabRegistration<D = unknown> {
+  Wiring?: ComponentType<BodyTabProps>;
+  /** Typed by the tab's own data, so its `useData` and `describe` agree. */
+  map?: BodyTabMap<D>;
+  Dock?: ComponentType<BodyTabProps>;
+}
 
 export type BodyTabRegistry = Readonly<Record<BodyTabKey, BodyTabSlot>>;
 
@@ -81,7 +86,8 @@ export type BodyTabRegistry = Readonly<Record<BodyTabKey, BodyTabSlot>>;
  * given stays a *Not built yet* slot.
  */
 export function registerBodyTabs(
-  built: Partial<Record<BodyTabKey, BodyTabRegistration>>,
+  // biome-ignore lint/suspicious/noExplicitAny: each tab registers its own data type; the frame only threads it.
+  built: Partial<Record<BodyTabKey, BodyTabRegistration<any>>>,
 ): BodyTabRegistry {
   return Object.fromEntries(
     BODY_TABS.map((key) => [key, { key, label: BODY_TAB_LABELS[key], ...built[key] }]),

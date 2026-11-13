@@ -3,6 +3,7 @@ import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { computedColor, JUNCTION_TOLERANCE_PX, sameColor } from '@/components/kit/measure';
 import { faceLoaded, must } from '@/components/kit/storyKit';
+import { InspectorFrame } from '../tabStoryFrame';
 import { NamesView } from './NamesView';
 import {
   AUBURN_NAMES,
@@ -10,7 +11,6 @@ import {
   MASCOMA_NAMES,
   MASCOMA_NAMES_AS_READ,
 } from './namesFixtures';
-import { InspectorFrame } from './tabStoryFrame';
 
 /**
  * Board 5.4.2, Body › Names: the tab's column at the board's size. Render `Board` beside the

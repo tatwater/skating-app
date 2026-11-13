@@ -4,10 +4,10 @@ import { useMutation, useQuery } from 'convex/react';
 import { useMemo } from 'react';
 
 import { useRole } from '@/lib/useRole';
+import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
+import { useTabAction } from '../useTabAction';
 import { NamesView } from './NamesView';
 import { type NamesData, namesFromBody, namesMapScene } from './namesModel';
-import type { BodyTabProps, BodyTabRegistration } from './tabContract';
-import { useTabAction } from './useTabAction';
 
 /**
  * The Names tab's data from the body's record (`waterBodies.get`), memoized on the record so the

@@ -16,7 +16,7 @@ import { Input, InputGroup, InputGroupKbd } from '@/components/kit/input';
 import { RadioGroup, RadioRow } from '@/components/kit/radio';
 import { Section } from '@/components/kit/section-slug';
 import { cn } from '@/lib/utils';
-
+import { LIT_ROW, LoadingSection, litAttr, TabBody } from '../tabParts';
 import {
   CATALOG_NAMES,
   CATALOG_TAGS,
@@ -28,7 +28,6 @@ import {
   otherClasses,
   stateName,
 } from './namesModel';
-import { LIT_ROW, LoadingSection, litAttr, TabBody } from './tabParts';
 
 /**
  * Body › Names (board 5.4.2), the default view: the name ladder, the aliases, the class and where

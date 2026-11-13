@@ -8,7 +8,7 @@ import { Section } from '@/components/kit/section-slug';
 import { usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
 
-import { LIT_ROW, LoadingSection, litAttr, TabBody } from '../names/tabParts';
+import { LIT_ROW, LoadingSection, litAttr, TabBody } from '../tabParts';
 import { type AccessData, litId, type PutInRow } from './accessModel';
 import { EntryTile } from './kit-candidates/entry-tile';
 import { sayUnavailable, UnavailableButton } from './kit-candidates/unavailable-button';

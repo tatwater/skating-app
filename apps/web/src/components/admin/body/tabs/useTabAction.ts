@@ -2,8 +2,8 @@ import { useCallback, useMemo } from 'react';
 
 import { toast } from '@/components/kit/toast';
 
-import { errorText } from '../../../adminUi';
-import { type Receipt, useUndo } from '../../../shell/undo';
+import { errorText } from '../../adminUi';
+import { type Receipt, useUndo } from '../../shell/undo';
 
 /**
  * How the Body console's tabs run a write: the mutation, then the receipt toast with Undo while the

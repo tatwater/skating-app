@@ -319,7 +319,12 @@ describe('BodyConsoleRoute', () => {
 
   it('opens the tab the URL names, and a slot with no tab says so', () => {
     mocks.search = { tab: 'water', lit: 'not valid' };
-    render(<Mounted />);
+    // A registry with Shape alone, so the Water slot is empty whatever the console has built.
+    render(
+      <Mounted>
+        <BodyConsoleRoute registry={registerBodyTabs({ shape: SHAPE_TAB })} />
+      </Mounted>,
+    );
     expect(screen.getByRole('tab', { name: /Water/ })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByText(/Water isn’t in the console yet/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Old editor →' })).toHaveAttribute(

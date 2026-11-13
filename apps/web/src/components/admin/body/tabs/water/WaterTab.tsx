@@ -3,7 +3,7 @@ import type { Id } from '@skating/convex/dataModel';
 import { useQuery } from 'convex/react';
 import { useMemo } from 'react';
 
-import type { BodyTabProps, BodyTabRegistration } from '../names/tabContract';
+import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { WaterView } from './WaterView';
 import { type WaterData, waterFrom, waterMapScene } from './waterModel';
 

@@ -18,7 +18,7 @@ import {
 import { usePaneKeys } from '@/lib/keys';
 
 import { sayUnavailable, UnavailableButton } from '../access/kit-candidates/unavailable-button';
-import { BLOCK_GAP, dayMonthYear } from '../names/tabParts';
+import { BLOCK_GAP, dayMonthYear } from '../tabParts';
 import { InsetCard, InsetCardFoot } from './kit-candidates/inset-card';
 import { acres, CATALOG_NAMES, formatPoint, type LandmarkRow, PROMOTABLE } from './placesModel';
 

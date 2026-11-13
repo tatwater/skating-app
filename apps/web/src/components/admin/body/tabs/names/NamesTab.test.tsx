@@ -37,7 +37,7 @@ vi.mock('@/components/kit/toast', () => ({ toast: (t: unknown) => toasts.push(t)
 import { api } from '@skating/convex/api';
 import { getFunctionName } from 'convex/server';
 
-import { stubJsdomAnimations } from './jsdomStubs';
+import { stubJsdomAnimations } from '../jsdomStubs';
 import { NamesTab } from './NamesTab';
 
 beforeAll(stubJsdomAnimations);

@@ -23,7 +23,12 @@ import { BodyMap } from '../map/BodyMap';
 import { mergeScenes } from '../map/bodyScene';
 import type { BodyMapScene } from '../map/mapDescriptors';
 import { TabBoundary } from '../TabBoundary';
+import { ACCESS_TAB } from '../tabs/access';
+import { NAMES_TAB } from '../tabs/names';
+import { PLACES_TAB } from '../tabs/places';
 import { SHAPE_TAB } from '../tabs/shape/ShapeTabRoute';
+import { WATER_TAB } from '../tabs/water';
+import { WATER_TAB } from '../tabs/water';
 import { campaignText } from '../tabs/shape/shapeModel';
 import { BodyConsoleGone } from './BodyConsoleGone';
 import { BodyConsoleMissing, BodyConsoleView } from './BodyConsoleView';
@@ -58,7 +63,13 @@ import { type MapFailures, useBodyConsole } from './useBodyConsole';
  * Every tab built so far is registered in {@link BODY_TAB_REGISTRY}; a slot nobody has filled draws
  * *Not built yet* with a link to the old editor, which still does that tab's work.
  */
-export const BODY_TAB_REGISTRY: BodyTabRegistry = registerBodyTabs({ shape: SHAPE_TAB });
+export const BODY_TAB_REGISTRY: BodyTabRegistry = registerBodyTabs({
+  shape: SHAPE_TAB,
+  names: NAMES_TAB,
+  places: PLACES_TAB,
+  access: ACCESS_TAB,
+  water: WATER_TAB,
+});
 
 export function BodyConsoleRoute({ registry = BODY_TAB_REGISTRY }: { registry?: BodyTabRegistry }) {
   const params = useParams({ strict: false }) as { id?: string };

@@ -21,7 +21,7 @@ import { usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
 import { sayUnavailable, UnavailableButton } from '../access/kit-candidates/unavailable-button';
 import { ReasonAsk } from '../access/ReasonAsk';
-import { LIT_ROW, LoadingSection, litAttr, TabBody } from '../names/tabParts';
+import { LIT_ROW, LoadingSection, litAttr, TabBody } from '../tabParts';
 import { LandmarkMark } from './kit-candidates/landmark-mark';
 import { PersonLockup } from './kit-candidates/person-lockup';
 import { LandmarkCard, type LandmarkEdit } from './LandmarkCard';

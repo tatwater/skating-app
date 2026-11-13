@@ -10,7 +10,7 @@ import { RadioGroup } from '@/components/kit/radio';
 import { Section } from '@/components/kit/section-slug';
 import { cn } from '@/lib/utils';
 
-import { LIT_ROW, LoadingSection, litAttr, TabBody } from '../names/tabParts';
+import { LIT_ROW, LoadingSection, litAttr, TabBody } from '../tabParts';
 import { RadioCell } from './kit-candidates/radio-cell';
 import {
   type DepthRung,

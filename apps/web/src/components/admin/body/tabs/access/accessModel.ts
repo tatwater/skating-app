@@ -9,7 +9,7 @@ import {
   type PublicAccessVerdict,
 } from '@skating/core';
 
-import type { TabMapItem, TabMapScene } from '../names/mapDescriptors';
+import type { BodyMapScene, MapItem } from '../../map/mapDescriptors';
 
 type LatLng = { lat: number; lng: number };
 
@@ -229,8 +229,8 @@ export const litId = {
  * `putIn:<id>` and `lot:<id>`): each routed walk from a lot to its put-in. The lit item is kept when
  * it is on the map — a put-in or lot the frame draws.
  */
-export function accessMapScene(data: AccessData, lit: string | null): TabMapScene {
-  const items: TabMapItem[] = data.putIns.flatMap((p): TabMapItem[] =>
+export function accessMapScene(data: AccessData, lit: string | null): BodyMapScene {
+  const items: MapItem[] = data.putIns.flatMap((p): MapItem[] =>
     p.approach
       ? [
           {

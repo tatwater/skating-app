@@ -4,7 +4,7 @@ import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { faceLoaded, must } from '@/components/kit/storyKit';
 
-import { InspectorFrame } from '../names/tabStoryFrame';
+import { InspectorFrame } from '../tabStoryFrame';
 import { PlacesView, type PlacesViewProps } from './PlacesView';
 import { HOVERED_DAM, MASCOMA_PLACES, SELECTED_UPPER } from './placesFixtures';
 

@@ -5,7 +5,7 @@ import { Button } from '@/components/kit/button';
 import { computedColor, sameColor } from '@/components/kit/measure';
 import { faceLoaded, must } from '@/components/kit/storyKit';
 
-import { InspectorFrame } from '../names/tabStoryFrame';
+import { InspectorFrame } from '../tabStoryFrame';
 import { WaterView } from './WaterView';
 import { CHAMPLAIN_WATER, MASCOMA_WATER, MASCOMA_WATER_AS_READ } from './waterFixtures';
 

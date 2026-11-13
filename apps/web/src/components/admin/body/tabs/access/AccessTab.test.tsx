@@ -33,7 +33,7 @@ vi.mock('../../../shell/undo', () => ({ useUndo: () => ({ announce: mocks.announ
 import { api } from '@skating/convex/api';
 import { getFunctionName } from 'convex/server';
 
-import { stubJsdomAnimations } from '../names/jsdomStubs';
+import { stubJsdomAnimations } from '../jsdomStubs';
 import { AccessTab } from './AccessTab';
 
 beforeAll(stubJsdomAnimations);

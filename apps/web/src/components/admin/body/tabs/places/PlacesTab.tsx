@@ -5,8 +5,8 @@ import { useMemo, useState } from 'react';
 
 import { useRole } from '@/lib/useRole';
 
-import type { BodyTabProps, BodyTabRegistration } from '../names/tabContract';
-import { useTabAction } from '../names/useTabAction';
+import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
+import { useTabAction } from '../useTabAction';
 import { PlacesView } from './PlacesView';
 import { landmarkRows, type PlacesData, placeAsks, placesMapScene } from './placesModel';
 
