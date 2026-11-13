@@ -10,8 +10,8 @@ import fc from 'fast-check';
 import { describe, expect, test } from 'vitest';
 import { api } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+import { AUTHOR_DELETED_RESTORE } from './lib/authorDeletion';
 import {
-  AUTHOR_DELETED_RESTORE,
   POST_RESTORE_NEEDS_A_CHOICE,
   POST_UNRESTORABLE,
   UNDO_LEAVES_POST_EMPTY,

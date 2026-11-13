@@ -10,7 +10,12 @@ import fc from 'fast-check';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
-import { AUTHOR_DELETED_ALREADY, AUTHOR_DELETED_RESTORE, AUTHOR_DELETED_UNDO } from './moderation';
+import {
+  AUTHOR_DELETED_ALREADY,
+  AUTHOR_DELETED_RESTORE,
+  AUTHOR_DELETED_UNDO,
+} from './lib/authorDeletion';
+import { revertPostVerdict } from './moderation';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -160,17 +165,22 @@ describe('an author deletion is final', () => {
     await author.as.mutation(api.comments.remove, { commentId });
     await author.as.mutation(api.reports.remove, { reportId });
     await author.as.mutation(api.posts.remove, { postId });
+    // The comment's deletion is on the record now, like a Report's or a Post's.
+    expect((await newestOn(t, 'comment', commentId)).action).toBe('author_delete');
     for (const [type, id] of [
       ['report', reportId],
       ['comment', commentId],
       ['post', postId],
     ] as const) {
       await expect(set(type, id, 'visible')).rejects.toThrow(literally(AUTHOR_DELETED_RESTORE));
-      await expect(set(type, id, 'hidden')).rejects.toThrow(literally(AUTHOR_DELETED_ALREADY));
+      // A takedown is still a moderator's decision on the record — the content doesn't move.
+      await set(type, id, 'hidden');
       expect(await statusOf(t, id)).toBe('removed');
+      expect(await newestOn(t, type, id)).toMatchObject({
+        action: 'hide',
+        metadata: { onAuthorDeleted: true, priorStatus: 'removed', newStatus: 'removed' },
+      });
     }
-    // The comment's deletion is on the record now, like a Report's or a Post's.
-    expect((await newestOn(t, 'comment', commentId)).action).toBe('author_delete');
   });
 
   test("everything inside a Post its author deleted stays down, a moderator's earlier removal included", async () => {
@@ -209,7 +219,9 @@ describe('an author deletion is final', () => {
     await author.as.mutation(api.posts.remove, { postId });
     // The author's own rows are newer, so the engine sees each takedown as overtaken.
     for (const row of [hide, postHide]) {
-      await expect(mod.as.mutation(api.undo.run, { actionId: row._id })).rejects.toThrow();
+      await expect(mod.as.mutation(api.undo.run, { actionId: row._id })).rejects.toThrow(
+        'Something changed this since',
+      );
     }
     expect(await statusOf(t, commentId)).toBe('removed');
     expect(await statusOf(t, postId)).toBe('removed');
@@ -220,10 +232,34 @@ describe('an author deletion is final', () => {
     await set('comment', other, 'hidden');
     const otherHide = await newestOn(t, 'comment', other);
     await t.run((ctx) => ctx.db.patch(other, { authorDeletedAt: Date.now() }));
+    // History reads the stamp too, so it never offers the undo it would refuse.
+    const offered = await mod.as.query(api.undo.latestOwn, {
+      targetType: 'comment',
+      targetId: other,
+    });
+    expect(offered?.undo).toEqual({ state: 'unavailable', why: AUTHOR_DELETED_UNDO });
     await expect(mod.as.mutation(api.undo.run, { actionId: otherHide._id })).rejects.toThrow(
       literally(AUTHOR_DELETED_UNDO),
     );
     expect(await statusOf(t, other)).toBe('hidden');
+  });
+
+  test("a Post verdict's undo leaves a Post its author deleted as it is, whatever it put back to", async () => {
+    const { t, author, mod, set } = await setup();
+    const { postId } = await seedPost(t, author.id, 1);
+    await set('post', postId, 'hidden');
+    await set('post', postId, 'removed');
+    const removal = await newestOn(t, 'post', postId);
+    // Stamped with no row of its own (a backfill), so the removal is still the last word on it.
+    await t.run((ctx) => ctx.db.patch(postId, { authorDeletedAt: Date.now() }));
+    await expect(
+      t.run(async (ctx) => {
+        const actor = await ctx.db.get(mod.id);
+        if (!actor) throw new Error('no moderator');
+        await revertPostVerdict(ctx, actor, { row: removal, reason: 'x' });
+      }),
+    ).rejects.toThrow(AUTHOR_DELETED_ALREADY);
+    expect(await statusOf(t, postId)).toBe('removed');
   });
 
   test("deleting content a moderator already removed registers as the author's withdrawal", async () => {
@@ -252,7 +288,9 @@ describe('the backfills', () => {
     const { t, author, mod } = await setup();
     const withdrawn = await seedReport(t, author.id);
     const restoredSince = await seedReport(t, author.id);
+    const restoreUndone = await seedReport(t, author.id);
     const { postId, reportIds } = await seedPost(t, author.id, 2);
+    const emptied = await seedPost(t, author.id, 1);
     const reportId = await seedReport(t, author.id);
     const authorsComment = await t.run((ctx) =>
       ctx.db.insert('comments', {
@@ -276,14 +314,21 @@ describe('the backfills', () => {
     );
     const at = Date.now() - 5000;
     await t.run(async (ctx) => {
-      await ctx.db.patch(withdrawn, { moderationStatus: 'removed' });
-      for (const id of [postId, ...reportIds])
+      // `restoredSince` came back and was taken down again on a moderator's own verdict;
+      // `restoreUndone` came back and the restore was undone, so it is down as its author left it.
+      for (const id of [withdrawn, restoredSince, restoreUndone, ...emptied.reportIds])
+        await ctx.db.patch(id, { moderationStatus: 'removed' });
+      for (const id of [postId, ...reportIds, emptied.postId])
         await ctx.db.patch(id, { moderationStatus: 'removed' });
       const row = (
         targetType: 'report' | 'post' | 'comment',
         targetId: string,
         action: 'author_delete' | 'restore' | 'remove',
         offset = 0,
+        extra: {
+          metadata?: Record<string, unknown>;
+          undoesActionId?: Id<'moderationActions'>;
+        } = {},
       ) =>
         ctx.db.insert('moderationActions', {
           actorId: action === 'author_delete' ? author.id : mod.id,
@@ -292,11 +337,22 @@ describe('the backfills', () => {
           targetId,
           reason: action,
           createdAt: at + offset,
+          ...extra,
         });
       await row('report', withdrawn, 'author_delete');
       await row('report', restoredSince, 'author_delete');
       await row('report', restoredSince, 'restore', 1000); // a moderator brought it back, pre-D248
+      await row('report', restoredSince, 'remove', 2000); // and took it down again, on its merits
+      await row('report', restoreUndone, 'author_delete');
+      const restore = await row('report', restoreUndone, 'restore', 1000);
+      await row('report', restoreUndone, 'remove', 2000, { undoesActionId: restore });
       await row('post', postId, 'author_delete');
+      // The Post its last Report's deletion emptied: the author deleted the Report, not the Post.
+      const [last] = emptied.reportIds as [Id<'reports'>];
+      await row('report', last, 'author_delete');
+      await row('post', emptied.postId, 'author_delete', 0, {
+        metadata: { priorStatus: 'visible', newStatus: 'removed', derivedFromReportId: last },
+      });
       await row('comment', modsComment, 'remove');
     });
 
@@ -308,6 +364,9 @@ describe('the backfills', () => {
 
     expect(await deletedAt(t, withdrawn)).toBe(at);
     expect(await deletedAt(t, restoredSince)).toBeUndefined();
+    expect(await deletedAt(t, restoreUndone)).toBe(at);
+    expect(await deletedAt(t, emptied.reportIds[0] as Id<'reports'>)).toBe(at);
+    expect(await deletedAt(t, emptied.postId)).toBeUndefined();
     for (const id of [postId, ...reportIds]) expect(await deletedAt(t, id)).toBe(at);
     expect(await deletedAt(t, authorsComment)).toBeDefined();
     expect(await deletedAt(t, modsComment)).toBeUndefined();

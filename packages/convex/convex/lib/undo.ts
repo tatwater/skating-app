@@ -21,9 +21,10 @@ import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { asUndoOf } from './audit';
 import { hasCapability } from './auth';
+import { authorDeletedAtOn, authorDeletedRefusal } from './authorDeletion';
 import { UNDO_HANDLERS } from './undoHandlers';
 import { UNDO_POLICY, undoCapability, WORKSTREAM_MODE } from './undoPolicy';
-import type { UndoHandler, UndoViewer } from './undoTypes';
+import { meta, type UndoHandler, type UndoViewer } from './undoTypes';
 
 /** How long after acting the toast offers its undo (D226). History has no limit. */
 export const TOAST_UNDO_MS = 10_000;
@@ -39,7 +40,10 @@ function handlerFor(row: Doc<'moderationActions'>): UndoHandler | null {
   return UNDO_HANDLERS[row.action] ?? null;
 }
 
-/** Whether `row` can be undone by `viewer`, and if not, why. Bounded: two index reads. */
+/**
+ * Whether `row` can be undone by `viewer`, and if not, why. Bounded: two index reads, and one `get`
+ * of an item an author could have deleted.
+ */
 export async function undoState(
   ctx: QueryCtx | MutationCtx,
   viewer: UndoViewer,
@@ -73,6 +77,12 @@ export async function undoState(
 
   const blocked = handler.blocked?.(row, viewer) ?? null;
   if (blocked) return { state: 'unavailable', why: blocked };
+  // Content its author deleted stays as the deletion left it (D248). The author's own row usually
+  // overtakes the takedown above; a withdrawal stamped with no row of its own (a backfill) doesn't,
+  // so the undo would be offered and then refused — read the stamp, and give the refusal here.
+  if ((await authorDeletedAtOn(ctx, row.targetType, row.targetId)) !== undefined) {
+    return { state: 'unavailable', why: authorDeletedRefusal(meta(row).priorStatus, true) };
+  }
   if (!hasCapability(viewer, undoCapability(rule, row.targetType))) {
     return { state: 'unavailable', why: 'Undoing this takes a role you do not hold.' };
   }

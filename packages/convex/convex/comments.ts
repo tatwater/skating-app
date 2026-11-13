@@ -29,6 +29,7 @@ import {
   requireContributor,
   requireProfile,
 } from './lib/auth';
+import { AUTHOR_DELETE_REASON } from './lib/authorDeletion';
 import { publicAuthor } from './lib/authorView';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import { enqueueActorNotification } from './lib/notificationQueue';
@@ -300,7 +301,7 @@ export const remove = mutation({
       action: 'author_delete',
       targetType: 'comment',
       targetId: commentId,
-      reason: 'Deleted by the author',
+      reason: AUTHOR_DELETE_REASON,
       metadata: { priorStatus: existing.moderationStatus, newStatus: 'removed' },
       createdAt: now,
     });

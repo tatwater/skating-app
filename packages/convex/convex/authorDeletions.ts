@@ -7,13 +7,15 @@ import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
 import { internalMutation, type MutationCtx, type QueryCtx } from './_generated/server';
-import { authorDeletedAtOf } from './lib/authorDeletion';
+import {
+  authorDeletedAtOf,
+  isWithdrawable,
+  WITHDRAWABLE_TABLE,
+  type Withdrawable,
+} from './lib/authorDeletion';
 
 /** Rows per backfill page; each page is its own transaction and schedules the next. */
 const BACKFILL_PAGE = 200;
-
-const TABLE = { report: 'reports', post: 'posts', comment: 'comments' } as const;
-type Withdrawable = keyof typeof TABLE;
 
 /** An item's audit rows, newest first, bounded. */
 function historyOf(ctx: QueryCtx, targetType: Withdrawable, targetId: string) {
@@ -27,21 +29,26 @@ function historyOf(ctx: QueryCtx, targetType: Withdrawable, targetId: string) {
 /**
  * Stamp the content one historic `author_delete` row withdrew, if it still answers to it: still
  * removed, and not restored by a moderator since (which a moderator could do before D248 — the
- * last word was theirs). A Post its last Report's deletion emptied was not deleted by its author
- * (the live writer leaves it unstamped too); a Post its author did delete takes every removed member
- * with it, a member a moderator removed first included, as `authorRemovePost` does now.
+ * last word was theirs); a restore that was itself undone put it back where its author left it. A
+ * Post its last Report's deletion emptied was not deleted by its author (the live writer leaves it
+ * unstamped too); a Post its author did delete takes every removed member with it, a member a
+ * moderator removed first included, as `authorRemovePost` does now.
  */
 async function stampFromRow(ctx: MutationCtx, row: Doc<'moderationActions'>): Promise<number> {
-  const targetType = row.targetType as Withdrawable;
-  if (!(targetType in TABLE)) return 0;
+  const targetType = row.targetType;
+  if (!isWithdrawable(targetType)) return 0;
   const meta = (row.metadata ?? {}) as Record<string, unknown>;
   if (targetType === 'post' && meta.derivedFromReportId !== undefined) return 0;
-  const id = ctx.db.normalizeId(TABLE[targetType], row.targetId);
+  const id = ctx.db.normalizeId(WITHDRAWABLE_TABLE[targetType], row.targetId);
   const target = id ? await ctx.db.get(id) : null;
   if (!target || authorDeletedAtOf(target) !== undefined) return 0;
   if (target.moderationStatus !== 'removed') return 0;
   const history = await historyOf(ctx, targetType, row.targetId);
-  if (history.some((r) => r._creationTime > row._creationTime && r.action === 'restore')) return 0;
+  const undone = new Set(history.flatMap((r) => (r.undoesActionId ? [r.undoesActionId] : [])));
+  const restoredSince = history.some(
+    (r) => r._creationTime > row._creationTime && r.action === 'restore' && !undone.has(r._id),
+  );
+  if (restoredSince) return 0;
   await ctx.db.patch(target._id, { authorDeletedAt: row.createdAt });
   let stamped = 1;
   if (targetType === 'post') {

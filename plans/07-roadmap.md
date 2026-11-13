@@ -827,6 +827,7 @@ knows what needs them, does it where they found it, and watches the machinery wo
 - The dev inbox seed (§8 §2) — the founder's OK is given; the examples are the build's to invent
 - `planConventions.test.ts` accepts the `B` era (done in this phase's first commit)
 - The Post-restore chooser on mobile — the server refuses an empty Post restore and takes chosen Reports (2026-11-13); the web chooser is `components/moderation/RestorePost`, the phone has none yet (and no restore of a Post today)
+- D248's two backfills on dev, once #108 is deployed (`convex dev --once`): `authorDeletions:backfillFromAudit` and `authorDeletions:backfillCommentDeletions`. Until they run, a moderator can still restore a Report or Comment its author deleted before the stamp existed
 
 ## Phase B03 — The skater web app
 🟢 **Complete** 2026-11-07 · PRs #95–#104 · [plan](./phases/B03-skater-web.md) · D237 D238 D239 D240 D241 D242 D243 D244

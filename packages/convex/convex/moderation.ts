@@ -19,7 +19,12 @@ import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
 import { writeAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
-import { authorDeletedAtOf } from './lib/authorDeletion';
+import {
+  AUTHOR_DELETE_REASON,
+  AUTHOR_DELETED_RESTORE,
+  authorDeletedAtOf,
+  authorDeletedRefusal,
+} from './lib/authorDeletion';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import { MODERATION_ACTIONS, MODERATION_STATUSES, MODERATION_TARGET_TYPES } from './lib/enums';
@@ -42,7 +47,7 @@ const ACTION_FOR_STATUS = {
  * target and writes one `hide` / `remove` / `restore` audit row with the required reason. A no-op
  * status change (already at `status`) still records the action — the moderator asserted a decision.
  */
-export const MODERATION_TABLE = {
+const MODERATION_TABLE = {
   report: 'reports',
   post: 'posts',
   comment: 'comments',
@@ -132,9 +137,6 @@ async function derivePostVisibility(
     });
   }
 }
-
-/** The reason an author's own takedown carries — there is no free text to ask for. */
-const AUTHOR_DELETE_REASON = 'Deleted by the author';
 
 /**
  * An author taking down their own Report (A10-3, founder call 2026-09-21: people control what
@@ -260,13 +262,6 @@ export async function authorRemovePost(
     createdAt: now,
   });
 }
-
-/** A restore of something its author deleted (founder ruling, 2026-11-13). */
-export const AUTHOR_DELETED_RESTORE = "Its author deleted this, so it can't be restored.";
-/** Anything else a moderator tries on it: it is already down, and stays as its author left it. */
-export const AUTHOR_DELETED_ALREADY = 'Its author deleted this, so it stays as they left it.';
-/** The same refusal, for an undo. */
-export const AUTHOR_DELETED_UNDO = "Its author deleted this since, so undoing can't bring it back.";
 
 /** A forward restore that would bring the Post back with none of its Reports (founder, 2026-11-13). */
 export const POST_RESTORE_NEEDS_A_CHOICE =
@@ -440,10 +435,7 @@ export async function setContentStatus(
      * by its author.
      */
     withReportIds?: Id<'reports'>[];
-    /**
-     * Set by an undo, to the row it undoes: an undo never chooses, so its refusal points at Restore
-     * instead, and it puts the person's record back where that row found it.
-     */
+    /** Set by an undo, to the row it undoes: an undo never chooses, so its refusals say so. */
     undoes?: Id<'moderationActions'>;
   },
 ): Promise<Id<'reports'> | Id<'posts'> | Id<'comments'> | Id<'hazards'>> {
@@ -466,14 +458,26 @@ export async function setContentStatus(
       throw new ConvexError('Reports can only be chosen when restoring a post');
     }
     // Author-deleted content never comes back (D248, founder ruling 2026-11-13) — not by restore, not
-    // by a Post's choice, not by undo — and nothing else moves it either.
-    const authorDeleted = authorDeletedAtOf(typedTarget) !== undefined;
-    if (authorDeleted && args.status === 'visible') {
-      throw new ConvexError(asUndo ? AUTHOR_DELETED_UNDO : AUTHOR_DELETED_RESTORE);
-    }
-    if (authorDeleted) {
-      // Withdrawn by its author: it is already down, and stays exactly as the deletion left it.
-      throw new ConvexError(AUTHOR_DELETED_ALREADY);
+    // by a Post's choice, not by undo — and nothing else moves it either: it stays as the deletion
+    // left it.
+    if (authorDeletedAtOf(typedTarget) !== undefined) {
+      if (args.status === 'visible' || asUndo) {
+        throw new ConvexError(authorDeletedRefusal(args.status, asUndo));
+      }
+      // A moderator's hide or remove on content its author already deleted (a flag that arrives
+      // after the delete) is still their decision, and goes on the audit trail as evidence — the
+      // content stays exactly as the deletion left it. (D248 ruling 2: the next PR puts it on the
+      // person's verdict record.)
+      await writeAudit(ctx, {
+        actorId: actor._id,
+        action: ACTION_FOR_STATUS[args.status],
+        targetType: args.targetType,
+        targetId: args.targetId,
+        reason: args.reason,
+        metadata: { priorStatus, newStatus: priorStatus, onAuthorDeleted: true },
+        createdAt: now,
+      });
+      return targetId;
     }
 
     const audit = { actorId: actor._id, reason: args.reason, now };
@@ -628,8 +632,9 @@ export async function revertPostVerdict(
   const postId = ctx.db.normalizeId('posts', row.targetId);
   const post = postId ? await ctx.db.get(postId) : null;
   if (!post) throw new ConvexError('Target not found');
-  if (post.authorDeletedAt !== undefined && priorStatus === 'visible') {
-    throw new ConvexError(AUTHOR_DELETED_UNDO);
+  // A Post its author deleted stays as the deletion left it, whatever the undo would put back to.
+  if (post.authorDeletedAt !== undefined) {
+    throw new ConvexError(authorDeletedRefusal(priorStatus, true));
   }
   const now = Date.now();
   const audit = { actorId: actor._id, reason, now };
