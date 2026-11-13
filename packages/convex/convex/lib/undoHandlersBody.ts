@@ -29,7 +29,6 @@ import {
 } from '../subAreas';
 import {
   type DepthFields,
-  depthStateOf,
   removeBodyImpl,
   restoreBodyImpl,
   restoreDepthImpl,
@@ -138,21 +137,13 @@ const undoLakeDepth: UndoHandler = {
   blocked: (row) =>
     meta(row).prev === undefined || meta(row).after === undefined ? PREDATES : null,
   undoTakesAway: (row) => UNDO_POLICY.set_lake_depth.takesAway(meta(row).prev),
-  run: async ({ ctx, actor, row, reason }) => {
-    const waterBodyId = row.targetId as Id<'waterBodies'>;
-    const body = await ctx.db.get(waterBodyId);
-    if (!body) throw new ConvexError('Water body not found');
-    if (JSON.stringify(depthStateOf(body)) !== JSON.stringify(depthStateOf(meta(row).after))) {
-      throw new ConvexError(
-        'The depth has changed since (an import or another edit); set it again rather than undo',
-      );
-    }
-    await restoreDepthImpl(ctx, actor, {
-      waterBodyId,
+  run: ({ ctx, actor, row, reason }) =>
+    restoreDepthImpl(ctx, actor, {
+      waterBodyId: row.targetId as Id<'waterBodies'>,
       fields: meta(row).prev as Partial<DepthFields>,
+      expected: meta(row).after as Partial<DepthFields>,
       reason,
-    });
-  },
+    }),
 };
 
 /** set_satellite_imagery → the mode it replaced (`auto` when none was stored). */

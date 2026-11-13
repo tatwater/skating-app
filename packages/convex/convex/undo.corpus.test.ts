@@ -330,6 +330,21 @@ describe('undo: access alert pins (D226)', () => {
     );
   });
 
+  test('a pin over a claim the community resolved cannot be released back to live', async () => {
+    const { t, mod, alertId } = await alertSetup();
+    await t.run((ctx) => ctx.db.patch(alertId, { status: 'resolved' }));
+    await mod.as.mutation(api.accessAlerts.setOfficial, {
+      accessAlertId: alertId,
+      official: true,
+      reason: 'still locked',
+    });
+    const pin = await newestOn(t, 'accessAlert', alertId);
+    await expect(mod.as.mutation(api.undo.run, { actionId: pin._id })).rejects.toThrow(
+      /had resolved it before the pin/,
+    );
+    expect((await t.run((ctx) => ctx.db.get(alertId)))?.status).toBe('official');
+  });
+
   test('an unpinned alert its author retracted since is not pinned back', async () => {
     const { t, author, mod, alertId } = await alertSetup();
     await mod.as.mutation(api.accessAlerts.setOfficial, {

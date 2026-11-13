@@ -33,6 +33,9 @@ import { meta, PREDATES, type TargetUndo, type UndoCall, type UndoHandler } from
 
 type ContentStatus = 'visible' | 'hidden' | 'removed';
 
+/** How far down an item is: a step up this ladder takes something away (D226's reason rule). */
+const STATUS_SEVERITY: Record<ContentStatus, number> = { visible: 0, hidden: 1, removed: 2 };
+
 function contentBlocked(row: Doc<'moderationActions'>): string | null {
   // A row a Post's verdict wrote for one of its members is undone with the Post, not on its own.
   if (meta(row).cascadedFromPostId !== undefined || meta(row).derivedFromReportId !== undefined) {
@@ -72,7 +75,15 @@ const contentUndoTakedown: UndoHandler = {
     }
     return contentBlocked(row);
   },
-  undoTakesAway: () => false,
+  // Back to visible, or down from removed to hidden, gives something back; back up to removed from a
+  // hide (hiding a removed item, then undoing it) is a `remove`, which asks why like any other.
+  undoTakesAway: (row) => {
+    const { priorStatus, newStatus } = meta(row) as {
+      priorStatus: ContentStatus;
+      newStatus: ContentStatus;
+    };
+    return STATUS_SEVERITY[priorStatus] > STATUS_SEVERITY[newStatus];
+  },
   run: (call) => takeContentBackTo(meta(call.row).priorStatus as ContentStatus)(call),
 };
 

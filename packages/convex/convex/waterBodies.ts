@@ -4054,13 +4054,13 @@ export async function writeDepth(
   },
 ): Promise<void> {
   await ctx.db.patch(body._id, patch);
+  const prev = Object.fromEntries(
+    DEPTH_FIELD_KEYS.map((k) => [k, body[k]]),
+  ) as Partial<DepthFields>;
   // What the body's depth reads after this write — every field, the patched over the unpatched. The
   // depth also changes with no audit row (the A06a import refills a released measurement), so the
   // undo compares the body against this to see a write the audit log can't show it.
-  const after = depthStateOf({
-    ...Object.fromEntries(DEPTH_FIELD_KEYS.map((k) => [k, body[k]])),
-    ...patch,
-  });
+  const after = depthStateOf({ ...prev, ...patch });
   await writeAudit(ctx, {
     actorId: actor._id,
     action: 'set_lake_depth',
@@ -4069,17 +4069,7 @@ export async function writeDepth(
     reason,
     // Before *and* after. The audit row is the only place a prior value survives a patch, so a log
     // that records just the new number can answer "who changed this" and never "changed it from what".
-    metadata: {
-      ...metadata,
-      prev: {
-        meanDepthM: body.meanDepthM,
-        meanDepthSource: body.meanDepthSource,
-        maxDepthM: body.maxDepthM,
-        maxDepthSource: body.maxDepthSource,
-        depthSourceNote: body.depthSourceNote,
-      },
-      after,
-    },
+    metadata: { ...metadata, prev, after },
     createdAt: Date.now(),
   });
 }
@@ -4087,6 +4077,8 @@ export async function writeDepth(
 /**
  * Put a body's depth fields back exactly as a `set_lake_depth` row's `prev` recorded them — the undo
  * of a reading, a rejection or a release (D226), rung and citation included, through {@link writeDepth}.
+ * Only while the body still reads `expected` (the undone row's `after`): a depth the import has
+ * rewritten since is refused, not thrown away.
  */
 export async function restoreDepthImpl(
   ctx: MutationCtx,
@@ -4094,11 +4086,22 @@ export async function restoreDepthImpl(
   {
     waterBodyId,
     fields,
+    expected,
     reason,
-  }: { waterBodyId: Id<'waterBodies'>; fields: Partial<DepthFields>; reason: string },
+  }: {
+    waterBodyId: Id<'waterBodies'>;
+    fields: Partial<DepthFields>;
+    expected: Partial<DepthFields>;
+    reason: string;
+  },
 ): Promise<void> {
   const body = await ctx.db.get(waterBodyId);
   if (!body) throw new ConvexError('Water body not found');
+  if (JSON.stringify(depthStateOf(body)) !== JSON.stringify(depthStateOf(expected))) {
+    throw new ConvexError(
+      'The depth has changed since (an import or another edit); set it again rather than undo',
+    );
+  }
   await writeDepth(ctx, actor, {
     body,
     // Every field named, so one the prior state lacked is cleared rather than left.

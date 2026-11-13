@@ -22,7 +22,7 @@ import { ConvexError } from 'convex/values';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { writeAudit } from './audit';
-import { hasCapability, isSuspendedNow } from './auth';
+import { hasCapability, isLockedOut, isSuspendedNow } from './auth';
 
 type Profile = Doc<'profiles'>;
 
@@ -72,13 +72,7 @@ export function isLedgerEditor(profile: Pick<Profile, 'role' | 'canEditLedger'>)
  * editor" — or the last holder who can act could step down and strand it.
  */
 function canStillAct(profile: Profile): boolean {
-  return (
-    profile.status !== 'banned' &&
-    profile.status !== 'deleting' &&
-    profile.status !== 'deleted' &&
-    !isSuspendedNow(profile, Date.now()) &&
-    !isLeaving(profile)
-  );
+  return !isLockedOut(profile) && !isSuspendedNow(profile, Date.now()) && !isLeaving(profile);
 }
 
 /** An editor who can still act. This is who counts toward "never no editor". */

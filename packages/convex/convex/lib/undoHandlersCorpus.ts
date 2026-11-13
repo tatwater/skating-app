@@ -103,6 +103,8 @@ const undoPin: UndoHandler = {
         return 'It was already pinned before this, so there is nothing to release.';
       case 'retracted':
         return 'It had been retracted before the pin; releasing it would put a withdrawn claim back on the map.';
+      case 'resolved':
+        return 'The people who checked it had resolved it before the pin; releasing it would put a closed claim back on the map.';
       case 'expired':
         return 'It had expired before the pin; releasing it would put a lapsed claim back on the map.';
     }

@@ -43,15 +43,19 @@ export async function requireProfile(ctx: Ctx): Promise<Doc<'profiles'>> {
   // between two of them would land in a table an earlier stage already drained and outlive its own
   // deletion (PR #29 review). Note this is the finalization lock, not the 30-day pending request —
   // a pending request deliberately gates nothing, so the person can still sign in and cancel.
-  if (
-    profile.status === 'banned' ||
-    profile.status === 'deleting' ||
-    profile.status === 'deleted'
-  ) {
-    throw new ConvexError('Account is not active');
-  }
+  if (isLockedOut(profile)) throw new ConvexError('Account is not active');
   if (isSuspendedNow(profile, Date.now())) throw new ConvexError('Account is suspended');
   return profile;
+}
+
+/**
+ * Banned, being taken apart, or gone: `requireProfile` refuses every call outright. Shared with
+ * anything that has to agree with it about who can act at all.
+ */
+export function isLockedOut(profile: Pick<Doc<'profiles'>, 'status'>): boolean {
+  return (
+    profile.status === 'banned' || profile.status === 'deleting' || profile.status === 'deleted'
+  );
 }
 
 /**

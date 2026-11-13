@@ -206,6 +206,28 @@ describe('undo: content (D226)', () => {
     expect(await statusOf(t, reportId)).toBe('hidden');
   });
 
+  test('undoing a hide of a removed item puts the removal back, and asks why like any removal', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'a');
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const reportId = await seedReport(t, author.id);
+    for (const status of ['removed', 'hidden'] as const) {
+      await mod.as.mutation(api.moderation.setModerationStatus, {
+        targetType: 'report',
+        targetId: reportId,
+        status,
+        reason: status,
+      });
+    }
+    const hide = await newestOn(t, 'report', reportId);
+
+    await expect(mod.as.mutation(api.undo.run, { actionId: hide._id })).rejects.toThrow(
+      /needs a reason/i,
+    );
+    await mod.as.mutation(api.undo.run, { actionId: hide._id, reason: 'removed was right' });
+    expect(await statusOf(t, reportId)).toBe('removed');
+  });
+
   test('a takedown that changed nothing has nothing to undo', async () => {
     const t = convexTest(schema, modules);
     const author = await seedUser(t, 'a');

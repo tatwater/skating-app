@@ -42,6 +42,18 @@ describe('useOpenSync', () => {
     expect(sync).toHaveBeenCalledTimes(2);
   });
 
+  test('a window that never left view syncs again when it is focused on a new day', () => {
+    const sync = vi.fn();
+    renderHook(() => useOpenSync(sync, true));
+    window.dispatchEvent(new Event('focus'));
+    expect(sync).toHaveBeenCalledTimes(1);
+    vi.setSystemTime(MONDAY_NOON + 20 * HOUR); // Tuesday, still visible all night
+    window.dispatchEvent(new Event('focus'));
+    expect(sync).toHaveBeenCalledTimes(2);
+    window.dispatchEvent(new Event('focus'));
+    expect(sync).toHaveBeenCalledTimes(2);
+  });
+
   test('nothing before there is a profile, and nothing after unmount', () => {
     const sync = vi.fn();
     const { rerender, unmount } = renderHook(({ on }) => useOpenSync(sync, on), {
