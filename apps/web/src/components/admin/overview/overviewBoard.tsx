@@ -68,7 +68,10 @@ export function OverviewBoard({
   className = 'h-[56.25rem] w-[90rem]',
 }: BoardProps) {
   const [tab, setTab] = useState<'home' | 'metrics'>('home');
-  const trouble = data.machinery ? machineryTrouble(data.machinery) : { stalled: 0, failed: 0 };
+  const trouble =
+    data.machinery && data.machinery !== 'withheld'
+      ? machineryTrouble(data.machinery)
+      : { stalled: 0, failed: 0 };
   const heads = overviewHeads({
     inbox: data.inbox ? inboxTotal(data.inbox) : { count: 0, capped: false },
     refits: data.corpus?.chordRefits ?? { count: 0, capped: false },

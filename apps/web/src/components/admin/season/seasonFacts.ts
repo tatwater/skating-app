@@ -1,6 +1,7 @@
 /**
  * The season's state as Home's stat strip reads it — the watch, winter region-wide, imagery and the
- * first skate — and the adapters from the season watch's record (`imageryIngestSeasons`, A06i).
+ * first skate — and the adapter from `seasonWatch.homeSummary`, which sends the record's calendar
+ * days (`YYYY-MM-DD`) and instants; this draws both in the reader's zone.
  *
  * Standalone from the Overview on purpose: the Seasons page draws the same facts, and these blocks
  * move with them if Seasons folds into the Overview.
@@ -8,6 +9,9 @@
  * Nothing here says the ice is safe or predicts it: the watch is a schedule for the machines and a
  * prompt for staff, and every word is about what was measured.
  */
+
+import type { api } from '@skating/convex/api';
+import type { FunctionReturnType } from 'convex/server';
 
 const MONTHS = [
   'Jan',
@@ -50,8 +54,8 @@ export type IceWatch =
 export interface WatchRecord {
   opensOn: string;
   openedBy: readonly string[];
-  closesOn?: string | undefined;
-  opening?: { sentinels: readonly unknown[] } | undefined;
+  closesOn?: string | null | undefined;
+  opening?: { sentinels: readonly unknown[] } | null | undefined;
   sentinels?: readonly unknown[] | undefined;
 }
 
@@ -131,13 +135,16 @@ export function winterWords(winter: RegionWinter): {
 // ── Imagery ──────────────────────────────────────────────────────────────────────────────────
 
 export interface ImageryState {
-  state: 'not-started' | 'running' | 'paused';
+  /** `ended` once the watch has closed: the cutter has stopped for the season. */
+  state: 'not-started' | 'running' | 'paused' | 'ended';
   /** Granules cut this season. */
   granules: number;
   /** When the cutter was pinned to this season's build. */
   cutterPinnedAt?: number | null;
   /** When the last frame landed. */
   lastLandedAt?: number | null;
+  /** When the season's last frame was captured — what an ended season is dated by. */
+  lastFrameAt?: number | null;
 }
 
 export function imageryWords(imagery: ImageryState): {
@@ -159,6 +166,16 @@ export function imageryWords(imagery: ImageryState): {
       return { value: 'Not started', tone: 'dim', sub: 'Starts when the watch asks for it' };
     case 'paused':
       return { value: 'Paused', unit, tone: 'dim', sub };
+    case 'ended':
+      return {
+        value: 'Ended',
+        unit,
+        tone: 'dim',
+        sub:
+          imagery.lastFrameAt != null
+            ? `Last frame ${dayMonthOf(imagery.lastFrameAt)}`
+            : 'No frame landed',
+      };
     case 'running':
       return { value: 'Running', unit, tone: 'default', sub };
   }
@@ -184,4 +201,49 @@ export function firstSkateWords(first: FirstSkate): {
     : '';
   if (first.at === null) return { value: '—', tone: 'dim', sub: last };
   return { value: dayMonthOf(first.at), tone: 'default', sub: first.body ?? last };
+}
+
+// ── From the server ──────────────────────────────────────────────────────────────────────────
+
+/** `seasonWatch.homeSummary`, as the server returns it. */
+export type HomeSummary = FunctionReturnType<typeof api.seasonWatch.homeSummary>;
+type SkateMark = NonNullable<NonNullable<HomeSummary['firstSkate']>['first']>;
+
+/** A first skate's instant: a staff-entered day at the reader's midnight, or the report's moment. */
+function skateAt(mark: SkateMark): number {
+  return mark.source === 'field' ? isoDay(mark.day) : mark.at;
+}
+
+/** The four tiles from the summary; each `null` where the server records nothing. */
+export function seasonFromSummary(summary: HomeSummary): {
+  watch: IceWatch;
+  winter: RegionWinter | null;
+  imagery: ImageryState;
+  firstSkate: FirstSkate | null;
+} {
+  const first = summary.firstSkate;
+  return {
+    watch: iceWatchFromRecord(summary.watch, isoDay(summary.countsFrom)),
+    winter:
+      summary.winter === null
+        ? null
+        : summary.winter.state === 'not-yet'
+          ? { state: 'not-yet' }
+          : { ...summary.winter, from: isoDay(summary.winter.from) },
+    imagery: summary.imagery,
+    firstSkate:
+      first === null
+        ? null
+        : {
+            at: first.first === null ? null : skateAt(first.first),
+            body: first.first?.body ?? null,
+            lastWinter:
+              first.lastWinter === null
+                ? null
+                : {
+                    at: skateAt(first.lastWinter),
+                    body: first.lastWinter.body ?? 'A body since removed',
+                  },
+          },
+  };
 }

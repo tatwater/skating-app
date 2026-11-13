@@ -2,21 +2,23 @@ import { seasonOf } from '@skating/core';
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 
+import { useOverviewMetrics } from '@/components/admin/metrics/useOverviewMetrics';
 import { useConnection } from '@/lib/useConnection';
 import { useRole } from '@/lib/useRole';
 import { OverviewView } from './OverviewView';
 import type { LinkTo } from './overviewLinks';
 import type { LiveState } from './overviewModel';
 import { consolePathFor, feedTargetPath } from './overviewRoutes';
-import { type OverviewSearch, overviewTabOf, searchForTab } from './overviewSearch';
+import { type OverviewSearch, overviewTabOf, searchForTab, seasonOfSearch } from './overviewSearch';
 import { liveStateOf } from './overviewStatus';
 import { useOverviewHome } from './useOverviewHome';
 
 /**
- * The Overview at `/admin`, wired: the tab from the URL (`?tab=metrics`; Home is no param), Home's
- * reads that exist today (`useOverviewHome`), the connection for the live mark, and every link to
- * the old page that does the work until each target's mode lands. The page itself is
- * `OverviewView`, which draws every block no read serves as *Not recorded yet*.
+ * The Overview at `/admin`, wired: the tab and the season from the URL (`?tab=metrics`,
+ * `?season=2025`; Home and the current season are no param), Home's reads (`useOverviewHome`) and
+ * Metrics' (`useOverviewMetrics`, while its tab is open), each asked for only when the viewer holds
+ * its capability; the connection for the live mark; and every link to the old page that does the
+ * work until each target's mode lands. The page itself is `OverviewView`, props only.
  */
 
 /** A link through the router to the old page that does the work, or plain text where none does. */
@@ -29,15 +31,21 @@ export function OverviewRoute() {
   const search = useSearch({ from: '/admin/' }) as OverviewSearch;
   const navigate = useNavigate();
   const { can } = useRole();
-  const reads = useOverviewHome();
   const now = useMinuteClock();
+  const season = seasonOfSearch(search, seasonOf(now));
+  const tab = overviewTabOf(search);
+  const reads = useOverviewHome({ season, now, can });
+  const metrics = useOverviewMetrics({ season, can, active: tab === 'metrics' });
   const live = useFeedLive(reads.feed);
   return (
     <OverviewView
-      season={seasonOf(now)}
-      tab={overviewTabOf(search)}
-      onTabChange={(next) => void navigate({ to: '/admin', search: searchForTab(next) })}
+      season={season}
+      tab={tab}
+      onTabChange={(next) =>
+        void navigate({ to: '/admin', search: searchForTab(next, search.season) })
+      }
       reads={reads}
+      metrics={metrics}
       now={now}
       live={live}
       support={can('inbox.support.read')}

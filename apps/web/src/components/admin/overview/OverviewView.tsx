@@ -1,8 +1,9 @@
-import type { Season } from '@skating/core';
+import { type Season, seasonRecordWindow } from '@skating/core';
 import { useMemo } from 'react';
 
-import { metricsNotRecorded, metricsWindow } from '@/components/admin/metrics/metricsModel';
+import { type DayKey, metricsNotRecorded } from '@/components/admin/metrics/metricsModel';
 import { OverviewMetrics } from '@/components/admin/metrics/OverviewMetrics';
+import type { MetricsReads } from '@/components/admin/metrics/useOverviewMetrics';
 import type { SeasonPending } from '@/components/admin/season/SeasonTiles';
 import { isoDay } from '@/components/admin/season/seasonFacts';
 import { ScrollArea } from '@/components/kit/scroll-area';
@@ -11,35 +12,31 @@ import { ConsoleStatus } from '../shell/ConsoleShell';
 import { LiveMark } from './LiveMark';
 import { OverviewHome, type OverviewHomeData } from './OverviewHome';
 import { OverviewPage } from './OverviewPage';
-import { type FeedTarget, inboxTotal } from './overviewData';
+import { type FeedTarget, inboxTotal, machineryTrouble } from './overviewData';
 import type { LinkTo } from './overviewLinks';
 import { type LiveState, overviewHeads } from './overviewModel';
 import type { OverviewTabValue } from './overviewSearch';
 import { overviewStatus } from './overviewStatus';
+import type { HomeReads } from './useOverviewHome';
 
 /**
- * The Overview page as the console mounts it, from what the route hands it: the tab, Home's reads
- * that exist, the clock and the connection. `OverviewRoute` wires it to the router and Convex; a
- * story draws the same page inside the real shell.
+ * The Overview page as the console mounts it, from what the route hands it: the tab, the season,
+ * Home's reads and Metrics', the clock and the connection. `OverviewRoute` wires it to the router
+ * and Convex; a story draws the same page inside the real shell.
  *
- * **Nothing here is a fixture.** Every block no read serves yet — the season's four, cost,
- * Machinery — is `null`, which each block draws as *Not recorded yet*; Metrics has no reads yet, so
- * every section is drawn unread (`metricsNotRecorded`) over the season window. As each read lands,
- * its `null` is swapped for the read.
+ * **Nothing here is a fixture.** Cost, which no read serves yet, is `null` — *Not recorded yet* — and
+ * so is whatever a read returned as `null`. A Metrics section whose read hasn't landed, or was read
+ * over other days than the page draws (a read either side of midnight), is drawn unread
+ * (`metricsNotRecorded`) over the season window until it matches.
  */
 
 /** The blocks no read serves yet. Each is drawn *Not recorded yet*, never as a zero or a guess. */
-export const UNREAD: Pick<
-  OverviewHomeData,
-  'watch' | 'winter' | 'imagery' | 'firstSkate' | 'cost' | 'machinery'
-> = {
-  watch: null,
-  winter: null,
-  imagery: null,
-  firstSkate: null,
-  cost: null,
-  machinery: null,
-};
+export const UNREAD: Pick<OverviewHomeData, 'cost'> = { cost: null };
+
+/** Whether a read covers exactly the days the page draws. */
+function sameDays(a: readonly DayKey[], b: readonly DayKey[]): boolean {
+  return a.length === b.length && a.every((day, i) => day === b[i]);
+}
 
 export type OverviewViewProps = {
   /**
@@ -49,8 +46,10 @@ export type OverviewViewProps = {
   season: Season;
   tab: OverviewTabValue;
   onTabChange: (tab: OverviewTabValue) => void;
-  /** Home's reads that exist (`useOverviewHome`), each `undefined` while it loads. */
-  reads: Pick<OverviewHomeData, 'inbox' | 'corpus' | 'people' | 'feed'>;
+  /** Home's reads (`useOverviewHome`), each `undefined` while it loads. */
+  reads: HomeReads;
+  /** Metrics' reads (`useOverviewMetrics`); none, or one still loading, draws unread. */
+  metrics?: MetricsReads;
   /** The instant every age is read against. */
   now: number;
   /** The audit feed's live mark. */
@@ -69,6 +68,7 @@ export function OverviewView({
   tab,
   onTabChange,
   reads,
+  metrics: metricReads = {},
   now,
   live,
   support,
@@ -77,7 +77,7 @@ export function OverviewView({
   onOpenBody,
   onRefresh,
 }: OverviewViewProps) {
-  const span = useMemo(() => metricsWindow(season, now), [season, now]);
+  const span = useMemo(() => seasonRecordWindow(season, now), [season, now]);
   // From 1 July to 30 September the season has begun but its record hasn't: its four tiles show
   // the new season, empty, and when its record begins — never the last season's facts.
   const preseason: SeasonPending | null =
@@ -92,14 +92,29 @@ export function OverviewView({
       firstSkate: preseason,
     }),
   };
+  // Machinery unread, withheld or loading says no run is stalled or failed — and none is fine.
+  const trouble =
+    data.machinery && data.machinery !== 'withheld'
+      ? machineryTrouble(data.machinery)
+      : { stalled: 0, failed: 0 };
   const heads = overviewHeads({
     inbox: data.inbox ? inboxTotal(data.inbox) : { count: 0, capped: false },
     refits: data.corpus?.chordRefits ?? { count: 0, capped: false },
-    // Machinery is unread: no run is said to be stalled or failed, and none is said to be fine.
-    stalled: 0,
-    failed: 0,
+    ...trouble,
   });
-  const metrics = useMemo(() => metricsNotRecorded(span.days, { support }), [span.days, support]);
+  const { keepingUp, showingUp, coverage } = metricReads;
+  const metrics = useMemo(() => {
+    const unread = metricsNotRecorded(span.days, { support });
+    const read = <T,>(
+      r: { days: readonly DayKey[] } | undefined,
+      part: T | undefined,
+    ): T | undefined => (r !== undefined && sameDays(r.days, span.days) ? part : undefined);
+    return {
+      keepingUp: read(keepingUp, keepingUp?.keepingUp) ?? unread.keepingUp,
+      showingUp: read(showingUp, showingUp?.showingUp) ?? unread.showingUp,
+      coverage: read(coverage, coverage?.coverage) ?? unread.coverage,
+    };
+  }, [span.days, support, keepingUp, showingUp, coverage]);
 
   return (
     <div

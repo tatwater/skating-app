@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import {
   firstSkateWords,
+  type HomeSummary,
   iceWatchFromRecord,
   iceWatchWords,
   imageryWords,
   isoDay,
+  seasonFromSummary,
   winterWords,
 } from './seasonFacts';
 
@@ -133,5 +135,71 @@ describe('first skated', () => {
       sub: 'Post Pond',
     });
     expect(firstSkateWords({ at: null, body: null }).sub).toBe('');
+  });
+});
+
+describe('an ended season', () => {
+  it('reads Ended, with the date of its last frame, never running', () => {
+    const words = imageryWords({ state: 'ended', granules: 412, lastFrameAt: day(3, 12, 2027) });
+    expect(words).toEqual({
+      value: 'Ended',
+      unit: '412 granules',
+      tone: 'dim',
+      sub: 'Last frame 12 Apr',
+    });
+    expect(imageryWords({ state: 'ended', granules: 0, lastFrameAt: null }).sub).toBe(
+      'No frame landed',
+    );
+  });
+});
+
+describe('seasonFromSummary — the server’s days and instants, in the reader’s zone', () => {
+  const SUMMARY: HomeSummary = {
+    season: 2026,
+    countsFrom: '2026-10-01',
+    watch: {
+      opensOn: '2026-10-03',
+      openedBy: ['sentinel'],
+      closesOn: null,
+      opening: { sentinels: [{ name: 'Upper Lake of the Clouds', lowC: -3 }] },
+      sentinels: [],
+    },
+    winter: { state: 'set', from: '2026-11-05', nights: 2, frozen: 11, reporting: 25, needs: 13 },
+    imagery: { state: 'running', granules: 4, lastLandedAt: 7, lastFrameAt: 6 },
+    firstSkate: {
+      first: { source: 'field', day: '2026-11-08', body: 'Crystal Lake' },
+      lastWinter: { source: 'report', at: 99, body: 'Kezar Lake' },
+    },
+  };
+
+  it('turns each record day into that calendar day, local, and keeps instants as they are', () => {
+    const facts = seasonFromSummary(SUMMARY);
+    expect(facts.watch).toMatchObject({ state: 'open', since: day(9, 3), sentinels: 1 });
+    expect(facts.winter).toEqual({
+      state: 'set',
+      from: day(10, 5),
+      nights: 2,
+      frozen: 11,
+      reporting: 25,
+      needs: 13,
+    });
+    expect(facts.firstSkate).toEqual({
+      at: day(10, 8),
+      body: 'Crystal Lake',
+      lastWinter: { at: 99, body: 'Kezar Lake' },
+    });
+  });
+
+  it('keeps the server’s nulls: a winter not recorded, a first skate the look could not find', () => {
+    const facts = seasonFromSummary({ ...SUMMARY, watch: null, winter: null, firstSkate: null });
+    expect(facts.watch).toEqual({ state: 'waiting', countsFrom: day(9, 1) });
+    expect(facts.winter).toBeNull();
+    expect(facts.firstSkate).toBeNull();
+    expect(seasonFromSummary({ ...SUMMARY, winter: { state: 'not-yet' } }).winter).toEqual({
+      state: 'not-yet',
+    });
+    expect(
+      seasonFromSummary({ ...SUMMARY, firstSkate: { first: null, lastWinter: null } }).firstSkate,
+    ).toEqual({ at: null, body: null, lastWinter: null });
   });
 });

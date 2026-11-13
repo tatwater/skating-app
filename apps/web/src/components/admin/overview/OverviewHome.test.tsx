@@ -4,12 +4,19 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { StatusBar } from '@/components/kit/status-bar';
 
-const convex = vi.hoisted(() => ({ results: new Map<string, unknown>(), calls: [] as unknown[] }));
+const convex = vi.hoisted(() => ({
+  results: new Map<string, unknown>(),
+  calls: [] as unknown[],
+  asked: [] as string[],
+}));
 vi.mock('convex/react', async () => {
   const { getFunctionName } = await import('convex/server');
   return {
+    // A skipped read is never sent and never answers, as Convex's own `useQuery` does.
     useQuery: (ref: Parameters<typeof getFunctionName>[0], args: unknown) => {
+      if (args === 'skip') return undefined;
       convex.calls.push(args);
+      convex.asked.push(getFunctionName(ref));
       return convex.results.get(getFunctionName(ref));
     },
   };
@@ -141,7 +148,7 @@ describe('OverviewHome', () => {
       <OverviewHome
         data={{
           machinery: {
-            jobs: [{ id: 'x', name: 'Rollovers', state: 'never', at: '—' }],
+            jobs: [{ id: 'x', name: 'Rollovers', state: 'never', at: null }],
             more: 0,
             moreAllOk: true,
           },
@@ -270,6 +277,7 @@ describe('the status bar’s integration points', () => {
         inbox: {
           lanes: { ...must(HOME.inbox).lanes, safety: { count: 0, capped: false } },
           oldestOpenAt: null,
+          medianOpenedAt: null,
         },
         machinery: { jobs: [], more: 3, moreAllOk: true },
         corpus: { ...must(HOME.corpus), preIcePass: { state: 'done', at: 1 } },
@@ -284,26 +292,69 @@ describe('useOverviewHome', () => {
   beforeEach(() => {
     convex.results.clear();
     convex.calls.length = 0;
+    convex.asked.length = 0;
   });
 
+  const admin = () => true;
+  const moderator = (cap: string) => cap !== 'machinery.read' && cap !== 'inbox.support.read';
+
   it('is undefined block by block until each read lands', () => {
-    const { result } = renderHook(() => useOverviewHome());
+    const { result } = renderHook(() => useOverviewHome({ season: 2026, now: NOW, can: admin }));
     expect(result.current).toEqual({
       inbox: undefined,
       people: undefined,
       corpus: undefined,
+      machinery: undefined,
+      watch: undefined,
+      winter: undefined,
+      imagery: undefined,
+      firstSkate: undefined,
       feed: undefined,
     });
     expect(convex.calls).toContainEqual({ limit: FEED_LIMIT });
+    expect(convex.calls).toContainEqual({ season: 2026 });
+    // Machinery is read on the minute, so a job falls late as the clock moves.
+    expect(convex.calls).toContainEqual({ now: Math.floor(NOW / 60_000) * 60_000 });
   });
 
-  it('adapts each read, with the extras the route passes', () => {
+  it('asks only for what the viewer may read; Machinery is left out for a moderator', () => {
+    const { result } = renderHook(() =>
+      useOverviewHome({ season: 2026, now: NOW, can: moderator }),
+    );
+    expect(convex.asked).not.toContain(getFunctionName(api.machinery.overviewJobs));
+    expect(result.current.machinery).toBe('withheld');
+  });
+
+  it('adapts each read, the Corpus counts over the intake rows, and the feeds in time order', () => {
     convex.results.set(getFunctionName(api.console.overview), {
-      inbox: { ...must(HOME.inbox).lanes, oldestOpenAt: 5 },
-      people: { ...must(HOME.people), totalUsers: undefined },
+      inbox: { ...must(HOME.inbox).lanes, oldestOpenAt: 5, medianOpenedAt: 6 },
+      people: { ...must(HOME.people), totalUsers: null },
     });
     convex.results.set(getFunctionName(api.waterBodies.reviewQueueCounts), {
       'name-conflict': { count: 3, capped: false, advisory: true },
+      'duplicate-candidate': { count: 8, capped: false, advisory: false },
+    });
+    convex.results.set(getFunctionName(api.console.corpusCounts), {
+      duplicates: { count: 4, capped: false },
+      chordRefits: { count: 2, capped: false },
+      placeNames: { count: 237, capped: false },
+      preIcePass: null,
+      enrichment: null,
+      campaignAt: 7,
+    });
+    convex.results.set(getFunctionName(api.machinery.overviewJobs), {
+      jobs: [{ id: 'imagery-poll', name: 'Imagery poll', state: 'failed', at: NOW - 3_600_000 }],
+      more: 22,
+      moreAllOk: false,
+      untracked: 22,
+    });
+    convex.results.set(getFunctionName(api.seasonWatch.homeSummary), {
+      season: 2026,
+      countsFrom: '2026-10-01',
+      watch: null,
+      winter: { state: 'not-yet' },
+      imagery: { state: 'ended', granules: 4, lastLandedAt: null, lastFrameAt: 9 },
+      firstSkate: { first: null, lastWinter: null },
     });
     convex.results.set(getFunctionName(api.moderation.listActions), [
       {
@@ -317,20 +368,34 @@ describe('useOverviewHome', () => {
         undo: { kind: 'none' },
       },
     ]);
-    const { result } = renderHook(() =>
-      useOverviewHome({
-        chordRefits: { count: 2, capped: false },
-        placeNames: { count: 237, capped: false },
-        preIcePass: { state: 'not-run' },
-        enrichment: { count: 58, capped: false },
-        campaignAt: 7,
-      }),
-    );
-    expect(result.current.inbox?.oldestOpenAt).toBe(5);
-    expect(result.current.people?.totalUsers).toBeNull();
-    expect(result.current.corpus?.nameConflicts).toEqual({ count: 3, capped: false });
-    expect(result.current.corpus?.chordRefits).toEqual({ count: 2, capped: false });
-    expect(result.current.corpus?.campaignAt).toBe(7);
-    expect(result.current.feed?.[0]).toMatchObject({ actor: 'Sarah', action: 'Hid' });
+    convex.results.set(getFunctionName(api.console.systemFeed), [
+      {
+        id: 'import:r',
+        at: 2,
+        actor: null,
+        action: 'Run failed',
+        target: { type: 'importRun', id: 'r', label: 'VT canonical water' },
+      },
+    ]);
+    const { result } = renderHook(() => useOverviewHome({ season: 2026, now: NOW, can: admin }));
+    const r = result.current;
+    expect(r.inbox?.oldestOpenAt).toBe(5);
+    expect(r.inbox?.medianOpenedAt).toBe(6);
+    expect(r.people?.totalUsers).toBeNull();
+    expect(r.corpus?.nameConflicts).toEqual({ count: 3, capped: false });
+    // Decisions, not rows: the Corpus counts replace the intake reasons' sum.
+    expect(r.corpus?.duplicates).toEqual({ count: 4, capped: false });
+    expect(r.corpus?.preIcePass).toBeNull();
+    expect(r.machinery).toEqual({
+      jobs: [{ id: 'imagery-poll', name: 'Imagery poll', state: 'failed', at: NOW - 3_600_000 }],
+      more: 22,
+      moreAllOk: false,
+    });
+    expect(r.watch).toEqual({ state: 'waiting', countsFrom: new Date(2026, 9, 1).getTime() });
+    expect(r.imagery).toMatchObject({ state: 'ended', lastFrameAt: 9 });
+    expect(r.feed?.map((row) => [row.actor, row.action])).toEqual([
+      [null, 'Run failed'],
+      ['Sarah', 'Hid'],
+    ]);
   });
 });

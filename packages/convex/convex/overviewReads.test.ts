@@ -642,11 +642,11 @@ describe('console.systemFeed — what the machines did', () => {
     const admin = await seedUser(t, 'adm', 'admin');
     await seedRuns(t);
     const rows = await admin.as.query(api.console.systemFeed, {});
-    expect(rows.map((r) => r.action)).toEqual([
-      'Imagery pump failed',
-      'Imagery pump refused',
-      'Import failed',
-      'Ice watch opened',
+    expect(rows.map((r) => [r.action, r.target.label])).toEqual([
+      ['Run failed', 'Imagery pump'],
+      ['Run refused', 'Imagery pump'],
+      ['Run failed', 'VT canonical water'],
+      ['Opened ice watch', 'Winter 2026–27'],
     ]);
     expect(rows.every((r) => r.actor === null)).toBe(true);
     expect(rows[2]?.target).toEqual(
@@ -659,7 +659,7 @@ describe('console.systemFeed — what the machines did', () => {
     const mod = await seedUser(t, 'mod', 'moderator');
     await seedRuns(t);
     expect((await mod.as.query(api.console.systemFeed, {})).map((r) => r.action)).toEqual([
-      'Ice watch opened',
+      'Opened ice watch',
     ]);
     const admin = await seedUser(t, 'adm', 'admin');
     expect(await admin.as.query(api.console.systemFeed, { limit: 1 })).toHaveLength(1);
@@ -681,8 +681,8 @@ describe('console.systemFeed — what the machines did', () => {
       }),
     );
     expect((await mod.as.query(api.console.systemFeed, {})).map((r) => r.action)).toEqual([
-      'Ice watch closed',
-      'Ice watch opened',
+      'Closed ice watch',
+      'Opened ice watch',
     ]);
   });
 });

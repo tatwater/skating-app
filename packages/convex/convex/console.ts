@@ -352,6 +352,12 @@ const SYSTEM_FEED_MAX = 100;
 /** Imagery runs looked through for the failures among them (the pump beats every few minutes). */
 const IMAGERY_RUN_SCAN = 200;
 
+/** `winter-2026-27` → "Winter 2026–27", the season's name as the console writes it. */
+function seasonName(label: string): string {
+  const m = /^winter-(\d{4})-(\d{2})$/.exec(label);
+  return m ? `Winter ${m[1]}–${m[2]}` : label;
+}
+
 /** A row of the audit feed the machine wrote: no actor, a verb in words, a target it names. */
 type SystemFeedRow = {
   id: string;
@@ -395,7 +401,7 @@ export const systemFeed = query({
           id: `import:${run._id}`,
           at: run.finishedAt ?? run.startedAt,
           actor: null,
-          action: run.status === 'failed' ? 'Import failed' : 'Import finished',
+          action: run.status === 'failed' ? 'Run failed' : 'Run succeeded',
           target: { type: 'importRun', id: run._id, label: run.label },
         });
       }
@@ -409,9 +415,8 @@ export const systemFeed = query({
           id: `imagery:${run._id}`,
           at: run.finishedAt ?? run.startedAt,
           actor: null,
-          action:
-            run.outcome === 'failed' ? `Imagery ${run.kind} failed` : `Imagery ${run.kind} refused`,
-          target: { type: 'imageryRun', id: run._id, label: run.season },
+          action: run.outcome === 'failed' ? 'Run failed' : 'Run refused',
+          target: { type: 'imageryRun', id: run._id, label: `Imagery ${run.kind}` },
         });
       }
     }
@@ -427,16 +432,16 @@ export const systemFeed = query({
           id: `watch-open:${s._id}`,
           at: s.detectedAt,
           actor: null,
-          action: 'Ice watch opened',
-          target: { type: 'seasonWatch', id: s.season, label: s.opensOn },
+          action: 'Opened ice watch',
+          target: { type: 'seasonWatch', id: s.season, label: seasonName(s.season) },
         });
         if (s.closedAt !== undefined && s.closesOn !== undefined) {
           rows.push({
             id: `watch-close:${s._id}`,
             at: s.closedAt,
             actor: null,
-            action: 'Ice watch closed',
-            target: { type: 'seasonWatch', id: s.season, label: s.closesOn },
+            action: 'Closed ice watch',
+            target: { type: 'seasonWatch', id: s.season, label: seasonName(s.season) },
           });
         }
       }

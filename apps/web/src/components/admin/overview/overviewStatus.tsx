@@ -20,8 +20,8 @@ export function overviewStatus({
   corpus,
 }: {
   inbox?: InboxCardData | undefined;
-  /** `null` until a read serves the jobs: the bar then names no machinery trouble. */
-  machinery?: MachineryCardData | null | undefined;
+  /** `null` until a read serves the jobs, or `'withheld'`: the bar then names no machinery trouble. */
+  machinery?: MachineryCardData | null | undefined | 'withheld';
   corpus?: CorpusCardData | undefined;
 }): ReactNode[] {
   const groups: ReactNode[] = [];
@@ -36,7 +36,7 @@ export function overviewStatus({
     );
   }
 
-  if (machinery) {
+  if (machinery && machinery !== 'withheld') {
     const n = (state: string) => machinery.jobs.filter((j) => j.state === state).length;
     const hand = [
       n('stalled') > 0 ? `${n('stalled')} stalled` : null,

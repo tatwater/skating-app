@@ -13,7 +13,7 @@ import { faceLoaded, must } from '@/components/kit/storyKit';
 import { LiveMark } from './LiveMark';
 import { InboxCard, MachineryCard } from './OverviewCards';
 import { OverviewPage } from './OverviewPage';
-import { HOME, LAST_CHECKED_LIVE, LAST_CHECKED_QUIET, NOW } from './overviewFixtures';
+import { HOME, LAST_CHECKED_LIVE, LAST_CHECKED_QUIET, MACHINERY, NOW } from './overviewFixtures';
 import { StatusDot } from './StatusDot';
 
 /** The Home blocks one at a time, in all four maps where the piece is surface-neutral. */
@@ -200,7 +200,7 @@ export const CountCardRows: Story = {
 export const MachineryRows: Story = {
   render: () => (
     <div className="w-[20.5rem]">
-      <MachineryCard data={HOME.machinery} />
+      <MachineryCard data={MACHINERY} now={NOW} />
     </div>
   ),
   play: async ({ canvasElement }) => {

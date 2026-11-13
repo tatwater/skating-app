@@ -42,8 +42,8 @@ import { type LinkTo, OverviewLinkProvider } from './overviewLinks';
 
 /**
  * Each block's view model: `undefined` while its read loads (the block holds its place), `null`
- * where no read serves it yet (the block says *Not recorded yet* — the season's four, cost and
- * Machinery until their reads land). The season's four also take `SeasonPending` from 1 July to
+ * where nothing records it (the block says *Not recorded yet* — cost, and whatever a read returns
+ * as `null`). The season's four also take `SeasonPending` from 1 July to
  * 30 September: the new season, empty, saying when its record begins.
  */
 export interface OverviewHomeData {
@@ -54,7 +54,8 @@ export interface OverviewHomeData {
   cost?: CostData | null | undefined;
   inbox?: InboxCardData | undefined;
   corpus?: CorpusCardData | undefined;
-  machinery?: MachineryCardData | null | undefined;
+  /** `'withheld'` from a viewer who can't read Machinery (admin only): the card is left out. */
+  machinery?: MachineryCardData | null | undefined | 'withheld';
   people?: PeopleCardData | undefined;
   feed?: readonly FeedRow[] | undefined;
 }
@@ -117,7 +118,12 @@ export function OverviewHome({
         <div data-slot="overview-cards" className={cn(COLUMNS, 'items-start')}>
           <InboxCard data={data.inbox} now={now} />
           <CorpusCard data={data.corpus} />
-          <MachineryCard data={data.machinery} />
+          {data.machinery === 'withheld' ? (
+            // The column keeps its width, so People stays on the board's line.
+            <div data-slot="machinery-withheld" />
+          ) : (
+            <MachineryCard data={data.machinery} now={now} />
+          )}
           <PeopleCard data={data.people} />
         </div>
 

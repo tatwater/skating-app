@@ -1,6 +1,6 @@
 import { api } from '@skating/convex/api';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
-import { useQuery } from 'convex/react';
+import { useMutation, useQuery } from 'convex/react';
 import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { Toaster } from '@/components/kit/toast';
 import { useConnection } from '@/lib/useConnection';
@@ -11,6 +11,7 @@ import { ConsolePalette } from './ConsolePalette';
 import { ConsoleShell, type RailMode } from './ConsoleShell';
 import { CONSOLE_MODES, LEGACY_PAGES, modeAt } from './consoleNav';
 import { seasonTape } from './consoleTime';
+import { colleaguesFrom, useHeartbeat, useMinuteNow } from './presence';
 import { UndoProvider, useUndoServer } from './undo';
 
 /**
@@ -27,6 +28,10 @@ import { UndoProvider, useUndoServer } from './undo';
  * - **The keys**: ⌘K and the search trigger open the palette; G then a letter goes to a mode, the
  *   Legacy menu or the app (the kit shell's go-mode).
  * - **Undo and the toasts** are mounted here once: `useUndo()` and History work on every page.
+ * - **The season tape** draws the watch's record (`seasonWatch.tape`) — its marks and the day of the
+ *   watch — over the calendar; **the faces** are the colleagues on staff in the console now
+ *   (`console.colleagues`); and while the tab is open and visible this page says so once a minute
+ *   (`console.heartbeat`). Each is asked for only with its capability.
  */
 export function ConsoleLayout() {
   const { isModerator, isLoading, can, userId } = useRole();
@@ -36,6 +41,16 @@ export function ConsoleLayout() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const server = useUndoServer();
   useAdminSurface();
+  const now = useMinuteNow();
+  const minute = Math.floor(now / 60_000) * 60_000;
+
+  const tapeFacts = useQuery(api.seasonWatch.tape, can('season.summary') ? {} : 'skip');
+  const colleagueRows = useQuery(
+    api.console.colleagues,
+    can('console.colleagues') ? { now: minute } : 'skip',
+  );
+  const beat = useMutation(api.console.heartbeat);
+  useHeartbeat(!isLoading && can('console.presence'), () => beat({}));
 
   const mode = modeAt(pathname);
   const modeRefused = mode !== undefined && !can(mode.capability);
@@ -48,9 +63,9 @@ export function ConsoleLayout() {
     void navigate({ to: home });
   }, [turnedAway, isModerator, mode, navigate]);
 
-  // Read once per mount: the tape moves a day at a time, and a remount (a hop between shells) is
-  // often enough to keep it current for a working session.
-  const tape = useMemo(() => seasonTape(Date.now()), []);
+  // Redrawn when the record changes and each minute — cheap, and today's mark turns at midnight.
+  const tape = useMemo(() => seasonTape(now, undefined, tapeFacts), [tapeFacts, now]);
+  const colleagues = useMemo(() => colleaguesFrom(colleagueRows ?? []), [colleagueRows]);
 
   if (isLoading || turnedAway) return <Splash />;
 
@@ -77,6 +92,7 @@ export function ConsoleLayout() {
           : {})}
         {...(userId !== undefined ? { viewerId: userId } : {})}
         tape={tape}
+        colleagues={colleagues}
         onSearch={() => setPaletteOpen(true)}
         onCommandKey={() => setPaletteOpen((o) => !o)}
         lamp={<ConnectionLamp />}

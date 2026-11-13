@@ -13,14 +13,12 @@ import {
   instantLabel,
   medianPhrase,
   metricsNotRecorded,
-  metricsWindow,
   OLDEST_FLAG_BAD_HOURS,
   oldestFlagTone,
   PULSE_KEYS,
   perThousand,
   pulseSub,
   pulseTicks,
-  seasonWindowDays,
   shortAge,
   stateInk,
   sumBuckets,
@@ -250,75 +248,6 @@ describe('words', () => {
     expect(stateInk('VT')).toBe('var(--fg)');
     expect(stateInk('MA')).toBe('var(--line)');
     expect(stateInk('QC')).toBe('var(--line)');
-  });
-});
-
-describe('the season window', () => {
-  const DAY = 86_400_000;
-  const isoDay = (ms: number) => new Date(ms).toISOString().slice(0, 10);
-
-  it('runs from the season’s 1 October through today', () => {
-    const days = seasonWindowDays(Date.UTC(2027, 0, 16, 16, 52));
-    expect(days[0]).toBe('2026-10-01');
-    expect(days.at(-1)).toBe('2027-01-16');
-    expect(days).toHaveLength(108);
-  });
-
-  it('flips to the new season on 1 July, and stays empty until its window opens 1 October', () => {
-    expect(seasonWindowDays(Date.UTC(2027, 5, 30, 23, 59)).at(-1)).toBe('2027-06-30');
-    expect(seasonWindowDays(Date.UTC(2027, 6, 1, 0, 0))).toEqual([]);
-    expect(metricsWindow(2027, Date.UTC(2027, 8, 30, 23, 59))).toEqual({
-      opensOn: '2027-10-01',
-      days: [],
-    });
-    expect(seasonWindowDays(Date.UTC(2027, 9, 1, 0, 0))).toEqual(['2027-10-01']);
-  });
-
-  it('draws a past season whole, 1 October to 30 June, only when it is asked for', () => {
-    const { opensOn, days } = metricsWindow(2025, Date.UTC(2027, 0, 16));
-    expect(opensOn).toBe('2025-10-01');
-    expect(days[0]).toBe('2025-10-01');
-    expect(days.at(-1)).toBe('2026-06-30');
-    expect(days).toHaveLength(273);
-  });
-
-  it('is the new season, empty, all summer; else 1 October to today, no day skipped', () => {
-    fc.assert(
-      fc.property(fc.integer({ min: Date.UTC(2020, 0, 1), max: Date.UTC(2040, 0, 1) }), (now) => {
-        const days = seasonWindowDays(now);
-        const month = new Date(now).getUTCMonth();
-        if (month >= 6 && month <= 8) {
-          expect(days).toEqual([]);
-          return;
-        }
-        expect(days[0]?.slice(5)).toBe('10-01');
-        expect(days.at(-1)).toBe(isoDay(now));
-        // 273 days, 274 when the February has a 29th.
-        expect(days.length).toBeLessThanOrEqual(274);
-        for (let i = 1; i < days.length; i++) {
-          expect(Date.parse(`${days[i]}T00:00:00Z`) - Date.parse(`${days[i - 1]}T00:00:00Z`)).toBe(
-            DAY,
-          );
-        }
-      }),
-    );
-  });
-
-  it('opens the window of the season it is handed, never another', () => {
-    fc.assert(
-      fc.property(
-        fc.integer({ min: 2020, max: 2040 }),
-        fc.integer({ min: Date.UTC(2020, 0, 1), max: Date.UTC(2042, 0, 1) }),
-        (season, now) => {
-          const { opensOn, days } = metricsWindow(season, now);
-          expect(opensOn).toBe(`${season}-10-01`);
-          for (const day of days) {
-            expect(day >= `${season}-10-01` && day <= `${season + 1}-06-30`).toBe(true);
-            expect(day <= isoDay(now)).toBe(true);
-          }
-        },
-      ),
-    );
   });
 });
 

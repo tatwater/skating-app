@@ -1,6 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { historyWhen, seasonTape } from './consoleTime';
+import { dayMonth, historyWhen, seasonTape, type TapeFacts } from './consoleTime';
 
 const NY = 'America/New_York';
 const at = (iso: string) => new Date(iso).getTime();
@@ -76,5 +76,105 @@ describe('historyWhen', () => {
     // 01:30 UTC on the 17th is still the 16th in New Hampshire.
     const late = at('2027-01-17T01:30:00Z');
     expect(historyWhen(at('2027-01-16T23:00:00Z'), late, NY)).toBe('18:00');
+  });
+});
+
+describe('short months', () => {
+  it('writes September as Sep, whatever the ICU build says (current ICU writes "Sept")', () => {
+    expect(dayMonth(at('2026-09-14T12:00:00Z'), 'UTC')).toBe('14 Sep');
+    expect(historyWhen(at('2026-09-14T12:00:00Z'), at('2026-11-13T12:00:00Z'), 'UTC')).toBe(
+      '14 Sep',
+    );
+    expect(seasonTape(at('2026-10-14T16:00:00Z'), NY).marks[0]?.detail).toBe('14 Oct');
+  });
+
+  it('writes every month in three letters', () => {
+    for (let m = 0; m < 12; m++) {
+      expect(dayMonth(Date.UTC(2026, m, 15, 12), 'UTC')).toMatch(/^15 [A-Z][a-z]{2}$/);
+    }
+  });
+});
+
+describe('seasonTape with the watch’s record', () => {
+  const WATCH: NonNullable<TapeFacts['watch']> = {
+    opensOn: '2026-10-05',
+    openedBy: ['sentinel'],
+    closesOn: null,
+    opening: {
+      sentinels: [
+        { name: 'A', lowC: -2 },
+        { name: 'B', lowC: -1 },
+      ],
+    },
+    sentinels: [
+      { waterBodyId: 'a' as never, name: 'A' },
+      { waterBodyId: 'b' as never, name: 'B' },
+      { waterBodyId: 'c' as never, name: 'C' },
+    ],
+  };
+  const FACTS: TapeFacts = {
+    season: 2026,
+    countsFrom: '2026-10-01',
+    watch: WATCH,
+    imageryNudgeOn: '2026-10-07',
+    imageryNudgeLowC: -7.2,
+    winterFrom: null,
+    lastWinterFirst: { source: 'report', at: at('2025-12-06T15:00:00Z'), body: 'Crystal Lake' },
+  };
+
+  it('marks the opening, the imagery line, today with the day of the watch, and last winter’s ghost', () => {
+    const tape = seasonTape(at('2026-10-14T16:00:00Z'), NY, FACTS);
+    expect(tape.badge).toBe('Day 10');
+    expect(tape.marks.map((m) => [m.kind, m.title, m.detail])).toEqual([
+      ['event', 'Ice watch opened', '5 Oct · 2 of 3 sentinels'],
+      ['event', 'First imagery-line night', '7 Oct · 19 °F'],
+      ['now', 'Today', '14 Oct · Day 10 of the watch'],
+      ['ghost', 'Last winter’s first report', '6 Dec · Crystal Lake'],
+    ]);
+    // The ghost sits where 6 December falls on this winter's tape.
+    expect(tape.marks[3]?.at).toBeCloseTo(66 / 212, 6);
+  });
+
+  it('closes: a close mark, and no day badge', () => {
+    const closed = {
+      ...FACTS,
+      watch: { ...WATCH, closesOn: '2027-04-20' },
+      winterFrom: '2026-12-01',
+    };
+    const tape = seasonTape(at('2027-04-25T16:00:00Z'), NY, closed);
+    expect(tape.badge).toBeUndefined();
+    expect(tape.marks.map((m) => m.title)).toEqual([
+      'Ice watch opened',
+      'First imagery-line night',
+      'Winter set in, region-wide',
+      'Last winter’s first report',
+      'Ice watch closed',
+      'Today',
+    ]);
+  });
+
+  it('says the region opened it when no sentinel did, and draws a staff date as a first skate', () => {
+    const facts: TapeFacts = {
+      ...FACTS,
+      watch: { ...WATCH, opening: { sentinels: [] } },
+      imageryNudgeOn: null,
+      imageryNudgeLowC: null,
+      lastWinterFirst: { source: 'field', day: '2025-12-20', body: null },
+    };
+    const tape = seasonTape(at('2026-10-14T16:00:00Z'), NY, facts);
+    expect(tape.marks.map((m) => m.detail)).toEqual([
+      '5 Oct · the region’s bodies',
+      '14 Oct · Day 10 of the watch',
+      '20 Dec',
+    ]);
+    expect(tape.marks[2]?.title).toBe('Last winter’s first skate');
+  });
+
+  it('ignores another season’s record, and waits for the watch to open before a badge', () => {
+    expect(
+      seasonTape(at('2026-10-14T16:00:00Z'), NY, { ...FACTS, season: 2025 }).marks,
+    ).toHaveLength(1);
+    const waiting = seasonTape(at('2026-10-14T16:00:00Z'), NY, { ...FACTS, watch: null });
+    expect(waiting.badge).toBeUndefined();
   });
 });

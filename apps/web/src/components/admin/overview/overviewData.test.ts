@@ -4,6 +4,7 @@ import {
   type ActionRow,
   actionWords,
   type ConsoleOverview,
+  corpusExtrasFrom,
   corpusFromReviewCounts,
   dollars,
   feedFromActions,
@@ -30,6 +31,7 @@ const OVERVIEW: ConsoleOverview = {
     contentFlags: c(2),
     support: null,
     oldestOpenAt: 1_000,
+    medianOpenedAt: 2_500,
   },
   people: {
     moderators: c(1),
@@ -41,6 +43,7 @@ const OVERVIEW: ConsoleOverview = {
     flaggedPeople: c(1),
     appealsOpen: null,
     leaving: c(0),
+    totalUsers: null,
   },
 };
 
@@ -53,12 +56,21 @@ describe('the Inbox card', () => {
     expect(inboxTotal(inbox)).toEqual(c(17));
   });
 
-  it('ages the oldest item from now, never below zero', () => {
+  it('ages the oldest and the median item from now, never below zero', () => {
     const inbox = inboxFromOverview(OVERVIEW.inbox);
-    expect(inboxFootAges(inbox, 4_000)).toEqual({ oldestMs: 3_000, medianMs: null });
-    expect(inboxFootAges(inbox, 0)).toEqual({ oldestMs: 0, medianMs: null });
+    expect(inboxFootAges(inbox, 4_000)).toEqual({ oldestMs: 3_000, medianMs: 1_500 });
+    expect(inboxFootAges(inbox, 0)).toEqual({ oldestMs: 0, medianMs: 0 });
     expect(inboxFootAges({ ...inbox, oldestOpenAt: null }, 4_000)).toBeNull();
-    expect(inboxFootAges({ ...inbox, medianAgeMs: 7 }, 4_000)?.medianMs).toBe(7);
+    expect(inboxFootAges({ ...inbox, medianOpenedAt: null }, 4_000)?.medianMs).toBeNull();
+  });
+
+  it('keeps aging the median between reads: the same read, a later clock, an older foot', () => {
+    const inbox = inboxFromOverview(OVERVIEW.inbox);
+    const DAY = 86_400_000;
+    const first = inboxFootAges(inbox, 2_500 + DAY);
+    const later = inboxFootAges(inbox, 2_500 + 3 * DAY);
+    expect(first?.medianMs).toBe(DAY);
+    expect(later?.medianMs).toBe(3 * DAY);
   });
 });
 
@@ -81,6 +93,25 @@ describe('the Corpus card', () => {
     expect(corpus.preIcePass).toBeNull();
   });
 
+  it('takes the decisions console.corpusCounts counts over the rows the reasons add up', () => {
+    const corpus = corpusFromReviewCounts(
+      { 'duplicate-candidate': { count: 200, capped: false, advisory: false } },
+      corpusExtrasFrom({
+        duplicates: c(120),
+        chordRefits: c(3),
+        placeNames: c(9),
+        preIcePass: null,
+        enrichment: null,
+        campaignAt: 11,
+      }),
+    );
+    expect(corpus.duplicates).toEqual(c(120));
+    expect(corpus.placeNames).toEqual(c(9));
+    // No record says when the pre-ice pass ran: it stays out, never "not run".
+    expect(corpus.preIcePass).toBeNull();
+    expect(corpus.enrichment).toBeNull();
+  });
+
   it('counts a reason the server left out as zero, and takes the extras it is given', () => {
     const corpus = corpusFromReviewCounts({}, { chordRefits: c(2), campaignAt: 9 });
     expect(corpus.duplicates).toEqual(c(0));
@@ -90,9 +121,9 @@ describe('the Corpus card', () => {
 });
 
 describe('the People card', () => {
-  it('passes the server’s counts through with the total when one is read', () => {
+  it('passes the server’s counts through, the total as read', () => {
     expect(peopleFromOverview(OVERVIEW.people).totalUsers).toBeNull();
-    expect(peopleFromOverview(OVERVIEW.people, c(38)).totalUsers).toEqual(c(38));
+    expect(peopleFromOverview({ ...OVERVIEW.people, totalUsers: c(38) }).totalUsers).toEqual(c(38));
   });
 
   it('names one suspension’s end, or the soonest of several', () => {
