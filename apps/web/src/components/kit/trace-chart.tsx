@@ -1,6 +1,17 @@
 import { Meter as MeterPrimitive } from '@base-ui/react/meter';
 import * as tokens from '@skating/design/tokens';
-import { type ComponentProps, type RefObject, useLayoutEffect, useRef, useState } from 'react';
+import {
+  type ComponentProps,
+  createContext,
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactNode,
+  type RefObject,
+  useContext,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 
 import { useReducedMotion } from '@/lib/useReducedMotion';
 import { cn } from '@/lib/utils';
@@ -26,6 +37,9 @@ import { cn } from '@/lib/utils';
  * - **`Sparkbars`** — a short run of daily counts (`.trend`, `.spark`): bottom-aligned bars, the
  *   latest lit, a zero a one-hair stub; a red part at a bar's foot (the safety lane), and an
  *   optional amber threshold rule.
+ * - **`SparkbarSet`** — a stack of `Sparkbars` on one day axis read together (Metrics' *Each day*):
+ *   hovering any strip, or stepping with ← → once the set has focus, draws **one** hairline through
+ *   every strip at that day and **one** plate with each strip's value — never a plate per strip.
  *
  * Tones never carry a verdict: these draw temperatures, depths and counts.
  */
@@ -588,6 +602,11 @@ function StageBar({ stages, fill = false, className, ...props }: StageBarProps) 
 
 type Sparkbar = number | { value: number; bad?: number };
 
+/** A bar's resting ink: the faint ink (`.trend`, `.spark`) or the muted one (Metrics' pulse). */
+type SparkbarTone = 'faint' | 'muted';
+
+const SPARK_INK: Record<SparkbarTone, string> = { faint: 'bg-fg3', muted: 'bg-fg2' };
+
 type SparkbarsProps = Omit<ComponentProps<'div'>, 'children'> & {
   /** One count a day, oldest first; `bad` is the part of it in the safety lane (red, at the foot). */
   values: readonly Sparkbar[];
@@ -597,18 +616,25 @@ type SparkbarsProps = Omit<ComponentProps<'div'>, 'children'> & {
   lightLatest?: boolean;
   /** An amber dashed threshold across the bars, in the bars' units. */
   rule?: number;
+  /** The bars' resting ink. Default `faint`. */
+  tone?: SparkbarTone;
   /** What the bars count, for a reader ("Open flags, the last 14 days"). */
   'aria-label': string;
 };
+
+/** The day a `SparkbarSet` is pointing at, for the strips inside it. */
+const SparkbarSetContext = createContext<number | null>(null);
 
 function Sparkbars({
   values,
   max,
   lightLatest = false,
   rule,
+  tone = 'faint',
   className,
   ...props
 }: SparkbarsProps) {
+  const active = useContext(SparkbarSetContext);
   const bars = values.map((v) => (typeof v === 'number' ? { value: v, bad: 0 } : { bad: 0, ...v }));
   const top = Math.max(max ?? 0, ...bars.map((b) => b.value), rule ?? 0, 1);
   const pct = (v: number) => `${(100 * v) / top}%`;
@@ -621,6 +647,7 @@ function Sparkbars({
     >
       {bars.map((b, i) => {
         const latest = lightLatest && i === bars.length - 1;
+        const hovered = active === i;
         return (
           <span
             // biome-ignore lint/suspicious/noArrayIndexKey: days are positional
@@ -628,15 +655,19 @@ function Sparkbars({
             aria-hidden="true"
             data-slot="sparkbar"
             data-latest={latest ? '' : undefined}
+            data-hovered={hovered ? '' : undefined}
             className="flex h-full min-w-0 flex-1 flex-col justify-end"
           >
             {b.value === 0 ? (
-              <span data-slot="sparkbar-zero" className="block h-(--stroke-hair) bg-line" />
+              <span
+                data-slot="sparkbar-zero"
+                className={cn('block h-(--stroke-hair)', hovered ? 'bg-fg2' : 'bg-line')}
+              />
             ) : (
               <>
                 <span
                   data-slot="sparkbar-fill"
-                  className={cn('block', latest ? 'bg-fg' : 'bg-fg3')}
+                  className={cn('block', latest || hovered ? 'bg-fg' : SPARK_INK[tone])}
                   style={{ height: pct(b.value - Math.min(b.bad, b.value)) }}
                 />
                 {b.bad > 0 && (
@@ -663,13 +694,240 @@ function Sparkbars({
   );
 }
 
+// ── A set of strips, one hover ───────────────────────────────────────────────────────────────
+
+type Span = { left: number; right: number };
+
+/**
+ * The bar under a pointer at `x`, from the bars' spans in order: the bar whose half of the gap on
+ * either side holds it, so the whole strip answers with no dead pixel between bars; `null` past
+ * the first or last bar's outer half-gap. Exported for its test.
+ */
+function barAt(bars: readonly Span[], x: number): number | null {
+  const n = bars.length;
+  const first = bars[0];
+  const last = bars[n - 1];
+  if (first === undefined || last === undefined) return null;
+  const halfGap = n > 1 ? ((bars[1] as Span).left - first.right) / 2 : 0;
+  if (x < first.left - halfGap || x > last.right + halfGap) return null;
+  for (let i = 0; i < n - 1; i++) {
+    const edge = ((bars[i] as Span).right + (bars[i + 1] as Span).left) / 2;
+    if (x < edge) return i;
+  }
+  return n - 1;
+}
+
+/** Where the set's hairline and plate go, in the set's own box. */
+type SetGeometry = { x: number; top: number; bottom: number; width: number };
+
+type SparkbarSetRow = {
+  /** The strip's name ("Reports"). */
+  label: ReactNode;
+  /** Its value that day, as the plate shows it ("12", "—"). */
+  value: ReactNode;
+};
+
+type SparkbarSetProps = Omit<ComponentProps<'div'>, 'children' | 'title'> & {
+  /** How many days every strip in the set draws. */
+  length: number;
+  /** A day's title on the plate and to a reader ("Sat 4 Oct"). */
+  title: (index: number) => string;
+  /** A day's rows on the plate: each strip's name and its value, in the strips' order. */
+  rows: (index: number) => readonly SparkbarSetRow[];
+  /** A day to show hovered from the start (a board's drawn hover state). */
+  defaultActive?: number | null;
+  /** The set's name for a reader ("Each day"). */
+  'aria-label': string;
+  /** Any layout holding the strips (`Sparkbars`): labels, totals, an axis. */
+  children: ReactNode;
+};
+
+const PLATE = [
+  'absolute z-(--z-plate) grid w-max grid-cols-[auto_auto] gap-x-(--space-4_5) gap-y-(--space-1_5)',
+  'px-(--space-3) py-(--space-2_5) pointer-events-none',
+  'rounded-container border border-solid border-line2 bg-plate-solid shadow-plate',
+];
+
+/**
+ * Strips of daily bars read as one (Metrics' *Each day*): wrap them, in whatever layout, and the set
+ * owns one hover — a hairline in the muted ink through every strip at the hovered day, from just
+ * over the first strip to the last one's foot, and one plate beside it with the day and each
+ * strip's value; the hovered bar lights in every strip. The plate opens away from the nearer edge.
+ *
+ * Read a day at a time, so to a keyboard and a reader it is a slider over the days: ← → step,
+ * Home and End jump, Esc lets go, and the day it rests on is spoken. Every strip in the set draws
+ * `length` days on one axis; where they are is measured, so labels and totals may sit beside them.
+ */
+function SparkbarSet({
+  length,
+  title,
+  rows,
+  defaultActive = null,
+  className,
+  children,
+  onPointerMove,
+  onPointerLeave,
+  onKeyDown,
+  onBlur,
+  ...props
+}: SparkbarSetProps) {
+  const [active, setActive] = useState<number | null>(defaultActive);
+  const [geometry, setGeometry] = useState<SetGeometry | null>(null);
+  const root = useRef<HTMLDivElement>(null);
+  const day = active !== null && active >= 0 && active < length ? active : null;
+
+  // Where the hovered day sits: measured from the strips themselves, after every layout.
+  useLayoutEffect(() => {
+    const el = root.current;
+    /* v8 ignore next */
+    if (el === null) return;
+    const measure = () => {
+      const strips = [...el.querySelectorAll<HTMLElement>('[data-slot="sparkbars"]')];
+      const bar = day === null ? undefined : strips[0]?.children[day];
+      if (bar === undefined || strips.length === 0) {
+        setGeometry(null);
+        return;
+      }
+      const box = el.getBoundingClientRect();
+      const r = bar.getBoundingClientRect();
+      const tops = strips.map((s) => s.getBoundingClientRect());
+      const next = {
+        x: r.left + r.width / 2 - box.left,
+        top: Math.min(...tops.map((t) => t.top)) - box.top,
+        bottom: Math.max(...tops.map((t) => t.bottom)) - box.top,
+        width: box.width,
+      };
+      setGeometry((prev) =>
+        prev !== null &&
+        prev.x === next.x &&
+        prev.top === next.top &&
+        prev.bottom === next.bottom &&
+        prev.width === next.width
+          ? prev
+          : next,
+      );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [day]);
+
+  const dayAt = (clientX: number): number | null => {
+    const strip = root.current?.querySelector('[data-slot="sparkbars"]');
+    if (!strip) return null;
+    const spans = [...strip.children]
+      .filter((c) => c.matches('[data-slot="sparkbar"]'))
+      .map((c) => c.getBoundingClientRect());
+    return barAt(spans, clientX);
+  };
+
+  const step = (event: KeyboardEvent<HTMLDivElement>) => {
+    const by = { ArrowLeft: -1, ArrowRight: 1 }[event.key];
+    if (by !== undefined && length > 0) {
+      event.preventDefault();
+      setActive((at) => Math.max(0, Math.min(length - 1, (at ?? length) + by)));
+    } else if ((event.key === 'Home' || event.key === 'End') && length > 0) {
+      event.preventDefault();
+      setActive(event.key === 'Home' ? 0 : length - 1);
+    } else if (event.key === 'Escape') setActive(null);
+  };
+
+  const resting = day ?? Math.max(0, length - 1);
+  const onRight = day !== null && day < length / 2;
+  return (
+    <div
+      ref={root}
+      data-slot="sparkbar-set"
+      role="slider"
+      tabIndex={0}
+      aria-orientation="horizontal"
+      aria-valuemin={0}
+      aria-valuemax={Math.max(0, length - 1)}
+      aria-valuenow={resting}
+      aria-valuetext={length > 0 ? title(resting) : undefined}
+      onPointerMove={(event: PointerEvent<HTMLDivElement>) => {
+        setActive(dayAt(event.clientX));
+        onPointerMove?.(event);
+      }}
+      onPointerLeave={(event) => {
+        setActive(null);
+        onPointerLeave?.(event);
+      }}
+      onKeyDown={(event) => {
+        step(event);
+        onKeyDown?.(event);
+      }}
+      onBlur={(event) => {
+        setActive(null);
+        onBlur?.(event);
+      }}
+      className={cn('relative outline-none focus-visible:shadow-focus', className)}
+      {...props}
+    >
+      <SparkbarSetContext.Provider value={day}>{children}</SparkbarSetContext.Provider>
+      {day !== null && geometry !== null && (
+        <>
+          <span
+            aria-hidden="true"
+            data-slot="sparkbar-set-hairline"
+            className="pointer-events-none absolute w-(--stroke-hair) -translate-x-1/2 bg-fg2"
+            style={{
+              left: geometry.x,
+              top: `calc(${geometry.top}px - var(--space-1))`,
+              height: `calc(${geometry.bottom - geometry.top}px + var(--space-1))`,
+            }}
+          />
+          <div
+            data-slot="sparkbar-set-plate"
+            role="status"
+            className={cn(PLATE)}
+            style={{
+              top: `calc(${geometry.top}px - var(--space-1))`,
+              ...(onRight
+                ? { left: `calc(${geometry.x}px + var(--space-2_5))` }
+                : { right: `calc(${geometry.width - geometry.x}px + var(--space-2_5))` }),
+            }}
+          >
+            <span
+              data-slot="sparkbar-set-title"
+              className="col-span-2 text-kick leading-none font-medium tracking-head text-fg uppercase"
+            >
+              {title(day)}
+            </span>
+            {rows(day).map((row, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: a row is its strip's place
+              <span key={i} className="contents">
+                <span className="text-assist leading-none whitespace-nowrap text-fg2">
+                  {row.label}
+                </span>
+                <b
+                  data-slot="sparkbar-set-value"
+                  className="text-right font-(family-name:--family-mono) text-mono-sm leading-none font-medium tracking-value text-fg tabular-nums"
+                >
+                  {row.value}
+                </b>
+              </span>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export {
+  barAt,
   endLabelYs,
   LedStrip,
   type LedStripProps,
   paperColor,
+  SparkbarSet,
+  type SparkbarSetProps,
+  type SparkbarSetRow,
   Sparkbars,
   type SparkbarsProps,
+  type SparkbarTone,
   StageBar,
   type StageBarProps,
   type StageState,

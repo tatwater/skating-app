@@ -61,6 +61,18 @@ const DOLLARS: ChartConfig = {
   spend: { label: 'Spend', tone: 'lead', format: (v) => `$${v.toFixed(2)}` },
 };
 
+/** Open flags a day, the quiet context under the safety part (Metrics' oldest-flag chart). */
+const QUEUE = [2, 3, 1, 4, 3, 2].map((standard, i) => ({
+  day: `${i + 1} Oct`,
+  standard,
+  safety: [0, 1, 0, 1, 0, 0][i] as number,
+}));
+
+const OPEN_FLAGS: ChartConfig = {
+  standard: { label: 'Open flags', tone: 'quiet' },
+  safety: { label: 'Safety', tone: 'bad' },
+};
+
 const WATER = [41, 40, 40, 39, 38, 38, 37, 36, 36, 35, 35, 34].map((temp, i) => ({
   day: `${i + 1} Nov`,
   temp,
@@ -100,6 +112,21 @@ function Spend({ className }: { className?: string }) {
         <ChartYAxis tickFormatter={(v: number) => `$${v}`} />
         <ChartRule y={25} />
         <ChartBar dataKey="spend" />
+        <ChartTooltip />
+      </BarChart>
+    </ChartContainer>
+  );
+}
+
+function Queue({ className }: { className?: string }) {
+  return (
+    <ChartContainer config={OPEN_FLAGS} className={className}>
+      <BarChart data={QUEUE} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+        <ChartGrid />
+        <ChartXAxis dataKey="day" />
+        <ChartYAxis allowDecimals={false} />
+        <ChartBar dataKey="standard" stackId="open" />
+        <ChartBar dataKey="safety" stackId="open" />
         <ChartTooltip />
       </BarChart>
     </ChartContainer>
@@ -398,6 +425,30 @@ export const Bars: Story = {
       ),
     ).toEqual(sameColor(line2));
     await leave(canvasElement);
+  },
+};
+
+/**
+ * The quiet tone: context counted under the lead, in the strong rule's gray (the boards' `g4`) —
+ * a step under `faint`, which a count beside a bright line would shout in. No caller overrides a
+ * color variable to get it.
+ */
+export const QuietTone: Story = {
+  args: { config: OPEN_FLAGS, children: null },
+  render: () => <Queue />,
+  play: async ({ canvasElement }) => {
+    await drawn(canvasElement, BAR);
+    const line2 = computedColor(canvasElement, 'var(--line2)');
+    const bad = computedColor(canvasElement, 'var(--bad)');
+    const fills = await paints(() => qa(canvasElement, BAR), 'fill', 'the bars');
+    await expect(fills).toContainEqual(sameColor(line2));
+    await expect(fills).toContainEqual(sameColor(bad));
+    // The quiet bars are the strong rule's gray, not the faint ink.
+    await expect(fills).not.toContainEqual(sameColor(computedColor(canvasElement, 'var(--fg3)')));
+    // The plate's swatch wears the same tone as the mark.
+    const chart = must(canvasElement.querySelector<HTMLElement>('[data-slot="chart"]'));
+    await expect(chart.style.getPropertyValue('--chart-quiet')).toBe('var(--line2)');
+    await expect(chart.style.getPropertyValue('--color-standard')).toBe('var(--chart-quiet)');
   },
 };
 

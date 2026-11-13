@@ -1,12 +1,13 @@
 import * as tokens from '@skating/design/tokens';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, waitFor, within } from 'storybook/test';
+import { expect, fireEvent, userEvent, waitFor, within } from 'storybook/test';
 
 import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { KICKER, must } from './storyKit';
 import {
   LedStrip,
   paperColor,
+  SparkbarSet,
   Sparkbars,
   StageBar,
   type Trace,
@@ -412,6 +413,150 @@ export const Bars: Story = {
   },
 };
 
+// ── A set of strips ──────────────────────────────────────────────────────────────────────────
+
+const PULSE = [
+  { key: 'reports', label: 'Reports', values: [3, 5, 2, 0, 4, 6, 3, 2, 7, 5, 4, 3, 6, 8] },
+  { key: 'photos', label: 'Photos', values: [6, 9, 3, 0, 8, 12, 5, 4, 11, 9, 7, 6, 10, 14] },
+  { key: 'accounts', label: 'New accounts', values: [1, 0, 0, 1, 2, 0, 1, 0, 0, 1, 0, 2, 1, 1] },
+] as const;
+
+const PULSE_DAYS = PULSE[0].values.map((_, i) => `${i + 1} Oct`);
+
+/** Metrics' *Each day*: a label, a strip and a total per row, one hover across the strips. */
+function PulseSet({ defaultActive }: { defaultActive?: number }) {
+  return (
+    <SparkbarSet
+      aria-label="Each day"
+      length={PULSE_DAYS.length}
+      title={(i) => PULSE_DAYS[i] ?? ''}
+      rows={(i) => PULSE.map((p) => ({ label: p.label, value: p.values[i] ?? '—' }))}
+      defaultActive={defaultActive}
+      className="grid w-[36rem] grid-cols-[6.875rem_minmax(0,1fr)_2rem] items-end gap-x-(--space-3_5) gap-y-[0.5625rem]"
+    >
+      {PULSE.map((p) => (
+        <div key={p.key} className="contents">
+          <span className={KICKER}>{p.label}</span>
+          <Sparkbars
+            aria-label={`${p.label}, each day`}
+            tone="muted"
+            lightLatest
+            values={p.values}
+            className="h-[1.875rem] border-0 border-b border-solid border-line2"
+          />
+          <span className="text-right font-(family-name:--family-mono) text-mono-sm text-fg">
+            {p.values.reduce((a: number, b: number) => a + b, 0)}
+          </span>
+        </div>
+      ))}
+    </SparkbarSet>
+  );
+}
+
+const centerOf = (el: Element) => {
+  const r = el.getBoundingClientRect();
+  return r.left + r.width / 2;
+};
+
+/**
+ * One hairline and one plate across the set: hover the fourth day on any strip and every strip
+ * lights its fourth bar, the hairline runs from just over the first strip to the last one's foot,
+ * and one plate says each strip's value. The keyboard reaches the same states.
+ */
+export const SharedHover: Story = {
+  render: () => <PulseSet />,
+  play: async ({ canvasElement }) => {
+    const set = must(canvasElement.querySelector<HTMLElement>('[data-slot="sparkbar-set"]'));
+    const strips = () => [...set.querySelectorAll<HTMLElement>('[data-slot="sparkbars"]')];
+    const barsOf = (strip: Element) => [
+      ...strip.querySelectorAll<HTMLElement>('[data-slot="sparkbar"]'),
+    ];
+    const hairline = () => set.querySelector<HTMLElement>('[data-slot="sparkbar-set-hairline"]');
+    const plates = () => set.querySelectorAll('[data-slot="sparkbar-set-plate"]');
+    await expect(hairline()).toBeNull();
+
+    // Hover the fourth day over the middle strip.
+    const target = must(barsOf(must(strips()[1]))[3]);
+    fireEvent.pointerMove(set, { clientX: centerOf(target) });
+    await waitFor(() => expect(hairline()).not.toBeNull());
+    // One of each, however many strips.
+    await expect(set.querySelectorAll('[data-slot="sparkbar-set-hairline"]')).toHaveLength(1);
+    await expect(plates()).toHaveLength(1);
+    // Every strip lights the same day, in the bright ink — a zero lights to the muted ink.
+    const fg = computedColor(set, 'var(--fg)');
+    for (const strip of strips()) {
+      const bars = barsOf(strip);
+      await expect(bars.filter((b) => b.hasAttribute('data-hovered'))).toEqual([bars[3]]);
+      const fill = bars[3]?.querySelector('[data-slot="sparkbar-fill"]');
+      if (fill) await expect(getComputedStyle(fill).backgroundColor).toEqual(sameColor(fg));
+    }
+    const zero = must(barsOf(must(strips()[0]))[3]?.querySelector('[data-slot="sparkbar-zero"]'));
+    await expect(getComputedStyle(zero).backgroundColor).toEqual(
+      sameColor(computedColor(set, 'var(--fg2)')),
+    );
+    // The hairline: at the day's middle in every strip, from space-1 over the first strip to the
+    // last one's foot. One fresh read of everything.
+    const line = must(hairline()).getBoundingClientRect();
+    const lineX = line.left + line.width / 2;
+    for (const strip of strips()) {
+      await expect(Math.abs(centerOf(must(barsOf(strip)[3])) - lineX)).toBeLessThanOrEqual(0.5);
+    }
+    const first = must(strips()[0]).getBoundingClientRect();
+    const last = must(strips().at(-1)).getBoundingClientRect();
+    await expect(
+      Math.abs(first.top - line.top - resolvePx(set, 'var(--space-1)')),
+    ).toBeLessThanOrEqual(JUNCTION_TOLERANCE_PX);
+    await expect(Math.abs(line.bottom - last.bottom)).toBeLessThanOrEqual(JUNCTION_TOLERANCE_PX);
+    await expect(getComputedStyle(must(hairline())).backgroundColor).toEqual(
+      sameColor(computedColor(set, 'var(--fg2)')),
+    );
+    // The plate: the day, then each strip's value, opening right of an early day.
+    const plate = must(plates()[0]) as HTMLElement;
+    await expect(plate).toHaveTextContent('4 Oct');
+    await expect(
+      [...plate.querySelectorAll('[data-slot="sparkbar-set-value"]')].map((v) => v.textContent),
+    ).toEqual(['0', '0', '1']);
+    await expect(plate.getBoundingClientRect().left).toBeGreaterThan(lineX);
+    await expect(getComputedStyle(plate).borderRadius).toBe('0px');
+
+    // Off the strips' ends, nothing; leaving, nothing.
+    fireEvent.pointerMove(set, { clientX: set.getBoundingClientRect().left + 2 });
+    await waitFor(() => expect(hairline()).toBeNull());
+
+    // The keyboard: a slider over the days.
+    set.focus();
+    await userEvent.keyboard('{End}');
+    await waitFor(() => expect(set).toHaveAttribute('aria-valuenow', '13'));
+    await expect(set).toHaveAttribute('aria-valuetext', '14 Oct');
+    await waitFor(() => expect(plates()).toHaveLength(1));
+    // A late day's plate opens to the left.
+    const late = must(plates()[0]).getBoundingClientRect();
+    await expect(late.right).toBeLessThan(must(hairline()).getBoundingClientRect().left);
+    await userEvent.keyboard('{ArrowLeft}');
+    await waitFor(() => expect(set).toHaveAttribute('aria-valuenow', '12'));
+    await userEvent.keyboard('{Home}');
+    await waitFor(() => expect(set).toHaveAttribute('aria-valuenow', '0'));
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(hairline()).toBeNull());
+    fireEvent.pointerMove(set, { clientX: centerOf(target) });
+    await waitFor(() => expect(hairline()).not.toBeNull());
+    // React hears a leave from the pointer going out to something outside the set.
+    fireEvent.pointerOut(set, { relatedTarget: document.body });
+    await waitFor(() => expect(hairline()).toBeNull());
+  },
+};
+
+/** The board's drawn state: a day hovered from the start. */
+export const SharedHoverDrawn: Story = {
+  render: () => <PulseSet defaultActive={9} />,
+  play: async ({ canvasElement }) => {
+    const plate = await waitFor(() =>
+      must(canvasElement.querySelector('[data-slot="sparkbar-set-plate"]')),
+    );
+    await expect(plate).toHaveTextContent('10 Oct');
+  },
+};
+
 /**
  * All four maps: the inks follow each map, and the band's rgba() follows each map's own lift — the
  * drawing reads its nearest theme, not the page's.
@@ -458,6 +603,7 @@ export const FourUp: Story = {
       <LedStrip value={9} max={10} full aria-label="Complete" />
       <StageBar stages={['done', 'done', 'run', 'waiting', 'waiting', '|', 'waiting']} />
       <Sparkbars aria-label="Flags" lightLatest values={[1, 2, 0, 3, { value: 4, bad: 1 }, 2, 5]} />
+      <PulseSet defaultActive={3} />
     </div>
   ),
   parameters: { fourUp: true },
