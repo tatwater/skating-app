@@ -7,7 +7,9 @@ import { errorText } from '@/components/admin/adminUi';
 import { useUndo } from '@/components/admin/shell/undo';
 import { useRole } from '@/lib/useRole';
 
+import type { BodyTabProps, BodyTabRegistration } from '../hazards/tabContract';
 import { LinksTabView } from './LinksTabView';
+import { linksMapScene } from './linksMap';
 
 /**
  * Body › Links, wired: the body from `waterBodies.get` (the derived links are built from it at
@@ -15,7 +17,8 @@ import { LinksTabView } from './LinksTabView';
  * remove, reorder — written whole through `waterBodies.setReferenceLinks` (`body.identity`) and
  * announced to the shell's Undo, whose undo puts the previous list back.
  */
-export function LinksTab({ bodyId }: { bodyId: Id<'waterBodies'> }) {
+export function LinksTab({ bodyId: id }: BodyTabProps) {
+  const bodyId = id as Id<'waterBodies'>;
   const result = useQuery(api.waterBodies.get, { waterBodyId: bodyId });
   const setLinks = useMutation(api.waterBodies.setReferenceLinks);
   const { can } = useRole();
@@ -43,6 +46,21 @@ export function LinksTab({ bodyId }: { bodyId: Id<'waterBodies'> }) {
     />
   );
 }
+
+/** The map's data: the body, as `waterBodies.get` hands it (Convex keeps its identity). */
+function useLinksMapData(bodyId: string) {
+  return useQuery(api.waterBodies.get, { waterBodyId: bodyId as Id<'waterBodies'> });
+}
+
+/** The Links tab's registration in the frame's registry. */
+export const LINKS_TAB: BodyTabRegistration = {
+  Wiring: LinksTab,
+  map: {
+    useData: useLinksMapData,
+    describe: (result: ReturnType<typeof useLinksMapData>, lit: string | null) =>
+      linksMapScene(result?.available === true ? result.body : null, lit),
+  },
+};
 
 /** Copernicus' window is the last 14 days from now: moved on daily. */
 function useDayClock(): number {

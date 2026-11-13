@@ -8,6 +8,7 @@ import { errorText } from '@/components/admin/adminUi';
 import { useUndo } from '@/components/admin/shell/undo';
 import { useRole } from '@/lib/useRole';
 
+import type { BodyTabProps, BodyTabRegistration } from '../hazards/tabContract';
 import { StandingTabView } from './StandingTabView';
 import type { RetentionFacts } from './standingModel';
 
@@ -21,7 +22,8 @@ import type { RetentionFacts } from './standingModel';
  * Favorites and the last use have no read yet (a seam request): those lanes are *Not recorded
  * yet*, never zero.
  */
-export function StandingTab({ bodyId }: { bodyId: Id<'waterBodies'> }) {
+export function StandingTab({ bodyId: id }: BodyTabProps) {
+  const bodyId = id as Id<'waterBodies'>;
   const result = useQuery(api.waterBodies.get, { waterBodyId: bodyId });
   const putIns = useQuery(api.putIns.listForBody, { waterBodyId: bodyId });
   const setStanding = useMutation(api.standing.setStanding);
@@ -96,6 +98,12 @@ export function StandingTab({ bodyId }: { bodyId: Id<'waterBodies'> }) {
     />
   );
 }
+
+/**
+ * The Standing tab's registration in the frame's registry. It draws nothing on the map of its own
+ * (its board's one hover plate, a GNIS town, is the frame's own mark), so it has no `map`.
+ */
+export const STANDING_TAB: BodyTabRegistration = { Wiring: StandingTab };
 
 /** The instant the lanes start from, moved on hourly: the coarsest thing they draw is a day. */
 function useHourClock(): number {

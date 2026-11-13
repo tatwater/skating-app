@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { dropIndex, moveId } from './kit-candidates/sortable-rows';
 import { BODY_NOW, MASCOMA, SMALL_POND } from './linksFixtures';
-import { linksMapDraw } from './linksMap';
+import { INTERIOR_POINT_ID, linksMapScene } from './linksMap';
 import { coordWords, derivedRows, inKeyOrder, keyedLinks } from './linksModel';
 
 describe('derivedRows', () => {
@@ -109,22 +109,26 @@ describe('moveId and dropIndex', () => {
 });
 
 describe('the map', () => {
-  it('lights the interior point with its plate, every other mark stepped back', () => {
-    expect(linksMapDraw(MASCOMA)).toEqual({
+  it('lights the interior point with its plate, on the samples layer', () => {
+    expect(linksMapScene(MASCOMA, null)).toEqual({
       items: [
         {
           kind: 'point',
-          id: 'interior-point',
+          id: 'interior:point',
+          layer: 'samples',
           at: [-72.136, 43.6174],
-          label: 'Interior point',
-          value: '43.6174°N 72.1360°W',
+          mark: 'sample',
+          hoverKicker: 'Interior point',
+          name: '43.6174°N 72.1360°W',
           caption: 'Windy and Copernicus open here',
         },
       ],
-      lit: 'interior-point',
-      fadeOthers: true,
+      lit: 'interior:point',
     });
-    expect(linksMapDraw({})).toEqual({ items: [], lit: null, fadeOthers: false });
+    expect(linksMapScene({}, null)).toEqual({ items: [] });
+    expect(linksMapScene(null, 'interior:point')).toEqual({ items: [] });
+    // The address is one the frame's `?lit=` accepts.
+    expect(/^[a-z][a-zA-Z]{0,31}:[A-Za-z0-9_.-]{1,128}$/.test(INTERIOR_POINT_ID)).toBe(true);
   });
 
   it('writes either hemisphere', () => {

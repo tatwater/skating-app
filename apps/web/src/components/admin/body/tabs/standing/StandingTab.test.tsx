@@ -31,7 +31,7 @@ vi.mock('@/components/admin/shell/undo', () => ({ useUndo: () => undo }));
 import type { Id } from '@skating/convex/dataModel';
 import { ConvexError } from 'convex/values';
 
-import { StandingTab } from './StandingTab';
+import { STANDING_TAB, StandingTab } from './StandingTab';
 
 const BODY = 'k1' as Id<'waterBodies'>;
 
@@ -150,5 +150,9 @@ describe('StandingTab', () => {
     convex.results.set('waterBodies:get', body());
     render(<StandingTab bodyId={BODY} />);
     expect(screen.queryByRole('radio', { name: /^Removed/ })).toBeNull();
+  });
+
+  it('registers its wiring and no map of its own', () => {
+    expect(STANDING_TAB).toEqual({ Wiring: StandingTab });
   });
 });

@@ -27,7 +27,7 @@ vi.mock('@/components/admin/shell/undo', () => ({ useUndo: () => undo }));
 import type { Id } from '@skating/convex/dataModel';
 import { ConvexError } from 'convex/values';
 
-import { LinksTab } from './LinksTab';
+import { LINKS_TAB, LinksTab } from './LinksTab';
 import { MASCOMA } from './linksFixtures';
 
 const BODY = 'k1' as Id<'waterBodies'>;
@@ -84,5 +84,22 @@ describe('LinksTab', () => {
     convex.results.set('waterBodies:get', { available: true, body: { _id: BODY, ...MASCOMA } });
     render(<LinksTab bodyId={BODY} />);
     expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
+  });
+
+  it('registers its wiring and a map that plates the interior point', () => {
+    expect(LINKS_TAB.Wiring).toBe(LinksTab);
+    const result = { available: true, body: { _id: BODY, ...MASCOMA } };
+    convex.results.set('waterBodies:get', result);
+    let data: unknown;
+    function Probe() {
+      data = LINKS_TAB.map?.useData(BODY);
+      return null;
+    }
+    render(<Probe />);
+    // Convex's own result: the identity the frame keys its redraw on.
+    expect(data).toBe(result);
+    expect(LINKS_TAB.map?.describe(data, null).lit).toBe('interior:point');
+    expect(LINKS_TAB.map?.describe({ available: false }, null)).toEqual({ items: [] });
+    expect(LINKS_TAB.map?.describe(undefined, null)).toEqual({ items: [] });
   });
 });

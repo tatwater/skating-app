@@ -1,54 +1,36 @@
 import { linkCoordinate, type ReferenceLinkBody } from '@skating/core';
 
+import {
+  type BodyMapScene,
+  EMPTY_SCENE,
+  type MapPointWithCaption,
+} from '../hazards/mapDescriptors';
 import { coordWords } from './linksModel';
 
 /**
- * What the Links tab asks the frame's map to draw (board 5.4.9): the one point Windy and Copernicus
- * open on — the interior point, derived from the outline, stored nowhere, not movable — marked and
- * plated as on Water, with every other mark stepped back while its plate shows.
- *
- * Plain data. The frame owns the real descriptor types; these are this tab's narrow copy, so
- * reconciling them is mechanical.
+ * What the Links tab asks the frame's map to draw (board 5.4.9): the one point Windy and
+ * Copernicus open on — the interior point, derived from the outline, stored nowhere, not movable —
+ * plated as on Water and lit, so every other mark steps back while its plate shows. The plate's
+ * last line (`caption`) is a contract request; until the frame adopts it the plate shows the
+ * kicker and the coordinate.
  */
 
-/** `[lng, lat]`, GeoJSON order. */
-export type LngLat = readonly [number, number];
+/** The interior point's address: the same `?lit=` the plate answers to. */
+export const INTERIOR_POINT_ID = 'interior:point';
 
-export type LinksMapItem = {
-  kind: 'point';
-  id: 'interior-point';
-  at: LngLat;
-  /** The plate's slug. */
-  label: 'Interior point';
-  /** The plate's figure: the coordinate. */
-  value: string;
-  /** The plate's last line: why the point is here. */
-  caption: string;
-};
-
-export type LinksMapDraw = {
-  items: LinksMapItem[];
-  /** The item whose plate shows. */
-  lit: LinksMapItem['id'] | null;
-  /** Every mark not in `items` steps back while the plate shows. */
-  fadeOthers: boolean;
-};
-
-export function linksMapDraw(body: ReferenceLinkBody): LinksMapDraw {
-  const c = linkCoordinate(body);
-  if (c === undefined) return { items: [], lit: null, fadeOthers: false };
-  return {
-    items: [
-      {
-        kind: 'point',
-        id: 'interior-point',
-        at: [c.lng, c.lat],
-        label: 'Interior point',
-        value: coordWords(c),
-        caption: 'Windy and Copernicus open here',
-      },
-    ],
-    lit: 'interior-point',
-    fadeOthers: true,
+export function linksMapScene(body: ReferenceLinkBody | null, _lit: string | null): BodyMapScene {
+  const c = body === null ? undefined : linkCoordinate(body);
+  if (c === undefined) return EMPTY_SCENE;
+  const point: MapPointWithCaption = {
+    kind: 'point',
+    id: INTERIOR_POINT_ID,
+    layer: 'samples',
+    at: [c.lng, c.lat],
+    mark: 'sample',
+    hoverKicker: 'Interior point',
+    name: coordWords(c),
+    caption: 'Windy and Copernicus open here',
   };
+  // Links lights nothing else: the plate always shows.
+  return { items: [point], lit: INTERIOR_POINT_ID };
 }
