@@ -62,6 +62,7 @@ import type * as lib_clerkEmail from "../lib/clerkEmail.js";
 import type * as lib_clerkWebhook from "../lib/clerkWebhook.js";
 import type * as lib_contentPurge from "../lib/contentPurge.js";
 import type * as lib_contributionCounts from "../lib/contributionCounts.js";
+import type * as lib_contributions from "../lib/contributions.js";
 import type * as lib_dailyThrottle from "../lib/dailyThrottle.js";
 import type * as lib_depth from "../lib/depth.js";
 import type * as lib_emailBlocks from "../lib/emailBlocks.js";
@@ -211,6 +212,7 @@ declare const fullApi: ApiFromModules<{
   "lib/clerkWebhook": typeof lib_clerkWebhook;
   "lib/contentPurge": typeof lib_contentPurge;
   "lib/contributionCounts": typeof lib_contributionCounts;
+  "lib/contributions": typeof lib_contributions;
   "lib/dailyThrottle": typeof lib_dailyThrottle;
   "lib/depth": typeof lib_depth;
   "lib/emailBlocks": typeof lib_emailBlocks;
