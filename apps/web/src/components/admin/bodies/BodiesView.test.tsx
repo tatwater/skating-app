@@ -102,6 +102,13 @@ describe('the page', () => {
     expect(next.sort).toEqual(next.lane.sort);
   });
 
+  it('keeps its place when the lane on screen is picked again', async () => {
+    const spy = vi.fn();
+    render(<Harness spy={spy} initial={queryOf({ q: 'mor' })} />);
+    await userEvent.click(screen.getByRole('button', { name: /^Active/ }));
+    expect(spy).not.toHaveBeenCalled();
+  });
+
   it('sorts by a heading, and again reverses it', async () => {
     const spy = vi.fn();
     render(<Harness spy={spy} />);

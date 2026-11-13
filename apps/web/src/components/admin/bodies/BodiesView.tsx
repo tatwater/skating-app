@@ -135,6 +135,8 @@ export function BodiesView({
           label="Bodies"
           selected={lane.id}
           onSelect={(id) => {
+            // The lane on screen again keeps its place; another lane opens fresh.
+            if (id === lane.id) return;
             const next = laneById(id, lanes);
             onQueryChange({
               lane: next,
