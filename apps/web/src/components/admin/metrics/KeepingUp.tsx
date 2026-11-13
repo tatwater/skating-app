@@ -116,12 +116,14 @@ export function KeepingUpStats({ data, now }: { data: KeepingUpData; now: number
 
 // ── Oldest open flag ─────────────────────────────────────────────────────────────────────────
 
-const OLDEST_CONFIG: ChartConfig = {
+// `satisfies`, not a `ChartConfig` annotation: the keys stay known, so the legend reads each tone
+// with no fallback that could quietly stand in for a renamed series.
+const OLDEST_CONFIG = {
   // Context counted under the hours line: the chart's own quiet tone (the boards' `g4`).
   standard: { label: 'Open flags', tone: 'quiet' },
   safety: { label: 'Safety', tone: 'bad' },
   hours: { label: 'Hours waiting', tone: 'lead', format: (v) => `${Math.floor(v)} h` },
-};
+} satisfies ChartConfig;
 
 /**
  * The open-flag bars sit on a scale of their own, low in the plot under the hours line: three flags
@@ -131,13 +133,9 @@ const FLAG_HEADROOM = 5.5;
 
 // The swatches read the chart's own tones, so a legend can't drift from its marks.
 const OLDEST_LEGEND: LegendItem[] = [
-  {
-    label: 'Hours waiting',
-    ink: chartToneColor(OLDEST_CONFIG.hours?.tone ?? 'lead'),
-    mark: 'line',
-  },
-  { label: 'Open flags', ink: chartToneColor(OLDEST_CONFIG.standard?.tone ?? 'quiet') },
-  { label: 'Safety', ink: chartToneColor(OLDEST_CONFIG.safety?.tone ?? 'bad') },
+  { label: 'Hours waiting', ink: chartToneColor(OLDEST_CONFIG.hours.tone), mark: 'line' },
+  { label: 'Open flags', ink: chartToneColor(OLDEST_CONFIG.standard.tone) },
+  { label: 'Safety', ink: chartToneColor(OLDEST_CONFIG.safety.tone) },
 ];
 
 type DotProps = { cx?: number; cy?: number; index?: number; value?: unknown };
@@ -301,21 +299,17 @@ const TICKET_LABEL: Record<SupportCategory, string> = {
   safety: 'Safety',
 };
 
-const TICKET_CONFIG: ChartConfig = {
+const TICKET_CONFIG = {
   bug: { label: 'Bug', tone: 'muted' },
   account: { label: 'Account', tone: 'faint' },
   other: { label: 'Other', tone: 'quiet' },
   safety: { label: 'Safety', tone: 'bad' },
-};
+} satisfies ChartConfig;
 
 /** The swatches read the chart's own tones (`chartToneColor`), so a legend can't drift from its bars. */
-const TICKET_INK = Object.fromEntries(
-  SUPPORT_CATEGORIES.map((c) => [c, chartToneColor(TICKET_CONFIG[c]?.tone ?? 'faint')]),
-) as Record<SupportCategory, string>;
-
 export const TICKET_LEGEND: LegendItem[] = SUPPORT_CATEGORIES.map((c) => ({
   label: TICKET_LABEL[c],
-  ink: TICKET_INK[c],
+  ink: chartToneColor(TICKET_CONFIG[c].tone),
 }));
 
 /** Tickets open at any point of each season day, stacked by kind. */

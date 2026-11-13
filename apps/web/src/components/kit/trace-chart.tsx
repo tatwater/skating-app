@@ -7,6 +7,7 @@ import {
   type PointerEvent,
   type ReactNode,
   type RefObject,
+  useCallback,
   useContext,
   useLayoutEffect,
   useRef,
@@ -35,8 +36,8 @@ import { cn } from '@/lib/utils';
  *   (amber), stalled (red), failed and waiting; a gap parts the campaign's passes from the by-hand
  *   ones.
  * - **`Sparkbars`** — a short run of daily counts (`.trend`, `.spark`): bottom-aligned bars, the
- *   latest lit, a zero a one-hair stub; a red part at a bar's foot (the safety lane), and an
- *   optional amber threshold rule.
+ *   latest lit, a zero a one-hair stub, a day nothing recorded an empty slot; a red part at a bar's
+ *   foot (the safety lane), and an optional amber threshold rule.
  * - **`SparkbarSet`** — a stack of `Sparkbars` on one day axis read together (Metrics' *Each day*):
  *   hovering any strip, or stepping with ← → once the set has focus, draws **one** hairline through
  *   every strip at that day and **one** plate with each strip's value — never a plate per strip.
@@ -750,7 +751,7 @@ type SetGeometry = { x: number; top: number; bottom: number; width: number };
 type SparkbarSetRow = {
   /** The strip's name ("Reports"). */
   label: ReactNode;
-  /** Its value that day, as the plate shows it ("12"); `null` for a day nothing recorded. */
+  /** Its value that day, as the plate shows it ("12"); `null` or absent: a day nothing recorded. */
   value: ReactNode;
 };
 
@@ -803,42 +804,51 @@ function SparkbarSet({
   const root = useRef<HTMLDivElement>(null);
   const day = active !== null && active >= 0 && active < length ? active : null;
 
-  // Where the hovered day sits: measured from the strips themselves, after every layout.
+  // Where the hovered day sits: measured from the strips themselves.
+  const measure = useCallback(() => {
+    const el = root.current;
+    /* v8 ignore next */
+    if (el === null) return;
+    const strips = [...el.querySelectorAll<HTMLElement>('[data-slot="sparkbars"]')];
+    const bar = day === null ? undefined : strips[0]?.children[day];
+    if (bar === undefined || strips.length === 0) {
+      setGeometry(null);
+      return;
+    }
+    const box = el.getBoundingClientRect();
+    const r = bar.getBoundingClientRect();
+    const tops = strips.map((s) => s.getBoundingClientRect());
+    const next = {
+      x: r.left + r.width / 2 - box.left,
+      top: Math.min(...tops.map((t) => t.top)) - box.top,
+      bottom: Math.max(...tops.map((t) => t.bottom)) - box.top,
+      width: box.width,
+    };
+    setGeometry((prev) =>
+      prev !== null &&
+      prev.x === next.x &&
+      prev.top === next.top &&
+      prev.bottom === next.bottom &&
+      prev.width === next.width
+        ? prev
+        : next,
+    );
+  }, [day]);
+  // After every commit, not only when the day moves: strips that mount or move under a day already
+  // held (a drawn hover, a read swapping *not recorded* for its strips) re-place the hairline. A
+  // no-op unless the geometry changed.
+  useLayoutEffect(() => {
+    measure();
+  });
+  // And after a resize, which no commit announces.
   useLayoutEffect(() => {
     const el = root.current;
     /* v8 ignore next */
     if (el === null) return;
-    const measure = () => {
-      const strips = [...el.querySelectorAll<HTMLElement>('[data-slot="sparkbars"]')];
-      const bar = day === null ? undefined : strips[0]?.children[day];
-      if (bar === undefined || strips.length === 0) {
-        setGeometry(null);
-        return;
-      }
-      const box = el.getBoundingClientRect();
-      const r = bar.getBoundingClientRect();
-      const tops = strips.map((s) => s.getBoundingClientRect());
-      const next = {
-        x: r.left + r.width / 2 - box.left,
-        top: Math.min(...tops.map((t) => t.top)) - box.top,
-        bottom: Math.max(...tops.map((t) => t.bottom)) - box.top,
-        width: box.width,
-      };
-      setGeometry((prev) =>
-        prev !== null &&
-        prev.x === next.x &&
-        prev.top === next.top &&
-        prev.bottom === next.bottom &&
-        prev.width === next.width
-          ? prev
-          : next,
-      );
-    };
-    measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [day]);
+  }, [measure]);
 
   const dayAt = (clientX: number): number | null => {
     const strip = root.current?.querySelector('[data-slot="sparkbars"]');
@@ -928,7 +938,7 @@ function SparkbarSet({
                 <span className="text-assist leading-none whitespace-nowrap text-fg2">
                   {row.label}
                 </span>
-                {row.value === null ? (
+                {row.value === null || row.value === undefined ? (
                   // A day nothing recorded says so, in words, never as a zero.
                   <span
                     data-slot="sparkbar-set-value"

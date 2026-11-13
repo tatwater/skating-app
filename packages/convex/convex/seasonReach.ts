@@ -45,6 +45,7 @@ import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, type MutationCtx } from './_generated/server';
+import { latestMetricIn } from './lib/metricReads';
 import { writeMetricSnapshot } from './lib/metrics';
 import { isCountedComment } from './lib/pulse';
 
@@ -483,19 +484,20 @@ export function reachMeta(season: Season, through: string, t: Tally) {
  * rows retention erased (D254) keeps the signed-in figure an earlier walk stored for it — counted
  * then, from rows that were whole — and only says *not recorded* when none was. (Every other figure
  * is read in full from rows still kept, so the walk may correct it.)
+ *
+ * The earlier figure is the one the reads show: the newest `season_reach` row in the season's
+ * window (`latestMetricIn`, as `metrics.seasonRow` reads it), not only a row stamped on the
+ * window's last day. The row this walk writes becomes the newest, so it carries what they showed.
  */
 async function keepRecordedSignIns(
   ctx: MutationCtx,
   season: Season,
-  stampedOn: string,
+  span: { firstDay: string; lastDay: string },
   meta: ReturnType<typeof reachMeta>,
   tally: Tally,
 ): Promise<ReturnType<typeof reachMeta>> {
   if (tally.signInsGone !== true) return meta;
-  const earlier = await ctx.db
-    .query('metricSnapshots')
-    .withIndex('by_metric_date', (q) => q.eq('metric', 'season_reach').eq('date', stampedOn))
-    .unique();
+  const earlier = await latestMetricIn(ctx, 'season_reach', [span.firstDay, span.lastDay]);
   const was = earlier?.meta as ReturnType<typeof reachMeta> | undefined;
   if (was !== undefined && was.season === season && !was.capped.includes('signedIn')) {
     return { ...meta, people: { ...meta.people, signedIn: was.people.signedIn } };
@@ -572,7 +574,7 @@ export const step = internalMutation({
       meta: await keepRecordedSignIns(
         ctx,
         season,
-        span.lastDay,
+        span,
         reachMeta(season, span.lastDay, page.tally),
         page.tally,
       ),

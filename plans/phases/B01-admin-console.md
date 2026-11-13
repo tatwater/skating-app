@@ -1433,7 +1433,11 @@ one branch (`b01-3-server`).
 - **The season's distinct figures** come from a walk (`seasonReach`), one page per transaction,
   writing `season_reach` and `most_reported` once at the end. Its tally travels as a scheduled
   function's arguments, so it is bounded (8,192 ids a set, 15,000 in all, 1,000 bodies); a figure past
-  that reads as not recorded.
+  that reads as not recorded. A season whose sign-in rows retention erased (D254) can't be counted
+  again: a re-walk keeps the signed-in figure the reads were showing, and says not recorded only
+  when none was.
+- **This week's contributors** stand whenever their reads were whole; *first-timers* alone reads as
+  not recorded when someone's first contribution can't be told, or past 300 people.
 - **What still says *Not recorded yet*:** cost (no invoice or rate rows exist), the pre-ice pass (no
   record of when it was done), enrichment (nothing indexes what a body lacks), a strip before the walk
   has run, a figure whose read stopped short, and new accounts until every day of the season has a

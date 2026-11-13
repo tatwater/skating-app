@@ -376,9 +376,10 @@ async function weekSignIns(
 /**
  * *Contributors* this week — anyone with a standing contribution in it (`lib/contributions`, D253) —
  * and how many contributed for the first time: their earliest standing contribution of any kind is
- * in the week. `null` when a read stopped short, past {@link FIRST_TIME_CAP} people, or when
- * someone's first contribution can't be told. `weekReports` are the week's visible reports, already
- * read (`take(WEEK_CAP + 1)`), so they aren't read twice.
+ * in the week. `null` when a read stopped short; `firstTime` alone is `null` — the count stands —
+ * past {@link FIRST_TIME_CAP} people, or when someone's first contribution can't be told.
+ * `weekReports` are the week's visible reports, already read (`take(WEEK_CAP + 1)`), so they aren't
+ * read twice.
  */
 async function weekContributors(
   ctx: QueryCtx,

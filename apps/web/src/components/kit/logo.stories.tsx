@@ -79,8 +79,9 @@ export const FourUp: Story = {
 /**
  * Every way the page can be themed, the root rewritten case by case and put back after: explicit
  * light and dark; *system* on a light and on a dark OS (no `data-mode` anywhere, `.dark` set by the
- * before-paint script and the provider when the OS is dark); and a scope of the other mode inside
- * each — the founder's own request, right in every combination.
+ * before-paint script and the provider when the OS is dark); a scope of either mode inside each,
+ * and a scope inside a scope of the other mode — the founder's own request, right in every
+ * combination.
  */
 export const EveryTheme: Story = {
   render: () => (
@@ -93,6 +94,16 @@ export const EveryTheme: Story = {
       </div>
       <div data-mode="light" data-case="light-scope" className="p-(--space-3)">
         <Logo />
+      </div>
+      <div data-mode="dark" className="p-(--space-3)">
+        <div data-mode="light" data-case="light-in-dark" className="p-(--space-3)">
+          <Logo />
+        </div>
+      </div>
+      <div data-mode="light" className="p-(--space-3)">
+        <div data-mode="dark" data-case="dark-in-light" className="p-(--space-3)">
+          <Logo />
+        </div>
       </div>
     </div>
   ),
@@ -122,6 +133,9 @@ export const EveryTheme: Story = {
         // A scope of either mode inside the page wears its own, whatever the page's.
         await waitFor(() => expect(at('dark-scope'), `${c.name}, dark scope`).toBe('dark'));
         await waitFor(() => expect(at('light-scope'), `${c.name}, light scope`).toBe('light'));
+        // A scope inside a scope wears the inner one's: with a stated page mode, three levels.
+        await waitFor(() => expect(at('light-in-dark'), `${c.name}, light in dark`).toBe('light'));
+        await waitFor(() => expect(at('dark-in-light'), `${c.name}, dark in light`).toBe('dark'));
       }
     } finally {
       if (mode === null) root.removeAttribute('data-mode');

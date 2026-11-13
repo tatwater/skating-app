@@ -16,9 +16,11 @@ import { cn } from '@/lib/utils';
  *   `.dark` on `<html>` in step with the OS. No `.dark` and no mode means the light map's black.
  *
  * The precedence is carried by specificity, never by the order the rules land in the sheet: a
- * scope's rule repeats its attribute (one class's weight more than `.dark &`), and a scope inside a
- * scope adds one more, so the nearest always outweighs the farther. Two levels of scope are
- * resolved; a third inside them reads as its middle scope's.
+ * scope's rule repeats its attribute (one class's weight more than `.dark &`), and each scope
+ * further in adds one more, so the nearest always outweighs the farther. A page with a stated mode
+ * is itself a level (`<html data-mode>`), so three are resolved: the page, a scope, and a scope
+ * inside it — a light card in a dark quad on a light page. A fourth level that alternates again
+ * ties, and the sheet's order decides it.
  *
  * One image to a reader, named "Gli"; the two files are its drawing. Sized by its height (`h-…`),
  * its width following the mark's own proportion.
@@ -27,12 +29,15 @@ const ON_DARK = cn(
   'hidden',
   // The page, with no scope: its resolved mode.
   '[.dark_&]:block',
-  // One scope.
+  // One level.
   '[[data-mode=light][data-mode=light]_&]:hidden',
   '[[data-mode=dark][data-mode=dark]_&]:block',
-  // A scope inside a scope: the inner one.
+  // One inside another: the inner one.
   '[[data-mode=light]_[data-mode=dark][data-mode=dark]_&]:block',
   '[[data-mode=dark]_[data-mode=light][data-mode=light]_&]:hidden',
+  // Three, alternating: without these the two pairs above tie, both matching at once.
+  '[[data-mode=dark]_[data-mode=light]_[data-mode=dark][data-mode=dark]_&]:block',
+  '[[data-mode=light]_[data-mode=dark]_[data-mode=light][data-mode=light]_&]:hidden',
 );
 const ON_LIGHT = cn(
   'block',
@@ -41,6 +46,8 @@ const ON_LIGHT = cn(
   '[[data-mode=dark][data-mode=dark]_&]:hidden',
   '[[data-mode=light]_[data-mode=dark][data-mode=dark]_&]:hidden',
   '[[data-mode=dark]_[data-mode=light][data-mode=light]_&]:block',
+  '[[data-mode=dark]_[data-mode=light]_[data-mode=dark][data-mode=dark]_&]:hidden',
+  '[[data-mode=light]_[data-mode=dark]_[data-mode=light][data-mode=light]_&]:block',
 );
 
 type LogoProps = Omit<ComponentProps<'span'>, 'children'> & {

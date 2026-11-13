@@ -1025,6 +1025,49 @@ describe('contributions — one rule for every contributors figure', () => {
     });
   });
 
+  test('past the first-time cap, the count stands and only first-timers are not recorded', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const body = await seedBody(t, 'Mascoma Lake');
+    // 301 people, one report each this week: one more than first-time looks up.
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 301; i++) {
+        const authorId = await ctx.db.insert('profiles', {
+          clerkUserId: `p${i}`,
+          displayName: `P${i} Person`,
+          username: `p${i}`,
+          driveTimePrefMinutes: 60,
+          profileVisibility: 'public' as const,
+          notificationPrefs: NOTIF_PREFS,
+          dateOfBirth: Date.UTC(1990, 0, 1),
+          reputationPoints: 0,
+          role: 'member' as const,
+          status: 'active' as const,
+          createdAt: NOW - 400 * DAY,
+        });
+        await ctx.db.insert('reports', {
+          authorId,
+          waterBodyId: body,
+          point: { lat: 0.5, lng: 0.5 },
+          skateEndTime: NOW - DAY,
+          reportTime: NOW - DAY,
+          source: 'native' as const,
+          iceTypes: [],
+          surfaceTags: [],
+          photoIds: [],
+          moderationStatus: 'visible' as const,
+          hazardIdsCreated: [],
+          createdAt: NOW - DAY,
+          updatedAt: NOW - DAY,
+        });
+      }
+    });
+    expect((await mod.as.query(api.metrics.showingUp, {})).showingUp.week.contributors).toEqual({
+      people: 301,
+      firstTime: null,
+    });
+  });
+
   test('the season walk counts every kind once per person, and only reports by state', async () => {
     const t = harness();
     const body = await seedBody(t, 'Mascoma Lake');
@@ -1283,6 +1326,32 @@ describe('the season’s reach', () => {
     expect(meta.capped).not.toContain('signedIn');
     expect(meta.counts.reports).toBe(1);
     expect(meta.people.contributors).toBe(1);
+  });
+
+  test('a re-walk keeps the figure the reads showed, even one stamped before the season’s end', async () => {
+    const t = convexTest(schema, modules);
+    // The last walk while 2024–25's rows were whole ran on 29 June; the reads show its 41.
+    await snapshot(t, 'season_reach', '2025-06-29', {
+      meta: {
+        season: 2024,
+        through: '2025-06-29',
+        counts: { reports: 0, comments: 0, kudos: 0, photos: 0, hazards: 0 },
+        over: { reports: 0, comments: 0, kudos: 0, photos: 0, hazards: 0 },
+        people: { signedIn: 41, contributors: 0 },
+        vantage: {},
+        states: {},
+        kinds: ['helpful'],
+        capped: [],
+      },
+    });
+    await walkReach(t, 2024);
+    // The re-walk's row, on the window's last day, is now the one the reads take: it keeps the 41.
+    const meta = (await readSnapshot(t, 'season_reach', '2025-06-30'))?.meta as {
+      people: { signedIn: number };
+      capped: string[];
+    };
+    expect(meta.people.signedIn).toBe(41);
+    expect(meta.capped).not.toContain('signedIn');
   });
 
   test('walks nothing before the record opens, and a past season whole', async () => {
