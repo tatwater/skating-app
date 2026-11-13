@@ -884,6 +884,23 @@ skater explores lakes, reads peers' reports, and posts their own from a browser 
 - A check that the Clerk `convex` JWT template carries `picture` and `updated_at`
 - Mobile's hazards empty state still has the pre-D237 wording (web's was fixed in close-out)
 
+## Phase B04 — Your contributions: find them, correct them, take them back
+⚪ **Scoped** 2026-11-13 · [plan](./phases/B04-skater-contributions.md)
+
+D248 gave the server rules for what a skater can take back — a hazard no other skater has vouched for,
+a request or flag no moderator has decided, an access alert no moderator has pinned — but no client
+reaches them, and the only way to find a hazard you posted is to remember its lake. This phase gives a
+skater's own profile a list of what they shared that can still be acted on, puts the same actions where
+each item is shown, and adds what the server lacks: moving a hazard and changing its type under the
+withdrawal's gate (earlier doubts about the old spot stop counting; a hazard never becomes a crossing),
+the owner-only reads, and flag ids for the person who filed them. Server, then web, then the phone app.
+*A skater finds a hazard they posted, moves it to where it really is, and withdraws a request they no
+longer need.*
+
+#### Owed
+- `b01-1b-retention` (D248's server) merged to main before B04-1 cuts its branch; that branch's Owed row *Retraction screens* is this phase
+- The founder's answers to the plan's §9 questions, and the boards in its §5 before B04-3
+
 ## Deferred register
 
 Everything deliberately not done, in one place, with what it waits on — grouped by the blocker, since
