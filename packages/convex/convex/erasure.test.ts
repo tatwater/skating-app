@@ -6,9 +6,11 @@
  */
 import { POST_BODY_MAX_CHARS, POST_TITLE_MAX_CHARS, WITHDRAWN_ERASE_MS } from '@skating/core';
 import { convexTest } from 'convex-test';
+import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+import type { MutationCtx } from './_generated/server';
 import { ERASED_KINDS, ITEM_NEED, ROW_MAX } from './erasure';
 import { TX_BUDGET } from './lib/readBudget';
 import schema from './schema';
@@ -1296,4 +1298,252 @@ describe("a photo is erased only when nothing of its uploader's still uses it", 
     expect(await get(t, photoId)).toMatchObject({ caption: 'the inlet 0', reportId: other });
     expect((await get(t, photoId))?.erasedAt).toBeUndefined();
   });
+});
+
+describe('the erasure holds under any order', () => {
+  type Kind = 'comment' | 'report' | 'hazard';
+  type Op =
+    | { op: 'delete' | 'hide' | 'remove' | 'restore' | 'overturn' | 'undo' | 'flag'; kind: Kind }
+    | { op: 'resolve' | 'retract' | 'sweep' }
+    | { op: 'advance'; days: number }
+    | { op: 'noise'; kind: Kind; rows: number };
+  const kind = fc.constantFrom<Kind>('comment', 'report', 'hazard');
+  const op: fc.Arbitrary<Op> = fc.oneof(
+    fc.record({
+      op: fc.constantFrom(
+        'delete',
+        'hide',
+        'remove',
+        'restore',
+        'overturn',
+        'undo',
+        'flag' as const,
+      ),
+      kind,
+    }) as fc.Arbitrary<Op>,
+    fc.record({ op: fc.constantFrom('resolve', 'retract', 'sweep' as const) }) as fc.Arbitrary<Op>,
+    fc.record({ op: fc.constant('advance' as const), days: fc.integer({ min: 0, max: 40 }) }),
+    fc.record({ op: fc.constant('noise' as const), kind, rows: fc.integer({ min: 1, max: 40 }) }),
+  );
+
+  /** A standing verdict, or an undecided flag, on the item — or, for a Report, on its Post. */
+  async function heldNow(t: T, type: Kind, id: string, postId: string) {
+    return t.run(async (raw) => {
+      const ctx = raw as unknown as MutationCtx;
+      const on = async (targetType: Kind | 'post', targetId: string) => {
+        const verdict = await ctx.db
+          .query('contentVerdicts')
+          .withIndex('by_target_standing', (q) =>
+            q.eq('targetType', targetType).eq('targetId', targetId).eq('standing', true),
+          )
+          .first();
+        if (verdict) return true;
+        for (const status of ['open', 'reviewing'] as const) {
+          const flag = await ctx.db
+            .query('contentFlags')
+            .withIndex('by_target_status_reason', (q) =>
+              q.eq('targetType', targetType).eq('targetId', targetId).eq('status', status),
+            )
+            .first();
+          if (flag) return true;
+        }
+        return false;
+      };
+      return (await on(type, id)) || (type === 'report' && (await on('post', postId)));
+    });
+  }
+
+  test('nothing held is erased, nothing unheld outlives its time, a reversed verdict never stands, a used photo stays, no job stalls', async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.array(op, { minLength: 1, maxLength: 20 }), async (ops) => {
+        const { t, author, other, mod, waterBodyId } = await setup();
+        const { postId, reportIds, photoIds } = await seedPost(t, author.id, waterBodyId, 2);
+        const reportId = reportIds[0] as Id<'reports'>;
+        const sharedPhoto = photoIds[0] as Id<'photos'>;
+        const commentId = await author.as.mutation(api.comments.create, {
+          reportId: reportIds[1] as Id<'reports'>,
+          body: 'you are all wrong',
+        });
+        const hazardId = await seedHazard(t, author.id, waterBodyId);
+        // The hazard shows the Report's photo too: erasing the Report must not take it.
+        await t.run((ctx) => ctx.db.patch(hazardId, { photoIds: [sharedPhoto] }));
+        const ids: Record<Kind, string> = {
+          comment: commentId,
+          report: reportId,
+          hazard: hazardId,
+        };
+        const withdrawn: Record<Kind, boolean> = { comment: false, report: false, hazard: false };
+        const flags: Id<'contentFlags'>[] = [];
+        const attempt = async (fn: () => Promise<unknown>) => {
+          try {
+            await fn();
+          } catch {
+            // a refusal is an outcome
+          }
+        };
+        const set = (k: Kind, status: 'visible' | 'hidden' | 'removed') =>
+          mod.as.mutation(api.moderation.setModerationStatus, {
+            targetType: k,
+            targetId: ids[k],
+            status,
+            reason: `${status} it`,
+          });
+        const sweepChecked = async () => {
+          const held = {} as Record<Kind, boolean>;
+          for (const k of ['comment', 'report', 'hazard'] as const) {
+            held[k] = await heldNow(t, k, ids[k], postId);
+          }
+          await sweep(t);
+          for (const k of ['comment', 'report', 'hazard'] as const) {
+            // Nothing held is erased; nothing never withdrawn is erased.
+            if (held[k] || !withdrawn[k]) expect(await get(t, ids[k])).not.toBeNull();
+          }
+          // A photo something still shows stays.
+          if (await get(t, hazardId)) expect(await get(t, sharedPhoto)).not.toBeNull();
+        };
+
+        for (const step of ops) {
+          if (step.op === 'advance') advance(step.days * DAY);
+          else if (step.op === 'sweep') await sweepChecked();
+          else if (step.op === 'resolve' || step.op === 'retract') {
+            const flagId = flags.shift();
+            if (flagId) {
+              await attempt(() =>
+                step.op === 'resolve'
+                  ? mod.as.mutation(api.moderation.resolveFlag, {
+                      flagId,
+                      resolution: 'dismissed',
+                      reason: 'not this',
+                    })
+                  : other.as.mutation(api.contentFlags.retract, { flagId }),
+              );
+            }
+          } else if (step.op === 'noise') {
+            const target = ids[step.kind];
+            await t.run(async (ctx) => {
+              for (let i = 0; i < step.rows; i++) {
+                await ctx.db.insert('moderationActions', {
+                  actorId: mod.id,
+                  action: 'dismiss_flag',
+                  targetType: step.kind,
+                  targetId: target,
+                  reason: 'noise',
+                  createdAt: Date.now(),
+                });
+              }
+            });
+          } else {
+            const k = (step as { kind: Kind }).kind;
+            if ((await get(t, ids[k])) === null) continue;
+            if (step.op === 'delete') {
+              await attempt(async () => {
+                if (k === 'comment') {
+                  await author.as.mutation(api.comments.remove, { commentId });
+                } else if (k === 'report') {
+                  await author.as.mutation(api.reports.remove, { reportId });
+                } else {
+                  await author.as.mutation(api.hazardWithdrawal.withdraw, { hazardId });
+                }
+                withdrawn[k] = true;
+              });
+            } else if (step.op === 'hide') await attempt(() => set(k, 'hidden'));
+            else if (step.op === 'remove') await attempt(() => set(k, 'removed'));
+            else if (step.op === 'restore') await attempt(() => set(k, 'visible'));
+            else if (step.op === 'overturn') {
+              await attempt(() =>
+                mod.as.mutation(api.moderation.overturnVerdict, {
+                  targetType: k,
+                  targetId: ids[k],
+                  reason: 'on appeal',
+                }),
+              );
+            } else if (step.op === 'undo') {
+              const rows = await t.run((raw) =>
+                (raw as unknown as MutationCtx).db
+                  .query('moderationActions')
+                  .withIndex('by_target', (q) => q.eq('targetType', k).eq('targetId', ids[k]))
+                  .order('desc')
+                  .take(1),
+              );
+              const row = rows[0];
+              if (row && row.action !== 'dismiss_flag') {
+                await attempt(() =>
+                  mod.as.mutation(api.undo.run, { actionId: row._id, reason: 'x' }),
+                );
+              }
+            } else {
+              await attempt(async () => {
+                flags.push(
+                  await other.as.mutation(api.contentFlags.flag, {
+                    targetType: k,
+                    targetId: ids[k],
+                    reason: 'harassment',
+                  }),
+                );
+              });
+            }
+          }
+          // The member clocks a Post's hold moves follow in their own jobs.
+          await t.finishAllScheduledFunctions(vi.runAllTimers);
+          // A verdict stands at most once on an item.
+          for (const k of ['comment', 'report', 'hazard'] as const) {
+            const standing = await t.run((raw) =>
+              (raw as unknown as MutationCtx).db
+                .query('contentVerdicts')
+                .withIndex('by_target_standing', (q) =>
+                  q.eq('targetType', k).eq('targetId', ids[k]).eq('standing', true),
+                )
+                .collect(),
+            );
+            expect(standing.length).toBeLessThanOrEqual(1);
+          }
+        }
+
+        // One rule, two answers never: the backfill, replaying every history whole a page at a time,
+        // lands where the live writers did — so no reversed verdict stands.
+        const snapshot = async () =>
+          (await t.run((ctx) => ctx.db.query('contentVerdicts').collect()))
+            .map((v) => `${v.actionId} ${v.standing} ${v.endedByActionId ?? '-'}`)
+            .sort();
+        const live = await snapshot();
+        await t.run(async (ctx) => {
+          for (const v of await ctx.db.query('contentVerdicts').collect())
+            await ctx.db.delete(v._id);
+        });
+        await t.mutation(internal.contentRecord.backfillVerdicts, { pageSize: 7, clocks: false });
+        await t.finishAllScheduledFunctions(vi.runAllTimers, 10_000);
+        expect(await snapshot()).toEqual(live);
+
+        // Every hold let go, 30 days on: everything withdrawn is gone, everything else stays.
+        for (const flagId of flags) {
+          await attempt(() =>
+            mod.as.mutation(api.moderation.resolveFlag, {
+              flagId,
+              resolution: 'dismissed',
+              reason: 'x',
+            }),
+          );
+        }
+        for (const k of ['comment', 'report', 'hazard'] as const) {
+          if (withdrawn[k]) {
+            await attempt(() =>
+              mod.as.mutation(api.moderation.overturnVerdict, {
+                targetType: k,
+                targetId: ids[k],
+                reason: 'closing out',
+              }),
+            );
+          }
+        }
+        await t.finishAllScheduledFunctions(vi.runAllTimers);
+        advance(31 * DAY);
+        await sweepChecked();
+        for (const k of ['comment', 'report', 'hazard'] as const) {
+          if (withdrawn[k]) expect(await get(t, ids[k])).toBeNull();
+          else expect(await get(t, ids[k])).not.toBeNull();
+        }
+      }),
+      { numRuns: 60 },
+    );
+  }, 300_000);
 });
