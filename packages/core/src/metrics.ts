@@ -189,7 +189,7 @@ export const METRICS = {
   active_contributors: {
     label: 'Active contributors',
     description:
-      'Distinct authors who posted a report or hazard in the trailing 7 days — the number that decides whether every other rate here is signal or noise.',
+      'Distinct people with a standing contribution in the trailing 7 days — a report, a hazard, an access alert, a not-publicly-accessible report, a put-in placed or a corpus request (D253) — the number that decides whether every other rate here is signal or noise.',
     kind: 'rollup',
     shape: 'scalar',
   },
@@ -421,7 +421,7 @@ export const METRICS = {
   daily_contributors: {
     label: 'Contributors',
     description:
-      'Distinct people who posted a visible report (by skate end), a hazard or a visible comment this day.',
+      'Distinct people with a standing contribution this day: a report whose skate ended on it, or a hazard, an access alert, a not-publicly-accessible report, a put-in placed or a corpus request made on it (D253). Comments are not contributions.',
     kind: 'rollup',
     shape: 'scalar',
   },

@@ -7,6 +7,7 @@ import {
   seasonRecordOpensMs,
   seasonRecordSpan,
   seasonRecordWindow,
+  signInRetentionFrom,
 } from './seasonRecord';
 
 const DAY = 86_400_000;
@@ -130,6 +131,26 @@ describe('lastDays', () => {
         expect(now).toBeGreaterThanOrEqual(from);
         expect(now).toBeLessThan(to);
         expect(to - from).toBe(count * DAY);
+      }),
+    );
+  });
+});
+
+describe('signInRetentionFrom — the current season and one past (D254)', () => {
+  it('keeps from the start of the previous season', () => {
+    expect(signInRetentionFrom(Date.UTC(2026, 10, 13))).toBe('2025-07-01');
+    // The boundary: on 30 June the season before last is still the "one past"; on 1 July it goes.
+    expect(signInRetentionFrom(Date.UTC(2026, 5, 30, 23, 59))).toBe('2024-07-01');
+    expect(signInRetentionFrom(Date.UTC(2026, 6, 1))).toBe('2025-07-01');
+  });
+
+  it('always keeps the whole previous season and today, and nothing older than one past season', () => {
+    fc.assert(
+      fc.property(instant, (now) => {
+        const from = signInRetentionFrom(now);
+        expect(from <= metricDay(now)).toBe(true);
+        expect(from).toBe(metricDay(seasonStartMs(seasonOf(now) - 1)));
+        expect(seasonOf(metricDayStart(from))).toBe(seasonOf(now) - 1);
       }),
     );
   });

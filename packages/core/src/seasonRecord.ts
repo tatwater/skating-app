@@ -14,7 +14,7 @@
  */
 
 import { metricDay, metricDayRange, metricDayStart } from './metrics';
-import { type Season, seasonEndMs } from './season';
+import { type Season, seasonEndMs, seasonOf, seasonStartMs } from './season';
 
 const DAY_MS = 86_400_000;
 
@@ -72,4 +72,14 @@ export function lastDays(now: number, count: number): { days: string[]; from: nu
     from: today - (count - 1) * DAY_MS,
     to: today + DAY_MS,
   };
+}
+
+/**
+ * The first day the sign-in record keeps (the founder, 2026-11-13; D254): the start of the previous
+ * season — "one past season seems like it should be fine." Rows dated before it are erased. The
+ * current season and the whole of the one before it stay, so a past season chosen on the Overview
+ * still reads its sign-ins.
+ */
+export function signInRetentionFrom(now: number): string {
+  return metricDay(seasonStartMs(seasonOf(now) - 1));
 }
