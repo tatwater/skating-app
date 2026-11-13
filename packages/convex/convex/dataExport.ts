@@ -210,10 +210,14 @@ export const collect = internalQuery({
       .query('activityConnections')
       .withIndex('by_user', (q) => q.eq('userId', userId))
       .take(ROW_CAP);
-    const photos = await ctx.db
-      .query('photos')
-      .withIndex('by_uploader', (q) => q.eq('uploaderId', userId))
-      .take(ROW_CAP);
+    // A photo an erasure let go of but could not delete (D248) is kept only as the pointer to its
+    // blobs for the orphan sweep; it is no longer theirs to export.
+    const photos = (
+      await ctx.db
+        .query('photos')
+        .withIndex('by_uploader', (q) => q.eq('uploaderId', userId))
+        .take(ROW_CAP)
+    ).filter((p) => p.erasedAt === undefined);
     // The access layer (A06d / D73, D88). Three tables of things a person said and did — a claim that
     // a gate was locked, a verdict on somebody else's, a photo of a pull-off — and an export that
     // omitted them would be quietly incomplete in the one direction that matters, since the whole

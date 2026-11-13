@@ -693,6 +693,20 @@ describe('an access alert', () => {
     expect(record.deleted.map((d) => d.targetId)).toEqual([alertId]);
   });
 
+  test("an author's repeat retraction of an old, timeless one gives it its clock from now", async () => {
+    const { t, skater, alertId } = await alertSetup();
+    // As the old writer left it: retracted by its author, no `retractedAt`.
+    await t.run((ctx) =>
+      ctx.db.patch(alertId, { status: 'retracted', retractedByUserId: skater.id }),
+    );
+    vi.setSystemTime(T0 + 5 * DAY);
+    await skater.as.mutation(api.accessAlerts.retract, { accessAlertId: alertId });
+    expect(await get(t, alertId)).toMatchObject({
+      retractedAt: T0 + 5 * DAY,
+      eraseAt: T0 + 5 * DAY + WITHDRAWN_ERASE_MS,
+    });
+  });
+
   test('a moderator retracting their own alert does so by the author rule', async () => {
     const { t, mod, waterBodyId } = await alertSetup();
     const putInId = await t.run((ctx) =>

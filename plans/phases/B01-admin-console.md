@@ -1419,7 +1419,17 @@ the People page and the skater screens that reach it are owed (the roadmap's reg
   `lib/eraseClock` at the writes that move a withdrawal or a hold — the author's delete, a verdict
   recorded or ended, a flag filed, closed or retracted, a retraction — so `by_erase_at`'s bounded
   range is the sweep's whole work list. `erasure.eraseDue` (hourly) re-reads the hold anyway, pages
-  with a size seam, and writes one actorless, contentless `erase` row per item. What each kind loses:
+  with a size seam, and writes one actorless, contentless `erase` row per item. **Nothing an item
+  carries is capped away** (Greptile, #110): its revisions (one per edit, unbounded), joins, links
+  and the author's own votes go a per-tick write budget at a time, through indexes on each link
+  (`accessAlerts.by_report`, `waterBodyRequests.by_report`, `putIns.by_origin_report`), and the item's
+  own row goes last, so a pass that runs out leaves it whole and still due for the next; the
+  `erase` row is written only when it is really gone. A photo whose blob outlives the delete is kept
+  as the orphan sweep's pointer, stripped and marked `erasedAt`, and leaves the uploader's export.
+  **What was withdrawn before the clock** gets one from the clocks backfill: content through Part A's
+  stamps; an alert its author retracted before `retractedAt` existed (no time on the row, none in the
+  history) is stamped at the backfill — never in the past — and so is one its author retracts again.
+  Flags, requests and hazards have no withdrawals older than this branch. What each kind loses:
   a **comment** its words (a placeholder stays only where replies point at it, and goes with its last
   reply; comments keep no revisions); a **Report** its row, words, revisions, photos (unless the
   uploader's other content still uses one) and bay joins — its hazards stay unchanged and unlinked,

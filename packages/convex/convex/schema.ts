@@ -3258,6 +3258,9 @@ export default defineSchema({
   })
     // The erasure sweep (D248): a `gt(0).lte(now)` range holds only due work.
     .index('by_erase_at', ['eraseAt'])
+    // The landmark proposals a Report filed, so erasing the Report clears their link (D248).
+    // `eq()` only: the field is optional and the index not sparse.
+    .index('by_report', ['reportId'])
     // The moderator queue: open requests, oldest first (a request nobody answered is the worst row).
     .index('by_status_created', ['status', 'createdAt'])
     // The requester's own — the drawer's "you asked for this" line and the You-tab list.
@@ -3524,6 +3527,12 @@ export default defineSchema({
      * run sets it fresh. Absent ⇒ not currently under consideration, which is why it needs no
      * migration and no index — the sweep pages `by_uploader` and reads the flag in memory.
      */
+    /**
+     * When an erasure (D248) let go of this photo but could not delete it — a blob that outlived the
+     * attempt. The row stays as the only pointer to its blobs, for the orphan sweep, and is no longer
+     * anything of its uploader's: their export leaves it out. Absent ⇒ not erased.
+     */
+    erasedAt: v.optional(v.number()),
     orphanCandidate: v.optional(v.boolean()),
     /**
      * The same scratch mark for `photoReconcile`'s **season-expiry** mode (D66/A05a) — a departed
@@ -4018,7 +4027,9 @@ export default defineSchema({
     // Offline-flush dedup (A10 §9.1) — `eq()` only, the optional-index rule.
     .index('by_idempotency_key', ['idempotencyKey'])
     // The erasure clock (D248): a `gt(0).lte(now)` range holds only due work.
-    .index('by_erase_at', ['eraseAt']),
+    .index('by_erase_at', ['eraseAt'])
+    // The alerts a Report filed, so erasing the Report clears their link (D248). `eq()` only.
+    .index('by_report', ['reportId']),
 
   /**
    * Photos of an access point (A06d Workstream 4 / D88) — *"is this the right dirt road"*.

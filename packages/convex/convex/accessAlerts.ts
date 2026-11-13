@@ -69,7 +69,7 @@ import {
   ACCESS_ALERT_VERDICTS,
   ACCESS_REASONS,
 } from './lib/enums';
-import { refreshEraseClock, withdrawnAtOf } from './lib/eraseClock';
+import { refreshEraseClock } from './lib/eraseClock';
 import { literals } from './lib/validators';
 
 /** Free text has to be bounded somewhere; this is a sentence about a gate, not an essay. */
@@ -376,7 +376,9 @@ export const retract = mutation({
       // A verdict takes a reason, as every verdict does: a bare retract (the lake page's button,
       // which sends none) that lands just after the author's own is not a decision about them.
       const verdictReason = reason?.trim() ?? '';
-      const authorWithdrew = withdrawnAtOf('accessAlert', alert) !== undefined;
+      // Who retracted it, not whether it has a time yet: a retraction from before `retractedAt`
+      // existed is the author's all the same (the clocks backfill gives it its time).
+      const authorWithdrew = alert.retractedByUserId === alert.createdByUserId;
       if (isModerator && !isAuthor && authorWithdrew && verdictReason.length > 0) {
         const now = Date.now();
         const actionId = await writeAudit(ctx, {
@@ -400,6 +402,13 @@ export const retract = mutation({
           kind: 'retracted',
           at: now,
         });
+      }
+      // The author again, on a retraction from before `retractedAt` existed: it has no clock to
+      // run, so it gets one now — never in the past.
+      if (isAuthor && authorWithdrew && alert.retractedAt === undefined) {
+        const now = Date.now();
+        await ctx.db.patch(accessAlertId, { retractedAt: now });
+        await refreshEraseClock(ctx, 'accessAlert', accessAlertId, now);
       }
       // Anything else: nothing left to retract.
       return;

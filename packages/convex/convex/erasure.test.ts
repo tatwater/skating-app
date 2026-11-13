@@ -646,3 +646,186 @@ describe('the clocks backfill', () => {
     expect((await get(t, up))?.eraseAt).toBeUndefined();
   });
 });
+
+describe('nothing of an item outlives its erasure, however much it carries', () => {
+  test('a Report and its Post with more revisions than a pass erase over several passes, never stranding one', async () => {
+    const { t, author, waterBodyId } = await setup();
+    const { postId, reportIds } = await seedPost(t, author.id, waterBodyId, 1);
+    const [reportId] = reportIds as [Id<'reports'>];
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 30; i++) {
+        await ctx.db.insert('contentRevisions', {
+          targetType: 'report',
+          targetId: reportId,
+          authorId: author.id,
+          snapshot: { notes: `draft ${i} of the report` },
+          replacedAt: T0 + i,
+        });
+        await ctx.db.insert('contentRevisions', {
+          targetType: 'post',
+          targetId: postId,
+          authorId: author.id,
+          snapshot: { body: `draft ${i} of the post` },
+          replacedAt: T0 + i,
+        });
+      }
+    });
+    await author.as.mutation(api.posts.remove, { postId });
+    advance(31 * DAY);
+    // One row a page, twenty writes a pass: the first pass gets part-way and stops.
+    const first = await t.mutation(internal.erasure.eraseDue, { pageSize: 1 });
+    expect(first.more).toBe(true);
+    // Part-way, the Report is whole and still due: its revisions are never left behind a row that
+    // is gone.
+    expect(await get(t, reportId)).not.toBeNull();
+    expect((await get(t, reportId))?.eraseAt).toBeLessThanOrEqual(Date.now());
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await get(t, reportId)).toBeNull();
+    expect(await get(t, postId)).toBeNull();
+    const bundle = await t.query(internal.dataExport.collect, { userId: author.id });
+    expect(bundle.contentRevisions).toEqual([]);
+    expect(JSON.stringify(bundle)).not.toContain('draft');
+    // One history row each, written only when the item was really gone.
+    const erased = (await t.run((ctx) => ctx.db.query('moderationActions').collect())).filter(
+      (r) => r.action === 'erase',
+    );
+    expect(erased.map((r) => r.targetId).sort()).toEqual([postId, reportId].sort());
+  });
+
+  test("a photo whose blob outlives the delete is no longer the uploader's", async () => {
+    const { t, author, waterBodyId } = await setup();
+    const { reportIds, photoIds } = await seedPost(t, author.id, waterBodyId, 2);
+    const [reportId] = reportIds as [Id<'reports'>];
+    const [photoId] = photoIds as [Id<'photos'>];
+    // A storage id the store can't answer for: the blob's delete fails, so the row must stay.
+    await t.run((ctx) => ctx.db.patch(photoId, { storageId: 'not-a-storage-id' }));
+    await author.as.mutation(api.reports.remove, { reportId });
+    advance(31 * DAY);
+    await sweep(t);
+    const kept = await get(t, photoId);
+    expect(kept).not.toBeNull();
+    expect(kept?.erasedAt).toBeDefined();
+    expect(kept?.caption).toBeUndefined();
+    expect(kept?.coord).toBeUndefined();
+    const bundle = await t.query(internal.dataExport.collect, { userId: author.id });
+    expect(bundle.photos.map((p) => p.photoId)).toEqual([photoIds[1]]);
+  });
+});
+
+describe('what was withdrawn before the clock existed', () => {
+  test('every withdrawable kind gets its clock from the backfill and is erased when due', async () => {
+    const { t, author, other, waterBodyId } = await setup();
+    const { postId, reportIds } = await seedPost(t, author.id, waterBodyId, 1);
+    const [reportId] = reportIds as [Id<'reports'>];
+    const hazardId = await seedHazard(t, author.id, waterBodyId);
+    const ids = await t.run(async (ctx) => {
+      // As the Part A stamp backfill leaves them: withdrawn, with a time, and no clock.
+      await ctx.db.patch(reportId, { moderationStatus: 'removed', authorDeletedAt: T0 });
+      await ctx.db.patch(postId, { moderationStatus: 'removed', authorDeletedAt: T0 });
+      await ctx.db.patch(hazardId, { moderationStatus: 'removed', authorDeletedAt: T0 });
+      const commentId = await ctx.db.insert('comments', {
+        reportId,
+        authorId: author.id,
+        body: 'an old deleted comment',
+        source: 'native' as const,
+        moderationStatus: 'removed' as const,
+        authorDeletedAt: T0,
+        createdAt: T0,
+      });
+      const flagId = await ctx.db.insert('contentFlags', {
+        flaggerId: author.id,
+        targetType: 'waterbody',
+        targetId: waterBodyId,
+        reason: 'no_public_access',
+        note: 'an old withdrawn report',
+        status: 'retracted',
+        origin: 'user',
+        retractedAt: T0,
+        createdAt: T0,
+      });
+      const requestId = await ctx.db.insert('waterBodyRequests', {
+        kind: 'activate',
+        status: 'retracted',
+        requesterId: author.id,
+        coord: { lat: 0.5, lng: 0.5 },
+        waterBodyId,
+        note: 'an old withdrawn ask',
+        retractedAt: T0,
+        createdAt: T0,
+      });
+      const putInId = await ctx.db.insert('putIns', {
+        waterBodyId,
+        coord: { lat: 0.5, lng: 0.5 },
+        source: 'osm' as const,
+        status: 'visible' as const,
+        createdAt: T0,
+      });
+      // The old writer: a status and who retracted it, no time.
+      const alertId = await ctx.db.insert('accessAlerts', {
+        targetType: 'put_in' as const,
+        putInId,
+        waterBodyId,
+        reason: 'not_plowed' as const,
+        kind: 'blocker' as const,
+        note: 'an old retracted alert',
+        createdByUserId: author.id,
+        createdAt: T0,
+        season: 2026,
+        status: 'retracted' as const,
+        retractedByUserId: author.id,
+        confirmCount: 0,
+        denyCount: 0,
+      });
+      // A moderator's old retraction is not a withdrawal: it gets no time and no clock.
+      const theirs = await ctx.db.insert('accessAlerts', {
+        targetType: 'put_in' as const,
+        putInId,
+        waterBodyId,
+        reason: 'not_plowed' as const,
+        kind: 'blocker' as const,
+        createdByUserId: other.id,
+        createdAt: T0,
+        season: 2026,
+        status: 'retracted' as const,
+        retractedByUserId: author.id,
+        confirmCount: 0,
+        denyCount: 0,
+      });
+      return { commentId, flagId, requestId, alertId, theirs };
+    });
+    advance(10 * DAY);
+    const backfillAt = Date.now();
+    await t.mutation(internal.erasure.backfillClocks, { pageSize: 1 });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    for (const id of [reportId, hazardId, ids.commentId, ids.flagId, ids.requestId]) {
+      expect((await get(t, id))?.eraseAt).toBe(T0 + WITHDRAWN_ERASE_MS);
+    }
+    // The Post waits for its Report; the old alert's 30 days start at the backfill.
+    expect((await get(t, postId))?.eraseAt).toBeUndefined();
+    expect(await get(t, ids.alertId)).toMatchObject({
+      retractedAt: backfillAt,
+      eraseAt: backfillAt + WITHDRAWN_ERASE_MS,
+    });
+    expect((await get(t, ids.theirs))?.retractedAt).toBeUndefined();
+    expect((await get(t, ids.theirs))?.eraseAt).toBeUndefined();
+
+    advance(31 * DAY);
+    await sweep(t);
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    for (const id of [reportId, postId, hazardId, ids.commentId, ids.flagId, ids.requestId]) {
+      expect(await get(t, id)).toBeNull();
+    }
+    expect(await get(t, ids.alertId)).toBeNull();
+    expect(await get(t, ids.theirs)).not.toBeNull();
+    const text = JSON.stringify(await t.query(internal.dataExport.collect, { userId: author.id }));
+    for (const words of [
+      'an old deleted comment',
+      'an old withdrawn report',
+      'an old withdrawn ask',
+      'an old retracted alert',
+      'north bay ridge',
+    ]) {
+      expect(text).not.toContain(words);
+    }
+  });
+});

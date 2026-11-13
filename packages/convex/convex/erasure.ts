@@ -71,12 +71,48 @@ interface PhotoWork {
   fromReport?: Id<'reports'>;
 }
 
+/**
+ * What one tick may still write. Every eraser spends it on the rows it removes or unlinks, and when
+ * it runs out mid-item the item is left whole and still due — its row is the last thing deleted, so
+ * nothing of it is ever stranded behind a row that is already gone — and the next pass resumes it.
+ * Sized from the page seam, so a test can force an item across passes.
+ */
+interface Budget {
+  left: number;
+}
+
+/** Writes per tick for every page row: an item rarely needs more than a few. */
+const WRITES_PER_ROW = 20;
+
+/**
+ * Delete or unlink, a bounded page at a time, every row a range still holds. `take` returns the next
+ * page of the range; `act` removes each row from the range (a delete, or clearing the indexed link),
+ * so the range shrinks and each page is new work. `true` when the range is empty.
+ */
+async function drain<Row>(
+  budget: Budget,
+  take: (n: number) => Promise<Row[]>,
+  act: (row: Row) => Promise<unknown>,
+): Promise<boolean> {
+  for (;;) {
+    const n = budget.left;
+    const page = await take(Math.max(n, 1));
+    if (page.length === 0) return true;
+    if (n <= 0) return false;
+    for (const row of page) await act(row);
+    budget.left -= page.length;
+    if (page.length < n) return true;
+  }
+}
+
+/** `true` when the item was erased; `false` when the budget ran out first (it is still due). */
 type Eraser = (
   ctx: MutationCtx,
   doc: ErasableDoc,
   now: number,
   photos: PhotoWork[],
-) => Promise<void>;
+  budget: Budget,
+) => Promise<boolean>;
 
 /**
  * Who erases each kind, in the order a tick runs them: a Post after its members (a Post is held
@@ -88,12 +124,21 @@ type Eraser = (
  */
 const ERASERS: Record<Erasable, Eraser> = {
   comment: (ctx, doc, now) => eraseComment(ctx, doc as Doc<'comments'>, now),
-  hazard: (ctx, doc, _now, photos) => eraseHazard(ctx, doc as Doc<'hazards'>, photos),
-  report: (ctx, doc, _now, photos) => eraseReport(ctx, doc as Doc<'reports'>, photos),
-  post: (ctx, doc) => erasePost(ctx, doc as Doc<'posts'>),
-  contentFlag: (ctx, doc) => ctx.db.delete((doc as Doc<'contentFlags'>)._id),
-  waterBodyRequest: (ctx, doc) => ctx.db.delete((doc as Doc<'waterBodyRequests'>)._id),
-  accessAlert: (ctx, doc) => eraseAlert(ctx, doc as Doc<'accessAlerts'>),
+  hazard: (ctx, doc, _now, photos, budget) =>
+    eraseHazard(ctx, doc as Doc<'hazards'>, photos, budget),
+  report: (ctx, doc, _now, photos, budget) =>
+    eraseReport(ctx, doc as Doc<'reports'>, photos, budget),
+  post: (ctx, doc, _now, _photos, budget) => erasePost(ctx, doc as Doc<'posts'>, budget),
+  contentFlag: async (ctx, doc) => {
+    await ctx.db.delete((doc as Doc<'contentFlags'>)._id);
+    return true;
+  },
+  waterBodyRequest: async (ctx, doc) => {
+    await ctx.db.delete((doc as Doc<'waterBodyRequests'>)._id);
+    return true;
+  },
+  accessAlert: (ctx, doc, _now, _photos, budget) =>
+    eraseAlert(ctx, doc as Doc<'accessAlerts'>, budget),
 };
 
 /** The kinds the sweep erases, in order. */
@@ -151,13 +196,19 @@ export const eraseDue = internalMutation({
     const now = Date.now();
     const erased: Partial<Record<Erasable, number>> = {};
     const photos: PhotoWork[] = [];
+    const budget: Budget = { left: size * WRITES_PER_ROW };
     let held = 0;
     let more = false;
-    for (const kind of ERASED_KINDS) {
+    kinds: for (const kind of ERASED_KINDS) {
       const eraser = ERASERS[kind];
       const due = (await dueRows(ctx, kind, now, size)) as ErasableDoc[];
       if (due.length >= size) more = true;
       for (const doc of due) {
+        // Out of budget: the rest waits for the next pass, still due.
+        if (budget.left <= 0) {
+          more = true;
+          break kinds;
+        }
         // The second guard: re-read the withdrawal and the holds now. A row that is held (or no
         // longer withdrawn) has its clock cleared or moved by the refresh, and is left alone.
         const next = await refreshEraseClock(ctx, kind, doc._id, now);
@@ -168,7 +219,11 @@ export const eraseDue = internalMutation({
         // The refresh read the row again; erase what is stored now.
         const current = (await ctx.db.get(doc._id)) as ErasableDoc | null;
         if (!current || withdrawnAtOf(kind, current) === undefined) continue;
-        await eraser(ctx, current, now, photos);
+        if (!(await eraser(ctx, current, now, photos, budget))) {
+          // Part-way: what it removed is gone, the item itself is whole and still due.
+          more = true;
+          break kinds;
+        }
         await writeAudit(ctx, {
           action: 'erase',
           targetType: kind,
@@ -199,7 +254,11 @@ export const eraseDue = internalMutation({
  * removed comment (`buildCommentThread`). Any other is deleted. A shell whose last reply this was has
  * nothing left to hold up, and goes too. (Comments keep no revisions: an edit replaces the body.)
  */
-async function eraseComment(ctx: MutationCtx, comment: Doc<'comments'>, now: number) {
+async function eraseComment(
+  ctx: MutationCtx,
+  comment: Doc<'comments'>,
+  now: number,
+): Promise<boolean> {
   const reply = await ctx.db
     .query('comments')
     .withIndex('by_parent', (q) => q.eq('parentCommentId', comment._id))
@@ -224,6 +283,7 @@ async function eraseComment(ctx: MutationCtx, comment: Doc<'comments'>, now: num
       if (!sibling) await ctx.db.delete(parent._id);
     }
   }
+  return true;
 }
 
 /**
@@ -252,25 +312,42 @@ async function erasePhotos(ctx: MutationCtx, work: readonly PhotoWork[]) {
       }
       if (referenced !== null && (await deletePhotoAndBlobs(ctx, photo))) continue;
       // Kept: the scan couldn't answer, or a blob outlived the attempt. The row stays as the only
-      // pointer to its blobs (the orphan sweep retries), and stops being a record of anything.
+      // pointer to its blobs (the orphan sweep retries), and stops being a record of anything. When
+      // it is known to be this item's alone — a blob that outlived the delete, or the erased Report's
+      // own photo — it is no longer the uploader's either, and their export leaves it out.
+      const ours =
+        referenced !== null || (fromReport !== undefined && photo.reportId === fromReport);
       await ctx.db.patch(photoId, {
         ...unlink,
         caption: undefined,
         takenAt: undefined,
         coord: undefined,
         placeOnMap: false,
+        ...(ours ? { erasedAt: Date.now() } : {}),
       });
     }
   }
 }
 
-/** What an author wrote before each edit — their words too, and gone with the item. */
-async function eraseRevisions(ctx: MutationCtx, targetType: 'report' | 'post', targetId: string) {
-  const revisions = await ctx.db
-    .query('contentRevisions')
-    .withIndex('by_target', (q) => q.eq('targetType', targetType).eq('targetId', targetId))
-    .take(500);
-  for (const revision of revisions) await ctx.db.delete(revision._id);
+/**
+ * What an author wrote before each edit — their words too, and gone before the item is. An edit adds
+ * one each time, with no cap, so they go a budget at a time; `false` while any remain.
+ */
+function eraseRevisions(
+  ctx: MutationCtx,
+  targetType: 'report' | 'post',
+  targetId: string,
+  budget: Budget,
+): Promise<boolean> {
+  return drain(
+    budget,
+    (n) =>
+      ctx.db
+        .query('contentRevisions')
+        .withIndex('by_target', (q) => q.eq('targetType', targetType).eq('targetId', targetId))
+        .take(n),
+    (revision) => ctx.db.delete(revision._id),
+  );
 }
 
 /**
@@ -295,7 +372,61 @@ async function eraseRevisions(ctx: MutationCtx, targetType: 'report' | 'post', t
  * is gone — `listByReport` answers `[]`), ratings and flags on it, bounties it answered (their
  * readers already skip a Report that isn't there).
  */
-async function eraseReport(ctx: MutationCtx, report: Doc<'reports'>, photos: PhotoWork[]) {
+async function eraseReport(
+  ctx: MutationCtx,
+  report: Doc<'reports'>,
+  photos: PhotoWork[],
+  budget: Budget,
+): Promise<boolean> {
+  // Everything that holds its words or points at it first, a budget at a time; the row last, so a
+  // pass that runs out leaves the Report whole, still due, and still findable by every step below.
+  if (!(await eraseRevisions(ctx, 'report', report._id, budget))) return false;
+  const joins = await drain(
+    budget,
+    (n) =>
+      ctx.db
+        .query('reportSubAreas')
+        .withIndex('by_report', (q) => q.eq('reportId', report._id))
+        .take(n),
+    (join) => ctx.db.delete(join._id),
+  );
+  if (!joins) return false;
+  // A put-in a Report's point became (stored by the pre-D62 purge) is an access point on the
+  // community record and stays, coordinate and all; only its pointer to the Report goes.
+  const putIns = await drain(
+    budget,
+    (n) =>
+      ctx.db
+        .query('putIns')
+        .withIndex('by_origin_report', (q) => q.eq('originReportId', report._id))
+        .take(n),
+    (putIn) => ctx.db.patch(putIn._id, { originReportId: undefined }),
+  );
+  if (!putIns) return false;
+  // An access alert filed from it keeps its own life (others vote on it); its link goes.
+  const alerts = await drain(
+    budget,
+    (n) =>
+      ctx.db
+        .query('accessAlerts')
+        .withIndex('by_report', (q) => q.eq('reportId', report._id))
+        .take(n),
+    (alert) => ctx.db.patch(alert._id, { reportId: undefined }),
+  );
+  if (!alerts) return false;
+  // A landmark proposal the Report's `where` filed keeps its own life (it is a request, theirs to
+  // retract), and loses its pointer to the Report.
+  const requests = await drain(
+    budget,
+    (n) =>
+      ctx.db
+        .query('waterBodyRequests')
+        .withIndex('by_report', (q) => q.eq('reportId', report._id))
+        .take(n),
+    (request) => ctx.db.patch(request._id, { reportId: undefined }),
+  );
+  if (!requests) return false;
+  // Bounded by the Report's own list (`HAZARD_MAX_PER_REPORT`).
   for (const hazardId of report.hazardIdsCreated) {
     const hazard = await ctx.db.get(hazardId);
     if (hazard?.originReportId === report._id) {
@@ -308,38 +439,6 @@ async function eraseReport(ctx: MutationCtx, report: Doc<'reports'>, photos: Pho
       await ctx.db.patch(activity._id, { linkedReportId: undefined, promptState: 'dismissed' });
     }
   }
-  // An author's alerts are a handful; bounded anyway, and only theirs can name their Report.
-  const alerts = await ctx.db
-    .query('accessAlerts')
-    .withIndex('by_author', (q) => q.eq('createdByUserId', report.authorId))
-    .take(1000);
-  for (const alert of alerts) {
-    if (alert.reportId === report._id) await ctx.db.patch(alert._id, { reportId: undefined });
-  }
-  // A put-in a Report's point became (stored by the pre-D62 purge) is an access point on the
-  // community record and stays, coordinate and all; only its pointer to the Report goes.
-  const putIns = await ctx.db
-    .query('putIns')
-    .withIndex('by_origin_report', (q) => q.eq('originReportId', report._id))
-    .take(100);
-  for (const putIn of putIns) await ctx.db.patch(putIn._id, { originReportId: undefined });
-  // A landmark proposal the Report's `where` filed keeps its own life (it is a request, theirs to
-  // retract), and loses its pointer to the Report. One person's requests, bounded.
-  const requests = await ctx.db
-    .query('waterBodyRequests')
-    .withIndex('by_requester_created', (q) => q.eq('requesterId', report.authorId))
-    .take(1000);
-  for (const request of requests) {
-    if (request.reportId === report._id) {
-      await ctx.db.patch(request._id, { reportId: undefined });
-    }
-  }
-  const joins = await ctx.db
-    .query('reportSubAreas')
-    .withIndex('by_report', (q) => q.eq('reportId', report._id))
-    .take(100);
-  for (const join of joins) await ctx.db.delete(join._id);
-  await eraseRevisions(ctx, 'report', report._id);
 
   await ctx.db.delete(report._id);
   // Settled at the end of the tick, after the row is gone, so the reference scan no longer counts
@@ -359,16 +458,18 @@ async function eraseReport(ctx: MutationCtx, report: Doc<'reports'>, photos: Pho
       await refreshEraseClock(ctx, 'post', post._id);
     }
   }
+  return true;
 }
 
 /** A Post: reached only once every member is erased (`lib/eraseClock` holds it until then). */
-async function erasePost(ctx: MutationCtx, post: Doc<'posts'>) {
+async function erasePost(ctx: MutationCtx, post: Doc<'posts'>, budget: Budget): Promise<boolean> {
   if (post.reportIds.length > 0) {
     // The clock never lets this happen; refuse rather than strand members without their Post.
     throw new ConvexError('A post is erased only after its reports');
   }
-  await eraseRevisions(ctx, 'post', post._id);
+  if (!(await eraseRevisions(ctx, 'post', post._id, budget))) return false;
   await ctx.db.delete(post._id);
+  return true;
 }
 
 /**
@@ -377,14 +478,25 @@ async function erasePost(ctx: MutationCtx, post: Doc<'posts'>) {
  * or it could not have been withdrawn — stay theirs. The Report it was drawn in, if that still
  * stands, stops listing it.
  */
-async function eraseHazard(ctx: MutationCtx, hazard: Doc<'hazards'>, photos: PhotoWork[]) {
-  const own = await ctx.db
-    .query('hazardConfirmations')
-    .withIndex('by_hazard_and_user', (q) =>
-      q.eq('hazardId', hazard._id).eq('userId', hazard.createdByUserId),
-    )
-    .take(10);
-  for (const vote of own) await ctx.db.delete(vote._id);
+async function eraseHazard(
+  ctx: MutationCtx,
+  hazard: Doc<'hazards'>,
+  photos: PhotoWork[],
+  budget: Budget,
+): Promise<boolean> {
+  // One row a person, but older rows can hold more than one: drained, never capped.
+  const own = await drain(
+    budget,
+    (n) =>
+      ctx.db
+        .query('hazardConfirmations')
+        .withIndex('by_hazard_and_user', (q) =>
+          q.eq('hazardId', hazard._id).eq('userId', hazard.createdByUserId),
+        )
+        .take(n),
+    (vote) => ctx.db.delete(vote._id),
+  );
+  if (!own) return false;
   if (hazard.originReportId !== undefined) {
     const report = await ctx.db.get(hazard.originReportId);
     if (report?.hazardIdsCreated.includes(hazard._id)) {
@@ -395,6 +507,7 @@ async function eraseHazard(ctx: MutationCtx, hazard: Doc<'hazards'>, photos: Pho
   }
   await ctx.db.delete(hazard._id);
   photos.push({ uploaderId: hazard.createdByUserId, photoIds: hazard.photoIds });
+  return true;
 }
 
 /**
@@ -403,15 +516,25 @@ async function eraseHazard(ctx: MutationCtx, hazard: Doc<'hazards'>, photos: Pho
  * export and the vote mutation, which refuses a missing alert. A flag on it shows as "(deleted)" in
  * the queue, as for any erased target.
  */
-async function eraseAlert(ctx: MutationCtx, alert: Doc<'accessAlerts'>) {
-  const own = await ctx.db
-    .query('accessAlertVotes')
-    .withIndex('by_alert_user', (q) =>
-      q.eq('accessAlertId', alert._id).eq('userId', alert.createdByUserId),
-    )
-    .take(10);
-  for (const vote of own) await ctx.db.delete(vote._id);
+async function eraseAlert(
+  ctx: MutationCtx,
+  alert: Doc<'accessAlerts'>,
+  budget: Budget,
+): Promise<boolean> {
+  const own = await drain(
+    budget,
+    (n) =>
+      ctx.db
+        .query('accessAlertVotes')
+        .withIndex('by_alert_user', (q) =>
+          q.eq('accessAlertId', alert._id).eq('userId', alert.createdByUserId),
+        )
+        .take(n),
+    (vote) => ctx.db.delete(vote._id),
+  );
+  if (!own) return false;
   await ctx.db.delete(alert._id);
+  return true;
 }
 
 // ── The clocks' backfill ───────────────────────────────────────────────────────────────────────
@@ -422,7 +545,8 @@ const BACKFILL_PAGE = 200;
  * Give every withdrawn row its clock (D248) — content its author deleted before the clock existed.
  * One kind per call, paged with a cursor (a row keeps its place, so the range does not shrink), then
  * the next kind. Idempotent: a running clock is never moved. Where the deletion time is unknown the
- * Part A backfill stamped it at its own run, so the 30 days start there.
+ * Part A backfill stamped it at its own run, so the 30 days start there; an alert its author retracted
+ * before `retractedAt` existed is stamped here, at this run (`stampOldRetraction`).
  *
  * **Run it after the verdict backfill** (`contentRecord.backfillVerdicts` chains here when it
  * finishes): a clock set before an old verdict is rebuilt would let the sweep erase evidence. The
@@ -446,8 +570,16 @@ export const backfillClocks = internalMutation({
       .query(ERASABLE[current])
       .paginate({ cursor: cursor ?? null, numItems: size });
     let set = 0;
+    let stamped = 0;
     for (const doc of page.page as ErasableDoc[]) {
-      if (withdrawnAtOf(current, doc) === undefined || doc.eraseAt !== undefined) continue;
+      if (
+        current === 'accessAlert' &&
+        (await stampOldRetraction(ctx, doc as Doc<'accessAlerts'>, now))
+      ) {
+        stamped++;
+      }
+      const fresh = (await ctx.db.get(doc._id)) as ErasableDoc;
+      if (withdrawnAtOf(current, fresh) === undefined || fresh.eraseAt !== undefined) continue;
       if ((await refreshEraseClock(ctx, current, doc._id, now)) !== undefined) set++;
     }
     const next = page.isDone ? kinds[kinds.indexOf(current) + 1] : current;
@@ -458,6 +590,23 @@ export const backfillClocks = internalMutation({
         ...(pageSize !== undefined ? { pageSize } : {}),
       });
     }
-    return { kind: current, set, more: next !== undefined };
+    return { kind: current, set, stamped, more: next !== undefined };
   },
 });
+
+/**
+ * An alert its author retracted before `retractedAt` existed carries no time for its 30 days: the old
+ * writer saved only the status and who retracted it, and an author's retraction left no history row
+ * to recover it from. Its 30 days start at the backfill — never in the past, the rule the comment
+ * backfill keeps. A moderator's retraction is not a withdrawal and is left alone. `true` if stamped.
+ */
+async function stampOldRetraction(
+  ctx: MutationCtx,
+  alert: Doc<'accessAlerts'>,
+  now: number,
+): Promise<boolean> {
+  if (alert.status !== 'retracted' || alert.retractedAt !== undefined) return false;
+  if (alert.retractedByUserId !== alert.createdByUserId) return false;
+  await ctx.db.patch(alert._id, { retractedAt: now });
+  return true;
+}
