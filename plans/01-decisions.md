@@ -7832,7 +7832,11 @@ Post should not have to leave the flow to restore a Report first.
     undid does not count). The author's "it's open" stays available, as always — and both clients
     now offer it to the author on their own pinned alert.
 
-Still the founder's call: whether an alert its author retracted is erased at 30 days (its clock
-runs; nothing erases it yet).
+11. **An alert its author retracted is erased after 30 days, like every other withdrawal:** "we should
+    go with your recommendation here to follow the 30-day pattern." A moderator's own retraction of
+    someone's alert is a moderator action, not the author's withdrawal, and is not on this clock.
+    Other skaters' votes on an erased alert stay theirs. A moderator who cares about a pattern of bad
+    claims keeps one as evidence the way content is kept: a retraction recorded on the withdrawn
+    alert is a verdict on the author's record, and holds it until a moderator overturns it.
 
 **Related:** D3, D17, D33, D50, D58, D62, D65, D73, D179, D186, D226, D247, [`phase-B01`](./phases/B01-admin-console.md) §7.

@@ -3,6 +3,15 @@
 > **Status:** scoped 2026-11-13, not started. The server rules this phase puts buttons on (D248) are on
 > the unpushed branch `b01-1b-retention`, not on main; B04-1 cuts from main after that branch merges.
 > No boards exist yet; §5 lists what to draw. The ⚪ roadmap entry is `07-roadmap.md`, Phase B04.
+>
+> **What this doc is for** (founder, 2026-11-13): "We should treat this Phase B04 doc as our running
+> list of changes we discover we need to make to the skaters' experience as we build out this whole
+> admin panel." Anything a console build finds a skater needs is appended to *The running list* below,
+> dated, with where it was found.
+>
+> **When** (founder, 2026-11-13): B01 is the focus. The Paper boards and B04's design and build passes
+> wait; B04 is designed and built in tandem at a later date. Its five scoping questions (§9) stay open,
+> with their recommendations — they have not been answered.
 
 Sources read: `CLAUDE.md`, `plans/README.md`, [`B03-skater-web.md`](./B03-skater-web.md) (route grammar
 §1, state §2, analytics §4.1), `skating-mockups/skater-web/README.md` (Reviews 2–4 and the calls after),
@@ -82,6 +91,36 @@ founder asked for this scope so the work is not forgotten, and these are the cal
    only (`lake/AccessTab.tsx`, `onRetract={moderator ? … : null}`).
 10. **A phone build in the field is a client this phase can break.** Changing the shape of
     `myAccessFlags` would crash installed builds that expect `string[]`; the new reads are new names (§3.4).
+
+---
+
+## The running list
+
+Changes a skater's experience needs, found while building the admin console. Append; never reorder.
+Each entry: the date, where it was found, what is wrong or missing, and where the plan covers it (or
+"not yet planned"). When a B04 build pass takes one, it says so in place rather than deleting it.
+
+- **2026-11-13 · found by** the B04 scoping read of `contentFlags.ts` (§0.2 item 5) — a "no public
+  access" report can be filed twice: once a moderator picks it up (`reviewing`), `myAccessFlags` stops
+  returning it, the lake un-fades for the person who filed it, the About tab offers the report button
+  again, and `contentFlags.flag` dedupes on `open` only. *Planned:* §3.4.
+- **2026-11-13 · found by** the B04 scoping read of both comment threads (§0.2 item 8) — deleting a
+  comment has no confirmation on web (`panels/CommentThread.tsx`) or the phone (`CommentThread.tsx`);
+  one tap, and since D248 it is final. *Planned:* §2.3 (the delete confirmations), §8.2.
+- **2026-11-13 · found by** the B04 scoping read (§0.2 item 8) — a Post has no delete button on either
+  client; `posts.remove` has no caller (deleting its last Report empties it). *Planned:* left out of
+  scope unless the founder wants it (§2.3).
+- **2026-11-13 · found by** the B04 scoping read of `AccessSection.tsx` (§0.2 item 9) — the phone shows
+  no Retract on any access alert, to anyone; the web shows it to moderators only. *Planned:* the
+  author's Retract, §2.2 and §6; moderators' stays the console's.
+- **2026-11-13 · found by** the B04 scoping read of `actions/RequestLakePane.tsx` and
+  `corpusRequests.listMine` (§0.2 item 7) — a lake requested by clicking unlisted water (`admit`) is
+  never shown to the person who asked again: it has no lake page for a "you asked" line, and
+  `listMine` has no caller. *Planned:* the Requests group of §3.3.
+- **2026-11-13 · found by** the `b01-1b-retention` build (D248) — the phone's "It's open" for an
+  alert's author on their own pinned alert is built (`AccessSection`, on core's
+  `accessAlertVoteControls`) but has not been on a device: there is no React Native render harness.
+  *Planned:* the EAS preview pass that closes §8.4.
 
 ---
 
@@ -522,8 +561,9 @@ Four PRs, each well under the ~5,000-line bound. If the founder answers Q3 "wait
    deferred-register row instead of a roadmap entry, deleted when it ships.
 
 Not asked, because the docs or the code answer it: bounties (already listed and cancelable on the profile);
-a moderator's controls (the console's); the retracted alert's erasure (still open under D248, and nothing
-here depends on it); the clock on a move (unchanged — the author's own "Still there" already refreshes it).
+a moderator's controls (the console's); the retracted alert's erasure (settled: erased at 30 days,
+D248, and nothing here depends on it); the clock on a move (unchanged — the author's own "Still there"
+already refreshes it).
 
 ---
 

@@ -832,7 +832,6 @@ knows what needs them, does it where they found it, and watches the machinery wo
 - The People page's record (§8 §7): the standing verdicts and the recently withdrawn list (`contentRecord.personContentRecord`), and the controls to record a verdict on deleted content and to overturn one (`moderation.overturnVerdict`) — the server is built, no screen reads it
 - Retraction screens (D248, server built, no client reaches them) — **Phase B04** ([plan](./phases/B04-skater-contributions.md)) owns them: a request's *Withdraw*, a flag's and a no-public-access report's *Withdraw*, an alert author's *Retract*, a hazard's *Withdraw*, and the delete confirmations' 30 days
 - The phone's "It's open" for an alert's author on their own pinned alert (D248) — built in `AccessSection` on the shared rule, not yet on a device (no RN render harness); its pass rides **Phase B04**'s EAS preview pass (§8.4)
-- The erasure of an access alert its author retracted (D248) — the clock runs, the eraser waits on the founder's call: the alert's own design keeps a retracted row "as the record that something was claimed and withdrawn", and other skaters' votes hang off it
 - Telling people about the 30 days (D248): the app's delete confirmations, and the privacy policy (the legal checklist)
 
 ## Phase B03 — The skater web app
@@ -900,6 +899,7 @@ longer need.*
 #### Owed
 - `b01-1b-retention` (D248's server) merged to main before B04-1 cuts its branch; that branch's Owed row *Retraction screens* is this phase
 - The founder's answers to the plan's §9 questions, and the boards in its §5 before B04-3
+- The founder's sequencing (2026-11-13): B01 is the focus; the boards and B04's design and build passes wait, designed and built in tandem later. Until then the plan is the running list of skater-side changes the console build finds (its *The running list*)
 
 ## Deferred register
 

@@ -712,8 +712,10 @@ land; the third came out of the #108 review. **The calls:**
    cross-season pattern, or made a permanent feature — is a shared record and stays up; and **a
    past pin counts as acted on**: once a moderator pinned an alert, its author can't retract it even
    after the pin is released, though their "it's open" always stands. A verdict or open flag on a
-   Post holding its member Reports is accepted as built. Erasing an author-retracted alert is still
-   open.
+   Post holding its member Reports is accepted as built. And **an alert its author retracted is
+   erased after 30 days**: "we should go with your recommendation here to follow the 30-day
+   pattern" — a moderator's own retraction is not on that clock, and a moderator can keep a
+   withdrawn alert as evidence with a verdict.
 
 ### The governor's rulings at the Overview's integration (2026-11-13)
 
@@ -1478,8 +1480,12 @@ the People page and the skater screens that reach it are owed (the roadmap's reg
   search words; a **Post** goes after its last member (held while any member is stored), with its
   words and revisions — and a verdict or an open flag on a Post holds its members too, since it
   judged what the Post showed; a **hazard** its row, photos and its author's own vote; a retracted
-  **request** or **flag** its row. **Access alerts** run the clock with no eraser — a founder call
-  (the register). The clock is `WITHDRAWN_ERASE_DAYS`, a sibling of the account grace pinned equal
+  **request** or **flag** its row; an **access alert its author retracted** its row and the author's
+  own vote (other skaters' votes stay theirs; a moderator's retraction of a live alert is not on the
+  clock). A moderator keeps a withdrawn alert as evidence by retracting it again: on an alert its
+  author already retracted that records a verdict (`contentVerdicts`, kind `retracted`) instead of
+  moving the row, holds it, shows on the People record, and is ended by `overturnVerdict` (under
+  the alert lever, `access.alert`). The clock is `WITHDRAWN_ERASE_DAYS`, a sibling of the account grace pinned equal
   to it, because the codebase names each promise it states.
 - **Other people's content attached to an erased item stays theirs.** Comments on an erased Report
   stay in each commenter's record and export, unreachable in the app (the thread answers empty, as
