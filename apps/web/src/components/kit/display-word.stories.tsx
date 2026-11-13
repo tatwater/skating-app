@@ -44,7 +44,7 @@ async function expectType(el: HTMLElement, surface: tokens.Surface, size: 'page'
 
 /** The page's word: the console's display size, tracked wide, as its own heading. */
 export const Page: Story = {
-  args: { render: <h1 /> },
+  args: { render: (props) => <h1 {...props} /> },
   play: async ({ canvasElement, globals }) => {
     const el = word(canvasElement);
     await expect(el.tagName).toBe('H1');
@@ -54,7 +54,7 @@ export const Page: Story = {
 
 /** A column's head: the wordmark step, tracked as a head. */
 export const Column: Story = {
-  args: { size: 'column', render: <h2 />, children: 'Keeping up' },
+  args: { size: 'column', render: (props) => <h2 {...props} />, children: 'Keeping up' },
   play: async ({ canvasElement, globals }) => {
     const el = word(canvasElement);
     await expect(el.tagName).toBe('H2');
