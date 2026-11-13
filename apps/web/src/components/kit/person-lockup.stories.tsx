@@ -5,9 +5,9 @@ import { must } from '@/components/kit/storyKit';
 
 import { PersonLockup } from './person-lockup';
 
-/** Kit candidate: the person lockup — a circle, the real name, the @handle. */
+/** The person lockup — a circle, the real name, the @handle. */
 const meta = {
-  title: 'Admin/Body/Kit candidates/Person lockup',
+  title: 'Kit/PersonLockup',
   component: PersonLockup,
   globals: { surface: 'admin', mode: 'dark' },
   args: { name: 'Kate Donovan', handle: 'kdonovan' },

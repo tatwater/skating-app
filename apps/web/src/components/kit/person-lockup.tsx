@@ -1,10 +1,9 @@
 import type { ComponentProps } from 'react';
-
-import { Avatar } from '@/components/kit/avatar';
 import { cn } from '@/lib/utils';
+import { Avatar } from './avatar';
 
 /**
- * **Kit candidate.** The boards' `.person` lockup: a person's circle, their real name, then their
+ * The boards' `.person` lockup: a person's circle, their real name, then their
  * @handle — the one place a handle survives (Round 2 #1), and the link to their page when there
  * is one. Whoever took an action stands on their own line under it, as this.
  *

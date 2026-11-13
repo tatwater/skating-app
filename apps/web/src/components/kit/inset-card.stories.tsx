@@ -1,14 +1,13 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, fn, userEvent, waitFor } from 'storybook/test';
-
-import { Button } from '@/components/kit/button';
 import { must } from '@/components/kit/storyKit';
+import { Button } from './button';
 
 import { InsetCard, InsetCardFoot } from './inset-card';
 
-/** Kit candidate: the inset card over a pane (Review 14), in all four maps. */
+/** The inset card over a pane (Review 14), in all four maps. */
 const meta = {
-  title: 'Admin/Body/Kit candidates/Inset card',
+  title: 'Kit/InsetCard',
   component: InsetCard,
   globals: { surface: 'admin', mode: 'dark' },
   args: { back: 'Back to landmarks', onBack: fn() },

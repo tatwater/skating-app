@@ -6,6 +6,7 @@ import { Button } from '@/components/kit/button';
 import { ChipInput } from '@/components/kit/chip-input';
 import { KeyValueList, KeyValueRow } from '@/components/kit/grid-list';
 import { Input, InputGroup, InputGroupKbd } from '@/components/kit/input';
+import { InsetCard, InsetCardFoot } from '@/components/kit/inset-card';
 import { Kbd } from '@/components/kit/kbd';
 import { Section } from '@/components/kit/section-slug';
 import {
@@ -15,11 +16,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/kit/select';
-import { usePaneKeys } from '@/lib/keys';
 
-import { sayUnavailable, UnavailableButton } from '../access/kit-candidates/unavailable-button';
+import { sayUnavailable, UnavailableButton } from '@/components/kit/unavailable-button';
+import { usePaneKeys } from '@/lib/keys';
 import { BLOCK_GAP, dayMonthYear } from '../tabParts';
-import { InsetCard, InsetCardFoot } from './kit-candidates/inset-card';
 import { acres, CATALOG_NAMES, formatPoint, type LandmarkRow, PROMOTABLE } from './placesModel';
 
 /**

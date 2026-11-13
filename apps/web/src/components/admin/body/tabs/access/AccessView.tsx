@@ -3,15 +3,14 @@ import { type ReactNode, useRef } from 'react';
 
 import { Badge, Tag } from '@/components/kit/badge';
 import { Button } from '@/components/kit/button';
+import { EntryTile } from '@/components/kit/entry-tile';
 import { Kbd } from '@/components/kit/kbd';
 import { Section } from '@/components/kit/section-slug';
+import { sayUnavailable, UnavailableButton } from '@/components/kit/unavailable-button';
 import { usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
-
 import { LIT_ROW, LoadingSection, litAttr, TabBody } from '../tabParts';
 import { type AccessData, litId, type PutInRow } from './accessModel';
-import { EntryTile } from './kit-candidates/entry-tile';
-import { sayUnavailable, UnavailableButton } from './kit-candidates/unavailable-button';
 import { ReasonAsk } from './ReasonAsk';
 import { RulingStrip } from './RulingStrip';
 

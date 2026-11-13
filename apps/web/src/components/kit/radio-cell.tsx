@@ -1,11 +1,10 @@
 import { Radio as RadioPrimitive } from '@base-ui/react/radio';
 import type { ReactNode } from 'react';
-
-import { Badge } from '@/components/kit/badge';
 import { cn } from '@/lib/utils';
+import { Badge } from './badge';
 
 /**
- * **Kit candidate** (beside `radio`'s `RadioRow`). A value you can pick, as a boxed table cell —
+ * Beside `radio`'s `RadioRow`: a value you can pick, as a boxed table cell —
  * Body › Water's depth ladder, where each source offers a mean and a max and each column is one
  * radio group (`RadioGroup` from the kit holds them; arrow keys move the pick down a column).
  *
@@ -36,8 +35,8 @@ type RadioCellProps = Omit<RadioPrimitive.Root.Props, 'children'> & {
   lead?: ReactNode;
 };
 
-/** The unit's gap: 7 px, the boards' value-to-unit spacing (Review 8). No token holds it yet. */
-const UNIT_GAP = 'ms-[0.4375rem]';
+/** The unit's gap: the boards' value-to-unit spacing (Review 8), the `gap.unit` token. */
+const UNIT_GAP = 'ms-unit';
 
 function RadioCell({
   figure,

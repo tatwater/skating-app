@@ -17,7 +17,7 @@ const MASCOMA_BOUNDS = {
 };
 
 /**
- * Kit candidates from the Body console's map (board 5.4.1): the graticule labeled at a pane's edges,
+ * From the Body console's map (board 5.4.1): the graticule labeled at a pane's edges,
  * and the place marks. Each in all four maps.
  */
 const meta = {

@@ -1,14 +1,14 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, fn, userEvent, within } from 'storybook/test';
-import { computedColor, sameColor } from '@/components/kit/measure';
-import { RadioGroup } from '@/components/kit/radio';
 import { must } from '@/components/kit/storyKit';
+import { computedColor, sameColor } from './measure';
+import { RadioGroup } from './radio';
 
 import { RadioCell } from './radio-cell';
 
-/** Kit candidate: a value you can pick, as a boxed table cell; the one in use wears Now. */
+/** A value you can pick, as a boxed table cell; the one in use wears Now. */
 const meta = {
-  title: 'Admin/Body/Kit candidates/Radio cell',
+  title: 'Kit/RadioCell',
   component: RadioCell,
   globals: { surface: 'admin', mode: 'dark' },
   args: { value: 'survey', figure: '9.4', unit: 'm' },

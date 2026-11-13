@@ -7,11 +7,10 @@ import { Button } from '@/components/kit/button';
 import { KeyValueList, KeyValueRow } from '@/components/kit/grid-list';
 import { Input, InputGroup, InputGroupIcon, InputGroupKbd } from '@/components/kit/input';
 import { RadioGroup } from '@/components/kit/radio';
+import { RadioCell } from '@/components/kit/radio-cell';
 import { Section } from '@/components/kit/section-slug';
 import { cn } from '@/lib/utils';
-
 import { LIT_ROW, LoadingSection, litAttr, TabBody } from '../tabParts';
-import { RadioCell } from './kit-candidates/radio-cell';
 import {
   type DepthRung,
   depthFigure,

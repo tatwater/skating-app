@@ -1,11 +1,10 @@
 import { type ComponentProps, type ReactNode, useEffect, useRef } from 'react';
-
-import { Kbd } from '@/components/kit/kbd';
-import { plateVariants } from '@/components/kit/plate';
 import { cn } from '@/lib/utils';
+import { Kbd } from './kbd';
+import { plateVariants } from './plate';
 
 /**
- * **Kit candidate** (§8's deferred `InsetCard`). A task on one thing — edit a landmark, drop one,
+ * A task on one thing — edit a landmark, drop one,
  * link a lot — on a temporary card over the inspector (Review 14's `.icard`): what the pane showed
  * stays put behind it, dimmed, and the map stays live beside it.
  *

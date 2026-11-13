@@ -15,15 +15,15 @@ import {
   DropdownMenuTrigger,
 } from '@/components/kit/dropdown-menu';
 import { Kbd } from '@/components/kit/kbd';
+import { PlaceMark } from '@/components/kit/map-marks';
+import { PersonLockup } from '@/components/kit/person-lockup';
 import { RadioGroup, RadioRow } from '@/components/kit/radio';
 import { Section } from '@/components/kit/section-slug';
+import { sayUnavailable, UnavailableButton } from '@/components/kit/unavailable-button';
 import { usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
-import { sayUnavailable, UnavailableButton } from '../access/kit-candidates/unavailable-button';
 import { ReasonAsk } from '../access/ReasonAsk';
 import { LIT_ROW, LoadingSection, litAttr, TabBody } from '../tabParts';
-import { LandmarkMark } from './kit-candidates/landmark-mark';
-import { PersonLockup } from './kit-candidates/person-lockup';
 import { LandmarkCard, type LandmarkEdit } from './LandmarkCard';
 import {
   askKicker,
@@ -193,7 +193,7 @@ function LandmarkListRow({
 }) {
   const content = (
     <>
-      <LandmarkMark kind={l.kind} />
+      <PlaceMark kind={l.kind} glyph />
       <span className="flex min-w-0 items-baseline gap-(--space-2) whitespace-nowrap">
         <span className="truncate text-row text-fg1 group-data-hovered/lm:text-fg group-data-selected/lm:text-fg group-hover/lm:text-fg">
           {l.name}
@@ -323,7 +323,7 @@ function AskActions({
                 {landmarks.map((l) => (
                   <DropdownMenuItem
                     key={l.id}
-                    icon={<LandmarkMark kind={l.kind} />}
+                    icon={<PlaceMark kind={l.kind} glyph />}
                     onClick={() => onFileAsSpelling(ask.id, l.id)}
                   >
                     {l.name}
