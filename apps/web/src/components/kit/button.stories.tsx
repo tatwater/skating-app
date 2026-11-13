@@ -26,7 +26,7 @@ const meta = {
     variant: { control: 'inline-radio', options: ['outline', 'primary', 'danger', 'link', 'bare'] },
     size: {
       control: 'inline-radio',
-      options: ['default', 'sm', 'xs', 'icon', 'icon-sm', 'icon-xs'],
+      options: ['default', 'sm', 'xs', 'row', 'icon', 'icon-sm', 'icon-xs'],
     },
     armed: { control: 'boolean', if: { arg: 'variant', eq: 'danger' } },
     external: { control: 'boolean', if: { arg: 'variant', eq: 'link' } },
@@ -158,6 +158,7 @@ const ROWS: ReadonlyArray<{ label: string; props: ComponentProps<typeof Button> 
   { label: 'Danger', props: { variant: 'danger', children: 'Remove' } },
   { label: 'Danger, armed', props: { variant: 'danger', armed: true, children: 'Remove' } },
   { label: 'Link', props: { variant: 'link', children: 'History' } },
+  { label: 'Link, in a row', props: { variant: 'link', size: 'row', children: 'Inbox' } },
   { label: 'Bare', props: { variant: 'bare', children: 'Lake Mascoma' } },
   {
     label: 'Bare icon',
@@ -337,6 +338,41 @@ export const SizeLadder: Story = {
         await expect(el.getBoundingClientRect().height).toBeCloseTo(expected, 1);
       }
     }
+  },
+};
+
+/**
+ * In a row: the link chip a count row carries ("Inbox →") is `size="row"` — 18 on the console, so
+ * it sits inside a 22 px row without making it taller; the same kicker label and insets as `xs`.
+ */
+export const InRow: Story = {
+  render: () => (
+    <div
+      data-row=""
+      className="flex h-[1.375rem] w-[16rem] items-center justify-between text-assist"
+    >
+      <span>Content flags</span>
+      <Button variant="link" size="row">
+        Inbox
+      </Button>
+    </div>
+  ),
+  play: async ({ canvasElement, globals }) => {
+    const surface = globals.surface as tokens.Surface;
+    const row = must(canvasElement.querySelector<HTMLElement>('[data-row]'));
+    const chip = must(canvasElement.querySelector<HTMLElement>('[data-slot="button"]'));
+    const rootPx = parseFloat(getComputedStyle(document.documentElement).fontSize);
+    const r = row.getBoundingClientRect();
+    const c = chip.getBoundingClientRect();
+    await expect(c.height).toBeCloseTo(tokens.size[surface]['btn-row'].value * rootPx, 1);
+    // The row keeps its height; the chip sits centered in it.
+    await expect(r.height).toBeCloseTo(22 * (rootPx / 16), 1);
+    await expect(Math.abs(c.top - r.top - (r.bottom - c.bottom))).toBeLessThanOrEqual(0.5);
+    // The same label and insets as the extra-small chip.
+    const style = getComputedStyle(chip);
+    await expect(style.textTransform).toBe('uppercase');
+    await expect(parseFloat(style.paddingLeft)).toBeCloseTo(0.8 * parseFloat(style.fontSize), 1);
+    await expect(chip).toHaveTextContent('Inbox→');
   },
 };
 
