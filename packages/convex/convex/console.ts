@@ -34,6 +34,9 @@ const PLACE_KINDS: readonly RequestKind[] = ['name_bay', 'name_landmark'];
 
 const DAY_MS = 86_400_000;
 
+/** Fields added to a read after its first clients: always present, typed optional. */
+type Added<T> = Partial<T>;
+
 /**
  * Everyone with an account, from the 6-hourly `accounts_total` rollup — one point read, where a
  * live count would read every profile. `null` until the rollup has run once; `capped` when its scan
@@ -156,6 +159,12 @@ export const overview = query({
     // whenever either read stopped short rather than a median of the oldest two hundred.
     const openedAts = [...flags.map((f) => f.createdAt), ...requests.map((r) => r.createdAt)];
     const oldest = openedAts.length > 0 ? Math.min(...openedAts) : null;
+    // The two B01-3 additions are always sent; their type is optional (`Added`) only so a client
+    // built against the read before them — the Overview's fixtures — compiles unchanged.
+    const inboxAdded: Added<{ medianAgeMs: number | null }> = {
+      medianAgeMs: flagsCapped || requestsCapped ? null : medianAge(openedAts, now),
+    };
+    const peopleAdded: Added<{ totalUsers: Count | null }> = { totalUsers: await totalUsers(ctx) };
     return {
       inbox: {
         safety: { count: safety, capped: flagsCapped },
@@ -166,7 +175,7 @@ export const overview = query({
         contentFlags: { count: content, capped: flagsCapped },
         support,
         oldestOpenAt: oldest,
-        medianAgeMs: flagsCapped || requestsCapped ? null : medianAge(openedAts, now),
+        ...inboxAdded,
       },
       people: {
         moderators: cappedCount(moderators.length),
@@ -180,7 +189,7 @@ export const overview = query({
         flaggedPeople: { count: flaggedPeople, capped: flagsCapped },
         appealsOpen: appeals,
         leaving: cappedCount(leaving.length),
-        totalUsers: await totalUsers(ctx),
+        ...peopleAdded,
       },
     };
   },
