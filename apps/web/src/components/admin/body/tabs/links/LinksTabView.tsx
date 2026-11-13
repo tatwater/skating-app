@@ -243,6 +243,10 @@ function OpenLink({
 const ROW =
   'grid items-start gap-x-(--space-3_5) border-b border-dotted border-line py-(--space-2_5) first:pt-0 last:border-b-0 last:pb-0';
 
+/** A staff row sits inside the sortable list's `li`: first and last are the `li`'s. */
+const STAFF_ROW =
+  'grid items-start gap-x-(--space-3_5) border-0 border-b border-dotted border-line py-(--space-2_5) in-[li:first-child]:pt-0 in-[li:last-child]:border-b-0 in-[li:last-child]:pb-0';
+
 function DerivedLinkRow({ row }: { row: DerivedRow }) {
   return (
     <li
@@ -276,7 +280,7 @@ function StaffLinkRow({
     <div
       data-slot="link-row"
       className={cn(
-        ROW,
+        STAFF_ROW,
         grip === null
           ? 'grid-cols-[minmax(0,1fr)_auto]'
           : 'grid-cols-[auto_minmax(0,1fr)_auto] gap-x-(--space-2_5)',
@@ -333,7 +337,7 @@ function LinkEditor({
   return (
     <div
       data-slot="link-editor"
-      className="flex flex-col gap-(--space-2) border-b border-dotted border-line py-(--space-2_5) last:border-b-0"
+      className="flex flex-col gap-(--space-2) border-0 border-b border-dotted border-line py-(--space-2_5) last:border-b-0 in-[li:last-child]:border-b-0"
     >
       <label htmlFor={labelId} className="sr-only">
         Label

@@ -469,7 +469,7 @@ function FeatureList({
               <span className="truncate text-body leading-(--lead-snug) text-fg1">
                 {f.place ?? f.type}
               </span>
-              <span className="truncate text-assist leading-(--lead-snug) text-fg3">{f.sub}</span>
+              <span className="text-assist leading-(--lead-snug) text-fg3">{f.sub}</span>
             </span>
             <span className="flex flex-col items-stretch gap-(--space-1_5)">
               {edit !== undefined && (

@@ -20,6 +20,7 @@ import { Avatar } from '@/components/kit/avatar';
 import { Badge } from '@/components/kit/badge';
 import { Button, buttonVariants } from '@/components/kit/button';
 import { Kbd } from '@/components/kit/kbd';
+import { Plate } from '@/components/kit/plate';
 import { Section } from '@/components/kit/section-slug';
 import {
   Table,
@@ -189,10 +190,7 @@ export function ImageryTabView({
             No satellite pass reached this body this winter
           </p>
         ) : (
-          <div
-            data-slot="pass-card"
-            className="corner-dots flex flex-col gap-(--space-2_5) bg-raise px-(--space-4) pt-(--space-3) [--dot-opacity:1]"
-          >
+          <Plate data-slot="pass-card" className="pb-0">
             <div className="flex items-center justify-between gap-(--space-2_5)">
               <span className="flex items-baseline gap-(--space-2_5) whitespace-nowrap">
                 <b
@@ -264,7 +262,7 @@ export function ImageryTabView({
                 <Kbd variant="dim">→</Kbd>
               </Button>
             </div>
-          </div>
+          </Plate>
         )}
       </Section>
 
