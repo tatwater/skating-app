@@ -174,10 +174,14 @@ export const collect = internalQuery({
       .query('contentRevisions')
       .withIndex('by_author_replaced_at', (q) => q.eq('authorId', userId))
       .take(ROW_CAP);
-    const comments = await ctx.db
-      .query('comments')
-      .withIndex('by_author', (q) => q.eq('authorId', userId))
-      .take(ROW_CAP);
+    // An erased comment's placeholder (D248) is kept only so replies still hang from something; it
+    // holds none of their words and is no longer theirs to export.
+    const comments = (
+      await ctx.db
+        .query('comments')
+        .withIndex('by_author', (q) => q.eq('authorId', userId))
+        .take(ROW_CAP)
+    ).filter((c) => c.erasedAt === undefined);
     const hazards = await ctx.db
       .query('hazards')
       .withIndex('by_author_and_water_body', (q) => q.eq('createdByUserId', userId))

@@ -91,6 +91,10 @@ crons.interval(
   {},
 );
 
+// Erase what people withdrew, 30 days on unless held (D248). Hourly like the account sweep: the
+// window is a month, and the range it reads holds only rows already due (`erasure.eraseDue`).
+crons.interval('erase withdrawn content', { hours: 1 }, internal.erasure.eraseDue, {});
+
 // The inbox's season purge (A08 §1.5): every notification created before this season's July 1 goes,
 // read or not. Daily, bounded, and a no-op for eleven months — the day after the boundary is the one
 // that matters, and a bounded pass means it clears over a few ticks rather than one huge transaction.

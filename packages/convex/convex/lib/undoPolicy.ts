@@ -105,6 +105,30 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
     takesAway: always,
     capability: 'content.moderate',
   },
+  // An overturn takes a verdict off a person's record; putting it back is a new verdict, with its
+  // own reason, not an undo (D248).
+  overturn_verdict: {
+    undo: { kind: 'none', why: 'To put the verdict back, record it again with Hide or Remove.' },
+    takesAway: never,
+    capability: 'content.moderate',
+  },
+  // Erased is gone: nothing is left to put back (D248).
+  erase: {
+    undo: { kind: 'none', why: 'This was erased, so there is nothing left to bring back.' },
+    takesAway: always,
+    capability: 'content.moderate',
+  },
+
+  // The reporter's own "it's open" (founder ruling, 2026-11-13): theirs to say, not a moderator's to
+  // take back. A moderator who thinks it still stands pins it again.
+  author_resolve_access_alert: {
+    undo: {
+      kind: 'none',
+      why: 'The person who reported it marked it open again. Pin it again if it still stands.',
+    },
+    takesAway: never,
+    capability: 'access.alert',
+  },
 
   // ── People ──────────────────────────────────────────────────────────────────────────────────────
   ban: { undo: inverse('unban'), takesAway: always, capability: 'people.discipline' },

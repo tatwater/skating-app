@@ -24,6 +24,7 @@
 import type { Id } from '../_generated/dataModel';
 import type { MutationCtx } from '../_generated/server';
 import type { FLAG_REASONS, FLAG_TARGET_TYPES } from './enums';
+import { holdMoved } from './eraseClock';
 
 type FlagTargetType = (typeof FLAG_TARGET_TYPES)[number];
 type FlagReason = (typeof FLAG_REASONS)[number];
@@ -180,6 +181,8 @@ export async function fileOrBumpAutoFlag(
     ...(recent && resolved ? { supersedesFlagId: resolved._id } : {}),
     createdAt: now,
   });
+  // An open complaint holds withdrawn content back from erasure (D248).
+  await holdMoved(ctx, args.targetType, args.targetId, now);
   return {
     flagId,
     occurrences,

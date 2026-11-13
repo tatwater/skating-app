@@ -32,6 +32,7 @@ import {
 import { AUTHOR_DELETE_REASON } from './lib/authorDeletion';
 import { publicAuthor } from './lib/authorView';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
+import { refreshEraseClock } from './lib/eraseClock';
 import { enqueueActorNotification } from './lib/notificationQueue';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
 
@@ -287,6 +288,8 @@ export const remove = mutation({
     if (existing.authorDeletedAt !== undefined) return commentId;
     const now = Date.now();
     await ctx.db.patch(commentId, { moderationStatus: 'removed', authorDeletedAt: now });
+    // The 30 days start now, unless a verdict or an open flag holds it (D248).
+    await refreshEraseClock(ctx, 'comment', commentId, now);
     if (existing.moderationStatus !== 'removed') {
       // Drop the author's visible-comment counter if this was still counting (visible → removed).
       await bumpContributionCount(

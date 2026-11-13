@@ -28,11 +28,14 @@ function historyOf(ctx: QueryCtx, targetType: Withdrawable, targetId: string) {
 
 /**
  * Stamp the content one historic `author_delete` row withdrew, if it still answers to it: still
- * removed, and not restored by a moderator since (which a moderator could do before D248 — the
- * last word was theirs); a restore that was itself undone put it back where its author left it. A
- * Post its last Report's deletion emptied was not deleted by its author (the live writer leaves it
- * unstamped too); a Post its author did delete takes every removed member with it, a member a
- * moderator removed first included, as `authorRemovePost` does now.
+ * down, and not restored by a moderator since (which a moderator could do before D248 — the last
+ * word was theirs); a restore that was itself undone put it back where its author left it. Down
+ * includes hidden: a moderator who hid it after the deletion (before D248 they could) kept it down,
+ * and their hide is a verdict on deleted content now, not a way back. A Post its last Report's
+ * deletion emptied was not deleted by its author (the live writer leaves it unstamped too); a Post
+ * its author did delete takes every member that is down with it — one a moderator removed first,
+ * and one a moderator hid after the deletion, included: everything inside a deleted Post is
+ * withdrawn. A member a moderator brought back up since is left as it stands, live.
  */
 async function stampFromRow(ctx: MutationCtx, row: Doc<'moderationActions'>): Promise<number> {
   const targetType = row.targetType;
@@ -42,7 +45,7 @@ async function stampFromRow(ctx: MutationCtx, row: Doc<'moderationActions'>): Pr
   const id = ctx.db.normalizeId(WITHDRAWABLE_TABLE[targetType], row.targetId);
   const target = id ? await ctx.db.get(id) : null;
   if (!target || authorDeletedAtOf(target) !== undefined) return 0;
-  if (target.moderationStatus !== 'removed') return 0;
+  if (target.moderationStatus === 'visible') return 0;
   const history = await historyOf(ctx, targetType, row.targetId);
   const undone = new Set(history.flatMap((r) => (r.undoesActionId ? [r.undoesActionId] : [])));
   const restoredSince = history.some(
@@ -55,7 +58,7 @@ async function stampFromRow(ctx: MutationCtx, row: Doc<'moderationActions'>): Pr
     for (const reportId of (target as Doc<'posts'>).reportIds) {
       const report = await ctx.db.get(reportId);
       if (!report || report.authorDeletedAt !== undefined) continue;
-      if (report.moderationStatus !== 'removed') continue;
+      if (report.moderationStatus === 'visible') continue;
       await ctx.db.patch(reportId, { authorDeletedAt: row.createdAt });
       stamped++;
     }

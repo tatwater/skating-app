@@ -28,6 +28,7 @@ import {
   unbanImpl,
 } from '../moderation';
 import type { ModerationAction, ModerationTargetType } from './audit';
+import { AUTHOR_DELETED_OVERTURN } from './authorDeletion';
 import { BODY_TARGET_UNDO, BODY_UNDO_HANDLERS } from './undoHandlersBody';
 import { CORPUS_TARGET_UNDO, CORPUS_UNDO_HANDLERS } from './undoHandlersCorpus';
 import { UNDO_POLICY } from './undoPolicy';
@@ -99,6 +100,8 @@ function contentUndoTakesAway(row: Doc<'moderationActions'>): boolean {
 const contentUndoTakedown: UndoHandler = {
   blocked: (row) => {
     const { priorStatus, newStatus } = meta(row);
+    // A verdict recorded on content its author had already deleted is reversed by an overturn (D248).
+    if (meta(row).onAuthorDeleted === true) return AUTHOR_DELETED_OVERTURN;
     if (priorStatus !== 'visible' && priorStatus !== 'hidden' && priorStatus !== 'removed') {
       return PREDATES;
     }

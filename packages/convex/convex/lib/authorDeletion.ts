@@ -19,12 +19,17 @@ export const AUTHOR_DELETED_RESTORE = "Its author deleted this, so it can't be r
 export const AUTHOR_DELETED_ALREADY = 'Its author deleted this, so it stays as they left it.';
 /** The same refusal, for an undo. */
 export const AUTHOR_DELETED_UNDO = "Its author deleted this since, so undoing can't bring it back.";
+/** An undo of a verdict recorded on content already deleted: the reversal is an overturn (D248). */
+export const AUTHOR_DELETED_OVERTURN =
+  'Its author had deleted this. Overturn the verdict to take it off their record.';
 
 /** The tables whose rows an author can withdraw, by audit target type. */
 export const WITHDRAWABLE_TABLE = {
   report: 'reports',
   post: 'posts',
   comment: 'comments',
+  // Since 2026-11-13: an author may withdraw a hazard no other skater has said is there.
+  hazard: 'hazards',
 } as const;
 export type Withdrawable = keyof typeof WITHDRAWABLE_TABLE;
 

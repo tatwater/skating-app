@@ -373,6 +373,49 @@ describe('the backfills', () => {
   });
 });
 
+describe('the backfill, on old dev data', () => {
+  test('a member a moderator hid after its Post was deleted is withdrawn with the Post; one brought back up is left live', async () => {
+    const { t, author, mod } = await setup();
+    const { postId, reportIds } = await seedPost(t, author.id, 3);
+    const [cascaded, hiddenAfter, broughtBack] = reportIds as [
+      Id<'reports'>,
+      Id<'reports'>,
+      Id<'reports'>,
+    ];
+    const at = Date.now() - 5000;
+    await t.run(async (ctx) => {
+      await ctx.db.patch(postId, { moderationStatus: 'removed' });
+      await ctx.db.patch(cascaded, { moderationStatus: 'removed' });
+      // Before D248 a moderator could move a member of a deleted Post: one hidden, one restored.
+      await ctx.db.patch(hiddenAfter, { moderationStatus: 'hidden' });
+      await ctx.db.patch(broughtBack, { moderationStatus: 'visible' });
+      await ctx.db.insert('moderationActions', {
+        actorId: author.id,
+        action: 'author_delete',
+        targetType: 'post',
+        targetId: postId,
+        reason: 'Deleted by the author',
+        createdAt: at,
+      });
+      await ctx.db.insert('moderationActions', {
+        actorId: mod.id,
+        action: 'hide',
+        targetType: 'report',
+        targetId: hiddenAfter,
+        reason: 'rude',
+        metadata: { priorStatus: 'removed', newStatus: 'hidden' },
+        createdAt: at + 1000,
+      });
+    });
+    await t.mutation(internal.authorDeletions.backfillFromAudit, {});
+    expect(await deletedAt(t, postId)).toBe(at);
+    expect(await deletedAt(t, cascaded)).toBe(at);
+    expect(await deletedAt(t, hiddenAfter)).toBe(at);
+    expect(await deletedAt(t, broughtBack)).toBeUndefined();
+    expect(await statusOf(t, broughtBack)).toBe('visible');
+  });
+});
+
 describe('the rule holds under any order', () => {
   test('author-deleted content never shows again', async () => {
     type Op = 'delete' | 'hide' | 'remove' | 'restore' | 'undo';

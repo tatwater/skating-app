@@ -2406,6 +2406,14 @@ export default defineSchema({
      * Absent ⇒ the author hasn't withdrawn it.
      */
     authorDeletedAt: v.optional(v.number()),
+    /**
+     * When this withdrawn item is to be erased (D248): set at the author's deletion to 30 days on,
+     * cleared while a moderator's verdict or an open flag holds it, and set again when the hold
+     * clears — to the later of the deletion + 30 days and that moment. Written only by
+     * `lib/eraseClock.refreshEraseClock`, so the erasure sweep's range holds nothing but due work.
+     * Absent ⇒ not withdrawn, or held, or already erased.
+     */
+    eraseAt: v.optional(v.number()),
   })
     .index('by_water_body_skate_end_time', ['waterBodyId', 'skateEndTime'])
     // Per-body feed, paginated (infinite scroll). `moderationStatus` leads so the gate is applied
@@ -2421,6 +2429,11 @@ export default defineSchema({
     // cannot see it under the second. The old `by_sub_area_moderation_and_skate_end_time` index
     // was dropped with them: an unread index is write amplification plus a trap.
     .index('by_author', ['authorId'])
+    // A person's own deletions, newest first — the People page's recently deleted list (D248). Read
+    // with a lower bound: the field is optional, and an absent value sorts first.
+    .index('by_author_deleted', ['authorId', 'authorDeletedAt'])
+    // The erasure sweep (D248): a `gt(0).lte(now)` range holds only due work (`lib/erasure`).
+    .index('by_erase_at', ['eraseAt'])
     // Newest-first author history for the profile page, bounded by a `.take()` on skate-end time so a
     // prolific reporter's page never `.collect()`s an unbounded set (D13).
     .index('by_author_skate_end_time', ['authorId', 'skateEndTime'])
@@ -2498,6 +2511,14 @@ export default defineSchema({
      */
     authorDeletedAt: v.optional(v.number()),
     /**
+     * When this withdrawn item is to be erased (D248): set at the author's deletion to 30 days on,
+     * cleared while a moderator's verdict or an open flag holds it, and set again when the hold
+     * clears — to the later of the deletion + 30 days and that moment. Written only by
+     * `lib/eraseClock.refreshEraseClock`, so the erasure sweep's range holds nothing but due work.
+     * Absent ⇒ not withdrawn, or held, or already erased.
+     */
+    eraseAt: v.optional(v.number()),
+    /**
      * The words a search of Latest reads (B03 §11): the Post's title and prose, and what its
      * **visible** members' authors typed. Derived; one writer, `refreshPostSearchText` in
      * `lib/postSync.ts`, called from everything that changes those words or a member's verdict, so a
@@ -2511,6 +2532,10 @@ export default defineSchema({
     // Profile history, newest first, bounded by a `.take()` (D13) — and the departed-user sweep.
     .index('by_author_latest_skate_end_time', ['authorId', 'latestSkateEndTime'])
     .index('by_author', ['authorId'])
+    // A person's own deletions, newest first (D248) — read with a lower bound, as on `reports`.
+    .index('by_author_deleted', ['authorId', 'authorDeletedAt'])
+    // The erasure sweep (D248), as on `reports`.
+    .index('by_erase_at', ['eraseAt'])
     .index('by_idempotency_key', ['idempotencyKey'])
     // Latest's text search, with the moderation gate and the skater filter in the index.
     .searchIndex('search_text', {
@@ -2601,10 +2626,32 @@ export default defineSchema({
      * Absent ⇒ the author hasn't withdrawn it.
      */
     authorDeletedAt: v.optional(v.number()),
+    /**
+     * When this withdrawn item is to be erased (D248): set at the author's deletion to 30 days on,
+     * cleared while a moderator's verdict or an open flag holds it, and set again when the hold
+     * clears — to the later of the deletion + 30 days and that moment. Written only by
+     * `lib/eraseClock.refreshEraseClock`, so the erasure sweep's range holds nothing but due work.
+     * Absent ⇒ not withdrawn, or held, or already erased.
+     */
+    eraseAt: v.optional(v.number()),
+    /**
+     * When the erasure sweep erased this (D248). Only a comment replies point at keeps a row once
+     * erased: an empty shell — no words, no edit time — so the thread still draws the placeholder its
+     * replies hang from, as it does for any removed comment. Every other erased comment is deleted.
+     * Absent ⇒ not erased.
+     */
+    erasedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index('by_report', ['reportId'])
-    .index('by_author', ['authorId']), // profile #comments count + enumerate a user's comments (D13)
+    .index('by_author', ['authorId']) // profile #comments count + enumerate a user's comments (D13)
+    // A person's own deletions, newest first (D248) — read with a lower bound, as on `reports`.
+    .index('by_author_deleted', ['authorId', 'authorDeletedAt'])
+    // The erasure sweep (D248), as on `reports`.
+    .index('by_erase_at', ['eraseAt'])
+    // A comment's replies, so erasing it knows whether a placeholder must stay. `eq()` only: the
+    // field is optional, and a top-level comment's absent value would sort first under a range.
+    .index('by_parent', ['parentCommentId']),
 
   hazards: defineTable({
     waterBodyId: v.id('waterBodies'),
@@ -2701,8 +2748,21 @@ export default defineSchema({
     decayMultiplier: v.optional(v.number()),
     snowHidden: v.optional(v.boolean()),
     weatherAdjustedAt: v.optional(v.number()),
+    /**
+     * When its author withdrew it — "this was never here", the D65 sense, not "it healed" (D248,
+     * founder ruling 2026-11-13). Allowed only while no other skater has said it is there. The pin
+     * leaves as if never posted: `moderationStatus` becomes `removed` and the lifecycle `status` is
+     * left alone, so nothing reads it as cleared or healed (D3). Never cleared; nothing restores it.
+     */
+    authorDeletedAt: v.optional(v.number()),
+    /** When a withdrawn hazard is erased — 30 days on, unless held (`lib/eraseClock`). */
+    eraseAt: v.optional(v.number()),
     createdAt: v.number(),
   })
+    // The erasure sweep (D248): a `gt(0).lte(now)` range holds only due work.
+    .index('by_erase_at', ['eraseAt'])
+    // An author's own withdrawals, newest first — the People page (D248). Read with a lower bound.
+    .index('by_author_deleted', ['createdByUserId', 'authorDeletedAt'])
     .index('by_water_body_status', ['waterBodyId', 'status'])
     .index('by_water_body', ['waterBodyId'])
     // D55 auto-bundle: find an author's own unattached hazards on a body to offer into their report.
@@ -3187,8 +3247,17 @@ export default defineSchema({
     reportId: v.optional(v.id('reports')),
     /** For an approved `name_landmark`: the landmark that answered it. */
     landmarkId: v.optional(v.id('bodyLandmarks')),
+    /**
+     * When the person who asked withdrew it (D248): `status` is `retracted`, and no moderator
+     * decides it after. Only while it was `open`. Absent ⇒ not retracted.
+     */
+    retractedAt: v.optional(v.number()),
+    /** When a retracted request is erased — 30 days on (`lib/erasure`). Absent ⇒ not due. */
+    eraseAt: v.optional(v.number()),
     createdAt: v.number(),
   })
+    // The erasure sweep (D248): a `gt(0).lte(now)` range holds only due work.
+    .index('by_erase_at', ['eraseAt'])
     // The moderator queue: open requests, oldest first (a request nobody answered is the worst row).
     .index('by_status_created', ['status', 'createdAt'])
     // The requester's own — the drawer's "you asked for this" line and the You-tab list.
@@ -3233,9 +3302,19 @@ export default defineSchema({
     origin: v.optional(literals(FLAG_ORIGINS)),
     createdAt: v.number(),
     resolvedAt: v.optional(v.number()),
+    /**
+     * When the person who filed it withdrew it (D248): `status` is `retracted`, it left the queue,
+     * and it no longer holds anything from erasure. Only a person's own flag, and only before a
+     * moderator decides it. Absent ⇒ not retracted.
+     */
+    retractedAt: v.optional(v.number()),
+    /** When a retracted flag is erased — 30 days on (`lib/erasure`). Absent ⇒ not due. */
+    eraseAt: v.optional(v.number()),
   })
     .index('by_status', ['status'])
     .index('by_target', ['targetType', 'targetId'])
+    // The erasure sweep (D248): a `gt(0).lte(now)` range holds only due work.
+    .index('by_erase_at', ['eraseAt'])
     // Departed-user redaction (`lib/contentPurge`): clear the free-text `note` on every flag this
     // person filed. Nothing else needs to look a flag up by its filer — the queue reads by status and
     // by target — so this index exists solely so that sweep can be a bounded equality read instead of
@@ -3293,6 +3372,36 @@ export default defineSchema({
     // per day, which means reading this table by time. Without the index that is a scan of an
     // append-only audit log, i.e. the exact unbounded-growth shape the Phase 07-2 rule forbids.
     .index('by_created_at', ['createdAt']),
+
+  /**
+   * **A moderator's verdict on someone's content, kept with the person** (D248). One row per
+   * top-level hide or remove (a Post's cascade onto its members and a derived Post hide are not
+   * verdicts of their own), naming whose content it was, so one bounded read returns a person's
+   * record whatever later happened to the content. A verdict **stands until a moderator reverses
+   * it** — a restore, an undo, or, on content its author has since deleted, an overturn; the
+   * author deleting the content does not clear it. A later verdict on the same item supersedes the
+   * earlier one, so an item counts once. A standing verdict also holds withdrawn content back from
+   * erasure. Written beside the audit row by `lib/contentVerdicts`; read by the People page (staff
+   * only — never a skater-facing read, never reputation: D17/D50 stay boost-only).
+   */
+  contentVerdicts: defineTable({
+    subjectUserId: v.id('profiles'),
+    targetType: literals(['report', 'post', 'comment', 'hazard'] as const),
+    targetId: v.string(),
+    actionId: v.id('moderationActions'),
+    kind: literals(['hidden', 'removed'] as const),
+    at: v.number(),
+    standing: v.boolean(),
+    /** When it stopped standing, and the action that ended it (a reversal, or a later verdict). */
+    endedAt: v.optional(v.number()),
+    endedByActionId: v.optional(v.id('moderationActions')),
+  })
+    .index('by_subject_standing', ['subjectUserId', 'standing', 'at'])
+    .index('by_target_standing', ['targetType', 'targetId', 'standing'])
+    .index('by_action', ['actionId'])
+    // What an action ended, for its undo (`lib/contentVerdicts.recordUndoneVerdict`). Equality reads
+    // only, so the unset value on every standing row never matches (no sparse-index trap).
+    .index('by_ended_by', ['endedByActionId']),
 
   /**
    * What an audited action replaced, when it is too big for the audit row (D226, B01 §11): a
@@ -3828,6 +3937,14 @@ export default defineSchema({
     /** The moderator who pinned it `official`, and the one who retracted it. */
     pinnedByUserId: v.optional(v.id('profiles')),
     retractedByUserId: v.optional(v.id('profiles')),
+    /** When it was retracted, by its author or a moderator (`retractedByUserId` says which). */
+    retractedAt: v.optional(v.number()),
+    /**
+     * When an alert its author retracted is due for erasure — 30 days on, unless an open flag holds
+     * it (D248, `lib/erasure`). Set and cleared like the content tables' clock; nothing erases an
+     * alert yet (the eraser waits on a founder call). Absent ⇒ not due.
+     */
+    eraseAt: v.optional(v.number()),
   })
     /**
      * The two per-lake reads, and the status prefix is the point (PR #43 review). `kind` sits between
@@ -3888,7 +4005,9 @@ export default defineSchema({
     // A departing user's alerts (A03/D62), and the author-side half of the orphan-photo scan.
     .index('by_author', ['createdByUserId'])
     // Offline-flush dedup (A10 §9.1) — `eq()` only, the optional-index rule.
-    .index('by_idempotency_key', ['idempotencyKey']),
+    .index('by_idempotency_key', ['idempotencyKey'])
+    // The erasure clock (D248): a `gt(0).lte(now)` range holds only due work.
+    .index('by_erase_at', ['eraseAt']),
 
   /**
    * Photos of an access point (A06d Workstream 4 / D88) — *"is this the right dirt road"*.
