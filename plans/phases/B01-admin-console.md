@@ -1508,7 +1508,8 @@ the People page and the skater screens that reach it are owed (the roadmap's reg
   say the asker withdrew it), flags (`contentFlags.retract`, while open or picked up; not one the
   system filed or has counted again for others; it leaves the queue and stops holding content), and
   alerts (the author's retraction only while a live community claim no moderator ever pinned — read
-  from the history, bounded, an undone pin not counting; a moderator's unchanged; an author-retracted
+  from the history, bounded, an undone pin not counting; a moderator's of someone else's alert
+  unchanged, but on their own alert a moderator is its author and follows the same rule; an author-retracted
   alert can't be pinned or released back). The author's own `open` resolves their alert, pinned or
   not, releasing the pin with an `author_resolve_access_alert` history row; **both clients show the
   author "It's open" on their own pinned alert** (one rule in core, `accessAlertVoteControls`; web
