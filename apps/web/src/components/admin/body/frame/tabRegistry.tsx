@@ -31,7 +31,11 @@ export interface BodyTabProps {
   onLitChange?: (lit: string | null) => void;
 }
 
-/** A tab's drawing: its data, and the pure function from it to what it wants drawn. */
+/**
+ * A tab's drawing: its data, and the pure function from it to what it wants drawn. `useData` must
+ * hand back the same object until the data changes (a Convex result already does; a constant for a
+ * tab with nothing to read), since the frame re-draws whenever its identity moves.
+ */
 export interface BodyTabMap<D> {
   useData: (bodyId: string) => D | undefined;
   describe: (data: D, lit: string | null) => BodyMapScene;
