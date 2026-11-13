@@ -17,6 +17,7 @@ import {
 import { Badge } from '@/components/kit/badge';
 import { Button } from '@/components/kit/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/kit/collapsible';
+import { type DayStrip, DayStrips } from '@/components/kit/day-strips';
 import {
   DropdownMenu,
   DropdownMenuCaret,
@@ -30,7 +31,6 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/kit/toggle-group';
 import { Toolbar, ToolbarButton } from '@/components/kit/toolbar';
 import { usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
-
 import type { GlyphCell } from './featureGlyph';
 import { featureLit, hazardLit, winterLit } from './hazardsMap';
 import {
@@ -40,7 +40,6 @@ import {
   seasonChoices,
   seasonWord,
 } from './hazardsModel';
-import { type DayStrip, DayStrips } from './kit-candidates/day-strips';
 
 /**
  * Board 5.4.7, Body › Hazards, the default view: the winters as a bar over the tab, this winter's

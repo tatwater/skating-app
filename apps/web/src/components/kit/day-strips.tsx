@@ -3,7 +3,7 @@ import type { ComponentProps } from 'react';
 import { cn } from '@/lib/utils';
 
 /**
- * A kit candidate: **day strips** — a few series on one day axis, stacked, each a baseline with a
+ * **Day strips** — a few series on one day axis, stacked, each a baseline with a
  * bar per day (a step per count), the months under the last. Body › Hazards' empty winter is its
  * first use (board 5.4.7: this winter so far, bare, over last winter's record — the same months a
  * year apart).

@@ -2,17 +2,16 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useState } from 'react';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 
-import { computedColor, sameColor } from '@/components/kit/measure';
-import { faceLoaded, must, settled } from '@/components/kit/storyKit';
-
+import { computedColor, sameColor } from './measure';
 import { SortableRows } from './sortable-rows';
+import { faceLoaded, must, settled } from './storyKit';
 
 /**
- * A kit candidate: rows that reorder by a grip, in all four maps. Generic — rows and an order
+ * Rows that reorder by a grip, in all four maps. Generic — rows and an order
  * callback — so a promotion into the kit is a file move.
  */
 const meta = {
-  title: 'Kit candidates/Sortable rows',
+  title: 'Kit/SortableRows',
   parameters: { fourUp: true },
 } satisfies Meta;
 

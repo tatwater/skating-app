@@ -1,17 +1,15 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect } from 'storybook/test';
-
-import { computedColor, sameColor } from '@/components/kit/measure';
-import { faceLoaded, must } from '@/components/kit/storyKit';
-
 import { LaneTimeline } from './lane-timeline';
+import { computedColor, sameColor } from './measure';
+import { faceLoaded, must } from './storyKit';
 
 /**
- * A kit candidate: the lane timeline, in all four maps. Generic data — lanes, spans and gridlines —
+ * The lane timeline, in all four maps. Generic data — lanes, spans and gridlines —
  * so a promotion into the kit is a file move.
  */
 const meta = {
-  title: 'Kit candidates/Lane timeline',
+  title: 'Kit/LaneTimeline',
   component: LaneTimeline,
   parameters: { fourUp: true },
 } satisfies Meta<typeof LaneTimeline>;

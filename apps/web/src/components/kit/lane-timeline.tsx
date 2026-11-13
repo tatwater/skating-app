@@ -3,7 +3,7 @@ import type { ComponentProps, CSSProperties, ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
 /**
- * A kit candidate: the **lane timeline** — one lane per thing that holds, laid on a time axis, each
+ * The **lane timeline** — one lane per thing that holds, laid on a time axis, each
  * a bar from the axis's start that either runs off the end (open-ended, an arrowhead) or stops at a
  * date (a stop bar). Body › Standing's *What keeps it active* is its first use (board 5.4.8).
  *

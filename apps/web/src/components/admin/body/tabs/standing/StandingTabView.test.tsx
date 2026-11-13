@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
-import { laneFraction } from './kit-candidates/lane-timeline';
+import { laneFraction } from '@/components/kit/lane-timeline';
 import { StandingTabView, type StandingTabViewProps } from './StandingTabView';
 import {
   ACTIVE,

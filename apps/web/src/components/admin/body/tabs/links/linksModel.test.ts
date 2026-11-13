@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { dropIndex, moveId } from './kit-candidates/sortable-rows';
+import { dropIndex, moveId } from '@/components/kit/sortable-rows';
 import { BODY_NOW, MASCOMA, SMALL_POND } from './linksFixtures';
 import { INTERIOR_POINT_ID, linksMapScene } from './linksMap';
 import { coordWords, derivedRows, inKeyOrder, keyedLinks } from './linksModel';

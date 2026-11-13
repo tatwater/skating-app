@@ -1,17 +1,15 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect } from 'storybook/test';
-
-import { computedColor, sameColor } from '@/components/kit/measure';
-import { must } from '@/components/kit/storyKit';
-
 import { DayStrips } from './day-strips';
+import { computedColor, sameColor } from './measure';
+import { must } from './storyKit';
 
 /**
- * A kit candidate: day strips, in all four maps — a bare current strip (ten days so far, the rest
+ * Day strips, in all four maps — a bare current strip (ten days so far, the rest
  * dotted) over a full one. Generic: series of per-day values on one axis.
  */
 const meta = {
-  title: 'Kit candidates/Day strips',
+  title: 'Kit/DayStrips',
   component: DayStrips,
   parameters: { fourUp: true },
 } satisfies Meta<typeof DayStrips>;

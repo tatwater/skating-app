@@ -394,7 +394,7 @@ function Figure({ value, failed }: { value: number | null; failed: boolean }) {
       ) : (
         <>
           {value}
-          <span className={cn('ms-[0.6em]', failed ? 'text-fg2' : 'text-fg3')}>%</span>
+          <span className={cn('ms-unit', failed ? 'text-fg2' : 'text-fg3')}>%</span>
         </>
       )}
     </TableCell>

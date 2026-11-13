@@ -11,6 +11,7 @@ import { Badge } from '@/components/kit/badge';
 import { Button } from '@/components/kit/button';
 import { Input, InputGroup, InputGroupKbd } from '@/components/kit/input';
 import { Kbd } from '@/components/kit/kbd';
+import { LaneTimeline } from '@/components/kit/lane-timeline';
 import { RadioGroup, RadioRow } from '@/components/kit/radio';
 import { Section } from '@/components/kit/section-slug';
 import {
@@ -21,8 +22,6 @@ import {
   SelectValue,
 } from '@/components/kit/select';
 import { cn } from '@/lib/utils';
-
-import { LaneTimeline } from './kit-candidates/lane-timeline';
 import { type RetentionFacts, retentionModel } from './standingModel';
 
 /**

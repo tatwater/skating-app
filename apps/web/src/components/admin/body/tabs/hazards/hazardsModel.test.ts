@@ -1,7 +1,7 @@
 import { seasonOf } from '@skating/core';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-
+import { dayX, lastReal } from '@/components/kit/day-strips';
 import { FIELD_LEVELS, featureGlyph } from './featureGlyph';
 import {
   BODY_NOW,
@@ -26,7 +26,6 @@ import {
   stripValues,
   winterWindow,
 } from './hazardsModel';
-import { dayX, lastReal } from './kit-candidates/day-strips';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;

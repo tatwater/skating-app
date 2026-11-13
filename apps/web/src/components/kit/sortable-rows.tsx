@@ -10,7 +10,7 @@ import {
 import { cn } from '@/lib/utils';
 
 /**
- * A kit candidate: **rows that reorder by a grip** — Body › Links' *Added by staff* (board 5.4.9)
+ * **Rows that reorder by a grip** — Body › Links' *Added by staff* (board 5.4.9)
  * is its first use. No library: pointer events for the drag, and a keyboard path on the grip that
  * follows the console's keys (Round 3: the grip is a control inside its pane; arrows move within).
  *

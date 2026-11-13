@@ -6,9 +6,8 @@ import { type ComponentProps, type KeyboardEvent, type ReactNode, useId, useStat
 import { Button, buttonVariants } from '@/components/kit/button';
 import { Input } from '@/components/kit/input';
 import { Section } from '@/components/kit/section-slug';
+import { SortableRows } from '@/components/kit/sortable-rows';
 import { cn } from '@/lib/utils';
-
-import { SortableRows } from './kit-candidates/sortable-rows';
 import {
   type DerivedRow,
   derivedRows,

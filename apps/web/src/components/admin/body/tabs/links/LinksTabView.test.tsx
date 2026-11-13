@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
-import { SortableRows } from './kit-candidates/sortable-rows';
+import { SortableRows } from '@/components/kit/sortable-rows';
 import { LinksTabView, type LinksTabViewProps } from './LinksTabView';
 import { BODY_NOW, MASCOMA, SMALL_POND } from './linksFixtures';
 
