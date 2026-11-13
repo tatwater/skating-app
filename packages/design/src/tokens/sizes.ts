@@ -196,6 +196,7 @@ export const SIZE_KEYS = [
   'key',
   'pill',
   'badge',
+  'btn-row',
   'btn-xs',
   'btn-sm',
   'btn',
@@ -204,6 +205,7 @@ export const SIZE_KEYS = [
   'avatar-sm',
   'avatar',
   'avatar-lg',
+  'avatar-xl',
   'search',
   'lanes',
   'tape',
@@ -224,6 +226,7 @@ const adminSize = assertUnitClass('size', {
   key: rem(16),
   pill: rem(17),
   badge: rem(20),
+  'btn-row': rem(18), // a link chip inside a 22 px row (Home's "Inbox →")
   'btn-xs': rem(22),
   'btn-sm': rem(24),
   btn: rem(28),
@@ -232,6 +235,7 @@ const adminSize = assertUnitClass('size', {
   'avatar-sm': rem(16),
   avatar: rem(20),
   'avatar-lg': rem(26),
+  'avatar-xl': rem(32), // the person a page is about (People's head, `.person.xl`)
   search: rem(200),
   lanes: rem(236),
   tape: rem(240),
@@ -245,10 +249,11 @@ const adminSize = assertUnitClass('size', {
 
 /**
  * Sizes per surface. Skater differs where its mocks draw the same part larger: the top bar 56,
- * keys 18 (`.key`), buttons 36 / small 30 / in-row 28 (`.btn`, `.btn.sm`, `.pick`), a table row
+ * keys 18 (`.key`), buttons 36 / small 30 / in-row 28 (`.btn`, `.btn.sm`, `.pick` — both `btn-xs`
+ * and `btn-row`, since its rows are tall enough for the small chip), a table row
  * 36 (`.cal`), people 22 / 28 / 30 (`.ppl .av`, `.av`, `.me`), and the search field 460
- * (`.top .search`'s max width). Parts the skater app doesn't have (rail, status bar, lanes, tape)
- * keep admin's values so the key set stays whole.
+ * (`.top .search`'s max width). Parts the skater app doesn't have (rail, status bar, lanes, tape,
+ * the 32 px page-head avatar) keep admin's values so the key set stays whole.
  */
 export const size = {
   admin: adminSize,
@@ -256,6 +261,7 @@ export const size = {
     ...adminSize,
     top: rem(56),
     key: rem(18),
+    'btn-row': rem(28),
     'btn-xs': rem(28),
     'btn-sm': rem(30),
     btn: rem(36),
