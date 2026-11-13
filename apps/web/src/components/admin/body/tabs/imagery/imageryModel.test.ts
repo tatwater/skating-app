@@ -200,12 +200,11 @@ describe('the lit address', () => {
 });
 
 describe('the map', () => {
-  const data = { rows: MASCOMA_PASSES, band: 'visual' };
+  const data = { rows: MASCOMA_PASSES, band: 'visual', season: 'winter-2026-27' };
   it('draws the lit pass as the Aerial layer, and turns the layer on', () => {
     const scene = imageryMapScene(data, `pass:visual.${granuleOf(10)}`);
     expect(scene).toEqual({
-      items: [],
-      rasters: [
+      items: [
         {
           kind: 'raster',
           id: `pass:visual.${granuleOf(10)}`,
@@ -214,6 +213,7 @@ describe('the map', () => {
           band: 'visual',
           capturedAt: '2026-10-10T15:42:00Z',
           key: `frames/winter-2026-27/${granuleOf(10)}.webp`,
+          season: 'winter-2026-27',
         },
       ],
       lit: `pass:visual.${granuleOf(10)}`,
@@ -222,9 +222,8 @@ describe('the map', () => {
     // Nothing lit: the newest shown pass.
     expect(imageryMapScene(data, null).lit).toBe(`pass:visual.${granuleOf(13)}`);
     expect(imageryMapScene(data, 'hazard:x').lit).toBe(`pass:visual.${granuleOf(13)}`);
-    expect(imageryMapScene({ rows: [], band: 'visual' }, null)).toEqual({
+    expect(imageryMapScene({ rows: [], band: 'visual', season: null }, null)).toEqual({
       items: [],
-      rasters: [],
       lit: null,
       layers: { aerial: true },
     });
@@ -233,7 +232,6 @@ describe('the map', () => {
   it('never draws one band’s picture for a pass lit in another', () => {
     expect(imageryMapScene(data, 'pass:vh.S1A_IW_20261012')).toEqual({
       items: [],
-      rasters: [],
       lit: 'pass:vh.S1A_IW_20261012',
       layers: { aerial: true },
     });

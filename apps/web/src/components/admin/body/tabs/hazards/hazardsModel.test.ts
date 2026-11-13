@@ -12,7 +12,7 @@ import {
   MASCOMA_FEATURES,
   MASCOMA_MAP_DATA,
 } from './hazardsFixtures';
-import { hazardsMapScene } from './hazardsMap';
+import { hazardLit, hazardsMapScene, seasonOfLit, winterLit } from './hazardsMap';
 import {
   ageWords,
   archivedRows,
@@ -286,6 +286,8 @@ describe('the map', () => {
   it('draws every footprint on its layer, opens Hazards and Features, lights only its own', () => {
     const scene = hazardsMapScene(
       {
+        season: 2025,
+        current: 2025,
         hazards: [
           {
             _id: 'h-slush',
@@ -335,6 +337,8 @@ describe('the map', () => {
     };
     const scene = hazardsMapScene(
       {
+        season: 2025,
+        current: 2025,
         hazards: [],
         features: [
           { _id: 'a', geometryKind: 'polygon', geometry: null, clippedFootprint: clip },
@@ -345,5 +349,54 @@ describe('the map', () => {
     );
     expect(scene.items.map((i) => i.id)).toEqual(['feature:a']);
     expect((scene.items[0] as { geometry: unknown }).geometry).toBe(clip);
+  });
+});
+
+describe('the winter in the lit address', () => {
+  const NOW = 2025;
+  it('opens on the current winter, and a past one only by choosing it', () => {
+    expect(seasonOfLit(null, NOW)).toBe(NOW);
+    expect(seasonOfLit('feature:f1', NOW)).toBe(NOW);
+    expect(seasonOfLit('hazard:h1', NOW)).toBe(NOW);
+    expect(seasonOfLit('winter:2023', NOW)).toBe(2023);
+    expect(seasonOfLit('hazard:2023.h1', NOW)).toBe(2023);
+    // A winter that hasn't come is no winter: the current one.
+    expect(seasonOfLit('winter:2031', NOW)).toBe(NOW);
+    expect(seasonOfLit('winter:23', NOW)).toBe(NOW);
+  });
+
+  it('keeps a past winter through lighting a hazard and clearing it', () => {
+    expect(winterLit(NOW, NOW)).toBeNull();
+    expect(winterLit(2023, NOW)).toBe('winter:2023');
+    expect(hazardLit('h1', NOW, NOW)).toBe('hazard:h1');
+    expect(hazardLit('h1', 2023, NOW)).toBe('hazard:2023.h1');
+    expect(seasonOfLit(hazardLit('h1', 2023, NOW), NOW)).toBe(2023);
+    expect(seasonOfLit(winterLit(2023, NOW), NOW)).toBe(2023);
+  });
+
+  it('draws a past winter’s hazards under their winter’s addresses', () => {
+    const scene = hazardsMapScene(
+      {
+        season: 2023,
+        current: NOW,
+        hazards: [
+          {
+            _id: 'h1',
+            geometryKind: 'point_radius',
+            geometry: { type: 'Point', coordinates: [-72.15, 43.63] },
+            radiusMeters: 40,
+            freshness: 'stale',
+            provisional: true,
+          },
+        ],
+        features: [],
+      },
+      'hazard:2023.h1',
+    );
+    expect(scene.lit).toBe('hazard:2023.h1');
+    expect(scene.items[0]).toMatchObject({
+      id: 'hazard:2023.h1',
+      field: { freshness: 'stale', provisional: true },
+    });
   });
 });

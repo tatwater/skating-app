@@ -1,14 +1,17 @@
-import { type HazardShape, hazardFootprint } from '@skating/core';
+import { type HazardShape, hazardFootprint, type Season } from '@skating/core';
 
-import type { BodyMapScene, MapHazardField } from './mapDescriptors';
+import type { BodyMapScene, MapOutline } from '../../map/mapDescriptors';
 
 /**
  * What the Hazards tab asks the frame's map to draw (board 5.4.7): every hazard's footprint and
  * every known feature's, on the Hazards and Features layers — and Hazards opens with both on.
  * **No clocks on the map** (Review 13): a hazard is its dot field there, dimmed by freshness and
  * never removed; a known feature draws exactly as a hazard does, at full strength, with no key.
- * The dot field is a contract request (`MapHazardField`); until the frame adopts it, each draws as
- * a plain footprint plate.
+ *
+ * **The winter on screen is in the lit address**, so the map draws the winter the list shows and a
+ * reload keeps it: `winter:<year>` while a past winter is chosen and nothing in it is lit, and a
+ * hazard in a past winter as `hazard:<year>.<id>`. The current winter needs neither — the tab opens
+ * on it, empty or not, and a past one is shown only by choosing it.
  */
 
 /** A footprint the map can draw: the stored clip when there is one, else the shape grown. */
@@ -19,6 +22,9 @@ type Shaped = Pick<HazardShape, 'geometryKind' | 'radiusMeters' | 'bufferMeters'
 };
 
 export type HazardsMapData = {
+  /** The winter these hazards are from, and the winter it is now. */
+  season: Season;
+  current: Season;
   hazards: readonly (Shaped & {
     freshness: 'fresh' | 'aging' | 'stale';
     provisional: boolean;
@@ -46,12 +52,27 @@ function footprintOf(s: Shaped): Area | null {
   }
 }
 
-/** The address a hazard or a feature answers to on `?lit=`. */
-export const hazardLit = (id: string) => `hazard:${id}`;
+/**
+ * The address a hazard answers to on `?lit=`: bare in the current winter, carrying its winter in a
+ * past one, so lighting it never moves the list or the map back to now.
+ */
+export const hazardLit = (id: string, season?: Season, current?: Season) =>
+  season === undefined || season === current ? `hazard:${id}` : `hazard:${season}.${id}`;
 export const featureLit = (id: string) => `feature:${id}`;
 
+/** A chosen winter with nothing in it lit: `null` for the current one, which needs no address. */
+export const winterLit = (season: Season, current: Season): string | null =>
+  season === current ? null : `winter:${season}`;
+
+/** The winter a lit address is in: a chosen past winter, a past winter's hazard, or now. */
+export function seasonOfLit(lit: string | null | undefined, current: Season): Season {
+  const m = /^(?:winter:(\d{4})$|hazard:(\d{4})\.)/.exec(lit ?? '');
+  const year = Number(m?.[1] ?? m?.[2]);
+  return Number.isInteger(year) && year <= current ? year : current;
+}
+
 export function hazardsMapScene(data: HazardsMapData, lit: string | null): BodyMapScene {
-  const items: MapHazardField[] = [];
+  const items: MapOutline[] = [];
   for (const f of data.features) {
     const geometry = footprintOf(f);
     if (geometry === null) continue;
@@ -69,7 +90,7 @@ export function hazardsMapScene(data: HazardsMapData, lit: string | null): BodyM
     if (geometry === null) continue;
     items.push({
       kind: 'outline',
-      id: hazardLit(h._id),
+      id: hazardLit(h._id, data.season, data.current),
       layer: 'hazards',
       style: 'footprint',
       geometry,

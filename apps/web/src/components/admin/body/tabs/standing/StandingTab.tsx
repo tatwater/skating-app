@@ -8,7 +8,7 @@ import { errorText } from '@/components/admin/adminUi';
 import { useUndo } from '@/components/admin/shell/undo';
 import { useRole } from '@/lib/useRole';
 
-import type { BodyTabProps, BodyTabRegistration } from '../hazards/tabContract';
+import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { StandingTabView } from './StandingTabView';
 import type { RetentionFacts } from './standingModel';
 

@@ -148,14 +148,14 @@ describe('HazardsTab', () => {
     convex.results.set('hazards:listForBody', hazards);
     const seen: unknown[] = [];
     function Probe() {
-      seen.push(HAZARDS_TAB.map?.useData(BODY));
+      seen.push(HAZARDS_TAB.map?.useData(BODY, null));
       return null;
     }
     const { rerender } = render(<Probe />);
     rerender(<Probe />);
     expect(seen[0]).toBeDefined();
     expect(seen[1]).toBe(seen[0]);
-    const scene = HAZARDS_TAB.map?.describe(seen[0], 'feature:f-spring');
+    const scene = HAZARDS_TAB.map?.describe(seen[0] as never, 'feature:f-spring');
     expect(scene?.lit).toBe('feature:f-spring');
     expect(scene?.items.map((i: { id: string }) => i.id)).toEqual([
       'feature:f-spring',

@@ -24,10 +24,14 @@ import { mergeScenes } from '../map/bodyScene';
 import type { BodyMapScene } from '../map/mapDescriptors';
 import { TabBoundary } from '../TabBoundary';
 import { ACCESS_TAB } from '../tabs/access';
+import { HAZARDS_TAB } from '../tabs/hazards/HazardsTab';
+import { IMAGERY_TAB } from '../tabs/imagery/ImageryTab';
+import { LINKS_TAB } from '../tabs/links/LinksTab';
 import { NAMES_TAB } from '../tabs/names';
 import { PLACES_TAB } from '../tabs/places';
 import { SHAPE_TAB } from '../tabs/shape/ShapeTabRoute';
 import { campaignText } from '../tabs/shape/shapeModel';
+import { STANDING_TAB } from '../tabs/standing/StandingTab';
 import { WATER_TAB } from '../tabs/water';
 import { BodyConsoleGone } from './BodyConsoleGone';
 import { BodyConsoleMissing, BodyConsoleView } from './BodyConsoleView';
@@ -59,8 +63,8 @@ import { type MapFailures, useBodyConsole } from './useBodyConsole';
  *
  *   createFileRoute('/admin/body/$id')({ validateSearch: validateBodySearch, component: BodyConsoleRoute })
  *
- * Every tab built so far is registered in {@link BODY_TAB_REGISTRY}; a slot nobody has filled draws
- * *Not built yet* with a link to the old editor, which still does that tab's work.
+ * All nine tabs are registered in {@link BODY_TAB_REGISTRY}; a slot with no tab in it (a registry
+ * a test or a story builds) draws *Not built yet* with a link to the old editor.
  */
 export const BODY_TAB_REGISTRY: BodyTabRegistry = registerBodyTabs({
   shape: SHAPE_TAB,
@@ -68,6 +72,10 @@ export const BODY_TAB_REGISTRY: BodyTabRegistry = registerBodyTabs({
   places: PLACES_TAB,
   access: ACCESS_TAB,
   water: WATER_TAB,
+  imagery: IMAGERY_TAB,
+  hazards: HAZARDS_TAB,
+  standing: STANDING_TAB,
+  links: LINKS_TAB,
 });
 
 export function BodyConsoleRoute({ registry = BODY_TAB_REGISTRY }: { registry?: BodyTabRegistry }) {

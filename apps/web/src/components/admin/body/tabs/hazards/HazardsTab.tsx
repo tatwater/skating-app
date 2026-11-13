@@ -8,12 +8,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { errorText } from '@/components/admin/adminUi';
 import { useUndo } from '@/components/admin/shell/undo';
 import { useRole } from '@/lib/useRole';
-
+import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { featureGlyph } from './featureGlyph';
 import { type FeatureRowWithGlyph, HazardsTabView } from './HazardsTabView';
-import { type HazardsMapData, hazardsMapScene } from './hazardsMap';
+import { type HazardsMapData, hazardsMapScene, seasonOfLit, winterLit } from './hazardsMap';
 import { archivedRows, type FeatureInput, featureRows, hazardRows } from './hazardsModel';
-import type { BodyTabProps, BodyTabRegistration } from './tabContract';
 
 /**
  * Body › Hazards, wired: the season's hazards (`hazards.listForBody`, the map layer's own read, so
@@ -27,11 +26,17 @@ import type { BodyTabProps, BodyTabRegistration } from './tabContract';
  * (map modes, which wait), Edit shape (no mutation), the two winters' strip (no per-day read) and
  * the watch's opening date (admin-only today).
  */
-export function HazardsTab({ bodyId: id, lit = null, onLitChange }: BodyTabProps) {
+export function HazardsTab({ bodyId: id, lit: framed = null, onLitChange }: BodyTabProps) {
   const waterBodyId = id as Id<'waterBodies'>;
   const now = useHourClock();
   const current = seasonOf(now);
-  const [season, setSeason] = useState<Season>(current);
+  // The lit address is the frame's when it has one (the URL keeps it), else the tab's own.
+  const [own, setOwn] = useState<string | null>(null);
+  const lit = onLitChange === undefined ? own : framed;
+  const setLit = onLitChange ?? setOwn;
+  // The winter on screen is the lit address's: the current one unless a past one was chosen.
+  const season: Season = seasonOfLit(lit, current);
+  const setSeason = (next: Season) => setLit(winterLit(next, current));
   const result = useQuery(api.waterBodies.get, { waterBodyId });
   const hazards = useQuery(api.hazards.listForBody, { waterBodyId, season });
   const withArchived = useQuery(api.hazards.listForBody, {
@@ -91,7 +96,7 @@ export function HazardsTab({ bodyId: id, lit = null, onLitChange }: BodyTabProps
           }
         : {})}
       lit={lit}
-      onLitChange={(next) => onLitChange?.(next)}
+      onLitChange={setLit}
     />
   );
 }
@@ -118,19 +123,27 @@ function withGlyphs(features: readonly FeatureInput[]): FeatureRowWithGlyph[] {
   });
 }
 
-/** The map's data: this season's hazards and the features, kept until either read changes. */
-function useHazardsMapData(bodyId: string): HazardsMapData | undefined {
+/**
+ * The map's data: the hazards of the winter the lit address is in (the one the list shows) and the
+ * features, kept until either read changes.
+ */
+function useHazardsMapData(bodyId: string, lit: string | null): HazardsMapData | undefined {
   const waterBodyId = bodyId as Id<'waterBodies'>;
-  const hazards = useQuery(api.hazards.listForBody, { waterBodyId });
+  const current = seasonOf(useHourClock());
+  const season = seasonOfLit(lit, current);
+  const hazards = useQuery(api.hazards.listForBody, { waterBodyId, season });
   const features = useQuery(api.bodyFeatures.listForBody, { waterBodyId });
   return useMemo(
-    () => (hazards === undefined || features === undefined ? undefined : { hazards, features }),
-    [hazards, features],
+    () =>
+      hazards === undefined || features === undefined
+        ? undefined
+        : { hazards, features, season, current },
+    [hazards, features, season, current],
   );
 }
 
 /** The Hazards tab's registration in the frame's registry. */
-export const HAZARDS_TAB: BodyTabRegistration = {
+export const HAZARDS_TAB: BodyTabRegistration<HazardsMapData> = {
   Wiring: HazardsTab,
   map: { useData: useHazardsMapData, describe: hazardsMapScene },
 };

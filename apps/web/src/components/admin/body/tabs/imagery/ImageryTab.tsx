@@ -9,7 +9,7 @@ import { useUndo } from '@/components/admin/shell/undo';
 import { useFreezeUpTimeline } from '@/components/useFreezeUpTimeline';
 import { useRole } from '@/lib/useRole';
 
-import type { BodyTabProps, BodyTabRegistration } from '../hazards/tabContract';
+import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { ImageryDockView } from './ImageryDockView';
 import { ImageryTabView } from './ImageryTabView';
 import { type ImageryMapData, imageryMapScene } from './imageryMap';
@@ -104,7 +104,7 @@ export function ImageryTab(props: BodyTabProps) {
 
 /**
  * The dock at the map's foot: the passes as notches, the lit pass's caption, the band. The frame
- * has no slot for it yet (a contract request); it reads the same `?lit=` as the inspector.
+ * mounts it in the map's foot slot; it reads the same `?lit=` as the inspector.
  */
 export function ImageryDock(props: BodyTabProps) {
   const { lit, setLit } = useLit(props);
@@ -126,18 +126,24 @@ export function ImageryDock(props: BodyTabProps) {
   );
 }
 
-/** The map's data: the passes in the lit band, kept until they change. */
-function useImageryMapData(bodyId: string): ImageryMapData | undefined {
-  // The frame hands `useData` no lit address, so the map reads the default band's passes; the
-  // scene follows `?lit=` within them.
-  const { band, rows } = usePasses(bodyId, null);
-  return useMemo(() => (rows === undefined ? undefined : { rows, band }), [rows, band]);
+/**
+ * The map's data: the passes in the lit address's band (a band chosen in the dock), and the
+ * archive's season for the picture's credit, kept until they change.
+ */
+function useImageryMapData(bodyId: string, lit: string | null): ImageryMapData | undefined {
+  const { band, rows, timeline } = usePasses(bodyId, lit);
+  const season = timeline.season;
+  return useMemo(
+    () => (rows === undefined ? undefined : { rows, band, season }),
+    [rows, band, season],
+  );
 }
 
-/** The Imagery tab's registration in the frame's registry. */
-export const IMAGERY_TAB: BodyTabRegistration = {
+/** The Imagery tab's registration in the frame's registry: the inspector, the map and the dock. */
+export const IMAGERY_TAB: BodyTabRegistration<ImageryMapData> = {
   Wiring: ImageryTab,
   map: { useData: useImageryMapData, describe: imageryMapScene },
+  Dock: ImageryDock,
 };
 
 /** Copernicus' window is the last 14 days from now: moved on daily. */

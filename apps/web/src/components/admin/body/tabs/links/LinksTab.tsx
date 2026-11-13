@@ -7,7 +7,7 @@ import { errorText } from '@/components/admin/adminUi';
 import { useUndo } from '@/components/admin/shell/undo';
 import { useRole } from '@/lib/useRole';
 
-import type { BodyTabProps, BodyTabRegistration } from '../hazards/tabContract';
+import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { LinksTabView } from './LinksTabView';
 import { linksMapScene } from './linksMap';
 
@@ -53,7 +53,7 @@ function useLinksMapData(bodyId: string) {
 }
 
 /** The Links tab's registration in the frame's registry. */
-export const LINKS_TAB: BodyTabRegistration = {
+export const LINKS_TAB: BodyTabRegistration<ReturnType<typeof useLinksMapData>> = {
   Wiring: LinksTab,
   map: {
     useData: useLinksMapData,

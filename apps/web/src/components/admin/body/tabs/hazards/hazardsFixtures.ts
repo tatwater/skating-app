@@ -200,6 +200,8 @@ export const FEB_ARCHIVED: HazardInput[] = [
 
 /** The map's data for the default board: no hazards, the two features. */
 export const MASCOMA_MAP_DATA: HazardsMapData = {
+  season: 2025,
+  current: 2025,
   hazards: [],
   features: MASCOMA_FEATURES.map((f) => ({ ...f, geometryKind: f.geometryKind })),
 };

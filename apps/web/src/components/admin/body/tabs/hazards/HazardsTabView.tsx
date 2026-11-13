@@ -32,7 +32,7 @@ import { usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
 
 import type { GlyphCell } from './featureGlyph';
-import { featureLit, hazardLit } from './hazardsMap';
+import { featureLit, hazardLit, winterLit } from './hazardsMap';
 import {
   type ArchivedRow,
   type FeatureRow,
@@ -187,7 +187,14 @@ export function HazardsTabView({
             </span>
           </div>
         ) : (
-          <HazardList rows={hazards} lit={lit} onLitChange={onLitChange} />
+          <HazardList
+            rows={hazards}
+            lit={lit}
+            onLitChange={onLitChange}
+            litOf={(hazardId) => hazardLit(hazardId, season, currentSeason)}
+            // Clearing a hazard in a past winter stays in that winter.
+            cleared={winterLit(season, currentSeason)}
+          />
         )}
         {winters !== null && empty && <WinterStrips winters={winters} season={season} />}
         {!empty && hazards !== undefined && (
@@ -312,10 +319,16 @@ function HazardList({
   rows,
   lit,
   onLitChange,
+  litOf,
+  cleared,
 }: {
   rows: readonly HazardRow[];
   lit: string | null;
   onLitChange: (lit: string | null) => void;
+  /** A row's lit address, in the winter on screen. */
+  litOf: (id: string) => string;
+  /** What the lit address becomes when the lit row is pressed again. */
+  cleared: string | null;
 }) {
   return (
     <div data-slot="hazard-list" className="flex flex-col">
@@ -326,7 +339,7 @@ function HazardList({
       </div>
       <ul aria-label="Hazards on the lake" className="m-0 flex list-none flex-col p-0">
         {rows.map((h) => {
-          const id = hazardLit(h.id);
+          const id = litOf(h.id);
           const on = lit === id;
           return (
             <li key={h.id}>
@@ -335,7 +348,7 @@ function HazardList({
                 data-slot="hazard-row"
                 data-state={h.state}
                 aria-pressed={on}
-                onClick={() => onLitChange(on ? null : id)}
+                onClick={() => onLitChange(on ? cleared : id)}
                 className={cn(
                   '-mx-gutter grid w-[calc(100%+2*var(--gap-gutter))] cursor-pointer grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-(--space-3) border-0 border-b border-dotted border-line bg-transparent px-gutter py-(--space-1_5) text-left outline-none',
                   'transition-[background-color] duration-(--duration-fast) ease-standard lit:bg-lift-05 focus-visible:shadow-focus',

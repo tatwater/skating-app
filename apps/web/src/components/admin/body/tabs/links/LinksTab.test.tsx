@@ -92,13 +92,13 @@ describe('LinksTab', () => {
     convex.results.set('waterBodies:get', result);
     let data: unknown;
     function Probe() {
-      data = LINKS_TAB.map?.useData(BODY);
+      data = LINKS_TAB.map?.useData(BODY, null);
       return null;
     }
     render(<Probe />);
     // Convex's own result: the identity the frame keys its redraw on.
     expect(data).toBe(result);
-    expect(LINKS_TAB.map?.describe(data, null).lit).toBe('interior:point');
+    expect(LINKS_TAB.map?.describe(data as never, null).lit).toBe('interior:point');
     expect(LINKS_TAB.map?.describe({ available: false }, null)).toEqual({ items: [] });
     expect(LINKS_TAB.map?.describe(undefined, null)).toEqual({ items: [] });
   });

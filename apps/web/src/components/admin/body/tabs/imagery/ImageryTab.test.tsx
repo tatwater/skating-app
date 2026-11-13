@@ -147,7 +147,7 @@ describe('ImageryTab', () => {
     convex.results.set('waterBodies:get', { available: true, body: MASCOMA });
     const seen: unknown[] = [];
     function Probe() {
-      seen.push(IMAGERY_TAB.map?.useData(BODY));
+      seen.push(IMAGERY_TAB.map?.useData(BODY, null));
       return null;
     }
     const { rerender } = render(<Probe />);
@@ -155,7 +155,7 @@ describe('ImageryTab', () => {
     expect(seen[0]).toBeDefined();
     expect(seen[1]).toBe(seen[0]);
     expect(IMAGERY_TAB.Wiring).toBe(ImageryTab);
-    const scene = IMAGERY_TAB.map?.describe(seen[0], null);
+    const scene = IMAGERY_TAB.map?.describe(seen[0] as never, null);
     expect(scene?.lit).toBe(`pass:visual.${granuleOf(13)}`);
     expect(scene?.layers).toEqual({ aerial: true });
   });
