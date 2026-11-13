@@ -25,6 +25,18 @@ import type { ModerationAction, ModerationTargetType } from './audit';
 
 export type Workstream = '§2 Inbox' | '§3 Body console' | '§4 Corpus' | '§6 Season';
 
+/**
+ * What an operator is told a `later` undo waits on: the console mode it arrives with, in plain words.
+ * The workstream token is the plan's bookkeeping; a reason shown in History or a toast never carries
+ * a plan token (no `§`, no D#).
+ */
+export const WORKSTREAM_MODE: Record<Workstream, string> = {
+  '§2 Inbox': 'the Inbox',
+  '§3 Body console': 'the Body console',
+  '§4 Corpus': 'Corpus',
+  '§6 Season': 'the Season page',
+};
+
 export type UndoKind =
   | { kind: 'inverse'; inverse: ModerationAction | 'priorStatus' }
   | { kind: 'setPrev' }

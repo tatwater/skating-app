@@ -478,7 +478,7 @@ describe('undo: a body’s identity and water (D226)', () => {
       requestId: 'r1',
     });
     await expect(mod.as.mutation(api.undo.run, { actionId: admitted })).rejects.toThrow(
-      /reopening the request/i,
+      /^This body was admitted from the catalog on a skater's request; reopening the request in the Inbox undoes it\.$/,
     );
   });
 });
@@ -1008,7 +1008,7 @@ describe('a body merge records its change set (D226)', () => {
 
     // The unmerge is §4's; until then History says so rather than offering an undo.
     await expect(mod.as.mutation(api.undo.run, { actionId: merge._id })).rejects.toThrow(
-      /lands with §4/,
+      /^Undo for this arrives with Corpus\.$/,
     );
   });
 

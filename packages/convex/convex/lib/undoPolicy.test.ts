@@ -1,7 +1,7 @@
 import { CAPABILITIES } from '@skating/core';
 import { describe, expect, test } from 'vitest';
 import { MODERATION_ACTIONS } from './enums';
-import { UNDO_POLICY, undoCapability, undoOwed } from './undoPolicy';
+import { UNDO_POLICY, undoCapability, undoOwed, WORKSTREAM_MODE } from './undoPolicy';
 
 describe('the undo registry (D226)', () => {
   test('covers every audited verb, and nothing else', () => {
@@ -57,6 +57,14 @@ describe('the undo registry (D226)', () => {
     expect(UNDO_POLICY.set_satellite_imagery.takesAway('auto')).toBe(false);
     expect(UNDO_POLICY.demote_body.takesAway('active')).toBe(false);
     expect(UNDO_POLICY.activate_body.takesAway('dormant')).toBe(true);
+  });
+
+  test('what an operator is told a later undo waits on carries no plan token', () => {
+    // Reasons reach History and the toast verbatim; a `§` or a D# is the plan's, never the screen's.
+    for (const rule of Object.values(UNDO_POLICY)) {
+      if (rule.undo.kind !== 'later') continue;
+      expect(WORKSTREAM_MODE[rule.undo.workstream]).toMatch(/^[A-Za-z ]+$/);
+    }
   });
 
   test('the owed register names a workstream and a plan for each', () => {

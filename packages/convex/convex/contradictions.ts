@@ -157,7 +157,8 @@ async function flagContradictionPattern(
     targetId: authorId,
     reason: 'unsafe_false_report',
     flaggerId, // a corroborated opponent — the action that crossed the line; `note` marks it system-generated
-    note: 'Auto: repeated weather-unexplained contradictions against corroborated reports (D56 §7). Review the good-vs-bad trend.',
+    // Shown to moderators as written: plain words, no plan tokens (D56 §7 is the rule behind it).
+    note: 'Auto: repeated weather-unexplained contradictions against corroborated reports. Review the good-vs-bad trend.',
   });
   // Safety-priority alert (D38) — but no longer on *every* occurrence, which is the noise bundling
   // exists to remove. It fires on the first and then at widening intervals, so a contributor quietly

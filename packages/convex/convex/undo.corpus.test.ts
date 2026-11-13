@@ -710,10 +710,10 @@ describe('undo: known features (D226)', () => {
     expect(undoRow.action).toBe('demote_body_feature');
     expect(undoRow.undoesActionId).toBe(promote._id);
 
-    // The demotion's own undo (reactivate) lands with §3.
+    // The demotion's own undo (reactivate) arrives with the Body console (§3).
     await expect(
       mod.as.mutation(api.undo.run, { actionId: undoRow._id, reason: 'r' }),
-    ).rejects.toThrow(/lands with §3/);
+    ).rejects.toThrow(/^Undo for this arrives with the Body console\.$/);
   });
 
   test('a cluster promotion undoes back into the recurrence queue, backlinks cleared', async () => {
@@ -886,7 +886,7 @@ describe('undo: hazard merges (D226)', () => {
 
     // Re-merging is §4's.
     await expect(mod.as.mutation(api.undo.run, { actionId: undoRow._id })).rejects.toThrow(
-      /lands with §4/,
+      /^Undo for this arrives with Corpus\.$/,
     );
   });
 

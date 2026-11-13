@@ -22,7 +22,7 @@ import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { asUndoOf } from './audit';
 import { hasCapability } from './auth';
 import { UNDO_HANDLERS } from './undoHandlers';
-import { UNDO_POLICY, undoCapability } from './undoPolicy';
+import { UNDO_POLICY, undoCapability, WORKSTREAM_MODE } from './undoPolicy';
 import type { UndoHandler, UndoViewer } from './undoTypes';
 
 /** How long after acting the toast offers its undo (D226). History has no limit. */
@@ -48,7 +48,10 @@ export async function undoState(
   const rule = UNDO_POLICY[row.action];
   if (rule.undo.kind === 'none') return { state: 'unavailable', why: rule.undo.why };
   if (rule.undo.kind === 'later') {
-    return { state: 'unavailable', why: `Undo for this lands with ${rule.undo.workstream}.` };
+    return {
+      state: 'unavailable',
+      why: `Undo for this arrives with ${WORKSTREAM_MODE[rule.undo.workstream]}.`,
+    };
   }
   const handler = handlerFor(row);
   if (!handler) return { state: 'unavailable', why: 'Undo for this is not built yet.' };

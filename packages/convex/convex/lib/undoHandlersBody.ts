@@ -220,7 +220,7 @@ const undoPublicAccess: UndoHandler = {
 const undoIncludedByRequest: UndoHandler = {
   blocked: (row) => {
     if (meta(row).requestId !== undefined) {
-      return "This body was admitted from the catalog on a skater's request; reopening the request undoes it (§2 Inbox).";
+      return "This body was admitted from the catalog on a skater's request; reopening the request in the Inbox undoes it.";
     }
     return needsPrev(row);
   },
