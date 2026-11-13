@@ -534,9 +534,11 @@ export const syncFromClerk = mutation({
     if (!identity) return null;
     const profile = await profileForClerkUser(ctx, identity.subject);
     if (!profile) return null;
-    // **The sign-in record (B01).** This is the one call every client makes on every open, so it
-    // is where a day's first open goes on the record — before the mirror gate, which turns away a
-    // suspended account that did, all the same, sign in. `lib/signInDays` decides who counts.
+    // **The sign-in record (B01).** This is the one call every client makes on every open — and
+    // again when an app left open returns on a new UTC day (web: `useOpenSync` on visibility and
+    // focus; phone: AppState `active`) — so it is where a day's first open goes on the record,
+    // before the mirror gate, which turns away a suspended account that did, all the same, sign
+    // in. `lib/signInDays` decides who counts.
     await recordSignInDay(ctx, profile, Date.now());
     return applyClerkMirrorsTo(ctx, profile, {
       email: identity.email,
