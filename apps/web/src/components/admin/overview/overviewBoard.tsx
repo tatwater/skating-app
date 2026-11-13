@@ -19,6 +19,7 @@ import {
 import { useState } from 'react';
 
 import { AppShell, ShellRailItem } from '@/components/kit/app-shell';
+import { Logo } from '@/components/kit/logo';
 import { RailViewer } from '@/components/kit/rail-item';
 import { ColleagueFaces, SearchTrigger, SeasonTape } from '@/components/kit/top-bar-parts';
 import type { GoLetter } from '@/lib/keys';
@@ -77,8 +78,8 @@ export function OverviewBoard({
     <AppShell
       className={className}
       railHead={
-        <span className="mb-(--space-2_5) flex h-(--space-8) items-center justify-center text-logo font-extrabold tracking-logo text-fg italic">
-          GLI
+        <span className="mb-(--space-2_5) flex h-(--space-8) items-center justify-center">
+          <Logo className="h-(--space-4)" />
         </span>
       }
       rail={MODES.map((m) => (
