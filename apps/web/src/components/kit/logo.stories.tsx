@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, within } from 'storybook/test';
+import { expect, waitFor, within } from 'storybook/test';
 
 import { Logo } from './logo';
 import { must } from './storyKit';
@@ -12,7 +12,7 @@ const meta = {
     docs: {
       description: {
         component:
-          'The Gli duotone mark: white on a dark map, black on a light one, picked by the nearest `data-mode` so a scoped theme wears its own. One image to a reader, named Gli; sized by its height.',
+          'The Gli duotone mark: white on a dark map, black on a light one. The nearest `data-mode` picks, so a scoped theme wears its own; with none, the page’s `.dark` — the way *system* resolves (the attribute removed, `.dark` kept in step with the OS). One image to a reader, named Gli; sized by its height.',
       },
     },
   },
@@ -73,5 +73,60 @@ export const FourUp: Story = {
     const quads = [...canvasElement.querySelectorAll<HTMLElement>('[data-theme-scope]')];
     await expect(quads).toHaveLength(4);
     for (const q of quads) await expect(shown(q)).toBe(q.dataset.mode);
+  },
+};
+
+/**
+ * Every way the page can be themed, the root rewritten case by case and put back after: explicit
+ * light and dark; *system* on a light and on a dark OS (no `data-mode` anywhere, `.dark` set by the
+ * before-paint script and the provider when the OS is dark); and a scope of the other mode inside
+ * each — the founder's own request, right in every combination.
+ */
+export const EveryTheme: Story = {
+  render: () => (
+    <div className="flex gap-(--space-4)">
+      <div data-case="page" className="p-(--space-3)">
+        <Logo />
+      </div>
+      <div data-mode="dark" data-case="dark-scope" className="p-(--space-3)">
+        <Logo />
+      </div>
+      <div data-mode="light" data-case="light-scope" className="p-(--space-3)">
+        <Logo />
+      </div>
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const root = document.documentElement;
+    const mode = root.getAttribute('data-mode');
+    const dark = root.classList.contains('dark');
+    // Re-queried on every try: a retry reads the paint as it is now.
+    const at = (c: string) => shown(must(canvasElement.querySelector(`[data-case="${c}"]`)));
+    const cases: Array<{
+      name: string;
+      mode: string | null;
+      dark: boolean;
+      page: 'dark' | 'light';
+    }> = [
+      { name: 'explicit light', mode: 'light', dark: false, page: 'light' },
+      { name: 'explicit dark', mode: 'dark', dark: true, page: 'dark' },
+      { name: 'system, light OS', mode: null, dark: false, page: 'light' },
+      { name: 'system, dark OS', mode: null, dark: true, page: 'dark' },
+    ];
+    try {
+      for (const c of cases) {
+        if (c.mode === null) root.removeAttribute('data-mode');
+        else root.setAttribute('data-mode', c.mode);
+        root.classList.toggle('dark', c.dark);
+        await waitFor(() => expect(at('page'), c.name).toBe(c.page));
+        // A scope of either mode inside the page wears its own, whatever the page's.
+        await waitFor(() => expect(at('dark-scope'), `${c.name}, dark scope`).toBe('dark'));
+        await waitFor(() => expect(at('light-scope'), `${c.name}, light scope`).toBe('light'));
+      }
+    } finally {
+      if (mode === null) root.removeAttribute('data-mode');
+      else root.setAttribute('data-mode', mode);
+      root.classList.toggle('dark', dark);
+    }
   },
 };
