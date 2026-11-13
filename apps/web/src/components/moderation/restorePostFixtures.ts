@@ -5,7 +5,10 @@
 import type { Id } from '@skating/convex/dataModel';
 import type { PostRestoreChoices } from './RestorePost';
 
-const JAN = (day: number, hour = 12) => Date.UTC(2027, 0, day, hour);
+// Local midday, like the boards' `BOARD_NOON`: the chooser shows dates in the viewer's zone, so a
+// fixture pinned at a UTC instant would name another day across the date line (CI runs the unit
+// project at UTC+14 and UTC−11).
+const JAN = (day: number, hour = 12) => new Date(2027, 0, day, hour).getTime();
 const MOD = { userId: 'p_mod', username: 'sarah', displayName: 'Sarah Berman' };
 
 export const id = (s: string) => s as Id<'reports'>;
