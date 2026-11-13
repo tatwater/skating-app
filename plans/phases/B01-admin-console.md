@@ -688,7 +688,16 @@ land; the third came out of the #108 review. **The calls:**
    conscious override. **Reports their author deleted are never restored through a Post** (the
    2026-09-21 call: people control what they shared); they are shown, not choosable, and a Post
    whose every Report its author deleted can't be restored. (A moderator's per-Report restore of an
-   author-deleted Report is untouched by this call.)
+   author-deleted Report is untouched by this call — superseded by call 4.)
+4. **Author deletions are final, verdicts outlive content, deleted content is erased at 30 days
+   unless held, and a filed request can be retracted until it is decided** (D248). "Any
+   author-deleted content should not be able to come back, no moderator should be able to restore
+   it"; a user "shouldn't be able to delete their comment and thereby remove evidence of their bad
+   behavior, which would influence future penalties"; a deletion is honored for real after 30 days
+   "if no moderator action is taken during that time", so "people's mistakes don't live on for
+   perpetuity"; and a person can retract what they filed "up until the action is determined/taken."
+   Part A (final) lands in #108; Parts B (the verdict record), C (the erasure) and D (retraction)
+   land together in the next PR.
 
 ## §8 — Workstreams (firmed up 2026-10-12; order is the founder's call 13)
 
@@ -722,7 +731,10 @@ per workstream unless two are small enough to share one; the roadmap entry flips
   `imageryRuns` and `importRuns` read through one list; stalled runs.
 - **§6 — Season.** The season page, the per-season rollup (D220, the §10 pick), the change log,
   past seasons; A06i's components re-homed; the cost summary from the ledger.
-- **§7 — People.** Browse lists; the detail drawing what `getAdmin` returns; the flagging
+- **§7 — People.** The person's content record (D248, from the next PR's server half): the
+  standing verdicts with the content still kept, labeled when its author deleted it afterward, and
+  the recently deleted list; the controls to record a verdict on deleted content and to overturn one.
+  Browse lists; the detail drawing what `getAdmin` returns; the flagging
   permission; the suspension-expiry and lift-on-deleted bugs; D50's trust-score leak closed; no
   mute (D222).
 - **§8 — Instruments and the close.** Tuning and calibration re-homed; the operational-health

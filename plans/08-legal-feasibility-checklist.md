@@ -61,7 +61,8 @@ framing (D3) and the assumption-of-risk acknowledgment (D45) being enforced as w
 - **Live:** interim [`TERMS.md`](../TERMS.md) and [`PRIVACY.md`](../PRIVACY.md); the 16+ gate;
   a versioned, server-stamped risk-ack (`RISK_ACK_VERSION`) that re-prompts on change.
 - [ ] Lawyer engaged. [ ] Final ToS + privacy policy supersede the interim files. [ ] Risk-ack
-      wording reviewed; bump the version if it changes.
+      wording reviewed; bump the version if it changes. [ ] The policy states D248's retention
+      (L3).
 
 ## L2 — Minors, 16–17 (D41) 🟡
 Under-13 is avoided by construction; 16–17 are still minors and we store DOB. The posture — minors
@@ -78,6 +79,10 @@ anonymized); a 30-day login grace; a JSON export. [`docs/account-deletion.md`](.
 The **wording** in the terms and privacy policy waits on Q10.
 - [ ] Lawyer confirms the three-bucket model and windows. [ ] Export contents meet portability
       obligations (no tokens, nothing of other users').
+- [ ] **D248 (must land before the store launch, Phase B02):** the policy and the in-app delete
+      confirmation say that deleted content is kept 30 days and then erased, content under a
+      moderator's verdict is kept as evidence, the verdict record outlives the content, and what a
+      data export contains in each case — see the roadmap's lawyer register.
 
 ## L4 — AGPL §7 store exception (D43) 🟡
 Drafted in [`LICENSE-EXCEPTIONS.md`](../LICENSE-EXCEPTIONS.md); sole-copyright-holder keeps it

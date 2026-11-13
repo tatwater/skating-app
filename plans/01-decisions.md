@@ -7754,3 +7754,43 @@ index returns it and the card is dropped, so pages come back short — and a mod
 Post should not have to leave the flow to restore a Report first.
 
 **Related:** D186, D226, [`phase-B01`](./phases/B01-admin-console.md) §7 (2026-11-13).
+
+## D248 — An author's deletion is final; a moderator's verdict outlives the content; deleted content is erased after 30 days unless held; a filed request can be retracted until it is decided (B01)
+
+**2026-11-13, founder rulings** (the #108 review), in the founder's words:
+
+1. "Any author-deleted content should not be able to come back, no moderator should be able to
+   restore it."
+2. "If a user was being rude and their post/comment got restricted by a moderator, they shouldn't be
+   able to delete their comment and thereby remove evidence of their bad behavior, which would
+   influence future penalties."
+3. An author's deletion is honored for real after 30 days "if no moderator action is taken during
+   that time" — so a data dump holds what the person expects, a complaint that arrives after a
+   harasser deletes their comment can still be assessed, and "people's mistakes don't live on for
+   perpetuity."
+4. "If a user reports an access issue, asks for a body to be included in the corpus, reports a body
+   as not accessible to the public, or any of those kinds of actions, they should be able to retract
+   them at any time (up until the action is determined/taken). So if they request a body and that
+   body is added by a moderator, their request cannot be retracted."
+
+- **Final — built in #108 (Part A).** Posts, Reports and Comments carry `authorDeletedAt`, set by the
+  author's delete and never cleared. No restore, Post choice (D247) or undo brings one back, and no
+  other verdict moves it; everything inside a Post its author deleted is withdrawn with it, a member a
+  moderator removed earlier included. Deleting something a moderator already removed still registers
+  as the author's withdrawal, and a comment's deletion is audited like a Report's or a Post's.
+  Content withdrawn before the stamp existed is stamped by two backfills after deploy.
+- **The verdict is the person's — the next PR (Part B).** A moderator's top-level hide or remove is
+  kept with the person whose content it was and stands until a moderator reverses it (a restore, an
+  undo, or, on content its author has since deleted, an overturn that clears the verdict without
+  bringing the content back). The author's deletion does not clear it; a moderator can record a
+  verdict on content its author already deleted, which keeps it as evidence. Staff-only: it never
+  reaches a skater-facing read or reputation (D17/D50 stay boost-only).
+- **Erased at 30 days unless held — the next PR (Part C).** Held means a standing verdict or an
+  open flag; a cleared hold erases at the later of the deletion + 30 days and the moment it cleared.
+  Erased means gone, observation included — unlike account deletion's "erase the person, keep the
+  observation" (D62), because here the author withdrew the item from the community.
+- **Retraction until decided — the next PR (Part D).** A request or report a person files for a
+  moderator to decide can be retracted by them until it is decided or acted on, and is final once
+  retracted, like any author withdrawal.
+
+**Related:** D17, D33, D50, D62, D73, D179, D186, D226, D247, [`phase-B01`](./phases/B01-admin-console.md) §7.

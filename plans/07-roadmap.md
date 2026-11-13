@@ -796,7 +796,7 @@ lack of signal.*
 - The founder's device pass of the sheet on the Android preview build (every door; offline; the silhouette picker) — and `convex dev --once` before it (`contentRevisions`, `author_delete`)
 
 ## Phase B01 — The admin console: one surface, organized by what an operator is doing
-🟡 **In progress** 2026-10-14 · [plan](./phases/B01-admin-console.md) · D216 D217 D218 D219 D220 D221 D222 D223 D224 D225 D226 D227 D245 D246 D247
+🟡 **In progress** 2026-10-14 · [plan](./phases/B01-admin-console.md) · D216 D217 D218 D219 D220 D221 D222 D223 D224 D225 D226 D227 D245 D246 D247 D248
 
 Phase 07 built `/admin` as work queues plus a control room, and every phase since added a page
 for its own feature; sixteen nav items later the surface is organized by table, not by task — an
@@ -903,6 +903,7 @@ here and defers to this table. The long-form register this table replaced is arc
 | Item | Status | Blocked on | Where |
 | --- | --- | --- | --- |
 | **Legal engagement** — ToS, privacy, risk-ack enforceability, the minor-data posture (whether minors ever post waits on this too), deletion wording, the AGPL store exception, takedown wording, email compliance (L19: CAN-SPAM class, a postal address), L16's "ask" if the lawyer wants it (Q10 / L1–L4, L11, L16, L19). Every mechanism is built; only copy waits. The interim `PRIVACY.md` / `TERMS.md` were refreshed to what's built on 2026-09-20 | ⚪ | a lawyer; one engagement clears most of it | [`08`](./08-legal-feasibility-checklist.md), `PRIVACY.md`, `TERMS.md` |
+| **The privacy policy and the delete confirmations, for D248 — must land before the store launch (Phase B02).** Once the next B01 PR lands, the policy and the in-app delete confirmation have to say: content a person deletes is kept 30 days and then erased; content under a moderator's verdict is kept as evidence until the verdict is reversed; the verdict record outlives the content; and what a data export contains in each case (deleted-but-not-yet-erased content, content held under a verdict, erased content) | ⚪ | the next B01 PR (D248 Parts B–D); a lawyer for the wording | [`08`](./08-legal-feasibility-checklist.md) L1 · L3, D248, `PRIVACY.md` |
 | **Forum / Facebook / Google-Group ingestion** (Q8 / L5 — feasibility, then consent, then ToS; D21's classifier rides it) · **AI summarization beyond weather facts** (Q9 / L6; A10's author-side extraction is a recorded carve-out) · **PostHog session replay** (L12 — the rest of PostHog landed in D235; replay is disabled at init) · **ODbL share-alike** (L10 — only if the extract is ever published) | ⚪ | legal, per item | `08`, [`backlog/posthog.md`](./backlog/posthog.md) |
 
 ### An external partner
