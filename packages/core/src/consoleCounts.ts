@@ -18,14 +18,21 @@ export function cappedCount(rows: number, cap = COUNT_CAP): Count {
 }
 
 /**
- * The median age of what is open, as the Inbox card's foot says it ("median age 1.5 d") — the lower
- * median, so of an even count the younger of the middle two and the foot never reads older than the
- * queue is. `null` with nothing open. Ages are never negative: a clock ahead of ours reads as none.
+ * When the median open item was opened — the instant the Inbox card's foot ages against the reader's
+ * own clock ("median age 1.5 d"), so the age keeps growing between reads instead of freezing at the
+ * server's. The lower median of the ages: of an even count, the younger of the middle two (the later
+ * opened), so the foot never reads older than the queue is. `null` with nothing open.
  */
-export function medianAge(openedAts: readonly number[], now: number): number | null {
+export function medianOpenedAt(openedAts: readonly number[]): number | null {
   if (openedAts.length === 0) return null;
-  const ages = openedAts.map((at) => Math.max(0, now - at)).sort((a, b) => a - b);
-  return ages[Math.floor((ages.length - 1) / 2)] as number;
+  const newestFirst = [...openedAts].sort((a, b) => b - a);
+  return newestFirst[Math.floor((newestFirst.length - 1) / 2)] as number;
+}
+
+/** The median age `now` reads from {@link medianOpenedAt}: never negative, a clock behind reads as none. */
+export function medianAge(openedAts: readonly number[], now: number): number | null {
+  const at = medianOpenedAt(openedAts);
+  return at === null ? null : Math.max(0, now - at);
 }
 
 /**

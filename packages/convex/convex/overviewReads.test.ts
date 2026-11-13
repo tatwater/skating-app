@@ -374,7 +374,7 @@ describe('open flags include reviewing, everywhere (the governor’s ruling)', (
 // ── console.overview additions ──────────────────────────────────────────────────────────────────
 
 describe('console.overview — the Inbox foot and the People total', () => {
-  test('the median age is the lower median of what is open', async () => {
+  test('the median open item is sent as when it opened, for the client to age', async () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');
     const s = await seedUser(t, 's');
@@ -391,7 +391,8 @@ describe('console.overview — the Inbox foot and the People total', () => {
       }),
     );
     const o = await mod.as.query(api.console.overview, {});
-    expect(o.inbox.medianAgeMs).toBe(DAY);
+    // Ages 4 d, 2 d, 1 d, 2 h: the lower median is the 1-day-old flag.
+    expect(o.inbox.medianOpenedAt).toBe(NOW - DAY);
   });
 
   test('the median age is not recorded once a lane read stopped short', async () => {
@@ -399,7 +400,7 @@ describe('console.overview — the Inbox foot and the People total', () => {
     const mod = await seedUser(t, 'mod', 'moderator');
     const s = await seedUser(t, 's');
     for (let i = 0; i < 201; i++) await seedFlag(t, s.id, 'report', `r${i}`);
-    expect((await mod.as.query(api.console.overview, {})).inbox.medianAgeMs).toBeNull();
+    expect((await mod.as.query(api.console.overview, {})).inbox.medianOpenedAt).toBeNull();
   });
 
   test('nothing open: no age at all', async () => {
@@ -407,7 +408,7 @@ describe('console.overview — the Inbox foot and the People total', () => {
     const mod = await seedUser(t, 'mod', 'moderator');
     const o = await mod.as.query(api.console.overview, {});
     expect(o.inbox.oldestOpenAt).toBeNull();
-    expect(o.inbox.medianAgeMs).toBeNull();
+    expect(o.inbox.medianOpenedAt).toBeNull();
   });
 
   test('total users comes from the rollup — not recorded until it runs, a floor when capped', async () => {
@@ -1220,13 +1221,20 @@ describe('seasonWatch.tape and seasonWatch.homeSummary — for moderators', () =
       countsFrom: '2026-10-01',
       watch: null,
       imageryNudgeOn: null,
+      imageryNudgeLowC: null,
       winterFrom: null,
+      lastWinterFirst: null,
     });
     const home = await mod.as.query(api.seasonWatch.homeSummary, {});
     expect(home.watch).toBeNull();
     expect(home.winter).toEqual({ state: 'not-yet' });
-    expect(home.imagery).toEqual({ state: 'not-started', granules: 0, lastLandedAt: null });
-    expect(home.firstSkate).toEqual({ at: null, body: null, lastWinter: null });
+    expect(home.imagery).toEqual({
+      state: 'not-started',
+      granules: 0,
+      lastLandedAt: null,
+      lastFrameAt: null,
+    });
+    expect(home.firstSkate).toEqual({ first: null, lastWinter: null });
   });
 
   test('open, winter set in for two nights, imagery running, the first skate from on the ice', async () => {
@@ -1248,6 +1256,10 @@ describe('seasonWatch.tape and seasonWatch.homeSummary — for moderators', () =
           corpus: { frozen: 0, reporting: 2 },
         },
         imageryNudgeOn: '2026-10-20',
+        imageryNudgeSites: [
+          { name: 'Upper Lake of the Clouds', lowC: -8 },
+          { name: 'Eagle Lake', lowC: -7 },
+        ],
         imageryStartedAt: NOW - 10 * DAY,
         sitesSampled: 3,
         detectedAt: NOW - 40 * DAY,
@@ -1285,6 +1297,12 @@ describe('seasonWatch.tape and seasonWatch.homeSummary — for moderators', () =
     expect(tape.watch?.opensOn).toBe('2026-10-03');
     expect(tape.imageryNudgeOn).toBe('2026-10-20');
     expect(tape.winterFrom).toBe('2026-11-05');
+    expect(tape.imageryNudgeLowC).toBe(-8);
+    expect(tape.lastWinterFirst).toEqual({
+      source: 'report',
+      at: Date.UTC(2025, 11, 20),
+      body: 'Valley B',
+    });
 
     const home = await mod.as.query(api.seasonWatch.homeSummary, {});
     expect(home.watch).toEqual(
@@ -1299,12 +1317,85 @@ describe('seasonWatch.tape and seasonWatch.homeSummary — for moderators', () =
       reporting: 2,
       needs: 1,
     });
-    expect(home.imagery).toEqual({ state: 'running', granules: 4, lastLandedAt: null });
-    expect(home.firstSkate).toEqual({
-      at: NOW - 2 * DAY,
-      body: 'Valley A',
-      lastWinter: { at: Date.UTC(2025, 11, 20), body: 'Valley B' },
+    expect(home.imagery).toEqual({
+      state: 'running',
+      granules: 4,
+      lastLandedAt: null,
+      lastFrameAt: null,
     });
+    expect(home.firstSkate).toEqual({
+      first: { source: 'report', at: NOW - 2 * DAY, body: 'Valley A' },
+      lastWinter: { source: 'report', at: Date.UTC(2025, 11, 20), body: 'Valley B' },
+    });
+  });
+
+  test('first skated prefers the date staff entered, with its body or place', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const ada = await seedUser(t, 'ada');
+    const crystal = await seedBody(t, 'Crystal Lake');
+    await seedReport(t, ada.id, crystal, NOW - 2 * DAY, { observedFrom: 'on_ice' });
+    await t.run(async (ctx) => {
+      await ctx.db.insert('seasonFieldDates', {
+        season: 'winter-2026-27',
+        kind: 'last_skated',
+        date: '2026-10-30',
+        enteredBy: mod.id,
+        enteredAt: NOW,
+      });
+      await ctx.db.insert('seasonFieldDates', {
+        season: 'winter-2026-27',
+        kind: 'first_skated',
+        date: '2026-11-08',
+        waterBodyId: crystal,
+        enteredBy: mod.id,
+        enteredAt: NOW,
+      });
+      await ctx.db.insert('seasonFieldDates', {
+        season: 'winter-2025-26',
+        kind: 'first_skated',
+        date: '2025-12-06',
+        place: 'Low Plains',
+        enteredBy: mod.id,
+        enteredAt: NOW,
+      });
+    });
+    const home = await mod.as.query(api.seasonWatch.homeSummary, {});
+    expect(home.firstSkate).toEqual({
+      first: { source: 'field', day: '2026-11-08', body: 'Crystal Lake' },
+      lastWinter: { source: 'field', day: '2025-12-06', body: 'Low Plains' },
+    });
+  });
+
+  test('a closed watch ends imagery, with the capture of its last frame', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await t.run(async (ctx) => {
+      await ctx.db.insert('imageryIngestSeasons', {
+        season: 'winter-2025-26',
+        opensOn: '2025-10-04',
+        openedBy: ['sentinel'],
+        winterFrom: null,
+        closesOn: '2026-05-05',
+        closedAt: Date.UTC(2026, 4, 6),
+        imageryStartedAt: Date.UTC(2025, 10, 1),
+        sitesSampled: 3,
+        detectedAt: Date.UTC(2025, 9, 5),
+      });
+      await ctx.db.insert('imageryFrames', {
+        season: 'winter-2025-26',
+        manifestKey: 'k',
+        granuleId: 'g',
+        capturedAt: '2026-04-12T15:30:00Z',
+        cloudCoverPct: 10,
+        bodyCount: 3,
+        bands: [],
+      });
+    });
+    const home = await mod.as.query(api.seasonWatch.homeSummary, { season: 2025 });
+    expect(home.imagery).toEqual(
+      expect.objectContaining({ state: 'ended', lastFrameAt: Date.UTC(2026, 3, 12, 15, 30) }),
+    );
   });
 
   test('a paused imagery run, and a winter recorded without its night', async () => {

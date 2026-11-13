@@ -1054,6 +1054,9 @@ const SUMMARY_SERIES_CAP = 200;
 /** The most reports the first-skate look reads before it says *not recorded*. */
 const FIRST_SKATE_SCAN = 500;
 
+/** The most field-date rows a season's first-skated look reads (a handful a season). */
+const FIELD_DATE_SCAN = 100;
+
 /** A season's watch record, or `null` while no night has opened it. */
 async function watchRecord(ctx: QueryCtx, label: string) {
   return await ctx.db
@@ -1094,12 +1097,18 @@ export const tape = query({
     const label = archiveSeasonLabel(season);
     const record = await watchRecord(ctx, label);
     const settings = await settingsFor(ctx, record);
+    const nudgeLows = (record?.imageryNudgeSites ?? []).map((site) => site.lowC);
+    const lastWinter = await firstSkate(ctx, season - 1, Date.now());
     return {
       season,
       countsFrom: seasonFloorDate(label, settings.startMonthDay),
       watch: record === null ? null : watchFacts(record),
       imageryNudgeOn: record?.imageryNudgeOn ?? null,
+      /** The coldest sentinel low on the imagery-line night, °C; `null` without one. */
+      imageryNudgeLowC: nudgeLows.length > 0 ? Math.min(...nudgeLows) : null,
       winterFrom: record?.winterFrom ?? null,
+      /** Last winter's first skate, for the tape's ghost; `null` when none is known. */
+      lastWinterFirst: typeof lastWinter === 'object' ? lastWinter : null,
     };
   },
 });
@@ -1114,10 +1123,12 @@ export const tape = query({
  *   freezing, how many the rule needs, and how many nights in a row it held (`winterRunNights` over
  *   the season's stored lows, under the settings that decided the season). `null` for a winter
  *   recorded without its night's detail, or when the stored lows run past the read's bound.
- * - `imagery` — not started, running or paused (from the record), the granules cut (landed and
- *   empty), and when the newest frame was indexed. When the cutter was pinned is not recorded.
- * - `firstSkate` — the season's first visible report from on the ice, from 1 October, and last
- *   winter's; `null` when the bounded look can't say.
+ * - `imagery` — not started, running, paused, or **ended** once the watch has closed (from the
+ *   record); the granules cut (landed and empty); when the newest frame was indexed and when it was
+ *   captured. When the cutter was pinned is not recorded.
+ * - `firstSkate` — the season's first skate and last winter's: the date staff entered for it when
+ *   there is one (`seasonFieldDates`), else the first visible report from on the ice from 1 October.
+ *   `null` when the bounded look can't say.
  */
 export const homeSummary = query({
   args: { season: v.optional(v.number()) },
@@ -1192,16 +1203,22 @@ async function imagerySummary(
     .withIndex('by_season', (q) => q.eq('season', label))
     .order('desc')
     .first();
+  // A closed watch stops the cutter (`imageryLive`), so a season whose watch has closed has ended,
+  // whatever its run marks still say.
   const state =
     record?.imageryStartedAt === undefined
       ? ('not-started' as const)
-      : record.imageryPausedAt !== undefined
-        ? ('paused' as const)
-        : ('running' as const);
+      : record.closesOn !== undefined
+        ? ('ended' as const)
+        : record.imageryPausedAt !== undefined
+          ? ('paused' as const)
+          : ('running' as const);
+  const capturedAt = newest === null ? Number.NaN : Date.parse(newest.capturedAt);
   return {
     state,
     granules: counts === null ? 0 : counts.landed + counts.empty,
     lastLandedAt: newest?._creationTime ?? null,
+    lastFrameAt: Number.isFinite(capturedAt) ? capturedAt : null,
   };
 }
 
@@ -1236,13 +1253,50 @@ async function firstOnIce(
   return { at: hit.skateEndTime, body: body?.name ?? 'A body since removed' };
 }
 
+/**
+ * A season's first skate: a calendar day staff entered (`source: 'field'`), or a report's instant
+ * (`source: 'report'`). The client draws either in the reader's zone.
+ */
+export type SkateMark =
+  | { source: 'field'; day: string; body: string | null }
+  | { source: 'report'; at: number; body: string };
+
+/** The first-skated date staff entered for a season, with where, or `null`. */
+async function fieldFirstSkate(ctx: QueryCtx, season: number): Promise<SkateMark | null> {
+  let scanned = 0;
+  for await (const row of ctx.db
+    .query('seasonFieldDates')
+    .withIndex('by_season', (q) => q.eq('season', archiveSeasonLabel(season)))) {
+    if (row.kind === 'first_skated') {
+      const body = row.waterBodyId ? await ctx.db.get(row.waterBodyId) : null;
+      return { source: 'field', day: row.date, body: body?.name ?? row.place ?? null };
+    }
+    if (++scanned >= FIELD_DATE_SCAN) break;
+  }
+  return null;
+}
+
+/**
+ * A season's first skate (the founder's default, 2026-11-13): the date staff entered when there is
+ * one, else the first visible on-ice report from 1 October. `unknown` when the report look ran out.
+ */
+async function firstSkate(
+  ctx: QueryCtx,
+  season: number,
+  now: number,
+): Promise<SkateMark | 'none' | 'unknown'> {
+  const field = await fieldFirstSkate(ctx, season);
+  if (field !== null) return field;
+  const report = await firstOnIce(ctx, season, now);
+  return typeof report === 'object' ? { source: 'report', ...report } : report;
+}
+
 async function firstSkateSummary(ctx: QueryCtx, season: number, now: number) {
-  const thisSeason = await firstOnIce(ctx, season, now);
+  const thisSeason = await firstSkate(ctx, season, now);
   if (thisSeason === 'unknown') return null;
-  const last = await firstOnIce(ctx, season - 1, now);
+  const last = await firstSkate(ctx, season - 1, now);
   return {
-    at: thisSeason === 'none' ? null : thisSeason.at,
-    body: thisSeason === 'none' ? null : thisSeason.body,
+    first: thisSeason === 'none' ? null : thisSeason,
     lastWinter: typeof last === 'object' ? last : null,
   };
 }

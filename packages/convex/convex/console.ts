@@ -16,7 +16,7 @@ import {
   type Count,
   cappedCount,
   duplicateDecisions,
-  medianAge,
+  medianOpenedAt,
   type REQUEST_KINDS,
   roleMeets,
 } from '@skating/core';
@@ -33,9 +33,6 @@ type RequestKind = (typeof REQUEST_KINDS)[number];
 const PLACE_KINDS: readonly RequestKind[] = ['name_bay', 'name_landmark'];
 
 const DAY_MS = 86_400_000;
-
-/** Fields added to a read after its first clients: always present, typed optional. */
-type Added<T> = Partial<T>;
 
 export const overview = query({
   args: {},
@@ -147,14 +144,6 @@ export const overview = query({
     // whenever either read stopped short rather than a median of the oldest two hundred.
     const openedAts = [...flags.map((f) => f.createdAt), ...requests.map((r) => r.createdAt)];
     const oldest = openedAts.length > 0 ? Math.min(...openedAts) : null;
-    // The two B01-3 additions are always sent; their type is optional (`Added`) only so a client
-    // built against the read before them — the Overview's fixtures — compiles unchanged.
-    const inboxAdded: Added<{ medianAgeMs: number | null }> = {
-      medianAgeMs: flagsCapped || requestsCapped ? null : medianAge(openedAts, now),
-    };
-    const peopleAdded: Added<{ totalUsers: Count | null }> = {
-      totalUsers: await accountsTotal(ctx),
-    };
     return {
       inbox: {
         safety: { count: safety, capped: flagsCapped },
@@ -165,7 +154,10 @@ export const overview = query({
         contentFlags: { count: content, capped: flagsCapped },
         support,
         oldestOpenAt: oldest,
-        ...inboxAdded,
+        // When the median open item was opened, for the client to age on its own clock: an age
+        // computed here would freeze between data changes. `null` once a lane read stopped short —
+        // a median of the oldest two hundred is not the queue's.
+        medianOpenedAt: flagsCapped || requestsCapped ? null : medianOpenedAt(openedAts),
       },
       people: {
         moderators: cappedCount(moderators.length),
@@ -179,7 +171,7 @@ export const overview = query({
         flaggedPeople: { count: flaggedPeople, capped: flagsCapped },
         appealsOpen: appeals,
         leaving: cappedCount(leaving.length),
-        ...peopleAdded,
+        totalUsers: await accountsTotal(ctx),
       },
     };
   },

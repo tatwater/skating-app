@@ -1,6 +1,12 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { cappedCount, duplicateDecisions, medianAge, sumRecorded } from './consoleCounts';
+import {
+  cappedCount,
+  duplicateDecisions,
+  medianAge,
+  medianOpenedAt,
+  sumRecorded,
+} from './consoleCounts';
 
 describe('cappedCount', () => {
   it('says when the read stopped short', () => {
@@ -31,6 +37,31 @@ describe('medianAge — the Inbox foot', () => {
           expect(m).toBeLessThanOrEqual(Math.max(...ages));
           // At least half the ages are at or above it.
           expect(ages.filter((a) => a >= m).length * 2).toBeGreaterThanOrEqual(ages.length);
+        },
+      ),
+    );
+  });
+});
+
+describe("medianOpenedAt — the foot ages on the reader's clock", () => {
+  it('is the opened-at of the lower-median age', () => {
+    expect(medianOpenedAt([])).toBeNull();
+    expect(medianOpenedAt([1, 4, 8, 9])).toBe(8);
+    expect(medianOpenedAt([1, 4, 8])).toBe(4);
+  });
+
+  it('gives the same age as the median of the ages, at any later clock — so the age advances', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.integer({ min: 0, max: 1e9 }), { minLength: 1 }),
+        fc.integer({ min: 0, max: 1e9 }),
+        (at, later) => {
+          const now = Math.max(...at) + later;
+          const ages = at.map((a) => now - a).sort((a, b) => a - b);
+          expect(now - (medianOpenedAt(at) as number)).toBe(
+            ages[Math.floor((ages.length - 1) / 2)],
+          );
+          expect(medianAge(at, now + 1)).toBe((medianAge(at, now) as number) + 1);
         },
       ),
     );
