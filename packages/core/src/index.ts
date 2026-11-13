@@ -21,6 +21,7 @@ export * from './coldChain';
 export * from './comment';
 export * from './compassRing';
 export * from './confidence';
+export * from './consoleCounts';
 export * from './contentRevision';
 export * from './contourLayer';
 export * from './corpusRequests';

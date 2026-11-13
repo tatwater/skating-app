@@ -74,6 +74,10 @@ export const CAPABILITIES = {
     'moderator',
     "The Overview's Metrics: counts and rollups, never a person. Support's half also needs inbox.support.read (PII, D37).",
   ),
+  'console.colleagues': read(
+    'moderator',
+    'Who else on staff is in the console now: names and faces.',
+  ),
   'console.presence': write(
     'moderator',
     'Be seen in the console by colleagues while on a console page; staff only, nothing about skaters.',

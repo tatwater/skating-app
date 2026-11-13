@@ -425,20 +425,6 @@ export const METRICS = {
     kind: 'rollup',
     shape: 'scalar',
   },
-  reports_by_vantage: {
-    label: 'Reports by vantage',
-    description:
-      'Visible reports whose skate ended this day, by where the skater saw the ice from (on the ice, from shore, secondhand), and those stating none.',
-    kind: 'rollup',
-    shape: 'meta',
-  },
-  state_activity: {
-    label: 'Activity by state',
-    description:
-      'This day’s visible reports, comments, report photos and kudos on reports, keyed `STATE:kind` by the state the report was filed from.',
-    kind: 'rollup',
-    shape: 'meta',
-  },
   // Point-in-time: stamped on the day they were measured and overwritten by the next tick.
   accounts_total: {
     label: 'Accounts',
@@ -450,7 +436,7 @@ export const METRICS = {
   season_reach: {
     label: 'Season reach',
     description:
-      'The season so far, from 1 October, counted once each: posts reported in, reports commented on and photographed, people giving kudos, bodies with hazards, people signed in, contributors, and contributors by state. A figure whose scan stopped short is listed in `meta.capped`.',
+      'The season so far, from 1 October: its reports, comments, report photos, kudos and hazards; what they were spread over (posts, reports, people, bodies) and the people signed in and contributing, each counted once; reports by vantage; and the same counts by state. A figure whose walk stopped short is listed in `meta.capped`.',
     kind: 'rollup',
     shape: 'meta',
   },
