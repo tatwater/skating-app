@@ -148,9 +148,12 @@ export const Stat: Story = {
   play: async ({ canvasElement }) => {
     const { skeleton, real } = pair(canvasElement);
     // `ch` is the loaded face's: load the value's own face first (the fallback's digits are a
-    // different width).
+    // different width). The skeleton holds no text, so its `ch` re-resolves only when the browser
+    // gets round to the font-load invalidation — on a starved runner that can land after the
+    // first read (CI once measured it 13 px narrow). Wait for the boxes themselves (§12.5).
     await faceLoaded(real);
-    await expectSameBox(skeleton, real, 'stat');
+    await faceLoaded(skeleton);
+    await waitFor(() => expectSameBox(skeleton, real, 'stat'));
   },
 };
 
