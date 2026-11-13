@@ -50,3 +50,17 @@ export const LIT_ROW =
 /** `data-lit` when `id` is the lit item. */
 export const litAttr = (lit: string | null | undefined, id: string) =>
   lit === id ? { 'data-lit': '' } : {};
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** "29 Sep 2026", in the viewer's zone: a status date in a panel carries its year (Review 13 #7). */
+export function dayMonthYear(at: number): string {
+  const d = new Date(at);
+  return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+/** "12 Sep": a table cell or history row keeps day and month. */
+export function dayMonth(at: number): string {
+  const d = new Date(at);
+  return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+}
