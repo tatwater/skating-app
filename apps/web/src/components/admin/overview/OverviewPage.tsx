@@ -1,6 +1,7 @@
 import type { ComponentProps, ReactNode } from 'react';
 
 import { Badge } from '@/components/kit/badge';
+import { DisplayWord } from '@/components/kit/display-word';
 import { Tabs, TabsList, TabsPanel, TabsTab } from '@/components/kit/tabs';
 import { cn } from '@/lib/utils';
 
@@ -53,12 +54,9 @@ export function OverviewPage<V extends string>({
       {...props}
     >
       <div data-slot="overview-head" className="flex min-w-0 items-end gap-(--space-4_5)">
-        <h1
-          data-slot="page-word"
-          className="m-0 text-disp-lg leading-none font-semibold tracking-label whitespace-nowrap text-fg uppercase"
-        >
+        <DisplayWord data-slot="page-word" render={(props) => <h1 {...props} />}>
           {title}
-        </h1>
+        </DisplayWord>
         <TabsList aria-label={`${title} tabs`} className="mb-px">
           {tabs.map((tab) => (
             <TabsTab key={tab.value} value={tab.value}>

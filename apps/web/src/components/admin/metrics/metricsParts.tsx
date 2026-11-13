@@ -1,5 +1,5 @@
 import { type ComponentProps, createContext, type ReactNode, useContext } from 'react';
-
+import { DisplayWord } from '@/components/kit/display-word';
 import { StatTile } from '@/components/kit/stat-tile';
 import { cn } from '@/lib/utils';
 
@@ -13,17 +13,18 @@ import { type AgePart, type DayKey, dayLabel, NOT_RECORDED } from './metricsMode
 /** A column's head ("Keeping up"): display caps over a rule the column's width. */
 export function ColumnHead({ children, className, ...props }: ComponentProps<'h2'>) {
   return (
-    <h2
+    <DisplayWord
+      size="column"
       data-slot="metrics-column-head"
+      render={(renderProps) => <h2 {...renderProps} {...props} />}
+      // The kit's column word, over the rule the column's width; a block, where the word alone is a line.
       className={cn(
-        'm-0 border-0 border-b-(length:--stroke-hair) border-solid border-line2 pb-(--space-1_5)',
-        'text-logo leading-none font-semibold tracking-head text-fg uppercase',
+        'block border-0 border-b-(length:--stroke-hair) border-solid border-line2 pb-(--space-1_5)',
         className,
       )}
-      {...props}
     >
       {children}
-    </h2>
+    </DisplayWord>
   );
 }
 

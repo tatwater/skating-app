@@ -733,6 +733,12 @@ Asked by the integration's report. **The calls:**
 3. **The dim lamp stands for *not live*** until the kit's live `Badge` and `StatusLamp` have a
    hollow state (the kit extensions owed, §12.8).
 
+### The founder's call on the console's mark (2026-11-13)
+
+**The console rail wears the Gli logo** (the kit's `Logo`) instead of the text wordmark the boards
+draw — a deliberate deviation from the boards, by the founder's call. It sits 16 px tall in the
+wordmark's old 32 px head with the same bottom gap, so nothing below it moved.
+
 ## §8 — Workstreams (firmed up 2026-10-12; order is the founder's call 13)
 
 Wireframes come first (§6, a static HTML mockup per mode, reviewed before React). Then, one PR
@@ -873,6 +879,26 @@ are used below) and `plans/research/web-frontend-stack-2026-10-30.md` §2.
 
 **Count:** 54 components: 30 re-skinned shadcn atoms, 4 Base UI primitives, 20 custom. Fifty-three
 are done; the mobile bar waits for a later phase.
+
+**Kit extensions (B01-3, 2026-11-13)** — the B01-2 owed list, built on `b01-3-kit` and carried with
+B01-3, and what the Overview adopted:
+
+| Piece | Status | What it is | Adopted by |
+|---|---|---|---|
+| Badge `variant="live" tone="off"` | ✅ | The hollow LED: not live | `LiveMark` (its local hollow class is gone) |
+| StatusLamp `state="off"` | ✅ | The status bar's hollow lamp | `OverviewLamp` (was the dim lamp, a stand-in) |
+| StatGrid `ruled={false}` | ✅ | A bare strip of stats on the grid's gap | Home's season strip |
+| Chart `quiet` tone | ✅ | The context gray (`--line2`) under a lead series | `KeepingUp`'s open-flag and *other*-ticket bars (overrides gone) |
+| `SparkbarSet` + Sparkbars `tone="muted"` | ✅ | One hairline and plate across a stack of strips, keyboard stepping | **Not yet adopted:** Sparkbars has no *not recorded* day, and the pulse's unrecorded days must never draw as a zero stub — the kit needs a `null` day first |
+| `ChartLegend`, `ChartNote`, `StatusDot` | ✅ | Promoted from the console into the kit | Their importers |
+| `DisplayWord` (`page`, `column`) | ✅ | The page word and a column's head | `OverviewPage`, Metrics' `ColumnHead` |
+| Button `size="row"` | ✅ | The 18 px chip that fits a 22 px row | `RowLink` |
+| `Logo` | ✅ | The Gli mark | The console rail (§7, the founder's call) |
+| Avatar `xl`, the page head's tone | ✅ | — | — |
+| Meter's gate tick and dim fill | ✅ | — | — |
+| `LifeStrip` | ✅ | An item's life as a strip map | — |
+| The top bar's search and tape | ✅ | Never truncate the search or run the tape over it | The shell |
+| Tokens: `btn-row`, `avatar-xl`; the gaps `section`, `unit` (7 px), `segment` (3 px); the fade opacity; a token catalog story read off the registry | ✅ | — | — |
 
 **The kit review's first batch (§12.7), as integrated in B01-2 (2026-11-13):**
 

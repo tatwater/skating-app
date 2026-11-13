@@ -1,4 +1,3 @@
-import type { CSSProperties } from 'react';
 import { BarChart, ComposedChart, LabelList } from 'recharts';
 
 import {
@@ -117,7 +116,8 @@ export function KeepingUpStats({ data, now }: { data: KeepingUpData; now: number
 // ── Oldest open flag ─────────────────────────────────────────────────────────────────────────
 
 const OLDEST_CONFIG: ChartConfig = {
-  standard: { label: 'Open flags', tone: 'faint' },
+  // Context counted under the hours line: the chart's own quiet tone (the boards' `g4`).
+  standard: { label: 'Open flags', tone: 'quiet' },
   safety: { label: 'Safety', tone: 'bad' },
   hours: { label: 'Hours waiting', tone: 'lead', format: (v) => `${Math.floor(v)} h` },
 };
@@ -133,9 +133,6 @@ const OLDEST_LEGEND: LegendItem[] = [
   { label: 'Open flags', ink: 'var(--line2)' },
   { label: 'Safety', ink: 'var(--bad)' },
 ];
-
-/** The quiet bar gray the boards count context in (`g4`), which the kit's tones stop short of. */
-const QUIET_INK = 'var(--line2)';
 
 type DotProps = { cx?: number; cy?: number; index?: number; value?: unknown };
 
@@ -178,11 +175,7 @@ export function OldestOpenFlagChart({
   };
   return (
     <div className="relative">
-      <ChartContainer
-        config={OLDEST_CONFIG}
-        className="h-[14.125rem]"
-        style={{ '--color-standard': QUIET_INK } as CSSProperties}
-      >
+      <ChartContainer config={OLDEST_CONFIG} className="h-[14.125rem]">
         <ComposedChart data={rows} margin={SEASON_MARGIN} barCategoryGap="28%">
           <ChartGrid yAxisId="hours" />
           <ChartXAxis
@@ -298,7 +291,7 @@ export function ResolveHistogram({
 const TICKET_INK: Record<SupportCategory, string> = {
   bug: 'var(--fg2)',
   account: 'var(--fg3)',
-  other: QUIET_INK,
+  other: 'var(--line2)', // the chart's quiet tone
   safety: 'var(--bad)',
 };
 
@@ -312,7 +305,7 @@ const TICKET_LABEL: Record<SupportCategory, string> = {
 const TICKET_CONFIG: ChartConfig = {
   bug: { label: 'Bug', tone: 'muted' },
   account: { label: 'Account', tone: 'faint' },
-  other: { label: 'Other', tone: 'faint' },
+  other: { label: 'Other', tone: 'quiet' },
   safety: { label: 'Safety', tone: 'bad' },
 };
 
@@ -345,11 +338,7 @@ export function OpenTicketsChart({
   const start = recordStart(days, depth);
   return (
     <div className="relative">
-      <ChartContainer
-        config={TICKET_CONFIG}
-        className="h-[10.625rem]"
-        style={{ '--color-other': QUIET_INK } as CSSProperties}
-      >
+      <ChartContainer config={TICKET_CONFIG} className="h-[10.625rem]">
         <BarChart data={rows} margin={SEASON_MARGIN} barCategoryGap="28%">
           <ChartGrid />
           <ChartXAxis

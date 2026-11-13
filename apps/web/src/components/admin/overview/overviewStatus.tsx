@@ -77,9 +77,13 @@ const LAMP_WORDS: Record<LiveState, string> = {
 };
 
 /**
- * The connection lamp, in the live mark's states. The kit lamp has no hollow state yet, so *Not
- * live* reads idle (dim, still) until it does.
+ * The connection lamp, in the live mark's states: lit while live, still while checking, hollow
+ * (`off`) when not live — the same three the live mark draws.
  */
 export function OverviewLamp({ state }: { state: LiveState }) {
-  return <StatusLamp state={state === 'live' ? 'live' : 'idle'}>{LAMP_WORDS[state]}</StatusLamp>;
+  return (
+    <StatusLamp state={state === 'live' ? 'live' : state === 'off' ? 'off' : 'idle'}>
+      {LAMP_WORDS[state]}
+    </StatusLamp>
+  );
 }

@@ -23,10 +23,6 @@ import { clockSeconds, type LiveState } from './overviewModel';
  * tooltip, because the quiet state's plate holds a button.
  */
 
-/** The hollow LED: no fill, a hairline ring in the faint ink, no halo, no breath. */
-const HOLLOW =
-  'text-fg3 before:bg-transparent before:shadow-[inset_0_0_0_var(--stroke-hair)_var(--fg3)]';
-
 const WORDS: Record<LiveState, string> = { live: 'Live', checking: 'Checking', off: 'Not live' };
 
 type LiveMarkProps = Omit<ComponentProps<'button'>, 'children'> & {
@@ -68,11 +64,8 @@ export function LiveMark({
         )}
         {...props}
       >
-        <Badge
-          variant="live"
-          tone={state === 'live' ? 'default' : 'dim'}
-          className={cn(state === 'off' && HOLLOW)}
-        >
+        {/* The kit's live badge: lit while live, dim while checking, hollow (`off`) when not live. */}
+        <Badge variant="live" tone={state === 'live' ? 'default' : state === 'off' ? 'off' : 'dim'}>
           {WORDS[state]}
         </Badge>
       </PopoverTrigger>

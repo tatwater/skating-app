@@ -13,7 +13,7 @@ import type {
   ImageryState,
   RegionWinter,
 } from '@/components/admin/season/seasonFacts';
-import { StatTile } from '@/components/kit/stat-tile';
+import { StatGrid, StatTile } from '@/components/kit/stat-tile';
 import { cn } from '@/lib/utils';
 
 import { AuditFeed } from './AuditFeed';
@@ -94,25 +94,24 @@ export function OverviewHome({
         className={cn('flex min-h-0 flex-1 flex-col gap-(--space-5_5)', className)}
         {...props}
       >
-        <section
-          aria-label="This season"
-          data-slot="overview-stats"
-          className="grid grid-cols-5 gap-x-(--space-5) pb-(--space-1)"
-        >
-          <IceWatchTile data={data.watch} />
-          <WinterTile data={data.winter} />
-          <ImageryTile data={data.imagery} />
-          <FirstSkatedTile data={data.firstSkate} />
-          {data.cost === null ? (
-            <StatTile label="Cost · this season" {...NOT_RECORDED} />
-          ) : (
-            <StatTile
-              label="Cost · this season"
-              value={data.cost?.total ?? '$0.00'}
-              sub={data.cost?.totalSub ?? 'Loading'}
-              loading={data.cost === undefined}
-            />
-          )}
+        <section aria-label="This season" data-slot="overview-stats" className="pb-(--space-1)">
+          {/* The kit's bare strip: five stats on the grid's gap, no rules between them. */}
+          <StatGrid columns={5} ruled={false}>
+            <IceWatchTile data={data.watch} />
+            <WinterTile data={data.winter} />
+            <ImageryTile data={data.imagery} />
+            <FirstSkatedTile data={data.firstSkate} />
+            {data.cost === null ? (
+              <StatTile label="Cost · this season" {...NOT_RECORDED} />
+            ) : (
+              <StatTile
+                label="Cost · this season"
+                value={data.cost?.total ?? '$0.00'}
+                sub={data.cost?.totalSub ?? 'Loading'}
+                loading={data.cost === undefined}
+              />
+            )}
+          </StatGrid>
         </section>
 
         <div data-slot="overview-cards" className={cn(COLUMNS, 'items-start')}>
