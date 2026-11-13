@@ -39,7 +39,10 @@ import { type KeyHint, KeyRegistryProvider, StatusBar, type StatusBarProps } fro
  *   the modes (`ShellRailItem`), then the app item and the viewer at its foot. It never collapses
  *   and binds no key of its own — G then a mode's letter goes there.
  * - **The top bar** (`size-top`, 44 px): the page's own controls at its start, the season tape
- *   centered on the bar, the search trigger and the colleagues' faces at its end.
+ *   centered on the bar, the search trigger and the colleagues' faces at its end. Three columns —
+ *   two equal sides and the tape between — so the tape is centered while the sides fit, steps
+ *   toward the start when the end needs the room, and never runs over the search: at the very
+ *   narrowest the tape is clipped, never the search.
  * - **Main**, between them: the lanes, the middle list and the inspector as kit Resizable panes
  *   — sizes from the container tokens, `defaultLayout` to start from a persisted layout and
  *   `onLayoutChanged` to hear the operator's (the route keeps it in a cookie, so the server renders
@@ -371,13 +374,20 @@ function ShellFrame({
 
         <header
           data-slot="shell-top"
-          className="relative col-start-2 row-start-1 flex min-w-0 items-center gap-bar-gap border-0 border-b border-solid border-line pr-bar-x pl-(--space-3)"
+          className={cn(
+            'relative col-start-2 row-start-1 grid min-w-0 items-center gap-x-bar-gap',
+            'border-0 border-b border-solid border-line',
+            // Two equal sides, each at least its content, and the tape between: centered while
+            // the sides fit; the side that needs more room takes it from the other, never from
+            // the tape's neighbor. The bar's padding lives in the sides, so they stay equal.
+            'grid-cols-[1fr_auto_1fr]',
+          )}
         >
           {topStart !== undefined && (
             <div
               data-slot="shell-top-start"
               className={cn(
-                'flex min-w-0 items-center gap-bar-gap',
+                'col-start-1 row-start-1 flex items-center gap-bar-gap justify-self-start ps-(--space-3)',
                 DIM,
                 go && 'opacity-(--opacity-dim)',
               )}
@@ -389,7 +399,10 @@ function ShellFrame({
             <div
               data-slot="shell-top-center"
               className={cn(
-                'absolute inset-y-0 left-1/2 flex -translate-x-1/2 items-center',
+                // At the very narrowest the tape gives way (clipped) — never the page's own
+                // controls, never over the search; its marks' hit areas still reach above and
+                // below it.
+                'col-start-2 row-start-1 flex h-full min-w-0 items-center overflow-x-clip',
                 DIM,
                 go && 'opacity-(--opacity-dim)',
               )}
@@ -401,7 +414,7 @@ function ShellFrame({
             <div
               data-slot="shell-top-end"
               className={cn(
-                'ml-auto flex items-center gap-(--space-4)',
+                'col-start-3 row-start-1 flex items-center gap-(--space-4) justify-self-end pe-bar-x',
                 DIM,
                 go && 'opacity-(--opacity-dim)',
               )}

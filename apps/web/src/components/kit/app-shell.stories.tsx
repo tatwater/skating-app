@@ -22,7 +22,7 @@ import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './me
 import { MiddleList, type MiddleListItem } from './middle-list';
 import { RailViewer } from './rail-item';
 import { StatusLamp, StatusText, useClaimKey } from './status-bar';
-import { must } from './storyKit';
+import { faceLoaded, must } from './storyKit';
 import { ColleagueFaces, SearchTrigger, SeasonTape } from './top-bar-parts';
 
 const meta = {
@@ -655,6 +655,70 @@ export const Light: Story = {
   render: () => <Console />,
   globals: { surface: 'admin', mode: 'light' },
   play: ({ canvasElement }) => darkLight(canvasElement),
+};
+
+// ── The top bar at every width ──────────────────────────────────────────────────────────────
+
+/**
+ * The top bar's three parts, read once: the search's words whole, nothing over anything, and —
+ * when `centered` — the tape on the bar's middle.
+ */
+async function expectTopBar(root: HTMLElement, { centered }: { centered: boolean }) {
+  const label = slot(root, 'search-label');
+  await faceLoaded(label, 'Jump to a body or a person');
+  await faceLoaded(slot(root, 'tape-season'), 'WINTER');
+  // One fresh read of every box, after the faces.
+  const bar = slot(root, 'shell-top').getBoundingClientRect();
+  const start = slot(root, 'shell-top-start').getBoundingClientRect();
+  const center = slot(root, 'shell-top-center').getBoundingClientRect();
+  const end = slot(root, 'shell-top-end').getBoundingClientRect();
+  // The placeholder never truncates where the bar has room for it.
+  await expect(label.scrollWidth).toBeLessThanOrEqual(label.clientWidth);
+  // Nothing runs over anything: start, tape, end in that order, apart.
+  await expect(center.left).toBeGreaterThanOrEqual(start.right);
+  await expect(end.left).toBeGreaterThanOrEqual(center.right);
+  await expect(end.right).toBeLessThanOrEqual(bar.right);
+  if (centered) {
+    await near(center.left + center.width / 2, bar.left + bar.width / 2, 0.5);
+  }
+}
+
+/** At 1440 the search's words are whole and the tape sits on the bar's middle. */
+export const TopBarWide: Story = {
+  render: () => <Console className="h-[20rem] w-[85.5rem]" />,
+  play: ({ canvasElement }) => expectTopBar(canvasElement, { centered: true }),
+};
+
+/**
+ * Under 1,000 the sides can't both fit beside a centered tape: the tape steps toward the start,
+ * and never runs over the search, whose words stay whole.
+ */
+export const TopBarNarrow: Story = {
+  render: () => <Console className="h-[20rem] w-[60rem]" />,
+  play: async ({ canvasElement }) => {
+    await expectTopBar(canvasElement, { centered: false });
+    // The whole tape still shows: it moved, it wasn't cut.
+    const center = slot(canvasElement, 'shell-top-center');
+    await expect(center.scrollWidth).toBeLessThanOrEqual(center.clientWidth + 0.5);
+  },
+};
+
+/**
+ * At the very narrowest the tape gives way (clipped): never the page's own controls at the start,
+ * and never over the search.
+ */
+export const TopBarNarrowest: Story = {
+  render: () => <Console className="h-[20rem] w-[44rem]" />,
+  play: async ({ canvasElement }) => {
+    const label = slot(canvasElement, 'search-label');
+    await faceLoaded(label, 'Jump to a body or a person');
+    const start = slot(canvasElement, 'shell-top-start').getBoundingClientRect();
+    const center = slot(canvasElement, 'shell-top-center').getBoundingClientRect();
+    const end = slot(canvasElement, 'shell-top-end').getBoundingClientRect();
+    await expect(center.left).toBeGreaterThanOrEqual(start.right);
+    await expect(end.left).toBeGreaterThanOrEqual(center.right);
+    await expect(label.scrollWidth).toBeLessThanOrEqual(label.clientWidth);
+  },
 };
 
 /** The status bar's caps for pane keys: modifiers as glyphs, Mod per platform; unlabeled keys stay out. */
