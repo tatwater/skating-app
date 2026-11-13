@@ -77,9 +77,10 @@ export type RequestKind = (typeof REQUEST_KINDS)[number];
 /**
  * A request's life: `open` until a moderator decides; `approved` or `declined` after. For an `admit`,
  * `open` also covers the window before the resolver has answered — the queue shows whether a
- * candidate is attached.
+ * candidate is attached. `retracted` is the asker's own withdrawal while it was still open (D248):
+ * no moderator decides it after, and it is erased 30 days on.
  */
-export const REQUEST_STATUSES = ['open', 'approved', 'declined'] as const;
+export const REQUEST_STATUSES = ['open', 'approved', 'declined', 'retracted'] as const;
 export type RequestStatus = (typeof REQUEST_STATUSES)[number];
 
 /** A skater's note on a request — one sentence, rendered to a moderator. */
@@ -272,6 +273,7 @@ export function describeRequestOutcome(request: {
   decisionNote?: string;
 }): string | null {
   if (request.status === 'open') return null;
+  if (request.status === 'retracted') return 'You withdrew this request.';
   const head =
     request.status === 'approved'
       ? request.kind === 'takedown'

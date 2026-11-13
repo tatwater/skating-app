@@ -182,6 +182,8 @@ export interface AccessAlertVote {
 export interface AccessAlertRecord {
   status: AccessAlertStatus;
   createdAt: number;
+  /** Who posted it — their own "it's open" settles it (founder ruling, 2026-11-13). */
+  createdByUserId?: string;
   /** Absent **only** for `official` pins, which have no TTL by founder call. */
   expiresAt?: number;
 }
@@ -229,8 +231,12 @@ export function accessAlertIsLive(alert: AccessAlertRecord, nowMs: number): bool
  * votes**, never from an incremented column, so a replayed offline confirmation updates one row and
  * re-derives the same numbers instead of double-counting.
  *
- * Three rules, in precedence order:
+ * Four rules, in precedence order:
  *
+ * 0. **The author's own "it's open" resolves it, pinned or not** (founder ruling, 2026-11-13: a
+ *    skater reports an unplowed lot, a moderator pins it, the skater later sees it plowed). `resolved`
+ *    — it was true and no longer is — never `retracted`, which would say it never existed. Only a
+ *    retraction is beyond it: there is no claim left to close.
  * 1. **A pinned or already-closed alert is not moved by votes.** A moderator's pin outranks the crowd
  *    (that is what pinning means), and re-opening a `retracted` row by voting on it would let the
  *    crowd overturn a "this never existed" verdict the author or a moderator issued.
@@ -258,6 +264,19 @@ export function deriveAccessAlertLifecycle(
   const lastConfirmedAt = confirms.length
     ? Math.max(...confirms.map((v) => v.observedAt))
     : undefined;
+
+  const authorsWord =
+    alert.createdByUserId !== undefined ? latestByUser.get(alert.createdByUserId) : undefined;
+  if (authorsWord?.verdict === 'open' && alert.status !== 'retracted') {
+    return {
+      status: 'resolved',
+      // A pin carries no expiry; resolving it adds none. A community claim keeps the one it had.
+      expiresAt: alert.expiresAt,
+      confirmCount,
+      denyCount,
+      lastConfirmedAt,
+    };
+  }
 
   const settled: AccessAlertStatus[] = ['official', 'retracted'];
   if (settled.includes(alert.status)) {
