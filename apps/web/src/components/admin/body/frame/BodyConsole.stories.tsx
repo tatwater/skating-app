@@ -171,7 +171,7 @@ export const AsRead: Story = {
     await expect(canvasElement.querySelector('[data-slot="body-missing"]')).toBeNull();
     await expect(canvasElement.querySelector('[data-slot="tabs-flag"]')).toBeNull();
     await expect(
-      slot(canvasElement, 'segment-meter-row').querySelector('[data-state="unknown"]'),
+      slot(canvasElement, 'led-strip').querySelector('[data-state="unknown"]'),
     ).not.toBeNull();
   },
 };

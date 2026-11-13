@@ -112,7 +112,7 @@ export const PlaceMarks: Story = {
         >
           <PlaceMark kind={kind} />
           <PlaceMark kind={kind} highlight />
-          <PlaceMark kind={kind} dim />
+          <PlaceMark kind={kind} fade />
           <PlaceMark kind={kind} glyph />
           {PLACE_KEY_LABELS[kind]}
         </div>
@@ -128,8 +128,9 @@ export const PlaceMarks: Story = {
       await expect(q.querySelectorAll('[data-slot="place-mark-brackets"]')).toHaveLength(
         KINDS.length,
       );
-      const dim = must(q.querySelector<SVGElement>('[data-slot="place-mark"][data-dim]'));
-      await expect(Number(getComputedStyle(dim).opacity)).toBeCloseTo(0.38, 2);
+      // A hover elsewhere fades a place to the fade step (Review 13).
+      const faded = must(q.querySelector<SVGElement>('[data-slot="place-mark"][data-fade]'));
+      await expect(Number(getComputedStyle(faded).opacity)).toBeCloseTo(0.38, 2);
       // A river is water you can name: the dim ice; a town is land: gray.
       const river = must(
         q.querySelector('[data-kind-row="waterway"] [data-slot="place-mark"] g rect'),
