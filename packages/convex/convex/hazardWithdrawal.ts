@@ -46,31 +46,26 @@ export const HAZARD_WITHDRAW_REFUSALS = {
     // Not "other skaters'": merge and recurrence don't look at who posted, so the others may be the
     // author's own pins from another day or season.
     'This hazard has been combined with other reports of the same spot, so it is a shared record now and stays up.',
-  unknown: 'This hazard has too many confirmations to check, so it stays up.',
 } as const;
 
-/** Rows read per verdict when looking for another skater's "it's there". */
-const VOTE_PROBE = 100;
-
 /**
- * Whether anyone but the author has said the hazard is there. `true` also when the probe could not
- * tell (a page full of the author's own rows) — keeping a warning up is the safe way to be wrong.
+ * Whether anyone but the author has said the hazard is there. Exact, with no cap to reach: a skater
+ * has one vote row per hazard (`hazardConfirmations.confirm` patches theirs in place), so within one
+ * verdict the author owns at most a row — a few, from rows older than that upsert — and the read
+ * stops at the first row that is someone else's.
  */
-async function othersSayItIsThere(
-  ctx: QueryCtx,
-  hazard: Doc<'hazards'>,
-): Promise<'yes' | 'no' | 'unknown'> {
+async function othersSayItIsThere(ctx: QueryCtx, hazard: Doc<'hazards'>): Promise<boolean> {
   for (const verdict of ['still_there', 'healing_unsafe'] as const) {
-    const votes = await ctx.db
+    const someoneElse = await ctx.db
       .query('hazardConfirmations')
       .withIndex('by_hazard_and_verdict', (q) =>
         q.eq('hazardId', hazard._id).eq('verdict', verdict),
       )
-      .take(VOTE_PROBE);
-    if (votes.some((vote) => vote.userId !== hazard.createdByUserId)) return 'yes';
-    if (votes.length >= VOTE_PROBE) return 'unknown';
+      .filter((q) => q.neq(q.field('userId'), hazard.createdByUserId))
+      .first();
+    if (someoneElse) return true;
   }
-  return 'no';
+  return false;
 }
 
 /** Whether merge or recurrence machinery has joined this pin to others. */
@@ -99,9 +94,7 @@ export async function hazardWithdrawRefusal(
   if (hazard.createdByUserId !== authorId) return HAZARD_WITHDRAW_REFUSALS.notYours;
   if (hazard.promotedToFeatureId !== undefined) return HAZARD_WITHDRAW_REFUSALS.feature;
   if (await isJoined(ctx, hazard)) return HAZARD_WITHDRAW_REFUSALS.joined;
-  const others = await othersSayItIsThere(ctx, hazard);
-  if (others === 'yes') return HAZARD_WITHDRAW_REFUSALS.confirmed;
-  if (others === 'unknown') return HAZARD_WITHDRAW_REFUSALS.unknown;
+  if (await othersSayItIsThere(ctx, hazard)) return HAZARD_WITHDRAW_REFUSALS.confirmed;
   return null;
 }
 
