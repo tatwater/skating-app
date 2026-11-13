@@ -1,0 +1,234 @@
+import {
+  DEFAULT_SAMPLE_SPACING_KM,
+  DEPTH_SOURCE_LABELS,
+  DEPTH_SOURCE_RANK,
+  type DepthSource,
+  isMeasuredDepthSource,
+  spansMultipleSampleCells,
+} from '@skating/core';
+
+import type { LatLng, WaterMapDrawing, WaterMapPoint } from './waterMap';
+
+/**
+ * The Water tab's data: depth as a ladder of sources (each offering a mean, a max or both, the one
+ * in use wearing Now), where the weather is sampled and why there, and the bathymetry state. Pure.
+ * `null` means not recorded — drawn as absent, never as zero.
+ */
+
+export type BBox = { minLat: number; minLng: number; maxLat: number; maxLng: number };
+
+/** One source's offer: its mean and max, where it has them. */
+export type DepthRung = {
+  source: DepthSource;
+  mean: number | null;
+  max: number | null;
+};
+
+export type Depth = {
+  rungs: DepthRung[];
+  /** The source each measurement uses now; `null` with none on record. */
+  meanFrom: DepthSource | null;
+  maxFrom: DepthSource | null;
+};
+
+export type Sampling = {
+  /** The interior point every body samples at by default; `null` until derived. */
+  interior: LatLng | null;
+  /** Points a moderator set by hand, replacing the default; `null` when there are none. */
+  points: LatLng[] | null;
+  /** How far the body spans, the longer of its box's two sides, in km. */
+  acrossKm: number | null;
+  /** Wider than the forecast models resolve: more than one point is worth having. */
+  wide: boolean;
+};
+
+export type Bathymetry = {
+  /** What was searched for this body, and when. */
+  searched: { source: string; when: string } | null;
+  /** What was found. */
+  found: string;
+  /** No contour lines: the record wants finishing. */
+  missing: boolean;
+};
+
+export type WaterData = {
+  name: string;
+  /** The body's (first) state, for a state survey's name. */
+  state: string | null;
+  depth: Depth;
+  sampling: Sampling;
+  /** `null` until a read serves it. */
+  bathymetry: Bathymetry | null;
+  box: BBox | null;
+};
+
+/** What the model reads off the body's record. */
+export type WaterBody = {
+  name: string;
+  states?: readonly string[];
+  meanDepthM?: number;
+  maxDepthM?: number;
+  meanDepthSource?: DepthSource;
+  maxDepthSource?: DepthSource;
+  interiorPoint?: LatLng;
+  weatherSamplePoints?: readonly LatLng[];
+  bbox?: BBox;
+};
+
+/**
+ * The ladder from the record. The record keeps only each measurement's winner, so today's ladder is
+ * one rung per source in use (two when mean and max came from different sources); the other
+ * sources' offers arrive with the candidates read (`extra`), best first.
+ */
+export function depthOf(body: WaterBody, extra: readonly DepthRung[] = []): Depth {
+  const rungs = new Map<DepthSource, DepthRung>();
+  for (const r of extra) rungs.set(r.source, { ...r });
+  const put = (source: DepthSource | undefined, key: 'mean' | 'max', value: number | undefined) => {
+    if (source === undefined || value === undefined) return;
+    const rung = rungs.get(source) ?? { source, mean: null, max: null };
+    rung[key] = value;
+    rungs.set(source, rung);
+  };
+  put(body.meanDepthSource, 'mean', body.meanDepthM);
+  put(body.maxDepthSource, 'max', body.maxDepthM);
+  return {
+    rungs: [...rungs.values()]
+      .filter((r) => r.mean !== null || r.max !== null)
+      .sort((a, b) => DEPTH_SOURCE_RANK[a.source] - DEPTH_SOURCE_RANK[b.source]),
+    meanFrom: body.meanDepthM !== undefined ? (body.meanDepthSource ?? null) : null,
+    maxFrom: body.maxDepthM !== undefined ? (body.maxDepthSource ?? null) : null,
+  };
+}
+
+/** A source's name on the ladder, and the line under it when the name alone would mislead. */
+export function sourceWords(
+  source: DepthSource,
+  state: string | null,
+): { name: string; note: string | null } {
+  switch (source) {
+    case 'state_agency':
+      return { name: state ? `${state} state survey` : 'State survey', note: null };
+    case 'hydrolakes_modeled':
+      return { name: 'HydroLAKES', note: 'Modeled · an estimate' };
+    case 'hydrolakes_reported':
+      return { name: 'HydroLAKES', note: 'From its reported volume' };
+    case 'globathy':
+      return { name: 'GLOBathy', note: 'Modeled · an estimate' };
+    case 'operator':
+      return { name: 'A moderator', note: 'Entered by hand' };
+    default: {
+      const label = DEPTH_SOURCE_LABELS[source];
+      return { name: label.charAt(0).toUpperCase() + label.slice(1), note: null };
+    }
+  }
+}
+
+/** A modeled number reads as an estimate ("~8.1"). */
+export const isEstimate = (source: DepthSource) => !isMeasuredDepthSource(source);
+
+/** Meters to one decimal under 10, whole above — as the board writes them. */
+export function depthFigure(m: number): string {
+  return m < 10 ? m.toFixed(1) : String(Math.round(m));
+}
+
+const M_PER_DEG_LAT = 111_320;
+
+/** The longer side of a box, in km, measured the way `spansMultipleSampleCells` does. */
+export function acrossKm(box: BBox): number {
+  const lat = (box.maxLat - box.minLat) * M_PER_DEG_LAT;
+  const worst = Math.max(Math.abs(box.minLat), Math.abs(box.maxLat));
+  const lng = (box.maxLng - box.minLng) * M_PER_DEG_LAT * Math.cos((worst * Math.PI) / 180);
+  return Math.max(lat, lng) / 1000;
+}
+
+/** The box's two spans, east–west then north–south, in km to a tenth. */
+export function spansKm(box: BBox): { ew: number; ns: number } {
+  const ns = ((box.maxLat - box.minLat) * M_PER_DEG_LAT) / 1000;
+  const ew =
+    ((box.maxLng - box.minLng) * M_PER_DEG_LAT * Math.cos((box.maxLat * Math.PI) / 180)) / 1000;
+  return { ew, ns };
+}
+
+export function waterFrom(
+  body: WaterBody,
+  extras: { candidates?: readonly DepthRung[]; bathymetry?: Bathymetry | null } = {},
+): WaterData {
+  const box = body.bbox ?? null;
+  return {
+    name: body.name,
+    state: body.states?.[0] ?? null,
+    depth: depthOf(body, extras.candidates),
+    sampling: {
+      interior: body.interiorPoint ?? null,
+      points:
+        body.weatherSamplePoints && body.weatherSamplePoints.length > 0
+          ? [...body.weatherSamplePoints]
+          : null,
+      acrossKm: box ? acrossKm(box) : null,
+      wide: box ? spansMultipleSampleCells(box) : false,
+    },
+    bathymetry: extras.bathymetry ?? null,
+    box,
+  };
+}
+
+/** A point as the board writes it: four decimals, hemisphere letters. */
+export function formatLatLng(p: LatLng): string {
+  const lat = `${Math.abs(p.lat).toFixed(4)}°${p.lat >= 0 ? 'N' : 'S'}`;
+  const lng = `${Math.abs(p.lng).toFixed(4)}°${p.lng >= 0 ? 'E' : 'W'}`;
+  return `${lat} ${lng}`;
+}
+
+/** Why the body has the points it has, in a sentence. */
+export function samplingNote(name: string, sampling: Sampling): string | null {
+  if (sampling.acrossKm === null) return null;
+  const km = `${sampling.acrossKm.toFixed(1)} km`;
+  const spacing = DEFAULT_SAMPLE_SPACING_KM;
+  return sampling.wide
+    ? `${name} is ${km} across. Forecast models resolve at 2 to ${spacing} km, so a body wider than ${spacing} km can read a different forecast at each end.`
+    : `${name} is ${km} across. Forecast models resolve at 2 to ${spacing} km, so points closer than ${spacing} km read the same forecast; a second point is offered only on a body wider than that.`;
+}
+
+/** The lit-item ids Water answers to. */
+export const litId = {
+  interior: 'sample:interior',
+  point: (i: number) => `sample:${i}`,
+  depth: (source: DepthSource) => `depth:${source}`,
+};
+
+/** What Water asks the map to draw. */
+export function waterMapDrawing(data: WaterData, lit: string | null): WaterMapDrawing {
+  const { sampling } = data;
+  const points: WaterMapPoint[] =
+    sampling.points !== null
+      ? sampling.points.map((at, i) => ({
+          id: litId.point(i),
+          mark: 'sample-point',
+          at,
+          label: `Sample point ${i + 1}`,
+          caption: 'Weather samples here',
+          lit: lit === litId.point(i),
+        }))
+      : sampling.interior !== null
+        ? [
+            {
+              id: litId.interior,
+              mark: 'sample-point',
+              at: sampling.interior,
+              label: 'Interior point',
+              caption: 'Weather samples here',
+              lit: lit === litId.interior,
+            },
+          ]
+        : [];
+  const box = data.box;
+  const spans = box ? spansKm(box) : null;
+  return {
+    points,
+    boxes:
+      box && spans
+        ? [{ id: 'bbox', box, ew: `${spans.ew.toFixed(1)} KM`, ns: `${spans.ns.toFixed(1)} KM` }]
+        : [],
+    lit: points.some((p) => p.lit) ? lit : null,
+  };
+}
