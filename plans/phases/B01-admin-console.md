@@ -698,6 +698,16 @@ land; the third came out of the #108 review. **The calls:**
    perpetuity"; and a person can retract what they filed "up until the action is determined/taken."
    Part A (final) lands in #108; Parts B (the verdict record), C (the erasure) and D (retraction)
    land together in the next PR.
+5. **What an erased Report takes with it** (D248, answering the three calls the erasure waited on):
+   the hazards drawn in it stay exactly as they are, only unlinked — "a live warning others
+   confirmed" is not the author's to take down by deleting a Report; its linked recording returns to
+   the author's private recordings ("they deleted the Report, not the recording"); its point events
+   stay — they carry none of its content, and removing them would penalize deleting.
+6. **A hazard is the author's to withdraw until someone else has said it is there** (D248): "any
+   hazard that has confirmations from other users shouldn't be able to be deleted, only hazards that
+   are either disputed or have no interactions at all." And **an alert's author's "it's open" wins**
+   over a moderator's pin — a skater reports an unplowed lot, a moderator pins it, the skater later
+   sees it plowed; resolved, never retracted, with a history entry so the moderator can re-pin.
 
 ### The governor's rulings at the Overview's integration (2026-11-13)
 
@@ -765,9 +775,10 @@ per workstream unless two are small enough to share one; the roadmap entry flips
   `imageryRuns` and `importRuns` read through one list; stalled runs.
 - **§6 — Season.** The season page, the per-season rollup (D220, the §10 pick), the change log,
   past seasons; A06i's components re-homed; the cost summary from the ledger.
-- **§7 — People.** The person's content record (D248, from the next PR's server half): the
-  standing verdicts with the content still kept, labeled when its author deleted it afterward, and
-  the recently deleted list; the controls to record a verdict on deleted content and to overturn one.
+- **§7 — People.** The person's content record (`contentRecord.personContentRecord`, D248, built
+  server-side in B01-1b): the standing verdicts with the content still kept, labeled when its author
+  deleted it afterward, and the recently withdrawn list with each item's erasure date; the controls
+  to record a verdict on deleted content and to overturn one (`moderation.overturnVerdict`).
   Browse lists; the detail drawing what `getAdmin` returns; the flagging
   permission; the suspension-expiry and lift-on-deleted bugs; D50's trust-score leak closed; no
   mute (D222).
@@ -1429,6 +1440,66 @@ Raised by the builders as kit candidates or gaps; each is the governor's to prom
 **Known bug, skater territory (owed, not B01-2):** client-side navigation from a skater page to an
 old admin page leaves `data-surface="skater"` on `<html>` — the old page wants it absent, and no
 shell on that path takes it off.
+
+**B01-1b (2026-11-13): what a person can take back, and what stays on record** (D248). Server only;
+the People page and the skater screens that reach it are owed (the roadmap's register).
+
+- **The verdict record (Part B).** `contentVerdicts`, one row per top-level hide or remove, naming
+  whose content it was, written beside the audit row by `lib/contentVerdicts` and ended only by a
+  moderator — a restore (a Post restore's chosen member included), an undo, or `overturnVerdict` on
+  content its author has since deleted (or a Post its author emptied Report by Report, or a withdrawn
+  hazard). A takedown on already-deleted content, history only in #108, is now a verdict; undoing
+  one points at the overturn. `contentRecord.backfillVerdicts` rebuilds the record from the audit
+  log through the same rules (a property test holds the replay to what the live writers keep under
+  any order of deletes, hides, removes, restores, undos and overturns). **The 100-row history bound
+  can miss a case only for an item carrying more than 100 audit rows**: the stamp backfill's "not
+  restored since" read, the comment backfill's last word and the verdict replay all read the newest
+  100. Real items carry a handful, so it is a bound rather than a gap; the verdict replay logs every
+  item that reaches it instead of silently replaying part of one. The stamp backfill also now
+  withdraws a member a moderator hid after its Post was author-deleted; a member a moderator brought
+  back *up* is left live, since taking it down would change what skaters see.
+- **The erasure (Part C).** Every withdrawable row carries `eraseAt`, written only by
+  `lib/eraseClock` at the writes that move a withdrawal or a hold — the author's delete, a verdict
+  recorded or ended, a flag filed, closed or retracted, a retraction — so `by_erase_at`'s bounded
+  range is the sweep's whole work list. `erasure.eraseDue` (hourly) re-reads the hold anyway, pages
+  with a size seam, and writes one actorless, contentless `erase` row per item. What each kind loses:
+  a **comment** its words (a placeholder stays only where replies point at it, and goes with its last
+  reply; comments keep no revisions); a **Report** its row, words, revisions, photos (unless the
+  uploader's other content still uses one) and bay joins — its hazards stay unchanged and unlinked,
+  its recording is unlinked with its prompt settled (`dismissed`, so nobody is asked again to report
+  it), an access alert filed from it is unlinked, its point events stay (a delta, a reason, the
+  Report's id and a time — no content), and its Post drops it and re-derives its album, sort key and
+  search words; a **Post** goes after its last member (held while any member is stored), with its
+  words and revisions; a **hazard** its row, photos and its author's own vote; a retracted
+  **request** or **flag** its row. **Access alerts** run the clock with no eraser — a founder call
+  (the register). The clock is `WITHDRAWN_ERASE_DAYS`, a sibling of the account grace pinned equal
+  to it, because the codebase names each promise it states.
+- **Other people's content attached to an erased item stays theirs.** Comments on an erased Report
+  stay in each commenter's record and export, unreachable in the app (the thread answers empty, as
+  for a removed Report today); replies under an erased comment hang from its placeholder; ratings,
+  flags and votes others left stay, pointing at an id that no longer resolves (their readers already
+  skip a missing target — the flag queue shows "(deleted)"); a bounty another skater posted keeps its
+  fulfilled state and its answer list skips the gone Report; notifications already delivered to
+  others stay in their inbox. Two things copy a Report's content and stay, per call 5: a hazard
+  derived from a located sighting carries the sighting's words in its description ("Seen, not
+  skated: …"), and stored put-in rows from the pre-D62 purge (`putIns.originReportId`) carry a
+  Report's coordinate — nothing reads that link today.
+- **Hazard withdrawal (call 6).** `hazardWithdrawal.withdraw`: the author, while no other skater's
+  latest vote is `still_there` or `healing_unsafe` (a property test over any votes). The pin leaves
+  as never posted — moderation `removed`, lifecycle untouched, so nothing reads it as healed — and is
+  final. Refused, and owed a founder call: a merge tombstone, a survivor that absorbed pins, a member
+  of a cross-season pattern; also a pin promoted to a permanent feature (a moderator made it the
+  lake's).
+- **Retraction (Part D).** Requests (`corpusRequests.retract`, while open; approve and decline then
+  say the asker withdrew it), flags (`contentFlags.retract`, while open or picked up; not one the
+  system filed or has counted again for others; it leaves the queue and stops holding content), and
+  alerts (the author's retraction only while a live community claim; a moderator's unchanged; an
+  author-retracted alert can't be pinned back). The author's own `open` resolves their alert, pinned
+  or not, releasing the pin with an `author_resolve_access_alert` history row. **No client reaches any
+  of these yet**, and both clients hide the vote buttons on a pinned alert, so the author's "it's
+  open" there needs a client change too (the register).
+- **Found on the way.** `dataExport.collect` carries none of the flags or requests a person filed —
+  theirs, and "everything about you" omits them; not changed here.
 
 ## Ruled out
 

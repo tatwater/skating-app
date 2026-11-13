@@ -7779,18 +7779,45 @@ Post should not have to leave the flow to restore a Report first.
   moderator removed earlier included. Deleting something a moderator already removed still registers
   as the author's withdrawal, and a comment's deletion is audited like a Report's or a Post's.
   Content withdrawn before the stamp existed is stamped by two backfills after deploy.
-- **The verdict is the person's — the next PR (Part B).** A moderator's top-level hide or remove is
-  kept with the person whose content it was and stands until a moderator reverses it (a restore, an
-  undo, or, on content its author has since deleted, an overturn that clears the verdict without
-  bringing the content back). The author's deletion does not clear it; a moderator can record a
-  verdict on content its author already deleted, which keeps it as evidence. Staff-only: it never
-  reaches a skater-facing read or reputation (D17/D50 stay boost-only).
-- **Erased at 30 days unless held — the next PR (Part C).** Held means a standing verdict or an
-  open flag; a cleared hold erases at the later of the deletion + 30 days and the moment it cleared.
-  Erased means gone, observation included — unlike account deletion's "erase the person, keep the
-  observation" (D62), because here the author withdrew the item from the community.
-- **Retraction until decided — the next PR (Part D).** A request or report a person files for a
-  moderator to decide can be retracted by them until it is decided or acted on, and is final once
-  retracted, like any author withdrawal.
+- **The verdict is the person's — built in the next PR (Part B).** A moderator's top-level hide or
+  remove is kept with the person whose content it was (`contentVerdicts`) and stands until a
+  moderator reverses it (a restore, an undo, or, on content its author has since deleted, an overturn
+  that clears the verdict without bringing the content back). The author's deletion does not clear
+  it; a moderator can record a verdict on content its author already deleted, which keeps it as
+  evidence. Staff-only: it never reaches a skater-facing read or reputation (D17/D50 stay
+  boost-only).
+- **Erased at 30 days unless held — built in the next PR (Part C).** Held means a standing verdict or
+  an open flag; a cleared hold erases at the later of the deletion + 30 days and the moment it
+  cleared. Erased means gone, observation included — unlike account deletion's "erase the person,
+  keep the observation" (D62), because here the author withdrew the item from the community. The
+  clock is its own constant (`WITHDRAWN_ERASE_DAYS`), pinned equal to the account-deletion grace.
+- **Retraction until decided — built in the next PR (Part D).** A request or report a person files
+  for a moderator to decide can be retracted by them until it is decided or acted on, and is final
+  once retracted, like any author withdrawal: a request while open, a flag while open or picked up,
+  an access alert by its author while it is a live community claim (a moderator's pin is the claim
+  acted on).
 
-**Related:** D17, D33, D50, D62, D73, D179, D186, D226, D247, [`phase-B01`](./phases/B01-admin-console.md) §7.
+**2026-11-13, the founder's answers to the erasure's three open calls, and two more rulings:**
+
+5. **A Report's erasure leaves its hazards.** A hazard drawn in a Report has its own life — other
+   skaters confirm it, it may be a live warning (D3) — so it stays exactly as it is, with only its
+   link to the erased Report removed; nothing about it may change in a way that reads as an
+   all-clear. Its author withdraws it separately (ruling 7).
+6. **The linked recording returns to the author's private recordings** — they deleted the Report,
+   not the recording (in the data: the link goes both ways and the prompt is settled, which is D58's
+   "not linked to a visible report", the predicate account deletion uses). **Point events stay**:
+   they carry none of the Report's content, and removing them would penalize deleting.
+7. **A hazard can be withdrawn by its author until another skater has said it is there:** "any
+   hazard that has confirmations from other users shouldn't be able to be deleted, only hazards that
+   are either disputed or have no interactions at all." Another skater's `still_there` or
+   `healing_unsafe` counts as saying it is there; no votes, or only others' `fully_healed`, leaves
+   it withdrawable; the author's own votes never count. A withdrawal says "never here" (the D65
+   sense), never "healed": the pin goes as if not posted.
+8. **An access alert's author's "it's open" wins.** The founder's case: a skater reports an unplowed
+   lot, a moderator pins it, the skater later sees it plowed. The author's own `open` vote resolves
+   the alert at once, pinned or not — `resolved`, it was true and no longer is, never `retracted` —
+   releasing a pin with a history entry so the moderator who pinned it can see it and re-pin.
+   Everyone else's votes work as before. The author's *retraction* ("it never existed") is still
+   refused once a moderator has pinned; their *resolution* ("it's over") is always allowed.
+
+**Related:** D3, D17, D33, D50, D58, D62, D65, D73, D179, D186, D226, D247, [`phase-B01`](./phases/B01-admin-console.md) §7.
