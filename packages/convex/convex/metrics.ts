@@ -34,7 +34,7 @@ import { v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
 import { hasCapability, requireCapability } from './lib/auth';
-import { latestMetric, latestMetricIn, metricOverDays } from './lib/metricReads';
+import { accountsTotal, latestMetric, latestMetricIn, metricOverDays } from './lib/metricReads';
 import { flagBodyId, readOpenFlags } from './lib/openFlags';
 import { isCountedComment } from './lib/pulse';
 
@@ -135,7 +135,7 @@ export const keepingUp = query({
     const resolvedWeek = sumRecorded(
       (await metricOverDays(ctx, 'flag_time_to_resolution_h', week.days)).map((r) => r?.buckets),
     );
-    const resolveSeason = sumRecorded(
+    const resolvedSeason = sumRecorded(
       (await metricOverDays(ctx, 'flag_time_to_resolution_h', days)).map((r) => r?.buckets),
     );
     const oldestHours = await scalarsOver(ctx, 'flag_oldest_open_age_h', days);
@@ -181,7 +181,14 @@ export const keepingUp = query({
       season,
       opensOn,
       days,
-      keepingUp: { openFlags, oldestOpenFlag, resolvedWeek, resolveSeason, queueByDay, support },
+      keepingUp: {
+        openFlags,
+        oldestOpenFlag,
+        resolvedWeek,
+        resolveSeason: resolvedSeason,
+        queueByDay,
+        support,
+      },
     };
   },
 });
@@ -285,12 +292,11 @@ export const showingUp = query({
       .query('profiles')
       .withIndex('by_created_at', (q) => q.gte('createdAt', week.from))
       .take(WEEK_CAP + 1);
-    const total = await latestMetric(ctx, 'accounts_total');
-    const totalCapped = (total?.meta as { capped?: boolean } | undefined)?.capped === true;
+    const total = await accountsTotal(ctx);
     const accounts =
-      added.length > WEEK_CAP || total?.scalar === undefined || totalCapped
+      added.length > WEEK_CAP || total === null || total.capped
         ? null
-        : { added: added.length, total: total.scalar };
+        : { added: added.length, total: total.count };
 
     const signedIn = await weekSignIns(ctx, week.days);
     const contributors = reportsCapped ? null : await weekContributors(ctx, week, weekReports);

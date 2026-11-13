@@ -173,7 +173,7 @@ export const CAPABILITIES = {
   'season.read': read('admin', 'The season watch, its settings and the replay (A06i, D213).'),
   'season.summary': read(
     'moderator',
-    "The season's state at a glance — the watch, winter region-wide, imagery, the first skate — for the shell's tape and the Overview. No settings, sites or lows.",
+    "The season's state at a glance — the watch, winter region-wide, imagery, the first skate — for the shell's tape and the Overview. No settings and no stored series: of the sites, only the sentinels that opened the watch and their lows that night.",
   ),
   'season.settings': write(
     'admin',

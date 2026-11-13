@@ -60,6 +60,12 @@ describe('winterRunNights — how long the region stayed in winter', () => {
     expect(winterRunNights(sites, START, { winterFraction: 0.3, freezeC: -2 })).toBe(0);
   });
 
+  it('never calls a night winter under a fraction that is not a number', () => {
+    const sites = [series('a', [-5, -5]), series('b', [-5, -5])];
+    expect(winterRunNights(sites, START, { winterFraction: Number.NaN })).toBe(0);
+    expect(winterOnOrAfter(sites, START, { winterFraction: Number.NaN })).toBeNull();
+  });
+
   const lows = fc.array(fc.option(fc.integer({ min: -10, max: 10 }), { nil: null }), {
     maxLength: 20,
   });

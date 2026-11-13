@@ -22,9 +22,9 @@ import {
 } from '@skating/core';
 import { v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
-import { mutation, type QueryCtx, query } from './_generated/server';
-import { hasCapability, requireCapability } from './lib/auth';
-import { latestMetric } from './lib/metricReads';
+import { mutation, query } from './_generated/server';
+import { hasCapability, isLockedOut, requireCapability } from './lib/auth';
+import { accountsTotal } from './lib/metricReads';
 import { readOpenFlags } from './lib/openFlags';
 
 export type { Count };
@@ -36,18 +36,6 @@ const DAY_MS = 86_400_000;
 
 /** Fields added to a read after its first clients: always present, typed optional. */
 type Added<T> = Partial<T>;
-
-/**
- * Everyone with an account, from the 6-hourly `accounts_total` rollup — one point read, where a
- * live count would read every profile. `null` until the rollup has run once; `capped` when its scan
- * stopped short, so the number is a floor.
- */
-async function totalUsers(ctx: QueryCtx): Promise<Count | null> {
-  const row = await latestMetric(ctx, 'accounts_total');
-  if (row?.scalar === undefined) return null;
-  const meta = row.meta as { capped?: boolean } | undefined;
-  return { count: row.scalar, capped: meta?.capped === true };
-}
 
 export const overview = query({
   args: {},
@@ -164,7 +152,9 @@ export const overview = query({
     const inboxAdded: Added<{ medianAgeMs: number | null }> = {
       medianAgeMs: flagsCapped || requestsCapped ? null : medianAge(openedAts, now),
     };
-    const peopleAdded: Added<{ totalUsers: Count | null }> = { totalUsers: await totalUsers(ctx) };
+    const peopleAdded: Added<{ totalUsers: Count | null }> = {
+      totalUsers: await accountsTotal(ctx),
+    };
     return {
       inbox: {
         safety: { count: safety, capped: flagsCapped },
@@ -350,14 +340,7 @@ export const colleagues = query({
     for (const row of rows) {
       if (row.userId === viewer._id) continue;
       const person = await ctx.db.get(row.userId);
-      if (!person || !roleMeets(person.role, 'moderator')) continue;
-      if (
-        person.status === 'banned' ||
-        person.status === 'deleting' ||
-        person.status === 'deleted'
-      ) {
-        continue;
-      }
+      if (!person || !roleMeets(person.role, 'moderator') || isLockedOut(person)) continue;
       out.push({
         id: person._id,
         name: person.displayName.trim() || person.username,
@@ -402,7 +385,10 @@ export const systemFeed = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
     const viewer = await requireCapability(ctx, 'audit.read');
-    const limit = Math.max(1, Math.min(Math.floor(args.limit ?? 50), SYSTEM_FEED_MAX));
+    // A limit that isn't a number reads as the default, never as an index bound that matches nothing.
+    const asked =
+      args.limit !== undefined && Number.isFinite(args.limit) ? Math.floor(args.limit) : 50;
+    const limit = Math.max(1, Math.min(asked, SYSTEM_FEED_MAX));
     const rows: SystemFeedRow[] = [];
 
     if (hasCapability(viewer, 'machinery.read')) {

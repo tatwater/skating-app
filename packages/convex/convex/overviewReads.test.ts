@@ -16,10 +16,11 @@ import { metricDay } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
-import type { Id } from './_generated/dataModel';
+import type { Doc, Id } from './_generated/dataModel';
+import { flagBodyId } from './lib/openFlags';
 import { cardRows, type JobRow } from './machinery';
 import schema from './schema';
-import { emptyTally, mostReported, unpack } from './seasonReach';
+import { BODY_CAP, emptyTally, mostReported, SET_ID_CAP, unpack } from './seasonReach';
 
 const modules = import.meta.glob('./**/*.*s');
 
@@ -297,6 +298,76 @@ describe('open flags include reviewing, everywhere (the governor’s ruling)', (
     });
     const k = await mod.as.query(api.metrics.keepingUp, {});
     expect(k.keepingUp.openFlags).toEqual({ total: 2, safety: 1 });
+  });
+
+  test('a flag names the body it is about, through whatever it was filed on', async () => {
+    const t = harness();
+    const s = await seedUser(t, 's');
+    const body = await seedBody(t, 'Mascoma Lake');
+    const report = await seedReport(t, s.id, body, NOW - DAY);
+    const ids = await t.run(async (ctx) => {
+      const post = await ctx.db.insert('posts', {
+        authorId: s.id,
+        reportIds: [report],
+        photoIds: [],
+        latestSkateEndTime: NOW - DAY,
+        moderationStatus: 'visible' as const,
+        createdAt: NOW - DAY,
+        updatedAt: NOW - DAY,
+      });
+      const comment = await ctx.db.insert('comments', {
+        reportId: report,
+        authorId: s.id,
+        body: 'Thanks',
+        source: 'native' as const,
+        moderationStatus: 'visible' as const,
+        createdAt: NOW,
+      });
+      const photo = await ctx.db.insert('photos', {
+        storageId: 's',
+        thumbStorageId: 't',
+        uploaderId: s.id,
+        placeOnMap: false,
+        createdAt: NOW,
+        reportId: report,
+      });
+      const alert = await ctx.db.insert('accessAlerts', {
+        targetType: 'put_in' as const,
+        waterBodyId: body,
+        reason: 'not_plowed' as const,
+        kind: 'blocker' as const,
+        createdByUserId: s.id,
+        createdAt: NOW,
+        season: 2026,
+        status: 'active' as const,
+        confirmCount: 0,
+        denyCount: 0,
+      });
+      const loose = await ctx.db.insert('photos', {
+        storageId: 's',
+        thumbStorageId: 't',
+        uploaderId: s.id,
+        placeOnMap: false,
+        createdAt: NOW,
+      });
+      return { post, comment, photo, alert, loose };
+    });
+    const hazard = await seedHazard(t, s.id, body, NOW);
+    const where = (targetType: Doc<'contentFlags'>['targetType'], targetId: string) =>
+      t.run((ctx) => flagBodyId(ctx, { targetType, targetId }));
+
+    expect(await where('waterbody', body)).toBe(body);
+    expect(await where('report', report)).toBe(body);
+    expect(await where('post', ids.post)).toBe(body);
+    expect(await where('comment', ids.comment)).toBe(body);
+    expect(await where('photo', ids.photo)).toBe(body);
+    expect(await where('hazard', hazard)).toBe(body);
+    expect(await where('accessAlert', ids.alert)).toBe(body);
+    // A person is no place; a photo on no report, or an id from another table, names none.
+    expect(await where('user', s.id)).toBeNull();
+    expect(await where('photo', ids.loose)).toBeNull();
+    expect(await where('report', body)).toBeNull();
+    expect(await where('hazard', report)).toBeNull();
   });
 });
 
@@ -800,6 +871,20 @@ describe('the season’s reach', () => {
     expect(again.pack().capped).toContain('posts');
   });
 
+  test('no one set outgrows what Convex stores as one array, nor the bodies one object', () => {
+    // The whole tally has room; the set does not.
+    const w = unpack(emptyTally(), { ids: 100, bodies: 5, perSet: 2 });
+    for (const id of ['a', 'b', 'c']) w.addTo(w.sets.signedIn, id, 'signedIn');
+    w.contributor('d');
+    const t = w.pack();
+    expect(t.sets.signedIn).toEqual(['a', 'b']);
+    expect(t.sets.contributors).toEqual(['d']);
+    expect(t.capped).toEqual(['signedIn']);
+    // The module's own caps stay inside Convex's value limits.
+    expect(SET_ID_CAP).toBeLessThanOrEqual(8_192);
+    expect(BODY_CAP).toBeLessThanOrEqual(1_024);
+  });
+
   test('ranks by reports, then the latest report', () => {
     expect(
       mostReported({
@@ -1297,10 +1382,27 @@ describe('machinery.overviewJobs', () => {
     });
     await snapshot(t, 'flag_queue_depth', TODAY, { scalar: 0, meta: {} });
 
-    const card = await admin.as.query(api.machinery.overviewJobs, {});
+    // Nothing queued: a pump that has had nothing to do for two hours is the schedule, not a fault.
+    const idle = await admin.as.query(api.machinery.overviewJobs, {});
+    expect(idle?.jobs.find((j) => j.id === 'imagery-pump')?.state).toBe('ok');
+
+    // A cut queued an hour ago and no beat since: late.
+    await t.run((ctx) =>
+      ctx.db.insert('imageryGranules', {
+        granuleId: 'g1',
+        slot: 's2_tile_2026-11-13',
+        mission: 's2' as const,
+        season: 'winter-2026-27',
+        capturedAt: '2026-11-13T10:00:00Z',
+        status: 'queued' as const,
+        attempts: 0,
+        queuedAt: NOW - HOUR,
+      }),
+    );
+    const card = await admin.as.query(api.machinery.overviewJobs, { now: NOW });
     expect(card?.jobs.map((j) => [j.id, j.state])).toEqual([
       ['imagery-poll', 'failed'],
-      // The pump beats every three minutes; two hours of silence while imagery runs is late.
+      // The pump beats every three minutes; an hour of silence with a cut waiting is late.
       ['imagery-pump', 'late'],
       ['imagery-index', 'retried'],
       ['metrics-rollup', 'ok'],
@@ -1308,6 +1410,29 @@ describe('machinery.overviewJobs', () => {
     ]);
     expect(card?.untracked).toBeGreaterThan(0);
     expect(card?.moreAllOk).toBe(false);
+
+    // A beat that took the lease a minute ago, with the cut still in flight, is on schedule.
+    await t.run((ctx) =>
+      ctx.db.insert('imageryPump', { key: 'pump', runningUntil: 0, runStartedAt: NOW - MINUTE }),
+    );
+    const beating = await admin.as.query(api.machinery.overviewJobs, { now: NOW });
+    expect(beating?.jobs.find((j) => j.id === 'imagery-pump')?.state).toBe('ok');
+  });
+
+  test('the caller’s clock moves a job late, but only within a minute of the server’s', async () => {
+    const t = harness();
+    const admin = await seedUser(t, 'adm', 'admin');
+    await snapshot(t, 'flag_queue_depth', TODAY, { scalar: 0, meta: {} });
+    const rollup = async (now?: number) =>
+      (
+        await admin.as.query(api.machinery.overviewJobs, now === undefined ? {} : { now })
+      )?.jobs.find((j) => j.id === 'metrics-rollup')?.state;
+    // The rollup stamped `NOW`; twelve hours on is late — but a client can't claim it.
+    expect(await rollup(NOW + 13 * HOUR)).toBe('ok');
+    expect(await rollup(Number.NaN)).toBe('ok');
+    vi.setSystemTime(NOW + 13 * HOUR);
+    expect(await rollup(NOW + 13 * HOUR)).toBe('late');
+    expect(await rollup()).toBe('late');
   });
 
   test('cardRows keeps every job that needs a look, and says all ok only when it knows', () => {

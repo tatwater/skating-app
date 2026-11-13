@@ -1153,7 +1153,13 @@ async function winterSummary(
     .withIndex('by_season_body', (q) => q.eq('season', label))
     .take(SUMMARY_SERIES_CAP + 1);
   if (docs.length > SUMMARY_SERIES_CAP) return null;
-  const sentinels = new Set<string>((record.sentinels ?? []).map((s) => s.waterBodyId));
+  // A sentinel never votes on winter. The rule that set it read the roster of its own night, not the
+  // copy taken at the opening, so a summit pond added since must not count here as an ordinary lake:
+  // both rosters' sentinels are left out.
+  const roster = (await latestSettings(ctx))?.sentinels ?? [];
+  const sentinels = new Set<string>(
+    [...(record.sentinels ?? []), ...roster].map((s) => s.waterBodyId),
+  );
   const sites = docs.map((d) => ({
     siteId: d.waterBodyId as string,
     ...(sentinels.has(d.waterBodyId) ? { sentinel: true } : {}),
@@ -1179,8 +1185,13 @@ async function imagerySummary(
     .query('imageryCounts')
     .withIndex('by_season', (q) => q.eq('season', label))
     .unique();
-  // The newest frame row of any season: its creation is when the index first saw it land.
-  const newest = await ctx.db.query('imageryFrames').order('desc').first();
+  // The season's newest frame by capture: its row's creation is when the index first saw it land.
+  // Read within the season — the newest row overall may be another season's (a history fill).
+  const newest = await ctx.db
+    .query('imageryFrames')
+    .withIndex('by_season', (q) => q.eq('season', label))
+    .order('desc')
+    .first();
   const state =
     record?.imageryStartedAt === undefined
       ? ('not-started' as const)
@@ -1190,7 +1201,7 @@ async function imagerySummary(
   return {
     state,
     granules: counts === null ? 0 : counts.landed + counts.empty,
-    lastLandedAt: newest !== null && newest.season === label ? newest._creationTime : null,
+    lastLandedAt: newest?._creationTime ?? null,
   };
 }
 
@@ -1202,17 +1213,25 @@ async function firstOnIce(
 ): Promise<{ at: number; body: string } | 'none' | 'unknown'> {
   const span = seasonRecordSpan(season, now);
   if (span === null) return 'none';
-  const rows = await ctx.db
+  // Stop at the first hit rather than taking the bound whole: the read then ends there, so a report
+  // filed later in the season doesn't re-run the tiles.
+  let hit: Doc<'reports'> | null = null;
+  let scanned = 0;
+  for await (const r of ctx.db
     .query('reports')
     .withIndex('by_moderation_and_skate_end_time', (q) =>
       q
         .eq('moderationStatus', 'visible')
         .gte('skateEndTime', span.from)
         .lt('skateEndTime', span.to),
-    )
-    .take(FIRST_SKATE_SCAN);
-  const hit = rows.find((r) => r.observedFrom === 'on_ice');
-  if (hit === undefined) return rows.length >= FIRST_SKATE_SCAN ? 'unknown' : 'none';
+    )) {
+    if (r.observedFrom === 'on_ice') {
+      hit = r;
+      break;
+    }
+    if (++scanned >= FIRST_SKATE_SCAN) return 'unknown';
+  }
+  if (hit === null) return 'none';
   const body = await ctx.db.get(hit.waterBodyId);
   return { at: hit.skateEndTime, body: body?.name ?? 'A body since removed' };
 }

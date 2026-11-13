@@ -13,7 +13,7 @@
  * `metricSnapshots.date`, and its instants are the same days' UTC bounds.
  */
 
-import { metricDay, metricDayRange } from './metrics';
+import { metricDay, metricDayRange, metricDayStart } from './metrics';
 import { type Season, seasonEndMs } from './season';
 
 const DAY_MS = 86_400_000;
@@ -58,7 +58,7 @@ export function seasonRecordSpan(season: Season, now: number): { from: number; t
   const { days } = seasonRecordWindow(season, now);
   const last = days[days.length - 1];
   if (last === undefined) return null;
-  return { from: seasonRecordOpensMs(season), to: Date.parse(`${last}T00:00:00.000Z`) + DAY_MS };
+  return { from: seasonRecordOpensMs(season), to: metricDayStart(last) + DAY_MS };
 }
 
 /**

@@ -4,7 +4,7 @@
  * 366 rows of one metric.
  */
 
-import type { MetricKey } from '@skating/core';
+import type { Count, MetricKey } from '@skating/core';
 import type { Doc } from '../_generated/dataModel';
 import type { QueryCtx } from '../_generated/server';
 
@@ -17,6 +17,18 @@ export async function latestMetric(ctx: QueryCtx, metric: MetricKey): Promise<Sn
     .withIndex('by_metric_date', (q) => q.eq('metric', metric))
     .order('desc')
     .first();
+}
+
+/**
+ * Everyone with an account, from the 6-hourly `accounts_total` rollup — one point read, where a
+ * live count would read every profile. `null` until the rollup has run once; `capped` when its scan
+ * stopped short, so the number is a floor. The Overview's *N users* and Metrics' *total* both read it.
+ */
+export async function accountsTotal(ctx: QueryCtx): Promise<Count | null> {
+  const row = await latestMetric(ctx, 'accounts_total');
+  if (row?.scalar === undefined) return null;
+  const meta = row.meta as { capped?: boolean } | undefined;
+  return { count: row.scalar, capped: meta?.capped === true };
 }
 
 /**

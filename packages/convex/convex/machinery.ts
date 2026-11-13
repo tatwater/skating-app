@@ -13,10 +13,12 @@
  */
 
 import { archiveSeasonAt } from '@skating/core';
+import { v } from 'convex/values';
 import type { Doc } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
 import crons from './crons';
 import { hasCapability, requireCapability } from './lib/auth';
+import { jobRow } from './lib/imageryPump';
 import { latestMetric } from './lib/metricReads';
 
 const MINUTE = 60_000;
@@ -64,34 +66,68 @@ const IMAGERY_KINDS = [
 
 /**
  * An imagery run's state: a failure is failed, a refusal (a cut the machine host turned down, now
- * backing off) is retried, anything else ran. Its lateness counts only while imagery is running for
- * the season — paused or not started, a quiet pump is the schedule, not a fault.
+ * backing off) is retried, anything else ran. Its lateness counts only while the job owes work —
+ * `owedSince`, the instant it began to, or `null` — because the pump and the index write a run only
+ * when a beat changed something: a quiet one with nothing to do is the schedule, not a fault. Late
+ * is measured from whichever came last: the last run, the last beat that took the lease
+ * (`beganAt`), or the work arriving.
  */
 function imageryState(
   run: Doc<'imageryRuns'> | null,
   every: number,
-  running: boolean,
+  owedSince: number | null,
+  beganAt: number | null,
   now: number,
 ): JobState {
   if (run === null) return 'never';
   if (run.outcome === 'failed') return 'failed';
   if (run.outcome === 'refused') return 'retried';
-  if (!running) return 'ok';
-  return byAge(run.finishedAt ?? run.startedAt, every, now);
+  if (owedSince === null) return 'ok';
+  return byAge(Math.max(run.finishedAt ?? run.startedAt, beganAt ?? 0, owedSince), every, now);
 }
 
 /** Every job a record can tell, worst first. */
 async function trackedJobs(ctx: QueryCtx, now: number): Promise<JobRow[]> {
   const rows: JobRow[] = [];
 
+  const label = archiveSeasonAt(now);
   const season = await ctx.db
     .query('imageryIngestSeasons')
-    .withIndex('by_season', (q) => q.eq('season', archiveSeasonAt(now)))
+    .withIndex('by_season', (q) => q.eq('season', label))
     .unique();
   const imageryRunning =
     season?.imageryStartedAt !== undefined &&
     season.imageryPausedAt === undefined &&
     season.closesOn === undefined;
+
+  // What each imagery job owes while imagery runs, and since when. The poll owes a search every
+  // tick. The pump owes a beat while a cut is queued or in flight — since the oldest of them was
+  // queued. The index owes a build only once one is asked for, and nothing records when that was,
+  // so a quiet index is never called late: that waits for §5's heartbeat.
+  const waiting = async (status: 'queued' | 'spawned') =>
+    await ctx.db
+      .query('imageryGranules')
+      .withIndex('by_season_status', (q) => q.eq('season', label).eq('status', status))
+      .first();
+  let pumpOwed: number | null = null;
+  if (imageryRunning) {
+    const queuedAts = [await waiting('spawned'), await waiting('queued')].flatMap((g) =>
+      g === null ? [] : [g.queuedAt],
+    );
+    pumpOwed = queuedAts.length > 0 ? Math.min(...queuedAts) : null;
+  }
+  const owed = {
+    poll: imageryRunning ? (season?.imageryStartedAt ?? null) : null,
+    pump: pumpOwed,
+    index: null,
+  };
+  // Every beat that had work takes the job's lease, recorded or not.
+  const beganAt = {
+    poll: null,
+    pump: (await jobRow(ctx, 'pump'))?.runStartedAt ?? null,
+    index: null,
+  };
+
   for (const job of IMAGERY_KINDS) {
     const run = await ctx.db
       .query('imageryRuns')
@@ -101,7 +137,7 @@ async function trackedJobs(ctx: QueryCtx, now: number): Promise<JobRow[]> {
     rows.push({
       id: job.id,
       name: job.name,
-      state: imageryState(run, job.every, imageryRunning, now),
+      state: imageryState(run, job.every, owed[job.kind], beganAt[job.kind], now),
       at: run === null ? null : (run.finishedAt ?? run.startedAt),
     });
   }
@@ -155,18 +191,28 @@ export function cardRows(
   };
 }
 
+/** How far the caller's clock may sit from the server's: one minute, the rounding it sends. */
+const CLOCK_SLACK_MS = MINUTE;
+
 export const overviewJobs = query({
-  args: {},
-  handler: async (ctx) => {
+  /**
+   * `now` is the caller's clock, rounded to the minute. A query is cached on the rows it reads, and
+   * a job falling late is a change in the clock, not in any row — precisely the case where nothing
+   * writes — so without it a stalled job would read ok until some other row moved. Clamped to the
+   * server's clock, so a skewed client can't move a job in or out of late.
+   */
+  args: { now: v.optional(v.number()) },
+  handler: async (ctx, args) => {
     const viewer = await requireCapability(ctx, 'inbox.read');
     if (!hasCapability(viewer, 'machinery.read')) return null;
-    const now = Date.now();
-    const untracked = Math.max(
-      0,
-      Object.keys(crons.crons).filter(
-        (name) => !(TRACKED_CRONS as readonly string[]).includes(name),
-      ).length,
-    );
+    const serverNow = Date.now();
+    const now =
+      args.now === undefined || !Number.isFinite(args.now)
+        ? serverNow
+        : Math.min(Math.max(args.now, serverNow - CLOCK_SLACK_MS), serverNow + CLOCK_SLACK_MS);
+    const untracked = Object.keys(crons.crons).filter(
+      (name) => !(TRACKED_CRONS as readonly string[]).includes(name),
+    ).length;
     return { ...cardRows(await trackedJobs(ctx, now), untracked), untracked };
   },
 });

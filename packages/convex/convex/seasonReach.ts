@@ -14,10 +14,12 @@
  * written: a chart never shows a half-walked season as if it were the whole one.
  *
  * **The tally is bounded as a whole**, because it travels as a scheduled function's arguments and
- * those are stored as one document (1 MiB). All its ids together stop at {@link TOTAL_ID_CAP} and its
- * bodies at {@link BODY_CAP}; a figure that would have needed one more is named in `capped`, which
- * the reads return as `null` — a floor is never shown as the count. That is thousands of people a
- * season; past it, moving the id sets into a scratch table is the fix.
+ * those are stored as one document (1 MiB). All its ids together stop at {@link TOTAL_ID_CAP}, any one
+ * set at {@link SET_ID_CAP} (Convex refuses an array past 8,192 values) and its bodies at
+ * {@link BODY_CAP} (nor an object past 1,024 entries, and the bodies are keyed by id); a figure that
+ * would have needed one more is named in `capped`, which the reads return as `null` — a floor is
+ * never shown as the count. That is thousands of people a season; past it, moving the id sets into a
+ * scratch table is the fix.
  *
  * ## Which season
  *
@@ -52,8 +54,17 @@ const PAGE = 300;
  */
 export const TOTAL_ID_CAP = 15_000;
 
-/** The most bodies the most-reported tally carries. Past it, the ranking is capped. */
-export const BODY_CAP = 2_000;
+/**
+ * The most ids any one set carries: each set travels as one array, and Convex refuses an array past
+ * 8,192 values — the scheduled step would fail and the walk end without writing.
+ */
+export const SET_ID_CAP = 8_192;
+
+/**
+ * The most bodies the most-reported tally carries. The tally keys them by id, and Convex refuses an
+ * object past 1,024 entries. Past it, the ranking is capped.
+ */
+export const BODY_CAP = 1_000;
 
 /** How many bodies the most-reported ranking keeps. */
 export const MOST_REPORTED_ROWS = 20;
@@ -115,7 +126,11 @@ const stateOf = (report: Doc<'reports'> | null): string => report?.place?.state 
  * A page's working copy of the tally: the id arrays as sets, written back by `pack`. The caps are
  * the module's unless a test asks for smaller ones.
  */
-export function unpack(t: Tally, caps = { ids: TOTAL_ID_CAP, bodies: BODY_CAP }) {
+export function unpack(
+  t: Tally,
+  caps: { ids: number; bodies: number; perSet?: number } = { ids: TOTAL_ID_CAP, bodies: BODY_CAP },
+) {
+  const perSet = caps.perSet ?? SET_ID_CAP;
   const sets = Object.fromEntries(
     Object.entries(t.sets).map(([k, ids]) => [k, new Set(ids)]),
   ) as Record<keyof Tally['sets'], Set<string>>;
@@ -129,10 +144,15 @@ export function unpack(t: Tally, caps = { ids: TOTAL_ID_CAP, bodies: BODY_CAP })
     [...statePeople.values()].reduce((n, set) => n + set.size, 0) +
     [...bodyPeople.values()].reduce((n, set) => n + set.size, 0);
 
-  /** Add to a set while the tally has room; past it, the figure that needed the id is capped. */
+  let bodyCount = Object.keys(t.bodies).length;
+
+  /**
+   * Add to a set while the tally — and the set itself — has room; past it, the figure that needed
+   * the id is capped.
+   */
   const addTo = (set: Set<string>, id: string, name: string) => {
     if (set.has(id)) return;
-    if (total >= caps.ids) {
+    if (total >= caps.ids || set.size >= perSet) {
       capped.add(name);
       return;
     }
@@ -154,12 +174,13 @@ export function unpack(t: Tally, caps = { ids: TOTAL_ID_CAP, bodies: BODY_CAP })
   const body = (id: string) => {
     const known = t.bodies[id];
     if (known !== undefined) return known;
-    if (Object.keys(t.bodies).length >= caps.bodies) {
+    if (bodyCount >= caps.bodies) {
       capped.add('mostReported');
       return undefined;
     }
     const made = { reports: 0, photos: 0, people: [] as string[], last: 0 };
     t.bodies[id] = made;
+    bodyCount++;
     bodyPeople.set(id, new Set());
     return made;
   };

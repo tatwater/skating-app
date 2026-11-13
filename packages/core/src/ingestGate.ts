@@ -410,7 +410,9 @@ function winterNight(
   const frozen = [...lows]
     .filter(([, low]) => low <= freezeC)
     .map(([siteId, lowC]) => ({ siteId, lowC }));
-  if (lows.size === 0 || frozen.length / lows.size < winterFraction) return null;
+  // Asked as "meets the fraction", never "falls short of it": a fraction that isn't a number then
+  // meets nothing, as `winterOnOrAfter` always read it, rather than every night.
+  if (lows.size === 0 || !(frozen.length / lows.size >= winterFraction)) return null;
   return { frozen: frozen.sort(byLow), reporting: lows.size };
 }
 
