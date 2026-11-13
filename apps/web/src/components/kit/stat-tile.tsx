@@ -139,19 +139,34 @@ function StatTile({
 type StatGridProps = ComponentProps<'div'> & {
   /** Cells per row. Default 4 (the boards' 4 × 3). */
   columns?: number;
+  /**
+   * The dotted rules between cells. Default on; off is a bare strip (the Overview's season stats):
+   * no rules, the cells `space-5` apart both ways, content to content.
+   */
+  ruled?: boolean;
 };
 
 /**
  * Stat tiles on a ruled grid. Each child is wrapped in a cell whose dividers are padding: dotted
  * row rules under every row but the last, dotted column rules after every column but the last.
+ * Unruled, the cells carry no padding and the grid's own gap spaces them, so a value sits where
+ * the column starts and the strip's edges are its content's.
  */
-function StatGrid({ columns = 4, className, style, children, ...props }: StatGridProps) {
+function StatGrid({
+  columns = 4,
+  ruled = true,
+  className,
+  style,
+  children,
+  ...props
+}: StatGridProps) {
   const cells = Children.toArray(children).filter(isValidElement);
   const rows = Math.ceil(cells.length / columns);
   return (
     <div
       data-slot="stat-grid"
-      className={cn('grid', className)}
+      data-ruled={ruled ? '' : undefined}
+      className={cn('grid', !ruled && 'gap-(--space-5)', className)}
       style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, ...style }}
       {...props}
     >
@@ -163,10 +178,13 @@ function StatGrid({ columns = 4, className, style, children, ...props }: StatGri
             key={String(cell.key)}
             data-slot="stat-cell"
             className={cn(
-              'min-w-0 border-dotted border-line px-(--space-3) py-(--space-2_5)',
-              col === 0 && 'ps-0',
-              col === columns - 1 ? 'pe-0' : 'border-e-(length:--stroke-hair)',
-              row < rows - 1 && 'border-b-(length:--stroke-hair)',
+              'min-w-0',
+              ruled && [
+                'border-dotted border-line px-(--space-3) py-(--space-2_5)',
+                col === 0 && 'ps-0',
+                col === columns - 1 ? 'pe-0' : 'border-e-(length:--stroke-hair)',
+                row < rows - 1 && 'border-b-(length:--stroke-hair)',
+              ],
             )}
           >
             {cell}

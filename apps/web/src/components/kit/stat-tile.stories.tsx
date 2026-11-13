@@ -380,17 +380,63 @@ export const GridThreeWide: Story = {
   },
 };
 
+/**
+ * The Overview's season strip: no rules at all, the cells `space-5` apart, content to content, and
+ * the first value on the strip's own edge.
+ */
+export const GridUnruled: Story = {
+  render: () => (
+    <StatGrid columns={5} ruled={false} className="w-full">
+      {SEASON.slice(0, 5).map((s) => (
+        <StatTile key={s.label} {...s} />
+      ))}
+    </StatGrid>
+  ),
+  decorators: [(Story) => <div className="w-[60rem]">{Story()}</div>],
+  play: async ({ canvasElement }) => {
+    const grid = part(canvasElement, 'stat-grid');
+    await expect(grid).not.toHaveAttribute('data-ruled');
+    const cells = [...grid.querySelectorAll<HTMLElement>(':scope > [data-slot="stat-cell"]')];
+    await expect(cells).toHaveLength(5);
+    const gap = resolvePx(grid, 'var(--space-5)');
+    const box = grid.getBoundingClientRect();
+    for (const [c, cell] of cells.entries()) {
+      const style = getComputedStyle(cell);
+      // No rule on any side, and no padding: the cell is its content.
+      for (const side of ['Top', 'Right', 'Bottom', 'Left'] as const) {
+        await expect(style[`border${side}Width`]).toBe('0px');
+        await expect(style[`padding${side}`]).toBe('0px');
+      }
+      const label = part(cell, 'stat-label').getBoundingClientRect();
+      if (c === 0) {
+        await expect(Math.abs(label.left - box.left)).toBeLessThanOrEqual(JUNCTION_TOLERANCE_PX);
+      }
+      const next = cells[c + 1];
+      if (next !== undefined) {
+        const between = next.getBoundingClientRect().left - cell.getBoundingClientRect().right;
+        await expect(Math.abs(between - gap)).toBeLessThanOrEqual(JUNCTION_TOLERANCE_PX);
+      }
+    }
+  },
+};
+
 // ── Four-up ──────────────────────────────────────────────────────────────────────────────────
 
 /** A 2-wide grid with a tone and a loading tile, in all four maps. */
 export const FourUp: Story = {
   render: () => (
-    <StatGrid columns={2} className="w-full max-w-[24rem]">
-      <StatTile label="Reports" value="14" unit="in 11 posts" sub="All from shore" />
-      <StatTile label="Imagery" value="1" unit="failed" tone="bad" sub="23 queued since 9 Oct" />
-      <StatTile label="Rollovers" value="2" unit="waiting" tone="warn" sub="Asks Matt" />
-      <StatTile label="Cost" value="$75.80" loading sub="$70.00 of it invoiced" />
-    </StatGrid>
+    <div className="flex flex-col gap-(--space-8)">
+      <StatGrid columns={2} className="w-full max-w-[24rem]">
+        <StatTile label="Reports" value="14" unit="in 11 posts" sub="All from shore" />
+        <StatTile label="Imagery" value="1" unit="failed" tone="bad" sub="23 queued since 9 Oct" />
+        <StatTile label="Rollovers" value="2" unit="waiting" tone="warn" sub="Asks Matt" />
+        <StatTile label="Cost" value="$75.80" loading sub="$70.00 of it invoiced" />
+      </StatGrid>
+      <StatGrid columns={2} ruled={false} className="w-full max-w-[24rem]">
+        <StatTile label="Ice watch" value="Day 10" sub="2 of 3 sentinels" />
+        <StatTile label="Cost · this season" value="$75.80" sub="$70.00 of it invoiced" />
+      </StatGrid>
+    </div>
   ),
   parameters: { fourUp: true },
   play: async ({ canvasElement }) => {
