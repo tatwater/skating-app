@@ -32,7 +32,7 @@ import {
   type VantageCounts,
   vantageSegments,
 } from './metricsModel';
-import { ColumnHead, SpanTag, UnrecordedTile } from './metricsParts';
+import { ColumnHead, SpanTag, UnrecordedTile, useRecordBegins } from './metricsParts';
 
 /**
  * Overview › Metrics, the right column: whether people are showing up. The top stats are the last
@@ -169,6 +169,7 @@ export function PulseStrips({
 }) {
   const [active, setActive] = useState<number | null>(defaultActive);
   const column = useRef<HTMLDivElement>(null);
+  const begins = useRecordBegins();
   const n = days.length;
 
   const dayAt = (clientX: number): number | null => {
@@ -217,7 +218,8 @@ export function PulseStrips({
       )}
     >
       {PULSE_KEYS.map((key, r) => {
-        const series = pulse[key];
+        // Before the window opens, every strip says when its record begins.
+        const series = begins === null ? pulse[key] : null;
         const row = { gridRow: r + 1 };
         return (
           <div key={key} className="contents" data-slot="pulse-strip" data-key={key}>
@@ -235,7 +237,7 @@ export function PulseStrips({
                   data-slot="pulse-note"
                   className="flex h-full items-end pb-(--space-1) text-assist leading-none text-fg3"
                 >
-                  {NOT_RECORDED}
+                  {begins ?? NOT_RECORDED}
                 </span>
               ) : (
                 <Strip pulseKey={key} series={series} days={days} active={active} />
@@ -345,12 +347,14 @@ const VANTAGE_INK: Record<keyof typeof VANTAGE_LABELS, string> = {
  * How the season's reports saw the ice: one bar split by vantage, then each vantage's count. Reports
  * from before vantage was asked state none; they are drawn hollow, and only when there are some.
  */
-export function VantageSplit({ counts }: { counts: VantageCounts | null }) {
+export function VantageSplit({ counts: read }: { counts: VantageCounts | null }) {
+  const begins = useRecordBegins();
+  const counts = begins === null ? read : null;
   if (counts === null) {
     return (
       <div data-slot="vantage" data-unrecorded="" className="flex flex-col gap-(--space-2_5)">
         <i aria-hidden="true" className="block h-[1.375rem] bg-line" />
-        <span className="text-assist leading-none text-fg3">{NOT_RECORDED}</span>
+        <span className="text-assist leading-none text-fg3">{begins ?? NOT_RECORDED}</span>
       </div>
     );
   }
@@ -446,10 +450,11 @@ export function MostReported({
   rows: MostReportedRow[] | null;
   timeZone?: string;
 }) {
+  const begins = useRecordBegins();
   const table = useTable({
     features: mostFeatures,
     columns: mostColumns(timeZone),
-    data: rows ?? [],
+    data: begins === null ? (rows ?? []) : [],
     getRowId: (row) => row.bodyId,
   });
   return (
@@ -458,7 +463,7 @@ export function MostReported({
       inset
       stickyHeader={false}
       className="px-0"
-      empty={rows === null ? NOT_RECORDED : 'No reports this season'}
+      empty={begins ?? (rows === null ? NOT_RECORDED : 'No reports this season')}
     />
   );
 }

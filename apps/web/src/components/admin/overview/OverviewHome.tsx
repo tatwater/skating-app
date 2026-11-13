@@ -4,6 +4,7 @@ import {
   IceWatchTile,
   ImageryTile,
   NOT_RECORDED,
+  type SeasonPending,
   WinterTile,
 } from '@/components/admin/season/SeasonTiles';
 import type {
@@ -42,13 +43,14 @@ import { type LinkTo, OverviewLinkProvider } from './overviewLinks';
 /**
  * Each block's view model: `undefined` while its read loads (the block holds its place), `null`
  * where no read serves it yet (the block says *Not recorded yet* — the season's four, cost and
- * Machinery until their reads land).
+ * Machinery until their reads land). The season's four also take `SeasonPending` from 1 July to
+ * 30 September: the new season, empty, saying when its record begins.
  */
 export interface OverviewHomeData {
-  watch?: IceWatch | null | undefined;
-  winter?: RegionWinter | null | undefined;
-  imagery?: ImageryState | null | undefined;
-  firstSkate?: FirstSkate | null | undefined;
+  watch?: IceWatch | SeasonPending | null | undefined;
+  winter?: RegionWinter | SeasonPending | null | undefined;
+  imagery?: ImageryState | SeasonPending | null | undefined;
+  firstSkate?: FirstSkate | SeasonPending | null | undefined;
   cost?: CostData | null | undefined;
   inbox?: InboxCardData | undefined;
   corpus?: CorpusCardData | undefined;

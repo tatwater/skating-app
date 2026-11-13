@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { ChartLegend } from './ChartLegend';
 import { CoverageByState, ListedBodiesBar } from './CoverageByState';
-import { KeepingUpStats } from './KeepingUp';
+import { KeepingUpStats, ResolveHistogram } from './KeepingUp';
 import {
   BOARD_COVERAGE,
   BOARD_DAYS,
@@ -12,7 +12,7 @@ import {
   RECORDED_COVERAGE,
 } from './metricsFixtures';
 import { metricsNotRecorded } from './metricsModel';
-import { AgeValue, DayTick } from './metricsParts';
+import { AgeValue, DayTick, SeasonNotOpen } from './metricsParts';
 import { MostReported, ShowingUpStats, VantageSplit } from './ShowingUp';
 
 describe('ChartLegend', () => {
@@ -241,5 +241,25 @@ describe('the tab before its reads exist', () => {
     expect(modView.keepingUp.support).toBeNull();
     render(<KeepingUpStats data={modView.keepingUp} now={METRICS_NOW} />);
     expect(screen.queryByText('Open tickets')).toBeNull();
+  });
+});
+
+describe('the season before its window opens', () => {
+  it('says when the record begins in every season-ranged section, whatever was read', () => {
+    render(
+      <SeasonNotOpen opensOn="2027-10-01">
+        <VantageSplit counts={{ on_ice: 2, shore: 11, secondhand: 1, unstated: 0 }} />
+        <ResolveHistogram title="Flags · time to resolve" noun="Flags" buckets={[5, 2, 0, 1]} />
+      </SeasonNotOpen>,
+    );
+    expect(screen.getAllByText('Record begins 1 Oct')).toHaveLength(2);
+    expect(screen.queryByText('11')).toBeNull();
+    expect(screen.queryByText('None resolved this season')).toBeNull();
+  });
+
+  it('says nothing of it once the window is open', () => {
+    render(<VantageSplit counts={{ on_ice: 2, shore: 11, secondhand: 1, unstated: 0 }} />);
+    expect(screen.queryByText(/Record begins/)).toBeNull();
+    expect(screen.getByText('11')).toBeInTheDocument();
   });
 });

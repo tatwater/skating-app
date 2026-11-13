@@ -18,7 +18,17 @@ import {
   type StateCoverageRow,
   stateInk,
 } from './metricsModel';
-import { SpanTag } from './metricsParts';
+import { SpanTag, useRecordBegins } from './metricsParts';
+
+/** A state's row before the season's window opens: its bodies, and no season counts yet. */
+const seasonUnopened = (row: StateCoverageRow): StateCoverageRow => ({
+  ...row,
+  reports: null,
+  comments: null,
+  photos: null,
+  kudos: null,
+  contributors: null,
+});
 
 /**
  * Coverage by state, under both columns: the listed bodies as one composition bar, then a plain
@@ -141,7 +151,10 @@ export function ListedBodiesBar({ data }: { data: CoverageData }) {
 }
 
 export function CoverageByState({ data }: { data: CoverageData }) {
-  const table = useTable({ features, columns, data: data.states, getRowId: (row) => row.state });
+  const begins = useRecordBegins();
+  // Before the window opens, the season's columns aren't counted yet; the listed bodies are.
+  const states = begins === null ? data.states : data.states.map(seasonUnopened);
+  const table = useTable({ features, columns, data: states, getRowId: (row) => row.state });
   return (
     <Section title="Coverage by state" end={<SpanTag>This season</SpanTag>}>
       <div className="flex flex-col gap-(--space-4_5)">
@@ -151,7 +164,7 @@ export function CoverageByState({ data }: { data: CoverageData }) {
           inset
           stickyHeader={false}
           className="px-0"
-          empty={data.listedBodies === null ? NOT_RECORDED : 'No listed bodies'}
+          empty={data.listedBodies === null ? (begins ?? NOT_RECORDED) : 'No listed bodies'}
         />
       </div>
     </Section>

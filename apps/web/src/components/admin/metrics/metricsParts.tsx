@@ -1,4 +1,4 @@
-import type { ComponentProps, ReactNode } from 'react';
+import { type ComponentProps, createContext, type ReactNode, useContext } from 'react';
 
 import { StatTile } from '@/components/kit/stat-tile';
 import { cn } from '@/lib/utils';
@@ -54,6 +54,23 @@ export function ChartNote({ title, detail }: { title: ReactNode; detail?: ReactN
       {detail != null && <span className="text-mono-sm leading-none text-fg3">{detail}</span>}
     </div>
   );
+}
+
+const SeasonOpensContext = createContext<DayKey | null>(null);
+
+/**
+ * The season before its chart window opens (1 July to 30 September — the founder, 2026-11-13): the
+ * season-ranged sections under it draw their empty state and say when the record begins, whatever
+ * a read returned for the days before it. `opensOn` is the window's first day.
+ */
+export function SeasonNotOpen({ opensOn, children }: { opensOn: DayKey; children: ReactNode }) {
+  return <SeasonOpensContext.Provider value={opensOn}>{children}</SeasonOpensContext.Provider>;
+}
+
+/** "Record begins 1 Oct" under `SeasonNotOpen`, else `null`. */
+export function useRecordBegins(): string | null {
+  const opensOn = useContext(SeasonOpensContext);
+  return opensOn === null ? null : `Record begins ${dayLabel(opensOn)}`;
 }
 
 /** A stat no read serves yet: a dash in the dim ink, and why — never a zero. */

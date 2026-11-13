@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { CoverageByState } from './CoverageByState';
 import { KeepingUp } from './KeepingUp';
 import type { CoverageData, DayKey, KeepingUpData, ShowingUpData } from './metricsModel';
+import { SeasonNotOpen } from './metricsParts';
 import { ShowingUp } from './ShowingUp';
 
 /**
@@ -18,8 +19,16 @@ import { ShowingUp } from './ShowingUp';
  */
 
 export type OverviewMetricsProps = Omit<ComponentProps<'div'>, 'children'> & {
-  /** The season's days, oldest first; the last is today. Every per-day series aligns with it. */
+  /**
+   * The season's window, oldest first: from its opening (1 October) to today, or the whole of a
+   * past season. Every per-day series aligns with it. Empty before the window opens.
+   */
   days: readonly DayKey[];
+  /**
+   * The window's first day (`metricsWindow`). With `days` empty — the season has begun (1 July) but
+   * its window hasn't opened — every season-ranged section says when its record begins instead.
+   */
+  opensOn?: DayKey;
   /** The instant ages are measured to (the oldest open flag, the oldest ticket). */
   now: number;
   /** The zone a table's dates are read in ("Last report"). The reader's own when omitted. */
@@ -33,6 +42,7 @@ export type OverviewMetricsProps = Omit<ComponentProps<'div'>, 'children'> & {
 
 export function OverviewMetrics({
   days,
+  opensOn,
   now,
   timeZone,
   keepingUp,
@@ -42,7 +52,7 @@ export function OverviewMetrics({
   className,
   ...props
 }: OverviewMetricsProps) {
-  return (
+  const page = (
     <div
       data-slot="overview-metrics"
       className={cn('flex min-w-0 flex-col gap-(--space-5_5)', className)}
@@ -54,5 +64,10 @@ export function OverviewMetrics({
       </div>
       <CoverageByState data={coverage} />
     </div>
+  );
+  return days.length === 0 && opensOn !== undefined ? (
+    <SeasonNotOpen opensOn={opensOn}>{page}</SeasonNotOpen>
+  ) : (
+    page
   );
 }

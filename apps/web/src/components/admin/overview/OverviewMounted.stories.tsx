@@ -1,3 +1,4 @@
+import { seasonOf } from '@skating/core';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useState } from 'react';
 import { expect, waitFor, within } from 'storybook/test';
@@ -34,7 +35,16 @@ const READS = {
   feed: HOME.feed,
 };
 
-function Mounted({ initialTab, fourUp }: { initialTab: OverviewTabValue; fourUp?: boolean }) {
+function Mounted({
+  initialTab,
+  fourUp,
+  now = NOW,
+}: {
+  initialTab: OverviewTabValue;
+  fourUp?: boolean;
+  /** The page's clock; the season is the one it falls in. */
+  now?: number;
+}) {
   const [tab, setTab] = useState<OverviewTabValue>(initialTab);
   return (
     <ConsoleShell
@@ -48,16 +58,17 @@ function Mounted({ initialTab, fourUp }: { initialTab: OverviewTabValue; fourUp?
       )}
       appHref="#app"
       viewer={{ name: 'Teagan Atwater' }}
-      tape={seasonTape(NOW, 'America/New_York')}
+      tape={seasonTape(now, 'America/New_York')}
       viewerId="t"
       onSearch={() => {}}
       lamp={<OverviewLamp state="live" />}
     >
       <OverviewView
+        season={seasonOf(now)}
         tab={tab}
         onTabChange={setTab}
         reads={READS}
-        now={NOW}
+        now={now}
         live={{ state: 'live', lastCheckedAt: LAST_CHECKED_LIVE }}
         support
       />
@@ -141,4 +152,38 @@ export const MetricsFourUp: Story = {
   name: 'Metrics, four-up',
   args: { initialTab: 'metrics', fourUp: true },
   parameters: { fourUp: true },
+};
+
+/** 20 July 2027: the new season has begun (1 July) and its record hasn't (1 October). */
+const JULY = Date.UTC(2027, 6, 20, 16);
+
+/**
+ * Home in July: the season's four show the new season, empty — the watch waiting and counting from
+ * 1 October, the others saying when the record begins — never last winter's facts.
+ */
+export const HomeInJuly: Story = {
+  name: 'Home in July',
+  args: { now: JULY },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    const tile = (label: string) =>
+      must(page.getByText(label, { selector: '[data-slot="stat-label"]' }).parentElement);
+    await expect(tile('Ice watch')).toHaveTextContent('WaitingCounting nights from 1 Oct');
+    for (const label of ['Winter, region-wide', 'Imagery', 'First skated']) {
+      await expect(tile(label)).toHaveTextContent('—Record begins 1 Oct');
+    }
+    await expect(page.getByText('Winter 2027–28')).toBeVisible();
+  },
+};
+
+/** Metrics in July: every season-ranged section says when its record begins. */
+export const MetricsInJuly: Story = {
+  name: 'Metrics in July',
+  args: { now: JULY, initialTab: 'metrics' },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    // Three charts, two histograms, eight strips, vantage, most-reported and coverage.
+    await expect(page.getAllByText('Record begins 1 Oct').length).toBeGreaterThanOrEqual(14);
+    await expect(page.queryByText('None resolved this season')).toBeNull();
+  },
 };

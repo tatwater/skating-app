@@ -1,3 +1,4 @@
+import { seasonOf } from '@skating/core';
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 
@@ -33,6 +34,7 @@ export function OverviewRoute() {
   const live = useFeedLive(reads.feed);
   return (
     <OverviewView
+      season={seasonOf(now)}
       tab={overviewTabOf(search)}
       onTabChange={(next) => void navigate({ to: '/admin', search: searchForTab(next) })}
       reads={reads}

@@ -1,4 +1,12 @@
-import { HOUR_BUCKETS, metricDayRange, OBSERVED_FROM, type ObservedFrom } from '@skating/core';
+import {
+  HOUR_BUCKETS,
+  metricDay,
+  metricDayRange,
+  OBSERVED_FROM,
+  type ObservedFrom,
+  type Season,
+  seasonOf,
+} from '@skating/core';
 
 /**
  * Overview › Metrics: the shapes the tab is drawn from, and the arithmetic between a read's rows and
@@ -447,15 +455,25 @@ export function metricsNotRecorded(
 }
 
 /**
- * The Metrics season window (the founder, 2026-11-13): from the latest 1 October on or before
- * `now`'s metric day, through that day, as UTC metric day keys, oldest first. 1 October is when the
- * watch opens; the data season's 1 July reset is not the charts' window.
+ * A season's Metrics window (the founder, 2026-11-13). The season is the data season (`Season`, the
+ * year it began on 1 July — the identity flips with it); its charts run from 1 October, when the
+ * watch opens, to today or, for a past season, to its last day (30 June). From 1 July to 30
+ * September the window is empty: the new season is shown, empty, never the last one's data — a
+ * past season is reached only by choosing it. `opensOn` is the window's first day either way.
  */
-export function seasonWindowDays(now: number): DayKey[] {
+export function metricsWindow(season: Season, now: number): { opensOn: DayKey; days: DayKey[] } {
+  const opens = Date.UTC(season, 9, 1);
+  const lastDay = Date.UTC(season + 1, 5, 30);
   const today = new Date(now);
-  const year = today.getUTCMonth() >= 9 ? today.getUTCFullYear() : today.getUTCFullYear() - 1;
-  const start = Date.UTC(year, 9, 1);
   const todayStart = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
-  const count = Math.round((todayStart - start) / (24 * HOUR)) + 1;
-  return metricDayRange(now, count);
+  const end = Math.min(todayStart, lastDay);
+  const opensOn = metricDay(opens);
+  if (end < opens) return { opensOn, days: [] };
+  const count = Math.round((end - opens) / (24 * HOUR)) + 1;
+  return { opensOn, days: metricDayRange(end, count) };
+}
+
+/** The current season's window: `metricsWindow` for the season `now` falls in. */
+export function seasonWindowDays(now: number): DayKey[] {
+  return metricsWindow(seasonOf(now), now).days;
 }

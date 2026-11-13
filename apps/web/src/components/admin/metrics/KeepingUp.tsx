@@ -35,7 +35,14 @@ import {
   type SupportCategory,
   shortAge,
 } from './metricsModel';
-import { AgeValue, ChartNote, ColumnHead, DayTick, UnrecordedTile } from './metricsParts';
+import {
+  AgeValue,
+  ChartNote,
+  ColumnHead,
+  DayTick,
+  UnrecordedTile,
+  useRecordBegins,
+} from './metricsParts';
 
 /**
  * Overview › Metrics, the left column: how staff are keeping up. The top stats are the last seven
@@ -146,6 +153,7 @@ export function OldestOpenFlagChart({
   days: readonly DayKey[];
   queue: ReadonlyArray<FlagQueueDay | null>;
 }) {
+  const begins = useRecordBegins();
   const today = days[days.length - 1] ?? '';
   const rows = days.map((day, i) => {
     const q = queue[i] ?? null;
@@ -205,8 +213,8 @@ export function OldestOpenFlagChart({
           <ChartTooltip labelFormatter={(day) => dayTitle(String(day))} />
         </ComposedChart>
       </ChartContainer>
-      {noneRecorded(queue) && (
-        <ChartNote title="The flag queue lands here" detail="Not recorded yet" />
+      {(begins !== null || noneRecorded(queue)) && (
+        <ChartNote title="The flag queue lands here" detail={begins ?? NOT_RECORDED} />
       )}
     </div>
   );
@@ -256,13 +264,16 @@ export function ResolveHistogram({
   /** The tallest bar of every histogram beside this one, so side-by-side bars compare. */
   scaleMax?: number;
 }) {
-  const counts = foldResolveBuckets(buckets ?? []);
+  const begins = useRecordBegins();
+  // Before the window opens, nothing in it has been resolved: the frame and when it begins.
+  const shown = begins === null ? buckets : null;
+  const counts = foldResolveBuckets(shown ?? []);
   const total = counts.reduce((sum, n) => sum + n, 0);
   const rows = RESOLVE_BUCKETS.map((bucket, i) => ({ bucket, n: counts[i] ?? 0 }));
   const config: ChartConfig = { n: { label: noun, tone: 'muted' } };
   const ticks = countTicks(Math.max(scaleMax ?? 0, ...counts));
   return (
-    <Section title={title} {...(buckets !== null && { count: total })}>
+    <Section title={title} {...(shown !== null && { count: total })}>
       <div className="relative">
         <ChartContainer config={config} className="h-[10.625rem]">
           <BarChart
@@ -279,8 +290,8 @@ export function ResolveHistogram({
             <ChartTooltip />
           </BarChart>
         </ChartContainer>
-        {buckets === null ? (
-          <ChartNote title="Time to resolve lands here" detail={NOT_RECORDED} />
+        {shown === null ? (
+          <ChartNote title="Time to resolve lands here" detail={begins ?? NOT_RECORDED} />
         ) : (
           total === 0 && <ChartNote title="None resolved this season" />
         )}
@@ -325,6 +336,7 @@ export function OpenTicketsChart({
   days: readonly DayKey[];
   depth: ReadonlyArray<Partial<Record<SupportCategory, number>> | null>;
 }) {
+  const begins = useRecordBegins();
   const today = days[days.length - 1] ?? '';
   const rows = days.map((day, i) => {
     const d = depth[i] ?? null;
@@ -361,8 +373,8 @@ export function OpenTicketsChart({
           <ChartTooltip labelFormatter={(day) => dayTitle(String(day))} />
         </BarChart>
       </ChartContainer>
-      {noneRecorded(depth) && (
-        <ChartNote title="Open tickets land here" detail="Not recorded yet" />
+      {(begins !== null || noneRecorded(depth)) && (
+        <ChartNote title="Open tickets land here" detail={begins ?? NOT_RECORDED} />
       )}
     </div>
   );

@@ -1,7 +1,10 @@
+import type { Season } from '@skating/core';
 import { useMemo } from 'react';
 
-import { metricsNotRecorded, seasonWindowDays } from '@/components/admin/metrics/metricsModel';
+import { metricsNotRecorded, metricsWindow } from '@/components/admin/metrics/metricsModel';
 import { OverviewMetrics } from '@/components/admin/metrics/OverviewMetrics';
+import type { SeasonPending } from '@/components/admin/season/SeasonTiles';
+import { isoDay } from '@/components/admin/season/seasonFacts';
 import { ScrollArea } from '@/components/kit/scroll-area';
 
 import { ConsoleStatus } from '../shell/ConsoleShell';
@@ -39,6 +42,11 @@ export const UNREAD: Pick<
 };
 
 export type OverviewViewProps = {
+  /**
+   * The season the page shows: the one `now` falls in (it flips on 1 July) unless a season is
+   * chosen. Every season-ranged block reads from it — a chooser is wiring, not a redraw.
+   */
+  season: Season;
   tab: OverviewTabValue;
   onTabChange: (tab: OverviewTabValue) => void;
   /** Home's reads that exist (`useOverviewHome`), each `undefined` while it loads. */
@@ -55,6 +63,7 @@ export type OverviewViewProps = {
 };
 
 export function OverviewView({
+  season,
   tab,
   onTabChange,
   reads,
@@ -65,7 +74,21 @@ export function OverviewView({
   onOpenTarget,
   onRefresh,
 }: OverviewViewProps) {
-  const data: OverviewHomeData = { ...reads, ...UNREAD };
+  const span = useMemo(() => metricsWindow(season, now), [season, now]);
+  // From 1 July to 30 September the season has begun but its record hasn't: its four tiles show
+  // the new season, empty, and when its record begins — never the last season's facts.
+  const preseason: SeasonPending | null =
+    span.days.length === 0 ? { state: 'pending', opensOn: isoDay(span.opensOn) } : null;
+  const data: OverviewHomeData = {
+    ...reads,
+    ...UNREAD,
+    ...(preseason !== null && {
+      watch: preseason,
+      winter: preseason,
+      imagery: preseason,
+      firstSkate: preseason,
+    }),
+  };
   const heads = overviewHeads({
     inbox: data.inbox ? inboxTotal(data.inbox) : { count: 0, capped: false },
     refits: data.corpus?.chordRefits?.count ?? 0,
@@ -73,8 +96,7 @@ export function OverviewView({
     stalled: 0,
     failed: 0,
   });
-  const days = useMemo(() => seasonWindowDays(now), [now]);
-  const metrics = useMemo(() => metricsNotRecorded(days, { support }), [days, support]);
+  const metrics = useMemo(() => metricsNotRecorded(span.days, { support }), [span.days, support]);
 
   return (
     <div
@@ -115,7 +137,7 @@ export function OverviewView({
             panel: (
               <div data-slot="metrics-scroll" className="flex min-h-0 flex-1 flex-col">
                 <ScrollArea className="min-h-0 flex-1" gutter={false}>
-                  <OverviewMetrics days={days} now={now} {...metrics} />
+                  <OverviewMetrics days={span.days} opensOn={span.opensOn} now={now} {...metrics} />
                 </ScrollArea>
               </div>
             ),
