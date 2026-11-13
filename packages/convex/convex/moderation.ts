@@ -12,7 +12,7 @@
  * lifecycle `status` (D3) — see the hazards schema note.
  */
 
-import { disputesReview } from '@skating/core';
+import { disputesReview, POST_MAX_REPORTS } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
@@ -241,12 +241,116 @@ export async function authorRemovePost(
   });
 }
 
+/** A forward restore that would bring the Post back with none of its Reports (founder, 2026-11-13). */
+export const POST_RESTORE_NEEDS_A_CHOICE =
+  'Every report in this post was hidden or removed on its own. Choose at least one report to restore with it.';
+/** Every member is withdrawn by its author, or gone: nothing can come back, so the Post can't. */
+export const POST_UNRESTORABLE =
+  "Every report in this post was deleted by its author, so the post can't be restored.";
+/** An undo that would do the same: undo never chooses, so it points at Restore. */
+export const UNDO_LEAVES_POST_EMPTY =
+  'Undoing this would show the post with none of its reports. Restore the post instead and choose which reports come back with it.';
+
+/** The newest audit row on a Report — the last word on it. */
+function newestRowOn(ctx: QueryCtx, reportId: Id<'reports'>) {
+  return ctx.db
+    .query('moderationActions')
+    .withIndex('by_target', (q) => q.eq('targetType', 'report').eq('targetId', reportId))
+    .order('desc')
+    .first();
+}
+
+/**
+ * Withdrawn by its author: removed, and the last word on it is the author's own `author_delete`.
+ * Never restorable through a Post's restore (founder call, 2026-09-21: people control what they
+ * shared). A moderator's own later decision on it makes the last word theirs.
+ */
+function isAuthorWithdrawn(report: Doc<'reports'>, last: Doc<'moderationActions'> | null): boolean {
+  return report.moderationStatus === 'removed' && last?.action === 'author_delete';
+}
+
+/** What a Post restore would do, before it does any of it. */
+export interface PostRestorePlan {
+  /** Members the plain restore brings back: the ones the Post's own hide took down. */
+  revive: Doc<'reports'>[];
+  /** Members chosen to come back with it, validated. */
+  chosen: Doc<'reports'>[];
+  /** Down members a moderator could choose: not revived, not withdrawn by their author. */
+  choosable: Doc<'reports'>[];
+  /** Members withdrawn by their author. */
+  authorWithdrawn: Doc<'reports'>[];
+  /** How many members would be visible after the restore. */
+  visibleAfter: number;
+}
+
+/**
+ * The one decision both Post writers share (founder call, 2026-11-13): which members a restore
+ * brings back, and whether the Post would show any. Reads only — a refusal writes nothing. A
+ * chosen id that isn't a member, isn't down, or was withdrawn by its author is refused.
+ */
+export async function planPostRestore(
+  ctx: QueryCtx,
+  post: Doc<'posts'>,
+  { reviveRemoved = false, chosen = [] }: { reviveRemoved?: boolean; chosen?: Id<'reports'>[] },
+): Promise<PostRestorePlan> {
+  const members = new Set<string>(post.reportIds);
+  const chosenSet = new Set<string>(chosen);
+  if (chosenSet.size !== chosen.length) throw new ConvexError('A report was chosen twice');
+  for (const id of chosenSet) {
+    if (!members.has(id)) throw new ConvexError('A chosen report is not part of this post');
+  }
+  const plan: PostRestorePlan = {
+    revive: [],
+    chosen: [],
+    choosable: [],
+    authorWithdrawn: [],
+    visibleAfter: 0,
+  };
+  for (const id of post.reportIds) {
+    const report = await ctx.db.get(id);
+    if (!report) {
+      if (chosenSet.has(id)) throw new ConvexError('A chosen report no longer exists');
+      continue;
+    }
+    if (report.moderationStatus === 'visible') {
+      if (chosenSet.has(id)) throw new ConvexError('A chosen report is already visible');
+      plan.visibleAfter++;
+      continue;
+    }
+    const last = await newestRowOn(ctx, report._id);
+    const revivable =
+      (report.moderationStatus === 'hidden' || reviveRemoved) &&
+      last?.metadata?.cascadedFromPostId === post._id &&
+      last.action !== 'author_delete';
+    if (revivable) {
+      plan.revive.push(report);
+      plan.visibleAfter++;
+      continue;
+    }
+    if (isAuthorWithdrawn(report, last)) {
+      plan.authorWithdrawn.push(report);
+      if (chosenSet.has(id)) {
+        throw new ConvexError("A chosen report was deleted by its author and can't be restored");
+      }
+      continue;
+    }
+    plan.choosable.push(report);
+    if (chosenSet.has(id)) {
+      plan.chosen.push(report);
+      plan.visibleAfter++;
+    }
+  }
+  return plan;
+}
+
 export const setModerationStatus = mutation({
   args: {
     targetType: literals(['report', 'post', 'comment', 'hazard']),
     targetId: v.string(),
     status: literals(MODERATION_STATUSES),
     reason: v.string(),
+    /** A Post restore only: members to restore with it (founder call, 2026-11-13). */
+    withReportIds: v.optional(v.array(v.id('reports'))),
   },
   handler: async (ctx, args) => {
     const actor = await requireCapability(ctx, 'content.moderate');
@@ -278,6 +382,15 @@ export async function setContentStatus(
      * leave a visible Post with every Report in it gone.
      */
     reviveRemoved?: boolean;
+    /**
+     * Members of the Post to restore with it (founder call, 2026-11-13): a moderator's conscious
+     * override of each member's own takedown, for a Post that would otherwise come back with none
+     * of its Reports. Only on a Post restore; each must be a member that is down and not withdrawn
+     * by its author.
+     */
+    withReportIds?: Id<'reports'>[];
+    /** Set by an undo: an undo never chooses, so its refusal points at Restore instead. */
+    asUndo?: boolean;
   },
 ): Promise<Id<'reports'> | Id<'posts'> | Id<'comments'> | Id<'hazards'>> {
   {
@@ -291,6 +404,12 @@ export async function setContentStatus(
 
     const typedTarget = target as Doc<'reports'> | Doc<'posts'> | Doc<'comments'> | Doc<'hazards'>;
     const priorStatus = typedTarget.moderationStatus;
+    if (
+      args.withReportIds !== undefined &&
+      (args.targetType !== 'post' || args.status !== 'visible')
+    ) {
+      throw new ConvexError('Reports can only be chosen when restoring a post');
+    }
 
     const audit = { actorId: actor._id, reason: args.reason, now };
     // Every member a Post's verdict moved, and from what to what — on the Post's own row, so its undo
@@ -304,25 +423,33 @@ export async function setContentStatus(
       // come back, so a member a moderator hid on its own merits stays hidden. `removed` cascades
       // the same way and is not restored by a Post restore — it is the stronger verdict.
       const post = target as Doc<'posts'>;
-      await ctx.db.patch(post._id, { moderationStatus: args.status });
-      for (const reportId of post.reportIds) {
-        const report = await ctx.db.get(reportId);
-        if (!report) continue;
-        if (args.status !== 'visible') {
-          if (report.moderationStatus !== 'visible') continue;
-        } else {
-          const memberPrior = report.moderationStatus;
-          if (memberPrior !== 'hidden' && !(args.reviveRemoved && memberPrior === 'removed')) {
-            continue;
-          }
-          const last = await ctx.db
-            .query('moderationActions')
-            .withIndex('by_target', (q) => q.eq('targetType', 'report').eq('targetId', report._id))
-            .order('desc')
-            .first();
-          if (last?.metadata?.cascadedFromPostId !== post._id) continue;
+      if (args.status !== 'visible') {
+        await ctx.db.patch(post._id, { moderationStatus: args.status });
+        for (const reportId of post.reportIds) {
+          const report = await ctx.db.get(reportId);
+          if (report === null || report.moderationStatus !== 'visible') continue;
+          cascaded.push(await moveMember(ctx, post._id, report, args.status, audit));
         }
-        cascaded.push(await moveMember(ctx, post._id, report, args.status, audit));
+      } else {
+        // Decided before anything is written: a Post is never stored visible with none of its
+        // Reports visible (D186; founder call, 2026-11-13).
+        const plan = await planPostRestore(ctx, post, {
+          reviveRemoved: args.reviveRemoved === true,
+          ...(args.withReportIds !== undefined ? { chosen: args.withReportIds } : {}),
+        });
+        if (plan.visibleAfter === 0) {
+          throw new ConvexError(
+            args.asUndo === true
+              ? UNDO_LEAVES_POST_EMPTY
+              : plan.choosable.length === 0
+                ? POST_UNRESTORABLE
+                : POST_RESTORE_NEEDS_A_CHOICE,
+          );
+        }
+        await ctx.db.patch(post._id, { moderationStatus: 'visible' });
+        for (const report of [...plan.revive, ...plan.chosen]) {
+          cascaded.push(await moveMember(ctx, post._id, report, 'visible', audit));
+        }
       }
     } else {
       await ctx.db.patch(targetId, { moderationStatus: args.status });
@@ -422,21 +549,34 @@ export async function revertPostVerdict(
   const now = Date.now();
   const audit = { actorId: actor._id, reason, now };
 
-  // The Post first, so a member's change doesn't re-derive the Post's status from the old one.
-  await ctx.db.patch(post._id, { moderationStatus: priorStatus });
-  const reverted: PostCascade[] = [];
+  // Which members go back, decided before anything is written.
+  const moves: { report: Doc<'reports'>; to: ModerationStatus }[] = [];
   for (const member of cascaded) {
     const report = await ctx.db.get(member.id);
     if (!report || report.moderationStatus !== member.to) continue;
-    const last = await ctx.db
-      .query('moderationActions')
-      .withIndex('by_target', (q) => q.eq('targetType', 'report').eq('targetId', report._id))
-      .order('desc')
-      .first();
+    const last = await newestRowOn(ctx, report._id);
     if (last?.metadata?.cascadedFromPostId !== post._id || last.createdAt !== row.createdAt) {
       continue;
     }
-    reverted.push(await moveMember(ctx, post._id, report, member.from, audit));
+    moves.push({ report, to: member.from });
+  }
+  // An undo back to visible must leave a Report showing (D186; founder call, 2026-11-13). It never
+  // chooses which — that is Restore's — so it refuses and says where the choice lives.
+  if (priorStatus === 'visible') {
+    const moving = new Map(moves.map((m) => [m.report._id as string, m.to]));
+    let visibleAfter = 0;
+    for (const id of post.reportIds) {
+      const status = moving.get(id) ?? (await ctx.db.get(id))?.moderationStatus;
+      if (status === 'visible') visibleAfter++;
+    }
+    if (visibleAfter === 0) throw new ConvexError(UNDO_LEAVES_POST_EMPTY);
+  }
+
+  // The Post first, so a member's change doesn't re-derive the Post's status from the old one.
+  await ctx.db.patch(post._id, { moderationStatus: priorStatus });
+  const reverted: PostCascade[] = [];
+  for (const { report, to } of moves) {
+    reverted.push(await moveMember(ctx, post._id, report, to, audit));
   }
   await writeAudit(ctx, {
     actorId: actor._id,
@@ -717,6 +857,82 @@ export interface AccessReportGroup {
    */
   disputesReviewFrom?: number;
 }
+
+/** One member of a Post, as the restore chooser shows it. */
+export interface PostRestoreMember {
+  reportId: Id<'reports'>;
+  status: ModerationStatus;
+  waterBodyName: string | null;
+  skateEndTime: number;
+  /** Why it is down: the last word on it. Absent for a visible member. */
+  down?: { action: string; by: QueueUser | null; at: number; reason: string };
+  /**
+   * What a restore of the Post does with it: it is `visible` already; the plain restore brings it
+   * back (`returns`, the Post's own hide took it down); a moderator may `choose` it; or it was
+   * `author_deleted` and never comes back through the Post.
+   */
+  standing: 'visible' | 'returns' | 'choose' | 'author_deleted';
+}
+
+/**
+ * What the Post-restore chooser needs (founder call, 2026-11-13): each member — what it is, why it
+ * is down, and whether it can be chosen — and whether a plain restore would bring a Report back on
+ * its own (then no chooser is needed). Bounded by the
+ * Post's member cap, which the Post's write enforces.
+ */
+export const postRestoreChoices = query({
+  args: { postId: v.id('posts') },
+  handler: async (ctx, { postId }) => {
+    // `content.read`, the read half of `content.moderate`: hidden content, read in full. A query
+    // can't take a write capability (a departing moderator still reads), and the restore it feeds
+    // is gated on `content.moderate` itself.
+    await requireCapability(ctx, 'content.read');
+    const post = await ctx.db.get(postId);
+    if (!post) return null;
+    const plan = await planPostRestore(ctx, post, {});
+    const returns = new Set<string>(plan.revive.map((r) => r._id));
+    const withdrawn = new Set<string>(plan.authorWithdrawn.map((r) => r._id));
+    const members: PostRestoreMember[] = [];
+    for (const id of post.reportIds.slice(0, POST_MAX_REPORTS)) {
+      const report = await ctx.db.get(id);
+      if (!report) continue;
+      const body = await ctx.db.get(report.waterBodyId);
+      const last = report.moderationStatus === 'visible' ? null : await newestRowOn(ctx, id);
+      members.push({
+        reportId: id,
+        status: report.moderationStatus,
+        waterBodyName: body?.name ?? null,
+        skateEndTime: report.skateEndTime,
+        ...(last
+          ? {
+              down: {
+                action: last.action,
+                by: await loadQueueUser(ctx, last.actorId),
+                at: last.createdAt,
+                reason: last.reason,
+              },
+            }
+          : {}),
+        standing:
+          report.moderationStatus === 'visible'
+            ? 'visible'
+            : returns.has(id)
+              ? 'returns'
+              : withdrawn.has(id)
+                ? 'author_deleted'
+                : 'choose',
+      });
+    }
+    return {
+      postStatus: post.moderationStatus,
+      /** A plain restore shows the Post with at least one Report: no choice is needed. */
+      plainRestoreBringsBack: plan.visibleAfter > 0,
+      /** Something can bring the Post back — the plain restore, or a choice. */
+      restorable: plan.visibleAfter > 0 || plan.choosable.length > 0,
+      members,
+    };
+  },
+});
 
 /**
  * The moderator flag queue (D37/D3). Open + reviewing flags off `by_status`, oldest-first (a queue

@@ -466,19 +466,24 @@ describe('undo: content (D226)', () => {
     });
   });
 
-  test("a moderator's own restore of a removed Post still leaves its removed members removed", async () => {
+  test("a moderator's own restore of a removed Post is refused rather than leave it empty", async () => {
+    // A Post is never stored visible with none of its Reports visible (founder call, 2026-11-13):
+    // a removal is the stronger verdict, so the restore brings no member back on its own, and is
+    // refused until the moderator chooses one.
     const t = convexTest(schema, modules);
     const author = await seedUser(t, 'a');
     const mod = await seedUser(t, 'mod', 'moderator');
     const { postId, reportIds } = await seedPost(t, author.id, 1);
-    for (const status of ['removed', 'visible'] as const) {
-      await mod.as.mutation(api.moderation.setModerationStatus, {
+    const set = (status: 'removed' | 'visible') =>
+      mod.as.mutation(api.moderation.setModerationStatus, {
         targetType: 'post',
         targetId: postId,
         status,
         reason: status === 'removed' ? 'doxxing' : 'the photo is gone',
       });
-    }
+    await set('removed');
+    await expect(set('visible')).rejects.toThrow(/Choose at least one report/);
+    expect(await statusOf(t, postId)).toBe('removed');
     expect(await statusOf(t, firstOf(reportIds))).toBe('removed');
   });
 
