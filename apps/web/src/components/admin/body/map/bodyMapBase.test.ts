@@ -10,7 +10,12 @@ describe('bodyMapBase', () => {
     const scene = bodyMapBase({
       ...MASCOMA_BASE_INPUT,
       bays: [
-        { ...MASCOMA_BASE_INPUT.bays[0]!, mouth: { a: { lat: 1, lng: 2 }, b: { lat: 3, lng: 4 } } },
+        {
+          id: 'bay-north',
+          name: 'Mascoma North',
+          polygon: MASCOMA_NORTH,
+          mouth: { a: { lat: 1, lng: 2 }, b: { lat: 3, lng: 4 } },
+        },
       ],
       samplePoints: [{ lat: 43.62, lng: -72.15 }],
     });
@@ -103,7 +108,7 @@ describe('basinLabel', () => {
       const t = (Math.PI * i) / 20;
       ring.push([0.8 * Math.cos(t), 0.8 * Math.sin(t)]);
     }
-    ring.push(ring[0]!);
+    ring.push([1, 0]);
     const { at } = basinLabel({ type: 'Polygon', coordinates: [ring] });
     const r = Math.hypot(at[0], at[1]);
     expect(r).toBeGreaterThanOrEqual(0.8 - 1e-6);

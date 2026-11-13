@@ -232,7 +232,11 @@ describe('asks and history', () => {
       who: 'Teagan',
       what: 'Ruled on public access',
     });
-    expect(bodyHistory([{ ...MASCOMA_HISTORY[0]!, actor: null }])[0]?.who).toBeNull();
+    expect(
+      bodyHistory([
+        { id: 'x', action: 'set_standing', targetType: 'waterbody', createdAt: 0, actor: null },
+      ])[0]?.who,
+    ).toBeNull();
     expect(firstName('  Matt  Steinberg ')).toBe('Matt');
   });
 });

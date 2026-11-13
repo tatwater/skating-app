@@ -106,6 +106,7 @@ vi.mock('@/lib/mapCanvas', () => ({
     const live = shell.live;
     const map = shell.map;
     // A fresh identity per readiness, as the real accessor has.
+    // biome-ignore lint/correctness/useExhaustiveDependencies: the fake shell's readiness is read per render, as the real hook's state is.
     const liveMap = useMemo(() => () => (live ? map : null), [live, map]);
     return { containerRef: { current: null }, mapRef: { current: map }, loaded: live, liveMap };
   },
