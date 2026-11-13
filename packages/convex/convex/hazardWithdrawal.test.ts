@@ -13,6 +13,7 @@ import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { HAZARD_WITHDRAW_REFUSALS } from './hazardWithdrawal';
 import { AUTHOR_DELETED_RESTORE } from './lib/authorDeletion';
+import { MAX_BODY_CLUSTERS } from './lib/recurrence';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -226,6 +227,57 @@ describe('withdrawing a hazard', () => {
     );
     await t.run((ctx) => ctx.db.patch(hazardId, { promotedToFeatureId: featureId }));
     await expect(withdraw()).rejects.toThrow(literally(HAZARD_WITHDRAW_REFUSALS.feature));
+  });
+
+  test('on a lake with more patterns than are read, it stays: an unread pattern may hold it', async () => {
+    const { t, author, hazardId, waterBodyId, withdraw } = await setup();
+    const elsewhere = await t.run((ctx) =>
+      ctx.db.insert('hazards', {
+        waterBodyId,
+        type: 'open_water' as const,
+        geometryKind: 'point_radius' as const,
+        geometry: { type: 'Point' as const, coordinates: [0.5, 0.5] },
+        radiusMeters: 30,
+        bbox: { minLat: 0.4, minLng: 0.4, maxLat: 0.6, maxLng: 0.6 },
+        createdByUserId: author.id,
+        photoIds: [],
+        status: 'active' as const,
+        moderationStatus: 'visible' as const,
+        firstReportedAt: T0,
+        lastConfirmedAt: T0,
+        confirmCount: 0,
+        goneCount: 0,
+        createdAt: T0,
+      }),
+    );
+    // More patterns than are read, none of the read ones naming this pin: whether an unread one does
+    // is unknown, and an unknown is never "not joined".
+    await t.run(async (ctx) => {
+      for (let i = 0; i <= MAX_BODY_CLUSTERS; i++) {
+        const member = elsewhere;
+        await ctx.db.insert('hazardRecurrence', {
+          waterBodyId,
+          family: 'ridge' as const,
+          geometryKind: 'point_radius' as const,
+          geometry: { type: 'Point' as const, coordinates: [0.5, 0.5] },
+          radiusMeters: 30,
+          bbox: { minLat: 0.4, minLng: 0.4, maxLat: 0.6, maxLng: 0.6 },
+          memberHazardIds: [member],
+          representativeHazardId: member,
+          seasonsObserved: [2025, 2026],
+          windowSeasons: 4,
+          distinctAuthorCount: 2,
+          firstReportedDayOfSeasonP25: 40,
+          firstReportedDayOfSeasonP75: 60,
+          priority: 1,
+          publiclyVisible: false,
+          computedAt: T0,
+          computedForSeason: 2026,
+        });
+      }
+    });
+    await expect(withdraw()).rejects.toThrow(literally(HAZARD_WITHDRAW_REFUSALS.unknown));
+    expect((await t.run((ctx) => ctx.db.get(hazardId)))?.authorDeletedAt).toBeUndefined();
   });
 
   test('is final: no restore brings it back, and a verdict on it holds it from erasure', async () => {

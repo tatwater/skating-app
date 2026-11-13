@@ -48,7 +48,7 @@ import {
 } from './lib/eraseClock';
 import { deletePhotoAndBlobs } from './lib/photoOrphans';
 import { postSearchText } from './lib/postSync';
-import { ROW_MAX, ReadBudget, type RowKind } from './lib/readBudget';
+import { ReadBudget, ROW_MAX, type RowKind } from './lib/readBudget';
 import { literals } from './lib/validators';
 
 export { ROW_MAX } from './lib/readBudget';
@@ -404,53 +404,63 @@ export const settlePhotos = internalMutation({
     uploaderId: v.id('profiles'),
     photoIds: v.array(v.id('photos')),
     phase: v.optional(literals(['reports', 'hazards'] as const)),
+    /** The Reports' page cursor. */
     cursor: v.optional(v.string()),
+    /** The creation time of the last hazard read: the hazards' read resumes after it. */
+    after: v.optional(v.number()),
     /** Test seam: rows per page, clamped to what the page can afford. */
     pageSize: v.optional(v.number()),
   },
-  handler: async (ctx, { uploaderId, photoIds, phase = 'reports', cursor, pageSize }) => {
+  handler: async (ctx, { uploaderId, photoIds, phase = 'reports', cursor, after, pageSize }) => {
     const reads = new ReadBudget();
     const cap = pageSize ?? Number.POSITIVE_INFINITY;
-    const page =
-      phase === 'reports'
-        ? await reads.page('report', reads.rows('report', cap, SETTLE_ONE), (numItems) =>
-            ctx.db
-              .query('reports')
-              .withIndex('by_author', (q) => q.eq('authorId', uploaderId))
-              .paginate({ cursor: cursor ?? null, numItems }),
-          )
-        : // Creation order, which no write moves: a hazard refiled to another lake would move under
-          // `by_author_and_water_body` and could slip behind the cursor unread, and a new one lands
-          // after it — where a later page from the end cursor reads it.
-          await reads.page('hazard', reads.rows('hazard', cap, SETTLE_ONE), (numItems) =>
-            ctx.db
-              .query('hazards')
-              .withIndex('by_author', (q) => q.eq('createdByUserId', uploaderId))
-              .paginate({ cursor: cursor ?? null, numItems }),
-          );
-    const used = new Set<string>(
-      (page.page as (Doc<'reports'> | Doc<'hazards'>)[]).flatMap((row) => row.photoIds),
-    );
-    const remaining = photoIds.filter((id) => !used.has(id));
-    if (remaining.length === 0) return { settled: 0, more: false };
-    const carryOn = (rest: Id<'photos'>[], next: 'reports' | 'hazards', at?: string) =>
+    const carryOn = (
+      rest: Id<'photos'>[],
+      next: { phase: 'reports'; cursor?: string } | { phase: 'hazards'; after?: number },
+    ) =>
       ctx.scheduler.runAfter(0, internal.erasure.settlePhotos, {
         uploaderId,
         photoIds: rest,
-        phase: next,
-        ...(at !== undefined ? { cursor: at } : {}),
+        ...next,
         ...(pageSize !== undefined ? { pageSize } : {}),
       });
     if (phase === 'reports') {
+      const page = await reads.page('report', reads.rows('report', cap), (numItems) =>
+        ctx.db
+          .query('reports')
+          .withIndex('by_author', (q) => q.eq('authorId', uploaderId))
+          .paginate({ cursor: cursor ?? null, numItems }),
+      );
+      const used = new Set<string>(page.page.flatMap((row) => row.photoIds));
+      const remaining = photoIds.filter((id) => !used.has(id));
+      if (remaining.length === 0) return { settled: 0, more: false };
       await carryOn(
         remaining,
-        page.isDone ? 'hazards' : 'reports',
-        page.isDone ? undefined : page.continueCursor,
+        page.isDone ? { phase: 'hazards' } : { phase: 'reports', cursor: page.continueCursor },
       );
       return { settled: 0, more: true };
     }
-    if (!page.isDone) {
-      await carryOn(remaining, 'hazards', page.continueCursor);
+    // Creation order, which no write moves (a hazard refiled to another lake would move under
+    // `by_author_and_water_body` and could slip behind a cursor unread), resumed after the last one
+    // read — creation times in a table are strictly increasing — so a hazard filed since is read too.
+    const n = Math.max(1, reads.rows('hazard', cap, SETTLE_ONE));
+    const hazards = await reads.take('hazard', n, (k) =>
+      ctx.db
+        .query('hazards')
+        .withIndex('by_author', (q) =>
+          after === undefined
+            ? q.eq('createdByUserId', uploaderId)
+            : q.eq('createdByUserId', uploaderId).gt('_creationTime', after),
+        )
+        .take(k),
+    );
+    const used = new Set<string>(hazards.flatMap((row) => row.photoIds));
+    const remaining = photoIds.filter((id) => !used.has(id));
+    if (remaining.length === 0) return { settled: 0, more: false };
+    const readTo = hazards.at(-1)?._creationTime ?? after;
+    const position = readTo !== undefined ? { after: readTo } : {};
+    if (hazards.length === n) {
+      await carryOn(remaining, { phase: 'hazards', ...position });
       return { settled: 0, more: true };
     }
     // This transaction read to the end of their hazards: what is left, nothing of theirs uses but a
@@ -485,7 +495,7 @@ export const settlePhotos = internalMutation({
       });
     }
     const rest = remaining.slice(done);
-    if (rest.length > 0) await carryOn(rest, 'hazards', page.continueCursor);
+    if (rest.length > 0) await carryOn(rest, { phase: 'hazards', ...position });
     return { settled, more: rest.length > 0 };
   },
 });

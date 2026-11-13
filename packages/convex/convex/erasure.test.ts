@@ -9,7 +9,8 @@ import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
-import { ROW_MAX } from './erasure';
+import { ERASED_KINDS, ITEM_NEED, ROW_MAX } from './erasure';
+import { TX_BUDGET } from './lib/readBudget';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -1037,11 +1038,142 @@ describe('a pass is sized by what its rows can weigh', () => {
     expect(bundle.contentRevisions).toEqual([]);
   });
 
-  test("every row's worst case is under what one pass may read", () => {
+  test("every row's worst case is under what one pass may read, and every item fits a fresh pass", () => {
     for (const weight of Object.values(ROW_MAX)) expect(weight * 4).toBeLessThan(READ_LIMIT);
+    // Progress: the sweep starts an item only when the budget covers it, and a fresh one always does.
+    for (const kind of ERASED_KINDS) expect(ITEM_NEED[kind]).toBeLessThanOrEqual(TX_BUDGET);
+    expect(TX_BUDGET).toBeLessThan(READ_LIMIT);
     // A capped field sizes its row from the cap, not the document limit.
     expect(ROW_MAX.postRevision).toBeLessThan(ROW_MAX.reportRevision);
     expect(ROW_MAX.comment).toBeLessThan(64 * 1024);
+  });
+});
+
+/** Near the document limit: what an uncapped field can weigh. */
+const HEAVY = 'h'.repeat(1000 * 1024);
+
+describe('every read fits a transaction, at the heaviest rows Convex allows', () => {
+  /** A photo of the author's with a caption near the document limit, each written on its own. */
+  async function heavyPhoto(t: T, uploaderId: Id<'profiles'>, i: number) {
+    return t.run(async (ctx) =>
+      ctx.db.insert('photos', {
+        storageId: await ctx.storage.store(new Blob([`full ${i}`])),
+        thumbStorageId: await ctx.storage.store(new Blob([`thumb ${i}`])),
+        uploaderId,
+        caption: `${i} ${HEAVY}`,
+        placeOnMap: false,
+        createdAt: Date.now(),
+      }),
+    );
+  }
+
+  test('photo settlement checks and deletes a page at a time, never all at once (Greptile #110)', async () => {
+    const { t, author, waterBodyId } = await setup();
+    const reportId = (await seedPost(t, author.id, waterBodyId, 1)).reportIds[0] as Id<'reports'>;
+    const photoIds: Id<'photos'>[] = [];
+    for (let i = 0; i < 20; i++) photoIds.push(await heavyPhoto(t, author.id, i));
+    await t.run((ctx) => ctx.db.patch(reportId, { photoIds }));
+    // The uploader's hazards are read to their end in this call, so it goes straight to the deletes —
+    // which must stop where its budget does.
+    await t.run((ctx) => ctx.db.delete(reportId));
+    const first = await t.mutation(internal.erasure.settlePhotos, {
+      uploaderId: author.id,
+      photoIds,
+      phase: 'hazards',
+    });
+    expect(first.more).toBe(true);
+    expect(first.settled).toBeGreaterThan(0);
+    expect(first.settled).toBeLessThan(photoIds.length);
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    for (const id of photoIds) expect(await get(t, id)).toBeNull();
+  });
+
+  test('a hazard filed while a settlement is under way keeps the photo it shows', async () => {
+    const { t, author, waterBodyId } = await setup();
+    const photoIds: Id<'photos'>[] = [];
+    for (let i = 0; i < 12; i++) photoIds.push(await heavyPhoto(t, author.id, i));
+    await t.mutation(internal.erasure.settlePhotos, {
+      uploaderId: author.id,
+      photoIds,
+      phase: 'hazards',
+    });
+    // Some went in the first pass; the last one is still waiting, and a hazard takes it now.
+    const last = photoIds[photoIds.length - 1] as Id<'photos'>;
+    expect(await get(t, last)).not.toBeNull();
+    const hazardId = await seedHazard(t, author.id, waterBodyId);
+    await t.run((ctx) => ctx.db.patch(hazardId, { photoIds: [last] }));
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await get(t, last)).toMatchObject({ uploaderId: author.id });
+    expect((await get(t, last))?.erasedAt).toBeUndefined();
+    expect(await get(t, photoIds[0] as string)).toBeNull();
+  });
+
+  /** A Post of ten Reports, each with notes near the document limit, every one withdrawn and due. */
+  async function heavyPost(t: T, authorId: Id<'profiles'>, waterBodyId: Id<'waterBodies'>) {
+    const { postId, reportIds } = await seedPost(t, authorId, waterBodyId, 10);
+    for (const id of reportIds) {
+      await t.run((ctx) =>
+        ctx.db.patch(id, {
+          notes: HEAVY,
+          moderationStatus: 'removed',
+          authorDeletedAt: T0,
+          eraseAt: T0 + WITHDRAWN_ERASE_MS,
+        }),
+      );
+    }
+    await t.run((ctx) =>
+      ctx.db.patch(postId, { moderationStatus: 'removed', authorDeletedAt: T0 }),
+    );
+    return { postId, reportIds };
+  }
+
+  test('a Report of a Post whose ten members are as heavy as they can be is erased, and the Post after', async () => {
+    const { t, author, waterBodyId } = await setup();
+    const { postId, reportIds } = await heavyPost(t, author.id, waterBodyId);
+    advance(31 * DAY);
+    await sweep(t);
+    for (const id of reportIds) expect(await get(t, id)).toBeNull();
+    expect(await get(t, postId)).toBeNull();
+    expect(await erasedCount(t, 'report')).toBe(10);
+    expect(await erasedCount(t, 'post')).toBe(1);
+  });
+
+  test("a flag on such a Post holds every member, the members' clocks a few at a time", async () => {
+    const { t, author, other, waterBodyId } = await setup();
+    const { postId, reportIds } = await heavyPost(t, author.id, waterBodyId);
+    await other.as.mutation(api.contentFlags.flag, {
+      targetType: 'post',
+      targetId: postId,
+      reason: 'harassment',
+      note: HEAVY.slice(0, 200 * 1024),
+    });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    for (const id of reportIds) expect((await get(t, id))?.eraseAt).toBeUndefined();
+    advance(31 * DAY);
+    await sweep(t);
+    for (const id of reportIds) expect(await get(t, id)).not.toBeNull();
+  });
+
+  test('the clocks backfill gives heavy rows their clocks a page at a time', async () => {
+    const { t, author, waterBodyId } = await setup();
+    const reportIds: Id<'reports'>[] = [];
+    for (let i = 0; i < 12; i++) {
+      const id = (await seedPost(t, author.id, waterBodyId, 1)).reportIds[0] as Id<'reports'>;
+      await t.run(async (ctx) => {
+        const report = await ctx.db.get(id);
+        if (report?.postId) await ctx.db.delete(report.postId);
+        await ctx.db.patch(id, {
+          notes: HEAVY,
+          postId: undefined,
+          moderationStatus: 'removed',
+          authorDeletedAt: T0,
+        });
+      });
+      reportIds.push(id);
+    }
+    await t.mutation(internal.erasure.backfillClocks, { kind: 'report' });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    for (const id of reportIds) expect((await get(t, id))?.eraseAt).toBe(T0 + WITHDRAWN_ERASE_MS);
   });
 });
 
