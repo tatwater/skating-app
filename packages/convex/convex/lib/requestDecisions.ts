@@ -23,6 +23,7 @@ import { ConvexError, v } from 'convex/values';
 import { internal } from '../_generated/api';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
+import { writeAudit } from './audit';
 import { liveLandmarksForBody } from './landmarkRows';
 import { literals } from './validators';
 
@@ -194,7 +195,7 @@ export async function closeRow(
     ...(admittedWaterBodyId ? { admittedWaterBodyId } : {}),
     ...(landmarkId ? { landmarkId } : {}),
   });
-  await ctx.db.insert('moderationActions', {
+  await writeAudit(ctx, {
     actorId,
     action: status === 'approved' ? 'approve_request' : 'decline_request',
     targetType: 'waterBodyRequest',

@@ -47,7 +47,7 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
-import { requireContributorRole, requireRole } from './lib/auth';
+import { requireCapability } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { busyUntil, setBusyUntil } from './lib/dailyThrottle';
 import { clearBackoff } from './lib/imageryPump';
@@ -438,7 +438,7 @@ const DEFAULTS_IN_CODE = {
 export const overview = query({
   args: {},
   handler: async (ctx) => {
-    await requireRole(ctx, 'admin');
+    await requireCapability(ctx, 'season.read');
     const versions = await ctx.db
       .query('seasonWatchSettings')
       .withIndex('by_version')
@@ -496,7 +496,7 @@ export const previewSites = query({
     sampleSize: v.number(),
   },
   handler: async (ctx, args) => {
-    await requireRole(ctx, 'admin');
+    await requireCapability(ctx, 'season.read');
     const size = args.sampleSize;
     if (!Number.isInteger(size) || size < 1 || size > MAX_SAMPLE_SITES) return null;
     if (args.sentinels.length > MAX_ROSTER_SITES || args.pinned.length > MAX_ROSTER_SITES)
@@ -514,7 +514,7 @@ export const series = query({
   // cached on the rows it reads, and the July turnover changes none of them.
   args: { current: v.string() },
   handler: async (ctx, { current }) => {
-    await requireRole(ctx, 'admin');
+    await requireCapability(ctx, 'season.read');
     const docs = await ctx.db.query('seasonWatchSeries').take(2_000);
     return docs.map((d) => ({
       season: d.season,
@@ -542,7 +542,7 @@ export const saveSettings = mutation({
     note: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const admin = await requireContributorRole(ctx, 'admin');
+    const admin = await requireCapability(ctx, 'season.settings');
     const errors = validateSeasonWatchSettings(args.settings);
     if (new Set(args.sentinels).size !== args.sentinels.length)
       errors.push('A sentinel is listed twice.');
@@ -601,7 +601,7 @@ const RESET_CONFIRMATION = 'reset';
 export const resetSeason = mutation({
   args: { season: v.string(), confirm: v.string() },
   handler: async (ctx, { season, confirm }) => {
-    const admin = await requireContributorRole(ctx, 'admin');
+    const admin = await requireCapability(ctx, 'season.settings');
     if (confirm.trim().toLowerCase() !== RESET_CONFIRMATION) {
       throw new ConvexError(`Type "${RESET_CONFIRMATION}" to confirm.`);
     }
@@ -637,7 +637,7 @@ async function seasonRow(ctx: MutationCtx, season: string) {
 export const startImagery = mutation({
   args: { season: v.string() },
   handler: async (ctx, { season }) => {
-    const admin = await requireContributorRole(ctx, 'admin');
+    const admin = await requireCapability(ctx, 'machinery.imagery');
     const row = await seasonRow(ctx, season);
     if (row.closesOn !== undefined) throw new ConvexError(`The ${season} watch has ended.`);
     await ctx.db.patch(row._id, {
@@ -655,7 +655,7 @@ export const startImagery = mutation({
 export const pauseImagery = mutation({
   args: { season: v.string() },
   handler: async (ctx, { season }) => {
-    await requireContributorRole(ctx, 'admin');
+    await requireCapability(ctx, 'machinery.imagery');
     const row = await seasonRow(ctx, season);
     await ctx.db.patch(row._id, { imageryPausedAt: Date.now() });
     return null;
@@ -672,7 +672,7 @@ export const addFieldDate = mutation({
     note: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const admin = await requireContributorRole(ctx, 'admin');
+    const admin = await requireCapability(ctx, 'season.settings');
     try {
       seasonStartYear(args.season);
     } catch {
@@ -711,7 +711,7 @@ export const addFieldDate = mutation({
 export const removeFieldDate = mutation({
   args: { id: v.id('seasonFieldDates') },
   handler: async (ctx, { id }) => {
-    await requireContributorRole(ctx, 'admin');
+    await requireCapability(ctx, 'season.settings');
     await ctx.db.delete(id);
     return null;
   },
@@ -721,7 +721,7 @@ export const removeFieldDate = mutation({
 export const requestHistoryFill = mutation({
   args: {},
   handler: async (ctx) => {
-    await requireContributorRole(ctx, 'admin');
+    await requireCapability(ctx, 'season.settings');
     // A fill from nothing is ~6,000 weighted Open-Meteo calls spread over a day and a half; a click
     // during one is told when it ends (a save during one books a re-plan instead).
     const busy = await busyUntil(ctx, FILL_KEY);

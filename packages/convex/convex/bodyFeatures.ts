@@ -16,7 +16,8 @@ import { type HazardShape, hazardBbox, isPubliclyVisible, isValidHazardShape } f
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, query } from './_generated/server';
-import { requireContributorRole, requireRole } from './lib/auth';
+import { writeAudit } from './lib/audit';
+import { requireCapability } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { BODY_FEATURE_TYPES } from './lib/enums';
 import { HAZARD_GEOMETRY_KINDS } from './lib/hazardValidators';
@@ -51,12 +52,12 @@ export const listForBody = query({
 
 /**
  * Operator: recent active body features across all bodies (D37/D53), each with its water-body name, for
- * the `/admin/features` management page. `requireRole('moderator')`; bounded (never scans the corpus).
+ * the `/admin/features` management page. `requireCapability('corpus.read')`; bounded (never scans the corpus).
  */
 export const listRecent = query({
   args: {},
   handler: async (ctx) => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'corpus.read');
     const features = await ctx.db.query('bodyFeatures').order('desc').take(100);
     const active = features.filter((f) => f.active);
     return Promise.all(
@@ -91,7 +92,7 @@ export const create = mutation({
     reason: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'corpus.preIce');
     if (args.reason.trim().length === 0) throw new ConvexError('A reason is required');
     const body = await resolveSurvivor(ctx, args.waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
@@ -142,7 +143,7 @@ export const promote = mutation({
     reason: v.string(),
   },
   handler: async (ctx, { hazardId, type, note, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'corpus.preIce');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     const hazard = await ctx.db.get(hazardId);
     if (!hazard) throw new ConvexError('Hazard not found');
@@ -184,55 +185,67 @@ export const promote = mutation({
 export const demote = mutation({
   args: { bodyFeatureId: v.id('bodyFeatures'), reason: v.string() },
   handler: async (ctx, { bodyFeatureId, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
-    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
-    const feature = await ctx.db.get(bodyFeatureId);
-    if (!feature) throw new ConvexError('Body feature not found');
-
-    await ctx.db.patch(bodyFeatureId, { active: false });
-    if (feature.promotedFromHazardId) {
-      const source = await ctx.db.get(feature.promotedFromHazardId);
-      // Only clear the backlink if this feature is still the one it points at — a hazard promoted,
-      // demoted, then re-promoted elsewhere must not have the stale demotion clear the new link.
-      if (source?.promotedToFeatureId === bodyFeatureId) {
-        await ctx.db.patch(feature.promotedFromHazardId, { promotedToFeatureId: undefined });
-      }
-    }
-    // **A cluster promotion set the backlink on every member, so a demotion has to clear every one**
-    // (A05c / §8.2). Clearing only `promotedFromHazardId` would leave the rest of the cluster pointing
-    // at a feature nobody can see any more — a provenance line in the drawer naming a standing
-    // statement about the lake that has been withdrawn, which is worse than no line at all.
-    //
-    // Found by walking back from the promotion rather than by an index on the field: a body's clusters
-    // are a handful of rows. Bounded anyway, at the shared ceiling — "a handful" is a fact about
-    // today's corpus, and this phase has now twice been wrong about which of those stay true (§20).
-    const clusters = await ctx.db
-      .query('hazardRecurrence')
-      .withIndex('by_water_body', (q) => q.eq('waterBodyId', feature.waterBodyId))
-      .take(MAX_BODY_CLUSTERS);
-    for (const cluster of clusters) {
-      if (cluster.promotedToFeatureId !== bodyFeatureId) continue;
-      for (const memberId of cluster.memberHazardIds) {
-        const member = await ctx.db.get(memberId);
-        if (member?.promotedToFeatureId !== bodyFeatureId) continue;
-        await ctx.db.patch(memberId, { promotedToFeatureId: undefined });
-      }
-      // The cluster returns to the suggestion queue — the promotion round-trips, and an operator who
-      // demoted by mistake finds the pattern where they left it rather than having to wait for July.
-      await ctx.db.patch(cluster._id, {
-        promotedToFeatureId: undefined,
-        publiclyVisible: isPubliclyVisible({
-          family: cluster.family,
-          seasonsObserved: cluster.seasonsObserved,
-          ...(cluster.suppressedAt !== undefined ? { suppressedAt: cluster.suppressedAt } : {}),
-        }),
-      });
-    }
-    await audit(ctx, actor._id, 'demote_body_feature', bodyFeatureId, reason, {
-      priorActive: feature.active,
-    });
+    const actor = await requireCapability(ctx, 'corpus.preIce');
+    await demoteImpl(ctx, actor, { bodyFeatureId, reason });
   },
 });
+
+/**
+ * `demote`'s body — also what undoing a promotion runs (D226), so the undo clears the source hazard's
+ * backlink and sends a promoted cluster back to the recurrence queue exactly as a demote does.
+ */
+export async function demoteImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  { bodyFeatureId, reason }: { bodyFeatureId: Id<'bodyFeatures'>; reason: string },
+): Promise<void> {
+  if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+  const feature = await ctx.db.get(bodyFeatureId);
+  if (!feature) throw new ConvexError('Body feature not found');
+
+  await ctx.db.patch(bodyFeatureId, { active: false });
+  if (feature.promotedFromHazardId) {
+    const source = await ctx.db.get(feature.promotedFromHazardId);
+    // Only clear the backlink if this feature is still the one it points at — a hazard promoted,
+    // demoted, then re-promoted elsewhere must not have the stale demotion clear the new link.
+    if (source?.promotedToFeatureId === bodyFeatureId) {
+      await ctx.db.patch(feature.promotedFromHazardId, { promotedToFeatureId: undefined });
+    }
+  }
+  // **A cluster promotion set the backlink on every member, so a demotion has to clear every one**
+  // (A05c / §8.2). Clearing only `promotedFromHazardId` would leave the rest of the cluster pointing
+  // at a feature nobody can see any more — a provenance line in the drawer naming a standing
+  // statement about the lake that has been withdrawn, which is worse than no line at all.
+  //
+  // Found by walking back from the promotion rather than by an index on the field: a body's clusters
+  // are a handful of rows. Bounded anyway, at the shared ceiling — "a handful" is a fact about
+  // today's corpus, and this phase has now twice been wrong about which of those stay true (§20).
+  const clusters = await ctx.db
+    .query('hazardRecurrence')
+    .withIndex('by_water_body', (q) => q.eq('waterBodyId', feature.waterBodyId))
+    .take(MAX_BODY_CLUSTERS);
+  for (const cluster of clusters) {
+    if (cluster.promotedToFeatureId !== bodyFeatureId) continue;
+    for (const memberId of cluster.memberHazardIds) {
+      const member = await ctx.db.get(memberId);
+      if (member?.promotedToFeatureId !== bodyFeatureId) continue;
+      await ctx.db.patch(memberId, { promotedToFeatureId: undefined });
+    }
+    // The cluster returns to the suggestion queue — the promotion round-trips, and an operator who
+    // demoted by mistake finds the pattern where they left it rather than having to wait for July.
+    await ctx.db.patch(cluster._id, {
+      promotedToFeatureId: undefined,
+      publiclyVisible: isPubliclyVisible({
+        family: cluster.family,
+        seasonsObserved: cluster.seasonsObserved,
+        ...(cluster.suppressedAt !== undefined ? { suppressedAt: cluster.suppressedAt } : {}),
+      }),
+    });
+  }
+  await audit(ctx, actor._id, 'demote_body_feature', bodyFeatureId, reason, {
+    priorActive: feature.active,
+  });
+}
 
 export async function insertBodyFeature(
   ctx: MutationCtx,
@@ -284,7 +297,7 @@ async function audit(
   reason: string,
   metadata: Record<string, unknown>,
 ): Promise<void> {
-  await ctx.db.insert('moderationActions', {
+  await writeAudit(ctx, {
     actorId,
     action,
     targetType: 'bodyFeature',

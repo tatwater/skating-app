@@ -14,6 +14,7 @@ import { CrashScreen } from '../components/skater/CrashScreen';
 import { NotFoundRoute } from '../components/skater/SkaterShell';
 import { isConfigured } from '../lib/env';
 import '../lib/fontawesome';
+import { FONT_PRELOADS } from '../lib/fontPreloads';
 import appCss from '../styles/app.css?url';
 
 /**
@@ -29,7 +30,7 @@ export const Route = createRootRoute({
       { name: 'viewport', content: 'width=device-width, initial-scale=1' },
       { title: 'Gli' },
     ],
-    links: [{ rel: 'stylesheet', href: appCss }],
+    links: [...FONT_PRELOADS, { rel: 'stylesheet', href: appCss }],
   }),
   shellComponent: RootDocument,
   notFoundComponent: NotFoundRoute,

@@ -272,7 +272,11 @@ of every line is the founder — they are provisioning decisions, not code.
    only there (`lib/scoring.ts` `richnessFor`), so without it no body gets its enrichment
    prominence; then the A07b standing seed; the A10 boost campaigns (`seed-destinations --apply`,
    with `CONVEX_RUN_AS` in the *shell* naming a moderator profile that must exist on prod first —
-   it is a `05` § 2e local variable, not a deployment one); `adminAreas`.
+   it is a `05` § 2e local variable, not a deployment one); `adminAreas`. Once the founder's
+   profile exists and is made admin by hand (Phase 07), seed invoice editing on it (D227):
+   `pnpm --filter @skating/convex exec convex run --prod ledger:seedEditor '{"username":"teagan"}'`
+   (the founder's prod handle; dev's is `admin1`). It refuses a handle with no profile or no admin
+   role, so it runs after both.
 3. **Resend prod key** + the three email vars on prod; the checklist (including why there is
    deliberately no MX record) is in `plans/phases/07-operator-surface.md` § "Resend checklist".
    Then the `broadcastToStaff --prod` smoke (`sent` = `recipients`) before the season opens, and a

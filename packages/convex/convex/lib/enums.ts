@@ -277,8 +277,9 @@ export const MODERATION_ACTIONS = [
   'hide',
   'remove',
   'restore',
-  // An author taking down their own Post or Report (A10-3): the same `removed` status, the same
-  // cascade, audited here with the author as actor so a moderator can see what left and when.
+  // An author taking down their own Post, Report or Comment (A10-3): the same `removed` status, the
+  // same cascade, audited here with the author as actor so a moderator can see what left and when.
+  // Final: nothing restores it (founder ruling, 2026-11-13).
   'author_delete',
   'ban',
   'suspend',
@@ -313,6 +314,10 @@ export const MODERATION_ACTIONS = [
   'dismiss_flag',
   'grant_role',
   'revoke_role',
+  // Gave or took ledger editing in the cost ledger (D227): a per-person grant on an admin, given only
+  // by an admin who holds it. A demotion out of admin writes its own `revoke_ledger_editor` first.
+  'grant_ledger_editor',
+  'revoke_ledger_editor',
   'set_posting_permission', // restrict/restore a canPost* right — finer than ban/suspend (D57, Phase 07)
   'promote_body_feature', // a recurring hazard graduated to a persistent body feature (D53, Phase 09a)
   'demote_body_feature', // reversible: flips `active` off, never hard-deletes (D53)
@@ -614,6 +619,10 @@ export const IMPORT_RUN_KINDS = [
   // by (D202). Its own kind because it writes its own table and fails in its own way: a landmark with
   // no body is a scope boundary (the ocean, a pond below the floor), never a fault.
   'landmark_seed',
+  // convex waterBodies:sweepAllBodySummaries — the full walk over every map summary card, which fills
+  // `bodySummaryRefreshes`. Its `succeeded` row is what tells the hourly sweep the table is complete
+  // and it may read only the due rows from then on.
+  'body_summary_backfill',
 ] as const;
 
 /**

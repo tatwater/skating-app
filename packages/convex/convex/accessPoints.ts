@@ -58,7 +58,8 @@ import {
 } from './_generated/server';
 import { loadLiveAlertsForBody } from './accessAlerts';
 import { MAX_ACCESS_ROWS_PER_BODY, MAX_PUT_IN_ROWS_SCANNED } from './lib/accessLimits';
-import { requireContributor, requireContributorRole } from './lib/auth';
+import { writeAudit } from './lib/audit';
+import { requireCapability, requireContributor } from './lib/auth';
 import { ACCESS_ALERT_TARGETS, ACCESS_AMENITIES, APPROACH_KINDS } from './lib/enums';
 import { assertOwnedPhotos, resolvePhotoUrls } from './lib/photoAccess';
 import { activateOnEvidence } from './lib/standing';
@@ -456,8 +457,9 @@ export const matchAndImportPutIns = internalMutation({
     // otherwise re-read and re-derive the same set six times inside one batch.
     for (const waterBodyId of touchedBodies) await recomputeAccessKind(ctx, waterBodyId);
     // Standing (A07b): a body the access pass just found a way onto qualifies for the active map —
-    // the same rule the seed applies. Only on a *new* launch, so a re-run of the pass over bodies the
-    // rollover has since shelved does not un-shelve them by re-stamping the same OSM slipway.
+    // the same rule the seed applies. Only on a *new* launch: re-stamping the same OSM slipway is not
+    // new evidence. (Since D245 the rollover keeps a body with a saved launch, so what this guards is
+    // a body shelved while its only launch was hidden — a re-run must not bring it back over the hide.)
     for (const waterBodyId of newlyAccessible) await activateOnEvidence(ctx, waterBodyId, 'put_in');
 
     return {
@@ -644,7 +646,7 @@ export const detachPhoto = mutation({
     await ctx.db.delete(accessPhotoId);
 
     if (isModerator && !isUploader) {
-      await ctx.db.insert('moderationActions', {
+      await writeAudit(ctx, {
         actorId: profile._id,
         action: 'remove',
         targetType: row.targetType === 'put_in' ? 'putIn' : 'parkingArea',
@@ -865,14 +867,24 @@ export const setOfficialParking = mutation({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.access');
     const now = Date.now();
     const name = args.name?.trim() || undefined;
 
     let parkingAreaId = args.parkingAreaId;
+    // What an edit replaced, for the Access tab's undo (D226, §3); a new lot replaced nothing.
+    let prev: Record<string, unknown> | null = null;
     if (parkingAreaId) {
       const existing = await ctx.db.get(parkingAreaId);
       if (!existing) throw new ConvexError('Parking area not found');
+      prev = {
+        coord: existing.coord,
+        name: existing.name ?? null,
+        source: existing.source,
+        amenities: existing.amenities,
+        capacity: existing.capacity ?? null,
+        fee: existing.fee ?? null,
+      };
       await ctx.db.patch(parkingAreaId, {
         coord: args.coord,
         name,
@@ -912,13 +924,13 @@ export const setOfficialParking = mutation({
       await linkParkingToBody(ctx, parkingAreaId, waterBodyId, false);
     }
 
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'set_parking_area',
       targetType: 'parkingArea',
       targetId: parkingAreaId,
       reason: args.reason ?? 'Set an official parking area',
-      metadata: { coord: args.coord, waterBodyIds: args.waterBodyIds, name },
+      metadata: { coord: args.coord, waterBodyIds: args.waterBodyIds, name, prev },
       createdAt: now,
     });
     return parkingAreaId;
@@ -947,86 +959,116 @@ export const setPutInAccess = mutation({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
-    const putIn = await ctx.db.get(args.putInId);
-    if (!putIn) throw new ConvexError('Put-in not found');
-
-    let approachMeters = putIn.approachMeters;
-    let approachRouted = putIn.approachRouted;
-    let approachAscentM = putIn.approachAscentM;
-    let parkingAreaId = putIn.parkingAreaId;
-    /**
-     * The stored line describes a walk **from a particular lot** (A06e Workstream 0), so it is retracted
-     * by both branches below and never carried across a re-association.
-     *
-     * The distance failing this way is recoverable — a wrong number reads as a wrong number. A line is
-     * worse: it would be drawn on the map from the *new* lot's marker, tracing a trail that starts
-     * somewhere else entirely, and it would look precisely as authoritative as the routed lines beside
-     * it. Silence until the next ETL pass re-routes the pair.
-     */
-    let approachPath = putIn.approachPath;
-
-    if (args.clearParking) {
-      parkingAreaId = undefined;
-      // The measurements described a walk from a lot that is no longer associated. Keeping them would
-      // leave a distance with nothing to walk from — the same reasoning A06a used for retracting the
-      // losing half of a contradictory depth pair.
-      approachMeters = undefined;
-      approachAscentM = undefined;
-      approachRouted = undefined;
-      approachPath = undefined;
-    } else if (args.parkingAreaId) {
-      const lot = await ctx.db.get(args.parkingAreaId);
-      if (!lot) throw new ConvexError('Parking area not found');
-      parkingAreaId = args.parkingAreaId;
-      // Straight-line, flagged. A hand association gets no ORS call — this is a request path, and
-      // "never route from a request path" is the one rule D87 asks to be written at the call site.
-      // The ETL's next pass replaces it with a routed figure.
-      const leg = straightLineApproach(lot.coord, putIn.coord);
-      approachMeters = Math.round(leg.meters);
-      approachAscentM = undefined;
-      approachRouted = false;
-      approachPath = undefined;
-    }
-
-    const override = args.clearApproachOverride
-      ? undefined
-      : (args.approachKindOverride ?? putIn.approachKindOverride);
-
-    if (requiresHikeInAssertion(approachMeters) && override !== 'hike_in') {
-      throw new ConvexError(
-        `An approach this long must be asserted as hike-in (over ${HIKE_IN_ASSERT_M} m) — set the approach kind explicitly rather than letting it be derived.`,
-      );
-    }
-
-    await ctx.db.patch(args.putInId, {
-      parkingAreaId,
-      approachMeters,
-      approachAscentM,
-      approachRouted,
-      approachPath,
-      approachKindOverride: override,
-    });
-
-    // **The denormalization has two writers, not one.** Everything this mutation touches is an input
-    // to `resolveApproachKind`, so skipping the recompute leaves the map card and the feed card
-    // showing a chip derived from the previous state — and in the direction that matters: a moderator
-    // asserting `hike_in` on a mile-away trailhead would leave the lake wearing no warning at all,
-    // which is the exact trip this phase exists to stop somebody making. `clearParking` is the mirror
-    // case, where a stale `drive_up` outlives the measurement it came from.
-    await recomputeAccessKind(ctx, putIn.waterBodyId);
-
-    await ctx.db.insert('moderationActions', {
-      actorId: actor._id,
-      action:
-        args.approachKindOverride || args.clearApproachOverride
-          ? 'set_approach_kind'
-          : 'set_parking_area',
-      targetType: 'putIn',
-      targetId: args.putInId,
-      reason: args.reason ?? 'Set put-in access',
-      metadata: { parkingAreaId, approachMeters, approachKindOverride: override },
-      createdAt: Date.now(),
-    });
+    const actor = await requireCapability(ctx, 'body.access');
+    await setPutInAccessImpl(ctx, actor, args);
   },
 });
+
+export interface SetPutInAccessArgs {
+  putInId: Id<'putIns'>;
+  parkingAreaId?: Id<'parkingAreas'>;
+  clearParking?: boolean;
+  approachKindOverride?: Doc<'putIns'>['approachKindOverride'];
+  clearApproachOverride?: boolean;
+  reason?: string;
+}
+
+/**
+ * `setPutInAccess`'s body — also what undoing an approach-kind change runs (D226), so the hike-in gate
+ * and the body's `accessKind` recompute apply to the undo too. The row records what it replaced as
+ * `prev` (the override and the lot).
+ */
+export async function setPutInAccessImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  args: SetPutInAccessArgs,
+): Promise<void> {
+  const putIn = await ctx.db.get(args.putInId);
+  if (!putIn) throw new ConvexError('Put-in not found');
+
+  let approachMeters = putIn.approachMeters;
+  let approachRouted = putIn.approachRouted;
+  let approachAscentM = putIn.approachAscentM;
+  let parkingAreaId = putIn.parkingAreaId;
+  /**
+   * The stored line describes a walk **from a particular lot** (A06e Workstream 0), so it is retracted
+   * by both branches below and never carried across a re-association.
+   *
+   * The distance failing this way is recoverable — a wrong number reads as a wrong number. A line is
+   * worse: it would be drawn on the map from the *new* lot's marker, tracing a trail that starts
+   * somewhere else entirely, and it would look precisely as authoritative as the routed lines beside
+   * it. Silence until the next ETL pass re-routes the pair.
+   */
+  let approachPath = putIn.approachPath;
+
+  if (args.clearParking) {
+    parkingAreaId = undefined;
+    // The measurements described a walk from a lot that is no longer associated. Keeping them would
+    // leave a distance with nothing to walk from — the same reasoning A06a used for retracting the
+    // losing half of a contradictory depth pair.
+    approachMeters = undefined;
+    approachAscentM = undefined;
+    approachRouted = undefined;
+    approachPath = undefined;
+  } else if (args.parkingAreaId) {
+    const lot = await ctx.db.get(args.parkingAreaId);
+    if (!lot) throw new ConvexError('Parking area not found');
+    parkingAreaId = args.parkingAreaId;
+    // Straight-line, flagged. A hand association gets no ORS call — this is a request path, and
+    // "never route from a request path" is the one rule D87 asks to be written at the call site.
+    // The ETL's next pass replaces it with a routed figure.
+    const leg = straightLineApproach(lot.coord, putIn.coord);
+    approachMeters = Math.round(leg.meters);
+    approachAscentM = undefined;
+    approachRouted = false;
+    approachPath = undefined;
+  }
+
+  const override = args.clearApproachOverride
+    ? undefined
+    : (args.approachKindOverride ?? putIn.approachKindOverride);
+
+  if (requiresHikeInAssertion(approachMeters) && override !== 'hike_in') {
+    throw new ConvexError(
+      `An approach this long must be asserted as hike-in (over ${HIKE_IN_ASSERT_M} m) — set the approach kind explicitly rather than letting it be derived.`,
+    );
+  }
+
+  await ctx.db.patch(args.putInId, {
+    parkingAreaId,
+    approachMeters,
+    approachAscentM,
+    approachRouted,
+    approachPath,
+    approachKindOverride: override,
+  });
+
+  // **The denormalization has two writers, not one.** Everything this mutation touches is an input
+  // to `resolveApproachKind`, so skipping the recompute leaves the map card and the feed card
+  // showing a chip derived from the previous state — and in the direction that matters: a moderator
+  // asserting `hike_in` on a mile-away trailhead would leave the lake wearing no warning at all,
+  // which is the exact trip this phase exists to stop somebody making. `clearParking` is the mirror
+  // case, where a stale `drive_up` outlives the measurement it came from.
+  await recomputeAccessKind(ctx, putIn.waterBodyId);
+
+  await writeAudit(ctx, {
+    actorId: actor._id,
+    action:
+      args.approachKindOverride || args.clearApproachOverride
+        ? 'set_approach_kind'
+        : 'set_parking_area',
+    targetType: 'putIn',
+    targetId: args.putInId,
+    reason: args.reason ?? 'Set put-in access',
+    metadata: {
+      parkingAreaId,
+      approachMeters,
+      approachKindOverride: override,
+      prev: {
+        parkingAreaId: putIn.parkingAreaId ?? null,
+        approachKindOverride: putIn.approachKindOverride ?? null,
+      },
+    },
+    createdAt: Date.now(),
+  });
+}

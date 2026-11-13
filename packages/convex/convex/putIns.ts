@@ -24,7 +24,8 @@ import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
 import { mutation, type QueryCtx, query } from './_generated/server';
 import { recomputeAccessKind } from './accessPoints';
-import { requireContributorRole } from './lib/auth';
+import { writeAudit } from './lib/audit';
+import { requireCapability } from './lib/auth';
 import { HIDE_SUPPRESS_METERS, isSuppressed } from './lib/putInSuppression';
 import { activateOnEvidence } from './lib/standing';
 import { latLng } from './lib/validators';
@@ -258,7 +259,7 @@ export const setOfficial = mutation({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, { waterBodyId, coord, name, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.access');
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
     const trimmedName = name?.trim();
@@ -302,7 +303,7 @@ export const setOfficial = mutation({
       createdByUserId: actor._id,
       createdAt: Date.now(),
     });
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'set_put_in', // a dedicated verb — placing an official marker, not un-hiding one
       targetType: 'waterbody',
@@ -316,7 +317,8 @@ export const setOfficial = mutation({
     });
     // Standing (A07b, founder call): an official put-in on a dormant body brings it back — a human
     // saying "you can get on the ice here" is evidence of access, and access is what the seed
-    // partitions on. Then the retention clock runs: a put-in alone does not *keep* a body active.
+    // partitions on. And it keeps the body active through the July rollover for as long as it is
+    // saved and not hidden (D245, reversing D177's "a put-in alone does not keep a body active").
     await activateOnEvidence(ctx, waterBodyId, 'put_in');
     // The body's denormalized `accessKind` is derived from its visible put-ins, so every mutation
     // that changes that set owes it a recompute (PR #43 review). A fresh `official` marker carries no
@@ -337,7 +339,7 @@ export const setOfficial = mutation({
 export const hide = mutation({
   args: { waterBodyId: v.id('waterBodies'), coord: latLng, reason: v.string() },
   handler: async (ctx, { waterBodyId, coord, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.access');
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
@@ -353,7 +355,7 @@ export const hide = mutation({
       createdByUserId: actor._id,
       createdAt: Date.now(),
     });
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'hide',
       targetType: 'waterbody',

@@ -35,7 +35,8 @@ import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, type MutationCtx, mutation, query } from './_generated/server';
 import { insertBodyFeature } from './bodyFeatures';
-import { requireContributorRole } from './lib/auth';
+import { writeAudit } from './lib/audit';
+import { requireCapability } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { BODY_FEATURE_TYPES } from './lib/enums';
 import { computeClustersForBody, MAX_BODY_CLUSTERS, windowStartMs } from './lib/recurrence';
@@ -550,7 +551,7 @@ function footprintOrNull(shape: HazardShape & { clippedFootprint?: HazardShape['
 export const listForBodyAdmin = query({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { waterBodyId }) => {
-    await requireContributorRole(ctx, 'moderator');
+    await requireCapability(ctx, 'body.read');
     const body = await resolveSurvivor(ctx, waterBodyId);
     if (!body) return [];
     const rows = await ctx.db
@@ -589,7 +590,7 @@ export const listQueue = query({
     includeSuppressed: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    await requireContributorRole(ctx, 'moderator');
+    await requireCapability(ctx, 'corpus.read');
     const season = args.season ?? seasonOf(Date.now());
     // Descending on `priority`, which the index carries — so the ranking *is* the read order and a
     // page is the top of what is left rather than an arbitrary slice.
@@ -636,49 +637,78 @@ export const listQueue = query({
 export const suppress = mutation({
   args: { recurrenceId: v.id('hazardRecurrence'), reason: v.string() },
   handler: async (ctx, { recurrenceId, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
-    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
-    const row = await ctx.db.get(recurrenceId);
-    if (!row) throw new ConvexError('Recurrence not found');
-    await ctx.db.patch(recurrenceId, {
-      suppressedAt: Date.now(),
-      suppressedByUserId: actor._id,
-      suppressReason: reason.trim(),
-      publiclyVisible: false,
-    });
-    await audit(ctx, actor._id, 'suppress_recurrence', recurrenceId, reason.trim(), {
-      waterBodyId: row.waterBodyId,
-    });
+    const actor = await requireCapability(ctx, 'corpus.preIce');
+    await suppressImpl(ctx, actor, { recurrenceId, reason });
   },
 });
+
+/** What a suppression or its lifting replaced, recorded as `prev` so the undo can tell (D226). */
+function suppressionPrev(row: Doc<'hazardRecurrence'>) {
+  return {
+    suppressedAt: row.suppressedAt ?? null,
+    suppressedByUserId: row.suppressedByUserId ?? null,
+    suppressReason: row.suppressReason ?? null,
+  };
+}
+
+/** `suppress`'s body — also what undoing an unsuppress runs (D226). */
+export async function suppressImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  { recurrenceId, reason }: { recurrenceId: Id<'hazardRecurrence'>; reason: string },
+): Promise<void> {
+  if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+  const row = await ctx.db.get(recurrenceId);
+  if (!row) throw new ConvexError('Recurrence not found');
+  await ctx.db.patch(recurrenceId, {
+    suppressedAt: Date.now(),
+    suppressedByUserId: actor._id,
+    suppressReason: reason.trim(),
+    publiclyVisible: false,
+  });
+  await audit(ctx, actor._id, 'suppress_recurrence', recurrenceId, reason.trim(), {
+    waterBodyId: row.waterBodyId,
+    prev: suppressionPrev(row),
+  });
+}
 
 /** Undo a suppression. The cluster returns to the queue and regains the public bar on the next pass. */
 export const unsuppress = mutation({
   args: { recurrenceId: v.id('hazardRecurrence'), reason: v.string() },
   handler: async (ctx, { recurrenceId, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
-    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
-    const row = await ctx.db.get(recurrenceId);
-    if (!row) throw new ConvexError('Recurrence not found');
-    await ctx.db.patch(recurrenceId, {
-      suppressedAt: undefined,
-      suppressedByUserId: undefined,
-      suppressReason: undefined,
-      // Recomputed here rather than left to the next rollover: an operator who un-suppresses expects
-      // the cluster to behave normally now, not next July.
-      publiclyVisible: isPubliclyVisible({
-        family: row.family,
-        seasonsObserved: row.seasonsObserved,
-        ...(row.promotedToFeatureId !== undefined
-          ? { promotedToFeatureId: row.promotedToFeatureId }
-          : {}),
-      }),
-    });
-    await audit(ctx, actor._id, 'unsuppress_recurrence', recurrenceId, reason.trim(), {
-      waterBodyId: row.waterBodyId,
-    });
+    const actor = await requireCapability(ctx, 'corpus.preIce');
+    await unsuppressImpl(ctx, actor, { recurrenceId, reason });
   },
 });
+
+/** `unsuppress`'s body — also what undoing a suppression runs (D226). */
+export async function unsuppressImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  { recurrenceId, reason }: { recurrenceId: Id<'hazardRecurrence'>; reason: string },
+): Promise<void> {
+  if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+  const row = await ctx.db.get(recurrenceId);
+  if (!row) throw new ConvexError('Recurrence not found');
+  await ctx.db.patch(recurrenceId, {
+    suppressedAt: undefined,
+    suppressedByUserId: undefined,
+    suppressReason: undefined,
+    // Recomputed here rather than left to the next rollover: an operator who un-suppresses expects
+    // the cluster to behave normally now, not next July.
+    publiclyVisible: isPubliclyVisible({
+      family: row.family,
+      seasonsObserved: row.seasonsObserved,
+      ...(row.promotedToFeatureId !== undefined
+        ? { promotedToFeatureId: row.promotedToFeatureId }
+        : {}),
+    }),
+  });
+  await audit(ctx, actor._id, 'unsuppress_recurrence', recurrenceId, reason.trim(), {
+    waterBodyId: row.waterBodyId,
+    prev: suppressionPrev(row),
+  });
+}
 
 /**
  * Graduate a whole cluster into a permanent body feature (§8.2).
@@ -706,7 +736,7 @@ export const promoteFromRecurrence = mutation({
     reason: v.string(),
   },
   handler: async (ctx, { recurrenceId, type, note, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'corpus.preIce');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     const row = await ctx.db.get(recurrenceId);
     if (!row) throw new ConvexError('Recurrence not found');
@@ -755,7 +785,7 @@ export const promoteFromRecurrence = mutation({
 export const recomputeForBody = mutation({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { waterBodyId }) => {
-    await requireContributorRole(ctx, 'moderator');
+    await requireCapability(ctx, 'corpus.preIce');
     const body = await resolveSurvivor(ctx, waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
     await recomputeBody(ctx, body, seasonOf(Date.now()), Date.now());
@@ -770,7 +800,7 @@ async function audit(
   reason: string,
   metadata: Record<string, unknown>,
 ): Promise<void> {
-  await ctx.db.insert('moderationActions', {
+  await writeAudit(ctx, {
     actorId,
     action,
     // A recurrence row is a statement *about* a body feature's justification, so the audit targets the

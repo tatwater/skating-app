@@ -40,6 +40,7 @@ import {
   reportStripState,
   seasonOf,
   standingOf,
+  wasOpenDuring,
 } from '@skating/core';
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
@@ -394,7 +395,7 @@ async function rollupActivity(ctx: MutationCtx, now: number): Promise<void> {
   await writeMetricSnapshot(ctx, 'point_source_composition', date, { meta: bySource });
 }
 
-/** Operational health — flag-queue depth/age, weather-strip coverage, orphaned photos. */
+/** Operational health — flag-queue depth/age, support-queue depth, weather-strip coverage, orphaned photos. */
 async function rollupOperational(ctx: MutationCtx, now: number): Promise<void> {
   const date = metricDay(now);
 
@@ -426,6 +427,8 @@ async function rollupOperational(ctx: MutationCtx, now: number): Promise<void> {
     scalar: oldest === null ? 0 : hoursBetween(oldest, now),
   });
 
+  await rollupSupportQueue(ctx, now);
+
   // The trailing-30d corpus classified by the strip state it would render in *right now*. Reports
   // older than the window are all `aged` by definition, so scanning further would only pad one bar.
   const stripReports = await capped(
@@ -446,6 +449,64 @@ async function rollupOperational(ctx: MutationCtx, now: number): Promise<void> {
   await writeMetricSnapshot(ctx, 'photo_orphans', date, {
     scalar: await countOrphanPhotos(ctx, now),
   });
+}
+
+/** The statuses a ticket waits in — everything but `resolved`. */
+const OPEN_TICKET_STATUSES = ['open', 'in_progress'] as const;
+
+/**
+ * The support queue's daily depth (`support_queue_depth`, B01): every ticket open at any point of
+ * the day, by category — for **today so far and yesterday**, re-measured on every tick.
+ *
+ * A ticket's open span runs from `createdAt` to `resolvedAt` (no reopen path exists), so the tickets
+ * open at any point of a day since yesterday began are exactly those open now and those resolved
+ * since then — two bounded, indexed reads, never the ticket history. Yesterday is in the pass because
+ * the last tick before midnight can't see the hours after it: the first tick of a day closes the day
+ * before, and the day after that no tick touches it again. Not in `rollupDay`, so the backfill never
+ * replays it: tickets are erased with their submitter's account (D33), and a replay over a thinned
+ * table would overwrite the days this series alone remembers.
+ */
+async function rollupSupportQueue(ctx: MutationCtx, now: number): Promise<void> {
+  const today = metricDayStart(metricDay(now));
+  const yesterday = today - DAY_MS;
+
+  const candidates: Doc<'supportTickets'>[] = [];
+  for (const status of OPEN_TICKET_STATUSES) {
+    candidates.push(
+      ...(await capped(
+        ctx.db
+          .query('supportTickets')
+          .withIndex('by_status', (q) => q.eq('status', status))
+          .take(DAY_SCAN_CAP),
+        DAY_SCAN_CAP,
+        `${status} support tickets`,
+      )),
+    );
+  }
+  // `resolvedAt` is optional, so the range carries its lower bound: a bare range would also match
+  // every resolved row lacking the field, which sorts first.
+  candidates.push(
+    ...(await capped(
+      ctx.db
+        .query('supportTickets')
+        .withIndex('by_status_resolved_at', (q) =>
+          q.eq('status', 'resolved').gte('resolvedAt', yesterday),
+        )
+        .take(DAY_SCAN_CAP),
+      DAY_SCAN_CAP,
+      'support tickets resolved since yesterday',
+    )),
+  );
+
+  for (const from of [yesterday, today]) {
+    const open = candidates.filter((t) =>
+      wasOpenDuring({ openedAt: t.createdAt, closedAt: t.resolvedAt }, from, from + DAY_MS),
+    );
+    await writeMetricSnapshot(ctx, 'support_queue_depth', metricDay(from), {
+      meta: countBy(open.map((t) => t.category)),
+      scalar: open.length,
+    });
+  }
 }
 
 /**

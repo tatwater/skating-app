@@ -20,6 +20,7 @@
 
 import {
   LANDMARK_KINDS,
+  type LandmarkKind,
   type LandmarkSourceCheck,
   landmarkDropsHeld,
   landmarkLabelMinZoom,
@@ -42,7 +43,7 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
-import { requireContributorRole, requireRole } from './lib/auth';
+import { requireCapability } from './lib/auth';
 import {
   assertNotABayName,
   assertNotDuplicate,
@@ -107,7 +108,7 @@ export const listForBody = query({
 export const listForEditor = query({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { waterBodyId }) => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'body.read');
     const rows = await landmarksForBody(ctx, waterBodyId);
     return rows
       .map((row) => ({
@@ -645,7 +646,7 @@ export const create = mutation({
     corpusNameId: v.optional(v.id('corpusPlaceNames')),
   },
   handler: async (ctx, args) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.places');
     await requireListedBody(ctx, args.waterBodyId);
     const names = cleanNames(args.name, args.aliases);
     const rows = await liveLandmarksForBody(ctx, args.waterBodyId);
@@ -709,7 +710,33 @@ export const update = mutation({
     aliases: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.places');
+    await updateLandmarkImpl(ctx, actor, args);
+  },
+});
+
+/** What an edit replaced — everything `update` can change — so its undo can put it back (D226). */
+export interface LandmarkEditPrev {
+  name: string;
+  aliases: string[];
+  kind: LandmarkKind;
+  point: { lat: number; lng: number };
+}
+
+/** `update`'s body, shared with the undo of an edit (D226); `reason` is an undo's own. */
+export async function updateLandmarkImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  args: {
+    landmarkId: Id<'bodyLandmarks'>;
+    name?: string;
+    kind?: LandmarkKind;
+    point?: { lat: number; lng: number };
+    aliases?: string[];
+    reason?: string;
+  },
+): Promise<void> {
+  {
     const row = await ctx.db.get(args.landmarkId);
     if (!row) throw new ConvexError('That landmark no longer exists');
     const names = cleanNames(args.name ?? row.name, args.aliases ?? row.aliases);
@@ -732,19 +759,44 @@ export const update = mutation({
       moderatorEditedAt: now,
       updatedAt: now,
     });
-    await auditLandmark(ctx, actor._id, 'edit_landmark', row._id, `Edited "${names.name}"`, {
-      ...(names.name !== row.name ? { from: row.name } : {}),
-      ...(moved ? { moved: true } : {}),
-      ...(args.kind !== undefined && args.kind !== row.kind ? { kind: args.kind } : {}),
-    });
-  },
-});
+    const prev: LandmarkEditPrev = {
+      name: row.name,
+      aliases: row.aliases,
+      kind: row.kind,
+      point: row.point,
+    };
+    await auditLandmark(
+      ctx,
+      actor._id,
+      'edit_landmark',
+      row._id,
+      args.reason ?? `Edited "${names.name}"`,
+      {
+        ...(names.name !== row.name ? { from: row.name } : {}),
+        ...(moved ? { moved: true } : {}),
+        ...(args.kind !== undefined && args.kind !== row.kind ? { kind: args.kind } : {}),
+        prev,
+      },
+    );
+  }
+}
 
 /** Moderator: take a landmark off the map. Soft, so a re-run of the ETL never brings it back. */
 export const remove = mutation({
   args: { landmarkId: v.id('bodyLandmarks'), reason: v.optional(v.string()) },
-  handler: async (ctx, { landmarkId, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+  handler: async (ctx, args) => {
+    const actor = await requireCapability(ctx, 'body.places');
+    await removeLandmarkImpl(ctx, actor, args);
+  },
+});
+
+/** `remove`'s body, shared with the undo of a landmark's creation or restore (D226). */
+export async function removeLandmarkImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  { landmarkId, reason }: { landmarkId: Id<'bodyLandmarks'>; reason?: string },
+): Promise<void> {
+  {
     const row = await ctx.db.get(landmarkId);
     if (!row) throw new ConvexError('That landmark no longer exists');
     // A row the catalogs dropped is already off the map, but a run that places it again would bring
@@ -762,14 +814,25 @@ export const remove = mutation({
       landmarkId,
       reason?.trim() || `Removed "${row.name}"`,
     );
-  },
-});
+  }
+}
 
 /** Moderator: bring a removed landmark back, if no live one has taken its name since. */
 export const restore = mutation({
   args: { landmarkId: v.id('bodyLandmarks') },
-  handler: async (ctx, { landmarkId }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+  handler: async (ctx, args) => {
+    const actor = await requireCapability(ctx, 'body.places');
+    await restoreLandmarkImpl(ctx, actor, args);
+  },
+});
+
+/** `restore`'s body, shared with the undo of a removal (D226); `reason` is an undo's own. */
+export async function restoreLandmarkImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  { landmarkId, reason }: { landmarkId: Id<'bodyLandmarks'>; reason?: string },
+): Promise<void> {
+  {
     const row = await ctx.db.get(landmarkId);
     if (!row) throw new ConvexError('That landmark no longer exists');
     if (row.removedAt === undefined) return;
@@ -796,6 +859,66 @@ export const restore = mutation({
       // A row a merge folded away is a place again once a moderator brings it back.
       mergedIntoId: undefined,
     });
-    await auditLandmark(ctx, actor._id, 'restore', landmarkId, `Restored "${row.name}"`);
-  },
-});
+    // What the restore cleared, so its undo is a true inverse (D226, founder call 2026-11-13): a
+    // catalog-dropped row goes back to the catalogs, a merge-folded one back into its twin.
+    const prev: LandmarkRestorePrev = {
+      removedAt: row.removedAt,
+      catalogDroppedAt: row.catalogDroppedAt ?? null,
+      mergedIntoId: row.mergedIntoId ?? null,
+      moderatorEditedAt: row.moderatorEditedAt ?? null,
+    };
+    await auditLandmark(ctx, actor._id, 'restore', landmarkId, reason ?? `Restored "${row.name}"`, {
+      prev,
+    });
+  }
+}
+
+/** The retirement a landmark restore cleared, recorded on its `restore` row (D226). */
+export interface LandmarkRestorePrev {
+  removedAt: number;
+  catalogDroppedAt: number | null;
+  mergedIntoId: Id<'bodyLandmarks'> | null;
+  /** Kept because catalog ownership keys off it: the import, `isCatalogsLive` and the merge fold
+   * all read a set `moderatorEditedAt` as "a moderator's row". */
+  moderatorEditedAt: number | null;
+}
+
+/**
+ * The undo of a restore (D226): the landmark retired exactly as it was before — its removal time,
+ * and whichever of the catalogs' drop, a merge's fold and a moderator's ownership the restore
+ * cleared. Not a fresh removal: that would make a catalog-dropped row a person's removal (which the
+ * catalogs never undo) and lose a folded row's twin. A row that is off the map again already has
+ * nothing to undo.
+ */
+export async function unrestoreLandmarkImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    landmarkId,
+    prev,
+    reason,
+  }: { landmarkId: Id<'bodyLandmarks'>; prev: LandmarkRestorePrev; reason: string },
+): Promise<void> {
+  const row = await ctx.db.get(landmarkId);
+  if (!row) throw new ConvexError('That landmark no longer exists');
+  if (row.removedAt !== undefined) {
+    throw new ConvexError('It has been taken off the map again since; there is nothing to undo');
+  }
+  await ctx.db.patch(landmarkId, {
+    removedAt: prev.removedAt,
+    catalogDroppedAt: prev.catalogDroppedAt ?? undefined,
+    mergedIntoId: prev.mergedIntoId ?? undefined,
+    moderatorEditedAt: prev.moderatorEditedAt ?? undefined,
+    updatedAt: Date.now(),
+  });
+  // A fold put back is the merge's again: the row names its twin, so undoing *this* removal is
+  // refused the way the merge's own fold row is — it comes back with the merge.
+  await auditLandmark(
+    ctx,
+    actor._id,
+    'remove',
+    landmarkId,
+    reason,
+    prev.mergedIntoId !== null ? { mergedIntoId: prev.mergedIntoId } : undefined,
+  );
+}

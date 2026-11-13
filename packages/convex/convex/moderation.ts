@@ -1,6 +1,6 @@
 /**
  * Moderation functions (D32/D37) — the minimal founder takedown path. Role-gated
- * (`requireRole('moderator')`); every action writes **exactly one** `moderationActions` audit row
+ * (each gated by a capability, D217); every action writes **exactly one** `moderationActions` audit row
  * (accountability for appeals/reversals). This is the inline hide/remove/restore + flag-resolution
  * surface; the full `/admin` work queues + email alerts are Phase 07 (D37/D38).
  *
@@ -17,13 +17,22 @@ import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
-import { requireContributorRole, requireRole } from './lib/auth';
+import { writeAudit } from './lib/audit';
+import { requireCapability } from './lib/auth';
+import {
+  AUTHOR_DELETE_REASON,
+  AUTHOR_DELETED_RESTORE,
+  authorDeletedAtOf,
+  authorDeletedRefusal,
+} from './lib/authorDeletion';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import { MODERATION_ACTIONS, MODERATION_STATUSES, MODERATION_TARGET_TYPES } from './lib/enums';
 import { closeFlag } from './lib/flagResolution';
+import { withoutLedgerGrantsFor } from './lib/ledgerEditors';
 import { refreshPostLatestSkateEnd, refreshPostSearchText } from './lib/postSync';
 import { mirrorReportSubAreas } from './lib/reportSubAreas';
+import { type UndoState, undoState } from './lib/undo';
 import { literals } from './lib/validators';
 
 /** The audit action implied by a target moderation status (D37). */
@@ -34,7 +43,7 @@ const ACTION_FOR_STATUS = {
 } as const;
 
 /**
- * Set a report's or comment's moderation status (D32/D37). `requireRole('moderator')`; patches the
+ * Set a report's or comment's moderation status (D32/D37). `requireCapability('content.moderate')`; patches the
  * target and writes one `hide` / `remove` / `restore` audit row with the required reason. A no-op
  * status change (already at `status`) still records the action — the moderator asserted a decision.
  */
@@ -100,7 +109,7 @@ async function derivePostVisibility(
       if (member && member.moderationStatus === 'visible') return;
     }
     await ctx.db.patch(postId, { moderationStatus: 'hidden' });
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: audit.actorId,
       action: 'hide',
       targetType: 'post',
@@ -117,7 +126,7 @@ async function derivePostVisibility(
       .first();
     if (last?.metadata?.derivedFromReportId === undefined) return;
     await ctx.db.patch(postId, { moderationStatus: 'visible' });
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: audit.actorId,
       action: 'restore',
       targetType: 'post',
@@ -128,9 +137,6 @@ async function derivePostVisibility(
     });
   }
 }
-
-/** The reason an author's own takedown carries — there is no free text to ask for. */
-const AUTHOR_DELETE_REASON = 'Deleted by the author';
 
 /**
  * An author taking down their own Report (A10-3, founder call 2026-09-21: people control what
@@ -147,9 +153,25 @@ export async function authorRemoveReport(
   author: Doc<'profiles'>,
   now: number,
 ): Promise<void> {
-  if (report.moderationStatus === 'removed') return;
+  if (report.authorDeletedAt !== undefined) return;
   const audit = { actorId: author._id, reason: AUTHOR_DELETE_REASON, now };
   const priorStatus = report.moderationStatus;
+  // The withdrawal is the author's whatever a moderator did first (founder ruling, 2026-11-13): a
+  // Report a moderator already removed is stamped too, so overturning that verdict later can never
+  // republish it. Its status, the counters and the Post are already where a removal leaves them.
+  await ctx.db.patch(report._id, { authorDeletedAt: now });
+  if (priorStatus === 'removed') {
+    await writeAudit(ctx, {
+      actorId: author._id,
+      action: 'author_delete',
+      targetType: 'report',
+      targetId: report._id,
+      reason: AUTHOR_DELETE_REASON,
+      metadata: { priorStatus, newStatus: 'removed' },
+      createdAt: now,
+    });
+    return;
+  }
 
   // Whether this member empties its Post is decided — and the Post patched — **before** the
   // member's own status moves: `applyReportStatus` runs the derived-visibility rule, which would
@@ -171,7 +193,7 @@ export async function authorRemoveReport(
   }
 
   await applyReportStatus(ctx, report, 'removed', audit);
-  await ctx.db.insert('moderationActions', {
+  await writeAudit(ctx, {
     actorId: author._id,
     action: 'author_delete',
     targetType: 'report',
@@ -181,7 +203,7 @@ export async function authorRemoveReport(
     createdAt: now,
   });
   if (post && emptiesPost) {
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: author._id,
       action: 'author_delete',
       targetType: 'post',
@@ -198,9 +220,9 @@ export async function authorRemoveReport(
 }
 
 /**
- * An author taking down their own Post: the Post and every member that is not already removed,
- * each with its audit row naming the cascade — the moderator's Post remove, with the author as
- * actor. A member a moderator removed on its own merits is left as it is.
+ * An author taking down their own Post: the Post and every member, each with its audit row naming
+ * the cascade — the moderator's Post remove, with the author as actor. A member a moderator already
+ * removed keeps its status and counters, but is withdrawn with the Post all the same (D248).
  */
 export async function authorRemovePost(
   ctx: MutationCtx,
@@ -208,16 +230,19 @@ export async function authorRemovePost(
   author: Doc<'profiles'>,
   now: number,
 ): Promise<void> {
-  if (post.moderationStatus === 'removed') return;
+  if (post.authorDeletedAt !== undefined) return;
   const audit = { actorId: author._id, reason: AUTHOR_DELETE_REASON, now };
   const priorStatus = post.moderationStatus;
-  await ctx.db.patch(post._id, { moderationStatus: 'removed' });
+  // Everything in it is withdrawn, a member a moderator removed earlier included (founder ruling,
+  // 2026-11-13): nothing inside a Post its author deleted can come back.
+  await ctx.db.patch(post._id, { moderationStatus: 'removed', authorDeletedAt: now });
   for (const reportId of post.reportIds) {
     const report = await ctx.db.get(reportId);
-    if (!report || report.moderationStatus === 'removed') continue;
+    if (!report || report.authorDeletedAt !== undefined) continue;
     const memberPrior = report.moderationStatus;
-    await applyReportStatus(ctx, report, 'removed', audit);
-    await ctx.db.insert('moderationActions', {
+    await ctx.db.patch(report._id, { authorDeletedAt: now });
+    if (memberPrior !== 'removed') await applyReportStatus(ctx, report, 'removed', audit);
+    await writeAudit(ctx, {
       actorId: author._id,
       action: 'author_delete',
       targetType: 'report',
@@ -227,7 +252,7 @@ export async function authorRemovePost(
       createdAt: now,
     });
   }
-  await ctx.db.insert('moderationActions', {
+  await writeAudit(ctx, {
     actorId: author._id,
     action: 'author_delete',
     targetType: 'post',
@@ -238,15 +263,183 @@ export async function authorRemovePost(
   });
 }
 
+/** A forward restore that would bring the Post back with none of its Reports (founder, 2026-11-13). */
+export const POST_RESTORE_NEEDS_A_CHOICE =
+  'Every report in this post was hidden or removed on its own. Choose at least one report to restore with it.';
+/** Every member is withdrawn by its author, or gone: nothing can come back, so the Post can't. */
+export const POST_UNRESTORABLE =
+  "Every report in this post was deleted by its author, so the post can't be restored.";
+/** An undo that would do the same: undo never chooses, so it points at Restore. */
+export const UNDO_LEAVES_POST_EMPTY =
+  'Undoing this would show the post with none of its reports. Restore the post instead and choose which reports come back with it.';
+
+/** The newest audit row on a Report — the last word on it. */
+function newestRowOn(ctx: QueryCtx, reportId: Id<'reports'>) {
+  return ctx.db
+    .query('moderationActions')
+    .withIndex('by_target', (q) => q.eq('targetType', 'report').eq('targetId', reportId))
+    .order('desc')
+    .first();
+}
+
+/**
+ * Withdrawn by its author: stamped `authorDeletedAt` (D248), or — a deletion from before the stamp
+ * that the backfill hasn't reached — removed with the author's own `author_delete` as the last word.
+ * Never restorable through a Post's restore, nor at all since D248.
+ */
+function isAuthorWithdrawn(report: Doc<'reports'>, last: Doc<'moderationActions'> | null): boolean {
+  return (
+    report.authorDeletedAt !== undefined ||
+    (report.moderationStatus === 'removed' && last?.action === 'author_delete')
+  );
+}
+
+/**
+ * What a restore of the Post does with one member: it is `visible` already; the plain restore
+ * brings it back (`returns`, the Post's own takedown took it down); a moderator may `choose` it; or
+ * it was `author_deleted` and never comes back through the Post.
+ */
+export type PostRestoreStanding = 'visible' | 'returns' | 'choose' | 'author_deleted';
+
+/** One member as the plan read it: the Report, the last word on it (none read when visible). */
+export interface PlannedMember {
+  report: Doc<'reports'>;
+  last: Doc<'moderationActions'> | null;
+  standing: PostRestoreStanding;
+}
+
+/** What a Post restore would do, before it does any of it. */
+export interface PostRestorePlan {
+  /** Every member that exists, in the Post's order, with what the restore does with it. */
+  members: PlannedMember[];
+  /** Members the plain restore brings back: the ones the Post's own takedown took down. */
+  revive: Doc<'reports'>[];
+  /** Members chosen to come back with it, validated. */
+  chosen: Doc<'reports'>[];
+  /** How many down members a moderator could choose: not revived, not withdrawn by their author. */
+  choosable: number;
+  /** How many members would be visible after the restore. */
+  visibleAfter: number;
+}
+
+/**
+ * The one decision both Post writers share (founder call, 2026-11-13): which members a restore
+ * brings back, and whether the Post would show any. Reads only — a refusal writes nothing. A
+ * chosen id that isn't a member, isn't down, or was withdrawn by its author is refused.
+ */
+export async function planPostRestore(
+  ctx: QueryCtx,
+  post: Doc<'posts'>,
+  { reviveRemoved = false, chosen = [] }: { reviveRemoved?: boolean; chosen?: Id<'reports'>[] },
+): Promise<PostRestorePlan> {
+  const memberIds = new Set<string>(post.reportIds);
+  const chosenSet = new Set<string>(chosen);
+  if (chosenSet.size !== chosen.length) throw new ConvexError('A report was chosen twice');
+  for (const id of chosenSet) {
+    if (!memberIds.has(id)) throw new ConvexError('A chosen report is not part of this post');
+  }
+  const plan: PostRestorePlan = {
+    members: [],
+    revive: [],
+    chosen: [],
+    choosable: 0,
+    visibleAfter: 0,
+  };
+  for (const id of post.reportIds) {
+    const report = await ctx.db.get(id);
+    if (!report) {
+      if (chosenSet.has(id)) throw new ConvexError('A chosen report no longer exists');
+      continue;
+    }
+    if (report.moderationStatus === 'visible') {
+      if (chosenSet.has(id)) throw new ConvexError('A chosen report is already visible');
+      plan.members.push({ report, last: null, standing: 'visible' });
+      plan.visibleAfter++;
+      continue;
+    }
+    const last = await newestRowOn(ctx, report._id);
+    // A member a moderator chose to bring back, then put back down by that restore's undo, is down
+    // on its own decision again, though the row naming the Post is the last word on it.
+    const revivable =
+      report.authorDeletedAt === undefined &&
+      (report.moderationStatus === 'hidden' || reviveRemoved) &&
+      last?.metadata?.cascadedFromPostId === post._id &&
+      last.metadata.chosen !== true &&
+      last.action !== 'author_delete';
+    if (revivable) {
+      plan.members.push({ report, last, standing: 'returns' });
+      plan.revive.push(report);
+      plan.visibleAfter++;
+      continue;
+    }
+    if (isAuthorWithdrawn(report, last)) {
+      if (chosenSet.has(id)) {
+        throw new ConvexError("A chosen report was deleted by its author and can't be restored");
+      }
+      plan.members.push({ report, last, standing: 'author_deleted' });
+      continue;
+    }
+    plan.members.push({ report, last, standing: 'choose' });
+    plan.choosable++;
+    if (chosenSet.has(id)) {
+      plan.chosen.push(report);
+      plan.visibleAfter++;
+    }
+  }
+  return plan;
+}
+
 export const setModerationStatus = mutation({
   args: {
     targetType: literals(['report', 'post', 'comment', 'hazard']),
     targetId: v.string(),
     status: literals(MODERATION_STATUSES),
     reason: v.string(),
+    /** A Post restore only: members to restore with it (founder call, 2026-11-13). */
+    withReportIds: v.optional(v.array(v.id('reports'))),
   },
   handler: async (ctx, args) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'content.moderate');
+    return setContentStatus(ctx, actor, args);
+  },
+});
+
+export type ContentTargetType = keyof typeof MODERATION_TABLE;
+
+/**
+ * The body of {@link setModerationStatus}, callable by an undo (D226) so the restore runs the same
+ * cascade the hide did — a Post brings back the reports *it* hid, and every count and card follows.
+ * A Post row that lists the members it moved (`cascaded`) undoes through {@link revertPostVerdict}
+ * instead; only a Post row from before that record comes back through here.
+ */
+export async function setContentStatus(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  args: {
+    targetType: ContentTargetType;
+    targetId: string;
+    status: ModerationStatus;
+    reason: string;
+    /**
+     * Bring back members this Post's own *removal* took down, too — set only by that removal's undo
+     * (D226), and only for a removal row from before `cascaded` was recorded (a newer one undoes
+     * through `revertPostVerdict`). A moderator's restore of a removed Post leaves them removed (the
+     * stronger verdict); an undo puts back what the removal replaced, and without this it would
+     * leave a visible Post with every Report in it gone.
+     */
+    reviveRemoved?: boolean;
+    /**
+     * Members of the Post to restore with it (founder call, 2026-11-13): a moderator's conscious
+     * override of each member's own takedown, for a Post that would otherwise come back with none
+     * of its Reports. Only on a Post restore; each must be a member that is down and not withdrawn
+     * by its author.
+     */
+    withReportIds?: Id<'reports'>[];
+    /** Set by an undo, to the row it undoes: an undo never chooses, so its refusals say so. */
+    undoes?: Id<'moderationActions'>;
+  },
+): Promise<Id<'reports'> | Id<'posts'> | Id<'comments'> | Id<'hazards'>> {
+  {
     if (args.reason.trim().length === 0) throw new ConvexError('A reason is required');
     const now = Date.now();
 
@@ -257,54 +450,83 @@ export const setModerationStatus = mutation({
 
     const typedTarget = target as Doc<'reports'> | Doc<'posts'> | Doc<'comments'> | Doc<'hazards'>;
     const priorStatus = typedTarget.moderationStatus;
+    const asUndo = args.undoes !== undefined;
+    if (
+      args.withReportIds !== undefined &&
+      (args.targetType !== 'post' || args.status !== 'visible')
+    ) {
+      throw new ConvexError('Reports can only be chosen when restoring a post');
+    }
+    // Author-deleted content never comes back (D248, founder ruling 2026-11-13) — not by restore, not
+    // by a Post's choice, not by undo — and nothing else moves it either: it stays as the deletion
+    // left it.
+    if (authorDeletedAtOf(typedTarget) !== undefined) {
+      if (args.status === 'visible' || asUndo) {
+        throw new ConvexError(authorDeletedRefusal(args.status, asUndo));
+      }
+      // A moderator's hide or remove on content its author already deleted (a flag that arrives
+      // after the delete) is still their decision, and goes on the audit trail as evidence — the
+      // content stays exactly as the deletion left it. (D248 ruling 2: the next PR puts it on the
+      // person's verdict record.)
+      await writeAudit(ctx, {
+        actorId: actor._id,
+        action: ACTION_FOR_STATUS[args.status],
+        targetType: args.targetType,
+        targetId: args.targetId,
+        reason: args.reason,
+        metadata: { priorStatus, newStatus: priorStatus, onAuthorDeleted: true },
+        createdAt: now,
+      });
+      return targetId;
+    }
 
     const audit = { actorId: actor._id, reason: args.reason, now };
+    // Every member a Post's verdict moved, and from what to what — on the Post's own row, so its undo
+    // can put each member back to its own prior status (founder call, 2026-11-13).
+    const cascaded: PostCascade[] = [];
     if (args.targetType === 'report') {
       await applyReportStatus(ctx, target as Doc<'reports'>, args.status, audit);
     } else if (args.targetType === 'post') {
       // A Post's verdict reaches its members (A10 §2.4): hidden ⇒ every visible Report hidden, each
-      // with its own audit row naming the cascade; restored ⇒ only the Reports *this* hide took down
-      // come back, so a member a moderator hid on its own merits stays hidden. `removed` cascades
-      // the same way and is not restored by a Post restore — it is the stronger verdict.
+      // with its own audit row naming the cascade; restored ⇒ the Reports *this* hide took down come
+      // back, plus any the moderator chose, so a member hidden on its own merits stays hidden unless
+      // chosen. `removed` cascades the same way and is not restored by a plain Post restore — it is
+      // the stronger verdict.
       const post = target as Doc<'posts'>;
-      await ctx.db.patch(post._id, { moderationStatus: args.status });
-      for (const reportId of post.reportIds) {
-        const report = await ctx.db.get(reportId);
-        if (!report) continue;
-        if (args.status !== 'visible') {
-          if (report.moderationStatus !== 'visible') continue;
-          await applyReportStatus(ctx, report, args.status, audit);
-          await ctx.db.insert('moderationActions', {
-            actorId: actor._id,
-            action: ACTION_FOR_STATUS[args.status],
-            targetType: 'report',
-            targetId: report._id,
-            reason: args.reason,
-            metadata: {
-              priorStatus: 'visible',
-              newStatus: args.status,
-              cascadedFromPostId: post._id,
-            },
-            createdAt: now,
-          });
-        } else {
-          if (report.moderationStatus !== 'hidden') continue;
-          const last = await ctx.db
-            .query('moderationActions')
-            .withIndex('by_target', (q) => q.eq('targetType', 'report').eq('targetId', report._id))
-            .order('desc')
-            .first();
-          if (last?.metadata?.cascadedFromPostId !== post._id) continue;
-          await applyReportStatus(ctx, report, 'visible', audit);
-          await ctx.db.insert('moderationActions', {
-            actorId: actor._id,
-            action: 'restore',
-            targetType: 'report',
-            targetId: report._id,
-            reason: args.reason,
-            metadata: { priorStatus: 'hidden', newStatus: 'visible', cascadedFromPostId: post._id },
-            createdAt: now,
-          });
+      if (args.status !== 'visible') {
+        await ctx.db.patch(post._id, { moderationStatus: args.status });
+        for (const reportId of post.reportIds) {
+          const report = await ctx.db.get(reportId);
+          if (report === null || report.moderationStatus !== 'visible') continue;
+          cascaded.push(await moveMember(ctx, post._id, report, args.status, audit));
+        }
+      } else {
+        // A choice is for a Post coming back. On one that is up already, the chosen Reports would be
+        // restored as the Post's, by a row whose undo has nothing to put the Post back to.
+        if (args.withReportIds?.length && post.moderationStatus === 'visible') {
+          throw new ConvexError('This post is already up. Restore its reports one at a time.');
+        }
+        // Decided before anything is written: a Post is never stored visible with none of its
+        // Reports visible (D186; founder call, 2026-11-13).
+        const plan = await planPostRestore(ctx, post, {
+          reviveRemoved: args.reviveRemoved === true,
+          ...(args.withReportIds !== undefined ? { chosen: args.withReportIds } : {}),
+        });
+        if (plan.visibleAfter === 0) {
+          throw new ConvexError(
+            asUndo
+              ? UNDO_LEAVES_POST_EMPTY
+              : plan.choosable === 0
+                ? POST_UNRESTORABLE
+                : POST_RESTORE_NEEDS_A_CHOICE,
+          );
+        }
+        await ctx.db.patch(post._id, { moderationStatus: 'visible' });
+        for (const report of plan.revive) {
+          cascaded.push(await moveMember(ctx, post._id, report, 'visible', audit));
+        }
+        for (const report of plan.chosen) {
+          cascaded.push(await moveMember(ctx, post._id, report, 'visible', audit, true));
         }
       }
     } else {
@@ -327,21 +549,144 @@ export const setModerationStatus = mutation({
       }
     }
 
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: ACTION_FOR_STATUS[args.status],
       targetType: args.targetType,
       targetId: args.targetId,
       reason: args.reason,
-      metadata: { priorStatus, newStatus: args.status },
+      metadata: {
+        priorStatus,
+        newStatus: args.status,
+        ...(args.targetType === 'post' ? { cascaded } : {}),
+      },
       createdAt: now,
     });
     return targetId;
-  },
-});
+  }
+}
+
+/** One member a Post's verdict moved: the Report, the status it had, the status it was given. */
+export interface PostCascade {
+  id: Id<'reports'>;
+  from: ModerationStatus;
+  to: ModerationStatus;
+  /**
+   * Brought back by a moderator's choice, not by the Post's own takedown: carried through every
+   * undo and redo, so when that undo puts it back down it is down on its own decision, which a
+   * plain restore of the Post never revives.
+   */
+  chosen?: true;
+}
 
 /**
- * Resolve a content flag (D32/D37). `requireRole('moderator')`; sets the flag terminal status
+ * Move one member of a Post for the Post's verdict, or for that verdict's undo: the Report's status
+ * and everything that follows it, and its own audit row naming the Post (which makes its undo the
+ * Post's). Returns the entry the Post's own row records.
+ */
+async function moveMember(
+  ctx: MutationCtx,
+  postId: Id<'posts'>,
+  report: Doc<'reports'>,
+  to: ModerationStatus,
+  audit: { actorId: Id<'profiles'>; reason: string; now: number },
+  chosen = false,
+): Promise<PostCascade> {
+  const from = report.moderationStatus;
+  const mark = chosen ? ({ chosen: true } as const) : {};
+  await applyReportStatus(ctx, report, to, audit);
+  await writeAudit(ctx, {
+    actorId: audit.actorId,
+    action: ACTION_FOR_STATUS[to],
+    targetType: 'report',
+    targetId: report._id,
+    reason: audit.reason,
+    metadata: { priorStatus: from, newStatus: to, cascadedFromPostId: postId, ...mark },
+    createdAt: audit.now,
+  });
+  return { id: report._id, from, to, ...mark };
+}
+
+/**
+ * The undo of a Post's verdict (D226; founder call, 2026-11-13): the Post back to the status it had,
+ * and **every member the verdict moved back to its own prior status** — whatever the Post returns
+ * to. Not `setContentStatus` in reverse: its cascade only ever revives members on the way to
+ * visible, so removing a hidden Post and undoing it left a Report the removal took down removed,
+ * with its own undo refused as "followed from the Post".
+ *
+ * A member is put back only while the verdict is still the last word on it — the newest row on it
+ * is this verdict's cascade row (same Post, same instant) and it still has the status the verdict
+ * gave it. A member a moderator has acted on since keeps that later decision. The Post's own row is
+ * written last, so it is the newest on the Post, and lists the members it moved, so its undo is
+ * the exact inverse again.
+ */
+export async function revertPostVerdict(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  { row, reason }: { row: Doc<'moderationActions'>; reason: string },
+): Promise<void> {
+  const { priorStatus, cascaded } = row.metadata as {
+    priorStatus: ModerationStatus;
+    cascaded: PostCascade[];
+  };
+  const postId = ctx.db.normalizeId('posts', row.targetId);
+  const post = postId ? await ctx.db.get(postId) : null;
+  if (!post) throw new ConvexError('Target not found');
+  // A Post its author deleted stays as the deletion left it, whatever the undo would put back to.
+  if (post.authorDeletedAt !== undefined) {
+    throw new ConvexError(authorDeletedRefusal(priorStatus, true));
+  }
+  const now = Date.now();
+  const audit = { actorId: actor._id, reason, now };
+
+  // Which members go back, decided before anything is written.
+  const moves: {
+    report: Doc<'reports'>;
+    to: ModerationStatus;
+    chosen: boolean;
+  }[] = [];
+  for (const member of cascaded) {
+    const report = await ctx.db.get(member.id);
+    if (!report || report.moderationStatus !== member.to) continue;
+    // A member its author deleted stays where the deletion left it, whatever the Post's undo does.
+    if (report.authorDeletedAt !== undefined) continue;
+    const last = await newestRowOn(ctx, report._id);
+    if (last?.metadata?.cascadedFromPostId !== post._id || last.createdAt !== row.createdAt) {
+      continue;
+    }
+    moves.push({ report, to: member.from, chosen: member.chosen === true });
+  }
+  // An undo back to visible must leave a Report showing (D186; founder call, 2026-11-13). It never
+  // chooses which — that is Restore's — so it refuses and says where the choice lives.
+  if (priorStatus === 'visible') {
+    const moving = new Map(moves.map((m) => [m.report._id as string, m.to]));
+    let visibleAfter = 0;
+    for (const id of post.reportIds) {
+      const status = moving.get(id) ?? (await ctx.db.get(id))?.moderationStatus;
+      if (status === 'visible') visibleAfter++;
+    }
+    if (visibleAfter === 0) throw new ConvexError(UNDO_LEAVES_POST_EMPTY);
+  }
+
+  // The Post first, so a member's change doesn't re-derive the Post's status from the old one.
+  await ctx.db.patch(post._id, { moderationStatus: priorStatus });
+  const reverted: PostCascade[] = [];
+  for (const { report, to, chosen } of moves) {
+    reverted.push(await moveMember(ctx, post._id, report, to, audit, chosen));
+  }
+  await writeAudit(ctx, {
+    actorId: actor._id,
+    action: ACTION_FOR_STATUS[priorStatus],
+    targetType: 'post',
+    targetId: post._id,
+    reason,
+    metadata: { priorStatus: post.moderationStatus, newStatus: priorStatus, cascaded: reverted },
+    createdAt: now,
+  });
+}
+
+/**
+ * Resolve a content flag (D32/D37). `requireCapability('inbox.flag')`; sets the flag terminal status
  * (`actioned` / `dismissed`) + `resolvedBy`/`resolvedAt` and writes one `resolve_flag` /
  * `dismiss_flag` audit row. Taking down the flagged content is a separate `setModerationStatus`
  * call (so the two decisions are each audited).
@@ -353,7 +698,7 @@ export const resolveFlag = mutation({
     reason: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'inbox.flag');
     if (args.reason.trim().length === 0) throw new ConvexError('A reason is required');
 
     const flag = await ctx.db.get(args.flagId);
@@ -372,7 +717,7 @@ export const resolveFlag = mutation({
     // `waterBodies.setPublicAccess`, which closes flags as a side effect of ruling on a lake.
     await closeFlag(ctx, flag, args.resolution, actor._id, now);
 
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: args.resolution === 'actioned' ? 'resolve_flag' : 'dismiss_flag',
       targetType: 'contentFlag',
@@ -385,7 +730,7 @@ export const resolveFlag = mutation({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Admin queue queries (Phase 07 read side). Every one gates `requireRole('moderator')`,
+// Admin queue queries (Phase 07 read side). Every one gates on a read capability (D217),
 // reads off an index, and is bounded — a queue read never `.collect()`s a whole table.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -609,6 +954,79 @@ export interface AccessReportGroup {
   disputesReviewFrom?: number;
 }
 
+/** One member of a Post, as the restore chooser shows it. */
+export interface PostRestoreMember {
+  reportId: Id<'reports'>;
+  status: ModerationStatus;
+  waterBodyName: string | null;
+  skateEndTime: number;
+  /** Why it is down: the last word on it. Absent for a visible member. */
+  down?: { action: string; by: QueueUser | null; at: number; reason: string };
+  standing: PostRestoreStanding;
+}
+
+/**
+ * What the Post-restore chooser needs (founder call, 2026-11-13): each member — what it is, why it
+ * is down, and whether it can be chosen — and whether a plain restore would bring a Report back on
+ * its own (then no chooser is needed). Bounded by the Post's member cap, which the Post's write
+ * enforces; the members are the plan's own reads, so the list and the verdict can't disagree.
+ */
+export const postRestoreChoices = query({
+  args: { postId: v.id('posts') },
+  handler: async (ctx, { postId }) => {
+    // `content.read`, the read half of `content.moderate`: hidden content, read in full. A query
+    // can't take a write capability (a departing moderator still reads), and the restore it feeds
+    // is gated on `content.moderate` itself.
+    await requireCapability(ctx, 'content.read');
+    const post = await ctx.db.get(postId);
+    if (!post) return null;
+    const plan = await planPostRestore(ctx, post, {});
+    const members: PostRestoreMember[] = [];
+    for (const { report, last, standing } of plan.members) {
+      const body = await ctx.db.get(report.waterBodyId);
+      members.push({
+        reportId: report._id,
+        status: report.moderationStatus,
+        waterBodyName: body?.name ?? null,
+        skateEndTime: report.skateEndTime,
+        ...(last
+          ? {
+              down: {
+                action: last.action,
+                by: await loadQueueUser(ctx, last.actorId),
+                at: last.createdAt,
+                reason: last.reason,
+              },
+            }
+          : {}),
+        standing,
+      });
+    }
+    // A Post its author deleted never comes back, whatever is in it (founder ruling, 2026-11-13).
+    const withdrawn = post.authorDeletedAt !== undefined;
+    const plainRestoreBringsBack = !withdrawn && plan.visibleAfter > 0;
+    return {
+      postStatus: post.moderationStatus,
+      /** A plain restore shows the Post with at least one Report: no choice is needed. */
+      plainRestoreBringsBack,
+      /** Something can bring the Post back — the plain restore, or a choice. */
+      restorable: !withdrawn && (plainRestoreBringsBack || plan.choosable > 0),
+      /**
+       * What the chooser says when a plain restore isn't enough, in the words the restore's own
+       * refusal uses: why a choice is needed, or why the Post can't come back.
+       */
+      prompt: withdrawn
+        ? AUTHOR_DELETED_RESTORE
+        : plainRestoreBringsBack
+          ? null
+          : plan.choosable > 0
+            ? POST_RESTORE_NEEDS_A_CHOICE
+            : POST_UNRESTORABLE,
+      members,
+    };
+  },
+});
+
 /**
  * The moderator flag queue (D37/D3). Open + reviewing flags off `by_status`, oldest-first (a queue
  * drains front-to-back so nothing rots), split into a **priority lane** — `unsafe_false_report` is a
@@ -626,7 +1044,7 @@ export const listFlags = query({
     standard: FlagView[];
     accessReports: AccessReportGroup[];
   }> => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'inbox.read');
     const open = await ctx.db
       .query('contentFlags')
       .withIndex('by_status', (q) => q.eq('status', 'open'))
@@ -700,10 +1118,20 @@ interface ActionView {
   metadata?: unknown;
   createdAt: number;
   actor: QueueUser | null;
+  /** Set on the row an undo wrote: the row it undid (D226). */
+  undoesActionId?: string;
+  /** Whether the viewer can undo this row now, and if not, why (D226). */
+  undo: UndoState;
 }
 
-async function toActionView(ctx: QueryCtx, a: Doc<'moderationActions'>): Promise<ActionView> {
+async function toActionView(
+  ctx: QueryCtx,
+  viewer: Doc<'profiles'>,
+  a: Doc<'moderationActions'>,
+): Promise<ActionView> {
   return {
+    ...(a.undoesActionId !== undefined ? { undoesActionId: a.undoesActionId } : {}),
+    undo: await undoState(ctx, viewer, a),
     id: a._id,
     action: a.action,
     targetType: a.targetType,
@@ -729,7 +1157,7 @@ export const listActions = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<ActionView[]> => {
-    await requireRole(ctx, 'moderator');
+    const viewer = await requireCapability(ctx, 'audit.read');
     const limit = Math.min(args.limit ?? QUEUE_LIMIT, QUEUE_LIMIT);
 
     const { targetType, targetId, actorId } = args;
@@ -750,9 +1178,11 @@ export const listActions = query({
       rows = await ctx.db.query('moderationActions').order('desc').take(limit);
     }
 
+    // Who holds ledger editing is for holders only (D227), in History as on the People row.
+    const visible = withoutLedgerGrantsFor(viewer, rows);
     const filtered =
-      args.action !== undefined ? rows.filter((r) => r.action === args.action) : rows;
-    return Promise.all(filtered.map((a) => toActionView(ctx, a)));
+      args.action !== undefined ? visible.filter((r) => r.action === args.action) : visible;
+    return Promise.all(filtered.map((a) => toActionView(ctx, viewer, a)));
   },
 });
 
@@ -790,7 +1220,7 @@ async function auditUser(
   reason: string,
   metadata?: Record<string, unknown>,
 ): Promise<void> {
-  await ctx.db.insert('moderationActions', {
+  await writeAudit(ctx, {
     actorId,
     action,
     targetType: 'user',
@@ -810,7 +1240,26 @@ async function auditUser(
 export const banUser = mutation({
   args: { userId: v.id('profiles'), reason: v.string() },
   handler: async (ctx, { userId, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'people.discipline');
+    return banImpl(ctx, actor, { userId, reason });
+  },
+});
+
+/** What a lifecycle action replaced — the whole status, so its undo puts back exactly that (D226). */
+function statusPrev(target: Doc<'profiles'>) {
+  return {
+    status: target.status,
+    statusReason: target.statusReason ?? null,
+    suspendedUntil: target.suspendedUntil ?? null,
+  };
+}
+
+export async function banImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  { userId, reason }: { userId: Id<'profiles'>; reason: string },
+): Promise<Id<'profiles'>> {
+  {
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     const target = await loadModeratableUser(ctx, actor, userId);
 
@@ -820,31 +1269,46 @@ export const banUser = mutation({
       suspendedUntil: undefined,
       moderatedByUserId: actor._id,
     });
-    await auditUser(ctx, actor._id, 'ban', userId, reason);
+    await auditUser(ctx, actor._id, 'ban', userId, reason, { prev: statusPrev(target) });
     // Fire-and-forget: a mutation can't fetch. Permanent bans only touch Clerk (founder decision).
     await ctx.scheduler.runAfter(0, internal.clerkAdmin.setBanned, {
       clerkUserId: target.clerkUserId,
       banned: true,
     });
     return userId;
-  },
-});
+  }
+}
 
 /**
  * Temporarily suspend a user until `suspendedUntil` (D37). The Convex gate (`requireProfile`) rejects
  * while the window is open and **auto-lifts** with no cron — so, per the founder decision (2026-07-23),
- * a suspension deliberately does NOT touch Clerk (that would leave the user locked out of sign-in after
- * the window naturally expired). Audits `suspend` with the window in metadata.
+ * a suspension deliberately never locks Clerk (that would leave the user locked out of sign-in after
+ * the window naturally expired), and one that replaces a ban lifts the ban's lock. Audits `suspend`
+ * with the window in metadata.
  */
 export const suspendUser = mutation({
   args: { userId: v.id('profiles'), reason: v.string(), suspendedUntil: v.number() },
   handler: async (ctx, { userId, reason, suspendedUntil }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'people.discipline');
+    return suspendImpl(ctx, actor, { userId, reason, suspendedUntil });
+  },
+});
+
+export async function suspendImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    userId,
+    reason,
+    suspendedUntil,
+  }: { userId: Id<'profiles'>; reason: string; suspendedUntil: number },
+): Promise<Id<'profiles'>> {
+  {
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     if (suspendedUntil <= Date.now()) {
       throw new ConvexError('Suspension must end in the future');
     }
-    await loadModeratableUser(ctx, actor, userId);
+    const target = await loadModeratableUser(ctx, actor, userId);
 
     await ctx.db.patch(userId, {
       status: 'suspended',
@@ -852,10 +1316,22 @@ export const suspendUser = mutation({
       suspendedUntil,
       moderatedByUserId: actor._id,
     });
-    await auditUser(ctx, actor._id, 'suspend', userId, reason, { suspendedUntil });
+    await auditUser(ctx, actor._id, 'suspend', userId, reason, {
+      suspendedUntil,
+      prev: statusPrev(target),
+    });
+    // A suspension that replaces a ban — softened on appeal, or a ban's undo back to the suspension
+    // it replaced (D226) — has to lift the ban's Clerk lock too: a suspension never holds one, so
+    // left in place it would outlive the window and lock the person out for good (the reason above).
+    if (target.status === 'banned') {
+      await ctx.scheduler.runAfter(0, internal.clerkAdmin.setBanned, {
+        clerkUserId: target.clerkUserId,
+        banned: false,
+      });
+    }
     return userId;
-  },
-});
+  }
+}
 
 /**
  * Lift a ban or suspension (D37) — returns the account to `active`, clears the suspension window +
@@ -865,7 +1341,17 @@ export const suspendUser = mutation({
 export const unbanUser = mutation({
   args: { userId: v.id('profiles'), reason: v.string() },
   handler: async (ctx, { userId, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'people.discipline');
+    return unbanImpl(ctx, actor, { userId, reason });
+  },
+});
+
+export async function unbanImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  { userId, reason }: { userId: Id<'profiles'>; reason: string },
+): Promise<Id<'profiles'>> {
+  {
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     const target = await loadModeratableUser(ctx, actor, userId);
 
@@ -875,14 +1361,14 @@ export const unbanUser = mutation({
       suspendedUntil: undefined,
       moderatedByUserId: actor._id,
     });
-    await auditUser(ctx, actor._id, 'unban', userId, reason);
+    await auditUser(ctx, actor._id, 'unban', userId, reason, { prev: statusPrev(target) });
     await ctx.scheduler.runAfter(0, internal.clerkAdmin.setBanned, {
       clerkUserId: target.clerkUserId,
       banned: false,
     });
     return userId;
-  },
-});
+  }
+}
 
 /**
  * Set (or clear) a requester's **open-bounty cap** (D57's deferred bounty lever, built in A02).
@@ -904,21 +1390,30 @@ export const setBountyPostLimit = mutation({
     reason: v.string(),
   },
   handler: async (ctx, { userId, limit, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
-    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
-    if (limit !== undefined && (!Number.isInteger(limit) || limit < 0)) {
-      throw new ConvexError('A bounty limit has to be a whole number, zero or more');
-    }
-    await loadModeratableUser(ctx, actor, userId);
-
-    await ctx.db.patch(userId, { activeBountyPostLimit: limit });
-    await auditUser(ctx, actor._id, 'set_posting_permission', userId, reason, {
-      permission: 'bounties',
-      limit: limit ?? null,
-    });
-    return userId;
+    const actor = await requireCapability(ctx, 'people.discipline');
+    return setBountyLimitImpl(ctx, actor, { userId, limit, reason });
   },
 });
+
+export async function setBountyLimitImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  { userId, limit, reason }: { userId: Id<'profiles'>; limit?: number; reason: string },
+): Promise<Id<'profiles'>> {
+  if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+  if (limit !== undefined && (!Number.isInteger(limit) || limit < 0)) {
+    throw new ConvexError('A bounty limit has to be a whole number, zero or more');
+  }
+  const target = await loadModeratableUser(ctx, actor, userId);
+
+  await ctx.db.patch(userId, { activeBountyPostLimit: limit });
+  await auditUser(ctx, actor._id, 'set_posting_permission', userId, reason, {
+    permission: 'bounties',
+    limit: limit ?? null,
+    prev: { limit: target.activeBountyPostLimit ?? null },
+  });
+  return userId;
+}
 
 /** Which `profiles` boolean each posting surface maps to (D57). */
 const POSTING_PERMISSION_FIELD = {
@@ -941,15 +1436,33 @@ export const setPostingPermission = mutation({
     reason: v.string(),
   },
   handler: async (ctx, { userId, permission, allowed, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
-    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
-    await loadModeratableUser(ctx, actor, userId);
-
-    await ctx.db.patch(userId, { [POSTING_PERMISSION_FIELD[permission]]: allowed });
-    await auditUser(ctx, actor._id, 'set_posting_permission', userId, reason, {
-      permission,
-      allowed,
-    });
-    return userId;
+    const actor = await requireCapability(ctx, 'people.discipline');
+    return setPostingPermissionImpl(ctx, actor, { userId, permission, allowed, reason });
   },
 });
+
+export type PostingPermission = keyof typeof POSTING_PERMISSION_FIELD;
+
+export async function setPostingPermissionImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    userId,
+    permission,
+    allowed,
+    reason,
+  }: { userId: Id<'profiles'>; permission: PostingPermission; allowed: boolean; reason: string },
+): Promise<Id<'profiles'>> {
+  if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+  const target = await loadModeratableUser(ctx, actor, userId);
+
+  const field = POSTING_PERMISSION_FIELD[permission];
+  await ctx.db.patch(userId, { [field]: allowed });
+  await auditUser(ctx, actor._id, 'set_posting_permission', userId, reason, {
+    permission,
+    allowed,
+    // Missing means allowed (D57), so the prior value is always a boolean.
+    prev: { allowed: target[field] !== false },
+  });
+  return userId;
+}

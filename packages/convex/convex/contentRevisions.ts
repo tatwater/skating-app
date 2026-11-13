@@ -17,7 +17,7 @@
 import { ConvexError, v } from 'convex/values';
 import type { Id } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
-import { requireRole } from './lib/auth';
+import { requireCapability } from './lib/auth';
 import { postSnapshotOf, reportSnapshotOf } from './lib/revisions';
 import { literals } from './lib/validators';
 
@@ -32,7 +32,7 @@ export const listForTarget = query({
     targetId: v.string(),
   },
   handler: async (ctx, { targetType, targetId }) => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'content.read');
 
     const rows = await ctx.db
       .query('contentRevisions')
@@ -95,7 +95,7 @@ export const countForTarget = query({
     targetId: v.string(),
   },
   handler: async (ctx, { targetType, targetId }) => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'content.read');
     const rows = await ctx.db
       .query('contentRevisions')
       .withIndex('by_target', (q) => q.eq('targetType', targetType).eq('targetId', targetId))

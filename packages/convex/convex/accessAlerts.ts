@@ -50,7 +50,8 @@ import {
   query,
 } from './_generated/server';
 import { MAX_ACCESS_ROWS_PER_BODY, MAX_LOT_LINKS_SCANNED } from './lib/accessLimits';
-import { requireContributor, requireContributorRole } from './lib/auth';
+import { writeAudit } from './lib/audit';
+import { requireCapability, requireContributor } from './lib/auth';
 import {
   ACCESS_ALERT_KINDS,
   ACCESS_ALERT_TARGETS,
@@ -297,7 +298,7 @@ export const retract = mutation({
     });
 
     if (isModerator && !isAuthor) {
-      await ctx.db.insert('moderationActions', {
+      await writeAudit(ctx, {
         actorId: profile._id,
         action: 'retract_access_alert',
         targetType: 'accessAlert',
@@ -325,40 +326,61 @@ export const retract = mutation({
 export const setOfficial = mutation({
   args: { accessAlertId: v.id('accessAlerts'), official: v.boolean(), reason: v.string() },
   handler: async (ctx, { accessAlertId, official, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
-    const alert = await ctx.db.get(accessAlertId);
-    if (!alert) throw new ConvexError('Access alert not found');
-    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
-
-    if (official) {
-      await ctx.db.patch(accessAlertId, {
-        status: 'official',
-        pinnedByUserId: actor._id,
-        expiresAt: undefined,
-      });
-    } else {
-      // Released back into the community lifecycle, with the clock restarted from now rather than
-      // from the original assertion — an alert a moderator vouched for until today is not
-      // simultaneously thirty days stale.
-      const now = Date.now();
-      await ctx.db.patch(accessAlertId, {
-        status: 'active',
-        pinnedByUserId: undefined,
-        expiresAt: accessAlertExpiryFor(now, seasonEndMs(alert.season)),
-      });
-    }
-
-    await ctx.db.insert('moderationActions', {
-      actorId: actor._id,
-      action: official ? 'pin_access_alert' : 'unpin_access_alert',
-      targetType: 'accessAlert',
-      targetId: accessAlertId,
-      reason,
-      metadata: { waterBodyId: alert.waterBodyId, alertReason: alert.reason },
-      createdAt: Date.now(),
-    });
+    const actor = await requireCapability(ctx, 'access.alert');
+    await setOfficialImpl(ctx, actor, { accessAlertId, official, reason });
   },
 });
+
+/**
+ * `setOfficial`'s body — also what undoing a pin or an unpin runs (D226). The row records the alert's
+ * prior `status` and `expiresAt` as `prev`, so an undo can tell whether the release it is about to
+ * perform would put back what was there.
+ */
+export async function setOfficialImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    accessAlertId,
+    official,
+    reason,
+  }: { accessAlertId: Id<'accessAlerts'>; official: boolean; reason: string },
+): Promise<void> {
+  const alert = await ctx.db.get(accessAlertId);
+  if (!alert) throw new ConvexError('Access alert not found');
+  if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+
+  if (official) {
+    await ctx.db.patch(accessAlertId, {
+      status: 'official',
+      pinnedByUserId: actor._id,
+      expiresAt: undefined,
+    });
+  } else {
+    // Released back into the community lifecycle, with the clock restarted from now rather than
+    // from the original assertion — an alert a moderator vouched for until today is not
+    // simultaneously thirty days stale.
+    const now = Date.now();
+    await ctx.db.patch(accessAlertId, {
+      status: 'active',
+      pinnedByUserId: undefined,
+      expiresAt: accessAlertExpiryFor(now, seasonEndMs(alert.season)),
+    });
+  }
+
+  await writeAudit(ctx, {
+    actorId: actor._id,
+    action: official ? 'pin_access_alert' : 'unpin_access_alert',
+    targetType: 'accessAlert',
+    targetId: accessAlertId,
+    reason,
+    metadata: {
+      waterBodyId: alert.waterBodyId,
+      alertReason: alert.reason,
+      prev: { status: alert.status, expiresAt: alert.expiresAt ?? null },
+    },
+    createdAt: Date.now(),
+  });
+}
 
 /** An alert as a client renders it, with the target resolved to something nameable. */
 export interface AccessAlertView {

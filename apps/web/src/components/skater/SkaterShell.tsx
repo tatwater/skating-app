@@ -3,6 +3,7 @@ import { api } from '@skating/convex/api';
 import { deviceTimeZone, timezoneToSync } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { type ReactNode, useEffect } from 'react';
+import { useOpenSync } from '../../lib/useOpenSync';
 
 import { SheetHostContext } from './chrome';
 import { useSearchOwnerBinding } from './GlobalSearch';
@@ -68,10 +69,8 @@ export function useAppOpenSync(): void {
   }, [hasProfile, storedZone, setTimezone]);
 
   const syncFromClerk = useMutation(api.profiles.syncFromClerk);
-  useEffect(() => {
-    if (!hasProfile) return;
-    void syncFromClerk({}).catch(() => {});
-  }, [hasProfile, syncFromClerk]);
+  // On open, and again when a tab left open returns on a new day — the sign-in record's touch point.
+  useOpenSync(() => void syncFromClerk({}).catch(() => {}), hasProfile);
 }
 
 /**

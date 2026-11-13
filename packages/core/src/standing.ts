@@ -35,11 +35,12 @@
  *
  * ## The retention rule
  *
- * A body stays active while someone has been on it recently — `INACTIVE_SEASONS` — or while a person
- * has said it matters (a curated boost, a favorite). It becomes active again the moment there is
- * evidence: a report, a matched track, a put-in placed on it, a moderator confirming public access.
- * A put-in alone does not *keep* a body active (founder call): it is evidence of access, not of use,
- * so it qualifies a lake for the seed and re-activates a dormant one, and then the clock runs.
+ * A body stays active while someone has been on it recently — `INACTIVE_SEASONS` — while a person
+ * has said it matters (a curated boost, a favorite), or while it has a saved put-in. It becomes
+ * active again the moment there is evidence: a report, a matched track, a put-in placed on it, a
+ * moderator confirming public access. A put-in *keeps* a body active as well as qualifying it (D245,
+ * which reversed D177's "access is not use"): the seed kept every body with a put-in, and a rollover
+ * that shelved those same bodies each July would undo the seed on a timer.
  *
  * What never flips automatically: a `none` access ruling and a removal. A resident skating a private
  * lake is not evidence the public may; their report attaches, the ruling stands.
@@ -61,8 +62,8 @@ export type Standing = (typeof STANDINGS)[number];
  * and `removedAt`, and storing a second copy is how two fields come to disagree.
  *
  * - `inactive` — the retention rule: nobody has reported, tracked or marked anything here in
- *   `INACTIVE_SEASONS`, and nobody has boosted or favorited it. Written by the season cron and by
- *   the seed. **The only reason the machine writes on its own.**
+ *   `INACTIVE_SEASONS`, nobody has boosted or favorited it, and it has no saved put-in. Written by
+ *   the season cron and by the seed. **The only reason the machine writes on its own.**
  * - `not_in_campaign` — the admission rules changed under it: a campaign's master list no longer
  *   contains it (a raised acreage floor, a class the merge now refuses). Written by the prunes, which
  *   demote rather than delete (founder call, 2026-09-16: *"they shouldn't leave our database"*).
@@ -238,19 +239,42 @@ export interface RetentionInput {
   curatedBoost?: number | undefined;
   /** Anyone at all has favorited it. *"If you favorited it, you know something we don't."* */
   favorited: boolean;
+  /**
+   * The body has a saved put-in — a stored launch (official, mapped or persisted) that no
+   * moderator's hide suppresses (D245). Required, like `favorited`, so a caller cannot forget it and
+   * shelve every lake the seed kept on its launches.
+   */
+  hasPutIn: boolean;
 }
 
+/** What kept a body active through a rollover — the dry run's tally keys. */
+export const RETENTION_REASONS = ['activity', 'curated', 'favorited', 'put_in'] as const;
+export type RetentionReason = (typeof RETENTION_REASONS)[number];
+
 /**
- * Does this active body stay active at the rollover into `season`?
+ * Why an active body stays active at the rollover into `season`, or `null` when it does not.
  *
- * Use within the window, or a standing human decision. Deliberately **not** `includedByRequest`
- * (admission is not retention — a requested pond nobody then skates is still an unskated pond) and
- * **not** a put-in (access is not use).
+ * **The first reason that holds, in this order:** use within the window, a curated boost, a
+ * favorite, a saved put-in. The order is the tally's, not the rule's — any one retains — and use
+ * comes first and the put-in last so the rollover's `put_in` count is exactly the bodies only a
+ * put-in kept: the ones D177's rule would have shelved and D245's keeps.
+ *
+ * Deliberately **not** `includedByRequest` (admission is not retention — a requested pond nobody then
+ * skates is still an unskated pond).
  */
+export function retentionReason(input: RetentionInput, season: Season): RetentionReason | null {
+  if (input.lastActivityAt !== undefined && input.lastActivityAt >= inactivityCutoffMs(season)) {
+    return 'activity';
+  }
+  if ((input.curatedBoost ?? 0) > 0) return 'curated';
+  if (input.favorited) return 'favorited';
+  if (input.hasPutIn) return 'put_in';
+  return null;
+}
+
+/** Does this active body stay active at the rollover into `season`? See `retentionReason`. */
 export function retainsActive(input: RetentionInput, season: Season): boolean {
-  if ((input.curatedBoost ?? 0) > 0) return true;
-  if (input.favorited) return true;
-  return input.lastActivityAt !== undefined && input.lastActivityAt >= inactivityCutoffMs(season);
+  return retentionReason(input, season) !== null;
 }
 
 // ── Copy ───────────────────────────────────────────────────────────────────────────────────────

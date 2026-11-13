@@ -56,6 +56,7 @@ import {
   polygonIoU,
   primaryReviewReason,
   REVIEW_REASONS,
+  type RemovalReason,
   type ReviewReason,
   reactivatesOnEvidence,
   referenceLinkError,
@@ -71,6 +72,7 @@ import type { LineString, MultiPolygon, Polygon } from 'geojson';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import {
+  type ActionCtx,
   internalAction,
   internalMutation,
   internalQuery,
@@ -79,12 +81,12 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
+import { snapshotDoc, writeAudit, writeSnapshot } from './lib/audit';
 import {
   getCurrentProfile,
+  requireCapability,
   requireContributor,
-  requireContributorRole,
   requireProfile,
-  requireRole,
 } from './lib/auth';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
@@ -97,7 +99,7 @@ import {
   WATER_BODY_SOURCES,
 } from './lib/enums';
 import { closeFlag } from './lib/flagResolution';
-import { repointLandmarksOnMerge } from './lib/landmarkRows';
+import { landmarksForBody, repointLandmarksOnMerge } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
 import { mirrorReportSubAreas } from './lib/reportSubAreas';
 import { takeCapped, takeCappedResult } from './lib/scan';
@@ -2640,7 +2642,7 @@ export const findMatchCandidates = query({
 export const approve = mutation({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, args) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'inbox.drawnBody');
     const body = await ctx.db.get(args.waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
     // Only user-created bodies enter the review queue; approving canonical (OSM/NHD)
@@ -2664,7 +2666,7 @@ export const approve = mutation({
     // Sub-areas inherit the parent's listing (Decision 11), so every mutation that moves it has to
     // move theirs — a bay is only reachable while the lake it names is.
     await syncCellsForParent(ctx, args.waterBodyId, { ...body, reviewStatus: 'approved' });
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'approve_waterbody',
       targetType: 'waterbody',
@@ -2690,31 +2692,43 @@ export const approve = mutation({
 export const remove = mutation({
   args: { waterBodyId: v.id('waterBodies'), reason: literals(REMOVAL_REASONS) },
   handler: async (ctx, args) => {
-    const actor = await requireContributorRole(ctx, 'admin');
-    const body = await ctx.db.get(args.waterBodyId);
-    if (!body) throw new ConvexError('Water body not found');
-    // Idempotency + no duplicate audit rows: only an on-map body can be removed.
-    if (body.removedAt !== undefined) throw new ConvexError('Water body is already removed');
-
-    const now = Date.now();
-    await transitionStanding(
-      ctx,
-      body,
-      { removedAt: now, removedByUserId: actor._id, removalReason: args.reason },
-      { actorId: actor._id, audit: false, now },
-    );
-    await ctx.db.insert('moderationActions', {
-      actorId: actor._id,
-      action: 'remove',
-      targetType: 'waterbody',
-      targetId: args.waterBodyId,
-      reason: `Removed from map (${args.reason})`,
-      metadata: { removalReason: args.reason },
-      createdAt: now,
-    });
-    return args.waterBodyId;
+    const actor = await requireCapability(ctx, 'body.remove');
+    return removeBodyImpl(ctx, actor, args);
   },
 });
+
+/**
+ * `remove`'s body, shared with the undo of a restore (D226). `note` replaces the audit row's
+ * generated reason — an undo's own reason; the mutation never passes it.
+ */
+export async function removeBodyImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  args: { waterBodyId: Id<'waterBodies'>; reason: RemovalReason; note?: string },
+): Promise<Id<'waterBodies'>> {
+  const body = await ctx.db.get(args.waterBodyId);
+  if (!body) throw new ConvexError('Water body not found');
+  // Idempotency + no duplicate audit rows: only an on-map body can be removed.
+  if (body.removedAt !== undefined) throw new ConvexError('Water body is already removed');
+
+  const now = Date.now();
+  await transitionStanding(
+    ctx,
+    body,
+    { removedAt: now, removedByUserId: actor._id, removalReason: args.reason },
+    { actorId: actor._id, audit: false, now },
+  );
+  await writeAudit(ctx, {
+    actorId: actor._id,
+    action: 'remove',
+    targetType: 'waterbody',
+    targetId: args.waterBodyId,
+    reason: args.note ?? `Removed from map (${args.reason})`,
+    metadata: { removalReason: args.reason },
+    createdAt: now,
+  });
+  return args.waterBodyId;
+}
 
 /**
  * Admin: reverse a removal — clear `removed*`, bring the body back to active, audit the restore
@@ -2730,30 +2744,41 @@ export const remove = mutation({
 export const restore = mutation({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, args) => {
-    const actor = await requireContributorRole(ctx, 'admin');
-    const body = await ctx.db.get(args.waterBodyId);
-    if (!body) throw new ConvexError('Water body not found');
-    if (body.removedAt === undefined) throw new ConvexError('Water body is not removed');
-
-    const now = Date.now();
-    await activateBody(ctx, body, {
-      via: 'restore',
-      actorId: actor._id,
-      audit: false,
-      now,
-      extraPatch: { removedAt: undefined, removedByUserId: undefined, removalReason: undefined },
-    });
-    await ctx.db.insert('moderationActions', {
-      actorId: actor._id,
-      action: 'restore',
-      targetType: 'waterbody',
-      targetId: args.waterBodyId,
-      reason: 'Restored to the map',
-      createdAt: now,
-    });
-    return args.waterBodyId;
+    const actor = await requireCapability(ctx, 'body.remove');
+    return restoreBodyImpl(ctx, actor, args);
   },
 });
+
+/** `restore`'s body, shared with the undo of a removal (D226). `note` as in {@link removeBodyImpl}. */
+export async function restoreBodyImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  args: { waterBodyId: Id<'waterBodies'>; note?: string },
+): Promise<Id<'waterBodies'>> {
+  const body = await ctx.db.get(args.waterBodyId);
+  if (!body) throw new ConvexError('Water body not found');
+  if (body.removedAt === undefined) throw new ConvexError('Water body is not removed');
+
+  const now = Date.now();
+  await activateBody(ctx, body, {
+    via: 'restore',
+    actorId: actor._id,
+    audit: false,
+    now,
+    extraPatch: { removedAt: undefined, removedByUserId: undefined, removalReason: undefined },
+  });
+  await writeAudit(ctx, {
+    actorId: actor._id,
+    action: 'restore',
+    targetType: 'waterbody',
+    targetId: args.waterBodyId,
+    reason: args.note ?? 'Restored to the map',
+    // What the removal said, so the restore's undo removes it for the same reason (D226).
+    metadata: { prev: { removalReason: body.removalReason ?? 'other' } },
+    createdAt: now,
+  });
+  return args.waterBodyId;
+}
 
 /**
  * Moderator: rule on whether a body can be lawfully reached (A06f).
@@ -2779,8 +2804,29 @@ export const setPublicAccess = mutation({
     note: v.optional(v.string()),
     reason: v.optional(v.string()),
   },
-  handler: async (ctx, { waterBodyId, verdict, note, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+  handler: async (ctx, args) => {
+    const actor = await requireCapability(ctx, 'access.rule');
+    return setPublicAccessImpl(ctx, actor, args);
+  },
+});
+
+/** `setPublicAccess`'s body, shared with its undo (D226), which rules `prev` again. */
+export async function setPublicAccessImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    waterBodyId,
+    verdict,
+    note,
+    reason,
+  }: {
+    waterBodyId: Id<'waterBodies'>;
+    verdict: (typeof PUBLIC_ACCESS_VERDICTS)[number] | null;
+    note?: string;
+    reason?: string;
+  },
+): Promise<Id<'waterBodies'>> {
+  {
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
 
@@ -2809,7 +2855,13 @@ export const setPublicAccess = mutation({
     // (`null`) simply re-derives from whatever else is on the row. All three go through
     // `transitionStanding`, so the score, the cells, the bays and the registry move together and
     // the audit row below is the one record of it.
-    if (verdict === 'open' && isListed(body)) {
+    //
+    // The dormancy an `open` ruling clears goes on the audit row, so its undo can shelve the body
+    // again for the reason it had (D226). A `none` ruling's dormancy is derived from the ruling and
+    // never stored, so it comes back with the ruling itself.
+    const activates = verdict === 'open' && isListed(body);
+    const clearedDormancy = activates ? body.dormant : undefined;
+    if (activates) {
       await activateBody(ctx, body, {
         via: 'access_confirmed',
         actorId: actor._id,
@@ -2853,18 +2905,24 @@ export const setPublicAccess = mutation({
       }
     }
 
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'set_public_access',
       targetType: 'waterbody',
       targetId: waterBodyId,
       reason: reason?.trim() || describePublicAccessChange(verdict, trimmedNote, resolved),
-      metadata: { publicAccess: next ?? null, prev: { publicAccess: body.publicAccess ?? null } },
+      metadata: {
+        publicAccess: next ?? null,
+        prev: {
+          publicAccess: body.publicAccess ?? null,
+          ...(clearedDormancy !== undefined ? { dormant: clearedDormancy } : {}),
+        },
+      },
       createdAt: now,
     });
     return waterBodyId;
-  },
-});
+  }
+}
 
 /** A citation, not a paragraph — it renders inline on the lake. Matches the depth-note ceiling. */
 const MAX_PUBLIC_ACCESS_NOTE_LENGTH = 160;
@@ -2927,7 +2985,7 @@ const MAX_ACCESS_REPORTS_COUNTED = 50;
 export const reject = mutation({
   args: { waterBodyId: v.id('waterBodies'), reason: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'inbox.drawnBody');
     const body = await ctx.db.get(args.waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
     if (body.source !== 'user') {
@@ -2944,7 +3002,7 @@ export const reject = mutation({
       listed: isListed({ ...body, reviewStatus: 'rejected' }),
     });
     await syncCellsForParent(ctx, args.waterBodyId, { ...body, reviewStatus: 'rejected' });
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'reject_waterbody',
       targetType: 'waterbody',
@@ -2980,7 +3038,7 @@ export const merge = mutation({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, { survivorId, loserId, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'corpus.duplicates');
     if (survivorId === loserId) throw new ConvexError('Cannot merge a water body into itself');
     const survivor = await ctx.db.get(survivorId);
     const loser = await ctx.db.get(loserId);
@@ -3000,6 +3058,59 @@ export const merge = mutation({
     return survivorId;
   },
 });
+
+/**
+ * What a body merge changed, row by row — written to `auditSnapshots` beside its `merge_waterbody`
+ * row (D226, B01 §11) for the unmerge §4 owes.
+ *
+ * - `moved`: every child row re-pointed from the loser (`waterBodyId` is the body it had);
+ * - `deletedFavorites`: favorites dropped because the user already had the survivor — by the id of
+ *   the survivor's favorite they duplicated, never the person (an unmerge reads the owner and the bay
+ *   off that row; once it is gone, unfavorited or erased with the account (D33), there is nothing to
+ *   put back, and the snapshot names no one);
+ * - `subAreasBefore` / `landmarksBefore`: the bays and labels the moves could change, whole, as
+ *   they stood (the loser's bays; both lakes' landmarks); `subAreasDelisted` and `landmarksAfter`
+ *   say which of them the merge delisted, moved, folded or retired;
+ * - `dedupBefore`: the duplicate flags on the loser and every partner whose flag the merge cleared.
+ */
+export interface MergeChangeSet {
+  survivorId: Id<'waterBodies'>;
+  loserId: Id<'waterBodies'>;
+  dedupBefore: {
+    id: Id<'waterBodies'>;
+    dedupStatus: Doc<'waterBodies'>['dedupStatus'];
+    duplicateCandidateIds: Id<'waterBodies'>[] | null;
+    mergedIntoId: Id<'waterBodies'> | null;
+  }[];
+  moved: {
+    table: 'reports' | 'hazards' | 'bounties' | 'bodyFeatures' | 'putIns' | 'waterBodyFavorites';
+    id: string;
+    waterBodyId: Id<'waterBodies'>;
+  }[];
+  deletedFavorites: {
+    id: Id<'waterBodyFavorites'>;
+    keptFavoriteId: Id<'waterBodyFavorites'>;
+    createdAt: number;
+  }[];
+  subAreasBefore: ReturnType<typeof snapshotDoc<Doc<'waterBodySubAreas'>>>[];
+  subAreasDelisted: Id<'waterBodySubAreas'>[];
+  landmarksBefore: ReturnType<typeof snapshotDoc<Doc<'bodyLandmarks'>>>[];
+  landmarksAfter: {
+    id: Id<'bodyLandmarks'>;
+    waterBodyId: Id<'waterBodies'>;
+    removed: boolean;
+    mergedIntoId?: Id<'bodyLandmarks'>;
+  }[];
+}
+
+function dedupFieldsOf(body: Doc<'waterBodies'>): MergeChangeSet['dedupBefore'][number] {
+  return {
+    id: body._id,
+    dedupStatus: body.dedupStatus,
+    duplicateCandidateIds: body.duplicateCandidateIds ?? null,
+    mergedIntoId: body.mergedIntoId ?? null,
+  };
+}
 
 /**
  * Fold one body into another: re-point every child, tombstone the loser, audit it.
@@ -3081,6 +3192,8 @@ export async function mergeBodyInto(
       .collect();
     let favoritesRepointed = 0;
     let favoritesDeduped = 0;
+    const repointedFavoriteIds: Id<'waterBodyFavorites'>[] = [];
+    const deletedFavorites: MergeChangeSet['deletedFavorites'] = [];
     for (const fav of favorites) {
       const existing = await ctx.db
         .query('waterBodyFavorites')
@@ -3090,12 +3203,30 @@ export async function mergeBodyInto(
         .unique();
       if (existing) {
         await ctx.db.delete(fav._id);
+        deletedFavorites.push({
+          id: fav._id,
+          keptFavoriteId: existing._id,
+          createdAt: fav.createdAt,
+        });
         favoritesDeduped++;
       } else {
         await ctx.db.patch(fav._id, { waterBodyId: survivorId });
+        repointedFavoriteIds.push(fav._id);
         favoritesRepointed++;
       }
     }
+
+    // What the bay and landmark moves are about to change, as it stood — the unmerge's starting
+    // point (D226). The loser's bays all move (and some are re-clipped or delisted on the way); the
+    // landmarks of *both* lakes can change, since a moved label folds into the survivor's twin.
+    const subAreasBefore = await ctx.db
+      .query('waterBodySubAreas')
+      .withIndex('by_parent', (q) => q.eq('waterBodyId', loserId))
+      .collect();
+    const landmarksBefore = [
+      ...(await landmarksForBody(ctx, loserId)),
+      ...(await landmarksForBody(ctx, survivorId)),
+    ];
 
     // Named sub-areas move too (Decision 11). Leaving them would strand hand-drawn curation on a
     // tombstone whose `isListed` is permanently false — unreachable from the map and the editor, yet
@@ -3138,10 +3269,13 @@ export async function mergeBodyInto(
     // one behind, and the queue could never reach zero. Only the loser is resolved here: a survivor
     // with other live candidates stays flagged, which is correct for a group of three.
     const resolved = new Set<Id<'waterBodies'>>([loserId]);
+    const partnersBefore: MergeChangeSet['dedupBefore'] = [];
     for (const id of new Set([survivorId, ...(loser.duplicateCandidateIds ?? [])])) {
       if (id === loserId) continue;
       const partner = await ctx.db.get(id);
-      if (partner) await clearDuplicateFlag(ctx, partner, resolved);
+      if (!partner) continue;
+      partnersBefore.push(dedupFieldsOf(partner));
+      await clearDuplicateFlag(ctx, partner, resolved);
     }
     await syncWaterBodyCells(ctx, loserId, {
       bbox: loser.bbox,
@@ -3159,15 +3293,54 @@ export async function mergeBodyInto(
     // longer belong to it.
     await recomputeBodySummary(ctx, survivorId);
     await recomputeBodySummary(ctx, loserId);
-    await ctx.db.insert('moderationActions', {
+    const actionId = await writeAudit(ctx, {
       ...(actorId !== undefined ? { actorId } : {}),
       action: 'merge_waterbody',
       targetType: 'waterbody',
       targetId: loserId,
       reason,
-      metadata: { survivorId, repointed },
+      metadata: { survivorId, repointed, changeSet: true },
       createdAt: Date.now(),
     });
+    // **Every row this merge moved or deleted, in the same transaction (D226, B01 §11).** The counts
+    // above say how much; this says which, so the unmerge §4 owes can put each row back. A merge
+    // recorded before this existed has only the counts, and the merge dialog says so.
+    const changeSet: MergeChangeSet = {
+      survivorId,
+      loserId,
+      dedupBefore: [dedupFieldsOf(loser), ...partnersBefore],
+      moved: [
+        ...reports.map((row) => ({ table: 'reports' as const, id: row._id })),
+        ...hazards.map((row) => ({ table: 'hazards' as const, id: row._id })),
+        ...bounties.map((row) => ({ table: 'bounties' as const, id: row._id })),
+        ...features.map((row) => ({ table: 'bodyFeatures' as const, id: row._id })),
+        ...putIns.map((row) => ({ table: 'putIns' as const, id: row._id })),
+        ...repointedFavoriteIds.map((id) => ({ table: 'waterBodyFavorites' as const, id })),
+      ].map((row) => ({ ...row, waterBodyId: loserId })),
+      deletedFavorites,
+      subAreasBefore: subAreasBefore.map(snapshotDoc),
+      subAreasDelisted: [],
+      landmarksBefore: landmarksBefore.map(snapshotDoc),
+      landmarksAfter: [],
+    };
+    for (const before of subAreasBefore) {
+      const after = await ctx.db.get(before._id);
+      if (before.removedAt === undefined && after?.removedAt !== undefined) {
+        changeSet.subAreasDelisted.push(before._id);
+      }
+    }
+    for (const before of landmarksBefore) {
+      const after = await ctx.db.get(before._id);
+      if (after && JSON.stringify(after) !== JSON.stringify(before)) {
+        changeSet.landmarksAfter.push({
+          id: after._id,
+          waterBodyId: after.waterBodyId,
+          removed: after.removedAt !== undefined,
+          ...(after.mergedIntoId !== undefined ? { mergedIntoId: after.mergedIntoId } : {}),
+        });
+      }
+    }
+    await writeSnapshot(ctx, actionId, changeSet);
     // The loser's reports and hazards now belong to the survivor, so their sub-area stamps have to be
     // recomputed against the survivor's bays — the old stamps were resolved against a different set.
     await scheduleRestamp(ctx, survivorId);
@@ -3420,7 +3593,25 @@ export const get = query({
 export const setCuratedBoost = mutation({
   args: { waterBodyId: v.id('waterBodies'), curatedBoost: v.number() },
   handler: async (ctx, { waterBodyId, curatedBoost }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.identity');
+    return setCuratedBoostImpl(ctx, actor, { waterBodyId, curatedBoost });
+  },
+});
+
+/**
+ * `setCuratedBoost`'s body, shared with its undo (D226). The undo may put back *no* boost
+ * (`undefined`), which the mutation's argument can't say; `reason` is an undo's own.
+ */
+export async function setCuratedBoostImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    waterBodyId,
+    curatedBoost,
+    reason,
+  }: { waterBodyId: Id<'waterBodies'>; curatedBoost: number | undefined; reason?: string },
+): Promise<Id<'waterBodies'>> {
+  {
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
 
@@ -3430,7 +3621,9 @@ export const setCuratedBoost = mutation({
     // machine set dormant brings it back: a curated boost is a standing human decision (it is what
     // `retainsActive` honors), and a moderator boosting a lake the season cron shelved has plainly
     // decided it belongs on the map.
-    if (curatedBoost > 0 && reactivatesOnEvidence(body)) {
+    const reactivates =
+      curatedBoost !== undefined && curatedBoost > 0 && reactivatesOnEvidence(body);
+    if (reactivates) {
       await activateBody(ctx, body, {
         via: 'moderator',
         actorId: actor._id,
@@ -3441,18 +3634,31 @@ export const setCuratedBoost = mutation({
       await transitionStanding(ctx, body, { curatedBoost }, { audit: false });
     }
     const after = await ctx.db.get(waterBodyId);
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'set_curated_boost',
       targetType: 'waterbody',
       targetId: waterBodyId,
-      reason: `Set curatedBoost to ${curatedBoost}`,
-      metadata: { curatedBoost, minVisibleZoom: after?.minVisibleZoom },
+      reason:
+        reason ??
+        (curatedBoost === undefined
+          ? 'Cleared curatedBoost'
+          : `Set curatedBoost to ${curatedBoost}`),
+      metadata: {
+        curatedBoost: curatedBoost ?? null,
+        minVisibleZoom: after?.minVisibleZoom,
+        // The boost it replaced, and — when this boost brought a shelved body back — the dormancy
+        // it cleared, so the undo can shelve it again (D226).
+        prev: {
+          curatedBoost: body.curatedBoost ?? null,
+          ...(reactivates && body.dormant !== undefined ? { dormant: body.dormant } : {}),
+        },
+      },
       createdAt: Date.now(),
     });
     return waterBodyId;
-  },
-});
+  }
+}
 
 /**
  * Moderator: set a body's operator-entered reference links (A06c Workstream §2.7).
@@ -3475,7 +3681,26 @@ export const setReferenceLinks = mutation({
     links: v.array(v.object({ label: v.string(), url: v.string() })),
   },
   handler: async (ctx, { waterBodyId, links }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.identity');
+    return setReferenceLinksImpl(ctx, actor, { waterBodyId, links });
+  },
+});
+
+/** `setReferenceLinks`'s body, shared with its undo (D226); `reason` is an undo's own. */
+export async function setReferenceLinksImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    waterBodyId,
+    links,
+    reason,
+  }: {
+    waterBodyId: Id<'waterBodies'>;
+    links: { label: string; url: string }[];
+    reason?: string;
+  },
+): Promise<Id<'waterBodies'>> {
+  {
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
     if (links.length > MAX_REFERENCE_LINKS) {
@@ -3490,15 +3715,16 @@ export const setReferenceLinks = mutation({
 
     const trimmed = links.map((link) => ({ label: link.label.trim(), url: link.url.trim() }));
     await ctx.db.patch(waterBodyId, { referenceLinks: trimmed });
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'set_reference_links',
       targetType: 'waterbody',
       targetId: waterBodyId,
       reason:
-        trimmed.length === 0
+        reason ??
+        (trimmed.length === 0
           ? 'Cleared the reference links'
-          : `Set ${trimmed.length} reference link${trimmed.length === 1 ? '' : 's'}`,
+          : `Set ${trimmed.length} reference link${trimmed.length === 1 ? '' : 's'}`),
       // **`prev` alongside the new value (A06c §6.1).** An audit row that records only what a field *became*
       // can answer "who changed this" and never "changed it from what", which is most of what someone
       // reading the timeline actually wants. Same convention as `setDepth`.
@@ -3506,8 +3732,8 @@ export const setReferenceLinks = mutation({
       createdAt: Date.now(),
     });
     return waterBodyId;
-  },
-});
+  }
+}
 
 /**
  * Moderator: override whether a body offers the Copernicus satellite link (A06c Workstream 4, D70/D75).
@@ -3533,7 +3759,26 @@ export const setSatelliteImagery = mutation({
     mode: literals(SATELLITE_IMAGERY_MODES),
   },
   handler: async (ctx, { waterBodyId, mode }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.water');
+    return setSatelliteImageryImpl(ctx, actor, { waterBodyId, mode });
+  },
+});
+
+/** `setSatelliteImagery`'s body, shared with its undo (D226); `reason` is an undo's own. */
+export async function setSatelliteImageryImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    waterBodyId,
+    mode,
+    reason,
+  }: {
+    waterBodyId: Id<'waterBodies'>;
+    mode: (typeof SATELLITE_IMAGERY_MODES)[number];
+    reason?: string;
+  },
+): Promise<Id<'waterBodies'>> {
+  {
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
 
@@ -3543,7 +3788,7 @@ export const setSatelliteImagery = mutation({
     await ctx.db.patch(waterBodyId, { satelliteImagery: mode === 'auto' ? undefined : mode });
     const after = satelliteImageryAvailable({ ...body, satelliteImagery: mode });
 
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'set_satellite_imagery',
       targetType: 'waterbody',
@@ -3551,9 +3796,10 @@ export const setSatelliteImagery = mutation({
       // The verdict, not the mode: "off" and "auto" can mean the same thing on a small pond, and the
       // line a person reads in the timeline should say what changed for the skater.
       reason:
-        mode === 'auto'
+        reason ??
+        (mode === 'auto'
           ? `Satellite link back to automatic (now ${after ? 'offered' : 'withheld'})`
-          : `Satellite link forced ${mode} (was ${before ? 'offered' : 'withheld'})`,
+          : `Satellite link forced ${mode} (was ${before ? 'offered' : 'withheld'})`),
       metadata: {
         satelliteImagery: mode,
         available: after,
@@ -3562,8 +3808,8 @@ export const setSatelliteImagery = mutation({
       createdAt: Date.now(),
     });
     return waterBodyId;
-  },
-});
+  }
+}
 
 /**
  * Moderator: set a body's weather **sample points** (D56 §5) — the writer the schema field and
@@ -3583,7 +3829,25 @@ export const setSatelliteImagery = mutation({
 export const setWeatherSamplePoints = mutation({
   args: { waterBodyId: v.id('waterBodies'), points: v.array(latLng) },
   handler: async (ctx, { waterBodyId, points }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.water');
+    return setWeatherSamplePointsImpl(ctx, actor, { waterBodyId, points });
+  },
+});
+
+/**
+ * `setWeatherSamplePoints`'s body, shared with its undo (D226). The grid it replaces goes to
+ * `auditSnapshots` rather than the audit row — a list of points is the row's whole budget twice over.
+ */
+export async function setWeatherSamplePointsImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    waterBodyId,
+    points,
+    reason,
+  }: { waterBodyId: Id<'waterBodies'>; points: LatLng[]; reason?: string },
+): Promise<Id<'waterBodies'>> {
+  {
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
     if (points.length > MAX_SUGGESTED_SAMPLE_POINTS) {
@@ -3606,21 +3870,25 @@ export const setWeatherSamplePoints = mutation({
     await ctx.db.patch(waterBodyId, {
       weatherSamplePoints: points.length > 0 ? points : undefined,
     });
-    await ctx.db.insert('moderationActions', {
+    const prevPoints = body.weatherSamplePoints ?? [];
+    const actionId = await writeAudit(ctx, {
       actorId: actor._id,
       action: 'set_weather_sample_points',
       targetType: 'waterbody',
       targetId: waterBodyId,
       reason:
-        points.length > 0
+        reason ??
+        (points.length > 0
           ? `Set ${points.length} weather sample point${points.length === 1 ? '' : 's'}`
-          : 'Cleared weather sample points (back to the centroid default)',
-      metadata: { count: points.length },
+          : 'Cleared weather sample points (back to the centroid default)'),
+      // The count of the grid it replaced; the grid itself is the snapshot (D226).
+      metadata: { count: points.length, prev: { count: prevPoints.length, snapshot: true } },
       createdAt: Date.now(),
     });
+    await writeSnapshot(ctx, actionId, { weatherSamplePoints: prevPoints });
     return waterBodyId;
-  },
-});
+  }
+}
 
 /**
  * Moderator: type in a body's depth — rung 1 of the D68 ladder (A06a).
@@ -3663,7 +3931,7 @@ export const setDepth = mutation({
     sourceNote: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, { waterBodyId, meanDepthM, maxDepthM, sourceNote }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.water');
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
 
@@ -3728,31 +3996,126 @@ export const setDepth = mutation({
 
     if (Object.keys(patch).length === 0) return waterBodyId; // a save that touched nothing
 
-    await ctx.db.patch(waterBodyId, patch);
-    await ctx.db.insert('moderationActions', {
-      actorId: actor._id,
-      action: 'set_lake_depth',
-      targetType: 'waterbody',
-      targetId: waterBodyId,
+    await writeDepth(ctx, actor, {
+      body,
+      patch,
       reason: describeDepthChange(meanDepthM, maxDepthM, nextNote),
-      // Before *and* after. The audit row is the only place a prior value survives a patch, so a log
-      // that records just the new number can answer "who changed this" and never "changed it from what".
-      metadata: {
-        meanDepthM: nextMean,
-        maxDepthM: nextMax,
-        prev: {
-          meanDepthM: body.meanDepthM,
-          meanDepthSource: body.meanDepthSource,
-          maxDepthM: body.maxDepthM,
-          maxDepthSource: body.maxDepthSource,
-          depthSourceNote: body.depthSourceNote,
-        },
-      },
-      createdAt: Date.now(),
+      metadata: { meanDepthM: nextMean, maxDepthM: nextMax },
     });
     return waterBodyId;
   },
 });
+
+/** The depth fields a `set_lake_depth` row records as `prev`, and its undo puts back. */
+export type DepthFields = Pick<
+  Doc<'waterBodies'>,
+  'meanDepthM' | 'meanDepthSource' | 'maxDepthM' | 'maxDepthSource' | 'depthSourceNote'
+>;
+
+const DEPTH_FIELD_KEYS = [
+  'meanDepthM',
+  'meanDepthSource',
+  'maxDepthM',
+  'maxDepthSource',
+  'depthSourceNote',
+] as const satisfies readonly (keyof DepthFields)[];
+
+/**
+ * A body's depth fields as a plain record, an absent field as `null` — the form a `set_lake_depth`
+ * row stores its `after` in (an audit row's metadata drops `undefined`), and the form the undo
+ * compares the body against.
+ */
+export function depthStateOf(
+  fields: Partial<DepthFields>,
+): Record<(typeof DEPTH_FIELD_KEYS)[number], string | number | null> {
+  return Object.fromEntries(DEPTH_FIELD_KEYS.map((k) => [k, fields[k] ?? null])) as Record<
+    (typeof DEPTH_FIELD_KEYS)[number],
+    string | number | null
+  >;
+}
+
+/**
+ * The one write of a body's depth fields — `setDepth`, `clearDepthOverride` and their undo (D226)
+ * all land here, so each writes the same `set_lake_depth` row with the same `prev`.
+ */
+export async function writeDepth(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    body,
+    patch,
+    reason,
+    metadata,
+  }: {
+    body: Doc<'waterBodies'>;
+    patch: Partial<DepthFields>;
+    reason: string;
+    metadata: Record<string, unknown>;
+  },
+): Promise<void> {
+  await ctx.db.patch(body._id, patch);
+  const prev = Object.fromEntries(
+    DEPTH_FIELD_KEYS.map((k) => [k, body[k]]),
+  ) as Partial<DepthFields>;
+  // What the body's depth reads after this write — every field, the patched over the unpatched. The
+  // depth also changes with no audit row (the A06a import refills a released measurement), so the
+  // undo compares the body against this to see a write the audit log can't show it.
+  const after = depthStateOf({ ...prev, ...patch });
+  await writeAudit(ctx, {
+    actorId: actor._id,
+    action: 'set_lake_depth',
+    targetType: 'waterbody',
+    targetId: body._id,
+    reason,
+    // Before *and* after. The audit row is the only place a prior value survives a patch, so a log
+    // that records just the new number can answer "who changed this" and never "changed it from what".
+    metadata: { ...metadata, prev, after },
+    createdAt: Date.now(),
+  });
+}
+
+/**
+ * Put a body's depth fields back exactly as a `set_lake_depth` row's `prev` recorded them — the undo
+ * of a reading, a rejection or a release (D226), rung and citation included, through {@link writeDepth}.
+ * Only while the body still reads `expected` (the undone row's `after`): a depth the import has
+ * rewritten since is refused, not thrown away.
+ */
+export async function restoreDepthImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    waterBodyId,
+    fields,
+    expected,
+    reason,
+  }: {
+    waterBodyId: Id<'waterBodies'>;
+    fields: Partial<DepthFields>;
+    expected: Partial<DepthFields>;
+    reason: string;
+  },
+): Promise<void> {
+  const body = await ctx.db.get(waterBodyId);
+  if (!body) throw new ConvexError('Water body not found');
+  if (JSON.stringify(depthStateOf(body)) !== JSON.stringify(depthStateOf(expected))) {
+    throw new ConvexError(
+      'The depth has changed since (an import or another edit); set it again rather than undo',
+    );
+  }
+  await writeDepth(ctx, actor, {
+    body,
+    // Every field named, so one the prior state lacked is cleared rather than left.
+    patch: {
+      meanDepthM: fields.meanDepthM,
+      meanDepthSource: fields.meanDepthSource,
+      maxDepthM: fields.maxDepthM,
+      maxDepthSource: fields.maxDepthSource,
+      depthSourceNote: fields.depthSourceNote,
+    },
+    reason,
+    metadata: { meanDepthM: fields.meanDepthM, maxDepthM: fields.maxDepthM },
+  });
+}
 
 /** Rows per page of the review queue. Bodies carry polygons, so the byte cap binds before the doc cap. */
 const REVIEW_QUEUE_PAGE = 40;
@@ -3784,7 +4147,7 @@ export const listReviewQueue = query({
     cursor: v.optional(v.string()),
   },
   handler: async (ctx, { reason, cursor }) => {
-    await requireContributorRole(ctx, 'moderator');
+    await requireCapability(ctx, 'corpus.read');
     const page = await ctx.db
       .query('waterBodies')
       .withIndex('by_review_reason', (q) => q.eq('reviewReason', reason))
@@ -3821,7 +4184,7 @@ export const listReviewQueue = query({
 export const reviewQueueCounts = query({
   args: {},
   handler: async (ctx) => {
-    await requireContributorRole(ctx, 'moderator');
+    await requireCapability(ctx, 'corpus.read');
     const counts: Record<string, { count: number; capped: boolean; advisory: boolean }> = {};
     for (const reason of REVIEW_REASONS) {
       const rows = await ctx.db
@@ -3890,7 +4253,26 @@ export const setWaterBodyName = mutation({
     name: v.union(v.string(), v.null()),
   },
   handler: async (ctx, { waterBodyId, name }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.identity');
+    return setWaterBodyNameImpl(ctx, actor, { waterBodyId, name });
+  },
+});
+
+/**
+ * `setWaterBodyName`'s body, shared with its undo (D226). Every row records `prev.overridden` — whether
+ * the name it replaced was a moderator's claim — since the undo of a pick is a clear when it wasn't,
+ * and a pick of the old name when it was. `reason` is an undo's own.
+ */
+export async function setWaterBodyNameImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    waterBodyId,
+    name,
+    reason,
+  }: { waterBodyId: Id<'waterBodies'>; name: string | null; reason?: string },
+): Promise<Id<'waterBodies'>> {
+  {
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
 
@@ -3904,6 +4286,8 @@ export const setWaterBodyName = mutation({
       stored.filter((c) => c.source === 'user'),
       catalog,
     );
+    // Whether the name being replaced is a moderator's claim — what the undo needs (D226).
+    const overridden = claims.some((c) => c.source === 'user');
 
     if (name === null) {
       // Back to whatever the catalogs rank first. Nothing to do if no override was ever set —
@@ -3916,15 +4300,17 @@ export const setWaterBodyName = mutation({
         nameClaims: catalog.length > 0 ? catalog : undefined,
         searchText: searchTextFor(restored, aliasesFor(catalog, restored)),
       });
-      await ctx.db.insert('moderationActions', {
+      await writeAudit(ctx, {
         actorId: actor._id,
         action: 'set_water_body_name',
         targetType: 'waterbody',
         targetId: waterBodyId,
-        reason: restored
-          ? `Cleared the name override; back to "${restored}"`
-          : 'Cleared the community name; back to unnamed (no catalog claim)',
-        metadata: { name: restored, prev: { name: body.name } },
+        reason:
+          reason ??
+          (restored
+            ? `Cleared the name override; back to "${restored}"`
+            : 'Cleared the community name; back to unnamed (no catalog claim)'),
+        metadata: { name: restored, prev: { name: body.name, overridden } },
         createdAt: Date.now(),
       });
       return waterBodyId;
@@ -3952,15 +4338,17 @@ export const setWaterBodyName = mutation({
         nameClaims: next,
         searchText: searchTextFor(chosen, aliasesFor(next, chosen)),
       });
-      await ctx.db.insert('moderationActions', {
+      await writeAudit(ctx, {
         actorId: actor._id,
         action: 'set_water_body_name',
         targetType: 'waterbody',
         targetId: waterBodyId,
-        reason: body.name
-          ? `Community name "${chosen}" instead of "${body.name}" (no catalog claim)`
-          : `Community name "${chosen}" for an unnamed body (no catalog claim)`,
-        metadata: { name: chosen, source: 'user', prev: { name: body.name } },
+        reason:
+          reason ??
+          (body.name
+            ? `Community name "${chosen}" instead of "${body.name}" (no catalog claim)`
+            : `Community name "${chosen}" for an unnamed body (no catalog claim)`),
+        metadata: { name: chosen, source: 'user', prev: { name: body.name, overridden } },
         createdAt: Date.now(),
       });
       return waterBodyId;
@@ -3982,18 +4370,18 @@ export const setWaterBodyName = mutation({
       nameClaims: next,
       searchText: searchTextFor(match.value, aliasesFor(next, match.value)),
     });
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'set_water_body_name',
       targetType: 'waterbody',
       targetId: waterBodyId,
-      reason: `Display "${match.value}" (${match.source}) instead of "${body.name}"`,
-      metadata: { name: match.value, source: match.source, prev: { name: body.name } },
+      reason: reason ?? `Display "${match.value}" (${match.source}) instead of "${body.name}"`,
+      metadata: { name: match.value, source: match.source, prev: { name: body.name, overridden } },
       createdAt: Date.now(),
     });
     return waterBodyId;
-  },
-});
+  }
+}
 
 /**
  * Moderator: drop an `operator` rung entirely, handing the measurement back to the import (A06a).
@@ -4011,7 +4399,7 @@ export const clearDepthOverride = mutation({
     measurements: v.array(literals(['mean', 'max'] as const)),
   },
   handler: async (ctx, { waterBodyId, measurements }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.water');
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
 
@@ -4031,24 +4419,11 @@ export const clearDepthOverride = mutation({
     // Nothing operator-sourced is left to cite, so the citation goes with it.
     patch.depthSourceNote = undefined;
 
-    await ctx.db.patch(waterBodyId, patch);
-    await ctx.db.insert('moderationActions', {
-      actorId: actor._id,
-      action: 'set_lake_depth',
-      targetType: 'waterbody',
-      targetId: waterBodyId,
+    await writeDepth(ctx, actor, {
+      body,
+      patch,
       reason: `Released the operator override on ${released.join(' and ')} depth — the import may refill it`,
-      metadata: {
-        released,
-        prev: {
-          meanDepthM: body.meanDepthM,
-          meanDepthSource: body.meanDepthSource,
-          maxDepthM: body.maxDepthM,
-          maxDepthSource: body.maxDepthSource,
-          depthSourceNote: body.depthSourceNote,
-        },
-      },
-      createdAt: Date.now(),
+      metadata: { released },
     });
     return waterBodyId;
   },
@@ -5432,7 +5807,7 @@ const CURATED_SCAN_CAP = CURATED_LIST_CAP * 2;
 export const listCurated = query({
   args: {},
   handler: async (ctx) => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'corpus.read');
     const rows = await takeCapped(
       ctx.db.query('waterBodies').withIndex('by_curated_boost', (q) => q.gt('curatedBoost', 0)),
       CURATED_SCAN_CAP,
@@ -5462,7 +5837,7 @@ export const listCurated = query({
 export const listPendingReview = query({
   args: {},
   handler: async (ctx) => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'inbox.read');
     // A moderator queue is meant to be short; if it isn't, showing a bounded page beats failing the
     // whole screen, and the log says the queue is running away (A01).
     return takeCapped(
@@ -5521,7 +5896,7 @@ export type DedupSummary = ReturnType<typeof dedupSummary>;
 export const listDedupCandidates = query({
   args: {},
   handler: async (ctx) => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'corpus.read');
     // Both match-on-create tiers land in the queue, near-certain first (D36) — a body flagged as
     // almost certainly a duplicate is the one a moderator should merge before anything else, and
     // before more reports accumulate on the wrong row.
@@ -5633,7 +6008,7 @@ export const listDedupCandidates = query({
 export const getDedupGroup = query({
   args: { waterBodyIds: v.array(v.id('waterBodies')) },
   handler: async (ctx, { waterBodyIds }) => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'corpus.read');
     if (waterBodyIds.length > DEDUP_GROUP_CAP) {
       throw new ConvexError(`A dedup group holds at most ${DEDUP_GROUP_CAP} bodies`);
     }
@@ -5770,7 +6145,7 @@ async function countAttachments(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>) {
 export const dismissDuplicates = mutation({
   args: { waterBodyIds: v.array(v.id('waterBodies')), reason: v.optional(v.string()) },
   handler: async (ctx, { waterBodyIds, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'corpus.duplicates');
     if (waterBodyIds.length < 1) throw new ConvexError('Nothing to dismiss');
     if (waterBodyIds.length > DEDUP_GROUP_CAP) {
       throw new ConvexError(`A dedup group holds at most ${DEDUP_GROUP_CAP} bodies`);
@@ -5790,7 +6165,7 @@ export const dismissDuplicates = mutation({
     if (first === undefined) {
       throw new ConvexError('Nothing to dismiss — every body in this group is already merged');
     }
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'dismiss_duplicate',
       targetType: 'waterbody',
@@ -6229,51 +6604,67 @@ export const setIncludedByRequest = internalMutation({
     const key = keys[0] as Id<'waterBodies'>;
     const body = await ctx.db.get(key);
     if (!body) throw new ConvexError('setIncludedByRequest: body not found');
-
-    // Keeping a body by request is also an activation when the machine had shelved it (A07b): a
-    // request is precisely the evidence `not_in_campaign` yields to, and an operator running this
-    // against an inactive body means "put it back". Withdrawing the flag changes nothing about
-    // standing — the next prune or rollover is the honest place for that.
-    if (included && reactivatesOnEvidence(body)) {
-      await activateBody(ctx, body, {
-        via: 'request',
-        actorId: actorUserId,
-        audit: false,
-        extraPatch: { includedByRequest: true },
-      });
-    } else {
-      await ctx.db.patch(key, { includedByRequest: included ? true : undefined });
-    }
-    await ctx.db.insert('moderationActions', {
-      actorId: actorUserId,
-      action: 'set_included_by_request',
-      targetType: 'waterbody',
-      targetId: key,
-      reason:
-        reason?.trim() ||
-        (included
-          ? 'Kept in the corpus by request, against the admission rules'
-          : 'No longer kept by request'),
-      metadata: { includedByRequest: included },
-      createdAt: Date.now(),
-    });
+    await setIncludedByRequestImpl(ctx, actorUserId, { body, included, reason });
     return { waterBodyId: key, name: body.name, includedByRequest: included };
   },
 });
 
 /**
- * Sweep stale map summaries (A06c Workstream 5).
+ * `setIncludedByRequest`'s body, shared with its undo (D226), which puts `prev` back. Records the
+ * flag it replaced; withdrawing it changes nothing about standing, so neither does the undo of a
+ * keep that activated a shelved body.
+ */
+export async function setIncludedByRequestImpl(
+  ctx: MutationCtx,
+  actorUserId: Id<'profiles'>,
+  { body, included, reason }: { body: Doc<'waterBodies'>; included: boolean; reason?: string },
+): Promise<void> {
+  const key = body._id;
+  // Keeping a body by request is also an activation when the machine had shelved it (A07b): a
+  // request is precisely the evidence `not_in_campaign` yields to, and an operator running this
+  // against an inactive body means "put it back". Withdrawing the flag changes nothing about
+  // standing — the next prune or rollover is the honest place for that.
+  if (included && reactivatesOnEvidence(body)) {
+    await activateBody(ctx, body, {
+      via: 'request',
+      actorId: actorUserId,
+      audit: false,
+      extraPatch: { includedByRequest: true },
+    });
+  } else {
+    await ctx.db.patch(key, { includedByRequest: included ? true : undefined });
+  }
+  await writeAudit(ctx, {
+    actorId: actorUserId,
+    action: 'set_included_by_request',
+    targetType: 'waterbody',
+    targetId: key,
+    reason:
+      reason?.trim() ||
+      (included
+        ? 'Kept in the corpus by request, against the admission rules'
+        : 'No longer kept by request'),
+    metadata: {
+      includedByRequest: included,
+      prev: { includedByRequest: body.includedByRequest === true },
+    },
+    createdAt: Date.now(),
+  });
+}
+
+/**
+ * One page of the **full** map-card walk (A06c Workstream 5) — the backfill and the repair, no
+ * longer the cron's tick.
  *
  * **The counts decay with no write to hang the decay on.** Every other path that touches
  * `summary` is an event — a report created, a hazard archived, a moderator hiding something — but a
- * report simply *aging out* of the 14-day window is not an event anywhere in the system. Without
- * this tick, a lake that was busy in January still shows January's card in March, which is the exact
- * failure mode A06c §5.4 named: a card carrying last season's numbers into a month when the lake is open
- * water.
+ * report simply *aging out* of the 14-day window is not an event anywhere in the system. The hourly
+ * cron (`sweepDueBodySummaries`) catches that from `bodySummaryRefreshes`; this walk is what fills
+ * that table for cards written before it existed, since every recompute here records its card's
+ * next refresh.
  *
- * Walks only bodies that **have** a summary, which is the small minority — the whole point of A06c §5.3 is
- * that most of the corpus carries none — so this is cheap despite running over the corpus. It pages,
- * because "the small minority" is a claim about today and not a guarantee.
+ * Recomputes only bodies that **have** a summary, but reads every body to find them — ~25,000
+ * documents, polygons included, ~84 MB. That is why it is no longer the six-hourly tick.
  */
 export const sweepBodySummaries = internalMutation({
   args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
@@ -6299,32 +6690,184 @@ export const sweepBodySummaries = internalMutation({
   },
 });
 
+/** The campaign id the full walk records under — its `succeeded` row marks the backfill done. */
+export const SUMMARY_BACKFILL_CAMPAIGN = 'body-summary-refresh-backfill';
+
 /**
- * The cron entry point: sweep every page of summaries in one go.
- *
- * An action rather than a mutation because it pages, and Convex allows exactly one paginated query
- * per function — the same constraint `regionStats:recompute` works around the same way.
+ * How long a `running` backfill row is trusted before the hourly tick treats it as a dead action
+ * and walks again. A full walk is ~500 pages of 50 — minutes, not an hour.
  */
-export const sweepAllBodySummaries = internalAction({
+const SUMMARY_BACKFILL_STALE_MS = 2 * 60 * 60 * 1000;
+
+/**
+ * How long after a failed walk the tick waits before walking again — the old six-hourly cadence,
+ * so a walk that keeps failing costs what the old sweep did rather than six times it.
+ */
+const SUMMARY_BACKFILL_RETRY_MS = 6 * 60 * 60 * 1000;
+
+/** Bodies the due sweep recomputes per transaction — the same byte budget as the walk's page. */
+const DUE_SUMMARY_BATCH = 50;
+
+/**
+ * One batch of the due sweep: recompute every card whose `bodySummaryRefreshes.refreshAt` has
+ * passed, oldest first.
+ *
+ * **Reads only what is due.** One range on `by_refresh_at` — bounded below as well as above, though
+ * `refreshAt` is required and no row can lack it — then one body per due row. A tick where no
+ * report has aged out reads nothing but an empty index range. Each recompute moves its row past
+ * `now` or deletes it (`summaryRefreshAt` is always later than `now`), so a batch never returns the
+ * same row twice and the loop above it terminates.
+ */
+export const refreshDueBodySummaries = internalMutation({
+  args: { batchSize: v.optional(v.number()) },
+  handler: async (ctx, { batchSize }) => {
+    const numItems = Math.min(200, Math.max(1, batchSize ?? DUE_SUMMARY_BATCH));
+    const now = Date.now();
+    const due = await ctx.db
+      .query('bodySummaryRefreshes')
+      .withIndex('by_refresh_at', (q) => q.gte('refreshAt', 0).lte('refreshAt', now))
+      .take(numItems);
+    for (const row of due) await recomputeBodySummary(ctx, row.waterBodyId, now);
+    return { refreshed: due.length, more: due.length === numItems };
+  },
+});
+
+/**
+ * Whether the full walk has filled `bodySummaryRefreshes` on this deployment: `done`, `running`
+ * (a walk started recently), `backoff` (the last walk failed recently), or `needed`.
+ */
+export const summaryBackfillState = internalQuery({
   args: {},
-  handler: async (ctx): Promise<{ swept: number; pages: number }> => {
+  handler: async (ctx): Promise<'done' | 'running' | 'backoff' | 'needed'> => {
+    const runs = await ctx.db
+      .query('importRuns')
+      .withIndex('by_campaign', (q) => q.eq('campaignId', SUMMARY_BACKFILL_CAMPAIGN))
+      .order('desc')
+      .take(20);
+    if (runs.some((run) => run.status === 'succeeded')) return 'done';
+    const latest = runs[0];
+    const now = Date.now();
+    if (latest?.status === 'running' && now - latest.startedAt < SUMMARY_BACKFILL_STALE_MS) {
+      return 'running';
+    }
+    if (
+      latest?.status === 'failed' &&
+      now - (latest.finishedAt ?? latest.startedAt) < SUMMARY_BACKFILL_RETRY_MS
+    ) {
+      return 'backoff';
+    }
+    return 'needed';
+  },
+});
+
+/**
+ * Walk every page of the corpus, recomputing every card — recorded as the backfill run.
+ *
+ * Shared by the manual action and the cron's first tick on a deployment that has never run it, so
+ * there is one walk and one run row however it was started.
+ */
+async function walkAllBodySummaries(ctx: ActionCtx): Promise<{ swept: number; pages: number }> {
+  const runId = await ctx.runMutation(internal.importRuns.start, {
+    kind: 'body_summary_backfill',
+    label: 'map summary cards: full walk (fills the refresh table)',
+    campaignId: SUMMARY_BACKFILL_CAMPAIGN,
+    deployment: process.env.CONVEX_CLOUD_URL ?? 'unknown',
+    isProd: !(process.env.CONVEX_CLOUD_URL ?? '').includes('agile-bee-397'),
+    stages: [
+      {
+        name: 'walk',
+        detail:
+          'sweepBodySummaries — every body with a summary is recomputed and its next refresh recorded',
+      },
+    ],
+  });
+  try {
     let cursor: string | undefined;
     let isDone = false;
     let swept = 0;
+    let scanned = 0;
     let pages = 0;
     // 24,953 bodies at 50 a page is ~500 pages, so the ceiling is a runaway guard rather than a
-    // budget — it must sit above a full walk or the sweep would silently stop half way.
+    // budget — it must sit above a full walk or the walk would silently stop half way.
     while (!isDone && pages < 2000) {
-      const page: { cursor: string; isDone: boolean; swept: number } = await ctx.runMutation(
-        internal.waterBodies.sweepBodySummaries,
-        cursor === undefined ? {} : { cursor },
-      );
+      const page: { cursor: string; isDone: boolean; swept: number; scanned: number } =
+        await ctx.runMutation(
+          internal.waterBodies.sweepBodySummaries,
+          cursor === undefined ? {} : { cursor },
+        );
       cursor = page.cursor;
       isDone = page.isDone;
       swept += page.swept;
+      scanned += page.scanned;
       pages++;
     }
+    await ctx.runMutation(internal.importRuns.finish, {
+      runId,
+      status: isDone ? 'succeeded' : 'failed',
+      counts: [
+        { name: 'scanned', value: scanned },
+        { name: 'swept', value: swept },
+        { name: 'pages', value: pages },
+      ],
+      ...(isDone ? {} : { error: `stopped at the ${pages}-page guard before the last page` }),
+    });
     return { swept, pages };
+  } catch (err) {
+    await ctx.runMutation(internal.importRuns.finish, {
+      runId,
+      status: 'failed',
+      error: err instanceof Error ? err.message : String(err),
+      notes: ['Partial walk — re-run; every recompute is idempotent.'],
+    });
+    throw err;
+  }
+}
+
+/**
+ * The full walk, by hand: `pnpm exec convex run waterBodies:sweepAllBodySummaries`.
+ *
+ * The backfill for `bodySummaryRefreshes` (the hourly tick also runs it once on its own, on a
+ * deployment with no `succeeded` walk), and the repair if the table is ever suspected of missing a
+ * card. An action because it pages, and Convex allows exactly one paginated query per function —
+ * the same constraint `regionStats:recompute` works around the same way.
+ */
+export const sweepAllBodySummaries = internalAction({
+  args: {},
+  handler: async (ctx): Promise<{ swept: number; pages: number }> => walkAllBodySummaries(ctx),
+});
+
+/**
+ * The cron entry point: refresh the cards that time has changed — **and only those.**
+ *
+ * Until the full walk has succeeded once on this deployment, cards written before
+ * `bodySummaryRefreshes` existed have no row, and a due-only sweep would never age them out. So the
+ * first tick walks everything (recording the run that marks the backfill done), a tick that finds
+ * that walk still running — or failed within the last six hours — sweeps what is already due, and
+ * every tick after a successful walk reads only due rows.
+ */
+export const sweepDueBodySummaries = internalAction({
+  args: {},
+  handler: async (ctx): Promise<{ mode: 'walk' | 'due'; refreshed: number; batches: number }> => {
+    const state = await ctx.runQuery(internal.waterBodies.summaryBackfillState, {});
+    if (state === 'needed') {
+      const { swept, pages } = await walkAllBodySummaries(ctx);
+      return { mode: 'walk', refreshed: swept, batches: pages };
+    }
+    let refreshed = 0;
+    let batches = 0;
+    let more = true;
+    // Each batch moves every row it read past `now`, so this ends; the guard is for a bug, not a
+    // budget — 200 batches is 10,000 cards due in one hour, fifty times today's whole set.
+    while (more && batches < 200) {
+      const batch: { refreshed: number; more: boolean } = await ctx.runMutation(
+        internal.waterBodies.refreshDueBodySummaries,
+        {},
+      );
+      refreshed += batch.refreshed;
+      more = batch.more;
+      batches++;
+    }
+    return { mode: 'due', refreshed, batches };
   },
 });
 

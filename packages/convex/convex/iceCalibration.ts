@@ -7,7 +7,7 @@
  * most counsel-shaped quantity this codebase can produce, and D3 says we never issue a safety
  * verdict. So D160 binds it with three rules, all of which are enforced here rather than promised:
  *
- * 1. **Structurally operator-only.** Every export is `requireRole('moderator')`-gated. Nothing on
+ * 1. **Structurally operator-only.** Every export is gated by `requireCapability('instruments.calibration')`. Nothing on
  *    this path is reachable by a skater client — not rendered-and-hidden, not fetched-and-filtered.
  * 2. **It never feeds anything.** No mutation lives in this file. Nothing writes an estimate onto a
  *    body, a report or a hazard, and no other module imports from here. The estimate is measured
@@ -42,7 +42,7 @@ import {
 import { v } from 'convex/values';
 import type { QueryCtx } from './_generated/server';
 import { query } from './_generated/server';
-import { requireRole } from './lib/auth';
+import { requireCapability } from './lib/auth';
 import { bodyWeatherCell } from './lib/sampling';
 import { OPEN_METEO_PROVIDER } from './weather';
 
@@ -371,7 +371,7 @@ export const calibrationPairs = query({
     windowDays: number;
     alpha: number;
   }> => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'instruments.calibration');
     const { pairs, excludedEstimates } = await collectCalibrationPairs(ctx, limit);
     return {
       pairs,
@@ -402,7 +402,7 @@ export const calibrationFit = query({
     defaultAlpha: number;
     declined: number;
   }> => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'instruments.calibration');
     // Shares `collectCalibrationPairs` with the table above rather than re-deriving, so the fit and
     // the rows it is drawn from can never disagree about their own sample — which means passing the
     // limit explicitly rather than letting two call sites land on the same default by luck.
@@ -435,7 +435,7 @@ export const calibrationFit = query({
 export const apiCallBudget = query({
   args: { provider: v.optional(v.string()), days: v.optional(v.number()) },
   handler: async (ctx, { provider, days }) => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'instruments.calibration');
     const span = Math.min(Math.max(days ?? 30, 1), 365);
     const today = Math.floor(Date.now() / DAY_MS) * DAY_MS;
     const rows = await ctx.db

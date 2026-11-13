@@ -59,12 +59,8 @@ import {
   query,
 } from './_generated/server';
 import { resolvePlaceForCoord } from './adminAreas';
-import {
-  getCurrentProfile,
-  requireContributor,
-  requireContributorRole,
-  requireRole,
-} from './lib/auth';
+import { writeAudit } from './lib/audit';
+import { getCurrentProfile, requireCapability, requireContributor } from './lib/auth';
 import { publicAuthor } from './lib/authorView';
 import { syncWaterBodyCells } from './lib/cellIndex';
 import { liveLandmarksForBody } from './lib/landmarkRows';
@@ -350,7 +346,7 @@ export const recordResolution = internalMutation({
 export const reresolve = mutation({
   args: { requestId: v.id('waterBodyRequests') },
   handler: async (ctx, { requestId }) => {
-    await requireContributorRole(ctx, 'moderator');
+    await requireCapability(ctx, 'inbox.request');
     const request = await ctx.db.get(requestId);
     if (request?.kind !== 'admit') throw new ConvexError('Not an admit request');
     if (request.status !== 'open') throw new ConvexError('This request has been decided');
@@ -474,7 +470,7 @@ function questionKey(r: Doc<'waterBodyRequests'>): string {
 export const listQueue = query({
   args: { status: v.optional(literals(['open', 'approved', 'declined'] as const)) },
   handler: async (ctx, { status }) => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'inbox.read');
     const now = Date.now();
     const rows = await ctx.db
       .query('waterBodyRequests')
@@ -610,7 +606,7 @@ export const listQueue = query({
 export const queueCount = query({
   args: {},
   handler: async (ctx) => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'inbox.read');
     const rows = await ctx.db
       .query('waterBodyRequests')
       .withIndex('by_status_created', (q) => q.eq('status', 'open'))
@@ -650,9 +646,10 @@ export const approve = mutation({
       throw new ConvexError('Only a landmark request is answered by a landmark');
     }
     if (request.status !== 'open') throw new ConvexError('This request has been decided');
-    const actor = await requireContributorRole(
+    // Restoring or taking down a body is the body.remove lever itself (D48), whoever asked for it.
+    const actor = await requireCapability(
       ctx,
-      request.kind === 'restore' || request.kind === 'takedown' ? 'admin' : 'moderator',
+      request.kind === 'restore' || request.kind === 'takedown' ? 'body.remove' : 'inbox.request',
     );
     const now = Date.now();
     const trimmedNote = note?.trim();
@@ -763,7 +760,7 @@ export const approve = mutation({
 export const decline = mutation({
   args: { requestId: v.id('waterBodyRequests'), note: v.string() },
   handler: async (ctx, { requestId, note }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'inbox.request');
     const request = await ctx.db.get(requestId);
     if (!request) throw new ConvexError('Request not found');
     if (request.status !== 'open') throw new ConvexError('This request has been decided');
@@ -797,7 +794,7 @@ export const closeSiblings = internalMutation({
 export const openBayRequestsForBody = query({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { waterBodyId }) => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'body.read');
     const rows = await ctx.db
       .query('waterBodyRequests')
       .withIndex('by_water_body', (q) =>
@@ -869,7 +866,7 @@ export const reviewState = query({
     landmarkId: v.optional(v.id('bodyLandmarks')),
   },
   handler: async (ctx, { requestIds, landmarkId }) => {
-    const me = await requireRole(ctx, 'moderator');
+    const me = await requireCapability(ctx, 'inbox.read');
     if (requestIds.length > 2) throw new ConvexError('A review holds at most two requests');
     const actor = async (id: Id<'profiles'> | undefined) => {
       const profile = id ? await ctx.db.get(id) : null;
@@ -963,7 +960,7 @@ export const reviewState = query({
 export const openLandmarkRequestsForBody = query({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { waterBodyId }) => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'body.read');
     const rows = await ctx.db
       .query('waterBodyRequests')
       .withIndex('by_water_body', (q) =>
@@ -1227,7 +1224,7 @@ async function admitCandidate(
   });
   const inserted = await ctx.db.get(id);
   if (inserted) await registerWeatherMembership(ctx, inserted, now);
-  await ctx.db.insert('moderationActions', {
+  await writeAudit(ctx, {
     actorId: actor._id,
     action: 'set_included_by_request',
     targetType: 'waterbody',

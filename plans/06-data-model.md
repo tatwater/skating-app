@@ -35,11 +35,12 @@ One line per table: what it's for, and the decision or phase that made it. Group
 
 | Table | For |
 | --- | --- |
-| `profiles` | one row per person: Clerk mirrors, visibility, role, status, DOB (minor status derived at read), the private home coordinate and its cached isochrones (D11, D18), notification prefs, reputation points, the aggregate opt-out — D41, D50, D58 |
+| `profiles` | one row per person: Clerk mirrors, visibility, role, the per-person invoice-editing grant on an admin (`canEditLedger`, D227), status, DOB (minor status derived at read), the private home coordinate and its cached isochrones (D11, D18), notification prefs, reputation points, the aggregate opt-out — D41, D50, D58 |
 | `pushTokens` | one row per (person, device) that registered for Expo push — A08 |
 | `blocks` | a block is also a mute; it never hides a report, only the person — D32, D3 |
 | `dataExports` | one row per export request; the bundle lives in file storage — D33/D62 |
 | `clientSignalEvents` | per-user rate-limit bookkeeping for the client analytics signal — 07-2 |
+| `signInDays` | one row per person per UTC day they opened the app signed in, written once a day by `syncFromClerk`, erased with the account — what the console's *Signed in* and *came back* read (B01 §5.1) |
 
 ### Water bodies and the corpus
 
@@ -54,6 +55,7 @@ One line per table: what it's for, and the decision or phase that made it. Group
 | `landmarkSourceBaselines` | what each catalog source (`vt.osm`, `ny.gnis`) read on the complete landmark loads this deployment accepted — the bar a later load must clear before it retires a catalog row; one row per accepted load, the newest is the bar — D202 |
 | `waterBodyRequests` | a skater asking for a body: activate, admit (resolved live against 3DHP), restore, contest access, takedown, and — the sub-area queue — name a bay; and a place a report named that no map has, filed by the report write — D179, D201, D202 |
 | `adminAreas` · `adminAreaCells` | town / county / state polygons and their cells, for the place a point resolves to — Phase 05 |
+| `bodySummaryRefreshes` | when each body's map summary card next changes by the passage of time — a report aging out of the window, the season turning; the summary sweep reads only the due rows, kept beside every card write |
 | `regionStats` | per-state deciles of area, depth, elevation — the comparison basis for generated captions — D70 |
 | `bathymetryCoverage` | which bodies have contour tiles and whose credit line to render — A06b |
 | `imageryIngestSeasons` | the season watch's verdict, one row per season: when the ice watch opened and why (with the settings that decided it), the first 20 °F sentinel night, winter region-wide, the end; the staff-email queue; whether imagery was started — D149, D161, D212–D214 |
@@ -139,7 +141,8 @@ One line per table: what it's for, and the decision or phase that made it. Group
 | Table | For |
 | --- | --- |
 | `contentFlags` | abuse and safety reports on any target; dedup per target *is* the corroboration count (A06f); corrections dedup per reason (D180) — D32 |
-| `moderationActions` | the audit log: who did what, why — D37; an author's own takedown is `author_delete` — A10-3 |
+| `moderationActions` | the audit log: who did what, why — D37; an author's own takedown is `author_delete` — A10-3; an undo is a new row pointing at the one it undoes (`undoesActionId`) — D226 |
+| `auditSnapshots` | what an audited action replaced when it is too big for its row (a polygon, a weather grid, a merge's moved rows), read only by its undo — D226 |
 | `contentRevisions` | what a Post or Report said before each author edit, for a moderator's comparison; the card shows only *Edited*; cleared with the words by the departed-user sweep — A10-3 |
 | `supportTickets` | the in-app support inbox, emailed to the operator — D37 |
 | `metricSnapshots` | pre-aggregated numbers every `/admin` chart reads, one row per (metric, day) — charts never scan the corpus — 07-2 |

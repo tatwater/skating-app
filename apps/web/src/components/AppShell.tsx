@@ -9,6 +9,7 @@ import logoBlack from '../assets/gli-black-duotone.svg';
 import logoWhite from '../assets/gli-white-duotone.svg';
 import { isAppSurfaceRoute, isMapRoute } from '../lib/mapSelection';
 import { useSignOut } from '../lib/sheetOwner';
+import { useOpenSync } from '../lib/useOpenSync';
 import { LakeSearch } from './LakeSearch';
 import { PersonName } from './PersonName';
 import { ThemeToggle } from './theme-toggle';
@@ -59,13 +60,11 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   // The Clerk mirrors (email for notification mail, the avatar), refreshed from the token's claims
   // on the same "app open". `upsertFromClerk` runs at onboarding only, so without this a changed
-  // address or picture never reached the profile. Once per signed-in mount; the server writes
-  // nothing when the claims already match.
+  // address or picture never reached the profile. On each signed-in mount, and again when a tab left
+  // open returns on a new day (the sign-in record's touch point); the server writes nothing when the
+  // claims already match.
   const syncFromClerk = useMutation(api.profiles.syncFromClerk);
-  useEffect(() => {
-    if (!hasProfile) return;
-    void syncFromClerk({}).catch(() => {});
-  }, [hasProfile, syncFromClerk]);
+  useOpenSync(() => void syncFromClerk({}).catch(() => {}), hasProfile);
   const mapRoute = isMapRoute(pathname);
   // The console (A10-6) takes the map's frame — the whole viewport, no page scroll — without the
   // map's search box.

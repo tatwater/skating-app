@@ -8,15 +8,21 @@
  * server-side. Callers get a `ConvexError` they can branch on.
  */
 
-import type { UserRole } from '@skating/core';
+import {
+  CAPABILITIES,
+  type Capability,
+  can,
+  type Grant,
+  grantFor,
+  type ReadCapability,
+  roleMeets,
+  type UserRole,
+} from '@skating/core';
 import { ConvexError } from 'convex/values';
 import type { Doc } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 
 type Ctx = QueryCtx | MutationCtx;
-
-/** Role precedence: admin ⊇ moderator ⊇ member (D37). */
-const ROLE_RANK: Record<UserRole, number> = { member: 0, moderator: 1, admin: 2 };
 
 /** The caller's profile, or `null` if unauthenticated / not yet provisioned. */
 export async function getCurrentProfile(ctx: Ctx): Promise<Doc<'profiles'> | null> {
@@ -37,23 +43,35 @@ export async function requireProfile(ctx: Ctx): Promise<Doc<'profiles'>> {
   // between two of them would land in a table an earlier stage already drained and outlive its own
   // deletion (PR #29 review). Note this is the finalization lock, not the 30-day pending request —
   // a pending request deliberately gates nothing, so the person can still sign in and cancel.
-  if (
-    profile.status === 'banned' ||
-    profile.status === 'deleting' ||
-    profile.status === 'deleted'
-  ) {
-    throw new ConvexError('Account is not active');
-  }
-  // A suspension blocks until it lapses (D37): an unset or future `suspendedUntil`
-  // still gates; a past one is treated as active (the flip to `active` happens
-  // separately). Compared at call time so the gate needs no scheduled cleanup.
-  if (
-    profile.status === 'suspended' &&
-    (profile.suspendedUntil === undefined || profile.suspendedUntil > Date.now())
-  ) {
-    throw new ConvexError('Account is suspended');
-  }
+  if (isLockedOut(profile)) throw new ConvexError('Account is not active');
+  if (isSuspendedNow(profile, Date.now())) throw new ConvexError('Account is suspended');
   return profile;
+}
+
+/**
+ * Banned, being taken apart, or gone: `requireProfile` refuses every call outright. Shared with
+ * anything that has to agree with it about who can act at all.
+ */
+export function isLockedOut(profile: Pick<Doc<'profiles'>, 'status'>): boolean {
+  return (
+    profile.status === 'banned' || profile.status === 'deleting' || profile.status === 'deleted'
+  );
+}
+
+/**
+ * A suspension blocks until it lapses (D37): an unset or future `suspendedUntil` still gates; a past
+ * one is treated as active (the flip to `active` happens separately). Compared at call time so the
+ * gate needs no scheduled cleanup. `requireProfile`'s rule, shared with anything that has to agree
+ * with it about who can write right now.
+ */
+export function isSuspendedNow(
+  profile: Pick<Doc<'profiles'>, 'status' | 'suspendedUntil'>,
+  now: number,
+): boolean {
+  return (
+    profile.status === 'suspended' &&
+    (profile.suspendedUntil === undefined || profile.suspendedUntil > now)
+  );
 }
 
 /**
@@ -144,9 +162,59 @@ export async function requireContributorRole(
   return profile;
 }
 
+/**
+ * The caller's profile, or throw unless they hold `capability` (D217).
+ *
+ * The capability map in `@skating/core` says the minimum role and whether the capability writes; the
+ * write flag picks the gate — {@link requireContributorRole} for a write (refused to an operator on
+ * their way out), {@link requireRole} for a read (kept through the window). The overloads make a
+ * query's context accept only a read capability; `capabilities.test.ts` holds mutations to writes.
+ *
+ * A row that names a per-person grant (D227 — `machinery.ledger` needs `canEditLedger`) is refused
+ * unless the profile also holds the grant: the role is necessary, not sufficient.
+ */
+export async function requireCapability(
+  ctx: MutationCtx,
+  capability: Capability,
+): Promise<Doc<'profiles'>>;
+export async function requireCapability(
+  ctx: QueryCtx,
+  capability: ReadCapability,
+): Promise<Doc<'profiles'>>;
+export async function requireCapability(
+  ctx: Ctx,
+  capability: Capability,
+): Promise<Doc<'profiles'>> {
+  const rule = CAPABILITIES[capability];
+  const profile = rule.write
+    ? await requireContributorRole(ctx, rule.role)
+    : await requireRole(ctx, rule.role);
+  const grant = grantFor(capability);
+  if (grant !== undefined && profile[grant] !== true) {
+    throw new ConvexError(GRANT_REQUIRED[grant]);
+  }
+  return profile;
+}
+
+/** What a caller who holds the role but not the grant is told. */
+const GRANT_REQUIRED: Record<Grant, string> = {
+  canEditLedger: 'Only an admin who has been given ledger editing can do this',
+};
+
+/**
+ * Whether an already-loaded profile holds `capability` — for a field or a branch, not a gate. A grant
+ * row (D227) also reads the grant off the profile, so a viewer passed without it holds none.
+ */
+export function hasCapability(
+  profile: Pick<Doc<'profiles'>, 'role' | 'canEditLedger'> | null | undefined,
+  capability: Capability,
+): boolean {
+  return profile != null && can(profile.role, capability, profile);
+}
+
 /** The rank comparison itself, shared so the two role gates can't drift on what "at least" means. */
 function assertRole(profile: Doc<'profiles'>, minRole: UserRole): void {
-  if (ROLE_RANK[profile.role] < ROLE_RANK[minRole]) {
+  if (!roleMeets(profile.role, minRole)) {
     throw new ConvexError(`Requires ${minRole} role`);
   }
 }

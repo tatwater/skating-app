@@ -243,8 +243,9 @@ crons.interval(
 /**
  * The corpus-standing rollover (A07b) — the third once-a-year job, same shape.
  *
- * Every active body with no report, track or hazard in the last `INACTIVE_SEASONS` (three) seasons
- * and no standing human decision (a curated boost, a favorite) becomes dormant: off every push
+ * Every active body with no report, track or hazard in the last `INACTIVE_SEASONS` (three) seasons,
+ * no standing human decision (a curated boost, a favorite) and no saved put-in (D245) becomes
+ * dormant: off every push
  * surface, drawn only when zoomed in on, and back the moment someone reports on it. Automatic
  * because dormancy is cheap to undo; recorded as an `importRuns` row so "did this season's pass
  * finish" is a fact, and gated on that row so the daily tick outside July 1–14 costs one indexed
@@ -307,14 +308,19 @@ crons.interval(
 crons.interval('refresh nws alerts', { minutes: 15 }, internal.weatherAlerts.refreshAlerts, {});
 
 /**
- * Map summary cards (A06c §5). Six-hourly because the only thing this catches is *time* — a report
- * aging out of the 14-day window, or a season boundary — and neither is urgent to the hour. Every
- * event-driven change to a card already happens synchronously on the write that caused it.
+ * Map summary cards (A06c §5). The only thing this catches is *time* — a report aging out of the
+ * 14-day window, or a season boundary; every event-driven change to a card already happens
+ * synchronously on the write that caused it.
+ *
+ * **Reads only the cards that are due** (`bodySummaryRefreshes`), so a tick costs what has aged
+ * out since the last one — usually an empty index range — rather than a walk of the whole corpus
+ * (~84 MB a tick at six-hourly, ~10 GB a month, before this). That is also why it is hourly now: a
+ * card that has lost a report says so within the hour, for a handful of small function calls a day.
  */
 crons.interval(
   'sweep body summaries',
-  { hours: 6 },
-  internal.waterBodies.sweepAllBodySummaries,
+  { hours: 1 },
+  internal.waterBodies.sweepDueBodySummaries,
   {},
 );
 

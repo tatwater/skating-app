@@ -22,12 +22,14 @@ import {
 import { ConvexError, v } from 'convex/values';
 import type { Doc } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
+import { writeAudit } from './lib/audit';
 import {
   assertCanPostComments,
   getCurrentProfile,
   requireContributor,
   requireProfile,
 } from './lib/auth';
+import { AUTHOR_DELETE_REASON } from './lib/authorDeletion';
 import { publicAuthor } from './lib/authorView';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import { enqueueActorNotification } from './lib/notificationQueue';
@@ -279,8 +281,13 @@ export const remove = mutation({
     if (existing.authorId !== profile._id) {
       throw new ConvexError('Only the author can remove a comment');
     }
+    // Final, and the author's whatever a moderator did first (founder ruling, 2026-11-13): stamped
+    // and audited like a Report or a Post, so no restore or undo can bring it back and a verdict on
+    // it stays on the author's record.
+    if (existing.authorDeletedAt !== undefined) return commentId;
+    const now = Date.now();
+    await ctx.db.patch(commentId, { moderationStatus: 'removed', authorDeletedAt: now });
     if (existing.moderationStatus !== 'removed') {
-      await ctx.db.patch(commentId, { moderationStatus: 'removed' });
       // Drop the author's visible-comment counter if this was still counting (visible → removed).
       await bumpContributionCount(
         ctx,
@@ -289,6 +296,15 @@ export const remove = mutation({
         visibleDelta(existing.moderationStatus, 'removed'),
       );
     }
+    await writeAudit(ctx, {
+      actorId: profile._id,
+      action: 'author_delete',
+      targetType: 'comment',
+      targetId: commentId,
+      reason: AUTHOR_DELETE_REASON,
+      metadata: { priorStatus: existing.moderationStatus, newStatus: 'removed' },
+      createdAt: now,
+    });
     return commentId;
   },
 });

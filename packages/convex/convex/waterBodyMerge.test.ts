@@ -622,7 +622,8 @@ describe('a merge moves both map cards (A06c §5, self-review 2026-08-10)', () =
    * A merge re-points the loser's reports and hazards onto the survivor. That changes the survivor's
    * counts with **no report or hazard mutation to hang a recompute on** — the one shape
    * `lib/bodySummary.ts`'s write-path coverage cannot see on its own. Without this the survivor
-   * understates its activity until the six-hourly sweep, on a lake that has just absorbed another's
+   * understates its activity until the sweep next reaches it (it reads only due cards, so perhaps
+   * never), on a lake that has just absorbed another's
    * entire history.
    */
   test('the survivor absorbs the loser’s activity, and the loser’s card empties', async () => {

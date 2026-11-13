@@ -795,6 +795,40 @@ lack of signal.*
 - 🟢 Jev access granted 2026-09-19 (`TYPESAFE_API_KEY` on dev); the harness still takes any engine
 - The founder's device pass of the sheet on the Android preview build (every door; offline; the silhouette picker) — and `convex dev --once` before it (`contentRevisions`, `author_delete`)
 
+## Phase B01 — The admin console: one surface, organized by what an operator is doing
+🟡 **In progress** 2026-10-14 · [plan](./phases/B01-admin-console.md) · D216 D217 D218 D219 D220 D221 D222 D223 D224 D225 D226 D227 D245 D246 D247 D248
+
+Phase 07 built `/admin` as work queues plus a control room, and every phase since added a page
+for its own feature; sixteen nav items later the surface is organized by table, not by task — an
+operator reads four pages to learn what needs them and still misses eight queues, fixes a lake in
+a 2,900-line editor whose map scrolls away, and watches a corpus campaign through a read-only
+history that cannot tell a live run from a dead one. This phase rebuilds the surface around the
+operator's tasks as a dense, keyboard-first console in the report console's register: an Overview
+that counts every lane, an Inbox where everything a person filed completes in place, a Corpus
+backlog of what the machines could not settle, a Body console with the map as the instrument,
+Machinery with live runs and triggers, a Season view with statistics and a cost ledger, People,
+and Instruments — every existing lever re-homed, none lost. *An operator opens one surface and
+knows what needs them, does it where they found it, and watches the machinery work.*
+
+#### Deferred
+- 🟢 **Which season statistics the nightly rollup carries** (D220) — all of the plan's §10 tiers 1 and 2, picked 2026-10-12; tier 3 is PostHog's when it lands
+- ⚪ **A hosted ETL runner** (GitHub Actions or a Fly machine over the R2 archives) — D218 builds the run vocabulary for it; its own decision when the laptop stops being the runner
+- ⚪ **Invoice entries for Anthropic and Zed** in the cost ledger (D219) — the table is shaped for them; typed in when the bills come
+- ⚪ **Client-side usage statistics** (sessions, map and lake views, search) — no instrumentation exists (D29); a product question first
+
+#### Ruled out
+- **Polygon editing and splitting a body** — D221; imported outlines are trusted, merge and sub-areas are the levers; trigger: a lake they cannot express
+- **Mute or a shadow state** — D222; restricting actions or sign-in is enough
+- **Computing season statistics at read time** — D220; nightly is cheaper and current enough
+- **A second admin app** — D37 stands
+
+#### Owed
+- Static wireframes per mode (`skating-mockups/admin-console/`, dark, 1440 × 900) reviewed before React
+- The dev inbox seed (§8 §2) — the founder's OK is given; the examples are the build's to invent
+- `planConventions.test.ts` accepts the `B` era (done in this phase's first commit)
+- The Post-restore chooser on mobile — the server refuses an empty Post restore and takes chosen Reports (2026-11-13); the web chooser is `components/moderation/RestorePost`, the phone has none yet (and no restore of a Post today)
+- D248's two backfills on dev, once #108 is deployed (`convex dev --once`): `authorDeletions:backfillFromAudit` and `authorDeletions:backfillCommentDeletions`. Until they run, a moderator can still restore a Report or Comment its author deleted before the stamp existed
+
 ## Phase B03 — The skater web app
 🟢 **Complete** 2026-11-07 · PRs #95–#104 · [plan](./phases/B03-skater-web.md) · D237 D238 D239 D240 D241 D242 D243 D244
 
@@ -870,6 +904,7 @@ here and defers to this table. The long-form register this table replaced is arc
 | Item | Status | Blocked on | Where |
 | --- | --- | --- | --- |
 | **Legal engagement** — ToS, privacy, risk-ack enforceability, the minor-data posture (whether minors ever post waits on this too), deletion wording, the AGPL store exception, takedown wording, email compliance (L19: CAN-SPAM class, a postal address), L16's "ask" if the lawyer wants it (Q10 / L1–L4, L11, L16, L19). Every mechanism is built; only copy waits. The interim `PRIVACY.md` / `TERMS.md` were refreshed to what's built on 2026-09-20 | ⚪ | a lawyer; one engagement clears most of it | [`08`](./08-legal-feasibility-checklist.md), `PRIVACY.md`, `TERMS.md` |
+| **The privacy policy and the delete confirmations, for D248 — must land before the store launch (Phase B02).** Once the next B01 PR lands, the policy and the in-app delete confirmation have to say: content a person deletes is kept 30 days and then erased; content under a moderator's verdict is kept as evidence until the verdict is reversed; the verdict record outlives the content; and what a data export contains in each case (deleted-but-not-yet-erased content, content held under a verdict, erased content) | ⚪ | the next B01 PR (D248 Parts B–D); a lawyer for the wording | [`08`](./08-legal-feasibility-checklist.md) L1 · L3, D248, `PRIVACY.md` |
 | **Forum / Facebook / Google-Group ingestion** (Q8 / L5 — feasibility, then consent, then ToS; D21's classifier rides it) · **AI summarization beyond weather facts** (Q9 / L6; A10's author-side extraction is a recorded carve-out) · **PostHog session replay** (L12 — the rest of PostHog landed in D235; replay is disabled at init) · **ODbL share-alike** (L10 — only if the extract is ever published) | ⚪ | legal, per item | `08`, [`backlog/posthog.md`](./backlog/posthog.md) |
 
 ### An external partner
@@ -905,6 +940,7 @@ here and defers to this table. The long-form register this table replaced is arc
 
 | Item | Status | Blocked on | Where |
 | --- | --- | --- | --- |
+| **The yearly recurrence pass can skip itself** — `maybeRunRollover` treats any `hazardRecurrence` row stamped with this season as "already run", and `enqueueBody` (the body-merge hook in `waterBodies.ts`, and "recompute now") stamps one; a merge or a recompute on 1–7 July before the pass starts makes every remaining tick in the window a no-op, and the pass waits a year. Gate on a run record (or the queue's own completion) rather than any computed row; a `convex-test` for a merge on 2 July. Found 2026-10-18 | ⚪ | nothing; must land before **1 July 2027** | `convex/recurrence.ts` `maybeRunRollover` / `enqueueBody`, A05c |
 | **`centroid` → `representativePoint` stage 2** — the 85-site code sweep, make it required, drop `centroid` and the `interiorPoint ?? representativePoint ?? centroid` chains · **the `waterBodies.ts` split** (6,289 lines, 58 exports; loaders call by string path) | ⚪ | nothing, and it shouldn't linger; the split wants its own PR with nothing else in flight | [`features/representative-point-rename.md`](./features/representative-point-rename.md), A07a-3 audit |
 | **`matchBathymetryLakes` and `matchAndImportDepths`** — `listedBodiesNearCoord` with no `marginMeters`; `putIns.loadPutInRows` uncapped `.collect()` | ⚪ | nothing; the A06d fix pattern applies (`coveringBodyForPoints` was deleted 2026-08-09) | A06d |
 | **Clerk custom flows onto the current API** — sign-in and sign-up still take `useSignIn` / `useSignUp` from `@clerk/expo/legacy` (the package moved on 2026-09-28, below); the method-based flows (`signIn.emailCode`, `finalize()`) are the rewrite, and the vehicle the Gli identifiers ride | ⚪ | nothing; a device session to prove it | [`backlog/gli-identifiers.md`](./backlog/gli-identifiers.md) |

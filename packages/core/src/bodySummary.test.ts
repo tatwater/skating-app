@@ -1,3 +1,4 @@
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   type BodySummary,
@@ -5,12 +6,16 @@ import {
   qualityMarkLabel,
   SUMMARY_QUALITY_DOTS,
   SUMMARY_QUALITY_QUORUM,
+  SUMMARY_WINDOW_MS,
   summarizeQuality,
   summarizeQualityRevealed,
   summaryHasCard,
+  summaryRefreshAt,
   summaryTitle,
+  summaryWindowStart,
   topHazardTypes,
 } from './bodySummary';
+import { currentSeason, isInSeason, seasonEndMs } from './season';
 
 function summary(over: Partial<BodySummary> = {}): BodySummary {
   return { recentReportCount: 0, topHazardTypes: [], updatedAt: 0, ...over };
@@ -188,5 +193,66 @@ describe('the reveal flag (A06c-2)', () => {
    */
   it('leaves `summarizeQuality` — the stored path — strictly quorum-respecting', () => {
     expect(summarizeQuality(['great', 'good'])).toEqual({});
+  });
+});
+
+describe('summaryRefreshAt — when time next changes a card', () => {
+  const HOUR = 3_600_000;
+  const DAY = 24 * HOUR;
+  const NOW = Date.UTC(2027, 0, 20, 12);
+
+  /** The report half of a card at `t`, as `recomputeBodySummary` filters it. */
+  const inCard = (times: readonly number[], t: number) =>
+    times.filter((r) => r >= summaryWindowStart(t) && isInSeason(r, currentSeason(t)));
+
+  it('is null with no reports: time alone cannot change a card with none', () => {
+    expect(summaryRefreshAt([], NOW)).toBeNull();
+  });
+
+  it('is the moment the oldest report leaves the window', () => {
+    const oldest = NOW - 10 * DAY;
+    const at = summaryRefreshAt([NOW - DAY, oldest], NOW);
+    expect(at).toBe(oldest + SUMMARY_WINDOW_MS + 1);
+    expect(inCard([oldest], (at as number) - 1)).toEqual([oldest]);
+    expect(inCard([oldest], at as number)).toEqual([]);
+  });
+
+  it('is the season end when that comes first', () => {
+    const lateJune = Date.UTC(2027, 5, 28);
+    expect(summaryRefreshAt([lateJune - DAY], lateJune)).toBe(seasonEndMs(currentSeason(lateJune)));
+  });
+
+  it('is always later than now, even for a time outside the window', () => {
+    expect(summaryRefreshAt([NOW - 40 * DAY], NOW)).toBe(NOW + 1);
+  });
+
+  /**
+   * The invariant the sweep rests on: **nothing the card counts can change before `refreshAt`**, so
+   * a sweep that reads only due rows never leaves a stale card. Report times are drawn the way the
+   * recompute reads them — inside the window at `now`, up to the write path's hour of future
+   * tolerance — and `now` ranges across season boundaries.
+   */
+  it('property: the card is the same at every instant from now until refreshAt', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: Date.UTC(2025, 0, 1), max: Date.UTC(2030, 0, 1) }),
+        fc.array(fc.integer({ min: -SUMMARY_WINDOW_MS, max: HOUR }), { maxLength: 12 }),
+        fc.double({ min: 0, max: 1, noNaN: true }),
+        (now, offsets, frac) => {
+          const times = offsets.map((o) => now + o);
+          const at = summaryRefreshAt(times, now);
+          if (times.length === 0) {
+            expect(at).toBeNull();
+            return;
+          }
+          expect(at).not.toBeNull();
+          const refreshAt = at as number;
+          expect(refreshAt).toBeGreaterThan(now);
+          const t = now + Math.floor(frac * (refreshAt - 1 - now));
+          expect(inCard(times, t)).toEqual(inCard(times, now));
+          expect(inCard(times, refreshAt - 1)).toEqual(inCard(times, now));
+        },
+      ),
+    );
   });
 });

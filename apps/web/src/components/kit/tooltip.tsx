@@ -112,7 +112,7 @@ function TooltipContent({
             'flex w-max max-w-[20rem] flex-col gap-(--space-1_5) px-(--space-3) py-(--space-2_5) text-left',
             'rounded-container border border-solid border-line2 bg-plate-solid shadow-plate',
             // The plate names its face, as every kit popup does: portaled to `body`, it would
-            // otherwise inherit the legacy `system-ui` rule there, never the kit's Saira.
+            // otherwise take whatever face the page's `body` carries, not the kit's.
             'font-(family-name:--family-sans)',
             'transition-opacity duration-(--duration-fast) ease-standard data-instant:duration-0',
             'data-starting-style:opacity-0 data-ending-style:opacity-0',

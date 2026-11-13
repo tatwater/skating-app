@@ -478,7 +478,7 @@ export async function createReportRow(
   // queue flushed (D36, Phase 02a §6.2), and `resolveSurvivor` sends the report to the canonical lake.
   // Recomputing the requested id would refresh the *loser's* card — a row nothing renders, since a
   // merged body is unlisted — and leave the survivor, the card a skater is actually looking at,
-  // stale until the six-hourly sweep.
+  // stale — and the sweep reads only cards time is due to change, so possibly for good.
   await recomputeBodySummary(ctx, body._id);
 
   // The landmarks it names grow in prominence; a spot it names that no map has is proposed (D202).

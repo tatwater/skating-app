@@ -193,10 +193,12 @@
   * {
     border-color: var(--color-border);
   }
+  /* Every screen defaults to the kit's face (founder, 2026-11-11): `--family-sans` leads with the
+     self-hosted Saira above and falls back to the system stack while it loads. */
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-family: var(--family-sans);
     -webkit-font-smoothing: antialiased;
   }
 }

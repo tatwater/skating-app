@@ -65,8 +65,8 @@ import {
 import {
   assertCanPostHazards,
   getCurrentProfile,
+  requireCapability,
   requireContributor,
-  requireContributorRole,
   requireProfile,
 } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
@@ -726,7 +726,7 @@ export const listPromotionCandidates = query({
     season: v.optional(v.number()),
   },
   handler: async (ctx, { waterBodyId, season }) => {
-    await requireContributorRole(ctx, 'moderator');
+    await requireCapability(ctx, 'body.read');
     const body = await resolveSurvivor(ctx, waterBodyId);
     if (!body) return [];
     const now = Date.now();
@@ -934,7 +934,7 @@ const MERGE_AUDIT_WINDOW_DAYS = 120;
 export const listRecentMerges = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, { limit }) => {
-    await requireContributorRole(ctx, 'moderator');
+    await requireCapability(ctx, 'corpus.read');
     const since = Date.now() - MERGE_AUDIT_WINDOW_DAYS * 24 * 60 * 60 * 1000;
     const rows = await ctx.db
       .query('moderationActions')
@@ -980,15 +980,24 @@ export const listRecentMerges = query({
 export const unmerge = mutation({
   args: { hazardId: v.id('hazards'), reason: v.string() },
   handler: async (ctx, { hazardId, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
-    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
-    // Fetched raw, not through `resolveHazardSurvivor` — the whole point is to act on the tombstone.
-    const loser = await ctx.db.get(hazardId);
-    if (!loser) throw new ConvexError('Hazard not found');
-    if (loser.mergedIntoHazardId === undefined) throw new ConvexError('Hazard is not merged');
-    await unmergeHazard(ctx, loser, { actorId: actor._id, reason });
+    const actor = await requireCapability(ctx, 'corpus.preIce');
+    await unmergeImpl(ctx, actor, { hazardId, reason });
   },
 });
+
+/** `unmerge`'s body — also what undoing a merge runs, automatic or not (D226). */
+export async function unmergeImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  { hazardId, reason }: { hazardId: Id<'hazards'>; reason: string },
+): Promise<void> {
+  if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+  // Fetched raw, not through `resolveHazardSurvivor` — the whole point is to act on the tombstone.
+  const loser = await ctx.db.get(hazardId);
+  if (!loser) throw new ConvexError('Hazard not found');
+  if (loser.mergedIntoHazardId === undefined) throw new ConvexError('Hazard is not merged');
+  await unmergeHazard(ctx, loser, { actorId: actor._id, reason });
+}
 
 /**
  * The author's own hazards on a body that aren't yet attached to any report — the D55 auto-bundle

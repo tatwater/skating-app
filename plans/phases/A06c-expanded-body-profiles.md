@@ -406,6 +406,15 @@ from a mean without knowing which value left.
 Recomputed from a bounded index range instead, with a cron for the decay no write can catch. Exact by
 construction rather than exact-until-a-path-is-missed.
 
+**The cron read the whole corpus to find the cards (fixed 2026-10-17).** The six-hourly sweep paged
+all ~24,953 bodies, polygons included, to recompute the ~212 with a card — ~84 MB a tick, ~10 GB a
+month of Convex bandwidth. Each recompute now also records when time next changes its card (the
+oldest report it read leaving the window, or the season's end — `summaryRefreshAt` in
+`@skating/core`) in `bodySummaryRefreshes`, and the cron, now hourly, recomputes only the rows that
+are due. A card with no report in the window has no row and is never swept. The full walk
+(`sweepAllBodySummaries`) stays as the backfill and the repair, and the cron runs it once by itself
+on a deployment with no `succeeded` walk on record.
+
 ### 4. §5 cannot be validated on this deployment, and that is fine
 
 Dev holds **1 report and 2 hazards**. §5.3's rule is that no activity means no card, and D86's quorum

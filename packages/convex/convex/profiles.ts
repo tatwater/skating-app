@@ -47,17 +47,20 @@ import {
 import {
   canReceiveNotifications,
   getCurrentProfile,
+  hasCapability,
+  requireCapability,
   requireContributor,
   requireProfile,
-  requireRole,
 } from './lib/auth';
 import { publicAuthor } from './lib/authorView';
 import { NOTIFICATION_PREF_DEFAULTS, NOTIFICATION_PREF_KEYS } from './lib/enums';
 import { loadFeedViewer, toPostCard } from './lib/feedCards';
+import { isLastLedgerEditor, seesLedgerGrants, withoutLedgerGrantsFor } from './lib/ledgerEditors';
 import { DIGEST_TIMEZONE } from './lib/notificationQueue';
 import { loadBlockedAuthorIds, profileAccess } from './lib/reportVisibility';
 import { trustClassFor } from './lib/reputation';
 import { takeCappedResult } from './lib/scan';
+import { recordSignInDay } from './lib/signInDays';
 import { latLng, literals, partialBoolFlags } from './lib/validators';
 import schema from './schema';
 
@@ -509,7 +512,7 @@ export const setTimezone = mutation({
  * changed Clerk email or avatar never reached us. The email sender's Clerk fallback papered over the
  * first (one lookup per person, cached), but a cached address is exactly the thing that goes stale
  * when the person changes it. This is the launch-time half: claims only, no identity args, writes
- * nothing when the claims match.
+ * nothing when the claims match (beyond the day's sign-in row, once a day — below).
  *
  * **Never un-scrub.** The same rule as `upsertFromClerk`: an inactive account or a pending deletion
  * has had these fields cleared on purpose, and a launch-time sync is the first thing that would put
@@ -529,7 +532,15 @@ export const syncFromClerk = mutation({
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return null;
-    return applyClerkMirrorsFor(ctx, identity.subject, {
+    const profile = await profileForClerkUser(ctx, identity.subject);
+    if (!profile) return null;
+    // **The sign-in record (B01).** This is the one call every client makes on every open — and
+    // again when an app left open returns on a new UTC day (web: `useOpenSync` on visibility and
+    // focus; phone: AppState `active`) — so it is where a day's first open goes on the record,
+    // before the mirror gate, which turns away a suspended account that did, all the same, sign
+    // in. `lib/signInDays` decides who counts.
+    await recordSignInDay(ctx, profile, Date.now());
+    return applyClerkMirrorsTo(ctx, profile, {
       email: identity.email,
       profileImageUrl: identity.pictureUrl,
       updatedAt: clerkUpdatedAtFromClaim(identity.updatedAt),
@@ -598,11 +609,25 @@ async function applyClerkMirrorsFor(
   clerkUserId: string,
   claims: MirrorClaims,
 ): Promise<Id<'profiles'> | null> {
-  const profile = await ctx.db
+  const profile = await profileForClerkUser(ctx, clerkUserId);
+  return profile ? applyClerkMirrorsTo(ctx, profile, claims) : null;
+}
+
+/** The profile for a Clerk subject, if one exists. */
+function profileForClerkUser(ctx: MutationCtx, clerkUserId: string) {
+  return ctx.db
     .query('profiles')
     .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', clerkUserId))
     .unique();
-  if (!profile || !canReceiveNotifications(profile)) return null;
+}
+
+/** `applyClerkMirrorsFor` once the profile is in hand. */
+async function applyClerkMirrorsTo(
+  ctx: MutationCtx,
+  profile: Doc<'profiles'>,
+  claims: MirrorClaims,
+): Promise<Id<'profiles'> | null> {
+  if (!canReceiveNotifications(profile)) return null;
   if (
     claims.updatedAt !== undefined &&
     profile.clerkUpdatedAt !== undefined &&
@@ -1069,7 +1094,7 @@ export const searchProfiles = query({
 });
 
 /**
- * The operator detail view of a user (D37/D50/D57). `requireRole('moderator')`: a moderator sees the
+ * The operator detail view of a user (D37/D50/D57). `requireCapability('people.read')`: a moderator sees the
  * lifecycle state, posting perms, and the **private, non-scoring `contradictionCount`** (their D57
  * lever's input) — but the **raw trust/bounty numbers stay admin-only** (D50), gated on the *viewer's*
  * role server-side so they never leave the deployment for a moderator. Bundles the user's recent
@@ -1079,8 +1104,8 @@ export const searchProfiles = query({
 export const getAdmin = query({
   args: { userId: v.id('profiles') },
   handler: async (ctx, { userId }) => {
-    const viewer = await requireRole(ctx, 'moderator');
-    const isAdmin = viewer.role === 'admin';
+    const viewer = await requireCapability(ctx, 'people.read');
+    const isAdmin = hasCapability(viewer, 'people.trustScore');
     const target = await ctx.db.get(userId);
     if (!target) return null;
 
@@ -1127,13 +1152,23 @@ export const getAdmin = query({
             bountyPoints: target.bountyPoints ?? 0,
           }
         : {}),
-      recentActions: recentActions.map((a) => ({
+      recentActions: withoutLedgerGrantsFor(viewer, recentActions).map((a) => ({
         id: a._id,
         action: a.action,
         reason: a.reason,
         createdAt: a.createdAt,
       })),
       openFlagCount: openFlags.length,
+      // Ledger editing (D227) — only an admin can hold it, so the row exists only on an admin, and
+      // only for a viewer who can change it: an admin who holds it and is not on their way out
+      // (`machinery.ledger`, the server's gate). Anyone else gets neither the row nor who holds it.
+      // `lastLedgerEditor` says why a holder's revoke is refused before anyone presses it.
+      ...(target.role === 'admin' && seesLedgerGrants(viewer)
+        ? {
+            ledgerEditor: target.canEditLedger === true,
+            lastLedgerEditor: await isLastLedgerEditor(ctx, target),
+          }
+        : {}),
     };
   },
 });

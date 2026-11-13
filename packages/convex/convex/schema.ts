@@ -294,6 +294,14 @@ export default defineSchema({
     activeBountyPostLimit: v.optional(v.number()),
     contradictionCount: v.optional(v.number()),
     role: literals(USER_ROLES), // mod=content; admin ⊇ mod (D37)
+    /**
+     * May edit the cost ledger (add, change and delete invoices; set rates) and give or take this
+     * from another admin (D227) — a per-person grant, not a role: being an admin does not confer
+     * it, and it means nothing without the admin role (`machinery.ledger` needs both). Absent ⇒ not
+     * held. Cleared in the same mutation that takes the admin role away, so a later re-promotion
+     * never restores it.
+     */
+    canEditLedger: v.optional(v.boolean()),
     status: literals(USER_STATUSES), // suspend/ban (D37); deleted (D33)
     statusReason: v.optional(v.string()),
     suspendedUntil: v.optional(v.number()), // temp suspension; null on ban = indefinite (D37)
@@ -1492,6 +1500,30 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index('by_state', ['state']),
 
+  /**
+   * **When each map summary card next changes by the passage of time** — the work list of the
+   * summary sweep (`waterBodies.sweepDueBodySummaries`).
+   *
+   * A card (`waterBodies.summary`) changes on a write — every one recomputes it — or when a report
+   * ages out of the 14-day window or the season turns, which no write marks. The sweep used to page
+   * every body in the corpus (~25,000 documents, polygons included, ~84 MB a tick) to find the ~200
+   * with a card; it now reads only the rows here that are due. One row per body whose card holds a
+   * report, kept by `recomputeBodySummary` in the same transaction as the card it describes
+   * (`summaryRefreshAt`), and deleted when time can no longer change the card.
+   *
+   * **A table of its own rather than a field and index on `waterBodies`**, for three reasons: the
+   * field is required here, so `by_refresh_at` holds only rows that mean something (an optional
+   * field's index is not sparse — every body without it would sort first); adding it needed no
+   * widen-and-backfill on a 25,000-row table of polygons; and the due read touches rows of two
+   * numbers instead of body documents, before it fetches the few bodies actually due.
+   */
+  bodySummaryRefreshes: defineTable({
+    waterBodyId: v.id('waterBodies'),
+    refreshAt: v.number(),
+  })
+    .index('by_water_body', ['waterBodyId'])
+    .index('by_refresh_at', ['refreshAt']),
+
   // The water-body spatial index (A01) — one row per grid cell a *listed* body's bbox covers, at the
   // ladder level `indexLevelFor` picks (see `lib/cellIndex` / `@skating/core`'s `spatialCells`).
   // Replaces `@convex-dev/geospatial`, whose per-row *point* and read-∝-`maxResults` query shape
@@ -2368,6 +2400,12 @@ export default defineSchema({
      * autofilled. Optional ⇒ absent on every report never edited, which is the great majority.
      */
     editedAt: v.optional(v.number()),
+    /**
+     * When the author deleted this (D248): set by the author's own delete, and never cleared.
+     * Author-deleted content never comes back — no restore, no undo, no Post choice.
+     * Absent ⇒ the author hasn't withdrawn it.
+     */
+    authorDeletedAt: v.optional(v.number()),
   })
     .index('by_water_body_skate_end_time', ['waterBodyId', 'skateEndTime'])
     // Per-body feed, paginated (infinite scroll). `moderationStatus` leads so the gate is applied
@@ -2453,6 +2491,12 @@ export default defineSchema({
     updatedAt: v.number(),
     /** When the author last edited the Post (the `reports.editedAt` rule: never `updatedAt`). */
     editedAt: v.optional(v.number()),
+    /**
+     * When the author deleted this (D248): set by the author's own delete, and never cleared.
+     * Author-deleted content never comes back — no restore, no undo, no Post choice.
+     * Absent ⇒ the author hasn't withdrawn it.
+     */
+    authorDeletedAt: v.optional(v.number()),
     /**
      * The words a search of Latest reads (B03 §11): the Post's title and prose, and what its
      * **visible** members' authors typed. Derived; one writer, `refreshPostSearchText` in
@@ -2551,6 +2595,12 @@ export default defineSchema({
      * this is nobody judging anything.
      */
     redactedAt: v.optional(v.number()),
+    /**
+     * When the author deleted this (D248): set by the author's own delete, and never cleared.
+     * Author-deleted content never comes back — no restore, no undo, no Post choice.
+     * Absent ⇒ the author hasn't withdrawn it.
+     */
+    authorDeletedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index('by_report', ['reportId'])
@@ -3227,15 +3277,35 @@ export default defineSchema({
     targetId: v.string(),
     reason: v.string(), // required — accountability for appeals/reversals
     metadata: v.optional(v.any()), // e.g. prior/new state, mergedIntoId, suspendedUntil
+    /**
+     * Set when this row undoes an earlier one (D226, B01 §11). The undo is a new action with its own
+     * row — the audit log stays append-only — and History finds "undone by" through `by_undoes`.
+     * Equality reads only, so the unset value on every other row never matches (no sparse-index trap).
+     */
+    undoesActionId: v.optional(v.id('moderationActions')),
     createdAt: v.number(),
   })
     .index('by_target', ['targetType', 'targetId'])
+    .index('by_undoes', ['undoesActionId'])
     .index('by_actor', ['actorId'])
     // The 07-2 rollup's day slice (A05c). Auto-merge is the one mechanism that changes a row without a
     // human, and its unmerge rate is the only empirical check on the bar — which means counting merges
     // per day, which means reading this table by time. Without the index that is a scan of an
     // append-only audit log, i.e. the exact unbounded-growth shape the Phase 07-2 rule forbids.
     .index('by_created_at', ['createdAt']),
+
+  /**
+   * What an audited action replaced, when it is too big for the audit row (D226, B01 §11): a
+   * sub-area's previous polygon, a body's previous weather grid, and every row a body merge moved
+   * or deleted. Written in the same mutation as the action, read only by its undo, keyed by the
+   * audit row. `part` orders a payload split across rows (a merge of a busy body).
+   */
+  auditSnapshots: defineTable({
+    actionId: v.id('moderationActions'),
+    part: v.number(),
+    payload: v.any(),
+    createdAt: v.number(),
+  }).index('by_action', ['actionId', 'part']),
 
   supportTickets: defineTable({
     userId: v.optional(v.id('profiles')), // absent when the Clerk user has no profile row yet
@@ -4004,6 +4074,27 @@ export default defineSchema({
   })
     .index('by_user_created', ['userId', 'createdAt']) // the per-user window rate-limit lookup
     .index('by_created_at', ['createdAt']), // the daily retention prune
+
+  /**
+   * **One row per person per UTC day they opened the app signed in** (B01, founder call 2026-11-10).
+   * Written by `profiles.syncFromClerk`, the call both clients make on every open once the person
+   * has a profile, and again when an app left open returns to the foreground on a new UTC day — the
+   * first open of the day inserts, every later one finds the row and writes
+   * nothing (`lib/signInDays.ts`). `pushTokens.lastSeenAt` keeps only the latest open, so without
+   * this nothing can say how many people came on a given day, or who came back.
+   *
+   * Read later by the console's Metrics tab (B01 §5.1, board 1.4): *Signed in* this week, *on two
+   * days or more* of the last seven, and *Signed in* per day through the season. It is a behavioral
+   * record, so it carries the profile id and the day and nothing else, and account deletion erases
+   * it (D33). Forward-only by nature: an open leaves no other trace to rebuild it from.
+   */
+  signInDays: defineTable({
+    userId: v.id('profiles'),
+    day: v.string(), // the UTC `YYYY-MM-DD` of `metricDay`, the key every metric day uses
+    firstAt: v.number(), // the day's first open, epoch ms
+  })
+    .index('by_user_day', ['userId', 'day']) // the once-a-day guard, and account erasure
+    .index('by_day', ['day']), // the Metrics reads: a day, or a range of days
 
   /**
    * The pre-aggregated numbers every chart reads — one row per `(metric, date)` (UTC day).

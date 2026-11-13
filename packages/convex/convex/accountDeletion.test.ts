@@ -1067,6 +1067,10 @@ describe('bucket 1 — erase (private artifacts)', () => {
         status: 'open' as const,
         createdAt: T0,
       });
+      // The days they opened the app (B01), and someone else's, which must survive.
+      await ctx.db.insert('signInDays', { userId: user.id, day: '2026-01-14', firstAt: T0 });
+      await ctx.db.insert('signInDays', { userId: user.id, day: '2026-01-15', firstAt: T0 });
+      await ctx.db.insert('signInDays', { userId: other.id, day: '2026-01-15', firstAt: T0 });
     });
 
     await finalize(t, user.id);
@@ -1080,6 +1084,7 @@ describe('bucket 1 — erase (private artifacts)', () => {
       pushTokens: (await ctx.db.query('pushTokens').collect()).length,
       blocks: (await ctx.db.query('blocks').collect()).length,
       tickets: (await ctx.db.query('supportTickets').collect()).length,
+      signInDays: (await ctx.db.query('signInDays').collect()).map((r) => r.userId),
     }));
     expect(counts).toEqual({
       connections: 0,
@@ -1090,6 +1095,7 @@ describe('bucket 1 — erase (private artifacts)', () => {
       pushTokens: 0, // a capability to ring the phone, and a tombstone must not keep one
       blocks: 0, // both directions — a block against a tombstone would filter forever
       tickets: 0,
+      signInDays: [other.id], // a behavioral record of one person; the other person's stays
     });
   });
 
@@ -1680,6 +1686,23 @@ describe('a ghost is a ghost everywhere (PR #30 review)', () => {
     // ...but the read still works. Blocking it would be the same mistake as putting the ghost gate in
     // `requireProfile`: reviewing the state of things on the way out is reasonable.
     await expect(mod.as.query(api.waterBodies.listCurated, {})).resolves.toBeDefined();
+
+    // The reads that used to sit behind the write gate (D217 found them): queries name a read
+    // capability now, so a departing operator keeps them like every other read.
+    await expect(mod.as.query(api.waterBodies.reviewQueueCounts, {})).resolves.toBeDefined();
+    await expect(
+      mod.as.query(api.waterBodies.listReviewQueue, { reason: 'name-conflict' }),
+    ).resolves.toBeDefined();
+    await expect(mod.as.query(api.hazards.listRecentMerges, {})).resolves.toBeDefined();
+    await expect(
+      mod.as.query(api.hazards.listPromotionCandidates, { waterBodyId: bodyId }),
+    ).resolves.toBeDefined();
+    await expect(
+      mod.as.query(api.recurrence.listForBodyAdmin, { waterBodyId: bodyId }),
+    ).resolves.toBeDefined();
+    await expect(
+      mod.as.query(api.subAreas.adminStatsForBody, { waterBodyId: bodyId }),
+    ).resolves.toBeDefined();
   });
 
   /**

@@ -20,6 +20,17 @@
  * on the busiest lake, and it is exact by construction rather than exact-until-a-path-is-missed.
  * The cron sweep then handles pure time decay, which has no write to ride on.
  *
+ * ## The sweep reads only what is due
+ *
+ * Each recompute also records **when time will next change the card** (`summaryRefreshAt`: the
+ * oldest report it read leaving the window, or the season's end, whichever is first) in
+ * `bodySummaryRefreshes`, in the same transaction. The sweep reads the rows that are due and
+ * recomputes those bodies, so its cost follows the cards that can change rather than the corpus:
+ * it used to page all ~25,000 bodies, polygons included, to find the ~200 with a card. A card with
+ * no report in the window has no row — its hazards change only on a write — and is never swept.
+ * The full walk (`sweepAllBodySummaries`) remains, as the backfill that fills the table once and as
+ * a repair.
+ *
  * ## ⚠ The caller invariant: pass the id off a STORED document, never off mutation args
  *
  * Review found this violated twice, in the two places it was easiest to violate. `reports.create`
@@ -53,7 +64,7 @@
  * | `hazards.moderationStatus` | `moderation.setStatus` | calls directly |
  * | **`hazards.mergedIntoHazardId`** | `applyMerge`, `unmergeHazard` | **`lib/hazardMerge.ts`, beside each write** |
  * | which body content belongs to | `waterBodies.merge` | calls directly, for both bodies |
- * | the passage of time | nothing | the six-hourly `sweepAllBodySummaries` cron |
+ * | the passage of time | nothing | the hourly `sweepDueBodySummaries` cron, due rows only |
  *
  * The merge/unmerge pair sits in the lib rather than in its callers on purpose: `mergedIntoHazardId`
  * became a summary input only when the card started excluding tombstones, and the first attempt
@@ -61,9 +72,8 @@
  * means a third writer cannot be added without meeting it.
  *
  * **One deliberate omission.** `reports.renameSkateTimeToSkateEndTime` patches `skateEndTime`, but it
- * is the one-time Phase 05 field rename — already run, against reports far outside any card's window —
- * and the sweep would reconcile it within six hours regardless. Named here so its absence reads as a
- * decision rather than a miss.
+ * is the one-time Phase 05 field rename — already run, against reports far outside any card's window.
+ * Named here so its absence reads as a decision rather than a miss.
  *
  * Nothing on the hazard *decay* path appears above, and that is correct: `hazardWeather` patches
  * `decayMultiplier` and `snowHidden` only. A decayed hazard is still an active hazard on the map, so
@@ -74,14 +84,13 @@ import {
   currentSeason,
   isInSeason,
   type SkateQuality,
-  SUMMARY_RECENT_DAYS,
   summarizeQuality,
+  summaryRefreshAt,
+  summaryWindowStart,
   topHazardTypes,
 } from '@skating/core';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx } from '../_generated/server';
-
-const DAY_MS = 86_400_000;
 
 /**
  * How many recent rows the recompute will read per body.
@@ -108,7 +117,7 @@ export async function recomputeBodySummary(
   /**
    * The body doc, when the caller already holds it.
    *
-   * The sweep pages `waterBodies` and therefore *has* every row it is about to recompute; without
+   * The full walk pages `waterBodies` and therefore *has* every row it is about to recompute; without
    * this it would re-read each one, and a `waterBodies` doc carries its `polygon` — ~300 KB for
    * Champlain against a 1.8 KB average. Doubling the byte cost of the heaviest rows in a
    * transaction already reading a page of them is how the depth loader blew Convex's 16 MB read cap
@@ -116,7 +125,7 @@ export async function recomputeBodySummary(
    */
   known?: Doc<'waterBodies'>,
 ): Promise<void> {
-  const windowStart = now - SUMMARY_RECENT_DAYS * DAY_MS;
+  const windowStart = summaryWindowStart(now);
   const season = currentSeason(now);
 
   const reports = await ctx.db
@@ -163,6 +172,20 @@ export async function recomputeBodySummary(
   };
 
   const body = known ?? (await ctx.db.get(waterBodyId));
+  // The sweep's work list moves with the card, in the same transaction, whether or not the card
+  // itself changed: every report this read is a report that will age out, and a stale `refreshAt`
+  // is a card the sweep never revisits. Every report read counts, not just the ones the card shows
+  // (see `summaryRefreshAt`) — an early refresh is one cheap recompute, a late one a stale card.
+  await syncSummaryRefresh(
+    ctx,
+    waterBodyId,
+    body
+      ? summaryRefreshAt(
+          reports.map((report) => report.skateEndTime),
+          now,
+        )
+      : null,
+  );
   if (!body) return;
   // **Skip the write when nothing changed.** A recompute runs on every report and hazard transition,
   // and a no-op patch is still a document write, a mutation conflict surface and a subscription
@@ -170,6 +193,35 @@ export async function recomputeBodySummary(
   // from the comparison, or the check could never be true.
   if (summaryUnchanged(body.summary, summary)) return;
   await ctx.db.patch(waterBodyId, { summary });
+}
+
+/**
+ * Make `bodySummaryRefreshes` say `refreshAt` for this body: one row, or none for `null`.
+ *
+ * Reads every row the body has (a handful at most — there is meant to be one) rather than
+ * `.unique()`, so a duplicate left by anything at all is folded away here instead of throwing on
+ * every report written to that lake. Writes only on a change, like the card.
+ */
+async function syncSummaryRefresh(
+  ctx: MutationCtx,
+  waterBodyId: Id<'waterBodies'>,
+  refreshAt: number | null,
+): Promise<void> {
+  const rows = await ctx.db
+    .query('bodySummaryRefreshes')
+    .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
+    .take(8);
+  const [keep, ...extra] = rows;
+  for (const row of extra) await ctx.db.delete(row._id);
+  if (refreshAt === null) {
+    if (keep) await ctx.db.delete(keep._id);
+    return;
+  }
+  if (!keep) {
+    await ctx.db.insert('bodySummaryRefreshes', { waterBodyId, refreshAt });
+  } else if (keep.refreshAt !== refreshAt) {
+    await ctx.db.patch(keep._id, { refreshAt });
+  }
 }
 
 /** Whether two summaries say the same thing, ignoring when they were computed. */

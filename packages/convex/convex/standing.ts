@@ -16,7 +16,9 @@
  *   boost, any human attachment, an admission by request, a mention in the design corpus. Dry by
  *   default, paged, re-runnable after any campaign.
  * - **the rollover** demotes, each July, every active body with no report, track or hazard in
- *   `INACTIVE_SEASONS` and no standing human decision. Automatic because dormancy is cheap to undo:
+ *   `INACTIVE_SEASONS`, no standing human decision and no saved put-in (D245 — the seed kept bodies
+ *   on their put-ins, and the rollover must not undo that every July). Automatic because dormancy is
+ *   cheap to undo:
  *   one report brings a body back. Recorded as a run row so "did this season's pass finish" is a
  *   fact.
  * - **a moderator** sets a body dormant with a note, or brings one back, one at a time.
@@ -24,13 +26,35 @@
  * Removal (D48) stays what it was: a human act with a reason. Nothing here deletes.
  */
 
-import { INACTIVE_SEASONS, isActive, retainsActive, seasonOf, standingOf } from '@skating/core';
+import {
+  type DormancyReason,
+  INACTIVE_SEASONS,
+  isActive,
+  RETENTION_REASONS,
+  type RetentionReason,
+  retentionReason,
+  seasonOf,
+  standingOf,
+} from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
-import { internalAction, internalMutation, mutation, query } from './_generated/server';
-import { requireContributorRole, requireRole } from './lib/auth';
+import type { Doc, Id } from './_generated/dataModel';
+import {
+  internalAction,
+  internalMutation,
+  type MutationCtx,
+  mutation,
+  query,
+} from './_generated/server';
+import { requireCapability } from './lib/auth';
 import { takeCappedResult } from './lib/scan';
-import { activateBody, anyFavorite, demoteBody, lastActivityAt } from './lib/standing';
+import {
+  activateBody,
+  anyFavorite,
+  demoteBody,
+  hasSavedPutIn,
+  lastActivityAt,
+} from './lib/standing';
 import { literals } from './lib/validators';
 import { bodyAttachmentKind } from './waterBodies';
 
@@ -56,8 +80,35 @@ export const setStanding = mutation({
     note: v.optional(v.string()),
     reason: v.optional(v.string()),
   },
-  handler: async (ctx, { waterBodyId, standing, note, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+  handler: async (ctx, args) => {
+    const actor = await requireCapability(ctx, 'body.standing');
+    return setStandingImpl(ctx, actor, args);
+  },
+});
+
+/**
+ * `setStanding`'s body, shared with the undo of a standing change (D226). The undo of an activation
+ * shelves the body for the reason it was shelved before — `dormancyReason`, which the mutation never
+ * passes (a moderator's hand is always `moderator`).
+ */
+export async function setStandingImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    waterBodyId,
+    standing,
+    note,
+    reason,
+    dormancyReason = 'moderator',
+  }: {
+    waterBodyId: Id<'waterBodies'>;
+    standing: 'active' | 'dormant';
+    note?: string;
+    reason?: string;
+    dormancyReason?: DormancyReason;
+  },
+): Promise<Id<'waterBodies'>> {
+  {
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
     const current = standingOf(body);
@@ -81,7 +132,11 @@ export const setStanding = mutation({
       await demoteBody(
         ctx,
         body,
-        { reason: 'moderator', byUserId: actor._id, ...(trimmedNote ? { note: trimmedNote } : {}) },
+        {
+          reason: dormancyReason,
+          byUserId: actor._id,
+          ...(trimmedNote ? { note: trimmedNote } : {}),
+        },
         { actorId: actor._id, ...(reason?.trim() ? { reason: reason.trim() } : {}) },
       );
       return waterBodyId;
@@ -103,8 +158,8 @@ export const setStanding = mutation({
       ...(reason?.trim() ? { reason: reason.trim() } : {}),
     });
     return waterBodyId;
-  },
-});
+  }
+}
 
 // ── The standing lists ─────────────────────────────────────────────────────────────────────────
 
@@ -127,7 +182,7 @@ export type StandingLane = (typeof LANES)[number];
 export const listLane = query({
   args: { lane: literals(LANES), limit: v.optional(v.number()) },
   handler: async (ctx, { lane, limit }) => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'corpus.read');
     const cap = Math.min(LANE_CAP, Math.max(1, limit ?? LANE_CAP));
     const source =
       lane === 'removed'
@@ -180,7 +235,7 @@ export const listLane = query({
 export const listRecentActivations = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, { limit }) => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'corpus.read');
     const cap = Math.min(LANE_CAP, Math.max(1, limit ?? 50));
     const rows = await ctx.db
       .query('waterBodies')
@@ -308,11 +363,13 @@ export const seedStanding = internalMutation({
 
 /**
  * One page of the season rollover: every active body with no evidence of use in the retention
- * window and no standing human decision becomes dormant (`inactive`).
+ * window, no standing human decision and no saved put-in becomes dormant (`inactive`).
  *
  * `season` is the season being rolled *into*; the window is the `INACTIVE_SEASONS` before it — see
- * `inactivityCutoffMs`. Four reads per active body (three for `lastActivityAt`, one for a
- * favorite) plus the demotion's own, so a page of 100 all-demoted sits around 3,000 reads.
+ * `inactivityCutoffMs`. Five index reads per active body (three for `lastActivityAt`, one for a
+ * favorite, one bounded read of its put-ins) plus the demotion's own, so a page of 100 all-demoted
+ * sits around 3,000 reads. `retainedBy` names what kept each retained body, first reason first (see
+ * `retentionReason`): its `put_in` count is the bodies only a put-in kept (D245).
  */
 export const demoteInactiveBodies = internalMutation({
   args: {
@@ -325,22 +382,25 @@ export const demoteInactiveBodies = internalMutation({
     const numItems = Math.min(100, Math.max(1, batchSize ?? 100));
     const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
     const kept = { notActive: 0, retained: 0 };
+    const retainedBy = emptyRetainedBy();
     let demoted = 0;
     for (const body of page.page) {
       if (!isActive(body)) {
         kept.notActive++;
         continue;
       }
-      const retained = retainsActive(
+      const reason = retentionReason(
         {
           lastActivityAt: await lastActivityAt(ctx, body._id),
           curatedBoost: body.curatedBoost,
           favorited: await anyFavorite(ctx, body._id),
+          hasPutIn: await hasSavedPutIn(ctx, body._id),
         },
         season,
       );
-      if (retained) {
+      if (reason !== null) {
         kept.retained++;
+        retainedBy[reason]++;
         continue;
       }
       if (apply === true) await demoteBody(ctx, body, { reason: 'inactive' });
@@ -351,11 +411,20 @@ export const demoteInactiveBodies = internalMutation({
       scanned: page.page.length,
       demoted,
       kept,
+      retainedBy,
       cursor: page.continueCursor,
       isDone: page.isDone,
     };
   },
 });
+
+/** A zero tally per retention reason, so every key is present in a page's result and the run row. */
+function emptyRetainedBy(): Record<RetentionReason, number> {
+  return Object.fromEntries(RETENTION_REASONS.map((r) => [r, 0])) as Record<
+    RetentionReason,
+    number
+  >;
+}
 
 /**
  * The campaign id a season's rollover is recorded under — one live row per season, by construction.
@@ -386,7 +455,13 @@ export const runStandingRollover = internalAction({
   handler: async (
     ctx,
     { season, apply, batchSize },
-  ): Promise<{ scanned: number; demoted: number; retained: number; pages: number }> => {
+  ): Promise<{
+    scanned: number;
+    demoted: number;
+    retained: number;
+    retainedBy: Record<RetentionReason, number>;
+    pages: number;
+  }> => {
     const runId = await ctx.runMutation(internal.importRuns.start, {
       kind: 'standing_rollover',
       label: `standing rollover into ${season}${apply === true ? '' : ' (dry)'}`,
@@ -396,7 +471,7 @@ export const runStandingRollover = internalAction({
       stages: [
         {
           name: 'rollover',
-          detail: `demoteInactiveBodies — active bodies with nothing in the last ${INACTIVE_SEASONS} seasons and no boost or favorite become dormant`,
+          detail: `demoteInactiveBodies — active bodies with nothing in the last ${INACTIVE_SEASONS} seasons and no boost, favorite or saved put-in become dormant`,
         },
       ],
     });
@@ -406,12 +481,14 @@ export const runStandingRollover = internalAction({
       let scanned = 0;
       let demoted = 0;
       let retained = 0;
+      const retainedBy = emptyRetainedBy();
       let pages = 0;
       while (!isDone && pages < 5000) {
         const page: {
           scanned: number;
           demoted: number;
           kept: { retained: number };
+          retainedBy: Record<RetentionReason, number>;
           cursor: string;
           isDone: boolean;
         } = await ctx.runMutation(internal.standing.demoteInactiveBodies, {
@@ -425,6 +502,7 @@ export const runStandingRollover = internalAction({
         scanned += page.scanned;
         demoted += page.demoted;
         retained += page.kept.retained;
+        for (const r of RETENTION_REASONS) retainedBy[r] += page.retainedBy[r];
         pages++;
       }
       await ctx.runMutation(internal.importRuns.finish, {
@@ -434,9 +512,12 @@ export const runStandingRollover = internalAction({
           { name: 'scanned', value: scanned },
           { name: apply === true ? 'demoted' : 'wouldDemote', value: demoted },
           { name: 'retained', value: retained },
+          // What kept them, first reason first — `retainedBy.put_in` is the bodies only a put-in
+          // kept (D245), the number a dry run before the first live July is for.
+          ...RETENTION_REASONS.map((r) => ({ name: `retainedBy.${r}`, value: retainedBy[r] })),
         ],
       });
-      return { scanned, demoted, retained, pages };
+      return { scanned, demoted, retained, retainedBy, pages };
     } catch (err) {
       await ctx.runMutation(internal.importRuns.finish, {
         runId,

@@ -92,3 +92,10 @@ things that currently ship dark behind constants.
   to stay silent without it rather than fail, so a missing key looks exactly like no traffic.
 - **Cost:** free tier is 1M events/month. Autocapture is the unpredictable half — worth a look at
   real volume once the alpha has traffic, since it is one line to turn off.
+
+## The line B01 drew (D220, 2026-10-12)
+
+Statistics about our own records (reports, lakes, runs, costs, the inbox) are rolled up in-house;
+behavior (sessions, screens, funnels, retention, search) is PostHog's. The admin console's Season
+view leaves a slot that links out to a PostHog dashboard, and its Instruments mode leaves a seam
+for a flags panel.

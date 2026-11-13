@@ -309,7 +309,7 @@ const ExpandedContext = createContext(false);
 
 /** The plate, the stripe's ink per tone (the toast's `data-type`), the stack and the motion. */
 const ROOT = [
-  // The plate — in the kit's face by name, since it portals to `body` (legacy `system-ui`).
+  // The plate — in the kit's face by name, as every kit popup is, since it portals to `body`.
   'absolute bottom-0 left-0 w-full overflow-hidden select-none',
   'rounded-container border border-solid border-line2 bg-plate-solid shadow-actbar',
   'font-(family-name:--family-sans)',

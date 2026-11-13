@@ -8,12 +8,12 @@ import {
   faUser,
 } from '@fortawesome/sharp-duotone-solid-svg-icons';
 import { api } from '@skating/convex/api';
-import { deviceTimeZone, type NotificationTarget, timezoneToSync } from '@skating/core';
+import { deviceTimeZone, type NotificationTarget, onceADay, timezoneToSync } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import * as Notifications from 'expo-notifications';
 import { Tabs, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { type ColorValue, View } from 'react-native';
+import { AppState, type ColorValue, View } from 'react-native';
 import { useTheme } from 'tamagui';
 import { ShareIntentHandler } from '../../src/components/ShareIntentHandler';
 import {
@@ -104,12 +104,22 @@ export default function TabsLayout() {
 
   // The Clerk mirrors (email for notification mail, the avatar), refreshed from the token's claims
   // on the same "app open". `upsertFromClerk` runs at onboarding only, so without this a changed
-  // address or picture never reached the profile. Once per signed-in mount; the server writes
-  // nothing when the claims already match.
+  // address or picture never reached the profile. On each signed-in mount, and again when the app
+  // comes back to the foreground on a new UTC day — the per-day sign-in record's touch point (B01):
+  // an app resumed on Tuesday without a remount would otherwise never say so, and a missed day can't
+  // be backfilled. `onceADay` keeps it to one call a day; the server writes nothing when the claims
+  // already match.
   const syncFromClerk = useMutation(api.profiles.syncFromClerk);
   useEffect(() => {
     if (!hasProfile) return;
-    void syncFromClerk({}).catch(() => {});
+    const sync = () => void syncFromClerk({}).catch(() => {});
+    const due = onceADay();
+    due(Date.now());
+    sync();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active' && due(Date.now())) sync();
+    });
+    return () => sub.remove();
   }, [hasProfile, syncFromClerk]);
 
   // The offline inbox is per device; bind it to whoever is signed in, so a previous account's page

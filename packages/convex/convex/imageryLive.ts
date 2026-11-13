@@ -78,7 +78,7 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
-import { requireContributorRole, requireRole } from './lib/auth';
+import { requireCapability } from './lib/auth';
 import { firstToday } from './lib/dailyThrottle';
 import {
   createCutMachine,
@@ -1150,7 +1150,7 @@ async function startCuts(
 export const retryFailed = mutation({
   args: {},
   handler: async (ctx) => {
-    await requireContributorRole(ctx, 'admin');
+    await requireCapability(ctx, 'machinery.imagery');
     const season = archiveSeasonAt(Date.now());
     const ledger = new Ledger(ctx);
     const rows = await ctx.db
@@ -1180,7 +1180,7 @@ export const retryFailed = mutation({
 export const tryAgainNow = mutation({
   args: {},
   handler: async (ctx) => {
-    await requireContributorRole(ctx, 'admin');
+    await requireCapability(ctx, 'machinery.imagery');
     await clearBackoff(ctx, 'pump');
     await retryNow(ctx, 'index');
     await ctx.scheduler.runAfter(0, internal.imageryLive.pump, {});
@@ -1481,7 +1481,7 @@ async function buildIndexOnce(
 export const activity = query({
   args: {},
   handler: async (ctx) => {
-    await requireRole(ctx, 'admin');
+    await requireCapability(ctx, 'machinery.read');
     const season = archiveSeasonAt(Date.now());
     const runs = await ctx.db.query('imageryRuns').withIndex('by_started').order('desc').take(40);
     const ledger = await ctx.db

@@ -285,6 +285,13 @@ of Strava's post-Nov-2024 terms** killed the pull model:
 See [`phases/08-native-capture.md`](./phases/08-native-capture.md) and L7 in
 [`08-legal-feasibility-checklist.md`](./08-legal-feasibility-checklist.md) for the full read.
 
+### Amendment (2026-11-06, B01 skater web) — Garmin is designed in, disabled at launch; GPX takes its place
+The founder wants a Garmin skate as a starting point for a new report, and considers it an important feature, but it
+will not ship with the MVP: the adapter still waits on its partner application and terms review. So the design shows
+Garmin **disabled, marked "Coming soon"**, on New report's Which Lake? view and in Settings › Reports and tracks, and
+**GPX import** is the working way in until then. Connected accounts at launch means Strava alone, through its push
+(`activity:write`) as above. Strava and Garmin appear with their official marks, not lettered tiles.
+
 ## D25 — Units, edits, comment depth (housekeeping)
 **Decided.** (a) Store **metric internally, display imperial** (US crowd).
 (b) Report edits are **last-write-wins** with `updatedAt` — no version history in v1.
@@ -5746,7 +5753,9 @@ never recommended"): `none` is simply one dormancy reason.
 - **Or a standing decision:** a positive `curatedBoost`, or anyone's favorite (*"if you favorited it,
   you know something we don't"*).
 - **Not** a put-in — *"having a put-in should not rescue an unskated body"* — and not
-  `includedByRequest`: admission is not retention.
+  `includedByRequest`: admission is not retention. **Amended 2026-10-17 (D245):** a saved put-in
+  now retains. The founder reversed the put-in half on seeing that the rollover would shelve the
+  ~1,250 bodies the seed kept on their put-ins; `includedByRequest` still does not retain.
 
 **The seed (option b)** partitions the stored corpus once by evidence of *access or use*: a put-in, a
 boost, any human attachment, an admission by request, a user-drawn origin, or a mention in the design
@@ -6475,6 +6484,13 @@ went through three founder rounds; the calls above are what survived them. The b
 (Saira, Martian Mono) are deliberately **not** adopted yet — they belong to the wider Figma
 redesign — so the sheet ships in the apps' current faces plus a `$mono` token for the readouts.
 
+**Amended 2026-11-10 (founder call, B01) — the brand faces are adopted app-wide on the web.** Saira
+and Martian Mono are now the web app's faces everywhere, not only the console's or the sheet's,
+self-hosted through Fontsource's variable packages (`@fontsource-variable/saira`, `/martian-mono`;
+#106) — nothing fetches a face from Google. B01's first PR finishes it: `body` defaults to
+`--family-sans`, so every screen is set in Saira, and the document head preloads the two Latin
+files so a first visit doesn't paint in the system stack and swap.
+
 **Related:** D3 (nothing here says safe; the meters count sections, never grade ice), D7, D34,
 D186, D187, D188, D189, D190, D192, D193, D198, D203.
 
@@ -6740,7 +6756,370 @@ under the old rule.
 
 **Related:** D5, D201, A02 Decision 10, A09.
 
-*(D216–D231 are minted in other trees and arrive when they merge.)*
+## D216 — The admin surface is organized by what an operator is doing, not by table (B01)
+
+**2026-10-12, founder calls at the B01 kickoff.** Phase 07's `/admin` (D37) grew one nav item per
+feature until sixteen pages sat side by side with no relationship an operator could read; the
+dashboard counted four of a dozen queues, and the real workbench — the lake editor — was reached
+only by hand-off. The surface is rebuilt as **eight modes**, each a task: Overview, Inbox, Corpus,
+Body console, Machinery, Season, People, Instruments (`plans/phases/B01-admin-console.md` §5).
+
+- **A feature adds a lane inside a mode, never a nav item.** The rail is the eight modes and stays
+  the eight modes.
+- **A person-filed item is Inbox; a machine-found item is Corpus.** Flags, access reports, corpus
+  requests, place asks, drawn bodies and support tickets wait on a person and sit in the Inbox,
+  whose goal is zero. Intake reasons, duplicate groups, chord re-fits, the ETL's leftover place
+  names from the community's emails (loaded by a machine, nobody waiting) and the pre-ice pass are
+  Corpus — a backlog with "done" semantics per task, not a queue to empty.
+- **Every task completes where it is found.** A queue row opens its handler in the inspector. A
+  geometry ask (draw a bay, place a landmark, approve a drawn outline) opens **the one body
+  editor through a second door** — `/admin/body/$id?task=<id>` — which arms the tool, shows the
+  ask in the banner, and returns to the queue on save. One editor, two doors; never an embedded
+  copy.
+- **Everything links.** A lake, a person, a run, a flag, an audit row is a link to its console
+  page, and each console page lists what is asked of it.
+- **The console takes the viewport** like the report console (A10-6, D206): one shell, a rail,
+  resizable panes, a command palette, list keys, a status bar, in the same visual register. Desktop
+  is the focus; **mobile is reachable everywhere and optimized nowhere**, the map editor view-only
+  below `lg`.
+- **Names** — Body console, People, Machinery, Instruments — are provisional and cheap to change.
+- **Nothing is lost.** The plan's §1 table maps every lever that exists today to its new home;
+  the old routes redirect until that table is all 🟢.
+
+**Why:** the founder *is* the operator (D61), and "what needs me?" was unanswerable from the
+surface as built. Organizing by intent is the only shape that survives the next feature.
+
+**Related:** D37, D61, D179, D202, D206.
+
+## D217 — Operator access control is a capability map, read by both the client and the server (B01)
+
+**2026-10-12, founder call.** The admin-only line stays where D37 drew it — role-granting, PII
+(support), the constants — plus what later phases added (imports, seasons; now Machinery). But the
+line is encoded today as a list of route prefixes in the layout and a per-function `requireRole`
+call, and the two disagree in places (admin-only buttons drawn for moderators; read queries behind
+the write gate). The founder wants adjusting access to be easy going forward, so:
+
+- **One capability map in `@skating/core`**: a named capability (`inbox.support`, `people.role`,
+  `machinery.trigger`, `body.remove`, …) → the minimum role, with a comment saying why. The server
+  gates a function by capability (`requireCapability(ctx, 'people.role')`, built on `requireRole`),
+  the client asks the same map before drawing a control, and the rail hides a mode the caller can't
+  use. A control the server will refuse for this role is **never drawn**.
+- **Role model unchanged**: `member < moderator < admin`. The map is where the line moves when it
+  moves; nothing else changes.
+- A test holds every gated function to a capability in the map, so a new function can't gate
+  itself ad hoc.
+
+**Why:** two encodings of one rule drift (they already have). A map is one place to read the
+policy and one place to change it.
+
+**Related:** D37, D50, D57.
+
+## D218 — Every job says where it runs; the console triggers what it can and shows the command for the rest (B01)
+
+**2026-10-12, founder call.** No ETL runner in this phase — the corpus passes (`run-corpus.sh`,
+`run-canonical.sh`, the archive and enrichment loaders) keep running on the operator's machine
+against gigabytes of extracts. What changes is that the machinery is **visible and honest**:
+
+- **A registry of jobs**, each with where it runs (`convex` cron, `convex` on demand, `local`
+  CLI), its schedule or trigger, and its last run. A job Convex can run itself gets a **Trigger**
+  in the console (the standing and recurrence rollovers, region stats, the analytics rollup, an
+  imagery poll, a weather sweep, the catalog measure), with a dry-run where one exists. A local
+  job gets **instructions**: the exact command, copy-paste ready, with the campaign id and flags
+  filled in, and what to expect afterward.
+- **Every run has a scope** — `full-canonical`, `single-source`, `enrichment`, `seed`, `rollover`,
+  `archive` — stored on the row, so "a full re-import" vs. "a gap-fill from one source" is read,
+  not inferred from `kind` and `label`.
+- **Every run has a heartbeat and an event stream.** A loader that flushes progress stamps a
+  heartbeat; a run silent past its interval reads **stalled**, never *running*. Events are
+  timestamped lines a run page tails live, the Vercel-build-log feel; the local log file stops
+  being the only record.
+- **Crons are listed** — all thirty, with schedule, last outcome, next due, and whether the last
+  window was missed.
+
+A hosted runner (GitHub Actions `workflow_dispatch`, or a Fly machine reading archives from R2) is
+a separate decision: it moves the ETL's credentials and its 100 GB reads off the laptop, and the
+vocabulary above is built so it can land without a redesign.
+
+**Why:** the founder wants to watch the machinery work and catch a pipeline going wrong; today the
+only signals are a terminal that scrolled past and a row that says `running` after the process
+died.
+
+**Related:** D37, A06c §6.2, A06i, D214.
+
+## D219 — A cost ledger: every third party, every day, in its own unit, with dollars where a rate is known (B01)
+
+**2026-10-12, founder call.** Open-Meteo is metered today (calls and weighted calls per UTC day,
+D158); nothing else is. The founder wants running costs for **every** third party, with stand-in
+units where a dollar figure isn't derivable, and a place for the bills that arrive by invoice.
+
+- **One ledger table**, one row per provider per UTC day: the **native units** (requests, tokens
+  in and out, machine-minutes, bytes stored or egressed, emails sent, pushes sent) and, where a
+  rate is known, the **estimated dollars** and the rate used. Metered rows are written by the
+  meters (the existing Open-Meteo meter generalized; ORS; Anthropic from the extraction contract's
+  usage; Fly machine-minutes from the imagery pump; Resend and Expo from delivery; R2 from the
+  mirror; Convex and Vercel from whatever their APIs expose, else nothing).
+- **Invoice rows** are typed in on Machinery: provider, period, amount, note — for the bills
+  (Convex, Vercel, Clerk, Anthropic, Zed, …) when they come. Later; the table is shaped for them
+  from the start.
+- **Machinery reads it by provider; Season sums it by season.** Where a provider has only units,
+  the console shows the units and says so; it never invents a dollar.
+- **Nothing throttles on it.** The ledger counts (as the Open-Meteo meter does); the guards that
+  exist (`POLL_CAP`, `MAX_LIVE_MACHINES`, the ORS circuit breaker) stay where they are.
+
+**Why:** "what does a season cost" has one answer today (Open-Meteo call counts) and the real
+spend is spread over nine providers.
+
+**Related:** D158, D214, D35.
+
+## D220 — Season statistics are rolled up nightly per season, not computed at read time (B01)
+
+**2026-10-12, founder call.** A season is `seasonOf(now)`, derived and never stored
+(`packages/core/src/season.ts`); the ice watch (A06i) is the only season *record*. Computing the
+season's reports, contributors, most-reported lakes, bodies activated and removed, POIs added and
+fetch counts at read time would scan whole tables once a season; the founder chose the cheaper
+shape: **extend Phase 07-2's `metricSnapshots` rollup with a season key**, computed nightly by the
+existing cron, so the Season page reads a few hundred small rows. The change log comes live from
+the indexed audit table and the run rows, bounded by the season's dates. **Which statistics:** the
+founder picked **all of the plan's §10 tiers 1 and 2** (2026-10-12) — reports and posts by
+vantage, contributors and new accounts, the most-reported lakes, bodies activated / demoted /
+removed / restored / admitted, POIs added by operators and by the ETL, hazards filed / confirmed /
+archived / merged, inbox throughput with time to resolution, bounties, external calls and cost
+per provider, notifications pushed and emailed, photos and bytes — beside the tier-1 facts the
+watch already stores.
+
+**Facts vs. behavior (asked the same day):** statistics about *our own records* stay in-house —
+nothing a third party observes can produce them, and shipping them out to query them back adds a
+vendor, latency and a second source of truth, on a location app with minors (L12). *Behavior* —
+sessions, screens, funnels, retention, search — is PostHog's (D29) when the alpha produces the
+questions; the Season page's tier-3 slot links out to it rather than rebuilding its charts, and
+Instruments gains a flags panel then. PostHog is not wired in B01.
+
+**Why:** cost, and the founder said so; a nightly number is current enough for a season view.
+
+**Related:** D212, D213, Phase 07-2's metric channels.
+
+## D221 — Imported outlines are trusted; merge and sub-areas are the geometry levers (B01)
+
+**2026-10-12, founder call.** Polygon editing — vertices, splits — is **deferred indefinitely**.
+The body console's Shape tab offers **merge into** (`waterBodies.merge`, today reachable only from
+the duplicates page) and sub-areas by chord and freehand (D201); it does not edit the lake's own
+outline, and a body is never split into two. An operator-edited outline would need a mutation with
+consequences (area, bbox, interior point, weather cells, sub-area clipping, D215's re-fit, and a
+rule for surviving the next campaign), and no example yet needs it. **Trigger to revisit:** a
+specific lake whose imported outline is wrong in a way merge and a sub-area cannot express.
+
+**Related:** D5, D36, D201, D215.
+
+## D222 — Discipline is permissions, suspension, ban and role; photos gain a moderation axis; flagging is a permission (B01)
+
+**2026-10-12, founder calls.**
+
+- **No mute, no shadow state.** The levers are the per-action posting permissions (D57), the
+  bounty cap, suspend, ban (which locks sign-in), lift, and role grant/revoke (admin). *Blocking or
+  restricting users from certain actions, or from signing in at all, is enough control.* The
+  founder's earlier mention of "mute" is withdrawn.
+- **Photos get `moderationStatus`** (visible / hidden / removed, audited, restorable) — the one
+  flaggable thing with no lever. Takedown of a photo hides it everywhere it is attached.
+- **Restore exists.** `setModerationStatus('visible')` has had no caller since Phase 07; the Inbox
+  and People draw it.
+- **Flagging is a per-user permission** (`canFlag`, default on), switched off from People with a
+  reason, so one person cannot flood the queue; moderators are exempt.
+- Two edges fixed with it: a lapsed suspension resets `status` to active on the sweep (today it
+  only lifts at read time), and *Lift* is never offered on a deleting or deleted account.
+
+**Related:** D32, D37, D50, D57, D62.
+
+## D223 — The admin console's visual register: a field, not panels; grayscale ink; blue means a transient mode (B01)
+
+**2026-10-13 and 14, founder calls**, after three compositions and two merges in
+`skating-mockups/admin-variants/` (its README carries every pick and the renders).
+
+- **A field, not panels.** No filled cards and no card borders; structure is thin rules, inverted
+  slugs with a leader to an end square, an L-bracket on a chart, dotted row separators and space.
+  Corner marks appear nowhere by default. One display word per page (the mode, the body's name,
+  the winter), set in the page and never in the navbar. Tables are kicker heads over a rule with
+  dotted rows; the audit feed is one live, infinite table that fades at its foot.
+- **Neutral ink.** Grayscale with no blue cast. Accents only where the data means them: **ice** is
+  water, geography and the ice watch; **amber** waits on a person; **red** will not recover
+  without a person. For machinery that is the whole rule — red for a stalled run with no
+  heartbeat or a failed job whose retries are spent, amber for late or retrying — because *failed*
+  cannot read as "the cron will try again".
+- **Blue is the color of a transient mode.** The task chip, the mode bar over the map, the ask the
+  task belongs to, and go-mode's chips are ice; ordinary selection (a lane, a list row, a plate)
+  stays white. Chosen after a side-by-side of white against blue on the Body console.
+- **Temperature is one scale**, from the app's color plate: cold cyan, brightest under 20 °F (the
+  good news), neutral gray at freezing, amber to orange above it. The sentinel matrix and anything
+  else that colors a temperature use it; a low is never "warned" in amber.
+- **Type.** Saira for everything typeset, Martian Mono for values; 14 px body, 12 px assistive,
+  10 px kickers; the rail's names are 8 px Saira Medium at 10 % tracking under the icons
+  (FontAwesome Sharp Light: tachograph-digital, inbox, cabinet-filing, map-location-dot,
+  calendar-days, users, engine, sliders), which the founder checked in Figma.
+- **The navbar lockup** is the season light on the left, the tape, a solid *Day n* badge on the
+  right; every tick on the tape explains itself on hover, including last winter's first skate.
+- **Keyboard.** No key chips on cards. `G` is a mode of its own: the page, the tape, the search,
+  the avatars and the status bar dim, every destination shows its ordinary key chip turned blue
+  with the spent `G` greyed and the finishing letter lit, `Esc` leaves. Keys look like keys
+  everywhere, at one size.
+- **The map.** The grid is hundredths of a degree, labeled at the edges, filling the panel; marks
+  are glyphs in colored squares with a white bracket on hover, a straight leader to a padded slug
+  over the name; the layer menu is pill toggles on plates with every key, open at desktop width,
+  collapsing to toggles under about 600 px and never inside a mode; a mode's to-do is a numbered
+  list aligned to the mode bar, with a real paste field.
+- **Words.** *Bodies*, never *lakes*, wherever the thing counted may be a bay, a dammed river or
+  the sea. The circuit (what feeds what, drawn as stepped traces between plates) lives on the
+  Season page with uneven columns, not on the Overview.
+
+**Why:** two earlier passes re-skinned the wireframe skeleton and read as a generic dark
+dashboard; what the founder recognized in the reference boards was the void and the rules, not the
+cards. The register is written down so the component sheet (deferred for now) and every later
+page start from the same calls rather than from the renders.
+
+**Related:** D3, D206, D216, [`phase-B01`](./phases/B01-admin-console.md) §6,
+`skating-mockups/admin-variants/README.md`.
+
+## D224 — An admin can show a clouded or clipped pass to skaters, per frame, from the Imagery tab (B01)
+
+**2026-10-14, founder.** In scope for B01.
+
+- A pass the cutter skipped (cloud over the threshold, a clipped footprint) stays drawn on the
+  freeze-up stepper for everyone, short and dim with its reason — as today. An admin may mark it
+  **shown anyway**: a per-frame, per-band override carrying who and when. The app then treats the
+  pass as landable and keeps the cloud figure in the caption; the console draws its mark amber,
+  names the blame beside the caption with a link to the audit row, and offers one action, *hide
+  from skaters again*. Every toggle writes one audit row.
+- **Where the thumb may rest.** Only with the Body console's *Imagery* tab open does the admin's
+  thumb land on a skipped pass (so the frame can be judged before the call); with any other tab the
+  dock behaves exactly like the app's stepper. The *Imagery* tab also carries the pass table —
+  every pass this winter, its band, its cloud figure, and whether skaters see it and by whose call.
+- Never a body-wide or season-wide rule, and never a changed threshold: the cutter's judgment
+  stands; the override is one frame an operator has looked at.
+
+**Why:** the cloud threshold is a heuristic over a whole footprint, and an operator looking at the
+frame can know better — thin high cloud over a clear shore is the common case. Skaters lose
+nothing, because the caveat stays on the caption (D84: the caption names what is on the map), and
+the tab rule keeps the admin's own map honest by default.
+
+**Related:** D84, D214, D216, D223, A06e §3.4 (the stepper's blocked stops).
+
+## D225 — Reports are a mode of the console, and moderators keep their in-context controls (B01)
+
+**2026-10-14, founder.** Reports are their own kind of thing: most never need moderating, and when
+one does it is usually because another person asked. They get a **ninth mode, Reports**
+(`/admin/reports`, rail between Inbox and Corpus, `G R`): lanes for recent, flagged, edited after
+posting, contradicted by the weather (private), hidden or removed, and later auto-flagged; posts,
+comments and photos as neighboring lanes. Its inspector shows the report, its photos, **its edit
+history** (D205's `RevisionHistory`, which today exists only on public pages), its flags, its
+thread, its author, and the levers: hide, remove, restore, lock comments, the person menu.
+
+- **The in-context controls stay.** A moderator on a report, hazard, comment or profile in the app
+  keeps the same levers layered over the skater UI (today's `ModeratorActions` and friends), now
+  through the console's one reason dialog, with restore, and with the edit history beside them.
+  Acting where you are and acting from a queue are both legitimate; they call the same mutations
+  and write the same audit rows.
+- **Who decides a flag.** A flag is decided in the Inbox; the Reports mode shows what the report is
+  and what happened to it, and links there. One item, one decision, two views.
+
+**Why:** reports are the app's core content and the thing a moderator most needs to *read* —
+edits, photos, thread, author — which a flag handler sized for a decision can't hold. Keeping
+the in-context levers means the console is where you go to work through things, not the only
+place you are allowed to act.
+
+**Related:** D3, D37, D205, D216, D217, D223.
+
+## D226 — Every operator action can be undone; a reason is asked when an action takes something away (B01)
+
+**2026-10-14, founder.** "Every action should have an undo, just to be safe" — except what is
+meant to be permanent and destructive (finalizing an account deletion; purging storage after a
+removal window).
+
+- **Undo, twice over.** A toast offers undo for ten seconds after any action; after that, History
+  lists every reversible action with its own Undo, Restore, Unmerge or Reactivate. An undo is a new
+  action with its own audit row. A row whose effect was overtaken says so instead of offering undo.
+- **What this adds.** Reactivate a demoted known feature; unpin an access alert (the server has
+  `setOfficial(false)`; no screen offered it); restore hidden or removed content, photos included
+  (D222); reopen a dismissed place name; restore a rejected user-drawn body to review (today's
+  `RestoreGate` dead end); undo a merge (bodies, hazards) where the data allows — where it can't,
+  the merge dialog says so before it runs.
+- **A reason when something is taken away.** Hide, remove, decline, demote, suspend, ban, dormant,
+  take off the map and **no public access** ask a reason; giving something back — confirm open,
+  restore, unhide, unpin, reactivate, bring back — acts on one press with no reason. The
+  public-access ruling on a body's public page follows the same rule, so ruling it closed there
+  now asks why (today it takes no reason either way).
+
+**Why:** an operator console used in passing will be misclicked, and a reason asked for every
+action trains people to type "ok". Undo makes mistakes cheap; the asymmetric reason keeps the
+audit log meaningful where it matters, on the actions skaters feel.
+
+**Related:** D37, D202, D216, D222, D223, D225.
+
+## D227 — Invoices in the cost ledger are edited by named people, not by a role (B01)
+
+**2026-10-16, founder call.** "I (Teagan) should be the only user allowed to submit, modify, or
+remove invoices from this ledger. I'm the only one developing / paying for things right now. This
+may not always be the case, but the users who should be allowed to make these changes will always
+be a select few."
+
+**Refined 2026-10-17, founder call.** "Let's seed me as the person with invoice editing permission,
+but let's add it as a row to the user profile page IF the user has been made an Admin (not
+Moderator), modifiable only by admins who already have the permission to edit invoices. So
+initially, only I would see the option to grant it to another admin. But if I grant it to another
+admin, only then should they see the ability to grant it to other admins."
+
+**Widened 2026-10-19, founder call.** The grant covers the whole ledger, not only its invoices:
+"Yes to widening the permission, and yes backdated rates should reprice all days since. … All
+admins should be able to view."
+
+- **Can edit the ledger** — invoices *and* rates. A rate is versioned from an effective date (a new
+  price is a new version, never an overwrite); one effective in the past **reprices every metered
+  day since**, and the change's audit row records the days it touched and the dollars before and
+  after. Every admin reads the ledger, its rates and both histories; an admin without the grant
+  sees no form, no edit affordance, and — as below — nothing of who holds it.
+
+- **A per-person grant**, `canEditLedger` on the profile, not a role: being an admin does not let
+  you add, change or delete an invoice. It is one row of D217's map, `machinery.ledger` — the admin
+  role **and** the grant (a capability row may now name a per-person `grant` the server and the
+  client both read). The grant means nothing without the admin role. Everyone who can read the
+  ledger (`machinery.read`) sees the invoices and their history.
+- **A row on an admin's People page**, drawn only for a viewer who holds the grant: a holder gives it
+  to another admin (no reason asked) or takes it (a reason asked, D226). So at first only Teagan
+  sees the row; whoever Teagan gives it to sees it next. A moderator's or member's page has no row.
+  An admin without the grant sees nothing of it — not the row, and not who holds it, on their own
+  page or anyone's (founder call, 2026-10-18); the server leaves it off their wire.
+- **Never no editor.** Taking it from the last holder who can still act is refused — a holder can
+  step down only once another admin holds it, and the last holder can't be demoted out of admin
+  until someone else is given it. A holder on their way out (D62) doesn't count.
+- **A demotion clears it.** Moving a holder out of admin takes the grant in the same mutation, with
+  its own audit row; a later promotion back, or the undo of the demotion, does not restore it — a
+  holder gives it again on purpose.
+- **Undo (D226).** A grant undoes to a revoke (asks a reason); a revoke undoes to a grant (no
+  reason); only a holder undoes either. The grant a demotion cleared has no undo of its own.
+- **Teagan holds it from the start.** No seed path for operator accounts exists (the first admin is
+  set by hand, Phase 07), so an internal mutation seeds it by handle, idempotently, audited as the
+  system: `ledger:seedEditor` — the founder is `@admin1` on dev (seeded at this phase's first dev
+  push) and will be `@teagan` on prod (seeded after the founder's admin role at first init).
+- **Invoices are editable and deletable** by a holder: selecting an invoice opens *Edit invoice* in
+  place of *Add an invoice*; delete confirms. Every add, change and delete writes an audit row, and
+  the ledger shows that history beside the form (D226: a delete undoes; a change undoes to the
+  prior amount).
+
+**Why:** the ledger records what the founder pays for; who may change it follows who pays, which no
+role models. A grant only a holder can pass on keeps it to "a select few" without a code change
+each time the few change.
+
+**Amended 2026-11-13 (founder call, #108 review) — the secrecy is row-hiding, not an absolute.**
+"Sees nothing of who holds it" above means the server never hands a non-holder a row that names a
+holder: not the People row, and not the grant and revoke rows in any history read (`getAdmin`'s
+recent actions, `listActions` by target, by actor and the unfiltered feed — all through
+`withoutLedgerGrantsFor`). Two one-way leaks remain and are accepted: a non-holder may deduce that
+a grant or revoke happened (History marks another row on that person *overtaken* by a row they
+cannot see), and the last-holder refusal ("They are the last person who can edit the ledger…") can
+name the holder to whoever triggers it. In the founder's words, "We all know each other anyway."
+A review measures this decision against row-hiding — a holder-naming row on a non-holder's wire is
+a defect; an inference from a gap or a refusal is not.
+
+**Related:** D37, D62, D217, D219, D226.
+
+*(D228–D231 are minted in Phase B02's tree and arrive when it merges.)*
 
 ## D232 — Colors are authored once, in OKLCH; every consumer's format is generated (B01)
 
@@ -7282,3 +7661,136 @@ product bug, and `panelTime.test.ts` now pins the boundary deliberately rather t
 be sampled at whatever hour CI happens to run.
 
 **Related:** D3, D237, D243.
+
+## D245 — A saved put-in keeps a body active through the standing rollover (B01 review)
+
+*Minted on the `fix/standing-putins-summary-sweep` branch as D228; renumbered on porting into B01,
+because D228–D231 belong to Phase B02.*
+
+**2026-10-17, founder call, reversing the put-in half of D177:** *"We should not make bodies dormant
+if they have saved put-ins … we should change the logic."* The July rollover now keeps an active
+body with at least one saved put-in, as it keeps a curated boost or a favorite.
+
+**Why:** the seed (D177, option b) kept every body with evidence of *access or use*, and a put-in
+was most of it — on dev, ~1,250 of the ~1,412 active bodies were kept on a put-in and nothing else.
+D177's rollover counted only *use*, so the first live July would have shelved all of them: the seed
+undone on a timer, a year after it ran, with no new evidence about any of those lakes. A way onto
+the ice that we have saved is a reason to keep pushing a lake, and the rollover now agrees with the
+seed that made the active set.
+
+**What counts as saved** (`hasSavedPutIn`): a `visible` `putIns` row — an operator's `official`
+marker, an `osm` launch from the access pass, a persisted `derived` one — that no moderator's hidden
+coordinate suppresses (the `isSuppressed` rule every put-in reader applies). That is narrower than
+the seed's test, which counted any `putIns` row, hidden ones included: a hide is a moderator saying
+"not a way in", and a body whose every launch is hidden is not kept on them. Report-derived markers
+are not saved (they are clustered from reports at read time); their reports retain the body while
+they are inside the window. The read is one bounded index read per body (≤ 25 rows), like the
+favorite probe beside it.
+
+**The tally:** the rollover's dry run and its run row report `retainedBy` — the first reason that
+held, in the order use, curated boost, favorite, put-in — so `retainedBy.put_in` is exactly the
+bodies only a put-in kept. Run it dry before the first live July.
+
+Unchanged: a put-in placed or imported on a dormant body still re-activates it (D177), and
+`includedByRequest` still does not retain.
+
+**Related:** D176, D177, D178, A06d, [`phase-A07b`](./phases/A07b-corpus-by-request.md),
+[`docs/corpus-lifecycle.md`](../docs/corpus-lifecycle.md).
+
+## D246 — The season page counts the active bodies the season's bake missed (B01)
+
+**2026-11-11, founder call.** `/admin/season` carries a **bake staleness counter**: how many active
+corpus bodies are missing from this season's imagery bake, with the re-bake command beside it. The
+same comparison read the other way — bodies in the bake that have since gone dormant or been
+removed — rides the same card, so one surface answers both "who is not getting imagery" and "who is
+still getting it for free".
+
+**Why:** the reveal masks and the search plan are baked once per season (A06i), and the cutter clips
+against that artifact — so a body that joins or rejoins the corpus after the bake (an approved
+*activate*, *admit* or *restore*) silently gets no imagery for the rest of the season, and a body
+shelved after the bake keeps being cut. Both happened in the first live month: two unnamed ponds
+near Mascoma went dormant in the 2026-10-16 inactivity sweep and were still being revealed a month
+later, and the fix (PR #107's corpus pre-filter work) only holds until the next corpus change. The
+counter makes the drift visible where the *Start imagery* button already lives; the re-bake stays a
+deliberate act (`bake-masks --upload`, then `publish-search-plan` — the poll's interlock needs
+both). Automating the re-bake was considered and declined for now: `bake-masks` is a local CLI
+doing heavy geometry, so automation means a credentialed CI job, which is new infrastructure for a
+drift this counter makes visible for a day's work.
+
+**The read:** the bake sidecar already records its body count and the bake date; the counter needs
+the active-corpus count at read time and the bake's member list for the two set differences. How
+the member list is read (the `.fgb` is in R2, not Convex) is a build choice for the Seasons
+workstream — a baked id manifest beside the sidecar is the obvious shape.
+
+**Related:** D213, D214, A06i, [`phase-B01`](./phases/B01-admin-console.md) §5.6.
+
+## D247 — A Post is never shown with none of its Reports; its restore takes chosen Reports with it (B01)
+
+**2026-11-13, founder call** (the #108 review). D186 says a Post requires a Report, and the
+Report→Post direction already kept "zero visible Reports ⇒ the Post is not shown" as a stored fact
+(`derivePostVisibility`). The Post→ direction had a hole: a Post restore, or an undo back to visible,
+stored the Post visible without checking any member would be.
+
+- **The rule.** A Post is never stored `visible` unless at least one of its Reports is visible after
+  the same mutation. One plan (`planPostRestore`) decides it for both writers, before anything is
+  written.
+- **A restore that would show it empty is refused with a message** — every Report was hidden or
+  removed on its own, so choose at least one to restore with it; or, when every Report was deleted by
+  its author, the Post can't be restored.
+- **Restore takes a choice.** A Post restore accepts the members to bring back with it, in one
+  mutation, each with its own audit row naming the Post and listed on the Post's row, so the
+  restore's undo is the exact inverse. The chooser lists the Reports — what each is, why it is down —
+  with nothing pre-selected: each takedown was a decision, and bringing one back is a conscious
+  override. A Report brought back by choice and put down again by that undo stays down on its own
+  decision; a plain restore never revives it.
+- **Undo stays a pure inverse.** An undo that would show the Post empty is refused and points at
+  Restore, where the choice lives; an undo never chooses.
+- **Reports their author deleted never come back through a Post** (the 2026-09-21 call: people
+  control what they shared). They are shown in the chooser, not choosable. A moderator's per-Report
+  restore of an author-deleted Report is untouched by this decision.
+
+**Why:** a visible Post with nothing in it is a card with no observation behind it — the feed's
+index returns it and the card is dropped, so pages come back short — and a moderator restoring a
+Post should not have to leave the flow to restore a Report first.
+
+**Related:** D186, D226, [`phase-B01`](./phases/B01-admin-console.md) §7 (2026-11-13).
+
+## D248 — An author's deletion is final; a moderator's verdict outlives the content; deleted content is erased after 30 days unless held; a filed request can be retracted until it is decided (B01)
+
+**2026-11-13, founder rulings** (the #108 review), in the founder's words:
+
+1. "Any author-deleted content should not be able to come back, no moderator should be able to
+   restore it."
+2. "If a user was being rude and their post/comment got restricted by a moderator, they shouldn't be
+   able to delete their comment and thereby remove evidence of their bad behavior, which would
+   influence future penalties."
+3. An author's deletion is honored for real after 30 days "if no moderator action is taken during
+   that time" — so a data dump holds what the person expects, a complaint that arrives after a
+   harasser deletes their comment can still be assessed, and "people's mistakes don't live on for
+   perpetuity."
+4. "If a user reports an access issue, asks for a body to be included in the corpus, reports a body
+   as not accessible to the public, or any of those kinds of actions, they should be able to retract
+   them at any time (up until the action is determined/taken). So if they request a body and that
+   body is added by a moderator, their request cannot be retracted."
+
+- **Final — built in #108 (Part A).** Posts, Reports and Comments carry `authorDeletedAt`, set by the
+  author's delete and never cleared. No restore, Post choice (D247) or undo brings one back, and no
+  other verdict moves it; everything inside a Post its author deleted is withdrawn with it, a member a
+  moderator removed earlier included. Deleting something a moderator already removed still registers
+  as the author's withdrawal, and a comment's deletion is audited like a Report's or a Post's.
+  Content withdrawn before the stamp existed is stamped by two backfills after deploy.
+- **The verdict is the person's — the next PR (Part B).** A moderator's top-level hide or remove is
+  kept with the person whose content it was and stands until a moderator reverses it (a restore, an
+  undo, or, on content its author has since deleted, an overturn that clears the verdict without
+  bringing the content back). The author's deletion does not clear it; a moderator can record a
+  verdict on content its author already deleted, which keeps it as evidence. Staff-only: it never
+  reaches a skater-facing read or reputation (D17/D50 stay boost-only).
+- **Erased at 30 days unless held — the next PR (Part C).** Held means a standing verdict or an
+  open flag; a cleared hold erases at the later of the deletion + 30 days and the moment it cleared.
+  Erased means gone, observation included — unlike account deletion's "erase the person, keep the
+  observation" (D62), because here the author withdrew the item from the community.
+- **Retraction until decided — the next PR (Part D).** A request or report a person files for a
+  moderator to decide can be retracted by them until it is decided or acted on, and is final once
+  retracted, like any author withdrawal.
+
+**Related:** D17, D33, D50, D62, D73, D179, D186, D226, D247, [`phase-B01`](./phases/B01-admin-console.md) §7.

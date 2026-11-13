@@ -66,8 +66,8 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
-
-import { requireContributorRole } from './lib/auth';
+import { writeAudit, writeSnapshot } from './lib/audit';
+import { requireCapability } from './lib/auth';
 import { syncSubAreaCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { rankCandidates, scanCells } from './lib/cellScan';
 import {
@@ -940,8 +940,8 @@ async function audit(
   subAreaId: Id<'waterBodySubAreas'>,
   reason: string,
   metadata?: Record<string, unknown>,
-): Promise<void> {
-  await ctx.db.insert('moderationActions', {
+): Promise<Id<'moderationActions'>> {
+  return writeAudit(ctx, {
     actorId,
     action,
     targetType: 'waterBodySubArea',
@@ -985,7 +985,7 @@ export const create = mutation({
     promoteLandmarkId: v.optional(v.id('bodyLandmarks')),
   },
   handler: async (ctx, args) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.shape');
     const name = args.name.trim();
     if (!name) throw new ConvexError('A sub-area needs a name');
     const parent = await requireParent(ctx, args.waterBodyId);
@@ -1021,38 +1021,95 @@ export const create = mutation({
 export const redraw = mutation({
   args: { subAreaId: v.id('waterBodySubAreas'), polygon: geoJson },
   handler: async (ctx, { subAreaId, polygon }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
-    const subArea = await ctx.db.get(subAreaId);
-    if (!subArea) throw new ConvexError('Sub-area not found');
-    const parent = await requireParent(ctx, subArea.waterBodyId);
-
-    const geometry = deriveGeometry(polygon as unknown as Polygon | MultiPolygon, parent);
-    // A redraw is the fix for an auto-delist, so it clears the note asking for one. (The row stays
-    // delisted — `restore` is the separate, deliberate act of putting it back on the map.)
-    const { geometryChanged } = await rederiveSubArea(ctx, subArea, {
-      polygon: geometry.polygon,
-      listed: subAreaListed(subArea, parent),
-      clearDelistReason: true,
-      // A free-drawn outline is not the one the mouth describes, so the mouth goes (D201).
-      mouth: null,
+    const actor = await requireCapability(ctx, 'body.shape');
+    return redrawSubAreaImpl(ctx, actor, {
+      subAreaId,
+      polygon: polygon as unknown as Polygon | MultiPolygon,
     });
-    // A bay drawn bigger or elsewhere may now name a landmark it was too far from before (D202).
-    await retireLandmarksForRedraw(ctx, actor._id, subArea, geometry.polygon);
-    await audit(ctx, actor._id, 'redraw_sub_area', subAreaId, `Redrew "${subArea.name}"`, {
+  },
+});
+
+/**
+ * What a redraw replaced (D226): the outline and the mouth it was derived from, kept in
+ * `auditSnapshots` — a polygon is too big for the audit row — and put back by the undo.
+ */
+export interface RedrawSnapshot {
+  polygon: Polygon | MultiPolygon;
+  mouth: SubAreaMouth | null;
+}
+
+async function snapshotRedraw(
+  ctx: MutationCtx,
+  actionId: Id<'moderationActions'>,
+  subArea: Doc<'waterBodySubAreas'>,
+): Promise<void> {
+  const prev: RedrawSnapshot = {
+    polygon: subArea.polygon as unknown as Polygon | MultiPolygon,
+    mouth: subArea.mouth ?? null,
+  };
+  await writeSnapshot(ctx, actionId, prev);
+}
+
+/**
+ * `redraw`'s body, shared with the undo of any redraw (D226). The undo passes the outline *and* the
+ * mouth it replaced, so a chord bay's undo gets its mouth back; the mutation never passes a mouth (a
+ * free-drawn outline is not the one a mouth describes, so its redraw clears it).
+ */
+export async function redrawSubAreaImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    subAreaId,
+    polygon,
+    mouth = null,
+    reason,
+  }: {
+    subAreaId: Id<'waterBodySubAreas'>;
+    polygon: Polygon | MultiPolygon;
+    mouth?: SubAreaMouth | null;
+    reason?: string;
+  },
+): Promise<Id<'waterBodySubAreas'>> {
+  const subArea = await ctx.db.get(subAreaId);
+  if (!subArea) throw new ConvexError('Sub-area not found');
+  const parent = await requireParent(ctx, subArea.waterBodyId);
+
+  const geometry = deriveGeometry(polygon, parent);
+  // A redraw is the fix for an auto-delist, so it clears the note asking for one. (The row stays
+  // delisted — `restore` is the separate, deliberate act of putting it back on the map.)
+  const { geometryChanged } = await rederiveSubArea(ctx, subArea, {
+    polygon: geometry.polygon,
+    listed: subAreaListed(subArea, parent),
+    clearDelistReason: true,
+    // A free-drawn outline is not the one the mouth describes, so the mouth goes (D201).
+    mouth,
+  });
+  // A bay drawn bigger or elsewhere may now name a landmark it was too far from before (D202).
+  await retireLandmarksForRedraw(ctx, actor._id, subArea, geometry.polygon);
+  const actionId = await audit(
+    ctx,
+    actor._id,
+    'redraw_sub_area',
+    subAreaId,
+    reason ?? `Redrew "${subArea.name}"`,
+    {
       waterBodyId: subArea.waterBodyId,
       clipped: geometry.clipped,
       retainedFraction: geometry.retainedFraction,
       // Whether the outline actually moved — and so whether a derived depth was cleared (A09).
       geometryChanged,
-      ...(subArea.mouth !== undefined ? { mouthCleared: true } : {}),
-    });
-    // Membership changed, so the stamps did too — in *both* directions. A shrunk bay releases reports
-    // it no longer contains, which is why the job recomputes from the whole sub-area set rather than
-    // testing only against the edited row.
-    await scheduleRestamp(ctx, subArea.waterBodyId);
-    return subAreaId;
-  },
-});
+      ...(subArea.mouth !== undefined && mouth === null ? { mouthCleared: true } : {}),
+      // The outline it replaced is the snapshot (D226).
+      prev: { snapshot: true },
+    },
+  );
+  await snapshotRedraw(ctx, actionId, subArea);
+  // Membership changed, so the stamps did too — in *both* directions. A shrunk bay releases reports
+  // it no longer contains, which is why the job recomputes from the whole sub-area set rather than
+  // testing only against the edited row.
+  await scheduleRestamp(ctx, subArea.waterBodyId);
+  return subAreaId;
+}
 
 /** The chord's polygon against this parent, or the refusal as a `ConvexError` the editor renders. */
 function deriveChordGeometry(mouth: SubAreaMouth, parent: Doc<'waterBodies'>) {
@@ -1092,7 +1149,7 @@ export const createFromChord = mutation({
     promoteLandmarkId: v.optional(v.id('bodyLandmarks')),
   },
   handler: async (ctx, args) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.shape');
     const name = args.name.trim();
     if (!name) throw new ConvexError('A sub-area needs a name');
     const parent = await requireParent(ctx, args.waterBodyId);
@@ -1140,7 +1197,7 @@ export const createFromChord = mutation({
 export const updateChord = mutation({
   args: { subAreaId: v.id('waterBodySubAreas'), mouth: subAreaMouth },
   handler: async (ctx, { subAreaId, mouth }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.shape');
     const subArea = await ctx.db.get(subAreaId);
     if (!subArea) throw new ConvexError('Sub-area not found');
     const parent = await requireParent(ctx, subArea.waterBodyId);
@@ -1153,13 +1210,22 @@ export const updateChord = mutation({
       mouth: geometry.mouth,
     });
     await retireLandmarksForRedraw(ctx, actor._id, subArea, geometry.polygon);
-    await audit(ctx, actor._id, 'redraw_sub_area', subAreaId, `Redrew "${subArea.name}" by chord`, {
-      waterBodyId: subArea.waterBodyId,
-      via: 'chord',
-      sagittaM: geometry.mouth.sagittaM,
-      clipped: geometry.clipped,
-      geometryChanged,
-    });
+    const actionId = await audit(
+      ctx,
+      actor._id,
+      'redraw_sub_area',
+      subAreaId,
+      `Redrew "${subArea.name}" by chord`,
+      {
+        waterBodyId: subArea.waterBodyId,
+        via: 'chord',
+        sagittaM: geometry.mouth.sagittaM,
+        clipped: geometry.clipped,
+        geometryChanged,
+        prev: { snapshot: true },
+      },
+    );
+    await snapshotRedraw(ctx, actionId, subArea);
     await scheduleRestamp(ctx, subArea.waterBodyId);
     return subAreaId;
   },
@@ -1178,8 +1244,29 @@ export const rename = mutation({
     name: v.optional(v.string()),
     aliases: v.optional(v.array(v.string())),
   },
-  handler: async (ctx, { subAreaId, name, aliases }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+  handler: async (ctx, args) => {
+    const actor = await requireCapability(ctx, 'body.shape');
+    return renameSubAreaImpl(ctx, actor, args);
+  },
+});
+
+/** `rename`'s body, shared with its undo (D226), which renames back to `prev`. */
+export async function renameSubAreaImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    subAreaId,
+    name,
+    aliases,
+    reason,
+  }: {
+    subAreaId: Id<'waterBodySubAreas'>;
+    name?: string;
+    aliases?: string[];
+    reason?: string;
+  },
+): Promise<Id<'waterBodySubAreas'>> {
+  {
     const subArea = await ctx.db.get(subAreaId);
     if (!subArea) throw new ConvexError('Sub-area not found');
     if (name === undefined && aliases === undefined) {
@@ -1204,10 +1291,16 @@ export const rename = mutation({
       actor._id,
       'rename_sub_area',
       subAreaId,
-      name !== undefined && nextName !== subArea.name
-        ? `Renamed "${subArea.name}" to "${nextName}"`
-        : `Updated aliases for "${nextName}"`,
-      { waterBodyId: subArea.waterBodyId, aliases: nextAliases },
+      reason ??
+        (name !== undefined && nextName !== subArea.name
+          ? `Renamed "${subArea.name}" to "${nextName}"`
+          : `Updated aliases for "${nextName}"`),
+      {
+        waterBodyId: subArea.waterBodyId,
+        aliases: nextAliases,
+        // What it was called, so the undo can call it that again (D226).
+        prev: { name: subArea.name, aliases: subArea.aliases ?? [] },
+      },
     );
     // A name the bay now answers to is the bay's — a live landmark saying it retires (D202).
     if (subArea.removedAt === undefined) {
@@ -1220,8 +1313,8 @@ export const rename = mutation({
     // Only the name is denormalized, so an alias-only edit changes nothing downstream — skip the job.
     if (nextName !== subArea.name) await scheduleRestamp(ctx, subArea.waterBodyId);
     return subAreaId;
-  },
-});
+  }
+}
 
 /**
  * Moderator: soft-delist a sub-area (D60) — reversible, never a hard delete, same ethos as D48.
@@ -1231,8 +1324,19 @@ export const rename = mutation({
  */
 export const remove = mutation({
   args: { subAreaId: v.id('waterBodySubAreas'), reason: v.optional(v.string()) },
-  handler: async (ctx, { subAreaId, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+  handler: async (ctx, args) => {
+    const actor = await requireCapability(ctx, 'body.shape');
+    return removeSubAreaImpl(ctx, actor, args);
+  },
+});
+
+/** `remove`'s body, shared with the undo of a sub-area's creation or restore (D226). */
+export async function removeSubAreaImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  { subAreaId, reason }: { subAreaId: Id<'waterBodySubAreas'>; reason?: string },
+): Promise<Id<'waterBodySubAreas'>> {
+  {
     const subArea = await ctx.db.get(subAreaId);
     if (!subArea) throw new ConvexError('Sub-area not found');
     if (subArea.removedAt !== undefined) throw new ConvexError('Sub-area is already removed');
@@ -1258,8 +1362,8 @@ export const remove = mutation({
     );
     await scheduleRestamp(ctx, subArea.waterBodyId);
     return subAreaId;
-  },
-});
+  }
+}
 
 /**
  * Moderator: reverse a delist (D60). The parent still has to be listed for it to reach the map.
@@ -1274,8 +1378,19 @@ export const remove = mutation({
  */
 export const restore = mutation({
   args: { subAreaId: v.id('waterBodySubAreas') },
-  handler: async (ctx, { subAreaId }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+  handler: async (ctx, args) => {
+    const actor = await requireCapability(ctx, 'body.shape');
+    return restoreSubAreaImpl(ctx, actor, args);
+  },
+});
+
+/** `restore`'s body, shared with the undo of a delist (D226); `reason` is an undo's own. */
+export async function restoreSubAreaImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  { subAreaId, reason }: { subAreaId: Id<'waterBodySubAreas'>; reason?: string },
+): Promise<Id<'waterBodySubAreas'>> {
+  {
     const subArea = await ctx.db.get(subAreaId);
     if (!subArea) throw new ConvexError('Sub-area not found');
     if (subArea.removedAt === undefined) throw new ConvexError('Sub-area is not removed');
@@ -1355,7 +1470,7 @@ export const restore = mutation({
         'The shoreline moved while this bay was delisted',
       );
     }
-    await audit(ctx, actor._id, 'restore', subAreaId, `Restored "${subArea.name}"`, {
+    await audit(ctx, actor._id, 'restore', subAreaId, reason ?? `Restored "${subArea.name}"`, {
       waterBodyId: subArea.waterBodyId,
       geometryChanged,
       ...(plan ? { via: plan.use === 'chord' ? 'chord' : 'reclip' } : {}),
@@ -1368,14 +1483,32 @@ export const restore = mutation({
     });
     await scheduleRestamp(ctx, subArea.waterBodyId);
     return subAreaId;
-  },
-});
+  }
+}
 
 /** Moderator: set a sub-area's `curatedBoost` (D49), so a bay can label wider than its area earns. */
 export const setCuratedBoost = mutation({
   args: { subAreaId: v.id('waterBodySubAreas'), curatedBoost: v.number() },
   handler: async (ctx, { subAreaId, curatedBoost }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.identity');
+    return setSubAreaCuratedBoostImpl(ctx, actor, { subAreaId, curatedBoost });
+  },
+});
+
+/**
+ * `setCuratedBoost`'s body, shared with its undo (D226), which may put back *no* boost — what the
+ * mutation's argument can't say. `reason` is an undo's own.
+ */
+export async function setSubAreaCuratedBoostImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    subAreaId,
+    curatedBoost,
+    reason,
+  }: { subAreaId: Id<'waterBodySubAreas'>; curatedBoost: number | undefined; reason?: string },
+): Promise<Id<'waterBodySubAreas'>> {
+  {
     const subArea = await ctx.db.get(subAreaId);
     if (!subArea) throw new ConvexError('Sub-area not found');
     const parent = await ctx.db.get(subArea.waterBodyId);
@@ -1390,18 +1523,26 @@ export const setCuratedBoost = mutation({
       minVisibleZoom: scores.minVisibleZoom,
       listed: subAreaListed(subArea, parent),
     });
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'set_curated_boost',
       targetType: 'waterBodySubArea',
       targetId: subAreaId,
-      reason: `Set curatedBoost to ${curatedBoost} on "${subArea.name}"`,
-      metadata: { curatedBoost, minVisibleZoom: scores.minVisibleZoom },
+      reason:
+        reason ??
+        (curatedBoost === undefined
+          ? `Cleared curatedBoost on "${subArea.name}"`
+          : `Set curatedBoost to ${curatedBoost} on "${subArea.name}"`),
+      metadata: {
+        curatedBoost: curatedBoost ?? null,
+        minVisibleZoom: scores.minVisibleZoom,
+        prev: { curatedBoost: subArea.curatedBoost ?? null },
+      },
       createdAt: Date.now(),
     });
     return subAreaId;
-  },
-});
+  }
+}
 
 /**
  * Named sub-areas, paged, for the destination seeding script (A10 bay-matching addendum).
@@ -1945,7 +2086,7 @@ export const importSeed = internalMutation({
         retireInto: named,
         now,
       });
-      await ctx.db.insert('moderationActions', {
+      await writeAudit(ctx, {
         actorId: actorUserId,
         action: 'create_sub_area',
         targetType: 'waterBodySubArea',
@@ -2169,7 +2310,7 @@ export const importBaySubAreas = internalMutation({
         retireInto: named,
         now,
       });
-      await ctx.db.insert('moderationActions', {
+      await writeAudit(ctx, {
         actorId: actorUserId,
         action: 'create_sub_area',
         targetType: 'waterBodySubArea',
@@ -2324,7 +2465,7 @@ const MOUTH_LINE_SCAN_CAP = 200;
 export const adminStatsForBody = query({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { waterBodyId }) => {
-    await requireContributorRole(ctx, 'moderator');
+    await requireCapability(ctx, 'body.read');
     const season = seasonOf(Date.now());
     const from = seasonStartMs(season);
     const to = seasonEndMs(season);
