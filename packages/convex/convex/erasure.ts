@@ -199,45 +199,79 @@ const ERASERS: Record<Erasable, Eraser> = {
 /** The kinds the sweep erases, in order. */
 export const ERASED_KINDS = Object.keys(ERASERS) as Erasable[];
 
-/** The head of one kind's due range. Bounded below: the index is not sparse. */
-function dueRows(ctx: MutationCtx, kind: Erasable, now: number, size: number) {
+/** The head of one kind's due range, charged. Bounded below: the index is not sparse. */
+async function dueHead(
+  ctx: MutationCtx,
+  reads: ReadBudget,
+  kind: Erasable,
+  now: number,
+): Promise<ErasableDoc | undefined> {
   // Spelled per table: Convex types an index range per table, and a union would lose them.
+  const head = (rows: ErasableDoc[]) => rows[0];
   switch (kind) {
     case 'comment':
-      return ctx.db
-        .query('comments')
-        .withIndex('by_erase_at', (q) => q.gt('eraseAt', 0).lte('eraseAt', now))
-        .take(size);
+      return head(
+        await reads.take(kind, 1, (n) =>
+          ctx.db
+            .query('comments')
+            .withIndex('by_erase_at', (q) => q.gt('eraseAt', 0).lte('eraseAt', now))
+            .take(n),
+        ),
+      );
     case 'hazard':
-      return ctx.db
-        .query('hazards')
-        .withIndex('by_erase_at', (q) => q.gt('eraseAt', 0).lte('eraseAt', now))
-        .take(size);
+      return head(
+        await reads.take(kind, 1, (n) =>
+          ctx.db
+            .query('hazards')
+            .withIndex('by_erase_at', (q) => q.gt('eraseAt', 0).lte('eraseAt', now))
+            .take(n),
+        ),
+      );
     case 'report':
-      return ctx.db
-        .query('reports')
-        .withIndex('by_erase_at', (q) => q.gt('eraseAt', 0).lte('eraseAt', now))
-        .take(size);
+      return head(
+        await reads.take(kind, 1, (n) =>
+          ctx.db
+            .query('reports')
+            .withIndex('by_erase_at', (q) => q.gt('eraseAt', 0).lte('eraseAt', now))
+            .take(n),
+        ),
+      );
     case 'post':
-      return ctx.db
-        .query('posts')
-        .withIndex('by_erase_at', (q) => q.gt('eraseAt', 0).lte('eraseAt', now))
-        .take(size);
+      return head(
+        await reads.take(kind, 1, (n) =>
+          ctx.db
+            .query('posts')
+            .withIndex('by_erase_at', (q) => q.gt('eraseAt', 0).lte('eraseAt', now))
+            .take(n),
+        ),
+      );
     case 'contentFlag':
-      return ctx.db
-        .query('contentFlags')
-        .withIndex('by_erase_at', (q) => q.gt('eraseAt', 0).lte('eraseAt', now))
-        .take(size);
+      return head(
+        await reads.take(kind, 1, (n) =>
+          ctx.db
+            .query('contentFlags')
+            .withIndex('by_erase_at', (q) => q.gt('eraseAt', 0).lte('eraseAt', now))
+            .take(n),
+        ),
+      );
     case 'waterBodyRequest':
-      return ctx.db
-        .query('waterBodyRequests')
-        .withIndex('by_erase_at', (q) => q.gt('eraseAt', 0).lte('eraseAt', now))
-        .take(size);
+      return head(
+        await reads.take(kind, 1, (n) =>
+          ctx.db
+            .query('waterBodyRequests')
+            .withIndex('by_erase_at', (q) => q.gt('eraseAt', 0).lte('eraseAt', now))
+            .take(n),
+        ),
+      );
     case 'accessAlert':
-      return ctx.db
-        .query('accessAlerts')
-        .withIndex('by_erase_at', (q) => q.gt('eraseAt', 0).lte('eraseAt', now))
-        .take(size);
+      return head(
+        await reads.take(kind, 1, (n) =>
+          ctx.db
+            .query('accessAlerts')
+            .withIndex('by_erase_at', (q) => q.gt('eraseAt', 0).lte('eraseAt', now))
+            .take(n),
+        ),
+      );
   }
 }
 
@@ -268,11 +302,7 @@ export const eraseDue = internalMutation({
           more = true;
           break kinds;
         }
-        const [doc] = await tick.reads.take(
-          kind,
-          1,
-          (n) => dueRows(ctx, kind, now, n) as Promise<ErasableDoc[]>,
-        );
+        const doc = await dueHead(ctx, tick.reads, kind, now);
         if (!doc) break;
         // The second guard: re-read the withdrawal and the holds now. A row that is held (or no
         // longer withdrawn) has its clock cleared or moved, which takes it out of the range.
