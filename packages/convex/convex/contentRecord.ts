@@ -20,7 +20,7 @@ import {
   type VerdictTargetType,
 } from './lib/contentVerdicts';
 import { ERASABLE, HOLD_COST, holdMoved, withdrawnAtOf } from './lib/eraseClock';
-import { DOC_MAX, ROW_MAX, ReadBudget, TX_BUDGET } from './lib/readBudget';
+import { DOC_MAX, ReadBudget, ROW_MAX, TX_BUDGET } from './lib/readBudget';
 import { literals } from './lib/validators';
 
 /** Rows per page of the record, at most — each page is also sized by what its rows can weigh. */

@@ -1407,8 +1407,7 @@ describe('the erasure holds under any order', () => {
             // Time passes, and the hourly sweep with it.
             advance(step.days * DAY);
             await sweepChecked();
-          }
-          else if (step.op === 'sweep') await sweepChecked();
+          } else if (step.op === 'sweep') await sweepChecked();
           else if (step.op === 'resolve' || step.op === 'retract') {
             const flagId = flags.shift();
             if (flagId) {

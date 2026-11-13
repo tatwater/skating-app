@@ -16,13 +16,18 @@
  * verdict recorded or ended (`lib/contentVerdicts`), a flag filed, closed or retracted, a request or
  * alert retracted — and the sweep itself, which re-reads the hold at the moment of erasure anyway.
  * The rule itself is `nextEraseAt` in `@skating/core`.
+ *
+ * **What it reads is bounded and charged** (`lib/readBudget`): a hold is a handful of `first()`
+ * existence checks on exact index prefixes — complete answers, at most {@link HOLD_COST} — and a
+ * caller that already holds the row passes it in (`refreshClockOf`) rather than reading it again. A
+ * Post's members, whose hold is the Post's too, follow in `erasure.refreshMemberClocks`.
  */
 
 import { nextEraseAt, WITHDRAWN_ERASE_MS } from '@skating/core';
 import { internal } from '../_generated/api';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
-import { ROW_MAX, ReadBudget } from './readBudget';
+import { ReadBudget, ROW_MAX } from './readBudget';
 
 /** Everything a person can take back, by its audit target type, with its table. */
 export const ERASABLE = {

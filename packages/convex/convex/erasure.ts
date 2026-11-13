@@ -422,10 +422,11 @@ const SETTLE_ONE = 2 * ROW_MAX.photo + ROW_MAX.small;
  * their hazards, a charged page per transaction, striking every photo it finds in use.
  *
  * **A photo is deleted only in a transaction that has itself read to the end of the uploader's
- * hazards** — from where the last page stopped, so a hazard filed since (which sets no back-link on
- * its photos) is read before anything it shows can go — and checked there against a Report that took
- * it since (the photo's back-link) and the access photos. The deletes go as many as the budget
- * affords; the rest carry on, the list only ever shrinking, with the same end-of-range cursor.
+ * hazards** — resuming after the last hazard read (by creation time), so a hazard filed since (which
+ * sets no back-link on its photos) is read before anything it shows can go — and checked there against
+ * a Report that took it since (the photo's back-link) and the access photos. The deletes go as many as
+ * the budget affords; the rest carry on with the same position, the list only ever shrinking (one
+ * tick's photos, in chunks of `SETTLE_CHUNK`: a scheduled function's arguments are bounded too).
  * Every pass strikes, deletes, or reads a page further. A photo whose blob outlives the delete stays
  * as the orphan sweep's pointer, stripped and marked `erasedAt`, and leaves its uploader's export.
  */
