@@ -27,6 +27,7 @@ import {
 } from '../subAreas';
 import {
   type DepthFields,
+  depthStateOf,
   removeBodyImpl,
   restoreBodyImpl,
   restoreDepthImpl,
@@ -125,16 +126,31 @@ const undoWaterBodyName: UndoHandler = {
   },
 };
 
-/** set_lake_depth (a reading, a rejection or a release) → the depth fields as they stood. */
+/**
+ * set_lake_depth (a reading, a rejection or a release) → the depth fields as they stood — only while
+ * the body still reads what this write left. The A06a import refills a released measurement without
+ * an audit row, so "a later write means no undo" can't see it in the log; the row's `after` is what
+ * lets the undo see it on the body, and refuse rather than throw a newer import's numbers away.
+ */
 const undoLakeDepth: UndoHandler = {
-  blocked: needsPrev,
+  blocked: (row) =>
+    meta(row).prev === undefined || meta(row).after === undefined ? PREDATES : null,
   undoTakesAway: (row) => UNDO_POLICY.set_lake_depth.takesAway(meta(row).prev),
-  run: ({ ctx, actor, row, reason }) =>
-    restoreDepthImpl(ctx, actor, {
-      waterBodyId: row.targetId as Id<'waterBodies'>,
+  run: async ({ ctx, actor, row, reason }) => {
+    const waterBodyId = row.targetId as Id<'waterBodies'>;
+    const body = await ctx.db.get(waterBodyId);
+    if (!body) throw new ConvexError('Water body not found');
+    if (JSON.stringify(depthStateOf(body)) !== JSON.stringify(depthStateOf(meta(row).after))) {
+      throw new ConvexError(
+        'The depth has changed since (an import or another edit); set it again rather than undo',
+      );
+    }
+    await restoreDepthImpl(ctx, actor, {
+      waterBodyId,
       fields: meta(row).prev as Partial<DepthFields>,
       reason,
-    }),
+    });
+  },
 };
 
 /** set_satellite_imagery → the mode it replaced (`auto` when none was stored). */

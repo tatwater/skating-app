@@ -328,6 +328,39 @@ describe('undo: a body’s identity and water (D226)', () => {
     expect(row?.meanDepthSource).toBe('operator');
   });
 
+  test('a release the import has refilled since is not undone over the newer depth', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const id = await seedBody(t, 'Lake Morey', { externalId: 'way/42' });
+    await mod.as.mutation(api.waterBodies.setDepth, { waterBodyId: id, meanDepthM: 7 });
+    await mod.as.mutation(api.waterBodies.clearDepthOverride, {
+      waterBodyId: id,
+      measurements: ['mean'],
+    });
+    const release = await newestOn(t, 'waterbody', id);
+
+    // The A06a import fills the released measurement — and writes no audit row, so the release
+    // still looks like the newest action on the body.
+    await t.mutation(internal.waterBodies.importDepths, {
+      depths: [
+        {
+          source: 'osm',
+          externalId: 'way/42',
+          meanDepthM: 6.2,
+          meanDepthSource: 'state_agency',
+          maxDepthM: 18,
+          maxDepthSource: 'state_agency',
+        },
+      ],
+    });
+    expect((await newestOn(t, 'waterbody', id))._id).toBe(release._id);
+
+    await expect(mod.as.mutation(api.undo.run, { actionId: release._id })).rejects.toThrow(
+      /depth has changed since/,
+    );
+    expect(await body(t, id)).toMatchObject({ meanDepthM: 6.2, maxDepthM: 18 });
+  });
+
   test('a satellite mode undoes to auto, and the undo of that puts "off" back', async () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');

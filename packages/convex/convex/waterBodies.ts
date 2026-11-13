@@ -4012,6 +4012,28 @@ export type DepthFields = Pick<
   'meanDepthM' | 'meanDepthSource' | 'maxDepthM' | 'maxDepthSource' | 'depthSourceNote'
 >;
 
+const DEPTH_FIELD_KEYS = [
+  'meanDepthM',
+  'meanDepthSource',
+  'maxDepthM',
+  'maxDepthSource',
+  'depthSourceNote',
+] as const satisfies readonly (keyof DepthFields)[];
+
+/**
+ * A body's depth fields as a plain record, an absent field as `null` — the form a `set_lake_depth`
+ * row stores its `after` in (an audit row's metadata drops `undefined`), and the form the undo
+ * compares the body against.
+ */
+export function depthStateOf(
+  fields: Partial<DepthFields>,
+): Record<(typeof DEPTH_FIELD_KEYS)[number], string | number | null> {
+  return Object.fromEntries(DEPTH_FIELD_KEYS.map((k) => [k, fields[k] ?? null])) as Record<
+    (typeof DEPTH_FIELD_KEYS)[number],
+    string | number | null
+  >;
+}
+
 /**
  * The one write of a body's depth fields — `setDepth`, `clearDepthOverride` and their undo (D226)
  * all land here, so each writes the same `set_lake_depth` row with the same `prev`.
@@ -4032,6 +4054,13 @@ export async function writeDepth(
   },
 ): Promise<void> {
   await ctx.db.patch(body._id, patch);
+  // What the body's depth reads after this write — every field, the patched over the unpatched. The
+  // depth also changes with no audit row (the A06a import refills a released measurement), so the
+  // undo compares the body against this to see a write the audit log can't show it.
+  const after = depthStateOf({
+    ...Object.fromEntries(DEPTH_FIELD_KEYS.map((k) => [k, body[k]])),
+    ...patch,
+  });
   await writeAudit(ctx, {
     actorId: actor._id,
     action: 'set_lake_depth',
@@ -4049,6 +4078,7 @@ export async function writeDepth(
         maxDepthSource: body.maxDepthSource,
         depthSourceNote: body.depthSourceNote,
       },
+      after,
     },
     createdAt: Date.now(),
   });
