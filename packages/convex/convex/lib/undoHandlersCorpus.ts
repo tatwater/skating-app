@@ -131,10 +131,15 @@ const undoUnpin: UndoHandler = {
   undoTakesAway: () => UNDO_POLICY.pin_access_alert.takesAway(),
   run: async ({ ctx, actor, row, reason }) => {
     const accessAlertId = row.targetId as Id<'accessAlerts'>;
-    // An author's own retraction leaves no audit row, so it can't overtake this one; read it here.
+    // An author's own retraction and the expiry sweep leave no audit row, so neither can overtake
+    // this one; read them here. Pinning a lapsed claim back would vouch for it with no expiry —
+    // the same refusal the pin's undo makes for one that would have lapsed.
     const alert = await ctx.db.get(accessAlertId);
     if (alert?.status === 'retracted') {
       throw new ConvexError('The alert has been retracted since; it can’t be pinned back');
+    }
+    if (alert?.status === 'expired') {
+      throw new ConvexError('The alert has expired since; it can’t be pinned back');
     }
     await setOfficialImpl(ctx, actor, { accessAlertId, official: true, reason });
   },

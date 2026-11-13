@@ -9,6 +9,7 @@
  */
 
 import type { REQUEST_KINDS } from '@skating/core';
+import type { Doc } from './_generated/dataModel';
 import { query } from './_generated/server';
 import { hasCapability, requireCapability } from './lib/auth';
 
@@ -43,14 +44,14 @@ export const overview = query({
       .take(COUNT_CAP + 1);
     const flagsCapped = openFlags.length > COUNT_CAP;
     const flags = openFlags.slice(0, COUNT_CAP);
+    // The same split `moderation.listFlags` draws: an access report is a `no_public_access` flag on a
+    // *body*; the same reason on anything else (a report, a put-in) stays in the content lane.
+    const isAccessReport = (f: (typeof flags)[number]) =>
+      f.reason === 'no_public_access' && f.targetType === 'waterbody';
     const safety = flags.filter((f) => f.reason === 'unsafe_false_report').length;
-    const access = new Set(
-      flags
-        .filter((f) => f.reason === 'no_public_access' && f.targetType === 'waterbody')
-        .map((f) => f.targetId),
-    ).size;
+    const access = new Set(flags.filter(isAccessReport).map((f) => f.targetId)).size;
     const content = flags.filter(
-      (f) => f.reason !== 'unsafe_false_report' && f.reason !== 'no_public_access',
+      (f) => f.reason !== 'unsafe_false_report' && !isAccessReport(f),
     ).length;
     const flaggedPeople = flags.filter((f) => f.targetType === 'user').length;
     const oldestFlag = flags.reduce(
@@ -73,14 +74,23 @@ export const overview = query({
       .withIndex('by_review_status', (q) => q.eq('reviewStatus', 'pending'))
       .take(COUNT_CAP + 1);
 
-    // Support is PII (D37): counted only for a viewer who may open it.
-    const support = hasCapability(viewer, 'inbox.support.read')
-      ? await ctx.db
-          .query('supportTickets')
-          .withIndex('by_status', (q) => q.eq('status', 'open'))
-          .take(COUNT_CAP + 1)
-      : null;
-    const appeals = support?.filter((s) => s.category === 'account').length ?? null;
+    // Support is PII (D37): counted only for a viewer who may open it. A ticket waits until it is
+    // resolved — `in_progress` is still waiting — the same rule `support_queue_depth` counts by.
+    let support: Count | null = null;
+    let appeals: number | null = null;
+    if (hasCapability(viewer, 'inbox.support.read')) {
+      const waiting: Doc<'supportTickets'>[] = [];
+      for (const status of ['open', 'in_progress'] as const) {
+        waiting.push(
+          ...(await ctx.db
+            .query('supportTickets')
+            .withIndex('by_status', (q) => q.eq('status', status))
+            .take(COUNT_CAP + 1)),
+        );
+      }
+      support = capped(waiting.length);
+      appeals = waiting.slice(0, COUNT_CAP).filter((s) => s.category === 'account').length;
+    }
 
     // ── People ────────────────────────────────────────────────────────────────────────────────
     const moderators = await ctx.db
@@ -133,14 +143,16 @@ export const overview = query({
         placesAsked: { count: places, capped: requestsCapped },
         drawnBodies: capped(drawn.length),
         contentFlags: { count: content, capped: flagsCapped },
-        support: support === null ? null : capped(support.length),
+        support,
         oldestOpenAt: Number.isFinite(oldest) ? oldest : null,
       },
       people: {
         moderators: capped(moderators.length),
         admins: capped(admins.length),
         newThisWeek: capped(newThisWeek.length),
-        suspended: capped(liveSuspensions.length),
+        // The live ones out of a read that may itself have hit the cap — which `capped` on the
+        // filtered count could never say.
+        suspended: { count: liveSuspensions.length, capped: suspended.length > COUNT_CAP },
         nextSuspensionEnds,
         banned: capped(banned.length),
         flaggedPeople: { count: flaggedPeople, capped: flagsCapped },

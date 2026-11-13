@@ -267,6 +267,13 @@ export async function setContentStatus(
     targetId: string;
     status: ModerationStatus;
     reason: string;
+    /**
+     * Bring back members this Post's own *removal* took down, too — set only by that removal's undo
+     * (D226). A moderator's restore of a removed Post leaves them removed (the stronger verdict); an
+     * undo puts back what the removal replaced, and without this it would leave a visible Post with
+     * every Report in it gone.
+     */
+    reviveRemoved?: boolean;
   },
 ): Promise<Id<'reports'> | Id<'posts'> | Id<'comments'> | Id<'hazards'>> {
   {
@@ -311,7 +318,10 @@ export async function setContentStatus(
             createdAt: now,
           });
         } else {
-          if (report.moderationStatus !== 'hidden') continue;
+          const memberPrior = report.moderationStatus;
+          if (memberPrior !== 'hidden' && !(args.reviveRemoved && memberPrior === 'removed')) {
+            continue;
+          }
           const last = await ctx.db
             .query('moderationActions')
             .withIndex('by_target', (q) => q.eq('targetType', 'report').eq('targetId', report._id))
@@ -325,7 +335,11 @@ export async function setContentStatus(
             targetType: 'report',
             targetId: report._id,
             reason: args.reason,
-            metadata: { priorStatus: 'hidden', newStatus: 'visible', cascadedFromPostId: post._id },
+            metadata: {
+              priorStatus: memberPrior,
+              newStatus: 'visible',
+              cascadedFromPostId: post._id,
+            },
             createdAt: now,
           });
         }
@@ -885,8 +899,9 @@ export async function banImpl(
 /**
  * Temporarily suspend a user until `suspendedUntil` (D37). The Convex gate (`requireProfile`) rejects
  * while the window is open and **auto-lifts** with no cron — so, per the founder decision (2026-07-23),
- * a suspension deliberately does NOT touch Clerk (that would leave the user locked out of sign-in after
- * the window naturally expired). Audits `suspend` with the window in metadata.
+ * a suspension deliberately never locks Clerk (that would leave the user locked out of sign-in after
+ * the window naturally expired), and one that replaces a ban lifts the ban's lock. Audits `suspend`
+ * with the window in metadata.
  */
 export const suspendUser = mutation({
   args: { userId: v.id('profiles'), reason: v.string(), suspendedUntil: v.number() },
@@ -922,6 +937,15 @@ export async function suspendImpl(
       suspendedUntil,
       prev: statusPrev(target),
     });
+    // A suspension that replaces a ban — softened on appeal, or a ban's undo back to the suspension
+    // it replaced (D226) — has to lift the ban's Clerk lock too: a suspension never holds one, so
+    // left in place it would outlive the window and lock the person out for good (the reason above).
+    if (target.status === 'banned') {
+      await ctx.scheduler.runAfter(0, internal.clerkAdmin.setBanned, {
+        clerkUserId: target.clerkUserId,
+        banned: false,
+      });
+    }
     return userId;
   }
 }

@@ -350,6 +350,24 @@ describe('undo: access alert pins (D226)', () => {
     expect((await t.run((ctx) => ctx.db.get(alertId)))?.status).toBe('retracted');
   });
 
+  test('an unpinned alert that has expired since is not pinned back', async () => {
+    const { t, mod, alertId } = await alertSetup();
+    for (const official of [true, false]) {
+      await mod.as.mutation(api.accessAlerts.setOfficial, {
+        accessAlertId: alertId,
+        official,
+        reason: official ? 'x' : 'y',
+      });
+    }
+    const unpin = await newestOn(t, 'accessAlert', alertId);
+    // The expiry sweep's write, which leaves no audit row.
+    await t.run((ctx) => ctx.db.patch(alertId, { status: 'expired' }));
+    await expect(mod.as.mutation(api.undo.run, { actionId: unpin._id })).rejects.toThrow(
+      /expired since/,
+    );
+    expect((await t.run((ctx) => ctx.db.get(alertId)))?.status).toBe('expired');
+  });
+
   test('pins and unpins recorded before undo, and an unpin of an unpinned alert, are refused', async () => {
     const { t, mod, alertId } = await alertSetup();
     for (const action of ['pin_access_alert', 'unpin_access_alert'] as const) {

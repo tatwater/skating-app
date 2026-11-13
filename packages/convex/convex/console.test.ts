@@ -153,6 +153,60 @@ describe('console.overview (B01 §5.1)', () => {
     expect(p.newThisWeek.count).toBe(5);
   });
 
+  test('a no-public-access flag on anything but a body is a content flag, as the Inbox lists it', async () => {
+    const t = convexTest(schema, modules);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const skater = await seedUser(t, 's');
+    await seedFlag(t, skater.id, 'no_public_access', 'report', 'r1');
+    const o = await mod.as.query(api.console.overview, {});
+    expect(o.inbox.accessReports).toEqual({ count: 0, capped: false });
+    expect(o.inbox.contentFlags).toEqual({ count: 1, capped: false });
+  });
+
+  test('a support ticket in progress is still waiting; a resolved one is not', async () => {
+    const t = convexTest(schema, modules);
+    const admin = await seedUser(t, 'adm', 'admin');
+    await t.run(async (ctx) => {
+      for (const status of ['open', 'in_progress', 'resolved'] as const) {
+        await ctx.db.insert('supportTickets', {
+          category: 'account',
+          status,
+          body: `Appeal (${status})`,
+          createdAt: Date.now(),
+          ...(status === 'resolved' ? { resolvedAt: Date.now() } : {}),
+        });
+      }
+    });
+    const o = await admin.as.query(api.console.overview, {});
+    expect(o.inbox.support).toEqual({ count: 2, capped: false });
+    expect(o.people.appealsOpen).toBe(2);
+  });
+
+  test('a suspension read past the cap says so, though the live count is filtered', async () => {
+    const t = convexTest(schema, modules);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 201; i++) {
+        await ctx.db.insert('profiles', {
+          clerkUserId: `s${i}`,
+          displayName: `s${i}`,
+          username: `s${i}`,
+          driveTimePrefMinutes: 60,
+          profileVisibility: 'public' as const,
+          notificationPrefs: NOTIF_PREFS,
+          dateOfBirth: Date.UTC(1990, 0, 1),
+          reputationPoints: 0,
+          role: 'member' as const,
+          status: 'suspended' as const,
+          suspendedUntil: Date.now() + DAY,
+          createdAt: Date.now(),
+        });
+      }
+    });
+    const p = (await mod.as.query(api.console.overview, {})).people;
+    expect(p.suspended).toEqual({ count: 200, capped: true });
+  });
+
   test('a lane past the cap reads as capped rather than being scanned', async () => {
     const t = convexTest(schema, modules);
     const mod = await seedUser(t, 'mod', 'moderator');

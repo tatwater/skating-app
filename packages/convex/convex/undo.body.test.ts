@@ -402,6 +402,28 @@ describe('undo: a body’s identity and water (D226)', () => {
     expect((await body(t, id))?.publicAccess?.verdict).toBe('none');
   });
 
+  test('an open ruling that brought a shelved body back shelves it again, and asks why', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const id = await seedBody(t, 'Mud Pond', {
+      dormant: { since: Date.now() - 1000, reason: 'moderator', note: 'posted closed' },
+    });
+    await mod.as.mutation(api.waterBodies.setPublicAccess, { waterBodyId: id, verdict: 'open' });
+    expect((await body(t, id))?.dormant).toBeUndefined();
+    const ruling = await newestOn(t, 'waterbody', id);
+    expect(ruling.metadata.prev.dormant?.reason).toBe('moderator');
+
+    await expect(mod.as.mutation(api.undo.run, { actionId: ruling._id })).rejects.toThrow(
+      /needs a reason/i,
+    );
+    await mod.as.mutation(api.undo.run, { actionId: ruling._id, reason: 'ruled the wrong pond' });
+    const after = await body(t, id);
+    expect(after?.publicAccess).toBeUndefined();
+    expect(after?.dormant).toMatchObject({ reason: 'moderator', note: 'posted closed' });
+    const rows = await undoRowsOf(t, ruling._id);
+    expect(rows.map((r) => r.action).sort()).toEqual(['set_public_access', 'set_standing']);
+  });
+
   test('kept-by-request undoes to not kept, and asks why; a catalog admission is not this lever', async () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');

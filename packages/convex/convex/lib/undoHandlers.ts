@@ -49,6 +49,8 @@ const takeContentBackTo =
       targetId: row.targetId,
       status,
       reason,
+      // A Post's removal took its Reports down with it; its undo brings them back too.
+      ...(row.action === 'remove' ? { reviveRemoved: true } : {}),
     });
   };
 

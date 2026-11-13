@@ -36,18 +36,19 @@ export function isLedgerEditor(profile: Pick<Profile, 'role' | 'canEditLedger'>)
   return profile.role === 'admin' && profile.canEditLedger === true;
 }
 
-/**
- * An editor who can still act: not banned or deleted, and not on their way out (a departing operator
- * loses every write, D62). This is who counts toward "never no editor".
- */
-function canStillEdit(profile: Profile): boolean {
+/** Not banned or deleted, and not on their way out (a departing operator loses every write, D62). */
+function canStillAct(profile: Profile): boolean {
   return (
-    isLedgerEditor(profile) &&
     profile.status !== 'banned' &&
     profile.status !== 'deleting' &&
     profile.status !== 'deleted' &&
     !isLeaving(profile)
   );
+}
+
+/** An editor who can still act. This is who counts toward "never no editor". */
+function canStillEdit(profile: Profile): boolean {
+  return isLedgerEditor(profile) && canStillAct(profile);
 }
 
 /** Editors who can still act, other than `exceptId`. */
@@ -87,14 +88,7 @@ export async function grantLedgerEditorImpl(
   if (target.role !== 'admin') {
     throw new ConvexError('Only an admin can be given ledger editing');
   }
-  if (
-    target.status === 'banned' ||
-    target.status === 'deleting' ||
-    target.status === 'deleted' ||
-    isLeaving(target)
-  ) {
-    throw new ConvexError('This account is not active');
-  }
+  if (!canStillAct(target)) throw new ConvexError('This account is not active');
   if (target.canEditLedger === true) throw new ConvexError('They can already edit the ledger');
 
   await ctx.db.patch(userId, { canEditLedger: true });

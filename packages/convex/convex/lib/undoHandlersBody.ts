@@ -7,7 +7,7 @@
  * re-stamps reports and hazards, a restore re-clips. Nothing here patches a row back by hand.
  */
 
-import type { BodyStanding } from '@skating/core';
+import { type BodyStanding, standingOf } from '@skating/core';
 import { ConvexError } from 'convex/values';
 import type { Doc, Id } from '../_generated/dataModel';
 import {
@@ -169,19 +169,41 @@ const undoWeatherSamplePoints: UndoHandler = {
 
 /**
  * set_public_access → the ruling it replaced, ruled again. Its standing follows as it does for any
- * ruling. Flags the ruling closed stay closed: reopening a flag is §2's inverse, not this one.
+ * ruling — and an `open` ruling that brought a shelved body back shelves it again, for the reason it
+ * had, as a boost's undo does. Flags the ruling closed stay closed: reopening a flag is §2's inverse,
+ * not this one.
  */
 const undoPublicAccess: UndoHandler = {
   blocked: needsPrev,
-  undoTakesAway: (row) => UNDO_POLICY.set_public_access.takesAway(meta(row).prev.publicAccess),
+  undoTakesAway: (row) => {
+    const prev = meta(row).prev as { publicAccess: unknown; dormant?: Dormancy };
+    return (
+      UNDO_POLICY.set_public_access.takesAway(prev.publicAccess) ||
+      (prev.dormant !== undefined && UNDO_POLICY.set_standing.takesAway('dormant'))
+    );
+  },
   run: async ({ ctx, actor, row, reason }) => {
-    const prev = meta(row).prev.publicAccess as Doc<'waterBodies'>['publicAccess'] | null;
+    const { publicAccess: prev, dormant } = meta(row).prev as {
+      publicAccess: Doc<'waterBodies'>['publicAccess'] | null;
+      dormant?: Dormancy;
+    };
+    const waterBodyId = row.targetId as Id<'waterBodies'>;
     await setPublicAccessImpl(ctx, actor, {
-      waterBodyId: row.targetId as Id<'waterBodies'>,
+      waterBodyId,
       verdict: prev?.verdict ?? null,
       ...(prev?.note !== undefined ? { note: prev.note } : {}),
       reason,
     });
+    const after = await ctx.db.get(waterBodyId);
+    if (dormant !== undefined && after && standingOf(after).standing === 'active') {
+      await setStandingImpl(ctx, actor, {
+        waterBodyId,
+        standing: 'dormant',
+        dormancyReason: dormant.reason,
+        ...(dormant.note !== undefined ? { note: dormant.note } : {}),
+        reason,
+      });
+    }
   },
 };
 

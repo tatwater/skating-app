@@ -2855,7 +2855,13 @@ export async function setPublicAccessImpl(
     // (`null`) simply re-derives from whatever else is on the row. All three go through
     // `transitionStanding`, so the score, the cells, the bays and the registry move together and
     // the audit row below is the one record of it.
-    if (verdict === 'open' && isListed(body)) {
+    //
+    // The dormancy an `open` ruling clears goes on the audit row, so its undo can shelve the body
+    // again for the reason it had (D226). A `none` ruling's dormancy is derived from the ruling and
+    // never stored, so it comes back with the ruling itself.
+    const activates = verdict === 'open' && isListed(body);
+    const clearedDormancy = activates ? body.dormant : undefined;
+    if (activates) {
       await activateBody(ctx, body, {
         via: 'access_confirmed',
         actorId: actor._id,
@@ -2905,7 +2911,13 @@ export async function setPublicAccessImpl(
       targetType: 'waterbody',
       targetId: waterBodyId,
       reason: reason?.trim() || describePublicAccessChange(verdict, trimmedNote, resolved),
-      metadata: { publicAccess: next ?? null, prev: { publicAccess: body.publicAccess ?? null } },
+      metadata: {
+        publicAccess: next ?? null,
+        prev: {
+          publicAccess: body.publicAccess ?? null,
+          ...(clearedDormancy !== undefined ? { dormant: clearedDormancy } : {}),
+        },
+      },
       createdAt: now,
     });
     return waterBodyId;

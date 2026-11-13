@@ -250,6 +250,63 @@ describe('undo: content (D226)', () => {
     for (const id of reportIds) expect(await statusOf(t, id)).toBe('visible');
   });
 
+  test("a Post's removal undoes with the members it removed — not only the ones a hide took", async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'a');
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const { postId, reportIds } = await seedPost(t, author.id, 2);
+    await mod.as.mutation(api.moderation.setModerationStatus, {
+      targetType: 'post',
+      targetId: postId,
+      status: 'removed',
+      reason: 'doxxing in the photos',
+    });
+    for (const id of reportIds) expect(await statusOf(t, id)).toBe('removed');
+
+    const postRemove = await newestOn(t, 'post', postId);
+    await mod.as.mutation(api.undo.run, { actionId: postRemove._id });
+    expect(await statusOf(t, postId)).toBe('visible');
+    for (const id of reportIds) expect(await statusOf(t, id)).toBe('visible');
+    expect((await t.run((ctx) => ctx.db.get(author.id)))?.reportCount).toBe(2);
+  });
+
+  test("a moderator's own restore of a removed Post still leaves its removed members removed", async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'a');
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const { postId, reportIds } = await seedPost(t, author.id, 1);
+    for (const status of ['removed', 'visible'] as const) {
+      await mod.as.mutation(api.moderation.setModerationStatus, {
+        targetType: 'post',
+        targetId: postId,
+        status,
+        reason: status === 'removed' ? 'doxxing' : 'the photo is gone',
+      });
+    }
+    expect(await statusOf(t, firstOf(reportIds))).toBe('removed');
+  });
+
+  test('an operator on their way out is not offered an undo the server would refuse', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'a');
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const reportId = await seedReport(t, author.id);
+    await mod.as.mutation(api.moderation.setModerationStatus, {
+      targetType: 'report',
+      targetId: reportId,
+      status: 'hidden',
+      reason: 'spam',
+    });
+    const hide = await newestOn(t, 'report', reportId);
+    await t.run((ctx) => ctx.db.patch(mod.id, { deletionRequestedAt: Date.now() }));
+    const [view] = await mod.as.query(api.moderation.listActions, {
+      targetType: 'report',
+      targetId: reportId,
+    });
+    expect(view?.undo).toEqual({ state: 'unavailable', why: expect.stringMatching(/deleted/) });
+    await expect(mod.as.mutation(api.undo.run, { actionId: hide._id })).rejects.toThrow();
+  });
+
   test('a member cannot undo; neither can someone without the capability', async () => {
     const t = convexTest(schema, modules);
     const author = await seedUser(t, 'a');
@@ -309,6 +366,31 @@ describe('undo: people (D226)', () => {
       reason: 'the appeal was withdrawn',
     });
     expect((await t.run((ctx) => ctx.db.get(user.id)))?.status).toBe('banned');
+  });
+
+  test("a ban that replaced a suspension undoes to the suspension, and lifts the ban's Clerk lock", async () => {
+    const t = convexTest(schema, modules);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const user = await seedUser(t, 'u');
+    const until = Date.now() + 3 * 86_400_000;
+    await mod.as.mutation(api.moderation.suspendUser, {
+      userId: user.id,
+      reason: 'cooling off',
+      suspendedUntil: until,
+    });
+    await mod.as.mutation(api.moderation.banUser, { userId: user.id, reason: 'kept at it' });
+    const ban = await newestOn(t, 'user', user.id);
+    await mod.as.mutation(api.undo.run, { actionId: ban._id, reason: 'the ban was too much' });
+
+    const after = await t.run((ctx) => ctx.db.get(user.id));
+    expect(after?.status).toBe('suspended');
+    expect(after?.suspendedUntil).toBe(until);
+    // A suspension never holds a Clerk lock, so the ban's has to go, or the person stays locked out
+    // of sign-in after the window ends.
+    const locks = (
+      await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect())
+    ).filter((f) => f.name.includes('clerkAdmin'));
+    expect(locks.map((f) => (f.args[0] as { banned: boolean }).banned)).toEqual([true, false]);
   });
 
   test('a lift recorded before undo existed says so', async () => {

@@ -56,7 +56,7 @@ The admin area is a set of pages under `/admin`, gated by role in the web app. E
 
 ### `apps/web/src/components/admin/adminUi.tsx` (primitives, no data)
 - `AdminPageHeader({title, subtitle, actions})`: an h1 with a subtitle, and an optional actions slot on the right.
-- `AdminEmpty`: a centred muted card for empty or loading states.
+- `AdminEmpty`: a centered muted card for empty or loading states.
 - `StatTile({label, value, hint, tone})`: one KPI card with a big number. Tone can be default, warning or danger.
 - `Table` / `Th` / `Td`: thin wrappers around a plain HTML table. The UI kit has no table component.
 - `errorText(err)`: turns a ConvexError into the message line the server wrote. It is used by lake-editor pages, not by the 9 pages here.
@@ -65,7 +65,7 @@ The admin area is a set of pages under `/admin`, gated by role in the web app. E
 ### `apps/web/src/components/admin/ReasonDialog.tsx`
 - Header comment: "A reusable 'collect a reason, then confirm' dialog for audited operator actions (D37). Every lifecycle/moderation mutation requires a non-empty reason for the `moderationActions` log…"
 - Props: `trigger`, `title`, `description`, `confirmLabel`, `confirmVariant` (default `destructive`), `reasonPlaceholder` (default "Why?"), `requireReason` (default true), `extraFields` (rendered above the reason box), `onOpenChange`, `confirmDisabled`, `onConfirm(reason) => Promise`.
-- Behaviour:
+- Behavior:
   - A Reason textarea. Confirm stays disabled while the reason is empty, if one is required.
   - Errors are shown inline.
   - On success the dialog closes and the reason is cleared.
@@ -78,7 +78,7 @@ The admin area is a set of pages under `/admin`, gated by role in the web app. E
 
 ### Chart helpers (used by Dashboard and Tuning)
 - `components/admin/MetricCharts.tsx`. Every query here is admin-only on the server.
-  - `useCatalog()` → `api.analytics.catalog`: the metric catalogue (label, description, bucket labels).
+  - `useCatalog()` → `api.analytics.catalog`: the metric catalog (label, description, bucket labels).
   - `ScalarTrend` → `api.analytics.series({metrics, days:30})`: a time-series line chart.
   - `MetricHistogram` → `api.analytics.latest({metrics:[key]})`: the latest bucketed snapshot as a histogram, with optional marker lines.
   - `MetricComposition` → `api.analytics.latest`: the latest `meta` breakdown as a horizontal composition bar.
@@ -440,7 +440,7 @@ The `file` named in each heading is under `packages/core/src/`.
 
 | Section | Constants (file) | Charts (metric key → type) |
 |---|---|---|
-| **Bounties** | FRESH_REPORT_HOURS, BOUNTY_REOPEN_FREEZING_DEGREE_HOURS, BOUNTY_REOPEN_THAW_DEGREE_HOURS, MAX_OPEN_BOUNTIES_PER_DAY, DEFAULT_BOUNTY_LIFETIME_MS (shown in days), DEFAULT_BOUNTY_REWARD_POINTS, BOUNTY_ELIGIBILITY_WINDOW_HOURS (reputationConfig.ts) | GateScatterCard (bounty suppression scatter); `bounty_outcomes` composition (semantic colours); `bounty_weather_reopen_rate` trend (%); `bounty_cap_hit_rate` trend (%); `bounty_time_to_fulfillment_h` histogram |
+| **Bounties** | FRESH_REPORT_HOURS, BOUNTY_REOPEN_FREEZING_DEGREE_HOURS, BOUNTY_REOPEN_THAW_DEGREE_HOURS, MAX_OPEN_BOUNTIES_PER_DAY, DEFAULT_BOUNTY_LIFETIME_MS (shown in days), DEFAULT_BOUNTY_REWARD_POINTS, BOUNTY_ELIGIBILITY_WINDOW_HOURS (reputationConfig.ts) | GateScatterCard (bounty suppression scatter); `bounty_outcomes` composition (semantic colors); `bounty_weather_reopen_rate` trend (%); `bounty_cap_hit_rate` trend (%); `bounty_time_to_fulfillment_h` histogram |
 | **Trust & points** | TRUST_CLASS_THRESHOLDS (trusted/expert/leader), NEW_ACCOUNT_WINDOW_MS, POINT_WEIGHTS.report_submitted, .helpful_thumb, .report_corroborated | `reputation_points_hist` histogram with markers at the **hard-coded** buckets '15–29' trusted, '60–99' expert, '150–249' leader; `point_source_composition` |
 | **Enforcement** | CONTRADICTION_FLAG_THRESHOLD, AUTO_LOW_QUALITY_NET_UNHELPFUL, CORROBORATION_MAX_PER_REPORT, HAZARD_CORROBORATION_MIN_CONFIRMS | "Contradiction gate" trend (`contradiction_detected`, `contradiction_weather_explained`, `contradiction_escalated`); `contradiction_count_hist` with a hard-coded '3–4' flag marker; `flag_dispositions` composition |
 | **Hazards** | SHALLOW_MEAN_DEPTH_M, SHALLOW_MAX_DEPTH_M (lakeDepth.ts), shallowThawK = SHALLOW_THAW_K (hazardWeatherDecay.ts) (D69) | `hazard_confirm_outcomes` composition; `hazard_age_at_confirm_h` histogram |
@@ -916,7 +916,7 @@ All placement tools share one `placing` slot (`'feature' | 'put_in' | 'parking' 
    - **"Drop a landmark"** form: point, name, kind, aliases → `landmarks.create`. It shows "Save anyway" if the linked proposal was closed by a colleague.
 3. **PostedAccessEditor** (`PostedAccessTool`, A06e): see §2 item 14. The header comment explains why it's one card with a target selector ("Champlain carries 160 parking areas") and that it's moderator-only.
 4. **DuplicateGroupCard** (the D36 queue, rebuilt for A07a). It shows:
-   - a tier badge (near certain / suspected), member names with colour dots, review-reason badges, and "N fields differ"
+   - a tier badge (near certain / suspected), member names with color dots, review-reason badges, and "N fields differ"
    - `describeAgreement` lines
    - truncation and single-member warnings
    - a field comparison table (differing fields only, or all fields)
@@ -993,7 +993,7 @@ All paths below are relative to `/Users/teagan/Code/skating`.
 | `api.importRuns.list({ limit: 50 })` | `admin.imports.tsx:33` | Newest 50 runs, as whole rows. The server also accepts `kind` and `campaignId`, but the page uses neither. It **filters by campaign on the client, within those 50 rows**. |
 | `api.importRuns.get({ runId })` | `admin.imports.tsx:35-38` | One full row for the detail view. |
 
-There are **no mutations** on this page. Nothing can be started, retried, cancelled or annotated from it.
+There are **no mutations** on this page. Nothing can be started, retried, canceled or annotated from it.
 
 ### The list page
 - **Latest campaign** (`admin.imports.tsx:126-168`). Takes the first run in the list that has a `campaignId` and totals that campaign's runs: Inserted and Updated, Failures, Runs not clean, Run count, and either total duration or "in progress". A campaign containing even one failed or still-`running` run is never shown as clean.

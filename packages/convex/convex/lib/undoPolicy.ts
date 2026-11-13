@@ -189,7 +189,7 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
   resolve_flag: {
     undo: later(
       '§2 Inbox',
-      'Reopen the flag; the verdict message is cancelled inside the settle window.',
+      'Reopen the flag; the verdict message is canceled inside the settle window.',
     ),
     takesAway: always,
     capability: 'inbox.flag',
@@ -197,7 +197,7 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
   dismiss_flag: {
     undo: later(
       '§2 Inbox',
-      'Reopen the flag; the verdict message is cancelled inside the settle window.',
+      'Reopen the flag; the verdict message is canceled inside the settle window.',
     ),
     takesAway: never,
     capability: 'inbox.flag',

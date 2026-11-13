@@ -15,6 +15,7 @@
  * and every row it writes is tagged as the undo.
  */
 
+import { isLeaving } from '@skating/core';
 import { ConvexError } from 'convex/values';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
@@ -71,6 +72,14 @@ export async function undoState(
   if (blocked) return { state: 'unavailable', why: blocked };
   if (!hasCapability(viewer, undoCapability(rule, row.targetType))) {
     return { state: 'unavailable', why: 'Undoing this takes a role you do not hold.' };
+  }
+  // Every undo is a write, and a write is refused to an operator on their way out (D62) — so it is
+  // never offered to one either, or History would draw a button the server turns down.
+  if (isLeaving(viewer)) {
+    return {
+      state: 'unavailable',
+      why: 'Your account is being deleted, so you can no longer undo.',
+    };
   }
   return { state: 'available', needsReason: handler.undoTakesAway(row) };
 }
