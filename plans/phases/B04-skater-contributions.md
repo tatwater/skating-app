@@ -66,10 +66,10 @@ founder asked for this scope so the work is not forgotten, and these are the cal
    the About tab offers the report button again, and `contentFlags.flag` dedupes on `open` only — so the
    same person can file a second flag. Retraction is allowed while `reviewing`, so the filer needs to see
    it. The read is also an unbounded `.collect()` over `by_flagger`.
-6. **The withdrawal's vote probe is larger than it needs to be.** `hazardConfirmations` keeps one row per
-   person per hazard (a re-vote patches it), so two rows of one verdict always include someone other than
-   the author. `take(2)` decides exactly; the `unknown` refusal ("too many confirmations to check") can
-   never be reached and its copy never needs showing.
+6. **The withdrawal's vote probe was larger than it needed to be** — fixed on the branch. `hazardConfirmations`
+   keeps one row per person per hazard (a re-vote patches it), so the `unknown` refusal ("too many
+   confirmations to check") could never be reached. It is gone; the read is exact (the first row of a
+   verdict that is someone else's).
 7. **`corpusRequests.listMine` exists with no caller.** Its comment says it lists `admit` requests; it
    returns every kind, landmark proposals included, newest 50. It is most of the requests half of the list
    read already. A request made by clicking unlisted water (`admit`) has no lake page to show a "you
@@ -93,7 +93,7 @@ unless a path says otherwise; "phone" is `apps/mobile/src/components/`.
 | Item | Taking it back on the server, and its gate | Web today | Phone today |
 |---|---|---|---|
 | **Hazard** | `hazardWithdrawal.withdraw`. Author only. Refused when a moderator made it a permanent feature, when it was merged with others' pins (either side of the merge) or counted in a cross-season pattern, or when another skater's current verdict is `still_there` or `healing_unsafe`. Others' `fully_healed` / `never_existed` and the author's own votes don't block; a moderator's hide doesn't either. Sets `moderationStatus: removed` and `authorDeletedAt`, leaves `status` alone, recomputes the lake's map card, writes `author_delete`, starts the erase clock. **No move, no retype, no edit of any kind.** | `panels/HazardPanel.tsx` computes `isOwn` only to hide rating your own; no withdraw. `lake/HazardList.tsx`, `HazardRow.tsx`: no mark for your own. The map: nothing. | `HazardDetail.tsx` computes `isOwn` the same way; nothing else. |
-| **Access alert** | `accessAlerts.retract`: the author while the alert is `active` and no moderator ever pinned it (read from history, an undone pin excluded); a moderator any time. `accessAlerts.vote` with `open` by the author resolves it at once, pinned or not, and releases the pin with a history entry. `AccessAlertView.isOwn` marks the viewer's own. | `lake/AccessTab.tsx` + `access/AccessViews.tsx`: votes for everyone; Retract for moderators only; the author's "It's open" on a pinned alert (branch). | `AccessSection.tsx`: votes; the author's "It's open" on a pin (branch); no Retract for anyone. |
+| **Access alert** | `accessAlerts.retract`: the author while the alert is `active` and no moderator ever pinned it (read from history, an undone pin excluded); a moderator any time. `accessAlerts.vote` with `open` by the author resolves it at once, pinned or not, and releases the pin with a history entry. Which alerts are the viewer's comes from its own query, `accessAlerts.myAlertIdsForBody` (live alerts, bounded by `by_author_status`) — never from `accessForBody` / `listForBody`, which stay viewer-free so the lake page shares one cached copy. | `lake/AccessTab.tsx` + `access/AccessViews.tsx`: votes for everyone; Retract for moderators only; the author's "It's open" on a pinned alert (branch). | `AccessSection.tsx`: votes; the author's "It's open" on a pin (branch); no Retract for anyone. |
 | **Request to a moderator** (add, activate, restore, contest, take down, name a bay, name a landmark) | `corpusRequests.retract`: the asker while `open`; final; frees a slot under the open-ask cap; erased 30 days on. `approve` / `decline` refuse a retracted one. | `components/RequestLake.tsx` (`RequestButtonsView`, mounted by `lake/LakePage.tsx` in the standing notice): "You asked — … — and it's with the moderators." No Withdraw. An `admit` from `actions/RequestLakePane.tsx` is never shown again. | `RequestLake.tsx`: the same line, no Withdraw. |
 | **Flag** (a report, comment, photo, person, hazard or alert; a lake with no public access) | `contentFlags.retract({ flagId })`: the filer while `open` or `reviewing`; refused for a system-filed flag and for one the system has since counted again for others (`occurrences > 1`). Leaves the queue at once, releases its erasure hold. | `lake/AboutTab.tsx` reads `myAccessFlags` (lake ids) for "already reported"; `panels/FlagDialog.tsx` ends at "Thanks". No Withdraw anywhere; no flag id on the client. | `PublicAccessSection.tsx`, `SafetyControls.tsx`: the same; `MapView.tsx` fades with `myAccessFlags`. |
 | **Report** | `reports.remove` (main; final since D248 Part A). | `panels/ReportPanel.tsx`: Delete + confirm, "It comes off the lake and the feed. A moderator can still read it." | `ReportDetail.tsx`: Delete + `Alert`, no word about time. |
@@ -106,7 +106,7 @@ unless a path says otherwise; "phone" is `apps/mobile/src/components/`.
 | Table | By-author indexes | A query that lists them today |
 |---|---|---|
 | `hazards` | `by_author_and_water_body` (main; ordered by lake, not time), `by_author_deleted` (branch; for the withdrawn list) | none |
-| `accessAlerts` | `by_author` (newest last within the author) | none |
+| `accessAlerts` | `by_author` (newest last within the author); `by_author_status` (branch) | `myAlertIdsForBody` (branch: the viewer's live alerts on one lake, ids only) |
 | `waterBodyRequests` | `by_requester_created`, `by_requester_status`, `by_requester_body` | `listMineForBody` (one lake, landmark proposals filtered out); `listMine` (every kind, newest 50, no caller) |
 | `contentFlags` | `by_flagger` | `myAccessFlags` (lake ids, `open` only, unbounded) |
 | `reports`, `posts`, `comments` | `by_author` and friends | the public profile's reports |
@@ -172,7 +172,7 @@ marked healed by others alike (the server allows all three; off the map, withdra
 | Not offered when | The person reads |
 |---|---|
 | another skater said it's there | Another skater has reported this hazard is there, so it stays up. You can still say what you see now. *(server)* |
-| it's combined with others' pins or counted in a pattern | This hazard has been combined with other skaters' reports of the same spot, so it is a shared record now and stays up. *(server)* |
+| it's combined with others' pins or counted in a pattern | This hazard has been combined with other reports of the same spot, so it is a shared record now and stays up. *(server)* |
 | a moderator made it a permanent feature | A moderator made this hazard a permanent feature of the lake, so it is a shared record now and stays up. *(server)* |
 | the phone is offline | You're offline. Try again when you're connected. |
 
@@ -293,11 +293,14 @@ One mutation, `hazards.amend({ hazardId, type?, shape? })` (shape = `geometryKin
   key, from facts the server loads once (`othersSayItIsThere`, `isJoined`, the feature, the two statuses,
   type, posting restriction, leaving). The mutations call the same function, so the list, the card and the
   mutation can't disagree.
-- **`othersSayItIsThere` probes `take(2)`** per verdict (§0.2 item 6); the `unknown` branch goes.
+- **`othersSayItIsThere` is already exact** on the branch (§0.2 item 6); the `unknown` branch is gone.
 - **`hazards.get` adds `yours`** — only when the viewer is the author — with those two answers (`ok` or a
   key). Additive; the list path (`listForBody`, the offline cache) is untouched and stays viewer-free.
-- **`AccessAlertView` adds `canRetract`** on the viewer's own alerts (`everPinned` is read for those only),
-  next to the branch's `isOwn`. Additive.
+- **The author's `canRetract` rides the own-alerts read, never `AccessAlertView`.** The shared reads
+  (`accessForBody`, `listForBody`) carry nothing about the viewer; the branch's
+  `accessAlerts.myAlertIdsForBody` is the per-viewer half. B04 widens it (or adds a sibling under a new
+  name, so installed phone builds keep working) to return each own alert's `canRetract`, with
+  `everPinned` read for those only. Additive.
 
 ### §3.3 — The list's read
 
