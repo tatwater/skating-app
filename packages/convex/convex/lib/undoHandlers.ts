@@ -16,7 +16,9 @@ import type { Doc, Id } from '../_generated/dataModel';
 import {
   banImpl,
   type ContentTargetType,
+  type PostCascade,
   type PostingPermission,
+  revertPostVerdict,
   setBountyLimitImpl,
   setContentStatus,
   setPostingPermissionImpl,
@@ -44,9 +46,23 @@ function contentBlocked(row: Doc<'moderationActions'>): string | null {
   return null;
 }
 
+/**
+ * The members a Post's verdict moved, as its row recorded them — `undefined` on any other target, and
+ * on a Post row from before the record (those undo through the cascade, as they always did).
+ */
+function cascadeOf(row: Doc<'moderationActions'>): PostCascade[] | undefined {
+  return row.targetType === 'post' ? (meta(row).cascaded as PostCascade[] | undefined) : undefined;
+}
+
 const takeContentBackTo =
   (status: ContentStatus) =>
   async ({ ctx, actor, row, reason }: UndoCall) => {
+    // A Post whose row lists its members goes back with each of them to its own prior status,
+    // whatever the Post returns to (founder call, 2026-11-13).
+    if (cascadeOf(row) !== undefined) {
+      await revertPostVerdict(ctx, actor, { row, reason });
+      return;
+    }
     await setContentStatus(ctx, actor, {
       targetType: row.targetType as ContentTargetType,
       targetId: row.targetId,
@@ -59,10 +75,25 @@ const takeContentBackTo =
   };
 
 /**
+ * Does undoing this row put anything — the item, or a member of a Post — back further down? Then it
+ * takes something away, and asks why (D226's reason rule): one rule for hide, remove and restore.
+ */
+function contentUndoTakesAway(row: Doc<'moderationActions'>): boolean {
+  const { priorStatus, newStatus } = meta(row) as {
+    priorStatus: ContentStatus;
+    newStatus: ContentStatus;
+  };
+  if (STATUS_SEVERITY[priorStatus] > STATUS_SEVERITY[newStatus]) return true;
+  return (cascadeOf(row) ?? []).some(
+    (m) => STATUS_SEVERITY[m.from as ContentStatus] > STATUS_SEVERITY[m.to as ContentStatus],
+  );
+}
+
+/**
  * hide / remove → the status it took the item down from, as the row recorded it. Not "visible"
  * regardless: removing an item a moderator had already hidden, then undoing the removal, must leave
- * it hidden, never publish it. A takedown that changed nothing (hiding the hidden) has nothing to
- * undo, and a row without the prior status can't say what to put back.
+ * it hidden, never publish it. A takedown that changed nothing — not the item, and on a Post none of
+ * its members — has nothing to undo, and a row without the prior status can't say what to put back.
  */
 const contentUndoTakedown: UndoHandler = {
   blocked: (row) => {
@@ -70,31 +101,23 @@ const contentUndoTakedown: UndoHandler = {
     if (priorStatus !== 'visible' && priorStatus !== 'hidden' && priorStatus !== 'removed') {
       return PREDATES;
     }
-    if (priorStatus === newStatus) {
+    if (priorStatus === newStatus && (cascadeOf(row) ?? []).length === 0) {
       return `Nothing changed: it was already ${priorStatus}.`;
     }
     return contentBlocked(row);
   },
-  // Back to visible, or down from removed to hidden, gives something back; back up to removed from a
-  // hide (hiding a removed item, then undoing it) is a `remove`, which asks why like any other.
-  undoTakesAway: (row) => {
-    const { priorStatus, newStatus } = meta(row) as {
-      priorStatus: ContentStatus;
-      newStatus: ContentStatus;
-    };
-    return STATUS_SEVERITY[priorStatus] > STATUS_SEVERITY[newStatus];
-  },
+  undoTakesAway: contentUndoTakesAway,
   run: (call) => takeContentBackTo(meta(call.row).priorStatus as ContentStatus)(call),
 };
 
-/** restore → the status it restored from. */
+/** restore → the status it restored from (a Post's members, each to theirs). */
 const contentUndoRestore: UndoHandler = {
   blocked: (row) => {
     const prior = meta(row).priorStatus;
     if (prior !== 'hidden' && prior !== 'removed') return PREDATES;
     return contentBlocked(row);
   },
-  undoTakesAway: () => true,
+  undoTakesAway: contentUndoTakesAway,
   run: (call) => takeContentBackTo(meta(call.row).priorStatus as ContentStatus)(call),
 };
 

@@ -290,6 +290,9 @@ export async function setContentStatus(
     const priorStatus = typedTarget.moderationStatus;
 
     const audit = { actorId: actor._id, reason: args.reason, now };
+    // Every member a Post's verdict moved, and from what to what — on the Post's own row, so its undo
+    // can put each member back to its own prior status (founder call, 2026-11-13).
+    const cascaded: PostCascade[] = [];
     if (args.targetType === 'report') {
       await applyReportStatus(ctx, target as Doc<'reports'>, args.status, audit);
     } else if (args.targetType === 'post') {
@@ -305,6 +308,7 @@ export async function setContentStatus(
         if (args.status !== 'visible') {
           if (report.moderationStatus !== 'visible') continue;
           await applyReportStatus(ctx, report, args.status, audit);
+          cascaded.push({ id: report._id, from: 'visible', to: args.status });
           await writeAudit(ctx, {
             actorId: actor._id,
             action: ACTION_FOR_STATUS[args.status],
@@ -330,6 +334,7 @@ export async function setContentStatus(
             .first();
           if (last?.metadata?.cascadedFromPostId !== post._id) continue;
           await applyReportStatus(ctx, report, 'visible', audit);
+          cascaded.push({ id: report._id, from: memberPrior, to: 'visible' });
           await writeAudit(ctx, {
             actorId: actor._id,
             action: 'restore',
@@ -371,11 +376,87 @@ export async function setContentStatus(
       targetType: args.targetType,
       targetId: args.targetId,
       reason: args.reason,
-      metadata: { priorStatus, newStatus: args.status },
+      metadata: {
+        priorStatus,
+        newStatus: args.status,
+        ...(args.targetType === 'post' ? { cascaded } : {}),
+      },
       createdAt: now,
     });
     return targetId;
   }
+}
+
+/** One member a Post's verdict moved: the Report, the status it had, the status it was given. */
+export interface PostCascade {
+  id: Id<'reports'>;
+  from: ModerationStatus;
+  to: ModerationStatus;
+}
+
+/**
+ * The undo of a Post's verdict (D226; founder call, 2026-11-13): the Post back to the status it had,
+ * and **every member the verdict moved back to its own prior status** — whatever the Post returns
+ * to. Not `setContentStatus` in reverse: its cascade only ever revives members on the way to
+ * visible, so removing a hidden Post and undoing it left a Report the removal took down removed,
+ * with its own undo refused as "followed from the Post".
+ *
+ * A member is put back only while the verdict is still the last word on it — the newest row on it
+ * is this verdict's cascade row (same Post, same instant) and it still has the status the verdict
+ * gave it. A member a moderator has acted on since keeps that later decision. The Post's own row is
+ * written last, so it is the newest on the Post, and lists the members it moved, so its undo is
+ * the exact inverse again.
+ */
+export async function revertPostVerdict(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  { row, reason }: { row: Doc<'moderationActions'>; reason: string },
+): Promise<void> {
+  const { priorStatus, cascaded } = row.metadata as {
+    priorStatus: ModerationStatus;
+    cascaded: PostCascade[];
+  };
+  const postId = ctx.db.normalizeId('posts', row.targetId);
+  const post = postId ? await ctx.db.get(postId) : null;
+  if (!post) throw new ConvexError('Target not found');
+  const now = Date.now();
+  const audit = { actorId: actor._id, reason, now };
+
+  // The Post first, so a member's change doesn't re-derive the Post's status from the old one.
+  await ctx.db.patch(post._id, { moderationStatus: priorStatus });
+  const reverted: PostCascade[] = [];
+  for (const member of cascaded) {
+    const report = await ctx.db.get(member.id);
+    if (!report || report.moderationStatus !== member.to) continue;
+    const last = await ctx.db
+      .query('moderationActions')
+      .withIndex('by_target', (q) => q.eq('targetType', 'report').eq('targetId', report._id))
+      .order('desc')
+      .first();
+    if (last?.metadata?.cascadedFromPostId !== post._id || last.createdAt !== row.createdAt) {
+      continue;
+    }
+    await applyReportStatus(ctx, report, member.from, audit);
+    await writeAudit(ctx, {
+      actorId: actor._id,
+      action: ACTION_FOR_STATUS[member.from],
+      targetType: 'report',
+      targetId: report._id,
+      reason,
+      metadata: { priorStatus: member.to, newStatus: member.from, cascadedFromPostId: post._id },
+      createdAt: now,
+    });
+    reverted.push({ id: report._id, from: member.to, to: member.from });
+  }
+  await writeAudit(ctx, {
+    actorId: actor._id,
+    action: ACTION_FOR_STATUS[priorStatus],
+    targetType: 'post',
+    targetId: post._id,
+    reason,
+    metadata: { priorStatus: post.moderationStatus, newStatus: priorStatus, cascaded: reverted },
+    createdAt: now,
+  });
 }
 
 /**
