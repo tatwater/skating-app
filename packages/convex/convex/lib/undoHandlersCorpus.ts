@@ -131,15 +131,28 @@ const undoUnpin: UndoHandler = {
   undoTakesAway: () => UNDO_POLICY.pin_access_alert.takesAway(),
   run: async ({ ctx, actor, row, reason }) => {
     const accessAlertId = row.targetId as Id<'accessAlerts'>;
-    // An author's own retraction and the expiry sweep leave no audit row, so neither can overtake
-    // this one; read them here. Pinning a lapsed claim back would vouch for it with no expiry —
-    // the same refusal the pin's undo makes for one that would have lapsed.
+    // What happened to the claim since the unpin writes no audit row — an author's retraction, the
+    // community's votes resolving it, the expiry sweep, or an expiry the sweep hasn't reached — so
+    // none of it overtakes this one; read the alert's live state here. Only a claim still live in
+    // the community lifecycle can be pinned back: pinning drops its expiry, so pinning a closed or
+    // lapsed one would put a dead claim back on the map for good (the pin's undo refuses the same).
     const alert = await ctx.db.get(accessAlertId);
-    if (alert?.status === 'retracted') {
-      throw new ConvexError('The alert has been retracted since; it can’t be pinned back');
+    const closed =
+      alert?.status === 'retracted'
+        ? 'been retracted'
+        : alert?.status === 'resolved'
+          ? 'been resolved by the people who checked it'
+          : alert?.status === 'expired' ||
+              (alert?.status === 'active' &&
+                alert.expiresAt !== undefined &&
+                alert.expiresAt <= Date.now())
+            ? 'expired'
+            : null;
+    if (closed !== null) {
+      throw new ConvexError(`The alert has ${closed} since; it can’t be pinned back`);
     }
-    if (alert?.status === 'expired') {
-      throw new ConvexError('The alert has expired since; it can’t be pinned back');
+    if (alert?.status !== 'active') {
+      throw new ConvexError('The alert is not in a state that can be pinned back');
     }
     await setOfficialImpl(ctx, actor, { accessAlertId, official: true, reason });
   },

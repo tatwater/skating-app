@@ -368,6 +368,30 @@ describe('undo: access alert pins (D226)', () => {
     expect((await t.run((ctx) => ctx.db.get(alertId)))?.status).toBe('expired');
   });
 
+  test('an unpinned alert the community resolved, or whose clock ran out unswept, is not pinned back', async () => {
+    // Neither writes an audit row — votes resolve a claim, and an expiry is a time the sweep has
+    // not reached yet — so the undo has to read the claim's live state itself.
+    for (const after of [
+      { status: 'resolved' as const },
+      { expiresAt: Date.now() - 1 }, // still `active` as stored; lapsed by the clock
+    ]) {
+      const { t, mod, alertId } = await alertSetup();
+      for (const official of [true, false]) {
+        await mod.as.mutation(api.accessAlerts.setOfficial, {
+          accessAlertId: alertId,
+          official,
+          reason: official ? 'x' : 'y',
+        });
+      }
+      const unpin = await newestOn(t, 'accessAlert', alertId);
+      await t.run((ctx) => ctx.db.patch(alertId, after));
+      await expect(mod.as.mutation(api.undo.run, { actionId: unpin._id })).rejects.toThrow(
+        /resolved by the people who checked it since|expired since/,
+      );
+      expect((await t.run((ctx) => ctx.db.get(alertId)))?.status).not.toBe('official');
+    }
+  });
+
   test('pins and unpins recorded before undo, and an unpin of an unpinned alert, are refused', async () => {
     const { t, mod, alertId } = await alertSetup();
     for (const action of ['pin_access_alert', 'unpin_access_alert'] as const) {
