@@ -3519,6 +3519,13 @@ export default defineSchema({
     reportId: v.optional(v.id('reports')),
     createdAt: v.number(),
     /**
+     * When an erasure (D248) let go of this photo but could not delete it — a blob that outlived the
+     * attempt, or the erased Report's own photo when the reference scan could not answer. The row
+     * stays as the only pointer to its blobs, for the orphan sweep, and is no longer anything of its
+     * uploader's: their export leaves it out. Absent ⇒ not erased.
+     */
+    erasedAt: v.optional(v.number()),
+    /**
      * Scratch mark for `photoReconcile` — the determinate orphan check for an uploader too prolific
      * for the one-shot scan (`REFERENCE_SCAN_CAP`). Set on every candidate, cleared by anything that
      * references it, and whatever is still marked at the end is provably unreferenced.
@@ -3527,12 +3534,6 @@ export default defineSchema({
      * run sets it fresh. Absent ⇒ not currently under consideration, which is why it needs no
      * migration and no index — the sweep pages `by_uploader` and reads the flag in memory.
      */
-    /**
-     * When an erasure (D248) let go of this photo but could not delete it — a blob that outlived the
-     * attempt. The row stays as the only pointer to its blobs, for the orphan sweep, and is no longer
-     * anything of its uploader's: their export leaves it out. Absent ⇒ not erased.
-     */
-    erasedAt: v.optional(v.number()),
     orphanCandidate: v.optional(v.boolean()),
     /**
      * The same scratch mark for `photoReconcile`'s **season-expiry** mode (D66/A05a) — a departed

@@ -35,7 +35,7 @@ import {
 } from './lib/contentVerdicts';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import { MODERATION_ACTIONS, MODERATION_STATUSES, MODERATION_TARGET_TYPES } from './lib/enums';
-import { ERASABLE, refreshEraseClock, withdrawnAtOf } from './lib/eraseClock';
+import { authorRetracted, ERASABLE, refreshEraseClock } from './lib/eraseClock';
 import { closeFlag } from './lib/flagResolution';
 import { withoutLedgerGrantsFor } from './lib/ledgerEditors';
 import { refreshPostLatestSkateEnd, refreshPostSearchText } from './lib/postSync';
@@ -814,7 +814,9 @@ export const overturnVerdict = mutation({
     if (!target) throw new ConvexError('Target not found');
     const withdrawn =
       args.targetType === 'accessAlert'
-        ? withdrawnAtOf('accessAlert', target as Doc<'accessAlerts'>) !== undefined
+        ? // Who retracted it, as `retract` reads it: a verdict it recorded on an alert retracted
+          // before `retractedAt` existed is overturnable before the clocks backfill reaches it.
+          authorRetracted(target as Doc<'accessAlerts'>)
         : authorDeletedAtOf(target as Exclude<typeof target, Doc<'accessAlerts'>>) !== undefined ||
           (args.targetType === 'post' && (await everyMemberWithdrawn(ctx, target as Doc<'posts'>)));
     if (!withdrawn) throw new ConvexError(OVERTURN_NOT_DELETED);

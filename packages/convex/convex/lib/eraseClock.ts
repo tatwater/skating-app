@@ -47,9 +47,18 @@ export function isErasable(targetType: string): targetType is Erasable {
 }
 
 /**
+ * Whether an access alert's own author took it back — who retracted it, whatever the row says about
+ * when (a retraction from before `retractedAt` existed is theirs all the same; the clocks backfill
+ * gives it its time). A moderator's retraction is a moderator's verdict on the claim, not this.
+ */
+export function authorRetracted(alert: Doc<'accessAlerts'>): boolean {
+  return alert.status === 'retracted' && alert.retractedByUserId === alert.createdByUserId;
+}
+
+/**
  * When the item was withdrawn, if it was: its author's deletion, or its filer's retraction. An
- * access alert counts only when its author retracted it — a moderator's retraction is a moderator's
- * verdict on the claim, not the author taking it back. An erased item has no clock left to run.
+ * access alert counts only when its author retracted it ({@link authorRetracted}). An erased item
+ * has no clock left to run.
  */
 export function withdrawnAtOf(type: Erasable, doc: ErasableDoc): number | undefined {
   switch (type) {
@@ -83,9 +92,7 @@ export function withdrawnAtOf(type: Erasable, doc: ErasableDoc): number | undefi
     }
     case 'accessAlert': {
       const alert = doc as Doc<'accessAlerts'>;
-      return alert.status === 'retracted' && alert.retractedByUserId === alert.createdByUserId
-        ? alert.retractedAt
-        : undefined;
+      return authorRetracted(alert) ? alert.retractedAt : undefined;
     }
   }
 }

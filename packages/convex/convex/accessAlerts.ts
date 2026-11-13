@@ -69,7 +69,7 @@ import {
   ACCESS_ALERT_VERDICTS,
   ACCESS_REASONS,
 } from './lib/enums';
-import { refreshEraseClock } from './lib/eraseClock';
+import { authorRetracted, refreshEraseClock } from './lib/eraseClock';
 import { literals } from './lib/validators';
 
 /** Free text has to be bounded somewhere; this is a sentence about a gate, not an essay. */
@@ -378,7 +378,7 @@ export const retract = mutation({
       const verdictReason = reason?.trim() ?? '';
       // Who retracted it, not whether it has a time yet: a retraction from before `retractedAt`
       // existed is the author's all the same (the clocks backfill gives it its time).
-      const authorWithdrew = alert.retractedByUserId === alert.createdByUserId;
+      const authorWithdrew = authorRetracted(alert);
       if (isModerator && !isAuthor && authorWithdrew && verdictReason.length > 0) {
         const now = Date.now();
         const actionId = await writeAudit(ctx, {
@@ -487,7 +487,7 @@ export async function setOfficialImpl(
   if (reason.trim().length === 0) throw new ConvexError('A reason is required');
   // The author's retraction is final (D248): no moderator puts a withdrawn claim back up — not by
   // pinning it, and not by releasing it, which would put it back in the community lifecycle.
-  if (alert.status === 'retracted' && alert.retractedByUserId === alert.createdByUserId) {
+  if (authorRetracted(alert)) {
     throw new ConvexError(
       official
         ? 'Its author retracted this alert, so it can’t be pinned.'

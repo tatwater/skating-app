@@ -692,6 +692,129 @@ describe('nothing of an item outlives its erasure, however much it carries', () 
     expect(erased.map((r) => r.targetId).sort()).toEqual([postId, reportId].sort());
   });
 
+  test("a Report's links and an item's own votes, more than a pass can write, go over several passes", async () => {
+    const { t, author, waterBodyId } = await setup();
+    const { reportIds } = await seedPost(t, author.id, waterBodyId, 2);
+    const [reportId] = reportIds as [Id<'reports'>];
+    const hazardId = await seedHazard(t, author.id, waterBodyId);
+    const linked = await t.run(async (ctx) => {
+      const putInId = await ctx.db.insert('putIns', {
+        waterBodyId,
+        coord: { lat: 0.5, lng: 0.5 },
+        source: 'osm' as const,
+        status: 'visible' as const,
+        createdAt: T0,
+      });
+      const alert = {
+        targetType: 'put_in' as const,
+        putInId,
+        waterBodyId,
+        reason: 'not_plowed' as const,
+        kind: 'blocker' as const,
+        createdByUserId: author.id,
+        createdAt: T0,
+        season: 2026,
+        confirmCount: 0,
+        denyCount: 0,
+      };
+      const alerts: Id<'accessAlerts'>[] = [];
+      const requests: Id<'waterBodyRequests'>[] = [];
+      const putIns: Id<'putIns'>[] = [];
+      for (let i = 0; i < 25; i++) {
+        alerts.push(
+          await ctx.db.insert('accessAlerts', {
+            ...alert,
+            status: 'active' as const,
+            expiresAt: T0 + 365 * DAY,
+            reportId,
+          }),
+        );
+        requests.push(
+          await ctx.db.insert('waterBodyRequests', {
+            kind: 'name_landmark' as const,
+            status: 'open' as const,
+            requesterId: author.id,
+            coord: { lat: 0.5, lng: 0.5 },
+            waterBodyId,
+            name: `Point ${i}`,
+            reportId,
+            createdAt: T0,
+          }),
+        );
+        putIns.push(
+          await ctx.db.insert('putIns', {
+            waterBodyId,
+            coord: { lat: 0.5, lng: 0.5 },
+            source: 'derived' as const,
+            originReportId: reportId,
+            status: 'visible' as const,
+            createdAt: T0,
+          }),
+        );
+        // Older rows can hold more than one of a person's votes on one item.
+        await ctx.db.insert('hazardConfirmations', {
+          hazardId,
+          userId: author.id,
+          verdict: 'still_there' as const,
+          via: 'app_open_nearby' as const,
+          createdAt: T0 + i,
+        });
+      }
+      const retracted = await ctx.db.insert('accessAlerts', {
+        ...alert,
+        status: 'retracted' as const,
+        retractedByUserId: author.id,
+        retractedAt: T0,
+        eraseAt: T0 + WITHDRAWN_ERASE_MS,
+      });
+      for (let i = 0; i < 25; i++) {
+        await ctx.db.insert('accessAlertVotes', {
+          accessAlertId: retracted,
+          userId: author.id,
+          verdict: 'still_blocked' as const,
+          observedAt: T0 + i,
+          createdAt: T0 + i,
+        });
+      }
+      // Withdrawn by its author, as the withdrawal leaves it.
+      await ctx.db.patch(hazardId, {
+        moderationStatus: 'removed',
+        authorDeletedAt: T0,
+        eraseAt: T0 + WITHDRAWN_ERASE_MS,
+      });
+      return { alerts, requests, putIns, retracted };
+    });
+    await author.as.mutation(api.reports.remove, { reportId });
+    advance(31 * DAY);
+    // Twenty writes a pass: every drain runs out part-way at least once.
+    const first = await t.mutation(internal.erasure.eraseDue, { pageSize: 1 });
+    expect(first.more).toBe(true);
+    expect(await get(t, hazardId)).not.toBeNull();
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await get(t, reportId)).toBeNull();
+    expect(await get(t, hazardId)).toBeNull();
+    expect(await get(t, linked.retracted)).toBeNull();
+    // What has its own life stays, without its pointer to the Report.
+    for (const id of [...linked.alerts, ...linked.requests]) {
+      const row = await get(t, id);
+      expect(row).not.toBeNull();
+      expect(row?.reportId).toBeUndefined();
+    }
+    for (const id of linked.putIns) {
+      const row = await get(t, id);
+      expect(row).not.toBeNull();
+      expect(row?.originReportId).toBeUndefined();
+    }
+    expect(await t.run((ctx) => ctx.db.query('hazardConfirmations').collect())).toEqual([]);
+    expect(await t.run((ctx) => ctx.db.query('accessAlertVotes').collect())).toEqual([]);
+    const erased = (await t.run((ctx) => ctx.db.query('moderationActions').collect())).filter(
+      (r) => r.action === 'erase',
+    );
+    expect(erased.map((r) => r.targetId).sort()).toEqual(
+      [reportId, hazardId, linked.retracted].sort(),
+    );
+  });
+
   test("a photo whose blob outlives the delete is no longer the uploader's", async () => {
     const { t, author, waterBodyId } = await setup();
     const { reportIds, photoIds } = await seedPost(t, author.id, waterBodyId, 2);

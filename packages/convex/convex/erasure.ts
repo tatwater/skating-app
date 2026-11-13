@@ -20,8 +20,9 @@
  * says only that the item is gone, and when.
  *
  * Paged like account deletion: each tick erases up to a page per kind and schedules itself again
- * while a page came back full. Erasing takes a row out of the range, so re-reading the first page
- * walks forward with no cursor; `pageSize` is the test seam for that continuation.
+ * while a page came back full, or its write budget ran out part-way (`Budget`). Erasing takes a row
+ * out of the range, so re-reading the first page walks forward with no cursor; `pageSize` is the
+ * test seam for that continuation.
  */
 
 import { ConvexError, v } from 'convex/values';
@@ -30,6 +31,7 @@ import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, type MutationCtx } from './_generated/server';
 import { writeAudit } from './lib/audit';
 import {
+  authorRetracted,
   ERASABLE,
   type Erasable,
   type ErasableDoc,
@@ -72,10 +74,12 @@ interface PhotoWork {
 }
 
 /**
- * What one tick may still write. Every eraser spends it on the rows it removes or unlinks, and when
- * it runs out mid-item the item is left whole and still due — its row is the last thing deleted, so
- * nothing of it is ever stranded behind a row that is already gone — and the next pass resumes it.
- * Sized from the page seam, so a test can force an item across passes.
+ * What one tick may still write to the rows an item carries without a bound of its own (revisions,
+ * joins, links, the author's own votes — `drain`). An item's bounded writes (its row, its Report's
+ * hazard list, its recording) are not counted. When it runs out mid-item the item is left whole and
+ * still due — its row is the last thing deleted, so nothing of it is ever stranded behind a row that
+ * is already gone — and the next pass resumes it. Sized from the page seam, so a test can force an
+ * item across passes.
  */
 interface Budget {
   left: number;
@@ -85,24 +89,24 @@ interface Budget {
 const WRITES_PER_ROW = 20;
 
 /**
- * Delete or unlink, a bounded page at a time, every row a range still holds. `take` returns the next
- * page of the range; `act` removes each row from the range (a delete, or clearing the indexed link),
- * so the range shrinks and each page is new work. `true` when the range is empty.
+ * Delete or unlink, up to the budget left, every row a range still holds. `take` returns the head
+ * of the range; `act` removes each row from the range (a delete, or clearing the indexed link), so
+ * the range shrinks. `true` when the range is empty.
  */
 async function drain<Row>(
   budget: Budget,
   take: (n: number) => Promise<Row[]>,
   act: (row: Row) => Promise<unknown>,
 ): Promise<boolean> {
-  for (;;) {
-    const n = budget.left;
-    const page = await take(Math.max(n, 1));
-    if (page.length === 0) return true;
-    if (n <= 0) return false;
-    for (const row of page) await act(row);
-    budget.left -= page.length;
-    if (page.length < n) return true;
-  }
+  const n = budget.left;
+  // With nothing left to spend, one row says whether anything is still owed.
+  if (n <= 0) return (await take(1)).length === 0;
+  const page = await take(n);
+  for (const row of page) await act(row);
+  budget.left -= page.length;
+  // A short page was the whole range; a full one spent the budget, and one more row says the rest.
+  if (page.length < n) return true;
+  return (await take(1)).length === 0;
 }
 
 /** `true` when the item was erased; `false` when the budget ran out first (it is still due). */
@@ -236,7 +240,7 @@ export const eraseDue = internalMutation({
     }
     // After every row they hung from is gone, so each uploader's reference scan runs once and no
     // longer counts any of this tick's erased rows.
-    await erasePhotos(ctx, photos);
+    await erasePhotos(ctx, photos, now);
     if (more) {
       await ctx.scheduler.runAfter(0, internal.erasure.eraseDue, {
         ...(pageSize !== undefined ? { pageSize } : {}),
@@ -293,7 +297,7 @@ async function eraseComment(
  * could not answer — loses its link back and, unless still referenced, everything that says anything
  * about a person. One reference scan per uploader, read after all of the tick's erasures.
  */
-async function erasePhotos(ctx: MutationCtx, work: readonly PhotoWork[]) {
+async function erasePhotos(ctx: MutationCtx, work: readonly PhotoWork[], now: number) {
   const byUploader = new Map<string, Set<string> | null>();
   for (const { uploaderId, photoIds, fromReport } of work) {
     if (photoIds.length === 0) continue;
@@ -323,7 +327,7 @@ async function erasePhotos(ctx: MutationCtx, work: readonly PhotoWork[]) {
         takenAt: undefined,
         coord: undefined,
         placeOnMap: false,
-        ...(ours ? { erasedAt: Date.now() } : {}),
+        ...(ours ? { erasedAt: now } : {}),
       });
     }
   }
@@ -572,13 +576,12 @@ export const backfillClocks = internalMutation({
     let set = 0;
     let stamped = 0;
     for (const doc of page.page as ErasableDoc[]) {
-      if (
+      const wasStamped =
         current === 'accessAlert' &&
-        (await stampOldRetraction(ctx, doc as Doc<'accessAlerts'>, now))
-      ) {
-        stamped++;
-      }
-      const fresh = (await ctx.db.get(doc._id)) as ErasableDoc;
+        (await stampOldRetraction(ctx, doc as Doc<'accessAlerts'>, now));
+      if (wasStamped) stamped++;
+      // Only a stamp changed the row since the page read it.
+      const fresh = wasStamped ? ((await ctx.db.get(doc._id)) as ErasableDoc) : doc;
       if (withdrawnAtOf(current, fresh) === undefined || fresh.eraseAt !== undefined) continue;
       if ((await refreshEraseClock(ctx, current, doc._id, now)) !== undefined) set++;
     }
@@ -605,8 +608,7 @@ async function stampOldRetraction(
   alert: Doc<'accessAlerts'>,
   now: number,
 ): Promise<boolean> {
-  if (alert.status !== 'retracted' || alert.retractedAt !== undefined) return false;
-  if (alert.retractedByUserId !== alert.createdByUserId) return false;
+  if (!authorRetracted(alert) || alert.retractedAt !== undefined) return false;
   await ctx.db.patch(alert._id, { retractedAt: now });
   return true;
 }

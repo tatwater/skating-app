@@ -707,6 +707,43 @@ describe('an access alert', () => {
     });
   });
 
+  test("a moderator's verdict on an old, timeless retraction is overturnable before the backfill gives it its clock", async () => {
+    const { t, skater, mod, alertId } = await alertSetup();
+    // As the old writer left it: retracted by its author, no `retractedAt`, no clock.
+    await t.run((ctx) =>
+      ctx.db.patch(alertId, {
+        status: 'retracted',
+        retractedByUserId: skater.id,
+        expiresAt: undefined,
+      }),
+    );
+    await mod.as.mutation(api.accessAlerts.retract, {
+      accessAlertId: alertId,
+      reason: 'a pattern of bogus closures',
+    });
+    expect(await t.run((ctx) => ctx.db.query('contentVerdicts').collect())).toEqual([
+      expect.objectContaining({ targetId: alertId, kind: 'retracted', standing: true }),
+    ]);
+    // The row is still its author's withdrawal, as they left it.
+    expect(await get(t, alertId)).toMatchObject({ retractedByUserId: skater.id });
+    expect((await get(t, alertId))?.retractedAt).toBeUndefined();
+    await mod.as.mutation(api.moderation.overturnVerdict, {
+      targetType: 'accessAlert',
+      targetId: alertId,
+      reason: 'one mistake, not a pattern',
+    });
+    expect(await t.run((ctx) => ctx.db.query('contentVerdicts').collect())).toEqual([
+      expect.objectContaining({ targetId: alertId, standing: false }),
+    ]);
+    // The backfill gives it its 30 days from its own run.
+    vi.setSystemTime(T0 + 5 * DAY);
+    await t.mutation(internal.erasure.backfillClocks, { kind: 'accessAlert' });
+    expect(await get(t, alertId)).toMatchObject({
+      retractedAt: T0 + 5 * DAY,
+      eraseAt: T0 + 5 * DAY + WITHDRAWN_ERASE_MS,
+    });
+  });
+
   test('a moderator retracting their own alert does so by the author rule', async () => {
     const { t, mod, waterBodyId } = await alertSetup();
     const putInId = await t.run((ctx) =>
