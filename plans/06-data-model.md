@@ -41,6 +41,7 @@ One line per table: what it's for, and the decision or phase that made it. Group
 | `dataExports` | one row per export request; the bundle lives in file storage — D33/D62 |
 | `clientSignalEvents` | per-user rate-limit bookkeeping for the client analytics signal — 07-2 |
 | `signInDays` | one row per person per UTC day they opened the app signed in, written once a day by `syncFromClerk`, erased with the account — what the console's *Signed in* and *came back* read (B01 §5.1) |
+| `consolePresence` | one row per staff member, the last instant they had a console page open — the top bar's colleague faces; replaced in place, staff only, erased with the account (B01 §5.1) |
 
 ### Water bodies and the corpus
 

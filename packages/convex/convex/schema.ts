@@ -1402,7 +1402,12 @@ export default defineSchema({
     outcome: literals(['ok', 'capped', 'failed', 'refused', 'skipped'] as const),
     detail: v.optional(v.string()),
     counts: v.optional(v.record(v.string(), v.number())),
-  }).index('by_started', ['startedAt']),
+  })
+    .index('by_started', ['startedAt'])
+    // ── B01 server reads: the Overview's Machinery card ──
+    // Each job's last run: the pump beats every few minutes, so the newest rows overall would bury the
+    // six-hourly poll. Every field is required — no sparse-index trap.
+    .index('by_kind_started', ['kind', 'startedAt']),
 
   // Once per key per New York day (A06i): an operator alert — a misconfigured job polls every six
   // hours, and four identical emails a day is how an inbox learns to ignore the fifth — or a full
@@ -1670,6 +1675,11 @@ export default defineSchema({
     // The depth loader's lookup by our own key (A09). `eq()` only — an optional field's index is not
     // sparse, so a range here would walk every un-keyed legacy row first.
     .index('by_sub_area_key', ['subAreaKey'])
+    // ── B01 server reads: the Overview's Corpus card ──
+    // Chord re-fits waiting across bodies (D215). Both fields are optional, so their indexes are not
+    // sparse: every read is an `eq()` on an outcome, or a range with a lower bound, never bare.
+    .index('by_mouth_review', ['mouthReview.outcome'])
+    .index('by_mouth_stale', ['mouthStale'])
     .searchIndex('search_subarea', { searchField: 'searchText' }),
 
   // The sub-area spatial index (A02) — the third table on A01's shared ladder-grid mechanism, same
@@ -2604,7 +2614,11 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index('by_report', ['reportId'])
-    .index('by_author', ['authorId']), // profile #comments count + enumerate a user's comments (D13)
+    .index('by_author', ['authorId']) // profile #comments count + enumerate a user's comments (D13)
+    // ── B01 server reads: the Overview's Metrics ──
+    // The day rollup's comments (`comments_created`, a contributor's day) and the season's reach, read
+    // by a bounded time range. `createdAt` is required, so nothing sorts as `undefined` ahead of it.
+    .index('by_created_at', ['createdAt']),
 
   hazards: defineTable({
     waterBodyId: v.id('waterBodies'),
@@ -2747,7 +2761,11 @@ export default defineSchema({
     // footprint is recomputed from and what `unmerge` walks. An equality read on a field almost every
     // row leaves unset, so it costs nothing to carry and turns "what was merged into this?" from a
     // scan of the body's hazards into a lookup.
-    .index('by_merged_into', ['mergedIntoHazardId']),
+    .index('by_merged_into', ['mergedIntoHazardId'])
+    // ── B01 server reads: the Overview's Metrics ──
+    // *First-time contributors*: a person's earliest hazard is the first row of this range.
+    // `by_author_and_water_body` orders by body, not by time, so it can't answer "the first one".
+    .index('by_author_created', ['createdByUserId', 'createdAt']),
   // NOTE: no spatial index for hazards (Phase 09a call 6). Hazards are only ever queried per body —
   // the map renders them for the selected lake, the mobile cache stores them per cached body, and the
   // proximity evaluator runs against that same cached set. A third spatial index
@@ -3386,7 +3404,11 @@ export default defineSchema({
     .index('by_target', ['targetType', 'targetId'])
     .index('by_rater', ['raterId'])
     // Enforce one rating per (rater, target) via a point lookup on this compound index (D50).
-    .index('by_rater_target', ['raterId', 'targetType', 'targetId']),
+    .index('by_rater_target', ['raterId', 'targetType', 'targetId'])
+    // ── B01 server reads: the Overview's Metrics ──
+    // Kudos are positive reactions (the founder, 2026-11-13): the day rollup reads a day's ratings by
+    // time and counts the helpful ones (`positive_reactions`). Backfillable — the rows are on disk.
+    .index('by_created_at', ['createdAt']),
 
   photos: defineTable({
     storageId: v.string(), // Convex file storage ref (optimized full image, D31)
@@ -4226,4 +4248,24 @@ export default defineSchema({
     .index('by_started', ['startedAt'])
     .index('by_kind_started', ['kind', 'startedAt'])
     .index('by_campaign', ['campaignId', 'startedAt']),
+
+  // ── B01 server reads: colleague presence ──────────────────────────────────────────────────────
+
+  /**
+   * **Who on staff is in the console now** (B01, the top bar's faces). One row per staff member,
+   * written by `console.heartbeat` while a console page is open — at most once a heartbeat interval,
+   * so a person costs one small write a minute and nothing while away. Staff only (a moderator or
+   * above, `console.presence`): nothing here is about skaters. It carries the profile id and the
+   * last instant seen, and nothing else — not the page, not the device.
+   *
+   * Bounded by staff, not by time: the row is replaced in place, never appended. The read is a range
+   * on `seenAt` over the last few minutes. Erased with the account (D33), and dropped when a person
+   * leaves staff (the heartbeat refuses them, and the read skips anyone no longer staff).
+   */
+  consolePresence: defineTable({
+    userId: v.id('profiles'),
+    seenAt: v.number(),
+  })
+    .index('by_user', ['userId']) // the upsert, and account erasure
+    .index('by_seen_at', ['seenAt']), // who was seen lately: a bounded range
 });
