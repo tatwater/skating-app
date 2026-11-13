@@ -35,6 +35,7 @@ import {
   hoursBetween,
   metricDay,
   metricDayStart,
+  positiveReactionOf,
   REPUTATION_POINT_BUCKETS,
   rate,
   reportStripState,
@@ -48,6 +49,8 @@ import type { Doc } from './_generated/dataModel';
 import { internalMutation, type MutationCtx } from './_generated/server';
 import { isListed } from './lib/listing';
 import { writeMetricSnapshot } from './lib/metrics';
+import { readOpenFlags } from './lib/openFlags';
+import { isCountedComment } from './lib/pulse';
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -289,6 +292,95 @@ async function rollupDay(ctx: MutationCtx, date: string): Promise<void> {
       HOUR_BUCKETS,
     ),
   });
+
+  await rollupPulseDay(ctx, date, from, to, { reports, hazards });
+}
+
+/**
+ * The Overview's daily pulse (B01, Metrics' *Each day*): the day's comments, report photos, kudos,
+ * sign-ins and contributors. Replayable like the rest of the day, so the day backfill fills a past
+ * season from the rows still on disk — except sign-ins before their record began, which stay
+ * unwritten (read as *not recorded*, never as a day nobody came).
+ *
+ * `reports` and `hazards` are the day's rows `rollupDay` already read: a contributor is anyone who
+ * posted a visible report that skated this day, a hazard or a visible comment.
+ */
+async function rollupPulseDay(
+  ctx: MutationCtx,
+  date: string,
+  from: number,
+  to: number,
+  day: { reports: Doc<'reports'>[]; hazards: Doc<'hazards'>[] },
+): Promise<void> {
+  const comments = (
+    await capped(
+      ctx.db
+        .query('comments')
+        .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to))
+        .take(DAY_SCAN_CAP),
+      DAY_SCAN_CAP,
+      `comments on ${date}`,
+    )
+  ).filter(isCountedComment);
+  await writeMetricSnapshot(ctx, 'comments_created', date, {
+    scalar: comments.length,
+    meta: { reports: new Set(comments.map((c) => c.reportId)).size },
+  });
+
+  // A photo counts once it belongs to a report: an upload never attached is not a contribution.
+  const photos = (
+    await capped(
+      ctx.db
+        .query('photos')
+        .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to))
+        .take(DAY_SCAN_CAP),
+      DAY_SCAN_CAP,
+      `photos on ${date}`,
+    )
+  ).filter((p) => p.reportId !== undefined);
+  await writeMetricSnapshot(ctx, 'photos_added', date, {
+    scalar: photos.length,
+    meta: { reports: new Set(photos.map((p) => p.reportId)).size },
+  });
+
+  // Kudos are positive reactions (the founder, 2026-11-13): a thumbs-down is never counted.
+  const ratings = await capped(
+    ctx.db
+      .query('reportRatings')
+      .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to))
+      .take(DAY_SCAN_CAP),
+    DAY_SCAN_CAP,
+    `ratings on ${date}`,
+  );
+  const kinds = ratings.flatMap((r) => {
+    const kind = positiveReactionOf(r.verdict);
+    return kind === null ? [] : [kind];
+  });
+  await writeMetricSnapshot(ctx, 'positive_reactions', date, {
+    scalar: kinds.length,
+    meta: countBy(kinds),
+  });
+
+  const contributors = new Set<string>([
+    ...day.reports.map((r) => r.authorId as string),
+    ...day.hazards.map((h) => h.createdByUserId as string),
+    ...comments.map((c) => c.authorId as string),
+  ]);
+  await writeMetricSnapshot(ctx, 'daily_contributors', date, { scalar: contributors.size });
+
+  // Sign-ins are forward-only (B01-1): a day before the record's first row was never measured.
+  const firstRecorded = await ctx.db.query('signInDays').withIndex('by_day').first();
+  if (firstRecorded !== null && firstRecorded.day <= date) {
+    const signIns = await capped(
+      ctx.db
+        .query('signInDays')
+        .withIndex('by_day', (q) => q.eq('day', date))
+        .take(DAY_SCAN_CAP),
+      DAY_SCAN_CAP,
+      `sign-ins on ${date}`,
+    );
+    await writeMetricSnapshot(ctx, 'signed_in', date, { scalar: signIns.length });
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -313,6 +405,12 @@ async function rollupDistributions(ctx: MutationCtx, now: number): Promise<void>
     'profile distributions',
   );
   const live = profiles.filter((p) => p.status !== 'deleted');
+  // Every account that exists, for the Overview's *N users* and Metrics' *total*. A floor once the
+  // scan stops short, and it says so.
+  await writeMetricSnapshot(ctx, 'accounts_total', date, {
+    scalar: live.length,
+    ...(profiles.length >= PROFILE_SCAN_CAP ? { meta: { capped: true } } : {}),
+  });
   await writeMetricSnapshot(ctx, 'reputation_points_hist', date, {
     buckets: histogram(
       live.map((p) => p.reputationPoints),
@@ -399,17 +497,11 @@ async function rollupActivity(ctx: MutationCtx, now: number): Promise<void> {
 async function rollupOperational(ctx: MutationCtx, now: number): Promise<void> {
   const date = metricDay(now);
 
-  const openFlags: Doc<'contentFlags'>[] = [];
-  for (const status of ['open', 'reviewing'] as const) {
-    openFlags.push(
-      ...(await capped(
-        ctx.db
-          .query('contentFlags')
-          .withIndex('by_status', (q) => q.eq('status', status))
-          .take(DAY_SCAN_CAP),
-        DAY_SCAN_CAP,
-        `${status} flags`,
-      )),
+  // Open means `open` or `reviewing` — the one definition every count of open flags reads.
+  const { flags: openFlags, capped: flagsCapped } = await readOpenFlags(ctx, DAY_SCAN_CAP);
+  if (flagsCapped) {
+    console.warn(
+      `analyticsRollup: open flags hit the ${DAY_SCAN_CAP}-row scan cap — the flag queue is computed from a partial slice.`,
     );
   }
   // Split by the safety lane, because the two have different urgency: a backlog of spam flags is a
@@ -590,6 +682,8 @@ async function scheduleRollupJobs(ctx: MutationCtx, now: number): Promise<void> 
   await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupDistributionsJob, {});
   await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupActivityJob, {});
   await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupOperationalJob, {});
+  // The season so far, counted once each (B01): its own self-chaining walk (`seasonReach.ts`).
+  await ctx.scheduler.runAfter(0, internal.seasonReach.start, {});
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -650,6 +744,7 @@ export const backfillStep = internalMutation({
     await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupDistributionsJob, {});
     await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupActivityJob, {});
     await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupOperationalJob, {});
+    await ctx.scheduler.runAfter(0, internal.seasonReach.start, {});
   },
 });
 
