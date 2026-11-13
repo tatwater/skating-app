@@ -30,9 +30,15 @@ import {
   MAX_ROSTER_SITES,
   MAX_SAMPLE_SITES,
   mergeLows,
+  resolveSeason,
   type SeasonWatchSettings,
+  seasonFloorDate,
+  seasonOf,
+  seasonRecordSpan,
   seasonStartYear,
   validateSeasonWatchSettings,
+  winterNeeds,
+  winterRunNights,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 
@@ -1032,3 +1038,192 @@ export const cliStatus = internalQuery({
     return { config, record };
   },
 });
+
+// ─── B01 server reads: the season at a glance, for moderators ───────────────────────────────────
+//
+// The shell's season tape (H1) and the Overview's four season tiles (S3). `overview` above is the
+// Seasons page's read: admin-only, and heavy (it samples the sites). These are neither: one season
+// row, the settings version, and — for the tiles — the season's stored lows and a bounded look at
+// its first reports. Nothing here says a lake froze or that ice is safe (D3): the watch is a
+// schedule for the machines, winter is a share of overnight air lows, and the first skate is a
+// report someone filed from on the ice.
+
+/** The most stored series a season's winter count reads (roster, pinned and sample, with room). */
+const SUMMARY_SERIES_CAP = 200;
+
+/** The most reports the first-skate look reads before it says *not recorded*. */
+const FIRST_SKATE_SCAN = 500;
+
+/** A season's watch record, or `null` while no night has opened it. */
+async function watchRecord(ctx: QueryCtx, label: string) {
+  return await ctx.db
+    .query('imageryIngestSeasons')
+    .withIndex('by_season', (q) => q.eq('season', label))
+    .unique();
+}
+
+/** The settings a season's facts are read under: the version that decided it, else the current. */
+async function settingsFor(
+  ctx: QueryCtx,
+  record: Doc<'imageryIngestSeasons'> | null,
+): Promise<SeasonWatchSettings> {
+  return record?.settings ?? (await latestSettings(ctx))?.settings ?? DEFAULT_SEASON_WATCH_SETTINGS;
+}
+
+/** The parts of the watch record the tape and the watch tile draw (`WatchRecord` in the web app). */
+function watchFacts(record: Doc<'imageryIngestSeasons'>) {
+  return {
+    opensOn: record.opensOn,
+    openedBy: record.openedBy,
+    closesOn: record.closesOn ?? null,
+    opening: record.opening ? { sentinels: record.opening.sentinels } : null,
+    sentinels: record.sentinels ?? [],
+  };
+}
+
+/**
+ * The shell's season tape (H1): the watch's opening (for the *Day N* badge and its mark), the first
+ * imagery-line night, the night winter set in region-wide, and the close. Dates are the record's
+ * calendar days (`YYYY-MM-DD`); `countsFrom` is the floor nights count from while the watch waits.
+ */
+export const tape = query({
+  args: { season: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    await requireCapability(ctx, 'season.summary');
+    const season = resolveSeason(args.season, seasonOf(Date.now()));
+    const label = archiveSeasonLabel(season);
+    const record = await watchRecord(ctx, label);
+    const settings = await settingsFor(ctx, record);
+    return {
+      season,
+      countsFrom: seasonFloorDate(label, settings.startMonthDay),
+      watch: record === null ? null : watchFacts(record),
+      imageryNudgeOn: record?.imageryNudgeOn ?? null,
+      winterFrom: record?.winterFrom ?? null,
+    };
+  },
+});
+
+/**
+ * The Overview's four season tiles (S3): the watch, winter region-wide, imagery and the first skate.
+ * Each is `null` where nothing records it; the web app's adapters (`seasonFacts.ts`) turn the
+ * record's dates into the tiles' instants in the reader's zone.
+ *
+ * - `watch` — the record (`iceWatchFromRecord`'s input), `null` while waiting; `countsFrom` beside it.
+ * - `winter` — `not-yet`, or the night it set in: how many of the reporting bodies were at or below
+ *   freezing, how many the rule needs, and how many nights in a row it held (`winterRunNights` over
+ *   the season's stored lows, under the settings that decided the season). `null` for a winter
+ *   recorded without its night's detail, or when the stored lows run past the read's bound.
+ * - `imagery` — not started, running or paused (from the record), the granules cut (landed and
+ *   empty), and when the newest frame was indexed. When the cutter was pinned is not recorded.
+ * - `firstSkate` — the season's first visible report from on the ice, from 1 October, and last
+ *   winter's; `null` when the bounded look can't say.
+ */
+export const homeSummary = query({
+  args: { season: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    await requireCapability(ctx, 'season.summary');
+    const now = Date.now();
+    const season = resolveSeason(args.season, seasonOf(now));
+    const label = archiveSeasonLabel(season);
+    const record = await watchRecord(ctx, label);
+    const settings = await settingsFor(ctx, record);
+
+    return {
+      season,
+      countsFrom: seasonFloorDate(label, settings.startMonthDay),
+      watch: record === null ? null : watchFacts(record),
+      winter: await winterSummary(ctx, label, record, settings),
+      imagery: await imagerySummary(ctx, label, record),
+      firstSkate: await firstSkateSummary(ctx, season, now),
+    };
+  },
+});
+
+async function winterSummary(
+  ctx: QueryCtx,
+  label: string,
+  record: Doc<'imageryIngestSeasons'> | null,
+  settings: SeasonWatchSettings,
+) {
+  if (record === null || record.winterFrom === null) return { state: 'not-yet' as const };
+  if (record.winter === undefined) return null;
+  const docs = await ctx.db
+    .query('seasonWatchSeries')
+    .withIndex('by_season_body', (q) => q.eq('season', label))
+    .take(SUMMARY_SERIES_CAP + 1);
+  if (docs.length > SUMMARY_SERIES_CAP) return null;
+  const sentinels = new Set<string>((record.sentinels ?? []).map((s) => s.waterBodyId));
+  const sites = docs.map((d) => ({
+    siteId: d.waterBodyId as string,
+    ...(sentinels.has(d.waterBodyId) ? { sentinel: true } : {}),
+    days: expandLows(d),
+  }));
+  const options = { freezeC: settings.freezeC, winterFraction: settings.winterFraction };
+  return {
+    state: 'set' as const,
+    from: record.winterFrom,
+    nights: winterRunNights(sites, record.winterFrom, options),
+    frozen: record.winter.frozen.length,
+    reporting: record.winter.reporting,
+    needs: winterNeeds(record.winter.reporting, settings.winterFraction),
+  };
+}
+
+async function imagerySummary(
+  ctx: QueryCtx,
+  label: string,
+  record: Doc<'imageryIngestSeasons'> | null,
+) {
+  const counts = await ctx.db
+    .query('imageryCounts')
+    .withIndex('by_season', (q) => q.eq('season', label))
+    .unique();
+  // The newest frame row of any season: its creation is when the index first saw it land.
+  const newest = await ctx.db.query('imageryFrames').order('desc').first();
+  const state =
+    record?.imageryStartedAt === undefined
+      ? ('not-started' as const)
+      : record.imageryPausedAt !== undefined
+        ? ('paused' as const)
+        : ('running' as const);
+  return {
+    state,
+    granules: counts === null ? 0 : counts.landed + counts.empty,
+    lastLandedAt: newest !== null && newest.season === label ? newest._creationTime : null,
+  };
+}
+
+/** The first visible report from on the ice in a season's record window, or what the look found. */
+async function firstOnIce(
+  ctx: QueryCtx,
+  season: number,
+  now: number,
+): Promise<{ at: number; body: string } | 'none' | 'unknown'> {
+  const span = seasonRecordSpan(season, now);
+  if (span === null) return 'none';
+  const rows = await ctx.db
+    .query('reports')
+    .withIndex('by_moderation_and_skate_end_time', (q) =>
+      q
+        .eq('moderationStatus', 'visible')
+        .gte('skateEndTime', span.from)
+        .lt('skateEndTime', span.to),
+    )
+    .take(FIRST_SKATE_SCAN);
+  const hit = rows.find((r) => r.observedFrom === 'on_ice');
+  if (hit === undefined) return rows.length >= FIRST_SKATE_SCAN ? 'unknown' : 'none';
+  const body = await ctx.db.get(hit.waterBodyId);
+  return { at: hit.skateEndTime, body: body?.name ?? 'A body since removed' };
+}
+
+async function firstSkateSummary(ctx: QueryCtx, season: number, now: number) {
+  const thisSeason = await firstOnIce(ctx, season, now);
+  if (thisSeason === 'unknown') return null;
+  const last = await firstOnIce(ctx, season - 1, now);
+  return {
+    at: thisSeason === 'none' ? null : thisSeason.at,
+    body: thisSeason === 'none' ? null : thisSeason.body,
+    lastWinter: typeof last === 'object' ? last : null,
+  };
+}
