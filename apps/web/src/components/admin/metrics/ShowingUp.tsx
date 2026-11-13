@@ -91,7 +91,12 @@ export function ShowingUpStats({ week }: { week: ShowingUpData['week'] }) {
           value={contributors.people}
           unit="this week"
           sub={
-            contributors.firstTime > 0 ? `${contributors.firstTime} for the first time` : undefined
+            // Who among them is new can be unknown while the count is not: say so, never a zero.
+            contributors.firstTime === null
+              ? 'First-timers not recorded'
+              : contributors.firstTime > 0
+                ? `${contributors.firstTime} for the first time`
+                : undefined
           }
         />
       )}

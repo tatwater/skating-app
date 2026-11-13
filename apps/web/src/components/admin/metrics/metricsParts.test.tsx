@@ -293,3 +293,19 @@ describe('the season before its window opens', () => {
     expect(screen.getByText('11')).toBeInTheDocument();
   });
 });
+
+describe('Showing up — contributors this week', () => {
+  const week = { reports: null, accounts: null, signedIn: null };
+  const tile = () => screen.getByText('Contributors').parentElement as HTMLElement;
+
+  it('keeps the count when who is new can’t be told, and says so', () => {
+    render(<ShowingUpStats week={{ ...week, contributors: { people: 6, firstTime: null } }} />);
+    expect(tile()).toHaveTextContent('6');
+    expect(tile()).toHaveTextContent('First-timers not recorded');
+  });
+
+  it('names the first-timers when it can', () => {
+    render(<ShowingUpStats week={{ ...week, contributors: { people: 6, firstTime: 2 } }} />);
+    expect(tile()).toHaveTextContent('2 for the first time');
+  });
+});

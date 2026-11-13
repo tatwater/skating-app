@@ -384,7 +384,7 @@ async function weekContributors(
   ctx: QueryCtx,
   week: { from: number; to: number },
   weekReports: readonly Doc<'reports'>[],
-): Promise<{ people: number; firstTime: number } | null> {
+): Promise<{ people: number; firstTime: number | null } | null> {
   const { people, capped } = await contributorsBetween(
     ctx,
     week.from,
@@ -392,11 +392,14 @@ async function weekContributors(
     WEEK_CAP,
     weekReports,
   );
-  if (capped || people.size > FIRST_TIME_CAP) return null;
+  // The count is known whenever the reads were whole; who among them is new is a second question,
+  // and not being able to answer it for one person never blanks the count.
+  if (capped) return null;
+  if (people.size > FIRST_TIME_CAP) return { people: people.size, firstTime: null };
   let firstTime = 0;
   for (const id of people) {
     const first = await firstContributionAt(ctx, id);
-    if (first === 'unknown') return null;
+    if (first === 'unknown') return { people: people.size, firstTime: null };
     if (first !== null && first >= week.from) firstTime++;
   }
   return { people: people.size, firstTime };

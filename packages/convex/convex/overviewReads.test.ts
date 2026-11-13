@@ -1008,7 +1008,7 @@ describe('contributions — one rule for every contributors figure', () => {
     expect(await read(3)).toEqual({ people: 2, capped: false });
   });
 
-  test('first-time is not recorded when a kind’s first rows are all withdrawn', async () => {
+  test('an unsettled first contribution blanks only first-timers, never the count', async () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');
     const body = await seedBody(t, 'Mascoma Lake');
@@ -1017,7 +1017,12 @@ describe('contributions — one rule for every contributors figure', () => {
       await seedReport(t, a.id, body, NOW - (90 - i) * DAY, { authorDeletedAt: NOW });
     }
     await seedReport(t, a.id, body, NOW - DAY);
-    expect((await mod.as.query(api.metrics.showingUp, {})).showingUp.week.contributors).toBeNull();
+    // Her first ten reports were withdrawn, so whether this week's is her first can't be told; that
+    // she contributed this week can.
+    expect((await mod.as.query(api.metrics.showingUp, {})).showingUp.week.contributors).toEqual({
+      people: 1,
+      firstTime: null,
+    });
   });
 
   test('the season walk counts every kind once per person, and only reports by state', async () => {
@@ -1227,28 +1232,57 @@ describe('the season’s reach', () => {
     expect(reach.people.signedIn).toBe(320);
   });
 
-  test('a season older than the sign-in record keeps reads signed-in as not recorded', async () => {
+  test('a season older than the sign-in record: never counted from a remnant, never erased', async () => {
     const t = convexTest(schema, modules);
     const a = await seedUser(t, 'a');
     await t.run(async (ctx) => {
       await ctx.db.insert('signInDays', { userId: a.id, day: '2025-01-10', firstAt: NOW });
       await ctx.db.insert('signInDays', { userId: a.id, day: '2026-01-10', firstAt: NOW });
     });
-    // 2024–25 is past what D254 keeps: whatever rows are left, its figure is not recorded.
+    const reach = async (date: string) =>
+      (await readSnapshot(t, 'season_reach', date))?.meta as {
+        people: { signedIn: number };
+        capped: string[];
+      };
+    // 2024–25 is past what D254 keeps, and no walk ever recorded it: not recorded.
     await walkReach(t, 2024);
-    const old = (await readSnapshot(t, 'season_reach', '2025-06-30'))?.meta as {
-      people: { signedIn: number };
-      capped: string[];
-    };
-    expect(old.capped).toContain('signedIn');
+    expect((await reach('2025-06-30')).capped).toContain('signedIn');
     // Last season is kept whole, and counted.
     await walkReach(t, 2025);
-    const last = (await readSnapshot(t, 'season_reach', '2026-06-30'))?.meta as {
-      people: { signedIn: number };
+    expect((await reach('2026-06-30')).capped).not.toContain('signedIn');
+    expect((await reach('2026-06-30')).people.signedIn).toBe(1);
+  });
+
+  test('a re-walk keeps the signed-in figure an earlier walk recorded once the rows are gone', async () => {
+    const t = convexTest(schema, modules);
+    // An earlier walk, run while 2024–25's rows were whole, counted 41 people.
+    await snapshot(t, 'season_reach', '2025-06-30', {
+      meta: {
+        season: 2024,
+        through: '2025-06-30',
+        counts: { reports: 0, comments: 0, kudos: 0, photos: 0, hazards: 0 },
+        over: { reports: 0, comments: 0, kudos: 0, photos: 0, hazards: 0 },
+        people: { signedIn: 41, contributors: 0 },
+        vantage: {},
+        states: {},
+        kinds: ['helpful'],
+        capped: [],
+      },
+    });
+    const ada = await seedUser(t, 'ada');
+    const body = await seedBody(t, 'Kezar Lake');
+    await seedReport(t, ada.id, body, Date.UTC(2025, 0, 12));
+    await walkReach(t, 2024);
+    const meta = (await readSnapshot(t, 'season_reach', '2025-06-30'))?.meta as {
+      people: { signedIn: number; contributors: number };
+      counts: { reports: number };
       capped: string[];
     };
-    expect(last.capped).not.toContain('signedIn');
-    expect(last.people.signedIn).toBe(1);
+    // Signed in is kept, never erased for want of rows; what the walk could read in full it corrects.
+    expect(meta.people.signedIn).toBe(41);
+    expect(meta.capped).not.toContain('signedIn');
+    expect(meta.counts.reports).toBe(1);
+    expect(meta.people.contributors).toBe(1);
   });
 
   test('walks nothing before the record opens, and a past season whole', async () => {

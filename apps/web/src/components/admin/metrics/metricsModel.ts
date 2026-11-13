@@ -354,7 +354,8 @@ export type ShowingUpData = {
     reports: { count: number; people: number } | null;
     accounts: { added: number; total: number } | null;
     signedIn: { people: number; twoDaysOrMore: number } | null;
-    contributors: { people: number; firstTime: number } | null;
+    /** `firstTime` is `null` when someone's first contribution can't be told; the count stands. */
+    contributors: { people: number; firstTime: number | null } | null;
   };
   pulse: Record<PulseKey, PulseSeries | null>;
   /** `null` until a read rolls the season's vantage up. */

@@ -112,6 +112,8 @@ export type Tally = {
   states: Record<string, StateTally>;
   bodies: Record<string, { reports: number; photos: number; people: string[]; last: number }>;
   capped: string[];
+  /** The season's sign-in rows were erased by retention (D254): signed-in can't be counted now. */
+  signInsGone?: boolean;
 };
 
 export function emptyTally(): Tally {
@@ -397,11 +399,14 @@ async function walkPage(
       return { tally: w.pack(), isDone: page.isDone, continueCursor: page.continueCursor };
     }
     case 'signIns': {
-      // A season older than the sign-in record keeps (D254) has had its rows erased: walking it
-      // would write *nobody signed in* over the figure an earlier walk recorded. Not recorded.
+      // A season older than the sign-in record keeps (D254) has had its rows erased: what is left
+      // can't be counted. The final write keeps what an earlier walk recorded, or says not recorded.
       if (span.firstDay < signInRetentionFrom(Date.now())) {
-        w.capped.add('signedIn');
-        return { tally: w.pack(), isDone: true, continueCursor: cursor ?? '' };
+        return {
+          tally: { ...w.pack(), signInsGone: true },
+          isDone: true,
+          continueCursor: cursor ?? '',
+        };
       }
       const page = await ctx.db
         .query('signInDays')
@@ -473,6 +478,31 @@ export function reachMeta(season: Season, through: string, t: Tally) {
   };
 }
 
+/**
+ * A re-walk never replaces a recorded figure with *not recorded*: walking a season whose sign-in
+ * rows retention erased (D254) keeps the signed-in figure an earlier walk stored for it — counted
+ * then, from rows that were whole — and only says *not recorded* when none was. (Every other figure
+ * is read in full from rows still kept, so the walk may correct it.)
+ */
+async function keepRecordedSignIns(
+  ctx: MutationCtx,
+  season: Season,
+  stampedOn: string,
+  meta: ReturnType<typeof reachMeta>,
+  tally: Tally,
+): Promise<ReturnType<typeof reachMeta>> {
+  if (tally.signInsGone !== true) return meta;
+  const earlier = await ctx.db
+    .query('metricSnapshots')
+    .withIndex('by_metric_date', (q) => q.eq('metric', 'season_reach').eq('date', stampedOn))
+    .unique();
+  const was = earlier?.meta as ReturnType<typeof reachMeta> | undefined;
+  if (was !== undefined && was.season === season && !was.capped.includes('signedIn')) {
+    return { ...meta, people: { ...meta.people, signedIn: was.people.signedIn } };
+  }
+  return { ...meta, capped: [...meta.capped, 'signedIn'] };
+}
+
 const stageValidator = v.union(...STAGES.map((s) => v.literal(s)));
 
 /**
@@ -539,7 +569,13 @@ export const step = internalMutation({
     }
 
     await writeMetricSnapshot(ctx, 'season_reach', span.lastDay, {
-      meta: reachMeta(season, span.lastDay, page.tally),
+      meta: await keepRecordedSignIns(
+        ctx,
+        season,
+        span.lastDay,
+        reachMeta(season, span.lastDay, page.tally),
+        page.tally,
+      ),
     });
     await writeMetricSnapshot(ctx, 'most_reported', span.lastDay, {
       meta: {
