@@ -12,7 +12,7 @@
  * as *Not recorded yet*.
  */
 
-import { archiveSeasonAt } from '@skating/core';
+import { archiveSeasonAt, callerNow } from '@skating/core';
 import { v } from 'convex/values';
 import type { Doc } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
@@ -205,11 +205,7 @@ export const overviewJobs = query({
   handler: async (ctx, args) => {
     const viewer = await requireCapability(ctx, 'inbox.read');
     if (!hasCapability(viewer, 'machinery.read')) return null;
-    const serverNow = Date.now();
-    const now =
-      args.now === undefined || !Number.isFinite(args.now)
-        ? serverNow
-        : Math.min(Math.max(args.now, serverNow - CLOCK_SLACK_MS), serverNow + CLOCK_SLACK_MS);
+    const now = callerNow(args.now, Date.now(), CLOCK_SLACK_MS);
     const untracked = Object.keys(crons.crons).filter(
       (name) => !(TRACKED_CRONS as readonly string[]).includes(name),
     ).length;

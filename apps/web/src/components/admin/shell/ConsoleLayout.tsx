@@ -1,4 +1,5 @@
 import { api } from '@skating/convex/api';
+import { seasonOf } from '@skating/core';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useMutation, useQuery } from 'convex/react';
 import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
@@ -44,7 +45,12 @@ export function ConsoleLayout() {
   const now = useMinuteNow();
   const minute = Math.floor(now / 60_000) * 60_000;
 
-  const tapeFacts = useQuery(api.seasonWatch.tape, can('season.summary') ? {} : 'skip');
+  // The season the tape draws, sent: a read keyed on nothing would keep its cached season across
+  // 1 July, and the tape drops facts for another season than its own.
+  const tapeFacts = useQuery(
+    api.seasonWatch.tape,
+    can('season.summary') ? { season: seasonOf(now) } : 'skip',
+  );
   const canColleagues = can('console.colleagues');
   // Held through each minute's new subscription, so the faces don't blink out as it loads.
   const colleagueRows = useHeldRead(

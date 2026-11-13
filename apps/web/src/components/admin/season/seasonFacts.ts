@@ -237,22 +237,31 @@ function skateAt(mark: SkateMark): number {
 }
 
 /** The four tiles from the summary; each `null` where the server records nothing. */
-export function seasonFromSummary(summary: HomeSummary): {
-  watch: IceWatch;
+export function seasonFromSummary(
+  summary: HomeSummary,
+  /**
+   * The season is over (a past season chosen with `?season=`): with no watch record it never
+   * waited — nothing recorded one — so the watch and imagery say *Not recorded yet*, never
+   * "Waiting" or "Starts when the watch asks for it".
+   */
+  past = false,
+): {
+  watch: IceWatch | null;
   winter: RegionWinter | null;
-  imagery: ImageryState;
+  imagery: ImageryState | null;
   firstSkate: FirstSkate | null;
 } {
   const first = summary.firstSkate;
+  const unrecordedPast = past && summary.watch === null;
   return {
-    watch: iceWatchFromRecord(summary.watch, isoDay(summary.countsFrom)),
+    watch: unrecordedPast ? null : iceWatchFromRecord(summary.watch, isoDay(summary.countsFrom)),
     winter:
       summary.winter === null
         ? null
         : summary.winter.state === 'not-yet'
           ? { state: 'not-yet' }
           : { ...summary.winter, from: isoDay(summary.winter.from) },
-    imagery: summary.imagery,
+    imagery: unrecordedPast && summary.imagery.state === 'not-started' ? null : summary.imagery,
     firstSkate:
       first === null
         ? null

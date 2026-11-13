@@ -11,6 +11,7 @@ import {
   inboxFootAges,
   inboxFromOverview,
   inboxTotal,
+  jobWhen,
   machineryTrouble,
   peopleFromOverview,
   suspensionDetail,
@@ -143,6 +144,19 @@ describe('machinery and cost', () => {
     for (const unread of [null, undefined, 'withheld'] as const) {
       expect(machineryTrouble(unread)).toEqual({ stalled: 0, failed: 0 });
     }
+  });
+
+  it('writes when a job last ran: minutes within the hour, then the clock, the weekday, the date', () => {
+    // Friday 13 November 2026, 15:00 in the reader's zone.
+    const now = new Date(2026, 10, 13, 15, 0).getTime();
+    const MIN = 60_000;
+    expect(jobWhen(null, now)).toBe('—');
+    expect(jobWhen(now - 41 * MIN, now)).toBe('41 min');
+    // A run the page's minute clock hasn't caught up to reads as just now, never a negative age.
+    expect(jobWhen(now + 30_000, now)).toBe('0 min');
+    expect(jobWhen(new Date(2026, 10, 13, 4, 12).getTime(), now)).toBe('04:12');
+    expect(jobWhen(new Date(2026, 10, 12, 22, 14).getTime(), now)).toBe('Thu 22:14');
+    expect(jobWhen(new Date(2026, 10, 3, 9, 0).getTime(), now)).toBe('3 Nov');
   });
 
   it('writes dollars to the cent', () => {

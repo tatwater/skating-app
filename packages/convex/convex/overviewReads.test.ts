@@ -932,6 +932,38 @@ describe('contributions — one rule for every contributors figure', () => {
     });
   });
 
+  test('an alert is read in the order it was observed, not the order it reached the server', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const body = await seedBody(t, 'Mascoma Lake');
+    const a = await seedUser(t, 'a');
+    const alert = (createdAt: number, status: string) => ({
+      targetType: 'put_in',
+      waterBodyId: body,
+      reason: 'road_closed',
+      kind: 'blocker',
+      createdByUserId: a.id,
+      createdAt,
+      season: 2026,
+      status,
+      confirmCount: 0,
+      denyCount: 0,
+    });
+    await t.run(async (ctx) => {
+      // Ten retracted alerts, then — flushed from a phone later — one observed before all of them.
+      for (let i = 0; i < 10; i++) {
+        await ctx.db.insert('accessAlerts', alert(NOW - (60 - i) * DAY, 'retracted') as never);
+      }
+      await ctx.db.insert('accessAlerts', alert(NOW - 70 * DAY, 'active') as never);
+    });
+    await seedReport(t, a.id, body, NOW - DAY);
+    // Her first contribution is the alert seventy days back: known, and not this week.
+    expect((await mod.as.query(api.metrics.showingUp, {})).showingUp.week.contributors).toEqual({
+      people: 1,
+      firstTime: 0,
+    });
+  });
+
   test('a moderator’s hidden markers never crowd out the put-ins they placed', async () => {
     const t = harness();
     const viewer = await seedUser(t, 'viewer', 'moderator');
@@ -1683,6 +1715,24 @@ describe('seasonWatch.tape and seasonWatch.homeSummary — for moderators', () =
       first: { source: 'report', at: NOW - 2 * DAY, body: 'Crystal Lake' },
       lastWinter: { source: 'field', day: '2025-12-06', body: 'Low Plains' },
     });
+  });
+
+  test('looks for the first skate through the page’s day — within a few minutes of the server’s', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const ada = await seedUser(t, 'ada');
+    const crystal = await seedBody(t, 'Crystal Lake');
+    // Two minutes before midnight, a page whose clock has turned asks for its new day; the season's
+    // first on-ice report ended a minute into that day.
+    vi.setSystemTime(Date.UTC(2026, 10, 13, 23, 58));
+    const at = Date.UTC(2026, 10, 14, 0, 1);
+    await seedReport(t, ada.id, crystal, at, { observedFrom: 'on_ice' });
+    const turned = await mod.as.query(api.seasonWatch.homeSummary, { now: Date.UTC(2026, 10, 14) });
+    expect(turned.firstSkate?.first).toEqual({ source: 'report', at, body: 'Crystal Lake' });
+    // The server's own day ends at midnight, and a clock weeks behind is pulled up to it.
+    expect((await mod.as.query(api.seasonWatch.homeSummary, {})).firstSkate?.first).toBeNull();
+    const behind = await mod.as.query(api.seasonWatch.homeSummary, { now: Date.UTC(2026, 9, 2) });
+    expect(behind.firstSkate?.first).toBeNull();
   });
 
   test('a closed watch ends imagery, with the capture of its last frame', async () => {

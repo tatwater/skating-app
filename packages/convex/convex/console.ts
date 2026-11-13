@@ -14,6 +14,7 @@
 import {
   COUNT_CAP,
   type Count,
+  callerNow,
   cappedCount,
   duplicateDecisions,
   medianOpenedAt,
@@ -317,11 +318,7 @@ export const colleagues = query({
   args: { now: v.number() },
   handler: async (ctx, args) => {
     const viewer = await requireCapability(ctx, 'console.colleagues');
-    const serverNow = Date.now();
-    const now = Math.min(
-      Math.max(args.now, serverNow - PRESENCE_HEARTBEAT_MS),
-      serverNow + PRESENCE_HEARTBEAT_MS,
-    );
+    const now = callerNow(args.now, Date.now(), PRESENCE_HEARTBEAT_MS);
     const rows = await ctx.db
       .query('consolePresence')
       .withIndex('by_seen_at', (q) => q.gte('seenAt', now - PRESENCE_IDLE_MS))

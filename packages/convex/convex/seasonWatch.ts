@@ -21,6 +21,7 @@ import {
   addDaysIso,
   archiveSeasonAt,
   archiveSeasonLabel,
+  callerNow,
   type DailyLow,
   DEFAULT_SEASON_WATCH_SETTINGS,
   dailyLowsFromOpenMeteo,
@@ -1057,6 +1058,9 @@ const FIRST_SKATE_SCAN = 500;
 /** The most field-date rows a season's first-skated look reads (a handful a season). */
 const FIELD_DATE_SCAN = 100;
 
+/** How far the summary's caller clock may sit from the server's (`callerNow`), as Metrics' does. */
+const SUMMARY_CLOCK_SLACK_MS = 5 * 60_000;
+
 /** A season's watch record, or `null` while no night has opened it. */
 async function watchRecord(ctx: QueryCtx, label: string) {
   return await ctx.db
@@ -1129,12 +1133,17 @@ export const tape = query({
  * - `firstSkate` — the season's first skate and last winter's: the first visible report from on the
  *   ice from 1 October; only for a season with none, the date staff entered (`seasonFieldDates`,
  *   `source: 'field'`). `null` when the bounded look can't say.
+ *
+ * `now` is the caller's clock — the page sends the start of its UTC day (`callerNow`). The first
+ * skate's look ranges through today, and a cached read keeps that range: without the day as an
+ * argument, a season's first on-ice report posted on a later day falls outside what the cached read
+ * covered and the tile keeps saying there is none until some other row it read moves.
  */
 export const homeSummary = query({
-  args: { season: v.optional(v.number()) },
+  args: { season: v.optional(v.number()), now: v.optional(v.number()) },
   handler: async (ctx, args) => {
     await requireCapability(ctx, 'season.summary');
-    const now = Date.now();
+    const now = callerNow(args.now, Date.now(), SUMMARY_CLOCK_SLACK_MS);
     const season = resolveSeason(args.season, seasonOf(now));
     const label = archiveSeasonLabel(season);
     const record = await watchRecord(ctx, label);

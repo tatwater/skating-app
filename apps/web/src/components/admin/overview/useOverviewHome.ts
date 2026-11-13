@@ -1,5 +1,5 @@
 import { api } from '@skating/convex/api';
-import type { Capability } from '@skating/core';
+import { type Capability, metricDay, metricDayStart, seasonOf } from '@skating/core';
 import { useQuery } from 'convex/react';
 import { useMemo } from 'react';
 
@@ -44,7 +44,8 @@ export function useOverviewHome({
   /** The season the season tiles read. */
   season: number;
   /**
-   * The page's clock. Machinery reads it, rounded to the minute: a job falling late is the clock
+   * The page's clock. Machinery reads it rounded to the minute, and the season tiles rounded to the
+   * UTC day: a job falling late, or a new day the first-skate look ranges through, is the clock
    * moving, not a row, so the argument is what re-runs the read.
    */
   now: number;
@@ -64,7 +65,16 @@ export function useOverviewHome({
     useQuery(api.machinery.overviewJobs, canMachinery ? { now: minute } : 'skip'),
     !canMachinery,
   );
-  const summary = useQuery(api.seasonWatch.homeSummary, canSeason ? { season } : 'skip');
+  // Held through the day's turn, as Machinery is through the minute's — but only for the season
+  // asked for: a season just chosen loads, it never shows the last one's tiles meanwhile.
+  const heldSummary = useHeldRead(
+    useQuery(
+      api.seasonWatch.homeSummary,
+      canSeason ? { season, now: metricDayStart(metricDay(now)) } : 'skip',
+    ),
+    !canSeason,
+  );
+  const summary = heldSummary?.season === season ? heldSummary : undefined;
   const actions = useQuery(api.moderation.listActions, canAudit ? { limit: FEED_LIMIT } : 'skip');
   const system = useQuery(api.console.systemFeed, canAudit ? { limit: FEED_LIMIT } : 'skip');
 
@@ -79,17 +89,23 @@ export function useOverviewHome({
     [actions, system],
   );
 
+  // A chosen season that is over: its tiles never waited.
+  const past = season < seasonOf(now);
+
   return useMemo(() => {
-    const facts = summary ? seasonFromSummary(summary) : undefined;
+    const facts = summary ? seasonFromSummary(summary, past) : undefined;
     // Every console viewer holds `season.summary`; were one not to, the tiles say *Not recorded yet*.
     const tile = <T>(value: T | undefined): T | undefined | null => (canSeason ? value : null);
     return {
       inbox: overview ? inboxFromOverview(overview.inbox) : undefined,
       people: overview ? peopleFromOverview(overview.people) : undefined,
       // The intake rows lead; the Corpus counts fill in what they carry once they land.
-      corpus: reviewCounts
-        ? corpusFromReviewCounts(reviewCounts, corpusCounts ? corpusExtrasFrom(corpusCounts) : {})
-        : undefined,
+      // Held until both reads land: drawn from the intake rows alone, Duplicates would read rows
+      // and then jump to decisions.
+      corpus:
+        reviewCounts && corpusCounts
+          ? corpusFromReviewCounts(reviewCounts, corpusExtrasFrom(corpusCounts))
+          : undefined,
       machinery: !canMachinery
         ? 'withheld'
         : jobs === undefined
@@ -103,5 +119,5 @@ export function useOverviewHome({
       firstSkate: tile(facts?.firstSkate),
       feed,
     };
-  }, [overview, reviewCounts, corpusCounts, jobs, summary, feed, canMachinery, canSeason]);
+  }, [overview, reviewCounts, corpusCounts, jobs, summary, feed, canMachinery, canSeason, past]);
 }

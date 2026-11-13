@@ -20,6 +20,7 @@
  */
 
 import {
+  callerNow,
   lastDays,
   type MetricKey,
   OBSERVED_FROM,
@@ -44,7 +45,7 @@ const OPEN_FLAG_CAP = 1_000;
 const OPEN_TICKET_CAP = 1_000;
 /** The most rows one *this week* figure reads before it says *not recorded*. */
 const WEEK_CAP = 2_000;
-/** The most contributors *first-time* looks up (six bounded reads of their first rows each). */
+/** The most contributors *first-time* looks up (six short reads of their first rows each). */
 const FIRST_TIME_CAP = 300;
 
 /** How far the caller's clock may sit from the server's before it is pulled back to it. */
@@ -61,11 +62,7 @@ const seasonArg = { season: v.optional(v.number()), now: v.optional(v.number()) 
 
 /** The season asked for, its window, and the instant they're read at. */
 function windowOf(season: number | undefined, asked?: number) {
-  const serverNow = Date.now();
-  const now =
-    asked === undefined || !Number.isFinite(asked)
-      ? serverNow
-      : Math.min(Math.max(asked, serverNow - CLOCK_SLACK_MS), serverNow + CLOCK_SLACK_MS);
+  const now = callerNow(asked, Date.now(), CLOCK_SLACK_MS);
   const s: Season = resolveSeason(season, seasonOf(now));
   return { now, season: s, ...seasonRecordWindow(s, now) };
 }
@@ -313,7 +310,7 @@ export const showingUp = query({
         : { added: added.length, total: total.count };
 
     const signedIn = await weekSignIns(ctx, week.days);
-    const contributors = await weekContributors(ctx, week);
+    const contributors = await weekContributors(ctx, week, weekReports);
 
     // ── The season ───────────────────────────────────────────────────────────────────────────
     const daily = Object.fromEntries(
@@ -380,13 +377,21 @@ async function weekSignIns(
  * *Contributors* this week — anyone with a standing contribution in it (`lib/contributions`, D253) —
  * and how many contributed for the first time: their earliest standing contribution of any kind is
  * in the week. `null` when a read stopped short, past {@link FIRST_TIME_CAP} people, or when
- * someone's first contribution can't be told.
+ * someone's first contribution can't be told. `weekReports` are the week's visible reports, already
+ * read (`take(WEEK_CAP + 1)`), so they aren't read twice.
  */
 async function weekContributors(
   ctx: QueryCtx,
   week: { from: number; to: number },
+  weekReports: readonly Doc<'reports'>[],
 ): Promise<{ people: number; firstTime: number } | null> {
-  const { people, capped } = await contributorsBetween(ctx, week.from, week.to, WEEK_CAP);
+  const { people, capped } = await contributorsBetween(
+    ctx,
+    week.from,
+    week.to,
+    WEEK_CAP,
+    weekReports,
+  );
   if (capped || people.size > FIRST_TIME_CAP) return null;
   let firstTime = 0;
   for (const id of people) {

@@ -23,6 +23,7 @@ vi.mock('convex/react', async () => {
 });
 
 import { api } from '@skating/convex/api';
+import { metricDay, metricDayStart } from '@skating/core';
 import { getFunctionName } from 'convex/server';
 
 import { LiveMark } from './LiveMark';
@@ -312,7 +313,8 @@ describe('useOverviewHome', () => {
       feed: undefined,
     });
     expect(convex.calls).toContainEqual({ limit: FEED_LIMIT });
-    expect(convex.calls).toContainEqual({ season: 2026 });
+    // The season tiles on the page's UTC day, so a new day re-runs the first-skate look.
+    expect(convex.calls).toContainEqual({ season: 2026, now: metricDayStart(metricDay(NOW)) });
     // Machinery is read on the minute, so a job falls late as the clock moves.
     expect(convex.calls).toContainEqual({ now: Math.floor(NOW / 60_000) * 60_000 });
   });
@@ -337,6 +339,39 @@ describe('useOverviewHome', () => {
     rerender({ now: NOW + 60_000 });
     expect(result.current.machinery).toMatchObject({ more: 1 });
     expect(result.current.feed).toBe(feed);
+  });
+
+  it('holds the season tiles through the day’s turn, never across a change of season', () => {
+    const name = getFunctionName(api.seasonWatch.homeSummary);
+    const summary = (season: number) => ({
+      season,
+      countsFrom: `${season}-10-01`,
+      watch: null,
+      winter: { state: 'not-yet' },
+      imagery: { state: 'not-started', granules: 0, lastLandedAt: null, lastFrameAt: null },
+      firstSkate: { first: null, lastWinter: null },
+    });
+    const tomorrow = NOW + 86_400_000;
+    convex.results.set(name, summary(2026));
+    const { result, rerender } = renderHook(
+      ({ now, season }: { now: number; season: number }) =>
+        useOverviewHome({ season, now, can: admin }),
+      { initialProps: { now: NOW, season: 2026 } },
+    );
+    expect(result.current.winter).toEqual({ state: 'not-yet' });
+    // The next day's read is a new subscription, still loading: the tiles keep the last.
+    convex.results.delete(name);
+    rerender({ now: tomorrow, season: 2026 });
+    expect(result.current.winter).toEqual({ state: 'not-yet' });
+    // Another season chosen: its tiles load, rather than showing this season's meanwhile.
+    rerender({ now: tomorrow, season: 2025 });
+    expect(result.current.winter).toBeUndefined();
+    convex.results.set(name, summary(2025));
+    rerender({ now: tomorrow, season: 2025 });
+    // A past season with no watch record never waited: not recorded, never "Waiting".
+    expect(result.current.watch).toBeNull();
+    expect(result.current.imagery).toBeNull();
+    expect(result.current.winter).toEqual({ state: 'not-yet' });
   });
 
   it('asks only for what the viewer may read; Machinery is left out for a moderator', () => {

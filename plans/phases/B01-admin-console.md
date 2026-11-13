@@ -1400,7 +1400,10 @@ one branch (`b01-3-server`).
 - **Contract:** a job's time and the season's dates arrive as instants and record days and are written
   on the client in the reader's zone; first skated is the first on-ice report, a staff date only for a
   season without one and marked as staff's (the founder's call); imagery reads *Ended* once the
-  watch's own close is recorded.
+  watch's own close is recorded. A read whose answer turns on the time takes the page's clock as an
+  argument, held near the server's (`callerNow`, `@skating/core`): Machinery and the faces by the
+  minute, Metrics and the season tiles by the UTC day, the tape by its season — a cached read
+  otherwise keeps its old answer while no row it read moves.
 - **Open on the next server round:** H4's call sites in `moderation.ts` and its undo (D252's rule is
   built), the feed's target names, H3, U1, U2 — all in files the author-deletion PR is rewriting.
 

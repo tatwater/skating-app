@@ -2616,8 +2616,9 @@ export default defineSchema({
     .index('by_report', ['reportId'])
     .index('by_author', ['authorId']) // profile #comments count + enumerate a user's comments (D13)
     // ── B01 server reads: the Overview's Metrics ──
-    // The day rollup's comments (`comments_created`, a contributor's day) and the season's reach, read
-    // by a bounded time range. `createdAt` is required, so nothing sorts as `undefined` ahead of it.
+    // The day rollup's comments (`comments_created`; a comment is not a contribution, D253) and the
+    // season's reach, read by a bounded time range. `createdAt` is required, so nothing sorts as
+    // `undefined` ahead of it.
     .index('by_created_at', ['createdAt']),
 
   hazards: defineTable({
@@ -3928,7 +3929,10 @@ export default defineSchema({
     .index('by_idempotency_key', ['idempotencyKey'])
     // ── B01 server reads: what a contribution is (D253) ──
     // An alert is a contribution (unless retracted): the day and season reads range it by time.
-    .index('by_created_at', ['createdAt']),
+    .index('by_created_at', ['createdAt'])
+    // And one person's alerts by time, for *first-time*: `by_author` orders by creation, and
+    // `createdAt` is when the alert was observed, which an offline flush can backdate.
+    .index('by_author_created', ['createdByUserId', 'createdAt']),
 
   /**
    * Photos of an access point (A06d Workstream 4 / D88) — *"is this the right dirt road"*.

@@ -105,6 +105,14 @@ beforeEach(() => {
   mocks.results.set(getFunctionName(api.waterBodies.reviewQueueCounts), {
     'duplicate-candidate': { count: 5, capped: false, advisory: false },
   });
+  mocks.results.set(getFunctionName(api.console.corpusCounts), {
+    duplicates: count(3),
+    chordRefits: count(0),
+    placeNames: count(0),
+    preIcePass: null,
+    enrichment: null,
+    campaignAt: null,
+  });
   mocks.results.set(getFunctionName(api.moderation.listActions), [
     {
       id: 'a1',
@@ -175,9 +183,10 @@ describe('the Overview at /admin', () => {
     for (const fixture of ['Mascoma Lake', '$75.80', 'Rob Tremblay', 'Campaign']) {
       expect(screen.queryByText(fixture, { exact: false })).toBeNull();
     }
-    // The Corpus rows no read counts are left out, not zeroed.
-    expect(screen.queryByText('Chord re-fits')).toBeNull();
+    // The Corpus rows the server records as null are left out, not zeroed; a measured zero shows.
     expect(screen.queryByText('Pre-ice pass')).toBeNull();
+    expect(screen.queryByText('Awaiting enrichment')).toBeNull();
+    expect(screen.getByText('Chord re-fits')).toBeInTheDocument();
   });
 
   it('sends each link to the old page that does the work', () => {

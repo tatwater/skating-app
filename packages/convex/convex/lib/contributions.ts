@@ -10,7 +10,7 @@
  */
 
 import { CONTRIBUTION_KINDS, type ContributionKind, contributionStands } from '@skating/core';
-import type { Id } from '../_generated/dataModel';
+import type { Doc, Id } from '../_generated/dataModel';
 import type { QueryCtx } from '../_generated/server';
 
 /**
@@ -21,12 +21,16 @@ import type { QueryCtx } from '../_generated/server';
  * would be six times the transaction's read the caller sized it for, and a job that reads past
  * Convex's per-transaction limit fails whole rather than computing from a partial slice. Each kind
  * reads what the ones before it left, plus one row to tell whether it stopped short.
+ *
+ * `readReports` — the window's visible reports by skate end, when the caller has already read them
+ * with `take(cap + 1)` — stand in for the first kind's read, so the same rows aren't read twice.
  */
 export async function contributorsBetween(
   ctx: QueryCtx,
   from: number,
   to: number,
   cap: number,
+  readReports?: readonly Doc<'reports'>[],
 ): Promise<{ people: Set<Id<'profiles'>>; capped: boolean }> {
   const people = new Set<Id<'profiles'>>();
   let left = cap;
@@ -40,12 +44,14 @@ export async function contributorsBetween(
   };
 
   for (const r of await within((n) =>
-    ctx.db
-      .query('reports')
-      .withIndex('by_moderation_and_skate_end_time', (q) =>
-        q.eq('moderationStatus', 'visible').gte('skateEndTime', from).lt('skateEndTime', to),
-      )
-      .take(n),
+    readReports !== undefined
+      ? Promise.resolve(readReports.slice(0, n))
+      : ctx.db
+          .query('reports')
+          .withIndex('by_moderation_and_skate_end_time', (q) =>
+            q.eq('moderationStatus', 'visible').gte('skateEndTime', from).lt('skateEndTime', to),
+          )
+          .take(n),
   )) {
     if (contributionStands.report(r)) people.add(r.authorId);
   }
@@ -102,74 +108,104 @@ export async function contributorsBetween(
 export const FIRST_PROBE = 10;
 
 /**
+ * What one kind's probe found: the instant of its first standing row; or, when the probe ran out on
+ * rows that don't stand, the instant of the last row read — a standing one can only come at or after
+ * it; or `null` when the person has no standing row of the kind at all.
+ */
+type Probe = { first: number } | { unseenFrom: number } | null;
+
+/**
+ * One kind's rows for a person, **in time order** (every index below ends in the instant `at`
+ * reads), looked through until one stands or {@link FIRST_PROBE} rows have been read. Stopping at the
+ * first that stands reads one row for nearly everyone, not the whole probe.
+ */
+async function probe<T>(
+  rows: AsyncIterable<T>,
+  at: (row: T) => number,
+  stands: (row: T) => boolean,
+): Promise<Probe> {
+  let read = 0;
+  for await (const row of rows) {
+    if (stands(row)) return { first: at(row) };
+    if (++read >= FIRST_PROBE) return { unseenFrom: at(row) };
+  }
+  return null;
+}
+
+/**
  * When `userId` first made a contribution that stands — the earliest across every kind — or `null`
  * if they never have.
  *
- * Each kind's first {@link FIRST_PROBE} rows are read in time order. When none of them stands, a
- * standing one of that kind can only come at or after the last row read; so the answer is
- * `unknown` only when that instant is earlier than every standing contribution found — a kind
- * whose first rows are withdrawn can't move a first contribution already known to come before
- * them. Put-ins are read from those the person placed (`official`), never the derived markers a
- * moderator's hide is attributed to.
+ * Each kind's first {@link FIRST_PROBE} rows are read in time order, the six kinds side by side.
+ * When none of them stands, a standing one of that kind can only come at or after the last row
+ * read; so the answer is `unknown` only when that instant is earlier than every standing
+ * contribution found — a kind whose first rows are withdrawn can't move a first contribution already
+ * known to come before them. Put-ins are read from those the person placed (`official`), never the
+ * derived markers a moderator's hide is attributed to.
  */
 export async function firstContributionAt(
   ctx: QueryCtx,
   userId: Id<'profiles'>,
 ): Promise<number | null | 'unknown'> {
-  const firsts: Record<ContributionKind, Array<{ at: number; stands: boolean }>> = {
-    report: (
-      await ctx.db
+  const probes: Record<ContributionKind, Promise<Probe>> = {
+    report: probe(
+      ctx.db
         .query('reports')
-        .withIndex('by_author_skate_end_time', (q) => q.eq('authorId', userId))
-        .take(FIRST_PROBE)
-    ).map((r) => ({ at: r.skateEndTime, stands: contributionStands.report(r) })),
-    hazard: (
-      await ctx.db
+        .withIndex('by_author_skate_end_time', (q) => q.eq('authorId', userId)),
+      (r) => r.skateEndTime,
+      contributionStands.report,
+    ),
+    hazard: probe(
+      ctx.db
         .query('hazards')
-        .withIndex('by_author_created', (q) => q.eq('createdByUserId', userId))
-        .take(FIRST_PROBE)
-    ).map((h) => ({ at: h.createdAt, stands: contributionStands.hazard(h) })),
-    accessAlert: (
-      await ctx.db
+        .withIndex('by_author_created', (q) => q.eq('createdByUserId', userId)),
+      (h) => h.createdAt,
+      contributionStands.hazard,
+    ),
+    // By `createdAt`, not `by_author`'s creation order: an alert's `createdAt` is when it was
+    // observed, which an offline flush can backdate past alerts created before it.
+    accessAlert: probe(
+      ctx.db
         .query('accessAlerts')
-        .withIndex('by_author', (q) => q.eq('createdByUserId', userId))
-        .take(FIRST_PROBE)
-    ).map((a) => ({ at: a.createdAt, stands: contributionStands.accessAlert(a) })),
-    noPublicAccess: (
-      await ctx.db
+        .withIndex('by_author_created', (q) => q.eq('createdByUserId', userId)),
+      (a) => a.createdAt,
+      contributionStands.accessAlert,
+    ),
+    noPublicAccess: probe(
+      ctx.db
         .query('contentFlags')
         .withIndex('by_flagger_reason_created', (q) =>
           q.eq('flaggerId', userId).eq('reason', 'no_public_access'),
-        )
-        .take(FIRST_PROBE)
-    ).map((f) => ({ at: f.createdAt, stands: contributionStands.noPublicAccess(f) })),
-    putIn: (
-      await ctx.db
+        ),
+      (f) => f.createdAt,
+      contributionStands.noPublicAccess,
+    ),
+    putIn: probe(
+      ctx.db
         .query('putIns')
         .withIndex('by_created_by_source_created', (q) =>
           q.eq('createdByUserId', userId).eq('source', 'official'),
-        )
-        .take(FIRST_PROBE)
-    ).map((p) => ({ at: p.createdAt, stands: contributionStands.putIn(p) })),
-    corpusRequest: (
-      await ctx.db
+        ),
+      (p) => p.createdAt,
+      contributionStands.putIn,
+    ),
+    corpusRequest: probe(
+      ctx.db
         .query('waterBodyRequests')
-        .withIndex('by_requester_created', (q) => q.eq('requesterId', userId))
-        .take(FIRST_PROBE)
-    ).map((r) => ({ at: r.createdAt, stands: contributionStands.corpusRequest(r) })),
+        .withIndex('by_requester_created', (q) => q.eq('requesterId', userId)),
+      (r) => r.createdAt,
+      contributionStands.corpusRequest,
+    ),
   };
   let earliest: number | null = null;
   // The earliest instant a standing row past a full probe of withdrawn ones could have.
   let unseenFrom: number | null = null;
-  for (const kind of CONTRIBUTION_KINDS) {
-    const rows = firsts[kind];
-    const standing = rows.filter((r) => r.stands);
-    if (standing.length > 0) {
-      const at = Math.min(...standing.map((r) => r.at));
-      earliest = earliest === null ? at : Math.min(earliest, at);
-    } else if (rows.length >= FIRST_PROBE) {
-      const through = Math.max(...rows.map((r) => r.at));
-      unseenFrom = unseenFrom === null ? through : Math.min(unseenFrom, through);
+  for (const found of await Promise.all(CONTRIBUTION_KINDS.map((kind) => probes[kind]))) {
+    if (found === null) continue;
+    if ('first' in found) {
+      earliest = earliest === null ? found.first : Math.min(earliest, found.first);
+    } else {
+      unseenFrom = unseenFrom === null ? found.unseenFrom : Math.min(unseenFrom, found.unseenFrom);
     }
   }
   if (unseenFrom !== null && (earliest === null || unseenFrom < earliest)) return 'unknown';

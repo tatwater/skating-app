@@ -15,6 +15,7 @@ export * from './bodyProbe';
 export * from './bodySilhouette';
 export * from './bodySummary';
 export * from './bounties';
+export * from './callerClock';
 export * from './capabilities';
 export * from './changeEmail';
 export * from './coalesce';

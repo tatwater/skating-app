@@ -70,9 +70,9 @@ export function useMinuteNow(): number {
 }
 
 /**
- * A read keyed on the minute (`{ now: minute }`) through the minute's turn. Each new minute is a new
- * subscription, which `useQuery` answers `undefined` until it lands — so without this the faces,
- * and the Machinery card, would blink out once a minute. `value` while it has one, else the last
+ * A read keyed on the clock (`{ now: minute }`, or the day) through the clock's turn. Each new minute
+ * is a new subscription, which `useQuery` answers `undefined` until it lands — so without this the
+ * faces, and the Machinery card, would blink out once a minute (and the season tiles once a day). `value` while it has one, else the last
  * it had; `undefined` while `skip` (the read isn't asked for), which also forgets what was held.
  */
 export function useHeldRead<T>(value: T | undefined, skip: boolean): T | undefined {
