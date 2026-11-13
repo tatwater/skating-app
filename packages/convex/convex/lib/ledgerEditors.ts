@@ -12,6 +12,8 @@
  * - **Never no editor.** Taking it from the last person who can act on it is refused — so a holder
  *   can step down only once another admin holds it, and the last holder can't be demoted out of
  *   admin until someone else is given it.
+ * - **Nor through discipline.** Suspending or banning the last editor who can act is refused the same
+ *   way ({@link refuseDisciplineOfLastLedgerEditor}).
  * - **A demotion clears it.** Leaving admin takes the grant with it, in the same mutation and with its
  *   own audit row, so a later promotion back to admin (or the undo of the demotion) does not quietly
  *   restore it; a holder gives it again on purpose.
@@ -102,6 +104,20 @@ export async function isLastLedgerEditor(
 
 export const LAST_EDITOR_MESSAGE =
   'They are the last person who can edit the ledger; give another admin ledger editing first';
+
+/**
+ * The discipline half of "never no editor" (B01, the governor's ruling on D227): a suspension or a
+ * ban takes away the last editor who can act just as a revoke or a demotion would — a suspended or
+ * banned holder can't edit or pass the grant on — so it is refused with the same message. Called
+ * before the status changes, by every path that suspends or bans (`moderation.banImpl`,
+ * `moderation.suspendImpl`, and an undo that puts a suspension or ban back).
+ */
+export async function refuseDisciplineOfLastLedgerEditor(
+  ctx: QueryCtx | MutationCtx,
+  target: Profile,
+): Promise<void> {
+  if (await isLastLedgerEditor(ctx, target)) throw new ConvexError(LAST_EDITOR_MESSAGE);
+}
 
 /**
  * Give `userId` ledger editing. `actor` is the admin holding it (already gated by the caller), or
