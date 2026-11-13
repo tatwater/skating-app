@@ -92,15 +92,10 @@ export function OverviewView({
       firstSkate: preseason,
     }),
   };
-  // Machinery unread, withheld or loading says no run is stalled or failed — and none is fine.
-  const trouble =
-    data.machinery && data.machinery !== 'withheld'
-      ? machineryTrouble(data.machinery)
-      : { stalled: 0, failed: 0 };
   const heads = overviewHeads({
     inbox: data.inbox ? inboxTotal(data.inbox) : { count: 0, capped: false },
     refits: data.corpus?.chordRefits ?? { count: 0, capped: false },
-    ...trouble,
+    ...machineryTrouble(data.machinery),
   });
   const { keepingUp, showingUp, coverage } = metricReads;
   const metrics = useMemo(() => {

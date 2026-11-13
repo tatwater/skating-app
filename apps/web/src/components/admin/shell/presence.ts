@@ -56,7 +56,10 @@ export function useHeartbeat(enabled: boolean, send: () => unknown): void {
   }, [enabled]);
 }
 
-/** The instant the console reads presence and the tape against, moved on once a minute. */
+/**
+ * The instant the console reads presence, the tape and the Overview's ages against, moved on once a
+ * minute (the coarsest age Home writes).
+ */
 export function useMinuteNow(): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -64,6 +67,19 @@ export function useMinuteNow(): number {
     return () => clearInterval(id);
   }, []);
   return now;
+}
+
+/**
+ * A read keyed on the minute (`{ now: minute }`) through the minute's turn. Each new minute is a new
+ * subscription, which `useQuery` answers `undefined` until it lands — so without this the faces,
+ * and the Machinery card, would blink out once a minute. `value` while it has one, else the last
+ * it had; `undefined` while `skip` (the read isn't asked for), which also forgets what was held.
+ */
+export function useHeldRead<T>(value: T | undefined, skip: boolean): T | undefined {
+  const held = useRef<T | undefined>(undefined);
+  if (skip) held.current = undefined;
+  else if (value !== undefined) held.current = value;
+  return held.current;
 }
 
 /** `console.colleagues`' rows as the top bar's faces. */

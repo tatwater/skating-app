@@ -192,8 +192,11 @@ export interface FirstSkate {
    * season, skated before the app could record it). A report always wins over it.
    */
   byStaff?: boolean;
-  /** Last winter's, for comparison while this one has none. */
-  lastWinter?: { at: number; body: string; byStaff?: boolean } | null;
+  /**
+   * Last winter's, for comparison while this one has none. `body` is `null` only for a staff date
+   * entered without a place — a report always names its body.
+   */
+  lastWinter?: { at: number; body: string | null; byStaff?: boolean } | null;
 }
 
 /** The words a staff-entered date carries, so it is never read as a report. */
@@ -204,8 +207,11 @@ export function firstSkateWords(first: FirstSkate): {
   tone: 'default' | 'dim';
   sub: string;
 } {
-  const last = first.lastWinter
-    ? `Last winter ${dayMonthOf(first.lastWinter.at)} · ${first.lastWinter.body}${first.lastWinter.byStaff ? ` · ${BY_STAFF}` : ''}`
+  const lw = first.lastWinter;
+  const last = lw
+    ? [`Last winter ${dayMonthOf(lw.at)}`, lw.body, lw.byStaff ? BY_STAFF : null]
+        .filter((part) => part)
+        .join(' · ')
     : '';
   if (first.at === null) return { value: '—', tone: 'dim', sub: last };
   if (first.byStaff) {
@@ -259,7 +265,9 @@ export function seasonFromSummary(summary: HomeSummary): {
                 ? null
                 : {
                     at: skateAt(first.lastWinter),
-                    body: first.lastWinter.body ?? 'A body since removed',
+                    // A report's body is always named (the server names a removed one); only a
+                    // staff date can come without a place, and then it names none.
+                    body: first.lastWinter.body,
                     ...(first.lastWinter.source === 'field' ? { byStaff: true } : {}),
                   },
           },

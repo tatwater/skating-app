@@ -5,6 +5,7 @@ import { useMemo } from 'react';
 
 import { seasonFromSummary } from '@/components/admin/season/seasonFacts';
 
+import { useHeldRead } from '../shell/presence';
 import type { OverviewHomeData } from './OverviewHome';
 import {
   corpusExtrasFrom,
@@ -58,10 +59,25 @@ export function useOverviewHome({
   const reviewCounts = useQuery(api.waterBodies.reviewQueueCounts, canCorpus ? {} : 'skip');
   const corpusCounts = useQuery(api.console.corpusCounts, canCorpus ? {} : 'skip');
   const minute = Math.floor(now / 60_000) * 60_000;
-  const jobs = useQuery(api.machinery.overviewJobs, canMachinery ? { now: minute } : 'skip');
+  // Held through each minute's new subscription, so the card doesn't fall back to loading as it lands.
+  const jobs = useHeldRead(
+    useQuery(api.machinery.overviewJobs, canMachinery ? { now: minute } : 'skip'),
+    !canMachinery,
+  );
   const summary = useQuery(api.seasonWatch.homeSummary, canSeason ? { season } : 'skip');
   const actions = useQuery(api.moderation.listActions, canAudit ? { limit: FEED_LIMIT } : 'skip');
   const system = useQuery(api.console.systemFeed, canAudit ? { limit: FEED_LIMIT } : 'skip');
+
+  // Its own memo: the feed is a new array only when its rows change, so the live mark's *Last
+  // checked* (which moves when the feed does) isn't moved by Machinery's minute or any other read.
+  const feed = useMemo(
+    () =>
+      // The feed waits for people's rows; the machine's join them as soon as they land.
+      actions
+        ? mergeFeed(feedFromActions(actions), system ? feedFromSystem(system) : [], FEED_LIMIT)
+        : undefined,
+    [actions, system],
+  );
 
   return useMemo(() => {
     const facts = summary ? seasonFromSummary(summary) : undefined;
@@ -85,20 +101,7 @@ export function useOverviewHome({
       winter: tile(facts?.winter),
       imagery: tile(facts?.imagery),
       firstSkate: tile(facts?.firstSkate),
-      // The feed waits for people's rows; the machine's join them as soon as they land.
-      feed: actions
-        ? mergeFeed(feedFromActions(actions), system ? feedFromSystem(system) : [], FEED_LIMIT)
-        : undefined,
+      feed,
     };
-  }, [
-    overview,
-    reviewCounts,
-    corpusCounts,
-    jobs,
-    summary,
-    actions,
-    system,
-    canMachinery,
-    canSeason,
-  ]);
+  }, [overview, reviewCounts, corpusCounts, jobs, summary, feed, canMachinery, canSeason]);
 }

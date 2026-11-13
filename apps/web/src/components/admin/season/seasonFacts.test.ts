@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  type FirstSkate,
   firstSkateWords,
   type HomeSummary,
   iceWatchFromRecord,
@@ -222,5 +223,24 @@ describe('a first skate staff recorded', () => {
         lastWinter: { at: day(11, 6, 2025), body: 'Low Plains', byStaff: true },
       }).sub,
     ).toBe('Last winter 6 Dec · Low Plains · recorded by staff');
+  });
+
+  it('names no place for a staff date entered without one — never a removed body', () => {
+    const facts = seasonFromSummary({
+      season: 2026,
+      countsFrom: '2026-10-01',
+      watch: null,
+      winter: null,
+      imagery: { state: 'not-started', granules: 0, lastLandedAt: null, lastFrameAt: null },
+      firstSkate: { first: null, lastWinter: { source: 'field', day: '2025-12-20', body: null } },
+    });
+    expect(facts.firstSkate?.lastWinter).toEqual({
+      at: day(11, 20, 2025),
+      body: null,
+      byStaff: true,
+    });
+    expect(firstSkateWords(facts.firstSkate as FirstSkate).sub).toBe(
+      'Last winter 20 Dec · recorded by staff',
+    );
   });
 });

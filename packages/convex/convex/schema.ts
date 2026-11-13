@@ -3712,7 +3712,10 @@ export default defineSchema({
     // ── B01 server reads: what a contribution is (D253) ──
     // A put-in a person placed (`official`) is a contribution: one source's put-ins by time, so the
     // derived markers the clustering writes in bulk are never read for it.
-    .index('by_source_created', ['source', 'createdAt']),
+    .index('by_source_created', ['source', 'createdAt'])
+    // And one person's placed put-ins by time, for *first-time*: `by_created_by` also holds every
+    // derived marker a moderator hid (the hide is attributed to them), which would crowd them out.
+    .index('by_created_by_source_created', ['createdByUserId', 'source', 'createdAt']),
 
   /**
    * Where the car goes (A06d / D72) — modeled apart from `putIns`, and many-to-many with bodies.

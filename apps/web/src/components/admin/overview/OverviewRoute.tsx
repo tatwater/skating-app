@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { useOverviewMetrics } from '@/components/admin/metrics/useOverviewMetrics';
 import { useConnection } from '@/lib/useConnection';
 import { useRole } from '@/lib/useRole';
+import { useMinuteNow } from '../shell/presence';
 import { OverviewView } from './OverviewView';
 import type { LinkTo } from './overviewLinks';
 import type { LiveState } from './overviewModel';
@@ -31,11 +32,11 @@ export function OverviewRoute() {
   const search = useSearch({ from: '/admin/' }) as OverviewSearch;
   const navigate = useNavigate();
   const { can } = useRole();
-  const now = useMinuteClock();
+  const now = useMinuteNow();
   const season = seasonOfSearch(search, seasonOf(now));
   const tab = overviewTabOf(search);
   const reads = useOverviewHome({ season, now, can });
-  const metrics = useOverviewMetrics({ season, can, active: tab === 'metrics' });
+  const metrics = useOverviewMetrics({ season, now, can, active: tab === 'metrics' });
   const live = useFeedLive(reads.feed);
   return (
     <OverviewView
@@ -61,16 +62,6 @@ export function OverviewRoute() {
       onRefresh={() => window.location.reload()}
     />
   );
-}
-
-/** The instant ages are read against, moved on once a minute (the coarsest age Home writes). */
-function useMinuteClock(): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 60_000);
-    return () => window.clearInterval(id);
-  }, []);
-  return now;
 }
 
 /**

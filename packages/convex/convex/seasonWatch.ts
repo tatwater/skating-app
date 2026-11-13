@@ -1204,12 +1204,13 @@ async function imagerySummary(
     .order('desc')
     .first();
   // A closed watch stops the cutter (`imageryLive`), so a season whose watch has closed has ended,
-  // whatever its run marks still say.
+  // whatever its run marks still say — one that never started included: "starts when the watch
+  // asks for it" is untrue of a watch that has closed.
   const state =
-    record?.imageryStartedAt === undefined
-      ? ('not-started' as const)
-      : record.closesOn !== undefined
-        ? ('ended' as const)
+    record?.closesOn !== undefined
+      ? ('ended' as const)
+      : record?.imageryStartedAt === undefined
+        ? ('not-started' as const)
         : record.imageryPausedAt !== undefined
           ? ('paused' as const)
           : ('running' as const);

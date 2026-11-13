@@ -44,14 +44,28 @@ const OPEN_FLAG_CAP = 1_000;
 const OPEN_TICKET_CAP = 1_000;
 /** The most rows one *this week* figure reads before it says *not recorded*. */
 const WEEK_CAP = 2_000;
-/** The most contributors *first-time* looks up (three point reads each). */
+/** The most contributors *first-time* looks up (six bounded reads of their first rows each). */
 const FIRST_TIME_CAP = 300;
 
-const seasonArg = { season: v.optional(v.number()) };
+/** How far the caller's clock may sit from the server's before it is pulled back to it. */
+const CLOCK_SLACK_MS = 5 * 60_000;
+
+/**
+ * `now` is the caller's clock — the page sends the start of its UTC day. A query is cached on the
+ * rows it reads, and a new day is a change in the clock, not in any row: without it a read cached
+ * before midnight keeps yesterday's window until some row it reads moves, and the page, which
+ * draws a read only over its own days, shows the tab unread until then. Clamped to the server's
+ * clock, so a skewed client can't read another day's window.
+ */
+const seasonArg = { season: v.optional(v.number()), now: v.optional(v.number()) };
 
 /** The season asked for, its window, and the instant they're read at. */
-function windowOf(season: number | undefined) {
-  const now = Date.now();
+function windowOf(season: number | undefined, asked?: number) {
+  const serverNow = Date.now();
+  const now =
+    asked === undefined || !Number.isFinite(asked)
+      ? serverNow
+      : Math.min(Math.max(asked, serverNow - CLOCK_SLACK_MS), serverNow + CLOCK_SLACK_MS);
   const s: Season = resolveSeason(season, seasonOf(now));
   return { now, season: s, ...seasonRecordWindow(s, now) };
 }
@@ -114,7 +128,7 @@ export const keepingUp = query({
   args: seasonArg,
   handler: async (ctx, args) => {
     const viewer = await requireCapability(ctx, 'metrics.read');
-    const { now, season, opensOn, days } = windowOf(args.season);
+    const { now, season, opensOn, days } = windowOf(args.season, args.now);
     const week = lastDays(now, 7);
 
     // Now: the queue as it stands. Open means `open` or `reviewing` (`lib/openFlags`).
@@ -270,7 +284,7 @@ export const showingUp = query({
   args: seasonArg,
   handler: async (ctx, args) => {
     await requireCapability(ctx, 'metrics.read');
-    const { now, season, opensOn, days } = windowOf(args.season);
+    const { now, season, opensOn, days } = windowOf(args.season, args.now);
     const week = lastDays(now, 7);
 
     // ── This week (not season-ranged) ────────────────────────────────────────────────────────
@@ -417,7 +431,7 @@ export const coverage = query({
   args: seasonArg,
   handler: async (ctx, args) => {
     await requireCapability(ctx, 'metrics.read');
-    const { season, opensOn, days } = windowOf(args.season);
+    const { season, opensOn, days } = windowOf(args.season, args.now);
     const bands = await latestMetric(ctx, 'zoom_band_distribution');
     const states = await latestMetric(ctx, 'state_coverage');
     if (bands?.scalar === undefined || states === null) {

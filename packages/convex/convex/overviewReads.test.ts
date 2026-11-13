@@ -17,6 +17,7 @@ import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
+import { contributorsBetween } from './lib/contributions';
 import { flagBodyId } from './lib/openFlags';
 import { cardRows, type JobRow } from './machinery';
 import schema from './schema';
@@ -904,6 +905,77 @@ describe('contributions — one rule for every contributors figure', () => {
     });
   });
 
+  test('withdrawn rows after a first contribution don’t make first-time unknown', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const body = await seedBody(t, 'Mascoma Lake');
+    const a = await seedUser(t, 'a');
+    // Her first contribution is a report two months back; then ten dismissed "not accessible"
+    // claims — a full probe of non-contributions, all after a first already known.
+    await seedReport(t, a.id, body, NOW - 60 * DAY);
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 10; i++) {
+        await ctx.db.insert('contentFlags', {
+          flaggerId: a.id,
+          targetType: 'waterbody' as const,
+          targetId: body,
+          reason: 'no_public_access' as const,
+          status: 'dismissed' as const,
+          createdAt: NOW - (50 - i) * DAY,
+        });
+      }
+    });
+    await seedReport(t, a.id, body, NOW - DAY);
+    expect((await mod.as.query(api.metrics.showingUp, {})).showingUp.week.contributors).toEqual({
+      people: 1,
+      firstTime: 0,
+    });
+  });
+
+  test('a moderator’s hidden markers never crowd out the put-ins they placed', async () => {
+    const t = harness();
+    const viewer = await seedUser(t, 'viewer', 'moderator');
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const body = await seedBody(t, 'Mascoma Lake');
+    await t.run(async (ctx) => {
+      // A cleanup: twelve derived markers hidden — each hide is attributed to the moderator.
+      for (let i = 0; i < 12; i++) {
+        await ctx.db.insert('putIns', {
+          waterBodyId: body,
+          coord: { lat: 0.5, lng: 0.5 },
+          source: 'derived' as const,
+          status: 'hidden' as const,
+          createdByUserId: mod.id,
+          createdAt: NOW - (40 - i) * DAY,
+        } as never);
+      }
+    });
+    // Their first contribution: a report this week.
+    await seedReport(t, mod.id, body, NOW - DAY);
+    expect((await viewer.as.query(api.metrics.showingUp, {})).showingUp.week.contributors).toEqual({
+      people: 1,
+      firstTime: 1,
+    });
+  });
+
+  test('the cap bounds the rows read across every kind together', async () => {
+    const t = harness();
+    const body = await seedBody(t, 'Mascoma Lake');
+    const a = await seedUser(t, 'a');
+    const b = await seedUser(t, 'b');
+    await seedReport(t, a.id, body, NOW - HOUR);
+    await seedReport(t, a.id, body, NOW - HOUR);
+    await seedHazard(t, b.id, body, NOW - HOUR);
+    const read = (cap: number) =>
+      t.run(async (ctx) => {
+        const { people, capped } = await contributorsBetween(ctx, NOW - DAY, NOW, cap);
+        return { people: people.size, capped };
+      });
+    // Two reports fill a cap of two: the hazard is past it, and the read says it stopped short.
+    expect(await read(2)).toEqual({ people: 1, capped: true });
+    expect(await read(3)).toEqual({ people: 2, capped: false });
+  });
+
   test('first-time is not recorded when a kind’s first rows are all withdrawn', async () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');
@@ -1123,6 +1195,30 @@ describe('the season’s reach', () => {
     expect(reach.people.signedIn).toBe(320);
   });
 
+  test('a season older than the sign-in record keeps reads signed-in as not recorded', async () => {
+    const t = convexTest(schema, modules);
+    const a = await seedUser(t, 'a');
+    await t.run(async (ctx) => {
+      await ctx.db.insert('signInDays', { userId: a.id, day: '2025-01-10', firstAt: NOW });
+      await ctx.db.insert('signInDays', { userId: a.id, day: '2026-01-10', firstAt: NOW });
+    });
+    // 2024–25 is past what D254 keeps: whatever rows are left, its figure is not recorded.
+    await walkReach(t, 2024);
+    const old = (await readSnapshot(t, 'season_reach', '2025-06-30'))?.meta as {
+      people: { signedIn: number };
+      capped: string[];
+    };
+    expect(old.capped).toContain('signedIn');
+    // Last season is kept whole, and counted.
+    await walkReach(t, 2025);
+    const last = (await readSnapshot(t, 'season_reach', '2026-06-30'))?.meta as {
+      people: { signedIn: number };
+      capped: string[];
+    };
+    expect(last.capped).not.toContain('signedIn');
+    expect(last.people.signedIn).toBe(1);
+  });
+
   test('walks nothing before the record opens, and a past season whole', async () => {
     const t = convexTest(schema, modules);
     vi.setSystemTime(Date.UTC(2026, 7, 10));
@@ -1238,6 +1334,25 @@ describe('metrics.keepingUp', () => {
     expect(pre.keepingUp.resolveSeason).toBeNull();
     // A season nobody can name reads the season now falls in.
     expect((await mod.as.query(api.metrics.keepingUp, { season: 1.5 })).season).toBe(2026);
+  });
+
+  test('reads the window of the page’s day — within a few minutes of the server’s clock', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    // Two minutes before midnight, a page whose clock has turned asks for its new day.
+    vi.setSystemTime(Date.UTC(2026, 10, 13, 23, 58));
+    const next = await mod.as.query(api.metrics.keepingUp, { now: Date.UTC(2026, 10, 14) });
+    expect(next.days.at(-1)).toBe('2026-11-14');
+    // The page sends its day's start, hours behind the server by noon: still that day.
+    vi.setSystemTime(Date.UTC(2026, 10, 13, 12));
+    const noon = await mod.as.query(api.metrics.keepingUp, { now: Date.UTC(2026, 10, 13) });
+    expect(noon.days.at(-1)).toBe('2026-11-13');
+    // A clock days ahead is pulled back to the server's.
+    const far = await mod.as.query(api.metrics.showingUp, { now: Date.UTC(2026, 11, 25) });
+    expect(far.days.at(-1)).toBe('2026-11-13');
+    expect((await mod.as.query(api.metrics.coverage, { now: Number.NaN })).days.at(-1)).toBe(
+      '2026-11-13',
+    );
   });
 
   test('a member is refused', async () => {
@@ -1599,6 +1714,30 @@ describe('seasonWatch.tape and seasonWatch.homeSummary — for moderators', () =
     expect(home.imagery).toEqual(
       expect.objectContaining({ state: 'ended', lastFrameAt: Date.UTC(2026, 3, 12, 15, 30) }),
     );
+  });
+
+  test('a watch that closed with imagery never started has ended, never "not started"', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await t.run((ctx) =>
+      ctx.db.insert('imageryIngestSeasons', {
+        season: 'winter-2025-26',
+        opensOn: '2025-10-04',
+        openedBy: ['corpus'],
+        winterFrom: null,
+        closesOn: '2026-05-05',
+        closedAt: Date.UTC(2026, 4, 6),
+        sitesSampled: 3,
+        detectedAt: Date.UTC(2025, 9, 5),
+      }),
+    );
+    const home = await mod.as.query(api.seasonWatch.homeSummary, { season: 2025 });
+    expect(home.imagery).toEqual({
+      state: 'ended',
+      granules: 0,
+      lastLandedAt: null,
+      lastFrameAt: null,
+    });
   });
 
   test('a paused imagery run, and a winter recorded without its night', async () => {

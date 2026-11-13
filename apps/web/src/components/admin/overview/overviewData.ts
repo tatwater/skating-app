@@ -206,8 +206,15 @@ export function jobWhen(at: number | null, now: number): string {
   return now - at < HOUR ? shortAge(now - at) : feedWhen(at, now);
 }
 
-/** Stalled and failed runs, for the heads row. */
-export function machineryTrouble(data: MachineryCardData): { stalled: number; failed: number } {
+/**
+ * Stalled and failed runs, for the heads row. Machinery unread, withheld or loading says no run is
+ * stalled or failed — and none is said to be fine.
+ */
+export function machineryTrouble(data: MachineryCardData | 'withheld' | null | undefined): {
+  stalled: number;
+  failed: number;
+} {
+  if (!data || data === 'withheld') return { stalled: 0, failed: 0 };
   return {
     stalled: data.jobs.filter((j) => j.state === 'stalled').length,
     failed: data.jobs.filter((j) => j.state === 'failed').length,

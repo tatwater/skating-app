@@ -1,7 +1,7 @@
 import { renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { colleaguesFrom, HEARTBEAT_MS, useHeartbeat } from './presence';
+import { colleaguesFrom, HEARTBEAT_MS, useHeartbeat, useHeldRead } from './presence';
 
 let visibility: DocumentVisibilityState = 'visible';
 
@@ -80,6 +80,27 @@ describe('useHeartbeat — the console tab says it is open', () => {
     renderHook(() => useHeartbeat(true, send));
     await vi.advanceTimersByTimeAsync(HEARTBEAT_MS);
     expect(send).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('useHeldRead — a minute-keyed read through the minute’s turn', () => {
+  it('holds the last answer while the next minute’s loads, and forgets it when skipped', () => {
+    const { result, rerender } = renderHook(
+      ({ value, skip }: { value: string | undefined; skip: boolean }) => useHeldRead(value, skip),
+      { initialProps: { value: undefined as string | undefined, skip: false } },
+    );
+    expect(result.current).toBeUndefined();
+    rerender({ value: 'minute 1', skip: false });
+    expect(result.current).toBe('minute 1');
+    // The new minute's subscription answers `undefined` until it lands: the faces stay.
+    rerender({ value: undefined, skip: false });
+    expect(result.current).toBe('minute 1');
+    rerender({ value: 'minute 2', skip: false });
+    expect(result.current).toBe('minute 2');
+    rerender({ value: undefined, skip: true });
+    expect(result.current).toBeUndefined();
+    rerender({ value: undefined, skip: false });
+    expect(result.current).toBeUndefined();
   });
 });
 

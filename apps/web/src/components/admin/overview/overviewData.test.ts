@@ -139,6 +139,10 @@ describe('the People card', () => {
 describe('machinery and cost', () => {
   it('counts the stalled and failed runs for the heads row', () => {
     expect(machineryTrouble(MACHINERY)).toEqual({ stalled: 1, failed: 2 });
+    // Unread, withheld or loading: no run is said to be in trouble.
+    for (const unread of [null, undefined, 'withheld'] as const) {
+      expect(machineryTrouble(unread)).toEqual({ stalled: 0, failed: 0 });
+    }
   });
 
   it('writes dollars to the cent', () => {

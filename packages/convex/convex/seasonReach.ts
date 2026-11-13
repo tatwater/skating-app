@@ -8,10 +8,11 @@
  *
  * A season's rows are far past what one transaction may read, and a distinct count can't be summed
  * from the days. So this walks the season's rows source by source — reports, comments, kudos,
- * photos, hazards, sign-ins — one page per transaction, carrying its tallies and id sets forward
- * through its own arguments (the `sweepCorpus` pattern), and writes `season_reach` and
- * `most_reported` once, at the end, stamped on the window's last day. Nothing partial is ever
- * written: a chart never shows a half-walked season as if it were the whole one.
+ * photos, hazards, the other kinds of contribution (D253), sign-ins — one page per transaction,
+ * carrying its tallies and id sets forward through its own arguments (the `sweepCorpus` pattern),
+ * and writes `season_reach` and `most_reported` once, at the end, stamped on the window's last day.
+ * Nothing partial is ever written: a chart never shows a half-walked season as if it were the
+ * whole one.
  *
  * **The tally is bounded as a whole**, because it travels as a scheduled function's arguments and
  * those are stored as one document (1 MiB). All its ids together stop at {@link TOTAL_ID_CAP}, any one
@@ -38,6 +39,7 @@ import {
   seasonOf,
   seasonRecordSpan,
   seasonRecordWindow,
+  signInRetentionFrom,
 } from '@skating/core';
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
@@ -395,6 +397,12 @@ async function walkPage(
       return { tally: w.pack(), isDone: page.isDone, continueCursor: page.continueCursor };
     }
     case 'signIns': {
+      // A season older than the sign-in record keeps (D254) has had its rows erased: walking it
+      // would write *nobody signed in* over the figure an earlier walk recorded. Not recorded.
+      if (span.firstDay < signInRetentionFrom(Date.now())) {
+        w.capped.add('signedIn');
+        return { tally: w.pack(), isDone: true, continueCursor: cursor ?? '' };
+      }
       const page = await ctx.db
         .query('signInDays')
         .withIndex('by_day', (q) => q.gte('day', span.firstDay).lte('day', span.lastDay))

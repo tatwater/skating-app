@@ -11,7 +11,7 @@ import { ConsolePalette } from './ConsolePalette';
 import { ConsoleShell, type RailMode } from './ConsoleShell';
 import { CONSOLE_MODES, LEGACY_PAGES, modeAt } from './consoleNav';
 import { seasonTape } from './consoleTime';
-import { colleaguesFrom, useHeartbeat, useMinuteNow } from './presence';
+import { colleaguesFrom, useHeartbeat, useHeldRead, useMinuteNow } from './presence';
 import { UndoProvider, useUndoServer } from './undo';
 
 /**
@@ -45,12 +45,17 @@ export function ConsoleLayout() {
   const minute = Math.floor(now / 60_000) * 60_000;
 
   const tapeFacts = useQuery(api.seasonWatch.tape, can('season.summary') ? {} : 'skip');
-  const colleagueRows = useQuery(
-    api.console.colleagues,
-    can('console.colleagues') ? { now: minute } : 'skip',
+  const canColleagues = can('console.colleagues');
+  // Held through each minute's new subscription, so the faces don't blink out as it loads.
+  const colleagueRows = useHeldRead(
+    useQuery(api.console.colleagues, canColleagues ? { now: minute } : 'skip'),
+    !canColleagues,
   );
   const beat = useMutation(api.console.heartbeat);
   useHeartbeat(!isLoading && can('console.presence'), () => beat({}));
+  // The page under the shell is one element for the layout's life: the minute's re-render redraws
+  // the tape and the faces, never the page (the router still redraws it on a route change).
+  const outlet = useMemo(() => <Outlet />, []);
 
   const mode = modeAt(pathname);
   const modeRefused = mode !== undefined && !can(mode.capability);
@@ -108,7 +113,7 @@ export function ConsoleLayout() {
           </>
         }
       >
-        <Outlet />
+        {outlet}
       </ConsoleShell>
     </UndoProvider>
   );

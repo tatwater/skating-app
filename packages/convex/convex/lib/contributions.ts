@@ -4,9 +4,9 @@
  * Metrics' week and first-timers. The season's walk (`seasonReach`) applies the same rule page by
  * page.
  *
- * Every read is an index range or an author's first rows, and bounded: a range read past `cap`
- * says so (`capped`), and a person whose first rows of a kind are all withdrawn reads as `unknown`
- * rather than a guess.
+ * Every read is an index range or an author's first rows, and bounded: the range reads share one
+ * budget and say when it ran out (`capped`), and a person whose first rows of a kind are all
+ * withdrawn — with no earlier contribution of another kind — reads as `unknown` rather than a guess.
  */
 
 import { CONTRIBUTION_KINDS, type ContributionKind, contributionStands } from '@skating/core';
@@ -15,7 +15,12 @@ import type { QueryCtx } from '../_generated/server';
 
 /**
  * The people with a standing contribution made in `[from, to)` — a report whose skate ended in it,
- * or anything else made in it — and whether any source's read stopped short at `cap`.
+ * or anything else made in it — and whether the read stopped short.
+ *
+ * `cap` bounds the rows read across **every** kind together, not each: six kinds at the cap apiece
+ * would be six times the transaction's read the caller sized it for, and a job that reads past
+ * Convex's per-transaction limit fails whole rather than computing from a partial slice. Each kind
+ * reads what the ones before it left, plus one row to tell whether it stopped short.
  */
 export async function contributorsBetween(
   ctx: QueryCtx,
@@ -24,65 +29,69 @@ export async function contributorsBetween(
   cap: number,
 ): Promise<{ people: Set<Id<'profiles'>>; capped: boolean }> {
   const people = new Set<Id<'profiles'>>();
+  let left = cap;
   let capped = false;
-  const take = <T>(rows: T[]) => {
-    capped ||= rows.length > cap;
-    return rows.slice(0, cap);
+  const within = async <T>(read: (n: number) => Promise<T[]>): Promise<T[]> => {
+    const rows = await read(left + 1);
+    if (rows.length > left) capped = true;
+    const kept = rows.slice(0, left);
+    left -= kept.length;
+    return kept;
   };
 
-  for (const r of take(
-    await ctx.db
+  for (const r of await within((n) =>
+    ctx.db
       .query('reports')
       .withIndex('by_moderation_and_skate_end_time', (q) =>
         q.eq('moderationStatus', 'visible').gte('skateEndTime', from).lt('skateEndTime', to),
       )
-      .take(cap + 1),
+      .take(n),
   )) {
     if (contributionStands.report(r)) people.add(r.authorId);
   }
-  for (const h of take(
-    await ctx.db
+  for (const h of await within((n) =>
+    ctx.db
       .query('hazards')
       .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to))
-      .take(cap + 1),
+      .take(n),
   )) {
     if (contributionStands.hazard(h)) people.add(h.createdByUserId);
   }
-  for (const a of take(
-    await ctx.db
+  for (const a of await within((n) =>
+    ctx.db
       .query('accessAlerts')
       .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to))
-      .take(cap + 1),
+      .take(n),
   )) {
     if (contributionStands.accessAlert(a)) people.add(a.createdByUserId);
   }
-  for (const f of take(
-    await ctx.db
+  for (const f of await within((n) =>
+    ctx.db
       .query('contentFlags')
       .withIndex('by_reason_created', (q) =>
         q.eq('reason', 'no_public_access').gte('createdAt', from).lt('createdAt', to),
       )
-      .take(cap + 1),
+      .take(n),
   )) {
     if (contributionStands.noPublicAccess(f)) people.add(f.flaggerId);
   }
-  for (const p of take(
-    await ctx.db
+  for (const p of await within((n) =>
+    ctx.db
       .query('putIns')
       .withIndex('by_source_created', (q) =>
         q.eq('source', 'official').gte('createdAt', from).lt('createdAt', to),
       )
-      .take(cap + 1),
+      .take(n),
   )) {
     if (contributionStands.putIn(p) && p.createdByUserId !== undefined) {
       people.add(p.createdByUserId);
     }
   }
-  for (const r of take(
-    await ctx.db
+  for (const r of await within((n) =>
+    ctx.db
       .query('waterBodyRequests')
       .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to))
-      .take(cap + 1),
+      .take(n),
   )) {
     if (contributionStands.corpusRequest(r)) people.add(r.requesterId);
   }
@@ -94,8 +103,14 @@ export const FIRST_PROBE = 10;
 
 /**
  * When `userId` first made a contribution that stands — the earliest across every kind — or `null`
- * if they never have, or `unknown` when a kind's first {@link FIRST_PROBE} rows were all withdrawn
- * or not contributions (so an earlier standing one can't be ruled out).
+ * if they never have.
+ *
+ * Each kind's first {@link FIRST_PROBE} rows are read in time order. When none of them stands, a
+ * standing one of that kind can only come at or after the last row read; so the answer is
+ * `unknown` only when that instant is earlier than every standing contribution found — a kind
+ * whose first rows are withdrawn can't move a first contribution already known to come before
+ * them. Put-ins are read from those the person placed (`official`), never the derived markers a
+ * moderator's hide is attributed to.
  */
 export async function firstContributionAt(
   ctx: QueryCtx,
@@ -131,7 +146,9 @@ export async function firstContributionAt(
     putIn: (
       await ctx.db
         .query('putIns')
-        .withIndex('by_created_by', (q) => q.eq('createdByUserId', userId))
+        .withIndex('by_created_by_source_created', (q) =>
+          q.eq('createdByUserId', userId).eq('source', 'official'),
+        )
         .take(FIRST_PROBE)
     ).map((p) => ({ at: p.createdAt, stands: contributionStands.putIn(p) })),
     corpusRequest: (
@@ -142,15 +159,19 @@ export async function firstContributionAt(
     ).map((r) => ({ at: r.createdAt, stands: contributionStands.corpusRequest(r) })),
   };
   let earliest: number | null = null;
+  // The earliest instant a standing row past a full probe of withdrawn ones could have.
+  let unseenFrom: number | null = null;
   for (const kind of CONTRIBUTION_KINDS) {
     const rows = firsts[kind];
     const standing = rows.filter((r) => r.stands);
-    if (standing.length === 0) {
-      if (rows.length >= FIRST_PROBE) return 'unknown';
-      continue;
+    if (standing.length > 0) {
+      const at = Math.min(...standing.map((r) => r.at));
+      earliest = earliest === null ? at : Math.min(earliest, at);
+    } else if (rows.length >= FIRST_PROBE) {
+      const through = Math.max(...rows.map((r) => r.at));
+      unseenFrom = unseenFrom === null ? through : Math.min(unseenFrom, through);
     }
-    const at = Math.min(...standing.map((r) => r.at));
-    earliest = earliest === null ? at : Math.min(earliest, at);
   }
+  if (unseenFrom !== null && (earliest === null || unseenFrom < earliest)) return 'unknown';
   return earliest;
 }

@@ -317,6 +317,28 @@ describe('useOverviewHome', () => {
     expect(convex.calls).toContainEqual({ now: Math.floor(NOW / 60_000) * 60_000 });
   });
 
+  it('holds Machinery through the minute’s turn, and keeps the feed while only Machinery moves', () => {
+    const name = getFunctionName(api.machinery.overviewJobs);
+    const jobs = { jobs: [], more: 0, moreAllOk: true, untracked: 0 };
+    convex.results.set(name, jobs);
+    convex.results.set(getFunctionName(api.moderation.listActions), []);
+    const { result, rerender } = renderHook(
+      ({ now }: { now: number }) => useOverviewHome({ season: 2026, now, can: admin }),
+      { initialProps: { now: NOW } },
+    );
+    const feed = result.current.feed;
+    expect(result.current.machinery).toEqual({ jobs: [], more: 0, moreAllOk: true });
+    // The next minute's read is a new subscription, still loading: the card keeps the last.
+    convex.results.delete(name);
+    rerender({ now: NOW + 60_000 });
+    expect(result.current.machinery).toEqual({ jobs: [], more: 0, moreAllOk: true });
+    // It lands; the feed's rows haven't moved, so neither has the feed (nor its *Last checked*).
+    convex.results.set(name, { ...jobs, more: 1 });
+    rerender({ now: NOW + 60_000 });
+    expect(result.current.machinery).toMatchObject({ more: 1 });
+    expect(result.current.feed).toBe(feed);
+  });
+
   it('asks only for what the viewer may read; Machinery is left out for a moderator', () => {
     const { result } = renderHook(() =>
       useOverviewHome({ season: 2026, now: NOW, can: moderator }),
