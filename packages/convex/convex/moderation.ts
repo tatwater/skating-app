@@ -259,6 +259,8 @@ export type ContentTargetType = keyof typeof MODERATION_TABLE;
 /**
  * The body of {@link setModerationStatus}, callable by an undo (D226) so the restore runs the same
  * cascade the hide did — a Post brings back the reports *it* hid, and every count and card follows.
+ * A Post row that lists the members it moved (`cascaded`) undoes through {@link revertPostVerdict}
+ * instead; only a Post row from before that record comes back through here.
  */
 export async function setContentStatus(
   ctx: MutationCtx,
@@ -270,9 +272,10 @@ export async function setContentStatus(
     reason: string;
     /**
      * Bring back members this Post's own *removal* took down, too — set only by that removal's undo
-     * (D226). A moderator's restore of a removed Post leaves them removed (the stronger verdict); an
-     * undo puts back what the removal replaced, and without this it would leave a visible Post with
-     * every Report in it gone.
+     * (D226), and only for a removal row from before `cascaded` was recorded (a newer one undoes
+     * through `revertPostVerdict`). A moderator's restore of a removed Post leaves them removed (the
+     * stronger verdict); an undo puts back what the removal replaced, and without this it would
+     * leave a visible Post with every Report in it gone.
      */
     reviveRemoved?: boolean;
   },
@@ -307,21 +310,6 @@ export async function setContentStatus(
         if (!report) continue;
         if (args.status !== 'visible') {
           if (report.moderationStatus !== 'visible') continue;
-          await applyReportStatus(ctx, report, args.status, audit);
-          cascaded.push({ id: report._id, from: 'visible', to: args.status });
-          await writeAudit(ctx, {
-            actorId: actor._id,
-            action: ACTION_FOR_STATUS[args.status],
-            targetType: 'report',
-            targetId: report._id,
-            reason: args.reason,
-            metadata: {
-              priorStatus: 'visible',
-              newStatus: args.status,
-              cascadedFromPostId: post._id,
-            },
-            createdAt: now,
-          });
         } else {
           const memberPrior = report.moderationStatus;
           if (memberPrior !== 'hidden' && !(args.reviveRemoved && memberPrior === 'removed')) {
@@ -333,22 +321,8 @@ export async function setContentStatus(
             .order('desc')
             .first();
           if (last?.metadata?.cascadedFromPostId !== post._id) continue;
-          await applyReportStatus(ctx, report, 'visible', audit);
-          cascaded.push({ id: report._id, from: memberPrior, to: 'visible' });
-          await writeAudit(ctx, {
-            actorId: actor._id,
-            action: 'restore',
-            targetType: 'report',
-            targetId: report._id,
-            reason: args.reason,
-            metadata: {
-              priorStatus: memberPrior,
-              newStatus: 'visible',
-              cascadedFromPostId: post._id,
-            },
-            createdAt: now,
-          });
         }
+        cascaded.push(await moveMember(ctx, post._id, report, args.status, audit));
       }
     } else {
       await ctx.db.patch(targetId, { moderationStatus: args.status });
@@ -395,6 +369,32 @@ export interface PostCascade {
 }
 
 /**
+ * Move one member of a Post for the Post's verdict, or for that verdict's undo: the Report's status
+ * and everything that follows it, and its own audit row naming the Post (which makes its undo the
+ * Post's). Returns the entry the Post's own row records.
+ */
+async function moveMember(
+  ctx: MutationCtx,
+  postId: Id<'posts'>,
+  report: Doc<'reports'>,
+  to: ModerationStatus,
+  audit: { actorId: Id<'profiles'>; reason: string; now: number },
+): Promise<PostCascade> {
+  const from = report.moderationStatus;
+  await applyReportStatus(ctx, report, to, audit);
+  await writeAudit(ctx, {
+    actorId: audit.actorId,
+    action: ACTION_FOR_STATUS[to],
+    targetType: 'report',
+    targetId: report._id,
+    reason: audit.reason,
+    metadata: { priorStatus: from, newStatus: to, cascadedFromPostId: postId },
+    createdAt: audit.now,
+  });
+  return { id: report._id, from, to };
+}
+
+/**
  * The undo of a Post's verdict (D226; founder call, 2026-11-13): the Post back to the status it had,
  * and **every member the verdict moved back to its own prior status** — whatever the Post returns
  * to. Not `setContentStatus` in reverse: its cascade only ever revives members on the way to
@@ -436,17 +436,7 @@ export async function revertPostVerdict(
     if (last?.metadata?.cascadedFromPostId !== post._id || last.createdAt !== row.createdAt) {
       continue;
     }
-    await applyReportStatus(ctx, report, member.from, audit);
-    await writeAudit(ctx, {
-      actorId: actor._id,
-      action: ACTION_FOR_STATUS[member.from],
-      targetType: 'report',
-      targetId: report._id,
-      reason,
-      metadata: { priorStatus: member.to, newStatus: member.from, cascadedFromPostId: post._id },
-      createdAt: now,
-    });
-    reverted.push({ id: report._id, from: member.to, to: member.from });
+    reverted.push(await moveMember(ctx, post._id, report, member.from, audit));
   }
   await writeAudit(ctx, {
     actorId: actor._id,

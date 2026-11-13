@@ -2,7 +2,9 @@
  * How each undoable verb is undone (D226, B01 §11) — the code half of `undoPolicy.ts`.
  *
  * Every handler calls the inverse verb's **own** helper, the one its mutation calls, so the undo
- * runs the same side effects (counts, cards, cascades, Clerk). A handler says:
+ * runs the same side effects (counts, cards, cascades, Clerk). One exception: a Post's verdict whose
+ * row lists the members it moved undoes through `revertPostVerdict`, which puts each member back to
+ * its own prior status with the per-member helper the verdict itself used. A handler says:
  * - `blocked(row)`: why this particular row can't be undone (it predates the data undo needs, or its
  *   target kind's inverse lands in a later workstream), or `null`;
  * - `undoTakesAway(row)`: whether the value the undo puts back takes something away (D226's reason);
@@ -68,8 +70,8 @@ const takeContentBackTo =
       targetId: row.targetId,
       status,
       reason,
-      // A Post's removal took its Reports down with it; its undo, back to visible, brings them back
-      // too. (`setContentStatus` reads the flag only on the way to visible.)
+      // A Post's removal from before the record took its Reports down with it; its undo, back to
+      // visible, brings them back too. (`setContentStatus` reads the flag only on the way to visible.)
       ...(row.action === 'remove' && status === 'visible' ? { reviveRemoved: true } : {}),
     });
   };
@@ -84,9 +86,7 @@ function contentUndoTakesAway(row: Doc<'moderationActions'>): boolean {
     newStatus: ContentStatus;
   };
   if (STATUS_SEVERITY[priorStatus] > STATUS_SEVERITY[newStatus]) return true;
-  return (cascadeOf(row) ?? []).some(
-    (m) => STATUS_SEVERITY[m.from as ContentStatus] > STATUS_SEVERITY[m.to as ContentStatus],
-  );
+  return (cascadeOf(row) ?? []).some((m) => STATUS_SEVERITY[m.from] > STATUS_SEVERITY[m.to]);
 }
 
 /**

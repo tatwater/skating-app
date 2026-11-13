@@ -418,6 +418,52 @@ describe('undo: content (D226)', () => {
       expect(await statusOf(t, r1)).toBe('removed');
       expect(await statusOf(t, reportIds[1] as Id<'reports'>)).toBe('visible');
     });
+
+    test('a member hidden again on its own keeps that decision, though its status never moved', async () => {
+      const { t, mod, postId, reportIds, set } = await setup(2);
+      const [r1, r2] = reportIds as [Id<'reports'>, Id<'reports'>];
+      await set('post', postId, 'hidden');
+      const hide = await newestOn(t, 'post', postId);
+      await set('report', r1, 'hidden'); // the same status, but a decision on R1 alone
+      await mod.as.mutation(api.undo.run, { actionId: hide._id });
+      expect([await statusOf(t, postId), await statusOf(t, r1), await statusOf(t, r2)]).toEqual([
+        'visible',
+        'hidden',
+        'visible',
+      ]);
+    });
+
+    test('undoing that undo takes the member down again, so it asks why', async () => {
+      const { t, mod, postId, reportIds, set } = await setup(2);
+      const r1 = firstOf(reportIds);
+      await set('post', postId, 'hidden');
+      await set('report', r1, 'visible');
+      await set('post', postId, 'hidden');
+      const rehide = await newestOn(t, 'post', postId);
+      await mod.as.mutation(api.undo.run, { actionId: rehide._id });
+      const undo = await newestOn(t, 'post', postId);
+      expect(undo.undoesActionId).toBe(rehide._id);
+
+      // The Post is hidden either way; it is R1 the redo takes away.
+      await expect(mod.as.mutation(api.undo.run, { actionId: undo._id })).rejects.toThrow(
+        /needs a reason/i,
+      );
+      await mod.as.mutation(api.undo.run, { actionId: undo._id, reason: 'R1 was part of it' });
+      expect(await statusOf(t, postId)).toBe('hidden');
+      expect(await statusOf(t, r1)).toBe('hidden');
+    });
+
+    test('a Post row from before the record still undoes through the cascade', async () => {
+      const { t, mod, postId, reportIds, set } = await setup(2);
+      await set('post', postId, 'removed');
+      const removal = await newestOn(t, 'post', postId);
+      await t.run((ctx) =>
+        ctx.db.patch(removal._id, { metadata: { priorStatus: 'visible', newStatus: 'removed' } }),
+      );
+      await mod.as.mutation(api.undo.run, { actionId: removal._id });
+      expect(await statusOf(t, postId)).toBe('visible');
+      for (const id of reportIds) expect(await statusOf(t, id)).toBe('visible');
+    });
   });
 
   test("a moderator's own restore of a removed Post still leaves its removed members removed", async () => {
