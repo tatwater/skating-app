@@ -154,6 +154,14 @@ async function newestOn(t: T, targetType: string, targetId: string) {
   if (!row) throw new Error(`no audit row on ${targetType} ${targetId}`);
   return row;
 }
+/** A backfill, run to its end: the walk and every item it hands off, each its own job. */
+async function runToEnd(t: T, start: () => Promise<unknown>) {
+  const real = !vi.isFakeTimers();
+  if (real) vi.useFakeTimers({ now: Date.now() });
+  await start();
+  await t.finishAllScheduledFunctions(vi.runAllTimers, 10_000);
+  if (real) vi.useRealTimers();
+}
 const literally = (s: string) => new RegExp(s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
 
 describe('an author deletion is final', () => {
@@ -407,7 +415,7 @@ describe('the backfill, on old dev data', () => {
         createdAt: at + 1000,
       });
     });
-    await t.mutation(internal.authorDeletions.backfillFromAudit, {});
+    await runToEnd(t, () => t.mutation(internal.authorDeletions.backfillFromAudit, {}));
     expect(await deletedAt(t, postId)).toBe(at);
     expect(await deletedAt(t, cascaded)).toBe(at);
     expect(await deletedAt(t, hiddenAfter)).toBe(at);
@@ -416,8 +424,8 @@ describe('the backfill, on old dev data', () => {
   });
 });
 
-describe('a history longer than the backfill reads', () => {
-  test('is unknown, never "nothing there": the item is left unstamped', async () => {
+describe('a history longer than a page', () => {
+  test('is read whole, a page a transaction: a restore far back still answers, and so does no word at all', async () => {
     const { t, author, mod } = await setup();
     const reportId = await seedReport(t, author.id);
     const commentId = await t.run((ctx) =>
@@ -466,13 +474,19 @@ describe('a history longer than the backfill reads', () => {
         }
       }
     });
-    await t.mutation(internal.authorDeletions.backfillFromAudit, {});
-    await t.mutation(internal.authorDeletions.backfillCommentDeletions, {});
+    await runToEnd(t, () =>
+      t.mutation(internal.authorDeletions.backfillFromAudit, { pageSize: 7 }),
+    );
+    await runToEnd(t, () =>
+      t.mutation(internal.authorDeletions.backfillCommentDeletions, { pageSize: 7 }),
+    );
+    // The restore, read whole: the moderator's word was the last, so the Report is left live.
     expect(await deletedAt(t, reportId)).toBeUndefined();
-    expect(await deletedAt(t, commentId)).toBeUndefined();
+    // No moderator's word anywhere in the comment's history, read whole: the removal was the author's.
+    expect(await deletedAt(t, commentId)).toBeDefined();
   });
 
-  test('one exactly as long as the read is known whole, and answers', async () => {
+  test('a removal far back in a long history is still the last word', async () => {
     const { t, author, mod } = await setup();
     const reportId = await seedReport(t, author.id);
     const commentId = await t.run((ctx) =>
@@ -486,7 +500,15 @@ describe('a history longer than the backfill reads', () => {
       }),
     );
     await t.run(async (ctx) => {
-      for (let i = 0; i < 100; i++) {
+      await ctx.db.insert('moderationActions', {
+        actorId: mod.id,
+        action: 'remove',
+        targetType: 'comment',
+        targetId: commentId,
+        reason: 'harassment',
+        createdAt: Date.now() - 1,
+      });
+      for (let i = 0; i < 150; i++) {
         await ctx.db.insert('moderationActions', {
           actorId: mod.id,
           action: 'dismiss_flag',
@@ -497,9 +519,11 @@ describe('a history longer than the backfill reads', () => {
         });
       }
     });
-    await t.mutation(internal.authorDeletions.backfillCommentDeletions, {});
-    // No moderator's word in the whole of it: the removal was the author's.
-    expect(await deletedAt(t, commentId)).toBeDefined();
+    await runToEnd(t, () =>
+      t.mutation(internal.authorDeletions.backfillCommentDeletions, { pageSize: 9 }),
+    );
+    // A moderator's remove, however far back: theirs, not the author's.
+    expect(await deletedAt(t, commentId)).toBeUndefined();
   });
 });
 
