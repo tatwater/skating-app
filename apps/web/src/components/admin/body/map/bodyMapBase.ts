@@ -69,9 +69,8 @@ export function basinLabel(geom: GeoJSON.Polygon | GeoJSON.MultiPolygon): {
     syy += y * y;
     sxy += x * y;
   }
-  let angle = (0.5 * Math.atan2(2 * sxy, sxx - syy) * 180) / Math.PI;
-  if (angle > 90) angle -= 180;
-  if (angle <= -90) angle += 180;
+  // Half of atan2's (−180°, 180°] is (−90°, 90°]: the axis already reads left to right.
+  const angle = (0.5 * Math.atan2(2 * sxy, sxx - syy) * 180) / Math.PI;
   const mean = { lat: my, lng: mx };
   const center = pointInPolygon(mean, geom) ? mean : representativePoint(geom);
   return { at: at(center), angle: Number(angle.toFixed(1)) };
