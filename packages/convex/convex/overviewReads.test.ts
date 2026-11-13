@@ -19,6 +19,7 @@ import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { cardRows, type JobRow } from './machinery';
 import schema from './schema';
+import { emptyTally, mostReported, unpack } from './seasonReach';
 
 const modules = import.meta.glob('./**/*.*s');
 
@@ -633,7 +634,7 @@ describe('the day pulse rollup', () => {
     await seedRating(t, bo.id, report, 'unhelpful', NOW - HOUR);
     await seedHazard(t, cy.id, body, NOW - HOUR);
 
-    await t.mutation(internal.analyticsRollup.rollupDayJob, { date: TODAY });
+    await t.mutation(internal.analyticsRollup.rollupPulseDayJob, { date: TODAY });
     expect(await readSnapshot(t, 'comments_created', TODAY)).toEqual(
       expect.objectContaining({ scalar: 1, meta: { reports: 1 } }),
     );
@@ -651,13 +652,13 @@ describe('the day pulse rollup', () => {
   test('sign-ins are written only from the day their record began', async () => {
     const t = harness();
     const ada = await seedUser(t, 'ada');
-    await t.mutation(internal.analyticsRollup.rollupDayJob, { date: TODAY });
+    await t.mutation(internal.analyticsRollup.rollupPulseDayJob, { date: TODAY });
     expect(await readSnapshot(t, 'signed_in', TODAY)).toBeNull();
     await t.run((ctx) =>
       ctx.db.insert('signInDays', { userId: ada.id, day: '2026-11-12', firstAt: NOW - DAY }),
     );
-    await t.mutation(internal.analyticsRollup.rollupDayJob, { date: '2026-11-11' });
-    await t.mutation(internal.analyticsRollup.rollupDayJob, { date: TODAY });
+    await t.mutation(internal.analyticsRollup.rollupPulseDayJob, { date: '2026-11-11' });
+    await t.mutation(internal.analyticsRollup.rollupPulseDayJob, { date: TODAY });
     expect(await readSnapshot(t, 'signed_in', '2026-11-11')).toBeNull();
     // After the record began, a day nobody came is a measured zero.
     expect((await readSnapshot(t, 'signed_in', TODAY))?.scalar).toBe(0);
@@ -674,11 +675,21 @@ describe('the day pulse rollup', () => {
     expect(row?.meta).toBeUndefined();
   });
 
-  test('the rollup schedules the season walk with its jobs', async () => {
-    const t = convexTest(schema, modules);
+  test('the rollup schedules the pulse for yesterday and today, and the season walk', async () => {
+    const t = harness();
     await t.mutation(internal.analyticsRollup.runRollup, {});
     const jobs = await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
+    expect(jobs.filter((j) => j.name.includes('rollupPulseDayJob'))).toHaveLength(2);
     expect(jobs.some((j) => j.name.includes('seasonReach'))).toBe(true);
+  });
+
+  test('the backfill replays the pulse a day at a time, each its own transaction', async () => {
+    const t = harness();
+    await t.mutation(internal.analyticsRollup.backfillStep, { offset: 2 });
+    const jobs = await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
+    expect(jobs.filter((j) => j.name.includes('rollupPulseDayJob')).map((j) => j.args[0])).toEqual([
+      { date: '2026-11-11' },
+    ]);
   });
 });
 
@@ -768,6 +779,35 @@ describe('the season’s reach', () => {
       [mascoma, 2, 2, 2],
       [morey, 1, 0, 1],
     ]);
+  });
+
+  test('the tally stops at its caps and names what it could not count', () => {
+    const w = unpack(emptyTally(), { ids: 2, bodies: 1 });
+    w.addTo(w.sets.signedIn, 'a', 'signedIn');
+    w.addTo(w.sets.signedIn, 'a', 'signedIn');
+    w.contributor('b');
+    w.contributor('c');
+    expect(w.body('x')).toBeDefined();
+    expect(w.body('y')).toBeUndefined();
+    expect(w.body('x')).toBeDefined();
+    const t = w.pack();
+    expect(t.sets.signedIn).toEqual(['a']);
+    expect(t.sets.contributors).toEqual(['b']);
+    expect(t.capped.sort()).toEqual(['contributors', 'mostReported']);
+    // A packed tally picks up where it left off: still full.
+    const again = unpack(t, { ids: 2, bodies: 1 });
+    again.addTo(again.sets.posts, 'p', 'posts');
+    expect(again.pack().capped).toContain('posts');
+  });
+
+  test('ranks by reports, then the latest report', () => {
+    expect(
+      mostReported({
+        a: { reports: 1, photos: 0, people: ['x'], last: 5 },
+        b: { reports: 2, photos: 1, people: ['x', 'y'], last: 1 },
+        c: { reports: 1, photos: 0, people: [], last: 9 },
+      }).map((r) => r.bodyId),
+    ).toEqual(['b', 'c', 'a']);
   });
 
   test('walks a page at a time, past one page of rows', async () => {

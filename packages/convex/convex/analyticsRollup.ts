@@ -292,8 +292,6 @@ async function rollupDay(ctx: MutationCtx, date: string): Promise<void> {
       HOUR_BUCKETS,
     ),
   });
-
-  await rollupPulseDay(ctx, date, from, to, { reports, hazards });
 }
 
 /**
@@ -302,16 +300,31 @@ async function rollupDay(ctx: MutationCtx, date: string): Promise<void> {
  * season from the rows still on disk — except sign-ins before their record began, which stay
  * unwritten (read as *not recorded*, never as a day nobody came).
  *
- * `reports` and `hazards` are the day's rows `rollupDay` already read: a contributor is anyone who
- * posted a visible report that skated this day, a hazard or a visible comment.
+ * Its own transaction (`rollupPulseDayJob`), beside `rollupDay`'s: each day job stays one day's
+ * scans. A contributor is anyone who posted a visible report that skated this day, a hazard or a
+ * visible comment.
  */
-async function rollupPulseDay(
-  ctx: MutationCtx,
-  date: string,
-  from: number,
-  to: number,
-  day: { reports: Doc<'reports'>[]; hazards: Doc<'hazards'>[] },
-): Promise<void> {
+async function rollupPulseDay(ctx: MutationCtx, date: string): Promise<void> {
+  const from = metricDayStart(date);
+  const to = from + DAY_MS;
+  const reports = await capped(
+    ctx.db
+      .query('reports')
+      .withIndex('by_moderation_and_skate_end_time', (q) =>
+        q.eq('moderationStatus', 'visible').gte('skateEndTime', from).lt('skateEndTime', to),
+      )
+      .take(DAY_SCAN_CAP),
+    DAY_SCAN_CAP,
+    `pulse reports on ${date}`,
+  );
+  const hazards = await capped(
+    ctx.db
+      .query('hazards')
+      .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to))
+      .take(DAY_SCAN_CAP),
+    DAY_SCAN_CAP,
+    `pulse hazards on ${date}`,
+  );
   const comments = (
     await capped(
       ctx.db
@@ -362,8 +375,8 @@ async function rollupPulseDay(
   });
 
   const contributors = new Set<string>([
-    ...day.reports.map((r) => r.authorId as string),
-    ...day.hazards.map((h) => h.createdByUserId as string),
+    ...reports.map((r) => r.authorId as string),
+    ...hazards.map((h) => h.createdByUserId as string),
     ...comments.map((c) => c.authorId as string),
   ]);
   await writeMetricSnapshot(ctx, 'daily_contributors', date, { scalar: contributors.size });
@@ -659,6 +672,12 @@ export const rollupDayJob = internalMutation({
   handler: (ctx, { date }) => rollupDay(ctx, date),
 });
 
+/** One UTC day of the Overview's pulse (B01), its own transaction beside `rollupDayJob`. */
+export const rollupPulseDayJob = internalMutation({
+  args: { date: v.string() },
+  handler: (ctx, { date }) => rollupPulseDay(ctx, date),
+});
+
 /** The point-in-time chunks, each a separate transaction (see the scan-cap note). */
 export const rollupDistributionsJob = internalMutation({
   args: {},
@@ -679,6 +698,9 @@ async function scheduleRollupJobs(ctx: MutationCtx, now: number): Promise<void> 
     date: metricDay(now - DAY_MS),
   });
   await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupDayJob, { date: metricDay(now) });
+  for (const date of [metricDay(now - DAY_MS), metricDay(now)]) {
+    await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupPulseDayJob, { date });
+  }
   await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupDistributionsJob, {});
   await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupActivityJob, {});
   await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupOperationalJob, {});
@@ -734,7 +756,9 @@ export const backfillStep = internalMutation({
   args: { offset: v.number() },
   handler: async (ctx, { offset }) => {
     const now = Date.now();
-    await rollupDay(ctx, metricDay(now - offset * DAY_MS));
+    const date = metricDay(now - offset * DAY_MS);
+    await rollupDay(ctx, date);
+    await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupPulseDayJob, { date });
     if (offset > 0) {
       await ctx.scheduler.runAfter(0, internal.analyticsRollup.backfillStep, {
         offset: offset - 1,

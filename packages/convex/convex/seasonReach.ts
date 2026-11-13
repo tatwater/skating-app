@@ -13,8 +13,11 @@
  * `most_reported` once, at the end, stamped on the window's last day. Nothing partial is ever
  * written: a chart never shows a half-walked season as if it were the whole one.
  *
- * Each id set is bounded ({@link ID_CAP}); one that fills stops growing and its figure is named in
- * `capped`, which the reads return as `null` — a floor is never shown as the count.
+ * **The tally is bounded as a whole**, because it travels as a scheduled function's arguments and
+ * those are stored as one document (1 MiB). All its ids together stop at {@link TOTAL_ID_CAP} and its
+ * bodies at {@link BODY_CAP}; a figure that would have needed one more is named in `capped`, which
+ * the reads return as `null` — a floor is never shown as the count. That is thousands of people a
+ * season; past it, moving the id sets into a scratch table is the fix.
  *
  * ## Which season
  *
@@ -43,11 +46,14 @@ import { isCountedComment } from './lib/pulse';
 /** Rows read per transaction. Comments, kudos and photos each read their report too. */
 const PAGE = 300;
 
-/** The most ids a set carries forward. Past it the set stops growing and its figure is capped. */
-export const ID_CAP = 20_000;
+/**
+ * The most ids the whole tally carries — every set, every state's and every body's people together.
+ * About 35 bytes each as an argument, so this keeps the tally near half a megabyte.
+ */
+export const TOTAL_ID_CAP = 15_000;
 
 /** The most bodies the most-reported tally carries. Past it, the ranking is capped. */
-const BODY_CAP = 5_000;
+export const BODY_CAP = 2_000;
 
 /** How many bodies the most-reported ranking keeps. */
 export const MOST_REPORTED_ROWS = 20;
@@ -105,8 +111,11 @@ export function emptyTally(): Tally {
 /** The state a report was filed from (its point-derived place), or `unknown`. */
 const stateOf = (report: Doc<'reports'> | null): string => report?.place?.state ?? 'unknown';
 
-/** A page's working copy of the tally: the id arrays as sets, written back by {@link pack}. */
-function unpack(t: Tally) {
+/**
+ * A page's working copy of the tally: the id arrays as sets, written back by `pack`. The caps are
+ * the module's unless a test asks for smaller ones.
+ */
+export function unpack(t: Tally, caps = { ids: TOTAL_ID_CAP, bodies: BODY_CAP }) {
   const sets = Object.fromEntries(
     Object.entries(t.sets).map(([k, ids]) => [k, new Set(ids)]),
   ) as Record<keyof Tally['sets'], Set<string>>;
@@ -115,15 +124,20 @@ function unpack(t: Tally) {
   );
   const bodyPeople = new Map(Object.entries(t.bodies).map(([id, b]) => [id, new Set(b.people)]));
   const capped = new Set(t.capped);
+  let total =
+    [...Object.values(sets)].reduce((n, set) => n + set.size, 0) +
+    [...statePeople.values()].reduce((n, set) => n + set.size, 0) +
+    [...bodyPeople.values()].reduce((n, set) => n + set.size, 0);
 
-  /** Add to a bounded set; a full set stops growing and marks its figure capped. */
+  /** Add to a set while the tally has room; past it, the figure that needed the id is capped. */
   const addTo = (set: Set<string>, id: string, name: string) => {
     if (set.has(id)) return;
-    if (set.size >= ID_CAP) {
+    if (total >= caps.ids) {
       capped.add(name);
       return;
     }
     set.add(id);
+    total++;
   };
   const state = (code: string): StateTally => {
     const s = t.states[code] ?? { reports: 0, comments: 0, photos: 0, kudos: 0, people: [] };
@@ -136,6 +150,19 @@ function unpack(t: Tally) {
     addTo(statePeople.get(code) as Set<string>, id, `states.${code}.contributors`);
   };
   const contributor = (id: string) => addTo(sets.contributors, id, 'contributors');
+  /** A body's running tally, made on its first report; `undefined` once the ranking is full. */
+  const body = (id: string) => {
+    const known = t.bodies[id];
+    if (known !== undefined) return known;
+    if (Object.keys(t.bodies).length >= caps.bodies) {
+      capped.add('mostReported');
+      return undefined;
+    }
+    const made = { reports: 0, photos: 0, people: [] as string[], last: 0 };
+    t.bodies[id] = made;
+    bodyPeople.set(id, new Set());
+    return made;
+  };
 
   const pack = (): Tally => ({
     ...t,
@@ -155,7 +182,7 @@ function unpack(t: Tally) {
     capped: [...capped],
   });
 
-  return { sets, addTo, state, statePerson, contributor, bodyPeople, capped, pack };
+  return { sets, addTo, state, statePerson, contributor, body, bodyPeople, capped, pack };
 }
 
 /** A report this page needs, read once per page. */
@@ -203,16 +230,7 @@ async function walkPage(
         const code = stateOf(r);
         w.state(code).reports++;
         w.statePerson(code, r.authorId);
-        let body = t.bodies[r.waterBodyId];
-        if (body === undefined) {
-          if (Object.keys(t.bodies).length >= BODY_CAP) {
-            w.capped.add('mostReported');
-          } else {
-            body = { reports: 0, photos: 0, people: [], last: 0 };
-            t.bodies[r.waterBodyId] = body;
-            w.bodyPeople.set(r.waterBodyId, new Set());
-          }
-        }
+        const body = w.body(r.waterBodyId);
         if (body !== undefined) {
           body.reports++;
           body.photos += r.photoIds.length;
