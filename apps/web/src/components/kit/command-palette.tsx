@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from './dialog';
 import { Kbd } from './kbd';
 import { ScrollArea } from './scroll-area';
+import { FootKey, SearchGroupLabel, SearchStatus } from './search-parts';
 
 /**
  * The kit's command palette (⌘K): Base UI's Autocomplete inside the kit Dialog — not shadcn's
@@ -274,16 +275,14 @@ function PaletteBody({
                 items={group.items}
                 data-slot="command-palette-group"
               >
-                <Autocomplete.GroupLabel
+                <SearchGroupLabel
                   data-slot="command-palette-group-label"
-                  className="flex items-center gap-(--space-2_5) px-gutter pt-(--space-3) pb-(--space-1_5)"
+                  look="palette"
+                  rule
+                  {...(group.count !== undefined ? { count: group.count } : {})}
                 >
-                  <span className="text-kick leading-none font-semibold tracking-kick text-fg3 uppercase">
-                    {group.label}
-                    {group.count !== undefined && ` · ${group.count}`}
-                  </span>
-                  <span aria-hidden="true" className="h-px flex-1 bg-line" />
-                </Autocomplete.GroupLabel>
+                  {group.label}
+                </SearchGroupLabel>
                 <Autocomplete.Collection>
                   {(item: CommandItem) => (
                     <Row
@@ -300,23 +299,13 @@ function PaletteBody({
           </Autocomplete.List>
         </ScrollArea>
         {count === 0 && (
-          <div
+          <SearchStatus
             data-slot="command-palette-note"
-            role="status"
-            className="absolute inset-0 grid place-items-center text-row text-fg3"
+            loading={loading}
+            className="absolute inset-0 text-row"
           >
-            {loading ? (
-              <>
-                <FontAwesomeIcon
-                  icon={faSpinnerThird}
-                  className="h-[1.2em] motion-safe:animate-spin"
-                />
-                <span className="sr-only">Searching</span>
-              </>
-            ) : (
-              empty
-            )}
-          </div>
+            {empty}
+          </SearchStatus>
         )}
       </div>
 
@@ -328,23 +317,12 @@ function PaletteBody({
         data-slot="command-palette-foot"
         className="flex shrink-0 items-center gap-(--space-4) border-t border-solid border-line px-gutter py-(--space-2_5) text-assist leading-none text-fg3"
       >
-        <FootKey k="↑↓">move</FootKey>
-        <FootKey k="⏎">open</FootKey>
-        <FootKey k="⇥">actions</FootKey>
-        <FootKey k="Esc">close</FootKey>
+        <FootKey keys={['↑↓']}>move</FootKey>
+        <FootKey keys={['⏎']}>open</FootKey>
+        <FootKey keys={['⇥']}>actions</FootKey>
+        <FootKey keys={['Esc']}>close</FootKey>
       </div>
     </Autocomplete.Root>
-  );
-}
-
-function FootKey({ k, children }: { k: string; children: ReactNode }) {
-  return (
-    <span className="inline-flex items-center gap-(--space-1_5) whitespace-nowrap">
-      <Kbd variant="dim" aria-hidden="true">
-        {k}
-      </Kbd>
-      {children}
-    </span>
   );
 }
 

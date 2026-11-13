@@ -3,12 +3,13 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faLocationDot, faMagnifyingGlass } from '@fortawesome/sharp-light-svg-icons';
 import { faSpinnerThird } from '@fortawesome/sharp-regular-svg-icons';
 import { ringsToPath, silhouetteProjection } from '@skating/core';
-import { type ReactNode, useEffect, useLayoutEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 
 import { cn } from '@/lib/utils';
 
 import { Avatar } from '../kit/avatar';
 import { Kbd } from '../kit/kbd';
+import { FootKey, SearchGroupLabel, SearchStatus } from '../kit/search-parts';
 import { SearchTrigger } from '../kit/top-bar-parts';
 import { type SearchGroup, type SearchRow, splitMatch } from './searchModel';
 import { PLATE } from './styles';
@@ -134,12 +135,9 @@ export function GlobalSearchView({
                     items={group.items}
                     data-slot="global-search-group"
                   >
-                    <Autocomplete.GroupLabel
-                      data-slot="global-search-group-label"
-                      className="flex h-[1.875rem] items-center px-(--space-4) text-kick leading-none font-medium tracking-kick text-fg3 uppercase"
-                    >
+                    <SearchGroupLabel data-slot="global-search-group-label">
                       {group.label}
-                    </Autocomplete.GroupLabel>
+                    </SearchGroupLabel>
                     <Autocomplete.Collection>
                       {(row: SearchRow) => (
                         <ResultRow key={row.key} row={row} query={query} onPick={onPick} />
@@ -321,14 +319,7 @@ export function EmptyNote({
   noResultsFor: string | null;
   loading: boolean;
 }) {
-  if (loading) {
-    return (
-      <div role="status" className="grid h-12 place-items-center text-fg3">
-        <FontAwesomeIcon icon={faSpinnerThird} className="h-[1.2em] motion-safe:animate-spin" />
-        <span className="sr-only">Searching</span>
-      </div>
-    );
-  }
+  if (loading) return <SearchStatus loading className="h-12" />;
   return (
     <div
       role="status"
@@ -350,18 +341,5 @@ export function EmptyNote({
         </span>
       )}
     </div>
-  );
-}
-
-function FootKey({ keys, children }: { keys: readonly string[]; children: ReactNode }) {
-  return (
-    <span className="inline-flex items-center gap-(--space-1_5) whitespace-nowrap">
-      {keys.map((k) => (
-        <Kbd key={k} variant="dim" aria-hidden="true">
-          {k}
-        </Kbd>
-      ))}
-      {children}
-    </span>
   );
 }
