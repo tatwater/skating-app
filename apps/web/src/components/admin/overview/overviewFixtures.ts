@@ -212,7 +212,7 @@ export const HOME: OverviewHomeData = {
     nextSuspensionEnds: day(0, 19),
     banned: { count: 0, capped: false },
     flaggedPeople: { count: 1, capped: false },
-    appealsOpen: 1,
+    appealsOpen: { count: 1, capped: false },
     leaving: { count: 0, capped: false },
     totalUsers: { count: 38, capped: false },
   },

@@ -92,6 +92,20 @@ describe('OverviewHome', () => {
     expect(screen.getByText('17 open')).toBeInTheDocument();
   });
 
+  it('says when the appeals count stopped at its bound, as every other count does', () => {
+    const people = must(HOME.people);
+    render(
+      <OverviewHome
+        data={{ ...HOME, people: { ...people, appealsOpen: { count: 200, capped: true } } }}
+        now={NOW}
+      />,
+    );
+    expect(within(must(rowNamed('Appeals open'))).getByText('200+')).toHaveAttribute(
+      'data-tone',
+      'default',
+    );
+  });
+
   it('holds every block’s place while nothing has landed', () => {
     render(<OverviewHome data={{}} now={NOW} />);
     const cards = document.querySelectorAll('[data-slot="count-card"]');

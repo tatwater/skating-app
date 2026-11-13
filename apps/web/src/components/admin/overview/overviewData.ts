@@ -184,7 +184,7 @@ export interface PeopleCardData {
   banned: Count;
   flaggedPeople: Count;
   /** Open appeals; `null` for a viewer who can't read support. */
-  appealsOpen: number | null;
+  appealsOpen: Count | null;
   leaving: Count;
   /** Everyone with a profile, when a read counts them. */
   totalUsers?: Count | null;

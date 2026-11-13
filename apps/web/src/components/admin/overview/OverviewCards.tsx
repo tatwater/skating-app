@@ -246,8 +246,8 @@ export function PeopleCard({ data, ...props }: CardProps<PeopleCardData>) {
         <CountRow
           label="Appeals open"
           detail={<RowLink to={{ kind: 'inbox', lane: 'support' }}>Support</RowLink>}
-          value={data.appealsOpen.toLocaleString('en-US')}
-          tone={data.appealsOpen === 0 ? 'dim' : 'default'}
+          value={countText(data.appealsOpen)}
+          tone={countTone(data.appealsOpen)}
         />
       )}
       <CountRow
