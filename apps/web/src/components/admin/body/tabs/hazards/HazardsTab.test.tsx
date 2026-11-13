@@ -119,9 +119,8 @@ describe('HazardsTab', () => {
 
   it('a past winter reads that season, and Recurrence opens the pre-ice pass', async () => {
     render(<HazardsTab bodyId={BODY} />);
-    const current = (
-      convex.calls.find((c) => c.name === 'hazards:listForBody')?.args as { season: number }
-    ).season;
+    const first = convex.calls.find((c) => c.name === 'hazards:listForBody');
+    const current = (first?.args as { season: number } | undefined)?.season ?? Number.NaN;
     await userEvent.click(
       screen.getByRole('button', {
         name: `${current - 1}–${String(current % 100).padStart(2, '0')}`,
