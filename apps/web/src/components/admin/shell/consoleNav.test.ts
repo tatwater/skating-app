@@ -72,4 +72,25 @@ describe('the built modes', () => {
     expect(modeAt('/admin/inbox')).toBeUndefined();
     expect(modeAt('/')).toBeUndefined();
   });
+
+  it('finds Bodies at the library and inside every body’s console, and nowhere that only shares a prefix', () => {
+    expect(modeAt('/admin/bodies')?.id).toBe('bodies');
+    expect(modeAt('/admin/bodies/')?.id).toBe('bodies');
+    expect(modeAt('/admin/body/abc123')?.id).toBe('bodies');
+    expect(modeAt('/admin/body')?.id).toBe('bodies');
+    expect(modeAt('/admin/bodyguard')).toBeUndefined();
+    expect(modeAt('/admin/bodiesx')).toBeUndefined();
+  });
+
+  it('gates Bodies on reading a body, a moderator line', () => {
+    const bodies = CONSOLE_MODES.find((m) => m.id === 'bodies');
+    expect(bodies).toMatchObject({ to: '/admin/bodies', goKey: 'B', capability: 'body.read' });
+    expect(CAPABILITIES['body.read'].role).toBe('moderator');
+  });
+
+  it('never sends a tree a mode owns to the old shell', () => {
+    for (const mode of CONSOLE_MODES) {
+      for (const tree of mode.also ?? []) expect(usesOldShell(`${tree}/x`)).toBe(false);
+    }
+  });
 });
