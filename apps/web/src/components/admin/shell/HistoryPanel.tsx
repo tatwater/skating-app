@@ -43,13 +43,18 @@ export type HistoryPanelViewProps = {
 /** The id a row is reachable by, so "changed since" can take the reader to the row that did. */
 const rowId = (id: string) => `history-${id}`;
 
+/** A person's name: their display name, or their handle when that is blank (as the audit feed). */
+const nameOf = (actor: NonNullable<HistoryEntry['actor']>) =>
+  actor.displayName.trim() || actor.username;
+
 /** Who took the action: the person's circle and name, or the machines. */
 function Who({ actor }: { actor: HistoryEntry['actor'] }) {
   if (actor === null) return <span data-slot="history-system">System</span>;
+  const name = nameOf(actor);
   return (
     <span className="inline-flex items-center gap-(--space-1_5)">
-      <Avatar name={actor.displayName} size="sm" />
-      <span>{actor.displayName}</span>
+      <Avatar name={name} size="sm" />
+      <span>{name}</span>
     </span>
   );
 }
@@ -75,7 +80,8 @@ export function HistoryPanelView({
         );
       case 'undone': {
         // Staff are named by first name in a row's words ("Undone · Sarah").
-        const by = byId.get(u.byActionId)?.actor?.displayName.split(' ')[0];
+        const actor = byId.get(u.byActionId)?.actor;
+        const by = actor ? nameOf(actor).split(/\s+/u)[0] : undefined;
         return (
           <span data-slot="history-undone" className="text-assist leading-list text-fg3">
             Undone{by !== undefined ? ` · ${by}` : ''}

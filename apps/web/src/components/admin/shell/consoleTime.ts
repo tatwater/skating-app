@@ -58,13 +58,23 @@ function dateKey(at: number, timeZone?: string): string {
   }).format(at);
 }
 
+/** The calendar day `at` falls on in `timeZone`, as a day number (days since the epoch). */
+function dayNumber(at: number, timeZone?: string): number {
+  const [y, m, d] = dateKey(at, timeZone).split('-').map(Number);
+  return Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1) / DAY_MS;
+}
+
 /**
  * A History row's time, as the boards write it: the clock today ("14:41"), the weekday this past
  * week ("Sat"), and the day and month before that ("3 Oct") — history rows keep day-month, never
  * the year (the founder's Review 13 rule; status dates carry it, rows don't).
+ *
+ * "This past week" is the six calendar days before today in the reader's zone — the audit feed's
+ * rule (`feedWhen`) — so a day reads the same whatever hour its row was written at.
  */
 export function historyWhen(at: number, now: number, timeZone?: string): string {
-  if (dateKey(at, timeZone) === dateKey(now, timeZone)) {
+  const daysAgo = dayNumber(now, timeZone) - dayNumber(at, timeZone);
+  if (daysAgo === 0) {
     return new Intl.DateTimeFormat('en-GB', {
       hour: '2-digit',
       minute: '2-digit',
@@ -72,7 +82,7 @@ export function historyWhen(at: number, now: number, timeZone?: string): string 
       timeZone,
     }).format(at);
   }
-  if (now - at < 6 * DAY_MS && at <= now) {
+  if (daysAgo > 0 && daysAgo <= 6) {
     return new Intl.DateTimeFormat('en-GB', { weekday: 'short', timeZone }).format(at);
   }
   return dayMonth(at, timeZone);

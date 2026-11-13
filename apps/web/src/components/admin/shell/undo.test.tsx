@@ -171,7 +171,11 @@ describe('useUndo', () => {
       useUndo();
       return null;
     };
-    vi.spyOn(console, 'error').mockImplementation(() => {});
-    expect(() => render(<Orphan />)).toThrow('useUndo needs an <UndoProvider> above it.');
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(() => render(<Orphan />)).toThrow('useUndo needs an <UndoProvider> above it.');
+    } finally {
+      quiet.mockRestore();
+    }
   });
 });

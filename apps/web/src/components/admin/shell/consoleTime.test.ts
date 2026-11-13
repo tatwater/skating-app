@@ -59,6 +59,14 @@ describe('historyWhen', () => {
     expect(historyWhen(at('2027-01-11T15:00:00Z'), now, NY)).toBe('Mon');
   });
 
+  it('counts the past week in calendar days, so a day reads the same at any hour', () => {
+    // Sunday the 10th, six days back: early (6 d 7 h ago) and late (5 d 14 h ago) alike.
+    expect(historyWhen(at('2027-01-10T09:30:00Z'), now, NY)).toBe('Sun');
+    expect(historyWhen(at('2027-01-11T02:30:00Z'), now, NY)).toBe('Sun');
+    // Saturday the 9th is a week back: its date, never a weekday that reads as today's.
+    expect(historyWhen(at('2027-01-10T04:00:00Z'), now, NY)).toBe('9 Jan');
+  });
+
   it('writes the day and month before that, never the year', () => {
     expect(historyWhen(at('2027-01-03T15:00:00Z'), now, NY)).toBe('3 Jan');
     expect(historyWhen(at('2026-10-03T15:00:00Z'), now, NY)).toBe('3 Oct');

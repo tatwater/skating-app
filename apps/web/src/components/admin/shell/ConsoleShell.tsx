@@ -11,6 +11,7 @@ import {
   type ReactElement,
   type ReactNode,
   useContext,
+  useMemo,
   useState,
 } from 'react';
 import { createPortal } from 'react-dom';
@@ -120,9 +121,15 @@ export function ConsoleShell({
 }: ConsoleShellProps) {
   const [statusSlot, setStatusSlot] = useState<HTMLElement | null>(null);
   const [topSlot, setTopSlot] = useState<HTMLElement | null>(null);
+  // One value per pair of slots, so a page's status and top-bar portals re-render only when a slot
+  // mounts, not on every render of the shell.
+  const chrome = useMemo<ChromeSlots>(
+    () => ({ status: statusSlot, topStart: topSlot }),
+    [statusSlot, topSlot],
+  );
 
   return (
-    <ChromeContext.Provider value={{ status: statusSlot, topStart: topSlot }}>
+    <ChromeContext.Provider value={chrome}>
       <AppShell
         className={className}
         railHead={

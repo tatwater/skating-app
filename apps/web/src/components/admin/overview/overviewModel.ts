@@ -148,8 +148,8 @@ export function overviewHeads({
 }: {
   /** Everything open in the Inbox. */
   inbox: Count;
-  /** Chord re-fits waiting in the Corpus. */
-  refits: number;
+  /** Chord re-fits waiting in the Corpus — "200+" once the read stopped, as the inbox's count. */
+  refits: Count;
   /** Runs gone quiet past their heartbeat. */
   stalled: number;
   /** Runs or crons whose last outcome was a failure. */
@@ -157,7 +157,7 @@ export function overviewHeads({
 }): Head[] {
   const person = [
     inbox.count > 0 ? `${countText(inbox)} in the inbox` : null,
-    refits > 0 ? `${refits} ${plural(refits, 're-fit', 're-fits')}` : null,
+    refits.count > 0 ? `${countText(refits)} ${plural(refits.count, 're-fit', 're-fits')}` : null,
   ].filter((b): b is string => b !== null);
   const hand = [
     stalled > 0 ? `${stalled} stalled` : null,

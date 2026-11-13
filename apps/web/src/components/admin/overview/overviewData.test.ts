@@ -156,18 +156,25 @@ describe('the audit feed', () => {
     expect(author?.actor).toBe('Rob Tremblay');
   });
 
-  it('falls back to the username, and to the verb in words', () => {
+  it('falls back to the username, and — for a verb this build has no words for — the verb in words', () => {
     const [r] = feedFromActions([
       row({
-        action: 'set_lake_depth' as ActionRow['action'],
+        action: 'set_ice_color' as ActionRow['action'],
         targetType: 'someNewThing' as ActionRow['targetType'],
         actor: { userId: 'u', username: 'matt', displayName: '  ' },
       }),
     ]);
     expect(r?.actor).toBe('matt');
-    expect(r?.action).toBe('Set lake depth');
+    expect(r?.action).toBe('Set ice color');
     expect(r?.target.label).toBe('SomeNewThing');
+    expect(verbWords('set_ice_color')).toBe('Set ice color');
+  });
+
+  it('writes every verb the table holds in the past tense, never its code name', () => {
     expect(actionWords('dismiss_flag')).toBe('Dismissed flag');
-    expect(verbWords('grant_ledger_editor')).toBe('Grant ledger editor');
+    expect(actionWords('grant_ledger_editor')).toBe('Gave ledger editing');
+    expect(actionWords('promote_landmark')).toBe('Promoted landmark');
+    expect(actionWords('create_sub_area')).toBe('Drew sub-area');
+    expect(actionWords('set_lake_depth')).toBe('Set depth');
   });
 });

@@ -57,6 +57,22 @@ describe('HistoryPanelView', () => {
     expect(within(rowOf('Activated a body')).getByText('System')).toBeInTheDocument();
   });
 
+  it('names a person with a blank display name by their handle, here and in "Undone"', () => {
+    const blank = (a: (typeof HISTORY_ROWS)[number]) =>
+      a.actor === null ? a : { ...a, actor: { ...a.actor, displayName: '  ' } };
+    render(
+      <HistoryPanelView
+        rows={HISTORY_ROWS.map(blank)}
+        now={BOARD_NOW_NH}
+        timeZone={NY}
+        onUndo={vi.fn()}
+      />,
+    );
+    expect(within(rowOf('Hid a report')).getByText('teagan')).toBeInTheDocument();
+    // a6 was undone by a5, Sarah's.
+    expect(within(rowOf('Hid a comment')).getByText('Undone · sarah')).toBeInTheDocument();
+  });
+
   it('offers Undo only where the server does', async () => {
     const onUndo = vi.fn();
     draw(onUndo);

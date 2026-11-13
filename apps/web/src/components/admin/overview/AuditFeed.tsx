@@ -1,5 +1,5 @@
 import { createColumnHelper, metaHelper, tableFeatures, useTable } from '@tanstack/react-table';
-import type { ComponentProps, ReactNode } from 'react';
+import { type ComponentProps, type ReactNode, useMemo } from 'react';
 
 import { ScrollArea } from '@/components/kit/scroll-area';
 import { Section } from '@/components/kit/section-slug';
@@ -70,9 +70,11 @@ type AuditFeedProps = Omit<ComponentProps<'section'>, 'title' | 'children'> & {
 };
 
 export function AuditFeed({ rows, now, live, onOpenTarget, className, ...props }: AuditFeedProps) {
+  // Rebuilt only when the clock moves: the feed re-renders on every live update and hover.
+  const columns = useMemo(() => columnsFor(now), [now]);
   const table = useTable({
     features,
-    columns: columnsFor(now),
+    columns,
     data: (rows ?? []) as FeedRow[],
     getRowId: (row) => row.id,
   });

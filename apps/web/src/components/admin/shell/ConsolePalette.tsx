@@ -68,6 +68,11 @@ export function ConsolePalette({
 }) {
   const [query, setQuery] = useState('');
   const rested = useResting(query, SEARCH_REST_MS);
+  // Closed by any path — Esc, a choice, or the shell's ⌘K toggling `open` without asking — it
+  // starts empty next time.
+  useEffect(() => {
+    if (!open) setQuery('');
+  }, [open]);
   const bodyArg = open && can('body.read') ? searchQueryArg(rested, 6) : 'skip';
   const bodies = useQuery(
     api.waterBodies.searchByName,

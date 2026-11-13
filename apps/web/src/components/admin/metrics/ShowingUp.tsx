@@ -1,5 +1,5 @@
 import { createColumnHelper, metaHelper, tableFeatures, useTable } from '@tanstack/react-table';
-import { type KeyboardEvent, type PointerEvent, useRef, useState } from 'react';
+import { type KeyboardEvent, type PointerEvent, useMemo, useRef, useState } from 'react';
 import { BarChart, Cell } from 'recharts';
 
 import {
@@ -451,9 +451,10 @@ export function MostReported({
   timeZone?: string;
 }) {
   const begins = useRecordBegins();
+  const columns = useMemo(() => mostColumns(timeZone), [timeZone]);
   const table = useTable({
     features: mostFeatures,
-    columns: mostColumns(timeZone),
+    columns,
     data: begins === null ? (rows ?? []) : [],
     getRowId: (row) => row.bodyId,
   });

@@ -91,7 +91,7 @@ export function OverviewView({
   };
   const heads = overviewHeads({
     inbox: data.inbox ? inboxTotal(data.inbox) : { count: 0, capped: false },
-    refits: data.corpus?.chordRefits?.count ?? 0,
+    refits: data.corpus?.chordRefits ?? { count: 0, capped: false },
     // Machinery is unread: no run is said to be stalled or failed, and none is said to be fine.
     stalled: 0,
     failed: 0,

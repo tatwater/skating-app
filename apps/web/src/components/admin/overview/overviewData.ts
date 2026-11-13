@@ -11,6 +11,7 @@
 import type { api } from '@skating/convex/api';
 import type { FunctionReturnType } from 'convex/server';
 
+import type { AuditAction, AuditTarget } from '../shell/actionLabels';
 import { type Count, sumCounts } from './overviewModel';
 
 /** `console.overview`, as the server returns it. */
@@ -254,8 +255,13 @@ export interface FeedRow {
   target: FeedTarget;
 }
 
-/** Verbs written as a person would say them; anything else is the verb in words. */
-const ACTION_WORDS: Partial<Record<string, string>> = {
+/**
+ * Every verb the audit table can hold, written as a person would say it, in the past tense. Typed
+ * over the table's own union (as History's sentences are, `shell/actionLabels`), so a verb added on
+ * the server without its words fails to compile rather than reaching the feed as "Grant ledger
+ * editor".
+ */
+const ACTION_WORDS: Record<AuditAction, string> = {
   hide: 'Hid',
   remove: 'Removed',
   restore: 'Restored',
@@ -267,38 +273,63 @@ const ACTION_WORDS: Partial<Record<string, string>> = {
   approve_waterbody: 'Approved drawn body',
   reject_waterbody: 'Rejected drawn body',
   set_curated_boost: 'Set curated boost',
+  set_reference_links: 'Set reference links',
+  set_included_by_request: 'Changed kept by request',
   set_standing: 'Set standing',
   activate_body: 'Activated body',
   demote_body: 'Made body dormant',
   approve_request: 'Approved request',
   decline_request: 'Declined request',
+  set_put_in: 'Placed put-in',
   resolve_flag: 'Actioned flag',
   dismiss_flag: 'Dismissed flag',
   grant_role: 'Granted role',
   revoke_role: 'Revoked role',
-  set_public_access: 'Ruled public access',
+  grant_ledger_editor: 'Gave ledger editing',
+  revoke_ledger_editor: 'Took ledger editing',
+  set_posting_permission: 'Changed posting rights',
+  promote_body_feature: 'Promoted hazard to feature',
+  demote_body_feature: 'Demoted known feature',
+  merge_hazards: 'Merged hazards',
+  unmerge_hazards: 'Unmerged hazards',
+  dismiss_duplicate: 'Kept bodies distinct',
+  suppress_recurrence: 'Suppressed recurring hazard',
+  unsuppress_recurrence: 'Brought back recurring hazard',
+  promote_recurrence: 'Promoted recurring hazard',
+  set_weather_sample_points: 'Set weather sample points',
+  set_lake_depth: 'Set depth',
+  create_sub_area: 'Drew sub-area',
+  redraw_sub_area: 'Redrew sub-area',
+  rename_sub_area: 'Renamed sub-area',
   set_water_body_name: 'Chose name',
-  create_landmark: 'Named landmark',
-  edit_landmark: 'Edited landmark',
-  set_put_in: 'Placed put-in',
   set_parking_area: 'Set parking area',
+  set_approach_kind: 'Set approach',
   pin_access_alert: 'Pinned access alert',
   unpin_access_alert: 'Unpinned access alert',
   retract_access_alert: 'Retracted access alert',
+  set_posted_access: 'Set posted rules',
+  set_satellite_imagery: 'Set satellite link',
+  set_public_access: 'Ruled public access',
+  create_landmark: 'Named landmark',
+  edit_landmark: 'Edited landmark',
+  promote_landmark: 'Promoted landmark',
 };
 
-/** `set_lake_depth` → "Set lake depth": the fallback for a verb with no words of its own. */
+/**
+ * `set_ice_color` → "Set ice color": the fallback for a verb this build has no words for — only a
+ * server deployed ahead of the client can send one.
+ */
 export function verbWords(action: string): string {
   const words = action.replaceAll('_', ' ').trim();
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 export function actionWords(action: string): string {
-  return ACTION_WORDS[action] ?? verbWords(action);
+  return (ACTION_WORDS as Partial<Record<string, string>>)[action] ?? verbWords(action);
 }
 
-/** A target type's word, for a row no read names. */
-const TARGET_WORDS: Partial<Record<string, string>> = {
+/** A target type's word, for a row no read names. Typed over the table's union, as the verbs are. */
+const TARGET_WORDS: Record<AuditTarget, string> = {
   report: 'Report',
   post: 'Post',
   comment: 'Comment',
@@ -338,7 +369,9 @@ export function feedFromActions(rows: readonly ActionRow[]): FeedRow[] {
     target: {
       type: row.targetType,
       id: row.targetId,
-      label: TARGET_WORDS[row.targetType] ?? verbWords(row.targetType),
+      label:
+        (TARGET_WORDS as Partial<Record<string, string>>)[row.targetType] ??
+        verbWords(row.targetType),
     },
   }));
 }

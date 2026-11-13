@@ -117,23 +117,26 @@ describe('clock words', () => {
 });
 
 describe('overviewHeads', () => {
+  const n = (count: number, capped = false) => ({ count, capped });
+
   it('draws one state per badge, and drops a zero and an empty group', () => {
-    expect(
-      overviewHeads({ inbox: { count: 19, capped: false }, refits: 2, stalled: 1, failed: 2 }),
-    ).toEqual([
+    expect(overviewHeads({ inbox: n(19), refits: n(2), stalled: 1, failed: 2 })).toEqual([
       { kicker: 'Needs a person', tone: 'warn', badges: ['19 in the inbox', '2 re-fits'] },
       { kicker: 'Needs a hand', tone: 'bad', badges: ['1 stalled', '2 failed'] },
     ]);
+    expect(overviewHeads({ inbox: n(0), refits: n(1), stalled: 0, failed: 0 })).toEqual([
+      { kicker: 'Needs a person', tone: 'warn', badges: ['1 re-fit'] },
+    ]);
+    expect(overviewHeads({ inbox: n(0), refits: n(0), stalled: 0, failed: 0 })).toEqual([]);
     expect(
-      overviewHeads({ inbox: { count: 0, capped: false }, refits: 1, stalled: 0, failed: 0 }),
-    ).toEqual([{ kicker: 'Needs a person', tone: 'warn', badges: ['1 re-fit'] }]);
-    expect(
-      overviewHeads({ inbox: { count: 0, capped: false }, refits: 0, stalled: 0, failed: 0 }),
-    ).toEqual([]);
-    expect(
-      overviewHeads({ inbox: { count: 200, capped: true }, refits: 0, stalled: 0, failed: 3 })[0]
-        ?.badges,
+      overviewHeads({ inbox: n(200, true), refits: n(0), stalled: 0, failed: 3 })[0]?.badges,
     ).toEqual(['200+ in the inbox']);
+  });
+
+  it('says a capped re-fit count is a floor, as the inbox’s is', () => {
+    expect(
+      overviewHeads({ inbox: n(0), refits: n(200, true), stalled: 0, failed: 0 })[0]?.badges,
+    ).toEqual(['200+ re-fits']);
   });
 });
 

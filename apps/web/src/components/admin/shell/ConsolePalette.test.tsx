@@ -115,4 +115,15 @@ describe('ConsolePalette', () => {
     expect(props().query).toBe('');
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
+
+  it('starts empty after the shell’s ⌘K closes it, which never asks the palette', () => {
+    const draw = (open: boolean) => (
+      <ConsolePalette open={open} onOpenChange={vi.fn()} can={as('moderator')} onGo={vi.fn()} />
+    );
+    const { rerender } = render(draw(true));
+    act(() => props().onQueryChange('flags'));
+    rerender(draw(false));
+    rerender(draw(true));
+    expect(props().query).toBe('');
+  });
 });
