@@ -1156,6 +1156,23 @@ describe('every read fits a transaction, at the heaviest rows Convex allows', ()
     for (const id of reportIds) expect(await get(t, id)).not.toBeNull();
   });
 
+  test("a member erased between two passes of its Post's clock job costs no other member its clock", async () => {
+    const { t, author, waterBodyId } = await setup();
+    const { postId, reportIds } = await heavyPost(t, author.id, waterBodyId);
+    // No clock on any member yet: the job is what starts them.
+    for (const id of reportIds) await t.run((ctx) => ctx.db.patch(id, { eraseAt: undefined }));
+    const first = await t.mutation(internal.erasure.refreshMemberClocks, { postId });
+    expect(first.more).toBe(true);
+    // The sweep erases the first member before the next pass, and the Post drops it.
+    const [gone, ...rest] = reportIds as [Id<'reports'>, ...Id<'reports'>[]];
+    await t.run(async (ctx) => {
+      await ctx.db.delete(gone);
+      await ctx.db.patch(postId, { reportIds: rest });
+    });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    for (const id of rest) expect((await get(t, id))?.eraseAt).toBe(T0 + WITHDRAWN_ERASE_MS);
+  });
+
   test('the clocks backfill gives heavy rows their clocks a page at a time', async () => {
     const { t, author, waterBodyId } = await setup();
     const reportIds: Id<'reports'>[] = [];

@@ -526,6 +526,33 @@ describe('a history longer than a page', () => {
     // A moderator's remove, however far back: theirs, not the author's.
     expect(await deletedAt(t, commentId)).toBeUndefined();
   });
+
+  test('a comment erased earlier on the page while the walk is handed off shifts nothing past it', async () => {
+    const { t, author } = await setup();
+    const reportId = await seedReport(t, author.id);
+    const insert = (moderationStatus: 'visible' | 'removed') =>
+      t.run((ctx) =>
+        ctx.db.insert('comments', {
+          reportId,
+          authorId: author.id,
+          body: 'x',
+          source: 'native' as const,
+          moderationStatus,
+          createdAt: Date.now(),
+        }),
+      );
+    const earlier = await insert('visible');
+    const handedOff = await insert('removed');
+    const next = await insert('removed');
+    await runToEnd(t, async () => {
+      // The walk hands off the first removed comment; before it resumes, the sweep erases one
+      // earlier on the same page.
+      await t.mutation(internal.authorDeletions.backfillCommentDeletions, {});
+      await t.run((ctx) => ctx.db.delete(earlier));
+    });
+    expect(await deletedAt(t, handedOff)).toBeDefined();
+    expect(await deletedAt(t, next)).toBeDefined();
+  });
 });
 
 describe('the rule holds under any order', () => {

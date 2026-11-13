@@ -23,7 +23,10 @@
  * A standing verdict also holds withdrawn content back from erasure, so every write here moves the
  * item's erasure clock (`lib/eraseClock`).
  *
- * {@link replayVerdicts} is the same rules over an item's audit history, for the backfill.
+ * {@link replayStep} is the same rules over an item's audit history, a row at a time, for the
+ * backfill (`contentRecord.replayVerdictHistory`). An undo's undone row is the one before it on the
+ * item — undo is only ever offered on an item's newest row, and a member a Post's undo moves is moved
+ * only while the Post's row is still the newest on it.
  *
  * Staff-only, and never reputation: nothing here feeds a skater-facing read or a score.
  */
@@ -212,27 +215,4 @@ export function replayStep(
     ended,
     minted,
   };
-}
-
-/**
- * The live writers' rules over one item's audit rows, oldest first: what verdicts its history
- * makes, and which still stand. An undo's undone row is the one before it on the item — undo is
- * only ever offered on an item's newest row, and a member a Post's undo moves is moved only while
- * the Post's row is still the newest on it. The same {@link replayStep} the backfill carries across
- * transactions.
- */
-export function replayVerdicts(rows: Doc<'moderationActions'>[]): ReplayedVerdict[] {
-  const verdicts: ReplayedVerdict[] = [];
-  let state = REPLAY_START;
-  for (const row of rows) {
-    const step = replayStep(state, row);
-    if (step.ended) {
-      const index = verdicts.findIndex((v) => v.actionId === step.ended?.actionId);
-      verdicts[index] = step.ended;
-    }
-    if (step.minted && step.state.standing)
-      verdicts.push({ ...step.state.standing, standing: true });
-    state = step.state;
-  }
-  return verdicts;
 }

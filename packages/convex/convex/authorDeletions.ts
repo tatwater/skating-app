@@ -26,6 +26,7 @@ import { literals } from './lib/validators';
 /** Rows per backfill page, at most; each page is its own transaction and schedules the next. */
 const BACKFILL_PAGE = 200;
 
+/** Where the audit walk resumes. A position on its page is stable: the audit log is append-only. */
 const resumeValidator = v.object({ cursor: v.union(v.string(), v.null()), skip: v.number() });
 type Resume = { cursor: string | null; skip: number };
 
@@ -131,16 +132,20 @@ export const stampWithdrawal = internalMutation({
     after: v.number(),
     phase: v.optional(literals(['history', 'members'] as const)),
     cursor: v.optional(v.string()),
-    /** The next member to stamp, in the members phase. */
-    from: v.optional(v.number()),
+    /** The members already looked at, in the members phase. */
+    done: v.optional(v.array(v.id('reports'))),
     resume: resumeValidator,
     pageSize: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const { targetType, targetId, deletedAt, after, phase = 'history', cursor, from = 0 } = args;
+    const { targetType, targetId, deletedAt, after, phase = 'history', cursor, done = [] } = args;
     const reads = new ReadBudget();
     const carry = args.pageSize !== undefined ? { pageSize: args.pageSize } : {};
-    const again = (next: { phase: 'history' | 'members'; cursor?: string; from?: number }) =>
+    const again = (next: {
+      phase: 'history' | 'members';
+      cursor?: string;
+      done?: Id<'reports'>[];
+    }) =>
       ctx.scheduler.runAfter(0, internal.authorDeletions.stampWithdrawal, {
         targetType,
         targetId,
@@ -156,8 +161,8 @@ export const stampWithdrawal = internalMutation({
         reads,
         targetId,
         deletedAt,
-        from,
-        (at) => again({ phase: 'members', from: at }),
+        done,
+        (next) => again({ phase: 'members', done: next }),
         args.resume,
         args.pageSize,
       );
@@ -197,7 +202,7 @@ export const stampWithdrawal = internalMutation({
     reads.touch(targetType);
     await ctx.db.patch(target._id, { authorDeletedAt: deletedAt });
     if (targetType === 'post' && (target as Doc<'posts'>).reportIds.length > 0) {
-      await again({ phase: 'members', from: 0 });
+      await again({ phase: 'members' });
       return { stamped: 1 };
     }
     return resumeWalk(ctx, args.resume, args.pageSize, 1);
@@ -210,25 +215,28 @@ async function stampMembers(
   reads: ReadBudget,
   postId: string,
   deletedAt: number,
-  from: number,
-  again: (at: number) => Promise<unknown>,
+  done: readonly Id<'reports'>[],
+  again: (done: Id<'reports'>[]) => Promise<unknown>,
   resume: Resume,
   pageSize: number | undefined,
 ) {
   const id = ctx.db.normalizeId('posts', postId);
   const post = id ? await reads.one('post', () => ctx.db.get(id)) : null;
-  const reportIds = post?.reportIds ?? [];
-  let at = from;
-  while (at < reportIds.length && reads.affords(2 * ROW_MAX.report)) {
-    const reportId = reportIds[at] as Id<'reports'>;
-    at++;
+  // By id, never by position: a member erased between passes leaves `reportIds`, and a position
+  // would then skip the member after it.
+  const seen = new Set<string>(done);
+  const todo = (post?.reportIds ?? []).filter((reportId) => !seen.has(reportId));
+  const looked: Id<'reports'>[] = [];
+  for (const reportId of todo) {
+    if (!reads.affords(2 * ROW_MAX.report)) break;
+    looked.push(reportId);
     const report = await reads.one('report', () => ctx.db.get(reportId));
     if (!report || report.authorDeletedAt !== undefined) continue;
     if (report.moderationStatus === 'visible') continue;
     reads.touch('report');
     await ctx.db.patch(reportId, { authorDeletedAt: deletedAt });
   }
-  if (at < reportIds.length) await again(at);
+  if (looked.length < todo.length) await again([...done, ...looked]);
   else await resumeWalk(ctx, resume, pageSize, 0);
 }
 
@@ -256,22 +264,25 @@ async function resumeWalk(
 export const backfillCommentDeletions = internalMutation({
   args: {
     cursor: v.optional(v.union(v.string(), v.null())),
-    skip: v.optional(v.number()),
+    /** When the comment last handed off from the page at `cursor` was created: the walk goes on after. */
+    after: v.optional(v.number()),
     pageSize: v.optional(v.number()),
   },
-  handler: async (ctx, { cursor, skip = 0, pageSize }) => {
+  handler: async (ctx, { cursor, after, pageSize }) => {
     const reads = new ReadBudget();
     const size = Math.min(Math.max(pageSize ?? BACKFILL_PAGE, 1), BACKFILL_PAGE);
     const page = await reads.page('comment', reads.rows('comment', size), (numItems) =>
       ctx.db.query('comments').paginate({ cursor: cursor ?? null, numItems }),
     );
     const carry = pageSize !== undefined ? { pageSize } : {};
-    for (let i = skip; i < page.page.length; i++) {
-      const comment = page.page[i] as Doc<'comments'>;
+    for (const comment of page.page) {
+      // Resumed by creation time, never by position: unlike the audit log, comments are deleted (the
+      // sweep erases them), and one gone from earlier on the page would shift a position past the next.
+      if (after !== undefined && comment._creationTime <= after) continue;
       if (comment.moderationStatus !== 'removed' || comment.authorDeletedAt !== undefined) continue;
       await ctx.scheduler.runAfter(0, internal.authorDeletions.commentLastWord, {
         commentId: comment._id,
-        resume: { cursor: cursor ?? null, skip: i + 1 },
+        resume: { cursor: cursor ?? null, after: comment._creationTime },
         ...carry,
       });
       return { handedOff: true, more: true };
@@ -291,7 +302,7 @@ export const commentLastWord = internalMutation({
   args: {
     commentId: v.id('comments'),
     cursor: v.optional(v.string()),
-    resume: resumeValidator,
+    resume: v.object({ cursor: v.union(v.string(), v.null()), after: v.number() }),
     pageSize: v.optional(v.number()),
   },
   handler: async (ctx, { commentId, cursor, resume, pageSize }) => {
@@ -333,7 +344,7 @@ export const commentLastWord = internalMutation({
     }
     await ctx.scheduler.runAfter(0, internal.authorDeletions.backfillCommentDeletions, {
       cursor: resume.cursor,
-      skip: resume.skip,
+      after: resume.after,
       ...carry,
     });
     return { stamped };

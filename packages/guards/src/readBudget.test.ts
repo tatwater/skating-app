@@ -18,15 +18,17 @@ import { expect, test } from 'vitest';
 const CONVEX = resolve(__dirname, '../../convex/convex');
 const MODULES = ['erasure.ts', 'contentRecord.ts', 'authorDeletions.ts', 'lib/eraseClock.ts'];
 
-/** The source with comments and string contents blanked, offsets preserved. */
+/**
+ * The source with comments and string contents blanked, offsets preserved. One pass, so whichever
+ * starts first wins: a `//` or `/*` inside a string is not a comment, and a quote inside a comment is
+ * not a string — either mistake would blank real code and hide a read on it.
+ */
 function code(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
-    .replace(/\/\/[^\n]*/g, (m) => ' '.repeat(m.length))
-    .replace(
-      /(['"`])(?:\\.|(?!\1)[^\\\n])*\1/g,
-      (m) => `${m[0]}${' '.repeat(m.length - 2)}${m[0]}`,
-    );
+  return source.replace(
+    /\/\*[\s\S]*?\*\/|\/\/[^\n]*|(['"`])(?:\\.|(?!\1)[^\\\n])*\1/g,
+    (m, quote: string | undefined) =>
+      quote ? `${quote}${' '.repeat(m.length - 2)}${quote}` : m.replace(/[^\n]/g, ' '),
+  );
 }
 
 /** Spans `[open, close]` of every charging call's argument list. */
@@ -79,4 +81,6 @@ test('the lint sees a raw read, and passes a charged one', () => {
     unchargedReads("await reads.one('small', () => ctx.db.query('x').collect());"),
   ).toHaveLength(1);
   expect(unchargedReads("// ctx.db.get(id) in a comment\nconst s = 'ctx.db.get(id)';")).toEqual([]);
+  // A comment marker inside a string hides nothing after it.
+  expect(unchargedReads("const u = 'https://x'; const y = await ctx.db.get(id);")).toHaveLength(1);
 });

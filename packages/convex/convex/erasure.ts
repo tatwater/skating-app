@@ -726,29 +726,37 @@ export const dropErasedMember = internalMutation({
 
 /**
  * A Post's hold moved (`lib/eraseClock.holdMoved`): its members' clocks follow, as many a transaction
- * as the budget affords — the Post's own hold read once, then each member and its own hold — from
- * `from` on. The first member always fits a fresh budget, so every pass moves.
+ * as the budget affords — the Post's own hold read once, then each member and its own hold — skipping
+ * the members `done` names. The first member always fits a fresh budget, so every pass moves.
  */
 export const refreshMemberClocks = internalMutation({
-  args: { postId: v.id('posts'), from: v.optional(v.number()) },
-  handler: async (ctx, { postId, from = 0 }) => {
+  args: { postId: v.id('posts'), done: v.optional(v.array(v.id('reports'))) },
+  handler: async (ctx, { postId, done = [] }) => {
     const reads = new ReadBudget();
     const post = await reads.one('post', () => ctx.db.get(postId));
     if (!post) return { refreshed: 0, more: false };
     const postHeld = await postHoldOf(ctx, reads, post._id);
     const now = Date.now();
     const perMember = 2 * ROW_MAX.report + HOLD_COST.post;
-    let at = from;
-    while (at < post.reportIds.length && reads.affords(perMember)) {
-      const id = post.reportIds[at] as Id<'reports'>;
-      at++;
+    // By id, never by position: a member erased between passes leaves `reportIds`, and a position
+    // would then skip the member after it — whose clock would never start.
+    const seen = new Set<string>(done);
+    const todo = post.reportIds.filter((id) => !seen.has(id));
+    const refreshed: Id<'reports'>[] = [];
+    for (const id of todo) {
+      if (!reads.affords(perMember)) break;
+      refreshed.push(id);
       const member = await reads.one('report', () => ctx.db.get(id));
       if (member) await refreshClockOf(ctx, reads, 'report', member, now, { postHeld });
     }
-    const more = at < post.reportIds.length;
-    if (more)
-      await ctx.scheduler.runAfter(0, internal.erasure.refreshMemberClocks, { postId, from: at });
-    return { refreshed: at - from, more };
+    const more = refreshed.length < todo.length;
+    if (more) {
+      await ctx.scheduler.runAfter(0, internal.erasure.refreshMemberClocks, {
+        postId,
+        done: [...done, ...refreshed],
+      });
+    }
+    return { refreshed: refreshed.length, more };
   },
 });
 
