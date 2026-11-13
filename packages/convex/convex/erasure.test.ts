@@ -4,11 +4,12 @@
  * days and the moment it cleared. The sweep reads only due rows; afterward the author's data export
  * holds none of the item's content, and everything that pointed at it still renders.
  */
-import { WITHDRAWN_ERASE_MS } from '@skating/core';
+import { POST_BODY_MAX_CHARS, POST_TITLE_MAX_CHARS, WITHDRAWN_ERASE_MS } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+import { ROW_MAX } from './erasure';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -180,7 +181,12 @@ async function seedHazard(
   );
 }
 
-const sweep = (t: T) => t.mutation(internal.erasure.eraseDue, {});
+/** One sweep, then whatever it scheduled (its continuation, the photo settlement). */
+const sweep = async (t: T) => {
+  const result = await t.mutation(internal.erasure.eraseDue, {});
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+  return result;
+};
 const advance = (ms: number) => vi.setSystemTime(Date.now() + ms);
 const get = (t: T, id: string) =>
   t.run((ctx) => ctx.db.get(id as never)) as Promise<Record<string, unknown> | null>;
@@ -950,5 +956,132 @@ describe('what was withdrawn before the clock existed', () => {
     ]) {
       expect(text).not.toContain(words);
     }
+  });
+});
+
+/** Convex's limits: what one transaction may read, and what one document may weigh. */
+const READ_LIMIT = 16 * (1 << 20);
+
+describe('a pass is sized by what its rows can weigh', () => {
+  test('heavy revisions erase over several passes, and no pass can read past the limit', async () => {
+    const { t, author, waterBodyId } = await setup();
+    const { postId, reportIds } = await seedPost(t, author.id, waterBodyId, 1);
+    const [reportId] = reportIds as [Id<'reports'>];
+    // Report notes have no cap but the document limit, so a revision may weigh almost that much.
+    const heavy = 'x'.repeat(900 * 1024);
+    const REVISIONS = 20;
+    await t.run(async (ctx) => {
+      for (let i = 0; i < REVISIONS; i++) {
+        await ctx.db.insert('contentRevisions', {
+          targetType: 'report',
+          targetId: reportId,
+          authorId: author.id,
+          snapshot: { notes: `${i} ${heavy}` },
+          replacedAt: T0 + i,
+        });
+      }
+      // And Post prose at its cap, many times over.
+      const full = 'y'.repeat(POST_BODY_MAX_CHARS);
+      const title = 't'.repeat(POST_TITLE_MAX_CHARS);
+      for (let i = 0; i < 150; i++) {
+        await ctx.db.insert('contentRevisions', {
+          targetType: 'post',
+          targetId: postId,
+          authorId: author.id,
+          snapshot: { title, body: `${i} ${full}` },
+          replacedAt: T0 + i,
+        });
+      }
+    });
+    await author.as.mutation(api.posts.remove, { postId });
+    advance(31 * DAY);
+    const revisionsLeft = async () =>
+      (await t.run((ctx) => ctx.db.query('contentRevisions').collect())).length;
+    const before = await revisionsLeft();
+    const first = await t.mutation(internal.erasure.eraseDue, {});
+    expect(first.more).toBe(true);
+    const deleted = before - (await revisionsLeft());
+    // The old budget (twenty writes a row) would have read all of them at once; this pass read what
+    // fits: the due rows and the revisions it deleted, each at its heaviest, under the limit.
+    expect(deleted).toBeGreaterThan(0);
+    expect(deleted).toBeLessThan(REVISIONS);
+    expect((deleted + 4) * ROW_MAX.reportRevision).toBeLessThan(READ_LIMIT);
+    // Part-way, the Report is whole and still due.
+    expect(await get(t, reportId)).not.toBeNull();
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await revisionsLeft()).toBe(0);
+    expect(await get(t, reportId)).toBeNull();
+    expect(await get(t, postId)).toBeNull();
+    const bundle = await t.query(internal.dataExport.collect, { userId: author.id });
+    expect(bundle.contentRevisions).toEqual([]);
+  });
+
+  test("every row's worst case is under what one pass may read", () => {
+    for (const weight of Object.values(ROW_MAX)) expect(weight * 4).toBeLessThan(READ_LIMIT);
+    // A capped field sizes its row from the cap, not the document limit.
+    expect(ROW_MAX.postRevision).toBeLessThan(ROW_MAX.reportRevision);
+    expect(ROW_MAX.comment).toBeLessThan(64 * 1024);
+  });
+});
+
+describe("a photo is erased only when nothing of its uploader's still uses it", () => {
+  async function withPhotoOn(t: T, authorId: Id<'profiles'>, waterBodyId: Id<'waterBodies'>) {
+    const { reportIds, photoIds } = await seedPost(t, authorId, waterBodyId, 1);
+    return { reportId: reportIds[0] as Id<'reports'>, photoId: photoIds[0] as Id<'photos'> };
+  }
+
+  test('one a surviving hazard shows stays, whole, and in the export', async () => {
+    const { t, author, waterBodyId } = await setup();
+    const { reportId, photoId } = await withPhotoOn(t, author.id, waterBodyId);
+    const hazardId = await seedHazard(t, author.id, waterBodyId);
+    await t.run((ctx) => ctx.db.patch(hazardId, { photoIds: [photoId] }));
+    await author.as.mutation(api.reports.remove, { reportId });
+    advance(31 * DAY);
+    await sweep(t);
+    expect(await get(t, reportId)).toBeNull();
+    const photo = await get(t, photoId);
+    expect(photo).toMatchObject({ caption: 'the inlet 0' });
+    expect(photo?.erasedAt).toBeUndefined();
+    expect(photo?.reportId).toBeUndefined();
+    expect(
+      await t.run((ctx) => ctx.storage.getUrl(photo?.storageId as Id<'_storage'>)),
+    ).not.toBeNull();
+    const bundle = await t.query(internal.dataExport.collect, { userId: author.id });
+    expect(bundle.photos.map((p) => p.photoId)).toEqual([photoId]);
+  });
+
+  test('the answer is read whole, a page at a time: untouched until it is, then kept or erased', async () => {
+    const { t, author, waterBodyId } = await setup();
+    const { reportId, photoId } = await withPhotoOn(t, author.id, waterBodyId);
+    const second = await seedPost(t, author.id, waterBodyId, 1);
+    const shared = second.photoIds[0] as Id<'photos'>;
+    // The erased Report also carried a photo that only the uploader's last hazard uses besides —
+    // read on the last page. (No Report links it, so the back-link can't answer for it.)
+    await t.run(async (ctx) => {
+      await ctx.db.patch(reportId, { photoIds: [photoId, shared] });
+      await ctx.db.patch(second.reportIds[0] as Id<'reports'>, { photoIds: [] });
+      await ctx.db.patch(shared, { reportId: undefined });
+    });
+    for (let i = 0; i < 5; i++) await seedHazard(t, author.id, waterBodyId);
+    const last = await seedHazard(t, author.id, waterBodyId);
+    await t.run((ctx) => ctx.db.patch(last, { photoIds: [shared] }));
+    await author.as.mutation(api.reports.remove, { reportId });
+    advance(31 * DAY);
+    await t.mutation(internal.erasure.eraseDue, {});
+    // The Report is gone; its photo's fate waits on the whole answer.
+    expect(await get(t, reportId)).toBeNull();
+    // A settlement that reads one row a page, to make every page a separate transaction.
+    await t.mutation(internal.erasure.settlePhotos, {
+      uploaderId: author.id,
+      photoIds: [photoId, shared],
+      pageSize: 1,
+    });
+    expect(await get(t, photoId)).toMatchObject({ caption: 'the inlet 0' });
+    expect((await get(t, photoId))?.erasedAt).toBeUndefined();
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    // Used by nothing: gone, blobs and all. Used by the hazard: kept, untouched.
+    expect(await get(t, photoId)).toBeNull();
+    expect(await get(t, shared)).toMatchObject({ caption: 'the inlet 0' });
+    expect((await get(t, shared))?.erasedAt).toBeUndefined();
   });
 });

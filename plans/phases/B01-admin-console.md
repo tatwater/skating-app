@@ -1424,8 +1424,23 @@ the People page and the skater screens that reach it are owed (the roadmap's reg
   and the author's own votes go a per-tick write budget at a time, through indexes on each link
   (`accessAlerts.by_report`, `waterBodyRequests.by_report`, `putIns.by_origin_report`), and the item's
   own row goes last, so a pass that runs out leaves it whole and still due for the next; the
-  `erase` row is written only when it is really gone. A photo whose blob outlives the delete is kept
-  as the orphan sweep's pointer, stripped and marked `erasedAt`, and leaves the uploader's export.
+  `erase` row is written only when it is really gone. **Every read of an unbounded number of rows is
+  sized by what a row can weigh** (Greptile, #110), not by the writes it leads to: the sweep's pages,
+  an item's revisions and links, and the clocks backfill's pages are each charged at their table's
+  worst case against half the 16 MiB transaction limit, so no pass can exceed it and every pass
+  erases something. The worst cases come from the real caps — a comment's 2,000 characters, a Post's
+  120 + 20,000, an alert's 500, a hazard's 1,000 and 500 vertices, a put-in's 256-vertex approach —
+  and from the 1 MiB document limit where a field has no cap: **a Report's notes and its chips'
+  notes, a flag's note, a photo's caption and a request's catalog polygon are uncapped on the
+  server**, so a Report revision is sized at 1 MiB. A fixed handful of reads per item (its Post and
+  that Post's ≤ 10 Reports, its recording) is bounded by count, as in every write to those rows.
+  **A photo is erased only when nothing of its uploader's uses it** — an unknown is never "unused":
+  `erasure.settlePhotos` reads the uploader's Reports and hazards a sized page per transaction until
+  it has the whole answer (the access photos by index), deletes what nothing uses with its blobs,
+  and leaves the rest untouched. A photo whose blob outlives the delete is kept as the orphan sweep's
+  pointer, stripped and marked `erasedAt`, and leaves the uploader's export. The backfills that read
+  an item's history now treat a history longer than they read as unknown: the stamp backfills leave
+  the item unstamped, and the verdict replay leaves its rows as they stand.
   **What was withdrawn before the clock** gets one from the clocks backfill: content through Part A's
   stamps; an alert its author retracted before `retractedAt` existed (no time on the row, none in the
   history) is stamped at the backfill — never in the past — and so is one its author retracts again.

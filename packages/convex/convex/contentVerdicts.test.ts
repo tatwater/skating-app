@@ -494,6 +494,41 @@ describe('the backfill', () => {
   });
 });
 
+describe('a history longer than the backfill reads', () => {
+  test('is left as it stands, never replayed in part', async () => {
+    const { t, author, mod, set, standing } = await setup();
+    const reportId = await seedReport(t, author.id);
+    await set('report', reportId, 'hidden');
+    const now = Date.now();
+    await t.run(async (ctx) => {
+      // A restore the backfill can't see whole: it falls inside the read, the hide it ended before it.
+      for (let i = 0; i < 100; i++) {
+        await ctx.db.insert('moderationActions', {
+          actorId: mod.id,
+          action: 'dismiss_flag',
+          targetType: 'report',
+          targetId: reportId,
+          reason: 'noise',
+          createdAt: now + 1 + i,
+        });
+      }
+      await ctx.db.insert('moderationActions', {
+        actorId: mod.id,
+        action: 'hide',
+        targetType: 'report',
+        targetId: reportId,
+        reason: 'a second hide',
+        metadata: { priorStatus: 'hidden', newStatus: 'hidden' },
+        createdAt: now + 200,
+      });
+    });
+    const before = (await standing()).map((v) => v._id);
+    const result = await t.mutation(internal.contentRecord.backfillVerdicts, { clocks: false });
+    expect(result.truncated).toEqual([`report:${reportId}`]);
+    expect((await standing()).map((v) => v._id)).toEqual(before);
+  });
+});
+
 describe('the rules hold under any order', () => {
   test('author-deleted content never shows again, and a verdict ends only by a moderator', async () => {
     type Op = 'delete' | 'hide' | 'remove' | 'restore' | 'undo' | 'overturn';

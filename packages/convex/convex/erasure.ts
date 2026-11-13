@@ -25,10 +25,13 @@
  * test seam for that continuation.
  */
 
+import { COMMENT_BODY_MAX_LENGTH, POST_BODY_MAX_CHARS, POST_TITLE_MAX_CHARS } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, type MutationCtx } from './_generated/server';
+import { MAX_ALERT_NOTE_LENGTH } from './accessAlerts';
+import { HAZARD_MAX_DESCRIPTION_LEN } from './hazards';
 import { writeAudit } from './lib/audit';
 import {
   authorRetracted,
@@ -38,8 +41,9 @@ import {
   refreshEraseClock,
   withdrawnAtOf,
 } from './lib/eraseClock';
-import { deletePhotoAndBlobs, referencedPhotoIds } from './lib/photoOrphans';
+import { deletePhotoAndBlobs } from './lib/photoOrphans';
 import { refreshPostLatestSkateEnd, refreshPostSearchText, syncPostPhotos } from './lib/postSync';
+import { literals } from './lib/validators';
 
 /** Rows per kind per tick. Each erasure is a handful of writes; a page fits a transaction easily. */
 const PAGE = 100;
@@ -61,16 +65,15 @@ const ERASE_REASON: Record<Erasable, string> = {
 };
 
 /**
- * Photos an erased item carried, settled once the tick's erasures are done (`erasePhotos`): whether
- * one is still referenced takes a scan of everything its uploader posted, so a tick reads that once
- * per uploader, after every row of theirs it erases is gone — not once per item, which for a page of
- * one person's deletions would read their whole history a hundred times in one transaction.
+ * Photos an erased item carried. Whether one is still used by anything that survives is a question
+ * about everything its uploader posted, and **an unknown is never "unused"**: so the tick only
+ * collects them, per uploader, and hands each uploader's set to `settlePhotos`, which reads their
+ * Reports and hazards a bounded page per transaction until it has the whole answer, and only then
+ * deletes what nothing uses.
  */
 interface PhotoWork {
   uploaderId: Id<'profiles'>;
   photoIds: readonly Id<'photos'>[];
-  /** The erased Report the photos hung from, whose back-link a kept photo loses. */
-  fromReport?: Id<'reports'>;
 }
 
 /**
@@ -82,30 +85,85 @@ interface PhotoWork {
  * item across passes.
  */
 interface Budget {
+  /** Writes left. */
   left: number;
+  /** Read bytes left, every row charged at the largest its table allows (`ROW_MAX`). */
+  bytes: number;
 }
 
 /** Writes per tick for every page row: an item rarely needs more than a few. */
 const WRITES_PER_ROW = 20;
 
+// ── What a read can weigh ───────────────────────────────────────────────────────────────────────
+//
+// A transaction may read 16 MiB; one document may weigh 1 MiB. Every read of an unbounded number of
+// rows — the sweep's own pages, an item's revisions, its links, the backfills' pages — is sized from
+// the largest row its table allows, never from how many writes it leads to, so no pass can exceed the
+// limit however large every row is. Where a field has a cap (a comment's body, a Post's prose, an
+// alert's note, a hazard's description and its vertex cap) the row's worst case is that cap in UTF-8
+// (4 bytes a character) plus room for the rest; where any field is uncapped (a Report's notes and its
+// chips' notes, a flag's note, a request's catalog polygon, a photo's caption) the worst case is the
+// document limit itself. A fixed handful of reads per item (the item, its Post and that Post's ≤ 10
+// Reports, its recording) is what every write to those rows already reads, and is not counted.
+
+/** Convex's per-document size limit, the worst any row can weigh. */
+const DOC_MAX = 1 << 20;
 /**
- * Delete or unlink, up to the budget left, every row a range still holds. `take` returns the head
- * of the range; `act` removes each row from the range (a delete, or clearing the indexed link), so
- * the range shrinks. `true` when the range is empty.
+ * What one sweep tick spends on the reads it counts — half the 16 MiB transaction limit. The due page
+ * takes at most half of what is left, so the first item always has room for at least four of its
+ * heaviest rows, and every pass erases or unlinks something: a pass never stalls where the last one
+ * did.
+ */
+const TICK_READ_BYTES = 8 * DOC_MAX;
+/** A row's fields other than its capped text, generously. */
+const SLACK = 8 * 1024;
+/** The worst case of one row, by what it is. */
+export const ROW_MAX = {
+  comment: COMMENT_BODY_MAX_LENGTH * 4 + SLACK,
+  accessAlert: MAX_ALERT_NOTE_LENGTH * 4 + SLACK,
+  // A description and up to 500 vertices, drawn and clipped.
+  hazard: HAZARD_MAX_DESCRIPTION_LEN * 4 + 64 * 1024,
+  report: DOC_MAX,
+  post: DOC_MAX,
+  contentFlag: DOC_MAX,
+  waterBodyRequest: DOC_MAX,
+  // A Post's snapshot is its title and prose (both capped); a Report's carries its uncapped notes.
+  postRevision: (POST_TITLE_MAX_CHARS + POST_BODY_MAX_CHARS) * 4 + SLACK,
+  reportRevision: DOC_MAX,
+  // An approach path is capped at 256 vertices.
+  putIn: 64 * 1024,
+  photo: DOC_MAX,
+  small: SLACK,
+} as const;
+
+/** Rows of `rowMax` that `bytes` can afford, at least one: a pass that can read nothing does nothing. */
+function rowsFor(bytes: number, rowMax: number, cap: number): number {
+  return Math.max(1, Math.min(cap, Math.floor(bytes / rowMax)));
+}
+
+/**
+ * Delete or unlink, up to the budget left, every row a range still holds — `rowMax` is what one of
+ * its rows can weigh, and the page is sized by that as well as by the writes left. `take` returns
+ * the head of the range; `act` removes each row from the range (a delete, or clearing the indexed
+ * link), so the range shrinks. `true` when the range is empty; `false` when the budget ran out first.
  */
 async function drain<Row>(
   budget: Budget,
+  rowMax: number,
   take: (n: number) => Promise<Row[]>,
   act: (row: Row) => Promise<unknown>,
 ): Promise<boolean> {
-  const n = budget.left;
-  // With nothing left to spend, one row says whether anything is still owed.
-  if (n <= 0) return (await take(1)).length === 0;
+  const n = Math.min(budget.left, Math.floor(budget.bytes / rowMax));
+  if (n <= 0) return false;
   const page = await take(n);
+  budget.bytes -= page.length * rowMax;
   for (const row of page) await act(row);
   budget.left -= page.length;
-  // A short page was the whole range; a full one spent the budget, and one more row says the rest.
+  // A short page was the whole range; a full one spent what it could, and one more row (if the
+  // budget still affords one) says whether anything is owed.
   if (page.length < n) return true;
+  if (budget.bytes < rowMax) return false;
+  budget.bytes -= rowMax;
   return (await take(1)).length === 0;
 }
 
@@ -200,13 +258,25 @@ export const eraseDue = internalMutation({
     const now = Date.now();
     const erased: Partial<Record<Erasable, number>> = {};
     const photos: PhotoWork[] = [];
-    const budget: Budget = { left: size * WRITES_PER_ROW };
+    // The seam scales both budgets, so a test can force any item across passes.
+    const budget: Budget = {
+      left: size * WRITES_PER_ROW,
+      bytes: Math.max(TICK_READ_BYTES * (size / PAGE), 2 * DOC_MAX),
+    };
     let held = 0;
     let more = false;
     kinds: for (const kind of ERASED_KINDS) {
       const eraser = ERASERS[kind];
-      const due = (await dueRows(ctx, kind, now, size)) as ErasableDoc[];
-      if (due.length >= size) more = true;
+      // The page is what half the reads left can afford at this kind's heaviest, so the items read
+      // always leave room to erase what they carry.
+      if (budget.bytes < ROW_MAX[kind]) {
+        more = true;
+        break;
+      }
+      const n = rowsFor(budget.bytes / 2, ROW_MAX[kind], size);
+      const due = (await dueRows(ctx, kind, now, n)) as ErasableDoc[];
+      budget.bytes -= due.length * ROW_MAX[kind];
+      if (due.length >= n) more = true;
       for (const doc of due) {
         // Out of budget: the rest waits for the next pass, still due.
         if (budget.left <= 0) {
@@ -238,9 +308,9 @@ export const eraseDue = internalMutation({
         erased[kind] = (erased[kind] ?? 0) + 1;
       }
     }
-    // After every row they hung from is gone, so each uploader's reference scan runs once and no
-    // longer counts any of this tick's erased rows.
-    await erasePhotos(ctx, photos, now);
+    // After every row they hung from is gone: each uploader's set is settled by a job that can read
+    // their whole history, a bounded page at a time.
+    await queuePhotoSettlement(ctx, photos);
     if (more) {
       await ctx.scheduler.runAfter(0, internal.erasure.eraseDue, {
         ...(pageSize !== undefined ? { pageSize } : {}),
@@ -290,48 +360,101 @@ async function eraseComment(
   return true;
 }
 
+/** One settlement job per uploader, for every photo of theirs the tick's erasures let go of. */
+async function queuePhotoSettlement(ctx: MutationCtx, work: readonly PhotoWork[]) {
+  const byUploader = new Map<Id<'profiles'>, Set<Id<'photos'>>>();
+  for (const { uploaderId, photoIds } of work) {
+    const set = byUploader.get(uploaderId) ?? new Set<Id<'photos'>>();
+    for (const id of photoIds) set.add(id);
+    byUploader.set(uploaderId, set);
+  }
+  for (const [uploaderId, set] of byUploader) {
+    if (set.size === 0) continue;
+    await ctx.scheduler.runAfter(0, internal.erasure.settlePhotos, {
+      uploaderId,
+      photoIds: [...set],
+    });
+  }
+}
+
 /**
- * Photos the tick's erased items carried: deleted with their blobs unless something else of the
- * uploader's still references them (the one rule `lib/photoOrphans` keeps for every destructive
- * path). A photo kept — still referenced, or its blob could not be deleted, or the reference scan
- * could not answer — loses its link back and, unless still referenced, everything that says anything
- * about a person. One reference scan per uploader, read after all of the tick's erasures.
+ * Settle the photos an erasure let go of: delete each one nothing else of its uploader's still uses,
+ * with its blobs; leave every other untouched (D248, and Greptile on #110 — "an unknown is not
+ * unused"). The only rows that can name a photo are its uploader's own Reports and hazards and the
+ * access photos that point at it (`lib/photoOrphans`), so the job reads the uploader's Reports, then
+ * their hazards, a page per transaction sized by what a row can weigh, striking every photo it finds
+ * in use; what is left when both are read is used by nothing, checked once more against the access
+ * photos and a Report that took it since. A photo whose blob outlives the delete stays as the orphan
+ * sweep's pointer, stripped and marked `erasedAt`, and leaves its uploader's export.
  */
-async function erasePhotos(ctx: MutationCtx, work: readonly PhotoWork[], now: number) {
-  const byUploader = new Map<string, Set<string> | null>();
-  for (const { uploaderId, photoIds, fromReport } of work) {
-    if (photoIds.length === 0) continue;
-    if (!byUploader.has(uploaderId)) {
-      byUploader.set(uploaderId, await referencedPhotoIds(ctx, uploaderId));
+export const settlePhotos = internalMutation({
+  args: {
+    uploaderId: v.id('profiles'),
+    photoIds: v.array(v.id('photos')),
+    phase: v.optional(literals(['reports', 'hazards'] as const)),
+    cursor: v.optional(v.string()),
+    /** Test seam: rows per page, clamped to what the page can afford. */
+    pageSize: v.optional(v.number()),
+  },
+  handler: async (ctx, { uploaderId, photoIds, phase = 'reports', cursor, pageSize }) => {
+    const rowMax = phase === 'reports' ? ROW_MAX.report : ROW_MAX.hazard;
+    const numItems = rowsFor(TICK_READ_BYTES, rowMax, pageSize ?? Number.POSITIVE_INFINITY);
+    const page =
+      phase === 'reports'
+        ? await ctx.db
+            .query('reports')
+            .withIndex('by_author', (q) => q.eq('authorId', uploaderId))
+            .paginate({ cursor: cursor ?? null, numItems })
+        : await ctx.db
+            .query('hazards')
+            .withIndex('by_author_and_water_body', (q) => q.eq('createdByUserId', uploaderId))
+            .paginate({ cursor: cursor ?? null, numItems });
+    const used = new Set<string>(
+      (page.page as (Doc<'reports'> | Doc<'hazards'>)[]).flatMap((row) => row.photoIds),
+    );
+    const remaining = photoIds.filter((id) => !used.has(id));
+    if (remaining.length === 0) return { settled: 0, kept: photoIds.length };
+    if (!page.isDone || phase === 'reports') {
+      await ctx.scheduler.runAfter(0, internal.erasure.settlePhotos, {
+        uploaderId,
+        photoIds: remaining,
+        phase: page.isDone ? 'hazards' : phase,
+        ...(page.isDone ? {} : { cursor: page.continueCursor }),
+        ...(pageSize !== undefined ? { pageSize } : {}),
+      });
+      return { settled: 0, more: true };
     }
-    const referenced = byUploader.get(uploaderId) ?? null;
-    for (const photoId of photoIds) {
+    // Every Report and hazard of theirs is read: what is left nothing of theirs uses.
+    const now = Date.now();
+    let settled = 0;
+    for (const photoId of remaining) {
       const photo = await ctx.db.get(photoId);
-      if (!photo) continue;
-      const unlink =
-        fromReport !== undefined && photo.reportId === fromReport ? { reportId: undefined } : {};
-      if (referenced?.has(photoId)) {
-        if (Object.keys(unlink).length > 0) await ctx.db.patch(photoId, unlink);
+      if (!photo || photo.erasedAt !== undefined) continue;
+      // A Report that took it since the scan began, or an access point that shows it: in use.
+      if (photo.reportId !== undefined) continue;
+      const onAccess = await ctx.db
+        .query('accessPhotos')
+        .withIndex('by_photo', (q) => q.eq('photoId', photoId))
+        .first();
+      if (onAccess) continue;
+      if (await deletePhotoAndBlobs(ctx, photo)) {
+        settled++;
         continue;
       }
-      if (referenced !== null && (await deletePhotoAndBlobs(ctx, photo))) continue;
-      // Kept: the scan couldn't answer, or a blob outlived the attempt. The row stays as the only
-      // pointer to its blobs (the orphan sweep retries), and stops being a record of anything. When
-      // it is known to be this item's alone — a blob that outlived the delete, or the erased Report's
-      // own photo — it is no longer the uploader's either, and their export leaves it out.
-      const ours =
-        referenced !== null || (fromReport !== undefined && photo.reportId === fromReport);
+      // A blob outlived the attempt: the row is the only pointer to it (the orphan sweep retries),
+      // and no longer anything of its uploader's.
       await ctx.db.patch(photoId, {
-        ...unlink,
         caption: undefined,
         takenAt: undefined,
         coord: undefined,
         placeOnMap: false,
-        ...(ours ? { erasedAt: now } : {}),
+        erasedAt: now,
       });
+      settled++;
     }
-  }
-}
+    return { settled, more: false };
+  },
+});
 
 /**
  * What an author wrote before each edit — their words too, and gone before the item is. An edit adds
@@ -345,6 +468,7 @@ function eraseRevisions(
 ): Promise<boolean> {
   return drain(
     budget,
+    targetType === 'post' ? ROW_MAX.postRevision : ROW_MAX.reportRevision,
     (n) =>
       ctx.db
         .query('contentRevisions')
@@ -387,6 +511,7 @@ async function eraseReport(
   if (!(await eraseRevisions(ctx, 'report', report._id, budget))) return false;
   const joins = await drain(
     budget,
+    ROW_MAX.small,
     (n) =>
       ctx.db
         .query('reportSubAreas')
@@ -399,6 +524,7 @@ async function eraseReport(
   // community record and stays, coordinate and all; only its pointer to the Report goes.
   const putIns = await drain(
     budget,
+    ROW_MAX.putIn,
     (n) =>
       ctx.db
         .query('putIns')
@@ -410,6 +536,7 @@ async function eraseReport(
   // An access alert filed from it keeps its own life (others vote on it); its link goes.
   const alerts = await drain(
     budget,
+    ROW_MAX.accessAlert,
     (n) =>
       ctx.db
         .query('accessAlerts')
@@ -422,6 +549,7 @@ async function eraseReport(
   // retract), and loses its pointer to the Report.
   const requests = await drain(
     budget,
+    ROW_MAX.waterBodyRequest,
     (n) =>
       ctx.db
         .query('waterBodyRequests')
@@ -430,13 +558,31 @@ async function eraseReport(
     (request) => ctx.db.patch(request._id, { reportId: undefined }),
   );
   if (!requests) return false;
-  // Bounded by the Report's own list (`HAZARD_MAX_PER_REPORT`).
-  for (const hazardId of report.hazardIdsCreated) {
-    const hazard = await ctx.db.get(hazardId);
-    if (hazard?.originReportId === report._id) {
-      await ctx.db.patch(hazardId, { originReportId: undefined });
-    }
-  }
+  // Its hazards stay as they are, unlinked (founder ruling, 2026-11-13).
+  const hazards = await drain(
+    budget,
+    ROW_MAX.hazard,
+    (n) =>
+      ctx.db
+        .query('hazards')
+        .withIndex('by_origin_report', (q) => q.eq('originReportId', report._id))
+        .take(n),
+    (hazard) => ctx.db.patch(hazard._id, { originReportId: undefined }),
+  );
+  if (!hazards) return false;
+  // Its photos lose their link to it now (a Report owns its photos one-to-one, `assertOwnedPhotos`);
+  // whether each is deleted waits for the settlement, which reads whether anything else uses it.
+  const linked = await drain(
+    budget,
+    ROW_MAX.photo,
+    (n) =>
+      ctx.db
+        .query('photos')
+        .withIndex('by_report', (q) => q.eq('reportId', report._id))
+        .take(n),
+    (photo) => ctx.db.patch(photo._id, { reportId: undefined }),
+  );
+  if (!linked) return false;
   if (report.activityId !== undefined) {
     const activity = await ctx.db.get(report.activityId);
     if (activity?.linkedReportId === report._id) {
@@ -445,9 +591,8 @@ async function eraseReport(
   }
 
   await ctx.db.delete(report._id);
-  // Settled at the end of the tick, after the row is gone, so the reference scan no longer counts
-  // this Report's own list.
-  photos.push({ uploaderId: report.authorId, photoIds: report.photoIds, fromReport: report._id });
+  // Settled after the tick, by a job that reads everything else of the uploader's.
+  photos.push({ uploaderId: report.authorId, photoIds: report.photoIds });
 
   if (report.postId !== undefined) {
     const post = await ctx.db.get(report.postId);
@@ -491,6 +636,7 @@ async function eraseHazard(
   // One row a person, but older rows can hold more than one: drained, never capped.
   const own = await drain(
     budget,
+    ROW_MAX.small,
     (n) =>
       ctx.db
         .query('hazardConfirmations')
@@ -527,6 +673,7 @@ async function eraseAlert(
 ): Promise<boolean> {
   const own = await drain(
     budget,
+    ROW_MAX.small,
     (n) =>
       ctx.db
         .query('accessAlertVotes')
@@ -570,9 +717,11 @@ export const backfillClocks = internalMutation({
     if (!kinds.includes(current)) throw new ConvexError(`Unknown kind ${kind}`);
     const size = Math.min(Math.max(pageSize ?? BACKFILL_PAGE, 1), BACKFILL_PAGE);
     const now = Date.now();
-    const page = await ctx.db
-      .query(ERASABLE[current])
-      .paginate({ cursor: cursor ?? null, numItems: size });
+    // Sized by what this kind's rows can weigh, as the sweep's pages are.
+    const page = await ctx.db.query(ERASABLE[current]).paginate({
+      cursor: cursor ?? null,
+      numItems: rowsFor(TICK_READ_BYTES, ROW_MAX[current], size),
+    });
     let set = 0;
     let stamped = 0;
     for (const doc of page.page as ErasableDoc[]) {

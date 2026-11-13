@@ -416,6 +416,63 @@ describe('the backfill, on old dev data', () => {
   });
 });
 
+describe('a history longer than the backfill reads', () => {
+  test('is unknown, never "nothing there": the item is left unstamped', async () => {
+    const { t, author, mod } = await setup();
+    const reportId = await seedReport(t, author.id);
+    const commentId = await t.run((ctx) =>
+      ctx.db.insert('comments', {
+        reportId,
+        authorId: author.id,
+        body: 'x',
+        source: 'native' as const,
+        moderationStatus: 'removed' as const,
+        createdAt: Date.now(),
+      }),
+    );
+    const at = Date.now() - 1_000_000;
+    await t.run(async (ctx) => {
+      await ctx.db.patch(reportId, { moderationStatus: 'removed' });
+      await ctx.db.insert('moderationActions', {
+        actorId: author.id,
+        action: 'author_delete',
+        targetType: 'report',
+        targetId: reportId,
+        reason: 'Deleted by the author',
+        createdAt: at,
+      });
+      // A moderator's restore, then more rows than the backfill reads, all after the deletion.
+      await ctx.db.insert('moderationActions', {
+        actorId: mod.id,
+        action: 'restore',
+        targetType: 'report',
+        targetId: reportId,
+        reason: 'before D248',
+        createdAt: at + 1,
+      });
+      for (let i = 0; i < 100; i++) {
+        for (const [targetType, targetId] of [
+          ['report', reportId],
+          ['comment', commentId],
+        ] as const) {
+          await ctx.db.insert('moderationActions', {
+            actorId: mod.id,
+            action: 'dismiss_flag',
+            targetType,
+            targetId,
+            reason: 'noise',
+            createdAt: at + 2 + i,
+          });
+        }
+      }
+    });
+    await t.mutation(internal.authorDeletions.backfillFromAudit, {});
+    await t.mutation(internal.authorDeletions.backfillCommentDeletions, {});
+    expect(await deletedAt(t, reportId)).toBeUndefined();
+    expect(await deletedAt(t, commentId)).toBeUndefined();
+  });
+});
+
 describe('the rule holds under any order', () => {
   test('author-deleted content never shows again', async () => {
     type Op = 'delete' | 'hide' | 'remove' | 'restore' | 'undo';

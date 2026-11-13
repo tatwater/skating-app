@@ -2807,7 +2807,10 @@ export default defineSchema({
     // footprint is recomputed from and what `unmerge` walks. An equality read on a field almost every
     // row leaves unset, so it costs nothing to carry and turns "what was merged into this?" from a
     // scan of the body's hazards into a lookup.
-    .index('by_merged_into', ['mergedIntoHazardId']),
+    .index('by_merged_into', ['mergedIntoHazardId'])
+    // The hazards drawn in one Report, so erasing the Report unlinks them a page at a time (D248).
+    // `eq()` only: the field is optional and the index not sparse.
+    .index('by_origin_report', ['originReportId']),
   // NOTE: no spatial index for hazards (Phase 09a call 6). Hazards are only ever queried per body —
   // the map renders them for the selected lake, the mobile cache stores them per cached body, and the
   // proximity evaluator runs against that same cached set. A third spatial index
@@ -3553,6 +3556,9 @@ export default defineSchema({
     seasonExpiryCandidate: v.optional(v.boolean()),
   })
     .index('by_uploader', ['uploaderId'])
+    // A Report's photos through their back-link, so erasing the Report unlinks them a page at a time
+    // (D248). `eq()` only: the field is optional and the index not sparse.
+    .index('by_report', ['reportId'])
     // Day-sliced orphan sweep (Phase 07-2): a photo abandoned between upload and attach is invisible
     // today, and the number decides whether the deferred GC cron is worth building.
     .index('by_created_at', ['createdAt']),

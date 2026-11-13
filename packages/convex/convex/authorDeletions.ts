@@ -17,13 +17,20 @@ import {
 /** Rows per backfill page; each page is its own transaction and schedules the next. */
 const BACKFILL_PAGE = 200;
 
-/** An item's audit rows, newest first, bounded. */
+/** How much of one item's history a backfill reads, newest first. */
+const HISTORY_LIMIT = 100;
+
+/**
+ * An item's audit rows, newest first, bounded. A full read may not be the whole history; the callers
+ * below treat what they could not see as unknown — never as "nothing there" — and leave the item
+ * unstamped (the safe way: unstamped content is neither final nor ever erased).
+ */
 function historyOf(ctx: QueryCtx, targetType: Withdrawable, targetId: string) {
   return ctx.db
     .query('moderationActions')
     .withIndex('by_target', (q) => q.eq('targetType', targetType).eq('targetId', targetId))
     .order('desc')
-    .take(100);
+    .take(HISTORY_LIMIT);
 }
 
 /**
@@ -47,6 +54,13 @@ async function stampFromRow(ctx: MutationCtx, row: Doc<'moderationActions'>): Pr
   if (!target || authorDeletedAtOf(target) !== undefined) return 0;
   if (target.moderationStatus === 'visible') return 0;
   const history = await historyOf(ctx, targetType, row.targetId);
+  // "Restored since" needs every row after the deletion. A full read that doesn't reach back to it
+  // may have missed a restore: unknown, so leave it unstamped.
+  const oldest = history[history.length - 1];
+  if (history.length >= HISTORY_LIMIT && oldest && oldest._creationTime > row._creationTime) {
+    console.error(`authorDeletions: ${targetType} ${row.targetId} has too long a history to tell`);
+    return 0;
+  }
   const undone = new Set(history.flatMap((r) => (r.undoesActionId ? [r.undoesActionId] : [])));
   const restoredSince = history.some(
     (r) => r._creationTime > row._creationTime && r.action === 'restore' && !undone.has(r._id),
@@ -112,6 +126,8 @@ export const backfillCommentDeletions = internalMutation({
       const history = await historyOf(ctx, 'comment', comment._id);
       const lastWord = history.find((r) => ['hide', 'remove', 'restore'].includes(r.action));
       if (lastWord?.action === 'remove') continue;
+      // No moderator's word in a full read is not "no moderator's word": unknown, so left alone.
+      if (lastWord === undefined && history.length >= HISTORY_LIMIT) continue;
       await ctx.db.patch(comment._id, { authorDeletedAt: now });
       stamped++;
     }

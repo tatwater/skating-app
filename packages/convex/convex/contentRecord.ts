@@ -25,7 +25,8 @@ const RECORD_LIMIT = 100;
 const BACKFILL_PAGE = 200;
 /**
  * An item's history read by the backfill, newest first. Far past any real item's (a handful of rows
- * each); an item that reaches it is replayed from the newest rows only, and the backfill says so.
+ * each); an item that reaches it is left as it stands rather than replayed in part, and the
+ * backfill says so.
  */
 export const HISTORY_LIMIT = 100;
 
@@ -229,7 +230,7 @@ export const backfillVerdicts = internalMutation({
     }
     if (truncated.length > 0) {
       console.error(
-        `contentRecord: ${truncated.length} item(s) carry more than ${HISTORY_LIMIT} audit rows and were replayed from the newest only: ${truncated.join(', ')}`,
+        `contentRecord: ${truncated.length} item(s) carry more than ${HISTORY_LIMIT} audit rows and were left untouched (their history can't be read whole here): ${truncated.join(', ')}`,
       );
     }
     if (!page.isDone) {
@@ -260,6 +261,10 @@ async function replayItem(
   if (!target) return { written: 0, truncated: false };
   const read = await historyOf(ctx, targetType, targetId);
   const truncated = read.length > HISTORY_LIMIT;
+  // A history longer than the read is not known whole, and a replay of part of it could end or drop
+  // a verdict that stands (and so let the item be erased). Unknown is not "nothing there": leave its
+  // rows exactly as they are, and say so.
+  if (truncated) return { written: 0, truncated };
   const history = read.slice(0, HISTORY_LIMIT).reverse();
   const replayed = replayVerdicts(history);
   let written = 0;
