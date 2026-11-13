@@ -1,10 +1,10 @@
 import { HAZARD_TYPE_LABELS, type HazardType } from '@skating/core';
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { MapHoverPlate } from '@/components/kit/map-controls';
+import { HazardMark, MARK_BOX, PutInMark } from '@/components/kit/map-marks';
 import { layoutLakeLabels, type Rect } from '@/lib/lakeLabelLayout';
 import { cn } from '@/lib/utils';
 import { LakeLabel } from './LakeLabel';
-import { HazardMark, MARK_BOX, PutInMark } from './MapMarks';
 import { type HazardMarkModel, type LakeLabelModel, markObstacle } from './mapDerive';
 
 /**

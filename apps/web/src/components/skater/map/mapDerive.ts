@@ -11,6 +11,8 @@ import {
   type PartialStandingInput,
   representativePoint,
 } from '@skating/core';
+import type { MapKeyKind } from '@/components/kit/map-key';
+import type { HazardTone } from '@/components/kit/map-marks';
 import {
   LABEL_DOT_RADIUS,
   labelPriority,
@@ -18,7 +20,6 @@ import {
   MAX_LAKE_LABELS,
   type RecentCount,
 } from '@/lib/lakeLabelLayout';
-import type { MapKeyKind } from './MapKey';
 
 export interface LatLngLike {
   lat: number;
@@ -195,7 +196,8 @@ export function labelCountIds(
 
 // ── Hazard marks ──────────────────────────────────────────────────────────────────────────────
 
-export type HazardTone = 'danger' | 'healing' | 'passage';
+/** A hazard mark's face, as the kit's marks draw it. */
+export type { HazardTone };
 
 export interface HazardMarkModel {
   id: string;

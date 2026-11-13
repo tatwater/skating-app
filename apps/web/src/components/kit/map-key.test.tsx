@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { MAP_KEY_ORDER, MapKey } from './MapKey';
+import { MAP_KEY_ORDER, MapKey } from './map-key';
 
 describe('MapKey', () => {
   it('draws nothing when the map draws nothing', () => {

@@ -4,6 +4,7 @@ import type maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MapModeBar } from '@/components/kit/map-controls';
+import { MapKey } from '@/components/kit/map-key';
 import { toast } from '@/components/kit/toast';
 import { useTheme } from '@/components/theme-provider';
 import {
@@ -41,7 +42,6 @@ import {
 import { effectiveMapSpec, useSkaterMapStore } from '@/stores/skaterMapStore';
 import { panelLinkState } from '../panels/panelNavigation';
 import { MapDockControls } from './MapDockControls';
-import { MapKey } from './MapKey';
 import { MapMarksLayer } from './MapMarksLayer';
 import { hitProperty, isUnlistedWater, type RenderedHit, skaterMapKeyKinds } from './mapDerive';
 import {

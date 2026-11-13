@@ -1,14 +1,16 @@
 import type { ReactNode } from 'react';
+
 import { cn } from '@/lib/utils';
-import { HazardMark, KEY_GLYPH, LotMark, PhotoMark, PutInMark } from './MapMarks';
+
+import { HazardMark, KEY_GLYPH, LotMark, PhotoMark, PutInMark } from './map-marks';
 
 /**
- * The map's key (admin console, the 5.4.x boards' foot): a slim bar along the map's bottom edge,
- * each kind the map is drawing as its own mark at 12 px and a name. A map lists only what it shows,
- * and a name is a noun for what the mark *is* — never a word about the ice (D3).
+ * The map's key, on both surfaces: a slim bar along the map's bottom edge, each kind the map is
+ * drawing as its own mark at 12 px (`map-marks`' glyphs) and a name. A map lists only what it
+ * shows, and a name is a noun for what the mark *is* — never a word about the ice.
  */
 
-export type MapKeyKind =
+type MapKeyKind =
   | 'putIn'
   | 'lot'
   | 'hazard'
@@ -23,7 +25,7 @@ export type MapKeyKind =
  * key's height while one is drawn, so the plates and the credits that sit on the bottom edge rise
  * above it instead of under it.
  */
-export const MAP_FOOT_ROOM = 'has-[[data-slot=map-key]]:[--map-foot:1.875rem]';
+const MAP_FOOT_ROOM = 'has-[[data-slot=map-key]]:[--map-foot:1.875rem]';
 
 /** A line's glyph, as the GL layer draws it: the track's ice, solid or dashed. */
 function LineGlyph({ dashed }: { dashed: boolean }) {
@@ -58,9 +60,9 @@ const ENTRIES: Record<MapKeyKind, { label: string; glyph: () => ReactNode }> = {
 };
 
 /** The key's order, whatever order a map hands its kinds in. */
-export const MAP_KEY_ORDER = Object.keys(ENTRIES) as MapKeyKind[];
+const MAP_KEY_ORDER = Object.keys(ENTRIES) as MapKeyKind[];
 
-export function MapKey({
+function MapKey({
   kinds,
   dim = false,
   className,
@@ -102,3 +104,5 @@ export function MapKey({
     </ul>
   );
 }
+
+export { MAP_FOOT_ROOM, MAP_KEY_ORDER, MapKey, type MapKeyKind };

@@ -8,7 +8,7 @@
 
 import type { BBox, LatLng } from '@skating/core';
 import type { FeatureCollection, LineString, MultiPolygon, Polygon } from 'geojson';
-import type { MapKeyKind } from '../map/MapKey';
+import type { MapKeyKind } from '../../kit/map-key';
 import { HAZARD_KEY_KIND, type HazardTone } from '../map/mapDerive';
 
 export interface InstrumentPin {

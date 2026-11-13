@@ -5,7 +5,7 @@ import { MapPane } from '@/components/kit/map-controls';
 import { useTheme } from '@/components/theme-provider';
 import { cn } from '@/lib/utils';
 import { MAP_FLAVORS } from '@/lib/waterMap';
-import { MAP_FOOT_ROOM, MapKey } from '../map/MapKey';
+import { MAP_FOOT_ROOM, MapKey } from '../../kit/map-key';
 import { mapMarkVars } from '../map/mapPalette';
 import { type InstrumentInput, instrumentKeyKinds } from './instrumentFeatures';
 
