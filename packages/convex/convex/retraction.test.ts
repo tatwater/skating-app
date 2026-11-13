@@ -368,7 +368,7 @@ describe('an access alert', () => {
     await expect(retract()).rejects.toThrow(literally(RETRACT_REFUSALS.closed));
   });
 
-  test('its pin history is read only as far as a transaction affords; past that it counts as pinned', async () => {
+  test("its pin history is read as far as its rows' real weight allows; past that it is unknown, and says so", async () => {
     const { t, skater, mod, alertId } = await alertSetup();
     // A pin far back, under rows as heavy as a moderator's uncapped reason makes them.
     await t.run((ctx) =>
@@ -393,11 +393,30 @@ describe('an access alert', () => {
         }),
       );
     }
-    // Refused, as unknown — never read past the transaction limit, never "never pinned".
+    // Refused, as unknown — never read past the transaction limit, never "never pinned", and never
+    // told that a moderator confirmed it.
     await expect(
       skater.as.mutation(api.accessAlerts.retract, { accessAlertId: alertId }),
-    ).rejects.toThrow(literally(RETRACT_REFUSALS.confirmed));
+    ).rejects.toThrow(literally(RETRACT_REFUSALS.historyTooLong));
     expect(await get(t, alertId)).toMatchObject({ status: 'active' });
+  });
+
+  test('a long history of ordinary rows is read whole: never pinned, it is still retractable', async () => {
+    const { t, skater, mod, alertId } = await alertSetup();
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 40; i++) {
+        await ctx.db.insert('moderationActions', {
+          actorId: mod.id,
+          action: 'dismiss_flag',
+          targetType: 'accessAlert',
+          targetId: alertId,
+          reason: 'not a real problem',
+          createdAt: Date.now() + i,
+        });
+      }
+    });
+    await skater.as.mutation(api.accessAlerts.retract, { accessAlertId: alertId });
+    expect(await get(t, alertId)).toMatchObject({ status: 'retracted' });
   });
 
   test('a pin a moderator undid does not count; a closed alert has nothing to retract', async () => {

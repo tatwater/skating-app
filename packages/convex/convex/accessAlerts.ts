@@ -70,7 +70,7 @@ import {
   ACCESS_REASONS,
 } from './lib/enums';
 import { authorRetracted, refreshClockOf, refreshEraseClock } from './lib/eraseClock';
-import { ReadBudget } from './lib/readBudget';
+import { DOC_MAX, ReadBudget } from './lib/readBudget';
 import { literals } from './lib/validators';
 
 /** Free text has to be bounded somewhere; this is a sentence about a gate, not an essay. */
@@ -315,28 +315,33 @@ export const vote = mutation({
 });
 
 /**
- * How far back an alert's history is read for a pin: what one transaction can read beside the
- * retraction's own reads — the caller's profile, the alert, and its clock's hold check — when every
- * audit row is as heavy as a moderator's uncapped reason can make it (`lib/readBudget`). An alert
- * carries a handful of rows.
+ * How much of an alert's history is read for a pin: up to 200 rows, newest first, and no more than
+ * this many bytes of them **as they actually weigh** (`maximumBytesRead`) — so a moderator's uncapped
+ * reason can't carry the read past the transaction limit, while the handful of sentence-sized rows a
+ * real alert carries are always read whole. The read stops after the row that crosses it (one more
+ * document at most), beside the retraction's own reads: the caller's profile, the alert, its hold.
  */
-const PIN_HISTORY_LIMIT = 7;
+const PIN_HISTORY_ROWS = 200;
+const PIN_HISTORY_BYTES = 6 * DOC_MAX;
 
 /**
  * Whether a moderator ever pinned this alert, and the pin was not undone (an undo is "I didn't mean
- * to"). Read from the history, newest first and bounded; a history longer than the bound is unknown,
- * and counts as pinned — refusing a retraction keeps a claim up and starts no erasure clock, and its
- * author can still mark it open.
+ * to"). Read from the history, newest first and bounded; a history the read could not finish is
+ * `'unknown'` — never "never pinned" — and the retraction is refused, saying so.
  */
-async function everPinned(ctx: QueryCtx, accessAlertId: Id<'accessAlerts'>): Promise<boolean> {
-  const rows = await ctx.db
+async function everPinned(
+  ctx: QueryCtx,
+  accessAlertId: Id<'accessAlerts'>,
+): Promise<boolean | 'unknown'> {
+  const page = await ctx.db
     .query('moderationActions')
     .withIndex('by_target', (q) => q.eq('targetType', 'accessAlert').eq('targetId', accessAlertId))
     .order('desc')
-    .take(PIN_HISTORY_LIMIT + 1);
+    .paginate({ cursor: null, numItems: PIN_HISTORY_ROWS, maximumBytesRead: PIN_HISTORY_BYTES });
+  const rows = page.page;
   const undone = new Set(rows.flatMap((r) => (r.undoesActionId ? [r.undoesActionId] : [])));
   if (rows.some((r) => r.action === 'pin_access_alert' && !undone.has(r._id))) return true;
-  return rows.length > PIN_HISTORY_LIMIT;
+  return page.isDone ? false : 'unknown';
 }
 
 /**
@@ -425,7 +430,8 @@ export const retract = mutation({
     // never disagree about whose withdrawal it was.
     if (isAuthor) {
       // The history is read only where it can change the answer: a live community claim.
-      const pinnedOnce = alert.status === 'active' && (await everPinned(ctx, alert._id));
+      const pinnedOnce = alert.status === 'active' ? await everPinned(ctx, alert._id) : false;
+      if (pinnedOnce === 'unknown') throw new ConvexError(RETRACT_REFUSALS.historyTooLong);
       const rule = alertRetractionByAuthor(alert.status, pinnedOnce);
       if (rule === 'already') return;
       if (rule !== 'retract') throw new ConvexError(RETRACT_REFUSALS[rule]);

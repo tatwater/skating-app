@@ -279,9 +279,20 @@ async function dueHead(
  * Cron entry: erase everything due. Self-continuing while any kind may have more, or a budget ran out
  * part-way through an item.
  */
+const photoWorkValidator = v.array(
+  v.object({ uploaderId: v.id('profiles'), photoIds: v.array(v.id('photos')) }),
+);
+
 export const eraseDue = internalMutation({
-  args: { pageSize: v.optional(v.number()) },
-  handler: async (ctx, { pageSize }) => {
+  args: {
+    pageSize: v.optional(v.number()),
+    /**
+     * Photos earlier passes of this run let go of, not yet settled: carried until the run ends or
+     * they make a chunk, so an uploader's history is read once per batch, not once per pass.
+     */
+    photos: v.optional(photoWorkValidator),
+  },
+  handler: async (ctx, { pageSize, photos: carried = [] }) => {
     const size = pageSizeFor(pageSize);
     const now = Date.now();
     const erased: Partial<Record<Erasable, number>> = {};
@@ -327,11 +338,19 @@ export const eraseDue = internalMutation({
       }
     }
     // After every row they hung from is gone: each uploader's set is settled by a job that can read
-    // their whole history, a charged page at a time.
-    await queuePhotoSettlement(ctx, photos);
+    // their whole history, a charged page at a time — once the run ends, or once a chunk is waiting.
+    const pending = [...carried, ...photos].filter((work) => work.photoIds.length > 0);
+    const waiting = pending.reduce((n, work) => n + work.photoIds.length, 0);
+    const settleNow = !more || waiting >= SETTLE_CHUNK;
+    if (settleNow) await queuePhotoSettlement(ctx, pending);
     if (more) {
       await ctx.scheduler.runAfter(0, internal.erasure.eraseDue, {
         ...(pageSize !== undefined ? { pageSize } : {}),
+        ...(settleNow || pending.length === 0
+          ? {}
+          : {
+              photos: pending.map((w) => ({ uploaderId: w.uploaderId, photoIds: [...w.photoIds] })),
+            }),
       });
     }
     return { erased, held, more };
@@ -868,45 +887,67 @@ const BACKFILL_PAGE = 200;
 export const backfillClocks = internalMutation({
   args: {
     kind: v.optional(v.string()),
-    cursor: v.optional(v.string()),
+    /** The creation time of the last row of this kind looked at: the walk resumes after it. */
+    after: v.optional(v.number()),
     pageSize: v.optional(v.number()),
   },
-  handler: async (ctx, { kind, cursor, pageSize }) => {
+  handler: async (ctx, { kind, after, pageSize }) => {
     const kinds = Object.keys(ERASABLE) as Erasable[];
     const current = (kind ?? kinds[0]) as Erasable;
     if (!kinds.includes(current)) throw new ConvexError(`Unknown kind ${kind}`);
     const size = Math.min(Math.max(pageSize ?? BACKFILL_PAGE, 1), BACKFILL_PAGE);
     const now = Date.now();
     const reads = new ReadBudget();
-    // The row, a stamp, its hold, its clock.
-    const perRow = 3 * ROW_MAX[current] + HOLD_COST[current];
-    const page = await reads.page(current, reads.rows(current, size, 0, perRow), (numItems) =>
-      ctx.db.query(ERASABLE[current]).paginate({ cursor: cursor ?? null, numItems }),
-    );
+    // A withdrawn row's own work beside its read: a stamp, its hold, its clock. Kept back for one
+    // row, so every pass gets through at least one; most rows are not withdrawn and cost only the read.
+    const work = 2 * ROW_MAX[current] + HOLD_COST[current];
+    // By creation time (which no write moves), resumed after the last row looked at — never by a
+    // position on a page, since erasure deletes rows of these tables while the walk runs.
+    const requested = Math.max(1, reads.rows(current, size, work));
+    const rows = (await reads.take(current, requested, (n) =>
+      // Typed as one table: every erasable table has the same `by_creation_time` index.
+      ctx.db
+        .query(ERASABLE[current] as 'reports')
+        .withIndex('by_creation_time', (q) =>
+          after === undefined ? q : q.gt('_creationTime', after),
+        )
+        .take(n),
+    )) as ErasableDoc[];
     let set = 0;
     let stamped = 0;
-    for (const doc of page.page as ErasableDoc[]) {
+    let lookedTo = after;
+    let looked = 0;
+    for (const doc of rows) {
+      const alertToStamp =
+        current === 'accessAlert' &&
+        authorRetracted(doc as Doc<'accessAlerts'>) &&
+        (doc as Doc<'accessAlerts'>).retractedAt === undefined;
+      const needsClock =
+        alertToStamp || (withdrawnAtOf(current, doc) !== undefined && doc.eraseAt === undefined);
+      if (needsClock && !reads.affords(work)) break;
+      looked++;
+      lookedTo = doc._creationTime;
+      if (!needsClock) continue;
       let fresh = doc;
-      if (current === 'accessAlert') {
-        const alert = doc as Doc<'accessAlerts'>;
+      if (alertToStamp) {
         // Retracted by its author before `retractedAt` existed: no time for its 30 days, and no
         // history row to recover one from. They start at the backfill — never in the past. A
         // moderator's retraction is not a withdrawal and is left alone.
-        if (authorRetracted(alert) && alert.retractedAt === undefined) {
-          reads.touch('accessAlert');
-          await ctx.db.patch(alert._id, { retractedAt: now });
-          fresh = { ...alert, retractedAt: now };
-          stamped++;
-        }
+        reads.touch('accessAlert');
+        await ctx.db.patch(doc._id as Id<'accessAlerts'>, { retractedAt: now });
+        fresh = { ...(doc as Doc<'accessAlerts'>), retractedAt: now };
+        stamped++;
       }
       if (withdrawnAtOf(current, fresh) === undefined || fresh.eraseAt !== undefined) continue;
       if ((await refreshClockOf(ctx, reads, current, fresh, now)) !== undefined) set++;
     }
-    const next = page.isDone ? kinds[kinds.indexOf(current) + 1] : current;
+    // A short read, every row of it looked at, was the rest of this kind.
+    const kindDone = looked === rows.length && rows.length < requested;
+    const next = kindDone ? kinds[kinds.indexOf(current) + 1] : current;
     if (next !== undefined) {
       await ctx.scheduler.runAfter(0, internal.erasure.backfillClocks, {
         kind: next,
-        ...(page.isDone ? {} : { cursor: page.continueCursor }),
+        ...(next === current && lookedTo !== undefined ? { after: lookedTo } : {}),
         ...(pageSize !== undefined ? { pageSize } : {}),
       });
     }

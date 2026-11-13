@@ -1202,6 +1202,27 @@ describe("a photo is erased only when nothing of its uploader's still uses it", 
     return { reportId: reportIds[0] as Id<'reports'>, photoId: photoIds[0] as Id<'photos'> };
   }
 
+  test("a run's passes settle an uploader's photos together, not once a pass", async () => {
+    const { t, author, waterBodyId } = await setup();
+    const reports: Id<'reports'>[] = [];
+    const photos: Id<'photos'>[] = [];
+    for (let i = 0; i < 3; i++) {
+      const seeded = await seedPost(t, author.id, waterBodyId, 1);
+      reports.push(seeded.reportIds[0] as Id<'reports'>);
+      photos.push(seeded.photoIds[0] as Id<'photos'>);
+    }
+    for (const reportId of reports) await author.as.mutation(api.reports.remove, { reportId });
+    advance(31 * DAY);
+    // One item a pass: three passes, one settlement.
+    await t.mutation(internal.erasure.eraseDue, { pageSize: 1 });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const settlements = (
+      await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect())
+    ).filter((job) => job.name.includes('settlePhotos') && job.args[0]?.phase === undefined);
+    expect(settlements).toHaveLength(1);
+    for (const id of [...reports, ...photos]) expect(await get(t, id)).toBeNull();
+  });
+
   test('one a surviving hazard shows stays, whole, and in the export', async () => {
     const { t, author, waterBodyId } = await setup();
     const { reportId, photoId } = await withPhotoOn(t, author.id, waterBodyId);

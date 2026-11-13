@@ -319,8 +319,11 @@ export const backfillVerdicts = internalMutation({
   },
 });
 
-/** What finishing a pass reads: the final verdict's row, and the item's clock (`holdMoved`). */
-const FINISH = 2 * ROW_MAX.verdict + 2 * DOC_MAX + HOLD_COST.report;
+/**
+ * What finishing a pass reads: whether the item is still there, the final verdict's row, and the
+ * item's clock (`holdMoved`).
+ */
+const FINISH = 2 * ROW_MAX.verdict + 3 * DOC_MAX + HOLD_COST.report;
 
 /**
  * Replay one item's whole history, oldest first, a page a transaction, carrying the replay's small
@@ -426,9 +429,12 @@ export const replayVerdictHistory = internalMutation({
       });
       return { written, more: true };
     }
-    // The end of its history: what it leaves standing stands, and the clock follows.
-    if (state.standing) written += await upsert({ ...state.standing, standing: true });
-    await holdMoved(ctx, targetType, targetId, Date.now(), reads);
+    // The end of its history: what it leaves standing stands, and the clock follows — on an item
+    // still there (one erased while the replay ran has no record to keep, as at the hand-off).
+    if (await loadTarget(ctx, reads, targetType, targetId)) {
+      if (state.standing) written += await upsert({ ...state.standing, standing: true });
+      await holdMoved(ctx, targetType, targetId, Date.now(), reads);
+    }
     if (pass === 'scan') {
       await ctx.scheduler.runAfter(0, internal.contentRecord.replayVerdictHistory, {
         ...base,

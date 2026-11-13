@@ -60,6 +60,8 @@ export const RETRACT_REFUSALS = {
   notYours: 'Only the person who filed this can retract it.',
   sharedFlag:
     'Others have reported the same thing since, so this stays with the moderators. It can no longer be retracted.',
+  historyTooLong:
+    "This alert's history is too long to check whether a moderator acted on it, so it can't be retracted. If it has cleared, mark it open.",
 } as const;
 
 /** A request to a moderator (activate, admit, restore, contest, takedown, name a bay or landmark). */

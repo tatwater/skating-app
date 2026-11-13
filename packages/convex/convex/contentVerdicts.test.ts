@@ -632,6 +632,35 @@ describe('a history longer than a page', () => {
     expect(await t.run((ctx) => ctx.db.query('contentVerdicts').collect())).toHaveLength(2);
   });
 
+  test('an item erased while its replay runs gets no verdict on the record', async () => {
+    vi.useFakeTimers();
+    const { t, author, mod } = await setup();
+    const reportId = await seedReport(t, author.id);
+    await t.run((ctx) =>
+      ctx.db.insert('moderationActions', {
+        actorId: mod.id,
+        action: 'hide',
+        targetType: 'report',
+        targetId: reportId,
+        reason: 'rude',
+        metadata: { priorStatus: 'visible', newStatus: 'hidden' },
+        createdAt: Date.now(),
+      }),
+    );
+    // Handed off while the Report stood; erased before its replay finished.
+    await t.run((ctx) => ctx.db.delete(reportId));
+    await t.mutation(internal.contentRecord.replayVerdictHistory, {
+      targetType: 'report',
+      targetId: reportId,
+      subjectUserId: author.id,
+      pass: 'scan',
+      resume: { cursor: null, skip: 0 },
+      clocks: false,
+    });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await t.run((ctx) => ctx.db.query('contentVerdicts').collect())).toEqual([]);
+  });
+
   test('never reads past the transaction limit, however heavy every row', async () => {
     vi.useFakeTimers();
     const t = convexTest({ schema, modules, transactionLimits: true });
