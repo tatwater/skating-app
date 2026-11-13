@@ -81,7 +81,8 @@ async function seedBody(t: T) {
 async function setup() {
   vi.useFakeTimers();
   vi.setSystemTime(T0);
-  const t = convexTest(schema, modules);
+  // Convex's real per-transaction limits, enforced: what passes here fits a deployment.
+  const t = convexTest({ schema, modules, transactionLimits: true });
   const author = await seedUser(t, 'author');
   const other = await seedUser(t, 'other');
   const mod = await seedUser(t, 'mod', 'moderator');
@@ -978,16 +979,18 @@ describe('a pass is sized by what its rows can weigh', () => {
     // Report notes have no cap but the document limit, so a revision may weigh almost that much.
     const heavy = 'x'.repeat(900 * 1024);
     const REVISIONS = 20;
-    await t.run(async (ctx) => {
-      for (let i = 0; i < REVISIONS; i++) {
-        await ctx.db.insert('contentRevisions', {
+    for (let i = 0; i < REVISIONS; i++) {
+      await t.run((ctx) =>
+        ctx.db.insert('contentRevisions', {
           targetType: 'report',
           targetId: reportId,
           authorId: author.id,
           snapshot: { notes: `${i} ${heavy}` },
           replacedAt: T0 + i,
-        });
-      }
+        }),
+      );
+    }
+    await t.run(async (ctx) => {
       // And Post prose at its cap, many times over.
       const full = 'y'.repeat(POST_BODY_MAX_CHARS);
       const title = 't'.repeat(POST_TITLE_MAX_CHARS);
@@ -1003,8 +1006,18 @@ describe('a pass is sized by what its rows can weigh', () => {
     });
     await author.as.mutation(api.posts.remove, { postId });
     advance(31 * DAY);
-    const revisionsLeft = async () =>
-      (await t.run((ctx) => ctx.db.query('contentRevisions').collect())).length;
+    // Counted a few rows a transaction: the test's own reads are under the limit too.
+    const revisionsLeft = async () => {
+      let count = 0;
+      for (let cursor: string | null = null; ; ) {
+        const page = await t.run((ctx) =>
+          ctx.db.query('contentRevisions').paginate({ cursor, numItems: 8 }),
+        );
+        count += page.page.length;
+        if (page.isDone) return count;
+        cursor = page.continueCursor;
+      }
+    };
     const before = await revisionsLeft();
     const first = await t.mutation(internal.erasure.eraseDue, {});
     expect(first.more).toBe(true);

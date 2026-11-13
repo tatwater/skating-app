@@ -69,7 +69,8 @@ import {
   ACCESS_ALERT_VERDICTS,
   ACCESS_REASONS,
 } from './lib/enums';
-import { authorRetracted, refreshEraseClock } from './lib/eraseClock';
+import { authorRetracted, refreshClockOf, refreshEraseClock } from './lib/eraseClock';
+import { ReadBudget } from './lib/readBudget';
 import { literals } from './lib/validators';
 
 /** Free text has to be bounded somewhere; this is a sentence about a gate, not an essay. */
@@ -313,23 +314,29 @@ export const vote = mutation({
   },
 });
 
-/** How far back an alert's history is read for a pin. An alert carries a handful of rows. */
-const PIN_HISTORY_LIMIT = 200;
+/**
+ * How far back an alert's history is read for a pin: what one transaction can read beside the
+ * retraction's own reads — the caller's profile, the alert, and its clock's hold check — when every
+ * audit row is as heavy as a moderator's uncapped reason can make it (`lib/readBudget`). An alert
+ * carries a handful of rows.
+ */
+const PIN_HISTORY_LIMIT = 7;
 
 /**
  * Whether a moderator ever pinned this alert, and the pin was not undone (an undo is "I didn't mean
- * to"). Read from the history, newest first and bounded; a history longer than the bound counts as
- * pinned — refusing a retraction keeps a claim up, and its author can still mark it open.
+ * to"). Read from the history, newest first and bounded; a history longer than the bound is unknown,
+ * and counts as pinned — refusing a retraction keeps a claim up and starts no erasure clock, and its
+ * author can still mark it open.
  */
 async function everPinned(ctx: QueryCtx, accessAlertId: Id<'accessAlerts'>): Promise<boolean> {
   const rows = await ctx.db
     .query('moderationActions')
     .withIndex('by_target', (q) => q.eq('targetType', 'accessAlert').eq('targetId', accessAlertId))
     .order('desc')
-    .take(PIN_HISTORY_LIMIT);
+    .take(PIN_HISTORY_LIMIT + 1);
   const undone = new Set(rows.flatMap((r) => (r.undoesActionId ? [r.undoesActionId] : [])));
   if (rows.some((r) => r.action === 'pin_access_alert' && !undone.has(r._id))) return true;
-  return rows.length >= PIN_HISTORY_LIMIT;
+  return rows.length > PIN_HISTORY_LIMIT;
 }
 
 /**
@@ -425,14 +432,16 @@ export const retract = mutation({
     }
 
     const now = Date.now();
-    await ctx.db.patch(accessAlertId, {
-      status: 'retracted',
+    const retracted = {
+      status: 'retracted' as const,
       retractedByUserId: profile._id,
       retractedAt: now,
       expiresAt: undefined,
-    });
-    // Only an author's own retraction is a withdrawal with a clock (`lib/eraseClock`).
-    await refreshEraseClock(ctx, 'accessAlert', accessAlertId, now);
+    };
+    await ctx.db.patch(accessAlertId, retracted);
+    // Only an author's own retraction is a withdrawal with a clock (`lib/eraseClock`) — read off the
+    // row as just written, without reading it again.
+    await refreshClockOf(ctx, new ReadBudget(), 'accessAlert', { ...alert, ...retracted }, now);
 
     if (isModerator && !isAuthor) {
       await writeAudit(ctx, {

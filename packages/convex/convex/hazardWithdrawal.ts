@@ -32,7 +32,8 @@ import { writeAudit } from './lib/audit';
 import { requireProfile } from './lib/auth';
 import { AUTHOR_DELETE_REASON } from './lib/authorDeletion';
 import { recomputeBodySummary } from './lib/bodySummary';
-import { refreshEraseClock } from './lib/eraseClock';
+import { refreshClockOf } from './lib/eraseClock';
+import { ReadBudget } from './lib/readBudget';
 import { MAX_BODY_CLUSTERS } from './lib/recurrence';
 
 /** The refusals, worded once for the mutation and its tests. */
@@ -46,6 +47,8 @@ export const HAZARD_WITHDRAW_REFUSALS = {
     // Not "other skaters'": merge and recurrence don't look at who posted, so the others may be the
     // author's own pins from another day or season.
     'This hazard has been combined with other reports of the same spot, so it is a shared record now and stays up.',
+  unknown:
+    "This lake's record of past hazards is too large to check this one against, so it stays up.",
 } as const;
 
 /**
@@ -68,8 +71,13 @@ async function othersSayItIsThere(ctx: QueryCtx, hazard: Doc<'hazards'>): Promis
   return false;
 }
 
-/** Whether merge or recurrence machinery has joined this pin to others. */
-async function isJoined(ctx: QueryCtx, hazard: Doc<'hazards'>): Promise<boolean> {
+/**
+ * Whether merge or recurrence machinery has joined this pin to others — `'unknown'` when the lake's
+ * patterns run past what is read. Every pattern on the lake is read (one more than the cap, so a read
+ * that reaches it says so): a cap that silently dropped the pattern this pin is in would let a shared
+ * record be withdrawn, and an unknown is never "not joined".
+ */
+async function isJoined(ctx: QueryCtx, hazard: Doc<'hazards'>): Promise<boolean | 'unknown'> {
   if (hazard.mergedIntoHazardId !== undefined) return true;
   const folded = await ctx.db
     .query('hazards')
@@ -79,10 +87,12 @@ async function isJoined(ctx: QueryCtx, hazard: Doc<'hazards'>): Promise<boolean>
   const patterns = await ctx.db
     .query('hazardRecurrence')
     .withIndex('by_water_body', (q) => q.eq('waterBodyId', hazard.waterBodyId))
-    .take(MAX_BODY_CLUSTERS);
-  return patterns.some(
+    .take(MAX_BODY_CLUSTERS + 1);
+  const joined = patterns.some(
     (p) => p.memberHazardIds.includes(hazard._id) || p.representativeHazardId === hazard._id,
   );
+  if (joined) return true;
+  return patterns.length > MAX_BODY_CLUSTERS ? 'unknown' : false;
 }
 
 /** Why this author can't withdraw this hazard now, or `null` when they can. */
@@ -93,7 +103,9 @@ export async function hazardWithdrawRefusal(
 ): Promise<string | null> {
   if (hazard.createdByUserId !== authorId) return HAZARD_WITHDRAW_REFUSALS.notYours;
   if (hazard.promotedToFeatureId !== undefined) return HAZARD_WITHDRAW_REFUSALS.feature;
-  if (await isJoined(ctx, hazard)) return HAZARD_WITHDRAW_REFUSALS.joined;
+  const joined = await isJoined(ctx, hazard);
+  if (joined === 'unknown') return HAZARD_WITHDRAW_REFUSALS.unknown;
+  if (joined) return HAZARD_WITHDRAW_REFUSALS.joined;
   if (await othersSayItIsThere(ctx, hazard)) return HAZARD_WITHDRAW_REFUSALS.confirmed;
   return null;
 }
@@ -126,7 +138,13 @@ export const withdraw = mutation({
       metadata: { priorStatus: hazard.moderationStatus, newStatus: 'removed' },
       createdAt: now,
     });
-    await refreshEraseClock(ctx, 'hazard', hazardId, now);
+    await refreshClockOf(
+      ctx,
+      new ReadBudget(),
+      'hazard',
+      { ...hazard, moderationStatus: 'removed', authorDeletedAt: now },
+      now,
+    );
     return hazardId;
   },
 });

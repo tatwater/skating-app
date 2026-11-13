@@ -124,7 +124,8 @@ async function seedPost(t: ReturnType<typeof convexTest>, authorId: Id<'profiles
 type T = ReturnType<typeof convexTest>;
 
 async function setup() {
-  const t = convexTest(schema, modules);
+  // Convex's real per-transaction limits, enforced: what passes here fits a deployment.
+  const t = convexTest({ schema, modules, transactionLimits: true });
   const author = await seedUser(t, 'a');
   const mod = await seedUser(t, 'mod', 'moderator');
   const set = (

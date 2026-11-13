@@ -87,7 +87,8 @@ async function seedUser(t: T, subject: string, role: 'member' | 'moderator' = 'm
 async function setup() {
   vi.useFakeTimers();
   vi.setSystemTime(T0);
-  const t = convexTest(schema, modules);
+  // Convex's real per-transaction limits, enforced: what passes here fits a deployment.
+  const t = convexTest({ schema, modules, transactionLimits: true });
   const skater = await seedUser(t, 'skater');
   const other = await seedUser(t, 'other');
   const mod = await seedUser(t, 'mod', 'moderator');
