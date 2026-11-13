@@ -50,16 +50,24 @@ export async function requireProfile(ctx: Ctx): Promise<Doc<'profiles'>> {
   ) {
     throw new ConvexError('Account is not active');
   }
-  // A suspension blocks until it lapses (D37): an unset or future `suspendedUntil`
-  // still gates; a past one is treated as active (the flip to `active` happens
-  // separately). Compared at call time so the gate needs no scheduled cleanup.
-  if (
-    profile.status === 'suspended' &&
-    (profile.suspendedUntil === undefined || profile.suspendedUntil > Date.now())
-  ) {
-    throw new ConvexError('Account is suspended');
-  }
+  if (isSuspendedNow(profile, Date.now())) throw new ConvexError('Account is suspended');
   return profile;
+}
+
+/**
+ * A suspension blocks until it lapses (D37): an unset or future `suspendedUntil` still gates; a past
+ * one is treated as active (the flip to `active` happens separately). Compared at call time so the
+ * gate needs no scheduled cleanup. `requireProfile`'s rule, shared with anything that has to agree
+ * with it about who can write right now.
+ */
+export function isSuspendedNow(
+  profile: Pick<Doc<'profiles'>, 'status' | 'suspendedUntil'>,
+  now: number,
+): boolean {
+  return (
+    profile.status === 'suspended' &&
+    (profile.suspendedUntil === undefined || profile.suspendedUntil > now)
+  );
 }
 
 /**

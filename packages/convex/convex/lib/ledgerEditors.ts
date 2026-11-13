@@ -22,6 +22,7 @@ import { ConvexError } from 'convex/values';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { writeAudit } from './audit';
+import { isSuspendedNow } from './auth';
 
 type Profile = Doc<'profiles'>;
 
@@ -36,12 +37,18 @@ export function isLedgerEditor(profile: Pick<Profile, 'role' | 'canEditLedger'>)
   return profile.role === 'admin' && profile.canEditLedger === true;
 }
 
-/** Not banned or deleted, and not on their way out (a departing operator loses every write, D62). */
+/**
+ * Can write right now: not banned or deleted, not inside a suspension (`requireProfile` refuses
+ * every write until it lapses), and not on their way out (a departing operator loses every write,
+ * D62). A suspended holder can't edit or pass the grant on, so they don't count toward "never no
+ * editor" — or the last holder who can act could step down and strand it.
+ */
 function canStillAct(profile: Profile): boolean {
   return (
     profile.status !== 'banned' &&
     profile.status !== 'deleting' &&
     profile.status !== 'deleted' &&
+    !isSuspendedNow(profile, Date.now()) &&
     !isLeaving(profile)
   );
 }

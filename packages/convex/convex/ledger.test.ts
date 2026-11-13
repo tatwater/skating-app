@@ -31,7 +31,12 @@ async function seedUser(
   t: T,
   subject: string,
   role: 'member' | 'moderator' | 'admin' = 'member',
-  extra: { canEditLedger?: boolean; deletionRequestedAt?: number } = {},
+  extra: {
+    canEditLedger?: boolean;
+    deletionRequestedAt?: number;
+    status?: 'active' | 'suspended';
+    suspendedUntil?: number;
+  } = {},
 ) {
   const id = await t.run((ctx) =>
     ctx.db.insert('profiles', {
@@ -238,6 +243,25 @@ describe('ledger.revokeEditor', () => {
     await expect(
       founder.as.mutation(api.ledger.revokeEditor, { userId: founder.id, reason: 'x' }),
     ).rejects.toThrow(/last person/i);
+  });
+
+  test('a suspended holder does not count toward the last one; a lapsed suspension does', async () => {
+    // `requireProfile` refuses a suspended holder's every write, so they can neither edit nor pass
+    // the grant on: counting them would let the one holder who can act step down and strand it.
+    const t = convexTest(schema, modules);
+    const founder = await editor(t, 'founder');
+    const away = await seedUser(t, 'away', 'admin', {
+      canEditLedger: true,
+      status: 'suspended',
+      suspendedUntil: Date.now() + 86_400_000,
+    });
+    await expect(
+      founder.as.mutation(api.ledger.revokeEditor, { userId: founder.id, reason: 'x' }),
+    ).rejects.toThrow(/last person/i);
+
+    await t.run((ctx) => ctx.db.patch(away.id, { suspendedUntil: Date.now() - 1 }));
+    await founder.as.mutation(api.ledger.revokeEditor, { userId: founder.id, reason: 'x' });
+    expect((await profile(t, founder.id))?.canEditLedger).toBeUndefined();
   });
 
   test('refuses someone who does not hold it', async () => {
