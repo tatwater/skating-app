@@ -834,9 +834,19 @@ describe('a body merge records its change set (D226)', () => {
         { table: 'waterBodyFavorites', id: soloFav, waterBodyId: loser },
       ]),
     );
+    const keptFav = await t.run((ctx) =>
+      ctx.db
+        .query('waterBodyFavorites')
+        .withIndex('by_user_water_body_sub_area', (q) =>
+          q.eq('userId', fan.id).eq('waterBodyId', survivor).eq('subAreaId', undefined),
+        )
+        .unique(),
+    );
     expect(set?.deletedFavorites).toEqual([
-      expect.objectContaining({ id: dupFav, userId: fan.id, waterBodyId: loser }),
+      { id: dupFav, keptFavoriteId: keptFav?._id, createdAt: expect.any(Number) },
     ]);
+    // A favorite is erased with its account (D33); the snapshot keeps no copy that names the person.
+    for (const person of [fan.id, loner.id]) expect(JSON.stringify(set)).not.toContain(person);
     expect(set?.subAreasBefore.map((s) => [s.id, s.waterBodyId])).toEqual([[bay, loser]]);
     expect(set?.landmarksBefore.map((l) => [l.id, l.waterBodyId])).toEqual([[landmark, loser]]);
     expect(set?.landmarksAfter).toEqual([{ id: landmark, waterBodyId: survivor, removed: false }]);

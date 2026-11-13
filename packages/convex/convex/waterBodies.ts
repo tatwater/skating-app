@@ -3064,7 +3064,10 @@ export const merge = mutation({
  * row (D226, B01 §11) for the unmerge §4 owes.
  *
  * - `moved`: every child row re-pointed from the loser (`waterBodyId` is the body it had);
- * - `deletedFavorites`: favorites dropped because the user already had the survivor, whole;
+ * - `deletedFavorites`: favorites dropped because the user already had the survivor — by the id of
+ *   the survivor's favorite they duplicated, never the person (an unmerge reads the owner and the bay
+ *   off that row; once it is gone, unfavorited or erased with the account (D33), there is nothing to
+ *   put back, and the snapshot names no one);
  * - `subAreasBefore` / `landmarksBefore`: the bays and labels the moves could change, whole, as
  *   they stood (the loser's bays; both lakes' landmarks); `subAreasDelisted` and `landmarksAfter`
  *   say which of them the merge delisted, moved, folded or retired;
@@ -3084,7 +3087,11 @@ export interface MergeChangeSet {
     id: string;
     waterBodyId: Id<'waterBodies'>;
   }[];
-  deletedFavorites: ReturnType<typeof snapshotDoc<Doc<'waterBodyFavorites'>>>[];
+  deletedFavorites: {
+    id: Id<'waterBodyFavorites'>;
+    keptFavoriteId: Id<'waterBodyFavorites'>;
+    createdAt: number;
+  }[];
   subAreasBefore: ReturnType<typeof snapshotDoc<Doc<'waterBodySubAreas'>>>[];
   subAreasDelisted: Id<'waterBodySubAreas'>[];
   landmarksBefore: ReturnType<typeof snapshotDoc<Doc<'bodyLandmarks'>>>[];
@@ -3186,7 +3193,7 @@ export async function mergeBodyInto(
     let favoritesRepointed = 0;
     let favoritesDeduped = 0;
     const repointedFavoriteIds: Id<'waterBodyFavorites'>[] = [];
-    const deletedFavorites: Doc<'waterBodyFavorites'>[] = [];
+    const deletedFavorites: MergeChangeSet['deletedFavorites'] = [];
     for (const fav of favorites) {
       const existing = await ctx.db
         .query('waterBodyFavorites')
@@ -3196,7 +3203,11 @@ export async function mergeBodyInto(
         .unique();
       if (existing) {
         await ctx.db.delete(fav._id);
-        deletedFavorites.push(fav);
+        deletedFavorites.push({
+          id: fav._id,
+          keptFavoriteId: existing._id,
+          createdAt: fav.createdAt,
+        });
         favoritesDeduped++;
       } else {
         await ctx.db.patch(fav._id, { waterBodyId: survivorId });
@@ -3306,7 +3317,7 @@ export async function mergeBodyInto(
         ...putIns.map((row) => ({ table: 'putIns' as const, id: row._id })),
         ...repointedFavoriteIds.map((id) => ({ table: 'waterBodyFavorites' as const, id })),
       ].map((row) => ({ ...row, waterBodyId: loserId })),
-      deletedFavorites: deletedFavorites.map(snapshotDoc),
+      deletedFavorites,
       subAreasBefore: subAreasBefore.map(snapshotDoc),
       subAreasDelisted: [],
       landmarksBefore: landmarksBefore.map(snapshotDoc),
