@@ -100,7 +100,7 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
   author_delete: {
     undo: {
       kind: 'none',
-      why: "The author's own takedown; a moderator restores the content with restore.",
+      why: "The author deleted this, and an author's deletion is final: nothing brings it back.",
     },
     takesAway: always,
     capability: 'content.moderate',

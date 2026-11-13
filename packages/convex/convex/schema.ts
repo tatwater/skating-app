@@ -2400,6 +2400,12 @@ export default defineSchema({
      * autofilled. Optional ⇒ absent on every report never edited, which is the great majority.
      */
     editedAt: v.optional(v.number()),
+    /**
+     * When the author deleted this (D248): set by the author's own delete, and never cleared.
+     * Author-deleted content never comes back — no restore, no undo, no Post choice.
+     * Absent ⇒ the author hasn't withdrawn it.
+     */
+    authorDeletedAt: v.optional(v.number()),
   })
     .index('by_water_body_skate_end_time', ['waterBodyId', 'skateEndTime'])
     // Per-body feed, paginated (infinite scroll). `moderationStatus` leads so the gate is applied
@@ -2485,6 +2491,12 @@ export default defineSchema({
     updatedAt: v.number(),
     /** When the author last edited the Post (the `reports.editedAt` rule: never `updatedAt`). */
     editedAt: v.optional(v.number()),
+    /**
+     * When the author deleted this (D248): set by the author's own delete, and never cleared.
+     * Author-deleted content never comes back — no restore, no undo, no Post choice.
+     * Absent ⇒ the author hasn't withdrawn it.
+     */
+    authorDeletedAt: v.optional(v.number()),
     /**
      * The words a search of Latest reads (B03 §11): the Post's title and prose, and what its
      * **visible** members' authors typed. Derived; one writer, `refreshPostSearchText` in
@@ -2583,6 +2595,12 @@ export default defineSchema({
      * this is nobody judging anything.
      */
     redactedAt: v.optional(v.number()),
+    /**
+     * When the author deleted this (D248): set by the author's own delete, and never cleared.
+     * Author-deleted content never comes back — no restore, no undo, no Post choice.
+     * Absent ⇒ the author hasn't withdrawn it.
+     */
+    authorDeletedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index('by_report', ['reportId'])

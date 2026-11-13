@@ -73,7 +73,7 @@ const takeContentBackTo =
       // A Post's removal from before the record took its Reports down with it; its undo, back to
       // visible, brings them back too. (`setContentStatus` reads the flag only on the way to visible.)
       ...(row.action === 'remove' && status === 'visible' ? { reviveRemoved: true } : {}),
-      asUndo: true,
+      undoes: row._id,
     });
   };
 

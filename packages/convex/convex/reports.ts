@@ -747,8 +747,9 @@ export const update = mutation({
 
 /**
  * An author deleting their own Report (A10-3). Soft: the row stays, `removed`, with an
- * `author_delete` audit row; the Post goes with its last member (D186). A Report a moderator has
- * already removed is left to them; a hidden one may still be deleted by its author — it is theirs.
+ * `author_delete` audit row; the Post goes with its last member (D186). A hidden one may still be
+ * deleted by its author — it is theirs — and so may one a moderator already removed: it stays
+ * removed, and the deletion is final all the same (D248).
  */
 export const remove = mutation({
   args: { reportId: v.id('reports') },

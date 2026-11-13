@@ -19,6 +19,7 @@ import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
 import { writeAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
+import { authorDeletedAtOf } from './lib/authorDeletion';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import { MODERATION_ACTIONS, MODERATION_STATUSES, MODERATION_TARGET_TYPES } from './lib/enums';
@@ -41,7 +42,7 @@ const ACTION_FOR_STATUS = {
  * target and writes one `hide` / `remove` / `restore` audit row with the required reason. A no-op
  * status change (already at `status`) still records the action — the moderator asserted a decision.
  */
-const MODERATION_TABLE = {
+export const MODERATION_TABLE = {
   report: 'reports',
   post: 'posts',
   comment: 'comments',
@@ -150,9 +151,25 @@ export async function authorRemoveReport(
   author: Doc<'profiles'>,
   now: number,
 ): Promise<void> {
-  if (report.moderationStatus === 'removed') return;
+  if (report.authorDeletedAt !== undefined) return;
   const audit = { actorId: author._id, reason: AUTHOR_DELETE_REASON, now };
   const priorStatus = report.moderationStatus;
+  // The withdrawal is the author's whatever a moderator did first (founder ruling, 2026-11-13): a
+  // Report a moderator already removed is stamped too, so overturning that verdict later can never
+  // republish it. Its status, the counters and the Post are already where a removal leaves them.
+  await ctx.db.patch(report._id, { authorDeletedAt: now });
+  if (priorStatus === 'removed') {
+    await writeAudit(ctx, {
+      actorId: author._id,
+      action: 'author_delete',
+      targetType: 'report',
+      targetId: report._id,
+      reason: AUTHOR_DELETE_REASON,
+      metadata: { priorStatus, newStatus: 'removed' },
+      createdAt: now,
+    });
+    return;
+  }
 
   // Whether this member empties its Post is decided — and the Post patched — **before** the
   // member's own status moves: `applyReportStatus` runs the derived-visibility rule, which would
@@ -201,9 +218,9 @@ export async function authorRemoveReport(
 }
 
 /**
- * An author taking down their own Post: the Post and every member that is not already removed,
- * each with its audit row naming the cascade — the moderator's Post remove, with the author as
- * actor. A member a moderator removed on its own merits is left as it is.
+ * An author taking down their own Post: the Post and every member, each with its audit row naming
+ * the cascade — the moderator's Post remove, with the author as actor. A member a moderator already
+ * removed keeps its status and counters, but is withdrawn with the Post all the same (D248).
  */
 export async function authorRemovePost(
   ctx: MutationCtx,
@@ -211,15 +228,18 @@ export async function authorRemovePost(
   author: Doc<'profiles'>,
   now: number,
 ): Promise<void> {
-  if (post.moderationStatus === 'removed') return;
+  if (post.authorDeletedAt !== undefined) return;
   const audit = { actorId: author._id, reason: AUTHOR_DELETE_REASON, now };
   const priorStatus = post.moderationStatus;
-  await ctx.db.patch(post._id, { moderationStatus: 'removed' });
+  // Everything in it is withdrawn, a member a moderator removed earlier included (founder ruling,
+  // 2026-11-13): nothing inside a Post its author deleted can come back.
+  await ctx.db.patch(post._id, { moderationStatus: 'removed', authorDeletedAt: now });
   for (const reportId of post.reportIds) {
     const report = await ctx.db.get(reportId);
-    if (!report || report.moderationStatus === 'removed') continue;
+    if (!report || report.authorDeletedAt !== undefined) continue;
     const memberPrior = report.moderationStatus;
-    await applyReportStatus(ctx, report, 'removed', audit);
+    await ctx.db.patch(report._id, { authorDeletedAt: now });
+    if (memberPrior !== 'removed') await applyReportStatus(ctx, report, 'removed', audit);
     await writeAudit(ctx, {
       actorId: author._id,
       action: 'author_delete',
@@ -241,6 +261,13 @@ export async function authorRemovePost(
   });
 }
 
+/** A restore of something its author deleted (founder ruling, 2026-11-13). */
+export const AUTHOR_DELETED_RESTORE = "Its author deleted this, so it can't be restored.";
+/** Anything else a moderator tries on it: it is already down, and stays as its author left it. */
+export const AUTHOR_DELETED_ALREADY = 'Its author deleted this, so it stays as they left it.';
+/** The same refusal, for an undo. */
+export const AUTHOR_DELETED_UNDO = "Its author deleted this since, so undoing can't bring it back.";
+
 /** A forward restore that would bring the Post back with none of its Reports (founder, 2026-11-13). */
 export const POST_RESTORE_NEEDS_A_CHOICE =
   'Every report in this post was hidden or removed on its own. Choose at least one report to restore with it.';
@@ -261,12 +288,15 @@ function newestRowOn(ctx: QueryCtx, reportId: Id<'reports'>) {
 }
 
 /**
- * Withdrawn by its author: removed, and the last word on it is the author's own `author_delete`.
- * Never restorable through a Post's restore (founder call, 2026-09-21: people control what they
- * shared). A moderator's own later decision on it makes the last word theirs.
+ * Withdrawn by its author: stamped `authorDeletedAt` (D248), or — a deletion from before the stamp
+ * that the backfill hasn't reached — removed with the author's own `author_delete` as the last word.
+ * Never restorable through a Post's restore, nor at all since D248.
  */
 function isAuthorWithdrawn(report: Doc<'reports'>, last: Doc<'moderationActions'> | null): boolean {
-  return report.moderationStatus === 'removed' && last?.action === 'author_delete';
+  return (
+    report.authorDeletedAt !== undefined ||
+    (report.moderationStatus === 'removed' && last?.action === 'author_delete')
+  );
 }
 
 /**
@@ -336,6 +366,7 @@ export async function planPostRestore(
     // A member a moderator chose to bring back, then put back down by that restore's undo, is down
     // on its own decision again, though the row naming the Post is the last word on it.
     const revivable =
+      report.authorDeletedAt === undefined &&
       (report.moderationStatus === 'hidden' || reviveRemoved) &&
       last?.metadata?.cascadedFromPostId === post._id &&
       last.metadata.chosen !== true &&
@@ -409,8 +440,11 @@ export async function setContentStatus(
      * by its author.
      */
     withReportIds?: Id<'reports'>[];
-    /** Set by an undo: an undo never chooses, so its refusal points at Restore instead. */
-    asUndo?: boolean;
+    /**
+     * Set by an undo, to the row it undoes: an undo never chooses, so its refusal points at Restore
+     * instead, and it puts the person's record back where that row found it.
+     */
+    undoes?: Id<'moderationActions'>;
   },
 ): Promise<Id<'reports'> | Id<'posts'> | Id<'comments'> | Id<'hazards'>> {
   {
@@ -424,11 +458,22 @@ export async function setContentStatus(
 
     const typedTarget = target as Doc<'reports'> | Doc<'posts'> | Doc<'comments'> | Doc<'hazards'>;
     const priorStatus = typedTarget.moderationStatus;
+    const asUndo = args.undoes !== undefined;
     if (
       args.withReportIds !== undefined &&
       (args.targetType !== 'post' || args.status !== 'visible')
     ) {
       throw new ConvexError('Reports can only be chosen when restoring a post');
+    }
+    // Author-deleted content never comes back (D248, founder ruling 2026-11-13) — not by restore, not
+    // by a Post's choice, not by undo — and nothing else moves it either.
+    const authorDeleted = authorDeletedAtOf(typedTarget) !== undefined;
+    if (authorDeleted && args.status === 'visible') {
+      throw new ConvexError(asUndo ? AUTHOR_DELETED_UNDO : AUTHOR_DELETED_RESTORE);
+    }
+    if (authorDeleted) {
+      // Withdrawn by its author: it is already down, and stays exactly as the deletion left it.
+      throw new ConvexError(AUTHOR_DELETED_ALREADY);
     }
 
     const audit = { actorId: actor._id, reason: args.reason, now };
@@ -465,7 +510,7 @@ export async function setContentStatus(
         });
         if (plan.visibleAfter === 0) {
           throw new ConvexError(
-            args.asUndo === true
+            asUndo
               ? UNDO_LEAVES_POST_EMPTY
               : plan.choosable === 0
                 ? POST_UNRESTORABLE
@@ -583,14 +628,23 @@ export async function revertPostVerdict(
   const postId = ctx.db.normalizeId('posts', row.targetId);
   const post = postId ? await ctx.db.get(postId) : null;
   if (!post) throw new ConvexError('Target not found');
+  if (post.authorDeletedAt !== undefined && priorStatus === 'visible') {
+    throw new ConvexError(AUTHOR_DELETED_UNDO);
+  }
   const now = Date.now();
   const audit = { actorId: actor._id, reason, now };
 
   // Which members go back, decided before anything is written.
-  const moves: { report: Doc<'reports'>; to: ModerationStatus; chosen: boolean }[] = [];
+  const moves: {
+    report: Doc<'reports'>;
+    to: ModerationStatus;
+    chosen: boolean;
+  }[] = [];
   for (const member of cascaded) {
     const report = await ctx.db.get(member.id);
     if (!report || report.moderationStatus !== member.to) continue;
+    // A member its author deleted stays where the deletion left it, whatever the Post's undo does.
+    if (report.authorDeletedAt !== undefined) continue;
     const last = await newestRowOn(ctx, report._id);
     if (last?.metadata?.cascadedFromPostId !== post._id || last.createdAt !== row.createdAt) {
       continue;
@@ -943,22 +997,26 @@ export const postRestoreChoices = query({
         standing,
       });
     }
-    const plainRestoreBringsBack = plan.visibleAfter > 0;
+    // A Post its author deleted never comes back, whatever is in it (founder ruling, 2026-11-13).
+    const withdrawn = post.authorDeletedAt !== undefined;
+    const plainRestoreBringsBack = !withdrawn && plan.visibleAfter > 0;
     return {
       postStatus: post.moderationStatus,
       /** A plain restore shows the Post with at least one Report: no choice is needed. */
       plainRestoreBringsBack,
       /** Something can bring the Post back — the plain restore, or a choice. */
-      restorable: plainRestoreBringsBack || plan.choosable > 0,
+      restorable: !withdrawn && (plainRestoreBringsBack || plan.choosable > 0),
       /**
        * What the chooser says when a plain restore isn't enough, in the words the restore's own
        * refusal uses: why a choice is needed, or why the Post can't come back.
        */
-      prompt: plainRestoreBringsBack
-        ? null
-        : plan.choosable > 0
-          ? POST_RESTORE_NEEDS_A_CHOICE
-          : POST_UNRESTORABLE,
+      prompt: withdrawn
+        ? AUTHOR_DELETED_RESTORE
+        : plainRestoreBringsBack
+          ? null
+          : plan.choosable > 0
+            ? POST_RESTORE_NEEDS_A_CHOICE
+            : POST_UNRESTORABLE,
       members,
     };
   },

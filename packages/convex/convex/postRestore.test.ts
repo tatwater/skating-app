@@ -11,6 +11,7 @@ import { describe, expect, test } from 'vitest';
 import { api } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import {
+  AUTHOR_DELETED_RESTORE,
   POST_RESTORE_NEEDS_A_CHOICE,
   POST_UNRESTORABLE,
   UNDO_LEAVES_POST_EMPTY,
@@ -319,11 +320,20 @@ describe('restoring a Post with chosen Reports', () => {
   test('a Post whose every Report its author deleted cannot be restored, and the read says so', async () => {
     const { author, mod, postId, set } = await setup();
     await author.as.mutation(api.posts.remove, { postId });
-    await expect(set('post', postId, 'visible')).rejects.toThrow(literally(POST_UNRESTORABLE));
+    await expect(set('post', postId, 'visible')).rejects.toThrow(literally(AUTHOR_DELETED_RESTORE));
     const choices = await mod.as.query(api.moderation.postRestoreChoices, { postId });
     expect(choices?.restorable).toBe(false);
-    expect(choices?.prompt).toBe(POST_UNRESTORABLE);
+    expect(choices?.prompt).toBe(AUTHOR_DELETED_RESTORE);
     expect(choices?.members.map((m) => m.standing)).toEqual(['author_deleted', 'author_deleted']);
+  });
+});
+
+describe('a Post whose Reports were each deleted by their author', () => {
+  test('cannot be restored: nothing in it can come back', async () => {
+    const { t, author, postId, reportIds, set } = await setup();
+    for (const reportId of reportIds) await author.as.mutation(api.reports.remove, { reportId });
+    expect(await statusOf(t, postId)).toBe('removed');
+    await expect(set('post', postId, 'visible')).rejects.toThrow(literally(POST_UNRESTORABLE));
   });
 });
 
