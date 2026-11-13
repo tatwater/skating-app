@@ -49,16 +49,31 @@ const takeContentBackTo =
       targetId: row.targetId,
       status,
       reason,
-      // A Post's removal took its Reports down with it; its undo brings them back too.
-      ...(row.action === 'remove' ? { reviveRemoved: true } : {}),
+      // A Post's removal took its Reports down with it; its undo, back to visible, brings them back
+      // too. (`setContentStatus` reads the flag only on the way to visible.)
+      ...(row.action === 'remove' && status === 'visible' ? { reviveRemoved: true } : {}),
     });
   };
 
-/** hide / remove → visible again. */
+/**
+ * hide / remove → the status it took the item down from, as the row recorded it. Not "visible"
+ * regardless: removing an item a moderator had already hidden, then undoing the removal, must leave
+ * it hidden, never publish it. A takedown that changed nothing (hiding the hidden) has nothing to
+ * undo, and a row without the prior status can't say what to put back.
+ */
 const contentUndoTakedown: UndoHandler = {
-  blocked: contentBlocked,
+  blocked: (row) => {
+    const { priorStatus, newStatus } = meta(row);
+    if (priorStatus !== 'visible' && priorStatus !== 'hidden' && priorStatus !== 'removed') {
+      return PREDATES;
+    }
+    if (priorStatus === newStatus) {
+      return `Nothing changed: it was already ${priorStatus}.`;
+    }
+    return contentBlocked(row);
+  },
   undoTakesAway: () => false,
-  run: takeContentBackTo('visible'),
+  run: (call) => takeContentBackTo(meta(call.row).priorStatus as ContentStatus)(call),
 };
 
 /** restore → the status it restored from. */

@@ -186,6 +186,46 @@ describe('undo: content (D226)', () => {
     expect(await statusOf(t, reportId)).toBe('removed');
   });
 
+  test('undoing the removal of a hidden item leaves it hidden — it never publishes it', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'a');
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const reportId = await seedReport(t, author.id);
+    const set = (status: 'hidden' | 'removed', reason: string) =>
+      mod.as.mutation(api.moderation.setModerationStatus, {
+        targetType: 'report',
+        targetId: reportId,
+        status,
+        reason,
+      });
+    await set('hidden', 'unsafe claim');
+    await set('removed', 'and a duplicate');
+    const remove = await newestOn(t, 'report', reportId);
+
+    await mod.as.mutation(api.undo.run, { actionId: remove._id });
+    expect(await statusOf(t, reportId)).toBe('hidden');
+  });
+
+  test('a takedown that changed nothing has nothing to undo', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'a');
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const reportId = await seedReport(t, author.id);
+    for (const reason of ['unsafe claim', 'still unsafe']) {
+      await mod.as.mutation(api.moderation.setModerationStatus, {
+        targetType: 'report',
+        targetId: reportId,
+        status: 'hidden',
+        reason,
+      });
+    }
+    const second = await newestOn(t, 'report', reportId);
+    await expect(mod.as.mutation(api.undo.run, { actionId: second._id })).rejects.toThrow(
+      /already hidden/i,
+    );
+    expect(await statusOf(t, reportId)).toBe('hidden');
+  });
+
   test('a later action on the same item overtakes the undo', async () => {
     const t = convexTest(schema, modules);
     const author = await seedUser(t, 'a');
