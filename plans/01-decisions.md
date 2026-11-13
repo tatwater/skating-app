@@ -7723,3 +7723,34 @@ the member list is read (the `.fgb` is in R2, not Convex) is a build choice for 
 workstream — a baked id manifest beside the sidecar is the obvious shape.
 
 **Related:** D213, D214, A06i, [`phase-B01`](./phases/B01-admin-console.md) §5.6.
+
+## D247 — A Post is never shown with none of its Reports; its restore takes chosen Reports with it (B01)
+
+**2026-11-13, founder call** (the #108 review). D186 says a Post requires a Report, and the
+Report→Post direction already kept "zero visible Reports ⇒ the Post is not shown" as a stored fact
+(`derivePostVisibility`). The Post→ direction had a hole: a Post restore, or an undo back to visible,
+stored the Post visible without checking any member would be.
+
+- **The rule.** A Post is never stored `visible` unless at least one of its Reports is visible after
+  the same mutation. One plan (`planPostRestore`) decides it for both writers, before anything is
+  written.
+- **A restore that would show it empty is refused with a message** — every Report was hidden or
+  removed on its own, so choose at least one to restore with it; or, when every Report was deleted by
+  its author, the Post can't be restored.
+- **Restore takes a choice.** A Post restore accepts the members to bring back with it, in one
+  mutation, each with its own audit row naming the Post and listed on the Post's row, so the
+  restore's undo is the exact inverse. The chooser lists the Reports — what each is, why it is down —
+  with nothing pre-selected: each takedown was a decision, and bringing one back is a conscious
+  override. A Report brought back by choice and put down again by that undo stays down on its own
+  decision; a plain restore never revives it.
+- **Undo stays a pure inverse.** An undo that would show the Post empty is refused and points at
+  Restore, where the choice lives; an undo never chooses.
+- **Reports their author deleted never come back through a Post** (the 2026-09-21 call: people
+  control what they shared). They are shown in the chooser, not choosable. A moderator's per-Report
+  restore of an author-deleted Report is untouched by this decision.
+
+**Why:** a visible Post with nothing in it is a card with no observation behind it — the feed's
+index returns it and the card is dropped, so pages come back short — and a moderator restoring a
+Post should not have to leave the flow to restore a Report first.
+
+**Related:** D186, D226, [`phase-B01`](./phases/B01-admin-console.md) §7 (2026-11-13).

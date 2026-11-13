@@ -676,7 +676,7 @@ land; the third came out of the #108 review. **The calls:**
    reactions — today the helpful ratings in `reportRatings`, which needs a by-time index to read by
    day (backfillable, so it waits for the reads) — and the metric is named and shaped for positive
    reactions in general, so later reaction kinds join it without a rename.
-3. **A Post is never shown with none of its Reports** (the #108 review). D186 says a Post requires
+3. **A Post is never shown with none of its Reports** (D247; the #108 review). D186 says a Post requires
    a Report; the Report→Post direction already kept that, and the Post→ direction now does too: a
    Post is never stored visible unless at least one member is visible after the same mutation,
    decided before anything is written. A restore that would bring a Post back empty is **refused

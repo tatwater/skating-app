@@ -796,7 +796,7 @@ lack of signal.*
 - The founder's device pass of the sheet on the Android preview build (every door; offline; the silhouette picker) — and `convex dev --once` before it (`contentRevisions`, `author_delete`)
 
 ## Phase B01 — The admin console: one surface, organized by what an operator is doing
-🟡 **In progress** 2026-10-14 · [plan](./phases/B01-admin-console.md) · D216 D217 D218 D219 D220 D221 D222 D223 D224 D225 D226 D227 D245 D246
+🟡 **In progress** 2026-10-14 · [plan](./phases/B01-admin-console.md) · D216 D217 D218 D219 D220 D221 D222 D223 D224 D225 D226 D227 D245 D246 D247
 
 Phase 07 built `/admin` as work queues plus a control room, and every phase since added a page
 for its own feature; sixteen nav items later the surface is organized by table, not by task — an
