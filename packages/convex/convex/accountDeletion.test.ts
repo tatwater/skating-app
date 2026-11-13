@@ -1067,6 +1067,10 @@ describe('bucket 1 — erase (private artifacts)', () => {
         status: 'open' as const,
         createdAt: T0,
       });
+      // The days they opened the app (B01), and someone else's, which must survive.
+      await ctx.db.insert('signInDays', { userId: user.id, day: '2026-01-14', firstAt: T0 });
+      await ctx.db.insert('signInDays', { userId: user.id, day: '2026-01-15', firstAt: T0 });
+      await ctx.db.insert('signInDays', { userId: other.id, day: '2026-01-15', firstAt: T0 });
     });
 
     await finalize(t, user.id);
@@ -1080,6 +1084,7 @@ describe('bucket 1 — erase (private artifacts)', () => {
       pushTokens: (await ctx.db.query('pushTokens').collect()).length,
       blocks: (await ctx.db.query('blocks').collect()).length,
       tickets: (await ctx.db.query('supportTickets').collect()).length,
+      signInDays: (await ctx.db.query('signInDays').collect()).map((r) => r.userId),
     }));
     expect(counts).toEqual({
       connections: 0,
@@ -1090,6 +1095,7 @@ describe('bucket 1 — erase (private artifacts)', () => {
       pushTokens: 0, // a capability to ring the phone, and a tombstone must not keep one
       blocks: 0, // both directions — a block against a tombstone would filter forever
       tickets: 0,
+      signInDays: [other.id], // a behavioral record of one person; the other person's stays
     });
   });
 

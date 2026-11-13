@@ -51,6 +51,21 @@ export function metricDayRange(endMs: number, count: number): string[] {
   return days;
 }
 
+/**
+ * Was something open — filed at `openedAt`, closed at `closedAt` (absent while still open) — at any
+ * moment of `[from, to)`? Its open span is half-open, `[openedAt, closedAt)`, so it counts on the day
+ * it was filed and on the day it closed, and an item closed in the same instant it was filed was
+ * never open. The support queue's daily depth (`support_queue_depth`) counts tickets with this.
+ */
+export function wasOpenDuring(
+  span: { openedAt: number; closedAt?: number },
+  from: number,
+  to: number,
+): boolean {
+  const closedAt = span.closedAt ?? Number.POSITIVE_INFINITY;
+  return span.openedAt < closedAt && span.openedAt < to && closedAt > from;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Histograms
 // ─────────────────────────────────────────────────────────────────────────────
@@ -328,6 +343,19 @@ export const METRICS = {
   support_volume: {
     label: 'Support tickets',
     description: 'Tickets opened this day by category — the highest-signal channel in alpha.',
+    kind: 'rollup',
+    shape: 'meta',
+  },
+  /**
+   * **Forward-only, though the rollup writes it** (B01, founder call 2026-11-10). A ticket is erased
+   * with its submitter's account (D33), so the table can't say what last month's queue held; this
+   * series is the only record of it, and it starts the day it ships. That is why it is computed for
+   * today and yesterday only and the day backfill never touches it.
+   */
+  support_queue_depth: {
+    label: 'Open support tickets',
+    description:
+      'Tickets open at any point this day, by category — the support queue’s daily depth. A ticket counts on every day from the one it was filed to the one it was resolved. Final once the day has closed.',
     kind: 'rollup',
     shape: 'meta',
   },

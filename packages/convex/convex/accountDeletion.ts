@@ -594,6 +594,14 @@ async function erasePrivate(
       .withIndex('by_user_created', (q) => q.eq('userId', userId))
       .take(size),
   );
+  // The days they opened the app (B01): a behavioral record of one person, with no community value.
+  // Past days' *Signed in* counts drop by one each, which is the honest cost of erasing it.
+  await drain(
+    await ctx.db
+      .query('signInDays')
+      .withIndex('by_user_day', (q) => q.eq('userId', userId))
+      .take(size),
+  );
 
   // Export bundles. An assembled export is every report, every track and every photo of the person in
   // one file — the densest concentration of one person's data anywhere in the system — so the default

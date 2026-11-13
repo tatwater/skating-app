@@ -1,3 +1,4 @@
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   bucketIndex,
@@ -17,6 +18,7 @@ import {
   REPUTATION_POINT_BUCKETS,
   ROLLUP_METRIC_KEYS,
   rate,
+  wasOpenDuring,
 } from './metrics';
 import { CONTRADICTION_FLAG_THRESHOLD, TRUST_CLASS_THRESHOLDS } from './reputationConfig';
 
@@ -184,5 +186,48 @@ describe('hoursBetween', () => {
 
   it('floors clock skew at zero rather than charting a negative age', () => {
     expect(hoursBetween(DAY_MS, 0)).toBe(0);
+  });
+});
+
+describe('wasOpenDuring', () => {
+  const from = Date.parse('2026-01-15T00:00:00Z');
+  const to = from + DAY_MS;
+
+  it('counts a ticket on the day it was filed and on the day it was resolved', () => {
+    const span = { openedAt: from - 3 * DAY_MS, closedAt: from + 60_000 };
+    expect(wasOpenDuring(span, from, to)).toBe(true);
+    expect(wasOpenDuring(span, from - 3 * DAY_MS, from - 2 * DAY_MS)).toBe(true);
+  });
+
+  it('counts a ticket still open on every day since it was filed', () => {
+    expect(wasOpenDuring({ openedAt: from - 30 * DAY_MS }, from, to)).toBe(true);
+  });
+
+  it('leaves out a ticket filed after the day, or resolved before it began', () => {
+    expect(wasOpenDuring({ openedAt: to }, from, to)).toBe(false);
+    expect(wasOpenDuring({ openedAt: from - DAY_MS, closedAt: from }, from, to)).toBe(false);
+  });
+
+  it('is exactly "the open span and the day share an instant"', () => {
+    // Brute force over a small integer clock: the span [o, c) and the day [f, t) share a whole
+    // instant iff some integer x sits in both.
+    const instant = fc.integer({ min: 0, max: 40 });
+    fc.assert(
+      fc.property(
+        instant,
+        fc.option(instant, { nil: undefined }),
+        instant,
+        fc.integer({ min: 1, max: 12 }),
+        (openedAt, closedAt, dayFrom, length) => {
+          const dayTo = dayFrom + length;
+          const end = closedAt ?? 100;
+          let shared = false;
+          for (let x = 0; x < 100; x++) {
+            if (x >= openedAt && x < end && x >= dayFrom && x < dayTo) shared = true;
+          }
+          expect(wasOpenDuring({ openedAt, closedAt }, dayFrom, dayTo)).toBe(shared);
+        },
+      ),
+    );
   });
 });

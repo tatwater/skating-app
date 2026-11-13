@@ -13,7 +13,7 @@
  */
 import { HOUR_BUCKETS, metricDay, seasonOf } from '@skating/core';
 import { convexTest } from 'convex-test';
-import { describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
@@ -404,6 +404,109 @@ describe('runRollup — photo orphans', () => {
 
     await doRollup(t);
     expect((await snapshot(t, 'photo_orphans', metricDay(Date.now())))?.scalar).toBe(0);
+  });
+});
+
+describe('runRollup — support queue depth', () => {
+  // Pinned, because the metric is about which UTC day a ticket's open span touches.
+  const NOW = Date.UTC(2026, 0, 15, 12, 0, 0);
+  const TODAY = '2026-01-15';
+  const YESTERDAY = '2026-01-14';
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const at = (day: number, hour: number) => Date.UTC(2026, 0, day, hour);
+  const seedTicket = (
+    t: ReturnType<typeof harness>,
+    category: 'bug' | 'account' | 'safety' | 'other',
+    createdAt: number,
+    resolvedAt?: number,
+    extra: Record<string, unknown> = {},
+  ) =>
+    t.run((ctx) =>
+      ctx.db.insert('supportTickets', {
+        category,
+        body: 'help',
+        status: resolvedAt === undefined ? ('open' as const) : ('resolved' as const),
+        createdAt,
+        ...(resolvedAt === undefined ? {} : { resolvedAt }),
+        ...extra,
+      }),
+    );
+
+  test('counts each ticket on every day it was open at any point, by category', async () => {
+    const t = harness();
+    await seedTicket(t, 'bug', at(10, 9), undefined, { status: 'in_progress' as const }); // open for days
+    await seedTicket(t, 'account', at(14, 20), at(15, 2)); // filed late yesterday, resolved overnight
+    await seedTicket(t, 'safety', at(14, 3), at(14, 5)); // came and went yesterday
+    await seedTicket(t, 'other', at(15, 10)); // filed this morning
+    await seedTicket(t, 'other', at(12, 9), at(13, 9)); // closed before yesterday began
+
+    await t.mutation(internal.analyticsRollup.rollupOperationalJob, {});
+
+    expect(await snapshot(t, 'support_queue_depth', TODAY)).toMatchObject({
+      scalar: 3,
+      meta: { bug: 1, account: 1, other: 1 },
+    });
+    expect(await snapshot(t, 'support_queue_depth', YESTERDAY)).toMatchObject({
+      scalar: 3,
+      meta: { bug: 1, account: 1, safety: 1 },
+    });
+  });
+
+  test('the first tick of a day closes the day before with the hours after its last tick', async () => {
+    const t = harness();
+    // The last tick of the 14th ran at 18:00; a ticket filed at 21:00 and still open is the 14th's too.
+    vi.setSystemTime(at(14, 18));
+    await t.mutation(internal.analyticsRollup.rollupOperationalJob, {});
+    expect((await snapshot(t, 'support_queue_depth', YESTERDAY))?.scalar).toBe(0);
+
+    await seedTicket(t, 'bug', at(14, 21));
+    vi.setSystemTime(at(15, 0) + 60_000);
+    await t.mutation(internal.analyticsRollup.rollupOperationalJob, {});
+    expect((await snapshot(t, 'support_queue_depth', YESTERDAY))?.scalar).toBe(1);
+    expect((await snapshot(t, 'support_queue_depth', TODAY))?.scalar).toBe(1);
+  });
+
+  test('reads only what can count: no resolved ticket without a resolvedAt, none resolved long ago', async () => {
+    const t = harness();
+    // A `resolved` row lacking `resolvedAt` sorts first on `by_status_resolved_at`; a bare range
+    // would sweep it (and every old resolution) in. The lower bound is what keeps it out.
+    await seedTicket(t, 'bug', at(1, 9), undefined, { status: 'resolved' as const });
+    await seedTicket(t, 'account', at(1, 9), at(2, 9));
+
+    await t.mutation(internal.analyticsRollup.rollupOperationalJob, {});
+    expect((await snapshot(t, 'support_queue_depth', TODAY))?.scalar).toBe(0);
+    expect((await snapshot(t, 'support_queue_depth', YESTERDAY))?.scalar).toBe(0);
+  });
+
+  test('re-running overwrites, and the day backfill never rewrites a closed day', async () => {
+    const t = harness();
+    await seedTicket(t, 'bug', at(13, 9));
+    vi.setSystemTime(at(14, 12));
+    await t.mutation(internal.analyticsRollup.rollupOperationalJob, {});
+    await t.mutation(internal.analyticsRollup.rollupOperationalJob, {});
+    vi.setSystemTime(at(15, 1));
+    await t.mutation(internal.analyticsRollup.rollupOperationalJob, {});
+    // `.unique()` in `snapshot` throws on a duplicate row for the (metric, date) pair.
+    expect((await snapshot(t, 'support_queue_depth', '2026-01-13'))?.scalar).toBe(1);
+
+    // The ticket is erased with its submitter's account; a replay of the 13th must not forget it.
+    await t.run(async (ctx) => {
+      for (const ticket of await ctx.db.query('supportTickets').collect()) {
+        await ctx.db.delete(ticket._id);
+      }
+    });
+    vi.setSystemTime(NOW);
+    for (const date of ['2026-01-13', YESTERDAY, TODAY]) {
+      await t.mutation(internal.analyticsRollup.rollupDayJob, { date });
+    }
+    expect((await snapshot(t, 'support_queue_depth', '2026-01-13'))?.scalar).toBe(1);
   });
 });
 

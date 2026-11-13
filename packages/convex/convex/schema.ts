@@ -4058,6 +4058,26 @@ export default defineSchema({
     .index('by_created_at', ['createdAt']), // the daily retention prune
 
   /**
+   * **One row per person per UTC day they opened the app signed in** (B01, founder call 2026-11-10).
+   * Written by `profiles.syncFromClerk`, the call both clients make on every open once the person
+   * has a profile — the first open of the day inserts, every later one finds the row and writes
+   * nothing (`lib/signInDays.ts`). `pushTokens.lastSeenAt` keeps only the latest open, so without
+   * this nothing can say how many people came on a given day, or who came back.
+   *
+   * Read later by the console's Metrics tab (B01 §5.1, board 1.4): *Signed in* this week, *on two
+   * days or more* of the last seven, and *Signed in* per day through the season. It is a behavioral
+   * record, so it carries the profile id and the day and nothing else, and account deletion erases
+   * it (D33). Forward-only by nature: an open leaves no other trace to rebuild it from.
+   */
+  signInDays: defineTable({
+    userId: v.id('profiles'),
+    day: v.string(), // the UTC `YYYY-MM-DD` of `metricDay`, the key every metric day uses
+    firstAt: v.number(), // the day's first open, epoch ms
+  })
+    .index('by_user_day', ['userId', 'day']) // the once-a-day guard, and account erasure
+    .index('by_day', ['day']), // the Metrics reads: a day, or a range of days
+
+  /**
    * The pre-aggregated numbers every chart reads — one row per `(metric, date)` (UTC day).
    *
    * Two writers, never mixed on one metric (see `metrics.ts`): **counters** are bumped at the event

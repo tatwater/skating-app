@@ -1218,6 +1218,31 @@ Verbatim in every brief, with the placeholders filled:
   - `useIsPhone` (`components/skater/phone/usePhoneLayout.ts`) — surface-neutral, so it belongs in
     `src/lib`.
 
+### §12.8 — What the build found
+
+**B01-1 (2026-11-13): the two Metrics write paths** (the founder's call 2, 2026-11-10), so their
+history starts on merge day; the reads and the tiles come with the Metrics tab.
+
+- **The sign-in record** is `signInDays`, one row per person per UTC day (`metricDay`), written by
+  `profiles.syncFromClerk` — the one call both clients make on every open once a profile exists.
+  The first open of a day reads one `by_user_day` entry and inserts; every later open finds it and
+  writes nothing, and two racing opens conflict under OCC and settle on one row. A suspended account
+  counts (it did sign in); a pending or finished deletion records nothing, and finalization erases
+  the rows (D33). *Signed in*, *on two days or more* and the season's per-day line read `by_day`.
+  **Open:** no retention bound yet. Rows grow with people × days, about a season's worth is what
+  Metrics reads, and a per-person record kept forever is a privacy question (`bountyGateEvents`
+  keeps 180 days for the same reason) — the founder's call when the reads land, with the day counts
+  rolled into `metricSnapshots` first if the rows are to be pruned.
+- **The support queue's depth** is `support_queue_depth` on `metricSnapshots`: tickets open at any
+  point of the day, by category (the board's *Open support tickets*). It rides the existing 6-hourly
+  `roll up operator metrics` cron, beside `flag_queue_depth`, and measures today so far and
+  yesterday, so the first tick after midnight closes the day before. Its reads are the open queue
+  (`by_status`) and resolutions since yesterday (`by_status_resolved_at`, lower-bounded), each
+  capped. It is forward-only even though a rollup writes it — tickets are erased with their
+  submitter's account — so the day backfill never replays it. One edge stays: `support.resolve`
+  re-stamps `resolvedAt` when a resolved ticket is resolved again, which would count it open on the
+  days between; nothing in the console does that today.
+
 ## Ruled out
 
 - **A second app or a separate deployment for admin** — D37 stands; the Convex function is the
