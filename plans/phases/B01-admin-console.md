@@ -1224,7 +1224,9 @@ Verbatim in every brief, with the placeholders filled:
 history starts on merge day; the reads and the tiles come with the Metrics tab.
 
 - **The sign-in record** is `signInDays`, one row per person per UTC day (`metricDay`), written by
-  `profiles.syncFromClerk` — the one call both clients make on every open once a profile exists.
+  `profiles.syncFromClerk` — the one call both clients make on every open once a profile exists,
+  and again when an app left open comes back to the foreground on a new UTC day (`onceADay`, so a
+  resumed tab or phone app is counted without a call on every focus).
   The first open of a day reads one `by_user_day` entry and inserts; every later open finds it and
   writes nothing, and two racing opens conflict under OCC and settle on one row. A suspended account
   counts (it did sign in); a pending or finished deletion records nothing, and finalization erases

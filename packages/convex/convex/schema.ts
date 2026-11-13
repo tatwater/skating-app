@@ -4060,7 +4060,8 @@ export default defineSchema({
   /**
    * **One row per person per UTC day they opened the app signed in** (B01, founder call 2026-11-10).
    * Written by `profiles.syncFromClerk`, the call both clients make on every open once the person
-   * has a profile — the first open of the day inserts, every later one finds the row and writes
+   * has a profile, and again when an app left open returns to the foreground on a new UTC day — the
+   * first open of the day inserts, every later one finds the row and writes
    * nothing (`lib/signInDays.ts`). `pushTokens.lastSeenAt` keeps only the latest open, so without
    * this nothing can say how many people came on a given day, or who came back.
    *

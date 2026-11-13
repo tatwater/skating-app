@@ -15,6 +15,7 @@ import {
   metricDay,
   metricDayRange,
   metricDayStart,
+  onceADay,
   REPUTATION_POINT_BUCKETS,
   ROLLUP_METRIC_KEYS,
   rate,
@@ -229,5 +230,25 @@ describe('wasOpenDuring', () => {
         },
       ),
     );
+  });
+});
+
+describe('onceADay', () => {
+  it('answers yes once per UTC day, and again at the first ask after midnight', () => {
+    const due = onceADay();
+    const day = Date.parse('2026-01-15T00:00:00Z');
+    expect(due(day + 1)).toBe(true);
+    expect(due(day + 12 * 3_600_000)).toBe(false);
+    expect(due(day + DAY_MS - 1)).toBe(false);
+    expect(due(day + DAY_MS)).toBe(true);
+    expect(due(day + DAY_MS + 60_000)).toBe(false);
+  });
+
+  it('keeps one latch per caller', () => {
+    const a = onceADay();
+    const b = onceADay();
+    const now = Date.parse('2026-01-15T09:00:00Z');
+    expect(a(now)).toBe(true);
+    expect(b(now)).toBe(true);
   });
 });

@@ -52,6 +52,22 @@ export function metricDayRange(endMs: number, count: number): string[] {
 }
 
 /**
+ * A once-per-UTC-day latch: the returned function answers `true` the first time it is asked on a
+ * metric day and `false` for the rest of that day. The clients use it to re-send the app-open sync
+ * when an app left open (backgrounded, a tab in the background) comes back on a new day, so the
+ * per-day sign-in record (`signInDays`) sees a returning person without a call on every focus.
+ */
+export function onceADay(): (now: number) => boolean {
+  let last: string | undefined;
+  return (now) => {
+    const day = metricDay(now);
+    if (day === last) return false;
+    last = day;
+    return true;
+  };
+}
+
+/**
  * Was something open — filed at `openedAt`, closed at `closedAt` (absent while still open) — at any
  * moment of `[from, to)`? Its open span is half-open, `[openedAt, closedAt)`, so it counts on the day
  * it was filed and on the day it closed, and an item closed in the same instant it was filed was
