@@ -18,12 +18,14 @@ import { cn } from '@/lib/utils';
  * around it — a column head's rule, a page head's tabs.
  */
 const displayWordVariants = cva(
-  'm-0 font-(family-name:--family-sans) leading-none font-semibold whitespace-nowrap text-fg uppercase',
+  'm-0 font-(family-name:--family-sans) font-semibold whitespace-nowrap text-fg uppercase',
   {
     variants: {
+      // `leading-none` follows each size: tailwind-merge drops a leading that comes before a font
+      // size, so set first it vanished and the word stood half again its type's height.
       size: {
-        page: 'text-disp-lg tracking-label',
-        column: 'text-logo tracking-head',
+        page: 'text-disp-lg leading-none tracking-label',
+        column: 'text-logo leading-none tracking-head',
       },
     },
     defaultVariants: { size: 'page' },

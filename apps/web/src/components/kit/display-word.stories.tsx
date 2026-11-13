@@ -39,6 +39,12 @@ async function expectType(el: HTMLElement, surface: tokens.Surface, size: 'page'
   await expect(style.textTransform).toBe('uppercase');
   await expect(style.whiteSpace).toBe('nowrap');
   await expect(style.marginTop).toBe('0px');
+  // One line, its box exactly its type: the line height is the font size.
+  await expect(parseFloat(style.lineHeight)).toBeCloseTo(px, 1);
+  const box = ['paddingTop', 'paddingBottom', 'borderTopWidth', 'borderBottomWidth'] as const;
+  const content =
+    el.getBoundingClientRect().height - box.reduce((n, k) => n + parseFloat(style[k]), 0);
+  await expect(content).toBeCloseTo(px, 0);
   await expect(style.color).toEqual(sameColor(computedColor(el, 'var(--fg)')));
 }
 
@@ -49,6 +55,18 @@ export const Page: Story = {
     const el = word(canvasElement);
     await expect(el.tagName).toBe('H1');
     await expectType(el, globals.surface as tokens.Surface, 'page');
+  },
+};
+
+/** A caller's own classes never cost the word its line height (a size before or after it). */
+export const CallerClasses: Story = {
+  args: {
+    size: 'column',
+    className: 'block border-b border-line2 pb-(--space-1_5)',
+    children: 'Showing up',
+  },
+  play: async ({ canvasElement, globals }) => {
+    await expectType(word(canvasElement), globals.surface as tokens.Surface, 'column');
   },
 };
 

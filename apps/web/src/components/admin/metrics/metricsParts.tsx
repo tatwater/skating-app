@@ -19,10 +19,9 @@ export function ColumnHead({ children, className, ...props }: ComponentProps<'h2
       data-slot="metrics-column-head"
       render={(renderProps) => <h2 {...renderProps} {...props} />}
       // The kit's column word, over the rule the column's width; a block, where the word alone is a
-      // line. `leading-none` is restated so the rule sits a fixed gap under the caps: the kit's base
-      // one precedes its size, and tailwind-merge drops it.
+      // line.
       className={cn(
-        'block border-0 border-b-(length:--stroke-hair) border-solid border-line2 pb-(--space-1_5) leading-none',
+        'block border-0 border-b-(length:--stroke-hair) border-solid border-line2 pb-(--space-1_5)',
         className,
       )}
     >
