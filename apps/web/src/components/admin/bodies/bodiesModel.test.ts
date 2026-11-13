@@ -11,7 +11,6 @@ import {
   classWord,
   countWords,
   laneKicker,
-  missingText,
   nextSort,
   sortRows,
   standingGroupWord,
@@ -53,13 +52,6 @@ describe('a cell says', () => {
   it('a capped count with its plus', () => {
     expect(countWords({ count: 24871, capped: false })).toBe('24,871');
     expect(countWords({ count: 200, capped: true })).toBe('200+');
-  });
-  it('what’s missing as one sentence', () => {
-    expect(missingText([])).toBeNull();
-    expect(missingText(['bathymetry'])).toBe('Missing bathymetry');
-    expect(missingText(['bathymetry', 'elevation', 'a put-in'])).toBe(
-      'Missing bathymetry, elevation and a put-in',
-    );
   });
   it('the group word for each standing', () => {
     expect(standingGroupWord('active')).toBe('Active');

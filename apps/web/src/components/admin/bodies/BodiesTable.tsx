@@ -20,11 +20,13 @@ import {
 } from 'react';
 
 import { ListEnd } from '@/components/kit/list-end';
+import { SearchMark } from '@/components/kit/search-mark';
 import { SkeletonText } from '@/components/kit/skeleton';
 import { Table, TableCell, TableHead, TableRow } from '@/components/kit/table';
+import { TableGroupRow } from '@/components/kit/table-group-row';
+import { LedStrip } from '@/components/kit/trace-chart';
 import { KEYS_PASS_THROUGH } from '@/lib/keys';
 import { cn } from '@/lib/utils';
-
 import type { BodiesListData } from './bodiesData';
 import {
   acresText,
@@ -40,9 +42,6 @@ import {
   statesText,
 } from './bodiesModel';
 import type { BodyLane } from './bodyLanes';
-import { LedStrip } from './kit-candidates/led-strip';
-import { SearchMark } from './kit-candidates/search-mark';
-import { TableGroupRow } from './kit-candidates/table-group-row';
 
 /**
  * The library's list (boards 5.1–5.3, middle): a real table over the lane's rows — TanStack Table
@@ -138,7 +137,13 @@ function cellFor(column: BodyColumnId, row: BodyRow, ctx: CellCtx): ReactNode {
       return row.areaSqM === null ? null : acresText(row.areaSqM);
     case 'complete':
       return row.complete === null ? null : (
-        <LedStrip label="Complete" value={row.complete.have} max={row.complete.of} />
+        <LedStrip
+          aria-label="Complete"
+          size="row"
+          tone="on"
+          value={row.complete.have}
+          max={row.complete.of}
+        />
       );
     case 'asks':
       return row.asks === null ? null : (

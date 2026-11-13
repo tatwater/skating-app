@@ -1,13 +1,13 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect } from 'storybook/test';
 import { must } from '@/components/kit/storyKit';
-import { Table, TableCell, TableRow } from '@/components/kit/table';
+import { Table, TableCell, TableRow } from './table';
 
 import { TableGroupRow } from './table-group-row';
 
-/** Kit candidate: a group divider inside a table (Bodies 5.3's *Dormant 4*). */
+/** A group divider inside a table (Bodies 5.3's *Dormant 4*). */
 const meta = {
-  title: 'Kit candidates/TableGroupRow',
+  title: 'Kit/TableGroupRow',
   component: TableGroupRow,
   tags: ['autodocs'],
   globals: { surface: 'admin', mode: 'dark' },

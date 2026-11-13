@@ -1,13 +1,13 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, fn, userEvent, within } from 'storybook/test';
 
-import { Button } from '@/components/kit/button';
+import { Button } from './button';
 
 import { FilterChip, FilterChipRow, FilterCount } from './filter-chip';
 
-/** Kit candidate: the applied-filter chips and the Filter button's count (Bodies 5.2). */
+/** The applied-filter chips and the Filter button's count (Bodies 5.2). */
 const meta = {
-  title: 'Kit candidates/FilterChip',
+  title: 'Kit/FilterChip',
   component: FilterChip,
   tags: ['autodocs'],
   globals: { surface: 'admin', mode: 'dark' },

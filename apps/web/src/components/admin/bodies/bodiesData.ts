@@ -1,3 +1,4 @@
+import { matchParts } from '@/components/kit/search-mark';
 import type { Count } from '../overview/overviewModel';
 import {
   type BodyColumnId,
@@ -16,7 +17,6 @@ import {
   matchesSelection,
   optionsOf,
 } from './bodyFacets';
-import { matchParts } from './kit-candidates/search-mark';
 
 /**
  * What the page is handed — the list, the lanes' counts, the preview — and the one rule for

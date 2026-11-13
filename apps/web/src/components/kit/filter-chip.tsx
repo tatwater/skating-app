@@ -5,7 +5,7 @@ import type { ComponentProps, ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
 /**
- * **Kit candidates** — what a list says about the filters on it (Bodies 5.2; Inbox, Reports and
+ * **The list tools** — what a list says about the filters on it (Bodies 5.2; Inbox, Reports and
  * People take the same row).
  *
  * - **`FilterChip`** — one applied option: the facet as a kicker, the option in the row's words,

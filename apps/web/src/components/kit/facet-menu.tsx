@@ -1,10 +1,9 @@
 import { type ComponentProps, type KeyboardEvent, useId, useRef, useState } from 'react';
-
-import { FootKey } from '@/components/kit/search-parts';
 import { cn } from '@/lib/utils';
+import { FootKey } from './search-parts';
 
 /**
- * **Kit candidate** — the facet menu: what sits behind a list's *Filter* button (Bodies 5.2; any
+ * The facet menu: what sits behind a list's *Filter* button (Bodies 5.2; any
  * list with more facets than its tab row holds). Render it inside a kit `PopoverContent`; it draws
  * the head, the facets and the foot.
  *

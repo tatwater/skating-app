@@ -1,7 +1,7 @@
 import { Fragment, type ReactNode } from 'react';
 
 /**
- * **Kit candidate** — the search highlight: the part of a name that matched what was typed, marked
+ * The search highlight: the part of a name that matched what was typed, marked
  * in place (Bodies 5.3; the palette, People and Reports searches mark the same way). The design
  * thread's rule: the ice mark ground (`acc-mark`) with a 1 px ice underline, the text keeping its
  * own ink — never bold, never a color change.

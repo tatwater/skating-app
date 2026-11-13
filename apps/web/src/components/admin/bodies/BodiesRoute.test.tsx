@@ -228,9 +228,13 @@ describe('the preview', () => {
     const preview = screen.getByRole('region', { name: 'Preview' });
     expect(within(preview).getByRole('heading', { name: 'Mascoma Lake' })).toBeInTheDocument();
     expect(within(preview).getByText(/2 bays/)).toBeInTheDocument();
-    // What no read gives is left out: no reports, no completeness, no asks.
+    // What no read gives is left out: no reports, no asks. Completeness draws from what is read,
+    // the parts no read here serves dashed and uncounted.
     expect(within(preview).queryByText('This season')).toBeNull();
-    expect(within(preview).queryByRole('meter')).toBeNull();
+    expect(within(preview).getByRole('meter', { name: 'Complete' })).toHaveAttribute(
+      'aria-valuemax',
+      '10',
+    );
     expect(
       within(preview)
         .getByText(/Open in Body/)

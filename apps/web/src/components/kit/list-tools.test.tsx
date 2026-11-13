@@ -6,9 +6,9 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { FacetMenu } from './facet-menu';
 import { FilterChip, FilterChipRow, FilterCount } from './filter-chip';
-import { LedStrip } from './led-strip';
 import { matchParts, SearchMark } from './search-mark';
 import { TableGroupRow } from './table-group-row';
+import { LedStrip } from './trace-chart';
 
 describe('matchParts', () => {
   it('marks every occurrence of the whole text, ignoring case and accents', () => {
@@ -49,19 +49,26 @@ describe('matchParts', () => {
 
 describe('LedStrip', () => {
   it('is a meter with one segment per part, the lit ones marked', () => {
-    render(<LedStrip label="Complete" value={9} max={10} size="full" />);
+    render(<LedStrip aria-label="Complete" value={9} max={10} full size="tall" />);
     const meter = screen.getByRole('meter', { name: 'Complete' });
     expect(meter).toHaveAttribute('aria-valuenow', '9');
     expect(meter).toHaveAttribute('aria-valuetext', '9 of 10');
     const segs = meter.querySelectorAll('[data-slot="led-segment"]');
     expect(segs).toHaveLength(10);
-    expect(meter.querySelectorAll('[data-lit]')).toHaveLength(9);
+    expect(meter.querySelectorAll('[data-on]')).toHaveLength(9);
   });
   it('clamps what it is handed', () => {
-    render(<LedStrip label="Over" value={14} max={10} />);
-    render(<LedStrip label="Under" value={-2} max={10} />);
+    render(<LedStrip aria-label="Over" value={14} max={10} />);
+    render(<LedStrip aria-label="Under" value={-2} max={10} />);
     expect(screen.getByRole('meter', { name: 'Over' })).toHaveAttribute('aria-valuenow', '10');
     expect(screen.getByRole('meter', { name: 'Under' })).toHaveAttribute('aria-valuenow', '0');
+  });
+  it('draws a part not recorded yet dashed and leaves it out of the count', () => {
+    render(<LedStrip aria-label="Known" segments={['on', 'off', 'unknown']} />);
+    const meter = screen.getByRole('meter', { name: 'Known' });
+    expect(meter).toHaveAttribute('aria-valuenow', '1');
+    expect(meter).toHaveAttribute('aria-valuemax', '3');
+    expect(meter.querySelectorAll('[data-state="unknown"]')).toHaveLength(1);
   });
 });
 

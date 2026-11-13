@@ -1,5 +1,6 @@
 import { sqMetersToAcres, waterBodyClassLabel } from '@skating/core';
 
+import type { Completeness } from '../body/completeness';
 import { type Count, clockTime, DAY, dayMonth } from '../overview/overviewModel';
 
 /**
@@ -49,15 +50,8 @@ export function standingGroupWord(standing: BodyStandingKey): string {
 
 // ── A row ────────────────────────────────────────────────────────────────────────────────────
 
-/** How much of what every body should have it has (the completeness strip). */
-export interface Completeness {
-  /** Fields the record has. */
-  have: number;
-  /** Fields every body should have. */
-  of: number;
-  /** What's missing, in the preview's words ("bathymetry"). */
-  missing: readonly string[];
-}
+/** How much of what every body should have it has (the completeness strip): the shared rule's. */
+export type { Completeness };
 
 /** One body as the list draws it. */
 export interface BodyRow {
@@ -226,13 +220,6 @@ export function asksText(asks: number): string {
 /** "1,412", or "200+" once the read stopped counting. */
 export function countWords({ count, capped }: Count): string {
   return `${count.toLocaleString('en-US')}${capped ? '+' : ''}`;
-}
-
-/** What's missing, as the preview's line reads: "Missing bathymetry, posted rules and a lot". */
-export function missingText(missing: readonly string[]): string | null {
-  if (missing.length === 0) return null;
-  if (missing.length === 1) return `Missing ${missing[0]}`;
-  return `Missing ${missing.slice(0, -1).join(', ')} and ${missing.at(-1)}`;
 }
 
 // ── The page's kicker ────────────────────────────────────────────────────────────────────────

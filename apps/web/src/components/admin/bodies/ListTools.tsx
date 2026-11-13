@@ -4,11 +4,12 @@ import { type Ref, useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/kit/button';
 import { DropdownMenuCaret } from '@/components/kit/dropdown-menu';
+import { FacetMenu } from '@/components/kit/facet-menu';
+import { FilterChip, FilterChipRow, FilterCount } from '@/components/kit/filter-chip';
 import { Input, InputGroup, InputGroupIcon, InputGroupKbd } from '@/components/kit/input';
 import { Kbd } from '@/components/kit/kbd';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/kit/popover';
 import { ToggleGroup, ToggleGroupItem } from '@/components/kit/toggle-group';
-
 import type { BodiesListData } from './bodiesData';
 import {
   type AppliedOption,
@@ -19,8 +20,6 @@ import {
   type FacetSelection,
 } from './bodyFacets';
 import type { BodyLane } from './bodyLanes';
-import { FacetMenu } from './kit-candidates/facet-menu';
-import { FilterChip, FilterChipRow, FilterCount } from './kit-candidates/filter-chip';
 
 /**
  * The tools over the list (boards 5.1–5.3): the search, then the facet row — the commonest facet

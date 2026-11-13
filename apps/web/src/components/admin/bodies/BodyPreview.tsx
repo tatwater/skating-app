@@ -10,12 +10,12 @@ import { Section } from '@/components/kit/section-slug';
 import { SkeletonBlock, SkeletonText } from '@/components/kit/skeleton';
 import { StatGrid, StatTile } from '@/components/kit/stat-tile';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/kit/tooltip';
+import { LedStrip } from '@/components/kit/trace-chart';
 import { cn } from '@/lib/utils';
-
+import { completenessSegments, missingSentence } from '../body/completeness';
 import { historyWhen } from '../shell/consoleTime';
 import type { BodyPreviewData } from './bodiesData';
-import { acresText, missingText } from './bodiesModel';
-import { LedStrip } from './kit-candidates/led-strip';
+import { acresText } from './bodiesModel';
 import { coordText, OutlineStill } from './OutlineStill';
 
 /**
@@ -168,7 +168,7 @@ function PreviewBody({ data, now }: { data: BodyPreviewData; now: number }) {
       ? [{ label: 'Elevation', value: `${Math.round(data.elevationM)} m` }]
       : []),
   ];
-  const missing = data.complete === null ? null : missingText(data.complete.missing);
+  const missing = data.complete === null ? null : missingSentence(data.complete.missing);
   return (
     <>
       {data.outline !== null && (
@@ -243,10 +243,10 @@ function PreviewBody({ data, now }: { data: BodyPreviewData; now: number }) {
               </span>
             </span>
             <LedStrip
-              size="full"
-              label="Complete"
-              value={data.complete.have}
-              max={data.complete.of}
+              full
+              size="tall"
+              aria-label="Complete"
+              segments={completenessSegments(data.complete)}
             />
             {missing !== null && (
               <span className="text-assist leading-list text-fg3">{missing}</span>

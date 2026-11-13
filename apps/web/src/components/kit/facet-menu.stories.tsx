@@ -2,12 +2,11 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useState } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
-import { Button } from '@/components/kit/button';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/kit/popover';
-
+import { Button } from './button';
 import { FacetMenu } from './facet-menu';
+import { Popover, PopoverContent, PopoverTrigger } from './popover';
 
-/** Kit candidate: the facet menu behind a list's *Filter* (Bodies 5.2). */
+/** The facet menu behind a list's *Filter* (Bodies 5.2). */
 const FACETS = [
   {
     id: 'class',
@@ -69,7 +68,7 @@ function Menu({ onToggle }: { onToggle: (facet: string, option: string) => void 
 }
 
 const meta = {
-  title: 'Kit candidates/FacetMenu',
+  title: 'Kit/FacetMenu',
   component: Menu,
   globals: { surface: 'admin', mode: 'dark' },
   args: { onToggle: fn() },

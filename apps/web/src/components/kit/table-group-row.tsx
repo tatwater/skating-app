@@ -3,7 +3,7 @@ import type { ComponentProps } from 'react';
 import { cn } from '@/lib/utils';
 
 /**
- * **Kit candidate** — a group divider inside a table: where the rows that follow are a different
+ * A group divider inside a table: where the rows that follow are a different
  * kind (Bodies 5.3's *Dormant 4*, under the active matches; a run history's season divider). One
  * cell across every column: a kicker and its count in mono, over a `line2` rule that runs the
  * table's width — the rows under it read as a new group of the same table, not a new table.

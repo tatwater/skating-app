@@ -24,7 +24,7 @@ const row = (over: Partial<BodyRow> = {}): BodyRow => ({
   bodyClass: 'lakePond',
   states: ['NH'],
   areaSqM: 127 * ACRE,
-  complete: { have: 9, of: 10, missing: ['bathymetry'] },
+  complete: { have: 9, of: 10, missing: ['bathymetry'], unknown: [] },
   asks: 1,
   reports: 1,
   changedAt: null,
@@ -101,10 +101,18 @@ describe('which options a body falls under', () => {
     expect(optionsOf(row({ reports: null }), facts(), 'reports')).toBeNull();
     expect(optionsOf(row(), facts(), 'complete')).toEqual(['most']);
     expect(
-      optionsOf(row({ complete: { have: 10, of: 10, missing: [] } }), facts(), 'complete'),
+      optionsOf(
+        row({ complete: { have: 10, of: 10, missing: [], unknown: [] } }),
+        facts(),
+        'complete',
+      ),
     ).toEqual(['all']);
     expect(
-      optionsOf(row({ complete: { have: 3, of: 10, missing: [] } }), facts(), 'complete'),
+      optionsOf(
+        row({ complete: { have: 3, of: 10, missing: [], unknown: [] } }),
+        facts(),
+        'complete',
+      ),
     ).toEqual(['under-8']);
     expect(optionsOf(row({ complete: null }), facts(), 'complete')).toBeNull();
     expect(

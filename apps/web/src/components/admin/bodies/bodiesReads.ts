@@ -2,6 +2,7 @@ import type { api } from '@skating/convex/api';
 import { type BodyStanding, standingOf } from '@skating/core';
 import type { FunctionReturnType } from 'convex/server';
 
+import { completenessOf } from '../body/completeness';
 import { actionLabel } from '../shell/actionLabels';
 import {
   answerHeld,
@@ -32,8 +33,9 @@ import type { BodyLane } from './bodyLanes';
  *   search of two letters or more runs `waterBodies.searchByName` (the top 20, ranked), the active
  *   matches first and the dormant ones under their divider.
  * - **The preview** — `waterBodies.get` (outline, figures), `putIns.listForBody`,
- *   `subAreas.listForBody` and the body's own audit rows (`moderation.listActions`). Reports,
- *   completeness, asks and the town have no read: those blocks are left out.
+ *   `subAreas.listForBody` and the body's own audit rows (`moderation.listActions`); completeness
+ *   from those, with lots, landmarks and bathymetry unknown (no read here). Reports, asks and the
+ *   town have no read: those blocks are left out.
  */
 
 export type LaneRows = FunctionReturnType<typeof api.standing.listLane>;
@@ -265,7 +267,22 @@ export function previewFrom({
     elevationM: body.elevationM ?? null,
     season: null,
     allTime: null,
-    complete: null,
+    // The ten from what this page reads: the body's own fields and its put-ins. Lots, landmarks and
+    // bathymetry have no read here, so they are unknown — dashed, never counted as missing.
+    complete: completenessOf({
+      polygon: body.polygon,
+      name: body.name,
+      publicAccess: body.publicAccess ?? null,
+      accessKind: body.accessKind ?? null,
+      maxDepthM: body.maxDepthM,
+      meanDepthM: body.meanDepthM,
+      elevationM: body.elevationM,
+      windRose: body.windRose,
+      putIns: putIns === undefined ? null : putIns.length,
+      lots: null,
+      landmarks: null,
+      hasContours: null,
+    }),
     asks: null,
     history:
       history == null

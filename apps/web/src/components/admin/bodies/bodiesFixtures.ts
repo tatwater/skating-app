@@ -1,10 +1,12 @@
 import type { Count } from '@/components/admin/overview/overviewModel';
 import { MASCOMA_PUT_INS, MASCOMA_RINGS } from '@/components/skater/map/mapStoryData';
 import { BOARD_NOON } from '@/test/boardNow';
-
+import {
+  COMPLETENESS_FIELD_COUNT as COMPLETENESS_FIELDS,
+  type CompletenessField,
+} from '../body/completeness';
 import type { BodiesListData, BodyPreviewData, HeldRow } from './bodiesData';
 import type { BodyRow, BodyStandingKey } from './bodiesModel';
-import { COMPLETENESS_FIELDS } from './bodyFacets';
 
 /**
  * Boards 5.1–5.3 as data, on the pinned clock (`BOARD_NOON`, Saturday 16 January 2027, local
@@ -37,7 +39,7 @@ type Spec = [
 const CLASS = { lake: 'lakePond', pond: 'lakePond', reservoir: 'reservoir', bay: 'bay' } as const;
 
 /** The fields the boards said were missing, longest first, so a row's gaps read believably. */
-const GAPS = ['bathymetry', 'a second access point', 'elevation', 'wind', 'a put-in', 'depth'];
+const GAPS: CompletenessField[] = ['bathymetry', 'lots', 'elevation', 'wind', 'putIns', 'depth'];
 
 function row(spec: Spec, standing: BodyStandingKey = 'active'): BodyRow {
   const [name, cls, states, acres, of12, asks, reports, changedAt, waiting] = spec;
@@ -52,6 +54,7 @@ function row(spec: Spec, standing: BodyStandingKey = 'active'): BodyRow {
       have,
       of: COMPLETENESS_FIELDS,
       missing: GAPS.slice(0, COMPLETENESS_FIELDS - have),
+      unknown: [],
     },
     asks,
     ...(waiting === true && { asksWaiting: true }),
@@ -214,7 +217,7 @@ export const PREVIEW_MASCOMA: BodyPreviewData = {
   elevationM: 229,
   season: { count: 3, sub: '2 on the ice · 1 from shore' },
   allTime: { count: 86, sub: 'Since 2023–24' },
-  complete: { have: 9, of: COMPLETENESS_FIELDS, missing: ['bathymetry'] },
+  complete: { have: 9, of: COMPLETENESS_FIELDS, missing: ['bathymetry'], unknown: [] },
   asks: [
     {
       id: 'a1',
@@ -292,7 +295,7 @@ export const PREVIEW_MOREY: BodyPreviewData = {
   elevationM: 127,
   season: { count: 2, sub: '2 on the ice' },
   allTime: { count: 41, sub: 'Since 2023–24' },
-  complete: { have: 9, of: COMPLETENESS_FIELDS, missing: ['bathymetry'] },
+  complete: { have: 9, of: COMPLETENESS_FIELDS, missing: ['bathymetry'], unknown: [] },
   asks: [],
   history: [
     { id: 'm1', at: daysAgo(1), actor: 'Sarah', words: 'Dismissed a flag' },

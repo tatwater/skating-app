@@ -1,5 +1,6 @@
 import { WATER_BODY_CLASSES, waterBodyClassLabel } from '@skating/core';
 
+import { COMPLETENESS_FIELD_COUNT } from '../body/completeness';
 import type { BodyRow } from './bodiesModel';
 
 /**
@@ -11,8 +12,8 @@ import type { BodyRow } from './bodiesModel';
  * (all of them). A facet with nothing chosen doesn't narrow.
  */
 
-/** How many fields every body should have (posted rules and sample points don't count). */
-export const COMPLETENESS_FIELDS = 10;
+/** How many fields every body should have: the shared rule's ten. */
+const COMPLETENESS_FIELDS = COMPLETENESS_FIELD_COUNT;
 
 export interface FacetOption {
   id: string;

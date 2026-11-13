@@ -285,9 +285,16 @@ describe('the preview from the reads that exist', () => {
       town: null,
       season: null,
       allTime: null,
-      complete: null,
       asks: null,
       standing: 'active',
+    });
+    // Completeness from what is read: its own fields and its put-ins; lots, landmarks and
+    // bathymetry have no read here, so they are unknown — never counted as missing.
+    expect(p.complete).toEqual({
+      have: 4,
+      of: 10,
+      missing: ['access', 'elevation', 'wind'],
+      unknown: ['lots', 'landmarks', 'bathymetry'],
     });
     expect(p.outline?.bbox).toEqual([-72.18, 43.6, -72.12, 43.65]);
     expect(p.history?.map((h) => h.actor)).toEqual(['Sarah', null]);
@@ -296,6 +303,7 @@ describe('the preview from the reads that exist', () => {
   it('leaves a block out while its read loads, and history out for a viewer who can’t read it', () => {
     const p = previewFrom({ body, putIns: undefined, subAreas: undefined, history: null });
     expect(p).toMatchObject({ putIns: null, bays: null, history: null });
+    expect(p.complete?.unknown).toContain('putIns');
   });
   it('reads polygons and multipolygons, nothing else', () => {
     expect(polygonsOf(body.polygon)).toHaveLength(1);
