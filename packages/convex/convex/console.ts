@@ -53,7 +53,10 @@ export const overview = query({
     const content = flags.filter(
       (f) => f.reason !== 'unsafe_false_report' && !isAccessReport(f),
     ).length;
-    const flaggedPeople = flags.filter((f) => f.targetType === 'user').length;
+    // People, not flags: three skaters flagging one account is one person to look at.
+    const flaggedPeople = new Set(
+      flags.filter((f) => f.targetType === 'user').map((f) => f.targetId),
+    ).size;
     const oldestFlag = flags.reduce(
       (min, f) => Math.min(min, f.createdAt),
       Number.POSITIVE_INFINITY,
@@ -77,19 +80,27 @@ export const overview = query({
     // Support is PII (D37): counted only for a viewer who may open it. A ticket waits until it is
     // resolved — `in_progress` is still waiting — the same rule `support_queue_depth` counts by.
     let support: Count | null = null;
-    let appeals: number | null = null;
+    let appeals: Count | null = null;
     if (hasCapability(viewer, 'inbox.support.read')) {
       const waiting: Doc<'supportTickets'>[] = [];
+      let readCapped = false;
       for (const status of ['open', 'in_progress'] as const) {
-        waiting.push(
-          ...(await ctx.db
-            .query('supportTickets')
-            .withIndex('by_status', (q) => q.eq('status', status))
-            .take(COUNT_CAP + 1)),
-        );
+        const page = await ctx.db
+          .query('supportTickets')
+          .withIndex('by_status', (q) => q.eq('status', status))
+          .take(COUNT_CAP + 1);
+        readCapped ||= page.length > COUNT_CAP;
+        waiting.push(...page);
       }
       support = capped(waiting.length);
-      appeals = waiting.slice(0, COUNT_CAP).filter((s) => s.category === 'account').length;
+      // Appeals are counted over every waiting ticket read, not the first 200 of the combined list,
+      // and say "capped" whenever either status read stopped short — a full page of bugs could be
+      // hiding an appeal past it.
+      const accountTickets = waiting.filter((s) => s.category === 'account').length;
+      appeals = {
+        count: Math.min(accountTickets, COUNT_CAP),
+        capped: readCapped || accountTickets > COUNT_CAP,
+      };
     }
 
     // ── People ────────────────────────────────────────────────────────────────────────────────

@@ -122,7 +122,7 @@ describe('console.overview (B01 §5.1)', () => {
     expect((await mod.as.query(api.console.overview, {})).people.appealsOpen).toBeNull();
     const a = await admin.as.query(api.console.overview, {});
     expect(a.inbox.support).toEqual({ count: 1, capped: false });
-    expect(a.people.appealsOpen).toBe(1);
+    expect(a.people.appealsOpen).toEqual({ count: 1, capped: false });
   });
 
   test('people: staff, live suspensions with the soonest end, the new, the banned, the leaving', async () => {
@@ -179,7 +179,7 @@ describe('console.overview (B01 §5.1)', () => {
     });
     const o = await admin.as.query(api.console.overview, {});
     expect(o.inbox.support).toEqual({ count: 2, capped: false });
-    expect(o.people.appealsOpen).toBe(2);
+    expect(o.people.appealsOpen).toEqual({ count: 2, capped: false });
   });
 
   test('a suspension read past the cap says so, though the live count is filtered', async () => {
@@ -214,6 +214,44 @@ describe('console.overview (B01 §5.1)', () => {
     for (let i = 0; i < 201; i++) await seedFlag(t, skater.id, 'spam', 'report', `r${i}`);
     const o = await mod.as.query(api.console.overview, {});
     expect(o.inbox.contentFlags).toEqual({ count: 200, capped: true });
+  });
+
+  test('flagged people are people: several flags on one account count it once', async () => {
+    const t = convexTest(schema, modules);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const target = await seedUser(t, 'target');
+    const other = await seedUser(t, 'other');
+    for (const subject of ['f1', 'f2', 'f3']) {
+      const flagger = await seedUser(t, subject);
+      await seedFlag(t, flagger.id, 'spam', 'user', target.id);
+    }
+    await seedFlag(t, mod.id, 'spam', 'user', other.id);
+    const o = await mod.as.query(api.console.overview, {});
+    expect(o.people.flaggedPeople).toEqual({ count: 2, capped: false });
+  });
+
+  test('an appeal past a full page of other tickets still counts, and the count says capped', async () => {
+    const t = convexTest(schema, modules);
+    const admin = await seedUser(t, 'adm', 'admin');
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 201; i++) {
+        await ctx.db.insert('supportTickets', {
+          category: 'bug',
+          status: 'open',
+          body: `bug ${i}`,
+          createdAt: Date.now(),
+        });
+      }
+      await ctx.db.insert('supportTickets', {
+        category: 'account',
+        status: 'in_progress',
+        body: 'Appeal: my suspension',
+        createdAt: Date.now(),
+      });
+    });
+    const o = await admin.as.query(api.console.overview, {});
+    expect(o.inbox.support).toEqual({ count: 200, capped: true });
+    expect(o.people.appealsOpen).toEqual({ count: 1, capped: true });
   });
 
   test('a member is refused', async () => {
