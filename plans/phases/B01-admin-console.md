@@ -665,11 +665,11 @@ name for it; the D# is minted when the mode is built and the name firms up.
 The first two were asked by the Overview's Metrics build and govern its read queries when they
 land; the third came out of the #108 review. **The calls:**
 
-1. **The Metrics season window starts 1 October.** The data season resets on 1 July, and only for
+1. **The Metrics season window starts 1 October** (D249). The data season resets on 1 July, and only for
    data cleanliness; the season as any skater thinks of it starts in late fall — the watch opens
    1 October, and ice rarely comes before November. The dashboard shows the watch, so the Metrics
    charts' season window runs from 1 October, not from the data season's 1 July.
-2. **Kudos are positive reactions, and *helpful* counts as one.** Reports keep thumbs up and down
+2. **Kudos are positive reactions, and *helpful* counts as one** (D250). Reports keep thumbs up and down
    for helpfulness, and the door stays open for social-style reactions on posts later, kudos being
    the easy starter. A thumbs-up (*helpful*) is a kudos; a thumbs-down is not an anti-kudos and
    never lowers a post's kudos count. So the Metrics kudos strip reads the count of positive
@@ -703,7 +703,7 @@ land; the third came out of the #108 review. **The calls:**
 
 Made while B01-2 integrated Home, Metrics and the shell; the founder may overturn any of them.
 
-1. **"Open flags" counts `reviewing` everywhere.** A flag a moderator has opened but not decided
+1. **"Open flags" counts `reviewing` everywhere** (D251). A flag a moderator has opened but not decided
    is still open — on Home's Inbox card, the heads row, and Metrics' *Open flags* and *Oldest open
    flag*. The server reads that count today in more than one place; unifying them on one
    definition is owed to the server agent (the B01-2 server register, §12.8).
@@ -719,7 +719,7 @@ Made while B01-2 integrated Home, Metrics and the shell; the founder may overtur
 
 Asked by the integration's report. **The calls:**
 
-1. **From 1 July to 1 October the Overview shows the new season, empty.** *"We should show empty
+1. **From 1 July to 1 October the Overview shows the new season, empty** (D249). *"We should show empty
    new season state from Jul 1 -> Oct 1. The user should have to explicitly choose a previous
    season in order to see its data."* The season's identity flips on 1 July with the data season
    (D63); its chart window still starts 1 October (the call above); between the two the window is
@@ -896,7 +896,7 @@ merge and sub-areas; no split), D222 (discipline: no mute; photos' moderation ax
 blue means a transient mode; go-mode; the temperature scale; *bodies*), D224 (a clouded pass shown
 to skaters, per frame, from the Imagery tab). D225 (Reports, a ninth mode; in-context
 moderator controls kept) and D226 (undo for every operator action; a reason only when something is
-taken away). **Added 2026-10-16:** D227 (invoices edited by named people — Teagan from the start — not a role). **Refined 2026-10-17:** D227's grant is a row on an admin's People page that only a holder sees and changes; never no holder; a demotion clears it. **Ported 2026-11-10:** D245 (a saved put-in keeps a body active through the standing rollover; minted on the sweep branch as D228, §7).
+taken away). **Added 2026-10-16:** D227 (invoices edited by named people — Teagan from the start — not a role). **Refined 2026-10-17:** D227's grant is a row on an admin's People page that only a holder sees and changes; never no holder; a demotion clears it. **Ported 2026-11-10:** D245 (a saved put-in keeps a body active through the standing rollover; minted on the sweep branch as D228, §7). **Added 2026-11-13:** D249 (the season flips on 1 July, its Metrics window opens on 1 October, empty between), D250 (kudos are positive reactions), D251 (a flag under review is open), D252 (discipline never leaves the ledger without an editor).
 
 ## §10 — Season statistics: the options (picked 2026-10-12: all of tiers 1 and 2)
 
@@ -1406,7 +1406,7 @@ the two undo fixes the executor's final review of #108 found (U1, U2). Nothing h
 | H1 | A moderator-readable season-tape summary — the watch's opening and the day count, so the tape can wear its *Day N* badge and its marks | The shell's season tape | ⚪ |
 | H2 | A colleague-presence read — who else is in the console now | The top bar's faces | ⚪ |
 | H3 | An optional audit-row id returned by every operator mutation | Undo's toast and History linking a write to its row | ⚪ |
-| H4 | Suspend and ban refuse the last ledger holder — D227's *never no holder* holds through discipline as well as demotion (the governor's ruling) | People, D227 | ⚪ |
+| H4 | Suspend and ban refuse the last ledger holder — D227's *never no holder* holds through discipline as well as demotion (the governor's ruling, D252) | People, D227 | ⚪ |
 | U1 | A Post's restore records the auto-hidden state in its `prev` snapshot, and its undo puts it back — today undoing a moderator's restore of an auto-hidden Post (all its Reports hidden) loses that record, and restoring one of its Reports afterwards no longer brings the Post back. The true-inverse rule of the landmark-restore fix (founder-ratified 2026-11-13): a restore records what it clears | Undo (D226), Post moderation | ⚪ |
 | U2 | History's *undone by* link on a Post can point at a Report's row instead of the Post's own undo row (`lib/undo.ts`). Nothing reads the link yet; a pre-wiring fix before the History panel does | Undo's History panel | ⚪ |
 

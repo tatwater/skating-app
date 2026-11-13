@@ -7794,3 +7794,69 @@ Post should not have to leave the flow to restore a Report first.
   retracted, like any author withdrawal.
 
 **Related:** D17, D33, D50, D62, D73, D179, D186, D226, D247, [`phase-B01`](./phases/B01-admin-console.md) §7.
+
+## D249 — The season's identity flips on 1 July; its Metrics window opens on 1 October, empty until then (B01)
+
+**2026-11-13, founder calls** (the Overview's Metrics build and the B01-2 integration). "The data
+season resets on 1 July, and only for data cleanliness; the season as any skater thinks of it starts
+in late fall — the watch opens 1 October, and ice rarely comes before November." And: "We should
+show empty new season state from Jul 1 -> Oct 1. The user should have to explicitly choose a previous
+season in order to see its data."
+
+- **Identity** is D63's: `seasonOf` flips on 1 July, and from that day the console shows the new
+  season.
+- **The window** of every season-ranged read and chart runs from 1 October through today, or a past
+  season whole to 30 June — one rule, `seasonRecordWindow` in `@skating/core`, read by the server's
+  reads and the page alike.
+- **Between the two the window is empty**: each season-ranged block says when the record begins and
+  nothing about the ice (D3). A past season is shown only when it is chosen, so every season-ranged
+  read takes the season as an argument.
+
+**Why:** the watch is what the dashboard shows, and a window opening on 1 July would chart three
+months of nothing as though they were the season; keeping the last season on screen through the
+summer would show old data under the new season's name.
+
+**Related:** D3, D63, D220, [`phase-B01`](./phases/B01-admin-console.md) §7 (2026-11-13).
+
+## D250 — Kudos are positive reactions; a helpful rating is one, and a thumbs-down never subtracts (B01)
+
+**2026-11-13, founder call.** Reports keep thumbs up and down for helpfulness, and the door stays open
+for social-style reactions on posts later, kudos being the easy starter. A thumbs-up (*helpful*) is a
+kudos; a thumbs-down is not an anti-kudos and never lowers a post's kudos count.
+
+- The console counts **positive reactions** by kind (`POSITIVE_REACTION_KINDS`, the
+  `positive_reactions` rollup): today the helpful ratings in `reportRatings`. A later reaction kind is
+  a new kind under the same metric, not a rename.
+- A thumbs-down is never counted toward kudos, and never subtracted from them.
+
+**Why:** a helpfulness vote and a social reaction are different acts; counting only the positive one
+keeps kudos meaning "people liked this", and naming the metric for reactions in general lets the next
+kind join without migrating a series.
+
+**Related:** D50, [`phase-B01`](./phases/B01-admin-console.md) §7 (2026-11-13).
+
+## D251 — A flag under review is still open, in every count (B01)
+
+**2026-11-13, the governor's ruling at the Overview's integration** (the founder may overturn it). A
+flag a moderator has opened but not decided — `reviewing` — is still open: it counts on the
+Overview's Inbox card and heads row, Metrics' *Open flags* and *Oldest open flag*, and the
+`flag_queue_depth` rollup. Every count reads one definition (`lib/openFlags.ts`).
+
+**Why:** a flag someone has looked at and not decided still waits on a person; leaving it out made
+the Overview and the rollup disagree about the same queue.
+
+**Related:** D37, [`phase-B01`](./phases/B01-admin-console.md) §7 (2026-11-13).
+
+## D252 — Discipline never leaves the ledger without an editor (B01, extends D227)
+
+**2026-11-13, the governor's ruling** (the founder may overturn it). D227's *never no holder* holds
+through discipline as well as demotion: suspending or banning the last ledger editor who can still
+act is refused, with the same message a demotion gets ("They are the last person who can edit the
+ledger; give another admin ledger editing first"). A suspended or banned holder can neither edit nor
+pass the grant on, so a suspension strands the ledger exactly as a demotion would.
+
+The rule is `refuseDisciplineOfLastLedgerEditor` (`lib/ledgerEditors.ts`); its calls in the suspend
+and ban paths, and in the undo that puts a suspension or ban back, land after the deletion PR that is
+rewriting those files.
+
+**Related:** D37, D226, D227, [`phase-B01`](./phases/B01-admin-console.md) §7.
