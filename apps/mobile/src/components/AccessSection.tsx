@@ -44,8 +44,12 @@ export function AccessSection({
     waterBodyId,
     ...(subAreaId !== undefined ? { subAreaId } : {}),
   });
-  // Which of these alerts are the viewer's own: asked apart, so the shared read stays one copy.
-  const mine = useQuery(api.accessAlerts.myAlertIdsForBody, { waterBodyId });
+  // Which of these alerts are the viewer's own: asked apart, so the shared read stays one copy, and
+  // only once there is an alert to ask about — most lakes have none, and this section draws nothing.
+  const mine = useQuery(
+    api.accessAlerts.myAlertIdsForBody,
+    (access?.alerts ?? []).length > 0 ? { waterBodyId } : 'skip',
+  );
   const vote = useMutation(api.accessAlerts.vote);
   const createAlert = useMutation(api.accessAlerts.create);
   const [busy, setBusy] = useState<string | null>(null);

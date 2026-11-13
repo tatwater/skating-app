@@ -11,6 +11,7 @@ import { convexTest } from 'convex-test';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+import { MY_ALERTS_SCAN } from './accessAlerts';
 import { WITHDRAWN_BY_ASKER } from './corpusRequests';
 import schema from './schema';
 
@@ -416,10 +417,45 @@ describe('an access alert', () => {
     expect(
       await skater.as.query(api.accessAlerts.myAlertIdsForBody, { waterBodyId: otherLake }),
     ).toEqual([lotAlert]);
-    await skater.as.mutation(api.accessAlerts.retract, { accessAlertId: lotAlert });
+    // A moderator narrowing the lot to the lakes it really serves takes it off the other one.
+    await t.run(async (ctx) => {
+      const link = await ctx.db
+        .query('parkingAreaBodies')
+        .withIndex('by_parking_area_water_body', (q) =>
+          q.eq('parkingAreaId', lotId).eq('waterBodyId', otherLake),
+        )
+        .unique();
+      if (link) await ctx.db.delete(link._id);
+    });
+    expect(
+      await skater.as.query(api.accessAlerts.myAlertIdsForBody, { waterBodyId: otherLake }),
+    ).toEqual([]);
+    // Lapsed but not yet swept is not live, so it is not listed.
+    await t.run((ctx) => ctx.db.patch(lotAlert, { expiresAt: Date.now() - 1 }));
+    expect(await skater.as.query(api.accessAlerts.myAlertIdsForBody, { waterBodyId })).toEqual([
+      alertId,
+    ]);
     // Closed alerts are not offered a vote, so they are not listed.
     await skater.as.mutation(api.accessAlerts.retract, { accessAlertId: alertId });
     expect(await skater.as.query(api.accessAlerts.myAlertIdsForBody, { waterBodyId })).toEqual([]);
+  });
+
+  test("a pin stays its author's to open, however many alerts they have filed since", async () => {
+    const { t, skater, other, waterBodyId, alertId, pin } = await alertSetup();
+    await pin();
+    // Settled rows are never deleted, so a busy reporter's history outgrows any one scan of it.
+    await t.run(async (ctx) => {
+      const row = await ctx.db.get(alertId);
+      if (!row) throw new Error('the alert is gone');
+      const { _id, _creationTime, pinnedByUserId, ...fields } = row;
+      for (let i = 0; i <= MY_ALERTS_SCAN; i += 1) {
+        await ctx.db.insert('accessAlerts', { ...fields, status: 'resolved' as const });
+      }
+    });
+    expect(await skater.as.query(api.accessAlerts.myAlertIdsForBody, { waterBodyId })).toEqual([
+      alertId,
+    ]);
+    expect(await other.as.query(api.accessAlerts.myAlertIdsForBody, { waterBodyId })).toEqual([]);
   });
 
   test('retracted by its author, it reads as before, starts its clock, and no moderator pins it back', async () => {

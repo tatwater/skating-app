@@ -596,6 +596,21 @@ async function liveAlertsByParkingArea(
   return pages.flat();
 }
 
+/** Whether a lot is (still) associated with a body — the target, not the alert's column, decides. */
+async function lotServesBody(
+  ctx: QueryCtx,
+  parkingAreaId: Id<'parkingAreas'>,
+  waterBodyId: Id<'waterBodies'>,
+): Promise<boolean> {
+  const link = await ctx.db
+    .query('parkingAreaBodies')
+    .withIndex('by_parking_area_water_body', (q) =>
+      q.eq('parkingAreaId', parkingAreaId).eq('waterBodyId', waterBodyId),
+    )
+    .unique();
+  return link !== null;
+}
+
 /**
  * Every live alert annotating an access point on this body.
  *
@@ -665,15 +680,7 @@ export async function loadLiveAlertsForBody(
   // silence beats a locked gate shown to people going somewhere else.
   for (const alert of direct) {
     if (alert.parkingAreaId !== undefined) {
-      const link = await ctx.db
-        .query('parkingAreaBodies')
-        .withIndex('by_parking_area_water_body', (q) =>
-          q
-            .eq('parkingAreaId', alert.parkingAreaId as Id<'parkingAreas'>)
-            .eq('waterBodyId', waterBodyId),
-        )
-        .unique();
-      if (!link) continue;
+      if (!(await lotServesBody(ctx, alert.parkingAreaId, waterBodyId))) continue;
     } else if (alert.putInId !== undefined) {
       const putIn = await ctx.db.get(alert.putInId);
       if (putIn?.waterBodyId !== waterBodyId) continue;
@@ -706,46 +713,51 @@ export const listForBody = query({
   },
 });
 
-/** How many of one person's alerts `myAlertIdsForBody` reads — far past anyone's. */
-const MY_ALERTS_SCAN = 500;
+/**
+ * How many of one person's alerts `myAlertIdsForBody` reads per live status — far past anyone's.
+ * Exported for the test that files more settled alerts than this after a pin.
+ */
+export const MY_ALERTS_SCAN = 500;
 
 /**
  * The viewer's own live alerts on this body — the one viewer-specific fact the access drawer needs
  * (D248): on a pinned alert its author alone keeps "It's open". Kept out of `accessForBody` and
  * `listForBody` on purpose: those are the lake page's shared reads, and reading the signed-in person
- * there would cache a copy per viewer and re-run them per viewer on every alert change. Bounded by one
- * person's alerts (`by_author`), newest first. An alert on a lot counts on every body the lot
- * serves, as the shared read shows it. Signed out, or none of their own: `[]`.
+ * there would cache a copy per viewer and re-run them per viewer on every alert change.
+ *
+ * Read by `(author, status)`, each live status capped on its own, so **the cap bounds their live
+ * alerts, not their history**: alert rows are never deleted, and the sheet's condition chips file
+ * them too, so a cap over every row they ever filed would push a pin (which never expires) out
+ * behind the settled rows filed since. An alert on a lot counts on every body the lot serves, as the
+ * shared read shows it. Signed out, or none of their own: `[]`.
  */
 export const myAlertIdsForBody = query({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { waterBodyId }): Promise<Id<'accessAlerts'>[]> => {
     const viewer = await getCurrentProfile(ctx);
     if (!viewer) return [];
-    const mine = await ctx.db
-      .query('accessAlerts')
-      .withIndex('by_author', (q) => q.eq('createdByUserId', viewer._id))
-      .order('desc')
-      .take(MY_ALERTS_SCAN);
-    const ids: Id<'accessAlerts'>[] = [];
-    for (const alert of mine) {
-      if (alert.status !== 'active' && alert.status !== 'official') continue;
-      if (alert.waterBodyId === waterBodyId) {
-        ids.push(alert._id);
-        continue;
-      }
-      if (alert.parkingAreaId === undefined) continue;
-      const link = await ctx.db
-        .query('parkingAreaBodies')
-        .withIndex('by_parking_area_water_body', (q) =>
-          q
-            .eq('parkingAreaId', alert.parkingAreaId as Id<'parkingAreas'>)
-            .eq('waterBodyId', waterBodyId),
-        )
-        .unique();
-      if (link) ids.push(alert._id);
-    }
-    return ids;
+    const now = Date.now();
+    const pages = await Promise.all(
+      LIVE_STATUSES.map((status) =>
+        ctx.db
+          .query('accessAlerts')
+          .withIndex('by_author_status', (q) =>
+            q.eq('createdByUserId', viewer._id).eq('status', status),
+          )
+          .order('desc')
+          .take(MY_ALERTS_SCAN),
+      ),
+    );
+    const live = pages.flat().filter((alert) => accessAlertIsLive(alert, now));
+    const here = await Promise.all(
+      live.map(
+        async (alert) =>
+          alert.waterBodyId === waterBodyId ||
+          (alert.parkingAreaId !== undefined &&
+            (await lotServesBody(ctx, alert.parkingAreaId, waterBodyId))),
+      ),
+    );
+    return live.filter((_, i) => here[i]).map((alert) => alert._id);
   },
 });
 

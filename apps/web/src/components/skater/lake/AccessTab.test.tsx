@@ -168,7 +168,12 @@ describe('AccessTab', () => {
     unmount();
 
     fakes.queries.set('accessAlerts:myAlertIdsForBody', ['alert-snow']);
-    tab();
+    fakes.calls.length = 0;
+    tab({ subAreaId: 'north' });
+    // Asked of the lake, not the bay: an alert of theirs is theirs wherever the drawer shows it.
+    expect(fakes.calls.find((c) => c.name === 'accessAlerts:myAlertIdsForBody')?.args).toEqual({
+      waterBodyId: 'mascoma',
+    });
     beach = card('Shakoma Beach');
     expect(within(beach).queryByRole('button', { name: 'Still blocked' })).toBeNull();
     fireEvent.click(within(beach).getByRole('button', { name: 'It’s open' }));
@@ -242,6 +247,8 @@ describe('AccessTab', () => {
     expect(screen.getByRole('article', { name: 'Where skaters put in' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Report an access problem' }));
     expect(report).toHaveBeenCalled();
+    // No alert to mark as the viewer's, so nobody is asked which are theirs.
+    expect(fakes.calls.some((c) => c.name === 'accessAlerts:myAlertIdsForBody')).toBe(false);
   });
 
   it('says so when nothing is on file', () => {

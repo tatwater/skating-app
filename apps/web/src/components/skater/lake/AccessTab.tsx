@@ -62,8 +62,12 @@ export function AccessTab({ waterBodyId, subAreaId, onReportProblem }: AccessTab
     access !== undefined && access.putIns.length === 0 ? { waterBodyId: lakeId } : 'skip',
   );
   const profile = useQuery(api.profiles.current, {});
-  // Which of these alerts are the viewer's own: asked apart, so the shared read stays one copy.
-  const mine = useQuery(api.accessAlerts.myAlertIdsForBody, { waterBodyId: lakeId });
+  // Which of these alerts are the viewer's own: asked apart, so the shared read stays one copy, and
+  // only once there is an alert to ask about.
+  const mine = useQuery(
+    api.accessAlerts.myAlertIdsForBody,
+    (access?.alerts ?? []).length > 0 ? { waterBodyId: lakeId } : 'skip',
+  );
   const createAlert = useMutation(api.accessAlerts.create);
   const [shown, setShown] = useState(PUT_INS_PAGE);
 
