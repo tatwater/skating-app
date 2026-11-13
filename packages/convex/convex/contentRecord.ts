@@ -8,7 +8,7 @@
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
-import { internalMutation, type MutationCtx, type QueryCtx, query } from './_generated/server';
+import { internalMutation, type QueryCtx, query } from './_generated/server';
 import { requireCapability } from './lib/auth';
 import { authorDeletedAtOf } from './lib/authorDeletion';
 import {
