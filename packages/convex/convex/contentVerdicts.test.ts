@@ -6,6 +6,8 @@
  * undo, an overturn), never by the author's deletion; a Post's cascade and a derived Post hide are
  * not verdicts; the backfill rebuilds exactly what the live writers keep.
  */
+
+import type { FunctionReturnType } from 'convex/server';
 import { convexTest } from 'convex-test';
 import fc from 'fast-check';
 import { afterEach, describe, expect, test, vi } from 'vitest';
@@ -156,6 +158,39 @@ async function newestOn(t: T, targetType: string, targetId: string) {
   if (!row) throw new Error(`no audit row on ${targetType} ${targetId}`);
   return row;
 }
+/** The whole record, every page of it, as the People page will read it. */
+async function readRecord(
+  as: ReturnType<ReturnType<typeof convexTest>['withIdentity']>,
+  userId: Id<'profiles'>,
+) {
+  type Verdict = FunctionReturnType<typeof api.contentRecord.personVerdicts>['page'][number];
+  type Withdrawal = FunctionReturnType<typeof api.contentRecord.personWithdrawals>['page'][number];
+  const verdicts: Verdict[] = [];
+  for (let cursor: string | null = null; ; ) {
+    const page: { page: Verdict[]; isDone: boolean; continueCursor: string } = await as.query(
+      api.contentRecord.personVerdicts,
+      { userId, cursor },
+    );
+    verdicts.push(...page.page);
+    if (page.isDone) break;
+    cursor = page.continueCursor;
+  }
+  const deleted: Withdrawal[] = [];
+  for (const kind of ['post', 'report', 'comment', 'hazard', 'accessAlert'] as const) {
+    for (let cursor: string | null = null; ; ) {
+      const page: { page: Withdrawal[]; isDone: boolean; continueCursor: string } = await as.query(
+        api.contentRecord.personWithdrawals,
+        { userId, kind, cursor },
+      );
+      deleted.push(...page.page);
+      if (page.isDone) break;
+      cursor = page.continueCursor;
+    }
+  }
+  deleted.sort((a, b) => b.deletedAt - a.deletedAt);
+  return { verdicts, deleted };
+}
+
 const literally = (s: string) => new RegExp(s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
 
 /** The backfill, rebuilding the record from the audit log alone, lands where the live writers did. */
@@ -168,8 +203,20 @@ async function expectBackfillAgrees(t: T) {
   await t.run(async (ctx) => {
     for (const v of await ctx.db.query('contentVerdicts').collect()) await ctx.db.delete(v._id);
   });
-  await t.mutation(internal.contentRecord.backfillVerdicts, { clocks: false });
+  await runBackfill(t);
   expect(await snapshot()).toEqual(live);
+}
+
+/** The verdict backfill, run to its end: the walk and every item's replay, each its own job. */
+async function runBackfill(
+  t: T,
+  args: { pageSize?: number; clocks?: boolean } = { clocks: false },
+) {
+  const real = !vi.isFakeTimers();
+  if (real) vi.useFakeTimers({ now: Date.now() });
+  await t.mutation(internal.contentRecord.backfillVerdicts, args);
+  await t.finishAllScheduledFunctions(vi.runAllTimers, 10_000);
+  if (real) vi.useRealTimers();
 }
 
 describe('a verdict belongs to the person', () => {
@@ -180,7 +227,7 @@ describe('a verdict belongs to the person', () => {
     await author.as.mutation(api.comments.remove, { commentId });
     expect(await standing()).toHaveLength(1);
 
-    const record = await mod.as.query(api.contentRecord.personContentRecord, { userId: author.id });
+    const record = await readRecord(mod.as, author.id);
     expect(record.verdicts).toEqual([
       expect.objectContaining({
         targetId: commentId,
@@ -346,7 +393,7 @@ describe('a verdict belongs to the person', () => {
     });
     await author.as.mutation(api.posts.remove, { postId });
 
-    const record = await mod.as.query(api.contentRecord.personContentRecord, { userId: author.id });
+    const record = await readRecord(mod.as, author.id);
     const byType = Object.fromEntries(record.verdicts.map((v) => [v.targetType, v]));
     expect(byType.report?.content).toEqual(expect.objectContaining({ text: 'thin by the inlet' }));
     expect(byType.post?.content).toEqual(
@@ -363,7 +410,7 @@ describe('a verdict belongs to the person', () => {
   test('the record is staff-only', async () => {
     const { author } = await setup();
     await expect(
-      author.as.query(api.contentRecord.personContentRecord, { userId: author.id }),
+      author.as.query(api.contentRecord.personVerdicts, { userId: author.id }),
     ).rejects.toThrow();
   });
 });
@@ -485,7 +532,7 @@ describe('the backfill', () => {
         createdAt: at,
       });
     });
-    await t.mutation(internal.contentRecord.backfillVerdicts, { clocks: false });
+    await runBackfill(t);
     const all = await t.run((ctx) => ctx.db.query('contentVerdicts').collect());
     expect(all.map((v) => [v.actionId, v.standing, v.endedByActionId])).toEqual([
       [hide._id, false, restore._id],
@@ -494,74 +541,121 @@ describe('the backfill', () => {
   });
 });
 
-describe('a history longer than the backfill reads', () => {
-  test('is left as it stands, never replayed in part', async () => {
-    const { t, author, mod, set, standing } = await setup();
-    const reportId = await seedReport(t, author.id);
-    await set('report', reportId, 'hidden');
-    const now = Date.now();
+describe('a history longer than a page', () => {
+  afterEach(() => vi.useRealTimers());
+
+  /** `n` audit rows on a Report that move nothing, from `at` on. */
+  async function noise(
+    t: T,
+    modId: Id<'profiles'>,
+    reportId: Id<'reports'>,
+    n: number,
+    at: number,
+  ) {
     await t.run(async (ctx) => {
-      // A restore the backfill can't see whole: it falls inside the read, the hide it ended before it.
-      for (let i = 0; i < 100; i++) {
+      for (let i = 0; i < n; i++) {
         await ctx.db.insert('moderationActions', {
-          actorId: mod.id,
+          actorId: modId,
           action: 'dismiss_flag',
           targetType: 'report',
           targetId: reportId,
           reason: 'noise',
-          createdAt: now + 1 + i,
+          createdAt: at + i,
         });
       }
-      await ctx.db.insert('moderationActions', {
-        actorId: mod.id,
-        action: 'hide',
-        targetType: 'report',
-        targetId: reportId,
-        reason: 'a second hide',
-        metadata: { priorStatus: 'hidden', newStatus: 'hidden' },
-        createdAt: now + 200,
-      });
     });
-    const before = (await standing()).map((v) => v._id);
-    const result = await t.mutation(internal.contentRecord.backfillVerdicts, { clocks: false });
-    expect(result.truncated).toEqual([`report:${reportId}`]);
-    expect((await standing()).map((v) => v._id)).toEqual(before);
-  });
+  }
 
-  test('with no verdict row yet, it is held by the newest takedown it can see, never left to erase', async () => {
+  test('is replayed whole: a hide its newest rows restored is never put back on the record (Greptile #110)', async () => {
+    vi.useFakeTimers();
     const { t, author, mod, standing } = await setup();
     const reportId = await seedReport(t, author.id);
     const now = Date.now();
-    await t.run(async (ctx) => {
-      await ctx.db.patch(reportId, {
+    await t.run((ctx) =>
+      ctx.db.patch(reportId, {
         moderationStatus: 'removed',
         authorDeletedAt: now - 60 * 86_400_000,
-      });
-      // A takedown recorded only as history (before the record existed), inside the read, then noise.
-      await ctx.db.insert('moderationActions', {
+      }),
+    );
+    // Recorded only as history, before the record existed: an old remove, a long run of rows, then a
+    // hide and the restore that reversed it — the restore beyond any fixed read of the newest rows.
+    const takedown = (action: 'remove' | 'hide' | 'restore', createdAt: number) =>
+      t.run((ctx) =>
+        ctx.db.insert('moderationActions', {
+          actorId: mod.id,
+          action,
+          targetType: 'report',
+          targetId: reportId,
+          reason: action,
+          metadata: {
+            priorStatus: 'visible',
+            newStatus: action === 'restore' ? 'visible' : 'hidden',
+          },
+          createdAt,
+        }),
+      );
+    await takedown('remove', now - 5000);
+    await noise(t, mod.id, reportId, 150, now - 4000);
+    await takedown('hide', now - 1000);
+    await takedown('restore', now - 500);
+    await noise(t, mod.id, reportId, 3, now);
+    await runBackfill(t, { pageSize: 7, clocks: false });
+    expect(await standing()).toEqual([]);
+    const all = await t.run((ctx) => ctx.db.query('contentVerdicts').collect());
+    expect(all.map((v) => v.standing)).toEqual([false, false]);
+    // Nothing holds what its author deleted, so its clock runs.
+    await t.mutation(internal.erasure.backfillClocks, { kind: 'report' });
+    expect((await t.run((ctx) => ctx.db.get(reportId)))?.eraseAt).toBeDefined();
+  });
+
+  test('is replayed whole the other way too: the newest takedown stands, however much follows it', async () => {
+    vi.useFakeTimers();
+    const { t, author, mod, set, standing } = await setup();
+    const reportId = await seedReport(t, author.id);
+    await set('report', reportId, 'hidden');
+    await noise(t, mod.id, reportId, 120, Date.now() + 1);
+    await t.run((ctx) =>
+      ctx.db.insert('moderationActions', {
         actorId: mod.id,
         action: 'remove',
         targetType: 'report',
         targetId: reportId,
-        reason: 'doxxing',
-        metadata: { priorStatus: 'visible', newStatus: 'removed' },
-        createdAt: now - 1000,
-      });
-      for (let i = 0; i < 100; i++) {
-        await ctx.db.insert('moderationActions', {
+        reason: 'a second look',
+        metadata: { priorStatus: 'hidden', newStatus: 'removed' },
+        createdAt: Date.now() + 200,
+      }),
+    );
+    await noise(t, mod.id, reportId, 120, Date.now() + 300);
+    await runBackfill(t, { pageSize: 13, clocks: false });
+    expect((await standing()).map((v) => [v.targetId, v.kind])).toEqual([[reportId, 'removed']]);
+    expect(await t.run((ctx) => ctx.db.query('contentVerdicts').collect())).toHaveLength(2);
+  });
+
+  test('never reads past the transaction limit, however heavy every row', async () => {
+    vi.useFakeTimers();
+    const t = convexTest({ schema, modules, transactionLimits: true });
+    const author = await seedUser(t, 'a');
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const reportId = await seedReport(t, author.id);
+    // A moderator's reason has no cap but the document's.
+    const heavy = 'r'.repeat(1000 * 1024);
+    for (let i = 0; i < 40; i++) {
+      await t.run((ctx) =>
+        ctx.db.insert('moderationActions', {
           actorId: mod.id,
-          action: 'dismiss_flag',
+          action: i % 2 === 0 ? 'hide' : 'restore',
           targetType: 'report',
           targetId: reportId,
-          reason: 'noise',
-          createdAt: now + i,
-        });
-      }
-    });
-    await t.mutation(internal.contentRecord.backfillVerdicts, { clocks: false });
-    expect((await standing()).map((v) => [v.targetId, v.kind])).toEqual([[reportId, 'removed']]);
-    await t.mutation(internal.erasure.backfillClocks, { kind: 'report' });
-    expect((await t.run((ctx) => ctx.db.get(reportId)))?.eraseAt).toBeUndefined();
+          reason: heavy,
+          metadata: { priorStatus: 'visible', newStatus: 'hidden' },
+          createdAt: Date.now() + i,
+        }),
+      );
+    }
+    await runBackfill(t, { clocks: false });
+    const all = await t.run((ctx) => ctx.db.query('contentVerdicts').collect());
+    expect(all).toHaveLength(20);
+    expect(all.filter((v) => v.standing)).toEqual([]);
   });
 });
 

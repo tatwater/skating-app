@@ -442,7 +442,11 @@ export const settlePhotos = internalMutation({
         ...(pageSize !== undefined ? { pageSize } : {}),
       });
     if (phase === 'reports') {
-      await carryOn(remaining, page.isDone ? 'hazards' : 'reports', page.isDone ? undefined : page.continueCursor);
+      await carryOn(
+        remaining,
+        page.isDone ? 'hazards' : 'reports',
+        page.isDone ? undefined : page.continueCursor,
+      );
       return { settled: 0, more: true };
     }
     if (!page.isDone) {
@@ -701,7 +705,8 @@ export const refreshMemberClocks = internalMutation({
       if (member) await refreshClockOf(ctx, reads, 'report', member, now, { postHeld });
     }
     const more = at < post.reportIds.length;
-    if (more) await ctx.scheduler.runAfter(0, internal.erasure.refreshMemberClocks, { postId, from: at });
+    if (more)
+      await ctx.scheduler.runAfter(0, internal.erasure.refreshMemberClocks, { postId, from: at });
     return { refreshed: at - from, more };
   },
 });

@@ -82,7 +82,9 @@ export class ReadBudget {
   charge(kind: RowKind, rows = 1): void {
     const cost = ROW_MAX[kind] * rows;
     if (cost > this.left) {
-      throw new OverBudget(`read budget: ${rows} ${kind} row(s) past what this transaction planned`);
+      throw new OverBudget(
+        `read budget: ${rows} ${kind} row(s) past what this transaction planned`,
+      );
     }
     this.left -= cost;
   }

@@ -7,6 +7,7 @@
  * pinned it.
  */
 import { RETRACT_REFUSALS, WITHDRAWN_ERASE_MS } from '@skating/core';
+import type { FunctionReturnType } from 'convex/server';
 import { convexTest } from 'convex-test';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
@@ -14,6 +15,39 @@ import type { Id } from './_generated/dataModel';
 import { MY_ALERTS_SCAN } from './accessAlerts';
 import { WITHDRAWN_BY_ASKER } from './corpusRequests';
 import schema from './schema';
+
+/** The whole record, every page of it, as the People page will read it. */
+async function readRecord(
+  as: ReturnType<ReturnType<typeof convexTest>['withIdentity']>,
+  userId: Id<'profiles'>,
+) {
+  type Verdict = FunctionReturnType<typeof api.contentRecord.personVerdicts>['page'][number];
+  type Withdrawal = FunctionReturnType<typeof api.contentRecord.personWithdrawals>['page'][number];
+  const verdicts: Verdict[] = [];
+  for (let cursor: string | null = null; ; ) {
+    const page: { page: Verdict[]; isDone: boolean; continueCursor: string } = await as.query(
+      api.contentRecord.personVerdicts,
+      { userId, cursor },
+    );
+    verdicts.push(...page.page);
+    if (page.isDone) break;
+    cursor = page.continueCursor;
+  }
+  const deleted: Withdrawal[] = [];
+  for (const kind of ['post', 'report', 'comment', 'hazard', 'accessAlert'] as const) {
+    for (let cursor: string | null = null; ; ) {
+      const page: { page: Withdrawal[]; isDone: boolean; continueCursor: string } = await as.query(
+        api.contentRecord.personWithdrawals,
+        { userId, kind, cursor },
+      );
+      deleted.push(...page.page);
+      if (page.isDone) break;
+      cursor = page.continueCursor;
+    }
+  }
+  deleted.sort((a, b) => b.deletedAt - a.deletedAt);
+  return { verdicts, deleted };
+}
 
 const modules = import.meta.glob('./**/*.*s');
 const T0 = Date.UTC(2027, 0, 14, 12);
@@ -576,9 +610,7 @@ describe('an access alert', () => {
     const alert = await get(t, alertId);
     expect(alert).toMatchObject({ status: 'retracted', retractedByUserId: skater.id });
     expect(alert?.eraseAt).toBeUndefined();
-    const record = await mod.as.query(api.contentRecord.personContentRecord, {
-      userId: skater.id,
-    });
+    const record = await readRecord(mod.as, skater.id);
     expect(record.verdicts).toEqual([
       expect.objectContaining({
         targetType: 'accessAlert',
@@ -597,6 +629,7 @@ describe('an access alert', () => {
       for (const v of await ctx.db.query('contentVerdicts').collect()) await ctx.db.delete(v._id);
     });
     await t.mutation(internal.contentRecord.backfillVerdicts, { clocks: false });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
     expect(
       (await t.run((ctx) => ctx.db.query('contentVerdicts').collect())).map(
         (v) => `${v.actionId} ${v.kind} ${v.standing}`,
@@ -685,9 +718,7 @@ describe('an access alert', () => {
       eraseAt: T0 + WITHDRAWN_ERASE_MS,
     });
     expect(await t.run((ctx) => ctx.db.query('contentVerdicts').collect())).toEqual([]);
-    const record = await mod.as.query(api.contentRecord.personContentRecord, {
-      userId: skater.id,
-    });
+    const record = await readRecord(mod.as, skater.id);
     expect(record.verdicts).toEqual([]);
     // Only their own withdrawal; the moderator's retraction of their other alert is not theirs.
     expect(record.deleted.map((d) => d.targetId)).toEqual([alertId]);

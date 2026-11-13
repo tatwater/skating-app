@@ -51,7 +51,10 @@ export function verdictKindOf(action: string): 'hidden' | 'removed' | 'retracted
   return action === 'hide' ? 'hidden' : action === 'retract_access_alert' ? 'retracted' : 'removed';
 }
 
-/** The standing verdicts on one item — at most a couple; bounded anyway. */
+/** Standing verdicts read per page — the writers keep at most one standing on an item. */
+const STANDING_PAGE = 16;
+
+/** The standing verdicts on one item, a page of them (the writers keep at most one). */
 export function standingVerdictsOn(
   ctx: QueryCtx,
   targetType: VerdictTargetType,
@@ -62,21 +65,29 @@ export function standingVerdictsOn(
     .withIndex('by_target_standing', (q) =>
       q.eq('targetType', targetType).eq('targetId', targetId).eq('standing', true),
     )
-    .take(10);
+    .take(STANDING_PAGE);
 }
 
-/** End every standing verdict on an item, without touching its clock (the callers below do). */
+/**
+ * End **every** standing verdict on an item, without touching its clock (the callers below do). Read
+ * a page at a time until none is left — each one ended leaves the range, so this ends — never "the
+ * first few": a verdict a reversal missed would stay on the person's record.
+ */
 async function endStanding(
   ctx: MutationCtx,
   targetType: VerdictTargetType,
   targetId: string,
   { actionId, at }: { actionId: Id<'moderationActions'>; at: number },
 ): Promise<number> {
-  const standing = await standingVerdictsOn(ctx, targetType, targetId);
-  for (const verdict of standing) {
-    await ctx.db.patch(verdict._id, { standing: false, endedAt: at, endedByActionId: actionId });
+  let ended = 0;
+  for (;;) {
+    const standing = await standingVerdictsOn(ctx, targetType, targetId);
+    if (standing.length === 0) return ended;
+    for (const verdict of standing) {
+      await ctx.db.patch(verdict._id, { standing: false, endedAt: at, endedByActionId: actionId });
+    }
+    ended += standing.length;
   }
-  return standing.length;
 }
 
 /**
@@ -160,41 +171,68 @@ export interface ReplayedVerdict {
 }
 
 /**
+ * Where a replay stands between two audit rows: the one verdict standing (a moving row ends every
+ * standing verdict and mints at most one, so there is never more than one), and whether the row just
+ * replayed ended one — what an undo taking the item back down asks of the row before it. Small and
+ * fixed-size, so a replay can carry it from one transaction to the next.
+ */
+export interface ReplayState {
+  standing: {
+    actionId: Id<'moderationActions'>;
+    kind: 'hidden' | 'removed' | 'retracted';
+    at: number;
+  } | null;
+  previousEnded: boolean;
+}
+
+export const REPLAY_START: ReplayState = { standing: null, previousEnded: false };
+
+/** What one audit row does to the replay: the verdict it ends, the one it mints, and the state after. */
+export function replayStep(
+  state: ReplayState,
+  row: Doc<'moderationActions'>,
+): { state: ReplayState; ended: ReplayedVerdict | null; minted: boolean } {
+  if (!movesVerdict(row))
+    return { state: { ...state, previousEnded: false }, ended: null, minted: false };
+  const takedown =
+    row.action === 'hide' || row.action === 'remove' || row.action === 'retract_access_alert';
+  const meta = (row.metadata ?? {}) as Record<string, unknown>;
+  const forward = row.undoesActionId === undefined && meta.cascadedFromPostId === undefined;
+  const minted = takedown && (forward || state.previousEnded);
+  const ended: ReplayedVerdict | null = state.standing
+    ? { ...state.standing, standing: false, endedAt: row.createdAt, endedByActionId: row._id }
+    : null;
+  return {
+    state: {
+      standing: minted
+        ? { actionId: row._id, kind: verdictKindOf(row.action), at: row.createdAt }
+        : null,
+      previousEnded: ended !== null,
+    },
+    ended,
+    minted,
+  };
+}
+
+/**
  * The live writers' rules over one item's audit rows, oldest first: what verdicts its history
  * makes, and which still stand. An undo's undone row is the one before it on the item — undo is
  * only ever offered on an item's newest row, and a member a Post's undo moves is moved only while
- * the Post's row is still the newest on it.
+ * the Post's row is still the newest on it. The same {@link replayStep} the backfill carries across
+ * transactions.
  */
 export function replayVerdicts(rows: Doc<'moderationActions'>[]): ReplayedVerdict[] {
   const verdicts: ReplayedVerdict[] = [];
-  const endedSomething = new Set<string>();
-  let previous: Doc<'moderationActions'> | undefined;
+  let state = REPLAY_START;
   for (const row of rows) {
-    if (movesVerdict(row)) {
-      const takedown =
-        row.action === 'hide' || row.action === 'remove' || row.action === 'retract_access_alert';
-      const meta = (row.metadata ?? {}) as Record<string, unknown>;
-      const forward = row.undoesActionId === undefined && meta.cascadedFromPostId === undefined;
-      const mints =
-        takedown &&
-        (forward || (previous !== undefined && endedSomething.has(previous._id as string)));
-      for (const verdict of verdicts) {
-        if (!verdict.standing) continue;
-        verdict.standing = false;
-        verdict.endedAt = row.createdAt;
-        verdict.endedByActionId = row._id;
-        endedSomething.add(row._id as string);
-      }
-      if (mints) {
-        verdicts.push({
-          actionId: row._id,
-          kind: verdictKindOf(row.action),
-          at: row.createdAt,
-          standing: true,
-        });
-      }
+    const step = replayStep(state, row);
+    if (step.ended) {
+      const index = verdicts.findIndex((v) => v.actionId === step.ended?.actionId);
+      verdicts[index] = step.ended;
     }
-    previous = row;
+    if (step.minted && step.state.standing)
+      verdicts.push({ ...step.state.standing, standing: true });
+    state = step.state;
   }
   return verdicts;
 }
