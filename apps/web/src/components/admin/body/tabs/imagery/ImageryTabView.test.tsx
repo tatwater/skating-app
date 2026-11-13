@@ -53,7 +53,7 @@ describe('ImageryTabView', () => {
     render(<ImageryTabView {...base} lit={granuleOf(10)} onOverride={onOverride} />);
     const c = within(card());
     expect(c.getByText('Hidden from skaters')).toBeVisible();
-    const [cloud] = card().querySelectorAll('[data-slot="threshold-meter"]');
+    const [cloud] = card().querySelectorAll('[data-slot="gate-row"]');
     expect(cloud).toHaveAttribute('data-fails');
     await userEvent.click(c.getByRole('button', { name: /Show to skaters anyway/ }));
     expect(onOverride).toHaveBeenCalledWith(granuleOf(10), 'show', undefined);
@@ -105,8 +105,8 @@ describe('ImageryTabView', () => {
     render(<ImageryTabView {...base} rows={passRows([INFERRED_STOP])} />);
     // No meter claims a value it doesn't have; the gates still stand on their tracks.
     expect(within(card()).queryAllByRole('meter')).toEqual([]);
-    expect(card().querySelectorAll('[data-slot="threshold-tick"]')).toHaveLength(2);
-    expect(card().querySelectorAll('[data-slot="threshold-fill"]')).toHaveLength(0);
+    expect(card().querySelectorAll('[data-slot="meter-mark"]')).toHaveLength(2);
+    expect(card().querySelectorAll('[data-slot="meter-fill"]')).toHaveLength(0);
     // Twice in the card, twice in the table.
     expect(screen.getAllByText('Not measured')).toHaveLength(4);
   });

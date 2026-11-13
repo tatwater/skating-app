@@ -20,6 +20,7 @@ import { Avatar } from '@/components/kit/avatar';
 import { Badge } from '@/components/kit/badge';
 import { Button, buttonVariants } from '@/components/kit/button';
 import { Kbd } from '@/components/kit/kbd';
+import { Meter } from '@/components/kit/meter';
 import { Plate } from '@/components/kit/plate';
 import { Section } from '@/components/kit/section-slug';
 import {
@@ -43,7 +44,6 @@ import {
   satelliteAssist,
   selectedPass,
 } from './imageryModel';
-import { ThresholdMeter } from './kit-candidates/threshold-meter';
 
 /**
  * Board 5.4.6, Body › Imagery's inspector, the default view: the lit pass as a card — its date,
@@ -210,13 +210,13 @@ export function ImageryTabView({
               )}
             </div>
             <div className="mt-(--space-1) flex flex-col gap-(--space-2)">
-              <ThresholdMeter
+              <GateRow
                 label="Clear of cloud"
                 value={row.clearPct}
                 threshold={CLEAR_GATE_PCT}
                 unit="%"
               />
-              <ThresholdMeter
+              <GateRow
                 label="Lake in the pass"
                 value={row.coveragePct}
                 threshold={COVERAGE_GATE_PCT}
@@ -431,4 +431,65 @@ function formatParts(at: number): string {
   const parts = STAFF_DAY.formatToParts(at);
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
   return `${get('day')} ${get('month')}`;
+}
+
+/**
+ * One gate a pass must clear (board 5.4.6's `.gate`): the name over what it needs, the kit `Meter`
+ * with its white gate tick (`markTone="lit"` — passing is not a warning, so not amber), and the
+ * figure with its unit. A value under its gate is the bright one: the name and figure go to the
+ * bright ink and the fill steps back to `dim`. **Not measured is absent, never zero**: an empty
+ * track, no figure, and a reader hears *Not measured*.
+ */
+function GateRow({
+  label,
+  value,
+  threshold,
+  unit = '',
+}: {
+  label: string;
+  /** In percent; `null` when nobody measured it. */
+  value: number | null;
+  threshold: number;
+  unit?: string;
+}) {
+  const fails = value !== null && value < threshold;
+  return (
+    <div
+      data-slot="gate-row"
+      data-fails={fails ? '' : undefined}
+      data-unmeasured={value === null ? '' : undefined}
+      // The board's columns: the name 104 px, the figure 46 px — the row's own dimensions.
+      className="group/gate grid grid-cols-[6.5rem_minmax(0,1fr)_2.875rem] items-center gap-x-(--space-3)"
+    >
+      <span className="flex flex-col gap-(--space-1)">
+        <span className="text-assist leading-(--lead-snug) whitespace-nowrap text-fg1 group-data-fails/gate:text-fg">
+          {label}
+        </span>
+        <span className="text-kick leading-(--lead-snug) whitespace-nowrap text-fg3">
+          Needs {threshold}
+          {unit}
+        </span>
+      </span>
+      <Meter
+        aria-label={label}
+        value={value === null ? null : Math.min(100, Math.max(0, value))}
+        mark={threshold}
+        markTone="lit"
+        tone={fails ? 'dim' : 'default'}
+        getAriaValueText={() => `${value}${unit}, needs ${threshold}${unit}`}
+      />
+      <span
+        data-slot="gate-value"
+        aria-hidden="true"
+        className="text-right font-(family-name:--family-mono) text-mono-sm leading-none font-medium whitespace-nowrap text-fg2 tabular-nums group-data-fails/gate:text-fg"
+      >
+        {value !== null && (
+          <>
+            {value}
+            {unit !== '' && <span className="ms-unit text-fg3">{unit}</span>}
+          </>
+        )}
+      </span>
+    </div>
+  );
 }

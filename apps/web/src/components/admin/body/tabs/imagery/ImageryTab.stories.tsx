@@ -81,8 +81,8 @@ export const Default: Story = {
     await faceLoaded(cell, '13 Oct');
     await expect(day).toHaveTextContent('13 Oct');
     // The gate is a white tick standing over the 4 px track.
-    const tick = must(q.querySelector<HTMLElement>('[data-slot="threshold-tick"]'));
-    const track = must(q.querySelector<HTMLElement>('[data-slot="threshold-track"]'));
+    const tick = must(q.querySelector<HTMLElement>('[data-slot="meter-mark"]'));
+    const track = must(q.querySelector<HTMLElement>('[data-slot="meter-track"]'));
     const fg = sameColor(computedColor(tick, 'var(--fg)'));
     await expect(getComputedStyle(tick).backgroundColor).toEqual(fg);
     await expect(track.getBoundingClientRect().height).toBeCloseTo(4, 0);

@@ -336,3 +336,19 @@ export const FourUp: Story = {
     }
   },
 };
+
+/**
+ * Not measured: an empty track with its gate still standing, no fill and no meter role — nothing
+ * claims a value it doesn't have — and a reader hears so (Body › Imagery's unmeasured pass).
+ */
+export const NotMeasured: Story = {
+  args: { value: null, mark: 60, markTone: 'lit' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.queryByRole('meter')).toBeNull();
+    await expect(canvasElement.querySelector('[data-slot="meter-fill"]')).toBeNull();
+    await expect(canvas.getByText('Not measured')).toBeInTheDocument();
+    const tick = must(canvasElement.querySelector<HTMLElement>('[data-slot="meter-mark"]'));
+    await expect(tick).toHaveAttribute('data-tone', 'lit');
+  },
+};

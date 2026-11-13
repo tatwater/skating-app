@@ -26,7 +26,6 @@ import {
   selectedPass,
   winterWord,
 } from './imageryModel';
-import { meterPercent } from './kit-candidates/threshold-meter';
 
 describe('passRows', () => {
   it('draws the board’s passes: cloud and coverage in percent, who sees each', () => {
@@ -156,13 +155,6 @@ describe('the dock’s notches and the meter', () => {
       ),
     );
     expect(notchAt(0, 1)).toBe(0.5);
-  });
-
-  it('the meter clamps to its range', () => {
-    expect(meterPercent(60, 0, 100)).toBe(60);
-    expect(meterPercent(-5, 0, 100)).toBe(0);
-    expect(meterPercent(150, 0, 100)).toBe(100);
-    expect(meterPercent(1, 1, 1)).toBe(0);
   });
 });
 
