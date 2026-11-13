@@ -6484,6 +6484,13 @@ went through three founder rounds; the calls above are what survived them. The b
 (Saira, Martian Mono) are deliberately **not** adopted yet — they belong to the wider Figma
 redesign — so the sheet ships in the apps' current faces plus a `$mono` token for the readouts.
 
+**Amended 2026-11-10 (founder call, B01) — the brand faces are adopted app-wide on the web.** Saira
+and Martian Mono are now the web app's faces everywhere, not only the console's or the sheet's,
+self-hosted through Fontsource's variable packages (`@fontsource-variable/saira`, `/martian-mono`;
+#106) — nothing fetches a face from Google. B01's first PR finishes it: `body` defaults to
+`--family-sans`, so every screen is set in Saira, and the document head preloads the two Latin
+files so a first visit doesn't paint in the system stack and swap.
+
 **Related:** D3 (nothing here says safe; the meters count sections, never grade ice), D7, D34,
 D186, D187, D188, D189, D190, D192, D193, D198, D203.
 

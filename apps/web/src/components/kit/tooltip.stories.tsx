@@ -147,9 +147,8 @@ export const TextTrigger: Story = {
     // The box is one 1.1 line plus the 1 px pad and the 1 px rule — the rule hugs the text.
     const size = parseFloat(style.fontSize);
     await expect(trigger.getBoundingClientRect().height).toBeCloseTo(size * 1.1 + 2, 0);
-    // The plate names its own face: it portals to `body`, and the app's `body` is the legacy
-    // `system-ui` (Storybook's is the kit's, which would hide an inherited face), so give `body`
-    // a face the plate must not take.
+    // The plate names its own face: it portals to `body`, and a `body` in the kit's face would
+    // hide an inherited one, so give `body` a face the plate must not take.
     const bodyFace = document.body.style.fontFamily;
     document.body.style.fontFamily = 'serif';
     try {
