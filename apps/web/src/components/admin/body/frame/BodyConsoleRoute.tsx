@@ -1,6 +1,6 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
+import { useNavigate, useParams, useRouter, useSearch } from '@tanstack/react-router';
 import { useMutation } from 'convex/react';
 import { type ComponentType, useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from '@/components/kit/toast';
@@ -62,10 +62,9 @@ export function BodyConsoleRoute({ registry = BODY_TAB_REGISTRY }: { registry?: 
       void navigate({ to: '.', search: next, replace } as never),
     [navigate],
   );
-  const onReturn = useCallback(
-    () => void navigate({ to: returnPathOf(search) } as never),
-    [navigate, search],
-  );
+  // The return path carries the list's own search, so it goes to history whole, not through `to`.
+  const router = useRouter();
+  const onReturn = useCallback(() => router.history.push(returnPathOf(search)), [router, search]);
   const onLitChange = useCallback(
     (lit: string | null) => go(searchFor(search, { lit }), true),
     [go, search],

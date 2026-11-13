@@ -240,8 +240,8 @@ function SceneLabel({
 }
 
 /**
- * The chrome the graticule's labels keep clear of, in pane px: the rack, the dock, and anything a
- * tab marks `data-map-ui`. Measured after layout, again whenever the pane changes size.
+ * The chrome the graticule's labels keep clear of, in pane px: the rack, the dock, MapLibre's own
+ * controls (the folded credits), and anything a tab marks `data-map-ui`. Measured after layout, again whenever the pane changes size.
  */
 function useKeepouts(
   pane: React.RefObject<HTMLDivElement | null>,
@@ -257,7 +257,7 @@ function useKeepouts(
     const host = el.getBoundingClientRect();
     const found = [
       ...el.querySelectorAll<HTMLElement>(
-        '[data-slot="map-layer-rack"], [data-slot="map-dock"], [data-map-ui]',
+        '[data-slot="map-layer-rack"], [data-slot="map-dock"], [data-map-ui], .maplibregl-ctrl',
       ),
     ].map((node) => {
       const r = node.getBoundingClientRect();

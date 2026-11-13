@@ -40,7 +40,8 @@ export type BodyConsoleData =
       state: 'ready';
       identity: BodyIdentity;
       asks: readonly BodyAsk[] | undefined;
-      history: { entries: readonly HistoryEntry[]; capped: boolean } | undefined;
+      /** `null` when the viewer can't read the audit trail: the section isn't drawn. */
+      history: { entries: readonly HistoryEntry[]; capped: boolean } | null | undefined;
       attention: ReadonlySet<BodyTabKey>;
       bbox: BBoxLike;
       scene: BodyMapScene;
@@ -126,8 +127,9 @@ export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleDa
     state: 'ready',
     identity,
     asks,
-    history:
-      actions === undefined
+    history: !can('audit.read')
+      ? null
+      : actions === undefined
         ? undefined
         : { entries: bodyHistory(history), capped: history.length >= HISTORY_LIMIT },
     attention: attentionTabs(identity.completeness),

@@ -26,8 +26,11 @@ export interface BodyLeftColumnProps {
   identity: BodyIdentity | undefined;
   /** `undefined` while the asks load. */
   asks: readonly BodyAsk[] | undefined;
-  /** `undefined` while the history loads; `capped` when there is more than was read. */
-  history: { entries: readonly HistoryEntry[]; capped: boolean } | undefined;
+  /**
+   * `undefined` while the history loads; `capped` when there is more than was read; `null` when
+   * the viewer can't read the audit trail, and the section isn't drawn.
+   */
+  history: { entries: readonly HistoryEntry[]; capped: boolean } | null | undefined;
   /** The lit item: an ask that is lit is drawn open. */
   lit: string | null;
   /** An ask was opened (⏎, Space or a press). */
@@ -99,36 +102,38 @@ export function BodyLeftColumn({
             />
           )}
         </Section>
-        <Section
-          className="mt-(--space-5_5)"
-          title="History"
-          {...(history !== undefined
-            ? {
-                end: (
-                  <span className="font-(family-name:--family-mono) text-kick leading-none tracking-micro text-fg2 uppercase">
-                    {history.capped ? `${history.entries.length}+` : history.entries.length}{' '}
-                    {history.entries.length === 1 ? 'change' : 'changes'}
-                  </span>
-                ),
-              }
-            : {})}
-        >
-          {history === undefined ? (
-            <Skeleton className="h-(--space-20)" />
-          ) : (
-            <HistoryList>
-              {history.entries.map((h) => (
-                <HistoryRow
-                  key={h.id}
-                  when={historyTime(h.at, now, timeZone)}
-                  {...(h.who !== null ? { who: h.who } : {})}
-                >
-                  {h.what}
-                </HistoryRow>
-              ))}
-            </HistoryList>
-          )}
-        </Section>
+        {history !== null && (
+          <Section
+            className="mt-(--space-5_5)"
+            title="History"
+            {...(history !== undefined
+              ? {
+                  end: (
+                    <span className="font-(family-name:--family-mono) text-kick leading-none tracking-micro text-fg2 uppercase">
+                      {history.capped ? `${history.entries.length}+` : history.entries.length}{' '}
+                      {history.entries.length === 1 ? 'change' : 'changes'}
+                    </span>
+                  ),
+                }
+              : {})}
+          >
+            {history === undefined ? (
+              <Skeleton className="h-(--space-20)" />
+            ) : (
+              <HistoryList>
+                {history.entries.map((h) => (
+                  <HistoryRow
+                    key={h.id}
+                    when={historyTime(h.at, now, timeZone)}
+                    {...(h.who !== null ? { who: h.who } : {})}
+                  >
+                    {h.what}
+                  </HistoryRow>
+                ))}
+              </HistoryList>
+            )}
+          </Section>
+        )}
       </div>
     </section>
   );
