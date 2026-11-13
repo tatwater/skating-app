@@ -103,11 +103,13 @@ describe('retraction until decided', () => {
     expect(flagRetraction({ status: 'open', origin: 'user', occurrences: 2 })).toBe('sharedFlag');
   });
 
-  it("an access alert, by its author: only a live community claim, never after a moderator's pin", () => {
-    expect(alertRetractionByAuthor('active')).toBe('retract');
-    expect(alertRetractionByAuthor('official')).toBe('decided');
-    expect(alertRetractionByAuthor('resolved')).toBe('closed');
-    expect(alertRetractionByAuthor('expired')).toBe('closed');
-    expect(alertRetractionByAuthor('retracted')).toBe('already');
+  it('an access alert, by its author: only a live community claim no moderator ever pinned', () => {
+    expect(alertRetractionByAuthor('active', false)).toBe('retract');
+    expect(alertRetractionByAuthor('official', true)).toBe('confirmed');
+    // Released since: a moderator still confirmed it existed.
+    expect(alertRetractionByAuthor('active', true)).toBe('confirmed');
+    expect(alertRetractionByAuthor('resolved', false)).toBe('closed');
+    expect(alertRetractionByAuthor('expired', false)).toBe('closed');
+    expect(alertRetractionByAuthor('retracted', true)).toBe('already');
   });
 });

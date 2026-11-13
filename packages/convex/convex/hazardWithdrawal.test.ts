@@ -186,6 +186,30 @@ describe('withdrawing a hazard', () => {
     );
     await expect(withdraw()).rejects.toThrow(literally(HAZARD_WITHDRAW_REFUSALS.joined));
     await t.run((ctx) => ctx.db.delete(absorbed));
+    // Counted in a cross-season pattern: a shared record too.
+    const pattern = await t.run((ctx) =>
+      ctx.db.insert('hazardRecurrence', {
+        waterBodyId,
+        family: 'ridge' as const,
+        geometryKind: 'point_radius' as const,
+        geometry: { type: 'Point' as const, coordinates: [0.5, 0.5] },
+        radiusMeters: 30,
+        bbox: { minLat: 0.4, minLng: 0.4, maxLat: 0.6, maxLng: 0.6 },
+        memberHazardIds: [hazardId],
+        representativeHazardId: hazardId,
+        seasonsObserved: [2025, 2026],
+        windowSeasons: 4,
+        distinctAuthorCount: 2,
+        firstReportedDayOfSeasonP25: 40,
+        firstReportedDayOfSeasonP75: 60,
+        priority: 1,
+        publiclyVisible: false,
+        computedAt: T0,
+        computedForSeason: 2026,
+      }),
+    );
+    await expect(withdraw()).rejects.toThrow(literally(HAZARD_WITHDRAW_REFUSALS.joined));
+    await t.run((ctx) => ctx.db.delete(pattern));
     const featureId = await t.run((ctx) =>
       ctx.db.insert('bodyFeatures', {
         waterBodyId,

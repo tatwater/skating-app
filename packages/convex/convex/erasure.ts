@@ -319,6 +319,13 @@ async function eraseReport(ctx: MutationCtx, report: Doc<'reports'>, photos: Pho
   for (const alert of alerts) {
     if (alert.reportId === report._id) await ctx.db.patch(alert._id, { reportId: undefined });
   }
+  // A put-in a Report's point became (stored by the pre-D62 purge) is an access point on the
+  // community record and stays, coordinate and all; only its pointer to the Report goes.
+  const putIns = await ctx.db
+    .query('putIns')
+    .withIndex('by_origin_report', (q) => q.eq('originReportId', report._id))
+    .take(100);
+  for (const putIn of putIns) await ctx.db.patch(putIn._id, { originReportId: undefined });
   const joins = await ctx.db
     .query('reportSubAreas')
     .withIndex('by_report', (q) => q.eq('reportId', report._id))

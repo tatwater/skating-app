@@ -10,6 +10,7 @@ import {
   ACCESS_ALERT_REASONS,
   ACCESS_REASON_LABELS,
   type AccessAlertReason,
+  accessAlertVoteControls,
   describePostedAccess,
   describePostedAccessNow,
   MAX_ACCESS_PHOTOS,
@@ -160,25 +161,26 @@ export function AccessAlertBox({
       {alert.note && <p className="m-0 text-assist text-fg2 [text-wrap:pretty]">{alert.note}</p>}
       {(onVote || onRetract) && (
         <div className="flex flex-wrap gap-(--space-2)">
-          {onVote && !alert.official && (
-            <>
-              <Button
-                size="sm"
-                disabled={busy}
-                data-attr="access-alert-still-blocked"
-                onClick={() => onVote('still_blocked')}
-              >
-                Still blocked
-              </Button>
-              <Button
-                size="sm"
-                disabled={busy}
-                data-attr="access-alert-open"
-                onClick={() => onVote('open')}
-              >
-                It’s open
-              </Button>
-            </>
+          {onVote && accessAlertVoteControls(alert).stillBlocked && (
+            <Button
+              size="sm"
+              disabled={busy}
+              data-attr="access-alert-still-blocked"
+              onClick={() => onVote('still_blocked')}
+            >
+              Still blocked
+            </Button>
+          )}
+          {/* A pin takes no votes — except its author's own "it's open" (D248). */}
+          {onVote && accessAlertVoteControls(alert).open && (
+            <Button
+              size="sm"
+              disabled={busy}
+              data-attr="access-alert-open"
+              onClick={() => onVote('open')}
+            >
+              It’s open
+            </Button>
           )}
           {onRetract && (
             <Button

@@ -154,6 +154,35 @@ describe('AccessTab', () => {
     );
   });
 
+  it('offers a pinned alert\'s author "It\'s open", and nobody else any vote', () => {
+    const pinned = (isOwn: boolean) => ({
+      ...MASCOMA_ACCESS,
+      alerts: MASCOMA_ACCESS.alerts.map((a) => ({
+        ...a,
+        status: 'official',
+        official: true,
+        ...(isOwn ? { isOwn: true } : {}),
+      })),
+    });
+    fakes.queries.set('accessPoints:accessForBody', pinned(false));
+    const { unmount } = tab();
+    let beach = card('Shakoma Beach');
+    expect(within(beach).getByText(/confirmed by a moderator/)).toBeTruthy();
+    expect(within(beach).queryByRole('button', { name: 'It’s open' })).toBeNull();
+    expect(within(beach).queryByRole('button', { name: 'Still blocked' })).toBeNull();
+    unmount();
+
+    fakes.queries.set('accessPoints:accessForBody', pinned(true));
+    tab();
+    beach = card('Shakoma Beach');
+    expect(within(beach).queryByRole('button', { name: 'Still blocked' })).toBeNull();
+    fireEvent.click(within(beach).getByRole('button', { name: 'It’s open' }));
+    expect(fakes.mutations.get('accessAlerts:vote')).toHaveBeenCalledWith({
+      accessAlertId: 'alert-snow',
+      verdict: 'open',
+    });
+  });
+
   it('lets a moderator retract an alert', () => {
     fakes.queries.set('profiles:current', { role: 'moderator' });
     tab();

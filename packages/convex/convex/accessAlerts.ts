@@ -53,7 +53,7 @@ import {
 } from './_generated/server';
 import { MAX_ACCESS_ROWS_PER_BODY, MAX_LOT_LINKS_SCANNED } from './lib/accessLimits';
 import { writeAudit } from './lib/audit';
-import { requireCapability, requireContributor } from './lib/auth';
+import { getCurrentProfile, requireCapability, requireContributor } from './lib/auth';
 import {
   ACCESS_ALERT_KINDS,
   ACCESS_ALERT_TARGETS,
@@ -304,6 +304,25 @@ export const vote = mutation({
   },
 });
 
+/** How far back an alert's history is read for a pin. An alert carries a handful of rows. */
+const PIN_HISTORY_LIMIT = 200;
+
+/**
+ * Whether a moderator ever pinned this alert, and the pin was not undone (an undo is "I didn't mean
+ * to"). Read from the history, newest first and bounded; a history longer than the bound counts as
+ * pinned — refusing a retraction keeps a claim up, and its author can still mark it open.
+ */
+async function everPinned(ctx: QueryCtx, accessAlertId: Id<'accessAlerts'>): Promise<boolean> {
+  const rows = await ctx.db
+    .query('moderationActions')
+    .withIndex('by_target', (q) => q.eq('targetType', 'accessAlert').eq('targetId', accessAlertId))
+    .order('desc')
+    .take(PIN_HISTORY_LIMIT);
+  const undone = new Set(rows.flatMap((r) => (r.undoesActionId ? [r.undoesActionId] : [])));
+  if (rows.some((r) => r.action === 'pin_access_alert' && !undone.has(r._id))) return true;
+  return rows.length >= PIN_HISTORY_LIMIT;
+}
+
 /**
  * "This never existed" — D65's verdict, applied to access.
  *
@@ -340,7 +359,7 @@ export const retract = mutation({
     // turn an author's final withdrawal into a moderator's (and so a pinnable) one.
     if (alert.status === 'retracted') return;
     if (!isModerator) {
-      const rule = alertRetractionByAuthor(alert.status);
+      const rule = alertRetractionByAuthor(alert.status, await everPinned(ctx, alert._id));
       if (rule === 'already') return;
       if (rule !== 'retract') throw new ConvexError(RETRACT_REFUSALS[rule]);
     }
@@ -464,10 +483,18 @@ export interface AccessAlertView {
   expiresAt?: number;
   confirmCount: number;
   denyCount: number;
+  /**
+   * The viewer posted it. Their own "it's open" settles it even on a pin (D248), so the clients show
+   * them that control where everyone else sees none. Absent for anyone else, and signed out.
+   */
+  isOwn?: true;
 }
 
-function toView(alert: Doc<'accessAlerts'>): AccessAlertView {
+function toView(alert: Doc<'accessAlerts'>, viewerId?: Id<'profiles'>): AccessAlertView {
   return {
+    ...(viewerId !== undefined && alert.createdByUserId === viewerId
+      ? { isOwn: true as const }
+      : {}),
     id: alert._id,
     targetType: alert.targetType,
     putInId: alert.putInId,
@@ -586,6 +613,8 @@ export async function loadLiveAlertsForBody(
   ctx: QueryCtx,
   waterBodyId: Id<'waterBodies'>,
   now: number = Date.now(),
+  /** Who is reading, so each of their own alerts says so (`isOwn`). */
+  viewerId?: Id<'profiles'>,
 ): Promise<AccessAlertView[]> {
   // Capped for the same reason the parking read is (see `MAX_ACCESS_ROWS_PER_BODY`): alerts are
   // user-generated, so "how many can one lake have" is not a number we control.
@@ -672,7 +701,7 @@ export async function loadLiveAlertsForBody(
     .sort((a, b) =>
       a.status === b.status ? b.createdAt - a.createdAt : a.status === 'official' ? -1 : 1,
     )
-    .map(toView);
+    .map((alert) => toView(alert, viewerId));
 }
 
 /** Public: live access alerts for a body. Returns `[]` for an unknown body. */
@@ -681,7 +710,8 @@ export const listForBody = query({
   handler: async (ctx, { waterBodyId }): Promise<AccessAlertView[]> => {
     const body = await ctx.db.get(waterBodyId);
     if (!body) return [];
-    return loadLiveAlertsForBody(ctx, waterBodyId);
+    const viewer = await getCurrentProfile(ctx);
+    return loadLiveAlertsForBody(ctx, waterBodyId, Date.now(), viewer?._id);
   },
 });
 

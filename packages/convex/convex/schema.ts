@@ -3787,7 +3787,10 @@ export default defineSchema({
     // reference scan (A03 / `lib/photoOrphans`). Without it the sweep would have to scan the whole
     // table to decide whether one person's photo is referenced, and the alternative it would fall
     // back to is deleting it.
-    .index('by_created_by', ['createdByUserId']),
+    .index('by_created_by', ['createdByUserId'])
+    // The put-ins a Report's point became (the pre-D62 purge's stored markers), so erasing the
+    // Report clears the link (D248). `eq()` only: the field is optional and the index not sparse.
+    .index('by_origin_report', ['originReportId']),
 
   /**
    * Where the car goes (A06d / D72) — modeled apart from `putIns`, and many-to-many with bodies.

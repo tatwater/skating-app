@@ -49,6 +49,11 @@ export interface AccessAlertModel {
   note: string | null;
   /** A moderator pinned it: no votes, it stands until they release it. */
   official: boolean;
+  /**
+   * The viewer posted it. On a pinned alert its author alone keeps "It's open": their own word that
+   * it has cleared settles it, pin or no pin (D248).
+   */
+  isOwn: boolean;
 }
 
 export interface PostedTarget {
@@ -104,6 +109,7 @@ function alertModel(alert: AccessAlertRow, now: number): AccessAlertModel {
     when: `reported ${reportWhen(alert.createdAt, now)}`,
     note: alert.note ?? null,
     official: alert.official,
+    isOwn: alert.isOwn === true,
   };
 }
 

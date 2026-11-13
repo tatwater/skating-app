@@ -4,6 +4,7 @@ import {
   ACCESS_ALERT_REASONS,
   ACCESS_REASON_LABELS,
   type AccessReason,
+  accessAlertVoteControls,
   chooseAccessTarget,
   describeApproach,
   isHikeIn,
@@ -174,25 +175,28 @@ export function AccessSection({
             {alert.official ? ' (confirmed by a moderator)' : ''}
           </Text>
           {alert.note ? <Paragraph color="$foregroundMuted">{alert.note}</Paragraph> : null}
-          {alert.official ? null : (
+          {/* A pin takes no votes — except its author's own "it's open" (D248). */}
+          {accessAlertVoteControls(alert).open ? (
             <XStack gap="$2">
-              <Button
-                size="$2"
-                chromeless
-                borderWidth={1}
-                borderColor="$border"
-                disabled={busy === alert.id}
-                onPress={async () => {
-                  setBusy(alert.id);
-                  try {
-                    await vote({ accessAlertId: alert.id, verdict: 'still_blocked' });
-                  } finally {
-                    setBusy(null);
-                  }
-                }}
-              >
-                <Text>Still blocked</Text>
-              </Button>
+              {accessAlertVoteControls(alert).stillBlocked ? (
+                <Button
+                  size="$2"
+                  chromeless
+                  borderWidth={1}
+                  borderColor="$border"
+                  disabled={busy === alert.id}
+                  onPress={async () => {
+                    setBusy(alert.id);
+                    try {
+                      await vote({ accessAlertId: alert.id, verdict: 'still_blocked' });
+                    } finally {
+                      setBusy(null);
+                    }
+                  }}
+                >
+                  <Text>Still blocked</Text>
+                </Button>
+              ) : null}
               <Button
                 size="$2"
                 chromeless
@@ -211,7 +215,7 @@ export function AccessSection({
                 <Text>It's open</Text>
               </Button>
             </XStack>
-          )}
+          ) : null}
         </YStack>
       ))}
     </Section>

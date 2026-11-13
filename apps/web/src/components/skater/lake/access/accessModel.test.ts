@@ -91,6 +91,7 @@ describe('putInCards', () => {
         when: expect.stringMatching(/^reported Thu/),
         note: null,
         official: false,
+        isOwn: false,
       },
     ]);
     expect(byId('launch').alerts).toEqual([]);

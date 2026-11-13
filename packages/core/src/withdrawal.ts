@@ -54,6 +54,8 @@ export function nextEraseAt(item: {
 /** What a filer is told when their retraction comes too late, or there is nothing to retract. */
 export const RETRACT_REFUSALS = {
   decided: 'A moderator has already acted on this, so it can no longer be retracted.',
+  confirmed:
+    'A moderator confirmed this, so it can no longer be retracted. If it has cleared, mark it open.',
   closed: 'This is already closed, so there is nothing to retract.',
   notYours: 'Only the person who filed this can retract it.',
   sharedFlag:
@@ -88,15 +90,19 @@ export function flagRetraction(flag: {
 }
 
 /**
- * An access alert, retracted by its author. Only a live community claim: a moderator's pin
- * (`official`) is the claim acted on; `resolved`, `expired` and `retracted` have nothing left to take
- * back. (A moderator's own retraction is not this rule — it is a moderator's verdict.)
+ * An access alert, retracted by its author ("this never existed"). Only a live community claim that
+ * no moderator ever pinned: a pin is a moderator confirming the claim existed, so it counts as acted
+ * on even after the pin is released (founder ruling, 2026-11-13) — `everPinned` is read from the
+ * alert's history, not its status. `resolved`, `expired` and `retracted` have nothing left to take
+ * back. The author's "it's open" is a different statement and is never refused. (A moderator's own
+ * retraction is not this rule — it is a moderator's verdict.)
  */
 export function alertRetractionByAuthor(
   status: 'active' | 'official' | 'resolved' | 'expired' | 'retracted',
+  everPinned: boolean,
 ): 'retract' | 'already' | keyof typeof RETRACT_REFUSALS {
-  if (status === 'active') return 'retract';
   if (status === 'retracted') return 'already';
-  if (status === 'official') return 'decided';
+  if (status === 'official' || everPinned) return 'confirmed';
+  if (status === 'active') return 'retract';
   return 'closed';
 }

@@ -231,6 +231,21 @@ export const collect = internalQuery({
       .query('accessPhotos')
       .withIndex('by_uploader', (q) => q.eq('uploaderId', userId))
       .take(ROW_CAP);
+    // What they filed for a moderator (D248): their flags and their requests — theirs to take back
+    // until decided, so theirs to see. **Only flags a person filed** (`origin: 'user'`): a flag the
+    // system filed names a real person in `flaggerId` who filed nothing (the rater whose thumb crossed
+    // a threshold), and telling them so is exactly what `content_flag_resolved` refuses to do. A
+    // retracted item is in here until it is erased, and nothing of it after.
+    const flags = (
+      await ctx.db
+        .query('contentFlags')
+        .withIndex('by_flagger', (q) => q.eq('flaggerId', userId))
+        .take(ROW_CAP)
+    ).filter((f) => f.origin === 'user');
+    const requests = await ctx.db
+      .query('waterBodyRequests')
+      .withIndex('by_requester_created', (q) => q.eq('requesterId', userId))
+      .take(ROW_CAP);
 
     const {
       // Not exported: the Clerk subject is an internal identifier for a system the user already has
@@ -260,6 +275,21 @@ export const collect = internalQuery({
       accessAlerts: accessAlerts,
       accessAlertVotes: accessAlertVotes,
       accessPhotos: accessPhotos,
+      contentFlags: flags,
+      // The catalog's answer to an `admit` is the catalog's polygon, not something they said: named,
+      // not copied — a lake outline can be most of a document.
+      waterBodyRequests: requests.map(({ candidate, ...rest }) => ({
+        ...rest,
+        ...(candidate
+          ? {
+              candidate: {
+                source: candidate.source,
+                externalId: candidate.externalId,
+                name: candidate.name,
+              },
+            }
+          : {}),
+      })),
       // Secrets stripped — see the note above.
       activityConnections: connections.map((c) => ({
         provider: c.provider,

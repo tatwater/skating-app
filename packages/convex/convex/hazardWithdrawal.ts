@@ -16,10 +16,10 @@
  * either way. A moderator having acted on it does not block it (their verdict stays on the record,
  * as on any withdrawn content), except a promotion to a permanent feature, which made it the lake's.
  *
- * **Not yet: a pin that merge or recurrence machinery has joined to others.** A tombstone folded into
- * another pin, a survivor that absorbed others, and a pin a cross-season pattern counts are each
- * refused here, because what withdrawing one should do to the others is not defined by the code —
- * that waits on a founder call.
+ * **Never: a pin joined to others' records** (founder ruling, 2026-11-13). Once a pin is folded
+ * together with other people's pins (a merge's tombstone or its survivor), or counted in a
+ * cross-season pattern, or made a permanent feature by a moderator, it is a shared record — the same
+ * principle as another skater confirming it — and stays up.
  *
  * Final like any author withdrawal (D248): nothing restores it, and it is erased 30 days on unless a
  * verdict or an open flag holds it (`erasure`).
@@ -40,8 +40,10 @@ export const HAZARD_WITHDRAW_REFUSALS = {
   notYours: 'Only the person who posted this hazard can withdraw it.',
   confirmed:
     'Another skater has reported this hazard is there, so it stays up. You can still say what you see now.',
-  feature: 'A moderator has made this a permanent feature of the lake, so it stays up.',
-  joined: 'This hazard has been joined with others on the map, so it can’t be withdrawn here.',
+  feature:
+    'A moderator made this hazard a permanent feature of the lake, so it is a shared record now and stays up.',
+  joined:
+    'This hazard has been combined with other skaters’ reports of the same spot, so it is a shared record now and stays up.',
   unknown: 'This hazard has too many confirmations to check, so it stays up.',
 } as const;
 

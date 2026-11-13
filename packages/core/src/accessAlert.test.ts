@@ -11,6 +11,7 @@ import {
   accessAlertExpiryFor,
   accessAlertIsLive,
   accessAlertKindOf,
+  accessAlertVoteControls,
   deriveAccessAlertLifecycle,
   isAccessCondition,
 } from './accessAlert';
@@ -292,5 +293,26 @@ describe('ACCESS_CONDITION_REASONS (D197)', () => {
     for (const reason of ACCESS_CONDITION_REASONS)
       expect(accessAlertKindOf(reason)).toBe('condition');
     for (const reason of ACCESS_ALERT_REASONS) expect(accessAlertKindOf(reason)).toBe('blocker');
+  });
+});
+
+describe('accessAlertVoteControls', () => {
+  test('a live claim takes both votes from anyone; a pin, only its author\'s "it\'s open"', () => {
+    expect(accessAlertVoteControls({ official: false })).toEqual({
+      stillBlocked: true,
+      open: true,
+    });
+    expect(accessAlertVoteControls({ official: false, isOwn: true })).toEqual({
+      stillBlocked: true,
+      open: true,
+    });
+    expect(accessAlertVoteControls({ official: true })).toEqual({
+      stillBlocked: false,
+      open: false,
+    });
+    expect(accessAlertVoteControls({ official: true, isOwn: true })).toEqual({
+      stillBlocked: false,
+      open: true,
+    });
   });
 });

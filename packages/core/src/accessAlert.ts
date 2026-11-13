@@ -308,3 +308,15 @@ export function deriveAccessAlertLifecycle(
     lastConfirmedAt,
   };
 }
+
+/**
+ * Which vote buttons an alert offers its viewer — one rule for web and phone. A live community claim
+ * takes both votes from anyone; a pinned one takes none, except its own author's "it's open", which
+ * settles it pin or no pin (founder ruling, 2026-11-13).
+ */
+export function accessAlertVoteControls(alert: { official: boolean; isOwn?: boolean }): {
+  stillBlocked: boolean;
+  open: boolean;
+} {
+  return { stillBlocked: !alert.official, open: !alert.official || alert.isOwn === true };
+}

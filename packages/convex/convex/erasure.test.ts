@@ -414,10 +414,26 @@ describe('a report', () => {
       }),
     );
 
+    // A put-in the pre-D62 purge materialized from this Report's point.
+    const putInId = await t.run((ctx) =>
+      ctx.db.insert('putIns', {
+        waterBodyId,
+        coord: { lat: 0.4321, lng: 0.8765 },
+        source: 'derived' as const,
+        originReportId: gone,
+        status: 'visible' as const,
+        createdAt: T0,
+      }),
+    );
+
     await author.as.mutation(api.reports.remove, { reportId: gone });
     advance(31 * DAY);
     const result = await sweep(t);
     expect(result.erased.report).toBe(1);
+    // The put-in stays on the community record, without its pointer to the Report.
+    const putIn = await get(t, putInId);
+    expect(putIn).toMatchObject({ coord: { lat: 0.4321, lng: 0.8765 }, status: 'visible' });
+    expect(putIn?.originReportId).toBeUndefined();
 
     expect(await get(t, gone)).toBeNull();
     expect(await get(t, photoIds[0] as string)).toBeNull();

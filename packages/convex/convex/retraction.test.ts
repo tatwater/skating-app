@@ -312,18 +312,52 @@ describe('an access alert', () => {
     expect(await get(t, alertId)).toMatchObject({ status: 'official' });
   });
 
-  test("its author's retraction: allowed while live, refused once pinned, a no-op once closed", async () => {
-    const { t, skater, alertId, pin } = await alertSetup();
+  test("its author's retraction is refused once a moderator ever pinned it, released or not", async () => {
+    const { t, skater, mod, alertId, pin } = await alertSetup();
     await pin();
-    await expect(
-      skater.as.mutation(api.accessAlerts.retract, { accessAlertId: alertId }),
-    ).rejects.toThrow(literally(RETRACT_REFUSALS.decided));
-    // Resolving is always theirs, and after it there is nothing left to retract.
+    const retract = () => skater.as.mutation(api.accessAlerts.retract, { accessAlertId: alertId });
+    await expect(retract()).rejects.toThrow(literally(RETRACT_REFUSALS.confirmed));
+    await mod.as.mutation(api.accessAlerts.setOfficial, {
+      accessAlertId: alertId,
+      official: false,
+      reason: 'back to the community',
+    });
+    expect(await get(t, alertId)).toMatchObject({ status: 'active' });
+    // A moderator confirmed it existed; "never existed" is no longer the author's to say.
+    await expect(retract()).rejects.toThrow(literally(RETRACT_REFUSALS.confirmed));
+    // "It's over" always is.
     await skater.as.mutation(api.accessAlerts.vote, { accessAlertId: alertId, verdict: 'open' });
+    expect(await get(t, alertId)).toMatchObject({ status: 'resolved' });
+  });
+
+  test('a pin a moderator undid does not count; a closed alert has nothing to retract', async () => {
+    const { t, skater, mod, alertId, pin } = await alertSetup();
+    await pin();
+    const pinRow = (await t.run((ctx) => ctx.db.query('moderationActions').collect())).find(
+      (r) => r.action === 'pin_access_alert',
+    );
+    if (!pinRow) throw new Error('expected the pin row');
+    await mod.as.mutation(api.undo.run, { actionId: pinRow._id, reason: 'pinned the wrong one' });
+    expect(await get(t, alertId)).toMatchObject({ status: 'active' });
+    await t.run((ctx) => ctx.db.patch(alertId, { status: 'expired' }));
     await expect(
       skater.as.mutation(api.accessAlerts.retract, { accessAlertId: alertId }),
     ).rejects.toThrow(literally(RETRACT_REFUSALS.closed));
-    expect(await get(t, alertId)).toMatchObject({ status: 'resolved' });
+    await t.run((ctx) => ctx.db.patch(alertId, { status: 'active' }));
+    await skater.as.mutation(api.accessAlerts.retract, { accessAlertId: alertId });
+    expect(await get(t, alertId)).toMatchObject({ status: 'retracted' });
+  });
+
+  test('the alert view tells its author it is theirs, and nobody else', async () => {
+    const { t, skater, other, waterBodyId, alertId } = await alertSetup();
+    const mine = await skater.as.query(api.accessAlerts.listForBody, { waterBodyId });
+    expect(mine).toEqual([expect.objectContaining({ id: alertId, isOwn: true })]);
+    const theirs = await other.as.query(api.accessAlerts.listForBody, { waterBodyId });
+    expect(theirs[0]?.isOwn).toBeUndefined();
+    const anonymous = await t.query(api.accessPoints.accessForBody, { waterBodyId });
+    expect(anonymous.alerts[0]?.isOwn).toBeUndefined();
+    const viaAccess = await skater.as.query(api.accessPoints.accessForBody, { waterBodyId });
+    expect(viaAccess.alerts[0]?.isOwn).toBe(true);
   });
 
   test('retracted by its author, it reads as before, starts its clock, and no moderator pins it back', async () => {

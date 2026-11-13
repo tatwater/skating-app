@@ -224,6 +224,91 @@ describe('collect — what a bundle carries', () => {
     expect(data.accessPhotos).toEqual([]);
   });
 
+  /**
+   * What a person filed for a moderator (D248): theirs to take back until decided, so theirs to see —
+   * and once a retracted one is erased, nothing of it is left here either.
+   */
+  test('carries the flags and requests they filed, never a flag the system filed in their name', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'exporter');
+    const bodyId = await seedBody(t);
+    const flagId = await user.as.mutation(api.contentFlags.flag, {
+      targetType: 'waterbody',
+      targetId: bodyId,
+      reason: 'no_public_access',
+      note: 'a new gate with a padlock',
+    });
+    await t.run((ctx) =>
+      ctx.db.insert('contentFlags', {
+        flaggerId: user.id,
+        targetType: 'waterbody',
+        targetId: bodyId,
+        reason: 'auto_low_quality',
+        note: 'system note',
+        status: 'open',
+        origin: 'auto',
+        createdAt: T0,
+      }),
+    );
+    const requestId = await t.run((ctx) =>
+      ctx.db.insert('waterBodyRequests', {
+        kind: 'admit',
+        status: 'open',
+        requesterId: user.id,
+        coord: { lat: 0.4321, lng: 0.8765 },
+        note: 'the pond behind the barn',
+        candidate: {
+          source: '3dhp' as const,
+          externalId: 'x-1',
+          name: 'Barn Pond',
+          featureType: 390,
+          polygon: {
+            type: 'Polygon' as const,
+            coordinates: [
+              [
+                [0, 0],
+                [0, 1],
+                [1, 1],
+                [0, 0],
+              ],
+            ],
+          },
+          bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+          centroid: { lat: 0.5, lng: 0.5 },
+          surfaceAreaSqM: 1000,
+          serviceUrl: 'https://example.test',
+          fetchedAt: T0,
+        },
+        createdAt: T0,
+      }),
+    );
+
+    const data = await t.query(internal.dataExport.collect, { userId: user.id });
+    expect(data.contentFlags.map((f) => f._id)).toEqual([flagId]);
+    expect(data.contentFlags[0]?.note).toBe('a new gate with a padlock');
+    expect(JSON.stringify(data)).not.toContain('system note');
+    expect(data.waterBodyRequests).toEqual([
+      expect.objectContaining({
+        _id: requestId,
+        note: 'the pond behind the barn',
+        candidate: { source: '3dhp', externalId: 'x-1', name: 'Barn Pond' },
+      }),
+    ]);
+
+    // Retracted, then erased 30 days on: nothing of either is left.
+    await user.as.mutation(api.contentFlags.retract, { flagId });
+    await user.as.mutation(api.corpusRequests.retract, { requestId });
+    await t.run(async (ctx) => {
+      await ctx.db.patch(flagId, { eraseAt: 1 });
+      await ctx.db.patch(requestId, { eraseAt: 1 });
+    });
+    await t.mutation(internal.erasure.eraseDue, {});
+    const after = JSON.stringify(await t.query(internal.dataExport.collect, { userId: user.id }));
+    expect(after).not.toContain('a new gate with a padlock');
+    expect(after).not.toContain('the pond behind the barn');
+    expect(after).not.toContain('0.4321');
+  });
+
   test('omits the Clerk subject', async () => {
     const t = harness();
     const user = await seedUser(t, 'exporter');
