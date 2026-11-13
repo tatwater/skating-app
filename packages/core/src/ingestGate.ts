@@ -386,21 +386,71 @@ export function winterOnOrAfter(
   from: string,
   options: GateOptions = {},
 ): { date: string; frozen: SiteLow[]; reporting: number } | null {
-  const freezeC = options.freezeC ?? DEFAULT_FREEZE_C;
-  const winterFraction = options.winterFraction ?? DEFAULT_WINTER_FRACTION;
   const others = sites.filter((s) => !s.sentinel);
   const index = indexLows(sites);
   for (const date of allDates(sites)) {
     if (date < from) continue;
-    const lows = lowsOn(others, date, index);
-    const frozen = [...lows]
-      .filter(([, low]) => low <= freezeC)
-      .map(([siteId, lowC]) => ({ siteId, lowC }));
-    if (lows.size > 0 && frozen.length / lows.size >= winterFraction) {
-      return { date, frozen: frozen.sort(byLow), reporting: lows.size };
-    }
+    const night = winterNight(lowsOn(others, date, index), options);
+    if (night !== null) return { date, ...night };
   }
   return null;
+}
+
+/**
+ * The winter rule on one night, given the ordinary sites that reported on it: the sites that froze,
+ * coldest first, when at least `winterFraction` of them did; `null` when too few did, or none
+ * reported. The one rule {@link winterOnOrAfter} and {@link winterRunNights} both apply.
+ */
+function winterNight(
+  lows: ReadonlyMap<string, number>,
+  options: GateOptions,
+): { frozen: SiteLow[]; reporting: number } | null {
+  const freezeC = options.freezeC ?? DEFAULT_FREEZE_C;
+  const winterFraction = options.winterFraction ?? DEFAULT_WINTER_FRACTION;
+  const frozen = [...lows]
+    .filter(([, low]) => low <= freezeC)
+    .map(([siteId, lowC]) => ({ siteId, lowC }));
+  if (lows.size === 0 || frozen.length / lows.size < winterFraction) return null;
+  return { frozen: frozen.sort(byLow), reporting: lows.size };
+}
+
+/**
+ * How many nights in a row, starting on `from`, met the winter rule (B01's season tile). One is a
+ * fragile winter — a single cold night that a warm one undid — which the console flags for a person to
+ * look at; zero means `from` itself did not meet it.
+ *
+ * A night no ordinary site reported on ends the run, as a missing reading never counts toward a
+ * run anywhere in this file: a gap in the record must not read as winter holding. Bounded by the
+ * series — a run can't outlast the last date any site reported.
+ */
+export function winterRunNights(
+  sites: readonly SiteSeries[],
+  from: string,
+  options: GateOptions = {},
+): number {
+  const others = sites.filter((s) => !s.sentinel);
+  const index = indexLows(sites);
+  const last = allDates(others).at(-1);
+  let nights = 0;
+  for (let date = from; last !== undefined && date <= last; date = addDaysIso(date, 1)) {
+    if (winterNight(lowsOn(others, date, index), options) === null) break;
+    nights++;
+  }
+  return nights;
+}
+
+/**
+ * The fewest of `reporting` sites that must freeze for a night to meet the winter rule — the
+ * smallest `k` with `k / reporting >= winterFraction`, the same comparison {@link winterOnOrAfter}
+ * makes. Computed from that comparison rather than as `ceil(fraction × reporting)`, which floating
+ * point puts one too high (`0.3 × 10` is `3.0000000000000004`).
+ */
+export function winterNeeds(reporting: number, winterFraction: number): number {
+  if (reporting <= 0) return 0;
+  let k = Math.min(reporting, Math.max(0, Math.ceil(winterFraction * reporting)));
+  while (k > 0 && (k - 1) / reporting >= winterFraction) k--;
+  while (k < reporting && k / reporting < winterFraction) k++;
+  return k;
 }
 
 /**

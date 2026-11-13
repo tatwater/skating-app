@@ -70,6 +70,14 @@ const granted = <R extends CapabilityRule['role']>(role: R, grant: Grant, why: s
 export const CAPABILITIES = {
   // ── Overview and the audit log ────────────────────────────────────────────────────────────────
   'audit.read': read('moderator', 'The audit feed and every History panel: who did what, and why.'),
+  'metrics.read': read(
+    'moderator',
+    "The Overview's Metrics: counts and rollups, never a person. Support's half also needs inbox.support.read (PII, D37).",
+  ),
+  'console.presence': write(
+    'moderator',
+    'Be seen in the console by colleagues while on a console page; staff only, nothing about skaters.',
+  ),
 
   // ── Inbox: what a person filed ────────────────────────────────────────────────────────────────
   'inbox.read': read(
@@ -159,6 +167,10 @@ export const CAPABILITIES = {
 
   // ── Season ────────────────────────────────────────────────────────────────────────────────────
   'season.read': read('admin', 'The season watch, its settings and the replay (A06i, D213).'),
+  'season.summary': read(
+    'moderator',
+    "The season's state at a glance — the watch, winter region-wide, imagery, the first skate — for the shell's tape and the Overview. No settings, sites or lows.",
+  ),
   'season.settings': write(
     'admin',
     'Save threshold versions, reset a watch, field dates, history fill (D213).',
