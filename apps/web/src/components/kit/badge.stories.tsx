@@ -9,6 +9,7 @@ import {
   contrastBetween,
   JUNCTION_TOLERANCE_PX,
   sameColor,
+  sameShadow,
 } from './measure';
 import { KICKER, must, rootPx } from './storyKit';
 
@@ -106,6 +107,34 @@ export const LiveIdle: Story = {
   },
 };
 
+/**
+ * Not live: the LED goes hollow — no fill, a hairline ring in the faint ink, no halo, no breath —
+ * and the words step back to the faint ink.
+ */
+export const LiveOff: Story = {
+  args: { variant: 'live', tone: 'off', children: 'Not live' },
+  play: async ({ canvasElement }) => {
+    const el = badge(canvasElement);
+    const faint = computedColor(el, 'var(--fg3)');
+    await expect(getComputedStyle(el).color).toEqual(sameColor(faint));
+    const led = getComputedStyle(el, '::before');
+    await expect(led.backgroundColor).toEqual(sameColor('rgba(0, 0, 0, 0)'));
+    await expect(led.animationName).toBe('none');
+    // One layer: the inset hairline ring. No halo.
+    await expect(led.boxShadow).toEqual(
+      sameShadow({ lengths: [0, 0, 0, 1], inset: true, color: faint }),
+    );
+    // No halo: every other layer (Tailwind stacks several) is transparent.
+    const painted = colorsIn(led.boxShadow).filter((c) => c !== 'rgba(0, 0, 0, 0)');
+    await expect(painted).toHaveLength(1);
+    // The LED keeps the lit one's size: hollow is a state, not a smaller mark.
+    await expect(parseFloat(led.width)).toBeCloseTo(
+      0.6 * parseFloat(getComputedStyle(el).fontSize),
+      1,
+    );
+  },
+};
+
 /** Catalog tags vouch for the value they follow: mono caps, no box, joined by a tight dot. */
 export const Tags: Story = {
   render: () => (
@@ -172,6 +201,16 @@ function Matrix() {
             ))}
           </tr>
         ))}
+        <tr>
+          <th scope="row" className={KICKER}>
+            live · off
+          </th>
+          <td>
+            <Badge variant="live" tone="off">
+              Not live
+            </Badge>
+          </td>
+        </tr>
       </tbody>
     </table>
   );
@@ -208,6 +247,9 @@ export const FourUp: Story = {
           ))}
         </div>
       ))}
+      <Badge variant="live" tone="off">
+        Not live
+      </Badge>
     </div>
   ),
   parameters: { fourUp: true },

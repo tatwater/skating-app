@@ -14,6 +14,9 @@ import { cn } from '@/lib/utils';
  * - **`outline`** — a claim beside a value: sans caps in a hairline box (`size-pill` tall). `lit`
  *   is the current value (Now); the default gray is the suggested one; `dim` is dashed.
  * - **`live`** — a running state: no box; its LED glows and breathes (still under reduced motion).
+ *   Its `off` tone is the state that stopped being live (*Not live*): the LED goes hollow — no fill,
+ *   a hairline ring in the faint ink, no halo, no breath — and the words step back to that ink.
+ *   `off` is the live badge's only: a solid or outlined badge has no hollow state.
  *
  * **One state per badge.** Two states are two badges side by side, never a bullet inside one, so
  * a `Badge` takes text only. Green has no tone: success is the quiet state. Badge copy is written
@@ -44,6 +47,7 @@ const badgeVariants = cva(
         warn: '',
         bad: '',
         acc: '',
+        off: '',
       },
     },
     compoundVariants: [
@@ -73,6 +77,15 @@ const badgeVariants = cva(
         tone: 'dim',
         className: '[--led:var(--fg3)] text-fg2 before:animate-none before:shadow-none',
       },
+      // Hollow: not live. The ring is a drawing value (a hairline), in the faint ink.
+      {
+        variant: 'live',
+        tone: 'off',
+        className: [
+          'text-fg3 [--led:transparent]',
+          'before:animate-none before:shadow-[inset_0_0_0_var(--stroke-hair)_var(--fg3)]',
+        ],
+      },
       {
         variant: 'live',
         tone: 'warn',
@@ -93,11 +106,16 @@ const badgeVariants = cva(
   },
 );
 
-type BadgeProps = Omit<useRender.ComponentProps<'span'>, 'children'> &
-  VariantProps<typeof badgeVariants> & {
-    /** One state, as text. */
-    children?: string | number;
-  };
+type BadgeTone = NonNullable<VariantProps<typeof badgeVariants>['tone']>;
+
+type BadgeProps = Omit<useRender.ComponentProps<'span'>, 'children'> & {
+  /** One state, as text. */
+  children?: string | number;
+} & (
+    | { variant?: 'solid' | 'outline' | null; tone?: Exclude<BadgeTone, 'off'> | null }
+    /** `off` is the live badge's hollow state (*Not live*). */
+    | { variant: 'live'; tone?: BadgeTone | null }
+  );
 
 function Badge({ className, variant = 'solid', tone = 'default', render, ...props }: BadgeProps) {
   return useRender({
@@ -156,4 +174,4 @@ function TagDot(): ReactNode {
   );
 }
 
-export { Badge, type BadgeProps, badgeVariants, Tag, TagRun };
+export { Badge, type BadgeProps, type BadgeTone, badgeVariants, Tag, TagRun };

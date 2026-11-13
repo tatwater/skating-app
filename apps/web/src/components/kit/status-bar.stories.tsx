@@ -238,6 +238,7 @@ export const RegistryCounts: Story = {
 const LAMPS = [
   { state: 'live', words: 'Convex live' },
   { state: 'idle', words: 'Nothing running' },
+  { state: 'off', words: 'Convex not live' },
   { state: 'warn', words: 'Reconnecting' },
   { state: 'bad', words: 'Offline' },
 ] as const;
@@ -279,6 +280,17 @@ export const Lamps: Story = {
     await expect(idle.backgroundColor).toEqual(
       sameColor(computedColor(canvasElement, 'var(--fg3)')),
     );
+    // Not live: hollow — no fill, an inset hairline ring in the faint ink, no halo, no breath.
+    const off = getComputedStyle(led('off'));
+    const faint = computedColor(canvasElement, 'var(--fg3)');
+    await expect(off.backgroundColor).toEqual(sameColor('rgba(0, 0, 0, 0)'));
+    await expect(off.animationName).toBe('none');
+    await expect(off.boxShadow).toEqual(
+      sameShadow({ lengths: [0, 0, 0, 1], inset: true, color: faint }),
+    );
+    await expect(
+      getComputedStyle(must(canvasElement.querySelector('[data-state="off"]'))).color,
+    ).toEqual(sameColor(faint));
     await expect(getComputedStyle(led('warn')).backgroundColor).toEqual(
       sameColor(computedColor(canvasElement, 'var(--warn)')),
     );
