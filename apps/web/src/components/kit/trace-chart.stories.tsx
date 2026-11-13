@@ -546,6 +546,119 @@ export const SharedHover: Story = {
   },
 };
 
+/**
+ * A day nothing recorded: the strip keeps the day's place and draws nothing there — no zero stub,
+ * which is a measured zero — the scale reads only the recorded days, and the plate says so in words.
+ * A strip whose record began partway shows its first days empty beside another strip's full ones.
+ */
+export const UnrecordedDays: Story = {
+  render: () => (
+    <SparkbarSet
+      aria-label="Each day"
+      length={5}
+      title={(i) => `${i + 1} Oct`}
+      rows={(i) => [
+        { label: 'Reports', value: [2, 0, 4, 1, 3][i] ?? null },
+        { label: 'Signed in', value: [null, null, 4, null, 2][i] ?? null },
+      ]}
+      className="grid w-[24rem] grid-cols-[6rem_minmax(0,1fr)] items-end gap-x-(--space-3_5) gap-y-[0.5625rem]"
+    >
+      <span className={KICKER}>Reports</span>
+      <Sparkbars
+        aria-label="Reports, each day"
+        tone="muted"
+        values={[2, 0, 4, 1, 3]}
+        className="h-[1.875rem]"
+      />
+      <span className={KICKER}>Signed in</span>
+      <Sparkbars
+        aria-label="Signed in, each day"
+        tone="muted"
+        lightLatest
+        values={[null, null, 4, null, 2]}
+        className="h-[1.875rem]"
+      />
+    </SparkbarSet>
+  ),
+  play: async ({ canvasElement }) => {
+    const set = must(canvasElement.querySelector<HTMLElement>('[data-slot="sparkbar-set"]'));
+    // Re-queried on every read, so a retry reads the strips as they now are.
+    const strip = (i: number) =>
+      must([...set.querySelectorAll<HTMLElement>('[data-slot="sparkbars"]')][i]);
+    const bars = (i: number) => [
+      ...strip(i).querySelectorAll<HTMLElement>('[data-slot="sparkbar"]'),
+    ];
+
+    // Five slots on both strips: an unrecorded day keeps the axis whole and lines up with its day.
+    await waitFor(() => expect(bars(1)).toHaveLength(5));
+    for (let d = 0; d < 5; d++) {
+      await expect(
+        Math.abs(centerOf(must(bars(0)[d])) - centerOf(must(bars(1)[d]))),
+      ).toBeLessThanOrEqual(0.5);
+    }
+    // It draws nothing: no fill, no zero stub — while a recorded zero keeps its stub.
+    for (const d of [0, 1, 3]) {
+      const slot = must(bars(1)[d]);
+      await expect(slot).toHaveAttribute('data-unrecorded');
+      await expect(
+        slot.querySelector('[data-slot="sparkbar-fill"], [data-slot="sparkbar-zero"]'),
+      ).toBeNull();
+    }
+    await expect(must(bars(0)[1]).querySelector('[data-slot="sparkbar-zero"]')).not.toBeNull();
+    // The scale reads only what was recorded: the 4 stands the strip's full height.
+    const h = strip(1).getBoundingClientRect().height;
+    const tallest = must(must(bars(1)[2]).querySelector('[data-slot="sparkbar-fill"]'));
+    await expect(tallest.getBoundingClientRect().height).toBeCloseTo(h, 0);
+    // The latest day is lit as before.
+    await expect(must(bars(1)[4])).toHaveAttribute('data-latest');
+
+    // Hovering an unrecorded day: the plate says so for that strip, in words, never "0".
+    fireEvent.pointerMove(set, { clientX: centerOf(must(bars(0)[1])) });
+    const plate = () => set.querySelector<HTMLElement>('[data-slot="sparkbar-set-plate"]');
+    await waitFor(() => expect(plate()).not.toBeNull());
+    const values = () => [...must(plate()).querySelectorAll('[data-slot="sparkbar-set-value"]')];
+    await waitFor(() =>
+      expect(values().map((v) => v.textContent)).toEqual(['0', 'Not recorded yet']),
+    );
+    await expect(values()[1]).toHaveAttribute('data-unrecorded');
+    await expect(getComputedStyle(must(values()[1])).color).toEqual(
+      sameColor(computedColor(set, 'var(--fg3)')),
+    );
+    // The keyboard steps across unrecorded days like any other.
+    set.focus();
+    await userEvent.keyboard('{Home}');
+    await waitFor(() => expect(set).toHaveAttribute('aria-valuenow', '0'));
+    await userEvent.keyboard('{ArrowRight}{ArrowRight}{ArrowRight}');
+    await waitFor(() => expect(set).toHaveAttribute('aria-valuenow', '3'));
+    await waitFor(() =>
+      expect(values().map((v) => v.textContent)).toEqual(['1', 'Not recorded yet']),
+    );
+  },
+};
+
+/** Unrecorded days in all four maps: empty slots, the zero stubs and fills as ever. */
+export const UnrecordedFourUp: Story = {
+  render: () => (
+    <Sparkbars
+      aria-label="Signed in, each day"
+      tone="muted"
+      lightLatest
+      values={[null, 0, 3, null, 2]}
+      className="h-[1.875rem] w-[12rem]"
+    />
+  ),
+  parameters: { fourUp: true },
+  play: async ({ canvasElement }) => {
+    const quads = [...canvasElement.querySelectorAll<HTMLElement>('[data-theme-scope]')];
+    await expect(quads).toHaveLength(4);
+    for (const q of quads) {
+      await expect(q.querySelectorAll('[data-unrecorded]')).toHaveLength(2);
+      await expect(q.querySelectorAll('[data-slot="sparkbar-zero"]')).toHaveLength(1);
+      await expect(q.querySelectorAll('[data-slot="sparkbar-fill"]')).toHaveLength(2);
+    }
+  },
+};
+
 /** The board's drawn state: a day hovered from the start. */
 export const SharedHoverDrawn: Story = {
   render: () => <PulseSet defaultActive={9} />,

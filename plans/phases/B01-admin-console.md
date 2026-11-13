@@ -890,7 +890,7 @@ B01-3, and what the Overview adopted:
 | StatusLamp `state="off"` | ✅ | The status bar's hollow lamp | `OverviewLamp` (was the dim lamp, a stand-in) |
 | StatGrid `ruled={false}` | ✅ | A bare strip of stats on the grid's gap | Home's season strip |
 | Chart `quiet` tone | ✅ | The context gray (`--line2`) under a lead series | `KeepingUp`'s open-flag and *other*-ticket bars (overrides gone) |
-| `SparkbarSet` + Sparkbars `tone="muted"` | ✅ | One hairline and plate across a stack of strips, keyboard stepping | **Not yet adopted:** Sparkbars has no *not recorded* day, and the pulse's unrecorded days must never draw as a zero stub — the kit needs a `null` day first |
+| `SparkbarSet` + Sparkbars `tone="muted"` | ✅ | One hairline and plate across a stack of strips, keyboard stepping; a `null` day is an empty slot, out of the scale, and the plate says *Not recorded yet* | Metrics' *Each day* strips (the pulse's own hover, plate and chart strips are gone) |
 | `ChartLegend`, `ChartNote`, `StatusDot` | ✅ | Promoted from the console into the kit | Their importers |
 | `DisplayWord` (`page`, `column`) | ✅ | The page word and a column's head | `OverviewPage`, Metrics' `ColumnHead` |
 | Button `size="row"` | ✅ | The 18 px chip that fits a 22 px row | `RowLink` |
@@ -901,18 +901,19 @@ B01-3, and what the Overview adopted:
 | The top bar's search and tape | ✅ | Never truncate the search or run the tape over it | The shell |
 | Tokens: `btn-row`, `avatar-xl`; the gaps `section`, `unit` (7 px), `segment` (3 px); the fade opacity; a token catalog story read off the registry | ✅ | — | — |
 
-**Owed to the kit, found reviewing the adoption (2026-11-13):**
+**Owed to the kit, found reviewing the adoption (2026-11-13) — all four settled the same day:**
 
-- **`DisplayWord` loses its `leading-none`.** Its base sets the leading before the size variant
-  (`text-disp-lg` / `text-logo`), and tailwind-merge drops a leading set before a font size (the
-  rule `Button` already follows), so the word takes the inherited 1.5 line: the page word grows
-  10 px and a column head's rule drops 7.5 px. `OverviewPage` and `ColumnHead` restate
-  `leading-none` until the kit moves it after the size; its stories never measured the line.
-- **`Logo` ignores the system mode.** It reads only a stated `data-mode`, and with none it draws
-  the white mark — but `system` is expressed by *removing* `data-mode` (`lib/theme.ts`), and the
-  token sheet's default is light, so on a light OS the console rail's mark is white on white. It
-  wants the `:root:not([data-mode])` + `prefers-color-scheme` branch `RegionBackdrop` and
-  `SystemStage` use.
+- **`DisplayWord` lost its `leading-none`** (tailwind-merge drops a leading set before a font size):
+  each size now carries it after the size class, and the Overview's caller-side restatements are
+  gone. Its stories hold the line height to the font size.
+- **`Logo` ignored the system mode** (white on white on a light OS): the nearest `data-mode` wins,
+  and with none the page's `.dark` — how the app resolves *system* (`lib/theme.ts`: the attribute
+  removed, `.dark` kept in step by the before-paint script and the provider). Precedence rides
+  specificity, not rule order; `EveryTheme` covers explicit light and dark, system on a light and
+  a dark OS, and a scope of each mode inside each.
+- **`Sparkbars` had no *not recorded* day:** a `null` day is an empty slot (never a zero stub), out
+  of the scale, and the set's plate says *Not recorded yet*; the Metrics strips adopted it.
+- **Chart tones' colors** are exported (`chartToneColor`), and the Metrics legends read them.
 
 **The kit review's first batch (§12.7), as integrated in B01-2 (2026-11-13):**
 

@@ -58,10 +58,11 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+// The pulse is the kit's SparkbarSet: its hover, plate and hairline are the set's own.
 const pulseOf = (scope: HTMLElement) =>
-  must(scope.querySelector<HTMLElement>('[data-slot="pulse"]'));
+  must(scope.querySelector<HTMLElement>('[data-slot="sparkbar-set"]'));
 const plateOf = (scope: HTMLElement) =>
-  scope.querySelector<HTMLElement>('[data-slot="pulse-plate"]');
+  scope.querySelector<HTMLElement>('[data-slot="sparkbar-set-plate"]');
 
 /** Moves a pointer over the pulse at day `i` of `n`, as a mouse would. */
 function pointAtDay(scope: HTMLElement, i: number, n: number) {
@@ -103,16 +104,18 @@ export const Board: Story = {
     // The drawn hover: Saturday 9 January, every strip's value.
     const plate = must(plateOf(canvasElement));
     await expect(plate).toHaveTextContent('Sat 9 Jan');
-    const values = [...plate.querySelectorAll('[data-slot="pulse-plate-value"]')].map(
+    const values = [...plate.querySelectorAll('[data-slot="sparkbar-set-value"]')].map(
       (v) => v.textContent,
     );
     await expect(values).toEqual(['3', '2', '9', '6', '1', '0', '11', '6']);
 
     // One hairline runs through every strip.
     const hair = must(
-      canvasElement.querySelector('[data-slot="pulse-hairline"]'),
+      canvasElement.querySelector('[data-slot="sparkbar-set-hairline"]'),
     ).getBoundingClientRect();
-    const strips = [...canvasElement.querySelectorAll('[data-slot="pulse-bars"]')];
+    await expect(canvasElement.querySelectorAll('[data-slot="pulse-bars"]')).toHaveLength(8);
+    // The set draws its hairline over the strips themselves, to the last one's foot.
+    const strips = [...canvasElement.querySelectorAll('[data-slot="sparkbars"]')];
     await expect(strips).toHaveLength(8);
     await expect(hair.top).toBeLessThanOrEqual(must(strips[0]).getBoundingClientRect().top);
     await expect(hair.bottom).toBeGreaterThanOrEqual(
@@ -137,7 +140,7 @@ export const PulseHover: Story = {
     await waitFor(() => expect(plateOf(canvasElement)).toHaveTextContent('Tue 5 Jan'));
     const right = must(plateOf(canvasElement)).getBoundingClientRect();
     const hair = must(
-      canvasElement.querySelector('[data-slot="pulse-hairline"]'),
+      canvasElement.querySelector('[data-slot="sparkbar-set-hairline"]'),
     ).getBoundingClientRect();
     await expect(right.left).toBeGreaterThanOrEqual(hair.right);
     // The last day: the plate moves to its left and names it.
@@ -145,7 +148,7 @@ export const PulseHover: Story = {
     await waitFor(() => expect(plateOf(canvasElement)).toHaveTextContent('Sat 16 Jan'));
     const moved = must(plateOf(canvasElement)).getBoundingClientRect();
     const hairNow = must(
-      canvasElement.querySelector('[data-slot="pulse-hairline"]'),
+      canvasElement.querySelector('[data-slot="sparkbar-set-hairline"]'),
     ).getBoundingClientRect();
     await expect(moved.right).toBeLessThanOrEqual(hairNow.left);
     // React hears a leave as a pointer going out to something outside.
@@ -205,15 +208,32 @@ export const RecordedToday: Story = {
       canvas.getByText('Signed in', { selector: '[data-slot="stat-label"]' }).parentElement,
     );
     await expect(signed).toHaveTextContent('—Not recorded yet');
-    // A day before the sign-in record reads as a dash on the plate, never 0.
+    // A day before the sign-in record says so on the plate, never 0.
     const plate = must(plateOf(canvasElement));
-    const values = [...plate.querySelectorAll('[data-slot="pulse-plate-value"]')].map(
+    const values = [...plate.querySelectorAll('[data-slot="sparkbar-set-value"]')].map(
       (v) => v.textContent,
     );
-    await expect(values[2]).toBe('—');
-    await expect(values[6]).toBe('—');
+    await expect(values[2]).toBe('Not recorded yet');
+    await expect(values[6]).toBe('Not recorded yet');
+    // On the strip itself, those days are empty slots: no fill, no zero stub.
+    const signedIn = must(
+      canvasElement.querySelector(
+        '[data-slot="pulse-strip"][data-key="signedIn"] [data-slot="sparkbars"]',
+      ),
+    );
+    const slots = [...signedIn.querySelectorAll('[data-slot="sparkbar"]')];
+    await expect(slots.slice(0, RECORD_BEGAN).every((b) => b.hasAttribute('data-unrecorded'))).toBe(
+      true,
+    );
+    await expect(
+      signedIn.querySelectorAll('[data-unrecorded] [data-slot="sparkbar-zero"]'),
+    ).toHaveLength(0);
     // Four per-state columns are unrecorded in each of five rows.
-    await expect(canvasElement.querySelectorAll('[data-unrecorded]')).toHaveLength(20);
+    await expect(
+      [...canvasElement.querySelectorAll('[data-unrecorded]')].filter(
+        (el) => el.closest('[data-slot="sparkbar-set"]') === null,
+      ),
+    ).toHaveLength(20);
     // The support chart marks where its record begins.
     await waitFor(() => expect(canvas.getAllByText('Record begins').length).toBeGreaterThan(0));
     await expect(RECORD_BEGAN).toBe(8);

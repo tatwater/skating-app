@@ -600,7 +600,14 @@ function StageBar({ stages, fill = false, className, ...props }: StageBarProps) 
 
 // ── Sparkbars ────────────────────────────────────────────────────────────────────────────────
 
-type Sparkbar = number | { value: number; bad?: number };
+/**
+ * One day's bar: a count, a count with its safety part, or `null` — a day nothing recorded, drawn as
+ * an empty slot (never a zero stub, which is a measured zero) and left out of the scale.
+ */
+type Sparkbar = number | { value: number; bad?: number } | null;
+
+/** What a strip or a plate says for a day nothing recorded. */
+const NOT_RECORDED = 'Not recorded yet';
 
 /** A bar's resting ink: the faint ink (`.trend`, `.spark`) or the muted one (Metrics' pulse). */
 type SparkbarTone = 'faint' | 'muted';
@@ -608,7 +615,10 @@ type SparkbarTone = 'faint' | 'muted';
 const SPARK_INK: Record<SparkbarTone, string> = { faint: 'bg-fg3', muted: 'bg-fg2' };
 
 type SparkbarsProps = Omit<ComponentProps<'div'>, 'children'> & {
-  /** One count a day, oldest first; `bad` is the part of it in the safety lane (red, at the foot). */
+  /**
+   * One count a day, oldest first; `bad` is the part of it in the safety lane (red, at the foot);
+   * `null` a day nothing recorded — an empty slot, out of the scale.
+   */
   values: readonly Sparkbar[];
   /** The top of the scale; otherwise the largest value. */
   max?: number;
@@ -635,8 +645,11 @@ function Sparkbars({
   ...props
 }: SparkbarsProps) {
   const active = useContext(SparkbarSetContext);
-  const bars = values.map((v) => (typeof v === 'number' ? { value: v, bad: 0 } : { bad: 0, ...v }));
-  const top = Math.max(max ?? 0, ...bars.map((b) => b.value), rule ?? 0, 1);
+  const bars = values.map((v) =>
+    v === null ? null : typeof v === 'number' ? { value: v, bad: 0 } : { bad: 0, ...v },
+  );
+  const recorded = bars.filter((b): b is { value: number; bad: number } => b !== null);
+  const top = Math.max(max ?? 0, ...recorded.map((b) => b.value), rule ?? 0, 1);
   const pct = (v: number) => `${(100 * v) / top}%`;
   return (
     <div
@@ -646,8 +659,22 @@ function Sparkbars({
       {...props}
     >
       {bars.map((b, i) => {
-        const latest = lightLatest && i === bars.length - 1;
         const hovered = active === i;
+        // A day nothing recorded keeps its place on the axis, and draws nothing.
+        if (b === null) {
+          return (
+            <span
+              // biome-ignore lint/suspicious/noArrayIndexKey: days are positional
+              key={i}
+              aria-hidden="true"
+              data-slot="sparkbar"
+              data-unrecorded=""
+              data-hovered={hovered ? '' : undefined}
+              className="flex h-full min-w-0 flex-1"
+            />
+          );
+        }
+        const latest = lightLatest && i === bars.length - 1;
         return (
           <span
             // biome-ignore lint/suspicious/noArrayIndexKey: days are positional
@@ -723,7 +750,7 @@ type SetGeometry = { x: number; top: number; bottom: number; width: number };
 type SparkbarSetRow = {
   /** The strip's name ("Reports"). */
   label: ReactNode;
-  /** Its value that day, as the plate shows it ("12", "—"). */
+  /** Its value that day, as the plate shows it ("12"); `null` for a day nothing recorded. */
   value: ReactNode;
 };
 
@@ -901,12 +928,23 @@ function SparkbarSet({
                 <span className="text-assist leading-none whitespace-nowrap text-fg2">
                   {row.label}
                 </span>
-                <b
-                  data-slot="sparkbar-set-value"
-                  className="text-right font-(family-name:--family-mono) text-mono-sm leading-none font-medium tracking-value text-fg tabular-nums"
-                >
-                  {row.value}
-                </b>
+                {row.value === null ? (
+                  // A day nothing recorded says so, in words, never as a zero.
+                  <span
+                    data-slot="sparkbar-set-value"
+                    data-unrecorded=""
+                    className="text-right text-assist leading-none whitespace-nowrap text-fg3"
+                  >
+                    {NOT_RECORDED}
+                  </span>
+                ) : (
+                  <b
+                    data-slot="sparkbar-set-value"
+                    className="text-right font-(family-name:--family-mono) text-mono-sm leading-none font-medium tracking-value text-fg tabular-nums"
+                  >
+                    {row.value}
+                  </b>
+                )}
               </span>
             ))}
           </div>
