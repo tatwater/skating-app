@@ -118,6 +118,9 @@
   --size-sheet: 62.5rem;
   --gap-gutter: 1.75rem;
   --gap-heading: 0.75rem;
+  --gap-block: 1.875rem;
+  --gap-unit: 0.4375rem;
+  --gap-segment: 0.1875rem;
   --gap-bar-x: 1.5rem;
   --gap-bar-gap: 1.75rem;
   --gap-hit-x: 0.75rem;
@@ -185,6 +188,7 @@
   --box-shadow-modal: 0px 24px 72px 0px var(--shade-deep);
   --box-shadow-focus: 0px 0px 0px 3px var(--bg), 0px 0px 0px 4px var(--fg);
   --opacity-dim: 0.28;
+  --opacity-fade: 0.38;
   --opacity-disabled: 0.4;
   --opacity-muted: 0.5;
   --z-raised: 1;
@@ -329,6 +333,9 @@
   --size-sheet: 62.5rem;
   --gap-gutter: 1.25rem;
   --gap-heading: 0.75rem;
+  --gap-block: 1.875rem;
+  --gap-unit: 0.4375rem;
+  --gap-segment: 0.1875rem;
   --gap-bar-x: 1.375rem;
   --gap-bar-gap: 0.875rem;
   --gap-hit-x: 0.5rem;
@@ -782,6 +789,9 @@
   --size-sheet: 62.5rem;
   --gap-gutter: 1.25rem;
   --gap-heading: 0.75rem;
+  --gap-block: 1.875rem;
+  --gap-unit: 0.4375rem;
+  --gap-segment: 0.1875rem;
   --gap-bar-x: 1.375rem;
   --gap-bar-gap: 0.875rem;
   --gap-hit-x: 0.5rem;
@@ -908,6 +918,9 @@
   --size-sheet: 62.5rem;
   --gap-gutter: 1.25rem;
   --gap-heading: 0.75rem;
+  --gap-block: 1.875rem;
+  --gap-unit: 0.4375rem;
+  --gap-segment: 0.1875rem;
   --gap-bar-x: 1.375rem;
   --gap-bar-gap: 0.875rem;
   --gap-hit-x: 0.5rem;
@@ -1034,6 +1047,9 @@
   --size-sheet: 62.5rem;
   --gap-gutter: 1.75rem;
   --gap-heading: 0.75rem;
+  --gap-block: 1.875rem;
+  --gap-unit: 0.4375rem;
+  --gap-segment: 0.1875rem;
   --gap-bar-x: 1.5rem;
   --gap-bar-gap: 1.75rem;
   --gap-hit-x: 0.75rem;
@@ -1160,6 +1176,9 @@
   --size-sheet: 62.5rem;
   --gap-gutter: 1.75rem;
   --gap-heading: 0.75rem;
+  --gap-block: 1.875rem;
+  --gap-unit: 0.4375rem;
+  --gap-segment: 0.1875rem;
   --gap-bar-x: 1.5rem;
   --gap-bar-gap: 1.75rem;
   --gap-hit-x: 0.75rem;

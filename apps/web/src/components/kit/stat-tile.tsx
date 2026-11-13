@@ -68,8 +68,8 @@ function Value({ value, unit, tone = 'default', className, ...props }: ValueProp
           <span className="sr-only"> </span>
           <span
             data-slot="value-unit"
-            // 7 px at the 16 px base (0.4375rem): the mocks' value–unit gap, in rem (D233).
-            className="ms-[0.4375rem] text-row font-light tracking-normal text-fg3"
+            // The value–unit gap (`gap-unit`, 7 px): ink to ink, no space character.
+            className="ms-unit text-row font-light tracking-normal text-fg3"
           >
             {unit}
           </span>

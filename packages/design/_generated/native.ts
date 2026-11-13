@@ -130,6 +130,9 @@ export const nativeThemes = {
       gap: {
         gutter: 20,
         heading: 12,
+        block: 30,
+        unit: 7,
+        segment: 3,
         'bar-x': 22,
         'bar-gap': 14,
         'hit-x': 8,
@@ -275,6 +278,9 @@ export const nativeThemes = {
       gap: {
         gutter: 20,
         heading: 12,
+        block: 30,
+        unit: 7,
+        segment: 3,
         'bar-x': 22,
         'bar-gap': 14,
         'hit-x': 8,
@@ -422,6 +428,9 @@ export const nativeThemes = {
       gap: {
         gutter: 28,
         heading: 12,
+        block: 30,
+        unit: 7,
+        segment: 3,
         'bar-x': 24,
         'bar-gap': 28,
         'hit-x': 12,
@@ -567,6 +576,9 @@ export const nativeThemes = {
       gap: {
         gutter: 28,
         heading: 12,
+        block: 30,
+        unit: 7,
+        segment: 3,
         'bar-x': 24,
         'bar-gap': 28,
         'hit-x': 12,
@@ -661,6 +673,7 @@ export const nativeTokens = {
   },
   opacity: {
     dim: 0.28,
+    fade: 0.38,
     disabled: 0.4,
     muted: 0.5,
   },

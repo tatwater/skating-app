@@ -506,7 +506,7 @@ function LedStrip({ value, max, tone = 'lit', full = false, className, ...props 
       max={max}
       value={lit}
       className={cn(
-        full ? 'grid w-full gap-[0.1875rem]' : 'inline-flex items-end gap-(--space-0_5)',
+        full ? 'grid w-full gap-segment' : 'inline-flex items-end gap-(--space-0_5)',
         className,
       )}
       style={full ? { gridTemplateColumns: `repeat(${max}, minmax(0, 1fr))` } : undefined}
@@ -642,7 +642,7 @@ function Sparkbars({
     <div
       role="img"
       data-slot="sparkbars"
-      className={cn('relative flex h-(--space-8) items-end gap-[0.1875rem]', className)}
+      className={cn('relative flex h-(--space-8) items-end gap-segment', className)}
       {...props}
     >
       {bars.map((b, i) => {

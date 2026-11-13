@@ -153,7 +153,17 @@ export const space = assertUnitClass('space', {
 export const nudge = assertUnitClass('nudge', { px: px(1) });
 
 /** Semantic gap keys — the spacing that differs by surface. */
-export const GAP_KEYS = ['gutter', 'heading', 'bar-x', 'bar-gap', 'hit-x', 'hit-y'] as const;
+export const GAP_KEYS = [
+  'gutter',
+  'heading',
+  'block',
+  'unit',
+  'segment',
+  'bar-x',
+  'bar-gap',
+  'hit-x',
+  'hit-y',
+] as const;
 export type GapKey = (typeof GAP_KEYS)[number];
 
 /**
@@ -161,6 +171,11 @@ export type GapKey = (typeof GAP_KEYS)[number];
  *
  * - `gutter` — a pane's inset: admin 20 (`spacing.5`), skater 28 (`.pnh`, `.nws`).
  * - `heading` — a heading over its content: 12 on both (the app-wide rule; skater `.sec`).
+ * - `block` — one inspector block to the next: 30 (the Body console's `.blk`, every tab; Review 13:
+ *   a block ends on its spacing, never a rule). Skater has no inspector and keeps admin's value.
+ * - `unit` — a value to its unit, ink to ink: 7 on both (Review 8: `.v .u`, no space character).
+ * - `segment` — between the bars or cells of one run (sparkbars, LED segments, the completeness
+ *   strip): 3 on both.
  * - `bar-x` / `bar-gap` — the top bar's side padding and group gap: admin 22 / 14, skater 24 / 28.
  * - `hit-x` / `hit-y` — the padding an interactive row or cell carries, which the kit bleeds back
  *   out with a negative margin so the *content* lands on the gap (D234's token pair): admin 8 / 6
@@ -170,6 +185,9 @@ export const gap = {
   admin: assertUnitClass('space', {
     gutter: rem(20),
     heading: rem(12),
+    block: rem(30),
+    unit: rem(7),
+    segment: rem(3),
     'bar-x': rem(22),
     'bar-gap': rem(14),
     'hit-x': rem(8),
@@ -178,6 +196,9 @@ export const gap = {
   skater: assertUnitClass('space', {
     gutter: rem(28),
     heading: rem(12),
+    block: rem(30),
+    unit: rem(7),
+    segment: rem(3),
     'bar-x': rem(24),
     'bar-gap': rem(28),
     'hit-x': rem(12),
@@ -326,9 +347,13 @@ export const border = assertUnitClass('border', {
   tick: px(6),
 });
 
-/** Opacity steps. */
+/**
+ * Opacity steps. `dim` is go-mode's step back; `fade` is every other mark while one is hovered
+ * (Review 13 — a selected mark never steps back for a hover).
+ */
 export const opacity = {
   dim: 0.28,
+  fade: 0.38,
   disabled: 0.4,
   muted: 0.5,
 } as const;
