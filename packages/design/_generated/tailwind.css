@@ -118,7 +118,7 @@
   --spacing-sheet: var(--size-sheet);
   --spacing-gutter: var(--gap-gutter);
   --spacing-heading: var(--gap-heading);
-  --spacing-block: var(--gap-block);
+  --spacing-section: var(--gap-section);
   --spacing-unit: var(--gap-unit);
   --spacing-segment: var(--gap-segment);
   --spacing-bar-x: var(--gap-bar-x);

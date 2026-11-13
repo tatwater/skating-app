@@ -118,7 +118,7 @@
   --size-sheet: 62.5rem;
   --gap-gutter: 1.75rem;
   --gap-heading: 0.75rem;
-  --gap-block: 1.875rem;
+  --gap-section: 1.875rem;
   --gap-unit: 0.4375rem;
   --gap-segment: 0.1875rem;
   --gap-bar-x: 1.5rem;
@@ -333,7 +333,7 @@
   --size-sheet: 62.5rem;
   --gap-gutter: 1.25rem;
   --gap-heading: 0.75rem;
-  --gap-block: 1.875rem;
+  --gap-section: 1.875rem;
   --gap-unit: 0.4375rem;
   --gap-segment: 0.1875rem;
   --gap-bar-x: 1.375rem;
@@ -789,7 +789,7 @@
   --size-sheet: 62.5rem;
   --gap-gutter: 1.25rem;
   --gap-heading: 0.75rem;
-  --gap-block: 1.875rem;
+  --gap-section: 1.875rem;
   --gap-unit: 0.4375rem;
   --gap-segment: 0.1875rem;
   --gap-bar-x: 1.375rem;
@@ -918,7 +918,7 @@
   --size-sheet: 62.5rem;
   --gap-gutter: 1.25rem;
   --gap-heading: 0.75rem;
-  --gap-block: 1.875rem;
+  --gap-section: 1.875rem;
   --gap-unit: 0.4375rem;
   --gap-segment: 0.1875rem;
   --gap-bar-x: 1.375rem;
@@ -1047,7 +1047,7 @@
   --size-sheet: 62.5rem;
   --gap-gutter: 1.75rem;
   --gap-heading: 0.75rem;
-  --gap-block: 1.875rem;
+  --gap-section: 1.875rem;
   --gap-unit: 0.4375rem;
   --gap-segment: 0.1875rem;
   --gap-bar-x: 1.5rem;
@@ -1176,7 +1176,7 @@
   --size-sheet: 62.5rem;
   --gap-gutter: 1.75rem;
   --gap-heading: 0.75rem;
-  --gap-block: 1.875rem;
+  --gap-section: 1.875rem;
   --gap-unit: 0.4375rem;
   --gap-segment: 0.1875rem;
   --gap-bar-x: 1.5rem;

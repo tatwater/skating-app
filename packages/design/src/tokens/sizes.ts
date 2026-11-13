@@ -156,7 +156,7 @@ export const nudge = assertUnitClass('nudge', { px: px(1) });
 export const GAP_KEYS = [
   'gutter',
   'heading',
-  'block',
+  'section',
   'unit',
   'segment',
   'bar-x',
@@ -171,8 +171,10 @@ export type GapKey = (typeof GAP_KEYS)[number];
  *
  * - `gutter` — a pane's inset: admin 20 (`spacing.5`), skater 28 (`.pnh`, `.nws`).
  * - `heading` — a heading over its content: 12 on both (the app-wide rule; skater `.sec`).
- * - `block` — one inspector block to the next: 30 (the Body console's `.blk`, every tab; Review 13:
- *   a block ends on its spacing, never a rule). Skater has no inspector and keeps admin's value.
+ * - `section` — one inspector block to the next: 30 (the Body console's `.blk`, every tab; Review
+ *   13: a block ends on its spacing, never a rule). Skater has no inspector and keeps admin's value.
+ *   (Not `block`: a spacing name becomes a Tailwind value, and `inline-block` would turn into an
+ *   inline size.)
  * - `unit` — a value to its unit, ink to ink: 7 on both (Review 8: `.v .u`, no space character).
  * - `segment` — between the bars or cells of one run (sparkbars, LED segments, the completeness
  *   strip): 3 on both.
@@ -185,7 +187,7 @@ export const gap = {
   admin: assertUnitClass('space', {
     gutter: rem(20),
     heading: rem(12),
-    block: rem(30),
+    section: rem(30),
     unit: rem(7),
     segment: rem(3),
     'bar-x': rem(22),
@@ -196,7 +198,7 @@ export const gap = {
   skater: assertUnitClass('space', {
     gutter: rem(28),
     heading: rem(12),
-    block: rem(30),
+    section: rem(30),
     unit: rem(7),
     segment: rem(3),
     'bar-x': rem(24),

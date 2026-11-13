@@ -130,7 +130,7 @@ export const nativeThemes = {
       gap: {
         gutter: 20,
         heading: 12,
-        block: 30,
+        section: 30,
         unit: 7,
         segment: 3,
         'bar-x': 22,
@@ -278,7 +278,7 @@ export const nativeThemes = {
       gap: {
         gutter: 20,
         heading: 12,
-        block: 30,
+        section: 30,
         unit: 7,
         segment: 3,
         'bar-x': 22,
@@ -428,7 +428,7 @@ export const nativeThemes = {
       gap: {
         gutter: 28,
         heading: 12,
-        block: 30,
+        section: 30,
         unit: 7,
         segment: 3,
         'bar-x': 24,
@@ -576,7 +576,7 @@ export const nativeThemes = {
       gap: {
         gutter: 28,
         heading: 12,
-        block: 30,
+        section: 30,
         unit: 7,
         segment: 3,
         'bar-x': 24,
