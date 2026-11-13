@@ -24,6 +24,13 @@ describe('the console tree', () => {
     expect(usesOldShell('/admin/water-bodies')).toBe(false);
     expect(usesOldShell('/admin')).toBe(false);
   });
+
+  it('keeps the old dashboard in the old shell at its new home, and the Overview out of it', () => {
+    expect(usesOldShell('/admin/dashboard')).toBe(true);
+    expect(usesOldShell('/admin/dashboards')).toBe(false);
+    expect(usesOldShell('/admin/')).toBe(false);
+    expect(LEGACY_PAGES[0]).toMatchObject({ label: 'Dashboard', to: '/admin/dashboard' });
+  });
 });
 
 describe('the Legacy menu and the old shell agree', () => {

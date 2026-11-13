@@ -84,6 +84,7 @@ const PATHS = [
   '/admin/body/abc',
   '/admin/people/abc',
   '/admin/flagsx',
+  '/admin/dashboards',
   '/admin/water-bodies',
   '/',
   '/latest',
@@ -97,6 +98,15 @@ describe('one predicate decides the shell, the surface and the old-shell wrap', 
     const list = THEME_INIT_SCRIPT.match(/var oldTrees = \[([^\]]*)\]/)?.[1];
     const trees = [...(list ?? '').matchAll(/'([^']+)'/g)].map((m) => m[1]);
     expect(trees).toEqual([...OLD_SHELL_TREES]);
+  });
+
+  // The old dashboard moved off `/admin` when the Overview took it: named here, not only through
+  // the list, so dropping it from both copies at once still fails.
+  it('draws the old dashboard in the old shell and the Overview in the console', () => {
+    expect(usesOldShell('/admin/dashboard')).toBe(true);
+    expect(initAt('/admin/dashboard', 'light').hasAttribute('data-surface')).toBe(false);
+    expect(usesOldShell('/admin')).toBe(false);
+    expect(initAt('/admin', 'light').getAttribute('data-surface')).toBe('admin');
   });
 
   it.each(PATHS)('%s', (path) => {

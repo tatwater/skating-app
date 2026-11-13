@@ -146,9 +146,19 @@ describe('the rail', () => {
     render(<ConsoleLayout />);
     await userEvent.click(within(rail()).getByRole('button', { name: /Legacy/ }));
     const menu = await screen.findByRole('menu');
-    expect(within(menu).getAllByRole('menuitem')).toHaveLength(14);
+    expect(within(menu).getAllByRole('menuitem')).toHaveLength(15);
     await userEvent.click(within(menu).getByRole('menuitem', { name: 'Imports' }));
     expect(mocks.navigate).toHaveBeenCalledWith({ to: '/admin/imports' });
+  });
+
+  it('lists the old dashboard first, at its new home', async () => {
+    render(<ConsoleLayout />);
+    await userEvent.click(within(rail()).getByRole('button', { name: /Legacy/ }));
+    const menu = await screen.findByRole('menu');
+    const first = within(menu).getAllByRole('menuitem')[0];
+    expect(first).toHaveTextContent('Dashboard');
+    await userEvent.click(within(menu).getByRole('menuitem', { name: 'Dashboard' }));
+    expect(mocks.navigate).toHaveBeenCalledWith({ to: '/admin/dashboard' });
   });
 
   it('opens the app in a new tab and names the viewer at the foot', () => {

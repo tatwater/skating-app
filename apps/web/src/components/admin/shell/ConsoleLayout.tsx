@@ -2,11 +2,11 @@ import { api } from '@skating/convex/api';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { StatusLamp } from '@/components/kit/status-bar';
 import { Toaster } from '@/components/kit/toast';
 import { useConnection } from '@/lib/useConnection';
 import { useRole } from '@/lib/useRole';
 import { Splash } from '../../Splash';
+import { liveStateOf, OverviewLamp } from '../overview/overviewStatus';
 import { ConsolePalette } from './ConsolePalette';
 import { ConsoleShell, type RailMode } from './ConsoleShell';
 import { CONSOLE_MODES, LEGACY_PAGES, modeAt } from './consoleNav';
@@ -98,12 +98,13 @@ export function ConsoleLayout() {
   );
 }
 
-/** The status bar's lamp: the connection to the server, as the offline screens read it. */
+/**
+ * The status bar's lamp: the connection to the server, in the live mark's words (*Convex live*,
+ * *Convex checking*, *Convex not live*), so the bar and the audit feed's mark never disagree.
+ */
 function ConnectionLamp() {
   const { status } = useConnection();
-  if (status === 'online') return <StatusLamp state="live">Convex live</StatusLamp>;
-  if (status === 'connecting') return <StatusLamp state="idle">Connecting</StatusLamp>;
-  return <StatusLamp state="bad">Offline</StatusLamp>;
+  return <OverviewLamp state={liveStateOf(status)} />;
 }
 
 /**

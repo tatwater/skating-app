@@ -20,6 +20,7 @@ import type { GoLetter } from '@/lib/keys';
 
 /** The old admin pages still standing: each the root of a tree that draws in the old shell. */
 export const OLD_SHELL_TREES = [
+  '/admin/dashboard',
   '/admin/flags',
   '/admin/users',
   '/admin/water',
@@ -97,6 +98,10 @@ export type LegacyPage = {
  * {@link OLD_SHELL_TREES}, and every tree has at least one (`consoleNav.test.ts`).
  */
 export const LEGACY_PAGES: readonly LegacyPage[] = [
+  // The old dashboard, moved off `/admin` when the Overview took it: everything it drew (the queue
+  // tiles, app health, the base map's provenance, the recent actions) stays reachable until the
+  // modes that replace it land (Instruments, Machinery).
+  { label: 'Dashboard', to: '/admin/dashboard', capability: 'inbox.read' },
   { label: 'Flags', to: '/admin/flags', capability: 'inbox.read' },
   { label: 'Users', to: '/admin/users', capability: 'people.read' },
   { label: 'Water bodies', to: '/admin/water', capability: 'body.read' },
