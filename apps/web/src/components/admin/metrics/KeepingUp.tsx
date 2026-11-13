@@ -12,11 +12,11 @@ import {
   ChartXAxis,
   ChartYAxis,
 } from '@/components/kit/chart';
+import { ChartLegend, ChartNote, type LegendItem } from '@/components/kit/chart-legend';
 import { Section } from '@/components/kit/section-slug';
 import { StatGrid, StatTile } from '@/components/kit/stat-tile';
 import { cn } from '@/lib/utils';
 
-import { ChartLegend, type LegendItem } from './ChartLegend';
 import {
   ageParts,
   axisTicks,
@@ -35,14 +35,7 @@ import {
   type SupportCategory,
   shortAge,
 } from './metricsModel';
-import {
-  AgeValue,
-  ChartNote,
-  ColumnHead,
-  DayTick,
-  UnrecordedTile,
-  useRecordBegins,
-} from './metricsParts';
+import { AgeValue, ColumnHead, DayTick, UnrecordedTile, useRecordBegins } from './metricsParts';
 
 /**
  * Overview › Metrics, the left column: how staff are keeping up. The top stats are the last seven

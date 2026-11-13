@@ -1,5 +1,6 @@
 import type { ComponentProps } from 'react';
 
+import { StatusDot, type StatusDotTone } from '@/components/kit/status-dot';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/kit/tooltip';
 
 import { CountCard, CountFoot, CountRow, RowLink, SectionNote } from './CountCard';
@@ -24,7 +25,6 @@ import {
   sumCounts,
   type ValueTone,
 } from './overviewModel';
-import { StatusDot, type StatusDotTone } from './StatusDot';
 
 /**
  * Home's four count cards: Inbox by lane, Corpus by task, Machinery by job, People. Each takes its

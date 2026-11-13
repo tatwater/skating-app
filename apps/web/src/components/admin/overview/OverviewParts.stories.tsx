@@ -8,13 +8,13 @@ import {
   resolvePx,
   sameColor,
 } from '@/components/kit/measure';
+import { StatusDot } from '@/components/kit/status-dot';
 import { faceLoaded, must } from '@/components/kit/storyKit';
 
 import { LiveMark } from './LiveMark';
 import { InboxCard, MachineryCard } from './OverviewCards';
 import { OverviewPage } from './OverviewPage';
 import { HOME, LAST_CHECKED_LIVE, LAST_CHECKED_QUIET, MACHINERY, NOW } from './overviewFixtures';
-import { StatusDot } from './StatusDot';
 
 /** The Home blocks one at a time, in all four maps where the piece is surface-neutral. */
 const meta = {

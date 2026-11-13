@@ -2,12 +2,12 @@ import type { ComponentProps } from 'react';
 import { BarChart } from 'recharts';
 
 import { ChartBar, type ChartConfig, ChartContainer, ChartTooltip } from '@/components/kit/chart';
+import { ChartNote } from '@/components/kit/chart-legend';
 import { Meter } from '@/components/kit/meter';
 import { Section } from '@/components/kit/section-slug';
 import { StatTile } from '@/components/kit/stat-tile';
 import { cn } from '@/lib/utils';
 
-import { ChartNote } from '../metrics/metricsParts';
 import { RowLink } from './CountCard';
 import { type CostData, type CostMonth, dollars } from './overviewData';
 import { monthName } from './overviewModel';

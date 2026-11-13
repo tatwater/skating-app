@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
-import { ChartLegend } from './ChartLegend';
+import { ChartLegend } from '@/components/kit/chart-legend';
 import { CoverageByState, ListedBodiesBar } from './CoverageByState';
 import { KeepingUpStats, ResolveHistogram } from './KeepingUp';
 import {

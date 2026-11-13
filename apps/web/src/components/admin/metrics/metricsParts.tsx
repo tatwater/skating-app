@@ -7,7 +7,7 @@ import { type AgePart, type DayKey, dayLabel, NOT_RECORDED } from './metricsMode
 
 /**
  * The small pieces every Metrics section shares: the two column heads, the "This season" tag at a
- * rule's end, a chart's empty note, a compound age value and a season axis' day tick.
+ * rule's end, a compound age value and a season axis' day tick.
  */
 
 /** A column's head ("Keeping up"): display caps over a rule the column's width. */
@@ -36,23 +36,6 @@ export function SpanTag({ children }: { children: ReactNode }) {
     >
       {children}
     </span>
-  );
-}
-
-/**
- * A chart with nothing to draw says so where its marks would be: what lands here, then why it is
- * empty (the calibration board's "Measured pairs land here / None yet this winter"). Centered over
- * the plot, over the chart's own empty frame.
- */
-export function ChartNote({ title, detail }: { title: ReactNode; detail?: ReactNode }) {
-  return (
-    <div
-      data-slot="chart-note"
-      className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-(--space-1) text-center"
-    >
-      <span className="text-assist leading-none text-fg2">{title}</span>
-      {detail != null && <span className="text-mono-sm leading-none text-fg3">{detail}</span>}
-    </div>
   );
 }
 
