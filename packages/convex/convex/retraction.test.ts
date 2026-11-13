@@ -440,6 +440,75 @@ describe('an access alert', () => {
     expect(await skater.as.query(api.accessAlerts.myAlertIdsForBody, { waterBodyId })).toEqual([]);
   });
 
+  test('the own-alerts read names an alert only where the shared read shows it', async () => {
+    const { t, skater, waterBodyId, alertId } = await alertSetup();
+    const lotId = await t.run(async (ctx) => {
+      const id = await ctx.db.insert('parkingAreas', {
+        coord: { lat: 0.5, lng: 0.5 },
+        source: 'osm' as const,
+        status: 'visible' as const,
+        amenities: [],
+        createdAt: Date.now(),
+      });
+      await ctx.db.insert('parkingAreaBodies', {
+        parkingAreaId: id,
+        waterBodyId,
+        inferred: false,
+        createdAt: Date.now(),
+      });
+      return id;
+    });
+    const lotAlert = await skater.as.mutation(api.accessAlerts.create, {
+      targetType: 'parking_area',
+      parkingAreaId: lotId,
+      reason: 'not_plowed',
+    });
+    expect((await get(t, lotAlert))?.waterBodyId).toBe(waterBodyId);
+    // The lot unlinked from the lake its column still names, and the launch moved off it: the
+    // shared read shows neither there, so neither is the author's there.
+    const elsewhere = await t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        name: 'Third Pond',
+        searchText: 'Third Pond',
+        type: 'lakePond' as const,
+        source: 'osm' as const,
+        polygon: {
+          type: 'Polygon' as const,
+          coordinates: [
+            [
+              [4, 4],
+              [4, 5],
+              [5, 5],
+              [5, 4],
+              [4, 4],
+            ],
+          ],
+        },
+        bbox: { minLat: 4, minLng: 4, maxLat: 5, maxLng: 5 },
+        centroid: { lat: 4.5, lng: 4.5 },
+        dedupStatus: 'clean' as const,
+        createdAt: Date.now(),
+      }),
+    );
+    await t.run(async (ctx) => {
+      for (const link of await ctx.db
+        .query('parkingAreaBodies')
+        .withIndex('by_parking_area_water_body', (q) => q.eq('parkingAreaId', lotId))
+        .collect()) {
+        await ctx.db.delete(link._id);
+      }
+      const alert = await ctx.db.get(alertId);
+      if (alert?.putInId === undefined) throw new Error('expected a launch alert');
+      await ctx.db.patch(alert.putInId, { waterBodyId: elsewhere });
+    });
+    for (const body of [waterBodyId, elsewhere]) {
+      expect(await t.query(api.accessAlerts.listForBody, { waterBodyId: body })).toEqual([]);
+      expect(
+        await skater.as.query(api.accessAlerts.myAlertIdsForBody, { waterBodyId: body }),
+      ).toEqual([]);
+    }
+  });
+
   test("a pin stays its author's to open, however many alerts they have filed since", async () => {
     const { t, skater, other, waterBodyId, alertId, pin } = await alertSetup();
     await pin();

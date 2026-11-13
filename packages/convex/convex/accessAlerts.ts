@@ -612,6 +612,25 @@ async function lotServesBody(
 }
 
 /**
+ * Whether this alert annotates this body, as `loadLiveAlertsForBody` shows it — the one rule, so the
+ * viewer's own-alerts read can't name an alert the shared read hides. A lot's alert counts on every
+ * body the lot still serves; a launch's only on the body its column names *and* the launch is still
+ * on (the shared read reaches it through the column alone, so a moved launch's alert is nowhere).
+ */
+async function alertAnnotatesBody(
+  ctx: QueryCtx,
+  alert: Doc<'accessAlerts'>,
+  waterBodyId: Id<'waterBodies'>,
+): Promise<boolean> {
+  if (alert.parkingAreaId !== undefined) {
+    return lotServesBody(ctx, alert.parkingAreaId, waterBodyId);
+  }
+  if (alert.waterBodyId !== waterBodyId) return false;
+  if (alert.putInId === undefined) return true;
+  return (await ctx.db.get(alert.putInId))?.waterBodyId === waterBodyId;
+}
+
+/**
  * Every live alert annotating an access point on this body.
  *
  * Liveness is re-checked here and not left to the sweep, because **the cron's schedule must never be a
@@ -678,15 +697,12 @@ export async function loadLiveAlertsForBody(
   // right one: the read is keyed on the denormalized column, so a moved target's row is unreachable
   // from its new body until something rewrites the column. That asymmetry is the right way round —
   // silence beats a locked gate shown to people going somewhere else.
-  for (const alert of direct) {
-    if (alert.parkingAreaId !== undefined) {
-      if (!(await lotServesBody(ctx, alert.parkingAreaId, waterBodyId))) continue;
-    } else if (alert.putInId !== undefined) {
-      const putIn = await ctx.db.get(alert.putInId);
-      if (putIn?.waterBodyId !== waterBodyId) continue;
-    }
-    byId.set(alert._id, alert);
-  }
+  const directHere = await Promise.all(
+    direct.map((alert) => alertAnnotatesBody(ctx, alert, waterBodyId)),
+  );
+  direct.forEach((alert, i) => {
+    if (directHere[i]) byId.set(alert._id, alert);
+  });
 
   // Issued together rather than in sequence: they are independent indexed ranges that return nothing
   // for the overwhelming majority of lots, so the cost is round trips rather than documents.
@@ -725,11 +741,12 @@ export const MY_ALERTS_SCAN = 500;
  * `listForBody` on purpose: those are the lake page's shared reads, and reading the signed-in person
  * there would cache a copy per viewer and re-run them per viewer on every alert change.
  *
- * Read by `(author, status)`, each live status capped on its own, so **the cap bounds their live
- * alerts, not their history**: alert rows are never deleted, and the sheet's condition chips file
- * them too, so a cap over every row they ever filed would push a pin (which never expires) out
- * behind the settled rows filed since. An alert on a lot counts on every body the lot serves, as the
- * shared read shows it. Signed out, or none of their own: `[]`.
+ * Read by `(author, status)`, each live status capped on its own and `active` bounded by its clock
+ * as the per-lake reads are, so **the cap bounds their live alerts, not their history**: alert rows
+ * are never deleted, and the sheet's condition chips file them too, so a cap over every row they ever
+ * filed would push a pin (which never expires) out behind the settled rows filed since — and a
+ * status-only range would spend it on lapsed rows the sweep has not reached. Which body an alert
+ * annotates is `alertAnnotatesBody`, the shared read's own rule. Signed out, or none of their own: `[]`.
  */
 export const myAlertIdsForBody = query({
   args: { waterBodyId: v.id('waterBodies') },
@@ -741,21 +758,17 @@ export const myAlertIdsForBody = query({
       LIVE_STATUSES.map((status) =>
         ctx.db
           .query('accessAlerts')
-          .withIndex('by_author_status', (q) =>
-            q.eq('createdByUserId', viewer._id).eq('status', status),
-          )
+          .withIndex('by_author_status_expires_at', (q) => {
+            const scoped = q.eq('createdByUserId', viewer._id).eq('status', status);
+            return status === 'active' ? scoped.gt('expiresAt', now) : scoped;
+          })
           .order('desc')
           .take(MY_ALERTS_SCAN),
       ),
     );
     const live = pages.flat().filter((alert) => accessAlertIsLive(alert, now));
     const here = await Promise.all(
-      live.map(
-        async (alert) =>
-          alert.waterBodyId === waterBodyId ||
-          (alert.parkingAreaId !== undefined &&
-            (await lotServesBody(ctx, alert.parkingAreaId, waterBodyId))),
-      ),
+      live.map((alert) => alertAnnotatesBody(ctx, alert, waterBodyId)),
     );
     return live.filter((_, i) => here[i]).map((alert) => alert._id);
   },

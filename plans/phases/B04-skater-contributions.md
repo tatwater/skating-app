@@ -93,7 +93,7 @@ unless a path says otherwise; "phone" is `apps/mobile/src/components/`.
 | Item | Taking it back on the server, and its gate | Web today | Phone today |
 |---|---|---|---|
 | **Hazard** | `hazardWithdrawal.withdraw`. Author only. Refused when a moderator made it a permanent feature, when it was merged with others' pins (either side of the merge) or counted in a cross-season pattern, or when another skater's current verdict is `still_there` or `healing_unsafe`. Others' `fully_healed` / `never_existed` and the author's own votes don't block; a moderator's hide doesn't either. Sets `moderationStatus: removed` and `authorDeletedAt`, leaves `status` alone, recomputes the lake's map card, writes `author_delete`, starts the erase clock. **No move, no retype, no edit of any kind.** | `panels/HazardPanel.tsx` computes `isOwn` only to hide rating your own; no withdraw. `lake/HazardList.tsx`, `HazardRow.tsx`: no mark for your own. The map: nothing. | `HazardDetail.tsx` computes `isOwn` the same way; nothing else. |
-| **Access alert** | `accessAlerts.retract`: the author while the alert is `active` and no moderator ever pinned it (read from history, an undone pin excluded); a moderator any time. `accessAlerts.vote` with `open` by the author resolves it at once, pinned or not, and releases the pin with a history entry. Which alerts are the viewer's comes from its own query, `accessAlerts.myAlertIdsForBody` (live alerts, bounded by `by_author_status`) — never from `accessForBody` / `listForBody`, which stay viewer-free so the lake page shares one cached copy. | `lake/AccessTab.tsx` + `access/AccessViews.tsx`: votes for everyone; Retract for moderators only; the author's "It's open" on a pinned alert (branch). | `AccessSection.tsx`: votes; the author's "It's open" on a pin (branch); no Retract for anyone. |
+| **Access alert** | `accessAlerts.retract`: the author while the alert is `active` and no moderator ever pinned it (read from history, an undone pin excluded); a moderator any time. `accessAlerts.vote` with `open` by the author resolves it at once, pinned or not, and releases the pin with a history entry. Which alerts are the viewer's comes from its own query, `accessAlerts.myAlertIdsForBody` (live alerts, bounded by `by_author_status_expires_at`) — never from `accessForBody` / `listForBody`, which stay viewer-free so the lake page shares one cached copy. | `lake/AccessTab.tsx` + `access/AccessViews.tsx`: votes for everyone; Retract for moderators only; the author's "It's open" on a pinned alert (branch). | `AccessSection.tsx`: votes; the author's "It's open" on a pin (branch); no Retract for anyone. |
 | **Request to a moderator** (add, activate, restore, contest, take down, name a bay, name a landmark) | `corpusRequests.retract`: the asker while `open`; final; frees a slot under the open-ask cap; erased 30 days on. `approve` / `decline` refuse a retracted one. | `components/RequestLake.tsx` (`RequestButtonsView`, mounted by `lake/LakePage.tsx` in the standing notice): "You asked — … — and it's with the moderators." No Withdraw. An `admit` from `actions/RequestLakePane.tsx` is never shown again. | `RequestLake.tsx`: the same line, no Withdraw. |
 | **Flag** (a report, comment, photo, person, hazard or alert; a lake with no public access) | `contentFlags.retract({ flagId })`: the filer while `open` or `reviewing`; refused for a system-filed flag and for one the system has since counted again for others (`occurrences > 1`). Leaves the queue at once, releases its erasure hold. | `lake/AboutTab.tsx` reads `myAccessFlags` (lake ids) for "already reported"; `panels/FlagDialog.tsx` ends at "Thanks". No Withdraw anywhere; no flag id on the client. | `PublicAccessSection.tsx`, `SafetyControls.tsx`: the same; `MapView.tsx` fades with `myAccessFlags`. |
 | **Report** | `reports.remove` (main; final since D248 Part A). | `panels/ReportPanel.tsx`: Delete + confirm, "It comes off the lake and the feed. A moderator can still read it." | `ReportDetail.tsx`: Delete + `Alert`, no word about time. |
@@ -106,7 +106,7 @@ unless a path says otherwise; "phone" is `apps/mobile/src/components/`.
 | Table | By-author indexes | A query that lists them today |
 |---|---|---|
 | `hazards` | `by_author_and_water_body` (main; ordered by lake, not time), `by_author_deleted` (branch; for the withdrawn list) | none |
-| `accessAlerts` | `by_author` (newest last within the author); `by_author_status` (branch) | `myAlertIdsForBody` (branch: the viewer's live alerts on one lake, ids only) |
+| `accessAlerts` | `by_author` (newest last within the author); `by_author_status_expires_at` (branch) | `myAlertIdsForBody` (branch: the viewer's live alerts on one lake, ids only) |
 | `waterBodyRequests` | `by_requester_created`, `by_requester_status`, `by_requester_body` | `listMineForBody` (one lake, landmark proposals filtered out); `listMine` (every kind, newest 50, no caller) |
 | `contentFlags` | `by_flagger` | `myAccessFlags` (lake ids, `open` only, unbounded) |
 | `reports`, `posts`, `comments` | `by_author` and friends | the public profile's reports |
@@ -305,18 +305,26 @@ One mutation, `hazards.amend({ hazardId, type?, shape? })` (shape = `geometryKin
 ### §3.3 — The list's read
 
 `contributions.mine` — a query, the caller's own rows only, `[]` signed out, no username argument. Every
-group bounded in the index, this season only:
+group bounded in the index, this season only — and **every row a group drops is left out of the range,
+never filtered after the take**, or the cap is spent on rows the list then throws away (the bug the branch
+fixed in `myAlertIdsForBody`):
 
-- **Hazards:** a new index `by_author_first_reported` (`createdByUserId`, `firstReportedAt`), every field
-  required, so the season's lower bound is a range and nothing sorts as `undefined` into it;
-  `.order('desc').take(50)`, withdrawn ones filtered out. The facts for §3.2 per row; the cross-season
+- **Hazards:** a new index `by_author_withdrawn_first_reported` (`createdByUserId`, `authorDeletedAt`,
+  `firstReportedAt`), read `eq('authorDeletedAt', undefined)` — an `eq`, so the optional field's
+  `undefined` bucket is exactly the not-withdrawn rows — with the season's lower bound a range on the
+  required `firstReportedAt`; `.order('desc').take(50)`. The facts for §3.2 per row; the cross-season
   pattern read is per lake (up to `MAX_BODY_CLUSTERS` rows), so it is read once per lake in the page, not
   per pin.
-- **Alerts:** `by_author`, `desc`, `take(50)`, this season.
+- **Alerts:** the live ones as `myAlertIdsForBody` reads them (`by_author_status_expires_at`, each live
+  status capped apart, `active` by its clock); this season's closed ones by `by_author` in the season's
+  `_creationTime` range, `desc`, `take(50)`, capped apart from the live ones. One cap over the season
+  would let a reporter's later condition chips push a pin off the list.
 - **Requests:** `by_requester_created`, `desc`, `take(50)` — `listMine`'s read, with the outcome line and
   the lake's name; `listMine` itself is left for a later cleanup (its comment is wrong, §0.2 item 7).
-- **Flags:** `by_flagger`, `desc`, `take(50)`, `origin: 'user'` only, with what the target was (kind and
-  lake; no excerpt of anyone's words).
+- **Flags:** a new index `by_flagger_origin` (`flaggerId`, `origin`), read `eq('origin', 'user')`,
+  `desc`, `take(50)`, this season — not `by_flagger` filtered after the take: an automatic flag names a
+  real rater as its `flaggerId` (`lib/autoFlag.ts`), so a busy rater's would crowd out what they filed.
+  With what the target was (kind and lake; no excerpt of anyone's words).
 - **Each row carries its actions** from the core rules (`hazardAuthorActions`, `requestRetraction`,
   `flagRetraction`, `alertRetractionByAuthor`, `accessAlertVoteControls`), so web and phone render one
   answer.

@@ -4007,10 +4007,11 @@ export default defineSchema({
     .index('by_status_expires_at', ['status', 'expiresAt'])
     // A departing user's alerts (A03/D62), and the author-side half of the orphan-photo scan.
     .index('by_author', ['createdByUserId'])
-    // One person's *live* alerts (`myAlertIdsForBody`, D248). `status` leads after the author for the
-    // reason the per-lake reads lead with it: rows are never deleted, so a cap over `by_author` bounds
-    // their history, and a pin filed seasons ago falls out behind the settled rows filed since.
-    .index('by_author_status', ['createdByUserId', 'status'])
+    // One person's *live* alerts (`myAlertIdsForBody`, D248), shaped as the per-lake reads are and for
+    // their reasons: rows are never deleted, so a cap over `by_author` bounds their history and a pin
+    // filed seasons ago falls out behind the settled rows filed since; and status alone still holds
+    // lapsed rows the sweep has not reached, so `active` is read `gt('expiresAt', now)`.
+    .index('by_author_status_expires_at', ['createdByUserId', 'status', 'expiresAt'])
     // Offline-flush dedup (A10 §9.1) — `eq()` only, the optional-index rule.
     .index('by_idempotency_key', ['idempotencyKey'])
     // The erasure clock (D248): a `gt(0).lte(now)` range holds only due work.
