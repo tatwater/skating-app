@@ -171,7 +171,10 @@ export async function isHeld(ctx: QueryCtx, type: Erasable, targetId: string): P
         (await hasOpenFlag(ctx, type, targetId))
       );
     case 'accessAlert':
-      return hasOpenFlag(ctx, 'accessAlert', targetId);
+      return (
+        (await hasStandingVerdictOn(ctx, 'accessAlert', targetId)) ||
+        (await hasOpenFlag(ctx, 'accessAlert', targetId))
+      );
     case 'contentFlag':
     case 'waterBodyRequest':
       // Nothing files a verdict or a flag on a flag or a request.

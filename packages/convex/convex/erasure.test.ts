@@ -577,8 +577,8 @@ describe('a report', () => {
 });
 
 describe('what the sweep never erases', () => {
-  test('content not withdrawn, and an access alert (its eraser waits on a call)', async () => {
-    const { t, author, waterBodyId } = await setup();
+  test("content not withdrawn, and an alert a moderator retracted (their decision, not the author's)", async () => {
+    const { t, author, mod, waterBodyId } = await setup();
     const { reportIds } = await seedPost(t, author.id, waterBodyId, 1);
     const putInId = await t.run((ctx) =>
       ctx.db.insert('putIns', {
@@ -600,8 +600,9 @@ describe('what the sweep never erases', () => {
         createdAt: T0,
         season: 2026,
         status: 'retracted' as const,
-        retractedByUserId: author.id,
+        retractedByUserId: mod.id,
         retractedAt: T0,
+        // A stale clock: a moderator's retraction never sets one.
         eraseAt: T0 + WITHDRAWN_ERASE_MS,
         confirmCount: 0,
         denyCount: 0,
@@ -615,6 +616,7 @@ describe('what the sweep never erases', () => {
     expect(await get(t, reportIds[0] as string)).not.toBeNull();
     expect((await get(t, reportIds[0] as string))?.eraseAt).toBeUndefined();
     expect(await get(t, alertId)).not.toBeNull();
+    expect((await get(t, alertId))?.eraseAt).toBeUndefined();
   });
 });
 

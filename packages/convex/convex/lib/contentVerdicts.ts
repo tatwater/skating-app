@@ -31,13 +31,23 @@ import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { holdMoved } from './eraseClock';
 
 export type VerdictTargetType = Doc<'contentVerdicts'>['targetType'];
-type ContentDoc = Doc<'reports'> | Doc<'posts'> | Doc<'comments'> | Doc<'hazards'>;
+type ContentDoc =
+  | Doc<'reports'>
+  | Doc<'posts'>
+  | Doc<'comments'>
+  | Doc<'hazards'>
+  | Doc<'accessAlerts'>;
 
 /** Whose content a moderated item is. */
 export function subjectOf(targetType: VerdictTargetType, target: ContentDoc): Id<'profiles'> {
-  return targetType === 'hazard'
-    ? (target as Doc<'hazards'>).createdByUserId
+  return targetType === 'hazard' || targetType === 'accessAlert'
+    ? (target as Doc<'hazards'> | Doc<'accessAlerts'>).createdByUserId
     : (target as Doc<'reports'> | Doc<'posts'> | Doc<'comments'>).authorId;
+}
+
+/** The verdict a moderator's audit row puts on the record, by its action. */
+export function verdictKindOf(action: string): 'hidden' | 'removed' | 'retracted' {
+  return action === 'hide' ? 'hidden' : action === 'retract_access_alert' ? 'retracted' : 'removed';
 }
 
 /** The standing verdicts on one item — at most a couple; bounded anyway. */
@@ -88,7 +98,7 @@ export interface VerdictEntry {
   targetType: VerdictTargetType;
   targetId: string;
   actionId: Id<'moderationActions'>;
-  kind: 'hidden' | 'removed';
+  kind: 'hidden' | 'removed' | 'retracted';
   at: number;
 }
 
@@ -128,8 +138,12 @@ export async function recordUndoneVerdict(
  */
 export function movesVerdict(row: Doc<'moderationActions'>): boolean {
   if (row.actorId === undefined) return false;
-  if (!['hide', 'remove', 'restore', 'overturn_verdict'].includes(row.action)) return false;
   const meta = (row.metadata ?? {}) as Record<string, unknown>;
+  // An alert's only verdict on the record: a moderator's retraction of one its author had already
+  // retracted, kept as evidence. Their retraction of a live alert is their call on the claim, as
+  // before, and not on the person's record.
+  if (row.action === 'retract_access_alert') return meta.onAuthorWithdrawn === true;
+  if (!['hide', 'remove', 'restore', 'overturn_verdict'].includes(row.action)) return false;
   if (meta.derivedFromReportId !== undefined) return false;
   return meta.cascadedFromPostId === undefined || meta.chosen === true;
 }
@@ -137,7 +151,7 @@ export function movesVerdict(row: Doc<'moderationActions'>): boolean {
 /** One verdict as a replay of the item's history leaves it. */
 export interface ReplayedVerdict {
   actionId: Id<'moderationActions'>;
-  kind: 'hidden' | 'removed';
+  kind: 'hidden' | 'removed' | 'retracted';
   at: number;
   standing: boolean;
   endedAt?: number;
@@ -156,7 +170,8 @@ export function replayVerdicts(rows: Doc<'moderationActions'>[]): ReplayedVerdic
   let previous: Doc<'moderationActions'> | undefined;
   for (const row of rows) {
     if (movesVerdict(row)) {
-      const takedown = row.action === 'hide' || row.action === 'remove';
+      const takedown =
+        row.action === 'hide' || row.action === 'remove' || row.action === 'retract_access_alert';
       const meta = (row.metadata ?? {}) as Record<string, unknown>;
       const forward = row.undoesActionId === undefined && meta.cascadedFromPostId === undefined;
       const mints =
@@ -172,7 +187,7 @@ export function replayVerdicts(rows: Doc<'moderationActions'>[]): ReplayedVerdic
       if (mints) {
         verdicts.push({
           actionId: row._id,
-          kind: row.action === 'hide' ? 'hidden' : 'removed',
+          kind: verdictKindOf(row.action),
           at: row.createdAt,
           standing: true,
         });

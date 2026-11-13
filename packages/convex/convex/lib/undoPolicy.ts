@@ -314,7 +314,10 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
     capability: 'access.alert',
   },
   retract_access_alert: {
-    undo: later('§2 Inbox', 'Return the alert to the status it had before retraction.'),
+    undo: later(
+      '§2 Inbox',
+      'Return the alert to the status it had before retraction. A retraction recorded on an alert its author had already retracted is a verdict, reversed by an overturn instead.',
+    ),
     takesAway: always,
     capability: 'access.alert',
   },

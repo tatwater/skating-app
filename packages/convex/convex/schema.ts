@@ -3386,10 +3386,12 @@ export default defineSchema({
    */
   contentVerdicts: defineTable({
     subjectUserId: v.id('profiles'),
-    targetType: literals(['report', 'post', 'comment', 'hazard'] as const),
+    // `accessAlert`: a moderator's retraction recorded on an alert its author already retracted —
+    // the one alert verdict kept, as evidence of a pattern of bad claims (founder call, 2026-11-13).
+    targetType: literals(['report', 'post', 'comment', 'hazard', 'accessAlert'] as const),
     targetId: v.string(),
     actionId: v.id('moderationActions'),
-    kind: literals(['hidden', 'removed'] as const),
+    kind: literals(['hidden', 'removed', 'retracted'] as const),
     at: v.number(),
     standing: v.boolean(),
     /** When it stopped standing, and the action that ended it (a reversal, or a later verdict). */

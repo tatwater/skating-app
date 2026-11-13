@@ -81,12 +81,11 @@ type Eraser = (
 /**
  * Who erases each kind, in the order a tick runs them: a Post after its members (a Post is held
  * while a member is still stored), a member after the comments under it are sorted out. `null` is a
- * kind whose clock runs but nothing erases yet — the sweep never reads its range.
+ * kind whose clock runs but nothing erases yet — the sweep never reads its range (none today).
  *
- * **Access alerts wait on a founder call.** The alert's own doc keeps a retracted row "as the record
- * that something was claimed and withdrawn, which is what makes a pattern of bad claims visible", and
- * other skaters' votes hang off it; D248 says the author's retraction is erased at 30 days. The two
- * disagree, so the clock is set and the eraser is left to the call.
+ * **An alert its author retracted follows the same 30 days** (founder call, 2026-11-13: "follow the
+ * 30-day pattern"). A moderator who wants one kept as evidence of a pattern of bad claims records a
+ * verdict on it (a retraction on the withdrawn alert), which holds it like any held content.
  */
 const ERASERS: Record<Erasable, Eraser | null> = {
   comment: (ctx, doc, now) => eraseComment(ctx, doc as Doc<'comments'>, now),
@@ -95,7 +94,7 @@ const ERASERS: Record<Erasable, Eraser | null> = {
   post: (ctx, doc) => erasePost(ctx, doc as Doc<'posts'>),
   contentFlag: (ctx, doc) => ctx.db.delete((doc as Doc<'contentFlags'>)._id),
   waterBodyRequest: (ctx, doc) => ctx.db.delete((doc as Doc<'waterBodyRequests'>)._id),
-  accessAlert: null,
+  accessAlert: (ctx, doc) => eraseAlert(ctx, doc as Doc<'accessAlerts'>),
 };
 
 /** The kinds the sweep erases, in order. */
@@ -398,6 +397,23 @@ async function eraseHazard(ctx: MutationCtx, hazard: Doc<'hazards'>, photos: Pho
   }
   await ctx.db.delete(hazard._id);
   photos.push({ uploaderId: hazard.createdByUserId, photoIds: hazard.photoIds });
+}
+
+/**
+ * An access alert its author retracted: the row and the author's own vote on it. Other skaters'
+ * votes stay theirs, pointing at an id that no longer resolves — their only readers are their own
+ * export and the vote mutation, which refuses a missing alert. A flag on it shows as "(deleted)" in
+ * the queue, as for any erased target.
+ */
+async function eraseAlert(ctx: MutationCtx, alert: Doc<'accessAlerts'>) {
+  const own = await ctx.db
+    .query('accessAlertVotes')
+    .withIndex('by_alert_user', (q) =>
+      q.eq('accessAlertId', alert._id).eq('userId', alert.createdByUserId),
+    )
+    .take(10);
+  for (const vote of own) await ctx.db.delete(vote._id);
+  await ctx.db.delete(alert._id);
 }
 
 // ── The clocks' backfill ───────────────────────────────────────────────────────────────────────

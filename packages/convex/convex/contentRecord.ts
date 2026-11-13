@@ -17,7 +17,7 @@ import {
   subjectOf,
   type VerdictTargetType,
 } from './lib/contentVerdicts';
-import { holdMoved } from './lib/eraseClock';
+import { holdMoved, withdrawnAtOf } from './lib/eraseClock';
 
 /** Rows per list on the record — a person's standing verdicts and recent deletions are a handful. */
 const RECORD_LIMIT = 100;
@@ -29,16 +29,31 @@ const BACKFILL_PAGE = 200;
  */
 export const HISTORY_LIMIT = 100;
 
-type ContentDoc = Doc<'reports'> | Doc<'posts'> | Doc<'comments'> | Doc<'hazards'>;
+type ContentDoc =
+  | Doc<'reports'>
+  | Doc<'posts'>
+  | Doc<'comments'>
+  | Doc<'hazards'>
+  | Doc<'accessAlerts'>;
 
 async function loadTarget(
   ctx: QueryCtx,
   targetType: VerdictTargetType,
   targetId: string,
 ): Promise<ContentDoc | null> {
-  // A verdict's targets are exactly what an author can withdraw (`lib/authorDeletion`).
-  const id = ctx.db.normalizeId(WITHDRAWABLE_TABLE[targetType], targetId);
+  // A verdict's targets are what an author can withdraw (`lib/authorDeletion`), and an alert its
+  // author retracted.
+  const id = ctx.db.normalizeId(
+    targetType === 'accessAlert' ? 'accessAlerts' : WITHDRAWABLE_TABLE[targetType],
+    targetId,
+  );
   return id ? ((await ctx.db.get(id)) as ContentDoc | null) : null;
+}
+
+/** When its author took it back, if they did — a deletion, or an alert's own retraction. */
+function withdrawnAt(targetType: VerdictTargetType, doc: ContentDoc): number | null {
+  if (targetType === 'accessAlert') return withdrawnAtOf('accessAlert', doc) ?? null;
+  return authorDeletedAtOf(doc as Exclude<ContentDoc, Doc<'accessAlerts'>>) ?? null;
 }
 
 /** What staff read of an item on the record: the words still kept, and when it was made. */
@@ -59,6 +74,10 @@ function contentOf(targetType: VerdictTargetType, doc: ContentDoc) {
     case 'hazard': {
       const h = doc as Doc<'hazards'>;
       return { at: h.firstReportedAt, title: h.type, text: h.description ?? null };
+    }
+    case 'accessAlert': {
+      const a = doc as Doc<'accessAlerts'>;
+      return { at: a.createdAt, title: a.reason, text: a.note ?? null };
     }
   }
 }
@@ -91,7 +110,7 @@ export const personContentRecord = query({
           reason: action?.reason ?? null,
           byUserId: action?.actorId ?? null,
           content: target ? contentOf(verdict.targetType, target) : null,
-          authorDeletedAt: (target && authorDeletedAtOf(target)) ?? null,
+          authorDeletedAt: target ? withdrawnAt(verdict.targetType, target) : null,
         };
       }),
     );
@@ -111,7 +130,7 @@ export const personContentRecord = query({
       deleted.push({
         targetType,
         targetId: row._id,
-        deletedAt: authorDeletedAtOf(row) as number,
+        deletedAt: withdrawnAt(targetType, row) as number,
         eraseAt: row.eraseAt ?? null,
         content: contentOf(targetType, row),
       });
@@ -142,6 +161,16 @@ export const personContentRecord = query({
       .order('desc')
       .take(RECORD_LIMIT))
       push('hazard', row);
+    // Alerts they retracted themselves (a moderator's retraction is not theirs to list).
+    for (const row of await ctx.db
+      .query('accessAlerts')
+      .withIndex('by_author_status_expires_at', (q) =>
+        q.eq('createdByUserId', userId).eq('status', 'retracted'),
+      )
+      .order('desc')
+      .take(RECORD_LIMIT)) {
+      if (withdrawnAtOf('accessAlert', row) !== undefined) push('accessAlert', row);
+    }
     deleted.sort((a, b) => b.deletedAt - a.deletedAt);
     return { verdicts, deleted: deleted.slice(0, RECORD_LIMIT) };
   },
@@ -149,7 +178,13 @@ export const personContentRecord = query({
 
 // ── The backfill (run once on each deployment after this ships) ──────────────────────────────────
 
-const CONTENT_TYPES: ReadonlySet<string> = new Set(['report', 'post', 'comment', 'hazard']);
+const CONTENT_TYPES: ReadonlySet<string> = new Set([
+  'report',
+  'post',
+  'comment',
+  'hazard',
+  'accessAlert',
+]);
 
 /** An item's audit rows, newest first, bounded — one more than the limit, to know it was reached. */
 function historyOf(ctx: QueryCtx, targetType: VerdictTargetType, targetId: string) {

@@ -35,7 +35,7 @@ import {
 } from './lib/contentVerdicts';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import { MODERATION_ACTIONS, MODERATION_STATUSES, MODERATION_TARGET_TYPES } from './lib/enums';
-import { refreshEraseClock } from './lib/eraseClock';
+import { refreshEraseClock, withdrawnAtOf } from './lib/eraseClock';
 import { closeFlag } from './lib/flagResolution';
 import { withoutLedgerGrantsFor } from './lib/ledgerEditors';
 import { refreshPostLatestSkateEnd, refreshPostSearchText } from './lib/postSync';
@@ -795,21 +795,30 @@ export const ERASED_ALREADY = 'This was erased, so there is nothing left to act 
  */
 export const overturnVerdict = mutation({
   args: {
-    // Only what an author can withdraw.
-    targetType: literals(['report', 'post', 'comment', 'hazard']),
+    // Only what an author can withdraw — and an alert its author retracted.
+    targetType: literals(['report', 'post', 'comment', 'hazard', 'accessAlert']),
     targetId: v.string(),
     reason: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await requireCapability(ctx, 'content.moderate');
+    // An alert's verdict is the alert lever's, as its retraction and pin are.
+    const actor = await requireCapability(
+      ctx,
+      args.targetType === 'accessAlert' ? 'access.alert' : 'content.moderate',
+    );
     const reason = args.reason.trim();
     if (reason.length === 0) throw new ConvexError('A reason is required');
-    const targetId = ctx.db.normalizeId(MODERATION_TABLE[args.targetType], args.targetId);
+    const targetId = ctx.db.normalizeId(
+      args.targetType === 'accessAlert' ? 'accessAlerts' : MODERATION_TABLE[args.targetType],
+      args.targetId,
+    );
     const target = targetId ? await ctx.db.get(targetId) : null;
     if (!target) throw new ConvexError('Target not found');
     const withdrawn =
-      authorDeletedAtOf(target) !== undefined ||
-      (args.targetType === 'post' && (await everyMemberWithdrawn(ctx, target as Doc<'posts'>)));
+      args.targetType === 'accessAlert'
+        ? withdrawnAtOf('accessAlert', target as Doc<'accessAlerts'>) !== undefined
+        : authorDeletedAtOf(target as Exclude<typeof target, Doc<'accessAlerts'>>) !== undefined ||
+          (args.targetType === 'post' && (await everyMemberWithdrawn(ctx, target as Doc<'posts'>)));
     if (!withdrawn) throw new ConvexError(OVERTURN_NOT_DELETED);
     if ((await standingVerdictsOn(ctx, args.targetType, args.targetId)).length === 0) {
       throw new ConvexError(OVERTURN_NOTHING_STANDING);

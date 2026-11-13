@@ -25,6 +25,14 @@
  * **An alert annotates; it never suppresses.** A blocked launch on a lake with three others must not
  * silence the lake in drive-time notifications, for the same reason a hazard never hides a body. Every
  * read here returns alerts *alongside* access points — nothing in this module filters one out.
+ *
+ * ## How long a withdrawn claim is kept
+ *
+ * **An alert its author retracted is kept 30 days, then erased** (D248; founder call 2026-11-13:
+ * "follow the 30-day pattern"), and longer only while something holds it: an open flag on it, or a
+ * moderator's verdict — a retraction recorded on the withdrawn alert, kept as evidence of a pattern of
+ * bad claims, until a moderator overturns it. A moderator's own retraction of someone else's live
+ * alert is their decision on the claim, not the author's withdrawal: that row stays.
  */
 
 import {
@@ -54,6 +62,7 @@ import {
 import { MAX_ACCESS_ROWS_PER_BODY, MAX_LOT_LINKS_SCANNED } from './lib/accessLimits';
 import { writeAudit } from './lib/audit';
 import { getCurrentProfile, requireCapability, requireContributor } from './lib/auth';
+import { recordVerdict } from './lib/contentVerdicts';
 import {
   ACCESS_ALERT_KINDS,
   ACCESS_ALERT_TARGETS,
@@ -331,9 +340,11 @@ async function everPinned(ctx: QueryCtx, accessAlertId: Id<'accessAlerts'>): Pro
  * able to take it back rather than watch a wrong claim decay over thirty days, and A05b made exactly
  * that argument for hazards.
  *
- * The author may retract their own; a moderator may retract anyone's. Never a delete — the row is the
- * record that something was claimed and withdrawn, which is what makes a pattern of bad claims
- * visible.
+ * The author may retract their own; a moderator may retract anyone's. Never a delete at the time —
+ * the row is the record that something was claimed and withdrawn. **An author's retraction is kept 30
+ * days, then erased** (D248), and longer only while held: an open flag on it, or a moderator's
+ * retraction recorded on the withdrawn alert (below), which keeps it as evidence of a pattern of bad
+ * claims until a moderator overturns it. A moderator's retraction of a live alert is kept.
  *
  * **The author's retraction is a withdrawal until the claim is acted on** (D248): only a live
  * community claim (`active`). A moderator's pin is the claim acted on, so it is refused after one; a
@@ -342,6 +353,8 @@ async function everPinned(ctx: QueryCtx, accessAlertId: Id<'accessAlerts'>): Pro
  * vote resolves the alert, pinned or not. A moderator's own retraction is a moderator's verdict and
  * is unchanged. The author's retraction is final and starts the 30-day erasure clock; a retracted
  * alert reads exactly as before — it leaves every live read, and nothing says the way is clear.
+ * A moderator retracting an alert its author already retracted records a verdict on it instead of
+ * moving it (`contentVerdicts`, kind `retracted`): the row stays as its author left it.
  */
 export const retract = mutation({
   args: { accessAlertId: v.id('accessAlerts'), reason: v.optional(v.string()) },
@@ -355,9 +368,39 @@ export const retract = mutation({
     if (!isAuthor && !isModerator) {
       throw new ConvexError('Only the author or a moderator can retract an alert');
     }
-    // Already retracted: nothing left to retract, by anyone — a moderator's second word must not
-    // turn an author's final withdrawal into a moderator's (and so a pinnable) one.
-    if (alert.status === 'retracted') return;
+    if (alert.status === 'retracted') {
+      // A moderator's word on an alert its author already retracted is a verdict kept as evidence —
+      // a pattern of bad claims — and it holds the alert from erasure until a moderator overturns it
+      // (founder call, 2026-11-13). The row stays exactly as its author left it: a second retraction
+      // must never turn the author's final withdrawal into a moderator's (and so a pinnable) one.
+      const authorWithdrew = alert.retractedByUserId === alert.createdByUserId;
+      if (isModerator && !isAuthor && authorWithdrew) {
+        const now = Date.now();
+        const actionId = await writeAudit(ctx, {
+          actorId: profile._id,
+          action: 'retract_access_alert',
+          targetType: 'accessAlert',
+          targetId: accessAlertId,
+          reason: reason?.trim() || 'Kept an alert its author retracted, as a record',
+          metadata: {
+            waterBodyId: alert.waterBodyId,
+            alertReason: alert.reason,
+            onAuthorWithdrawn: true,
+          },
+          createdAt: now,
+        });
+        await recordVerdict(ctx, {
+          subjectUserId: alert.createdByUserId,
+          targetType: 'accessAlert',
+          targetId: accessAlertId,
+          actionId,
+          kind: 'retracted',
+          at: now,
+        });
+      }
+      // Anything else: nothing left to retract.
+      return;
+    }
     if (!isModerator) {
       // The history is read only where it can change the answer: a live community claim.
       const pinnedOnce = alert.status === 'active' && (await everPinned(ctx, alert._id));

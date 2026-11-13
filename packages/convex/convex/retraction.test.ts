@@ -556,14 +556,113 @@ describe('an access alert', () => {
     expect(await get(t, alertId)).toMatchObject({ status: 'retracted' });
   });
 
-  test("a moderator's second retraction can't turn the author's final one into a moderator's", async () => {
-    const { t, skater, mod, alertId } = await alertSetup();
-    await skater.as.mutation(api.accessAlerts.retract, { accessAlertId: alertId });
-    await mod.as.mutation(api.accessAlerts.retract, { accessAlertId: alertId, reason: 'bogus' });
-    expect(await get(t, alertId)).toMatchObject({
-      retractedByUserId: skater.id,
-      eraseAt: T0 + WITHDRAWN_ERASE_MS,
+  test("a moderator's retraction of an alert its author retracted keeps it as evidence, until overturned", async () => {
+    const { t, skater, other, mod, alertId } = await alertSetup();
+    // Another skater's vote on it, and the author's own.
+    await other.as.mutation(api.accessAlerts.vote, {
+      accessAlertId: alertId,
+      verdict: 'still_blocked',
     });
+    await skater.as.mutation(api.accessAlerts.vote, {
+      accessAlertId: alertId,
+      verdict: 'still_blocked',
+    });
+    await skater.as.mutation(api.accessAlerts.retract, { accessAlertId: alertId });
+    await mod.as.mutation(api.accessAlerts.retract, {
+      accessAlertId: alertId,
+      reason: 'third bogus closure from this account',
+    });
+    // The row is still the author's withdrawal, now held by the verdict, not counting.
+    const alert = await get(t, alertId);
+    expect(alert).toMatchObject({ status: 'retracted', retractedByUserId: skater.id });
+    expect(alert?.eraseAt).toBeUndefined();
+    const record = await mod.as.query(api.contentRecord.personContentRecord, {
+      userId: skater.id,
+    });
+    expect(record.verdicts).toEqual([
+      expect.objectContaining({
+        targetType: 'accessAlert',
+        targetId: alertId,
+        kind: 'retracted',
+        reason: 'third bogus closure from this account',
+        authorDeletedAt: T0,
+      }),
+    ]);
+    expect(record.deleted.map((d) => d.targetId)).toEqual([alertId]);
+    // The backfill rebuilds exactly that verdict from the history.
+    const before = (await t.run((ctx) => ctx.db.query('contentVerdicts').collect())).map(
+      (v) => `${v.actionId} ${v.kind} ${v.standing}`,
+    );
+    await t.run(async (ctx) => {
+      for (const v of await ctx.db.query('contentVerdicts').collect()) await ctx.db.delete(v._id);
+    });
+    await t.mutation(internal.contentRecord.backfillVerdicts, { clocks: false });
+    expect(
+      (await t.run((ctx) => ctx.db.query('contentVerdicts').collect())).map(
+        (v) => `${v.actionId} ${v.kind} ${v.standing}`,
+      ),
+    ).toEqual(before);
+
+    vi.setSystemTime(T0 + 45 * DAY);
+    await t.mutation(internal.erasure.eraseDue, {});
+    expect(await get(t, alertId)).not.toBeNull();
+    await mod.as.mutation(api.moderation.overturnVerdict, {
+      targetType: 'accessAlert',
+      targetId: alertId,
+      reason: 'it was one mistake, not a pattern',
+    });
+    // Its 30 days ran out while held: due from the overturn.
+    expect((await get(t, alertId))?.eraseAt).toBe(T0 + 45 * DAY);
+    await t.mutation(internal.erasure.eraseDue, {});
+    expect(await get(t, alertId)).toBeNull();
+    // The author's own vote went with it; the other skater's stays theirs.
+    const votes = await t.run((ctx) => ctx.db.query('accessAlertVotes').collect());
+    expect(votes.map((v) => v.userId)).toEqual([other.id]);
+    await expect(
+      other.as.mutation(api.accessAlerts.vote, { accessAlertId: alertId, verdict: 'open' }),
+    ).rejects.toThrow(/not found/);
+    // The author's export holds nothing of it.
+    const bundle = await t.query(internal.dataExport.collect, { userId: skater.id });
+    expect(bundle.accessAlerts).toEqual([]);
+    expect(bundle.accessAlertVotes).toEqual([]);
+  });
+
+  test('an alert its author retracted is erased 30 days on; an open flag holds it', async () => {
+    const { t, skater, other, mod, alertId } = await alertSetup();
+    await skater.as.mutation(api.accessAlerts.retract, { accessAlertId: alertId });
+    const flagId = await other.as.mutation(api.contentFlags.flag, {
+      targetType: 'accessAlert',
+      targetId: alertId,
+      reason: 'spam',
+    });
+    vi.setSystemTime(T0 + 31 * DAY);
+    await t.mutation(internal.erasure.eraseDue, {});
+    expect(await get(t, alertId)).not.toBeNull();
+    await mod.as.mutation(api.moderation.resolveFlag, {
+      flagId,
+      resolution: 'dismissed',
+      reason: 'nothing to it',
+    });
+    await t.mutation(internal.erasure.eraseDue, {});
+    expect(await get(t, alertId)).toBeNull();
+    const history = (await t.run((ctx) => ctx.db.query('moderationActions').collect())).filter(
+      (r) => r.targetId === alertId && r.action === 'erase',
+    );
+    expect(history).toHaveLength(1);
+    // The flag that was about it stays in the queue's history, its target shown as gone.
+    expect(await get(t, flagId)).not.toBeNull();
+  });
+
+  test('overturning on an alert needs the alert lever, and an alert its author withdrew', async () => {
+    const { other, mod, alertId } = await alertSetup();
+    const overturn = (as: typeof mod.as) =>
+      as.mutation(api.moderation.overturnVerdict, {
+        targetType: 'accessAlert',
+        targetId: alertId,
+        reason: 'x',
+      });
+    await expect(overturn(other.as)).rejects.toThrow();
+    await expect(overturn(mod.as)).rejects.toThrow(/still has this up/);
   });
 
   test("a moderator's own retraction is unchanged, pinned or not, and starts no clock", async () => {
