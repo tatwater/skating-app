@@ -783,7 +783,7 @@ per workstream unless two are small enough to share one; the roadmap entry flips
   `imageryRuns` and `importRuns` read through one list; stalled runs.
 - **§6 — Season.** The season page, the per-season rollup (D220, the §10 pick), the change log,
   past seasons; A06i's components re-homed; the cost summary from the ledger.
-- **§7 — People.** The person's content record (`contentRecord.personContentRecord`, D248, built
+- **§7 — People.** The person's content record (`contentRecord.personVerdicts` and `personWithdrawals`, D248, built
   server-side in B01-1b): the standing verdicts with the content still kept, labeled when its author
   deleted it afterward, and the recently withdrawn list with each item's erasure date; the controls
   to record a verdict on deleted content and to overturn one (`moderation.overturnVerdict`).
@@ -1408,11 +1408,15 @@ the People page and the skater screens that reach it are owed (the roadmap's reg
   hazard). A takedown on already-deleted content, history only in #108, is now a verdict; undoing
   one points at the overturn. `contentRecord.backfillVerdicts` rebuilds the record from the audit
   log through the same rules (a property test holds the replay to what the live writers keep under
-  any order of deletes, hides, removes, restores, undos and overturns). **The 100-row history bound
-  can miss a case only for an item carrying more than 100 audit rows**: the stamp backfill's "not
-  restored since" read, the comment backfill's last word and the verdict replay all read the newest
-  100. Real items carry a handful, so it is a bound rather than a gap; the verdict replay logs every
-  item that reaches it instead of silently replaying part of one. The stamp backfill also now
+  any order of deletes, hides, removes, restores, undos and overturns). **Every history is read
+  whole** (Greptile #110, round 3: a fixed read of the newest 100 rows, and a fallback that guessed
+  from it, put a reversed hide back on a person's record): the verdict replay, the stamp backfill's
+  "not restored since" and the comment backfill's last word each hand one item at a time to a job
+  that reads its history a charged page per transaction, carrying the replay's two-field state
+  between them, and hands the audit walk back where it left off — so no history is too long, nothing
+  is left unknown, and nothing is guessed. The verdict replay runs twice per item: first it makes what
+  the history leaves standing stand (only ever adding a hold), then it brings every other row to the
+  history, so the item is never less held mid-replay than its history leaves it. The stamp backfill also now
   withdraws a member a moderator hid after its Post was author-deleted; a member a moderator brought
   back *up* is left live, since taking it down would change what skaters see.
 - **The erasure (Part C).** Every withdrawable row carries `eraseAt`, written only by
@@ -1424,31 +1428,34 @@ the People page and the skater screens that reach it are owed (the roadmap's reg
   and the author's own votes go a per-tick write budget at a time, through indexes on each link
   (`accessAlerts.by_report`, `waterBodyRequests.by_report`, `putIns.by_origin_report`), and the item's
   own row goes last, so a pass that runs out leaves it whole and still due for the next; the
-  `erase` row is written only when it is really gone. **Every read of an unbounded number of rows is
-  sized by what a row can weigh** (Greptile, #110), not by the writes it leads to: the sweep's pages,
-  an item's revisions and links, and the clocks backfill's pages are each charged at their table's
-  worst case against half the 16 MiB transaction limit, so no pass can exceed it and every pass
-  erases something. The worst cases come from the real caps — a comment's 2,000 characters, a Post's
-  120 + 20,000, a put-in's 256-vertex approach — and from the 1 MiB document limit where a field has
-  no cap: **a Report's notes and its chips' notes, a flag's note, a photo's caption, a request's
-  catalog polygon, a hazard's or an alert's client-sent `idempotencyKey` and a hazard's footprint
-  clipped to the shoreline are uncapped on the server**, so a Report revision, a hazard and an alert
-  are each sized at 1 MiB (capping those keys at the writers would win hazards and alerts back). A fixed handful of reads per item (its Post and
-  that Post's ≤ 10 Reports, its recording) is bounded by count, as in every write to those rows.
+  `erase` row is written only when it is really gone. **Every read is charged** (Greptile #110, three
+  rounds; `lib/readBudget`): each transaction of the sweep, the photo settlement, the Post jobs and
+  the backfills charges every read it makes — page rows, `get`s, `first()` existence checks, and a
+  second touch of a row it patches or deletes — at its table's worst case against a 12 MiB budget
+  (Convex's 16 MiB less headroom), and a read past the plan throws. The worst cases come from the
+  real caps — a comment's 2,000 characters, a Post's 120 + 20,000 — and from the 1 MiB document limit
+  wherever a field has no cap (**a Report's notes, a flag's note, a photo's caption, a request's
+  polygon, a hazard's or an alert's client-sent `idempotencyKey`, a put-in's name, a moderator's
+  reason**). The sweep takes the head of the due range one item at a time and starts an item only
+  when the budget covers its hold check, its fixed reads and one drained row (`ITEM_NEED`, under a
+  fresh budget for every kind — a test holds it), so every pass erases an item, clears a clock that
+  should not run, or deletes a row. A Report's Post is re-derived after it in a job of its own
+  (`dropErasedMember`: the Post and its ≤ 9 other members, each read once, one write), and a Post's
+  hold reaches its members' clocks a few a transaction (`refreshMemberClocks`) — until either runs,
+  nothing is unsafe, because the sweep re-reads every hold before it erases. The D248 suites run under
+  Convex's real transaction limits (`convexTest({ transactionLimits: true })`) with rows near the
+  document limit, and `packages/guards` holds every read in the erasure and record modules to a charge.
   **A photo is erased only when nothing of its uploader's uses it** — an unknown is never "unused":
-  `erasure.settlePhotos` reads the uploader's Reports and hazards a sized page per transaction until
-  it has the whole answer (the access photos by index), deletes what nothing uses with its blobs,
-  and leaves the rest untouched. A photo whose blob outlives the delete is kept as the orphan sweep's
-  pointer, stripped and marked `erasedAt`, and leaves the uploader's export. The backfills that read
-  an item's history now treat a history longer than they read as unknown: the stamp backfills leave
-  the item unstamped, and the verdict replay leaves its rows as they stand — and, if none stands,
-  holds the item by the newest moderator takedown it can see, so evidence is never left to erase.
-  **What is left:** the fixed per-item reads (a Report's Post and its ≤ 10 members, re-read by the
-  Post's syncs) are bounded by count, not weight; they could pass the limit only if a Post's Reports
-  carried notes near the 1 MiB document limit, which nothing on the server prevents — a cap on
-  Report notes would close it and is a founder call. Two tick's settlements for one uploader can run
-  at once and each read their history (correct, metered); and the orphan sweep that retries an
-  `erasedAt` photo's blob reads the oldest photos first and can starve behind referenced ones.
+  `erasure.settlePhotos` reads the uploader's Reports and hazards a charged page per transaction, and
+  deletes a photo only in a transaction that has itself read to the end of their hazards (resuming
+  after the last one read, so one filed mid-settlement is seen), beside the photo's back-link and
+  access-photo checks, as many as the budget affords; the rest carry on, the list only shrinking. A
+  photo whose blob outlives the delete is kept as the orphan sweep's pointer, stripped and marked
+  `erasedAt`, and leaves the uploader's export. **What is left** is in the read table below: reads
+  outside the erasure and record jobs whose weight is the live write's or the page's own, not this
+  build's to rebound. Two ticks' settlements for one uploader can run at once and each read their
+  history (correct, metered); and the orphan sweep that retries an `erasedAt` photo's blob reads the
+  oldest photos first and can starve behind referenced ones.
   **What was withdrawn before the clock** gets one from the clocks backfill: content through Part A's
   stamps; an alert its author retracted before `retractedAt` existed (no time on the row, none in the
   history) is stamped at the backfill — never in the past — and so is one its author retracts again.
@@ -1514,6 +1521,58 @@ the People page and the skater screens that reach it are owed (the roadmap's reg
 - **No pointer to an erased Report.** A put-in the pre-D62 purge made from a Report's point keeps its
   place and coordinate on the community record and loses only its `originReportId`; a landmark
   proposal the Report's `where` filed stays the author's request and loses its `reportId`.
+
+**B01-1b: every read, weighed (2026-11-13, after Greptile's third round on #110).** Every database
+read in the files D248 touched, with what one row can weigh and what rests on the answer. *R* is the
+1 MiB document limit (any row with an uncapped field), *F* a flag (its note is uncapped, so *R*),
+*V* a verdict row (ids and numbers, ≤ 8 KiB), *C* a comment (2,000 characters, ≤ 16 KiB), *S* a row of
+ids, numbers and literals (≤ 8 KiB). "Charged" means the read goes through `lib/readBudget` and the
+transaction holds at most 12 MiB of charged reads; the guard in `packages/guards/src/readBudget.test.ts`
+holds the first four modules to that. Two tests apply to each row — **weight** (can the transaction
+pass 16 MiB with valid data?) and **completeness** (is a capped, `null` or partial answer used to
+erase, hide from the export, restore, record or clear a verdict, or start or stop a clock?) — and a
+third to each continuing job: **progress** (does every pass erase, stamp or advance something?).
+
+| Where (at the PR's head) | Table · index | Bound | Row | Rests on it | Weight · completeness · progress |
+| --- | --- | --- | --- | --- | --- |
+| `erasure.ts` `dueHead` (7 tables) | erasable table · `by_erase_at` `gt(0).lte(now)` | 1 row a step | R (C) | which item is erased next | charged; exact due range; each step erases, clears or moves the head's clock, or drains a row — **fixed** (was a page of up to half the budget, with an item's fixed reads uncounted) |
+| `lib/eraseClock` `directHold` | `contentVerdicts` · `by_target_standing` | `first()` | V | holds erasure | charged; an existence check on an exact prefix is complete |
+| `lib/eraseClock` `directHold` | `contentFlags` · `by_target_status_reason` ×2 | `first()` each | F | holds erasure | charged; complete; a Report reads its Post's too (`HOLD_COST`) — **fixed** (was uncounted, and re-read the Report and its Post) |
+| `lib/eraseClock` `refreshEraseClock` / `holdMoved` | the item; a Post | one `get` | R | the clock | charged; a caller holding the row passes it (`refreshClockOf`); a Post's members follow in `refreshMemberClocks` — **fixed** (ten members inline read ~70 MiB at worst) |
+| `erasure.ts` `eraseComment` | `comments` · `by_parent` ×2, `get` | `first()` / one | C | placeholder kept or deleted | charged; complete |
+| `erasure.ts` `eraseRevisions` | `contentRevisions` · `by_target` | drained by budget | R (Post: 84 KiB) | erased before the row | charged read + touch; the row goes last |
+| `erasure.ts` `eraseReport` links | `reportSubAreas`, `putIns`, `accessAlerts`, `waterBodyRequests`, `hazards`, `photos` · `by_report` / `by_origin_report` | drained by budget | S / R | unlinked or deleted before the row | charged; a drain runs to a short page or stops the pass with the item whole |
+| `erasure.ts` `eraseReport` recording | `gpsActivities` `get` | one | R | returned to private | charged (kept back in `TAIL`) |
+| `erasure.ts` `eraseHazard` / `eraseAlert` own votes | `hazardConfirmations` · `by_hazard_and_user`; `accessAlertVotes` · `by_alert_user` | drained | S | erased before the row | charged |
+| `erasure.ts` `eraseHazard` origin Report | `reports` `get` | one | R | Report stops listing it | charged |
+| `erasure.ts` `dropErasedMember` (new job) | `posts` `get`; members `get` | 1 + ≤ 9 | R | the Post's album, sort key, search words, clock | charged, 11 MiB; one write — **fixed** (ran in the sweep, three helpers re-reading ten members: ~33 MiB) |
+| `erasure.ts` `refreshMemberClocks` (new job) | `posts`, members, holds | a few members a pass | R, F | members' clocks | charged; the first member always fits, so every pass advances |
+| `erasure.ts` `settlePhotos` Reports | `reports` · `by_author` | paginate by budget | R | strikes photos in use | charged |
+| `erasure.ts` `settlePhotos` hazards | `hazards` · `by_author` `gt(_creationTime)` | take by budget | R | strikes photos in use | charged; resumes after the last hazard read, so one filed mid-settlement is seen — **fixed** (a paginate cursor at the end of a range reads nothing new) |
+| `erasure.ts` `settlePhotos` deletes | `photos` `get`, `accessPhotos` · `by_photo` | as many as the budget affords | R, S | **a photo is erased** | charged; only in a transaction that read to the end of the hazards; the rest carry on, the list only shrinking — **fixed** (Greptile #110: every remaining photo in one transaction) |
+| `erasure.ts` `queuePhotoSettlement` | — (arguments) | 500 ids a job | — | — | **fixed**: a tick's photo list is chunked; arguments are bounded too |
+| `erasure.ts` `backfillClocks` | each erasable table, paginate | rows a page sized by row + stamp + hold + clock | R | **starts a clock** | charged — **fixed** (each row's hold re-read the Report and its Post uncounted: ~24 MiB on a page of eight) |
+| `contentRecord.ts` `backfillVerdicts` | `moderationActions`, paginate; newest row · `by_target` desc; the item `get` | sized by budget | R | which item to replay, once | charged; an item is replayed at its newest row — **fixed** (200 audit rows a page) |
+| `contentRecord.ts` `replayVerdictHistory` (new job) | `moderationActions` · `by_target` asc, paginate; `contentVerdicts` · `by_action` | sized by budget | R, V | **records, ends or drops verdicts** | charged; the whole history, a page a pass, two passes; no fallback — **fixed** (Greptile #110: the newest 100 rows, and a guessed standing verdict) |
+| `contentRecord.ts` `personVerdicts` / `personWithdrawals` | `contentVerdicts` · `by_subject_standing`; action and item `get`; each kind · `by_author_deleted` | paged by budget | R | the People page (display) | charged — **fixed** (100 verdicts × action + item, and 5 × 100 rows, in one query) |
+| `authorDeletions.ts` `backfillFromAudit` | `moderationActions`, paginate; the item `get` | sized by budget | R | hand-off | charged — **fixed** (200 rows a page) |
+| `authorDeletions.ts` `stampWithdrawal` (new job) | `moderationActions` · `by_target` `gt(_creationTime)`; `by_undoes` `first()`; members `get` | sized by budget | R | **"restored since" → stamps (finality, and later a clock)** | charged; read to the first standing restore or the end — **fixed** (the newest 100 rows; longer left unknown) |
+| `authorDeletions.ts` `backfillCommentDeletions` / `commentLastWord` | `comments`, paginate; `moderationActions` · `by_target` desc | sized by budget | C, R | **the last word → stamps** | charged; read to the first deciding word or the end — **fixed** (as above) |
+| `lib/contentVerdicts.ts` `endStanding` | `contentVerdicts` · `by_target_standing` | 16 a page, until none | V | **ends verdicts** | complete: ends every standing one — **fixed** (`take(10)`, the rest left standing) |
+| `lib/contentVerdicts.ts` `recordUndoneVerdict` | `contentVerdicts` · `by_ended_by` | `first()` | V | an undo re-records | complete |
+| `lib/authorDeletion.ts` `authorDeletedAtOn` | the item `get` | one | R | refuses a restore | complete |
+| `hazardWithdrawal.ts` `othersSayItIsThere` | `hazardConfirmations` · `by_hazard_and_verdict` + filter | stops at the first other person's | S | **allows a withdrawal (starts a clock)** | complete: skips only the author's own rows (one per person by the upsert) |
+| `hazardWithdrawal.ts` `isJoined` merges | `hazards` · `by_merged_into` | `first()` | R | **refuses** | complete |
+| `hazardWithdrawal.ts` `isJoined` patterns | `hazardRecurrence` · `by_water_body` | `MAX_BODY_CLUSTERS + 1` | R | **allows a withdrawal** | completeness **fixed** (a 1,001st pattern was never read; now unknown → refused); weight **not changed**: up to 1,001 rows a lake, realistically tens — past the limit the mutation fails, which refuses |
+| `hazardWithdrawal.ts` `withdraw` | the hazard `get`; `recomputeBodySummary` (200 Reports + 200 hazards) | — | R | the lake card | the card helper is A06c's, shared by every hazard and Report write; **not changed** |
+| `accessAlerts.ts` `everPinned` | `moderationActions` · `by_target` desc | 8 | R | **refuses an author's retraction** | weight **fixed** (200 rows of uncapped reasons); longer is unknown and counts as pinned, as before |
+| `accessAlerts.ts` `retract` | profile, the alert `get`; its clock | — | R | the clock | the clock reads the row as written — about 13 MiB at worst |
+| `contentFlags.ts` `retract`; `corpusRequests.ts` `retract` | the flag / request `get`; target hold; clock | — | R, F | **starts a clock; releases a hold** | bounded (a Post's members via the job) |
+| `contentFlags.ts` `flag` dedupe | `contentFlags` · `by_target` + two filters | every flag on the target | F | a duplicate open flag | pre-existing (A02); unbounded by weight; **not changed** |
+| `contentFlags.ts` `myAccessFlags` | `contentFlags` · `by_flagger` `collect()` | all of a person's | F | display | pre-existing (A06f); **not changed** |
+| `accessAlerts.ts` `recomputeAlert` | `accessAlertVotes` · `by_alert` `collect()` | every vote | S | the alert's lifecycle | pre-existing (A06d); small rows, unbounded count; **not changed** |
+| `accessAlerts.ts` `loadLiveAlertsForBody`, `myAlertIdsForBody`, `create`, `vote`, `setOfficialImpl`, `expireLapsedAlerts` | `accessAlerts`, `parkingAreaBodies`, `putIns` | 64 / 500 / 512 / 200 | R | display; the lifecycle | caps bound counts, not bytes: every alert row is *R* only because the client-sent `idempotencyKey` is uncapped. Not erasure or record; **not changed** (capping the key — not user text — would bound them) |
+| `dataExport.ts` `collect` | 17 tables · by person, `take(5000)` each | 5,000 a table | R | **what the export holds** | pre-existing (D33/A03): one query over every table, so a heavy contributor's export can pass 16 MiB, and a 5,001st row is silently left out; D248 filters only complete rows (`erasedAt`, `origin`); **not changed** — it needs the export built in pages, its own change |
 
 ### The B01-2 server register (owed to the server agent)
 
