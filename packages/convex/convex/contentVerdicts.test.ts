@@ -527,6 +527,42 @@ describe('a history longer than the backfill reads', () => {
     expect(result.truncated).toEqual([`report:${reportId}`]);
     expect((await standing()).map((v) => v._id)).toEqual(before);
   });
+
+  test('with no verdict row yet, it is held by the newest takedown it can see, never left to erase', async () => {
+    const { t, author, mod, standing } = await setup();
+    const reportId = await seedReport(t, author.id);
+    const now = Date.now();
+    await t.run(async (ctx) => {
+      await ctx.db.patch(reportId, {
+        moderationStatus: 'removed',
+        authorDeletedAt: now - 60 * 86_400_000,
+      });
+      // A takedown recorded only as history (before the record existed), inside the read, then noise.
+      await ctx.db.insert('moderationActions', {
+        actorId: mod.id,
+        action: 'remove',
+        targetType: 'report',
+        targetId: reportId,
+        reason: 'doxxing',
+        metadata: { priorStatus: 'visible', newStatus: 'removed' },
+        createdAt: now - 1000,
+      });
+      for (let i = 0; i < 100; i++) {
+        await ctx.db.insert('moderationActions', {
+          actorId: mod.id,
+          action: 'dismiss_flag',
+          targetType: 'report',
+          targetId: reportId,
+          reason: 'noise',
+          createdAt: now + i,
+        });
+      }
+    });
+    await t.mutation(internal.contentRecord.backfillVerdicts, { clocks: false });
+    expect((await standing()).map((v) => [v.targetId, v.kind])).toEqual([[reportId, 'removed']]);
+    await t.mutation(internal.erasure.backfillClocks, { kind: 'report' });
+    expect((await t.run((ctx) => ctx.db.get(reportId)))?.eraseAt).toBeUndefined();
+  });
 });
 
 describe('the rules hold under any order', () => {

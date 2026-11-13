@@ -450,7 +450,7 @@ describe('a history longer than the backfill reads', () => {
         reason: 'before D248',
         createdAt: at + 1,
       });
-      for (let i = 0; i < 100; i++) {
+      for (let i = 0; i <= 100; i++) {
         for (const [targetType, targetId] of [
           ['report', reportId],
           ['comment', commentId],
@@ -470,6 +470,36 @@ describe('a history longer than the backfill reads', () => {
     await t.mutation(internal.authorDeletions.backfillCommentDeletions, {});
     expect(await deletedAt(t, reportId)).toBeUndefined();
     expect(await deletedAt(t, commentId)).toBeUndefined();
+  });
+
+  test('one exactly as long as the read is known whole, and answers', async () => {
+    const { t, author, mod } = await setup();
+    const reportId = await seedReport(t, author.id);
+    const commentId = await t.run((ctx) =>
+      ctx.db.insert('comments', {
+        reportId,
+        authorId: author.id,
+        body: 'x',
+        source: 'native' as const,
+        moderationStatus: 'removed' as const,
+        createdAt: Date.now(),
+      }),
+    );
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 100; i++) {
+        await ctx.db.insert('moderationActions', {
+          actorId: mod.id,
+          action: 'dismiss_flag',
+          targetType: 'comment',
+          targetId: commentId,
+          reason: 'noise',
+          createdAt: Date.now() + i,
+        });
+      }
+    });
+    await t.mutation(internal.authorDeletions.backfillCommentDeletions, {});
+    // No moderator's word in the whole of it: the removal was the author's.
+    expect(await deletedAt(t, commentId)).toBeDefined();
   });
 });
 

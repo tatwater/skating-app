@@ -2810,7 +2810,11 @@ export default defineSchema({
     .index('by_merged_into', ['mergedIntoHazardId'])
     // The hazards drawn in one Report, so erasing the Report unlinks them a page at a time (D248).
     // `eq()` only: the field is optional and the index not sparse.
-    .index('by_origin_report', ['originReportId']),
+    .index('by_origin_report', ['originReportId'])
+    // An author's hazards in creation order, which no write moves — what the erasure's photo
+    // settlement pages across transactions (D248): `by_author_and_water_body` reorders a hazard
+    // refiled to another lake, so a cursor walk over it can miss one.
+    .index('by_author', ['createdByUserId']),
   // NOTE: no spatial index for hazards (Phase 09a call 6). Hazards are only ever queried per body —
   // the map renders them for the selected lake, the mobile cache stores them per cached body, and the
   // proximity evaluator runs against that same cached set. A third spatial index
@@ -3522,8 +3526,8 @@ export default defineSchema({
     reportId: v.optional(v.id('reports')),
     createdAt: v.number(),
     /**
-     * When an erasure (D248) let go of this photo but could not delete it — a blob that outlived the
-     * attempt, or the erased Report's own photo when the reference scan could not answer. The row
+     * When an erasure (D248) let go of this photo — nothing of its uploader's still uses it — but could
+     * not delete it: a blob outlived the attempt (`erasure.settlePhotos`). The row
      * stays as the only pointer to its blobs, for the orphan sweep, and is no longer anything of its
      * uploader's: their export leaves it out. Absent ⇒ not erased.
      */

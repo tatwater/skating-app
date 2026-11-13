@@ -16,6 +16,7 @@ import {
   replayVerdicts,
   subjectOf,
   type VerdictTargetType,
+  verdictKindOf,
 } from './lib/contentVerdicts';
 import { ERASABLE, holdMoved, withdrawnAtOf } from './lib/eraseClock';
 
@@ -262,9 +263,40 @@ async function replayItem(
   const read = await historyOf(ctx, targetType, targetId);
   const truncated = read.length > HISTORY_LIMIT;
   // A history longer than the read is not known whole, and a replay of part of it could end or drop
-  // a verdict that stands (and so let the item be erased). Unknown is not "nothing there": leave its
-  // rows exactly as they are, and say so.
-  if (truncated) return { written: 0, truncated };
+  // a verdict that stands — and an item with no verdict row is held by nothing, so it would be erased.
+  // Unknown is not "nothing there": leave its rows exactly as they are, and if none stands, hold it
+  // by the newest moderator takedown the read can see — the evidence a moderator can overturn, never
+  // evidence silently lost.
+  if (truncated) {
+    const standingNow = await ctx.db
+      .query('contentVerdicts')
+      .withIndex('by_target_standing', (q) =>
+        q.eq('targetType', targetType).eq('targetId', targetId).eq('standing', true),
+      )
+      .first();
+    const newestTakedown = read.find(
+      (row) =>
+        movesVerdict(row) &&
+        (row.action === 'hide' || row.action === 'remove' || row.action === 'retract_access_alert'),
+    );
+    if (standingNow || !newestTakedown) return { written: 0, truncated };
+    const known = await ctx.db
+      .query('contentVerdicts')
+      .withIndex('by_action', (q) => q.eq('actionId', newestTakedown._id))
+      .first();
+    if (known) return { written: 0, truncated };
+    await ctx.db.insert('contentVerdicts', {
+      subjectUserId: subjectOf(targetType, target),
+      targetType,
+      targetId,
+      actionId: newestTakedown._id,
+      kind: verdictKindOf(newestTakedown.action),
+      at: newestTakedown.createdAt,
+      standing: true,
+    });
+    await holdMoved(ctx, targetType, targetId);
+    return { written: 1, truncated };
+  }
   const history = read.slice(0, HISTORY_LIMIT).reverse();
   const replayed = replayVerdicts(history);
   let written = 0;

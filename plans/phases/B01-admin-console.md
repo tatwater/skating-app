@@ -1429,10 +1429,11 @@ the People page and the skater screens that reach it are owed (the roadmap's reg
   an item's revisions and links, and the clocks backfill's pages are each charged at their table's
   worst case against half the 16 MiB transaction limit, so no pass can exceed it and every pass
   erases something. The worst cases come from the real caps — a comment's 2,000 characters, a Post's
-  120 + 20,000, an alert's 500, a hazard's 1,000 and 500 vertices, a put-in's 256-vertex approach —
-  and from the 1 MiB document limit where a field has no cap: **a Report's notes and its chips'
-  notes, a flag's note, a photo's caption and a request's catalog polygon are uncapped on the
-  server**, so a Report revision is sized at 1 MiB. A fixed handful of reads per item (its Post and
+  120 + 20,000, a put-in's 256-vertex approach — and from the 1 MiB document limit where a field has
+  no cap: **a Report's notes and its chips' notes, a flag's note, a photo's caption, a request's
+  catalog polygon, a hazard's or an alert's client-sent `idempotencyKey` and a hazard's footprint
+  clipped to the shoreline are uncapped on the server**, so a Report revision, a hazard and an alert
+  are each sized at 1 MiB (capping those keys at the writers would win hazards and alerts back). A fixed handful of reads per item (its Post and
   that Post's ≤ 10 Reports, its recording) is bounded by count, as in every write to those rows.
   **A photo is erased only when nothing of its uploader's uses it** — an unknown is never "unused":
   `erasure.settlePhotos` reads the uploader's Reports and hazards a sized page per transaction until
@@ -1440,7 +1441,14 @@ the People page and the skater screens that reach it are owed (the roadmap's reg
   and leaves the rest untouched. A photo whose blob outlives the delete is kept as the orphan sweep's
   pointer, stripped and marked `erasedAt`, and leaves the uploader's export. The backfills that read
   an item's history now treat a history longer than they read as unknown: the stamp backfills leave
-  the item unstamped, and the verdict replay leaves its rows as they stand.
+  the item unstamped, and the verdict replay leaves its rows as they stand — and, if none stands,
+  holds the item by the newest moderator takedown it can see, so evidence is never left to erase.
+  **What is left:** the fixed per-item reads (a Report's Post and its ≤ 10 members, re-read by the
+  Post's syncs) are bounded by count, not weight; they could pass the limit only if a Post's Reports
+  carried notes near the 1 MiB document limit, which nothing on the server prevents — a cap on
+  Report notes would close it and is a founder call. Two tick's settlements for one uploader can run
+  at once and each read their history (correct, metered); and the orphan sweep that retries an
+  `erasedAt` photo's blob reads the oldest photos first and can starve behind referenced ones.
   **What was withdrawn before the clock** gets one from the clocks backfill: content through Part A's
   stamps; an alert its author retracted before `retractedAt` existed (no time on the row, none in the
   history) is stamped at the backfill — never in the past — and so is one its author retracts again.

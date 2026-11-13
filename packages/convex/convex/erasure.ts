@@ -30,8 +30,6 @@ import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, type MutationCtx } from './_generated/server';
-import { MAX_ALERT_NOTE_LENGTH } from './accessAlerts';
-import { HAZARD_MAX_DESCRIPTION_LEN } from './hazards';
 import { writeAudit } from './lib/audit';
 import {
   authorRetracted,
@@ -99,12 +97,13 @@ const WRITES_PER_ROW = 20;
 // A transaction may read 16 MiB; one document may weigh 1 MiB. Every read of an unbounded number of
 // rows — the sweep's own pages, an item's revisions, its links, the backfills' pages — is sized from
 // the largest row its table allows, never from how many writes it leads to, so no pass can exceed the
-// limit however large every row is. Where a field has a cap (a comment's body, a Post's prose, an
-// alert's note, a hazard's description and its vertex cap) the row's worst case is that cap in UTF-8
-// (4 bytes a character) plus room for the rest; where any field is uncapped (a Report's notes and its
-// chips' notes, a flag's note, a request's catalog polygon, a photo's caption) the worst case is the
-// document limit itself. A fixed handful of reads per item (the item, its Post and that Post's ≤ 10
-// Reports, its recording) is what every write to those rows already reads, and is not counted.
+// limit however large every row is. Where every field has a cap (a comment's body, a Post's prose)
+// the row's worst case is that cap in UTF-8 (4 bytes a character) plus room for the rest; where any
+// field is uncapped (a Report's notes and its chips' notes, a flag's note, a request's catalog
+// polygon, a photo's caption, a hazard's or an alert's client-sent `idempotencyKey`, a hazard's
+// footprint clipped to the lake's shoreline) the worst case is the document limit itself. A fixed
+// handful of reads per item (the item, its Post and that Post's ≤ 10 Reports, its recording) is what
+// every write to those rows already reads, and is not counted.
 
 /** Convex's per-document size limit, the worst any row can weigh. */
 const DOC_MAX = 1 << 20;
@@ -120,9 +119,11 @@ const SLACK = 8 * 1024;
 /** The worst case of one row, by what it is. */
 export const ROW_MAX = {
   comment: COMMENT_BODY_MAX_LENGTH * 4 + SLACK,
-  accessAlert: MAX_ALERT_NOTE_LENGTH * 4 + SLACK,
-  // A description and up to 500 vertices, drawn and clipped.
-  hazard: HAZARD_MAX_DESCRIPTION_LEN * 4 + 64 * 1024,
+  // The note is capped, the client's `idempotencyKey` is not.
+  accessAlert: DOC_MAX,
+  // The drawing is capped at 500 vertices, but not the client's `idempotencyKey`, nor the footprint
+  // clipped to the shoreline (every shore vertex inside a 5 km circle, or a merge's union of them).
+  hazard: DOC_MAX,
   report: DOC_MAX,
   post: DOC_MAX,
   contentFlag: DOC_MAX,
@@ -405,15 +406,18 @@ export const settlePhotos = internalMutation({
             .query('reports')
             .withIndex('by_author', (q) => q.eq('authorId', uploaderId))
             .paginate({ cursor: cursor ?? null, numItems })
-        : await ctx.db
+        : // Creation order, which no write moves: a hazard refiled to another lake would move under
+          // `by_author_and_water_body` and could slip behind the cursor unread, and a new one lands
+          // after it (a hazard sets no back-link on its photos for the last check to catch).
+          await ctx.db
             .query('hazards')
-            .withIndex('by_author_and_water_body', (q) => q.eq('createdByUserId', uploaderId))
+            .withIndex('by_author', (q) => q.eq('createdByUserId', uploaderId))
             .paginate({ cursor: cursor ?? null, numItems });
     const used = new Set<string>(
       (page.page as (Doc<'reports'> | Doc<'hazards'>)[]).flatMap((row) => row.photoIds),
     );
     const remaining = photoIds.filter((id) => !used.has(id));
-    if (remaining.length === 0) return { settled: 0, kept: photoIds.length };
+    if (remaining.length === 0) return { settled: 0, more: false };
     if (!page.isDone || phase === 'reports') {
       await ctx.scheduler.runAfter(0, internal.erasure.settlePhotos, {
         uploaderId,

@@ -1065,23 +1065,82 @@ describe("a photo is erased only when nothing of its uploader's still uses it", 
     for (let i = 0; i < 5; i++) await seedHazard(t, author.id, waterBodyId);
     const last = await seedHazard(t, author.id, waterBodyId);
     await t.run((ctx) => ctx.db.patch(last, { photoIds: [shared] }));
-    await author.as.mutation(api.reports.remove, { reportId });
-    advance(31 * DAY);
-    await t.mutation(internal.erasure.eraseDue, {});
-    // The Report is gone; its photo's fate waits on the whole answer.
-    expect(await get(t, reportId)).toBeNull();
+    // What a tick leaves — the Report gone, its photo unlinked — without the settlement the tick
+    // would also schedule, so the paged one below is the only one running.
+    await t.run(async (ctx) => {
+      await ctx.db.delete(reportId);
+      await ctx.db.patch(photoId, { reportId: undefined });
+    });
     // A settlement that reads one row a page, to make every page a separate transaction.
     await t.mutation(internal.erasure.settlePhotos, {
       uploaderId: author.id,
       photoIds: [photoId, shared],
       pageSize: 1,
     });
-    expect(await get(t, photoId)).toMatchObject({ caption: 'the inlet 0' });
-    expect((await get(t, photoId))?.erasedAt).toBeUndefined();
+    // Its fate waits on the whole answer: page after page, nothing is touched.
+    for (let page = 0; page < 3; page++) {
+      expect(await get(t, photoId)).toMatchObject({ caption: 'the inlet 0' });
+      expect((await get(t, photoId))?.erasedAt).toBeUndefined();
+      vi.runOnlyPendingTimers();
+      await t.finishInProgressScheduledFunctions();
+    }
     await t.finishAllScheduledFunctions(vi.runAllTimers);
     // Used by nothing: gone, blobs and all. Used by the hazard: kept, untouched.
     expect(await get(t, photoId)).toBeNull();
     expect(await get(t, shared)).toMatchObject({ caption: 'the inlet 0' });
     expect((await get(t, shared))?.erasedAt).toBeUndefined();
+  });
+
+  test('one an access point shows stays, whole', async () => {
+    const { t, author, waterBodyId } = await setup();
+    const { reportId, photoId } = await withPhotoOn(t, author.id, waterBodyId);
+    await t.run(async (ctx) => {
+      const putInId = await ctx.db.insert('putIns', {
+        waterBodyId,
+        coord: { lat: 0.5, lng: 0.5 },
+        source: 'osm' as const,
+        status: 'visible' as const,
+        createdAt: T0,
+      });
+      await ctx.db.insert('accessPhotos', {
+        targetType: 'put_in' as const,
+        putInId,
+        photoId,
+        uploaderId: author.id,
+        createdAt: T0,
+      });
+    });
+    await author.as.mutation(api.reports.remove, { reportId });
+    advance(31 * DAY);
+    await sweep(t);
+    expect(await get(t, reportId)).toBeNull();
+    expect(await get(t, photoId)).toMatchObject({ caption: 'the inlet 0' });
+    expect((await get(t, photoId))?.erasedAt).toBeUndefined();
+  });
+
+  test('one a Report took behind the scan stays, whole', async () => {
+    const { t, author, waterBodyId } = await setup();
+    const { reportId, photoId } = await withPhotoOn(t, author.id, waterBodyId);
+    const other = (await seedPost(t, author.id, waterBodyId, 1)).reportIds[0] as Id<'reports'>;
+    await seedHazard(t, author.id, waterBodyId);
+    await t.run(async (ctx) => {
+      await ctx.db.delete(reportId);
+      await ctx.db.patch(photoId, { reportId: undefined });
+    });
+    // The first page reads the only Report left, which doesn't carry it yet.
+    await t.mutation(internal.erasure.settlePhotos, {
+      uploaderId: author.id,
+      photoIds: [photoId],
+      pageSize: 1,
+    });
+    // Now it does, behind the cursor: only the photo's back-link can say so.
+    await t.run(async (ctx) => {
+      const row = await ctx.db.get(other);
+      await ctx.db.patch(other, { photoIds: [...(row?.photoIds ?? []), photoId] });
+      await ctx.db.patch(photoId, { reportId: other });
+    });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await get(t, photoId)).toMatchObject({ caption: 'the inlet 0', reportId: other });
+    expect((await get(t, photoId))?.erasedAt).toBeUndefined();
   });
 });
