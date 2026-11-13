@@ -859,6 +859,66 @@ export async function restoreLandmarkImpl(
       // A row a merge folded away is a place again once a moderator brings it back.
       mergedIntoId: undefined,
     });
-    await auditLandmark(ctx, actor._id, 'restore', landmarkId, reason ?? `Restored "${row.name}"`);
+    // What the restore cleared, so its undo is a true inverse (D226, founder call 2026-11-13): a
+    // catalog-dropped row goes back to the catalogs, a merge-folded one back into its twin.
+    const prev: LandmarkRestorePrev = {
+      removedAt: row.removedAt,
+      catalogDroppedAt: row.catalogDroppedAt ?? null,
+      mergedIntoId: row.mergedIntoId ?? null,
+      moderatorEditedAt: row.moderatorEditedAt ?? null,
+    };
+    await auditLandmark(ctx, actor._id, 'restore', landmarkId, reason ?? `Restored "${row.name}"`, {
+      prev,
+    });
   }
+}
+
+/** The retirement a landmark restore cleared, recorded on its `restore` row (D226). */
+export interface LandmarkRestorePrev {
+  removedAt: number;
+  catalogDroppedAt: number | null;
+  mergedIntoId: Id<'bodyLandmarks'> | null;
+  /** Kept because catalog ownership keys off it: the import, `isCatalogsLive` and the merge fold
+   * all read a set `moderatorEditedAt` as "a moderator's row". */
+  moderatorEditedAt: number | null;
+}
+
+/**
+ * The undo of a restore (D226): the landmark retired exactly as it was before — its removal time,
+ * and whichever of the catalogs' drop, a merge's fold and a moderator's ownership the restore
+ * cleared. Not a fresh removal: that would make a catalog-dropped row a person's removal (which the
+ * catalogs never undo) and lose a folded row's twin. A row that is off the map again already has
+ * nothing to undo.
+ */
+export async function unrestoreLandmarkImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    landmarkId,
+    prev,
+    reason,
+  }: { landmarkId: Id<'bodyLandmarks'>; prev: LandmarkRestorePrev; reason: string },
+): Promise<void> {
+  const row = await ctx.db.get(landmarkId);
+  if (!row) throw new ConvexError('That landmark no longer exists');
+  if (row.removedAt !== undefined) {
+    throw new ConvexError('It has been taken off the map again since; there is nothing to undo');
+  }
+  await ctx.db.patch(landmarkId, {
+    removedAt: prev.removedAt,
+    catalogDroppedAt: prev.catalogDroppedAt ?? undefined,
+    mergedIntoId: prev.mergedIntoId ?? undefined,
+    moderatorEditedAt: prev.moderatorEditedAt ?? undefined,
+    updatedAt: Date.now(),
+  });
+  // A fold put back is the merge's again: the row names its twin, so undoing *this* removal is
+  // refused the way the merge's own fold row is — it comes back with the merge.
+  await auditLandmark(
+    ctx,
+    actor._id,
+    'remove',
+    landmarkId,
+    reason,
+    prev.mergedIntoId !== null ? { mergedIntoId: prev.mergedIntoId } : undefined,
+  );
 }

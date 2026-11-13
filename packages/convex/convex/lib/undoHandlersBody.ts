@@ -12,8 +12,10 @@ import { ConvexError } from 'convex/values';
 import type { Doc, Id } from '../_generated/dataModel';
 import {
   type LandmarkEditPrev,
+  type LandmarkRestorePrev,
   removeLandmarkImpl,
   restoreLandmarkImpl,
+  unrestoreLandmarkImpl,
   updateLandmarkImpl,
 } from '../landmarks';
 import { setStandingImpl } from '../standing';
@@ -401,11 +403,20 @@ const LANDMARK: TargetUndo = {
       await restoreLandmarkImpl(ctx, actor, { landmarkId: landmarkId(row), reason });
     },
   },
-  /** A restore → removed again. */
+  /**
+   * A restore → retired again exactly as it was: the catalogs' drop, a merge's fold, or a person's
+   * removal, with the removal time and ownership it had. A restore from before `prev` can't say
+   * which, so it is refused rather than turned into a person's removal.
+   */
   restore: {
+    blocked: needsPrev,
     undoTakesAway: () => true,
     run: async ({ ctx, actor, row, reason }) => {
-      await removeLandmarkImpl(ctx, actor, { landmarkId: landmarkId(row), reason });
+      await unrestoreLandmarkImpl(ctx, actor, {
+        landmarkId: landmarkId(row),
+        prev: meta(row).prev as LandmarkRestorePrev,
+        reason,
+      });
     },
   },
 };

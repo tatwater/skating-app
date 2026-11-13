@@ -973,6 +973,15 @@ around:
 - **Added 2026-10-17 (D227).** Undoing an invoice editor's demotion gives back the admin role, not
   invoice editing: the demotion cleared the grant with its own row first, and that row has no undo
   of its own. A holder gives it again.
+- **Added 2026-11-13 (founder call).** A landmark restore records what it cleared (`prev`: the
+  removal time, the catalogs' drop, a merge's fold, the moderator stamp), and its undo puts exactly
+  that back: a catalog-dropped label returns to the catalogs, a folded one returns folded into its
+  twin — and that removal, like the merge's own, comes back only with the merge. A restore from
+  before `prev` is refused rather than turned into a person's removal.
+- **Added 2026-11-13 (#108 review).** Two writes the audit log can't see are checked against the
+  row when the undo runs: a depth undo refuses once the import has rewritten the depth since (each
+  `set_lake_depth` row records `after`), and an unpin's undo refuses a claim the community resolved
+  or whose clock ran out before the sweep.
 
 ### The founder's calls (2026-10-14)
 

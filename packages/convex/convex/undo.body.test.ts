@@ -811,6 +811,122 @@ describe('undo: landmarks (D226)', () => {
   });
 });
 
+// ── A restore's undo puts the exact retirement back (founder call, 2026-11-13) ─────────────────────
+
+describe('undo: a landmark restore undoes to the retirement it cleared', () => {
+  /** The fields a retirement is made of — compared whole, so nothing the round trip loses hides. */
+  const retirement = (row: Doc<'bodyLandmarks'> | null) => ({
+    waterBodyId: row?.waterBodyId,
+    removedAt: row?.removedAt,
+    catalogDroppedAt: row?.catalogDroppedAt,
+    mergedIntoId: row?.mergedIntoId,
+    moderatorEditedAt: row?.moderatorEditedAt,
+  });
+  const landmarkRow = (t: T, id: Id<'bodyLandmarks'>) => t.run((ctx) => ctx.db.get(id));
+  const GULL = { name: 'Gull Island', kind: 'island' as const, point: { lat: 44.6, lng: -73.1 } };
+
+  test('a merge-folded label returns folded, and its removal still comes back only with the merge', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const survivor = await seedBody(t, 'Lake Champlain');
+    const loser = await seedBody(t, 'Champlain (dup)');
+    // The survivor's twin was removed by a person, so the merge folds the moved label into that
+    // removal — and a restore of the folded row isn't refused as a duplicate of a live twin.
+    const twin = await mod.as.mutation(api.landmarks.create, { waterBodyId: survivor, ...GULL });
+    await mod.as.mutation(api.landmarks.remove, { landmarkId: twin, reason: 'a buoy' });
+    const moved = await mod.as.mutation(api.landmarks.create, { waterBodyId: loser, ...GULL });
+    await mod.as.mutation(api.waterBodies.merge, { survivorId: survivor, loserId: loser });
+
+    const fold = await newestOn(t, 'bodyLandmark', moved);
+    const folded = await landmarkRow(t, moved);
+    expect(folded?.mergedIntoId).toBe(twin);
+
+    await mod.as.mutation(api.landmarks.restore, { landmarkId: moved });
+    const live = await landmarkRow(t, moved);
+    expect([live?.removedAt, live?.mergedIntoId]).toEqual([undefined, undefined]);
+    const restore = await newestOn(t, 'bodyLandmark', moved);
+    await mod.as.mutation(api.undo.run, { actionId: restore._id, reason: 'it is the buoy' });
+
+    // Exactly as the merge left it: what the unmerge will look for, the restore never happened.
+    expect(retirement(await landmarkRow(t, moved))).toEqual(retirement(folded));
+
+    // The removal now on the row is the merge's fold again: its undo is refused for the merge's
+    // reason; and the merge's own fold row, overtaken by the restore, is not undoable either.
+    const refold = await newestOn(t, 'bodyLandmark', moved);
+    expect(refold.undoesActionId).toBe(restore._id);
+    await expect(mod.as.mutation(api.undo.run, { actionId: refold._id })).rejects.toThrow(
+      /comes back with the merge/,
+    );
+    await expect(mod.as.mutation(api.undo.run, { actionId: fold._id })).rejects.toThrow(
+      /changed this since/,
+    );
+    expect((await landmarkRow(t, moved))?.mergedIntoId).toBe(twin);
+  });
+
+  test("a catalog-dropped label returns to the catalogs, not as a moderator's removal", async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const lake = await seedBody(t);
+    const droppedAt = Date.now() - 86_400_000;
+    const id = await t.run((ctx) =>
+      ctx.db.insert('bodyLandmarks', {
+        waterBodyId: lake,
+        ...GULL,
+        source: 'osm',
+        externalIds: ['osm:way/1'],
+        aliases: [],
+        removedAt: droppedAt,
+        catalogDroppedAt: droppedAt,
+        createdAt: droppedAt,
+        updatedAt: droppedAt,
+      }),
+    );
+    const dropped = await landmarkRow(t, id);
+    await mod.as.mutation(api.landmarks.restore, { landmarkId: id });
+    expect((await landmarkRow(t, id))?.moderatorEditedAt).toBeDefined();
+    const restore = await newestOn(t, 'bodyLandmark', id);
+    await mod.as.mutation(api.undo.run, {
+      actionId: restore._id,
+      reason: 'leave it to the catalogs',
+    });
+
+    // `catalogDroppedAt` set and `moderatorEditedAt` clear is what the import reads as the
+    // catalogs' own drop, which placing it again returns.
+    expect(retirement(await landmarkRow(t, id))).toEqual(retirement(dropped));
+  });
+
+  test("a moderator's removal round-trips unchanged", async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const lake = await seedBody(t);
+    const id = await mod.as.mutation(api.landmarks.create, { waterBodyId: lake, ...GULL });
+    await mod.as.mutation(api.landmarks.remove, { landmarkId: id, reason: 'a buoy' });
+    // Removed a while ago, so a re-removal stamped "now" can't pass for the original.
+    await t.run((ctx) => ctx.db.patch(id, { removedAt: Date.now() - 3_600_000 }));
+    const removed = await landmarkRow(t, id);
+    await mod.as.mutation(api.landmarks.restore, { landmarkId: id });
+    const restore = await newestOn(t, 'bodyLandmark', id);
+    await mod.as.mutation(api.undo.run, { actionId: restore._id, reason: 'it is a buoy' });
+    expect(retirement(await landmarkRow(t, id))).toEqual(retirement(removed));
+
+    // And the removal it put back undoes like any person's: restored again.
+    const again = await newestOn(t, 'bodyLandmark', id);
+    await mod.as.mutation(api.undo.run, { actionId: again._id });
+    expect((await landmarkRow(t, id))?.removedAt).toBeUndefined();
+  });
+
+  test('a restore from before its prior state was recorded is not guessed at', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const lake = await seedBody(t);
+    const id = await mod.as.mutation(api.landmarks.create, { waterBodyId: lake, ...GULL });
+    const legacy = await legacyRow(t, mod.id, 'restore', 'bodyLandmark', id);
+    await expect(mod.as.mutation(api.undo.run, { actionId: legacy, reason: 'x' })).rejects.toThrow(
+      /before undo existed/i,
+    );
+  });
+});
+
 // ── A body merge: recorded, not yet undone ──────────────────────────────────────────────────────
 
 describe('a body merge records its change set (D226)', () => {
