@@ -678,6 +678,8 @@ describe('hazards.listBundleCandidates (D55)', () => {
     const loser = await t.run(async (ctx) =>
       (await ctx.db.query('hazards').collect()).find((h) => h.mergedIntoHazardId !== undefined),
     );
+    // Merged away: when it left the lake as its own pin is recorded (B01-3b).
+    expect(loser?.leftLakeAt).toEqual(expect.any(Number));
 
     const reportId = await author.as.mutation(api.reports.create, {
       ...OBSERVED,

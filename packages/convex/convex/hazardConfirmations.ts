@@ -287,8 +287,15 @@ async function recomputeLifecycle(
     hazard.decayMultiplier !== undefined ||
     hazard.snowHidden !== undefined ||
     hazard.weatherAdjustedAt !== undefined;
+  // When the pin left the lake (B01-3b): stamped once, the vote that archived it — never moved
+  // after, so a vote cast later can't rewrite a past winter.
+  const leftLake =
+    hazard.status !== 'archived' && next.status === 'archived' && hazard.leftLakeAt === undefined
+      ? { leftLakeAt: Date.now() }
+      : {};
   await ctx.db.patch(hazard._id, {
     ...next,
+    ...leftLake,
     ...(clockAdvanced && hasStoredWeather
       ? { decayMultiplier: undefined, snowHidden: undefined, weatherAdjustedAt: undefined }
       : {}),
@@ -296,7 +303,8 @@ async function recomputeLifecycle(
   // A vote that archived the pin takes it off the map card too (A06c §5). Only a `status` change can
   // do that, so this is cheap in the common case: the recompute short-circuits on an unchanged
   // summary rather than writing the body again.
-  await recomputeBodySummary(ctx, hazard.waterBodyId);
+  // No library fact counts hazards: the summary only (B01-3b).
+  await recomputeBodySummary(ctx, hazard.waterBodyId, undefined, undefined, false);
 
   // The author's notification hangs off the *phase* changing — the same event the map re-renders on.
   // Through the settle queue (D169): the flush re-reads the phase, so a vote flipped back inside the

@@ -21,6 +21,8 @@ import {
   currentSeason,
   resolveSeason,
   type Season,
+  seasonEndMs,
+  seasonStartMs,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
@@ -389,9 +391,12 @@ export const landmarkProposers = query({
 const DAILY_HAZARD_CAP = 500;
 const DAY_MS = 86_400_000;
 
-/** A winter's window as the strips draw it: 1 October to 1 April. */
+/**
+ * A season's span as the hazard reads cover it: 1 July to the next 1 July — the span the Hazards tab's
+ * list (`hazards.listForBody`) covers, so the strip and the list count the same hazards.
+ */
 export function winterWindow(season: Season): { start: number; end: number } {
-  return { start: Date.UTC(season, 9, 1), end: Date.UTC(season + 1, 3, 1) };
+  return { start: seasonStartMs(season), end: seasonEndMs(season) };
 }
 
 /**
@@ -408,20 +413,20 @@ export function daysCovered(from: number, to: number, window: { start: number; e
 }
 
 /**
- * **How many hazards were on the lake each day of a winter** (1 October to 1 April), and when the
- * season's watch opened. Each day says two things:
+ * **How many hazards were on the lake each day of a season**, and when the season's watch opened.
+ * Each day says two things:
  *
- * - `count` — hazards **established** on the lake that day: one is from its first report, and one
- *   still active is through today (or the winter's end);
- * - `unknown` — archived hazards that **may** have been: an archived hazard's end is not stored, and
- *   its votes can't establish it (a vote is edited in place, and an archived hazard still takes
- *   them), so every day after its first report is unknown — never counted as clear. A vote cast
- *   today changes no day of a past winter.
+ * - `count` — hazards **established** on the lake that day: from the first report, through today
+ *   for one still active, or through the day it left the lake for one whose leaving was recorded
+ *   (`leftLakeAt`: the vote that archived it, or its merge into another) — and no further;
+ * - `unknown` — archived hazards with no recorded end (every pin archived before the end was
+ *   recorded): each day after the first report is unknown, never counted as clear.
  *
- * `unknownEnds` is how many archived hazards that is. Hidden and merged-away hazards are not
- * counted; days after today are absent, never zero. `watchOpensOn` is the season record's opening
- * day, `null` while the watch waits. An honest end needs the hazard writers to stamp when a hazard
- * left the lake — deferred until the author-deletion PR's files are open again.
+ * Days run through the end of the caller's UTC day (never past it, never past the season). `hazards`
+ * lists each counted hazard's first-report day and whether its end is recorded (with its end day),
+ * so the tab can mark first reports without another read. `unknownEnds` counts the archived hazards
+ * with no recorded end. Hidden and merged-away pins are not counted. Bounded at
+ * {@link DAILY_HAZARD_CAP}; `capped` past it. `watchOpensOn` is the season record's opening day.
  */
 export const dailyHazards = query({
   args: {
@@ -437,6 +442,8 @@ export const dailyHazards = query({
     const now = callerNow(args.now, Date.now(), DAY_MS);
     const season = resolveSeason(args.season, currentSeason(now));
     const window = winterWindow(season);
+    // Through the end of the caller's UTC day, never past the season.
+    const lastDay = Math.min(Math.floor(now / DAY_MS) * DAY_MS + DAY_MS, window.end);
     const hazards = await ctx.db
       .query('hazards')
       .withIndex('by_water_body_first_reported', (q) =>
@@ -452,16 +459,31 @@ export const dailyHazards = query({
       d[field]++;
       days.set(day, d);
     };
-    // The span's end is exclusive and never past now, so no day after today is ever produced.
-    const lastDay = Math.min(now, window.end);
     let unknownEnds = 0;
+    const listed: {
+      hazardId: Id<'hazards'>;
+      firstReportedDay: number;
+      endRecorded: boolean;
+      endDay: number | null;
+    }[] = [];
     for (const h of hazards.slice(0, DAILY_HAZARD_CAP)) {
       if (h.moderationStatus !== 'visible' || h.mergedIntoHazardId !== undefined) continue;
       const active = h.status === 'active';
-      if (!active) unknownEnds++;
       const firstDay = Math.floor(h.firstReportedAt / DAY_MS) * DAY_MS;
-      for (const day of daysCovered(h.firstReportedAt, lastDay, window)) {
-        const established = active || day === firstDay;
+      // A recorded end counts through its day; a pin still active is on the lake today, whatever any
+      // stamp says (an unmerged pin keeps its first stamp).
+      const endDay =
+        !active && h.leftLakeAt !== undefined ? Math.floor(h.leftLakeAt / DAY_MS) * DAY_MS : null;
+      if (!active && endDay === null) unknownEnds++;
+      listed.push({
+        hazardId: h._id,
+        firstReportedDay: firstDay,
+        endRecorded: endDay !== null,
+        endDay,
+      });
+      const through = endDay === null ? lastDay : Math.min(endDay + DAY_MS, lastDay);
+      for (const day of daysCovered(h.firstReportedAt, active ? lastDay : through, window)) {
+        const established = active || endDay !== null || day === firstDay;
         bump(day, established ? 'count' : 'unknown');
       }
     }
@@ -476,6 +498,7 @@ export const dailyHazards = query({
         .sort(([a], [b]) => a - b)
         .map(([at, d]) => ({ at, count: d.count, unknown: d.unknown })),
       unknownEnds,
+      hazards: listed,
       capped: hazards.length > DAILY_HAZARD_CAP,
       watchOpensOn: opens === undefined ? null : Date.parse(`${opens}T00:00:00Z`),
     };

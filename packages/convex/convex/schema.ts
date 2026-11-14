@@ -2818,6 +2818,12 @@ export default defineSchema({
     snowHidden: v.optional(v.boolean()),
     weatherAdjustedAt: v.optional(v.number()),
     /**
+     * When the pin left the lake — archived by the vote that healed it, or merged into another — set
+     * once and never moved (B01-3b). Absent on a pin still active, and on every pin archived before
+     * it existed: the winters' strip reads those as an end not recorded, never a guessed one.
+     */
+    leftLakeAt: v.optional(v.number()),
+    /**
      * When its author withdrew it — "this was never here", the D65 sense, not "it healed" (D248,
      * founder ruling 2026-11-13). Allowed only while no other skater has said it is there. The pin
      * leaves as if never posted: `moderationStatus` becomes `removed` and the lifecycle `status` is

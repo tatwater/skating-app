@@ -592,7 +592,14 @@ export async function setContentStatus(
       }
       // A hidden hazard must leave the map card too (A06c §5).
       if (args.targetType === 'hazard') {
-        await recomputeBodySummary(ctx, (target as Doc<'hazards'>).waterBodyId);
+        // No library fact counts hazards: the summary only (B01-3b).
+        await recomputeBodySummary(
+          ctx,
+          (target as Doc<'hazards'>).waterBodyId,
+          undefined,
+          undefined,
+          false,
+        );
       }
     }
 

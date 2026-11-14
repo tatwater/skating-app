@@ -158,7 +158,8 @@ describe('pure helpers', () => {
   });
   test('a span counts on every day it overlaps inside the winter', () => {
     const w = winterWindow(2026);
-    expect(w.start).toBe(Date.UTC(2026, 9, 1));
+    // The season's span, as the Hazards tab's list covers it: 1 July to the next 1 July.
+    expect(w).toEqual({ start: Date.UTC(2026, 6, 1), end: Date.UTC(2027, 6, 1) });
     expect(daysCovered(w.start - DAY, w.start + DAY / 2, w)).toEqual([w.start]);
     expect(daysCovered(w.start + DAY / 2, w.start + 2 * DAY + 1, w)).toHaveLength(3);
     expect(daysCovered(w.end, w.end + DAY, w)).toEqual([]);
@@ -781,6 +782,73 @@ describe('dailyHazards', () => {
     expect(day(1)).toMatchObject({ count: 1, unknown: 2 });
     expect(day(5)).toMatchObject({ count: 1, unknown: 2 });
     expect(r.days.every((d) => d.at <= NOW)).toBe(true);
+  });
+
+  test('a recorded end counts through its day; days run through the caller’s whole day; the season opens in July', async () => {
+    const t = harness();
+    const { as, id: mod } = await seedUser(t);
+    const id = await seedBody(t, { name: 'Stamped' });
+    const today = Math.floor(NOW / DAY) * DAY;
+    const ids = await t.run(async (ctx) => {
+      const pin = (at: number, extra: Partial<Doc<'hazards'>>) =>
+        ctx.db.insert('hazards', {
+          waterBodyId: id,
+          type: 'pressure_ridge',
+          geometryKind: 'point_radius',
+          geometry: { type: 'Point' as const, coordinates: [-72, 44] },
+          radiusMeters: 20,
+          bbox: boxOf(-72, 44, 0.001),
+          createdByUserId: mod,
+          photoIds: [],
+          moderationStatus: 'visible',
+          confirmCount: 0,
+          goneCount: 0,
+          createdAt: at,
+          firstReportedAt: at,
+          lastConfirmedAt: at,
+          status: 'active',
+          ...extra,
+        });
+      return {
+        // Archived three days after its first report, the end recorded.
+        ended: await pin(today - 6 * DAY, { status: 'archived', leftLakeAt: today - 3 * DAY + 5 }),
+        // Reported later today than the caller's clock: still today's count.
+        late: await pin(NOW + 3_600_000, {}),
+        // Reported in July, before the old October window opened.
+        july: await pin(Date.UTC(2026, 6, 15), { status: 'archived' }),
+      };
+    });
+    const r = await as.query(api.bodyConsole.dailyHazards, { waterBodyId: id, now: NOW });
+    const day = (at: number) => r.days.find((x) => x.at === at) ?? { count: 0, unknown: 0 };
+    // The recorded end: counted from its first report through the day it left, and no further.
+    expect(day(today - 6 * DAY)).toMatchObject({ count: 1 });
+    expect(day(today - 3 * DAY)).toMatchObject({ count: 1, unknown: 1 });
+    expect(day(today - 2 * DAY)).toMatchObject({ count: 0, unknown: 1 });
+    // Today counts the pin reported later today.
+    expect(day(today)).toMatchObject({ count: 1 });
+    expect(r.days.some((d) => d.at > today)).toBe(false);
+    // The July pin is in the season: its first day counted, every day after unknown.
+    expect(day(Date.UTC(2026, 6, 15))).toMatchObject({ count: 1, unknown: 0 });
+    expect(day(Date.UTC(2026, 6, 16))).toMatchObject({ count: 0, unknown: 1 });
+    expect(r.unknownEnds).toBe(1);
+    expect(r.hazards).toEqual(
+      expect.arrayContaining([
+        {
+          hazardId: ids.ended,
+          firstReportedDay: today - 6 * DAY,
+          endRecorded: true,
+          endDay: today - 3 * DAY,
+        },
+        { hazardId: ids.late, firstReportedDay: today, endRecorded: false, endDay: null },
+        {
+          hazardId: ids.july,
+          firstReportedDay: Date.UTC(2026, 6, 15),
+          endRecorded: false,
+          endDay: null,
+        },
+      ]),
+    );
+    expect(r.hazards).toHaveLength(3);
   });
 
   test('a season or clock out of range reads as this season, at the server’s day', async () => {
