@@ -132,7 +132,13 @@ async function derivePostVisibility(
       .withIndex('by_target', (q) => q.eq('targetType', 'post').eq('targetId', postId))
       .order('desc')
       .first();
-    if (last?.metadata?.derivedFromReportId === undefined) return;
+    // Down because its Reports were: hidden by the last member's hide, or put back that way by the
+    // undo of a moderator's restore (`rederivedFromReportId`).
+    const meta = last?.metadata as
+      | { derivedFromReportId?: string; rederivedFromReportId?: string }
+      | undefined;
+    if (meta?.derivedFromReportId === undefined && meta?.rederivedFromReportId === undefined)
+      return;
     await ctx.db.patch(postId, { moderationStatus: 'visible' });
     await writeAudit(ctx, {
       actorId: audit.actorId,
@@ -509,6 +515,8 @@ export async function setContentStatus(
     // Every member a Post's verdict moved, and from what to what — on the Post's own row, so its undo
     // can put each member back to its own prior status (founder call, 2026-11-13).
     const cascaded: PostCascade[] = [];
+    // A Post restore of one its Reports took down: the member that did, for the undo to put back.
+    let clearsDerivedFromReportId: string | undefined;
     if (args.targetType === 'report') {
       await applyReportStatus(ctx, target as Doc<'reports'>, args.status, audit);
     } else if (args.targetType === 'post') {
@@ -545,6 +553,19 @@ export async function setContentStatus(
                 ? POST_UNRESTORABLE
                 : POST_RESTORE_NEEDS_A_CHOICE,
           );
+        }
+        // A restore records what it clears (the true-inverse rule): a Post that was down only because
+        // its Reports were carries that marker on its newest row, and this restore's undo puts it
+        // back, so a member restored later brings the Post back as it would have.
+        if (post.moderationStatus === 'hidden') {
+          const newest = await ctx.db
+            .query('moderationActions')
+            .withIndex('by_target', (q) => q.eq('targetType', 'post').eq('targetId', post._id))
+            .order('desc')
+            .first();
+          const derived =
+            newest?.metadata?.derivedFromReportId ?? newest?.metadata?.rederivedFromReportId;
+          if (typeof derived === 'string') clearsDerivedFromReportId = derived;
         }
         await ctx.db.patch(post._id, { moderationStatus: 'visible' });
         for (const report of plan.revive) {
@@ -584,6 +605,7 @@ export async function setContentStatus(
         priorStatus,
         newStatus: args.status,
         ...(args.targetType === 'post' ? { cascaded } : {}),
+        ...(clearsDerivedFromReportId !== undefined ? { clearsDerivedFromReportId } : {}),
       },
       createdAt: now,
     });
@@ -688,9 +710,11 @@ export async function revertPostVerdict(
   actor: Doc<'profiles'>,
   { row, reason }: { row: Doc<'moderationActions'>; reason: string },
 ): Promise<void> {
-  const { priorStatus, cascaded } = row.metadata as {
+  const { priorStatus, cascaded, clearsDerivedFromReportId } = row.metadata as {
     priorStatus: ModerationStatus;
     cascaded: PostCascade[];
+    /** On a restore of a Post its Reports took down: the member that did (U1). */
+    clearsDerivedFromReportId?: string;
   };
   const postId = ctx.db.normalizeId('posts', row.targetId);
   const post = postId ? await ctx.db.get(postId) : null;
@@ -744,7 +768,18 @@ export async function revertPostVerdict(
     targetType: 'post',
     targetId: post._id,
     reason,
-    metadata: { priorStatus: post.moderationStatus, newStatus: priorStatus, cascaded: reverted },
+    metadata: {
+      priorStatus: post.moderationStatus,
+      newStatus: priorStatus,
+      cascaded: reverted,
+      // Undoing a restore of a Post its Reports took down puts it back down the same way, marked as
+      // `derivePostVisibility` reads it, so restoring a member later brings the Post back.
+      // Its own key, not `derivedFromReportId`: this row is the moderator's undo, which can itself be
+      // undone and is not a Post's derived change.
+      ...(priorStatus === 'hidden' && clearsDerivedFromReportId !== undefined
+        ? { rederivedFromReportId: clearsDerivedFromReportId }
+        : {}),
+    },
     createdAt: now,
   });
   // The undo reverses the Post's verdict, or (undoing a restore) puts back the verdict that restore
