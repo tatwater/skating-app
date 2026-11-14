@@ -1774,6 +1774,49 @@ one branch (`b01-3-server`).
   - Cost (S2): no ledger rows exist.
   - A strip with no record still draws its full-height hairline on hover.
 
+**B01-1c (2026-11-14): the server follow-up that waited on #110.** One branch,
+`b01-1c-server-followup`, opened after #112.
+
+- **A write made through a script names the person and the script (D256).** `moderationActions.via`,
+  written only by `lib/audit.ts` from the caller identity's `via` claim, and only when it passes
+  `isAuditVia` (core). `convexRun` requires a `via` for every call made as a person and puts it beside
+  the `subject` in `convex run --identity`, which needs the deployment's admin credentials, so no
+  client can set it. It is a label, never a permission. History and the audit feed read "Teagan via
+  seed-destinations", the name in mono. Old rows stay unmarked.
+- **Discipline never strands the ledger, wired (D252).** `banImpl` and `suspendImpl` refuse the last
+  ledger editor who can act, and an undo that puts a ban or suspension back runs through them.
+- **A lift is refused on an account being deleted, or deleted** (`unbanImpl`, and so its undo).
+- **Text caps at the write.** Report notes 5,000 characters (core's `validateReportInput`, on create
+  and edit), photo captions 500, flag notes 1,000 (a person's and the automatic flags'), the
+  access-alert `idempotencyKey` 128. No client sets a limit on any of them. Longer rows stay as they
+  are. `lib/readBudget` charges a photo, a flag and an alert at their capped worst. That holds because
+  every writer is capped and no existing row exceeds a cap: dev has none, prod has no data. A Report and
+  its revision stay at the document limit, for their other fields.
+- **The lengths are recorded, for a screen beside each cap (the founder, 2026-11-14).**
+  - Each write of one of the three texts inserts a `textLengthEvents` row (counts only, never the
+    text), folded per day into a `text_lengths` snapshot by band against the cap in force. An insert
+    reads nothing, so writes never contend.
+  - An edit counts its new length; the old one stays counted.
+  - `metrics.textLengths` reads a season, with a day nothing recorded as `null`.
+  - **Refusals can't be counted:** a refused mutation commits nothing, so the server can't tally
+    them. **Owed before launch:** a backfill of existing rows' lengths.
+- **The daily retry walks all parked erasure work** (no longer three a kind), chained, each piece once
+  a run; a pass that moves nothing throws.
+- **Undo (U1, U2).** A restore of a Post down only because its Reports were records the member that
+  took it down, and the restore's undo puts it back marked `rederivedFromReportId`, so restoring a
+  member later brings the Post back. "Undone by" names the undo's own row on the target.
+- **A Post goes on the next hourly run after its last Report.** Its clock is set by the job the
+  Report's erasure schedules, after that run's cutoff. With lighter charges the sweep no longer runs a
+  second pass, so the tests that expected the same run now take the next one. That was always the
+  production behavior: the tests freeze the clock.
+- **Raw trust points stay visible to moderators — an accepted deviation** from the admins-only rule
+  (D50; the founder, 2026-11-14, "at least for now"). `profiles.getPublicProfile` is unchanged; not a
+  bug.
+- **Waiting:**
+  - H3: no console write calls the undo toast yet; `undo.latestOwn` serves it until one does.
+  - S5's target names: a body's name needs #112's stored library row, not the body's outline.
+  - `listActions`' verb filter in the index: it needs #112's `by_target_action`.
+
 ### The B01-2 server register (owed to the server agent)
 
 Every seam request the B01-2 builders raised against `packages/convex` and `packages/core`, and
@@ -1786,7 +1829,7 @@ the two undo fixes the executor's final review of #108 found (U1, U2). Nothing h
 | S2 | `ledger.overviewCost` — this season's total and its invoiced/metered split, each service's amount and free-tier meter, the last three full months and this one by hosting/AI/compute | Home › cost strip, *Cost · this season*, *By month* | ⚪ no ledger rows yet |
 | S3 | `seasonWatch.homeSummary`, moderator-readable — the watch (waiting/open/closed, sentinels), winter region-wide, imagery state, the first skate | Home › the season's four tiles | 🟢 B01-3 |
 | S4 | `console.overview` additions — `inbox.medianAgeMs`; `people.totalUsers`; the Corpus counts no read has (chord re-fits across bodies, place names, the pre-ice pass's date, awaiting enrichment, the last campaign); dedup groups counted as decisions, not rows | Home › Inbox foot, People's *N users*, Corpus rows | 🟢 B01-3 (pre-ice pass, enrichment: no record) |
-| S5 | The audit feed: a `targetLabel` on each `listActions` row (the body's or person's name), and machine-run events (cron and run outcomes) in the same feed as `system` | Home › audit feed | 🟡 B01-3: machine rows; target names wait |
+| S5 | The audit feed: a `targetLabel` on each `listActions` row (the body's or person's name), and machine-run events (cron and run outcomes) in the same feed as `system` | Home › audit feed | 🟡 B01-3: machine rows; target names wait on #112's stored body row |
 | S6 | One definition of *open flags* that includes `reviewing`, used by every count (§7, the governor's ruling 1) | Home, Metrics | 🟢 B01-3 (D251) |
 | M1 | Keeping up, now — open flags (all, safety), the oldest open flag (when, which body), open tickets and the oldest | Metrics › Keeping up's stats | 🟢 B01-3 |
 | M2 | Keeping up, the season — `flag_time_to_resolution_h` for the last 7 days and the season, the flag queue per day (`flag_oldest_open_age_h`, `flag_queue_depth`), support's resolution histogram and `support_queue_depth` per day | Metrics › the oldest-flag chart, both histograms, open support tickets | 🟢 B01-3 |
@@ -1800,10 +1843,10 @@ the two undo fixes the executor's final review of #108 found (U1, U2). Nothing h
 | M9 | A by-time index on `reportRatings` for kudos (the founder, 2026-11-13: kudos are positive reactions; *helpful* counts; a thumbs-down never subtracts) | M4's kudos strip, M7's kudos column | 🟢 B01-3 (D250) |
 | H1 | A moderator-readable season-tape summary — the watch's opening and the day count, so the tape can wear its *Day N* badge and its marks | The shell's season tape | 🟢 B01-3 |
 | H2 | A colleague-presence read — who else is in the console now | The top bar's faces | 🟢 B01-3 |
-| H3 | An optional audit-row id returned by every operator mutation | Undo's toast and History linking a write to its row | ⚪ waits on the deletion PR |
-| H4 | Suspend and ban refuse the last ledger holder — D227's *never no holder* holds through discipline as well as demotion (the governor's ruling, D252) | People, D227 | 🟡 B01-3: the rule (D252); call sites wait on the deletion PR |
-| U1 | A Post's restore records the auto-hidden state in its `prev` snapshot, and its undo puts it back — today undoing a moderator's restore of an auto-hidden Post (all its Reports hidden) loses that record, and restoring one of its Reports afterwards no longer brings the Post back. The true-inverse rule of the landmark-restore fix (founder-ratified 2026-11-13): a restore records what it clears | Undo (D226), Post moderation | ⚪ waits on the deletion PR |
-| U2 | History's *undone by* link on a Post can point at a Report's row instead of the Post's own undo row (`lib/undo.ts`). Nothing reads the link yet; a pre-wiring fix before the History panel does | Undo's History panel | ⚪ waits on the deletion PR |
+| H3 | An optional audit-row id returned by every operator mutation | Undo's toast and History linking a write to its row | ⚪ waits on a console write that calls the toast (B01-1c: none does yet) |
+| H4 | Suspend and ban refuse the last ledger holder — D227's *never no holder* holds through discipline as well as demotion (the governor's ruling, D252) | People, D227 | 🟢 B01-1c (the rule in B01-3) |
+| U1 | A Post's restore records the auto-hidden state in its `prev` snapshot, and its undo puts it back — today undoing a moderator's restore of an auto-hidden Post (all its Reports hidden) loses that record, and restoring one of its Reports afterwards no longer brings the Post back. The true-inverse rule of the landmark-restore fix (founder-ratified 2026-11-13): a restore records what it clears | Undo (D226), Post moderation | 🟢 B01-1c |
+| U2 | History's *undone by* link on a Post can point at a Report's row instead of the Post's own undo row (`lib/undo.ts`). Nothing reads the link yet; a pre-wiring fix before the History panel does | Undo's History panel | 🟢 B01-1c |
 
 ### Kit extensions owed (B01-2)
 
