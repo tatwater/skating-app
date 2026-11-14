@@ -47,6 +47,21 @@ describe('the strip', () => {
       }),
     );
   });
+
+  it('dashes a field a page can’t say about yet, and never counts it', () => {
+    const c = {
+      have: 7,
+      of: 10,
+      missing: [],
+      unknown: ['lots', 'landmarks', 'bathymetry'] as const,
+    };
+    expect(completenessSegments(c)).toEqual([
+      ...Array<string>(7).fill('on'),
+      'unknown',
+      'unknown',
+      'unknown',
+    ]);
+  });
 });
 
 describe('the note', () => {

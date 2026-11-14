@@ -10,9 +10,9 @@ import { Skeleton } from '@/components/kit/skeleton';
 import { Slider } from '@/components/kit/slider';
 import { LedStrip } from '@/components/kit/trace-chart';
 import { cn } from '@/lib/utils';
-import { completenessSegments, missingSentence, summarizeCompleteness } from '../completeness';
+import { completenessSegments, missingSentence } from '../completeness';
 import type { BodyAsk, BodyIdentity, HistoryEntry } from './bodyModel';
-import { historyTime } from './bodyModel';
+import { historyTime, summarizeCompleteness } from './bodyModel';
 
 /**
  * The Body console's left column (§5.4): the body's lockup, its figures, how complete its record

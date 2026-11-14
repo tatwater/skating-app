@@ -1,6 +1,8 @@
+import { bodyCompleteness } from '@skating/core';
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { missingSentence, summarizeCompleteness } from '../completeness';
+import { missingSentence } from '../completeness';
 import { BODY_NOW, MASCOMA_HISTORY, MASCOMA_RECORD } from './bodyFixtures';
 import {
   acresText,
@@ -15,6 +17,7 @@ import {
   lengthText,
   ringsText,
   statusDate,
+  summarizeCompleteness,
 } from './bodyModel';
 
 const COUNTS = { putIns: 2, lots: 1, landmarks: 7, hasContours: false };
@@ -69,6 +72,39 @@ describe('completeness', () => {
     const keys = itemsOf().map((i) => i.field);
     expect(keys).not.toContain('postedRules');
     expect(keys).not.toContain('samplePoints');
+  });
+
+  it('is core’s rule exactly whenever every count is read', () => {
+    const counts = fc.record({
+      putIns: fc.nat({ max: 3 }),
+      lots: fc.nat({ max: 3 }),
+      landmarks: fc.nat({ max: 3 }),
+      hasContours: fc.boolean(),
+    });
+    fc.assert(
+      fc.property(counts, fc.boolean(), fc.boolean(), (c, named, measured) => {
+        const record = {
+          ...MASCOMA_RECORD,
+          name: named ? MASCOMA_RECORD.name : ' ',
+          elevationM: measured ? MASCOMA_RECORD.elevationM : undefined,
+        };
+        const { unknown, ...summary } = summarizeCompleteness(itemsOf(record, c));
+        expect(unknown).toEqual([]);
+        expect(summary).toEqual(
+          bodyCompleteness({
+            polygon: record.polygon,
+            name: record.name,
+            publicAccess: record.publicAccess ?? null,
+            accessKind: record.accessKind ?? null,
+            maxDepthM: record.maxDepthM,
+            meanDepthM: record.meanDepthM,
+            elevationM: record.elevationM,
+            windRose: record.windRose,
+            ...c,
+          }),
+        );
+      }),
+    );
   });
 
   it('draws an unknown part as neither there nor missing', () => {

@@ -1,5 +1,9 @@
 import type { Doc } from '@skating/convex/dataModel';
 import {
+  COMPLETENESS_FIELDS,
+  COMPLETENESS_RULES,
+  type CompletenessField,
+  type CompletenessInput,
   sqMetersToAcres,
   standingOf,
   standingReasonLabel,
@@ -8,7 +12,7 @@ import {
 } from '@skating/core';
 
 import { type AuditAction, type AuditTarget, actionLabel } from '../../shell/actionLabels';
-import { COMPLETENESS_TABS, type CompletenessItem, completenessItems } from '../completeness';
+import type { Completeness } from '../completeness';
 import type { BodyTabKey } from './bodySearch';
 
 /**
@@ -172,9 +176,73 @@ export function bodyFigures(b: BodyRecord): Figure[] {
 
 // ── Completeness ─────────────────────────────────────────────────────────────────────────────
 
+/** The Body console tab that holds each of core's ten — where its amber square goes. */
+export const COMPLETENESS_TABS: Record<
+  CompletenessField,
+  'shape' | 'names' | 'places' | 'access' | 'water'
+> = {
+  outline: 'shape',
+  name: 'names',
+  access: 'access',
+  depth: 'water',
+  elevation: 'water',
+  wind: 'water',
+  putIns: 'access',
+  lots: 'access',
+  landmarks: 'places',
+  bathymetry: 'water',
+};
+
+/** One of the ten as the console reads it: there, missing, or not yet readable here. */
+export interface CompletenessItem {
+  field: CompletenessField;
+  state: 'present' | 'missing' | 'unknown';
+}
+
+/** The count each counted field is decided by. */
+const COUNTED: Partial<Record<CompletenessField, keyof CompletenessCounts>> = {
+  putIns: 'putIns',
+  lots: 'lots',
+  landmarks: 'landmarks',
+  bathymetry: 'hasContours',
+};
+
 /**
- * The tabs whose part of the record is missing something: each wears the amber square. Read from
- * the shared rule (`../completeness`); an unknown part never flags a tab.
+ * The ten, by **core's rule** (`COMPLETENESS_RULES`, the one `bodyCompleteness` applies and the
+ * library row stores), from what the console reads. A field whose count no read here serves yet
+ * (`null`) is *unknown* — never decided, never counted, never named missing — so a gap in the
+ * reads never reads as a gap in the record. Once the console reads the stored answer, this goes.
+ */
+export function completenessItems(
+  facts: Omit<CompletenessInput, keyof CompletenessCounts> & CompletenessCounts,
+): CompletenessItem[] {
+  const input: CompletenessInput = {
+    ...facts,
+    putIns: facts.putIns ?? 0,
+    lots: facts.lots ?? 0,
+    landmarks: facts.landmarks ?? 0,
+    hasContours: facts.hasContours ?? false,
+  };
+  return COMPLETENESS_FIELDS.map((field) => {
+    const count = COUNTED[field];
+    if (count !== undefined && facts[count] === null) return { field, state: 'unknown' };
+    return { field, state: COMPLETENESS_RULES[field](input) ? 'present' : 'missing' };
+  });
+}
+
+/** The items, counted for the strip and the note: what is there, missing, and unknown. */
+export function summarizeCompleteness(items: readonly CompletenessItem[]): Completeness {
+  return {
+    have: items.filter((i) => i.state === 'present').length,
+    of: items.length,
+    missing: items.filter((i) => i.state === 'missing').map((i) => i.field),
+    unknown: items.filter((i) => i.state === 'unknown').map((i) => i.field),
+  };
+}
+
+/**
+ * The tabs whose part of the record is missing something: each wears the amber square. An unknown
+ * part never flags a tab.
  */
 export function attentionTabs(items: readonly CompletenessItem[]): ReadonlySet<BodyTabKey> {
   return new Set(items.filter((i) => i.state === 'missing').map((i) => COMPLETENESS_TABS[i.field]));
