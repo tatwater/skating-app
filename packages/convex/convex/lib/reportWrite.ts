@@ -80,6 +80,7 @@ import { awardPointEvent, checkAndAwardBadges } from './reputation';
 import { postSnapshotOf, recordRevision } from './revisions';
 import { deriveSightingHazards, drawnHazardOf } from './sightingHazards';
 import { activateOnEvidence } from './standing';
+import { recordTextLength } from './textLengths';
 import { chipInput, iceThickness, latLng, literals, snow } from './validators';
 
 /** Editable report content, shared by `create` and `update` args (the schema mirrors these). */
@@ -308,6 +309,8 @@ export async function createReportRow(
     });
   }
   const n = result.normalized;
+  // How long the notes are, for the cap's record (counts only; a replay returned above records none).
+  await recordTextLength(ctx, 'report_notes', n.notes, now);
 
   // A new report's id is not known yet, so the claim is "no report": a photo already documenting
   // one is refused rather than shared (A10 / D186 — one photo, one report).

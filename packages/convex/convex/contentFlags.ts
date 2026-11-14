@@ -19,6 +19,7 @@ import { mutation, query } from './_generated/server';
 import { getCurrentProfile, requireProfile } from './lib/auth';
 import { FLAG_REASONS, FLAG_TARGET_TYPES } from './lib/enums';
 import { holdMoved, refreshEraseClock } from './lib/eraseClock';
+import { recordTextLength } from './lib/textLengths';
 import { literals } from './lib/validators';
 
 /** The table each flag target type refers to — used to validate the target actually exists. */
@@ -104,6 +105,8 @@ export const flag = mutation({
       origin: 'user', // a person pressed "report" — the one origin `content_flag_resolved` notifies
       createdAt: Date.now(),
     });
+    // How long the note is, for the cap's record (counts only; a repeat flag above wrote nothing).
+    await recordTextLength(ctx, 'flag_note', args.note);
     // An open complaint holds withdrawn content back from erasure (D248).
     await holdMoved(ctx, args.targetType, args.targetId);
 

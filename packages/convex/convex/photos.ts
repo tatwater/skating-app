@@ -13,6 +13,7 @@ import { resolvePhotoUrls } from './lib/photoAccess';
 import { deletePhotoAndBlobs } from './lib/photoOrphans';
 import { getViewableReport } from './lib/reportVisibility';
 import { deleteStoredBlob } from './lib/storageBlobs';
+import { recordTextLength } from './lib/textLengths';
 import { latLng } from './lib/validators';
 
 /** Mint a one-time Convex storage upload URL for the optimized full image / thumb (auth'd). */
@@ -52,6 +53,8 @@ export const create = mutation({
     // Capped at the write, so a photo row has a known worst case for every read of it.
     const captionTooLong = tooLongMessage('The caption', args.caption, PHOTO_CAPTION_MAX_CHARS);
     if (captionTooLong !== null) throw new ConvexError(captionTooLong);
+    // How long the caption is, for the cap's record (counts only).
+    await recordTextLength(ctx, 'photo_caption', args.caption);
     // D42: retain a coord ONLY on placeOnMap opt-in — server-side, so a client bug can't leak it.
     const coord = args.placeOnMap ? args.coord : undefined;
     // Range-check before storing (the `latLng` validator checks types, not geographic bounds).

@@ -123,6 +123,7 @@ import type * as lib_sightingHazards from "../lib/sightingHazards.js";
 import type * as lib_signInDays from "../lib/signInDays.js";
 import type * as lib_standing from "../lib/standing.js";
 import type * as lib_storageBlobs from "../lib/storageBlobs.js";
+import type * as lib_textLengths from "../lib/textLengths.js";
 import type * as lib_undo from "../lib/undo.js";
 import type * as lib_undoHandlers from "../lib/undoHandlers.js";
 import type * as lib_undoHandlersBody from "../lib/undoHandlersBody.js";
@@ -286,6 +287,7 @@ declare const fullApi: ApiFromModules<{
   "lib/signInDays": typeof lib_signInDays;
   "lib/standing": typeof lib_standing;
   "lib/storageBlobs": typeof lib_storageBlobs;
+  "lib/textLengths": typeof lib_textLengths;
   "lib/undo": typeof lib_undo;
   "lib/undoHandlers": typeof lib_undoHandlers;
   "lib/undoHandlersBody": typeof lib_undoHandlersBody;

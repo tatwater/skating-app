@@ -42,6 +42,9 @@ import {
   seasonOf,
   signInRetentionFrom,
   standingOf,
+  TEXT_LENGTH_CAPS,
+  TEXT_LENGTH_KINDS,
+  tallyRecorded,
   wasOpenDuring,
 } from '@skating/core';
 import { v } from 'convex/values';
@@ -720,7 +723,50 @@ export const rollupDayJob = internalMutation({
 /** One UTC day of the Overview's pulse (B01), its own transaction beside `rollupDayJob`. */
 export const rollupPulseDayJob = internalMutation({
   args: { date: v.string() },
-  handler: (ctx, { date }) => rollupPulseDay(ctx, date),
+  handler: async (ctx, { date }) => {
+    await rollupPulseDay(ctx, date);
+    // The day's text lengths in a transaction of their own, by the same two callers (the tick, the
+    // backfill), so neither has to know about them.
+    await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupTextLengthsDayJob, { date });
+  },
+});
+
+/** How long `textLengthEvents` are kept: past the tick's yesterday, with a week for a backfill. */
+export const TEXT_LENGTH_EVENT_KEEP_DAYS = 7;
+
+/**
+ * One day's `text_lengths` snapshot (the founder's ruling, 2026-11-14): per kind, the writes in each
+ * band against the cap in force at each write, the longest, and the cap now. Counts only.
+ *
+ * A kind whose read hits `cap` is `null` in the snapshot — not recorded, never a partial tally — and
+ * the other kinds still save. **Forward-only:** a day before the first event, or older than events are
+ * kept, is never written, so a backfill can't turn a day whose events were pruned into a day of none.
+ */
+export async function rollupTextLengthsDay(
+  ctx: MutationCtx,
+  date: string,
+  cap: number = DAY_SCAN_CAP,
+): Promise<void> {
+  if (date < metricDay(Date.now() - TEXT_LENGTH_EVENT_KEEP_DAYS * DAY_MS)) return;
+  const first = await ctx.db.query('textLengthEvents').withIndex('by_day_kind').first();
+  if (first === null || first.day > date) return;
+  const meta: Record<string, unknown> = {};
+  for (const kind of TEXT_LENGTH_KINDS) {
+    const rows = await wholeDay(
+      ctx.db
+        .query('textLengthEvents')
+        .withIndex('by_day_kind', (q) => q.eq('day', date).eq('kind', kind)),
+      cap,
+      `${kind} lengths on ${date}`,
+    );
+    meta[kind] = rows === null ? null : { ...tallyRecorded(rows), cap: TEXT_LENGTH_CAPS[kind] };
+  }
+  await writeMetricSnapshot(ctx, 'text_lengths', date, { meta });
+}
+
+export const rollupTextLengthsDayJob = internalMutation({
+  args: { date: v.string() },
+  handler: (ctx, { date }) => rollupTextLengthsDay(ctx, date),
 });
 
 /** The point-in-time chunks, each a separate transaction (see the scan-cap note). */
@@ -855,6 +901,8 @@ export const pruneClientSignals = internalMutation({
     for (const row of stale) await ctx.db.delete(row._id);
     // The sign-in record's retention rides this daily prune (D254): its own transaction.
     await ctx.scheduler.runAfter(0, internal.analyticsRollup.pruneSignInDays, {});
+    // So do the text-length events, folded into their days' snapshots and kept a week.
+    await ctx.scheduler.runAfter(0, internal.analyticsRollup.pruneTextLengthEvents, {});
     return { deleted: stale.length };
   },
 });
@@ -877,6 +925,27 @@ export const pruneSignInDays = internalMutation({
     for (const row of stale) await ctx.db.delete(row._id);
     if (stale.length === DAY_SCAN_CAP) {
       await ctx.scheduler.runAfter(0, internal.analyticsRollup.pruneSignInDays, {});
+    }
+    return { deleted: stale.length, keepFrom };
+  },
+});
+
+/**
+ * `textLengthEvents` retention: every row from before the week the day rollup reads, a page per
+ * transaction, chained while a page comes back full. The snapshots they were folded into stay, like
+ * every other daily metric.
+ */
+export const pruneTextLengthEvents = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const keepFrom = metricDay(Date.now() - TEXT_LENGTH_EVENT_KEEP_DAYS * DAY_MS);
+    const stale = await ctx.db
+      .query('textLengthEvents')
+      .withIndex('by_day_kind', (q) => q.gte('day', '0000-01-01').lt('day', keepFrom))
+      .take(DAY_SCAN_CAP);
+    for (const row of stale) await ctx.db.delete(row._id);
+    if (stale.length === DAY_SCAN_CAP) {
+      await ctx.scheduler.runAfter(0, internal.analyticsRollup.pruneTextLengthEvents, {});
     }
     return { deleted: stale.length, keepFrom };
   },
