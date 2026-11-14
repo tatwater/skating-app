@@ -828,6 +828,11 @@ knows what needs them, does it where they found it, and watches the machinery wo
 - `planConventions.test.ts` accepts the `B` era (done in this phase's first commit)
 - The Post-restore chooser on mobile — the server refuses an empty Post restore and takes chosen Reports (2026-11-13); the web chooser is `components/moderation/RestorePost`, the phone has none yet (and no restore of a Post today)
 - D248's two backfills on dev, once #108 is deployed (`convex dev --once`): `authorDeletions:backfillFromAudit` and `authorDeletions:backfillCommentDeletions`. Until they run, a moderator can still restore a Report or Comment its author deleted before the stamp existed
+- D248's verdict record on dev, after the next PR deploys: `authorDeletions:backfillFromAudit` again (it now also withdraws a member hidden after its Post was deleted), then `contentRecord:backfillVerdicts`, which starts `erasure:backfillClocks` when it finishes — in that order, so no clock runs before the verdict that holds it exists
+- The People page's record (§8 §7): the standing verdicts and the recently withdrawn list (`contentRecord.personVerdicts` and `contentRecord.personWithdrawals`, each paged), and the controls to record a verdict on deleted content and to overturn one (`moderation.overturnVerdict`) — the server is built, no screen reads it
+- Retraction screens (D248, server built, no client reaches them) — **Phase B04** ([plan](./phases/B04-skater-contributions.md)) owns them: a request's *Withdraw*, a flag's and a no-public-access report's *Withdraw*, an alert author's *Retract*, a hazard's *Withdraw*, and the delete confirmations' 30 days
+- The phone's "It's open" for an alert's author on their own pinned alert (D248) — built in `AccessSection` on the shared rule, not yet on a device (no RN render harness); its pass rides **Phase B04**'s EAS preview pass (§8.4)
+- Telling people about the 30 days (D248): the app's delete confirmations, and the privacy policy (the legal checklist)
 
 ## Phase B03 — The skater web app
 🟢 **Complete** 2026-11-07 · PRs #95–#104 · [plan](./phases/B03-skater-web.md) · D237 D238 D239 D240 D241 D242 D243 D244
@@ -877,6 +882,24 @@ skater explores lakes, reads peers' reports, and posts their own from a browser 
 - The avatar-remove default image: store nothing when Clerk's `has_image` is false, in the webhook and the token claim both
 - A check that the Clerk `convex` JWT template carries `picture` and `updated_at`
 - Mobile's hazards empty state still has the pre-D237 wording (web's was fixed in close-out)
+
+## Phase B04 — Your contributions: find them, correct them, take them back
+⚪ **Scoped** 2026-11-13 · [plan](./phases/B04-skater-contributions.md)
+
+D248 gave the server rules for what a skater can take back — a hazard no other skater has vouched for,
+a request or flag no moderator has decided, an access alert no moderator has pinned — but no client
+reaches them, and the only way to find a hazard you posted is to remember its lake. This phase gives a
+skater's own profile a list of what they shared that can still be acted on, puts the same actions where
+each item is shown, and adds what the server lacks: moving a hazard and changing its type under the
+withdrawal's gate (earlier doubts about the old spot stop counting; a hazard never becomes a crossing),
+the owner-only reads, and flag ids for the person who filed them. Server, then web, then the phone app.
+*A skater finds a hazard they posted, moves it to where it really is, and withdraws a request they no
+longer need.*
+
+#### Owed
+- `b01-1b-retention` (D248's server) merged to main before B04-1 cuts its branch; that branch's Owed row *Retraction screens* is this phase
+- The founder's answers to the plan's §9 questions, and the boards in its §5 before B04-3
+- The founder's sequencing (2026-11-13): B01 is the focus; the boards and B04's design and build passes wait, designed and built in tandem later. Until then the plan is the running list of skater-side changes the console build finds (its *The running list*)
 
 ## Deferred register
 

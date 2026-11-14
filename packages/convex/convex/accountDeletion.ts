@@ -540,6 +540,20 @@ async function erasePrivate(
       .withIndex('by_user', (q) => q.eq('userId', userId))
       .take(size),
   );
+  // A photo settlement owed to them, and their place in its queue (D248): the photos it names go
+  // with their own photos stage.
+  await drain(
+    await ctx.db
+      .query('photoSettlementQueue')
+      .withIndex('by_uploader', (q) => q.eq('uploaderId', userId))
+      .take(size),
+  );
+  await drain(
+    await ctx.db
+      .query('photoSettlements')
+      .withIndex('by_uploader', (q) => q.eq('uploaderId', userId))
+      .take(size),
+  );
   // A *From Google Photos* in flight holds a live one-hour token (A10-8, D207).
   await drain(
     await ctx.db

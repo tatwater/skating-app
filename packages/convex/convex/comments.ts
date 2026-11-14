@@ -32,6 +32,7 @@ import {
 import { AUTHOR_DELETE_REASON } from './lib/authorDeletion';
 import { publicAuthor } from './lib/authorView';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
+import { refreshEraseClock } from './lib/eraseClock';
 import { enqueueActorNotification } from './lib/notificationQueue';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
 
@@ -73,7 +74,8 @@ export const create = mutation({
     let parent: Doc<'comments'> | null = null;
     if (args.parentCommentId !== undefined) {
       parent = await ctx.db.get(args.parentCommentId);
-      if (!parent || parent.reportId !== args.reportId) {
+      // An erased comment's placeholder is nobody's words to answer (D248).
+      if (!parent || parent.reportId !== args.reportId || parent.erasedAt !== undefined) {
         throw new ConvexError('Parent comment not found');
       }
       // 2-level cap (D25): a reply's parent must itself be top-level. A well-behaved client already
@@ -287,6 +289,8 @@ export const remove = mutation({
     if (existing.authorDeletedAt !== undefined) return commentId;
     const now = Date.now();
     await ctx.db.patch(commentId, { moderationStatus: 'removed', authorDeletedAt: now });
+    // The 30 days start now, unless a verdict or an open flag holds it (D248).
+    await refreshEraseClock(ctx, 'comment', commentId, now);
     if (existing.moderationStatus !== 'removed') {
       // Drop the author's visible-comment counter if this was still counting (visible → removed).
       await bumpContributionCount(

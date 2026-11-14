@@ -93,6 +93,12 @@ describe('describeRequestOutcome', () => {
       'A moderator reviewed your request and left things as they are.',
     );
   });
+
+  it('says the asker withdrew it, never that a moderator decided it', () => {
+    expect(describeRequestOutcome({ kind: 'admit', status: 'retracted' })).toBe(
+      'You withdrew this request.',
+    );
+  });
 });
 
 describe('the catalog point query', () => {

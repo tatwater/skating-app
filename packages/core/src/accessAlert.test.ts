@@ -1,3 +1,4 @@
+import fc from 'fast-check';
 import { describe, expect, test } from 'vitest';
 import {
   ACCESS_ALERT_REASONS,
@@ -10,6 +11,7 @@ import {
   accessAlertExpiryFor,
   accessAlertIsLive,
   accessAlertKindOf,
+  accessAlertVoteControls,
   deriveAccessAlertLifecycle,
   isAccessCondition,
 } from './accessAlert';
@@ -191,6 +193,91 @@ describe('deriveAccessAlertLifecycle', () => {
     expect(out.lastConfirmedAt).toBe(JAN + 2);
     expect(out.expiresAt).toBeUndefined();
   });
+  test('the author\'s own "it\'s open" resolves it at once, pinned or not — resolved, never retracted', () => {
+    for (const status of ['active', 'official', 'expired'] as const) {
+      const row = alert({
+        status,
+        createdByUserId: 'author',
+        ...(status === 'official' ? { expiresAt: undefined } : {}),
+      });
+      const out = deriveAccessAlertLifecycle(row, [vote('author', 'open', JAN + 1)], SEASON_END);
+      expect(out.status).toBe('resolved');
+      expect(out.expiresAt).toBe(row.expiresAt);
+    }
+  });
+
+  test('anyone else\'s "it\'s open" on a pinned alert still does nothing', () => {
+    const out = deriveAccessAlertLifecycle(
+      alert({ status: 'official', expiresAt: undefined, createdByUserId: 'author' }),
+      [vote('a', 'open', JAN + 1)],
+      SEASON_END,
+    );
+    expect(out.status).toBe('official');
+  });
+
+  test('a retracted alert stays retracted, whatever its author says after', () => {
+    const out = deriveAccessAlertLifecycle(
+      alert({ status: 'retracted', createdByUserId: 'author' }),
+      [vote('author', 'open', JAN + 1)],
+      SEASON_END,
+    );
+    expect(out.status).toBe('retracted');
+  });
+
+  test('the author\'s later "still blocked" takes back their earlier "open"', () => {
+    const out = deriveAccessAlertLifecycle(
+      alert({ createdByUserId: 'author' }),
+      [vote('author', 'open', JAN + 1), vote('author', 'still_blocked', JAN + 2)],
+      SEASON_END,
+    );
+    expect(out.status).toBe('active');
+  });
+});
+
+describe('deriveAccessAlertLifecycle, under any votes', () => {
+  const statuses = fc.constantFrom(...ACCESS_ALERT_STATUSES);
+  const votes = fc.array(
+    fc.record({
+      userId: fc.constantFrom('author', 'a', 'b', 'c'),
+      verdict: fc.constantFrom('still_blocked' as const, 'open' as const),
+      observedAt: fc.integer({ min: JAN, max: JAN + 60 * 24 * 60 * 60 * 1000 }),
+    }),
+    { maxLength: 8 },
+  );
+  const latestOf = (vs: readonly AccessAlertVote[], userId: string) =>
+    vs.filter((v) => v.userId === userId).sort((x, y) => y.observedAt - x.observedAt)[0];
+
+  test('the author\'s latest "open" resolves any claim not retracted; otherwise the rule is inert', () => {
+    fc.assert(
+      fc.property(statuses, votes, (status, vs) => {
+        const row = alert({ status, createdByUserId: 'author' });
+        const out = deriveAccessAlertLifecycle(row, vs, SEASON_END);
+        const authors = latestOf(vs, 'author');
+        // Ties between two of the author's votes at one instant keep the first seen, as the
+        // derivation does; skip them rather than re-implement that order here.
+        const tied = vs.filter(
+          (v) => v.userId === 'author' && v.observedAt === authors?.observedAt,
+        );
+        if (tied.length > 1) return;
+        if (authors?.verdict === 'open' && status !== 'retracted') {
+          expect(out.status).toBe('resolved');
+        } else {
+          const { createdByUserId: _, ...anonymous } = row;
+          expect(out).toEqual(deriveAccessAlertLifecycle(anonymous, vs, SEASON_END));
+        }
+      }),
+    );
+  });
+
+  test('without the author, a pin outranks every vote', () => {
+    fc.assert(
+      fc.property(votes, (vs) => {
+        const others = vs.filter((v) => v.userId !== 'author');
+        const row = alert({ status: 'official', expiresAt: undefined, createdByUserId: 'author' });
+        expect(deriveAccessAlertLifecycle(row, others, SEASON_END).status).toBe('official');
+      }),
+    );
+  });
 });
 
 describe('ACCESS_CONDITION_REASONS (D197)', () => {
@@ -206,5 +293,26 @@ describe('ACCESS_CONDITION_REASONS (D197)', () => {
     for (const reason of ACCESS_CONDITION_REASONS)
       expect(accessAlertKindOf(reason)).toBe('condition');
     for (const reason of ACCESS_ALERT_REASONS) expect(accessAlertKindOf(reason)).toBe('blocker');
+  });
+});
+
+describe('accessAlertVoteControls', () => {
+  test('a live claim takes both votes from anyone; a pin, only its author\'s "it\'s open"', () => {
+    expect(accessAlertVoteControls({ official: false })).toEqual({
+      stillBlocked: true,
+      open: true,
+    });
+    expect(accessAlertVoteControls({ official: false, isOwn: true })).toEqual({
+      stillBlocked: true,
+      open: true,
+    });
+    expect(accessAlertVoteControls({ official: true })).toEqual({
+      stillBlocked: false,
+      open: false,
+    });
+    expect(accessAlertVoteControls({ official: true, isOwn: true })).toEqual({
+      stillBlocked: false,
+      open: true,
+    });
   });
 });

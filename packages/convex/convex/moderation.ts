@@ -26,8 +26,16 @@ import {
   authorDeletedRefusal,
 } from './lib/authorDeletion';
 import { recomputeBodySummary } from './lib/bodySummary';
+import {
+  endVerdicts,
+  recordUndoneVerdict,
+  recordVerdict,
+  standingVerdictsOn,
+  subjectOf,
+} from './lib/contentVerdicts';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import { MODERATION_ACTIONS, MODERATION_STATUSES, MODERATION_TARGET_TYPES } from './lib/enums';
+import { authorRetracted, ERASABLE, refreshEraseClock } from './lib/eraseClock';
 import { closeFlag } from './lib/flagResolution';
 import { withoutLedgerGrantsFor } from './lib/ledgerEditors';
 import { refreshPostLatestSkateEnd, refreshPostSearchText } from './lib/postSync';
@@ -160,6 +168,8 @@ export async function authorRemoveReport(
   // Report a moderator already removed is stamped too, so overturning that verdict later can never
   // republish it. Its status, the counters and the Post are already where a removal leaves them.
   await ctx.db.patch(report._id, { authorDeletedAt: now });
+  // The 30 days start now, unless a verdict or an open flag holds it (D248).
+  await refreshEraseClock(ctx, 'report', report._id, now);
   if (priorStatus === 'removed') {
     await writeAudit(ctx, {
       actorId: author._id,
@@ -236,11 +246,14 @@ export async function authorRemovePost(
   // Everything in it is withdrawn, a member a moderator removed earlier included (founder ruling,
   // 2026-11-13): nothing inside a Post its author deleted can come back.
   await ctx.db.patch(post._id, { moderationStatus: 'removed', authorDeletedAt: now });
+  // The 30 days start now for the Post and each member, unless something holds it (D248).
+  await refreshEraseClock(ctx, 'post', post._id, now);
   for (const reportId of post.reportIds) {
     const report = await ctx.db.get(reportId);
     if (!report || report.authorDeletedAt !== undefined) continue;
     const memberPrior = report.moderationStatus;
     await ctx.db.patch(report._id, { authorDeletedAt: now });
+    await refreshEraseClock(ctx, 'report', report._id, now);
     if (memberPrior !== 'removed') await applyReportStatus(ctx, report, 'removed', audit);
     await writeAudit(ctx, {
       actorId: author._id,
@@ -460,15 +473,19 @@ export async function setContentStatus(
     // Author-deleted content never comes back (D248, founder ruling 2026-11-13) — not by restore, not
     // by a Post's choice, not by undo — and nothing else moves it either: it stays as the deletion
     // left it.
+    // Erased is gone (D248): nothing is left to judge, and a verdict on it would be a record of nothing.
+    if (args.targetType === 'comment' && (typedTarget as Doc<'comments'>).erasedAt !== undefined) {
+      throw new ConvexError(ERASED_ALREADY);
+    }
     if (authorDeletedAtOf(typedTarget) !== undefined) {
       if (args.status === 'visible' || asUndo) {
         throw new ConvexError(authorDeletedRefusal(args.status, asUndo));
       }
       // A moderator's hide or remove on content its author already deleted (a flag that arrives
-      // after the delete) is still their decision, and goes on the audit trail as evidence — the
-      // content stays exactly as the deletion left it. (D248 ruling 2: the next PR puts it on the
-      // person's verdict record.)
-      await writeAudit(ctx, {
+      // after the delete) is still their decision, and goes on the person's record as evidence
+      // (D248) — the content stays exactly as the deletion left it, and the verdict holds it back
+      // from erasure until a moderator overturns it.
+      const actionId = await writeAudit(ctx, {
         actorId: actor._id,
         action: ACTION_FOR_STATUS[args.status],
         targetType: args.targetType,
@@ -476,6 +493,14 @@ export async function setContentStatus(
         reason: args.reason,
         metadata: { priorStatus, newStatus: priorStatus, onAuthorDeleted: true },
         createdAt: now,
+      });
+      await recordVerdict(ctx, {
+        subjectUserId: subjectOf(args.targetType, typedTarget),
+        targetType: args.targetType,
+        targetId: args.targetId,
+        actionId,
+        kind: args.status,
+        at: now,
       });
       return targetId;
     }
@@ -549,7 +574,7 @@ export async function setContentStatus(
       }
     }
 
-    await writeAudit(ctx, {
+    const actionId = await writeAudit(ctx, {
       actorId: actor._id,
       action: ACTION_FOR_STATUS[args.status],
       targetType: args.targetType,
@@ -562,6 +587,22 @@ export async function setContentStatus(
       },
       createdAt: now,
     });
+    // The person's record (D248): a restore reverses the standing verdict, a hide or remove puts one
+    // on the record, and an undo back down puts back only what the undone row ended.
+    if (args.status === 'visible') {
+      await endVerdicts(ctx, args.targetType, args.targetId, { actionId, at: now });
+    } else {
+      const entry = {
+        subjectUserId: subjectOf(args.targetType, typedTarget),
+        targetType: args.targetType,
+        targetId: args.targetId,
+        actionId,
+        kind: args.status,
+        at: now,
+      };
+      if (args.undoes !== undefined) await recordUndoneVerdict(ctx, entry, args.undoes);
+      else await recordVerdict(ctx, entry);
+    }
     return targetId;
   }
 }
@@ -583,6 +624,11 @@ export interface PostCascade {
  * Move one member of a Post for the Post's verdict, or for that verdict's undo: the Report's status
  * and everything that follows it, and its own audit row naming the Post (which makes its undo the
  * Post's). Returns the entry the Post's own row records.
+ *
+ * A member the moderator **chose** is their own decision on it, so it moves the person's record
+ * (D248): brought back, its verdict ends; put back down by the restore's undo (`undoing` is the
+ * member's row that undo reverses), the verdict that choice ended is on the record again. A plain
+ * cascade is the Post's verdict, not one of its own.
  */
 async function moveMember(
   ctx: MutationCtx,
@@ -591,11 +637,12 @@ async function moveMember(
   to: ModerationStatus,
   audit: { actorId: Id<'profiles'>; reason: string; now: number },
   chosen = false,
+  undoing?: Id<'moderationActions'>,
 ): Promise<PostCascade> {
   const from = report.moderationStatus;
   const mark = chosen ? ({ chosen: true } as const) : {};
   await applyReportStatus(ctx, report, to, audit);
-  await writeAudit(ctx, {
+  const actionId = await writeAudit(ctx, {
     actorId: audit.actorId,
     action: ACTION_FOR_STATUS[to],
     targetType: 'report',
@@ -604,6 +651,22 @@ async function moveMember(
     metadata: { priorStatus: from, newStatus: to, cascadedFromPostId: postId, ...mark },
     createdAt: audit.now,
   });
+  if (chosen && to === 'visible') {
+    await endVerdicts(ctx, 'report', report._id, { actionId, at: audit.now });
+  } else if (chosen && undoing !== undefined && to !== 'visible') {
+    await recordUndoneVerdict(
+      ctx,
+      {
+        subjectUserId: report.authorId,
+        targetType: 'report',
+        targetId: report._id,
+        actionId,
+        kind: to,
+        at: audit.now,
+      },
+      undoing,
+    );
+  }
   return { id: report._id, from, to, ...mark };
 }
 
@@ -644,6 +707,7 @@ export async function revertPostVerdict(
     report: Doc<'reports'>;
     to: ModerationStatus;
     chosen: boolean;
+    undoing: Id<'moderationActions'>;
   }[] = [];
   for (const member of cascaded) {
     const report = await ctx.db.get(member.id);
@@ -654,7 +718,7 @@ export async function revertPostVerdict(
     if (last?.metadata?.cascadedFromPostId !== post._id || last.createdAt !== row.createdAt) {
       continue;
     }
-    moves.push({ report, to: member.from, chosen: member.chosen === true });
+    moves.push({ report, to: member.from, chosen: member.chosen === true, undoing: last._id });
   }
   // An undo back to visible must leave a Report showing (D186; founder call, 2026-11-13). It never
   // chooses which — that is Restore's — so it refuses and says where the choice lives.
@@ -671,10 +735,10 @@ export async function revertPostVerdict(
   // The Post first, so a member's change doesn't re-derive the Post's status from the old one.
   await ctx.db.patch(post._id, { moderationStatus: priorStatus });
   const reverted: PostCascade[] = [];
-  for (const { report, to, chosen } of moves) {
-    reverted.push(await moveMember(ctx, post._id, report, to, audit, chosen));
+  for (const { report, to, chosen, undoing } of moves) {
+    reverted.push(await moveMember(ctx, post._id, report, to, audit, chosen, undoing));
   }
-  await writeAudit(ctx, {
+  const actionId = await writeAudit(ctx, {
     actorId: actor._id,
     action: ACTION_FOR_STATUS[priorStatus],
     targetType: 'post',
@@ -683,7 +747,95 @@ export async function revertPostVerdict(
     metadata: { priorStatus: post.moderationStatus, newStatus: priorStatus, cascaded: reverted },
     createdAt: now,
   });
+  // The undo reverses the Post's verdict, or (undoing a restore) puts back the verdict that restore
+  // ended — none, for a Post that was down only because its Reports were.
+  if (priorStatus === 'visible') {
+    await endVerdicts(ctx, 'post', post._id, { actionId, at: now });
+  } else {
+    await recordUndoneVerdict(
+      ctx,
+      {
+        subjectUserId: post.authorId,
+        targetType: 'post',
+        targetId: post._id,
+        actionId,
+        kind: priorStatus,
+        at: now,
+      },
+      row._id,
+    );
+  }
 }
+
+/**
+ * A Post its author emptied Report by Report (the clients delete Reports, never a whole Post): every
+ * member deleted by its author, or already erased. Nothing in it can come back, so a verdict on it is
+ * overturned like one on deleted content — a restore would be refused.
+ */
+async function everyMemberWithdrawn(ctx: QueryCtx, post: Doc<'posts'>): Promise<boolean> {
+  for (const id of post.reportIds) {
+    const member = await ctx.db.get(id);
+    if (member && member.authorDeletedAt === undefined) return false;
+  }
+  return true;
+}
+
+/** Overturn refusals, worded once for the mutation and its tests. */
+export const OVERTURN_NOT_DELETED =
+  'Its author still has this up. Restore it to take the verdict off their record.';
+export const OVERTURN_NOTHING_STANDING = 'There is no standing verdict on this to overturn.';
+/** Anything a moderator tries on a comment the sweep erased. */
+export const ERASED_ALREADY = 'This was erased, so there is nothing left to act on.';
+
+/**
+ * Overturn a verdict on content its author has since deleted (D248) — a mistake, or a successful
+ * appeal. The verdict leaves the person's record; the content does not come back, and with nothing
+ * else holding it, its erasure clock runs again. Content still the author's to show is reversed with
+ * Restore instead.
+ */
+export const overturnVerdict = mutation({
+  args: {
+    // Only what an author can withdraw — and an alert its author retracted.
+    targetType: literals(['report', 'post', 'comment', 'hazard', 'accessAlert']),
+    targetId: v.string(),
+    reason: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // An alert's verdict is the alert lever's, as its retraction and pin are. Each gate is spelled
+    // as a literal so the D217 guard (`capabilityGates.test.ts`) reads both.
+    const actor =
+      args.targetType === 'accessAlert'
+        ? await requireCapability(ctx, 'access.alert')
+        : await requireCapability(ctx, 'content.moderate');
+    const reason = args.reason.trim();
+    if (reason.length === 0) throw new ConvexError('A reason is required');
+    const targetId = ctx.db.normalizeId(ERASABLE[args.targetType], args.targetId);
+    const target = targetId ? await ctx.db.get(targetId) : null;
+    if (!target) throw new ConvexError('Target not found');
+    const withdrawn =
+      args.targetType === 'accessAlert'
+        ? // Who retracted it, as `retract` reads it: a verdict it recorded on an alert retracted
+          // before `retractedAt` existed is overturnable before the clocks backfill reaches it.
+          authorRetracted(target as Doc<'accessAlerts'>)
+        : authorDeletedAtOf(target as Exclude<typeof target, Doc<'accessAlerts'>>) !== undefined ||
+          (args.targetType === 'post' && (await everyMemberWithdrawn(ctx, target as Doc<'posts'>)));
+    if (!withdrawn) throw new ConvexError(OVERTURN_NOT_DELETED);
+    if ((await standingVerdictsOn(ctx, args.targetType, args.targetId)).length === 0) {
+      throw new ConvexError(OVERTURN_NOTHING_STANDING);
+    }
+    const now = Date.now();
+    const actionId = await writeAudit(ctx, {
+      actorId: actor._id,
+      action: 'overturn_verdict',
+      targetType: args.targetType,
+      targetId: args.targetId,
+      reason,
+      createdAt: now,
+    });
+    await endVerdicts(ctx, args.targetType, args.targetId, { actionId, at: now });
+    return targetId;
+  },
+});
 
 /**
  * Resolve a content flag (D32/D37). `requireCapability('inbox.flag')`; sets the flag terminal status
@@ -710,6 +862,12 @@ export const resolveFlag = mutation({
     // concurrent second resolver re-reads the now-terminal status on retry and lands here.
     if (flag.status === 'actioned' || flag.status === 'dismissed') {
       throw new ConvexError('This flag has already been resolved');
+    }
+    // The filer's withdrawal is final (D248): no moderator decides it after.
+    if (flag.status === 'retracted') {
+      throw new ConvexError(
+        'The person who filed this withdrew it, so there is nothing to resolve.',
+      );
     }
 
     const now = Date.now();

@@ -2416,6 +2416,26 @@ export default defineSchema({
      * Absent ⇒ the author hasn't withdrawn it.
      */
     authorDeletedAt: v.optional(v.number()),
+    /**
+     * When this withdrawn item is to be erased (D248): set at the author's deletion to 30 days on,
+     * cleared while a moderator's verdict or an open flag holds it, and set again when the hold
+     * clears — to the later of the deletion + 30 days and that moment. Written only by
+     * `lib/eraseClock.refreshEraseClock`, so the erasure sweep's range holds nothing but due work.
+     * Absent ⇒ not withdrawn, or held, or already erased.
+     */
+    eraseAt: v.optional(v.number()),
+    /**
+     * Erasure attempts that failed in a row (D248), the last one's error class (never its message),
+     * and when the item was parked after three — or last tried, once parked (`lib/attempts`). Any
+     * progress clears them. A parked item is off the clock and out of the sweep's range, so one item
+     * that always fails never holds up the rest; the daily retry tries it again, a few a day, least
+     * recently tried first, and `erasure.retryParked` releases it at once.
+     */
+    eraseAttempts: v.optional(v.number()),
+    eraseErrorClass: v.optional(v.string()),
+    eraseParkedAt: v.optional(v.number()),
+    /** When the daily retry of parked erasures last tried it, if it has. */
+    eraseRetriedAt: v.optional(v.number()),
   })
     .index('by_water_body_skate_end_time', ['waterBodyId', 'skateEndTime'])
     // Per-body feed, paginated (infinite scroll). `moderationStatus` leads so the gate is applied
@@ -2431,6 +2451,13 @@ export default defineSchema({
     // cannot see it under the second. The old `by_sub_area_moderation_and_skate_end_time` index
     // was dropped with them: an unread index is write amplification plus a trap.
     .index('by_author', ['authorId'])
+    // A person's own deletions, newest first — the People page's recently deleted list (D248). Read
+    // with a lower bound: the field is optional, and an absent value sorts first.
+    .index('by_author_deleted', ['authorId', 'authorDeletedAt'])
+    // The erasure sweep (D248): a `gt(0).lte(now)` range holds only due work (`lib/erasure`).
+    .index('by_erase_at', ['eraseAt'])
+    // Parked erasures (D248), read with a lower bound: the field is optional.
+    .index('by_erase_parked', ['eraseParkedAt'])
     // Newest-first author history for the profile page, bounded by a `.take()` on skate-end time so a
     // prolific reporter's page never `.collect()`s an unbounded set (D13).
     .index('by_author_skate_end_time', ['authorId', 'skateEndTime'])
@@ -2508,6 +2535,26 @@ export default defineSchema({
      */
     authorDeletedAt: v.optional(v.number()),
     /**
+     * When this withdrawn item is to be erased (D248): set at the author's deletion to 30 days on,
+     * cleared while a moderator's verdict or an open flag holds it, and set again when the hold
+     * clears — to the later of the deletion + 30 days and that moment. Written only by
+     * `lib/eraseClock.refreshEraseClock`, so the erasure sweep's range holds nothing but due work.
+     * Absent ⇒ not withdrawn, or held, or already erased.
+     */
+    eraseAt: v.optional(v.number()),
+    /**
+     * Erasure attempts that failed in a row (D248), the last one's error class (never its message),
+     * and when the item was parked after three — or last tried, once parked (`lib/attempts`). Any
+     * progress clears them. A parked item is off the clock and out of the sweep's range, so one item
+     * that always fails never holds up the rest; the daily retry tries it again, a few a day, least
+     * recently tried first, and `erasure.retryParked` releases it at once.
+     */
+    eraseAttempts: v.optional(v.number()),
+    eraseErrorClass: v.optional(v.string()),
+    eraseParkedAt: v.optional(v.number()),
+    /** When the daily retry of parked erasures last tried it, if it has. */
+    eraseRetriedAt: v.optional(v.number()),
+    /**
      * The words a search of Latest reads (B03 §11): the Post's title and prose, and what its
      * **visible** members' authors typed. Derived; one writer, `refreshPostSearchText` in
      * `lib/postSync.ts`, called from everything that changes those words or a member's verdict, so a
@@ -2521,6 +2568,12 @@ export default defineSchema({
     // Profile history, newest first, bounded by a `.take()` (D13) — and the departed-user sweep.
     .index('by_author_latest_skate_end_time', ['authorId', 'latestSkateEndTime'])
     .index('by_author', ['authorId'])
+    // A person's own deletions, newest first (D248) — read with a lower bound, as on `reports`.
+    .index('by_author_deleted', ['authorId', 'authorDeletedAt'])
+    // The erasure sweep (D248), as on `reports`.
+    .index('by_erase_at', ['eraseAt'])
+    // Parked erasures (D248), read with a lower bound: the field is optional.
+    .index('by_erase_parked', ['eraseParkedAt'])
     .index('by_idempotency_key', ['idempotencyKey'])
     // Latest's text search, with the moderation gate and the skater filter in the index.
     .searchIndex('search_text', {
@@ -2611,10 +2664,46 @@ export default defineSchema({
      * Absent ⇒ the author hasn't withdrawn it.
      */
     authorDeletedAt: v.optional(v.number()),
+    /**
+     * When this withdrawn item is to be erased (D248): set at the author's deletion to 30 days on,
+     * cleared while a moderator's verdict or an open flag holds it, and set again when the hold
+     * clears — to the later of the deletion + 30 days and that moment. Written only by
+     * `lib/eraseClock.refreshEraseClock`, so the erasure sweep's range holds nothing but due work.
+     * Absent ⇒ not withdrawn, or held, or already erased.
+     */
+    eraseAt: v.optional(v.number()),
+    /**
+     * Erasure attempts that failed in a row (D248), the last one's error class (never its message),
+     * and when the item was parked after three — or last tried, once parked (`lib/attempts`). Any
+     * progress clears them. A parked item is off the clock and out of the sweep's range, so one item
+     * that always fails never holds up the rest; the daily retry tries it again, a few a day, least
+     * recently tried first, and `erasure.retryParked` releases it at once.
+     */
+    eraseAttempts: v.optional(v.number()),
+    eraseErrorClass: v.optional(v.string()),
+    eraseParkedAt: v.optional(v.number()),
+    /** When the daily retry of parked erasures last tried it, if it has. */
+    eraseRetriedAt: v.optional(v.number()),
+    /**
+     * When the erasure sweep erased this (D248). Only a comment replies point at keeps a row once
+     * erased: an empty shell — no words, no edit time — so the thread still draws the placeholder its
+     * replies hang from, as it does for any removed comment. Every other erased comment is deleted.
+     * Absent ⇒ not erased.
+     */
+    erasedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index('by_report', ['reportId'])
     .index('by_author', ['authorId']) // profile #comments count + enumerate a user's comments (D13)
+    // A person's own deletions, newest first (D248) — read with a lower bound, as on `reports`.
+    .index('by_author_deleted', ['authorId', 'authorDeletedAt'])
+    // The erasure sweep (D248), as on `reports`.
+    .index('by_erase_at', ['eraseAt'])
+    // Parked erasures (D248), read with a lower bound: the field is optional.
+    .index('by_erase_parked', ['eraseParkedAt'])
+    // A comment's replies, so erasing it knows whether a placeholder must stay. `eq()` only: the
+    // field is optional, and a top-level comment's absent value would sort first under a range.
+    .index('by_parent', ['parentCommentId'])
     // ── B01 server reads: the Overview's Metrics ──
     // The day rollup's comments (`comments_created`; a comment is not a contribution, D253) and the
     // season's reach, read by a bounded time range. `createdAt` is required, so nothing sorts as
@@ -2716,8 +2805,35 @@ export default defineSchema({
     decayMultiplier: v.optional(v.number()),
     snowHidden: v.optional(v.boolean()),
     weatherAdjustedAt: v.optional(v.number()),
+    /**
+     * When its author withdrew it — "this was never here", the D65 sense, not "it healed" (D248,
+     * founder ruling 2026-11-13). Allowed only while no other skater has said it is there. The pin
+     * leaves as if never posted: `moderationStatus` becomes `removed` and the lifecycle `status` is
+     * left alone, so nothing reads it as cleared or healed (D3). Never cleared; nothing restores it.
+     */
+    authorDeletedAt: v.optional(v.number()),
+    /** When a withdrawn hazard is erased — 30 days on, unless held (`lib/eraseClock`). */
+    eraseAt: v.optional(v.number()),
+    /**
+     * Erasure attempts that failed in a row (D248), the last one's error class (never its message),
+     * and when the item was parked after three — or last tried, once parked (`lib/attempts`). Any
+     * progress clears them. A parked item is off the clock and out of the sweep's range, so one item
+     * that always fails never holds up the rest; the daily retry tries it again, a few a day, least
+     * recently tried first, and `erasure.retryParked` releases it at once.
+     */
+    eraseAttempts: v.optional(v.number()),
+    eraseErrorClass: v.optional(v.string()),
+    eraseParkedAt: v.optional(v.number()),
+    /** When the daily retry of parked erasures last tried it, if it has. */
+    eraseRetriedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
+    // The erasure sweep (D248): a `gt(0).lte(now)` range holds only due work.
+    .index('by_erase_at', ['eraseAt'])
+    // Parked erasures (D248), read with a lower bound: the field is optional.
+    .index('by_erase_parked', ['eraseParkedAt'])
+    // An author's own withdrawals, newest first — the People page (D248). Read with a lower bound.
+    .index('by_author_deleted', ['createdByUserId', 'authorDeletedAt'])
     .index('by_water_body_status', ['waterBodyId', 'status'])
     .index('by_water_body', ['waterBodyId'])
     // D55 auto-bundle: find an author's own unattached hazards on a body to offer into their report.
@@ -2763,6 +2879,13 @@ export default defineSchema({
     // row leaves unset, so it costs nothing to carry and turns "what was merged into this?" from a
     // scan of the body's hazards into a lookup.
     .index('by_merged_into', ['mergedIntoHazardId'])
+    // The hazards drawn in one Report, so erasing the Report unlinks them a page at a time (D248).
+    // `eq()` only: the field is optional and the index not sparse.
+    .index('by_origin_report', ['originReportId'])
+    // An author's hazards in creation order, which no write moves — what the erasure's photo
+    // settlement pages across transactions (D248): `by_author_and_water_body` reorders a hazard
+    // refiled to another lake, so a cursor walk over it can miss one.
+    .index('by_author', ['createdByUserId'])
     // ── B01 server reads: the Overview's Metrics ──
     // *First-time contributors*: a person's earliest hazard is the first row of this range.
     // `by_author_and_water_body` orders by body, not by time, so it can't answer "the first one".
@@ -3206,8 +3329,34 @@ export default defineSchema({
     reportId: v.optional(v.id('reports')),
     /** For an approved `name_landmark`: the landmark that answered it. */
     landmarkId: v.optional(v.id('bodyLandmarks')),
+    /**
+     * When the person who asked withdrew it (D248): `status` is `retracted`, and no moderator
+     * decides it after. Only while it was `open`. Absent ⇒ not retracted.
+     */
+    retractedAt: v.optional(v.number()),
+    /** When a retracted request is erased — 30 days on (`lib/erasure`). Absent ⇒ not due. */
+    eraseAt: v.optional(v.number()),
+    /**
+     * Erasure attempts that failed in a row (D248), the last one's error class (never its message),
+     * and when the item was parked after three — or last tried, once parked (`lib/attempts`). Any
+     * progress clears them. A parked item is off the clock and out of the sweep's range, so one item
+     * that always fails never holds up the rest; the daily retry tries it again, a few a day, least
+     * recently tried first, and `erasure.retryParked` releases it at once.
+     */
+    eraseAttempts: v.optional(v.number()),
+    eraseErrorClass: v.optional(v.string()),
+    eraseParkedAt: v.optional(v.number()),
+    /** When the daily retry of parked erasures last tried it, if it has. */
+    eraseRetriedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
+    // The erasure sweep (D248): a `gt(0).lte(now)` range holds only due work.
+    .index('by_erase_at', ['eraseAt'])
+    // Parked erasures (D248), read with a lower bound: the field is optional.
+    .index('by_erase_parked', ['eraseParkedAt'])
+    // The landmark proposals a Report filed, so erasing the Report clears their link (D248).
+    // `eq()` only: the field is optional and the index not sparse.
+    .index('by_report', ['reportId'])
     // The moderator queue: open requests, oldest first (a request nobody answered is the worst row).
     .index('by_status_created', ['status', 'createdAt'])
     // The requester's own — the drawer's "you asked for this" line and the You-tab list.
@@ -3255,9 +3404,33 @@ export default defineSchema({
     origin: v.optional(literals(FLAG_ORIGINS)),
     createdAt: v.number(),
     resolvedAt: v.optional(v.number()),
+    /**
+     * When the person who filed it withdrew it (D248): `status` is `retracted`, it left the queue,
+     * and it no longer holds anything from erasure. Only a person's own flag, and only before a
+     * moderator decides it. Absent ⇒ not retracted.
+     */
+    retractedAt: v.optional(v.number()),
+    /** When a retracted flag is erased — 30 days on (`lib/erasure`). Absent ⇒ not due. */
+    eraseAt: v.optional(v.number()),
+    /**
+     * Erasure attempts that failed in a row (D248), the last one's error class (never its message),
+     * and when the item was parked after three — or last tried, once parked (`lib/attempts`). Any
+     * progress clears them. A parked item is off the clock and out of the sweep's range, so one item
+     * that always fails never holds up the rest; the daily retry tries it again, a few a day, least
+     * recently tried first, and `erasure.retryParked` releases it at once.
+     */
+    eraseAttempts: v.optional(v.number()),
+    eraseErrorClass: v.optional(v.string()),
+    eraseParkedAt: v.optional(v.number()),
+    /** When the daily retry of parked erasures last tried it, if it has. */
+    eraseRetriedAt: v.optional(v.number()),
   })
     .index('by_status', ['status'])
     .index('by_target', ['targetType', 'targetId'])
+    // The erasure sweep (D248): a `gt(0).lte(now)` range holds only due work.
+    .index('by_erase_at', ['eraseAt'])
+    // Parked erasures (D248), read with a lower bound: the field is optional.
+    .index('by_erase_parked', ['eraseParkedAt'])
     // Departed-user redaction (`lib/contentPurge`): clear the free-text `note` on every flag this
     // person filed. Nothing else needs to look a flag up by its filer — the queue reads by status and
     // by target — so this index exists solely so that sweep can be a bounded equality read instead of
@@ -3320,6 +3493,85 @@ export default defineSchema({
     // per day, which means reading this table by time. Without the index that is a scan of an
     // append-only audit log, i.e. the exact unbounded-growth shape the Phase 07-2 rule forbids.
     .index('by_created_at', ['createdAt']),
+
+  /**
+   * **A moderator's verdict on someone's content, kept with the person** (D248). One row per
+   * top-level hide or remove (a Post's cascade onto its members and a derived Post hide are not
+   * verdicts of their own), naming whose content it was, so one bounded read returns a person's
+   * record whatever later happened to the content. A verdict **stands until a moderator reverses
+   * it** — a restore, an undo, or, on content its author has since deleted, an overturn; the
+   * author deleting the content does not clear it. A later verdict on the same item supersedes the
+   * earlier one, so an item counts once. A standing verdict also holds withdrawn content back from
+   * erasure. Written beside the audit row by `lib/contentVerdicts`; read by the People page (staff
+   * only — never a skater-facing read, never reputation: D17/D50 stay boost-only).
+   */
+  contentVerdicts: defineTable({
+    subjectUserId: v.id('profiles'),
+    // `accessAlert`: a moderator's retraction recorded on an alert its author already retracted —
+    // the one alert verdict kept, as evidence of a pattern of bad claims (founder call, 2026-11-13).
+    targetType: literals(['report', 'post', 'comment', 'hazard', 'accessAlert'] as const),
+    targetId: v.string(),
+    actionId: v.id('moderationActions'),
+    kind: literals(['hidden', 'removed', 'retracted'] as const),
+    at: v.number(),
+    standing: v.boolean(),
+    /** When it stopped standing, and the action that ended it (a reversal, or a later verdict). */
+    endedAt: v.optional(v.number()),
+    endedByActionId: v.optional(v.id('moderationActions')),
+  })
+    .index('by_subject_standing', ['subjectUserId', 'standing', 'at'])
+    .index('by_target_standing', ['targetType', 'targetId', 'standing'])
+    .index('by_action', ['actionId'])
+    // What an action ended, for its undo (`lib/contentVerdicts.recordUndoneVerdict`). Equality reads
+    // only, so the unset value on every standing row never matches (no sparse-index trap).
+    .index('by_ended_by', ['endedByActionId']),
+
+  /**
+   * **A photo settlement owed** (D248). When the erasure sweep erases an item that carried photos, it
+   * writes rows here in the same transaction — the uploader and the item's photo ids, at most
+   * `SETTLE_CHUNK_IDS` a row, nothing else — and `erasure.settleStep` works from these rows, deleting
+   * each photo nothing of the uploader's still uses, and deletes a row only after its settlement has
+   * finished. So a pass that fails after an erasure loses no photo it owed: the uploader's place in
+   * `photoSettlementQueue`, written beside the row, brings the next run's `erasure.settleOwed` to it.
+   * Rows per erased item, not per uploader: an insert reads nothing, and a row is bounded by its
+   * chunk, where a per-uploader list would be read and rewritten whole at every erasure and could
+   * outgrow a document. Account deletion drops a person's rows with their private data.
+   */
+  photoSettlements: defineTable({
+    uploaderId: v.id('profiles'),
+    photoIds: v.array(v.id('photos')),
+    owedAt: v.number(),
+  }).index('by_uploader', ['uploaderId']),
+
+  /**
+   * **Who is owed a photo settlement, and how far it has got** (D248): one row per uploader with
+   * debts in `photoSettlements`, written beside the first debt. `erasure.settleOwed` walks these by
+   * `queuedAt`, one settlement step per uploader per turn, each step its own nested transaction: a
+   * step that throws rolls back only that uploader's step, is counted here (`attempts`, the error's
+   * class, never its message) and, after `MAX_SETTLE_ATTEMPTS`, parks the uploader — skipped by the
+   * walk, its debts still owed and its photos untouched — and tried again by the daily retry (a few a
+   * day, least recently tried first), or released at once by `erasure.retryParked`. Any successful
+   * step clears the count (`lib/attempts`).
+   * The step's position (phase, cursor, the photo ids and debts it took on) lives here, so a run that
+   * dies resumes where it was. Per uploader rather than on the debts, because the settlement reads an
+   * uploader's whole history and fails or succeeds as one. Account deletion drops it.
+   */
+  photoSettlementQueue: defineTable({
+    uploaderId: v.id('profiles'),
+    queuedAt: v.number(),
+    phase: literals(['take', 'reports', 'hazards', 'clear'] as const),
+    cursor: v.optional(v.string()),
+    after: v.optional(v.number()),
+    photoIds: v.optional(v.array(v.id('photos'))),
+    owed: v.optional(v.array(v.id('photoSettlements'))),
+    attempts: v.optional(v.number()),
+    lastErrorClass: v.optional(v.string()),
+    parkedAt: v.optional(v.number()),
+    /** When the daily retry of parked settlements last tried it, if it has. */
+    retriedAt: v.optional(v.number()),
+  })
+    .index('by_uploader', ['uploaderId'])
+    .index('by_parked_queued', ['parkedAt', 'queuedAt']),
 
   /**
    * What an audited action replaced, when it is too big for the audit row (D226, B01 §11): a
@@ -3436,6 +3688,13 @@ export default defineSchema({
     reportId: v.optional(v.id('reports')),
     createdAt: v.number(),
     /**
+     * When an erasure (D248) let go of this photo — nothing of its uploader's still uses it — but could
+     * not delete it: a blob outlived the attempt (`erasure.settleStep`). The row
+     * stays as the only pointer to its blobs, for the orphan sweep, and is no longer anything of its
+     * uploader's: their export leaves it out. Absent ⇒ not erased.
+     */
+    erasedAt: v.optional(v.number()),
+    /**
      * Scratch mark for `photoReconcile` — the determinate orphan check for an uploader too prolific
      * for the one-shot scan (`REFERENCE_SCAN_CAP`). Set on every candidate, cleared by anything that
      * references it, and whatever is still marked at the end is provably unreferenced.
@@ -3463,6 +3722,9 @@ export default defineSchema({
     seasonExpiryCandidate: v.optional(v.boolean()),
   })
     .index('by_uploader', ['uploaderId'])
+    // A Report's photos through their back-link, so erasing the Report unlinks them a page at a time
+    // (D248). `eq()` only: the field is optional and the index not sparse.
+    .index('by_report', ['reportId'])
     // Day-sliced orphan sweep (Phase 07-2): a photo abandoned between upload and attach is invisible
     // today, and the number decides whether the deferred GC cron is worth building.
     .index('by_created_at', ['createdAt']),
@@ -3710,6 +3972,9 @@ export default defineSchema({
     // table to decide whether one person's photo is referenced, and the alternative it would fall
     // back to is deleting it.
     .index('by_created_by', ['createdByUserId'])
+    // The put-ins a Report's point became (the pre-D62 purge's stored markers), so erasing the
+    // Report clears the link (D248). `eq()` only: the field is optional and the index not sparse.
+    .index('by_origin_report', ['originReportId'])
     // ── B01 server reads: what a contribution is (D253) ──
     // A put-in a person placed (`official`) is a contribution: one source's put-ins by time, so the
     // derived markers the clustering writes in bulk are never read for it.
@@ -3866,12 +4131,33 @@ export default defineSchema({
     /** The moderator who pinned it `official`, and the one who retracted it. */
     pinnedByUserId: v.optional(v.id('profiles')),
     retractedByUserId: v.optional(v.id('profiles')),
+    /** When it was retracted, by its author or a moderator (`retractedByUserId` says which). */
+    retractedAt: v.optional(v.number()),
+    /**
+     * When an alert its author retracted is due for erasure — 30 days on, unless an open flag or a
+     * moderator's standing verdict holds it (D248, `erasure.ts`). Set and cleared like the content
+     * tables' clock. Absent ⇒ not due.
+     */
+    eraseAt: v.optional(v.number()),
+    /**
+     * Erasure attempts that failed in a row (D248), the last one's error class (never its message),
+     * and when the item was parked after three — or last tried, once parked (`lib/attempts`). Any
+     * progress clears them. A parked item is off the clock and out of the sweep's range, so one item
+     * that always fails never holds up the rest; the daily retry tries it again, a few a day, least
+     * recently tried first, and `erasure.retryParked` releases it at once.
+     */
+    eraseAttempts: v.optional(v.number()),
+    eraseErrorClass: v.optional(v.string()),
+    eraseParkedAt: v.optional(v.number()),
+    /** When the daily retry of parked erasures last tried it, if it has. */
+    eraseRetriedAt: v.optional(v.number()),
   })
     /**
      * The two per-lake reads, and the status prefix is the point (PR #43 review). `kind` sits between
      * status and the clock (A10-3) so each kind is capped in its own range — see `kind` above.
      *
-     * An alert row is never deleted — expiring flips a status — so a lake accumulates them across
+     * An alert row is never deleted by settling — expiring flips a status, and only an author's own
+     * retraction is erased (D248) — so a lake accumulates them across
      * seasons for ever. These replaced bare `by_water_body` / `by_parking_area` indexes, over which a
      * capped read took the *oldest* rows and only then filtered for liveness: after two winters that
      * is a page of expired rows and a locked gate nobody is told about. The bug was that the cap got
@@ -3925,8 +4211,19 @@ export default defineSchema({
     .index('by_status_expires_at', ['status', 'expiresAt'])
     // A departing user's alerts (A03/D62), and the author-side half of the orphan-photo scan.
     .index('by_author', ['createdByUserId'])
+    // One person's *live* alerts (`myAlertIdsForBody`, D248), shaped as the per-lake reads are and for
+    // their reasons: rows are never deleted, so a cap over `by_author` bounds their history and a pin
+    // filed seasons ago falls out behind the settled rows filed since; and status alone still holds
+    // lapsed rows the sweep has not reached, so `active` is read `gt('expiresAt', now)`.
+    .index('by_author_status_expires_at', ['createdByUserId', 'status', 'expiresAt'])
     // Offline-flush dedup (A10 §9.1) — `eq()` only, the optional-index rule.
     .index('by_idempotency_key', ['idempotencyKey'])
+    // The erasure clock (D248): a `gt(0).lte(now)` range holds only due work.
+    .index('by_erase_at', ['eraseAt'])
+    // Parked erasures (D248), read with a lower bound: the field is optional.
+    .index('by_erase_parked', ['eraseParkedAt'])
+    // The alerts a Report filed, so erasing the Report clears their link (D248). `eq()` only.
+    .index('by_report', ['reportId'])
     // ── B01 server reads: what a contribution is (D253) ──
     // An alert is a contribution (unless retracted): the day and season reads range it by time.
     .index('by_created_at', ['createdAt'])

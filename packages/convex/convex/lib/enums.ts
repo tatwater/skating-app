@@ -260,7 +260,10 @@ export const FLAG_REASONS = [
   'no_public_access',
   'other',
 ] as const;
-export const FLAG_STATUSES = ['open', 'reviewing', 'actioned', 'dismissed'] as const;
+// `retracted` is the filer's own withdrawal before a moderator decided it (D248): out of the queue,
+// holding nothing from erasure, and erased 30 days on. Not a resolution — it never reaches the
+// dispositions metric or the flagger's verdict notification.
+export const FLAG_STATUSES = ['open', 'reviewing', 'actioned', 'dismissed', 'retracted'] as const;
 /**
  * Who filed a flag (A08 §2.3): a person who pressed "report", or the system crossing a threshold.
  *
@@ -281,6 +284,12 @@ export const MODERATION_ACTIONS = [
   // same cascade, audited here with the author as actor so a moderator can see what left and when.
   // Final: nothing restores it (founder ruling, 2026-11-13).
   'author_delete',
+  // A moderator clearing a verdict on content its author has since deleted (D248): the verdict leaves
+  // the person's record, the content stays withdrawn.
+  'overturn_verdict',
+  // Withdrawn content, or a retracted request or flag, erased 30 days on (D248). Written by the
+  // sweep with no actor and no content — the row says only that the item is gone, and when.
+  'erase',
   'ban',
   'suspend',
   'unban',
@@ -373,6 +382,9 @@ export const MODERATION_ACTIONS = [
   // was never true, where removal says it is no longer wanted on screen, and a mistaken alert deserves
   // the first rather than the second.
   'retract_access_alert',
+  // The alert's own author said "it's open" (founder ruling, 2026-11-13): it resolved, and a pin on it
+  // was released. Written with the author as actor, so the moderator who pinned it sees why.
+  'author_resolve_access_alert',
   // ── A06e ─────────────────────────────────────────────────────────────────────────────────────────
   // Typed in what a posted sign says — the seasonal window, the daily hours, the permit. One verb for
   // all three targets (body, put-in, lot) because it is one claim wearing three hats, and the target

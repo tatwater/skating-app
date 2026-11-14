@@ -105,6 +105,35 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
     takesAway: always,
     capability: 'content.moderate',
   },
+  // An overturn takes a verdict off a person's record; putting it back is a new verdict, with its
+  // own reason, not an undo (D248).
+  overturn_verdict: {
+    undo: {
+      kind: 'none',
+      why: 'To put the verdict back, record it again: Hide or Remove, or Retract on an alert.',
+    },
+    takesAway: never,
+    // The lever the overturn itself takes: an alert's is the alert lever (`moderation.overturnVerdict`).
+    capability: (targetType) =>
+      targetType === 'accessAlert' ? 'access.alert' : 'content.moderate',
+  },
+  // Erased is gone: nothing is left to put back (D248).
+  erase: {
+    undo: { kind: 'none', why: 'This was erased, so there is nothing left to bring back.' },
+    takesAway: always,
+    capability: 'content.moderate',
+  },
+
+  // The reporter's own "it's open" (founder ruling, 2026-11-13): theirs to say, not a moderator's to
+  // take back. A moderator who thinks it still stands pins it again.
+  author_resolve_access_alert: {
+    undo: {
+      kind: 'none',
+      why: 'The person who reported it said it has cleared. Pin it again if it still stands.',
+    },
+    takesAway: never,
+    capability: 'access.alert',
+  },
 
   // ── People ──────────────────────────────────────────────────────────────────────────────────────
   ban: { undo: inverse('unban'), takesAway: always, capability: 'people.discipline' },
@@ -290,7 +319,10 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
     capability: 'access.alert',
   },
   retract_access_alert: {
-    undo: later('§2 Inbox', 'Return the alert to the status it had before retraction.'),
+    undo: later(
+      '§2 Inbox',
+      'Return the alert to the status it had before retraction. A retraction recorded on an alert its author had already retracted is a verdict, reversed by an overturn instead.',
+    ),
     takesAway: always,
     capability: 'access.alert',
   },

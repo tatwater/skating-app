@@ -47,8 +47,13 @@ export interface AccessAlertModel {
   /** "reported Thu · 3:15 PM" (when it was filed). */
   when: string;
   note: string | null;
-  /** A moderator pinned it: no votes, it stands until they release it. */
+  /** A moderator pinned it: no votes but its author's "It's open"; it stands until released. */
   official: boolean;
+  /**
+   * The viewer posted it. On a pinned alert its author alone keeps "It's open": their own word that
+   * it has cleared settles it, pin or no pin (D248).
+   */
+  isOwn: boolean;
 }
 
 export interface PostedTarget {
@@ -97,13 +102,18 @@ export function lotLine(lot: AccessLot): string {
   return parts.length > 0 ? parts.join(' · ') : 'Parking lot';
 }
 
-function alertModel(alert: AccessAlertRow, now: number): AccessAlertModel {
+function alertModel(
+  alert: AccessAlertRow,
+  now: number,
+  ownAlertIds: ReadonlySet<string>,
+): AccessAlertModel {
   return {
     id: alert.id,
     reason: reasonLabel(alert.reason),
     when: `reported ${reportWhen(alert.createdAt, now)}`,
     note: alert.note ?? null,
     official: alert.official,
+    isOwn: ownAlertIds.has(alert.id),
   };
 }
 
@@ -146,6 +156,11 @@ export function putInCards(
   access: AccessData,
   platform: DirectionsPlatform,
   now: number,
+  /**
+   * The viewer's own live alerts here (`accessAlerts.myAlertIdsForBody`) — asked apart from the
+   * shared read, which says nothing about who is looking.
+   */
+  ownAlertIds: ReadonlySet<string> = new Set(),
 ): PutInCardModel[] {
   const blocked = new Set<string>(access.blockedIds);
   const lotIds = new Set(access.parking.map((lot) => lot.id));
@@ -179,7 +194,7 @@ export function putInCards(
         ...(lot?.postedAccess ? [{ rule: lot.postedAccess, coord: lot.coord }] : []),
       ],
       here: lot ? lotLine(lot) : null,
-      alerts: alerts.map((a) => alertModel(a, now)),
+      alerts: alerts.map((a) => alertModel(a, now, ownAlertIds)),
       stored: true,
       directions: directionsFor(target, platform),
     };

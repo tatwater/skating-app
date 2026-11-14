@@ -174,10 +174,14 @@ export const collect = internalQuery({
       .query('contentRevisions')
       .withIndex('by_author_replaced_at', (q) => q.eq('authorId', userId))
       .take(ROW_CAP);
-    const comments = await ctx.db
-      .query('comments')
-      .withIndex('by_author', (q) => q.eq('authorId', userId))
-      .take(ROW_CAP);
+    // An erased comment's placeholder (D248) is kept only so replies still hang from something; it
+    // holds none of their words and is no longer theirs to export.
+    const comments = (
+      await ctx.db
+        .query('comments')
+        .withIndex('by_author', (q) => q.eq('authorId', userId))
+        .take(ROW_CAP)
+    ).filter((c) => c.erasedAt === undefined);
     const hazards = await ctx.db
       .query('hazards')
       .withIndex('by_author_and_water_body', (q) => q.eq('createdByUserId', userId))
@@ -206,10 +210,14 @@ export const collect = internalQuery({
       .query('activityConnections')
       .withIndex('by_user', (q) => q.eq('userId', userId))
       .take(ROW_CAP);
-    const photos = await ctx.db
-      .query('photos')
-      .withIndex('by_uploader', (q) => q.eq('uploaderId', userId))
-      .take(ROW_CAP);
+    // A photo an erasure let go of but could not delete (D248) is kept only as the pointer to its
+    // blobs for the orphan sweep; it is no longer theirs to export.
+    const photos = (
+      await ctx.db
+        .query('photos')
+        .withIndex('by_uploader', (q) => q.eq('uploaderId', userId))
+        .take(ROW_CAP)
+    ).filter((p) => p.erasedAt === undefined);
     // The access layer (A06d / D73, D88). Three tables of things a person said and did — a claim that
     // a gate was locked, a verdict on somebody else's, a photo of a pull-off — and an export that
     // omitted them would be quietly incomplete in the one direction that matters, since the whole
@@ -226,6 +234,21 @@ export const collect = internalQuery({
     const accessPhotos = await ctx.db
       .query('accessPhotos')
       .withIndex('by_uploader', (q) => q.eq('uploaderId', userId))
+      .take(ROW_CAP);
+    // What they filed for a moderator (D248): their flags and their requests — theirs to take back
+    // until decided, so theirs to see. **Only flags a person filed** (`origin: 'user'`): a flag the
+    // system filed names a real person in `flaggerId` who filed nothing (the rater whose thumb crossed
+    // a threshold), and telling them so is exactly what `content_flag_resolved` refuses to do. A
+    // retracted item is in here until it is erased, and nothing of it after.
+    const flags = (
+      await ctx.db
+        .query('contentFlags')
+        .withIndex('by_flagger', (q) => q.eq('flaggerId', userId))
+        .take(ROW_CAP)
+    ).filter((f) => f.origin === 'user');
+    const requests = await ctx.db
+      .query('waterBodyRequests')
+      .withIndex('by_requester_created', (q) => q.eq('requesterId', userId))
       .take(ROW_CAP);
 
     const {
@@ -256,6 +279,23 @@ export const collect = internalQuery({
       accessAlerts: accessAlerts,
       accessAlertVotes: accessAlertVotes,
       accessPhotos: accessPhotos,
+      // Which moderator decided is the console's, not theirs: the requester-facing reads leave it
+      // out, and so does this.
+      contentFlags: flags.map(({ resolvedByUserId: _resolver, ...flag }) => flag),
+      // The catalog's answer to an `admit` is the catalog's polygon, not something they said: named,
+      // not copied — a lake outline can be most of a document.
+      waterBodyRequests: requests.map(({ candidate, decidedByUserId: _decider, ...rest }) => ({
+        ...rest,
+        ...(candidate
+          ? {
+              candidate: {
+                source: candidate.source,
+                externalId: candidate.externalId,
+                name: candidate.name,
+              },
+            }
+          : {}),
+      })),
       // Secrets stripped — see the note above.
       activityConnections: connections.map((c) => ({
         provider: c.provider,
