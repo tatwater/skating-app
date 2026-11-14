@@ -73,8 +73,12 @@ export function normalizePeopleListArgs(args: {
   pageSize?: number | null;
 }): PeopleListArgs | null {
   if (!isPeopleLane(args.lane)) return null;
-  const folded = (args.search ?? '').replace(/\s+/g, ' ').trim().replace(/^@+/, '').trim();
-  const search = folded.length > 0 ? folded.slice(0, PEOPLE_SEARCH_MAX_CHARS) : null;
+  const folded = (args.search ?? '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s@]+/, '')
+    .slice(0, PEOPLE_SEARCH_MAX_CHARS)
+    .trim();
+  const search = folded.length > 0 ? folded : null;
   const asked = args.pageSize;
   const pageSize =
     asked === undefined || asked === null || !Number.isFinite(asked)
