@@ -627,10 +627,11 @@ describe('bays, landmarks and history', () => {
       return historyTargets(short as unknown as typeof ctx, id);
     });
     expect(read.truncated).toBe(true);
-    // The body's own family is read; no absorbed family is taken in on a spent read.
-    expect(read.targets.filter((x) => x.targetType === 'waterbody')).toEqual([
-      { targetType: 'waterbody', targetId: id },
-    ]);
+    // The body's own family is read, and the first absorbed body itself (its rows cost one query);
+    // the walk stops before another polygon, and no absorbed family is taken in on a spent read.
+    const bodies = read.targets.filter((x) => x.targetType === 'waterbody');
+    expect(bodies).toHaveLength(2);
+    expect(bodies[0]).toEqual({ targetType: 'waterbody', targetId: id });
   });
 
   test('the absorbed walk stops at its count and says so; a loop back to the body is read once', async () => {
@@ -1054,7 +1055,78 @@ describe('a merge chain’s history', () => {
     expect(read.entries.map((e) => e.id)).toEqual(expected);
   });
 
-  test('a chain of fifty absorbed bodies, each with its family, caps honestly and never throws', async () => {
+  test('a lot serving the survivor and a body merged into it is read once', async () => {
+    const t = harness();
+    const { as, id: mod } = await seedUser(t);
+    const survivor = await seedBody(t, { name: 'Survivor' });
+    const absorbed = await seedBody(t, { name: 'Duplicate', at: [-71.9, 44] });
+    // A merge leaves the lot links where they were: the duplicate's inferred link stays beside the
+    // survivor's to the same lot.
+    const expected = await t.run(async (ctx) => {
+      const lot = await ctx.db.insert('parkingAreas', {
+        coord: { lat: 44, lng: -72 },
+        source: 'osm',
+        status: 'visible',
+        amenities: [],
+        createdAt: NOW,
+      });
+      for (const waterBodyId of [survivor, absorbed]) {
+        await ctx.db.insert('parkingAreaBodies', {
+          parkingAreaId: lot,
+          waterBodyId,
+          inferred: true,
+          createdAt: NOW,
+        });
+      }
+      await ctx.db.patch(absorbed, { dedupStatus: 'merged', mergedIntoId: survivor });
+      return [
+        await ctx.db.insert('moderationActions', {
+          actorId: mod,
+          action: 'set_parking_area',
+          targetType: 'parkingArea',
+          targetId: lot,
+          reason: 'set_parking_area',
+          createdAt: NOW - DAY,
+        }),
+      ];
+    });
+    const read = await as.query(api.bodyConsole.history, { waterBodyId: survivor, limit: 100 });
+    expect(read.capped).toBe(false);
+    expect(read.entries.map((e) => e.id)).toEqual(expected);
+  });
+
+  test('the survivor’s untouched landmarks never crowd out a body merged into it', async () => {
+    const t = harness();
+    const { id: mod } = await seedUser(t);
+    const survivor = await seedBody(t, { name: 'Survivor' });
+    const absorbed = await seedBody(t, { name: 'Duplicate', at: [-71.9, 44] });
+    const family = await relatives(t, absorbed, mod, NOW - DAY);
+    const read = await t.run(async (ctx) => {
+      // More catalog labels than the bound holds, none a person touched.
+      for (let i = 0; i < 1_250; i++) {
+        await ctx.db.insert('bodyLandmarks', {
+          waterBodyId: survivor,
+          name: `Label ${i}`,
+          kind: 'island',
+          point: { lat: 44, lng: -72 },
+          source: 'osm',
+          externalIds: [],
+          aliases: [],
+          createdAt: NOW - 2 * DAY,
+          updatedAt: NOW - 2 * DAY,
+        });
+      }
+      await ctx.db.patch(absorbed, { dedupStatus: 'merged', mergedIntoId: survivor });
+      return historyTargets(ctx, survivor);
+    });
+    expect(read.truncated).toBe(true);
+    expect(read.targets.length).toBeLessThanOrEqual(1_200);
+    // The absorbed body and its whole family, its removed landmark among them, all made the cut.
+    const held = new Set(read.targets.map((x) => x.targetId));
+    for (const id of family) expect(held.has(id)).toBe(true);
+  });
+
+  test('a chain past fifty absorbed bodies, each with its family, caps honestly and never throws', async () => {
     const t = harness();
     const { as, id: mod } = await seedUser(t);
     const survivor = await seedBody(t, { name: 'Giant' });
@@ -1068,6 +1140,8 @@ describe('a merge chain’s history', () => {
     const read = await as.query(api.bodyConsole.history, { waterBodyId: survivor, limit: 100 });
     // Fifty-one bodies deep: past the chain's bound, so the read says it may be incomplete.
     expect(read.capped).toBe(true);
-    expect(read.entries.length).toBeGreaterThan(0);
+    // A full page of the families it did take in, each row once.
+    expect(read.entries).toHaveLength(100);
+    expect(new Set(read.entries.map((e) => e.id)).size).toBe(100);
   });
 });

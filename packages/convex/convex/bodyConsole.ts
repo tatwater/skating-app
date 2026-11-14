@@ -289,20 +289,24 @@ async function absorbedInto(
   return { ids, truncated: false };
 }
 
+/** One body's family: its landmarks apart from its other targets, so a history can rank them last. */
+type Family = {
+  targets: Target[];
+  landmarks: { touched: Target[]; rest: Target[] };
+  truncated: boolean;
+};
+
 /**
  * **One body's own family — every target whose audit rows concern it**, the targets
  * `bodiesOfTarget` files under the body: the body; its bays, put-ins and landmarks whatever their
  * state (removed, hidden, folded by a merge, re-parented here); the lots that serve it; its known
  * features, live or demoted; the requests, corpus place names and flags on it, open or decided.
- * Membership is the relation, never which fields a row happens to carry. Landmarks come last and
- * take at most `room` targets, the ones a person touched first. `truncated` when any kind ran past
- * its bound.
+ * Membership is the relation, never which fields a row happens to carry. The landmarks are apart
+ * (`touched`, the ones a person placed, edited, moved or removed, and the `rest`, newest first), so
+ * the history can rank every family's landmarks after every family's other targets. `truncated`
+ * when any kind ran past its bound.
  */
-async function ownFamily(
-  ctx: QueryCtx,
-  waterBodyId: Id<'waterBodies'>,
-  room: number,
-): Promise<{ targets: Target[]; truncated: boolean }> {
+async function ownFamily(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>): Promise<Family> {
   let truncated = false;
   const ids = (rows: readonly { _id: string }[], bound: number) => {
     if (rows.length > bound) truncated = true;
@@ -390,11 +394,14 @@ async function ownFamily(
     l.moderatorEditedAt !== undefined ||
     l.movedAt !== undefined ||
     l.removedAt !== undefined;
-  const ordered = [...landmarks].sort(
-    (a, b) => Number(touched(b)) - Number(touched(a)) || b.updatedAt - a.updatedAt,
-  );
-  add('bodyLandmark', ids(ordered, Math.max(0, room - targets.length)));
-  return { targets, truncated };
+  const newest = [...landmarks].sort((a, b) => b.updatedAt - a.updatedAt);
+  const of = (rows: Doc<'bodyLandmarks'>[]): Target[] =>
+    rows.map((l) => ({ targetType: 'bodyLandmark', targetId: l._id }));
+  return {
+    targets,
+    landmarks: { touched: of(newest.filter(touched)), rest: of(newest.filter((l) => !touched(l))) },
+    truncated,
+  };
 }
 
 /**
@@ -402,42 +409,72 @@ async function ownFamily(
  * (its landmarks are up to 3,000 rows), then one query per target, and the audit rows and their
  * people after it.
  */
-const FAMILY_RESERVE = { bytesRead: 6 * 1024 * 1024, documentsRead: 8_000, databaseQueries: 2_000 };
+const FAMILY_RESERVE = {
+  bytesRead: HISTORY_BYTES_RESERVE,
+  documentsRead: 8_000,
+  databaseQueries: 2_000,
+};
 
 /**
  * **A body's history targets: the family of the body and of every body merged into it** — the
  * same {@link ownFamily}, applied identically to the survivor and to each body in its merge chain
- * (followed hop by hop, up to {@link HISTORY_ABSORBED}). Within the shared limits: the family walk
- * stops when the targets reach {@link HISTORY_MAX_TARGETS} or the read can no longer afford another
- * family, and any stop — a chain, a kind or the read running out — says `truncated`, so
- * `capped: false` still means complete.
+ * (followed hop by hop, up to {@link HISTORY_ABSORBED}). The survivor's family is read first, so the
+ * walk's byte check sees it; every body the walk finds is read itself (its own rows, the merge that
+ * folded it in among them, cost one query), and its family only while the read can afford it. Each
+ * target once — a lot can serve the survivor and a body merged into it — and every family's
+ * landmarks after every family's other targets, the touched first, up to
+ * {@link HISTORY_MAX_TARGETS}. Any stop — a chain, a kind, the bound or the read running out — says
+ * `truncated`, so `capped: false` still means complete.
  */
 export async function historyTargets(
   ctx: QueryCtx,
   waterBodyId: Id<'waterBodies'>,
 ): Promise<{ targets: Target[]; truncated: boolean }> {
-  const absorbed = await absorbedInto(ctx, waterBodyId);
-  let truncated = absorbed.truncated;
   const targets: Target[] = [];
-  for (const [i, id] of [waterBodyId, ...absorbed.ids].entries()) {
-    const room = HISTORY_MAX_TARGETS - targets.length;
+  const touched: Target[] = [];
+  const rest: Target[] = [];
+  const seen = new Set<string>();
+  let truncated = false;
+  const keep = (into: Target[], of: readonly Target[]) => {
+    for (const t of of) {
+      const key = `${t.targetType}:${t.targetId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      into.push(t);
+    }
+  };
+  const take = (family: Family) => {
+    if (family.truncated) truncated = true;
+    keep(targets, family.targets);
+    keep(touched, family.landmarks.touched);
+    keep(rest, family.landmarks.rest);
+  };
+
+  take(await ownFamily(ctx, waterBodyId));
+  const absorbed = await absorbedInto(ctx, waterBodyId);
+  if (absorbed.truncated) truncated = true;
+  keep(
+    targets,
+    absorbed.ids.map((id): Target => ({ targetType: 'waterbody', targetId: id })),
+  );
+  for (const id of absorbed.ids) {
     const m = await ctx.meta.getTransactionMetrics();
-    // The body's own family is always read; each absorbed family only while the read can afford it.
-    const spent =
-      room <= 0 ||
+    // One audit query per target held, up to the bound the list is cut to.
+    const held = Math.min(HISTORY_MAX_TARGETS, targets.length + touched.length + rest.length);
+    if (
+      targets.length >= HISTORY_MAX_TARGETS ||
       m.bytesRead.remaining < FAMILY_RESERVE.bytesRead ||
       m.documentsRead.remaining < FAMILY_RESERVE.documentsRead ||
-      m.databaseQueries.remaining < FAMILY_RESERVE.databaseQueries + targets.length;
-    if (i > 0 && spent) {
+      m.databaseQueries.remaining < FAMILY_RESERVE.databaseQueries + held
+    ) {
       truncated = true;
       break;
     }
-    const family = await ownFamily(ctx, id, room);
-    if (family.truncated) truncated = true;
-    targets.push(...family.targets.slice(0, room));
-    if (family.targets.length > room) truncated = true;
+    take(await ownFamily(ctx, id));
   }
-  return { targets, truncated };
+  const all = [...targets, ...touched, ...rest];
+  if (all.length > HISTORY_MAX_TARGETS) truncated = true;
+  return { targets: all.slice(0, HISTORY_MAX_TARGETS), truncated };
 }
 
 /**
