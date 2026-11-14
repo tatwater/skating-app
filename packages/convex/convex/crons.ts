@@ -99,6 +99,15 @@ crons.interval('erase withdrawn content', { hours: 1 }, internal.erasure.eraseDu
 // tick means a debt is picked up even in an hour whose sweep failed, since the debts are rows.
 crons.interval('settle photos erasure let go of', { hours: 1 }, internal.erasure.settleOwed, {});
 
+// Parked erasure work heals itself (D248): once a day, a few parked settlements and items of each kind
+// are tried again, least recently tried first, so a deployed fix frees them without anyone remembering.
+crons.daily(
+  'retry parked erasure work',
+  { hourUTC: 9, minuteUTC: 40 },
+  internal.erasure.retryParkedDaily,
+  {},
+);
+
 // The inbox's season purge (A08 §1.5): every notification created before this season's July 1 goes,
 // read or not. Daily, bounded, and a no-op for eleven months — the day after the boundary is the one
 // that matters, and a bounded pass means it clears over a few ticks rather than one huge transaction.

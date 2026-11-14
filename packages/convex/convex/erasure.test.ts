@@ -11,8 +11,9 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import type { MutationCtx } from './_generated/server';
-import { ERASED_KINDS, MAX_SETTLE_ATTEMPTS, PASS_NEED, ROW_MAX } from './erasure';
+import { DAILY_RETRIES, ERASED_KINDS, MAX_SETTLE_ATTEMPTS, PASS_NEED, ROW_MAX } from './erasure';
 import * as audit from './lib/audit';
+import * as eraseClock from './lib/eraseClock';
 import { MAX_ERASE_ATTEMPTS } from './lib/eraseClock';
 import * as photoOrphans from './lib/photoOrphans';
 import { TX_BUDGET } from './lib/readBudget';
@@ -400,11 +401,17 @@ describe('one item that always fails', () => {
       return real(ctx, entry);
     });
     advance(31 * DAY);
-    // One run: everything behind it erased; it parked after exactly three attempts, untouched.
+    // The first run: everything behind it erased, and it tried once, not parked yet.
     const first = await t.mutation(internal.erasure.eraseDue, {});
     await t.finishAllScheduledFunctions(vi.runAllTimers);
-    expect(first.failed).toBeGreaterThan(0);
+    expect(first.failed).toBe(1);
     for (const id of healthy) expect(await get(t, id)).toBeNull();
+    expect(await get(t, poison)).toMatchObject({ eraseAttempts: 1 });
+    // One attempt a run: two more runs, and it is parked, untouched.
+    for (let run = 0; run < 2; run++) {
+      advance(60 * 60 * 1000);
+      await sweep(t);
+    }
     expect(await get(t, poison)).toMatchObject({
       body: 'c0',
       eraseAttempts: MAX_ERASE_ATTEMPTS,
@@ -488,7 +495,7 @@ describe('one item that always fails', () => {
     for (const id of uploaders) {
       const place = await placeOf(t, id);
       expect(place?.parkedAt).toBeUndefined();
-      expect(place?.attempts).toBe(0);
+      expect(place?.attempts).toBeUndefined();
     }
   });
 
@@ -523,6 +530,60 @@ describe('one item that always fails', () => {
     expect(report.settlements).toHaveLength(50);
     expect(report.items.length).toBeGreaterThan(0);
     expect(report.capped).toBe(true);
+  });
+});
+
+describe('failures far apart', () => {
+  test('fail, partial success, fail, partial success, fail: never parked (Greptile #110)', async () => {
+    const { t, author, waterBodyId } = await setup();
+    const { postId, reportIds } = await seedPost(t, author.id, waterBodyId, 1);
+    const [reportId] = reportIds as [Id<'reports'>];
+    // Far more revisions than a pass erases at the page seam: each successful pass drains some.
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 200; i++) {
+        await ctx.db.insert('contentRevisions', {
+          targetType: 'report',
+          targetId: reportId,
+          authorId: author.id,
+          snapshot: { notes: `draft ${i}` },
+          replacedAt: T0 + i,
+        });
+      }
+    });
+    await author.as.mutation(api.posts.remove, { postId });
+    advance(31 * DAY);
+    // Each hourly run takes the item once: it fails, then drains part of what it carries, in turn.
+    const outcomes = ['fail', 'progress', 'fail', 'progress', 'fail'] as const;
+    const real = eraseClock.refreshClockOf;
+    let failNext = false;
+    vi.spyOn(eraseClock, 'refreshClockOf').mockImplementation(async (...args) => {
+      if (failNext) throw new Error('flaky');
+      return real(...args);
+    });
+    for (const outcome of outcomes) {
+      failNext = outcome === 'fail';
+      await t.mutation(internal.erasure.eraseDue, { pageSize: 1 });
+      await t.run(async (ctx) => {
+        for (const job of await ctx.db.system.query('_scheduled_functions').collect()) {
+          if (job.state.kind === 'pending') await ctx.scheduler.cancel(job._id);
+        }
+      });
+      advance(60 * 60 * 1000);
+    }
+    const row = await get(t, reportId);
+    expect(row).not.toBeNull();
+    expect(row?.eraseParkedAt).toBeUndefined();
+    expect(row?.eraseAttempts).toBe(1);
+    // And three failures with no progress between them do park it.
+    failNext = true;
+    for (let run = 0; run < 2; run++) {
+      await t.mutation(internal.erasure.eraseDue, { pageSize: 1 });
+      advance(60 * 60 * 1000);
+    }
+    expect(await get(t, reportId)).toMatchObject({
+      eraseAttempts: 3,
+      eraseParkedAt: expect.any(Number),
+    });
   });
 });
 
@@ -2009,18 +2070,136 @@ describe('the erasure holds under any order', () => {
 });
 
 describe('fairness under failure, under any mix', () => {
-  test('settleOwed: every healthy uploader settled in one run; every failing one parked after exactly three attempts, owing all, losing nothing', async () => {
+  type Outcome = 'fail' | 'succeed' | 'held';
+  const RUNS = 6;
+  const HOUR = 60 * 60 * 1000;
+
+  /** The rule's model: consecutive failures since the last success; parked at three. */
+  function model(outcomes: readonly Outcome[]) {
+    let failures = 0;
+    let parked = false;
+    let done = false;
+    return outcomes.map((o) => {
+      const attempted = !done && !parked && o !== 'held';
+      if (attempted && o === 'fail') {
+        failures++;
+        if (failures >= MAX_ERASE_ATTEMPTS) parked = true;
+      } else if (attempted && o === 'succeed') {
+        done = true;
+        failures = 0;
+      }
+      return { attempted, failures, parked, done };
+    });
+  }
+
+  test('eraseDue, over any outcomes across runs: one attempt a run; parked exactly after three failures in a row; healthy items done in their run; the daily retry frees what heals', async () => {
     await fc.assert(
       fc.asyncProperty(
-        fc.array(fc.record({ debts: fc.integer({ min: 1, max: 9 }), fails: fc.boolean() }), {
-          minLength: 1,
-          maxLength: 4,
-        }),
-        async (uploaders) => {
+        fc.array(
+          fc.array(fc.constantFrom<Outcome>('fail', 'succeed', 'held'), {
+            minLength: RUNS,
+            maxLength: RUNS,
+          }),
+          {
+            minLength: 1,
+            maxLength: 5,
+          },
+        ),
+        async (plans) => {
           // A run a shrink abandoned part-way leaves no spy behind for the next.
           vi.restoreAllMocks();
+          const { t, author, other, mod, waterBodyId } = await setup();
+          const reportId = (await seedPost(t, author.id, waterBodyId, 1))
+            .reportIds[0] as Id<'reports'>;
+          const ids: Id<'comments'>[] = [];
+          for (const [i] of plans.entries()) {
+            const id = await author.as.mutation(api.comments.create, { reportId, body: `c${i}` });
+            await author.as.mutation(api.comments.remove, { commentId: id });
+            ids.push(id);
+          }
+          const expected = plans.map(model);
+          const failing = new Set<string>();
+          const real = audit.writeAudit;
+          const writes = vi.spyOn(audit, 'writeAudit').mockImplementation(async (ctx, entry) => {
+            if (entry.action === 'erase' && failing.has(entry.targetId)) throw new Error('poison');
+            return real(ctx, entry);
+          });
+          advance(31 * DAY);
+          for (let run = 0; run < RUNS; run++) {
+            failing.clear();
+            const flags: Id<'contentFlags'>[] = [];
+            for (const [i, plan] of plans.entries()) {
+              if (plan[run] === 'fail') failing.add(ids[i] as string);
+              if (plan[run] === 'held' && (await get(t, ids[i] as string))) {
+                flags.push(
+                  await other.as.mutation(api.contentFlags.flag, {
+                    targetType: 'comment',
+                    targetId: ids[i] as string,
+                    reason: 'harassment',
+                  }),
+                );
+              }
+            }
+            writes.mockClear();
+            await sweep(t);
+            for (const [i, id] of ids.entries()) {
+              const tries = writes.mock.calls.filter(
+                ([, entry]) => entry.action === 'erase' && entry.targetId === id,
+              ).length;
+              const want = expected[i]?.[run];
+              // At most one attempt per item per run, and only when the rule says it is attempted.
+              expect(tries).toBe(want?.attempted ? 1 : 0);
+              const row = await get(t, id);
+              if (want?.done) expect(row).toBeNull();
+              else {
+                expect(row?.eraseAttempts ?? 0).toBe(want?.failures ?? 0);
+                expect(row?.eraseParkedAt !== undefined).toBe(want?.parked ?? false);
+              }
+            }
+            for (const flagId of flags) {
+              await mod.as.mutation(api.moderation.resolveFlag, {
+                flagId,
+                resolution: 'dismissed',
+                reason: 'not this',
+              });
+            }
+            advance(HOUR);
+          }
+          // Everything heals: the daily retry frees every parked item — a few a day — and nobody
+          // releases anything by hand.
+          failing.clear();
+          for (let day = 0; day < 3; day++) {
+            await t.mutation(internal.erasure.retryParkedDaily, {});
+            await t.finishAllScheduledFunctions(vi.runAllTimers, 10_000);
+            advance(DAY);
+          }
+          // And the hourly run for what was never parked.
+          await sweep(t);
+          for (const id of ids) expect(await get(t, id)).toBeNull();
+          vi.restoreAllMocks();
+        },
+      ),
+      { numRuns: 20 },
+    );
+  }, 300_000);
+
+  test('settleOwed, over any outcomes across runs: one attempt a run; parked exactly after three failures in a row; healthy uploaders settled in their run; the daily retry frees what heals', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(
+          fc.record({
+            debts: fc.integer({ min: 1, max: 9 }),
+            plan: fc.array(fc.constantFrom<Outcome>('fail', 'succeed'), {
+              minLength: RUNS,
+              maxLength: RUNS,
+            }),
+          }),
+          { minLength: 1, maxLength: 4 },
+        ),
+        async (uploaders) => {
+          vi.restoreAllMocks();
           const { t } = await setup();
-          const people: { id: Id<'profiles'>; photos: Id<'photos'>[]; fails: boolean }[] = [];
+          const people: { id: Id<'profiles'>; photos: Id<'photos'>[] }[] = [];
           for (const [n, spec] of uploaders.entries()) {
             const person = await seedUser(t, `u${n}`);
             const photos: Id<'photos'>[] = [];
@@ -2035,94 +2214,109 @@ describe('fairness under failure, under any mix', () => {
                 }),
               );
               photos.push(photoId);
-              // Interleaved by when they were owed, failing uploaders' debts among the oldest.
-              await oweOnRecord(t, person.id, [photoId], {
-                owedAt: T0 - 1000 * (spec.fails ? 2 : 1) + i,
-              });
+              await oweOnRecord(t, person.id, [photoId], { owedAt: T0 - 1000 + i });
             }
-            people.push({ id: person.id, photos, fails: spec.fails });
+            people.push({ id: person.id, photos });
           }
-          const failing = new Set(people.filter((p) => p.fails).map((p) => p.id as string));
+          const expected = uploaders.map((u) => model(u.plan));
+          const failing = new Set<string>();
           const real = photoOrphans.deletePhotoAndBlobs;
-          vi.spyOn(photoOrphans, 'deletePhotoAndBlobs').mockImplementation(async (ctx, row) => {
-            if (failing.has(row.uploaderId)) throw new Error('poison');
-            return real(ctx, row);
-          });
-          // One run.
-          await settleAll(t);
-          const debts = await t.run((ctx) => ctx.db.query('photoSettlements').collect());
-          for (const person of people) {
-            const place = await placeOf(t, person.id);
-            const theirs = debts.filter((d) => d.uploaderId === person.id);
-            if (person.fails) {
-              expect(place).toMatchObject({
-                attempts: MAX_SETTLE_ATTEMPTS,
-                parkedAt: expect.any(Number),
-              });
-              expect(theirs).toHaveLength(person.photos.length);
-              for (const id of person.photos) expect(await get(t, id)).not.toBeNull();
-            } else {
-              expect(place).toBeNull();
-              expect(theirs).toEqual([]);
-              for (const id of person.photos) expect(await get(t, id)).toBeNull();
+          const deletes = vi
+            .spyOn(photoOrphans, 'deletePhotoAndBlobs')
+            .mockImplementation(async (ctx, row) => {
+              if (failing.has(row.uploaderId)) throw new Error('poison');
+              return real(ctx, row);
+            });
+          for (let run = 0; run < RUNS; run++) {
+            failing.clear();
+            for (const [i, spec] of uploaders.entries()) {
+              if (spec.plan[run] === 'fail') failing.add(people[i]?.id as string);
             }
+            deletes.mockClear();
+            await settleAll(t);
+            for (const [i, person] of people.entries()) {
+              const want = expected[i]?.[run];
+              const tries = deletes.mock.calls.filter(
+                ([, row]) => row.uploaderId === person.id,
+              ).length;
+              // A failing attempt fails on its first photo: once a run, and only when attempted.
+              if (uploaders[i]?.plan[run] === 'fail') expect(tries).toBe(want?.attempted ? 1 : 0);
+              const place = await placeOf(t, person.id);
+              if (want?.done) {
+                expect(place).toBeNull();
+                for (const id of person.photos) expect(await get(t, id)).toBeNull();
+              } else {
+                expect(place?.attempts ?? 0).toBe(want?.failures ?? 0);
+                expect(place?.parkedAt !== undefined).toBe(want?.parked ?? false);
+                // Nothing of a failing uploader's is cleared or deleted.
+                for (const id of person.photos) expect(await get(t, id)).not.toBeNull();
+              }
+            }
+            advance(HOUR);
           }
-          // Nothing is tried again once parked.
-          advance(60 * 60 * 1000);
+          failing.clear();
+          for (let day = 0; day < 3; day++) {
+            await t.mutation(internal.erasure.retryParkedDaily, {});
+            await t.finishAllScheduledFunctions(vi.runAllTimers, 10_000);
+            advance(DAY);
+          }
           await settleAll(t);
-          for (const person of people.filter((p) => p.fails)) {
-            expect((await placeOf(t, person.id))?.attempts).toBe(MAX_SETTLE_ATTEMPTS);
+          for (const person of people) {
+            expect(await placeOf(t, person.id)).toBeNull();
+            for (const id of person.photos) expect(await get(t, id)).toBeNull();
           }
           vi.restoreAllMocks();
         },
       ),
-      { numRuns: 25 },
+      { numRuns: 20 },
     );
   }, 300_000);
+});
 
-  test('eraseDue: every healthy due item erased in one run; every failing one parked after exactly three attempts, untouched', async () => {
-    await fc.assert(
-      fc.asyncProperty(fc.array(fc.boolean(), { minLength: 1, maxLength: 8 }), async (fails) => {
-        // A run a shrink abandoned part-way leaves no spy behind for the next.
-        vi.restoreAllMocks();
-        const { t, author, waterBodyId } = await setup();
-        const reportId = (await seedPost(t, author.id, waterBodyId, 1))
-          .reportIds[0] as Id<'reports'>;
-        const items: { id: Id<'comments'>; fails: boolean }[] = [];
-        for (const [i, f] of fails.entries()) {
-          const id = await author.as.mutation(api.comments.create, { reportId, body: `c${i}` });
-          await author.as.mutation(api.comments.remove, { commentId: id });
-          items.push({ id, fails: f });
-          advance(1000);
-        }
-        const failing = new Set(items.filter((i) => i.fails).map((i) => i.id as string));
-        const real = audit.writeAudit;
-        vi.spyOn(audit, 'writeAudit').mockImplementation(async (ctx, entry) => {
-          if (entry.action === 'erase' && failing.has(entry.targetId)) throw new Error('poison');
-          return real(ctx, entry);
-        });
-        advance(31 * DAY);
-        await sweep(t);
-        for (const item of items) {
-          const row = await get(t, item.id);
-          if (item.fails) {
-            expect(row).toMatchObject({
-              eraseAttempts: MAX_ERASE_ATTEMPTS,
-              eraseParkedAt: expect.any(Number),
-            });
-            expect(row?.eraseAt).toBeUndefined();
-          } else {
-            expect(row).toBeNull();
-          }
-        }
-        advance(60 * 60 * 1000);
-        await sweep(t);
-        for (const item of items.filter((i) => i.fails)) {
-          expect((await get(t, item.id))?.eraseAttempts).toBe(MAX_ERASE_ATTEMPTS);
-        }
-        vi.restoreAllMocks();
-      }),
-      { numRuns: 25 },
-    );
-  }, 300_000);
+describe('parking heals itself', () => {
+  test('a parked item that always fails never keeps another from its daily retry', async () => {
+    const { t, author, waterBodyId } = await setup();
+    const admin = await seedUser(t, 'admin', 'admin');
+    const reportId = (await seedPost(t, author.id, waterBodyId, 1)).reportIds[0] as Id<'reports'>;
+    const ids: Id<'comments'>[] = [];
+    for (let i = 0; i < DAILY_RETRIES + 2; i++) {
+      const id = await author.as.mutation(api.comments.create, { reportId, body: `c${i}` });
+      await author.as.mutation(api.comments.remove, { commentId: id });
+      ids.push(id);
+      advance(1000);
+    }
+    const [poison] = ids as [Id<'comments'>];
+    // All of them parked, the poison the longest ago: three failing runs.
+    const broken = new Set<string>(ids);
+    const real = audit.writeAudit;
+    vi.spyOn(audit, 'writeAudit').mockImplementation(async (ctx, entry) => {
+      if (entry.action === 'erase' && broken.has(entry.targetId)) throw new Error('poison');
+      return real(ctx, entry);
+    });
+    advance(31 * DAY);
+    for (let run = 0; run < 3; run++) {
+      await sweep(t);
+      advance(60 * 60 * 1000);
+    }
+    for (const id of ids) expect((await get(t, id))?.eraseParkedAt).toBeDefined();
+    // A fix ships for all but the poison. Day by day, a few at a time, least recently tried first:
+    // the poison is re-stamped behind the rest each time it fails, so every other gets its turn.
+    broken.clear();
+    broken.add(poison);
+    for (let day = 0; day < 2; day++) {
+      await t.mutation(internal.erasure.retryParkedDaily, {});
+      await t.finishAllScheduledFunctions(vi.runAllTimers, 10_000);
+      advance(DAY);
+    }
+    for (const id of ids.slice(1)) expect(await get(t, id)).toBeNull();
+    const still = await get(t, poison);
+    expect(still).toMatchObject({
+      eraseParkedAt: expect.any(Number),
+      eraseRetriedAt: expect.any(Number),
+    });
+    const report = await admin.as.query(api.erasure.parked, {});
+    expect(report.items).toEqual([
+      expect.objectContaining({ id: poison, dailyRetriedAt: expect.any(Number) }),
+    ]);
+  });
 });

@@ -35,14 +35,18 @@ import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, type MutationCtx, type QueryCtx, query } from './_generated/server';
+import { type AttemptState, MAX_ATTEMPTS, nextAttemptState } from './lib/attempts';
 import { writeAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import {
+  attemptsOfItem,
   authorRetracted,
+  clockOf,
   ERASABLE,
   type Erasable,
   type ErasableDoc,
   HOLD_COST,
+  itemAttemptFields,
   postHoldOf,
   recordEraseFailure,
   refreshClockOf,
@@ -217,7 +221,7 @@ async function dueHead(
   ctx: MutationCtx,
   reads: ReadBudget,
   kind: Erasable,
-  now: number,
+  cutoff: number,
 ): Promise<ErasableDoc | undefined> {
   // Spelled per table: Convex types an index range per table, and a union would lose them.
   const head = (rows: ErasableDoc[]) => rows[0];
@@ -227,7 +231,7 @@ async function dueHead(
         await reads.take(kind, 1, (n) =>
           ctx.db
             .query('comments')
-            .withIndex('by_erase_at', (q) => q.gt('eraseAt', 0).lte('eraseAt', now))
+            .withIndex('by_erase_at', (q) => q.gt('eraseAt', 0).lte('eraseAt', cutoff))
             .take(n),
         ),
       );
@@ -236,7 +240,7 @@ async function dueHead(
         await reads.take(kind, 1, (n) =>
           ctx.db
             .query('hazards')
-            .withIndex('by_erase_at', (q) => q.gt('eraseAt', 0).lte('eraseAt', now))
+            .withIndex('by_erase_at', (q) => q.gt('eraseAt', 0).lte('eraseAt', cutoff))
             .take(n),
         ),
       );
@@ -245,7 +249,7 @@ async function dueHead(
         await reads.take(kind, 1, (n) =>
           ctx.db
             .query('reports')
-            .withIndex('by_erase_at', (q) => q.gt('eraseAt', 0).lte('eraseAt', now))
+            .withIndex('by_erase_at', (q) => q.gt('eraseAt', 0).lte('eraseAt', cutoff))
             .take(n),
         ),
       );
@@ -254,7 +258,7 @@ async function dueHead(
         await reads.take(kind, 1, (n) =>
           ctx.db
             .query('posts')
-            .withIndex('by_erase_at', (q) => q.gt('eraseAt', 0).lte('eraseAt', now))
+            .withIndex('by_erase_at', (q) => q.gt('eraseAt', 0).lte('eraseAt', cutoff))
             .take(n),
         ),
       );
@@ -263,7 +267,7 @@ async function dueHead(
         await reads.take(kind, 1, (n) =>
           ctx.db
             .query('contentFlags')
-            .withIndex('by_erase_at', (q) => q.gt('eraseAt', 0).lte('eraseAt', now))
+            .withIndex('by_erase_at', (q) => q.gt('eraseAt', 0).lte('eraseAt', cutoff))
             .take(n),
         ),
       );
@@ -272,7 +276,7 @@ async function dueHead(
         await reads.take(kind, 1, (n) =>
           ctx.db
             .query('waterBodyRequests')
-            .withIndex('by_erase_at', (q) => q.gt('eraseAt', 0).lte('eraseAt', now))
+            .withIndex('by_erase_at', (q) => q.gt('eraseAt', 0).lte('eraseAt', cutoff))
             .take(n),
         ),
       );
@@ -281,7 +285,7 @@ async function dueHead(
         await reads.take(kind, 1, (n) =>
           ctx.db
             .query('accessAlerts')
-            .withIndex('by_erase_at', (q) => q.gt('eraseAt', 0).lte('eraseAt', now))
+            .withIndex('by_erase_at', (q) => q.gt('eraseAt', 0).lte('eraseAt', cutoff))
             .take(n),
         ),
       );
@@ -290,9 +294,17 @@ async function dueHead(
 
 /**
  * One item's erasure, as its own nested transaction: the hold re-read, the eraser, its history row
- * and the photo debt it leaves. An item that throws rolls back only its own work; the sweep counts
- * the failure on the item and moves on (`recordEraseFailure`). The sweep passes the row it read, in
+ * and the photo debt it leaves. An item that throws rolls back only its own work; the caller counts
+ * the failure on the item and moves on (`recordEraseFailure`). The caller passes the row it read, in
  * the same transaction, so it is not read twice. Returns what it did and what it spent.
+ *
+ * **Progress clears a failure count** (`lib/attempts`): a pass that erased or unlinked anything the
+ * item carries, and stopped part-way, writes the cleared count back — only when there was one, so
+ * the common path writes nothing, and inside the eraser's own reserve (`TAIL`, which a part-way stop
+ * always leaves unspent and which is never less than the row). An erased row takes its count with it.
+ *
+ * `retry` is the daily retry of a parked item: its clock is read as if it were not parked, and
+ * nothing is written to it here — the caller un-parks it only if this attempt went through.
  */
 export const eraseOne = internalMutation({
   args: {
@@ -309,21 +321,42 @@ export const eraseOne = internalMutation({
     now: v.number(),
     bytes: v.number(),
     writes: v.number(),
+    retry: v.optional(v.boolean()),
   },
-  handler: async (ctx, { kind, doc, now, bytes, writes }) => {
+  handler: async (ctx, { kind, doc, now, bytes, writes, retry }) => {
     const item = doc as ErasableDoc;
     try {
       const tick: Tick = { reads: new ReadBudget(bytes), writes };
       const spent = () => ({ spent: bytes - tick.reads.bytes, writes: writes - tick.writes });
-      // The second guard: re-read the holds now, against the row the sweep read in this same
-      // transaction (its withdrawal). A row that is held (or no longer withdrawn) has its clock
-      // cleared or moved, which takes it out of the range.
-      const next = await refreshClockOf(ctx, tick.reads, kind, item, now);
-      if (next === undefined || next > now) return { outcome: 'held' as const, ...spent() };
+      const progress = nextAttemptState(attemptsOfItem(item), { kind: 'progress' }, now);
+      const cleared = progress ? itemAttemptFields(progress) : null;
+      let subject = item;
+      let dueAt: number | undefined;
+      if (retry) {
+        // As if not parked: due now, unless a hold keeps it — then it stays parked, untouched.
+        subject = { ...item, ...cleared } as ErasableDoc;
+        dueAt = await clockOf(ctx, tick.reads, kind, subject, now);
+        if (dueAt === undefined || dueAt > now) return { outcome: 'held' as const, ...spent() };
+        subject = { ...subject, eraseAt: dueAt } as ErasableDoc;
+      } else {
+        // The second guard: re-read the holds now, against the row the sweep read in this same
+        // transaction (its withdrawal). A row that is held (or no longer withdrawn) has its clock
+        // cleared or moved, which takes it out of the range.
+        const next = await refreshClockOf(ctx, tick.reads, kind, item, now);
+        if (next === undefined || next > now) return { outcome: 'held' as const, ...spent() };
+      }
       const photos: PhotoWork[] = [];
       // Part-way: what it removed is gone, the item itself is whole and still due.
-      if (!(await ERASERS[kind](ctx, tick, item, now, photos))) {
-        return { outcome: 'partial' as const, ...spent() };
+      if (!(await ERASERS[kind](ctx, tick, subject, now, photos))) {
+        if (!retry && cleared) {
+          tick.reads.touch(kind);
+          await ctx.db.patch(item._id as Id<(typeof ERASABLE)[Erasable]>, cleared);
+        }
+        return {
+          outcome: 'partial' as const,
+          ...spent(),
+          ...(dueAt !== undefined ? { dueAt } : {}),
+        };
       }
       await writeAudit(ctx, {
         action: 'erase',
@@ -359,18 +392,26 @@ export const PASS_NEED: Record<Erasable, number> = Object.fromEntries(
  *
  * **One item that always fails never holds up the rest.** Each item is erased in its own nested
  * transaction (`eraseOne`). One that throws rolls back only itself, and the sweep records the attempt
- * on it (`lib/eraseClock.recordEraseFailure`) and goes on; after `MAX_ERASE_ATTEMPTS` the item is
- * parked — out of the due range, counted in `erasure.parked`, released only by `erasure.retryParked`.
+ * on it (`lib/eraseClock.recordEraseFailure`) and goes on — not to it again this run. After
+ * `MAX_ERASE_ATTEMPTS` failures in a row, with no progress between, the item is parked: out of the due
+ * range, listed in `erasure.parked`, tried again by the daily retry (`retryParkedDaily`) and released
+ * at once by `erasure.retryParked`.
  */
 export const eraseDue = internalMutation({
   args: {
     pageSize: v.optional(v.number()),
+    /**
+     * This run's cutoff: every pass of a run reads the range due by the moment it started. A failed
+     * item's clock moves just past it, so a run tries each item once (`recordEraseFailure`).
+     */
+    cutoff: v.optional(v.number()),
   },
   handler: (ctx, args) =>
     traced('erasure.eraseDue', args, async () => {
       const { pageSize } = args;
       const size = pageSizeFor(pageSize);
       const now = Date.now();
+      const cutoff = args.cutoff ?? now;
       const erased: Partial<Record<Erasable, number>> = {};
       const reads = new ReadBudget();
       // The seam scales the write budget, so a test can force any item across passes.
@@ -391,7 +432,7 @@ export const eraseDue = internalMutation({
             more = true;
             break kinds;
           }
-          const doc = await dueHead(ctx, reads, kind, now);
+          const doc = await dueHead(ctx, reads, kind, cutoff);
           if (!doc) break;
           const allowance = reads.bytes - ROW_MAX[kind];
           // Only the nested call is caught: a failure after it committed is this pass's, not the item's.
@@ -406,9 +447,18 @@ export const eraseDue = internalMutation({
             // Its own work rolled back; its reads still count against this transaction.
             reads.spend(allowance);
             failed++;
-            if (
-              (await recordEraseFailure(ctx, reads, kind, doc, errorClassOf(err), now)) === 'parked'
-            ) {
+            const recorded = await recordEraseFailure(
+              ctx,
+              reads,
+              kind,
+              doc,
+              errorClassOf(err),
+              now,
+              {
+                runCutoff: cutoff,
+              },
+            );
+            if (recorded === 'parked') {
               parked++;
               console.error(`erasure.eraseDue: parked ${kind} ${doc._id} after repeated failures`);
             }
@@ -434,6 +484,7 @@ export const eraseDue = internalMutation({
       }
       if (more) {
         await ctx.scheduler.runAfter(0, internal.erasure.eraseDue, {
+          cutoff,
           ...(pageSize !== undefined ? { pageSize } : {}),
         });
       } else {
@@ -528,8 +579,8 @@ async function owePhotos(ctx: MutationCtx, reads: ReadBudget, work: PhotoWork, n
   }
 }
 
-/** Failed settlement steps an uploader gets before they are parked. */
-export const MAX_SETTLE_ATTEMPTS = 3;
+/** Failed settlement steps in a row an uploader gets before they are parked (`lib/attempts`). */
+export const MAX_SETTLE_ATTEMPTS = MAX_ATTEMPTS;
 /** Clearing one debt: its row read and deleted. */
 const CLEAR_ONE = 2 * ROW_MAX.photoSettlement;
 /** Settling one photo: the row, its access-photo check, and the delete or strip. */
@@ -539,77 +590,130 @@ const STEP_PLACE = 2 * ROW_MAX.settleQueue;
 /** The least a step is given: its place, and a page row with a photo's settlement beside it. */
 const MIN_STEP = STEP_PLACE + ROW_MAX.hazard + SETTLE_ONE;
 
+/** An uploader's attempt state, read off their queue row. */
+function attemptsOfPlace(place: Doc<'photoSettlementQueue'>): AttemptState {
+  return {
+    attempts: place.attempts,
+    errorClass: place.lastErrorClass,
+    parkedAt: place.parkedAt,
+    retriedAt: place.retriedAt,
+  };
+}
+
+/** The same, as the queue row's fields. */
+function queueAttemptFields(state: AttemptState) {
+  return {
+    attempts: state.attempts,
+    lastErrorClass: state.errorClass,
+    parkedAt: state.parkedAt,
+    retriedAt: state.retriedAt,
+  };
+}
+
 /**
  * Settle everyone owed a settlement, an uploader at a time, round robin: the walk takes the unparked
- * uploader whose turn is oldest (`photoSettlementQueue.by_parked_queued`), runs one step of their
- * settlement as its own nested transaction (`settleStep`), and goes on to the next turn, as many as
- * the budget affords, then continues itself until no unparked uploader is owed anything.
+ * uploader whose turn is oldest and due in this run (`photoSettlementQueue.by_parked_queued`, up to
+ * the run's cutoff), runs one step of their settlement as its own nested transaction (`settleStep`),
+ * and goes on, as many turns as the budget affords, then continues itself until no unparked uploader
+ * is owed anything due in this run. A step that goes through leaves the turn at the cutoff, still in
+ * the run, so a healthy settlement finishes in one run.
  *
  * **One uploader that always fails never holds up anyone else.** A step that throws rolls back only
- * that uploader's step; the walk records the attempt and the error's class on their queue row, sends
- * them to the back, and goes on; after `MAX_SETTLE_ATTEMPTS` they are parked — skipped, counted in
- * `erasure.parked`, their debts still owed and their photos untouched — until `erasure.retryParked`.
- * Started at each sweep run's end and by its own hourly cron; the state is all rows, never arguments.
+ * that uploader's step; the walk records the failure on their queue row (`lib/attempts`), moves their
+ * turn just past the cutoff — not again this run — and goes on. After `MAX_SETTLE_ATTEMPTS` failures in
+ * a row, with no successful step between, they are parked: skipped, listed in `erasure.parked`, their
+ * debts still owed and their photos untouched, tried again by the daily retry and released at once by
+ * `erasure.retryParked`. Started at each sweep run's end and by its own hourly cron; the state is all
+ * rows, never arguments.
  */
 export const settleOwed = internalMutation({
-  args: { pageSize: v.optional(v.number()) },
+  args: { pageSize: v.optional(v.number()), cutoff: v.optional(v.number()) },
   handler: (ctx, args) =>
     traced('erasure.settleOwed', args, async () => {
       const reads = new ReadBudget();
       const now = Date.now();
+      const cutoff = args.cutoff ?? now;
+      const seam = args.pageSize !== undefined ? { pageSize: args.pageSize } : {};
       let steps = 0;
       let failed = 0;
       let parked = 0;
       for (;;) {
         // A turn: the next uploader's place, a step, and the write that records a failure.
         if (!reads.affords(ROW_MAX.settleQueue + MIN_STEP + ROW_MAX.settleQueue)) {
-          await ctx.scheduler.runAfter(0, internal.erasure.settleOwed, args);
+          await ctx.scheduler.runAfter(0, internal.erasure.settleOwed, { cutoff, ...seam });
           return { steps, failed, parked, more: true };
         }
         const [turn] = await reads.take('settleQueue', 1, (n) =>
           ctx.db
             .query('photoSettlementQueue')
-            .withIndex('by_parked_queued', (q) => q.eq('parkedAt', undefined))
+            .withIndex('by_parked_queued', (q) =>
+              q.eq('parkedAt', undefined).lte('queuedAt', cutoff),
+            )
             .take(n),
         );
         if (!turn) return { steps, failed, parked, more: false };
-        const allowance = reads.bytes - ROW_MAX.settleQueue;
-        // Only the nested call is caught: a failure after it committed is this walk's, not theirs.
-        let spent: number;
-        try {
-          spent = await ctx.runMutation(
-            internal.erasure.settleStep,
-            {
-              uploaderId: turn.uploaderId,
-              bytes: allowance,
-              ...(args.pageSize !== undefined ? { pageSize: args.pageSize } : {}),
-            },
-            { transactionLimits: { bytesRead: allowance } },
-          );
-        } catch (err) {
-          reads.spend(allowance);
+        const outcome = await settleTurn(ctx, reads, turn, now, { cutoff, ...seam });
+        if (outcome === 'settled') steps++;
+        else {
           failed++;
-          const attempts = (turn.attempts ?? 0) + 1;
-          const parks = attempts >= MAX_SETTLE_ATTEMPTS;
-          reads.touch('settleQueue');
-          await ctx.db.patch(turn._id, {
-            attempts,
-            lastErrorClass: errorClassOf(err),
-            // To the back of the queue: everyone else's turn comes first.
-            queuedAt: Math.max(now, turn.queuedAt + 1),
-            ...(parks ? { parkedAt: now } : {}),
-          });
-          if (parks) {
-            parked++;
-            console.error(`erasure.settleOwed: parked the settlement of ${turn.uploaderId}`);
-          }
-          continue;
+          if (outcome === 'parked') parked++;
         }
-        reads.spend(spent);
-        steps++;
       }
     }),
 });
+
+/**
+ * One turn of one uploader's settlement: its step as a nested transaction, and on a failure the
+ * rule's next state on their queue row, their turn moved past the run's cutoff. Shared by the walk
+ * and the daily retry.
+ */
+async function settleTurn(
+  ctx: MutationCtx,
+  reads: ReadBudget,
+  turn: Doc<'photoSettlementQueue'>,
+  now: number,
+  {
+    cutoff,
+    pageSize,
+    byDailyRetry = false,
+  }: { cutoff: number; pageSize?: number; byDailyRetry?: boolean },
+): Promise<'settled' | 'failed' | 'parked'> {
+  const allowance = reads.bytes - ROW_MAX.settleQueue;
+  // Only the nested call is caught: a failure after it committed is this walk's, not theirs.
+  let spent: number;
+  try {
+    spent = await ctx.runMutation(
+      internal.erasure.settleStep,
+      {
+        uploaderId: turn.uploaderId,
+        bytes: allowance,
+        queueAt: cutoff,
+        ...(pageSize !== undefined ? { pageSize } : {}),
+      },
+      { transactionLimits: { bytesRead: allowance } },
+    );
+  } catch (err) {
+    reads.spend(allowance);
+    const next = nextAttemptState(
+      attemptsOfPlace(turn),
+      { kind: 'failed', errorClass: errorClassOf(err), byDailyRetry },
+      now,
+    ) as AttemptState;
+    reads.touch('settleQueue');
+    await ctx.db.patch(turn._id, {
+      ...queueAttemptFields(next),
+      // Not again in this run: everyone else due comes first, and this uploader the next run.
+      queuedAt: cutoff + 1,
+    });
+    if (next.parkedAt !== undefined && turn.parkedAt === undefined) {
+      console.error(`erasure.settleOwed: parked the settlement of ${turn.uploaderId}`);
+      return 'parked';
+    }
+    return 'failed';
+  }
+  reads.spend(spent);
+  return 'settled';
+}
 
 /**
  * One step of one uploader's settlement, as its own nested transaction (`settleOwed` runs it):
@@ -635,8 +739,10 @@ export const settleStep = internalMutation({
     bytes: v.number(),
     /** Test seam: rows per page, clamped to what the page can afford. */
     pageSize: v.optional(v.number()),
+    /** Where the step leaves its turn: the walk's run cutoff, so it stays in this run. */
+    queueAt: v.optional(v.number()),
   },
-  handler: async (ctx, { uploaderId, bytes, pageSize }) => {
+  handler: async (ctx, { uploaderId, bytes, pageSize, queueAt }) => {
     try {
       const reads = new ReadBudget(bytes);
       const cap = pageSize ?? Number.POSITIVE_INFINITY;
@@ -656,12 +762,14 @@ export const settleStep = internalMutation({
           cursor: undefined,
           after: undefined,
           ...next,
-          // A step went through, so the failures before it were not a poison: only failures in a
-          // row park an uploader, never a few spread over a settlement that runs for many steps.
-          attempts: undefined,
-          lastErrorClass: undefined,
-          // A turn taken, so to the back: round robin with everyone else owed.
-          queuedAt: Math.max(now, place.queuedAt + 1),
+          // A step went through: progress, so any failures before it are cleared and a parked
+          // uploader is un-parked (`lib/attempts`) — in this same write.
+          ...queueAttemptFields(
+            nextAttemptState(attemptsOfPlace(place), { kind: 'progress' }, now) ??
+              attemptsOfPlace(place),
+          ),
+          // A turn taken: behind everyone else whose turn is due in this run, but still in it.
+          queuedAt: queueAt ?? now,
         });
       };
       const photoIds = place.photoIds ?? [];
@@ -794,6 +902,130 @@ export const settleStep = internalMutation({
   },
 });
 
+/** Parked settlements, and parked items of each kind, the daily retry tries a run. */
+export const DAILY_RETRIES = 3;
+
+/**
+ * **Parking heals itself.** Once a day, a few parked pieces of each kind — settlements first, then
+ * each erasable kind — are tried again, least recently tried first, each in its own nested
+ * transaction exactly as the hourly walks try healthy work, and never in its way (its own cron, its
+ * own budget). One that goes through is un-parked by the rule (`lib/attempts`): a settlement step
+ * clears it in its own write, and an item erased is gone, or one erased part-way goes back on the
+ * clock. One that fails again stays parked, re-stamped as just tried — so it goes behind every other
+ * parked piece next day, and one that never works can't keep another from its turn — and noted as
+ * retried. A deployed fix frees what it parked within a day, with nobody needing to remember;
+ * `retryParked` is still there to release everything at once.
+ */
+export const retryParkedDaily = internalMutation({
+  args: {
+    cutoff: v.optional(v.number()),
+    /** Which kind the run has reached: -1 the settlements, then `ERASED_KINDS` in order. */
+    at: v.optional(v.number()),
+    /** Tried so far of the kind it has reached. */
+    tried: v.optional(v.number()),
+  },
+  handler: (ctx, args) =>
+    traced('erasure.retryParkedDaily', args, async () => {
+      const now = Date.now();
+      const cutoff = args.cutoff ?? now;
+      const reads = new ReadBudget();
+      let at = args.at ?? -1;
+      let tried = args.tried ?? 0;
+      let freed = 0;
+      // What a pass freed goes on with the hourly walks now rather than at their next tick.
+      const walkOn = async () => {
+        if (freed === 0) return;
+        await ctx.scheduler.runAfter(0, internal.erasure.eraseDue, {});
+        await ctx.scheduler.runAfter(0, internal.erasure.settleOwed, {});
+      };
+      const carryOn = async () => {
+        await walkOn();
+        await ctx.scheduler.runAfter(0, internal.erasure.retryParkedDaily, { cutoff, at, tried });
+      };
+      for (; at < ERASED_KINDS.length; at++, tried = 0) {
+        for (; tried < DAILY_RETRIES; tried++) {
+          if (at === -1) {
+            // A parked settlement: its place, a step, and the write that records a failure.
+            if (!reads.affords(ROW_MAX.settleQueue + MIN_STEP + ROW_MAX.settleQueue)) {
+              await carryOn();
+              return { freed, more: true };
+            }
+            const [turn] = await reads.take('settleQueue', 1, (n) =>
+              ctx.db
+                .query('photoSettlementQueue')
+                .withIndex('by_parked_queued', (q) => q.gt('parkedAt', 0).lte('parkedAt', cutoff))
+                .take(n),
+            );
+            if (!turn) break;
+            const outcome = await settleTurn(ctx, reads, turn, now, { cutoff, byDailyRetry: true });
+            if (outcome === 'settled') freed++;
+            continue;
+          }
+          const kind = ERASED_KINDS[at] as Erasable;
+          if (!reads.affords(PASS_NEED[kind])) {
+            await carryOn();
+            return { freed, more: true };
+          }
+          const [doc] = (await reads.take(kind, 1, (n) =>
+            ctx.db
+              .query(ERASABLE[kind] as 'reports')
+              .withIndex('by_erase_parked', (q) =>
+                q.gt('eraseParkedAt', 0).lte('eraseParkedAt', cutoff),
+              )
+              .take(n),
+          )) as ErasableDoc[];
+          if (!doc) break;
+          if (await retryParkedItem(ctx, reads, kind, doc, now, cutoff)) freed++;
+        }
+      }
+      await walkOn();
+      return { freed, more: false };
+    }),
+});
+
+/**
+ * One parked item, tried again: its erasure in a nested transaction, as if not parked. Erased: gone.
+ * Part-way: un-parked and back on the clock, due now, in the write a failure would otherwise have
+ * taken. Held: left parked, untouched. Failed: still parked, re-stamped, noted as retried.
+ */
+async function retryParkedItem(
+  ctx: MutationCtx,
+  reads: ReadBudget,
+  kind: Erasable,
+  doc: ErasableDoc,
+  now: number,
+  cutoff: number,
+): Promise<boolean> {
+  const allowance = reads.bytes - ROW_MAX[kind];
+  let result: { outcome: 'held' | 'partial' | 'erased'; spent: number; dueAt?: number };
+  try {
+    result = await ctx.runMutation(
+      internal.erasure.eraseOne,
+      { kind, doc, now, bytes: allowance, writes: WRITES_PER_ROW * PAGE, retry: true },
+      { transactionLimits: { bytesRead: allowance } },
+    );
+  } catch (err) {
+    reads.spend(allowance);
+    await recordEraseFailure(ctx, reads, kind, doc, errorClassOf(err), now, {
+      runCutoff: cutoff,
+      byDailyRetry: true,
+    });
+    return false;
+  }
+  reads.spend(result.spent);
+  if (result.outcome === 'partial') {
+    const cleared = itemAttemptFields(
+      nextAttemptState(attemptsOfItem(doc), { kind: 'progress' }, now) ?? {},
+    );
+    reads.touch(kind);
+    await ctx.db.patch(doc._id as Id<(typeof ERASABLE)[Erasable]>, {
+      ...cleared,
+      eraseAt: result.dueAt,
+    });
+  }
+  return result.outcome !== 'held';
+}
+
 /** The most parked settlements the parked read lists, and the most a retry releases a call. */
 const PARKED_LIST = 50;
 /** The most parked items of one kind the parked read lists. */
@@ -826,9 +1058,9 @@ export const retryParked = internalMutation({
     for (const row of uploaders) {
       reads.touch('settleQueue');
       await ctx.db.patch(row._id, {
-        parkedAt: undefined,
-        attempts: 0,
-        lastErrorClass: undefined,
+        ...queueAttemptFields(
+          nextAttemptState(attemptsOfPlace(row), { kind: 'progress' }, now) ?? {},
+        ),
         queuedAt: now,
       });
     }
@@ -869,7 +1101,8 @@ function parkedOf(ctx: QueryCtx, reads: ReadBudget, kind: Erasable, n: number) {
 /**
  * **What the erasure has parked** — for the console's Machinery: per kind and for photo settlements,
  * how many (counted to the list's bound, `capped` past it) and each with its attempts, its last
- * error's class and when it was parked. No content: ids, counts, classes and times.
+ * error's class, when it was last tried (parked, or last retried) and whether the daily retry has run
+ * on it. No content: ids, counts, classes and times.
  */
 export const parked = query({
   args: {},
@@ -887,7 +1120,8 @@ export const parked = query({
       id: string;
       attempts: number;
       errorClass: string | null;
-      parkedAt: number;
+      lastTriedAt: number;
+      dailyRetriedAt: number | null;
     }[] = [];
     let capped = settlements.length > PARKED_LIST;
     for (const kind of ERASED_KINDS) {
@@ -908,7 +1142,8 @@ export const parked = query({
           id: doc._id,
           attempts: doc.eraseAttempts ?? 0,
           errorClass: doc.eraseErrorClass ?? null,
-          parkedAt: doc.eraseParkedAt as number,
+          lastTriedAt: doc.eraseParkedAt as number,
+          dailyRetriedAt: doc.eraseRetriedAt ?? null,
         });
       }
     }
@@ -917,7 +1152,8 @@ export const parked = query({
         uploaderId: row.uploaderId,
         attempts: row.attempts ?? 0,
         errorClass: row.lastErrorClass ?? null,
-        parkedAt: row.parkedAt as number,
+        lastTriedAt: row.parkedAt as number,
+        dailyRetriedAt: row.retriedAt ?? null,
       })),
       items,
       capped,

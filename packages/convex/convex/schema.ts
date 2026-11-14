@@ -2425,13 +2425,17 @@ export default defineSchema({
      */
     eraseAt: v.optional(v.number()),
     /**
-     * Erasure attempts that failed (D248), the last one's error class (never its message), and when
-     * the item was parked after too many: a parked item is off the clock and out of the sweep's range
-     * until `erasure.retryParked` releases it, so one item that always fails never holds up the rest.
+     * Erasure attempts that failed in a row (D248), the last one's error class (never its message),
+     * and when the item was parked after three — or last tried, once parked (`lib/attempts`). Any
+     * progress clears them. A parked item is off the clock and out of the sweep's range, so one item
+     * that always fails never holds up the rest; the daily retry tries it again, a few a day, least
+     * recently tried first, and `erasure.retryParked` releases it at once.
      */
     eraseAttempts: v.optional(v.number()),
     eraseErrorClass: v.optional(v.string()),
     eraseParkedAt: v.optional(v.number()),
+    /** When the daily retry of parked erasures last tried it, if it has. */
+    eraseRetriedAt: v.optional(v.number()),
   })
     .index('by_water_body_skate_end_time', ['waterBodyId', 'skateEndTime'])
     // Per-body feed, paginated (infinite scroll). `moderationStatus` leads so the gate is applied
@@ -2539,13 +2543,17 @@ export default defineSchema({
      */
     eraseAt: v.optional(v.number()),
     /**
-     * Erasure attempts that failed (D248), the last one's error class (never its message), and when
-     * the item was parked after too many: a parked item is off the clock and out of the sweep's range
-     * until `erasure.retryParked` releases it, so one item that always fails never holds up the rest.
+     * Erasure attempts that failed in a row (D248), the last one's error class (never its message),
+     * and when the item was parked after three — or last tried, once parked (`lib/attempts`). Any
+     * progress clears them. A parked item is off the clock and out of the sweep's range, so one item
+     * that always fails never holds up the rest; the daily retry tries it again, a few a day, least
+     * recently tried first, and `erasure.retryParked` releases it at once.
      */
     eraseAttempts: v.optional(v.number()),
     eraseErrorClass: v.optional(v.string()),
     eraseParkedAt: v.optional(v.number()),
+    /** When the daily retry of parked erasures last tried it, if it has. */
+    eraseRetriedAt: v.optional(v.number()),
     /**
      * The words a search of Latest reads (B03 §11): the Post's title and prose, and what its
      * **visible** members' authors typed. Derived; one writer, `refreshPostSearchText` in
@@ -2665,13 +2673,17 @@ export default defineSchema({
      */
     eraseAt: v.optional(v.number()),
     /**
-     * Erasure attempts that failed (D248), the last one's error class (never its message), and when
-     * the item was parked after too many: a parked item is off the clock and out of the sweep's range
-     * until `erasure.retryParked` releases it, so one item that always fails never holds up the rest.
+     * Erasure attempts that failed in a row (D248), the last one's error class (never its message),
+     * and when the item was parked after three — or last tried, once parked (`lib/attempts`). Any
+     * progress clears them. A parked item is off the clock and out of the sweep's range, so one item
+     * that always fails never holds up the rest; the daily retry tries it again, a few a day, least
+     * recently tried first, and `erasure.retryParked` releases it at once.
      */
     eraseAttempts: v.optional(v.number()),
     eraseErrorClass: v.optional(v.string()),
     eraseParkedAt: v.optional(v.number()),
+    /** When the daily retry of parked erasures last tried it, if it has. */
+    eraseRetriedAt: v.optional(v.number()),
     /**
      * When the erasure sweep erased this (D248). Only a comment replies point at keeps a row once
      * erased: an empty shell — no words, no edit time — so the thread still draws the placeholder its
@@ -2803,13 +2815,17 @@ export default defineSchema({
     /** When a withdrawn hazard is erased — 30 days on, unless held (`lib/eraseClock`). */
     eraseAt: v.optional(v.number()),
     /**
-     * Erasure attempts that failed (D248), the last one's error class (never its message), and when
-     * the item was parked after too many: a parked item is off the clock and out of the sweep's range
-     * until `erasure.retryParked` releases it, so one item that always fails never holds up the rest.
+     * Erasure attempts that failed in a row (D248), the last one's error class (never its message),
+     * and when the item was parked after three — or last tried, once parked (`lib/attempts`). Any
+     * progress clears them. A parked item is off the clock and out of the sweep's range, so one item
+     * that always fails never holds up the rest; the daily retry tries it again, a few a day, least
+     * recently tried first, and `erasure.retryParked` releases it at once.
      */
     eraseAttempts: v.optional(v.number()),
     eraseErrorClass: v.optional(v.string()),
     eraseParkedAt: v.optional(v.number()),
+    /** When the daily retry of parked erasures last tried it, if it has. */
+    eraseRetriedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
     // The erasure sweep (D248): a `gt(0).lte(now)` range holds only due work.
@@ -3321,13 +3337,17 @@ export default defineSchema({
     /** When a retracted request is erased — 30 days on (`lib/erasure`). Absent ⇒ not due. */
     eraseAt: v.optional(v.number()),
     /**
-     * Erasure attempts that failed (D248), the last one's error class (never its message), and when
-     * the item was parked after too many: a parked item is off the clock and out of the sweep's range
-     * until `erasure.retryParked` releases it, so one item that always fails never holds up the rest.
+     * Erasure attempts that failed in a row (D248), the last one's error class (never its message),
+     * and when the item was parked after three — or last tried, once parked (`lib/attempts`). Any
+     * progress clears them. A parked item is off the clock and out of the sweep's range, so one item
+     * that always fails never holds up the rest; the daily retry tries it again, a few a day, least
+     * recently tried first, and `erasure.retryParked` releases it at once.
      */
     eraseAttempts: v.optional(v.number()),
     eraseErrorClass: v.optional(v.string()),
     eraseParkedAt: v.optional(v.number()),
+    /** When the daily retry of parked erasures last tried it, if it has. */
+    eraseRetriedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
     // The erasure sweep (D248): a `gt(0).lte(now)` range holds only due work.
@@ -3393,13 +3413,17 @@ export default defineSchema({
     /** When a retracted flag is erased — 30 days on (`lib/erasure`). Absent ⇒ not due. */
     eraseAt: v.optional(v.number()),
     /**
-     * Erasure attempts that failed (D248), the last one's error class (never its message), and when
-     * the item was parked after too many: a parked item is off the clock and out of the sweep's range
-     * until `erasure.retryParked` releases it, so one item that always fails never holds up the rest.
+     * Erasure attempts that failed in a row (D248), the last one's error class (never its message),
+     * and when the item was parked after three — or last tried, once parked (`lib/attempts`). Any
+     * progress clears them. A parked item is off the clock and out of the sweep's range, so one item
+     * that always fails never holds up the rest; the daily retry tries it again, a few a day, least
+     * recently tried first, and `erasure.retryParked` releases it at once.
      */
     eraseAttempts: v.optional(v.number()),
     eraseErrorClass: v.optional(v.string()),
     eraseParkedAt: v.optional(v.number()),
+    /** When the daily retry of parked erasures last tried it, if it has. */
+    eraseRetriedAt: v.optional(v.number()),
   })
     .index('by_status', ['status'])
     .index('by_target', ['targetType', 'targetId'])
@@ -3525,7 +3549,9 @@ export default defineSchema({
    * `queuedAt`, one settlement step per uploader per turn, each step its own nested transaction: a
    * step that throws rolls back only that uploader's step, is counted here (`attempts`, the error's
    * class, never its message) and, after `MAX_SETTLE_ATTEMPTS`, parks the uploader — skipped by the
-   * walk, its debts still owed and its photos untouched — until `erasure.retryParked` releases it.
+   * walk, its debts still owed and its photos untouched — and tried again by the daily retry (a few a
+   * day, least recently tried first), or released at once by `erasure.retryParked`. Any successful
+   * step clears the count (`lib/attempts`).
    * The step's position (phase, cursor, the photo ids and debts it took on) lives here, so a run that
    * dies resumes where it was. Per uploader rather than on the debts, because the settlement reads an
    * uploader's whole history and fails or succeeds as one. Account deletion drops it.
@@ -3541,6 +3567,8 @@ export default defineSchema({
     attempts: v.optional(v.number()),
     lastErrorClass: v.optional(v.string()),
     parkedAt: v.optional(v.number()),
+    /** When the daily retry of parked settlements last tried it, if it has. */
+    retriedAt: v.optional(v.number()),
   })
     .index('by_uploader', ['uploaderId'])
     .index('by_parked_queued', ['parkedAt', 'queuedAt']),
@@ -4112,13 +4140,17 @@ export default defineSchema({
      */
     eraseAt: v.optional(v.number()),
     /**
-     * Erasure attempts that failed (D248), the last one's error class (never its message), and when
-     * the item was parked after too many: a parked item is off the clock and out of the sweep's range
-     * until `erasure.retryParked` releases it, so one item that always fails never holds up the rest.
+     * Erasure attempts that failed in a row (D248), the last one's error class (never its message),
+     * and when the item was parked after three — or last tried, once parked (`lib/attempts`). Any
+     * progress clears them. A parked item is off the clock and out of the sweep's range, so one item
+     * that always fails never holds up the rest; the daily retry tries it again, a few a day, least
+     * recently tried first, and `erasure.retryParked` releases it at once.
      */
     eraseAttempts: v.optional(v.number()),
     eraseErrorClass: v.optional(v.string()),
     eraseParkedAt: v.optional(v.number()),
+    /** When the daily retry of parked erasures last tried it, if it has. */
+    eraseRetriedAt: v.optional(v.number()),
   })
     /**
      * The two per-lake reads, and the status prefix is the point (PR #43 review). `kind` sits between

@@ -52,6 +52,7 @@ import type * as ledger from "../ledger.js";
 import type * as lib_accessLimits from "../lib/accessLimits.js";
 import type * as lib_activityConnections from "../lib/activityConnections.js";
 import type * as lib_apiMeter from "../lib/apiMeter.js";
+import type * as lib_attempts from "../lib/attempts.js";
 import type * as lib_audit from "../lib/audit.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_authorDeletion from "../lib/authorDeletion.js";
@@ -209,6 +210,7 @@ declare const fullApi: ApiFromModules<{
   "lib/accessLimits": typeof lib_accessLimits;
   "lib/activityConnections": typeof lib_activityConnections;
   "lib/apiMeter": typeof lib_apiMeter;
+  "lib/attempts": typeof lib_attempts;
   "lib/audit": typeof lib_audit;
   "lib/auth": typeof lib_auth;
   "lib/authorDeletion": typeof lib_authorDeletion;

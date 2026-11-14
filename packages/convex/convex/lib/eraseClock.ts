@@ -27,6 +27,7 @@ import { nextEraseAt, WITHDRAWN_ERASE_MS } from '@skating/core';
 import { internal } from '../_generated/api';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
+import { type AttemptState, MAX_ATTEMPTS, nextAttemptState } from './attempts';
 import { ReadBudget, ROW_MAX } from './readBudget';
 
 /** Everything a person can take back, by its audit target type, with its table. */
@@ -290,14 +291,35 @@ export async function holdMoved(
   }
 }
 
-/** Failed erasures an item gets before it is parked. */
-export const MAX_ERASE_ATTEMPTS = 3;
+/** Failed erasures in a row an item gets before it is parked (the one rule, `lib/attempts`). */
+export const MAX_ERASE_ATTEMPTS = MAX_ATTEMPTS;
+
+/** An item's attempt state, read off its row. */
+export function attemptsOfItem(doc: ErasableDoc): AttemptState {
+  return {
+    attempts: doc.eraseAttempts,
+    errorClass: doc.eraseErrorClass,
+    parkedAt: doc.eraseParkedAt,
+    retriedAt: doc.eraseRetriedAt,
+  };
+}
+
+/** The same, as the row's fields. */
+export function itemAttemptFields(state: AttemptState) {
+  return {
+    eraseAttempts: state.attempts,
+    eraseErrorClass: state.errorClass,
+    eraseParkedAt: state.parkedAt,
+    eraseRetriedAt: state.retriedAt,
+  };
+}
 
 /**
- * An item's erasure failed (its nested transaction rolled back): one more attempt and its error's
- * class on the row, and after {@link MAX_ERASE_ATTEMPTS} the item is parked — off the clock and out
- * of the sweep's range — so it never holds up what is due behind it. Written in the sweep's own
- * transaction. Parking erases nothing and changes nothing else about the item.
+ * An item's erasure failed (its nested transaction rolled back): the rule's next state on the row,
+ * written in the sweep's own transaction. Not yet parked, its clock moves to just past this run's
+ * cutoff (`runCutoff + 1`) — still due, but not again in this run, so it is tried once a run and
+ * three failures mean three runs. Parked, it is off the clock and out of the range until the daily
+ * retry or `erasure.retryParked`. Parking erases nothing and changes nothing else about the item.
  */
 export async function recordEraseFailure(
   ctx: MutationCtx,
@@ -306,19 +328,23 @@ export async function recordEraseFailure(
   doc: ErasableDoc,
   errorClass: string,
   now: number,
+  { runCutoff, byDailyRetry = false }: { runCutoff: number; byDailyRetry?: boolean },
 ): Promise<'retry' | 'parked'> {
-  const attempts = (doc.eraseAttempts ?? 0) + 1;
-  const parked = attempts >= MAX_ERASE_ATTEMPTS;
+  const next = nextAttemptState(
+    attemptsOfItem(doc),
+    { kind: 'failed', errorClass, byDailyRetry },
+    now,
+  ) as AttemptState;
+  const parked = next.parkedAt !== undefined;
   budget.touch(type);
   await ctx.db.patch(doc._id as Id<(typeof ERASABLE)[Erasable]>, {
-    eraseAttempts: attempts,
-    eraseErrorClass: errorClass,
-    ...(parked ? { eraseParkedAt: now, eraseAt: undefined } : {}),
+    ...itemAttemptFields(next),
+    eraseAt: parked ? undefined : runCutoff + 1,
   });
   return parked ? 'parked' : 'retry';
 }
 
-/** Release a parked item: its attempts reset, and its clock what its withdrawal and holds say now. */
+/** Release a parked item: its attempts cleared, and its clock what its withdrawal and holds say now. */
 export async function releaseParkedErasure(
   ctx: MutationCtx,
   budget: ReadBudget,
@@ -326,11 +352,9 @@ export async function releaseParkedErasure(
   doc: ErasableDoc,
   now: number,
 ): Promise<number | undefined> {
-  const released = {
-    eraseAttempts: undefined,
-    eraseErrorClass: undefined,
-    eraseParkedAt: undefined,
-  };
+  const released = itemAttemptFields(
+    nextAttemptState(attemptsOfItem(doc), { kind: 'progress' }, now) ?? {},
+  );
   return refreshClockOf(
     ctx,
     budget,
