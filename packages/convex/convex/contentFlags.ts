@@ -10,6 +10,7 @@ import {
   FLAG_NOTE_MAX_CHARS,
   flagRetraction,
   RETRACT_REFUSALS,
+  roleMeets,
   tooLongMessage,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
@@ -19,8 +20,12 @@ import { mutation, query } from './_generated/server';
 import { getCurrentProfile, requireProfile } from './lib/auth';
 import { FLAG_REASONS, FLAG_TARGET_TYPES } from './lib/enums';
 import { holdMoved, refreshEraseClock } from './lib/eraseClock';
+import { subjectOfTarget } from './lib/flagSubject';
 import { recordTextLength } from './lib/textLengths';
 import { literals } from './lib/validators';
+
+/** What a person whose flagging is switched off is told. */
+export const FLAGGING_RESTRICTED = 'Your flagging has been restricted';
 
 /** The table each flag target type refers to — used to validate the target actually exists. */
 const TARGET_TABLE: Record<(typeof FLAG_TARGET_TYPES)[number], TableNames> = {
@@ -54,6 +59,10 @@ export const flag = mutation({
   },
   handler: async (ctx, args) => {
     const profile = await requireProfile(ctx);
+    // Flagging is a per-person right (D222), switched off from People; staff are exempt.
+    if (profile.canFlag === false && !roleMeets(profile.role, 'moderator')) {
+      throw new ConvexError(FLAGGING_RESTRICTED);
+    }
     // Capped at the write, so a flag row has a known worst case for every read of it.
     const noteTooLong = tooLongMessage('The note', args.note, FLAG_NOTE_MAX_CHARS);
     if (noteTooLong !== null) throw new ConvexError(noteTooLong);
@@ -102,6 +111,8 @@ export const flag = mutation({
       reason: args.reason,
       ...(args.note !== undefined ? { note: args.note } : {}),
       status: 'open',
+      // Whose it is, for "flagged: the person or their content" (`lib/flagSubject`).
+      subjectUserId: subjectOfTarget(args.targetType, args.targetId, target),
       origin: 'user', // a person pressed "report" — the one origin `content_flag_resolved` notifies
       createdAt: Date.now(),
     });

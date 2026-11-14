@@ -78,6 +78,7 @@ import { internalMutation, type MutationCtx, mutation } from './_generated/serve
 import { requireProfile } from './lib/auth';
 import { redactAgedContent } from './lib/contentPurge';
 import { reclaimExportBlob } from './lib/exportBundles';
+import { refreshPersonRow } from './lib/peopleRows';
 import { deletePhotoAndBlobs, referencedPhotoIds } from './lib/photoOrphans';
 
 /**
@@ -181,6 +182,7 @@ export const requestDeletion = mutation({
       // a profile with nothing on it.
       profileVisibility: 'private',
     });
+    await refreshPersonRow(ctx, profile._id);
 
     // The words come off now, not at finalize. Scheduled rather than inline because a prolific
     // contributor's history is more than one transaction, and because the request itself must return
@@ -209,6 +211,7 @@ export const cancelDeletion = mutation({
     const profile = await requireProfile(ctx);
     if (profile.deletionRequestedAt === undefined) return { canceled: false };
     await ctx.db.patch(profile._id, { deletionRequestedAt: undefined });
+    await refreshPersonRow(ctx, profile._id);
     return { canceled: true };
   },
 });
@@ -499,6 +502,7 @@ async function runStage(
 async function lockAccount(ctx: MutationCtx, profile: Doc<'profiles'>): Promise<void> {
   if (profile.status === 'deleting') return; // re-driven job, already locked
   await ctx.db.patch(profile._id, { status: 'deleting' });
+  await refreshPersonRow(ctx, profile._id);
 }
 
 /**
@@ -838,6 +842,8 @@ async function writeTombstone(ctx: MutationCtx, profile: Doc<'profiles'>): Promi
     // the careful privacy choice and would silently pull every track this person contributed off the
     // map — the exact opposite of what keeping published tracks is for.
   });
+  // Out of every People lane but Deleted, with the counts.
+  await refreshPersonRow(ctx, profile._id);
 
   await ctx.scheduler.runAfter(0, internal.clerkAdmin.deleteUser, { clerkUserId });
 }
@@ -864,6 +870,7 @@ export const finalizeNow = internalMutation({
     if (!profile) throw new ConvexError('No such profile');
     if (profile.deletionRequestedAt === undefined) {
       await ctx.db.patch(userId, { deletionRequestedAt: Date.now() });
+      await refreshPersonRow(ctx, userId);
     }
     await ctx.scheduler.runAfter(0, internal.accountDeletion.finalizeAccount, { userId });
   },

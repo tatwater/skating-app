@@ -39,6 +39,7 @@ import {
   RECURRENCE_FAMILIES,
   REQUEST_KINDS,
   REQUEST_STATUSES,
+  RESTRICTIONS,
   REVIEW_REASONS,
   SIGHTINGS,
   SIZE_OPTIONS,
@@ -359,6 +360,22 @@ export default defineSchema({
      * cleared — a *referenced* photo, which is the one mistake this whole area exists to prevent.
      */
     photoReconcileStartedAt: v.optional(v.number()),
+    /**
+     * Whether this person may flag (D222): absent ⇒ allowed, like the posting rights. Switched off
+     * from People with a reason so one person can't flood the queue; staff are exempt, and switching
+     * it off on a staffer is refused (`lib/peopleCan`).
+     */
+    canFlag: v.optional(v.boolean()),
+    /**
+     * The lapsed-suspension sweep's attempts on this person (B01, `peopleJobs.sweepLapsedSuspensions`,
+     * `lib/attempts`): failures in a row, the last one's error class (never its message), and when it
+     * was parked after three — or last tried, once parked — and when the daily retry last tried it. A
+     * new suspension, ban or lift clears them. A parked person is out of `by_suspension_due`.
+     */
+    lapseAttempts: v.optional(v.number()),
+    lapseErrorClass: v.optional(v.string()),
+    lapseParkedAt: v.optional(v.number()),
+    lapseRetriedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index('by_clerk_user_id', ['clerkUserId'])
@@ -393,12 +410,88 @@ export default defineSchema({
     // Signups-per-day for the analytics rollup (Phase 07-2). The implicit creation order can't be
     // range-scanned to "just this UTC day", so the daily job reads a bounded slice off this instead.
     .index('by_created_at', ['createdAt'])
+    // The lapsed-suspension sweep's work list: suspended, not parked, not in the deletion window
+    // (`eq(undefined)` on both optional fields), ranged on `suspendedUntil` with a lower bound — an
+    // optional field's index is not sparse.
+    .index('by_suspension_due', [
+      'status',
+      'lapseParkedAt',
+      'deletionRequestedAt',
+      'suspendedUntil',
+    ])
+    // Parked by the sweep, for its daily retry: `gt(0)` on the optional field.
+    .index('by_suspension_parked', ['status', 'lapseParkedAt'])
     // Name search for public profiles (D13). The filter field lets the query exclude private
     // profiles in-index (they're not searchable); exact `@handle` lookups keep using `by_username`.
     .searchIndex('search_profile', {
       searchField: 'displayName',
       filterFields: ['profileVisibility'],
     }),
+
+  /**
+   * **One light row per person, for the People lists** (B01 §5.7) — exactly what a list shows, sorts
+   * by and narrows on, because a `profiles` row can weigh up to the document limit (its cached drive
+   * isochrones are polygons) and a page of them can't be read safely. Written only by
+   * `lib/peopleRows.refreshPersonRow`, from the profile, at every write that moves one of these facts;
+   * that writer also moves `peopleCounts` in the same transaction, so a stored lane count is the
+   * tally of these rows by construction. Every sort key is a required value (no index ranges over an
+   * optional field); an unknown time is stored as 0 and read back as `null`.
+   */
+  peopleRows: defineTable({
+    userId: v.id('profiles'),
+    displayName: v.string(),
+    username: v.string(),
+    profileImageUrl: v.optional(v.string()),
+    /** Lowercased name, the list's order within a lane. */
+    nameKey: v.string(),
+    /** Name and handle, for the search index. */
+    searchText: v.string(),
+    role: literals(USER_ROLES),
+    /** 0 admin, 1 moderator, 2 anyone else (a deleted account included): Staff is `lt(2)`. */
+    staffRank: v.number(),
+    status: literals(USER_STATUSES),
+    /** When the stored status began, as this writer saw it change; 0 when not recorded. */
+    statusSince: v.number(),
+    /** The suspension's end while suspended (the largest safe number for an open-ended one); else 0. */
+    suspendedUntil: v.number(),
+    /** The reason on file for a suspension or ban, cut to a list line; absent otherwise. */
+    statusReason: v.optional(v.string()),
+    restricted: v.boolean(),
+    restrictions: v.array(literals(RESTRICTIONS)),
+    /** When the person became restricted, as this writer saw it; 0 when not recorded or not restricted. */
+    restrictedSince: v.number(),
+    /** When the deletion window ends, while in it; else 0. */
+    leavingUntil: v.number(),
+    /** Not a tombstone: Everyone and Newest read `eq(true)`. */
+    live: v.boolean(),
+    deletedAt: v.number(),
+    /** Raw trust points, so the list can derive the trust class without reading the profile. */
+    reputationPoints: v.number(),
+    createdAt: v.number(),
+    refreshedAt: v.number(),
+  })
+    .index('by_user', ['userId'])
+    .index('by_live_name', ['live', 'nameKey'])
+    .index('by_live_created', ['live', 'createdAt'])
+    .index('by_staff', ['staffRank', 'nameKey'])
+    .index('by_status_since', ['status', 'statusSince'])
+    .index('by_suspended_until', ['suspendedUntil'])
+    .index('by_restricted', ['restricted', 'restrictedSince'])
+    .index('by_leaving', ['leavingUntil'])
+    .index('by_refreshed_at', ['refreshedAt'])
+    .searchIndex('search_people', { searchField: 'searchText' }),
+
+  /**
+   * **The People lanes' stored counts** (B01 §5.7): one row per key — `everyone`, `admins`,
+   * `moderators`, `banned`, `restricted`, `leaving`, `deleted` — moved only by the writer of
+   * `peopleRows`, in the transaction that moves a row, so each is the tally of rows in its lane.
+   * Two marker keys say a backfill has finished (`ready:rows`, `ready:flagSubjects`): until then a
+   * count is a floor and says so.
+   */
+  peopleCounts: defineTable({
+    key: v.string(),
+    count: v.number(),
+  }).index('by_key', ['key']),
 
   /**
    * Short-lived OAuth `state` nonces (Phase 08, Strava).
@@ -3422,6 +3515,13 @@ export default defineSchema({
      * moderator decides it. Absent ⇒ not retracted.
      */
     retractedAt: v.optional(v.number()),
+    /**
+     * Whose it is (B01, the founder's ruling of 2026-11-14: "flagged" means the person or their
+     * content): the author of the flagged content, the person for a flag on a person, `null` where
+     * no person is behind it (a body, or content gone before the backfill reached it). Stamped at
+     * filing (`lib/flagSubject`); absent only on a row the backfill hasn't reached.
+     */
+    subjectUserId: v.optional(v.union(v.id('profiles'), v.null())),
     /** When a retracted flag is erased — 30 days on (`lib/erasure`). Absent ⇒ not due. */
     eraseAt: v.optional(v.number()),
     /**
@@ -3439,6 +3539,9 @@ export default defineSchema({
   })
     .index('by_status', ['status'])
     .index('by_target', ['targetType', 'targetId'])
+    // A person's flags — on them or their content — by status (`eq` on both), a decided status's rows
+    // in the order they were decided (People's History reads them newest first).
+    .index('by_subject_status', ['subjectUserId', 'status', 'resolvedAt'])
     // The erasure sweep (D248): a `gt(0).lte(now)` range holds only due work.
     .index('by_erase_at', ['eraseAt'])
     // Parked erasures (D248), read with a lower bound: the field is optional.
@@ -3542,6 +3645,11 @@ export default defineSchema({
     endedByActionId: v.optional(v.id('moderationActions')),
   })
     .index('by_subject_standing', ['subjectUserId', 'standing', 'at'])
+    // The person's record of one kind (the People page's Hidden content filter).
+    .index('by_subject_standing_type', ['subjectUserId', 'standing', 'targetType', 'at'])
+    // Their verdicts in the order they ended (People's History, newest first): `gt(0)` on the optional
+    // field, which a standing verdict lacks.
+    .index('by_subject_ended', ['subjectUserId', 'endedAt'])
     .index('by_target_standing', ['targetType', 'targetId', 'standing'])
     .index('by_action', ['actionId'])
     // What an action ended, for its undo (`lib/contentVerdicts.recordUndoneVerdict`). Equality reads

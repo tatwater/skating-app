@@ -57,6 +57,7 @@ import { NOTIFICATION_PREF_DEFAULTS, NOTIFICATION_PREF_KEYS } from './lib/enums'
 import { loadFeedViewer, toPostCard } from './lib/feedCards';
 import { isLastLedgerEditor, seesLedgerGrants, withoutLedgerGrantsFor } from './lib/ledgerEditors';
 import { DIGEST_TIMEZONE } from './lib/notificationQueue';
+import { refreshPersonRow } from './lib/peopleRows';
 import { loadBlockedAuthorIds, profileAccess } from './lib/reportVisibility';
 import { trustClassFor } from './lib/reputation';
 import { takeCappedResult } from './lib/scan';
@@ -223,10 +224,11 @@ export const upsertFromClerk = mutation({
         // original time is preserved across routine re-syncs (never trust the client clock).
         riskAckAt: reAccepted ? now : (existing.riskAckAt ?? now),
       });
+      await refreshPersonRow(ctx, existing._id);
       return existing._id;
     }
 
-    return ctx.db.insert('profiles', {
+    const created = await ctx.db.insert('profiles', {
       clerkUserId: identity.subject,
       displayName,
       username,
@@ -245,6 +247,9 @@ export const upsertFromClerk = mutation({
       status: 'active',
       createdAt: now,
     });
+    // The People lists' row (`lib/peopleRows`), with the new account in Everyone and Newest.
+    await refreshPersonRow(ctx, created);
+    return created;
   },
 });
 
@@ -339,6 +344,7 @@ export const changeUsername = mutation({
       const now = Date.now();
       assertMayRename(profile, now);
       await ctx.db.patch(profile._id, { username: verdict.username, usernameChangedAt: now });
+      await refreshPersonRow(ctx, profile._id);
     }
     return { username: verdict.username };
   },
@@ -648,7 +654,10 @@ async function applyClerkMirrorsTo(
   ) {
     patch.profileImageUrl = claims.profileImageUrl ?? undefined;
   }
-  if (Object.keys(patch).length > 0) await ctx.db.patch(profile._id, patch);
+  if (Object.keys(patch).length > 0) {
+    await ctx.db.patch(profile._id, patch);
+    if ('profileImageUrl' in patch) await refreshPersonRow(ctx, profile._id);
+  }
   return profile._id;
 }
 

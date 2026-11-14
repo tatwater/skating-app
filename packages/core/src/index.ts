@@ -95,6 +95,7 @@ export * from './osm';
 export * from './passedHazards';
 export * from './pathToBody';
 export * from './peerSuggestions';
+export * from './people';
 export * from './photo';
 export * from './photoAccess';
 export * from './photoAssignment';

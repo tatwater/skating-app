@@ -21,19 +21,17 @@ import {
   roleMeets,
 } from '@skating/core';
 import { v } from 'convex/values';
-import type { Doc, Id } from './_generated/dataModel';
+import type { Id } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
 import { hasCapability, isLockedOut, requireCapability } from './lib/auth';
 import { countDedupDecisions } from './lib/dedupQueue';
-import { accountsTotal } from './lib/metricReads';
 import { readOpenFlags } from './lib/openFlags';
+import { peopleCardFigures, readWaitingTickets } from './lib/peopleFigures';
 
 export type { Count };
 
 type RequestKind = (typeof REQUEST_KINDS)[number];
 const PLACE_KINDS: readonly RequestKind[] = ['name_bay', 'name_landmark'];
-
-const DAY_MS = 86_400_000;
 
 export const overview = query({
   args: {},
@@ -53,10 +51,6 @@ export const overview = query({
     const content = flags.filter(
       (f) => f.reason !== 'unsafe_false_report' && !isAccessReport(f),
     ).length;
-    // People, not flags: three skaters flagging one account is one person to look at.
-    const flaggedPeople = new Set(
-      flags.filter((f) => f.targetType === 'user').map((f) => f.targetId),
-    ).size;
 
     // ── Inbox: requests (places are their own lane) ───────────────────────────────────────────
     const openRequests = await ctx.db
@@ -74,71 +68,13 @@ export const overview = query({
 
     // Support is PII (D37): counted only for a viewer who may open it. A ticket waits until it is
     // resolved — `in_progress` is still waiting — the same rule `support_queue_depth` counts by.
-    let support: Count | null = null;
-    let appeals: Count | null = null;
-    if (hasCapability(viewer, 'inbox.support.read')) {
-      const waiting: Doc<'supportTickets'>[] = [];
-      let readCapped = false;
-      for (const status of ['open', 'in_progress'] as const) {
-        const page = await ctx.db
-          .query('supportTickets')
-          .withIndex('by_status', (q) => q.eq('status', status))
-          .take(COUNT_CAP + 1);
-        readCapped ||= page.length > COUNT_CAP;
-        waiting.push(...page);
-      }
-      support = cappedCount(waiting.length);
-      // Appeals are counted over every waiting ticket read, not the first 200 of the combined list,
-      // and say "capped" whenever either status read stopped short — a full page of bugs could be
-      // hiding an appeal past it.
-      const accountTickets = waiting.filter((s) => s.category === 'account').length;
-      appeals = {
-        count: Math.min(accountTickets, COUNT_CAP),
-        capped: readCapped || accountTickets > COUNT_CAP,
-      };
-    }
+    const waiting = hasCapability(viewer, 'inbox.support.read')
+      ? await readWaitingTickets(ctx)
+      : null;
+    const support: Count | null = waiting === null ? null : cappedCount(waiting.tickets.length);
 
-    // ── People ────────────────────────────────────────────────────────────────────────────────
-    const moderators = await ctx.db
-      .query('profiles')
-      .withIndex('by_role', (q) => q.eq('role', 'moderator'))
-      .take(COUNT_CAP + 1);
-    const admins = await ctx.db
-      .query('profiles')
-      .withIndex('by_role', (q) => q.eq('role', 'admin'))
-      .take(COUNT_CAP + 1);
-    const suspended = await ctx.db
-      .query('profiles')
-      .withIndex('by_status', (q) => q.eq('status', 'suspended'))
-      .take(COUNT_CAP + 1);
-    const banned = await ctx.db
-      .query('profiles')
-      .withIndex('by_status', (q) => q.eq('status', 'banned'))
-      .take(COUNT_CAP + 1);
-    const newThisWeek = await ctx.db
-      .query('profiles')
-      .withIndex('by_created_at', (q) => q.gte('createdAt', now - 7 * DAY_MS))
-      .take(COUNT_CAP + 1);
-    // An optional field's index is not sparse — `undefined` sorts first — so the range needs a lower
-    // bound, or every profile without a deletion request would match.
-    const leaving = await ctx.db
-      .query('profiles')
-      .withIndex('by_deletion_requested_at', (q) => q.gt('deletionRequestedAt', 0))
-      .take(COUNT_CAP + 1);
-    // A suspension lapses at read time (D37); the stored status lags until the sweep. Count only the
-    // live ones, and name the soonest end.
-    const liveSuspensions = suspended
-      .slice(0, COUNT_CAP)
-      .filter((p) => p.suspendedUntil === undefined || p.suspendedUntil > now);
-    const nextSuspensionEnds = liveSuspensions.reduce<number | null>(
-      (min, p) =>
-        p.suspendedUntil === undefined
-          ? min
-          : min === null
-            ? p.suspendedUntil
-            : Math.min(min, p.suspendedUntil),
-      null,
-    );
+    // ── People: the People lanes' own reads (`lib/peopleFigures`), so the card and the lanes agree ──
+    const people = await peopleCardFigures(ctx, now, { flags, capped: flagsCapped }, waiting);
 
     // What the Inbox card's foot ages: the open flags and the open requests. The oldest of each read
     // is its oldest overall (both read oldest first); the median needs every one, so it is `null`
@@ -160,20 +96,7 @@ export const overview = query({
         // a median of the oldest two hundred is not the queue's.
         medianOpenedAt: flagsCapped || requestsCapped ? null : medianOpenedAt(openedAts),
       },
-      people: {
-        moderators: cappedCount(moderators.length),
-        admins: cappedCount(admins.length),
-        newThisWeek: cappedCount(newThisWeek.length),
-        // The live ones out of a read that may itself have hit the cap — which `capped` on the
-        // filtered count could never say.
-        suspended: { count: liveSuspensions.length, capped: suspended.length > COUNT_CAP },
-        nextSuspensionEnds,
-        banned: cappedCount(banned.length),
-        flaggedPeople: { count: flaggedPeople, capped: flagsCapped },
-        appealsOpen: appeals,
-        leaving: cappedCount(leaving.length),
-        totalUsers: await accountsTotal(ctx),
-      },
+      people,
     };
   },
 });
