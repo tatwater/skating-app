@@ -668,12 +668,13 @@ describe('the preview', () => {
     );
     expect(
       within(pane())
-        .getByText(/Open in Body/)
+        .getByText(/Open in the editor/)
         .closest('a'),
-    ).toHaveAttribute('href', `/admin/body/${ID}`);
+    ).toHaveAttribute('href', `/admin/water/${ID}`);
     act(() => pane().focus());
     await userEvent.keyboard('{Enter}');
-    expect(mocks.navigate).toHaveBeenLastCalledWith({ to: `/admin/body/${ID}` });
+    // The Body console isn't here yet: the body opens in the old editor, never a page that isn't.
+    expect(mocks.navigate).toHaveBeenLastCalledWith({ to: `/admin/water/${ID}` });
   });
 
   it('skips the history for a viewer who can’t read the audit', () => {
@@ -756,7 +757,7 @@ describe('the preview', () => {
     expect(
       within(pane()).getByText('The full preview isn’t available for a rejected body.'),
     ).toBeInTheDocument();
-    expect(within(pane()).queryByText(/Open in Body/)).toBeNull();
+    expect(within(pane()).queryByText(/Open in the editor/)).toBeNull();
     act(() => pane().focus());
     await userEvent.keyboard('{Enter}');
     expect(mocks.navigate).not.toHaveBeenCalled();

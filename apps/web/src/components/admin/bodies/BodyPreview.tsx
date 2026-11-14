@@ -25,7 +25,8 @@ import { coordText, OutlineStill } from './OutlineStill';
  * The preview pane (boards 5.1–5.3, right): the body the list has open, read before it's opened
  * in full — its outline, its lockup (class and place, the name, area, depth, elevation), its
  * reports this season and all-time, how complete its record is, what's asked of it, and what
- * changed last. One action at its foot: *Open in Body →* (⏎).
+ * changed last. One action at its foot: open the body (⏎) — *Open in the editor →* until the Body
+ * console lands, then *Open in Body →*.
  *
  * Each block draws what its read returned and nothing else: a block whose read doesn't exist yet
  * (`null`) is left out, never drawn as a zero; a read on its way holds its block's shape, and a read
@@ -45,6 +46,8 @@ type BodyPreviewProps = {
   bodyLink?: (id: string) => ReactElement;
   /** Opens the body's console (⏎ in the pane; the route says where). */
   onOpen?: (id: string) => void;
+  /** The action's words: where it opens the body. */
+  openLabel?: string;
   /** Re-runs the preview's failed reads (its *Try again*). */
   onRetry?: () => void;
   /** The failed reads were tried again; their fresh answers aren't in. */
@@ -58,6 +61,7 @@ export function BodyPreview({
   onOpen,
   onRetry,
   pending = false,
+  openLabel = OPEN_LABEL,
 }: BodyPreviewProps) {
   return (
     <div data-slot="body-preview" className="flex h-full min-h-0 flex-col">
@@ -103,12 +107,12 @@ export function BodyPreview({
                 {
                   'data-slot': 'open-in-body',
                   className: cn(buttonVariants(), 'w-full no-underline'),
-                  children: <OpenLabel />,
+                  children: <OpenLabel label={openLabel} />,
                 } as ComponentProps<'a'>,
               )
             ) : (
               <Button data-slot="open-in-body" className="w-full" onClick={() => onOpen?.(data.id)}>
-                <OpenLabel />
+                <OpenLabel label={openLabel} />
               </Button>
             )}
           </div>
@@ -118,10 +122,13 @@ export function BodyPreview({
   );
 }
 
-function OpenLabel() {
+/** Where the list opens a body, in words: the old editor, until the Body console lands. */
+export const OPEN_LABEL = 'Open in the editor';
+
+function OpenLabel({ label }: { label: string }) {
   return (
     <span data-slot="label" className="inline-flex items-center gap-[inherit]">
-      Open in Body →
+      {label} →
       <Kbd variant="dim" aria-hidden="true">
         ⏎
       </Kbd>

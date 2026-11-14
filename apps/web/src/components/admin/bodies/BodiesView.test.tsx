@@ -398,7 +398,7 @@ describe('the preview', () => {
     expect(screen.getByText('Couldn’t read the history')).toBeInTheDocument();
     rerender(<Harness preview="error" />);
     expect(screen.getByText('Couldn’t read this body')).toBeInTheDocument();
-    expect(screen.queryByText(/Open in Body/)).toBeNull();
+    expect(screen.queryByText(/Open in the editor/)).toBeNull();
   });
 
   it('counts every open ask, and says plainly when the list is only the newest of them', () => {

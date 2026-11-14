@@ -58,18 +58,23 @@ import { BODY_LANES } from './bodyLanes';
  * replaces the entry rather than stacking one per row.
  */
 
-/** Where a body's console is. Default: the Body console's route. */
-export const BODY_CONSOLE_PATH = (id: string) => `/admin/body/${id}`;
+/**
+ * Where the list opens a body. The Body console lands with its own change; until then a body opens
+ * in the old editor, which still does that work — never a page that isn't there.
+ */
+export const BODY_PATH = (id: string) => `/admin/water/${encodeURIComponent(id)}`;
 
 /** A Convex id's shape, so a hand-edited `?body=` never reaches a query as junk. */
 const ID_SHAPE = /^[0-9a-z]{30,34}$/;
 
 export type BodiesRouteProps = {
-  /** Where a body's console is (the Body console's route). */
+  /** Where a body opens (the old editor until the Body console lands). */
   bodyPath?: (id: string) => string;
+  /** The open action's words, matching `bodyPath`. */
+  openLabel?: string;
 };
 
-export function BodiesRoute({ bodyPath = BODY_CONSOLE_PATH }: BodiesRouteProps) {
+export function BodiesRoute({ bodyPath = BODY_PATH, openLabel }: BodiesRouteProps) {
   const search = useSearch({ strict: false }) as BodiesSearch;
   const navigate = useNavigate();
   const { can } = useRole();
@@ -105,6 +110,7 @@ export function BodiesRoute({ bodyPath = BODY_CONSOLE_PATH }: BodiesRouteProps) 
     now,
     bodyLink,
     onOpenBody: (id) => void navigate({ to: bodyPath(id) }),
+    ...(openLabel !== undefined && { openLabel }),
     // Mounted whatever the counts' state, so its words are announced when they come.
     status: [
       <ReadNote key="counts" data-slot="counts-error" reads={[summary.state]}>

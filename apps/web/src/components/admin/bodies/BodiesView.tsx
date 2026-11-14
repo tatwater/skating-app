@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 import { type Count, countText } from '../overview/overviewModel';
 import { ConsoleStatus } from '../shell/ConsoleShell';
 import { BodiesTable } from './BodiesTable';
-import { BodyPreview } from './BodyPreview';
+import { BodyPreview, OPEN_LABEL } from './BodyPreview';
 import { allRows, type BodiesListData, type BodyPreviewData } from './bodiesData';
 import { laneKicker, nextSort } from './bodiesModel';
 import { type BodiesQuery, listKey, listSort } from './bodiesSearch';
@@ -58,7 +58,9 @@ export type BodiesViewProps = {
   preview: BodyPreviewData | null | undefined | 'error' | 'unavailable';
   /** The instant ages are read against. */
   now: number;
-  /** The router's link to a body's console; the preview's *Open in Body* renders as it. */
+  /** The open action's words (where it opens the body). */
+  openLabel?: string;
+  /** The router's link to a body's console; the preview's open action renders as it. */
   bodyLink?: (id: string) => ReactElement;
   /** Opens a body's console (⏎ in the preview). */
   onOpenBody: (id: string) => void;
@@ -81,6 +83,7 @@ export function BodiesView({
   preview,
   now,
   bodyLink,
+  openLabel = OPEN_LABEL,
   onOpenBody,
   status = [],
   className,
@@ -120,7 +123,7 @@ export function BodiesView({
   usePaneKeys(inspector, [
     {
       key: 'Enter',
-      label: 'Open in Body',
+      label: openLabel,
       run: () => {
         if (query.bodyId !== null) onOpenBody(query.bodyId);
       },
@@ -279,6 +282,7 @@ export function BodiesView({
           now={now}
           {...(bodyLink !== undefined && { bodyLink })}
           onOpen={onOpenBody}
+          openLabel={openLabel}
           // The note holds (Trying again…) and keeps focus while the reads run again.
           {...(onRetryPreview !== undefined && { onRetry: onRetryPreview })}
           pending={previewPending}
