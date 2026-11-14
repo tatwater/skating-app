@@ -217,7 +217,7 @@ function usePreview(
   bodyId: string | null,
   canRead: boolean,
   canReadAudit: boolean,
-): BodyPreviewData | null | undefined | 'error' {
+): BodyPreviewData | null | undefined | 'error' | 'unavailable' {
   const id =
     canRead && bodyId !== null && ID_SHAPE.test(bodyId) ? (bodyId as Id<'waterBodies'>) : null;
   const now = useClockFor(id ?? '');
@@ -245,7 +245,9 @@ function usePreview(
   const body = got.body;
   if (body === undefined) return undefined;
   if (body instanceof Error) return 'error';
-  if (body === null || !body.available) return null;
+  if (body === null) return null;
+  // A rejected body isn't served whole; the page draws it from its list row.
+  if (!body.available) return 'unavailable';
   const quiet = <T,>(r: T | Error | undefined) => (r instanceof Error ? undefined : r);
   return previewFrom({
     body: body.body,

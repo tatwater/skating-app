@@ -17,7 +17,7 @@ import { completenessSegments, missingSentence } from '../body/completeness';
 import { countText } from '../overview/overviewModel';
 import { historyWhen } from '../shell/consoleTime';
 import type { BodyPreviewData, PreviewCount } from './bodiesData';
-import { acresText } from './bodiesModel';
+import { acresText, type BodyRow, changedWhen, STANDING_LABEL } from './bodiesModel';
 import { coordText, OutlineStill } from './OutlineStill';
 
 /**
@@ -32,8 +32,12 @@ import { coordText, OutlineStill } from './OutlineStill';
  */
 
 type BodyPreviewProps = {
-  /** The open body; `undefined` while it loads, `null` with none open, `'error'` if it failed. */
-  data: BodyPreviewData | null | undefined | 'error';
+  /**
+   * The open body; `undefined` while it loads, `null` with none open, `'error'` if it failed, and
+   * `{ unavailable }` for a body the reads can't serve (a rejected one) — with its list row, if the
+   * list holds it.
+   */
+  data: BodyPreviewData | null | undefined | 'error' | { unavailable: BodyRow | null };
   /** The instant ages are read against. */
   now: number;
   /** The router's link to the body's console (`<Link to="/admin/body/$id" … />`). */
@@ -66,11 +70,13 @@ export function BodyPreview({ data, now, bodyLink, onOpen }: BodyPreviewProps) {
           <ListEnd data-slot="preview-error" className="mt-(--space-3)">
             Couldn’t read this body
           </ListEnd>
+        ) : 'unavailable' in data ? (
+          <RowOnly row={data.unavailable} now={now} />
         ) : (
           <PreviewBody data={data} now={now} />
         )}
       </div>
-      {data != null && data !== 'error' && (
+      {data != null && data !== 'error' && !('unavailable' in data) && (
         <div data-slot="preview-actbar" className="shrink-0 px-(--space-2) pb-(--space-2)">
           <div className="flex border border-solid border-line p-(--space-2)">
             {bodyLink !== undefined ? (
@@ -175,6 +181,47 @@ function stillLabel(data: BodyPreviewData): string {
 }
 
 const KICK = 'text-kick leading-none font-semibold tracking-kick text-fg3 uppercase';
+
+/**
+ * A body the reads can't serve — a rejected one, which `waterBodies.get` doesn't return: what its
+ * list row says (name, class and states, standing, its last change), and plainly that the full
+ * preview isn't shown. No way into the Body console, which can't read it either.
+ */
+function RowOnly({ row, now }: { row: BodyRow | null; now: number }) {
+  return (
+    <div data-slot="preview-unavailable" className="flex flex-col gap-(--space-2) pt-(--space-3_5)">
+      {row !== null && (
+        <>
+          <span className={KICK}>
+            {waterBodyClassLabel(row.bodyClass)}
+            {row.states.length > 0 && ` · ${row.states.join(' · ')}`}
+          </span>
+          <h2
+            data-slot="preview-name"
+            className="m-0 text-disp leading-none font-semibold tracking-disp text-fg uppercase"
+          >
+            {row.name}
+          </h2>
+          <span className="flex items-center gap-(--space-2)">
+            <Badge tone="dim" className="normal-case">
+              {STANDING_LABEL[row.standing]}
+            </Badge>
+            {row.changedAt !== null && (
+              <span className="text-assist leading-none text-fg3">
+                Last changed {changedWhen(row.changedAt, now)}
+              </span>
+            )}
+          </span>
+        </>
+      )}
+      <Note data-slot="preview-unavailable-note" className="mt-(--space-1)">
+        {row !== null
+          ? `The full preview isn’t available for a ${STANDING_LABEL[row.standing].toLowerCase()} body.`
+          : 'The full preview isn’t available for a body that isn’t listed.'}
+      </Note>
+    </div>
+  );
+}
 
 /** A count of reports: "3 reports", "1,000+ reports" when the read stopped short. */
 function ReportsTile({ label, count }: { label: string; count: PreviewCount }) {

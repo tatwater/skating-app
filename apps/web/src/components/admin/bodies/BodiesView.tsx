@@ -46,7 +46,8 @@ export type BodiesViewProps = {
   /** How many bodies the corpus holds, when a read says. */
   corpus: Count | null;
   /** The open body; `undefined` while it loads, `null` with none open, `'error'` if it failed. */
-  preview: BodyPreviewData | null | undefined | 'error';
+  /** `'unavailable'`: a body the reads can't serve (rejected) — drawn from its list row. */
+  preview: BodyPreviewData | null | undefined | 'error' | 'unavailable';
   /** The instant ages are read against. */
   now: number;
   /** The router's link to a body's console; the preview's *Open in Body* renders as it. */
@@ -100,7 +101,11 @@ export function BodiesView({
       run: () => {
         if (query.bodyId !== null) onOpenBody(query.bodyId);
       },
-      enabled: query.bodyId !== null && preview != null && preview !== 'error',
+      enabled:
+        query.bodyId !== null &&
+        preview != null &&
+        preview !== 'error' &&
+        preview !== 'unavailable',
     },
     { key: 'Shift+Enter', label: 'Back to the list', run: () => grid.current?.focus() },
   ]);
@@ -246,7 +251,16 @@ export function BodiesView({
         className="flex min-h-0 min-w-0 flex-col outline-none focus-visible:shadow-[inset_0_0_0_var(--stroke-hair)_var(--fg)]"
       >
         <BodyPreview
-          data={preview}
+          data={
+            preview === 'unavailable'
+              ? {
+                  unavailable:
+                    [...list.rows, ...(list.others ?? []).flatMap((g) => g.rows)].find(
+                      (r) => r.id === query.bodyId,
+                    ) ?? null,
+                }
+              : preview
+          }
           now={now}
           {...(bodyLink !== undefined && { bodyLink })}
           onOpen={onOpenBody}

@@ -527,9 +527,42 @@ describe('the preview', () => {
     expect(screen.getByText('No body open')).toBeInTheDocument();
   });
 
-  it('says nothing is open for a body that isn’t available', () => {
+  it('draws a rejected body from its list row, and offers no way into the console', async () => {
+    mocks.search = { lane: 'removed', body: ID };
+    mocks.paged = {
+      results: [
+        row(ID, 'Echo Lake', { standing: 'rejected', changedAt: Date.now() - 3 * 86_400_000 }),
+      ],
+      status: 'Exhausted',
+    };
+    mocks.results.set(name(api.waterBodies.get), { available: false });
+    mount();
+    expect(screen.queryByText('No body open')).toBeNull();
+    expect(within(pane()).getByRole('heading', { name: 'Echo Lake' })).toBeInTheDocument();
+    expect(within(pane()).getByText('Rejected')).toBeInTheDocument();
+    expect(within(pane()).getByText(/^Last changed /)).toBeInTheDocument();
+    expect(
+      within(pane()).getByText('The full preview isn’t available for a rejected body.'),
+    ).toBeInTheDocument();
+    expect(within(pane()).queryByText(/Open in Body/)).toBeNull();
+    act(() => pane().focus());
+    await userEvent.keyboard('{Enter}');
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  it('says plainly what it can’t show for an unlisted body the list doesn’t hold', () => {
     mocks.search = { body: ID };
     mocks.results.set(name(api.waterBodies.get), { available: false });
+    mount();
+    expect(screen.queryByText('No body open')).toBeNull();
+    expect(
+      within(pane()).getByText('The full preview isn’t available for a body that isn’t listed.'),
+    ).toBeInTheDocument();
+  });
+
+  it('says nothing is open for a body that doesn’t exist', () => {
+    mocks.search = { body: ID };
+    mocks.results.set(name(api.waterBodies.get), null);
     mount();
     expect(screen.getByText('No body open')).toBeInTheDocument();
   });
