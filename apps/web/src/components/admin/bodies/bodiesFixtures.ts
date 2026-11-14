@@ -1,11 +1,9 @@
+import { type CompletenessField, COMPLETENESS_FIELDS as FIELDS } from '@skating/core';
 import type { Count } from '@/components/admin/overview/overviewModel';
 import { MASCOMA_PUT_INS, MASCOMA_RINGS } from '@/components/skater/map/mapStoryData';
 import { BOARD_NOON } from '@/test/boardNow';
-import {
-  COMPLETENESS_FIELD_COUNT as COMPLETENESS_FIELDS,
-  type CompletenessField,
-} from '../body/completeness';
-import type { BodiesListData, BodyPreviewData, HeldRow } from './bodiesData';
+
+import type { BodiesListData, BodyPreviewData } from './bodiesData';
 import type { BodyRow, BodyStandingKey } from './bodiesModel';
 
 /**
@@ -19,6 +17,8 @@ export const NOW = BOARD_NOON;
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
+
+const COMPLETENESS_FIELDS = FIELDS.length;
 
 /** Local midday `days` ago — a date the boards write as "19 Sep" or "Wed". */
 const daysAgo = (days: number) => NOW - days * DAY;
@@ -54,7 +54,6 @@ function row(spec: Spec, standing: BodyStandingKey = 'active'): BodyRow {
       have,
       of: COMPLETENESS_FIELDS,
       missing: GAPS.slice(0, COMPLETENESS_FIELDS - have),
-      unknown: [],
     },
     asks,
     ...(waiting === true && { asksWaiting: true }),
@@ -203,7 +202,7 @@ export const PREVIEW_MASCOMA: BodyPreviewData = {
   bodyClass: 'reservoir',
   states: ['NH'],
   town: 'Enfield',
-  moreTowns: ['Canaan, NH'],
+  moreTowns: ['Canaan'],
   centroid: { lat: 43.63, lng: -72.15 },
   outline: {
     polygons: [MASCOMA_RINGS.map((r) => [...r])],
@@ -215,9 +214,10 @@ export const PREVIEW_MASCOMA: BodyPreviewData = {
   meanDepthM: 9.4,
   maxDepthM: 24,
   elevationM: 229,
-  season: { count: 3, sub: '2 on the ice · 1 from shore' },
-  allTime: { count: 86, sub: 'Since 2023–24' },
-  complete: { have: 9, of: COMPLETENESS_FIELDS, missing: ['bathymetry'], unknown: [] },
+  facts: 'ready',
+  season: { count: 3, capped: false, sub: '2 on the ice · 1 from shore' },
+  allTime: { count: 86, capped: false, sub: 'Since 2023–24' },
+  complete: { have: 9, of: COMPLETENESS_FIELDS, missing: ['bathymetry'] },
   asks: [
     {
       id: 'a1',
@@ -247,7 +247,6 @@ export const PREVIEW_MASCOMA: BodyPreviewData = {
     { id: 'h6', at: daysAgo(119), actor: 'Sarah', words: 'Drew a sub-area' },
     { id: 'h7', at: daysAgo(135), actor: 'Teagan', words: 'Activated the body' },
   ].sort((a, b) => b.at - a.at),
-  standing: 'active',
 };
 
 /** Lake Morey's outline, from board 5.3 (a long, narrow north–south lake). */
@@ -293,9 +292,10 @@ export const PREVIEW_MOREY: BodyPreviewData = {
   meanDepthM: 7.6,
   maxDepthM: 13,
   elevationM: 127,
-  season: { count: 2, sub: '2 on the ice' },
-  allTime: { count: 41, sub: 'Since 2023–24' },
-  complete: { have: 9, of: COMPLETENESS_FIELDS, missing: ['bathymetry'], unknown: [] },
+  facts: 'ready',
+  season: { count: 2, capped: false, sub: '2 on the ice' },
+  allTime: { count: 41, capped: false, sub: 'Since 2023–24' },
+  complete: { have: 9, of: COMPLETENESS_FIELDS, missing: ['bathymetry'] },
   asks: [],
   history: [
     { id: 'm1', at: daysAgo(1), actor: 'Sarah', words: 'Dismissed a flag' },
@@ -304,18 +304,4 @@ export const PREVIEW_MOREY: BodyPreviewData = {
     { id: 'm4', at: daysAgo(117), actor: 'Teagan', words: 'Ruled public access' },
     { id: 'm5', at: daysAgo(135), actor: 'Teagan', words: 'Activated the body' },
   ],
-  standing: 'active',
 };
-
-/** A small lane held whole, for `answerHeld`'s stories and tests. */
-export const HELD: readonly HeldRow[] = [...ACTIVE_ROWS, ...BIG_ROWS].map((r, i) => ({
-  row: r,
-  facts: {
-    outline: i % 9 === 0 ? 'drawn' : 'catalog',
-    putIns: i % 4,
-    curated: i % 5 === 0,
-    intake: i % 7 === 0,
-    awaitingEnrichment: false,
-  },
-  aliases: r.name === 'Lake Morey' ? ['Fairlee Pond'] : [],
-}));

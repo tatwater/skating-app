@@ -6,6 +6,7 @@ import { Button, buttonVariants } from '@/components/kit/button';
 import { HistoryList, HistoryRow } from '@/components/kit/grid-list';
 import { Kbd } from '@/components/kit/kbd';
 import { ListEnd } from '@/components/kit/list-end';
+import { Note } from '@/components/kit/note';
 import { Section } from '@/components/kit/section-slug';
 import { SkeletonBlock, SkeletonText } from '@/components/kit/skeleton';
 import { StatGrid, StatTile } from '@/components/kit/stat-tile';
@@ -13,8 +14,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/kit/toolti
 import { LedStrip } from '@/components/kit/trace-chart';
 import { cn } from '@/lib/utils';
 import { completenessSegments, missingSentence } from '../body/completeness';
+import { countText } from '../overview/overviewModel';
 import { historyWhen } from '../shell/consoleTime';
-import type { BodyPreviewData } from './bodiesData';
+import type { BodyPreviewData, PreviewCount } from './bodiesData';
 import { acresText } from './bodiesModel';
 import { coordText, OutlineStill } from './OutlineStill';
 
@@ -25,12 +27,13 @@ import { coordText, OutlineStill } from './OutlineStill';
  * changed last. One action at its foot: *Open in Body →* (⏎).
  *
  * Each block draws what its read returned and nothing else: a block whose read doesn't exist yet
- * (`null`) is left out, never drawn as a zero. `undefined` is the body on its way.
+ * (`null`) is left out, never drawn as a zero; a read on its way holds its block's shape, and a read
+ * that failed says so. `undefined` is the body on its way.
  */
 
 type BodyPreviewProps = {
-  /** The open body; `undefined` while it loads, `null` with none open. */
-  data: BodyPreviewData | null | undefined;
+  /** The open body; `undefined` while it loads, `null` with none open, `'error'` if it failed. */
+  data: BodyPreviewData | null | undefined | 'error';
   /** The instant ages are read against. */
   now: number;
   /** The router's link to the body's console (`<Link to="/admin/body/$id" … />`). */
@@ -59,11 +62,15 @@ export function BodyPreview({ data, now, bodyLink, onOpen }: BodyPreviewProps) {
           <PreviewLoading />
         ) : data === null ? (
           <ListEnd className="mt-(--space-3)">No body open</ListEnd>
+        ) : data === 'error' ? (
+          <ListEnd data-slot="preview-error" className="mt-(--space-3)">
+            Couldn’t read this body
+          </ListEnd>
         ) : (
           <PreviewBody data={data} now={now} />
         )}
       </div>
-      {data != null && (
+      {data != null && data !== 'error' && (
         <div data-slot="preview-actbar" className="shrink-0 px-(--space-2) pb-(--space-2)">
           <div className="flex border border-solid border-line p-(--space-2)">
             {bodyLink !== undefined ? (
@@ -128,12 +135,22 @@ function placeKicker(data: BodyPreviewData): ReactNode {
             <TooltipTrigger variant="text" render={<span />}>
               +{data.moreTowns.length}
             </TooltipTrigger>
-            <TooltipContent>Also in: {data.moreTowns.join(', ')}</TooltipContent>
+            <TooltipContent>Also in: {otherTowns(data)}</TooltipContent>
           </Tooltip>
         </>
       )}
     </>
   );
+}
+
+/**
+ * "Canaan, NH": the other towns, each with its state when the body lies in one state (a town it
+ * touches is in it); a border body's towns go without, since the read doesn't say whose each is.
+ */
+function otherTowns(data: BodyPreviewData): string {
+  const [only, ...more] = data.states;
+  const state = only !== undefined && more.length === 0 ? `, ${only}` : '';
+  return data.moreTowns.map((t) => `${t}${state}`).join(' · ');
 }
 
 /** "9.4 / 24 m", either half alone when only one is recorded. */
@@ -158,6 +175,18 @@ function stillLabel(data: BodyPreviewData): string {
 }
 
 const KICK = 'text-kick leading-none font-semibold tracking-kick text-fg3 uppercase';
+
+/** A count of reports: "3 reports", "1,000+ reports" when the read stopped short. */
+function ReportsTile({ label, count }: { label: string; count: PreviewCount }) {
+  return (
+    <StatTile
+      label={label}
+      value={countText(count)}
+      unit={count.count === 1 && !count.capped ? 'report' : 'reports'}
+      {...(count.sub !== null && { sub: count.sub })}
+    />
+  );
+}
 
 function PreviewBody({ data, now }: { data: BodyPreviewData; now: number }) {
   const depth = depthText(data.meanDepthM, data.maxDepthM);
@@ -207,29 +236,31 @@ function PreviewBody({ data, now }: { data: BodyPreviewData; now: number }) {
             ))}
           </dl>
         )}
-        {(data.season !== null || data.allTime !== null) && (
+        {data.facts === 'loading' ? (
           <StatGrid
             columns={2}
             data-slot="preview-reports"
+            aria-busy="true"
             className="mt-(--space-1) border-0 border-t border-dotted border-line pt-(--space-2_5)"
           >
-            {data.season !== null && (
-              <StatTile
-                label="This season"
-                value={data.season.count}
-                unit={data.season.count === 1 ? 'report' : 'reports'}
-                {...(data.season.sub !== null && { sub: data.season.sub })}
-              />
-            )}
-            {data.allTime !== null && (
-              <StatTile
-                label="All-time"
-                value={data.allTime.count}
-                unit={data.allTime.count === 1 ? 'report' : 'reports'}
-                {...(data.allTime.sub !== null && { sub: data.allTime.sub })}
-              />
-            )}
+            <StatTile label="This season" value="" unit="reports" sub="" loading chars={2} />
+            <StatTile label="All-time" value="" unit="reports" sub="" loading chars={3} />
           </StatGrid>
+        ) : data.facts === 'error' ? (
+          <Note data-slot="preview-facts-error" className="mt-(--space-2)">
+            Reports, completeness and asks couldn’t be read
+          </Note>
+        ) : (
+          (data.season !== null || data.allTime !== null) && (
+            <StatGrid
+              columns={2}
+              data-slot="preview-reports"
+              className="mt-(--space-1) border-0 border-t border-dotted border-line pt-(--space-2_5)"
+            >
+              {data.season !== null && <ReportsTile label="This season" count={data.season} />}
+              {data.allTime !== null && <ReportsTile label="All-time" count={data.allTime} />}
+            </StatGrid>
+          )
         )}
         {data.complete !== null && (
           <div
@@ -280,22 +311,28 @@ function PreviewBody({ data, now }: { data: BodyPreviewData; now: number }) {
           </ul>
         </Section>
       )}
-      {data.history !== null && (
-        <Section title="Last changed" count={data.history.length} className="mt-(--space-5_5)">
-          {data.history.length > 0 && (
-            <HistoryList>
-              {data.history.map((row) => (
-                <HistoryRow
-                  key={row.id}
-                  when={historyWhen(row.at, now)}
-                  who={row.actor ?? 'The machinery'}
-                >
-                  {row.words}
-                </HistoryRow>
-              ))}
-            </HistoryList>
-          )}
+      {data.history === 'error' ? (
+        <Section title="Last changed" className="mt-(--space-5_5)">
+          <ListEnd data-slot="preview-history-error">Couldn’t read the history</ListEnd>
         </Section>
+      ) : (
+        data.history !== null && (
+          <Section title="Last changed" count={data.history.length} className="mt-(--space-5_5)">
+            {data.history.length > 0 && (
+              <HistoryList>
+                {data.history.map((row) => (
+                  <HistoryRow
+                    key={row.id}
+                    when={historyWhen(row.at, now)}
+                    who={row.actor ?? 'The machinery'}
+                  >
+                    {row.words}
+                  </HistoryRow>
+                ))}
+              </HistoryList>
+            )}
+          </Section>
+        )
       )}
     </>
   );

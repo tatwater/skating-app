@@ -1,3 +1,5 @@
+import { LIBRARY_LANES, type LibraryListLane } from '@skating/core';
+
 import type { BodyColumnId, BodySort, BodyStandingKey } from './bodiesModel';
 import type { FacetId } from './bodyFacets';
 
@@ -16,12 +18,13 @@ import type { FacetId } from './bodyFacets';
  * registry (`BodiesRoute`); the page never looks inside.
  */
 export type BodyLaneRead =
-  /** Bodies in these standings. */
-  | { kind: 'standing'; standings: readonly BodyStandingKey[] }
+  /**
+   * A lane of the server's library (`bodies.listPage`): every body, a standing lane, or *Changed
+   * this week* — core's `LIBRARY_LIST_LANES`.
+   */
+  | { kind: 'library'; lane: LibraryListLane }
   /** Bodies the viewer opened, newest first. */
   | { kind: 'openedByViewer' }
-  /** Bodies whose record changed in the last `days` days. */
-  | { kind: 'changedWithin'; days: number }
   /** A Corpus task's queue (the founder may fold them in as lanes). */
   | { kind: 'corpusTask'; task: string };
 
@@ -100,7 +103,7 @@ export const BODY_LANES: readonly BodyLane[] = [
     label: 'Changed this week',
     title: 'Changed this week',
     word: 'changed',
-    read: { kind: 'changedWithin', days: 7 },
+    read: { kind: 'library', lane: 'changed' },
     sort: BY_CHANGE,
     showStanding: true,
   }),
@@ -110,18 +113,7 @@ export const BODY_LANES: readonly BodyLane[] = [
     label: 'All bodies',
     title: 'All bodies',
     word: 'bodies',
-    read: {
-      kind: 'standing',
-      standings: [
-        'active',
-        'inactive',
-        'not_in_campaign',
-        'moderator',
-        'no_public_access',
-        'removed',
-        'rejected',
-      ],
-    },
+    read: { kind: 'library', lane: 'all' },
     sort: BY_REPORTS,
     showStanding: true,
   }),
@@ -131,7 +123,7 @@ export const BODY_LANES: readonly BodyLane[] = [
     label: 'Active',
     title: 'Active bodies',
     word: 'active',
-    read: { kind: 'standing', standings: ['active'] },
+    read: { kind: 'library', lane: 'active' },
     sort: BY_REPORTS,
   }),
   lane({
@@ -140,7 +132,7 @@ export const BODY_LANES: readonly BodyLane[] = [
     label: 'Dormant · inactive',
     title: 'Inactive bodies',
     word: 'inactive',
-    read: { kind: 'standing', standings: ['inactive'] },
+    read: { kind: 'library', lane: 'inactive' },
     sort: BY_CHANGE,
   }),
   lane({
@@ -149,7 +141,7 @@ export const BODY_LANES: readonly BodyLane[] = [
     label: 'Dormant · not in campaign',
     title: 'Not in campaign',
     word: 'not in campaign',
-    read: { kind: 'standing', standings: ['not_in_campaign'] },
+    read: { kind: 'library', lane: 'not_in_campaign' },
     sort: BY_CHANGE,
   }),
   lane({
@@ -158,7 +150,7 @@ export const BODY_LANES: readonly BodyLane[] = [
     label: 'Dormant · moderator',
     title: 'Dormant by a moderator',
     word: 'dormant',
-    read: { kind: 'standing', standings: ['moderator'] },
+    read: { kind: 'library', lane: 'moderator' },
     sort: BY_CHANGE,
   }),
   lane({
@@ -167,7 +159,7 @@ export const BODY_LANES: readonly BodyLane[] = [
     label: 'No public access',
     title: 'No public access',
     word: 'ruled',
-    read: { kind: 'standing', standings: ['no_public_access'] },
+    read: { kind: 'library', lane: 'no_public_access' },
     sort: BY_CHANGE,
   }),
   lane({
@@ -176,11 +168,23 @@ export const BODY_LANES: readonly BodyLane[] = [
     label: 'Removed · rejected',
     title: 'Removed · rejected',
     word: 'removed',
-    read: { kind: 'standing', standings: ['removed', 'rejected'] },
+    read: { kind: 'library', lane: 'removed' },
     sort: BY_CHANGE,
     showStanding: true,
   }),
 ];
+
+/**
+ * The one standing a lane holds, if it holds one (`active` for Active): its rows say no standing of
+ * their own. *Removed · rejected* holds two, *All* and the views every one.
+ */
+export function laneStanding(lane: BodyLane): BodyStandingKey | null {
+  if (lane.read.kind !== 'library') return null;
+  const l = lane.read.lane;
+  return (LIBRARY_LANES as readonly string[]).includes(l) && l !== 'removed'
+    ? (l as BodyStandingKey)
+    : null;
+}
 
 /** The lane the library opens on. */
 export const DEFAULT_LANE_ID = 'active';

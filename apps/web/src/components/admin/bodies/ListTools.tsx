@@ -161,11 +161,17 @@ export function ListTools({
   );
 }
 
-/** "2 active · 4 dormant": the matches in this lane, then each other standing's. */
+/**
+ * "2 active · 4 dormant": the matches in this lane, then each other standing's. While more pages
+ * wait, the lane's figure is what has arrived so far — a floor, written "50+".
+ */
 export function searchTally(list: BodiesListData, laneWord: string): string | null {
-  if (list.status === 'loading' || list.status === 'unread') return null;
+  if (list.status === 'loading' || list.status === 'unread' || list.status === 'error') {
+    return null;
+  }
+  const more = list.status !== 'done';
   const parts = [
-    `${list.rows.length} ${laneWord}`,
+    `${list.rows.length.toLocaleString('en-US')}${more ? '+' : ''} ${laneWord}`,
     ...list.others.map((g) => `${g.rows.length} ${g.label.toLowerCase()}`),
   ];
   return parts.join(' · ');

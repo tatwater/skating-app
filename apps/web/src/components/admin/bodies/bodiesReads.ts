@@ -1,216 +1,204 @@
 import type { api } from '@skating/convex/api';
-import { type BodyStanding, standingOf } from '@skating/core';
-import type { FunctionReturnType } from 'convex/server';
-
-import { completenessOf } from '../body/completeness';
-import { actionLabel } from '../shell/actionLabels';
+import type { Doc } from '@skating/convex/dataModel';
 import {
-  answerHeld,
-  type BodiesListData,
-  type BodyPreviewData,
-  groupOthers,
-  type HeldRow,
-  type ListServes,
-  SERVES_NOTHING,
-  UNREAD_LIST,
+  currentSeason,
+  type LibraryListLane,
+  type RequestKind,
+  seasonRecordOpensMs,
+} from '@skating/core';
+import type { PaginationStatus } from 'convex/react';
+import type { FunctionArgs, FunctionReturnType } from 'convex/server';
+
+import { VANTAGE_LABELS } from '../metrics/metricsModel';
+import type { Count } from '../overview/overviewModel';
+import { actionLabel } from '../shell/actionLabels';
+import { dayMonth, seasonYears } from '../shell/consoleTime';
+import type {
+  BodiesListData,
+  BodyPreviewData,
+  ListServes,
+  ListStatus,
+  PreviewAsk,
+  PreviewCount,
 } from './bodiesData';
-import type { BodyRow, BodyStandingKey } from './bodiesModel';
+import type { BodyRow, BodySort } from './bodiesModel';
 import type { BodiesQuery } from './bodiesSearch';
-import type { FacetId } from './bodyFacets';
+import { FACET_IDS, type FacetCounts } from './bodyFacets';
 import type { BodyLane } from './bodyLanes';
 
 /**
- * The reads that exist today, turned into what the page draws — pure, so each mapping is tested
- * without Convex. `BodiesRoute` runs the queries and hands their results here.
+ * The Bodies library's server reads, turned into what the page draws — pure, so each mapping is
+ * tested without Convex. `BodiesRoute` runs the queries and hands their results here.
  *
- * What serves the board today, and what doesn't (each gap is a seam request in the report):
- *
- * - **Dormant, no public access, removed** — `standing.listLane`, newest first, capped at 200. A lane
- *   that came back whole is answered here exactly (search, state, class, size, the order by name,
- *   class, state or acres); a lane that hit the cap is drawn in the read's order with nothing to
- *   narrow it (`capped`), since filtering a page would lie.
- * - **Active, all bodies, the views** — no read lists them. The list says *Not recorded yet*; a
- *   search of two letters or more runs `waterBodies.searchByName` (the top 20, ranked), the active
- *   matches first and the dormant ones under their divider.
+ * - **The list** — `bodies.listPage`, a page at a time through the paginated hook: the lane, the
+ *   state tab, the facets, the search and the order are all the server's. A page that comes back
+ *   short because its scan ran out is not the end (`isDone` stays false): the list keeps asking,
+ *   and draws its end only once the read says it is done.
+ * - **The counts** — `bodies.listSummary`: every lane's total (*Changed this week* to a cap), the
+ *   corpus, the lane's state tabs, the list's total and the facet counts the stored counts answer
+ *   exactly. A count it can't answer is `null` — no number, never a zero.
  * - **The preview** — `waterBodies.get` (outline, figures), `putIns.listForBody`,
- *   `subAreas.listForBody` and the body's own audit rows (`moderation.listActions`); completeness
- *   from those, with lots, landmarks and bathymetry unknown (no read here). Reports, asks and the
- *   town have no read: those blocks are left out.
+ *   `subAreas.listForBody`, the body's history (`bodyConsole.history`: the body, its bays,
+ *   landmarks and put-ins) and `bodies.preview`, whose facts the page words: reports this season by
+ *   vantage and all time, completeness, the open asks, the towns.
+ *
+ * **`null` is "not recorded"** throughout, never a zero.
  */
 
-export type LaneRows = FunctionReturnType<typeof api.standing.listLane>;
-export type SearchHits = FunctionReturnType<typeof api.waterBodies.searchByName>;
+export type ListPage = FunctionReturnType<typeof api.bodies.listPage>;
+export type LibraryRow = ListPage['page'][number];
+export type ListSummary = FunctionReturnType<typeof api.bodies.listSummary>;
+export type PreviewFacts = NonNullable<FunctionReturnType<typeof api.bodies.preview>>;
 export type BodyDoc = Extract<
   NonNullable<FunctionReturnType<typeof api.waterBodies.get>>,
   { available: true }
 >['body'];
 export type PutIns = FunctionReturnType<typeof api.putIns.listForBody>;
 export type SubAreas = FunctionReturnType<typeof api.subAreas.listForBody>;
-export type ActionRows = FunctionReturnType<typeof api.moderation.listActions>;
+export type BodyHistory = FunctionReturnType<typeof api.bodyConsole.history>;
 
-/** The `standing.listLane` lane behind a library lane, if one serves it. */
-export function standingLaneOf(
-  lane: BodyLane,
-): 'inactive' | 'not_in_campaign' | 'moderator' | 'no_public_access' | 'removed' | null {
-  if (lane.read.kind !== 'standing') return null;
-  const [only, ...rest] = lane.read.standings;
-  if (only === 'removed' && rest.every((s) => s === 'rejected')) return 'removed';
-  if (rest.length > 0) return null;
-  switch (only) {
-    case 'inactive':
-    case 'not_in_campaign':
-    case 'moderator':
-    case 'no_public_access':
-      return only;
-    default:
-      return null;
-  }
+/** What `bodies.listPage` and `bodies.listSummary` are asked, short of the page cursor. */
+export type ListArgs = Omit<FunctionArgs<typeof api.bodies.listPage>, 'paginationOpts'>;
+/** The server's order. The page's columns are its columns: `sortArg` doesn't compile otherwise. */
+type ListSort = NonNullable<ListArgs['sort']>;
+
+// ── The list ─────────────────────────────────────────────────────────────────────────────────
+
+/** The server lane behind a library lane, or `null` for one no server read lists. */
+export function libraryLaneOf(lane: BodyLane): LibraryListLane | null {
+  return lane.read.kind === 'library' ? lane.read.lane : null;
 }
 
-/** Whether a search runs `waterBodies.searchByName` for this lane (one no lane read serves). */
-export function searchesByName(lane: BodyLane): boolean {
-  return lane.read.kind === 'standing' && lane.read.standings.includes('active');
+/** The server's order for the page's: none while a search ranks the list. */
+function sortArg(sort: BodySort): ListSort | undefined {
+  return sort.column === 'match' ? undefined : { column: sort.column, dir: sort.dir };
 }
 
-/** Where a body stands, in the library's keys. */
-export function standingKey(standing: BodyStanding): BodyStandingKey {
-  switch (standing.standing) {
-    case 'active':
-      return 'active';
-    case 'unlisted':
-      return 'rejected';
-    case 'removed':
-      return 'removed';
-    case 'dormant':
-      return standing.reason;
-  }
-}
-
-/** A recorded area; the lane read writes `0` for a body never measured. */
-const area = (sqm: number | undefined) => (sqm === undefined || sqm <= 0 ? null : sqm);
-
-/** A `standing.listLane` row as the list holds it. What the read doesn't carry is `null`. */
-export function heldFromLane(row: LaneRows['rows'][number]): HeldRow {
+/**
+ * The list read's arguments for the place in the URL, at `now` (the list's clock: *Changed this
+ * week* and the season's reports are read against it). `null` for a lane no server read lists.
+ */
+export function listArgsOf(query: BodiesQuery, now: number): ListArgs | null {
+  const lane = libraryLaneOf(query.lane);
+  if (lane === null) return null;
+  const q = query.q.trim();
+  const sort = sortArg(query.sort);
+  const facets = Object.fromEntries(
+    FACET_IDS.flatMap((id) => {
+      const chosen = query.facets[id];
+      return chosen !== undefined && chosen.length > 0 ? [[id, [...chosen]]] : [];
+    }),
+  ) as NonNullable<ListArgs['facets']>;
   return {
-    row: {
-      id: row._id,
-      name: row.name,
-      bodyClass: row.type,
-      states: row.states,
-      areaSqM: area(row.surfaceAreaSqM),
-      complete: null,
-      asks: null,
-      reports: null,
-      changedAt: null,
-      standing: standingKey(row.standing),
-    },
-    facts: {
-      outline: null,
-      putIns: null,
-      curated: row.curatedBoost > 0,
-      intake: null,
-      awaitingEnrichment: null,
-    },
-    aliases: [],
+    lane,
+    ...(query.state !== null && { state: query.state }),
+    ...(q !== '' && { q }),
+    ...(Object.keys(facets).length > 0 && { facets }),
+    ...(sort !== undefined && { sort }),
+    now,
   };
 }
 
-/** What a lane held whole can answer: only what its rows carry. */
-const HELD_SERVES: ListServes = {
-  sort: ['name', 'class', 'state', 'acres'],
-  facets: ['class', 'size'],
+/** A stored library row as the list draws it. */
+export function rowFromLibrary(row: LibraryRow): BodyRow {
+  return {
+    id: row.id,
+    name: row.name,
+    ...(row.matchedAlias !== undefined && { matchedAlias: row.matchedAlias }),
+    bodyClass: row.bodyClass,
+    states: row.states,
+    areaSqM: row.areaSqM,
+    complete: row.complete,
+    asks: row.asks,
+    ...(row.asksCapped && { asksCapped: true }),
+    ...(row.asksWaiting && { asksWaiting: true }),
+    reports: row.reports,
+    ...(row.reportsCapped && { reportsCapped: true }),
+    changedAt: row.changedAt,
+    standing: row.standing,
+  };
+}
+
+/** The paginated hook's status in the list's words. */
+export function listStatusOf(status: PaginationStatus): ListStatus {
+  switch (status) {
+    case 'LoadingFirstPage':
+      return 'loading';
+    case 'CanLoadMore':
+      return 'more';
+    case 'LoadingMore':
+      return 'fetching';
+    case 'Exhausted':
+      return 'done';
+  }
+}
+
+/** While the summary loads (or failed), no control claims more than the list read honors. */
+const SERVES_WHILE_UNKNOWN: ListServes = {
+  sort: [],
+  facets: [...FACET_IDS],
   states: true,
   search: true,
 };
 
-/**
- * A `standing.listLane` result as the list. Whole, it answers the query here; capped, it is the
- * read's newest rows in the read's order, with nothing to narrow them.
- */
-export function listFromLane(result: LaneRows | undefined, query: BodiesQuery): BodiesListData {
-  if (result === undefined) return { ...UNREAD_LIST, status: 'loading', serves: HELD_SERVES };
-  const held = result.rows.map(heldFromLane);
-  if (result.truncated) {
-    return {
-      status: 'capped',
-      rows: held.map((h) => h.row),
-      others: [],
-      total: { count: held.length, capped: true },
-      serves: SERVES_NOTHING,
-      facetCounts: null,
-      states: [],
-    };
-  }
-  // A column the rows don't carry can't order them: the read's own order stands.
-  const sort =
-    query.sort.column !== 'match' && !HELD_SERVES.sort.includes(query.sort.column)
-      ? ({ column: 'match' } as const)
-      : query.sort;
-  // A facet the rows can't answer (a hand-edited link) narrows nothing rather than everything.
-  const facets = Object.fromEntries(
-    Object.entries(query.facets).filter(([id]) => HELD_SERVES.facets.includes(id as FacetId)),
-  );
+/** What the list read honors for this query, from the summary that says so. */
+export function servesFrom(summary: ListSummary | undefined): ListServes {
+  if (summary === undefined) return SERVES_WHILE_UNKNOWN;
   return {
-    status: 'done',
+    sort: summary.serves.sort,
+    facets: summary.serves.facets,
+    states: summary.serves.states,
+    search: summary.serves.search,
+  };
+}
+
+/**
+ * The list from its reads: the pages the paginated hook has gathered, and the summary — `current`
+ * for this exact query (the total and the facet counts, never a stale one), `held` the last that
+ * landed (what controls the read honors, and the lane's state tabs, which don't move with a
+ * filter).
+ */
+export function listFrom({
+  rows,
+  status,
+  current,
+  held,
+}: {
+  rows: readonly LibraryRow[];
+  status: PaginationStatus;
+  /** The summary for this query, `undefined` while it loads or if it failed. */
+  current: ListSummary | undefined;
+  /** The last summary for this lane, if any. */
+  held: ListSummary | undefined;
+}): BodiesListData {
+  return {
+    status: listStatusOf(status),
+    rows: rows.map(rowFromLibrary),
+    // A search answers this lane only; matches in other standings need a read of their own.
     others: [],
-    serves: HELD_SERVES,
-    ...answerHeld(held, { ...query, sort, facets }),
+    total: current?.total ?? null,
+    serves: servesFrom(current ?? held),
+    facetCounts: current?.facetCounts ?? null,
+    states: (current ?? held)?.states ?? [],
   };
 }
 
-/** How many a lane holds, from its read: exact when whole, a floor when capped. */
-export function laneCountFrom(result: LaneRows | undefined) {
-  if (result === undefined) return null;
-  return { count: result.rows.length, capped: result.truncated };
+/** Each lane's count by the page's lane id, from the summary; `null` where no read counts it. */
+export function laneCountsFrom(
+  summary: ListSummary | undefined,
+  lanes: readonly BodyLane[],
+): Record<string, Count | null> {
+  const out: Record<string, Count | null> = {};
+  for (const lane of lanes) {
+    const server = libraryLaneOf(lane);
+    out[lane.id] = server === null ? null : (summary?.laneCounts[server] ?? null);
+  }
+  return out;
 }
 
-/** The shortest search `searchByName` answers. */
-export const SEARCH_MIN_CHARS = 2;
-/** How many hits it is asked for (its most). */
-export const SEARCH_LIMIT = 20;
-
-/** A `searchByName` body hit as a row. */
-export function rowFromHit(hit: SearchHits[number]): BodyRow {
-  return {
-    id: hit.waterBodyId,
-    name: hit.name,
-    bodyClass: hit.type,
-    states: hit.states,
-    areaSqM: area(hit.surfaceAreaSqM),
-    complete: null,
-    asks: null,
-    reports: null,
-    changedAt: null,
-    standing: hit.inactive === true ? 'dormant' : 'active',
-  };
-}
-
-/**
- * A lane no read lists, searched by name: the active matches as the list (or every match, in a lane
- * that holds every standing), the dormant ones under their divider. Ranked by the search, so no
- * heading sorts it; the top 20 is the search's whole answer.
- */
-export function listFromSearch(
-  hits: SearchHits | undefined,
-  lane: BodyLane,
-  q: string,
-): BodiesListData {
-  const searchOnly: ListServes = { ...SERVES_NOTHING, search: true };
-  if (q.trim().length < SEARCH_MIN_CHARS) return { ...UNREAD_LIST, serves: searchOnly };
-  if (hits === undefined) return { ...UNREAD_LIST, status: 'loading', serves: searchOnly };
-  const rows = hits.filter((h) => h.kind === 'body').map(rowFromHit);
-  const holdsAll = lane.read.kind === 'standing' && lane.read.standings.length > 1;
-  const here = holdsAll ? rows : rows.filter((r) => r.standing === 'active');
-  const others = holdsAll ? [] : groupOthers(rows.filter((r) => r.standing !== 'active'));
-  return {
-    status: hits.length >= SEARCH_LIMIT ? 'capped' : 'done',
-    rows: here,
-    others,
-    total: { count: here.length, capped: hits.length >= SEARCH_LIMIT },
-    serves: searchOnly,
-    facetCounts: null,
-    states: [],
-  };
+/** What `FacetCounts` the menu shows: the summary's, exactly as given. */
+export function facetCountsOf(summary: ListSummary | undefined): FacetCounts | null {
+  return summary?.facetCounts ?? null;
 }
 
 // ── The preview ──────────────────────────────────────────────────────────────────────────────
@@ -227,33 +215,129 @@ export function polygonsOf(
   return [];
 }
 
+/** A recorded area; a body never measured reads `0` or nothing. */
+const area = (sqm: number | undefined) => (sqm === undefined || sqm <= 0 ? null : sqm);
+
 /** Staff by first name; the machine by no name (`null`). */
-function firstName(actor: ActionRows[number]['actor']): string | null {
+function firstName(actor: BodyHistory['entries'][number]['actor']): string | null {
   if (actor === null) return null;
   const full = actor.displayName.trim() || actor.username;
   return full.split(/\s+/u)[0] ?? full;
 }
 
-/** What the preview's reads that exist say about a body. */
+/** "2 on the ice · 1 from shore": how the season's reports were made, the kinds with any. */
+export function vantageWords(byVantage: PreviewFacts['season']['byVantage']): string | null {
+  const parts = (['on_ice', 'shore', 'secondhand', 'unstated'] as const)
+    .filter((k) => byVantage[k] > 0)
+    .map((k) => `${byVantage[k].toLocaleString('en-US')} ${VANTAGE_LABELS[k].toLowerCase()}`);
+  return parts.length === 0 ? null : parts.join(' · ');
+}
+
+/**
+ * Reports this season, as the preview writes them. From 1 July to 30 September the season's record
+ * hasn't opened: it is honestly empty, and says when it begins.
+ */
+export function seasonCount(season: PreviewFacts['season'], now: number): PreviewCount {
+  if (!season.recordOpen) {
+    const opens = dayMonth(seasonRecordOpensMs(currentSeason(now)), 'UTC');
+    return { count: 0, capped: false, sub: `Record begins ${opens}` };
+  }
+  return { count: season.count, capped: season.capped, sub: vantageWords(season.byVantage) };
+}
+
+/** Reports since the record began, and the season of the first ("Since 2023–24"). */
+export function allTimeCount(allTime: PreviewFacts['allTime']): PreviewCount {
+  return {
+    count: allTime.count,
+    capped: allTime.capped,
+    sub: allTime.firstSeason === null ? null : `Since ${seasonYears(allTime.firstSeason)}`,
+  };
+}
+
+/** A request's kind, as an ask's kicker names it. */
+const REQUEST_WORDS: Record<RequestKind, string> = {
+  activate: 'Activation',
+  admit: 'Admission',
+  restore: 'Restoration',
+  contest_access: 'Access contested',
+  takedown: 'Takedown',
+  name_bay: 'Bay name',
+  name_landmark: 'Landmark name',
+};
+
+/** What a request asks for, when it names nothing ("Make it active"). */
+const REQUEST_ASKS: Record<RequestKind, string> = {
+  activate: 'Make it active',
+  admit: 'Add it to the map',
+  restore: 'Bring it back',
+  contest_access: 'Reopen its access',
+  takedown: 'Take it down',
+  name_bay: 'Name a bay',
+  name_landmark: 'Name a landmark',
+};
+
+/** A flag's reason, in words. */
+const FLAG_WORDS: Record<Doc<'contentFlags'>['reason'], string> = {
+  unsafe_false_report: 'Dangerously false ice report',
+  spam: 'Spam',
+  harassment: 'Harassment',
+  inappropriate: 'Inappropriate',
+  auto_low_quality: 'Rated unhelpful',
+  no_public_access: 'No public access',
+  other: 'Other',
+};
+
+/** One of `bodies.preview`'s open asks (facts), worded for the preview. */
+export function askFrom(ask: PreviewFacts['asks'][number]): PreviewAsk {
+  switch (ask.kind) {
+    case 'request':
+      return {
+        id: ask.id,
+        kicker: `${REQUEST_WORDS[ask.requestKind]} · Inbox`,
+        title: ask.name !== null ? `“${ask.name}”` : REQUEST_ASKS[ask.requestKind],
+        sub: ask.note,
+      };
+    case 'placeName':
+      return {
+        id: ask.id,
+        kicker: `Place name · ${ask.messages.toLocaleString('en-US')} ${ask.messages === 1 ? 'email' : 'emails'}`,
+        title: `“${ask.name}”`,
+        sub: null,
+      };
+    case 'flag':
+      return { id: ask.id, kicker: 'Flag · Inbox', title: FLAG_WORDS[ask.reason], sub: null };
+  }
+}
+
+/** The body's own facts: `undefined` while `bodies.preview` loads, an `Error` if it failed. */
+type FactsRead = PreviewFacts | null | undefined | Error;
+
+/** What the preview's reads say about a body. */
 export function previewFrom({
   body,
   putIns,
   subAreas,
   history,
+  facts,
+  now,
 }: {
   body: BodyDoc;
   putIns: PutIns | undefined;
   subAreas: SubAreas | undefined;
-  /** `null` when the viewer can't read the audit. */
-  history: ActionRows | null | undefined;
+  /** `null` when the viewer can't read the audit; an `Error` if the read failed. */
+  history: BodyHistory | null | undefined | Error;
+  facts: FactsRead;
+  /** The clock the facts were read against. */
+  now: number;
 }): BodyPreviewData {
+  const ready = facts !== undefined && !(facts instanceof Error) ? facts : null;
   return {
     id: body._id,
     name: body.name,
     bodyClass: body.type,
     states: body.states ?? [],
-    town: null,
-    moreTowns: [],
+    town: ready?.town ?? null,
+    moreTowns: ready?.moreTowns ?? [],
     centroid: body.centroid,
     outline: {
       polygons: polygonsOf(body.polygon),
@@ -265,34 +349,22 @@ export function previewFrom({
     meanDepthM: body.meanDepthM ?? null,
     maxDepthM: body.maxDepthM ?? null,
     elevationM: body.elevationM ?? null,
-    season: null,
-    allTime: null,
-    // The ten from what this page reads: the body's own fields and its put-ins. Lots, landmarks and
-    // bathymetry have no read here, so they are unknown — dashed, never counted as missing.
-    complete: completenessOf({
-      polygon: body.polygon,
-      name: body.name,
-      publicAccess: body.publicAccess ?? null,
-      accessKind: body.accessKind ?? null,
-      maxDepthM: body.maxDepthM,
-      meanDepthM: body.meanDepthM,
-      elevationM: body.elevationM,
-      windRose: body.windRose,
-      putIns: putIns === undefined ? null : putIns.length,
-      lots: null,
-      landmarks: null,
-      hasContours: null,
-    }),
-    asks: null,
+    facts: facts === undefined ? 'loading' : facts instanceof Error ? 'error' : 'ready',
+    season: ready === null ? null : seasonCount(ready.season, now),
+    allTime: ready === null ? null : allTimeCount(ready.allTime),
+    // Core's rule, as the stored row holds it; a body with no row yet is not recorded.
+    complete: ready?.complete ?? null,
+    asks: ready === null ? null : ready.asks.map(askFrom),
     history:
-      history == null
-        ? null
-        : history.map((row) => ({
-            id: row.id,
-            at: row.createdAt,
-            actor: firstName(row.actor),
-            words: actionLabel(row.action, row.targetType),
-          })),
-    standing: standingKey(standingOf(body)),
+      history instanceof Error
+        ? 'error'
+        : history == null
+          ? null
+          : history.entries.map((row) => ({
+              id: row.id,
+              at: row.createdAt,
+              actor: firstName(row.actor),
+              words: actionLabel(row.action, row.targetType),
+            })),
   };
 }

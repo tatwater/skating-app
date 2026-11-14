@@ -1,7 +1,12 @@
-import { sqMetersToAcres, waterBodyClassLabel } from '@skating/core';
+import {
+  LIBRARY_STANDINGS,
+  type LibraryStanding,
+  sqMetersToAcres,
+  waterBodyClassLabel,
+} from '@skating/core';
 
 import type { Completeness } from '../body/completeness';
-import { type Count, clockTime, DAY, dayMonth } from '../overview/overviewModel';
+import { type Count, clockTime, countText, DAY, dayMonth } from '../overview/overviewModel';
 
 /**
  * The Bodies library as data: what a row of the list is, what the preview reads, the columns and
@@ -9,29 +14,19 @@ import { type Count, clockTime, DAY, dayMonth } from '../overview/overviewModel'
  *
  * **`null` means "not recorded"** everywhere here — a read that doesn't exist yet, or a field the
  * read didn't carry — and is drawn as absent, never as a zero or a guess. A recorded zero is a
- * value (`0` asks reads "—", the boards' zero).
+ * value (`0` asks reads "—", the boards' zero). A count a read stopped short on is a floor and
+ * says so ("3+").
  */
 
 // ── Standing ─────────────────────────────────────────────────────────────────────────────────
 
-/** Where a body stands, as the library files it: one lane per key under *Standing*. */
-export const BODY_STANDINGS = [
-  'active',
-  /** Dormant, the reason not read (a search hit says only that it isn't active). */
-  'dormant',
-  'inactive',
-  'not_in_campaign',
-  'moderator',
-  'no_public_access',
-  'removed',
-  'rejected',
-] as const;
-export type BodyStandingKey = (typeof BODY_STANDINGS)[number];
+/** Where a body stands, as the library files it (core's `LIBRARY_STANDINGS`, the stored row's). */
+export const BODY_STANDINGS = LIBRARY_STANDINGS;
+export type BodyStandingKey = LibraryStanding;
 
 /** A standing in the library's words — a row's sub-line when it isn't the lane's own. */
 export const STANDING_LABEL: Record<BodyStandingKey, string> = {
   active: 'Active',
-  dormant: 'Dormant',
   inactive: 'Dormant · inactive',
   not_in_campaign: 'Dormant · not in campaign',
   moderator: 'Dormant · moderator',
@@ -50,7 +45,7 @@ export function standingGroupWord(standing: BodyStandingKey): string {
 
 // ── A row ────────────────────────────────────────────────────────────────────────────────────
 
-/** How much of what every body should have it has (the completeness strip): the shared rule's. */
+/** How much of what every body should have it has (the completeness strip): core's rule, stored. */
 export type { Completeness };
 
 /** One body as the list draws it. */
@@ -67,10 +62,14 @@ export interface BodyRow {
   complete: Completeness | null;
   /** Open asks of this body (inbox items and corpus tasks). */
   asks: number | null;
+  /** `asks` is a floor: the read stopped counting a kind of ask. */
+  asksCapped?: boolean;
   /** Some ask waits on a person (the amber count). */
   asksWaiting?: boolean;
   /** Reports this season. */
   reports: number | null;
+  /** `reports` is a floor: the read stopped inside the season's record. */
+  reportsCapped?: boolean;
   /** When its record last changed. */
   changedAt: number | null;
   standing: BodyStandingKey;
@@ -127,51 +126,6 @@ export function nextSort(current: BodySort, column: BodyColumnId): BodySort {
   return { column, dir: FIRST_DIR[column] };
 }
 
-/** A row's value in a column, for a sort; `null` when it isn't recorded. */
-function sortValue(row: BodyRow, column: BodyColumnId): string | number | null {
-  switch (column) {
-    case 'name':
-      return row.name.toLocaleLowerCase();
-    case 'class':
-      return classWord(row.bodyClass);
-    case 'state':
-      return row.states.join(' ');
-    case 'acres':
-      return row.areaSqM;
-    case 'complete':
-      return row.complete === null ? null : row.complete.have / row.complete.of;
-    case 'asks':
-      return row.asks;
-    case 'reports':
-      return row.reports;
-    case 'changed':
-      return row.changedAt;
-  }
-}
-
-/**
- * Orders rows by `sort` — over a list held **whole**, never a page of one (a page's order is the
- * server's). Unrecorded values sort last either way, so they never read as the smallest or the
- * largest; ties keep the name order, then the id, so the order is total and stable.
- */
-export function sortRows(rows: readonly BodyRow[], sort: BodySort): BodyRow[] {
-  if (sort.column === 'match') return [...rows];
-  const { column, dir } = sort;
-  const sign = dir === 'asc' ? 1 : -1;
-  return [...rows].sort((a, b) => {
-    const va = sortValue(a, column);
-    const vb = sortValue(b, column);
-    if (va === null || vb === null) {
-      if (va !== vb) return va === null ? 1 : -1;
-    } else if (va !== vb) {
-      return (va < vb ? -1 : 1) * sign;
-    }
-    const byName = a.name.localeCompare(b.name);
-    if (byName !== 0) return byName;
-    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
-  });
-}
-
 // ── What a cell says ─────────────────────────────────────────────────────────────────────────
 
 /** The class as a cell writes it: core's word, lowercased ("lake or pond", "reservoir"). */
@@ -212,14 +166,9 @@ export function changedWhen(at: number, now: number): string {
   return dayMonth(at);
 }
 
-/** A count of asks as the board writes it: "—" for none, the number otherwise. */
-export function asksText(asks: number): string {
-  return asks === 0 ? '—' : asks.toLocaleString('en-US');
-}
-
-/** "1,412", or "200+" once the read stopped counting. */
-export function countWords({ count, capped }: Count): string {
-  return `${count.toLocaleString('en-US')}${capped ? '+' : ''}`;
+/** A count of asks as the board writes it: "—" for none, the number otherwise ("3+" a floor). */
+export function asksText(asks: number, capped = false): string {
+  return asks === 0 && !capped ? '—' : countText({ count: asks, capped });
 }
 
 // ── The page's kicker ────────────────────────────────────────────────────────────────────────
@@ -249,10 +198,10 @@ export function laneKicker({
 }): string | null {
   if (narrowedBy.length > 0) {
     if (shown === null) return narrowedBy.join(' · ');
-    const of = lane === null ? '' : ` of ${countWords(lane)} ${laneWord}`;
-    return [`${countWords(shown)}${of}`, ...narrowedBy].join(' · ');
+    const of = lane === null ? '' : ` of ${countText(lane)} ${laneWord}`;
+    return [`${countText(shown)}${of}`, ...narrowedBy].join(' · ');
   }
   if (lane === null) return null;
-  if (corpus === null) return countWords(lane);
-  return `${countWords(lane)} of ${countWords(corpus)} in the corpus`;
+  if (corpus === null) return countText(lane);
+  return `${countText(lane)} of ${countText(corpus)} in the corpus`;
 }

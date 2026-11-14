@@ -27,6 +27,7 @@ import { TableGroupRow } from '@/components/kit/table-group-row';
 import { LedStrip } from '@/components/kit/trace-chart';
 import { KEYS_PASS_THROUGH } from '@/lib/keys';
 import { cn } from '@/lib/utils';
+import { countText } from '../overview/overviewModel';
 import type { BodiesListData } from './bodiesData';
 import {
   acresText,
@@ -37,11 +38,10 @@ import {
   COLUMN_LABEL,
   changedWhen,
   classWord,
-  countWords,
   STANDING_LABEL,
   statesText,
 } from './bodiesModel';
-import type { BodyLane } from './bodyLanes';
+import { type BodyLane, laneStanding } from './bodyLanes';
 
 /**
  * The library's list (boards 5.1–5.3, middle): a real table over the lane's rows — TanStack Table
@@ -58,7 +58,9 @@ import type { BodyLane } from './bodyLanes';
  *   preview and moves focus there; a click opens it where you are. G and ? pass through to the
  *   keyboard layer; / goes to the search.
  * - **Pages arrive as it scrolls**: near the end it asks for more, so the server is asked for a page
- *   at a time, never for the corpus. Above a hundred rows only the rows in view are in the page.
+ *   at a time, never for the corpus. A page that came back short (its scan ran out) is still near
+ *   the end, so the next is asked for at once; the end tab is drawn only once the read is done.
+ *   Above a hundred rows only the rows in view are in the page.
  * - **It comes back as it was**: the scroll offset is kept per list (lane, search, facets, sort) for
  *   this tab, so returning from a body's console lands where you left.
  */
@@ -152,11 +154,13 @@ function cellFor(column: BodyColumnId, row: BodyRow, ctx: CellCtx): ReactNode {
           data-waiting={row.asksWaiting === true && row.asks > 0 ? '' : undefined}
           className="data-waiting:text-warn"
         >
-          {asksText(row.asks)}
+          {asksText(row.asks, row.asksCapped === true)}
         </span>
       );
     case 'reports':
-      return row.reports === null ? null : row.reports.toLocaleString('en-US');
+      return row.reports === null
+        ? null
+        : countText({ count: row.reports, capped: row.reportsCapped === true });
     case 'changed':
       return row.changedAt === null ? null : changedWhen(row.changedAt, ctx.now);
   }
@@ -509,26 +513,21 @@ export function BodiesTable({
   );
 }
 
-/** The one standing a lane holds, if it holds one ("active" for Active). */
-function laneStanding(lane: BodyLane): string | null {
-  return lane.read.kind === 'standing' && lane.read.standings.length === 1
-    ? (lane.read.standings[0] ?? null)
-    : null;
-}
-
 /** The list-end tab: what the list is, or why it stops where it does. */
 function ListFoot({ list, rows, q }: { list: BodiesListData; rows: number; q: string }) {
   const words = (() => {
     switch (list.status) {
       case 'unread':
         return 'Not recorded yet';
+      case 'error':
+        return 'Couldn’t read this list';
+      case 'loading':
       case 'more':
+      case 'fetching':
         return 'Loading more';
-      case 'capped':
-        return `Newest ${rows.toLocaleString('en-US')}`;
-      default:
+      case 'done':
         if (rows === 0) return q.trim() !== '' ? `Nothing matches “${q.trim()}”` : 'None here';
-        return `All ${list.total !== null ? countWords(list.total) : rows.toLocaleString('en-US')}`;
+        return `All ${list.total !== null ? countText(list.total) : rows.toLocaleString('en-US')}`;
     }
   })();
   return (

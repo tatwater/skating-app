@@ -1,39 +1,49 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
+import { clampPageSize, LIBRARY_PAGE_SIZE } from '@skating/core';
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
-import { useQuery } from 'convex/react';
-import { type ReactElement, useEffect, useState } from 'react';
+import { usePaginatedQuery, useQueries } from 'convex/react';
+import { type ReactElement, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useRole } from '@/lib/useRole';
 
-import { BodiesView } from './BodiesView';
-import type { BodiesListData, BodyPreviewData } from './bodiesData';
-import { UNREAD_LIST } from './bodiesData';
+import { useMinuteNow } from '../shell/presence';
+import { BodiesView, type BodiesViewProps } from './BodiesView';
+import { type BodiesListData, type BodyPreviewData, UNREAD_LIST } from './bodiesData';
 import {
-  laneCountFrom,
-  listFromLane,
-  listFromSearch,
+  type BodyDoc,
+  type BodyHistory,
+  type ListArgs,
+  type ListSummary,
+  laneCountsFrom,
+  listArgsOf,
+  listFrom,
+  type PreviewFacts,
+  type PutIns,
   previewFrom,
-  SEARCH_LIMIT,
-  SEARCH_MIN_CHARS,
-  searchesByName,
-  standingLaneOf,
+  type SubAreas,
+  servesFrom,
 } from './bodiesReads';
-import { type BodiesQuery, type BodiesSearch, queryOf, searchFor } from './bodiesSearch';
+import { type BodiesQuery, type BodiesSearch, listKey, queryOf, searchFor } from './bodiesSearch';
+import { BODY_LANES } from './bodyLanes';
+import { ReadBoundary } from './ReadBoundary';
 
 /**
  * The Bodies library, wired: its place from the URL (validated by `validateBodiesSearch`, which the
- * route file adopts as its `validateSearch`), the reads that exist today (`bodiesReads` says which
- * serve what), the clock, and the link to a body's console.
+ * route file adopts as its `validateSearch`), the library's server reads (`bodiesReads` maps them),
+ * the clock, and the link to a body's console. The page itself is `BodiesView`, props only.
  *
- * The integrator mounts it as the route's component:
+ * - **The list** is `bodies.listPage` through the paginated hook, starting at the library's page
+ *   size — or, coming back to a list, as many rows as were showing (up to the library's most), so
+ *   the remembered scroll lands where it was. A failed page is the list's own error state.
+ * - **The counts** are `bodies.listSummary`. The lanes' counts are held through a change of place
+ *   (they don't move with a filter); the list's total and the facet counts are only ever this
+ *   query's, so a count is never a stale one.
+ * - **The preview** reads the open body and its facts; each read that fails says so in its block.
  *
- * ```ts
- * export const Route = createFileRoute('/admin/bodies')({
- *   validateSearch: validateBodiesSearch,
- *   component: () => <BodiesRoute bodyPath={(id) => `/admin/body/${id}`} />,
- * });
- * ```
+ * The list and its counts are read against the **list's clock**: the minute the list was opened,
+ * held while it stays open, so a new minute never restarts the paging. Every read waits on
+ * `body.read`; a viewer without it sees *Not recorded yet*.
  *
  * Every change of place is a navigation to the same route with the new search, so the back button,
  * a reload and a return from the Body console put the list back as it was. Moving down the list
@@ -55,10 +65,14 @@ export function BodiesRoute({ bodyPath = BODY_CONSOLE_PATH }: BodiesRouteProps) 
   const search = useSearch({ strict: false }) as BodiesSearch;
   const navigate = useNavigate();
   const { can } = useRole();
-  const now = useMinuteClock();
+  const now = useMinuteNow();
   const query = queryOf(search);
-  const { list, laneCount } = useLaneList(query);
-  const preview = usePreview(query.bodyId, can('audit.read'));
+  const key = listKey(query);
+  const listNow = useClockFor(key);
+  const canRead = can('body.read');
+  const args = canRead ? listArgsOf(query, listNow) : null;
+  const summary = useSummary(args);
+  const preview = usePreview(query.bodyId, canRead, can('audit.read'));
 
   const go = (next: BodiesQuery, how?: { replace?: boolean }) =>
     void navigate({
@@ -68,76 +82,175 @@ export function BodiesRoute({ bodyPath = BODY_CONSOLE_PATH }: BodiesRouteProps) 
     });
   const bodyLink = (id: string): ReactElement => <Link to={bodyPath(id)} />;
 
+  const view: Omit<BodiesViewProps, 'list'> = {
+    query,
+    onQueryChange: go,
+    laneCounts: laneCountsFrom(summary.held, BODY_LANES),
+    corpus: summary.held?.corpus ?? null,
+    preview,
+    now,
+    bodyLink,
+    onOpenBody: (id) => void navigate({ to: bodyPath(id) }),
+    status: summary.failed ? ['Counts couldn’t be read'] : [],
+  };
+
+  if (args === null) return <BodiesView {...view} list={UNREAD_LIST} />;
+  const failedList: BodiesListData = {
+    ...UNREAD_LIST,
+    status: 'error',
+    serves: servesFrom(summary.current ?? summary.laneHeld),
+  };
   return (
-    <BodiesView
-      query={query}
-      onQueryChange={go}
-      list={list}
-      laneCounts={{ [query.lane.id]: laneCount }}
-      corpus={null}
-      preview={preview}
-      now={now}
-      bodyLink={bodyLink}
-      onOpenBody={(id) => void navigate({ to: bodyPath(id) })}
-    />
+    <ReadBoundary resetKey={key} fallback={<BodiesView {...view} list={failedList} />}>
+      <PagedList args={args} memoryKey={key} summary={summary} view={view} />
+    </ReadBoundary>
   );
 }
 
-/** The list for the lane on screen, from whichever read serves it. */
-function useLaneList(query: BodiesQuery): {
-  list: BodiesListData;
-  laneCount: { count: number; capped: boolean } | null;
-} {
-  const standingLane = standingLaneOf(query.lane);
-  const byName = searchesByName(query.lane);
-  const q = query.q.trim();
-  const lane = useQuery(
-    api.standing.listLane,
-    standingLane === null ? 'skip' : { lane: standingLane },
-  );
-  const hits = useQuery(
-    api.waterBodies.searchByName,
-    byName && q.length >= SEARCH_MIN_CHARS
-      ? { query: q, limit: SEARCH_LIMIT, bodiesOnly: true }
-      : 'skip',
-  );
-  if (standingLane !== null) {
-    return { list: listFromLane(lane, query), laneCount: laneCountFrom(lane) };
+// ── The list ─────────────────────────────────────────────────────────────────────────────────
+
+/** How many rows each list was showing, this tab (a list is its `listKey`). */
+const shownMemory = new Map<string, number>();
+
+/** Forget every list's row count (stories and tests start clean). */
+export function resetShownMemory(): void {
+  shownMemory.clear();
+}
+
+/**
+ * The first page a list asks for: the library's page size, or as many rows as it was showing when
+ * it was left — up to the library's most a first page may ask for.
+ */
+export function startingPageSize(memoryKey: string): number {
+  return clampPageSize(Math.max(LIBRARY_PAGE_SIZE, shownMemory.get(memoryKey) ?? 0));
+}
+
+function PagedList({
+  args,
+  memoryKey,
+  summary,
+  view,
+}: {
+  args: ListArgs;
+  memoryKey: string;
+  summary: SummaryRead;
+  view: Omit<BodiesViewProps, 'list'>;
+}): ReactNode {
+  // Read once per list: the size only starts a list, and changing it mid-list would restart none.
+  const initialNumItems = useMemo(() => startingPageSize(memoryKey), [memoryKey]);
+  const { results, status, loadMore } = usePaginatedQuery(api.bodies.listPage, args, {
+    initialNumItems,
+  });
+  useEffect(() => {
+    if (results.length > 0) shownMemory.set(memoryKey, results.length);
+  }, [memoryKey, results.length]);
+  const list = listFrom({
+    rows: results,
+    status,
+    current: summary.current,
+    held: summary.laneHeld,
+  });
+  return <BodiesView {...view} list={list} onLoadMore={() => loadMore(LIBRARY_PAGE_SIZE)} />;
+}
+
+// ── The counts ───────────────────────────────────────────────────────────────────────────────
+
+type SummaryRead = {
+  /** This query's summary; `undefined` while it loads or if it failed. */
+  current: ListSummary | undefined;
+  /** The last summary that landed, for any query — the lanes' counts and the corpus. */
+  held: ListSummary | undefined;
+  /** The last summary that landed for this lane — its state tabs and what the read honors. */
+  laneHeld: ListSummary | undefined;
+  failed: boolean;
+};
+
+function useSummary(args: ListArgs | null): SummaryRead {
+  const summaryArgs = args === null ? null : (({ sort: _sort, ...rest }) => rest)(args);
+  const json = JSON.stringify(summaryArgs);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the arguments' value.
+  const queries = useMemo(() => {
+    const out: Parameters<typeof useQueries>[0] = {};
+    if (summaryArgs !== null) out.summary = { query: api.bodies.listSummary, args: summaryArgs };
+    return out;
+  }, [json]);
+  const got = useQueries(queries).summary as ListSummary | undefined | Error;
+  const current = got instanceof Error ? undefined : got;
+  const held = useRef<{ lane: string; value: ListSummary } | undefined>(undefined);
+  if (current !== undefined && args !== null) held.current = { lane: args.lane, value: current };
+  const last = held.current;
+  return {
+    current,
+    held: last?.value,
+    laneHeld: last !== undefined && last.lane === args?.lane ? last.value : undefined,
+    failed: got instanceof Error,
+  };
+}
+
+/**
+ * The minute a place was opened at, held while it stays open: the clock a list (or a preview) is
+ * read against, so the clock moving on never restarts a read. A new `key` reads the clock again.
+ */
+function useClockFor(key: string): number {
+  const [clock, setClock] = useState(() => ({ key, at: minute(Date.now()) }));
+  if (clock.key !== key) {
+    const next = { key, at: minute(Date.now()) };
+    setClock(next);
+    return next.at;
   }
-  if (byName) return { list: listFromSearch(hits, query.lane, q), laneCount: null };
-  return { list: UNREAD_LIST, laneCount: null };
+  return clock.at;
 }
 
-/** The open body's preview, from the reads that exist. */
+const minute = (at: number) => Math.floor(at / 60_000) * 60_000;
+
+// ── The preview ──────────────────────────────────────────────────────────────────────────────
+
+type GetRead = { available: true; body: BodyDoc } | { available: false } | null;
+
+/** The open body's preview, from its reads. */
 function usePreview(
   bodyId: string | null,
+  canRead: boolean,
   canReadAudit: boolean,
-): BodyPreviewData | null | undefined {
-  const id = bodyId !== null && ID_SHAPE.test(bodyId) ? (bodyId as Id<'waterBodies'>) : null;
-  const got = useQuery(api.waterBodies.get, id === null ? 'skip' : { waterBodyId: id });
-  const putIns = useQuery(api.putIns.listForBody, id === null ? 'skip' : { waterBodyId: id });
-  const subAreas = useQuery(api.subAreas.listForBody, id === null ? 'skip' : { waterBodyId: id });
-  const history = useQuery(
-    api.moderation.listActions,
-    id === null || !canReadAudit ? 'skip' : { targetType: 'waterbody', targetId: id, limit: 7 },
-  );
+): BodyPreviewData | null | undefined | 'error' {
+  const id =
+    canRead && bodyId !== null && ID_SHAPE.test(bodyId) ? (bodyId as Id<'waterBodies'>) : null;
+  const now = useClockFor(id ?? '');
+  const queries = useMemo<Parameters<typeof useQueries>[0]>(() => {
+    if (id === null) return {};
+    const waterBodyId = id;
+    return {
+      body: { query: api.waterBodies.get, args: { waterBodyId } },
+      putIns: { query: api.putIns.listForBody, args: { waterBodyId } },
+      subAreas: { query: api.subAreas.listForBody, args: { waterBodyId } },
+      facts: { query: api.bodies.preview, args: { waterBodyId, now } },
+      ...(canReadAudit && {
+        history: { query: api.bodyConsole.history, args: { waterBodyId, limit: HISTORY_ROWS } },
+      }),
+    };
+  }, [id, now, canReadAudit]);
+  const got = useQueries(queries) as {
+    body?: GetRead | Error;
+    putIns?: PutIns | Error;
+    subAreas?: SubAreas | Error;
+    facts?: PreviewFacts | null | Error;
+    history?: BodyHistory | Error;
+  };
   if (id === null) return null;
-  if (got === undefined) return undefined;
-  if (got === null || !got.available) return null;
+  const body = got.body;
+  if (body === undefined) return undefined;
+  if (body instanceof Error) return 'error';
+  if (body === null || !body.available) return null;
+  const quiet = <T,>(r: T | Error | undefined) => (r instanceof Error ? undefined : r);
   return previewFrom({
-    body: got.body,
-    putIns,
-    subAreas,
-    history: canReadAudit ? history : null,
+    body: body.body,
+    putIns: quiet(got.putIns),
+    subAreas: quiet(got.subAreas),
+    history: canReadAudit ? got.history : null,
+    facts: got.facts,
+    now,
   });
 }
 
-/** The instant ages are read against, moved on once a minute (the finest age a row writes). */
-function useMinuteClock(): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 60_000);
-    return () => window.clearInterval(id);
-  }, []);
-  return now;
-}
+/** How many of a body's latest changes the preview lists. */
+const HISTORY_ROWS = 7;

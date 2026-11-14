@@ -280,10 +280,112 @@ describe('what no read serves', () => {
     ]);
   });
 
-  it('says a capped lane is its newest, and that more are loading', () => {
-    const { rerender } = render(<Harness list={{ ...LIST_ACTIVE, status: 'capped' }} />);
-    expect(screen.getByText('Newest 25')).toBeInTheDocument();
-    rerender(<Harness list={LIST_ACTIVE} />);
+  it('marks a count the read stopped short on as a floor', () => {
+    const list: BodiesListData = {
+      ...LIST_ACTIVE,
+      rows: [
+        {
+          ...(LIST_ACTIVE.rows[0] as BodyRow),
+          asks: 100,
+          asksCapped: true,
+          reports: 300,
+          reportsCapped: true,
+        },
+      ],
+    };
+    render(<Harness list={list} />);
+    const cells = within(within(grid()).getByRole('row')).getAllByRole('gridcell');
+    expect(cells[5]).toHaveTextContent('100+');
+    expect(cells[6]).toHaveTextContent('300+');
+  });
+});
+
+describe('the list’s reading', () => {
+  it('says a failed list failed — never that it is empty', () => {
+    render(<Harness list={{ ...UNREAD_LIST, status: 'error', serves: LIST_ACTIVE.serves }} />);
+    expect(screen.getByText('Couldn’t read this list')).toBeInTheDocument();
+    expect(screen.queryByText('None here')).toBeNull();
+    expect(screen.queryByText('Not recorded yet')).toBeNull();
+  });
+
+  it('draws no end until the read is done', () => {
+    const { rerender } = render(<Harness list={LIST_ACTIVE} />);
     expect(screen.getByText('Loading more')).toBeInTheDocument();
+    rerender(<Harness list={{ ...LIST_ACTIVE, status: 'fetching' }} />);
+    expect(screen.getByText('Loading more')).toBeInTheDocument();
+    rerender(<Harness list={{ ...LIST_ACTIVE, status: 'done' }} />);
+    expect(screen.getByText('All 1,412')).toBeInTheDocument();
+    rerender(<Harness list={{ ...LIST_ACTIVE, status: 'done', total: null }} />);
+    expect(screen.getByText(`All ${LIST_ACTIVE.rows.length}`)).toBeInTheDocument();
+  });
+
+  it('asks for the next page at once when one came back short, and again after an empty one', () => {
+    const onLoadMore = vi.fn();
+    const short: BodiesListData = { ...LIST_ACTIVE, rows: LIST_ACTIVE.rows.slice(0, 2) };
+    const { rerender } = render(<Harness list={short} onLoadMore={onLoadMore} />);
+    expect(onLoadMore).toHaveBeenCalledTimes(1);
+    // The next page is on its way: nothing more is asked for meanwhile.
+    rerender(<Harness list={{ ...short, status: 'fetching' }} onLoadMore={onLoadMore} />);
+    expect(onLoadMore).toHaveBeenCalledTimes(1);
+    // It came back empty — its scan ran out, the list didn't end — so the next is asked for.
+    rerender(<Harness list={short} onLoadMore={onLoadMore} />);
+    expect(onLoadMore).toHaveBeenCalledTimes(2);
+    rerender(<Harness list={{ ...short, status: 'done' }} onLoadMore={onLoadMore} />);
+    expect(onLoadMore).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('the preview', () => {
+  it('words the body’s facts: reports by vantage, since when, completeness, the asks', () => {
+    render(<Harness />);
+    const pane = screen.getByRole('region', { name: 'Preview' });
+    expect(within(pane).getByText('2 on the ice · 1 from shore')).toBeInTheDocument();
+    expect(within(pane).getByText('Since 2023–24')).toBeInTheDocument();
+    expect(within(pane).getByText('9 / 10')).toBeInTheDocument();
+    expect(within(pane).getByText('Missing bathymetry')).toBeInTheDocument();
+    expect(within(pane).getByText('“Shaker cove”')).toBeInTheDocument();
+  });
+
+  it('marks a floor, holds the reports’ shape while they load, and says when they failed', () => {
+    const floor = {
+      ...PREVIEW_MASCOMA,
+      allTime: { count: 1000, capped: true, sub: null },
+      season: { count: 1, capped: false, sub: null },
+    };
+    const { rerender } = render(<Harness preview={floor} />);
+    const pane = () => screen.getByRole('region', { name: 'Preview' });
+    expect(within(pane()).getByText('1,000+')).toBeInTheDocument();
+    expect(within(pane()).getByText('report')).toBeInTheDocument();
+    rerender(<Harness preview={{ ...PREVIEW_MASCOMA, facts: 'loading', season: null }} />);
+    expect(pane().querySelector('[data-slot=preview-reports][aria-busy=true]')).not.toBeNull();
+    rerender(
+      <Harness
+        preview={{
+          ...PREVIEW_MASCOMA,
+          facts: 'error',
+          season: null,
+          allTime: null,
+          complete: null,
+          asks: null,
+        }}
+      />,
+    );
+    expect(
+      within(pane()).getByText('Reports, completeness and asks couldn’t be read'),
+    ).toBeInTheDocument();
+    expect(within(pane()).queryByText('9 / 10')).toBeNull();
+  });
+
+  it('says a failed body or history failed, and offers no way in to a body it couldn’t read', () => {
+    const { rerender } = render(<Harness preview={{ ...PREVIEW_MASCOMA, history: 'error' }} />);
+    expect(screen.getByText('Couldn’t read the history')).toBeInTheDocument();
+    rerender(<Harness preview="error" />);
+    expect(screen.getByText('Couldn’t read this body')).toBeInTheDocument();
+    expect(screen.queryByText(/Open in Body/)).toBeNull();
+  });
+
+  it('names the other towns with the body’s one state', () => {
+    render(<Harness />);
+    expect(screen.getByText('+1')).toBeInTheDocument();
   });
 });

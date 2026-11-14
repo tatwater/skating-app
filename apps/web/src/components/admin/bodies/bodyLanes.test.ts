@@ -1,8 +1,16 @@
+import { LIBRARY_LIST_LANES } from '@skating/core';
 import { describe, expect, it } from 'vitest';
 
-import { searchesByName, standingLaneOf } from './bodiesReads';
+import { libraryLaneOf } from './bodiesReads';
 import { FACET_IDS } from './bodyFacets';
-import { BODY_LANES, type BodyLane, DEFAULT_LANE_ID, laneById, laneGroups } from './bodyLanes';
+import {
+  BODY_LANES,
+  type BodyLane,
+  DEFAULT_LANE_ID,
+  laneById,
+  laneGroups,
+  laneStanding,
+} from './bodyLanes';
 
 describe('the lanes', () => {
   it('have unique ids, the default among them', () => {
@@ -45,20 +53,25 @@ describe('the lanes', () => {
     const lanes = [...BODY_LANES, names];
     expect(laneById('name-conflicts', lanes)).toBe(names);
     expect(laneGroups(lanes).at(-1)?.label).toBe('Corpus');
-    expect(standingLaneOf(names)).toBeNull();
-    expect(searchesByName(names)).toBe(false);
+    expect(libraryLaneOf(names)).toBeNull();
+    expect(laneStanding(names)).toBeNull();
   });
-  it('know which existing read serves each standing lane', () => {
-    expect(BODY_LANES.map((l) => [l.id, standingLaneOf(l), searchesByName(l)])).toEqual([
-      ['opened', null, false],
-      ['changed', null, false],
-      ['all', null, true],
-      ['active', null, true],
-      ['inactive', 'inactive', false],
-      ['not-in-campaign', 'not_in_campaign', false],
-      ['moderator', 'moderator', false],
-      ['no-public-access', 'no_public_access', false],
-      ['removed', 'removed', false],
+  it('know which server lane lists each, and the one standing a lane holds', () => {
+    expect(BODY_LANES.map((l) => [l.id, libraryLaneOf(l), laneStanding(l)])).toEqual([
+      ['opened', null, null],
+      ['changed', 'changed', null],
+      ['all', 'all', null],
+      ['active', 'active', 'active'],
+      ['inactive', 'inactive', 'inactive'],
+      ['not-in-campaign', 'not_in_campaign', 'not_in_campaign'],
+      ['moderator', 'moderator', 'moderator'],
+      ['no-public-access', 'no_public_access', 'no_public_access'],
+      // Removed and rejected share a lane, so its rows say which.
+      ['removed', 'removed', null],
     ]);
+  });
+  it('cover every lane the server lists', () => {
+    const served = BODY_LANES.map(libraryLaneOf).filter((l) => l !== null);
+    expect([...served].sort()).toEqual([...LIBRARY_LIST_LANES].sort());
   });
 });

@@ -4,12 +4,12 @@ import { Lanes } from '@/components/kit/lanes';
 import { isTextEntry, usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
 
-import type { Count } from '../overview/overviewModel';
+import { type Count, countText } from '../overview/overviewModel';
 import { ConsoleStatus } from '../shell/ConsoleShell';
 import { BodiesTable } from './BodiesTable';
 import { BodyPreview } from './BodyPreview';
 import type { BodiesListData, BodyPreviewData } from './bodiesData';
-import { countWords, laneKicker, nextSort } from './bodiesModel';
+import { laneKicker, nextSort } from './bodiesModel';
 import { type BodiesQuery, listKey } from './bodiesSearch';
 import { appliedOptions, chipWords, toggleOption } from './bodyFacets';
 import { BODY_LANES, type BodyLane, laneById, laneGroups } from './bodyLanes';
@@ -29,7 +29,7 @@ import { ListTools } from './ListTools';
  *
  * Every change of place goes through `onQueryChange` — the route writes it to the URL, so the list
  * comes back exactly as it was when you return from a body. Nothing here is a fixture: a lane no
- * read serves says *Not recorded yet*, a count no read gives is absent.
+ * read serves says *Not recorded yet*, a count no read gives is absent, a read that failed says so.
  */
 
 export type BodiesViewProps = {
@@ -45,8 +45,8 @@ export type BodiesViewProps = {
   laneCounts: Readonly<Partial<Record<string, Count | null>>>;
   /** How many bodies the corpus holds, when a read says. */
   corpus: Count | null;
-  /** The open body; `undefined` while it loads, `null` with none open. */
-  preview: BodyPreviewData | null | undefined;
+  /** The open body; `undefined` while it loads, `null` with none open, `'error'` if it failed. */
+  preview: BodyPreviewData | null | undefined | 'error';
   /** The instant ages are read against. */
   now: number;
   /** The router's link to a body's console; the preview's *Open in Body* renders as it. */
@@ -100,7 +100,7 @@ export function BodiesView({
       run: () => {
         if (query.bodyId !== null) onOpenBody(query.bodyId);
       },
-      enabled: query.bodyId !== null && preview != null,
+      enabled: query.bodyId !== null && preview != null && preview !== 'error',
     },
     { key: 'Shift+Enter', label: 'Back to the list', run: () => grid.current?.focus() },
   ]);
@@ -154,7 +154,7 @@ export function BodiesView({
               return {
                 id: l.id,
                 label: l.label,
-                ...(count !== null && { count: countWords(count) }),
+                ...(count !== null && { count: countText(count) }),
                 ...(count !== null && count.count === 0 && !count.capped && { dim: true }),
               };
             }),

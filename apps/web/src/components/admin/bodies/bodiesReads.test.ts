@@ -1,241 +1,327 @@
 import { describe, expect, it } from 'vitest';
 
-import { answerHeld, groupOthers } from './bodiesData';
-import { HELD } from './bodiesFixtures';
-import type { BodyRow } from './bodiesModel';
 import {
+  allTimeCount,
+  askFrom,
   type BodyDoc,
-  heldFromLane,
-  type LaneRows,
-  laneCountFrom,
-  listFromLane,
-  listFromSearch,
+  type BodyHistory,
+  type LibraryRow,
+  type ListSummary,
+  laneCountsFrom,
+  libraryLaneOf,
+  listArgsOf,
+  listFrom,
+  listStatusOf,
+  type PreviewFacts,
   polygonsOf,
   previewFrom,
-  rowFromHit,
-  SEARCH_LIMIT,
-  type SearchHits,
-  standingKey,
+  rowFromLibrary,
+  seasonCount,
+  servesFrom,
+  vantageWords,
 } from './bodiesReads';
 import { queryOf } from './bodiesSearch';
-import { laneById } from './bodyLanes';
+import { BODY_LANES } from './bodyLanes';
 
 const ACRE = 4046.8564224;
+/** The list's clock: any instant will do, the reads only pass it on. */
+const NOW = Date.UTC(2027, 0, 16, 17);
 
-const laneRow = (over: Partial<LaneRows['rows'][number]> = {}): LaneRows['rows'][number] =>
+const libraryRow = (over: Partial<LibraryRow> = {}): LibraryRow =>
   ({
-    _id: 'b1',
-    name: 'Echo Lake',
-    type: 'lakePond',
-    states: ['VT'],
-    surfaceAreaSqM: 550 * ACRE,
-    centroid: { lat: 44, lng: -72 },
-    standing: { standing: 'dormant', since: 1, reason: 'moderator' },
-    lastActivityAt: null,
-    includedByRequest: false,
-    curatedBoost: 0,
+    id: 'm1',
+    name: 'Mascoma Lake',
+    bodyClass: 'reservoir',
+    states: ['NH'],
+    areaSqM: 1143 * ACRE,
+    complete: { have: 9, of: 10, missing: ['bathymetry'] },
+    asks: 3,
+    asksCapped: false,
+    asksWaiting: true,
+    reports: 3,
+    reportsCapped: false,
+    changedAt: NOW - 60_000,
+    standing: 'active',
     ...over,
-  }) as LaneRows['rows'][number];
+  }) as LibraryRow;
 
-const hit = (over: Partial<SearchHits[number]> = {}): SearchHits[number] =>
+const count = (n: number, capped = false) => ({ count: n, capped });
+
+const summary = (over: Partial<ListSummary> = {}): ListSummary =>
   ({
-    kind: 'body',
-    _id: 'h1',
-    waterBodyId: 'h1',
-    name: 'Lake Morey',
-    type: 'lakePond',
-    centroid: { lat: 43.92, lng: -72.15 },
-    bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
-    states: ['VT'],
-    surfaceAreaSqM: 545 * ACRE,
+    laneCounts: {
+      all: count(24871),
+      active: count(1412),
+      inactive: count(22901),
+      not_in_campaign: count(411),
+      moderator: count(14),
+      no_public_access: count(72),
+      removed: count(61),
+      changed: count(500, true),
+    },
+    corpus: count(24871),
+    states: ['NH', 'VT'],
+    total: count(1412),
+    facetCounts: { size: { 'under-10': 412, '1000-up': 187 } },
+    serves: {
+      sort: ['name', 'class', 'state', 'acres', 'complete', 'asks', 'reports', 'changed'],
+      facets: ['class', 'size', 'outline', 'putins', 'reports', 'complete', 'curation'],
+      states: true,
+      search: true,
+    },
     ...over,
-  }) as SearchHits[number];
+  }) as ListSummary;
 
-describe('standing', () => {
-  it('maps every standing to a library key', () => {
-    expect(standingKey({ standing: 'active' })).toBe('active');
-    expect(standingKey({ standing: 'unlisted' })).toBe('rejected');
-    expect(standingKey({ standing: 'removed', since: 1, reason: 'junk' })).toBe('removed');
-    expect(standingKey({ standing: 'dormant', since: 1, reason: 'no_public_access' })).toBe(
-      'no_public_access',
+describe('the list read’s arguments', () => {
+  it('ask the server for the lane, the tab, the search, the facets and the order', () => {
+    const args = listArgsOf(
+      queryOf({
+        lane: 'not-in-campaign',
+        state: 'VT',
+        q: '  mor ',
+        size: '1000-up',
+        sort: 'acres',
+        dir: 'asc',
+      }),
+      NOW,
     );
+    expect(args).toEqual({
+      lane: 'not_in_campaign',
+      state: 'VT',
+      q: 'mor',
+      facets: { size: ['1000-up'] },
+      sort: { column: 'acres', dir: 'asc' },
+      now: NOW,
+    });
+  });
+
+  it('leave out what isn’t chosen, and the order while a search ranks the list', () => {
+    expect(listArgsOf(queryOf({}), NOW)).toEqual({
+      lane: 'active',
+      sort: { column: 'reports', dir: 'desc' },
+      now: NOW,
+    });
+    expect(listArgsOf(queryOf({ q: 'mor' }), NOW)).toEqual({ lane: 'active', q: 'mor', now: NOW });
+  });
+
+  it('are none for a lane no server read lists', () => {
+    expect(listArgsOf(queryOf({ lane: 'opened' }), NOW)).toBeNull();
+    expect(libraryLaneOf(BODY_LANES[0] as (typeof BODY_LANES)[number])).toBeNull();
   });
 });
 
-describe('a lane read held whole', () => {
-  it('carries what the read has and leaves the rest unrecorded', () => {
-    const held = heldFromLane(laneRow({ curatedBoost: 0.2, surfaceAreaSqM: 0 }));
-    expect(held.row).toMatchObject({
-      id: 'b1',
-      bodyClass: 'lakePond',
-      areaSqM: null,
-      complete: null,
-      asks: null,
-      reports: null,
-      changedAt: null,
-      standing: 'moderator',
-    });
-    expect(held.facts).toEqual({
-      outline: null,
-      putIns: null,
-      curated: true,
-      intake: null,
-      awaitingEnrichment: null,
-    });
-  });
-  it('is answered exactly here when the read came back whole', () => {
-    const rows = [
-      laneRow({
-        _id: 'a' as never,
-        name: 'Morrison Lake',
-        states: ['VT'],
-        surfaceAreaSqM: 12 * ACRE,
-      }),
-      laneRow({
-        _id: 'b' as never,
-        name: 'Echo Lake',
-        states: ['NH'],
-        surfaceAreaSqM: 1500 * ACRE,
-      }),
-      laneRow({ _id: 'c' as never, name: 'Morey Pond', states: ['NH'], surfaceAreaSqM: 41 * ACRE }),
-    ];
-    const list = listFromLane(
-      { rows, truncated: false },
-      queryOf({ lane: 'moderator', q: 'mor', state: 'NH' }),
-    );
-    expect(list.status).toBe('done');
-    expect(list.rows.map((r) => r.id)).toEqual(['c']);
-    expect(list.total).toEqual({ count: 1, capped: false });
-    // The tabs follow the search, before the state narrows: most bodies first.
-    expect(list.states).toEqual(['NH', 'VT']);
-  });
-  it('keeps the read’s order for a column its rows don’t carry, and ignores a facet they can’t answer', () => {
-    const rows = [
-      laneRow({ _id: 'z' as never, name: 'Zed' }),
-      laneRow({ _id: 'a' as never, name: 'Abe' }),
-    ];
-    const byChange = listFromLane({ rows, truncated: false }, queryOf({ lane: 'moderator' }));
-    expect(byChange.rows.map((r) => r.id)).toEqual(['z', 'a']);
-    const byName = listFromLane(
-      { rows, truncated: false },
-      queryOf({ lane: 'moderator', sort: 'name', outline: 'drawn' }),
-    );
-    expect(byName.rows.map((r) => r.id)).toEqual(['a', 'z']);
-  });
-  it('answers nothing locally when the read stopped at its cap', () => {
-    const list = listFromLane(
-      { rows: [laneRow({ _id: 'z' as never }), laneRow({ _id: 'a' as never })], truncated: true },
-      queryOf({ lane: 'inactive', sort: 'name' }),
-    );
-    expect(list.status).toBe('capped');
-    expect(list.rows.map((r) => r.id)).toEqual(['z', 'a']);
-    expect(list.serves).toEqual({ sort: [], facets: [], states: false, search: false });
-    expect(list.total).toEqual({ count: 2, capped: true });
-  });
-  it('is loading until the read lands, and counts the lane from it', () => {
-    expect(listFromLane(undefined, queryOf({ lane: 'moderator' })).status).toBe('loading');
-    expect(laneCountFrom(undefined)).toBeNull();
-    expect(laneCountFrom({ rows: [laneRow()], truncated: true })).toEqual({
-      count: 1,
-      capped: true,
-    });
-  });
-});
-
-describe('a search where no lane read serves', () => {
-  const active = laneById('active');
-  it('is unread under two letters, loading until the hits land', () => {
-    expect(listFromSearch(undefined, active, 'm')).toMatchObject({
-      status: 'unread',
-      serves: { search: true },
-    });
-    expect(listFromSearch(undefined, active, 'mor').status).toBe('loading');
-  });
-  it('lists the active matches, the dormant under their divider', () => {
-    const list = listFromSearch(
-      [
-        hit({ waterBodyId: 'a' as never, name: 'Lake Morey' }),
-        hit({ waterBodyId: 'b' as never, name: 'Morey Pond', inactive: true }),
-        hit({ kind: 'subArea', waterBodyId: 'c' as never, name: 'Morey Bay' }),
-      ],
-      active,
-      'mor',
-    );
-    expect(list.rows.map((r) => r.id)).toEqual(['a']);
-    expect(list.others.map((g) => [g.label, g.rows.map((r) => r.id)])).toEqual([
-      ['Dormant', ['b']],
-    ]);
-    expect(list.status).toBe('done');
-  });
-  it('keeps every match in a lane of every standing', () => {
-    const list = listFromSearch(
-      [hit({ waterBodyId: 'a' as never }), hit({ waterBodyId: 'b' as never, inactive: true })],
-      laneById('all'),
-      'mor',
-    );
-    expect(list.rows.map((r) => r.standing)).toEqual(['active', 'dormant']);
-    expect(list.others).toEqual([]);
-  });
-  it('says when it stopped at its limit', () => {
-    const hits = Array.from({ length: SEARCH_LIMIT }, (_, i) =>
-      hit({ waterBodyId: `h${i}` as never }),
-    );
-    expect(listFromSearch(hits, active, 'mor')).toMatchObject({
-      status: 'capped',
-      total: { count: SEARCH_LIMIT, capped: true },
-    });
-  });
-  it('maps a hit, an unmeasured area unrecorded', () => {
-    expect(rowFromHit(hit({ surfaceAreaSqM: undefined }))).toMatchObject({
-      areaSqM: null,
+describe('a library row', () => {
+  it('is drawn as stored, completeness as core states it', () => {
+    expect(rowFromLibrary(libraryRow())).toEqual({
+      id: 'm1',
+      name: 'Mascoma Lake',
+      bodyClass: 'reservoir',
+      states: ['NH'],
+      areaSqM: 1143 * ACRE,
+      complete: { have: 9, of: 10, missing: ['bathymetry'] },
+      asks: 3,
+      asksWaiting: true,
+      reports: 3,
+      changedAt: NOW - 60_000,
       standing: 'active',
     });
   });
+
+  it('carries the alias a search matched, and says a count is a floor', () => {
+    const r = rowFromLibrary(
+      libraryRow({
+        matchedAlias: 'Morgan Pond',
+        asksCapped: true,
+        reportsCapped: true,
+        areaSqM: null,
+        changedAt: null,
+      }),
+    );
+    expect(r).toMatchObject({
+      matchedAlias: 'Morgan Pond',
+      asksCapped: true,
+      reportsCapped: true,
+      areaSqM: null,
+      changedAt: null,
+    });
+  });
 });
 
-describe('answerHeld', () => {
-  it('searches aliases too and says which one matched', () => {
-    const { rows } = answerHeld(HELD, {
-      q: 'fairlee p',
-      state: null,
-      facets: {},
-      sort: { column: 'match' },
-    });
-    expect(rows.map((r) => [r.name, r.matchedAlias])).toEqual([['Lake Morey', 'Fairlee Pond']]);
+describe('the list from its pages', () => {
+  it('follows the paginated hook: loading, more to come, fetching, done', () => {
+    expect(listStatusOf('LoadingFirstPage')).toBe('loading');
+    expect(listStatusOf('CanLoadMore')).toBe('more');
+    expect(listStatusOf('LoadingMore')).toBe('fetching');
+    expect(listStatusOf('Exhausted')).toBe('done');
   });
-  it('counts each option against the other facets as they are', () => {
-    const { facetCounts, total } = answerHeld(HELD, {
-      q: '',
-      state: null,
-      facets: { size: ['1000-up'] },
-      sort: { column: 'reports', dir: 'desc' },
+
+  it('takes its total and facet counts from this query’s summary only, never a stale one', () => {
+    const rows = [libraryRow()];
+    const now = listFrom({ rows, status: 'CanLoadMore', current: summary(), held: summary() });
+    expect(now).toMatchObject({
+      status: 'more',
+      total: count(1412),
+      facetCounts: { size: { 'under-10': 412, '1000-up': 187 } },
+      states: ['NH', 'VT'],
+      others: [],
     });
-    const all = answerHeld(HELD, { q: '', state: null, facets: {}, sort: { column: 'match' } });
-    expect(facetCounts?.size?.['1000-up']).toBe(total?.count);
-    // The size facet's own counts ignore the size chosen; another facet's honor it.
-    expect(facetCounts?.size?.['under-10'] ?? 0).toBe(all.facetCounts?.size?.['under-10'] ?? 0);
-    const classes = Object.values(facetCounts?.class ?? {}).reduce((a = 0, b = 0) => a + b, 0);
-    expect(classes).toBe(total?.count);
+    expect(now.rows).toHaveLength(1);
+    // The query moved on; its summary hasn't landed. The tabs and the controls hold; no count does.
+    const moved = listFrom({ rows, status: 'CanLoadMore', current: undefined, held: summary() });
+    expect(moved).toMatchObject({ total: null, facetCounts: null, states: ['NH', 'VT'] });
+    expect(moved.serves.sort).toContain('acres');
   });
-  it('groups other standings under one divider per word', () => {
-    const r = (id: string, standing: BodyRow['standing']) => ({
-      ...(HELD[0]?.row as BodyRow),
-      id,
-      standing,
+
+  it('draws no count the read can’t answer — a search, or two facets', () => {
+    const searching = summary({ total: null, facetCounts: null, serves: { ...summary().serves } });
+    const list = listFrom({ rows: [], status: 'Exhausted', current: searching, held: undefined });
+    expect(list).toMatchObject({ status: 'done', total: null, facetCounts: null });
+  });
+
+  it('honors no order it can’t ask for until the summary says what the read can', () => {
+    expect(servesFrom(undefined)).toEqual({
+      sort: [],
+      facets: ['class', 'size', 'outline', 'putins', 'reports', 'complete', 'curation'],
+      states: true,
+      search: true,
+    });
+    expect(servesFrom(summary({ serves: { ...summary().serves, sort: [] } })).sort).toEqual([]);
+  });
+});
+
+describe('the lanes’ counts', () => {
+  it('map the server’s lanes to the page’s, the capped Changed count kept capped', () => {
+    expect(laneCountsFrom(summary(), BODY_LANES)).toEqual({
+      opened: null,
+      changed: count(500, true),
+      all: count(24871),
+      active: count(1412),
+      inactive: count(22901),
+      'not-in-campaign': count(411),
+      moderator: count(14),
+      'no-public-access': count(72),
+      removed: count(61),
+    });
+  });
+
+  it('are none before the summary lands', () => {
+    expect(Object.values(laneCountsFrom(undefined, BODY_LANES)).every((c) => c === null)).toBe(
+      true,
+    );
+  });
+});
+
+// ── The preview ──────────────────────────────────────────────────────────────────────────────
+
+const facts = (over: Partial<PreviewFacts> = {}): PreviewFacts =>
+  ({
+    season: {
+      count: 3,
+      capped: false,
+      recordOpen: true,
+      byVantage: { on_ice: 2, shore: 1, secondhand: 0, unstated: 0 },
+    },
+    allTime: { count: 86, capped: false, firstSeason: 2023 },
+    asks: [],
+    town: 'Enfield',
+    moreTowns: ['Canaan'],
+    complete: { have: 9, of: 10, missing: ['bathymetry'] },
+    ...over,
+  }) as PreviewFacts;
+
+describe('the season’s reports', () => {
+  it('say how they were made, the kinds with any, in a fixed order', () => {
+    expect(vantageWords({ on_ice: 2, shore: 1, secondhand: 0, unstated: 0 })).toBe(
+      '2 on the ice · 1 from shore',
+    );
+    expect(vantageWords({ on_ice: 0, shore: 0, secondhand: 1, unstated: 1200 })).toBe(
+      '1 secondhand · 1,200 not stated',
+    );
+    expect(vantageWords({ on_ice: 0, shore: 0, secondhand: 0, unstated: 0 })).toBeNull();
+  });
+
+  it('are a floor when the read stopped inside the season', () => {
+    const { season } = facts();
+    expect(seasonCount({ ...season, count: 1000, capped: true }, NOW)).toMatchObject({
+      count: 1000,
+      capped: true,
+    });
+  });
+
+  it('are honestly empty before the record opens, and say when it begins', () => {
+    const closed = {
+      count: 0,
+      capped: false,
+      recordOpen: false,
+      byVantage: facts().season.byVantage,
+    };
+    expect(seasonCount(closed, Date.UTC(2026, 7, 14, 17))).toEqual({
+      count: 0,
+      capped: false,
+      sub: 'Record begins 1 Oct',
+    });
+  });
+
+  it('say since when, unless the all-time read stopped short of the first', () => {
+    expect(allTimeCount({ count: 86, capped: false, firstSeason: 2023 })).toEqual({
+      count: 86,
+      capped: false,
+      sub: 'Since 2023–24',
+    });
+    expect(allTimeCount({ count: 1000, capped: true, firstSeason: null })).toEqual({
+      count: 1000,
+      capped: true,
+      sub: null,
+    });
+  });
+});
+
+describe('an ask', () => {
+  it('words a request by its kind, its name and its note', () => {
+    expect(
+      askFrom({
+        id: 'r1',
+        kind: 'request',
+        requestKind: 'name_bay',
+        name: 'Shaker cove',
+        note: 'Near the Shaker Bridge launch',
+        createdAt: 1,
+      }),
+    ).toEqual({
+      id: 'r1',
+      kicker: 'Bay name · Inbox',
+      title: '“Shaker cove”',
+      sub: 'Near the Shaker Bridge launch',
     });
     expect(
-      groupOthers([r('a', 'inactive'), r('b', 'removed'), r('c', 'moderator')]).map((g) => [
-        g.label,
-        g.rows.map((x) => x.id),
-      ]),
-    ).toEqual([
-      ['Dormant', ['a', 'c']],
-      ['Removed', ['b']],
-    ]);
+      askFrom({
+        id: 'r2',
+        kind: 'request',
+        requestKind: 'activate',
+        name: null,
+        note: null,
+        createdAt: 1,
+      }),
+    ).toEqual({ id: 'r2', kicker: 'Activation · Inbox', title: 'Make it active', sub: null });
+  });
+
+  it('words a place name by its emails, and a flag by its reason', () => {
+    expect(
+      askFrom({ id: 'p1', kind: 'placeName', name: 'the Narrows', messages: 12, createdAt: 1 }),
+    ).toEqual({ id: 'p1', kicker: 'Place name · 12 emails', title: '“the Narrows”', sub: null });
+    expect(
+      askFrom({ id: 'p2', kind: 'placeName', name: 'the Gut', messages: 1, createdAt: 1 }).kicker,
+    ).toBe('Place name · 1 email');
+    expect(askFrom({ id: 'f1', kind: 'flag', reason: 'no_public_access', createdAt: 1 })).toEqual({
+      id: 'f1',
+      kicker: 'Flag · Inbox',
+      title: 'No public access',
+      sub: null,
+    });
   });
 });
 
-describe('the preview from the reads that exist', () => {
+describe('the preview from its reads', () => {
   const body = {
     _id: 'm1',
     name: 'Mascoma Lake',
@@ -259,21 +345,30 @@ describe('the preview from the reads that exist', () => {
     dedupStatus: 'clean',
   } as unknown as BodyDoc;
 
-  it('draws what each read returned and leaves the reads that don’t exist out', () => {
+  const history = {
+    entries: [
+      {
+        id: 'r1',
+        createdAt: 5,
+        actor: { userId: 'u1', displayName: 'Sarah Berman', username: 'sarah' },
+        action: 'hide',
+        targetType: 'report',
+      },
+      { id: 'r2', createdAt: 4, actor: null, action: 'activate_body', targetType: 'waterbody' },
+    ],
+    capped: false,
+  } as unknown as BodyHistory;
+
+  it('draws each read, the facts worded and completeness as stored', () => {
     const p = previewFrom({
       body,
       putIns: [{ coord: { lat: 43.63, lng: -72.15 }, source: 'osm' }] as never,
       subAreas: [{}, {}] as never,
-      history: [
-        {
-          id: 'r1',
-          createdAt: 5,
-          actor: { displayName: 'Sarah Berman', username: 'sarah' },
-          action: 'hide',
-          targetType: 'report',
-        },
-        { id: 'r2', createdAt: 4, actor: null, action: 'activate_body', targetType: 'waterbody' },
-      ] as never,
+      history,
+      facts: facts({
+        asks: [{ id: 'f1', kind: 'flag', reason: 'spam', createdAt: 1 }],
+      }),
+      now: NOW,
     });
     expect(p).toMatchObject({
       id: 'm1',
@@ -282,29 +377,65 @@ describe('the preview from the reads that exist', () => {
       meanDepthM: null,
       maxDepthM: 24,
       elevationM: null,
-      town: null,
-      season: null,
-      allTime: null,
-      asks: null,
-      standing: 'active',
-    });
-    // Completeness from what is read: its own fields and its put-ins; lots, landmarks and
-    // bathymetry have no read here, so they are unknown — never counted as missing.
-    expect(p.complete).toEqual({
-      have: 4,
-      of: 10,
-      missing: ['access', 'elevation', 'wind'],
-      unknown: ['lots', 'landmarks', 'bathymetry'],
+      town: 'Enfield',
+      moreTowns: ['Canaan'],
+      facts: 'ready',
+      season: { count: 3, capped: false, sub: '2 on the ice · 1 from shore' },
+      allTime: { count: 86, capped: false, sub: 'Since 2023–24' },
+      complete: { have: 9, of: 10, missing: ['bathymetry'] },
+      asks: [{ kicker: 'Flag · Inbox', title: 'Spam' }],
     });
     expect(p.outline?.bbox).toEqual([-72.18, 43.6, -72.12, 43.65]);
-    expect(p.history?.map((h) => h.actor)).toEqual(['Sarah', null]);
-    expect(p.history?.[0]?.words).toBe('Hid a report');
+    expect(p.history).toEqual([
+      { id: 'r1', at: 5, actor: 'Sarah', words: 'Hid a report' },
+      { id: 'r2', at: 4, actor: null, words: expect.any(String) },
+    ]);
   });
-  it('leaves a block out while its read loads, and history out for a viewer who can’t read it', () => {
-    const p = previewFrom({ body, putIns: undefined, subAreas: undefined, history: null });
-    expect(p).toMatchObject({ putIns: null, bays: null, history: null });
-    expect(p.complete?.unknown).toContain('putIns');
+
+  it('holds the facts’ blocks while they load, and says when they failed — never zeros', () => {
+    const loading = previewFrom({
+      body,
+      putIns: undefined,
+      subAreas: undefined,
+      history: undefined,
+      facts: undefined,
+      now: NOW,
+    });
+    expect(loading).toMatchObject({
+      facts: 'loading',
+      putIns: null,
+      bays: null,
+      history: null,
+      season: null,
+      allTime: null,
+      complete: null,
+      asks: null,
+      town: null,
+      moreTowns: [],
+    });
+    const failed = previewFrom({
+      body,
+      putIns: undefined,
+      subAreas: undefined,
+      history: new Error('nope'),
+      facts: new Error('nope'),
+      now: NOW,
+    });
+    expect(failed).toMatchObject({ facts: 'error', season: null, history: 'error' });
   });
+
+  it('leaves completeness unrecorded for a body with no library row yet, and history out unread', () => {
+    const p = previewFrom({
+      body,
+      putIns: [],
+      subAreas: [],
+      history: null,
+      facts: facts({ complete: null, town: null, moreTowns: [] }),
+      now: NOW,
+    });
+    expect(p).toMatchObject({ complete: null, history: null, town: null, putIns: [], bays: 0 });
+  });
+
   it('reads polygons and multipolygons, nothing else', () => {
     expect(polygonsOf(body.polygon)).toHaveLength(1);
     expect(

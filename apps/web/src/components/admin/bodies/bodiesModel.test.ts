@@ -6,32 +6,16 @@ import { BOARD_NOON } from '@/test/boardNow';
 import {
   acresText,
   asksText,
-  type BodyRow,
   changedWhen,
   classWord,
-  countWords,
   laneKicker,
   nextSort,
-  sortRows,
   standingGroupWord,
   statesText,
 } from './bodiesModel';
 
 const ACRE = 4046.8564224;
 const DAY = 86_400_000;
-
-const body = (over: Partial<BodyRow> & { id: string }): BodyRow => ({
-  name: over.id,
-  bodyClass: 'lakePond',
-  states: ['NH'],
-  areaSqM: null,
-  complete: null,
-  asks: null,
-  reports: null,
-  changedAt: null,
-  standing: 'active',
-  ...over,
-});
 
 describe('a cell says', () => {
   it('the class in core’s words, lowercased', () => {
@@ -45,18 +29,18 @@ describe('a cell says', () => {
     expect(acresText(271000 * ACRE)).toBe('271,000');
     expect(acresText(0.44 * ACRE)).toBe('0.4');
   });
-  it('no asks as the board’s dash, a count otherwise', () => {
+  it('no asks as the board’s dash, a count otherwise, a floor with its plus', () => {
     expect(asksText(0)).toBe('—');
     expect(asksText(3)).toBe('3');
-  });
-  it('a capped count with its plus', () => {
-    expect(countWords({ count: 24871, capped: false })).toBe('24,871');
-    expect(countWords({ count: 200, capped: true })).toBe('200+');
+    expect(asksText(1200)).toBe('1,200');
+    expect(asksText(100, true)).toBe('100+');
+    // A read that stopped short at nothing is still not a recorded zero.
+    expect(asksText(0, true)).toBe('0+');
   });
   it('the group word for each standing', () => {
     expect(standingGroupWord('active')).toBe('Active');
     expect(standingGroupWord('inactive')).toBe('Dormant');
-    expect(standingGroupWord('dormant')).toBe('Dormant');
+    expect(standingGroupWord('moderator')).toBe('Dormant');
     expect(standingGroupWord('rejected')).toBe('Removed');
     expect(standingGroupWord('no_public_access')).toBe('No public access');
   });
@@ -93,51 +77,7 @@ describe('changedWhen', () => {
   });
 });
 
-describe('sorting a lane held whole', () => {
-  const rows = [
-    body({ id: 'b', reports: 2, areaSqM: 10 }),
-    body({ id: 'a', reports: null, areaSqM: 30 }),
-    body({ id: 'c', reports: 2, areaSqM: null }),
-    body({ id: 'd', reports: 5, areaSqM: 20 }),
-  ];
-  it('orders by the column, ties by name', () => {
-    expect(sortRows(rows, { column: 'reports', dir: 'desc' }).map((r) => r.id)).toEqual([
-      'd',
-      'b',
-      'c',
-      'a',
-    ]);
-    expect(sortRows(rows, { column: 'acres', dir: 'asc' }).map((r) => r.id)).toEqual([
-      'b',
-      'd',
-      'a',
-      'c',
-    ]);
-  });
-  it('keeps the read’s order while a search ranks it', () => {
-    expect(sortRows(rows, { column: 'match' }).map((r) => r.id)).toEqual(['b', 'a', 'c', 'd']);
-  });
-  it('puts the unrecorded last whichever way, and is total and stable', () => {
-    const arb = fc.array(
-      fc.record({
-        id: fc.uuid(),
-        name: fc.constantFrom('Post Pond', 'Lake Morey', 'Echo Lake'),
-        reports: fc.option(fc.integer({ min: 0, max: 9 }), { nil: null }),
-      }),
-      { maxLength: 30 },
-    );
-    fc.assert(
-      fc.property(arb, fc.constantFrom('asc', 'desc' as const), (specs, dir) => {
-        const list = specs.map((s) => body(s));
-        const sorted = sortRows(list, { column: 'reports', dir });
-        const firstNull = sorted.findIndex((r) => r.reports === null);
-        const nullsLast =
-          firstNull === -1 || sorted.slice(firstNull).every((r) => r.reports === null);
-        const again = sortRows([...list].reverse(), { column: 'reports', dir });
-        return nullsLast && again.map((r) => r.id).join() === sorted.map((r) => r.id).join();
-      }),
-    );
-  });
+describe('the order', () => {
   it('a heading press starts in its first direction and reverses when pressed again', () => {
     expect(nextSort({ column: 'reports', dir: 'desc' }, 'name')).toEqual({
       column: 'name',
