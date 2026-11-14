@@ -107,7 +107,8 @@ const scopeOf = (state: string | undefined) => {
 function cleanFacets(facets: LibraryFacetSelection | undefined): LibraryFacetSelection {
   const out: LibraryFacetSelection = {};
   for (const facet of LIBRARY_FACET_IDS) {
-    const known = (facets?.[facet] ?? []).filter((o) =>
+    // Known options only, each once: a repeated option would count its stored total twice.
+    const known = [...new Set(facets?.[facet] ?? [])].filter((o) =>
       (LIBRARY_FACETS[facet] as readonly string[]).includes(o),
     );
     if (known.length > 0) out[facet] = known;

@@ -263,7 +263,8 @@ async function historyTargets(
         l.createdByUserId !== undefined ||
         l.moderatorEditedAt !== undefined ||
         l.movedAt !== undefined ||
-        (l.removedAt !== undefined && l.mergedIntoId === undefined),
+        // Any removal: a moderator's takedown, and a merge's fold, which writes its own receipt.
+        l.removedAt !== undefined,
     )
     .sort((a, b) => b.updatedAt - a.updatedAt);
   for (const l of touched.slice(0, HISTORY_LANDMARKS)) {
@@ -451,9 +452,10 @@ export function daysCovered(from: number, to: number, window: { start: number; e
 
 /**
  * **How many hazards were on the lake each day of a winter** (1 October to 1 April), and when the
- * season's watch opened. A hazard is on the lake from its first report until it was voted fully
- * healed (the vote that archives it); a hazard archived with no such vote has no recorded end, so it
- * counts through its last confirmation — a floor, said in `unknownEnds`. A hazard still active counts
+ * season's watch opened. A hazard is on the lake from its first report; one still active counts
+ * through today (or the winter's end). An archived hazard's end is not stored and its votes can't
+ * establish it (edited in place, still taken after the archive), so it counts through its last
+ * confirmation — a floor, each one counted in `unknownEnds`. A hazard still active counts
  * through today (or the winter's end). Hidden and merged-away hazards are not counted. Days after
  * today are absent, never zero. `watchOpensOn` is the season record's opening day, `null` while the
  * watch waits.
@@ -486,19 +488,11 @@ export const dailyHazards = query({
       if (h.status === 'active') {
         end = Math.min(now, window.end);
       } else {
-        const healed = await ctx.db
-          .query('hazardConfirmations')
-          .withIndex('by_hazard_and_verdict', (q) =>
-            q.eq('hazardId', h._id).eq('verdict', 'fully_healed'),
-          )
-          .order('desc')
-          .first();
-        if (healed) end = healed.createdAt;
-        else {
-          unknownEnds++;
-          // Through the day of its last confirmation: someone said it was there then.
-          end = Math.max(h.lastConfirmedAt, h.firstReportedAt) + 1;
-        }
+        // When it left the lake isn't stored, and the votes can't say: a vote is edited in place
+        // and an archived hazard still takes them. Counted through the day of its last
+        // confirmation — someone said it was there then — as a floor.
+        unknownEnds++;
+        end = Math.max(h.lastConfirmedAt, h.firstReportedAt) + 1;
       }
       for (const day of daysCovered(h.firstReportedAt, end, window)) {
         if (day > now) continue;

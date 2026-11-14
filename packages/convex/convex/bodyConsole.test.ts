@@ -388,6 +388,27 @@ describe('bays, landmarks and history', () => {
     expect(all.capped).toBe(true);
   });
 
+  test('a catalog landmark folded by a merge keeps its receipt in the history', async () => {
+    const t = harness();
+    const { mod, id, landmarks } = await scene(t);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(landmarks.catalog, {
+        removedAt: NOW - DAY / 4,
+        mergedIntoId: landmarks.placed,
+      });
+      await ctx.db.insert('moderationActions', {
+        actorId: mod.id,
+        action: 'remove',
+        targetType: 'bodyLandmark',
+        targetId: landmarks.catalog,
+        reason: 'folded by a merge',
+        createdAt: NOW - DAY / 4,
+      });
+    });
+    const all = await mod.as.query(api.bodyConsole.history, { waterBodyId: id });
+    expect(all.entries[0]).toMatchObject({ targetId: landmarks.catalog, action: 'remove' });
+  });
+
   test('landmarks say who placed them; a proposal says who asked', async () => {
     const t = harness();
     const { mod, id, landmarks } = await scene(t);
@@ -423,7 +444,7 @@ describe('bays, landmarks and history', () => {
 });
 
 describe('dailyHazards', () => {
-  test('counts each day a hazard was on the lake, ends at its healing, and names the watch’s opening', async () => {
+  test('counts each day a hazard was on the lake, an archived one through its last confirmation, and names the watch’s opening', async () => {
     const t = harness();
     const { as, id: mod } = await seedUser(t);
     const id = await seedBody(t, { name: 'Ridged' });
@@ -471,11 +492,12 @@ describe('dailyHazards', () => {
     });
     const r = await as.query(api.bodyConsole.dailyHazards, { waterBodyId: id, now: NOW });
     expect(r.season).toBe(2026);
-    expect(r.unknownEnds).toBe(1);
+    // Both archived hazards: their end isn't stored, and a healed vote can't establish it.
+    expect(r.unknownEnds).toBe(2);
     expect(r.watchOpensOn).toBe(Date.UTC(2026, 10, 20));
     const at = (d: number) => r.days.find((x) => x.at === start + d * DAY)?.count;
     expect(at(0)).toBe(3);
-    expect(at(1)).toBe(3);
+    expect(at(1)).toBe(2);
     expect(at(2)).toBe(1);
     expect(at(5)).toBe(1);
     expect(r.days.every((d) => d.at <= NOW)).toBe(true);

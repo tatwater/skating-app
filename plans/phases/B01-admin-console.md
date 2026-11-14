@@ -1636,7 +1636,7 @@ register's shape differ, the prop type won; where the page draws words, the read
 | BS12 | Index `moderationActions.by_target_action`; `bodyConsole.history` takes `action` | `moderation.listActions` still filters after its page — one line, deferred to after the author-deletion PR |
 | BS13 | Deferred | A pass override needs a table and an audit verb (as BS9) |
 | BS14 | `standing.retentionForBody` | The newest use and its kind, the boost and when it was set, favorites (to 1,000), saved put-ins |
-| BS15 | `bodyConsole.dailyHazards` | A hazard is on the lake until the vote that healed it; one archived without such a vote counts through its last confirmation (`unknownEnds`); the watch's opening day beside it |
+| BS15 | `bodyConsole.dailyHazards` | A hazard is on the lake from its first report; an archived one's end isn't stored and its votes can't establish it (edited in place, still taken after the archive), so it counts through its last confirmation, a floor (`unknownEnds`); the watch's opening day beside it |
 | BS16 | Deferred | Editing a feature's shape needs an audit verb (as BS9) |
 
 **The governor's rulings on the deferred items (2026-11-14).** A moderator's aliases are their own

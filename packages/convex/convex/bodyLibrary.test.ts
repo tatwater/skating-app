@@ -907,6 +907,17 @@ describe('the list', () => {
     expect(changed.serves.sort).toEqual(['changed']);
   });
 
+  test('a repeated facet option counts once', async () => {
+    const t = harness();
+    const { as } = await seedUser(t);
+    await corpus(t);
+    const s = await as.query(api.bodies.listSummary, {
+      lane: 'active',
+      facets: { size: ['1000-up', '1000-up'] },
+    });
+    expect(s.total).toEqual({ count: 1, capped: false });
+  });
+
   test('a member can read none of it', async () => {
     const t = harness();
     const { as } = await seedUser(t, 'member');
@@ -1559,6 +1570,16 @@ describe('a body whose refresh throws', () => {
     }
     expect(await t.mutation(internal.bodyLibrary.turnSeason, {})).toMatchObject({ closed: 0 });
     await expectCountsAreTheTally(t);
+  });
+
+  test('a Changed left on the queue is written by whatever path refreshes the body next', async () => {
+    const t = harness();
+    const id = await seedBody(t, { name: 'Owed' });
+    await t.run((ctx) => queueLibraryRefresh(ctx, [id], NOW, { changedAt: NOW - DAY }));
+    // A report write refreshes it, not the drain: the owed stamp still lands, then the entry goes.
+    await t.run((ctx) => recomputeBodySummary(ctx, id));
+    expect((await rowsOf(t, id))[0]?.changedAt).toBe(NOW - DAY);
+    expect(await queueRow(t, id)).toBeNull();
   });
 
   test('names an error by its class, never its message', () => {

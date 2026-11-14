@@ -424,10 +424,13 @@ export async function rebuildBodyLibrary(
       r.changedAt === undefined ? latest : Math.max(latest ?? r.changedAt, r.changedAt),
     undefined,
   );
-  const changedAt =
-    opts.changedAt === undefined
-      ? storedChange
-      : Math.max(opts.changedAt, storedChange ?? opts.changedAt);
+  // A *Changed* a deferred refresh left on the queue entry — whatever path refreshes the body next
+  // writes it before the entry is cleared, never only the drain.
+  const queued = await ctx.db
+    .query('bodyLibraryQueue')
+    .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
+    .first();
+  const changedAt = laterOf(laterOf(storedChange, queued?.changedAt), opts.changedAt);
   const changedKeys = unknownLastKeys(changedAt);
   const next: RowFields[] = libraryScopes(body.states).map((scope) => ({
     ...shared,
