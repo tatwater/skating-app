@@ -36,6 +36,7 @@
  */
 
 import {
+  ACCESS_ALERT_NOTE_MAX_CHARS,
   ACCESS_ALERT_TTL_MS,
   type AccessAlertKind,
   type AccessAlertVote,
@@ -45,10 +46,12 @@ import {
   alertRetractionByAuthor,
   currentSeason,
   deriveAccessAlertLifecycle,
+  IDEMPOTENCY_KEY_MAX_CHARS,
   isMinor,
   RETRACT_REFUSALS,
   seasonEndMs,
   seasonOf,
+  tooLongMessage,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
@@ -72,9 +75,6 @@ import {
 import { authorRetracted, refreshClockOf, refreshEraseClock } from './lib/eraseClock';
 import { DOC_MAX, ReadBudget } from './lib/readBudget';
 import { literals } from './lib/validators';
-
-/** Free text has to be bounded somewhere; this is a sentence about a gate, not an essay. */
-export const MAX_ALERT_NOTE_LENGTH = 500;
 
 /**
  * Recompute one alert from its full vote set and persist the result. Returns the new row.
@@ -136,6 +136,15 @@ export const create = mutation({
   handler: async (ctx, args) => {
     const profile = await requireContributor(ctx);
     const now = Date.now();
+
+    // The retry key is capped before it is looked up: the apps send a UUID, so a longer one is a bug
+    // or an abuse, and an uncapped one made every read of this table charge a whole document.
+    const keyTooLong = tooLongMessage(
+      'The retry key',
+      args.idempotencyKey,
+      IDEMPOTENCY_KEY_MAX_CHARS,
+    );
+    if (keyTooLong !== null) throw new ConvexError(keyTooLong);
 
     // A replayed flush returns the row it already filed (the `reports.create` rule, D30): a claim
     // that corroborates itself is exactly the shape the vote counts exist to prevent. Author-scoped.
@@ -210,7 +219,7 @@ export const create = mutation({
       throw new ConvexError('That report is about another water body');
     }
 
-    const note = args.note?.trim().slice(0, MAX_ALERT_NOTE_LENGTH) || undefined;
+    const note = args.note?.trim().slice(0, ACCESS_ALERT_NOTE_MAX_CHARS) || undefined;
     // Clamped rather than trusted: a future timestamp is device skew, or a client trying to freeze an
     // alert as permanently fresh.
     const at = Math.min(args.observedAt ?? now, now);

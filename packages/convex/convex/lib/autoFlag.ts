@@ -21,6 +21,7 @@
  * dismissed 6d ago", which is the actual input to the D57 posting-permission decision.
  */
 
+import { FLAG_NOTE_MAX_CHARS, tooLongMessage } from '@skating/core';
 import type { Id } from '../_generated/dataModel';
 import type { MutationCtx } from '../_generated/server';
 import type { FLAG_REASONS, FLAG_TARGET_TYPES } from './enums';
@@ -111,6 +112,10 @@ export async function fileOrBumpAutoFlag(
     countsAsOccurrence?: boolean;
   },
 ): Promise<AutoFlagResult> {
+  // The same cap as a person's flag note, so every row's note has one worst case. These notes are
+  // written by code, so one past it is a bug, said plainly.
+  const noteTooLong = tooLongMessage('An automatic flag note', args.note, FLAG_NOTE_MAX_CHARS);
+  if (noteTooLong !== null) throw new Error(noteTooLong);
   const now = args.now ?? Date.now();
   const cooldown = args.cooldownMs ?? AUTO_FLAG_COOLDOWN_MS;
   const countsAsOccurrence = args.countsAsOccurrence ?? true;
