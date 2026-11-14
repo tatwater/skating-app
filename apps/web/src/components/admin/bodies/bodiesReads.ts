@@ -1,11 +1,5 @@
 import type { api } from '@skating/convex/api';
-import type { Doc } from '@skating/convex/dataModel';
-import {
-  currentSeason,
-  type LibraryListLane,
-  type RequestKind,
-  seasonRecordOpensMs,
-} from '@skating/core';
+import { currentSeason, type LibraryListLane, seasonRecordOpensMs } from '@skating/core';
 import type { PaginationStatus } from 'convex/react';
 import type { FunctionArgs, FunctionReturnType } from 'convex/server';
 
@@ -13,12 +7,12 @@ import { VANTAGE_LABELS } from '../metrics/metricsModel';
 import type { Count } from '../overview/overviewModel';
 import { actionLabel } from '../shell/actionLabels';
 import { dayMonth, seasonYears } from '../shell/consoleTime';
+import { askFrom } from './askWords';
 import type {
   BodiesListData,
   BodyPreviewData,
   ListServes,
   ListStatus,
-  PreviewAsk,
   PreviewCount,
 } from './bodiesData';
 import type { BodyRow, BodySort } from './bodiesModel';
@@ -251,61 +245,6 @@ export function allTimeCount(allTime: PreviewFacts['allTime']): PreviewCount {
     capped: allTime.capped,
     sub: allTime.firstSeason === null ? null : `Since ${seasonYears(allTime.firstSeason)}`,
   };
-}
-
-/** A request's kind, as an ask's kicker names it. */
-const REQUEST_WORDS: Record<RequestKind, string> = {
-  activate: 'Activation',
-  admit: 'Admission',
-  restore: 'Restoration',
-  contest_access: 'Access contested',
-  takedown: 'Takedown',
-  name_bay: 'Bay name',
-  name_landmark: 'Landmark name',
-};
-
-/** What a request asks for, when it names nothing ("Make it active"). */
-const REQUEST_ASKS: Record<RequestKind, string> = {
-  activate: 'Make it active',
-  admit: 'Add it to the map',
-  restore: 'Bring it back',
-  contest_access: 'Reopen its access',
-  takedown: 'Take it down',
-  name_bay: 'Name a bay',
-  name_landmark: 'Name a landmark',
-};
-
-/** A flag's reason, in words. */
-const FLAG_WORDS: Record<Doc<'contentFlags'>['reason'], string> = {
-  unsafe_false_report: 'Dangerously false ice report',
-  spam: 'Spam',
-  harassment: 'Harassment',
-  inappropriate: 'Inappropriate',
-  auto_low_quality: 'Rated unhelpful',
-  no_public_access: 'No public access',
-  other: 'Other',
-};
-
-/** One of `bodies.preview`'s open asks (facts), worded for the preview. */
-export function askFrom(ask: PreviewFacts['asks'][number]): PreviewAsk {
-  switch (ask.kind) {
-    case 'request':
-      return {
-        id: ask.id,
-        kicker: `${REQUEST_WORDS[ask.requestKind]} · Inbox`,
-        title: ask.name !== null ? `“${ask.name}”` : REQUEST_ASKS[ask.requestKind],
-        sub: ask.note,
-      };
-    case 'placeName':
-      return {
-        id: ask.id,
-        kicker: `Place name · ${ask.messages.toLocaleString('en-US')} ${ask.messages === 1 ? 'email' : 'emails'}`,
-        title: `“${ask.name}”`,
-        sub: null,
-      };
-    case 'flag':
-      return { id: ask.id, kicker: 'Flag · Inbox', title: FLAG_WORDS[ask.reason], sub: null };
-  }
 }
 
 /** The body's own facts: `undefined` while `bodies.preview` loads, an `Error` if it failed. */
