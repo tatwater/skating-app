@@ -20,7 +20,7 @@
  * `undoPolicy.test.ts` holds the table exhaustive over `MODERATION_ACTIONS`.
  */
 
-import type { Capability } from '@skating/core';
+import { type Capability, effectiveBountyLimitOf, ROLE_RANK, type UserRole } from '@skating/core';
 import type { ModerationAction, ModerationTargetType } from './audit';
 
 export type Workstream = '§2 Inbox' | '§3 Body console' | '§4 Corpus' | '§6 Season';
@@ -78,6 +78,12 @@ export function undoCapability(rule: UndoRule, targetType: ModerationTargetType)
 }
 
 const always = () => true;
+
+/** Whether a role change `{ from, to }` moves the person down. */
+function roleDown(value?: unknown): boolean {
+  const { from, to } = (value ?? {}) as { from?: UserRole; to?: UserRole };
+  return from !== undefined && to !== undefined && ROLE_RANK[to] < ROLE_RANK[from];
+}
 const never = () => false;
 
 const inverse = (verb: ModerationAction | 'priorStatus'): UndoKind => ({
@@ -141,12 +147,21 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
   unban: { undo: setPrev, takesAway: never, capability: 'people.discipline' },
   set_posting_permission: {
     undo: setPrev,
-    // Restricting takes a right away; restoring it, or raising a bounty limit, gives one back.
-    takesAway: (allowed) => allowed === false || allowed === 0,
+    // Restricting takes a right away (flagging included, D222); restoring it gives one back. A bounty
+    // limit takes away when it lowers the limit in force: `{ from, to }`, each a limit or `null` for
+    // the global cap.
+    takesAway: (value) => {
+      if (typeof value === 'object' && value !== null && 'to' in value) {
+        const { from, to } = value as { from: number | null; to: number | null };
+        return effectiveBountyLimitOf(to) < effectiveBountyLimitOf(from);
+      }
+      return value === false;
+    },
     capability: 'people.discipline',
   },
-  grant_role: { undo: setPrev, takesAway: always, capability: 'people.role' },
-  revoke_role: { undo: setPrev, takesAway: always, capability: 'people.role' },
+  // A demotion asks why; a promotion does not (D226; the founder, 2026-11-14). `{ from, to }`.
+  grant_role: { undo: setPrev, takesAway: roleDown, capability: 'people.role' },
+  revoke_role: { undo: setPrev, takesAway: roleDown, capability: 'people.role' },
   // Ledger editing (D227): only a holder gives or takes it, so only a holder undoes either. Giving it
   // asks no reason; taking it does — so undoing a grant asks why, and undoing a revoke does not.
   grant_ledger_editor: {

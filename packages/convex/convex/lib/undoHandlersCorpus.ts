@@ -40,7 +40,14 @@ async function restoreRole({ ctx, actor, row, reason }: UndoCall, prior: Role): 
 
 const priorRoleOf = (row: Doc<'moderationActions'>): Role | undefined => meta(row).priorRole;
 
-/** grant_role / revoke_role → the role it replaced. Both ask a reason (the registry's rule). */
+/** The role a role row moved the person to. */
+const newRoleOf = (row: Doc<'moderationActions'>): Role =>
+  row.action === 'revoke_role' ? 'member' : ((meta(row).role as Role | undefined) ?? 'member');
+
+/**
+ * grant_role / revoke_role → the role it replaced. A reason is asked when the role put back is lower
+ * than the one it replaces — a demotion — and not for a promotion back (D226; the founder, 2026-11-14).
+ */
 const undoRoleChange: UndoHandler = {
   blocked: (row, viewer) => {
     const prior = priorRoleOf(row);
@@ -53,7 +60,12 @@ const undoRoleChange: UndoHandler = {
     }
     return null;
   },
-  undoTakesAway: (row) => UNDO_POLICY[row.action].takesAway(priorRoleOf(row)),
+  undoTakesAway: (row) => {
+    const prior = priorRoleOf(row);
+    return (
+      prior !== undefined && UNDO_POLICY[row.action].takesAway({ from: newRoleOf(row), to: prior })
+    );
+  },
   run: (call) => restoreRole(call, priorRoleOf(call.row) as Role),
 };
 

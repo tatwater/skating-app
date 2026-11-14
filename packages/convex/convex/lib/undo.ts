@@ -22,6 +22,7 @@ import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { asUndoOf } from './audit';
 import { hasCapability } from './auth';
 import { authorDeletedAtOn, authorDeletedRefusal } from './authorDeletion';
+import { disciplineRefusal, roleRefusal } from './peopleCan';
 import { UNDO_HANDLERS } from './undoHandlers';
 import { UNDO_POLICY, undoCapability, WORKSTREAM_MODE } from './undoPolicy';
 import { meta, type UndoHandler, type UndoViewer } from './undoTypes';
@@ -110,6 +111,11 @@ export async function undoState(
   if ((await authorDeletedAtOn(ctx, row.targetType, row.targetId)) !== undefined) {
     return { state: 'unavailable', why: authorDeletedRefusal(meta(row).priorStatus, true) };
   }
+  // A change to a person is refused through the same rule its forward write uses (`lib/peopleCan`):
+  // an account being deleted, or deleted, can't be disciplined back or forth — so History never
+  // offers an undo the write would turn down.
+  const refusal = await personUndoRefusal(ctx, viewer, row);
+  if (refusal !== null) return { state: 'unavailable', why: refusal };
   if (!hasCapability(viewer, undoCapability(rule, row.targetType))) {
     return { state: 'unavailable', why: 'Undoing this takes a role you do not hold.' };
   }
@@ -122,6 +128,34 @@ export async function undoState(
     };
   }
   return { state: 'available', needsReason: handler.undoTakesAway(row) };
+}
+
+/**
+ * Why an undo on a person can't run now, from the lever it would pull: a ban or suspension's undo
+ * puts back the status it replaced (a ban, a suspension, or a lift); a lift's undo puts back the ban
+ * or suspension; a right's undo restricts or restores; a role's undo changes the role. One `get`.
+ */
+async function personUndoRefusal(
+  ctx: QueryCtx | MutationCtx,
+  viewer: UndoViewer,
+  row: Doc<'moderationActions'>,
+): Promise<string | null> {
+  if (row.targetType !== 'user') return null;
+  const statusVerb = row.action === 'ban' || row.action === 'suspend' || row.action === 'unban';
+  const roleVerb = row.action === 'grant_role' || row.action === 'revoke_role';
+  if (!statusVerb && !roleVerb && row.action !== 'set_posting_permission') return null;
+  const id = ctx.db.normalizeId('profiles', row.targetId);
+  const target = id ? await ctx.db.get(id) : null;
+  if (!target) return 'This account no longer exists.';
+  if (roleVerb) {
+    const prior = (meta(row).priorRole as Doc<'profiles'>['role'] | undefined) ?? 'member';
+    return roleRefusal(ctx, viewer, target, prior);
+  }
+  if (!statusVerb) return disciplineRefusal(ctx, viewer, target, 'restrict');
+  const prev = meta(row).prev as { status?: string } | undefined;
+  const puttingBack = prev?.status ?? 'active';
+  const lever = puttingBack === 'banned' ? 'ban' : puttingBack === 'suspended' ? 'suspend' : 'lift';
+  return disciplineRefusal(ctx, viewer, target, lever);
 }
 
 /** Undo `actionId` as `actor` (already gated by the caller), with `reason` when one is needed. */

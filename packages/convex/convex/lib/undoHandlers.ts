@@ -196,9 +196,9 @@ const undoLift: UndoHandler = {
 const undoPostingPermission: UndoHandler = {
   blocked: (row) => (meta(row).prev === undefined ? PREDATES : null),
   undoTakesAway: (row) => {
-    const { prev, permission } = meta(row);
+    const { prev, permission, limit } = meta(row);
     return UNDO_POLICY.set_posting_permission.takesAway(
-      permission === 'bounties' ? prev?.limit : prev?.allowed,
+      permission === 'bounties' ? { from: limit ?? null, to: prev?.limit ?? null } : prev?.allowed,
     );
   },
   run: async ({ ctx, actor, row, reason }) => {

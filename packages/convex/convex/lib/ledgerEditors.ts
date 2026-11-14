@@ -120,6 +120,24 @@ export async function refuseDisciplineOfLastLedgerEditor(
   if (await isLastLedgerEditor(ctx, target)) throw new ConvexError(LAST_EDITOR_MESSAGE);
 }
 
+/** Why `target` can't be given ledger editing, or `null` — the People row's `can` and the write's. */
+export function ledgerGrantRefusal(target: Profile): string | null {
+  if (target.role !== 'admin') return 'Only an admin can be given ledger editing';
+  if (!canStillAct(target)) return 'This account is not active';
+  if (target.canEditLedger === true) return 'They can already edit the ledger';
+  return null;
+}
+
+/** Why ledger editing can't be taken from `target`, or `null`. */
+export async function ledgerRevokeRefusal(
+  ctx: QueryCtx | MutationCtx,
+  target: Profile,
+): Promise<string | null> {
+  if (target.canEditLedger !== true) return 'They cannot edit the ledger';
+  if (await isLastLedgerEditor(ctx, target)) return LAST_EDITOR_MESSAGE;
+  return null;
+}
+
 /**
  * Give `userId` ledger editing. `actor` is the admin holding it (already gated by the caller), or
  * `null` when the system seeds it. The reason is optional: giving something does not ask why (D226).
@@ -131,11 +149,8 @@ export async function grantLedgerEditorImpl(
 ): Promise<void> {
   const target = await ctx.db.get(userId);
   if (!target) throw new ConvexError('User not found');
-  if (target.role !== 'admin') {
-    throw new ConvexError('Only an admin can be given ledger editing');
-  }
-  if (!canStillAct(target)) throw new ConvexError('This account is not active');
-  if (target.canEditLedger === true) throw new ConvexError('They can already edit the ledger');
+  const refused = ledgerGrantRefusal(target);
+  if (refused !== null) throw new ConvexError(refused);
 
   await ctx.db.patch(userId, { canEditLedger: true });
   await writeAudit(ctx, {
@@ -160,7 +175,8 @@ export async function revokeLedgerEditorImpl(
   if (reason.trim().length === 0) throw new ConvexError('A reason is required');
   const target = await ctx.db.get(userId);
   if (!target) throw new ConvexError('User not found');
-  if (target.canEditLedger !== true) throw new ConvexError('They cannot edit the ledger');
+  const refused = await ledgerRevokeRefusal(ctx, target);
+  if (refused !== null) throw new ConvexError(refused);
   await takeLedgerGrant(ctx, actor, target, reason.trim(), {});
 }
 
