@@ -490,4 +490,37 @@ describe('every chain reaches its end on its dearest page', () => {
     for (const id of reportIds) expect(await t.run((ctx) => ctx.db.get(id))).toBeNull();
     expect(await t.run((ctx) => ctx.db.get(postId))).toBeNull();
   });
+
+  test('settleOwed and the settlement’s take and clear: many debts, several uploaders, every photo owed', async () => {
+    const { t, author, other } = await setup();
+    const photoIds: Id<'photos'>[] = [];
+    for (const [uploader, debts] of [
+      [author.id, 30],
+      [other.id, 5],
+    ] as const) {
+      for (let i = 0; i < debts; i++) {
+        const photoId = await t.run(async (ctx) =>
+          ctx.db.insert('photos', {
+            storageId: await ctx.storage.store(new Blob([`full ${i}`])),
+            thumbStorageId: await ctx.storage.store(new Blob([`thumb ${i}`])),
+            uploaderId: uploader,
+            caption: HEAVY,
+            placeOnMap: false,
+            createdAt: T0,
+          }),
+        );
+        await t.run((ctx) =>
+          ctx.db.insert('photoSettlements', {
+            uploaderId: uploader,
+            photoIds: [photoId],
+            owedAt: T0 + i,
+          }),
+        );
+        photoIds.push(photoId);
+      }
+    }
+    await runOut(t, () => t.mutation(internal.erasure.settleOwed, {}));
+    for (const id of photoIds) expect(await t.run((ctx) => ctx.db.get(id))).toBeNull();
+    expect(await t.run((ctx) => ctx.db.query('photoSettlements').collect())).toEqual([]);
+  });
 });

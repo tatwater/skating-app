@@ -1449,7 +1449,14 @@ the People page and the skater screens that reach it are owed (the roadmap's reg
   `erasure.settlePhotos` reads the uploader's Reports and hazards a charged page per transaction, and
   deletes a photo only in a transaction that has itself read to the end of their hazards (resuming
   after the last one read, so one filed mid-settlement is seen), beside the photo's back-link and
-  access-photo checks, as many as the budget affords; the rest carry on, the list only shrinking. A
+  access-photo checks, as many as the budget affords; the rest carry on, the list only shrinking.
+  **What is owed is a row**: the transaction that erases an item with photos writes a
+  `photoSettlements` row (the uploader and the item's photo ids), the settlement takes an uploader's
+  rows and deletes them only after it has finished, and every sweep run's end starts `settleOwed`,
+  which walks the oldest debts one uploader at a time — so a pass that throws never leaves an erased
+  item's photos with nothing coming back for them. One row per erased item rather than per uploader:
+  an insert reads nothing and is bounded by the item's own list, where a per-uploader list would be
+  read and rewritten whole at every erasure and could outgrow a document. A
   photo whose blob outlives the delete is kept as the orphan sweep's pointer, stripped and marked
   `erasedAt`, and leaves the uploader's export. **What is left** is in the read table below: reads
   outside the erasure and record jobs whose weight is the live write's or the page's own, not this
@@ -1550,7 +1557,7 @@ third to each continuing job: **progress** (does every pass erase, stamp or adva
 | `erasure.ts` `settlePhotos` Reports | `reports` · `by_author` | paginate by budget | R | strikes photos in use | charged |
 | `erasure.ts` `settlePhotos` hazards | `hazards` · `by_author` `gt(_creationTime)` | take by budget | R | strikes photos in use | charged; resumes after the last hazard read, so one filed mid-settlement is seen — **fixed** (a paginate cursor at the end of a range reads nothing new) |
 | `erasure.ts` `settlePhotos` deletes | `photos` `get`, `accessPhotos` · `by_photo` | as many as the budget affords | R, S | **a photo is erased** | charged; only in a transaction that read to the end of the hazards; the rest carry on, the list only shrinking — **fixed** (Greptile #110: every remaining photo in one transaction) |
-| `erasure.ts` `queuePhotoSettlement` | — (arguments) | 500 ids a job | — | — | **fixed**: released photos ride a sweep run's continuation (under 500 ids) and are settled once per uploader when the run ends or a chunk is waiting, in jobs of at most 500 ids |
+| `erasure.ts` debts (`photoSettlements`) | insert one row per erased item with photos, in the erasing transaction; `settleOwed` · `by_owed_at` `take(1)`; the settlement's take · `by_uploader`, ≤ 16 rows and ≤ 500 ids; clear: each row `get` + delete | 1; ≤ 16; while the budget lasts | R (an item's photo ids) | **erases photos later; a debt is cleared only after its settlement has finished** | charged — **fixed** (the photo list rode the sweep's arguments and was lost with a pass that threw; now the debt is a row, and each run's end picks up every row still owed) |
 | `erasure.ts` `backfillClocks` | each erasable table · `by_creation_time` `gt(after)` | rows by budget, a withdrawn row's stamp, hold and clock kept back | R | **starts a clock** | charged; resumed by creation time (erasure deletes rows mid-walk) — **fixed** (each row's hold re-read the Report and its Post uncounted: ~24 MiB on a page of eight) |
 | `contentRecord.ts` `backfillVerdicts` | `moderationActions`, paginate; newest row · `by_target` desc; the item `get` | sized by budget | R | which item to replay, once | charged; an item is replayed at its newest row — **fixed** (200 audit rows a page) |
 | `contentRecord.ts` `replayVerdictHistory` (new job) | `moderationActions` · `by_target` asc, paginate; `contentVerdicts` · `by_action` | sized by budget | R, V | **records, ends or drops verdicts** | charged; the whole history, a page a pass, two passes; no fallback — **fixed** (Greptile #110: the newest 100 rows, and a guessed standing verdict) |
@@ -1599,6 +1606,9 @@ below are at the 12 MiB budget; *R* 1 MiB, *V* 8 KiB, *C* 16 KiB, *F* a flag (*R
 | `authorDeletions.commentLastWord` | a | ≤ 11 rows, the stamp kept back | R | ≤ 12 MiB |
 | `erasure.eraseDue` | b | one item at a time while `ITEM_NEED` fits | head + hold + clock or eraser's fixed reads + one drained row (`ITEM_NEED`, 10 MiB + 2V for a Report); drains size themselves by the rest | ≤ 12 MiB |
 | `erasure.settlePhotos` Reports | a | 12 Reports | R | 12 MiB |
+| `erasure.settleOwed` | a (fixed) | the oldest debt | R | 1 MiB |
+| `erasure.settlePhotos` take | a | ≤ 16 debts (≤ 500 ids carried) | R | ≤ 12 MiB |
+| `erasure.settlePhotos` clear | b | debts while one fits | R + delete R | ≤ 12 MiB |
 | `erasure.settlePhotos` hazards + deletes | a then b | 9 hazards, one photo kept back; photos while one fits | R; a photo R + access check V + delete R | ≤ 12 MiB |
 | `erasure.backfillClocks` | a then b | 5 Reports (more of lighter kinds), one row's work kept back; withdrawn rows while their work fits | R; a withdrawn row: stamp R + hold (4F + 2V) + clock R | ≤ 12 MiB |
 | `erasure.dropErasedMember` | a (fixed) | the Post and ≤ 10 members (9 when the erased one is listed) | — | ≤ 12 MiB with the Post's write; more members than a Post can hold throws, traced |

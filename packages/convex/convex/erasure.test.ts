@@ -1223,6 +1223,121 @@ describe("a photo is erased only when nothing of its uploader's still uses it", 
     for (const id of [...reports, ...photos]) expect(await get(t, id)).toBeNull();
   });
 
+  /** The photo debts on record. */
+  const owed = (t: T) => t.run((ctx) => ctx.db.query('photoSettlements').collect());
+  /** Sweep passes, run by hand and nothing they schedule, until `id` is erased. */
+  async function passesUntilGone(t: T, id: string) {
+    for (let pass = 0; pass < 20 && (await get(t, id)) !== null; pass++) {
+      await t.mutation(internal.erasure.eraseDue, {});
+    }
+    expect(await get(t, id)).toBeNull();
+  }
+
+  test('a run that dies after an erasure loses no photo it owed: the next run settles it, no step by hand', async () => {
+    const { t, author, waterBodyId } = await setup();
+    const { reportIds, photoIds } = await seedPost(t, author.id, waterBodyId, 1);
+    const [reportId] = reportIds as [Id<'reports'>];
+    const [photoId] = photoIds as [Id<'photos'>];
+    await author.as.mutation(api.reports.remove, { reportId });
+    advance(31 * DAY);
+    // The pass that erases the Report writes the debt in the same transaction...
+    await passesUntilGone(t, reportId);
+    expect((await owed(t)).map((row) => [row.uploaderId, row.photoIds])).toEqual([
+      [author.id, [photoId]],
+    ]);
+    // ...and then everything scheduled after it dies: the run's settlement never happens.
+    await t.run(async (ctx) => {
+      for (const job of await ctx.db.system.query('_scheduled_functions').collect()) {
+        if (job.state.kind === 'pending') await ctx.scheduler.cancel(job._id);
+      }
+    });
+    expect(await get(t, photoId)).not.toBeNull();
+    // The next hourly run has nothing due, and still settles what is owed.
+    advance(60 * 60 * 1000);
+    await sweep(t);
+    expect(await get(t, photoId)).toBeNull();
+    expect(await owed(t)).toEqual([]);
+  });
+
+  test('a debt is cleared exactly when its settlement has finished, not a pass before', async () => {
+    const { t, author, waterBodyId } = await setup();
+    const { reportIds, photoIds } = await seedPost(t, author.id, waterBodyId, 1);
+    const [photoId] = photoIds as [Id<'photos'>];
+    for (let i = 0; i < 4; i++) await seedHazard(t, author.id, waterBodyId);
+    await t.run(async (ctx) => {
+      await ctx.db.delete(reportIds[0] as Id<'reports'>);
+      await ctx.db.patch(photoId, { reportId: undefined });
+      await ctx.db.insert('photoSettlements', {
+        uploaderId: author.id,
+        photoIds: [photoId],
+        owedAt: Date.now(),
+      });
+    });
+    await t.mutation(internal.erasure.settleOwed, { pageSize: 1 });
+    // Pass by pass: the debt stands while the photo does, and goes only after it.
+    for (let pass = 0; pass < 40; pass++) {
+      const photo = await get(t, photoId);
+      const debts = await owed(t);
+      if (photo !== null) expect(debts).toHaveLength(1);
+      if (photo === null && debts.length === 0) break;
+      vi.runOnlyPendingTimers();
+      await t.finishInProgressScheduledFunctions();
+    }
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await get(t, photoId)).toBeNull();
+    expect(await owed(t)).toEqual([]);
+  });
+
+  test('a second erasure while the first is still owed adds its own debt; both are settled, once', async () => {
+    const { t, author, waterBodyId } = await setup();
+    const first = await seedPost(t, author.id, waterBodyId, 1);
+    const second = await seedPost(t, author.id, waterBodyId, 1);
+    const shared = first.photoIds[0] as Id<'photos'>;
+    // The second Report also carries the first one's photo: one debt each, the photo settled once.
+    await t.run((ctx) =>
+      ctx.db.patch(second.reportIds[0] as Id<'reports'>, {
+        photoIds: [second.photoIds[0] as Id<'photos'>, shared],
+      }),
+    );
+    await author.as.mutation(api.reports.remove, { reportId: first.reportIds[0] as Id<'reports'> });
+    advance(31 * DAY);
+    await passesUntilGone(t, first.reportIds[0] as string);
+    await author.as.mutation(api.reports.remove, {
+      reportId: second.reportIds[0] as Id<'reports'>,
+    });
+    advance(31 * DAY);
+    await passesUntilGone(t, second.reportIds[0] as string);
+    const debts = await owed(t);
+    expect(debts).toHaveLength(2);
+    expect(debts.every((row) => row.uploaderId === author.id)).toBe(true);
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    for (const id of [shared, second.photoIds[0] as Id<'photos'>])
+      expect(await get(t, id)).toBeNull();
+    expect(await owed(t)).toEqual([]);
+  });
+
+  test('an uploader deleted while a settlement is owed leaves no debt row and no photo behind', async () => {
+    const { t, author, waterBodyId } = await setup();
+    const { reportIds, photoIds } = await seedPost(t, author.id, waterBodyId, 1);
+    const [photoId] = photoIds as [Id<'photos'>];
+    await t.run(async (ctx) => {
+      await ctx.db.delete(reportIds[0] as Id<'reports'>);
+      await ctx.db.patch(photoId, { reportId: undefined });
+      await ctx.db.insert('photoSettlements', {
+        uploaderId: author.id,
+        photoIds: [photoId],
+        owedAt: Date.now(),
+      });
+    });
+    await t.mutation(internal.accountDeletion.finalizeNow, { userId: author.id });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await owed(t)).toEqual([]);
+    expect(await get(t, photoId)).toBeNull();
+    // And a settlement that still finds the debt gone has nothing to do.
+    await sweep(t);
+    expect(await owed(t)).toEqual([]);
+  });
+
   test('one a surviving hazard shows stays, whole, and in the export', async () => {
     const { t, author, waterBodyId } = await setup();
     const { reportId, photoId } = await withPhotoOn(t, author.id, waterBodyId);
