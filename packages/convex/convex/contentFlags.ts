@@ -17,6 +17,7 @@ import { internal } from './_generated/api';
 import type { Doc, Id, TableNames } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
 import { getCurrentProfile, requireProfile } from './lib/auth';
+import { queueLibraryRefresh } from './lib/bodyLibrary';
 import { FLAG_REASONS, FLAG_TARGET_TYPES } from './lib/enums';
 import { holdMoved, refreshEraseClock } from './lib/eraseClock';
 import { recordTextLength } from './lib/textLengths';
@@ -105,6 +106,10 @@ export const flag = mutation({
       origin: 'user', // a person pressed "report" — the one origin `content_flag_resolved` notifies
       createdAt: Date.now(),
     });
+    // A flag on a body is one of its asks: its library row moves with the minute cron (B01-3b).
+    if (args.targetType === 'waterbody') {
+      await queueLibraryRefresh(ctx, [targetId as Id<'waterBodies'>]);
+    }
     // How long the note is, for the cap's record (counts only; a repeat flag above wrote nothing).
     await recordTextLength(ctx, 'flag_note', args.note);
     // An open complaint holds withdrawn content back from erasure (D248).

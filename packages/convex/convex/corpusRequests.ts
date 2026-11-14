@@ -70,6 +70,7 @@ import {
 } from './lib/auth';
 import { publicAuthor } from './lib/authorView';
 import { resolveSurvivor } from './lib/bodies';
+import { queueLibraryRefresh } from './lib/bodyLibrary';
 import { syncWaterBodyCells } from './lib/cellIndex';
 import { refreshEraseClock } from './lib/eraseClock';
 import { liveLandmarksForBody } from './lib/landmarkRows';
@@ -235,7 +236,7 @@ export const create = mutation({
     );
     if (dupe) throw new ConvexError('You have already asked — it is with the moderators.');
 
-    return await ctx.db.insert('waterBodyRequests', {
+    const requestId = await ctx.db.insert('waterBodyRequests', {
       kind,
       status: 'open',
       requesterId: profile._id,
@@ -246,6 +247,9 @@ export const create = mutation({
       ...(bayName ? { name: bayName, nameKey: requestNameKey(bayName) } : {}),
       createdAt: now,
     });
+    // A new ask on the body: its library row's asks move with the minute cron (B01-3b).
+    await queueLibraryRefresh(ctx, [waterBodyId], now);
+    return requestId;
   },
 });
 
@@ -1161,6 +1165,7 @@ export const seedBayRequests = internalMutation({
           note: row.note,
           createdAt: now,
         });
+        await queueLibraryRefresh(ctx, [parent._id], now);
       }
       report.push({ name: row.name, parent: parent.name, status: apply ? 'filed' : 'would_file' });
     }

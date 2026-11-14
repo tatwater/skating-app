@@ -145,6 +145,14 @@ describe('create — the five kinds and their guards', () => {
       status: 'open',
       note: 'We skate it every January.',
     });
+    // A new ask queues the body's library row for the minute cron (B01-3b).
+    const queued = await t.run((ctx) =>
+      ctx.db
+        .query('bodyLibraryQueue')
+        .withIndex('by_body', (q) => q.eq('waterBodyId', id))
+        .first(),
+    );
+    expect(queued).not.toBeNull();
     await expect(
       skater.as.mutation(api.corpusRequests.create, {
         kind: 'activate',
