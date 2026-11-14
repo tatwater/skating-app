@@ -1575,11 +1575,17 @@ records and applies the count differences:
 - **A body whose refresh throws never blocks the rest.** Every refresh outside the writer runs in
   a nested transaction of its own (`refreshBodyLibrary`), so a failure rolls back only that body's
   work — never the moderator's write, the report, or the rest of a drain, repair or backfill page.
-  The failure goes on the body's queue entry with an attempt count and its error's class (never its
-  message), at the back; after three attempts the entry is **parked**: skipped by the drain and the
-  drift repair, counted in `bodyLibrary:state`, and listed by `bodyLibrary.parked` (Machinery,
+  The failure goes on the body's queue entry with an attempt count — one per transaction, however
+  often a writer refreshes it — and its error's class (never its message), at the back; after three
+  attempts the entry is **parked**: skipped by the drain, the drift repair and the season turning,
+  counted in `bodyLibrary:state`, and listed by `bodyLibrary.parked` (Machinery,
   `machinery.read`). A parked body is tried again by its next audited write — success clears the
-  entry — or released by `bodyLibrary:retryParked`.
+  entry, and one past the inline cap releases it to the queue — or released by
+  `bodyLibrary:retryParked`. Each nested refresh runs under its own read limits (6 MiB, 4,000
+  documents, 1,000 queries — far past any real body), so one that reads too much fails as itself;
+  and a drain, repair, turn or backfill page stops when it can no longer fund another full refresh,
+  leaving the rest queued, so a healthy body is never starved into failing. A *Changed* stamp a
+  failed or deferred refresh owes rides on the queue entry until the drain lands it.
 - **A drift repair** walks the oldest-refreshed rows a few at a time. Nothing a moderator does
   depends on it; it catches what is deferred below.
 - **Deferred, in files the author-deletion PR rewrites:** a skater's new corpus request

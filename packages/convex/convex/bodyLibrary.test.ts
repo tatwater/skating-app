@@ -11,9 +11,11 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import {
+  drainLibraryQueue,
   errorClassOf,
   factsOfRow,
   MAX_REFRESH_ATTEMPTS,
+  noteAuditedAction,
   queueLibraryRefresh,
   refreshBodyLibrary,
 } from './lib/bodyLibrary';
@@ -377,9 +379,15 @@ describe('kept current at the writes', () => {
     const before = await as.query(api.bodies.listPage, { lane: 'active', paginationOpts: page() });
     // Read-time: last season's count is not this season's.
     expect(before.page[0]?.reports).toBe(0);
-    expect(await t.mutation(internal.bodyLibrary.turnSeason, {})).toEqual({ refreshed: 1 });
+    expect(await t.mutation(internal.bodyLibrary.turnSeason, {})).toEqual({
+      refreshed: 1,
+      failed: 0,
+    });
     expect((await rowsOf(t, id))[0]).toMatchObject({ reports: 0, reportsSeason: 2027 });
-    expect(await t.mutation(internal.bodyLibrary.turnSeason, {})).toEqual({ refreshed: 0 });
+    expect(await t.mutation(internal.bodyLibrary.turnSeason, {})).toEqual({
+      refreshed: 0,
+      failed: 0,
+    });
   });
 
   test('the drift repair refreshes the oldest rows', async () => {
@@ -1034,11 +1042,61 @@ describe('a body whose refresh throws', () => {
     expect(await rowsOf(t, bad)).toHaveLength(0);
     expect(await queueRow(t, bad)).toMatchObject({
       attempts: 1,
-      lastErrorClass: expect.stringMatching(/^[A-Za-z]+$/),
+      // The class the nested call caught, carried across it — not the plain `Error` it arrives as.
+      lastErrorClass: 'TypeError',
       queuedAt: NOW,
     });
     expect((await queueRow(t, bad))?.parkedAt).toBeUndefined();
     await expectCountsAreTheTally(t);
+  });
+
+  test('fails once per transaction however often a writer refreshes it', async () => {
+    const t = harness();
+    const bad = await poison(t, 'Twice');
+    await t.run(async (ctx) => {
+      // An audit row's refresh and the writer's refresh after it: one attempt, not two.
+      expect(await refreshBodyLibrary(ctx, bad)).toBe(false);
+      expect(await refreshBodyLibrary(ctx, bad)).toBe(false);
+    });
+    expect(await queueRow(t, bad)).toMatchObject({ attempts: 1 });
+    await t.run((ctx) => refreshBodyLibrary(ctx, bad));
+    expect(await queueRow(t, bad)).toMatchObject({ attempts: 2 });
+  });
+
+  test('a backfill page and the season turning count the body that failed', async () => {
+    const t = harness();
+    const bad = await poison(t, 'Soured Page');
+    const good = await seedBody(t, { name: 'Sound Page' });
+    await seedReport(t, good, NOW - DAY);
+    expect(await t.mutation(internal.bodyLibrary.backfill, {})).toMatchObject({
+      refreshed: 1,
+      failed: 1,
+      isDone: true,
+    });
+    // The poisoned body with last season's count on its rows, and parked: the turn passes it.
+    await t.run(async (ctx) => {
+      const id = await seedBodyIn(ctx, 'Parked Last Season');
+      await refreshBodyLibrary(ctx, id);
+      for (const row of await ctx.db
+        .query('bodyLibraryRows')
+        .withIndex('by_body', (q) => q.eq('waterBodyId', id))
+        .collect()) {
+        await ctx.db.patch(row._id, { reports: 1, reportsSeason: 2026 });
+      }
+      await ctx.db.insert('bodyLibraryQueue', {
+        waterBodyId: id,
+        queuedAt: NOW,
+        attempts: 3,
+        parkedAt: NOW,
+      });
+    });
+    vi.setSystemTime(Date.UTC(2027, 6, 2));
+    expect(await t.mutation(internal.bodyLibrary.turnSeason, {})).toEqual({
+      refreshed: 1,
+      failed: 0,
+    });
+    expect((await rowsOf(t, good))[0]).toMatchObject({ reports: 0, reportsSeason: 2027 });
+    expect(await queueRow(t, bad)).toMatchObject({ attempts: 1 });
   });
 
   test('parks after the last attempt, is skipped and counted, and shows in the parked read', async () => {
@@ -1054,7 +1112,11 @@ describe('a body whose refresh throws', () => {
       failed: 0,
       more: false,
     });
-    expect(await t.query(internal.bodyLibrary.state, {})).toMatchObject({ queued: 0, parked: 1 });
+    expect(await t.query(internal.bodyLibrary.state, {})).toMatchObject({
+      queued: 0,
+      parked: 1,
+      parkedCapped: false,
+    });
     const admin = await seedUser(t, 'admin');
     const read = await admin.as.query(api.bodyLibrary.parked, {});
     expect(read).toEqual({
@@ -1065,15 +1127,18 @@ describe('a body whose refresh throws', () => {
           waterBodyId: bad,
           name: 'Stubborn',
           attempts: MAX_REFRESH_ATTEMPTS,
-          lastErrorClass: expect.any(String),
+          lastErrorClass: 'TypeError',
           parkedAt: NOW,
         },
       ],
     });
     const mod = await seedUser(t);
     await expect(mod.as.query(api.bodyLibrary.parked, {})).rejects.toThrow();
-    // Released by hand, it waits in the queue again with its attempts reset.
-    expect(await t.mutation(internal.bodyLibrary.retryParked, {})).toEqual({ released: 1 });
+    // Released by hand, it waits in the queue again with its attempts reset; a limit that is no
+    // whole number still releases at least one.
+    expect(await t.mutation(internal.bodyLibrary.retryParked, { limit: 0.5 })).toEqual({
+      released: 1,
+    });
     expect(await queueRow(t, bad)).toMatchObject({ attempts: 0 });
     expect((await queueRow(t, bad))?.parkedAt).toBeUndefined();
     await expectCountsAreTheTally(t);
@@ -1129,11 +1194,87 @@ describe('a body whose refresh throws', () => {
       expect((await rowsOf(t, id))[0]?.refreshedAt).toBe(NOW + 2 * DAY);
     }
     expect(await queueRow(t, bad)).toMatchObject({ attempts: 1 });
+    // A parked body with rows is named from its library row.
+    const admin = await seedUser(t, 'admin');
+    const read = await admin.as.query(api.bodyLibrary.parked, {});
+    expect(read.rows.map((r) => r.name)).toEqual(['Parked']);
     await expectCountsAreTheTally(t);
+  });
+
+  test('a run short of budget for another full refresh stops, and what it didn’t reach waits', async () => {
+    const t = harness();
+    const ids = [await seedBody(t, { name: 'Wait A' }), await seedBody(t, { name: 'Wait B' })];
+    const spent = { used: 0, remaining: 0 };
+    const low = {
+      bytesRead: spent,
+      bytesWritten: spent,
+      databaseQueries: spent,
+      documentsRead: spent,
+      documentsWritten: spent,
+      functionsScheduled: spent,
+      scheduledFunctionArgsBytes: spent,
+    };
+    await t.run(async (ctx) => {
+      await queueLibraryRefresh(ctx, ids);
+      const starved = { ...ctx, meta: { ...ctx.meta, getTransactionMetrics: async () => low } };
+      expect(await drainLibraryQueue(starved as typeof ctx, 10)).toEqual({
+        refreshed: 0,
+        failed: 0,
+        more: true,
+      });
+      // A moderator's refresh in a spent transaction is queued, never attempted half-funded.
+      expect(await refreshBodyLibrary(starved as typeof ctx, ids[0] as Id<'waterBodies'>)).toBe(
+        false,
+      );
+    });
+    expect((await t.query(internal.bodyLibrary.state, {})).queued).toBe(2);
+    for (const id of ids) expect((await queueRow(t, id))?.attempts).toBeUndefined();
+    expect(await t.mutation(internal.bodyLibrary.drainQueue, {})).toMatchObject({ refreshed: 2 });
+  });
+
+  test('a Changed owed by a body with no rows yet rides on its queue entry until the drain lands it', async () => {
+    const t = harness();
+    const { as } = await seedUser(t);
+    const bad = await poison(t, 'Unrowed');
+    await as.mutation(api.standing.setStanding, { waterBodyId: bad, standing: 'dormant' });
+    expect(await rowsOf(t, bad)).toHaveLength(0);
+    expect(await queueRow(t, bad)).toMatchObject({ attempts: 1, changedAt: NOW });
+    await t.run((ctx) => ctx.db.patch(bad, { polygon: square(0.01) }));
+    expect(await t.mutation(internal.bodyLibrary.drainQueue, {})).toMatchObject({ refreshed: 1 });
+    expect((await rowsOf(t, bad))[0]).toMatchObject({ changedAt: NOW, lane: 'moderator' });
+  });
+
+  test('an audited write past the inline cap releases a parked body to the queue', async () => {
+    const t = harness();
+    const mod = await seedUser(t);
+    const others: Id<'waterBodies'>[] = [];
+    for (let i = 0; i < 4; i++) others.push(await seedBody(t, { name: `Other ${i}` }));
+    const bad = await seedBody(t, { name: 'Held' });
+    await t.run(async (ctx) => {
+      await ctx.db.insert('bodyLibraryQueue', {
+        waterBodyId: bad,
+        queuedAt: NOW - DAY,
+        attempts: 3,
+        parkedAt: NOW - DAY,
+      });
+      for (const id of [...others, bad]) {
+        await noteAuditedAction(ctx, {
+          actorId: mod.id,
+          targetType: 'waterbody',
+          targetId: id,
+          createdAt: NOW,
+        });
+      }
+    });
+    expect(await queueRow(t, bad)).toMatchObject({ attempts: 0, queuedAt: NOW, changedAt: NOW });
+    expect((await queueRow(t, bad))?.parkedAt).toBeUndefined();
   });
 
   test('names an error by its class, never its message', () => {
     expect(errorClassOf(new ConvexError('a lake called Secret'))).toBe('ConvexError');
+    expect(errorClassOf(new ConvexError({ refreshFailed: 'RangeError' }))).toBe('RangeError');
+    expect(errorClassOf(new ConvexError({ refreshFailed: 'a lake called Secret' }))).toBe('Error');
+    expect(errorClassOf(new ConvexError({ refreshFailed: 7 }))).toBe('Error');
     expect(errorClassOf(new TypeError('x'))).toBe('TypeError');
     const odd = new Error('y');
     odd.name = 'has spaces and words';

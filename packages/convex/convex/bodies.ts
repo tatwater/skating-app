@@ -297,8 +297,12 @@ export const listPage = query({
       page: page.page.map((row) => rowView(row, season, q)),
       // The page stopped because its scan budget ran out, not because the list ended: there may be
       // more matches past it, so the list keeps loading (`isDone` is false) and draws no end.
+      // A reload pinned to an `endCursor` is sized by its range, not by `numItems`: only the read's
+      // own split signal says the scan ran out there.
       scanBudgetSpent:
-        !page.isDone && (page.pageStatus === 'SplitRequired' || page.page.length < opts.numItems),
+        !page.isDone &&
+        (page.pageStatus === 'SplitRequired' ||
+          (args.paginationOpts.endCursor == null && page.page.length < opts.numItems)),
     };
   },
 });

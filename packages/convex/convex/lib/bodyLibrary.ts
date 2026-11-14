@@ -369,7 +369,6 @@ function stripSystem(row: Row): RowFields {
  * caller's transaction**, so a throw here fails the caller. Every caller outside this module goes
  * through {@link refreshBodyLibrary}, which runs this in a nested transaction of its own.
  *
- * - `known` — the body, when the caller already holds it;
  * - `changedAt` — stamp *Changed* (a moderator acted on the body or its bays, landmarks, put-ins);
  *   otherwise the stored date stands.
  *
@@ -378,14 +377,14 @@ function stripSystem(row: Row): RowFields {
 export async function rebuildBodyLibrary(
   ctx: MutationCtx,
   waterBodyId: Id<'waterBodies'>,
-  opts: { known?: Doc<'waterBodies'>; changedAt?: number; now?: number } = {},
+  opts: { changedAt?: number; now?: number } = {},
 ): Promise<void> {
   const now = opts.now ?? Date.now();
   const existing = await ctx.db
     .query('bodyLibraryRows')
     .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
     .take(MAX_SCOPES);
-  const body = opts.known ?? (await ctx.db.get(waterBodyId));
+  const body = await ctx.db.get(waterBodyId);
   const standing = body ? libraryStandingOf(body) : null;
   const before = footprintOf(existing.map(stripSystem));
 
@@ -436,14 +435,40 @@ export async function rebuildBodyLibrary(
 
 // ── Isolation: one body's failure never fails its caller ─────────────────────────────────────
 
-/** Attempts a body's refresh gets before it is parked: skipped by the drain and the repair. */
+/**
+ * Attempts a body's refresh gets before it is parked: skipped by the drain, the repair and the
+ * season turning. One attempt per transaction, however often a writer refreshes the body in it.
+ */
 export const MAX_REFRESH_ATTEMPTS = 3;
 
-/** An error's class for the queue — its kind only, never its message (which can carry content). */
+/** A class name the queue keeps: a bare word, or the generic one. */
+const ERROR_CLASS = /^[A-Za-z]{1,40}$/;
+
+/**
+ * An error's class for the queue — its kind only, never its message (which can carry content).
+ * A failure from `refreshOne` arrives as the {@link RefreshFailure} it threw: an error crossing a
+ * nested call is rebuilt as a plain `Error` (or a `ConvexError` with its data), so the class the
+ * nested call caught rides across as data.
+ */
 export function errorClassOf(err: unknown): string {
-  if (err instanceof ConvexError) return 'ConvexError';
-  if (err instanceof Error) return /^[A-Za-z]{1,40}$/.test(err.name) ? err.name : 'Error';
+  if (err instanceof ConvexError) {
+    const data: unknown = err.data;
+    if (typeof data === 'object' && data !== null && 'refreshFailed' in data) {
+      const named = (data as RefreshFailure).refreshFailed;
+      return typeof named === 'string' && ERROR_CLASS.test(named) ? named : 'Error';
+    }
+    return 'ConvexError';
+  }
+  if (err instanceof Error) return ERROR_CLASS.test(err.name) ? err.name : 'Error';
   return 'unknown';
+}
+
+/** What `refreshOne` throws when the rebuild fails: the class of what it caught, never the message. */
+export type RefreshFailure = { refreshFailed: string };
+
+/** The error `refreshOne` throws for a failed rebuild — it still rolls the nested call back. */
+export function refreshFailure(err: unknown): ConvexError<RefreshFailure> {
+  return new ConvexError({ refreshFailed: errorClassOf(err) });
 }
 
 /** A body's queue entry, cleared: its rows are current (a refresh that succeeded un-parks it). */
@@ -458,34 +483,72 @@ async function clearQueued(ctx: MutationCtx, waterBodyId: Id<'waterBodies'>): Pr
 /**
  * Record a failed refresh: one more attempt, its error class, and to the back of the queue; parked
  * after {@link MAX_REFRESH_ATTEMPTS}. Written in the caller's transaction, after the nested one that
- * failed rolled back.
+ * failed rolled back. A *Changed* stamp the refresh carried rides on the entry, so the drain writes
+ * it even for a body with no rows yet.
  */
 export async function recordRefreshFailure(
   ctx: MutationCtx,
   waterBodyId: Id<'waterBodies'>,
   err: unknown,
   now: number,
+  changedAt?: number,
 ): Promise<void> {
   const row = await ctx.db
     .query('bodyLibraryQueue')
     .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
     .first();
   const attempts = (row?.attempts ?? 0) + 1;
+  const carried = laterOf(row?.changedAt, changedAt);
   const fields = {
     queuedAt: now,
     attempts,
     lastErrorClass: errorClassOf(err),
+    ...(carried !== undefined ? { changedAt: carried } : {}),
     ...(attempts >= MAX_REFRESH_ATTEMPTS ? { parkedAt: row?.parkedAt ?? now } : {}),
   };
   if (row === null) await ctx.db.insert('bodyLibraryQueue', { waterBodyId, ...fields });
   else await ctx.db.patch(row._id, fields);
 }
 
+const laterOf = (a: number | undefined, b: number | undefined) =>
+  a === undefined ? b : b === undefined ? a : Math.max(a, b);
+
+/** Bodies whose refresh failed in this transaction (the mutation's `ctx`): one attempt each. */
+const failedIn = new WeakMap<object, Set<Id<'waterBodies'>>>();
+
+const MiB = 1024 * 1024;
+
 /**
- * **Refresh one body's library rows, isolated**: {@link rebuildBodyLibrary} in a nested transaction,
- * so a body whose refresh throws rolls back only its own work — never the moderator's write, the
- * report, or the rest of a drain or repair. A failure is recorded on the body's queue entry
- * ({@link recordRefreshFailure}). Returns whether the refresh succeeded.
+ * **What one body's refresh may read** — its nested transaction's own limits. Generous for any real
+ * body (Champlain is a ~300 KB outline and its newest {@link REPORT_SCAN} reports), so a refresh that
+ * runs past it is a body broken for the writer, recorded and in time parked like a throw.
+ */
+export const REFRESH_LIMITS = { bytesRead: 6 * MiB, documentsRead: 4_000, databaseQueries: 1_000 };
+/** Headroom kept past a refresh's limits for the caller to record its outcome. */
+const REFRESH_RESERVE = { bytesRead: 1 * MiB, documentsRead: 200, databaseQueries: 100 };
+
+/**
+ * Whether this transaction can still afford a body's refresh at its full {@link REFRESH_LIMITS}, with
+ * room to record the outcome. A loop stops here rather than starve a healthy body into failing: what
+ * it didn't reach waits in the queue for the next run.
+ */
+export async function hasRefreshBudget(ctx: MutationCtx): Promise<boolean> {
+  const m = await ctx.meta.getTransactionMetrics();
+  return (
+    m.bytesRead.remaining >= REFRESH_LIMITS.bytesRead + REFRESH_RESERVE.bytesRead &&
+    m.documentsRead.remaining >= REFRESH_LIMITS.documentsRead + REFRESH_RESERVE.documentsRead &&
+    m.databaseQueries.remaining >= REFRESH_LIMITS.databaseQueries + REFRESH_RESERVE.databaseQueries
+  );
+}
+
+/**
+ * **Refresh one body's library rows, isolated**: {@link rebuildBodyLibrary} in a nested transaction
+ * with its own {@link REFRESH_LIMITS}, so a body whose refresh throws — or reads past its limits —
+ * rolls back only its own work: never the moderator's write, the report, or the rest of a drain,
+ * repair or backfill page. A failure is recorded on the body's queue entry
+ * ({@link recordRefreshFailure}), once per transaction: a body that already failed in this one is not
+ * tried again in it. A transaction without the budget for a refresh queues the body instead (its
+ * *Changed* carried). Returns whether the rows were refreshed now.
  */
 export async function refreshBodyLibrary(
   ctx: MutationCtx,
@@ -493,16 +556,26 @@ export async function refreshBodyLibrary(
   opts: { changedAt?: number; now?: number } = {},
 ): Promise<boolean> {
   const now = opts.now ?? Date.now();
-  try {
-    await ctx.runMutation(internal.bodyLibrary.refreshOne, {
-      waterBodyId,
-      now,
+  const failed = failedIn.get(ctx) ?? new Set<Id<'waterBodies'>>();
+  failedIn.set(ctx, failed);
+  if (failed.has(waterBodyId) || !(await hasRefreshBudget(ctx))) {
+    await queueLibraryRefresh(ctx, [waterBodyId], now, {
       ...(opts.changedAt !== undefined ? { changedAt: opts.changedAt } : {}),
     });
+    if (opts.changedAt !== undefined) await stampChanged(ctx, waterBodyId, opts.changedAt);
+    return false;
+  }
+  try {
+    await ctx.runMutation(
+      internal.bodyLibrary.refreshOne,
+      { waterBodyId, now, ...(opts.changedAt !== undefined ? { changedAt: opts.changedAt } : {}) },
+      { transactionLimits: REFRESH_LIMITS },
+    );
     return true;
   } catch (err) {
-    await recordRefreshFailure(ctx, waterBodyId, err, now);
-    // The stamp the failed refresh would have written, so the drain carries it.
+    await recordRefreshFailure(ctx, waterBodyId, err, now, opts.changedAt);
+    failed.add(waterBodyId);
+    // The stamp the failed refresh would have written, on rows that exist; the queue carries it too.
     if (opts.changedAt !== undefined) await stampChanged(ctx, waterBodyId, opts.changedAt);
     return false;
   }
@@ -619,8 +692,13 @@ export async function noteAuditedAction(
       auditRefreshes.set(ctx, used + 1);
       await refreshBodyLibrary(ctx, id, stamp ? { changedAt: entry.createdAt } : {});
     } else {
+      // Past the inline cap: queued, its *Changed* carried — and a parked body released, since an
+      // audited write is what tries a parked body again.
       if (stamp) await stampChanged(ctx, id, entry.createdAt);
-      await queueLibraryRefresh(ctx, [id], entry.createdAt);
+      await queueLibraryRefresh(ctx, [id], entry.createdAt, {
+        ...(stamp ? { changedAt: entry.createdAt } : {}),
+        unpark: true,
+      });
     }
   }
 }
@@ -647,19 +725,38 @@ export async function stampChanged(
 
 // ── The queue: the machine's bulk writes ─────────────────────────────────────────────────────
 
-/** Queue bodies for a refresh by the minute cron: one row each, whatever the number of writes. */
+/**
+ * Queue bodies for a refresh by the minute cron: one entry each, whatever the number of writes. A
+ * body already queued keeps its entry (a later *Changed* stamp rides on it); a parked one stays
+ * parked unless `unpark` — an audited write — releases it with its attempts reset.
+ */
 export async function queueLibraryRefresh(
   ctx: MutationCtx,
   ids: Iterable<Id<'waterBodies'>>,
   now: number = Date.now(),
+  opts: { changedAt?: number; unpark?: boolean } = {},
 ): Promise<void> {
-  // A body already queued — or parked — keeps its entry: a bulk write doesn't un-park it.
   for (const waterBodyId of new Set(ids)) {
     const queued = await ctx.db
       .query('bodyLibraryQueue')
       .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
       .first();
-    if (queued === null) await ctx.db.insert('bodyLibraryQueue', { waterBodyId, queuedAt: now });
+    if (queued === null) {
+      await ctx.db.insert('bodyLibraryQueue', {
+        waterBodyId,
+        queuedAt: now,
+        ...(opts.changedAt !== undefined ? { changedAt: opts.changedAt } : {}),
+      });
+      continue;
+    }
+    const carried = laterOf(queued.changedAt, opts.changedAt);
+    const release = opts.unpark === true && queued.parkedAt !== undefined;
+    if (carried !== queued.changedAt || release) {
+      await ctx.db.patch(queued._id, {
+        ...(carried !== undefined ? { changedAt: carried } : {}),
+        ...(release ? { parkedAt: undefined, attempts: 0, queuedAt: now } : {}),
+      });
+    }
   }
 }
 
@@ -678,10 +775,15 @@ export async function drainLibraryQueue(
   const batch = due.slice(0, limit);
   const now = Date.now();
   let refreshed = 0;
+  let tried = 0;
   for (const row of batch) {
-    if (await refreshBodyLibrary(ctx, row.waterBodyId, { now })) refreshed++;
+    // Out of budget for another full refresh: stop, the rest wait for the next run.
+    if (!(await hasRefreshBudget(ctx))) break;
+    tried++;
+    const opts = row.changedAt !== undefined ? { now, changedAt: row.changedAt } : { now };
+    if (await refreshBodyLibrary(ctx, row.waterBodyId, opts)) refreshed++;
   }
-  return { refreshed, failed: batch.length - refreshed, more: due.length > limit };
+  return { refreshed, failed: tried - refreshed, more: due.length > tried };
 }
 
 /** Whether a body's refresh is parked. */

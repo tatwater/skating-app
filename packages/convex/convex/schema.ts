@@ -4415,9 +4415,12 @@ export default defineSchema({
     attempts: v.optional(v.number()),
     /** The last failure's error class (`ConvexError`, `TypeError`…) — never its message. */
     lastErrorClass: v.optional(v.string()),
+    /** A moderator's *Changed* the refresh owes, carried until it lands (a body with no rows yet). */
+    changedAt: v.optional(v.number()),
     /**
-     * Parked after the last allowed attempt: the drain and the drift repair skip it until the body
-     * is next written through the audit path, or `bodyLibrary:retryParked` releases it.
+     * Parked after the last allowed attempt: the drain, the drift repair and the season turning skip
+     * it until the body is next written through the audit path, or `bodyLibrary:retryParked`
+     * releases it.
      */
     parkedAt: v.optional(v.number()),
   })

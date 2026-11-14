@@ -12,7 +12,7 @@
  *    resumable the same way. Needs the rows from step 1.
  */
 
-import { currentSeason } from '@skating/core';
+import { currentSeason, SCOPE_ALL } from '@skating/core';
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
@@ -21,10 +21,13 @@ import { requireCapability } from './lib/auth';
 import {
   bodiesOfTarget,
   drainLibraryQueue,
+  hasRefreshBudget,
   isParked,
   markRead,
+  queueLibraryRefresh,
   rebuildBodyLibrary,
   refreshBodyLibrary,
+  refreshFailure,
   stampChanged,
 } from './lib/bodyLibrary';
 
@@ -39,10 +42,15 @@ export const refreshOne = internalMutation({
     now: v.optional(v.number()),
   },
   handler: async (ctx, { waterBodyId, changedAt, now }) => {
-    await rebuildBodyLibrary(ctx, waterBodyId, {
-      ...(changedAt !== undefined ? { changedAt } : {}),
-      ...(now !== undefined ? { now } : {}),
-    });
+    try {
+      await rebuildBodyLibrary(ctx, waterBodyId, {
+        ...(changedAt !== undefined ? { changedAt } : {}),
+        ...(now !== undefined ? { now } : {}),
+      });
+    } catch (err) {
+      // An error leaves a nested call as a plain `Error`, its class lost: the class rides as data.
+      throw refreshFailure(err);
+    }
   },
 });
 
@@ -63,10 +71,21 @@ export const backfill = internalMutation({
       maximumBytesRead: BACKFILL_MAX_BYTES,
     });
     const now = Date.now();
-    // Each body isolated: one that throws is queued with its attempt, and the page goes on.
-    for (const body of page.page) await refreshBodyLibrary(ctx, body._id, { now });
+    // Each body isolated: one that throws is queued with its attempt, and the page goes on. A page
+    // that runs short of budget for another full refresh queues the rest for the minute cron.
+    let refreshed = 0;
+    let tried = 0;
+    for (const body of page.page) {
+      if (!(await hasRefreshBudget(ctx))) break;
+      tried++;
+      if (await refreshBodyLibrary(ctx, body._id, { now })) refreshed++;
+    }
+    const rest = page.page.slice(tried).map((b) => b._id);
+    await queueLibraryRefresh(ctx, rest, now);
     return {
-      refreshed: page.page.length,
+      refreshed,
+      failed: tried - refreshed,
+      deferred: rest.length,
       isDone: page.isDone,
       continueCursor: page.continueCursor,
     };
@@ -145,12 +164,16 @@ export const drainQueue = internalMutation({
 const SEASON_BATCH = 10;
 /** How many seasons back the turning looks for rows still counting reports. */
 const SEASONS_BACK = 3;
+/** The most rows one season-turning tick reads looking for its batch, past parked bodies' rows. */
+const SEASON_SCAN = SEASON_BATCH * 40;
 
 /**
  * The season turning (1 July): re-count the rows that still count an earlier season's reports. Only
  * those need it — a row counting none reads the same in any season, and the list reads an earlier
  * season's count as this season's empty record until the row is re-counted. An equality on the
  * season and a lower bound on the count, so a tick outside the first days of July reads nothing.
+ * A parked body is passed over: its rows keep their old season and would otherwise hold the front
+ * of the range every tick.
  */
 export const turnSeason = internalMutation({
   args: {},
@@ -158,15 +181,32 @@ export const turnSeason = internalMutation({
     const now = Date.now();
     const current = currentSeason(now);
     const bodies = new Set<Id<'waterBodies'>>();
-    for (let s = current - 1; s >= current - SEASONS_BACK && bodies.size < SEASON_BATCH; s--) {
-      const rows = await ctx.db
+    const passed = new Set<Id<'waterBodies'>>();
+    let scanned = 0;
+    for (
+      let s = current - 1;
+      s >= current - SEASONS_BACK && bodies.size < SEASON_BATCH && scanned < SEASON_SCAN;
+      s--
+    ) {
+      const rows = ctx.db
         .query('bodyLibraryRows')
-        .withIndex('by_reports_season', (q) => q.eq('reportsSeason', s).gt('reports', 0))
-        .take(SEASON_BATCH * 4);
-      for (const r of rows) if (bodies.size < SEASON_BATCH) bodies.add(r.waterBodyId);
+        .withIndex('by_reports_season', (q) => q.eq('reportsSeason', s).gt('reports', 0));
+      for await (const r of rows) {
+        if (bodies.size >= SEASON_BATCH || ++scanned > SEASON_SCAN) break;
+        const id = r.waterBodyId;
+        if (bodies.has(id) || passed.has(id)) continue;
+        if (await isParked(ctx, id)) passed.add(id);
+        else bodies.add(id);
+      }
     }
-    for (const id of bodies) await refreshBodyLibrary(ctx, id, { now });
-    return { refreshed: bodies.size };
+    let refreshed = 0;
+    let tried = 0;
+    for (const id of bodies) {
+      if (!(await hasRefreshBudget(ctx))) break;
+      tried++;
+      if (await refreshBodyLibrary(ctx, id, { now })) refreshed++;
+    }
+    return { refreshed, failed: tried - refreshed };
   },
 });
 
@@ -189,16 +229,22 @@ export const repairDrift = internalMutation({
     const now = Date.now();
     let refreshed = 0;
     let skipped = 0;
+    let failedHere = 0;
     for (const id of bodies) {
+      // Out of budget for another full refresh: the rest come first next tick.
+      if (!(await hasRefreshBudget(ctx))) break;
       // A parked body is passed over, and a failing one too: each is marked read so the repair moves
       // on rather than meeting it again first on every tick.
       if (await isParked(ctx, id)) {
         skipped++;
         await markRead(ctx, id, now);
       } else if (await refreshBodyLibrary(ctx, id, { now })) refreshed++;
-      else await markRead(ctx, id, now);
+      else {
+        failedHere++;
+        await markRead(ctx, id, now);
+      }
     }
-    return { refreshed, skipped, failed: bodies.length - refreshed - skipped };
+    return { refreshed, skipped, failed: failedHere };
   },
 });
 
@@ -212,10 +258,11 @@ const PARKED_LIST = 50;
 export const retryParked = internalMutation({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, { limit }) => {
+    const asked = limit !== undefined && Number.isFinite(limit) ? Math.floor(limit) : 100;
     const parked = await ctx.db
       .query('bodyLibraryQueue')
       .withIndex('by_parked_queued', (q) => q.gt('parkedAt', 0))
-      .take(Math.min(500, Math.max(1, limit ?? 100)));
+      .take(Math.min(500, Math.max(1, asked)));
     const now = Date.now();
     for (const row of parked) {
       await ctx.db.patch(row._id, { parkedAt: undefined, attempts: 0, queuedAt: now });
@@ -239,10 +286,16 @@ export const parked = query({
       .take(PARKED_LIST + 1);
     const out = [];
     for (const row of rows.slice(0, PARKED_LIST)) {
-      const body = await ctx.db.get(row.waterBodyId);
+      // The name from the body's library row, a small document; the body itself (its polygon) only
+      // for one that never had a row.
+      const listed = await ctx.db
+        .query('bodyLibraryRows')
+        .withIndex('by_body', (q) => q.eq('waterBodyId', row.waterBodyId).eq('scope', SCOPE_ALL))
+        .first();
+      const name = listed?.name ?? (await ctx.db.get(row.waterBodyId))?.name ?? null;
       out.push({
         waterBodyId: row.waterBodyId,
-        name: body?.name ?? null,
+        name,
         attempts: row.attempts ?? 0,
         lastErrorClass: row.lastErrorClass ?? null,
         parkedAt: row.parkedAt as number,
@@ -275,6 +328,7 @@ export const state = internalQuery({
       queued: Math.min(queued.length, 1000),
       queuedCapped: queued.length > 1000,
       parked: Math.min(parkedRows.length, 1000),
+      parkedCapped: parkedRows.length > 1000,
     };
   },
 });
