@@ -439,6 +439,8 @@ describe('HazardsTabView — a list, and a past winter', () => {
     expect(
       within(rows[2] as HTMLElement).getByRole('img', { name: '1 of 2 said gone' }),
     ).toBeVisible();
+    // Over a list, the winter on screen alone — not last winter beside it.
+    expect(screen.getByRole('img', { name: /^2026–27: [^;]+$/ })).toBeVisible();
     // The groups are closed, their counts on their heads; the known features fold into one.
     expect(screen.getByRole('button', { name: /Archived this winter/ })).toHaveTextContent('2');
     expect(screen.queryByRole('region', { name: 'Known features' })).toBeNull();

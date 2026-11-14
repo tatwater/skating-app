@@ -193,8 +193,9 @@ export function HazardsTabView({
       onAsk={setDemoting}
     />
   );
+  // Beside an empty winter, last winter's record; over a list, the winter on screen alone.
   const strips = (
-    <WinterBlock winters={winters} season={season} current={current} onRetry={onRetry} />
+    <WinterBlock winters={winters} season={season} alone={listed || !current} onRetry={onRetry} />
   );
 
   return (
@@ -401,12 +402,13 @@ const STRIPS_ASPECT = { one: 'aspect-[340/32]', two: 'aspect-[340/62]' };
 function WinterBlock({
   winters,
   season,
-  current,
+  alone,
   onRetry,
 }: {
   winters: Read<Winters>;
   season: Season;
-  current: boolean;
+  /** Draw the winter on screen only, without the one beside it. */
+  alone: boolean;
   onRetry: (() => void) | undefined;
 }) {
   if (winters === undefined) {
@@ -414,7 +416,7 @@ function WinterBlock({
       <SkeletonBlock
         aria-hidden="true"
         data-slot="hazards-winters-loading"
-        className={current ? STRIPS_ASPECT.two : STRIPS_ASPECT.one}
+        className={alone ? STRIPS_ASPECT.one : STRIPS_ASPECT.two}
       />
     );
   }
@@ -425,14 +427,15 @@ function WinterBlock({
       </ReadFailed>
     );
   }
-  const first = winters.lines[0];
+  const lines = alone ? winters.lines.slice(0, 1) : winters.lines;
+  const first = lines[0];
   const todayDay = first !== undefined && winters.today !== null ? first.days[winters.today] : null;
-  const many = winters.lines.length > 1;
-  const notes = winters.lines.flatMap((line) => lineNotes(line, many));
+  const many = lines.length > 1;
+  const notes = lines.flatMap((line) => lineNotes(line, many));
   return (
     <div data-slot="hazards-winters" className="flex flex-col gap-(--space-2_5)">
       <UncertainDayStrips
-        strips={winters.lines.map((line, k) => ({
+        strips={lines.map((line, k) => ({
           key: String(line.season),
           label: seasonWord(line.season),
           values: line.days.map((d) => (d === null ? null : d.count)),

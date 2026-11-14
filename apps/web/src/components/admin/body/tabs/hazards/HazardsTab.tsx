@@ -63,7 +63,9 @@ const readsKey = (bodyId: string) => `hazards:${bodyId}`;
 
 function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabProps) {
   const waterBodyId = id as Id<'waterBodies'>;
+  // The reads hold their arguments for the hour; ages read the minute, so none looks fresher.
   const now = useHourClock();
+  const ageNow = useMinuteClock();
   const current = seasonOf(now);
   // The lit address is the frame's when it has one (the URL keeps it), else the tab's own.
   const [own, setOwn] = useState<string | null>(null);
@@ -121,7 +123,7 @@ function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabPr
       onSeasonChange={setSeason}
       bodyName={name.replace(/ (Lake|Pond|Reservoir)$/, '')}
       watchOpenedAt={season === current ? opened : null}
-      hazards={readOf(hazards, (h) => hazardRows(h, now))}
+      hazards={readOf(hazards, (h) => hazardRows(h, ageNow))}
       archived={readOf(withArchived, archivedRows)}
       features={featureView}
       winters={winters}
@@ -233,10 +235,7 @@ export const HAZARDS_TAB: BodyTabRegistration<HazardsMapData> = {
   map: { useData: useHazardsMapData, describe: hazardsMapScene },
 };
 
-/**
- * Ages are hours and days: the clock moves on hourly, on the hour, so the reads it keys hold their
- * arguments for the hour.
- */
+/** The reads' clock: on the hour, so the reads it keys hold their arguments for the hour. */
 function useHourClock(): number {
   const [now, setNow] = useState(() => onTheHour(Date.now()));
   useEffect(() => {
@@ -247,3 +246,13 @@ function useHourClock(): number {
 }
 
 const onTheHour = (at: number) => Math.floor(at / 3_600_000) * 3_600_000;
+
+/** Since anyone last looked, as the minute has it: an age never reads younger than it is. */
+function useMinuteClock(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+  return now;
+}
