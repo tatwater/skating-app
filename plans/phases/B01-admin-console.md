@@ -1824,6 +1824,145 @@ Raised by the builders as kit candidates or gaps; each is the governor's to prom
 old admin page leaves `data-surface="skater"` on `<html>` — the old page wants it absent, and no
 shell on that path takes it off.
 
+### The Bodies library on the server (B01-3, the design)
+
+The library lists about 25,000 bodies; a lane, a state tab, seven facets and eight sortable columns
+cannot be answered from `waterBodies` (a polygon per row, no index on most of what the list shows).
+So the list reads a **stored row per body**, written where the facts change.
+
+**The row** (`bodyLibraryRows`): exactly what the list shows, sorts by and filters on — name, the
+aliases and a `searchText` of name, aliases and every id (ours, `waterBodyKey`, OSM, NHD, 3DHP,
+GNIS); class; states; area and its size option; standing and its lane; completeness as core's
+`bodyCompleteness` stores it (`have`, `of`, `missing`, and its facet option); open asks and whether
+one waits on a skater; reports this season (with the season they count) and whether the body was
+ever reported; the outline's origin, put-ins, curation, an intake reason and awaiting enrichment;
+and when a moderator last changed the body or its bays, landmarks or put-ins.
+
+- **One row per body per scope**: `*` and each state it touches, so a state tab is an index prefix
+  and a border body (Champlain) is listed under both states. Merged bodies have no row.
+- **Indexes**: each sort column twice — `[scope, key, nameKey]` for *All bodies* and
+  `[scope, lane, key, nameKey]` for a standing lane. Every sort key is a required number or string;
+  an unknown area or change date is stored as two keys (`-1` for the descending order, the largest
+  number for the ascending one), so an unknown sorts last both ways and no index ranges over an
+  optional field. *Changed this week* is a lower-bounded range on the change key.
+- **Search** is a search index over `searchText`, filtered by scope and lane: a body is found by any
+  name or id; while searching the order is the match.
+- **Facets** narrow inside the index read (`filter` before `paginate`, with `maximumRowsRead`), never
+  after a page: a page is the true next run of matches in the index's order, and a narrow facet costs
+  more pages, never a wrong one. Seven facets times eight columns cannot each be an index; this is
+  the one place the list's filter is evaluated in the query rather than ranged by an index.
+- **Counts** (`bodyLibraryCounts`) — lane totals, the corpus, the state tabs and every facet option,
+  per lane and scope — move with the rows: the one writer of a row applies the difference between
+  its old and new options in the same transaction, so a count is the tally of the rows by
+  construction. A facet's counts are exact while no other facet is applied (the menu's rule: what
+  an option would leave with the others as they are); otherwise the read says it has none.
+
+**Kept current at the writes.** One writer (`lib/bodyLibrary.ts`) recomputes a body's rows from the
+records and applies the count differences:
+
+- **Every audited action** (`writeAudit`): a row whose target is a body, a bay, a landmark, a put-in,
+  a lot (each body it serves), a corpus request or a place name refreshes that body in the same
+  transaction; a moderator's action on the body, its bays, landmarks or put-ins stamps *Changed*,
+  and so does a merge, on its survivor. One rule decides a body's *Changed* on every path — the
+  latest of the write's, the rows' and the queue entry's (`changedDateOf`).
+  Writers that audit before they write call the refresh again after. A transaction runs at
+  most four of these refreshes; a bulk writer's further rows (a request's siblings, a rollover or
+  prune page, a seed's bays) stamp *Changed* and queue the body instead, so each page keeps the
+  read budget it was sized against. **A transaction's fifth refresh and on lands through the queue,
+  within a minute** (the governor's ruling, 2026-11-14).
+- **Every report write and report moderation** (`recomputeBodySummary`, which each of them already
+  calls): reports this season, ever reported, and the put-ins reports derive.
+- **The machine's bulk writes with no audit row** (the canonical import, depth, elevation, wind,
+  contour coverage, the access join, the landmark and place-name loads, the prunes and duplicate
+  resolution) queue the bodies they touched (`bodyLibraryQueue`); a cron drains the queue each
+  minute, bounded, and a hard-deleted body's rows go with its queue entry.
+- **The season turning** (1 July) re-counts the rows still counting the last season's reports, ten
+  bodies an hour. The rows and the *reported this season* filter read honestly at once — a row
+  counted for an earlier season reads as zero reports this season — while the stored counts behind
+  the facet's number and the reports sort lag until the turn finishes: a body an hour per ten
+  reported last season, about 30 hours for 300. It happens on 1 July, when nobody is skating
+  (accepted by the governor, 2026-11-14). A parked body, which can't be re-counted, has its rows
+  closed on the new season (zero in its empty record, the counts moved with them), so the turn
+  always finishes. While the turn runs, `listSummary` gives no counts for the reports facet (and no
+  total with it applied), since rows still counted for last season are filed under *reported this
+  season* in the counts while every row and the page's filter read them as zero.
+- **A body whose refresh throws never blocks the rest.** Every refresh outside the writer runs in
+  a nested transaction of its own (`refreshBodyLibrary`), so a failure rolls back only that body's
+  work — never the moderator's write, the report, or the rest of a drain, repair or backfill page.
+  The failure goes on the body's queue entry with an attempt count — one per transaction, however
+  often a writer refreshes it — and its error's class (never its message), at the back; after three
+  attempts the entry is **parked**: skipped by the drain, the drift repair and the season turning,
+  counted in `bodyLibrary:state`, and listed by `bodyLibrary.parked` (Machinery,
+  `machinery.read`). A parked body is tried again by its next audited write — success clears the
+  entry, and one past the inline cap releases it to the queue — or released by
+  `bodyLibrary:retryParked`. Each nested refresh runs under its own read limits (6 MiB, 4,000
+  documents, 1,000 queries — far past any real body), so one that reads too much fails as itself;
+  and a drain, repair, turn or backfill page stops when it can no longer fund another full refresh,
+  leaving the rest queued, so a healthy body is never starved into failing. A *Changed* stamp a
+  failed or deferred refresh owes rides on the queue entry until the drain lands it.
+- **A drift repair** walks the oldest-refreshed rows a few at a time — only rows a day old or more,
+  since a refresh marks an unchanged row read at most daily and a younger one would be re-read every
+  tick. Nothing a moderator does depends on it; it catches what is deferred below.
+- **The contour coverage** knows a body only by its catalog id, and resolving one reads its polygon:
+  the bodies whose coverage moved are queued by a job of their own (`bodyLibrary.queueByExternalId`)
+  that reads as many as a transaction affords and schedules the rest, since a replacement's first
+  batch clears the whole set.
+- **Deferred, in files the author-deletion PR rewrites:** a skater's new corpus request
+  (`corpusRequests.ts`) and a new flag on a body (`contentFlags.ts`) change its asks without an
+  audit row; each needs one line (`queueLibraryRefresh`) at its insert. Until then the drift repair
+  picks them up.
+  The hazard writes (`hazards.ts`, `hazardConfirmations.ts`, `lib/hazardMerge.ts`, and the hazard
+  hide in `moderation.ts`) call `recomputeBodySummary`, which refreshes the library; no library fact
+  counts hazards, so each could pass `library = false` — one argument per call site, deferred with
+  them. Until then a hazard write pays a refresh that writes nothing.
+
+**A figure a read stopped short on says so.** A row's reports this season come from its newest 300
+reports and its asks from up to 100 of each kind; when either read stopped inside what it counts,
+the row says `reportsCapped` or `asksCapped` and the number is a floor, never presented as whole.
+
+**Reads** (`bodies.ts`, gated on `body.read`): `listPage` (lane, state, search, facets, sort, paged
+— a starting page up to the library's most, so a return reloads as many rows as were showing; a
+page that came back short because its scan budget ran out says so, `scanBudgetSpent`, and is not
+done — the list keeps loading and draws no end, the governor's condition on facets in the read);
+`listSummary` (lane counts, the corpus, the state tabs, the list's total and facet counts, and what
+the read can honor); `preview` (reports this season by vantage and all time, the open asks, the
+towns). **Backfill**: `bodyLibrary.backfill`, paged by body and resumable, then
+`bodyLibrary.backfillChangedAt` over the audit log.
+
+**What the Bodies server built (B01-3), against the register.** Where a page's prop type and the
+register's shape differ, the prop type won; where the page draws words, the read returns facts.
+
+| # | Built | Notes |
+|---|---|---|
+| BS1 | `bodies.listPage` | The stored row above; facets in the paged read, capped at 2,000 rows scanned a page |
+| BS2 | `bodies.listSummary.laneCounts` | Exact from the counts; *Changed this week* counted from its range to 500 |
+| BS3 | `bodies.listSummary.facetCounts` | Exact while at most one facet is applied (`servedCounts`); none while searching |
+| BS4 | `bodies.preview` | Reports this season by vantage and all time (capped at 1,000), the open asks as facts, the towns (sampled) |
+| BS5 | Stored as `have`, `of`, `missing` and the facet option | Core's `bodyCompleteness`, with every count served — nothing unknown on the server |
+| BS6 | `LIBRARY_PAGE_SIZE` 50, `LIBRARY_MAX_START` 400 | The read clamps a first page; the page keeps how many rows were showing in its return address |
+| BS7 | `bodyConsole.consoleExtras` | Towns sampled; the outline trusted since a person's approval, else its campaign's run; touching bodies among the 12 most prominent nearby, within 30 m, `null` above 20,000 vertices |
+| BS8 | `subAreas.listForBody.createdAt`, `bodyConsole.bayProvenance`, `bodyConsole.history` | How a bay was made comes from its creating audit row (new rows say `via`); History covers the body's whole family, the targets `bodiesOfTarget` files under it — its bays, put-ins and landmarks whatever their state, the lots that serve it, its known features, and the requests, corpus place names and flags on it — and the same family of every body merged into it, through the merge chain (up to 50 bodies, each family taken in only while the read can afford it) — by relation, never by which fields a row carries; `capped: false` means every row; by verb as an index range |
+| BS9 | Deferred | `setAliases` and `setClass` need audit verbs, whose undo rows live in `lib/undoPolicy.ts` (the author-deletion PR rewrites it); an alias also needs a call on how it is stored beside the user claim that already means *a moderator picked the display name*. Per-catalog name and class claims are not stored — the import keeps one source per spelling and only a class confidence — so they are `null` until the ETL keeps them |
+| BS10 | `bodyConsole.places`, `landmarkProvenance`, `landmarkProposers` | Places sampled; the proposer read is gated on `inbox.read` |
+| BS11 | Bathymetry in `consoleExtras.hasBathymetry` | Depth candidates are not stored (the depth loader keeps each measurement's winner), so `null`; choosing a source and filing a survey need verbs (as BS9) and a call on what a survey filing records |
+| BS12 | Index `moderationActions.by_target_action`; `bodyConsole.history` takes `action` | `moderation.listActions` still filters after its page — one line, deferred to after the author-deletion PR |
+| BS13 | Deferred | A pass override needs a table and an audit verb (as BS9) |
+| BS14 | `standing.retentionForBody` | The newest use and its kind, the boost and when it was set, favorites (to 1,000), saved put-ins |
+| BS15 | `bodyConsole.dailyHazards` | Each day's `count` is the hazards established on the lake (from the first report; an active one through today) and its `unknown` the archived ones that may have been — an archived hazard's end isn't stored and its votes can't establish it (edited in place, still taken after the archive), so its later days are unknown, never clear, and a vote cast today changes no past day. An honest end needs the hazard writers to stamp when a hazard left the lake: deferred until #110 merges |
+| BS16 | Deferred | Editing a feature's shape needs an audit verb (as BS9) |
+
+**The governor's rulings on the deferred items (2026-11-14).** A moderator's aliases are their own
+bounded field on the body, `moderatorAliases` — at most 20, each at most 120 characters, trimmed,
+de-duplicated case-insensitively against the display name and each other — never name claims: a
+`user` claim keeps meaning *a moderator picked the display name*. The library row's aliases and
+search text fold them in. **Built after the author-deletion PR (#110) merges**, with the four
+deferred writes (BS9's `setAliases` and `setClass`, BS11's choosing a depth source and filing a
+survey, BS13, BS16), since their verbs and undo rows land in files it rewrites — and with the
+one-line call sites waiting on the same files: `queueLibraryRefresh` at a skater's new corpus
+request (`corpusRequests.ts`) and new flag on a body (`contentFlags.ts`), `library = false` at the
+hazard callers of `recomputeBodySummary`, and `moderation.listActions` filtering by verb through
+`by_target_action`.
+
 ## Ruled out
 
 - **A second app or a separate deployment for admin** — D37 stands; the Convex function is the

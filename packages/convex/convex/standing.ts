@@ -47,6 +47,8 @@ import {
   query,
 } from './_generated/server';
 import { requireCapability } from './lib/auth';
+import { loadPutInRows } from './lib/putInMarkers';
+import { isSuppressed } from './lib/putInSuppression';
 import { takeCappedResult } from './lib/scan';
 import {
   activateBody,
@@ -54,6 +56,7 @@ import {
   demoteBody,
   hasSavedPutIn,
   lastActivityAt,
+  lastActivityOf,
 } from './lib/standing';
 import { literals } from './lib/validators';
 import { bodyAttachmentKind } from './waterBodies';
@@ -271,6 +274,62 @@ export const listRecentActivations = query({
       });
     }
     return out;
+  },
+});
+
+// ── B01-3: what keeps a body active, for the Standing tab ─────────────────────────────────────
+
+/** The most favorites the retention read counts before it says it stopped. */
+const FAVORITES_CAP = 1_000;
+
+/**
+ * **The facts the retention rule reads about one body** (D177, D245) — the Standing tab's lanes:
+ *
+ * - `lastActivity` — the newest report, matched track or hazard on it, and which; absent when there
+ *   has never been one (`lastActivityOf`, the reads `lastActivityAt` makes for the rollover);
+ * - `curatedBoost` — the map boost and when a moderator last set it (`at: null` when no audit row
+ *   says); absent with no boost;
+ * - `favorites` — how many skaters favorited it, counted to {@link FAVORITES_CAP} (`favoritesCapped`);
+ * - `savedPutIns` — its saved put-ins, by the rollover's rule (`hasSavedPutIn`): the `visible` rows
+ *   (official, mapped, or a persisted derived one) no moderator's hidden coordinate suppresses.
+ *
+ * `null` for a body that doesn't exist.
+ */
+export const retentionForBody = query({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }) => {
+    await requireCapability(ctx, 'body.read');
+    const body = await ctx.db.get(waterBodyId);
+    if (!body) return null;
+    const lastActivity = await lastActivityOf(ctx, waterBodyId);
+    let curatedBoost: { value: number; at: number | null } | undefined;
+    // A boost set to zero is no boost — the rollover's rule (`retentionReason`) and the library's.
+    if (body.curatedBoost !== undefined && body.curatedBoost !== 0) {
+      const set = await ctx.db
+        .query('moderationActions')
+        .withIndex('by_target_action', (q) =>
+          q
+            .eq('targetType', 'waterbody')
+            .eq('targetId', waterBodyId)
+            .eq('action', 'set_curated_boost'),
+        )
+        .order('desc')
+        .first();
+      curatedBoost = { value: body.curatedBoost, at: set?.createdAt ?? null };
+    }
+    const favorites = await ctx.db
+      .query('waterBodyFavorites')
+      .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
+      .take(FAVORITES_CAP + 1);
+    const { official, osm, persisted, hidden } = await loadPutInRows(ctx, waterBodyId);
+    const saved = [...official, ...osm, ...persisted].filter((r) => !isSuppressed(r.coord, hidden));
+    return {
+      ...(lastActivity !== undefined ? { lastActivity } : {}),
+      ...(curatedBoost !== undefined ? { curatedBoost } : {}),
+      favorites: Math.min(favorites.length, FAVORITES_CAP),
+      favoritesCapped: favorites.length > FAVORITES_CAP,
+      savedPutIns: saved.length,
+    };
   },
 });
 

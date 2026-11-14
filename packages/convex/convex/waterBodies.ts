@@ -88,6 +88,7 @@ import {
   requireContributor,
   requireProfile,
 } from './lib/auth';
+import { queueLibraryRefresh, stampChanged } from './lib/bodyLibrary';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { rankCandidates, scanCells } from './lib/cellScan';
@@ -618,6 +619,7 @@ export const importCanonical = internalMutation({
           // worse, because a moderator made some of these by hand.
           active: isActive(existing),
         });
+        await queueLibraryRefresh(ctx, [existing._id]);
         await ctx.db.patch(existing._id, {
           // `name` + `nameClaims` + `searchText` together, because a moderator's pick outranks the
           // import and the three must never disagree. See `nameFields`.
@@ -735,6 +737,7 @@ export const importCanonical = internalMutation({
           minVisibleZoom: scores.minVisibleZoom,
           listed: true,
         });
+        await queueLibraryRefresh(ctx, [id]);
         inserted++;
       }
     }
@@ -2011,14 +2014,21 @@ export const importContourCoverage = internalMutation({
   },
   handler: async (ctx, { source, externalIds, clearFirst }) => {
     let cleared = 0;
+    // The Bodies library's bathymetry fact moves only for a body whose coverage changed: one cleared
+    // (of any source) and not re-imported here, or one newly covered.
+    type CoverageRef = Pick<Doc<'bathymetryCoverage'>, 'source' | 'externalId'>;
+    const refKey = (r: CoverageRef) => `${r.source}\u0001${r.externalId}`;
+    const clearedRefs = new Map<string, CoverageRef>();
     if (clearFirst) {
       // ~2,000 rows, so a full collect is bounded and this is the one place it is honest to do.
       const existing = await ctx.db.query('bathymetryCoverage').collect();
       for (const row of existing) {
         await ctx.db.delete(row._id);
+        clearedRefs.set(refKey(row), { source: row.source, externalId: row.externalId });
         cleared++;
       }
     }
+    const moved: CoverageRef[] = [];
     let inserted = 0;
     for (const externalId of externalIds) {
       const already = await ctx.db
@@ -2027,7 +2037,15 @@ export const importContourCoverage = internalMutation({
         .first();
       if (already) continue;
       await ctx.db.insert('bathymetryCoverage', { source, externalId });
+      if (!clearedRefs.delete(refKey({ source, externalId }))) moved.push({ source, externalId });
       inserted++;
+    }
+    moved.push(...clearedRefs.values());
+    // Resolved to bodies by a job of its own: each is a read of the body's polygon, and a
+    // replacement's first batch clears the whole set — thousands of outlines, past one
+    // transaction's read limit.
+    if (moved.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.bodyLibrary.queueByExternalId, { refs: moved });
     }
     return { cleared, inserted };
   },
@@ -2202,6 +2220,7 @@ export const importElevations = internalMutation({
         implausible++;
         continue;
       }
+      await queueLibraryRefresh(ctx, [waterBodyId]);
       await ctx.db.patch(waterBodyId, {
         elevationM,
         elevationSource: source,
@@ -2276,6 +2295,7 @@ export const retractElevations = internalMutation({
       // The raster metadata goes with the reading. A resolution and a raster id describing a number
       // that is no longer there would be provenance for nothing — and worse, would make the row look
       // stamped to anything counting coverage by `elevationSource`.
+      await queueLibraryRefresh(ctx, [waterBodyId]);
       await ctx.db.patch(waterBodyId, {
         elevationM: undefined,
         elevationSource: undefined,
@@ -2446,6 +2466,7 @@ export const importWindRoses = internalMutation({
         continue;
       }
       await ctx.db.patch(entry.waterBodyId, patch);
+      await queueLibraryRefresh(ctx, [entry.waterBodyId]);
       updated++;
     }
     return { updated, malformed, missing };
@@ -2560,6 +2581,7 @@ export const create = mutation({
     });
     // Bind the skate to the water it discovered, so the report flow can carry straight on.
     await ctx.db.patch(args.activityId, { waterBodyId: id });
+    await queueLibraryRefresh(ctx, [id]);
     return id;
   },
 });
@@ -3294,6 +3316,9 @@ export async function mergeBodyInto(
     // longer belong to it.
     await recomputeBodySummary(ctx, survivorId);
     await recomputeBodySummary(ctx, loserId);
+    // A merge is a moderator's action on the survivor too: its *Changed* moves (the loser leaves the
+    // library). On the stamp's one rule, so a deferred or failed refresh above can't lose it.
+    if (actorId !== undefined) await stampChanged(ctx, survivorId, Date.now());
     const actionId = await writeAudit(ctx, {
       ...(actorId !== undefined ? { actorId } : {}),
       action: 'merge_waterbody',
@@ -3352,6 +3377,9 @@ export async function mergeBodyInto(
     // more full pass inside it is the transaction size nobody wants to debug.
     await ctx.scheduler.runAfter(0, internal.recurrence.enqueueBody, { waterBodyId: survivorId });
     await ctx.scheduler.runAfter(0, internal.recurrence.enqueueBody, { waterBodyId: loserId });
+    // The Bodies library moved with the two summary recomputes above: they run after every row the
+    // merge moves and after the loser's tombstone, so the loser left the library and the survivor
+    // was re-read with the loser's reports, put-ins and landmarks.
     return { repointed };
   }
 }
@@ -4615,6 +4643,7 @@ async function applyDepthLadder(
     return { changed: false, operatorHeld, rejectedValues, inversions };
   }
   await ctx.db.patch(body._id, patch);
+  await queueLibraryRefresh(ctx, [body._id]);
   return { changed: true, operatorHeld, rejectedValues, inversions };
 }
 
@@ -5324,7 +5353,7 @@ export const applyCuratedBoostSeed = internalMutation({
  * `zoom` absent ⇒ scan every rung with no cutoff (a containment lookup: the pond you are standing
  * on must be found however unprominent it is).
  */
-async function bodiesCoveringBox(
+export async function bodiesCoveringBox(
   ctx: QueryCtx,
   box: { minLat: number; minLng: number; maxLat: number; maxLng: number },
   /**
@@ -6377,6 +6406,7 @@ export const resolveIncomingMergeDuplicates = internalMutation({
             listed: false,
           });
           await ctx.db.delete(loser._id);
+          await queueLibraryRefresh(ctx, [loser._id]);
         }
       }
 
@@ -6386,6 +6416,7 @@ export const resolveIncomingMergeDuplicates = internalMutation({
           dedupStatus: 'clean',
           duplicateCandidateIds: undefined,
         });
+        await queueLibraryRefresh(ctx, [survivor._id]);
       }
     }
 
@@ -6487,6 +6518,7 @@ export const resolveCampaignDuplicates = internalMutation({
         listed: false,
       });
       await ctx.db.delete(body._id);
+      await queueLibraryRefresh(ctx, [body._id]);
     }
 
     return {
@@ -6630,7 +6662,7 @@ export const sweepBodySummaries = internalMutation({
     for (const body of page.page) {
       if (!body.summary) continue; // no card, nothing to decay
       // Hand the row we already read straight through — see `recomputeBodySummary`'s `known`.
-      await recomputeBodySummary(ctx, body._id, Date.now(), body);
+      await recomputeBodySummary(ctx, body._id, Date.now(), body, false);
       swept++;
     }
     return { cursor: page.continueCursor, isDone: page.isDone, swept, scanned: page.page.length };
@@ -6674,7 +6706,7 @@ export const refreshDueBodySummaries = internalMutation({
       .query('bodySummaryRefreshes')
       .withIndex('by_refresh_at', (q) => q.gte('refreshAt', 0).lte('refreshAt', now))
       .take(numItems);
-    for (const row of due) await recomputeBodySummary(ctx, row.waterBodyId, now);
+    for (const row of due) await recomputeBodySummary(ctx, row.waterBodyId, now, undefined, false);
     return { refreshed: due.length, more: due.length === numItems };
   },
 });

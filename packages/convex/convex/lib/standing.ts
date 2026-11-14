@@ -31,6 +31,7 @@ import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { syncCellsForParent } from '../subAreas';
 import { writeAudit } from './audit';
+import { queueLibraryRefresh } from './bodyLibrary';
 import { syncWaterBodyCells } from './cellIndex';
 import { isListed } from './listing';
 import { isSuppressed } from './putInSuppression';
@@ -67,6 +68,21 @@ export async function lastActivityAt(
   ctx: QueryCtx,
   waterBodyId: Id<'waterBodies'>,
 ): Promise<number | undefined> {
+  return (await lastActivityOf(ctx, waterBodyId))?.at;
+}
+
+/** A body's most recent use and which kind it was — {@link lastActivityAt}'s reads, kept whole. */
+export type LastActivity = { at: number; kind: 'report' | 'track' | 'hazard' };
+
+/**
+ * {@link lastActivityAt} with the kind of use that set it (the Standing tab names it). One rule for
+ * both, so the tab cannot disagree with the rollover about when a body was last used. On a tie the
+ * report wins, then a track.
+ */
+export async function lastActivityOf(
+  ctx: QueryCtx,
+  waterBodyId: Id<'waterBodies'>,
+): Promise<LastActivity | undefined> {
   const report = await ctx.db
     .query('reports')
     .withIndex('by_water_body_skate_end_time', (q) => q.eq('waterBodyId', waterBodyId))
@@ -86,12 +102,17 @@ export async function lastActivityAt(
     .withIndex('by_water_body_first_reported', (q) => q.eq('waterBodyId', waterBodyId))
     .order('desc')
     .first();
-  const candidates = [
-    report?.skateEndTime,
-    ...tracks.map((t) => t.endTime),
-    hazard?.firstReportedAt,
-  ].filter((t): t is number => t !== undefined);
-  return candidates.length === 0 ? undefined : Math.max(...candidates);
+  const uses: LastActivity[] = [
+    ...(report ? [{ at: report.skateEndTime, kind: 'report' as const }] : []),
+    ...tracks.flatMap((t) =>
+      t.endTime === undefined ? [] : [{ at: t.endTime, kind: 'track' as const }],
+    ),
+    ...(hazard ? [{ at: hazard.firstReportedAt, kind: 'hazard' as const }] : []),
+  ];
+  return uses.reduce<LastActivity | undefined>(
+    (best, u) => (best === undefined || u.at > best.at ? u : best),
+    undefined,
+  );
 }
 
 /** Tracks read per body by `lastActivityAt` — a read bound, not a claim about the world. */
@@ -205,6 +226,11 @@ export async function transitionStanding(
   if (became === 'active') await registerWeatherMembership(ctx, next, now);
   if (became === 'inactive') await dropWeatherMembership(ctx, body._id);
 
+  if (became === null || opts.audit === false) {
+    // No audit row from here to refresh the Bodies library: queue it. A caller that audits for
+    // itself (`audit: false`) refreshes it in its own transaction when it does.
+    await queueLibraryRefresh(ctx, [body._id], now);
+  }
   if (became !== null && opts.audit !== false) {
     await writeAudit(ctx, {
       ...(opts.actorId !== undefined ? { actorId: opts.actorId } : {}),

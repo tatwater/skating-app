@@ -10,6 +10,7 @@
 
 import type { Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
+import { noteAuditedAction } from './bodyLibrary';
 import type { MODERATION_ACTIONS, MODERATION_TARGET_TYPES } from './enums';
 
 export type ModerationAction = (typeof MODERATION_ACTIONS)[number];
@@ -37,11 +38,21 @@ export async function writeAudit(
 ): Promise<Id<'moderationActions'>> {
   const { createdAt, ...row } = entry;
   const undoesActionId = row.undoesActionId ?? UNDOING.get(ctx);
-  return ctx.db.insert('moderationActions', {
+  const at = createdAt ?? Date.now();
+  const id = await ctx.db.insert('moderationActions', {
     ...row,
     ...(undoesActionId !== undefined ? { undoesActionId } : {}),
-    createdAt: createdAt ?? Date.now(),
+    createdAt: at,
   });
+  // The Bodies library (B01-3): an action on a body, or on something that belongs to one, refreshes
+  // that body's library row in this transaction — and a moderator's stamps *Changed*.
+  await noteAuditedAction(ctx, {
+    ...(row.actorId !== undefined ? { actorId: row.actorId } : {}),
+    targetType: row.targetType,
+    targetId: row.targetId,
+    createdAt: at,
+  });
+  return id;
 }
 
 /**

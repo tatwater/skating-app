@@ -341,4 +341,22 @@ crons.interval(
   {},
 );
 
+// ── B01-3: the Bodies library ─────────────────────────────────────────────────────────────────
+
+/**
+ * The library's rows, kept current where no moderator's write refreshes them (B01 §12.8): the
+ * machine's bulk writes queue their bodies and this drains them, a bounded batch a minute; an empty
+ * queue is one empty index read.
+ */
+crons.interval(
+  'drain the bodies library queue',
+  { minutes: 1 },
+  internal.bodyLibrary.drainQueue,
+  {},
+);
+/** The season turning re-counts the rows of the last season; any other hour reads an empty range. */
+crons.interval('turn the bodies library season', { hours: 1 }, internal.bodyLibrary.turnSeason, {});
+/** The drift repair: the oldest-refreshed rows, a few a tick — the corpus about every four days. */
+crons.interval('repair bodies library drift', { minutes: 2 }, internal.bodyLibrary.repairDrift, {});
+
 export default crons;
