@@ -12,7 +12,7 @@
  * lifecycle `status` (D3) — see the hazards schema note.
  */
 
-import { disputesReview } from '@skating/core';
+import { disputesReview, isLeaving } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
@@ -1512,6 +1512,12 @@ export const unbanUser = mutation({
   },
 });
 
+/** Why a lift is refused on an account on its way out, or gone (worded once for the tests). */
+export const LIFT_REFUSALS = {
+  deleting: 'This account is being deleted, so its suspension or ban can’t be lifted.',
+  deleted: 'This account is deleted, so there is nothing to lift.',
+} as const;
+
 export async function unbanImpl(
   ctx: MutationCtx,
   actor: Doc<'profiles'>,
@@ -1520,6 +1526,10 @@ export async function unbanImpl(
   {
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     const target = await loadModeratableUser(ctx, actor, userId);
+    // A lift puts the account back to `active`, which would bring a deleted one back and let a
+    // departing one write again (D33, D62). Refused here, so an undo that lifts is refused too.
+    if (target.status === 'deleted') throw new ConvexError(LIFT_REFUSALS.deleted);
+    if (isLeaving(target)) throw new ConvexError(LIFT_REFUSALS.deleting);
 
     await ctx.db.patch(userId, {
       status: 'active',

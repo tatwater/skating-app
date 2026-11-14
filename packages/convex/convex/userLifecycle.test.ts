@@ -7,6 +7,7 @@ import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+import { LIFT_REFUSALS } from './moderation';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -150,6 +151,59 @@ describe('moderation.suspendUser / unbanUser', () => {
     expect(after?.statusReason).toBeUndefined();
     const actions = await actionsFor(t, target);
     expect(actions.map((a) => a.action).sort()).toEqual(['ban', 'unban']);
+  });
+});
+
+describe('a lift is refused on an account being deleted, or deleted', () => {
+  async function suspended(t: ReturnType<typeof convexTest>) {
+    await seed(t, 'mod', 'moderator');
+    const target = await seed(t, 'bad');
+    await as(t, 'mod').mutation(api.moderation.suspendUser, {
+      userId: target,
+      reason: 'cooling off',
+      suspendedUntil: Date.now() + 60 * 60 * 1000,
+    });
+    return target;
+  }
+
+  test('on an account whose deletion is under way', async () => {
+    const t = harness();
+    const target = await suspended(t);
+    await t.run((ctx) => ctx.db.patch(target, { deletionRequestedAt: Date.now() }));
+    await expect(
+      as(t, 'mod').mutation(api.moderation.unbanUser, { userId: target, reason: 'appeal' }),
+    ).rejects.toThrow(LIFT_REFUSALS.deleting);
+    expect((await t.run((ctx) => ctx.db.get(target)))?.status).toBe('suspended');
+    expect((await actionsFor(t, target)).map((a) => a.action)).toEqual(['suspend']);
+  });
+
+  test('on a deleted account', async () => {
+    const t = harness();
+    const target = await suspended(t);
+    await t.run((ctx) => ctx.db.patch(target, { status: 'deleted' }));
+    await expect(
+      as(t, 'mod').mutation(api.moderation.unbanUser, { userId: target, reason: 'appeal' }),
+    ).rejects.toThrow(LIFT_REFUSALS.deleted);
+    expect((await t.run((ctx) => ctx.db.get(target)))?.status).toBe('deleted');
+  });
+
+  test('by the undo of the suspension, which lifts it the same way', async () => {
+    const t = harness();
+    const target = await suspended(t);
+    const [suspension] = await actionsFor(t, target);
+    if (!suspension) throw new Error('no suspension row');
+    await t.run((ctx) => ctx.db.patch(target, { deletionRequestedAt: Date.now() }));
+    await expect(
+      as(t, 'mod').mutation(api.undo.run, { actionId: suspension._id, reason: 'mistake' }),
+    ).rejects.toThrow(LIFT_REFUSALS.deleting);
+    expect((await t.run((ctx) => ctx.db.get(target)))?.status).toBe('suspended');
+  });
+
+  test('a lift on an account that is staying goes through as before', async () => {
+    const t = harness();
+    const target = await suspended(t);
+    await as(t, 'mod').mutation(api.moderation.unbanUser, { userId: target, reason: 'appeal' });
+    expect((await t.run((ctx) => ctx.db.get(target)))?.status).toBe('active');
   });
 });
 
