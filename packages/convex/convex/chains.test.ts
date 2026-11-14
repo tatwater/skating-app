@@ -625,5 +625,86 @@ describe('every chain reaches its end on its dearest page', () => {
     for (const id of reportIds) expect(await t.run((ctx) => ctx.db.get(id))).toBeNull();
     for (const id of photoIds) expect(await t.run((ctx) => ctx.db.get(id))).toBeNull();
     expect(await t.run((ctx) => ctx.db.query('photoSettlementQueue').collect())).toEqual([]);
+    // A run of many passes sets the hourly walks going once, at its end — not one chain a pass.
+    const jobs = await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
+    const passes = jobs.filter((job) => job.name.includes('retryParkedDaily'));
+    const walks = jobs.filter(
+      (job) => job.name.includes('eraseDue') && JSON.stringify(job.args) === '[{}]',
+    );
+    expect(passes.length).toBeGreaterThan(1);
+    expect(walks).toHaveLength(1);
+  });
+
+  test('retryParkedDaily: a heavy parked Report erased part-way is un-parked and back on the clock', async () => {
+    const { t, author, waterBodyId } = await setup();
+    const reportId = await heavyReport(t, author.id, waterBodyId, {
+      moderationStatus: 'removed',
+      authorDeletedAt: T0,
+      eraseAttempts: 3,
+      eraseErrorClass: 'Error',
+      eraseParkedAt: T0,
+    });
+    for (let i = 0; i < 12; i++) {
+      await t.run((ctx) =>
+        ctx.db.insert('contentRevisions', {
+          targetType: 'report',
+          targetId: reportId,
+          authorId: author.id,
+          snapshot: { notes: `${i} ${HEAVY}` },
+          replacedAt: T0 + i,
+        }),
+      );
+    }
+    vi.setSystemTime(T0 + 31 * DAY);
+    // One pass drains what fits and stops part-way: progress, so it is freed in that same pass.
+    await t.mutation(internal.erasure.retryParkedDaily, {});
+    const partWay = await t.run((ctx) => ctx.db.get(reportId));
+    expect(partWay).toMatchObject({ eraseAt: T0 + 31 * DAY });
+    for (const field of ['eraseAttempts', 'eraseErrorClass', 'eraseParkedAt', 'eraseRetriedAt']) {
+      expect((partWay as Record<string, unknown> | null)?.[field]).toBeUndefined();
+    }
+    // And the hourly walk it set going finishes it.
+    await runOut(t, async () => {});
+    expect(await t.run((ctx) => ctx.db.get(reportId))).toBeNull();
+  });
+
+  test('retryParkedDaily: heavy parked Reports parked at one moment, held ones walked past across passes', async () => {
+    const { t, author, other, waterBodyId } = await setup();
+    const reportIds: Id<'reports'>[] = [];
+    for (let i = 0; i < 4; i++) {
+      reportIds.push(
+        await heavyReport(t, author.id, waterBodyId, {
+          moderationStatus: 'removed',
+          authorDeletedAt: T0,
+          eraseAttempts: 3,
+          eraseErrorClass: 'Error',
+          // One moment for all: the walk's position is the creation time within it.
+          eraseParkedAt: T0,
+        }),
+      );
+    }
+    // The first two are held by an open flag: not tried, left as they are, and walked past.
+    const held = reportIds.slice(0, 2);
+    for (const id of held) {
+      await t.run((ctx) =>
+        ctx.db.insert('contentFlags', {
+          flaggerId: other.id,
+          targetType: 'report',
+          targetId: id,
+          reason: 'spam',
+          status: 'open',
+          origin: 'user',
+          createdAt: T0,
+        }),
+      );
+    }
+    vi.setSystemTime(T0 + 31 * DAY);
+    await runOut(t, () => t.mutation(internal.erasure.retryParkedDaily, {}));
+    for (const id of held) {
+      expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({ eraseParkedAt: T0 });
+    }
+    for (const id of reportIds.slice(2)) {
+      expect(await t.run((ctx) => ctx.db.get(id))).toBeNull();
+    }
   });
 });

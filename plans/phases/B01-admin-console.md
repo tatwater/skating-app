@@ -1649,7 +1649,7 @@ below are at the 12 MiB budget; *R* 1 MiB, *V* 8 KiB, *C* 16 KiB, *F* a flag (*R
 | `erasure.eraseDue` | b, each item nested | one item at a time while `PASS_NEED` fits (the due row, the item's `ITEM_NEED`, a failure's record; ≤ 11 MiB + 80 KiB for a Report) | the due row R; the item in `eraseOne` (its hold, its eraser's fixed reads, one drained row, its uploader's queue row); a failure: the item's row touched | ≤ 12 MiB; a pass that stops part-way on an item carrying a failure count clears it inside the eraser's unspent `TAIL` |
 | `erasure.settleStep` reports | a | 11 Reports, its place kept back | R | ≤ 12 MiB |
 | `erasure.settleOwed` (each sweep run's end, and its own hourly cron) | b, each step nested | turns while a turn fits (its place, a step's least `MIN_STEP`, a failure's record) | a place 64 KiB; the step gets the rest of the budget and spends what it charges; a failure: the place touched | ≤ 12 MiB |
-| `erasure.retryParkedDaily` (its own daily cron) | b, each nested | up to `DAILY_RETRIES` parked settlements, then of each kind, oldest tried first, each while a turn or a `PASS_NEED` fits | as the hourly walks: a place, a step, a failure's record; a due row, `ITEM_NEED`, and either the failure's record or the un-park write (never both) | ≤ 12 MiB |
+| `erasure.retryParkedDaily` (its own daily cron) | b, each nested | up to `DAILY_RETRIES` parked settlements, then of each kind, oldest tried first and only what was parked or tried before the run began, each while a turn or a `PASS_NEED` fits; a held item is walked past (its position carried), never counted | as the hourly walks: a place, a step, a failure's record; a due row (two probes past a held item, at most one charged), `ITEM_NEED`, and either the failure's record or the un-park write (never both) | ≤ 12 MiB |
 | `erasure.settleStep` take | a | ≤ 16 debts (≤ 500 ids carried) | 64 KiB | ≤ 1.2 MiB |
 | `erasure.settleStep` clear | b | debts while one fits | 64 KiB + delete 64 KiB | ≤ 12 MiB |
 | `erasure.settleStep` hazards + deletes | a then b | 9 hazards, one photo kept back; photos while one fits | R; a photo R + access check V + delete R | ≤ 12 MiB |
@@ -1687,8 +1687,10 @@ item; the walk records it and goes on.
   runs, and a healthy settlement (whose turns stay at the cutoff) still finishes in its run.
 - **Parking heals itself.** `erasure.retryParkedDaily` (its own daily cron) tries a few parked
   settlements and a few parked items of each kind (`DAILY_RETRIES`), least recently tried first, each
-  in its own nested transaction and never in the hourly walks' way. A success un-parks it and the walks
-  carry on with it at once; a failure keeps it parked, re-stamped as just tried — behind every other
+  in its own nested transaction and never in the hourly walks' way, each once a run (it reads only what
+  was parked or last tried before it began). A held item is not tried and stays as it is; the walk goes
+  on past it, so it never takes another's turn. A success un-parks it and the walks carry on with it
+  when the run ends; a failure keeps it parked, re-stamped as just tried — behind every other
   parked piece next day, so one that never works can't keep another from its turn — and noted as
   retried. A deployed fix frees what it parked within a day with nobody remembering to;
   `erasure.retryParked` still releases everything at once. `erasure.parked` (`machinery.read`) lists

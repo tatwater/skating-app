@@ -2319,4 +2319,113 @@ describe('parking heals itself', () => {
       expect.objectContaining({ id: poison, dailyRetriedAt: expect.any(Number) }),
     ]);
   });
+
+  /** `ids`' comments, withdrawn and parked by three failing hourly runs; `broken` keeps failing. */
+  async function parkComments(t: T, ids: readonly string[], broken: Set<string>) {
+    const real = audit.writeAudit;
+    const writes = vi.spyOn(audit, 'writeAudit').mockImplementation(async (ctx, entry) => {
+      if (entry.action === 'erase' && broken.has(entry.targetId)) throw new Error('poison');
+      return real(ctx, entry);
+    });
+    advance(31 * DAY);
+    for (let run = 0; run < 3; run++) {
+      await sweep(t);
+      advance(60 * 60 * 1000);
+    }
+    for (const id of ids) expect((await get(t, id))?.eraseParkedAt).toBeDefined();
+    return writes;
+  }
+
+  test('a parked piece is tried once a daily run, however few are parked', async () => {
+    const { t, author, waterBodyId } = await setup();
+    const reportId = (await seedPost(t, author.id, waterBodyId, 1)).reportIds[0] as Id<'reports'>;
+    const id = await author.as.mutation(api.comments.create, { reportId, body: 'c' });
+    await author.as.mutation(api.comments.remove, { commentId: id });
+    const writes = await parkComments(t, [id], new Set([id]));
+    // And one parked settlement, alone, whose step keeps failing on its photo.
+    const uploader = await seedUser(t, 'uploader');
+    const photoId = await t.run(async (ctx) =>
+      ctx.db.insert('photos', {
+        storageId: await ctx.storage.store(new Blob(['full'])),
+        thumbStorageId: await ctx.storage.store(new Blob(['thumb'])),
+        uploaderId: uploader.id,
+        placeOnMap: false,
+        createdAt: Date.now(),
+      }),
+    );
+    await t.run((ctx) =>
+      ctx.db.insert('photoSettlementQueue', {
+        uploaderId: uploader.id,
+        queuedAt: Date.now(),
+        phase: 'hazards',
+        photoIds: [photoId],
+        owed: [],
+        attempts: MAX_SETTLE_ATTEMPTS,
+        lastErrorClass: 'Error',
+        // Parked before the run began.
+        parkedAt: Date.now() - 1,
+      }),
+    );
+    const deletes = vi.spyOn(photoOrphans, 'deletePhotoAndBlobs').mockImplementation(async () => {
+      throw new Error('poison');
+    });
+    writes.mockClear();
+    // Its first pass's `now` is the run's cutoff, so a piece re-stamped there must be past the run.
+    await t.mutation(internal.erasure.retryParkedDaily, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers, 10_000);
+    expect(
+      writes.mock.calls.filter(([, entry]) => entry.action === 'erase' && entry.targetId === id),
+    ).toHaveLength(1);
+    expect(await get(t, id)).toMatchObject({ eraseAttempts: MAX_ERASE_ATTEMPTS + 1 });
+    expect(deletes).toHaveBeenCalledTimes(1);
+    expect(await placeOf(t, uploader.id)).toMatchObject({ attempts: MAX_SETTLE_ATTEMPTS + 1 });
+  });
+
+  test('a parked comment with replies, erased by the daily retry, leaves nothing parked behind', async () => {
+    const { t, author, other, waterBodyId } = await setup();
+    const admin = await seedUser(t, 'admin', 'admin');
+    const reportId = (await seedPost(t, author.id, waterBodyId, 1)).reportIds[0] as Id<'reports'>;
+    const id = await author.as.mutation(api.comments.create, { reportId, body: 'c' });
+    await other.as.mutation(api.comments.create, { reportId, parentCommentId: id, body: 'r' });
+    await author.as.mutation(api.comments.remove, { commentId: id });
+    const broken = new Set<string>([id]);
+    await parkComments(t, [id], broken);
+    broken.clear();
+    await t.mutation(internal.erasure.retryParkedDaily, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers, 10_000);
+    const shell = await get(t, id);
+    expect(shell).toMatchObject({ body: '', erasedAt: expect.any(Number) });
+    for (const field of ['eraseAttempts', 'eraseErrorClass', 'eraseParkedAt', 'eraseRetriedAt']) {
+      expect(shell?.[field]).toBeUndefined();
+    }
+    expect((await admin.as.query(api.erasure.parked, {})).items).toEqual([]);
+  });
+
+  test('a held parked item uses no turn: the others of its kind are still tried that day', async () => {
+    const { t, author, other, waterBodyId } = await setup();
+    const reportId = (await seedPost(t, author.id, waterBodyId, 1)).reportIds[0] as Id<'reports'>;
+    const ids: Id<'comments'>[] = [];
+    for (let i = 0; i < DAILY_RETRIES + 1; i++) {
+      const id = await author.as.mutation(api.comments.create, { reportId, body: `c${i}` });
+      await author.as.mutation(api.comments.remove, { commentId: id });
+      ids.push(id);
+      advance(1000);
+    }
+    const broken = new Set<string>(ids);
+    await parkComments(t, ids, broken);
+    // The longest parked is flagged: held, so not tried — and it must not stand in front of the rest.
+    const [held, ...rest] = ids as [Id<'comments'>, ...Id<'comments'>[]];
+    await other.as.mutation(api.contentFlags.flag, {
+      targetType: 'comment',
+      targetId: held,
+      reason: 'harassment',
+    });
+    const before = await get(t, held);
+    broken.clear();
+    await t.mutation(internal.erasure.retryParkedDaily, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers, 10_000);
+    for (const id of rest) expect(await get(t, id)).toBeNull();
+    // Held is neither: left exactly as it was.
+    expect(await get(t, held)).toEqual(before);
+  });
 });

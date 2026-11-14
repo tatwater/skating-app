@@ -344,6 +344,25 @@ export async function recordEraseFailure(
   return parked ? 'parked' : 'retry';
 }
 
+/**
+ * A parked item the daily retry erased part-way: progress, so its attempts are cleared and it goes
+ * back on the clock at `dueAt` (what its withdrawal and holds said in the attempt), in one write.
+ */
+export async function unparkOnProgress(
+  ctx: MutationCtx,
+  budget: ReadBudget,
+  type: Erasable,
+  doc: ErasableDoc,
+  dueAt: number,
+  now: number,
+): Promise<void> {
+  budget.touch(type);
+  await ctx.db.patch(doc._id as Id<(typeof ERASABLE)[Erasable]>, {
+    ...itemAttemptFields(nextAttemptState(attemptsOfItem(doc), { kind: 'progress' }, now) ?? {}),
+    eraseAt: dueAt,
+  });
+}
+
 /** Release a parked item: its attempts cleared, and its clock what its withdrawal and holds say now. */
 export async function releaseParkedErasure(
   ctx: MutationCtx,
