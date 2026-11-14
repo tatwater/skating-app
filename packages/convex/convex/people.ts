@@ -236,7 +236,9 @@ export const listPage = query({
     const stored = await readStoredCounts(ctx);
     const queue = await readOpenFlagQueue(ctx);
     const flagged = flaggedPeopleFrom(queue.flags, queue.capped);
-    const flagsBy = new Map(flagged.people.map((p) => [p.userId as string, p]));
+    const flagsBy = new Map(
+      flagged.people.map((p) => [p.userId as string, { onUser: p.onUser, onContent: p.onContent }]),
+    );
     const waiting = hasCapability(viewer, 'inbox.support.read')
       ? await readWaitingTickets(ctx)
       : null;
@@ -419,7 +421,7 @@ export const person = query({
       onContent.push(...content.slice(0, PERSON_FLAG_CAP));
     }
     const openFlags: OpenFlag[] = [...onUser, ...onContent]
-      .sort((a, b) => a.createdAt - b.createdAt)
+      .sort((a, b) => a.createdAt - b.createdAt || a._creationTime - b._creationTime)
       .map((f) => ({
         flagId: f._id,
         reason: f.reason,

@@ -36,8 +36,11 @@ import { DOC_MAX, errorClassOf, ReadBudget, ROW_MAX, traced } from './lib/readBu
 
 const DAY = 86_400_000;
 
-/** What a nested per-person write may read: the profile at its worst, and the small rows beside it. */
-const PERSON_WORK = DOC_MAX + 64 * 1024;
+/**
+ * What a nested per-person write may read: the profile at its worst, twice (the writer checks it, and
+ * the row's refresh re-reads it after the patch), and the small rows beside it.
+ */
+const PERSON_WORK = 2 * DOC_MAX + 64 * 1024;
 
 // ── The lapsed-suspension sweep ────────────────────────────────────────────────────────────────
 
