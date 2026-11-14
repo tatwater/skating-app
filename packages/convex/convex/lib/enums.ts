@@ -672,3 +672,40 @@ export const WEATHER_CELL_INVALIDATING_KINDS: readonly (typeof IMPORT_RUN_KINDS)
  * the failure mode a printed-to-stderr summary could never record.
  */
 export const IMPORT_RUN_STATUSES = ['running', 'succeeded', 'failed'] as const;
+
+/**
+ * The recurring jobs whose failing work lives in `jobFailures` (D257) — work with no row of its own
+ * to carry its attempt state. Named for the cron each belongs to.
+ *
+ * - `orphanPhotos` — a photo the orphan walk could not examine (keyed by photo id).
+ * - `weatherCells` — a page of the cell-registry reconcile that could not be written (keyed by its
+ *   first cell key or body id).
+ * - `weatherGaps` — a cell the gap repair could not finish (keyed by cell key).
+ * - `standingRollover` — a body the rollover could not decide (keyed by body id, scoped by season).
+ * - `hazardWeather` — a hazard whose weather refresh threw (keyed by hazard id).
+ * - `nwsAlerts` — a state whose alerts could not be written (keyed by state code).
+ * - `seasonWatch` — the season watch's daily tick (keyed by season label; all-or-nothing by design,
+ *   so it is counted, never parked).
+ */
+export const FAILING_JOBS = [
+  'orphanPhotos',
+  'weatherCells',
+  'weatherGaps',
+  'standingRollover',
+  'hazardWeather',
+  'nwsAlerts',
+  'seasonWatch',
+] as const;
+export type FailingJob = (typeof FAILING_JOBS)[number];
+
+/**
+ * The walks that lap a table from a durable position (`jobPositions`, D257), so an item that keeps
+ * failing or keeps being kept is passed rather than re-read at the head for ever.
+ */
+export const LAPPING_JOBS = [
+  'orphanPhotos',
+  'finalizeDeletions',
+  'redactGhosts',
+  'expiredExports',
+] as const;
+export type LappingJob = (typeof LAPPING_JOBS)[number];

@@ -744,7 +744,9 @@ describe('access-point photos (Workstream 4 / D88)', () => {
     const user = await seedUploader(t, 'skater');
     const photoId = await seedPhoto(t, user.id, Date.now() - 60 * 24 * 60 * 60 * 1000);
 
+    // The walk owes it to the photo settlement (D257), which deletes what nothing shows.
     await t.mutation(internal.storageHygiene.sweepOrphanPhotos, {});
+    await t.mutation(internal.erasure.settleOwed, {});
 
     expect(await t.run((ctx) => ctx.db.get(photoId))).toBeNull();
   });

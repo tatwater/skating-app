@@ -5,10 +5,12 @@
  */
 import { seasonOf, seasonStartMs } from '@skating/core';
 import { convexTest } from 'convex-test';
+import fc from 'fast-check';
 import { describe, expect, test, vi } from 'vitest';
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { PHOTO_ORPHAN_GRACE_MS } from './lib/photoOrphans';
+import * as recurringWork from './lib/recurringWork';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -233,15 +235,50 @@ describe('purgeLastSeasonNotifications (A08 §1.5)', () => {
   });
 });
 
-describe('sweepOrphanPhotos', () => {
+/** A lap of the orphan walk, then the photo settlement it owes to (D257). */
+async function sweepOrphans(t: ReturnType<typeof convexTest>) {
+  const result = await t.mutation(internal.storageHygiene.sweepOrphanPhotos, {});
+  await t.mutation(internal.erasure.settleOwed, {});
+  return result;
+}
+
+async function seedHazard(
+  t: ReturnType<typeof convexTest>,
+  userId: Id<'profiles'>,
+  bodyId: Id<'waterBodies'>,
+  photoIds: Id<'photos'>[],
+  at: number,
+) {
+  return t.run((ctx) =>
+    ctx.db.insert('hazards', {
+      waterBodyId: bodyId,
+      createdByUserId: userId,
+      type: 'open_water' as const,
+      geometryKind: 'point_radius' as const,
+      geometry: { type: 'Point' as const, coordinates: [0.5, 0.5] },
+      radiusMeters: 25,
+      bbox: { minLat: 0.49, minLng: 0.49, maxLat: 0.51, maxLng: 0.51 },
+      photoIds,
+      status: 'active' as const,
+      moderationStatus: 'visible' as const,
+      firstReportedAt: at,
+      lastConfirmedAt: at,
+      confirmCount: 0,
+      goneCount: 0,
+      createdAt: at,
+    }),
+  );
+}
+
+describe('sweepOrphanPhotos (D257: a lap from a saved position, owed to the settlement)', () => {
   test('deletes an abandoned upload past the grace window — row and both blobs', async () => {
     const t = harness();
     const userId = await seedUser(t, 'uploader');
     const orphan = await seedPhoto(t, userId, Date.now() - PHOTO_ORPHAN_GRACE_MS - HOUR_MS);
     const row = await t.run((ctx) => ctx.db.get(orphan));
 
-    const result = await t.mutation(internal.storageHygiene.sweepOrphanPhotos, {});
-    expect(result).toMatchObject({ deleted: 1, skipped: 0, retained: 0 });
+    const result = await sweepOrphans(t);
+    expect(result).toMatchObject({ examined: 1, owed: 1, failed: 0, lapDone: true });
     expect(await t.run((ctx) => ctx.db.get(orphan))).toBeNull();
     expect(await t.run((ctx) => ctx.storage.getUrl(row?.storageId as Id<'_storage'>))).toBeNull();
     expect(
@@ -252,33 +289,25 @@ describe('sweepOrphanPhotos', () => {
   /**
    * PR #29 review (Greptile P1, security): the row is the **only** pointer to those two blobs — this
    * sweep is what finds them — so deleting it after a failed `storage.delete` leaves private image
-   * bytes that nothing in the system can name again. Not a leak a later job cleans up: a leak no later
-   * job can see.
-   *
-   * The unreclaimable blob here is a storage id that storage refuses to resolve. That's a stand-in for
-   * the general failure and not a perfect one — convex-test can't make a *present* blob undeletable —
-   * but it drives the real branch: `deleteStoredBlob` reports a failure, the row is kept, and the
-   * photo comes back to the front of tomorrow's oldest-first sweep.
+   * bytes that nothing in the system can name again. The settlement keeps the row, stripped and
+   * marked `erasedAt`; every later lap tries the blob again, directly, until it goes.
    */
-  test('a photo whose blob cannot be reclaimed keeps its row for the next tick', async () => {
+  test('a photo whose blob cannot be reclaimed keeps its row, and every lap tries again', async () => {
     const t = harness();
     const userId = await seedUser(t, 'uploader');
     const stuck = await seedPhoto(t, userId, Date.now() - PHOTO_ORPHAN_GRACE_MS - HOUR_MS);
     await t.run((ctx) => ctx.db.patch(stuck, { storageId: 'not-a-storage-id' }));
 
-    expect(await t.mutation(internal.storageHygiene.sweepOrphanPhotos, {})).toMatchObject({
-      deleted: 0,
-      retained: 1,
-    });
+    await sweepOrphans(t);
+    const marked = await t.run((ctx) => ctx.db.get(stuck));
+    expect(marked?.erasedAt).toBeDefined();
+
+    expect(await sweepOrphans(t)).toMatchObject({ examined: 1, retained: 1, owed: 0 });
     expect(await t.run((ctx) => ctx.db.get(stuck))).not.toBeNull();
 
-    // And it is retried rather than parked: the next tick tries again, and succeeds once the id resolves.
     const real = await t.run((ctx) => ctx.storage.store(new Blob(['recovered'])));
     await t.run((ctx) => ctx.db.patch(stuck, { storageId: real }));
-    expect(await t.mutation(internal.storageHygiene.sweepOrphanPhotos, {})).toMatchObject({
-      deleted: 1,
-      retained: 0,
-    });
+    expect(await sweepOrphans(t)).toMatchObject({ deleted: 1, retained: 0 });
     expect(await t.run((ctx) => ctx.db.get(stuck))).toBeNull();
     expect(await t.run((ctx) => ctx.storage.getUrl(real))).toBeNull();
   });
@@ -288,15 +317,15 @@ describe('sweepOrphanPhotos', () => {
     const userId = await seedUser(t, 'uploader');
     const fresh = await seedPhoto(t, userId, Date.now() - HOUR_MS);
 
-    const result = await t.mutation(internal.storageHygiene.sweepOrphanPhotos, {});
-    expect(result).toMatchObject({ scanned: 0, deleted: 0 });
+    const result = await sweepOrphans(t);
+    expect(result).toMatchObject({ examined: 0, owed: 0, lapDone: true });
     expect(await t.run((ctx) => ctx.db.get(fresh))).not.toBeNull();
   });
 
   /**
-   * The soundness case. `reports.update` can attach a photo long after either row was created, so a
-   * creation-time reference window would miss it — which is exactly why `referencedPhotoIds` scans by
-   * *author* instead. An old photo newly attached to an old report must survive the sweep.
+   * The soundness case. `reports.update` can attach a photo long after either row was created, and a
+   * pre-A10 report photo carries no back-link — so the walk owes it, and the settlement, reading the
+   * uploader's Reports, keeps it.
    */
   test('keeps a photo attached to a report, however long after the fact it was attached', async () => {
     const t = harness();
@@ -324,8 +353,8 @@ describe('sweepOrphanPhotos', () => {
       }),
     );
 
-    const result = await t.mutation(internal.storageHygiene.sweepOrphanPhotos, {});
-    expect(result).toMatchObject({ deleted: 1 });
+    const result = await sweepOrphans(t);
+    expect(result).toMatchObject({ examined: 2, owed: 2 });
     expect(await t.run((ctx) => ctx.db.get(attached))).not.toBeNull();
     expect(await t.run((ctx) => ctx.db.get(orphan))).toBeNull();
   });
@@ -336,30 +365,180 @@ describe('sweepOrphanPhotos', () => {
     const bodyId = await seedBody(t);
     const old = Date.now() - PHOTO_ORPHAN_GRACE_MS - HOUR_MS;
     const attached = await seedPhoto(t, userId, old);
+    await seedHazard(t, userId, bodyId, [attached], old);
 
-    await t.run((ctx) =>
-      ctx.db.insert('hazards', {
-        waterBodyId: bodyId,
-        createdByUserId: userId,
-        type: 'open_water' as const,
-        geometryKind: 'point_radius' as const,
-        geometry: { type: 'Point' as const, coordinates: [0.5, 0.5] },
-        radiusMeters: 25,
-        bbox: { minLat: 0.49, minLng: 0.49, maxLat: 0.51, maxLng: 0.51 },
-        photoIds: [attached],
-        status: 'active' as const,
-        moderationStatus: 'visible' as const,
-        firstReportedAt: old,
-        lastConfirmedAt: old,
-        confirmCount: 0,
-        goneCount: 0,
-        createdAt: old,
-      }),
-    );
-
-    await t.mutation(internal.storageHygiene.sweepOrphanPhotos, {});
+    await sweepOrphans(t);
     expect(await t.run((ctx) => ctx.db.get(attached))).not.toBeNull();
   });
+
+  test('a photo a hazard filed mid-walk shows survives: the settlement reads the hazards to the end, beside the delete', async () => {
+    const t = harness();
+    const userId = await seedUser(t, 'uploader');
+    const bodyId = await seedBody(t);
+    const photo = await seedPhoto(t, userId, Date.now() - PHOTO_ORPHAN_GRACE_MS - HOUR_MS);
+
+    // The walk owes it: nothing cheap says it is shown.
+    expect(await t.mutation(internal.storageHygiene.sweepOrphanPhotos, {})).toMatchObject({
+      owed: 1,
+    });
+    // Before the settlement runs, a hazard is filed showing it.
+    await seedHazard(t, userId, bodyId, [photo], Date.now());
+    await t.mutation(internal.erasure.settleOwed, {});
+    expect(await t.run((ctx) => ctx.db.get(photo))).not.toBeNull();
+  });
+
+  /**
+   * The bug this fixes: the walk read the oldest 500 photos past grace every day and passed the ones
+   * in use without marking them — so 600 old photos in use hid every newer orphan for ever.
+   */
+  test('600 old photos in use, then newer orphans: the orphans are reached and removed in one run, and nothing in use goes', async () => {
+    vi.useFakeTimers();
+    try {
+      const t = harness();
+      const userId = await seedUser(t, 'uploader');
+      const bodyId = await seedBody(t);
+      const old = Date.now() - PHOTO_ORPHAN_GRACE_MS - 400 * 24 * HOUR_MS;
+      const reportId = await t.run((ctx) =>
+        ctx.db.insert('reports', {
+          authorId: userId,
+          waterBodyId: bodyId,
+          point: { lat: 0.5, lng: 0.5 },
+          skateEndTime: old,
+          reportTime: old,
+          source: 'native' as const,
+          iceTypes: [],
+          surfaceTags: [],
+          photoIds: [],
+          hazardIdsCreated: [],
+          moderationStatus: 'visible' as const,
+          createdAt: old,
+          updatedAt: old,
+        }),
+      );
+      // In use through the back-link a Report keeps (`photos.reportId`) — 600 of them, oldest.
+      await t.run(async (ctx) => {
+        for (let i = 0; i < 600; i++) {
+          await ctx.db.insert('photos', {
+            storageId: `kept-${i}`,
+            thumbStorageId: `kept-thumb-${i}`,
+            uploaderId: userId,
+            placeOnMap: false,
+            reportId,
+            createdAt: old + i,
+          });
+        }
+      });
+      const orphans = [];
+      for (let i = 0; i < 3; i++) {
+        orphans.push(await seedPhoto(t, userId, Date.now() - PHOTO_ORPHAN_GRACE_MS - HOUR_MS - i));
+      }
+
+      // A lap small enough to need its chain: 100 photos a pass.
+      await t.mutation(internal.storageHygiene.sweepOrphanPhotos, { limit: 100 });
+      await t.finishAllScheduledFunctions(vi.runAllTimers, 100);
+
+      for (const id of orphans) expect(await t.run((ctx) => ctx.db.get(id))).toBeNull();
+      expect(
+        await t.run((ctx) =>
+          ctx.db
+            .query('photos')
+            .withIndex('by_report', (q) => q.eq('reportId', reportId))
+            .collect(),
+        ),
+      ).toHaveLength(600);
+      const lap = await t.run((ctx) => ctx.db.query('jobPositions').collect());
+      expect(lap[0]).toMatchObject({ job: 'orphanPhotos', lapsCompleted: 1 });
+      expect(lap[0]?.value).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('a lap owns its chain: a cron tick stands down while it runs, and a superseded pass stops', async () => {
+    const t = harness();
+    const userId = await seedUser(t, 'uploader');
+    for (let i = 0; i < 3; i++) {
+      await seedPhoto(t, userId, Date.now() - PHOTO_ORPHAN_GRACE_MS - HOUR_MS - i);
+    }
+    const first = await t.mutation(internal.storageHygiene.sweepOrphanPhotos, { limit: 1 });
+    expect(first).toMatchObject({ examined: 1, lapDone: false });
+    expect(await t.mutation(internal.storageHygiene.sweepOrphanPhotos, {})).toEqual({
+      skipped: 'a lap is running',
+    });
+    expect(
+      await t.mutation(internal.storageHygiene.sweepOrphanPhotos, { run: 'someone-else' }),
+    ).toEqual({ skipped: 'superseded' });
+    // A lap whose chain died (its lease ran out) is taken over where it stopped.
+    await t.run(async (ctx) => {
+      const lap = await ctx.db.query('jobPositions').first();
+      if (lap) await ctx.db.patch(lap._id, { leaseUntil: Date.now() - 1 });
+    });
+    expect(await t.mutation(internal.storageHygiene.sweepOrphanPhotos, {})).toMatchObject({
+      examined: 2,
+      lapDone: true,
+    });
+  });
+});
+
+describe('sweepOrphanPhotos under failure (D257)', () => {
+  const RUNS = 5;
+
+  test('over any photos and any that always fail: each healthy photo is examined once a lap; a failing one is counted once a lap, parked at its third, and freed by the lap after it heals', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(fc.boolean(), { minLength: 1, maxLength: 8 }),
+        fc.integer({ min: 1, max: RUNS }),
+        async (failing, healsAfter) => {
+          vi.restoreAllMocks();
+          const t = harness();
+          const userId = await seedUser(t, 'uploader');
+          const bodyId = await seedBody(t);
+          // Every photo is in use (shown by a hazard), so it survives every lap and is examined again.
+          const ids: Id<'photos'>[] = [];
+          for (const [i] of failing.entries()) {
+            ids.push(await seedPhoto(t, userId, Date.now() - PHOTO_ORPHAN_GRACE_MS - HOUR_MS - i));
+          }
+          await seedHazard(t, userId, bodyId, ids, Date.now());
+          const poison = new Set(ids.filter((_, i) => failing[i]).map(String));
+          const real = recurringWork.clearFailure;
+          const calls = vi
+            .spyOn(recurringWork, 'clearFailure')
+            .mockImplementation(async (ctx, job, key) => {
+              if (job === 'orphanPhotos' && poison.has(key)) throw new Error('poison');
+              return real(ctx, job, key);
+            });
+          for (let run = 1; run <= RUNS; run++) {
+            if (run > healsAfter) poison.clear();
+            calls.mockClear();
+            await sweepOrphans(t);
+            for (const id of ids) {
+              const tries = calls.mock.calls.filter(
+                ([, job, key]) => job === 'orphanPhotos' && key === id,
+              );
+              // Once a lap, every photo — failing or not.
+              expect(tries).toHaveLength(1);
+              const row = await t.run((ctx) =>
+                ctx.db
+                  .query('jobFailures')
+                  .withIndex('by_job_key', (q) => q.eq('job', 'orphanPhotos').eq('key', id))
+                  .first(),
+              );
+              const failedRuns = failing[ids.indexOf(id)] ? Math.min(run, healsAfter) : 0;
+              if (failedRuns === 0 || run > healsAfter) expect(row).toBeNull();
+              else {
+                expect(row?.attempts).toBe(failedRuns);
+                expect(row?.parkedAt !== undefined).toBe(failedRuns >= 3);
+              }
+            }
+            // Nothing in use is ever deleted.
+            for (const id of ids) expect(await t.run((ctx) => ctx.db.get(id))).not.toBeNull();
+          }
+          vi.restoreAllMocks();
+        },
+      ),
+      { numRuns: 15 },
+    );
+  }, 120_000);
 });
 
 describe('sweepExpiredExports', () => {

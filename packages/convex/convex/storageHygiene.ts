@@ -16,14 +16,25 @@
 import { seasonOf, seasonStartMs } from '@skating/core';
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
-import { internalMutation } from './_generated/server';
+import type { Doc, Id } from './_generated/dataModel';
+import { internalMutation, type MutationCtx } from './_generated/server';
+import { owePhotos } from './erasure';
 import { reclaimExportBlob } from './lib/exportBundles';
+import { deletePhotoAndBlobs, durablePhotoIds, PHOTO_ORPHAN_GRACE_MS } from './lib/photoOrphans';
+import { ReadBudget, traced } from './lib/readBudget';
 import {
-  deletePhotoAndBlobs,
-  durablePhotoIds,
-  PHOTO_ORPHAN_GRACE_MS,
-  referencedPhotoIds,
-} from './lib/photoOrphans';
+  affords,
+  asItem,
+  clearFailure,
+  type ItemBudget,
+  lapOf,
+  MiB,
+  type Position,
+  positionOf,
+  recordFailure,
+  runIsolated,
+  saveLap,
+} from './lib/recurringWork';
 import { claimPhotoReconcile } from './photoReconcile';
 
 /** Rows examined per tick. Bounded so a sweep is always one comfortable transaction. */
@@ -154,81 +165,210 @@ export const pruneForecastCache = internalMutation({
 });
 
 /**
- * Delete photos past the grace window that no report or hazard references, plus their storage blobs.
+ * **The orphan-photo walk** (D257): every photo past the grace window, examined once a lap, from a
+ * durable position that advances and wraps — so a photo still in use is passed, never re-read at the
+ * head of the next run.
  *
- * The durable backstop behind the client's best-effort reclaim (`photos.remove` / `removeBlob`): those
- * handle the abandoned form, but a killed app, a failed reclaim call, or an account deletion that hit
- * its reference-scan cap all still strand blobs.
+ * It used to read the oldest 500 photos past grace every day and skip the ones in use without
+ * marking them: once 500 in-use photos were old, it re-read those 500 for ever and never reached a
+ * newer orphan. Now each pass starts where the last stopped (`jobPositions`), a lap ends at the
+ * newest photo past grace and the next cron tick starts the next lap, and a chain owns its lap
+ * (`run`, renewed with a lease each pass) so a tick that finds one running stands down.
  *
- * Candidates come off `by_created_at` **oldest first**, so the sweep drains the backlog from the end
- * that's certain rather than nibbling at the recent end where a photo might still be mid-submission.
- * Whether a photo is referenced is `lib/photoOrphans`' call, shared with account deletion so the two
- * destructive paths can't disagree; an uploader whose scan can't be completed is skipped, not guessed
- * at.
+ * **One rule for "is this photo still shown anywhere": the photo settlement's.** This walk does not
+ * judge a photo unused. It passes the ones the settlement would keep without reading anyone's
+ * history — a Report's back-link (`reportId`) or an access point that shows it — and *owes* the rest
+ * to the settlement (`erasure.owePhotos`), which reads the uploader's Reports and hazards to the end,
+ * the last of them in the very transaction that deletes, and so keeps a photo a hazard filed mid-walk
+ * shows. A photo an erasure already let go of (`erasedAt`) whose blob outlived the delete is retried
+ * here directly: that question was answered when it was marked.
+ *
+ * **One photo that fails never stops the walk.** Each is examined in its own nested transaction; a
+ * failure is recorded (`jobFailures`, job `orphanPhotos`) and the walk moves past it. A lap visits each
+ * photo once, so the next lap is the failing photo's retry — the daily one — and three failures in a
+ * row mark it parked, which only the Machinery read reports.
  */
 export const sweepOrphanPhotos = internalMutation({
-  args: { limit: v.optional(v.number()) },
-  handler: async (ctx, { limit }) => {
-    const max = Math.min(Math.max(limit ?? SWEEP_LIMIT, 1), SWEEP_LIMIT);
-    const candidates = await ctx.db
-      .query('photos')
-      .withIndex('by_created_at', (q) => q.lt('createdAt', Date.now() - PHOTO_ORPHAN_GRACE_MS))
-      .take(max);
-
-    // One reference scan per uploader, not per photo: a sweep page is usually a handful of people's
-    // abandoned uploads, and re-deriving the same author's set 200 times would be the read cost that
-    // makes an otherwise-cheap cron expensive.
-    const byUploader = new Map<string, Set<string> | null>();
-    /** Uploaders already escalated this tick — one job each, however many of their photos are here. */
-    const escalated = new Set<string>();
-    let deleted = 0;
-    let skipped = 0;
-    let retained = 0;
-
-    for (const photo of candidates) {
-      const key = photo.uploaderId;
-      if (!byUploader.has(key))
-        byUploader.set(key, await referencedPhotoIds(ctx, photo.uploaderId));
-      const referenced = byUploader.get(key);
-      if (referenced === null || referenced === undefined) {
-        // Couldn't determine — keep the photo (see `referencedPhotoIds`) and **hand the uploader to
-        // the determinate job** (PR #30 review).
-        //
-        // Keeping alone used to be the whole response, which quietly made this permanent: the scan
-        // caps on a property of the *uploader*, not of the photo, so every subsequent tick re-derived
-        // the same `null` and skipped again. Nothing ever reclaimed those blobs, including after the
-        // account was deleted — reports survive a deletion, so a departed uploader stays exactly as
-        // capped as they were in life.
-        //
-        // `photoReconcile` answers the same question across as many transactions as it needs, so this
-        // is an escalation to a complete method rather than a retry of the one that just failed.
-        skipped++;
-        // The `escalated` set only de-duplicates within *this* tick. Across ticks the lease is what
-        // stops a second run being scheduled on top of one still working — which matters more now
-        // that a second mode exists: two runs interleaving mark and sweep over the same photo rows
-        // could delete one that the other had marked but not yet cleared.
-        if (!escalated.has(key) && (await claimPhotoReconcile(ctx, photo.uploaderId, Date.now()))) {
-          escalated.add(key);
-          await ctx.scheduler.runAfter(0, internal.photoReconcile.reconcileUploaderPhotos, {
-            uploaderId: photo.uploaderId,
-          });
-        }
-        continue;
-      }
-      if (referenced.has(photo._id)) continue;
-      // `false` ⇒ a blob survived, so the row stayed as the only thing that can name it. It comes back
-      // to the front of this sweep tomorrow, since candidates are read oldest-first.
-      if (await deletePhotoAndBlobs(ctx, photo)) deleted++;
-      else retained++;
-    }
-
-    if (skipped > 0) {
-      console.warn(
-        `sweepOrphanPhotos: kept ${skipped} photo(s) whose uploader's reference scan hit its cap — handed ${escalated.size} uploader(s) to photoReconcile for a complete pass`,
-      );
-    }
-    return { scanned: candidates.length, deleted, skipped, retained, escalated: escalated.size };
+  args: {
+    /** The chain this pass belongs to; absent on the cron's tick. */
+    run: v.optional(v.string()),
+    /** Test seam: photos examined per pass at most. */
+    limit: v.optional(v.number()),
   },
+  handler: (ctx, args): Promise<OrphanSweepResult> =>
+    traced('storageHygiene.sweepOrphanPhotos', args, async (): Promise<OrphanSweepResult> => {
+      const now = Date.now();
+      const graceCutoff = now - PHOTO_ORPHAN_GRACE_MS;
+      const lap = await lapOf(ctx, 'orphanPhotos');
+      const leased = lap?.run !== undefined && (lap.leaseUntil ?? 0) > now;
+      if (args.run === undefined && leased) return { skipped: 'a lap is running' as const };
+      if (args.run !== undefined && lap?.run !== args.run)
+        return { skipped: 'superseded' as const };
+      const run = args.run ?? `${now}-${Math.random().toString(36).slice(2, 10)}`;
+      const max = Math.max(1, Math.floor(args.limit ?? Number.POSITIVE_INFINITY));
+      let position = positionOf(lap);
+      const counts = {
+        examined: 0,
+        owed: 0,
+        deleted: 0,
+        retained: 0,
+        kept: 0,
+        failed: 0,
+        parked: 0,
+      };
+      const owe = new Map<Id<'profiles'>, Id<'photos'>[]>();
+      let lapDone = false;
+      while (counts.examined < max) {
+        if (!(await affords(ctx, PHOTO_ITEM))) break;
+        const photo = await nextPhotoAfter(ctx, position, graceCutoff);
+        if (!photo) {
+          lapDone = true;
+          break;
+        }
+        position = { value: photo.createdAt, creationTime: photo._creationTime };
+        counts.examined++;
+        const result = await runIsolated<{ outcome: PhotoOutcome }>(
+          ctx,
+          internal.storageHygiene.examinePhoto,
+          { photoId: photo._id },
+          PHOTO_ITEM.limits,
+        );
+        if (!result.ok) {
+          counts.failed++;
+          const r = await recordFailure(ctx, 'orphanPhotos', photo._id, result.errorClass, now);
+          if (r === 'parked') counts.parked++;
+          continue;
+        }
+        const { outcome } = result.value;
+        if (outcome === 'candidate') {
+          const ids = owe.get(photo.uploaderId) ?? [];
+          ids.push(photo._id);
+          owe.set(photo.uploaderId, ids);
+          counts.owed++;
+        } else if (outcome === 'deleted') counts.deleted++;
+        else if (outcome === 'retained') counts.retained++;
+        else counts.kept++;
+      }
+      // A fresh transaction always affords a photo; one that examined none and isn't done would
+      // reschedule itself over the same place for ever.
+      if (!lapDone && counts.examined === 0) {
+        throw new Error('storageHygiene.sweepOrphanPhotos: a pass made no progress');
+      }
+      // Each uploader's candidates as one debt, so the settlement reads their history once for all.
+      for (const [uploaderId, photoIds] of owe) {
+        await owePhotos(ctx, new ReadBudget(), { uploaderId, photoIds }, now);
+      }
+      if (owe.size > 0) await ctx.scheduler.runAfter(0, internal.erasure.settleOwed, {});
+      if (lapDone) {
+        await saveLap(ctx, 'orphanPhotos', lap, undefined, now);
+      } else {
+        await saveLap(ctx, 'orphanPhotos', lap, position, now, {
+          run,
+          leaseUntil: now + LAP_LEASE_MS,
+        });
+        await ctx.scheduler.runAfter(0, internal.storageHygiene.sweepOrphanPhotos, {
+          run,
+          ...(args.limit !== undefined ? { limit: args.limit } : {}),
+        });
+      }
+      if (counts.failed > 0) {
+        console.warn(
+          `sweepOrphanPhotos: ${counts.failed} photo(s) could not be examined (${counts.parked} newly parked); the walk went on past them`,
+        );
+      }
+      return { ...counts, lapDone };
+    }),
+});
+
+/** What one pass of the orphan walk did, or why it stood down. */
+type OrphanSweepResult =
+  | { skipped: 'a lap is running' | 'superseded' }
+  | {
+      examined: number;
+      owed: number;
+      deleted: number;
+      retained: number;
+      kept: number;
+      failed: number;
+      parked: number;
+      lapDone: boolean;
+    };
+
+/** What examining one photo found. */
+type PhotoOutcome = 'gone' | 'deleted' | 'retained' | 'kept' | 'candidate';
+
+/** How long a lap's chain is trusted between passes before a cron tick takes the lap over. */
+const LAP_LEASE_MS = HOUR_MS;
+
+/**
+ * One photo of the orphan walk: its own read, its access-photo check, and — for a photo an erasure
+ * already let go of — the delete. Generous for any photo (a row is at most a document).
+ */
+const PHOTO_ITEM: ItemBudget = {
+  limits: { bytesRead: 2 * MiB, documentsRead: 20, databaseQueries: 20, documentsWritten: 10 },
+  // The next photo's read, each owed uploader's queue place and debt, the position and the chain.
+  reserve: {
+    bytesRead: 3 * MiB,
+    documentsRead: 2000,
+    databaseQueries: 1000,
+    documentsWritten: 1000,
+  },
+};
+
+/** The next photo past grace after `at` on `by_created_at` (created time, then creation order). */
+async function nextPhotoAfter(
+  ctx: MutationCtx,
+  at: Position | undefined,
+  graceCutoff: number,
+): Promise<Doc<'photos'> | null> {
+  if (at !== undefined) {
+    const tied = await ctx.db
+      .query('photos')
+      .withIndex('by_created_at', (q) =>
+        q.eq('createdAt', at.value).gt('_creationTime', at.creationTime),
+      )
+      .first();
+    if (tied && tied.createdAt < graceCutoff) return tied;
+  }
+  return ctx.db
+    .query('photos')
+    .withIndex('by_created_at', (q) =>
+      at !== undefined
+        ? q.gt('createdAt', at.value).lt('createdAt', graceCutoff)
+        : q.lt('createdAt', graceCutoff),
+    )
+    .first();
+}
+
+/**
+ * Examine one photo of the orphan walk, as its own nested transaction:
+ *
+ * - **erased** (`erasedAt`): an erasure found nothing of its uploader's uses it and its blob outlived
+ *   the delete — delete it again (`retained` when a blob still outlives it; its row stays the only
+ *   pointer to the blob).
+ * - **kept**: a Report's back-link or an access point shows it — the settlement's own early answer.
+ * - **candidate**: nothing cheap says it is shown; the walk owes it to the settlement, which decides.
+ */
+export const examinePhoto = internalMutation({
+  args: { photoId: v.id('photos') },
+  handler: (ctx, { photoId }): Promise<{ outcome: PhotoOutcome }> =>
+    asItem(photoId, async () => {
+      const photo = await ctx.db.get(photoId);
+      let outcome: PhotoOutcome;
+      if (!photo) outcome = 'gone';
+      else if (photo.erasedAt !== undefined) {
+        outcome = (await deletePhotoAndBlobs(ctx, photo)) ? 'deleted' : 'retained';
+      } else if (photo.reportId !== undefined) outcome = 'kept';
+      else {
+        const onAccess = await ctx.db
+          .query('accessPhotos')
+          .withIndex('by_photo', (q) => q.eq('photoId', photoId))
+          .first();
+        outcome = onAccess ? 'kept' : 'candidate';
+      }
+      await clearFailure(ctx, 'orphanPhotos', photoId);
+      return { outcome };
+    }),
 });
 
 /**
@@ -247,12 +387,47 @@ export const sweepOrphanPhotos = internalMutation({
  * reasoning it was copied from.
  */
 export const sweepExpiredExports = internalMutation({
-  args: {},
-  handler: async (ctx) => {
-    const expired = await ctx.db
-      .query('dataExports')
-      .withIndex('by_expires_at', (q) => q.lt('expiresAt', Date.now()))
-      .take(SWEEP_LIMIT);
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, { limit }) => {
+    const now = Date.now();
+    const max = Math.min(Math.max(limit ?? SWEEP_LIMIT, 1), SWEEP_LIMIT);
+    // **A turn each, from where the last tick stopped** (D257): a bundle whose blob can't be deleted
+    // keeps its row, and five hundred of them at the head of the oldest-first read would have held
+    // every tick's page. Each tick now starts after the last row it reached and wraps at the end of
+    // the expired range, so a stuck bundle only ever takes its own turn.
+    const lap = await lapOf(ctx, 'expiredExports');
+    const from = positionOf(lap);
+    const expired: Doc<'dataExports'>[] = [];
+    if (from !== undefined) {
+      expired.push(
+        ...(await ctx.db
+          .query('dataExports')
+          .withIndex('by_expires_at', (q) =>
+            q.eq('expiresAt', from.value).gt('_creationTime', from.creationTime),
+          )
+          .take(max)),
+      );
+    }
+    if (expired.length < max) {
+      expired.push(
+        ...(await ctx.db
+          .query('dataExports')
+          .withIndex('by_expires_at', (q) =>
+            from !== undefined
+              ? q.gt('expiresAt', from.value).lt('expiresAt', now)
+              : q.lt('expiresAt', now),
+          )
+          .take(max - expired.length)),
+      );
+    }
+    const last = expired.at(-1);
+    const next =
+      expired.length === max && last !== undefined
+        ? { value: last.expiresAt, creationTime: last._creationTime }
+        : undefined;
+    if (next !== undefined || from !== undefined) {
+      await saveLap(ctx, 'expiredExports', lap, next, now);
+    }
 
     let deleted = 0;
     let retained = 0;

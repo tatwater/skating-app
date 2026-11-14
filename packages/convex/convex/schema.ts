@@ -75,6 +75,7 @@ import {
   DATA_EXPORT_STATUSES,
   DEDUP_STATUSES,
   DORMANCY_REASONS,
+  FAILING_JOBS,
   FLAG_ORIGINS,
   FLAG_REASONS,
   FLAG_STATUSES,
@@ -87,6 +88,7 @@ import {
   HAZARD_STATUSES,
   IMPORT_RUN_KINDS,
   IMPORT_RUN_STATUSES,
+  LAPPING_JOBS,
   MODERATION_ACTIONS,
   MODERATION_STATUSES,
   MODERATION_TARGET_TYPES,
@@ -541,6 +543,17 @@ export default defineSchema({
      * before the second source does.
      */
     supersededByActivityId: v.optional(v.id('gpsActivities')),
+    /**
+     * The prompt sweep's attempt state (D257, `lib/attempts`): failed attempts in a row at this
+     * row's prompt, the last failure's class (never its message), when it was parked (or, once the
+     * daily retry has tried it, last tried), when the daily retry last tried it, and the run cutoff of
+     * the last failure — so a run never tries it twice. All absent on a healthy row.
+     */
+    promptAttempts: v.optional(v.number()),
+    promptErrorClass: v.optional(v.string()),
+    promptParkedAt: v.optional(v.number()),
+    promptRetriedAt: v.optional(v.number()),
+    promptFailedRun: v.optional(v.number()),
   })
     .index('by_user', ['userId'])
     .index('by_provider_activity', ['provider', 'providerActivityId']) // unique dedup (D24)
@@ -549,6 +562,10 @@ export default defineSchema({
     // fields are required, so no sparse-index trap — and the sweep flips the row to `prompted`, so a
     // row leaves this range the moment it's been asked about.
     .index('by_prompt_state_detected', ['promptState', 'detectedAt'])
+    // The sweep's due range, parked rows left out (D257): `eq('pending').eq(promptParkedAt,
+    // undefined)` is the work, `eq('pending').gt(promptParkedAt, 0)` the parked — the field is
+    // optional and the index not sparse, so the parked range always takes a lower bound.
+    .index('by_prompt_parked_detected', ['promptState', 'promptParkedAt', 'detectedAt'])
     // The sweep's dedup candidates (A08 §2.4a, PR #53 review): a same-skate copy starts within
     // `ACTIVITY_DEDUP_START_WINDOW_MS` of the due row, so the read is a start-time window per due
     // row. `by_user` orders by *insertion*, and "the 50 most recently inserted" is the wrong set —
@@ -1537,9 +1554,22 @@ export default defineSchema({
   bodySummaryRefreshes: defineTable({
     waterBodyId: v.id('waterBodies'),
     refreshAt: v.number(),
+    /**
+     * The due sweep's attempt state (D257, `lib/attempts`): failed recomputes in a row, the last
+     * failure's class, when it was parked (or last tried by the daily retry), and when the daily
+     * retry last tried it. All absent on a healthy row; a recompute that goes through rewrites the
+     * row without them.
+     */
+    attempts: v.optional(v.number()),
+    lastErrorClass: v.optional(v.string()),
+    parkedAt: v.optional(v.number()),
+    retriedAt: v.optional(v.number()),
   })
     .index('by_water_body', ['waterBodyId'])
-    .index('by_refresh_at', ['refreshAt']),
+    .index('by_refresh_at', ['refreshAt'])
+    // The due range with parked cards left out (D257): `eq(parkedAt, undefined)` then the time; the
+    // parked range is `gt(parkedAt, 0)` — the field is optional and the index not sparse.
+    .index('by_parked_refresh_at', ['parkedAt', 'refreshAt']),
 
   // The water-body spatial index (A01) — one row per grid cell a *listed* body's bbox covers, at the
   // ladder level `indexLevelFor` picks (see `lib/cellIndex` / `@skating/core`'s `spatialCells`).
@@ -3596,6 +3626,51 @@ export default defineSchema({
     .index('by_parked_queued', ['parkedAt', 'queuedAt']),
 
   /**
+   * **A recurring job's failing work, where the work has no row of its own to carry it** (D257): a
+   * weather cell, a body in a walk, a photo in the orphan walk, a hazard's weather, a state's NWS
+   * alerts, the season watch's tick. One row per (job, key) while it keeps failing, the state
+   * `lib/attempts` decides — failures in a row, the last one's class (never its message), parked
+   * after three — and deleted by the first attempt that goes through. `key` is the work's id or key,
+   * never content; `scope` is what the retry needs beside it (a rollover's season). The queue-shaped
+   * jobs keep this state on their own rows instead, since their due range must leave a parked row
+   * out (`notificationQueue`, `gpsActivities`, `bodySummaryRefreshes`).
+   */
+  jobFailures: defineTable({
+    job: literals(FAILING_JOBS),
+    key: v.string(),
+    scope: v.optional(v.string()),
+    attempts: v.number(),
+    errorClass: v.string(),
+    firstFailedAt: v.number(),
+    lastFailedAt: v.number(),
+    parkedAt: v.optional(v.number()),
+    retriedAt: v.optional(v.number()),
+  })
+    .index('by_job_key', ['job', 'key'])
+    // A job's parked work, oldest first: `eq(job).gt(parkedAt, 0)` — the field is optional and the
+    // index not sparse. `eq(job).eq(parkedAt, undefined)` is what is failing but not yet parked.
+    .index('by_job_parked', ['job', 'parkedAt']),
+
+  /**
+   * **Where a walk that laps its table is** (D257): the orphan-photo walk, the account-deletion and
+   * redaction turns, the expired-export sweep. A position in an index (`value` the indexed number,
+   * `creationTime` the tie-break), so each run starts after where the last one stopped and an item
+   * that keeps failing — or keeps being kept — is passed, never re-read at the head for ever. `run`
+   * and `leaseUntil` let one chain own a lap: a cron tick that finds a live lease stands down. No
+   * position ⇒ the next lap starts at the beginning.
+   */
+  jobPositions: defineTable({
+    job: literals(LAPPING_JOBS),
+    value: v.optional(v.number()),
+    creationTime: v.optional(v.number()),
+    run: v.optional(v.string()),
+    leaseUntil: v.optional(v.number()),
+    lapStartedAt: v.optional(v.number()),
+    lapsCompleted: v.optional(v.number()),
+    updatedAt: v.number(),
+  }).index('by_job', ['job']),
+
+  /**
    * What an audited action replaced, when it is too big for the audit row (D226, B01 §11): a
    * sub-area's previous polygon, a body's previous weather grid, and every row a body merge moved
    * or deleted. Written in the same mutation as the action, read only by its undo, keyed by the
@@ -4347,9 +4422,26 @@ export default defineSchema({
     flushAfter: v.number(), // earliest delivery time (next 8pm for digest; debounce/settle otherwise)
     createdAt: v.number(),
     trigger: v.optional(notificationTrigger), // what to re-read at flush (actor kinds only)
+    /**
+     * The flush's attempt state (D257, `lib/attempts`): failed deliveries in a row, the last
+     * failure's class (never its message), when it was parked (or last tried by the retry), when the
+     * retry last tried it, and when it first fell due — the clock the freshness rule reads, since a
+     * failure moves `flushAfter` past the run. All absent on a healthy row.
+     */
+    attempts: v.optional(v.number()),
+    lastErrorClass: v.optional(v.string()),
+    parkedAt: v.optional(v.number()),
+    retriedAt: v.optional(v.number()),
+    firstDueAt: v.optional(v.number()),
   })
     .index('by_flush', ['flushAfter'])
+    // The flush's due range with parked rows left out (D257): `eq(parkedAt, undefined)` then the
+    // time; the parked range is `gt(parkedAt, 0)` — the field is optional and the index not sparse.
+    .index('by_parked_flush', ['parkedAt', 'flushAfter'])
     .index('by_coalesce', ['coalesceKey'])
+    // Where a new event coalesces (D257): the key's row that is not parked. A parked row keeps only
+    // what it already held — a new event never lands in it, where nothing would deliver it.
+    .index('by_coalesce_parked', ['coalesceKey', 'parkedAt'])
     // Deletion erases a departing user's pending pushes (D62). Without this the finalize job would
     // have to scan the whole queue to find one person's rows — and it would still be wrong to leave
     // them, since flushing a queued digest to a tombstone is a notification nobody can read.
