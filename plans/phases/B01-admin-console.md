@@ -1577,6 +1577,28 @@ the read can honor); `preview` (reports this season by vantage and all time, the
 towns). **Backfill**: `bodyLibrary.backfill`, paged by body and resumable, then
 `bodyLibrary.backfillChangedAt` over the audit log.
 
+**What the Bodies server built (B01-3), against the register.** Where a page's prop type and the
+register's shape differ, the prop type won; where the page draws words, the read returns facts.
+
+| # | Built | Notes |
+|---|---|---|
+| BS1 | `bodies.listPage` | The stored row above; facets in the paged read, capped at 2,000 rows scanned a page |
+| BS2 | `bodies.listSummary.laneCounts` | Exact from the counts; *Changed this week* counted from its range to 500 |
+| BS3 | `bodies.listSummary.facetCounts` | Exact while at most one facet is applied (`servedCounts`); none while searching |
+| BS4 | `bodies.preview` | Reports this season by vantage and all time (capped at 1,000), the open asks as facts, the towns (sampled) |
+| BS5 | Stored as `have`, `of`, `missing` and the facet option | Core's `bodyCompleteness`, with every count served — nothing unknown on the server |
+| BS6 | `LIBRARY_PAGE_SIZE` 50, `LIBRARY_MAX_START` 400 | The read clamps a first page; the page keeps how many rows were showing in its return address |
+| BS7 | `bodyConsole.consoleExtras` | Towns sampled; the outline trusted since a person's approval, else its campaign's run; touching bodies among the 12 most prominent nearby, within 30 m, `null` above 20,000 vertices |
+| BS8 | `subAreas.listForBody.createdAt`, `bodyConsole.bayProvenance`, `bodyConsole.history` | How a bay was made comes from its creating audit row (new rows say `via`); History covers the body, its bays, the landmarks a person touched and its put-ins, by verb as an index range |
+| BS9 | Deferred | `setAliases` and `setClass` need audit verbs, whose undo rows live in `lib/undoPolicy.ts` (the author-deletion PR rewrites it); an alias also needs a call on how it is stored beside the user claim that already means *a moderator picked the display name*. Per-catalog name and class claims are not stored — the import keeps one source per spelling and only a class confidence — so they are `null` until the ETL keeps them |
+| BS10 | `bodyConsole.places`, `landmarkProvenance`, `landmarkProposers` | Places sampled; the proposer read is gated on `inbox.read` |
+| BS11 | Bathymetry in `consoleExtras.hasBathymetry` | Depth candidates are not stored (the depth loader keeps each measurement's winner), so `null`; choosing a source and filing a survey need verbs (as BS9) and a call on what a survey filing records |
+| BS12 | Index `moderationActions.by_target_action`; `bodyConsole.history` takes `action` | `moderation.listActions` still filters after its page — one line, deferred to after the author-deletion PR |
+| BS13 | Deferred | A pass override needs a table and an audit verb (as BS9) |
+| BS14 | `standing.retentionForBody` | The newest use and its kind, the boost and when it was set, favorites (to 1,000), saved put-ins |
+| BS15 | `bodyConsole.dailyHazards` | A hazard is on the lake until the vote that healed it; one archived without such a vote counts through its last confirmation (`unknownEnds`); the watch's opening day beside it |
+| BS16 | Deferred | Editing a feature's shape needs an audit verb (as BS9) |
+
 ## Ruled out
 
 - **A second app or a separate deployment for admin** — D37 stands; the Convex function is the
