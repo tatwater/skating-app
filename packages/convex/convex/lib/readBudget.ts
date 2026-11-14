@@ -50,6 +50,8 @@ export const ROW_MAX = {
   moderationAction: DOC_MAX,
   // Geometry and a suppression reason are uncapped.
   hazardRecurrence: DOC_MAX,
+  // A photo settlement owed: an erased item's photo ids, as many as its row held.
+  photoSettlement: DOC_MAX,
   // Ids, literals, numbers and a coordinate — no free text.
   verdict: SLACK,
   small: SLACK,

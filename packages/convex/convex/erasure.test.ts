@@ -1218,7 +1218,7 @@ describe("a photo is erased only when nothing of its uploader's still uses it", 
     await t.finishAllScheduledFunctions(vi.runAllTimers);
     const settlements = (
       await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect())
-    ).filter((job) => job.name.includes('settlePhotos') && job.args[0]?.phase === undefined);
+    ).filter((job) => job.name.includes('settlePhotos') && job.args[0]?.phase === 'reports');
     expect(settlements).toHaveLength(1);
     for (const id of [...reports, ...photos]) expect(await get(t, id)).toBeNull();
   });

@@ -3416,6 +3416,24 @@ export default defineSchema({
     .index('by_ended_by', ['endedByActionId']),
 
   /**
+   * **A photo settlement owed** (D248). When the erasure sweep erases an item that carried photos, it
+   * writes one row here in the same transaction — the uploader and the item's photo ids, nothing
+   * else — and `erasure.settlePhotos` works from these rows, deleting each photo nothing of the
+   * uploader's still uses, and deletes a row only after its settlement has finished. So a pass that
+   * fails after an erasure loses no photo it owed: the next run's `erasure.settleOwed` finds the row.
+   * One row per erased item, not per uploader: an insert reads nothing, and the row is bounded by the
+   * item's own list, where a per-uploader list would be read and rewritten whole at every erasure and
+   * could outgrow a document. Account deletion drops a person's rows with their private data.
+   */
+  photoSettlements: defineTable({
+    uploaderId: v.id('profiles'),
+    photoIds: v.array(v.id('photos')),
+    owedAt: v.number(),
+  })
+    .index('by_uploader', ['uploaderId'])
+    .index('by_owed_at', ['owedAt']),
+
+  /**
    * What an audited action replaced, when it is too big for the audit row (D226, B01 §11): a
    * sub-area's previous polygon, a body's previous weather grid, and every row a body merge moved
    * or deleted. Written in the same mutation as the action, read only by its undo, keyed by the

@@ -143,6 +143,7 @@ One line per table: what it's for, and the decision or phase that made it. Group
 | `contentFlags` | abuse and safety reports on any target; dedup per target *is* the corroboration count (A06f); corrections dedup per reason (D180) — D32 |
 | `moderationActions` | the audit log: who did what, why — D37; an author's own takedown is `author_delete` — A10-3; an undo is a new row pointing at the one it undoes (`undoesActionId`) — D226 |
 | `contentVerdicts` | a moderator's hide or remove on someone's content, kept with the person: standing until a moderator reverses it (restore, undo, overturn), never ended by the author's deletion; a standing verdict holds withdrawn content back from the 30-day erasure — staff-only, never reputation — D248 |
+| `photoSettlements` | a photo settlement the erasure sweep owes: one row per erased item that carried photos (uploader + photo ids, no content), written in the erasing transaction, deleted only after `settlePhotos` has finished with it — so a failed pass never leaves an erased item's photos behind — D248 |
 | `auditSnapshots` | what an audited action replaced when it is too big for its row (a polygon, a weather grid, a merge's moved rows), read only by its undo — D226 |
 | `contentRevisions` | what a Post or Report said before each author edit, for a moderator's comparison; the card shows only *Edited*; cleared with the words by the departed-user sweep — A10-3 |
 | `supportTickets` | the in-app support inbox, emailed to the operator — D37 |

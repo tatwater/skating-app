@@ -74,10 +74,10 @@ const ERASE_REASON: Record<Erasable, string> = {
 
 /**
  * Photos an erased item carried. Whether one is still used by anything that survives is a question
- * about everything its uploader posted, and **an unknown is never "unused"**: so the tick only
- * collects them, per uploader, and hands each uploader's set to `settlePhotos`, which reads their
- * Reports and hazards a charged page per transaction until it has the whole answer, and only then
- * deletes what nothing uses.
+ * about everything its uploader posted, and **an unknown is never "unused"**: so the tick records the
+ * debt — one `photoSettlements` row per erased item, in the transaction that erased it — and
+ * `settlePhotos` works from those rows, reading the uploader's Reports and hazards a charged page per
+ * transaction until it has the whole answer, and only then deletes what nothing uses.
  */
 interface PhotoWork {
   uploaderId: Id<'profiles'>;
@@ -279,22 +279,13 @@ async function dueHead(
  * Cron entry: erase everything due. Self-continuing while any kind may have more, or a budget ran out
  * part-way through an item.
  */
-const photoWorkValidator = v.array(
-  v.object({ uploaderId: v.id('profiles'), photoIds: v.array(v.id('photos')) }),
-);
-
 export const eraseDue = internalMutation({
   args: {
     pageSize: v.optional(v.number()),
-    /**
-     * Photos earlier passes of this run let go of, not yet settled: carried until the run ends or
-     * they make a chunk, so an uploader's history is read once per batch, not once per pass.
-     */
-    photos: v.optional(photoWorkValidator),
   },
   handler: (ctx, args) =>
     traced('erasure.eraseDue', args, async () => {
-      const { pageSize, photos: carried = [] } = args;
+      const { pageSize } = args;
       const size = pageSizeFor(pageSize);
       const now = Date.now();
       const erased: Partial<Record<Erasable, number>> = {};
@@ -347,23 +338,18 @@ export const eraseDue = internalMutation({
       if (more && !moved) {
         throw new Error('erasure.eraseDue: a pass made no progress on the head of the due range');
       }
-      // After every row they hung from is gone: each uploader's set is settled by a job that can read
-      // their whole history, a charged page at a time — once the run ends, or once a chunk is waiting.
-      const pending = [...carried, ...photos].filter((work) => work.photoIds.length > 0);
-      const waiting = pending.reduce((n, work) => n + work.photoIds.length, 0);
-      const settleNow = !more || waiting >= SETTLE_CHUNK;
-      if (settleNow) await queuePhotoSettlement(ctx, pending);
+      // What the erasures let go of is owed a settlement, written in this same transaction: a pass
+      // that throws later loses none of it, and the settlement works from the record, never from a
+      // job's arguments.
+      await owePhotoSettlements(ctx, photos, now);
       if (more) {
         await ctx.scheduler.runAfter(0, internal.erasure.eraseDue, {
           ...(pageSize !== undefined ? { pageSize } : {}),
-          ...(settleNow || pending.length === 0
-            ? {}
-            : {
-                photos: pending.map((w) => ({
-                  uploaderId: w.uploaderId,
-                  photoIds: [...w.photoIds],
-                })),
-              }),
+        });
+      } else {
+        // The run is over: settle what is owed — this run's debts, and any a failed chain left.
+        await ctx.scheduler.runAfter(0, internal.erasure.settleOwed, {
+          ...(pageSize !== undefined ? { pageSize } : {}),
         });
       }
       return { erased, held, more };
@@ -421,27 +407,45 @@ async function eraseComment(
   return true;
 }
 
-/** Photo ids per settlement job: a scheduled function's arguments are bounded too. */
-const SETTLE_CHUNK = 500;
-
-/** One settlement job per uploader per chunk, for every photo of theirs the tick's erasures let go of. */
-async function queuePhotoSettlement(ctx: MutationCtx, work: readonly PhotoWork[]) {
-  const byUploader = new Map<Id<'profiles'>, Set<Id<'photos'>>>();
+/**
+ * Record what a tick's erasures owe: one row per erased item that carried photos, naming its
+ * uploader and the item's photo ids — no content. Written blind (an insert reads nothing), and
+ * bounded by the item's own list, which already fit in the item's row.
+ */
+async function owePhotoSettlements(ctx: MutationCtx, work: readonly PhotoWork[], now: number) {
   for (const { uploaderId, photoIds } of work) {
-    const set = byUploader.get(uploaderId) ?? new Set<Id<'photos'>>();
-    for (const id of photoIds) set.add(id);
-    byUploader.set(uploaderId, set);
-  }
-  for (const [uploaderId, set] of byUploader) {
-    const ids = [...set];
-    for (let i = 0; i < ids.length; i += SETTLE_CHUNK) {
-      await ctx.scheduler.runAfter(0, internal.erasure.settlePhotos, {
-        uploaderId,
-        photoIds: ids.slice(i, i + SETTLE_CHUNK),
-      });
-    }
+    if (photoIds.length === 0) continue;
+    await ctx.db.insert('photoSettlements', { uploaderId, photoIds: [...photoIds], owedAt: now });
   }
 }
+
+/**
+ * Settle every uploader who is owed one, one uploader at a time: the oldest debt names the next
+ * uploader, whose settlement takes all of their debts and hands back here when it is done. One chain
+ * a run, so an uploader is settled once a run; and a chain that dies is picked up by the next run's
+ * end, since the debts are rows, not arguments.
+ */
+export const settleOwed = internalMutation({
+  args: { pageSize: v.optional(v.number()) },
+  handler: (ctx, args) =>
+    traced('erasure.settleOwed', args, async () => {
+      const reads = new ReadBudget();
+      const [oldest] = await reads.take('photoSettlement', 1, (n) =>
+        ctx.db.query('photoSettlements').withIndex('by_owed_at').take(n),
+      );
+      if (!oldest) return { uploaderId: null };
+      await ctx.scheduler.runAfter(0, internal.erasure.settlePhotos, {
+        uploaderId: oldest.uploaderId,
+        ...(args.pageSize !== undefined ? { pageSize: args.pageSize } : {}),
+      });
+      return { uploaderId: oldest.uploaderId };
+    }),
+});
+
+/** Photo ids one settlement takes on before it starts reading: its arguments are bounded too. */
+const SETTLE_TAKE_IDS = 500;
+/** Clearing one debt: its row read and deleted. */
+const CLEAR_ONE = 2 * ROW_MAX.photoSettlement;
 
 /** Settling one photo: the row, its access-photo check, and the delete or strip. */
 const SETTLE_ONE = 2 * ROW_MAX.photo + ROW_MAX.small;
@@ -465,8 +469,14 @@ const SETTLE_ONE = 2 * ROW_MAX.photo + ROW_MAX.small;
 export const settlePhotos = internalMutation({
   args: {
     uploaderId: v.id('profiles'),
-    photoIds: v.array(v.id('photos')),
-    phase: v.optional(literals(['reports', 'hazards'] as const)),
+    /**
+     * The photos being settled, as taken from the debts in `owed` (or given directly). Absent: take
+     * the uploader's next debts first.
+     */
+    photoIds: v.optional(v.array(v.id('photos'))),
+    /** The debts this settlement took on: cleared once it is done, never before. */
+    owed: v.optional(v.array(v.id('photoSettlements'))),
+    phase: v.optional(literals(['reports', 'hazards', 'clear'] as const)),
     /** The Reports' page cursor. */
     cursor: v.optional(v.string()),
     /** The creation time of the last hazard read: the hazards' read resumes after it. */
@@ -476,9 +486,10 @@ export const settlePhotos = internalMutation({
   },
   handler: (ctx, args) =>
     traced('erasure.settlePhotos', args, async () => {
-      const { uploaderId, photoIds, phase = 'reports', cursor, after, pageSize } = args;
+      const { uploaderId, photoIds, owed, phase = 'reports', cursor, after, pageSize } = args;
       const reads = new ReadBudget();
       const cap = pageSize ?? Number.POSITIVE_INFINITY;
+      const seam = pageSize !== undefined ? { pageSize } : {};
       const carryOn = (
         rest: Id<'photos'>[],
         next: { phase: 'reports'; cursor?: string } | { phase: 'hazards'; after?: number },
@@ -486,9 +497,82 @@ export const settlePhotos = internalMutation({
         ctx.scheduler.runAfter(0, internal.erasure.settlePhotos, {
           uploaderId,
           photoIds: rest,
+          ...(owed !== undefined ? { owed } : {}),
           ...next,
-          ...(pageSize !== undefined ? { pageSize } : {}),
+          ...seam,
         });
+      // Every photo settled or found in use: the debts it took on are paid. Cleared in passes of
+      // their own after this one, so a settlement is never cleared before it is finished; a failure
+      // in between leaves a debt whose re-settlement finds nothing left to do.
+      const finish = async (settled: number) => {
+        if (owed !== undefined && owed.length > 0) {
+          await ctx.scheduler.runAfter(0, internal.erasure.settlePhotos, {
+            uploaderId,
+            owed,
+            photoIds: [],
+            phase: 'clear',
+            ...seam,
+          });
+        }
+        return { settled, more: false };
+      };
+
+      if (photoIds === undefined) {
+        // Take on the uploader's oldest debts, as many as the arguments carry well.
+        const rows = await reads.take(
+          'photoSettlement',
+          sizePage(reads, 'photoSettlement', { cap: 16 }),
+          (n) =>
+            ctx.db
+              .query('photoSettlements')
+              .withIndex('by_uploader', (q) => q.eq('uploaderId', uploaderId))
+              .take(n),
+        );
+        if (rows.length === 0) {
+          // Nothing more owed by this uploader: the next uploader's turn.
+          await ctx.scheduler.runAfter(0, internal.erasure.settleOwed, seam);
+          return { settled: 0, more: false };
+        }
+        const taken: Id<'photoSettlements'>[] = [];
+        const ids = new Set<Id<'photos'>>();
+        for (const row of rows) {
+          if (taken.length > 0 && ids.size >= SETTLE_TAKE_IDS) break;
+          taken.push(row._id);
+          for (const id of row.photoIds) ids.add(id);
+        }
+        await ctx.scheduler.runAfter(0, internal.erasure.settlePhotos, {
+          uploaderId,
+          photoIds: [...ids],
+          owed: taken,
+          phase: 'reports',
+          ...seam,
+        });
+        return { settled: 0, more: true };
+      }
+
+      if (phase === 'clear') {
+        const rest = [...(owed ?? [])];
+        let cleared = 0;
+        while (rest.length > 0 && reads.affords(CLEAR_ONE)) {
+          const id = rest.shift() as Id<'photoSettlements'>;
+          await reads.row(CLEAR_ONE, async () => {
+            const row = await reads.one('photoSettlement', () => ctx.db.get(id));
+            if (!row) return;
+            reads.touch('photoSettlement');
+            await ctx.db.delete(id);
+            cleared++;
+          });
+        }
+        // Then this uploader's next debts, if any — and from there, the next uploader.
+        await ctx.scheduler.runAfter(
+          0,
+          internal.erasure.settlePhotos,
+          rest.length > 0
+            ? { uploaderId, owed: rest, photoIds: [], phase: 'clear' as const, ...seam }
+            : { uploaderId, ...seam },
+        );
+        return { settled: 0, cleared, more: true };
+      }
       if (phase === 'reports') {
         const page = await reads.page('report', sizePage(reads, 'report', { cap }), (numItems) =>
           ctx.db
@@ -498,7 +582,7 @@ export const settlePhotos = internalMutation({
         );
         const used = new Set<string>(page.page.flatMap((row) => row.photoIds));
         const remaining = photoIds.filter((id) => !used.has(id));
-        if (remaining.length === 0) return { settled: 0, more: false };
+        if (remaining.length === 0) return finish(0);
         await carryOn(
           remaining,
           page.isDone ? { phase: 'hazards' } : { phase: 'reports', cursor: page.continueCursor },
@@ -521,7 +605,7 @@ export const settlePhotos = internalMutation({
       );
       const used = new Set<string>(hazards.flatMap((row) => row.photoIds));
       const remaining = photoIds.filter((id) => !used.has(id));
-      if (remaining.length === 0) return { settled: 0, more: false };
+      if (remaining.length === 0) return finish(0);
       const readTo = hazards.at(-1)?._creationTime ?? after;
       const position = readTo !== undefined ? { after: readTo } : {};
       if (hazards.length === n) {
@@ -562,8 +646,9 @@ export const settlePhotos = internalMutation({
         });
       }
       const rest = remaining.slice(done);
-      if (rest.length > 0) await carryOn(rest, { phase: 'hazards', ...position });
-      return { settled, more: rest.length > 0 };
+      if (rest.length === 0) return finish(settled);
+      await carryOn(rest, { phase: 'hazards', ...position });
+      return { settled, more: true };
     }),
 });
 
