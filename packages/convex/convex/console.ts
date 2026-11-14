@@ -24,7 +24,7 @@ import { v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
 import { hasCapability, isLockedOut, requireCapability } from './lib/auth';
-import { readDedupQueue } from './lib/dedupQueue';
+import { countDedupDecisions } from './lib/dedupQueue';
 import { accountsTotal } from './lib/metricReads';
 import { readOpenFlags } from './lib/openFlags';
 
@@ -200,8 +200,10 @@ export const corpusCounts = query({
   handler: async (ctx) => {
     await requireCapability(ctx, 'corpus.read');
 
-    // The dedup queue's own read and grouping, so this is its `total` by construction.
-    const dedup = await readDedupQueue(ctx);
+    // The dedup queue's own read and grouping, so this is its `total` by construction. Only the
+    // candidates that can change the number are fetched: not every candidate's outline, and not a
+    // subscription to every popular lake a drawn pond was matched against.
+    const dedup = await countDedupDecisions(ctx);
 
     // A bay can be both re-fitted and stale; it is one re-fit to look at.
     const refits = new Set<Id<'waterBodySubAreas'>>();
@@ -240,8 +242,8 @@ export const corpusCounts = query({
     return {
       // A queue read that stopped short leaves a floor, and the figure says so.
       duplicates: {
-        count: Math.min(dedup.groups.length, COUNT_CAP),
-        capped: dedup.truncated || dedup.groups.length > COUNT_CAP,
+        count: Math.min(dedup.count, COUNT_CAP),
+        capped: dedup.truncated || dedup.count > COUNT_CAP,
       },
       chordRefits: {
         count: Math.min(refits.size, COUNT_CAP),

@@ -136,8 +136,10 @@ const NO_EXTRAS: Omit<CorpusExtras, 'duplicates'> = {
 /**
  * The intake reasons, folded into the Corpus card's tasks the way the Corpus mode lists them:
  * both duplicate reasons are one *Duplicates* lane, and a class dissent sits with the conflicts.
- * `extras` is `console.corpusCounts` when it has landed: its *Duplicates* count decisions (rows
- * that name each other are one), so it replaces the rows the intake reasons add up.
+ * `extras` is `console.corpusCounts` when it has landed: its *Duplicates* is the dedup queue's own
+ * total (`dedupStatus` groups, as decisions), which replaces the intake reasons' sum. That is a
+ * different population, not a finer count of the same rows; the intake sum is only what a caller
+ * without that read gets (the Overview waits for both).
  */
 export function corpusFromReviewCounts(
   counts: ReviewQueueCounts,

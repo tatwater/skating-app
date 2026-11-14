@@ -102,45 +102,66 @@ async function capped<T>(rows: Promise<T[]>, cap: number, label: string): Promis
  * Compute every day-scoped metric for one UTC day. Split out from the point-in-time metrics because
  * only these are replayable: their inputs are timestamped rows, so the backfill runs this same code
  * over past days and lands on the same numbers the live job would have.
+ *
+ * Reports, hazards and signups are three of the Metrics pulse's strips, so they follow the pulse's
+ * rule (`rollupPulseDay`): a count whose read hits `cap` is saved with no number, never as the day.
+ * `cap` bounds those three reads only, so a test can reach it without thousands of rows.
  */
-async function rollupDay(ctx: MutationCtx, date: string): Promise<void> {
+export async function rollupDay(
+  ctx: MutationCtx,
+  date: string,
+  cap: number = DAY_SCAN_CAP,
+): Promise<void> {
   const from = metricDayStart(date);
   const to = from + DAY_MS;
 
   // --- Activity -------------------------------------------------------------
   // Reports are keyed on **skate-end time**, not creation: the number that matters is how much ice
   // got read that day, and an offline report that syncs on Tuesday still describes Monday's ice.
-  const reports = await capped(
+  const reports = await wholeDay(
     ctx.db
       .query('reports')
       .withIndex('by_moderation_and_skate_end_time', (q) =>
         q.eq('moderationStatus', 'visible').gte('skateEndTime', from).lt('skateEndTime', to),
-      )
-      .take(DAY_SCAN_CAP),
-    DAY_SCAN_CAP,
+      ),
+    cap,
     `reports on ${date}`,
   );
-  await writeMetricSnapshot(ctx, 'reports_created', date, { scalar: reports.length });
+  await writeMetricSnapshot(
+    ctx,
+    'reports_created',
+    date,
+    reports === null ? NOT_RECORDED : { scalar: reports.length },
+  );
 
-  const hazards = await capped(
+  const hazards = await wholeDay(
     ctx.db
       .query('hazards')
-      .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to))
-      .take(DAY_SCAN_CAP),
-    DAY_SCAN_CAP,
+      .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to)),
+    cap,
     `hazards on ${date}`,
   );
-  await writeMetricSnapshot(ctx, 'hazards_created', date, { scalar: hazards.length });
+  await writeMetricSnapshot(
+    ctx,
+    'hazards_created',
+    date,
+    hazards === null ? NOT_RECORDED : { scalar: hazards.length },
+  );
 
-  const signups = await capped(
+  // The accounts strip adds these days up, so a partial day here would undercount its total.
+  const signups = await wholeDay(
     ctx.db
       .query('profiles')
-      .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to))
-      .take(DAY_SCAN_CAP),
-    DAY_SCAN_CAP,
+      .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to)),
+    cap,
     `signups on ${date}`,
   );
-  await writeMetricSnapshot(ctx, 'signups', date, { scalar: signups.length });
+  await writeMetricSnapshot(
+    ctx,
+    'signups',
+    date,
+    signups === null ? NOT_RECORDED : { scalar: signups.length },
+  );
 
   // --- Bounty gate ----------------------------------------------------------
   const gateEvents = await capped(
@@ -309,8 +330,9 @@ async function rollupDay(ctx: MutationCtx, date: string): Promise<void> {
  *
  * A count whose read hits `cap` is saved with **no number** (`meta.capped`), and the other fields of
  * the day still save: a slice of a day is never written as the day, and the chart draws that day
- * *Not recorded yet*. A later run of the same day (the backfill, or the next tick under a higher
- * cap) replaces it. `cap` is a parameter so a test can reach it without thousands of rows.
+ * *Not recorded yet*. A day's rows only grow, so under the same cap a re-run (the next tick, the
+ * backfill) caps again: the gap is filled only by a run under a higher cap. `cap` is a parameter so
+ * a test can reach it without thousands of rows.
  */
 export async function rollupPulseDay(
   ctx: MutationCtx,
@@ -320,6 +342,7 @@ export async function rollupPulseDay(
   const from = metricDayStart(date);
   const to = from + DAY_MS;
 
+  // Each read is the day's rows or `null` (capped); every check below is against `null`.
   const comments = await wholeDay(
     ctx.db
       .query('comments')
@@ -327,31 +350,30 @@ export async function rollupPulseDay(
     cap,
     `comments on ${date}`,
   );
-  const counted = comments?.filter(isCountedComment);
+  const counted = comments === null ? null : comments.filter(isCountedComment);
   await writeMetricSnapshot(
     ctx,
     'comments_created',
     date,
-    counted === undefined
+    counted === null
       ? NOT_RECORDED
       : { scalar: counted.length, meta: { reports: new Set(counted.map((c) => c.reportId)).size } },
   );
 
   // A photo counts once it belongs to a report: an upload never attached is not a contribution.
-  const photos = (
-    await wholeDay(
-      ctx.db
-        .query('photos')
-        .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to)),
-      cap,
-      `photos on ${date}`,
-    )
-  )?.filter((p) => p.reportId !== undefined);
+  const uploads = await wholeDay(
+    ctx.db
+      .query('photos')
+      .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to)),
+    cap,
+    `photos on ${date}`,
+  );
+  const photos = uploads === null ? null : uploads.filter((p) => p.reportId !== undefined);
   await writeMetricSnapshot(
     ctx,
     'photos_added',
     date,
-    photos === undefined
+    photos === null
       ? NOT_RECORDED
       : { scalar: photos.length, meta: { reports: new Set(photos.map((p) => p.reportId)).size } },
   );
@@ -364,15 +386,18 @@ export async function rollupPulseDay(
     cap,
     `ratings on ${date}`,
   );
-  const kinds = ratings?.flatMap((r) => {
-    const kind = positiveReactionOf(r.verdict);
-    return kind === null ? [] : [kind];
-  });
+  const kinds =
+    ratings === null
+      ? null
+      : ratings.flatMap((r) => {
+          const kind = positiveReactionOf(r.verdict);
+          return kind === null ? [] : [kind];
+        });
   await writeMetricSnapshot(
     ctx,
     'positive_reactions',
     date,
-    kinds === undefined ? NOT_RECORDED : { scalar: kinds.length, meta: countBy(kinds) },
+    kinds === null ? NOT_RECORDED : { scalar: kinds.length, meta: countBy(kinds) },
   );
 
   const contributors = await contributorsBetween(ctx, from, to, cap);

@@ -64,6 +64,7 @@ import type * as lib_contentPurge from "../lib/contentPurge.js";
 import type * as lib_contributionCounts from "../lib/contributionCounts.js";
 import type * as lib_contributions from "../lib/contributions.js";
 import type * as lib_dailyThrottle from "../lib/dailyThrottle.js";
+import type * as lib_dedupQueue from "../lib/dedupQueue.js";
 import type * as lib_depth from "../lib/depth.js";
 import type * as lib_emailBlocks from "../lib/emailBlocks.js";
 import type * as lib_enums from "../lib/enums.js";
@@ -214,6 +215,7 @@ declare const fullApi: ApiFromModules<{
   "lib/contributionCounts": typeof lib_contributionCounts;
   "lib/contributions": typeof lib_contributions;
   "lib/dailyThrottle": typeof lib_dailyThrottle;
+  "lib/dedupQueue": typeof lib_dedupQueue;
   "lib/depth": typeof lib_depth;
   "lib/emailBlocks": typeof lib_emailBlocks;
   "lib/enums": typeof lib_enums;

@@ -91,7 +91,7 @@ import {
 import { recomputeBodySummary } from './lib/bodySummary';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { rankCandidates, scanCells } from './lib/cellScan';
-import { DEDUP_GROUP_CAP, readDedupQueue } from './lib/dedupQueue';
+import { DEDUP_GROUP_CAP, dedupGroups, readDedupFlags } from './lib/dedupQueue';
 import {
   CANONICAL_SOURCES,
   GEOMETRY_SOURCES,
@@ -103,7 +103,7 @@ import { closeFlag } from './lib/flagResolution';
 import { landmarksForBody, repointLandmarksOnMerge } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
 import { mirrorReportSubAreas } from './lib/reportSubAreas';
-import { takeCapped, takeCappedResult } from './lib/scan';
+import { takeCapped } from './lib/scan';
 import { richnessFor, scoreFields, zoomSortKey } from './lib/scoring';
 import { activateBody, demoteBody, transitionStanding } from './lib/standing';
 import { bbox, geoJson, latLng, literals } from './lib/validators';
@@ -5893,17 +5893,46 @@ export const listDedupCandidates = query({
   args: {},
   handler: async (ctx) => {
     await requireCapability(ctx, 'corpus.read');
-    // The read, the grouping and the order are the shared queue's, so the Overview's count of it
-    // can never disagree with what this draws.
-    const { groups, flaggedRows, truncated } = await readDedupQueue(ctx);
+    const { flagged, truncated } = await readDedupFlags(ctx);
+
+    // Every body the card has to name, flagged or not: a candidate may be a clean canonical body
+    // (D36's original case) that never carries a flag of its own.
+    const byId = new Map<Id<'waterBodies'>, Doc<'waterBodies'>>(flagged.map((b) => [b._id, b]));
+    for (const body of flagged) {
+      for (const id of body.duplicateCandidateIds ?? []) {
+        if (byId.has(id)) continue;
+        const other = await ctx.db.get(id);
+        if (other) byId.set(id, other);
+      }
+    }
+
+    // The shared grouping, so the Overview's count of this queue can never disagree with it. A flag
+    // whose only candidate has since been deleted is a group of one: the flag is real and someone
+    // has to clear it.
+    const groups = dedupGroups(flagged, (id) => byId.has(id)).map((ids) => {
+      const docs = ids.flatMap((id) => byId.get(id) ?? []);
+      const members = docs.slice(0, DEDUP_GROUP_CAP);
+      return {
+        key: members
+          .map((m) => m._id)
+          .sort()
+          .join('+'),
+        members,
+        truncated: docs.length > DEDUP_GROUP_CAP,
+      };
+    });
+
+    // Near-certain groups first (D36), then the biggest: a three-body group is either the matcher
+    // chaining two lakes together or a genuinely messy piece of the corpus, and both want a human
+    // sooner than a routine pair does.
+    const tier = (g: (typeof groups)[number]) =>
+      g.members.some((m) => m.dedupStatus === 'near_certain') ? 0 : 1;
+    groups.sort((a, b) => tier(a) - tier(b) || b.members.length - a.members.length);
+
     return {
-      groups: groups.map((g) => ({
-        key: g.key,
-        members: g.members.map(dedupSummary),
-        truncated: g.truncated,
-      })),
+      groups: groups.map((g) => ({ ...g, members: g.members.map(dedupSummary) })),
       total: groups.length,
-      flaggedRows,
+      flaggedRows: flagged.length,
       truncated,
     };
   },

@@ -5,8 +5,8 @@
  * Overview. They used to read different things: the Overview counted rows by `reviewReason`, the
  * queue reads `dedupStatus`, and a body D36's match-on-create flagged (`waterBodies.create` sets
  * `dedupStatus` and its candidates, never a review reason) sat in the queue while the Overview said
- * nothing was waiting. Both now call this, so the Overview's figure is the queue's `total` by
- * construction.
+ * nothing was waiting. Both now read the flags here and group them with {@link dedupGroups}, so the
+ * Overview's figure is the queue's `total` by construction.
  */
 import type { Doc, Id } from '../_generated/dataModel';
 import type { QueryCtx } from '../_generated/server';
@@ -17,32 +17,16 @@ export const DEDUP_QUEUE_CAP = 250;
 /** The most bodies one card may hold. A component larger than this is a matcher bug, not a merge. */
 export const DEDUP_GROUP_CAP = 6;
 
-/** One card's worth of duplicates: the bodies, and whether the group cap cut it short. */
-export type DedupGroupDocs = {
-  key: string;
-  members: Doc<'waterBodies'>[];
-  truncated: boolean;
-};
+type BodyId = Id<'waterBodies'>;
 
 /**
- * The queue, grouped into one entry per decision.
- *
- * Both match-on-create tiers land in it, near-certain first (D36): a body flagged as almost
- * certainly a duplicate is the one a moderator should merge before anything else, and before more
- * reports accumulate on the wrong row. The read stops at {@link DEDUP_QUEUE_CAP} flagged rows, and
- * `truncated` says when it did: past that, `groups.length` is a floor.
- *
- * Rows are folded into connected components over `duplicateCandidateIds`. Edges are followed
- * **only out of rows that are themselves flagged**. A candidate that is clean (or already merged)
- * is pulled in so the card can name it, but its own candidate list is not walked: that bound is
- * what keeps one mis-scored chain from swallowing the corpus into a single card. A candidate that
- * no longer exists links nothing, so two flags pointing at the same deleted body are two cards.
+ * The flagged rows, both match-on-create tiers, near-certain first (D36): a body flagged as almost
+ * certainly a duplicate is the one a moderator should merge before anything else. The read stops at
+ * {@link DEDUP_QUEUE_CAP} rows, and `truncated` says when it did: past that, any count is a floor.
  */
-export async function readDedupQueue(ctx: QueryCtx): Promise<{
-  groups: DedupGroupDocs[];
-  flaggedRows: number;
-  truncated: boolean;
-}> {
+export async function readDedupFlags(
+  ctx: QueryCtx,
+): Promise<{ flagged: Doc<'waterBodies'>[]; truncated: boolean }> {
   const near = await takeCappedResult(
     ctx.db
       .query('waterBodies')
@@ -57,78 +41,94 @@ export async function readDedupQueue(ctx: QueryCtx): Promise<{
     Math.max(0, DEDUP_QUEUE_CAP - near.rows.length),
     'dedupQueue (suspected_duplicate)',
   );
-  const flagged = [...near.rows, ...suspected.rows];
-
-  // Every body the card has to name, flagged or not: a candidate may be a clean canonical body
-  // (D36's original case) that never carries a flag of its own.
-  const byId = new Map<Id<'waterBodies'>, Doc<'waterBodies'>>(flagged.map((b) => [b._id, b]));
-  for (const body of flagged) {
-    for (const id of body.duplicateCandidateIds ?? []) {
-      if (byId.has(id)) continue;
-      const other = await ctx.db.get(id);
-      if (other) byId.set(id, other);
-    }
-  }
-
-  // Connected components, walking edges out of flagged rows only (both directions: a mutual pair
-  // and a one-way D36 stamp must both come out as one card).
-  const neighbors = new Map<Id<'waterBodies'>, Set<Id<'waterBodies'>>>();
-  const link = (a: Id<'waterBodies'>, b: Id<'waterBodies'>) => {
-    if (!byId.has(a) || !byId.has(b)) return;
-    for (const [from, to] of [
-      [a, b],
-      [b, a],
-    ] as const) {
-      const set = neighbors.get(from) ?? new Set<Id<'waterBodies'>>();
-      set.add(to);
-      neighbors.set(from, set);
-    }
-  };
-  for (const body of flagged) {
-    for (const id of body.duplicateCandidateIds ?? []) link(body._id, id);
-  }
-
-  const seen = new Set<Id<'waterBodies'>>();
-  const groups: DedupGroupDocs[] = [];
-  for (const body of flagged) {
-    if (seen.has(body._id)) continue;
-    const members: Doc<'waterBodies'>[] = [];
-    const stack = [body._id];
-    let truncated = false;
-    while (stack.length > 0) {
-      const id = stack.pop();
-      if (id === undefined || seen.has(id)) continue;
-      seen.add(id);
-      const doc = byId.get(id);
-      if (!doc) continue;
-      if (members.length >= DEDUP_GROUP_CAP) {
-        truncated = true;
-        continue;
-      }
-      members.push(doc);
-      for (const next of neighbors.get(id) ?? []) stack.push(next);
-    }
-    // A flag whose only candidate has since been deleted leaves a group of one. It still belongs
-    // in the queue (the flag is real and someone has to clear it).
-    const key = members
-      .map((m) => m._id)
-      .sort()
-      .join('+');
-    groups.push({ key, members, truncated });
-  }
-
-  // Near-certain groups first (D36), then the biggest: a three-body group is either the matcher
-  // chaining two lakes together or a genuinely messy piece of the corpus, and both want a human
-  // sooner than a routine pair does.
-  groups.sort((a, b) => {
-    const tier = (g: DedupGroupDocs) =>
-      g.members.some((m) => m.dedupStatus === 'near_certain') ? 0 : 1;
-    return tier(a) - tier(b) || b.members.length - a.members.length;
-  });
-
   return {
-    groups,
-    flaggedRows: flagged.length,
+    flagged: [...near.rows, ...suspected.rows],
     truncated: near.truncated || suspected.truncated,
   };
+}
+
+type Flag = Pick<Doc<'waterBodies'>, '_id' | 'duplicateCandidateIds'>;
+
+/**
+ * The candidates whose existence can change the grouping: unflagged bodies named by two or more
+ * flagged rows. A candidate named once is a leaf of its one row's group whether it exists or not,
+ * and a flagged candidate is in the read. Only these need fetching to count the decisions.
+ */
+export function sharedCandidates(flagged: readonly Flag[]): BodyId[] {
+  const flaggedIds = new Set(flagged.map((f) => f._id));
+  const named = new Map<BodyId, number>();
+  for (const row of flagged) {
+    for (const id of new Set(row.duplicateCandidateIds ?? [])) {
+      if (!flaggedIds.has(id)) named.set(id, (named.get(id) ?? 0) + 1);
+    }
+  }
+  return [...named].filter(([, n]) => n >= 2).map(([id]) => id);
+}
+
+/**
+ * The flagged rows grouped into decisions: connected components over `duplicateCandidateIds`, each
+ * listed flagged rows first (in read order), then the candidates they pulled in. Edges are followed
+ * **only out of flagged rows**: a clean (or merged) candidate joins the rows that name it, but its own
+ * candidate list is not walked, so one mis-scored chain can't swallow the corpus into one card.
+ *
+ * A candidate that no longer exists links nothing, so two flags naming the same deleted body are two
+ * decisions. `exists` is consulted only for {@link sharedCandidates}: that is the whole of what the
+ * count must fetch, and the queue, which fetches every candidate to name it, gets the same groups.
+ */
+export function dedupGroups(flagged: readonly Flag[], exists: (id: BodyId) => boolean): BodyId[][] {
+  const flaggedIds = new Set(flagged.map((f) => f._id));
+  const shared = new Set(sharedCandidates(flagged));
+  const linkable = (id: BodyId) => flaggedIds.has(id) || !shared.has(id) || exists(id);
+
+  const parent = new Map<BodyId, BodyId>();
+  const find = (x: BodyId): BodyId => {
+    let root = x;
+    while (parent.get(root) !== root) root = parent.get(root) ?? root;
+    let at = x;
+    while (parent.get(at) !== root) {
+      const next = parent.get(at) as BodyId;
+      parent.set(at, root);
+      at = next;
+    }
+    return root;
+  };
+  const add = (x: BodyId) => {
+    if (!parent.has(x)) parent.set(x, x);
+  };
+  for (const row of flagged) {
+    add(row._id);
+    for (const id of row.duplicateCandidateIds ?? []) {
+      if (!linkable(id)) continue;
+      add(id);
+      const a = find(row._id);
+      const b = find(id);
+      if (a !== b) parent.set(a, b);
+    }
+  }
+
+  const groups = new Map<BodyId, BodyId[]>();
+  const placed = new Set<BodyId>();
+  const place = (id: BodyId) => {
+    if (placed.has(id) || !parent.has(id)) return;
+    placed.add(id);
+    const root = find(id);
+    const group = groups.get(root) ?? [];
+    group.push(id);
+    groups.set(root, group);
+  };
+  for (const row of flagged) place(row._id);
+  for (const row of flagged) for (const id of row.duplicateCandidateIds ?? []) place(id);
+  return [...groups.values()];
+}
+
+/** How many decisions the queue holds — its `total` — reading only what can change the number. */
+export async function countDedupDecisions(
+  ctx: QueryCtx,
+): Promise<{ count: number; truncated: boolean }> {
+  const { flagged, truncated } = await readDedupFlags(ctx);
+  const existing = new Set<BodyId>();
+  for (const id of sharedCandidates(flagged)) {
+    if ((await ctx.db.get(id)) !== null) existing.add(id);
+  }
+  return { count: dedupGroups(flagged, (id) => existing.has(id)).length, truncated };
 }
