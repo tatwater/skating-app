@@ -796,7 +796,7 @@ lack of signal.*
 - The founder's device pass of the sheet on the Android preview build (every door; offline; the silhouette picker) — and `convex dev --once` before it (`contentRevisions`, `author_delete`)
 
 ## Phase B01 — The admin console: one surface, organized by what an operator is doing
-🟡 **In progress** 2026-10-14 · [plan](./phases/B01-admin-console.md) · D216 D217 D218 D219 D220 D221 D222 D223 D224 D225 D226 D227 D245 D246 D247 D248 D249 D250 D251 D252 D253 D254 D255
+🟡 **In progress** 2026-10-14 · [plan](./phases/B01-admin-console.md) · D216 D217 D218 D219 D220 D221 D222 D223 D224 D225 D226 D227 D245 D246 D247 D248 D249 D250 D251 D252 D253 D254 D255 D256 D257
 
 Phase 07 built `/admin` as work queues plus a control room, and every phase since added a page
 for its own feature; sixteen nav items later the surface is organized by table, not by task — an
@@ -827,6 +827,7 @@ knows what needs them, does it where they found it, and watches the machinery wo
 - The dev inbox seed (§8 §2) — the founder's OK is given; the examples are the build's to invent
 - `planConventions.test.ts` accepts the `B` era (done in this phase's first commit)
 - The Post-restore chooser on mobile — the server refuses an empty Post restore and takes chosen Reports (2026-11-13); the web chooser is `components/moderation/RestorePost`, the phone has none yet (and no restore of a Post today)
+- The People server's two backfills on dev, once it is deployed (`convex dev --once`): `peopleJobs:backfillRows` (then `peopleJobs:restoreTombstoneStatus` for any tombstone it logs as overwritten) and `peopleJobs:backfillFlagSubjects`. Until each finishes, the People counts and the flagged figures say they are floors
 - D248's two backfills on dev, once #108 is deployed (`convex dev --once`): `authorDeletions:backfillFromAudit` and `authorDeletions:backfillCommentDeletions`. Until they run, a moderator can still restore a Report or Comment its author deleted before the stamp existed
 - D248's verdict record on dev, after the next PR deploys: `authorDeletions:backfillFromAudit` again (it now also withdraws a member hidden after its Post was deleted), then `contentRecord:backfillVerdicts`, which starts `erasure:backfillClocks` when it finishes — in that order, so no clock runs before the verdict that holds it exists
 - The People page's record (§8 §7): the standing verdicts and the recently withdrawn list (`contentRecord.personVerdicts` and `contentRecord.personWithdrawals`, each paged), and the controls to record a verdict on deleted content and to overturn one (`moderation.overturnVerdict`) — the server is built, no screen reads it

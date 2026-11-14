@@ -956,7 +956,7 @@ merge and sub-areas; no split), D222 (discipline: no mute; photos' moderation ax
 blue means a transient mode; go-mode; the temperature scale; *bodies*), D224 (a clouded pass shown
 to skaters, per frame, from the Imagery tab). D225 (Reports, a ninth mode; in-context
 moderator controls kept) and D226 (undo for every operator action; a reason only when something is
-taken away). **Added 2026-10-16:** D227 (invoices edited by named people — Teagan from the start — not a role). **Refined 2026-10-17:** D227's grant is a row on an admin's People page that only a holder sees and changes; never no holder; a demotion clears it. **Ported 2026-11-10:** D245 (a saved put-in keeps a body active through the standing rollover; minted on the sweep branch as D228, §7). **Added 2026-11-13:** D249 (the season flips on 1 July, its Metrics window opens on 1 October, empty between), D250 (kudos are positive reactions), D251 (a flag under review is open), D252 (discipline never leaves the ledger without an editor), D253 (what a contribution is), D254 (the sign-in record keeps the current season and one past), D255 (a body's completeness is ten things).
+taken away). **Added 2026-10-16:** D227 (invoices edited by named people — Teagan from the start — not a role). **Refined 2026-10-17:** D227's grant is a row on an admin's People page that only a holder sees and changes; never no holder; a demotion clears it. **Ported 2026-11-10:** D245 (a saved put-in keeps a body active through the standing rollover; minted on the sweep branch as D228, §7). **Added 2026-11-13:** D249 (the season flips on 1 July, its Metrics window opens on 1 October, empty between), D250 (kudos are positive reactions), D251 (a flag under review is open), D252 (discipline never leaves the ledger without an editor), D253 (what a contribution is), D254 (the sign-in record keeps the current season and one past), D255 (a body's completeness is ten things). **Added 2026-11-14:** D257 (People reads a light row per person; flagged means the person or their content; a staffer's figures, defined once).
 
 ## §10 — Season statistics: the options (picked 2026-10-12: all of tiers 1 and 2)
 
@@ -1843,6 +1843,108 @@ one branch (`b01-3-server`).
   - H3: no console write calls the undo toast yet; `undo.latestOwn` serves it until one does.
   - S5's target names: a body's name needs #112's stored library row, not the body's outline.
   - `listActions`' verb filter in the index: it needs #112's `by_target_action`.
+
+**B01-4 (2026-11-14): the People server** (boards 8.1, 8.2, 8.5, 8.6; the founder's rulings of the
+same day, D257). Server only; the page is owed.
+
+- **The list reads a stored row per person** (`peopleRows`, `lib/peopleRows`), not `profiles`: a
+  profile can weigh a whole document (two cached isochrone polygons), so a page of fifty could pass
+  the read limit, and the lanes need indexes `profiles` doesn't have. The row is derived from the
+  profile alone and written at every write that moves a fact it carries — the profile's creation and
+  renames, the avatar mirror, every discipline and role write, the deletion request, its cancel, the
+  finalization lock, the tombstone, the lapsed-suspension sweep; trust points take a light path (they
+  move on every rating and no lane reads them). A drift repair re-derives the rows refreshed longest
+  ago, ten every ten minutes, so a write that missed its refresh heals within days. The restriction
+  marker and the suspension's end therefore live on the row, not on `profiles` (the brief's
+  "restriction marker on profiles" became the row's `restricted`).
+- **Counts, one rule per lane** (`lib/peopleFigures`, read by `people.lanes` and the Overview's
+  People card alike): Everyone, Staff (admins + moderators), Banned, Restricted, Leaving and Deleted
+  are `peopleCounts`, moved by the row writer in the row's own transaction — exact, and a floor
+  (`capped`) until the rows backfill marks itself done; Suspended (still running at the page's clock)
+  and Newest (the last seven days) are counted from the very index range the list pages, to 200;
+  Flagged and Appeals open group the open queue their list pages (open flags; waiting account
+  tickets), to 200. A property test drives random histories of writes and holds every lane's count
+  to the rows its own list yields.
+- **Orders, as the boards state them:** Everyone by name; Staff admins first, each by name;
+  Suspended soonest to lapse first, an open-ended one last, a lapsed one gone at once; Banned and
+  Deleted most recent first (a ban older than the row's record last); Restricted most recently
+  restricted first; Flagged and Appeals oldest first; Newest newest first; Leaving the window that
+  ends soonest first. A search ignores the lane and orders by match.
+- **`can` is the write's answer** (`lib/peopleCan`): one function per lever family decides both the
+  refusal a write throws and the `can` `people.person` returns, and undo state refuses through it too.
+  A property test tries every lever as every viewer on every state a person can be in.
+- **A deletion is never overwritten** (found by #113's review, owed here): suspend, ban and lift are
+  refused on an account in its deletion window, being finalized or deleted; a restriction is refused
+  only once it is being finalized or deleted. Every undo that would put a status back goes through the
+  same writers and is shown unavailable first. **Detecting a row already broken on dev:** a tombstone
+  a discipline write overwrote has `deletedAt` set and a status other than `deleted`; the rows
+  backfill logs each it meets (`peopleJobs.backfillRows`), and `peopleJobs.restoreTombstoneStatus`
+  puts one back. An overwritten finalization lock (`deleting`) heals on its own: the hourly
+  finalization sweep re-drives any account past its window that isn't deleted, and re-locks it.
+- **Flagged means the person or their content** (D257): `contentFlags.subjectUserId`, stamped at
+  filing by both writers (a person's flag, `lib/autoFlag`), `null` for a body; `by_subject_status`
+  reads a person's flags; `backfillFlagSubjects` stamps the rest. Until it has run, a content flag
+  without a subject makes the flagged figures floors.
+- **Give-backs ask no reason** (D226 at the writes): a lift, a restored right (flagging included), a
+  raised or cleared bounty limit and a promotion take an optional reason and otherwise get a default,
+  marked `reasonDefaulted` so History can leave it out (`reasonGiven: false` on the row); a demotion
+  and every take-away still require one, and an undo asks one exactly when it takes something away (a
+  role undo by rank, a bounty-limit undo by the limit in force).
+- **`canFlag`** joins the posting-permission family (`setPostingPermission`, `permission:
+  'flagging'`): the same shape (one boolean right, off with a reason, on without), so it shares the
+  verb, its undo and History's words. `contentFlags.flag` refuses a member whose flagging is off;
+  staff are exempt, and switching it off on a staffer is refused.
+- **The lapsed-suspension sweep** (D222, ruling 10): `peopleJobs.sweepLapsedSuspensions` every 15
+  minutes, over `profiles.by_suspension_due` (suspended, not parked, not in the deletion window, a
+  lower-bounded range on the end); each reset is its own nested transaction writing an actorless
+  `unban` ("The suspension ran its course"); a failure is counted on the profile (`lib/attempts`), the
+  walk moves past it, three runs park it; `retryLapsedDaily` tries every parked one once a day, least
+  recently tried first; `peopleJobs.parkedLapses` lists them (`machinery.read`). A new suspension, ban
+  or lift starts the record over. A fast-check property holds fairness over any mix of outcomes.
+- **Time to decide** reads when the item was filed from the decision's own row: the flag, request and
+  drawn-body decisions now record `filedAt`. A drawn-body decision from before that can't be timed
+  without reading its outline, so a week holding one reads *not recorded* until it passes.
+
+**B01-4: every read, weighed.** *P* a profile (1 MiB, its isochrones), *R* a row with an uncapped
+field, *F* a flag (its note capped), *S* a row of ids, numbers and short strings (≤ 8 KiB): a People
+row is *S* (its reason line is cut to 280 characters).
+
+| Read | Table · index | Bound | Row | Capped or partial says so |
+| --- | --- | --- | --- | --- |
+| `people.lanes` | `peopleCounts`; `peopleRows` ranges; open flags · `by_status` ×2; tickets · `by_status` ×2 | 64; 201 ×2; 201 ×2; 201 ×2 | S, S, F, S | a stored count before `ready:rows`; a range or queue past 200 |
+| `people.listPage` | one lane's range (`paginate`), or `search_people`; the queues as above | ≤ 100 a page | S | `partial` before the rows backfill; `flagsCapped` |
+| `people.person` | the profile; `by_target_action` 1 row; flags · `by_target_status_reason` and `by_subject_status`; tickets · `by_clerk_user_created`; `by_flagger`; verdict counts; admins (last editor) | 51 / 101 a status; 201; 201; 501; 500 | P, R, F, S, F, S, P | `onUser`, `onContent` (also before the subject backfill), `flagsFiled`, `appealsCapped`, `hidden.capped` |
+| `people.history` | `by_target` (user); verdicts · `by_subject_standing` ×2 and `by_subject_ended`, each its action row; flags · `by_subject_status` ×2, each its decision rows | `limit + 1` each (≤ 101) | R | a capped source keeps only rows newer than what it didn't read; `capped` |
+| `people.decisions` | `by_actor`, filtered in the query, `paginate` | 100 a page, 2,000 scanned | R | `isDone` |
+| `people.staffStats` | `by_actor` + `_creationTime` (`paginate`, nine weeks); `by_undoes` per row this week; the season `by_actor` range, each with `by_undoes` and its verdict; grant rows | 2,000; 16 each; 301; 50 | R | a week the read didn't cover; `overturned.capped`; `staffSince` `null` at 50 grants |
+| `people.reportTrend` | `reports.by_author_skate_end_time`, `paginate` | 3,000 rows, 8 MiB as they weigh | R | `capped`; `monthsCapped` only when the read stopped inside the window |
+| `contentRecord.personVerdicts` | adds the comment's or Post's Report and the body's library row | charged (`ROW_MAX.bodyLibraryRow`) | R | a short page is not the end |
+| `peopleJobs` sweep / retry | `by_suspension_due` / `by_suspension_parked` `first()` a step; nested reset | while a step fits (head *P* + nested 2*P* + a failure's touch *P*) | P | each pass logs its position (`traced`) |
+| `peopleJobs.backfillRows` / `backfillFlagSubjects` / `repairDrift` | `profiles` / `contentFlags` · `by_creation_time`; `peopleRows.by_refreshed_at` | sized by budget (*P* + 2*P* nested; *F* + a target at *R*; 10 rows) | P, F, S | not marked ready after any failure |
+
+Reads whose rows are audit rows (*R*) are bounded by count, not charged: an audit row's reason and
+metadata are uncapped, so a page of them is weighed by its real size where a `paginate` can say so
+(`maximumBytesRead`) and otherwise by count — realistically under 2 KiB a row. One `paginate` per
+query is Convex's rule, so `history` and `staffStats`' season read use `take`.
+
+**What is *not recorded* (`null`) and what is capped.** `null`: contradictions never counted; raw
+trust points for a viewer without `people.trustScore`; the status note's actor and time when no audit
+row set the status; Time to decide with no decision, or with one whose filing time isn't known;
+Overturned while the season's record hasn't opened (1 July to 1 October); Staff since and role since
+without a grant row (the first admin); a list row's status time and restriction time when the row
+first met that state in the backfill. Capped (a floor): everything in the table's last column.
+
+**Open for a ruling:** the Overview's *N users* still reads the 6-hourly `accounts_total` rollup,
+shared with Metrics' total, while the Everyone lane counts live — the same definition (every account
+but a tombstone), refreshed differently; and the Overview's *open appeals* counts tickets where the
+lane counts people. Both were left as they were (the brief: the Overview's numbers change only where
+a ruling changes a rule).
+
+**Owed to the record sheet's PR** (ruling 1): the verdict and withdrawal lists' mock round and any
+read solely for them; overturn on the sheet. **Owed to the web builders:** `RestorePost.tsx` names
+the person by `@username` in its "why down" line (the rule is real names) and is a Dialog where the
+boards draw a sheet. **Deferred:** the decisions' target names (S5), and bounty asks this season on
+the Bounties lever.
 
 ### The B01-2 server register (owed to the server agent)
 

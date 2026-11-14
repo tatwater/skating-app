@@ -59,6 +59,8 @@ One line per table: what it's for, and the decision or phase that made it. Group
 | `adminAreas` · `adminAreaCells` | town / county / state polygons and their cells, for the place a point resolves to — Phase 05 |
 | `bodyLibraryRows` | the Bodies library's row: what the console's list shows, sorts by and filters on, one per body per scope (`*` and each state it touches), written only by `lib/bodyLibrary.ts` at the writes that change its facts — B01 §12.8 |
 | `bodyLibraryCounts` | the library's counts — each lane's total, the state tabs, every facet option, per lane and scope — moved by the row writer by the difference of each change, so a count is the tally of the rows — B01 §12.8 |
+| `peopleRows` | the People lists' row: one per profile, what a list shows, sorts by and narrows on — a profile can weigh a document, so no list pages through them — written only by `lib/peopleRows.ts` at the writes that move its facts, with a drift repair — B01 §12.8, D257 |
+| `peopleCounts` | the People lanes' stored counts (Everyone, admins, moderators, Banned, Restricted, Leaving, Deleted), moved by the row writer with each row, so a count is the tally of the rows; and the markers that say a backfill finished — B01 §12.8, D257 |
 | `bodyLibraryQueue` | bodies whose library row is owed a refresh by the machine's bulk writes (imports, enrichment loads, prunes), drained by the minute cron — B01 §12.8 |
 | `bodySummaryRefreshes` | when each body's map summary card next changes by the passage of time — a report aging out of the window, the season turning; the summary sweep reads only the due rows, kept beside every card write |
 | `regionStats` | per-state deciles of area, depth, elevation — the comparison basis for generated captions — D70 |
@@ -145,7 +147,7 @@ One line per table: what it's for, and the decision or phase that made it. Group
 
 | Table | For |
 | --- | --- |
-| `contentFlags` | abuse and safety reports on any target; dedup per target *is* the corroboration count (A06f); corrections dedup per reason (D180) — D32 |
+| `contentFlags` | abuse and safety reports on any target; dedup per target *is* the corroboration count (A06f); corrections dedup per reason (D180); each names its subject — the person, or the author of the flagged content (D257) — D32 |
 | `moderationActions` | the audit log: who did what, why — D37; an author's own takedown is `author_delete` — A10-3; an undo is a new row pointing at the one it undoes (`undoesActionId`) — D226 |
 | `contentVerdicts` | a moderator's hide or remove on someone's content, kept with the person: standing until a moderator reverses it (restore, undo, overturn), never ended by the author's deletion; a standing verdict holds withdrawn content back from the 30-day erasure — staff-only, never reputation — D248 |
 | `photoSettlements` | a photo settlement the erasure sweep owes: rows per erased item that carried photos (uploader + at most 500 photo ids, no content), written in the erasing transaction, deleted only after `settleStep` has finished with them — so a failed pass never leaves an erased item's photos behind — D248 |

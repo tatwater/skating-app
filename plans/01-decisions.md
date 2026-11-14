@@ -7988,3 +7988,42 @@ row so far read as the founder acting by hand. The row now says both who and how
 **Related:** D37, D80, D226, [`05-accounts-and-credentials.md`](./05-accounts-and-credentials.md)
 (the seed operator row), [`phase-B01`](./phases/B01-admin-console.md).
 
+## D257 — People reads a light row per person; flagged means the person or their content; a staffer's figures are defined once (B01)
+
+**2026-11-14, the founder's rulings on the People pages** (boards 8.1, 8.2, 8.5, 8.6), and the build
+call that carries them.
+
+- **A stored row per person.** The lists read `peopleRows`, one light row per profile written only by
+  `lib/peopleRows` from the profile at every write that moves a fact a list shows, never a page of
+  `profiles`: a profile can weigh a whole document (its cached drive isochrones are polygons), so a
+  page of fifty could pass a transaction's read limit. The lanes that are pure facts of the row
+  (Everyone, Staff, Banned, Restricted, Leaving, Deleted) are counted in `peopleCounts`, moved with
+  the row in the same transaction, so a count is the tally of its rows by construction; the lanes the
+  clock moves (Suspended — still running — and Newest — the last seven days) are counted from the
+  very index range their list reads; the queue lanes (Flagged, Appeals open) group the open queue
+  their list reads. Appeals open is a support read (PII): a moderator's lanes lack it.
+- **Flagged means the person or their content.** A flag names its subject at filing — the person, or
+  the author of what was flagged; nobody behind a body — and the Overview's flagged figure and the
+  People lane group the open queue by it, one rule.
+- **A staffer's figures.** *Decisions* are the audit rows they made, minus their own skater actions
+  (deleting their own content, resolving their own alert); *Time to decide* is the median, over this
+  week's decisions on filed items (flags, requests, drawn bodies), from filed to decided — support
+  tickets wait until their resolutions are audited; *Overturned this season* counts their decisions
+  someone else reversed (an undo, or a restore or overturn that ended the verdict); *Staff since* is
+  the grant row, *not recorded* when none exists. Moderators see them on an admin's page too.
+- **The person's strip says *Reports*** — total, hidden, edited — beside a monthly kept-versus-hidden
+  trend; months before the account existed are absent, not zero.
+- **No "Restore all"**: restores stay one at a time. **No photo moderation** on People yet.
+- **A reason only when something is taken away** (D226, made true at the writes): a lift, a restored
+  right, a raised bounty limit and a promotion ask none and get a default reason, marked so History
+  can leave it out; a demotion asks one, and an undo asks one exactly when it takes something away.
+- **A deletion is never overwritten.** Suspend, ban and lift are refused on an account in its
+  deletion window, being finalized or deleted, through the rule People's `can` reads, so a status
+  write never overwrites a deletion and a lapsing suspension never unlocks one; the lapsed-suspension
+  sweep (D222's) never touches such an account.
+
+**Why:** the lists have to be safe to page at the worst a row can weigh, and every figure on the page
+has to be the same number its list or its write would give.
+
+**Related:** D3, D37, D50, D57, D62, D222, D226, D227, D248, D251, D252,
+[`phase-B01`](./phases/B01-admin-console.md) §12.8.
