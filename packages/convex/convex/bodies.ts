@@ -127,9 +127,13 @@ export interface LibraryRowView {
   areaSqM: number | null;
   complete: { have: number; of: number; missing: LibraryRow['missing'] };
   asks: number;
+  /** `asks` is a floor: a kind of ask reached its read cap. */
+  asksCapped: boolean;
   asksWaiting: boolean;
   /** Reports this season; `0` from 1 July to 30 September, when the new season's record is empty. */
   reports: number;
+  /** `reports` is a floor: the scan stopped inside the season's record. */
+  reportsCapped: boolean;
   changedAt: number | null;
   standing: LibraryRow['standing'];
 }
@@ -145,10 +149,12 @@ function rowView(row: LibraryRow, season: number, q: string): LibraryRowView {
     areaSqM: row.areaSqM ?? null,
     complete: { have: row.completeHave, of: row.completeOf, missing: row.missing },
     asks: row.asks,
+    asksCapped: row.asksCapped,
     asksWaiting: row.asksWaiting,
     // A row counted for an earlier season belongs to a record that has closed: the season sweep
     // re-counts it, and until it does the honest figure for this season is the empty record's.
     reports: row.reportsSeason === season ? row.reports : 0,
+    reportsCapped: row.reportsSeason === season && row.reportsCapped,
     changedAt: row.changedAt ?? null,
     standing: row.standing,
   };

@@ -74,14 +74,15 @@ function vertexCount(geom: Polygon | MultiPolygon): number {
 
 /** Whether `from`'s outer rings come within {@link TOUCH_METERS} of `to`, by sampled vertices. */
 function samplesNear(from: Polygon | MultiPolygon, to: Polygon | MultiPolygon): boolean {
-  for (const ring of ringsOf(from)) {
-    const step = Math.max(1, Math.floor(ring.length / TOUCH_SAMPLES));
-    for (let i = 0; i < ring.length; i += step) {
-      const p = ring[i];
-      if (p === undefined || p.length < 2) continue;
-      const point = { lng: p[0] as number, lat: p[1] as number };
-      if (distanceToPolygonMeters(point, to) <= TOUCH_METERS) return true;
-    }
+  // {@link TOUCH_SAMPLES} across the whole outline, every ring's vertices in one sequence: a
+  // multipolygon of hundreds of parts costs the same as one ring, never a sample budget per part.
+  const points = ringsOf(from).flat();
+  const step = Math.max(1, Math.floor(points.length / TOUCH_SAMPLES));
+  for (let i = 0; i < points.length; i += step) {
+    const p = points[i];
+    if (p === undefined || p.length < 2) continue;
+    const point = { lng: p[0] as number, lat: p[1] as number };
+    if (distanceToPolygonMeters(point, to) <= TOUCH_METERS) return true;
   }
   return false;
 }

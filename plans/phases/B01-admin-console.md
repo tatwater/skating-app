@@ -1571,7 +1571,9 @@ records and applies the count differences:
   counted for an earlier season reads as zero reports this season — while the stored counts behind
   the facet's number and the reports sort lag until the turn finishes: a body an hour per ten
   reported last season, about 30 hours for 300. It happens on 1 July, when nobody is skating
-  (accepted by the governor, 2026-11-14).
+  (accepted by the governor, 2026-11-14). A parked body, which can't be re-counted, has its rows
+  closed on the new season (zero in its empty record, the counts moved with them), so the turn
+  always finishes.
 - **A body whose refresh throws never blocks the rest.** Every refresh outside the writer runs in
   a nested transaction of its own (`refreshBodyLibrary`), so a failure rolls back only that body's
   work — never the moderator's write, the report, or the rest of a drain, repair or backfill page.
@@ -1601,6 +1603,10 @@ records and applies the count differences:
   hide in `moderation.ts`) call `recomputeBodySummary`, which refreshes the library; no library fact
   counts hazards, so each could pass `library = false` — one argument per call site, deferred with
   them. Until then a hazard write pays a refresh that writes nothing.
+
+**A figure a read stopped short on says so.** A row's reports this season come from its newest 300
+reports and its asks from up to 100 of each kind; when either read stopped inside what it counts,
+the row says `reportsCapped` or `asksCapped` and the number is a floor, never presented as whole.
 
 **Reads** (`bodies.ts`, gated on `body.read`): `listPage` (lane, state, search, facets, sort, paged
 — a starting page up to the library's most, so a return reloads as many rows as were showing; a

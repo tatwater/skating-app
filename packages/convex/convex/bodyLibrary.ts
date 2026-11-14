@@ -28,6 +28,7 @@ import { requireCapability } from './lib/auth';
 import {
   bodiesOfTarget,
   changesTheBody,
+  closeSeasonFor,
   drainLibraryQueue,
   hasRefreshBudget,
   isParked,
@@ -246,7 +247,10 @@ export const turnSeason = internalMutation({
       tried++;
       if (await refreshBodyLibrary(ctx, id, { now })) refreshed++;
     }
-    return { refreshed, failed: tried - refreshed };
+    // A parked body can't be re-counted, but its last season's count is not this season's: its rows
+    // close to the new season's empty record (the counts moved with them), so the turn finishes.
+    for (const id of passed) await closeSeasonFor(ctx, id, current);
+    return { refreshed, failed: tried - refreshed, closed: passed.size };
   },
 });
 

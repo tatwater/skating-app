@@ -4344,9 +4344,13 @@ export default defineSchema({
     missing: v.array(literals(COMPLETENESS_FIELDS)),
     complete: literals(COMPLETE_OPTIONS),
     asks: v.number(),
+    /** A kind of ask reached its read cap: `asks` is a floor. */
+    asksCapped: v.boolean(),
     asksWaiting: v.boolean(),
     /** Reports in the season's record (`seasonRecordSpan`), and the season they were counted for. */
     reports: v.number(),
+    /** The report scan stopped inside the season's record: `reports` is a floor. */
+    reportsCapped: v.boolean(),
     reportsSeason: v.number(),
     everReported: v.boolean(),
     curated: v.boolean(),

@@ -59,6 +59,8 @@ import { PUT_IN_REPORT_SCAN, putInMarkersForBody } from './putInMarkers';
 
 /** The newest reports a refresh reads: the season's count and the put-in clusters share them. */
 export const REPORT_SCAN = 300;
+/** The further window read when every newest report is hidden. */
+const OLDER_REPORT_SCAN = 1_000;
 /** The most open asks of one kind a refresh counts. */
 const ASK_CAP = 100;
 /**
@@ -128,7 +130,8 @@ export async function hasLandmarkFor(
 export async function openAsksFor(
   ctx: QueryCtx,
   waterBodyId: Id<'waterBodies'>,
-): Promise<{ count: number; waiting: boolean }> {
+): Promise<{ count: number; waiting: boolean; capped: boolean }> {
+  let capped = false;
   let requests = 0;
   for (const kind of REQUEST_KINDS) {
     const rows = await ctx.db
@@ -137,6 +140,7 @@ export async function openAsksFor(
         q.eq('waterBodyId', waterBodyId).eq('kind', kind).eq('status', 'open'),
       )
       .take(ASK_CAP);
+    if (rows.length >= ASK_CAP) capped = true;
     requests += rows.length;
   }
   let flags = 0;
@@ -147,13 +151,16 @@ export async function openAsksFor(
         q.eq('targetType', 'waterbody').eq('targetId', waterBodyId).eq('status', status),
       )
       .take(ASK_CAP);
+    if (rows.length >= ASK_CAP) capped = true;
     flags += rows.length;
   }
   const names = await ctx.db
     .query('corpusPlaceNames')
     .withIndex('by_water_body_status', (q) => q.eq('waterBodyId', waterBodyId).eq('status', 'open'))
     .take(ASK_CAP);
-  return { count: requests + flags + names.length, waiting: requests + flags > 0 };
+  if (names.length >= ASK_CAP) capped = true;
+  // `capped`: some kind reached its cap, so `count` is a floor, never presented as whole.
+  return { count: requests + flags + names.length, waiting: requests + flags > 0, capped };
 }
 
 /**
@@ -167,6 +174,8 @@ export async function reportFactsFor(
   now: number,
 ): Promise<{
   reports: number;
+  /** The scan stopped inside the season's record: `reports` is a floor. */
+  reportsCapped: boolean;
   season: number;
   everReported: boolean;
   newest: Doc<'reports'>[];
@@ -183,18 +192,27 @@ export async function reportFactsFor(
     span === null
       ? 0
       : visible.filter((r) => r.skateEndTime >= span.from && r.skateEndTime < span.to).length;
+  const oldest = newest[newest.length - 1];
+  const reportsCapped =
+    span !== null &&
+    newest.length === REPORT_SCAN &&
+    oldest !== undefined &&
+    oldest.skateEndTime >= span.from;
   let everReported = visible.length > 0;
-  if (!everReported && newest.length === REPORT_SCAN) {
-    // Every newest report is hidden: an older visible one still counts. Rare, and bounded by the
-    // body's own reports.
+  if (!everReported && oldest !== undefined && newest.length === REPORT_SCAN) {
+    // Every newest report is hidden: an older visible one still counts. Read one bounded window
+    // further back; a body with more hidden reports than that reads as not reported (the facet's
+    // "never reported" is about visible reports, and this is the rare edge of an edge).
     const older = await ctx.db
       .query('reports')
-      .withIndex('by_water_body_skate_end_time', (q) => q.eq('waterBodyId', waterBodyId))
-      .filter((q) => q.eq(q.field('moderationStatus'), 'visible'))
-      .first();
-    everReported = older !== null;
+      .withIndex('by_water_body_skate_end_time', (q) =>
+        q.eq('waterBodyId', waterBodyId).lt('skateEndTime', oldest.skateEndTime),
+      )
+      .order('desc')
+      .take(OLDER_REPORT_SCAN);
+    everReported = older.some((r) => r.moderationStatus === 'visible');
   }
-  return { reports, season, everReported, newest };
+  return { reports, reportsCapped, season, everReported, newest };
 }
 
 /** The names a body is also known by: every claim but its displayed name, once each. */
@@ -292,8 +310,10 @@ export async function libraryFieldsFor(
     missing: complete.missing,
     complete: completeOption(complete.have, complete.of),
     asks: asks.count,
+    asksCapped: asks.capped,
     asksWaiting: asks.waiting,
     reports: reportFacts.reports,
+    reportsCapped: reportFacts.reportsCapped,
     reportsSeason: reportFacts.season,
     everReported: reportFacts.everReported,
     curated: (body.curatedBoost ?? 0) > 0,
@@ -526,9 +546,23 @@ const MiB = 1024 * 1024;
  * body (Champlain is a ~300 KB outline and its newest {@link REPORT_SCAN} reports), so a refresh that
  * runs past it is a body broken for the writer, recorded and in time parked like a throw.
  */
-export const REFRESH_LIMITS = { bytesRead: 6 * MiB, documentsRead: 4_000, databaseQueries: 1_000 };
-/** Headroom kept past a refresh's limits for the caller to record its outcome. */
-const REFRESH_RESERVE = { bytesRead: 1 * MiB, documentsRead: 200, databaseQueries: 100 };
+export const REFRESH_LIMITS = {
+  bytesRead: 6 * MiB,
+  documentsRead: 4_000,
+  databaseQueries: 500,
+  documentsWritten: 500,
+};
+/**
+ * Headroom a refresh must leave its caller after spending its whole {@link REFRESH_LIMITS}: room to
+ * record the outcome and to finish the caller's own page (a bulk writer's audited rows, a report
+ * write), whose budget was sized before this refresh existed.
+ */
+const REFRESH_RESERVE = {
+  bytesRead: 4 * MiB,
+  documentsRead: 8_000,
+  databaseQueries: 1_500,
+  documentsWritten: 2_000,
+};
 
 /**
  * Whether this transaction can still afford a body's refresh at its full {@link REFRESH_LIMITS}, with
@@ -540,7 +574,10 @@ export async function hasRefreshBudget(ctx: MutationCtx): Promise<boolean> {
   return (
     m.bytesRead.remaining >= REFRESH_LIMITS.bytesRead + REFRESH_RESERVE.bytesRead &&
     m.documentsRead.remaining >= REFRESH_LIMITS.documentsRead + REFRESH_RESERVE.documentsRead &&
-    m.databaseQueries.remaining >= REFRESH_LIMITS.databaseQueries + REFRESH_RESERVE.databaseQueries
+    m.databaseQueries.remaining >=
+      REFRESH_LIMITS.databaseQueries + REFRESH_RESERVE.databaseQueries &&
+    m.documentsWritten.remaining >=
+      REFRESH_LIMITS.documentsWritten + REFRESH_RESERVE.documentsWritten
   );
 }
 
@@ -737,6 +774,34 @@ export async function stampChanged(
     if (row.changedAt !== undefined && row.changedAt >= at) continue;
     await ctx.db.patch(row._id, { changedAt: at, changedAsc: keys.asc, changedDesc: keys.desc });
   }
+}
+
+/**
+ * Close a body's rows on an earlier season: zero reports in `season`'s record (the record a parked
+ * body can't be re-counted for), the counts moved by the difference. The season turn's write for a
+ * body it can't refresh — the honest figure for a season whose record nothing has counted into.
+ */
+export async function closeSeasonFor(
+  ctx: MutationCtx,
+  waterBodyId: Id<'waterBodies'>,
+  season: number,
+): Promise<void> {
+  const rows = await ctx.db
+    .query('bodyLibraryRows')
+    .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
+    .take(MAX_SCOPES);
+  const stale = rows.filter((r) => r.reportsSeason !== season);
+  if (stale.length === 0) return;
+  const before = footprintOf(rows.map(stripSystem));
+  const next = rows.map((r) =>
+    r.reportsSeason === season
+      ? stripSystem(r)
+      : { ...stripSystem(r), reports: 0, reportsCapped: false, reportsSeason: season },
+  );
+  for (const r of stale) {
+    await ctx.db.patch(r._id, { reports: 0, reportsCapped: false, reportsSeason: season });
+  }
+  await applyCountDeltas(ctx, countDeltas(before, footprintOf(next)));
 }
 
 // ── The queue: the machine's bulk writes ─────────────────────────────────────────────────────

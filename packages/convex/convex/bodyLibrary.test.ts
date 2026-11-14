@@ -18,6 +18,7 @@ import {
   MAX_REFRESH_ATTEMPTS,
   noteAuditedAction,
   queueLibraryRefresh,
+  REPORT_SCAN,
   refreshBodyLibrary,
 } from './lib/bodyLibrary';
 import { recomputeBodySummary } from './lib/bodySummary';
@@ -472,11 +473,13 @@ describe('kept current at the writes', () => {
     expect(await t.mutation(internal.bodyLibrary.turnSeason, {})).toEqual({
       refreshed: 1,
       failed: 0,
+      closed: 0,
     });
     expect((await rowsOf(t, id))[0]).toMatchObject({ reports: 0, reportsSeason: 2027 });
     expect(await t.mutation(internal.bodyLibrary.turnSeason, {})).toEqual({
       refreshed: 0,
       failed: 0,
+      closed: 0,
     });
   });
 
@@ -757,6 +760,71 @@ describe('the list', () => {
       if (next.isDone) expect(next.scanBudgetSpent).toBe(false);
     }
     expect(found).toEqual(['z bay 1', 'z bay 2', 'z bay 3']);
+  });
+
+  test('a figure the read stopped short on says it is a floor', async () => {
+    const t = harness();
+    const { as, id: mod } = await seedUser(t);
+    const busy = await seedBody(t, { name: 'Busy' });
+    await t.run(async (ctx) => {
+      const author = await ctx.db.insert('profiles', {
+        clerkUserId: 'floor-author',
+        displayName: 'a',
+        username: 'floor-a',
+        dateOfBirth: Date.UTC(1990, 0, 1),
+        driveTimePrefMinutes: 60,
+        profileVisibility: 'public',
+        notificationPrefs: NOTIF_PREFS,
+        reputationPoints: 0,
+        role: 'member',
+        status: 'active',
+        createdAt: NOW,
+      });
+      for (let i = 0; i < REPORT_SCAN; i++) {
+        const at = NOW - (i + 1) * 60_000;
+        await ctx.db.insert('reports', {
+          authorId: author,
+          waterBodyId: busy,
+          point: { lat: 44, lng: -72 },
+          skateEndTime: at,
+          reportTime: at,
+          source: 'native',
+          iceTypes: [{ type: 'black_ice' }],
+          surfaceTags: [],
+          photoIds: [],
+          moderationStatus: 'visible',
+          hazardIdsCreated: [],
+          createdAt: at,
+          updatedAt: at,
+        });
+      }
+      for (let i = 0; i < 100; i++) {
+        await ctx.db.insert('corpusPlaceNames', {
+          name: `Name ${i}`,
+          askKey: `name-${i}`,
+          aliases: [],
+          messages: 1,
+          skatedMessages: 0,
+          states: [],
+          waterBodyId: busy,
+          status: 'open',
+          createdAt: NOW,
+          updatedAt: NOW,
+        });
+      }
+      void mod;
+    });
+    const quiet = await seedBody(t, { name: 'Quiet' });
+    await backfill(t);
+    const res = await as.query(api.bodies.listPage, { lane: 'active', paginationOpts: page() });
+    const byId = new Map(res.page.map((r) => [r.id, r]));
+    expect(byId.get(busy)).toMatchObject({
+      reports: REPORT_SCAN,
+      reportsCapped: true,
+      asks: 100,
+      asksCapped: true,
+    });
+    expect(byId.get(quiet)).toMatchObject({ reportsCapped: false, asksCapped: false });
   });
 
   test('a search finds a body by alias and by id, and names the alias it matched', async () => {
@@ -1230,9 +1298,11 @@ describe('a body whose refresh throws', () => {
       });
     });
     vi.setSystemTime(Date.UTC(2027, 6, 2));
+    // The good body is re-counted; the parked one's rows close on the new season.
     expect(await t.mutation(internal.bodyLibrary.turnSeason, {})).toEqual({
       refreshed: 1,
       failed: 0,
+      closed: 1,
     });
     expect((await rowsOf(t, good))[0]).toMatchObject({ reports: 0, reportsSeason: 2027 });
     expect(await queueRow(t, bad)).toMatchObject({ attempts: 1 });
@@ -1463,6 +1533,32 @@ describe('a body whose refresh throws', () => {
       spent: (await parkedRows(starved(ctx))).rows.map((r) => r.name),
     }));
     expect(names).toEqual({ funded: ['Heavy'], spent: [null] });
+  });
+
+  test('the season turn closes a parked body’s rows on the new season, the counts moving with them', async () => {
+    const t = harness();
+    const id = await seedBody(t, { name: 'Parked Last Winter' });
+    await seedReport(t, id, NOW - DAY);
+    await backfill(t);
+    await t.run((ctx) =>
+      ctx.db.insert('bodyLibraryQueue', {
+        waterBodyId: id,
+        queuedAt: NOW,
+        attempts: 3,
+        parkedAt: NOW,
+      }),
+    );
+    vi.setSystemTime(Date.UTC(2027, 6, 2));
+    expect(await t.mutation(internal.bodyLibrary.turnSeason, {})).toEqual({
+      refreshed: 0,
+      failed: 0,
+      closed: 1,
+    });
+    for (const row of await rowsOf(t, id)) {
+      expect(row).toMatchObject({ reports: 0, reportsCapped: false, reportsSeason: 2027 });
+    }
+    expect(await t.mutation(internal.bodyLibrary.turnSeason, {})).toMatchObject({ closed: 0 });
+    await expectCountsAreTheTally(t);
   });
 
   test('names an error by its class, never its message', () => {
