@@ -91,6 +91,7 @@ import {
 } from '@skating/core';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx } from '../_generated/server';
+import { refreshBodyLibrary } from './bodyLibrary';
 
 /**
  * How many recent rows the recompute will read per body.
@@ -124,6 +125,13 @@ export async function recomputeBodySummary(
    * at batch 8 of 1,611.
    */
   known?: Doc<'waterBodies'>,
+  /**
+   * Also refresh the body's Bodies library row (B01-3): its reports this season, whether it was
+   * ever reported, and the put-ins its reports derive. On for every content write that calls this;
+   * the summary sweeps pass `false` — the passage of time moves none of those figures inside a
+   * season, and their pages are sized for the card alone.
+   */
+  library = true,
 ): Promise<void> {
   const windowStart = summaryWindowStart(now);
   const season = currentSeason(now);
@@ -191,6 +199,7 @@ export async function recomputeBodySummary(
   // and a no-op patch is still a document write, a mutation conflict surface and a subscription
   // invalidation for every client watching this lake. Comparing `updatedAt` is deliberately excluded
   // from the comparison, or the check could never be true.
+  if (library) await refreshBodyLibrary(ctx, waterBodyId, { now });
   if (summaryUnchanged(body.summary, summary)) return;
   await ctx.db.patch(waterBodyId, { summary });
 }

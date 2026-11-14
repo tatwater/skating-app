@@ -17,6 +17,7 @@ import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, mutation, type QueryCtx, query } from './_generated/server';
 import { writeAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
+import { queueLibraryRefresh, refreshBodyLibrary } from './lib/bodyLibrary';
 import {
   assertNotABayName,
   assertNotDuplicate,
@@ -153,6 +154,8 @@ export const importBatch = internalMutation({
             createdAt: now,
             updatedAt: now,
           });
+          // A new open name is a new ask of its body.
+          if (lake) await queueLibraryRefresh(ctx, [lake._id]);
         }
         continue;
       }
@@ -180,6 +183,8 @@ export const importBatch = internalMutation({
           ...(campaignId !== undefined ? { lastCampaignId: campaignId } : {}),
           ...(same ? {} : { updatedAt: now }),
         });
+        if (lakeFields.waterBodyId !== undefined)
+          await queueLibraryRefresh(ctx, [lakeFields.waterBodyId]);
       }
     }
     return counts;
@@ -275,6 +280,11 @@ export const setLake = mutation({
     const body = await ctx.db.get(waterBodyId);
     if (!body || !isListed(body)) throw new ConvexError('That lake is not on the map');
     await ctx.db.patch(row._id, { waterBodyId, lakeLabel: lakeLabel(body), updatedAt: Date.now() });
+    // Unaudited: the ask moves between two bodies' open asks, so both refresh here.
+    if (row.waterBodyId !== undefined && row.waterBodyId !== waterBodyId) {
+      await refreshBodyLibrary(ctx, row.waterBodyId);
+    }
+    await refreshBodyLibrary(ctx, waterBodyId);
   },
 });
 

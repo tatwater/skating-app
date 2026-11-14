@@ -31,6 +31,7 @@ import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { syncCellsForParent } from '../subAreas';
 import { writeAudit } from './audit';
+import { queueLibraryRefresh } from './bodyLibrary';
 import { syncWaterBodyCells } from './cellIndex';
 import { isListed } from './listing';
 import { isSuppressed } from './putInSuppression';
@@ -205,6 +206,11 @@ export async function transitionStanding(
   if (became === 'active') await registerWeatherMembership(ctx, next, now);
   if (became === 'inactive') await dropWeatherMembership(ctx, body._id);
 
+  if (became === null || opts.audit === false) {
+    // No audit row from here to refresh the Bodies library: queue it. A caller that audits for
+    // itself (`audit: false`) refreshes it in its own transaction when it does.
+    await queueLibraryRefresh(ctx, [body._id], now);
+  }
   if (became !== null && opts.audit !== false) {
     await writeAudit(ctx, {
       ...(opts.actorId !== undefined ? { actorId: opts.actorId } : {}),

@@ -44,6 +44,7 @@ import {
   query,
 } from './_generated/server';
 import { requireCapability } from './lib/auth';
+import { queueLibraryRefresh } from './lib/bodyLibrary';
 import {
   assertNotABayName,
   assertNotDuplicate,
@@ -292,6 +293,8 @@ export const importBatch = internalMutation({
         campaignId,
         write: dryRun === false,
       });
+      // The load leaves no audit row: the Bodies library's landmarks fact is refreshed by the queue.
+      if (dryRun === false) await queueLibraryRefresh(ctx, [waterBodyId]);
       for (const key of Object.keys(total) as (keyof ImportCounts)[]) total[key] += counts[key];
     }
     return { ...total, shortfalls: vouched ? [] : shortfalls };
