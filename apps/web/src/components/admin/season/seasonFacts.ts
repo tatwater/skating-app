@@ -11,6 +11,7 @@
  */
 
 import type { api } from '@skating/convex/api';
+import { celsiusToFahrenheit } from '@skating/core';
 import type { FunctionReturnType } from 'convex/server';
 
 const MONTHS = [
@@ -115,6 +116,11 @@ export type RegionWinter =
       reporting: number;
       /** How many bodies the rule needs on a night. */
       needs: number;
+      /**
+       * The freezing line `frozen` was counted under, °C (the settings that decided the season).
+       * Absent reads as the default line, 0 °C.
+       */
+      freezeC?: number;
     };
 
 export function winterWords(winter: RegionWinter): {
@@ -126,7 +132,9 @@ export function winterWords(winter: RegionWinter): {
   if (winter.state === 'not-yet') {
     return { value: 'Not yet', tone: 'dim', sub: 'No night has met the rule' };
   }
-  const sub = `${winter.frozen} of ${winter.reporting} bodies ≤ 32 °F on ${dayMonthOf(winter.from)} · needs ${winter.needs}`;
+  // The line the bodies were counted under, never an assumed 32 °F: staff can move it.
+  const lineF = Math.round(celsiusToFahrenheit(winter.freezeC ?? 0));
+  const sub = `${winter.frozen} of ${winter.reporting} bodies ≤ ${lineF} °F on ${dayMonthOf(winter.from)} · needs ${winter.needs}`;
   // A winter recorded from a single night waits on a person to look at the thresholds.
   if (winter.nights <= 1) return { value: 'One night', tone: 'warn', sub };
   return { value: 'Set in', unit: `Since ${dayMonthOf(winter.from)}`, tone: 'default', sub };
@@ -241,8 +249,8 @@ export function seasonFromSummary(
   summary: HomeSummary,
   /**
    * The season is over (a past season chosen with `?season=`): with no watch record it never
-   * waited — nothing recorded one — so the watch and imagery say *Not recorded yet*, never
-   * "Waiting" or "Starts when the watch asks for it".
+   * waited — nothing recorded one — so the watch, winter and imagery say *Not recorded yet*, never
+   * "Waiting", "No night has met the rule" or "Starts when the watch asks for it".
    */
   past = false,
 ): {
@@ -256,7 +264,7 @@ export function seasonFromSummary(
   return {
     watch: unrecordedPast ? null : iceWatchFromRecord(summary.watch, isoDay(summary.countsFrom)),
     winter:
-      summary.winter === null
+      summary.winter === null || unrecordedPast
         ? null
         : summary.winter.state === 'not-yet'
           ? { state: 'not-yet' }

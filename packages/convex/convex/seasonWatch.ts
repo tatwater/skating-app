@@ -1128,8 +1128,8 @@ export const tape = query({
  *   the season's stored lows, under the settings that decided the season). `null` for a winter
  *   recorded without its night's detail, or when the stored lows run past the read's bound.
  * - `imagery` — not started, running, paused, or **ended** once the watch has closed (from the
- *   record); the granules cut (landed and empty); when the newest frame was indexed and when it was
- *   captured. When the cutter was pinned is not recorded.
+ *   record) or, having started, its season is past; the granules cut (landed and empty); when the
+ *   newest frame was indexed and when it was captured. When the cutter was pinned is not recorded.
  * - `firstSkate` — the season's first skate and last winter's: the first visible report from on the
  *   ice from 1 October; only for a season with none, the date staff entered (`seasonFieldDates`,
  *   `source: 'field'`). `null` when the bounded look can't say.
@@ -1154,7 +1154,7 @@ export const homeSummary = query({
       countsFrom: seasonFloorDate(label, settings.startMonthDay),
       watch: record === null ? null : watchFacts(record),
       winter: await winterSummary(ctx, label, record, settings),
-      imagery: await imagerySummary(ctx, label, record),
+      imagery: await imagerySummary(ctx, label, record, season < seasonOf(now)),
       firstSkate: await firstSkateSummary(ctx, season, now),
     };
   },
@@ -1193,6 +1193,8 @@ async function winterSummary(
     frozen: record.winter.frozen.length,
     reporting: record.winter.reporting,
     needs: winterNeeds(record.winter.reporting, settings.winterFraction),
+    /** The freezing line `frozen` was counted under, °C — the tile states it, never assumes 32 °F. */
+    freezeC: settings.freezeC,
   };
 }
 
@@ -1200,6 +1202,8 @@ async function imagerySummary(
   ctx: QueryCtx,
   label: string,
   record: Doc<'imageryIngestSeasons'> | null,
+  /** The season is over: the cutter only ever works the season now falls in. */
+  past: boolean,
 ) {
   const counts = await ctx.db
     .query('imageryCounts')
@@ -1214,9 +1218,10 @@ async function imagerySummary(
     .first();
   // A closed watch stops the cutter (`imageryLive`), so a season whose watch has closed has ended,
   // whatever its run marks still say — one that never started included: "starts when the watch
-  // asks for it" is untrue of a watch that has closed.
+  // asks for it" is untrue of a watch that has closed. Nor does a past season's imagery still run
+  // when its record never had a close: the poll and the pump work only the season now is in.
   const state =
-    record?.closesOn !== undefined
+    record?.closesOn !== undefined || (past && record?.imageryStartedAt !== undefined)
       ? ('ended' as const)
       : record?.imageryStartedAt === undefined
         ? ('not-started' as const)

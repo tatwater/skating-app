@@ -409,6 +409,15 @@ async function walkPage(
           continueCursor: cursor ?? '',
         };
       }
+      // A season the record never reached — it began after the season's last day, or has no row at
+      // all — has nothing to count: not recorded, never a measured zero.
+      if (cursor === null) {
+        const began = await ctx.db.query('signInDays').withIndex('by_day').first();
+        if (began === null || began.day > span.lastDay) {
+          w.capped.add('signedIn');
+          return { tally: w.pack(), isDone: true, continueCursor: '' };
+        }
+      }
       const page = await ctx.db
         .query('signInDays')
         .withIndex('by_day', (q) => q.gte('day', span.firstDay).lte('day', span.lastDay))

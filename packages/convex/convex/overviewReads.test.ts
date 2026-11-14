@@ -519,6 +519,17 @@ describe('console.corpusCounts — the Corpus card’s tasks', () => {
     expect(c.enrichment).toBeNull();
   });
 
+  test('more decisions than the cap, with neither reason’s read stopping short, reads as a floor', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    // 150 unpaired rows of each reason: 300 decisions, each read whole.
+    for (const reviewReason of ['duplicate-candidate', 'same-source-duplicate'] as const) {
+      for (let i = 0; i < 150; i++) await seedBody(t, `Pond ${i}`, { reviewReason });
+    }
+    const c = await mod.as.query(api.console.corpusCounts, {});
+    expect(c.duplicates).toEqual({ count: 200, capped: true });
+  });
+
   test('a member is refused', async () => {
     const t = harness();
     const m = await seedUser(t, 'm');
@@ -1296,6 +1307,27 @@ describe('the season’s reach', () => {
     expect((await reach('2026-06-30')).people.signedIn).toBe(1);
   });
 
+  test('a season the sign-in record never reached is not recorded, never zero people', async () => {
+    const t = convexTest(schema, modules);
+    const a = await seedUser(t, 'a');
+    // The record began this November: last season, kept by retention, holds no row of it.
+    await t.run((ctx) =>
+      ctx.db.insert('signInDays', { userId: a.id, day: '2026-11-03', firstAt: NOW }),
+    );
+    await walkReach(t, 2025);
+    const reach = (await readSnapshot(t, 'season_reach', '2026-06-30'))?.meta as {
+      capped: string[];
+    };
+    expect(reach.capped).toContain('signedIn');
+    // With no row at all, this season is not recorded either.
+    const empty = convexTest(schema, modules);
+    await walkReach(empty, 2025);
+    const none = (await readSnapshot(empty, 'season_reach', '2026-06-30'))?.meta as {
+      capped: string[];
+    };
+    expect(none.capped).toContain('signedIn');
+  });
+
   test('a re-walk keeps the signed-in figure an earlier walk recorded once the rows are gone', async () => {
     const t = convexTest(schema, modules);
     // An earlier walk, run while 2024–25's rows were whole, counted 41 people.
@@ -1767,6 +1799,7 @@ describe('seasonWatch.tape and seasonWatch.homeSummary — for moderators', () =
       frozen: 1,
       reporting: 2,
       needs: 1,
+      freezeC: 0,
     });
     expect(home.imagery).toEqual({
       state: 'running',
@@ -1891,6 +1924,25 @@ describe('seasonWatch.tape and seasonWatch.homeSummary — for moderators', () =
       lastLandedAt: null,
       lastFrameAt: null,
     });
+  });
+
+  test('a past season’s imagery has ended even when its record never closed', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await t.run((ctx) =>
+      ctx.db.insert('imageryIngestSeasons', {
+        season: 'winter-2025-26',
+        opensOn: '2025-10-04',
+        openedBy: ['sentinel'],
+        winterFrom: null,
+        imageryStartedAt: Date.UTC(2025, 10, 1),
+        imageryPausedAt: Date.UTC(2026, 1, 1),
+        sitesSampled: 3,
+        detectedAt: Date.UTC(2025, 9, 5),
+      }),
+    );
+    const home = await mod.as.query(api.seasonWatch.homeSummary, { season: 2025 });
+    expect(home.imagery.state).toBe('ended');
   });
 
   test('a paused imagery run, and a winter recorded without its night', async () => {

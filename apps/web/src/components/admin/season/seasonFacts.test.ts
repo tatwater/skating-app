@@ -104,6 +104,22 @@ describe('winter, region-wide', () => {
     expect(set.tone).toBe('default');
     expect(winterWords({ state: 'not-yet' }).value).toBe('Not yet');
   });
+
+  it('states the freezing line the bodies were counted under, never an assumed 32 °F', () => {
+    const night = {
+      state: 'set',
+      from: day(10, 20),
+      nights: 3,
+      frozen: 18,
+      reporting: 25,
+    } as const;
+    expect(winterWords({ ...night, needs: 13, freezeC: -2 }).sub).toBe(
+      '18 of 25 bodies ≤ 28 °F on 20 Nov · needs 13',
+    );
+    expect(winterWords({ ...night, needs: 13, freezeC: 0 }).sub).toBe(
+      '18 of 25 bodies ≤ 32 °F on 20 Nov · needs 13',
+    );
+  });
 });
 
 describe('imagery', () => {
@@ -165,7 +181,15 @@ describe('seasonFromSummary — the server’s days and instants, in the reader�
       opening: { sentinels: [{ name: 'Upper Lake of the Clouds', lowC: -3 }] },
       sentinels: [],
     },
-    winter: { state: 'set', from: '2026-11-05', nights: 2, frozen: 11, reporting: 25, needs: 13 },
+    winter: {
+      state: 'set',
+      from: '2026-11-05',
+      nights: 2,
+      frozen: 11,
+      reporting: 25,
+      needs: 13,
+      freezeC: 0,
+    },
     imagery: { state: 'running', granules: 4, lastLandedAt: 7, lastFrameAt: 6 },
     firstSkate: {
       first: { source: 'field', day: '2026-11-08', body: 'Crystal Lake' },
@@ -183,6 +207,7 @@ describe('seasonFromSummary — the server’s days and instants, in the reader�
       frozen: 11,
       reporting: 25,
       needs: 13,
+      freezeC: 0,
     });
     expect(facts.firstSkate).toEqual({
       at: day(10, 8),
@@ -203,6 +228,26 @@ describe('seasonFromSummary — the server’s days and instants, in the reader�
     expect(
       seasonFromSummary({ ...SUMMARY, firstSkate: { first: null, lastWinter: null } }).firstSkate,
     ).toEqual({ at: null, body: null, lastWinter: null });
+  });
+
+  it('a past season nothing recorded: watch, winter and imagery are not recorded, never a state', () => {
+    const past = seasonFromSummary(
+      {
+        ...SUMMARY,
+        season: 2025,
+        watch: null,
+        winter: { state: 'not-yet' },
+        imagery: { state: 'not-started', granules: 0, lastLandedAt: null, lastFrameAt: null },
+      },
+      true,
+    );
+    expect(past.watch).toBeNull();
+    expect(past.winter).toBeNull();
+    expect(past.imagery).toBeNull();
+    // A past season with a record keeps what it recorded.
+    expect(seasonFromSummary({ ...SUMMARY, winter: { state: 'not-yet' } }, true).winter).toEqual({
+      state: 'not-yet',
+    });
   });
 });
 

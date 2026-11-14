@@ -409,10 +409,11 @@ describe('useOverviewHome', () => {
     expect(result.current.winter).toBeUndefined();
     convex.results.set(name, summary(2025));
     rerender({ now: tomorrow, season: 2025 });
-    // A past season with no watch record never waited: not recorded, never "Waiting".
+    // A past season with no watch record never waited: not recorded, never "Waiting" — nor "No
+    // night has met the rule", which nothing recorded either.
     expect(result.current.watch).toBeNull();
     expect(result.current.imagery).toBeNull();
-    expect(result.current.winter).toEqual({ state: 'not-yet' });
+    expect(result.current.winter).toBeNull();
   });
 
   it('asks only for what the viewer may read; Machinery is left out for a moderator', () => {

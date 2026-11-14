@@ -251,7 +251,12 @@ export const corpusCounts = query({
     }
 
     return {
-      duplicates: { count: Math.min(decisions, COUNT_CAP), capped: readCapped },
+      // Two reasons' worth of rows can add up to more decisions than the cap with neither read
+      // stopping short: past it, the figure is a floor and says so.
+      duplicates: {
+        count: Math.min(decisions, COUNT_CAP),
+        capped: readCapped || decisions > COUNT_CAP,
+      },
       chordRefits: {
         count: Math.min(refits.size, COUNT_CAP),
         capped: refitsCapped || refits.size > COUNT_CAP,

@@ -1440,8 +1440,10 @@ one branch (`b01-3-server`).
   not recorded when someone's first contribution can't be told, or past 300 people.
 - **What still says *Not recorded yet*:** cost (no invoice or rate rows exist), the pre-ice pass (no
   record of when it was done), enrichment (nothing indexes what a body lacks), a strip before the walk
-  has run, a figure whose read stopped short, and new accounts until every day of the season has a
-  rollup row.
+  has run, a figure whose read stopped short, new accounts until every day of the season has a
+  rollup row, and *signed in* for a season the sign-in record never reached (it began after the
+  season's last day). A past season with no watch record says it for the watch, winter and imagery
+  alike, and a past season's imagery reads *Ended* even when its record never closed.
 - **Contract:** a job's time and the season's dates arrive as instants and record days and are written
   on the client in the reader's zone; first skated is the first on-ice report, a staff date only for a
   season without one and marked as staff's (the founder's call); imagery reads *Ended* once the
