@@ -7,6 +7,7 @@ import { type ReactElement, type ReactNode, useEffect, useMemo, useRef, useState
 
 import { ReadBoundary } from '@/components/kit/read-boundary';
 import { useRole } from '@/lib/useRole';
+import { ID_SHAPE } from '../body/frame/bodySearch';
 
 import { isFailed, type Loadable, loaded, read, useConsoleReadSet } from '../reads/consoleReads';
 import { ReadNote } from '../reads/ReadNote';
@@ -63,11 +64,8 @@ import { BODY_LANES } from './bodyLanes';
  * replaces the entry rather than stacking one per row.
  */
 
-/** Where the list opens a body: its Body console. */
-export const BODY_PATH = (id: string) => `/admin/body/${id}`;
-
-/** A Convex id's shape, so a hand-edited `?body=` never reaches a query as junk. */
-const ID_SHAPE = /^[0-9a-z]{30,34}$/;
+/** Where the list opens a body: its Body console, the id escaped as every other link to it is. */
+export const BODY_PATH = (id: string) => `/admin/body/${encodeURIComponent(id)}`;
 
 export type BodiesRouteProps = {
   /** Where a body opens (its Body console). */

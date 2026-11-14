@@ -1,4 +1,4 @@
-import { type ReactNode, useId, useRef } from 'react';
+import { type ReactNode, useId, useRef, useState } from 'react';
 import { isFailed, type Loadable } from '@/components/admin/reads/consoleReads';
 import { ReadNote } from '@/components/admin/reads/ReadNote';
 import { Avatar } from '@/components/kit/avatar';
@@ -52,8 +52,12 @@ export interface BodyLeftColumnProps {
   lit: string | null;
   /** An ask was opened (⏎, Space or a press). */
   onOpenAsk: (ask: BodyAsk) => void;
-  /** The boost was let go at a new value. Absent: the boost reads but can't be moved (the role). */
-  onBoostCommit?: (value: number) => void;
+  /**
+   * The boost was let go at a new value. A promise that resolves `false` says the change didn't
+   * land, and the slider goes back to the record. Absent: the boost reads but can't be moved (the
+   * role).
+   */
+  onBoostCommit?: (value: number) => unknown;
   now: number;
   timeZone?: string;
   /** A story's still of the folded state. */
@@ -216,7 +220,7 @@ function Figures({
 }: {
   identity: BodyIdentity;
   completeness: Loadable<Completeness | null>;
-  onBoostCommit: ((value: number) => void) | undefined;
+  onBoostCommit: BodyLeftColumnProps['onBoostCommit'];
 }) {
   const shown = identity.figures.filter((f) => f.value !== null);
   return (
@@ -242,23 +246,69 @@ function Figures({
       )}
       <CompletenessBlock completeness={completeness} />
       <div data-slot="body-boost" className="mt-(--space-1) flex flex-col gap-(--space-2)">
-        <Slider
-          label="Map boost"
-          min={0}
-          max={1}
-          step={0.1}
-          ticks
-          ends
-          defaultValue={Math.min(1, Math.max(0, identity.boost.value))}
-          disabled={onBoostCommit === undefined}
-          onValueCommitted={(v) => onBoostCommit?.(Array.isArray(v) ? (v[0] ?? 0) : (v as number))}
-        />
+        <BoostSlider value={identity.boost.value} onCommit={onBoostCommit} />
         <p className="m-0 text-assist leading-list text-fg3">
           Draws the body from farther out.
           {identity.boost.note !== null ? ` ${identity.boost.note}` : ''}
         </p>
       </div>
     </div>
+  );
+}
+
+/** A tenth: the boost's step, and what the server is sent. */
+const tenth = (v: number) => Math.round(v * 10) / 10;
+
+/**
+ * What letting the boost go at `v` sends: its tenth, or nothing when that is where the record
+ * already stands (a press on the thumb that never moved it).
+ */
+export function boostToSend(v: number, record: number): number | null {
+  const next = tenth(v);
+  return next === tenth(record) ? null : next;
+}
+
+/**
+ * The map boost, held to the record: it moves under the operator's hand, and follows the record
+ * whenever the record moves (an Undo from the toast, another moderator) or a change didn't land.
+ * Letting go where it already stood sends nothing — no write, no receipt.
+ */
+function BoostSlider({
+  value,
+  onCommit,
+}: {
+  value: number;
+  onCommit: BodyLeftColumnProps['onBoostCommit'];
+}) {
+  const record = Math.min(1, Math.max(0, value));
+  const recordRef = useRef(record);
+  recordRef.current = record;
+  const [shown, setShown] = useState(record);
+  const [seen, setSeen] = useState(record);
+  if (seen !== record) {
+    setSeen(record);
+    setShown(record);
+  }
+  const one = (v: number | readonly number[]) => (Array.isArray(v) ? (v[0] ?? 0) : (v as number));
+  return (
+    <Slider
+      label="Map boost"
+      min={0}
+      max={1}
+      step={0.1}
+      ticks
+      ends
+      value={shown}
+      disabled={onCommit === undefined}
+      onValueChange={(v) => setShown(one(v))}
+      onValueCommitted={(v) => {
+        const next = boostToSend(one(v), recordRef.current);
+        if (onCommit === undefined || next === null) return;
+        void Promise.resolve(onCommit(next)).then((landed) => {
+          if (landed === false) setShown(recordRef.current);
+        });
+      }}
+    />
   );
 }
 

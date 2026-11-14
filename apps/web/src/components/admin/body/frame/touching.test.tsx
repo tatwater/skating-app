@@ -16,7 +16,11 @@ vi.mock('convex/react', () => ({
     ),
 }));
 
-import { isFailed, type ReadFailure } from '@/components/admin/reads/consoleReads';
+import {
+  isFailed,
+  type ReadFailure,
+  resetConsoleReads,
+} from '@/components/admin/reads/consoleReads';
 import { MASCOMA_RECORD, NEIGHBOR_POLYGON } from './bodyFixtures';
 import { type TouchingFacts, useNeighbors } from './touching';
 
@@ -29,7 +33,11 @@ const facts = (ids: string[] | null): TouchingFacts => ({
   touchingCapped: false,
 });
 
-beforeEach(() => mocks.results.clear());
+beforeEach(() => {
+  // The read layer's registry is module-wide: a Try again in one test never pauses the next.
+  resetConsoleReads();
+  mocks.results.clear();
+});
 
 describe('useNeighbors', () => {
   it('reads nothing until the touching test is in, and is empty when nothing touches', () => {

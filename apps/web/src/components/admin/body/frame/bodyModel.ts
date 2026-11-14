@@ -72,10 +72,15 @@ export interface HistoryAction {
 
 const int = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
 
+/** "1,143" — whole acres; under one, a tenth, so a small water never reads as none. */
+export function acresFigure(sqm: number): string {
+  const acres = sqMetersToAcres(sqm);
+  return acres < 1 ? acres.toFixed(1) : int.format(acres);
+}
+
 /** "1,143 ac" — whole acres; under one, a tenth. */
 export function acresText(sqm: number): string {
-  const acres = sqMetersToAcres(sqm);
-  return acres < 1 ? `${acres.toFixed(1)} ac` : `${int.format(acres)} ac`;
+  return `${acresFigure(sqm)} ac`;
 }
 
 /** "9.4" under ten meters, "24" above. */

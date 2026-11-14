@@ -9,6 +9,7 @@ import {
   read,
   useConsoleReads,
 } from '@/components/admin/reads/consoleReads';
+import { useRole } from '@/lib/useRole';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { useNeighbors } from '../../frame/touching';
 import { ShapeTabView } from './ShapeTab';
@@ -23,11 +24,15 @@ import { shapeBays, shapeMapScene, shapeMerge, shapeOutline } from './shapeModel
  */
 export function ShapeTabRoute({ bodyId, lit = null, onLitChange }: BodyTabProps) {
   const waterBodyId = bodyId as Id<'waterBodies'>;
+  // How each bay was made and what touches the body are `body.read`'s, as the frame's extras are:
+  // withheld, they're never asked (the rows say only what the bays read says; no Merge block).
+  const { can } = useRole();
+  const canRead = can('body.read');
   const r = useConsoleReads({
     body: read(api.waterBodies.get, { waterBodyId }),
     subAreas: read(api.subAreas.listForBody, { waterBodyId }),
-    made: read(api.bodyConsole.bayProvenance, { waterBodyId }),
-    extras: read(api.bodyConsole.consoleExtras, { waterBodyId }),
+    made: canRead ? read(api.bodyConsole.bayProvenance, { waterBodyId }) : null,
+    extras: canRead ? read(api.bodyConsole.consoleExtras, { waterBodyId }) : null,
   });
   const neighbors = useNeighbors(loaded(r.extras));
   const navigate = useNavigate();

@@ -26,7 +26,8 @@ import { DOT_SOURCE, glLayers, LINE_SOURCE, OUTLINE_SOURCE } from './glLayers';
  * - **No `idle` wait after a late source**: the sources are added inside `load`, and data is set on
  *   them directly; nothing here waits for `idle`.
  * - **The camera is held to the body**: it opens framed on the body inside the chrome's room, may
- *   zoom out one step past that and in to the street, and pans only within the body's reach.
+ *   zoom out one step past that and in to the street, and pans only within the body's reach. A
+ *   theme switch keeps the operator's own view; only a new body frames it again.
  */
 
 /** The room the chrome takes from the map when it frames the body: the rack, the dock, the key. */
@@ -79,6 +80,10 @@ export function useBodyMapCanvas({
     (bbox.minLng + bbox.maxLng) / 2,
     (bbox.minLat + bbox.maxLat) / 2,
   ];
+  // The bounds the camera was last framed on. A theme switch re-creates the map with the operator's
+  // own pan and zoom restored (`useMapCanvas`); only new bounds frame it again.
+  const framedRef = useRef<string | null>(null);
+  const boundsKey = `${bbox.minLng},${bbox.minLat},${bbox.maxLng},${bbox.maxLat}`;
   const { containerRef, liveMap } = useMapCanvas({
     pmtilesUrl: env.pmtilesUrl || DEMO_PMTILES_URL,
     worldPmtilesUrl: env.worldPmtilesUrl,
@@ -95,9 +100,18 @@ export function useBodyMapCanvas({
       // Framed inside the chrome's room, then held there: one step and a half out, no further.
       const canvas = map.getContainer();
       const camera = fitCamera(bbox, canvas.clientWidth, canvas.clientHeight, FIT_PADDING);
-      map.jumpTo({ center: [camera.center.lng, camera.center.lat], zoom: camera.zoom });
-      map.setMinZoom(Math.max(0, camera.zoom - ZOOM_OUT_ROOM));
+      // The ceiling first, then a floor never above it: MapLibre throws on a floor over the
+      // ceiling, and a pond small enough to frame past it would take the whole load down with it
+      // (the shell never marks the map live, so nothing is drawn over it).
       map.setMaxZoom(MAX_ZOOM);
+      map.setMinZoom(Math.min(MAX_ZOOM, Math.max(0, camera.zoom - ZOOM_OUT_ROOM)));
+      if (framedRef.current !== boundsKey) {
+        map.jumpTo({
+          center: [camera.center.lng, camera.center.lat],
+          zoom: Math.min(MAX_ZOOM, camera.zoom),
+        });
+        framedRef.current = boundsKey;
+      }
     },
   });
 

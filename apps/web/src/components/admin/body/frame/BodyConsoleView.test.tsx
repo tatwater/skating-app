@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -6,6 +6,7 @@ import type { ReadFailure } from '@/components/admin/reads/consoleReads';
 import { KeysProvider } from '@/lib/keys';
 import { stubJsdomAnimations } from '../tabs/jsdomStubs';
 import { BodyConsoleMissing, BodyConsoleView } from './BodyConsoleView';
+import { boostToSend } from './BodyLeftColumn';
 import {
   BODY_NOW,
   CAPPED_HISTORY,
@@ -201,6 +202,37 @@ describe('BodyConsoleView', () => {
   it('reads the boost but can’t move it without the role', () => {
     render(<Page />);
     expect(screen.getByRole('slider', { name: 'Map boost' })).toBeDisabled();
+  });
+
+  it('follows the record when the boost moves under it — an Undo, another moderator', () => {
+    const { rerender } = render(<Page onBoostCommit={vi.fn()} />);
+    const slider = () => screen.getByRole('slider', { name: 'Map boost' });
+    expect(slider()).toHaveValue(String(MASCOMA_IDENTITY.boost.value));
+    rerender(
+      <Page
+        identity={{ ...MASCOMA_IDENTITY, boost: { value: 0.7, note: null } }}
+        onBoostCommit={vi.fn()}
+      />,
+    );
+    expect(slider()).toHaveValue('0.7');
+  });
+
+  it('sends the moved boost, and goes back to the record when the change didn’t land', async () => {
+    const user = userEvent.setup();
+    const onBoostCommit = vi.fn(() => Promise.resolve(false));
+    render(<Page onBoostCommit={onBoostCommit} />);
+    const slider = screen.getByRole('slider', { name: 'Map boost' });
+    act(() => slider.focus());
+    await user.keyboard('{ArrowRight}');
+    expect(onBoostCommit).toHaveBeenCalledWith(0.4);
+    await waitFor(() => expect(slider).toHaveValue(String(MASCOMA_IDENTITY.boost.value)));
+  });
+
+  it('sends nothing when the boost is let go where the record already stands', () => {
+    expect(boostToSend(0.3, 0.3)).toBeNull();
+    expect(boostToSend(0.30000000000000004, 0.3)).toBeNull();
+    expect(boostToSend(0.44, 0.3)).toBe(0.4);
+    expect(boostToSend(0, 0.3)).toBe(0);
   });
 });
 

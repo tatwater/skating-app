@@ -56,12 +56,15 @@ class FakeMap {
     return { clientWidth: 656, clientHeight: 830 } as HTMLElement;
   }
   jumpTo({ zoom }: { zoom: number }) {
-    this.zoom = zoom;
+    this.zoom = Math.min(this.maxZoom, Math.max(this.minZoom, zoom));
   }
+  // MapLibre's own rules: a floor over the ceiling, or a ceiling under the floor, throws.
   setMinZoom(z: number) {
+    if (z < 0 || z > this.maxZoom) throw new Error('minZoom must be between 0 and the maxZoom');
     this.minZoom = z;
   }
   setMaxZoom(z: number) {
+    if (z < this.minZoom) throw new Error('maxZoom must be greater than the current minZoom');
     this.maxZoom = z;
   }
   getMinZoom() {
@@ -114,9 +117,15 @@ vi.mock('@/lib/mapCanvas', () => ({
 
 const { useBodyMapCanvas } = await import('./useBodyMapCanvas');
 
-function Harness({ mode }: { mode: 'dark' | 'light' }) {
+function Harness({
+  mode,
+  bbox = MASCOMA_BOUNDS,
+}: {
+  mode: 'dark' | 'light';
+  bbox?: typeof MASCOMA_BOUNDS;
+}) {
   const drawn = useMemo(() => drawScene(MASCOMA_SCENE, DEFAULT_LAYERS), []);
-  const canvas = useBodyMapCanvas({ bbox: MASCOMA_BOUNDS, mode, drawn });
+  const canvas = useBodyMapCanvas({ bbox, mode, drawn });
   return <div data-testid="zoom">{canvas.surface ? 'live' : 'waiting'}</div>;
 }
 
@@ -174,5 +183,52 @@ describe('useBodyMapCanvas', () => {
     expect(next.layers.get('body-console-outline-body')?.paint['line-color']).toBe(
       adminToken('light', 'fg1'),
     );
+  });
+
+  it('frames a pond too small for the ceiling without throwing, and goes live', () => {
+    // About 30 m across: the fit lands past zoom 19, so a floor of fit − 1.5 is over the ceiling.
+    const pond = { minLng: -72.1502, minLat: 43.63, maxLng: -72.1498, maxLat: 43.6302 };
+    const map = shell.map as FakeMap;
+    const { rerender, getByTestId } = render(<Harness mode="dark" bbox={pond} />);
+    map.loaded = true;
+    expect(() => shell.onLoad?.(map)).not.toThrow();
+    expect(map.maxZoom).toBe(17);
+    expect(map.minZoom).toBeLessThanOrEqual(17);
+    expect(map.zoom).toBe(17);
+    shell.live = true;
+    rerender(<Harness mode="dark" bbox={pond} />);
+    expect(getByTestId('zoom').textContent).toBe('live');
+  });
+
+  it('keeps the operator’s own view across a theme switch, and frames a new body afresh', () => {
+    const map = shell.map as FakeMap;
+    const { rerender } = render(<Harness mode="dark" />);
+    map.loaded = true;
+    shell.onLoad?.(map);
+    const framed = map.zoom;
+
+    // The shell re-creates the map at the view the operator left (here, zoom 13): not re-framed.
+    const next = new FakeMap();
+    next.zoom = 13;
+    shell.map = next;
+    rerender(<Harness mode="light" />);
+    next.loaded = true;
+    shell.onLoad?.(next);
+    expect(next.zoom).toBe(13);
+    expect(next.minZoom).toBeCloseTo(framed - 1.5, 6);
+
+    // Another body's bounds are framed again.
+    const other = new FakeMap();
+    shell.map = other;
+    const moved = {
+      minLng: MASCOMA_BOUNDS.minLng + 0.5,
+      minLat: MASCOMA_BOUNDS.minLat,
+      maxLng: MASCOMA_BOUNDS.maxLng + 0.5,
+      maxLat: MASCOMA_BOUNDS.maxLat,
+    };
+    rerender(<Harness mode="light" bbox={moved} />);
+    other.loaded = true;
+    shell.onLoad?.(other);
+    expect(other.zoom).toBeCloseTo(framed, 6);
   });
 });

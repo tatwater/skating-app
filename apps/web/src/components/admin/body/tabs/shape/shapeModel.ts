@@ -1,8 +1,7 @@
 import type { api } from '@skating/convex/api';
-import { sqMetersToAcres } from '@skating/core';
 import type { FunctionReturnType } from 'convex/server';
 import { type Loadable, mapLoadable } from '@/components/admin/reads/consoleReads';
-import { dayMonth, firstName, ringsText } from '../../frame/bodyModel';
+import { acresFigure, dayMonth, firstName, ringsText } from '../../frame/bodyModel';
 import type { Neighbor, TouchingFacts } from '../../frame/touching';
 import type { BodyMapScene } from '../../map/mapDescriptors';
 
@@ -34,7 +33,7 @@ export interface ShapeBay {
   /** The lit address: `bay:<id>`. */
   id: string;
   name: string;
-  /** "612" — whole acres. */
+  /** "612" — whole acres; under one, a tenth ("0.4"), never a zero for water that's there. */
   acres: string;
   /** How and when it was made, and by whom, as far as the record says ("Seeded · 2 Sep · Teagan"). */
   sub: string | null;
@@ -143,7 +142,7 @@ export function shapeBays(
     .map((s) => ({
       id: `bay:${s._id}`,
       name: s.name,
-      acres: int.format(sqMetersToAcres(s.surfaceAreaSqM)),
+      acres: acresFigure(s.surfaceAreaSqM),
       sub: baySub(s, made.get(s._id), timeZone),
       attention:
         s.mouthStale !== undefined

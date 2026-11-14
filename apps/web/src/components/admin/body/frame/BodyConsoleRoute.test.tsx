@@ -94,6 +94,7 @@ vi.mock('../map/useBodyMapCanvas', () => ({
 
 import { api } from '@skating/convex/api';
 import { getFunctionName } from 'convex/server';
+import { resetConsoleReads } from '@/components/admin/reads/consoleReads';
 import { KeysProvider } from '@/lib/keys';
 import { stubJsdomAnimations } from '../tabs/jsdomStubs';
 import { SHAPE_TAB } from '../tabs/shape/ShapeTabRoute';
@@ -136,6 +137,8 @@ const historyRow = (h: (typeof MASCOMA_HISTORY)[number]) => ({
 beforeAll(stubJsdomAnimations);
 
 beforeEach(() => {
+  // The read layer's registry is module-wide: a Try again in one test never pauses the next.
+  resetConsoleReads();
   mocks.results.clear();
   mocks.asked.length = 0;
   mocks.search = {};
@@ -464,6 +467,11 @@ describe('BodyConsoleRoute', () => {
     expect(screen.queryByRole('heading', { name: 'History' })).toBeNull();
     expect(screen.getByRole('slider', { name: 'Map boost' })).toBeDisabled();
     expect(askedFor(api.bodyConsole.history)).toEqual([]);
+    // What `body.read` withholds is never asked — by the frame or by Shape — and Shape draws no
+    // Merge block rather than a failure.
+    expect(askedFor(api.bodyConsole.consoleExtras)).toEqual([]);
+    expect(askedFor(api.bodyConsole.bayProvenance)).toEqual([]);
+    expect(screen.queryByRole('heading', { name: 'Merge into another body' })).toBeNull();
   });
 
   it('holds what the role gates as on its way while the role loads — never *Not recorded yet*', () => {

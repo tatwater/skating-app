@@ -274,24 +274,35 @@ function TabSceneProbe({
   return null;
 }
 
-/** Sets the map boost and puts its receipt (with Undo) in the toast. */
-function useBoostCommit(bodyId: string): (value: number) => void {
+/**
+ * Sets the map boost and puts its receipt (with Undo) in the toast. Resolves whether the change
+ * landed, so the slider can go back to the record when it didn't.
+ */
+function useBoostCommit(bodyId: string): (value: number) => Promise<boolean> {
   const set = useMutation(api.waterBodies.setCuratedBoost);
   const { announce } = useUndo();
-  const [, setBusy] = useState(false);
   return useCallback(
     (value: number) => {
       const rounded = Math.round(value * 10) / 10;
-      setBusy(true);
-      set({ waterBodyId: bodyId as Id<'waterBodies'>, curatedBoost: rounded })
-        .then(() =>
+      const failed = (e: unknown) => toast({ title: errorText(e), tone: 'bad' });
+      return set({ waterBodyId: bodyId as Id<'waterBodies'>, curatedBoost: rounded }).then(
+        () =>
           announce({
             title: `Map boost · ${rounded.toFixed(1)}`,
             target: { targetType: 'waterbody', targetId: bodyId },
-          }),
-        )
-        .catch((e: unknown) => toast({ title: errorText(e), tone: 'bad' }))
-        .finally(() => setBusy(false));
+          }).then(
+            () => true,
+            // The boost landed; only its receipt didn't.
+            (e: unknown) => {
+              failed(e);
+              return true;
+            },
+          ),
+        (e: unknown) => {
+          failed(e);
+          return false;
+        },
+      );
     },
     [announce, bodyId, set],
   );

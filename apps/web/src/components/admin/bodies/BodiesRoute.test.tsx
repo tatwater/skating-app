@@ -101,7 +101,7 @@ import { getFunctionName } from 'convex/server';
 
 import { KeysProvider } from '@/lib/keys';
 import { resetConsoleReads } from '../reads/consoleReads';
-import { BodiesRoute, resetShownMemory, startingPageSize } from './BodiesRoute';
+import { BODY_PATH, BodiesRoute, resetShownMemory, startingPageSize } from './BodiesRoute';
 import { resetScrollMemory } from './BodiesTable';
 import { listKey, queryOf } from './bodiesSearch';
 
@@ -601,6 +601,11 @@ describe('the place in the URL', () => {
     });
     await userEvent.click(screen.getByRole('button', { name: /^Active/ }));
     expect(mocks.navigate).toHaveBeenLastCalledWith({ to: '.', search: {} });
+  });
+
+  it('opens a body at its console, the id escaped as every other link to it is', () => {
+    expect(BODY_PATH(ID)).toBe(`/admin/body/${ID}`);
+    expect(BODY_PATH('k1/7')).toBe('/admin/body/k1%2F7');
   });
 });
 

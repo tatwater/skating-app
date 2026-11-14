@@ -1,12 +1,11 @@
 import type { ReactNode } from 'react';
 
-import { MAP_KEY_ORDER, MapKey, type MapKeyKind } from '@/components/kit/map-key';
+import { MapKey, type MapKeyKind } from '@/components/kit/map-key';
 import {
   HazardMark,
   LotMark,
   type MarkState,
   PhotoMark,
-  PLACE_KEY_LABELS,
   PlaceMark,
   type PlaceMarkKind,
   PutInMark,
@@ -38,30 +37,12 @@ export function PointFace({ mark, ...state }: MarkState & { mark: MapPointMark }
   return <PlaceMark kind={mark as PlaceMarkKind} {...state} />;
 }
 
-/** The key's word for each face. A noun for what the mark is — never a word about the ice. */
-export const POINT_KEY_LABELS: Record<MapPointMark, string> = {
-  ...PLACE_KEY_LABELS,
-  putIn: 'Put-in',
-  lot: 'Lot',
-  hazard: 'Hazard',
-  healing: 'Healing hazard',
-  passage: 'Ridge crossing',
-  feature: 'Hazard',
-  photo: 'Photo',
-};
-
-/** The key's kind for a face: a known feature is listed as a hazard (one word, drawn once). */
+/**
+ * The key's kind for a face: a known feature is listed as a hazard (one word, drawn once). The words
+ * are the kit key's own, so the map and its key never name a kind two ways.
+ */
 function keyKind(mark: MapPointMark): MapKeyKind {
   return mark === 'feature' ? 'hazard' : mark;
-}
-
-/** The kinds a key lists, in the kit key's order, each word once. */
-export function keyEntries(kinds: readonly MapPointMark[]): { mark: MapKeyKind; label: string }[] {
-  const wanted = new Set(kinds.map(keyKind));
-  return MAP_KEY_ORDER.filter((k) => wanted.has(k)).map((mark) => ({
-    mark,
-    label: (POINT_KEY_LABELS as Record<string, string>)[mark] ?? mark,
-  }));
 }
 
 /** The map's key: the kit's bar on the console's foot ground, listing every kind the map draws. */

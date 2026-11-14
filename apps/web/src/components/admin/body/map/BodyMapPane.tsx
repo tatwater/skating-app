@@ -1,6 +1,7 @@
 import {
   type CSSProperties,
   type ReactNode,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -96,7 +97,14 @@ export function BodyMapPane({
 }: BodyMapPaneProps) {
   const paneRef = useRef<HTMLDivElement | null>(null);
   const [pointerHover, setPointerHover] = useState<string | null>(null);
-  const hoverId = pointerHover ?? forcedHover;
+  // A mark that leaves the scene under the pointer (its layer switched off) never hears the pointer
+  // leave: forget it, or it comes back hovered with no pointer on it.
+  const pointerHoverShown =
+    pointerHover !== null && drawn.points.some((p) => p.id === pointerHover);
+  useEffect(() => {
+    if (pointerHover !== null && !pointerHoverShown) setPointerHover(null);
+  }, [pointerHover, pointerHoverShown]);
+  const hoverId = (pointerHoverShown ? pointerHover : null) ?? forcedHover;
   const keepouts = useKeepouts(paneRef, surface?.width ?? 0, surface?.height ?? 0, rack.length);
 
   const footInset = drawn.keyKinds.length > 0 ? KEY_HEIGHT : 0;
@@ -318,9 +326,15 @@ function SceneLabel({
   );
 }
 
+const KEEPOUT_SELECTOR =
+  '[data-slot="map-layer-rack"], [data-slot="map-dock"], [data-map-ui], .maplibregl-ctrl';
+
 /**
  * The chrome the graticule's labels keep clear of, in pane px: the rack, the dock, MapLibre's own
- * controls (the folded credits), and anything a tab marks `data-map-ui`. Measured after layout, again whenever the pane changes size.
+ * controls (the folded credits), and anything a tab marks `data-map-ui`. Measured after layout,
+ * again whenever the pane changes size, and whenever one of them does — the foot's notice arriving,
+ * a tab's dock mounting in it. A box with no area takes no room (the foot holds its live region
+ * mounted while it says nothing), so it keeps nothing out.
  */
 function useKeepouts(
   pane: React.RefObject<HTMLDivElement | null>,
@@ -333,21 +347,27 @@ function useKeepouts(
   useLayoutEffect(() => {
     const el = pane.current;
     if (!el) return;
-    const host = el.getBoundingClientRect();
-    const found = [
-      ...el.querySelectorAll<HTMLElement>(
-        '[data-slot="map-layer-rack"], [data-slot="map-dock"], [data-map-ui], .maplibregl-ctrl',
-      ),
-    ].map((node) => {
-      const r = node.getBoundingClientRect();
-      return {
-        left: r.left - host.left,
-        top: r.top - host.top,
-        right: r.right - host.left,
-        bottom: r.bottom - host.top,
-      };
-    });
-    setRects((prev) => (JSON.stringify(prev) === JSON.stringify(found) ? prev : found));
+    const measure = () => {
+      const host = el.getBoundingClientRect();
+      const found = [...el.querySelectorAll<HTMLElement>(KEEPOUT_SELECTOR)].flatMap((node) => {
+        const r = node.getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0) return [];
+        return [
+          {
+            left: r.left - host.left,
+            top: r.top - host.top,
+            right: r.right - host.left,
+            bottom: r.bottom - host.top,
+          },
+        ];
+      });
+      setRects((prev) => (JSON.stringify(prev) === JSON.stringify(found) ? prev : found));
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    for (const node of el.querySelectorAll<HTMLElement>(KEEPOUT_SELECTOR)) observer.observe(node);
+    return () => observer.disconnect();
   }, [width, height, rows]);
   return rects;
 }

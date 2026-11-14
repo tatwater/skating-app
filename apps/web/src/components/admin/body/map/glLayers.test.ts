@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { keyEntries, POINT_KEY_LABELS } from './BodyMapMarks';
 import {
   adminToken,
   bodyMapPalette,
@@ -90,18 +89,8 @@ describe('the palette', () => {
   });
 });
 
-describe('the key', () => {
-  it('lists access, then places, once per word', () => {
-    expect(keyEntries(['island', 'lot', 'putIn', 'hazard', 'feature']).map((e) => e.label)).toEqual(
-      ['Put-in', 'Lot', 'Island', 'Hazard'],
-    );
-    expect(keyEntries([])).toEqual([]);
-  });
-
-  it('has a word for every face, and none says anything about the ice', () => {
-    for (const label of Object.values(POINT_KEY_LABELS)) {
-      expect(label).not.toMatch(/safe|skateable|good|ok\b/i);
-    }
+describe('the rack', () => {
+  it('holds every layer the map draws, in the rack’s order', () => {
     expect(BODY_MAP_LAYERS).toHaveLength(10);
   });
 });

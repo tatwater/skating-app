@@ -36,10 +36,11 @@ export interface Neighbor {
 }
 
 /**
- * The neighbors, each read by id: `undefined` while any loads, a failure if any failed (its *Try
- * again* re-runs each failed one), else every neighbor still listed. `null` when the test didn't
- * run (or the facts aren't in yet: `undefined` facts read nothing). The list keeps its identity
- * while its reads do, so a map drawing it isn't redrawn by a render.
+ * The neighbors, each read by id: `undefined` while any loads (or while the facts aren't in:
+ * `undefined` facts read nothing), a failure if any failed (its *Try again* re-runs each failed
+ * one), else every neighbor still listed — empty when the test didn't run, so the map draws none;
+ * Shape says *not checked* from the facts themselves. The list keeps its identity while its reads
+ * do, so a map drawing it isn't redrawn by a render.
  */
 export function useNeighbors(facts: TouchingFacts | undefined): Loadable<readonly Neighbor[]> {
   const ids = facts?.touchingBodyIds ?? [];

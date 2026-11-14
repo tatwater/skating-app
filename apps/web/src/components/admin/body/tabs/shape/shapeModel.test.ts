@@ -87,6 +87,11 @@ describe('the bays', () => {
     ]);
   });
 
+  it('gives a bay under an acre its tenth — never a zero for water that is there', () => {
+    const small = { _id: 's', name: 'Cove', surfaceAreaSqM: 1700, removed: false };
+    expect(shapeBays([small])[0]?.acres).toBe('0.4');
+  });
+
   it('says only the day while how each was made is unread, and each way in its own words', () => {
     expect(shapeBays(MASCOMA_SUB_AREAS).map((b) => b.sub)).toEqual([
       'Added · 2 Sep',

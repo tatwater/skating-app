@@ -33,7 +33,7 @@ import {
   type Removal,
   removalOf,
 } from './bodyModel';
-import type { BodyTabKey } from './bodySearch';
+import { type BodyTabKey, ID_SHAPE } from './bodySearch';
 import { useNeighbors } from './touching';
 
 /**
@@ -60,17 +60,6 @@ import { useNeighbors } from './touching';
 export const HISTORY_LIMIT = 50;
 /** Rows of one verb read to find the body's own latest, when the main history stopped short. */
 const VERB_LIMIT = 10;
-
-/**
- * The most rows the two asks reads without a `more` flag return (the server's `QUEUE_CAP`s,
- * unexported: `corpusPlaceNames.openForBody` and `corpusRequests.openBayRequestsForBody`, whose
- * groups' `askers` sum to the rows read). A read that comes back this full may have stopped short,
- * so the asks are never counted as whole (a server request: a `more` flag on each). The place
- * names' cap is the Places tab's own, so the frame and the tab can't disagree on it.
- */
-
-/** A Convex id's shape, so a hand-edited link never reaches a read as junk. */
-const ID_SHAPE = /^[0-9a-z]{30,34}$/;
 
 /** A body the console can't open, and what the record still says about it. */
 export interface BodyGoneData {
