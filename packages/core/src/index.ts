@@ -11,6 +11,7 @@ export * from './block';
 export * from './bodyCompare';
 export * from './bodyCompleteness';
 export * from './bodyIdentity';
+export * from './bodyLibrary';
 export * from './bodyProbe';
 export * from './bodySilhouette';
 export * from './bodySummary';
