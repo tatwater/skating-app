@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   queryArgs: new Map<string, unknown>(),
   calls: [] as Array<[string, unknown]>,
   can: new Set<string>(),
+  roleLoading: false,
   announce: vi.fn(async () => {}),
 }));
 
@@ -31,7 +32,9 @@ vi.mock('convex/react', async () => {
     },
   };
 });
-vi.mock('@/lib/useRole', () => ({ useRole: () => ({ can: (c: string) => mocks.can.has(c) }) }));
+vi.mock('@/lib/useRole', () => ({
+  useRole: () => ({ can: (c: string) => mocks.can.has(c), isLoading: mocks.roleLoading }),
+}));
 vi.mock('../../../shell/undo', () => ({ useUndo: () => ({ announce: mocks.announce }) }));
 
 import { api } from '@skating/convex/api';
@@ -49,6 +52,7 @@ beforeEach(() => {
   mocks.queryArgs.clear();
   mocks.calls.length = 0;
   mocks.can = new Set(['access.rule', 'body.access', 'audit.read']);
+  mocks.roleLoading = false;
   mocks.announce.mockClear();
   const set = (ref: Parameters<typeof getFunctionName>[0], value: unknown) =>
     mocks.results.set(getFunctionName(ref), value);
@@ -172,6 +176,44 @@ describe('AccessTab', () => {
     const { container } = render(<AccessTab bodyId="wb1" />);
     expect(container.querySelector('[data-slot="ruling-strip-loading"]')).not.toBeNull();
     expect(container.querySelector('[data-slot="ruling-strip"]')).toBeNull();
+  });
+
+  it('holds the strip’s place while the viewer’s role is on its way — not withheld yet', () => {
+    mocks.can = new Set();
+    mocks.roleLoading = true;
+    const { container } = render(<AccessTab bodyId="wb1" />);
+    expect(mocks.queryArgs.has(historyFn)).toBe(false);
+    expect(container.querySelector('[data-slot="ruling-strip-loading"]')).not.toBeNull();
+  });
+
+  it('says who ruled isn’t recorded when the history holds no row that made the ruling', () => {
+    // The newest row is a day older than the record's ruling: not the one that made it.
+    const older = (capped: boolean) => ({
+      entries: [
+        {
+          id: 'ma0',
+          action: 'set_public_access',
+          targetType: 'waterbody',
+          targetId: 'wb1',
+          reason: 'Ruled',
+          createdAt: RULED - 86_400_000,
+          actor: null,
+          metadata: { prev: { publicAccess: null } },
+        },
+      ],
+      capped,
+    });
+    mocks.results.set(historyFn, older(false));
+    const { container, rerender } = render(<AccessTab bodyId="wb1" />);
+    expect(container.querySelector('[data-slot="ruling-strip"]')).toBeNull();
+    expect(screen.getByText('Who ruled and what stood before: Not recorded yet')).toBeTruthy();
+    expect(screen.getByText('1 earlier ruling')).toBeTruthy();
+    // A read that stopped short may hold it further back: past the read, not unrecorded.
+    mocks.results.set(historyFn, older(true));
+    rerender(<AccessTab bodyId="wb1" />);
+    expect(
+      screen.getByText('Who ruled and what stood before are past what this read shows'),
+    ).toBeTruthy();
   });
 
   it('says how many rulings came before, and never draws a capped history as whole', () => {

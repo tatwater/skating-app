@@ -165,6 +165,28 @@ export const HistoryLoading: Story = {
   },
 };
 
+/** The history landed without the row that made the ruling: who ruled isn't recorded, said so. */
+export const WhoRuledNotRecorded: Story = {
+  args: {
+    ...EVERY_LEVER,
+    data: {
+      ...MASCOMA_ACCESS,
+      ruling: {
+        ...MASCOMA_ACCESS.ruling,
+        before: undefined,
+        decidedBy: null,
+        history: { earlier: 0, capped: false },
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    await expect(slot(canvasElement, 'ruling-history-absent')).toHaveTextContent(
+      'Who ruled and what stood before: Not recorded yet',
+    );
+    await expect(canvasElement.querySelector('[data-slot="ruling-strip"]')).toBeNull();
+  },
+};
+
 /**
  * Who ruled and where each launch is couldn't be read: each says so in place, and the note at the
  * top names both with Try again. The ruling itself, from the record, still stands.

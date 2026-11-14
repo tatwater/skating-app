@@ -52,9 +52,10 @@ export type ProposalAsk = {
   point: LatLng;
   askers: number;
   /**
-   * Who asked first: a person; `erased` for an account since erased; `null` when the read didn't
-   * reach this ask; `hidden` for a viewer who can't see who asks (no `inbox.read`) — drawn as
-   * nothing at all; loading or failed as a read.
+   * Who asked first: a person; `erased` for an account since erased; `null` when the askers' read
+   * didn't reach this ask (it reads fewer requests than the proposals' read) — the asker is on
+   * record, so it is never drawn as *not recorded*; `hidden` for a viewer who can't see who asks
+   * (no `inbox.read`) — drawn as nothing at all; loading or failed as a read.
    */
   asker: Asker;
   /** The landmark already on the map under that name, at that place. */
@@ -137,7 +138,7 @@ export function landmarkRows(
 ): LandmarkRow[] {
   return rows
     .filter((r) => r.removedAt === undefined)
-    .map((r) => {
+    .map((r): LandmarkRow => {
       const ids = r.externalIds.map(parseExternalId);
       const fromIds = [...new Set(ids.map((i) => i.catalog).filter((c) => c !== ''))];
       return {

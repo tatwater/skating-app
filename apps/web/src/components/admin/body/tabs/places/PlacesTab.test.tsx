@@ -203,6 +203,15 @@ describe('PlacesTab', () => {
     expect(screen.queryByText(/Couldn’t/)).toBeNull();
   });
 
+  it('says an asker past the askers’ read is past it — never that nobody recorded them', () => {
+    // The askers' read covers fewer requests than the proposals' read: this one isn't in it.
+    mocks.results.set(fn(api.bodyConsole.landmarkProposers), []);
+    render(<PlacesTab bodyId="wb1" />);
+    const ask = screen.getAllByText(/the flats by the dam/)[0]?.closest('[data-slot="ask"]');
+    expect(ask).toHaveTextContent('Who asked is past what this read shows');
+    expect(ask).not.toHaveTextContent('Not recorded yet');
+  });
+
   it('holds who asked as loading while the viewer’s role is on its way', () => {
     mocks.can = new Set();
     mocks.roleLoading = true;

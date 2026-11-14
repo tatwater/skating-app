@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/tanstackstart-react';
 import { useQueries } from 'convex/react';
 import {
   type FunctionArgs,
@@ -5,7 +6,9 @@ import {
   type FunctionReturnType,
   getFunctionName,
 } from 'convex/server';
-import { useCallback, useMemo, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
+
+import { isConfigured } from '@/lib/env';
 
 /**
  * **How the Body console's tabs read** (Names, Places, Access and Water): every server read a tab
@@ -21,13 +24,20 @@ import { useCallback, useMemo, useSyncExternalStore } from 'react';
  * included (one module-level set) — for {@link RETRY_GAP_MS}, then subscribes again, and the server
  * runs it afresh. While it waits the read is loading, so the tab says so. A read the console's frame
  * also holds is re-run only once the frame lets go of it too.
+ *
+ * **A failure is still heard.** Each failed read goes to Sentry (only with a DSN) once — and again
+ * if it fails after a *Try again* — as the console's crash boundaries report what they catch: a
+ * read drawn as *Couldn't be read* is never a bug nobody hears about.
  */
 
 /** A read's state: loading (`undefined`), failed, or its value. */
 export type Loaded<T> = T | undefined | typeof FAILED;
 
-/** A read the server refused or failed. */
-export const FAILED = 'failed' as const;
+/**
+ * A read the server refused or failed. A symbol, never a string: a read's value may itself be a
+ * string (a bay's name, where a launch is), and no name may ever read as a failure.
+ */
+export const FAILED: unique symbol = Symbol('failed');
 
 /** How long a read is let go before it is asked again: long enough for React to commit the drop. */
 export const RETRY_GAP_MS = 50;
@@ -68,6 +78,16 @@ function subscribe(listener: () => void): () => void {
 
 const snapshot = () => version;
 
+/** The reads whose failure has gone to Sentry, by id: each once, and again after a Try again. */
+const reported = new Set<string>();
+
+/** Report a failed read to Sentry, once per read (only with a DSN). */
+function report(id: string, error: Error): void {
+  if (reported.has(id)) return;
+  reported.add(id);
+  if (isConfigured.sentry) Sentry.captureException(error);
+}
+
 /** A read's identity: its function and its arguments, as values. */
 export function readId(spec: ReadSpec): string {
   return `${getFunctionName(spec.query)}:${JSON.stringify(spec.args)}`;
@@ -77,7 +97,11 @@ export function readId(spec: ReadSpec): string {
 export function retryReads(ids: readonly string[]): void {
   const fresh = ids.filter((id) => !paused.has(id));
   if (fresh.length === 0) return;
-  for (const id of fresh) paused.add(id);
+  for (const id of fresh) {
+    paused.add(id);
+    // Asked again: a failure after this one is heard again.
+    reported.delete(id);
+  }
   emit();
   setTimeout(() => {
     for (const id of fresh) paused.delete(id);
@@ -106,17 +130,25 @@ export function useTabReads<S extends Specs>(specs: S): { reads: ReadsOf<S>; ret
   const got = useQueries(queries) as Record<string, unknown>;
   const reads: Record<string, unknown> = {};
   const failed: string[] = [];
+  const errors: Array<{ id: string; error: Error }> = [];
   for (const key of Object.keys(specs)) {
     const value = got[key];
     if (value instanceof Error) {
       reads[key] = FAILED;
       const entry = entries.find((e) => e.key === key);
-      if (entry !== undefined) failed.push(entry.id);
+      if (entry !== undefined) {
+        failed.push(entry.id);
+        errors.push({ id: entry.id, error: value });
+      }
     } else {
       reads[key] = value;
     }
   }
   const failedKey = failed.join('\n');
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on which reads failed, by value.
+  useEffect(() => {
+    for (const { id, error } of errors) report(id, error);
+  }, [failedKey]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on which reads failed, by value.
   const retry = useCallback(() => retryReads(failed), [failedKey]);
   return { reads: reads as ReadsOf<S>, retry };

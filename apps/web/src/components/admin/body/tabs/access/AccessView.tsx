@@ -10,7 +10,7 @@ import { sayUnavailable, UnavailableButton } from '@/components/kit/unavailable-
 import { usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
 import { RetryNote } from '../places/kit-candidates/retry-note';
-import { LoadingLine, ReadFailed, ReadFailures } from '../places/tabStates';
+import { LoadingLine, NOT_RECORDED, ReadFailed, ReadFailures } from '../places/tabStates';
 import { FAILED, type Loaded } from '../places/useTabReads';
 import { LIT_ROW, LoadingSection, litAttr, TabBody } from '../tabParts';
 import { type AccessData, earlierWords, litId, type PutInRow } from './accessModel';
@@ -23,8 +23,9 @@ import { RulingStrip } from './RulingStrip';
  * about whether the public may lawfully get there — never a word about the ice (D3).
  *
  * Each read is in its state: the record or the access read failing is the tab's note with *Try
- * again*; who ruled and where each launch is say *Couldn't be read* in place; a history read that
- * stopped short makes the earlier rulings' count a floor ("19+").
+ * again*; who ruled and where each launch is say *Couldn't be read* in place; a history that landed
+ * without the row that made the ruling says who ruled isn't recorded (or is past the read); a
+ * history read that stopped short makes the earlier rulings' count a floor ("19+").
  *
  * Every control is drawn only when its handler is passed. Placing a put-in or a lot, linking a lot
  * and writing what a sign says are task modes not built yet: drawn as the board draws them, they
@@ -263,6 +264,17 @@ function RulingSection({
           Who ruled and what stood before couldn’t be read
         </span>
       )}
+      {ruling.verdict !== null &&
+        ruling.decidedAt !== null &&
+        typeof ruling.history === 'object' &&
+        ruling.before === undefined && (
+          // The history landed without the row that made this ruling: say so, never a blank.
+          <span data-slot="ruling-history-absent" className="text-assist leading-list text-fg3">
+            {ruling.history.capped
+              ? 'Who ruled and what stood before are past what this read shows'
+              : `Who ruled and what stood before: ${NOT_RECORDED}`}
+          </span>
+        )}
       {ruling.verdict !== null && ruling.decidedAt !== null && ruling.before !== undefined && (
         <RulingStrip
           before={ruling.before}

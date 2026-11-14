@@ -236,7 +236,7 @@ export function accessFrom(
   landmarks: Loaded<ReadonlyArray<{ name: string; point: LatLng }>>,
 ): AccessData {
   const putIns: PutInRow[] = input.putIns
-    .map((p) => {
+    .map((p): PutInRow => {
       const source: PutInRow['source'] =
         p.source === 'official' || p.source === 'osm' ? p.source : 'derived';
       return {

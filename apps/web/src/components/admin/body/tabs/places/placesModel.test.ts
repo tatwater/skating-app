@@ -15,6 +15,7 @@ import {
   PLACE_NAMES_READ_CAP,
   type PlaceAsk,
   type PlaceNameAsk,
+  type PlacesData,
   type PlacesReads,
   type ProposalAsk,
   parseExternalId,
@@ -72,6 +73,9 @@ describe('landmarkRows', () => {
     expect(rows(FAILED)[1]?.[2]).toBe(FAILED);
     // A bay the read doesn't hold (removed since) is none.
     expect(rows(new Map())[1]?.[2]).toBeNull();
+    // A name is never a failure, whatever it spells.
+    expect(rows(new Map([['bay-x', 'failed']]))[1]?.[2]).toBe('failed');
+    expect(rows(new Map([['bay-x', 'failed']]))[1]?.[2]).not.toBe(FAILED);
   });
 
   it('orders by the list’s word, then name', () => {
@@ -202,7 +206,7 @@ describe('selection and the map', () => {
 
   it('draws nothing of a list still loading or failed, and lights nothing in it', () => {
     for (const state of [undefined, FAILED] as const) {
-      const data = { ...MASCOMA_PLACES, asks: state, landmarks: state };
+      const data: PlacesData = { ...MASCOMA_PLACES, asks: state, landmarks: state };
       expect(placesMapScene(data, 'landmark:lm-upper')).toEqual({ items: [], lit: null });
       expect(selectedLandmark(data, 'landmark:lm-upper')).toBeNull();
     }

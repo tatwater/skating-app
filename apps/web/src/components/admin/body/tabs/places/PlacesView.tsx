@@ -38,7 +38,7 @@ import {
   rowsOf,
   selectedLandmark,
 } from './placesModel';
-import { CappedCount, LoadingLine, NotRecorded, ReadFailed, ReadFailures } from './tabStates';
+import { CappedCount, LoadingLine, ReadFailed, ReadFailures } from './tabStates';
 import { FAILED } from './useTabReads';
 
 /**
@@ -351,7 +351,8 @@ function AskerLine({ asker }: { asker: Asker }) {
   if (asker === undefined) return <LoadingLine width="9rem" />;
   if (asker === FAILED) return <span className={ASSIST}>Who asked couldn’t be read</span>;
   if (asker === 'erased') return <span className={ASSIST}>Asked from an account since erased</span>;
-  if (asker === null) return <NotRecorded />;
+  // Every ask names its asker: `null` is an ask past what the askers' read covers, not one unrecorded.
+  if (asker === null) return <span className={ASSIST}>Who asked is past what this read shows</span>;
   return (
     <PersonLockup
       name={asker.name}

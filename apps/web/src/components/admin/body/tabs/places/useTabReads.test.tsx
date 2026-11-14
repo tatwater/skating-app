@@ -11,6 +11,20 @@ const mocks = vi.hoisted(() => ({
   results: new Map<string, unknown>(),
   /** Every queries object `useQueries` was handed, in order. */
   seen: [] as Array<Record<string, { query: unknown; args: unknown }>>,
+  /** What went to Sentry, and whether a DSN is set. */
+  exceptions: [] as unknown[],
+  sentry: true,
+}));
+
+vi.mock('@sentry/tanstackstart-react', () => ({
+  captureException: (e: unknown) => mocks.exceptions.push(e),
+}));
+vi.mock('@/lib/env', () => ({
+  isConfigured: {
+    get sentry() {
+      return mocks.sentry;
+    },
+  },
 }));
 
 vi.mock('convex/react', async () => {
@@ -41,6 +55,8 @@ const EXTRAS = getFunctionName(api.bodyConsole.consoleExtras);
 beforeEach(() => {
   mocks.results.clear();
   mocks.seen.length = 0;
+  mocks.exceptions.length = 0;
+  mocks.sentry = true;
   vi.useFakeTimers();
 });
 
@@ -96,6 +112,37 @@ describe('useTabReads', () => {
     });
     expect(tab.result.current.reads.places).toEqual({ towns: [], counties: [], states: [] });
     expect(map.result.current.reads.places).toEqual({ towns: [], counties: [], states: [] });
+  });
+
+  it('tells Sentry of a failed read once, however many hold it, and again if Try again fails', () => {
+    const down = new Error('down');
+    // A read this file's other tests never fail, so its report is this test's alone.
+    const useDam = () =>
+      useTabReads({
+        dam: read(api.bodyConsole.places, { waterBodyId: 'wb-dam' as Id<'waterBodies'> }),
+      });
+    mocks.results.set(PLACES, down);
+    const tab = renderHook(useDam);
+    renderHook(useDam);
+    tab.rerender();
+    expect(mocks.exceptions).toEqual([down]);
+    act(() => tab.result.current.retry());
+    act(() => {
+      vi.advanceTimersByTime(RETRY_GAP_MS);
+    });
+    expect(mocks.exceptions).toEqual([down, down]);
+  });
+
+  it('tells Sentry nothing without a DSN, and still says the read failed', () => {
+    mocks.sentry = false;
+    mocks.results.set(PLACES, new Error('down'));
+    const { result } = renderHook(() =>
+      useTabReads({
+        quiet: read(api.bodyConsole.places, { waterBodyId: 'wb-quiet' as Id<'waterBodies'> }),
+      }),
+    );
+    expect(result.current.reads.quiet).toBe(FAILED);
+    expect(mocks.exceptions).toEqual([]);
   });
 
   it('does nothing on Try again when nothing failed', () => {
