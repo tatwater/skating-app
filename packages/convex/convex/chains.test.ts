@@ -4,7 +4,7 @@
  * uncapped field lets it be, under Convex's real transaction limits. Each chain must reach its end —
  * no pass may throw (`OverBudget` included), and none may stall — and leave what it is for.
  */
-import { WITHDRAWN_ERASE_MS } from '@skating/core';
+import { FLAG_NOTE_MAX_CHARS, PHOTO_CAPTION_MAX_CHARS, WITHDRAWN_ERASE_MS } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
@@ -12,10 +12,14 @@ import type { Id } from './_generated/dataModel';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
-const DAY = 24 * 60 * 60 * 1000;
+const HOUR = 60 * 60 * 1000;
+const DAY = 24 * HOUR;
 const T0 = Date.UTC(2027, 0, 14, 12);
 /** Near the document limit: what an uncapped field can weigh. */
 const HEAVY = 'h'.repeat(1000 * 1024);
+/** The heaviest caption and flag note the writers allow: every writer is capped, so this is the worst. */
+const CAPTION_AT_CAP = 'c'.repeat(PHOTO_CAPTION_MAX_CHARS);
+const FLAG_NOTE_AT_CAP = 'n'.repeat(FLAG_NOTE_MAX_CHARS);
 
 type T = ReturnType<typeof convexTest>;
 
@@ -338,7 +342,7 @@ describe('every chain reaches its end on its dearest page', () => {
           targetType: 'post',
           targetId: postId,
           reason: 'harassment',
-          note: HEAVY,
+          note: FLAG_NOTE_AT_CAP,
           status: 'open',
           origin: 'user',
           createdAt: T0,
@@ -395,7 +399,7 @@ describe('every chain reaches its end on its dearest page', () => {
           storageId: await ctx.storage.store(new Blob([`full ${i}`])),
           thumbStorageId: await ctx.storage.store(new Blob([`thumb ${i}`])),
           uploaderId: author.id,
-          caption: HEAVY,
+          caption: CAPTION_AT_CAP,
           placeOnMap: false,
           createdAt: T0,
         }),
@@ -444,7 +448,7 @@ describe('every chain reaches its end on its dearest page', () => {
           targetType: 'report',
           targetId: reportId,
           reason: 'spam',
-          note: HEAVY,
+          note: FLAG_NOTE_AT_CAP,
           status: 'open',
           origin: 'user',
           createdAt: T0,
@@ -500,6 +504,10 @@ describe('every chain reaches its end on its dearest page', () => {
     vi.setSystemTime(T0 + 31 * DAY);
     await runOut(t, () => t.mutation(internal.erasure.eraseDue, {}));
     for (const id of reportIds) expect(await t.run((ctx) => ctx.db.get(id))).toBeNull();
+    // The Post's clock is set after this run's cutoff, by the job its last member's erasure
+    // schedules: it goes on the next hourly run.
+    vi.setSystemTime(T0 + 31 * DAY + HOUR);
+    await runOut(t, () => t.mutation(internal.erasure.eraseDue, {}));
     expect(await t.run((ctx) => ctx.db.get(postId))).toBeNull();
   });
 
@@ -516,7 +524,7 @@ describe('every chain reaches its end on its dearest page', () => {
             storageId: await ctx.storage.store(new Blob([`full ${i}`])),
             thumbStorageId: await ctx.storage.store(new Blob([`thumb ${i}`])),
             uploaderId: uploader,
-            caption: HEAVY,
+            caption: CAPTION_AT_CAP,
             placeOnMap: false,
             createdAt: T0,
           }),
@@ -596,7 +604,7 @@ describe('every chain reaches its end on its dearest page', () => {
           storageId: await ctx.storage.store(new Blob(['full'])),
           thumbStorageId: await ctx.storage.store(new Blob(['thumb'])),
           uploaderId: uploader,
-          caption: HEAVY,
+          caption: CAPTION_AT_CAP,
           placeOnMap: false,
           createdAt: T0,
         }),

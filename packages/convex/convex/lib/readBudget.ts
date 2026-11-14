@@ -8,13 +8,22 @@
  * transaction. A read the plan did not leave room for throws instead of running past the limit, so a
  * planning mistake fails a test rather than a deployment. A row's worst case is its capped fields in
  * UTF-8 (four bytes a character) plus room for the rest; **any uncapped string or array makes it the
- * 1 MiB document limit** — a Report's notes, a flag's note, a photo's caption, a request's polygon, a
- * hazard's or an alert's `idempotencyKey`, a put-in's name, a moderator's reason.
+ * 1 MiB document limit** — a request's polygon, a hazard's `idempotencyKey`, a put-in's name, a
+ * moderator's reason. A Report's notes are capped now, but a Report stays at the limit for its other
+ * fields.
  *
  * Every read in the files D248 touched, its bound, its worst case and what rests on its answer, is the
  * table in `plans/phases/B01-admin-console.md` §12.8 ("B01-1b: every read, weighed").
  */
-import { COMMENT_BODY_MAX_LENGTH, POST_BODY_MAX_CHARS, POST_TITLE_MAX_CHARS } from '@skating/core';
+import {
+  ACCESS_ALERT_NOTE_MAX_CHARS,
+  COMMENT_BODY_MAX_LENGTH,
+  FLAG_NOTE_MAX_CHARS,
+  IDEMPOTENCY_KEY_MAX_CHARS,
+  PHOTO_CAPTION_MAX_CHARS,
+  POST_BODY_MAX_CHARS,
+  POST_TITLE_MAX_CHARS,
+} from '@skating/core';
 import { ConvexError } from 'convex/values';
 
 /** Convex's per-document size limit — the worst any row can weigh. */
@@ -35,15 +44,19 @@ export const ROW_MAX = {
   report: DOC_MAX,
   post: DOC_MAX,
   hazard: DOC_MAX,
-  contentFlag: DOC_MAX,
+  // A flag's one free text is its note, capped at every writer (a person's and the automatic one);
+  // its target id resolves to a real row and its error class is a class name.
+  contentFlag: FLAG_NOTE_MAX_CHARS * 4 + SLACK,
   waterBodyRequest: DOC_MAX,
-  accessAlert: DOC_MAX,
+  // An alert's note is cut at the write and its retry key capped; the rest are ids and literals.
+  accessAlert: (ACCESS_ALERT_NOTE_MAX_CHARS + IDEMPOTENCY_KEY_MAX_CHARS) * 4 + SLACK,
   // A Post's snapshot is its title and prose (both capped); a Report's carries its uncapped notes.
   postRevision: (POST_TITLE_MAX_CHARS + POST_BODY_MAX_CHARS) * 4 + SLACK,
   reportRevision: DOC_MAX,
   // The approach path is capped, the name and external id are not.
   putIn: DOC_MAX,
-  photo: DOC_MAX,
+  // Its caption is capped at the write; the rest are storage ids, a coordinate and numbers.
+  photo: PHOTO_CAPTION_MAX_CHARS * 4 + SLACK,
   // The recorded path and the provider's payload are uncapped.
   activity: DOC_MAX,
   profile: DOC_MAX,

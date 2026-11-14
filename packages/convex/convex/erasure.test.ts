@@ -4,7 +4,13 @@
  * days and the moment it cleared. The sweep reads only due rows; afterward the author's data export
  * holds none of the item's content, and everything that pointed at it still renders.
  */
-import { POST_BODY_MAX_CHARS, POST_TITLE_MAX_CHARS, WITHDRAWN_ERASE_MS } from '@skating/core';
+import {
+  FLAG_NOTE_MAX_CHARS,
+  PHOTO_CAPTION_MAX_CHARS,
+  POST_BODY_MAX_CHARS,
+  POST_TITLE_MAX_CHARS,
+  WITHDRAWN_ERASE_MS,
+} from '@skating/core';
 import { convexTest } from 'convex-test';
 import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -20,7 +26,8 @@ import { TX_BUDGET } from './lib/readBudget';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
-const DAY = 24 * 60 * 60 * 1000;
+const HOUR = 60 * 60 * 1000;
+const DAY = 24 * HOUR;
 /** Midday UTC, so no fixture sits near a date line in any zone. */
 const T0 = Date.UTC(2027, 0, 14, 12);
 
@@ -196,6 +203,14 @@ const sweep = async (t: T) => {
   return result;
 };
 const advance = (ms: number) => vi.setSystemTime(Date.now() + ms);
+/**
+ * The next hourly run. A Post's clock is set by the job its last Report's erasure schedules, after
+ * that run's cutoff, so the Post goes on the next run, not in the same one.
+ */
+const nextRun = async (t: T) => {
+  advance(HOUR);
+  return sweep(t);
+};
 const get = (t: T, id: string) =>
   t.run((ctx) => ctx.db.get(id as never)) as Promise<Record<string, unknown> | null>;
 /** How many items of a kind the sweep erased, across every pass it took. */
@@ -239,12 +254,21 @@ async function oweOnRecord(
   });
 }
 /** One step of the uploader's settlement, as the walk runs it. */
-const step = (t: T, uploaderId: Id<'profiles'>, pageSize?: number) =>
+const step = (t: T, uploaderId: Id<'profiles'>, pageSize?: number, bytes = TX_BUDGET) =>
   t.mutation(internal.erasure.settleStep, {
     uploaderId,
-    bytes: TX_BUDGET,
+    bytes,
     ...(pageSize !== undefined ? { pageSize } : {}),
   });
+/**
+ * The least budget a settlement step runs on: one hazard row (the page it must afford), its place in
+ * the queue and a photo's check and delete. With no hazards to read, a step on it settles a few dozen
+ * photos at the caption cap, so a test of where a pass stops seeds more than that.
+ */
+const LEAST_STEP =
+  ROW_MAX.hazard + 2 * ROW_MAX.settleQueue + 2 * (2 * ROW_MAX.photo + ROW_MAX.small);
+/** More photos than one {@link LEAST_STEP} pass settles. */
+const PAST_ONE_PASS = 60;
 /** Everything owed settled: the walk, run to its end. */
 async function settleAll(t: T) {
   await t.mutation(internal.erasure.settleOwed, {});
@@ -825,6 +849,7 @@ describe('a report', () => {
     expect((await get(t, reportId))?.eraseAt).toBe(Date.now());
     await sweep(t);
     expect(await get(t, reportId)).toBeNull();
+    await nextRun(t);
     expect(await get(t, postId)).toBeNull();
     const bundle = await t.query(internal.dataExport.collect, { userId: author.id });
     expect(JSON.stringify(bundle)).not.toContain('Morey at dawn');
@@ -854,6 +879,7 @@ describe('a report', () => {
     });
     await sweep(t);
     expect(await get(t, b)).toBeNull();
+    await nextRun(t);
     expect(await get(t, postId)).toBeNull();
     const erased = (await historyOn(t, postId)).filter((r) => r.action === 'erase');
     expect(erased).toHaveLength(1);
@@ -1219,6 +1245,7 @@ describe('what was withdrawn before the clock existed', () => {
     advance(31 * DAY);
     await sweep(t);
     await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await nextRun(t);
     for (const id of [reportId, postId, hazardId, ids.commentId, ids.flagId, ids.requestId]) {
       expect(await get(t, id)).toBeNull();
     }
@@ -1319,16 +1346,18 @@ describe('a pass is sized by what its rows can weigh', () => {
 
 /** Near the document limit: what an uncapped field can weigh. */
 const HEAVY = 'h'.repeat(1000 * 1024);
+/** The longest caption the photo writer allows: every writer is capped, so it is the worst a row weighs. */
+const CAPTION_AT_CAP = 'c'.repeat(PHOTO_CAPTION_MAX_CHARS);
 
 describe('every read fits a transaction, at the heaviest rows Convex allows', () => {
-  /** A photo of the author's with a caption near the document limit, each written on its own. */
+  /** A photo of the author's with the longest caption the writer allows, each written on its own. */
   async function heavyPhoto(t: T, uploaderId: Id<'profiles'>, i: number) {
     return t.run(async (ctx) =>
       ctx.db.insert('photos', {
         storageId: await ctx.storage.store(new Blob([`full ${i}`])),
         thumbStorageId: await ctx.storage.store(new Blob([`thumb ${i}`])),
         uploaderId,
-        caption: `${i} ${HEAVY}`,
+        caption: `${i} ${CAPTION_AT_CAP}`.slice(0, PHOTO_CAPTION_MAX_CHARS),
         placeOnMap: false,
         createdAt: Date.now(),
       }),
@@ -1339,13 +1368,14 @@ describe('every read fits a transaction, at the heaviest rows Convex allows', ()
     const { t, author, waterBodyId } = await setup();
     const reportId = (await seedPost(t, author.id, waterBodyId, 1)).reportIds[0] as Id<'reports'>;
     const photoIds: Id<'photos'>[] = [];
-    for (let i = 0; i < 20; i++) photoIds.push(await heavyPhoto(t, author.id, i));
+    for (let i = 0; i < PAST_ONE_PASS; i++) photoIds.push(await heavyPhoto(t, author.id, i));
     await t.run((ctx) => ctx.db.patch(reportId, { photoIds }));
     // The uploader's hazards are read to their end in this call, so it goes straight to the deletes —
     // which must stop where its budget does.
     await t.run((ctx) => ctx.db.delete(reportId));
     await oweOnRecord(t, author.id, photoIds, { phase: 'hazards' });
-    await step(t, author.id);
+    // At the caption cap a whole budget holds hundreds of photos, so this pass gets the least it runs on.
+    await step(t, author.id, undefined, LEAST_STEP);
     const left = (await Promise.all(photoIds.map((id) => get(t, id)))).filter(Boolean).length;
     expect(left).toBeGreaterThan(0);
     expect(left).toBeLessThan(photoIds.length);
@@ -1357,9 +1387,9 @@ describe('every read fits a transaction, at the heaviest rows Convex allows', ()
   test('a hazard filed while a settlement is under way keeps the photo it shows', async () => {
     const { t, author, waterBodyId } = await setup();
     const photoIds: Id<'photos'>[] = [];
-    for (let i = 0; i < 12; i++) photoIds.push(await heavyPhoto(t, author.id, i));
+    for (let i = 0; i < PAST_ONE_PASS; i++) photoIds.push(await heavyPhoto(t, author.id, i));
     await oweOnRecord(t, author.id, photoIds, { phase: 'hazards' });
-    await step(t, author.id);
+    await step(t, author.id, undefined, LEAST_STEP);
     // Some went in the first pass; the last one is still waiting, and a hazard takes it now.
     const last = photoIds[photoIds.length - 1] as Id<'photos'>;
     expect(await get(t, last)).not.toBeNull();
@@ -1396,6 +1426,7 @@ describe('every read fits a transaction, at the heaviest rows Convex allows', ()
     advance(31 * DAY);
     await sweep(t);
     for (const id of reportIds) expect(await get(t, id)).toBeNull();
+    await nextRun(t);
     expect(await get(t, postId)).toBeNull();
     expect(await erasedCount(t, 'report')).toBe(10);
     expect(await erasedCount(t, 'post')).toBe(1);
@@ -1408,7 +1439,7 @@ describe('every read fits a transaction, at the heaviest rows Convex allows', ()
       targetType: 'post',
       targetId: postId,
       reason: 'harassment',
-      note: HEAVY.slice(0, 200 * 1024),
+      note: 'n'.repeat(FLAG_NOTE_MAX_CHARS),
     });
     await t.finishAllScheduledFunctions(vi.runAllTimers);
     for (const id of reportIds) expect((await get(t, id))?.eraseAt).toBeUndefined();
@@ -2072,7 +2103,6 @@ describe('the erasure holds under any order', () => {
 describe('fairness under failure, under any mix', () => {
   type Outcome = 'fail' | 'succeed' | 'held';
   const RUNS = 6;
-  const HOUR = 60 * 60 * 1000;
 
   /** The rule's model: consecutive failures since the last success; parked at three. */
   function model(outcomes: readonly Outcome[]) {
