@@ -103,7 +103,7 @@ export function AccessView({
     return (
       <TabBody data-slot="access-tab">
         {onRetry ? (
-          <RetryNote onRetry={onRetry}>Couldn’t read this body’s access.</RetryNote>
+          <RetryNote onRetry={onRetry}>Couldn’t read this body’s record or its access.</RetryNote>
         ) : (
           <ReadFailed />
         )}

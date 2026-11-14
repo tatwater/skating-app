@@ -250,7 +250,9 @@ describe('AccessTab', () => {
   it('says the tab couldn’t be read when the record or access failed, with Try again', () => {
     mocks.results.set(getFunctionName(api.accessPoints.accessForBody), new Error('down'));
     render(<AccessTab bodyId="wb1" />);
-    expect(screen.getByRole('status')).toHaveTextContent('Couldn’t read this body’s access.');
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Couldn’t read this body’s record or its access.',
+    );
     expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
   });
 });

@@ -222,7 +222,7 @@ export const AccessFailed: Story = {
   args: { data: FAILED, onRetry: fn() },
   play: async ({ canvasElement }) => {
     await expect(slot(canvasElement, 'retry-note')).toHaveTextContent(
-      'Couldn’t read this body’s access.',
+      'Couldn’t read this body’s record or its access.',
     );
   },
 };
