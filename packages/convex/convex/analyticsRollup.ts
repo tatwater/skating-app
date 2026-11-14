@@ -739,8 +739,9 @@ export const TEXT_LENGTH_EVENT_KEEP_DAYS = 7;
  * band against the cap in force at each write, the longest, and the cap now. Counts only.
  *
  * A kind whose read hits `cap` is `null` in the snapshot — not recorded, never a partial tally — and
- * the other kinds still save. **Forward-only:** a day before the first event, or older than events are
- * kept, is never written, so a backfill can't turn a day whose events were pruned into a day of none.
+ * the other kinds still save. **Forward-only:** a day before the record began (its first event, or its
+ * first folded day), or older than events are kept, is never written, so a backfill can't turn a day
+ * whose events were pruned into a day of none — while a quiet day after it began is a measured zero.
  */
 export async function rollupTextLengthsDay(
   ctx: MutationCtx,
@@ -748,8 +749,16 @@ export async function rollupTextLengthsDay(
   cap: number = DAY_SCAN_CAP,
 ): Promise<void> {
   if (date < metricDay(Date.now() - TEXT_LENGTH_EVENT_KEEP_DAYS * DAY_MS)) return;
+  // The record began on or before `date` if an event that old survives, or a day up to it was folded
+  // already: after a quiet week the prune leaves no event at all, and a day of none is then a zero.
   const first = await ctx.db.query('textLengthEvents').withIndex('by_day_kind').first();
-  if (first === null || first.day > date) return;
+  if (first === null || first.day > date) {
+    const folded = await ctx.db
+      .query('metricSnapshots')
+      .withIndex('by_metric_date', (q) => q.eq('metric', 'text_lengths').lte('date', date))
+      .first();
+    if (folded === null) return;
+  }
   const meta: Record<string, unknown> = {};
   for (const kind of TEXT_LENGTH_KINDS) {
     const rows = await wholeDay(
