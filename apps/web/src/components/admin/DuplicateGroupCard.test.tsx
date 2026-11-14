@@ -40,8 +40,8 @@ function member(overrides: Partial<DuplicateMember> = {}): DuplicateMember {
   };
 }
 
-function group(members: DuplicateMember[]): DuplicateGroup {
-  return { key: members.map((m) => m._id).join('+'), members, truncated: false };
+function group(members: DuplicateMember[], hidden = 0): DuplicateGroup {
+  return { key: members.map((m) => m._id).join('+'), members, truncated: hidden > 0, hidden };
 }
 
 const noop = async () => undefined;
@@ -180,5 +180,47 @@ describe('DuplicateGroupCard', () => {
     expect(screen.getByText(/no longer exists/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Keep/ })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Not duplicates' })).toBeInTheDocument();
+  });
+
+  it('a cut card says how many bodies it leaves out, and that its actions cover only those shown', async () => {
+    render(
+      <DuplicateGroupCard
+        group={group(
+          [
+            member({
+              _id: 'a' as DuplicateMember['_id'],
+              name: 'Mascoma Lake',
+              dedupStatus: 'clean',
+            }),
+            member({ _id: 'b' as DuplicateMember['_id'], name: 'Drawn 1' }),
+          ],
+          2,
+        )}
+        onMerge={noop}
+        onDismiss={noop}
+      />,
+    );
+    expect(screen.getByText(/and 2 more/)).toBeInTheDocument();
+    expect(screen.getByText(/2 bodies more than this card shows/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Not duplicates' }));
+    expect(
+      await screen.findByText(/Clears the links among the 2 bodies shown here/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/The 2 bodies not shown keep their flags/)).toBeInTheDocument();
+  });
+
+  it('a whole group says nothing about bodies left out', () => {
+    render(
+      <DuplicateGroupCard
+        group={group([
+          member({ _id: 'a' as DuplicateMember['_id'], name: 'Mascoma Lake' }),
+          member({ _id: 'b' as DuplicateMember['_id'], name: 'Drawn 1' }),
+        ])}
+        onMerge={noop}
+        onDismiss={noop}
+      />,
+    );
+    expect(screen.queryByText(/more$/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/than this card shows/)).not.toBeInTheDocument();
   });
 });

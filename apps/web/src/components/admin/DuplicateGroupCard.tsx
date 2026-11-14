@@ -48,9 +48,14 @@ export type DuplicateMember = ComparableBody & { _id: Id<'waterBodies'> };
 
 export interface DuplicateGroup {
   key: string;
+  /** The bodies this card shows: a walk over the group's links, so each is linked to one before it. */
   members: DuplicateMember[];
   truncated: boolean;
+  /** How many bodies of the group this card leaves out (0 when it shows them all). */
+  hidden: number;
 }
+
+const bodies = (n: number) => `${n} ${n === 1 ? 'body' : 'bodies'}`;
 
 /**
  * A color per member, reused by the outline, the table column and the merge button — so "the pink
@@ -103,6 +108,9 @@ export function DuplicateGroupCard({
                 {bodyLabel(m)}
               </span>
             ))}
+            {group.hidden > 0 ? (
+              <span className="text-foreground-muted"> and {group.hidden} more</span>
+            ) : null}
           </span>
           {reasons.map((reason) => (
             <Badge key={reason} variant="outline">
@@ -124,10 +132,11 @@ export function DuplicateGroupCard({
           </p>
         ))}
 
-        {group.truncated ? (
+        {group.hidden > 0 ? (
           <p className="text-warning text-xs">
-            This group is larger than one card shows. Merging from here still works, but the chain
-            behind it is worth reading in the Convex dashboard before you do.
+            This group has {bodies(group.hidden)} more than this card shows. Merging and dismissing
+            act on the {bodies(group.members.length)} shown only; the rest stay flagged and come
+            back as their own card.
           </p>
         ) : null}
         {group.members.length === 1 ? (
@@ -216,7 +225,11 @@ export function DuplicateGroupCard({
               </Button>
             }
             title="These are separate bodies"
-            description="Clears the flag and leaves every row exactly as it is. Nothing is deleted and nothing moves — the decision and your reason go to the audit log."
+            description={
+              group.hidden > 0
+                ? `Clears the links among the ${bodies(group.members.length)} shown here and leaves every row exactly as it is. The ${bodies(group.hidden)} not shown keep their flags and come back as their own card. Nothing is deleted and nothing moves — the decision and your reason go to the audit log.`
+                : 'Clears the flag and leaves every row exactly as it is. Nothing is deleted and nothing moves — the decision and your reason go to the audit log.'
+            }
             confirmLabel="Dismiss"
             confirmVariant="secondary"
             requireReason={false}
