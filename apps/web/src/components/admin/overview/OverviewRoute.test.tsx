@@ -19,8 +19,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock('convex/react', async () => {
   const { getFunctionName } = await import('convex/server');
   return {
-    useQuery: (ref: Parameters<typeof getFunctionName>[0]) =>
-      mocks.results.get(getFunctionName(ref)),
+    useQuery: (ref: Parameters<typeof getFunctionName>[0], args: unknown) =>
+      args === 'skip' ? undefined : mocks.results.get(getFunctionName(ref)),
   };
 });
 vi.mock('@tanstack/react-router', () => ({
@@ -45,6 +45,7 @@ vi.mock('@/lib/useConnection', () => ({
 }));
 
 import { api } from '@skating/convex/api';
+import { seasonRecordWindow } from '@skating/core';
 import { getFunctionName } from 'convex/server';
 
 import { OverviewRoute } from './OverviewRoute';
@@ -86,6 +87,7 @@ beforeEach(() => {
       contentFlags: count(3),
       support: count(1),
       oldestOpenAt: null,
+      medianOpenedAt: null,
     },
     people: {
       moderators: count(2),
@@ -97,10 +99,19 @@ beforeEach(() => {
       flaggedPeople: count(1),
       appealsOpen: count(0),
       leaving: count(0),
+      totalUsers: null,
     },
   });
   mocks.results.set(getFunctionName(api.waterBodies.reviewQueueCounts), {
     'duplicate-candidate': { count: 5, capped: false, advisory: false },
+  });
+  mocks.results.set(getFunctionName(api.console.corpusCounts), {
+    duplicates: count(3),
+    chordRefits: count(0),
+    placeNames: count(0),
+    preIcePass: null,
+    enrichment: null,
+    campaignAt: null,
   });
   mocks.results.set(getFunctionName(api.moderation.listActions), [
     {
@@ -145,17 +156,23 @@ describe('the Overview at /admin', () => {
     expect(feed.getByText('Body')).toBeInTheDocument();
   });
 
-  it('draws every block no read serves as not recorded — no fixture, no zero', () => {
+  it('draws whatever the server records as null as not recorded — no fixture, no zero', () => {
+    mocks.results.set(getFunctionName(api.machinery.overviewJobs), null);
+    mocks.results.set(getFunctionName(api.seasonWatch.homeSummary), {
+      season: 2026,
+      countsFrom: '2026-10-01',
+      watch: null,
+      winter: null,
+      imagery: { state: 'not-started', granules: 0, lastLandedAt: null, lastFrameAt: null },
+      firstSkate: null,
+    });
     render(<OverviewRoute />);
-    for (const label of [
-      'Ice watch',
-      'Winter, region-wide',
-      'Imagery',
-      'First skated',
-      'Cost · this season',
-    ]) {
+    for (const label of ['Winter, region-wide', 'First skated', 'Cost · this season']) {
       expect(statTile(label)).toHaveTextContent('—Not recorded yet');
     }
+    // A waiting watch and imagery not started are facts, not absences.
+    expect(statTile('Ice watch')).toHaveTextContent('Waiting');
+    expect(statTile('Imagery')).toHaveTextContent('Not started');
     const machinery = screen.getByRole('region', { name: 'Machinery' });
     expect(within(machinery).getByText('Not recorded yet')).toBeInTheDocument();
     expect(screen.getByText('Spend by month lands here')).toBeInTheDocument();
@@ -166,9 +183,10 @@ describe('the Overview at /admin', () => {
     for (const fixture of ['Mascoma Lake', '$75.80', 'Rob Tremblay', 'Campaign']) {
       expect(screen.queryByText(fixture, { exact: false })).toBeNull();
     }
-    // The Corpus rows no read counts are left out, not zeroed.
-    expect(screen.queryByText('Chord re-fits')).toBeNull();
+    // The Corpus rows the server records as null are left out, not zeroed; a measured zero shows.
     expect(screen.queryByText('Pre-ice pass')).toBeNull();
+    expect(screen.queryByText('Awaiting enrichment')).toBeNull();
+    expect(screen.getByText('Chord re-fits')).toBeInTheDocument();
   });
 
   it('sends each link to the old page that does the work', () => {
@@ -200,6 +218,39 @@ describe('the Overview at /admin', () => {
     }
     expect(screen.queryByText('Nothing open')).toBeNull();
     expect(screen.queryByText('None resolved this season')).toBeNull();
+  });
+
+  it('draws Metrics from its reads, only on the days the page draws', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const now = Date.UTC(2026, 10, 13, 15);
+      vi.setSystemTime(now);
+      const { days, opensOn } = seasonRecordWindow(2026, now);
+      const keepingUp = (on: string[]) => ({
+        season: 2026,
+        opensOn,
+        days: on,
+        keepingUp: {
+          openFlags: { total: 3, safety: 1 },
+          oldestOpenFlag: null,
+          resolvedWeek: null,
+          resolveSeason: null,
+          queueByDay: on.map(() => null),
+          support: null,
+        },
+      });
+      mocks.search = { tab: 'metrics' };
+      mocks.results.set(getFunctionName(api.metrics.keepingUp), keepingUp(days));
+      const { unmount } = render(<OverviewRoute />);
+      expect(statTile('Open flags')).toHaveTextContent('3');
+      unmount();
+      // A read from either side of midnight waits until it matches the page's days.
+      mocks.results.set(getFunctionName(api.metrics.keepingUp), keepingUp(days.slice(1)));
+      render(<OverviewRoute />);
+      expect(statTile('Open flags')).toHaveTextContent('—Not recorded yet');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('leaves the support half of Metrics out for a viewer who may not read it', () => {

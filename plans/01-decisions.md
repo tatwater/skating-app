@@ -7840,3 +7840,124 @@ Post should not have to leave the flow to restore a Report first.
     alert is a verdict on the author's record, and holds it until a moderator overturns it.
 
 **Related:** D3, D17, D33, D50, D58, D62, D65, D73, D179, D186, D226, D247, [`phase-B01`](./phases/B01-admin-console.md) §7.
+
+## D249 — The season's identity flips on 1 July; its Metrics window opens on 1 October, empty until then (B01)
+
+**2026-11-13, founder calls** (the Overview's Metrics build and the B01-2 integration). "The data
+season resets on 1 July, and only for data cleanliness; the season as any skater thinks of it starts
+in late fall — the watch opens 1 October, and ice rarely comes before November." And: "We should
+show empty new season state from Jul 1 -> Oct 1. The user should have to explicitly choose a previous
+season in order to see its data."
+
+- **Identity** is D63's: `seasonOf` flips on 1 July, and from that day the console shows the new
+  season.
+- **The window** of every season-ranged read and chart runs from 1 October through today, or a past
+  season whole to 30 June — one rule, `seasonRecordWindow` in `@skating/core`, read by the server's
+  reads and the page alike.
+- **Between the two the window is empty**: each season-ranged block says when the record begins and
+  nothing about the ice (D3). A past season is shown only when it is chosen, so every season-ranged
+  read takes the season as an argument.
+
+**Why:** the watch is what the dashboard shows, and a window opening on 1 July would chart three
+months of nothing as though they were the season; keeping the last season on screen through the
+summer would show old data under the new season's name.
+
+**Related:** D3, D63, D220, [`phase-B01`](./phases/B01-admin-console.md) §7 (2026-11-13).
+
+## D250 — Kudos are positive reactions; a helpful rating is one, and a thumbs-down never subtracts (B01)
+
+**2026-11-13, founder call.** Reports keep thumbs up and down for helpfulness, and the door stays open
+for social-style reactions on posts later, kudos being the easy starter. A thumbs-up (*helpful*) is a
+kudos; a thumbs-down is not an anti-kudos and never lowers a post's kudos count.
+
+- The console counts **positive reactions** by kind (`POSITIVE_REACTION_KINDS`, the
+  `positive_reactions` rollup): today the helpful ratings in `reportRatings`. A later reaction kind is
+  a new kind under the same metric, not a rename.
+- A thumbs-down is never counted toward kudos, and never subtracted from them.
+
+**Why:** a helpfulness vote and a social reaction are different acts; counting only the positive one
+keeps kudos meaning "people liked this", and naming the metric for reactions in general lets the next
+kind join without migrating a series.
+
+**Related:** D50, [`phase-B01`](./phases/B01-admin-console.md) §7 (2026-11-13).
+
+## D251 — A flag under review is still open, in every count (B01)
+
+**2026-11-13, the governor's ruling at the Overview's integration** (the founder may overturn it). A
+flag a moderator has opened but not decided — `reviewing` — is still open: it counts on the
+Overview's Inbox card and heads row, Metrics' *Open flags* and *Oldest open flag*, and the
+`flag_queue_depth` rollup. Every count reads one definition (`lib/openFlags.ts`).
+
+**Why:** a flag someone has looked at and not decided still waits on a person; leaving it out made
+the Overview and the rollup disagree about the same queue.
+
+**Related:** D37, [`phase-B01`](./phases/B01-admin-console.md) §7 (2026-11-13).
+
+## D252 — Discipline never leaves the ledger without an editor (B01, extends D227)
+
+**2026-11-13, the governor's ruling** (the founder may overturn it). D227's *never no holder* holds
+through discipline as well as demotion: suspending or banning the last ledger editor who can still
+act is refused, with the same message a demotion gets ("They are the last person who can edit the
+ledger; give another admin ledger editing first"). A suspended or banned holder can neither edit nor
+pass the grant on, so a suspension strands the ledger exactly as a demotion would.
+
+The rule is `refuseDisciplineOfLastLedgerEditor` (`lib/ledgerEditors.ts`); its calls in the suspend
+and ban paths, and in the undo that puts a suspension or ban back, land after the deletion PR that is
+rewriting those files.
+
+**Related:** D37, D226, D227, [`phase-B01`](./phases/B01-admin-console.md) §7.
+
+## D253 — A contribution is an original, top-level piece of data that still stands (B01)
+
+**2026-11-13, founder call.** "My definition of a contribution is an original thought/piece of data
+that is top-level discoverable within its domain. So like a report is top-level in the newsfeed, a
+hazard is top-level in a body, a temporary blockage is top-level in a put-in. But a comment is just
+chatter on a report that may or may not hold value." And: "reporting that a put-in or parking area is
+temporarily out of commission or that a body of water isn't accessible to the public or things like
+that absolutely should count as contributions."
+
+- **Counts:** a report; a hazard; an access alert; a "not publicly accessible" report (the
+  `no_public_access` flag on a body); a put-in a person added; a request about the corpus (add or
+  activate a body); a proposed bay or landmark name.
+- **Does not count:** comments, hazard confirmations and alert votes, ratings and kudos, photos (they
+  belong to a report), and flags on other people's content.
+- **Only while it stands:** an item its author withdrew or retracted, or a moderator removed, hid,
+  declined or dismissed, does not count.
+- Defined once — `CONTRIBUTION_KINDS` and `contributionStands` in `@skating/core` — and read by every
+  contributors figure: Metrics' contributors and first-timers, the daily strip, the season's
+  contributors and Coverage's per-state column, and the older `active_contributors` rollup. A report
+  is dated by its skate's end (the date every report count uses), every other kind by when it was made.
+  By state, only reports are attributed: the other kinds sit on bodies, put-ins and lots that can span
+  states.
+
+**Why:** a contributors figure answers "who is adding to what the app knows"; chatter and votes on
+someone else's data are participation, not contribution, and a withdrawn item added nothing that
+remains.
+
+**Related:** D17, D50, D186, D248, D250, [`phase-B01`](./phases/B01-admin-console.md) §7.
+
+## D254 — The sign-in record keeps the current season and one past season (B01)
+
+**2026-11-13, founder call.** "One past season seems like it should be fine." `signInDays` keeps every
+day from the previous season's 1 July on; a daily sweep (`analyticsRollup.pruneSignInDays`, riding the
+client-signal prune, bounded per transaction) erases the rest. The `signed_in` day counts the rollup
+already wrote outlive the rows.
+
+**Why:** the record is one person's behavior; the current season's figures and a chosen past season
+are what the console reads, and nothing reads further back.
+
+**Related:** D33, D62, D249, [`phase-B01`](./phases/B01-admin-console.md) §12.8.
+
+## D255 — A body's completeness is ten things, defined once (B01)
+
+**2026-11-13, the founder's list** (Review 13). Ten things count, in this order: **outline, name,
+access, depth, elevation, wind, put-ins, lots, landmarks, bathymetry** — the mock notes' twelve,
+minus posted rules (optional: most bodies rightly have none) and weather sample points (they default
+to the interior point, so every body has them). `bodyCompleteness` in `@skating/core` returns
+`{ have, of: 10, missing }` in that order from the body's fields and three counts beside it; the pages
+adopt it at integration, and storing it per body is a later server batch.
+
+**Why:** two page builders guessed at it and guessed differently; one rule makes every page count the
+same ten.
+
+**Related:** D60, D72, D202, [`phase-B01`](./phases/B01-admin-console.md) §5.4.

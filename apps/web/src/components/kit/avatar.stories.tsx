@@ -18,7 +18,7 @@ const meta = {
   tags: ['autodocs'],
   args: { name: 'Sarah Kim' },
   argTypes: {
-    size: { control: 'inline-radio', options: ['sm', 'md', 'lg'] },
+    size: { control: 'inline-radio', options: ['sm', 'md', 'lg', 'xl'] },
     tone: { control: 'inline-radio', options: ['default', 'viewer'] },
   },
 } satisfies Meta<typeof Avatar>;
@@ -95,6 +95,33 @@ export const Viewer: Story = {
   },
 };
 
+/**
+ * The person a page is about (People's head, 8.2, 8.5, 8.6): the extra-large size, 32 on the console,
+ * on the raised ground in a quiet ring, initials bright in the small-mono step.
+ */
+export const Head: Story = {
+  args: { name: 'Rob Tremblay', size: 'xl', tone: 'head' },
+  play: async ({ canvasElement, globals }) => {
+    const el = must(avatars(canvasElement)[0]);
+    const style = getComputedStyle(el);
+    const surface = globals.surface as tokens.Surface;
+    await expect(el.getBoundingClientRect().width).toBeCloseTo(
+      tokens.size[surface]['avatar-xl'].value * rootPx(),
+      1,
+    );
+    await expect(style.borderRadius).not.toBe('0px');
+    await expect(style.backgroundColor).toEqual(sameColor(computedColor(el, 'var(--raise)')));
+    await expect(style.borderTopWidth).toBe('1px');
+    await expect(style.borderTopColor).toEqual(sameColor(computedColor(el, 'var(--fg3)')));
+    await expect(style.color).toEqual(sameColor(computedColor(el, 'var(--fg)')));
+    await expect(parseFloat(style.fontSize)).toBeCloseTo(
+      tokens.fontSize[surface]['mono-sm'].value * rootPx(),
+      1,
+    );
+    await expect(el).toHaveTextContent('RT');
+  },
+};
+
 /** Initials: the first and last word's first letters, capitalized; one word gives one letter. */
 export const InitialsRule: Story = {
   render: () => (
@@ -113,18 +140,22 @@ export const InitialsRule: Story = {
   },
 };
 
-/** Each size is its surface's people token — 16 / 20 / 26 on the console, 22 / 28 / 30 on skater. */
+/**
+ * Each size is its surface's people token — 16 / 20 / 26 / 32 on the console, 22 / 28 / 30 / 32 on
+ * skater.
+ */
 export const Sizes: Story = {
   render: () => (
     <div className="flex items-center gap-(--space-3)">
       <Avatar name="Sarah Kim" size="sm" />
       <Avatar name="Sarah Kim" size="md" />
       <Avatar name="Sarah Kim" size="lg" />
+      <Avatar name="Sarah Kim" size="xl" />
     </div>
   ),
   play: async ({ canvasElement, globals }) => {
     const surface = globals.surface as tokens.Surface;
-    const keys = ['avatar-sm', 'avatar', 'avatar-lg'] as const;
+    const keys = ['avatar-sm', 'avatar', 'avatar-lg', 'avatar-xl'] as const;
     const els = avatars(canvasElement);
     for (const [i, key] of keys.entries()) {
       const box = must(els[i]).getBoundingClientRect();
@@ -137,7 +168,7 @@ export const Sizes: Story = {
 
 // ── The stacked faces ────────────────────────────────────────────────────────────────────────
 
-function Colleagues({ max, size }: { max?: number; size?: 'sm' | 'md' | 'lg' }) {
+function Colleagues({ max, size }: { max?: number; size?: 'sm' | 'md' | 'lg' | 'xl' }) {
   return (
     <AvatarStack label="Also here" max={max} size={size}>
       <StackFace name="Kate Doyle" />
@@ -240,12 +271,13 @@ export const StackSizes: Story = {
 function Board() {
   return (
     <div className="flex flex-col gap-heading">
-      {(['sm', 'md', 'lg'] as const).map((size) => (
+      {(['sm', 'md', 'lg', 'xl'] as const).map((size) => (
         <div key={size} className="flex items-center gap-(--space-3)">
           <span className={`${KICKER} w-[3em]`}>{size}</span>
           <Avatar name="Sarah Kim" size={size} />
           <Avatar name="Matt Rivera" size={size} src={PHOTO} />
           <Avatar name="Teagan Atwater" size={size} tone="viewer" />
+          <Avatar name="Rob Tremblay" size={size} tone="head" />
           <Colleagues size={size} max={3} />
         </div>
       ))}

@@ -218,9 +218,10 @@ export function RowLink({
     {
       'data-slot': 'row-link',
       className: cn(
-        buttonVariants({ variant: 'link', size: 'xs' }),
+        // In a row, the kit's row chip (18 px, fits a 22 px row); at a section's end, the xs link.
+        buttonVariants({ variant: 'link', size: inRow ? 'row' : 'xs' }),
         'no-underline',
-        inRow && 'h-[1.125rem] self-center',
+        inRow && 'self-center',
       ),
       children: (
         <span data-slot="label" className="inline-flex items-center gap-[inherit]">

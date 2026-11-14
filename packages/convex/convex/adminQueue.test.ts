@@ -3,6 +3,7 @@
  * and that reads resolve their context. Seeds profiles directly so role/status can be set precisely.
  */
 import { convexTest } from 'convex-test';
+import fc from 'fast-check';
 import { describe, expect, test } from 'vitest';
 import { api } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
@@ -270,6 +271,73 @@ describe('waterBodies.listDedupCandidates (D36 queue)', () => {
     expect(queue.groups[0]?.members[0]).not.toHaveProperty('polygon');
   });
 
+  test('six flags on one clean lake: dismissing the card makes progress, never returns it unchanged', async () => {
+    // Greptile on #111: the card listed the six flagged bodies and cut their shared candidate, so
+    // "Not duplicates" cleared no link and the same card came straight back.
+    const t = harness();
+    await seedProfile(t, 'mod', { role: 'moderator' });
+    const lake = await t.run(async (ctx) => {
+      const lake = await seedBody(ctx, { name: 'Mascoma Lake' });
+      for (let i = 0; i < 6; i++) {
+        await seedBody(ctx, {
+          name: `Drawn ${i}`,
+          source: 'user',
+          dedupStatus: 'suspected_duplicate',
+          duplicateCandidateIds: [lake],
+        });
+      }
+      return lake;
+    });
+
+    const before = await as(t, 'mod').query(api.waterBodies.listDedupCandidates, {});
+    expect(before.total).toBe(1);
+    const card = before.groups[0];
+    // The lake every flag points at is on the card, and the card says what it isn't showing.
+    expect(card?.members.map((m) => m._id)).toContain(lake);
+    expect(card).toMatchObject({ hidden: 1 });
+
+    await as(t, 'mod').mutation(api.waterBodies.dismissDuplicates, {
+      waterBodyIds: card?.members.map((m) => m._id) ?? [],
+    });
+    const after = await as(t, 'mod').query(api.waterBodies.listDedupCandidates, {});
+    expect(after.groups.map((g) => g.key)).not.toContain(card?.key);
+    // The one flag the card didn't show is its own card now, with the lake.
+    expect(after.total).toBe(1);
+    expect(after.groups[0]).toMatchObject({ hidden: 0 });
+    expect(after.groups[0]?.members).toHaveLength(2);
+  });
+
+  test('a cut group sorts by its whole size, ahead of a group that shows all six', async () => {
+    const t = harness();
+    await seedProfile(t, 'mod', { role: 'moderator' });
+    const { small, big } = await t.run(async (ctx) => {
+      // Read first, so a tie would keep it first: six bodies, all on the card.
+      const small = await seedBody(ctx, { name: 'Small Lake' });
+      for (let i = 0; i < 5; i++) {
+        await seedBody(ctx, {
+          name: `Small ${i}`,
+          dedupStatus: 'suspected_duplicate',
+          duplicateCandidateIds: [small],
+        });
+      }
+      // Nine bodies, three of them left off the card.
+      const big = await seedBody(ctx, { name: 'Big Lake' });
+      for (let i = 0; i < 8; i++) {
+        await seedBody(ctx, {
+          name: `Big ${i}`,
+          dedupStatus: 'suspected_duplicate',
+          duplicateCandidateIds: [big],
+        });
+      }
+      return { small, big };
+    });
+
+    const queue = await as(t, 'mod').query(api.waterBodies.listDedupCandidates, {});
+    expect(queue.groups.map((g) => g.hidden)).toEqual([3, 0]);
+    expect(queue.groups[0]?.members.map((m) => m._id)).toContain(big);
+    expect(queue.groups[1]?.members.map((m) => m._id)).toContain(small);
+  });
+
   test('folds a mutually-flagged pair into ONE card, not two', async () => {
     const t = harness();
     await seedProfile(t, 'mod', { role: 'moderator' });
@@ -380,4 +448,158 @@ describe('waterBodies.listDedupCandidates (D36 queue)', () => {
     expect(detail.pairs[0]?.centroidDistanceM).toBe(0);
     expect(detail.pairs[0]?.areaRatio).toBe(2);
   });
+
+  // ── Every card makes progress ─────────────────────────────────────────────────────────────────
+
+  /** A corpus shape: each body's status, the bodies it names (by index), and whether it's deleted. */
+  type Shape = Array<{
+    status: 'clean' | 'suspected_duplicate' | 'near_certain' | 'merged';
+    names: number[];
+    deleted?: boolean;
+  }>;
+
+  const FLAGGED = new Set(['suspected_duplicate', 'near_certain']);
+
+  /** What is left to decide: each flagged row, plus each link out of one. */
+  const outstanding = (bodies: Doc<'waterBodies'>[]) =>
+    bodies
+      .filter((b) => FLAGGED.has(b.dedupStatus))
+      .reduce((n, b) => n + 1 + (b.duplicateCandidateIds?.length ?? 0), 0);
+
+  /**
+   * Seed `shape`, then dismiss the queue's first card until the queue is empty, checking at every
+   * step: (a) what is left to decide strictly shrinks, so this ends within that many steps; (b) the
+   * Overview's count is the queue's total; (c) a card of two or more bodies holds a link among them.
+   */
+  async function drain(shape: Shape) {
+    const t = harness();
+    await seedProfile(t, 'mod', { role: 'moderator' });
+    await t.run(async (ctx) => {
+      const ids: Id<'waterBodies'>[] = [];
+      for (const [i, b] of shape.entries()) {
+        ids.push(await seedBody(ctx, { name: `Body ${i}`, dedupStatus: b.status }));
+      }
+      for (const [i, b] of shape.entries()) {
+        if (b.names.length > 0) {
+          await ctx.db.patch(ids[i] as Id<'waterBodies'>, {
+            duplicateCandidateIds: b.names.map((j) => ids[j] as Id<'waterBodies'>),
+          });
+        }
+      }
+      for (const [i, b] of shape.entries())
+        if (b.deleted) await ctx.db.delete(ids[i] as Id<'waterBodies'>);
+    });
+    const corpus = () => t.run((ctx) => ctx.db.query('waterBodies').collect());
+
+    let left = outstanding(await corpus());
+    const bound = left;
+    for (let step = 0; ; step++) {
+      const queue = await as(t, 'mod').query(api.waterBodies.listDedupCandidates, {});
+      const counts = await as(t, 'mod').query(api.console.corpusCounts, {});
+      expect(counts.duplicates.count).toBe(Math.min(queue.total, 200));
+      const card = queue.groups[0];
+      if (card === undefined) break;
+      expect(step).toBeLessThan(bound);
+
+      const shown = new Set(card.members.map((m) => m._id));
+      if (shown.size >= 2) {
+        const linked = card.members.some(
+          (m) =>
+            FLAGGED.has(m.dedupStatus) &&
+            (m.duplicateCandidateIds ?? []).some((c) => c !== m._id && shown.has(c)),
+        );
+        expect(linked).toBe(true);
+      }
+      // A card leaves bodies out only when it is full.
+      if (card.hidden > 0) expect(card.members).toHaveLength(6);
+
+      await as(t, 'mod').mutation(api.waterBodies.dismissDuplicates, {
+        waterBodyIds: [...shown],
+      });
+      const next = outstanding(await corpus());
+      expect(next).toBeLessThan(left);
+      left = next;
+    }
+    expect(await as(t, 'mod').query(api.waterBodies.listDedupCandidates, {})).toMatchObject({
+      total: 0,
+    });
+  }
+
+  const flag = (names: number[]) => ({ status: 'suspected_duplicate' as const, names });
+  const clean = { status: 'clean' as const, names: [] };
+
+  test('named: six flags on one clean lake (the Greptile case) drain', async () => {
+    await drain([clean, ...Array.from({ length: 6 }, () => flag([0]))]);
+  });
+
+  test('named: a chain of eight drains, a card at a time', async () => {
+    await drain(Array.from({ length: 8 }, (_, i) => flag(i < 7 ? [i + 1] : [])));
+  });
+
+  test('named: a clique of seven, and flags on a deleted body, drain', async () => {
+    await drain(
+      Array.from({ length: 7 }, (_, i) => flag([0, 1, 2, 3, 4, 5, 6].filter((j) => j !== i))),
+    );
+    await drain([{ ...clean, deleted: true }, flag([0]), flag([0]), flag([0, 4]), clean]);
+  });
+
+  test('any shape: every dismissal makes progress, and the count is the queue total throughout', async () => {
+    const body = (n: number) =>
+      fc.record({
+        status: fc.constantFrom(
+          'clean' as const,
+          'suspected_duplicate' as const,
+          'suspected_duplicate' as const,
+          'near_certain' as const,
+          'near_certain' as const,
+          'merged' as const,
+        ),
+        names: fc.array(fc.integer({ min: 0, max: n - 1 }), { maxLength: 4 }),
+        deleted: fc.integer({ min: 0, max: 9 }).map((n) => n === 0),
+      });
+    const random = fc
+      .integer({ min: 1, max: 12 })
+      .chain((n) => fc.array(body(n), { minLength: n, maxLength: n }));
+    // The shapes a random corpus rarely builds: a clean body named by many, a long chain, a clique,
+    // each with a few random bodies beside it (which may name into it).
+    const status = fc.constantFrom('suspected_duplicate' as const, 'near_certain' as const);
+    const star = fc
+      .tuple(fc.integer({ min: 2, max: 10 }), status, fc.boolean())
+      .map(
+        ([k, st, gone]): Shape => [
+          { ...clean, deleted: gone && k % 3 === 0 },
+          ...Array.from({ length: k }, () => ({ status: st, names: [0] })),
+        ],
+      );
+    const chain = fc
+      .tuple(fc.integer({ min: 2, max: 10 }), status)
+      .map(
+        ([k, st]): Shape =>
+          Array.from({ length: k }, (_, i) => ({ status: st, names: i < k - 1 ? [i + 1] : [] })),
+      );
+    const clique = fc.tuple(fc.integer({ min: 2, max: 8 }), status).map(
+      ([k, st]): Shape =>
+        Array.from({ length: k }, (_, i) => ({
+          status: st,
+          names: Array.from({ length: k }, (_, j) => j).filter((j) => j !== i),
+        })),
+    );
+    const withNoise = (core: fc.Arbitrary<Shape>) =>
+      fc
+        .tuple(
+          core,
+          fc.array(fc.tuple(body(1), fc.array(fc.nat(), { maxLength: 3 })), { maxLength: 3 }),
+        )
+        .map(
+          ([c, extra]): Shape => [
+            ...c,
+            ...extra.map(([b, names]) => ({
+              ...b,
+              names: names.map((j) => j % (c.length + extra.length)),
+            })),
+          ],
+        );
+    const shape = fc.oneof(random, withNoise(star), withNoise(chain), withNoise(clique));
+    await fc.assert(fc.asyncProperty(shape, drain), { numRuns: 80 });
+  }, 120_000);
 });

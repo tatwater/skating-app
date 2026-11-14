@@ -2,7 +2,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSpinnerThird } from '@fortawesome/sharp-regular-svg-icons';
 import type { ComponentProps } from 'react';
 
-import { Badge } from '@/components/kit/badge';
+import { Badge, type BadgeTone } from '@/components/kit/badge';
 import { Button } from '@/components/kit/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/kit/popover';
 import { cn } from '@/lib/utils';
@@ -23,11 +23,13 @@ import { clockSeconds, type LiveState } from './overviewModel';
  * tooltip, because the quiet state's plate holds a button.
  */
 
-/** The hollow LED: no fill, a hairline ring in the faint ink, no halo, no breath. */
-const HOLLOW =
-  'text-fg3 before:bg-transparent before:shadow-[inset_0_0_0_var(--stroke-hair)_var(--fg3)]';
-
 const WORDS: Record<LiveState, string> = { live: 'Live', checking: 'Checking', off: 'Not live' };
+
+/** The kit's live badge: lit while live, dim while checking, hollow (`off`) when not live. */
+const TONE = { live: 'default', checking: 'dim', off: 'off' } as const satisfies Record<
+  LiveState,
+  BadgeTone
+>;
 
 type LiveMarkProps = Omit<ComponentProps<'button'>, 'children'> & {
   state: LiveState;
@@ -68,11 +70,7 @@ export function LiveMark({
         )}
         {...props}
       >
-        <Badge
-          variant="live"
-          tone={state === 'live' ? 'default' : 'dim'}
-          className={cn(state === 'off' && HOLLOW)}
-        >
+        <Badge variant="live" tone={TONE[state]}>
           {WORDS[state]}
         </Badge>
       </PopoverTrigger>

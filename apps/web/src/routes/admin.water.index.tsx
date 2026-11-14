@@ -196,7 +196,8 @@ function AdminWater() {
               // worth finding out about from a queue page.
               onMerge={async (survivorId, reason) => {
                 for (const loser of group.members) {
-                  if (loser._id === survivorId) continue;
+                  // A tombstone is already merged; the card never offers it either way.
+                  if (loser._id === survivorId || loser.dedupStatus === 'merged') continue;
                   await merge({
                     survivorId,
                     loserId: loser._id,

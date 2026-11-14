@@ -28,7 +28,8 @@ import { Separator } from './separator';
  *   drops keys the console never binds for lists — number keys and J/K (Tab, the arrows and
  *   type-ahead move through lists).
  * - **The lamp** (`StatusLamp`): a small square LED and its words — live (white, breathing on the
- *   2400 ms lamp timing), idle (dim and still), amber or red. It holds still under reduced motion.
+ *   2400 ms lamp timing), idle (dim and still), off (hollow: a hairline ring, no fill — the
+ *   connection went quiet, *Convex not live*), amber or red. It holds still under reduced motion.
  */
 
 // ── The key registry ─────────────────────────────────────────────────────────────────────────
@@ -166,12 +167,13 @@ function StatusText({ tone = 'default', className, ...props }: StatusTextProps) 
 const LAMP = {
   live: { dot: 'bg-fg led [--led-glow:var(--glow)]', text: 'text-fg' },
   idle: { dot: 'bg-fg3', text: 'text-fg3' },
+  off: { dot: 'bg-transparent inset-ring inset-ring-fg3', text: 'text-fg3' },
   warn: { dot: 'bg-warn led [--led-glow:var(--warn-glow)]', text: 'text-warn' },
   bad: { dot: 'bg-bad led [--led-glow:var(--bad-glow)]', text: 'text-bad' },
 } as const;
 
 type StatusLampProps = ComponentProps<'span'> & {
-  /** Live (white, breathing), idle (dim, still), amber or red. */
+  /** Live (white, breathing), idle (dim, still), off (hollow: not live), amber or red. */
   state?: keyof typeof LAMP;
 };
 

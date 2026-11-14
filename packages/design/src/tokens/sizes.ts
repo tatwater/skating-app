@@ -153,7 +153,17 @@ export const space = assertUnitClass('space', {
 export const nudge = assertUnitClass('nudge', { px: px(1) });
 
 /** Semantic gap keys — the spacing that differs by surface. */
-export const GAP_KEYS = ['gutter', 'heading', 'bar-x', 'bar-gap', 'hit-x', 'hit-y'] as const;
+export const GAP_KEYS = [
+  'gutter',
+  'heading',
+  'section',
+  'unit',
+  'segment',
+  'bar-x',
+  'bar-gap',
+  'hit-x',
+  'hit-y',
+] as const;
 export type GapKey = (typeof GAP_KEYS)[number];
 
 /**
@@ -161,6 +171,13 @@ export type GapKey = (typeof GAP_KEYS)[number];
  *
  * - `gutter` — a pane's inset: admin 20 (`spacing.5`), skater 28 (`.pnh`, `.nws`).
  * - `heading` — a heading over its content: 12 on both (the app-wide rule; skater `.sec`).
+ * - `section` — one inspector block to the next: 30 (the Body console's `.blk`, every tab; Review
+ *   13: a block ends on its spacing, never a rule). Skater has no inspector and keeps admin's value.
+ *   (Not `block`: a spacing name becomes a Tailwind value, and `inline-block` would turn into an
+ *   inline size.)
+ * - `unit` — a value to its unit, ink to ink: 7 on both (Review 8: `.v .u`, no space character).
+ * - `segment` — between the bars or cells of one run (sparkbars, LED segments, the completeness
+ *   strip): 3 on both.
  * - `bar-x` / `bar-gap` — the top bar's side padding and group gap: admin 22 / 14, skater 24 / 28.
  * - `hit-x` / `hit-y` — the padding an interactive row or cell carries, which the kit bleeds back
  *   out with a negative margin so the *content* lands on the gap (D234's token pair): admin 8 / 6
@@ -170,6 +187,9 @@ export const gap = {
   admin: assertUnitClass('space', {
     gutter: rem(20),
     heading: rem(12),
+    section: rem(30),
+    unit: rem(7),
+    segment: rem(3),
     'bar-x': rem(22),
     'bar-gap': rem(14),
     'hit-x': rem(8),
@@ -178,6 +198,9 @@ export const gap = {
   skater: assertUnitClass('space', {
     gutter: rem(28),
     heading: rem(12),
+    section: rem(30),
+    unit: rem(7),
+    segment: rem(3),
     'bar-x': rem(24),
     'bar-gap': rem(28),
     'hit-x': rem(12),
@@ -196,6 +219,7 @@ export const SIZE_KEYS = [
   'key',
   'pill',
   'badge',
+  'btn-row',
   'btn-xs',
   'btn-sm',
   'btn',
@@ -204,6 +228,7 @@ export const SIZE_KEYS = [
   'avatar-sm',
   'avatar',
   'avatar-lg',
+  'avatar-xl',
   'search',
   'lanes',
   'tape',
@@ -224,6 +249,7 @@ const adminSize = assertUnitClass('size', {
   key: rem(16),
   pill: rem(17),
   badge: rem(20),
+  'btn-row': rem(18), // a link chip inside a 22 px row (Home's "Inbox →")
   'btn-xs': rem(22),
   'btn-sm': rem(24),
   btn: rem(28),
@@ -232,6 +258,7 @@ const adminSize = assertUnitClass('size', {
   'avatar-sm': rem(16),
   avatar: rem(20),
   'avatar-lg': rem(26),
+  'avatar-xl': rem(32), // the person a page is about (People's head, `.person.xl`)
   search: rem(200),
   lanes: rem(236),
   tape: rem(240),
@@ -245,10 +272,11 @@ const adminSize = assertUnitClass('size', {
 
 /**
  * Sizes per surface. Skater differs where its mocks draw the same part larger: the top bar 56,
- * keys 18 (`.key`), buttons 36 / small 30 / in-row 28 (`.btn`, `.btn.sm`, `.pick`), a table row
+ * keys 18 (`.key`), buttons 36 / small 30 / in-row 28 (`.btn`, `.btn.sm`, `.pick` — both `btn-xs`
+ * and `btn-row`, since its rows are tall enough for the small chip), a table row
  * 36 (`.cal`), people 22 / 28 / 30 (`.ppl .av`, `.av`, `.me`), and the search field 460
- * (`.top .search`'s max width). Parts the skater app doesn't have (rail, status bar, lanes, tape)
- * keep admin's values so the key set stays whole.
+ * (`.top .search`'s max width). Parts the skater app doesn't have (rail, status bar, lanes, tape,
+ * the 32 px page-head avatar) keep admin's values so the key set stays whole.
  */
 export const size = {
   admin: adminSize,
@@ -256,6 +284,7 @@ export const size = {
     ...adminSize,
     top: rem(56),
     key: rem(18),
+    'btn-row': rem(28),
     'btn-xs': rem(28),
     'btn-sm': rem(30),
     btn: rem(36),
@@ -320,9 +349,13 @@ export const border = assertUnitClass('border', {
   tick: px(6),
 });
 
-/** Opacity steps. */
+/**
+ * Opacity steps. `dim` is go-mode's step back; `fade` is every other mark while one is hovered
+ * (Review 13 — a selected mark never steps back for a hover).
+ */
 export const opacity = {
   dim: 0.28,
+  fade: 0.38,
   disabled: 0.4,
   muted: 0.5,
 } as const;

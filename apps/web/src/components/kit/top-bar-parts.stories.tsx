@@ -10,7 +10,7 @@ import {
   sameShadow,
   transitionsDone,
 } from './measure';
-import { KICKER, must, PSEUDO_STATES, StateMatrix } from './storyKit';
+import { faceLoaded, KICKER, must, PSEUDO_STATES, StateMatrix } from './storyKit';
 import {
   type Colleague,
   ColleagueFaces,
@@ -295,9 +295,15 @@ export const SearchJunction: Story = {
     const px = (len: string) => resolvePx(canvasElement, len);
     const near = (a: number, b: number) => Math.abs(a - b) <= JUNCTION_TOLERANCE_PX;
     const search = within(canvasElement).getByRole('button');
+    // As wide as its words: the placeholder is whole, and the board's words fill at least the
+    // board's 200 px field.
+    const words = part(search, 'search-label');
+    await faceLoaded(words, 'Jump to a body or a person');
+    await expect(words.scrollWidth).toBeLessThanOrEqual(words.clientWidth);
+    await expect(search.getBoundingClientRect().width).toBeGreaterThanOrEqual(
+      px('var(--size-search)') - JUNCTION_TOLERANCE_PX,
+    );
     const box = search.getBoundingClientRect();
-    await expect(box.width).toBeCloseTo(px('var(--size-search)'), 1);
-    await expect(box.width).toBeCloseTo(px('12.5rem'), 1);
     await expect(box.height).toBeCloseTo(px('var(--size-btn-sm)'), 1);
     const icon = must(part(search, 'search-icon').querySelector('svg')).getBoundingClientRect();
     await expect(icon.height).toBeCloseTo(px('var(--type-row)'), 0);

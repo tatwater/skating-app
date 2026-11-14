@@ -10,18 +10,20 @@ import { cn } from '@/lib/utils';
  *
  * - **Sized by the surface's people tokens**: `sm` (`size-avatar-sm`: 16 on the console, 22 on
  *   skater — a person in a button or a dense row), `md` (`size-avatar`: 20 / 28 — the person lockup
- *   and the top bar's faces) and `lg` (`size-avatar-lg`: 26 / 30 — the viewer at the rail's foot).
+ *   and the top bar's faces), `lg` (`size-avatar-lg`: 26 / 30 — the viewer at the rail's foot) and
+ *   `xl` (`size-avatar-xl`: 32 — the person a page is about, People's head).
  *   Density follows `data-surface`; there is no pixel prop.
  * - **Initials, then the image.** The fallback is the person's initials (first and last word,
  *   capitalized) in semibold sans; an image replaces them once it has loaded, never before, so a
  *   slow or broken photo leaves the initials in place rather than an empty ring.
  * - **Tones.** `default` is the person lockup's (`.person .av`: the strong rule's gray, bright
- *   initials); `viewer` is the rail's (raised ground, a quiet ring, the bright-body ink).
+ *   initials); `viewer` is the rail's (raised ground, a quiet ring, the bright-body ink); `head` is
+ *   a page head's (`.person.xl .av`: the raised ground and the quiet ring, bright initials).
  * - **The name is the accessible name.** A lone avatar is an image named for its person; one
  *   beside the written name (the lockup) passes `aria-hidden` so a reader doesn't hear it twice.
  * - **Initials keep the rail exception's sub-floor type** on the console (the founder's call: the
  *   rail, its badges and avatar initials keep their small sizes) — `sm` takes the rail step, `md`
- *   the kicker, `lg` the small-mono step.
+ *   the kicker, `lg` and `xl` the small-mono step.
  */
 const avatarVariants = cva(
   [
@@ -34,10 +36,12 @@ const avatarVariants = cva(
         sm: 'size-avatar-sm text-rail',
         md: 'size-avatar text-kick',
         lg: 'size-avatar-lg text-mono-sm',
+        xl: 'size-avatar-xl text-mono-sm',
       },
       tone: {
         default: 'bg-line2 text-fg',
         viewer: 'border border-solid border-fg3 bg-raise text-fg1',
+        head: 'border border-solid border-fg3 bg-raise text-fg',
       },
     },
     defaultVariants: { size: 'md', tone: 'default' },
@@ -103,7 +107,7 @@ type AvatarStackProps = ComponentProps<'div'> & {
   /** How many faces show before the rest fold into a "+N" circle. */
   max?: number;
   /** Face size; the stack's overlap is a quarter of it. */
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'md' | 'lg' | 'xl';
   /** `StackFace` children, in the order they should read. Present faces lead. */
   children: ReactElement<StackFaceProps> | ReactElement<StackFaceProps>[];
 };
@@ -176,6 +180,7 @@ const OVERLAP = {
   sm: '-ms-[calc(var(--size-avatar-sm)/4)]',
   md: '-ms-[calc(var(--size-avatar)/4)]',
   lg: '-ms-[calc(var(--size-avatar-lg)/4)]',
+  xl: '-ms-[calc(var(--size-avatar-xl)/4)]',
 } as const;
 
 type StackFaceProps = {

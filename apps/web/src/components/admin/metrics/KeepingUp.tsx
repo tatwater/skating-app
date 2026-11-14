@@ -1,4 +1,3 @@
-import type { CSSProperties } from 'react';
 import { BarChart, ComposedChart, LabelList } from 'recharts';
 
 import {
@@ -11,12 +10,13 @@ import {
   ChartTooltip,
   ChartXAxis,
   ChartYAxis,
+  chartToneColor,
 } from '@/components/kit/chart';
+import { ChartLegend, ChartNote, type LegendItem } from '@/components/kit/chart-legend';
 import { Section } from '@/components/kit/section-slug';
 import { StatGrid, StatTile } from '@/components/kit/stat-tile';
 import { cn } from '@/lib/utils';
 
-import { ChartLegend, type LegendItem } from './ChartLegend';
 import {
   ageParts,
   axisTicks,
@@ -35,14 +35,7 @@ import {
   type SupportCategory,
   shortAge,
 } from './metricsModel';
-import {
-  AgeValue,
-  ChartNote,
-  ColumnHead,
-  DayTick,
-  UnrecordedTile,
-  useRecordBegins,
-} from './metricsParts';
+import { AgeValue, ColumnHead, DayTick, UnrecordedTile, useRecordBegins } from './metricsParts';
 
 /**
  * Overview › Metrics, the left column: how staff are keeping up. The top stats are the last seven
@@ -123,11 +116,14 @@ export function KeepingUpStats({ data, now }: { data: KeepingUpData; now: number
 
 // ── Oldest open flag ─────────────────────────────────────────────────────────────────────────
 
-const OLDEST_CONFIG: ChartConfig = {
-  standard: { label: 'Open flags', tone: 'faint' },
+// `satisfies`, not a `ChartConfig` annotation: the keys stay known, so the legend reads each tone
+// with no fallback that could quietly stand in for a renamed series.
+const OLDEST_CONFIG = {
+  // Context counted under the hours line: the chart's own quiet tone (the boards' `g4`).
+  standard: { label: 'Open flags', tone: 'quiet' },
   safety: { label: 'Safety', tone: 'bad' },
   hours: { label: 'Hours waiting', tone: 'lead', format: (v) => `${Math.floor(v)} h` },
-};
+} satisfies ChartConfig;
 
 /**
  * The open-flag bars sit on a scale of their own, low in the plot under the hours line: three flags
@@ -135,14 +131,12 @@ const OLDEST_CONFIG: ChartConfig = {
  */
 const FLAG_HEADROOM = 5.5;
 
+// The swatches read the chart's own tones, so a legend can't drift from its marks.
 const OLDEST_LEGEND: LegendItem[] = [
-  { label: 'Hours waiting', ink: 'var(--fg)', mark: 'line' },
-  { label: 'Open flags', ink: 'var(--line2)' },
-  { label: 'Safety', ink: 'var(--bad)' },
+  { label: 'Hours waiting', ink: chartToneColor(OLDEST_CONFIG.hours.tone), mark: 'line' },
+  { label: 'Open flags', ink: chartToneColor(OLDEST_CONFIG.standard.tone) },
+  { label: 'Safety', ink: chartToneColor(OLDEST_CONFIG.safety.tone) },
 ];
-
-/** The quiet bar gray the boards count context in (`g4`), which the kit's tones stop short of. */
-const QUIET_INK = 'var(--line2)';
 
 type DotProps = { cx?: number; cy?: number; index?: number; value?: unknown };
 
@@ -185,11 +179,7 @@ export function OldestOpenFlagChart({
   };
   return (
     <div className="relative">
-      <ChartContainer
-        config={OLDEST_CONFIG}
-        className="h-[14.125rem]"
-        style={{ '--color-standard': QUIET_INK } as CSSProperties}
-      >
+      <ChartContainer config={OLDEST_CONFIG} className="h-[14.125rem]">
         <ComposedChart data={rows} margin={SEASON_MARGIN} barCategoryGap="28%">
           <ChartGrid yAxisId="hours" />
           <ChartXAxis
@@ -302,13 +292,6 @@ export function ResolveHistogram({
 
 // ── Open support tickets ─────────────────────────────────────────────────────────────────────
 
-const TICKET_INK: Record<SupportCategory, string> = {
-  bug: 'var(--fg2)',
-  account: 'var(--fg3)',
-  other: QUIET_INK,
-  safety: 'var(--bad)',
-};
-
 const TICKET_LABEL: Record<SupportCategory, string> = {
   bug: 'Bug',
   account: 'Account',
@@ -316,16 +299,17 @@ const TICKET_LABEL: Record<SupportCategory, string> = {
   safety: 'Safety',
 };
 
-const TICKET_CONFIG: ChartConfig = {
+const TICKET_CONFIG = {
   bug: { label: 'Bug', tone: 'muted' },
   account: { label: 'Account', tone: 'faint' },
-  other: { label: 'Other', tone: 'faint' },
+  other: { label: 'Other', tone: 'quiet' },
   safety: { label: 'Safety', tone: 'bad' },
-};
+} satisfies ChartConfig;
 
+/** The swatches read the chart's own tones (`chartToneColor`), so a legend can't drift from its bars. */
 export const TICKET_LEGEND: LegendItem[] = SUPPORT_CATEGORIES.map((c) => ({
   label: TICKET_LABEL[c],
-  ink: TICKET_INK[c],
+  ink: chartToneColor(TICKET_CONFIG[c].tone),
 }));
 
 /** Tickets open at any point of each season day, stacked by kind. */
@@ -352,11 +336,7 @@ export function OpenTicketsChart({
   const start = recordStart(days, depth);
   return (
     <div className="relative">
-      <ChartContainer
-        config={TICKET_CONFIG}
-        className="h-[10.625rem]"
-        style={{ '--color-other': QUIET_INK } as CSSProperties}
-      >
+      <ChartContainer config={TICKET_CONFIG} className="h-[10.625rem]">
         <BarChart data={rows} margin={SEASON_MARGIN} barCategoryGap="28%">
           <ChartGrid />
           <ChartXAxis

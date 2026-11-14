@@ -5,6 +5,7 @@ import {
   OVERVIEW_TABS,
   overviewTabOf,
   searchForTab,
+  seasonOfSearch,
   validateOverviewSearch,
 } from './overviewSearch';
 
@@ -36,5 +37,25 @@ describe('the Overview’s tab in the URL', () => {
         expect(OVERVIEW_TABS).toContain(overviewTabOf(validateOverviewSearch(raw)));
       }),
     );
+  });
+});
+
+describe('the chosen season', () => {
+  it('keeps a season anyone could name, and drops nonsense to the current one', () => {
+    expect(validateOverviewSearch({ season: '2025' })).toEqual({ season: 2025 });
+    expect(validateOverviewSearch({ season: 2025, tab: 'metrics' })).toEqual({
+      tab: 'metrics',
+      season: 2025,
+    });
+    expect(validateOverviewSearch({ season: '20.5' })).toEqual({});
+    expect(validateOverviewSearch({ season: 'last' })).toEqual({});
+    expect(seasonOfSearch({}, 2026)).toBe(2026);
+    expect(seasonOfSearch({ season: 2025 }, 2026)).toBe(2025);
+  });
+
+  it('keeps the chosen season across a change of tab', () => {
+    expect(searchForTab('metrics', 2025)).toEqual({ tab: 'metrics', season: 2025 });
+    expect(searchForTab('home', 2025)).toEqual({ season: 2025 });
+    expect(searchForTab('home')).toEqual({});
   });
 });

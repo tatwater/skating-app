@@ -616,6 +616,13 @@ async function erasePrivate(
       .withIndex('by_user_day', (q) => q.eq('userId', userId))
       .take(size),
   );
+  // When they were last in the console (B01, staff only): one row, and nobody's business after.
+  await drain(
+    await ctx.db
+      .query('consolePresence')
+      .withIndex('by_user', (q) => q.eq('userId', userId))
+      .take(size),
+  );
 
   // Export bundles. An assembled export is every report, every track and every photo of the person in
   // one file — the densest concentration of one person's data anywhere in the system — so the default

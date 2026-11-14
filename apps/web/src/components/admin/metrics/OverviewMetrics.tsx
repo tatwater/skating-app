@@ -25,7 +25,7 @@ export type OverviewMetricsProps = Omit<ComponentProps<'div'>, 'children'> & {
    */
   days: readonly DayKey[];
   /**
-   * The window's first day (`metricsWindow`). With `days` empty — the season has begun (1 July) but
+   * The window's first day (`seasonRecordWindow`, `@skating/core`). With `days` empty — the season has begun (1 July) but
    * its window hasn't opened — every season-ranged section says when its record begins instead.
    */
   opensOn?: DayKey;

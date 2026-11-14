@@ -1,25 +1,33 @@
 /**
- * What each Home block draws, and the adapters from the reads that exist today:
+ * What each Home block draws, and the adapters from the reads that serve it:
  *
  * - `console.overview` → the Inbox and People cards (every lane counted through an index, capped);
- * - `waterBodies.reviewQueueCounts` → the Corpus card's intake rows;
- * - `moderation.listActions` → the audit feed.
+ * - `waterBodies.reviewQueueCounts` and `console.corpusCounts` → the Corpus card;
+ * - `machinery.overviewJobs` → the Machinery card (admins);
+ * - `moderation.listActions` and `console.systemFeed` → the audit feed, people's and the machine's.
  *
- * What no read carries yet — Machinery, cost, the season tiles, the Corpus rows outside the intake
- * reasons, the feed's target names — is a prop, filled by stories and fixtures until its read lands.
+ * What no read carries yet — cost, the feed's target names — stays `null`, drawn *Not recorded yet*.
  */
 import type { api } from '@skating/convex/api';
 import type { FunctionReturnType } from 'convex/server';
 
 import type { AuditAction, AuditTarget } from '../shell/actionLabels';
-import { type Count, sumCounts } from './overviewModel';
+import { type Count, DAY, feedWhen, shortAge, sumCounts } from './overviewModel';
+
+const HOUR = DAY / 24;
 
 /** `console.overview`, as the server returns it. */
 export type ConsoleOverview = FunctionReturnType<typeof api.console.overview>;
 /** `waterBodies.reviewQueueCounts`, as the server returns it. */
 export type ReviewQueueCounts = FunctionReturnType<typeof api.waterBodies.reviewQueueCounts>;
+/** `console.corpusCounts`, as the server returns it. */
+export type CorpusCounts = FunctionReturnType<typeof api.console.corpusCounts>;
 /** One `moderation.listActions` row. */
 export type ActionRow = FunctionReturnType<typeof api.moderation.listActions>[number];
+/** One `console.systemFeed` row: something the machine did. */
+export type SystemFeedRow = FunctionReturnType<typeof api.console.systemFeed>[number];
+/** `machinery.overviewJobs` for an admin (a moderator's read is `null`). */
+export type OverviewJobs = NonNullable<FunctionReturnType<typeof api.machinery.overviewJobs>>;
 
 // ── Inbox ────────────────────────────────────────────────────────────────────────────────────
 
@@ -50,8 +58,11 @@ export interface InboxCardData {
   lanes: Record<InboxLane, Count | null>;
   /** When the oldest open item was filed. */
   oldestOpenAt: number | null;
-  /** The median open item's age, when a read carries it. */
-  medianAgeMs?: number | null;
+  /**
+   * When the median open item was filed — aged on the reader's clock, so the foot keeps up between
+   * reads. `null` with nothing open, or when the server's read of a lane stopped short.
+   */
+  medianOpenedAt: number | null;
 }
 
 export function inboxFromOverview(inbox: ConsoleOverview['inbox']): InboxCardData {
@@ -66,6 +77,7 @@ export function inboxFromOverview(inbox: ConsoleOverview['inbox']): InboxCardDat
       support: inbox.support,
     },
     oldestOpenAt: inbox.oldestOpenAt,
+    medianOpenedAt: inbox.medianOpenedAt,
   };
 }
 
@@ -107,13 +119,13 @@ export interface CorpusCardData {
   campaignAt: number | null;
 }
 
-/** The parts of the Corpus card no read carries yet. */
+/** The parts of the Corpus card the intake reasons don't carry (`console.corpusCounts`). */
 export type CorpusExtras = Pick<
   CorpusCardData,
-  'chordRefits' | 'placeNames' | 'preIcePass' | 'enrichment' | 'campaignAt'
+  'duplicates' | 'chordRefits' | 'placeNames' | 'preIcePass' | 'enrichment' | 'campaignAt'
 >;
 
-const NO_EXTRAS: CorpusExtras = {
+const NO_EXTRAS: Omit<CorpusExtras, 'duplicates'> = {
   chordRefits: null,
   placeNames: null,
   preIcePass: null,
@@ -124,6 +136,10 @@ const NO_EXTRAS: CorpusExtras = {
 /**
  * The intake reasons, folded into the Corpus card's tasks the way the Corpus mode lists them:
  * both duplicate reasons are one *Duplicates* lane, and a class dissent sits with the conflicts.
+ * `extras` is `console.corpusCounts` when it has landed: its *Duplicates* is the dedup queue's own
+ * total (`dedupStatus` groups, as decisions), which replaces the intake reasons' sum. That is a
+ * different population, not a finer count of the same rows; the intake sum is only what a caller
+ * without that read gets (the Overview waits for both).
  */
 export function corpusFromReviewCounts(
   counts: ReviewQueueCounts,
@@ -140,6 +156,18 @@ export function corpusFromReviewCounts(
   };
 }
 
+/** `console.corpusCounts` as the Corpus card's extras. */
+export function corpusExtrasFrom(counts: CorpusCounts): CorpusExtras {
+  return {
+    duplicates: counts.duplicates,
+    chordRefits: counts.chordRefits,
+    placeNames: counts.placeNames,
+    preIcePass: counts.preIcePass,
+    enrichment: counts.enrichment,
+    campaignAt: counts.campaignAt,
+  };
+}
+
 // ── Machinery ────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -152,8 +180,8 @@ export interface JobRow {
   id: string;
   name: string;
   state: JobState;
-  /** When, as the row writes it ("41 min" for a stalled run's silence, "Sat 22:14", "04:12"). */
-  at: string;
+  /** When it last ran (`jobWhen` writes it); `null` if it never has. */
+  at: number | null;
 }
 
 export interface MachineryCardData {
@@ -165,8 +193,30 @@ export interface MachineryCardData {
   moreAllOk: boolean;
 }
 
-/** Stalled and failed runs, for the heads row. */
-export function machineryTrouble(data: MachineryCardData): { stalled: number; failed: number } {
+/** `machinery.overviewJobs` as the card draws it. */
+export function machineryFromJobs(read: OverviewJobs): MachineryCardData {
+  return { jobs: read.jobs, more: read.more, moreAllOk: read.moreAllOk };
+}
+
+/**
+ * When a job row says it last ran: minutes under an hour ("41 min", "3 min" — and for a stalled
+ * run, how long it has been quiet), the clock today ("04:12"), the weekday and time this past week
+ * ("Fri 22:14"), the date before that — in the reader's zone. A job that never ran says a dash.
+ */
+export function jobWhen(at: number | null, now: number): string {
+  if (at === null) return '—';
+  return now - at < HOUR ? shortAge(now - at) : feedWhen(at, now);
+}
+
+/**
+ * Stalled and failed runs, for the heads row. Machinery unread, withheld or loading says no run is
+ * stalled or failed — and none is said to be fine.
+ */
+export function machineryTrouble(data: MachineryCardData | 'withheld' | null | undefined): {
+  stalled: number;
+  failed: number;
+} {
+  if (!data || data === 'withheld') return { stalled: 0, failed: 0 };
   return {
     stalled: data.jobs.filter((j) => j.state === 'stalled').length,
     failed: data.jobs.filter((j) => j.state === 'failed').length,
@@ -187,15 +237,12 @@ export interface PeopleCardData {
   /** Open appeals; `null` for a viewer who can't read support. */
   appealsOpen: Count | null;
   leaving: Count;
-  /** Everyone with a profile, when a read counts them. */
-  totalUsers?: Count | null;
+  /** Everyone with an account (the 6-hourly rollup); `null` until it has run. */
+  totalUsers: Count | null;
 }
 
-export function peopleFromOverview(
-  people: ConsoleOverview['people'],
-  totalUsers: Count | null = null,
-): PeopleCardData {
-  return { ...people, totalUsers };
+export function peopleFromOverview(people: ConsoleOverview['people']): PeopleCardData {
+  return people;
 }
 
 // ── Cost ─────────────────────────────────────────────────────────────────────────────────────
@@ -363,6 +410,23 @@ function actorName(row: ActionRow): string | null {
   return full.split(/\s+/u)[0] ?? full;
 }
 
+/**
+ * The machine's rows (`console.systemFeed`): no actor, which the feed draws as *system*, the way it
+ * draws an automatic action; the verb and the target's name come from the server.
+ */
+export function feedFromSystem(rows: readonly SystemFeedRow[]): FeedRow[] {
+  return rows.map((row) => ({ ...row, target: { ...row.target } }));
+}
+
+/** People's rows and the machine's, newest first, at most `limit`. */
+export function mergeFeed(
+  people: readonly FeedRow[],
+  system: readonly FeedRow[],
+  limit: number,
+): FeedRow[] {
+  return [...people, ...system].sort((a, b) => b.at - a.at).slice(0, limit);
+}
+
 export function feedFromActions(rows: readonly ActionRow[]): FeedRow[] {
   return rows.map((row) => ({
     id: row.id,
@@ -387,7 +451,7 @@ export function inboxFootAges(
   if (data.oldestOpenAt === null) return null;
   return {
     oldestMs: Math.max(0, now - data.oldestOpenAt),
-    medianMs: data.medianAgeMs ?? null,
+    medianMs: data.medianOpenedAt === null ? null : Math.max(0, now - data.medianOpenedAt),
   };
 }
 

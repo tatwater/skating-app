@@ -8,13 +8,13 @@ import {
   resolvePx,
   sameColor,
 } from '@/components/kit/measure';
+import { StatusDot } from '@/components/kit/status-dot';
 import { faceLoaded, must } from '@/components/kit/storyKit';
 
 import { LiveMark } from './LiveMark';
 import { InboxCard, MachineryCard } from './OverviewCards';
 import { OverviewPage } from './OverviewPage';
-import { HOME, LAST_CHECKED_LIVE, LAST_CHECKED_QUIET, NOW } from './overviewFixtures';
-import { StatusDot } from './StatusDot';
+import { HOME, LAST_CHECKED_LIVE, LAST_CHECKED_QUIET, MACHINERY, NOW } from './overviewFixtures';
 
 /** The Home blocks one at a time, in all four maps where the piece is surface-neutral. */
 const meta = {
@@ -157,8 +157,12 @@ export const PageTabs: Story = {
     await expect(onTab).toHaveBeenCalledWith('seasons');
     await waitFor(() => expect(page.getByTestId('panel')).toHaveTextContent('Seasons panel'));
     await expect(page.getAllByTestId('panel')).toHaveLength(1);
-    // The tabs sit on the word's foot.
-    const word = slot(canvasElement, 'page-word').getBoundingClientRect();
+    // The tabs sit on the word's foot, and the word's box is its type's own height (a dropped
+    // `leading-none` would set it on the inherited 1.5 line, half a line above the tabs' foot).
+    const wordEl = slot(canvasElement, 'page-word');
+    const type = getComputedStyle(wordEl);
+    await expect(parseFloat(type.lineHeight)).toBeCloseTo(parseFloat(type.fontSize), 1);
+    const word = wordEl.getBoundingClientRect();
     const list = page.getByRole('tablist').getBoundingClientRect();
     await expect(Math.abs(list.bottom + 1 - word.bottom)).toBeLessThanOrEqual(4);
   },
@@ -200,7 +204,7 @@ export const CountCardRows: Story = {
 export const MachineryRows: Story = {
   render: () => (
     <div className="w-[20.5rem]">
-      <MachineryCard data={HOME.machinery} />
+      <MachineryCard data={MACHINERY} now={NOW} />
     </div>
   ),
   play: async ({ canvasElement }) => {

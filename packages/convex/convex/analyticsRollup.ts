@@ -35,10 +35,12 @@ import {
   hoursBetween,
   metricDay,
   metricDayStart,
+  positiveReactionOf,
   REPUTATION_POINT_BUCKETS,
   rate,
   reportStripState,
   seasonOf,
+  signInRetentionFrom,
   standingOf,
   wasOpenDuring,
 } from '@skating/core';
@@ -46,8 +48,11 @@ import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
 import { internalMutation, type MutationCtx } from './_generated/server';
+import { contributorsBetween } from './lib/contributions';
 import { isListed } from './lib/listing';
 import { writeMetricSnapshot } from './lib/metrics';
+import { readOpenFlags } from './lib/openFlags';
+import { isCountedComment } from './lib/pulse';
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -97,45 +102,66 @@ async function capped<T>(rows: Promise<T[]>, cap: number, label: string): Promis
  * Compute every day-scoped metric for one UTC day. Split out from the point-in-time metrics because
  * only these are replayable: their inputs are timestamped rows, so the backfill runs this same code
  * over past days and lands on the same numbers the live job would have.
+ *
+ * Reports, hazards and signups are three of the Metrics pulse's strips, so they follow the pulse's
+ * rule (`rollupPulseDay`): a count whose read hits `cap` is saved with no number, never as the day.
+ * `cap` bounds those three reads only, so a test can reach it without thousands of rows.
  */
-async function rollupDay(ctx: MutationCtx, date: string): Promise<void> {
+export async function rollupDay(
+  ctx: MutationCtx,
+  date: string,
+  cap: number = DAY_SCAN_CAP,
+): Promise<void> {
   const from = metricDayStart(date);
   const to = from + DAY_MS;
 
   // --- Activity -------------------------------------------------------------
   // Reports are keyed on **skate-end time**, not creation: the number that matters is how much ice
   // got read that day, and an offline report that syncs on Tuesday still describes Monday's ice.
-  const reports = await capped(
+  const reports = await wholeDay(
     ctx.db
       .query('reports')
       .withIndex('by_moderation_and_skate_end_time', (q) =>
         q.eq('moderationStatus', 'visible').gte('skateEndTime', from).lt('skateEndTime', to),
-      )
-      .take(DAY_SCAN_CAP),
-    DAY_SCAN_CAP,
+      ),
+    cap,
     `reports on ${date}`,
   );
-  await writeMetricSnapshot(ctx, 'reports_created', date, { scalar: reports.length });
+  await writeMetricSnapshot(
+    ctx,
+    'reports_created',
+    date,
+    reports === null ? NOT_RECORDED : { scalar: reports.length },
+  );
 
-  const hazards = await capped(
+  const hazards = await wholeDay(
     ctx.db
       .query('hazards')
-      .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to))
-      .take(DAY_SCAN_CAP),
-    DAY_SCAN_CAP,
+      .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to)),
+    cap,
     `hazards on ${date}`,
   );
-  await writeMetricSnapshot(ctx, 'hazards_created', date, { scalar: hazards.length });
+  await writeMetricSnapshot(
+    ctx,
+    'hazards_created',
+    date,
+    hazards === null ? NOT_RECORDED : { scalar: hazards.length },
+  );
 
-  const signups = await capped(
+  // The accounts strip adds these days up, so a partial day here would undercount its total.
+  const signups = await wholeDay(
     ctx.db
       .query('profiles')
-      .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to))
-      .take(DAY_SCAN_CAP),
-    DAY_SCAN_CAP,
+      .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to)),
+    cap,
     `signups on ${date}`,
   );
-  await writeMetricSnapshot(ctx, 'signups', date, { scalar: signups.length });
+  await writeMetricSnapshot(
+    ctx,
+    'signups',
+    date,
+    signups === null ? NOT_RECORDED : { scalar: signups.length },
+  );
 
   // --- Bounty gate ----------------------------------------------------------
   const gateEvents = await capped(
@@ -291,6 +317,139 @@ async function rollupDay(ctx: MutationCtx, date: string): Promise<void> {
   });
 }
 
+/**
+ * The Overview's daily pulse (B01, Metrics' *Each day*): the day's comments, report photos, kudos,
+ * sign-ins and contributors. Replayable like the rest of the day, so the day backfill fills a past
+ * season from the rows still on disk — except sign-ins before their record began, which stay
+ * unwritten (read as *not recorded*, never as a day nobody came).
+ *
+ * Its own transaction (`rollupPulseDayJob`), beside `rollupDay`'s: each day job stays one day's
+ * scans. A contributor is anyone with a standing contribution this day (`lib/contributions`, D253):
+ * a report whose skate ended on it, or a hazard, an access alert, a "not publicly accessible" report,
+ * a put-in placed or a corpus request made on it. Comments are not contributions.
+ *
+ * A count whose read hits `cap` is saved with **no number** (`meta.capped`), and the other fields of
+ * the day still save: a slice of a day is never written as the day, and the chart draws that day
+ * *Not recorded yet*. A day's rows only grow, so under the same cap a re-run (the next tick, the
+ * backfill) caps again: the gap is filled only by a run under a higher cap. `cap` is a parameter so
+ * a test can reach it without thousands of rows.
+ */
+export async function rollupPulseDay(
+  ctx: MutationCtx,
+  date: string,
+  cap: number = DAY_SCAN_CAP,
+): Promise<void> {
+  const from = metricDayStart(date);
+  const to = from + DAY_MS;
+
+  // Each read is the day's rows or `null` (capped); every check below is against `null`.
+  const comments = await wholeDay(
+    ctx.db
+      .query('comments')
+      .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to)),
+    cap,
+    `comments on ${date}`,
+  );
+  const counted = comments === null ? null : comments.filter(isCountedComment);
+  await writeMetricSnapshot(
+    ctx,
+    'comments_created',
+    date,
+    counted === null
+      ? NOT_RECORDED
+      : { scalar: counted.length, meta: { reports: new Set(counted.map((c) => c.reportId)).size } },
+  );
+
+  // A photo counts once it belongs to a report: an upload never attached is not a contribution.
+  const uploads = await wholeDay(
+    ctx.db
+      .query('photos')
+      .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to)),
+    cap,
+    `photos on ${date}`,
+  );
+  const photos = uploads === null ? null : uploads.filter((p) => p.reportId !== undefined);
+  await writeMetricSnapshot(
+    ctx,
+    'photos_added',
+    date,
+    photos === null
+      ? NOT_RECORDED
+      : { scalar: photos.length, meta: { reports: new Set(photos.map((p) => p.reportId)).size } },
+  );
+
+  // Kudos are positive reactions (the founder, 2026-11-13): a thumbs-down is never counted.
+  const ratings = await wholeDay(
+    ctx.db
+      .query('reportRatings')
+      .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to)),
+    cap,
+    `ratings on ${date}`,
+  );
+  const kinds =
+    ratings === null
+      ? null
+      : ratings.flatMap((r) => {
+          const kind = positiveReactionOf(r.verdict);
+          return kind === null ? [] : [kind];
+        });
+  await writeMetricSnapshot(
+    ctx,
+    'positive_reactions',
+    date,
+    kinds === null ? NOT_RECORDED : { scalar: kinds.length, meta: countBy(kinds) },
+  );
+
+  const contributors = await contributorsBetween(ctx, from, to, cap);
+  if (contributors.capped) warnCapped(`contributors on ${date}`, cap);
+  await writeMetricSnapshot(
+    ctx,
+    'daily_contributors',
+    date,
+    contributors.capped ? NOT_RECORDED : { scalar: contributors.people.size },
+  );
+
+  // Sign-ins are forward-only (B01-1): a day before the record's first row was never measured.
+  const firstRecorded = await ctx.db.query('signInDays').withIndex('by_day').first();
+  if (firstRecorded !== null && firstRecorded.day <= date) {
+    const signIns = await wholeDay(
+      ctx.db.query('signInDays').withIndex('by_day', (q) => q.eq('day', date)),
+      cap,
+      `sign-ins on ${date}`,
+    );
+    await writeMetricSnapshot(
+      ctx,
+      'signed_in',
+      date,
+      signIns === null ? NOT_RECORDED : { scalar: signIns.length },
+    );
+  }
+}
+
+/** A pulse field whose read hit its cap: no number, so the day reads *not recorded*, never a floor. */
+const NOT_RECORDED = { meta: { capped: true } } as const;
+
+function warnCapped(label: string, cap: number): void {
+  console.warn(
+    `analyticsRollup: ${label} hit the ${cap}-row scan cap — saved as not recorded rather than a partial count.`,
+  );
+}
+
+/**
+ * A day's rows, or `null` when `cap` is what stopped the read. It asks for one row past the cap, so
+ * a day with exactly `cap` rows is whole, not capped.
+ */
+async function wholeDay<T>(
+  query: { take(n: number): Promise<T[]> },
+  cap: number,
+  label: string,
+): Promise<T[] | null> {
+  const rows = await query.take(cap + 1);
+  if (rows.length <= cap) return rows;
+  warnCapped(label, cap);
+  return null;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Point-in-time rollups — "what is true right now", stamped on today
 // ─────────────────────────────────────────────────────────────────────────────
@@ -313,6 +472,12 @@ async function rollupDistributions(ctx: MutationCtx, now: number): Promise<void>
     'profile distributions',
   );
   const live = profiles.filter((p) => p.status !== 'deleted');
+  // Every account that exists, for the Overview's *N users* and Metrics' *total*. A floor once the
+  // scan stops short, and it says so.
+  await writeMetricSnapshot(ctx, 'accounts_total', date, {
+    scalar: live.length,
+    ...(profiles.length >= PROFILE_SCAN_CAP ? { meta: { capped: true } } : {}),
+  });
   await writeMetricSnapshot(ctx, 'reputation_points_hist', date, {
     buckets: histogram(
       live.map((p) => p.reputationPoints),
@@ -333,29 +498,20 @@ async function rollupDistributions(ctx: MutationCtx, now: number): Promise<void>
 async function rollupActivity(ctx: MutationCtx, now: number): Promise<void> {
   const date = metricDay(now);
 
-  // Distinct authors across reports AND hazards in the trailing window — one person who did both is
-  // one contributor, which is why this is a set union and not the sum of two counts.
+  // Distinct people with a standing contribution in the trailing window — the one rule every
+  // contributors figure reads (D253): a person who did two kinds is one contributor.
   const since = now - ACTIVE_CONTRIBUTOR_DAYS * DAY_MS;
-  const recentReports = await capped(
-    ctx.db
-      .query('reports')
-      .withIndex('by_created_at', (q) => q.gte('createdAt', since))
-      .take(WINDOW_SCAN_CAP),
+  const { people: contributors, capped: contributorsCapped } = await contributorsBetween(
+    ctx,
+    since,
+    now + 1,
     WINDOW_SCAN_CAP,
-    'recent reports (active contributors)',
   );
-  const recentHazards = await capped(
-    ctx.db
-      .query('hazards')
-      .withIndex('by_created_at', (q) => q.gte('createdAt', since))
-      .take(WINDOW_SCAN_CAP),
-    WINDOW_SCAN_CAP,
-    'recent hazards (active contributors)',
-  );
-  const contributors = new Set<string>([
-    ...recentReports.map((r) => r.authorId as string),
-    ...recentHazards.map((h) => h.createdByUserId as string),
-  ]);
+  if (contributorsCapped) {
+    console.warn(
+      `analyticsRollup: active contributors hit the ${WINDOW_SCAN_CAP}-row scan cap — computed from a partial slice.`,
+    );
+  }
   await writeMetricSnapshot(ctx, 'active_contributors', date, { scalar: contributors.size });
 
   const bounties = await capped(
@@ -399,17 +555,11 @@ async function rollupActivity(ctx: MutationCtx, now: number): Promise<void> {
 async function rollupOperational(ctx: MutationCtx, now: number): Promise<void> {
   const date = metricDay(now);
 
-  const openFlags: Doc<'contentFlags'>[] = [];
-  for (const status of ['open', 'reviewing'] as const) {
-    openFlags.push(
-      ...(await capped(
-        ctx.db
-          .query('contentFlags')
-          .withIndex('by_status', (q) => q.eq('status', status))
-          .take(DAY_SCAN_CAP),
-        DAY_SCAN_CAP,
-        `${status} flags`,
-      )),
+  // Open means `open` or `reviewing` — the one definition every count of open flags reads.
+  const { flags: openFlags, capped: flagsCapped } = await readOpenFlags(ctx, DAY_SCAN_CAP);
+  if (flagsCapped) {
+    console.warn(
+      `analyticsRollup: open flags hit the ${DAY_SCAN_CAP}-row scan cap — the flag queue is computed from a partial slice.`,
     );
   }
   // Split by the safety lane, because the two have different urgency: a backlog of spam flags is a
@@ -567,6 +717,12 @@ export const rollupDayJob = internalMutation({
   handler: (ctx, { date }) => rollupDay(ctx, date),
 });
 
+/** One UTC day of the Overview's pulse (B01), its own transaction beside `rollupDayJob`. */
+export const rollupPulseDayJob = internalMutation({
+  args: { date: v.string() },
+  handler: (ctx, { date }) => rollupPulseDay(ctx, date),
+});
+
 /** The point-in-time chunks, each a separate transaction (see the scan-cap note). */
 export const rollupDistributionsJob = internalMutation({
   args: {},
@@ -587,9 +743,14 @@ async function scheduleRollupJobs(ctx: MutationCtx, now: number): Promise<void> 
     date: metricDay(now - DAY_MS),
   });
   await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupDayJob, { date: metricDay(now) });
+  for (const date of [metricDay(now - DAY_MS), metricDay(now)]) {
+    await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupPulseDayJob, { date });
+  }
   await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupDistributionsJob, {});
   await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupActivityJob, {});
   await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupOperationalJob, {});
+  // The season so far, counted once each (B01): its own self-chaining walk (`seasonReach.ts`).
+  await ctx.scheduler.runAfter(0, internal.seasonReach.start, {});
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -640,7 +801,9 @@ export const backfillStep = internalMutation({
   args: { offset: v.number() },
   handler: async (ctx, { offset }) => {
     const now = Date.now();
-    await rollupDay(ctx, metricDay(now - offset * DAY_MS));
+    const date = metricDay(now - offset * DAY_MS);
+    await rollupDay(ctx, date);
+    await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupPulseDayJob, { date });
     if (offset > 0) {
       await ctx.scheduler.runAfter(0, internal.analyticsRollup.backfillStep, {
         offset: offset - 1,
@@ -650,6 +813,7 @@ export const backfillStep = internalMutation({
     await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupDistributionsJob, {});
     await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupActivityJob, {});
     await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupOperationalJob, {});
+    await ctx.scheduler.runAfter(0, internal.seasonReach.start, {});
   },
 });
 
@@ -689,7 +853,32 @@ export const pruneClientSignals = internalMutation({
       .withIndex('by_created_at', (q) => q.lt('createdAt', cutoff))
       .take(DAY_SCAN_CAP);
     for (const row of stale) await ctx.db.delete(row._id);
+    // The sign-in record's retention rides this daily prune (D254): its own transaction.
+    await ctx.scheduler.runAfter(0, internal.analyticsRollup.pruneSignInDays, {});
     return { deleted: stale.length };
+  },
+});
+
+/**
+ * `signInDays` retention (the founder, 2026-11-13; D254): the current season and one past season
+ * are kept — "one past season seems like it should be fine" — and every day before the previous
+ * season's 1 July is erased. A page per transaction: a full page schedules the next, so a backlog
+ * drains in one run without any one transaction reading past the cap. The day range carries its
+ * lower bound, as every range over this index does.
+ */
+export const pruneSignInDays = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const keepFrom = signInRetentionFrom(Date.now());
+    const stale = await ctx.db
+      .query('signInDays')
+      .withIndex('by_day', (q) => q.gte('day', '0000-01-01').lt('day', keepFrom))
+      .take(DAY_SCAN_CAP);
+    for (const row of stale) await ctx.db.delete(row._id);
+    if (stale.length === DAY_SCAN_CAP) {
+      await ctx.scheduler.runAfter(0, internal.analyticsRollup.pruneSignInDays, {});
+    }
+    return { deleted: stale.length, keepFrom };
   },
 });
 

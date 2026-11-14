@@ -213,7 +213,9 @@ type SearchTriggerProps = Omit<ComponentProps<'button'>, 'children'> & {
  * The top bar's search: **a button dressed as the underline input** — the 13 px magnifier, the
  * placeholder in the quiet ink, the ⌘K cap at the rule's end — that opens the command palette.
  * It's a button because it holds no text of its own; typing happens in the palette. Hover and
- * focus are one look, the input's focus: the rule turns bright and doubles.
+ * focus are one look, the input's focus: the rule turns bright and doubles. It is as wide as its
+ * words, so the placeholder never truncates where there is room for it (the console's top bar);
+ * a caller that sets a width (`w-full`) gets that width.
  */
 function SearchTrigger({
   label = 'Jump to a body or a person',
@@ -231,7 +233,7 @@ function SearchTrigger({
       aria-haspopup="dialog"
       aria-keyshortcuts={keyshortcuts}
       className={cn(
-        'flex h-btn-sm w-search min-w-0 shrink items-center gap-(--space-2) bg-transparent px-0 pb-(--space-0_5) text-left outline-none',
+        'flex h-btn-sm w-max max-w-full min-w-0 shrink items-center gap-(--space-2) bg-transparent px-0 pb-(--space-0_5) text-left outline-none',
         'border-0 border-b border-solid border-line2 rounded-none',
         'text-assist leading-none font-regular text-fg3',
         'transition-[border-color,box-shadow,color,opacity] duration-(--duration-fast) ease-standard',

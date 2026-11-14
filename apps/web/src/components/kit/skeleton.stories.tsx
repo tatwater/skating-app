@@ -158,8 +158,12 @@ export const Stat: Story = {
     />
   ),
   play: async ({ canvasElement }) => {
-    // `ch` is the loaded face's, and so are the value's digits: both faces load before any read.
+    // Both widths are laid-out mono glyphs, so both follow the face when it loads.
     await expectPairSame(canvasElement, 'stat');
+    // The glyphs that size it are never seen or read, forced colors included: hidden, not inked.
+    const { skeleton } = pair(canvasElement);
+    await expect(skeleton).toHaveAttribute('aria-hidden', 'true');
+    await expect(getComputedStyle(must(skeleton.firstElementChild)).visibility).toBe('hidden');
   },
 };
 
