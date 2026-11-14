@@ -632,6 +632,48 @@ describe('a history longer than a page', () => {
     expect(await t.run((ctx) => ctx.db.query('contentVerdicts').collect())).toHaveLength(2);
   });
 
+  test('a page of newest rows whose items are all gone still walks on, and starts the clocks (Greptile #110)', async () => {
+    vi.useFakeTimers();
+    const { t, author, mod } = await setup();
+    // Six items erased since their only audit row was written: each row is its item's newest, and
+    // each item's lookup finds nothing — the most expensive branch of the walk, on every row.
+    for (let i = 0; i < 6; i++) {
+      const reportId = await seedReport(t, author.id);
+      await t.run(async (ctx) => {
+        await ctx.db.insert('moderationActions', {
+          actorId: mod.id,
+          action: 'hide',
+          targetType: 'report',
+          targetId: reportId,
+          reason: 'rude',
+          metadata: { priorStatus: 'visible', newStatus: 'hidden' },
+          createdAt: Date.now() + i,
+        });
+        await ctx.db.delete(reportId);
+      });
+    }
+    // Something only the clocks backfill gives a clock to: proof the chain reached its end.
+    const reportId = await seedReport(t, author.id);
+    const commentId = await t.run((ctx) =>
+      ctx.db.insert('comments', {
+        reportId,
+        authorId: author.id,
+        body: 'withdrawn before the clock',
+        source: 'native' as const,
+        moderationStatus: 'removed' as const,
+        authorDeletedAt: Date.now(),
+        createdAt: Date.now(),
+      }),
+    );
+    await t.mutation(internal.contentRecord.backfillVerdicts, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers, 10_000);
+    const failed = (
+      await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect())
+    ).filter((job) => job.state.kind === 'failed');
+    expect(failed).toEqual([]);
+    expect((await t.run((ctx) => ctx.db.get(commentId)))?.eraseAt).toBeDefined();
+  });
+
   test('an item erased while its replay runs gets no verdict on the record', async () => {
     vi.useFakeTimers();
     const { t, author, mod } = await setup();

@@ -20,7 +20,7 @@ import {
   type VerdictTargetType,
 } from './lib/contentVerdicts';
 import { ERASABLE, HOLD_COST, holdMoved, withdrawnAtOf } from './lib/eraseClock';
-import { DOC_MAX, ReadBudget, ROW_MAX, TX_BUDGET } from './lib/readBudget';
+import { DOC_MAX, ReadBudget, ROW_MAX, sizePage, TX_BUDGET, traced } from './lib/readBudget';
 import { literals } from './lib/validators';
 
 /** Rows per page of the record, at most — each page is also sized by what its rows can weigh. */
@@ -263,60 +263,66 @@ export const backfillVerdicts = internalMutation({
     /** Test seam: stop after the record, without starting the clocks. */
     clocks: v.optional(v.boolean()),
   },
-  handler: async (ctx, { cursor, skip = 0, pageSize, clocks }) => {
-    const reads = new ReadBudget();
-    const size = Math.min(Math.max(pageSize ?? BACKFILL_PAGE, 1), BACKFILL_PAGE);
-    // A row, its item's newest row; and once, the item itself.
-    const perRow = 2 * ROW_MAX.moderationAction;
-    const page = await reads.page(
-      'moderationAction',
-      reads.rows('moderationAction', size, DOC_MAX, perRow),
-      (numItems) =>
-        ctx.db
-          .query('moderationActions')
-          .order('asc')
-          .paginate({ cursor: cursor ?? null, numItems }),
-    );
-    const carry = {
-      ...(pageSize !== undefined ? { pageSize } : {}),
-      ...(clocks !== undefined ? { clocks } : {}),
-    };
-    for (let i = skip; i < page.page.length; i++) {
-      const row = page.page[i] as Doc<'moderationActions'>;
-      if (!CONTENT_TYPES.has(row.targetType)) continue;
-      const targetType = row.targetType as VerdictTargetType;
-      const newest = await reads.one('moderationAction', () =>
-        ctx.db
-          .query('moderationActions')
-          .withIndex('by_target', (q) =>
-            q.eq('targetType', targetType).eq('targetId', row.targetId),
-          )
-          .order('desc')
-          .first(),
+  handler: (ctx, args) =>
+    traced('contentRecord.backfillVerdicts', args, async () => {
+      const { cursor, skip = 0, pageSize, clocks } = args;
+      const reads = new ReadBudget();
+      const size = Math.min(Math.max(pageSize ?? BACKFILL_PAGE, 1), BACKFILL_PAGE);
+      // What one row may cost beside its own read, on its dearest branch: its item's newest row, and
+      // the item itself — looked up on every newest row, found or gone (Greptile #110: a page of rows
+      // whose items were erased paid for the lookup on each and ran past a budget sized for one).
+      const work = ROW_MAX.moderationAction + DOC_MAX;
+      const page = await reads.page(
+        'moderationAction',
+        sizePage(reads, 'moderationAction', { cap: size, work }),
+        (numItems) =>
+          ctx.db
+            .query('moderationActions')
+            .order('asc')
+            .paginate({ cursor: cursor ?? null, numItems }),
       );
-      if (newest?._id !== row._id) continue;
-      const target = await loadTarget(ctx, reads, targetType, row.targetId);
-      if (!target) continue;
-      await ctx.scheduler.runAfter(0, internal.contentRecord.replayVerdictHistory, {
-        targetType,
-        targetId: row.targetId,
-        subjectUserId: subjectOf(targetType, target),
-        pass: 'scan' as const,
-        resume: { cursor: cursor ?? null, skip: i + 1 },
-        ...carry,
-      });
-      return { replaying: `${targetType}:${row.targetId}`, more: true };
-    }
-    if (!page.isDone) {
-      await ctx.scheduler.runAfter(0, internal.contentRecord.backfillVerdicts, {
-        cursor: page.continueCursor,
-        ...carry,
-      });
-      return { replaying: null, more: true };
-    }
-    if (clocks !== false) await ctx.scheduler.runAfter(0, internal.erasure.backfillClocks, {});
-    return { replaying: null, more: false };
-  },
+      const carry = {
+        ...(pageSize !== undefined ? { pageSize } : {}),
+        ...(clocks !== undefined ? { clocks } : {}),
+      };
+      for (let i = skip; i < page.page.length; i++) {
+        const row = page.page[i] as Doc<'moderationActions'>;
+        if (!CONTENT_TYPES.has(row.targetType)) continue;
+        const targetType = row.targetType as VerdictTargetType;
+        const target = await reads.row(work, async () => {
+          const newest = await reads.one('moderationAction', () =>
+            ctx.db
+              .query('moderationActions')
+              .withIndex('by_target', (q) =>
+                q.eq('targetType', targetType).eq('targetId', row.targetId),
+              )
+              .order('desc')
+              .first(),
+          );
+          if (newest?._id !== row._id) return null;
+          return loadTarget(ctx, reads, targetType, row.targetId);
+        });
+        if (!target) continue;
+        await ctx.scheduler.runAfter(0, internal.contentRecord.replayVerdictHistory, {
+          targetType,
+          targetId: row.targetId,
+          subjectUserId: subjectOf(targetType, target),
+          pass: 'scan' as const,
+          resume: { cursor: cursor ?? null, skip: i + 1 },
+          ...carry,
+        });
+        return { replaying: `${targetType}:${row.targetId}`, more: true };
+      }
+      if (!page.isDone) {
+        await ctx.scheduler.runAfter(0, internal.contentRecord.backfillVerdicts, {
+          cursor: page.continueCursor,
+          ...carry,
+        });
+        return { replaying: null, more: true };
+      }
+      if (clocks !== false) await ctx.scheduler.runAfter(0, internal.erasure.backfillClocks, {});
+      return { replaying: null, more: false };
+    }),
 });
 
 /**

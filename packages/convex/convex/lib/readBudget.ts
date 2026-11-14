@@ -121,4 +121,62 @@ export class ReadBudget {
   touch(kind: RowKind): void {
     this.charge(kind);
   }
+
+  /**
+   * One row's work in a continuing job's loop, held to the worst case the job declared for it — the
+   * same number its page was sized by. A row that charges more than `allowance`, on whatever branch,
+   * is a plan that understated a branch: it throws here, on the first row that takes that branch, in
+   * any test that reaches it, rather than only when a full page of such rows overruns the budget.
+   */
+  async row<T>(allowance: number, work: () => Promise<T>): Promise<T> {
+    if (!this.affords(allowance)) {
+      throw new OverBudget(`read budget: a row's ${allowance} bytes were not left for it`);
+    }
+    const before = this.left;
+    const result = await work();
+    const spent = before - this.left;
+    if (spent > allowance) {
+      throw new OverBudget(
+        `read budget: a row charged ${spent} bytes, past the ${allowance} its page was sized for`,
+      );
+    }
+    return result;
+  }
+}
+
+/**
+ * Size a continuing job's page so a full page fits at worst: each row costs its own read plus
+ * `work` (everything any branch of the loop may charge for it), with `reserve` kept back for what
+ * follows the loop. At least one row — and if not even one fits, that is a plan error, thrown now.
+ */
+export function sizePage(
+  reads: ReadBudget,
+  kind: RowKind,
+  { cap, work = 0, reserve = 0 }: { cap: number; work?: number; reserve?: number },
+): number {
+  const n = reads.rows(kind, cap, reserve, ROW_MAX[kind] + work);
+  if (n < 1) throw new OverBudget(`read budget: not one ${kind} row and its work fit a pass`);
+  return n;
+}
+
+/**
+ * Run one pass of a continuing job so that a failure is never silent: whatever it throws is logged
+ * with the job's name and the position it was started at — the position a re-run resumes from, since
+ * every job here is idempotent from its saved position — and rethrown, so Convex records the
+ * scheduled function as failed. Positions are ids, cursors and times: no content.
+ */
+export async function traced<T>(
+  job: string,
+  position: unknown,
+  pass: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await pass();
+  } catch (error) {
+    console.error(
+      `${job}: a pass failed and its chain stopped; re-run it from ${JSON.stringify(position)}`,
+      error,
+    );
+    throw error;
+  }
 }
