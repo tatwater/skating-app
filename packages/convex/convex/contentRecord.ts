@@ -7,7 +7,7 @@
  */
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
-import type { Doc } from './_generated/dataModel';
+import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, type QueryCtx, query } from './_generated/server';
 import { requireCapability } from './lib/auth';
 import { authorDeletedAtOf } from './lib/authorDeletion';
@@ -268,10 +268,11 @@ export const backfillVerdicts = internalMutation({
       const { cursor, skip = 0, pageSize, clocks } = args;
       const reads = new ReadBudget();
       const size = Math.min(Math.max(pageSize ?? BACKFILL_PAGE, 1), BACKFILL_PAGE);
-      // What one row may cost beside its own read, on its dearest branch: its item's newest row, and
-      // the item itself — looked up on every newest row, found or gone (Greptile #110: a page of rows
-      // whose items were erased paid for the lookup on each and ran past a budget sized for one).
-      const work = ROW_MAX.moderationAction + DOC_MAX;
+      // What one row may cost beside its own read, on its dearest branch: its item's newest row, the
+      // item itself — looked up on every newest row, found or gone (Greptile #110: a page of rows whose
+      // items were erased paid for the lookup on each and ran past a budget sized for one) — and, for
+      // an item that is gone, one of its verdict rows, for whose record it is.
+      const work = ROW_MAX.moderationAction + DOC_MAX + ROW_MAX.verdict;
       const page = await reads.page(
         'moderationAction',
         sizePage(reads, 'moderationAction', { cap: size, work }),
@@ -289,7 +290,7 @@ export const backfillVerdicts = internalMutation({
         const row = page.page[i] as Doc<'moderationActions'>;
         if (!CONTENT_TYPES.has(row.targetType)) continue;
         const targetType = row.targetType as VerdictTargetType;
-        const target = await reads.row(work, async () => {
+        const found = await reads.row(work, async () => {
           const newest = await reads.one('moderationAction', () =>
             ctx.db
               .query('moderationActions')
@@ -300,13 +301,26 @@ export const backfillVerdicts = internalMutation({
               .first(),
           );
           if (newest?._id !== row._id) return null;
-          return loadTarget(ctx, reads, targetType, row.targetId);
+          const target = await loadTarget(ctx, reads, targetType, row.targetId);
+          if (target) return { subjectUserId: subjectOf(targetType, target) };
+          // A verdict outlives its content (D248): an item that is gone — erased, most often — is
+          // replayed all the same, and whose record its verdicts are on is read off a verdict row it
+          // left, or else, in the replay, off its author's own deletion in its history.
+          const left = await reads.one('verdict', () =>
+            ctx.db
+              .query('contentVerdicts')
+              .withIndex('by_target_standing', (q) =>
+                q.eq('targetType', targetType).eq('targetId', row.targetId),
+              )
+              .first(),
+          );
+          return { subjectUserId: left?.subjectUserId };
         });
-        if (!target) continue;
+        if (!found) continue;
         await ctx.scheduler.runAfter(0, internal.contentRecord.replayVerdictHistory, {
           targetType,
           targetId: row.targetId,
-          subjectUserId: subjectOf(targetType, target),
+          ...(found.subjectUserId !== undefined ? { subjectUserId: found.subjectUserId } : {}),
           pass: 'scan' as const,
           resume: { cursor: cursor ?? null, skip: i + 1 },
           ...carry,
@@ -347,7 +361,11 @@ export const replayVerdictHistory = internalMutation({
   args: {
     targetType: literals(VERDICT_TARGETS),
     targetId: v.string(),
-    subjectUserId: v.id('profiles'),
+    /**
+     * Whose record the item's verdicts are on. Absent for an item that is gone and left no verdict
+     * row: the scan reads it off the author's own deletion in the history, if there is one.
+     */
+    subjectUserId: v.optional(v.id('profiles')),
     pass: literals(['scan', 'write'] as const),
     cursor: v.optional(v.string()),
     state: v.optional(replayStateValidator),
@@ -357,7 +375,9 @@ export const replayVerdictHistory = internalMutation({
   },
   handler: (ctx, args) =>
     traced('contentRecord.replayVerdictHistory', args, async () => {
-      const { targetType, targetId, subjectUserId, pass, cursor, resume, pageSize, clocks } = args;
+      const { targetType, targetId, pass, cursor, resume, pageSize, clocks } = args;
+      let subjectUserId = args.subjectUserId;
+      let unnamed = 0;
       const reads = new ReadBudget();
       // A row's work beside its read, in the write pass: the row keyed by it and the one it ends, each
       // looked up and written. The finish is kept back.
@@ -384,6 +404,11 @@ export const replayVerdictHistory = internalMutation({
             .first(),
         );
         if (!existing) {
+          // A verdict is on someone's record; one whose person can't be named is not made up.
+          if (subjectUserId === undefined) {
+            unnamed++;
+            return 0;
+          }
           await ctx.db.insert('contentVerdicts', {
             subjectUserId,
             targetType,
@@ -409,6 +434,13 @@ export const replayVerdictHistory = internalMutation({
       let state: ReplayState = args.state ?? REPLAY_START;
       let written = 0;
       for (const row of page.page) {
+        // For an item gone with no verdict row left: its author's own deletion names them, or the
+        // person a verdict's action recorded it was on.
+        if (subjectUserId === undefined) {
+          const named = ((row.metadata ?? {}) as { subjectUserId?: Id<'profiles'> }).subjectUserId;
+          if (named !== undefined) subjectUserId = named;
+          else if (row.action === 'author_delete' && row.actorId) subjectUserId = row.actorId;
+        }
         const step = replayStep(state, row);
         if (pass === 'write')
           await reads.row(work, async () => {
@@ -433,7 +465,7 @@ export const replayVerdictHistory = internalMutation({
       const base = {
         targetType,
         targetId,
-        subjectUserId,
+        ...(subjectUserId !== undefined ? { subjectUserId } : {}),
         resume,
         ...(pageSize !== undefined ? { pageSize } : {}),
         ...(clocks !== undefined ? { clocks } : {}),
@@ -447,15 +479,20 @@ export const replayVerdictHistory = internalMutation({
         });
         return { written, more: true };
       }
-      // The end of its history: what it leaves standing stands, and the clock follows — on an item
-      // still there (one erased while the replay ran has no record to keep, as at the hand-off).
+      // The end of its history: what it leaves standing stands — whether or not the item is still
+      // there, since a verdict outlives its content (D248) — and the clock follows, on an item that is.
       const standing = state.standing;
       await reads.row(FINISH, async () => {
+        if (standing) written += await upsert({ ...standing, standing: true });
         if (await loadTarget(ctx, reads, targetType, targetId)) {
-          if (standing) written += await upsert({ ...standing, standing: true });
           await holdMoved(ctx, targetType, targetId, Date.now(), reads);
         }
       });
+      if (unnamed > 0) {
+        console.error(
+          `contentRecord.replayVerdictHistory: ${targetType} ${targetId} is gone and nothing left names its author; ${unnamed} verdict(s) of its history were not rebuilt`,
+        );
+      }
       if (pass === 'scan') {
         await ctx.scheduler.runAfter(0, internal.contentRecord.replayVerdictHistory, {
           ...base,

@@ -412,6 +412,9 @@ export const retract = mutation({
             waterBodyId: alert.waterBodyId,
             alertReason: alert.reason,
             onAuthorWithdrawn: true,
+            // Whose record the verdict is on, kept with the action: an alert its author retracted
+            // leaves no row of their own, so a rebuild after its erasure can still name them (D248).
+            subjectUserId: alert.createdByUserId,
           },
           createdAt: now,
         });

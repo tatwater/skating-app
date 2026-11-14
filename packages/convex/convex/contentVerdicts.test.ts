@@ -674,7 +674,7 @@ describe('a history longer than a page', () => {
     expect((await t.run((ctx) => ctx.db.get(commentId)))?.eraseAt).toBeDefined();
   });
 
-  test('an item erased while its replay runs gets no verdict on the record', async () => {
+  test('an item gone while its replay runs keeps its verdict on the record: a verdict outlives its content', async () => {
     vi.useFakeTimers();
     const { t, author, mod } = await setup();
     const reportId = await seedReport(t, author.id);
@@ -700,7 +700,14 @@ describe('a history longer than a page', () => {
       clocks: false,
     });
     await t.finishAllScheduledFunctions(vi.runAllTimers);
-    expect(await t.run((ctx) => ctx.db.query('contentVerdicts').collect())).toEqual([]);
+    expect(
+      (await t.run((ctx) => ctx.db.query('contentVerdicts').collect())).map((v) => [
+        v.targetId,
+        v.kind,
+        v.standing,
+        v.subjectUserId,
+      ]),
+    ).toEqual([[reportId, 'hidden', true, author.id]]);
   });
 
   test('never reads past the transaction limit, however heavy every row', async () => {
