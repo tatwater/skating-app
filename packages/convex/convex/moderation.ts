@@ -37,7 +37,7 @@ import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import { MODERATION_ACTIONS, MODERATION_STATUSES, MODERATION_TARGET_TYPES } from './lib/enums';
 import { authorRetracted, ERASABLE, refreshEraseClock } from './lib/eraseClock';
 import { closeFlag } from './lib/flagResolution';
-import { withoutLedgerGrantsFor } from './lib/ledgerEditors';
+import { refuseDisciplineOfLastLedgerEditor, withoutLedgerGrantsFor } from './lib/ledgerEditors';
 import { refreshPostLatestSkateEnd, refreshPostSearchText } from './lib/postSync';
 import { mirrorReportSubAreas } from './lib/reportSubAreas';
 import { type UndoState, undoState } from './lib/undo';
@@ -1420,6 +1420,9 @@ export async function banImpl(
   {
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     const target = await loadModeratableUser(ctx, actor, userId);
+    // Never no ledger editor (D252): banning the last one who can act is refused, here and in an undo
+    // that puts a ban back, which comes through this same writer.
+    await refuseDisciplineOfLastLedgerEditor(ctx, target);
 
     await ctx.db.patch(userId, {
       status: 'banned',
@@ -1467,6 +1470,8 @@ export async function suspendImpl(
       throw new ConvexError('Suspension must end in the future');
     }
     const target = await loadModeratableUser(ctx, actor, userId);
+    // The same for a suspension (D252): a suspended editor can't edit or pass the grant on.
+    await refuseDisciplineOfLastLedgerEditor(ctx, target);
 
     await ctx.db.patch(userId, {
       status: 'suspended',
