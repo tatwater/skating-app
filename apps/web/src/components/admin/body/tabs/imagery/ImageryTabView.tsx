@@ -23,6 +23,7 @@ import { Kbd } from '@/components/kit/kbd';
 import { Meter } from '@/components/kit/meter';
 import { Note } from '@/components/kit/note';
 import { Plate } from '@/components/kit/plate';
+import { RetryNote } from '@/components/kit/retry-note';
 import { Section } from '@/components/kit/section-slug';
 import {
   Table,
@@ -33,10 +34,13 @@ import {
   TableRow,
 } from '@/components/kit/table';
 import { ToggleGroup, ToggleGroupItem } from '@/components/kit/toggle-group';
-import { sayUnavailable, UnavailableButton } from '@/components/kit/unavailable-button';
+import {
+  sayUnavailable,
+  UNAVAILABLE,
+  UnavailableButton,
+} from '@/components/kit/unavailable-button';
 import { usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
-import { ReadFailed } from '../hazards/kit-candidates/read-failed';
 import { LoadingSection } from '../tabParts';
 
 import {
@@ -93,7 +97,6 @@ export type ImageryTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
 };
 
 /** A call whose writer isn't built: drawn, and saying *Not available yet*. */
-export const UNAVAILABLE = 'unavailable';
 
 /** What the pass call will do, for its *Not available yet*. */
 const OVERRIDE_WHAT =
@@ -215,9 +218,9 @@ export function ImageryTabView({
               No imagery archive is set up for this deployment, so no passes can be read here.
             </Note>
           ) : archiveError ? (
-            <ReadFailed data-slot="archive-failed" onRetry={onRetry}>
+            <RetryNote data-slot="archive-failed" onRetry={onRetry}>
               The imagery archive couldn’t be read. That is about the archive, not the lake.
-            </ReadFailed>
+            </RetryNote>
           ) : (
             <div aria-busy="true" data-slot="passes-loading">
               <LoadingSection lines={4} />

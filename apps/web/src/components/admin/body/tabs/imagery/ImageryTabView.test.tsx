@@ -2,10 +2,10 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-
+import { UNAVAILABLE } from '@/components/kit/unavailable-button';
 import { stubJsdomAnimations } from '../jsdomStubs';
 import { ImageryDockView } from './ImageryDockView';
-import { ImageryTabView, type ImageryTabViewProps, UNAVAILABLE } from './ImageryTabView';
+import { ImageryTabView, type ImageryTabViewProps } from './ImageryTabView';
 import {
   granuleOf,
   INFERRED_STOP,

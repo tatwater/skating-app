@@ -39,10 +39,10 @@ vi.mock('@tanstack/react-router', () => ({ useNavigate: () => nav.navigate }));
 
 import { seasonOf } from '@skating/core';
 import { ConvexError } from 'convex/values';
+import { resetConsoleReads } from '@/components/admin/reads/consoleReads';
 import { HAZARDS_TAB, HazardsTab } from './HazardsTab';
 import { dailyFrom, FEB_ARCHIVED, FEB_HAZARDS, MASCOMA_FEATURES } from './hazardsFixtures';
 import { dailyClock, winterWindow } from './hazardsModel';
-import { resetReadPauses } from './tabReads';
 
 const BODY = 'k1';
 
@@ -61,7 +61,7 @@ beforeEach(() => {
   });
   convex.results.set('bodyFeatures:listForBody', MASCOMA_FEATURES);
   convex.results.set('hazards:listForBody', () => []);
-  resetReadPauses();
+  resetConsoleReads();
   // Whatever winter the clock is in: this one bare, the last with one archived hazard in it.
   convex.results.set('bodyConsole:dailyHazards', (args: { season: number; now: number }) =>
     args.season === seasonOf(Date.now())

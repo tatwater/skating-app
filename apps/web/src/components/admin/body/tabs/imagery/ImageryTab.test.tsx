@@ -55,7 +55,7 @@ vi.mock('@/components/useFreezeUpTimeline', () => ({
 
 import type { Id } from '@skating/convex/dataModel';
 import { ConvexError } from 'convex/values';
-import { resetReadPauses } from '../hazards/tabReads';
+import { resetConsoleReads } from '@/components/admin/reads/consoleReads';
 import { IMAGERY_TAB, ImageryDock, ImageryTab } from './ImageryTab';
 import { granuleOf, MASCOMA_STOPS } from './imageryFixtures';
 
@@ -71,7 +71,7 @@ const MASCOMA = {
 };
 
 beforeEach(() => {
-  resetReadPauses();
+  resetConsoleReads();
   where.archiveUrl = 'https://archive.example';
   convex.results.clear();
   convex.mutations.clear();

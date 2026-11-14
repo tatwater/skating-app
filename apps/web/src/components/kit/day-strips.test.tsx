@@ -1,45 +1,20 @@
 import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import fc from 'fast-check';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import { ReadFailed } from './read-failed';
-import {
-  dayParts,
-  roomAbove,
-  stripStep,
-  type UncertainDayStrip,
-  UncertainDayStrips,
-} from './uncertain-day-strips';
+import { type DayStrip, DayStrips, dayParts, roomAbove, stripStep } from './day-strips';
 
-describe('ReadFailed', () => {
-  it('names what couldn’t be read in a gray note, with Try again', async () => {
-    const onRetry = vi.fn();
-    render(<ReadFailed onRetry={onRetry}>The hazards couldn’t be read</ReadFailed>);
-    const note = screen.getByRole('note');
-    expect(note).toHaveAttribute('data-tone', 'default');
-    expect(note).toHaveTextContent('The hazards couldn’t be read');
-    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
-    expect(onRetry).toHaveBeenCalledTimes(1);
-  });
-
-  it('draws no button without a way to read again', () => {
-    render(<ReadFailed>This tab couldn’t be drawn</ReadFailed>);
-    expect(screen.queryByRole('button')).toBeNull();
-  });
-});
-
-const strip = (values: (number | null)[], unknown?: number[]): UncertainDayStrip => ({
+const strip = (values: (number | null)[], unknown?: number[]): DayStrip => ({
   key: 's',
   label: '2025–26',
   values,
   ...(unknown !== undefined ? { unknown } : {}),
 });
 
-describe('UncertainDayStrips', () => {
+describe('DayStrips', () => {
   it('draws a known bar and a broken unknown stack on it; nothing on a quiet or future day', () => {
     const { container } = render(
-      <UncertainDayStrips
+      <DayStrips
         strips={[
           {
             ...strip([2, 0, 0, null], [1, 0, 3, 0]),
@@ -69,7 +44,7 @@ describe('UncertainDayStrips', () => {
 
   it('on a step too small for blocks, a day’s unknown part is one bar that counts them all', () => {
     const { container } = render(
-      <UncertainDayStrips strips={[strip([10, 0], [30, 0])]} months={[]} days={2} />,
+      <DayStrips strips={[strip([10, 0], [30, 0])]} months={[]} days={2} />,
     );
     const marks = container.querySelectorAll<SVGRectElement>('[data-slot="day-strip-unknown"]');
     expect(marks).toHaveLength(1);
@@ -84,7 +59,7 @@ describe('UncertainDayStrips', () => {
     // 8 on the kit's step of 3 is 24, ten more than the 14 above the first baseline.
     const tall = [strip([8, 0])];
     expect(roomAbove(tall)).toBeCloseTo(10, 6);
-    const { container } = render(<UncertainDayStrips strips={tall} months={[]} days={2} />);
+    const { container } = render(<DayStrips strips={tall} months={[]} days={2} />);
     const svg = container.querySelector('svg');
     expect(svg?.getAttribute('viewBox')).toBe('0 -10 340 42');
     const bar = container.querySelector('[data-slot="day-strip-bar"]');
@@ -93,7 +68,7 @@ describe('UncertainDayStrips', () => {
 
   it('a reader hears each strip’s summary, or its known total', () => {
     render(
-      <UncertainDayStrips
+      <DayStrips
         strips={[
           { ...strip([1, 2]), summary: 'Two days' },
           { ...strip([1, 2]), key: 't', label: '2024–25' },

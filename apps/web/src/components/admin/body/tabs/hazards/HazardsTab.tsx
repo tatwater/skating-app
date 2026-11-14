@@ -6,12 +6,20 @@ import { useMutation } from 'convex/react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { errorText } from '@/components/admin/adminUi';
+import {
+  isFailed,
+  type Loadable,
+  read,
+  useConsoleReadSet,
+} from '@/components/admin/reads/consoleReads';
+import { ReadNote } from '@/components/admin/reads/ReadNote';
 import { useUndo } from '@/components/admin/shell/undo';
+import { UNAVAILABLE } from '@/components/kit/unavailable-button';
 import { useRole } from '@/lib/useRole';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { LoadingSection, TabBody } from '../tabParts';
 import { featureGlyph } from './featureGlyph';
-import { type FeatureRowWithGlyph, HazardsTabView, type Read, UNAVAILABLE } from './HazardsTabView';
+import { type FeatureRowWithGlyph, HazardsTabView, type Read } from './HazardsTabView';
 import { type HazardsMapData, hazardsMapScene, seasonOfLit, winterLit } from './hazardsMap';
 import {
   archivedRows,
@@ -23,8 +31,6 @@ import {
   type Winters,
   wintersFrom,
 } from './hazardsModel';
-import { ReadFailed } from './kit-candidates/read-failed';
-import { read, TabReadBoundary, useTabReads } from './tabReads';
 
 /**
  * Body › Hazards, wired:
@@ -48,15 +54,8 @@ import { read, TabReadBoundary, useTabReads } from './tabReads';
  * a past one only by choosing it (the lit address carries the choice, so the map follows).
  */
 export function HazardsTab(props: BodyTabProps) {
-  return (
-    <TabReadBoundary readsKey={readsKey(props.bodyId)}>
-      <HazardsReads {...props} />
-    </TabReadBoundary>
-  );
+  return <HazardsReads {...props} />;
 }
-
-/** The reads this tab and its map share: one key, so Try again re-runs them for both. */
-const readsKey = (bodyId: string) => `hazards:${bodyId}`;
 
 function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabProps) {
   const waterBodyId = id as Id<'waterBodies'>;
@@ -72,7 +71,7 @@ function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabPr
   const season: Season = seasonOfLit(lit, current);
   const setSeason = (next: Season) => setLit(winterLit(next, current));
   const { can } = useRole();
-  const { got, retry } = useTabReads(readsKey(id), {
+  const { reads: got, retry } = useConsoleReadSet({
     body: read(api.waterBodies.get, { waterBodyId }),
     hazards: read(api.hazards.listForBody, { waterBodyId, season }),
     withArchived: read(api.hazards.listForBody, { waterBodyId, season, includeArchived: true }),
@@ -112,18 +111,24 @@ function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabPr
   if (body === undefined) {
     return (
       <TabBody aria-busy="true">
+        {/* The tab's note, mounted from the first state, so a failure's words are announced. */}
+        <ReadNote reads={[body]}>This body couldn’t be read</ReadNote>
         <LoadingSection lines={3} />
         <LoadingSection lines={2} />
       </TabBody>
     );
   }
-  if (body instanceof Error) {
-    return <ReadFailed onRetry={retry}>This body couldn’t be read</ReadFailed>;
+  if (isFailed(body)) {
+    return (
+      <TabBody>
+        <ReadNote reads={[body]}>This body couldn’t be read</ReadNote>
+      </TabBody>
+    );
   }
   if (body === null || !body.available) return null;
   const name = body.body.name ?? 'this body';
   const featureTools = can('corpus.preIce');
-  const opened = daily instanceof Error || daily === undefined ? null : daily.watchOpensOn;
+  const opened = isFailed(daily) || daily === undefined ? null : daily.watchOpensOn;
   return (
     <HazardsTabView
       season={season}
@@ -172,21 +177,22 @@ function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabPr
 }
 
 /** A read as the view takes it: mapped when it landed, `'error'` when it failed. */
-function readOf<T, U>(r: T | undefined | Error, map: (value: T) => U): Read<U> {
+function readOf<T, U>(r: Loadable<T>, map: (value: T) => U): Read<U> {
   if (r === undefined) return undefined;
-  if (r instanceof Error) return 'error';
-  return map(r);
+  if (isFailed(r)) return 'error';
+  return map(r as T);
 }
 
 /** The winters, once every strip's read has landed; a failure in either fails the block. */
 function wintersOf(
-  daily: DailyHazards | undefined | Error,
-  lastWinter: DailyHazards | undefined | Error | null,
+  daily: Loadable<DailyHazards>,
+  lastWinter: Loadable<DailyHazards> | null,
   now: number,
 ): Read<Winters> {
-  if (daily instanceof Error || lastWinter instanceof Error) return 'error';
+  if (isFailed(daily) || isFailed(lastWinter)) return 'error';
   if (daily === undefined || lastWinter === undefined) return undefined;
-  return wintersFrom(lastWinter === null ? [daily] : [daily, lastWinter], now) ?? undefined;
+  const d = daily as DailyHazards;
+  return wintersFrom(lastWinter === null ? [d] : [d, lastWinter as DailyHazards], now) ?? undefined;
 }
 
 /** Each feature's row with its glyph, drawn from its own footprint. */
@@ -220,17 +226,14 @@ function useHazardsMapData(bodyId: string, lit: string | null): HazardsMapData |
   const waterBodyId = bodyId as Id<'waterBodies'>;
   const current = seasonOf(useHourClock());
   const season = seasonOfLit(lit, current);
-  const { got } = useTabReads(readsKey(bodyId), {
+  const { reads: got } = useConsoleReadSet({
     hazards: read(api.hazards.listForBody, { waterBodyId, season }),
     features: read(api.bodyFeatures.listForBody, { waterBodyId }),
   });
   const { hazards, features } = got;
   return useMemo(
     () =>
-      hazards === undefined ||
-      features === undefined ||
-      hazards instanceof Error ||
-      features instanceof Error
+      hazards === undefined || features === undefined || isFailed(hazards) || isFailed(features)
         ? undefined
         : { hazards, features, season, current },
     [hazards, features, season, current],

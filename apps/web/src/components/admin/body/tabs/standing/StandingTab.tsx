@@ -6,12 +6,11 @@ import type { FunctionReturnType } from 'convex/server';
 import { useEffect, useMemo, useState } from 'react';
 
 import { errorText } from '@/components/admin/adminUi';
+import { isFailed, read, useConsoleReadSet } from '@/components/admin/reads/consoleReads';
+import { ReadNote } from '@/components/admin/reads/ReadNote';
 import { useUndo } from '@/components/admin/shell/undo';
 import { useRole } from '@/lib/useRole';
-
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
-import { ReadFailed } from '../hazards/kit-candidates/read-failed';
-import { read, TabReadBoundary, useTabReads } from '../hazards/tabReads';
 import { LoadingSection, TabBody } from '../tabParts';
 import { StandingTabView } from './StandingTabView';
 import type { RetentionFacts } from './standingModel';
@@ -28,11 +27,7 @@ import type { RetentionFacts } from './standingModel';
  * retention read on its way holds the lanes' place — never drawn as nothing keeping the body.
  */
 export function StandingTab(props: BodyTabProps) {
-  return (
-    <TabReadBoundary readsKey={`standing:${props.bodyId}`}>
-      <StandingReads {...props} />
-    </TabReadBoundary>
-  );
+  return <StandingReads {...props} />;
 }
 
 type Retention = NonNullable<FunctionReturnType<typeof api.standing.retentionForBody>>;
@@ -57,7 +52,7 @@ const NOT_RECORDED: RetentionFacts = {
 
 function StandingReads({ bodyId: id }: BodyTabProps) {
   const bodyId = id as Id<'waterBodies'>;
-  const { got, retry } = useTabReads(`standing:${bodyId}`, {
+  const { reads: got, retry } = useConsoleReadSet({
     body: read(api.waterBodies.get, { waterBodyId: bodyId }),
     retention: read(api.standing.retentionForBody, { waterBodyId: bodyId }),
   });
@@ -72,7 +67,7 @@ function StandingReads({ bodyId: id }: BodyTabProps) {
     () =>
       retentionRead === undefined
         ? undefined
-        : retentionRead instanceof Error
+        : isFailed(retentionRead)
           ? ('error' as const)
           : retentionRead === null
             ? // No such body on the server: every fact is not recorded, never zero.
@@ -85,13 +80,19 @@ function StandingReads({ bodyId: id }: BodyTabProps) {
   if (result === undefined) {
     return (
       <TabBody aria-busy="true">
+        {/* The tab's note, mounted from the first state, so a failure's words are announced. */}
+        <ReadNote reads={[result]}>This body couldn’t be read</ReadNote>
         <LoadingSection lines={4} />
         <LoadingSection lines={3} />
       </TabBody>
     );
   }
-  if (result instanceof Error) {
-    return <ReadFailed onRetry={retry}>This body couldn’t be read</ReadFailed>;
+  if (isFailed(result)) {
+    return (
+      <TabBody>
+        <ReadNote reads={[result]}>This body couldn’t be read</ReadNote>
+      </TabBody>
+    );
   }
   if (result === null || !result.available) {
     return (

@@ -36,7 +36,7 @@ vi.mock('@/components/admin/shell/undo', () => ({ useUndo: () => undo }));
 import type { Id } from '@skating/convex/dataModel';
 import { ConvexError } from 'convex/values';
 
-import { resetReadPauses } from '../hazards/tabReads';
+import { resetConsoleReads } from '@/components/admin/reads/consoleReads';
 import { STANDING_TAB, StandingTab } from './StandingTab';
 
 const BODY = 'k1' as Id<'waterBodies'>;
@@ -44,7 +44,7 @@ const BODY = 'k1' as Id<'waterBodies'>;
 beforeAll(stubJsdomAnimations);
 
 beforeEach(() => {
-  resetReadPauses();
+  resetConsoleReads();
   convex.results.clear();
   convex.mutations.clear();
   undo.announce.mockClear();

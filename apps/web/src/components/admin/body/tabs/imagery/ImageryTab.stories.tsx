@@ -4,10 +4,10 @@ import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { computedColor, sameColor } from '@/components/kit/measure';
 import { faceLoaded, must } from '@/components/kit/storyKit';
+import { UNAVAILABLE } from '@/components/kit/unavailable-button';
 import { ThemePair } from '../../../../../../.storybook/theme';
-
 import { ImageryDockView } from './ImageryDockView';
-import { ImageryTabView, type ImageryTabViewProps, UNAVAILABLE } from './ImageryTabView';
+import { ImageryTabView, type ImageryTabViewProps } from './ImageryTabView';
 import { granuleOf, MASCOMA_PASSES, MASCOMA_SATELLITE, SEASON } from './imageryFixtures';
 import { selectedPass } from './imageryModel';
 

@@ -17,6 +17,7 @@ import {
 import { Badge } from '@/components/kit/badge';
 import { Button } from '@/components/kit/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/kit/collapsible';
+import { DayStrips } from '@/components/kit/day-strips';
 import {
   DropdownMenu,
   DropdownMenuCaret,
@@ -26,11 +27,16 @@ import {
 } from '@/components/kit/dropdown-menu';
 import { Kbd } from '@/components/kit/kbd';
 import { Note } from '@/components/kit/note';
+import { RetryNote } from '@/components/kit/retry-note';
 import { Section } from '@/components/kit/section-slug';
 import { SkeletonBlock } from '@/components/kit/skeleton';
 import { ToggleGroup, ToggleGroupItem } from '@/components/kit/toggle-group';
 import { Toolbar, ToolbarButton } from '@/components/kit/toolbar';
-import { sayUnavailable, UnavailableButton } from '@/components/kit/unavailable-button';
+import {
+  sayUnavailable,
+  UNAVAILABLE,
+  UnavailableButton,
+} from '@/components/kit/unavailable-button';
 import { usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
 import { LoadingSection } from '../tabParts';
@@ -48,8 +54,6 @@ import {
   type Winters,
 } from './hazardsModel';
 import { HAZARDS_WORDS, VOTE_WORDS, wordsContext } from './hazardsWords';
-import { ReadFailed } from './kit-candidates/read-failed';
-import { UncertainDayStrips } from './kit-candidates/uncertain-day-strips';
 
 /**
  * Board 5.4.7, Body › Hazards, the default view: the winters as a bar over the tab, this winter's
@@ -78,7 +82,6 @@ export type FeatureRowWithGlyph = FeatureRow & {
 export type Read<T> = T | undefined | 'error';
 
 /** A tool whose writer isn't built: drawn, and saying *Not available yet*. */
-export const UNAVAILABLE = 'unavailable';
 
 export type HazardsTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
   season: Season;
@@ -215,9 +218,9 @@ export function HazardsTabView({
         {hazards === undefined ? (
           <LoadingSection lines={3} />
         ) : hazards === 'error' ? (
-          <ReadFailed data-slot="hazards-failed" onRetry={onRetry}>
+          <RetryNote data-slot="hazards-failed" onRetry={onRetry}>
             The hazards on the lake couldn’t be read
-          </ReadFailed>
+          </RetryNote>
         ) : listed ? (
           <>
             {strips}
@@ -295,7 +298,7 @@ export function HazardsTabView({
           {patternsWaiting === undefined ? (
             <LoadingSection lines={1} />
           ) : patternsWaiting === 'error' ? (
-            <ReadFailed onRetry={onRetry}>The pre-ice pass couldn’t be read</ReadFailed>
+            <RetryNote onRetry={onRetry}>The pre-ice pass couldn’t be read</RetryNote>
           ) : (
             <p className="m-0 text-row leading-(--lead-list) text-fg1">
               {HAZARDS_WORDS.patternsLine(
@@ -358,9 +361,9 @@ function QuietWinter({
   if (archived === 'error') {
     return (
       <>
-        <ReadFailed data-slot="archived-failed" onRetry={onRetry}>
+        <RetryNote data-slot="archived-failed" onRetry={onRetry}>
           The archived hazards couldn’t be read
-        </ReadFailed>
+        </RetryNote>
         {strips}
       </>
     );
@@ -420,9 +423,9 @@ function WinterBlock({
   }
   if (winters === 'error') {
     return (
-      <ReadFailed data-slot="hazards-winters-failed" onRetry={onRetry}>
+      <RetryNote data-slot="hazards-winters-failed" onRetry={onRetry}>
         The winter’s day-by-day count couldn’t be read
-      </ReadFailed>
+      </RetryNote>
     );
   }
   const lines = alone ? winters.lines.slice(0, 1) : winters.lines;
@@ -432,7 +435,7 @@ function WinterBlock({
   const notes = lines.flatMap((line) => lineNotes(line, many));
   return (
     <div data-slot="hazards-winters" className="flex flex-col gap-(--space-2_5)">
-      <UncertainDayStrips
+      <DayStrips
         strips={lines.map((line, k) => ({
           key: String(line.season),
           label: seasonWord(line.season),
@@ -663,9 +666,9 @@ function ArchivedList({
   if (rows === undefined) return <LoadingSection lines={2} />;
   if (rows === 'error') {
     return (
-      <ReadFailed data-slot="archived-failed" onRetry={onRetry}>
+      <RetryNote data-slot="archived-failed" onRetry={onRetry}>
         The archived hazards couldn’t be read
-      </ReadFailed>
+      </RetryNote>
     );
   }
   if (rows.length === 0) return null;
@@ -710,9 +713,9 @@ function FeatureList({
   if (features === undefined) return <LoadingSection lines={2} />;
   if (features === 'error') {
     return (
-      <ReadFailed data-slot="features-failed" onRetry={onRetry}>
+      <RetryNote data-slot="features-failed" onRetry={onRetry}>
         The known features couldn’t be read
-      </ReadFailed>
+      </RetryNote>
     );
   }
   if (features.length === 0) return null;

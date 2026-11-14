@@ -4,8 +4,9 @@ import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { computedColor, sameColor } from '@/components/kit/measure';
 import { faceLoaded, must } from '@/components/kit/storyKit';
+import { UNAVAILABLE } from '@/components/kit/unavailable-button';
 import { ThemePair } from '../../../../../../.storybook/theme';
-import { HazardsTabView, type HazardsTabViewProps, UNAVAILABLE } from './HazardsTabView';
+import { HazardsTabView, type HazardsTabViewProps } from './HazardsTabView';
 import {
   dailyFrom,
   FEB_ARCHIVED,

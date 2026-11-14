@@ -5,17 +5,22 @@ import { useMutation } from 'convex/react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { errorText } from '@/components/admin/adminUi';
+import {
+  isFailed,
+  read,
+  useConsoleReadSet,
+  useExternalRead,
+} from '@/components/admin/reads/consoleReads';
+import { ReadNote } from '@/components/admin/reads/ReadNote';
 import { useUndo } from '@/components/admin/shell/undo';
+import { UNAVAILABLE } from '@/components/kit/unavailable-button';
 import { useFreezeUpTimeline } from '@/components/useFreezeUpTimeline';
 import { env } from '@/lib/env';
 import { useRole } from '@/lib/useRole';
-
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
-import { ReadFailed } from '../hazards/kit-candidates/read-failed';
-import { read, TabReadBoundary, useTabReads } from '../hazards/tabReads';
 import { LoadingSection, TabBody } from '../tabParts';
 import { ImageryDockView } from './ImageryDockView';
-import { ImageryTabView, UNAVAILABLE } from './ImageryTabView';
+import { ImageryTabView } from './ImageryTabView';
 import { type ImageryMapData, imageryMapScene } from './imageryMap';
 import {
   type PassRow,
@@ -51,22 +56,27 @@ import {
 
 /** The body and the season's passes in the lit address's band. */
 function usePasses(bodyId: string, lit: string | null | undefined) {
-  const { got, retry, live } = useTabReads(`imagery:${bodyId}`, {
+  const { reads: got, retry } = useConsoleReadSet({
     body: read(api.waterBodies.get, { waterBodyId: bodyId as Id<'waterBodies'> }),
   });
   const result = got.body;
   const body =
-    result !== undefined && !(result instanceof Error) && result?.available === true
-      ? result.body
-      : null;
+    result !== undefined && !isFailed(result) && result?.available === true ? result.body : null;
   const { band } = parsePassAddress(lit);
-  // A retry's paused commit lets go of the archive too, so it is asked again.
-  const timeline = useFreezeUpTimeline({ body, band, enabled: body !== null && live });
+  // The archive is read outside Convex, in the same registry: Try again lets go of it for a
+  // commit (`live` false), so it is asked again.
+  const archive = useExternalRead(`imagery-archive:${bodyId}`);
+  const timeline = useFreezeUpTimeline({ body, band, enabled: body !== null && archive.live });
   const rows: PassRow[] | undefined = useMemo(
     () => (timeline.timeline === null ? undefined : passRows(timeline.timeline.stops)),
     [timeline.timeline],
   );
-  return { result, body, band, rows, timeline, retry };
+  // Try again re-runs the failed body read and lets go of the archive.
+  const tryAgain = () => {
+    retry();
+    archive.retry();
+  };
+  return { result, body, band, rows, timeline, retry: tryAgain };
 }
 
 /** The lit address, the frame's or the tab's own. */
@@ -79,11 +89,7 @@ function useLit({ lit, onLitChange }: BodyTabProps) {
 
 /** The inspector: the lit pass's card, the passes, the satellite link. */
 export function ImageryTab(props: BodyTabProps) {
-  return (
-    <TabReadBoundary readsKey={`imagery:${props.bodyId}`}>
-      <ImageryReads {...props} />
-    </TabReadBoundary>
-  );
+  return <ImageryReads {...props} />;
 }
 
 function ImageryReads(props: BodyTabProps) {
@@ -98,13 +104,19 @@ function ImageryReads(props: BodyTabProps) {
   if (result === undefined) {
     return (
       <TabBody aria-busy="true">
+        {/* The tab's note, mounted from the first state, so a failure's words are announced. */}
+        <ReadNote reads={[result]}>This body couldn’t be read</ReadNote>
         <LoadingSection lines={4} />
         <LoadingSection lines={3} />
       </TabBody>
     );
   }
-  if (result instanceof Error) {
-    return <ReadFailed onRetry={retry}>This body couldn’t be read</ReadFailed>;
+  if (isFailed(result)) {
+    return (
+      <TabBody>
+        <ReadNote reads={[result]}>This body couldn’t be read</ReadNote>
+      </TabBody>
+    );
   }
   if (body === null) return null;
   const coord = linkCoordinate(body);

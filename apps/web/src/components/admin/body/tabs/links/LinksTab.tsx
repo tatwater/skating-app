@@ -4,12 +4,11 @@ import { useMutation } from 'convex/react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { errorText } from '@/components/admin/adminUi';
+import { isFailed, read, useConsoleReadSet } from '@/components/admin/reads/consoleReads';
+import { ReadNote } from '@/components/admin/reads/ReadNote';
 import { useUndo } from '@/components/admin/shell/undo';
 import { useRole } from '@/lib/useRole';
-
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
-import { ReadFailed } from '../hazards/kit-candidates/read-failed';
-import { read, TabReadBoundary, useTabReads } from '../hazards/tabReads';
 import { LoadingSection, TabBody } from '../tabParts';
 import { LinksTabView } from './LinksTabView';
 import { linksMapScene } from './linksMap';
@@ -26,23 +25,19 @@ import { linksMapScene } from './linksMap';
  * failure says so with *Try again*.
  */
 export function LinksTab(props: BodyTabProps) {
-  return (
-    <TabReadBoundary readsKey={`links:${props.bodyId}`}>
-      <LinksReads {...props} />
-    </TabReadBoundary>
-  );
+  return <LinksReads {...props} />;
 }
 
 /** The body, for the tab and its map: one key, so Try again re-reads it for both. */
 function useBody(bodyId: string) {
-  return useTabReads(`links:${bodyId}`, {
+  return useConsoleReadSet({
     body: read(api.waterBodies.get, { waterBodyId: bodyId as Id<'waterBodies'> }),
   });
 }
 
 function LinksReads({ bodyId: id }: BodyTabProps) {
   const bodyId = id as Id<'waterBodies'>;
-  const { got, retry } = useBody(bodyId);
+  const { reads: got } = useBody(bodyId);
   const result = got.body;
   const setLinks = useMutation(api.waterBodies.setReferenceLinks);
   const { can } = useRole();
@@ -52,13 +47,19 @@ function LinksReads({ bodyId: id }: BodyTabProps) {
   if (result === undefined) {
     return (
       <TabBody aria-busy="true">
+        {/* The tab's note, mounted from the first state, so a failure's words are announced. */}
+        <ReadNote reads={[result]}>This body couldn’t be read</ReadNote>
         <LoadingSection lines={3} />
         <LoadingSection lines={2} />
       </TabBody>
     );
   }
-  if (result instanceof Error) {
-    return <ReadFailed onRetry={retry}>This body couldn’t be read</ReadFailed>;
+  if (isFailed(result)) {
+    return (
+      <TabBody>
+        <ReadNote reads={[result]}>This body couldn’t be read</ReadNote>
+      </TabBody>
+    );
   }
   if (result === null || !result.available) return null;
   return (
@@ -89,10 +90,10 @@ type LinksMapData = { body: Parameters<typeof linksMapScene>[0] };
  * failed or missing read draws nothing of its own.
  */
 function useLinksMapData(bodyId: string): LinksMapData | undefined {
-  const result = useBody(bodyId).got.body;
+  const result = useBody(bodyId).reads.body;
   return useMemo(
     () =>
-      result === undefined || result instanceof Error
+      result === undefined || isFailed(result)
         ? undefined
         : { body: result?.available === true ? result.body : null },
     [result],

@@ -2,8 +2,9 @@ import { act, cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import fc from 'fast-check';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { UNAVAILABLE } from '@/components/kit/unavailable-button';
 import { stubJsdomAnimations } from '../jsdomStubs';
-import { HazardsTabView, type HazardsTabViewProps, UNAVAILABLE } from './HazardsTabView';
+import { HazardsTabView, type HazardsTabViewProps } from './HazardsTabView';
 import {
   BODY_NOW,
   FEB_ARCHIVED,

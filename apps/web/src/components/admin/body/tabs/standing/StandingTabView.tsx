@@ -13,6 +13,7 @@ import { Input, InputGroup, InputGroupKbd } from '@/components/kit/input';
 import { Kbd } from '@/components/kit/kbd';
 import { LaneTimeline } from '@/components/kit/lane-timeline';
 import { RadioGroup, RadioRow } from '@/components/kit/radio';
+import { RetryNote } from '@/components/kit/retry-note';
 import { Section } from '@/components/kit/section-slug';
 import {
   Select,
@@ -22,7 +23,6 @@ import {
   SelectValue,
 } from '@/components/kit/select';
 import { cn } from '@/lib/utils';
-import { ReadFailed } from '../hazards/kit-candidates/read-failed';
 import { LoadingSection } from '../tabParts';
 import { type RetentionFacts, retentionModel } from './standingModel';
 
@@ -214,7 +214,7 @@ export function StandingTabView({
           </Section>
         ) : retention === 'error' ? (
           <Section title="What keeps it active" data-slot="standing-retention">
-            <ReadFailed onRetry={onRetry}>What keeps it active couldn’t be read</ReadFailed>
+            <RetryNote onRetry={onRetry}>What keeps it active couldn’t be read</RetryNote>
           </Section>
         ) : (
           <Retention facts={retention} now={now} />
