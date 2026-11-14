@@ -1,4 +1,7 @@
+import * as Sentry from '@sentry/tanstackstart-react';
 import { Component, type ReactNode } from 'react';
+
+import { isConfigured } from '@/lib/env';
 
 type ReadBoundaryProps = {
   /** The place the read is for: a new one (another lane, a search, a filter) tries again. */
@@ -11,6 +14,10 @@ type ReadBoundaryProps = {
 /**
  * Catches a failed read below it and draws `fallback` in its place. Convex's paginated hook throws a
  * failed page into React; this is where the Bodies list takes it back and says so in the list.
+ *
+ * Whatever it catches still goes to Sentry (only with a DSN), as every crash boundary's does: it
+ * catches anything thrown below it, not only a read, so a bug drawn as *Couldn't read this list* is
+ * never a bug nobody hears about.
  */
 export class ReadBoundary extends Component<
   ReadBoundaryProps,
@@ -30,6 +37,10 @@ export class ReadBoundary extends Component<
     state: { failed: boolean; resetKey: string },
   ): { failed: false; resetKey: string } | null {
     return props.resetKey !== state.resetKey ? { failed: false, resetKey: props.resetKey } : null;
+  }
+
+  override componentDidCatch(error: unknown): void {
+    if (isConfigured.sentry) Sentry.captureException(error);
   }
 
   override render(): ReactNode {

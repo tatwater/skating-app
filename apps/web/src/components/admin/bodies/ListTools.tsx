@@ -11,6 +11,7 @@ import { Kbd } from '@/components/kit/kbd';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/kit/popover';
 import { ToggleGroup, ToggleGroupItem } from '@/components/kit/toggle-group';
 import type { BodiesListData } from './bodiesData';
+import { isSearch } from './bodiesSearch';
 import {
   type AppliedOption,
   appliedOptions,
@@ -89,7 +90,7 @@ export function ListTools({
           q={q}
           onSearch={onSearch}
           disabled={!list.serves.search}
-          tally={q.trim() === '' ? null : searchTally(list, lane.word)}
+          tally={isSearch(q) ? searchTally(list, lane.word) : null}
           inputRef={searchRef}
         />
       </div>

@@ -22,8 +22,8 @@ import type {
   PreviewCount,
 } from './bodiesData';
 import type { BodyRow, BodySort } from './bodiesModel';
-import type { BodiesQuery } from './bodiesSearch';
-import { FACET_IDS, type FacetCounts } from './bodyFacets';
+import { type BodiesQuery, isSearch } from './bodiesSearch';
+import { FACET_IDS } from './bodyFacets';
 import type { BodyLane } from './bodyLanes';
 
 /**
@@ -82,7 +82,10 @@ export function listArgsOf(query: BodiesQuery, now: number): ListArgs | null {
   const lane = libraryLaneOf(query.lane);
   if (lane === null) return null;
   const q = query.q.trim();
-  const sort = sortArg(query.sort);
+  const searching = isSearch(q);
+  // A search too short for the server to run ranks nothing: the lane in its own order, not the
+  // match's (which the server would answer by name).
+  const sort = sortArg(searching || query.sort.column !== 'match' ? query.sort : query.lane.sort);
   const facets = Object.fromEntries(
     FACET_IDS.flatMap((id) => {
       const chosen = query.facets[id];
@@ -92,6 +95,7 @@ export function listArgsOf(query: BodiesQuery, now: number): ListArgs | null {
   return {
     lane,
     ...(query.state !== null && { state: query.state }),
+    // The search as the URL holds it: the server trims, bounds and ignores a short one itself.
     ...(q !== '' && { q }),
     ...(Object.keys(facets).length > 0 && { facets }),
     ...(sort !== undefined && { sort }),
@@ -194,11 +198,6 @@ export function laneCountsFrom(
     out[lane.id] = server === null ? null : (summary?.laneCounts[server] ?? null);
   }
   return out;
-}
-
-/** What `FacetCounts` the menu shows: the summary's, exactly as given. */
-export function facetCountsOf(summary: ListSummary | undefined): FacetCounts | null {
-  return summary?.facetCounts ?? null;
 }
 
 // ── The preview ──────────────────────────────────────────────────────────────────────────────

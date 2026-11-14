@@ -1,5 +1,6 @@
 import {
   COMPLETENESS_FIELDS,
+  LIBRARY_FACET_IDS,
   LIBRARY_FACETS,
   type LibraryFacet,
   type LibraryFacetSelection,
@@ -35,16 +36,9 @@ export interface Facet {
   options: readonly FacetOption[];
 }
 
-export const FACET_IDS = [
-  'class',
-  'size',
-  'outline',
-  'putins',
-  'reports',
-  'complete',
-  'curation',
-] as const satisfies readonly LibraryFacet[];
-export type FacetId = (typeof FACET_IDS)[number];
+/** Core's facets, in the menu's order — a facet core adds is one the page must word (`FACETS`). */
+export const FACET_IDS: readonly LibraryFacet[] = LIBRARY_FACET_IDS;
+export type FacetId = LibraryFacet;
 
 /** What is chosen: option ids per facet. A facet that isn't here doesn't narrow. */
 export type FacetSelection = LibraryFacetSelection;

@@ -38,8 +38,11 @@ import { ReadBoundary } from './ReadBoundary';
  *   the remembered scroll lands where it was. A failed page is the list's own error state.
  * - **The counts** are `bodies.listSummary`. The lanes' counts are held through a change of place
  *   (they don't move with a filter); the list's total and the facet counts are only ever this
- *   query's, so a count is never a stale one.
- * - **The preview** reads the open body and its facts; each read that fails says so in its block.
+ *   query's, so a count is never a stale one. A lane no server read lists (Opened recently) reads
+ *   All's summary for them, so the rail is counted whichever lane the page opens on.
+ * - **The preview** reads the open body and its facts; the body, its facts and its history each say
+ *   so in their block when their read fails. A failed put-ins or bays read is drawn as not recorded
+ *   (no dots, no figure), never as a zero.
  *
  * The list and its counts are read against the **list's clock**: the minute the list was opened,
  * held while it stays open, so a new minute never restarts the paging. Every read waits on
@@ -71,7 +74,8 @@ export function BodiesRoute({ bodyPath = BODY_CONSOLE_PATH }: BodiesRouteProps) 
   const listNow = useClockFor(key);
   const canRead = can('body.read');
   const args = canRead ? listArgsOf(query, listNow) : null;
-  const summary = useSummary(args);
+  // A lane no server read lists (Opened recently) still counts the others: All's summary.
+  const summary = useSummary(canRead ? (args ?? { lane: 'all', now: listNow }) : null);
   const preview = usePreview(query.bodyId, canRead, can('audit.read'));
 
   const go = (next: BodiesQuery, how?: { replace?: boolean }) =>
@@ -144,12 +148,13 @@ function PagedList({
   useEffect(() => {
     if (results.length > 0) shownMemory.set(memoryKey, results.length);
   }, [memoryKey, results.length]);
-  const list = listFrom({
-    rows: results,
-    status,
-    current: summary.current,
-    held: summary.laneHeld,
-  });
+  // Rows keep their identity between renders (a minute's tick, a row selected), so the table
+  // rebuilds its model only when a page or the summary lands.
+  const { current, laneHeld } = summary;
+  const list = useMemo(
+    () => listFrom({ rows: results, status, current, held: laneHeld }),
+    [results, status, current, laneHeld],
+  );
   return <BodiesView {...view} list={list} onLoadMore={() => loadMore(LIBRARY_PAGE_SIZE)} />;
 }
 

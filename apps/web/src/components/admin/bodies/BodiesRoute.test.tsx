@@ -291,6 +291,16 @@ describe('the list', () => {
 });
 
 describe('the counts', () => {
+  it('still count every lane on one no server read lists, from All’s summary', () => {
+    mocks.search = { lane: 'opened' };
+    mount();
+    expect(mocks.calls.get(name(api.bodies.listSummary))).toEqual({
+      lane: 'all',
+      now: expect.any(Number),
+    });
+    expect(within(lanes()).getByRole('button', { name: /^Active/ })).toHaveTextContent('1,412');
+  });
+
   it('count every lane, the capped Changed count in its capped style', () => {
     mount();
     expect(within(lanes()).getByRole('button', { name: /^Changed this week/ })).toHaveTextContent(
@@ -320,6 +330,31 @@ describe('the counts', () => {
     // Class isn't counted with a size applied: no number — never a zero, never the last one.
     const bay = within(menu).getByRole('button', { name: /^Bay/ });
     expect(bay.querySelector('[data-slot=facet-menu-count]')).toBeNull();
+  });
+
+  it('shows no reports count while the season turns — no total, no option numbers, never a zero', async () => {
+    mocks.search = { reports: 'season' };
+    const { reports: _turning, ...others } = { ...SUMMARY.facetCounts, reports: undefined };
+    mocks.results.set(name(api.bodies.listSummary), {
+      ...SUMMARY,
+      total: null,
+      facetCounts: others,
+    });
+    mount();
+    // The chip says what the URL says; the kicker carries no number.
+    expect(
+      screen.getByText('Reported this season', { selector: '[data-slot=bodies-kicker]' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/ of 1,412 active/)).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: /Filter/ }));
+    const menu = await screen.findByRole('dialog', { name: 'Filter' });
+    for (const label of [/^Reported this season/, /^Never reported/]) {
+      expect(
+        within(menu)
+          .getByRole('button', { name: label })
+          .querySelector('[data-slot=facet-menu-count]'),
+      ).toBeNull();
+    }
   });
 
   it('never shows a stale count while this query’s summary is on its way', async () => {

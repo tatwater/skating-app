@@ -41,6 +41,7 @@ import {
   STANDING_LABEL,
   statesText,
 } from './bodiesModel';
+import { isSearch } from './bodiesSearch';
 import { type BodyLane, laneStanding } from './bodyLanes';
 
 /**
@@ -213,7 +214,8 @@ export function BodiesTable({
   // model is built once per lane, not once per keystroke.
   const ctx = useRef<CellCtx>({ q, now, showStanding: () => false });
   ctx.current = {
-    q,
+    // A search too short to run marks nothing: the rows aren't its matches.
+    q: isSearch(q) ? q : '',
     now,
     showStanding: (row) => lane.showStanding || row.standing !== laneStanding(lane),
   };
@@ -526,7 +528,7 @@ function ListFoot({ list, rows, q }: { list: BodiesListData; rows: number; q: st
       case 'fetching':
         return 'Loading more';
       case 'done':
-        if (rows === 0) return q.trim() !== '' ? `Nothing matches “${q.trim()}”` : 'None here';
+        if (rows === 0) return isSearch(q) ? `Nothing matches “${q.trim()}”` : 'None here';
         return `All ${list.total !== null ? countText(list.total) : rows.toLocaleString('en-US')}`;
     }
   })();

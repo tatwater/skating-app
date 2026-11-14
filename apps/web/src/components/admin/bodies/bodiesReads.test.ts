@@ -104,6 +104,22 @@ describe('the list read’s arguments', () => {
     expect(listArgsOf(queryOf({ q: 'mor' }), NOW)).toEqual({ lane: 'active', q: 'mor', now: NOW });
   });
 
+  it('leave a short search to the server, and keep the lane’s own order for it', () => {
+    expect(listArgsOf(queryOf({ q: 'm' }), NOW)).toEqual({
+      lane: 'active',
+      q: 'm',
+      sort: { column: 'reports', dir: 'desc' },
+      now: NOW,
+    });
+    // A heading pressed during a short search is still that heading's order.
+    expect(listArgsOf(queryOf({ q: 'm', sort: 'name' }), NOW)).toEqual({
+      lane: 'active',
+      q: 'm',
+      sort: { column: 'name', dir: 'asc' },
+      now: NOW,
+    });
+  });
+
   it('are none for a lane no server read lists', () => {
     expect(listArgsOf(queryOf({ lane: 'opened' }), NOW)).toBeNull();
     expect(libraryLaneOf(BODY_LANES[0] as (typeof BODY_LANES)[number])).toBeNull();
