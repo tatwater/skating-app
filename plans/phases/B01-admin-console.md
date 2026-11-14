@@ -1646,9 +1646,10 @@ below are at the 12 MiB budget; *R* 1 MiB, *V* 8 KiB, *C* 16 KiB, *F* a flag (*R
 | `authorDeletions.stampWithdrawal` members | b | members until the budget ends | member R + stamp R | Post R + 5 members |
 | `authorDeletions.backfillCommentDeletions` | a | ≤ 200 comments | C (a match hands off, no more reads) | ≤ 3.2 MiB |
 | `authorDeletions.commentLastWord` | a | ≤ 11 rows, the stamp kept back | R | ≤ 12 MiB |
-| `erasure.eraseDue` | b, each item nested | one item at a time while `PASS_NEED` fits (the due row, the item's `ITEM_NEED`, a failure's record; ≤ 11 MiB + 80 KiB for a Report) | the due row R; the item in `eraseOne` (its hold, its eraser's fixed reads, one drained row, its uploader's queue row); a failure: the item's row touched | ≤ 12 MiB |
+| `erasure.eraseDue` | b, each item nested | one item at a time while `PASS_NEED` fits (the due row, the item's `ITEM_NEED`, a failure's record; ≤ 11 MiB + 80 KiB for a Report) | the due row R; the item in `eraseOne` (its hold, its eraser's fixed reads, one drained row, its uploader's queue row); a failure: the item's row touched | ≤ 12 MiB; a pass that stops part-way on an item carrying a failure count clears it inside the eraser's unspent `TAIL` |
 | `erasure.settleStep` reports | a | 11 Reports, its place kept back | R | ≤ 12 MiB |
 | `erasure.settleOwed` (each sweep run's end, and its own hourly cron) | b, each step nested | turns while a turn fits (its place, a step's least `MIN_STEP`, a failure's record) | a place 64 KiB; the step gets the rest of the budget and spends what it charges; a failure: the place touched | ≤ 12 MiB |
+| `erasure.retryParkedDaily` (its own daily cron) | b, each nested | up to `DAILY_RETRIES` parked settlements, then of each kind, oldest tried first, each while a turn or a `PASS_NEED` fits | as the hourly walks: a place, a step, a failure's record; a due row, `ITEM_NEED`, and either the failure's record or the un-park write (never both) | ≤ 12 MiB |
 | `erasure.settleStep` take | a | ≤ 16 debts (≤ 500 ids carried) | 64 KiB | ≤ 1.2 MiB |
 | `erasure.settleStep` clear | b | debts while one fits | 64 KiB + delete 64 KiB | ≤ 12 MiB |
 | `erasure.settleStep` hazards + deletes | a then b | 9 hazards, one photo kept back; photos while one fits | R; a photo R + access check V + delete R | ≤ 12 MiB |
@@ -1662,25 +1663,47 @@ holds this line.** A static check could insist page sizes go through `sizePage`,
 `work` that understates a branch, and only running the branch shows that. `ReadBudget.row` is that
 check, at runtime, on every branch a test reaches.
 
-**B01-1b: one failing item never starves the rest (2026-11-14, after Greptile's fifth round on #110).**
-Greptile found the settlement could starve: it claimed an uploader's debts by re-stamping the six it
-took, so an uploader with seven older debts whose settlement kept failing was chosen again through
-the seventh, every time. The property now held by construction, for both recurring jobs: **one item
-failing — any pass, any reason, every time — never stops, delays past the run, or reorders anyone
-else's.** Each item's work is its own nested transaction (`eraseOne` for a due item, `settleStep` for
-a step of an uploader's settlement), so a failure rolls back only that item; the walk records the
-attempt and the error's class (never its message) and goes on in the same run; after three the item
-is **parked** — out of the due range (an item) or skipped by the walk (an uploader), counted and
-listed in `erasure.parked` (`machinery.read`), released only by `erasure.retryParked`. Parking never
-clears a debt, deletes a photo or erases anything. Where the state lives: **on the item's own row**
-for the sweep (`eraseAttempts`, `eraseErrorClass`, `eraseParkedAt` on each erasable table, with
-`by_erase_parked`) — the item already carries its clock, the sweep already reads the row, and the
-state goes when the item does; and **one row per owed uploader** for the settlement
-(`photoSettlementQueue`) — the settlement succeeds or fails per uploader, an uploader has no row of
-their own to carry it, and the same row holds the settlement's position, so a run that dies resumes
-where it was. A new debt does not release a parked uploader: what fails is reading their history,
-which a new debt does not change. Fast-check properties hold both walks over any mix with any
-subset always failing (`erasure.test.ts`, "fairness under failure, under any mix").
+**B01-1b: one failing item never starves the rest (2026-11-14, after Greptile's fifth and sixth rounds on #110).**
+Greptile found the settlement could starve (a claim by re-stamping six debts let an uploader with
+seven, whose settlement kept failing, be chosen again every time), then that a large item's failures
+counted though progress came between them. The property now held by construction, for both
+recurring jobs: **one item failing — any pass, any reason, every time — never stops, delays past the
+run, or reorders anyone else's.** Each item's work is its own nested transaction (`eraseOne` for a
+due item, `settleStep` for a step of an uploader's settlement), so a failure rolls back only that
+item; the walk records it and goes on.
+
+**Parking is one rule, read by both walks** (`lib/attempts`, a fast-check state machine):
+- **Only a failure counts**, with the error's class (never its message). Three failures in a row park
+  it: out of the due range (an item) or skipped by the walk (an uploader).
+- **Progress clears the count, the class and any parking.** For the sweep, progress is an item erased,
+  or anything it carries erased or unlinked in a pass that stops part-way; for the settlement, any step
+  that goes through (taking debts on, a page further, a photo settled, a debt cleared). The clearing
+  write happens only when there is something to clear, so the common path writes nothing, and fits by
+  construction: a part-way stop always leaves the eraser's reserve (`TAIL`, never less than the row)
+  unspent; a settlement step clears in the write it makes anyway.
+- **Held is neither**: an item a verdict or an open flag keeps is not attempted and not written.
+- **One attempt a run.** Each run reads only what is due by the moment it started; a failure moves the
+  item's clock, or the uploader's turn, just past that cutoff — so three failures in a row take three
+  runs, and a healthy settlement (whose turns stay at the cutoff) still finishes in its run.
+- **Parking heals itself.** `erasure.retryParkedDaily` (its own daily cron) tries a few parked
+  settlements and a few parked items of each kind (`DAILY_RETRIES`), least recently tried first, each
+  in its own nested transaction and never in the hourly walks' way. A success un-parks it and the walks
+  carry on with it at once; a failure keeps it parked, re-stamped as just tried — behind every other
+  parked piece next day, so one that never works can't keep another from its turn — and noted as
+  retried. A deployed fix frees what it parked within a day with nobody remembering to;
+  `erasure.retryParked` still releases everything at once. `erasure.parked` (`machinery.read`) lists
+  each with its attempts, class, when last tried and whether the daily retry has run.
+- **Parking never clears a debt, deletes a photo or erases anything.**
+
+Where the state lives: **on the item's own row** for the sweep (`eraseAttempts`, `eraseErrorClass`,
+`eraseParkedAt`, `eraseRetriedAt`, with `by_erase_parked`) — the item already carries its clock, the
+sweep already reads the row, and the state goes when the item does; and **one row per owed uploader**
+for the settlement (`photoSettlementQueue`) — the settlement succeeds or fails per uploader, an
+uploader has no row of their own to carry it, and the same row holds the settlement's position, so a
+run that dies resumes where it was. A new debt does not release a parked uploader: what fails is
+reading their history, which a new debt does not change; the daily retry does. Fast-check properties
+hold both walks over any outcomes across runs, any subset failing (`erasure.test.ts`, "fairness under
+failure, under any mix").
 
 **The other recurring jobs, and whether one poison item can block them** (read, not run; none
 changed here — they are outside D248 and go to the follow-up with the text caps). The one-time,

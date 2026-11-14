@@ -212,8 +212,8 @@ export async function clockOf(
   now: number,
   known: { postHeld?: boolean } = {},
 ): Promise<number | undefined> {
-  // Parked after failing too often: off the clock until `erasure.retryParked` releases it, whatever
-  // its holds do meanwhile — so nothing retries it but that.
+  // Parked after failing too often: off the clock whatever its holds do meanwhile, so only the
+  // daily retry (`erasure.retryParkedDaily`) or a manual release (`erasure.retryParked`) tries it.
   if (doc.eraseParkedAt !== undefined) return undefined;
   const withdrawnAt = withdrawnAtOf(type, doc);
   const held = withdrawnAt !== undefined && (await isHeld(ctx, budget, type, doc, known));
