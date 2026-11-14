@@ -42,8 +42,9 @@ import { type PaginationResult, paginationOptsValidator } from 'convex/server';
 import { v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
-import { townsForBody } from './adminAreas';
 import { requireCapability } from './lib/auth';
+import { resolveSurvivor } from './lib/bodies';
+import { geoFactsOf } from './lib/bodyGeo';
 import { type LibraryRow, openAsksFor, readCount } from './lib/bodyLibrary';
 import { FLAG_REASONS } from './lib/enums';
 import { OPEN_FLAG_STATUSES } from './lib/openFlags';
@@ -472,11 +473,13 @@ export type PreviewAsk =
  */
 export const preview = query({
   args: { waterBodyId: v.id('waterBodies'), now: v.optional(v.number()) },
-  handler: async (ctx, { waterBodyId, now: asked }) => {
+  handler: async (ctx, { waterBodyId: requested, now: asked }) => {
     await requireCapability(ctx, 'body.read');
     const now = callerNow(asked, Date.now(), CLOCK_SLACK_MS);
-    const body = await ctx.db.get(waterBodyId);
+    // A merged-away id reads its survivor, as `waterBodies.get` does.
+    const body = await resolveSurvivor(ctx, requested);
     if (!body) return null;
+    const waterBodyId = body._id;
 
     const reports = await ctx.db
       .query('reports')
@@ -513,7 +516,9 @@ export const preview = query({
     // Every open ask, by the rule the list's row counts them by — beside a list of the newest, so
     // a list shorter than the count says so ("20 of N").
     const openAsks = await openAsksFor(ctx, waterBodyId);
-    const towns = await townsForBody(ctx, body);
+    // The places stored at the write (`lib/bodyGeo.ts`) — no geometry in this read.
+    const geo = await geoFactsOf(ctx, body._id);
+    const towns = geo === null ? [] : (geo.towns ?? []);
 
     return {
       season: {
@@ -535,8 +540,8 @@ export const preview = query({
       askCount: { count: openAsks.count, capped: openAsks.capped },
       /** `asks` is not every open ask: show it as "N of the count". */
       asksListCapped: openAsks.capped || openAsks.count > asks.length,
-      town: towns === null ? null : (towns.towns[0] ?? null),
-      moreTowns: towns === null ? [] : towns.towns.slice(1),
+      town: towns[0] ?? null,
+      moreTowns: towns.slice(1),
       complete:
         row === null ? null : { have: row.completeHave, of: row.completeOf, missing: row.missing },
     };

@@ -4736,6 +4736,45 @@ export default defineSchema({
    * no audit row (the imports, the enrichment loads, the prunes) and by a refresh that failed,
    * drained by the minute cron. One row per body; a moderator's write never waits on it.
    */
+  // ── B01-3b: a body's geometry facts, computed at the write ──
+  /**
+   * **A body's touching bodies and the places it lies in**, computed by the `bodyGeo` jobs (in an
+   * action, where geometry whose cost grows with an outline has room) and stored, so the console's
+   * reads do no geometry. `staleAt` marks a body owed a recompute (its outline, or a neighbor's
+   * relation, moved); `computedAt` absent is "not computed" — the reads say `null`, never "none".
+   * `stamp` is the outline the answer was computed for. The attempt fields are `lib/attempts.ts`'s.
+   */
+  bodyGeoFacts: defineTable({
+    waterBodyId: v.id('waterBodies'),
+    staleAt: v.optional(v.number()),
+    computedAt: v.optional(v.number()),
+    stamp: v.optional(v.string()),
+    /** The touching bodies, each with its name and a simplified outer ring. */
+    neighbors: v.optional(
+      v.array(
+        v.object({
+          waterBodyId: v.id('waterBodies'),
+          name: v.string(),
+          ring: v.array(v.array(v.number())),
+        }),
+      ),
+    ),
+    /** More candidates than were tested, or the box past its tile bound. */
+    neighborsCapped: v.optional(v.boolean()),
+    towns: v.optional(v.array(v.string())),
+    counties: v.optional(v.array(v.string())),
+    states: v.optional(v.array(v.string())),
+    attempts: v.optional(v.number()),
+    errorClass: v.optional(v.string()),
+    parkedAt: v.optional(v.number()),
+    retriedAt: v.optional(v.number()),
+  })
+    .index('by_body', ['waterBodyId'])
+    // The work: unparked bodies owed a recompute, oldest first (`eq(undefined)` then `gt(0)`).
+    .index('by_parked_stale', ['parkedAt', 'staleAt'])
+    // The daily retry: parked bodies, least recently tried first (`gt(0)`).
+    .index('by_parked', ['parkedAt']),
+
   bodyLibraryQueue: defineTable({
     waterBodyId: v.id('waterBodies'),
     queuedAt: v.number(),

@@ -29,9 +29,10 @@ import { ConvexError, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
-import { townsForBody } from './adminAreas';
 import { auditRowsOn } from './lib/auditReads';
 import { requireCapability } from './lib/auth';
+import { resolveSurvivor } from './lib/bodies';
+import { geoFactsOf } from './lib/bodyGeo';
 import { hasContoursFor } from './lib/bodyLibrary';
 import { MODERATION_ACTIONS } from './lib/enums';
 import { landmarksForBody } from './lib/landmarkRows';
@@ -39,7 +40,6 @@ import { QUEUE_CAP } from './lib/requestDecisions';
 import { undoState } from './lib/undo';
 import { literals } from './lib/validators';
 import { subAreasForBody } from './subAreas';
-import { bodiesCoveringBox } from './waterBodies';
 
 /** A person as the console names them; `null` for the machine or an erased account. */
 type PersonView = { userId: Id<'profiles'>; username: string; displayName: string } | null;
@@ -50,77 +50,37 @@ async function personOf(ctx: QueryCtx, id: Id<'profiles'> | undefined): Promise<
   return p ? { userId: p._id, username: p.username, displayName: p.displayName } : null;
 }
 
+/** The body an id names now — a merged one's survivor, as `waterBodies.get` follows it — or throw. */
 async function bodyOrThrow(ctx: QueryCtx, id: Id<'waterBodies'>): Promise<Doc<'waterBodies'>> {
-  const body = await ctx.db.get(id);
+  const body = await resolveSurvivor(ctx, id);
   if (!body) throw new ConvexError('Water body not found');
   return body;
 }
 
+/** The id a body is known by now (a merged one's survivor's), or `null` when the chain dead-ends. */
+async function currentId(ctx: QueryCtx, id: Id<'waterBodies'>): Promise<Id<'waterBodies'> | null> {
+  return (await resolveSurvivor(ctx, id))?._id ?? null;
+}
+
 // ── The frame's extras ───────────────────────────────────────────────────────────────────────
 
-/** Bodies the touching read considers: the most prominent whose box meets this body's. */
-const TOUCH_CANDIDATES = 12;
-/** Two outlines this close count as touching (the stored outlines are simplified to ~5 m). */
-export const TOUCH_METERS = 30;
-/** Outline points of a candidate tested against this body. */
-const TOUCH_SAMPLES = 48;
-/** Above this many vertices, the touching test would cost too much: the read says it didn't run. */
-const TOUCH_MAX_VERTICES = 20_000;
-
-function ringsOf(geom: Polygon | MultiPolygon): number[][][] {
-  return geom.type === 'Polygon'
-    ? [geom.coordinates[0] ?? []]
-    : geom.coordinates.map((p) => p[0] ?? []);
-}
-
-function vertexCount(geom: Polygon | MultiPolygon): number {
-  const polys = geom.type === 'Polygon' ? [geom.coordinates] : geom.coordinates;
-  return polys.reduce((n, p) => n + p.reduce((m, r) => m + r.length, 0), 0);
-}
-
-/** Whether `from`'s outer rings come within {@link TOUCH_METERS} of `to`, by sampled vertices. */
-function samplesNear(from: Polygon | MultiPolygon, to: Polygon | MultiPolygon): boolean {
-  // {@link TOUCH_SAMPLES} across the whole outline, every ring's vertices in one sequence: a
-  // multipolygon of hundreds of parts costs the same as one ring, never a sample budget per part.
-  const points = ringsOf(from).flat();
-  const step = Math.max(1, Math.floor(points.length / TOUCH_SAMPLES));
-  for (let i = 0; i < points.length; i += step) {
-    const p = points[i];
-    if (p === undefined || p.length < 2) continue;
-    const point = { lng: p[0] as number, lat: p[1] as number };
-    if (distanceToPolygonMeters(point, to) <= TOUCH_METERS) return true;
-  }
-  return false;
-}
-
 /**
- * Whether two outlines come within {@link TOUCH_METERS}, sampled **both ways**: a large lake's ring
- * sampled {@link TOUCH_SAMPLES} times is kilometers between samples, so a pond beside it is found
- * only by sampling the pond's ring against the lake. The other's outline is tested whole only below
- * {@link TOUCH_MAX_VERTICES}, the bound the body itself is held to.
- */
-function touches(body: Polygon | MultiPolygon, other: Polygon | MultiPolygon): boolean {
-  if (samplesNear(other, body)) return true;
-  return vertexCount(other) <= TOUCH_MAX_VERTICES && samplesNear(body, other);
-}
-
-/** Degrees of latitude in {@link TOUCH_METERS}, for the box the candidates are read in. */
-const TOUCH_PAD_DEG = TOUCH_METERS / 111_000;
-
-/**
- * **The frame's extras.** `towns` — sampled at the interior point and along the shore (`null` when
- * no boundary contains the body); `hasBathymetry` — contours were drawn for it; `outlineTrustedSince`
- * — when a person last vouched for the outline (a drawn body's approval), else when the import
- * campaign that last re-affirmed it ran, else `null`; `touchingBodyIds` — listed bodies whose
- * outline comes within {@link TOUCH_METERS}, among the {@link TOUCH_CANDIDATES} most prominent whose
- * box meets this one (`null` for an outline too large to test; `capped` when there were more).
+ * **The frame's extras.** `towns` — the places stored for the body (sampled at its interior point and
+ * along its shore by the `bodyGeo` jobs), `null` when not computed yet or no boundary contains it;
+ * `hasBathymetry` — contours were drawn for it; `outlineTrustedSince` — when a person last vouched for
+ * the outline (a drawn body's approval), else when the import campaign that last re-affirmed it ran,
+ * else `null`; `touchingBodyIds` and `touching` — listed bodies whose outline comes within 30 m,
+ * tested among the 12 most prominent whose box meets this one, each with its name and a simplified
+ * ring (`null` while not computed; `touchingCapped` when there were more, or the box ran past its
+ * tile bound); `geoComputedAt` — when those were computed. **No geometry here**: the answers are
+ * stored at the write (`lib/bodyGeo.ts`).
  */
 export const consoleExtras = query({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { waterBodyId }) => {
     await requireCapability(ctx, 'body.read');
     const body = await bodyOrThrow(ctx, waterBodyId);
-    const places = await townsForBody(ctx, body);
+    const geo = await geoFactsOf(ctx, body._id);
     const hasBathymetry = await hasContoursFor(ctx, body);
 
     // A person vouching for the outline: a drawn body approved, the latest wins.
@@ -148,35 +108,32 @@ export const consoleExtras = query({
       }
     }
 
-    const geom = body.polygon as unknown as Polygon | MultiPolygon;
-    let touching: { ids: Id<'waterBodies'>[]; capped: boolean } | null = null;
-    if (vertexCount(geom) <= TOUCH_MAX_VERTICES) {
-      const box = polygonBBox(geom);
-      const padded = {
-        minLat: box.minLat - TOUCH_PAD_DEG,
-        maxLat: box.maxLat + TOUCH_PAD_DEG,
-        minLng: box.minLng - TOUCH_PAD_DEG * 1.5,
-        maxLng: box.maxLng + TOUCH_PAD_DEG * 1.5,
-      };
-      // Already refined to the padded box and to listed bodies, most prominent first.
-      const near = await bodiesCoveringBox(ctx, padded, { limit: TOUCH_CANDIDATES + 1 });
-      const others = [...near.byId.values()].filter((b) => b._id !== waterBodyId);
-      touching = {
-        ids: others
-          .slice(0, TOUCH_CANDIDATES)
-          .filter((b) => touches(geom, b.polygon as unknown as Polygon | MultiPolygon))
-          .map((b) => b._id),
-        capped: near.truncated || others.length > TOUCH_CANDIDATES,
-      };
-    }
+    // A neighbor since gone or merged leaves the list: its library row is the cheap check.
+    const touching =
+      geo === null
+        ? null
+        : await (async () => {
+            const kept = [];
+            for (const n of geo.neighbors ?? []) {
+              const row = await ctx.db
+                .query('bodyLibraryRows')
+                .withIndex('by_body', (q) => q.eq('waterBodyId', n.waterBodyId).eq('scope', '*'))
+                .first();
+              if (row !== null)
+                kept.push({ waterBodyId: n.waterBodyId, name: row.name, ring: n.ring });
+            }
+            return kept;
+          })();
 
     return {
-      towns: places === null ? null : places.towns,
+      towns: geo === null || (geo.towns ?? []).length === 0 ? null : (geo.towns as string[]),
       hasBathymetry,
       outlineTrustedSince,
       outlineTrustedVia,
-      touchingBodyIds: touching === null ? null : touching.ids,
-      touchingCapped: touching?.capped ?? false,
+      touchingBodyIds: touching === null ? null : touching.map((n) => n.waterBodyId),
+      touching,
+      touchingCapped: geo?.neighborsCapped ?? false,
+      geoComputedAt: geo?.computedAt ?? null,
     };
   },
 });
@@ -551,7 +508,16 @@ export const places = query({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { waterBodyId }) => {
     await requireCapability(ctx, 'body.read');
-    return townsForBody(ctx, await bodyOrThrow(ctx, waterBodyId));
+    const geo = await geoFactsOf(ctx, (await bodyOrThrow(ctx, waterBodyId))._id);
+    if (geo === null || ((geo.towns ?? []).length === 0 && (geo.counties ?? []).length === 0)) {
+      return null;
+    }
+    return {
+      towns: geo.towns ?? [],
+      counties: geo.counties ?? [],
+      states: geo.states ?? [],
+      computedAt: geo.computedAt as number,
+    };
   },
 });
 

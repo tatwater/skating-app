@@ -88,6 +88,7 @@ import {
   requireContributor,
   requireProfile,
 } from './lib/auth';
+import { markGeoStale } from './lib/bodyGeo';
 import { queueLibraryRefresh, stampChanged } from './lib/bodyLibrary';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
@@ -682,6 +683,8 @@ export const importCanonical = internalMutation({
         // and identical geodesic area means OSM handed us the same shoreline, and a containment
         // answer that was true a moment ago is still true.
         if (footprintMoved(existing, item)) {
+          // Its touching bodies and places were computed for the old outline (B01-3b).
+          await markGeoStale(ctx, [existing._id]);
           const resynced = await reclipSubAreasToParent(ctx, existing._id, {
             ...existing,
             polygon: item.polygon,
@@ -738,6 +741,7 @@ export const importCanonical = internalMutation({
           listed: true,
         });
         await queueLibraryRefresh(ctx, [id]);
+        await markGeoStale(ctx, [id]);
         inserted++;
       }
     }
@@ -2582,6 +2586,7 @@ export const create = mutation({
     // Bind the skate to the water it discovered, so the report flow can carry straight on.
     await ctx.db.patch(args.activityId, { waterBodyId: id });
     await queueLibraryRefresh(ctx, [id]);
+    await markGeoStale(ctx, [id]);
     return id;
   },
 });
@@ -3316,6 +3321,8 @@ export async function mergeBodyInto(
     // longer belong to it.
     await recomputeBodySummary(ctx, survivorId);
     await recomputeBodySummary(ctx, loserId);
+    // The loser leaves the map: its facts go, and its neighbors' lists drop it (B01-3b).
+    await markGeoStale(ctx, [loserId]);
     // A merge is a moderator's action on the survivor too: its *Changed* moves (the loser leaves the
     // library). On the stamp's one rule, so a deferred or failed refresh above can't lose it.
     if (actorId !== undefined) await stampChanged(ctx, survivorId, Date.now());
@@ -6407,6 +6414,7 @@ export const resolveIncomingMergeDuplicates = internalMutation({
           });
           await ctx.db.delete(loser._id);
           await queueLibraryRefresh(ctx, [loser._id]);
+          await markGeoStale(ctx, [loser._id]);
         }
       }
 
@@ -6519,6 +6527,7 @@ export const resolveCampaignDuplicates = internalMutation({
       });
       await ctx.db.delete(body._id);
       await queueLibraryRefresh(ctx, [body._id]);
+      await markGeoStale(ctx, [body._id]);
     }
 
     return {

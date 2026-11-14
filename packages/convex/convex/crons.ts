@@ -359,4 +359,13 @@ crons.interval('turn the bodies library season', { hours: 1 }, internal.bodyLibr
 /** The drift repair: the oldest-refreshed rows, a few a tick — the corpus about every four days. */
 crons.interval('repair bodies library drift', { minutes: 2 }, internal.bodyLibrary.repairDrift, {});
 
+// ── B01-3b: the geometry facts ──────────────────────────────────────────────────────────────────
+
+/** Recompute the bodies whose touching bodies and places are stale (an action: geometry has room). */
+crons.interval('compute body geometry facts', { minutes: 5 }, internal.bodyGeo.computeDue, {});
+/** The daily retry of parked geometry computations, least recently tried first. */
+crons.interval('retry parked body geometry', { hours: 24 }, internal.bodyGeo.computeDue, {
+  parked: true,
+});
+
 export default crons;

@@ -7,9 +7,11 @@
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { api } from './_generated/api';
+import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { bayViaOf, daysCovered, historyTargets, winterWindow } from './bodyConsole';
+import { markGeoStale } from './lib/bodyGeo';
+import { rebuildBodyLibrary } from './lib/bodyLibrary';
 import { syncAdminAreaCells, syncWaterBodyCells } from './lib/cellIndex';
 import schema from './schema';
 
@@ -114,6 +116,17 @@ async function seedBody(
   });
 }
 
+/** Build every body's library row, then compute every body's geometry facts (as the jobs would). */
+async function computeGeo(t: T) {
+  await t.run(async (ctx) => {
+    for (const b of await ctx.db.query('waterBodies').collect()) {
+      await rebuildBodyLibrary(ctx, b._id);
+      await markGeoStale(ctx, [b._id]);
+    }
+  });
+  await t.action(internal.bodyGeo.computeDue, {});
+}
+
 describe('pure helpers', () => {
   test('a bay’s way is its via, or its words for rows written before', () => {
     expect(bayViaOf({ metadata: { via: 'chord' }, reason: 'x' })).toBe('chord');
@@ -163,7 +176,19 @@ describe('consoleExtras', () => {
         createdAt: NOW - DAY,
       });
     });
+    // Not computed yet: the stored answers read null, never "none".
+    expect(await as.query(api.bodyConsole.consoleExtras, { waterBodyId: id })).toMatchObject({
+      towns: null,
+      touchingBodyIds: null,
+      touching: null,
+      geoComputedAt: null,
+    });
+    expect(await as.query(api.bodyConsole.places, { waterBodyId: id })).toBeNull();
+    await computeGeo(t);
     const x = await as.query(api.bodyConsole.consoleExtras, { waterBodyId: id });
+    expect(x.touching).toEqual([
+      { waterBodyId: touching, name: 'Neighbor', ring: expect.any(Array) },
+    ]);
     expect(x).toMatchObject({
       towns: ['Enfield'],
       hasBathymetry: false,
@@ -173,7 +198,7 @@ describe('consoleExtras', () => {
       touchingCapped: false,
     });
     const places = await as.query(api.bodyConsole.places, { waterBodyId: id });
-    expect(places).toEqual({ towns: ['Enfield'], counties: [], states: ['NH'] });
+    expect(places).toMatchObject({ towns: ['Enfield'], counties: [], states: ['NH'] });
   });
 
   test('a pond beside a large lake touches it, though the lake’s sampled ring passes it by', async () => {
@@ -202,6 +227,7 @@ describe('consoleExtras', () => {
       polygon: { type: 'Polygon', coordinates: [ring] },
     });
     const pond = await seedBody(t, { name: 'Side Pond', at: [e + 0.0011, 44.0035], half: 0.001 });
+    await computeGeo(t);
     const x = await as.query(api.bodyConsole.consoleExtras, { waterBodyId: pond });
     expect(x.touchingBodyIds).toEqual([lake]);
   });
@@ -230,6 +256,8 @@ describe('consoleExtras', () => {
       });
       await ctx.db.insert('bathymetryCoverage', { source: 'osm', externalId: 'way/2' });
     });
+    const none = await seedBody(t, { name: 'Unstamped', at: [-71, 43] });
+    await computeGeo(t);
     const x = await as.query(api.bodyConsole.consoleExtras, { waterBodyId: id });
     expect(x).toMatchObject({
       towns: null,
@@ -238,7 +266,6 @@ describe('consoleExtras', () => {
       outlineTrustedVia: 'campaign',
       touchingBodyIds: [],
     });
-    const none = await seedBody(t, { name: 'Unstamped' });
     expect(await as.query(api.bodyConsole.consoleExtras, { waterBodyId: none })).toMatchObject({
       outlineTrustedSince: null,
       outlineTrustedVia: null,
