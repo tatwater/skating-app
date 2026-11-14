@@ -163,7 +163,7 @@ export const MASCOMA_PLACES: PlacesData = {
       name: 'the flats by the dam',
       point: { lat: 43.6468, lng: -72.1787 },
       askers: 1,
-      asker: { name: 'Kate Donovan', handle: 'kdonovan' },
+      asker: { name: 'Kate Donovan', handle: 'kdonovan', href: '/admin/users/u-kdonovan' },
       existingLandmarkId: null,
       similar: {
         landmarkId: 'lm-dam',
@@ -173,7 +173,9 @@ export const MASCOMA_PLACES: PlacesData = {
       },
     },
   ],
+  asksCapped: false,
   landmarks: MASCOMA_LANDMARKS,
+  failures: [],
 };
 
 /** The board's hovered row (clear ground at the lake's north end). */

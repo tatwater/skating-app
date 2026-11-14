@@ -26,6 +26,7 @@ import { ReasonAsk } from '../access/ReasonAsk';
 import { LIT_ROW, LoadingSection, litAttr, TabBody } from '../tabParts';
 import { LandmarkCard, type LandmarkEdit } from './LandmarkCard';
 import {
+  type Asker,
   askKicker,
   formatDistance,
   kindWord,
@@ -34,8 +35,11 @@ import {
   type PlaceAsk,
   type PlacesData,
   type ProposalAsk,
+  rowsOf,
   selectedLandmark,
 } from './placesModel';
+import { CappedCount, LoadingLine, NotRecorded, ReadFailed, ReadFailures } from './tabStates';
+import { FAILED } from './useTabReads';
 
 /**
  * Body › Places (board 5.4.3), the default view: what is asked of the body's places, then its
@@ -43,6 +47,10 @@ import {
  * inset card (board 5.4.3 | Landmark). The lit item is the frame's (controlled): a landmark, or an
  * ask the left column linked. A row's hover is the view's own until the frame's contract carries a
  * hovered item to its marker (a contract request).
+ *
+ * Each list is in its read's state: a skeleton while it loads, *Couldn't be read* where it failed
+ * (the tab's note names what failed, with *Try again*), and a count that says when its read
+ * stopped short ("400+"). Who asked is drawn only for a viewer who can see it.
  *
  * Every control is drawn only when its handler is passed (the wiring passes one only for a viewer
  * with the capability). The map tools — placing a name, adding a proposal, dropping, moving or
@@ -52,6 +60,8 @@ import {
 
 export type PlacesViewProps = {
   data: PlacesData | undefined;
+  /** Ask again for every read that failed. */
+  onRetry?: () => void;
   lit?: string | null;
   onLitChange?: (id: string | null) => void;
   hovered?: string | null;
@@ -80,8 +90,27 @@ const MAP_TOOLS = {
   drop: 'Dropping a landmark on the map comes with the map’s landmark tools.',
 };
 
+/** A list's count on its rule: its length, a floor when its read stopped short, none until it lands. */
+function listCount(list: PlacesData['asks'], capped: boolean) {
+  if (!Array.isArray(list)) return {};
+  return capped ? { end: <CappedCount count={list.length} /> } : { count: list.length };
+}
+
+/** A list's lines held while its read is on its way. */
+function LoadingLines({ lines }: { lines: number }) {
+  return (
+    <span aria-hidden="true" className="flex flex-col gap-(--space-1_5)">
+      {Array.from({ length: lines }, (_, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: placeholders have no identity
+        <LoadingLine key={i} width="100%" />
+      ))}
+    </span>
+  );
+}
+
 export function PlacesView({
   data,
+  onRetry,
   lit = null,
   onLitChange,
   hovered = null,
@@ -95,6 +124,7 @@ export function PlacesView({
 }: PlacesViewProps) {
   const root = useRef<HTMLDivElement>(null);
   const selected = selectedLandmark(data, lit);
+  const landmarks = data === undefined ? [] : rowsOf(data.landmarks);
   usePaneKeys(root, [
     { key: 'L', run: () => sayUnavailable(MAP_TOOLS.drop), enabled: canPlace && selected === null },
   ]);
@@ -114,28 +144,41 @@ export function PlacesView({
         className="transition-opacity duration-(--duration-fast) ease-standard data-dimmed:pointer-events-none data-dimmed:opacity-(--opacity-dim)"
         inert={selected !== null}
       >
-        <Section title="Asked" count={data.asks.length} data-slot="asks">
-          {data.asks.length > 0 && (
-            <ul className="flex flex-col">
-              {data.asks.map((ask) => (
-                <AskRow
-                  key={ask.id}
-                  ask={ask}
-                  lit={lit}
-                  landmarks={data.landmarks}
-                  canPlace={canPlace}
-                  onFileAsSpelling={onFileAsSpelling}
-                  onDismissName={onDismissName}
-                  onSamePlace={onSamePlace}
-                  onDecline={onDecline}
-                />
-              ))}
-            </ul>
+        <ReadFailures failures={data.failures} onRetry={onRetry} />
+        <Section
+          title="Asked"
+          {...listCount(data.asks, data.asksCapped)}
+          aria-busy={data.asks === undefined || undefined}
+          data-slot="asks"
+        >
+          {data.asks === undefined ? (
+            <LoadingLines lines={3} />
+          ) : data.asks === FAILED ? (
+            <ReadFailed />
+          ) : (
+            data.asks.length > 0 && (
+              <ul className="flex flex-col">
+                {data.asks.map((ask) => (
+                  <AskRow
+                    key={ask.id}
+                    ask={ask}
+                    lit={lit}
+                    landmarks={landmarks}
+                    canPlace={canPlace}
+                    onFileAsSpelling={onFileAsSpelling}
+                    onDismissName={onDismissName}
+                    onSamePlace={onSamePlace}
+                    onDecline={onDecline}
+                  />
+                ))}
+              </ul>
+            )
           )}
         </Section>
         <Section
           title="Landmarks"
-          count={data.landmarks.length}
+          {...(Array.isArray(data.landmarks) ? { count: data.landmarks.length } : {})}
+          aria-busy={data.landmarks === undefined || undefined}
           data-slot="landmarks"
           end={
             canPlace ? (
@@ -148,19 +191,25 @@ export function PlacesView({
             ) : undefined
           }
         >
-          {data.landmarks.length > 0 && (
-            <ul className="flex flex-col" aria-label="Landmarks">
-              {data.landmarks.map((l) => (
-                <LandmarkListRow
-                  key={l.id}
-                  landmark={l}
-                  selected={selected?.id === l.id}
-                  hovered={hovered === litId.landmark(l.id)}
-                  onSelect={onLitChange ? () => onLitChange(litId.landmark(l.id)) : undefined}
-                  onHover={onHoverChange}
-                />
-              ))}
-            </ul>
+          {data.landmarks === undefined ? (
+            <LoadingLines lines={12} />
+          ) : data.landmarks === FAILED ? (
+            <ReadFailed />
+          ) : (
+            data.landmarks.length > 0 && (
+              <ul className="flex flex-col" aria-label="Landmarks">
+                {data.landmarks.map((l) => (
+                  <LandmarkListRow
+                    key={l.id}
+                    landmark={l}
+                    selected={selected?.id === l.id}
+                    hovered={hovered === litId.landmark(l.id)}
+                    onSelect={onLitChange ? () => onLitChange(litId.landmark(l.id)) : undefined}
+                    onHover={onHoverChange}
+                  />
+                ))}
+              </ul>
+            )
           )}
         </Section>
       </TabBody>
@@ -279,9 +328,7 @@ function AskRow({
           Possibly {ask.similar.name}, {formatDistance(ask.similar.meters)} away
         </span>
       )}
-      {ask.kind === 'proposal' && ask.asker !== null && (
-        <PersonLockup name={ask.asker.name} handle={ask.asker.handle} />
-      )}
+      {ask.kind === 'proposal' && <AskerLine asker={ask.asker} />}
       <AskActions
         ask={ask}
         landmarks={landmarks}
@@ -294,6 +341,27 @@ function AskRow({
     </li>
   );
 }
+
+/**
+ * Who asked first, in the lockup's place: the person, or what the read says instead — never a blank
+ * where a name would be. A viewer who can't see who asks gets no line at all.
+ */
+function AskerLine({ asker }: { asker: Asker }) {
+  if (asker === 'hidden') return null;
+  if (asker === undefined) return <LoadingLine width="9rem" />;
+  if (asker === FAILED) return <span className={ASSIST}>Who asked couldn’t be read</span>;
+  if (asker === 'erased') return <span className={ASSIST}>Asked from an account since erased</span>;
+  if (asker === null) return <NotRecorded />;
+  return (
+    <PersonLockup
+      name={asker.name}
+      handle={asker.handle}
+      {...(asker.href !== undefined ? { href: asker.href } : {})}
+    />
+  );
+}
+
+const ASSIST = 'text-assist leading-list text-fg3';
 
 function AskActions({
   ask,

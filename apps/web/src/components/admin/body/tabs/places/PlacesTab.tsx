@@ -1,6 +1,6 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { useMutation, useQuery } from 'convex/react';
+import { useMutation } from 'convex/react';
 import { useMemo, useState } from 'react';
 
 import { useRole } from '@/lib/useRole';
@@ -8,41 +8,56 @@ import { useRole } from '@/lib/useRole';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { useTabAction } from '../useTabAction';
 import { PlacesView } from './PlacesView';
-import { landmarkRows, type PlacesData, placeAsks, placesMapScene } from './placesModel';
+import { type PlacesData, placesFrom, placesMapScene, rowsOf } from './placesModel';
+import { read, useTabReads } from './useTabReads';
 
 /**
- * The Places tab's data — the landmarks with their provenance, the bays they fall in, the emailed
- * names and the skaters' proposals — memoized on the reads, so the map's `useData` keeps its
- * identity until one changes. The bays aren't waited on: without them a landmark has no bay yet.
+ * The Places tab's reads and its data — the landmarks with when and by whom each was added, the
+ * bays they fall in, the emailed names, the skaters' proposals and who asked for each — memoized
+ * on the reads, so the map's `useData` keeps its identity until one changes. Who asked is read only
+ * for a viewer who can see the asks (`inbox.read`); without it the tab has no askers at all.
  */
-export function usePlacesData(bodyId: string): PlacesData | undefined {
+export function usePlacesRead(bodyId: string): { data: PlacesData; retry: () => void } {
   const waterBodyId = bodyId as Id<'waterBodies'>;
-  const landmarks = useQuery(api.landmarks.listForEditor, { waterBodyId });
-  const bays = useQuery(api.subAreas.listForBody, { waterBodyId });
-  const names = useQuery(api.corpusPlaceNames.openForBody, { waterBodyId });
-  const proposals = useQuery(api.corpusRequests.openLandmarkRequestsForBody, { waterBodyId });
-  return useMemo<PlacesData | undefined>(() => {
-    if (landmarks === undefined || names === undefined || proposals === undefined) return undefined;
-    const bayNames = bays ? new Map(bays.map((b) => [b._id as string, b.name])) : null;
-    return {
-      asks: placeAsks(names, proposals.proposals),
-      landmarks: landmarkRows(landmarks, bayNames),
-    };
-  }, [landmarks, bays, names, proposals]);
+  const { can, isLoading } = useRole();
+  const seesAskers = can('inbox.read');
+  const { reads, retry } = useTabReads({
+    landmarks: read(api.landmarks.listForEditor, { waterBodyId }),
+    bays: read(api.subAreas.listForBody, { waterBodyId }),
+    names: read(api.corpusPlaceNames.openForBody, { waterBodyId }),
+    proposals: read(api.corpusRequests.openLandmarkRequestsForBody, { waterBodyId }),
+    provenance: read(api.bodyConsole.landmarkProvenance, { waterBodyId }),
+    proposers: seesAskers ? read(api.bodyConsole.landmarkProposers, { waterBodyId }) : null,
+  });
+  const { landmarks, bays, names, proposals, provenance, proposers } = reads;
+  // While the role loads, who asked is on its way, not withheld.
+  const askers = seesAskers ? proposers : isLoading ? undefined : 'hidden';
+  const data = useMemo(
+    () => placesFrom({ landmarks, bays, names, proposals, provenance, proposers: askers }),
+    [landmarks, bays, names, proposals, provenance, askers],
+  );
+  return { data, retry };
+}
+
+/** The drawing's data: the tab's, as the map reads it. */
+export function usePlacesData(bodyId: string): PlacesData | undefined {
+  return usePlacesRead(bodyId).data;
 }
 
 /**
- * Body › Places, wired. Reads: the landmarks with their provenance (`landmarks.listForEditor`),
- * the bays they fall in (`subAreas.listForBody`), the emails' open names
- * (`corpusPlaceNames.openForBody`) and the skaters' open proposals
- * (`corpusRequests.openLandmarkRequestsForBody`). Writes, each behind its capability and announced
+ * Body › Places, wired. Reads: the landmarks (`landmarks.listForEditor`) and when and by whom each
+ * was added (`bodyConsole.landmarkProvenance`), the bays they fall in (`subAreas.listForBody`), the
+ * emails' open names (`corpusPlaceNames.openForBody`), the skaters' open proposals
+ * (`corpusRequests.openLandmarkRequestsForBody`) and who asked for each
+ * (`bodyConsole.landmarkProposers`, `inbox.read`). Each read says in place when it is loading or
+ * failed, and the tab's note offers *Try again*. Writes, each behind its capability and announced
  * for undo: a landmark's name, spellings and kind (`landmarks.update`, `body.places`); filing or
  * dismissing an emailed name (`corpusPlaceNames.fileAsSpelling` / `dismiss`,
  * `corpus.placeNames`); answering a proposal with the landmark already there or declining it
  * (`corpusRequests.approve` / `decline`, `inbox.request`). The map tools are task modes, not built.
  */
 export function PlacesTab({ bodyId, lit = null, onLitChange }: BodyTabProps) {
-  const data = usePlacesData(bodyId);
+  const { data, retry } = usePlacesRead(bodyId);
   // A row's hover washes its row; the frame's contract has no hovered item yet to carry it to the
   // marker (a contract request), so it stays the view's.
   const [hovered, setHovered] = useState<string | null>(null);
@@ -54,12 +69,14 @@ export function PlacesTab({ bodyId, lit = null, onLitChange }: BodyTabProps) {
   const { act, actInDialog } = useTabAction();
   const { can } = useRole();
 
-  const nameOf = (id: string) => data?.landmarks.find((l) => l.id === id)?.name ?? 'the landmark';
-  const askName = (id: string) => data?.asks.find((a) => a.id === id)?.name ?? '';
+  const nameOf = (id: string) =>
+    rowsOf(data.landmarks).find((l) => l.id === id)?.name ?? 'the landmark';
+  const askName = (id: string) => rowsOf(data.asks).find((a) => a.id === id)?.name ?? '';
 
   return (
     <PlacesView
       data={data}
+      onRetry={retry}
       lit={lit}
       onLitChange={onLitChange}
       hovered={hovered}

@@ -7,6 +7,8 @@ import { faceLoaded, must } from '@/components/kit/storyKit';
 import { InspectorFrame } from '../tabStoryFrame';
 import { PlacesView, type PlacesViewProps } from './PlacesView';
 import { HOVERED_DAM, MASCOMA_PLACES, SELECTED_UPPER } from './placesFixtures';
+import { rowsOf } from './placesModel';
+import { FAILED } from './useTabReads';
 
 /**
  * Boards 5.4.3 and 5.4.3 | Landmark, Body › Places: the tab's column at the board's size. Render
@@ -194,10 +196,129 @@ export const ReadOnly: Story = {
 
 /** Nothing asked, no landmarks: each list still says what it is, with its 0. */
 export const Empty: Story = {
-  args: { data: { asks: [], landmarks: [] }, canPlace: true },
+  args: { data: { asks: [], asksCapped: false, landmarks: [], failures: [] }, canPlace: true },
   play: async ({ canvasElement }) => {
     await expect(slot(slot(canvasElement, 'asks'), 'section-count')).toHaveTextContent('0');
     await expect(slot(slot(canvasElement, 'landmarks'), 'section-count')).toHaveTextContent('0');
+  },
+};
+
+/** A viewer who can't see who asks: the asks stand, with no asker line and no blank for one. */
+export const NoAskers: Story = {
+  args: {
+    data: {
+      ...MASCOMA_PLACES,
+      asks: rowsOf(MASCOMA_PLACES.asks).map((a) =>
+        a.kind === 'proposal' ? { ...a, asker: 'hidden' as const } : a,
+      ),
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const proposal = must(slots(canvasElement, 'ask')[1]);
+    await expect(proposal).not.toHaveTextContent('Kate Donovan');
+    await expect(proposal.querySelector('[data-slot="person-lockup"]')).toBeNull();
+    await expect(proposal.querySelector('[data-slot="skeleton"]')).toBeNull();
+  },
+};
+
+/** An asker whose account was since erased: said so, never a blank where the name would be. */
+export const ErasedAsker: Story = {
+  args: {
+    data: {
+      ...MASCOMA_PLACES,
+      asks: rowsOf(MASCOMA_PLACES.asks).map((a) =>
+        a.kind === 'proposal' ? { ...a, asker: 'erased' as const } : a,
+      ),
+    },
+  },
+  play: async ({ canvasElement }) => {
+    await expect(slots(canvasElement, 'ask')[1]).toHaveTextContent(
+      'Asked from an account since erased',
+    );
+  },
+};
+
+/** A landmark a moderator dropped: who added it is their lockup, the handle the link to them. */
+export const AddedByAModerator: Story = {
+  args: {
+    ...EVERY_LEVER,
+    lit: SELECTED_UPPER,
+    data: {
+      ...MASCOMA_PLACES,
+      landmarks: rowsOf(MASCOMA_PLACES.landmarks).map((l) =>
+        l.id === 'lm-upper'
+          ? {
+              ...l,
+              added: {
+                at: new Date(2026, 9, 3, 12).getTime(),
+                by: { name: 'Teagan Atwater', handle: 'teagan', href: '/admin/users/u-teagan' },
+              },
+            }
+          : l,
+      ),
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const card = slot(canvasElement, 'inset-card');
+    await expect(card).toHaveTextContent('3 Oct 2026');
+    await expect(within(card).getByRole('link', { name: '@teagan' })).toHaveAttribute(
+      'href',
+      '/admin/users/u-teagan',
+    );
+  },
+};
+
+/** The asks are on their way and who added the landmark too: each place is held. */
+export const PartlyLoading: Story = {
+  args: {
+    ...EVERY_LEVER,
+    lit: SELECTED_UPPER,
+    data: {
+      ...MASCOMA_PLACES,
+      asks: undefined,
+      landmarks: rowsOf(MASCOMA_PLACES.landmarks).map((l) => ({ ...l, added: undefined })),
+    },
+  },
+  play: async ({ canvasElement }) => {
+    await expect(slot(canvasElement, 'asks')).toHaveAttribute('aria-busy', 'true');
+    await expect(
+      slot(canvasElement, 'inset-card').querySelector('[data-slot="skeleton"]'),
+    ).not.toBeNull();
+  },
+};
+
+/**
+ * The landmarks and who asked couldn't be read: each says so in place, the note at the top names
+ * both, with Try again; the asks still stand.
+ */
+export const ReadsFailed: Story = {
+  args: {
+    ...EVERY_LEVER,
+    onRetry: fn(),
+    data: {
+      ...MASCOMA_PLACES,
+      asks: rowsOf(MASCOMA_PLACES.asks).map((a) =>
+        a.kind === 'proposal' ? { ...a, asker: FAILED } : a,
+      ),
+      landmarks: FAILED,
+      failures: ['the landmarks', 'who asked'],
+    },
+  },
+  play: async ({ canvasElement, args }) => {
+    const note = slot(canvasElement, 'read-failures');
+    await expect(note).toHaveTextContent('Couldn’t read the landmarks and who asked.');
+    await expect(slot(canvasElement, 'landmarks')).toHaveTextContent('Couldn’t be read');
+    await expect(slots(canvasElement, 'ask')[1]).toHaveTextContent('Who asked couldn’t be read');
+    await userEvent.click(within(note).getByRole('button', { name: 'Try again' }));
+    await expect(args.onRetry).toHaveBeenCalled();
+  },
+};
+
+/** More is asked than the reads returned: the count is a floor ("2+"), never drawn as whole. */
+export const CappedAsks: Story = {
+  args: { ...EVERY_LEVER, data: { ...MASCOMA_PLACES, asksCapped: true } },
+  play: async ({ canvasElement }) => {
+    await expect(slot(slot(canvasElement, 'asks'), 'section-count')).toHaveTextContent('2+');
   },
 };
 

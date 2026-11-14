@@ -8,6 +8,7 @@ import { KeyValueList, KeyValueRow } from '@/components/kit/grid-list';
 import { Input, InputGroup, InputGroupKbd } from '@/components/kit/input';
 import { InsetCard, InsetCardFoot } from '@/components/kit/inset-card';
 import { Kbd } from '@/components/kit/kbd';
+import { PersonLockup } from '@/components/kit/person-lockup';
 import { Section } from '@/components/kit/section-slug';
 import {
   Select,
@@ -16,11 +17,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/kit/select';
-
 import { sayUnavailable, UnavailableButton } from '@/components/kit/unavailable-button';
 import { usePaneKeys } from '@/lib/keys';
 import { BLOCK_GAP, dayMonthYear } from '../tabParts';
-import { acres, CATALOG_NAMES, formatPoint, type LandmarkRow, PROMOTABLE } from './placesModel';
+import {
+  type Added,
+  acres,
+  CATALOG_NAMES,
+  formatPoint,
+  type LandmarkRow,
+  PROMOTABLE,
+} from './placesModel';
+import { LoadingLine, NotRecorded, ReadFailed } from './tabStates';
+import { FAILED, type Loaded } from './useTabReads';
 
 /**
  * Board 5.4.3 | Landmark: the selected landmark on the inset card over the list. Its fields save as
@@ -180,7 +189,17 @@ export function LandmarkCard({
         </Section>
         <Section title="On the lake">
           <KeyValueList keyWidth="5.75rem">
-            {l.bay !== null && <KeyValueRow label="Bay">{l.bay}</KeyValueRow>}
+            {l.bay !== null && (
+              <KeyValueRow label="Bay">
+                {l.bay === undefined ? (
+                  <LoadingLine width="7rem" />
+                ) : l.bay === FAILED ? (
+                  <ReadFailed />
+                ) : (
+                  l.bay
+                )}
+              </KeyValueRow>
+            )}
             <KeyValueRow label="Point" mono>
               {formatPoint(l.point)}
             </KeyValueRow>
@@ -215,17 +234,33 @@ export function LandmarkCard({
                 </span>
               </KeyValueRow>
             )}
-            {l.added !== null && (
-              <KeyValueRow label="Added">
-                <span className="flex flex-col gap-(--space-1)">
-                  <span>{dayMonthYear(l.added.at)}</span>
-                  <span className="text-fg3">{l.added.by}</span>
-                </span>
-              </KeyValueRow>
-            )}
+            <KeyValueRow label="Added">
+              <AddedValue added={l.added} />
+            </KeyValueRow>
           </KeyValueList>
         </Section>
       </div>
     </InsetCard>
+  );
+}
+
+/** When and by whom a landmark was added, in the read's state. */
+function AddedValue({ added }: { added: Loaded<Added | null> }) {
+  if (added === undefined) return <LoadingLine width="7rem" />;
+  if (added === FAILED) return <ReadFailed />;
+  if (added === null) return <NotRecorded />;
+  return (
+    <span className="flex flex-col items-start gap-(--space-1)">
+      <span>{dayMonthYear(added.at)}</span>
+      {typeof added.by === 'string' ? (
+        <span className="text-fg3">{added.by}</span>
+      ) : (
+        <PersonLockup
+          name={added.by.name}
+          handle={added.by.handle}
+          {...(added.by.href !== undefined ? { href: added.by.href } : {})}
+        />
+      )}
+    </span>
   );
 }

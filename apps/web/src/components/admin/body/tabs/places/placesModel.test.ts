@@ -2,20 +2,29 @@ import { describe, expect, it } from 'vitest';
 
 import { MASCOMA_PLACES } from './placesFixtures';
 import {
+  ADDED_BY,
   acres,
+  addedByLandmark,
+  askersByRequest,
   askKicker,
   formatDistance,
   formatPoint,
   kindWord,
   landmarkRows,
   litId,
+  PLACE_NAMES_READ_CAP,
+  type PlaceAsk,
   type PlaceNameAsk,
+  type PlacesReads,
   type ProposalAsk,
   parseExternalId,
+  personFrom,
   placeAsks,
+  placesFrom,
   placesMapScene,
   selectedLandmark,
 } from './placesModel';
+import { FAILED } from './useTabReads';
 
 const editorRow = (over: Record<string, unknown> = {}) => ({
   _id: 'lm1',
@@ -31,7 +40,7 @@ const editorRow = (over: Record<string, unknown> = {}) => ({
 
 describe('landmarkRows', () => {
   it('reads catalogs and ids from the external ids, and the bay by name', () => {
-    const [row] = landmarkRows([editorRow()], new Map([['bay-s', 'Mascoma South']]));
+    const [row] = landmarkRows([editorRow()], new Map([['bay-s', 'Mascoma South']]), new Map());
     expect(row).toMatchObject({
       catalogs: ['OSM', 'GNIS'],
       ids: [
@@ -44,19 +53,25 @@ describe('landmarkRows', () => {
     });
   });
 
-  it('leaves removed rows out, falls back to the source word, and has no bay until bays are read', () => {
-    const rows = landmarkRows(
-      [
-        editorRow({ _id: 'gone', removedAt: 1 }),
-        editorRow({ _id: 'mod', source: 'moderator', externalIds: [], subAreaId: undefined }),
-        editorRow({ _id: 'other-bay', subAreaId: 'bay-x' }),
-      ],
-      null,
-    );
-    expect(rows.map((r) => [r.id, r.catalogs, r.bay])).toEqual([
+  it('leaves removed rows out, falls back to the source word, and has the bay in its read’s state', () => {
+    const rows = (bays: Parameters<typeof landmarkRows>[1]) =>
+      landmarkRows(
+        [
+          editorRow({ _id: 'gone', removedAt: 1 }),
+          editorRow({ _id: 'mod', source: 'moderator', externalIds: [], subAreaId: undefined }),
+          editorRow({ _id: 'other-bay', subAreaId: 'bay-x' }),
+        ],
+        bays,
+        new Map(),
+      ).map((r) => [r.id, r.catalogs, r.bay]);
+    // A landmark in no bay is in none, whatever the bays' read says.
+    expect(rows(undefined)).toEqual([
       ['mod', ['MODERATOR'], null],
-      ['other-bay', ['OSM', 'GNIS'], null],
+      ['other-bay', ['OSM', 'GNIS'], undefined],
     ]);
+    expect(rows(FAILED)[1]?.[2]).toBe(FAILED);
+    // A bay the read doesn't hold (removed since) is none.
+    expect(rows(new Map())[1]?.[2]).toBeNull();
   });
 
   it('orders by the list’s word, then name', () => {
@@ -66,7 +81,8 @@ describe('landmarkRows', () => {
         editorRow({ _id: 'b', name: 'Camp', kind: 'establishment' }),
         editorRow({ _id: 'c', name: 'Alpha', kind: 'waterway' }),
       ],
-      null,
+      undefined,
+      undefined,
     );
     expect(rows.map((r) => r.id)).toEqual(['b', 'c', 'a']);
   });
@@ -131,12 +147,13 @@ describe('placeAsks', () => {
           existingLandmarkId: 'l2',
         },
       ],
+      'hidden',
     );
     expect(asks.map((a) => a.id)).toEqual(['n2', 'n3', 'n1', 'r1', 'r2']);
     expect(asks[0]).toMatchObject({ alreadyNamed: true });
     expect(asks[1]).toMatchObject({ alreadyNamed: false });
     expect(asks[3]).toMatchObject({
-      asker: null,
+      asker: 'hidden',
       existingLandmarkId: null,
       similar: { name: 'Dam' },
     });
@@ -177,7 +194,18 @@ describe('selection and the map', () => {
   it('lights nothing that isn’t on the map: an emailed name, a gone landmark', () => {
     expect(placesMapScene(MASCOMA_PLACES, 'placeName:ask-narrows').lit).toBeNull();
     expect(placesMapScene(MASCOMA_PLACES, 'landmark:gone').lit).toBeNull();
-    expect(placesMapScene({ asks: [], landmarks: [] }, null)).toEqual({ items: [], lit: null });
+    expect(placesMapScene({ ...MASCOMA_PLACES, asks: [], landmarks: [] }, null)).toEqual({
+      items: [],
+      lit: null,
+    });
+  });
+
+  it('draws nothing of a list still loading or failed, and lights nothing in it', () => {
+    for (const state of [undefined, FAILED] as const) {
+      const data = { ...MASCOMA_PLACES, asks: state, landmarks: state };
+      expect(placesMapScene(data, 'landmark:lm-upper')).toEqual({ items: [], lit: null });
+      expect(selectedLandmark(data, 'landmark:lm-upper')).toBeNull();
+    }
   });
 
   it('addresses each ask the way the left column links it', () => {
@@ -186,5 +214,131 @@ describe('selection and the map', () => {
       'placeName:ask-narrows',
       'landmarkAsk:ask-flats',
     ]);
+  });
+});
+
+const KATE = { userId: 'u1', username: 'kdonovan', displayName: 'Kate Donovan' };
+/** 29 Sep 2026 at local midday. */
+const PASS = new Date(2026, 8, 29, 12).getTime();
+
+describe('people and provenance', () => {
+  it('names a person by their real name, the handle as the link to their page', () => {
+    expect(personFrom(KATE)).toEqual({
+      name: 'Kate Donovan',
+      handle: 'kdonovan',
+      href: '/admin/users/u1',
+    });
+    // No real name on record: the handle stands in, never a blank.
+    expect(personFrom({ ...KATE, displayName: '  ' }).name).toBe('kdonovan');
+  });
+
+  it('says who added a landmark: the moderator who placed it, else what its source was', () => {
+    const added = addedByLandmark([
+      { landmarkId: 'a', source: 'moderator', createdAt: PASS, createdBy: KATE },
+      { landmarkId: 'b', source: 'osm', createdAt: PASS, createdBy: null },
+      { landmarkId: 'c', source: 'corpus', createdAt: PASS, createdBy: null },
+      { landmarkId: 'd', source: 'someday', createdAt: PASS, createdBy: null },
+    ]);
+    expect(added.get('a')).toEqual({ at: PASS, by: personFrom(KATE) });
+    expect(added.get('b')?.by).toBe(ADDED_BY.osm);
+    expect(added.get('c')?.by).toBe('From the community’s emails');
+    expect(added.get('d')?.by).toBe('someday');
+  });
+
+  it('marks an erased asker as erased, never as nobody', () => {
+    const askers = askersByRequest([
+      { requestId: 'r1', requester: KATE },
+      { requestId: 'r2', requester: null },
+    ]);
+    expect(askers.get('r1')).toEqual(personFrom(KATE));
+    expect(askers.get('r2')).toBe('erased');
+  });
+});
+
+describe('placesFrom', () => {
+  const reads = (over: Partial<PlacesReads> = {}): PlacesReads => ({
+    landmarks: [editorRow({ _id: 'lm1' })],
+    bays: [{ _id: 'bay-s', name: 'Mascoma South' }],
+    names: [{ _id: 'n1', name: 'the Narrows', messages: 12 }],
+    proposals: {
+      proposals: [
+        { requestId: 'r1', name: 'the flats', coord: { lat: 1, lng: 2 }, askers: 1 },
+        { requestId: 'r9', name: 'the pier', coord: { lat: 1, lng: 2 }, askers: 1 },
+      ],
+      more: false,
+    },
+    provenance: [{ landmarkId: 'lm1', source: 'osm', createdAt: PASS, createdBy: null }],
+    proposers: [{ requestId: 'r1', requester: KATE }],
+    ...over,
+  });
+
+  it('draws every read that landed, with who asked and when each landmark was added', () => {
+    const data = placesFrom(reads());
+    expect(data.failures).toEqual([]);
+    expect(data.asksCapped).toBe(false);
+    const asks = data.asks as PlaceAsk[];
+    expect(asks.map((a) => (a.kind === 'proposal' ? a.asker : a.kind))).toEqual([
+      'place-name',
+      personFrom(KATE),
+      // An ask the proposers read didn't reach is not recorded, never erased.
+      null,
+    ]);
+    expect(data.landmarks).toMatchObject([
+      { id: 'lm1', bay: 'Mascoma South', added: { at: PASS, by: 'By the landmark pass' } },
+    ]);
+  });
+
+  it('keeps each read’s own state: loading stays loading, a failure is named', () => {
+    const loading = placesFrom(
+      reads({ names: undefined, bays: undefined, provenance: undefined, proposers: undefined }),
+    );
+    expect(loading.asks).toBeUndefined();
+    expect(loading.landmarks).toMatchObject([{ bay: undefined, added: undefined }]);
+    expect(loading.failures).toEqual([]);
+
+    const failed = placesFrom(
+      reads({
+        landmarks: FAILED,
+        proposals: FAILED,
+        bays: FAILED,
+        provenance: FAILED,
+        proposers: FAILED,
+      }),
+    );
+    expect(failed.asks).toBe(FAILED);
+    expect(failed.landmarks).toBe(FAILED);
+    expect(failed.failures).toEqual([
+      'the landmarks',
+      'what is asked',
+      'the bays',
+      'when each landmark was added',
+      'who asked',
+    ]);
+
+    // Who asked failing leaves the asks standing, each saying it.
+    const askers = placesFrom(reads({ proposers: FAILED }));
+    expect((askers.asks as ProposalAsk[])[1]?.asker).toBe(FAILED);
+  });
+
+  it('draws no askers at all for a viewer who can’t see them', () => {
+    const data = placesFrom(reads({ proposers: 'hidden' }));
+    const proposals = (data.asks as PlaceAsk[]).filter((a) => a.kind === 'proposal');
+    expect(proposals.map((p) => p.asker)).toEqual(['hidden', 'hidden']);
+    expect(data.failures).toEqual([]);
+  });
+
+  it('says the asks are a floor when either read stopped short', () => {
+    const more = placesFrom(reads({ proposals: { proposals: [], more: true } }));
+    expect(more.asksCapped).toBe(true);
+    const full = placesFrom(
+      reads({
+        names: Array.from({ length: PLACE_NAMES_READ_CAP }, (_, i) => ({
+          _id: `n${i}`,
+          name: `Name ${i}`,
+          messages: 1,
+        })),
+      }),
+    );
+    expect(full.asksCapped).toBe(true);
   });
 });
