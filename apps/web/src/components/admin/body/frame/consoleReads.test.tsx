@@ -117,11 +117,52 @@ describe('useConsoleReads', () => {
     const failure = result.current.body as ReadFailure;
     mocks.calls.length = 0;
     set(api.waterBodies.get, { available: false });
-    act(() => failure.retry());
-    // One render without it (the subscription drops), then it is asked for again.
-    expect(mocks.calls).toContainEqual(['subAreas']);
+    vi.useFakeTimers();
+    try {
+      act(() => failure.retry());
+      // A commit without it (the subscription drops)…
+      expect(mocks.calls.at(-1)).toEqual(['subAreas']);
+      expect(result.current.body).toBeUndefined();
+      // …then it is asked for again.
+      act(() => {
+        vi.runOnlyPendingTimers();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
     expect(mocks.calls.at(-1)).toEqual(['body', 'subAreas']);
     expect(result.current.body).toEqual({ available: false });
+  });
+
+  it('lets go of a failed read in every block holding it, so Try again reaches the server', () => {
+    set(api.waterBodies.get, new Error('boom'));
+    const body = () => read(api.waterBodies.get, { waterBodyId: ID });
+    // The frame and the open tab hold the same read: one subscription, shared.
+    const frame = renderHook(() => useConsoleReads({ body: body() }));
+    const tab = renderHook(() =>
+      useConsoleReads({
+        body: body(),
+        subAreas: read(api.subAreas.listForBody, { waterBodyId: ID }),
+      }),
+    );
+    mocks.calls.length = 0;
+    set(api.waterBodies.get, { available: false });
+    vi.useFakeTimers();
+    try {
+      act(() => (tab.result.current.body as ReadFailure).retry());
+      // Both dropped it — the frame's hook too, though its own note wasn't pressed…
+      expect(mocks.calls).toContainEqual([]);
+      expect(mocks.calls).toContainEqual(['subAreas']);
+      expect(frame.result.current.body).toBeUndefined();
+      // …then both asked for it again.
+      act(() => {
+        vi.runOnlyPendingTimers();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(frame.result.current.body).toEqual({ available: false });
+    expect(tab.result.current.body).toEqual({ available: false });
   });
 
   it('reports a failure to Sentry once, and only with a DSN', () => {

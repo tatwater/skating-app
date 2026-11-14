@@ -7,7 +7,6 @@ import {
   CAPPED_NONE,
   CAPPED_SOME,
   campaignText,
-  mergeFailed,
   NOT_CHECKED,
   shapeBays,
   shapeMapScene,
@@ -161,7 +160,6 @@ describe('merge', () => {
     expect(shapeMerge(facts, undefined)?.touching).toBeUndefined();
     const failed = shapeMerge(facts, failure);
     expect(failed?.touching).toBe(failure);
-    expect(failed !== null && mergeFailed(failed)).toBe(true);
   });
 });
 

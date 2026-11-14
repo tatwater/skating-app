@@ -6,7 +6,7 @@ import {
   type FunctionReturnType,
   getFunctionName,
 } from 'convex/server';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 
 import { isConfigured } from '@/lib/env';
 
@@ -17,9 +17,10 @@ import { isConfigured } from '@/lib/env';
  * takes down its own block, never the console.
  *
  * Convex's `useQueries` hands a failed read back as an `Error` rather than throwing it, and keeps
- * the failure while the subscription lives. *Try again* drops that one subscription for a render
- * and subscribes afresh, so the server runs the read again. (Another block subscribed to the same
- * read keeps it alive; it re-runs when what it read changes, as every Convex read does.)
+ * the failure while the subscription lives — and one subscription per read is shared by every
+ * block holding it (the frame and the open tab both read the bays, the extras and the touching
+ * bodies). *Try again* lets go of the read **everywhere it is held** for one commit, then every
+ * holder subscribes afresh, so the server runs the read again.
  *
  * The reads are keyed on their **values** — the function's name and its arguments — never on an
  * object rebuilt each render: a new object every render re-subscribes every render, which crashed a
@@ -85,44 +86,98 @@ function report(error: Error): void {
   if (isConfigured.sentry) Sentry.captureException(error);
 }
 
+// ── The reads let go of for a Try again ─────────────────────────────────────────────────────
+//
+// By the read's identity (its function and arguments), across every hook holding it: the client
+// re-runs a failed subscription only once every holder has let go of it.
+
+const paused = new Set<string>();
+let pauseVersion = 0;
+const pauseListeners = new Set<() => void>();
+
+function emitPause(): void {
+  pauseVersion++;
+  for (const listener of pauseListeners) listener();
+}
+
+function subscribePause(listener: () => void): () => void {
+  pauseListeners.add(listener);
+  return () => {
+    pauseListeners.delete(listener);
+  };
+}
+
+const pauseSnapshot = () => pauseVersion;
+
+/** How long a read stays let go if no holder takes it back (its one holder unmounted mid-retry). */
+const PAUSE_LIMIT_MS = 1_000;
+
+/** A read's identity: its function and its arguments, as values. */
+const readIdOf = (spec: ReadSpec): string =>
+  JSON.stringify([getFunctionName(spec.query), spec.args]);
+
+/** Let go of a read in every hook holding it; the holders take it back after that commit. */
+function pauseRead(id: string): void {
+  if (paused.has(id)) return;
+  paused.add(id);
+  emitPause();
+  setTimeout(() => resumeReads([id]), PAUSE_LIMIT_MS);
+}
+
+function resumeReads(ids: Iterable<string>): void {
+  let any = false;
+  for (const id of ids) if (paused.delete(id)) any = true;
+  if (any) emitPause();
+}
+
 export function useConsoleReads<S extends ReadSpecs>(specs: S): Reads<S> {
-  // Reads to drop for one render, so the next subscribes afresh (*Try again*).
-  const [paused, setPaused] = useState<ReadonlySet<string>>(() => new Set());
+  // Every holder renders again when a read is let go of or taken back.
+  useSyncExternalStore(subscribePause, pauseSnapshot, pauseSnapshot);
+  const ids = new Map<string, string>();
+  for (const [name, spec] of Object.entries(specs)) {
+    if (spec !== null) ids.set(name, readIdOf(spec));
+  }
   const key = JSON.stringify(
-    Object.entries(specs).map(([name, spec]) => [
-      name,
-      spec === null || paused.has(name) ? null : [getFunctionName(spec.query), spec.args],
-    ]),
+    Object.keys(specs).map((name) => {
+      const id = ids.get(name);
+      return [name, id === undefined || paused.has(id) ? null : id];
+    }),
   );
   // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the reads' value, not the object.
   const queries = useMemo(() => {
     const out: Parameters<typeof useQueries>[0] = {};
     for (const [name, spec] of Object.entries(specs)) {
-      if (spec !== null && !paused.has(name)) out[name] = { query: spec.query, args: spec.args };
+      const id = ids.get(name);
+      if (spec !== null && id !== undefined && !paused.has(id)) {
+        out[name] = { query: spec.query, args: spec.args };
+      }
     }
     return out;
   }, [key]);
   const got = useQueries(queries) as Record<string, unknown>;
 
-  // Declared after `useQueries`, so the paused render's subscription has dropped the read before
-  // this puts it back.
+  // Declared after `useQueries`, so this holder has dropped the read by the time it runs; taken
+  // back a task later, once every other holder has committed its drop too, so the client lets go
+  // of the subscription and the next one is asked afresh.
+  const letGo = [...ids.values()].filter((id) => paused.has(id));
+  const letGoKey = letGo.join('\n');
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on which reads are let go, by value.
   useEffect(() => {
-    if (paused.size > 0) setPaused(new Set());
-  }, [paused]);
-
-  const retry = useCallback((name: string) => {
-    setPaused((now) => new Set([...now, name]));
-  }, []);
+    if (letGo.length === 0) return;
+    const timer = setTimeout(() => resumeReads(letGo), 0);
+    return () => clearTimeout(timer);
+  }, [letGoKey]);
 
   // A failure keeps its identity while the same error stands, so a block's props don't churn.
   const failures = useRef(new Map<string, { error: Error; failure: ReadFailure }>());
   const out: Record<string, unknown> = {};
   for (const name of Object.keys(specs)) {
     const value = got[name];
-    if (value instanceof Error) {
+    const id = ids.get(name);
+    if (value instanceof Error && id !== undefined) {
       let held = failures.current.get(name);
       if (held === undefined || held.error !== value) {
-        held = { error: value, failure: { failed: true, retry: () => retry(name) } };
+        held = { error: value, failure: { failed: true, retry: () => pauseRead(id) } };
         failures.current.set(name, held);
       }
       out[name] = held.failure;

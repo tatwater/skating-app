@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 /**
  * The Body console as the app mounts it at `/admin/body/$id`: the body and the frame's reads (each
@@ -20,6 +20,8 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   push: vi.fn(),
   can: true,
+  /** The viewer's role still on its way (`can` says no until it lands). */
+  roleLoading: false,
   mutate: vi.fn(() => Promise.resolve()),
   announce: vi.fn(() => Promise.resolve()),
 }));
@@ -67,7 +69,9 @@ vi.mock('@tanstack/react-router', () => ({
     </a>
   ),
 }));
-vi.mock('@/lib/useRole', () => ({ useRole: () => ({ can: () => mocks.can }) }));
+vi.mock('@/lib/useRole', () => ({
+  useRole: () => ({ can: () => mocks.can, isLoading: mocks.roleLoading }),
+}));
 vi.mock('../../shell/undo', () => ({ useUndo: () => ({ announce: mocks.announce }) }));
 vi.mock('../map/useBodyMapCanvas', () => ({
   FIT_PADDING: { top: 0, right: 0, bottom: 0, left: 0 },
@@ -130,6 +134,7 @@ beforeEach(() => {
   mocks.search = {};
   mocks.params = { id: MASCOMA_ID };
   mocks.can = true;
+  mocks.roleLoading = false;
   mocks.navigate.mockReset();
   mocks.push.mockReset();
   mocks.mutate.mockClear();
@@ -298,7 +303,9 @@ describe('BodyConsoleRoute', () => {
       if (throws) throw new Error('tab down');
       return <p>Names drawn</p>;
     }
-    vi.spyOn(console, 'error').mockImplementation(() => {});
+    // React logs the error the boundary caught; this test means it.
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    onTestFinished(() => quiet.mockRestore());
     mocks.search = { tab: 'names' };
     render(
       <Mounted>
@@ -449,6 +456,57 @@ describe('BodyConsoleRoute', () => {
     expect(screen.queryByRole('heading', { name: 'History' })).toBeNull();
     expect(screen.getByRole('slider', { name: 'Map boost' })).toBeDisabled();
     expect(askedFor(api.bodyConsole.history)).toEqual([]);
+  });
+
+  it('holds what the role gates as on its way while the role loads — never *Not recorded yet*', () => {
+    mocks.can = false;
+    mocks.roleLoading = true;
+    const { container } = render(<Mounted />);
+    expect(screen.queryByText('Not recorded yet')).toBeNull();
+    expect(container.querySelector('[data-slot="body-complete"][aria-busy="true"]')).not.toBeNull();
+    // History is on its way too, not withheld.
+    expect(screen.getByRole('heading', { name: 'History' })).toBeInTheDocument();
+  });
+
+  it('never counts the asks as whole when a read without a flag came back full', () => {
+    set(
+      api.corpusPlaceNames.openForBody,
+      Array.from({ length: 400 }, (_, i) => ({ _id: `pn${i}`, name: `Name ${i}`, messages: 1 })),
+    );
+    const { container } = render(<Mounted />);
+    expect(container.querySelector('[data-slot="body-asks-more"]')).not.toBeNull();
+  });
+
+  it('draws the map again on another tab when the open tab’s drawing threw', async () => {
+    const user = userEvent.setup();
+    // React logs the error the boundary caught; this test means it.
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    onTestFinished(() => quiet.mockRestore());
+    const throwing = {
+      Wiring: () => <p>Names drawn</p>,
+      map: {
+        useData: (): never => {
+          throw new Error('drawing down');
+        },
+        describe: () => ({ items: [], lit: null }),
+      },
+    };
+    mocks.search = { tab: 'names' };
+    const { rerender } = render(
+      <Mounted>
+        <BodyConsoleRoute registry={registerBodyTabs({ shape: SHAPE_TAB, names: throwing })} />
+      </Mounted>,
+    );
+    expect(screen.getByText('The map couldn’t be drawn')).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: /Shape/ }));
+    mocks.search = { tab: 'shape' };
+    rerender(
+      <Mounted>
+        <BodyConsoleRoute registry={registerBodyTabs({ shape: SHAPE_TAB, names: throwing })} />
+      </Mounted>,
+    );
+    expect(screen.queryByText('The map couldn’t be drawn')).toBeNull();
+    expect(screen.getByTestId('ground')).toBeInTheDocument();
   });
 });
 

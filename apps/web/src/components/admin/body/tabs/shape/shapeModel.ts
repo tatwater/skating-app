@@ -3,7 +3,7 @@ import { sqMetersToAcres } from '@skating/core';
 import type { FunctionReturnType } from 'convex/server';
 
 import { dayMonth, firstName, ringsText } from '../../frame/bodyModel';
-import { isFailed, type Loadable, mapLoadable } from '../../frame/consoleReads';
+import { type Loadable, mapLoadable } from '../../frame/consoleReads';
 import type { Neighbor, TouchingFacts } from '../../frame/touching';
 import type { BodyMapScene } from '../../map/mapDescriptors';
 
@@ -200,9 +200,6 @@ export function shapeMerge(
     note: facts.touchingCapped ? CAPPED_SOME : null,
   };
 }
-
-/** Whether a Merge block's list failed to read (its *Try again* is in the value). */
-export const mergeFailed = (m: ShapeMerge) => isFailed(m.touching);
 
 /**
  * The Shape tab's map: nothing of its own — the frame already draws the outline, the bays and the

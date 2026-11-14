@@ -176,7 +176,8 @@ export function BodyConsoleRoute({ registry = BODY_TAB_REGISTRY }: { registry?: 
       map={
         data.state === 'ready' && scene !== null ? (
           <ReadBoundary
-            resetKey={`${bodyId}:${attempt.map}`}
+            // The open tab's drawing is read inside it: another tab is another try.
+            resetKey={`${bodyId}:${slot.key}:${attempt.map}`}
             fallback={() => (
               <div className="p-gutter">
                 <ReadFailed

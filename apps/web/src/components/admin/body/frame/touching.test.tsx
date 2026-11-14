@@ -72,7 +72,16 @@ describe('useNeighbors', () => {
     const { result } = renderHook(() => useNeighbors(f));
     expect(isFailed(result.current)).toBe(true);
     mocks.results.set('a', body('a', 'A'));
-    act(() => (result.current as ReadFailure).retry());
+    vi.useFakeTimers();
+    try {
+      act(() => (result.current as ReadFailure).retry());
+      // Let go of for a commit, then asked again.
+      act(() => {
+        vi.runOnlyPendingTimers();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
     expect(result.current).toEqual([
       { id: 'a', name: 'A', polygon: NEIGHBOR_POLYGON },
       { id: 'b', name: 'B', polygon: NEIGHBOR_POLYGON },

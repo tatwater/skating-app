@@ -59,6 +59,15 @@ export const HISTORY_LIMIT = 50;
 /** Rows of one verb read to find the body's own latest, when the main history stopped short. */
 const VERB_LIMIT = 10;
 
+/**
+ * The most rows the two asks reads without a `more` flag return (the server's `QUEUE_CAP`s,
+ * unexported: `corpusPlaceNames.openForBody` and `corpusRequests.openBayRequestsForBody`, whose
+ * groups' `askers` sum to the rows read). A read that comes back this full may have stopped short,
+ * so the asks are never counted as whole (a server request: a `more` flag on each).
+ */
+const PLACE_NAMES_READ_CAP = 400;
+const BAY_REQUESTS_READ_CAP = 200;
+
 /** A Convex id's shape, so a hand-edited link never reaches a read as junk. */
 const ID_SHAPE = /^[0-9a-z]{30,34}$/;
 
@@ -125,9 +134,12 @@ const minute = (at: number) => Math.floor(at / 60_000) * 60_000;
 export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleData {
   const valid = ID_SHAPE.test(bodyId);
   const waterBodyId = bodyId as Id<'waterBodies'>;
-  const { can } = useRole();
+  const { can, isLoading } = useRole();
   const canRead = can('body.read');
   const canAudit = can('audit.read');
+  // A read the viewer's role withholds: on its way while the role loads (`can` says no until it
+  // lands), never `null` — which says *not recorded*, a claim about the body.
+  const withheld = isLoading ? undefined : null;
   const now = useOpenedAt(bodyId);
   const on = valid;
   const r = useConsoleReads({
@@ -225,7 +237,7 @@ export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleDa
   if (r.body === null) return { state: 'missing' };
 
   const history: Loadable<BodyHistoryView> | null = !canAudit
-    ? null
+    ? withheld
     : mapLoadable(r.history, (h) => ({
         entries: bodyHistory(h.entries as readonly HistoryAction[]),
         capped: h.capped,
@@ -243,11 +255,14 @@ export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleDa
           removalOf(h.entries as readonly HistoryAction[], bodyId, timeZone),
         ),
         // A merged body's facts went with it to the survivor; a rejected one's are still its own.
-        towns: survivor !== null || !canRead ? null : mapLoadable(r.extras, (e) => e.towns),
+        towns:
+          survivor !== null ? null : !canRead ? withheld : mapLoadable(r.extras, (e) => e.towns),
         reports:
-          survivor !== null || !canRead
+          survivor !== null
             ? null
-            : mapLoadable(r.facts, (f) => (f === null ? null : f.allTime)),
+            : !canRead
+              ? withheld
+              : mapLoadable(r.facts, (f) => (f === null ? null : f.allTime)),
         history,
       },
     };
@@ -263,7 +278,7 @@ export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleDa
   });
 
   const completeness: Loadable<Completeness | null> = !canRead
-    ? null
+    ? withheld
     : mapLoadable(r.facts, (f) => f?.complete ?? null);
 
   const askReads = [r.bayAsks, r.placeNames, r.landmarkAsks];
@@ -296,10 +311,14 @@ export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleDa
     state: 'ready',
     identity,
     completeness,
-    towns: !canRead ? null : mapLoadable(extras, (e) => e.towns),
-    trust: !canRead ? null : mapLoadable(extras, (e) => outlineTrust(e, timeZone)),
+    towns: !canRead ? withheld : mapLoadable(extras, (e) => e.towns),
+    trust: !canRead ? withheld : mapLoadable(extras, (e) => outlineTrust(e, timeZone)),
     asks,
-    asksMore: landmarkAsks?.more === true,
+    // Only the proposals' read says it stopped short; the other two are full at their cap.
+    asksMore:
+      landmarkAsks?.more === true ||
+      (placeNames?.length ?? 0) >= PLACE_NAMES_READ_CAP ||
+      (bayAsks ?? []).reduce((n, b) => n + b.askers, 0) >= BAY_REQUESTS_READ_CAP,
     history,
     attention: attentionTabs(done?.missing ?? []),
     bbox: polygonBBox(body.polygon as GeoJSON.Polygon | GeoJSON.MultiPolygon),
