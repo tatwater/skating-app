@@ -167,9 +167,8 @@ describe('the day fold', () => {
     await record(t, 'flag_note', [5]);
     await t.mutation(internal.analyticsRollup.rollupPulseDayJob, { date: TODAY });
     await t.finishAllScheduledFunctions(vi.runAllTimers);
-    expect(((await snapshot(t, TODAY))?.meta as Record<string, unknown>).flag_note).toMatchObject({
-      writes: 1,
-    });
+    const meta = (await snapshot(t, TODAY))?.meta as Record<string, unknown> | undefined;
+    expect(meta?.flag_note).toMatchObject({ writes: 1 });
   });
 
   test('the prune drops events past the week and keeps the rest', async () => {
