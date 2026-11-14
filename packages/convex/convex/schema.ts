@@ -3990,6 +3990,9 @@ export default defineSchema({
     subAreaId: v.optional(v.id('waterBodySubAreas')),
   })
     .index('by_water_body', ['waterBodyId'])
+    // A body's visible launches apart from its hidden coordinates — the saved-put-in rule's two
+    // bounded reads (B01-3b, `savedPutInsOf`).
+    .index('by_water_body_status', ['waterBodyId', 'status'])
     // Idempotent OSM upsert (A06d §2.3), mirroring `waterBodies.by_external_id`.
     .index('by_external_id', ['externalId'])
     // A bay's own launches (A09) — the drive-time coordinate and the bay view's access list. `eq()`

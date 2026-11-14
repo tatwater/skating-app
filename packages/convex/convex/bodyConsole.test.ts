@@ -944,6 +944,7 @@ describe('standing.retentionForBody', () => {
       favoritesCapped: false,
       savedPutIns: 1,
       savedPutInsCapped: false,
+      putInKeeps: true,
     });
     // A boost set to zero is no boost: absent, as the rollover reads it.
     const bare = await seedBody(t, { name: 'Bare', curatedBoost: 0 });
@@ -952,6 +953,7 @@ describe('standing.retentionForBody', () => {
       favoritesCapped: false,
       savedPutIns: 0,
       savedPutInsCapped: false,
+      putInKeeps: false,
     });
     await t.run((ctx) => ctx.db.delete(bare));
     expect(await as.query(api.standing.retentionForBody, { waterBodyId: bare })).toBeNull();
