@@ -541,6 +541,8 @@ export const preview = query({
       asksListCapped: openAsks.capped || openAsks.count > asks.length,
       town: towns[0] ?? null,
       moreTowns: towns.slice(1),
+      /** When the towns were computed (`lib/bodyGeo.ts`); `null` until they are — not "no town". */
+      townsComputedAt: geo?.computedAt ?? null,
       complete:
         row === null ? null : { have: row.completeHave, of: row.completeOf, missing: row.missing },
     };

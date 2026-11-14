@@ -289,8 +289,18 @@ describe('computed at the write, read without geometry', () => {
         await syncAdminAreaCells(ctx, area, { bbox: boxOf(-72, 44, r, r), level });
       }
     });
+    // Before the computation: the preview has no town and says the towns aren't computed yet.
+    expect(await as.query(api.bodies.preview, { waterBodyId: id })).toMatchObject({
+      town: null,
+      townsComputedAt: null,
+    });
     await stale(t, [id]);
     await compute(t);
+    expect(await as.query(api.bodies.preview, { waterBodyId: id })).toMatchObject({
+      town: 'Enfield',
+      moreTowns: [],
+      townsComputedAt: NOW,
+    });
     expect(await as.query(api.bodyConsole.places, { waterBodyId: id })).toEqual({
       towns: ['Enfield'],
       counties: ['Grafton'],

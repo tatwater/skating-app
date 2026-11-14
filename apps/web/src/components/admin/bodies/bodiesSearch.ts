@@ -1,3 +1,4 @@
+import { SEARCH_MIN_CHARS } from '@skating/core';
 import { z } from 'zod';
 
 import {
@@ -28,11 +29,11 @@ import { BODY_LANES, type BodyLane, DEFAULT_LANE_ID, laneById } from './bodyLane
 /** The server trims a search past this; the URL never holds more. */
 export const SEARCH_MAX_CHARS = 100;
 /**
- * The shortest search the server runs (`bodies.ts`' `SEARCH_MIN_CHARS`, not exported to core): the
- * page uses it only for what it draws — a shorter one marks nothing and ranks nothing. The server
- * canonicalizes the search itself; the page never trims it for the read.
+ * The shortest search the server runs (core's, which `bodies.listPage` reads): the page uses it only
+ * for what it draws — a shorter one marks nothing and ranks nothing. The server canonicalizes the
+ * search itself; the page never trims it for the read.
  */
-export const SEARCH_MIN_CHARS = 2;
+export { SEARCH_MIN_CHARS };
 
 /** Whether `q` is a search the server runs — two characters or more, trimmed. */
 export const isSearch = (q: string) => q.trim().length >= SEARCH_MIN_CHARS;
