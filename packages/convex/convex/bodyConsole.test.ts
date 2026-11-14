@@ -627,8 +627,10 @@ describe('bays, landmarks and history', () => {
       return historyTargets(short as unknown as typeof ctx, id);
     });
     expect(read.truncated).toBe(true);
-    // The first absorbed body is read; the walk stops before another polygon.
-    expect(read.targets.filter((x) => x.targetType === 'waterbody')).toHaveLength(2);
+    // The body's own family is read; no absorbed family is taken in on a spent read.
+    expect(read.targets.filter((x) => x.targetType === 'waterbody')).toEqual([
+      { targetType: 'waterbody', targetId: id },
+    ]);
   });
 
   test('the absorbed walk stops at its count and says so; a loop back to the body is read once', async () => {
@@ -901,5 +903,171 @@ describe('standing.retentionForBody', () => {
       ctx.db.insert('putIns', { ...row({ lat: 44.005, lng: -72 }, 'osm'), status: 'hidden' }),
     );
     expect(await saved()).toBe(1);
+  });
+});
+
+describe('a merge chain’s history', () => {
+  /** Every related kind on one body, each with an audit row; returns every target id it holds. */
+  async function relatives(
+    t: T,
+    bodyId: Id<'waterBodies'>,
+    mod: Id<'profiles'>,
+    at: number,
+  ): Promise<string[]> {
+    return t.run(async (ctx) => {
+      const bay = await ctx.db.insert('waterBodySubAreas', {
+        waterBodyId: bodyId,
+        name: 'A Bay',
+        searchText: 'A Bay',
+        polygon: square(-72, 44, 0.001),
+        bbox: boxOf(-72, 44, 0.001),
+        centroid: { lat: 44, lng: -72 },
+        surfaceAreaSqM: ACRE,
+        displayScore: 0,
+        minVisibleZoom: 10,
+        createdByUserId: mod,
+        createdAt: at,
+        updatedAt: at,
+        removedAt: at,
+      });
+      const putIn = await ctx.db.insert('putIns', {
+        waterBodyId: bodyId,
+        coord: { lat: 44, lng: -72 },
+        source: 'osm',
+        status: 'hidden',
+        createdAt: at,
+      });
+      const landmark = await ctx.db.insert('bodyLandmarks', {
+        waterBodyId: bodyId,
+        name: 'Folded',
+        kind: 'island',
+        point: { lat: 44, lng: -72 },
+        source: 'osm',
+        externalIds: [],
+        aliases: [],
+        removedAt: at,
+        createdAt: at,
+        updatedAt: at,
+      });
+      const lot = await ctx.db.insert('parkingAreas', {
+        coord: { lat: 44, lng: -72 },
+        source: 'osm',
+        status: 'visible',
+        amenities: [],
+        createdAt: at,
+      });
+      await ctx.db.insert('parkingAreaBodies', {
+        parkingAreaId: lot,
+        waterBodyId: bodyId,
+        inferred: true,
+        createdAt: at,
+      });
+      const feature = await ctx.db.insert('bodyFeatures', {
+        waterBodyId: bodyId,
+        type: 'spring_current',
+        geometryKind: 'point_radius',
+        geometry: { type: 'Point', coordinates: [-72, 44] },
+        bbox: boxOf(-72, 44, 0.001),
+        addedByUserId: mod,
+        active: false,
+        createdAt: at,
+      });
+      const request = await ctx.db.insert('waterBodyRequests', {
+        kind: 'name_bay',
+        status: 'declined',
+        requesterId: mod,
+        coord: { lat: 44, lng: -72 },
+        waterBodyId: bodyId,
+        name: 'Cove',
+        createdAt: at,
+      });
+      const placeName = await ctx.db.insert('corpusPlaceNames', {
+        name: 'The Gut',
+        askKey: `gut-${bodyId}`,
+        aliases: [],
+        messages: 1,
+        skatedMessages: 0,
+        states: [],
+        waterBodyId: bodyId,
+        status: 'dismissed',
+        createdAt: at,
+        updatedAt: at,
+      });
+      const flag = await ctx.db.insert('contentFlags', {
+        flaggerId: mod,
+        targetType: 'waterbody',
+        targetId: bodyId,
+        reason: 'spam',
+        status: 'dismissed',
+        createdAt: at,
+      });
+      const rows = [
+        ['set_curated_boost', 'waterbody', bodyId],
+        ['remove', 'waterBodySubArea', bay],
+        ['hide', 'putIn', putIn],
+        ['remove', 'bodyLandmark', landmark],
+        ['set_parking_area', 'parkingArea', lot],
+        ['demote_body_feature', 'bodyFeature', feature],
+        ['decline_request', 'waterBodyRequest', request],
+        ['remove', 'corpusPlaceName', placeName],
+        ['dismiss_flag', 'contentFlag', flag],
+      ] as const;
+      let k = 0;
+      for (const [action, targetType, targetId] of rows) {
+        await ctx.db.insert('moderationActions', {
+          actorId: mod,
+          action,
+          targetType,
+          targetId,
+          reason: action,
+          createdAt: at + k++,
+        });
+      }
+      return [bodyId, bay, putIn, landmark, lot, feature, request, placeName, flag];
+    });
+  }
+
+  test('the survivor’s history holds every absorbed body’s family, through a chain', async () => {
+    const t = harness();
+    const { as, id: mod } = await seedUser(t);
+    const survivor = await seedBody(t, { name: 'Survivor' });
+    const middle = await seedBody(t, { name: 'Middle', at: [-71.9, 44] });
+    const oldest = await seedBody(t, { name: 'Oldest', at: [-71.8, 44] });
+    const ids = new Set<string>([
+      ...(await relatives(t, survivor, mod, NOW - 3 * DAY)),
+      ...(await relatives(t, middle, mod, NOW - 2 * DAY)),
+      ...(await relatives(t, oldest, mod, NOW - DAY)),
+    ]);
+    // Oldest was merged into Middle, which was later merged into Survivor.
+    await t.run(async (ctx) => {
+      await ctx.db.patch(oldest, { dedupStatus: 'merged', mergedIntoId: middle });
+      await ctx.db.patch(middle, { dedupStatus: 'merged', mergedIntoId: survivor });
+    });
+    const expected = await t.run(async (ctx) =>
+      (await ctx.db.query('moderationActions').collect())
+        .filter((r) => ids.has(r.targetId))
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .map((r) => r._id as string),
+    );
+    const read = await as.query(api.bodyConsole.history, { waterBodyId: survivor, limit: 100 });
+    expect(read.capped).toBe(false);
+    expect(read.entries.map((e) => e.id)).toEqual(expected);
+  });
+
+  test('a chain of fifty absorbed bodies, each with its family, caps honestly and never throws', async () => {
+    const t = harness();
+    const { as, id: mod } = await seedUser(t);
+    const survivor = await seedBody(t, { name: 'Giant' });
+    let parent = survivor;
+    for (let i = 0; i < 51; i++) {
+      const child = await seedBody(t, { name: `Absorbed ${i}`, at: [-71 - i * 0.01, 44] });
+      await relatives(t, child, mod, NOW - DAY + i * 100);
+      await t.run((ctx) => ctx.db.patch(child, { dedupStatus: 'merged', mergedIntoId: parent }));
+      parent = child;
+    }
+    const read = await as.query(api.bodyConsole.history, { waterBodyId: survivor, limit: 100 });
+    // Fifty-one bodies deep: past the chain's bound, so the read says it may be incomplete.
+    expect(read.capped).toBe(true);
+    expect(read.entries.length).toBeGreaterThan(0);
   });
 });
