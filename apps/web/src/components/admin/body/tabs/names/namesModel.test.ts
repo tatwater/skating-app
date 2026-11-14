@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-
+import { FAILED } from '../places/useTabReads';
 import { MASCOMA_NAMES } from './namesFixtures';
 import {
   aliasesOf,
@@ -56,52 +56,75 @@ describe('aliasesOf', () => {
 
 describe('namesFromBody', () => {
   it('reads the record: Now, the override, the class and the one state it holds', () => {
-    const data = namesFromBody({
-      name: 'Lake Auburn',
-      type: 'lakePond',
-      nameClaims: [
-        { source: 'user', value: 'Lake Auburn' },
-        { source: 'nhd', value: 'The Basin' },
-        { source: 'osm', value: 'Lake Auburn' },
-      ],
-      states: ['ME'],
-    });
+    const data = namesFromBody(
+      {
+        name: 'Lake Auburn',
+        type: 'lakePond',
+        nameClaims: [
+          { source: 'user', value: 'Lake Auburn' },
+          { source: 'nhd', value: 'The Basin' },
+          { source: 'osm', value: 'Lake Auburn' },
+        ],
+        states: ['ME'],
+      },
+      null,
+    );
     expect(data.overridden).toBe(true);
     expect(data.community).toBe(false);
     expect(data.rungs.map((r) => r.now)).toEqual([false, true]);
     expect(data.cls).toBe('lakePond');
     // Not recorded stays null — never zero, never "none".
     expect(data.classOptions).toBeNull();
-    expect(data.place).toEqual({ towns: null, county: null, state: 'ME', townLines: null });
+    expect(data.perCatalogClaims).toBeNull();
+    expect(data.place).toEqual({ admin: null, states: ['ME'], townLines: null });
+    expect(data.failures).toEqual([]);
   });
 
   it('calls a body with no catalog claim the community’s', () => {
-    const data = namesFromBody({ name: '', type: 'lakePond' });
+    const data = namesFromBody({ name: '', type: 'lakePond' }, null);
     expect(data.community).toBe(true);
     expect(data.overridden).toBe(false);
-    expect(data.place.state).toBeNull();
+    expect(data.place.states).toEqual([]);
   });
 
   it('keeps the current class among the options, so Now always has a row', () => {
-    const data = namesFromBody(
-      { name: 'Mascoma Lake', type: 'reservoir' },
-      { classOptions: [{ cls: 'lakePond', sources: ['NHD'] }] },
-    );
+    const data = namesFromBody({ name: 'Mascoma Lake', type: 'reservoir' }, null, {
+      classOptions: [{ cls: 'lakePond', sources: ['NHD'] }],
+    });
     expect(data.classOptions?.map((o) => o.cls)).toEqual(['reservoir', 'lakePond']);
-    const already = namesFromBody(
-      { name: 'Mascoma Lake', type: 'reservoir' },
-      { classOptions: [{ cls: 'reservoir', sources: ['OSM'] }] },
-    );
+    const already = namesFromBody({ name: 'Mascoma Lake', type: 'reservoir' }, null, {
+      classOptions: [{ cls: 'reservoir', sources: ['OSM'] }],
+    });
     expect(already.classOptions).toHaveLength(1);
   });
 
-  it('takes towns and the county from the boundary read when it lands', () => {
+  it('takes the towns and the first county from the boundary read when it lands', () => {
+    const body = { name: 'Mascoma Lake', type: 'reservoir' as const, states: ['NH'] };
+    const data = namesFromBody(body, {
+      towns: ['Enfield', 'Lebanon'],
+      counties: ['Grafton County'],
+      states: ['NH'],
+    });
+    expect(data.place.admin).toEqual({ towns: ['Enfield', 'Lebanon'], county: 'Grafton County' });
+    expect(
+      namesFromBody(body, { towns: ['Enfield'], counties: [], states: [] }).place.admin,
+    ).toEqual({ towns: ['Enfield'], county: null });
+  });
+
+  it('keeps the boundary read’s state: loading stays loading, a failure is named', () => {
+    const body = { name: 'Mascoma Lake', type: 'reservoir' as const };
+    expect(namesFromBody(body, undefined).place.admin).toBeUndefined();
+    const failed = namesFromBody(body, FAILED);
+    expect(failed.place.admin).toBe(FAILED);
+    expect(failed.failures).toEqual(['the towns and county']);
+  });
+
+  it('names every state a border body is in', () => {
     const data = namesFromBody(
-      { name: 'Mascoma Lake', type: 'reservoir', states: ['NH'] },
-      { place: { towns: ['Enfield'], county: 'Grafton' } },
+      { name: 'Lake Champlain', type: 'lakePond', states: ['VT', 'NY'] },
+      null,
     );
-    expect(data.place.towns).toEqual(['Enfield']);
-    expect(data.place.county).toBe('Grafton');
+    expect(data.place.states).toEqual(['VT', 'NY']);
   });
 });
 

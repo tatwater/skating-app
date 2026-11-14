@@ -3,6 +3,7 @@ import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { computedColor, JUNCTION_TOLERANCE_PX, sameColor } from '@/components/kit/measure';
 import { faceLoaded, must } from '@/components/kit/storyKit';
+import { FAILED } from '../places/useTabReads';
 import { InspectorFrame } from '../tabStoryFrame';
 import { NamesView } from './NamesView';
 import {
@@ -81,18 +82,102 @@ export const PickAClass: Story = {
   },
 };
 
-/** A viewer with nothing to change, or no write to change it with: the same facts, no controls. */
+/** A viewer with nothing to change: the same facts, no controls; what no read records says so. */
 export const ReadOnly: Story = {
   args: { data: MASCOMA_NAMES_AS_READ },
   play: async ({ canvasElement }) => {
     const page = within(canvasElement);
     await expect(page.queryByRole('button')).toBeNull();
     await expect(page.queryByRole('combobox')).toBeNull();
-    // Not recorded is absent, never "none": no towns, no county, no source line.
+    await expect(page.queryByRole('group', { name: 'Aliases' })).toBeNull();
     const location = slot(canvasElement, 'location');
-    await expect(location).not.toHaveTextContent('Towns');
-    await expect(location).not.toHaveTextContent('County');
+    await expect(location).toHaveTextContent('Enfield');
+    await expect(location).toHaveTextContent('Grafton County');
     await expect(location).toHaveTextContent('New Hampshire');
+    await expect(slot(canvasElement, 'class-claims')).toHaveTextContent(
+      'Each catalog’s class: Not recorded yet',
+    );
+    await expect(slot(canvasElement, 'per-catalog-claims')).toHaveTextContent('Not recorded yet');
+  },
+};
+
+/**
+ * The tab as the app draws it for a moderator today: the aliases' editor and the class change have
+ * no server write yet, so each is drawn where the board draws it and says *Not available yet*.
+ */
+export const AsTheAppDrawsIt: Story = {
+  args: {
+    data: MASCOMA_NAMES_AS_READ,
+    onChooseName: fn(),
+    canEditAliases: true,
+    canEditClass: true,
+  },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    const aliases = page.getByRole('group', { name: 'Aliases' });
+    await expect(aliases).toHaveAttribute('aria-disabled', 'true');
+    await userEvent.hover(aliases);
+    await waitFor(() =>
+      expect(document.querySelector('[data-slot="tooltip-title"]')).toHaveTextContent(
+        'Not available yet',
+      ),
+    );
+    await userEvent.unhover(aliases);
+    await expect(page.getByRole('button', { name: /Another class/ })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+  },
+};
+
+/** No boundary holds the body: its towns and county are not recorded, said so. */
+export const NoBoundary: Story = {
+  args: { data: LOW_PLAINS_NAMES },
+  play: async ({ canvasElement }) => {
+    const location = slot(canvasElement, 'location');
+    await expect(location).toHaveTextContent('TownsNot recorded yet');
+    await expect(location).toHaveTextContent('CountyNot recorded yet');
+    await expect(location).not.toHaveTextContent('TIGER');
+  },
+};
+
+/** The boundaries are on their way: their rows hold their place. */
+export const BoundariesLoading: Story = {
+  args: {
+    data: { ...MASCOMA_NAMES_AS_READ, place: { ...MASCOMA_NAMES_AS_READ.place, admin: undefined } },
+  },
+  play: async ({ canvasElement }) => {
+    const location = slot(canvasElement, 'location');
+    await expect(location.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(2);
+  },
+};
+
+/** The boundaries couldn't be read: said in place, and once at the top with Try again. */
+export const BoundariesFailed: Story = {
+  args: {
+    data: {
+      ...MASCOMA_NAMES_AS_READ,
+      place: { ...MASCOMA_NAMES_AS_READ.place, admin: FAILED },
+      failures: ['the towns and county'],
+    },
+    onRetry: fn(),
+  },
+  play: async ({ canvasElement, args }) => {
+    const note = slot(canvasElement, 'read-failures');
+    await expect(note).toHaveTextContent('Couldn’t read the towns and county.');
+    await expect(slot(canvasElement, 'location')).toHaveTextContent('TownsCouldn’t be read');
+    await userEvent.click(within(note).getByRole('button', { name: 'Try again' }));
+    await expect(args.onRetry).toHaveBeenCalled();
+  },
+};
+
+/** The record itself couldn't be read: the tab says so, with Try again. */
+export const RecordFailed: Story = {
+  args: { data: FAILED, onRetry: fn() },
+  play: async ({ canvasElement }) => {
+    await expect(slot(canvasElement, 'retry-note')).toHaveTextContent(
+      'Couldn’t read this body’s record.',
+    );
   },
 };
 

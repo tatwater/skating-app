@@ -7,15 +7,18 @@ import {
 } from '@skating/core';
 
 import type { BodyMapScene, LngLat, MapItem } from '../../map/mapDescriptors';
+import { FAILED, type Loaded } from '../places/useTabReads';
 
 type LatLng = { lat: number; lng: number };
 
 /**
- * The Names tab's data, from the body's record: the name ladder (every catalog's spelling, the
- * one displayed wearing Now), the aliases, the class with each catalog's answer, and where the body
- * is. Pure — the tab's view and its map drawing both read what this returns.
+ * The Names tab's data, from the body's record and the boundaries it lies in: the name ladder (each
+ * spelling the catalogs gave, the one displayed wearing Now), the aliases, the class with each
+ * catalog's answer, and where the body is. Pure — the tab's view and its map drawing both read
+ * what this returns.
  *
- * `null` anywhere means *not recorded* — drawn as absent, never as zero or "none".
+ * `null` anywhere means *not recorded* — said so, never zero or "none". A part read on its own is
+ * in its read's state ({@link Loaded}).
  */
 
 /** A catalog written out where it is the subject (Review 12 #7); its caps tag everywhere else. */
@@ -59,11 +62,14 @@ export type ClassOption = {
 /** A town line crossing the body, as the boundary read returns it. */
 export type TownLine = { id: string; path: LatLng[]; faces: [string, string] };
 
+/** The towns and county a body lies in, from the boundaries (`bodyConsole.places`). */
+export type AdminPlaces = { towns: string[]; county: string | null };
+
 export type Place = {
-  towns: string[] | null;
-  county: string | null;
-  /** The two-letter state code. */
-  state: string | null;
+  /** The towns and county, in their read's state; `null` when no boundary holds the body. */
+  admin: Loaded<AdminPlaces | null>;
+  /** The states the record says the body is in, as two-letter codes; empty when it says none. */
+  states: string[];
   /** The boundary lines that cross the map's view of the body, `null` until a read serves them. */
   townLines: TownLine[] | null;
 };
@@ -79,9 +85,18 @@ export type NamesData = {
   /** Names skaters use that the body doesn't display. */
   aliases: string[];
   cls: WaterBodyClass;
-  /** Each catalog's answer; `null` until the claims are read. Always holds the current class. */
+  /** Each catalog's answer; `null` until the claims are stored. Always holds the current class. */
   classOptions: ClassOption[] | null;
+  /**
+   * Whether every catalog's own name claim is kept, the ones that spelled it alike included. The
+   * import keeps one source per spelling, so this is `null` (not recorded) until the ETL keeps them
+   * all — until then a rung names the most authoritative catalog that gave its spelling, and no
+   * other; `kept` once the ladder is whole (the board's).
+   */
+  perCatalogClaims: 'kept' | null;
   place: Place;
+  /** What couldn't be read, in words ("the towns and county"). */
+  failures: string[];
 };
 
 /** What the model reads off the body's record. */
@@ -129,9 +144,14 @@ export function aliasesOf(name: string, claims: NamesBody['nameClaims']): string
   return out;
 }
 
+/** `bodyConsole.places`' answer: the towns, counties and states sampled; `null` with none. */
+export type PlacesInput = { towns: string[]; counties: string[]; states: string[] } | null;
+
 export function namesFromBody(
   body: NamesBody,
-  extras: { classOptions?: ClassOption[] | null; place?: Partial<Place> } = {},
+  // Required, never defaulted: a default would read a boundary read still loading as landed.
+  places: Loaded<PlacesInput>,
+  extras: { classOptions?: ClassOption[] | null; townLines?: TownLine[] | null } = {},
 ): NamesData {
   const rungs = nameRungs(body.name, body.nameClaims);
   const overridden = (body.nameClaims ?? []).some(
@@ -146,14 +166,24 @@ export function namesFromBody(
     aliases: aliasesOf(body.name, body.nameClaims),
     cls: body.type,
     classOptions: options === null ? null : withCurrentClass(options, body.type),
+    perCatalogClaims: null,
     place: {
-      towns: extras.place?.towns ?? null,
-      county: extras.place?.county ?? null,
-      // One state is a fact the record holds; a body across a state line names its first.
-      state: extras.place?.state ?? body.states?.[0] ?? null,
-      townLines: extras.place?.townLines ?? null,
+      admin: adminOf(places),
+      // The record's states; a body across a state line names each.
+      states: [...(body.states ?? [])],
+      townLines: extras.townLines ?? null,
     },
+    failures: places === FAILED ? ['the towns and county'] : [],
   };
+}
+
+/**
+ * The towns and county from the boundary read. Counties are read at the interior point only (a body
+ * rarely spans two), so the first is the county.
+ */
+export function adminOf(places: Loaded<PlacesInput>): Loaded<AdminPlaces | null> {
+  if (places === undefined || places === FAILED || places === null) return places;
+  return { towns: [...places.towns], county: places.counties[0] ?? null };
 }
 
 /** The class options with the current class among them, so Now always has a row to sit on. */

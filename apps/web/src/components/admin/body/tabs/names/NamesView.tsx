@@ -1,5 +1,5 @@
 import type { WaterBodyClass } from '@skating/core';
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 
 import { Badge, Tag, TagRun } from '@/components/kit/badge';
 import { Button } from '@/components/kit/button';
@@ -15,9 +15,15 @@ import { KeyValueList, KeyValueRow } from '@/components/kit/grid-list';
 import { Input, InputGroup, InputGroupKbd } from '@/components/kit/input';
 import { RadioGroup, RadioRow } from '@/components/kit/radio';
 import { Section } from '@/components/kit/section-slug';
+import { UnavailableButton } from '@/components/kit/unavailable-button';
 import { cn } from '@/lib/utils';
+import { RetryNote } from '../places/kit-candidates/retry-note';
+import { UnavailableField } from '../places/kit-candidates/unavailable-field';
+import { LoadingLine, NOT_RECORDED, ReadFailed, ReadFailures } from '../places/tabStates';
+import { FAILED, type Loaded } from '../places/useTabReads';
 import { LIT_ROW, LoadingSection, litAttr, TabBody } from '../tabParts';
 import {
+  type AdminPlaces,
   CATALOG_NAMES,
   CATALOG_TAGS,
   type ClassOption,
@@ -33,14 +39,24 @@ import {
  * Body › Names (board 5.4.2), the default view: the name ladder, the aliases, the class and where
  * the body is. Everything it shows arrives as props; every control is drawn only when its handler
  * is passed — the wiring passes one only for a viewer who holds the capability, and only where the
- * server has the mutation.
+ * server has the mutation. A control the server has no write for yet (the aliases, the class) is
+ * drawn *Not available yet* for a viewer who could use it (`canEditAliases`, `canEditClass`),
+ * never hidden; what no read records (each catalog's own claims) says *Not recorded yet*.
  */
+
+/** What the unbuilt controls will do, in the operator's words. */
+const NOT_YET = {
+  aliases: 'Adding and removing the names skaters use comes with the aliases editor.',
+  cls: 'Changing a body’s class comes with the class editor.',
+};
 
 const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 export type NamesViewProps = {
-  /** The tab's data; `undefined` while it loads. */
-  data: NamesData | undefined;
+  /** The tab's data; `undefined` while it loads, `failed` when the record couldn't be read. */
+  data: Loaded<NamesData>;
+  /** Ask again for every read that failed. */
+  onRetry?: () => void;
   /** The lit item (the deep link's highlight), controlled by the frame. */
   lit?: string | null;
   /** Display this catalog spelling, or (`null`) go back to the catalogs' ranking. */
@@ -51,15 +67,22 @@ export type NamesViewProps = {
   onAliasesChange?: (aliases: string[]) => void;
   /** Set the class. */
   onClassChange?: (cls: WaterBodyClass) => void;
+  /** The viewer could edit the aliases: with no `onAliasesChange` yet, the field says so. */
+  canEditAliases?: boolean;
+  /** The viewer could change the class: with no `onClassChange` yet, the control says so. */
+  canEditClass?: boolean;
 };
 
 export function NamesView({
   data,
+  onRetry,
   lit = null,
   onChooseName,
   onCommunityName,
   onAliasesChange,
   onClassChange,
+  canEditAliases = false,
+  canEditClass = false,
 }: NamesViewProps) {
   if (data === undefined) {
     return (
@@ -71,8 +94,20 @@ export function NamesView({
       </TabBody>
     );
   }
+  if (data === FAILED) {
+    return (
+      <TabBody data-slot="names-tab">
+        {onRetry ? (
+          <RetryNote onRetry={onRetry}>Couldn’t read this body’s record.</RetryNote>
+        ) : (
+          <ReadFailed />
+        )}
+      </TabBody>
+    );
+  }
   return (
     <TabBody data-slot="names-tab">
+      <ReadFailures failures={data.failures} onRetry={onRetry} />
       <NameSection data={data} lit={lit} onChoose={onChooseName} onCommunity={onCommunityName} />
       <Section title="Aliases" count={data.aliases.length} data-slot="aliases">
         {onAliasesChange ? (
@@ -82,6 +117,15 @@ export function NamesView({
             onValueChange={onAliasesChange}
             placeholder="Add a name skaters use"
           />
+        ) : canEditAliases ? (
+          <UnavailableField what={NOT_YET.aliases} label="Aliases">
+            <ChipInput
+              aria-label="Aliases"
+              value={data.aliases}
+              placeholder="Add a name skaters use"
+              disabled
+            />
+          </UnavailableField>
         ) : (
           data.aliases.length > 0 && (
             <ul className="flex flex-wrap gap-(--space-1_5)">
@@ -101,7 +145,7 @@ export function NamesView({
           )
         )}
       </Section>
-      <ClassSection data={data} lit={lit} onChange={onClassChange} />
+      <ClassSection data={data} lit={lit} onChange={onClassChange} canEdit={canEditClass} />
       <LocationSection data={data} />
     </TabBody>
   );
@@ -166,6 +210,11 @@ function NameSection({
           </li>
         ))}
       </ol>
+      {data.perCatalogClaims === null && (
+        <span data-slot="per-catalog-claims" className="text-assist leading-list text-fg3">
+          Other catalogs that gave the same spelling: {NOT_RECORDED}
+        </span>
+      )}
       {onChoose && data.overridden && (
         <Button size="xs" className="self-start" onClick={() => onChoose(null)}>
           Back to the catalogs’ ranking
@@ -234,10 +283,12 @@ function ClassSection({
   data,
   lit,
   onChange,
+  canEdit,
 }: {
   data: NamesData;
   lit: string | null;
   onChange: NamesViewProps['onClassChange'];
+  canEdit: boolean;
 }) {
   const [pick, setPick] = useState<WaterBodyClass>(data.cls);
   const [extra, setExtra] = useState<WaterBodyClass | null>(null);
@@ -272,6 +323,11 @@ function ClassSection({
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+        ) : !onChange && canEdit ? (
+          <UnavailableButton size="xs" what={NOT_YET.cls}>
+            Another class
+            <DropdownMenuCaret />
+          </UnavailableButton>
         ) : undefined
       }
     >
@@ -313,6 +369,11 @@ function ClassSection({
           />
         ))}
       </RadioGroup>
+      {data.classOptions === null && (
+        <span data-slot="class-claims" className="text-assist leading-list text-fg3">
+          Each catalog’s class: {NOT_RECORDED}
+        </span>
+      )}
       {onChange && pick !== data.cls && (
         <Button className="self-start" onClick={() => onChange(pick)}>
           Set as {classLabel(pick)}
@@ -323,32 +384,57 @@ function ClassSection({
 }
 
 function LocationSection({ data }: { data: NamesData }) {
-  const { towns, county, state } = data.place;
-  const country = countryOf(state);
+  const { admin, states } = data.place;
+  const country = countryOf(states[0] ?? null);
+  const fromBoundaries = (fact: (a: AdminPlaces) => ReactNode) =>
+    admin === undefined ? (
+      <LoadingLine width="7rem" />
+    ) : admin === FAILED ? (
+      <ReadFailed />
+    ) : admin === null ? (
+      <span className="text-fg3">{NOT_RECORDED}</span>
+    ) : (
+      fact(admin)
+    );
+  const known = typeof admin === 'object' && admin !== null;
   return (
     <Section title="Location" data-slot="location">
       <KeyValueList keyWidth="6.5rem">
-        {(towns !== null || county !== null) && (
+        {known && (
           <KeyValueRow label="Source">
             US Census Bureau<Tag className="ms-(--space-2)">TIGER</Tag>
           </KeyValueRow>
         )}
-        {towns !== null && towns.length > 0 && (
-          <KeyValueRow label="Towns">
+        <KeyValueRow label="Towns">
+          {fromBoundaries((a) =>
+            a.towns.length > 0 ? (
+              <span className="flex flex-col gap-(--space-1_5)">
+                {a.towns.map((t) => (
+                  <span key={t}>{t}</span>
+                ))}
+              </span>
+            ) : (
+              <span className="text-fg3">{NOT_RECORDED}</span>
+            ),
+          )}
+        </KeyValueRow>
+        <KeyValueRow label="County">
+          {fromBoundaries((a) => a.county ?? <span className="text-fg3">{NOT_RECORDED}</span>)}
+        </KeyValueRow>
+        <KeyValueRow label={states.length > 1 ? 'States' : 'State'}>
+          {states.length === 0 ? (
+            <span className="text-fg3">{NOT_RECORDED}</span>
+          ) : (
             <span className="flex flex-col gap-(--space-1_5)">
-              {towns.map((t) => (
-                <span key={t}>{t}</span>
+              {states.map((s) => (
+                <span key={s}>
+                  {stateName(s)}
+                  <Tag className="ms-(--space-2)">{s}</Tag>
+                </span>
               ))}
             </span>
-          </KeyValueRow>
-        )}
-        {county !== null && <KeyValueRow label="County">{county}</KeyValueRow>}
-        {state !== null && (
-          <KeyValueRow label="State">
-            {stateName(state)}
-            <Tag className="ms-(--space-2)">{state}</Tag>
-          </KeyValueRow>
-        )}
+          )}
+        </KeyValueRow>
         {country !== null && <KeyValueRow label="Country">{country}</KeyValueRow>}
       </KeyValueList>
     </Section>

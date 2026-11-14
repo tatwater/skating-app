@@ -20,10 +20,11 @@ export const MASCOMA_NAMES: NamesData = {
     { cls: 'reservoir', sources: ['OSM', '3DHP'] },
     { cls: 'lakePond', sources: ['NHD'], note: 'fcode 390' },
   ],
+  perCatalogClaims: 'kept',
+  failures: [],
   place: {
-    towns: ['Enfield', 'Lebanon'],
-    county: 'Grafton',
-    state: 'NH',
+    admin: { towns: ['Enfield', 'Lebanon'], county: 'Grafton' },
+    states: ['NH'],
     townLines: [
       {
         id: 'canaan-enfield',
@@ -47,12 +48,20 @@ export const MASCOMA_NAMES: NamesData = {
   },
 };
 
-/** The same body as the app reads it today: one stored claim, no class claims, no towns. */
+/**
+ * The same body as the app reads it today: one stored claim (the import keeps one source per
+ * spelling), no class claims, the towns and county from the boundaries, no town lines.
+ */
 export const MASCOMA_NAMES_AS_READ: NamesData = {
   ...MASCOMA_NAMES,
   rungs: [{ value: 'Mascoma Lake', sources: ['nhd'], now: true }],
   classOptions: null,
-  place: { towns: null, county: null, state: 'NH', townLines: null },
+  perCatalogClaims: null,
+  place: {
+    admin: { towns: ['Enfield', 'Lebanon'], county: 'Grafton County' },
+    states: ['NH'],
+    townLines: null,
+  },
 };
 
 /** Two catalogs disagree on the spelling, and a moderator chose the losing one. */
@@ -67,7 +76,9 @@ export const AUBURN_NAMES: NamesData = {
   aliases: ['Auburn Lake'],
   cls: 'lakePond',
   classOptions: null,
-  place: { towns: ['Auburn'], county: 'Androscoggin', state: 'ME', townLines: null },
+  perCatalogClaims: null,
+  place: { admin: { towns: ['Auburn'], county: 'Androscoggin' }, states: ['ME'], townLines: null },
+  failures: [],
 };
 
 /** A pond no catalog named, which skaters call Low Plains. */
@@ -79,5 +90,8 @@ export const LOW_PLAINS_NAMES: NamesData = {
   aliases: [],
   cls: 'lakePond',
   classOptions: null,
-  place: { towns: null, county: null, state: 'NH', townLines: null },
+  perCatalogClaims: null,
+  // No boundary holds it: the towns are not recorded.
+  place: { admin: null, states: ['NH'], townLines: null },
+  failures: [],
 };
