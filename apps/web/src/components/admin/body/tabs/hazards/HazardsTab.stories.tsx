@@ -83,7 +83,7 @@ export const Default: Story = {
     await faceLoaded(chip, 'ON THE LAKE');
     await faceLoaded(feature, 'Mascoma River inlet');
     await expect(must(q.querySelector('[data-slot="hazards-empty"]'))).toHaveTextContent(
-      'Nothing marked yet',
+      'No hazard reports yet',
     );
     // The season bar spans the pane, edge to edge.
     const bar = must(
@@ -147,7 +147,7 @@ export const Wired: Story = {
       'aria-disabled',
       'true',
     );
-    await expect(q.getByText(/archived hazards have no recorded end/)).toBeVisible();
+    await expect(q.getByText(/archived reports have no recorded end/)).toBeVisible();
   },
 };
 
@@ -175,7 +175,7 @@ export const Failed: Story = {
   args: { hazards: 'error', features: 'error', patternsWaiting: 'error' },
   play: async ({ canvasElement, args }) => {
     const q = within(quad(canvasElement));
-    await expect(q.queryByText(/Nothing marked/)).toBeNull();
+    await expect(q.queryByText(/No hazard reports/)).toBeNull();
     await userEvent.click(must(q.getAllByRole('button', { name: 'Try again' })[0]));
     await expect(args.onRetry).toHaveBeenCalled();
   },

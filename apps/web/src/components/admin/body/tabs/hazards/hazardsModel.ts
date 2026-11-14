@@ -9,13 +9,16 @@ import {
   seasonOf,
 } from '@skating/core';
 
+import { HAZARDS_WORDS, wordsContext } from './hazardsWords';
+
 /**
  * Body › Hazards' arithmetic. Pure, with `now` passed in.
  *
  * **D3, at its sharpest.** A hazard's freshness is how recently anyone looked, never whether the
- * ice is safe: a stale hazard keeps its row and its field (faded, never gone); an archived one was
- * voted healed by skaters, which is a report, not a clearance; an empty list says nothing was
- * marked — never that nothing is there.
+ * ice is safe: a stale hazard keeps its row and its field (faded, never removed); an archived one
+ * was archived by skaters' votes, which is a report about a report, and its end isn't recorded; an
+ * empty list says no hazard reports are on record — never that no hazard is there. Every string the
+ * tab says lives in `hazardsWords.ts`, under that rule.
  */
 
 // ── Ages ────────────────────────────────────────────────────────────────────────────────────────
@@ -37,10 +40,7 @@ export function ageWords(at: number, now: number): string {
 
 // ── Seasons ─────────────────────────────────────────────────────────────────────────────────────
 
-/** "2026–27". */
-export function seasonWord(season: Season): string {
-  return `${season}–${String((season + 1) % 100).padStart(2, '0')}`;
-}
+export { seasonWord } from './hazardsWords';
 
 /** The season bar: this season and the two before it as tabs, three more under Earlier. */
 export function seasonChoices(current: Season): { bar: Season[]; earlier: Season[] } {
@@ -271,22 +271,10 @@ export function stripDays(
   return out;
 }
 
-/**
- * A day in words, as its strip's title and today's line write it. **D3**: a day with any unknown
- * reads "at least" its known count and names the unknown; a day of a read that stopped short
- * (`capped`) is a floor too; a day with nothing marked reads *none marked*, never clear.
- */
+/** A day in words, as its strip's title and today's line write it (`HAZARDS_WORDS.day`). */
 export function dayWords(day: DayOnLake | null, capped: boolean): string {
   if (day === null) return 'Not yet';
-  const { count, unknown } = day;
-  if (unknown > 0) {
-    return count > 0
-      ? `At least ${count} on the lake, ${unknown} unknown`
-      : `${unknown} unknown: may have been on the lake`;
-  }
-  if (capped)
-    return count > 0 ? `At least ${count} on the lake` : 'None counted; the count stopped short';
-  return count > 0 ? `${count} on the lake` : 'None marked';
+  return HAZARDS_WORDS.day(wordsContext({ count: day.count, unknown: day.unknown, capped }));
 }
 
 /** One winter's strip as the tab draws it. */
@@ -332,19 +320,18 @@ export function wintersFrom(reads: readonly DailyHazards[], now: number): Winter
   };
 }
 
-/** "3 days with hazards marked, 2 with some unknown" — what a reader hears for a strip. */
+/** What a reader hears for a strip (`HAZARDS_WORDS.lineSummary`). */
 export function lineSummary(line: WinterLine): string {
-  let marked = 0;
-  let unsure = 0;
+  let markedDays = 0;
+  let unsureDays = 0;
   for (const d of line.days) {
     if (d === null || d.count + d.unknown === 0) continue;
-    marked++;
-    if (d.unknown > 0) unsure++;
+    markedDays++;
+    if (d.unknown > 0) unsureDays++;
   }
-  if (marked === 0) return line.capped ? 'None counted; the count stopped short' : 'None marked';
-  const days = `${marked} ${marked === 1 ? 'day' : 'days'} with hazards marked`;
-  const some = unsure === 0 ? '' : `, ${unsure} with some unknown`;
-  return `${days}${some}${line.capped ? '; each a floor' : ''}`;
+  return HAZARDS_WORDS.lineSummary(
+    wordsContext({ season: line.season, markedDays, unsureDays, capped: line.capped }),
+  );
 }
 
 /** The month ticks on the window: each 1st, as "OCT". */

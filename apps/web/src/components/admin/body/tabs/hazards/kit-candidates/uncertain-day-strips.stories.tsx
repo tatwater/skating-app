@@ -27,18 +27,18 @@ const meta = {
         current: true,
         today: 13,
         opens: 2,
-        summary: 'None marked',
+        summary: 'No hazard reports',
       },
       {
         key: 'last',
         label: '2025–26',
         values: known,
         unknown,
-        summary: '52 days with hazards marked, 28 with some unknown',
+        summary: '52 days with hazard reports, 28 with some unknown',
         dayTitle: (i: number) =>
           (unknown[i] ?? 0) > 0
-            ? `At least ${known[i]} on the lake, ${unknown[i]} unknown`
-            : `${known[i]} on the lake`,
+            ? `At least ${known[i]} reported on the lake, ${unknown[i]} unknown`
+            : `${known[i]} reported on the lake`,
       },
     ],
     months: [
@@ -57,7 +57,7 @@ type Story = StoryObj<typeof meta>;
 export const Default: Story = {
   play: async ({ canvasElement }) => {
     const svg = within(canvasElement).getByRole('img');
-    await expect(svg).toHaveAccessibleName(/2025–26: 52 days with hazards marked, 28 with some/);
+    await expect(svg).toHaveAccessibleName(/2025–26: 52 days with hazard reports, 28 with some/);
     const block = canvasElement.querySelector<SVGRectElement>('[data-slot="day-strip-unknown"]');
     const bar = canvasElement.querySelector<SVGRectElement>('[data-slot="day-strip-bar"]');
     await expect(block).not.toBeNull();

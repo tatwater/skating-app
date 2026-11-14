@@ -31,6 +31,7 @@ import {
   wintersFrom,
   winterWindow,
 } from './hazardsModel';
+import { LAKE_CLAIM } from './hazardsWords';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -342,12 +343,18 @@ describe('the day-by-day read’s clock', () => {
 describe('a day in words', () => {
   it('reads the board’s days', () => {
     expect(dayWords(null, false)).toBe('Not yet');
-    expect(dayWords({ count: 0, unknown: 0 }, false)).toBe('None marked');
-    expect(dayWords({ count: 3, unknown: 0 }, false)).toBe('3 on the lake');
-    expect(dayWords({ count: 3, unknown: 2 }, false)).toBe('At least 3 on the lake, 2 unknown');
-    expect(dayWords({ count: 0, unknown: 2 }, false)).toBe('2 unknown: may have been on the lake');
-    expect(dayWords({ count: 3, unknown: 0 }, true)).toBe('At least 3 on the lake');
-    expect(dayWords({ count: 0, unknown: 0 }, true)).toBe('None counted; the count stopped short');
+    expect(dayWords({ count: 0, unknown: 0 }, false)).toBe('No hazard reports');
+    expect(dayWords({ count: 3, unknown: 0 }, false)).toBe('3 reported on the lake');
+    expect(dayWords({ count: 3, unknown: 2 }, false)).toBe(
+      'At least 3 reported on the lake, 2 unknown',
+    );
+    expect(dayWords({ count: 0, unknown: 2 }, false)).toBe(
+      '2 unknown: archived, may still have been on the lake',
+    );
+    expect(dayWords({ count: 3, unknown: 0 }, true)).toBe('At least 3 reported on the lake');
+    expect(dayWords({ count: 0, unknown: 0 }, true)).toBe(
+      'No reports counted; the count stopped short',
+    );
   });
 
   it('never claims fewer than the count, and names any unknown (fast-check)', () => {
@@ -360,9 +367,9 @@ describe('a day in words', () => {
         if (count > 0 && (unknown > 0 || capped)) expect(words).toMatch(/^At least /);
         if (unknown > 0) {
           expect(words).toContain(`${unknown} unknown`);
-          expect(words).not.toMatch(/None|clear|gone|safe/i);
+          expect(words).not.toMatch(/None/i);
         }
-        expect(words).not.toMatch(/clear|safe|gone|ended/i);
+        expect(words).not.toMatch(LAKE_CLAIM);
       }),
     );
   });
@@ -378,7 +385,7 @@ describe('the winters as the tab draws them', () => {
     expect(w?.begins).toBe(Date.UTC(2026, 9, 1));
     expect(w?.today).toBeNull();
     expect(w?.lines[0]?.days.every((d) => d === null)).toBe(true);
-    expect(w && lineSummary(w.lines[0] as WinterLine)).toBe('None marked');
+    expect(w && lineSummary(w.lines[0] as WinterLine)).toBe('No hazard reports');
   });
 
   it('marks today and the watch’s opening, and carries each strip’s floor and missing ends', () => {
@@ -402,9 +409,9 @@ describe('the winters as the tab draws them', () => {
       [2026, true, 0],
       [2025, false, 8],
     ]);
-    expect(lineSummary(w?.lines[0] as WinterLine)).toBe('1 day with hazards marked; each a floor');
+    expect(lineSummary(w?.lines[0] as WinterLine)).toBe('1 day with hazard reports; each a floor');
     expect(lineSummary(w?.lines[1] as WinterLine)).toMatch(
-      /^\d+ days with hazards marked, \d+ with some unknown$/,
+      /^\d+ days with hazard reports, \d+ with some unknown$/,
     );
     expect(wintersFrom([], 0)).toBeNull();
   });

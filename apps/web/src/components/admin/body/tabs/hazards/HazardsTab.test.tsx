@@ -85,7 +85,7 @@ describe('HazardsTab', () => {
     convex.results.delete('waterBodies:get');
     const { container, rerender } = render(<HazardsTab bodyId={BODY} />);
     expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
-    expect(screen.queryByText(/Nothing marked/)).toBeNull();
+    expect(screen.queryByText(/No hazard reports/)).toBeNull();
     convex.results.set('waterBodies:get', new Error('boom'));
     rerender(<HazardsTab bodyId={BODY} />);
     expect(screen.getByText('This body couldn’t be read')).toBeVisible();
@@ -93,8 +93,10 @@ describe('HazardsTab', () => {
 
   it('reads this season’s hazards, the archived, the features and the waiting patterns', () => {
     render(<HazardsTab bodyId={BODY} />);
-    expect(screen.getByText('Nothing marked yet')).toBeVisible();
-    expect(screen.getByText(/No one has marked a hazard on Mascoma this winter\./)).toBeVisible();
+    expect(screen.getByText('No hazard reports yet')).toBeVisible();
+    expect(
+      screen.getByText(/There are no hazard reports on record for Mascoma this winter\./),
+    ).toBeVisible();
     expect(screen.getByText('2 patterns on Mascoma wait in the pre-ice pass')).toBeVisible();
     const seasons = convex.calls
       .filter((c) => c.name === 'hazards:listForBody')
@@ -149,7 +151,7 @@ describe('HazardsTab', () => {
     expect(screen.getByText('The hazards on the lake couldn’t be read')).toBeVisible();
     convex.results.set('hazards:listForBody', () => []);
     await userEvent.click(screen.getAllByRole('button', { name: 'Try again' })[0] as HTMLElement);
-    expect(await screen.findByText('Nothing marked yet')).toBeVisible();
+    expect(await screen.findByText('No hazard reports yet')).toBeVisible();
   });
 
   it('a populated winter lists its hazards over its strip, its archived ones in their group', () => {

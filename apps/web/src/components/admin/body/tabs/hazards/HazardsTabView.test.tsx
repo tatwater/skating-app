@@ -49,29 +49,31 @@ describe('HazardsTabView — the default board', () => {
     render(<HazardsTabView {...base} />);
     const onLake = screen.getByRole('region', { name: 'On the lake' });
     expect(within(onLake).getByText('0')).toBeVisible();
-    expect(within(onLake).getByText('Nothing marked yet')).toBeVisible();
+    expect(within(onLake).getByText('No hazard reports yet')).toBeVisible();
     expect(
       within(onLake).getByText(
-        'No one has marked a hazard on Mascoma since the watch opened 3 Oct 2026. No reports is not a reading of the ice.',
+        'There are no hazard reports on record for Mascoma since the watch opened 3 Oct 2026. No reports is not a reading of the ice.',
       ),
     ).toBeVisible();
     // The two winters: this one bare, last one's record — its archived hazards unknown, not gone.
     expect(
       within(onLake).getByRole('img', {
-        name: /^2026–27: None marked; 2025–26: \d+ days with hazards marked, \d+ with some unknown$/,
+        name: /^2026–27: No hazard reports; 2025–26: \d+ days with hazard reports, \d+ with some unknown$/,
       }),
     ).toBeVisible();
-    expect(within(onLake).getByText('Today: None marked')).toBeVisible();
+    expect(within(onLake).getByText('Today: No hazard reports')).toBeVisible();
     expect(
       within(onLake).getByText(
-        '2025–26: 8 archived hazards have no recorded end. From their first report on, every day counts them as unknown, never as gone.',
+        '2025–26: 8 archived reports have no recorded end. From their first report on, every day counts them as unknown: each hazard may still have been on the lake.',
       ),
     ).toBeVisible();
   });
 
   it('without the watch’s date, says this winter instead; the strips hold their place loading', () => {
     render(<HazardsTabView {...base} watchOpenedAt={null} winters={undefined} />);
-    expect(screen.getByText(/No one has marked a hazard on Mascoma this winter\./)).toBeVisible();
+    expect(
+      screen.getByText(/There are no hazard reports on record for Mascoma this winter\./),
+    ).toBeVisible();
     expect(screen.queryByRole('img', { name: /2026–27/ })).toBeNull();
     expect(document.querySelector('[data-slot="hazards-winters-loading"]')).not.toBeNull();
   });
@@ -193,25 +195,25 @@ describe('HazardsTabView — the default board', () => {
       'aria-busy',
       'true',
     );
-    expect(screen.queryByText(/Nothing marked/)).toBeNull();
+    expect(screen.queryByText(/No hazard reports/)).toBeNull();
     expect(screen.queryByText(/pre-ice pass/)).toBeNull();
   });
 
   it('says nothing was marked only once the archived read has landed', () => {
     const { rerender } = render(<HazardsTabView {...base} archived={undefined} />);
-    expect(screen.queryByText('Nothing marked yet')).toBeNull();
+    expect(screen.queryByText('No hazard reports yet')).toBeNull();
     rerender(<HazardsTabView {...base} archived="error" />);
-    expect(screen.queryByText('Nothing marked yet')).toBeNull();
+    expect(screen.queryByText('No hazard reports yet')).toBeNull();
     expect(screen.getByText('The archived hazards couldn’t be read')).toBeVisible();
   });
 
-  it('a winter whose every hazard was voted gone says so, and lists them open', () => {
+  it('a winter with no open report says how many were archived, and lists them open', () => {
     render(<HazardsTabView {...base} archived={FEB.archived} />);
-    expect(screen.queryByText('Nothing marked yet')).toBeNull();
-    expect(screen.getByText('All archived by votes')).toBeVisible();
+    expect(screen.queryByText('No hazard reports yet')).toBeNull();
+    expect(screen.getByText('No open reports · 2 archived')).toBeVisible();
     expect(
       screen.getByText(
-        'All 2 hazards marked on Mascoma since the watch opened 3 Oct 2026 were since voted gone by skaters. A vote is a report, not a reading of the ice.',
+        '2 hazard reports on Mascoma since the watch opened 3 Oct 2026, each archived by skaters’ votes. An archived report has no recorded end, so the hazard may still have been on the lake. No open report is not a reading of the ice.',
       ),
     ).toBeVisible();
     expect(screen.getAllByText(/Last seen/)).toHaveLength(2);
@@ -226,10 +228,10 @@ describe('HazardsTabView — the default board', () => {
     expect(screen.getAllByText(/Last seen/)).toHaveLength(2);
   });
 
-  it('a past winter with one hazard voted gone words it singly', () => {
+  it('a past winter with one archived report words it singly', () => {
     render(<HazardsTabView {...base} season={SEASON - 1} archived={FEB.archived.slice(0, 1)} />);
     expect(
-      screen.getByText(/^The one hazard marked on Mascoma in 2025–26 was since voted gone/),
+      screen.getByText(/^1 hazard report on Mascoma in 2025–26, archived by skaters’ votes\./),
     ).toBeVisible();
   });
 });
@@ -249,7 +251,7 @@ describe('HazardsTabView — reads that failed', () => {
     expect(screen.getByText('The hazards on the lake couldn’t be read')).toBeVisible();
     expect(screen.getByText('The known features couldn’t be read')).toBeVisible();
     expect(screen.getByText('The pre-ice pass couldn’t be read')).toBeVisible();
-    expect(screen.queryByText(/Nothing marked|Nothing was marked|voted gone/)).toBeNull();
+    expect(screen.queryByText(/No hazard reports|archived by skaters/)).toBeNull();
     const again = screen.getAllByRole('button', { name: 'Try again' });
     expect(again).toHaveLength(3);
     await userEvent.click(again[0] as HTMLElement);
@@ -297,7 +299,7 @@ describe('HazardsTabView — the winters, a day at a time', () => {
       start + 2 * 86_400_000 + 3_600_000,
     );
     render(<HazardsTabView {...base} archived={FEB.archived} winters={winters ?? undefined} />);
-    expect(screen.getByText('Today: At least 4 on the lake')).toBeVisible();
+    expect(screen.getByText('Today: At least 4 reported on the lake')).toBeVisible();
     expect(
       screen.getByText(
         'The count stopped short of every hazard reported; each day is at least what it shows.',
@@ -452,7 +454,9 @@ describe('HazardsTabView — a list, and a past winter', () => {
     ]);
     expect(rows[1]).toHaveTextContent('Wet / working crack · aging');
     expect(
-      within(rows[2] as HTMLElement).getByRole('img', { name: '1 of 2 said gone' }),
+      within(rows[2] as HTMLElement).getByRole('img', {
+        name: '1 skater voted it gone; 2 archive it',
+      }),
     ).toBeVisible();
     // Over a list, the winter on screen alone — not last winter beside it — and no "Today:" line
     // that could contradict the list.
@@ -485,8 +489,10 @@ describe('HazardsTabView — a list, and a past winter', () => {
   it('a past winter is read-only: the solid badge, no tools, past tense', () => {
     render(<HazardsTabView {...base} season={SEASON - 1} hazards={[]} />);
     expect(screen.getByText('Read-only')).toHaveAttribute('data-slot', 'badge');
-    expect(screen.getByText('Nothing was marked')).toBeVisible();
-    expect(screen.getByText(/No one marked a hazard on Mascoma in 2025–26\./)).toBeVisible();
+    expect(screen.getByText('No hazard reports on record')).toBeVisible();
+    expect(
+      screen.getByText(/There are no hazard reports on record for Mascoma in 2025–26\./),
+    ).toBeVisible();
     expect(
       screen.queryByRole('button', { name: /Demote|Edit shape|Mark a hazard|Add a feature/ }),
     ).toBeNull();

@@ -47,17 +47,20 @@ import {
   type WinterLine,
   type Winters,
 } from './hazardsModel';
+import { HAZARDS_WORDS, VOTE_WORDS, wordsContext } from './hazardsWords';
 import { ReadFailed } from './kit-candidates/read-failed';
 import { UncertainDayStrips } from './kit-candidates/uncertain-day-strips';
 
 /**
  * Board 5.4.7, Body › Hazards, the default view: the winters as a bar over the tab, this winter's
- * hazards on the lake — or, before any, *nothing marked yet* over the empty winter beside last
+ * hazards on the lake — or, before any, *no hazard reports yet* over the empty winter beside last
  * winter's record — then the body's known features, the promotion queue's count, and *Mark a
  * hazard* floating at the pane's foot.
  *
- * **D3.** An empty list says nothing was marked, never that nothing is there. A stale hazard keeps
- * its row, faded, never gone; an archived one was voted gone by skaters, which is a report. A day
+ * **D3.** The tab describes the record, never the lake: an empty list says no hazard reports are
+ * on record, never that nothing is there. A stale hazard keeps its row, faded, never removed; an
+ * archived one was archived by skaters' votes, which is a report about a report, and may still
+ * have been on the lake. Every headline, empty state and note comes from `hazardsWords.ts`. A day
  * on a strip with archived hazards that may have been on the lake reads *at least* its known count
  * and carries the unknown mark — never a smaller count, never clear, never ended. A read that
  * failed says so in its place, with *Try again*; it is never drawn as empty. A past winter is
@@ -115,22 +118,6 @@ const TOOLS = {
   edit: 'Redrawing a known feature’s footprint comes with the map’s hazard tools.',
 };
 
-/*
- * A record's day is a UTC midnight (the watch's opening, a winter's 1 October), so it is written
- * in UTC: in the viewer's zone it would read as the day before west of Greenwich.
- */
-const DAY = new Intl.DateTimeFormat('en-US', {
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
-  timeZone: 'UTC',
-});
-function dateWords(at: number): string {
-  const parts = DAY.formatToParts(at);
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
-  return `${get('day')} ${get('month')} ${get('year')}`;
-}
-
 const isList = <T,>(r: Read<readonly T[]>): r is readonly T[] => Array.isArray(r);
 
 export function HazardsTabView({
@@ -180,7 +167,7 @@ export function HazardsTabView({
   ]);
 
   const listed = isList(hazards) && hazards.length > 0;
-  // Nothing on the list is a claim only once the archived read says what was voted gone.
+  // An empty list is said only once the archived read says how many reports were archived.
   const quiet = isList(hazards) && hazards.length === 0;
   const featureBlock = (
     <FeatureList
@@ -259,7 +246,7 @@ export function HazardsTabView({
             {/* Keyed on the state, so a winter that turns quiet opens its group afresh. */}
             <Collapsible key={listed ? 'listed' : 'quiet'} defaultOpen={!listed}>
               <CollapsibleTrigger count={isList(archived) ? archived.length : undefined}>
-                {current ? 'Archived this winter' : `Archived in ${seasonWord(season)}`}
+                {HAZARDS_WORDS.archivedGroup(wordsContext({ current, season }))}
               </CollapsibleTrigger>
               <CollapsibleContent>
                 <ArchivedList rows={archived} onRetry={onRetry} />
@@ -311,9 +298,9 @@ export function HazardsTabView({
             <ReadFailed onRetry={onRetry}>The pre-ice pass couldn’t be read</ReadFailed>
           ) : (
             <p className="m-0 text-row leading-(--lead-list) text-fg1">
-              {patternsWaiting === 0
-                ? `No patterns on ${bodyName} wait in the pre-ice pass`
-                : `${patternsWaiting} ${patternsWaiting === 1 ? 'pattern' : 'patterns'} on ${bodyName} ${patternsWaiting === 1 ? 'waits' : 'wait'} in the pre-ice pass`}
+              {HAZARDS_WORDS.patternsLine(
+                wordsContext({ body: bodyName, patterns: patternsWaiting }),
+              )}
             </p>
           )}
         </Section>
@@ -347,7 +334,7 @@ export function HazardsTabView({
 }
 
 /**
- * The winter with nothing on the list: what was voted gone, or that nothing was marked — said
+ * The winter with no open report: how many were archived, or that none is on record — said
  * only once the archived read has landed, since an archived hazard is a hazard that was marked.
  */
 function QuietWinter({
@@ -378,22 +365,21 @@ function QuietWinter({
       </>
     );
   }
-  const n = archived.length;
-  const when = current
-    ? watchOpenedAt === null
-      ? 'this winter'
-      : `since the watch opened ${dateWords(watchOpenedAt)}`
-    : `in ${seasonWord(season)}`;
+  const words = wordsContext({
+    body: bodyName,
+    current,
+    season,
+    watchOpenedAt,
+    archived: archived.length,
+  });
   return (
     <>
       <div data-slot="hazards-empty" className="flex flex-col gap-(--space-1_5)">
         <span className="text-body leading-(--lead-snug) text-fg">
-          {n > 0 ? 'All archived by votes' : current ? 'Nothing marked yet' : 'Nothing was marked'}
+          {HAZARDS_WORDS.quietHeadline(words)}
         </span>
         <span className="text-assist leading-(--lead-list) text-fg3">
-          {n > 0
-            ? `${n === 1 ? 'The one hazard' : `All ${n} hazards`} marked on ${bodyName} ${when} ${n === 1 ? 'was' : 'were'} since voted gone by skaters. A vote is a report, not a reading of the ice.`
-            : `No one ${current ? 'has marked' : 'marked'} a hazard on ${bodyName} ${when}. No reports is not a reading of the ice.`}
+          {HAZARDS_WORDS.quietDetail(words)}
         </span>
       </div>
       {strips}
@@ -463,12 +449,18 @@ function WinterBlock({
       />
       {today && first !== undefined && todayDay !== null && todayDay !== undefined && (
         <p data-slot="hazards-today" className="m-0 text-assist leading-(--lead-list) text-fg2">
-          Today: {dayWords(todayDay, first.capped)}
+          {HAZARDS_WORDS.todayLine(
+            wordsContext({
+              count: todayDay.count,
+              unknown: todayDay.unknown,
+              capped: first.capped,
+            }),
+          )}
         </p>
       )}
       {winters.begins !== null && first !== undefined && (
         <p data-slot="hazards-begins" className="m-0 text-assist leading-(--lead-list) text-fg3">
-          The record for {seasonWord(first.season)} begins {dateWords(winters.begins)}.
+          {HAZARDS_WORDS.beginsLine(wordsContext({ season: first.season, begins: winters.begins }))}
         </p>
       )}
       {notes.map((n) => (
@@ -486,20 +478,24 @@ function lineNotes(
   named: boolean,
 ): { key: string; slot: string; text: string }[] {
   const out: { key: string; slot: string; text: string }[] = [];
-  const lead = named ? `${seasonWord(line.season)}: ` : '';
-  const n = line.unknownEnds;
-  if (n > 0) {
+  const words = wordsContext({
+    season: line.season,
+    named,
+    unknownEnds: line.unknownEnds,
+    capped: line.capped,
+  });
+  if (line.unknownEnds > 0) {
     out.push({
       key: `${line.season}.ends`,
       slot: 'hazards-unknown-ends',
-      text: `${lead}${n === 1 ? '1 archived hazard has' : `${n} archived hazards have`} no recorded end. From ${n === 1 ? 'its' : 'their'} first report on, every day counts ${n === 1 ? 'it' : 'them'} as unknown, never as gone.`,
+      text: HAZARDS_WORDS.unknownEndsNote(words),
     });
   }
   if (line.capped) {
     out.push({
       key: `${line.season}.capped`,
       slot: 'hazards-capped',
-      text: `${lead}The count stopped short of every hazard reported; each day is at least what it shows.`,
+      text: HAZARDS_WORDS.cappedNote(words),
     });
   }
   return out;
@@ -573,7 +569,10 @@ function HazardList({
       <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-(--space-3) border-0 border-b border-solid border-line2 pb-(--space-2) text-kick leading-none font-medium tracking-kick text-fg3 uppercase">
         <span>Hazard</span>
         <span className="text-right">Seen</span>
-        <span className="text-right">Gone</span>
+        {/* The vote's name, the one place "gone" is said: a count of skaters' votes on a report. */}
+        <span data-slot="gone-votes-head" className="text-right">
+          {VOTE_WORDS.column}
+        </span>
       </div>
       <ul aria-label="Hazards on the lake" className="m-0 flex list-none flex-col p-0">
         {rows.map((h) => {
@@ -639,7 +638,7 @@ function GoneSlots({ n, of }: { n: number; of: number }) {
       className="inline-flex justify-end gap-(--space-0_5)"
       style={{ '--gone-slot': GONE_SLOT } as CSSProperties}
       role="img"
-      aria-label={`${n} of ${of} said gone`}
+      aria-label={VOTE_WORDS.goneVotes(n, of)}
     >
       {Array.from({ length: of }, (_, i) => (
         <i
