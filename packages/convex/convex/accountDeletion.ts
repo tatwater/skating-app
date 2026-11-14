@@ -79,6 +79,7 @@ import { requireProfile } from './lib/auth';
 import { redactAgedContent } from './lib/contentPurge';
 import { reclaimExportBlob } from './lib/exportBundles';
 import { deletePhotoAndBlobs, referencedPhotoIds } from './lib/photoOrphans';
+import { lapOf, type Position, positionOf, saveLap } from './lib/recurringWork';
 
 /**
  * Rows touched per invocation. Small on purpose: every stage runs in its own transaction and
@@ -274,13 +275,17 @@ export const redactGhostContent = internalMutation({
 export const finalizeDueDeletions = internalMutation({
   args: {},
   handler: async (ctx) => {
-    const dueAt = Date.now() - DELETION_GRACE_MS;
-    const due = await ctx.db
-      .query('profiles')
-      .withIndex('by_deletion_requested_at', (q) =>
-        q.gt('deletionRequestedAt', 0).lte('deletionRequestedAt', dueAt),
-      )
-      .take(FINALIZE_PER_TICK);
+    const now = Date.now();
+    const dueAt = now - DELETION_GRACE_MS;
+    // **A turn each, from where the last tick stopped** (D257). This read the oldest twenty due
+    // accounts every hour, so twenty whose chains kept failing would hold every slot and no account
+    // behind them would ever be finalized — a privacy promise broken by somebody else's account. Now
+    // each tick takes the next twenty after the saved position and the walk wraps at the end of the
+    // due range: every due account is queued once a lap, a failing one only ever takes its own turn.
+    const finalizeLap = await lapOf(ctx, 'finalizeDeletions');
+    const finalizeFrom = positionOf(finalizeLap);
+    const due = await accountsAfter(ctx, finalizeFrom, FINALIZE_PER_TICK, dueAt);
+    await saveTurn(ctx, 'finalizeDeletions', finalizeLap, due, FINALIZE_PER_TICK, now);
 
     let started = 0;
     let skipped = 0;
@@ -316,10 +321,21 @@ export const finalizeDueDeletions = internalMutation({
     //
     // The remaining cap is a priority order, not a starvation: the oldest pending ghosts are the ones
     // closest to finalization, which is exactly when their content has to be clean.
-    const pending = await ctx.db
-      .query('profiles')
-      .withIndex('by_deletion_requested_at', (q) => q.gt('deletionRequestedAt', dueAt))
-      .take(REDACT_PER_TICK);
+    //
+    // The same turn-taking as the due accounts above (D257): two hundred ghosts whose redaction kept
+    // failing would otherwise hold the page.
+    const redactLap = await lapOf(ctx, 'redactGhosts');
+    const redactFrom = positionOf(redactLap);
+    const pending = await accountsAfter(
+      ctx,
+      // A saved place an account has since passed into the due range is behind the range's start.
+      redactFrom !== undefined && redactFrom.value > dueAt
+        ? redactFrom
+        : { value: dueAt, creationTime: Number.POSITIVE_INFINITY },
+      REDACT_PER_TICK,
+      undefined,
+    );
+    await saveTurn(ctx, 'redactGhosts', redactLap, pending, REDACT_PER_TICK, now);
     let redacting = 0;
     for (const profile of pending) {
       if (profile.deletionRequestedAt === undefined) continue;
@@ -333,6 +349,59 @@ export const finalizeDueDeletions = internalMutation({
     return { due: due.length, started, skipped, redacting };
   },
 });
+
+/**
+ * Up to `n` profiles on `by_deletion_requested_at` after `at` (requested time, then creation), up to
+ * `upTo` when given — always bounded below by the position or by `gt(0)`, since the field is optional
+ * and the index not sparse.
+ */
+async function accountsAfter(
+  ctx: MutationCtx,
+  at: Position | undefined,
+  n: number,
+  upTo: number | undefined,
+): Promise<Doc<'profiles'>[]> {
+  const rows: Doc<'profiles'>[] = [];
+  if (at !== undefined && Number.isFinite(at.creationTime)) {
+    const tied = await ctx.db
+      .query('profiles')
+      .withIndex('by_deletion_requested_at', (q) =>
+        q.eq('deletionRequestedAt', at.value).gt('_creationTime', at.creationTime),
+      )
+      .take(n);
+    rows.push(...tied);
+  }
+  if (rows.length < n) {
+    const rest = await ctx.db
+      .query('profiles')
+      .withIndex('by_deletion_requested_at', (q) => {
+        const from = q.gt('deletionRequestedAt', at?.value ?? 0);
+        return upTo !== undefined ? from.lte('deletionRequestedAt', upTo) : from;
+      })
+      .take(n - rows.length);
+    rows.push(...rest);
+  }
+  return rows;
+}
+
+/** Save where a turn-taking walk stopped: after its last row, or — a short page — back to the start. */
+async function saveTurn(
+  ctx: MutationCtx,
+  job: 'finalizeDeletions' | 'redactGhosts',
+  lap: Doc<'jobPositions'> | null,
+  taken: readonly Doc<'profiles'>[],
+  n: number,
+  now: number,
+): Promise<void> {
+  const last = taken.at(-1);
+  const at =
+    taken.length === n && last?.deletionRequestedAt !== undefined
+      ? { value: last.deletionRequestedAt, creationTime: last._creationTime }
+      : undefined;
+  // Nothing to write when nothing moves: no position before, none after.
+  if (at === undefined && positionOf(lap) === undefined && lap !== null) return;
+  await saveLap(ctx, job, lap, at, now);
+}
 
 /**
  * The stages, in order. Named rather than numbered so a log line or a resumed job says what it's doing,

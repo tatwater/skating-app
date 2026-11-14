@@ -90,6 +90,8 @@ import { meterOpenMeteo } from './lib/apiMeter';
 import { liveSubAreaOf } from './lib/bodies';
 import { WEATHER_DAY_SOURCES } from './lib/enums';
 import { isListed } from './lib/listing';
+import { errorClassOf } from './lib/readBudget';
+import { asItem, type Isolated, runItem } from './lib/recurringWork';
 import { bodyWeatherCell, subAreaWeatherCell } from './lib/sampling';
 import { literals } from './lib/validators';
 import { HOURLY_VARS, MAX_PAST_DAYS, OPEN_METEO_FORECAST_URL } from './weather';
@@ -134,6 +136,8 @@ export const CELL_BATCH_SIZE = 40;
 
 /** Bodies per batch while materialising the cell registry. */
 export const CELL_BACKFILL_BATCH = 500;
+/** The most a registry page reads, by weight — a page of heavy outlines ends early (D257). */
+const PAGE_BYTES = 6 * 1024 * 1024;
 
 /** How far back the gap sweep looks. Inside the 92-day window, so step 1 of the ladder can serve it. */
 export const GAP_SWEEP_DAYS = 30;
@@ -539,13 +543,22 @@ export const backfillWeatherCells = internalAction({
     tier: v.optional(literals(WEATHER_TIERS)),
     /** Minted by the first batch and carried by the rest — see `weatherCells.runId`. */
     runId: v.optional(v.string()),
+    /** When the run began, carried so its last page can tell whether any page of it failed (D257). */
+    startedAt: v.optional(v.number()),
   },
   handler: async (
     ctx,
-    { cursor, tier, runId },
-  ): Promise<{ done: boolean; scanned: number; pruned: number; superseded?: true }> => {
+    { cursor, tier, runId, startedAt: runStartedAt },
+  ): Promise<{
+    done: boolean;
+    scanned: number;
+    pruned: number;
+    failed?: number;
+    superseded?: true;
+  }> => {
     const targetTier = tier ?? 'filter';
     const run = runId ?? `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const startedAt = runStartedAt ?? Date.now();
 
     // The first page claims the tier; later pages inherit the claim. `startedAt` is recorded here and
     // nowhere else, because it is the instant the completed run's guarantee is stated against: *this
@@ -554,7 +567,7 @@ export const backfillWeatherCells = internalAction({
       await ctx.runMutation(internal.weatherArchive.beginCellSync, {
         tier: targetTier,
         runId: run,
-        startedAt: Date.now(),
+        startedAt,
       });
     }
 
@@ -562,34 +575,19 @@ export const backfillWeatherCells = internalAction({
       cursor: cursor ?? null,
       tier: targetTier,
     });
-    const { superseded } = await ctx.runMutation(internal.weatherArchive.upsertWeatherCells, {
-      tier: targetTier,
-      cells: page.cells,
-      runId: run,
-      nowMs: Date.now(),
-    });
+    const cells = await upsertIsolated(ctx, targetTier, run, page);
     // ⚠ **A superseded run stops here — it does not write, reschedule or prune.** Two walks running at
     // once would each see the other's rows as foreign and take turns deleting them, so the registry
     // could end up emptier the more often it was reconciled. Ownership is a single `runId` and the
     // newest claim wins; the loser abandons its remaining pages, whose work the winner is redoing.
-    if (superseded) return { done: true, scanned: page.scanned, pruned: 0, superseded: true };
-    // The discovery join rides the same walk (Workstream 5): the page already resolved every body's
-    // filter cell, so writing `bodyWeatherCells` here costs nothing it was not already paying.
-    if (page.members.length > 0) {
-      const joined = await ctx.runMutation(internal.weatherArchive.upsertBodyWeatherCells, {
-        members: page.members,
-        runId: run,
-        nowMs: Date.now(),
-      });
-      if (joined.superseded)
-        return { done: true, scanned: page.scanned, pruned: 0, superseded: true };
-    }
+    if (cells.superseded) return { done: true, scanned: page.scanned, pruned: 0, superseded: true };
 
     if (!page.isDone) {
       await ctx.scheduler.runAfter(0, internal.weatherArchive.backfillWeatherCells, {
         cursor: page.cursor,
         tier: targetTier,
         runId: run,
+        startedAt,
       });
       return { done: false, scanned: page.scanned, pruned: 0 };
     }
@@ -607,24 +605,27 @@ export const backfillWeatherCells = internalAction({
         cursor: subCursor,
         tier: targetTier,
       });
-      const res = await ctx.runMutation(internal.weatherArchive.upsertWeatherCells, {
-        tier: targetTier,
-        cells: bays.cells,
-        runId: run,
-        nowMs: Date.now(),
-      });
+      const res = await upsertIsolated(ctx, targetTier, run, bays);
       if (res.superseded) return { done: true, scanned, pruned: 0, superseded: true };
-      if (bays.members.length > 0) {
-        const joined = await ctx.runMutation(internal.weatherArchive.upsertBodyWeatherCells, {
-          members: bays.members,
-          runId: run,
-          nowMs: Date.now(),
-        });
-        if (joined.superseded) return { done: true, scanned, pruned: 0, superseded: true };
-      }
       scanned += bays.scanned;
       if (bays.isDone) break;
       subCursor = bays.cursor;
+    }
+    // ⚠ **A run any page of which failed is not complete** (D257): a cell or membership it could not
+    // write would read as vacated, and pruning it would stop the weather for a lake that is still
+    // there. So the run prunes nothing and is not marked complete — the registry keeps what it had,
+    // which costs a few Open-Meteo calls and loses nothing. What failed is counted (`jobFailures`,
+    // never parked), and the next walk — the weekly net or an import's — tries it again.
+    if (
+      await ctx.runQuery(internal.recurringJobs.failedSince, {
+        job: 'weatherCells',
+        since: startedAt,
+      })
+    ) {
+      console.error(
+        `weatherArchive: the ${targetTier} registry walk had failures — nothing pruned, not marked complete`,
+      );
+      return { done: true, scanned, pruned: 0, failed: 1 };
     }
     // ⚠ **Only after a COMPLETE walk — of both tables.** Pruning mid-run would delete every cell the remaining pages
     // were about to re-stamp — the whole registry, one page in. `isDone` is the only safe moment,
@@ -652,9 +653,88 @@ export const backfillWeatherCells = internalAction({
       runId: run,
       completedAt: Date.now(),
     });
+    // A complete walk saw everything that was failing go through, or go: forget the rest.
+    await ctx.runMutation(internal.recurringJobs.forgetBefore, {
+      job: 'weatherCells',
+      before: startedAt,
+    });
     return { done: true, scanned, pruned };
   },
 });
+
+/** What a page's writes failed on: a cell's key, or a body's (or bay's) membership. */
+type Failed = { key: string; errorClass: string };
+
+/**
+ * Write one page of the registry walk — its cells, then its memberships — so that **one row that
+ * can't be written never stops the walk** (D257). Each write goes whole first, the common path; if it
+ * throws, each cell or membership is written alone, and the ones that still fail are recorded
+ * (`jobFailures`, job `weatherCells`, never parked). The superseded check stays in every write.
+ */
+async function upsertIsolated(
+  ctx: ActionCtx,
+  tier: WeatherTier,
+  runId: string,
+  page: CellPage,
+): Promise<{ superseded: boolean }> {
+  const failed: Failed[] = [];
+  const cells = await writeIsolated(
+    page.cells,
+    (batch) =>
+      runItem<{ superseded: boolean }>(ctx, internal.weatherArchive.upsertWeatherCells, {
+        tier,
+        cells: batch,
+        runId,
+        nowMs: Date.now(),
+      }),
+    (cell) => `cell:${tier}:${cell.cellKey}`,
+    failed,
+  );
+  if (cells.superseded) return { superseded: true };
+  // The discovery join rides the same walk (Workstream 5): the page already resolved every body's
+  // filter cell, so writing `bodyWeatherCells` here costs nothing it was not already paying.
+  if (page.members.length > 0) {
+    const joined = await writeIsolated(
+      page.members,
+      (batch) =>
+        runItem<{ superseded: boolean }>(ctx, internal.weatherArchive.upsertBodyWeatherCells, {
+          members: batch,
+          runId,
+          nowMs: Date.now(),
+        }),
+      (m) => `member:${m.subAreaId ?? m.waterBodyId}`,
+      failed,
+    );
+    if (joined.superseded) return { superseded: true };
+  }
+  if (failed.length > 0) {
+    await ctx.runMutation(internal.recurringJobs.settle, {
+      job: 'weatherCells',
+      failed,
+      succeeded: [],
+      park: false,
+    });
+  }
+  return { superseded: false };
+}
+
+/** A write whole, then — if it threw — each row alone, collecting what still fails. */
+async function writeIsolated<T>(
+  rows: readonly T[],
+  write: (batch: T[]) => Promise<Isolated<{ superseded: boolean }>>,
+  keyOf: (row: T) => string,
+  failed: Failed[],
+): Promise<{ superseded: boolean }> {
+  if (rows.length === 0) return { superseded: false };
+  const whole = await write([...rows]);
+  if (whole.ok) return whole.value;
+  for (const row of rows) {
+    const one = await write([row]);
+    if (!one.ok) failed.push({ key: keyOf(row), errorClass: one.errorClass });
+    else if (one.value.superseded) return { superseded: true };
+  }
+  return { superseded: false };
+}
 
 /** Claim a tier for a run, displacing any walk already in flight. */
 export const beginCellSync = internalMutation({
@@ -930,9 +1010,11 @@ function countCell(byKey: Map<string, CellPageEntry>, cell: WeatherCell): void {
 export const pageBodyCells = internalQuery({
   args: { cursor: v.union(v.string(), v.null()), tier: literals(WEATHER_TIERS) },
   handler: async (ctx, { cursor, tier }): Promise<CellPage> => {
+    // Bounded by weight as well as rows (D257): a page of giant outlines ends early rather than
+    // reading past the limit — which would fail the same page every run.
     const page = await ctx.db
       .query('waterBodies')
-      .paginate({ numItems: CELL_BACKFILL_BATCH, cursor });
+      .paginate({ numItems: CELL_BACKFILL_BATCH, cursor, maximumBytesRead: PAGE_BYTES });
     const byKey = new Map<string, CellPageEntry>();
     const members: MemberEntry[] = [];
     for (const body of page.page) {
@@ -982,7 +1064,7 @@ export const pageSubAreaCells = internalQuery({
   handler: async (ctx, { cursor, tier }): Promise<CellPage> => {
     const page = await ctx.db
       .query('waterBodySubAreas')
-      .paginate({ numItems: CELL_BACKFILL_BATCH, cursor });
+      .paginate({ numItems: CELL_BACKFILL_BATCH, cursor, maximumBytesRead: PAGE_BYTES });
     const parents = new Map<string, { elevationM?: number } | null>();
     const byKey = new Map<string, CellPageEntry>();
     const members: MemberEntry[] = [];
@@ -1034,40 +1116,22 @@ export const upsertWeatherCells = internalMutation({
       }),
     ),
   },
-  handler: async (ctx, { tier, runId, nowMs, cells }): Promise<{ superseded: boolean }> => {
-    // ⚠ Checked here rather than in the action so the claim and the write share one transaction: a
-    // run that reads "still mine", then gets displaced, then writes would resurrect rows the winner
-    // has already pruned.
-    const claim = await ctx.db
-      .query('weatherCellSyncs')
-      .withIndex('by_tier', (q) => q.eq('tier', tier))
-      .unique();
-    if (claim && claim.runId !== runId) return { superseded: true };
+  handler: (ctx, { tier, runId, nowMs, cells }): Promise<{ superseded: boolean }> =>
+    asItem('cells', async () => {
+      // ⚠ Checked here rather than in the action so the claim and the write share one transaction: a
+      // run that reads "still mine", then gets displaced, then writes would resurrect rows the winner
+      // has already pruned.
+      const claim = await ctx.db
+        .query('weatherCellSyncs')
+        .withIndex('by_tier', (q) => q.eq('tier', tier))
+        .unique();
+      if (claim && claim.runId !== runId) return { superseded: true };
 
-    for (const cell of cells) {
-      const existing = await ctx.db
-        .query('weatherCells')
-        .withIndex('by_key', (q) => q.eq('cellKey', cell.cellKey))
-        .first();
-      if (existing) {
-        // A cell can straddle a page boundary, so counts *accumulate* within a run and are *replaced*
-        // by a later one. The discriminator is the run id, not the clock: two runs in the same
-        // millisecond both read as "same run" under a timestamp comparison and double-count every
-        // body — which is exactly what the registry test caught.
-        const sameRun = existing.runId === runId;
-        await ctx.db.patch(existing._id, {
-          ...cell,
-          tier,
-          runId,
-          bodyCount: sameRun ? existing.bodyCount + cell.bodyCount : cell.bodyCount,
-          updatedAt: nowMs,
-        });
-        continue;
-      }
-      await ctx.db.insert('weatherCells', { ...cell, tier, runId, updatedAt: nowMs });
-    }
-    return { superseded: false };
-  },
+      // Each cell is its own item (D257): a page whose write throws is written again a row at a time.
+      for (const cell of cells)
+        await asItem(cell.cellKey, () => upsertCell(ctx, tier, runId, nowMs, cell));
+      return { superseded: false };
+    }),
 });
 
 /**
@@ -1088,37 +1152,77 @@ export const upsertBodyWeatherCells = internalMutation({
       }),
     ),
   },
-  handler: async (ctx, { runId, nowMs, members }): Promise<{ superseded: boolean }> => {
-    // ⚠ The same in-transaction ownership check `upsertWeatherCells` makes, for the same reason: a
-    // page of a superseded walk that lands after the winner's prune would stamp rows with a dead
-    // run id — unpruned until the next walk — and patch a body's cell back to a stale key. The
-    // action's earlier check was a separate transaction; this one shares the write's.
-    const claim = await ctx.db
-      .query('weatherCellSyncs')
-      .withIndex('by_tier', (q) => q.eq('tier', 'filter'))
-      .unique();
-    if (claim && claim.runId !== runId) return { superseded: true };
-    for (const m of members) {
-      const existing = await ctx.db
-        .query('bodyWeatherCells')
-        .withIndex('by_body', (q) =>
-          q.eq('waterBodyId', m.waterBodyId).eq('subAreaId', m.subAreaId),
-        )
-        .first();
-      if (existing) {
-        await ctx.db.patch(existing._id, { cellKey: m.cellKey, runId, updatedAt: nowMs });
-        continue;
+  handler: (ctx, { runId, nowMs, members }): Promise<{ superseded: boolean }> =>
+    asItem('members', async () => {
+      // ⚠ The same in-transaction ownership check `upsertWeatherCells` makes, for the same reason: a
+      // page of a superseded walk that lands after the winner's prune would stamp rows with a dead
+      // run id — unpruned until the next walk — and patch a body's cell back to a stale key. The
+      // action's earlier check was a separate transaction; this one shares the write's.
+      const claim = await ctx.db
+        .query('weatherCellSyncs')
+        .withIndex('by_tier', (q) => q.eq('tier', 'filter'))
+        .unique();
+      if (claim && claim.runId !== runId) return { superseded: true };
+      for (const m of members) {
+        await asItem(m.subAreaId ?? m.waterBodyId, () => upsertMember(ctx, runId, nowMs, m));
       }
-      await ctx.db.insert('bodyWeatherCells', {
-        ...m,
-        isBay: m.subAreaId !== undefined,
-        runId,
-        updatedAt: nowMs,
-      });
-    }
-    return { superseded: false };
-  },
+      return { superseded: false };
+    }),
 });
+
+/**
+ * One cell of a registry page. A cell can straddle a page boundary, so counts *accumulate* within a
+ * run and are *replaced* by a later one. The discriminator is the run id, not the clock: two runs in
+ * the same millisecond both read as "same run" under a timestamp comparison and double-count every
+ * body — which is exactly what the registry test caught.
+ */
+async function upsertCell(
+  ctx: MutationCtx,
+  tier: WeatherTier,
+  runId: string,
+  nowMs: number,
+  cell: CellPageEntry,
+): Promise<void> {
+  const existing = await ctx.db
+    .query('weatherCells')
+    .withIndex('by_key', (q) => q.eq('cellKey', cell.cellKey))
+    .first();
+  if (existing) {
+    const sameRun = existing.runId === runId;
+    await ctx.db.patch(existing._id, {
+      ...cell,
+      tier,
+      runId,
+      bodyCount: sameRun ? existing.bodyCount + cell.bodyCount : cell.bodyCount,
+      updatedAt: nowMs,
+    });
+    return;
+  }
+  await ctx.db.insert('weatherCells', { ...cell, tier, runId, updatedAt: nowMs });
+}
+
+/** One membership of a registry page: a body's (or bay's) cell, keyed on the pair. */
+async function upsertMember(
+  ctx: MutationCtx,
+  runId: string,
+  nowMs: number,
+  m: MemberEntry,
+): Promise<void> {
+  const existing = await ctx.db
+    .query('bodyWeatherCells')
+    .withIndex('by_body', (q) => q.eq('waterBodyId', m.waterBodyId).eq('subAreaId', m.subAreaId))
+    .first();
+  if (existing) {
+    await ctx.db.patch(existing._id, { cellKey: m.cellKey, runId, updatedAt: nowMs });
+    return;
+  }
+  await ctx.db.insert('bodyWeatherCells', {
+    ...m,
+    isBay: m.subAreaId !== undefined,
+    runId,
+    updatedAt: nowMs,
+  });
+}
 
 /** Join rows examined per prune page — a page must stay well under the per-function read cap. */
 export const MEMBERSHIP_PRUNE_BATCH = 4000;
@@ -1475,68 +1579,34 @@ export const sweepWeatherDayGaps = internalAction({
 
     let repaired = 0;
     let lastKey = afterKey;
+    const { keys: failingKeys }: { keys: string[] } = await ctx.runQuery(
+      internal.recurringJobs.failingKeys,
+      { job: 'weatherGaps' },
+    );
+    const wasFailing = new Set(failingKeys);
+    const failed: { key: string; errorClass: string }[] = [];
+    const recovered: string[] = [];
     for (const cell of cells) {
       lastKey = cell.cellKey;
-      const held = await ctx.runQuery(internal.weatherArchive.listCellDayKeys, {
-        cellKey: cell.cellKey,
-        fromMs,
-        toMs,
-      });
-      if (held.present.length === 0 && held.missing.length === 0) continue; // never touched
-
-      const have = new Set(held.present);
-      const holes: number[] = [];
-      // Only inside the cell's own known range — a cell first touched a week ago is not missing the
-      // three weeks before that.
-      const earliest = Math.min(...held.present, ...held.missing);
-      for (let d = Math.max(fromMs, earliest); d <= toMs; d += DAY_MS) {
-        if (!have.has(d)) holes.push(d);
-      }
-      if (holes.length === 0) continue;
-
-      // Step 1: refetch. One request covers every hole in the window, so ask once and widely rather
-      // than per hole.
-      const spanDays = Math.ceil((toMs - Math.min(...holes)) / DAY_MS) + 2;
+      const key = `${tier}:${cell.cellKey}`;
+      // **One cell that throws no longer ends the walk** (D257): it used to stop the batch, and
+      // the next day's sweep started over and died at the same cell. Now it is recorded and the walk
+      // goes on; the next daily run is its retry. A gap left unrepaired is a day the record says
+      // nothing about, never a day it calls clear.
       try {
-        await ingestCellDays(ctx, tier, { key: cell.cellKey, ...cell }, spanDays);
+        repaired += await asItem(key, () => repairCellGaps(ctx, tier, cell, fromMs, toMs, now));
+        if (wasFailing.has(key)) recovered.push(key);
       } catch (err) {
-        console.warn(`weatherArchive: gap refetch for ${cell.cellKey} threw`, err);
+        console.error(`weatherArchive: gap repair for ${cell.cellKey} failed`, err);
+        failed.push({ key, errorClass: errorClassOf(err) });
       }
-
-      const after = await ctx.runQuery(internal.weatherArchive.listCellDayKeys, {
-        cellKey: cell.cellKey,
-        fromMs,
-        toMs,
+    }
+    if (failed.length > 0 || recovered.length > 0) {
+      await ctx.runMutation(internal.recurringJobs.settle, {
+        job: 'weatherGaps',
+        failed,
+        succeeded: recovered,
       });
-      // Built once, not once per hole — the Set was being reconstructed inside the predicate.
-      const recovered = new Set(after.present);
-      const stillMissing = holes.filter((d) => !recovered.has(d));
-      repaired += holes.length - stillMissing.length;
-
-      if (stillMissing.length > 0) {
-        // Step 2 (borrow the coarser tier) applies only to `browse`; `filter` has no parent, and step
-        // 3 (ERA5, past 92 days) is deferred — so `filter` goes straight to step 4. Recording the gap
-        // is what keeps a D159 predicate from reading an absent day as "no snow fell".
-        //
-        // ⚠ **The borrow reports *which* days it filled, not how many.** The parent holds an
-        // arbitrary subset of the holes, so subtracting a count off the front of `stillMissing`
-        // would mark the wrong days: a parent that covered only the newest hole would leave the
-        // oldest one silently unrecorded — the precise failure step 4 exists to prevent.
-        const borrowed = tier === 'browse' ? await borrowFromFilter(ctx, cell, stillMissing) : [];
-        const borrowedDays = new Set(borrowed);
-        const unrecovered = stillMissing.filter((d) => !borrowedDays.has(d));
-        if (unrecovered.length > 0) {
-          await ctx.runMutation(internal.weatherArchive.writeMissingDays, {
-            cellKey: cell.cellKey,
-            tier,
-            dayMs: unrecovered,
-            fetchedAt: now,
-          });
-        }
-        repaired += borrowed.length;
-      }
-      // A repaired or newly-recorded gap changes what the chain can honestly say.
-      if (tier === 'filter') await rebuildDigestFor(ctx, cell);
     }
 
     if (cells.length === CELL_BATCH_SIZE && lastKey !== undefined) {
@@ -1549,6 +1619,79 @@ export const sweepWeatherDayGaps = internalAction({
     return { done: true, repaired };
   },
 });
+
+/** One cell's gap repair (D161's ladder): refetch, borrow, record what stays missing. */
+async function repairCellGaps(
+  ctx: ActionCtx,
+  tier: WeatherTier,
+  cell: { cellKey: string; lat: number; lng: number; elevationM?: number },
+  fromMs: number,
+  toMs: number,
+  now: number,
+): Promise<number> {
+  let repaired = 0;
+  const held = await ctx.runQuery(internal.weatherArchive.listCellDayKeys, {
+    cellKey: cell.cellKey,
+    fromMs,
+    toMs,
+  });
+  if (held.present.length === 0 && held.missing.length === 0) return 0; // never touched
+
+  const have = new Set(held.present);
+  const holes: number[] = [];
+  // Only inside the cell's own known range — a cell first touched a week ago is not missing the
+  // three weeks before that.
+  const earliest = Math.min(...held.present, ...held.missing);
+  for (let d = Math.max(fromMs, earliest); d <= toMs; d += DAY_MS) {
+    if (!have.has(d)) holes.push(d);
+  }
+  if (holes.length === 0) return 0;
+
+  // Step 1: refetch. One request covers every hole in the window, so ask once and widely rather
+  // than per hole.
+  const spanDays = Math.ceil((toMs - Math.min(...holes)) / DAY_MS) + 2;
+  try {
+    await ingestCellDays(ctx, tier, { key: cell.cellKey, ...cell }, spanDays);
+  } catch (err) {
+    console.warn(`weatherArchive: gap refetch for ${cell.cellKey} threw`, err);
+  }
+
+  const after = await ctx.runQuery(internal.weatherArchive.listCellDayKeys, {
+    cellKey: cell.cellKey,
+    fromMs,
+    toMs,
+  });
+  // Built once, not once per hole — the Set was being reconstructed inside the predicate.
+  const recovered = new Set(after.present);
+  const stillMissing = holes.filter((d) => !recovered.has(d));
+  repaired += holes.length - stillMissing.length;
+
+  if (stillMissing.length > 0) {
+    // Step 2 (borrow the coarser tier) applies only to `browse`; `filter` has no parent, and step
+    // 3 (ERA5, past 92 days) is deferred — so `filter` goes straight to step 4. Recording the gap
+    // is what keeps a D159 predicate from reading an absent day as "no snow fell".
+    //
+    // ⚠ **The borrow reports *which* days it filled, not how many.** The parent holds an
+    // arbitrary subset of the holes, so subtracting a count off the front of `stillMissing`
+    // would mark the wrong days: a parent that covered only the newest hole would leave the
+    // oldest one silently unrecorded — the precise failure step 4 exists to prevent.
+    const borrowed = tier === 'browse' ? await borrowFromFilter(ctx, cell, stillMissing) : [];
+    const borrowedDays = new Set(borrowed);
+    const unrecovered = stillMissing.filter((d) => !borrowedDays.has(d));
+    if (unrecovered.length > 0) {
+      await ctx.runMutation(internal.weatherArchive.writeMissingDays, {
+        cellKey: cell.cellKey,
+        tier,
+        dayMs: unrecovered,
+        fetchedAt: now,
+      });
+    }
+    repaired += borrowed.length;
+  }
+  // A repaired or newly-recorded gap changes what the chain can honestly say.
+  if (tier === 'filter') await rebuildDigestFor(ctx, cell);
+  return repaired;
+}
 
 /**
  * Step 2 of the ladder: fill a `browse` cell's missing days from its coarser `filter` parent.

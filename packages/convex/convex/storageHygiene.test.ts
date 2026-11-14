@@ -571,6 +571,54 @@ describe('sweepExpiredExports', () => {
     expect(await t.run((ctx) => ctx.db.get(live))).not.toBeNull();
   });
 
+  /**
+   * D257: a bundle whose blob can't be deleted keeps its row, and enough of them at the head of the
+   * oldest-first read held every tick's page. Each tick now starts after the last one stopped.
+   */
+  test('bundles whose blob will not delete never hold the page: the next tick starts after them', async () => {
+    const t = harness();
+    const userId = await seedUser(t, 'exporter');
+    const stuck: Id<'dataExports'>[] = [];
+    for (let i = 0; i < 2; i++) {
+      stuck.push(
+        (await t.run((ctx) =>
+          ctx.db.insert('dataExports', {
+            userId,
+            status: 'ready' as const,
+            storageId: 'not-a-storage-id',
+            requestedAt: Date.now() - 100 * HOUR_MS,
+            expiresAt: Date.now() - 10 * HOUR_MS + i,
+          }),
+        )) as Id<'dataExports'>,
+      );
+    }
+    const healthy = (await t.run((ctx) =>
+      ctx.db.insert('dataExports', {
+        userId,
+        status: 'ready' as const,
+        requestedAt: Date.now() - 100 * HOUR_MS,
+        expiresAt: Date.now() - HOUR_MS,
+      }),
+    )) as Id<'dataExports'>;
+
+    expect(await t.mutation(internal.storageHygiene.sweepExpiredExports, { limit: 2 })).toEqual({
+      deleted: 0,
+      retained: 2,
+    });
+    // The next tick reaches the bundle behind them.
+    expect(await t.mutation(internal.storageHygiene.sweepExpiredExports, { limit: 2 })).toEqual({
+      deleted: 1,
+      retained: 0,
+    });
+    expect(await t.run((ctx) => ctx.db.get(healthy))).toBeNull();
+    for (const id of stuck) expect(await t.run((ctx) => ctx.db.get(id))).not.toBeNull();
+    // And it wraps: the stuck ones come round again.
+    expect(await t.mutation(internal.storageHygiene.sweepExpiredExports, { limit: 2 })).toEqual({
+      deleted: 0,
+      retained: 2,
+    });
+  });
+
   /** The crash case: an action that died before writing its storageId leaves a row saying "building". */
   test('sweeps a stuck building row once it expires', async () => {
     const t = harness();

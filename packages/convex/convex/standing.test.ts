@@ -21,6 +21,7 @@ import type { Polygon } from 'geojson';
 import { describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
+import * as libStanding from './lib/standing';
 import schema from './schema';
 
 /**
@@ -1016,6 +1017,55 @@ describe('the season rollover', () => {
         { name: 'retainedBy.favorited', value: 1 },
       ]),
     );
+  });
+
+  /**
+   * D257: a page that threw used to end the walk, and the next day's run started over and died at
+   * the same page. Now its bodies are decided one at a time; one that fails is left active (shown,
+   * never hidden), counted for the daily retry, and the walk reaches its end. Who is kept or made
+   * dormant is the same rule (`rolloverBody`), unchanged.
+   */
+  test('a page that throws: its bodies go one at a time, the failing one stays active and the daily retry decides it', async () => {
+    vi.useFakeTimers({ now: Date.UTC(SEASON, 6, 3) });
+    const t = harness();
+    const a = await seedBody(t, 'osm/a');
+    const poison = await seedBody(t, 'osm/poison');
+    const c = await seedBody(t, 'osm/c');
+    const real = libStanding.demoteBody;
+    const spy = vi.spyOn(libStanding, 'demoteBody').mockImplementation(async (ctx, body, opts) => {
+      if (body._id === poison) throw new Error('poison');
+      return real(ctx, body, opts);
+    });
+    try {
+      const result = await t.action(internal.standing.runStandingRollover, {
+        season: SEASON,
+        apply: true,
+      });
+      expect(result).toMatchObject({ scanned: 3, demoted: 2, failed: 1 });
+      expect(isActive((await get(t, a)) as Doc<'waterBodies'>)).toBe(false);
+      expect(isActive((await get(t, c)) as Doc<'waterBodies'>)).toBe(false);
+      expect(isActive((await get(t, poison)) as Doc<'waterBodies'>)).toBe(true);
+      const [run] = await t.run((ctx) => ctx.db.query('importRuns').collect());
+      expect(run).toMatchObject({ status: 'succeeded' });
+      expect(run?.counts).toEqual(expect.arrayContaining([{ name: 'failed', value: 1 }]));
+      expect(await t.run((ctx) => ctx.db.query('jobFailures').collect())).toMatchObject([
+        { job: 'standingRollover', key: poison, scope: String(SEASON), attempts: 1 },
+      ]);
+      // Still failing: the daily retry counts it again; healed: the daily retry decides it.
+      vi.setSystemTime(Date.now() + 86_400_000);
+      await t.mutation(internal.recurringJobs.retryParkedDaily, {});
+      expect(await t.run((ctx) => ctx.db.query('jobFailures').first())).toMatchObject({
+        attempts: 2,
+      });
+      spy.mockRestore();
+      vi.setSystemTime(Date.now() + 86_400_000);
+      await t.mutation(internal.recurringJobs.retryParkedDaily, {});
+      expect(isActive((await get(t, poison)) as Doc<'waterBodies'>)).toBe(false);
+      expect(await t.run((ctx) => ctx.db.query('jobFailures').collect())).toEqual([]);
+    } finally {
+      vi.restoreAllMocks();
+      vi.useRealTimers();
+    }
   });
 
   test('the action records a run row, and the daily gate runs it once per season', async () => {

@@ -3,6 +3,7 @@ import type { Polygon } from 'geojson';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+import * as recurringWork from './lib/recurringWork';
 import { nearestSamplePoint } from './lib/sampling';
 import schema from './schema';
 
@@ -153,6 +154,52 @@ describe('nearestSamplePoint', () => {
 });
 
 describe('hazardWeather.refreshHazardWeather', () => {
+  /**
+   * D257: a hazard whose refresh throws used to stay un-stamped at the front of the stalest-first
+   * read, so a thousand of them froze every tick. Now it goes to the back with its last multiplier
+   * kept, the failure is counted (never parked), the rest are refreshed, and a later success clears it.
+   */
+  test('a hazard whose refresh throws goes to the back, keeps what it had, and is counted; the rest refresh', async () => {
+    const t = convexTestWithGeo();
+    const waterBodyId = await seedBody(t);
+    const authorId = await seedProfile(t);
+    const bad = await seedHazard(t, waterBodyId, authorId, { decayMultiplier: 1.5 });
+    const good = await seedHazard(t, waterBodyId, authorId);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () => new Response(JSON.stringify(coldSnowyResponse(Date.now())), { status: 200 }),
+      ),
+    );
+    const real = recurringWork.asItem;
+    const spy = vi.spyOn(recurringWork, 'asItem').mockImplementation(async (key, work) => {
+      if (key === bad) throw new Error('poison');
+      return real(key, work);
+    });
+    try {
+      expect(await t.action(internal.hazardWeather.refreshHazardWeather, {})).toEqual({
+        refreshed: 2,
+        failed: 1,
+      });
+      const badRow = await t.run((ctx) => ctx.db.get(bad));
+      expect(badRow?.decayMultiplier).toBe(1.5); // what it had, unchanged
+      expect(badRow?.weatherAdjustedAt).toBeGreaterThan(0); // stamped: to the back
+      expect((await t.run((ctx) => ctx.db.get(good)))?.decayMultiplier).toBeGreaterThan(1);
+      const failures = await t.run((ctx) => ctx.db.query('jobFailures').collect());
+      expect(failures).toMatchObject([
+        { job: 'hazardWeather', key: bad, attempts: 1, errorClass: 'Error' },
+      ]);
+      expect(failures[0]?.parkedAt).toBeUndefined();
+      // It heals: once the gate lets it through again, a refresh that lands clears the count.
+      spy.mockRestore();
+      await t.run((ctx) => ctx.db.patch(bad, { weatherAdjustedAt: Date.now() - 4 * HOUR_MS }));
+      await t.action(internal.hazardWeather.refreshHazardWeather, {});
+      expect(await t.run((ctx) => ctx.db.query('jobFailures').collect())).toEqual([]);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
   test('stores a weather multiplier + snow-hidden flag for an active hazard', async () => {
     const t = convexTestWithGeo();
     const waterBodyId = await seedBody(t);

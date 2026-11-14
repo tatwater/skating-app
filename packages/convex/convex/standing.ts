@@ -42,6 +42,7 @@ import type { Doc, Id } from './_generated/dataModel';
 import {
   internalAction,
   internalMutation,
+  internalQuery,
   type MutationCtx,
   mutation,
   query,
@@ -49,6 +50,7 @@ import {
 import { requireCapability } from './lib/auth';
 import { loadPutInRows } from './lib/putInMarkers';
 import { isSuppressed } from './lib/putInSuppression';
+import { asItem, clearFailure, runItem } from './lib/recurringWork';
 import { takeCappedResult } from './lib/scan';
 import {
   activateBody,
@@ -450,26 +452,13 @@ export const demoteInactiveBodies = internalMutation({
     const retainedBy = emptyRetainedBy();
     let demoted = 0;
     for (const body of page.page) {
-      if (!isActive(body)) {
-        kept.notActive++;
-        continue;
-      }
-      const reason = retentionReason(
-        {
-          lastActivityAt: await lastActivityAt(ctx, body._id),
-          curatedBoost: body.curatedBoost,
-          favorited: await anyFavorite(ctx, body._id),
-          hasPutIn: await hasSavedPutIn(ctx, body._id),
-        },
-        season,
-      );
-      if (reason !== null) {
+      const verdict = await rolloverBody(ctx, body, season, apply === true);
+      if (verdict === 'notActive') kept.notActive++;
+      else if (verdict === 'demoted') demoted++;
+      else {
         kept.retained++;
-        retainedBy[reason]++;
-        continue;
+        retainedBy[verdict.retained]++;
       }
-      if (apply === true) await demoteBody(ctx, body, { reason: 'inactive' });
-      demoted++;
     }
     return {
       applied: apply === true,
@@ -482,6 +471,77 @@ export const demoteInactiveBodies = internalMutation({
     };
   },
 });
+
+/** One body's verdict at the rollover — not active, kept (and why), or made dormant. */
+type RolloverVerdict = 'notActive' | 'demoted' | { retained: RetentionReason };
+
+/**
+ * **The rollover's rule for one body** — the one place it is decided, shared by the page and the
+ * body-at-a-time path D257 added for a page that throws. Unchanged by D257.
+ */
+async function rolloverBody(
+  ctx: MutationCtx,
+  body: Doc<'waterBodies'>,
+  season: number,
+  apply: boolean,
+): Promise<RolloverVerdict> {
+  if (!isActive(body)) return 'notActive';
+  const reason = retentionReason(
+    {
+      lastActivityAt: await lastActivityAt(ctx, body._id),
+      curatedBoost: body.curatedBoost,
+      favorited: await anyFavorite(ctx, body._id),
+      hasPutIn: await hasSavedPutIn(ctx, body._id),
+    },
+    season,
+  );
+  if (reason !== null) return { retained: reason };
+  if (apply) await demoteBody(ctx, body, { reason: 'inactive' });
+  return 'demoted';
+}
+
+/**
+ * The ids on one page of the rollover's walk and where the next starts — what the walk reads when the
+ * page itself threw (D257), to decide its bodies one at a time.
+ */
+export const rolloverPageIds = internalQuery({
+  args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
+  handler: async (
+    ctx,
+    { cursor, batchSize },
+  ): Promise<{ ids: Id<'waterBodies'>[]; cursor: string; isDone: boolean }> => {
+    const numItems = Math.min(100, Math.max(1, batchSize ?? 100));
+    const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
+    return { ids: page.page.map((b) => b._id), cursor: page.continueCursor, isDone: page.isDone };
+  },
+});
+
+/**
+ * One body at the rollover, as its own transaction (D257): the walk's path for a page that threw, and
+ * the daily retry's for a body it could not decide. The same rule as the page (`rolloverBody`).
+ */
+export const rolloverOne = internalMutation({
+  args: { season: v.number(), waterBodyId: v.string(), apply: v.optional(v.boolean()) },
+  handler: (ctx, { season, waterBodyId, apply }): Promise<{ verdict: string }> =>
+    asItem(waterBodyId, async () => {
+      const id = ctx.db.normalizeId('waterBodies', waterBodyId);
+      const body = id ? await ctx.db.get(id) : null;
+      if (!body) return { verdict: 'gone' };
+      const verdict = await rolloverBody(ctx, body, season, apply === true);
+      await clearFailure(ctx, 'standingRollover', waterBodyId);
+      return { verdict: typeof verdict === 'string' ? verdict : `retained:${verdict.retained}` };
+    }),
+});
+
+/** One page of the rollover, as the walk reads it. */
+type RolloverPage = {
+  scanned: number;
+  demoted: number;
+  kept: { retained: number };
+  retainedBy: Record<RetentionReason, number>;
+  cursor: string;
+  isDone: boolean;
+};
 
 /** A zero tally per retention reason, so every key is present in a page's result and the run row. */
 function emptyRetainedBy(): Record<RetentionReason, number> {
@@ -524,6 +584,7 @@ export const runStandingRollover = internalAction({
     scanned: number;
     demoted: number;
     retained: number;
+    failed: number;
     retainedBy: Record<RetentionReason, number>;
     pages: number;
   }> => {
@@ -546,28 +607,65 @@ export const runStandingRollover = internalAction({
       let scanned = 0;
       let demoted = 0;
       let retained = 0;
+      let failed = 0;
       const retainedBy = emptyRetainedBy();
       let pages = 0;
       while (!isDone && pages < 5000) {
-        const page: {
-          scanned: number;
-          demoted: number;
-          kept: { retained: number };
-          retainedBy: Record<RetentionReason, number>;
-          cursor: string;
-          isDone: boolean;
-        } = await ctx.runMutation(internal.standing.demoteInactiveBodies, {
+        const whole = await runItem<RolloverPage>(ctx, internal.standing.demoteInactiveBodies, {
           season,
           ...(cursor !== undefined ? { cursor } : {}),
           ...(apply !== undefined ? { apply } : {}),
           ...(batchSize !== undefined ? { batchSize } : {}),
         });
-        cursor = page.cursor;
-        isDone = page.isDone;
-        scanned += page.scanned;
-        demoted += page.demoted;
-        retained += page.kept.retained;
-        for (const r of RETENTION_REASONS) retainedBy[r] += page.retainedBy[r];
+        if (whole.ok) {
+          const page = whole.value;
+          cursor = page.cursor;
+          isDone = page.isDone;
+          scanned += page.scanned;
+          demoted += page.demoted;
+          retained += page.kept.retained;
+          for (const r of RETENTION_REASONS) retainedBy[r] += page.retainedBy[r];
+        } else {
+          // **A page that throws no longer ends the walk** (D257): its bodies are decided one at a
+          // time, each its own transaction, and a body that fails is recorded for the daily retry —
+          // it stays active (shown, never hidden) until it is decided. The walk goes on.
+          const listed: { ids: Id<'waterBodies'>[]; cursor: string; isDone: boolean } =
+            await ctx.runQuery(internal.standing.rolloverPageIds, {
+              ...(cursor !== undefined ? { cursor } : {}),
+              ...(batchSize !== undefined ? { batchSize } : {}),
+            });
+          const bad: { key: string; errorClass: string; scope: string }[] = [];
+          for (const waterBodyId of listed.ids) {
+            const one = await runItem<{ verdict: string }>(ctx, internal.standing.rolloverOne, {
+              season,
+              waterBodyId,
+              ...(apply !== undefined ? { apply } : {}),
+            });
+            scanned++;
+            if (!one.ok) {
+              bad.push({ key: waterBodyId, errorClass: one.errorClass, scope: String(season) });
+              continue;
+            }
+            const { verdict } = one.value;
+            if (verdict === 'demoted') demoted++;
+            else if (verdict.startsWith('retained:')) {
+              retained++;
+              const r = verdict.slice('retained:'.length) as RetentionReason;
+              if (r in retainedBy) retainedBy[r]++;
+            }
+          }
+          failed += bad.length;
+          // A dry run decides nothing, so it leaves nothing to retry.
+          if (bad.length > 0 && apply === true) {
+            await ctx.runMutation(internal.recurringJobs.settle, {
+              job: 'standingRollover',
+              failed: bad,
+              succeeded: [],
+            });
+          }
+          cursor = listed.cursor;
+          isDone = listed.isDone;
+        }
         pages++;
       }
       await ctx.runMutation(internal.importRuns.finish, {
@@ -577,12 +675,14 @@ export const runStandingRollover = internalAction({
           { name: 'scanned', value: scanned },
           { name: apply === true ? 'demoted' : 'wouldDemote', value: demoted },
           { name: 'retained', value: retained },
+          // Bodies a page that threw could not decide one at a time — left active, retried daily.
+          { name: 'failed', value: failed },
           // What kept them, first reason first — `retainedBy.put_in` is the bodies only a put-in
           // kept (D245), the number a dry run before the first live July is for.
           ...RETENTION_REASONS.map((r) => ({ name: `retainedBy.${r}`, value: retainedBy[r] })),
         ],
       });
-      return { scanned, demoted, retained, retainedBy, pages };
+      return { scanned, demoted, retained, failed, retainedBy, pages };
     } catch (err) {
       await ctx.runMutation(internal.importRuns.finish, {
         runId,

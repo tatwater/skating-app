@@ -461,6 +461,37 @@ describe('maybeCheckSeasonOpen — the season lifecycle', () => {
     );
     await expect(tickNow(t)).rejects.toThrow(/Open-Meteo 503/);
     expect(await broadcasts(t)).toHaveLength(1);
+    // D257: all or nothing by design, so not isolated — but no longer silent. Each failed day is
+    // counted with its class, never parked; Machinery reads how many in a row and since when.
+    await expect(tickNow(t)).rejects.toThrow(/Open-Meteo 503/);
+    const failures = await t.run((ctx) => ctx.db.query('jobFailures').collect());
+    expect(failures).toMatchObject([
+      { job: 'seasonWatch', key: 'winter-2026-27', attempts: 2, errorClass: 'Error' },
+    ]);
+    expect(failures[0]?.parkedAt).toBeUndefined();
+    await expect(tickNow(t)).rejects.toThrow(/Open-Meteo 503/);
+    const third = await t.run((ctx) => ctx.db.query('jobFailures').first());
+    expect(third).toMatchObject({ attempts: 3 });
+    expect(third?.parkedAt).toBeUndefined(); // a third day still is not parked: the watch keeps going
+  });
+  test('a tick that goes through clears the days it failed (D257)', async () => {
+    vi.useFakeTimers();
+    atDate(IN_SEASON);
+    const t = convexTest(schema, modules);
+    await t.run((ctx) =>
+      ctx.db.insert('jobFailures', {
+        job: 'seasonWatch',
+        key: 'winter-2026-27',
+        attempts: 2,
+        errorClass: 'Error',
+        firstFailedAt: Date.now() - 2 * 86_400_000,
+        lastFailedAt: Date.now() - 86_400_000,
+      }),
+    );
+    // No sites: the tick goes through having nothing to decide, which is still a tick that worked.
+    await t.mutation(internal.seasonWatch.ensureSettings, {});
+    await tickNow(t);
+    expect(await t.run((ctx) => ctx.db.query('jobFailures').collect())).toEqual([]);
   });
   test("today's low is a forecast, and is never stored or decided on", async () => {
     vi.useFakeTimers();

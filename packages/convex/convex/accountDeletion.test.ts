@@ -585,6 +585,48 @@ describe('the grace window', () => {
     });
   });
 
+  /**
+   * D257, a privacy promise: the sweep read the oldest twenty due accounts every hour, so twenty whose
+   * chains kept failing held every slot and nobody behind them was ever finalized. Each tick now takes
+   * its turn after the last one's and wraps, so every due account is queued once a lap.
+   */
+  test('accounts whose chains keep failing never hold up anyone else: the next tick starts after them', async () => {
+    const t = harness();
+    const due: Id<'profiles'>[] = [];
+    for (let i = 0; i < 25; i++) {
+      const user = await seedUser(t, `leaver${i}`);
+      await t.run((ctx) =>
+        ctx.db.patch(user.id, { deletionRequestedAt: Date.now() - DELETION_GRACE_MS - 1000 - i }),
+      );
+      due.push(user.id);
+    }
+    const queued = async () => {
+      const jobs = await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
+      const ids = jobs
+        .filter((j) => j.name === 'accountDeletion:finalizeAccount' && j.state.kind === 'pending')
+        .map((j) => (j.args[0] as { userId: Id<'profiles'> }).userId);
+      // The chains "fail": nothing runs, every account stays due.
+      for (const job of jobs)
+        if (job.state.kind === 'pending') await t.run((ctx) => ctx.scheduler.cancel(job._id));
+      return ids;
+    };
+    expect(await t.mutation(internal.accountDeletion.finalizeDueDeletions, {})).toMatchObject({
+      due: 20,
+      started: 20,
+    });
+    const first = await queued();
+    expect(await t.mutation(internal.accountDeletion.finalizeDueDeletions, {})).toMatchObject({
+      due: 5,
+      started: 5,
+    });
+    const second = await queued();
+    // Every due account got its turn, none twice in the lap.
+    expect(new Set([...first, ...second])).toEqual(new Set(due));
+    // And the lap wraps: the third tick starts again from the front.
+    await t.mutation(internal.accountDeletion.finalizeDueDeletions, {});
+    expect(await queued()).toEqual(first);
+  });
+
   test('the sweep only finalizes accounts past the window', async () => {
     const t = harness();
     const fresh = await seedUser(t, 'fresh');
