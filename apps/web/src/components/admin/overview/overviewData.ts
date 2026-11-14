@@ -297,6 +297,8 @@ export interface FeedRow {
   at: number;
   /** Who did it; `null` for the machine. */
   actor: string | null;
+  /** The script or agent they did it through, read "Teagan via seed-destinations" (D256). */
+  via?: string;
   /** What was done, from the operator's side ("Declined request"). */
   action: string;
   target: FeedTarget;
@@ -432,6 +434,7 @@ export function feedFromActions(rows: readonly ActionRow[]): FeedRow[] {
     id: row.id,
     at: row.createdAt,
     actor: actorName(row),
+    ...(row.via !== undefined ? { via: row.via } : {}),
     action: actionWords(row.action),
     target: {
       type: row.targetType,

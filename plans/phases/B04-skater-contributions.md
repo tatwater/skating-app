@@ -121,6 +121,18 @@ Each entry: the date, where it was found, what is wrong or missing, and where th
   alert's author on their own pinned alert is built (`AccessSection`, on core's
   `accessAlertVoteControls`) but has not been on a device: there is no React Native render harness.
   *Planned:* the EAS preview pass that closes §8.4.
+- **2026-11-14 · found by** the B01 Bodies console build (#112: the kit's map marks) — the basemap's
+  labels can sit under the console's DOM marks, and the kit's mark halos read `--map-ground`, which the
+  skater map never sets, so a skater surface that adopts those marks draws them without their halo.
+  *Not yet planned.*
+- **2026-11-14 · found by** the B01 Bodies preview (#112) — no read stored a body's town for skater
+  search: the console's Bodies preview now serves towns, but the skater side still cannot name the town
+  a lake is in when searching. *Not yet planned.*
+- **2026-11-14 · found by** the B01 Bodies console build (#112: imagery frame labels) — core's
+  `frameDateLabel` documents "22 Dec 2025" but writes "Dec 22, 2025"; whichever the skater side shows,
+  the doc and the output should agree. *Not yet planned.*
+- **2026-11-14 · checked by** the B01-1c follow-up — the delete confirmations' 30-day statement is
+  already owed above (§0.1, and board 14 of §5); nothing new to add.
 
 ---
 

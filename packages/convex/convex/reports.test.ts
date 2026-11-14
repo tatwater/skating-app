@@ -1470,6 +1470,57 @@ describe('reports.update (author-only LWW, D25)', () => {
   });
 });
 
+describe('report notes: capped at the write, and their lengths recorded', () => {
+  const events = (t: ReturnType<typeof convexTest>) =>
+    t.run((ctx) => ctx.db.query('textLengthEvents').collect());
+
+  test('create and edit each record the stored length; a replay records nothing more', async () => {
+    const t = convexTestWithGeo();
+    const { id } = await seedBody(t);
+    const asUser = await seedUser(t, 'clerk_a');
+    const args = {
+      ...OBSERVED,
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+      notes: '  glassy  ',
+      idempotencyKey: 'draft-lengths',
+    };
+    const reportId = await asUser.mutation(api.reports.create, args);
+    await asUser.mutation(api.reports.create, args); // the offline flush, replayed
+    await asUser.mutation(api.reports.update, {
+      ...OBSERVED,
+      reportId,
+      skateEndTime: SKATE_TIME,
+      notes: 'x'.repeat(4_800),
+    });
+    const rows = await events(t);
+    expect(rows.map((r) => [r.kind, r.length, r.band, r.cap])).toEqual([
+      ['report_notes', 6, 'to25', 5_000], // trimmed, as stored
+      ['report_notes', 4_800, 'to99', 5_000], // the edit's new length; the old one stays counted
+    ]);
+    // Counts only: nothing names the report, its author or its words.
+    expect(Object.keys(rows[0] ?? {}).sort()).toEqual(
+      ['_creationTime', '_id', 'band', 'cap', 'day', 'kind', 'length'].sort(),
+    );
+  });
+
+  test('a note past the cap is refused, says by how much, and stores nothing', async () => {
+    const t = convexTestWithGeo();
+    const { id } = await seedBody(t);
+    const asUser = await seedUser(t, 'clerk_a');
+    await expect(
+      asUser.mutation(api.reports.create, {
+        ...OBSERVED,
+        waterBodyId: id,
+        skateEndTime: SKATE_TIME,
+        notes: 'x'.repeat(5_001),
+      }),
+    ).rejects.toThrow(/notes: are 5,001 characters; shorten them to 5,000 or fewer/);
+    expect(await t.run((ctx) => ctx.db.query('reports').collect())).toEqual([]);
+    expect(await events(t)).toEqual([]);
+  });
+});
+
 describe('reports.create idempotency (Phase 02a §6.2 offline flush, D30)', () => {
   test('reusing a key returns the same report — no duplicate (lost-ack retry)', async () => {
     const t = convexTestWithGeo();

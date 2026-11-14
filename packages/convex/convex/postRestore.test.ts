@@ -435,3 +435,101 @@ describe('the rule holds under any order of verdicts, choices and undos', () => 
     );
   });
 });
+
+describe('undo keeps a Post that was down only because its Reports were (U1)', () => {
+  test('undoing a restore of such a Post puts it back down the same way, so a member restored later brings it back', async () => {
+    const { t, mod, postId, reportIds, set } = await setup();
+    const [r1, r2] = reportIds as [Id<'reports'>, Id<'reports'>];
+    await set('report', r1, 'hidden');
+    await set('report', r2, 'hidden'); // the last visible member: the Post goes down with it
+    expect(await statusOf(t, postId)).toBe('hidden');
+
+    // A moderator restores the Post, choosing r1 to come back with it.
+    await set('post', postId, 'visible', [r1]);
+    const restore = await newestOn(t, 'post', postId);
+    expect(restore.metadata).toMatchObject({ clearsDerivedFromReportId: r2 });
+
+    await mod.as.mutation(api.undo.run, { actionId: restore._id, reason: 'restored too soon' });
+    expect(await statusOf(t, postId)).toBe('hidden');
+    expect(await statusOf(t, r1)).toBe('hidden');
+    const undoRow = await newestOn(t, 'post', postId);
+    expect(undoRow.metadata).toMatchObject({ rederivedFromReportId: r2 });
+    // The undo is the moderator's own row, so it can be undone in turn.
+    const [view] = await mod.as.query(api.moderation.listActions, {
+      targetType: 'post',
+      targetId: postId,
+      limit: 1,
+    });
+    expect(view?.undo.state).toBe('available');
+
+    // Restoring a member brings the Post back, as it did before the restore.
+    await set('report', r2, 'visible');
+    expect(await statusOf(t, postId)).toBe('visible');
+  });
+
+  test('undo, redo, undo: the marker survives the chain, so a member restored later still brings the Post back', async () => {
+    const { t, mod, postId, reportIds, set } = await setup();
+    const [r1, r2] = reportIds as [Id<'reports'>, Id<'reports'>];
+    await set('report', r1, 'hidden');
+    await set('report', r2, 'hidden');
+    await set('post', postId, 'visible', [r1]);
+    const restore = await newestOn(t, 'post', postId);
+    await mod.as.mutation(api.undo.run, { actionId: restore._id, reason: 'restored too soon' });
+    const undoRow = await newestOn(t, 'post', postId);
+
+    // The redo takes the Post out of that state again, and says what it clears, as the restore did.
+    await mod.as.mutation(api.undo.run, { actionId: undoRow._id, reason: 'it was right' });
+    expect(await statusOf(t, postId)).toBe('visible');
+    const redo = await newestOn(t, 'post', postId);
+    expect(redo.metadata).toMatchObject({ clearsDerivedFromReportId: r2 });
+
+    await mod.as.mutation(api.undo.run, { actionId: redo._id, reason: 'no, too soon' });
+    expect(await statusOf(t, postId)).toBe('hidden');
+    expect((await newestOn(t, 'post', postId)).metadata).toMatchObject({
+      rederivedFromReportId: r2,
+    });
+    await set('report', r2, 'visible');
+    expect(await statusOf(t, postId)).toBe('visible');
+  });
+
+  test('undoing a removal of such a Post puts it back down the same way, too', async () => {
+    const { t, mod, postId, reportIds, set } = await setup();
+    const [r1, r2] = reportIds as [Id<'reports'>, Id<'reports'>];
+    await set('report', r1, 'hidden');
+    await set('report', r2, 'hidden');
+    await set('post', postId, 'removed');
+    const removal = await newestOn(t, 'post', postId);
+    expect(removal.metadata).toMatchObject({ clearsDerivedFromReportId: r2 });
+
+    await mod.as.mutation(api.undo.run, { actionId: removal._id, reason: 'removed by mistake' });
+    expect(await statusOf(t, postId)).toBe('hidden');
+    await set('report', r2, 'visible');
+    expect(await statusOf(t, postId)).toBe('visible');
+  });
+
+  test('a restore of a Post a moderator hid on its own records nothing to put back', async () => {
+    const { t, postId, set } = await setup();
+    await set('post', postId, 'hidden');
+    await set('post', postId, 'visible');
+    const restore = await newestOn(t, 'post', postId);
+    expect(restore.metadata).not.toHaveProperty('clearsDerivedFromReportId');
+  });
+});
+
+describe('History’s “undone by” on a Post names the Post’s own undo row (U2)', () => {
+  test('not the row of a member its undo moved first', async () => {
+    const { t, mod, postId, set } = await setup();
+    await set('post', postId, 'hidden'); // hides both members, each with a row naming the Post
+    const hide = await newestOn(t, 'post', postId);
+    await mod.as.mutation(api.undo.run, { actionId: hide._id });
+    const undoRow = await newestOn(t, 'post', postId);
+    expect(undoRow.undoesActionId).toBe(hide._id);
+
+    const views = await mod.as.query(api.moderation.listActions, {
+      targetType: 'post',
+      targetId: postId,
+    });
+    const hideView = views.find((v) => v.id === hide._id);
+    expect(hideView?.undo).toEqual({ state: 'undone', byActionId: undoRow._id });
+  });
+});

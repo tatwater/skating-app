@@ -452,6 +452,72 @@ describe('discipline never leaves the ledger without an editor (the governor’s
       }),
     ).rejects.toThrow(LAST_EDITOR_MESSAGE);
   });
+
+  const DAY = 86_400_000;
+
+  test('the ban and suspend writers refuse the last editor who can act, and change nothing', async () => {
+    const t = convexTest(schema, modules);
+    const only = await editor(t, 'only');
+    const admin = await seedUser(t, 'admin', 'admin');
+    await expect(
+      admin.as.mutation(api.moderation.banUser, { userId: only.id, reason: 'x' }),
+    ).rejects.toThrow(LAST_EDITOR_MESSAGE);
+    await expect(
+      admin.as.mutation(api.moderation.suspendUser, {
+        userId: only.id,
+        reason: 'x',
+        suspendedUntil: Date.now() + DAY,
+      }),
+    ).rejects.toThrow(LAST_EDITOR_MESSAGE);
+    expect((await profile(t, only.id))?.status).toBe('active');
+    expect(await rowsOn(t, only.id)).toEqual([]);
+  });
+
+  test('with a second editor who can act, both go through', async () => {
+    const t = convexTest(schema, modules);
+    const first = await editor(t, 'first');
+    const second = await editor(t, 'second');
+    const admin = await seedUser(t, 'admin', 'admin');
+    await admin.as.mutation(api.moderation.suspendUser, {
+      userId: first.id,
+      reason: 'x',
+      suspendedUntil: Date.now() + DAY,
+    });
+    expect((await profile(t, first.id))?.status).toBe('suspended');
+    // `first` is benched now, so `second` is the last who can act: their ban is refused.
+    await expect(
+      admin.as.mutation(api.moderation.banUser, { userId: second.id, reason: 'x' }),
+    ).rejects.toThrow(LAST_EDITOR_MESSAGE);
+    await admin.as.mutation(api.moderation.banUser, { userId: first.id, reason: 'x' });
+    expect((await profile(t, first.id))?.status).toBe('banned');
+  });
+
+  for (const verb of ['ban', 'suspend'] as const) {
+    test(`an undo that puts a ${verb} back is refused once they are the last editor`, async () => {
+      const t = convexTest(schema, modules);
+      const target = await editor(t, 'target');
+      const other = await editor(t, 'other');
+      const admin = await seedUser(t, 'admin', 'admin');
+      if (verb === 'ban') {
+        await admin.as.mutation(api.moderation.banUser, { userId: target.id, reason: 'x' });
+      } else {
+        await admin.as.mutation(api.moderation.suspendUser, {
+          userId: target.id,
+          reason: 'x',
+          suspendedUntil: Date.now() + DAY,
+        });
+      }
+      await admin.as.mutation(api.moderation.unbanUser, { userId: target.id, reason: 'appeal' });
+      const unban = await newestOn(t, target.id);
+      // `other` steps down, so `target` is the only editor who can act.
+      await target.as.mutation(api.ledger.revokeEditor, { userId: other.id, reason: 'x' });
+
+      await expect(
+        admin.as.mutation(api.undo.run, { actionId: unban._id, reason: 'appeal overturned' }),
+      ).rejects.toThrow(LAST_EDITOR_MESSAGE);
+      expect((await profile(t, target.id))?.status).toBe('active');
+    });
+  }
 });
 
 describe('undo (D226)', () => {

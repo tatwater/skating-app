@@ -12,12 +12,13 @@
  * lifecycle `status` (D3) — see the hazards schema note.
  */
 
-import { disputesReview } from '@skating/core';
+import { disputesReview, isLeaving } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
 import { writeAudit } from './lib/audit';
+import { auditRowsOn } from './lib/auditReads';
 import { requireCapability } from './lib/auth';
 import {
   AUTHOR_DELETE_REASON,
@@ -37,7 +38,7 @@ import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import { MODERATION_ACTIONS, MODERATION_STATUSES, MODERATION_TARGET_TYPES } from './lib/enums';
 import { authorRetracted, ERASABLE, refreshEraseClock } from './lib/eraseClock';
 import { closeFlag } from './lib/flagResolution';
-import { withoutLedgerGrantsFor } from './lib/ledgerEditors';
+import { refuseDisciplineOfLastLedgerEditor, withoutLedgerGrantsFor } from './lib/ledgerEditors';
 import { refreshPostLatestSkateEnd, refreshPostSearchText } from './lib/postSync';
 import { mirrorReportSubAreas } from './lib/reportSubAreas';
 import { type UndoState, undoState } from './lib/undo';
@@ -132,7 +133,13 @@ async function derivePostVisibility(
       .withIndex('by_target', (q) => q.eq('targetType', 'post').eq('targetId', postId))
       .order('desc')
       .first();
-    if (last?.metadata?.derivedFromReportId === undefined) return;
+    // Down because its Reports were: hidden by the last member's hide, or put back that way by the
+    // undo of a moderator's restore (`rederivedFromReportId`).
+    const meta = last?.metadata as
+      | { derivedFromReportId?: string; rederivedFromReportId?: string }
+      | undefined;
+    if (meta?.derivedFromReportId === undefined && meta?.rederivedFromReportId === undefined)
+      return;
     await ctx.db.patch(postId, { moderationStatus: 'visible' });
     await writeAudit(ctx, {
       actorId: audit.actorId,
@@ -509,6 +516,21 @@ export async function setContentStatus(
     // Every member a Post's verdict moved, and from what to what — on the Post's own row, so its undo
     // can put each member back to its own prior status (founder call, 2026-11-13).
     const cascaded: PostCascade[] = [];
+    // A verdict on a Post that was down only because its Reports were records what it clears (the
+    // true-inverse rule): the member that took it down, on the Post's newest row, so this verdict's
+    // undo puts the Post back down that same way and a member restored later still brings it back.
+    // Any verdict, not only a restore: a removal moves it out of that state just the same.
+    let clearsDerivedFromReportId: string | undefined;
+    if (args.targetType === 'post' && priorStatus === 'hidden') {
+      const newest = await ctx.db
+        .query('moderationActions')
+        .withIndex('by_target', (q) => q.eq('targetType', 'post').eq('targetId', targetId))
+        .order('desc')
+        .first();
+      const derived =
+        newest?.metadata?.derivedFromReportId ?? newest?.metadata?.rederivedFromReportId;
+      if (typeof derived === 'string') clearsDerivedFromReportId = derived;
+    }
     if (args.targetType === 'report') {
       await applyReportStatus(ctx, target as Doc<'reports'>, args.status, audit);
     } else if (args.targetType === 'post') {
@@ -584,6 +606,7 @@ export async function setContentStatus(
         priorStatus,
         newStatus: args.status,
         ...(args.targetType === 'post' ? { cascaded } : {}),
+        ...(clearsDerivedFromReportId !== undefined ? { clearsDerivedFromReportId } : {}),
       },
       createdAt: now,
     });
@@ -688,10 +711,15 @@ export async function revertPostVerdict(
   actor: Doc<'profiles'>,
   { row, reason }: { row: Doc<'moderationActions'>; reason: string },
 ): Promise<void> {
-  const { priorStatus, cascaded } = row.metadata as {
-    priorStatus: ModerationStatus;
-    cascaded: PostCascade[];
-  };
+  const { priorStatus, cascaded, clearsDerivedFromReportId, rederivedFromReportId } =
+    row.metadata as {
+      priorStatus: ModerationStatus;
+      cascaded: PostCascade[];
+      /** On a verdict on a Post its Reports took down: the member that did (U1). */
+      clearsDerivedFromReportId?: string;
+      /** On an undo that put such a Post back down: the same member. */
+      rederivedFromReportId?: string;
+    };
   const postId = ctx.db.normalizeId('posts', row.targetId);
   const post = postId ? await ctx.db.get(postId) : null;
   if (!post) throw new ConvexError('Target not found');
@@ -744,7 +772,23 @@ export async function revertPostVerdict(
     targetType: 'post',
     targetId: post._id,
     reason,
-    metadata: { priorStatus: post.moderationStatus, newStatus: priorStatus, cascaded: reverted },
+    metadata: {
+      priorStatus: post.moderationStatus,
+      newStatus: priorStatus,
+      cascaded: reverted,
+      // Undoing a restore of a Post its Reports took down puts it back down the same way, marked as
+      // `derivePostVisibility` reads it, so restoring a member later brings the Post back.
+      // Its own key, not `derivedFromReportId`: this row is the moderator's undo, which can itself be
+      // undone and is not a Post's derived change.
+      ...(priorStatus === 'hidden' && clearsDerivedFromReportId !== undefined
+        ? { rederivedFromReportId: clearsDerivedFromReportId }
+        : {}),
+      // Undoing that undo takes the Post out of that state again, so it records what it clears as
+      // the verdict did: the chain undo → redo → undo still lands on a Post a member brings back.
+      ...(priorStatus !== 'hidden' && rederivedFromReportId !== undefined
+        ? { clearsDerivedFromReportId: rederivedFromReportId }
+        : {}),
+    },
     createdAt: now,
   });
   // The undo reverses the Post's verdict, or (undoing a restore) puts back the verdict that restore
@@ -1278,6 +1322,8 @@ interface ActionView {
   actor: QueueUser | null;
   /** Set on the row an undo wrote: the row it undid (D226). */
   undoesActionId?: string;
+  /** The script or agent the actor made the write through (D256): "Teagan via seed-destinations". */
+  via?: string;
   /** Whether the viewer can undo this row now, and if not, why (D226). */
   undo: UndoState;
 }
@@ -1289,6 +1335,7 @@ async function toActionView(
 ): Promise<ActionView> {
   return {
     ...(a.undoesActionId !== undefined ? { undoesActionId: a.undoesActionId } : {}),
+    ...(a.via !== undefined ? { via: a.via } : {}),
     undo: await undoState(ctx, viewer, a),
     id: a._id,
     action: a.action,
@@ -1318,14 +1365,24 @@ export const listActions = query({
     const viewer = await requireCapability(ctx, 'audit.read');
     const limit = Math.min(args.limit ?? QUEUE_LIMIT, QUEUE_LIMIT);
 
-    const { targetType, targetId, actorId } = args;
+    const { targetType, targetId, actorId, action } = args;
+    // Normalized at the edge: a target is both halves or neither, and a verb filter is read in the
+    // index, which only a target's history has (`by_target_action`) — never filtered over a page
+    // already capped, which would hand back a short list as if it were whole.
+    if ((targetType === undefined) !== (targetId === undefined)) {
+      throw new ConvexError('A target needs both its type and its id');
+    }
+    if (action !== undefined && targetType === undefined) {
+      throw new ConvexError('Filtering by action needs a target');
+    }
     let rows: Doc<'moderationActions'>[];
     if (targetType !== undefined && targetId !== undefined) {
-      rows = await ctx.db
-        .query('moderationActions')
-        .withIndex('by_target', (q) => q.eq('targetType', targetType).eq('targetId', targetId))
-        .order('desc')
-        .take(limit);
+      // The same read the Body console's history makes for a target (`lib/auditReads`): one rule.
+      rows = await auditRowsOn(
+        ctx,
+        { targetType, targetId, ...(action !== undefined ? { action } : {}) },
+        limit,
+      );
     } else if (actorId !== undefined) {
       rows = await ctx.db
         .query('moderationActions')
@@ -1338,9 +1395,7 @@ export const listActions = query({
 
     // Who holds ledger editing is for holders only (D227), in History as on the People row.
     const visible = withoutLedgerGrantsFor(viewer, rows);
-    const filtered =
-      args.action !== undefined ? visible.filter((r) => r.action === args.action) : visible;
-    return Promise.all(filtered.map((a) => toActionView(ctx, viewer, a)));
+    return Promise.all(visible.map((a) => toActionView(ctx, viewer, a)));
   },
 });
 
@@ -1420,6 +1475,9 @@ export async function banImpl(
   {
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     const target = await loadModeratableUser(ctx, actor, userId);
+    // Never no ledger editor (D252): banning the last one who can act is refused, here and in an undo
+    // that puts a ban back, which comes through this same writer.
+    await refuseDisciplineOfLastLedgerEditor(ctx, target);
 
     await ctx.db.patch(userId, {
       status: 'banned',
@@ -1467,6 +1525,8 @@ export async function suspendImpl(
       throw new ConvexError('Suspension must end in the future');
     }
     const target = await loadModeratableUser(ctx, actor, userId);
+    // The same for a suspension (D252): a suspended editor can't edit or pass the grant on.
+    await refuseDisciplineOfLastLedgerEditor(ctx, target);
 
     await ctx.db.patch(userId, {
       status: 'suspended',
@@ -1504,6 +1564,12 @@ export const unbanUser = mutation({
   },
 });
 
+/** Why a lift is refused on an account on its way out, or gone (worded once for the tests). */
+export const LIFT_REFUSALS = {
+  deleting: 'This account is being deleted, so its suspension or ban can’t be lifted.',
+  deleted: 'This account is deleted, so there is nothing to lift.',
+} as const;
+
 export async function unbanImpl(
   ctx: MutationCtx,
   actor: Doc<'profiles'>,
@@ -1512,6 +1578,10 @@ export async function unbanImpl(
   {
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     const target = await loadModeratableUser(ctx, actor, userId);
+    // A lift puts the account back to `active`, which would bring a deleted one back and let a
+    // departing one write again (D33, D62). Refused here, so an undo that lifts is refused too.
+    if (target.status === 'deleted') throw new ConvexError(LIFT_REFUSALS.deleted);
+    if (isLeaving(target)) throw new ConvexError(LIFT_REFUSALS.deleting);
 
     await ctx.db.patch(userId, {
       status: 'active',

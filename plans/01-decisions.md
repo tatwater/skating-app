@@ -7961,3 +7961,30 @@ adopt it at integration, and storing it per body is a later server batch.
 same ten.
 
 **Related:** D60, D72, D202, [`phase-B01`](./phases/B01-admin-console.md) §5.4.
+
+## D256 — A write made through a script names the person and the script (B01)
+
+**2026-11-14, the founder's ruling.** When a script or an agent makes a write as a person, the person
+stays the actor and the audit row records what it was done through: an optional `via` on the row, the
+tool's short name (lowercase letters and digits in hyphen-joined words, at most 40 characters,
+`isAuditVia` in `@skating/core`). The console's History and audit feed read it as **"Teagan via
+seed-destinations"**: the person's name, the word "via", no comma, the script's name in the mono face.
+`CONVEX_RUN_AS` is the operator's own account, never just any admin's.
+
+**How it travels.** A script writes as a person with `convex run --identity`, which needs the
+deployment's admin credentials; `@skating/run-log`'s `convexRun` requires a `via` for every such
+call, refuses one that fails the rule, and puts it beside the `subject` in that identity.
+`lib/audit.ts`, the one writer of audit rows, copies the identity's `via` claim onto rows that have a
+person as actor, and drops one that fails the rule. No mutation takes it as an argument.
+
+**It is a label, never a permission.** Nothing reads `via` to decide anything, and the actor is still
+the signed-in person, so a forged claim could at most relabel the forger's own row. Undo of such a row
+behaves as any other; the undo's own row carries the undoer's marker or none. Old rows stay unmarked,
+with no backfill.
+
+**Why:** dev has three admin profiles, so "run it as the admin" was ambiguous, and every script-made
+row so far read as the founder acting by hand. The row now says both who and how.
+
+**Related:** D37, D80, D226, [`05-accounts-and-credentials.md`](./05-accounts-and-credentials.md)
+(the seed operator row), [`phase-B01`](./phases/B01-admin-console.md).
+

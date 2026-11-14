@@ -180,6 +180,13 @@ export interface NormalizedReport {
   putInId?: string;
 }
 
+/**
+ * The longest a Report's notes may be, trimmed. No client sets a limit (the A10 sheet writes a Post's
+ * body, not notes), so this is the founder-approved default; a longer note is refused, and rows
+ * already longer stay as they are.
+ */
+export const REPORT_NOTES_MAX_CHARS = 5_000;
+
 export interface ReportValidationError {
   field: string;
   message: string;
@@ -568,6 +575,15 @@ export function validateReportInput(
   }
   if (input.putInId !== undefined && input.putInId.trim() === '') {
     errors.push({ field: 'putInId', message: 'must name a put-in' });
+  }
+
+  // Capped at the write (B01's read budget): a Report's notes were the one uncapped prose on it.
+  const notesLength = input.notes?.trim().length ?? 0;
+  if (notesLength > REPORT_NOTES_MAX_CHARS) {
+    errors.push({
+      field: 'notes',
+      message: `are ${notesLength.toLocaleString('en-US')} characters; shorten them to ${REPORT_NOTES_MAX_CHARS.toLocaleString('en-US')} or fewer`,
+    });
   }
 
   if (errors.length > 0) return { ok: false, errors };

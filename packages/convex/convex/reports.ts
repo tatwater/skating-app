@@ -74,6 +74,7 @@ import {
 import { trustClassFor } from './lib/reputation';
 import { recordRevision, reportSnapshotOf } from './lib/revisions';
 import { addedSightings, deriveSightingHazards, drawnHazardOf } from './lib/sightingHazards';
+import { recordTextLength } from './lib/textLengths';
 import { authorRemoveReport } from './moderation';
 import { resolveReportSubAreas, stampCandidates } from './subAreas';
 import { loadFavorites, type ViewerFavorites } from './waterBodyFavorites';
@@ -580,6 +581,8 @@ export const update = mutation({
       });
     }
     const n = result.normalized;
+    // An edit records the new length (the old one stays counted: the record is of writes).
+    await recordTextLength(ctx, 'report_notes', n.notes, now);
 
     const photoIds = [...new Set(args.photoIds ?? existing.photoIds)];
     await assertOwnedPhotos(ctx, photoIds, profile._id, { reportId: args.reportId });

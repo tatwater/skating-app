@@ -5,6 +5,7 @@ import {
   locatedNamedSpots,
   locatedSubAreaIds,
   minimumSetGaps,
+  REPORT_NOTES_MAX_CHARS,
   type ReportInput,
   SIGHTING_FROM_ICE_MESSAGE,
   SKATE_TIME_FUTURE_TOLERANCE_MS,
@@ -138,6 +139,29 @@ describe('validateReportInput — valid reports', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.normalized.notes).toBeUndefined();
+  });
+});
+
+describe('validateReportInput — notes are capped at the write', () => {
+  it('takes notes up to the cap, counted after trimming', () => {
+    const atCap = validateReportInput(
+      base({ notes: `  ${'x'.repeat(REPORT_NOTES_MAX_CHARS)}  ` }),
+      CTX,
+    );
+    expect(atCap.ok).toBe(true);
+  });
+
+  it('refuses one character past, saying how long and what to cut it to', () => {
+    const result = validateReportInput(
+      base({ notes: 'x'.repeat(REPORT_NOTES_MAX_CHARS + 1) }),
+      CTX,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors).toContainEqual({
+      field: 'notes',
+      message: 'are 5,001 characters; shorten them to 5,000 or fewer',
+    });
   });
 });
 

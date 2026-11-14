@@ -21,7 +21,7 @@ import {
   SATELLITE_MIN_AREA_SQM,
   satelliteImageryAvailable,
 } from '@skating/core';
-import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
+import { convexRun, type RunAs, RunLogger, resolveDeployment } from '@skating/run-log';
 import type { MultiPolygon, Polygon } from 'geojson';
 import {
   boostFor,
@@ -35,6 +35,8 @@ import {
   matchAll,
 } from './match';
 
+/** What this script's writes record they were made through (D256). */
+const SCRIPT_NAME = 'seed-destinations';
 const DEFAULT_SHORTLIST = fileURLToPath(new URL('../destinations.json', import.meta.url));
 const REPORT = fileURLToPath(new URL('../.report.json', import.meta.url));
 const IMAGERY_REPORT = fileURLToPath(new URL('../.imagery-report.json', import.meta.url));
@@ -172,10 +174,14 @@ async function main() {
   const args = process.argv.slice(2);
   const apply = args.includes('--apply');
   // `setCuratedBoost` is the admin path (moderator role): `--apply` runs it as the operator named by
-  // `CONVEX_RUN_AS` (a Clerk user id with a moderator/admin profile on the target deployment).
+  // `CONVEX_RUN_AS` — the operator's own Clerk user id (a moderator or admin profile on the target
+  // deployment), never just any admin's: the audit rows name that person as the actor, made through
+  // this script (D256).
   const runAs = process.env.CONVEX_RUN_AS;
   if (apply && !runAs) {
-    process.stderr.write('[seed] --apply needs CONVEX_RUN_AS=<clerk user id of a moderator>\n');
+    process.stderr.write(
+      '[seed] --apply needs CONVEX_RUN_AS=<your own Clerk user id> — the person running this, who must be a moderator or admin; the audit log records the writes as yours, made through seed-destinations\n',
+    );
     process.exit(2);
   }
   const verifyImagery = args.includes('--verify-imagery');
@@ -315,6 +321,8 @@ async function main() {
     call: convexRun,
   });
   logger.start();
+  // `--apply` refused to start without `CONVEX_RUN_AS`; an empty one is refused before any write.
+  const operator: RunAs = { as: runAs ?? '', via: SCRIPT_NAME };
 
   let applied = 0;
   for (const o of matched) {
@@ -338,7 +346,7 @@ async function main() {
             subAreaId: target._id,
             curatedBoost: boostFor(o.destination),
           },
-          { as: runAs },
+          { runAs: operator },
         );
       } else {
         convexRun(
@@ -347,7 +355,7 @@ async function main() {
             waterBodyId: target._id,
             curatedBoost: boostFor(o.destination),
           },
-          { as: runAs },
+          { runAs: operator },
         );
       }
       applied++;

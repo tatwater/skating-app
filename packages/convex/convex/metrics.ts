@@ -21,6 +21,7 @@
 
 import {
   callerNow,
+  type LengthTally,
   lastDays,
   type MetricKey,
   OBSERVED_FROM,
@@ -30,6 +31,10 @@ import {
   seasonOf,
   seasonRecordWindow,
   sumRecorded,
+  sumTallies,
+  TEXT_LENGTH_CAPS,
+  TEXT_LENGTH_KINDS,
+  type TextLengthKind,
 } from '@skating/core';
 import { v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
@@ -477,5 +482,46 @@ export const coverage = query({
         }),
       },
     };
+  },
+});
+
+// ── Text lengths ────────────────────────────────────────────────────────────────────────────────
+
+/** One kind's lengths over the season: its cap now, each day's tally, and the days added up. */
+type TextLengthSeries = {
+  cap: number;
+  /** Aligned with `days`; `null` for a day not recorded (no rollup, or its read hit its cap). */
+  daily: Array<(LengthTally & { cap: number }) | null>;
+  /** The recorded days added up; `null` when none was. Partial whenever `notRecordedDays > 0`. */
+  season: LengthTally | null;
+  notRecordedDays: number;
+};
+
+/**
+ * How long people's capped texts are over a season (the founder's ruling, 2026-11-14), for the screen
+ * that will sit beside each cap: per kind, writes per length band against the cap in force, the
+ * longest, and the cap. Gated like the rest of Metrics. Counts only. A day nothing recorded is `null`,
+ * never zero, and the season's total says how many days it is missing rather than reading as whole.
+ */
+export const textLengths = query({
+  args: seasonArg,
+  handler: async (ctx, args) => {
+    await requireCapability(ctx, 'metrics.read');
+    const { season, opensOn, days } = windowOf(args.season, args.now);
+    const rows = await metricOverDays(ctx, 'text_lengths', days);
+    const kinds = {} as Record<TextLengthKind, TextLengthSeries>;
+    for (const kind of TEXT_LENGTH_KINDS) {
+      const daily = rows.map((row) => {
+        const day = (row?.meta as Record<string, unknown> | undefined)?.[kind];
+        return (day ?? null) as (LengthTally & { cap: number }) | null;
+      });
+      kinds[kind] = {
+        cap: TEXT_LENGTH_CAPS[kind],
+        daily,
+        season: sumTallies(daily),
+        notRecordedDays: daily.filter((d) => d === null).length,
+      };
+    }
+    return { season, opensOn, days, kinds };
   },
 });

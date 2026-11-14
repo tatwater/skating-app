@@ -5,7 +5,13 @@
  * at `/admin/flags`, which reads `moderation.listFlags` and resolves through `moderation.resolveFlag`.
  */
 
-import { accessReportGateMessage, flagRetraction, RETRACT_REFUSALS } from '@skating/core';
+import {
+  accessReportGateMessage,
+  FLAG_NOTE_MAX_CHARS,
+  flagRetraction,
+  RETRACT_REFUSALS,
+  tooLongMessage,
+} from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id, TableNames } from './_generated/dataModel';
@@ -13,6 +19,7 @@ import { mutation, query } from './_generated/server';
 import { getCurrentProfile, requireProfile } from './lib/auth';
 import { FLAG_REASONS, FLAG_TARGET_TYPES } from './lib/enums';
 import { holdMoved, refreshEraseClock } from './lib/eraseClock';
+import { recordTextLength } from './lib/textLengths';
 import { literals } from './lib/validators';
 
 /** The table each flag target type refers to — used to validate the target actually exists. */
@@ -47,6 +54,9 @@ export const flag = mutation({
   },
   handler: async (ctx, args) => {
     const profile = await requireProfile(ctx);
+    // Capped at the write, so a flag row has a known worst case for every read of it.
+    const noteTooLong = tooLongMessage('The note', args.note, FLAG_NOTE_MAX_CHARS);
+    if (noteTooLong !== null) throw new ConvexError(noteTooLong);
 
     // Validate the target exists (and that targetId is a real id for its table).
     const table = TARGET_TABLE[args.targetType];
@@ -95,6 +105,8 @@ export const flag = mutation({
       origin: 'user', // a person pressed "report" — the one origin `content_flag_resolved` notifies
       createdAt: Date.now(),
     });
+    // How long the note is, for the cap's record (counts only; a repeat flag above wrote nothing).
+    await recordTextLength(ctx, 'flag_note', args.note);
     // An open complaint holds withdrawn content back from erasure (D248).
     await holdMoved(ctx, args.targetType, args.targetId);
 

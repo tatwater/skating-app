@@ -425,6 +425,19 @@ export const METRICS = {
     kind: 'rollup',
     shape: 'scalar',
   },
+  /**
+   * How long the capped texts written this day were (the founder, 2026-11-14): per kind, how many writes
+   * fell in each band against the cap in force, the longest, and the cap — counts only, never the text.
+   * A kind whose day's read hit its cap is `null` in `meta` (not recorded). Forward-only: a day before
+   * the record began, or older than its events are kept, is never written.
+   */
+  text_lengths: {
+    label: 'Text lengths',
+    description:
+      'Report notes, photo captions and flag notes written this day: writes per length band against the cap, the longest, and the cap in force. Counts only.',
+    kind: 'rollup',
+    shape: 'meta',
+  },
   // Point-in-time: stamped on the day they were measured and overwritten by the next tick.
   accounts_total: {
     label: 'Accounts',

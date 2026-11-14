@@ -28,6 +28,7 @@ import {
   ICE_TYPES,
   LANDMARK_KINDS,
   LANDMARK_SOURCES,
+  LENGTH_BANDS,
   LIBRARY_LANES,
   LIBRARY_STANDINGS,
   OBSERVED_FROM,
@@ -46,6 +47,7 @@ import {
   SKY_CONDITIONS,
   SUITABILITIES,
   SURFACE_TAGS,
+  TEXT_LENGTH_KINDS,
   USER_ROLES,
   USER_STATUSES,
   WATER_BODY_CLASSES,
@@ -3493,6 +3495,13 @@ export default defineSchema({
      * Equality reads only, so the unset value on every other row never matches (no sparse-index trap).
      */
     undoesActionId: v.optional(v.id('moderationActions')),
+    /**
+     * What a person made this write **through** — the script or agent, by its short name (D256).
+     * The person stays the actor; this is a label, never a permission. Written only by
+     * `lib/audit.ts`, from the caller's identity, and only when it passes `isAuditVia`. Older rows
+     * have none and get none.
+     */
+    via: v.optional(v.string()),
     createdAt: v.number(),
   })
     .index('by_target', ['targetType', 'targetId'])
@@ -4454,6 +4463,21 @@ export default defineSchema({
   })
     .index('by_user_day', ['userId', 'day']) // the once-a-day guard, and account erasure
     .index('by_day', ['day']), // the Metrics reads: a day, or a range of days
+
+  /**
+   * One capped text written, as a length (the founder's ruling, 2026-11-14) — **counts only, never the
+   * text, nor who wrote it or on what**. Written by `lib/textLengths.ts` at each write that sets a
+   * report's notes, a photo's caption or a flag's note; folded into the day's `text_lengths` snapshot by
+   * the day rollup, and pruned once a week old. An insert per write, so a burst of writes on a busy day
+   * never contends on a shared counter row.
+   */
+  textLengthEvents: defineTable({
+    day: v.string(), // the UTC `YYYY-MM-DD` of `metricDay`
+    kind: literals(TEXT_LENGTH_KINDS),
+    length: v.number(),
+    band: literals(LENGTH_BANDS), // against `cap`, the cap in force at the write
+    cap: v.number(),
+  }).index('by_day_kind', ['day', 'kind']), // the fold reads a day's kind; the prune, days before
 
   /**
    * The pre-aggregated numbers every chart reads — one row per `(metric, date)` (UTC day).

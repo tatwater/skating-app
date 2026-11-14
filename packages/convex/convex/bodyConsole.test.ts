@@ -1226,3 +1226,64 @@ describe('retention’s saved put-ins at the read’s bound', () => {
     });
   });
 });
+
+describe('one rule for a target’s history: the Body console and listActions agree on a verb filter', () => {
+  test('for the same body and verb, the same rows in the same order, with the same marker', async () => {
+    const t = harness();
+    const mod = await seedUser(t);
+    const body = await seedBody(t, { name: 'Mascoma Lake' });
+    let at = NOW;
+    const row = (action: Doc<'moderationActions'>['action'], via?: string) =>
+      t.run((ctx) =>
+        ctx.db.insert('moderationActions', {
+          actorId: mod.id,
+          action,
+          targetType: 'waterbody',
+          targetId: body,
+          reason: 'x',
+          createdAt: at++,
+          ...(via !== undefined ? { via } : {}),
+        }),
+      );
+    await row('set_public_access');
+    await row('demote_body');
+    await row('set_public_access', 'seed-destinations');
+    await row('activate_body');
+    await row('set_public_access');
+
+    for (const action of ['set_public_access', 'demote_body', 'merge_waterbody'] as const) {
+      const listed = await mod.as.query(api.moderation.listActions, {
+        targetType: 'waterbody',
+        targetId: body,
+        action,
+      });
+      const { entries } = await mod.as.query(api.bodyConsole.history, {
+        waterBodyId: body,
+        action,
+      });
+      const onBody = entries.filter((e) => e.targetType === 'waterbody' && e.targetId === body);
+      expect(onBody.map((e) => [e.id, e.via])).toEqual(listed.map((r) => [r.id, r.via]));
+      expect(listed.every((r) => r.action === action)).toBe(true);
+    }
+    // The verb is read in the index: three of five rows, never a filtered page that comes back short.
+    const listed = await mod.as.query(api.moderation.listActions, {
+      targetType: 'waterbody',
+      targetId: body,
+      action: 'set_public_access',
+      limit: 3,
+    });
+    expect(listed).toHaveLength(3);
+    expect(listed.map((r) => r.via)).toEqual([undefined, 'seed-destinations', undefined]);
+  });
+
+  test('listActions refuses a verb with no target, and half a target', async () => {
+    const t = harness();
+    const mod = await seedUser(t);
+    await expect(
+      mod.as.query(api.moderation.listActions, { action: 'demote_body' }),
+    ).rejects.toThrow('Filtering by action needs a target');
+    await expect(
+      mod.as.query(api.moderation.listActions, { targetType: 'waterbody' }),
+    ).rejects.toThrow('A target needs both its type and its id');
+  });
+});

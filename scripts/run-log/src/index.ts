@@ -32,6 +32,7 @@ export {
   threeDhpClipStage,
   threeDhpSourceStage,
 } from './provenance';
+export { identityArgs, type RunAs } from './runAs';
 export {
   type ConvexCaller,
   MAX_FORWARDED_FAILURES,

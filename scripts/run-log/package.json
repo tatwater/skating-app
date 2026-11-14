@@ -15,6 +15,9 @@
     "record": "tsx src/cli.ts",
     "backfill-archives": "tsx src/backfillArchives.ts"
   },
+  "dependencies": {
+    "@skating/core": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "^24.19.0",
     "@vitest/coverage-v8": "^5.0.2",

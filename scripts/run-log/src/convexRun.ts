@@ -7,6 +7,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { parseConvexOutput } from './parseOutput';
+import { identityArgs, type RunAs } from './runAs';
 
 /**
  * Call a Convex function and parse its return value.
@@ -14,20 +15,25 @@ import { parseConvexOutput } from './parseOutput';
  * `convex run` pretty-prints the return value on stdout as JSON and sends the function's own logs
  * to stderr, which we inherit so a loader's operator still sees them live.
  *
- * **`options.as` (a Clerk user id) runs the call as that signed-in user.** Deployment credentials
- * carry no *user* identity, so a public mutation behind `requireContributorRole` — `setCuratedBoost`
- * is one — rejects a bare `convex run` with "Not authenticated". `convex run --identity` supplies a
- * `UserIdentity` for a dev deployment, and `lib/auth.ts` resolves the profile from its `subject`.
- * Per call, never global: a run carrying a user identity can reach *only* public functions, so the
- * internal reads a loader pages with (`listNamedForSeeding`) must keep going out bare. The operator
- * who names the user is the one whose audit rows result.
+ * **`options.runAs` runs the call as a signed-in person, through this script.** Deployment
+ * credentials carry no *user* identity, so a public mutation behind `requireContributorRole` —
+ * `setCuratedBoost` is one — rejects a bare `convex run` with "Not authenticated". `convex run
+ * --identity` supplies a `UserIdentity` for a dev deployment, and `lib/auth.ts` resolves the profile
+ * from its `subject`. Per call, never global: a run carrying a user identity can reach *only* public
+ * functions, so the internal reads a loader pages with (`listNamedForSeeding`) must keep going out
+ * bare.
+ *
+ * **`as` is the operator's own Clerk user id — the person running the script, never just any
+ * admin's.** The audit row names them as the actor, and `via` (the script's name, required) records
+ * what they did it through, so the console reads "Teagan via seed-destinations" (D256). See
+ * `runAs.ts`.
  */
 export function convexRun<T>(
   functionName: string,
   args: unknown,
-  options: { as?: string } = {},
+  options: { runAs?: RunAs } = {},
 ): T {
-  const identity = options.as ? ['--identity', JSON.stringify({ subject: options.as })] : [];
+  const identity = identityArgs(options.runAs);
   const stdout = execFileSync(
     'pnpm',
     [

@@ -42,6 +42,7 @@ One line per table: what it's for, and the decision or phase that made it. Group
 | `clientSignalEvents` | per-user rate-limit bookkeeping for the client analytics signal — 07-2 |
 | `signInDays` | one row per person per UTC day they opened the app signed in, written once a day by `syncFromClerk`, erased with the account — what the console's *Signed in* and *came back* read (B01 §5.1) |
 | `consolePresence` | one row per staff member, the last instant they had a console page open — the top bar's colleague faces; replaced in place, staff only, erased with the account (B01 §5.1) |
+| `textLengthEvents` | one row per write of a report's notes, a photo's caption or a flag's note: the day, the kind, the length and its band against the cap in force — counts only, never the text, the writer or the item; folded per day into `text_lengths` and pruned after a week (B01-1c; the founder, 2026-11-14) |
 
 ### Water bodies and the corpus
 

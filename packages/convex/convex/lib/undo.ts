@@ -41,8 +41,38 @@ function handlerFor(row: Doc<'moderationActions'>): UndoHandler | null {
 }
 
 /**
- * Whether `row` can be undone by `viewer`, and if not, why. Bounded: two index reads, and one `get`
- * of an item an author could have deleted.
+ * How many rows tagged with one undo are read to find that undo's own row. An undo tags every row it
+ * writes (`asUndoOf`): a Post's undo writes a row per member it moves (at most ten), then the Post's
+ * own, so this covers the largest undo with room to spare.
+ */
+const UNDO_TAG_READ = 16;
+
+/**
+ * The row that undid `row`, if one did: **the undo's own row on the same target**, not the first row
+ * the undo happened to write. An undo writes its cascade first (a Post's undo moves its members, each
+ * with a row tagged as undoing the Post's), and its own row last, so the newest tagged row on the
+ * target is the one. With no tagged row on the target in the read, the newest tagged row stands in:
+ * it still says the row was undone, which is what the state decides.
+ */
+async function undoRowOf(
+  ctx: QueryCtx | MutationCtx,
+  row: Doc<'moderationActions'>,
+): Promise<Doc<'moderationActions'> | null> {
+  const tagged = await ctx.db
+    .query('moderationActions')
+    .withIndex('by_undoes', (q) => q.eq('undoesActionId', row._id))
+    .order('desc')
+    .take(UNDO_TAG_READ);
+  return (
+    tagged.find((r) => r.targetType === row.targetType && r.targetId === row.targetId) ??
+    tagged[0] ??
+    null
+  );
+}
+
+/**
+ * Whether `row` can be undone by `viewer`, and if not, why. Bounded: two index reads (one of at most
+ * {@link UNDO_TAG_READ} rows), and one `get` of an item an author could have deleted.
  */
 export async function undoState(
   ctx: QueryCtx | MutationCtx,
@@ -60,10 +90,7 @@ export async function undoState(
   const handler = handlerFor(row);
   if (!handler) return { state: 'unavailable', why: 'Undo for this is not built yet.' };
 
-  const undoneBy = await ctx.db
-    .query('moderationActions')
-    .withIndex('by_undoes', (q) => q.eq('undoesActionId', row._id))
-    .first();
+  const undoneBy = await undoRowOf(ctx, row);
   if (undoneBy) return { state: 'undone', byActionId: undoneBy._id };
 
   const newest = await ctx.db
