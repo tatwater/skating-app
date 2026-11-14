@@ -444,7 +444,7 @@ describe('bays, landmarks and history', () => {
 });
 
 describe('dailyHazards', () => {
-  test('counts each day a hazard was on the lake, an archived one through its last confirmation, and names the watch’s opening', async () => {
+  test('counts the days a hazard is established on the lake, marks an archived one’s later days unknown, and names the watch’s opening', async () => {
     const t = harness();
     const { as, id: mod } = await seedUser(t);
     const id = await seedBody(t, { name: 'Ridged' });
@@ -495,12 +495,55 @@ describe('dailyHazards', () => {
     // Both archived hazards: their end isn't stored, and a healed vote can't establish it.
     expect(r.unknownEnds).toBe(2);
     expect(r.watchOpensOn).toBe(Date.UTC(2026, 10, 20));
-    const at = (d: number) => r.days.find((x) => x.at === start + d * DAY)?.count;
-    expect(at(0)).toBe(3);
-    expect(at(1)).toBe(2);
-    expect(at(2)).toBe(1);
-    expect(at(5)).toBe(1);
+    const day = (d: number) => r.days.find((x) => x.at === start + d * DAY);
+    // The first day: all three established. After it: the active one established, the two archived
+    // unknown — never counted as gone.
+    expect(day(0)).toMatchObject({ count: 3, unknown: 0 });
+    expect(day(1)).toMatchObject({ count: 1, unknown: 2 });
+    expect(day(5)).toMatchObject({ count: 1, unknown: 2 });
     expect(r.days.every((d) => d.at <= NOW)).toBe(true);
+  });
+
+  test('a vote cast today changes no day of a past winter', async () => {
+    const t = harness();
+    const { as, id: mod } = await seedUser(t);
+    const id = await seedBody(t, { name: 'Last Winter' });
+    const start = Date.UTC(2026, 0, 10); // the 2025 winter
+    const hazard = await t.run((ctx) =>
+      ctx.db.insert('hazards', {
+        waterBodyId: id,
+        type: 'pressure_ridge',
+        geometryKind: 'point_radius',
+        geometry: { type: 'Point' as const, coordinates: [-72, 44] },
+        radiusMeters: 20,
+        bbox: boxOf(-72, 44, 0.001),
+        createdByUserId: mod,
+        photoIds: [],
+        moderationStatus: 'visible',
+        confirmCount: 0,
+        goneCount: 0,
+        createdAt: start,
+        firstReportedAt: start,
+        lastConfirmedAt: start + DAY,
+        status: 'archived',
+      }),
+    );
+    const read = () =>
+      as.query(api.bodyConsole.dailyHazards, { waterBodyId: id, season: 2025, now: NOW });
+    const before = await read();
+    await t.run(async (ctx) => {
+      // A confirmation and a healed vote cast today, on the archived hazard, as the writers allow.
+      await ctx.db.patch(hazard, { lastConfirmedAt: NOW, confirmCount: 1 });
+      await ctx.db.insert('hazardConfirmations', {
+        hazardId: hazard,
+        userId: mod,
+        verdict: 'fully_healed',
+        via: 'report_flow',
+        createdAt: NOW,
+      });
+    });
+    expect(await read()).toEqual(before);
+    expect(before.days[0]).toMatchObject({ at: start, count: 1, unknown: 0 });
   });
 });
 

@@ -452,13 +452,19 @@ export function daysCovered(from: number, to: number, window: { start: number; e
 
 /**
  * **How many hazards were on the lake each day of a winter** (1 October to 1 April), and when the
- * season's watch opened. A hazard is on the lake from its first report; one still active counts
- * through today (or the winter's end). An archived hazard's end is not stored and its votes can't
- * establish it (edited in place, still taken after the archive), so it counts through its last
- * confirmation — a floor, each one counted in `unknownEnds`. A hazard still active counts
- * through today (or the winter's end). Hidden and merged-away hazards are not counted. Days after
- * today are absent, never zero. `watchOpensOn` is the season record's opening day, `null` while the
- * watch waits.
+ * season's watch opened. Each day says two things:
+ *
+ * - `count` — hazards **established** on the lake that day: one is from its first report, and one
+ *   still active is through today (or the winter's end);
+ * - `unknown` — archived hazards that **may** have been: an archived hazard's end is not stored, and
+ *   its votes can't establish it (a vote is edited in place, and an archived hazard still takes
+ *   them), so every day after its first report is unknown — never counted as clear. A vote cast
+ *   today changes no day of a past winter.
+ *
+ * `unknownEnds` is how many archived hazards that is. Hidden and merged-away hazards are not
+ * counted; days after today are absent, never zero. `watchOpensOn` is the season record's opening
+ * day, `null` while the watch waits. An honest end needs the hazard writers to stamp when a hazard
+ * left the lake — deferred until the author-deletion PR's files are open again.
  */
 export const dailyHazards = query({
   args: {
@@ -480,23 +486,27 @@ export const dailyHazards = query({
           .lt('firstReportedAt', window.end),
       )
       .take(DAILY_HAZARD_CAP + 1);
-    const counts = new Map<number, number>();
+    const days = new Map<number, { count: number; unknown: number }>();
+    const bump = (day: number, field: 'count' | 'unknown') => {
+      const d = days.get(day) ?? { count: 0, unknown: 0 };
+      d[field]++;
+      days.set(day, d);
+    };
+    const lastDay = Math.min(now, window.end);
     let unknownEnds = 0;
     for (const h of hazards.slice(0, DAILY_HAZARD_CAP)) {
       if (h.moderationStatus !== 'visible' || h.mergedIntoHazardId !== undefined) continue;
-      let end: number;
+      const firstDay = Math.floor(h.firstReportedAt / DAY_MS) * DAY_MS;
       if (h.status === 'active') {
-        end = Math.min(now, window.end);
-      } else {
-        // When it left the lake isn't stored, and the votes can't say: a vote is edited in place
-        // and an archived hazard still takes them. Counted through the day of its last
-        // confirmation — someone said it was there then — as a floor.
-        unknownEnds++;
-        end = Math.max(h.lastConfirmedAt, h.firstReportedAt) + 1;
+        for (const day of daysCovered(h.firstReportedAt, lastDay, window)) {
+          if (day <= now) bump(day, 'count');
+        }
+        continue;
       }
-      for (const day of daysCovered(h.firstReportedAt, end, window)) {
+      unknownEnds++;
+      for (const day of daysCovered(h.firstReportedAt, lastDay, window)) {
         if (day > now) continue;
-        counts.set(day, (counts.get(day) ?? 0) + 1);
+        bump(day, day === firstDay ? 'count' : 'unknown');
       }
     }
     const record = await ctx.db
@@ -506,7 +516,9 @@ export const dailyHazards = query({
     const opens = record?.opensOn;
     return {
       season,
-      days: [...counts.entries()].sort(([a], [b]) => a - b).map(([at, count]) => ({ at, count })),
+      days: [...days.entries()]
+        .sort(([a], [b]) => a - b)
+        .map(([at, d]) => ({ at, count: d.count, unknown: d.unknown })),
       unknownEnds,
       capped: hazards.length > DAILY_HAZARD_CAP,
       watchOpensOn: opens === undefined ? null : Date.parse(`${opens}T00:00:00Z`),
