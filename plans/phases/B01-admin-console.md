@@ -1729,6 +1729,92 @@ may fail loudly and stop; each logs where to re-run from (`traced`).
 | refresh nws alerts | partially | a state whose write throws skips the states after it while that alert is live |
 | expire bounties, expire access alerts, the prune and purge jobs, roll up operator metrics, sweep water-body coverage, append daily (bay) weather archive, expire departed skaters' photos, poll for new satellite imagery, rebuild the live imagery index | no | per-item isolation, a cursor that moves past failures, deletes or status patches only, or no per-item work |
 
+**B01-1d (2026-11-14): the recurring jobs, fixed** (D257). Every job the table above marks *yes* or
+*partially*, read against the code first, then changed so one failing item never stops, delays past
+its run, or reorders anyone else's work. The shared pieces are `lib/recurringWork` (an item in its own
+nested transaction under limits of its own, the walk asking the transaction's real metrics before each
+item, `jobFailures` for work with no row of its own, `jobPositions` for a walk that laps its table) and
+`lib/attempts`, the rule the erasure already used. `recurringJobs.health` (`machinery.read`) is the one
+read Machinery will draw: per job, failing and parked counts, the oldest parked time and oldest
+failure, and the error classes — counts only, every count capped and saying so; the account deletions
+and expired exports show how much is overdue instead.
+
+**Where the audit's list was wrong or short:**
+- *Sweep orphan photos* was worse than stuck: its read of 500 photos at up to a document each (the
+  caption is uncapped) and its one-transaction reference scan (4,000 Reports and 4,000 hazards per
+  uploader) could each fail the same page every day by weight alone, with no item throwing.
+- *Prompt unreported skates* could also fail by weight: fifty due recordings and fifty windows of fifty
+  recordings each, a path per row, in one transaction.
+- *Demote inactive bodies at the rollover* was understated as "partially": a run that fails is retried
+  only through 14 July, so a page that always throws left every body past it undecided for the season.
+- *Refresh hazard weather*: a fetch that comes back empty is deliberately left un-stamped and is not a
+  poison item (Open-Meteo down leaves them all at the front, and they all go when it returns); only a
+  throw was. Its list read of 1,000 hazards at up to a document each is unbounded by weight (owed).
+- *Finalize account deletions*: the ghost redaction beside it had the same shape (the oldest 200
+  pending, re-read every hour).
+- *Flush notification queue*: a new event coalesced into whatever row held its key, so once a row is
+  parked a new event would have landed in it and never been sent (found while fixing; now a parked row
+  is passed over by a new index).
+- The *no* row was spot-checked, not re-read in full (the departed-photo sweep and the season purge
+  hold up); the Bodies library's three crons came after the audit and park on their own.
+
+| Cron | Was | Now | Parked means | Test |
+| --- | --- | --- | --- | --- |
+| sweep orphan photos | the oldest 500 past grace, re-read for ever | a lap from a saved place (`jobPositions`), a chain owning it by run and lease; the photos the settlement would keep without reading history (a back-link, an access point) passed, the rest owed to the settlement (`erasure.owePhotos`), whose complete check is the one rule; an erased photo's blob retried directly | a marker: the daily lap is the retry | `storageHygiene.test.ts` "600 old photos in use…", "…a hazard filed mid-walk…", "sweepOrphanPhotos under failure" (fast-check) |
+| flush notification queue | one transaction, a throw re-ran first | the batch whole, then a row at a time if it fails; a failure counted on the row, moved past the run's cutoff; twelve-hour freshness on every row | out of `by_parked_flush`; retried hourly, expired past the window | `recurringJobs.test.ts` "flush notification queue, under failure" (fast-check), "the freshness rule…", "…never coalesces into a parked row" |
+| prompt unreported skates | fifty rows, one transaction | each skater's due rows in their own nested transaction; the run walks forward from a position it carries | out of `by_prompt_parked_detected`, still on the skater's list; retried daily | "prompt unreported skates, under failure" (fast-check) |
+| sweep body summaries (due mode) | fifty cards, one transaction | each card in its own nested transaction; a failure moves it past the run's cutoff | out of `by_parked_refresh_at`, its card left as it was (hazards included); retried daily | "sweep body summaries (due mode), under failure" (fast-check) |
+| demote inactive bodies at the rollover | a page that threw ended the run | the page whole, then a body at a time; the rule is one helper (`rolloverBody`), unchanged | the body stays active; the daily retry decides it, parked or not, since the walk runs once a season | `standing.test.ts` "a page that throws…" |
+| reconcile weather cell registry | a page that threw ended the walk | pages bounded by weight; a write whole, then a row at a time; a run with failures prunes nothing and is not marked complete | never parked; the next walk retries | `weatherArchive.test.ts` "a page whose write throws…" |
+| repair weather archive gaps | a cell that threw ended the walk | each cell an item; counted, the walk goes on | a marker: the daily run is the retry | "one cell that throws no longer ends the walk…" |
+| refresh hazard weather | a throw stayed at the front | a throw is stamped to the back, its last multiplier kept, counted | never parked: the cadence gate spaces its tries | `hazardWeather.test.ts` "a hazard whose refresh throws…" |
+| refresh nws alerts | a state's failed write skipped the rest | each state's write an item; it keeps what it had | never parked | `weatherAlerts.test.ts` "a state whose write throws…" |
+| watch for the imagery season to open | a failed tick was silent past the logs | all or nothing kept (a shrinking sample opens seasons); each failed day counted with its class | never parked | `imageryIngest.test.ts` "an Open-Meteo failure throws…", "a tick that goes through clears…" |
+| finalize account deletions (and the redaction) | the oldest twenty (two hundred), every hour | a turn after the last tick's, wrapping | never parked; overdue accounts on the read | `accountDeletion.test.ts` "accounts whose chains keep failing…" |
+| sweep expired exports | the oldest five hundred | a turn after the last tick's, wrapping | — | `storageHygiene.test.ts` "bundles whose blob will not delete…" |
+
+Each queue-shaped job's property holds, over any set of items and any subset that always fails: every
+healthy item goes through in its first run, a failing one is tried once a run and parked after exactly
+three failures in a row, the walk does not try it again, the retry frees it once it heals with nobody
+releasing anything, and no item is delivered twice. The lap walk's version: every photo once a lap,
+counted while it fails, cleared by the lap after it heals. One seam makes any item fail in a test:
+`lib/recurringWork.asItem`, which every isolated item runs through.
+
+**Sized, under Convex's real limits** (`recurringChains.test.ts`, every row near the document limit):
+these walks use design (b) with real metrics — before each item the walk asks whether the transaction
+can still pay the item's own limits and a reserve past it, so a light item leaves room for many and a
+heavy one for few, and the item runs under those limits.
+
+| Job | Item's own limits (read · docs · queries · writes) | Reserve past it | Worst-case test |
+| --- | --- | --- | --- |
+| `storageHygiene.sweepOrphanPhotos` | 2 MiB · 20 · 20 · 10 | 3 MiB, for the next photo and each owed uploader's queue place | thirty photos near the limit, half in use: the lap ends, the orphans go |
+| `notifications.flushNotificationQueue` | the batch 8 MiB · 8,000 · 2,500 · 4,000; a row 3 MiB · 2,000 · 200 · 500 | 1 MiB | twenty recipients near the limit: the batch fails as a batch, every row lands one at a time |
+| `gpsActivities.sweepUnpromptedActivities` | a skater 8 MiB · 3,000 · 300 · 300 | 1 MiB, plus 1 MiB per due row read | twelve skaters and recordings near the limit: each is asked |
+| `waterBodies.refreshDueBodySummaries` | a card 8 MiB · 2,000 · 100 · 50 | 1 MiB | cards with four Reports near the limit each: several batches, every card refreshed |
+| `recurringJobs.retryParkedDaily` | 8 MiB · 3,000 · 300 · 300 | 1 MiB | (covered by the three properties' retries) |
+| `recurringJobs.health` | heavy rows (queue, recordings, profiles, exports) to ten each, only while affordable at a document each; small rows to 200 | 3 MiB | fourteen parked rows near the limit: ten counted, capped |
+
+**Owed, with the reason:**
+- *Pump live satellite imagery*: a Machine that stays live keeps its granule in flight and one of a
+  hundred slots; every other failure already counts attempts, fails the granule and alerts. Bounded by
+  how long a cut can run; not changed.
+- *Recompute hazard recurrence at the rollover*: already saves attempts and skips a body after three;
+  a failure ending the day's chain inside the seven-day window is the remaining shape, and its retry
+  is the next day. Not changed here.
+- *Refresh hazard weather*'s list read (1,000 hazards and their bodies at up to a document each) is
+  unbounded by weight.
+- *The Bodies library queue* keeps its own copy of the park rule (`lib/bodyLibrary.recordRefreshFailure`):
+  it keeps the first `parkedAt` where `lib/attempts` re-stamps it, and has no daily-retry stamp, so the
+  switch is not behavior-neutral — left as it is.
+- *A parked map card* keeps its last counts and quality dots past their window. Clearing it would drop
+  its hazards, which reads as all-clear, so it stays; drawing it as stale needs the clients.
+- *The orphan walk owes every in-use photo with no back-link every lap* (hazard photos, pre-A10 Report
+  photos): the settlement then reads that uploader's history once a day. Correct and bounded; a cost
+  that grows with hazard photos.
+- *A registry walk with a row that always fails* never prunes or completes until it heals: the
+  registry keeps vacated cells (a few Open-Meteo calls), and the import debounce sees an hour-old
+  in-flight claim as dead and walks again.
+
 **B01-3 (2026-11-13): the Overview's server reads, and the page reading them.** Server and web on
 one branch (`b01-3-server`).
 
