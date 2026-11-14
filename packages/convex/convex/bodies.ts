@@ -32,6 +32,7 @@ import {
   type OBSERVED_FROM,
   REQUEST_KINDS,
   SCOPE_ALL,
+  SEARCH_MIN_CHARS,
   seasonOf,
   seasonRecordSpan,
   servedCounts,
@@ -91,8 +92,6 @@ const listArgs = {
   now: v.optional(v.number()),
 };
 
-/** The shortest search the search index is asked. */
-export const SEARCH_MIN_CHARS = 2;
 /** The longest search read; the rest is dropped. */
 const SEARCH_MAX_CHARS = 100;
 
