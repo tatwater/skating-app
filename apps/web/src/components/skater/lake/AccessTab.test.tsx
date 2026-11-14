@@ -154,6 +154,35 @@ describe('AccessTab', () => {
     );
   });
 
+  it('offers a pinned alert\'s author "It\'s open", and nobody else any vote', () => {
+    fakes.queries.set('accessPoints:accessForBody', {
+      ...MASCOMA_ACCESS,
+      alerts: MASCOMA_ACCESS.alerts.map((a) => ({ ...a, status: 'official', official: true })),
+    });
+    fakes.queries.set('accessAlerts:myAlertIdsForBody', []);
+    const { unmount } = tab();
+    let beach = card('Shakoma Beach');
+    expect(within(beach).getByText(/confirmed by a moderator/)).toBeTruthy();
+    expect(within(beach).queryByRole('button', { name: 'It’s open' })).toBeNull();
+    expect(within(beach).queryByRole('button', { name: 'Still blocked' })).toBeNull();
+    unmount();
+
+    fakes.queries.set('accessAlerts:myAlertIdsForBody', ['alert-snow']);
+    fakes.calls.length = 0;
+    tab({ subAreaId: 'north' });
+    // Asked of the lake, not the bay: an alert of theirs is theirs wherever the drawer shows it.
+    expect(fakes.calls.find((c) => c.name === 'accessAlerts:myAlertIdsForBody')?.args).toEqual({
+      waterBodyId: 'mascoma',
+    });
+    beach = card('Shakoma Beach');
+    expect(within(beach).queryByRole('button', { name: 'Still blocked' })).toBeNull();
+    fireEvent.click(within(beach).getByRole('button', { name: 'It’s open' }));
+    expect(fakes.mutations.get('accessAlerts:vote')).toHaveBeenCalledWith({
+      accessAlertId: 'alert-snow',
+      verdict: 'open',
+    });
+  });
+
   it('lets a moderator retract an alert', () => {
     fakes.queries.set('profiles:current', { role: 'moderator' });
     tab();
@@ -218,6 +247,8 @@ describe('AccessTab', () => {
     expect(screen.getByRole('article', { name: 'Where skaters put in' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Report an access problem' }));
     expect(report).toHaveBeenCalled();
+    // No alert to mark as the viewer's, so nobody is asked which are theirs.
+    expect(fakes.calls.some((c) => c.name === 'accessAlerts:myAlertIdsForBody')).toBe(false);
   });
 
   it('says so when nothing is on file', () => {

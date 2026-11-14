@@ -1,5 +1,6 @@
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx } from '../_generated/server';
+import { holdMoved } from './eraseClock';
 import { bumpMetricMetaCounter } from './metrics';
 import { enqueueActorNotification } from './notificationQueue';
 
@@ -39,6 +40,8 @@ export async function closeFlag(
     resolvedByUserId: actorId,
     resolvedAt: now,
   });
+  // A decided complaint no longer holds withdrawn content back from erasure (D248).
+  await holdMoved(ctx, flag.targetType, flag.targetId, now);
 
   // The enforcement funnel's last stage (Phase 07-2): upheld vs dismissed, **keyed by flag reason**.
   // The reason is what makes it a tuning signal rather than a workload stat — mostly-dismissed

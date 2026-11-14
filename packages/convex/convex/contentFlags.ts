@@ -5,13 +5,14 @@
  * at `/admin/flags`, which reads `moderation.listFlags` and resolves through `moderation.resolveFlag`.
  */
 
-import { accessReportGateMessage } from '@skating/core';
+import { accessReportGateMessage, flagRetraction, RETRACT_REFUSALS } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id, TableNames } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
 import { getCurrentProfile, requireProfile } from './lib/auth';
 import { FLAG_REASONS, FLAG_TARGET_TYPES } from './lib/enums';
+import { holdMoved, refreshEraseClock } from './lib/eraseClock';
 import { literals } from './lib/validators';
 
 /** The table each flag target type refers to — used to validate the target actually exists. */
@@ -53,6 +54,10 @@ export const flag = mutation({
     if (!targetId) throw new ConvexError('Target not found');
     const target = await ctx.db.get(targetId as Id<TableNames>);
     if (!target) throw new ConvexError('Target not found');
+    // An erased comment's placeholder is nobody's words any more (D248): there is nothing to report.
+    if ('erasedAt' in target && target.erasedAt !== undefined) {
+      throw new ConvexError('Target not found');
+    }
 
     // ── The A06f re-reporting gate ────────────────────────────────────────────────────────────────
     //
@@ -90,6 +95,8 @@ export const flag = mutation({
       origin: 'user', // a person pressed "report" — the one origin `content_flag_resolved` notifies
       createdAt: Date.now(),
     });
+    // An open complaint holds withdrawn content back from erasure (D248).
+    await holdMoved(ctx, args.targetType, args.targetId);
 
     // Safety-priority alert (D38/D3): a dangerously-false "ice is great" flag is a safety incident, not
     // FIFO spam — email the founder to the priority lane. Fire-and-forget; no-ops without Resend keys.
@@ -104,6 +111,34 @@ export const flag = mutation({
         deepLinkPath: '/admin/flags',
       });
     }
+    return flagId;
+  },
+});
+
+/**
+ * Take back a flag you filed, until a moderator decides it (D248, founder ruling 2026-11-13: "if a
+ * user reports an access issue ... reports a body as not accessible to the public, or any of those
+ * kinds of actions, they should be able to retract them at any time (up until the action is
+ * determined/taken)"). Open or picked up (`reviewing`) is not decided; `actioned` and `dismissed`
+ * are. A flag the system filed, or one it has since counted again for others, is not one person's
+ * to take back (`flagRetraction`). A retracted flag leaves the queue at once (it reads only `open`
+ * and `reviewing`), stops holding anything back from erasure, is never resolved after, and is
+ * erased 30 days on. A second retraction is a no-op.
+ */
+export const retract = mutation({
+  args: { flagId: v.id('contentFlags') },
+  handler: async (ctx, { flagId }) => {
+    const profile = await requireProfile(ctx);
+    const flag = await ctx.db.get(flagId);
+    if (!flag) throw new ConvexError('Flag not found');
+    if (flag.flaggerId !== profile._id) throw new ConvexError(RETRACT_REFUSALS.notYours);
+    const rule = flagRetraction(flag);
+    if (rule === 'already') return flagId;
+    if (rule !== 'retract') throw new ConvexError(RETRACT_REFUSALS[rule]);
+    const now = Date.now();
+    await ctx.db.patch(flagId, { status: 'retracted', retractedAt: now });
+    await holdMoved(ctx, flag.targetType, flag.targetId, now);
+    await refreshEraseClock(ctx, 'contentFlag', flagId, now);
     return flagId;
   },
 });

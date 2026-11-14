@@ -125,7 +125,8 @@ async function seedPost(t: ReturnType<typeof convexTest>, authorId: Id<'profiles
 type T = ReturnType<typeof convexTest>;
 
 async function setup() {
-  const t = convexTest(schema, modules);
+  // Convex's real per-transaction limits, enforced: what passes here fits a deployment.
+  const t = convexTest({ schema, modules, transactionLimits: true });
   const author = await seedUser(t, 'a');
   const mod = await seedUser(t, 'mod', 'moderator');
   const set = (
@@ -153,6 +154,14 @@ async function newestOn(t: T, targetType: string, targetId: string) {
   const row = rows.find((r) => r.targetType === targetType && r.targetId === targetId);
   if (!row) throw new Error(`no audit row on ${targetType} ${targetId}`);
   return row;
+}
+/** A backfill, run to its end: the walk and every item it hands off, each its own job. */
+async function runToEnd(t: T, start: () => Promise<unknown>) {
+  const real = !vi.isFakeTimers();
+  if (real) vi.useFakeTimers({ now: Date.now() });
+  await start();
+  await t.finishAllScheduledFunctions(vi.runAllTimers, 10_000);
+  if (real) vi.useRealTimers();
 }
 const literally = (s: string) => new RegExp(s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
 
@@ -370,6 +379,179 @@ describe('the backfills', () => {
     for (const id of [postId, ...reportIds]) expect(await deletedAt(t, id)).toBe(at);
     expect(await deletedAt(t, authorsComment)).toBeDefined();
     expect(await deletedAt(t, modsComment)).toBeUndefined();
+  });
+});
+
+describe('the backfill, on old dev data', () => {
+  test('a member a moderator hid after its Post was deleted is withdrawn with the Post; one brought back up is left live', async () => {
+    const { t, author, mod } = await setup();
+    const { postId, reportIds } = await seedPost(t, author.id, 3);
+    const [cascaded, hiddenAfter, broughtBack] = reportIds as [
+      Id<'reports'>,
+      Id<'reports'>,
+      Id<'reports'>,
+    ];
+    const at = Date.now() - 5000;
+    await t.run(async (ctx) => {
+      await ctx.db.patch(postId, { moderationStatus: 'removed' });
+      await ctx.db.patch(cascaded, { moderationStatus: 'removed' });
+      // Before D248 a moderator could move a member of a deleted Post: one hidden, one restored.
+      await ctx.db.patch(hiddenAfter, { moderationStatus: 'hidden' });
+      await ctx.db.patch(broughtBack, { moderationStatus: 'visible' });
+      await ctx.db.insert('moderationActions', {
+        actorId: author.id,
+        action: 'author_delete',
+        targetType: 'post',
+        targetId: postId,
+        reason: 'Deleted by the author',
+        createdAt: at,
+      });
+      await ctx.db.insert('moderationActions', {
+        actorId: mod.id,
+        action: 'hide',
+        targetType: 'report',
+        targetId: hiddenAfter,
+        reason: 'rude',
+        metadata: { priorStatus: 'removed', newStatus: 'hidden' },
+        createdAt: at + 1000,
+      });
+    });
+    await runToEnd(t, () => t.mutation(internal.authorDeletions.backfillFromAudit, {}));
+    expect(await deletedAt(t, postId)).toBe(at);
+    expect(await deletedAt(t, cascaded)).toBe(at);
+    expect(await deletedAt(t, hiddenAfter)).toBe(at);
+    expect(await deletedAt(t, broughtBack)).toBeUndefined();
+    expect(await statusOf(t, broughtBack)).toBe('visible');
+  });
+});
+
+describe('a history longer than a page', () => {
+  test('is read whole, a page a transaction: a restore far back still answers, and so does no word at all', async () => {
+    const { t, author, mod } = await setup();
+    const reportId = await seedReport(t, author.id);
+    const commentId = await t.run((ctx) =>
+      ctx.db.insert('comments', {
+        reportId,
+        authorId: author.id,
+        body: 'x',
+        source: 'native' as const,
+        moderationStatus: 'removed' as const,
+        createdAt: Date.now(),
+      }),
+    );
+    const at = Date.now() - 1_000_000;
+    await t.run(async (ctx) => {
+      await ctx.db.patch(reportId, { moderationStatus: 'removed' });
+      await ctx.db.insert('moderationActions', {
+        actorId: author.id,
+        action: 'author_delete',
+        targetType: 'report',
+        targetId: reportId,
+        reason: 'Deleted by the author',
+        createdAt: at,
+      });
+      // A moderator's restore, then more rows than the backfill reads, all after the deletion.
+      await ctx.db.insert('moderationActions', {
+        actorId: mod.id,
+        action: 'restore',
+        targetType: 'report',
+        targetId: reportId,
+        reason: 'before D248',
+        createdAt: at + 1,
+      });
+      for (let i = 0; i <= 100; i++) {
+        for (const [targetType, targetId] of [
+          ['report', reportId],
+          ['comment', commentId],
+        ] as const) {
+          await ctx.db.insert('moderationActions', {
+            actorId: mod.id,
+            action: 'dismiss_flag',
+            targetType,
+            targetId,
+            reason: 'noise',
+            createdAt: at + 2 + i,
+          });
+        }
+      }
+    });
+    await runToEnd(t, () =>
+      t.mutation(internal.authorDeletions.backfillFromAudit, { pageSize: 7 }),
+    );
+    await runToEnd(t, () =>
+      t.mutation(internal.authorDeletions.backfillCommentDeletions, { pageSize: 7 }),
+    );
+    // The restore, read whole: the moderator's word was the last, so the Report is left live.
+    expect(await deletedAt(t, reportId)).toBeUndefined();
+    // No moderator's word anywhere in the comment's history, read whole: the removal was the author's.
+    expect(await deletedAt(t, commentId)).toBeDefined();
+  });
+
+  test('a removal far back in a long history is still the last word', async () => {
+    const { t, author, mod } = await setup();
+    const reportId = await seedReport(t, author.id);
+    const commentId = await t.run((ctx) =>
+      ctx.db.insert('comments', {
+        reportId,
+        authorId: author.id,
+        body: 'x',
+        source: 'native' as const,
+        moderationStatus: 'removed' as const,
+        createdAt: Date.now(),
+      }),
+    );
+    await t.run(async (ctx) => {
+      await ctx.db.insert('moderationActions', {
+        actorId: mod.id,
+        action: 'remove',
+        targetType: 'comment',
+        targetId: commentId,
+        reason: 'harassment',
+        createdAt: Date.now() - 1,
+      });
+      for (let i = 0; i < 150; i++) {
+        await ctx.db.insert('moderationActions', {
+          actorId: mod.id,
+          action: 'dismiss_flag',
+          targetType: 'comment',
+          targetId: commentId,
+          reason: 'noise',
+          createdAt: Date.now() + i,
+        });
+      }
+    });
+    await runToEnd(t, () =>
+      t.mutation(internal.authorDeletions.backfillCommentDeletions, { pageSize: 9 }),
+    );
+    // A moderator's remove, however far back: theirs, not the author's.
+    expect(await deletedAt(t, commentId)).toBeUndefined();
+  });
+
+  test('a comment erased earlier on the page while the walk is handed off shifts nothing past it', async () => {
+    const { t, author } = await setup();
+    const reportId = await seedReport(t, author.id);
+    const insert = (moderationStatus: 'visible' | 'removed') =>
+      t.run((ctx) =>
+        ctx.db.insert('comments', {
+          reportId,
+          authorId: author.id,
+          body: 'x',
+          source: 'native' as const,
+          moderationStatus,
+          createdAt: Date.now(),
+        }),
+      );
+    const earlier = await insert('visible');
+    const handedOff = await insert('removed');
+    const next = await insert('removed');
+    await runToEnd(t, async () => {
+      // The walk hands off the first removed comment; before it resumes, the sweep erases one
+      // earlier on the same page.
+      await t.mutation(internal.authorDeletions.backfillCommentDeletions, {});
+      await t.run((ctx) => ctx.db.delete(earlier));
+    });
+    expect(await deletedAt(t, handedOff)).toBeDefined();
+    expect(await deletedAt(t, next)).toBeDefined();
   });
 });
 

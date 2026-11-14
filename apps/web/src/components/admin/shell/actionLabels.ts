@@ -37,6 +37,8 @@ const VERB: Record<AuditAction, string> = {
   remove: 'Removed {t}',
   restore: 'Restored {t}',
   author_delete: 'Author deleted {t}',
+  overturn_verdict: 'Overturned the verdict on {t}',
+  erase: 'Erased {t}',
   ban: 'Banned an account',
   suspend: 'Suspended an account',
   unban: 'Lifted a ban or suspension',
@@ -78,6 +80,9 @@ const VERB: Record<AuditAction, string> = {
   pin_access_alert: 'Pinned an access alert',
   unpin_access_alert: 'Unpinned an access alert',
   retract_access_alert: 'Retracted an access alert',
+  // The skater's own button, quoted: "open" alone would read as the alert reopened, when their word
+  // closed it and released the pin.
+  author_resolve_access_alert: 'The reporter said “It’s open” on a pinned access alert',
   set_posted_access: 'Set the posted rules',
   set_satellite_imagery: 'Set the satellite link',
   set_public_access: 'Ruled on public access',

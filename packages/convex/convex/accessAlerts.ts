@@ -25,6 +25,14 @@
  * **An alert annotates; it never suppresses.** A blocked launch on a lake with three others must not
  * silence the lake in drive-time notifications, for the same reason a hazard never hides a body. Every
  * read here returns alerts *alongside* access points — nothing in this module filters one out.
+ *
+ * ## How long a withdrawn claim is kept
+ *
+ * **An alert its author retracted is kept 30 days, then erased** (D248; founder call 2026-11-13:
+ * "follow the 30-day pattern"), and longer only while something holds it: an open flag on it, or a
+ * moderator's verdict — a retraction recorded on the withdrawn alert, kept as evidence of a pattern of
+ * bad claims, until a moderator overturns it. A moderator's own retraction of someone else's live
+ * alert is their decision on the claim, not the author's withdrawal: that row stays.
  */
 
 import {
@@ -34,9 +42,11 @@ import {
   accessAlertExpiryFor,
   accessAlertIsLive,
   accessAlertKindOf,
+  alertRetractionByAuthor,
   currentSeason,
   deriveAccessAlertLifecycle,
   isMinor,
+  RETRACT_REFUSALS,
   seasonEndMs,
   seasonOf,
 } from '@skating/core';
@@ -51,22 +61,30 @@ import {
 } from './_generated/server';
 import { MAX_ACCESS_ROWS_PER_BODY, MAX_LOT_LINKS_SCANNED } from './lib/accessLimits';
 import { writeAudit } from './lib/audit';
-import { requireCapability, requireContributor } from './lib/auth';
+import { getCurrentProfile, requireCapability, requireContributor } from './lib/auth';
+import { recordVerdict } from './lib/contentVerdicts';
 import {
   ACCESS_ALERT_KINDS,
   ACCESS_ALERT_TARGETS,
   ACCESS_ALERT_VERDICTS,
   ACCESS_REASONS,
 } from './lib/enums';
+import { authorRetracted, refreshClockOf, refreshEraseClock } from './lib/eraseClock';
+import { DOC_MAX, ReadBudget } from './lib/readBudget';
 import { literals } from './lib/validators';
 
 /** Free text has to be bounded somewhere; this is a sentence about a gate, not an essay. */
 export const MAX_ALERT_NOTE_LENGTH = 500;
 
-/** Recompute one alert from its full vote set and persist the result. Returns the new row. */
+/**
+ * Recompute one alert from its full vote set and persist the result. Returns the new row.
+ * `authorsWordCounts: false` derives it as if no one had posted it, so the author's standing "it's
+ * open" does not settle it (see `vote`).
+ */
 async function recomputeAlert(
   ctx: MutationCtx,
   alert: Doc<'accessAlerts'>,
+  authorsWordCounts = true,
 ): Promise<Doc<'accessAlerts'>> {
   const rows = await ctx.db
     .query('accessAlertVotes')
@@ -77,7 +95,12 @@ async function recomputeAlert(
     verdict: r.verdict,
     observedAt: r.observedAt,
   }));
-  const next = deriveAccessAlertLifecycle(alert, votes, seasonEndMs(alert.season));
+  const { createdByUserId: _, ...anonymous } = alert;
+  const next = deriveAccessAlertLifecycle(
+    authorsWordCounts ? alert : anonymous,
+    votes,
+    seasonEndMs(alert.season),
+  );
   await ctx.db.patch(alert._id, {
     status: next.status,
     expiresAt: next.expiresAt,
@@ -262,9 +285,64 @@ export const vote = mutation({
       });
     }
 
-    return recomputeAlert(ctx, alert);
+    // On a pinned alert the author's word counts only when it is the author voting now: an "it's
+    // open" they said before a moderator pinned it — or pinned it again after they released it — is
+    // not a word about that pin, and must not release it the next time anyone else votes.
+    const authorsTurn = alert.status !== 'official' || alert.createdByUserId === profile._id;
+    const next = await recomputeAlert(ctx, alert, authorsTurn);
+    // The author's own "it's open" releases a moderator's pin (founder ruling, 2026-11-13): the
+    // reporter saw it plowed. The release is on the record, so the moderator who pinned it sees it
+    // and can pin it again if it still stands.
+    if (alert.status === 'official' && next.status === 'resolved') {
+      await ctx.db.patch(accessAlertId, { pinnedByUserId: undefined });
+      await writeAudit(ctx, {
+        actorId: profile._id,
+        action: 'author_resolve_access_alert',
+        targetType: 'accessAlert',
+        targetId: accessAlertId,
+        reason: 'The person who reported it said it has cleared, which released the pin',
+        metadata: {
+          waterBodyId: alert.waterBodyId,
+          alertReason: alert.reason,
+          prev: { status: alert.status, pinnedByUserId: alert.pinnedByUserId ?? null },
+        },
+        createdAt: now,
+      });
+      return (await ctx.db.get(accessAlertId)) as Doc<'accessAlerts'>;
+    }
+    return next;
   },
 });
+
+/**
+ * How much of an alert's history is read for a pin: up to 200 rows, newest first, and no more than
+ * this many bytes of them **as they actually weigh** (`maximumBytesRead`) — so a moderator's uncapped
+ * reason can't carry the read past the transaction limit, while the handful of sentence-sized rows a
+ * real alert carries are always read whole. The read stops after the row that crosses it (one more
+ * document at most), beside the retraction's own reads: the caller's profile, the alert, its hold.
+ */
+const PIN_HISTORY_ROWS = 200;
+const PIN_HISTORY_BYTES = 6 * DOC_MAX;
+
+/**
+ * Whether a moderator ever pinned this alert, and the pin was not undone (an undo is "I didn't mean
+ * to"). Read from the history, newest first and bounded; a history the read could not finish is
+ * `'unknown'` — never "never pinned" — and the retraction is refused, saying so.
+ */
+async function everPinned(
+  ctx: QueryCtx,
+  accessAlertId: Id<'accessAlerts'>,
+): Promise<boolean | 'unknown'> {
+  const page = await ctx.db
+    .query('moderationActions')
+    .withIndex('by_target', (q) => q.eq('targetType', 'accessAlert').eq('targetId', accessAlertId))
+    .order('desc')
+    .paginate({ cursor: null, numItems: PIN_HISTORY_ROWS, maximumBytesRead: PIN_HISTORY_BYTES });
+  const rows = page.page;
+  const undone = new Set(rows.flatMap((r) => (r.undoesActionId ? [r.undoesActionId] : [])));
+  if (rows.some((r) => r.action === 'pin_access_alert' && !undone.has(r._id))) return true;
+  return page.isDone ? false : 'unknown';
+}
 
 /**
  * "This never existed" — D65's verdict, applied to access.
@@ -274,9 +352,21 @@ export const vote = mutation({
  * able to take it back rather than watch a wrong claim decay over thirty days, and A05b made exactly
  * that argument for hazards.
  *
- * The author may retract their own; a moderator may retract anyone's. Never a delete — the row is the
- * record that something was claimed and withdrawn, which is what makes a pattern of bad claims
- * visible.
+ * The author may retract their own; a moderator may retract anyone's. Never a delete at the time —
+ * the row is the record that something was claimed and withdrawn. **An author's retraction is kept 30
+ * days, then erased** (D248), and longer only while held: an open flag on it, or a moderator's
+ * retraction recorded on the withdrawn alert (below), which keeps it as evidence of a pattern of bad
+ * claims until a moderator overturns it. A moderator's retraction of a live alert is kept.
+ *
+ * **The author's retraction is a withdrawal until the claim is acted on** (D248): only a live
+ * community claim (`active`). A moderator's pin is the claim acted on, so it is refused after one; a
+ * resolved, expired or already retracted alert has nothing left to retract. "It's over" is a
+ * different statement from "it never was", and that one is always the author's: their own `open`
+ * vote resolves the alert, pinned or not. A moderator's own retraction is a moderator's verdict and
+ * is unchanged. The author's retraction is final and starts the 30-day erasure clock; a retracted
+ * alert reads exactly as before — it leaves every live read, and nothing says the way is clear.
+ * A moderator retracting an alert its author already retracted, with a reason, records a verdict on
+ * it instead of moving it (`contentVerdicts`, kind `retracted`): the row stays as its author left it.
  */
 export const retract = mutation({
   args: { accessAlertId: v.id('accessAlerts'), reason: v.optional(v.string()) },
@@ -290,12 +380,74 @@ export const retract = mutation({
     if (!isAuthor && !isModerator) {
       throw new ConvexError('Only the author or a moderator can retract an alert');
     }
+    if (alert.status === 'retracted') {
+      // A moderator's word on an alert its author already retracted is a verdict kept as evidence —
+      // a pattern of bad claims — and it holds the alert from erasure until a moderator overturns it
+      // (founder call, 2026-11-13). The row stays exactly as its author left it: a second retraction
+      // must never turn the author's final withdrawal into a moderator's (and so a pinnable) one.
+      // A verdict takes a reason, as every verdict does: a bare retract (the lake page's button,
+      // which sends none) that lands just after the author's own is not a decision about them.
+      const verdictReason = reason?.trim() ?? '';
+      // Who retracted it, not whether it has a time yet: a retraction from before `retractedAt`
+      // existed is the author's all the same (the clocks backfill gives it its time).
+      const authorWithdrew = authorRetracted(alert);
+      if (isModerator && !isAuthor && authorWithdrew && verdictReason.length > 0) {
+        const now = Date.now();
+        const actionId = await writeAudit(ctx, {
+          actorId: profile._id,
+          action: 'retract_access_alert',
+          targetType: 'accessAlert',
+          targetId: accessAlertId,
+          reason: verdictReason,
+          metadata: {
+            waterBodyId: alert.waterBodyId,
+            alertReason: alert.reason,
+            onAuthorWithdrawn: true,
+          },
+          createdAt: now,
+        });
+        await recordVerdict(ctx, {
+          subjectUserId: alert.createdByUserId,
+          targetType: 'accessAlert',
+          targetId: accessAlertId,
+          actionId,
+          kind: 'retracted',
+          at: now,
+        });
+      }
+      // The author again, on a retraction from before `retractedAt` existed: it has no clock to
+      // run, so it gets one now — never in the past.
+      if (isAuthor && authorWithdrew && alert.retractedAt === undefined) {
+        const now = Date.now();
+        await ctx.db.patch(accessAlertId, { retractedAt: now });
+        await refreshEraseClock(ctx, 'accessAlert', accessAlertId, now);
+      }
+      // Anything else: nothing left to retract.
+      return;
+    }
+    // On their own alert a moderator is its author, and takes back what they posted by the author's
+    // rule — a pin someone else made of it is a shared record (D248) — so the clock and the record
+    // never disagree about whose withdrawal it was.
+    if (isAuthor) {
+      // The history is read only where it can change the answer: a live community claim.
+      const pinnedOnce = alert.status === 'active' ? await everPinned(ctx, alert._id) : false;
+      if (pinnedOnce === 'unknown') throw new ConvexError(RETRACT_REFUSALS.historyTooLong);
+      const rule = alertRetractionByAuthor(alert.status, pinnedOnce);
+      if (rule === 'already') return;
+      if (rule !== 'retract') throw new ConvexError(RETRACT_REFUSALS[rule]);
+    }
 
-    await ctx.db.patch(accessAlertId, {
-      status: 'retracted',
+    const now = Date.now();
+    const retracted = {
+      status: 'retracted' as const,
       retractedByUserId: profile._id,
+      retractedAt: now,
       expiresAt: undefined,
-    });
+    };
+    await ctx.db.patch(accessAlertId, retracted);
+    // Only an author's own retraction is a withdrawal with a clock (`lib/eraseClock`) — read off the
+    // row as just written, without reading it again.
+    await refreshClockOf(ctx, new ReadBudget(), 'accessAlert', { ...alert, ...retracted }, now);
 
     if (isModerator && !isAuthor) {
       await writeAudit(ctx, {
@@ -348,6 +500,15 @@ export async function setOfficialImpl(
   const alert = await ctx.db.get(accessAlertId);
   if (!alert) throw new ConvexError('Access alert not found');
   if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+  // The author's retraction is final (D248): no moderator puts a withdrawn claim back up — not by
+  // pinning it, and not by releasing it, which would put it back in the community lifecycle.
+  if (authorRetracted(alert)) {
+    throw new ConvexError(
+      official
+        ? 'Its author retracted this alert, so it can’t be pinned.'
+        : 'Its author retracted this alert, so it can’t be released.',
+    );
+  }
 
   if (official) {
     await ctx.db.patch(accessAlertId, {
@@ -508,6 +669,40 @@ async function liveAlertsByParkingArea(
   return pages.flat();
 }
 
+/** Whether a lot is (still) associated with a body — the target, not the alert's column, decides. */
+async function lotServesBody(
+  ctx: QueryCtx,
+  parkingAreaId: Id<'parkingAreas'>,
+  waterBodyId: Id<'waterBodies'>,
+): Promise<boolean> {
+  const link = await ctx.db
+    .query('parkingAreaBodies')
+    .withIndex('by_parking_area_water_body', (q) =>
+      q.eq('parkingAreaId', parkingAreaId).eq('waterBodyId', waterBodyId),
+    )
+    .unique();
+  return link !== null;
+}
+
+/**
+ * Whether this alert annotates this body, as `loadLiveAlertsForBody` shows it — the one rule, so the
+ * viewer's own-alerts read can't name an alert the shared read hides. A lot's alert counts on every
+ * body the lot still serves; a launch's only on the body its column names *and* the launch is still
+ * on (the shared read reaches it through the column alone, so a moved launch's alert is nowhere).
+ */
+async function alertAnnotatesBody(
+  ctx: QueryCtx,
+  alert: Doc<'accessAlerts'>,
+  waterBodyId: Id<'waterBodies'>,
+): Promise<boolean> {
+  if (alert.parkingAreaId !== undefined) {
+    return lotServesBody(ctx, alert.parkingAreaId, waterBodyId);
+  }
+  if (alert.waterBodyId !== waterBodyId) return false;
+  if (alert.putInId === undefined) return true;
+  return (await ctx.db.get(alert.putInId))?.waterBodyId === waterBodyId;
+}
+
 /**
  * Every live alert annotating an access point on this body.
  *
@@ -575,23 +770,12 @@ export async function loadLiveAlertsForBody(
   // right one: the read is keyed on the denormalized column, so a moved target's row is unreachable
   // from its new body until something rewrites the column. That asymmetry is the right way round —
   // silence beats a locked gate shown to people going somewhere else.
-  for (const alert of direct) {
-    if (alert.parkingAreaId !== undefined) {
-      const link = await ctx.db
-        .query('parkingAreaBodies')
-        .withIndex('by_parking_area_water_body', (q) =>
-          q
-            .eq('parkingAreaId', alert.parkingAreaId as Id<'parkingAreas'>)
-            .eq('waterBodyId', waterBodyId),
-        )
-        .unique();
-      if (!link) continue;
-    } else if (alert.putInId !== undefined) {
-      const putIn = await ctx.db.get(alert.putInId);
-      if (putIn?.waterBodyId !== waterBodyId) continue;
-    }
-    byId.set(alert._id, alert);
-  }
+  const directHere = await Promise.all(
+    direct.map((alert) => alertAnnotatesBody(ctx, alert, waterBodyId)),
+  );
+  direct.forEach((alert, i) => {
+    if (directHere[i]) byId.set(alert._id, alert);
+  });
 
   // Issued together rather than in sequence: they are independent indexed ranges that return nothing
   // for the overwhelming majority of lots, so the cost is round trips rather than documents.
@@ -615,6 +799,52 @@ export const listForBody = query({
     const body = await ctx.db.get(waterBodyId);
     if (!body) return [];
     return loadLiveAlertsForBody(ctx, waterBodyId);
+  },
+});
+
+/**
+ * How many of one person's alerts `myAlertIdsForBody` reads per live status — far past anyone's.
+ * Exported for the test that files more settled alerts than this after a pin.
+ */
+export const MY_ALERTS_SCAN = 500;
+
+/**
+ * The viewer's own live alerts on this body — the one viewer-specific fact the access drawer needs
+ * (D248): on a pinned alert its author alone keeps "It's open". Kept out of `accessForBody` and
+ * `listForBody` on purpose: those are the lake page's shared reads, and reading the signed-in person
+ * there would cache a copy per viewer and re-run them per viewer on every alert change.
+ *
+ * Read by `(author, status)`, each live status capped on its own and `active` bounded by its clock
+ * as the per-lake reads are, so **the cap bounds their live alerts, not their history**: settled alert
+ * rows are kept (only an author's own retraction is erased, D248), and the sheet's condition chips
+ * file them too, so a cap over every row they ever filed would push a pin (which never expires) out
+ * behind the settled rows filed since — and a status-only range would spend it on lapsed rows the
+ * sweep has not reached. Which body an alert
+ * annotates is `alertAnnotatesBody`, the shared read's own rule. Signed out, or none of their own: `[]`.
+ */
+export const myAlertIdsForBody = query({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }): Promise<Id<'accessAlerts'>[]> => {
+    const viewer = await getCurrentProfile(ctx);
+    if (!viewer) return [];
+    const now = Date.now();
+    const pages = await Promise.all(
+      LIVE_STATUSES.map((status) =>
+        ctx.db
+          .query('accessAlerts')
+          .withIndex('by_author_status_expires_at', (q) => {
+            const scoped = q.eq('createdByUserId', viewer._id).eq('status', status);
+            return status === 'active' ? scoped.gt('expiresAt', now) : scoped;
+          })
+          .order('desc')
+          .take(MY_ALERTS_SCAN),
+      ),
+    );
+    const live = pages.flat().filter((alert) => accessAlertIsLive(alert, now));
+    const here = await Promise.all(
+      live.map((alert) => alertAnnotatesBody(ctx, alert, waterBodyId)),
+    );
+    return live.filter((_, i) => here[i]).map((alert) => alert._id);
   },
 });
 

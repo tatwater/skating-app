@@ -13,6 +13,15 @@ describe('actionLabel', () => {
     expect(actionLabel('decline_request', 'waterBodyRequest')).toBe('Declined a request');
   });
 
+  it('says what became of withdrawn content, and whose word closed a pinned alert', () => {
+    expect(actionLabel('erase', 'comment')).toBe('Erased a comment');
+    expect(actionLabel('overturn_verdict', 'report')).toBe('Overturned the verdict on a report');
+    // Quoting the skater's button: a bare "open" would read as the alert reopened.
+    expect(actionLabel('author_resolve_access_alert', 'accessAlert')).toBe(
+      'The reporter said “It’s open” on a pinned access alert',
+    );
+  });
+
   it('never shows a code name or a placeholder', () => {
     for (const [a, t] of [
       ['ban', 'user'],

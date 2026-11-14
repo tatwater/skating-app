@@ -10,6 +10,7 @@ import {
   ACCESS_ALERT_REASONS,
   ACCESS_REASON_LABELS,
   type AccessAlertReason,
+  accessAlertVoteControls,
   describePostedAccess,
   describePostedAccessNow,
   MAX_ACCESS_PHOTOS,
@@ -132,7 +133,7 @@ export function PostedLines({
 /**
  * A live access alert on this launch or its lot, with the community's two answers. Confirming
  * resets its clock; two "It's open" resolve it — being wrong about a gate costs a drive either way.
- * A moderator's pinned alert takes no votes.
+ * A moderator's pinned alert takes no votes, except its own author's "It's open".
  */
 export function AccessAlertBox({
   alert,
@@ -148,6 +149,7 @@ export function AccessAlertBox({
   /** A moderator's retract ("this never existed"); `null` for everyone else. */
   onRetract: (() => void) | null;
 }) {
+  const votes = onVote ? accessAlertVoteControls(alert) : { stillBlocked: false, open: false };
   return (
     <div
       data-slot="access-alert"
@@ -158,27 +160,28 @@ export function AccessAlertBox({
         {alert.official && <span className="text-fg2"> · confirmed by a moderator</span>}
       </p>
       {alert.note && <p className="m-0 text-assist text-fg2 [text-wrap:pretty]">{alert.note}</p>}
-      {(onVote || onRetract) && (
+      {(votes.stillBlocked || votes.open || onRetract) && (
         <div className="flex flex-wrap gap-(--space-2)">
-          {onVote && !alert.official && (
-            <>
-              <Button
-                size="sm"
-                disabled={busy}
-                data-attr="access-alert-still-blocked"
-                onClick={() => onVote('still_blocked')}
-              >
-                Still blocked
-              </Button>
-              <Button
-                size="sm"
-                disabled={busy}
-                data-attr="access-alert-open"
-                onClick={() => onVote('open')}
-              >
-                It’s open
-              </Button>
-            </>
+          {onVote && votes.stillBlocked && (
+            <Button
+              size="sm"
+              disabled={busy}
+              data-attr="access-alert-still-blocked"
+              onClick={() => onVote('still_blocked')}
+            >
+              Still blocked
+            </Button>
+          )}
+          {/* A pin takes no votes — except its author's own "it's open" (D248). */}
+          {onVote && votes.open && (
+            <Button
+              size="sm"
+              disabled={busy}
+              data-attr="access-alert-open"
+              onClick={() => onVote('open')}
+            >
+              It’s open
+            </Button>
           )}
           {onRetract && (
             <Button

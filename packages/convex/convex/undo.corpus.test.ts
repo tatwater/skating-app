@@ -358,7 +358,15 @@ describe('undo: access alert pins (D226)', () => {
       reason: 'y',
     });
     const unpin = await newestOn(t, 'accessAlert', alertId);
-    await author.as.mutation(api.accessAlerts.retract, { accessAlertId: alertId });
+    // A past pin is a moderator confirming the claim (D248): its author can no longer retract it…
+    await expect(
+      author.as.mutation(api.accessAlerts.retract, { accessAlertId: alertId }),
+    ).rejects.toThrow(/A moderator confirmed this/);
+    // …so a retraction under a released pin exists only in rows from before that rule, which leave
+    // no audit row; the undo still reads the alert's live state and refuses to pin it back.
+    await t.run((ctx) =>
+      ctx.db.patch(alertId, { status: 'retracted', retractedByUserId: author.id }),
+    );
     await expect(mod.as.mutation(api.undo.run, { actionId: unpin._id })).rejects.toThrow(
       /retracted since/,
     );

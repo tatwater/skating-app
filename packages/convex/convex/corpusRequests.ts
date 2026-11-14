@@ -38,9 +38,11 @@ import {
   nearestBodyForPoint,
   parseCatalogResponse,
   REQUEST_KINDS,
+  RETRACT_REFUSALS,
   type RequestKind,
   requestKindsFor,
   requestNameKey,
+  requestRetraction,
   sameName,
   searchTextFor,
   standingOf,
@@ -60,9 +62,15 @@ import {
 } from './_generated/server';
 import { resolvePlaceForCoord } from './adminAreas';
 import { writeAudit } from './lib/audit';
-import { getCurrentProfile, requireCapability, requireContributor } from './lib/auth';
+import {
+  getCurrentProfile,
+  requireCapability,
+  requireContributor,
+  requireProfile,
+} from './lib/auth';
 import { publicAuthor } from './lib/authorView';
 import { syncWaterBodyCells } from './lib/cellIndex';
+import { refreshEraseClock } from './lib/eraseClock';
 import { liveLandmarksForBody } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
 import {
@@ -237,6 +245,36 @@ export const create = mutation({
       ...(bayName ? { name: bayName, nameKey: requestNameKey(bayName) } : {}),
       createdAt: now,
     });
+  },
+});
+
+// ── Retract ────────────────────────────────────────────────────────────────────────────────────
+
+/** What a moderator is told about a request its asker withdrew. */
+export const WITHDRAWN_BY_ASKER = 'The person who asked withdrew this request.';
+
+/**
+ * Member: take back your own request while it is still open (D248, founder ruling 2026-11-13: "they
+ * should be able to retract them at any time (up until the action is determined/taken)"). Refused
+ * once a moderator has approved or declined it; a second retraction is a no-op. Final — no moderator
+ * decides it after — and erased 30 days on. Every kind, a landmark proposal filed by a report
+ * included. `requireProfile`, not `requireContributor`: withdrawing is not contributing, and a person
+ * on their way out can still take back what they asked.
+ */
+export const retract = mutation({
+  args: { requestId: v.id('waterBodyRequests') },
+  handler: async (ctx, { requestId }) => {
+    const profile = await requireProfile(ctx);
+    const request = await ctx.db.get(requestId);
+    if (!request) throw new ConvexError('Request not found');
+    if (request.requesterId !== profile._id) throw new ConvexError(RETRACT_REFUSALS.notYours);
+    const rule = requestRetraction(request.status);
+    if (rule === 'already') return requestId;
+    if (rule !== 'retract') throw new ConvexError(RETRACT_REFUSALS[rule]);
+    const now = Date.now();
+    await ctx.db.patch(requestId, { status: 'retracted', retractedAt: now });
+    await refreshEraseClock(ctx, 'waterBodyRequest', requestId, now);
+    return requestId;
   },
 });
 
@@ -645,6 +683,7 @@ export const approve = mutation({
     if (sameAs !== undefined && request.kind !== 'name_landmark') {
       throw new ConvexError('Only a landmark request is answered by a landmark');
     }
+    if (request.status === 'retracted') throw new ConvexError(WITHDRAWN_BY_ASKER);
     if (request.status !== 'open') throw new ConvexError('This request has been decided');
     // Restoring or taking down a body is the body.remove lever itself (D48), whoever asked for it.
     const actor = await requireCapability(
@@ -763,6 +802,7 @@ export const decline = mutation({
     const actor = await requireCapability(ctx, 'inbox.request');
     const request = await ctx.db.get(requestId);
     if (!request) throw new ConvexError('Request not found');
+    if (request.status === 'retracted') throw new ConvexError(WITHDRAWN_BY_ASKER);
     if (request.status !== 'open') throw new ConvexError('This request has been decided');
     // The requester reads this; a decline with nothing to read is the "unavailable" with no reason
     // that A07b exists to end. Enforced here, not only in the dialog.
@@ -881,6 +921,11 @@ export const reviewState = query({
       }
       if (r.status === 'open') {
         requests.push({ requestId, status: 'open' as const, name: r.name ?? '' });
+        continue;
+      }
+      // Withdrawn by the person who asked (D248): it left the queue, as a deleted one would.
+      if (r.status === 'retracted') {
+        requests.push({ requestId, status: 'gone' as const });
         continue;
       }
       const answer = r.landmarkId ? await ctx.db.get(r.landmarkId) : null;
