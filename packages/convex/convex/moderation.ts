@@ -1278,6 +1278,8 @@ interface ActionView {
   actor: QueueUser | null;
   /** Set on the row an undo wrote: the row it undid (D226). */
   undoesActionId?: string;
+  /** The script or agent the actor made the write through (D256): "Teagan via seed-destinations". */
+  via?: string;
   /** Whether the viewer can undo this row now, and if not, why (D226). */
   undo: UndoState;
 }
@@ -1289,6 +1291,7 @@ async function toActionView(
 ): Promise<ActionView> {
   return {
     ...(a.undoesActionId !== undefined ? { undoesActionId: a.undoesActionId } : {}),
+    ...(a.via !== undefined ? { via: a.via } : {}),
     undo: await undoState(ctx, viewer, a),
     id: a._id,
     action: a.action,

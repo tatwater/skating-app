@@ -3493,6 +3493,13 @@ export default defineSchema({
      * Equality reads only, so the unset value on every other row never matches (no sparse-index trap).
      */
     undoesActionId: v.optional(v.id('moderationActions')),
+    /**
+     * What a person made this write **through** — the script or agent, by its short name (D256).
+     * The person stays the actor; this is a label, never a permission. Written only by
+     * `lib/audit.ts`, from the caller's identity, and only when it passes `isAuditVia`. Older rows
+     * have none and get none.
+     */
+    via: v.optional(v.string()),
     createdAt: v.number(),
   })
     .index('by_target', ['targetType', 'targetId'])

@@ -8,6 +8,7 @@
  * sources to this file being the only writer.
  */
 
+import { isAuditVia } from '@skating/core';
 import type { Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { noteAuditedAction } from './bodyLibrary';
@@ -39,9 +40,11 @@ export async function writeAudit(
   const { createdAt, ...row } = entry;
   const undoesActionId = row.undoesActionId ?? UNDOING.get(ctx);
   const at = createdAt ?? Date.now();
+  const via = row.actorId !== undefined ? await viaOf(ctx) : undefined;
   const id = await ctx.db.insert('moderationActions', {
     ...row,
     ...(undoesActionId !== undefined ? { undoesActionId } : {}),
+    ...(via !== undefined ? { via } : {}),
     createdAt: at,
   });
   // The Bodies library (B01-3): an action on a body, or on something that belongs to one, refreshes
@@ -53,6 +56,22 @@ export async function writeAudit(
     createdAt: at,
   });
   return id;
+}
+
+/**
+ * The script or agent the caller made this write through (D256), from the `via` claim on their
+ * identity, when it passes `isAuditVia`; anything else is dropped, never stored.
+ *
+ * **Why a claim and not an argument.** A script calls public mutations as a person with
+ * `convex run --identity`, which needs the deployment's admin credentials, and puts `via` beside the
+ * `subject` there (`@skating/run-log`'s `convexRun`). No mutation takes it as an argument, so no
+ * client can pass it, and a signed-in session's token carries only the claims its issuer writes.
+ * Even a forged one could do no more than relabel the forger's own row: the actor is still the
+ * signed-in person, and nothing reads `via` to decide anything.
+ */
+async function viaOf(ctx: MutationCtx): Promise<string | undefined> {
+  const claim = (await ctx.auth.getUserIdentity())?.via;
+  return isAuditVia(claim) ? claim : undefined;
 }
 
 /**

@@ -4,6 +4,7 @@ export * from './activityDedup';
 export * from './aerialImagery';
 export * from './age';
 export * from './approachLayer';
+export * from './auditVia';
 export * from './authRoute';
 export * from './badges';
 export * from './basemapLayers';
