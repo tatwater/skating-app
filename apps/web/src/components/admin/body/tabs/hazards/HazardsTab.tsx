@@ -64,7 +64,7 @@ const readsKey = (bodyId: string) => `hazards:${bodyId}`;
 
 function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabProps) {
   const waterBodyId = id as Id<'waterBodies'>;
-  // The reads hold their arguments for the hour; ages read the minute, so none looks fresher.
+  // The reads hold their arguments for the hour; ages read the minute, so none looks an hour fresher.
   const now = useHourClock();
   const ageNow = useMinuteClock();
   const current = seasonOf(now);
@@ -259,7 +259,7 @@ function useHourClock(): number {
 
 const onTheHour = (at: number) => Math.floor(at / 3_600_000) * 3_600_000;
 
-/** Since anyone last looked, as the minute has it: an age never reads younger than it is. */
+/** Since anyone last looked, to the minute: an age lags by a minute at most, never by an hour. */
 function useMinuteClock(): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {

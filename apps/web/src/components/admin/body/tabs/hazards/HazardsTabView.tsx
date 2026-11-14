@@ -380,7 +380,7 @@ function QuietWinter({
     <>
       <div data-slot="hazards-empty" className="flex flex-col gap-(--space-1_5)">
         <span className="text-body leading-(--lead-snug) text-fg">
-          {n > 0 ? 'All voted gone' : current ? 'Nothing marked yet' : 'Nothing was marked'}
+          {n > 0 ? 'All archived by votes' : current ? 'Nothing marked yet' : 'Nothing was marked'}
         </span>
         <span className="text-assist leading-(--lead-list) text-fg3">
           {n > 0

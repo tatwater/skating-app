@@ -52,6 +52,13 @@ export function retentionFacts(r: Retention): RetentionFacts {
   };
 }
 
+const NOT_RECORDED: RetentionFacts = {
+  lastActivity: null,
+  curatedBoost: null,
+  favorites: null,
+  savedPutIns: null,
+};
+
 function StandingReads({ bodyId: id }: BodyTabProps) {
   const bodyId = id as Id<'waterBodies'>;
   const { got, retry } = useTabReads(`standing:${bodyId}`, {
@@ -67,11 +74,14 @@ function StandingReads({ bodyId: id }: BodyTabProps) {
   const retentionRead = got.retention;
   const retention = useMemo(
     () =>
-      retentionRead === undefined || retentionRead === null
+      retentionRead === undefined
         ? undefined
         : retentionRead instanceof Error
           ? ('error' as const)
-          : retentionFacts(retentionRead),
+          : retentionRead === null
+            ? // No such body on the server: every fact is not recorded, never zero.
+              NOT_RECORDED
+            : retentionFacts(retentionRead),
     [retentionRead],
   );
 

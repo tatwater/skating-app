@@ -112,6 +112,18 @@ describe('StandingTab', () => {
     ).toBeVisible();
   });
 
+  it('a retention read that finds no body names every fact as not recorded, never as zero', () => {
+    convex.results.set('waterBodies:get', body());
+    convex.results.set('standing:retentionForBody', null);
+    render(<StandingTab bodyId={BODY} />);
+    expect(
+      screen.getByText(
+        'Not recorded yet: the map boost, favorites, saved put-ins and the last report.',
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText(/Nothing keeps it/)).toBeNull();
+  });
+
   it('while the retention read is on its way the lanes hold their place; a failure says so', async () => {
     convex.results.set('waterBodies:get', body());
     const { rerender } = render(<StandingTab bodyId={BODY} />);

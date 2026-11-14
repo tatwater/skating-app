@@ -208,7 +208,7 @@ describe('HazardsTabView — the default board', () => {
   it('a winter whose every hazard was voted gone says so, and lists them open', () => {
     render(<HazardsTabView {...base} archived={FEB.archived} />);
     expect(screen.queryByText('Nothing marked yet')).toBeNull();
-    expect(screen.getByText('All voted gone')).toBeVisible();
+    expect(screen.getByText('All archived by votes')).toBeVisible();
     expect(
       screen.getByText(
         'All 2 hazards marked on Mascoma since the watch opened 3 Oct 2026 were since voted gone by skaters. A vote is a report, not a reading of the ice.',
