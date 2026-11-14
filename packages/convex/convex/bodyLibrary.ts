@@ -15,7 +15,7 @@
 import { currentSeason, SCOPE_ALL } from '@skating/core';
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
-import type { Id } from './_generated/dataModel';
+import type { Doc, Id } from './_generated/dataModel';
 import {
   internalAction,
   internalMutation,
@@ -150,33 +150,66 @@ export const backfillAll = internalAction({
   },
 });
 
-/** Audit rows a *Changed* backfill page reads. */
-const CHANGED_PAGE = 200;
+/** Audit rows a *Changed* backfill page reads at most. */
+const CHANGED_PAGE = 100;
+/** Read budget a page keeps back; below it the page stops and is re-run smaller from its cursor. */
+const CHANGED_BYTES_RESERVE = 4 * 1024 * 1024;
+
+/** The body a merge's audit row named as its survivor, when it names one. */
+function survivorOf(row: Doc<'moderationActions'>): Id<'waterBodies'> | null {
+  if (row.action !== 'merge_waterbody') return null;
+  const id = (row.metadata as { survivorId?: unknown } | undefined)?.survivorId;
+  return typeof id === 'string' ? (id as Id<'waterBodies'>) : null;
+}
 
 /**
  * One page of *Changed* from the audit log, oldest first: each moderator action on a body, its bays,
- * landmarks or put-ins stamps that body's rows (the latest wins). Returns the cursor to resume.
+ * landmarks or put-ins stamps that body (the latest wins), and a merge stamps its survivor too. A
+ * stamp is idempotent, so a page that runs low on read budget stops before its writes and is re-run
+ * from the same cursor at half the size — never skipping a row. Returns the cursor to resume.
  */
 export const backfillChangedAt = internalMutation({
-  args: { cursor: v.optional(v.string()) },
-  handler: async (ctx, { cursor }) => {
+  args: { cursor: v.optional(v.string()), pageSize: v.optional(v.number()) },
+  handler: async (ctx, { cursor, pageSize }) => {
+    const size =
+      pageSize !== undefined && Number.isFinite(pageSize)
+        ? Math.min(CHANGED_PAGE, Math.max(1, Math.floor(pageSize)))
+        : CHANGED_PAGE;
     const page = await ctx.db
       .query('moderationActions')
       .withIndex('by_created_at')
-      .paginate({ cursor: cursor ?? null, numItems: CHANGED_PAGE });
+      .paginate({ cursor: cursor ?? null, numItems: size });
     const latest = new Map<Id<'waterBodies'>, number>();
+    const stamp = (id: Id<'waterBodies'>, at: number) =>
+      latest.set(id, Math.max(latest.get(id) ?? 0, at));
     // A target is read once a page — a bay is its polygon, and a session edits one bay many times —
     // and only a kind that stamps: a lot's links, a flag or a request are never read here.
     const bodiesOf = new Map<string, Id<'waterBodies'>[]>();
     for (const row of page.page) {
-      if (row.actorId === undefined || !changesTheBody(row.targetType)) continue;
+      if (row.actorId === undefined) continue;
+      const survivor = survivorOf(row);
+      if (survivor !== null) stamp(survivor, row.createdAt);
+      if (!changesTheBody(row.targetType)) continue;
       const key = `${row.targetType}\u0001${row.targetId}`;
       let bodies = bodiesOf.get(key);
       if (bodies === undefined) {
+        const m = await ctx.meta.getTransactionMetrics();
+        if (m.bytesRead.remaining < CHANGED_BYTES_RESERVE && size > 1) {
+          await ctx.scheduler.runAfter(0, internal.bodyLibrary.backfillChangedAt, {
+            ...(cursor !== undefined ? { cursor } : {}),
+            pageSize: Math.floor(size / 2),
+          });
+          return {
+            stamped: 0,
+            isDone: false,
+            continueCursor: cursor ?? null,
+            rerunAt: Math.floor(size / 2),
+          };
+        }
         bodies = (await bodiesOfTarget(ctx, row.targetType, row.targetId)).bodies;
         bodiesOf.set(key, bodies);
       }
-      for (const id of bodies) latest.set(id, Math.max(latest.get(id) ?? 0, row.createdAt));
+      for (const id of bodies) stamp(id, row.createdAt);
     }
     for (const [id, at] of latest) await stampChanged(ctx, id, at);
     if (!page.isDone) {
@@ -184,7 +217,12 @@ export const backfillChangedAt = internalMutation({
         cursor: page.continueCursor,
       });
     }
-    return { stamped: latest.size, isDone: page.isDone, continueCursor: page.continueCursor };
+    return {
+      stamped: latest.size,
+      isDone: page.isDone,
+      continueCursor: page.continueCursor,
+      rerunAt: null,
+    };
   },
 });
 

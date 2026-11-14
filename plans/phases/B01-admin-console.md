@@ -1554,7 +1554,9 @@ records and applies the count differences:
 
 - **Every audited action** (`writeAudit`): a row whose target is a body, a bay, a landmark, a put-in,
   a lot (each body it serves), a corpus request or a place name refreshes that body in the same
-  transaction; a moderator's action on the body, its bays, landmarks or put-ins stamps *Changed*.
+  transaction; a moderator's action on the body, its bays, landmarks or put-ins stamps *Changed*,
+  and so does a merge, on its survivor. One rule decides a body's *Changed* on every path — the
+  latest of the write's, the rows' and the queue entry's (`changedDateOf`).
   Writers that audit before they write call the refresh again after. A transaction runs at
   most four of these refreshes; a bulk writer's further rows (a request's siblings, a rollover or
   prune page, a seed's bays) stamp *Changed* and queue the body instead, so each page keeps the
@@ -1573,7 +1575,9 @@ records and applies the count differences:
   reported last season, about 30 hours for 300. It happens on 1 July, when nobody is skating
   (accepted by the governor, 2026-11-14). A parked body, which can't be re-counted, has its rows
   closed on the new season (zero in its empty record, the counts moved with them), so the turn
-  always finishes.
+  always finishes. While the turn runs, `listSummary` gives no counts for the reports facet (and no
+  total with it applied), since rows still counted for last season are filed under *reported this
+  season* in the counts while every row and the page's filter read them as zero.
 - **A body whose refresh throws never blocks the rest.** Every refresh outside the writer runs in
   a nested transaction of its own (`refreshBodyLibrary`), so a failure rolls back only that body's
   work — never the moderator's write, the report, or the rest of a drain, repair or backfill page.

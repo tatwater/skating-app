@@ -1850,3 +1850,77 @@ describe('the list’s arguments, normalized once at the edge', () => {
     );
   });
 });
+
+describe('a merge, and the season turn, read honestly', () => {
+  test('a merge moves its survivor’s Changed, live and from the audit log', async () => {
+    const t = harness();
+    const mod = await seedUser(t);
+    const survivor = await seedBody(t, { name: 'Survivor' });
+    const loser = await seedBody(t, { name: 'Loser' });
+    await backfill(t);
+    vi.setSystemTime(NOW + DAY);
+    await t.run(async (ctx) => {
+      const { mergeBodyInto } = await import('./waterBodies');
+      await mergeBodyInto(ctx, {
+        survivor: (await ctx.db.get(survivor)) as Doc<'waterBodies'>,
+        loser: (await ctx.db.get(loser)) as Doc<'waterBodies'>,
+        actorId: mod.id,
+        reason: 'one lake',
+      });
+    });
+    expect((await rowsOf(t, survivor))[0]?.changedAt).toBe(NOW + DAY);
+    expect(await rowsOf(t, loser)).toHaveLength(0);
+
+    // From the log: a merge row names its survivor, which the backfill stamps.
+    const other = await seedBody(t, { name: 'Other Survivor' });
+    await backfill(t);
+    await t.run((ctx) =>
+      ctx.db.insert('moderationActions', {
+        actorId: mod.id,
+        action: 'merge_waterbody',
+        targetType: 'waterbody',
+        targetId: loser,
+        reason: 'r',
+        metadata: { survivorId: other },
+        createdAt: NOW + 2 * DAY,
+      }),
+    );
+    let res = await t.mutation(internal.bodyLibrary.backfillChangedAt, {});
+    while (!res.isDone) {
+      res = await t.mutation(internal.bodyLibrary.backfillChangedAt, {
+        ...(res.continueCursor ? { cursor: res.continueCursor } : {}),
+      });
+    }
+    expect((await rowsOf(t, other))[0]?.changedAt).toBe(NOW + 2 * DAY);
+  });
+
+  test('while the season turns, the reports facet gives no counts its pages would contradict', async () => {
+    const t = harness();
+    const { as } = await seedUser(t);
+    const id = await seedBody(t, { name: 'Last Season' });
+    await seedReport(t, id, NOW - DAY);
+    await backfill(t);
+    vi.setSystemTime(Date.UTC(2027, 6, 2));
+    const turning = await as.query(api.bodies.listSummary, { lane: 'active' });
+    expect(turning.facetCounts?.reports).toBeUndefined();
+    expect(turning.facetCounts?.class).toBeDefined();
+    const applied = await as.query(api.bodies.listSummary, {
+      lane: 'active',
+      facets: { reports: ['season'] },
+    });
+    expect(applied.total).toBeNull();
+    const page = await as.query(api.bodies.listPage, {
+      lane: 'active',
+      facets: { reports: ['season'] },
+      paginationOpts: { numItems: 50, cursor: null },
+    });
+    expect(page.page).toEqual([]);
+    await t.mutation(internal.bodyLibrary.turnSeason, {});
+    const turned = await as.query(api.bodies.listSummary, {
+      lane: 'active',
+      facets: { reports: ['season'] },
+    });
+    expect(turned.total).toEqual({ count: 0, capped: false });
+    expect(turned.facetCounts?.reports).toMatchObject({ season: 0, never: 0 });
+  });
+});

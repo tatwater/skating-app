@@ -88,7 +88,7 @@ import {
   requireContributor,
   requireProfile,
 } from './lib/auth';
-import { queueLibraryRefresh } from './lib/bodyLibrary';
+import { queueLibraryRefresh, stampChanged } from './lib/bodyLibrary';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { rankCandidates, scanCells } from './lib/cellScan';
@@ -3316,6 +3316,9 @@ export async function mergeBodyInto(
     // longer belong to it.
     await recomputeBodySummary(ctx, survivorId);
     await recomputeBodySummary(ctx, loserId);
+    // A merge is a moderator's action on the survivor too: its *Changed* moves (the loser leaves the
+    // library). On the stamp's one rule, so a deferred or failed refresh above can't lose it.
+    if (actorId !== undefined) await stampChanged(ctx, survivorId, Date.now());
     const actionId = await writeAudit(ctx, {
       ...(actorId !== undefined ? { actorId } : {}),
       action: 'merge_waterbody',

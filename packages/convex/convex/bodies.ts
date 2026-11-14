@@ -352,6 +352,18 @@ async function changedCount(ctx: QueryCtx, scope: string, since: number): Promis
   };
 }
 
+/** Whether some row still counts an earlier season's reports — the season turn not yet finished. */
+async function seasonTurning(ctx: QueryCtx, current: number): Promise<boolean> {
+  for (let s = current - 1; s >= current - 3; s--) {
+    const row = await ctx.db
+      .query('bodyLibraryRows')
+      .withIndex('by_reports_season', (q) => q.eq('reportsSeason', s).gt('reports', 0))
+      .first();
+    if (row !== null) return true;
+  }
+  return false;
+}
+
 /**
  * **The list's counts**: every lane's total (`changed` counted from its range, up to a cap), the
  * corpus, the lane's state tabs (most bodies first), and — for this query — the list's total and the
@@ -393,16 +405,22 @@ export const listSummary = query({
         .withIndex('by_lane_scope_key', (r) => r.eq('lane', lane).eq('scope', scope))
         .take(COUNT_KEYS_CAP);
       const countOf = new Map(stored.map((r) => [r.key, r.count]));
+      // While the season turns, rows still counting last season's reports are filed under
+      // *reported this season* in the counts, but the page's filter (and every row) reads them as
+      // this season's empty record: the reports facet's counts would disagree with its pages, so the
+      // read gives none until the turn finishes.
+      const turning = await seasonTurning(ctx, currentSeason(now));
       facetCounts = {};
       for (const facet of served.facets) {
+        if (turning && facet === 'reports') continue;
         const counts: Record<string, number> = {};
         for (const option of LIBRARY_FACETS[facet]) {
           counts[option] = countOf.get(facetKey(facet, option)) ?? 0;
         }
         facetCounts[facet] = counts;
       }
-      if (served.total) {
-        const [only] = appliedFacets(selection);
+      const [only] = appliedFacets(selection);
+      if (served.total && !(turning && only === 'reports')) {
         const count =
           only === undefined
             ? (countOf.get(TOTAL_KEY) ?? 0)
