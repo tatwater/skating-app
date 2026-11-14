@@ -1941,29 +1941,89 @@ describe('a verdict outlives its content (D248)', () => {
     expect(await snapshot()).toEqual(live);
   });
 
-  test('a gone item whose history names nobody is left unrebuilt and said so, never guessed', async () => {
-    const { t, mod } = await setup();
-    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
-    // A hide and its restore on an item that is gone, with no author's row and no verdict row left.
-    await t.run(async (ctx) => {
-      for (const action of ['hide', 'restore'] as const) {
-        await ctx.db.insert('moderationActions', {
-          actorId: mod.id,
-          action,
-          targetType: 'comment',
-          targetId: 'gone-comment',
-          reason: action,
-          metadata: { priorStatus: 'visible', newStatus: 'hidden' },
-          createdAt: Date.now(),
-        });
-      }
+  // A page at a time too: each page is its own transaction, so one that skips a verdict says so
+  // itself, never only the last page.
+  test.each([{ pageSize: undefined }, { pageSize: 1 }])(
+    'a gone item whose history names nobody is left unrebuilt and said so, never guessed (page size $pageSize)',
+    async ({ pageSize }) => {
+      const { t, mod } = await setup();
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      // A hide and its restore on an item that is gone, with no author's row and no verdict row left —
+      // and a row after them, so a page at a time the restore's page is not the last.
+      await t.run(async (ctx) => {
+        for (const action of ['hide', 'restore', 'dismiss_flag'] as const) {
+          await ctx.db.insert('moderationActions', {
+            actorId: mod.id,
+            action,
+            targetType: 'comment',
+            targetId: 'gone-comment',
+            reason: action,
+            ...(action === 'dismiss_flag'
+              ? {}
+              : {
+                  metadata:
+                    action === 'hide'
+                      ? { priorStatus: 'visible', newStatus: 'hidden' }
+                      : { priorStatus: 'hidden', newStatus: 'visible' },
+                }),
+            createdAt: Date.now(),
+          });
+        }
+      });
+      await t.mutation(internal.contentRecord.backfillVerdicts, {
+        clocks: false,
+        ...(pageSize !== undefined ? { pageSize } : {}),
+      });
+      await t.finishAllScheduledFunctions(vi.runAllTimers, 10_000);
+      expect(await t.run((ctx) => ctx.db.query('contentVerdicts').collect())).toEqual([]);
+      expect(
+        error.mock.calls.some(([line]) => String(line).includes('nothing left names its author')),
+      ).toBe(true);
+    },
+  );
+
+  test("a Post a moderator removed, then its author emptied Report by Report, is still rebuilt once it's erased", async () => {
+    const { t, author, mod, waterBodyId } = await setup();
+    const { postId, reportIds } = await seedPost(t, author.id, waterBodyId, 2);
+    await mod.as.mutation(api.moderation.setModerationStatus, {
+      targetType: 'post',
+      targetId: postId,
+      status: 'removed',
+      reason: 'removed it',
     });
-    await t.mutation(internal.contentRecord.backfillVerdicts, { clocks: false });
-    await t.finishAllScheduledFunctions(vi.runAllTimers, 10_000);
-    expect(await t.run((ctx) => ctx.db.query('contentVerdicts').collect())).toEqual([]);
+    // The clients delete Reports, never a whole Post: every member was already down, so no row of
+    // the author's lands on the Post itself.
+    for (const reportId of reportIds) await author.as.mutation(api.reports.remove, { reportId });
+    await mod.as.mutation(api.moderation.overturnVerdict, {
+      targetType: 'post',
+      targetId: postId,
+      reason: 'on appeal',
+    });
+    // The Reports go, then the emptied Post on a later run.
+    advance(31 * DAY);
+    await sweep(t);
+    await nextRun(t);
+    await nextRun(t);
+    expect(await get(t, postId)).toBeNull();
     expect(
-      error.mock.calls.some(([line]) => String(line).includes('nothing left names its author')),
-    ).toBe(true);
+      (await historyOn(t, postId)).some((r) => r.action === 'author_delete'),
+      'nothing of the author names them on the Post',
+    ).toBe(false);
+    const snapshot = async () =>
+      (await t.run((ctx) => ctx.db.query('contentVerdicts').collect()))
+        .map(
+          (v) =>
+            `${v.targetType} ${v.actionId} ${v.standing} ${v.endedByActionId ?? '-'} ${v.subjectUserId}`,
+        )
+        .sort();
+    const live = await snapshot();
+    expect(live).toHaveLength(1);
+    await t.run(async (ctx) => {
+      for (const v of await ctx.db.query('contentVerdicts').collect()) await ctx.db.delete(v._id);
+    });
+    await t.mutation(internal.contentRecord.backfillVerdicts, { pageSize: 7, clocks: false });
+    await t.finishAllScheduledFunctions(vi.runAllTimers, 10_000);
+    expect(await snapshot()).toEqual(live);
   });
 });
 
@@ -2171,9 +2231,10 @@ describe('the erasure holds under any order', () => {
 
     // One rule, two answers never: the backfill, replaying every history whole a page at a time,
     // lands where the live writers did — so no reversed verdict stands.
+    // Whose record each is on too: a rebuild that named the wrong person would be two answers.
     const snapshot = async () =>
       (await t.run((ctx) => ctx.db.query('contentVerdicts').collect()))
-        .map((v) => `${v.actionId} ${v.standing} ${v.endedByActionId ?? '-'}`)
+        .map((v) => `${v.actionId} ${v.standing} ${v.endedByActionId ?? '-'} ${v.subjectUserId}`)
         .sort();
     const live = await snapshot();
     await t.run(async (ctx) => {
@@ -2237,17 +2298,20 @@ describe('the erasure holds under any order', () => {
    * one of them reaches is caught on the branch that made it — and one random seed, so the search
    * keeps widening. `ERASURE_PROPERTY_RUNS` and `ERASURE_PROPERTY_SEED` widen or replay it locally.
    */
-  const RUNS = Number(process.env.ERASURE_PROPERTY_RUNS ?? 60);
+  // An unset, empty or unreadable knob is the default, never zero runs that check nothing.
+  const RUNS = Math.max(1, Math.trunc(Number(process.env.ERASURE_PROPERTY_RUNS)) || 60);
   const PINNED_SEEDS = [1947312279, 20261114, 4242, 7];
-  const seeds = process.env.ERASURE_PROPERTY_SEED
-    ? [Number(process.env.ERASURE_PROPERTY_SEED)]
-    : [...PINNED_SEEDS, undefined];
+  const replayed = Number(process.env.ERASURE_PROPERTY_SEED);
+  const replaying = process.env.ERASURE_PROPERTY_SEED !== undefined && Number.isInteger(replayed);
+  const seeds = replaying ? [replayed] : [...PINNED_SEEDS, undefined];
   for (const seed of seeds) {
     test(`nothing held is erased, nothing unheld outlives its time, a reversed verdict never stands, a used photo stays, no job stalls (seed ${seed ?? 'random'})`, async () => {
       await fc.assert(
         fc.asyncProperty(fc.array(op, { minLength: 1, maxLength: 20 }), (ops) => scenario(ops)),
         {
-          numRuns: seed === undefined ? RUNS : Math.ceil(RUNS / 2),
+          // A replayed seed runs as many cases as the random one that printed it, or a counterexample
+          // it found past the pinned seeds' half would never be reached again.
+          numRuns: seed === undefined || replaying ? RUNS : Math.ceil(RUNS / 2),
           ...(seed !== undefined ? { seed } : {}),
           examples: Object.values(FOUND).map((ops) => [ops]),
         },

@@ -305,7 +305,8 @@ export const backfillVerdicts = internalMutation({
           if (target) return { subjectUserId: subjectOf(targetType, target) };
           // A verdict outlives its content (D248): an item that is gone — erased, most often — is
           // replayed all the same, and whose record its verdicts are on is read off a verdict row it
-          // left, or else, in the replay, off its author's own deletion in its history.
+          // left, or else, in the replay, off its history: the person a moderator's action recorded,
+          // or its author's own deletion.
           const left = await reads.one('verdict', () =>
             ctx.db
               .query('contentVerdicts')
@@ -363,7 +364,8 @@ export const replayVerdictHistory = internalMutation({
     targetId: v.string(),
     /**
      * Whose record the item's verdicts are on. Absent for an item that is gone and left no verdict
-     * row: the scan reads it off the author's own deletion in the history, if there is one.
+     * row: the scan reads it off the history — the person a moderator's action recorded, or the
+     * author's own deletion — if anything there names them.
      */
     subjectUserId: v.optional(v.id('profiles')),
     pass: literals(['scan', 'write'] as const),
@@ -470,6 +472,15 @@ export const replayVerdictHistory = internalMutation({
         ...(pageSize !== undefined ? { pageSize } : {}),
         ...(clocks !== undefined ? { clocks } : {}),
       };
+      // Said on every page that skipped one, not only the last: each page is its own transaction, and
+      // a count kept to the end would lose what the earlier pages left unrebuilt.
+      const sayUnnamed = () => {
+        if (unnamed > 0) {
+          console.error(
+            `contentRecord.replayVerdictHistory: ${targetType} ${targetId} is gone and nothing left names its author; ${unnamed} verdict(s) of its history were not rebuilt`,
+          );
+        }
+      };
       if (!page.isDone) {
         await ctx.scheduler.runAfter(0, internal.contentRecord.replayVerdictHistory, {
           ...base,
@@ -477,6 +488,7 @@ export const replayVerdictHistory = internalMutation({
           cursor: page.continueCursor,
           state,
         });
+        sayUnnamed();
         return { written, more: true };
       }
       // The end of its history: what it leaves standing stands — whether or not the item is still
@@ -488,11 +500,7 @@ export const replayVerdictHistory = internalMutation({
           await holdMoved(ctx, targetType, targetId, Date.now(), reads);
         }
       });
-      if (unnamed > 0) {
-        console.error(
-          `contentRecord.replayVerdictHistory: ${targetType} ${targetId} is gone and nothing left names its author; ${unnamed} verdict(s) of its history were not rebuilt`,
-        );
-      }
+      sayUnnamed();
       if (pass === 'scan') {
         await ctx.scheduler.runAfter(0, internal.contentRecord.replayVerdictHistory, {
           ...base,
