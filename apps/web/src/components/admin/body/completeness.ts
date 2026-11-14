@@ -17,11 +17,6 @@ export interface Completeness {
   have: number;
   of: number;
   missing: readonly CompletenessField[];
-  /**
-   * Fields a page can't say about yet — the Body console, while it reads a count no read serves.
-   * Drawn dashed, never counted and never named missing. The stored row has none.
-   */
-  unknown?: readonly CompletenessField[];
 }
 
 /** Each field in the note's words: "Missing bathymetry, a lot and a landmark". */
@@ -38,13 +33,10 @@ export const COMPLETENESS_WORDS: Record<CompletenessField, string> = {
   bathymetry: 'bathymetry',
 };
 
-/**
- * The strip's segments, in core's order: lit for what the body has, dark for what it lacks, dashed
- * for what can't be said yet.
- */
+/** The strip's segments, in core's order: lit for what the body has, dark for what it lacks. */
 export function completenessSegments(c: Completeness): LedSegment[] {
   return COMPLETENESS_FIELDS.slice(0, c.of).map((field) =>
-    c.missing.includes(field) ? 'off' : c.unknown?.includes(field) === true ? 'unknown' : 'on',
+    c.missing.includes(field) ? 'off' : 'on',
   );
 }
 

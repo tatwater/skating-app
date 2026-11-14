@@ -1,11 +1,12 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, userEvent, waitFor, within } from 'storybook/test';
+import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { computedColor, sameColor } from '@/components/kit/measure';
 import { faceLoaded, must } from '@/components/kit/storyKit';
-
 import { BodyBoard } from './bodyBoard';
-import { MASCOMA_IDENTITY_AS_READ } from './bodyFixtures';
+import { CAPPED_HISTORY, NEIGHBOR_ID, NEIGHBOR_POLYGON } from './bodyFixtures';
+import type { ReadFailure } from './consoleReads';
+import { ReadFailed } from './kit-candidates/read-failed';
 
 /**
  * Boards 5.4.1 Body | Shape and 5.4.1 Shape | Scrolled: the Body console as an admin first finds
@@ -156,23 +157,116 @@ export const LitBay: Story = {
   },
 };
 
-/** As the app reads it today: no read names the towns or says whether there's bathymetry. */
-export const AsRead: Story = {
-  name: 'As read today',
-  args: { identity: MASCOMA_IDENTITY_AS_READ },
+/**
+ * A body the record has no answer for yet: no stored completeness, no boundary around it, no one
+ * vouching for its outline. Each is drawn as absent or *Not recorded yet* — never a zero, never a
+ * guess, and never an amber square for a gap the record can't name.
+ */
+export const NotRecorded: Story = {
+  name: 'Not recorded',
+  args: { completeness: null, towns: null, trust: null },
   play: async ({ canvasElement }) => {
     const page = within(canvasElement);
     await expect(page.queryByText('Towns')).toBeNull();
-    await expect(page.getByRole('meter', { name: /Complete/ })).toHaveAttribute(
-      'aria-valuenow',
-      '9',
-    );
-    // Not known is drawn as absent: no amber note, no amber square.
+    await expect(page.queryByText('Trusted')).toBeNull();
+    await expect(page.getByText('Not recorded yet')).toBeVisible();
+    await expect(page.queryByRole('meter', { name: /Complete/ })).toBeNull();
     await expect(canvasElement.querySelector('[data-slot="body-missing"]')).toBeNull();
     await expect(canvasElement.querySelector('[data-slot="tabs-flag"]')).toBeNull();
+  },
+};
+
+const failure = (): ReadFailure => ({ failed: true, retry: fn() });
+
+/**
+ * Every read beside the body's own failed: each block says so in its own place, with *Try again*,
+ * and the record, the tabs and the map still stand.
+ */
+export const ReadsFailed: Story = {
+  name: 'Reads failed',
+  args: {
+    completeness: failure(),
+    towns: failure(),
+    trust: failure(),
+    asks: failure(),
+    history: failure(),
+    foot: (
+      <div className="m-(--space-3) max-w-(--size-inspector) border border-solid border-line bg-panel p-(--space-2_5)">
+        <ReadFailed onRetry={fn()}>The map couldn’t read the bays and the lots</ReadFailed>
+      </div>
+    ),
+  },
+  play: async ({ canvasElement, args }) => {
+    const page = within(canvasElement);
+    await faceLoaded(slot(canvasElement, 'record-lockup-name'));
+    await expect(page.getByRole('heading', { level: 1, name: 'Mascoma Lake' })).toBeVisible();
+    const notes = slots(canvasElement, 'read-failed');
+    await expect(notes.map((n) => n.textContent?.replace('Try again', ''))).toEqual([
+      'Completeness couldn’t be read',
+      'The towns and the outline’s trust couldn’t be read',
+      'What is asked of this body couldn’t be read',
+      'The history couldn’t be read',
+      'The map couldn’t read the bays and the lots',
+    ]);
+    // Gray, never red at rest: a failed read is something worth knowing.
+    const note = must(notes[0]?.querySelector<HTMLElement>('[data-slot="note"]'));
+    await expect(note).toHaveAttribute('data-tone', 'default');
+    await userEvent.click(page.getAllByRole('button', { name: 'Try again' })[3] as HTMLElement);
+    await expect((args.history as ReadFailure).retry).toHaveBeenCalledTimes(1);
+  },
+};
+
+/** A very large lake: the history read always stops short, and the page never draws it as whole. */
+export const CappedHistory: Story = {
+  name: 'History capped',
+  args: { history: CAPPED_HISTORY },
+  play: async ({ canvasElement }) => {
+    await expect(slot(canvasElement, 'body-history-head')).toHaveTextContent('Latest 6');
+    await expect(slot(canvasElement, 'body-history-capped')).toHaveTextContent(
+      'More history exists than is shown here.',
+    );
+  },
+};
+
+/**
+ * Another body touches this one: the map draws it quiet and dashed beside the shore, and Shape
+ * offers the merge (not built here yet), the touching body lit from its row.
+ */
+export const Touching: Story = {
+  args: {
+    lit: `neighbor:${NEIGHBOR_ID}`,
+    tabScene: {
+      items: [
+        {
+          kind: 'outline',
+          id: `neighbor:${NEIGHBOR_ID}`,
+          layer: 'outline',
+          geometry: NEIGHBOR_POLYGON,
+          style: 'neighbor',
+        },
+      ],
+      lit: `neighbor:${NEIGHBOR_ID}`,
+    },
+    shape: {
+      merge: {
+        touching: [{ lit: `neighbor:${NEIGHBOR_ID}`, id: NEIGHBOR_ID, name: 'Crystal Lake' }],
+        note: null,
+      },
+      // biome-ignore lint/a11y/useAnchorContent: the link takes its words from what renders it.
+      bodyLink: (id) => <a href={`#body-${id}`} />,
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    const merge = page.getByRole('region', { name: 'Merge into another body' });
+    await expect(within(merge).getByText('Crystal Lake')).toBeVisible();
     await expect(
-      slot(canvasElement, 'led-strip').querySelector('[data-state="unknown"]'),
-    ).not.toBeNull();
+      must(merge.querySelector(`tr[data-id="neighbor:${NEIGHBOR_ID}"]`)),
+    ).toHaveAttribute('data-selected');
+    await expect(within(merge).getByRole('button', { name: 'Choose a body' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
   },
 };
 
@@ -182,5 +276,18 @@ export const Loading: Story = {
   play: async ({ canvasElement }) => {
     await expect(canvasElement.querySelector('[data-slot="record-lockup"]')).toBeNull();
     await expect(slots(canvasElement, 'skeleton').length).toBeGreaterThan(0);
+  },
+};
+
+/** The record in, the frame's other reads on their way: completeness, towns and trust hold their places. */
+export const ExtrasLoading: Story = {
+  name: 'Extras loading',
+  args: { extrasLoading: true },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    await expect(page.getByRole('heading', { level: 1, name: 'Mascoma Lake' })).toBeVisible();
+    await expect(slot(canvasElement, 'body-complete')).toHaveAttribute('aria-busy', 'true');
+    await expect(page.getByText('Towns')).toBeVisible();
+    await expect(page.queryByText('Enfield, NH')).toBeNull();
   },
 };

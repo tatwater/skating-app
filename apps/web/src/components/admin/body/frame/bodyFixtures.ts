@@ -1,16 +1,20 @@
 import type { LandmarkKind } from '@skating/core';
 
+import type { Completeness } from '../completeness';
+
 import { type BodyMapBaseInput, bodyMapBase } from '../map/bodyMapBase';
 import type { BodyMapScene } from '../map/mapDescriptors';
 import {
   type BodyAsk,
+  type BodyHistoryView,
   type BodyIdentity,
   type BodyRecord,
   bodyAsks,
   bodyHistory,
   bodyIdentity,
   type HistoryAction,
-  type HistoryEntry,
+  type OutlineTrust,
+  outlineTrust,
 } from './bodyModel';
 import {
   MASCOMA_BBOX,
@@ -30,9 +34,9 @@ import {
 
 /** 14 Oct 2026, 12:00 in the runner's own zone. */
 export const BODY_NOW = new Date(2026, 9, 14, 12, 0).getTime();
-const on = (month: number, day: number) => new Date(2026, month - 1, day, 12, 0).getTime();
+export const on = (month: number, day: number) => new Date(2026, month - 1, day, 12, 0).getTime();
 
-export const MASCOMA_ID = 'j57mascoma0000000000000000000';
+export const MASCOMA_ID = 'j57mascoma0000000000000000000000';
 
 export const MASCOMA_RECORD: BodyRecord = {
   _id: MASCOMA_ID as BodyRecord['_id'],
@@ -71,40 +75,58 @@ export const MASCOMA_RECORD: BodyRecord = {
 const TEAGAN = { displayName: 'Teagan Atwater', username: 'teagan' };
 const MATT = { displayName: 'Matt Steinberg', username: 'matt' };
 
-/** The body's audit rows, newest first — what `moderation.listActions` reads for it. */
+const BODY = 'waterbody' as const;
+
+/**
+ * The body's family's audit rows, newest first — what `bodyConsole.history` reads for it: the body
+ * itself, and a landmark of its (the family's rows come with the body's).
+ */
 export const MASCOMA_HISTORY: readonly HistoryAction[] = [
+  {
+    id: 'h6',
+    action: 'edit_landmark',
+    targetType: 'bodyLandmark',
+    targetId: 'lm0',
+    createdAt: on(10, 12),
+    actor: MATT,
+  },
   {
     id: 'h5',
     action: 'set_reference_links',
-    targetType: 'waterbody',
+    targetType: BODY,
+    targetId: MASCOMA_ID,
     createdAt: on(10, 10) + 3_600_000,
     actor: MATT,
   },
   {
     id: 'h4',
     action: 'set_public_access',
-    targetType: 'waterbody',
+    targetType: BODY,
+    targetId: MASCOMA_ID,
     createdAt: on(9, 21),
     actor: TEAGAN,
   },
   {
     id: 'h3',
     action: 'set_curated_boost',
-    targetType: 'waterbody',
+    targetType: BODY,
+    targetId: MASCOMA_ID,
     createdAt: on(9, 19),
     actor: TEAGAN,
   },
   {
     id: 'h2',
     action: 'activate_body',
-    targetType: 'waterbody',
+    targetType: BODY,
+    targetId: MASCOMA_ID,
     createdAt: on(9, 17),
-    actor: TEAGAN,
+    actor: null,
   },
   {
     id: 'h1',
     action: 'set_lake_depth',
-    targetType: 'waterbody',
+    targetType: BODY,
+    targetId: MASCOMA_ID,
     createdAt: on(9, 12),
     actor: MATT,
   },
@@ -112,16 +134,24 @@ export const MASCOMA_HISTORY: readonly HistoryAction[] = [
 
 export const MASCOMA_IDENTITY: BodyIdentity = bodyIdentity(MASCOMA_RECORD, {
   history: MASCOMA_HISTORY,
-  counts: { putIns: 2, lots: 1, landmarks: 7, hasContours: false },
-  towns: ['Enfield, NH', 'Lebanon, NH'],
 });
 
-/** As the app reads it today: no read says the towns or the bathymetry yet. */
-export const MASCOMA_IDENTITY_AS_READ: BodyIdentity = bodyIdentity(MASCOMA_RECORD, {
-  history: MASCOMA_HISTORY,
-  counts: { putIns: 2, lots: 1, landmarks: 7, hasContours: null },
-  towns: null,
-});
+/** The stored answer for Mascoma (board 5.4.1): nine of the ten, bathymetry missing. */
+export const MASCOMA_COMPLETENESS: Completeness = { have: 9, of: 10, missing: ['bathymetry'] };
+
+export const MASCOMA_TOWNS: readonly string[] = ['Enfield, NH', 'Lebanon, NH'];
+
+/** `consoleExtras` for Mascoma: the 12 Oct campaign re-affirmed the outline; nothing touches it. */
+export const MASCOMA_EXTRAS = {
+  towns: ['Enfield, NH', 'Lebanon, NH'],
+  hasBathymetry: false,
+  outlineTrustedSince: on(10, 12),
+  outlineTrustedVia: 'campaign' as const,
+  touchingBodyIds: [] as string[],
+  touchingCapped: false,
+};
+
+export const MASCOMA_TRUST: OutlineTrust | null = outlineTrust(MASCOMA_EXTRAS);
 
 export const MASCOMA_ASKS: readonly BodyAsk[] = bodyAsks({
   bays: [
@@ -139,9 +169,15 @@ export const MASCOMA_ASKS: readonly BodyAsk[] = bodyAsks({
   ],
 });
 
-export const MASCOMA_HISTORY_ENTRIES: { entries: readonly HistoryEntry[]; capped: boolean } = {
+export const MASCOMA_HISTORY_ENTRIES: BodyHistoryView = {
   entries: bodyHistory(MASCOMA_HISTORY),
   capped: false,
+};
+
+/** A very large lake's history: the read stopped short, as it always does there. */
+export const CAPPED_HISTORY: BodyHistoryView = {
+  entries: bodyHistory(MASCOMA_HISTORY),
+  capped: true,
 };
 
 /** A lot sits a few meters off its launch, as the dev lots do. */
@@ -178,6 +214,41 @@ export const MASCOMA_BOUNDS = MASCOMA_BBOX;
 
 /** The Shape tab's records. */
 export const MASCOMA_SUB_AREAS = [
-  { _id: 'bay-north', name: 'Mascoma North', surfaceAreaSqM: 2_476_700, removed: false },
-  { _id: 'bay-south', name: 'Mascoma South', surfaceAreaSqM: 2_148_900, removed: false },
+  {
+    _id: 'bay-north',
+    name: 'Mascoma North',
+    surfaceAreaSqM: 2_476_700,
+    removed: false,
+    createdAt: on(9, 2),
+  },
+  {
+    _id: 'bay-south',
+    name: 'Mascoma South',
+    surfaceAreaSqM: 2_148_900,
+    removed: false,
+    createdAt: on(9, 2),
+  },
 ] as const;
+
+/** How Mascoma's two bays were made: seeded on 2 Sep by Teagan (`bodyConsole.bayProvenance`). */
+export const MASCOMA_BAY_PROVENANCE = MASCOMA_SUB_AREAS.map((s) => ({
+  subAreaId: s._id as never,
+  createdAt: s.createdAt,
+  createdVia: 'seed' as const,
+  createdBy: { userId: 'teagan' as never, username: 'teagan', displayName: 'Teagan Atwater' },
+}));
+
+/** A body that touches Mascoma, for the Merge block and the map's neighbor (a made-up pond). */
+export const NEIGHBOR_ID = 'k57neighbor00000000000000000000';
+export const NEIGHBOR_POLYGON: GeoJSON.Polygon = {
+  type: 'Polygon',
+  coordinates: [
+    [
+      [-72.168, 43.66],
+      [-72.16, 43.66],
+      [-72.16, 43.666],
+      [-72.168, 43.666],
+      [-72.168, 43.66],
+    ],
+  ],
+};

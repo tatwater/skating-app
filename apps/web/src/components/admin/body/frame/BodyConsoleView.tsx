@@ -10,6 +10,7 @@ import { BodyInspector } from './BodyInspector';
 import { BodyLeftColumn, type BodyLeftColumnProps } from './BodyLeftColumn';
 import type { BodyAsk } from './bodyModel';
 import type { BodyTabKey } from './bodySearch';
+import { ReadFailed } from './kit-candidates/read-failed';
 
 /**
  * The Body console (`/admin/body/$id`, §5.4), drawn from props: the left column (the body), the map
@@ -105,26 +106,22 @@ export function BodyConsoleView({
   );
 }
 
-/** The page when there is no body to show: a broken link, or a body no longer listed. */
-export function BodyConsoleMissing({
-  state,
-  oldEditorHref,
-}: {
-  state: 'missing' | 'unlisted';
-  oldEditorHref?: string;
-}) {
+/**
+ * The page when there is no body to show: a broken link, or the body's own read failed (with *Try
+ * again*, which reads it again). A body that was removed or merged is `BodyConsoleGone`.
+ */
+export function BodyConsoleMissing(
+  props: { state: 'missing' } | { state: 'failed'; onRetry: () => void },
+) {
   return (
     <div data-slot="body-console-missing" className="flex h-full items-start p-gutter">
-      <div className="flex flex-col items-start gap-(--space-3_5)">
-        <Note>
-          {state === 'missing'
-            ? 'No such body. The link may be broken.'
-            : 'This body is unlisted: rejected, or merged into another.'}
-        </Note>
-        {state === 'unlisted' && oldEditorHref !== undefined && (
-          <Button variant="link" size="sm" render={<a href={oldEditorHref} />}>
-            Old editor →
-          </Button>
+      <div className="flex max-w-(--size-inspector) flex-col items-start gap-(--space-3_5)">
+        {props.state === 'missing' ? (
+          <Note>No such body. The link may be broken.</Note>
+        ) : (
+          <ReadFailed data-for="body-console" onRetry={props.onRetry}>
+            This body couldn’t be read
+          </ReadFailed>
         )}
       </div>
     </div>

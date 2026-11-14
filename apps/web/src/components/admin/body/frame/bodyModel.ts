@@ -1,9 +1,6 @@
 import type { Doc } from '@skating/convex/dataModel';
 import {
-  COMPLETENESS_FIELDS,
-  COMPLETENESS_RULES,
   type CompletenessField,
-  type CompletenessInput,
   sqMetersToAcres,
   standingOf,
   standingReasonLabel,
@@ -12,14 +9,15 @@ import {
 } from '@skating/core';
 
 import { type AuditAction, type AuditTarget, actionLabel } from '../../shell/actionLabels';
-import type { Completeness } from '../completeness';
 import type { BodyTabKey } from './bodySearch';
 
 /**
  * The Body console's left column, from the records — pure, so every rule is tested without a page:
- * the lockup's figures, completeness, the boost, the identity list, what is asked of the body, and
- * its history. **`null` means not recorded** and is drawn as absent, never as zero (a depth nobody
- * measured is not a depth of 0 m).
+ * the lockup's figures, the boost, the identity list, the outline's trust, what is asked of the
+ * body, and its history. Completeness is never decided here: the console draws the answer the
+ * server stores for the body (core's `bodyCompleteness`, read through `bodies.preview`). **`null`
+ * means not recorded** and is drawn as absent, never as zero (a depth nobody measured is not a
+ * depth of 0 m).
  */
 
 /** The fields of a body the console reads. */
@@ -55,13 +53,19 @@ export type BodyRecord = Pick<
   | 'createdAt'
 >;
 
-/** An audit row as `moderation.listActions` returns it — the fields the column reads. */
+/**
+ * An audit row as `bodyConsole.history` returns it — the fields the column reads. The history is the
+ * body's whole family (its bays, landmarks, put-ins, lots, absorbed bodies…), so a row says whose.
+ */
 export interface HistoryAction {
   id: string;
   action: AuditAction;
   targetType: AuditTarget;
+  targetId: string;
   createdAt: number;
   actor: { displayName: string; username: string } | null;
+  /** The reason the actor gave, or the machine's own words. */
+  reason?: string;
 }
 
 // ── Formats ──────────────────────────────────────────────────────────────────────────────────
@@ -193,67 +197,12 @@ export const COMPLETENESS_TABS: Record<
   bathymetry: 'water',
 };
 
-/** One of the ten as the console reads it: there, missing, or not yet readable here. */
-export interface CompletenessItem {
-  field: CompletenessField;
-  state: 'present' | 'missing' | 'unknown';
-}
-
-/** The count each counted field is decided by. */
-const COUNTED: Partial<Record<CompletenessField, keyof CompletenessCounts>> = {
-  putIns: 'putIns',
-  lots: 'lots',
-  landmarks: 'landmarks',
-  bathymetry: 'hasContours',
-};
-
 /**
- * The ten, by **core's rule** (`COMPLETENESS_RULES`, the one `bodyCompleteness` applies and the
- * library row stores), from what the console reads. A field whose count no read here serves yet
- * (`null`) is *unknown* — never decided, never counted, never named missing — so a gap in the
- * reads never reads as a gap in the record. Once the console reads the stored answer, this goes.
+ * The tabs whose part of the record is missing something, from the stored answer's `missing`: each
+ * wears the amber square.
  */
-export function completenessItems(
-  facts: Omit<CompletenessInput, keyof CompletenessCounts> & CompletenessCounts,
-): CompletenessItem[] {
-  const input: CompletenessInput = {
-    ...facts,
-    putIns: facts.putIns ?? 0,
-    lots: facts.lots ?? 0,
-    landmarks: facts.landmarks ?? 0,
-    hasContours: facts.hasContours ?? false,
-  };
-  return COMPLETENESS_FIELDS.map((field) => {
-    const count = COUNTED[field];
-    if (count !== undefined && facts[count] === null) return { field, state: 'unknown' };
-    return { field, state: COMPLETENESS_RULES[field](input) ? 'present' : 'missing' };
-  });
-}
-
-/** The items, counted for the strip and the note: what is there, missing, and unknown. */
-export function summarizeCompleteness(items: readonly CompletenessItem[]): Completeness {
-  return {
-    have: items.filter((i) => i.state === 'present').length,
-    of: items.length,
-    missing: items.filter((i) => i.state === 'missing').map((i) => i.field),
-    unknown: items.filter((i) => i.state === 'unknown').map((i) => i.field),
-  };
-}
-
-/**
- * The tabs whose part of the record is missing something: each wears the amber square. An unknown
- * part never flags a tab.
- */
-export function attentionTabs(items: readonly CompletenessItem[]): ReadonlySet<BodyTabKey> {
-  return new Set(items.filter((i) => i.state === 'missing').map((i) => COMPLETENESS_TABS[i.field]));
-}
-
-/** What the page counted beside the body, for the ten; `null` where no read serves it yet. */
-export interface CompletenessCounts {
-  putIns: number | null;
-  lots: number | null;
-  landmarks: number | null;
-  hasContours: boolean | null;
+export function attentionTabs(missing: readonly CompletenessField[]): ReadonlySet<BodyTabKey> {
+  return new Set(missing.map((field) => COMPLETENESS_TABS[field]));
 }
 
 // ── Identity ─────────────────────────────────────────────────────────────────────────────────
@@ -267,15 +216,12 @@ export interface BodyIdentity {
   name: string;
   kind: string;
   figures: Figure[];
-  completeness: CompletenessItem[];
   boost: { value: number; note: string | null };
   standing: { badge: string; tone: 'lit' | 'dim'; since: string | null; note: string | null };
   /** The public-access ruling; `null` when nobody has ruled. */
   access: { badge: string; ruled: string; by: Person | null } | null;
   shoreline: string | null;
   names: { primary: string; tag: string | null; aliases: string[] };
-  /** The towns the body lies in; `null` until a read can say (a seam). */
-  towns: string[] | null;
   ids: { tag: string; value: string }[];
   outline: { tag: string; rings: string };
 }
@@ -300,22 +246,35 @@ export function ringsText(geom: GeoJSON.Polygon | GeoJSON.MultiPolygon): string 
   return `${shore} and ${islands} ${islands === 1 ? 'island' : 'islands'}`;
 }
 
-/** The latest row of one verb, newest first in `history`. */
-function latest(history: readonly HistoryAction[], action: AuditAction): HistoryAction | null {
-  return history.find((h) => h.action === action) ?? null;
+/**
+ * The latest row of one verb **on the body itself**, newest first in `history` — which holds the
+ * whole family's rows, so a bay's or an absorbed body's row of the same verb is never taken for the
+ * body's own.
+ */
+export function latestOnBody(
+  history: readonly HistoryAction[],
+  bodyId: string,
+  action: AuditAction,
+): HistoryAction | null {
+  return (
+    history.find(
+      (h) => h.action === action && h.targetType === 'waterbody' && h.targetId === bodyId,
+    ) ?? null
+  );
 }
 
+/**
+ * The identity list, from the body and its history (newest first; the family's rows). Who ruled on
+ * public access and who set the boost come from the body's own latest row of each verb; when no row
+ * read says, nobody is named — never a guess.
+ */
 export function bodyIdentity(
   b: BodyRecord,
   {
     history,
-    counts,
-    towns,
     timeZone,
   }: {
     history: readonly HistoryAction[];
-    counts: CompletenessCounts;
-    towns: string[] | null;
     timeZone?: string;
   },
 ): BodyIdentity {
@@ -339,7 +298,7 @@ export function bodyIdentity(
           };
 
   const ruling = b.publicAccess;
-  const ruledBy = latest(history, 'set_public_access')?.actor ?? null;
+  const ruledBy = latestOnBody(history, b._id, 'set_public_access')?.actor ?? null;
   const access: BodyIdentity['access'] =
     ruling === undefined
       ? null
@@ -349,7 +308,7 @@ export function bodyIdentity(
           by: ruledBy ? { name: firstName(ruledBy.displayName) } : null,
         };
 
-  const boostRow = latest(history, 'set_curated_boost');
+  const boostRow = latestOnBody(history, b._id, 'set_curated_boost');
   const boostNote = boostRow
     ? `Set ${statusDate(boostRow.createdAt, timeZone)} by ${boostRow.actor ? firstName(boostRow.actor.displayName) : 'the system'}.`
     : null;
@@ -372,17 +331,6 @@ export function bodyIdentity(
     name: waterBodyDisplayName(b.name),
     kind: waterBodyClassLabel(b.type),
     figures: bodyFigures(b),
-    completeness: completenessItems({
-      polygon: b.polygon,
-      name: b.name,
-      publicAccess: b.publicAccess ?? null,
-      accessKind: b.accessKind ?? null,
-      maxDepthM: b.maxDepthM,
-      meanDepthM: b.meanDepthM,
-      elevationM: b.elevationM,
-      windRose: b.windRose,
-      ...counts,
-    }),
     boost: { value: b.curatedBoost ?? 0, note: boostNote },
     standing: standingView,
     access,
@@ -392,7 +340,6 @@ export function bodyIdentity(
       tag: primaryTag === undefined ? null : (SOURCE_TAG[primaryTag] ?? primaryTag.toUpperCase()),
       aliases,
     },
-    towns,
     ids,
     outline: {
       tag: SOURCE_TAG[b.geometrySource ?? b.source] ?? (b.geometrySource ?? b.source).toUpperCase(),
@@ -478,4 +425,96 @@ export function bodyHistory(rows: readonly HistoryAction[]): HistoryEntry[] {
     who: r.actor ? firstName(r.actor.displayName) : null,
     what: actionLabel(r.action, r.targetType),
   }));
+}
+
+/**
+ * The History section's rows, and whether more exist than were read (`capped`: the read stopped at
+ * its budget, a kind of the family ran past its bound, or more rows exist than it returned — on a
+ * very large lake, always).
+ */
+export interface BodyHistoryView {
+  entries: readonly HistoryEntry[];
+  capped: boolean;
+}
+
+/**
+ * The History head's words: an exact count only when the read was whole ("31 changes"); a capped
+ * read says how many it shows, never a total ("Latest 50"), and nothing when it shows none.
+ */
+export function historyHead(view: BodyHistoryView): string | null {
+  const n = view.entries.length;
+  if (view.capped) return n === 0 ? null : `Latest ${int.format(n)}`;
+  return `${int.format(n)} ${n === 1 ? 'change' : 'changes'}`;
+}
+
+// ── The frame's extras ───────────────────────────────────────────────────────────────────────
+
+/** When the outline was last vouched for, and how. */
+export interface OutlineTrust {
+  /** "Since 12 Oct 2026". */
+  since: string;
+  /** "A moderator approved it", "An import re-affirmed it". */
+  via: string;
+}
+
+/**
+ * The outline's trust, from `bodyConsole.consoleExtras`: a person's approval of a drawn body, else
+ * the import campaign that last re-affirmed it. `null` when neither is recorded — drawn as absent,
+ * never as "untrusted".
+ */
+export function outlineTrust(
+  extras: {
+    outlineTrustedSince: number | null;
+    outlineTrustedVia: 'approved' | 'campaign' | null;
+  },
+  timeZone?: string,
+): OutlineTrust | null {
+  if (extras.outlineTrustedSince === null || extras.outlineTrustedVia === null) return null;
+  return {
+    since: `Since ${statusDate(extras.outlineTrustedSince, timeZone)}`,
+    via:
+      extras.outlineTrustedVia === 'approved'
+        ? 'A moderator approved it'
+        : 'An import re-affirmed it',
+  };
+}
+
+// ── A body the console can't open ────────────────────────────────────────────────────────────
+
+/** How a body left: rejected by a moderator, or merged into another. */
+export interface Removal {
+  /** "Rejected", "Merged". */
+  verb: string;
+  /** "12 Oct 2026". */
+  when: string;
+  /** Who, by first name; `null` for the machine or an erased account. */
+  who: string | null;
+  /** The reason the row gives, as written; `null` when it gives none. */
+  reason: string | null;
+}
+
+/**
+ * How the body left, from its own latest rejection or merge row in the history read (newest
+ * first). `null` when the rows read hold neither — the caller says the history shown doesn't say,
+ * never that nothing happened.
+ */
+export function removalOf(
+  history: readonly HistoryAction[],
+  bodyId: string,
+  timeZone?: string,
+): Removal | null {
+  const row = history.find(
+    (h) =>
+      (h.action === 'reject_waterbody' || h.action === 'merge_waterbody') &&
+      h.targetType === 'waterbody' &&
+      h.targetId === bodyId,
+  );
+  if (row === undefined) return null;
+  const reason = row.reason?.trim() ?? '';
+  return {
+    verb: row.action === 'reject_waterbody' ? 'Rejected' : 'Merged',
+    when: statusDate(row.createdAt, timeZone),
+    who: row.actor ? firstName(row.actor.displayName) : null,
+    reason: reason === '' ? null : reason,
+  };
 }

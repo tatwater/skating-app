@@ -1,9 +1,8 @@
-import { bodyCompleteness } from '@skating/core';
+import { COMPLETENESS_FIELDS } from '@skating/core';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { missingSentence } from '../completeness';
-import { BODY_NOW, MASCOMA_HISTORY, MASCOMA_RECORD } from './bodyFixtures';
+import { BODY_NOW, MASCOMA_HISTORY, MASCOMA_ID, MASCOMA_RECORD, on } from './bodyFixtures';
 import {
   acresText,
   attentionTabs,
@@ -11,20 +10,21 @@ import {
   bodyFigures,
   bodyHistory,
   bodyIdentity,
+  COMPLETENESS_TABS,
   dayMonth,
   firstName,
+  type HistoryAction,
+  historyHead,
   historyTime,
+  latestOnBody,
   lengthText,
+  outlineTrust,
+  removalOf,
   ringsText,
   statusDate,
-  summarizeCompleteness,
 } from './bodyModel';
 
-const COUNTS = { putIns: 2, lots: 1, landmarks: 7, hasContours: false };
-const ctx = { history: MASCOMA_HISTORY, counts: COUNTS, towns: null };
-/** The identity's completeness under some counts (and the record's own fields). */
-const itemsOf = (record = MASCOMA_RECORD, counts: Partial<typeof COUNTS> | object = {}) =>
-  bodyIdentity(record, { ...ctx, counts: { ...COUNTS, ...counts } }).completeness;
+const ctx = { history: MASCOMA_HISTORY };
 
 describe('the lockup', () => {
   it('draws the boards’ figures for Mascoma', () => {
@@ -59,70 +59,32 @@ describe('the lockup', () => {
   });
 });
 
-describe('completeness', () => {
-  it('reads Mascoma as 9 / 10, missing only bathymetry, on the Water tab', () => {
-    const items = itemsOf();
-    expect(items).toHaveLength(10);
-    expect(summarizeCompleteness(items).have).toBe(9);
-    expect(missingSentence(summarizeCompleteness(items).missing)).toBe('Missing bathymetry');
-    expect([...attentionTabs(items)]).toEqual(['water']);
+describe('completeness’s amber squares', () => {
+  it('flags the tab of each field the stored answer says is missing — Water for bathymetry', () => {
+    expect([...attentionTabs(['bathymetry'])]).toEqual(['water']);
+    expect([...attentionTabs([])]).toEqual([]);
+    expect(
+      [...attentionTabs(['name', 'elevation', 'lots', 'landmarks', 'bathymetry'])].sort(),
+    ).toEqual(['access', 'names', 'places', 'water']);
   });
 
-  it('is the founder’s ten: never posted rules or sample points', () => {
-    const keys = itemsOf().map((i) => i.field);
-    expect(keys).not.toContain('postedRules');
-    expect(keys).not.toContain('samplePoints');
-  });
-
-  it('is core’s rule exactly whenever every count is read', () => {
-    const counts = fc.record({
-      putIns: fc.nat({ max: 3 }),
-      lots: fc.nat({ max: 3 }),
-      landmarks: fc.nat({ max: 3 }),
-      hasContours: fc.boolean(),
-    });
+  it('flags exactly the tabs that hold a missing field, for any stored answer (property)', () => {
     fc.assert(
-      fc.property(counts, fc.boolean(), fc.boolean(), (c, named, measured) => {
-        const record = {
-          ...MASCOMA_RECORD,
-          name: named ? MASCOMA_RECORD.name : ' ',
-          elevationM: measured ? MASCOMA_RECORD.elevationM : undefined,
-        };
-        const { unknown, ...summary } = summarizeCompleteness(itemsOf(record, c));
-        expect(unknown).toEqual([]);
-        expect(summary).toEqual(
-          bodyCompleteness({
-            polygon: record.polygon,
-            name: record.name,
-            publicAccess: record.publicAccess ?? null,
-            accessKind: record.accessKind ?? null,
-            maxDepthM: record.maxDepthM,
-            meanDepthM: record.meanDepthM,
-            elevationM: record.elevationM,
-            windRose: record.windRose,
-            ...c,
-          }),
+      fc.property(fc.subarray([...COMPLETENESS_FIELDS]), (missing) => {
+        const tabs = attentionTabs(missing);
+        expect([...tabs].sort()).toEqual(
+          [...new Set(missing.map((f) => COMPLETENESS_TABS[f]))].sort(),
         );
+        // Nothing missing flags nothing: an answer never invents a gap.
+        if (missing.length === 0) expect(tabs.size).toBe(0);
       }),
     );
   });
 
-  it('draws an unknown part as neither there nor missing', () => {
-    const items = itemsOf(MASCOMA_RECORD, { hasContours: null });
-    expect(items.find((i) => i.field === 'bathymetry')?.state).toBe('unknown');
-    expect(missingSentence(summarizeCompleteness(items).missing)).toBeNull();
-    expect(attentionTabs(items).size).toBe(0);
-  });
-
-  it('lists what is missing as a sentence, each part flagging its own tab', () => {
-    const items = itemsOf(
-      { ...MASCOMA_RECORD, name: ' ', elevationM: undefined },
-      { lots: 0, landmarks: 0 },
-    );
-    expect(missingSentence(summarizeCompleteness(items).missing)).toBe(
-      'Missing a name, elevation, a lot, a landmark and bathymetry',
-    );
-    expect([...attentionTabs(items)].sort()).toEqual(['access', 'names', 'places', 'water']);
+  it('has a tab for every one of the founder’s ten, and never posted rules or sample points', () => {
+    expect(Object.keys(COMPLETENESS_TABS).sort()).toEqual([...COMPLETENESS_FIELDS].sort());
+    expect(Object.keys(COMPLETENESS_TABS)).not.toContain('postedRules');
+    expect(Object.keys(COMPLETENESS_TABS)).not.toContain('samplePoints');
   });
 });
 
@@ -187,7 +149,7 @@ describe('the identity list', () => {
         activatedAt: undefined,
         shorelineM: undefined,
       },
-      { history: [], counts: { ...COUNTS, hasContours: null }, towns: null },
+      { history: [] },
     );
     expect(bare.access).toBeNull();
     expect(bare.boost).toEqual({ value: 0, note: null });
@@ -267,15 +229,22 @@ describe('asks and history', () => {
 
   it('names staff by first name and says what they did from the operator’s side', () => {
     const rows = bodyHistory(MASCOMA_HISTORY);
-    expect(rows[1]).toEqual({
+    expect(rows[2]).toEqual({
       id: 'h4',
-      at: MASCOMA_HISTORY[1]?.createdAt,
+      at: MASCOMA_HISTORY[2]?.createdAt,
       who: 'Teagan',
       what: 'Ruled on public access',
     });
     expect(
       bodyHistory([
-        { id: 'x', action: 'set_standing', targetType: 'waterbody', createdAt: 0, actor: null },
+        {
+          id: 'x',
+          action: 'set_standing',
+          targetType: 'waterbody',
+          targetId: 'b',
+          createdAt: 0,
+          actor: null,
+        },
       ])[0]?.who,
     ).toBeNull();
     expect(firstName('  Matt  Steinberg ')).toBe('Matt');
@@ -304,5 +273,104 @@ describe('clock words', () => {
     expect(historyTime(at, now, 'America/New_York')).toBe('22:00');
     expect(statusDate(at, 'America/New_York')).toBe('14 Oct 2026');
     expect(statusDate(at, 'UTC')).toBe('15 Oct 2026');
+  });
+});
+
+describe('the family’s history', () => {
+  const row = (over: Partial<HistoryAction>): HistoryAction => ({
+    id: 'r',
+    action: 'set_public_access',
+    targetType: 'waterbody',
+    targetId: MASCOMA_ID,
+    createdAt: on(9, 1),
+    actor: { displayName: 'Sarah Berman', username: 'sarah' },
+    ...over,
+  });
+
+  it('takes the body’s own row of a verb, never a bay’s or an absorbed body’s', () => {
+    const rows = [
+      row({ id: 'absorbed', targetId: 'other' }),
+      row({ id: 'bay', targetType: 'waterBodySubArea' }),
+      row({ id: 'own' }),
+    ];
+    expect(latestOnBody(rows, MASCOMA_ID, 'set_public_access')?.id).toBe('own');
+    expect(latestOnBody(rows.slice(0, 2), MASCOMA_ID, 'set_public_access')).toBeNull();
+  });
+
+  it('names nobody for a ruling no row read records — never a guess', () => {
+    const noRow = bodyIdentity(MASCOMA_RECORD, { history: [row({ targetId: 'absorbed' })] });
+    expect(noRow.access).toMatchObject({ badge: 'Accessible', by: null });
+    expect(noRow.boost.note).toBeNull();
+  });
+
+  it('counts the changes only when the read was whole; a capped read says how many it shows', () => {
+    const entries = bodyHistory(MASCOMA_HISTORY);
+    expect(historyHead({ entries, capped: false })).toBe('6 changes');
+    expect(historyHead({ entries: entries.slice(0, 1), capped: false })).toBe('1 change');
+    expect(historyHead({ entries: [], capped: false })).toBe('0 changes');
+    expect(historyHead({ entries, capped: true })).toBe('Latest 6');
+    expect(historyHead({ entries: [], capped: true })).toBeNull();
+  });
+
+  it('never writes a capped count as a total (property)', () => {
+    fc.assert(
+      fc.property(fc.nat({ max: 120 }), fc.boolean(), (n, capped) => {
+        const entries = Array.from({ length: n }, (_, i) => ({
+          id: String(i),
+          at: 0,
+          who: null,
+          what: 'x',
+        }));
+        const head = historyHead({ entries, capped });
+        if (capped) expect(head === null || /^Latest /.test(head)).toBe(true);
+        else expect(head).toMatch(/ changes?$/);
+      }),
+    );
+  });
+});
+
+describe('the outline’s trust', () => {
+  it('says since when and how, and nothing when neither is recorded', () => {
+    expect(
+      outlineTrust({ outlineTrustedSince: on(10, 12), outlineTrustedVia: 'campaign' }),
+    ).toEqual({ since: 'Since 12 Oct 2026', via: 'An import re-affirmed it' });
+    expect(
+      outlineTrust({ outlineTrustedSince: on(9, 3), outlineTrustedVia: 'approved' })?.via,
+    ).toBe('A moderator approved it');
+    expect(outlineTrust({ outlineTrustedSince: null, outlineTrustedVia: null })).toBeNull();
+    expect(outlineTrust({ outlineTrustedSince: on(9, 3), outlineTrustedVia: null })).toBeNull();
+  });
+});
+
+describe('a body that left', () => {
+  const base: HistoryAction = {
+    id: 'x',
+    action: 'reject_waterbody',
+    targetType: 'waterbody',
+    targetId: MASCOMA_ID,
+    createdAt: on(10, 2),
+    actor: { displayName: 'Teagan Atwater', username: 'teagan' },
+    reason: '  Drawn over the town beach  ',
+  };
+
+  it('says when, by whom and why it was rejected', () => {
+    expect(removalOf([base], MASCOMA_ID)).toEqual({
+      verb: 'Rejected',
+      when: '2 Oct 2026',
+      who: 'Teagan',
+      reason: 'Drawn over the town beach',
+    });
+  });
+
+  it('says a merge, the machine by no name, and no reason when it gave none', () => {
+    expect(
+      removalOf([{ ...base, action: 'merge_waterbody', actor: null, reason: ' ' }], MASCOMA_ID),
+    ).toEqual({ verb: 'Merged', when: '2 Oct 2026', who: null, reason: null });
+  });
+
+  it('finds nothing in another body’s rows, or in rows of other verbs', () => {
+    expect(removalOf([{ ...base, targetId: 'other' }], MASCOMA_ID)).toBeNull();
+    expect(removalOf([{ ...base, action: 'remove' }], MASCOMA_ID)).toBeNull();
+    expect(removalOf([], MASCOMA_ID)).toBeNull();
   });
 });

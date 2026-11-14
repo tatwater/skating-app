@@ -5,33 +5,24 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { KeysProvider } from '@/lib/keys';
 
-import { ShapeTabView } from '../tabs/shape/ShapeTab';
+import { stubJsdomAnimations } from '../tabs/jsdomStubs';
+
 import { BodyConsoleMissing, BodyConsoleView } from './BodyConsoleView';
 import {
   BODY_NOW,
+  CAPPED_HISTORY,
   MASCOMA_ASKS,
+  MASCOMA_COMPLETENESS,
   MASCOMA_HISTORY_ENTRIES,
   MASCOMA_IDENTITY,
-  MASCOMA_IDENTITY_AS_READ,
+  MASCOMA_TOWNS,
+  MASCOMA_TRUST,
 } from './bodyFixtures';
 import { attentionTabs } from './bodyModel';
+import type { ReadFailure } from './consoleReads';
 import { NotBuiltTab } from './NotBuiltTab';
 
-// jsdom has no Web Animations; the kit skeleton's shimmer asks for it.
-beforeAll(() => {
-  if (!('animate' in Element.prototype)) {
-    Object.defineProperty(Element.prototype, 'animate', {
-      configurable: true,
-      value: () => ({ cancel: () => {}, finished: Promise.resolve() }),
-    });
-  }
-  if (!('getAnimations' in Element.prototype)) {
-    Object.defineProperty(Element.prototype, 'getAnimations', {
-      configurable: true,
-      value: () => [],
-    });
-  }
-});
+beforeAll(stubJsdomAnimations);
 
 function Page(props: Partial<Parameters<typeof BodyConsoleView>[0]> & { panel?: ReactNode }) {
   const { panel, ...rest } = props;
@@ -39,6 +30,9 @@ function Page(props: Partial<Parameters<typeof BodyConsoleView>[0]> & { panel?: 
     <KeysProvider>
       <BodyConsoleView
         identity={MASCOMA_IDENTITY}
+        completeness={MASCOMA_COMPLETENESS}
+        towns={MASCOMA_TOWNS}
+        trust={MASCOMA_TRUST}
         asks={MASCOMA_ASKS}
         history={MASCOMA_HISTORY_ENTRIES}
         lit={null}
@@ -46,7 +40,7 @@ function Page(props: Partial<Parameters<typeof BodyConsoleView>[0]> & { panel?: 
         tab="shape"
         onTabChange={() => {}}
         onOpenAsk={() => {}}
-        attention={attentionTabs(MASCOMA_IDENTITY.completeness)}
+        attention={attentionTabs(MASCOMA_COMPLETENESS.missing)}
         tabPanel={panel ?? <p>Shape</p>}
         map={<div>map</div>}
         {...rest}
@@ -114,17 +108,97 @@ describe('BodyConsoleView', () => {
     expect(onTabChange).toHaveBeenCalledWith('hazards');
   });
 
-  it('draws what was never recorded as absent', () => {
-    render(<Page identity={MASCOMA_IDENTITY_AS_READ} />);
+  it('draws the stored completeness, the towns and the outline’s trust', () => {
+    render(<Page />);
+    expect(screen.getByRole('meter', { name: /Complete · 9 \/ 10/ })).toHaveAttribute(
+      'aria-valuenow',
+      '9',
+    );
+    expect(screen.getByText('Missing bathymetry')).toBeInTheDocument();
+    expect(screen.getByText('Enfield, NH')).toBeInTheDocument();
+    expect(screen.getByText('Trusted')).toBeInTheDocument();
+    expect(screen.getByText('Since 12 Oct 2026')).toBeInTheDocument();
+    expect(screen.getByText('An import re-affirmed it')).toBeInTheDocument();
+    expect(screen.getByText('6 changes')).toBeInTheDocument();
+  });
+
+  it('draws what was never recorded as absent — never a zero, never a guess', () => {
+    render(<Page completeness={null} towns={null} trust={null} attention={new Set()} />);
     expect(screen.queryByText('Towns')).toBeNull();
+    expect(screen.queryByText('Trusted')).toBeNull();
+    expect(screen.queryByRole('meter', { name: /Complete/ })).toBeNull();
+    expect(screen.getByText('Not recorded yet')).toBeInTheDocument();
     expect(screen.queryByText(/^Missing/)).toBeNull();
-    expect(screen.getByRole('meter', { name: /Complete/ })).toHaveAttribute('aria-valuenow', '9');
+    expect(screen.queryByText('Missing something')).toBeNull();
   });
 
   it('holds every block’s place while it loads', () => {
-    render(<Page identity={undefined} asks={undefined} history={undefined} />);
+    const { container } = render(
+      <Page
+        identity={undefined}
+        completeness={undefined}
+        towns={undefined}
+        trust={undefined}
+        asks={undefined}
+        history={undefined}
+      />,
+    );
     expect(screen.queryByRole('heading', { level: 1 })).toBeNull();
     expect(screen.getByRole('heading', { name: 'Asked of this body' })).toBeInTheDocument();
+    expect(container.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThan(1);
+  });
+
+  it('holds the record’s own blocks while the frame’s other reads load', () => {
+    const { container } = render(
+      <Page completeness={undefined} towns={undefined} trust={undefined} />,
+    );
+    expect(screen.getByRole('heading', { level: 1, name: 'Mascoma Lake' })).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="body-complete"]')).toHaveAttribute('aria-busy');
+    expect(screen.getByText('Towns')).toBeInTheDocument();
+    expect(screen.queryByText('Enfield, NH')).toBeNull();
+  });
+
+  it('says in its own place each read that failed, and tries it again', async () => {
+    const user = userEvent.setup();
+    const failure = (): ReadFailure => ({ failed: true, retry: vi.fn() });
+    const [complete, extras, asks, history] = [failure(), failure(), failure(), failure()];
+    render(
+      <Page completeness={complete} towns={extras} trust={extras} asks={asks} history={history} />,
+    );
+    expect(screen.getByText('Completeness couldn’t be read')).toBeInTheDocument();
+    expect(
+      screen.getByText('The towns and the outline’s trust couldn’t be read'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('What is asked of this body couldn’t be read')).toBeInTheDocument();
+    expect(screen.getByText('The history couldn’t be read')).toBeInTheDocument();
+    const buttons = screen.getAllByRole('button', { name: 'Try again' });
+    expect(buttons).toHaveLength(4);
+    for (const b of buttons) await user.click(b);
+    for (const f of [complete, extras, asks, history]) expect(f.retry).toHaveBeenCalledTimes(1);
+    // The record itself still stands.
+    expect(screen.getByRole('heading', { level: 1, name: 'Mascoma Lake' })).toBeInTheDocument();
+  });
+
+  it('never counts the asks, nor draws them as whole, when more wait than were read', () => {
+    render(<Page asksMore />);
+    expect(screen.getByText('More is asked of this body than is shown here.')).toBeInTheDocument();
+    const slug = screen.getByRole('heading', { name: 'Asked of this body' }).parentElement;
+    expect(slug?.textContent).not.toMatch(/3/);
+  });
+
+  it('never draws a capped history as whole', () => {
+    render(<Page history={CAPPED_HISTORY} />);
+    expect(screen.getByText('Latest 6')).toBeInTheDocument();
+    expect(screen.queryByText(/changes?$/)).toBeNull();
+    expect(screen.getByText('More history exists than is shown here.')).toBeInTheDocument();
+  });
+
+  it('says an empty history is empty, and leaves History out without the audit trail', () => {
+    const { rerender } = render(<Page history={{ entries: [], capped: false }} />);
+    expect(screen.getByText('Nothing recorded')).toBeInTheDocument();
+    expect(screen.getByText('0 changes')).toBeInTheDocument();
+    rerender(<Page history={null} />);
+    expect(screen.queryByRole('heading', { name: 'History' })).toBeNull();
   });
 
   it('reads the boost but can’t move it without the role', () => {
@@ -143,48 +217,14 @@ describe('the tab slots', () => {
     );
   });
 
-  it('says a missing body is missing, and an unlisted one where to go', () => {
+  it('says a missing body is missing, and a body whose read failed so, with Try again', async () => {
+    const user = userEvent.setup();
+    const onRetry = vi.fn();
     const { rerender } = render(<BodyConsoleMissing state="missing" />);
     expect(screen.getByText(/No such body/)).toBeInTheDocument();
-    rerender(<BodyConsoleMissing state="unlisted" oldEditorHref="/admin/water/x" />);
-    expect(screen.getByRole('link', { name: 'Old editor →' })).toBeInTheDocument();
-  });
-});
-
-describe('ShapeTabView', () => {
-  const view = (onAddBay?: (w: string) => void, onLitChange = vi.fn()) => (
-    <KeysProvider>
-      <ShapeTabView
-        outline={undefined}
-        bays={[{ id: 'bay:n', name: 'Mascoma North', acres: '612', sub: null, attention: null }]}
-        lit={null}
-        onLitChange={onLitChange}
-        {...(onAddBay ? { onAddBay } : {})}
-      />
-    </KeysProvider>
-  );
-
-  it('acts on its keys only while its pane has focus', async () => {
-    const user = userEvent.setup();
-    const onAddBay = vi.fn();
-    render(view(onAddBay));
-    await user.keyboard('c');
-    expect(onAddBay).not.toHaveBeenCalled();
-    screen.getAllByRole('button')[0]?.focus();
-    await user.keyboard('f');
-    expect(onAddBay).toHaveBeenCalledWith('freehand');
-  });
-
-  it('rests its ways disabled when no tool can take them', () => {
-    render(view());
-    for (const b of screen.getAllByRole('button', { name: /Draw|Paste/ })) expect(b).toBeDisabled();
-  });
-
-  it('lights a bay from its row, and puts it out again', async () => {
-    const user = userEvent.setup();
-    const onLitChange = vi.fn();
-    render(view(undefined, onLitChange));
-    await user.click(screen.getByText('Mascoma North'));
-    expect(onLitChange).toHaveBeenCalledWith('bay:n');
+    rerender(<BodyConsoleMissing state="failed" onRetry={onRetry} />);
+    expect(screen.getByText('This body couldn’t be read')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
   });
 });

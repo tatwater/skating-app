@@ -1,8 +1,11 @@
-import { type ReactNode, useRef } from 'react';
+import { cloneElement, type ReactElement, type ReactNode, useRef } from 'react';
 
 import { Tag } from '@/components/kit/badge';
+import { buttonVariants } from '@/components/kit/button';
 import { EntryTile } from '@/components/kit/entry-tile';
 import { KeyValueList, KeyValueRow } from '@/components/kit/grid-list';
+import { ListEnd } from '@/components/kit/list-end';
+import { Note } from '@/components/kit/note';
 import { Section } from '@/components/kit/section-slug';
 import { Skeleton } from '@/components/kit/skeleton';
 import {
@@ -13,10 +16,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/kit/table';
+import { UnavailableButton } from '@/components/kit/unavailable-button';
 import { usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
 
-import type { ShapeBay, ShapeOutline } from './shapeModel';
+import { isFailed, type Loadable, type ReadFailure } from '../../frame/consoleReads';
+import { ReadFailed } from '../../frame/kit-candidates/read-failed';
+import type { ShapeBay, ShapeMerge, ShapeOutline } from './shapeModel';
 
 /**
  * The Shape tab's default view (5.4.1 Body | Shape): the **Outline** (its source written out, its
@@ -26,14 +32,28 @@ import type { ShapeBay, ShapeOutline } from './shapeModel';
  * Props only. The ways to draw are the bay mode's to build (task and map modes wait, the founder's
  * Review 12 call); until then the caller passes `onAddBay` to hand each way to the tool that has it,
  * or leaves it out and the ways rest disabled. Their keys act only while this pane has focus.
+ *
+ * **Merge into another body** shows only when another body touches this one (Review 13 #8), or when
+ * the touching test couldn't say: each touching body is listed (a press lights it on the map), and
+ * the merge itself is *Not available yet* until the console's merge tool exists.
+ *
+ * Each block draws its own read: a skeleton while it loads, a note with *Try again* if it failed.
  */
 
 export type BayWay = 'chord' | 'freehand' | 'paste';
 
 export interface ShapeTabViewProps {
-  /** `undefined` while it loads. */
-  outline: ShapeOutline | undefined;
-  bays: readonly ShapeBay[] | undefined;
+  outline: Loadable<ShapeOutline>;
+  bays: Loadable<readonly ShapeBay[]>;
+  /** How each bay was made couldn't be read: the rows say only what the bays read says. */
+  baysMadeFailed?: ReadFailure | null;
+  /**
+   * The Merge block; `null` when no body touches this one (no block), `undefined` while the touching
+   * test is read (no block yet: it is drawn only once there is something to say).
+   */
+  merge?: Loadable<ShapeMerge | null>;
+  /** A touching body's console, as a router link (`<Link to="/admin/body/$id" … />`). */
+  bodyLink?: (id: string) => ReactElement;
   lit: string | null;
   onLitChange: (lit: string | null) => void;
   onAddBay?: (way: BayWay) => void;
@@ -49,11 +69,15 @@ const WAYS: readonly { way: BayWay; name: string; sub: string; key: 'C' | 'F' | 
 export function ShapeTabView({
   outline,
   bays,
+  baysMadeFailed = null,
+  merge,
+  bodyLink,
   lit,
   onLitChange,
   onAddBay,
   className,
 }: ShapeTabViewProps) {
+  const readyBays = bays === undefined || isFailed(bays) ? undefined : bays;
   const root = useRef<HTMLDivElement | null>(null);
   usePaneKeys(
     root,
@@ -71,7 +95,11 @@ export function ShapeTabView({
       className={cn('flex flex-col gap-(--space-8)', className)}
     >
       <Section title="Outline">
-        {outline === undefined ? (
+        {isFailed(outline) ? (
+          <ReadFailed data-for="shape-outline" onRetry={outline.retry}>
+            The outline couldn’t be read
+          </ReadFailed>
+        ) : outline === undefined ? (
           <Skeleton className="h-(--space-20)" />
         ) : (
           <KeyValueList keyWidth="6.5rem" className="gap-y-(--space-2_5)">
@@ -90,10 +118,16 @@ export function ShapeTabView({
         )}
       </Section>
 
-      <Section title="Bays" {...(bays !== undefined ? { count: bays.length } : {})}>
-        {bays === undefined ? (
+      <Section title="Bays" {...(readyBays !== undefined ? { count: readyBays.length } : {})}>
+        {isFailed(bays) ? (
+          <ReadFailed data-for="shape-bays" onRetry={bays.retry}>
+            The bays couldn’t be read
+          </ReadFailed>
+        ) : readyBays === undefined ? (
           <Skeleton className="h-(--space-14)" />
-        ) : bays.length === 0 ? null : (
+        ) : readyBays.length === 0 ? (
+          <ListEnd>No bays</ListEnd>
+        ) : (
           <Table inset>
             <TableHeader>
               <tr>
@@ -104,7 +138,7 @@ export function ShapeTabView({
               </tr>
             </TableHeader>
             <TableBody>
-              {bays.map((b) => (
+              {readyBays.map((b) => (
                 <TableRow
                   key={b.id}
                   clickable
@@ -130,6 +164,15 @@ export function ShapeTabView({
               ))}
             </TableBody>
           </Table>
+        )}
+        {baysMadeFailed !== null && readyBays !== undefined && readyBays.length > 0 && (
+          <ReadFailed
+            data-for="shape-bays-made"
+            className="mt-(--space-3)"
+            onRetry={baysMadeFailed.retry}
+          >
+            How each bay was made couldn’t be read
+          </ReadFailed>
         )}
       </Section>
 
@@ -157,7 +200,105 @@ export function ShapeTabView({
           ))}
         </div>
       </Section>
+
+      {merge !== undefined && merge !== null && (
+        <MergeSection merge={merge} lit={lit} onLitChange={onLitChange} bodyLink={bodyLink} />
+      )}
     </div>
+  );
+}
+
+/**
+ * The rare merge, with the shape (it changes what the body is): the bodies that touch this one,
+ * each lighting its outline on the map, and the merge itself, not built here yet.
+ */
+function MergeSection({
+  merge,
+  lit,
+  onLitChange,
+  bodyLink,
+}: {
+  merge: Loadable<ShapeMerge>;
+  lit: string | null;
+  onLitChange: (lit: string | null) => void;
+  bodyLink: ((id: string) => ReactElement) | undefined;
+}) {
+  if (isFailed(merge)) {
+    return (
+      <Section title="Merge into another body">
+        <ReadFailed data-for="shape-merge" onRetry={merge.retry}>
+          Whether another body touches this one couldn’t be read
+        </ReadFailed>
+      </Section>
+    );
+  }
+  if (merge === undefined) return null;
+  const touching = merge.touching;
+  return (
+    <Section title="Merge into another body" data-slot="shape-merge">
+      <div className="flex flex-col items-start gap-(--space-3)">
+        <p className="m-0 text-assist leading-list text-fg3">
+          For a lake drawn twice: everything on it moves to the body you pick.
+        </p>
+        {isFailed(touching) ? (
+          <ReadFailed data-for="shape-touching" onRetry={touching.retry}>
+            The bodies that touch this one couldn’t be read
+          </ReadFailed>
+        ) : touching === undefined ? (
+          <Skeleton className="h-(--space-10) w-full" />
+        ) : (
+          touching.length > 0 && (
+            <Table inset className="w-full">
+              <TableHeader>
+                <tr>
+                  <TableHead sticky={false}>Touches</TableHead>
+                  <TableHead sticky={false} align="end">
+                    <span className="sr-only">Open</span>
+                  </TableHead>
+                </tr>
+              </TableHeader>
+              <TableBody>
+                {touching.map((n) => (
+                  <TableRow
+                    key={n.id}
+                    clickable
+                    selected={n.lit === lit}
+                    data-id={n.lit}
+                    onClick={() => onLitChange(n.lit === lit ? null : n.lit)}
+                  >
+                    <TableCell lead>{n.name}</TableCell>
+                    <TableCell align="end">
+                      {bodyLink !== undefined &&
+                        cloneElement(
+                          bodyLink(n.id) as ReactElement<{
+                            className?: string;
+                            children?: ReactNode;
+                            onClick?: (e: { stopPropagation: () => void }) => void;
+                          }>,
+                          {
+                            className: buttonVariants({ variant: 'link', size: 'row' }),
+                            children: 'Open →',
+                            // Opening it isn't lighting it.
+                            onClick: (e) => e.stopPropagation(),
+                          },
+                        )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )
+        )}
+        {merge.note !== null && <Note data-slot="shape-merge-note">{merge.note}</Note>}
+        <UnavailableButton
+          variant="outline"
+          size="sm"
+          what="Merging from the console comes with its merge tool. The duplicates queue merges bodies today."
+        >
+          Choose a body
+        </UnavailableButton>
+      </div>
+    </Section>
   );
 }
 

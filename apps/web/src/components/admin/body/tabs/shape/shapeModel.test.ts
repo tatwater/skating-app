@@ -1,8 +1,20 @@
 import { describe, expect, it } from 'vitest';
 
-import { MASCOMA_SUB_AREAS } from '../../frame/bodyFixtures';
+import { MASCOMA_BAY_PROVENANCE, MASCOMA_SUB_AREAS, on } from '../../frame/bodyFixtures';
+import type { ReadFailure } from '../../frame/consoleReads';
 import { MASCOMA_POLYGON } from '../../frame/mascomaFixtures';
-import { campaignText, shapeBays, shapeMapScene, shapeOutline, vertexCount } from './shapeModel';
+import {
+  CAPPED_NONE,
+  CAPPED_SOME,
+  campaignText,
+  mergeFailed,
+  NOT_CHECKED,
+  shapeBays,
+  shapeMapScene,
+  shapeMerge,
+  shapeOutline,
+  vertexCount,
+} from './shapeModel';
 
 describe('the outline', () => {
   it('writes its source out and counts its rings and vertices', () => {
@@ -58,11 +70,44 @@ describe('the outline', () => {
 });
 
 describe('the bays', () => {
-  it('lists the listed bays in whole acres, addressed for ?lit=', () => {
-    expect(shapeBays(MASCOMA_SUB_AREAS)).toEqual([
-      { id: 'bay:bay-north', name: 'Mascoma North', acres: '612', sub: null, attention: null },
-      { id: 'bay:bay-south', name: 'Mascoma South', acres: '531', sub: null, attention: null },
+  it('lists the listed bays in whole acres, addressed for ?lit=, each saying how it was made', () => {
+    expect(shapeBays(MASCOMA_SUB_AREAS, MASCOMA_BAY_PROVENANCE)).toEqual([
+      {
+        id: 'bay:bay-north',
+        name: 'Mascoma North',
+        acres: '612',
+        sub: 'Seeded · 2 Sep · Teagan',
+        attention: null,
+      },
+      {
+        id: 'bay:bay-south',
+        name: 'Mascoma South',
+        acres: '531',
+        sub: 'Seeded · 2 Sep · Teagan',
+        attention: null,
+      },
     ]);
+  });
+
+  it('says only the day while how each was made is unread, and each way in its own words', () => {
+    expect(shapeBays(MASCOMA_SUB_AREAS).map((b) => b.sub)).toEqual([
+      'Added · 2 Sep',
+      'Added · 2 Sep',
+    ]);
+    const bay = { _id: 'a', name: 'A', surfaceAreaSqM: 4047, removed: false, createdAt: on(10, 1) };
+    const made = (createdVia: 'chord' | 'drawn' | 'catalog' | null, createdBy = null) => [
+      { subAreaId: 'a' as never, createdAt: on(10, 1), createdVia, createdBy },
+    ];
+    expect(shapeBays([bay], made('chord'))[0]?.sub).toBe('Drawn by chord · 1 Oct');
+    expect(shapeBays([bay], made('drawn'))[0]?.sub).toBe('Drawn · 1 Oct');
+    expect(shapeBays([bay], made('catalog'))[0]?.sub).toBe('From the catalog · 1 Oct');
+    // No creating row: a chord's stored mouth still says how; else only when.
+    expect(shapeBays([bay], made(null))[0]?.sub).toBe('Added · 1 Oct');
+    expect(shapeBays([{ ...bay, mouth: {} }], made(null))[0]?.sub).toBe('Drawn by chord · 1 Oct');
+    // Nothing recorded at all: no sub-line, never a guess.
+    expect(
+      shapeBays([{ _id: 'b', name: 'B', surfaceAreaSqM: 4047, removed: false }])[0]?.sub,
+    ).toBeNull();
   });
 
   it('leaves a removed bay to History, and says what waits on a person', () => {
@@ -85,9 +130,45 @@ describe('the bays', () => {
   });
 });
 
+describe('merge', () => {
+  const failure: ReadFailure = { failed: true, retry: () => {} };
+  const pond = { id: 'k1', name: 'Crystal Lake', polygon: MASCOMA_POLYGON };
+
+  it('shows no block only when the test ran over everything near and found nothing', () => {
+    expect(shapeMerge({ touchingBodyIds: [], touchingCapped: false }, [])).toBeNull();
+  });
+
+  it('keeps the block, and says so, when the test couldn’t run or stopped short', () => {
+    expect(shapeMerge({ touchingBodyIds: null, touchingCapped: false }, undefined)).toEqual({
+      touching: [],
+      note: NOT_CHECKED,
+    });
+    expect(shapeMerge({ touchingBodyIds: [], touchingCapped: true }, [])).toEqual({
+      touching: [],
+      note: CAPPED_NONE,
+    });
+    expect(shapeMerge({ touchingBodyIds: ['k1'], touchingCapped: true }, [pond])?.note).toBe(
+      CAPPED_SOME,
+    );
+  });
+
+  it('lists each touching body, addressed for ?lit=, as its reads land', () => {
+    const facts = { touchingBodyIds: ['k1'], touchingCapped: false };
+    expect(shapeMerge(facts, [pond])).toEqual({
+      touching: [{ lit: 'neighbor:k1', id: 'k1', name: 'Crystal Lake' }],
+      note: null,
+    });
+    expect(shapeMerge(facts, undefined)?.touching).toBeUndefined();
+    const failed = shapeMerge(facts, failure);
+    expect(failed?.touching).toBe(failure);
+    expect(failed !== null && mergeFailed(failed)).toBe(true);
+  });
+});
+
 describe('the map', () => {
-  it('draws nothing of its own but lights a lit bay', () => {
+  it('draws nothing of its own but lights a lit bay or neighbor', () => {
     expect(shapeMapScene(null, 'bay:x')).toEqual({ items: [], lit: 'bay:x' });
+    expect(shapeMapScene(null, 'neighbor:x')).toEqual({ items: [], lit: 'neighbor:x' });
     expect(shapeMapScene(null, 'ask:x')).toEqual({ items: [], lit: null });
     expect(shapeMapScene(null, null)).toEqual({ items: [], lit: null });
   });

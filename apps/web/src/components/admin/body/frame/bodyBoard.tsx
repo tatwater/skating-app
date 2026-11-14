@@ -14,21 +14,27 @@ import { seasonTape } from '../../shell/consoleTime';
 import { BodyMapStillView } from '../map/BodyMap';
 import { mergeScenes } from '../map/bodyScene';
 import type { BodyMapScene } from '../map/mapDescriptors';
-import { ShapeTabView } from '../tabs/shape/ShapeTab';
+import { ShapeTabView, type ShapeTabViewProps } from '../tabs/shape/ShapeTab';
 import { shapeBays, shapeMapScene, shapeOutline } from '../tabs/shape/shapeModel';
+import { BodyConsoleGone, type BodyConsoleGoneProps } from './BodyConsoleGone';
 import { BodyConsoleView, type BodyConsoleViewProps } from './BodyConsoleView';
 import {
   BODY_NOW,
   MASCOMA_ASKS,
+  MASCOMA_BAY_PROVENANCE,
   MASCOMA_BOUNDS,
+  MASCOMA_COMPLETENESS,
   MASCOMA_HISTORY_ENTRIES,
   MASCOMA_IDENTITY,
   MASCOMA_RECORD,
   MASCOMA_SCENE,
   MASCOMA_SUB_AREAS,
+  MASCOMA_TOWNS,
+  MASCOMA_TRUST,
 } from './bodyFixtures';
 import { attentionTabs } from './bodyModel';
 import type { BodyTabKey } from './bodySearch';
+import { isFailed } from './consoleReads';
 import { MASCOMA_POLYGON } from './mascomaFixtures';
 import { NotBuiltTab } from './NotBuiltTab';
 import { BODY_TAB_LABELS } from './tabRegistry';
@@ -56,10 +62,19 @@ function Measured({ children }: { children: (w: number, h: number) => ReactNode 
 }
 
 export type BodyBoardProps = Partial<
-  Pick<BodyConsoleViewProps, 'identity' | 'asks' | 'history' | 'initiallyFolded'>
+  Pick<
+    BodyConsoleViewProps,
+    'identity' | 'completeness' | 'towns' | 'trust' | 'asks' | 'history' | 'initiallyFolded'
+  >
 > & {
+  /** The Shape tab's view, over Mascoma's own (its merge block, a failed read). */
+  shape?: Partial<ShapeTabViewProps>;
+  /** The map's foot (a notice that some of its reads failed). */
+  foot?: ReactNode;
   /** Every read still on its way. */
   loading?: boolean;
+  /** The record in, completeness, the towns and the trust still on their way. */
+  extrasLoading?: boolean;
   /** The open tab (Shape by default). */
   tab?: BodyTabKey;
   /** The lit item. */
@@ -71,28 +86,8 @@ export type BodyBoardProps = Partial<
   className?: string;
 };
 
-/** The Body console in the console's frame, on the boards' clock. */
-export function BodyBoard({
-  identity: givenIdentity = MASCOMA_IDENTITY,
-  asks: givenAsks = MASCOMA_ASKS,
-  history: givenHistory = MASCOMA_HISTORY_ENTRIES,
-  loading = false,
-  initiallyFolded,
-  tab: initialTab = 'shape',
-  lit: initialLit = null,
-  hoverId = null,
-  tabScene = null,
-  className = 'h-[56.25rem] w-[90rem]',
-}: BodyBoardProps) {
-  const identity = loading ? undefined : givenIdentity;
-  const asks = loading ? undefined : givenAsks;
-  const history = loading ? undefined : givenHistory;
-  const [tab, setTab] = useState<BodyTabKey>(initialTab);
-  const [lit, setLit] = useState<string | null>(initialLit);
-  const scene = mergeScenes(
-    { ...MASCOMA_SCENE, lit },
-    tabScene ?? (tab === 'shape' ? shapeMapScene(null, lit) : null),
-  );
+/** The console's frame around a page, as the boards draw it. */
+function BoardShell({ className, children }: { className: string; children: ReactNode }) {
   return (
     <ConsoleShell
       className={className}
@@ -110,8 +105,60 @@ export function BodyBoard({
       onSearch={() => {}}
       lamp={<StatusLamp>Convex live</StatusLamp>}
     >
+      {children}
+    </ConsoleShell>
+  );
+}
+
+/** A body the console can't open, in the console's frame, on the boards' clock. */
+export function BodyGoneBoard({
+  className = 'h-[56.25rem] w-[90rem]',
+  ...props
+}: Omit<BodyConsoleGoneProps, 'now'> & { className?: string }) {
+  return (
+    <BoardShell className={className}>
+      <BodyConsoleGone {...props} now={BODY_NOW} onReturn={() => {}} />
+    </BoardShell>
+  );
+}
+
+/** The Body console in the console's frame, on the boards' clock. */
+export function BodyBoard({
+  identity: givenIdentity = MASCOMA_IDENTITY,
+  completeness: givenCompleteness = MASCOMA_COMPLETENESS,
+  towns: givenTowns = MASCOMA_TOWNS,
+  trust: givenTrust = MASCOMA_TRUST,
+  asks: givenAsks = MASCOMA_ASKS,
+  history: givenHistory = MASCOMA_HISTORY_ENTRIES,
+  shape,
+  foot,
+  loading = false,
+  extrasLoading = false,
+  initiallyFolded,
+  tab: initialTab = 'shape',
+  lit: initialLit = null,
+  hoverId = null,
+  tabScene = null,
+  className = 'h-[56.25rem] w-[90rem]',
+}: BodyBoardProps) {
+  const identity = loading ? undefined : givenIdentity;
+  const completeness = loading || extrasLoading ? undefined : givenCompleteness;
+  const asks = loading ? undefined : givenAsks;
+  const history = loading ? undefined : givenHistory;
+  const done = completeness == null || isFailed(completeness) ? null : completeness;
+  const [tab, setTab] = useState<BodyTabKey>(initialTab);
+  const [lit, setLit] = useState<string | null>(initialLit);
+  const scene = mergeScenes(
+    { ...MASCOMA_SCENE, lit },
+    tabScene ?? (tab === 'shape' ? shapeMapScene(null, lit) : null),
+  );
+  return (
+    <BoardShell className={className}>
       <BodyConsoleView
         identity={identity}
+        completeness={completeness}
+        towns={loading || extrasLoading ? undefined : givenTowns}
+        trust={loading || extrasLoading ? undefined : givenTrust}
         asks={asks}
         history={history}
         {...(initiallyFolded !== undefined ? { initiallyFolded } : {})}
@@ -126,7 +173,7 @@ export function BodyBoard({
           setTab(ask.tab);
           setLit(ask.id);
         }}
-        attention={identity ? attentionTabs(identity.completeness) : new Set()}
+        attention={attentionTabs(done?.missing ?? [])}
         onBoostCommit={() => {}}
         onReturn={() => {}}
         status="Last campaign 12 Oct"
@@ -140,6 +187,7 @@ export function BodyBoard({
                 width={w}
                 height={h}
                 hoverId={hoverId}
+                foot={foot}
               />
             )}
           </Measured>
@@ -153,16 +201,17 @@ export function BodyBoard({
                 geometrySource: 'osm',
                 lastCampaignId: 'a07a-20261012',
               })}
-              bays={shapeBays(MASCOMA_SUB_AREAS)}
+              bays={shapeBays(MASCOMA_SUB_AREAS, MASCOMA_BAY_PROVENANCE)}
               lit={lit}
               onLitChange={setLit}
               onAddBay={() => {}}
+              {...shape}
             />
           ) : (
             <NotBuiltTab label={BODY_TAB_LABELS[tab]} oldEditorHref="#old-editor" />
           )
         }
       />
-    </ConsoleShell>
+    </BoardShell>
   );
 }
