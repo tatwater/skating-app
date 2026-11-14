@@ -96,6 +96,7 @@ import { api } from '@skating/convex/api';
 import { getFunctionName } from 'convex/server';
 import { resetConsoleReads } from '@/components/admin/reads/consoleReads';
 import { KeysProvider } from '@/lib/keys';
+import { readOpened } from '../../bodies/openedRecently';
 import { stubJsdomAnimations } from '../tabs/jsdomStubs';
 import { SHAPE_TAB } from '../tabs/shape/ShapeTabRoute';
 import { BodyConsoleRoute } from './BodyConsoleRoute';
@@ -315,6 +316,15 @@ describe('BodyConsoleRoute', () => {
     set(api.bodyConsole.consoleExtras, new Error('extras down'));
     render(<Mounted />);
     expect(screen.getByText('The map couldn’t read the bodies that touch it')).toBeInTheDocument();
+  });
+
+  it('remembers, in this browser only, that the body was opened', () => {
+    window.localStorage.clear();
+    const id = 'k17mascoma00000000000000000000000';
+    mocks.params = { id };
+    set(api.waterBodies.get, { available: true, body: { ...MASCOMA_RECORD, _id: id } });
+    render(<Mounted />);
+    expect(readOpened()).toEqual([id]);
   });
 
   it('opens the tab the URL names, and a slot with no tab says so', () => {

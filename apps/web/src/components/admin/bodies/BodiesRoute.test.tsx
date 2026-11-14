@@ -104,6 +104,7 @@ import { resetConsoleReads } from '../reads/consoleReads';
 import { BODY_PATH, BodiesRoute, resetShownMemory, startingPageSize } from './BodiesRoute';
 import { resetScrollMemory } from './BodiesTable';
 import { listKey, queryOf } from './bodiesSearch';
+import { rememberOpened } from './openedRecently';
 
 const ACRE = 4046.8564224;
 const ID = 'k17abcdefghijklmnopqrstuvwxyz012';
@@ -175,6 +176,7 @@ const row = (id: string, name: string, over: Record<string, unknown> = {}) => ({
 beforeEach(() => {
   resetScrollMemory();
   resetShownMemory();
+  window.localStorage.clear();
   mocks.search = {};
   mocks.navigate.mockReset();
   mocks.loadMore.mockReset();
@@ -432,11 +434,11 @@ describe('the list', () => {
     );
   });
 
-  it('reads nothing for a lane no server read lists, nor for a viewer without the library', () => {
+  it('asks no server list for this browser’s own lane, nor anything for a viewer without the library', () => {
     mocks.search = { lane: 'opened' };
     const { unmount } = mount();
     expect(mocks.pagedCalls).toHaveLength(0);
-    expect(screen.getByText('Not recorded yet')).toBeInTheDocument();
+    expect(screen.getByText('None here')).toBeInTheDocument();
     unmount();
     mocks.search = {};
     mocks.denied = new Set(['body.read']);
@@ -582,6 +584,118 @@ describe('the counts', () => {
       .split('true')
       .filter((r) => r !== '');
     expect(runs).toHaveLength(1);
+  });
+});
+
+describe('Opened recently, this browser’s own', () => {
+  const A = 'k17aaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const B = 'k17bbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  const body = (id: string, bodyName: string) => ({
+    available: true,
+    body: { _id: id, name: bodyName, type: 'lakePond', states: ['NH'], surfaceAreaSqM: 10 * ACRE },
+  });
+
+  it('lists the bodies this browser opened, newest first, each read by id — no server lane', () => {
+    rememberOpened(A);
+    rememberOpened(B);
+    mocks.search = { lane: 'opened' };
+    const bodies: Record<string, unknown> = {
+      [A]: body(A, 'Mascoma Lake'),
+      [B]: body(B, 'Lake Morey'),
+    };
+    mocks.results.set(
+      name(api.waterBodies.get),
+      (a: { waterBodyId: string }) => bodies[a.waterBodyId],
+    );
+    mount();
+    expect(mocks.pagedCalls).toHaveLength(0);
+    expect([...grid().querySelectorAll('[data-slot=body-name]')].map((n) => n.textContent)).toEqual(
+      ['Lake Morey', 'Mascoma Lake'],
+    );
+    expect(within(lanes()).getByRole('button', { name: /^Opened recently/ })).toHaveTextContent(
+      '2',
+    );
+    // Nothing narrows or orders a list the server doesn't answer.
+    expect(screen.getByRole('button', { name: /Filter/ })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Acres' })).toBeNull();
+  });
+
+  it('holds while a body loads, and leaves out one that can’t be opened', () => {
+    rememberOpened(A);
+    rememberOpened(B);
+    mocks.search = { lane: 'opened' };
+    const bodies: Record<string, unknown> = { [A]: body(A, 'Mascoma Lake') };
+    mocks.results.set(
+      name(api.waterBodies.get),
+      (a: { waterBodyId: string }) => bodies[a.waterBodyId],
+    );
+    const { rerender } = mount();
+    expect(grid()).toHaveAttribute('aria-busy', 'true');
+    bodies[B] = { available: false };
+    rerender(view());
+    expect([...grid().querySelectorAll('[data-slot=body-name]')].map((n) => n.textContent)).toEqual(
+      ['Mascoma Lake'],
+    );
+    expect(screen.getByText('All 1')).toBeInTheDocument();
+  });
+
+  it('says a failed read failed — never a body quietly left out — and tries it again', async () => {
+    rememberOpened(A);
+    rememberOpened(B);
+    mocks.search = { lane: 'opened' };
+    const bodies: Record<string, unknown> = {
+      [A]: body(A, 'Mascoma Lake'),
+      [B]: new Error('nope'),
+    };
+    mocks.results.set(
+      name(api.waterBodies.get),
+      (a: { waterBodyId: string }) => bodies[a.waterBodyId],
+    );
+    mount();
+    expect(screen.getByText('Couldn’t read this list')).toBeInTheDocument();
+    expect(
+      within(lanes()).getByRole('button', { name: /^Opened recently/ }).textContent,
+    ).not.toMatch(/\d/);
+    bodies[B] = body(B, 'Lake Morey');
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect([...grid().querySelectorAll('[data-slot=body-name]')].map((n) => n.textContent)).toEqual(
+      ['Lake Morey', 'Mascoma Lake'],
+    );
+  });
+
+  it('marks no search it doesn’t answer, and never says nothing matches it', () => {
+    rememberOpened(A);
+    // A name the search would match: nothing is marked, since the lane's read doesn't search.
+    mocks.search = { lane: 'opened', q: 'mas' };
+    mocks.results.set(name(api.waterBodies.get), () => body(A, 'Mascoma Lake'));
+    mount();
+    expect(grid().querySelector('mark')).toBeNull();
+    expect(screen.queryByText(/Nothing matches/)).toBeNull();
+    expect(document.querySelector('[data-slot=search-tally]')).toBeNull();
+  });
+
+  it('lists a merged body once, as the survivor its read follows', () => {
+    rememberOpened(A);
+    rememberOpened(B);
+    mocks.search = { lane: 'opened' };
+    // B was merged into A: its read follows the merge and returns A.
+    mocks.results.set(name(api.waterBodies.get), () => body(A, 'Mascoma Lake'));
+    mount();
+    expect([...grid().querySelectorAll('[data-slot=body-name]')].map((n) => n.textContent)).toEqual(
+      ['Mascoma Lake'],
+    );
+    expect(screen.getByText('All 1')).toBeInTheDocument();
+  });
+
+  it('is an empty lane, not a broken page, when storage has nothing or can’t be read', () => {
+    mocks.search = { lane: 'opened' };
+    const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    mount();
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Opened recently');
+    expect(screen.queryAllByRole('row').filter((r) => r.querySelector('td') !== null)).toEqual([]);
+    get.mockRestore();
   });
 });
 

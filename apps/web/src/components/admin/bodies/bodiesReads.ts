@@ -1,20 +1,27 @@
 import type { api } from '@skating/convex/api';
-import { currentSeason, type LibraryListLane, seasonRecordOpensMs } from '@skating/core';
+import {
+  currentSeason,
+  type LibraryListLane,
+  libraryStandingOf,
+  seasonRecordOpensMs,
+} from '@skating/core';
 import type { PaginationStatus } from 'convex/react';
 import type { FunctionArgs, FunctionReturnType } from 'convex/server';
 
 import { VANTAGE_LABELS } from '../metrics/metricsModel';
 import type { Count } from '../overview/overviewModel';
-import { isFailed, type ReadFailure } from '../reads/consoleReads';
+import { isFailed, type Loadable, type ReadFailure } from '../reads/consoleReads';
 import { actionLabel, actorWords } from '../shell/actionLabels';
 import { dayMonth, seasonYears } from '../shell/consoleTime';
 import { askFrom } from './askWords';
-import type {
-  BodiesListData,
-  BodyPreviewData,
-  ListServes,
-  ListStatus,
-  PreviewCount,
+import {
+  type BodiesListData,
+  type BodyPreviewData,
+  type ListServes,
+  type ListStatus,
+  type PreviewCount,
+  SERVES_NOTHING,
+  UNREAD_LIST,
 } from './bodiesData';
 import type { BodyRow, BodySort } from './bodiesModel';
 import { type BodiesQuery, listSort } from './bodiesSearch';
@@ -29,6 +36,10 @@ import type { BodyLane } from './bodyLanes';
  *   state tab, the facets, the search and the order are all the server's. A page that comes back
  *   short because its scan ran out is not the end (`isDone` stays false): the list keeps asking,
  *   and draws its end only once the read says it is done.
+ * - **Opened recently** — this browser's own list (`openedRecently.ts`), no server lane: each body
+ *   read by `waterBodies.get` and drawn as the body carries it, newest opened first. Nothing the
+ *   body alone doesn't say (completeness, asks, reports, the last change) is drawn, and nothing
+ *   narrows or orders it — the page filters no list itself, and twelve rows need none.
  * - **The counts** — `bodies.listSummary`: every lane's total (*Changed this week* to a cap), the
  *   corpus, the lane's state tabs, the list's total and the facet counts the stored counts answer
  *   exactly. A count it can't answer is `null` — no number, never a zero.
@@ -44,6 +55,7 @@ export type ListPage = FunctionReturnType<typeof api.bodies.listPage>;
 export type LibraryRow = ListPage['page'][number];
 export type ListSummary = FunctionReturnType<typeof api.bodies.listSummary>;
 export type PreviewFacts = NonNullable<FunctionReturnType<typeof api.bodies.preview>>;
+export type GetResult = FunctionReturnType<typeof api.waterBodies.get>;
 export type BodyDoc = Extract<
   NonNullable<FunctionReturnType<typeof api.waterBodies.get>>,
   { available: true }
@@ -179,6 +191,61 @@ export function listFrom({
     serves: servesFrom(current ?? held),
     facetCounts: current?.facetCounts ?? null,
     states: (current ?? held)?.states ?? [],
+  };
+}
+
+/**
+ * A body from `waterBodies.get` as the list draws it — only what the body itself carries; the
+ * library row's facts are not recorded here. A merged body has no standing of its own: none.
+ */
+export function rowFromBody(body: BodyDoc): BodyRow | null {
+  const standing = libraryStandingOf(body);
+  if (standing === null) return null;
+  return {
+    id: body._id,
+    name: body.name,
+    bodyClass: body.type,
+    states: body.states ?? [],
+    areaSqM: area(body.surfaceAreaSqM),
+    complete: null,
+    asks: null,
+    reports: null,
+    changedAt: null,
+    standing,
+  };
+}
+
+/**
+ * The Opened recently lane: the bodies this browser opened, each read by id, in the order opened
+ * (newest first). An id still loading holds the list; a read that failed makes the list's error
+ * (with its Try again) — never a body quietly left out of a count that says it is exact. A body that
+ * can no longer be opened (gone or unavailable) is left out. `waterBodies.get` follows a merge to
+ * its survivor, so a merged id reads as the body that took it in — listed once, where it was opened
+ * first. Its count is exact once every read lands. No read gives other standings: `others` is none.
+ */
+export function listFromOpened(
+  ids: readonly string[],
+  got: Readonly<Record<string, Loadable<GetResult>>>,
+): BodiesListData {
+  if (ids.some((id) => got[id] === undefined)) return { ...UNREAD_LIST, status: 'loading' };
+  if (ids.some((id) => isFailed(got[id]))) return { ...UNREAD_LIST, status: 'error' };
+  const seen = new Set<string>();
+  const rows = ids.flatMap((id) => {
+    const r = got[id];
+    if (r == null || isFailed(r) || !r.available) return [];
+    const row = rowFromBody(r.body);
+    if (row === null || seen.has(row.id)) return [];
+    seen.add(row.id);
+    return [row];
+  });
+  return {
+    status: 'done',
+    rows,
+    others: null,
+    total: { count: rows.length, capped: false },
+    serves: SERVES_NOTHING,
+    facetCounts: null,
+    states: [],
   };
 }
 

@@ -16,17 +16,20 @@ import { useMinuteNow } from '../shell/presence';
 import { BodiesView, type BodiesViewProps } from './BodiesView';
 import { type BodiesListData, type BodyPreviewData, UNREAD_LIST } from './bodiesData';
 import {
+  type GetResult,
   type LibraryRow,
   type ListArgs,
   type ListSummary,
   laneCountsFrom,
   listArgsOf,
   listFrom,
+  listFromOpened,
   previewFrom,
   servesFrom,
 } from './bodiesReads';
 import { type BodiesQuery, type BodiesSearch, listKey, queryOf, searchFor } from './bodiesSearch';
 import { BODY_LANES } from './bodyLanes';
+import { useOpenedBodies } from './openedRecently';
 
 /**
  * The Bodies library, wired: its place from the URL (validated by `validateBodiesSearch`, which the
@@ -88,6 +91,7 @@ export function BodiesRoute({ bodyPath = BODY_PATH, openLabel }: BodiesRouteProp
   const args = canRead ? listArgsOf(query, listNow) : null;
   // A lane no server read lists (Opened recently) still counts the others: All's summary.
   const summary = useSummary(canRead ? (args ?? { lane: 'all', now: listNow }) : null);
+  const opened = useOpenedList(canRead && query.lane.read.kind === 'openedByViewer');
   const preview = usePreview(query.bodyId, canRead, can('audit.read'));
   const paged = usePaged(key);
 
@@ -114,7 +118,10 @@ export function BodiesRoute({ bodyPath = BODY_PATH, openLabel }: BodiesRouteProp
   const view: Omit<BodiesViewProps, 'list'> = {
     query,
     onQueryChange: go,
-    laneCounts: laneCountsFrom(counted, BODY_LANES),
+    laneCounts: {
+      ...laneCountsFrom(counted, BODY_LANES),
+      ...(opened?.list.status === 'done' && { [query.lane.id]: opened.list.total }),
+    },
     corpus: counted?.corpus ?? null,
     preview: preview.data,
     onRetryPreview: preview.retry,
@@ -136,6 +143,9 @@ export function BodiesRoute({ bodyPath = BODY_PATH, openLabel }: BodiesRouteProp
     ),
   };
 
+  if (opened !== null) {
+    return <BodiesView {...view} list={opened.list} onRetryList={opened.retry} />;
+  }
   if (args === null) return <BodiesView {...view} list={UNREAD_LIST} />;
   return (
     <>
@@ -356,6 +366,30 @@ function useClockFor(key: string): number {
 }
 
 const minute = (at: number) => Math.floor(at / 60_000) * 60_000;
+
+// ── Opened recently ──────────────────────────────────────────────────────────────────────────
+
+/**
+ * The Opened recently lane: this browser's list, each body read by id. `null` while another lane is
+ * on screen (and nothing is read). The reads are keyed on the ids' value, so a render with the same
+ * list keeps its subscriptions.
+ */
+function useOpenedList(on: boolean): { list: BodiesListData; retry: () => void } | null {
+  const ids = useOpenedBodies();
+  // Through the read layer, keyed on the ids' value: Try again re-runs only the failed reads, and
+  // a body the preview also reads is one read, retried once.
+  const { reads, retry, pending } = useConsoleReadSet(
+    Object.fromEntries(
+      (on ? ids : []).map((id) => [
+        id,
+        read(api.waterBodies.get, { waterBodyId: id as Id<'waterBodies'> }),
+      ]),
+    ),
+  );
+  if (!on) return null;
+  const list = listFromOpened(ids, reads as Record<string, Loadable<GetResult>>);
+  return { list: list.status === 'error' ? { ...list, retryPending: pending } : list, retry };
+}
 
 // ── The preview ──────────────────────────────────────────────────────────────────────────────
 

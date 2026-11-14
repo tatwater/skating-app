@@ -219,8 +219,9 @@ export function BodiesTable({
   // model is built once per lane, not once per keystroke.
   const ctx = useRef<CellCtx>({ q, now, showStanding: () => false });
   ctx.current = {
-    // A search too short to run marks nothing: the rows aren't its matches.
-    q: isSearch(q) ? q : '',
+    // A search too short to run, or one the list's read doesn't answer, marks nothing: the rows
+    // aren't its matches.
+    q: list.serves.search && isSearch(q) ? q : '',
     now,
     showStanding: (row) => lane.showStanding || row.standing !== laneStanding(lane),
   };
@@ -548,7 +549,9 @@ function ListFoot({
       case 'fetching':
         return 'Loading more';
       case 'done':
-        if (rows === 0) return isSearch(q) ? `Nothing matches “${q.trim()}”` : 'None here';
+        if (rows === 0) {
+          return list.serves.search && isSearch(q) ? `Nothing matches “${q.trim()}”` : 'None here';
+        }
         // Every row is in: a total the summary stopped counting at ("500+") gives way to the
         // rows' own exact count.
         return `All ${list.total !== null && !list.total.capped ? countText(list.total) : rows.toLocaleString('en-US')}`;

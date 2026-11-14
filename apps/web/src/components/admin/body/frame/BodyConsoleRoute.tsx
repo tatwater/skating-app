@@ -18,6 +18,7 @@ import { useTheme } from '@/components/theme-provider';
 import { cn } from '@/lib/utils';
 import { listWords } from '@/lib/words';
 import { errorText } from '../../adminUi';
+import { rememberOpened } from '../../bodies/openedRecently';
 import { useUndo } from '../../shell/undo';
 import { BodyMap } from '../map/BodyMap';
 import { mergeScenes } from '../map/bodyScene';
@@ -87,6 +88,11 @@ export function BodyConsoleRoute({ registry = BODY_TAB_REGISTRY }: { registry?: 
   const { resolvedTheme } = useTheme();
   const mode = resolvedTheme === 'light' ? 'light' : 'dark';
   const data = useBodyConsole(bodyId);
+  // This browser remembers the bodies it opened: the Bodies list's Opened recently lane.
+  const ready = data.state === 'ready';
+  useEffect(() => {
+    if (ready) rememberOpened(bodyId);
+  }, [ready, bodyId]);
   const tab = bodyTabOf(search);
   const slot = registry[tab];
   const oldEditorHref = `/admin/water/${encodeURIComponent(bodyId)}`;
