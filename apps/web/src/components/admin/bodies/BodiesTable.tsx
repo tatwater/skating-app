@@ -6,7 +6,7 @@ import {
   tableFeatures,
   useTable,
 } from '@tanstack/react-table';
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { defaultRangeExtractor, useVirtualizer } from '@tanstack/react-virtual';
 import {
   type KeyboardEvent,
   type ReactNode,
@@ -265,6 +265,11 @@ export function BodiesTable({
     rowEntries[0]?.id ??
     null;
 
+  const cursorAt = useMemo(
+    () => entries.findIndex((e) => e.kind === 'row' && e.row.id === cursor),
+    [entries, cursor],
+  );
+
   const virtual = entries.length > VIRTUALIZE_ABOVE;
   const virtualizer = useVirtualizer({
     count: virtual ? entries.length : 0,
@@ -277,9 +282,8 @@ export function BodiesTable({
     overscan: 12,
     // The cursor's row stays rendered, so `aria-activedescendant` always names an element and
     // focus isn't lost when it scrolls out; `spacedRows` keeps the rows between it and the visible
-    // run in their room.
-    rangeExtractor: (range) =>
-      withPinned(range, [entries.findIndex((e) => e.kind === 'row' && e.row.id === cursor)]),
+    // run in their room. The run is the default extractor's, so the overscan holds.
+    rangeExtractor: (range) => withPinned(defaultRangeExtractor(range), [cursorAt]),
   });
 
   // Come back where you were: the remembered scroll once rows are in, else the open row in view.

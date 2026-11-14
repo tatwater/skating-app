@@ -213,21 +213,22 @@ describe('the search', () => {
     expect(spy.mock.lastCall?.[0]).toMatchObject({ q: '', sort: { column: 'reports' } });
   });
 
-  it('old typing never filters another lane: an empty search, typed, then another lane before the wait', async () => {
+  it('Escape on typing that never landed clears the field and leaves the order alone', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const spy = vi.fn();
-    render(<Harness spy={spy} initial={queryOf({})} />);
+    render(<Harness spy={spy} initial={queryOf({ sort: 'acres' })} />);
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     await user.type(screen.getByRole('searchbox', { name: 'Find a body' }), 'mor');
-    // Both lanes have an empty search, so the committed value never changes.
-    await user.click(screen.getByRole('button', { name: /^Dormant · moderator/ }));
+    await user.keyboard('{Escape}');
     act(() => vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS * 2));
-    expect(spy.mock.calls.every(([next]) => next.q === '')).toBe(true);
-    expect(spy.mock.lastCall?.[0].lane.id).not.toBe('active');
+    expect(spy).not.toHaveBeenCalled();
     expect(screen.getByRole('searchbox', { name: 'Find a body' })).toHaveValue('');
   });
 
-  /** Every action that moves the place the typing was in: pending typing is dropped, never sent. */
+  /**
+   * Every action that moves the place the typing was in: pending typing is dropped, never sent —
+   * old typing never filters another lane, even when both lanes have an empty search.
+   */
   const CONTEXT_CHANGES: [
     string,
     {

@@ -254,6 +254,9 @@ function SearchField({
             event.preventDefault();
             setText('');
             window.clearTimeout(timer.current);
+            // Typing that never landed leaves nothing to clear: asking for an empty search would
+            // put the lane's order back over a heading pressed meanwhile.
+            if (sent.current === '') return;
             sent.current = '';
             onSearch('');
           }

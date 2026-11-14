@@ -1,6 +1,6 @@
 import { act, fireEvent, render } from '@testing-library/react';
 import fc from 'fast-check';
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { KeysProvider } from '@/lib/keys';
 import { BodiesTable, resetScrollMemory } from './BodiesTable';
@@ -27,6 +27,10 @@ beforeAll(() => {
 
 const ROW = 32;
 const GROUP = 40;
+
+/** The run the virtualizer renders on its own: `start` to `end`, inclusive. */
+const span = (start: number, end: number) =>
+  Array.from({ length: end - start + 1 }, (_, i) => start + i);
 
 /** What the virtualizer hands for `indices`, from every row's height. */
 function placed(heights: readonly number[], indices: readonly number[]) {
@@ -64,13 +68,13 @@ function offsets(heights: readonly number[], laid: ReturnType<typeof spacedRows>
 describe('the virtual rows as table rows', () => {
   it('cursor on row 0, rows 100–120 in view: rows 1–99 keep their room', () => {
     const heights = Array.from({ length: 300 }, () => ROW);
-    const { items, total } = placed(heights, withPinned({ startIndex: 100, endIndex: 120 }, [0]));
+    const { items, total } = placed(heights, withPinned(span(100, 120), [0]));
     const laid = spacedRows(items, total);
     const { at, height } = offsets(heights, laid);
     expect(at.get(0)).toBe(0);
     expect(at.get(100)).toBe(100 * ROW);
     expect(height).toBe(total);
-    expect(laid[1]).toEqual({ kind: 'pad', key: 'pad-before-100', height: 99 * ROW });
+    expect(laid[1]).toEqual({ kind: 'pad', key: 'pad-gap-0', height: 99 * ROW });
   });
 
   it('any heights, any scroll, any pinned rows: the whole height, every row at its own offset, every pin present (fast-check)', () => {
@@ -85,7 +89,8 @@ describe('the virtual rows as table rows', () => {
           const startIndex = start % n;
           const endIndex = Math.min(n - 1, startIndex + run);
           const pinned = pins.map((p) => p % n);
-          const indices = withPinned({ startIndex, endIndex }, pinned);
+          // -1 is the cursor not found in the list: no row.
+          const indices = withPinned(span(startIndex, endIndex), [...pinned, -1]);
           const { items, total, starts } = placed(heights, indices);
           const laid = spacedRows(items, total);
           const { at, height } = offsets(heights, laid);
@@ -150,7 +155,6 @@ describe('the Bodies table, scrolled away from its cursor', () => {
     if (realOffset) Object.defineProperty(HTMLElement.prototype, 'offsetHeight', realOffset);
     if (realClient) Object.defineProperty(Element.prototype, 'clientHeight', realClient);
     Element.prototype.getBoundingClientRect = realRect;
-    vi.useRealTimers();
   });
 
   it('keeps the cursor row rendered and every row at its own offset', () => {
@@ -199,6 +203,8 @@ describe('the Bodies table, scrolled away from its cursor', () => {
     expect(container.querySelector('[data-cursor]')?.getAttribute('data-index')).toBe('0');
     // The rows in view are where they belong, and the table is as tall as every row.
     expect(at.get(100)).toBe(100 * ROW);
+    // The overscan holds: rows just out of view are rendered too.
+    expect(at.has(100 - 12)).toBe(true);
     for (const [index, top] of at) expect(top).toBe(index * ROW);
     expect(y).toBe(rows.length * ROW);
     // Spacers are hidden from assistive tech: the grid's rows are only its rows.

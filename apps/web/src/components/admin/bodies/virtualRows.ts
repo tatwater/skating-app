@@ -6,13 +6,12 @@
  * their room — or the visible rows slide up into it and the scroll height shrinks.
  */
 
-/** The virtualizer's visible run, and the rows pinned into it. */
-export type VisibleRange = { startIndex: number; endIndex: number };
-
-/** The indices to render: the visible run (overscan included) and every pinned row, in order. */
-export function withPinned(range: VisibleRange, pinned: readonly number[]): number[] {
-  const out = new Set<number>();
-  for (let i = range.startIndex; i <= range.endIndex; i++) out.add(i);
+/**
+ * The indices to render: the run the virtualizer would render on its own (its default extractor's,
+ * overscan included) and every pinned row, in order. A pin of -1 (a row not in the list) is none.
+ */
+export function withPinned(run: readonly number[], pinned: readonly number[]): number[] {
+  const out = new Set(run);
   for (const p of pinned) if (p >= 0) out.add(p);
   return [...out].sort((a, b) => a - b);
 }
@@ -28,14 +27,19 @@ export type LaidOut<T extends PlacedRow> =
 /**
  * The table body in order: a spacer before the first rendered row, between every two rendered rows
  * that aren't neighbors, and after the last, so each rendered row sits at its own offset and the
- * whole is the virtualizer's total height.
+ * whole is the virtualizer's total height. A spacer's key is its place among the spacers, not the
+ * row after it, so scrolling resizes the same spacer rather than swapping it for a new one.
  */
 export function spacedRows<T extends PlacedRow>(items: readonly T[], total: number): LaidOut<T>[] {
   const out: LaidOut<T>[] = [];
   let at = 0;
+  let gaps = 0;
   for (const item of items) {
     const gap = item.start - at;
-    if (gap > 0) out.push({ kind: 'pad', key: `pad-before-${item.index}`, height: gap });
+    if (gap > 0) {
+      const key = out.length === 0 ? 'pad-start' : `pad-gap-${gaps++}`;
+      out.push({ kind: 'pad', key, height: gap });
+    }
     out.push({ kind: 'row', item });
     at = Math.max(at, item.end);
   }
