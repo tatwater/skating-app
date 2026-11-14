@@ -1786,6 +1786,10 @@ one branch (`b01-3-server`).
 - **Discipline never strands the ledger, wired (D252).** `banImpl` and `suspendImpl` refuse the last
   ledger editor who can act, and an undo that puts a ban or suspension back runs through them.
 - **A lift is refused on an account being deleted, or deleted** (`unbanImpl`, and so its undo).
+  **Owed to the People server PR:** the other direction, a ban or suspension on an account `deleting`
+  or `deleted` (the finalization lock, the tombstone), which overwrites that status, and whose lapsed
+  suspension window would unlock an account mid-deletion. Found in this PR's review; left out of its
+  scope.
 - **Text caps at the write.** Report notes 5,000 characters (core's `validateReportInput`, on create
   and edit), photo captions 500, flag notes 1,000 (a person's and the automatic flags'), the
   access-alert `idempotencyKey` 128. No client sets a limit on any of them. Longer rows stay as they
@@ -1797,14 +1801,18 @@ one branch (`b01-3-server`).
     text), folded per day into a `text_lengths` snapshot by band against the cap in force. An insert
     reads nothing, so writes never contend.
   - An edit counts its new length; the old one stays counted.
-  - `metrics.textLengths` reads a season, with a day nothing recorded as `null`.
+  - `metrics.textLengths` reads a season, with a day nothing recorded as `null`. The record has begun
+    once an event or a folded day exists, so a quiet day after a quiet week (every event pruned) is a
+    measured zero, not a gap.
   - **Refusals can't be counted:** a refused mutation commits nothing, so the server can't tally
     them. **Owed before launch:** a backfill of existing rows' lengths.
 - **The daily retry walks all parked erasure work** (no longer three a kind), chained, each piece once
   a run; a pass that moves nothing throws.
-- **Undo (U1, U2).** A restore of a Post down only because its Reports were records the member that
-  took it down, and the restore's undo puts it back marked `rederivedFromReportId`, so restoring a
-  member later brings the Post back. "Undone by" names the undo's own row on the target.
+- **Undo (U1, U2).** Any verdict on a Post down only because its Reports were (a restore, or a
+  removal) records the member that took it down, and its undo puts the Post back marked
+  `rederivedFromReportId`, so restoring a member later brings the Post back. A redo of that undo
+  records what it clears in turn, so undo → redo → undo lands in the same place. "Undone by" names the
+  undo's own row on the target.
 - **A Post goes on the next hourly run after its last Report.** Its clock is set by the job the
   Report's erasure schedules, after that run's cutoff. With lighter charges the sweep no longer runs a
   second pass, so the tests that expected the same run now take the next one. That was always the
