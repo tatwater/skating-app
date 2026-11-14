@@ -940,9 +940,9 @@ type PublicProfile =
       private: false;
       homeTownLabel?: string;
       bio?: string;
-      // Trust score (D50) — the raw number. Present ONLY when the *viewer* is an admin; omitted from the
-      // wire for everyone else, moderators included, so nobody else can read it off the network
-      // response (the class chip is the public signal). Everyone else gets `undefined`.
+      // Trust score (D50) — the raw number. Present ONLY when the *viewer* is a moderator/admin; omitted
+      // from the wire for everyone else, so an ordinary viewer can't read it off the network response
+      // (the class chip is the public signal). Ordinary viewers get `undefined`.
       reputationPoints?: number;
       bountyPoints: number; // separate bounty currency (decision 11); absent ⇒ 0
       badges: string[]; // earned BadgeType families in stable order (decision 6)
@@ -964,7 +964,7 @@ type PublicProfile =
  * blocked target OR target blocked viewer → treated as not-found); a `deleted` account is not shown.
  * A **public** profile (or the caller's own) returns the full payload — name, avatar, town, bio,
  * #reports/#comments, cosmetic `trustClass` + `badges`/`bountyPoints`, and visible report history. The
- * raw `reputationPoints` number is included ONLY for an admin viewer (D50). A **private**
+ * raw `reputationPoints` number is included ONLY for a moderator/admin viewer (D50). A **private**
  * profile returns name + avatar only. Never leaks the home coordinate, DOB, or tokens.
  */
 export const getPublicProfile = query({
@@ -986,11 +986,10 @@ export const getPublicProfile = query({
     // to be able to give the name back.
     const access = await profileAccess(ctx, target, viewer);
     if (access === 'hidden') return null;
-    // The raw trust number is admin-only (D50): moderators see the trust class, as on the operator
-    // view. Gated server-side on the *viewer's* capability so it never leaves the deployment for
-    // anyone else — the client-side chrome that hides it is only defense-in-depth. Own profile does
-    // not unlock it; a member never sees their own raw score.
-    const seesTrustScore = viewer !== null && hasCapability(viewer, 'people.trustScore');
+    // The raw trust number is admin-only (D50). Gate it server-side on the *viewer's* role so it never
+    // leaves the deployment for an ordinary viewer — the client-side chrome that hides it is only
+    // defense-in-depth. Own profile does not unlock it; a member never sees their own raw score.
+    const viewerIsMod = viewer?.role === 'moderator' || viewer?.role === 'admin';
 
     const base = {
       userId: target._id,
@@ -1040,8 +1039,8 @@ export const getPublicProfile = query({
       private: false,
       ...(target.homeTownLabel !== undefined ? { homeTownLabel: target.homeTownLabel } : {}),
       ...(target.bio !== undefined ? { bio: target.bio } : {}),
-      // Admin-only raw score (D50) — included solely for an admin viewer (see `seesTrustScore`).
-      ...(seesTrustScore ? { reputationPoints: target.reputationPoints } : {}),
+      // Admin-only raw score (D50) — included solely for a moderator/admin viewer (see `viewerIsMod`).
+      ...(viewerIsMod ? { reputationPoints: target.reputationPoints } : {}),
       bountyPoints: target.bountyPoints ?? 0,
       badges: target.badges ?? [],
       reportCount,
