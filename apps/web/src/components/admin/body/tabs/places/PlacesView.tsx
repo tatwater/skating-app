@@ -25,7 +25,7 @@ import { usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
 import { ReasonAsk } from '../access/ReasonAsk';
 import { LIT_ROW, LoadingSection, litAttr, TabBody } from '../tabParts';
-import { CouldntRead, LoadingLine, ReadFailures } from '../tabStates';
+import { CouldntRead, LoadingLine, NOT_RECORDED, ReadFailures } from '../tabStates';
 import { LandmarkCard, type LandmarkEdit } from './LandmarkCard';
 import {
   type Asker,
@@ -355,7 +355,7 @@ function AskerLine({ asker }: { asker: Asker }) {
   if (isFailed(asker)) return <span className={ASSIST}>Who asked couldn’t be read</span>;
   if (asker === 'erased') return <span className={ASSIST}>Asked from an account since erased</span>;
   // Every ask names its asker: `null` is an ask past what the askers' read covers, not one unrecorded.
-  if (asker === null) return <span className={ASSIST}>Who asked is past what this read shows</span>;
+  if (asker === null) return <span className={ASSIST}>Who asked: {NOT_RECORDED}</span>;
   return (
     <PersonLockup
       name={asker.name}

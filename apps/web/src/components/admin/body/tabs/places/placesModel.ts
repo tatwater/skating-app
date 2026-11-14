@@ -58,9 +58,9 @@ export type ProposalAsk = {
   askers: number;
   /**
    * Who asked first: a person; `erased` for an account since erased; `null` when the askers' read
-   * didn't reach this ask (it reads fewer requests than the proposals' read) — the asker is on
-   * record, so it is never drawn as *not recorded*; `hidden` for a viewer who can't see who asks
-   * (no `inbox.read`) — drawn as nothing at all; loading or failed as a read.
+   * holds no row for this ask — it covers the same proposals as the proposals' read (the newest
+   * 200), so that is a requester not on record: *Not recorded yet*; `hidden` for a viewer who can't
+   * see who asks (no `inbox.read`) — drawn as nothing at all; loading or failed as a read.
    */
   asker: Asker;
   /** The landmark already on the map under that name, at that place. */
