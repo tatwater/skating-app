@@ -33,6 +33,7 @@ export const MASCOMA_ACCESS: AccessData = {
     decidedAt: RULED,
     decidedBy: { name: 'Teagan', handle: 'teagan' },
     before: null,
+    history: { earlier: 0, capped: false },
   },
   putIns: [
     putIn('pi-launch', 'official', 'Mascoma Lake Boat Launch', [43.6309, -72.1576], 32),
@@ -55,6 +56,7 @@ export const MASCOMA_ACCESS: AccessData = {
   ],
   postedRule: null,
   alerts: [],
+  failures: [],
 };
 
 /** No public access, ruled over an earlier accessible ruling, with an alert pinned on a launch. */
@@ -67,6 +69,8 @@ export const NO_ACCESS: AccessData = {
     decidedAt: new Date(2026, 9, 2, 12).getTime(),
     decidedBy: { name: 'Matt Steinberg', handle: 'matt' },
     before: 'open',
+    // The accessible ruling it replaced.
+    history: { earlier: 1, capped: false },
   },
   postedRule: 'Open sunrise to sunset',
   alerts: [{ id: 'al-1', label: 'Gate locked', on: 'Mascoma Lake Boat Launch', official: true }],

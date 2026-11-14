@@ -3,8 +3,9 @@ import userEvent from '@testing-library/user-event';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * Body › Access as the console mounts it: four reads, the ruling and the put-in writes behind their
- * capabilities and announced for undo; a reason asked only when access is taken away.
+ * Body › Access as the console mounts it: four reads (mocked at the Convex hooks), the ruling and
+ * the put-in writes behind their capabilities and announced for undo; a reason asked only when
+ * access is taken away; each read's state said in its place.
  */
 
 const mocks = vi.hoisted(() => ({
@@ -18,10 +19,13 @@ const mocks = vi.hoisted(() => ({
 vi.mock('convex/react', async () => {
   const { getFunctionName } = await import('convex/server');
   return {
-    useQuery: (ref: Parameters<typeof getFunctionName>[0], args: unknown) => {
-      mocks.queryArgs.set(getFunctionName(ref), args);
-      return args === 'skip' ? undefined : mocks.results.get(getFunctionName(ref));
-    },
+    useQueries: (queries: Record<string, { query: never; args: unknown }>) =>
+      Object.fromEntries(
+        Object.entries(queries).map(([key, { query, args }]) => {
+          mocks.queryArgs.set(getFunctionName(query), args);
+          return [key, mocks.results.get(getFunctionName(query))];
+        }),
+      ),
     useMutation: (ref: Parameters<typeof getFunctionName>[0]) => async (args: unknown) => {
       mocks.calls.push([getFunctionName(ref), args]);
     },
@@ -65,21 +69,30 @@ beforeEach(() => {
     alerts: [],
   });
   set(api.landmarks.listForBody, []);
-  set(api.moderation.listActions, [
-    {
-      createdAt: RULED,
-      actor: { displayName: 'Teagan', username: 'teagan' },
-      metadata: { prev: { publicAccess: null } },
-    },
-  ]);
+  set(api.bodyConsole.history, {
+    entries: [
+      {
+        id: 'ma1',
+        action: 'set_public_access',
+        targetType: 'waterbody',
+        targetId: 'wb1',
+        reason: 'Ruled',
+        createdAt: RULED,
+        actor: { userId: 'p1', displayName: 'Teagan', username: 'teagan' },
+        metadata: { prev: { publicAccess: null } },
+      },
+    ],
+    capped: false,
+  });
 });
+
+const historyFn = getFunctionName(api.bodyConsole.history);
 
 describe('AccessTab', () => {
   it('reads the ruling’s own audit rows, and draws who ruled', () => {
     render(<AccessTab bodyId="wb1" />);
-    expect(mocks.queryArgs.get(getFunctionName(api.moderation.listActions))).toEqual({
-      targetType: 'waterbody',
-      targetId: 'wb1',
+    expect(mocks.queryArgs.get(historyFn)).toEqual({
+      waterBodyId: 'wb1',
       action: 'set_public_access',
       limit: 20,
     });
@@ -143,7 +156,7 @@ describe('AccessTab', () => {
     mocks.can = new Set();
     render(<AccessTab bodyId="wb1" />);
     expect(screen.queryByRole('button')).toBeNull();
-    expect(mocks.queryArgs.get(getFunctionName(api.moderation.listActions))).toBe('skip');
+    expect(mocks.queryArgs.has(historyFn)).toBe(false);
     // Who ruled isn't known without the audit: absent, never guessed.
     expect(screen.queryByText('Teagan')).toBeNull();
   });
@@ -152,5 +165,50 @@ describe('AccessTab', () => {
     mocks.results.delete(getFunctionName(api.accessPoints.accessForBody));
     const { container } = render(<AccessTab bodyId="wb1" />);
     expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
+  });
+
+  it('holds the strip’s place while who ruled is on its way', () => {
+    mocks.results.delete(historyFn);
+    const { container } = render(<AccessTab bodyId="wb1" />);
+    expect(container.querySelector('[data-slot="ruling-strip-loading"]')).not.toBeNull();
+    expect(container.querySelector('[data-slot="ruling-strip"]')).toBeNull();
+  });
+
+  it('says how many rulings came before, and never draws a capped history as whole', () => {
+    const entry = (createdAt: number) => ({
+      id: `ma${createdAt}`,
+      action: 'set_public_access',
+      targetType: 'waterbody',
+      targetId: 'wb1',
+      reason: 'Ruled',
+      createdAt,
+      actor: null,
+      metadata: { prev: { publicAccess: null } },
+    });
+    mocks.results.set(historyFn, {
+      entries: [entry(RULED), entry(RULED - 86_400_000), entry(RULED - 2 * 86_400_000)],
+      capped: true,
+    });
+    render(<AccessTab bodyId="wb1" />);
+    expect(screen.getByText('2+ earlier rulings')).toBeTruthy();
+  });
+
+  it('says what failed, in place and in the note, and keeps the rest of the tab', () => {
+    mocks.results.set(historyFn, new Error('down'));
+    mocks.results.set(getFunctionName(api.landmarks.listForBody), new Error('down'));
+    render(<AccessTab bodyId="wb1" />);
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Couldn’t read who ruled and where each launch is.',
+    );
+    expect(screen.getByText('Who ruled and what stood before couldn’t be read')).toBeTruthy();
+    expect(screen.getByText('Couldn’t be read')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Make official' })).toBeTruthy();
+  });
+
+  it('says the tab couldn’t be read when the record or access failed, with Try again', () => {
+    mocks.results.set(getFunctionName(api.accessPoints.accessForBody), new Error('down'));
+    render(<AccessTab bodyId="wb1" />);
+    expect(screen.getByRole('status')).toHaveTextContent('Couldn’t read this body’s access.');
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
   });
 });

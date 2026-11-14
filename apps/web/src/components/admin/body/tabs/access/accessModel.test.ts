@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
-
+import { FAILED } from '../places/useTabReads';
 import { BOARD_TODAY, MASCOMA_ACCESS } from './accessFixtures';
 import {
   accessFrom,
   accessMapScene,
   dayCount,
   daysSince,
+  earlierWords,
+  rulingFrom,
   rulingOf,
   rulingStatement,
   verdictWords,
@@ -98,7 +100,7 @@ describe('accessFrom', () => {
           { id: 'b', reason: 'mystery', putInId: 'nope', official: true },
         ],
       },
-      rulingOf(undefined, null),
+      rulingFrom(undefined, 'wb1', 'hidden'),
       undefined,
       landmarks,
     );
@@ -119,18 +121,111 @@ describe('accessFrom', () => {
 
   it('says the posted rule in words, and nothing for a rule with nothing to say', () => {
     const empty = { putIns: [], parking: [], alerts: [] };
-    const none = rulingOf(undefined, null);
+    const none = rulingFrom(undefined, 'wb1', 'hidden');
     expect(
-      accessFrom(empty, none, { dailyWindow: { kind: 'daylight', offsetMinutes: 0 } }, null)
+      accessFrom(empty, none, { dailyWindow: { kind: 'daylight', offsetMinutes: 0 } }, [])
         .postedRule,
     ).toMatch(/sunrise/i);
-    expect(accessFrom(empty, none, { note: 'A sign' }, null).postedRule).toBeNull();
+    expect(accessFrom(empty, none, { note: 'A sign' }, []).postedRule).toBeNull();
   });
 
-  it('names where a launch is by the nearest landmark within reach, else nothing', () => {
+  it('names where a launch is by the nearest landmark’s real name within reach, else nothing', () => {
     expect(whereOf({ lat: 43.6489, lng: -72.1793 }, landmarks)).toBe('Mascoma Lake Dam');
     expect(whereOf({ lat: 43.5, lng: -72.5 }, landmarks)).toBeNull();
-    expect(whereOf({ lat: 43.5, lng: -72.5 }, null)).toBeNull();
+    expect(whereOf({ lat: 43.5, lng: -72.5 }, [])).toBeNull();
+    // The landmarks' read in its state: loading stays loading, a failure stays a failure.
+    expect(whereOf({ lat: 43.5, lng: -72.5 }, undefined)).toBeUndefined();
+    expect(whereOf({ lat: 43.5, lng: -72.5 }, FAILED)).toBe(FAILED);
+  });
+
+  it('names what failed: the landmarks, and the ruling’s history', () => {
+    const one = {
+      putIns: [{ id: 'o', coord: { lat: 1, lng: 1 }, source: 'osm' }],
+      parking: [],
+      alerts: [],
+    };
+    const data = accessFrom(one, rulingFrom(undefined, 'wb1', FAILED), undefined, FAILED);
+    expect(data.putIns[0]?.where).toBe(FAILED);
+    expect(data.failures).toEqual(['who ruled', 'where each launch is']);
+    expect(accessFrom(one, rulingFrom(undefined, 'wb1', 'hidden'), undefined, []).failures).toEqual(
+      [],
+    );
+  });
+});
+
+describe('the ruling’s history', () => {
+  const entry = (targetId: string, createdAt: number, prev: unknown = null) => ({
+    targetType: 'waterbody',
+    targetId,
+    createdAt,
+    actor: { displayName: 'Teagan', username: 'teagan' },
+    metadata: { prev: { publicAccess: prev } },
+  });
+
+  it('takes who ruled from the body’s own newest row, and counts the rest as earlier', () => {
+    const ruling = rulingFrom(open, 'wb1', {
+      entries: [
+        // A body merged into this one ruled later: not this body's ruling.
+        entry('absorbed', RULED + 5_000_000),
+        entry('wb1', RULED + 200, { verdict: 'none' }),
+        entry('wb1', RULED - 86_400_000),
+      ],
+      capped: false,
+    });
+    expect(ruling).toMatchObject({
+      decidedBy: { name: 'Teagan', handle: 'teagan' },
+      before: 'none',
+      history: { earlier: 1, capped: false },
+    });
+    expect(earlierWords(ruling.history)).toBe('1 earlier ruling');
+  });
+
+  it('counts every row as earlier when none made the ruling in force', () => {
+    const ruling = rulingFrom(open, 'wb1', {
+      entries: [entry('wb1', RULED - 86_400_000), entry('wb1', RULED - 2 * 86_400_000)],
+      capped: false,
+    });
+    expect(ruling.before).toBeUndefined();
+    expect(ruling.history).toEqual({ earlier: 2, capped: false });
+    expect(earlierWords(ruling.history)).toBe('2 earlier rulings');
+  });
+
+  it('never presents a capped history as whole', () => {
+    const capped = rulingFrom(open, 'wb1', {
+      entries: [
+        entry('wb1', RULED),
+        ...Array.from({ length: 19 }, (_, i) => entry('wb1', RULED - i - 1)),
+      ],
+      capped: true,
+    });
+    expect(earlierWords(capped.history)).toBe('19+ earlier rulings');
+    const cappedNone = rulingFrom(open, 'wb1', { entries: [entry('wb1', RULED)], capped: true });
+    expect(earlierWords(cappedNone.history)).toBe(
+      'Earlier rulings may exist past what this read shows',
+    );
+    // Whole and only the one ruling: nothing to say.
+    expect(
+      earlierWords(
+        rulingFrom(open, 'wb1', { entries: [entry('wb1', RULED)], capped: false }).history,
+      ),
+    ).toBeNull();
+  });
+
+  it('keeps the read’s state when it is loading, failed or withheld', () => {
+    for (const state of [undefined, FAILED, 'hidden'] as const) {
+      const ruling = rulingFrom(open, 'wb1', state);
+      expect(ruling.history).toBe(state);
+      expect(ruling.before).toBeUndefined();
+      expect(earlierWords(ruling.history)).toBeNull();
+    }
+  });
+
+  it('names a ruler with no real name on record by their handle', () => {
+    const ruling = rulingFrom(open, 'wb1', {
+      entries: [{ ...entry('wb1', RULED), actor: { displayName: ' ', username: 'teagan' } }],
+      capped: false,
+    });
+    expect(ruling.decidedBy).toEqual({ name: 'teagan', handle: 'teagan' });
   });
 });
 

@@ -9,8 +9,11 @@ import { Section } from '@/components/kit/section-slug';
 import { sayUnavailable, UnavailableButton } from '@/components/kit/unavailable-button';
 import { usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
+import { RetryNote } from '../places/kit-candidates/retry-note';
+import { LoadingLine, ReadFailed, ReadFailures } from '../places/tabStates';
+import { FAILED, type Loaded } from '../places/useTabReads';
 import { LIT_ROW, LoadingSection, litAttr, TabBody } from '../tabParts';
-import { type AccessData, litId, type PutInRow } from './accessModel';
+import { type AccessData, earlierWords, litId, type PutInRow } from './accessModel';
 import { ReasonAsk } from './ReasonAsk';
 import { RulingStrip } from './RulingStrip';
 
@@ -19,13 +22,20 @@ import { RulingStrip } from './RulingStrip';
  * it, the put-ins by who vouches for them, any live alerts, and the posted rules. A ruling here is
  * about whether the public may lawfully get there — never a word about the ice (D3).
  *
+ * Each read is in its state: the record or the access read failing is the tab's note with *Try
+ * again*; who ruled and where each launch is say *Couldn't be read* in place; a history read that
+ * stopped short makes the earlier rulings' count a floor ("19+").
+ *
  * Every control is drawn only when its handler is passed. Placing a put-in or a lot, linking a lot
  * and writing what a sign says are task modes not built yet: drawn as the board draws them, they
  * say so instead of acting.
  */
 
 export type AccessViewProps = {
-  data: AccessData | undefined;
+  /** The tab's data; `undefined` while it loads, `failed` when the record or access failed. */
+  data: Loaded<AccessData>;
+  /** Ask again for every read that failed. */
+  onRetry?: () => void;
   lit?: string | null;
   /** The clock the ruling's days are counted to. */
   now: number;
@@ -65,6 +75,7 @@ const SOURCE_HEAD: Record<PutInRow['source'], { title: ReactNode; aside: string 
 
 export function AccessView({
   data,
+  onRetry,
   lit = null,
   now,
   onRule,
@@ -87,11 +98,23 @@ export function AccessView({
       </TabBody>
     );
   }
+  if (data === FAILED) {
+    return (
+      <TabBody data-slot="access-tab">
+        {onRetry ? (
+          <RetryNote onRetry={onRetry}>Couldn’t read this body’s access.</RetryNote>
+        ) : (
+          <ReadFailed />
+        )}
+      </TabBody>
+    );
+  }
   const groups = (['official', 'osm', 'derived'] as const)
     .map((source) => ({ source, rows: data.putIns.filter((p) => p.source === source) }))
     .filter((g) => g.rows.length > 0);
   return (
     <TabBody ref={root} data-slot="access-tab">
+      <ReadFailures failures={data.failures} onRetry={onRetry} />
       <RulingSection data={data} lit={lit} now={now} onRule={onRule} />
       <Section title="Put-ins" count={data.putIns.length} data-slot="put-ins">
         {groups.length > 0 && (
@@ -223,6 +246,23 @@ function RulingSection({
           {ruling.statement}
         </p>
       )}
+      {ruling.verdict !== null && ruling.decidedAt !== null && ruling.history === undefined && (
+        // The strip's place while who ruled is on its way: its kickers, its line, its two states.
+        <span
+          aria-hidden="true"
+          data-slot="ruling-strip-loading"
+          className="flex flex-col gap-(--space-1_5)"
+        >
+          <LoadingLine width="100%" />
+          <LoadingLine width="100%" />
+          <LoadingLine width="60%" />
+        </span>
+      )}
+      {ruling.verdict !== null && ruling.decidedAt !== null && ruling.history === FAILED && (
+        <span data-slot="ruling-history-failed" className="text-assist leading-list text-fg3">
+          Who ruled and what stood before couldn’t be read
+        </span>
+      )}
       {ruling.verdict !== null && ruling.decidedAt !== null && ruling.before !== undefined && (
         <RulingStrip
           before={ruling.before}
@@ -231,6 +271,11 @@ function RulingSection({
           decidedBy={ruling.decidedBy}
           now={now}
         />
+      )}
+      {earlierWords(ruling.history) !== null && (
+        <span data-slot="ruling-earlier" className="text-assist leading-list text-fg3">
+          {earlierWords(ruling.history)}
+        </span>
       )}
       {onRule && (
         <div className={cn('flex flex-wrap gap-(--space-2)')}>
@@ -308,7 +353,15 @@ function PutInItem({
       {walk ?? <span />}
       {twoLines && (
         <>
-          <span className="truncate text-assist text-fg3">{p.where ?? ''}</span>
+          <span className="truncate text-assist text-fg3">
+            {p.where === undefined ? (
+              <LoadingLine width="7rem" />
+            ) : p.where === FAILED ? (
+              <ReadFailed />
+            ) : (
+              (p.where ?? '')
+            )}
+          </span>
           {actions || <span />}
         </>
       )}

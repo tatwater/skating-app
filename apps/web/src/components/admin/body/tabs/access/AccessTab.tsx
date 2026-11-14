@@ -1,65 +1,81 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import type { PublicAccessVerdict } from '@skating/core';
-import { useMutation, useQuery } from 'convex/react';
+import { useMutation } from 'convex/react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { useRole } from '@/lib/useRole';
 
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
+import { FAILED, type Loaded, read, useTabReads } from '../places/useTabReads';
 import { useTabAction } from '../useTabAction';
 import { AccessView } from './AccessView';
 import {
   type AccessData,
   accessFrom,
   accessMapScene,
-  type RulingAction,
-  rulingOf,
+  RULING_HISTORY_LIMIT,
+  rulingFrom,
 } from './accessModel';
 
 /**
  * Body › Access, wired. Reads: the body's record (the ruling, the posted rule), its access in one
  * round trip (`accessPoints.accessForBody`: put-ins, lots, alerts), its landmarks for where a launch
- * is (`landmarks.listForBody`), and the ruling's audit rows for who ruled and what stood before
- * (`moderation.listActions`, `audit.read`). Writes, each behind its capability and announced for
- * undo: the ruling (`waterBodies.setPublicAccess`, `access.rule` — no public access asks its
- * reason), and a mapped launch made official or hidden (`putIns.setOfficial` / `hide`,
- * `body.access`). Placing put-ins and lots, linking a lot and the posted-rules editor are task modes.
+ * is (`landmarks.listForBody`), and the ruling's history for who ruled, what stood before and how
+ * many rulings came earlier (`bodyConsole.history` by verb, `audit.read`). Writes, each behind its
+ * capability and announced for undo: the ruling (`waterBodies.setPublicAccess`, `access.rule` — no
+ * public access asks its reason), and a mapped launch made official or hidden (`putIns.setOfficial`
+ * / `hide`, `body.access`). Placing put-ins and lots, linking a lot and the posted-rules editor are
+ * task modes.
  */
 /**
- * The Access tab's data — the record's ruling and posted rule, the access read, the landmarks for
- * where a launch is, and the ruling's audit rows — memoized on the reads, so the map's `useData`
- * keeps its identity until one changes.
+ * The Access tab's reads and its data — memoized on the reads, so the map's `useData` keeps its
+ * identity until one changes. The record or the access read failing is the tab's failure; the
+ * landmarks and the history each say so in place.
  */
-export function useAccessData(bodyId: string): AccessData | undefined {
+export function useAccessRead(bodyId: string): { data: Loaded<AccessData>; retry: () => void } {
   const waterBodyId = bodyId as Id<'waterBodies'>;
-  const { can } = useRole();
-  const result = useQuery(api.waterBodies.get, { waterBodyId });
-  const access = useQuery(api.accessPoints.accessForBody, { waterBodyId });
-  const landmarks = useQuery(api.landmarks.listForBody, { waterBodyId });
-  const rulings = useQuery(
-    api.moderation.listActions,
-    can('audit.read')
-      ? { targetType: 'waterbody', targetId: bodyId, action: 'set_public_access', limit: 20 }
-      : 'skip',
-  );
-  const body = result?.available ? result.body : undefined;
-  return useMemo(() => {
+  const { can, isLoading } = useRole();
+  const readsAudit = can('audit.read');
+  const { reads, retry } = useTabReads({
+    body: read(api.waterBodies.get, { waterBodyId }),
+    access: read(api.accessPoints.accessForBody, { waterBodyId }),
+    landmarks: read(api.landmarks.listForBody, { waterBodyId }),
+    rulings: readsAudit
+      ? read(api.bodyConsole.history, {
+          waterBodyId,
+          action: 'set_public_access',
+          limit: RULING_HISTORY_LIMIT,
+        })
+      : null,
+  });
+  const { body: got, access, landmarks, rulings } = reads;
+  const body = got === FAILED ? FAILED : got?.available ? got.body : undefined;
+  // While the role loads, the history is on its way, not withheld.
+  const history = readsAudit ? rulings : isLoading ? undefined : 'hidden';
+  const data = useMemo<Loaded<AccessData>>(() => {
+    if (body === FAILED || access === FAILED) return FAILED;
     if (body === undefined || access === undefined) return undefined;
-    const latest = rulings === undefined ? undefined : ((rulings[0] as RulingAction) ?? null);
     return accessFrom(
       access,
-      rulingOf(body.publicAccess, latest),
+      rulingFrom(body.publicAccess, bodyId, history),
       body.postedAccess,
-      landmarks ?? null,
+      landmarks,
     );
-  }, [body, access, rulings, landmarks]);
+  }, [body, access, landmarks, history, bodyId]);
+  return { data, retry };
+}
+
+/** The drawing's data: the tab's, once its record and access are read. */
+export function useAccessData(bodyId: string): AccessData | undefined {
+  const { data } = useAccessRead(bodyId);
+  return data === FAILED ? undefined : data;
 }
 
 export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
   const waterBodyId = bodyId as Id<'waterBodies'>;
   const { can } = useRole();
-  const data = useAccessData(bodyId);
+  const { data, retry } = useAccessRead(bodyId);
   const setPublicAccess = useMutation(api.waterBodies.setPublicAccess);
   const setOfficial = useMutation(api.putIns.setOfficial);
   const hide = useMutation(api.putIns.hide);
@@ -77,6 +93,7 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
   return (
     <AccessView
       data={data}
+      onRetry={retry}
       lit={lit}
       now={now}
       canPlace={can('body.access')}

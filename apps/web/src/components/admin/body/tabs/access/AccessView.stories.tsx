@@ -4,6 +4,7 @@ import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 import { computedColor, sameColor } from '@/components/kit/measure';
 import { faceLoaded, must } from '@/components/kit/storyKit';
 
+import { FAILED } from '../places/useTabReads';
 import { InspectorFrame } from '../tabStoryFrame';
 import { AccessView } from './AccessView';
 import { BOARD_TODAY, MASCOMA_ACCESS, NO_ACCESS } from './accessFixtures';
@@ -110,6 +111,7 @@ export const NoPublicAccess: Story = {
     await expect(page.queryByRole('button', { name: 'Rule no public access' })).toBeNull();
     await expect(slot(canvasElement, 'alerts')).toHaveTextContent('Gate locked');
     await expect(slot(canvasElement, 'posted-rules')).toHaveTextContent('Open sunrise to sunset');
+    await expect(slot(canvasElement, 'ruling-earlier')).toHaveTextContent('1 earlier ruling');
   },
 };
 
@@ -125,6 +127,7 @@ export const NoRuling: Story = {
         decidedAt: null,
         decidedBy: null,
         before: undefined,
+        history: { earlier: 0, capped: false },
       },
     },
   },
@@ -133,6 +136,72 @@ export const NoRuling: Story = {
     const page = within(canvasElement);
     await expect(page.getByRole('button', { name: 'Rule accessible' })).toBeVisible();
     await expect(page.queryByRole('button', { name: 'Clear the ruling' })).toBeNull();
+  },
+};
+
+/** The history read stopped short: the earlier rulings are a floor, never drawn as whole. */
+export const CappedHistory: Story = {
+  args: {
+    ...EVERY_LEVER,
+    data: { ...NO_ACCESS, ruling: { ...NO_ACCESS.ruling, history: { earlier: 19, capped: true } } },
+  },
+  play: async ({ canvasElement }) => {
+    await expect(slot(canvasElement, 'ruling-earlier')).toHaveTextContent('19+ earlier rulings');
+  },
+};
+
+/** Who ruled is on its way: the strip's place is held. */
+export const HistoryLoading: Story = {
+  args: {
+    ...EVERY_LEVER,
+    data: {
+      ...MASCOMA_ACCESS,
+      ruling: { ...MASCOMA_ACCESS.ruling, before: undefined, decidedBy: null, history: undefined },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    await expect(slot(canvasElement, 'ruling-strip-loading')).toBeVisible();
+    await expect(canvasElement.querySelector('[data-slot="ruling-strip"]')).toBeNull();
+  },
+};
+
+/**
+ * Who ruled and where each launch is couldn't be read: each says so in place, and the note at the
+ * top names both with Try again. The ruling itself, from the record, still stands.
+ */
+export const ReadsFailed: Story = {
+  args: {
+    ...EVERY_LEVER,
+    onRetry: fn(),
+    data: {
+      ...MASCOMA_ACCESS,
+      ruling: { ...MASCOMA_ACCESS.ruling, before: undefined, decidedBy: null, history: FAILED },
+      putIns: MASCOMA_ACCESS.putIns.map((p) =>
+        p.source === 'official' ? p : { ...p, where: FAILED },
+      ),
+      failures: ['who ruled', 'where each launch is'],
+    },
+  },
+  play: async ({ canvasElement, args }) => {
+    const note = slot(canvasElement, 'read-failures');
+    await expect(note).toHaveTextContent('Couldn’t read who ruled and where each launch is.');
+    await expect(slot(canvasElement, 'ruling-history-failed')).toBeVisible();
+    await expect(slot(canvasElement, 'ruling-statement')).toHaveTextContent(
+      'Accessible to the public',
+    );
+    await expect(slots(canvasElement, 'read-failed')).toHaveLength(3);
+    await userEvent.click(within(note).getByRole('button', { name: 'Try again' }));
+    await expect(args.onRetry).toHaveBeenCalled();
+  },
+};
+
+/** The record or the access read couldn't be read: the tab says so, with Try again. */
+export const AccessFailed: Story = {
+  args: { data: FAILED, onRetry: fn() },
+  play: async ({ canvasElement }) => {
+    await expect(slot(canvasElement, 'retry-note')).toHaveTextContent(
+      'Couldn’t read this body’s access.',
+    );
   },
 };
 

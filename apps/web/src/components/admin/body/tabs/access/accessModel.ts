@@ -10,13 +10,15 @@ import {
 } from '@skating/core';
 
 import type { BodyMapScene, MapItem } from '../../map/mapDescriptors';
+import { FAILED, type Loaded } from '../places/useTabReads';
 
 type LatLng = { lat: number; lng: number };
 
 /**
  * The Access tab's data: the public-access ruling with what stood before it, the put-ins by who
  * vouches for them, the posted rules and any live alerts. Pure. An access ruling is about whether
- * the public may lawfully get there — never about the ice (D3). `null` means not recorded.
+ * the public may lawfully get there — never about the ice (D3). `null` means not recorded; a part
+ * read on its own is in its read's state ({@link Loaded}).
  */
 
 export type Person = { name: string; handle: string };
@@ -30,6 +32,12 @@ export type Ruling = {
   decidedBy: Person | null;
   /** What stood before this ruling; `undefined` when the history isn't known. */
   before: PublicAccessVerdict | null | undefined;
+  /**
+   * The ruling's history read (`bodyConsole.history`, `set_public_access`): how many rulings came
+   * before this one, and whether the read stopped short (`capped`: more may exist, so the number is
+   * a floor). `hidden` for a viewer who can't read the audit trail; loading or failed as a read.
+   */
+  history: Loaded<{ earlier: number; capped: boolean }> | 'hidden';
 };
 
 export type PutInRow = {
@@ -41,8 +49,8 @@ export type PutInRow = {
   walkM: number | null;
   /** The routed walk, to draw. */
   approach: LatLng[] | null;
-  /** Where it is, by the nearest landmark; `null` when none is close. */
-  where: string | null;
+  /** Where it is, by the nearest landmark's name; `null` when none is close. */
+  where: Loaded<string | null>;
 };
 
 export type LotRow = { id: string; name: string | null; at: LatLng };
@@ -63,6 +71,8 @@ export type AccessData = {
   /** The body's posted rule, in words; `null` when none is set. */
   postedRule: string | null;
   alerts: AlertRow[];
+  /** What couldn't be read, in words ("who ruled", "where each launch is"). */
+  failures: string[];
 };
 
 /** "Accessible to the public": a one-clause status carries no period (Review 14 #9). */
@@ -95,7 +105,7 @@ function priorVerdict(action: RulingAction): PublicAccessVerdict | null {
 export function rulingOf(
   access: PublicAccess | undefined,
   latest: RulingAction | null | undefined,
-): Ruling {
+): Omit<Ruling, 'history'> {
   const matches =
     latest != null &&
     (access === undefined ? true : Math.abs(latest.createdAt - access.decidedAt) < 60_000);
@@ -105,10 +115,59 @@ export function rulingOf(
     decidedAt: access?.decidedAt ?? null,
     decidedBy:
       matches && access !== undefined && latest.actor !== null
-        ? { name: latest.actor.displayName, handle: latest.actor.username }
+        ? {
+            name: latest.actor.displayName.trim() || latest.actor.username,
+            handle: latest.actor.username,
+          }
         : null,
     before: matches ? priorVerdict(latest) : undefined,
   };
+}
+
+/** A row of `bodyConsole.history`, trimmed to what the ruling reads. */
+export type HistoryRow = {
+  targetType: string;
+  targetId: string;
+  createdAt: number;
+  actor: { displayName: string; username: string } | null;
+  metadata?: unknown;
+};
+
+/** How many rulings a history read asks for: the newest, and enough before it to count. */
+export const RULING_HISTORY_LIMIT = 20;
+
+/**
+ * The ruling from the body's record and its history read (`bodyConsole.history`, filtered to
+ * `set_public_access`). History covers the body's whole family; only the body's own rows are its
+ * rulings — the newest says who ruled and what stood before, the rest count as earlier. A read that
+ * stopped short (`capped`) makes that count a floor.
+ */
+export function rulingFrom(
+  access: PublicAccess | undefined,
+  bodyId: string,
+  history: Loaded<{ entries: readonly HistoryRow[]; capped: boolean }> | 'hidden',
+): Ruling {
+  if (history === 'hidden' || history === undefined || history === FAILED) {
+    return { ...rulingOf(access, undefined), history };
+  }
+  const own = history.entries.filter((e) => e.targetType === 'waterbody' && e.targetId === bodyId);
+  const ruling = rulingOf(access, own[0] ?? null);
+  // The newest row counts as this ruling's only when it made it; otherwise every row came earlier.
+  const made = ruling.before !== undefined ? 1 : 0;
+  return { ...ruling, history: { earlier: own.length - made, capped: history.capped } };
+}
+
+/** The earlier rulings, in words: "1 earlier ruling", "19+ earlier rulings"; nothing when none. */
+export function earlierWords(history: Ruling['history']): string | null {
+  if (typeof history !== 'object') return null;
+  const { earlier, capped } = history;
+  if (capped) {
+    return earlier === 0
+      ? 'Earlier rulings may exist past what this read shows'
+      : `${earlier.toLocaleString('en-US')}+ earlier rulings`;
+  }
+  if (earlier === 0) return null;
+  return `${earlier.toLocaleString('en-US')} earlier ${earlier === 1 ? 'ruling' : 'rulings'}`;
 }
 
 /** A state's words on the strip. */
@@ -133,13 +192,14 @@ export const dayCount = (n: number) => `${n.toLocaleString('en-US')} ${n === 1 ?
 /** How near a landmark must be to name where a put-in is. */
 export const WHERE_RADIUS_M = 1_000;
 
-/** The nearest landmark within reach of a point, by name. */
+/** The nearest landmark within reach of a point, by name; loading and failed pass through. */
 export function whereOf(
   at: LatLng,
-  landmarks: ReadonlyArray<{ name: string; point: LatLng }> | null,
-): string | null {
+  landmarks: Loaded<ReadonlyArray<{ name: string; point: LatLng }>>,
+): Loaded<string | null> {
+  if (landmarks === undefined || landmarks === FAILED) return landmarks;
   let best: { name: string; d: number } | null = null;
-  for (const l of landmarks ?? []) {
+  for (const l of landmarks) {
     const d = haversineMeters(at, l.point);
     if (d <= WHERE_RADIUS_M && (best === null || d < best.d)) best = { name: l.name, d };
   }
@@ -173,7 +233,7 @@ export function accessFrom(
   input: AccessInput,
   ruling: Ruling,
   postedAccess: PostedAccess | undefined,
-  landmarks: ReadonlyArray<{ name: string; point: LatLng }> | null,
+  landmarks: Loaded<ReadonlyArray<{ name: string; point: LatLng }>>,
 ): AccessData {
   const putIns: PutInRow[] = input.putIns
     .map((p) => {
@@ -211,6 +271,10 @@ export function accessFrom(
       on: names.get(a.putInId ?? a.parkingAreaId ?? '') ?? null,
       official: a.official,
     })),
+    failures: [
+      ...(ruling.history === FAILED ? ['who ruled'] : []),
+      ...(landmarks === FAILED ? ['where each launch is'] : []),
+    ],
   };
 }
 
