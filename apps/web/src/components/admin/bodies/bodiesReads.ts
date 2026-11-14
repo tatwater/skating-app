@@ -16,7 +16,7 @@ import type {
   PreviewCount,
 } from './bodiesData';
 import type { BodyRow, BodySort } from './bodiesModel';
-import { type BodiesQuery, isSearch } from './bodiesSearch';
+import { type BodiesQuery, listSort } from './bodiesSearch';
 import { FACET_IDS } from './bodyFacets';
 import type { BodyLane } from './bodyLanes';
 
@@ -76,10 +76,9 @@ export function listArgsOf(query: BodiesQuery, now: number): ListArgs | null {
   const lane = libraryLaneOf(query.lane);
   if (lane === null) return null;
   const q = query.q.trim();
-  const searching = isSearch(q);
   // A search too short for the server to run ranks nothing: the lane in its own order, not the
   // match's (which the server would answer by name).
-  const sort = sortArg(searching || query.sort.column !== 'match' ? query.sort : query.lane.sort);
+  const sort = sortArg(listSort(query));
   const facets = Object.fromEntries(
     FACET_IDS.flatMap((id) => {
       const chosen = query.facets[id];

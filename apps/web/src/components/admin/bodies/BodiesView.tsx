@@ -8,9 +8,9 @@ import { type Count, countText } from '../overview/overviewModel';
 import { ConsoleStatus } from '../shell/ConsoleShell';
 import { BodiesTable } from './BodiesTable';
 import { BodyPreview } from './BodyPreview';
-import type { BodiesListData, BodyPreviewData } from './bodiesData';
+import { allRows, type BodiesListData, type BodyPreviewData } from './bodiesData';
 import { laneKicker, nextSort } from './bodiesModel';
-import { type BodiesQuery, listKey } from './bodiesSearch';
+import { type BodiesQuery, listKey, listSort } from './bodiesSearch';
 import { appliedOptions, chipWords, toggleOption } from './bodyFacets';
 import { BODY_LANES, type BodyLane, laneById, laneGroups } from './bodyLanes';
 import { ListTools } from './ListTools';
@@ -49,8 +49,10 @@ export type BodiesViewProps = {
   laneCounts: Readonly<Partial<Record<string, Count | null>>>;
   /** How many bodies the corpus holds, when a read says. */
   corpus: Count | null;
-  /** The open body; `undefined` while it loads, `null` with none open, `'error'` if it failed. */
-  /** `'unavailable'`: a body the reads can't serve (rejected) — drawn from its list row. */
+  /**
+   * The open body; `undefined` while it loads, `null` with none open, `'error'` if it failed, and
+   * `'unavailable'` for a body the reads can't serve (a rejected one) — drawn from its list row.
+   */
   preview: BodyPreviewData | null | undefined | 'error' | 'unavailable';
   /** The instant ages are read against. */
   now: number;
@@ -87,8 +89,20 @@ export function BodiesView({
   const search = useRef<HTMLInputElement>(null);
   const [filterOpen, setFilterOpen] = useState(false);
   const { lane } = query;
+  // The order the list is in — a search too short to run keeps the lane's, its heading lit.
+  const sort = listSort(query);
   const set = (patch: Partial<BodiesQuery>, how?: { replace?: boolean }) =>
     onQueryChange({ ...query, ...patch }, how);
+  // A body the reads can't serve is drawn from its row; while the first page is still on its way
+  // the pane holds its shape rather than saying the list doesn't hold it.
+  const unavailableRow =
+    preview === 'unavailable' ? (allRows(list).find((r) => r.id === query.bodyId) ?? null) : null;
+  const previewData =
+    preview !== 'unavailable'
+      ? preview
+      : unavailableRow === null && list.status === 'loading'
+        ? undefined
+        : { unavailable: unavailableRow };
 
   // F opens the filter from the list's tools (the tabs, the buttons, the chips) — not from the
   // search, which types it, nor from the rows, whose letters type ahead.
@@ -232,10 +246,10 @@ export function BodiesView({
             lane={lane}
             list={list}
             q={query.q}
-            sort={query.sort}
+            sort={sort}
             selectedId={query.bodyId}
             now={now}
-            onSort={(column) => set({ sort: nextSort(query.sort, column) })}
+            onSort={(column) => set({ sort: nextSort(sort, column) })}
             onSelect={(bodyId) => set({ bodyId }, { replace: true })}
             onOpen={(bodyId) => {
               set({ bodyId }, { replace: true });
@@ -258,20 +272,17 @@ export function BodiesView({
         className="flex min-h-0 min-w-0 flex-col outline-none focus-visible:shadow-[inset_0_0_0_var(--stroke-hair)_var(--fg)]"
       >
         <BodyPreview
-          data={
-            preview === 'unavailable'
-              ? {
-                  unavailable:
-                    [...list.rows, ...(list.others ?? []).flatMap((g) => g.rows)].find(
-                      (r) => r.id === query.bodyId,
-                    ) ?? null,
-                }
-              : preview
-          }
+          data={previewData}
           now={now}
           {...(bodyLink !== undefined && { bodyLink })}
           onOpen={onOpenBody}
-          {...(onRetryPreview !== undefined && { onRetry: onRetryPreview })}
+          {...(onRetryPreview !== undefined && {
+            // The button gives way to the read it re-runs: focus stays in the pane, not the page.
+            onRetry: () => {
+              onRetryPreview();
+              inspector.current?.focus();
+            },
+          })}
         />
       </section>
     </div>

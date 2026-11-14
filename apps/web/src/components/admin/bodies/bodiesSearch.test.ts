@@ -5,6 +5,7 @@ import { BODY_COLUMNS } from './bodiesModel';
 import {
   bodiesSearchSchema,
   listKey,
+  listSort,
   queryOf,
   SEARCH_MAX_CHARS,
   searchFor,
@@ -82,6 +83,13 @@ describe('queryOf and searchFor', () => {
       sort: 'reports',
       dir: 'desc',
     });
+  });
+  it('keeps the lane’s order while a search is too short to rank, else the order chosen', () => {
+    expect(listSort(queryOf({ q: 'm' }))).toEqual({ column: 'reports', dir: 'desc' });
+    expect(listSort(queryOf({ q: ' m ' }))).toEqual({ column: 'reports', dir: 'desc' });
+    expect(listSort(queryOf({ q: 'mo' }))).toEqual({ column: 'match' });
+    expect(listSort(queryOf({ q: 'm', sort: 'name' }))).toEqual({ column: 'name', dir: 'asc' });
+    expect(listSort(queryOf({}))).toEqual({ column: 'reports', dir: 'desc' });
   });
   it('takes a column’s first direction when the URL names none', () => {
     expect(queryOf({ sort: 'name' }).sort).toEqual({ column: 'name', dir: 'asc' });

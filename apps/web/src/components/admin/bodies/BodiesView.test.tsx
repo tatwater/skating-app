@@ -225,6 +225,15 @@ describe('the search', () => {
     }
   });
 
+  it('lights the lane’s heading while a search is too short to rank, and reverses it', async () => {
+    const spy = vi.fn();
+    render(<Harness spy={spy} initial={queryOf({ q: 'm' })} />);
+    const reports = screen.getByRole('columnheader', { name: /Reports/ });
+    expect(reports).toHaveAttribute('aria-sort', 'descending');
+    await userEvent.click(screen.getByRole('button', { name: 'Reports' }));
+    expect(spy.mock.lastCall?.[0].sort).toEqual({ column: 'reports', dir: 'asc' });
+  });
+
   it('draws no other-standing group and no tally while no read gives the other standings', () => {
     render(<Harness initial={queryOf({ q: 'mor' })} list={{ ...LIST_SEARCH, others: null }} />);
     expect(document.querySelector('[data-slot=search-tally]')).toBeNull();

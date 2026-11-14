@@ -28,7 +28,7 @@ import { LedStrip } from '@/components/kit/trace-chart';
 import { KEYS_PASS_THROUGH } from '@/lib/keys';
 import { cn } from '@/lib/utils';
 import { countText } from '../overview/overviewModel';
-import type { BodiesListData } from './bodiesData';
+import { allRows, type BodiesListData } from './bodiesData';
 import {
   acresText,
   asksText,
@@ -236,10 +236,8 @@ export function BodiesTable({
       ),
     [lane.columns],
   );
-  const data = useMemo(
-    () => [...list.rows, ...(list.others ?? []).flatMap((g) => g.rows)],
-    [list.rows, list.others],
-  );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the rows are the list's rows and groups.
+  const data = useMemo(() => allRows(list), [list.rows, list.others]);
   const table = useTable({ features, columns, data, getRowId: (row) => row.id });
   const rowById = new Map(table.getRowModel().rows.map((r) => [r.id, r]));
 

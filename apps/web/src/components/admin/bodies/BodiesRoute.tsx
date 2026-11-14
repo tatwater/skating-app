@@ -196,16 +196,21 @@ type SummaryRead = {
   retry: () => void;
 };
 
+const NOTHING_PAUSED: ReadonlySet<string> = new Set();
+
 /**
- * A read to try again: `retry` drops its subscription for one render and takes it up again, so the
- * server runs it anew rather than the client answering with the failure it holds.
+ * Reads to try again: `retry(keys)` drops those reads' subscriptions for one render and takes them
+ * up again, so the server runs them anew. Until it answers, Convex's client still holds the failure
+ * it had, so the read reads as failed until its new answer lands. A read another component also
+ * subscribes to (the same query and arguments) keeps its server subscription, and isn't run anew.
  */
-function useRetry(): { paused: boolean; retry: () => void } {
-  const [paused, setPaused] = useState(false);
+function useRetry(): { paused: ReadonlySet<string>; retry: (keys: Iterable<string>) => void } {
+  const [paused, setPaused] = useState(NOTHING_PAUSED);
   useEffect(() => {
-    if (paused) setPaused(false);
+    if (paused.size > 0) setPaused(NOTHING_PAUSED);
   }, [paused]);
-  return { paused, retry: useCallback(() => setPaused(true), []) };
+  const retry = useCallback((keys: Iterable<string>) => setPaused(new Set(keys)), []);
+  return { paused, retry };
 }
 
 function useSummary(args: ListArgs | null): SummaryRead {
@@ -215,7 +220,7 @@ function useSummary(args: ListArgs | null): SummaryRead {
   // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the arguments' value.
   const queries = useMemo(() => {
     const out: Parameters<typeof useQueries>[0] = {};
-    if (summaryArgs !== null && !paused) {
+    if (summaryArgs !== null && !paused.has('summary')) {
       out.summary = { query: api.bodies.listSummary, args: summaryArgs };
     }
     return out;
@@ -230,7 +235,7 @@ function useSummary(args: ListArgs | null): SummaryRead {
     held: last?.value,
     laneHeld: last !== undefined && last.lane === args?.lane ? last.value : undefined,
     failed: got instanceof Error,
-    retry,
+    retry: () => retry(['summary']),
   };
 }
 
@@ -254,30 +259,28 @@ const minute = (at: number) => Math.floor(at / 60_000) * 60_000;
 
 type GetRead = { available: true; body: BodyDoc } | { available: false } | null;
 
-/** The open body's preview, from its reads. */
+type PreviewReads = {
+  body?: GetRead | Error;
+  putIns?: PutIns | Error;
+  subAreas?: SubAreas | Error;
+  facts?: PreviewFacts | null | Error;
+  history?: BodyHistory | Error;
+};
+
+/** The open body's preview, from its reads; `retry` re-runs only the reads that failed. */
 function usePreview(
   bodyId: string | null,
   canRead: boolean,
   canReadAudit: boolean,
 ): { data: BodyPreviewData | null | undefined | 'error' | 'unavailable'; retry: () => void } {
   const { paused, retry } = useRetry();
-  const data = usePreviewData(bodyId, canRead, canReadAudit, paused);
-  return { data, retry };
-}
-
-function usePreviewData(
-  bodyId: string | null,
-  canRead: boolean,
-  canReadAudit: boolean,
-  paused: boolean,
-): BodyPreviewData | null | undefined | 'error' | 'unavailable' {
   const id =
     canRead && bodyId !== null && ID_SHAPE.test(bodyId) ? (bodyId as Id<'waterBodies'>) : null;
   const now = useClockFor(id ?? '');
   const queries = useMemo<Parameters<typeof useQueries>[0]>(() => {
-    if (id === null || paused) return {};
+    if (id === null) return {};
     const waterBodyId = id;
-    return {
+    const reads: Parameters<typeof useQueries>[0] = {
       body: { query: api.waterBodies.get, args: { waterBodyId } },
       putIns: { query: api.putIns.listForBody, args: { waterBodyId } },
       subAreas: { query: api.subAreas.listForBody, args: { waterBodyId } },
@@ -286,14 +289,19 @@ function usePreviewData(
         history: { query: api.bodyConsole.history, args: { waterBodyId, limit: HISTORY_ROWS } },
       }),
     };
+    return Object.fromEntries(Object.entries(reads).filter(([key]) => !paused.has(key)));
   }, [id, now, canReadAudit, paused]);
-  const got = useQueries(queries) as {
-    body?: GetRead | Error;
-    putIns?: PutIns | Error;
-    subAreas?: SubAreas | Error;
-    facts?: PreviewFacts | null | Error;
-    history?: BodyHistory | Error;
-  };
+  const got = useQueries(queries) as PreviewReads;
+  const failed = Object.entries(got).flatMap(([key, r]) => (r instanceof Error ? [key] : []));
+  return { data: previewOf(id, got, canReadAudit, now), retry: () => retry(failed) };
+}
+
+function previewOf(
+  id: Id<'waterBodies'> | null,
+  got: PreviewReads,
+  canReadAudit: boolean,
+  now: number,
+): BodyPreviewData | null | undefined | 'error' | 'unavailable' {
   if (id === null) return null;
   const body = got.body;
   if (body === undefined) return undefined;

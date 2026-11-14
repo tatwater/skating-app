@@ -136,6 +136,14 @@ export function queryOf(
   return { lane, bodyId: search.body ?? null, q, state: search.state ?? null, facets, sort };
 }
 
+/**
+ * The order the list is in: the match only while a search runs. A search too short to run ranks
+ * nothing, so the lane keeps its own order — the order the read is asked for and the heading lit.
+ */
+export function listSort(query: BodiesQuery): BodySort {
+  return query.sort.column === 'match' && !isSearch(query.q) ? query.lane.sort : query.sort;
+}
+
 /** The search that puts the library at `query` — defaults left out, so equal places are equal URLs. */
 export function searchFor(query: BodiesQuery): BodiesSearch {
   const out: BodiesSearch = {};

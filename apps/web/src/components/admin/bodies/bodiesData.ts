@@ -77,6 +77,11 @@ export const UNREAD_LIST: BodiesListData = {
   states: [],
 };
 
+/** Every row the list draws, in order: the lane's, then each other standing's group. */
+export function allRows(list: BodiesListData): BodyRow[] {
+  return [...list.rows, ...(list.others ?? []).flatMap((g) => g.rows)];
+}
+
 // ── The preview ──────────────────────────────────────────────────────────────────────────────
 
 export interface PreviewAsk {

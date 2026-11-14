@@ -28,7 +28,8 @@ import type { BodyLane } from './bodyLanes';
  *
  * - **The search** waits a beat before it asks (`SEARCH_DEBOUNCE_MS`), so the URL and the read
  *   follow the words, not each key. Its `/` cap shows at rest (it's the key that puts focus here);
- *   while it holds words it says how many matched where ("2 active · 4 dormant").
+ *   while it runs it says how many matched where ("2 active · 4 dormant") — once a read gives the
+ *   other standings' matches; until then it says nothing.
  * - **Filter tabs carry no counts**; the menu's options keep theirs.
  * - A control the lane's read can't honor is drawn off, never left to lie.
  */
