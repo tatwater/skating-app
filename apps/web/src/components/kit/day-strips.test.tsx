@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { type DayStrip, DayStrips, dayParts, roomAbove, stripStep } from './day-strips';
+import { type DayStrip, DayStrips, dayParts, MIN_MARK, roomAbove, stripStep } from './day-strips';
 
 const strip = (values: (number | null)[], unknown?: number[]): DayStrip => ({
   key: 's',
@@ -51,6 +51,16 @@ describe('DayStrips', () => {
     expect(marks[0]?.dataset.count).toBe('30');
     const step = stripStep(strip([10, 0], [30, 0]));
     expect(Number(marks[0]?.getAttribute('height'))).toBeCloseTo(30 * step, 6);
+  });
+
+  it('beside a very tall day, a day with one hazard still draws a mark that can be seen', () => {
+    const tall = strip([1, 400, 0], [0, 0, 1]);
+    expect(stripStep(tall) * 1).toBeLessThan(MIN_MARK);
+    const { container } = render(<DayStrips strips={[tall]} months={[]} days={3} />);
+    const bars = container.querySelectorAll<SVGRectElement>('[data-slot="day-strip-bar"]');
+    expect(Number(bars[0]?.getAttribute('height'))).toBe(MIN_MARK);
+    const unknown = container.querySelector<SVGRectElement>('[data-slot="day-strip-unknown"]');
+    expect(Number(unknown?.getAttribute('height'))).toBe(MIN_MARK);
   });
 
   it('the first strip’s tall day grows the drawing upward, never over what is above it', () => {

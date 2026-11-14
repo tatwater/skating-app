@@ -16,6 +16,8 @@ import { cn } from '@/lib/utils';
  *   strip above draws every bar of that strip on a smaller step, so each day keeps its proportion;
  *   a reader hears the numbers, not the heights. On a step too small for a block to read, a day's
  *   unknown part is one brighter bar of the same height — one mark a day, never one per hazard.
+ *   However small the step, a marked day's bar is never thinner than {@link MIN_MARK}, so a day
+ *   that holds a hazard never reads as empty beside a much taller one.
  *   The first strip has nothing above it but the page, so the drawing grows upward to hold it.
  * - **A day that hasn't happened is `null`**: the baseline goes dotted from the last real day on,
  *   and nothing is drawn — never a zero.
@@ -67,6 +69,12 @@ const STRIPS_HEADROOM = STRIPS_PITCH - 6;
 const UNKNOWN_GAP = 1 / 3;
 /** The smallest step the unknown part is drawn on block by block; below it, one bar a day. */
 const UNKNOWN_BLOCK_STEP = 1.5;
+/**
+ * The least height a marked day's known bar, or its one unknown bar, is drawn at: on a step shrunk
+ * for a very tall day, one hazard's share would otherwise be a sliver no one can see, and a day
+ * that holds a hazard would read as an empty one.
+ */
+export const MIN_MARK = 1;
 
 /** One day's known count and unknown part, as the strip draws them. */
 export function dayParts(strip: DayStrip, day: number): { known: number; unknown: number } | null {
@@ -176,7 +184,10 @@ function DayStrips({
               const p = dayParts(s, i);
               if (p === null || p.known + p.unknown === 0) return null;
               const x = dayX(i, days) + 0.2;
-              const top = base - 0.5 - p.known * step;
+              // A marked day is never drawn thinner than a mark can be seen.
+              const knownHeight = p.known > 0 ? Math.max(p.known * step, MIN_MARK) : 0;
+              const unknownHeight = Math.max(p.unknown * step, MIN_MARK);
+              const top = base - 0.5 - knownHeight;
               const title = s.dayTitle?.(i);
               return (
                 <g
@@ -195,7 +206,7 @@ function DayStrips({
                       x={x}
                       y={top}
                       width={width}
-                      height={p.known * step}
+                      height={knownHeight}
                       className="fill-fg3"
                     />
                   )}
@@ -218,9 +229,9 @@ function DayStrips({
                           data-slot="day-strip-unknown"
                           data-count={p.unknown}
                           x={x}
-                          y={top - p.unknown * step}
+                          y={top - unknownHeight}
                           width={width}
-                          height={p.unknown * step}
+                          height={unknownHeight}
                           className="fill-fg1"
                         />
                       )}

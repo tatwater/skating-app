@@ -6,6 +6,9 @@ import {
   seasonStartMs,
 } from '@skating/core';
 
+import { listWords } from '@/lib/words';
+import { seasonYears } from '../../../shell/consoleTime';
+
 /**
  * The Standing tab's arithmetic: what keeps an active body active at each 1 July rollover, laid on
  * the years ahead. Pure, with `now` passed in.
@@ -65,10 +68,8 @@ export const RETENTION_YEARS = 4;
 
 const YEAR_MS = 365.25 * 86_400_000;
 
-/** "2029–30" — a season by the years it spans. */
-export function seasonWord(season: Season): string {
-  return `${season}–${String((season + 1) % 100).padStart(2, '0')}`;
-}
+/** "2029–30" — a season by the years it spans (the console's one season word). */
+export const seasonWord: (season: Season) => string = seasonYears;
 
 /** The last season use at `at` keeps a body active into: `seasonOf(at) + INACTIVE_SEASONS`. */
 export function activityHoldsThrough(at: number): Season {
@@ -214,10 +215,4 @@ function footFor(
   // Only a complete read may say nothing holds: an unread reason might.
   if (!complete) return '';
   return `Nothing keeps it: the ${rolloverWords(seasonStartMs(seasonOf(now) + 1))} rollover sets it dormant.`;
-}
-
-/** "a, b and c". */
-function listWords(items: readonly string[]): string {
-  if (items.length <= 1) return items.join('');
-  return `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`;
 }

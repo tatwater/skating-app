@@ -100,6 +100,7 @@ function Meter({
       />
     );
   if (value === null) {
+    // No meter role, but still its kicker over the track.
     return (
       <span
         data-slot="meter"
@@ -109,6 +110,14 @@ function Meter({
           typeof className === 'string' ? className : undefined,
         )}
       >
+        {label != null && (
+          <span
+            data-slot="meter-label"
+            className="min-w-0 text-kick leading-(--lead-snug) font-semibold tracking-kick text-fg3 uppercase"
+          >
+            {label}
+          </span>
+        )}
         <span data-slot="meter-track" className="relative block h-(--stroke-now) w-full bg-line">
           <span className="sr-only">Not measured</span>
           {tick}

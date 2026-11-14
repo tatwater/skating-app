@@ -178,6 +178,9 @@ export function HazardsTabView({
       onRetry={onRetry}
       lit={lit}
       onLitChange={onLitChange}
+      litOf={(featureId) => featureLit(featureId, season, currentSeason)}
+      // Clearing a feature in a past winter stays in that winter, as a hazard's does.
+      cleared={winterLit(season, currentSeason)}
       demote={demote}
       edit={edit}
       onAsk={setDemoting}
@@ -698,6 +701,8 @@ function FeatureList({
   onRetry,
   lit,
   onLitChange,
+  litOf,
+  cleared,
   demote,
   edit,
   onAsk,
@@ -706,6 +711,10 @@ function FeatureList({
   onRetry: (() => void) | undefined;
   lit: string | null;
   onLitChange: (lit: string | null) => void;
+  /** A feature's lit address, in the winter on screen. */
+  litOf: (id: string) => string;
+  /** What the lit address becomes when the lit feature is pressed again. */
+  cleared: string | null;
   demote: HazardsTabViewProps['onDemote'];
   edit: HazardsTabViewProps['onEditShape'];
   onAsk: (f: FeatureRowWithGlyph) => void;
@@ -722,7 +731,7 @@ function FeatureList({
   return (
     <ul aria-label="Known features" className="m-0 flex list-none flex-col p-0">
       {features.map((f) => {
-        const id = featureLit(f.id);
+        const id = litOf(f.id);
         return (
           <li
             key={f.id}
@@ -734,7 +743,7 @@ function FeatureList({
               type="button"
               aria-label={`Show ${f.type} on the map`}
               aria-pressed={lit === id}
-              onClick={() => onLitChange(lit === id ? null : id)}
+              onClick={() => onLitChange(lit === id ? cleared : id)}
               className="cursor-pointer border-0 bg-transparent p-0 outline-none focus-visible:shadow-focus"
             >
               <Glyph glyph={f.glyph} />

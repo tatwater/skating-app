@@ -1,4 +1,4 @@
-import { type HazardShape, hazardFootprint, type Season } from '@skating/core';
+import { type HazardShape, hazardFootprint, isBrowsableSeason, type Season } from '@skating/core';
 
 import type { BodyMapScene, MapOutline } from '../../map/mapDescriptors';
 
@@ -58,17 +58,27 @@ function footprintOf(s: Shaped): Area | null {
  */
 export const hazardLit = (id: string, season?: Season, current?: Season) =>
   season === undefined || season === current ? `hazard:${id}` : `hazard:${season}.${id}`;
-export const featureLit = (id: string) => `feature:${id}`;
+/**
+ * A known feature's address: like a hazard's, it carries the winter on screen when that is a past
+ * one, so lighting a feature while a past winter is shown keeps that winter (a feature has no
+ * winter of its own, but the list and the map beside it do).
+ */
+export const featureLit = (id: string, season?: Season, current?: Season) =>
+  season === undefined || season === current ? `feature:${id}` : `feature:${season}.${id}`;
 
 /** A chosen winter with nothing in it lit: `null` for the current one, which needs no address. */
 export const winterLit = (season: Season, current: Season): string | null =>
   season === current ? null : `winter:${season}`;
 
-/** The winter a lit address is in: a chosen past winter, a past winter's hazard, or now. */
+/**
+ * The winter a lit address is in: a chosen past winter, a past winter's hazard or feature, or now.
+ * A year the server wouldn't browse (it reads such a season as this one) is now, too, so a crafted
+ * address never labels this winter's hazards as another's.
+ */
 export function seasonOfLit(lit: string | null | undefined, current: Season): Season {
-  const m = /^(?:winter:(\d{4})$|hazard:(\d{4})\.)/.exec(lit ?? '');
+  const m = /^(?:winter:(\d{4})$|(?:hazard|feature):(\d{4})\.)/.exec(lit ?? '');
   const year = Number(m?.[1] ?? m?.[2]);
-  return Number.isInteger(year) && year <= current ? year : current;
+  return isBrowsableSeason(year) && year <= current ? year : current;
 }
 
 export function hazardsMapScene(data: HazardsMapData, lit: string | null): BodyMapScene {
@@ -78,7 +88,7 @@ export function hazardsMapScene(data: HazardsMapData, lit: string | null): BodyM
     if (geometry === null) continue;
     items.push({
       kind: 'outline',
-      id: featureLit(f._id),
+      id: featureLit(f._id, data.season, data.current),
       layer: 'features',
       style: 'footprint',
       geometry,

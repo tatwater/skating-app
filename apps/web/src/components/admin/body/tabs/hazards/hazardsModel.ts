@@ -7,6 +7,7 @@ import {
   type HazardType,
   type Season,
   seasonOf,
+  verdictLabel,
 } from '@skating/core';
 
 import { HAZARDS_WORDS, wordsContext } from './hazardsWords';
@@ -77,7 +78,7 @@ export type HazardRow = {
   healing: boolean;
   /** Where on the body, when the row says; `null` draws the type alone. */
   place: string | null;
-  /** "3 “still there” · healing". */
+  /** "3 “still there” · “Healing — still unsafe”". */
   sub: string;
   /** "1 d" — since anyone last looked. */
   age: string;
@@ -105,7 +106,9 @@ export function hazardRows(hazards: readonly HazardInput[], now: number): Hazard
       place: h.subAreaName ?? null,
       sub: [
         still === 0 ? 'No other sighting' : `${still} “still there”`,
-        ...(healing ? ['“healing”'] : []),
+        // The skaters' whole verdict, never a bare "healing": the word without "still unsafe"
+        // reads as the hazard going away (D3), and a crossing's verdict is its own.
+        ...(healing ? [`“${verdictLabel('healing_unsafe', h.type as HazardType)}”`] : []),
       ].join(' · '),
       age: ageWords(h.lastConfirmedAt, now),
       gone: Math.min(h.goneCount, DEFAULT_REMOVAL_THRESHOLD),

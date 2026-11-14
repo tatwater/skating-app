@@ -91,7 +91,7 @@ describe('hazard rows', () => {
         'Wet / working crack',
         'aging',
         'Across the north end',
-        '1 “still there” · “healing”',
+        '1 “still there” · “Healing — still unsafe”',
         '3 d',
         0,
       ],
@@ -112,6 +112,19 @@ describe('hazard rows', () => {
       FEB_NOW,
     );
     expect([none?.healing, disputed?.healing]).toEqual([false, false]);
+  });
+
+  it('quotes the whole healing verdict, never a bare “healing”, and a crossing’s own words', () => {
+    const base = FEB_HAZARDS[0] as (typeof FEB_HAZARDS)[number];
+    const [ridge, crossing] = hazardRows(
+      [
+        { ...base, healingState: 'healing_unsafe' },
+        { ...base, type: 'ridge_crossing', healingState: 'healing_unsafe' },
+      ],
+      FEB_NOW,
+    );
+    expect(ridge?.sub).toContain('“Healing — still unsafe”');
+    expect(crossing?.sub).toContain('“Crossing looks dicey now”');
   });
 
   it('a stale or unconfirmed hazard is never dropped', () => {
@@ -526,6 +539,11 @@ describe('the winter in the lit address', () => {
     // A winter that hasn't come is no winter: the current one.
     expect(seasonOfLit('winter:2031', NOW)).toBe(NOW);
     expect(seasonOfLit('winter:23', NOW)).toBe(NOW);
+    // A feature lit in a past winter keeps that winter.
+    expect(seasonOfLit('feature:2023.f1', NOW)).toBe(2023);
+    // A year the server won't browse (it would answer with this season) is now.
+    expect(seasonOfLit('winter:1000', NOW)).toBe(NOW);
+    expect(seasonOfLit('hazard:1899.h1', NOW)).toBe(NOW);
   });
 
   it('keeps a past winter through lighting a hazard and clearing it', () => {

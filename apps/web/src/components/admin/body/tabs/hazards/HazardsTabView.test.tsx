@@ -2,6 +2,7 @@ import { act, cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import fc from 'fast-check';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { MIN_MARK } from '@/components/kit/day-strips';
 import { UNAVAILABLE } from '@/components/kit/unavailable-button';
 import { stubJsdomAnimations } from '../jsdomStubs';
 import { HazardsTabView, type HazardsTabViewProps } from './HazardsTabView';
@@ -15,6 +16,7 @@ import {
   SEASON,
   WATCH_OPENED,
 } from './hazardsFixtures';
+import { seasonOfLit } from './hazardsMap';
 import { archivedRows, dayWords, hazardRows, wintersFrom, winterWindow } from './hazardsModel';
 
 const base: HazardsTabViewProps = {
@@ -165,6 +167,23 @@ describe('HazardsTabView — the default board', () => {
     render(<HazardsTabView {...base} onLitChange={onLitChange} />);
     await userEvent.click(screen.getByRole('button', { name: 'Show Spring / current on the map' }));
     expect(onLitChange).toHaveBeenCalledWith('feature:f-spring');
+  });
+
+  it('in a past winter, lighting a feature and clearing it both stay in that winter', async () => {
+    const onLitChange = vi.fn();
+    const { rerender } = render(
+      <HazardsTabView {...base} season={SEASON - 1} onLitChange={onLitChange} />,
+    );
+    const glyph = () => screen.getByRole('button', { name: 'Show Spring / current on the map' });
+    await userEvent.click(glyph());
+    const litAddress = `feature:${SEASON - 1}.f-spring`;
+    expect(onLitChange).toHaveBeenLastCalledWith(litAddress);
+    expect(seasonOfLit(litAddress, SEASON)).toBe(SEASON - 1);
+    rerender(
+      <HazardsTabView {...base} season={SEASON - 1} lit={litAddress} onLitChange={onLitChange} />,
+    );
+    await userEvent.click(glyph());
+    expect(onLitChange).toHaveBeenLastCalledWith(`winter:${SEASON - 1}`);
   });
 
   it('picks the winter from the bar or from Earlier', async () => {
@@ -371,12 +390,21 @@ describe('HazardsTabView — the winters, a day at a time', () => {
             expect(title).toBe(dayWords({ count: e.count, unknown: e.unknown }, capped));
             if (e.count > 0) expect(title).toContain(String(e.count));
             if (e.unknown > 0) expect(title).toContain('unknown');
-            // The bar is the whole count, on the strip's one step for every day.
+            // The bar is the whole count, on the strip's one step for every day — and never
+            // thinner than a mark can be seen.
             if (bar !== null && blocks.length > 0) {
-              const step = Number(bar.getAttribute('height')) / e.count;
+              const known = Number(bar.getAttribute('height'));
               const block = Number(blocks[0]?.getAttribute('height'));
               const whole = blocks[0]?.dataset.count !== undefined;
-              expect(block).toBeCloseTo(whole ? step * e.unknown : (step * 2) / 3, 6);
+              expect(known).toBeGreaterThanOrEqual(MIN_MARK);
+              if (whole) expect(block).toBeGreaterThanOrEqual(MIN_MARK);
+              if (known > MIN_MARK) {
+                const step = known / e.count;
+                expect(block).toBeCloseTo(
+                  whole ? Math.max(step * e.unknown, MIN_MARK) : (step * 2) / 3,
+                  6,
+                );
+              }
             }
           }
           cleanup();

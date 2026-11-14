@@ -1,5 +1,7 @@
 import type { Season } from '@skating/core';
 
+import { seasonYears } from '../../../shell/consoleTime';
+
 /**
  * **Every headline, empty state, summary and note the Hazards tab can say, in one place** — so a
  * test can call each and hold it to the rule (`hazardsWords.test.ts` calls every entry of
@@ -82,10 +84,8 @@ export function dateWords(at: number): string {
   return `${get('day')} ${get('month')} ${get('year')}`;
 }
 
-/** "2026–27". */
-export function seasonWord(season: Season): string {
-  return `${season}–${String((season + 1) % 100).padStart(2, '0')}`;
-}
+/** "2026–27": the console's one season word. */
+export const seasonWord: (season: Season) => string = seasonYears;
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
