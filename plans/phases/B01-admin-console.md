@@ -1424,8 +1424,8 @@ the phase branch at `519cc1c8`.
 one branch (`b01-3-server`).
 
 - **The reads:** `console.overview` (the median open item as an instant the client ages, total users
-  from a rollup), `console.corpusCounts` (duplicates as decisions, chord re-fits, place names, the last
-  run — its own query so a flag filed doesn't re-read body outlines), `machinery.overviewJobs` (only
+  from a rollup), `console.corpusCounts` (duplicates as the dedup queue's own total, chord re-fits, place
+  names, the last run — its own query so a flag filed doesn't re-read body outlines), `machinery.overviewJobs` (only
   the jobs a record can tell; the untracked crons are counted in *more* and never called ok),
   `console.systemFeed` (the machine's rows, actor-less), `seasonWatch.tape` and `.homeSummary`
   (moderator-readable; no site sampling), `metrics.keepingUp` / `.showingUp` / `.coverage` (every
@@ -1453,6 +1453,17 @@ one branch (`b01-3-server`).
   otherwise keeps its old answer while no row it read moves.
 - **Open on the next server round:** H4's call sites in `moderation.ts` and its undo (D252's rule is
   built), the feed's target names, H3, U1, U2 — all in files the author-deletion PR is rewriting.
+- **Found in review (#111):**
+  - *Duplicates* counted rows by intake review reason, while the merge queue reads `dedupStatus`, so a body a skater drew over a known one (`waterBodies.create` stamps no review reason) sat in the queue and never reached the Overview. Both now call one helper (`lib/dedupQueue`), so the Overview's figure is the queue's `total` by construction. An intake review reason alone is no longer counted.
+  - A day pulse count whose read hit its scan cap was saved as a whole number. It is now saved with no number, and the rest of the day still saves. The strip draws that day *Not recorded yet*, the season totals come from the walk, and the next run of the day fills the gap.
+  - The stat skeleton was sized `calc(n * 1ch)` on an empty box, and Chromium left that `ch` on the fallback face after Martian Mono loaded. That made it 13 px short in about one cold run in five, in the app as well as the story. It is now laid out from invisible mono glyphs.
+- **Owed, left as is (the governor's ruling, 2026-11-14):**
+  - *Signed in*'s season total counts from the day the sign-in record began (about 7 November 2026), and the page doesn't say so. An honest *since* label needs the record's first day from `showingUp`; the strip's first recorded day can be later than that when a day rollup is missing.
+  - Splitting the reads in `seasonWatch.homeSummary` and `metrics.showingUp` so a row change re-runs less.
+  - The caller clock's five-minute slack around midnight.
+  - The kit `Logo` keys its dark ink on the old `.dark` class until the old pages retire.
+  - Cost (S2): no ledger rows exist.
+  - A strip with no record still draws its full-height hairline on hover.
 
 ### The B01-2 server register (owed to the server agent)
 
