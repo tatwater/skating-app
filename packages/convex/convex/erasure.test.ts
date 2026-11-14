@@ -263,7 +263,10 @@ async function historyOn(t: T, targetId: string) {
 }
 
 beforeEach(() => vi.useFakeTimers());
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 describe('the clock', () => {
   test("starts at the author's deletion and runs 30 days", async () => {
@@ -1886,6 +1889,123 @@ describe('the erasure holds under any order', () => {
         }
       }),
       { numRuns: 60 },
+    );
+  }, 300_000);
+});
+
+describe('fairness under failure, under any mix', () => {
+  test('settleOwed: every healthy uploader settled in one run; every failing one parked after exactly three attempts, owing all, losing nothing', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(fc.record({ debts: fc.integer({ min: 1, max: 9 }), fails: fc.boolean() }), {
+          minLength: 1,
+          maxLength: 4,
+        }),
+        async (uploaders) => {
+          // A run a shrink abandoned part-way leaves no spy behind for the next.
+          vi.restoreAllMocks();
+          const { t } = await setup();
+          const people: { id: Id<'profiles'>; photos: Id<'photos'>[]; fails: boolean }[] = [];
+          for (const [n, spec] of uploaders.entries()) {
+            const person = await seedUser(t, `u${n}`);
+            const photos: Id<'photos'>[] = [];
+            for (let i = 0; i < spec.debts; i++) {
+              const photoId = await t.run(async (ctx) =>
+                ctx.db.insert('photos', {
+                  storageId: await ctx.storage.store(new Blob([`f${i}`])),
+                  thumbStorageId: await ctx.storage.store(new Blob([`t${i}`])),
+                  uploaderId: person.id,
+                  placeOnMap: false,
+                  createdAt: T0,
+                }),
+              );
+              photos.push(photoId);
+              // Interleaved by when they were owed, failing uploaders' debts among the oldest.
+              await oweOnRecord(t, person.id, [photoId], {
+                owedAt: T0 - 1000 * (spec.fails ? 2 : 1) + i,
+              });
+            }
+            people.push({ id: person.id, photos, fails: spec.fails });
+          }
+          const failing = new Set(people.filter((p) => p.fails).map((p) => p.id as string));
+          const real = photoOrphans.deletePhotoAndBlobs;
+          vi.spyOn(photoOrphans, 'deletePhotoAndBlobs').mockImplementation(async (ctx, row) => {
+            if (failing.has(row.uploaderId)) throw new Error('poison');
+            return real(ctx, row);
+          });
+          // One run.
+          await settleAll(t);
+          const debts = await t.run((ctx) => ctx.db.query('photoSettlements').collect());
+          for (const person of people) {
+            const place = await placeOf(t, person.id);
+            const theirs = debts.filter((d) => d.uploaderId === person.id);
+            if (person.fails) {
+              expect(place).toMatchObject({
+                attempts: MAX_SETTLE_ATTEMPTS,
+                parkedAt: expect.any(Number),
+              });
+              expect(theirs).toHaveLength(person.photos.length);
+              for (const id of person.photos) expect(await get(t, id)).not.toBeNull();
+            } else {
+              expect(place).toBeNull();
+              expect(theirs).toEqual([]);
+              for (const id of person.photos) expect(await get(t, id)).toBeNull();
+            }
+          }
+          // Nothing is tried again once parked.
+          advance(60 * 60 * 1000);
+          await settleAll(t);
+          for (const person of people.filter((p) => p.fails)) {
+            expect((await placeOf(t, person.id))?.attempts).toBe(MAX_SETTLE_ATTEMPTS);
+          }
+          vi.restoreAllMocks();
+        },
+      ),
+      { numRuns: 25 },
+    );
+  }, 300_000);
+
+  test('eraseDue: every healthy due item erased in one run; every failing one parked after exactly three attempts, untouched', async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.array(fc.boolean(), { minLength: 1, maxLength: 8 }), async (fails) => {
+        const { t, author, waterBodyId } = await setup();
+        const reportId = (await seedPost(t, author.id, waterBodyId, 1))
+          .reportIds[0] as Id<'reports'>;
+        const items: { id: Id<'comments'>; fails: boolean }[] = [];
+        for (const [i, f] of fails.entries()) {
+          const id = await author.as.mutation(api.comments.create, { reportId, body: `c${i}` });
+          await author.as.mutation(api.comments.remove, { commentId: id });
+          items.push({ id, fails: f });
+          advance(1000);
+        }
+        const failing = new Set(items.filter((i) => i.fails).map((i) => i.id as string));
+        const real = audit.writeAudit;
+        vi.spyOn(audit, 'writeAudit').mockImplementation(async (ctx, entry) => {
+          if (entry.action === 'erase' && failing.has(entry.targetId)) throw new Error('poison');
+          return real(ctx, entry);
+        });
+        advance(31 * DAY);
+        await sweep(t);
+        for (const item of items) {
+          const row = await get(t, item.id);
+          if (item.fails) {
+            expect(row).toMatchObject({
+              eraseAttempts: MAX_ERASE_ATTEMPTS,
+              eraseParkedAt: expect.any(Number),
+            });
+            expect(row?.eraseAt).toBeUndefined();
+          } else {
+            expect(row).toBeNull();
+          }
+        }
+        advance(60 * 60 * 1000);
+        await sweep(t);
+        for (const item of items.filter((i) => i.fails)) {
+          expect((await get(t, item.id))?.eraseAttempts).toBe(MAX_ERASE_ATTEMPTS);
+        }
+        vi.restoreAllMocks();
+      }),
+      { numRuns: 25 },
     );
   }, 300_000);
 });
