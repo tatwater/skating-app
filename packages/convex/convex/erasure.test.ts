@@ -11,7 +11,10 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import type { MutationCtx } from './_generated/server';
-import { ERASED_KINDS, ITEM_NEED, ROW_MAX } from './erasure';
+import { ERASED_KINDS, MAX_SETTLE_ATTEMPTS, PASS_NEED, ROW_MAX } from './erasure';
+import * as audit from './lib/audit';
+import { MAX_ERASE_ATTEMPTS } from './lib/eraseClock';
+import * as photoOrphans from './lib/photoOrphans';
 import { TX_BUDGET } from './lib/readBudget';
 import schema from './schema';
 
@@ -35,7 +38,7 @@ const NOTIF_PREFS = {
 
 type T = ReturnType<typeof convexTest>;
 
-async function seedUser(t: T, subject: string, role: 'member' | 'moderator' = 'member') {
+async function seedUser(t: T, subject: string, role: 'member' | 'moderator' | 'admin' = 'member') {
   const id = await t.run((ctx) =>
     ctx.db.insert('profiles', {
       clerkUserId: subject,
@@ -200,6 +203,59 @@ async function erasedCount(t: T, kind: string) {
     (r) => r.action === 'erase' && r.targetType === kind,
   ).length;
 }
+/**
+ * A debt of these photos on record for the uploader, and their place in the settlement queue — as
+ * an erasure leaves them, or, with `phase`, part-way through a settlement that took this debt on.
+ */
+async function oweOnRecord(
+  t: T,
+  uploaderId: Id<'profiles'>,
+  photoIds: Id<'photos'>[],
+  opts: { phase?: 'reports' | 'hazards' | 'clear'; owedAt?: number; queuedAt?: number } = {},
+) {
+  return t.run(async (raw) => {
+    const ctx = raw as unknown as MutationCtx;
+    const debt = await ctx.db.insert('photoSettlements', {
+      uploaderId,
+      photoIds,
+      owedAt: opts.owedAt ?? Date.now(),
+    });
+    const place = await ctx.db
+      .query('photoSettlementQueue')
+      .withIndex('by_uploader', (q) => q.eq('uploaderId', uploaderId))
+      .first();
+    if (!place) {
+      await ctx.db.insert('photoSettlementQueue', {
+        uploaderId,
+        queuedAt: opts.queuedAt ?? opts.owedAt ?? Date.now(),
+        phase: opts.phase ?? 'take',
+        ...(opts.phase !== undefined
+          ? { photoIds: opts.phase === 'clear' ? [] : photoIds, owed: [debt] }
+          : {}),
+      });
+    }
+    return debt;
+  });
+}
+/** One step of the uploader's settlement, as the walk runs it. */
+const step = (t: T, uploaderId: Id<'profiles'>, pageSize?: number) =>
+  t.mutation(internal.erasure.settleStep, {
+    uploaderId,
+    bytes: TX_BUDGET,
+    ...(pageSize !== undefined ? { pageSize } : {}),
+  });
+/** Everything owed settled: the walk, run to its end. */
+async function settleAll(t: T) {
+  await t.mutation(internal.erasure.settleOwed, {});
+  await t.finishAllScheduledFunctions(vi.runAllTimers, 10_000);
+}
+const placeOf = (t: T, uploaderId: Id<'profiles'>) =>
+  t.run((raw) =>
+    (raw as unknown as MutationCtx).db
+      .query('photoSettlementQueue')
+      .withIndex('by_uploader', (q) => q.eq('uploaderId', uploaderId))
+      .first(),
+  );
 async function historyOn(t: T, targetId: string) {
   return (await t.run((ctx) => ctx.db.query('moderationActions').collect())).filter(
     (r) => r.targetId === targetId,
@@ -318,6 +374,54 @@ describe('the clock', () => {
       expect(row.metadata).toBeUndefined();
       expect(row.reason).not.toMatch(/c\d/);
     }
+  });
+});
+
+describe('one item that always fails', () => {
+  test('at the front of the due range, it never holds up what is due behind it', async () => {
+    const { t, author, waterBodyId } = await setup();
+    const admin = await seedUser(t, 'admin', 'admin');
+    const reportId = (await seedPost(t, author.id, waterBodyId, 1)).reportIds[0] as Id<'reports'>;
+    const ids: Id<'comments'>[] = [];
+    for (let i = 0; i < 4; i++) {
+      const id = await author.as.mutation(api.comments.create, { reportId, body: `c${i}` });
+      await author.as.mutation(api.comments.remove, { commentId: id });
+      ids.push(id);
+      advance(1000);
+    }
+    // The first deleted is the first due: the head of the range, and its erasure always throws.
+    const [poison, ...healthy] = ids as [Id<'comments'>, ...Id<'comments'>[]];
+    const real = audit.writeAudit;
+    vi.spyOn(audit, 'writeAudit').mockImplementation(async (ctx, entry) => {
+      if (entry.action === 'erase' && entry.targetId === poison) throw new Error('poison');
+      return real(ctx, entry);
+    });
+    advance(31 * DAY);
+    // One run: everything behind it erased; it parked after exactly three attempts, untouched.
+    const first = await t.mutation(internal.erasure.eraseDue, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(first.failed).toBeGreaterThan(0);
+    for (const id of healthy) expect(await get(t, id)).toBeNull();
+    expect(await get(t, poison)).toMatchObject({
+      body: 'c0',
+      eraseAttempts: MAX_ERASE_ATTEMPTS,
+      eraseErrorClass: 'Error',
+      eraseParkedAt: expect.any(Number),
+    });
+    expect((await get(t, poison))?.eraseAt).toBeUndefined();
+    // Not tried again once parked: a later run leaves it be, and a hold moving doesn't re-queue it.
+    advance(60 * 60 * 1000);
+    await sweep(t);
+    expect((await get(t, poison))?.eraseAttempts).toBe(MAX_ERASE_ATTEMPTS);
+    const report = await admin.as.query(api.erasure.parked, {});
+    expect(report.items).toEqual([
+      expect.objectContaining({ kind: 'comment', id: poison, attempts: 3, errorClass: 'Error' }),
+    ]);
+    // Released by an operator once fixed: erased on the next run.
+    vi.restoreAllMocks();
+    await t.mutation(internal.erasure.retryParked, {});
+    await sweep(t);
+    expect(await get(t, poison)).toBeNull();
   });
 });
 
@@ -1043,7 +1147,7 @@ describe('a pass is sized by what its rows can weigh', () => {
   test("every row's worst case is under what one pass may read, and every item fits a fresh pass", () => {
     for (const weight of Object.values(ROW_MAX)) expect(weight * 4).toBeLessThan(READ_LIMIT);
     // Progress: the sweep starts an item only when the budget covers it, and a fresh one always does.
-    for (const kind of ERASED_KINDS) expect(ITEM_NEED[kind]).toBeLessThanOrEqual(TX_BUDGET);
+    for (const kind of ERASED_KINDS) expect(PASS_NEED[kind]).toBeLessThanOrEqual(TX_BUDGET);
     expect(TX_BUDGET).toBeLessThan(READ_LIMIT);
     // A capped field sizes its row from the cap, not the document limit.
     expect(ROW_MAX.postRevision).toBeLessThan(ROW_MAX.reportRevision);
@@ -1078,33 +1182,28 @@ describe('every read fits a transaction, at the heaviest rows Convex allows', ()
     // The uploader's hazards are read to their end in this call, so it goes straight to the deletes —
     // which must stop where its budget does.
     await t.run((ctx) => ctx.db.delete(reportId));
-    const first = await t.mutation(internal.erasure.settlePhotos, {
-      uploaderId: author.id,
-      photoIds,
-      phase: 'hazards',
-    });
-    expect(first.more).toBe(true);
-    expect(first.settled).toBeGreaterThan(0);
-    expect(first.settled).toBeLessThan(photoIds.length);
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await oweOnRecord(t, author.id, photoIds, { phase: 'hazards' });
+    await step(t, author.id);
+    const left = (await Promise.all(photoIds.map((id) => get(t, id)))).filter(Boolean).length;
+    expect(left).toBeGreaterThan(0);
+    expect(left).toBeLessThan(photoIds.length);
+    await settleAll(t);
     for (const id of photoIds) expect(await get(t, id)).toBeNull();
+    expect(await placeOf(t, author.id)).toBeNull();
   });
 
   test('a hazard filed while a settlement is under way keeps the photo it shows', async () => {
     const { t, author, waterBodyId } = await setup();
     const photoIds: Id<'photos'>[] = [];
     for (let i = 0; i < 12; i++) photoIds.push(await heavyPhoto(t, author.id, i));
-    await t.mutation(internal.erasure.settlePhotos, {
-      uploaderId: author.id,
-      photoIds,
-      phase: 'hazards',
-    });
+    await oweOnRecord(t, author.id, photoIds, { phase: 'hazards' });
+    await step(t, author.id);
     // Some went in the first pass; the last one is still waiting, and a hazard takes it now.
     const last = photoIds[photoIds.length - 1] as Id<'photos'>;
     expect(await get(t, last)).not.toBeNull();
     const hazardId = await seedHazard(t, author.id, waterBodyId);
     await t.run((ctx) => ctx.db.patch(hazardId, { photoIds: [last] }));
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await settleAll(t);
     expect(await get(t, last)).toMatchObject({ uploaderId: author.id });
     expect((await get(t, last))?.erasedAt).toBeUndefined();
     expect(await get(t, photoIds[0] as string)).toBeNull();
@@ -1202,7 +1301,7 @@ describe("a photo is erased only when nothing of its uploader's still uses it", 
     return { reportId: reportIds[0] as Id<'reports'>, photoId: photoIds[0] as Id<'photos'> };
   }
 
-  test("a run's passes settle an uploader's photos together, not once a pass", async () => {
+  test("a run's erasures leave one place per uploader in the queue; one take settles them together", async () => {
     const { t, author, waterBodyId } = await setup();
     const reports: Id<'reports'>[] = [];
     const photos: Id<'photos'>[] = [];
@@ -1213,20 +1312,20 @@ describe("a photo is erased only when nothing of its uploader's still uses it", 
     }
     for (const reportId of reports) await author.as.mutation(api.reports.remove, { reportId });
     advance(31 * DAY);
-    // One item a pass: three passes, one settlement.
-    await t.mutation(internal.erasure.eraseDue, { pageSize: 1 });
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
-    const settlements = (
-      await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect())
-    ).filter(
-      // A settlement's start: the take's hand-off to the Reports' first page (no cursor yet).
-      (job) =>
-        job.name.includes('settlePhotos') &&
-        job.args[0]?.phase === 'reports' &&
-        job.args[0]?.cursor === undefined,
-    );
-    expect(settlements).toHaveLength(1);
+    // Erased pass by pass, nothing scheduled run: three debts, one place in the queue.
+    for (const reportId of reports) {
+      for (let pass = 0; pass < 20 && (await get(t, reportId)) !== null; pass++) {
+        await t.mutation(internal.erasure.eraseDue, { pageSize: 1 });
+      }
+    }
+    expect(await t.run((ctx) => ctx.db.query('photoSettlements').collect())).toHaveLength(3);
+    expect(await t.run((ctx) => ctx.db.query('photoSettlementQueue').collect())).toHaveLength(1);
+    // One take carries all three debts.
+    await step(t, author.id);
+    expect((await placeOf(t, author.id))?.owed).toHaveLength(3);
+    await settleAll(t);
     for (const id of [...reports, ...photos]) expect(await get(t, id)).toBeNull();
+    expect(await placeOf(t, author.id)).toBeNull();
   });
 
   /** The photo debts on record. */
@@ -1273,25 +1372,18 @@ describe("a photo is erased only when nothing of its uploader's still uses it", 
     await t.run(async (ctx) => {
       await ctx.db.delete(reportIds[0] as Id<'reports'>);
       await ctx.db.patch(photoId, { reportId: undefined });
-      await ctx.db.insert('photoSettlements', {
-        uploaderId: author.id,
-        photoIds: [photoId],
-        owedAt: Date.now(),
-      });
     });
-    await t.mutation(internal.erasure.settleOwed, { pageSize: 1 });
-    // Pass by pass: the debt stands while the photo does, and goes only after it.
-    for (let pass = 0; pass < 40; pass++) {
+    await oweOnRecord(t, author.id, [photoId]);
+    // Step by step, a page a step: the debt stands while the photo does, and goes only after it.
+    for (let pass = 0; pass < 40 && (await placeOf(t, author.id)) !== null; pass++) {
       const photo = await get(t, photoId);
       const debts = await owed(t);
       if (photo !== null) expect(debts).toHaveLength(1);
-      if (photo === null && debts.length === 0) break;
-      vi.runOnlyPendingTimers();
-      await t.finishInProgressScheduledFunctions();
+      await step(t, author.id, 1);
     }
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
     expect(await get(t, photoId)).toBeNull();
     expect(await owed(t)).toEqual([]);
+    expect(await placeOf(t, author.id)).toBeNull();
   });
 
   test('a second erasure while the first is still owed adds its own debt; both are settled, once', async () => {
@@ -1322,10 +1414,10 @@ describe("a photo is erased only when nothing of its uploader's still uses it", 
     expect(await owed(t)).toEqual([]);
   });
 
-  test("a settlement that dies on one uploader sends them to the back, not in everyone else's way", async () => {
+  test("an uploader whose settlement always fails never holds up anyone else's (Greptile #110)", async () => {
     const { t, author, other } = await setup();
-    const debt = async (uploaderId: Id<'profiles'>, owedAt: number) => {
-      const photoId = await t.run(async (ctx) =>
+    const photo = (uploaderId: Id<'profiles'>) =>
+      t.run(async (ctx) =>
         ctx.db.insert('photos', {
           storageId: await ctx.storage.store(new Blob(['full'])),
           thumbStorageId: await ctx.storage.store(new Blob(['thumb'])),
@@ -1334,26 +1426,50 @@ describe("a photo is erased only when nothing of its uploader's still uses it", 
           createdAt: T0,
         }),
       );
-      await t.run((ctx) =>
-        ctx.db.insert('photoSettlements', { uploaderId, photoIds: [photoId], owedAt }),
-      );
-      return photoId;
-    };
-    await debt(author.id, T0 - 2000);
-    const theirs = await debt(other.id, T0 - 1000);
-    // The chain starts on the oldest debt, takes it on, and dies right there.
-    expect((await t.mutation(internal.erasure.settleOwed, {})).uploaderId).toBe(author.id);
-    vi.runOnlyPendingTimers();
-    await t.finishInProgressScheduledFunctions();
-    await t.run(async (ctx) => {
-      for (const job of await ctx.db.system.query('_scheduled_functions').collect()) {
-        if (job.state.kind === 'pending') await ctx.scheduler.cancel(job._id);
-      }
+    // Seven older debts — more than one take's worth — for an uploader whose settlement always fails,
+    // and one newer debt for someone else.
+    const poisoned: Id<'photos'>[] = [];
+    for (let i = 0; i < 7; i++) {
+      const photoId = await photo(author.id);
+      poisoned.push(photoId);
+      await oweOnRecord(t, author.id, [photoId], { owedAt: T0 - 10_000 + i });
+    }
+    const theirs = await photo(other.id);
+    await oweOnRecord(t, other.id, [theirs], { owedAt: T0 });
+    const real = photoOrphans.deletePhotoAndBlobs;
+    vi.spyOn(photoOrphans, 'deletePhotoAndBlobs').mockImplementation(async (ctx, row) => {
+      if (row.uploaderId === author.id) throw new Error('poison');
+      return real(ctx, row);
     });
-    // The next start goes to the other uploader, whose debt is now the oldest, and settles it.
-    expect((await t.mutation(internal.erasure.settleOwed, {})).uploaderId).toBe(other.id);
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    // Three hourly runs: whatever becomes of the poisoned uploader, the other's photo is settled.
+    for (let run = 0; run < 3; run++) {
+      await t.mutation(internal.erasure.settleOwed, {});
+      await t.finishAllScheduledFunctions(vi.runAllTimers);
+      advance(60 * 60 * 1000);
+    }
+    vi.restoreAllMocks();
     expect(await get(t, theirs)).toBeNull();
+    // The poisoned uploader: parked after exactly three attempts, every debt still owed, every photo
+    // still there, and not tried again once parked.
+    for (const id of poisoned) expect(await get(t, id)).not.toBeNull();
+    expect(await placeOf(t, author.id)).toMatchObject({
+      attempts: MAX_SETTLE_ATTEMPTS,
+      lastErrorClass: 'Error',
+      parkedAt: expect.any(Number),
+    });
+    expect(
+      (await owed(t)).filter((row) => row.uploaderId === author.id).map((row) => row.photoIds[0]),
+    ).toEqual(poisoned);
+    // Visible to the console, and released by an operator's retry.
+    const admin = await seedUser(t, 'admin', 'admin');
+    const report = await admin.as.query(api.erasure.parked, {});
+    expect(report.settlements).toEqual([
+      expect.objectContaining({ uploaderId: author.id, attempts: 3, errorClass: 'Error' }),
+    ]);
+    await t.mutation(internal.erasure.retryParked, {});
+    await settleAll(t);
+    for (const id of poisoned) expect(await get(t, id)).toBeNull();
+    expect(await placeOf(t, author.id)).toBeNull();
   });
 
   test('an uploader deleted while a settlement is owed leaves no debt row and no photo behind', async () => {
@@ -1363,15 +1479,12 @@ describe("a photo is erased only when nothing of its uploader's still uses it", 
     await t.run(async (ctx) => {
       await ctx.db.delete(reportIds[0] as Id<'reports'>);
       await ctx.db.patch(photoId, { reportId: undefined });
-      await ctx.db.insert('photoSettlements', {
-        uploaderId: author.id,
-        photoIds: [photoId],
-        owedAt: Date.now(),
-      });
     });
+    await oweOnRecord(t, author.id, [photoId]);
     await t.mutation(internal.accountDeletion.finalizeNow, { userId: author.id });
     await t.finishAllScheduledFunctions(vi.runAllTimers);
     expect(await owed(t)).toEqual([]);
+    expect(await placeOf(t, author.id)).toBeNull();
     expect(await get(t, photoId)).toBeNull();
     // And a settlement that still finds the debt gone has nothing to do.
     await sweep(t);
@@ -1395,43 +1508,28 @@ describe("a photo is erased only when nothing of its uploader's still uses it", 
             }),
           );
         }
-        await ctx.db.insert('photoSettlements', {
-          uploaderId: author.id,
-          photoIds: ids,
-          owedAt: Date.now(),
-        });
         return ids;
       });
-    const all = [...(await debtOf(300)), ...(await debtOf(300))];
-    await t.mutation(internal.erasure.settlePhotos, { uploaderId: author.id });
-    // 300 + 300 is past 500: the first settlement carries the first debt alone.
-    const [start] = (
-      await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect())
-    ).filter((job) => job.name.includes('settlePhotos') && job.state.kind === 'pending');
-    expect(start?.args[0]?.photoIds).toHaveLength(300);
-    expect(start?.args[0]?.owed).toHaveLength(1);
-    // A few photos a pass at their worst case: some 120 passes for the 600.
-    await t.finishAllScheduledFunctions(vi.runAllTimers, 1_000);
-    for (const id of all) expect(await get(t, id)).toBeNull();
+    const first = await debtOf(300);
+    const second = await debtOf(300);
+    await oweOnRecord(t, author.id, first);
+    await oweOnRecord(t, author.id, second);
+    await step(t, author.id);
+    // 300 + 300 is past 500: the first take carries the first debt alone.
+    const place = await placeOf(t, author.id);
+    expect(place?.photoIds).toHaveLength(300);
+    expect(place?.owed).toHaveLength(1);
+    await settleAll(t);
+    for (const id of [...first, ...second]) expect(await get(t, id)).toBeNull();
     expect(await owed(t)).toEqual([]);
   });
 
-  test('a clear pass clears, given its debts and nothing else', async () => {
+  test('a clear step clears the debts its settlement took on, then takes again', async () => {
     const { t, author } = await setup();
-    const debt = await t.run((ctx) =>
-      ctx.db.insert('photoSettlements', {
-        uploaderId: author.id,
-        photoIds: [],
-        owedAt: Date.now(),
-      }),
-    );
-    const result = await t.mutation(internal.erasure.settlePhotos, {
-      uploaderId: author.id,
-      owed: [debt],
-      phase: 'clear',
-    });
-    expect(result).toMatchObject({ cleared: 1 });
+    await oweOnRecord(t, author.id, [], { phase: 'clear' });
+    await step(t, author.id);
     expect(await owed(t)).toEqual([]);
+    expect(await placeOf(t, author.id)).toMatchObject({ phase: 'take', owed: [] });
   });
 
   test('one a surviving hazard shows stays, whole, and in the export', async () => {
@@ -1475,20 +1573,15 @@ describe("a photo is erased only when nothing of its uploader's still uses it", 
       await ctx.db.delete(reportId);
       await ctx.db.patch(photoId, { reportId: undefined });
     });
-    // A settlement that reads one row a page, to make every page a separate transaction.
-    await t.mutation(internal.erasure.settlePhotos, {
-      uploaderId: author.id,
-      photoIds: [photoId, shared],
-      pageSize: 1,
-    });
+    // A settlement that reads one row a step, to make every page a separate transaction.
+    await oweOnRecord(t, author.id, [photoId, shared], { phase: 'reports' });
     // Its fate waits on the whole answer: page after page, nothing is touched.
     for (let page = 0; page < 3; page++) {
+      await step(t, author.id, 1);
       expect(await get(t, photoId)).toMatchObject({ caption: 'the inlet 0' });
       expect((await get(t, photoId))?.erasedAt).toBeUndefined();
-      vi.runOnlyPendingTimers();
-      await t.finishInProgressScheduledFunctions();
     }
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await settleAll(t);
     // Used by nothing: gone, blobs and all. Used by the hazard: kept, untouched.
     expect(await get(t, photoId)).toBeNull();
     expect(await get(t, shared)).toMatchObject({ caption: 'the inlet 0' });
@@ -1532,18 +1625,15 @@ describe("a photo is erased only when nothing of its uploader's still uses it", 
       await ctx.db.patch(photoId, { reportId: undefined });
     });
     // The first page reads the only Report left, which doesn't carry it yet.
-    await t.mutation(internal.erasure.settlePhotos, {
-      uploaderId: author.id,
-      photoIds: [photoId],
-      pageSize: 1,
-    });
+    await oweOnRecord(t, author.id, [photoId], { phase: 'reports' });
+    await step(t, author.id, 1);
     // Now it does, behind the cursor: only the photo's back-link can say so.
     await t.run(async (ctx) => {
       const row = await ctx.db.get(other);
       await ctx.db.patch(other, { photoIds: [...(row?.photoIds ?? []), photoId] });
       await ctx.db.patch(photoId, { reportId: other });
     });
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await settleAll(t);
     expect(await get(t, photoId)).toMatchObject({ caption: 'the inlet 0', reportId: other });
     expect((await get(t, photoId))?.erasedAt).toBeUndefined();
   });

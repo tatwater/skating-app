@@ -540,7 +540,14 @@ async function erasePrivate(
       .withIndex('by_user', (q) => q.eq('userId', userId))
       .take(size),
   );
-  // A photo settlement owed to them (D248): the photos it names go with their own photos stage.
+  // A photo settlement owed to them, and their place in its queue (D248): the photos it names go
+  // with their own photos stage.
+  await drain(
+    await ctx.db
+      .query('photoSettlementQueue')
+      .withIndex('by_uploader', (q) => q.eq('uploaderId', userId))
+      .take(size),
+  );
   await drain(
     await ctx.db
       .query('photoSettlements')

@@ -211,6 +211,9 @@ export async function clockOf(
   now: number,
   known: { postHeld?: boolean } = {},
 ): Promise<number | undefined> {
+  // Parked after failing too often: off the clock until `erasure.retryParked` releases it, whatever
+  // its holds do meanwhile — so nothing retries it but that.
+  if (doc.eraseParkedAt !== undefined) return undefined;
   const withdrawnAt = withdrawnAtOf(type, doc);
   const held = withdrawnAt !== undefined && (await isHeld(ctx, budget, type, doc, known));
   return nextEraseAt({ withdrawnAt, held, current: doc.eraseAt, now });
@@ -285,4 +288,56 @@ export async function holdMoved(
   if (post.reportIds.length > 0) {
     await ctx.scheduler.runAfter(0, internal.erasure.refreshMemberClocks, { postId: post._id });
   }
+}
+
+/** Failed erasures an item gets before it is parked. */
+export const MAX_ERASE_ATTEMPTS = 3;
+
+/**
+ * An item's erasure failed (its nested transaction rolled back): one more attempt and its error's
+ * class on the row, and after {@link MAX_ERASE_ATTEMPTS} the item is parked — off the clock and out
+ * of the sweep's range — so it never holds up what is due behind it. Written in the sweep's own
+ * transaction. Parking erases nothing and changes nothing else about the item.
+ */
+export async function recordEraseFailure(
+  ctx: MutationCtx,
+  budget: ReadBudget,
+  type: Erasable,
+  doc: ErasableDoc,
+  errorClass: string,
+  now: number,
+): Promise<'retry' | 'parked'> {
+  const attempts = (doc.eraseAttempts ?? 0) + 1;
+  const parked = attempts >= MAX_ERASE_ATTEMPTS;
+  budget.touch(type);
+  await ctx.db.patch(doc._id as Id<(typeof ERASABLE)[Erasable]>, {
+    eraseAttempts: attempts,
+    eraseErrorClass: errorClass,
+    ...(parked ? { eraseParkedAt: now, eraseAt: undefined } : {}),
+  });
+  return parked ? 'parked' : 'retry';
+}
+
+/** Release a parked item: its attempts reset, and its clock what its withdrawal and holds say now. */
+export async function releaseParkedErasure(
+  ctx: MutationCtx,
+  budget: ReadBudget,
+  type: Erasable,
+  doc: ErasableDoc,
+  now: number,
+): Promise<number | undefined> {
+  const released = {
+    eraseAttempts: undefined,
+    eraseErrorClass: undefined,
+    eraseParkedAt: undefined,
+  };
+  return refreshClockOf(
+    ctx,
+    budget,
+    type,
+    { ...doc, ...released } as ErasableDoc,
+    now,
+    {},
+    released,
+  );
 }

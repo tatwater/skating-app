@@ -34,8 +34,9 @@ import { POST_MAX_REPORTS, postPhotoIds } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { internalMutation, type MutationCtx } from './_generated/server';
+import { internalMutation, type MutationCtx, type QueryCtx, query } from './_generated/server';
 import { writeAudit } from './lib/audit';
+import { requireCapability } from './lib/auth';
 import {
   authorRetracted,
   ERASABLE,
@@ -43,12 +44,25 @@ import {
   type ErasableDoc,
   HOLD_COST,
   postHoldOf,
+  recordEraseFailure,
   refreshClockOf,
+  releaseParkedErasure,
   withdrawnAtOf,
 } from './lib/eraseClock';
 import { deletePhotoAndBlobs } from './lib/photoOrphans';
 import { postSearchText } from './lib/postSync';
-import { ReadBudget, ROW_MAX, type RowKind, sizePage, traced } from './lib/readBudget';
+import {
+  asFailure,
+  errorClassOf,
+  ReadBudget,
+  ROW_MAX,
+  type RowKind,
+  SETTLE_CHUNK_IDS,
+  sizePage,
+  TX_BUDGET,
+  TX_READ_LIMIT,
+  traced,
+} from './lib/readBudget';
 import { literals } from './lib/validators';
 
 export { ROW_MAX } from './lib/readBudget';
@@ -101,10 +115,10 @@ const WRITES_PER_ROW = 20;
 const TAIL: Record<Erasable, number> = {
   // Its replies (one), itself, its parent, the parent's replies (one), the parent.
   comment: 5 * ROW_MAX.comment,
-  // The Report it was drawn in, read and patched; itself, deleted.
-  hazard: 2 * ROW_MAX.report + ROW_MAX.hazard,
-  // Its recording, read and patched; itself, deleted.
-  report: 2 * ROW_MAX.activity + ROW_MAX.report,
+  // The Report it was drawn in, read and patched; itself, deleted; its uploader's settlement place.
+  hazard: 2 * ROW_MAX.report + ROW_MAX.hazard + ROW_MAX.settleQueue,
+  // Its recording, read and patched; itself, deleted; its uploader's settlement place.
+  report: 2 * ROW_MAX.activity + ROW_MAX.report + ROW_MAX.settleQueue,
   post: ROW_MAX.post,
   contentFlag: ROW_MAX.contentFlag,
   waterBodyRequest: ROW_MAX.waterBodyRequest,
@@ -130,7 +144,7 @@ const ONE_DRAINED: Record<Erasable, number> = {
 export const ITEM_NEED: Record<Erasable, number> = Object.fromEntries(
   (Object.keys(ERASABLE) as Erasable[]).map((kind) => [
     kind,
-    ROW_MAX[kind] + HOLD_COST[kind] + Math.max(ROW_MAX[kind], TAIL[kind] + ONE_DRAINED[kind]),
+    HOLD_COST[kind] + Math.max(ROW_MAX[kind], TAIL[kind] + ONE_DRAINED[kind]),
   ]),
 ) as Record<Erasable, number>;
 
@@ -276,8 +290,74 @@ async function dueHead(
 }
 
 /**
+ * One item's erasure, as its own nested transaction: the hold re-read, the eraser, its history row
+ * and the photo debt it leaves. An item that throws rolls back only its own work; the sweep counts
+ * the failure on the item and moves on (`recordEraseFailure`). The sweep passes the row it read, in
+ * the same transaction, so it is not read twice. Returns what it did and what it spent.
+ */
+export const eraseOne = internalMutation({
+  args: {
+    kind: literals([
+      'report',
+      'post',
+      'comment',
+      'hazard',
+      'contentFlag',
+      'waterBodyRequest',
+      'accessAlert',
+    ] as const satisfies readonly Erasable[]),
+    doc: v.any(),
+    now: v.number(),
+    bytes: v.number(),
+    writes: v.number(),
+  },
+  handler: async (ctx, { kind, doc, now, bytes, writes }) => {
+    try {
+      const tick: Tick = { reads: new ReadBudget(bytes), writes };
+      const item = doc as ErasableDoc;
+      const spent = () => ({ spent: bytes - tick.reads.bytes, writes: writes - tick.writes });
+      // The second guard: re-read the withdrawal and the holds now. A row that is held (or no longer
+      // withdrawn) has its clock cleared or moved, which takes it out of the range.
+      const next = await refreshClockOf(ctx, tick.reads, kind, item, now);
+      if (next === undefined || next > now) return { outcome: 'held' as const, ...spent() };
+      const photos: PhotoWork[] = [];
+      // Part-way: what it removed is gone, the item itself is whole and still due.
+      if (!(await ERASERS[kind](ctx, tick, item, now, photos))) {
+        return { outcome: 'partial' as const, ...spent() };
+      }
+      await writeAudit(ctx, {
+        action: 'erase',
+        targetType: kind,
+        targetId: item._id,
+        reason: ERASE_REASON[kind],
+        createdAt: now,
+      });
+      // What it let go of is owed a settlement, written here, with the erasure.
+      for (const work of photos) await owePhotos(ctx, tick.reads, work, now);
+      return { outcome: 'erased' as const, ...spent() };
+    } catch (err) {
+      throw asFailure(err);
+    }
+  },
+});
+
+/**
+ * What the sweep's own transaction needs before it takes the next item of a kind: the due row, the
+ * item's own need (`ITEM_NEED`, spent by `eraseOne`), and the write that records a failure. Every one
+ * is under a fresh `TX_BUDGET` (a test holds that), so a pass always moves.
+ */
+export const PASS_NEED: Record<Erasable, number> = Object.fromEntries(
+  (Object.keys(ERASABLE) as Erasable[]).map((kind) => [kind, 2 * ROW_MAX[kind] + ITEM_NEED[kind]]),
+) as Record<Erasable, number>;
+
+/**
  * Cron entry: erase everything due. Self-continuing while any kind may have more, or a budget ran out
  * part-way through an item.
+ *
+ * **One item that always fails never holds up the rest.** Each item is erased in its own nested
+ * transaction (`eraseOne`). One that throws rolls back only itself, and the sweep records the attempt
+ * on it (`lib/eraseClock.recordEraseFailure`) and goes on; after `MAX_ERASE_ATTEMPTS` the item is
+ * parked — out of the due range, counted in `erasure.parked`, released only by `erasure.retryParked`.
  */
 export const eraseDue = internalMutation({
   args: {
@@ -289,59 +369,63 @@ export const eraseDue = internalMutation({
       const size = pageSizeFor(pageSize);
       const now = Date.now();
       const erased: Partial<Record<Erasable, number>> = {};
-      const photos: PhotoWork[] = [];
+      const reads = new ReadBudget();
       // The seam scales the write budget, so a test can force any item across passes.
-      const tick: Tick = { reads: new ReadBudget(), writes: size * WRITES_PER_ROW };
+      let writes = size * WRITES_PER_ROW;
       let held = 0;
+      let failed = 0;
+      let parked = 0;
+      let drained = false;
       let more = false;
       kinds: for (const kind of ERASED_KINDS) {
-        const eraser = ERASERS[kind];
         for (let taken = 0; ; taken++) {
           if (taken >= size) {
             more = true;
             break;
           }
           // Out of budget: the rest waits for the next pass, still due.
-          if (!tick.reads.affords(ITEM_NEED[kind]) || tick.writes <= 0) {
+          if (!reads.affords(PASS_NEED[kind]) || writes <= 0) {
             more = true;
             break kinds;
           }
-          const doc = await dueHead(ctx, tick.reads, kind, now);
+          const doc = await dueHead(ctx, reads, kind, now);
           if (!doc) break;
-          // The second guard: re-read the withdrawal and the holds now. A row that is held (or no
-          // longer withdrawn) has its clock cleared or moved, which takes it out of the range.
-          const next = await refreshClockOf(ctx, tick.reads, kind, doc, now);
-          if (next === undefined || next > now) {
-            held++;
-            continue;
+          const allowance = reads.bytes - ROW_MAX[kind];
+          try {
+            const result = await ctx.runMutation(
+              internal.erasure.eraseOne,
+              { kind, doc, now, bytes: allowance, writes },
+              { transactionLimits: { bytesRead: allowance } },
+            );
+            reads.spend(result.spent);
+            writes -= result.writes;
+            if (result.writes > 0) drained = true;
+            if (result.outcome === 'held') held++;
+            else if (result.outcome === 'erased') erased[kind] = (erased[kind] ?? 0) + 1;
+            else {
+              more = true;
+              break kinds;
+            }
+          } catch (err) {
+            // Its own work rolled back; its reads still count against this transaction.
+            reads.spend(allowance);
+            failed++;
+            if (
+              (await recordEraseFailure(ctx, reads, kind, doc, errorClassOf(err), now)) === 'parked'
+            ) {
+              parked++;
+              console.error(`erasure.eraseDue: parked ${kind} ${doc._id} after repeated failures`);
+            }
           }
-          if (!(await eraser(ctx, tick, doc, now, photos))) {
-            // Part-way: what it removed is gone, the item itself is whole and still due.
-            more = true;
-            break kinds;
-          }
-          await writeAudit(ctx, {
-            action: 'erase',
-            targetType: kind,
-            targetId: doc._id,
-            reason: ERASE_REASON[kind],
-            createdAt: now,
-          });
-          erased[kind] = (erased[kind] ?? 0) + 1;
         }
       }
-      // Every pass moves: it erases an item, clears or moves a clock, or deletes a row an item carries
-      // (`ITEM_NEED` holds a fresh budget to that). One that did none of those and still has work would
-      // reschedule itself forever over the same head — so it fails, loudly, instead.
-      const moved =
-        Object.keys(erased).length > 0 || held > 0 || tick.writes < size * WRITES_PER_ROW;
+      // Every pass moves: it erases an item, clears or moves a clock, deletes a row an item carries, or
+      // counts a failure (`PASS_NEED` holds a fresh budget to that). One that did none of those and still
+      // has work would reschedule itself forever over the same head — so it fails, loudly, instead.
+      const moved = Object.keys(erased).length > 0 || held > 0 || failed > 0 || drained;
       if (more && !moved) {
         throw new Error('erasure.eraseDue: a pass made no progress on the head of the due range');
       }
-      // What the erasures let go of is owed a settlement, written in this same transaction: a pass
-      // that throws later loses none of it, and the settlement works from the record, never from a
-      // job's arguments.
-      await owePhotoSettlements(ctx, photos, now);
       if (more) {
         await ctx.scheduler.runAfter(0, internal.erasure.eraseDue, {
           ...(pageSize !== undefined ? { pageSize } : {}),
@@ -352,7 +436,7 @@ export const eraseDue = internalMutation({
           ...(pageSize !== undefined ? { pageSize } : {}),
         });
       }
-      return { erased, held, more };
+      return { erased, held, failed, parked, more };
     }),
 });
 
@@ -408,154 +492,173 @@ async function eraseComment(
 }
 
 /**
- * Record what a tick's erasures owe: one row per erased item that carried photos, naming its
- * uploader and the item's photo ids — no content. Written blind (an insert reads nothing), and
- * bounded by the item's own list, which already fit in the item's row.
+ * Record what an erasure owes, in its own transaction: the item's photo ids in debt rows of at most
+ * `SETTLE_CHUNK_IDS` (an insert reads nothing), and the uploader's place in the settlement queue if
+ * they have none — at the back. A parked uploader stays parked: a new debt does not release them,
+ * because what fails is reading their history, which a new debt does not change; their debts wait.
  */
-async function owePhotoSettlements(ctx: MutationCtx, work: readonly PhotoWork[], now: number) {
-  for (const { uploaderId, photoIds } of work) {
-    if (photoIds.length === 0) continue;
-    await ctx.db.insert('photoSettlements', { uploaderId, photoIds: [...photoIds], owedAt: now });
+async function owePhotos(ctx: MutationCtx, reads: ReadBudget, work: PhotoWork, now: number) {
+  const ids = [...new Set(work.photoIds)];
+  if (ids.length === 0) return;
+  for (let i = 0; i < ids.length; i += SETTLE_CHUNK_IDS) {
+    await ctx.db.insert('photoSettlements', {
+      uploaderId: work.uploaderId,
+      photoIds: ids.slice(i, i + SETTLE_CHUNK_IDS),
+      owedAt: now,
+    });
+  }
+  const queued = await reads.one('settleQueue', () =>
+    ctx.db
+      .query('photoSettlementQueue')
+      .withIndex('by_uploader', (q) => q.eq('uploaderId', work.uploaderId))
+      .first(),
+  );
+  if (!queued) {
+    await ctx.db.insert('photoSettlementQueue', {
+      uploaderId: work.uploaderId,
+      queuedAt: now,
+      phase: 'take',
+    });
   }
 }
 
+/** Failed settlement steps an uploader gets before they are parked. */
+export const MAX_SETTLE_ATTEMPTS = 3;
+/** Clearing one debt: its row read and deleted. */
+const CLEAR_ONE = 2 * ROW_MAX.photoSettlement;
+/** Settling one photo: the row, its access-photo check, and the delete or strip. */
+const SETTLE_ONE = 2 * ROW_MAX.photo + ROW_MAX.small;
+/** A step's own bookkeeping: its place in the queue, read and written back. */
+const STEP_PLACE = 2 * ROW_MAX.settleQueue;
+/** The least a step is given: its place, and a page row with a photo's settlement beside it. */
+const MIN_STEP = STEP_PLACE + ROW_MAX.hazard + SETTLE_ONE;
+
 /**
- * Settle every uploader who is owed one, one uploader at a time: the oldest debt names the next
- * uploader, whose settlement takes their debts and hands back here when it is done. Started at each
- * sweep run's end and by its own hourly cron, so a debt is picked up whatever became of the run that
- * made it, since the debts are rows, not arguments. A settlement claims the debts it takes by
- * re-stamping them to now: a second chain running meanwhile starts on a different uploader, and an
- * uploader whose settlement dies the same way every time falls behind everyone else's debts instead of
- * blocking them. Two chains on one uploader's untaken debts are safe — a settled photo is gone and a
- * cleared debt is skipped — only repeated.
+ * Settle everyone owed a settlement, an uploader at a time, round robin: the walk takes the unparked
+ * uploader whose turn is oldest (`photoSettlementQueue.by_parked_queued`), runs one step of their
+ * settlement as its own nested transaction (`settleStep`), and goes on to the next turn, as many as
+ * the budget affords, then continues itself until no unparked uploader is owed anything.
+ *
+ * **One uploader that always fails never holds up anyone else.** A step that throws rolls back only
+ * that uploader's step; the walk records the attempt and the error's class on their queue row, sends
+ * them to the back, and goes on; after `MAX_SETTLE_ATTEMPTS` they are parked — skipped, counted in
+ * `erasure.parked`, their debts still owed and their photos untouched — until `erasure.retryParked`.
+ * Started at each sweep run's end and by its own hourly cron; the state is all rows, never arguments.
  */
 export const settleOwed = internalMutation({
   args: { pageSize: v.optional(v.number()) },
   handler: (ctx, args) =>
     traced('erasure.settleOwed', args, async () => {
       const reads = new ReadBudget();
-      const [oldest] = await reads.take('photoSettlement', 1, (n) =>
-        ctx.db.query('photoSettlements').withIndex('by_owed_at').take(n),
-      );
-      if (!oldest) return { uploaderId: null };
-      await ctx.scheduler.runAfter(0, internal.erasure.settlePhotos, {
-        uploaderId: oldest.uploaderId,
-        ...(args.pageSize !== undefined ? { pageSize: args.pageSize } : {}),
-      });
-      return { uploaderId: oldest.uploaderId };
+      const now = Date.now();
+      let steps = 0;
+      let failed = 0;
+      let parked = 0;
+      for (;;) {
+        // A turn: the next uploader's place, a step, and the write that records a failure.
+        if (!reads.affords(ROW_MAX.settleQueue + MIN_STEP + ROW_MAX.settleQueue)) {
+          await ctx.scheduler.runAfter(0, internal.erasure.settleOwed, args);
+          return { steps, failed, parked, more: true };
+        }
+        const [turn] = await reads.take('settleQueue', 1, (n) =>
+          ctx.db
+            .query('photoSettlementQueue')
+            .withIndex('by_parked_queued', (q) => q.eq('parkedAt', undefined))
+            .take(n),
+        );
+        if (!turn) return { steps, failed, parked, more: false };
+        const allowance = reads.bytes - ROW_MAX.settleQueue;
+        try {
+          const spent = await ctx.runMutation(
+            internal.erasure.settleStep,
+            {
+              uploaderId: turn.uploaderId,
+              bytes: allowance,
+              ...(args.pageSize !== undefined ? { pageSize: args.pageSize } : {}),
+            },
+            { transactionLimits: { bytesRead: allowance } },
+          );
+          reads.spend(spent);
+          steps++;
+        } catch (err) {
+          reads.spend(allowance);
+          failed++;
+          const attempts = (turn.attempts ?? 0) + 1;
+          const parks = attempts >= MAX_SETTLE_ATTEMPTS;
+          reads.touch('settleQueue');
+          await ctx.db.patch(turn._id, {
+            attempts,
+            lastErrorClass: errorClassOf(err),
+            // To the back of the queue: everyone else's turn comes first.
+            queuedAt: Math.max(now, turn.queuedAt + 1),
+            ...(parks ? { parkedAt: now } : {}),
+          });
+          if (parks) {
+            parked++;
+            console.error(`erasure.settleOwed: parked the settlement of ${turn.uploaderId}`);
+          }
+        }
+      }
     }),
 });
 
 /**
- * Photo ids one settlement takes on before it starts reading — more only when one debt alone names
- * more: its arguments are bounded too (an array holds at most 8,192 values).
- */
-const SETTLE_TAKE_IDS = 500;
-/** Clearing one debt: its row read and deleted. */
-const CLEAR_ONE = 2 * ROW_MAX.photoSettlement;
-
-/** Settling one photo: the row, its access-photo check, and the delete or strip. */
-const SETTLE_ONE = 2 * ROW_MAX.photo + ROW_MAX.small;
-
-/**
- * Settle the photos an erasure let go of: delete each one nothing else of its uploader's still uses,
- * with its blobs; leave every other untouched (D248, and Greptile on #110 — "an unknown is not
- * unused"). The only rows that can name a photo are its uploader's own Reports and hazards and the
- * access photos that point at it (`lib/photoOrphans`), so the job reads the uploader's Reports, then
- * their hazards, a charged page per transaction, striking every photo it finds in use.
+ * One step of one uploader's settlement, as its own nested transaction (`settleOwed` runs it):
+ * whatever their queue row says comes next, and the row moved on and sent to the back of the queue.
+ * Returns the bytes it charged. The phases:
  *
- * **A photo is deleted only in a transaction that has itself read to the end of the uploader's
- * hazards** — resuming after the last hazard read (by creation time), so a hazard filed since (which
- * sets no back-link on its photos) is read before anything it shows can go — and checked there against
- * a Report that took it since (the photo's back-link) and the access photos. The deletes go as many as
- * the budget affords; the rest carry on with the same position, the list only ever shrinking (the
- * photos of the debts it took on, up to `SETTLE_TAKE_IDS`: a scheduled function's arguments are
- * bounded too). Every pass strikes, deletes, or reads a page further. A photo whose blob outlives the
- * delete stays as the orphan sweep's pointer, stripped and marked `erasedAt`, and leaves its
- * uploader's export.
+ * - **take**: their oldest debts, as many as fit `SETTLE_CHUNK_IDS` photo ids. None left: their place
+ *   is deleted — they are owed nothing.
+ * - **reports**, then **hazards**: their Reports a page at a time, then their hazards resumed after
+ *   the last one read (by creation time, which no write moves), striking each photo in use. **A photo
+ *   is deleted only in a step that has itself read to the end of their hazards** — so a hazard filed
+ *   since (which sets no back-link on its photos) is read before anything it shows can go — and is
+ *   checked there against a Report that took it since (the photo's back-link) and the access photos.
+ *   The only rows that can name a photo are its uploader's own Reports and hazards and the access
+ *   photos that point at it (`lib/photoOrphans`). A photo whose blob outlives the delete stays as the
+ *   orphan sweep's pointer, stripped and marked `erasedAt`, and leaves its uploader's export.
+ * - **clear**: once every photo it took on is settled or found in use, the debts it took on are
+ *   deleted, then the next take. A debt is never cleared before its settlement has finished.
  */
-export const settlePhotos = internalMutation({
+export const settleStep = internalMutation({
   args: {
     uploaderId: v.id('profiles'),
-    /**
-     * The photos being settled, as taken from the debts in `owed` (or given directly). Absent: take
-     * the uploader's next debts first.
-     */
-    photoIds: v.optional(v.array(v.id('photos'))),
-    /** The debts this settlement took on: cleared once it is done, never before. */
-    owed: v.optional(v.array(v.id('photoSettlements'))),
-    phase: v.optional(literals(['reports', 'hazards', 'clear'] as const)),
-    /** The Reports' page cursor. */
-    cursor: v.optional(v.string()),
-    /** The creation time of the last hazard read: the hazards' read resumes after it. */
-    after: v.optional(v.number()),
+    bytes: v.number(),
     /** Test seam: rows per page, clamped to what the page can afford. */
     pageSize: v.optional(v.number()),
   },
-  handler: (ctx, args) =>
-    traced('erasure.settlePhotos', args, async () => {
-      const { uploaderId, photoIds, owed, phase = 'reports', cursor, after, pageSize } = args;
-      const reads = new ReadBudget();
+  handler: async (ctx, { uploaderId, bytes, pageSize }) => {
+    try {
+      const reads = new ReadBudget(bytes);
       const cap = pageSize ?? Number.POSITIVE_INFINITY;
-      const seam = pageSize !== undefined ? { pageSize } : {};
-      const carryOn = (
-        rest: Id<'photos'>[],
-        next: { phase: 'reports'; cursor?: string } | { phase: 'hazards'; after?: number },
-      ) =>
-        ctx.scheduler.runAfter(0, internal.erasure.settlePhotos, {
-          uploaderId,
-          photoIds: rest,
-          ...(owed !== undefined ? { owed } : {}),
+      const place = await reads.one('settleQueue', () =>
+        ctx.db
+          .query('photoSettlementQueue')
+          .withIndex('by_uploader', (q) => q.eq('uploaderId', uploaderId))
+          .first(),
+      );
+      if (!place) return bytes - reads.bytes;
+      // The place is written back once, at the end; kept back from every page below.
+      const reserve = ROW_MAX.settleQueue;
+      const now = Date.now();
+      const save = async (next: Partial<Doc<'photoSettlementQueue'>>) => {
+        reads.touch('settleQueue');
+        await ctx.db.patch(place._id, {
+          cursor: undefined,
+          after: undefined,
           ...next,
-          ...seam,
+          // A turn taken, so to the back: round robin with everyone else owed.
+          queuedAt: Math.max(now, place.queuedAt + 1),
         });
-      // Every photo settled or found in use: the debts it took on are paid. Cleared in passes of
-      // their own after this one, so a settlement is never cleared before it is finished; a failure
-      // in between leaves a debt whose re-settlement finds nothing left to do.
-      const finish = async (settled: number) => {
-        if (owed !== undefined && owed.length > 0) {
-          await ctx.scheduler.runAfter(0, internal.erasure.settlePhotos, {
-            uploaderId,
-            owed,
-            photoIds: [],
-            phase: 'clear',
-            ...seam,
-          });
-        }
-        return { settled, more: owed !== undefined && owed.length > 0 };
       };
+      const photoIds = place.photoIds ?? [];
+      const owed = place.owed ?? [];
+      const toClear = () => save({ phase: 'clear', photoIds: [], owed });
 
-      // First, so a clear is never mistaken for a take: a clear carries no photos of its own.
-      if (phase === 'clear') {
-        const rest = [...(owed ?? [])];
-        let cleared = 0;
-        while (rest.length > 0 && reads.affords(CLEAR_ONE)) {
-          const id = rest.shift() as Id<'photoSettlements'>;
-          await reads.row(CLEAR_ONE, async () => {
-            const row = await reads.one('photoSettlement', () => ctx.db.get(id));
-            if (!row) return;
-            reads.touch('photoSettlement');
-            await ctx.db.delete(id);
-            cleared++;
-          });
-        }
-        // Then this uploader's next debts, if any — and from there, the next uploader.
-        await ctx.scheduler.runAfter(
-          0,
-          internal.erasure.settlePhotos,
-          rest.length > 0
-            ? { uploaderId, owed: rest, photoIds: [], phase: 'clear' as const, ...seam }
-            : { uploaderId, ...seam },
-        );
-        return { settled: 0, cleared, more: true };
-      }
-
-      if (photoIds === undefined) {
-        // Take on the uploader's oldest debts, as many as the arguments carry well.
+      if (place.phase === 'take') {
         const rows = await reads.take(
           'photoSettlement',
-          // Each debt taken is also re-stamped: a claim, written back.
-          sizePage(reads, 'photoSettlement', { cap: 16, work: ROW_MAX.photoSettlement }),
+          sizePage(reads, 'photoSettlement', { cap: 16, reserve }),
           (n) =>
             ctx.db
               .query('photoSettlements')
@@ -563,57 +666,57 @@ export const settlePhotos = internalMutation({
               .take(n),
         );
         if (rows.length === 0) {
-          // Nothing more owed by this uploader: the next uploader's turn.
-          await ctx.scheduler.runAfter(0, internal.erasure.settleOwed, seam);
-          return { settled: 0, more: false };
+          // Owed nothing more: their place goes.
+          reads.touch('settleQueue');
+          await ctx.db.delete(place._id);
+          return bytes - reads.bytes;
         }
         const taken: Id<'photoSettlements'>[] = [];
         const ids = new Set<Id<'photos'>>();
         for (const row of rows) {
-          // The first debt always; another only while the whole of it still fits under the cap.
+          // The first debt always (at most a chunk); another only while all of it still fits.
           const fresh = [...new Set(row.photoIds)].filter((id) => !ids.has(id));
-          if (taken.length > 0 && ids.size + fresh.length > SETTLE_TAKE_IDS) break;
+          if (taken.length > 0 && ids.size + fresh.length > SETTLE_CHUNK_IDS) break;
           taken.push(row._id);
           for (const id of fresh) ids.add(id);
         }
-        // Claim what was taken by moving it to the back of the queue: a settlement that dies the same
-        // way every time sends its uploader behind everyone else's debts instead of blocking them,
-        // and a second chain running meanwhile starts on a different uploader.
-        const claimedAt = Date.now();
-        for (const id of taken) {
-          reads.touch('photoSettlement');
-          await ctx.db.patch(id, { owedAt: claimedAt });
-        }
-        await ctx.scheduler.runAfter(0, internal.erasure.settlePhotos, {
-          uploaderId,
-          photoIds: [...ids],
-          owed: taken,
-          phase: 'reports',
-          ...seam,
-        });
-        return { settled: 0, more: true };
+        await save({ phase: 'reports', photoIds: [...ids], owed: taken });
+        return bytes - reads.bytes;
       }
 
-      if (phase === 'reports') {
-        const page = await reads.page('report', sizePage(reads, 'report', { cap }), (numItems) =>
+      if (place.phase === 'clear') {
+        const rest = [...owed];
+        while (rest.length > 0 && reads.affords(CLEAR_ONE + reserve)) {
+          const id = rest.shift() as Id<'photoSettlements'>;
+          await reads.row(CLEAR_ONE, async () => {
+            const row = await reads.one('photoSettlement', () => ctx.db.get(id));
+            if (!row) return;
+            reads.touch('photoSettlement');
+            await ctx.db.delete(id);
+          });
+        }
+        await save(rest.length > 0 ? { phase: 'clear', owed: rest } : { phase: 'take', owed: [] });
+        return bytes - reads.bytes;
+      }
+
+      if (place.phase === 'reports') {
+        const page = await reads.page('report', sizePage(reads, 'report', { cap, reserve }), (n) =>
           ctx.db
             .query('reports')
             .withIndex('by_author', (q) => q.eq('authorId', uploaderId))
-            .paginate({ cursor: cursor ?? null, numItems }),
+            .paginate({ cursor: place.cursor ?? null, numItems: n }),
         );
         const used = new Set<string>(page.page.flatMap((row) => row.photoIds));
         const remaining = photoIds.filter((id) => !used.has(id));
-        if (remaining.length === 0) return finish(0);
-        await carryOn(
-          remaining,
-          page.isDone ? { phase: 'hazards' } : { phase: 'reports', cursor: page.continueCursor },
-        );
-        return { settled: 0, more: true };
+        if (remaining.length === 0) await toClear();
+        else if (page.isDone) await save({ phase: 'hazards', photoIds: remaining });
+        else await save({ phase: 'reports', photoIds: remaining, cursor: page.continueCursor });
+        return bytes - reads.bytes;
       }
-      // Creation order, which no write moves (a hazard refiled to another lake would move under
-      // `by_author_and_water_body` and could slip behind a cursor unread), resumed after the last one
-      // read — creation times in a table are strictly increasing — so a hazard filed since is read too.
-      const n = sizePage(reads, 'hazard', { cap, reserve: SETTLE_ONE });
+
+      // Hazards, resumed after the last one read; a photo is kept back for, so a short read settles.
+      const after = place.after;
+      const n = sizePage(reads, 'hazard', { cap, reserve: reserve + SETTLE_ONE });
       const hazards = await reads.take('hazard', n, (k) =>
         ctx.db
           .query('hazards')
@@ -626,34 +729,35 @@ export const settlePhotos = internalMutation({
       );
       const used = new Set<string>(hazards.flatMap((row) => row.photoIds));
       const remaining = photoIds.filter((id) => !used.has(id));
-      if (remaining.length === 0) return finish(0);
       const readTo = hazards.at(-1)?._creationTime ?? after;
       const position = readTo !== undefined ? { after: readTo } : {};
-      if (hazards.length === n) {
-        await carryOn(remaining, { phase: 'hazards', ...position });
-        return { settled: 0, more: true };
+      if (remaining.length === 0) {
+        await toClear();
+        return bytes - reads.bytes;
       }
-      // This transaction read to the end of their hazards: what is left, nothing of theirs uses but a
-      // Report that took it since or an access point — read here, beside the delete.
-      const now = Date.now();
-      let settled = 0;
+      if (hazards.length === n) {
+        await save({ phase: 'hazards', photoIds: remaining, ...position });
+        return bytes - reads.bytes;
+      }
+      // This step read to the end of their hazards: what is left, nothing of theirs uses but a Report
+      // that took it since or an access point — read here, beside the delete.
       let done = 0;
-      while (done < remaining.length && reads.affords(SETTLE_ONE)) {
+      while (done < remaining.length && reads.affords(SETTLE_ONE + reserve)) {
         const photoId = remaining[done] as Id<'photos'>;
         done++;
-        settled += await reads.row(SETTLE_ONE, async () => {
+        await reads.row(SETTLE_ONE, async () => {
           const photo = await reads.one('photo', () => ctx.db.get(photoId));
-          if (!photo || photo.erasedAt !== undefined) return 0;
-          if (photo.reportId !== undefined) return 0;
+          if (!photo || photo.erasedAt !== undefined) return;
+          if (photo.reportId !== undefined) return;
           const onAccess = await reads.one('small', () =>
             ctx.db
               .query('accessPhotos')
               .withIndex('by_photo', (q) => q.eq('photoId', photoId))
               .first(),
           );
-          if (onAccess) return 0;
+          if (onAccess) return;
           reads.touch('photo');
-          if (await deletePhotoAndBlobs(ctx, photo)) return 1;
+          if (await deletePhotoAndBlobs(ctx, photo)) return;
           // A blob outlived the attempt: the row is the only pointer to it (the orphan sweep retries),
           // and no longer anything of its uploader's.
           await ctx.db.patch(photoId, {
@@ -663,14 +767,119 @@ export const settlePhotos = internalMutation({
             placeOnMap: false,
             erasedAt: now,
           });
-          return 1;
         });
       }
       const rest = remaining.slice(done);
-      if (rest.length === 0) return finish(settled);
-      await carryOn(rest, { phase: 'hazards', ...position });
-      return { settled, more: true };
-    }),
+      if (rest.length === 0) await toClear();
+      else await save({ phase: 'hazards', photoIds: rest, ...position });
+      return bytes - reads.bytes;
+    } catch (err) {
+      throw asFailure(err);
+    }
+  },
+});
+
+/** The most parked items the parked read lists, and the most a retry releases, per kind. */
+const PARKED_LIST = 50;
+
+/**
+ * Release parked work — every parked uploader's settlement, and every parked item of the kinds named
+ * (all, by default), up to `PARKED_LIST` of each a call: attempts reset, back in the queue and on the
+ * clock. For an operator, once whatever made them fail is fixed: `convex run erasure:retryParked '{}'`.
+ */
+export const retryParked = internalMutation({
+  args: { kinds: v.optional(v.array(v.string())) },
+  handler: async (ctx, { kinds }) => {
+    const now = Date.now();
+    const reads = new ReadBudget(TX_READ_LIMIT);
+    const uploaders = await reads.take('settleQueue', PARKED_LIST, (n) =>
+      ctx.db
+        .query('photoSettlementQueue')
+        .withIndex('by_parked_queued', (q) => q.gt('parkedAt', 0))
+        .take(n),
+    );
+    for (const row of uploaders) {
+      await ctx.db.patch(row._id, {
+        parkedAt: undefined,
+        attempts: 0,
+        lastErrorClass: undefined,
+        queuedAt: now,
+      });
+    }
+    let items = 0;
+    for (const kind of (kinds ?? ERASED_KINDS) as Erasable[]) {
+      if (!ERASED_KINDS.includes(kind)) throw new ConvexError(`Unknown kind ${kind}`);
+      const budget = new ReadBudget(TX_BUDGET);
+      const parkedRows = await parkedOf(ctx, budget, kind, Math.floor(PARKED_LIST / 4));
+      for (const doc of parkedRows) {
+        await releaseParkedErasure(ctx, budget, kind, doc, now);
+        items++;
+      }
+    }
+    return { uploaders: uploaders.length, items };
+  },
+});
+
+/** One kind's parked items, oldest parked first. Bounded below: the field is optional. */
+function parkedOf(ctx: QueryCtx, reads: ReadBudget, kind: Erasable, n: number) {
+  return reads.take(kind, Math.max(1, reads.rows(kind, n)), (k) =>
+    // Typed as one table: every erasable table has the same `by_erase_parked` index.
+    ctx.db
+      .query(ERASABLE[kind] as 'reports')
+      .withIndex('by_erase_parked', (q) => q.gt('eraseParkedAt', 0))
+      .take(k),
+  ) as Promise<ErasableDoc[]>;
+}
+
+/**
+ * **What the erasure has parked** — for the console's Machinery: per kind and for photo settlements,
+ * how many (counted to the list's bound, `capped` past it) and each with its attempts, its last
+ * error's class and when it was parked. No content: ids, counts, classes and times.
+ */
+export const parked = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireCapability(ctx, 'machinery.read');
+    const reads = new ReadBudget(TX_BUDGET - ROW_MAX.profile);
+    const settlements = await reads.take('settleQueue', PARKED_LIST + 1, (n) =>
+      ctx.db
+        .query('photoSettlementQueue')
+        .withIndex('by_parked_queued', (q) => q.gt('parkedAt', 0))
+        .take(n),
+    );
+    const items: {
+      kind: Erasable;
+      id: string;
+      attempts: number;
+      errorClass: string | null;
+      parkedAt: number;
+    }[] = [];
+    let capped = settlements.length > PARKED_LIST;
+    for (const kind of ERASED_KINDS) {
+      const per = Math.max(1, Math.floor(reads.bytes / ROW_MAX[kind] / (ERASED_KINDS.length + 1)));
+      const rows = await parkedOf(ctx, reads, kind, Math.min(per, 8) + 1);
+      if (rows.length > Math.min(per, 8)) capped = true;
+      for (const doc of rows.slice(0, Math.min(per, 8))) {
+        items.push({
+          kind,
+          id: doc._id,
+          attempts: doc.eraseAttempts ?? 0,
+          errorClass: doc.eraseErrorClass ?? null,
+          parkedAt: doc.eraseParkedAt as number,
+        });
+      }
+    }
+    return {
+      settlements: settlements.slice(0, PARKED_LIST).map((row) => ({
+        uploaderId: row.uploaderId,
+        attempts: row.attempts ?? 0,
+        errorClass: row.lastErrorClass ?? null,
+        parkedAt: row.parkedAt as number,
+      })),
+      items,
+      capped,
+    };
+  },
 });
 
 /**

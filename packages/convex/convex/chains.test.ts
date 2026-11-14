@@ -355,7 +355,7 @@ describe('every chain reaches its end on its dearest page', () => {
     }
   });
 
-  test('settlePhotos: heavy hazards to read, then heavy photos on access points to check', async () => {
+  test('settleStep: heavy hazards to read, then heavy photos on access points to check', async () => {
     const { t, author, waterBodyId } = await setup();
     for (let i = 0; i < 14; i++) {
       await t.run((ctx) =>
@@ -412,9 +412,21 @@ describe('every chain reaches its end on its dearest page', () => {
       );
       photoIds.push(photoId);
     }
-    await runOut(t, () =>
-      t.mutation(internal.erasure.settlePhotos, { uploaderId: author.id, photoIds }),
-    );
+    await t.run(async (ctx) => {
+      const debt = await ctx.db.insert('photoSettlements', {
+        uploaderId: author.id,
+        photoIds,
+        owedAt: T0,
+      });
+      await ctx.db.insert('photoSettlementQueue', {
+        uploaderId: author.id,
+        queuedAt: T0,
+        phase: 'reports',
+        photoIds,
+        owed: [debt],
+      });
+    });
+    await runOut(t, () => t.mutation(internal.erasure.settleOwed, {}));
     for (const id of photoIds) expect(await t.run((ctx) => ctx.db.get(id))).not.toBeNull();
   });
 
@@ -518,9 +530,17 @@ describe('every chain reaches its end on its dearest page', () => {
         );
         photoIds.push(photoId);
       }
+      await t.run((ctx) =>
+        ctx.db.insert('photoSettlementQueue', {
+          uploaderId: uploader,
+          queuedAt: T0,
+          phase: 'take',
+        }),
+      );
     }
     await runOut(t, () => t.mutation(internal.erasure.settleOwed, {}));
     for (const id of photoIds) expect(await t.run((ctx) => ctx.db.get(id))).toBeNull();
     expect(await t.run((ctx) => ctx.db.query('photoSettlements').collect())).toEqual([]);
+    expect(await t.run((ctx) => ctx.db.query('photoSettlementQueue').collect())).toEqual([]);
   });
 });

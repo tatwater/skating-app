@@ -15,6 +15,7 @@
  * table in `plans/phases/B01-admin-console.md` §12.8 ("B01-1b: every read, weighed").
  */
 import { COMMENT_BODY_MAX_LENGTH, POST_BODY_MAX_CHARS, POST_TITLE_MAX_CHARS } from '@skating/core';
+import { ConvexError } from 'convex/values';
 
 /** Convex's per-document size limit — the worst any row can weigh. */
 export const DOC_MAX = 1 << 20;
@@ -50,8 +51,12 @@ export const ROW_MAX = {
   moderationAction: DOC_MAX,
   // Geometry and a suppression reason are uncapped.
   hazardRecurrence: DOC_MAX,
-  // A photo settlement owed: an erased item's photo ids, as many as its row held.
-  photoSettlement: DOC_MAX,
+  // A photo settlement owed: at most `SETTLE_CHUNK_IDS` photo ids (an erased item's list is written in
+  // chunks of that many), about 40 bytes each.
+  photoSettlement: 64 * 1024,
+  // An uploader's place in the settlement queue: its position, and at most `SETTLE_CHUNK_IDS` photo ids
+  // and a handful of debt ids taken on.
+  settleQueue: 64 * 1024,
   // Ids, literals, numbers and a coordinate — no free text.
   verdict: SLACK,
   small: SLACK,
@@ -117,6 +122,14 @@ export class ReadBudget {
     const result = await read(size);
     this.left += (size - result.page.length) * ROW_MAX[kind];
     return result;
+  }
+
+  /** Bytes another transaction spent on this one's behalf (a nested call's reads fold into ours). */
+  spend(bytes: number): void {
+    if (bytes > this.left) {
+      throw new OverBudget(`read budget: ${bytes} bytes spent past what this transaction planned`);
+    }
+    this.left -= bytes;
   }
 
   /** A patch or delete of a row already read: charged as a second touch of it. */
@@ -186,4 +199,28 @@ export async function traced<T>(
     console.error(`${job}: a pass failed and its chain stopped; re-run it from ${at}`, error);
     throw error;
   }
+}
+
+/** Photo ids per debt row, and so per settlement the queue carries: an erased item's list is chunked. */
+export const SETTLE_CHUNK_IDS = 500;
+
+/**
+ * What kind of failure this was — its class, never its message (a message can carry content). A
+ * failure that crossed a nested call arrives as a `ConvexError` carrying the class as data
+ * ({@link asFailure}), since an error leaves a nested call with its class lost.
+ */
+export function errorClassOf(err: unknown): string {
+  if (err && typeof err === 'object' && 'data' in err) {
+    const data = (err as { data: unknown }).data;
+    if (data && typeof data === 'object' && 'failed' in data) {
+      return String((data as { failed: unknown }).failed);
+    }
+  }
+  if (err instanceof Error) return err.constructor.name || 'Error';
+  return 'unknown';
+}
+
+/** Rethrow a nested call's failure with its class as data, so the caller can record it. */
+export function asFailure(err: unknown): Error {
+  return new ConvexError({ failed: errorClassOf(err) });
 }
