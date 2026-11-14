@@ -60,7 +60,6 @@ import {
   SETTLE_CHUNK_IDS,
   sizePage,
   TX_BUDGET,
-  TX_READ_LIMIT,
   traced,
 } from './lib/readBudget';
 import { literals } from './lib/validators';
@@ -88,10 +87,10 @@ const ERASE_REASON: Record<Erasable, string> = {
 
 /**
  * Photos an erased item carried. Whether one is still used by anything that survives is a question
- * about everything its uploader posted, and **an unknown is never "unused"**: so the tick records the
- * debt — one `photoSettlements` row per erased item, in the transaction that erased it — and
- * `settlePhotos` works from those rows, reading the uploader's Reports and hazards a charged page per
- * transaction until it has the whole answer, and only then deletes what nothing uses.
+ * about everything its uploader posted, and **an unknown is never "unused"**: so the erasure records
+ * the debt — `photoSettlements` rows for the erased item, in the transaction that erased it — and
+ * `settleStep` works from those rows, reading the uploader's Reports and hazards a charged page per
+ * step until it has the whole answer, and only then deletes what nothing uses.
  */
 interface PhotoWork {
   uploaderId: Id<'profiles'>;
@@ -312,12 +311,13 @@ export const eraseOne = internalMutation({
     writes: v.number(),
   },
   handler: async (ctx, { kind, doc, now, bytes, writes }) => {
+    const item = doc as ErasableDoc;
     try {
       const tick: Tick = { reads: new ReadBudget(bytes), writes };
-      const item = doc as ErasableDoc;
       const spent = () => ({ spent: bytes - tick.reads.bytes, writes: writes - tick.writes });
-      // The second guard: re-read the withdrawal and the holds now. A row that is held (or no longer
-      // withdrawn) has its clock cleared or moved, which takes it out of the range.
+      // The second guard: re-read the holds now, against the row the sweep read in this same
+      // transaction (its withdrawal). A row that is held (or no longer withdrawn) has its clock
+      // cleared or moved, which takes it out of the range.
       const next = await refreshClockOf(ctx, tick.reads, kind, item, now);
       if (next === undefined || next > now) return { outcome: 'held' as const, ...spent() };
       const photos: PhotoWork[] = [];
@@ -336,6 +336,9 @@ export const eraseOne = internalMutation({
       for (const work of photos) await owePhotos(ctx, tick.reads, work, now);
       return { outcome: 'erased' as const, ...spent() };
     } catch (err) {
+      // Only its class crosses back to the row; the error itself goes to the logs, so whoever
+      // releases a parked item can see what made it fail.
+      console.error(`erasure.eraseOne: ${kind} ${item._id} failed`, err);
       throw asFailure(err);
     }
   },
@@ -391,21 +394,14 @@ export const eraseDue = internalMutation({
           const doc = await dueHead(ctx, reads, kind, now);
           if (!doc) break;
           const allowance = reads.bytes - ROW_MAX[kind];
+          // Only the nested call is caught: a failure after it committed is this pass's, not the item's.
+          let result: { outcome: 'held' | 'partial' | 'erased'; spent: number; writes: number };
           try {
-            const result = await ctx.runMutation(
+            result = await ctx.runMutation(
               internal.erasure.eraseOne,
               { kind, doc, now, bytes: allowance, writes },
               { transactionLimits: { bytesRead: allowance } },
             );
-            reads.spend(result.spent);
-            writes -= result.writes;
-            if (result.writes > 0) drained = true;
-            if (result.outcome === 'held') held++;
-            else if (result.outcome === 'erased') erased[kind] = (erased[kind] ?? 0) + 1;
-            else {
-              more = true;
-              break kinds;
-            }
           } catch (err) {
             // Its own work rolled back; its reads still count against this transaction.
             reads.spend(allowance);
@@ -416,6 +412,16 @@ export const eraseDue = internalMutation({
               parked++;
               console.error(`erasure.eraseDue: parked ${kind} ${doc._id} after repeated failures`);
             }
+            continue;
+          }
+          reads.spend(result.spent);
+          writes -= result.writes;
+          if (result.writes > 0) drained = true;
+          if (result.outcome === 'held') held++;
+          else if (result.outcome === 'erased') erased[kind] = (erased[kind] ?? 0) + 1;
+          else {
+            more = true;
+            break kinds;
           }
         }
       }
@@ -568,8 +574,10 @@ export const settleOwed = internalMutation({
         );
         if (!turn) return { steps, failed, parked, more: false };
         const allowance = reads.bytes - ROW_MAX.settleQueue;
+        // Only the nested call is caught: a failure after it committed is this walk's, not theirs.
+        let spent: number;
         try {
-          const spent = await ctx.runMutation(
+          spent = await ctx.runMutation(
             internal.erasure.settleStep,
             {
               uploaderId: turn.uploaderId,
@@ -578,8 +586,6 @@ export const settleOwed = internalMutation({
             },
             { transactionLimits: { bytesRead: allowance } },
           );
-          reads.spend(spent);
-          steps++;
         } catch (err) {
           reads.spend(allowance);
           failed++;
@@ -597,7 +603,10 @@ export const settleOwed = internalMutation({
             parked++;
             console.error(`erasure.settleOwed: parked the settlement of ${turn.uploaderId}`);
           }
+          continue;
         }
+        reads.spend(spent);
+        steps++;
       }
     }),
 });
@@ -647,6 +656,10 @@ export const settleStep = internalMutation({
           cursor: undefined,
           after: undefined,
           ...next,
+          // A step went through, so the failures before it were not a poison: only failures in a
+          // row park an uploader, never a few spread over a settlement that runs for many steps.
+          attempts: undefined,
+          lastErrorClass: undefined,
           // A turn taken, so to the back: round robin with everyone else owed.
           queuedAt: Math.max(now, place.queuedAt + 1),
         });
@@ -774,24 +787,36 @@ export const settleStep = internalMutation({
       else await save({ phase: 'hazards', photoIds: rest, ...position });
       return bytes - reads.bytes;
     } catch (err) {
+      // Only its class crosses back to the queue row; the error itself goes to the logs.
+      console.error(`erasure.settleStep: the settlement of ${uploaderId} failed`, err);
       throw asFailure(err);
     }
   },
 });
 
-/** The most parked items the parked read lists, and the most a retry releases, per kind. */
+/** The most parked settlements the parked read lists, and the most a retry releases a call. */
 const PARKED_LIST = 50;
+/** The most parked items of one kind the parked read lists. */
+const PARKED_SHOWN = 8;
+/** The most parked items of one kind a retry releases a call. */
+const RELEASE_PER_KIND = 12;
 
 /**
- * Release parked work — every parked uploader's settlement, and every parked item of the kinds named
- * (all, by default), up to `PARKED_LIST` of each a call: attempts reset, back in the queue and on the
- * clock. For an operator, once whatever made them fail is fixed: `convex run erasure:retryParked '{}'`.
+ * Release parked work — parked uploaders' settlements, up to `PARKED_LIST` a call, then parked items
+ * of the kinds named (all, by default), up to `RELEASE_PER_KIND` of each, as many as the call's one
+ * budget affords (each its row, its hold re-read and its write): attempts reset, back in the queue
+ * and on the clock. `more` while anything parked may be left — run it again. For an operator, once
+ * whatever made them fail is fixed: `convex run erasure:retryParked '{}'`.
  */
 export const retryParked = internalMutation({
   args: { kinds: v.optional(v.array(v.string())) },
   handler: async (ctx, { kinds }) => {
+    const chosen = (kinds ?? ERASED_KINDS) as Erasable[];
+    for (const kind of chosen) {
+      if (!ERASED_KINDS.includes(kind)) throw new ConvexError(`Unknown kind ${kind}`);
+    }
     const now = Date.now();
-    const reads = new ReadBudget(TX_READ_LIMIT);
+    const reads = new ReadBudget();
     const uploaders = await reads.take('settleQueue', PARKED_LIST, (n) =>
       ctx.db
         .query('photoSettlementQueue')
@@ -799,6 +824,7 @@ export const retryParked = internalMutation({
         .take(n),
     );
     for (const row of uploaders) {
+      reads.touch('settleQueue');
       await ctx.db.patch(row._id, {
         parkedAt: undefined,
         attempts: 0,
@@ -806,23 +832,32 @@ export const retryParked = internalMutation({
         queuedAt: now,
       });
     }
+    let more = uploaders.length === PARKED_LIST;
     let items = 0;
-    for (const kind of (kinds ?? ERASED_KINDS) as Erasable[]) {
-      if (!ERASED_KINDS.includes(kind)) throw new ConvexError(`Unknown kind ${kind}`);
-      const budget = new ReadBudget(TX_BUDGET);
-      const parkedRows = await parkedOf(ctx, budget, kind, Math.floor(PARKED_LIST / 4));
+    for (const kind of chosen) {
+      const work = HOLD_COST[kind] + ROW_MAX[kind];
+      const n = reads.rows(kind, RELEASE_PER_KIND, 0, ROW_MAX[kind] + work);
+      if (n === 0) {
+        more = true;
+        continue;
+      }
+      const parkedRows = await parkedOf(ctx, reads, kind, n);
       for (const doc of parkedRows) {
-        await releaseParkedErasure(ctx, budget, kind, doc, now);
+        await reads.row(work, () => releaseParkedErasure(ctx, reads, kind, doc, now));
         items++;
       }
+      if (parkedRows.length === n) more = true;
     }
-    return { uploaders: uploaders.length, items };
+    return { uploaders: uploaders.length, items, more };
   },
 });
 
-/** One kind's parked items, oldest parked first. Bounded below: the field is optional. */
+/**
+ * One kind's parked items, oldest parked first — `n` of them, which the caller has made sure its
+ * budget affords. Bounded below: the field is optional.
+ */
 function parkedOf(ctx: QueryCtx, reads: ReadBudget, kind: Erasable, n: number) {
-  return reads.take(kind, Math.max(1, reads.rows(kind, n)), (k) =>
+  return reads.take(kind, n, (k) =>
     // Typed as one table: every erasable table has the same `by_erase_parked` index.
     ctx.db
       .query(ERASABLE[kind] as 'reports')
@@ -857,9 +892,17 @@ export const parked = query({
     let capped = settlements.length > PARKED_LIST;
     for (const kind of ERASED_KINDS) {
       const per = Math.max(1, Math.floor(reads.bytes / ROW_MAX[kind] / (ERASED_KINDS.length + 1)));
-      const rows = await parkedOf(ctx, reads, kind, Math.min(per, 8) + 1);
-      if (rows.length > Math.min(per, 8)) capped = true;
-      for (const doc of rows.slice(0, Math.min(per, 8))) {
+      const shown = Math.min(per, PARKED_SHOWN);
+      // One row past what it shows, to tell whether there are more — as far as the budget affords.
+      const n = reads.rows(kind, shown + 1);
+      if (n === 0) {
+        capped = true;
+        continue;
+      }
+      const rows = await parkedOf(ctx, reads, kind, n);
+      // More than it shows, or a read the budget cut short of the row that would have said.
+      if (rows.length > shown || (n <= shown && rows.length === n)) capped = true;
+      for (const doc of rows.slice(0, shown)) {
         items.push({
           kind,
           id: doc._id,

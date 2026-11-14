@@ -426,6 +426,104 @@ describe('one item that always fails', () => {
     await sweep(t);
     expect(await get(t, poison)).toBeNull();
   });
+
+  /** Withdrawn heavy items of every kind with a hold to read, parked as three failures leave them. */
+  async function parkHeavy(t: T, authorId: Id<'profiles'>, waterBodyId: Id<'waterBodies'>) {
+    const parked: string[] = [];
+    const { reportIds } = await seedPost(t, authorId, waterBodyId, 4);
+    for (let i = 0; i < 4; i++) parked.push(await seedHazard(t, authorId, waterBodyId));
+    parked.push(...reportIds);
+    await t.run(async (ctx) => {
+      for (const id of parked) {
+        await ctx.db.patch(id as Id<'reports'>, {
+          authorDeletedAt: Date.now(),
+          eraseAttempts: MAX_ERASE_ATTEMPTS,
+          eraseErrorClass: 'Error',
+          eraseParkedAt: Date.now(),
+        });
+      }
+    });
+    return parked;
+  }
+
+  /** `n` uploaders whose settlements are parked. */
+  async function parkSettlements(t: T, n: number) {
+    const uploaders: Id<'profiles'>[] = [];
+    for (let i = 0; i < n; i++) {
+      const { id } = await seedUser(t, `uploader${i}`);
+      uploaders.push(id);
+      await t.run((ctx) =>
+        ctx.db.insert('photoSettlementQueue', {
+          uploaderId: id,
+          queuedAt: Date.now(),
+          phase: 'take',
+          attempts: MAX_SETTLE_ATTEMPTS,
+          lastErrorClass: 'Error',
+          parkedAt: Date.now(),
+        }),
+      );
+    }
+    return uploaders;
+  }
+
+  test('a retry releases every parked item, however many and however heavy, a budget at a time', async () => {
+    const { t, author, waterBodyId } = await setup();
+    const parked = await parkHeavy(t, author.id, waterBodyId);
+    const uploaders = await parkSettlements(t, 60);
+    let released = 0;
+    let calls = 0;
+    for (; calls < 20; calls++) {
+      const result = await t.mutation(internal.erasure.retryParked, {});
+      released += result.items;
+      if (!result.more) break;
+    }
+    expect(calls).toBeLessThan(20);
+    expect(released).toBe(parked.length);
+    for (const id of parked) {
+      const row = await get(t, id);
+      expect(row?.eraseParkedAt).toBeUndefined();
+      expect(row?.eraseAttempts).toBeUndefined();
+      expect(row?.eraseAt).toEqual(expect.any(Number));
+    }
+    for (const id of uploaders) {
+      const place = await placeOf(t, id);
+      expect(place?.parkedAt).toBeUndefined();
+      expect(place?.attempts).toBe(0);
+    }
+  });
+
+  test('the parked read fits its budget with every heavy kind parked, and says when it shows only some', async () => {
+    const { t, author, other, waterBodyId } = await setup();
+    const admin = await seedUser(t, 'admin', 'admin');
+    await parkHeavy(t, author.id, waterBodyId);
+    await parkSettlements(t, 60);
+    // Parked Posts and flags too: four heavy kinds past what one read can list in full.
+    const { postId } = await seedPost(t, other.id, waterBodyId, 1);
+    const { postId: second } = await seedPost(t, other.id, waterBodyId, 1);
+    await t.run(async (ctx) => {
+      for (const id of [postId, second]) {
+        await ctx.db.patch(id, { eraseAttempts: 3, eraseParkedAt: Date.now() });
+      }
+      for (let i = 0; i < 3; i++) {
+        await ctx.db.insert('contentFlags', {
+          flaggerId: other.id,
+          targetType: 'post',
+          targetId: postId,
+          reason: 'spam',
+          status: 'retracted',
+          retractedAt: Date.now(),
+          origin: 'user',
+          createdAt: Date.now(),
+          eraseAttempts: 3,
+          eraseParkedAt: Date.now(),
+        });
+      }
+    });
+    const report = await admin.as.query(api.erasure.parked, {});
+    expect(report.settlements).toHaveLength(50);
+    expect(report.items.length).toBeGreaterThan(0);
+    expect(report.capped).toBe(true);
+  });
 });
 
 describe('a comment', () => {
@@ -1533,6 +1631,23 @@ describe("a photo is erased only when nothing of its uploader's still uses it", 
     await step(t, author.id);
     expect(await owed(t)).toEqual([]);
     expect(await placeOf(t, author.id)).toMatchObject({ phase: 'take', owed: [] });
+  });
+
+  test('a step that goes through clears the failures before it: only failures in a row park', async () => {
+    const { t, author } = await setup();
+    await oweOnRecord(t, author.id, [], { phase: 'clear' });
+    const before = await placeOf(t, author.id);
+    await t.run((ctx) =>
+      ctx.db.patch(before?._id as Id<'photoSettlementQueue'>, {
+        attempts: MAX_SETTLE_ATTEMPTS - 1,
+        lastErrorClass: 'Error',
+      }),
+    );
+    await step(t, author.id);
+    const after = await placeOf(t, author.id);
+    expect(after).toMatchObject({ phase: 'take' });
+    expect(after?.attempts).toBeUndefined();
+    expect(after?.lastErrorClass).toBeUndefined();
   });
 
   test('one a surviving hazard shows stays, whole, and in the export', async () => {

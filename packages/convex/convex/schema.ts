@@ -3477,14 +3477,21 @@ export default defineSchema({
 
   /**
    * **A photo settlement owed** (D248). When the erasure sweep erases an item that carried photos, it
-   * writes one row here in the same transaction — the uploader and the item's photo ids, nothing
-   * else — and `erasure.settlePhotos` works from these rows, deleting each photo nothing of the
-   * uploader's still uses, and deletes a row only after its settlement has finished. So a pass that
-   * fails after an erasure loses no photo it owed: the next run's `erasure.settleOwed` finds the row.
-   * One row per erased item, not per uploader: an insert reads nothing, and the row is bounded by the
-   * item's own list, where a per-uploader list would be read and rewritten whole at every erasure and
-   * could outgrow a document. Account deletion drops a person's rows with their private data.
+   * writes rows here in the same transaction — the uploader and the item's photo ids, at most
+   * `SETTLE_CHUNK_IDS` a row, nothing else — and `erasure.settleStep` works from these rows, deleting
+   * each photo nothing of the uploader's still uses, and deletes a row only after its settlement has
+   * finished. So a pass that fails after an erasure loses no photo it owed: the uploader's place in
+   * `photoSettlementQueue`, written beside the row, brings the next run's `erasure.settleOwed` to it.
+   * Rows per erased item, not per uploader: an insert reads nothing, and a row is bounded by its
+   * chunk, where a per-uploader list would be read and rewritten whole at every erasure and could
+   * outgrow a document. Account deletion drops a person's rows with their private data.
    */
+  photoSettlements: defineTable({
+    uploaderId: v.id('profiles'),
+    photoIds: v.array(v.id('photos')),
+    owedAt: v.number(),
+  }).index('by_uploader', ['uploaderId']),
+
   /**
    * **Who is owed a photo settlement, and how far it has got** (D248): one row per uploader with
    * debts in `photoSettlements`, written beside the first debt. `erasure.settleOwed` walks these by
@@ -3510,14 +3517,6 @@ export default defineSchema({
   })
     .index('by_uploader', ['uploaderId'])
     .index('by_parked_queued', ['parkedAt', 'queuedAt']),
-
-  photoSettlements: defineTable({
-    uploaderId: v.id('profiles'),
-    photoIds: v.array(v.id('photos')),
-    owedAt: v.number(),
-  })
-    .index('by_uploader', ['uploaderId'])
-    .index('by_owed_at', ['owedAt']),
 
   /**
    * What an audited action replaced, when it is too big for the audit row (D226, B01 §11): a
@@ -3631,7 +3630,7 @@ export default defineSchema({
     createdAt: v.number(),
     /**
      * When an erasure (D248) let go of this photo — nothing of its uploader's still uses it — but could
-     * not delete it: a blob outlived the attempt (`erasure.settlePhotos`). The row
+     * not delete it: a blob outlived the attempt (`erasure.settleStep`). The row
      * stays as the only pointer to its blobs, for the orphan sweep, and is no longer anything of its
      * uploader's: their export leaves it out. Absent ⇒ not erased.
      */
