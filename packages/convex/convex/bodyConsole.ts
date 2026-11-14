@@ -19,17 +19,13 @@ import {
   archiveSeasonLabel,
   callerNow,
   currentSeason,
-  distanceToPolygonMeters,
-  MAX_LANDMARKS_PER_BODY,
-  polygonBBox,
   resolveSeason,
   type Season,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
-import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
-import { auditRowsOn } from './lib/auditReads';
+import { auditLinksOnBody } from './lib/auditReads';
 import { requireCapability } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { geoFactsOf } from './lib/bodyGeo';
@@ -140,9 +136,6 @@ export const consoleExtras = query({
 
 // ── Bays ─────────────────────────────────────────────────────────────────────────────────────
 
-/** The most bays whose audit rows a body's history reads (past it, `truncated`). */
-const MAX_BAYS = 100;
-
 /** How a bay was made, from its creating audit row. */
 export type BayVia = 'chord' | 'drawn' | 'seed' | 'catalog';
 
@@ -162,8 +155,11 @@ export function bayViaOf(row: Pick<Doc<'moderationActions'>, 'metadata' | 'reaso
  */
 export const bayProvenance = query({
   args: { waterBodyId: v.id('waterBodies') },
-  handler: async (ctx, { waterBodyId }) => {
+  handler: async (ctx, { waterBodyId: requested }) => {
     await requireCapability(ctx, 'body.read');
+    // A merged-away id reads its survivor's, as `waterBodies.get` follows it.
+    const waterBodyId = await currentId(ctx, requested);
+    if (waterBodyId === null) return [];
     // The same bays `subAreas.listForBody` lists, so every bay the tab shows has its provenance.
     const bays = await subAreasForBody(ctx, waterBodyId);
     const out = [];
@@ -192,31 +188,13 @@ export const bayProvenance = query({
 
 /** The most rows History returns. */
 const HISTORY_MAX = 100;
-/** Audit rows read across every target before the read says it stopped. */
-const HISTORY_ROW_BUDGET = 2_000;
-/** Every target a history reads, across its whole family; past it the read says `capped`. */
-const HISTORY_MAX_TARGETS = 1_200;
-/** Put-ins whose history is read. */
-const HISTORY_PUT_INS = 200;
-/** Lots serving the body whose history is read. */
-const HISTORY_LOTS = 64;
 /** Bodies merged into this one, directly or through another, whose own rows are read. */
 const HISTORY_ABSORBED = 50;
-/** Known features on the body, live and demoted, whose history is read. */
-const HISTORY_FEATURES = 64;
-/** Requests on the body, open and decided, whose history is read. */
-const HISTORY_REQUESTS = 200;
-/** Corpus place names on the body whose history is read. */
-const HISTORY_PLACE_NAMES = 100;
-/** Flags on the body itself whose history is read. */
-const HISTORY_FLAGS = 200;
 /**
  * Bytes a history keeps in hand while it walks the absorbed bodies (each is its polygon, up to a
  * document's 1 MiB): the next one, and the audit rows and their people after it.
  */
 const HISTORY_BYTES_RESERVE = 6 * 1024 * 1024;
-
-type Target = { targetType: Doc<'moderationActions'>['targetType']; targetId: string };
 
 /**
  * The bodies merged into this one — and into those, hop by hop, since a body that absorbed others
@@ -247,238 +225,54 @@ async function absorbedInto(
   return { ids, truncated: false };
 }
 
-/** One body's family: its landmarks apart from its other targets, so a history can rank them last. */
-type Family = {
-  targets: Target[];
-  landmarks: { touched: Target[]; rest: Target[] };
-  truncated: boolean;
-};
-
 /**
- * **One body's own family — every target whose audit rows concern it**, the targets
- * `bodiesOfTarget` files under the body: the body; its bays, put-ins and landmarks whatever their
- * state (removed, hidden, folded by a merge, re-parented here); the lots that serve it; its known
- * features, live or demoted; the requests, corpus place names and flags on it, open or decided.
- * Membership is the relation, never which fields a row happens to carry. The landmarks are apart
- * (`touched`, the ones a person placed, edited, moved or removed, and the `rest`, newest first), so
- * the history can rank every family's landmarks after every family's other targets. `truncated`
- * when any kind ran past its bound.
- */
-async function ownFamily(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>): Promise<Family> {
-  let truncated = false;
-  const ids = (rows: readonly { _id: string }[], bound: number) => {
-    if (rows.length > bound) truncated = true;
-    return rows.slice(0, bound).map((r) => r._id);
-  };
-  const targets: Target[] = [{ targetType: 'waterbody', targetId: waterBodyId }];
-  const add = (targetType: Target['targetType'], of: readonly string[]) => {
-    for (const targetId of of) targets.push({ targetType, targetId });
-  };
-  add(
-    'waterBodySubArea',
-    ids(
-      await ctx.db
-        .query('waterBodySubAreas')
-        .withIndex('by_parent', (q) => q.eq('waterBodyId', waterBodyId))
-        .take(MAX_BAYS + 1),
-      MAX_BAYS,
-    ),
-  );
-  add(
-    'putIn',
-    ids(
-      await ctx.db
-        .query('putIns')
-        .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
-        .take(HISTORY_PUT_INS + 1),
-      HISTORY_PUT_INS,
-    ),
-  );
-  const lotLinks = await ctx.db
-    .query('parkingAreaBodies')
-    .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
-    .take(HISTORY_LOTS + 1);
-  if (lotLinks.length > HISTORY_LOTS) truncated = true;
-  add('parkingArea', [
-    ...new Set(lotLinks.slice(0, HISTORY_LOTS).map((l) => l.parkingAreaId as string)),
-  ]);
-  add(
-    'bodyFeature',
-    ids(
-      await ctx.db
-        .query('bodyFeatures')
-        .withIndex('by_water_body_active', (q) => q.eq('waterBodyId', waterBodyId))
-        .take(HISTORY_FEATURES + 1),
-      HISTORY_FEATURES,
-    ),
-  );
-  add(
-    'waterBodyRequest',
-    ids(
-      await ctx.db
-        .query('waterBodyRequests')
-        .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
-        .take(HISTORY_REQUESTS + 1),
-      HISTORY_REQUESTS,
-    ),
-  );
-  add(
-    'corpusPlaceName',
-    ids(
-      await ctx.db
-        .query('corpusPlaceNames')
-        .withIndex('by_water_body_status', (q) => q.eq('waterBodyId', waterBodyId))
-        .take(HISTORY_PLACE_NAMES + 1),
-      HISTORY_PLACE_NAMES,
-    ),
-  );
-  add(
-    'contentFlag',
-    ids(
-      await ctx.db
-        .query('contentFlags')
-        .withIndex('by_target', (q) => q.eq('targetType', 'waterbody').eq('targetId', waterBodyId))
-        .take(HISTORY_FLAGS + 1),
-      HISTORY_FLAGS,
-    ),
-  );
-  const landmarks = await landmarksForBody(ctx, waterBodyId);
-  if (landmarks.filter((l) => l.removedAt !== undefined).length >= MAX_LANDMARKS_PER_BODY) {
-    // The removed read stops at its cap: older removals may hold rows the read can't see.
-    truncated = true;
-  }
-  const touched = (l: Doc<'bodyLandmarks'>) =>
-    l.createdByUserId !== undefined ||
-    l.moderatorEditedAt !== undefined ||
-    l.movedAt !== undefined ||
-    l.removedAt !== undefined;
-  const newest = [...landmarks].sort((a, b) => b.updatedAt - a.updatedAt);
-  const of = (rows: Doc<'bodyLandmarks'>[]): Target[] =>
-    rows.map((l) => ({ targetType: 'bodyLandmark', targetId: l._id }));
-  return {
-    targets,
-    landmarks: { touched: of(newest.filter(touched)), rest: of(newest.filter((l) => !touched(l))) },
-    truncated,
-  };
-}
-
-/**
- * Reads a history keeps in hand before it takes in another body's family: the family's own reads
- * (its landmarks are up to 3,000 rows), then one query per target, and the audit rows and their
- * people after it.
- */
-const FAMILY_RESERVE = {
-  bytesRead: HISTORY_BYTES_RESERVE,
-  documentsRead: 8_000,
-  databaseQueries: 2_000,
-};
-
-/**
- * **A body's history targets: the family of the body and of every body merged into it** — the
- * same {@link ownFamily}, applied identically to the survivor and to each body in its merge chain
- * (followed hop by hop, up to {@link HISTORY_ABSORBED}). The survivor's family is read first, so the
- * walk's byte check sees it; every body the walk finds is read itself (its own rows, the merge that
- * folded it in among them, cost one query), and its family only while the read can afford it. Each
- * target once — a lot can serve the survivor and a body merged into it — and every family's
- * landmarks after every family's other targets, the touched first, up to
- * {@link HISTORY_MAX_TARGETS}. Any stop — a chain, a kind, the bound or the read running out — says
- * `truncated`, so `capped: false` still means complete.
- */
-export async function historyTargets(
-  ctx: QueryCtx,
-  waterBodyId: Id<'waterBodies'>,
-): Promise<{ targets: Target[]; truncated: boolean }> {
-  const targets: Target[] = [];
-  const touched: Target[] = [];
-  const rest: Target[] = [];
-  const seen = new Set<string>();
-  let truncated = false;
-  const keep = (into: Target[], of: readonly Target[]) => {
-    for (const t of of) {
-      const key = `${t.targetType}:${t.targetId}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      into.push(t);
-    }
-  };
-  const take = (family: Family) => {
-    if (family.truncated) truncated = true;
-    keep(targets, family.targets);
-    keep(touched, family.landmarks.touched);
-    keep(rest, family.landmarks.rest);
-  };
-
-  take(await ownFamily(ctx, waterBodyId));
-  const absorbed = await absorbedInto(ctx, waterBodyId);
-  if (absorbed.truncated) truncated = true;
-  keep(
-    targets,
-    absorbed.ids.map((id): Target => ({ targetType: 'waterbody', targetId: id })),
-  );
-  for (const id of absorbed.ids) {
-    const m = await ctx.meta.getTransactionMetrics();
-    // One audit query per target held, up to the bound the list is cut to.
-    const held = Math.min(HISTORY_MAX_TARGETS, targets.length + touched.length + rest.length);
-    if (
-      targets.length >= HISTORY_MAX_TARGETS ||
-      m.bytesRead.remaining < FAMILY_RESERVE.bytesRead ||
-      m.documentsRead.remaining < FAMILY_RESERVE.documentsRead ||
-      m.databaseQueries.remaining < FAMILY_RESERVE.databaseQueries + held
-    ) {
-      truncated = true;
-      break;
-    }
-    take(await ownFamily(ctx, id));
-  }
-  const all = [...targets, ...touched, ...rest];
-  if (all.length > HISTORY_MAX_TARGETS) truncated = true;
-  return { targets: all.slice(0, HISTORY_MAX_TARGETS), truncated };
-}
-
-/**
- * **A body's history, with its family's** (`historyTargets`: absorbed bodies, bays, put-ins, lots,
- * features, requests, place names, flags, landmarks, whatever their state) — newest first, each
- * row with who acted (`null` for the machine) and whether the viewer can undo it. `action` narrows
- * to one verb as an index range, never a filter over a capped page. Bounded: each target's newest
- * `limit` rows, {@link HISTORY_ROW_BUDGET} rows in all — `capped` when the budget ran out before
- * every target was read, a kind of target had more than its bound, or more rows exist than returned.
+ * **A body's history** — every audit row that concerns it (`auditBodyLinks`: rows on the body, its
+ * bays, landmarks, put-ins, known features, requests, place names and flags, and the lots that serve
+ * it) and the same of every body merged into it, newest first; each row with who acted (`null` for
+ * the machine), what it was made through, and whether the viewer can undo it. One indexed range per
+ * body in the merge chain (up to {@link HISTORY_ABSORBED}). `action` narrows to one verb in the
+ * index; `bodyOnly` to rows on the body itself. `capped` means only that more rows exist than
+ * returned (or the merge chain ran past its bound). A merged-away id reads its survivor's history.
  */
 export const history = query({
   args: {
     waterBodyId: v.id('waterBodies'),
     action: v.optional(literals(MODERATION_ACTIONS)),
+    bodyOnly: v.optional(v.boolean()),
     limit: v.optional(v.number()),
   },
-  handler: async (ctx, { waterBodyId, action, limit }) => {
+  handler: async (ctx, { waterBodyId, action, bodyOnly, limit }) => {
     const viewer = await requireCapability(ctx, 'audit.read');
     // Held to one row and the most; a missing or non-finite limit is the default.
     const n = Number.isFinite(limit)
       ? Math.min(HISTORY_MAX, Math.max(1, Math.floor(limit as number)))
       : 50;
-    const { targets, truncated } = await historyTargets(ctx, waterBodyId);
-    let budget = HISTORY_ROW_BUDGET;
-    let capped = truncated;
-    const rows: Doc<'moderationActions'>[] = [];
-    for (const { targetType, targetId } of targets) {
-      if (budget <= 0) {
-        capped = true;
-        break;
-      }
-      // One past the page, so a target with more than it returns says so.
-      const take = Math.min(n + 1, budget);
-      // The same read `moderation.listActions` makes for a target (`lib/auditReads`): one rule.
-      const read = await auditRowsOn(
+    const body = await bodyOrThrow(ctx, waterBodyId);
+    const absorbed = await absorbedInto(ctx, body._id);
+    let capped = absorbed.truncated;
+    const links = new Map<string, { actionId: Id<'moderationActions'>; createdAt: number }>();
+    for (const id of [body._id, ...absorbed.ids]) {
+      // The same range `moderation.listActions` reads for a body (`lib/auditReads`): one rule.
+      const read = await auditLinksOnBody(
         ctx,
-        { targetType, targetId, ...(action !== undefined ? { action } : {}) },
-        take,
+        {
+          waterBodyId: id,
+          ...(action !== undefined ? { action } : {}),
+          ...(bodyOnly === true ? { bodyOnly } : {}),
+        },
+        n + 1,
       );
-      budget -= read.length;
-      rows.push(...read);
+      if (read.length > n) capped = true;
+      for (const l of read) links.set(l.actionId, l);
     }
-    rows.sort((a, b) => b.createdAt - a.createdAt || (a._id < b._id ? 1 : -1));
-    if (rows.length > n) capped = true;
+    const newest = [...links.values()].sort(
+      (a, b) => b.createdAt - a.createdAt || (a.actionId < b.actionId ? 1 : -1),
+    );
+    if (newest.length > n) capped = true;
     const entries = [];
-    for (const row of rows.slice(0, n)) {
+    for (const link of newest.slice(0, n)) {
+      const row = await ctx.db.get(link.actionId);
+      if (!row) continue;
       entries.push({
         id: row._id,
         action: row.action,
@@ -528,8 +322,11 @@ export const places = query({
  */
 export const landmarkProvenance = query({
   args: { waterBodyId: v.id('waterBodies') },
-  handler: async (ctx, { waterBodyId }) => {
+  handler: async (ctx, { waterBodyId: requested }) => {
     await requireCapability(ctx, 'body.read');
+    // A merged-away id reads its survivor's, as `waterBodies.get` follows it.
+    const waterBodyId = await currentId(ctx, requested);
+    if (waterBodyId === null) return [];
     const rows = await landmarksForBody(ctx, waterBodyId);
     const people = new Map<Id<'profiles'>, PersonView>();
     const out = [];
@@ -561,8 +358,11 @@ export const landmarkProvenance = query({
  */
 export const landmarkProposers = query({
   args: { waterBodyId: v.id('waterBodies') },
-  handler: async (ctx, { waterBodyId }) => {
+  handler: async (ctx, { waterBodyId: requested }) => {
     await requireCapability(ctx, 'inbox.read');
+    // A merged-away id reads its survivor's, as `waterBodies.get` follows it.
+    const waterBodyId = await currentId(ctx, requested);
+    if (waterBodyId === null) return [];
     const open = await ctx.db
       .query('waterBodyRequests')
       .withIndex('by_water_body', (q) =>
@@ -631,6 +431,8 @@ export const dailyHazards = query({
   },
   handler: async (ctx, args) => {
     await requireCapability(ctx, 'body.read');
+    // A merged-away id reads its survivor's hazards, as `waterBodies.get` follows it.
+    const waterBodyId = await currentId(ctx, args.waterBodyId);
     // The caller's day, held near the server's; a season outside the browsable range is this one.
     const now = callerNow(args.now, Date.now(), DAY_MS);
     const season = resolveSeason(args.season, currentSeason(now));
@@ -639,7 +441,7 @@ export const dailyHazards = query({
       .query('hazards')
       .withIndex('by_water_body_first_reported', (q) =>
         q
-          .eq('waterBodyId', args.waterBodyId)
+          .eq('waterBodyId', waterBodyId ?? args.waterBodyId)
           .gte('firstReportedAt', window.start)
           .lt('firstReportedAt', window.end),
       )

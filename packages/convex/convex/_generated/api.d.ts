@@ -15,6 +15,7 @@ import type * as admin from "../admin.js";
 import type * as adminAreas from "../adminAreas.js";
 import type * as analytics from "../analytics.js";
 import type * as analyticsRollup from "../analyticsRollup.js";
+import type * as auditLinks from "../auditLinks.js";
 import type * as authorDeletions from "../authorDeletions.js";
 import type * as basemap from "../basemap.js";
 import type * as blocks from "../blocks.js";
@@ -182,6 +183,7 @@ declare const fullApi: ApiFromModules<{
   adminAreas: typeof adminAreas;
   analytics: typeof analytics;
   analyticsRollup: typeof analyticsRollup;
+  auditLinks: typeof auditLinks;
   authorDeletions: typeof authorDeletions;
   basemap: typeof basemap;
   blocks: typeof blocks;

@@ -54,7 +54,7 @@ import { internal } from '../_generated/api';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { MAX_ACCESS_ROWS_PER_BODY } from './accessLimits';
-import type { ModerationTargetType } from './audit';
+import type { ModerationAction, ModerationTargetType } from './audit';
 import { OPEN_FLAG_STATUSES } from './openFlags';
 import { PUT_IN_REPORT_SCAN, putInMarkersForBody } from './putInMarkers';
 
@@ -720,6 +720,43 @@ export async function bodiesOfTarget(
 }
 
 /**
+ * Link an audit row to every body it concerns (`auditBodyLinks`) — written beside the row, from the
+ * same resolution the library refresh makes, so a body's History is an indexed range. Idempotent: a
+ * row already linked to a body is not linked again.
+ */
+export async function linkAuditRow(
+  ctx: MutationCtx,
+  row: {
+    actionId: Id<'moderationActions'>;
+    action: ModerationAction;
+    targetType: ModerationTargetType;
+    targetId: string;
+    createdAt: number;
+  },
+  bodies: readonly Id<'waterBodies'>[],
+): Promise<number> {
+  if (bodies.length === 0) return 0;
+  const existing = await ctx.db
+    .query('auditBodyLinks')
+    .withIndex('by_action', (q) => q.eq('actionId', row.actionId))
+    .take(LOT_BODY_CAP + 1);
+  const have = new Set(existing.map((l) => l.waterBodyId as string));
+  let written = 0;
+  for (const waterBodyId of new Set(bodies)) {
+    if (have.has(waterBodyId)) continue;
+    await ctx.db.insert('auditBodyLinks', {
+      actionId: row.actionId,
+      waterBodyId,
+      action: row.action,
+      self: row.targetType === 'waterbody' && row.targetId === waterBodyId,
+      createdAt: row.createdAt,
+    });
+    written++;
+  }
+  return written;
+}
+
+/**
  * Audit-driven refreshes one transaction runs inline. A refresh is ~20 index reads, the body's
  * polygon and its newest {@link REPORT_SCAN} reports, so the bulk writers that audit row after row —
  * a request's siblings closed together (up to 200 on one body), a rollover or prune page demoting
@@ -740,6 +777,8 @@ const auditRefreshes = new WeakMap<object, number>();
 export async function noteAuditedAction(
   ctx: MutationCtx,
   entry: {
+    actionId?: Id<'moderationActions'>;
+    action?: ModerationAction;
     actorId?: Id<'profiles'>;
     targetType: ModerationTargetType;
     targetId: string;
@@ -747,6 +786,19 @@ export async function noteAuditedAction(
   },
 ): Promise<void> {
   const { bodies, changes } = await bodiesOfTarget(ctx, entry.targetType, entry.targetId);
+  if (entry.actionId !== undefined && entry.action !== undefined) {
+    await linkAuditRow(
+      ctx,
+      {
+        actionId: entry.actionId,
+        action: entry.action,
+        targetType: entry.targetType,
+        targetId: entry.targetId,
+        createdAt: entry.createdAt,
+      },
+      bodies,
+    );
+  }
   const stamp = changes && entry.actorId !== undefined;
   for (const id of bodies) {
     const used = auditRefreshes.get(ctx) ?? 0;

@@ -47,6 +47,7 @@ import {
   query,
 } from './_generated/server';
 import { requireCapability } from './lib/auth';
+import { resolveSurvivor } from './lib/bodies';
 import { loadPutInRows } from './lib/putInMarkers';
 import { isSuppressed } from './lib/putInSuppression';
 import { takeCappedResult } from './lib/scan';
@@ -298,10 +299,12 @@ const FAVORITES_CAP = 1_000;
  */
 export const retentionForBody = query({
   args: { waterBodyId: v.id('waterBodies') },
-  handler: async (ctx, { waterBodyId }) => {
+  handler: async (ctx, { waterBodyId: requested }) => {
     await requireCapability(ctx, 'body.read');
-    const body = await ctx.db.get(waterBodyId);
+    // A merged-away id reads its survivor's, as `waterBodies.get` follows it.
+    const body = await resolveSurvivor(ctx, requested);
     if (!body) return null;
+    const waterBodyId = body._id;
     const lastActivity = await lastActivityOf(ctx, waterBodyId);
     let curatedBoost: { value: number; at: number | null } | undefined;
     // A boost set to zero is no boost — the rollover's rule (`retentionReason`) and the library's.

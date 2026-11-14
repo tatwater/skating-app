@@ -4736,6 +4736,27 @@ export default defineSchema({
    * no audit row (the imports, the enrichment loads, the prunes) and by a refresh that failed,
    * drained by the minute cron. One row per body; a moderator's write never waits on it.
    */
+  // ── B01-3b: which bodies an audit row concerns ──
+  /**
+   * **One row per (audit row, body it concerns)** — written by `writeAudit` with the resolver the
+   * library refresh uses (`bodiesOfTarget`): the body itself, or the body a bay, landmark, put-in,
+   * feature, request, place name or flag belongs to, or every body a lot serves. A link table rather
+   * than a field on the audit row because a lot's row concerns every body it serves, and an array
+   * can't be indexed. A body's History is then one indexed range per body in its merge chain.
+   * `self` is a row on the body itself (its own `waterbody` target).
+   */
+  auditBodyLinks: defineTable({
+    actionId: v.id('moderationActions'),
+    waterBodyId: v.id('waterBodies'),
+    action: literals(MODERATION_ACTIONS),
+    self: v.boolean(),
+    createdAt: v.number(),
+  })
+    .index('by_action', ['actionId'])
+    .index('by_body_time', ['waterBodyId', 'createdAt'])
+    .index('by_body_action_time', ['waterBodyId', 'action', 'createdAt'])
+    .index('by_body_self_time', ['waterBodyId', 'self', 'createdAt']),
+
   // ── B01-3b: a body's geometry facts, computed at the write ──
   /**
    * **A body's touching bodies and the places it lies in**, computed by the `bodyGeo` jobs (in an
