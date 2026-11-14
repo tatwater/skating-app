@@ -9,7 +9,12 @@ import { Input, InputGroup, InputGroupIcon, InputGroupKbd } from '@/components/k
 import { RadioGroup } from '@/components/kit/radio';
 import { RadioCell } from '@/components/kit/radio-cell';
 import { Section } from '@/components/kit/section-slug';
+import { UnavailableButton } from '@/components/kit/unavailable-button';
 import { cn } from '@/lib/utils';
+import { RetryNote } from '../places/kit-candidates/retry-note';
+import { UnavailableField } from '../places/kit-candidates/unavailable-field';
+import { LoadingLine, NOT_RECORDED, ReadFailed, ReadFailures } from '../places/tabStates';
+import { FAILED, type Loaded } from '../places/useTabReads';
 import { LIT_ROW, LoadingSection, litAttr, TabBody } from '../tabParts';
 import {
   type DepthRung,
@@ -28,11 +33,22 @@ import {
  * there, and the bathymetry state, the section's chip amber while the record lacks it.
  *
  * Every control is drawn only when its handler is passed. Choosing a depth source and filing a
- * survey wait on their server writes; the sample-point preview is a map mode, not built.
+ * survey wait on their server writes: for a viewer who could make them (`canChooseDepth`,
+ * `canFileSurvey`) each is drawn where the board draws it and says *Not available yet*. The
+ * sample-point preview is a map mode, not built. What no read records says *Not recorded yet*.
  */
 
+/** What the unbuilt controls will do, in the operator's words. */
+const NOT_YET = {
+  depth: 'Choosing which source a depth comes from comes with the depth editor.',
+  survey: 'Filing a survey for the next bathymetry build comes with the survey queue.',
+};
+
 export type WaterViewProps = {
-  data: WaterData | undefined;
+  /** The tab's data; `undefined` while it loads, `failed` when the record couldn't be read. */
+  data: Loaded<WaterData>;
+  /** Ask again for every read that failed. */
+  onRetry?: () => void;
   lit?: string | null;
   /** Use this source's number for the mean or the max. */
   onChooseDepth?: (measurement: 'mean' | 'max', source: DepthSource) => void;
@@ -40,6 +56,10 @@ export type WaterViewProps = {
   onSurvey?: (text: string) => void;
   /** The link to Machinery's enrichment page, once it exists. */
   enrichmentLink?: ReactNode;
+  /** The viewer could choose a depth's source: with no `onChooseDepth` yet, it says so. */
+  canChooseDepth?: boolean;
+  /** The viewer could file a survey: with no `onSurvey` yet, the field says so. */
+  canFileSurvey?: boolean;
 };
 
 /**
@@ -55,10 +75,13 @@ const HEAD = 'text-kick leading-none font-medium tracking-kick text-fg3 uppercas
 
 export function WaterView({
   data,
+  onRetry,
   lit = null,
   onChooseDepth,
   onSurvey,
   enrichmentLink,
+  canChooseDepth = false,
+  canFileSurvey = false,
 }: WaterViewProps) {
   if (data === undefined) {
     return (
@@ -69,11 +92,28 @@ export function WaterView({
       </TabBody>
     );
   }
+  if (data === FAILED) {
+    return (
+      <TabBody data-slot="water-tab">
+        {onRetry ? (
+          <RetryNote onRetry={onRetry}>Couldn’t read this body’s record.</RetryNote>
+        ) : (
+          <ReadFailed />
+        )}
+      </TabBody>
+    );
+  }
   return (
     <TabBody data-slot="water-tab">
-      <DepthSection data={data} lit={lit} onChoose={onChooseDepth} />
+      <ReadFailures failures={data.failures} onRetry={onRetry} />
+      <DepthSection data={data} lit={lit} onChoose={onChooseDepth} canChoose={canChooseDepth} />
       <SamplingSection data={data} lit={lit} />
-      <BathymetrySection data={data} onSurvey={onSurvey} enrichmentLink={enrichmentLink} />
+      <BathymetrySection
+        data={data}
+        onSurvey={onSurvey}
+        canSurvey={canFileSurvey}
+        enrichmentLink={enrichmentLink}
+      />
     </TabBody>
   );
 }
@@ -82,12 +122,16 @@ function DepthSection({
   data,
   lit,
   onChoose,
+  canChoose,
 }: {
   data: WaterData;
   lit: string | null;
   onChoose: WaterViewProps['onChooseDepth'];
+  canChoose: boolean;
 }) {
-  const { rungs, meanFrom, maxFrom } = data.depth;
+  const { rungs, meanFrom, maxFrom, others } = data.depth;
+  // A viewer who could choose picks a cell either way; with no write yet, the button says so.
+  const picks = onChoose !== undefined || canChoose;
   const [mean, setMean] = useState<DepthSource | null>(meanFrom);
   const [max, setMax] = useState<DepthSource | null>(maxFrom);
   const height = (r: DepthRung) =>
@@ -103,7 +147,7 @@ function DepthSection({
     <RadioGroup
       aria-label={measurement === 'mean' ? 'Mean depth' : 'Max depth'}
       value={pick}
-      readOnly={!onChoose}
+      readOnly={!picks}
       onValueChange={(v) => setPick(v as DepthSource)}
       data-slot={`depth-${measurement}`}
       className={cn('shrink-0', VALUE_COLUMN)}
@@ -178,23 +222,54 @@ function DepthSection({
             {column('mean', mean, setMean, meanFrom)}
             {column('max', max, setMax, maxFrom)}
           </div>
-          {onChoose && (mean !== meanFrom || max !== maxFrom) && (
+          {picks && (mean !== meanFrom || max !== maxFrom) && (
             <div className="mt-(--space-2_5) flex flex-wrap gap-(--space-2)">
               {mean !== null && mean !== meanFrom && (
-                <Button size="sm" onClick={() => onChoose('mean', mean)}>
+                <ChooseButton onChoose={onChoose} measurement="mean" source={mean}>
                   Use {sourceWords(mean, data.state).name} for the mean
-                </Button>
+                </ChooseButton>
               )}
               {max !== null && max !== maxFrom && (
-                <Button size="sm" onClick={() => onChoose('max', max)}>
+                <ChooseButton onChoose={onChoose} measurement="max" source={max}>
                   Use {sourceWords(max, data.state).name} for the max
-                </Button>
+                </ChooseButton>
               )}
             </div>
+          )}
+          {others === null && (
+            <span
+              data-slot="depth-others"
+              className="mt-(--space-2_5) text-assist leading-list text-fg3"
+            >
+              Other sources’ depths: {NOT_RECORDED}
+            </span>
           )}
         </div>
       )}
     </Section>
+  );
+}
+
+/** Apply a picked source — or, with no write yet, say it isn't available. */
+function ChooseButton({
+  onChoose,
+  measurement,
+  source,
+  children,
+}: {
+  onChoose: WaterViewProps['onChooseDepth'];
+  measurement: 'mean' | 'max';
+  source: DepthSource;
+  children: ReactNode;
+}) {
+  return onChoose ? (
+    <Button size="sm" onClick={() => onChoose(measurement, source)}>
+      {children}
+    </Button>
+  ) : (
+    <UnavailableButton size="sm" what={NOT_YET.depth}>
+      {children}
+    </UnavailableButton>
   );
 }
 
@@ -251,38 +326,64 @@ function SamplingSection({ data, lit }: { data: WaterData; lit: string | null })
 function BathymetrySection({
   data,
   onSurvey,
+  canSurvey,
   enrichmentLink,
 }: {
   data: WaterData;
+  canSurvey: boolean;
 } & Pick<WaterViewProps, 'onSurvey' | 'enrichmentLink'>) {
   const [draft, setDraft] = useState('');
   const b = data.bathymetry;
+  const missing = typeof b === 'object' && b.missing;
+  const field = (disabled: boolean) => (
+    <InputGroup>
+      <InputGroupIcon>
+        <FontAwesomeIcon icon={faLink} />
+      </InputGroupIcon>
+      <Input
+        aria-label="A survey the next build should load"
+        placeholder="Paste a link or a citation"
+        value={draft}
+        disabled={disabled}
+        onChange={(e) => setDraft(e.target.value)}
+      />
+      <InputGroupKbd>⏎</InputGroupKbd>
+    </InputGroup>
+  );
   return (
     <Section
       title="Bathymetry"
       data-slot="bathymetry"
-      data-gap={b?.missing ? '' : undefined}
+      data-gap={missing ? '' : undefined}
+      aria-busy={b === undefined || undefined}
       // The one gap left on the record turns the title chip amber (Review 14). The kit's slug has
       // no tone yet (a kit extension owed); until it does, the chip is toned from here.
       className="data-gap:[&_[data-slot=section-chip]]:bg-warn data-gap:[&_[data-slot=section-chip]]:text-bg"
       end={enrichmentLink}
     >
-      {b === null ? (
-        <span className="text-assist leading-list text-fg3">Not recorded yet</span>
+      {b === undefined ? (
+        <span aria-hidden="true" className="flex flex-col gap-(--space-1_5)">
+          <LoadingLine width="100%" />
+          <LoadingLine width="70%" />
+        </span>
+      ) : b === FAILED ? (
+        <ReadFailed />
       ) : (
         <KeyValueList keyWidth="6.5rem">
-          {b.searched !== null && (
-            <KeyValueRow label="Searched">
+          <KeyValueRow label="Searched">
+            {b.searched !== null ? (
               <span className="flex flex-col gap-(--space-1)">
                 <span>{b.searched.source}</span>
                 <span className="text-fg3">{b.searched.when}</span>
               </span>
-            </KeyValueRow>
-          )}
+            ) : (
+              <span className="text-fg3">{NOT_RECORDED}</span>
+            )}
+          </KeyValueRow>
           <KeyValueRow label="Found">{b.found}</KeyValueRow>
         </KeyValueList>
       )}
-      {onSurvey && (
+      {onSurvey ? (
         <form
           className="mt-(--space-1_5) flex flex-col gap-(--space-2)"
           onSubmit={(e) => {
@@ -294,19 +395,17 @@ function BathymetrySection({
           }}
         >
           <span className={HEAD}>A survey the next build should load</span>
-          <InputGroup>
-            <InputGroupIcon>
-              <FontAwesomeIcon icon={faLink} />
-            </InputGroupIcon>
-            <Input
-              aria-label="A survey the next build should load"
-              placeholder="Paste a link or a citation"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-            />
-            <InputGroupKbd>⏎</InputGroupKbd>
-          </InputGroup>
+          {field(false)}
         </form>
+      ) : (
+        canSurvey && (
+          <div className="mt-(--space-1_5) flex flex-col gap-(--space-2)">
+            <span className={HEAD}>A survey the next build should load</span>
+            <UnavailableField what={NOT_YET.survey} label="A survey the next build should load">
+              {field(true)}
+            </UnavailableField>
+          </div>
+        )
       )}
     </Section>
   );

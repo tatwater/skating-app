@@ -8,13 +8,15 @@ import {
 } from '@skating/core';
 
 import type { BodyMapScene, MapItem } from '../../map/mapDescriptors';
+import { FAILED, type Loaded } from '../places/useTabReads';
 
 type LatLng = { lat: number; lng: number };
 
 /**
  * The Water tab's data: depth as a ladder of sources (each offering a mean, a max or both, the one
  * in use wearing Now), where the weather is sampled and why there, and the bathymetry state. Pure.
- * `null` means not recorded — drawn as absent, never as zero.
+ * `null` means not recorded — said so, never zero; a part read on its own is in its read's state
+ * ({@link Loaded}).
  */
 
 export type BBox = { minLat: number; minLng: number; maxLat: number; maxLng: number };
@@ -31,6 +33,12 @@ export type Depth = {
   /** The source each measurement uses now; `null` with none on record. */
   meanFrom: DepthSource | null;
   maxFrom: DepthSource | null;
+  /**
+   * Whether the other sources' offers are on the ladder. The depth loader keeps only each
+   * measurement's winner, so this is `null` (not recorded) until the candidates are stored; `kept`
+   * once they are (the board's).
+   */
+  others: 'kept' | null;
 };
 
 export type Sampling = {
@@ -45,7 +53,7 @@ export type Sampling = {
 };
 
 export type Bathymetry = {
-  /** What was searched for this body, and when. */
+  /** What was searched for this body, and when; `null` when no read records it. */
   searched: { source: string; when: string } | null;
   /** What was found. */
   found: string;
@@ -59,9 +67,11 @@ export type WaterData = {
   state: string | null;
   depth: Depth;
   sampling: Sampling;
-  /** `null` until a read serves it. */
-  bathymetry: Bathymetry | null;
+  /** The bathymetry state, in its read's state (`bodyConsole.consoleExtras`). */
+  bathymetry: Loaded<Bathymetry>;
   box: BBox | null;
+  /** What couldn't be read, in words ("the bathymetry state"). */
+  failures: string[];
 };
 
 /** What the model reads off the body's record. */
@@ -99,7 +109,18 @@ export function depthOf(body: WaterBody, extra: readonly DepthRung[] = []): Dept
       .sort((a, b) => DEPTH_SOURCE_RANK[a.source] - DEPTH_SOURCE_RANK[b.source]),
     meanFrom: body.meanDepthM !== undefined ? (body.meanDepthSource ?? null) : null,
     maxFrom: body.maxDepthM !== undefined ? (body.maxDepthSource ?? null) : null,
+    others: extra.length > 0 ? 'kept' : null,
   };
+}
+
+/**
+ * The bathymetry state from whether contours were drawn for the body (`consoleExtras`). What was
+ * searched, and when, no read records yet.
+ */
+export function bathymetryOf(hasBathymetry: boolean): Bathymetry {
+  return hasBathymetry
+    ? { searched: null, found: 'Contour lines drawn', missing: false }
+    : { searched: null, found: 'No contour lines', missing: true };
 }
 
 /** A source's name on the ladder, and the line under it when the name alone would mislead. */
@@ -153,9 +174,15 @@ export function spansKm(box: BBox): { ew: number; ns: number } {
 
 export function waterFrom(
   body: WaterBody,
-  extras: { candidates?: readonly DepthRung[]; bathymetry?: Bathymetry | null } = {},
+  // Required, never defaulted: a default would read the extras still loading as landed.
+  extrasRead: Loaded<{ hasBathymetry: boolean }>,
+  extras: { candidates?: readonly DepthRung[] } = {},
 ): WaterData {
   const box = body.bbox ?? null;
+  const bathymetry: Loaded<Bathymetry> =
+    extrasRead === undefined || extrasRead === FAILED
+      ? extrasRead
+      : bathymetryOf(extrasRead.hasBathymetry);
   return {
     name: body.name,
     state: body.states?.[0] ?? null,
@@ -169,8 +196,9 @@ export function waterFrom(
       acrossKm: box ? acrossKm(box) : null,
       wide: box ? spansMultipleSampleCells(box) : false,
     },
-    bathymetry: extras.bathymetry ?? null,
+    bathymetry,
     box,
+    failures: extrasRead === FAILED ? ['the bathymetry state'] : [],
   };
 }
 

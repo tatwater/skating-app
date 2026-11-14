@@ -1,32 +1,60 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { useQuery } from 'convex/react';
 import { useMemo } from 'react';
 
+import { useRole } from '@/lib/useRole';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
+import { FAILED, type Loaded, read, useTabReads } from '../places/useTabReads';
 import { WaterView } from './WaterView';
 import { type WaterData, waterFrom, waterMapScene } from './waterModel';
 
 /**
- * The Water tab's data from the body's record (`waterBodies.get`) — depth and its sources, the
- * interior point, any hand-set sample points and the box — memoized on the record, so the map's
- * `useData` keeps its identity until the record changes.
+ * The Water tab's reads and its data: the body's record (`waterBodies.get` — depth and its sources,
+ * the interior point, any hand-set sample points, the box) and whether contours were drawn for it
+ * (`bodyConsole.consoleExtras`), memoized on the reads so the map's `useData` keeps its identity
+ * until one changes. The record failing is the tab's failure; the bathymetry state says so in place.
  */
+export function useWaterRead(bodyId: string): { data: Loaded<WaterData>; retry: () => void } {
+  const waterBodyId = bodyId as Id<'waterBodies'>;
+  const { reads, retry } = useTabReads({
+    body: read(api.waterBodies.get, { waterBodyId }),
+    extras: read(api.bodyConsole.consoleExtras, { waterBodyId }),
+  });
+  const { body: got, extras } = reads;
+  const body = got === FAILED ? FAILED : got?.available ? got.body : undefined;
+  const data = useMemo<Loaded<WaterData>>(
+    () => (body === undefined || body === FAILED ? body : waterFrom(body, extras)),
+    [body, extras],
+  );
+  return { data, retry };
+}
+
+/** The drawing's data: the tab's, once the record is read. */
 export function useWaterData(bodyId: string): WaterData | undefined {
-  const result = useQuery(api.waterBodies.get, { waterBodyId: bodyId as Id<'waterBodies'> });
-  const body = result?.available ? result.body : undefined;
-  return useMemo(() => (body ? waterFrom(body) : undefined), [body]);
+  const { data } = useWaterRead(bodyId);
+  return data === FAILED ? undefined : data;
 }
 
 /**
- * Body › Water, wired. Read-only today: the board's two edits (choosing a depth source, filing a
- * survey) wait on server writes, and the other depth lever the old editor has — typing an operator
- * reading or rejecting one — is not on this board (the B01-3 server register). The depth candidates
- * and the bathymetry state wait on their reads; until then the ladder shows the sources in use and
- * Bathymetry says it isn't recorded.
+ * Body › Water, wired: the record and the bathymetry state. Read-only today — the board's two edits
+ * (choosing a depth source, filing a survey) wait on server writes, so for a viewer who could make
+ * them (`body.water`) each is drawn where the board draws it and says *Not available yet*. The
+ * other sources' depths aren't stored (the loader keeps each measurement's winner) and what was
+ * searched for contours isn't recorded: each says *Not recorded yet*.
  */
 export function WaterTab({ bodyId, lit = null }: BodyTabProps) {
-  return <WaterView data={useWaterData(bodyId)} lit={lit} />;
+  const { data, retry } = useWaterRead(bodyId);
+  const { can } = useRole();
+  const canEdit = can('body.water');
+  return (
+    <WaterView
+      data={data}
+      onRetry={retry}
+      lit={lit}
+      canChooseDepth={canEdit}
+      canFileSurvey={canEdit}
+    />
+  );
 }
 
 /** The Water tab's registration in the frame's registry. */

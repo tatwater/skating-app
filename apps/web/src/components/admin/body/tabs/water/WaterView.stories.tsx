@@ -1,10 +1,11 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, fn, userEvent, within } from 'storybook/test';
+import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { Button } from '@/components/kit/button';
 import { computedColor, sameColor } from '@/components/kit/measure';
 import { faceLoaded, must } from '@/components/kit/storyKit';
 
+import { FAILED } from '../places/useTabReads';
 import { InspectorFrame } from '../tabStoryFrame';
 import { WaterView } from './WaterView';
 import { CHAMPLAIN_WATER, MASCOMA_WATER, MASCOMA_WATER_AS_READ } from './waterFixtures';
@@ -90,18 +91,92 @@ export const FileASurvey: Story = {
   },
 };
 
-/** As the app reads it today: the source in use, read-only; the bathymetry not recorded yet. */
+/**
+ * As the app reads it today: the source in use, read-only; the other sources and what was searched
+ * not recorded yet; the missing contours the record's gap, the chip amber.
+ */
 export const AsRead: Story = {
   args: { data: MASCOMA_WATER_AS_READ },
   play: async ({ canvasElement }) => {
     const page = within(canvasElement);
     await expect(page.queryByRole('button')).toBeNull();
     await expect(page.queryByRole('textbox')).toBeNull();
-    await expect(slot(canvasElement, 'bathymetry')).toHaveTextContent('Not recorded yet');
-    // No gap known, so no amber: the chip is the plain inverted ink.
-    const chip = slot(slot(canvasElement, 'bathymetry'), 'section-chip');
+    await expect(slot(canvasElement, 'depth-others')).toHaveTextContent(
+      'Other sources’ depths: Not recorded yet',
+    );
+    const bathymetry = slot(canvasElement, 'bathymetry');
+    await expect(bathymetry).toHaveTextContent('SearchedNot recorded yet');
+    await expect(bathymetry).toHaveTextContent('FoundNo contour lines');
+    const chip = slot(bathymetry, 'section-chip');
     await expect(getComputedStyle(chip).backgroundColor).toEqual(
-      sameColor(computedColor(chip, 'var(--fg1)')),
+      sameColor(computedColor(chip, 'var(--warn)')),
+    );
+  },
+};
+
+/**
+ * The tab as the app draws it for a moderator today: filing a survey has no server write yet, so
+ * the field is drawn where the board draws it and says *Not available yet*.
+ */
+export const AsTheAppDrawsIt: Story = {
+  args: { data: MASCOMA_WATER_AS_READ, canChooseDepth: true, canFileSurvey: true },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    const survey = page.getByRole('group', { name: 'A survey the next build should load' });
+    await expect(survey).toHaveAttribute('aria-disabled', 'true');
+    await expect(page.getByRole('textbox')).toBeDisabled();
+    await userEvent.hover(survey);
+    await waitFor(() =>
+      expect(document.querySelector('[data-slot="tooltip-title"]')).toHaveTextContent(
+        'Not available yet',
+      ),
+    );
+    await userEvent.unhover(survey);
+  },
+};
+
+/** Picking another source with no write yet: the button names it, and says it isn't available. */
+export const ChooseNotAvailable: Story = {
+  args: { data: MASCOMA_WATER, canChooseDepth: true },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    await userEvent.click(page.getByRole('radio', { name: /LAGOS-US DEPTH, 23 m/ }));
+    await expect(page.getByRole('button', { name: /for the max/ })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+  },
+};
+
+/** The bathymetry state is on its way: its place is held. */
+export const BathymetryLoading: Story = {
+  args: { data: { ...MASCOMA_WATER_AS_READ, bathymetry: undefined } },
+  play: async ({ canvasElement }) => {
+    await expect(slot(canvasElement, 'bathymetry')).toHaveAttribute('aria-busy', 'true');
+  },
+};
+
+/** The bathymetry state couldn't be read: said in place, and once at the top with Try again. */
+export const BathymetryFailed: Story = {
+  args: {
+    data: { ...MASCOMA_WATER_AS_READ, bathymetry: FAILED, failures: ['the bathymetry state'] },
+    onRetry: fn(),
+  },
+  play: async ({ canvasElement, args }) => {
+    const note = slot(canvasElement, 'read-failures');
+    await expect(note).toHaveTextContent('Couldn’t read the bathymetry state.');
+    await expect(slot(canvasElement, 'bathymetry')).toHaveTextContent('Couldn’t be read');
+    await userEvent.click(within(note).getByRole('button', { name: 'Try again' }));
+    await expect(args.onRetry).toHaveBeenCalled();
+  },
+};
+
+/** The record couldn't be read: the tab says so, with Try again. */
+export const RecordFailed: Story = {
+  args: { data: FAILED, onRetry: fn() },
+  play: async ({ canvasElement }) => {
+    await expect(slot(canvasElement, 'retry-note')).toHaveTextContent(
+      'Couldn’t read this body’s record.',
     );
   },
 };

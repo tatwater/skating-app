@@ -24,6 +24,7 @@ export const MASCOMA_WATER: WaterData = {
     ],
     meanFrom: 'state_agency',
     maxFrom: 'state_agency',
+    others: 'kept',
   },
   sampling: {
     interior: { lat: 43.617368284786984, lng: -72.136005675 },
@@ -37,24 +38,29 @@ export const MASCOMA_WATER: WaterData = {
     missing: true,
   },
   box: MASCOMA_BBOX,
+  failures: [],
 };
 
-/** As the app reads it today: the two winners only, and no bathymetry read. */
+/**
+ * As the app reads it today: the two winners only (the other sources' offers aren't stored), and
+ * the bathymetry state from whether contours were drawn — what was searched isn't recorded.
+ */
 export const MASCOMA_WATER_AS_READ: WaterData = {
   ...MASCOMA_WATER,
   depth: {
     rungs: [{ source: 'state_agency', mean: 9.4, max: 24 }],
     meanFrom: 'state_agency',
     maxFrom: 'state_agency',
+    others: null,
   },
-  bathymetry: null,
+  bathymetry: { searched: null, found: 'No contour lines', missing: true },
 };
 
 /** A wide body with a grid of points set by hand. */
 export const CHAMPLAIN_WATER: WaterData = {
   name: 'Lake Champlain',
   state: 'VT',
-  depth: { rungs: [], meanFrom: null, maxFrom: null },
+  depth: { rungs: [], meanFrom: null, maxFrom: null, others: null },
   sampling: {
     interior: { lat: 44.5, lng: -73.3 },
     points: [
@@ -65,6 +71,7 @@ export const CHAMPLAIN_WATER: WaterData = {
     acrossKm: 172.4,
     wide: true,
   },
-  bathymetry: { searched: null, found: 'Contour lines', missing: false },
+  bathymetry: { searched: null, found: 'Contour lines drawn', missing: false },
   box: { minLat: 43.5, minLng: -73.5, maxLat: 45.05, maxLng: -73.2 },
+  failures: [],
 };
