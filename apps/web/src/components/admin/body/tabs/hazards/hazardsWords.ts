@@ -34,6 +34,10 @@ export type WordsContext = {
   /** One day: reports known on the lake, and archived ones that may have been. */
   count: number;
   unknown: number;
+  /**
+   * Hazards with no recorded end first reported that day (each a mark) — or, for a strip, in all.
+   */
+  reported: number;
   /** The read stopped at its most hazards. */
   capped: boolean;
   /** Archived reports with no recorded end, on one strip. */
@@ -60,6 +64,7 @@ export function wordsContext(over: Partial<WordsContext> = {}): WordsContext {
     archived: 0,
     count: 0,
     unknown: 0,
+    reported: 0,
     capped: false,
     unknownEnds: 0,
     markedDays: 0,
@@ -112,19 +117,23 @@ export const HAZARDS_WORDS = {
       ? `${plural(c.archived, 'hazard report', 'hazard reports')} on ${c.body} ${when(c)}, ${c.archived === 1 ? 'archived' : 'each archived'} by skaters’ votes. An archived report has no recorded end, so the hazard may still have been on the lake. No open report is not a reading of the ice.`
       : `There are no hazard reports on record for ${c.body} ${when(c)}. No reports is not a reading of the ice.`,
 
-  /** One day, as its strip's title and today's line write it. */
+  /**
+   * One day, as its strip's title and today's line write it. A mark's hazard is *first reported*
+   * that day — never ended, never gone after it.
+   */
   day: (c: WordsContext): string => {
+    const firsts = c.reported > 0 ? `, ${c.reported} first reported this day` : '';
     if (c.unknown > 0) {
       return c.count > 0
-        ? `At least ${c.count} reported on the lake, ${c.unknown} unknown`
+        ? `At least ${c.count} reported on the lake${firsts}, ${c.unknown} unknown`
         : `${c.unknown} unknown: archived, may still have been on the lake`;
     }
     if (c.capped) {
       return c.count > 0
-        ? `At least ${c.count} reported on the lake`
+        ? `At least ${c.count} reported on the lake${firsts}`
         : 'No reports counted; the count stopped short';
     }
-    return c.count > 0 ? `${c.count} reported on the lake` : 'No hazard reports';
+    return c.count > 0 ? `${c.count} reported on the lake${firsts}` : 'No hazard reports';
   },
 
   /** What a reader hears for one strip. */
@@ -133,15 +142,36 @@ export const HAZARDS_WORDS = {
       return c.capped ? 'No reports counted; the count stopped short' : 'No hazard reports';
     }
     const days = `${plural(c.markedDays, 'day', 'days')} with hazard reports`;
+    const firsts =
+      c.reported === 0
+        ? ''
+        : `, ${plural(c.reported, 'first report', 'first reports')} with no recorded end`;
     const some = c.unsureDays === 0 ? '' : `, ${c.unsureDays} with some unknown`;
-    return `${days}${some}${c.capped ? '; each a floor' : ''}`;
+    return `${days}${firsts}${some}${c.capped ? '; each a floor' : ''}`;
   },
 
-  /** Archived reports with no recorded end, on one strip. */
+  /**
+   * The strips' caption, drawn whenever a mark is: what a mark is, and that the days after it say
+   * nothing about the lake.
+   */
+  marksCaption: (_c: WordsContext): string =>
+    'A bright mark is the day a hazard with no recorded end was first reported. How long it stayed on the lake isn’t recorded; the days after it are not a reading of the ice.',
+
+  /** Archived reports with no recorded end, on a strip that marks their first reports. */
   unknownEndsNote: (c: WordsContext): string => {
     const n = c.unknownEnds;
     const lead = c.named ? `${seasonWord(c.season)}: ` : '';
-    return `${lead}${n === 1 ? '1 archived report has' : `${n} archived reports have`} no recorded end. From ${n === 1 ? 'its' : 'their'} first report on, every day counts ${n === 1 ? 'it' : 'them'} as unknown: ${n === 1 ? 'the hazard' : 'each hazard'} may still have been on the lake.`;
+    return `${lead}${n === 1 ? '1 archived report has' : `${n} archived reports have`} no recorded end. ${n === 1 ? 'It is' : 'Each is'} marked on the day it was first reported; from then on, every day counts ${n === 1 ? 'it' : 'them'} as unknown: ${n === 1 ? 'the hazard' : 'each hazard'} may still have been on the lake.`;
+  },
+
+  /**
+   * Archived reports with no recorded end, on a strip whose first reports the tab doesn't read
+   * (last winter, beside this one): no marks, and why.
+   */
+  unmarkedNote: (c: WordsContext): string => {
+    const n = c.unknownEnds;
+    const lead = c.named ? `${seasonWord(c.season)}: ` : '';
+    return `${lead}${n === 1 ? '1 archived report has' : `${n} archived reports have`} no recorded end. ${n === 1 ? 'It is' : 'Each is'} counted on the day it was first reported, but that day isn’t marked for this winter; from then on, every day counts ${n === 1 ? 'it' : 'them'} as unknown: ${n === 1 ? 'the hazard' : 'each hazard'} may still have been on the lake.`;
   },
 
   /** A count that stopped short. */

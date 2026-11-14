@@ -8,6 +8,7 @@ import { stubJsdomAnimations } from '../jsdomStubs';
 import { HazardsTabView, type HazardsTabViewProps } from './HazardsTabView';
 import {
   BODY_NOW,
+  dailyFrom,
   FEB_ARCHIVED,
   FEB_HAZARDS,
   FEB_NOW,
@@ -21,6 +22,7 @@ import {
   archivedRows,
   axisIndex,
   dayWords,
+  type HazardInput,
   hazardRows,
   wintersFrom,
   winterWindow,
@@ -72,9 +74,12 @@ describe('HazardsTabView — the default board', () => {
       }),
     ).toBeVisible();
     expect(within(onLake).getByText('Today: No hazard reports')).toBeVisible();
+    // Last winter's list isn't read beside this one: no marks, no caption, and the note says why.
+    expect(document.querySelector('[data-slot="day-strip-mark"]')).toBeNull();
+    expect(document.querySelector('[data-slot="day-strips-caption"]')).toBeNull();
     expect(
       within(onLake).getByText(
-        '2025–26: 8 archived reports have no recorded end. From their first report on, every day counts them as unknown: each hazard may still have been on the lake.',
+        '2025–26: 8 archived reports have no recorded end. Each is counted on the day it was first reported, but that day isn’t marked for this winter; from then on, every day counts them as unknown: each hazard may still have been on the lake.',
       ),
     ).toBeVisible();
   });
@@ -354,92 +359,150 @@ describe('HazardsTabView — the winters, a day at a time', () => {
     ).toBeVisible();
   });
 
-  it('no day ever draws fewer hazards than its count, and every unknown carries its mark (fast-check)', () => {
-    const { start, days } = winterWindow(SEASON - 1);
+  it('a past winter marks each archived hazard once, under its caption, never fewer than the count (fast-check)', () => {
+    const season = SEASON - 1;
+    const { start, days } = winterWindow(season);
     const DAY_MS = 86_400_000;
     fc.assert(
       fc.property(
-        fc.uniqueArray(
+        fc.array(
           fc.record({
             day: fc.integer({ min: 0, max: days - 1 }),
-            count: fc.nat(30),
-            unknown: fc.nat(30),
+            hour: fc.integer({ min: 0, max: 23 }),
+            active: fc.boolean(),
           }),
-          { selector: (e) => e.day, maxLength: 12 },
+          { maxLength: 14 },
         ),
         fc.boolean(),
         (entries, capped) => {
-          const winters = wintersFrom(
-            [
-              {
-                season: SEASON - 1,
-                days: entries.map((e) => ({
-                  at: start + e.day * DAY_MS + 3_600_000,
-                  count: e.count,
-                  unknown: e.unknown,
-                })),
-                unknownEnds: entries.filter((e) => e.unknown > 0).length,
-                capped,
-                watchOpensOn: null,
-              },
-            ],
-            BODY_NOW,
-          );
+          const hazards = entries.map((e) => ({
+            first: start + e.day * DAY_MS + e.hour * 3_600_000,
+            active: e.active,
+          }));
+          const read = dailyFrom(season, hazards, BODY_NOW, { capped });
+          const list: HazardInput[] = hazards.map((h, i) => ({
+            _id: `h${i}`,
+            type: 'thin_ice',
+            freshness: 'stale',
+            provisional: false,
+            confirmCount: 1,
+            goneCount: 0,
+            lastConfirmedAt: h.first,
+            firstReportedAt: h.first,
+            status: h.active ? 'active' : 'archived',
+          }));
+          const winters = wintersFrom([read], BODY_NOW, [list]);
           const { container } = render(
             <HazardsTabView
               {...base}
-              season={SEASON - 1}
+              season={season}
               hazards={FEB.hazards}
               winters={winters ?? undefined}
             />,
           );
+          const line = winters?.lines[0];
+          if (line === undefined) throw new Error('no strip');
+          const g = (i: number) =>
+            container.querySelector<SVGGElement>(`[data-slot="day-strip-day"][data-day="${i}"]`);
+          const marksOn = (el: SVGGElement | null) =>
+            [
+              ...(el?.querySelectorAll<SVGRectElement>('[data-slot="day-strip-mark"]') ?? []),
+            ].reduce((n, b) => n + Number(b.dataset.count ?? 1), 0);
+          // Each hazard with no recorded end: exactly one mark, on its first-report day.
+          const expected = new Map<number, number>();
           for (const e of entries) {
-            const g = container.querySelector<SVGGElement>(
-              // The winter's day on the winters' one axis (a common winter's March moves one along).
-              `[data-slot="day-strip-day"][data-day="${axisIndex(e.day, SEASON - 1)}"]`,
-            );
-            if (e.count + e.unknown === 0) {
-              expect(g).toBeNull();
-              continue;
+            if (e.active) continue;
+            const at = axisIndex(e.day, season);
+            expected.set(at, (expected.get(at) ?? 0) + 1);
+          }
+          let drawn = 0;
+          line.days.forEach((d, i) => {
+            const el = g(i);
+            const marks = marksOn(el);
+            drawn += marks;
+            expect(marks).toBe(expected.get(i) ?? 0);
+            if (d === null) return;
+            // No day draws fewer known hazards than the server's count.
+            const known = Number(el?.dataset.known ?? 0) + marks;
+            expect(known).toBeGreaterThanOrEqual(d.count);
+            // A day with anything to say keeps its words, unknown included — never a tower.
+            if (d.count + d.unknown + d.reported > 0) {
+              const title = el?.querySelector('title')?.textContent ?? '';
+              expect(title).toBe(dayWords(d, capped));
+              if (d.unknown > 0) expect(title).toContain(`${d.unknown} unknown`);
+              if (d.reported > 0) expect(title).toContain('first reported this day');
+              expect(title).not.toMatch(/\bended\b/i);
             }
-            expect(g).not.toBeNull();
-            const el = g as SVGGElement;
-            expect(Number(el.dataset.known)).toBe(e.count);
-            const bar = el.querySelector('[data-slot="day-strip-bar"]');
-            expect(bar !== null).toBe(e.count > 0);
-            const blocks = [
-              ...el.querySelectorAll<SVGRectElement>('[data-slot="day-strip-unknown"]'),
-            ];
-            // Every unknown carries its mark: a block each, or one bar that counts them all.
-            const marked = blocks.reduce((n, b) => n + Number(b.dataset.count ?? 1), 0);
-            expect(marked).toBe(e.unknown);
-            if (e.unknown > 0) expect(el.dataset.unknown).toBe(String(e.unknown));
-            const title = el.querySelector('title')?.textContent ?? '';
-            expect(title).toBe(dayWords({ count: e.count, unknown: e.unknown }, capped));
-            if (e.count > 0) expect(title).toContain(String(e.count));
-            if (e.unknown > 0) expect(title).toContain('unknown');
-            // The bar is the whole count, on the strip's one step for every day — and never
-            // thinner than a mark can be seen.
-            if (bar !== null && blocks.length > 0) {
-              const known = Number(bar.getAttribute('height'));
-              const block = Number(blocks[0]?.getAttribute('height'));
-              const whole = blocks[0]?.dataset.count !== undefined;
-              expect(known).toBeGreaterThanOrEqual(MIN_MARK);
-              if (whole) expect(block).toBeGreaterThanOrEqual(MIN_MARK);
-              if (known > MIN_MARK) {
-                const step = known / e.count;
-                expect(block).toBeCloseTo(
-                  whole ? Math.max(step * e.unknown, MIN_MARK) : (step * 2) / 3,
-                  6,
-                );
-              }
-            }
+          });
+          expect(container.querySelectorAll('[data-slot="day-strip-unknown"]')).toHaveLength(0);
+          // The caption is there whenever a mark is, and only then.
+          expect(container.querySelector('[data-slot="day-strips-caption"]') !== null).toBe(
+            drawn > 0,
+          );
+          if (entries.some((e) => !e.active)) {
+            expect(container.querySelector('[data-slot="hazards-unknown-ends"]')).not.toBeNull();
           }
           cleanup();
         },
       ),
       { numRuns: 40 },
     );
+  });
+
+  it('a mark’s bar and blocks keep the strip’s one step, never thinner than a mark can be seen', () => {
+    const season = SEASON - 1;
+    const { start } = winterWindow(season);
+    const at = (d: number) => start + d * 86_400_000 + 3_600_000;
+    const read = dailyFrom(
+      season,
+      [
+        { first: at(3), active: true },
+        { first: at(3), active: true },
+        { first: at(3), active: false },
+        { first: at(9), active: false },
+      ],
+      BODY_NOW,
+    );
+    const list = [at(3), at(9)].map(
+      (first, i): HazardInput => ({
+        _id: `a${i}`,
+        type: 'thin_ice',
+        freshness: 'stale',
+        provisional: false,
+        confirmCount: 1,
+        goneCount: 2,
+        lastConfirmedAt: first,
+        firstReportedAt: first,
+        status: 'archived',
+      }),
+    );
+    const { container } = render(
+      <HazardsTabView
+        {...base}
+        season={season}
+        hazards={FEB.hazards}
+        winters={wintersFrom([read], BODY_NOW, [list]) ?? undefined}
+      />,
+    );
+    const day3 = container.querySelector('[data-slot="day-strip-day"][data-day="3"]');
+    const bar = Number(day3?.querySelector('[data-slot="day-strip-bar"]')?.getAttribute('height'));
+    const block = Number(
+      day3?.querySelector('[data-slot="day-strip-mark"]')?.getAttribute('height'),
+    );
+    // Two open hazards' bar, one archived hazard's mark on the same step.
+    expect(day3?.getAttribute('data-known')).toBe('2');
+    expect(day3?.getAttribute('data-marks')).toBe('1');
+    expect(bar).toBeGreaterThanOrEqual(MIN_MARK);
+    expect(block).toBeCloseTo(((bar / 2) * 2) / 3, 6);
+    // The archived hazard's later days carry no mark: the open hazards' bar goes on, and words.
+    const day10 = container.querySelector('[data-slot="day-strip-day"][data-day="10"]');
+    expect(day10?.querySelector('[data-slot="day-strip-mark"]')).toBeNull();
+    expect(
+      day10?.querySelector('[data-slot="day-strip-bar"]')?.getAttribute('height'),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/A bright mark is the day a hazard with no recorded end/),
+    ).toBeVisible();
   });
 });
 

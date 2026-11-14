@@ -74,7 +74,7 @@ export const MASCOMA_FEATURE_ROWS: FeatureRowWithGlyph[] = featureRows(MASCOMA_F
  * Last winter's hazards on Mascoma as the store holds them: the day each was first reported, and
  * whether it is still active (stale, never voted gone) or archived. An archived hazard's end isn't
  * stored, so the read counts it on its first day and as unknown every day after, to the winter's
- * end — the strip shows that honestly, never as a lake gone clear.
+ * end; the strip marks its first report and says the rest in words — never a lake gone clear.
  */
 const LAST_WINTER: { m: number; d: number; active: boolean }[] = [
   { m: 12, d: 3, active: false },
@@ -123,28 +123,53 @@ export function dailyFrom(
   };
 }
 
+const lastWinterFirst = (h: { m: number; d: number }) =>
+  Date.UTC(h.m >= 10 ? SEASON - 1 : SEASON, h.m - 1, h.d, 15);
+
 /** Last winter's read, on the Body row's pinned day. */
 export const LAST_WINTER_DAILY: DailyHazards = dailyFrom(
   SEASON - 1,
-  LAST_WINTER.map((h) => ({
-    first: Date.UTC(h.m >= 10 ? SEASON - 1 : SEASON, h.m - 1, h.d, 15),
-    active: h.active,
-  })),
+  LAST_WINTER.map((h) => ({ first: lastWinterFirst(h), active: h.active })),
   BODY_NOW,
 );
+
+/**
+ * Last winter's hazards as `hazards.listForBody` hands them with archived — what the tab reads
+ * for the winter on screen, and what its first-report marks come from.
+ */
+export const LAST_WINTER_LIST: HazardInput[] = LAST_WINTER.map((h, i) => ({
+  _id: `h-last-${i}`,
+  type: 'pressure_ridge',
+  freshness: 'stale',
+  provisional: false,
+  confirmCount: 1,
+  goneCount: h.active ? 0 : 2,
+  lastConfirmedAt: lastWinterFirst(h),
+  firstReportedAt: lastWinterFirst(h),
+  status: h.active ? 'active' : 'archived',
+}));
 
 /** This winter's read on 14 Oct: nothing marked, the watch open since 3 Oct. */
 export const THIS_WINTER_DAILY: DailyHazards = dailyFrom(SEASON, [], BODY_NOW, {
   watchOpensOn: WATCH_OPENED,
 });
 
-/** Last winter on its own, as a past winter is drawn when chosen. */
-export const PAST_WINTERS = wintersFrom([LAST_WINTER_DAILY], BODY_NOW) as Winters;
+/**
+ * Last winter on its own, as a past winter is drawn when chosen: the tab reads its list, so each
+ * archived hazard's first report is a mark.
+ */
+export const PAST_WINTERS = wintersFrom([LAST_WINTER_DAILY], BODY_NOW, [
+  LAST_WINTER_LIST,
+]) as Winters;
 
-export const MASCOMA_WINTERS = wintersFrom(
-  [THIS_WINTER_DAILY, LAST_WINTER_DAILY],
-  BODY_NOW,
-) as Winters;
+/**
+ * This winter beside last winter's record, as the default board draws them: the tab reads only this
+ * winter's list, so last winter's strip carries no marks and says so.
+ */
+export const MASCOMA_WINTERS = wintersFrom([THIS_WINTER_DAILY, LAST_WINTER_DAILY], BODY_NOW, [
+  [],
+  null,
+]) as Winters;
 
 /** 17 Feb 2026's list, for the rows (as `hazards.listForBody` hands them). */
 export const FEB_NOW = new Date(2026, 1, 17, 12, 0).getTime();
@@ -158,6 +183,7 @@ export const FEB_HAZARDS: HazardInput[] = [
     confirmCount: 3,
     goneCount: 0,
     lastConfirmedAt: FEB_NOW - 26 * 3_600_000,
+    firstReportedAt: FEB_NOW - 26 * 3_600_000 - 5 * 86_400_000,
     status: 'active',
   },
   {
@@ -170,6 +196,7 @@ export const FEB_HAZARDS: HazardInput[] = [
     confirmCount: 1,
     goneCount: 0,
     lastConfirmedAt: FEB_NOW - 93 * 3_600_000,
+    firstReportedAt: FEB_NOW - 93 * 3_600_000 - 5 * 86_400_000,
     status: 'active',
   },
   {
@@ -181,6 +208,7 @@ export const FEB_HAZARDS: HazardInput[] = [
     confirmCount: 1,
     goneCount: 1,
     lastConfirmedAt: FEB_NOW - 20.5 * 3_600_000,
+    firstReportedAt: FEB_NOW - 20.5 * 3_600_000 - 5 * 86_400_000,
     status: 'active',
   },
   {
@@ -192,6 +220,7 @@ export const FEB_HAZARDS: HazardInput[] = [
     confirmCount: 1,
     goneCount: 0,
     lastConfirmedAt: FEB_NOW - 194 * 3_600_000,
+    firstReportedAt: FEB_NOW - 194 * 3_600_000 - 5 * 86_400_000,
     status: 'active',
   },
   {
@@ -203,6 +232,7 @@ export const FEB_HAZARDS: HazardInput[] = [
     confirmCount: 0,
     goneCount: 0,
     lastConfirmedAt: FEB_NOW - 4.3 * 3_600_000,
+    firstReportedAt: FEB_NOW - 4.3 * 3_600_000 - 5 * 86_400_000,
     status: 'active',
   },
 ];
@@ -216,6 +246,7 @@ export const FEB_ARCHIVED: HazardInput[] = [
     confirmCount: 2,
     goneCount: 2,
     lastConfirmedAt: day(2026, 2, 9),
+    firstReportedAt: day(2026, 2, 9) - 5 * 86_400_000,
     status: 'archived',
   },
   {
@@ -227,6 +258,7 @@ export const FEB_ARCHIVED: HazardInput[] = [
     confirmCount: 1,
     goneCount: 2,
     lastConfirmedAt: day(2026, 1, 26),
+    firstReportedAt: day(2026, 1, 26) - 5 * 86_400_000,
     status: 'archived',
   },
 ];

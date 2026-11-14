@@ -134,7 +134,8 @@ export const PastWinter: Story = {
 
 /**
  * As the console wires it today: the tools with no writer drawn, each saying *Not available yet*;
- * last winter's archived hazards unknown to the winter's end, said in words under the strips.
+ * beside this winter, last winter's strip draws no first-report marks (its list isn't read) and
+ * says so under the strips, its archived hazards unknown to the winter's end.
  */
 export const Wired: Story = {
   args: {
@@ -149,6 +150,8 @@ export const Wired: Story = {
       'true',
     );
     await expect(q.getByText(/archived reports have no recorded end/)).toBeVisible();
+    await expect(q.getByText(/that day isn’t marked for this winter/)).toBeVisible();
+    await expect(quad(canvasElement).querySelector('[data-slot="day-strip-mark"]')).toBeNull();
   },
 };
 
@@ -184,37 +187,48 @@ export const Failed: Story = {
 
 const FEB_START = winterWindow(SEASON - 1).start;
 
+/** A past winter's hazards as its list hands them: two still up, three archived. */
+const MARKED_WINTER = [
+  { day: 70, active: false },
+  { day: 95, active: true },
+  { day: 110, active: false },
+  { day: 120, active: false },
+  { day: 130, active: true },
+].map((h) => ({ first: FEB_START + h.day * 86_400_000, active: h.active }));
+
 /**
- * A winter's strip over its list, with days that are only floors: two hazards still up, three
- * archived (unknown from the day after each first report), and a count that stopped short.
+ * A winter's strip over its list: the two hazards still up are bars from their first report on;
+ * each archived one, whose end isn't recorded, is one bright mark on the day it was first
+ * reported and nothing after, under the caption that says so; the days it may still have been on
+ * the lake are said in words, never drawn as a tower; and the count stopped short.
  */
-export const UnknownDays: Story = {
+export const FirstReportMarks: Story = {
   args: {
     season: SEASON - 1,
     hazards: hazardRows(FEB_HAZARDS, FEB_NOW),
     archived: archivedRows(FEB_ARCHIVED),
     winters: wintersFrom(
-      [
-        dailyFrom(
-          SEASON - 1,
-          [
-            { first: FEB_START + 70 * 86_400_000, active: false },
-            { first: FEB_START + 95 * 86_400_000, active: true },
-            { first: FEB_START + 110 * 86_400_000, active: false },
-            { first: FEB_START + 120 * 86_400_000, active: false },
-            { first: FEB_START + 130 * 86_400_000, active: true },
-          ],
-          FEB_NOW,
-          { capped: true },
-        ),
-      ],
+      [dailyFrom(SEASON - 1, MARKED_WINTER, FEB_NOW, { capped: true })],
       FEB_NOW,
+      [
+        MARKED_WINTER.map((h, i) => ({
+          ...(FEB_ARCHIVED[0] as (typeof FEB_ARCHIVED)[number]),
+          _id: `m${i}`,
+          firstReportedAt: h.first,
+          lastConfirmedAt: h.first,
+          status: h.active ? 'active' : 'archived',
+        })),
+      ],
     ) as NonNullable<ReturnType<typeof wintersFrom>>,
   },
   play: async ({ canvasElement }) => {
     const q = quad(canvasElement);
-    const unknown = q.querySelectorAll('[data-slot="day-strip-unknown"]');
-    await expect(unknown.length).toBeGreaterThan(0);
+    // One mark per archived hazard, on its first-report day; no tower of unknown days.
+    const marks = [...q.querySelectorAll<SVGRectElement>('[data-slot="day-strip-mark"]')];
+    await expect(marks.reduce((n, m) => n + Number(m.dataset.count ?? 1), 0)).toBe(3);
+    await expect(
+      within(q).getByText(/A bright mark is the day a hazard with no recorded end/),
+    ).toBeVisible();
     await expect(within(q).getByText(/each day is at least what it shows/)).toBeVisible();
   },
 };

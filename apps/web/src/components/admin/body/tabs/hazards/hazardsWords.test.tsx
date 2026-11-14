@@ -16,7 +16,13 @@ import {
   WATCH_OPENED,
 } from './hazardsFixtures';
 import { archivedRows, hazardRows, wintersFrom, winterWindow } from './hazardsModel';
-import { HAZARDS_WORDS, LAKE_CLAIM, VOTE_WORDS, type WordsContext } from './hazardsWords';
+import {
+  HAZARDS_WORDS,
+  LAKE_CLAIM,
+  VOTE_WORDS,
+  type WordsContext,
+  wordsContext,
+} from './hazardsWords';
 
 beforeAll(stubJsdomAnimations);
 
@@ -36,6 +42,7 @@ const context: fc.Arbitrary<WordsContext> = fc.record({
   archived: fc.nat(600),
   count: fc.nat(600),
   unknown: fc.nat(600),
+  reported: fc.nat(600),
   capped: fc.boolean(),
   unknownEnds: fc.integer({ min: 1, max: 600 }),
   markedDays: fc.nat(183),
@@ -96,8 +103,17 @@ describe('the words the tab can say', () => {
         expect(HAZARDS_WORDS.quietHeadline(words)).toBe(`No open reports · ${archived} archived`);
         expect(HAZARDS_WORDS.quietDetail(words)).toContain('may still have been on the lake');
         expect(HAZARDS_WORDS.unknownEndsNote(words)).toContain('may still have been on the lake');
+        expect(HAZARDS_WORDS.unmarkedNote(words)).toContain('may still have been on the lake');
       }),
     );
+  });
+
+  it('the caption says a mark is a first report, and that how long it stayed isn’t recorded', () => {
+    const caption = HAZARDS_WORDS.marksCaption(wordsContext());
+    expect(caption).toBe(
+      'A bright mark is the day a hazard with no recorded end was first reported. How long it stayed on the lake isn’t recorded; the days after it are not a reading of the ice.',
+    );
+    expect(caption).not.toMatch(/\bended\b/);
   });
 
   it('“voted it gone” is only ever a counted, attributed vote on one report', () => {

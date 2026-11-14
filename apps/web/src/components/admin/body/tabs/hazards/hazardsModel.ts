@@ -65,6 +65,8 @@ export type HazardInput = {
   clusterConfirmCount?: number | undefined;
   goneCount: number;
   lastConfirmedAt: number;
+  /** When it was first reported: its season, and the day its first-report mark is drawn on. */
+  firstReportedAt: number;
   status: string;
 };
 
@@ -271,40 +273,85 @@ export type DailyHazards = {
   watchOpensOn: number | null;
 };
 
-/** One day on a strip: hazards known on the lake, and how many more may have been. */
-export type DayOnLake = { count: number; unknown: number };
+/**
+ * One day on a strip: hazards known on the lake (`count`, the server's), how many more may have been
+ * (`unknown`, the server's), and — from the archived list — how many hazards with no recorded end
+ * were first reported that day (`reported`, each a mark).
+ */
+export type DayOnLake = { count: number; unknown: number; reported: number };
 
 /**
- * One strip's days on the window: `{ count: 0, unknown: 0 }` on a day the read covers with nothing
- * marked, and `null` on a day that hasn't happened yet (this winter after today) — never zero.
- * **A day the read holds is never dropped**, whatever this clock says: a server day past the
- * viewer's today still draws, so no rendering ever shows fewer hazards than the read counted.
+ * Each archived hazard's first report, as a count per day of the winter's window — the strip's
+ * marks. **One mark per hazard with no recorded end, on the day it was first reported** (the
+ * founder's ruling, 2026-11-14): every archived hazard today, since nothing stored says when one
+ * left the lake. A hazard first reported outside the window (July to September) is on no strip.
+ */
+export function firstReports(hazards: readonly HazardInput[], season: Season): number[] {
+  const out = Array.from({ length: winterWindow(season).days }, () => 0);
+  for (const h of hazards) {
+    if (h.status !== 'archived') continue;
+    const i = dayIndex(h.firstReportedAt, season);
+    if (i !== null) out[i] = (out[i] ?? 0) + 1;
+  }
+  return out;
+}
+
+/**
+ * A day as the strip draws it: the marks, and the bars for the rest of the known count. The
+ * server counts a hazard with no recorded end on its first-report day, so its mark stands in for
+ * that day's share of the bar — **never fewer known hazards drawn than the server's `count`**, and
+ * more only when the list holds a first report the count doesn't.
+ */
+export function drawnDay(day: DayOnLake): { bars: number; marks: number } {
+  return { bars: Math.max(0, day.count - day.reported), marks: day.reported };
+}
+
+/** The known hazards a day draws and says: the server's count, or the marks where they exceed it. */
+export const knownOn = (day: DayOnLake): number => Math.max(day.count, day.reported);
+
+/**
+ * One strip's days on the window: `{ count: 0, unknown: 0, reported: 0 }` on a day the read covers
+ * with nothing marked, and `null` on a day that hasn't happened yet (this winter after today) —
+ * never zero. `reported` is each day's first reports ({@link firstReports}); absent, none is drawn.
+ * **A day the read or the list holds is never dropped**, whatever this clock says: a server day or
+ * a first report past the viewer's today still draws, so no rendering ever shows fewer hazards
+ * than either counted.
  */
 export function stripDays(
   read: Pick<DailyHazards, 'season' | 'days'>,
   now: number,
+  reported: readonly number[] | null = null,
 ): (DayOnLake | null)[] {
   const { start, days } = winterWindow(read.season);
   const today = Math.floor((now - start) / DAY);
+  const empty = (): DayOnLake => ({ count: 0, unknown: 0, reported: 0 });
   const out: (DayOnLake | null)[] = Array.from({ length: days }, (_, i) =>
-    i <= today ? { count: 0, unknown: 0 } : null,
+    i <= today ? empty() : null,
   );
   for (const d of read.days) {
     const i = dayIndex(d.at, read.season);
     if (i === null) continue;
-    const held = out[i] ?? { count: 0, unknown: 0 };
+    const held = out[i] ?? empty();
     out[i] = {
+      ...held,
       count: held.count + Math.max(0, d.count),
       unknown: held.unknown + Math.max(0, d.unknown),
     };
   }
+  reported?.forEach((n, i) => {
+    if (n <= 0 || i >= days) return;
+    const held = out[i] ?? empty();
+    out[i] = { ...held, reported: held.reported + n };
+  });
   return out;
 }
 
 /** A day in words, as its strip's title and today's line write it (`HAZARDS_WORDS.day`). */
 export function dayWords(day: DayOnLake | null, capped: boolean): string {
   if (day === null) return 'Not yet';
-  return HAZARDS_WORDS.day(wordsContext({ count: day.count, unknown: day.unknown, capped }));
+  return HAZARDS_WORDS.day(
+    wordsContext({ count: knownOn(day), unknown: day.unknown, reported: day.reported, capped }),
+  );
 }
 
 /** One winter's strip as the tab draws it. */
@@ -313,6 +360,13 @@ export type WinterLine = {
   days: (DayOnLake | null)[];
   capped: boolean;
   unknownEnds: number;
+  /**
+   * The archived list covers this winter, so its first reports are drawn as marks. When it
+   * doesn't (last winter beside this one: the tab reads the archived list for the winter on screen
+   * only), the strip draws no marks — the server's count as bars, the unknown in words — and says
+   * which day each archived hazard was first reported isn't read.
+   */
+  marked: boolean;
 };
 
 /** The winters the tab draws: the season on screen first, then any it is set beside. */
@@ -329,8 +383,16 @@ export type Winters = {
   begins: number | null;
 };
 
-/** The strips from their reads, the season on screen first. */
-export function wintersFrom(reads: readonly DailyHazards[], now: number): Winters | null {
+/**
+ * The strips from their reads, the season on screen first. `lists[k]` is the hazards list (with
+ * archived) for `reads[k]`'s winter, or `null` where the tab doesn't read one: that strip is drawn
+ * without marks.
+ */
+export function wintersFrom(
+  reads: readonly DailyHazards[],
+  now: number,
+  lists: readonly (readonly HazardInput[] | null)[] = [],
+): Winters | null {
   const first = reads[0];
   if (first === undefined) return null;
   const { start, days } = winterWindow(first.season);
@@ -340,12 +402,19 @@ export function wintersFrom(reads: readonly DailyHazards[], now: number): Winter
   return {
     days: AXIS_DAYS,
     months: monthTicks(AXIS_SEASON),
-    lines: reads.map((r) => ({
-      season: r.season,
-      days: onAxis(stripDays(r, now), r.season),
-      capped: r.capped,
-      unknownEnds: r.unknownEnds,
-    })),
+    lines: reads.map((r, k) => {
+      const list = lists[k] ?? null;
+      return {
+        season: r.season,
+        days: onAxis(
+          stripDays(r, now, list === null ? null : firstReports(list, r.season)),
+          r.season,
+        ),
+        capped: r.capped,
+        unknownEnds: r.unknownEnds,
+        marked: list !== null,
+      };
+    }),
     today: today >= 0 && today < days ? axisIndex(today, first.season) : null,
     opens: opens === null ? null : axisIndex(opens, first.season),
     begins: now < start && seasonOf(now) === first.season ? start : null,
@@ -356,13 +425,15 @@ export function wintersFrom(reads: readonly DailyHazards[], now: number): Winter
 export function lineSummary(line: WinterLine): string {
   let markedDays = 0;
   let unsureDays = 0;
+  let reported = 0;
   for (const d of line.days) {
-    if (d === null || d.count + d.unknown === 0) continue;
+    if (d === null || knownOn(d) + d.unknown === 0) continue;
     markedDays++;
     if (d.unknown > 0) unsureDays++;
+    reported += d.reported;
   }
   return HAZARDS_WORDS.lineSummary(
-    wordsContext({ season: line.season, markedDays, unsureDays, capped: line.capped }),
+    wordsContext({ season: line.season, markedDays, unsureDays, reported, capped: line.capped }),
   );
 }
 

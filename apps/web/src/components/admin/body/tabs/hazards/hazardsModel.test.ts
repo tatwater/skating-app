@@ -5,10 +5,12 @@ import { dayX, lastReal } from '@/components/kit/day-strips';
 import { FIELD_LEVELS, featureGlyph } from './featureGlyph';
 import {
   BODY_NOW,
+  dailyFrom,
   FEB_ARCHIVED,
   FEB_HAZARDS,
   FEB_NOW,
   LAST_WINTER_DAILY,
+  LAST_WINTER_LIST,
   MASCOMA_FEATURES,
   MASCOMA_MAP_DATA,
 } from './hazardsFixtures';
@@ -19,7 +21,10 @@ import {
   dailyClock,
   dayIndex,
   dayWords,
+  drawnDay,
   featureRows,
+  firstReports,
+  type HazardInput,
   hazardRows,
   isCurrent,
   lineSummary,
@@ -267,14 +272,20 @@ describe('the winters, a bar per day', () => {
       { season: 2026, days: [{ at: Date.UTC(2026, 9, 5, 3), count: 2, unknown: 1 }] },
       now,
     );
-    const none = { count: 0, unknown: 0 };
-    expect(days.slice(0, 5)).toEqual([none, none, none, none, { count: 2, unknown: 1 }]);
+    const none = { count: 0, unknown: 0, reported: 0 };
+    expect(days.slice(0, 5)).toEqual([
+      none,
+      none,
+      none,
+      none,
+      { count: 2, unknown: 1, reported: 0 },
+    ]);
     expect(days.slice(5, 14).every((d) => d?.count === 0 && d.unknown === 0)).toBe(true);
     expect(days.slice(14).every((d) => d === null)).toBe(true);
     // Last winter, whole: every day real, the archived ones unknown to the winter's end.
     const last = stripDays(LAST_WINTER_DAILY, BODY_NOW);
     expect(last.every((d) => d !== null)).toBe(true);
-    expect(last.at(-1)).toEqual({ count: 2, unknown: 8 });
+    expect(last.at(-1)).toEqual({ count: 2, unknown: 8, reported: 0 });
   });
 
   it('never drops a day the read holds, even one past this clock’s today', () => {
@@ -283,7 +294,7 @@ describe('the winters, a bar per day', () => {
       { season: 2026, days: [{ at: Date.UTC(2026, 11, 1), count: 3, unknown: 0 }] },
       now,
     );
-    expect(days[61]).toEqual({ count: 3, unknown: 0 });
+    expect(days[61]).toEqual({ count: 3, unknown: 0, reported: 0 });
     // Out of the window is out.
     expect(
       stripDays({ season: 2026, days: [{ at: Date.UTC(2026, 8, 1), count: 3, unknown: 0 }] }, now)
@@ -356,24 +367,57 @@ describe('the day-by-day read’s clock', () => {
 describe('a day in words', () => {
   it('reads the board’s days', () => {
     expect(dayWords(null, false)).toBe('Not yet');
-    expect(dayWords({ count: 0, unknown: 0 }, false)).toBe('No hazard reports');
-    expect(dayWords({ count: 3, unknown: 0 }, false)).toBe('3 reported on the lake');
-    expect(dayWords({ count: 3, unknown: 2 }, false)).toBe(
+    expect(dayWords({ count: 0, unknown: 0, reported: 0 }, false)).toBe('No hazard reports');
+    expect(dayWords({ count: 3, unknown: 0, reported: 0 }, false)).toBe('3 reported on the lake');
+    expect(dayWords({ count: 3, unknown: 2, reported: 0 }, false)).toBe(
       'At least 3 reported on the lake, 2 unknown',
     );
-    expect(dayWords({ count: 0, unknown: 2 }, false)).toBe(
+    expect(dayWords({ count: 0, unknown: 2, reported: 0 }, false)).toBe(
       '2 unknown: archived, may still have been on the lake',
     );
-    expect(dayWords({ count: 3, unknown: 0 }, true)).toBe('At least 3 reported on the lake');
-    expect(dayWords({ count: 0, unknown: 0 }, true)).toBe(
+    expect(dayWords({ count: 3, unknown: 0, reported: 0 }, true)).toBe(
+      'At least 3 reported on the lake',
+    );
+    expect(dayWords({ count: 0, unknown: 0, reported: 0 }, true)).toBe(
       'No reports counted; the count stopped short',
+    );
+    // A mark's hazard was first reported that day: never ended, never gone after it.
+    expect(dayWords({ count: 2, unknown: 3, reported: 1 }, false)).toBe(
+      'At least 2 reported on the lake, 1 first reported this day, 3 unknown',
+    );
+    expect(dayWords({ count: 1, unknown: 0, reported: 1 }, false)).toBe(
+      '1 reported on the lake, 1 first reported this day',
+    );
+    // A first report the count doesn't hold is still said: never fewer than drawn.
+    expect(dayWords({ count: 0, unknown: 0, reported: 2 }, false)).toBe(
+      '2 reported on the lake, 2 first reported this day',
+    );
+  });
+
+  it('a marked day says reported, never ended, and still names its unknown (fast-check)', () => {
+    fc.assert(
+      fc.property(
+        fc.nat(200),
+        fc.nat(200),
+        fc.integer({ min: 1, max: 50 }),
+        fc.boolean(),
+        (count, unknown, reported, capped) => {
+          const words = dayWords({ count, unknown, reported }, capped);
+          expect(words).toContain(`${reported} first reported this day`);
+          expect(words).not.toMatch(/\bend(ed|s)?\b/i);
+          expect(words).not.toMatch(LAKE_CLAIM);
+          if (unknown > 0) expect(words).toContain(`${unknown} unknown`);
+          const numbers = (words.match(/\d+/g) ?? []).map(Number);
+          expect(numbers[0]).toBe(Math.max(count, reported));
+        },
+      ),
     );
   });
 
   it('never claims fewer than the count, and names any unknown (fast-check)', () => {
     fc.assert(
       fc.property(fc.nat(1000), fc.nat(1000), fc.boolean(), (count, unknown, capped) => {
-        const words = dayWords({ count, unknown }, capped);
+        const words = dayWords({ count, unknown, reported: 0 }, capped);
         const numbers = (words.match(/\d+/g) ?? []).map(Number);
         // The first number is the known count whenever there is one; nothing reads as clear.
         if (count > 0) expect(numbers[0]).toBe(count);
@@ -503,7 +547,7 @@ describe('the winters as the tab draws them', () => {
         ],
         Date.UTC(season + 1, 5, 1),
       );
-      expect(w?.lines[0]?.days.at(-1)).toEqual({ count: 1, unknown: 0 });
+      expect(w?.lines[0]?.days.at(-1)).toEqual({ count: 1, unknown: 0, reported: 0 });
     }
   });
 
@@ -523,6 +567,104 @@ describe('the winters as the tab draws them', () => {
       }),
     );
     expect(dayX(3, 0)).toBe(dayX(0, 0));
+  });
+});
+
+describe('first-report marks — a hazard with no recorded end', () => {
+  const season = 2025;
+  const { start, days } = winterWindow(season);
+  const hazard = (first: number, active: boolean, i = 0): HazardInput => ({
+    _id: `h${i}`,
+    type: 'thin_ice',
+    freshness: 'stale',
+    provisional: false,
+    confirmCount: 1,
+    goneCount: active ? 0 : 2,
+    lastConfirmedAt: first,
+    firstReportedAt: first,
+    status: active ? 'active' : 'archived',
+  });
+
+  it('marks each archived hazard once, on the day it was first reported, and nothing else', () => {
+    const marks = firstReports(
+      [
+        hazard(start + 3 * DAY + 5 * HOUR, false),
+        hazard(start + 3 * DAY + 20 * HOUR, false),
+        hazard(start + 9 * DAY, true),
+        // First reported in September: its season, but on no strip.
+        hazard(start - 10 * DAY, false),
+      ],
+      season,
+    );
+    expect(marks).toHaveLength(days);
+    expect(marks[3]).toBe(2);
+    expect(marks.reduce((a, b) => a + b, 0)).toBe(2);
+  });
+
+  it('a strip with its list draws marks, never fewer known than the count; one without draws none', () => {
+    const covered = wintersFrom([LAST_WINTER_DAILY], BODY_NOW, [LAST_WINTER_LIST]);
+    const bare = wintersFrom([LAST_WINTER_DAILY], BODY_NOW);
+    const marked = covered?.lines[0] as WinterLine;
+    const unmarked = bare?.lines[0] as WinterLine;
+    expect(marked.marked).toBe(true);
+    expect(unmarked.marked).toBe(false);
+    const total = (l: WinterLine) =>
+      l.days.reduce((n, d) => n + (d === null ? 0 : drawnDay(d).marks), 0);
+    expect(total(marked)).toBe(LAST_WINTER_LIST.filter((h) => h.status === 'archived').length);
+    expect(total(unmarked)).toBe(0);
+    // The unknown is still said for the strip.
+    expect(lineSummary(marked)).toMatch(
+      /8 first reports with no recorded end, \d+ with some unknown$/,
+    );
+  });
+
+  it('every hazard with no recorded end yields exactly one mark, on its first-report day, and no day draws fewer than the count (fast-check)', () => {
+    const entry = fc.record({
+      day: fc.integer({ min: 0, max: days - 1 }),
+      hour: fc.integer({ min: 0, max: 23 }),
+      active: fc.boolean(),
+    });
+    fc.assert(
+      fc.property(
+        fc.array(entry, { maxLength: 40 }),
+        fc.integer({ min: start, max: start + (days + 20) * DAY }),
+        (entries, now) => {
+          const firsts = entries.map((e) => start + e.day * DAY + e.hour * HOUR);
+          // Only what has been reported by now is in either read.
+          const seen = entries.filter((_, i) => (firsts[i] as number) < now);
+          const seenFirsts = firsts.filter((f) => f < now);
+          const read = dailyFrom(
+            season,
+            seen.map((e, i) => ({ first: seenFirsts[i] as number, active: e.active })),
+            now,
+          );
+          const list = seen.map((e, i) => hazard(seenFirsts[i] as number, e.active, i));
+          const w = wintersFrom([read], now, [list]);
+          const line = w?.lines[0] as WinterLine;
+          const window = stripDays(read, now);
+          // Each archived hazard: one mark, on its first-report day's place on the axis.
+          const expected = Array.from({ length: line.days.length }, () => 0);
+          seen.forEach((e) => {
+            if (!e.active) {
+              const at = line.days.length === days ? e.day : e.day < 151 ? e.day : e.day + 1;
+              expected[at] = (expected[at] ?? 0) + 1;
+            }
+          });
+          line.days.forEach((d, i) => {
+            expect(d === null ? 0 : drawnDay(d).marks).toBe(expected[i]);
+          });
+          // No day draws fewer known hazards than the server's count.
+          let k = 0;
+          line.days.forEach((d) => {
+            if (d === null) return;
+            const { bars, marks } = drawnDay(d);
+            expect(bars + marks).toBeGreaterThanOrEqual(d.count);
+            k++;
+          });
+          expect(k).toBeGreaterThanOrEqual(window.filter((d) => d !== null).length);
+        },
+      ),
+    );
   });
 });
 

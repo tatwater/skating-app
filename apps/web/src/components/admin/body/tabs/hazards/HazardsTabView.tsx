@@ -53,8 +53,10 @@ import { featureLit, hazardLit, winterLit } from './hazardsMap';
 import {
   type ArchivedRow,
   dayWords,
+  drawnDay,
   type FeatureRow,
   type HazardRow,
+  knownOn,
   lineSummary,
   seasonChoices,
   seasonWord,
@@ -72,9 +74,11 @@ import { HAZARDS_WORDS, VOTE_WORDS, wordsContext } from './hazardsWords';
  * **D3.** The tab describes the record, never the lake: an empty list says no hazard reports are
  * on record, never that nothing is there. A stale hazard keeps its row, faded, never removed; an
  * archived one was archived by skaters' votes, which is a report about a report, and may still
- * have been on the lake. Every headline, empty state and note comes from `hazardsWords.ts`. A day
- * on a strip with archived hazards that may have been on the lake reads *at least* its known count
- * and carries the unknown mark — never a smaller count, never clear, never ended. A read that
+ * have been on the lake. Every headline, empty state and note comes from `hazardsWords.ts`. An
+ * archived hazard, whose end isn't recorded, is one bright mark on the day it was first reported,
+ * under a caption that says a mark isn't an end; a day with archived hazards that may have been on
+ * the lake reads *at least* its known count in words — never a smaller count, never clear, never
+ * ended. A read that
  * failed says so in its place, with *Try again*; it is never drawn as empty. A past winter is
  * read-only and says so in a solid badge.
  *
@@ -460,10 +464,14 @@ function WinterBlock({
   return (
     <div data-slot="hazards-winters" className="flex flex-col gap-(--space-2_5)">
       <DayStrips
+        caption={HAZARDS_WORDS.marksCaption(wordsContext())}
         strips={lines.map((line, k) => ({
           key: String(line.season),
           label: seasonWord(line.season),
-          values: line.days.map((d) => (d === null ? null : d.count)),
+          // Bars for what is known to be on the lake, a mark for each first report with no end.
+          values: line.days.map((d) => (d === null ? null : drawnDay(d).bars)),
+          marks: line.days.map((d) => (d === null ? 0 : drawnDay(d).marks)),
+          // Never drawn: said in the day's words.
           unknown: line.days.map((d) => d?.unknown ?? 0),
           current: k === 0 && line.season === season,
           ...(k === 0 && winters.today !== null ? { today: winters.today } : {}),
@@ -478,8 +486,9 @@ function WinterBlock({
         <p data-slot="hazards-today" className="m-0 text-assist leading-(--lead-list) text-fg2">
           {HAZARDS_WORDS.todayLine(
             wordsContext({
-              count: todayDay.count,
+              count: knownOn(todayDay),
               unknown: todayDay.unknown,
+              reported: todayDay.reported,
               capped: first.capped,
             }),
           )}
@@ -499,7 +508,10 @@ function WinterBlock({
   );
 }
 
-/** What one strip can't say in bars: archived hazards with no end, a count that stopped short. */
+/**
+ * What one strip can't say in bars and marks: archived hazards with no end (and, on a strip that
+ * can't mark their first reports, why), a count that stopped short.
+ */
 function lineNotes(
   line: WinterLine,
   named: boolean,
@@ -514,8 +526,8 @@ function lineNotes(
   if (line.unknownEnds > 0) {
     out.push({
       key: `${line.season}.ends`,
-      slot: 'hazards-unknown-ends',
-      text: HAZARDS_WORDS.unknownEndsNote(words),
+      slot: line.marked ? 'hazards-unknown-ends' : 'hazards-unmarked',
+      text: line.marked ? HAZARDS_WORDS.unknownEndsNote(words) : HAZARDS_WORDS.unmarkedNote(words),
     });
   }
   if (line.capped) {
