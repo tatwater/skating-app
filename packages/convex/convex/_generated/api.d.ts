@@ -19,6 +19,7 @@ import type * as authorDeletions from "../authorDeletions.js";
 import type * as basemap from "../basemap.js";
 import type * as blocks from "../blocks.js";
 import type * as bodies from "../bodies.js";
+import type * as bodyConsole from "../bodyConsole.js";
 import type * as bodyFeatures from "../bodyFeatures.js";
 import type * as bodyLibrary from "../bodyLibrary.js";
 import type * as bounties from "../bounties.js";
@@ -174,6 +175,7 @@ declare const fullApi: ApiFromModules<{
   basemap: typeof basemap;
   blocks: typeof blocks;
   bodies: typeof bodies;
+  bodyConsole: typeof bodyConsole;
   bodyFeatures: typeof bodyFeatures;
   bodyLibrary: typeof bodyLibrary;
   bounties: typeof bounties;

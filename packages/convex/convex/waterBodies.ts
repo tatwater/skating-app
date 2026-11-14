@@ -5351,7 +5351,7 @@ export const applyCuratedBoostSeed = internalMutation({
  * `zoom` absent ⇒ scan every rung with no cutoff (a containment lookup: the pond you are standing
  * on must be found however unprominent it is).
  */
-async function bodiesCoveringBox(
+export async function bodiesCoveringBox(
   ctx: QueryCtx,
   box: { minLat: number; minLng: number; maxLat: number; maxLng: number },
   /**
