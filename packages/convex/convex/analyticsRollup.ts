@@ -306,80 +306,123 @@ async function rollupDay(ctx: MutationCtx, date: string): Promise<void> {
  * scans. A contributor is anyone with a standing contribution this day (`lib/contributions`, D253):
  * a report whose skate ended on it, or a hazard, an access alert, a "not publicly accessible" report,
  * a put-in placed or a corpus request made on it. Comments are not contributions.
+ *
+ * A count whose read hits `cap` is saved with **no number** (`meta.capped`), and the other fields of
+ * the day still save: a slice of a day is never written as the day, and the chart draws that day
+ * *Not recorded yet*. A later run of the same day (the backfill, or the next tick under a higher
+ * cap) replaces it. `cap` is a parameter so a test can reach it without thousands of rows.
  */
-async function rollupPulseDay(ctx: MutationCtx, date: string): Promise<void> {
+export async function rollupPulseDay(
+  ctx: MutationCtx,
+  date: string,
+  cap: number = DAY_SCAN_CAP,
+): Promise<void> {
   const from = metricDayStart(date);
   const to = from + DAY_MS;
-  const comments = (
-    await capped(
-      ctx.db
-        .query('comments')
-        .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to))
-        .take(DAY_SCAN_CAP),
-      DAY_SCAN_CAP,
-      `comments on ${date}`,
-    )
-  ).filter(isCountedComment);
-  await writeMetricSnapshot(ctx, 'comments_created', date, {
-    scalar: comments.length,
-    meta: { reports: new Set(comments.map((c) => c.reportId)).size },
-  });
+
+  const comments = await wholeDay(
+    ctx.db
+      .query('comments')
+      .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to)),
+    cap,
+    `comments on ${date}`,
+  );
+  const counted = comments?.filter(isCountedComment);
+  await writeMetricSnapshot(
+    ctx,
+    'comments_created',
+    date,
+    counted === undefined
+      ? NOT_RECORDED
+      : { scalar: counted.length, meta: { reports: new Set(counted.map((c) => c.reportId)).size } },
+  );
 
   // A photo counts once it belongs to a report: an upload never attached is not a contribution.
   const photos = (
-    await capped(
+    await wholeDay(
       ctx.db
         .query('photos')
-        .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to))
-        .take(DAY_SCAN_CAP),
-      DAY_SCAN_CAP,
+        .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to)),
+      cap,
       `photos on ${date}`,
     )
-  ).filter((p) => p.reportId !== undefined);
-  await writeMetricSnapshot(ctx, 'photos_added', date, {
-    scalar: photos.length,
-    meta: { reports: new Set(photos.map((p) => p.reportId)).size },
-  });
+  )?.filter((p) => p.reportId !== undefined);
+  await writeMetricSnapshot(
+    ctx,
+    'photos_added',
+    date,
+    photos === undefined
+      ? NOT_RECORDED
+      : { scalar: photos.length, meta: { reports: new Set(photos.map((p) => p.reportId)).size } },
+  );
 
   // Kudos are positive reactions (the founder, 2026-11-13): a thumbs-down is never counted.
-  const ratings = await capped(
+  const ratings = await wholeDay(
     ctx.db
       .query('reportRatings')
-      .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to))
-      .take(DAY_SCAN_CAP),
-    DAY_SCAN_CAP,
+      .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to)),
+    cap,
     `ratings on ${date}`,
   );
-  const kinds = ratings.flatMap((r) => {
+  const kinds = ratings?.flatMap((r) => {
     const kind = positiveReactionOf(r.verdict);
     return kind === null ? [] : [kind];
   });
-  await writeMetricSnapshot(ctx, 'positive_reactions', date, {
-    scalar: kinds.length,
-    meta: countBy(kinds),
-  });
+  await writeMetricSnapshot(
+    ctx,
+    'positive_reactions',
+    date,
+    kinds === undefined ? NOT_RECORDED : { scalar: kinds.length, meta: countBy(kinds) },
+  );
 
-  const contributors = await contributorsBetween(ctx, from, to, DAY_SCAN_CAP);
-  if (contributors.capped) {
-    console.warn(
-      `analyticsRollup: contributors on ${date} hit the ${DAY_SCAN_CAP}-row scan cap — computed from a partial slice.`,
-    );
-  }
-  await writeMetricSnapshot(ctx, 'daily_contributors', date, { scalar: contributors.people.size });
+  const contributors = await contributorsBetween(ctx, from, to, cap);
+  if (contributors.capped) warnCapped(`contributors on ${date}`, cap);
+  await writeMetricSnapshot(
+    ctx,
+    'daily_contributors',
+    date,
+    contributors.capped ? NOT_RECORDED : { scalar: contributors.people.size },
+  );
 
   // Sign-ins are forward-only (B01-1): a day before the record's first row was never measured.
   const firstRecorded = await ctx.db.query('signInDays').withIndex('by_day').first();
   if (firstRecorded !== null && firstRecorded.day <= date) {
-    const signIns = await capped(
-      ctx.db
-        .query('signInDays')
-        .withIndex('by_day', (q) => q.eq('day', date))
-        .take(DAY_SCAN_CAP),
-      DAY_SCAN_CAP,
+    const signIns = await wholeDay(
+      ctx.db.query('signInDays').withIndex('by_day', (q) => q.eq('day', date)),
+      cap,
       `sign-ins on ${date}`,
     );
-    await writeMetricSnapshot(ctx, 'signed_in', date, { scalar: signIns.length });
+    await writeMetricSnapshot(
+      ctx,
+      'signed_in',
+      date,
+      signIns === null ? NOT_RECORDED : { scalar: signIns.length },
+    );
   }
+}
+
+/** A pulse field whose read hit its cap: no number, so the day reads *not recorded*, never a floor. */
+const NOT_RECORDED = { meta: { capped: true } } as const;
+
+function warnCapped(label: string, cap: number): void {
+  console.warn(
+    `analyticsRollup: ${label} hit the ${cap}-row scan cap — saved as not recorded rather than a partial count.`,
+  );
+}
+
+/**
+ * A day's rows, or `null` when `cap` is what stopped the read. It asks for one row past the cap, so
+ * a day with exactly `cap` rows is whole, not capped.
+ */
+async function wholeDay<T>(
+  query: { take(n: number): Promise<T[]> },
+  cap: number,
+  label: string,
+): Promise<T[] | null> {
+  const rows = await query.take(cap + 1);
+  if (rows.length <= cap) return rows;
+  warnCapped(label, cap);
+  return null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

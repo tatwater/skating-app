@@ -17,6 +17,7 @@ import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
+import { rollupPulseDay } from './analyticsRollup';
 import { contributorsBetween } from './lib/contributions';
 import { flagBodyId } from './lib/openFlags';
 import { cardRows, type JobRow } from './machinery';
@@ -794,6 +795,92 @@ describe('the day pulse rollup', () => {
     expect(await readSnapshot(t, 'signed_in', '2026-11-11')).toBeNull();
     // After the record began, a day nobody came is a measured zero.
     expect((await readSnapshot(t, 'signed_in', TODAY))?.scalar).toBe(0);
+  });
+
+  describe('a count that hits its scan cap is not recorded, never a partial number', () => {
+    const CAP = 2;
+    const FIELDS = [
+      'comments_created',
+      'photos_added',
+      'positive_reactions',
+      'daily_contributors',
+      'signed_in',
+    ] as const;
+    type Field = (typeof FIELDS)[number];
+
+    /** Exactly `CAP` rows of every counted kind on the day: two reports by two people (the only
+     * contributions), two comments, two attached photos, two kudos, two sign-ins. */
+    async function atCap(t: T) {
+      const ada = await seedUser(t, 'ada');
+      const bo = await seedUser(t, 'bo');
+      const body = await seedBody(t, 'Mascoma Lake');
+      const report = await seedReport(t, ada.id, body, NOW - HOUR);
+      await seedReport(t, bo.id, body, NOW - HOUR);
+      for (const who of [ada, bo]) {
+        await seedComment(t, who.id, report, NOW - HOUR);
+        await seedPhoto(t, who.id, NOW - HOUR, report);
+        await seedRating(t, who.id, report, 'helpful', NOW - HOUR);
+        await t.run((ctx) =>
+          ctx.db.insert('signInDays', { userId: who.id, day: TODAY, firstAt: NOW - HOUR }),
+        );
+      }
+      return { ada, bo, body, report };
+    }
+
+    /** One row past the cap, of one kind only. */
+    async function onePast(t: T, field: Field, f: Awaited<ReturnType<typeof atCap>>) {
+      const cy = await seedUser(t, 'cy');
+      switch (field) {
+        case 'comments_created':
+          return void (await seedComment(t, cy.id, f.report, NOW - HOUR));
+        case 'photos_added':
+          return void (await seedPhoto(t, cy.id, NOW - HOUR, f.report));
+        case 'positive_reactions':
+          return void (await seedRating(t, cy.id, f.report, 'helpful', NOW - HOUR));
+        case 'daily_contributors':
+          return void (await seedReport(t, cy.id, f.body, NOW - HOUR));
+        case 'signed_in':
+          return void (await t.run((ctx) =>
+            ctx.db.insert('signInDays', { userId: cy.id, day: TODAY, firstAt: NOW - HOUR }),
+          ));
+      }
+    }
+
+    test('a day with exactly the cap is whole', async () => {
+      const t = harness();
+      await atCap(t);
+      await t.run((ctx) => rollupPulseDay(ctx, TODAY, CAP));
+      for (const field of FIELDS) {
+        expect((await readSnapshot(t, field, TODAY))?.scalar, field).toBe(2);
+      }
+    });
+
+    test.each(FIELDS)(
+      '%s past the cap is saved with no number; the rest of the day saves',
+      async (field) => {
+        const t = harness();
+        const fixture = await atCap(t);
+        await onePast(t, field, fixture);
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        await t.run((ctx) => rollupPulseDay(ctx, TODAY, CAP));
+        expect(warn).toHaveBeenCalledWith(expect.stringMatching(/scan cap/));
+        warn.mockRestore();
+
+        const capped = await readSnapshot(t, field, TODAY);
+        expect(capped).not.toBeNull();
+        expect(capped?.scalar).toBeUndefined();
+        expect(capped?.meta).toEqual({ capped: true });
+        for (const other of FIELDS.filter((f) => f !== field)) {
+          expect((await readSnapshot(t, other, TODAY))?.scalar, other).toBe(2);
+        }
+
+        // A later run under a cap the day fits replaces the gap with the real number.
+        await t.mutation(internal.analyticsRollup.rollupPulseDayJob, { date: TODAY });
+        const whole = await readSnapshot(t, field, TODAY);
+        expect(whole?.scalar).toBe(3);
+        expect(whole?.meta).not.toEqual({ capped: true });
+      },
+    );
   });
 
   test('accounts_total counts every account that exists', async () => {
@@ -1655,6 +1742,46 @@ describe('metrics.showingUp', () => {
         people: 2,
       }),
     );
+  });
+
+  test('a day saved as not recorded leaves the season’s totals whole', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await seedSeason(t);
+    await t.mutation(internal.analyticsRollup.rollupDayJob, { date: TODAY });
+    await walkReach(t);
+    // Someone signs in today, after the walk: today has a row, so a read capped at zero stops short.
+    await t.run((ctx) =>
+      ctx.db.insert('signInDays', { userId: mod.id, day: TODAY, firstAt: NOW - HOUR }),
+    );
+    // Today's every pulse read that finds a row stops short: each is saved with no number.
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await t.run((ctx) => rollupPulseDay(ctx, TODAY, 0));
+    vi.mocked(console.warn).mockRestore();
+
+    const { pulse } = (await mod.as.query(api.metrics.showingUp, {})).showingUp;
+    for (const key of ['comments', 'kudos', 'photos', 'signedIn', 'contributors'] as const) {
+      const series = pulse[key];
+      expect(series, key).not.toBeNull();
+      const today = await readSnapshot(
+        t,
+        {
+          comments: 'comments_created',
+          kudos: 'positive_reactions',
+          photos: 'photos_added',
+          signedIn: 'signed_in',
+          contributors: 'daily_contributors',
+        }[key],
+        TODAY,
+      );
+      // A day that had rows reads not recorded on the strip, never zero...
+      if (today?.scalar === undefined) expect(series?.daily.at(-1), key).toBeNull();
+    }
+    // ...and the totals come from the season's walk, not a sum of days, so nothing is undercounted.
+    expect(pulse.kudos).toEqual(expect.objectContaining({ total: 2, over: 2 }));
+    expect(pulse.signedIn).toEqual(expect.objectContaining({ total: 2 }));
+    expect(pulse.contributors).toEqual(expect.objectContaining({ total: 3 }));
+    expect(pulse.signedIn?.daily.at(-1)).toBeNull();
   });
 
   test('new accounts read as a total once every day is recorded', async () => {
