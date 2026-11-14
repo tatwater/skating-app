@@ -4,13 +4,12 @@ import { useMutation } from 'convex/react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { errorText } from '@/components/admin/adminUi';
-import { ReadBoundary } from '@/components/admin/bodies/ReadBoundary';
 import { useUndo } from '@/components/admin/shell/undo';
 import { useRole } from '@/lib/useRole';
 
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { ReadFailed } from '../hazards/kit-candidates/read-failed';
-import { read, useTabReads } from '../hazards/tabReads';
+import { read, TabReadBoundary, useTabReads } from '../hazards/tabReads';
 import { LoadingSection, TabBody } from '../tabParts';
 import { LinksTabView } from './LinksTabView';
 import { linksMapScene } from './linksMap';
@@ -28,12 +27,9 @@ import { linksMapScene } from './linksMap';
  */
 export function LinksTab(props: BodyTabProps) {
   return (
-    <ReadBoundary
-      resetKey={props.bodyId}
-      fallback={<ReadFailed>This tab couldn’t be drawn</ReadFailed>}
-    >
+    <TabReadBoundary readsKey={`links:${props.bodyId}`}>
       <LinksReads {...props} />
-    </ReadBoundary>
+    </TabReadBoundary>
   );
 }
 

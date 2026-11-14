@@ -5,7 +5,6 @@ import { useMutation } from 'convex/react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { errorText } from '@/components/admin/adminUi';
-import { ReadBoundary } from '@/components/admin/bodies/ReadBoundary';
 import { useUndo } from '@/components/admin/shell/undo';
 import { useFreezeUpTimeline } from '@/components/useFreezeUpTimeline';
 import { env } from '@/lib/env';
@@ -13,7 +12,7 @@ import { useRole } from '@/lib/useRole';
 
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { ReadFailed } from '../hazards/kit-candidates/read-failed';
-import { read, useTabReads } from '../hazards/tabReads';
+import { read, TabReadBoundary, useTabReads } from '../hazards/tabReads';
 import { LoadingSection, TabBody } from '../tabParts';
 import { ImageryDockView } from './ImageryDockView';
 import { ImageryTabView, UNAVAILABLE } from './ImageryTabView';
@@ -81,12 +80,9 @@ function useLit({ lit, onLitChange }: BodyTabProps) {
 /** The inspector: the lit pass's card, the passes, the satellite link. */
 export function ImageryTab(props: BodyTabProps) {
   return (
-    <ReadBoundary
-      resetKey={props.bodyId}
-      fallback={<ReadFailed>This tab couldn’t be drawn</ReadFailed>}
-    >
+    <TabReadBoundary readsKey={`imagery:${props.bodyId}`}>
       <ImageryReads {...props} />
-    </ReadBoundary>
+    </TabReadBoundary>
   );
 }
 

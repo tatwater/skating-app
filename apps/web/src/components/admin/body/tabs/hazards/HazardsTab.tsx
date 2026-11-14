@@ -6,7 +6,6 @@ import { useMutation } from 'convex/react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { errorText } from '@/components/admin/adminUi';
-import { ReadBoundary } from '@/components/admin/bodies/ReadBoundary';
 import { useUndo } from '@/components/admin/shell/undo';
 import { useRole } from '@/lib/useRole';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
@@ -25,7 +24,7 @@ import {
   wintersFrom,
 } from './hazardsModel';
 import { ReadFailed } from './kit-candidates/read-failed';
-import { read, useTabReads } from './tabReads';
+import { read, TabReadBoundary, useTabReads } from './tabReads';
 
 /**
  * Body › Hazards, wired:
@@ -50,12 +49,9 @@ import { read, useTabReads } from './tabReads';
  */
 export function HazardsTab(props: BodyTabProps) {
   return (
-    <ReadBoundary
-      resetKey={props.bodyId}
-      fallback={<ReadFailed>This tab couldn’t be drawn</ReadFailed>}
-    >
+    <TabReadBoundary readsKey={readsKey(props.bodyId)}>
       <HazardsReads {...props} />
-    </ReadBoundary>
+    </TabReadBoundary>
   );
 }
 
