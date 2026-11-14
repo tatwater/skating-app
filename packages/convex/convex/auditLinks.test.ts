@@ -137,6 +137,22 @@ describe('links written at the write', () => {
       bodyOnly: true,
     });
     expect(historyRows.entries.map((e) => e.id)).toEqual(listed.map((r) => r.id));
+    // The feed names the body from its stored library row (S5); a lot has no label.
+    await t.mutation(internal.bodyLibrary.refreshOne, { waterBodyId: a });
+    await t.run((ctx) =>
+      writeAudit(ctx, {
+        actorId: mod,
+        action: 'set_posting_permission',
+        targetType: 'user',
+        targetId: mod,
+        reason: 'r',
+        createdAt: NOW - 1000,
+      }),
+    );
+    const feed = await as.query(api.moderation.listActions, {});
+    expect(feed.find((r) => r.action === 'set_curated_boost')?.targetLabel).toBe('A');
+    expect(feed.find((r) => r.action === 'set_parking_area')).not.toHaveProperty('targetLabel');
+    expect(feed.find((r) => r.action === 'set_posting_permission')?.targetLabel).toBe('M');
   });
 
   test('a merged-away id reads its survivor’s history; capped means only more rows than the limit', async () => {
