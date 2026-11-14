@@ -195,7 +195,15 @@ export function HazardsTabView({
   );
   // Beside an empty winter, last winter's record; over a list, the winter on screen alone.
   const strips = (
-    <WinterBlock winters={winters} season={season} alone={listed || !current} onRetry={onRetry} />
+    <WinterBlock
+      winters={winters}
+      season={season}
+      alone={listed || !current}
+      // Over a list, the list is today's word: the strip's window (from 1 October) can miss a
+      // hazard the list holds from earlier in the season, and must never read "None" beside it.
+      today={!listed}
+      onRetry={onRetry}
+    />
   );
 
   return (
@@ -404,12 +412,15 @@ function WinterBlock({
   winters,
   season,
   alone,
+  today,
   onRetry,
 }: {
   winters: Read<Winters>;
   season: Season;
   /** Draw the winter on screen only, without the one beside it. */
   alone: boolean;
+  /** Say today's count in words under the strips. */
+  today: boolean;
   onRetry: (() => void) | undefined;
 }) {
   if (winters === undefined) {
@@ -450,7 +461,7 @@ function WinterBlock({
         months={winters.months}
         days={winters.days}
       />
-      {first !== undefined && todayDay !== null && todayDay !== undefined && (
+      {today && first !== undefined && todayDay !== null && todayDay !== undefined && (
         <p data-slot="hazards-today" className="m-0 text-assist leading-(--lead-list) text-fg2">
           Today: {dayWords(todayDay, first.capped)}
         </p>

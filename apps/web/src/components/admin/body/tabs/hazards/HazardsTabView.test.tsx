@@ -282,6 +282,7 @@ describe('HazardsTabView — the winters, a day at a time', () => {
   });
 
   it('a count that stopped short is stated in words, and today reads as a floor', () => {
+    // A current winter with nothing on the list (all archived), so today's line is drawn.
     const start = winterWindow(SEASON).start;
     const winters = wintersFrom(
       [
@@ -295,7 +296,7 @@ describe('HazardsTabView — the winters, a day at a time', () => {
       ],
       start + 2 * 86_400_000 + 3_600_000,
     );
-    render(<HazardsTabView {...base} {...FEB} winters={winters ?? undefined} />);
+    render(<HazardsTabView {...base} archived={FEB.archived} winters={winters ?? undefined} />);
     expect(screen.getByText('Today: At least 4 on the lake')).toBeVisible();
     expect(
       screen.getByText(
@@ -453,8 +454,10 @@ describe('HazardsTabView — a list, and a past winter', () => {
     expect(
       within(rows[2] as HTMLElement).getByRole('img', { name: '1 of 2 said gone' }),
     ).toBeVisible();
-    // Over a list, the winter on screen alone — not last winter beside it.
+    // Over a list, the winter on screen alone — not last winter beside it — and no "Today:" line
+    // that could contradict the list.
     expect(screen.getByRole('img', { name: /^2026–27: [^;]+$/ })).toBeVisible();
+    expect(screen.queryByText(/^Today:/)).toBeNull();
     // The groups are closed, their counts on their heads; the known features fold into one.
     expect(screen.getByRole('button', { name: /Archived this winter/ })).toHaveTextContent('2');
     expect(screen.queryByRole('region', { name: 'Known features' })).toBeNull();
