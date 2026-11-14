@@ -348,6 +348,7 @@ describe('no read does geometry that grows with an outline', () => {
           }),
       ],
       ['listSummary', () => as.query(api.bodies.listSummary, { lane: 'all' })],
+      ['history', () => as.query(api.bodyConsole.history, { waterBodyId: giant })],
     ];
     // The bound: a quarter of a query's second, in this simulated backend. The touching test alone
     // took 1.4 s here before it moved to the write.

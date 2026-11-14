@@ -64,7 +64,7 @@ async function currentId(ctx: QueryCtx, id: Id<'waterBodies'>): Promise<Id<'wate
 
 /**
  * **The frame's extras.** `towns` — the places stored for the body (sampled at its interior point and
- * along its shore by the `bodyGeo` jobs), `null` when not computed yet or no boundary contains it;
+ * along its shore by the `bodyGeo` jobs), `null` when not computed yet, empty when none contains it;
  * `hasBathymetry` — contours were drawn for it; `outlineTrustedSince` — when a person last vouched for
  * the outline (a drawn body's approval), else when the import campaign that last re-affirmed it ran,
  * else `null`; `touchingBodyIds` and `touching` — listed bodies whose outline comes within 30 m,
@@ -85,10 +85,7 @@ export const consoleExtras = query({
     const vouched = await ctx.db
       .query('moderationActions')
       .withIndex('by_target_action', (q) =>
-        q
-          .eq('targetType', 'waterbody')
-          .eq('targetId', waterBodyId)
-          .eq('action', 'approve_waterbody'),
+        q.eq('targetType', 'waterbody').eq('targetId', body._id).eq('action', 'approve_waterbody'),
       )
       .order('desc')
       .first();
@@ -124,7 +121,8 @@ export const consoleExtras = query({
           })();
 
     return {
-      towns: geo === null || (geo.towns ?? []).length === 0 ? null : (geo.towns as string[]),
+      // `null` until computed (`geoComputedAt`); computed, the towns it lies in — empty for none.
+      towns: geo === null ? null : (geo.towns ?? []),
       hasBathymetry,
       outlineTrustedSince,
       outlineTrustedVia,
@@ -298,16 +296,15 @@ export const history = query({
 
 /**
  * **The places a body lies in** — towns (the interior point's first), counties and states, sampled
- * at the interior point and along the shore. `null` when no boundary contains the body.
+ * at the interior point and along the shore, stored at the write (`lib/bodyGeo.ts`). `null` until
+ * they are computed; computed and in no boundary, empty lists with `computedAt`.
  */
 export const places = query({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { waterBodyId }) => {
     await requireCapability(ctx, 'body.read');
     const geo = await geoFactsOf(ctx, (await bodyOrThrow(ctx, waterBodyId))._id);
-    if (geo === null || ((geo.towns ?? []).length === 0 && (geo.counties ?? []).length === 0)) {
-      return null;
-    }
+    if (geo === null) return null;
     return {
       towns: geo.towns ?? [],
       counties: geo.counties ?? [],

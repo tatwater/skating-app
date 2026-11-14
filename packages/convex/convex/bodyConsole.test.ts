@@ -222,6 +222,12 @@ describe('consoleExtras', () => {
     });
     const places = await as.query(api.bodyConsole.places, { waterBodyId: id });
     expect(places).toMatchObject({ towns: ['Enfield'], counties: [], states: ['NH'] });
+    // A merged-away id reads its survivor's extras, the vouching included.
+    const gone = await seedBody(t, { name: 'Merged Away', at: [-70, 42] });
+    await t.run((ctx) => ctx.db.patch(gone, { dedupStatus: 'merged', mergedIntoId: id }));
+    expect(await as.query(api.bodyConsole.consoleExtras, { waterBodyId: gone })).toEqual(
+      await as.query(api.bodyConsole.consoleExtras, { waterBodyId: id }),
+    );
   });
 
   test('a pond beside a large lake touches it, though the lake’s sampled ring passes it by', async () => {
@@ -282,8 +288,9 @@ describe('consoleExtras', () => {
     const none = await seedBody(t, { name: 'Unstamped', at: [-71, 43] });
     await computeGeo(t);
     const x = await as.query(api.bodyConsole.consoleExtras, { waterBodyId: id });
+    // Computed, and in no town: an empty list, not "not computed".
     expect(x).toMatchObject({
-      towns: null,
+      towns: [],
       hasBathymetry: true,
       outlineTrustedSince: NOW - 10 * DAY,
       outlineTrustedVia: 'campaign',
@@ -293,7 +300,12 @@ describe('consoleExtras', () => {
       outlineTrustedSince: null,
       outlineTrustedVia: null,
     });
-    expect(await as.query(api.bodyConsole.places, { waterBodyId: none })).toBeNull();
+    expect(await as.query(api.bodyConsole.places, { waterBodyId: none })).toEqual({
+      towns: [],
+      counties: [],
+      states: [],
+      computedAt: expect.any(Number),
+    });
   });
 
   test('a member is refused; a missing body says so', async () => {
