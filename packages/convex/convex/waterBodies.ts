@@ -91,7 +91,7 @@ import {
 import { recomputeBodySummary } from './lib/bodySummary';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { rankCandidates, scanCells } from './lib/cellScan';
-import { DEDUP_GROUP_CAP, dedupGroups, readDedupFlags } from './lib/dedupQueue';
+import { cutCard, DEDUP_GROUP_CAP, dedupGroups, readDedupFlags } from './lib/dedupQueue';
 import {
   CANONICAL_SOURCES,
   GEOMETRY_SOURCES,
@@ -5909,16 +5909,16 @@ export const listDedupCandidates = query({
     // The shared grouping, so the Overview's count of this queue can never disagree with it. A flag
     // whose only candidate has since been deleted is a group of one: the flag is real and someone
     // has to clear it.
-    const groups = dedupGroups(flagged, (id) => byId.has(id)).map((ids) => {
-      const docs = ids.flatMap((id) => byId.get(id) ?? []);
-      const members = docs.slice(0, DEDUP_GROUP_CAP);
+    const groups = dedupGroups(flagged, (id) => byId.has(id)).map((walk) => {
+      const { members, hidden } = cutCard(walk, (id) => byId.get(id));
       return {
         key: members
           .map((m) => m._id)
           .sort()
           .join('+'),
         members,
-        truncated: docs.length > DEDUP_GROUP_CAP,
+        truncated: hidden > 0,
+        hidden,
       };
     });
 

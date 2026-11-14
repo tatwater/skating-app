@@ -66,59 +66,77 @@ export function sharedCandidates(flagged: readonly Flag[]): BodyId[] {
 }
 
 /**
- * The flagged rows grouped into decisions: connected components over `duplicateCandidateIds`, each
- * listed flagged rows first (in read order), then the candidates they pulled in. Edges are followed
- * **only out of flagged rows**: a clean (or merged) candidate joins the rows that name it, but its own
- * candidate list is not walked, so one mis-scored chain can't swallow the corpus into one card.
+ * The flagged rows grouped into decisions: connected components over `duplicateCandidateIds`. Edges
+ * are followed **only out of flagged rows**: a clean (or merged) candidate joins the rows that name
+ * it, but its own candidate list is not walked, so one mis-scored chain can't swallow the corpus into
+ * one card.
  *
  * A candidate that no longer exists links nothing, so two flags naming the same deleted body are two
  * decisions. `exists` is consulted only for {@link sharedCandidates}: that is the whole of what the
  * count must fetch, and the queue, which fetches every candidate to name it, gets the same groups.
+ *
+ * Each group comes back **in walk order**: breadth-first from its first flagged row (in read order),
+ * a body's own candidates before the flagged rows that name it. A card shows a prefix of this order,
+ * so every body it shows is linked to one shown before it, and a flagged row's candidates are shown
+ * with it wherever the card's limit allows. Dismissing what a card shows therefore always clears a
+ * link (the cut that listed six flagged rows and hid the lake they all named cleared none).
  */
 export function dedupGroups(flagged: readonly Flag[], exists: (id: BodyId) => boolean): BodyId[][] {
   const flaggedIds = new Set(flagged.map((f) => f._id));
   const shared = new Set(sharedCandidates(flagged));
   const linkable = (id: BodyId) => flaggedIds.has(id) || !shared.has(id) || exists(id);
 
-  const parent = new Map<BodyId, BodyId>();
-  const find = (x: BodyId): BodyId => {
-    let root = x;
-    while (parent.get(root) !== root) root = parent.get(root) ?? root;
-    let at = x;
-    while (parent.get(at) !== root) {
-      const next = parent.get(at) as BodyId;
-      parent.set(at, root);
-      at = next;
-    }
-    return root;
-  };
-  const add = (x: BodyId) => {
-    if (!parent.has(x)) parent.set(x, x);
-  };
+  // A body's neighbors: its own candidates first, then the flagged rows naming it, in read order.
+  const out = new Map<BodyId, BodyId[]>();
+  const into = new Map<BodyId, BodyId[]>();
   for (const row of flagged) {
-    add(row._id);
-    for (const id of row.duplicateCandidateIds ?? []) {
-      if (!linkable(id)) continue;
-      add(id);
-      const a = find(row._id);
-      const b = find(id);
-      if (a !== b) parent.set(a, b);
+    const mine: BodyId[] = [];
+    for (const id of new Set(row.duplicateCandidateIds ?? [])) {
+      if (id === row._id || !linkable(id)) continue;
+      mine.push(id);
+      const naming = into.get(id) ?? [];
+      naming.push(row._id);
+      into.set(id, naming);
     }
+    out.set(row._id, mine);
   }
 
-  const groups = new Map<BodyId, BodyId[]>();
-  const placed = new Set<BodyId>();
-  const place = (id: BodyId) => {
-    if (placed.has(id) || !parent.has(id)) return;
-    placed.add(id);
-    const root = find(id);
-    const group = groups.get(root) ?? [];
-    group.push(id);
-    groups.set(root, group);
+  const seen = new Set<BodyId>();
+  const groups: BodyId[][] = [];
+  for (const row of flagged) {
+    if (seen.has(row._id)) continue;
+    seen.add(row._id);
+    const walk: BodyId[] = [row._id];
+    for (let i = 0; i < walk.length; i++) {
+      const at = walk[i] as BodyId;
+      for (const next of [...(out.get(at) ?? []), ...(into.get(at) ?? [])]) {
+        if (seen.has(next)) continue;
+        seen.add(next);
+        walk.push(next);
+      }
+    }
+    groups.push(walk);
+  }
+  return groups;
+}
+
+/**
+ * What one card shows of a group: the first {@link DEDUP_GROUP_CAP} bodies of its walk that still
+ * exist, and how many existing bodies it leaves out. A card that leaves some out says so; dismissing
+ * it clears only the links among the bodies it shows, and the rest come back as their own card.
+ */
+export function cutCard<T>(
+  walk: readonly BodyId[],
+  docOf: (id: BodyId) => T | undefined,
+): { members: T[]; hidden: number } {
+  const docs = walk.flatMap((id) => {
+    const doc = docOf(id);
+    return doc === undefined ? [] : [doc];
+  });
+  return {
+    members: docs.slice(0, DEDUP_GROUP_CAP),
+    hidden: Math.max(0, docs.length - DEDUP_GROUP_CAP),
   };
-  for (const row of flagged) place(row._id);
-  for (const row of flagged) for (const id of row.duplicateCandidateIds ?? []) place(id);
-  return [...groups.values()];
 }
 
 /** How many decisions the queue holds — its `total` — reading only what can change the number. */
