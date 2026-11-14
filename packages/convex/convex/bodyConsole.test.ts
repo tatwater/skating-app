@@ -368,6 +368,26 @@ describe('bays, landmarks and history', () => {
     await expect(member.as.query(api.bodyConsole.history, { waterBodyId: id })).rejects.toThrow();
   });
 
+  test('a body with more put-ins than the history reads says it is capped', async () => {
+    const t = harness();
+    const { mod, id } = await scene(t);
+    await t.run(async (ctx) => {
+      for (let i = 0; i <= 64; i++) {
+        await ctx.db.insert('putIns', {
+          waterBodyId: id,
+          coord: { lat: 44 + i * 1e-4, lng: -72 },
+          source: 'osm',
+          status: 'visible',
+          createdAt: NOW,
+        });
+      }
+    });
+    const all = await mod.as.query(api.bodyConsole.history, { waterBodyId: id });
+    // Every row read fits the page, but a put-in's history was never read.
+    expect(all.entries).toHaveLength(5);
+    expect(all.capped).toBe(true);
+  });
+
   test('landmarks say who placed them; a proposal says who asked', async () => {
     const t = harness();
     const { mod, id, landmarks } = await scene(t);
@@ -496,7 +516,8 @@ describe('standing.retentionForBody', () => {
       favoritesCapped: false,
       savedPutIns: 1,
     });
-    const bare = await seedBody(t, { name: 'Bare' });
+    // A boost set to zero is no boost: absent, as the rollover reads it.
+    const bare = await seedBody(t, { name: 'Bare', curatedBoost: 0 });
     expect(await as.query(api.standing.retentionForBody, { waterBodyId: bare })).toEqual({
       favorites: 0,
       favoritesCapped: false,

@@ -2015,18 +2015,20 @@ export const importContourCoverage = internalMutation({
   handler: async (ctx, { source, externalIds, clearFirst }) => {
     let cleared = 0;
     // The Bodies library's bathymetry fact moves only for a body whose coverage changed: one cleared
-    // and not re-imported here, or one newly covered.
-    const clearedIds = new Set<string>();
+    // (of any source) and not re-imported here, or one newly covered.
+    type CoverageRef = Pick<Doc<'bathymetryCoverage'>, 'source' | 'externalId'>;
+    const refKey = (r: CoverageRef) => `${r.source}\u0001${r.externalId}`;
+    const clearedRefs = new Map<string, CoverageRef>();
     if (clearFirst) {
       // ~2,000 rows, so a full collect is bounded and this is the one place it is honest to do.
       const existing = await ctx.db.query('bathymetryCoverage').collect();
       for (const row of existing) {
         await ctx.db.delete(row._id);
-        if (row.source === source) clearedIds.add(row.externalId);
+        clearedRefs.set(refKey(row), { source: row.source, externalId: row.externalId });
         cleared++;
       }
     }
-    const coverageMoved: string[] = [];
+    const moved: CoverageRef[] = [];
     let inserted = 0;
     for (const externalId of externalIds) {
       const already = await ctx.db
@@ -2035,18 +2037,16 @@ export const importContourCoverage = internalMutation({
         .first();
       if (already) continue;
       await ctx.db.insert('bathymetryCoverage', { source, externalId });
-      if (!clearedIds.delete(externalId)) coverageMoved.push(externalId);
+      if (!clearedRefs.delete(refKey({ source, externalId }))) moved.push({ source, externalId });
       inserted++;
     }
-    const moved: Id<'waterBodies'>[] = [];
-    for (const externalId of [...coverageMoved, ...clearedIds]) {
-      const body = await ctx.db
-        .query('waterBodies')
-        .withIndex('by_external_id', (q) => q.eq('source', source).eq('externalId', externalId))
-        .first();
-      if (body) moved.push(body._id);
+    moved.push(...clearedRefs.values());
+    // Resolved to bodies by a job of its own: each is a read of the body's polygon, and a
+    // replacement's first batch clears the whole set — thousands of outlines, past one
+    // transaction's read limit.
+    if (moved.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.bodyLibrary.queueByExternalId, { refs: moved });
     }
-    await queueLibraryRefresh(ctx, moved);
     return { cleared, inserted };
   },
 });

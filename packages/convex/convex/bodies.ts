@@ -454,6 +454,10 @@ export const preview = query({
     };
     for (const r of inSeason) byVantage[r.observedFrom ?? 'unstated']++;
     const oldest = visible[visible.length - 1];
+    // The read stopped inside the season's record: older reports of this season may lie past it.
+    const lastRead = reports[PREVIEW_REPORT_CAP - 1];
+    const seasonCapped =
+      capped && span !== null && lastRead !== undefined && lastRead.skateEndTime >= span.from;
 
     const row = await ctx.db
       .query('bodyLibraryRows')
@@ -465,6 +469,8 @@ export const preview = query({
     return {
       season: {
         count: inSeason.length,
+        /** The read stopped at its cap inside the season's record: `count` is a floor. */
+        capped: seasonCapped,
         /** The record is empty from 1 July to 30 September; it opens on this instant. */
         recordOpen: span !== null,
         byVantage,

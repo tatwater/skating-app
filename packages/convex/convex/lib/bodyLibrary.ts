@@ -61,8 +61,11 @@ import { PUT_IN_REPORT_SCAN, putInMarkersForBody } from './putInMarkers';
 export const REPORT_SCAN = 300;
 /** The most open asks of one kind a refresh counts. */
 const ASK_CAP = 100;
-/** An unchanged row's `refreshedAt` is moved on when older than this (the drift repair's progress). */
-const REFRESHED_STALE_MS = 86_400_000;
+/**
+ * An unchanged row's `refreshedAt` is moved on when older than this (the drift repair's progress),
+ * and the drift repair reads only rows at least this old — a row it would re-read without marking.
+ */
+export const REFRESHED_STALE_MS = 86_400_000;
 /** The most rows one body can have (every state it touches, and `*`). */
 const MAX_SCOPES = 16;
 
@@ -548,19 +551,24 @@ export async function hasRefreshBudget(ctx: MutationCtx): Promise<boolean> {
  * repair or backfill page. A failure is recorded on the body's queue entry
  * ({@link recordRefreshFailure}), once per transaction: a body that already failed in this one is not
  * tried again in it. A transaction without the budget for a refresh queues the body instead (its
- * *Changed* carried). Returns whether the rows were refreshed now.
+ * *Changed* carried) — and with `unpark` (an audited write, which is what tries a parked body
+ * again) releases a parked one to the queue, as the audit hook does past its inline cap. Returns
+ * whether the rows were refreshed now.
  */
 export async function refreshBodyLibrary(
   ctx: MutationCtx,
   waterBodyId: Id<'waterBodies'>,
-  opts: { changedAt?: number; now?: number } = {},
+  opts: { changedAt?: number; now?: number; unpark?: boolean } = {},
 ): Promise<boolean> {
   const now = opts.now ?? Date.now();
   const failed = failedIn.get(ctx) ?? new Set<Id<'waterBodies'>>();
   failedIn.set(ctx, failed);
-  if (failed.has(waterBodyId) || !(await hasRefreshBudget(ctx))) {
+  const tried = failed.has(waterBodyId);
+  if (tried || !(await hasRefreshBudget(ctx))) {
     await queueLibraryRefresh(ctx, [waterBodyId], now, {
       ...(opts.changedAt !== undefined ? { changedAt: opts.changedAt } : {}),
+      // A body that failed in this transaction was tried: its failure stands, parked or not.
+      ...(opts.unpark === true && !tried ? { unpark: true } : {}),
     });
     if (opts.changedAt !== undefined) await stampChanged(ctx, waterBodyId, opts.changedAt);
     return false;
@@ -590,6 +598,10 @@ const CHANGES_THE_BODY: ReadonlySet<ModerationTargetType> = new Set([
   'bodyLandmark',
   'putIn',
 ]);
+
+/** Whether a moderator's action on this kind of target stamps its body's *Changed*. */
+export const changesTheBody = (targetType: ModerationTargetType): boolean =>
+  CHANGES_THE_BODY.has(targetType);
 
 /** The most bodies one lot's audit row refreshes. */
 const LOT_BODY_CAP = 16;
@@ -690,7 +702,11 @@ export async function noteAuditedAction(
     const used = auditRefreshes.get(ctx) ?? 0;
     if (used < INLINE_AUDIT_REFRESHES) {
       auditRefreshes.set(ctx, used + 1);
-      await refreshBodyLibrary(ctx, id, stamp ? { changedAt: entry.createdAt } : {});
+      // Tried now; a transaction too spent to try it queues it, releasing a parked body all the same.
+      await refreshBodyLibrary(ctx, id, {
+        ...(stamp ? { changedAt: entry.createdAt } : {}),
+        unpark: true,
+      });
     } else {
       // Past the inline cap: queued, its *Changed* carried — and a parked body released, since an
       // audited write is what tries a parked body again.

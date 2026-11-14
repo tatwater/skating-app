@@ -10,6 +10,7 @@ import type { Polygon } from 'geojson';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
+import { parkedRows, queueCatalogRefs, RESOLVE_BATCH } from './bodyLibrary';
 import {
   drainLibraryQueue,
   errorClassOf,
@@ -165,6 +166,14 @@ const backfill = async (t: T) => {
   }
 };
 
+const queuedOf = (t: T, id: Id<'waterBodies'>) =>
+  t.run((ctx) =>
+    ctx.db
+      .query('bodyLibraryQueue')
+      .withIndex('by_body', (q) => q.eq('waterBodyId', id))
+      .first(),
+  );
+
 const rowsOf = (t: T, id: Id<'waterBodies'>) =>
   t.run((ctx) =>
     ctx.db
@@ -192,6 +201,23 @@ async function expectCountsAreTheTally(t: T) {
 }
 
 const page = (n = 50) => ({ numItems: n, cursor: null });
+
+type RunCtx = Parameters<Parameters<T['run']>[0]>[0];
+
+/** The same transaction, its metrics reading every budget spent. */
+function starved(ctx: RunCtx): RunCtx {
+  const spent = { used: 0, remaining: 0 };
+  const low = {
+    bytesRead: spent,
+    bytesWritten: spent,
+    databaseQueries: spent,
+    documentsRead: spent,
+    documentsWritten: spent,
+    functionsScheduled: spent,
+    scheduledFunctionArgsBytes: spent,
+  };
+  return { ...ctx, meta: { ...ctx.meta, getTransactionMetrics: async () => low } } as RunCtx;
+}
 
 describe('the stored row', () => {
   test('one row per scope, the facts the list shows, and counts that are the tally', async () => {
@@ -349,6 +375,70 @@ describe('kept current at the writes', () => {
     await expectCountsAreTheTally(t);
   });
 
+  test('a contour coverage replacement queues the bodies whose coverage moved, by a job of its own', async () => {
+    const t = harness();
+    const ids = {
+      kept: await seedBody(t, { name: 'Kept', externalId: 'way/1' }),
+      dropped: await seedBody(t, { name: 'Dropped', externalId: 'way/2' }),
+      added: await seedBody(t, { name: 'Added', externalId: 'way/3' }),
+      otherCatalog: await seedBody(t, { name: 'Other', source: 'nhd', externalId: '77' }),
+    };
+    await t.run(async (ctx) => {
+      await ctx.db.insert('bathymetryCoverage', { source: 'osm', externalId: 'way/1' });
+      await ctx.db.insert('bathymetryCoverage', { source: 'osm', externalId: 'way/2' });
+      await ctx.db.insert('bathymetryCoverage', { source: 'nhd', externalId: '77' });
+    });
+    await t.mutation(internal.waterBodies.importContourCoverage, {
+      source: 'osm',
+      externalIds: ['way/1', 'way/3'],
+      clearFirst: true,
+    });
+    // No body read in the import itself: the moved refs ride to the resolver.
+    const scheduled = await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
+    const job = scheduled.find((s) => s.name === 'bodyLibrary:queueByExternalId');
+    expect(job).toBeDefined();
+    const [args] = (job as (typeof scheduled)[number]).args as [
+      { refs: { source: 'osm' | 'nhd'; externalId: string }[] },
+    ];
+    const refs = args.refs;
+    expect(refs).toEqual([
+      { source: 'osm', externalId: 'way/3' },
+      { source: 'osm', externalId: 'way/2' },
+      { source: 'nhd', externalId: '77' },
+    ]);
+    expect(
+      await t.mutation(internal.bodyLibrary.queueByExternalId, {
+        refs: [...refs, { source: 'osm', externalId: 'way/404' }],
+      }),
+    ).toEqual({ queued: 3, deferred: 0 });
+    for (const id of [ids.added, ids.dropped, ids.otherCatalog]) {
+      expect(await queuedOf(t, id)).not.toBeNull();
+    }
+    expect(await queuedOf(t, ids.kept)).toBeNull();
+  });
+
+  test('the coverage resolver reads what a transaction affords and hands the rest on', async () => {
+    const t = harness();
+    const a = await seedBody(t, { name: 'A', externalId: 'way/a' });
+    const refs = [
+      { source: 'osm' as const, externalId: 'way/a' },
+      { source: 'osm' as const, externalId: 'way/b' },
+    ];
+    // Spent after the first read: the first is always taken, so a run never stalls.
+    const left = await t.run(async (ctx) => (await queueCatalogRefs(starved(ctx), refs)).rest);
+    expect(left).toEqual([refs[1]]);
+    expect(await queuedOf(t, a)).not.toBeNull();
+    // A long list is taken a batch at a time, the rest scheduled.
+    const many = Array.from({ length: RESOLVE_BATCH + 1 }, (_, i) => ({
+      source: 'osm' as const,
+      externalId: `way/n${i}`,
+    }));
+    expect(await t.mutation(internal.bodyLibrary.queueByExternalId, { refs: many })).toEqual({
+      queued: 0,
+      deferred: 1,
+    });
+  });
+
   test('a state the body stops touching loses its row; an area cleared is dropped', async () => {
     const t = harness();
     const id = await seedBody(t, {
@@ -409,7 +499,12 @@ describe('kept current at the writes', () => {
     const id = await seedBody(t, { name: 'Steady' });
     await backfill(t);
     vi.setSystemTime(NOW + DAY / 2);
-    await t.mutation(internal.bodyLibrary.repairDrift, {});
+    // Younger than a day: not re-read, so the repair doesn't spend each tick on the same bodies.
+    expect(await t.mutation(internal.bodyLibrary.repairDrift, {})).toEqual({
+      refreshed: 0,
+      skipped: 0,
+      failed: 0,
+    });
     expect((await rowsOf(t, id))[0]?.refreshedAt).toBe(NOW);
     vi.setSystemTime(NOW + 2 * DAY);
     await t.mutation(internal.bodyLibrary.repairDrift, {});
@@ -441,6 +536,8 @@ describe('kept current at the writes', () => {
       for (const [actorId, at] of [
         [mod.id, NOW - 3 * DAY],
         [undefined, NOW - DAY],
+        // The same bay again: read once a page, the latest stamp still wins.
+        [mod.id, NOW - 4 * DAY],
       ] as const) {
         await ctx.db.insert('moderationActions', {
           ...(actorId ? { actorId } : {}),
@@ -452,6 +549,17 @@ describe('kept current at the writes', () => {
         });
       }
     });
+    // A lot's audit row is not a change to its bodies: passed over before any read.
+    await t.run((ctx) =>
+      ctx.db.insert('moderationActions', {
+        actorId: mod.id,
+        action: 'remove',
+        targetType: 'parkingArea',
+        targetId: 'not-a-lot',
+        reason: 'r',
+        createdAt: NOW - DAY,
+      }),
+    );
     expect(await t.mutation(internal.bodyLibrary.backfillChangedAt, {})).toMatchObject({
       stamped: 1,
       isDone: true,
@@ -776,6 +884,7 @@ describe('the preview', () => {
     const p = await as.query(api.bodies.preview, { waterBodyId: id });
     expect(p?.season).toEqual({
       count: 2,
+      capped: false,
       recordOpen: true,
       byVantage: { on_ice: 1, shore: 0, secondhand: 0, unstated: 1 },
     });
@@ -785,6 +894,36 @@ describe('the preview', () => {
     expect(p?.complete?.of).toBe(10);
     const [row] = await rowsOf(t, id);
     expect(row).toMatchObject({ asks: 2, asksWaiting: true });
+  });
+
+  test('a read that stops inside the season’s record says its season count is a floor', async () => {
+    const t = harness();
+    const { as, id: author } = await seedUser(t);
+    const id = await seedBody(t, { name: 'Crowded' });
+    // 1,001 reports this season, the oldest past the read's 1,000.
+    await t.run(async (ctx) => {
+      for (let i = 0; i <= 1_000; i++) {
+        const at = NOW - DAY - i * 60_000;
+        await ctx.db.insert('reports', {
+          authorId: author,
+          waterBodyId: id,
+          point: { lat: 44.0, lng: -72.0 },
+          skateEndTime: at,
+          reportTime: at,
+          source: 'native' as const,
+          iceTypes: [{ type: 'black_ice' as const }],
+          surfaceTags: [],
+          photoIds: [],
+          moderationStatus: 'visible' as const,
+          hazardIdsCreated: [],
+          createdAt: at,
+          updatedAt: at,
+        });
+      }
+    });
+    const p = await as.query(api.bodies.preview, { waterBodyId: id });
+    expect(p?.season).toMatchObject({ count: 1_000, capped: true });
+    expect(p?.allTime).toMatchObject({ count: 1_000, capped: true, firstSeason: null });
   });
 
   test('an unknown body has no preview', async () => {
@@ -1268,6 +1407,62 @@ describe('a body whose refresh throws', () => {
     });
     expect(await queueRow(t, bad)).toMatchObject({ attempts: 0, queuedAt: NOW, changedAt: NOW });
     expect((await queueRow(t, bad))?.parkedAt).toBeUndefined();
+  });
+
+  test('an audited write in a transaction too spent to refresh still releases a parked body', async () => {
+    const t = harness();
+    const mod = await seedUser(t);
+    const held = await seedBody(t, { name: 'Held Inline' });
+    await t.run(async (ctx) => {
+      await ctx.db.insert('bodyLibraryQueue', {
+        waterBodyId: held,
+        queuedAt: NOW - DAY,
+        attempts: 3,
+        parkedAt: NOW - DAY,
+      });
+      await noteAuditedAction(starved(ctx), {
+        actorId: mod.id,
+        targetType: 'waterbody',
+        targetId: held,
+        createdAt: NOW,
+      });
+    });
+    expect(await queueRow(t, held)).toMatchObject({ attempts: 0, queuedAt: NOW, changedAt: NOW });
+    expect((await queueRow(t, held))?.parkedAt).toBeUndefined();
+  });
+
+  test('a body that failed in this transaction stays parked when a spent writer meets it again', async () => {
+    const t = harness();
+    const bad = await poison(t, 'Twice');
+    await t.run(async (ctx) => {
+      await ctx.db.insert('bodyLibraryQueue', {
+        waterBodyId: bad,
+        queuedAt: NOW - DAY,
+        attempts: 3,
+        parkedAt: NOW - DAY,
+      });
+      expect(await refreshBodyLibrary(ctx, bad, { unpark: true })).toBe(false);
+      expect(await refreshBodyLibrary(ctx, bad, { unpark: true })).toBe(false);
+    });
+    expect(await queueRow(t, bad)).toMatchObject({ attempts: 4, parkedAt: NOW - DAY });
+  });
+
+  test('the parked read names a body with no row only while it can afford the body', async () => {
+    const t = harness();
+    const bad = await poison(t, 'Heavy');
+    await t.run((ctx) =>
+      ctx.db.insert('bodyLibraryQueue', {
+        waterBodyId: bad,
+        queuedAt: NOW,
+        attempts: 3,
+        parkedAt: NOW,
+      }),
+    );
+    const names = await t.run(async (ctx) => ({
+      funded: (await parkedRows(ctx)).rows.map((r) => r.name),
+      spent: (await parkedRows(starved(ctx))).rows.map((r) => r.name),
+    }));
+    expect(names).toEqual({ funded: ['Heavy'], spent: [null] });
   });
 
   test('names an error by its class, never its message', () => {

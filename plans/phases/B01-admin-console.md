@@ -1586,8 +1586,13 @@ records and applies the count differences:
   and a drain, repair, turn or backfill page stops when it can no longer fund another full refresh,
   leaving the rest queued, so a healthy body is never starved into failing. A *Changed* stamp a
   failed or deferred refresh owes rides on the queue entry until the drain lands it.
-- **A drift repair** walks the oldest-refreshed rows a few at a time. Nothing a moderator does
-  depends on it; it catches what is deferred below.
+- **A drift repair** walks the oldest-refreshed rows a few at a time — only rows a day old or more,
+  since a refresh marks an unchanged row read at most daily and a younger one would be re-read every
+  tick. Nothing a moderator does depends on it; it catches what is deferred below.
+- **The contour coverage** knows a body only by its catalog id, and resolving one reads its polygon:
+  the bodies whose coverage moved are queued by a job of their own (`bodyLibrary.queueByExternalId`)
+  that reads as many as a transaction affords and schedules the rest, since a replacement's first
+  batch clears the whole set.
 - **Deferred, in files the author-deletion PR rewrites:** a skater's new corpus request
   (`corpusRequests.ts`) and a new flag on a body (`contentFlags.ts`) change its asks without an
   audit row; each needs one line (`queueLibraryRefresh`) at its insert. Until then the drift repair

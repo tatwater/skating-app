@@ -239,14 +239,22 @@ const HISTORY_PUT_INS = 64;
 
 type Target = { targetType: Doc<'moderationActions'>['targetType']; targetId: string };
 
-/** The targets a body's history covers: the body, its bays, the landmarks a person touched, its put-ins. */
-async function historyTargets(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>): Promise<Target[]> {
+/**
+ * The targets a body's history covers: the body, its bays, the landmarks a person touched, its
+ * put-ins — and `truncated` when a kind had more than its bound, so History never reads as whole.
+ */
+async function historyTargets(
+  ctx: QueryCtx,
+  waterBodyId: Id<'waterBodies'>,
+): Promise<{ targets: Target[]; truncated: boolean }> {
   const targets: Target[] = [{ targetType: 'waterbody', targetId: waterBodyId }];
   const bays = await ctx.db
     .query('waterBodySubAreas')
     .withIndex('by_parent', (q) => q.eq('waterBodyId', waterBodyId))
-    .take(MAX_BAYS);
-  for (const b of bays) targets.push({ targetType: 'waterBodySubArea', targetId: b._id });
+    .take(MAX_BAYS + 1);
+  for (const b of bays.slice(0, MAX_BAYS)) {
+    targets.push({ targetType: 'waterBodySubArea', targetId: b._id });
+  }
   // A catalog landmark nobody touched has no audit rows; the touched ones are a person's.
   const touched = (await landmarksForBody(ctx, waterBodyId))
     .filter(
@@ -256,15 +264,20 @@ async function historyTargets(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>): Pr
         l.movedAt !== undefined ||
         (l.removedAt !== undefined && l.mergedIntoId === undefined),
     )
-    .sort((a, b) => b.updatedAt - a.updatedAt)
-    .slice(0, HISTORY_LANDMARKS);
-  for (const l of touched) targets.push({ targetType: 'bodyLandmark', targetId: l._id });
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+  for (const l of touched.slice(0, HISTORY_LANDMARKS)) {
+    targets.push({ targetType: 'bodyLandmark', targetId: l._id });
+  }
   const putIns = await ctx.db
     .query('putIns')
     .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
-    .take(HISTORY_PUT_INS);
-  for (const p of putIns) targets.push({ targetType: 'putIn', targetId: p._id });
-  return targets;
+    .take(HISTORY_PUT_INS + 1);
+  for (const p of putIns.slice(0, HISTORY_PUT_INS)) {
+    targets.push({ targetType: 'putIn', targetId: p._id });
+  }
+  const truncated =
+    bays.length > MAX_BAYS || touched.length > HISTORY_LANDMARKS || putIns.length > HISTORY_PUT_INS;
+  return { targets, truncated };
 }
 
 /**
@@ -272,7 +285,7 @@ async function historyTargets(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>): Pr
  * acted (`null` for the machine) and whether the viewer can undo it. `action` narrows to one verb as
  * an index range, never a filter over a capped page. Bounded: each target's newest `limit` rows,
  * {@link HISTORY_ROW_BUDGET} rows in all — `capped` when the budget ran out before every target was
- * read, or more rows exist than returned.
+ * read, a kind of target had more than its bound, or more rows exist than returned.
  */
 export const history = query({
   args: {
@@ -283,9 +296,9 @@ export const history = query({
   handler: async (ctx, { waterBodyId, action, limit }) => {
     const viewer = await requireCapability(ctx, 'audit.read');
     const n = Math.min(HISTORY_MAX, Math.max(1, Math.floor(limit ?? 50)));
-    const targets = await historyTargets(ctx, waterBodyId);
+    const { targets, truncated } = await historyTargets(ctx, waterBodyId);
     let budget = HISTORY_ROW_BUDGET;
-    let capped = false;
+    let capped = truncated;
     const rows: Doc<'moderationActions'>[] = [];
     for (const { targetType, targetId } of targets) {
       if (budget <= 0) {

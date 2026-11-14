@@ -303,7 +303,8 @@ export const retentionForBody = query({
     if (!body) return null;
     const lastActivity = await lastActivityOf(ctx, waterBodyId);
     let curatedBoost: { value: number; at: number | null } | undefined;
-    if (body.curatedBoost !== undefined) {
+    // A boost set to zero is no boost — the rollover's rule (`retentionReason`) and the library's.
+    if (body.curatedBoost !== undefined && body.curatedBoost !== 0) {
       const set = await ctx.db
         .query('moderationActions')
         .withIndex('by_target_action', (q) =>

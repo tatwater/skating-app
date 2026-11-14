@@ -16,20 +16,46 @@ import { currentSeason, SCOPE_ALL } from '@skating/core';
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
-import { internalAction, internalMutation, internalQuery, query } from './_generated/server';
+import {
+  internalAction,
+  internalMutation,
+  internalQuery,
+  type MutationCtx,
+  type QueryCtx,
+  query,
+} from './_generated/server';
 import { requireCapability } from './lib/auth';
 import {
   bodiesOfTarget,
+  changesTheBody,
   drainLibraryQueue,
   hasRefreshBudget,
   isParked,
   markRead,
   queueLibraryRefresh,
+  REFRESHED_STALE_MS,
   rebuildBodyLibrary,
   refreshBodyLibrary,
   refreshFailure,
   stampChanged,
 } from './lib/bodyLibrary';
+import { CANONICAL_SOURCES } from './lib/enums';
+import { literals } from './lib/validators';
+
+const MiB = 1024 * 1024;
+
+/**
+ * Whether this transaction can afford one more read of a body document — its polygon, at most a
+ * document's 1 MiB — with room past it for what the caller writes next.
+ */
+async function canReadAnotherBody(ctx: QueryCtx): Promise<boolean> {
+  const m = await ctx.meta.getTransactionMetrics();
+  return (
+    m.bytesRead.remaining >= 2 * MiB &&
+    m.documentsRead.remaining >= 100 &&
+    m.databaseQueries.remaining >= 100
+  );
+}
 
 /**
  * One body's refresh as its own (nested) transaction — what `refreshBodyLibrary` runs, so a body
@@ -57,9 +83,15 @@ export const refreshOne = internalMutation({
 /** Bodies a backfill page refreshes. Small: a body is its polygon, and a busy one its reports. */
 export const BACKFILL_BATCH = 10;
 /** The body page's read budget, so a page of large outlines stops early rather than failing. */
-const BACKFILL_MAX_BYTES = 4 * 1024 * 1024;
-/** Pages one action run takes before it hands its cursor to a fresh run (actions time out). */
+const BACKFILL_MAX_BYTES = 4 * MiB;
+/** Pages one action run takes at most before it hands its cursor to a fresh run. */
 const PAGES_PER_RUN = 200;
+/**
+ * How long one action run pages before it hands its cursor on — well inside an action's ten
+ * minutes, so a run of slow pages still logs its cursor and schedules the next rather than dying
+ * with neither.
+ */
+const RUN_MS = 4 * 60_000;
 
 /** One page of the backfill: refresh up to `batchSize` bodies from `cursor`. */
 export const backfill = internalMutation({
@@ -94,15 +126,16 @@ export const backfill = internalMutation({
 
 /**
  * The whole corpus: pages of {@link backfill} until done, re-scheduling itself every
- * {@link PAGES_PER_RUN} pages so no run outlives an action's limit. About 2,500 pages for 25,000
- * bodies — tens of minutes.
+ * {@link PAGES_PER_RUN} pages or {@link RUN_MS}, whichever comes first, so no run outlives an
+ * action's limit. About 2,500 pages for 25,000 bodies — tens of minutes.
  */
 export const backfillAll = internalAction({
   args: { cursor: v.optional(v.string()) },
   handler: async (ctx, { cursor }): Promise<{ refreshed: number; done: boolean }> => {
+    const started = Date.now();
     let next = cursor;
     let refreshed = 0;
-    for (let i = 0; i < PAGES_PER_RUN; i++) {
+    for (let i = 0; i < PAGES_PER_RUN && Date.now() - started < RUN_MS; i++) {
       const page = await ctx.runMutation(internal.bodyLibrary.backfill, {
         ...(next !== undefined ? { cursor: next } : {}),
       });
@@ -131,10 +164,17 @@ export const backfillChangedAt = internalMutation({
       .withIndex('by_created_at')
       .paginate({ cursor: cursor ?? null, numItems: CHANGED_PAGE });
     const latest = new Map<Id<'waterBodies'>, number>();
+    // A target is read once a page — a bay is its polygon, and a session edits one bay many times —
+    // and only a kind that stamps: a lot's links, a flag or a request are never read here.
+    const bodiesOf = new Map<string, Id<'waterBodies'>[]>();
     for (const row of page.page) {
-      if (row.actorId === undefined) continue;
-      const { bodies, changes } = await bodiesOfTarget(ctx, row.targetType, row.targetId);
-      if (!changes) continue;
+      if (row.actorId === undefined || !changesTheBody(row.targetType)) continue;
+      const key = `${row.targetType}\u0001${row.targetId}`;
+      let bodies = bodiesOf.get(key);
+      if (bodies === undefined) {
+        bodies = (await bodiesOfTarget(ctx, row.targetType, row.targetId)).bodies;
+        bodiesOf.set(key, bodies);
+      }
       for (const id of bodies) latest.set(id, Math.max(latest.get(id) ?? 0, row.createdAt));
     }
     for (const [id, at] of latest) await stampChanged(ctx, id, at);
@@ -217,16 +257,20 @@ const DRIFT_BATCH = 10;
  * The drift repair: the rows refreshed longest ago, a few bodies a tick — the whole corpus in about
  * four days at the cron's pace. It catches what no write refreshes yet (a skater's new corpus request
  * or flag, whose files the author-deletion PR is rewriting); nothing a moderator does waits on it.
+ *
+ * Only rows refreshed at least {@link REFRESHED_STALE_MS} ago: a refresh marks an unchanged row read
+ * no oftener than that, so a younger one would stay at the front and be re-read every tick (the day
+ * after a backfill, or a corpus the repair has caught up with) — work that moves nothing on.
  */
 export const repairDrift = internalMutation({
   args: {},
   handler: async (ctx) => {
+    const now = Date.now();
     const rows = await ctx.db
       .query('bodyLibraryRows')
-      .withIndex('by_refreshed_at')
+      .withIndex('by_refreshed_at', (q) => q.lte('refreshedAt', now - REFRESHED_STALE_MS))
       .take(DRIFT_BATCH * 4);
     const bodies = [...new Set(rows.map((r) => r.waterBodyId))].slice(0, DRIFT_BATCH);
-    const now = Date.now();
     let refreshed = 0;
     let skipped = 0;
     let failedHere = 0;
@@ -272,6 +316,37 @@ export const retryParked = internalMutation({
 });
 
 /**
+ * The parked read's rows. The name from the body's library row, a small document; the body itself
+ * (its polygon) only for one that never had a row — a body that failed its first refresh, so often
+ * a heavy one — and only while the read can afford another body, else `null` (not recorded).
+ */
+export async function parkedRows(ctx: QueryCtx) {
+  const rows = await ctx.db
+    .query('bodyLibraryQueue')
+    .withIndex('by_parked_queued', (q) => q.gt('parkedAt', 0))
+    .take(PARKED_LIST + 1);
+  const out = [];
+  for (const row of rows.slice(0, PARKED_LIST)) {
+    const listed = await ctx.db
+      .query('bodyLibraryRows')
+      .withIndex('by_body', (q) => q.eq('waterBodyId', row.waterBodyId).eq('scope', SCOPE_ALL))
+      .first();
+    let name = listed?.name ?? null;
+    if (listed === null && (await canReadAnotherBody(ctx))) {
+      name = (await ctx.db.get(row.waterBodyId))?.name ?? null;
+    }
+    out.push({
+      waterBodyId: row.waterBodyId,
+      name,
+      attempts: row.attempts ?? 0,
+      lastErrorClass: row.lastErrorClass ?? null,
+      parkedAt: row.parkedAt as number,
+    });
+  }
+  return { count: out.length, capped: rows.length > PARKED_LIST, rows: out };
+}
+
+/**
  * **Bodies whose library refresh is parked** — for the console's Machinery: how many (counted to
  * the list's bound, `capped` past it), and each with its attempts, its last error's class and when
  * it was parked. No content: an error's class, never its message.
@@ -280,28 +355,57 @@ export const parked = query({
   args: {},
   handler: async (ctx) => {
     await requireCapability(ctx, 'machinery.read');
-    const rows = await ctx.db
-      .query('bodyLibraryQueue')
-      .withIndex('by_parked_queued', (q) => q.gt('parkedAt', 0))
-      .take(PARKED_LIST + 1);
-    const out = [];
-    for (const row of rows.slice(0, PARKED_LIST)) {
-      // The name from the body's library row, a small document; the body itself (its polygon) only
-      // for one that never had a row.
-      const listed = await ctx.db
-        .query('bodyLibraryRows')
-        .withIndex('by_body', (q) => q.eq('waterBodyId', row.waterBodyId).eq('scope', SCOPE_ALL))
-        .first();
-      const name = listed?.name ?? (await ctx.db.get(row.waterBodyId))?.name ?? null;
-      out.push({
-        waterBodyId: row.waterBodyId,
-        name,
-        attempts: row.attempts ?? 0,
-        lastErrorClass: row.lastErrorClass ?? null,
-        parkedAt: row.parkedAt as number,
-      });
+    return parkedRows(ctx);
+  },
+});
+
+/** Coverage refs one resolve run takes at most, so its writes stay small too. */
+export const RESOLVE_BATCH = 500;
+
+/** A body as the contour coverage knows it: its catalog and its id there. */
+export type CatalogRef = { source: (typeof CANONICAL_SOURCES)[number]; externalId: string };
+
+/**
+ * Resolve refs to their bodies and queue them, for as long as the transaction can afford another
+ * body read (the first is always read, so every run moves the list on). Returns the refs it left.
+ */
+export async function queueCatalogRefs(
+  ctx: MutationCtx,
+  refs: readonly CatalogRef[],
+): Promise<{ queued: number; rest: CatalogRef[] }> {
+  const now = Date.now();
+  let done = 0;
+  let queued = 0;
+  for (const { source, externalId } of refs) {
+    if (done >= RESOLVE_BATCH || (done > 0 && !(await canReadAnotherBody(ctx)))) break;
+    done++;
+    const body = await ctx.db
+      .query('waterBodies')
+      .withIndex('by_external_id', (q) => q.eq('source', source).eq('externalId', externalId))
+      .first();
+    if (body === null) continue;
+    await queueLibraryRefresh(ctx, [body._id], now);
+    queued++;
+  }
+  return { queued, rest: refs.slice(done) };
+}
+
+/**
+ * **Queue the bodies a catalog-keyed write moved** — the contour coverage, which knows a body by its
+ * source and external id. Resolving one reads the body (its polygon), and a coverage replacement's
+ * first batch clears the whole set, so this reads as many as the transaction affords and hands the
+ * rest to a fresh run of itself.
+ */
+export const queueByExternalId = internalMutation({
+  args: {
+    refs: v.array(v.object({ source: literals(CANONICAL_SOURCES), externalId: v.string() })),
+  },
+  handler: async (ctx, { refs }) => {
+    const { queued, rest } = await queueCatalogRefs(ctx, refs);
+    if (rest.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.bodyLibrary.queueByExternalId, { refs: rest });
     }
-    return { count: out.length, capped: rows.length > PARKED_LIST, rows: out };
+    return { queued, deferred: rest.length };
   },
 });
 
