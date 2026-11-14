@@ -139,7 +139,7 @@ const STATES = ['NH', 'VT', 'ME', 'NY', 'MA'];
 export const LIST_ACTIVE: BodiesListData = {
   status: 'more',
   rows: ACTIVE_ROWS,
-  others: [],
+  others: null,
   total: LANE_COUNTS.active as Count,
   serves: SERVES_ALL,
   facetCounts: null,
@@ -152,7 +152,7 @@ export const LIST_BIG: BodiesListData = {
   rows: [...ACTIVE_ROWS, ...BIG_ROWS]
     .filter((r) => (r.areaSqM ?? 0) >= 1000 * ACRE)
     .sort((a, b) => (b.reports ?? 0) - (a.reports ?? 0) || (b.areaSqM ?? 0) - (a.areaSqM ?? 0)),
-  others: [],
+  others: null,
   total: { count: 187, capped: false },
   serves: SERVES_ALL,
   facetCounts: {

@@ -224,6 +224,14 @@ describe('the search', () => {
       expect(head.getAttribute('aria-sort')).not.toMatch(/ending$/);
     }
   });
+
+  it('draws no other-standing group and no tally while no read gives the other standings', () => {
+    render(<Harness initial={queryOf({ q: 'mor' })} list={{ ...LIST_SEARCH, others: null }} />);
+    expect(document.querySelector('[data-slot=search-tally]')).toBeNull();
+    expect(screen.queryByText(/active ·/)).toBeNull();
+    expect(screen.queryByText('Dormant', { selector: 'th > span' })).toBeNull();
+    expect(within(grid()).getAllByRole('row')).toHaveLength(LIST_SEARCH.rows.length);
+  });
 });
 
 describe('the filters', () => {

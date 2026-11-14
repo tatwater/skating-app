@@ -209,6 +209,9 @@ describe('the list', () => {
     expect([...grid().querySelectorAll('[data-slot=body-name]')].map((n) => n.textContent)).toEqual(
       ['Post Pond', 'Crystal Lake'],
     );
+    // A search answers its lane only: no other-standing group, and no tally pretending to be whole.
+    expect(document.querySelector('[data-slot=search-tally]')).toBeNull();
+    expect(grid().querySelector('[data-slot=table-group-row]')).toBeNull();
   });
 
   it('keeps asking past a page its scan budget cut short, and draws no end until done', () => {

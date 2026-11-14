@@ -172,8 +172,9 @@ export function listFrom({
   return {
     status: listStatusOf(status),
     rows: rows.map(rowFromLibrary),
-    // A search answers this lane only; matches in other standings need a read of their own.
-    others: [],
+    // A search answers this lane only: matches in other standings need a read of their own, so
+    // none is drawn — not an empty group.
+    others: null,
     total: current?.total ?? null,
     serves: servesFrom(current ?? held),
     facetCounts: current?.facetCounts ?? null,

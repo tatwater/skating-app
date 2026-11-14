@@ -164,9 +164,11 @@ export function ListTools({
 
 /**
  * "2 active · 4 dormant": the matches in this lane, then each other standing's. While more pages
- * wait, the lane's figure is what has arrived so far — a floor, written "50+".
+ * wait, the lane's figure is what has arrived so far — a floor, written "50+". Drawn only when a
+ * read gives the other standings (`others`): a tally of one lane alone would read as the whole.
  */
 export function searchTally(list: BodiesListData, laneWord: string): string | null {
+  if (list.others === null) return null;
   if (list.status === 'loading' || list.status === 'unread' || list.status === 'error') {
     return null;
   }

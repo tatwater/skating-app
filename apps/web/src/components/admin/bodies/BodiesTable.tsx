@@ -233,7 +233,7 @@ export function BodiesTable({
     [lane.columns],
   );
   const data = useMemo(
-    () => [...list.rows, ...list.others.flatMap((g) => g.rows)],
+    () => [...list.rows, ...(list.others ?? []).flatMap((g) => g.rows)],
     [list.rows, list.others],
   );
   const table = useTable({ features, columns, data, getRowId: (row) => row.id });
@@ -242,7 +242,7 @@ export function BodiesTable({
   const entries = useMemo<Entry[]>(
     () => [
       ...list.rows.map((row) => ({ kind: 'row' as const, row, other: false })),
-      ...list.others.flatMap((g) => [
+      ...(list.others ?? []).flatMap((g) => [
         { kind: 'group' as const, key: g.key, label: g.label, count: g.rows.length },
         ...g.rows.map((row) => ({ kind: 'row' as const, row, other: true })),
       ]),

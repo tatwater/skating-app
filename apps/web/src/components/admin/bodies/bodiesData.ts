@@ -53,8 +53,11 @@ export interface BodiesListData {
   status: ListStatus;
   /** The lane's rows that answer the query, in the order to draw them. */
   rows: readonly BodyRow[];
-  /** A search's matches in other standings. */
-  others: readonly BodyGroup[];
+  /**
+   * A search's matches in other standings (board 5.3's "Dormant 4"), or `null` when no read gives
+   * them — then neither the group nor the search's tally is drawn, never an empty one or a zero.
+   */
+  others: readonly BodyGroup[] | null;
   /** How many the list holds after filters, when the read says. */
   total: Count | null;
   serves: ListServes;
@@ -67,7 +70,7 @@ export interface BodiesListData {
 export const UNREAD_LIST: BodiesListData = {
   status: 'unread',
   rows: [],
-  others: [],
+  others: null,
   total: null,
   serves: SERVES_NOTHING,
   facetCounts: null,

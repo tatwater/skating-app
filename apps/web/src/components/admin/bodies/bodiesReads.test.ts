@@ -178,7 +178,7 @@ describe('the list from its pages', () => {
       total: count(1412),
       facetCounts: { size: { 'under-10': 412, '1000-up': 187 } },
       states: ['NH', 'VT'],
-      others: [],
+      others: null,
     });
     expect(now.rows).toHaveLength(1);
     // The query moved on; its summary hasn't landed. The tabs and the controls hold; no count does.
