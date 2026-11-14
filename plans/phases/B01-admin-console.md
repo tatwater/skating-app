@@ -1574,6 +1574,41 @@ third to each continuing job: **progress** (does every pass erase, stamp or adva
 | `accessAlerts.ts` `loadLiveAlertsForBody`, `myAlertIdsForBody`, `create`, `vote`, `setOfficialImpl`, `expireLapsedAlerts` | `accessAlerts`, `parkingAreaBodies`, `putIns` | 64 / 500 / 512 / 200 | R | display; the lifecycle | caps bound counts, not bytes: every alert row is *R* only because the client-sent `idempotencyKey` is uncapped. Not erasure or record; **not changed** (capping the key — not user text — would bound them) |
 | `dataExport.ts` `collect` | 17 tables · by person, `take(5000)` each | 5,000 a table | R | **what the export holds** | pre-existing (D33/A03): one query over every table, so a heavy contributor's export can pass 16 MiB, and a 5,001st row is silently left out; D248 filters only complete rows (`erasedAt`, `origin`); **not changed** — it needs the export built in pages, its own change |
 
+**B01-1b: every chained job, sized (2026-11-14, after Greptile's fourth round on #110).** The budget made
+every read safe and opened a new way to fail: a job whose full page did not fit at its worst case
+threw `OverBudget`, and its chain stopped (Greptile: the verdict walk's page was sized for a row and
+its item's newest row, but every newest row also looks its item up, found or gone). Every job that
+charges the budget now does one of two things: **(a)** sizes its page with `sizePage` from a row's own
+read plus `work`, everything any branch may charge for it, with what follows the loop kept back; or
+**(b)** asks the budget for the next row's worst case before starting it, and saves its position when
+the budget can't cover it. Either way each row's work runs inside `ReadBudget.row(work)`, which throws on
+the first row whose branch charges more than declared, in any test that reaches that branch. A pass
+that makes no progress throws instead of rescheduling, and every pass runs in `traced`, which logs the
+position to re-run from (every job is idempotent from it) before Convex records the failure. Sizes
+below are at the 12 MiB budget; *R* 1 MiB, *V* 8 KiB, *C* 16 KiB, *F* a flag (*R*).
+
+| Job | Design | Page | One row's worst case (own read + work), every branch | Worst-case pass |
+| --- | --- | --- | --- | --- |
+| `contentRecord.backfillVerdicts` | a | 4 audit rows | R + newest row R + item R (found → hand-off; gone → continue) | 12 MiB |
+| `contentRecord.replayVerdictHistory` | a | ≤ 6 rows, finish kept back | R + stray lookup and delete 2V + ended verdict lookup and write 2V; finish: item R + standing verdict 2V + clock (R + 4F + 2V + R) | ≤ 12 MiB |
+| `authorDeletions.backfillFromAudit` | a | 6 audit rows | R + item R (`author_delete` rows; gone or live → continue) | 12 MiB |
+| `authorDeletions.stampWithdrawal` history | a | 5 rows, item read and stamp kept back | R + an undo's lookup R (restores) | ≤ 12 MiB |
+| `authorDeletions.stampWithdrawal` members | b | members until the budget ends | member R + stamp R | Post R + 5 members |
+| `authorDeletions.backfillCommentDeletions` | a | ≤ 200 comments | C (a match hands off, no more reads) | ≤ 3.2 MiB |
+| `authorDeletions.commentLastWord` | a | ≤ 11 rows, the stamp kept back | R | ≤ 12 MiB |
+| `erasure.eraseDue` | b | one item at a time while `ITEM_NEED` fits | head + hold + clock or eraser's fixed reads + one drained row (`ITEM_NEED`, ≤ 10 MiB for a Report); drains size themselves by the rest | ≤ 12 MiB |
+| `erasure.settlePhotos` Reports | a | 12 Reports | R | 12 MiB |
+| `erasure.settlePhotos` hazards + deletes | a then b | 10 hazards, one photo kept back; photos while one fits | R; a photo R + access check V + delete R | ≤ 12 MiB |
+| `erasure.backfillClocks` | a then b | 11 rows, one row's work kept back; withdrawn rows while their work fits | R; a withdrawn row: stamp R + hold (4F + 2V) + clock R | ≤ 12 MiB |
+| `erasure.dropErasedMember` | a (fixed) | the Post and ≤ 9 members | — | 11 MiB; more members than a Post can hold throws, traced |
+| `erasure.refreshMemberClocks` | b | members while one fits | member R + hold (2F + V) + clock R | Post R + its hold + 2 members |
+| `lib/contentVerdicts.endStanding` | — | 16 standing verdicts a read, until none | V (not budget-charged: a live writer's loop over rows the writers keep to one) | the writers' invariant |
+
+Each job has a test on its dearest page under Convex's real limits (`chains.test.ts`). **No lint
+holds this line.** A static check could insist page sizes go through `sizePage`, but the bug class is a
+`work` that understates a branch, and only running the branch shows that. `ReadBudget.row` is that
+check, at runtime, on every branch a test reaches.
+
 ### The B01-2 server register (owed to the server agent)
 
 Every seam request the B01-2 builders raised against `packages/convex` and `packages/core`, and
