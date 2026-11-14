@@ -205,6 +205,15 @@ describe('the audit feed', () => {
     expect(author?.actor).toBe('Rob Tremblay');
   });
 
+  it('carries what a person made the write through, and nothing on a row without it', () => {
+    const [scripted, plain] = feedFromActions([
+      row({ via: 'seed-destinations' } as Partial<ActionRow>),
+      row({ id: 'b' }),
+    ]);
+    expect(scripted?.via).toBe('seed-destinations');
+    expect(plain).not.toHaveProperty('via');
+  });
+
   it('names a skater saying “It’s open” on their own alert in full, and the erasure as the machine', () => {
     const [resolved, erased] = feedFromActions([
       row({

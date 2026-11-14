@@ -57,6 +57,25 @@ describe('HistoryPanelView', () => {
     expect(within(rowOf('Activated a body')).getByText('System')).toBeInTheDocument();
   });
 
+  it('says what a person made a write through: "Teagan Atwater via seed-destinations"', () => {
+    const [first, ...rest] = HISTORY_ROWS;
+    if (!first) throw new Error('no fixture row');
+    render(
+      <HistoryPanelView
+        rows={[{ ...first, via: 'seed-destinations' }, ...rest]}
+        now={BOARD_NOW_NH}
+        timeZone={NY}
+        onUndo={vi.fn()}
+      />,
+    );
+    const via = within(rowOf('Hid a report')).getByText('seed-destinations');
+    expect(via).toHaveAttribute('data-slot', 'history-via');
+    expect(via.className).toMatch(/family-mono/);
+    expect(via.parentElement).toHaveTextContent(/^Teagan Atwater via seed-destinations$/);
+    // Rows made in the console carry no marker.
+    expect(document.querySelectorAll('[data-slot="history-via"]')).toHaveLength(1);
+  });
+
   it('names a person with a blank display name by their handle, here and in "Undone"', () => {
     const blank = (a: (typeof HISTORY_ROWS)[number]) =>
       a.actor === null ? a : { ...a, actor: { ...a.actor, displayName: '  ' } };

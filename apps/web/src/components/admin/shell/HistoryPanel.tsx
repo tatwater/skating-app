@@ -47,14 +47,27 @@ const rowId = (id: string) => `history-${id}`;
 const nameOf = (actor: NonNullable<HistoryEntry['actor']>) =>
   actor.displayName.trim() || actor.username;
 
-/** Who took the action: the person's circle and name, or the machines. */
-function Who({ actor }: { actor: HistoryEntry['actor'] }) {
+/**
+ * Who took the action: the person's circle and name, or the machines. A write made through a script
+ * or agent says so after the name — "Teagan via seed-destinations", the name in the mono face (D256).
+ */
+function Who({ actor, via }: { actor: HistoryEntry['actor']; via?: string | undefined }) {
   if (actor === null) return <span data-slot="history-system">System</span>;
   const name = nameOf(actor);
   return (
     <span className="inline-flex items-center gap-(--space-1_5)">
       <Avatar name={name} size="sm" />
-      <span>{name}</span>
+      <span>
+        {name}
+        {via !== undefined ? (
+          <>
+            {' via '}
+            <span data-slot="history-via" className="font-(family-name:--family-mono) text-mono-sm">
+              {via}
+            </span>
+          </>
+        ) : null}
+      </span>
     </span>
   );
 }
@@ -137,7 +150,7 @@ export function HistoryPanelView({
                 data-state={row.undo.state}
                 className="outline-none focus-visible:shadow-focus"
                 when={historyWhen(row.createdAt, now, timeZone)}
-                who={<Who actor={row.actor} />}
+                who={<Who actor={row.actor} via={row.via} />}
                 action={wayBack(row)}
               >
                 {actionLabel(row.action, row.targetType)}

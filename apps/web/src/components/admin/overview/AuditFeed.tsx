@@ -27,6 +27,18 @@ const Cut = ({ children, className }: { children: ReactNode; className?: string 
   <span className={cn('block truncate', className)}>{children}</span>
 );
 
+/** What the person made the write through: " via seed-destinations", the name in the mono face. */
+function Via({ name }: { name: string }) {
+  return (
+    <>
+      {' via '}
+      <span data-slot="feed-via" className="font-(family-name:--family-mono) text-mono-sm">
+        {name}
+      </span>
+    </>
+  );
+}
+
 function columnsFor(now: number) {
   return helper.columns([
     helper.accessor('at', {
@@ -38,10 +50,14 @@ function columnsFor(now: number) {
       header: 'Actor',
       cell: (c) => {
         const actor = c.getValue();
+        const via = c.row.original.via;
         return actor === null ? (
           <Cut className="font-(family-name:--family-mono) text-mono-sm text-fg3">system</Cut>
         ) : (
-          <Cut>{actor}</Cut>
+          <Cut>
+            {actor}
+            {via !== undefined ? <Via name={via} /> : null}
+          </Cut>
         );
       },
       meta: { width: '5.625rem', skeleton: '3.5rem' },
