@@ -213,16 +213,99 @@ describe('the search', () => {
     expect(spy.mock.lastCall?.[0]).toMatchObject({ q: '', sort: { column: 'reports' } });
   });
 
-  it('lands a settled search on the place as it stands then, not where the typing began', async () => {
+  it('old typing never filters another lane: an empty search, typed, then another lane before the wait', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const spy = vi.fn();
     render(<Harness spy={spy} initial={queryOf({})} />);
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     await user.type(screen.getByRole('searchbox', { name: 'Find a body' }), 'mor');
-    // A row opened before the wait ran out stays open when the search lands.
-    await user.click(within(grid()).getByText('Mascoma Lake'));
+    // Both lanes have an empty search, so the committed value never changes.
+    await user.click(screen.getByRole('button', { name: /^Dormant · moderator/ }));
+    act(() => vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS * 2));
+    expect(spy.mock.calls.every(([next]) => next.q === '')).toBe(true);
+    expect(spy.mock.lastCall?.[0].lane.id).not.toBe('active');
+    expect(screen.getByRole('searchbox', { name: 'Find a body' })).toHaveValue('');
+  });
+
+  /** Every action that moves the place the typing was in: pending typing is dropped, never sent. */
+  const CONTEXT_CHANGES: [
+    string,
+    {
+      initial: BodiesQuery;
+      list?: BodiesListData;
+      act: (user: ReturnType<typeof userEvent.setup>) => Promise<void>;
+    },
+  ][] = [
+    [
+      'another lane',
+      {
+        initial: queryOf({}),
+        act: (user) => user.click(screen.getByRole('button', { name: /^Dormant · moderator/ })),
+      },
+    ],
+    [
+      'a state tab',
+      {
+        initial: queryOf({}),
+        act: (user) => user.click(screen.getByRole('button', { name: 'VT' })),
+      },
+    ],
+    [
+      'a facet removed',
+      {
+        initial: queryOf({ size: '1000-up' }),
+        list: LIST_BIG,
+        act: (user) =>
+          user.click(screen.getByRole('button', { name: 'Remove Size: 1,000 ac and up' })),
+      },
+    ],
+    [
+      'a body opened in the preview',
+      {
+        initial: queryOf({}),
+        act: (user) => user.click(within(grid()).getByText('Mascoma Lake')),
+      },
+    ],
+  ];
+
+  it.each(CONTEXT_CHANGES)(
+    'drops pending typing on %s: no late search, the field says what the URL does',
+    async (_name, c) => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const spy = vi.fn();
+      render(<Harness spy={spy} initial={c.initial} {...(c.list ? { list: c.list } : {})} />);
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      await user.type(screen.getByRole('searchbox', { name: 'Find a body' }), 'mor');
+      await c.act(user);
+      const calls = spy.mock.calls.length;
+      act(() => vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS * 2));
+      // Nothing lands after the move, and nothing the move sent carried the typing.
+      expect(spy.mock.calls.length).toBe(calls);
+      expect(spy.mock.calls.every(([next]) => next.q === '')).toBe(true);
+      expect(screen.getByRole('searchbox', { name: 'Find a body' })).toHaveValue('');
+    },
+  );
+
+  it('a pending search fires nothing once the page is gone', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const spy = vi.fn();
+    const { unmount } = render(<Harness spy={spy} initial={queryOf({})} />);
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    await user.type(screen.getByRole('searchbox', { name: 'Find a body' }), 'mor');
+    unmount();
+    act(() => vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS * 2));
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('a heading sorted while typing keeps the typing: the sort is the search’s, not its place', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const spy = vi.fn();
+    render(<Harness spy={spy} initial={queryOf({})} />);
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    await user.type(screen.getByRole('searchbox', { name: 'Find a body' }), 'mor');
+    await user.click(screen.getByRole('button', { name: 'Reports' }));
     act(() => vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS));
-    expect(spy.mock.lastCall?.[0]).toMatchObject({ q: 'mor', bodyId: 'mascoma-lake' });
+    expect(spy.mock.lastCall?.[0]).toMatchObject({ q: 'mor' });
   });
 
   it('drops what was being typed when the place moves on its own', async () => {

@@ -252,6 +252,7 @@ export function BodiesView({
             filterOpen={filterOpen}
             onFilterOpenChange={setFilterOpen}
             searchRef={search}
+            place={searchPlace(query)}
           />
         </div>
         <div className="min-h-0 flex-1 border-0 border-t border-solid border-line flex flex-col">
@@ -297,4 +298,12 @@ export function BodiesView({
       </section>
     </div>
   );
+}
+
+/**
+ * Where a search is typed: the lane, the state tab, the facets and the open body. The order is the
+ * search's own (a search ranks by match), so it isn't part of the place.
+ */
+export function searchPlace(query: BodiesQuery): string {
+  return JSON.stringify([query.lane.id, query.state, query.facets, query.bodyId]);
 }

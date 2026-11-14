@@ -50,6 +50,11 @@ type ListToolsProps = {
   filterOpen: boolean;
   onFilterOpenChange: (open: boolean) => void;
   searchRef?: Ref<HTMLInputElement>;
+  /**
+   * The place the search is typed in — everything about the list but the search and its order.
+   * Typing pending when it changes is dropped. Default: one place.
+   */
+  place?: string;
 };
 
 export function ListTools({
@@ -65,6 +70,7 @@ export function ListTools({
   filterOpen,
   onFilterOpenChange,
   searchRef,
+  place = '',
 }: ListToolsProps) {
   const applied = appliedOptions(facets);
   const states =
@@ -89,6 +95,7 @@ export function ListTools({
       <div data-slot="bodies-search" className="flex shrink-0 flex-col px-gutter pt-(--space-2)">
         <SearchField
           q={q}
+          place={place}
           onSearch={onSearch}
           disabled={!list.serves.search}
           tally={isSearch(q) ? searchTally(list, lane.word) : null}
@@ -183,12 +190,15 @@ export function searchTally(list: BodiesListData, laneWord: string): string | nu
 
 function SearchField({
   q,
+  place,
   onSearch,
   disabled,
   tally,
   inputRef,
 }: {
   q: string;
+  /** Where the search is typed: typing belongs to it, and is dropped when it moves. */
+  place: string;
   onSearch: (q: string) => void;
   disabled: boolean;
   tally: string | null;
@@ -197,19 +207,24 @@ function SearchField({
   const [text, setText] = useState(q);
   const sent = useRef(q);
   const timer = useRef<number | undefined>(undefined);
-  // The latest `onSearch`: a search that lands after the wait goes to the place as it stands then
-  // (a row opened, a lane picked meanwhile), never the place the first key was typed in.
-  const latest = useRef(onSearch);
-  latest.current = onSearch;
-  // The URL moved on its own (a lane change, the back button): the field follows it.
+  /*
+   * **Typing belongs to the place it was typed in.** Pending typing is dropped whenever the place
+   * moves — another lane, a state tab, a facet, a body opened, the back button — whether or not the
+   * search itself changed (two lanes can both have an empty one), and the field shows what the URL
+   * says. One rule, checked twice: the place moving resets the field, and a wait that ends after
+   * the place moved sends nothing.
+   */
+  const latest = useRef({ onSearch, place });
+  latest.current = { onSearch, place };
+  const typedIn = useRef(place);
   useEffect(() => {
-    if (q !== sent.current) {
-      // What was being typed is dropped with the field's words, never sent after them.
+    if (q !== sent.current || place !== typedIn.current) {
       window.clearTimeout(timer.current);
       sent.current = q;
+      typedIn.current = place;
       setText(q);
     }
-  }, [q]);
+  }, [q, place]);
   useEffect(() => () => window.clearTimeout(timer.current), []);
   return (
     <InputGroup className="h-(--space-8) text-body">
@@ -227,9 +242,11 @@ function SearchField({
           const next = event.currentTarget.value;
           setText(next);
           window.clearTimeout(timer.current);
+          const at = latest.current.place;
           timer.current = window.setTimeout(() => {
+            if (latest.current.place !== at) return;
             sent.current = next.trim();
-            latest.current(next.trim());
+            latest.current.onSearch(next.trim());
           }, SEARCH_DEBOUNCE_MS);
         }}
         onKeyDown={(event) => {
