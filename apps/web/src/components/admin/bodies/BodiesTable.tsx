@@ -44,6 +44,7 @@ import {
 } from './bodiesModel';
 import { isSearch } from './bodiesSearch';
 import { type BodyLane, laneStanding } from './bodyLanes';
+import { spacedRows, withPinned } from './virtualRows';
 
 /**
  * The library's list (boards 5.1–5.3, middle): a real table over the lane's rows — TanStack Table
@@ -274,14 +275,11 @@ export function BodiesTable({
       return e === undefined ? i : e.kind === 'row' ? e.row.id : `group-${e.key}`;
     },
     overscan: 12,
-    // The cursor's row stays rendered, so `aria-activedescendant` always names an element.
-    rangeExtractor: (range) => {
-      const at = entries.findIndex((e) => e.kind === 'row' && e.row.id === cursor);
-      const out: number[] = [];
-      for (let i = range.startIndex; i <= range.endIndex; i++) out.push(i);
-      if (at !== -1 && !out.includes(at)) out.push(at);
-      return out.sort((a, b) => a - b);
-    },
+    // The cursor's row stays rendered, so `aria-activedescendant` always names an element and
+    // focus isn't lost when it scrolls out; `spacedRows` keeps the rows between it and the visible
+    // run in their room.
+    rangeExtractor: (range) =>
+      withPinned(range, [entries.findIndex((e) => e.kind === 'row' && e.row.id === cursor)]),
   });
 
   // Come back where you were: the remembered scroll once rows are in, else the open row in view.
@@ -423,9 +421,7 @@ export function BodiesTable({
     );
   };
 
-  const items = virtual ? virtualizer.getVirtualItems() : [];
-  const padTop = items[0]?.start ?? 0;
-  const padBottom = virtual ? virtualizer.getTotalSize() - (items.at(-1)?.end ?? 0) : 0;
+  const laid = virtual ? spacedRows(virtualizer.getVirtualItems(), virtualizer.getTotalSize()) : [];
   const loading = status === 'loading';
   const rowsTotal = rowEntries.length;
 
@@ -498,21 +494,24 @@ export function BodiesTable({
                   </TableRow>
                 ))
               : virtual
-                ? [
-                    padTop > 0 && (
-                      <tr key="pad-top" data-slot="bodies-pad" style={{ height: padTop }} />
-                    ),
-                    ...items.map((item) =>
+                ? laid.map((part) =>
+                    part.kind === 'pad' ? (
+                      // A spacer for the rows not rendered: room, not a row of the grid.
+                      // biome-ignore lint/a11y/noAriaHiddenOnFocusable: an empty spacer row, no tabIndex, never focused
+                      <tr
+                        key={part.key}
+                        aria-hidden="true"
+                        data-slot="bodies-pad"
+                        style={{ height: part.height }}
+                      />
+                    ) : (
                       renderEntry(
-                        entries[item.index] as Entry,
-                        item.index,
+                        entries[part.item.index] as Entry,
+                        part.item.index,
                         virtualizer.measureElement,
-                      ),
+                      )
                     ),
-                    padBottom > 0 && (
-                      <tr key="pad-bottom" data-slot="bodies-pad" style={{ height: padBottom }} />
-                    ),
-                  ]
+                  )
                 : entries.map((entry, i) => renderEntry(entry, i))}
           </tbody>
         </Table>
