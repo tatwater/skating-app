@@ -518,6 +518,26 @@ export async function noteAuditedAction(
   }
 }
 
+/**
+ * Stamp *Changed* on a body's rows when `at` is later than what they hold — the audit-log backfill's
+ * write. *Changed* is no facet, so no count moves.
+ */
+export async function stampChanged(
+  ctx: MutationCtx,
+  waterBodyId: Id<'waterBodies'>,
+  at: number,
+): Promise<void> {
+  const rows = await ctx.db
+    .query('bodyLibraryRows')
+    .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
+    .take(MAX_SCOPES);
+  const keys = unknownLastKeys(at);
+  for (const row of rows) {
+    if (row.changedAt !== undefined && row.changedAt >= at) continue;
+    await ctx.db.patch(row._id, { changedAt: at, changedAsc: keys.asc, changedDesc: keys.desc });
+  }
+}
+
 // ── The queue: the machine's bulk writes ─────────────────────────────────────────────────────
 
 /** Queue bodies for a refresh by the minute cron: one row each, whatever the number of writes. */
