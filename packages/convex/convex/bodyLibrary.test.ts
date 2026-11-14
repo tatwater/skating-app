@@ -11,6 +11,7 @@ import type { Polygon } from 'geojson';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
+import { cleanFacets, listQueryOf, scopeOf, searchOf } from './bodies';
 import { parkedRows, queueCatalogRefs, RESOLVE_BATCH } from './bodyLibrary';
 import {
   drainLibraryQueue,
@@ -1707,6 +1708,118 @@ describe('Changed is never lost', () => {
         }
       }),
       { numRuns: 25 },
+    );
+  });
+});
+
+describe('the list’s arguments, normalized once at the edge', () => {
+  test('facets: repeated, unknown, empty and oversized input each come to one canonical selection', () => {
+    expect(cleanFacets({ size: ['1000-up', '10-100', '1000-up'] })).toEqual({
+      size: ['10-100', '1000-up'],
+    });
+    expect(cleanFacets({ size: ['huge'], class: [] })).toEqual({});
+    expect(cleanFacets({ class: ['Bay', 'bay'] })).toEqual({ class: ['bay'] });
+    const flood = [...Array.from({ length: 40 }, () => 'nope'), 'bay'];
+    // Read from the first 32 raw entries only: an option past them is not reached.
+    expect(cleanFacets({ class: flood })).toEqual({});
+    expect(cleanFacets(undefined)).toEqual({});
+  });
+  test('state: any case, else All; search: trimmed, bounded, none under two characters', () => {
+    expect(scopeOf(' vt ')).toBe('VT');
+    expect(scopeOf('Vermont')).toBe('*');
+    expect(scopeOf('')).toBe('*');
+    expect(scopeOf(undefined)).toBe('*');
+    expect(searchOf('  lake  ')).toBe('lake');
+    expect(searchOf(' l ')).toBe('');
+    expect(searchOf('x'.repeat(500))).toHaveLength(100);
+  });
+  test('the page and its counts read one query', () => {
+    const q = listQueryOf({
+      state: 'nh',
+      q: '  pond ',
+      facets: { size: ['under-10', 'under-10'] },
+    });
+    expect(q).toMatchObject({ scope: 'NH', q: 'pond', selection: { size: ['under-10'] } });
+    expect(Number.isFinite(listQueryOf({ now: Number.NaN }).now)).toBe(true);
+  });
+  test('an oversized first page is held to the library’s most', async () => {
+    const t = harness();
+    const { as } = await seedUser(t);
+    await seedBody(t, { name: 'One' });
+    await backfill(t);
+    const res = await as.query(api.bodies.listPage, {
+      lane: 'active',
+      paginationOpts: { numItems: 1e9, cursor: null },
+    });
+    expect(res.page).toHaveLength(1);
+  });
+
+  test('(property) with at most one facet applied, the summary’s total is the rows the pages yield', async () => {
+    const body = fc.record({
+      type: fc.constantFrom('lakePond', 'bay', 'reservoir'),
+      acres: fc.option(fc.constantFrom(4, 40, 400, 4_000), { nil: undefined }),
+      states: fc.subarray(['VT', 'NH']),
+      boosted: fc.boolean(),
+    });
+    const facetPick = fc.oneof(
+      fc.constant({}),
+      fc
+        .tuple(
+          fc.constantFrom('class', 'size', 'outline', 'putins', 'reports', 'complete'),
+          fc.array(
+            fc.constantFrom(
+              'lakePond',
+              'bay',
+              'under-10',
+              '1000-up',
+              'catalog',
+              'none',
+              'never',
+              'under-8',
+              'junk',
+            ),
+            { maxLength: 6 },
+          ),
+        )
+        .map(([facet, options]) => ({ [facet]: options })),
+    );
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(body, { maxLength: 7 }),
+        facetPick,
+        fc.constantFrom(undefined, 'vt', 'NH'),
+        async (bodies, facets, state) => {
+          const t = harness();
+          const { as } = await seedUser(t);
+          let n = 0;
+          for (const b of bodies) {
+            await seedBody(t, {
+              name: `Body ${n++}`,
+              type: b.type as 'lakePond',
+              states: b.states,
+              ...(b.acres !== undefined ? { surfaceAreaSqM: b.acres * ACRE } : {}),
+              ...(b.boosted ? { curatedBoost: 0.2 } : {}),
+            });
+          }
+          await backfill(t);
+          const args = { lane: 'active' as const, facets, ...(state ? { state } : {}) };
+          const summary = await as.query(api.bodies.listSummary, args);
+          let rows = 0;
+          let cursor: string | null = null;
+          for (let i = 0; i < 20; i++) {
+            const res: { page: unknown[]; isDone: boolean; continueCursor: string } =
+              await as.query(api.bodies.listPage, {
+                ...args,
+                paginationOpts: { numItems: 3, cursor },
+              });
+            rows += res.page.length;
+            if (res.isDone) break;
+            cursor = res.continueCursor;
+          }
+          expect(summary.total).toEqual({ count: rows, capped: false });
+        },
+      ),
+      { numRuns: 15 },
     );
   });
 });

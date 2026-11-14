@@ -93,27 +93,52 @@ export const SEARCH_MIN_CHARS = 2;
 /** The longest search read; the rest is dropped. */
 const SEARCH_MAX_CHARS = 100;
 
-const searchOf = (q: string | undefined) => {
-  const t = (q ?? '').trim().slice(0, SEARCH_MAX_CHARS);
+/** The most raw options a facet's argument is read for (its known options are far fewer). */
+const MAX_FACET_INPUT = 32;
+
+/** The search: trimmed, at most {@link SEARCH_MAX_CHARS}, and none under {@link SEARCH_MIN_CHARS}. */
+export const searchOf = (q: string | undefined) => {
+  const t = (q ?? '').trim().slice(0, SEARCH_MAX_CHARS).trim();
   return t.length >= SEARCH_MIN_CHARS ? t : '';
 };
 
-const scopeOf = (state: string | undefined) => {
+/** The state tab: a two-letter code in any case, else All. */
+export const scopeOf = (state: string | undefined) => {
   const code = (state ?? '').trim().toUpperCase();
   return /^[A-Z]{2}$/.test(code) ? code : SCOPE_ALL;
 };
 
-/** The selection with unknown options dropped, so a hand-edited link narrows nothing it can't. */
-function cleanFacets(facets: LibraryFacetSelection | undefined): LibraryFacetSelection {
+/**
+ * The facets as one canonical selection: each facet's known options only, each once, in the menu's
+ * order, read from at most {@link MAX_FACET_INPUT} raw entries — so a repeated, unknown, empty or
+ * oversized argument narrows nothing it can't, and the filter and the counts see the same selection.
+ */
+export function cleanFacets(facets: LibraryFacetSelection | undefined): LibraryFacetSelection {
   const out: LibraryFacetSelection = {};
   for (const facet of LIBRARY_FACET_IDS) {
-    // Known options only, each once: a repeated option would count its stored total twice.
-    const known = [...new Set(facets?.[facet] ?? [])].filter((o) =>
-      (LIBRARY_FACETS[facet] as readonly string[]).includes(o),
-    );
+    const asked = new Set((facets?.[facet] ?? []).slice(0, MAX_FACET_INPUT));
+    const known = (LIBRARY_FACETS[facet] as readonly string[]).filter((o) => asked.has(o));
     if (known.length > 0) out[facet] = known;
   }
   return out;
+}
+
+/**
+ * **A list query, normalized once at the edge** — the one canonical form `listPage` and
+ * `listSummary` both read, so a page and its counts can never answer two different questions.
+ */
+export function listQueryOf(args: {
+  state?: string | undefined;
+  q?: string | undefined;
+  facets?: LibraryFacetSelection | undefined;
+  now?: number | undefined;
+}) {
+  return {
+    now: callerNow(args.now, Date.now(), CLOCK_SLACK_MS),
+    q: searchOf(args.q),
+    scope: scopeOf(args.state),
+    selection: cleanFacets(args.facets),
+  };
 }
 
 // ── A row as the page draws it ───────────────────────────────────────────────────────────────
@@ -250,11 +275,8 @@ export const listPage = query({
   },
   handler: async (ctx, args) => {
     await requireCapability(ctx, 'body.read');
-    const now = callerNow(args.now, Date.now(), CLOCK_SLACK_MS);
+    const { now, q, scope, selection } = listQueryOf(args);
     const season = currentSeason(now);
-    const q = searchOf(args.q);
-    const scope = scopeOf(args.state);
-    const selection = cleanFacets(args.facets);
     const opts = {
       ...args.paginationOpts,
       numItems: clampPageSize(args.paginationOpts.numItems),
@@ -341,10 +363,7 @@ export const listSummary = query({
   args: listArgs,
   handler: async (ctx, args) => {
     await requireCapability(ctx, 'body.read');
-    const now = callerNow(args.now, Date.now(), CLOCK_SLACK_MS);
-    const q = searchOf(args.q);
-    const scope = scopeOf(args.state);
-    const selection = cleanFacets(args.facets);
+    const { now, q, scope, selection } = listQueryOf(args);
     const lane = args.lane === 'changed' ? null : args.lane;
 
     const laneCounts: Record<string, Count> = {};

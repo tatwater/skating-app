@@ -500,6 +500,24 @@ describe('bays, landmarks and history', () => {
     );
   });
 
+  test('a limit that is missing, zero, huge or not a number is held to the read’s bounds', async () => {
+    const t = harness();
+    const { mod, id } = await scene(t);
+    for (const [limit, rows] of [
+      [undefined, 5],
+      [0, 1],
+      [1e9, 5],
+      [Number.NaN, 5],
+      [2.7, 2],
+    ] as const) {
+      const res = await mod.as.query(api.bodyConsole.history, {
+        waterBodyId: id,
+        ...(limit !== undefined ? { limit } : {}),
+      });
+      expect(res.entries).toHaveLength(rows);
+    }
+  });
+
   test('landmarks say who placed them; a proposal says who asked', async () => {
     const t = harness();
     const { mod, id, landmarks } = await scene(t);
@@ -593,6 +611,22 @@ describe('dailyHazards', () => {
     expect(day(1)).toMatchObject({ count: 1, unknown: 2 });
     expect(day(5)).toMatchObject({ count: 1, unknown: 2 });
     expect(r.days.every((d) => d.at <= NOW)).toBe(true);
+  });
+
+  test('a season or clock out of range reads as this season, at the server’s day', async () => {
+    const t = harness();
+    const { as } = await seedUser(t);
+    const id = await seedBody(t, { name: 'Ranged' });
+    for (const season of [Number.NaN, 1e9, 2026.5, -4]) {
+      const r = await as.query(api.bodyConsole.dailyHazards, {
+        waterBodyId: id,
+        season,
+        now: Number.NaN,
+      });
+      expect(r.season).toBe(2026);
+    }
+    const past = await as.query(api.bodyConsole.dailyHazards, { waterBodyId: id, season: 2020 });
+    expect(past.season).toBe(2020);
   });
 
   test('a vote cast today changes no day of a past winter', async () => {

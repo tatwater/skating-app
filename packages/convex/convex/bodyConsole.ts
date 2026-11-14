@@ -17,10 +17,12 @@
 
 import {
   archiveSeasonLabel,
+  callerNow,
   currentSeason,
   distanceToPolygonMeters,
   MAX_LANDMARKS_PER_BODY,
   polygonBBox,
+  resolveSeason,
   type Season,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
@@ -333,7 +335,10 @@ export const history = query({
   },
   handler: async (ctx, { waterBodyId, action, limit }) => {
     const viewer = await requireCapability(ctx, 'audit.read');
-    const n = Math.min(HISTORY_MAX, Math.max(1, Math.floor(limit ?? 50)));
+    // Held to one row and the most; a missing or non-finite limit is the default.
+    const n = Number.isFinite(limit)
+      ? Math.min(HISTORY_MAX, Math.max(1, Math.floor(limit as number)))
+      : 50;
     const { targets, truncated } = await historyTargets(ctx, waterBodyId);
     let budget = HISTORY_ROW_BUDGET;
     let capped = truncated;
@@ -510,8 +515,12 @@ export const dailyHazards = query({
   },
   handler: async (ctx, args) => {
     await requireCapability(ctx, 'body.read');
-    const now = Math.min(args.now ?? Date.now(), Date.now() + DAY_MS);
-    const season = args.season ?? currentSeason(now);
+    // The caller's day, held near the server's; a season outside the browsable range is this one.
+    const now = callerNow(args.now, Date.now(), DAY_MS);
+    const season = resolveSeason(
+      args.season !== undefined && Number.isInteger(args.season) ? args.season : undefined,
+      currentSeason(now),
+    );
     const window = winterWindow(season);
     const hazards = await ctx.db
       .query('hazards')
