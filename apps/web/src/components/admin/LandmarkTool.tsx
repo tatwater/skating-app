@@ -126,7 +126,7 @@ export function LandmarkTool({
   const proposalQueue = useQuery(api.corpusRequests.openLandmarkRequestsForBody, { waterBodyId });
   const proposals = proposalQueue?.proposals;
   // What the community's emails name on this lake that no landmark took (the Place names queue).
-  const corpusNames = useQuery(api.corpusPlaceNames.openForBody, { waterBodyId });
+  const corpusNames = useQuery(api.corpusPlaceNames.openForBody, { waterBodyId })?.names;
   const fileAsSpelling = useMutation(api.corpusPlaceNames.fileAsSpelling);
 
   const [filter, setFilter] = useState('');

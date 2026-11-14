@@ -954,7 +954,9 @@ describe('name_bay — the sub-area queue', () => {
     await expect(
       one.as.query(api.corpusRequests.openBayRequestsForBody, { waterBodyId: id }),
     ).rejects.toThrow();
-    const rows = await mod.as.query(api.corpusRequests.openBayRequestsForBody, { waterBodyId: id });
+    const rows = (
+      await mod.as.query(api.corpusRequests.openBayRequestsForBody, { waterBodyId: id })
+    ).bays;
     expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({
       requestId: first,
@@ -1095,7 +1097,9 @@ describe('name_bay — the sub-area queue', () => {
         createdAt: Date.now(),
       }),
     );
-    const rows = await mod.as.query(api.corpusRequests.openBayRequestsForBody, { waterBodyId: id });
+    const rows = (
+      await mod.as.query(api.corpusRequests.openBayRequestsForBody, { waterBodyId: id })
+    ).bays;
     expect(rows[0]?.drawnSubAreaId).toBeDefined();
     await mod.as.mutation(api.corpusRequests.approve, { requestId });
     expect((await t.run((ctx) => ctx.db.get(requestId)))?.status).toBe('approved');
@@ -1113,7 +1117,8 @@ describe('name_bay — the sub-area queue', () => {
       waterBodyId: id,
       name: 'Corner Bay',
     });
-    let rows = await mod.as.query(api.corpusRequests.openBayRequestsForBody, { waterBodyId: id });
+    let rows = (await mod.as.query(api.corpusRequests.openBayRequestsForBody, { waterBodyId: id }))
+      .bays;
     expect(rows[0]?.coord).toBeUndefined();
     // A later ask for the same bay with a real point supplies one.
     const two = await seedUser(t, 'two');
@@ -1123,7 +1128,8 @@ describe('name_bay — the sub-area queue', () => {
       waterBodyId: id,
       name: 'corner bay',
     });
-    rows = await mod.as.query(api.corpusRequests.openBayRequestsForBody, { waterBodyId: id });
+    rows = (await mod.as.query(api.corpusRequests.openBayRequestsForBody, { waterBodyId: id }))
+      .bays;
     expect(rows[0]?.coord).toEqual(NOTCH);
     expect(rows[0]?.askers).toBe(2);
   });

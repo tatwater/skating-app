@@ -69,6 +69,7 @@ import {
   requireProfile,
 } from './lib/auth';
 import { publicAuthor } from './lib/authorView';
+import { resolveSurvivor } from './lib/bodies';
 import { syncWaterBodyCells } from './lib/cellIndex';
 import { refreshEraseClock } from './lib/eraseClock';
 import { liveLandmarksForBody } from './lib/landmarkRows';
@@ -829,19 +830,24 @@ export const closeSiblings = internalMutation({
  * Moderator: the lake editor's queue — this body's open bay asks, one row per bay (the asks for
  * one bay grouped by name key, oldest first), with what the chord tool needs to start: the name,
  * the aliases the seed knows, the point to fly to, the notes, how many asked, and whether a bay by
- * that name is already drawn (then the row offers "approve" rather than "draw").
+ * that name is already drawn (then the row offers "approve" rather than "draw"). `more` when the
+ * lake has more open bay asks than the read takes.
  */
 export const openBayRequestsForBody = query({
   args: { waterBodyId: v.id('waterBodies') },
-  handler: async (ctx, { waterBodyId }) => {
+  handler: async (ctx, { waterBodyId: requested }) => {
     await requireCapability(ctx, 'body.read');
-    const rows = await ctx.db
+    // A merged-away id reads its survivor's (a merge moves the asks).
+    const body = await resolveSurvivor(ctx, requested);
+    if (body === null) return { bays: [], more: false };
+    const waterBodyId = body._id;
+    const read = await ctx.db
       .query('waterBodyRequests')
       .withIndex('by_water_body', (q) =>
         q.eq('waterBodyId', waterBodyId).eq('kind', 'name_bay').eq('status', 'open'),
       )
-      .take(QUEUE_CAP);
-    const body = await ctx.db.get(waterBodyId);
+      .take(QUEUE_CAP + 1);
+    const rows = read.slice(0, QUEUE_CAP);
     const byKey = new Map<
       string,
       {
@@ -860,7 +866,7 @@ export const openBayRequestsForBody = query({
       // A skater's ask from the drawer carries the lake's own point, not the bay's: flying there
       // would land the moderator somewhere on the lake, not at the bay. Only a real point is kept
       // (the seed's GNIS/OSM point), and the first real one in the group wins.
-      const pointed = body ? !isLakePoint(r.coord, body) : true;
+      const pointed = !isLakePoint(r.coord, body);
       const entry = byKey.get(key);
       if (entry) {
         entry.askers += 1;
@@ -886,7 +892,8 @@ export const openBayRequestsForBody = query({
       const drawn = matchBay(bays, [entry.name, ...entry.aliases]);
       out.push({ ...entry, ...(drawn ? { drawnSubAreaId: drawn._id } : {}) });
     }
-    return out;
+    // `more`: the lake has more open bay asks than the read takes — the list is not every one.
+    return { bays: out, more: read.length > QUEUE_CAP };
   },
 });
 

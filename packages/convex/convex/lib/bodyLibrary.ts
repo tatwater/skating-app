@@ -140,9 +140,9 @@ export async function openAsksFor(
       .withIndex('by_water_body', (q) =>
         q.eq('waterBodyId', waterBodyId).eq('kind', kind).eq('status', 'open'),
       )
-      .take(ASK_CAP);
-    if (rows.length >= ASK_CAP) capped = true;
-    requests += rows.length;
+      .take(ASK_CAP + 1);
+    if (rows.length > ASK_CAP) capped = true;
+    requests += Math.min(rows.length, ASK_CAP);
   }
   let flags = 0;
   for (const status of OPEN_FLAG_STATUSES) {
@@ -151,17 +151,22 @@ export async function openAsksFor(
       .withIndex('by_target_status_reason', (q) =>
         q.eq('targetType', 'waterbody').eq('targetId', waterBodyId).eq('status', status),
       )
-      .take(ASK_CAP);
-    if (rows.length >= ASK_CAP) capped = true;
-    flags += rows.length;
+      .take(ASK_CAP + 1);
+    if (rows.length > ASK_CAP) capped = true;
+    flags += Math.min(rows.length, ASK_CAP);
   }
   const names = await ctx.db
     .query('corpusPlaceNames')
     .withIndex('by_water_body_status', (q) => q.eq('waterBodyId', waterBodyId).eq('status', 'open'))
-    .take(ASK_CAP);
-  if (names.length >= ASK_CAP) capped = true;
-  // `capped`: some kind reached its cap, so `count` is a floor, never presented as whole.
-  return { count: requests + flags + names.length, waiting: requests + flags > 0, capped };
+    .take(ASK_CAP + 1);
+  if (names.length > ASK_CAP) capped = true;
+  // `capped`: some source holds more than its cap (each read probes one past it, so exactly the cap
+  // is whole), and `count` is a floor, never presented as whole.
+  return {
+    count: requests + flags + Math.min(names.length, ASK_CAP),
+    waiting: requests + flags > 0,
+    capped,
+  };
 }
 
 /**
@@ -183,11 +188,14 @@ export async function reportFactsFor(
 }> {
   const season = currentSeason(now);
   const span = seasonRecordSpan(season, now);
-  const newest = await ctx.db
+  // One past the scan, so a body with exactly that many reports is not read as capped.
+  const read = await ctx.db
     .query('reports')
     .withIndex('by_water_body_skate_end_time', (q) => q.eq('waterBodyId', waterBodyId))
     .order('desc')
-    .take(REPORT_SCAN);
+    .take(REPORT_SCAN + 1);
+  const more = read.length > REPORT_SCAN;
+  const newest = read.slice(0, REPORT_SCAN);
   const visible = newest.filter((r) => r.moderationStatus === 'visible');
   const reports =
     span === null
@@ -195,12 +203,9 @@ export async function reportFactsFor(
       : visible.filter((r) => r.skateEndTime >= span.from && r.skateEndTime < span.to).length;
   const oldest = newest[newest.length - 1];
   const reportsCapped =
-    span !== null &&
-    newest.length === REPORT_SCAN &&
-    oldest !== undefined &&
-    oldest.skateEndTime >= span.from;
+    span !== null && more && oldest !== undefined && oldest.skateEndTime >= span.from;
   let everReported = visible.length > 0;
-  if (!everReported && oldest !== undefined && newest.length === REPORT_SCAN) {
+  if (!everReported && oldest !== undefined && more) {
     // Every newest report is hidden: an older visible one still counts. Read one bounded window
     // further back; a body with more hidden reports than that reads as not reported (the facet's
     // "never reported" is about visible reports, and this is the rare edge of an edge).

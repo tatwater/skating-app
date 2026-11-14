@@ -17,6 +17,7 @@ import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, mutation, type QueryCtx, query } from './_generated/server';
 import { writeAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
+import { resolveSurvivor } from './lib/bodies';
 import { queueLibraryRefresh, refreshBodyLibrary } from './lib/bodyLibrary';
 import {
   assertNotABayName,
@@ -214,8 +215,8 @@ export const listQueue = query({
         q.eq('status', status ?? 'open').gte('messages', minMessages ?? 0),
       )
       .order('desc')
-      .take(QUEUE_CAP);
-    const out = rows.map((row) => ({
+      .take(QUEUE_CAP + 1);
+    const out = rows.slice(0, QUEUE_CAP).map((row) => ({
       _id: row._id,
       name: row.name,
       aliases: row.aliases,
@@ -236,22 +237,28 @@ export const listQueue = query({
       ...(row.dismissReason !== undefined ? { dismissReason: row.dismissReason } : {}),
       ...(row.dismissNote !== undefined ? { dismissNote: row.dismissNote } : {}),
     }));
-    return { rows: out, capped: rows.length === QUEUE_CAP };
+    // One past the cap, so exactly the cap is the whole queue.
+    return { rows: out, capped: rows.length > QUEUE_CAP };
   },
 });
 
-/** Moderator: the open names on one lake — the lake editor's Landmarks card places them. */
+/**
+ * Moderator: the open names on one lake — the lake editor's Landmarks card places them. `more` when
+ * the lake has more open names than the read takes (the list is then not every name). A merged-away
+ * id reads its survivor's.
+ */
 export const openForBody = query({
   args: { waterBodyId: v.id('waterBodies') },
-  handler: async (ctx, { waterBodyId }) => {
+  handler: async (ctx, { waterBodyId: requested }) => {
     await requireCapability(ctx, 'body.read');
+    const body = await resolveSurvivor(ctx, requested);
+    if (body === null) return { names: [], more: false };
     const rows = await ctx.db
       .query('corpusPlaceNames')
-      .withIndex('by_water_body_status', (q) =>
-        q.eq('waterBodyId', waterBodyId).eq('status', 'open'),
-      )
-      .take(QUEUE_CAP);
-    return rows
+      .withIndex('by_water_body_status', (q) => q.eq('waterBodyId', body._id).eq('status', 'open'))
+      .take(QUEUE_CAP + 1);
+    const names = rows
+      .slice(0, QUEUE_CAP)
       .sort((a, b) => b.messages - a.messages || a.name.localeCompare(b.name))
       .map((row) => ({
         _id: row._id,
@@ -261,6 +268,7 @@ export const openForBody = query({
         skatedMessages: row.skatedMessages,
         ...(row.alreadyNamed ? { alreadyNamed: true } : {}),
       }));
+    return { names, more: rows.length > QUEUE_CAP };
   },
 });
 
