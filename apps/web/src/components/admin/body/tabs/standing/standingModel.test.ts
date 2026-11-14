@@ -118,7 +118,9 @@ describe('retentionModel', () => {
   it('says nothing holds only when every reason was read', () => {
     const none = retentionModel(NONE, BODY_NOW);
     expect(none.lanes).toEqual([]);
-    expect(none.foot).toBe('Nothing keeps it: the 1 Jul 2027 rollover sets it dormant.');
+    expect(none.foot).toBe(
+      'None of these keeps it. The 1 Jul 2027 rollover decides by its own count.',
+    );
     const unread = retentionModel({ ...NONE, favorites: null }, BODY_NOW);
     expect(unread.foot).toBe('');
     expect(unread.notRecorded).toBe('favorites');
@@ -178,5 +180,19 @@ describe('favorites past the count', () => {
     expect(lane({ ...RETENTION_FAVORITES_FLOOR, favoritesCapped: false })).toBe('1,000 skaters');
     expect(lane({ ...MASCOMA_RETENTION, favorites: 1 })).toBe('1 skater');
     expect(FAVORITES_COUNTED).toBe(1_000);
+  });
+});
+
+describe('saved put-ins past the read', () => {
+  it('read as a floor when the read stopped short, never as whole', () => {
+    const lane = (facts: RetentionFacts) =>
+      retentionModel(facts, BODY_NOW).lanes.find((l) => l.key === 'put_in')?.value;
+    expect(lane({ ...MASCOMA_RETENTION, savedPutIns: 1000, savedPutInsCapped: true })).toBe(
+      '1,000+ put-ins',
+    );
+    expect(lane({ ...MASCOMA_RETENTION, savedPutIns: 1000, savedPutInsCapped: false })).toBe(
+      '1,000 put-ins',
+    );
+    expect(lane({ ...MASCOMA_RETENTION, savedPutIns: 1 })).toBe('1 put-in');
   });
 });

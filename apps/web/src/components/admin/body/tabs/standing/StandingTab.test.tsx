@@ -91,6 +91,19 @@ describe('StandingTab', () => {
     expect(screen.queryByText(/Not recorded yet/)).toBeNull();
   });
 
+  it('a saved put-ins count past the server’s read is a floor', () => {
+    convex.results.set('waterBodies:get', body());
+    convex.results.set('standing:retentionForBody', {
+      favorites: 0,
+      favoritesCapped: false,
+      savedPutIns: 1_000,
+      savedPutInsCapped: true,
+    });
+    render(<StandingTab bodyId={BODY} />);
+    expect(screen.getByText('1,000+ put-ins')).toBeVisible();
+    expect(screen.queryByText('1,000 put-ins')).toBeNull();
+  });
+
   it('a favorite count past the server’s is a floor; nothing at all says nothing keeps it', () => {
     convex.results.set('waterBodies:get', body());
     convex.results.set('standing:retentionForBody', {
@@ -108,7 +121,9 @@ describe('StandingTab', () => {
     });
     render(<StandingTab bodyId={BODY} />);
     expect(
-      screen.getByText(/^Nothing keeps it: the 1 Jul \d{4} rollover sets it dormant\.$/),
+      screen.getByText(
+        /^None of these keeps it\. The 1 Jul \d{4} rollover decides by its own count\.$/,
+      ),
     ).toBeVisible();
   });
 
@@ -121,13 +136,13 @@ describe('StandingTab', () => {
         'Not recorded yet: the map boost, favorites, saved put-ins and the last report.',
       ),
     ).toBeVisible();
-    expect(screen.queryByText(/Nothing keeps it/)).toBeNull();
+    expect(screen.queryByText(/None of these keeps it/)).toBeNull();
   });
 
   it('while the retention read is on its way the lanes hold their place; a failure says so', async () => {
     convex.results.set('waterBodies:get', body());
     const { rerender } = render(<StandingTab bodyId={BODY} />);
-    expect(screen.queryByText(/Nothing keeps it/)).toBeNull();
+    expect(screen.queryByText(/None of these keeps it/)).toBeNull();
     expect(
       document.querySelector('[data-slot="standing-retention"][aria-busy="true"]'),
     ).not.toBeNull();

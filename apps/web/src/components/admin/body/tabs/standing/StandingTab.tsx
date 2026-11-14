@@ -40,6 +40,7 @@ export function retentionFacts(r: Retention): RetentionFacts {
     favorites: r.favorites,
     favoritesCapped: r.favoritesCapped,
     savedPutIns: r.savedPutIns,
+    savedPutInsCapped: r.savedPutInsCapped,
   };
 }
 

@@ -37,6 +37,8 @@ export type RetentionFacts = {
   favoritesCapped?: boolean;
   /** How many saved put-ins it has (D245): a visible, unsuppressed stored launch. */
   savedPutIns: number | null;
+  /** The saved put-ins read stopped at its most: there are at least `savedPutIns`, drawn "1,000+". */
+  savedPutInsCapped?: boolean;
 };
 
 export type RetentionLane = {
@@ -158,7 +160,10 @@ export function retentionModel(facts: RetentionFacts, now: number): RetentionMod
     lanes.push({
       key: 'put_in',
       label: 'Saved put-ins',
-      value: plural(facts.savedPutIns, 'put-in', 'put-ins'),
+      // Past the read's end the number is a floor, never presented as whole.
+      value: facts.savedPutInsCapped
+        ? `${facts.savedPutIns.toLocaleString('en-US')}+ put-ins`
+        : plural(facts.savedPutIns, 'put-in', 'put-ins'),
       end: null,
     });
   }
@@ -212,7 +217,9 @@ function footFor(
       : `${word} keeps it through ${through}.`;
   }
   if (holds) return 'Any one keeps it.';
-  // Only a complete read may say nothing holds: an unread reason might.
+  // Only a complete read may say none of these holds: an unread reason might. And it says only
+  // that: the rollover counts its own put-ins (hidden ones too), so the tab never words its
+  // numbers as the rollover's reason.
   if (!complete) return '';
-  return `Nothing keeps it: the ${rolloverWords(seasonStartMs(seasonOf(now) + 1))} rollover sets it dormant.`;
+  return `None of these keeps it. The ${rolloverWords(seasonStartMs(seasonOf(now) + 1))} rollover decides by its own count.`;
 }
