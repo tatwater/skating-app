@@ -6,7 +6,7 @@
  * - {@link consoleExtras} — the towns, whether contours were drawn, when the outline was trusted, and
  *   the bodies that touch it (the identity list, completeness's bathymetry, neighbors on the map).
  * - {@link bayProvenance} — when and how each bay was made (Shape's bays).
- * - {@link history} — the body's history with its bays', landmarks' and put-ins', newest first,
+ * - {@link history} — the body's history with its whole family's (`historyTargets`), newest first,
  *   optionally one verb (the console's History, Access's rulings, a tab's receipts).
  * - {@link places} — the towns, counties and states the body lies in (Places, Names).
  * - {@link landmarkProvenance} — who made each landmark and when; {@link landmarkProposers} — who
@@ -237,72 +237,150 @@ const HISTORY_MAX = 100;
 /** Audit rows read across every target before the read says it stopped. */
 const HISTORY_ROW_BUDGET = 2_000;
 /** Every target a history reads, across its whole family; past it the read says `capped`. */
-const HISTORY_MAX_TARGETS = 800;
+const HISTORY_MAX_TARGETS = 1_200;
 /** Put-ins whose history is read. */
 const HISTORY_PUT_INS = 200;
 /** Lots serving the body whose history is read. */
 const HISTORY_LOTS = 64;
-/** Bodies merged into this one whose own rows are read. */
+/** Bodies merged into this one, directly or through another, whose own rows are read. */
 const HISTORY_ABSORBED = 50;
+/** Known features on the body, live and demoted, whose history is read. */
+const HISTORY_FEATURES = 64;
+/** Requests on the body, open and decided, whose history is read. */
+const HISTORY_REQUESTS = 200;
+/** Corpus place names on the body whose history is read. */
+const HISTORY_PLACE_NAMES = 100;
+/** Flags on the body itself whose history is read. */
+const HISTORY_FLAGS = 200;
+/**
+ * Bytes a history keeps in hand while it walks the absorbed bodies (each is its polygon, up to a
+ * document's 1 MiB): the next one, and the audit rows and their people after it.
+ */
+const HISTORY_BYTES_RESERVE = 6 * 1024 * 1024;
 
 type Target = { targetType: Doc<'moderationActions'>['targetType']; targetId: string };
 
 /**
- * **A body's family — every target whose audit rows concern it**: the body; the bodies merged into
- * it (their rows went with them); its bays, put-ins and landmarks whatever their state — removed,
- * hidden, folded by a merge, or re-parented here; the lots that serve it. Membership is the
- * relation, never which fields a row happens to carry. Ordered so the targets most likely to hold
- * rows come first (the body, the absorbed, bays, put-ins, lots, then landmarks a person touched),
- * and `truncated` when any kind ran past its bound or the family past {@link HISTORY_MAX_TARGETS}.
+ * The bodies merged into this one — and into those, hop by hop, since a body that absorbed others
+ * can itself be merged later while its absorbed keep pointing at it. Up to
+ * {@link HISTORY_ABSORBED}, and only while the read can afford another body after the rest of the
+ * history; either stop says `truncated`.
+ */
+async function absorbedInto(
+  ctx: QueryCtx,
+  waterBodyId: Id<'waterBodies'>,
+): Promise<{ ids: Id<'waterBodies'>[]; truncated: boolean }> {
+  const ids: Id<'waterBodies'>[] = [];
+  const seen = new Set<string>([waterBodyId]);
+  for (let i = -1; i < ids.length; i++) {
+    const parent = i < 0 ? waterBodyId : (ids[i] as Id<'waterBodies'>);
+    const children = ctx.db
+      .query('waterBodies')
+      .withIndex('by_merged_into', (q) => q.eq('mergedIntoId', parent));
+    for await (const b of children) {
+      if (seen.has(b._id)) continue;
+      if (ids.length >= HISTORY_ABSORBED) return { ids, truncated: true };
+      seen.add(b._id);
+      ids.push(b._id);
+      const m = await ctx.meta.getTransactionMetrics();
+      if (m.bytesRead.remaining < HISTORY_BYTES_RESERVE) return { ids, truncated: true };
+    }
+  }
+  return { ids, truncated: false };
+}
+
+/**
+ * **A body's family — every target whose audit rows concern it**, the targets `bodiesOfTarget`
+ * files under the body: the body; the bodies merged into it (their rows went with them); its bays,
+ * put-ins and landmarks whatever their state — removed, hidden, folded by a merge, or re-parented
+ * here; the lots that serve it; its known features, live or demoted; the requests, corpus place
+ * names and flags on it, open or decided. Membership is the relation, never which fields a row
+ * happens to carry. Ordered so the targets most likely to hold rows come first (the body, the
+ * absorbed, bays, put-ins, lots, features, requests, place names, flags, then landmarks a person
+ * touched), and `truncated` when any kind ran past its bound or the family past
+ * {@link HISTORY_MAX_TARGETS}.
  */
 export async function historyTargets(
   ctx: QueryCtx,
   waterBodyId: Id<'waterBodies'>,
 ): Promise<{ targets: Target[]; truncated: boolean }> {
-  const targets: Target[] = [{ targetType: 'waterbody', targetId: waterBodyId }];
   let truncated = false;
-  const add = (targetType: Target['targetType'], ids: readonly string[], bound: number) => {
-    if (ids.length > bound) truncated = true;
-    for (const targetId of ids.slice(0, bound)) targets.push({ targetType, targetId });
+  const ids = (rows: readonly { _id: string }[], bound: number) => {
+    if (rows.length > bound) truncated = true;
+    return rows.slice(0, bound).map((r) => r._id);
   };
-  const absorbed = await ctx.db
-    .query('waterBodies')
-    .withIndex('by_merged_into', (q) => q.eq('mergedIntoId', waterBodyId))
-    .take(HISTORY_ABSORBED + 1);
-  add(
-    'waterbody',
-    absorbed.map((b) => b._id),
-    HISTORY_ABSORBED,
-  );
-  const bays = await ctx.db
-    .query('waterBodySubAreas')
-    .withIndex('by_parent', (q) => q.eq('waterBodyId', waterBodyId))
-    .take(MAX_BAYS + 1);
-  add(
-    'waterBodySubArea',
-    bays.map((b) => b._id),
+  const bays = ids(
+    await ctx.db
+      .query('waterBodySubAreas')
+      .withIndex('by_parent', (q) => q.eq('waterBodyId', waterBodyId))
+      .take(MAX_BAYS + 1),
     MAX_BAYS,
   );
-  const putIns = await ctx.db
-    .query('putIns')
-    .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
-    .take(HISTORY_PUT_INS + 1);
-  add(
-    'putIn',
-    putIns.map((p) => p._id),
+  const putIns = ids(
+    await ctx.db
+      .query('putIns')
+      .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
+      .take(HISTORY_PUT_INS + 1),
     HISTORY_PUT_INS,
   );
-  const lots = await ctx.db
+  const lotLinks = await ctx.db
     .query('parkingAreaBodies')
     .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
     .take(HISTORY_LOTS + 1);
-  add('parkingArea', [...new Set(lots.map((l) => l.parkingAreaId as string))], HISTORY_LOTS);
+  const lots = ids(
+    [...new Set(lotLinks.map((l) => l.parkingAreaId as string))].map((_id) => ({ _id })),
+    HISTORY_LOTS,
+  );
+  const features = ids(
+    await ctx.db
+      .query('bodyFeatures')
+      .withIndex('by_water_body_active', (q) => q.eq('waterBodyId', waterBodyId))
+      .take(HISTORY_FEATURES + 1),
+    HISTORY_FEATURES,
+  );
+  const requests = ids(
+    await ctx.db
+      .query('waterBodyRequests')
+      .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
+      .take(HISTORY_REQUESTS + 1),
+    HISTORY_REQUESTS,
+  );
+  const placeNames = ids(
+    await ctx.db
+      .query('corpusPlaceNames')
+      .withIndex('by_water_body_status', (q) => q.eq('waterBodyId', waterBodyId))
+      .take(HISTORY_PLACE_NAMES + 1),
+    HISTORY_PLACE_NAMES,
+  );
+  const flags = ids(
+    await ctx.db
+      .query('contentFlags')
+      .withIndex('by_target', (q) => q.eq('targetType', 'waterbody').eq('targetId', waterBodyId))
+      .take(HISTORY_FLAGS + 1),
+    HISTORY_FLAGS,
+  );
   // Every landmark, live and removed; the ones a person touched first, then the rest, newest first.
   const landmarks = await landmarksForBody(ctx, waterBodyId);
   if (landmarks.filter((l) => l.removedAt !== undefined).length >= MAX_LANDMARKS_PER_BODY) {
     // The removed read stops at its cap: older removals may hold rows the read can't see.
     truncated = true;
   }
+  // Last of the reads, so its byte check sees everything else this history read.
+  const absorbed = await absorbedInto(ctx, waterBodyId);
+  if (absorbed.truncated) truncated = true;
+
+  const targets: Target[] = [{ targetType: 'waterbody', targetId: waterBodyId }];
+  const add = (targetType: Target['targetType'], of: readonly string[]) => {
+    for (const targetId of of) targets.push({ targetType, targetId });
+  };
+  add('waterbody', absorbed.ids);
+  add('waterBodySubArea', bays);
+  add('putIn', putIns);
+  add('parkingArea', lots);
+  add('bodyFeature', features);
+  add('waterBodyRequest', requests);
+  add('corpusPlaceName', placeNames);
+  add('contentFlag', flags);
   const touched = (l: Doc<'bodyLandmarks'>) =>
     l.createdByUserId !== undefined ||
     l.moderatorEditedAt !== undefined ||
@@ -311,21 +389,17 @@ export async function historyTargets(
   const ordered = [...landmarks].sort(
     (a, b) => Number(touched(b)) - Number(touched(a)) || b.updatedAt - a.updatedAt,
   );
-  add(
-    'bodyLandmark',
-    ordered.map((l) => l._id),
-    Math.max(0, HISTORY_MAX_TARGETS - targets.length),
-  );
+  add('bodyLandmark', ids(ordered, Math.max(0, HISTORY_MAX_TARGETS - targets.length)));
   return { targets, truncated };
 }
 
 /**
  * **A body's history, with its family's** (`historyTargets`: absorbed bodies, bays, put-ins, lots,
- * landmarks, whatever their state) — newest first, each row with who
- * acted (`null` for the machine) and whether the viewer can undo it. `action` narrows to one verb as
- * an index range, never a filter over a capped page. Bounded: each target's newest `limit` rows,
- * {@link HISTORY_ROW_BUDGET} rows in all — `capped` when the budget ran out before every target was
- * read, a kind of target had more than its bound, or more rows exist than returned.
+ * features, requests, place names, flags, landmarks, whatever their state) — newest first, each
+ * row with who acted (`null` for the machine) and whether the viewer can undo it. `action` narrows
+ * to one verb as an index range, never a filter over a capped page. Bounded: each target's newest
+ * `limit` rows, {@link HISTORY_ROW_BUDGET} rows in all — `capped` when the budget ran out before
+ * every target was read, a kind of target had more than its bound, or more rows exist than returned.
  */
 export const history = query({
   args: {
@@ -517,10 +591,7 @@ export const dailyHazards = query({
     await requireCapability(ctx, 'body.read');
     // The caller's day, held near the server's; a season outside the browsable range is this one.
     const now = callerNow(args.now, Date.now(), DAY_MS);
-    const season = resolveSeason(
-      args.season !== undefined && Number.isInteger(args.season) ? args.season : undefined,
-      currentSeason(now),
-    );
+    const season = resolveSeason(args.season, currentSeason(now));
     const window = winterWindow(season);
     const hazards = await ctx.db
       .query('hazards')
@@ -537,21 +608,17 @@ export const dailyHazards = query({
       d[field]++;
       days.set(day, d);
     };
+    // The span's end is exclusive and never past now, so no day after today is ever produced.
     const lastDay = Math.min(now, window.end);
     let unknownEnds = 0;
     for (const h of hazards.slice(0, DAILY_HAZARD_CAP)) {
       if (h.moderationStatus !== 'visible' || h.mergedIntoHazardId !== undefined) continue;
+      const active = h.status === 'active';
+      if (!active) unknownEnds++;
       const firstDay = Math.floor(h.firstReportedAt / DAY_MS) * DAY_MS;
-      if (h.status === 'active') {
-        for (const day of daysCovered(h.firstReportedAt, lastDay, window)) {
-          if (day <= now) bump(day, 'count');
-        }
-        continue;
-      }
-      unknownEnds++;
       for (const day of daysCovered(h.firstReportedAt, lastDay, window)) {
-        if (day > now) continue;
-        bump(day, day === firstDay ? 'count' : 'unknown');
+        const established = active || day === firstDay;
+        bump(day, established ? 'count' : 'unknown');
       }
     }
     const record = await ctx.db

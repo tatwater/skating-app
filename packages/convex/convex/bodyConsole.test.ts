@@ -9,7 +9,7 @@ import type { Polygon } from 'geojson';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { bayViaOf, daysCovered, winterWindow } from './bodyConsole';
+import { bayViaOf, daysCovered, historyTargets, winterWindow } from './bodyConsole';
 import { syncAdminAreaCells, syncWaterBodyCells } from './lib/cellIndex';
 import schema from './schema';
 
@@ -498,6 +498,168 @@ describe('bays, landmarks and history', () => {
         'bodyLandmark',
       ]),
     );
+  });
+
+  test('the family is every target the library files under the body: features, requests, place names, flags, and bodies merged through another', async () => {
+    const t = harness();
+    const { mod, id } = await scene(t);
+    const family = await t.run(async (ctx) => {
+      const polygon = square(-72, 44, 0.002);
+      const tombstone = (name: string, into: Id<'waterBodies'>) =>
+        ctx.db.insert('waterBodies', {
+          name,
+          searchText: name,
+          type: 'lakePond',
+          source: 'osm',
+          polygon,
+          bbox: boxOf(-72, 44, 0.002),
+          centroid: { lat: 44, lng: -72 },
+          dedupStatus: 'merged',
+          mergedIntoId: into,
+          createdAt: NOW,
+        });
+      // Absorbed into a body that was later merged here: it still points at the middle one.
+      const middle = await tombstone('Middle', id);
+      const twice = await tombstone('Twice Removed', middle);
+      const feature = await ctx.db.insert('bodyFeatures', {
+        waterBodyId: id,
+        type: 'spring_current',
+        geometryKind: 'point_radius',
+        geometry: { type: 'Point', coordinates: [-72, 44] },
+        radiusMeters: 20,
+        bbox: boxOf(-72, 44, 0.001),
+        addedByUserId: mod.id,
+        active: false,
+        createdAt: NOW,
+      });
+      const request = await ctx.db.insert('waterBodyRequests', {
+        kind: 'contest_access',
+        status: 'approved',
+        requesterId: mod.id,
+        coord: { lat: 44, lng: -72 },
+        waterBodyId: id,
+        createdAt: NOW,
+      });
+      const placeName = await ctx.db.insert('corpusPlaceNames', {
+        name: 'The Narrows',
+        askKey: 'the narrows',
+        aliases: [],
+        messages: 3,
+        skatedMessages: 1,
+        states: ['VT'],
+        waterBodyId: id,
+        status: 'dismissed',
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+      const flag = await ctx.db.insert('contentFlags', {
+        flaggerId: mod.id,
+        targetType: 'waterbody',
+        targetId: id,
+        reason: 'no_public_access',
+        status: 'dismissed',
+        createdAt: NOW,
+      });
+      const rows = [
+        ['merge_waterbody', 'waterbody', twice, NOW - DAY / 3],
+        ['demote_body_feature', 'bodyFeature', feature, NOW - DAY / 4],
+        ['approve_request', 'waterBodyRequest', request, NOW - DAY / 5],
+        ['remove', 'corpusPlaceName', placeName, NOW - DAY / 6],
+        ['dismiss_flag', 'contentFlag', flag, NOW - DAY / 7],
+      ] as const;
+      const ids: string[] = [];
+      for (const [action, targetType, targetId, createdAt] of rows) {
+        ids.push(
+          await ctx.db.insert('moderationActions', {
+            actorId: mod.id,
+            action,
+            targetType,
+            targetId,
+            reason: action,
+            createdAt,
+          }),
+        );
+      }
+      return ids;
+    });
+    const read = await mod.as.query(api.bodyConsole.history, { waterBodyId: id, limit: 100 });
+    expect(read.capped).toBe(false);
+    expect(read.entries.map((e) => e.id)).toEqual(expect.arrayContaining(family));
+    // Access's rulings: one verb, as an index range on the request.
+    const rulings = await mod.as.query(api.bodyConsole.history, {
+      waterBodyId: id,
+      action: 'approve_request',
+    });
+    expect(rulings.entries.map((e) => e.id)).toEqual([family[2]]);
+  });
+
+  test('a read short of bytes stops walking the absorbed bodies, and says so', async () => {
+    const t = harness();
+    const { id } = await scene(t);
+    const read = await t.run(async (ctx) => {
+      for (const name of ['One', 'Two']) {
+        await ctx.db.insert('waterBodies', {
+          name,
+          searchText: name,
+          type: 'lakePond',
+          source: 'osm',
+          polygon: square(-72, 44, 0.002),
+          bbox: boxOf(-72, 44, 0.002),
+          centroid: { lat: 44, lng: -72 },
+          dedupStatus: 'merged',
+          mergedIntoId: id,
+          createdAt: NOW,
+        });
+      }
+      const spent = { used: 0, remaining: 0 };
+      const low = Object.fromEntries(
+        [
+          'bytesRead',
+          'bytesWritten',
+          'databaseQueries',
+          'documentsRead',
+          'documentsWritten',
+          'functionsScheduled',
+          'scheduledFunctionArgsBytes',
+        ].map((k) => [k, spent]),
+      );
+      const short = { ...ctx, meta: { ...ctx.meta, getTransactionMetrics: async () => low } };
+      return historyTargets(short as unknown as typeof ctx, id);
+    });
+    expect(read.truncated).toBe(true);
+    // The first absorbed body is read; the walk stops before another polygon.
+    expect(read.targets.filter((x) => x.targetType === 'waterbody')).toHaveLength(2);
+  });
+
+  test('the absorbed walk stops at its count and says so; a loop back to the body is read once', async () => {
+    const t = harness();
+    const { id } = await scene(t);
+    const read = await t.run(async (ctx) => {
+      let first: Id<'waterBodies'> | undefined;
+      for (let i = 0; i <= 50; i++) {
+        const name = `Absorbed ${i}`;
+        const b = await ctx.db.insert('waterBodies', {
+          name,
+          searchText: name,
+          type: 'lakePond',
+          source: 'osm',
+          polygon: square(-72, 44, 0.002),
+          bbox: boxOf(-72, 44, 0.002),
+          centroid: { lat: 44, lng: -72 },
+          dedupStatus: 'merged',
+          mergedIntoId: first ?? id,
+          createdAt: NOW,
+        });
+        first ??= b;
+      }
+      // A record no merge writes: the body pointing back at one merged into it.
+      await ctx.db.patch(id, { mergedIntoId: first });
+      return historyTargets(ctx, id);
+    });
+    expect(read.truncated).toBe(true);
+    const bodies = read.targets.filter((x) => x.targetType === 'waterbody').map((x) => x.targetId);
+    expect(bodies).toHaveLength(51);
+    expect(new Set(bodies).size).toBe(51);
   });
 
   test('a limit that is missing, zero, huge or not a number is held to the read’s bounds', async () => {

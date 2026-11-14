@@ -392,8 +392,9 @@ function stripSystem(row: Row): RowFields {
  * caller's transaction**, so a throw here fails the caller. Every caller outside this module goes
  * through {@link refreshBodyLibrary}, which runs this in a nested transaction of its own.
  *
- * - `changedAt` — stamp *Changed* (a moderator acted on the body or its bays, landmarks, put-ins);
- *   otherwise the stored date stands.
+ * - `changedAt` — stamp *Changed* (a moderator acted on the body or its bays, landmarks, put-ins).
+ *   The rows take the latest of it, the stored date and the one the queue entry carries
+ *   ({@link changedDateOf}).
  *
  * A body that is gone or merged loses its rows. Writes only what changed.
  */
@@ -782,7 +783,9 @@ export async function stampChanged(
     .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
     .take(MAX_SCOPES);
   if (rows.length === 0) {
-    await queueLibraryRefresh(ctx, [waterBodyId], at, { changedAt: at });
+    // In line from now, never from `at`: the audit-log backfill's dates are months old, and the
+    // queue drains oldest first — they would jump every refresh already waiting.
+    await queueLibraryRefresh(ctx, [waterBodyId], Date.now(), { changedAt: at });
     return;
   }
   for (const row of rows) {

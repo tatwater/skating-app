@@ -1627,6 +1627,33 @@ describe('Changed is never lost', () => {
     expect((await rowsOf(t, id))[0]?.changedAt).toBe(NOW - DAY);
   });
 
+  test('a rowless body the backfill stamps joins the queue from now, behind what already waits', async () => {
+    const t = harness();
+    const mod = await seedUser(t);
+    const waiting = await seedBody(t, { name: 'Waiting' });
+    const rowless = await seedBody(t, { name: 'Long Ago' });
+    await t.run((ctx) => queueLibraryRefresh(ctx, [waiting], NOW - 60_000));
+    await t.run((ctx) =>
+      ctx.db.insert('moderationActions', {
+        actorId: mod.id,
+        action: 'set_curated_boost',
+        targetType: 'waterbody',
+        targetId: rowless,
+        reason: 'r',
+        createdAt: NOW - 90 * DAY,
+      }),
+    );
+    await t.mutation(internal.bodyLibrary.backfillChangedAt, {});
+    expect(await queueEntry(t, rowless)).toMatchObject({
+      queuedAt: NOW,
+      changedAt: NOW - 90 * DAY,
+    });
+    // The oldest-first drain takes the body that was already waiting first.
+    await t.run((ctx) => drainLibraryQueue(ctx, 1));
+    expect(await queueEntry(t, waiting)).toBeNull();
+    expect(await queueEntry(t, rowless)).not.toBeNull();
+  });
+
   test('a failure, a parking and a release each keep the owed Changed', async () => {
     const t = harness();
     const id = await seedBody(t, {
