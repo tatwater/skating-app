@@ -167,6 +167,8 @@ describe('the lapsed-suspension sweep', () => {
     expect((await get(t, poison))?.lapseAttempts).toBe(MAX_ATTEMPTS);
     await t.mutation(internal.peopleJobs.retryLapsedDaily, {});
     await drain(t);
+    // Tried once this run: the failure re-stamps it at the run's own start, which the run never rereads.
+    expect(await get(t, poison)).toMatchObject({ lapseAttempts: MAX_ATTEMPTS + 1 });
     expect((await get(t, poison))?.lapseRetriedAt).toBeDefined();
     const listed = await t.run(async (ctx) => {
       await ctx.db.insert('profiles', {

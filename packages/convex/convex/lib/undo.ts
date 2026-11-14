@@ -15,14 +15,15 @@
  * and every row it writes is tagged as the undo.
  */
 
-import { isLeaving } from '@skating/core';
+import { DELETION_GRACE_MS, isLeaving } from '@skating/core';
 import { ConvexError } from 'convex/values';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { asUndoOf } from './audit';
 import { hasCapability } from './auth';
 import { authorDeletedAtOn, authorDeletedRefusal } from './authorDeletion';
-import { disciplineRefusal, roleRefusal } from './peopleCan';
+import { disciplineRefusal, type PersonFacts, roleRefusal } from './peopleCan';
+import { OPEN_ENDED, personRowOf } from './peopleRows';
 import { UNDO_HANDLERS } from './undoHandlers';
 import { UNDO_POLICY, undoCapability, WORKSTREAM_MODE } from './undoPolicy';
 import { meta, type UndoHandler, type UndoViewer } from './undoTypes';
@@ -145,7 +146,23 @@ async function personUndoRefusal(
   const roleVerb = row.action === 'grant_role' || row.action === 'revoke_role';
   if (!statusVerb && !roleVerb && row.action !== 'set_posting_permission') return null;
   const id = ctx.db.normalizeId('profiles', row.targetId);
-  const target = id ? await ctx.db.get(id) : null;
+  if (!id) return 'This account no longer exists.';
+  // The People row's copy of the facts the rule reads — light, where a profile can weigh a whole
+  // document and History reads this once a line. A person with no row yet is read in full.
+  const light = await personRowOf(ctx, id);
+  const target: PersonFacts | null = light
+    ? {
+        _id: id,
+        role: light.role,
+        status: light.status,
+        suspendedUntil:
+          light.suspendedUntil > 0 && light.suspendedUntil < OPEN_ENDED
+            ? light.suspendedUntil
+            : undefined,
+        deletionRequestedAt:
+          light.leavingUntil > 0 ? light.leavingUntil - DELETION_GRACE_MS : undefined,
+      }
+    : await ctx.db.get(id);
   if (!target) return 'This account no longer exists.';
   if (roleVerb) {
     const prior = (meta(row).priorRole as Doc<'profiles'>['role'] | undefined) ?? 'member';

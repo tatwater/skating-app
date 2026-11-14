@@ -86,6 +86,9 @@ describe('restrictions', () => {
       }),
     ).toEqual([...RESTRICTIONS]);
     expect(restrictionsOf({ canPostReports: true, canFlag: true })).toEqual([]);
+    // Staff are exempt from the flagging switch: a dormant `false` restricts nothing until a demotion.
+    expect(restrictionsOf({ role: 'moderator', canFlag: false })).toEqual([]);
+    expect(restrictionsOf({ role: 'member', canFlag: false })).toEqual(['flagging']);
   });
 
   test('a bounty limit restricts only below the global cap', () => {

@@ -8,7 +8,8 @@ import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
-import { LAST_EDITOR_MESSAGE, refuseDisciplineOfLastLedgerEditor } from './lib/ledgerEditors';
+import { LAST_EDITOR_MESSAGE } from './lib/ledgerEditors';
+import { disciplineRefusal } from './lib/peopleCan';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -401,11 +402,11 @@ describe('a demotion clears it (D227)', () => {
     const other = await editor(t, 'other');
     const mod = await seedUser(t, 'mod', 'moderator');
 
-    await founder.as.mutation(api.admin.grantRole, {
-      userId: other.id,
-      role: 'admin',
-      reason: 'x',
-    });
+    // Granting the role they hold is refused as no change at all (the People page's role menu, one
+    // rule), and the grant is untouched.
+    await expect(
+      founder.as.mutation(api.admin.grantRole, { userId: other.id, role: 'admin', reason: 'x' }),
+    ).rejects.toThrow('This is their role now.');
     expect((await profile(t, other.id))?.canEditLedger).toBe(true);
     await founder.as.mutation(api.admin.revokeRole, { userId: mod.id, reason: 'x' });
     expect((await rowsOn(t, mod.id)).map((r) => r.action)).toEqual(['revoke_role']);
@@ -413,15 +414,19 @@ describe('a demotion clears it (D227)', () => {
 });
 
 describe('discipline never leaves the ledger without an editor (the governor’s ruling on D227)', () => {
+  /** A stand-in admin acting: the last-editor refusal turns on the target alone (`lib/peopleCan`). */
+  const ACTOR = { _id: 'acting-admin' as Id<'profiles'>, role: 'admin' as const };
+  const refusal = (t: T, id: Id<'profiles'>, lever: 'suspend' | 'ban') =>
+    t.run(async (ctx) => {
+      const target = await ctx.db.get(id);
+      return target ? disciplineRefusal(ctx, ACTOR, target, lever) : 'no such profile';
+    });
+
   test('suspending or banning the last editor who can act is refused, with the demotion’s message', async () => {
     const t = convexTest(schema, modules);
     const only = await editor(t, 'only');
-    await expect(
-      t.run(async (ctx) => {
-        const target = await ctx.db.get(only.id);
-        if (target) await refuseDisciplineOfLastLedgerEditor(ctx, target);
-      }),
-    ).rejects.toThrow(LAST_EDITOR_MESSAGE);
+    expect(await refusal(t, only.id, 'suspend')).toBe(LAST_EDITOR_MESSAGE);
+    expect(await refusal(t, only.id, 'ban')).toBe(LAST_EDITOR_MESSAGE);
   });
 
   test('allowed once another editor can act, and for anyone who does not hold it', async () => {
@@ -429,12 +434,10 @@ describe('discipline never leaves the ledger without an editor (the governor’s
     const first = await editor(t, 'first');
     await editor(t, 'second');
     const plain = await seedUser(t, 'plain', 'admin');
-    await t.run(async (ctx) => {
-      for (const id of [first.id, plain.id]) {
-        const target = await ctx.db.get(id);
-        if (target) await refuseDisciplineOfLastLedgerEditor(ctx, target);
-      }
-    });
+    for (const id of [first.id, plain.id]) {
+      expect(await refusal(t, id, 'suspend')).toBeNull();
+      expect(await refusal(t, id, 'ban')).toBeNull();
+    }
   });
 
   test('a suspended second editor does not count: the first is still the last who can act', async () => {
@@ -445,12 +448,7 @@ describe('discipline never leaves the ledger without an editor (the governor’s
       status: 'suspended',
       suspendedUntil: Date.now() + 86_400_000,
     });
-    await expect(
-      t.run(async (ctx) => {
-        const target = await ctx.db.get(first.id);
-        if (target) await refuseDisciplineOfLastLedgerEditor(ctx, target);
-      }),
-    ).rejects.toThrow(LAST_EDITOR_MESSAGE);
+    expect(await refusal(t, first.id, 'suspend')).toBe(LAST_EDITOR_MESSAGE);
   });
 
   const DAY = 86_400_000;

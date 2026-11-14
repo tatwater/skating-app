@@ -20,9 +20,16 @@ import { canUse, isLeaving, ROLE_RANK } from '@skating/core';
 import { ConvexError } from 'convex/values';
 import type { Doc } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
-import { isLastLedgerEditor, LAST_EDITOR_MESSAGE } from './ledgerEditors';
+import { isLastLedgerEditor, LAST_EDITOR_MESSAGE, type LedgerFacts } from './ledgerEditors';
 
 type Profile = Doc<'profiles'>;
+
+/**
+ * What the rule reads of a person: a profile, or the People row's copy of these facts (undo state,
+ * which reads a row per History line, takes the light row; it carries no ledger grant, so the
+ * last-editor refusal is then left to the write).
+ */
+export type PersonFacts = LedgerFacts;
 type Ctx = QueryCtx | MutationCtx;
 
 /** Whether a control may be drawn and pressed, and if not, why — in words the page can show. */
@@ -47,6 +54,7 @@ export const DISCIPLINE_REFUSALS = {
 export const ROLE_REFUSALS = {
   self: 'You cannot change your own role',
   gone: 'This account is being deleted, so its role can’t change.',
+  current: 'This is their role now.',
 } as const;
 
 /** Being taken apart (the finalization lock) or a tombstone. */
@@ -58,7 +66,7 @@ function gone(target: Pick<Profile, 'status'>): boolean {
 export async function disciplineRefusal(
   ctx: Ctx,
   actor: Pick<Profile, '_id' | 'role'>,
-  target: Profile,
+  target: PersonFacts,
   lever: Lever,
 ): Promise<string | null> {
   if (target._id === actor._id) return DISCIPLINE_REFUSALS.self;
@@ -96,11 +104,12 @@ export function flaggingOffRefusal(target: Pick<Profile, 'role'>): string | null
 export async function roleRefusal(
   ctx: Ctx,
   actor: Pick<Profile, '_id'>,
-  target: Profile,
+  target: PersonFacts,
   role: Profile['role'],
 ): Promise<string | null> {
   if (target._id === actor._id) return ROLE_REFUSALS.self;
   if (gone(target)) return ROLE_REFUSALS.gone;
+  if (role === target.role) return ROLE_REFUSALS.current;
   // A demotion out of admin takes ledger editing with it, refused for the last editor (D227).
   if (
     role !== 'admin' &&

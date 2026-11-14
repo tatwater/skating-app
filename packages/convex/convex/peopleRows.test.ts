@@ -16,6 +16,8 @@ import {
   OPEN_ENDED,
   READY_FLAG_SUBJECTS,
   READY_ROWS,
+  REASON_LINE_CHARS,
+  reasonLine,
   refreshPersonRow,
   storedLanesOf,
 } from './lib/peopleRows';
@@ -87,6 +89,24 @@ describe('derivePersonRow', () => {
     const later = derivePersonRow(profileDoc({ status: 'banned' }), banned, 9_000);
     expect(later.statusSince).toBe(6_000);
     expect(later.statusReason).toBeUndefined();
+  });
+
+  test('a long reason is cut to a line, never through a surrogate pair', () => {
+    const short = 'Spam';
+    expect(reasonLine(short)).toBe(short);
+    const exact = 'x'.repeat(REASON_LINE_CHARS);
+    expect(reasonLine(exact)).toBe(exact);
+    // An emoji (two UTF-16 units) straddling the cut: its high half would be the last unit kept.
+    const straddling = `${'x'.repeat(REASON_LINE_CHARS - 1)}🧊 and more`;
+    expect(reasonLine(straddling)).toBe('x'.repeat(REASON_LINE_CHARS - 1));
+    const whole = `${'x'.repeat(REASON_LINE_CHARS - 2)}🧊 and more`;
+    expect(reasonLine(whole)).toBe(`${'x'.repeat(REASON_LINE_CHARS - 2)}🧊`);
+    const row = derivePersonRow(
+      profileDoc({ status: 'banned', statusReason: straddling }),
+      null,
+      1,
+    );
+    expect(row.statusReason).toBe('x'.repeat(REASON_LINE_CHARS - 1));
   });
 
   test('an open-ended suspension sorts last; a restriction is stamped when it lands', () => {

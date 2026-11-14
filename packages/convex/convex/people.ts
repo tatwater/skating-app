@@ -15,7 +15,6 @@
 import {
   type Count,
   callerNow,
-  cappedCount,
   DELETION_GRACE_MS,
   deriveTrustClass,
   effectiveBountyLimitOf,
@@ -70,6 +69,7 @@ import {
   readWaitingTickets,
 } from './lib/peopleFigures';
 import { OPEN_ENDED, personRowOf } from './lib/peopleRows';
+import { trustClassFor } from './lib/reputation';
 import { type ActionView, toActionView } from './moderation';
 
 const MINUTE = 60_000;
@@ -453,10 +453,17 @@ export const person = query({
     }
 
     // ── Flags they filed (the Flagging lever's "N filed") ──
-    const filed = await ctx.db
+    // An automatic flag names the rater whose thumb crossed the line as its flagger, though they
+    // filed nothing (`lib/autoFlag`): only a person's own (`origin: 'user'`) counts, and a read that
+    // stopped short makes the count a floor.
+    const flaggedBy = await ctx.db
       .query('contentFlags')
       .withIndex('by_flagger', (q) => q.eq('flaggerId', userId))
       .take(LANE_COUNT_CAP + 1);
+    const flagsFiled: Count = {
+      count: flaggedBy.slice(0, LANE_COUNT_CAP).filter((f) => f.origin === 'user').length,
+      capped: flaggedBy.length > LANE_COUNT_CAP,
+    };
 
     // ── The levers, and whether this viewer may pull each ──
     const discipline = viewerCan(viewer, 'people.discipline');
@@ -473,7 +480,6 @@ export const person = query({
     const roles = viewerCan(viewer, 'people.role');
     const roleCan = async (role: UserRole): Promise<Can> => {
       if (!roles) return no(cannotUse(viewer, 'role'));
-      if (role === target.role) return no('This is their role now.');
       const why = await roleRefusal(ctx, viewer, target, role);
       return why === null ? YES : no(why);
     };
@@ -492,10 +498,7 @@ export const person = query({
       profileVisibility: target.profileVisibility,
       role: target.role,
       status: target.status,
-      trustClass:
-        target.status === 'deleted'
-          ? null
-          : deriveTrustClass(target.reputationPoints, now - target.createdAt),
+      trustClass: target.status === 'deleted' ? null : trustClassFor(target, now),
       createdAt: target.createdAt,
       leavingUntil:
         target.deletionRequestedAt !== undefined && target.status !== 'deleted'
@@ -517,13 +520,14 @@ export const person = query({
         reports: target.canPostReports !== false,
         hazards: target.canPostHazards !== false,
         comments: target.canPostComments !== false,
-        flagging: target.canFlag !== false,
+        // Staff are exempt from the switch (D222): they can always flag.
+        flagging: target.canFlag !== false || ROLE_RANK[target.role] >= ROLE_RANK.moderator,
         /** Their own bounty limit, or `null` for the global one. */
         bountyLimit: target.activeBountyPostLimit ?? null,
         defaultBountyLimit: MAX_OPEN_BOUNTIES_PER_DAY,
         effectiveBountyLimit: effectiveBountyLimitOf(target.activeBountyPostLimit),
         restrictions: target.status === 'deleted' ? [] : restrictionsOf(target),
-        flagsFiled: cappedCount(filed.length, LANE_COUNT_CAP),
+        flagsFiled,
       },
       open: {
         flags: openFlags,

@@ -81,7 +81,7 @@ export function derivePersonRow(
         : now;
   const reason =
     (profile.status === 'suspended' || profile.status === 'banned') && profile.statusReason?.trim()
-      ? profile.statusReason.trim().slice(0, REASON_LINE_CHARS)
+      ? reasonLine(profile.statusReason.trim())
       : undefined;
   const name = profile.displayName.trim() || profile.username;
   return {
@@ -110,6 +110,17 @@ export function derivePersonRow(
     createdAt: profile.createdAt,
     refreshedAt: now,
   };
+}
+
+/**
+ * A reason cut to {@link REASON_LINE_CHARS} UTF-16 units, never through a surrogate pair: a cut that
+ * would leave half an emoji at the end drops that half rather than store a lone surrogate.
+ */
+export function reasonLine(text: string): string {
+  if (text.length <= REASON_LINE_CHARS) return text;
+  const cut = text.slice(0, REASON_LINE_CHARS);
+  const last = cut.charCodeAt(cut.length - 1);
+  return last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
 }
 
 /** The stored lanes a row is in — the rule each lane's index range in `lib/peopleFigures` mirrors. */

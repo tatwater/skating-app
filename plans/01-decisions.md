@@ -7901,9 +7901,9 @@ act is refused, with the same message a demotion gets ("They are the last person
 ledger; give another admin ledger editing first"). A suspended or banned holder can neither edit nor
 pass the grant on, so a suspension strands the ledger exactly as a demotion would.
 
-The rule is `refuseDisciplineOfLastLedgerEditor` (`lib/ledgerEditors.ts`); its calls in the suspend
-and ban paths, and in the undo that puts a suspension or ban back, land after the deletion PR that is
-rewriting those files.
+The rule is `disciplineRefusal` (`lib/peopleCan.ts`), which the suspend and ban paths, and the undo
+that puts a suspension or ban back, refuse by. (It began as `refuseDisciplineOfLastLedgerEditor` in
+`lib/ledgerEditors.ts` and moved into People's one rule for what may be done to a person, B01-4.)
 
 **Related:** D37, D226, D227, [`phase-B01`](./phases/B01-admin-console.md) §7.
 

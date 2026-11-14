@@ -25,13 +25,13 @@ import {
   DEFAULT_BOUNTY_LIFETIME_MS,
   DEFAULT_BOUNTY_REWARD_POINTS,
   driveOrigin,
+  effectiveBountyLimitOf,
   type FeedAuthor,
   FRESH_REPORT_HOURS,
   haversineMeters,
   isActive,
   isLeaving,
   isMinor,
-  MAX_OPEN_BOUNTIES_PER_DAY,
   memberSubAreaIds,
   reportSuppressesBounty,
   weatherExplainsIceChange,
@@ -305,10 +305,8 @@ async function underOpenBountyCap(
  * a rule; the rule they're told has to be theirs.
  */
 export function effectiveBountyLimit(profile: Doc<'profiles'>): number {
-  const limit = profile.activeBountyPostLimit;
-  return limit !== undefined && Number.isFinite(limit) && limit >= 0
-    ? limit
-    : MAX_OPEN_BOUNTIES_PER_DAY;
+  // One rule with People's rights row and the limit's reason (`@skating/core` `effectiveBountyLimitOf`).
+  return effectiveBountyLimitOf(profile.activeBountyPostLimit);
 }
 
 /** The user-facing rejection copy for each gate verdict — one place, so the action and tests agree. */

@@ -5,6 +5,7 @@
  * reads the lane keys and labels from here too, so a lane can't be spelled two ways.
  */
 
+import { DELETION_GRACE_DAYS } from './profile';
 import { MAX_OPEN_BOUNTIES_PER_DAY } from './reputationConfig';
 
 /**
@@ -35,7 +36,7 @@ export const PEOPLE_LANE_LABELS: Record<PeopleLane, string> = {
   flagged: 'Flagged',
   appeals: 'Appeals open',
   newest: 'Newest',
-  leaving: 'Leaving · 30-day window',
+  leaving: `Leaving · ${DELETION_GRACE_DAYS}-day window`,
   deleted: 'Deleted · tombstones',
 };
 
@@ -93,6 +94,8 @@ export type Restriction = (typeof RESTRICTIONS)[number];
 
 /** The profile fields the restriction rule reads. Absent means allowed (D57's fail-open default). */
 export interface RestrictionFields {
+  /** Staff are exempt from the flagging switch (D222), so it never restricts them. */
+  role?: 'member' | 'moderator' | 'admin';
   canPostReports?: boolean;
   canPostHazards?: boolean;
   canPostComments?: boolean;
@@ -102,7 +105,8 @@ export interface RestrictionFields {
 
 /**
  * Which rights are off, in {@link RESTRICTIONS} order. A bounty limit restricts only when it is below
- * the global cap: a limit at or above it takes nothing away.
+ * the global cap: a limit at or above it takes nothing away. Flagging switched off restricts only a
+ * member — staff are exempt from it, and the flag write lets them flag.
  */
 export function restrictionsOf(p: RestrictionFields): Restriction[] {
   const off: Restriction[] = [];
@@ -110,7 +114,7 @@ export function restrictionsOf(p: RestrictionFields): Restriction[] {
   if (p.canPostHazards === false) off.push('hazards');
   if (p.canPostComments === false) off.push('comments');
   if (bountyLimitRestricts(p.activeBountyPostLimit)) off.push('bounties');
-  if (p.canFlag === false) off.push('flagging');
+  if (p.canFlag === false && (p.role === undefined || p.role === 'member')) off.push('flagging');
   return off;
 }
 

@@ -329,7 +329,7 @@ describe('people.person', () => {
   test('open flags on the person and on their content, and the hidden content counts', async () => {
     const t = convexTest(schema, modules);
     await seed(t, 'mod', { role: 'moderator' });
-    await seed(t, 'filer');
+    const filer = await seed(t, 'filer');
     const rob = await seed(t, 'rob');
     await ready(t);
     const r1 = await report(t, rob);
@@ -356,6 +356,21 @@ describe('people.person', () => {
       onContent: { count: 1, capped: false },
     });
     expect(p?.open.flags.map((f) => f.targetType)).toEqual(['report', 'user']);
+    // "N filed" is what they filed: an automatic flag naming them as the rater is not one of theirs.
+    await t.run((ctx) =>
+      ctx.db.insert('contentFlags', {
+        flaggerId: filer,
+        targetType: 'report',
+        targetId: r2,
+        reason: 'spam',
+        status: 'open',
+        origin: 'auto',
+        createdAt: Date.now(),
+      }),
+    );
+    expect(
+      (await as(t, 'mod').query(api.people.person, { userId: filer }))?.rights.flagsFiled,
+    ).toEqual({ count: 2, capped: false });
     expect(p?.open.appeals).toBeNull();
     expect(p?.hidden).toMatchObject({ total: 1, capped: false });
     expect(p?.hidden.byKind.report).toBe(1);
@@ -536,15 +551,6 @@ describe('can is what the write answers', () => {
             () => true,
             () => false,
           );
-          // A role menu never offers the role a person holds now; the write records it as a no-op.
-          const sameRole =
-            (lever === 'roleAdmin' && (state === 'admin' || state === 'lastEditor')) ||
-            (lever === 'roleModerator' && state === 'moderator') ||
-            (lever === 'roleMember' && !['admin', 'lastEditor', 'moderator'].includes(state));
-          if (sameRole && accepted) {
-            expect(can.ok).toBe(false);
-            return;
-          }
           expect(can.ok, `${viewerKind} ${state} ${lever}`).toBe(accepted);
         },
       ),

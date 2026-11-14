@@ -231,7 +231,11 @@ export const sweepLapsedSuspensions = internalMutation({
     }),
 });
 
-/** The next parked profile tried before this run began, after `after`, least recently tried first. */
+/**
+ * The next parked profile tried strictly before this run began, after `after`, least recently tried
+ * first. Strictly: a failure re-stamps its profile at `now`, which is `runStart` itself in a run's
+ * first pass, so an inclusive bound would read it again in the same run (the erasure retry's rule).
+ */
 async function nextParked(
   ctx: MutationCtx,
   runStart: number,
@@ -255,7 +259,7 @@ async function nextParked(
       q
         .eq('status', 'suspended')
         .gt('lapseParkedAt', after?.at ?? 0)
-        .lte('lapseParkedAt', runStart),
+        .lt('lapseParkedAt', runStart),
     )
     .first();
 }

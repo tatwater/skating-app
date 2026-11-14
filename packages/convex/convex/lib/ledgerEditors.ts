@@ -13,8 +13,8 @@
  *   can step down only once another admin holds it, and the last holder can't be demoted out of
  *   admin until someone else is given it.
  * - **Nor through discipline.** Suspending or banning the last editor who can act is refused the same
- *   way ({@link refuseDisciplineOfLastLedgerEditor}, called by `moderation.banImpl` and
- *   `moderation.suspendImpl`, which an undo putting a ban or suspension back runs too).
+ *   way, with the same message (`lib/peopleCan.disciplineRefusal`, which `moderation.banImpl` and
+ *   `moderation.suspendImpl` refuse by, and an undo putting a ban or suspension back runs too).
  * - **A demotion clears it.** Leaving admin takes the grant with it, in the same mutation and with its
  *   own audit row, so a later promotion back to admin (or the undo of the demotion) does not quietly
  *   restore it; a holder gives it again on purpose.
@@ -28,6 +28,12 @@ import { writeAudit } from './audit';
 import { hasCapability, isLockedOut, isSuspendedNow } from './auth';
 
 type Profile = Doc<'profiles'>;
+
+/** What "can still act" and "the last editor" read of a person. */
+export type LedgerFacts = Pick<
+  Profile,
+  '_id' | 'role' | 'canEditLedger' | 'status' | 'suspendedUntil' | 'deletionRequestedAt'
+>;
 
 /**
  * How many admins a ledger query reads at most. Admins are a handful; the bound is there so the read
@@ -74,12 +80,12 @@ export function isLedgerEditor(profile: Pick<Profile, 'role' | 'canEditLedger'>)
  * D62). A suspended holder can't edit or pass the grant on, so they don't count toward "never no
  * editor" — or the last holder who can act could step down and strand it.
  */
-function canStillAct(profile: Profile): boolean {
+function canStillAct(profile: LedgerFacts): boolean {
   return !isLockedOut(profile) && !isSuspendedNow(profile, Date.now()) && !isLeaving(profile);
 }
 
 /** An editor who can still act. This is who counts toward "never no editor". */
-function canStillEdit(profile: Profile): boolean {
+function canStillEdit(profile: LedgerFacts): boolean {
   return isLedgerEditor(profile) && canStillAct(profile);
 }
 
@@ -98,27 +104,13 @@ export async function otherLedgerEditors(
 /** Whether `target` is the only editor who can still act — taking it from them is refused. */
 export async function isLastLedgerEditor(
   ctx: QueryCtx | MutationCtx,
-  target: Profile,
+  target: LedgerFacts,
 ): Promise<boolean> {
   return canStillEdit(target) && (await otherLedgerEditors(ctx, target._id)) === 0;
 }
 
 export const LAST_EDITOR_MESSAGE =
   'They are the last person who can edit the ledger; give another admin ledger editing first';
-
-/**
- * The discipline half of "never no editor" (B01, the governor's ruling on D227): a suspension or a
- * ban takes away the last editor who can act just as a revoke or a demotion would — a suspended or
- * banned holder can't edit or pass the grant on — so it is refused with the same message. To be
- * called before the status changes, by every path that suspends or bans: `moderation.banImpl` and
- * `moderation.suspendImpl`, which an undo that puts a suspension or ban back also runs.
- */
-export async function refuseDisciplineOfLastLedgerEditor(
-  ctx: QueryCtx | MutationCtx,
-  target: Profile,
-): Promise<void> {
-  if (await isLastLedgerEditor(ctx, target)) throw new ConvexError(LAST_EDITOR_MESSAGE);
-}
 
 /** Why `target` can't be given ledger editing, or `null` — the People row's `can` and the write's. */
 export function ledgerGrantRefusal(target: Profile): string | null {
