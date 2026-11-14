@@ -1968,6 +1968,8 @@ describe('fairness under failure, under any mix', () => {
   test('eraseDue: every healthy due item erased in one run; every failing one parked after exactly three attempts, untouched', async () => {
     await fc.assert(
       fc.asyncProperty(fc.array(fc.boolean(), { minLength: 1, maxLength: 8 }), async (fails) => {
+        // A run a shrink abandoned part-way leaves no spy behind for the next.
+        vi.restoreAllMocks();
         const { t, author, waterBodyId } = await setup();
         const reportId = (await seedPost(t, author.id, waterBodyId, 1))
           .reportIds[0] as Id<'reports'>;
