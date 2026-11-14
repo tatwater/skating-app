@@ -147,14 +147,15 @@ export class ReadBudget {
 /**
  * Size a continuing job's page so a full page fits at worst: each row costs its own read plus
  * `work` (everything any branch of the loop may charge for it), with `reserve` kept back for what
- * follows the loop. At least one row — and if not even one fits, that is a plan error, thrown now.
+ * follows the loop. At least one row — a `cap` below one (a test seam's 0) still asks for one, as
+ * `page` always did — and if not even one fits the budget, that is a plan error, thrown now.
  */
 export function sizePage(
   reads: ReadBudget,
   kind: RowKind,
   { cap, work = 0, reserve = 0 }: { cap: number; work?: number; reserve?: number },
 ): number {
-  const n = reads.rows(kind, cap, reserve, ROW_MAX[kind] + work);
+  const n = reads.rows(kind, Math.max(cap, 1), reserve, ROW_MAX[kind] + work);
   if (n < 1) throw new OverBudget(`read budget: not one ${kind} row and its work fit a pass`);
   return n;
 }
@@ -173,10 +174,14 @@ export async function traced<T>(
   try {
     return await pass();
   } catch (error) {
-    console.error(
-      `${job}: a pass failed and its chain stopped; re-run it from ${JSON.stringify(position)}`,
-      error,
-    );
+    let at: string;
+    try {
+      at = JSON.stringify(position);
+    } catch {
+      // A position that can't be written out must not replace the failure it is reporting.
+      at = String(position);
+    }
+    console.error(`${job}: a pass failed and its chain stopped; re-run it from ${at}`, error);
     throw error;
   }
 }

@@ -215,29 +215,55 @@ describe('every chain reaches its end on its dearest page', () => {
       }),
     );
     for (const id of reportIds) await t.run((ctx) => ctx.db.patch(id, { postId }));
-    // Author deletions whose items are gone: each one's lookup finds nothing.
+    // Author deletions whose items are gone: a real id each, so each one's lookup is made (and
+    // charged) and finds nothing — an id that doesn't normalize would skip the read entirely.
     for (let i = 0; i < 6; i++) {
+      const goneId = await t.run(async (ctx) => {
+        const id = await ctx.db.insert('reports', {
+          authorId: author.id,
+          waterBodyId,
+          point: { lat: 0.5, lng: 0.5 },
+          skateEndTime: T0,
+          reportTime: T0,
+          source: 'native' as const,
+          iceTypes: [{ type: 'black_ice' as const }],
+          surfaceTags: [],
+          photoIds: [],
+          moderationStatus: 'removed' as const,
+          hazardIdsCreated: [],
+          createdAt: T0,
+          updatedAt: T0,
+        });
+        await ctx.db.delete(id);
+        return id;
+      });
       await heavyAudit(t, {
         actorId: author.id,
         action: 'author_delete',
         targetType: 'report',
-        targetId: `gone${i}`,
+        targetId: goneId,
       });
     }
-    // The Post's deletion, then restores every one of which a moderator undid: each pays its undo.
+    // The Post's deletion, then restores every one of which a moderator undid — the restores first,
+    // so a whole page of them each pays its undo.
     await heavyAudit(t, {
       actorId: author.id,
       action: 'author_delete',
       targetType: 'post',
       targetId: postId,
     });
+    const restores: Id<'moderationActions'>[] = [];
     for (let i = 0; i < 6; i++) {
-      const restore = await heavyAudit(t, {
-        actorId: mod.id,
-        action: 'restore',
-        targetType: 'post',
-        targetId: postId,
-      });
+      restores.push(
+        await heavyAudit(t, {
+          actorId: mod.id,
+          action: 'restore',
+          targetType: 'post',
+          targetId: postId,
+        }),
+      );
+    }
+    for (const restore of restores) {
       await heavyAudit(t, {
         actorId: mod.id,
         action: 'hide',

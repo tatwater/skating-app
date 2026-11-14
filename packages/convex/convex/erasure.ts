@@ -475,7 +475,7 @@ export const settlePhotos = internalMutation({
     pageSize: v.optional(v.number()),
   },
   handler: (ctx, args) =>
-    traced('erasure.settlePhotos', { ...args, photoIds: args.photoIds.length }, async () => {
+    traced('erasure.settlePhotos', args, async () => {
       const { uploaderId, photoIds, phase = 'reports', cursor, after, pageSize } = args;
       const reads = new ReadBudget();
       const cap = pageSize ?? Number.POSITIVE_INFINITY;
@@ -730,7 +730,7 @@ async function eraseReport(
 /**
  * A Post loses an erased member: it drops the id and re-derives its album, sort key (over the visible
  * members; left alone with none, as `refreshPostLatestSkateEnd` leaves it) and search words from the
- * members left, each read once — the Post and at most nine Reports, inside one budget — and its clock
+ * members left, each read once — the Post and at most ten Reports, inside one budget — and its clock
  * with them, in one write. The Post was held while this member was listed; it may be due now.
  */
 export const dropErasedMember = internalMutation({
@@ -742,8 +742,9 @@ export const dropErasedMember = internalMutation({
       const post = await reads.one('post', () => ctx.db.get(postId));
       if (!post) return;
       const reportIds = post.reportIds.filter((id) => id !== reportId);
-      // The plan: the Post and the rest of its at most `POST_MAX_REPORTS` members, each read once.
-      if (reportIds.length >= POST_MAX_REPORTS) {
+      // The plan: the Post, at most `POST_MAX_REPORTS` members each read once, and the Post's write —
+      // twelve rows, the whole budget. Usually one fewer member (the erased one is listed); never more.
+      if (reportIds.length > POST_MAX_REPORTS) {
         throw new Error(`erasure.dropErasedMember: a Post with ${post.reportIds.length} members`);
       }
       const members: Doc<'reports'>[] = [];

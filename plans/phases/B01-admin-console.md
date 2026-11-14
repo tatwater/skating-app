@@ -1581,7 +1581,8 @@ its item's newest row, but every newest row also looks its item up, found or gon
 charges the budget now does one of two things: **(a)** sizes its page with `sizePage` from a row's own
 read plus `work`, everything any branch may charge for it, with what follows the loop kept back; or
 **(b)** asks the budget for the next row's worst case before starting it, and saves its position when
-the budget can't cover it. Either way each row's work runs inside `ReadBudget.row(work)`, which throws on
+the budget can't cover it. Either way each row's work (an `eraseDue` item aside: its drains size themselves
+by what is left) runs inside `ReadBudget.row(work)`, which throws on
 the first row whose branch charges more than declared, in any test that reaches that branch. A pass
 that makes no progress throws instead of rescheduling, and every pass runs in `traced`, which logs the
 position to re-run from (every job is idempotent from it) before Convex records the failure. Sizes
@@ -1596,11 +1597,11 @@ below are at the 12 MiB budget; *R* 1 MiB, *V* 8 KiB, *C* 16 KiB, *F* a flag (*R
 | `authorDeletions.stampWithdrawal` members | b | members until the budget ends | member R + stamp R | Post R + 5 members |
 | `authorDeletions.backfillCommentDeletions` | a | ≤ 200 comments | C (a match hands off, no more reads) | ≤ 3.2 MiB |
 | `authorDeletions.commentLastWord` | a | ≤ 11 rows, the stamp kept back | R | ≤ 12 MiB |
-| `erasure.eraseDue` | b | one item at a time while `ITEM_NEED` fits | head + hold + clock or eraser's fixed reads + one drained row (`ITEM_NEED`, ≤ 10 MiB for a Report); drains size themselves by the rest | ≤ 12 MiB |
+| `erasure.eraseDue` | b | one item at a time while `ITEM_NEED` fits | head + hold + clock or eraser's fixed reads + one drained row (`ITEM_NEED`, 10 MiB + 2V for a Report); drains size themselves by the rest | ≤ 12 MiB |
 | `erasure.settlePhotos` Reports | a | 12 Reports | R | 12 MiB |
 | `erasure.settlePhotos` hazards + deletes | a then b | 9 hazards, one photo kept back; photos while one fits | R; a photo R + access check V + delete R | ≤ 12 MiB |
 | `erasure.backfillClocks` | a then b | 5 Reports (more of lighter kinds), one row's work kept back; withdrawn rows while their work fits | R; a withdrawn row: stamp R + hold (4F + 2V) + clock R | ≤ 12 MiB |
-| `erasure.dropErasedMember` | a (fixed) | the Post and ≤ 9 members | — | 11 MiB; more members than a Post can hold throws, traced |
+| `erasure.dropErasedMember` | a (fixed) | the Post and ≤ 10 members (9 when the erased one is listed) | — | ≤ 12 MiB with the Post's write; more members than a Post can hold throws, traced |
 | `erasure.refreshMemberClocks` | b | members while one fits | member R + hold (2F + V) + clock R | Post R + its hold + 2 members |
 | `lib/contentVerdicts.endStanding` | — | 16 standing verdicts a read, until none | V (not budget-charged: a live writer's loop over rows the writers keep to one) | the writers' invariant |
 

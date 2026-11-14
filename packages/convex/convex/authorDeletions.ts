@@ -67,11 +67,11 @@ export const backfillFromAudit = internalMutation({
       const { cursor, skip = 0, pageSize } = args;
       const reads = new ReadBudget();
       const size = Math.min(Math.max(pageSize ?? BACKFILL_PAGE, 1), BACKFILL_PAGE);
-      // A row and the item it names.
+      // A row's work beside its read: the item it names, looked up on every `author_delete` row.
+      const work = DOC_MAX;
       const page = await reads.page(
         'moderationAction',
-        // A row's work beside its read: the item it names, looked up on every `author_delete` row.
-        sizePage(reads, 'moderationAction', { cap: size, work: DOC_MAX }),
+        sizePage(reads, 'moderationAction', { cap: size, work }),
         (numItems) =>
           ctx.db
             .query('moderationActions')
@@ -87,7 +87,7 @@ export const backfillFromAudit = internalMutation({
         // leaves it unstamped too).
         if (row.targetType === 'post' && meta.derivedFromReportId !== undefined) continue;
         const targetType = row.targetType;
-        const target = await reads.row(DOC_MAX, () =>
+        const target = await reads.row(work, () =>
           loadWithdrawable(ctx, reads, targetType, row.targetId),
         );
         if (!stillDown(target)) continue;
@@ -175,15 +175,14 @@ export const stampWithdrawal = internalMutation({
         );
         return { stamped: 0 };
       }
-      // Each row after the deletion, and for a restore, whether an undo names it. Kept back: the
-      // item, read and stamped.
+      // A row's work beside its read: for a restore, whether an undo names it. Kept back: the item,
+      // read and stamped.
+      const work = ROW_MAX.moderationAction;
       const page = await reads.page(
         'moderationAction',
-        // A row's work beside its read: for a restore, whether an undo names it. Kept back: the item,
-        // read and stamped.
         sizePage(reads, 'moderationAction', {
           cap: args.pageSize ?? BACKFILL_PAGE,
-          work: ROW_MAX.moderationAction,
+          work,
           reserve: 2 * DOC_MAX,
         }),
         (numItems) =>
@@ -197,7 +196,7 @@ export const stampWithdrawal = internalMutation({
       );
       for (const row of page.page) {
         if (row.action !== 'restore') continue;
-        const undo = await reads.row(ROW_MAX.moderationAction, () =>
+        const undo = await reads.row(work, () =>
           reads.one('moderationAction', () =>
             ctx.db
               .query('moderationActions')
@@ -242,10 +241,12 @@ async function stampMembers(
   const seen = new Set<string>(done);
   const todo = (post?.reportIds ?? []).filter((reportId) => !seen.has(reportId));
   const looked: Id<'reports'>[] = [];
+  // A member read, and stamped.
+  const perMember = 2 * ROW_MAX.report;
   for (const reportId of todo) {
-    if (!reads.affords(2 * ROW_MAX.report)) break;
+    if (!reads.affords(perMember)) break;
     looked.push(reportId);
-    await reads.row(2 * ROW_MAX.report, async () => {
+    await reads.row(perMember, async () => {
       const report = await reads.one('report', () => ctx.db.get(reportId));
       if (!report || report.authorDeletedAt !== undefined) return;
       if (report.moderationStatus === 'visible') return;
@@ -255,7 +256,7 @@ async function stampMembers(
   }
   // The Post and one member always fit a fresh pass, so a pass that looked at none is a plan error.
   if (todo.length > 0 && looked.length === 0) {
-    throw new Error('authorDeletions.stampMembers: a pass stamped no member');
+    throw new Error('authorDeletions.stampMembers: a pass looked at no member');
   }
   if (looked.length < todo.length) await again([...done, ...looked]);
   else await resumeWalk(ctx, resume, pageSize, 0);
