@@ -197,9 +197,9 @@ export async function recomputeBodySummary(
       : null,
   );
   if (!body) return;
-  // The body in hand, never a second read of its polygon (see `known`). The summary this writes is no
-  // part of the library row, so the doc read before the patch below is current for it.
-  if (library) await refreshBodyLibrary(ctx, waterBodyId, { now, known: body });
+  // In a nested transaction of its own (`refreshBodyLibrary`), so a body whose library refresh throws
+  // never fails the report write that got here; the cost is a second read of the body there.
+  if (library) await refreshBodyLibrary(ctx, waterBodyId, { now });
   // **Skip the write when nothing changed.** A recompute runs on every report and hazard transition,
   // and a no-op patch is still a document write, a mutation conflict surface and a subscription
   // invalidation for every client watching this lake. Comparing `updatedAt` is deliberately excluded

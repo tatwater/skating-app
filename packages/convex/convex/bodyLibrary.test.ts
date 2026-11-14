@@ -4,12 +4,19 @@
  */
 
 import { countKeysOf, tallyCounts } from '@skating/core';
+import { ConvexError } from 'convex/values';
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { factsOfRow, queueLibraryRefresh, refreshBodyLibrary } from './lib/bodyLibrary';
+import {
+  errorClassOf,
+  factsOfRow,
+  MAX_REFRESH_ATTEMPTS,
+  queueLibraryRefresh,
+  refreshBodyLibrary,
+} from './lib/bodyLibrary';
 import { recomputeBodySummary } from './lib/bodySummary';
 import schema from './schema';
 
@@ -309,6 +316,7 @@ describe('kept current at the writes', () => {
     expect((await t.query(internal.bodyLibrary.state, {})).queued).toBe(1);
     expect(await t.mutation(internal.bodyLibrary.drainQueue, {})).toEqual({
       refreshed: 1,
+      failed: 0,
       more: false,
     });
     expect(await rowsOf(t, id)).toHaveLength(0);
@@ -362,7 +370,11 @@ describe('kept current at the writes', () => {
     await backfill(t);
     await t.run((ctx) => ctx.db.patch(id, { curatedBoost: 1 }));
     vi.setSystemTime(NOW + DAY);
-    expect(await t.mutation(internal.bodyLibrary.repairDrift, {})).toEqual({ refreshed: 1 });
+    expect(await t.mutation(internal.bodyLibrary.repairDrift, {})).toEqual({
+      refreshed: 1,
+      skipped: 0,
+      failed: 0,
+    });
     expect((await rowsOf(t, id))[0]).toMatchObject({ curated: true, refreshedAt: NOW + DAY });
   });
 
@@ -906,5 +918,154 @@ describe('which body an audited action belongs to', () => {
       await refreshBodyLibrary(ctx, id);
     });
     expect((await rowsOf(t, id))[0]).toMatchObject({ everReported: true, reports: 0 });
+  });
+});
+
+describe('a body whose refresh throws', () => {
+  /** A body whose put-ins can't be derived: its outline is a point, and a report asks for a cluster. */
+  async function poison(t: T, name: string) {
+    const id = await seedBody(t, {
+      name,
+      polygon: { type: 'Point', coordinates: [-72, 44] } as never,
+    });
+    await seedReport(t, id, NOW - DAY);
+    return id;
+  }
+
+  test('throws on its own, and the probe is what the tests below lean on', async () => {
+    const t = harness();
+    const id = await poison(t, 'Probe');
+    await expect(
+      t.mutation(internal.bodyLibrary.refreshOne, { waterBodyId: id }),
+    ).rejects.toThrow();
+  });
+
+  const queueRow = (t: T, id: Id<'waterBodies'>) =>
+    t.run((ctx) =>
+      ctx.db
+        .query('bodyLibraryQueue')
+        .withIndex('by_body', (q) => q.eq('waterBodyId', id))
+        .first(),
+    );
+
+  test('does not stop the bodies behind it in the same drain, and goes to the back', async () => {
+    const t = harness();
+    const bad = await poison(t, 'Bad');
+    const good = [await seedBody(t, { name: 'Good A' }), await seedBody(t, { name: 'Good B' })];
+    await t.run((ctx) => queueLibraryRefresh(ctx, [bad, ...good], NOW - DAY));
+    expect(await t.mutation(internal.bodyLibrary.drainQueue, {})).toEqual({
+      refreshed: 2,
+      failed: 1,
+      more: false,
+    });
+    for (const id of good) expect(await rowsOf(t, id)).toHaveLength(2);
+    expect(await rowsOf(t, bad)).toHaveLength(0);
+    expect(await queueRow(t, bad)).toMatchObject({
+      attempts: 1,
+      lastErrorClass: expect.stringMatching(/^[A-Za-z]+$/),
+      queuedAt: NOW,
+    });
+    expect((await queueRow(t, bad))?.parkedAt).toBeUndefined();
+    await expectCountsAreTheTally(t);
+  });
+
+  test('parks after the last attempt, is skipped and counted, and shows in the parked read', async () => {
+    const t = harness();
+    const bad = await poison(t, 'Stubborn');
+    await t.run((ctx) => queueLibraryRefresh(ctx, [bad]));
+    for (let i = 0; i < MAX_REFRESH_ATTEMPTS; i++) {
+      expect(await t.mutation(internal.bodyLibrary.drainQueue, {})).toMatchObject({ failed: 1 });
+    }
+    expect((await queueRow(t, bad))?.parkedAt).toBe(NOW);
+    expect(await t.mutation(internal.bodyLibrary.drainQueue, {})).toEqual({
+      refreshed: 0,
+      failed: 0,
+      more: false,
+    });
+    expect(await t.query(internal.bodyLibrary.state, {})).toMatchObject({ queued: 0, parked: 1 });
+    const admin = await seedUser(t, 'admin');
+    const read = await admin.as.query(api.bodyLibrary.parked, {});
+    expect(read).toEqual({
+      count: 1,
+      capped: false,
+      rows: [
+        {
+          waterBodyId: bad,
+          name: 'Stubborn',
+          attempts: MAX_REFRESH_ATTEMPTS,
+          lastErrorClass: expect.any(String),
+          parkedAt: NOW,
+        },
+      ],
+    });
+    const mod = await seedUser(t);
+    await expect(mod.as.query(api.bodyLibrary.parked, {})).rejects.toThrow();
+    // Released by hand, it waits in the queue again with its attempts reset.
+    expect(await t.mutation(internal.bodyLibrary.retryParked, {})).toEqual({ released: 1 });
+    expect(await queueRow(t, bad)).toMatchObject({ attempts: 0 });
+    expect((await queueRow(t, bad))?.parkedAt).toBeUndefined();
+    await expectCountsAreTheTally(t);
+  });
+
+  test('a moderator’s write on it still lands; once mended, its next audited write un-parks it', async () => {
+    const t = harness();
+    const { as } = await seedUser(t);
+    const bad = await poison(t, 'Mended');
+    await seedBody(t, { name: 'Bystander' });
+    await backfill(t);
+    // The backfill page went on past it; the bystander has its rows.
+    expect((await t.query(internal.bodyLibrary.state, {})).corpus).toBe(1);
+    await t.run((ctx) =>
+      ctx.db
+        .query('bodyLibraryQueue')
+        .withIndex('by_body', (q) => q.eq('waterBodyId', bad))
+        .first()
+        .then((row) => row && ctx.db.patch(row._id, { parkedAt: NOW, attempts: 3 })),
+    );
+    await as.mutation(api.standing.setStanding, { waterBodyId: bad, standing: 'dormant' });
+    expect((await t.run((ctx) => ctx.db.get(bad)))?.dormant?.reason).toBe('moderator');
+    expect((await queueRow(t, bad))?.parkedAt).toBe(NOW);
+    await t.run((ctx) => ctx.db.patch(bad, { polygon: square(0.01) }));
+    await as.mutation(api.standing.setStanding, { waterBodyId: bad, standing: 'active' });
+    expect(await queueRow(t, bad)).toBeNull();
+    expect((await rowsOf(t, bad)).map((r) => r.lane)).toEqual(['active', 'active']);
+    await expectCountsAreTheTally(t);
+  });
+
+  test('the drift repair passes a failing or parked body and moves on', async () => {
+    const t = harness();
+    const bad = await seedBody(t, { name: 'Soured' });
+    const parked = await seedBody(t, { name: 'Parked' });
+    await backfill(t);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(bad, { polygon: { type: 'Point', coordinates: [-72, 44] } as never });
+      await ctx.db.insert('bodyLibraryQueue', {
+        waterBodyId: parked,
+        queuedAt: NOW,
+        attempts: 3,
+        parkedAt: NOW,
+      });
+    });
+    await seedReport(t, bad, NOW - DAY);
+    vi.setSystemTime(NOW + 2 * DAY);
+    expect(await t.mutation(internal.bodyLibrary.repairDrift, {})).toEqual({
+      refreshed: 0,
+      skipped: 1,
+      failed: 1,
+    });
+    for (const id of [bad, parked]) {
+      expect((await rowsOf(t, id))[0]?.refreshedAt).toBe(NOW + 2 * DAY);
+    }
+    expect(await queueRow(t, bad)).toMatchObject({ attempts: 1 });
+    await expectCountsAreTheTally(t);
+  });
+
+  test('names an error by its class, never its message', () => {
+    expect(errorClassOf(new ConvexError('a lake called Secret'))).toBe('ConvexError');
+    expect(errorClassOf(new TypeError('x'))).toBe('TypeError');
+    const odd = new Error('y');
+    odd.name = 'has spaces and words';
+    expect(errorClassOf(odd)).toBe('Error');
+    expect(errorClassOf('a string')).toBe('unknown');
   });
 });

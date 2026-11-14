@@ -49,6 +49,8 @@ import {
   unknownLastKeys,
   waterBodyClassLabel,
 } from '@skating/core';
+import { ConvexError } from 'convex/values';
+import { internal } from '../_generated/api';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { MAX_ACCESS_ROWS_PER_BODY } from './accessLimits';
@@ -363,15 +365,17 @@ function stripSystem(row: Row): RowFields {
 }
 
 /**
- * Recompute one body's library rows from its records and move the counts with them.
+ * Recompute one body's library rows from its records and move the counts with them — **in the
+ * caller's transaction**, so a throw here fails the caller. Every caller outside this module goes
+ * through {@link refreshBodyLibrary}, which runs this in a nested transaction of its own.
  *
- * - `known` — the body, when the caller already holds it (a backfill page);
+ * - `known` — the body, when the caller already holds it;
  * - `changedAt` — stamp *Changed* (a moderator acted on the body or its bays, landmarks, put-ins);
  *   otherwise the stored date stands.
  *
  * A body that is gone or merged loses its rows. Writes only what changed.
  */
-export async function refreshBodyLibrary(
+export async function rebuildBodyLibrary(
   ctx: MutationCtx,
   waterBodyId: Id<'waterBodies'>,
   opts: { known?: Doc<'waterBodies'>; changedAt?: number; now?: number } = {},
@@ -388,6 +392,7 @@ export async function refreshBodyLibrary(
   if (!body || standing === null) {
     for (const row of existing) await ctx.db.delete(row._id);
     await applyCountDeltas(ctx, countDeltas(before, null));
+    await clearQueued(ctx, waterBodyId);
     return;
   }
 
@@ -426,6 +431,81 @@ export async function refreshBodyLibrary(
   }
   for (const stale of byScope.values()) await ctx.db.delete(stale._id);
   await applyCountDeltas(ctx, countDeltas(before, footprintOf(next)));
+  await clearQueued(ctx, waterBodyId);
+}
+
+// ── Isolation: one body's failure never fails its caller ─────────────────────────────────────
+
+/** Attempts a body's refresh gets before it is parked: skipped by the drain and the repair. */
+export const MAX_REFRESH_ATTEMPTS = 3;
+
+/** An error's class for the queue — its kind only, never its message (which can carry content). */
+export function errorClassOf(err: unknown): string {
+  if (err instanceof ConvexError) return 'ConvexError';
+  if (err instanceof Error) return /^[A-Za-z]{1,40}$/.test(err.name) ? err.name : 'Error';
+  return 'unknown';
+}
+
+/** A body's queue entry, cleared: its rows are current (a refresh that succeeded un-parks it). */
+async function clearQueued(ctx: MutationCtx, waterBodyId: Id<'waterBodies'>): Promise<void> {
+  const rows = await ctx.db
+    .query('bodyLibraryQueue')
+    .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
+    .take(4);
+  for (const row of rows) await ctx.db.delete(row._id);
+}
+
+/**
+ * Record a failed refresh: one more attempt, its error class, and to the back of the queue; parked
+ * after {@link MAX_REFRESH_ATTEMPTS}. Written in the caller's transaction, after the nested one that
+ * failed rolled back.
+ */
+export async function recordRefreshFailure(
+  ctx: MutationCtx,
+  waterBodyId: Id<'waterBodies'>,
+  err: unknown,
+  now: number,
+): Promise<void> {
+  const row = await ctx.db
+    .query('bodyLibraryQueue')
+    .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
+    .first();
+  const attempts = (row?.attempts ?? 0) + 1;
+  const fields = {
+    queuedAt: now,
+    attempts,
+    lastErrorClass: errorClassOf(err),
+    ...(attempts >= MAX_REFRESH_ATTEMPTS ? { parkedAt: row?.parkedAt ?? now } : {}),
+  };
+  if (row === null) await ctx.db.insert('bodyLibraryQueue', { waterBodyId, ...fields });
+  else await ctx.db.patch(row._id, fields);
+}
+
+/**
+ * **Refresh one body's library rows, isolated**: {@link rebuildBodyLibrary} in a nested transaction,
+ * so a body whose refresh throws rolls back only its own work — never the moderator's write, the
+ * report, or the rest of a drain or repair. A failure is recorded on the body's queue entry
+ * ({@link recordRefreshFailure}). Returns whether the refresh succeeded.
+ */
+export async function refreshBodyLibrary(
+  ctx: MutationCtx,
+  waterBodyId: Id<'waterBodies'>,
+  opts: { changedAt?: number; now?: number } = {},
+): Promise<boolean> {
+  const now = opts.now ?? Date.now();
+  try {
+    await ctx.runMutation(internal.bodyLibrary.refreshOne, {
+      waterBodyId,
+      now,
+      ...(opts.changedAt !== undefined ? { changedAt: opts.changedAt } : {}),
+    });
+    return true;
+  } catch (err) {
+    await recordRefreshFailure(ctx, waterBodyId, err, now);
+    // The stamp the failed refresh would have written, so the drain carries it.
+    if (opts.changedAt !== undefined) await stampChanged(ctx, waterBodyId, opts.changedAt);
+    return false;
+  }
 }
 
 // ── Which body an audited action belongs to ──────────────────────────────────────────────────
@@ -573,6 +653,7 @@ export async function queueLibraryRefresh(
   ids: Iterable<Id<'waterBodies'>>,
   now: number = Date.now(),
 ): Promise<void> {
+  // A body already queued — or parked — keeps its entry: a bulk write doesn't un-park it.
   for (const waterBodyId of new Set(ids)) {
     const queued = await ctx.db
       .query('bodyLibraryQueue')
@@ -582,21 +663,47 @@ export async function queueLibraryRefresh(
   }
 }
 
-/** Refresh up to `limit` queued bodies, oldest first; returns how many it took and whether more wait. */
+/**
+ * Refresh up to `limit` queued bodies, oldest first, parked ones skipped. Each refresh is isolated:
+ * a body that throws goes to the back with one more attempt and the rest of the batch goes on.
+ */
 export async function drainLibraryQueue(
   ctx: MutationCtx,
   limit: number,
-): Promise<{ refreshed: number; more: boolean }> {
+): Promise<{ refreshed: number; failed: number; more: boolean }> {
   const due = await ctx.db
     .query('bodyLibraryQueue')
-    .withIndex('by_queued_at')
+    .withIndex('by_parked_queued', (q) => q.eq('parkedAt', undefined))
     .take(limit + 1);
   const batch = due.slice(0, limit);
+  const now = Date.now();
+  let refreshed = 0;
   for (const row of batch) {
-    await refreshBodyLibrary(ctx, row.waterBodyId);
-    await ctx.db.delete(row._id);
+    if (await refreshBodyLibrary(ctx, row.waterBodyId, { now })) refreshed++;
   }
-  return { refreshed: batch.length, more: due.length > limit };
+  return { refreshed, failed: batch.length - refreshed, more: due.length > limit };
+}
+
+/** Whether a body's refresh is parked. */
+export async function isParked(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>): Promise<boolean> {
+  const row = await ctx.db
+    .query('bodyLibraryQueue')
+    .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
+    .first();
+  return row?.parkedAt !== undefined;
+}
+
+/** Move a body's rows' `refreshedAt` on, so the drift repair passes it (a parked or failed body). */
+export async function markRead(
+  ctx: MutationCtx,
+  waterBodyId: Id<'waterBodies'>,
+  now: number,
+): Promise<void> {
+  const rows = await ctx.db
+    .query('bodyLibraryRows')
+    .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
+    .take(MAX_SCOPES);
+  for (const row of rows) await ctx.db.patch(row._id, { refreshedAt: now });
 }
 
 /** The rows a lane, scope and key count, read as the library's lanes and facets use them. */

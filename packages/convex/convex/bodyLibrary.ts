@@ -16,13 +16,35 @@ import { currentSeason } from '@skating/core';
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
-import { internalAction, internalMutation, internalQuery } from './_generated/server';
+import { internalAction, internalMutation, internalQuery, query } from './_generated/server';
+import { requireCapability } from './lib/auth';
 import {
   bodiesOfTarget,
   drainLibraryQueue,
+  isParked,
+  markRead,
+  rebuildBodyLibrary,
   refreshBodyLibrary,
   stampChanged,
 } from './lib/bodyLibrary';
+
+/**
+ * One body's refresh as its own (nested) transaction — what `refreshBodyLibrary` runs, so a body
+ * that throws rolls back only its own work.
+ */
+export const refreshOne = internalMutation({
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    changedAt: v.optional(v.number()),
+    now: v.optional(v.number()),
+  },
+  handler: async (ctx, { waterBodyId, changedAt, now }) => {
+    await rebuildBodyLibrary(ctx, waterBodyId, {
+      ...(changedAt !== undefined ? { changedAt } : {}),
+      ...(now !== undefined ? { now } : {}),
+    });
+  },
+});
 
 /** Bodies a backfill page refreshes. Small: a body is its polygon, and a busy one its reports. */
 export const BACKFILL_BATCH = 10;
@@ -41,7 +63,8 @@ export const backfill = internalMutation({
       maximumBytesRead: BACKFILL_MAX_BYTES,
     });
     const now = Date.now();
-    for (const body of page.page) await refreshBodyLibrary(ctx, body._id, { known: body, now });
+    // Each body isolated: one that throws is queued with its attempt, and the page goes on.
+    for (const body of page.page) await refreshBodyLibrary(ctx, body._id, { now });
     return {
       refreshed: page.page.length,
       isDone: page.isDone,
@@ -164,8 +187,68 @@ export const repairDrift = internalMutation({
       .take(DRIFT_BATCH * 4);
     const bodies = [...new Set(rows.map((r) => r.waterBodyId))].slice(0, DRIFT_BATCH);
     const now = Date.now();
-    for (const id of bodies) await refreshBodyLibrary(ctx, id, { now });
-    return { refreshed: bodies.length };
+    let refreshed = 0;
+    let skipped = 0;
+    for (const id of bodies) {
+      // A parked body is passed over, and a failing one too: each is marked read so the repair moves
+      // on rather than meeting it again first on every tick.
+      if (await isParked(ctx, id)) {
+        skipped++;
+        await markRead(ctx, id, now);
+      } else if (await refreshBodyLibrary(ctx, id, { now })) refreshed++;
+      else await markRead(ctx, id, now);
+    }
+    return { refreshed, skipped, failed: bodies.length - refreshed - skipped };
+  },
+});
+
+/** The most parked bodies the parked read lists. */
+const PARKED_LIST = 50;
+
+/**
+ * Release parked bodies back to the queue — their attempts reset, at its back — for the drain to
+ * try again. The way out besides the body's next audited write.
+ */
+export const retryParked = internalMutation({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, { limit }) => {
+    const parked = await ctx.db
+      .query('bodyLibraryQueue')
+      .withIndex('by_parked_queued', (q) => q.gt('parkedAt', 0))
+      .take(Math.min(500, Math.max(1, limit ?? 100)));
+    const now = Date.now();
+    for (const row of parked) {
+      await ctx.db.patch(row._id, { parkedAt: undefined, attempts: 0, queuedAt: now });
+    }
+    return { released: parked.length };
+  },
+});
+
+/**
+ * **Bodies whose library refresh is parked** — for the console's Machinery: how many (counted to
+ * the list's bound, `capped` past it), and each with its attempts, its last error's class and when
+ * it was parked. No content: an error's class, never its message.
+ */
+export const parked = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireCapability(ctx, 'machinery.read');
+    const rows = await ctx.db
+      .query('bodyLibraryQueue')
+      .withIndex('by_parked_queued', (q) => q.gt('parkedAt', 0))
+      .take(PARKED_LIST + 1);
+    const out = [];
+    for (const row of rows.slice(0, PARKED_LIST)) {
+      const body = await ctx.db.get(row.waterBodyId);
+      out.push({
+        waterBodyId: row.waterBodyId,
+        name: body?.name ?? null,
+        attempts: row.attempts ?? 0,
+        lastErrorClass: row.lastErrorClass ?? null,
+        parkedAt: row.parkedAt as number,
+      });
+    }
+    return { count: out.length, capped: rows.length > PARKED_LIST, rows: out };
   },
 });
 
@@ -179,11 +262,19 @@ export const state = internalQuery({
         q.eq('lane', 'all').eq('scope', '*').eq('key', 'total'),
       )
       .first();
-    const queued = await ctx.db.query('bodyLibraryQueue').take(1001);
+    const queued = await ctx.db
+      .query('bodyLibraryQueue')
+      .withIndex('by_parked_queued', (q) => q.eq('parkedAt', undefined))
+      .take(1001);
+    const parkedRows = await ctx.db
+      .query('bodyLibraryQueue')
+      .withIndex('by_parked_queued', (q) => q.gt('parkedAt', 0))
+      .take(1001);
     return {
       corpus: corpus?.count ?? 0,
       queued: Math.min(queued.length, 1000),
       queuedCapped: queued.length > 1000,
+      parked: Math.min(parkedRows.length, 1000),
     };
   },
 });

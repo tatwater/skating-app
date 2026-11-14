@@ -4405,13 +4405,24 @@ export default defineSchema({
 
   /**
    * **Bodies whose library row is owed a refresh** — queued by the machine's bulk writes that leave
-   * no audit row (the imports, the enrichment loads, the prunes), drained by the minute cron. One
-   * row per body; a moderator's write never waits on it (it refreshes in its own transaction).
+   * no audit row (the imports, the enrichment loads, the prunes) and by a refresh that failed,
+   * drained by the minute cron. One row per body; a moderator's write never waits on it.
    */
   bodyLibraryQueue: defineTable({
     waterBodyId: v.id('waterBodies'),
     queuedAt: v.number(),
+    /** Refreshes that failed; the entry goes to the back of the queue after each. */
+    attempts: v.optional(v.number()),
+    /** The last failure's error class (`ConvexError`, `TypeError`…) — never its message. */
+    lastErrorClass: v.optional(v.string()),
+    /**
+     * Parked after the last allowed attempt: the drain and the drift repair skip it until the body
+     * is next written through the audit path, or `bodyLibrary:retryParked` releases it.
+     */
+    parkedAt: v.optional(v.number()),
   })
     .index('by_body', ['waterBodyId'])
-    .index('by_queued_at', ['queuedAt']),
+    // The drain: `eq('parkedAt', undefined)` — the waiting entries, oldest first. The parked read:
+    // `gt('parkedAt', 0)`, a lower bound past the unparked majority.
+    .index('by_parked_queued', ['parkedAt', 'queuedAt']),
 });
