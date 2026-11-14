@@ -1,6 +1,7 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { stubJsdomAnimations } from '../jsdomStubs';
 
 const convex = vi.hoisted(() => ({
   results: new Map<string, unknown>(),
@@ -9,8 +10,12 @@ const convex = vi.hoisted(() => ({
 vi.mock('convex/react', async () => {
   const { getFunctionName } = await import('convex/server');
   return {
-    useQuery: (ref: Parameters<typeof getFunctionName>[0]) =>
-      convex.results.get(getFunctionName(ref)),
+    useQueries: (
+      queries: Record<string, { query: Parameters<typeof getFunctionName>[0]; args: unknown }>,
+    ) =>
+      Object.fromEntries(
+        Object.entries(queries).map(([k, q]) => [k, convex.results.get(getFunctionName(q.query))]),
+      ),
     useMutation: (ref: Parameters<typeof getFunctionName>[0]) => {
       const name = getFunctionName(ref);
       const made = convex.mutations.get(name) ?? vi.fn(async () => null);
@@ -30,6 +35,17 @@ const archive = vi.hoisted(() => ({
   >,
   calls: [] as unknown[],
 }));
+const where = vi.hoisted(() => ({ archiveUrl: 'https://archive.example' }));
+vi.mock('@/lib/env', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/env')>();
+  return {
+    ...actual,
+    env: new Proxy(actual.env, {
+      get: (target, key) =>
+        key === 'imageryArchiveUrl' ? where.archiveUrl : Reflect.get(target, key),
+    }),
+  };
+});
 vi.mock('@/components/useFreezeUpTimeline', () => ({
   useFreezeUpTimeline: (args: unknown) => {
     archive.calls.push(args);
@@ -39,8 +55,11 @@ vi.mock('@/components/useFreezeUpTimeline', () => ({
 
 import type { Id } from '@skating/convex/dataModel';
 import { ConvexError } from 'convex/values';
+import { resetReadPauses } from '../hazards/tabReads';
 import { IMAGERY_TAB, ImageryDock, ImageryTab } from './ImageryTab';
 import { granuleOf, MASCOMA_STOPS } from './imageryFixtures';
+
+beforeAll(stubJsdomAnimations);
 
 const BODY = 'k1' as Id<'waterBodies'>;
 const MASCOMA = {
@@ -52,6 +71,8 @@ const MASCOMA = {
 };
 
 beforeEach(() => {
+  resetReadPauses();
+  where.archiveUrl = 'https://archive.example';
   convex.results.clear();
   convex.mutations.clear();
   undo.announce.mockClear();
@@ -67,21 +88,26 @@ beforeEach(() => {
 });
 
 describe('ImageryTab', () => {
-  it('draws nothing until the body lands, and asks the archive nothing for an unlisted one', () => {
+  it('holds its place until the body lands, and asks the archive nothing for an unlisted one', () => {
     const { container, rerender } = render(<ImageryTab bodyId={BODY} />);
-    expect(container).toBeEmptyDOMElement();
+    expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
+    convex.results.set('waterBodies:get', new Error('boom'));
+    rerender(<ImageryTab bodyId={BODY} />);
+    expect(screen.getByText('This body couldn’t be read')).toBeVisible();
     convex.results.set('waterBodies:get', { available: false });
     rerender(<ImageryTab bodyId={BODY} />);
     expect(container).toBeEmptyDOMElement();
     expect(archive.calls.at(-1)).toEqual({ body: null, band: 'visual', enabled: false });
   });
 
-  it('reads the app’s own timeline: the season, the passes, no call without a writer', () => {
+  it('reads the app’s own timeline: the season, the passes; the call is drawn, not available yet', () => {
     convex.results.set('waterBodies:get', { available: true, body: MASCOMA });
     render(<ImageryTab bodyId={BODY} />);
     expect(screen.getByText('Winter 2026–27')).toBeVisible();
     expect(screen.getAllByRole('row')).toHaveLength(8);
-    expect(screen.queryByRole('button', { name: /skaters/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /Hide from skaters/ })).toHaveAttribute(
+      'data-unavailable',
+    );
     expect(screen.getByRole('link', { name: /Copernicus Browser/ }).getAttribute('href')).toMatch(
       /^https:\/\/browser\.dataspace\.copernicus\.eu\//,
     );
@@ -115,11 +141,41 @@ describe('ImageryTab', () => {
     expect(undo.announce).not.toHaveBeenCalled();
   });
 
-  it('a viewer without body.water reads the choice and can’t change it', () => {
+  it('a viewer without body.water reads the choice and can’t change it, and has no call', () => {
     role.caps = new Set();
     convex.results.set('waterBodies:get', { available: true, body: MASCOMA });
     render(<ImageryTab bodyId={BODY} />);
     expect(screen.getByRole('button', { name: 'Never' })).toHaveAttribute('data-disabled');
+    expect(screen.queryByRole('button', { name: /skaters/ })).toBeNull();
+  });
+
+  it('while the archive is on its way the card holds its place; without an address it says so', () => {
+    convex.results.set('waterBodies:get', { available: true, body: MASCOMA });
+    archive.value = { ...archive.value, timeline: null, index: null, season: null, loading: true };
+    const { rerender } = render(<ImageryTab bodyId={BODY} />);
+    expect(document.querySelector('[data-slot="passes-loading"]')).not.toBeNull();
+    expect(screen.queryByText(/No satellite pass/)).toBeNull();
+    where.archiveUrl = '';
+    rerender(<ImageryTab bodyId={BODY} />);
+    expect(screen.getByText(/No imagery archive is set up for this deployment/)).toBeVisible();
+  });
+
+  it('an archive that couldn’t be read says so; Try again asks it afresh', async () => {
+    convex.results.set('waterBodies:get', { available: true, body: MASCOMA });
+    archive.value = { ...archive.value, timeline: null, index: null, error: true };
+    render(<ImageryTab bodyId={BODY} />);
+    expect(
+      screen.getByText(
+        'The imagery archive couldn’t be read. That is about the archive, not the lake.',
+      ),
+    ).toBeVisible();
+    archive.calls = [];
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    // The paused commit lets go of the archive (disabled), then it is enabled again.
+    await vi.waitFor(() =>
+      expect(archive.calls.some((c) => (c as { enabled: boolean }).enabled === false)).toBe(true),
+    );
+    await vi.waitFor(() => expect(archive.calls.at(-1)).toMatchObject({ enabled: true }));
   });
 
   it('the dock and the inspector share the lit pass when the frame holds it', async () => {

@@ -7,7 +7,7 @@ import { faceLoaded, must } from '@/components/kit/storyKit';
 import { ThemePair } from '../../../../../../.storybook/theme';
 
 import { ImageryDockView } from './ImageryDockView';
-import { ImageryTabView, type ImageryTabViewProps } from './ImageryTabView';
+import { ImageryTabView, type ImageryTabViewProps, UNAVAILABLE } from './ImageryTabView';
 import { granuleOf, MASCOMA_PASSES, MASCOMA_SATELLITE, SEASON } from './imageryFixtures';
 import { selectedPass } from './imageryModel';
 
@@ -24,7 +24,8 @@ const meta = {
     rows: MASCOMA_PASSES,
     lit: null,
     onLitChange: fn(),
-    onOverride: fn(async () => {}),
+    onOverride: fn(async () => {}) as ImageryTabViewProps['onOverride'],
+    onRetry: fn(),
     satellite: MASCOMA_SATELLITE,
     onSatelliteChange: fn(async () => {}),
   },
@@ -123,4 +124,36 @@ export const Scrub: Story = {
 /** A viewer without the writers: no call, the satellite choice read-only. */
 export const ReadOnly: Story = {
   args: { onOverride: undefined, onSatelliteChange: undefined },
+};
+
+/**
+ * As the console wires it today: the pass override has no writer on the server, so the call is
+ * drawn as the board draws it and says *Not available yet*.
+ */
+export const Wired: Story = {
+  args: { onOverride: UNAVAILABLE },
+  play: async ({ canvasElement }) => {
+    const call = within(quad(canvasElement)).getByRole('button', { name: /Hide from skaters/ });
+    await expect(call).toHaveAttribute('aria-disabled', 'true');
+  },
+};
+
+/** The archive on its way: the card holds its place, and nothing is said about the lake. */
+export const Loading: Story = {
+  args: { rows: undefined, season: null },
+  play: async ({ canvasElement }) => {
+    const tab = must(quad(canvasElement).querySelector<HTMLElement>('[data-slot="imagery-tab"]'));
+    await expect(tab.querySelector('[data-slot="passes-loading"]')).not.toBeNull();
+    await expect(within(tab).queryByText(/No satellite pass/)).toBeNull();
+  },
+};
+
+/** The archive couldn't be read: a fact about the archive, with Try again. */
+export const ArchiveFailed: Story = {
+  args: { rows: undefined, season: null, archiveError: true },
+  play: async ({ canvasElement, args }) => {
+    const q = within(quad(canvasElement));
+    await userEvent.click(q.getByRole('button', { name: 'Try again' }));
+    await expect(args.onRetry).toHaveBeenCalled();
+  },
 };

@@ -115,7 +115,12 @@ const NONE: Parameters<typeof useQueries>[0] = {};
 export function useTabReads<S extends Record<string, TabRead | null>>(
   key: string,
   specs: S,
-): { got: Results<S>; retry: () => void } {
+): {
+  got: Results<S>;
+  retry: () => void;
+  /** `false` for the commit a retry pauses on: a reader outside Convex lets go too. */
+  live: boolean;
+} {
   const { live, retry } = useReadPause(key);
   const identity = JSON.stringify(
     Object.entries(specs).map(([k, s]) => [
@@ -134,7 +139,7 @@ export function useTabReads<S extends Record<string, TabRead | null>>(
     return out;
   }, [identity, live]);
   const got = useQueries(queries) as Results<S>;
-  return { got, retry };
+  return { got, retry, live };
 }
 
 /** The first failure among `results`, if any. */

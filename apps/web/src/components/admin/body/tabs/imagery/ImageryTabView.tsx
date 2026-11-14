@@ -21,6 +21,7 @@ import { Badge } from '@/components/kit/badge';
 import { Button, buttonVariants } from '@/components/kit/button';
 import { Kbd } from '@/components/kit/kbd';
 import { Meter } from '@/components/kit/meter';
+import { Note } from '@/components/kit/note';
 import { Plate } from '@/components/kit/plate';
 import { Section } from '@/components/kit/section-slug';
 import {
@@ -32,8 +33,11 @@ import {
   TableRow,
 } from '@/components/kit/table';
 import { ToggleGroup, ToggleGroupItem } from '@/components/kit/toggle-group';
+import { sayUnavailable, UnavailableButton } from '@/components/kit/unavailable-button';
 import { usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
+import { ReadFailed } from '../hazards/kit-candidates/read-failed';
+import { LoadingSection } from '../tabParts';
 
 import {
   CLEAR_GATE_PCT,
@@ -63,13 +67,20 @@ export type ImageryTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
   rows: readonly PassRow[] | undefined;
   /** The archive could not be read — a fact about the archive, never about the lake. */
   archiveError?: boolean;
+  /** This deployment has no address for the archive, so nothing can be read from it. */
+  archiveUnconfigured?: boolean;
+  /** Read the archive again after a failure. Absent: no *Try again*. */
+  onRetry?: () => void;
   lit: string | null;
   onLitChange: (id: string) => void;
   /**
    * Show a hidden pass anyway, or hide a shown one. Hiding takes the pass from skaters, so it asks
-   * a reason first; showing asks nothing. Absent: no call is offered.
+   * a reason first; showing asks nothing. Absent: no call is offered; `'unavailable'`: the call is
+   * drawn and says *Not available yet* (no writer on the server).
    */
-  onOverride?: (id: string, verdict: 'show' | 'hide', reason?: string) => Promise<void>;
+  onOverride?:
+    | ((id: string, verdict: 'show' | 'hide', reason?: string) => Promise<void>)
+    | typeof UNAVAILABLE;
   satellite: {
     mode: SatelliteImageryMode;
     name: string | undefined;
@@ -81,6 +92,13 @@ export type ImageryTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
   onSatelliteChange?: (mode: SatelliteImageryMode) => Promise<void>;
 };
 
+/** A call whose writer isn't built: drawn, and saying *Not available yet*. */
+export const UNAVAILABLE = 'unavailable';
+
+/** What the pass call will do, for its *Not available yet*. */
+const OVERRIDE_WHAT =
+  'A staff call on a pass, showing a clouded pass anyway or hiding a shown one, comes with the pass override.';
+
 const SATELLITE_CHOICES: ReadonlyArray<{ value: SatelliteImageryMode; label: string }> = [
   { value: 'auto', label: 'Auto' },
   { value: 'on', label: 'Always offer' },
@@ -91,9 +109,11 @@ export function ImageryTabView({
   season,
   rows,
   archiveError = false,
+  archiveUnconfigured = false,
+  onRetry,
   lit,
   onLitChange,
-  onOverride,
+  onOverride: override,
   satellite,
   onSatelliteChange,
   className,
@@ -106,6 +126,8 @@ export function ImageryTabView({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const hidden = row !== undefined && !isShown(row.seen);
+  const unavailable = override === UNAVAILABLE;
+  const onOverride = unavailable ? undefined : override;
 
   const [asking, setAsking] = useState(false);
   const [reason, setReason] = useState('');
@@ -125,6 +147,10 @@ export function ImageryTabView({
     }
   };
   const call = () => {
+    if (unavailable) {
+      sayUnavailable(OVERRIDE_WHAT);
+      return;
+    }
     if (hidden) {
       void write('show');
       return;
@@ -153,13 +179,13 @@ export function ImageryTabView({
     {
       key: 'S',
       run: call,
-      enabled: onOverride !== undefined && hidden && !busy,
+      enabled: override !== undefined && hidden && !busy,
       label: 'Show to skaters anyway',
     },
     {
       key: 'H',
       run: call,
-      enabled: onOverride !== undefined && row !== undefined && !hidden && !busy,
+      enabled: override !== undefined && row !== undefined && !hidden && !busy,
       label: 'Hide from skaters',
     },
   ]);
@@ -184,7 +210,19 @@ export function ImageryTabView({
         }
       >
         {rows === undefined ? (
-          <p className="m-0 text-assist text-fg3">{archiveError ? '' : 'Loading the passes'}</p>
+          archiveUnconfigured ? (
+            <Note data-slot="archive-unconfigured">
+              No imagery archive is set up for this deployment, so no passes can be read here.
+            </Note>
+          ) : archiveError ? (
+            <ReadFailed data-slot="archive-failed" onRetry={onRetry}>
+              The imagery archive couldn’t be read. That is about the archive, not the lake.
+            </ReadFailed>
+          ) : (
+            <div aria-busy="true" data-slot="passes-loading">
+              <LoadingSection lines={4} />
+            </div>
+          )
         ) : row === undefined ? (
           <p className="m-0 text-assist text-fg3">
             No satellite pass reached this body this winter
@@ -223,11 +261,18 @@ export function ImageryTabView({
                 unit="%"
               />
             </div>
-            {onOverride !== undefined && (
-              <Button size="sm" loading={busy} className="w-full" onClick={call}>
+            {unavailable ? (
+              <UnavailableButton size="sm" className="w-full" what={OVERRIDE_WHAT}>
                 {hidden ? 'Show to skaters anyway' : 'Hide from skaters'}
                 <Kbd variant="dim">{hidden ? 'S' : 'H'}</Kbd>
-              </Button>
+              </UnavailableButton>
+            ) : (
+              onOverride !== undefined && (
+                <Button size="sm" loading={busy} className="w-full" onClick={call}>
+                  {hidden ? 'Show to skaters anyway' : 'Hide from skaters'}
+                  <Kbd variant="dim">{hidden ? 'S' : 'H'}</Kbd>
+                </Button>
+              )
             )}
             {error !== null && !asking && (
               <p role="alert" className="m-0 text-assist text-bad">

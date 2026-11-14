@@ -1,10 +1,11 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { stubJsdomAnimations } from '../jsdomStubs';
 import { ImageryDockView } from './ImageryDockView';
-import { ImageryTabView, type ImageryTabViewProps } from './ImageryTabView';
+import { ImageryTabView, type ImageryTabViewProps, UNAVAILABLE } from './ImageryTabView';
 import {
   granuleOf,
   INFERRED_STOP,
@@ -13,6 +14,8 @@ import {
   SEASON,
 } from './imageryFixtures';
 import { passRows } from './imageryModel';
+
+beforeAll(stubJsdomAnimations);
 
 const base: ImageryTabViewProps = {
   season: SEASON,
@@ -111,12 +114,44 @@ describe('ImageryTabView', () => {
     expect(screen.getAllByText('Not measured')).toHaveLength(4);
   });
 
-  it('says what it can before the passes land, and when none reached the body', () => {
+  it('holds the card’s place before the passes land, and says when none reached the body', () => {
     const { rerender } = render(<ImageryTabView {...base} rows={undefined} />);
-    expect(screen.getByText('Loading the passes')).toBeVisible();
+    expect(document.querySelector('[data-slot="passes-loading"]')).toHaveAttribute(
+      'aria-busy',
+      'true',
+    );
+    expect(screen.queryByText(/No satellite pass/)).toBeNull();
     rerender(<ImageryTabView {...base} rows={[]} />);
     expect(screen.getByText('No satellite pass reached this body this winter')).toBeVisible();
     expect(screen.queryByText('Passes')).toBeNull();
+  });
+
+  it('an archive that couldn’t be read, or has no address, says so — never a word about the lake', async () => {
+    const onRetry = vi.fn();
+    const { rerender } = render(
+      <ImageryTabView {...base} rows={undefined} archiveError onRetry={onRetry} />,
+    );
+    expect(
+      screen.getByText(/couldn’t be read\. That is about the archive, not the lake\./),
+    ).toBeVisible();
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(onRetry).toHaveBeenCalled();
+    rerender(<ImageryTabView {...base} rows={undefined} archiveUnconfigured />);
+    expect(screen.getByText(/No imagery archive is set up for this deployment/)).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+  });
+
+  it('a call with no writer is drawn as the board draws it and does nothing else', async () => {
+    render(<ImageryTabView {...base} lit={granuleOf(10)} onOverride={UNAVAILABLE} />);
+    const call = screen.getByRole('button', { name: /Show to skaters anyway/ });
+    expect(call).toHaveAttribute('aria-disabled', 'true');
+    await userEvent.click(call);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    // Its key says so too, and opens nothing.
+    const pane = document.querySelector<HTMLElement>('[data-slot="imagery-tab"]');
+    pane?.focus();
+    fireEvent.keyDown(pane as HTMLElement, { key: 'S' });
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
   it('sets the satellite link; without a writer the choice is read-only', async () => {
