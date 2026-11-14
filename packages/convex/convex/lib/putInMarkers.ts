@@ -69,7 +69,7 @@ export interface PutInMarker {
  * The most stored put-in rows read for one body — a read bound well past any body's launches (the
  * busiest carry a few dozen), so a pathological body cannot make the map's read unbounded.
  */
-const PUT_IN_ROWS_CAP = 1_000;
+export const PUT_IN_ROWS_CAP = 1_000;
 
 /**
  * Split a body's stored `putIns` rows into official markers, **persisted derived** markers, and the

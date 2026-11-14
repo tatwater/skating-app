@@ -34,8 +34,10 @@ import { requireCapability } from './lib/auth';
 import { hasContoursFor } from './lib/bodyLibrary';
 import { MODERATION_ACTIONS } from './lib/enums';
 import { landmarksForBody } from './lib/landmarkRows';
+import { QUEUE_CAP } from './lib/requestDecisions';
 import { undoState } from './lib/undo';
 import { literals } from './lib/validators';
+import { subAreasForBody } from './subAreas';
 import { bodiesCoveringBox } from './waterBodies';
 
 /** A person as the console names them; `null` for the machine or an erased account. */
@@ -204,10 +206,8 @@ export const bayProvenance = query({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { waterBodyId }) => {
     await requireCapability(ctx, 'body.read');
-    const bays = await ctx.db
-      .query('waterBodySubAreas')
-      .withIndex('by_parent', (q) => q.eq('waterBodyId', waterBodyId))
-      .take(MAX_BAYS);
+    // The same bays `subAreas.listForBody` lists, so every bay the tab shows has its provenance.
+    const bays = await subAreasForBody(ctx, waterBodyId);
     const out = [];
     for (const bay of bays) {
       const created = await ctx.db
@@ -595,9 +595,6 @@ export const landmarkProvenance = query({
   },
 });
 
-/** The most open landmark proposals the proposers read covers. */
-const MAX_PROPOSALS = 100;
-
 /**
  * **Who asked for each open landmark** (`name_landmark` requests on the body): the requester as the
  * Inbox names them — `null` for an account since erased. Gated on `inbox.read`, the line that sees
@@ -612,7 +609,9 @@ export const landmarkProposers = query({
       .withIndex('by_water_body', (q) =>
         q.eq('waterBodyId', waterBodyId).eq('kind', 'name_landmark').eq('status', 'open'),
       )
-      .take(MAX_PROPOSALS);
+      // The requests `corpusRequests.openLandmarkRequestsForBody` lists — the same range, order and
+      // cap — so every proposal the tab shows has its proposer.
+      .take(QUEUE_CAP + 1);
     const out = [];
     for (const r of open) {
       out.push({

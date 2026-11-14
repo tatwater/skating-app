@@ -47,7 +47,7 @@ import {
   query,
 } from './_generated/server';
 import { requireCapability } from './lib/auth';
-import { loadPutInRows } from './lib/putInMarkers';
+import { loadPutInRows, PUT_IN_ROWS_CAP } from './lib/putInMarkers';
 import { isSuppressed } from './lib/putInSuppression';
 import { takeCappedResult } from './lib/scan';
 import {
@@ -329,6 +329,9 @@ export const retentionForBody = query({
       favorites: Math.min(favorites.length, FAVORITES_CAP),
       favoritesCapped: favorites.length > FAVORITES_CAP,
       savedPutIns: saved.length,
+      /** The stored put-in read stopped at its bound: `savedPutIns` is a floor. */
+      savedPutInsCapped:
+        official.length + osm.length + persisted.length + hidden.length >= PUT_IN_ROWS_CAP,
     };
   },
 });

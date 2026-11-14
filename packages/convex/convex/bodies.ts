@@ -44,7 +44,8 @@ import type { Doc, Id } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
 import { townsForBody } from './adminAreas';
 import { requireCapability } from './lib/auth';
-import { type LibraryRow, readCount } from './lib/bodyLibrary';
+import { type LibraryRow, openAsksFor, readCount } from './lib/bodyLibrary';
+import { FLAG_REASONS } from './lib/enums';
 import { literals } from './lib/validators';
 
 /** How long the caller's clock may drift from the server's. */
@@ -508,6 +509,9 @@ export const preview = query({
       .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId).eq('scope', SCOPE_ALL))
       .first();
     const asks = await previewAsks(ctx, waterBodyId);
+    // Every open ask, by the rule the list's row counts them by — beside a list of the newest, so
+    // a list shorter than the count says so ("20 of N").
+    const openAsks = await openAsksFor(ctx, waterBodyId);
     const towns = await townsForBody(ctx, body);
 
     return {
@@ -526,6 +530,10 @@ export const preview = query({
         firstSeason: oldest === undefined || capped ? null : seasonOf(oldest.skateEndTime),
       },
       asks,
+      /** All open asks (a floor when `capped`); `asks` is the newest of them. */
+      askCount: { count: openAsks.count, capped: openAsks.capped },
+      /** `asks` is not every open ask: show it as "N of the count". */
+      asksListCapped: openAsks.capped || openAsks.count > asks.length,
       town: towns === null ? null : (towns.towns[0] ?? null),
       moreTowns: towns === null ? [] : towns.towns.slice(1),
       complete:
@@ -534,42 +542,56 @@ export const preview = query({
   },
 });
 
+/**
+ * The newest {@link PREVIEW_ASK_CAP} open asks of a body, newest first. Each source is read newest
+ * first through its index — every request kind, every flag status and reason, the place names — so
+ * the cap keeps each source's newest, and the merge of those holds the body's newest overall: a
+ * cap never drops an ask the newest-first order says belongs on the list.
+ */
 async function previewAsks(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>): Promise<PreviewAsk[]> {
   const out: PreviewAsk[] = [];
-  const requests: Doc<'waterBodyRequests'>[] = [];
   for (const kind of REQUEST_KINDS) {
-    requests.push(
-      ...(await ctx.db
-        .query('waterBodyRequests')
-        .withIndex('by_water_body', (q) =>
-          q.eq('waterBodyId', waterBodyId).eq('kind', kind).eq('status', 'open'),
-        )
-        .take(PREVIEW_ASK_CAP)),
-    );
-  }
-  for (const r of requests) {
-    out.push({
-      id: r._id,
-      kind: 'request',
-      requestKind: r.kind,
-      name: r.name ?? null,
-      note: r.note ?? null,
-      createdAt: r.createdAt,
-    });
-  }
-  for (const status of ['open', 'reviewing'] as const) {
-    const flags = await ctx.db
-      .query('contentFlags')
-      .withIndex('by_target_status_reason', (q) =>
-        q.eq('targetType', 'waterbody').eq('targetId', waterBodyId).eq('status', status),
+    const requests = await ctx.db
+      .query('waterBodyRequests')
+      .withIndex('by_water_body', (q) =>
+        q.eq('waterBodyId', waterBodyId).eq('kind', kind).eq('status', 'open'),
       )
+      .order('desc')
       .take(PREVIEW_ASK_CAP);
-    for (const f of flags)
-      out.push({ id: f._id, kind: 'flag', reason: f.reason, createdAt: f.createdAt });
+    for (const r of requests) {
+      out.push({
+        id: r._id,
+        kind: 'request',
+        requestKind: r.kind,
+        name: r.name ?? null,
+        note: r.note ?? null,
+        createdAt: r.createdAt,
+      });
+    }
+  }
+  // The flag index orders by reason before time: each reason is its own newest-first range.
+  for (const status of ['open', 'reviewing'] as const) {
+    for (const reason of FLAG_REASONS) {
+      const flags = await ctx.db
+        .query('contentFlags')
+        .withIndex('by_target_status_reason', (q) =>
+          q
+            .eq('targetType', 'waterbody')
+            .eq('targetId', waterBodyId)
+            .eq('status', status)
+            .eq('reason', reason),
+        )
+        .order('desc')
+        .take(PREVIEW_ASK_CAP);
+      for (const f of flags) {
+        out.push({ id: f._id, kind: 'flag', reason: f.reason, createdAt: f.createdAt });
+      }
+    }
   }
   const names = await ctx.db
     .query('corpusPlaceNames')
     .withIndex('by_water_body_status', (q) => q.eq('waterBodyId', waterBodyId).eq('status', 'open'))
+    .order('desc')
     .take(PREVIEW_ASK_CAP);
   for (const n of names) {
     out.push({

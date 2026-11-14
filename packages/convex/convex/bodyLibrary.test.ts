@@ -1924,3 +1924,96 @@ describe('a merge, and the season turn, read honestly', () => {
     expect(turned.facetCounts?.reports).toMatchObject({ season: 0, never: 0 });
   });
 });
+
+describe('the preview’s asks: the newest, beside the count of all', () => {
+  test('21 open requests of one kind: the newest is listed, and the list says it is 20 of 21', async () => {
+    const t = harness();
+    const { as, id: mod } = await seedUser(t);
+    const id = await seedBody(t, { name: 'Asked Often' });
+    let newest = '';
+    await t.run(async (ctx) => {
+      for (let i = 0; i <= 20; i++) {
+        newest = await ctx.db.insert('waterBodyRequests', {
+          kind: 'name_bay',
+          status: 'open',
+          requesterId: mod,
+          coord: { lat: 44, lng: -72 },
+          waterBodyId: id,
+          name: `Cove ${i}`,
+          createdAt: NOW - DAY + i,
+        });
+      }
+    });
+    const p = await as.query(api.bodies.preview, { waterBodyId: id });
+    expect(p?.asks).toHaveLength(20);
+    expect(p?.asks[0]?.id).toBe(newest);
+    expect(p?.askCount).toEqual({ count: 21, capped: false });
+    expect(p?.asksListCapped).toBe(true);
+  });
+
+  test('21 open place names: the newest is listed', async () => {
+    const t = harness();
+    const { as } = await seedUser(t);
+    const id = await seedBody(t, { name: 'Named Often' });
+    let newest = '';
+    await t.run(async (ctx) => {
+      for (let i = 0; i <= 20; i++) {
+        newest = await ctx.db.insert('corpusPlaceNames', {
+          name: `Name ${i}`,
+          askKey: `n-${i}`,
+          aliases: [],
+          messages: 1,
+          skatedMessages: 0,
+          states: [],
+          waterBodyId: id,
+          status: 'open',
+          createdAt: NOW - DAY + i,
+          updatedAt: NOW,
+        });
+      }
+    });
+    const p = await as.query(api.bodies.preview, { waterBodyId: id });
+    expect(p?.asks[0]?.id).toBe(newest);
+  });
+
+  test('the newest flag is listed even when its reason sorts after twenty older ones', async () => {
+    const t = harness();
+    const { as, id: mod } = await seedUser(t);
+    const id = await seedBody(t, { name: 'Flagged Often' });
+    const newest = await t.run(async (ctx) => {
+      for (let i = 0; i < 20; i++) {
+        await ctx.db.insert('contentFlags', {
+          flaggerId: mod,
+          targetType: 'waterbody',
+          targetId: id,
+          reason: 'auto_low_quality',
+          status: 'open',
+          createdAt: NOW - DAY + i,
+        });
+      }
+      return ctx.db.insert('contentFlags', {
+        flaggerId: mod,
+        targetType: 'waterbody',
+        targetId: id,
+        reason: 'spam',
+        status: 'open',
+        createdAt: NOW,
+      });
+    });
+    const p = await as.query(api.bodies.preview, { waterBodyId: id });
+    expect(p?.asks[0]?.id).toBe(newest);
+    expect(p?.asksListCapped).toBe(true);
+  });
+
+  test('a short list of asks says it is complete', async () => {
+    const t = harness();
+    const { as } = await seedUser(t);
+    const id = await seedBody(t, { name: 'Quiet Asks' });
+    const p = await as.query(api.bodies.preview, { waterBodyId: id });
+    expect(p).toMatchObject({
+      asks: [],
+      askCount: { count: 0, capped: false },
+      asksListCapped: false,
+    });
+  });
+});

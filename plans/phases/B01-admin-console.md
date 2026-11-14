@@ -1951,6 +1951,28 @@ register's shape differ, the prop type won; where the page draws words, the read
 | BS15 | `bodyConsole.dailyHazards` | Each day's `count` is the hazards established on the lake (from the first report; an active one through today) and its `unknown` the archived ones that may have been — an archived hazard's end isn't stored and its votes can't establish it (edited in place, still taken after the archive), so its later days are unknown, never clear, and a vote cast today changes no past day. An honest end needs the hazard writers to stamp when a hazard left the lake: deferred until #110 merges |
 | BS16 | Deferred | Editing a feature's shape needs an audit verb (as BS9) |
 
+**Every capped read's order (Greptile on #112, "cap, then sort").** A capped read takes its rows in
+the order it presents them, or says it is capped. Read order is the index's; "drop" asks whether a
+cap can cut an item the returned order says belongs.
+
+| Read | Index order read | Order returned | Can a cap drop a row that belongs? |
+|---|---|---|---|
+| `bodies.listPage` | The sort column's index (ties by name), or the search's match | The same | No: a page ends at a cursor; `scanBudgetSpent` says when the scan, not the list, ended it |
+| `bodies.listSummary`: state tabs | `bodyLibraryCounts` by lane, key, scope (64) | Most bodies first | No: at most one scope per state plus `*`, inside the bound |
+| `bodies.listSummary`: facet counts, total | One range of a lane and scope's keys | — | No: every key fits; *Changed* is counted to 500 with `capped` |
+| `bodies.preview`: asks | **Fixed:** each request kind, each flag status and reason, and the place names newest first (20 each) | Newest first, 20 | No, after the fix: each source keeps its newest, so their merge holds the newest overall. `askCount` (all open asks, by the row's rule) and `asksListCapped` say when the list is "20 of N" |
+| `bodies.preview`: reports | A body's reports by skate end, newest first (1,000) | Counts | No: `season.capped` and `allTime.capped` say when the read stopped |
+| `bodyConsole.history` | Each target's rows newest first (one past the page) | Newest first, merged | No: each target keeps its newest; past any bound, `capped` |
+| `bodyConsole.bayProvenance` | **Fixed:** the same bays `subAreas.listForBody` lists | A lookup by bay | No, after the fix: every bay the tab shows has its provenance (it read only the first 100 before) |
+| `bodyConsole.landmarkProvenance` | The same landmarks the editor lists (`landmarksForBody`) | A lookup by landmark | No: the same set as the list it annotates |
+| `bodyConsole.landmarkProposers` | **Fixed:** the same range, order and cap as `openLandmarkRequestsForBody` (oldest first, 200) | A lookup by request | No, after the fix: every proposal the tab shows has its proposer (it read 100 before) |
+| `bodyConsole.places`, `consoleExtras` towns | Sampled points | — | Sampled, said in the read's description; touching bodies among the 12 most prominent, with `capped` |
+| `bodyConsole.dailyHazards` | A winter's hazards by first report, oldest first (500) | Per day | Yes, past 500 in one winter on one body: `capped` says so |
+| `standing.retentionForBody`: favorites | A body's favorites (1,000) | A count | No: `favoritesCapped` |
+| `standing.retentionForBody`: saved put-ins | A body's stored put-ins (1,000) | A count | **Fixed:** `savedPutInsCapped` now says when the count is a floor |
+| Library row: asks, reports | Each ask source (100 each); reports newest first (300) | Counts | No: `asksCapped`, `reportsCapped` |
+| `bodyLibrary.parked` | Parked entries, oldest parked first (50) | The same | No: `capped` |
+
 **The governor's rulings on the deferred items (2026-11-14).** A moderator's aliases are their own
 bounded field on the body, `moderatorAliases` — at most 20, each at most 120 characters, trimmed,
 de-duplicated case-insensitively against the display name and each other — never name claims: a

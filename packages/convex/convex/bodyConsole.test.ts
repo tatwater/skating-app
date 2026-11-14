@@ -870,6 +870,7 @@ describe('standing.retentionForBody', () => {
       favorites: 1,
       favoritesCapped: false,
       savedPutIns: 1,
+      savedPutInsCapped: false,
     });
     // A boost set to zero is no boost: absent, as the rollover reads it.
     const bare = await seedBody(t, { name: 'Bare', curatedBoost: 0 });
@@ -877,6 +878,7 @@ describe('standing.retentionForBody', () => {
       favorites: 0,
       favoritesCapped: false,
       savedPutIns: 0,
+      savedPutInsCapped: false,
     });
     await t.run((ctx) => ctx.db.delete(bare));
     expect(await as.query(api.standing.retentionForBody, { waterBodyId: bare })).toBeNull();
@@ -1143,5 +1145,78 @@ describe('a merge chain’s history', () => {
     // A full page of the families it did take in, each row once.
     expect(read.entries).toHaveLength(100);
     expect(new Set(read.entries.map((e) => e.id)).size).toBe(100);
+  });
+});
+
+describe('a capped read takes its rows in the order it presents them', () => {
+  test('bays’ provenance covers every bay the tab lists, the newest past a hundred included', async () => {
+    const t = harness();
+    const { as, id: mod } = await seedUser(t);
+    const id = await seedBody(t, { name: 'Many Bays' });
+    let newest = '';
+    await t.run(async (ctx) => {
+      for (let i = 0; i <= 100; i++) {
+        newest = await ctx.db.insert('waterBodySubAreas', {
+          waterBodyId: id,
+          name: `Bay ${i}`,
+          searchText: `Bay ${i}`,
+          polygon: square(-72, 44, 0.001),
+          bbox: boxOf(-72, 44, 0.001),
+          centroid: { lat: 44, lng: -72 },
+          surfaceAreaSqM: ACRE,
+          displayScore: 0,
+          minVisibleZoom: 10,
+          createdByUserId: mod,
+          createdAt: NOW + i,
+          updatedAt: NOW + i,
+        });
+      }
+    });
+    const rows = await as.query(api.bodyConsole.bayProvenance, { waterBodyId: id });
+    expect(rows).toHaveLength(101);
+    expect(rows.map((r) => r.subAreaId)).toContain(newest);
+  });
+
+  test('landmark proposers cover every open proposal the tab lists, the newest past a hundred included', async () => {
+    const t = harness();
+    const { as, id: mod } = await seedUser(t);
+    const id = await seedBody(t, { name: 'Many Asks' });
+    let newest = '';
+    await t.run(async (ctx) => {
+      for (let i = 0; i <= 100; i++) {
+        newest = await ctx.db.insert('waterBodyRequests', {
+          kind: 'name_landmark',
+          status: 'open',
+          requesterId: mod,
+          coord: { lat: 44, lng: -72 },
+          waterBodyId: id,
+          name: `Rock ${i}`,
+          createdAt: NOW + i,
+        });
+      }
+    });
+    const rows = await as.query(api.bodyConsole.landmarkProposers, { waterBodyId: id });
+    expect(rows.map((r) => r.requestId)).toContain(newest);
+  });
+});
+
+describe('retention’s saved put-ins at the read’s bound', () => {
+  test('a count the stored read stopped at says it is a floor', async () => {
+    const t = harness();
+    const { as } = await seedUser(t);
+    const id = await seedBody(t, { name: 'Many Launches' });
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 1_000; i++) {
+        await ctx.db.insert('putIns', {
+          waterBodyId: id,
+          coord: { lat: 44 + i * 0.001, lng: -72 },
+          source: 'official',
+          status: 'visible',
+          createdAt: NOW,
+        });
+      }
+    });
+    const r = await as.query(api.standing.retentionForBody, { waterBodyId: id });
+    expect(r).toMatchObject({ savedPutIns: 1_000, savedPutInsCapped: true });
   });
 });
