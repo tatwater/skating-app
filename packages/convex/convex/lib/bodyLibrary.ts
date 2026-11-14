@@ -430,7 +430,7 @@ export async function rebuildBodyLibrary(
     .query('bodyLibraryQueue')
     .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
     .first();
-  const changedAt = laterOf(laterOf(storedChange, queued?.changedAt), opts.changedAt);
+  const changedAt = changedDateOf(storedChange, queued?.changedAt, opts.changedAt);
   const changedKeys = unknownLastKeys(changedAt);
   const next: RowFields[] = libraryScopes(body.states).map((scope) => ({
     ...shared,
@@ -524,7 +524,7 @@ export async function recordRefreshFailure(
     .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
     .first();
   const attempts = (row?.attempts ?? 0) + 1;
-  const carried = laterOf(row?.changedAt, changedAt);
+  const carried = changedDateOf(row?.changedAt, changedAt);
   const fields = {
     queuedAt: now,
     attempts,
@@ -536,8 +536,16 @@ export async function recordRefreshFailure(
   else await ctx.db.patch(row._id, fields);
 }
 
-const laterOf = (a: number | undefined, b: number | undefined) =>
-  a === undefined ? b : b === undefined ? a : Math.max(a, b);
+/**
+ * **A body's *Changed*: the one rule.** The latest of every date that says a moderator acted — the
+ * one a write supplies, the one its rows hold, the one its queue entry carries — so no path that
+ * writes rows or rewrites a queue entry can lose a later one. Every such path decides it here.
+ */
+export function changedDateOf(...dates: (number | undefined)[]): number | undefined {
+  let latest: number | undefined;
+  for (const d of dates) if (d !== undefined && (latest === undefined || d > latest)) latest = d;
+  return latest;
+}
 
 /** Bodies whose refresh failed in this transaction (the mutation's `ctx`): one attempt each. */
 const failedIn = new WeakMap<object, Set<Id<'waterBodies'>>>();
@@ -760,8 +768,9 @@ export async function noteAuditedAction(
 }
 
 /**
- * Stamp *Changed* on a body's rows when `at` is later than what they hold — the audit-log backfill's
- * write. *Changed* is no facet, so no count moves.
+ * Stamp *Changed* on a body's rows when `at` is later than what they hold (*Changed* is no facet, so
+ * no count moves). A body with no rows yet carries the stamp on its queue entry instead, so the
+ * refresh that builds its rows writes it ({@link changedDateOf}).
  */
 export async function stampChanged(
   ctx: MutationCtx,
@@ -772,10 +781,15 @@ export async function stampChanged(
     .query('bodyLibraryRows')
     .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
     .take(MAX_SCOPES);
-  const keys = unknownLastKeys(at);
+  if (rows.length === 0) {
+    await queueLibraryRefresh(ctx, [waterBodyId], at, { changedAt: at });
+    return;
+  }
   for (const row of rows) {
-    if (row.changedAt !== undefined && row.changedAt >= at) continue;
-    await ctx.db.patch(row._id, { changedAt: at, changedAsc: keys.asc, changedDesc: keys.desc });
+    const next = changedDateOf(row.changedAt, at) as number;
+    if (next === row.changedAt) continue;
+    const keys = unknownLastKeys(next);
+    await ctx.db.patch(row._id, { changedAt: next, changedAsc: keys.asc, changedDesc: keys.desc });
   }
 }
 
@@ -808,6 +822,20 @@ export async function closeSeasonFor(
 }
 
 // ── The queue: the machine's bulk writes ─────────────────────────────────────────────────────
+//
+// What each path does to each field a queue entry carries — `changedAt`, `attempts`,
+// `lastErrorClass`, `parkedAt` (and `queuedAt`, its place in line):
+//
+// | path | changedAt | attempts · lastErrorClass | parkedAt |
+// | --- | --- | --- | --- |
+// | a refresh that succeeds (inline, drain, repair, turn, backfill) | written to the rows (`changedDateOf`), then the entry is cleared | cleared with it | cleared with it |
+// | a refresh that fails (`recordRefreshFailure`) | kept, or the later of it and the write's | +1 · this failure's class | set at the last attempt, else kept |
+// | a refresh deferred for budget, or past the inline cap | kept, or the later | kept | kept; an audited write releases it |
+// | a bulk write's queueing (`queueLibraryRefresh`) | kept, or the later | kept | kept |
+// | `stampChanged` on a body with no rows (`backfillChangedAt`) | kept, or the later | kept | kept |
+// | `retryParked` | kept | reset to 0 · kept | cleared |
+// | the drift repair passing a parked body (`markRead`) | untouched (rows only) | untouched | untouched |
+// | the season turn closing a parked body (`closeSeasonFor`) | untouched (rows only) | untouched | untouched |
 
 /**
  * Queue bodies for a refresh by the minute cron: one entry each, whatever the number of writes. A
@@ -833,7 +861,7 @@ export async function queueLibraryRefresh(
       });
       continue;
     }
-    const carried = laterOf(queued.changedAt, opts.changedAt);
+    const carried = changedDateOf(queued.changedAt, opts.changedAt);
     const release = opts.unpark === true && queued.parkedAt !== undefined;
     if (carried !== queued.changedAt || release) {
       await ctx.db.patch(queued._id, {

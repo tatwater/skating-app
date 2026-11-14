@@ -6,6 +6,7 @@
 import { countKeysOf, tallyCounts } from '@skating/core';
 import { ConvexError } from 'convex/values';
 import { convexTest } from 'convex-test';
+import fc from 'fast-check';
 import type { Polygon } from 'geojson';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
@@ -1592,5 +1593,120 @@ describe('a body whose refresh throws', () => {
     odd.name = 'has spaces and words';
     expect(errorClassOf(odd)).toBe('Error');
     expect(errorClassOf('a string')).toBe('unknown');
+  });
+});
+
+describe('Changed is never lost', () => {
+  const queueEntry = (t: T, id: Id<'waterBodies'>) =>
+    t.run((ctx) =>
+      ctx.db
+        .query('bodyLibraryQueue')
+        .withIndex('by_body', (q) => q.eq('waterBodyId', id))
+        .first(),
+    );
+
+  test('the audit-log backfill stamps a body with no rows on its queue entry', async () => {
+    const t = harness();
+    const mod = await seedUser(t);
+    const id = await seedBody(t, { name: 'Rowless' });
+    await t.run((ctx) =>
+      ctx.db.insert('moderationActions', {
+        actorId: mod.id,
+        action: 'set_curated_boost',
+        targetType: 'waterbody',
+        targetId: id,
+        reason: 'r',
+        createdAt: NOW - DAY,
+      }),
+    );
+    await t.mutation(internal.bodyLibrary.backfillChangedAt, {});
+    expect(await rowsOf(t, id)).toHaveLength(0);
+    expect((await queueEntry(t, id))?.changedAt).toBe(NOW - DAY);
+    await t.mutation(internal.bodyLibrary.drainQueue, {});
+    expect((await rowsOf(t, id))[0]?.changedAt).toBe(NOW - DAY);
+  });
+
+  test('a failure, a parking and a release each keep the owed Changed', async () => {
+    const t = harness();
+    const id = await seedBody(t, {
+      name: 'Owing',
+      polygon: { type: 'Point', coordinates: [-72, 44] } as never,
+    });
+    await seedReport(t, id, NOW - DAY);
+    await t.run((ctx) => queueLibraryRefresh(ctx, [id], NOW, { changedAt: NOW - 2 * DAY }));
+    for (let i = 0; i < MAX_REFRESH_ATTEMPTS; i++)
+      await t.mutation(internal.bodyLibrary.drainQueue, {});
+    expect(await queueEntry(t, id)).toMatchObject({ parkedAt: NOW, changedAt: NOW - 2 * DAY });
+    await t.mutation(internal.bodyLibrary.retryParked, {});
+    expect(await queueEntry(t, id)).toMatchObject({ attempts: 0, changedAt: NOW - 2 * DAY });
+    await t.run((ctx) => ctx.db.patch(id, { polygon: square(0.01) }));
+    await t.mutation(internal.bodyLibrary.drainQueue, {});
+    expect((await rowsOf(t, id))[0]?.changedAt).toBe(NOW - 2 * DAY);
+    expect(await queueEntry(t, id)).toBeNull();
+  });
+
+  test('(property) across any interleaving of audited writes, report writes, backfill pages and drains, Changed is never earlier than the latest moderator action', async () => {
+    const op = fc.constantFrom(
+      'audit',
+      'auditStarved',
+      'report',
+      'backfill',
+      'drain',
+      'poison',
+      'mend',
+    );
+    await fc.assert(
+      fc.asyncProperty(fc.array(op, { minLength: 1, maxLength: 10 }), async (ops) => {
+        const t = harness();
+        const mod = await seedUser(t);
+        const id = await seedBody(t, { name: 'Interleaved' });
+        await seedReport(t, id, NOW - DAY);
+        let latest: number | undefined;
+        let clock = NOW;
+        for (const kind of ops) {
+          clock += 60_000;
+          vi.setSystemTime(clock);
+          switch (kind) {
+            case 'audit':
+            case 'auditStarved':
+              latest = clock;
+              await t.run((ctx) =>
+                noteAuditedAction(kind === 'audit' ? ctx : starved(ctx), {
+                  actorId: mod.id,
+                  targetType: 'waterbody',
+                  targetId: id,
+                  createdAt: clock,
+                }),
+              );
+              break;
+            case 'report':
+              await t.run((ctx) => recomputeBodySummary(ctx, id));
+              break;
+            case 'backfill':
+              await t.mutation(internal.bodyLibrary.backfill, {});
+              break;
+            case 'drain':
+              await t.mutation(internal.bodyLibrary.drainQueue, {});
+              break;
+            case 'poison':
+              await t.run((ctx) =>
+                ctx.db.patch(id, { polygon: { type: 'Point', coordinates: [-72, 44] } as never }),
+              );
+              break;
+            case 'mend':
+              await t.run((ctx) => ctx.db.patch(id, { polygon: square(0.01) }));
+              break;
+          }
+          if (latest === undefined) continue;
+          const rows = await rowsOf(t, id);
+          if (rows.length > 0) {
+            for (const r of rows) expect(r.changedAt ?? -1).toBeGreaterThanOrEqual(latest);
+          } else {
+            expect((await queueEntry(t, id))?.changedAt ?? -1).toBeGreaterThanOrEqual(latest);
+          }
+        }
+      }),
+      { numRuns: 25 },
+    );
   });
 });
