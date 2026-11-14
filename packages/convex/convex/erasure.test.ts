@@ -17,7 +17,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import type { MutationCtx } from './_generated/server';
-import { DAILY_RETRIES, ERASED_KINDS, MAX_SETTLE_ATTEMPTS, PASS_NEED, ROW_MAX } from './erasure';
+import { ERASED_KINDS, MAX_SETTLE_ATTEMPTS, PASS_NEED, ROW_MAX } from './erasure';
 import * as audit from './lib/audit';
 import * as eraseClock from './lib/eraseClock';
 import { MAX_ERASE_ATTEMPTS } from './lib/eraseClock';
@@ -2304,12 +2304,14 @@ describe('fairness under failure, under any mix', () => {
 });
 
 describe('parking heals itself', () => {
+  /** More parked pieces of one kind than the old daily retry tried a day (three). */
+  const BACKLOG = 5;
   test('a parked item that always fails never keeps another from its daily retry', async () => {
     const { t, author, waterBodyId } = await setup();
     const admin = await seedUser(t, 'admin', 'admin');
     const reportId = (await seedPost(t, author.id, waterBodyId, 1)).reportIds[0] as Id<'reports'>;
     const ids: Id<'comments'>[] = [];
-    for (let i = 0; i < DAILY_RETRIES + 2; i++) {
+    for (let i = 0; i < BACKLOG; i++) {
       const id = await author.as.mutation(api.comments.create, { reportId, body: `c${i}` });
       await author.as.mutation(api.comments.remove, { commentId: id });
       ids.push(id);
@@ -2329,15 +2331,12 @@ describe('parking heals itself', () => {
       advance(60 * 60 * 1000);
     }
     for (const id of ids) expect((await get(t, id))?.eraseParkedAt).toBeDefined();
-    // A fix ships for all but the poison. Day by day, a few at a time, least recently tried first:
-    // the poison is re-stamped behind the rest each time it fails, so every other gets its turn.
+    // A fix ships for all but the poison. One daily run tries every parked piece, least recently
+    // tried first: the poison fails again and is re-stamped behind the rest; every other goes.
     broken.clear();
     broken.add(poison);
-    for (let day = 0; day < 2; day++) {
-      await t.mutation(internal.erasure.retryParkedDaily, {});
-      await t.finishAllScheduledFunctions(vi.runAllTimers, 10_000);
-      advance(DAY);
-    }
+    await t.mutation(internal.erasure.retryParkedDaily, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers, 10_000);
     for (const id of ids.slice(1)) expect(await get(t, id)).toBeNull();
     const still = await get(t, poison);
     expect(still).toMatchObject({
@@ -2435,7 +2434,7 @@ describe('parking heals itself', () => {
     const { t, author, other, waterBodyId } = await setup();
     const reportId = (await seedPost(t, author.id, waterBodyId, 1)).reportIds[0] as Id<'reports'>;
     const ids: Id<'comments'>[] = [];
-    for (let i = 0; i < DAILY_RETRIES + 1; i++) {
+    for (let i = 0; i < BACKLOG; i++) {
       const id = await author.as.mutation(api.comments.create, { reportId, body: `c${i}` });
       await author.as.mutation(api.comments.remove, { commentId: id });
       ids.push(id);

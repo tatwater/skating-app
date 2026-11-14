@@ -906,31 +906,31 @@ export const settleStep = internalMutation({
   },
 });
 
-/** Parked settlements, and parked items of each kind, the daily retry tries a run. */
-export const DAILY_RETRIES = 3;
-
 /**
- * **Parking heals itself.** Once a day, a few parked pieces of each kind — settlements first, then
- * each erasable kind — are tried again, least recently tried first, each in its own nested
- * transaction exactly as the hourly walks try healthy work, and never in its way (its own cron, its
- * own budget). One that goes through is un-parked by the rule (`lib/attempts`): a settlement step
+ * **Parking heals itself.** Once a day, **every** parked piece — settlements first, then each
+ * erasable kind — is tried again, least recently tried first, each in its own nested transaction
+ * exactly as the hourly walks try healthy work, and never in their way (its own cron, its own budget,
+ * a pass at a time). A large backlog parked by one bug is freed the day its fix deploys, not three a
+ * kind a day. One that goes through is un-parked by the rule (`lib/attempts`): a settlement step
  * clears it in its own write, and an item erased is gone, or one erased part-way goes back on the
  * clock. One that fails again stays parked, re-stamped as just tried — so it goes behind every other
  * parked piece next day, and one that never works can't keep another from its turn — and noted as
  * retried. A deployed fix frees what it parked within a day, with nobody needing to remember;
  * `retryParked` is still there to release everything at once.
  *
- * **Once a run each.** A run reads only what was parked, or last tried, strictly before it began: a
- * piece re-stamped in this run (at `now`, which is the cutoff itself in its first pass) is past it. A
- * held item is not tried and stays as it is, so the walk goes on past it (`past`) rather than reading
- * it again, and it never uses up a turn another parked item of its kind could have had.
+ * **Once a run each, and the run ends.** A run reads only what was parked, or last tried, strictly
+ * before it began: a piece re-stamped in this run (at `now`, which is the cutoff itself in its first
+ * pass) is past it, and one freed leaves the range. A held item is not tried and stays as it is, so
+ * the walk goes on past it (`past`) rather than reading it again. So every step moves the walk on,
+ * and a pass that cannot take even one — impossible on a fresh budget, by `PASS_NEED` — fails loudly
+ * rather than rescheduling itself for ever.
  */
 export const retryParkedDaily = internalMutation({
   args: {
     cutoff: v.optional(v.number()),
     /** Which kind the run has reached: -1 the settlements, then `ERASED_KINDS` in order. */
     at: v.optional(v.number()),
-    /** Tried so far of the kind it has reached. */
+    /** Accepted from a pass scheduled before the walk took everything; no longer read. */
     tried: v.optional(v.number()),
     /** The last held item the run walked past in the kind it has reached: when parked, and created. */
     past: v.optional(v.object({ parkedAt: v.number(), creationTime: v.number() })),
@@ -944,19 +944,23 @@ export const retryParkedDaily = internalMutation({
       const reads = new ReadBudget();
       // Anything below the settlements is the settlements: a bad position can't loop forever.
       let at = Math.max(-1, Math.floor(args.at ?? -1));
-      let tried = args.tried ?? 0;
       let past = args.past;
       let freed = args.freed ?? 0;
-      const carryOn = () =>
-        ctx.scheduler.runAfter(0, internal.erasure.retryParkedDaily, {
+      // Pieces this pass tried or walked past: a pass that moves none would reschedule for ever.
+      let steps = 0;
+      const carryOn = async () => {
+        if (steps === 0) {
+          throw new Error('erasure.retryParkedDaily: a pass moved nothing; it would never end');
+        }
+        await ctx.scheduler.runAfter(0, internal.erasure.retryParkedDaily, {
           cutoff,
           at,
-          tried,
           freed,
           ...(past !== undefined ? { past } : {}),
         });
-      for (; at < ERASED_KINDS.length; at++, tried = 0, past = undefined) {
-        while (tried < DAILY_RETRIES) {
+      };
+      for (; at < ERASED_KINDS.length; at++, past = undefined) {
+        for (;;) {
           if (at === -1) {
             // A parked settlement: its place, a step, and the write that records a failure.
             if (!reads.affords(ROW_MAX.settleQueue + MIN_STEP + ROW_MAX.settleQueue)) {
@@ -970,7 +974,7 @@ export const retryParkedDaily = internalMutation({
                 .take(n),
             );
             if (!turn) break;
-            tried++;
+            steps++;
             const outcome = await settleTurn(ctx, reads, turn, now, { cutoff, byDailyRetry: true });
             if (outcome === 'settled') freed++;
             continue;
@@ -982,13 +986,13 @@ export const retryParkedDaily = internalMutation({
           }
           const doc = await nextParked(ctx, reads, kind, cutoff, past);
           if (!doc) break;
+          steps++;
           const outcome = await retryParkedItem(ctx, reads, kind, doc, now, cutoff);
           if (outcome === 'held') {
             // Not tried, and left exactly as it was: walked past.
             past = { parkedAt: doc.eraseParkedAt as number, creationTime: doc._creationTime };
             continue;
           }
-          tried++;
           if (outcome === 'freed') freed++;
         }
       }
