@@ -128,8 +128,13 @@ export function storedLanesOf(row: PersonRowFields | null): Set<StoredCountKey> 
 
 /** Whether two rows say the same thing (the refresh stamp aside), whatever their key order. */
 function sameFacts(a: PersonRowFields, b: PersonRowFields): boolean {
-  const facts = ({ refreshedAt: _, ...rest }: PersonRowFields) =>
-    JSON.stringify(Object.entries(rest).sort(([x], [y]) => (x < y ? -1 : 1)));
+  // A stored row also carries its `_id` and `_creationTime`; only the derived fields compare.
+  const facts = (row: PersonRowFields) =>
+    JSON.stringify(
+      Object.entries(row)
+        .filter(([k]) => k !== 'refreshedAt' && !k.startsWith('_'))
+        .sort(([x], [y]) => (x < y ? -1 : 1)),
+    );
   return facts(a) === facts(b);
 }
 
