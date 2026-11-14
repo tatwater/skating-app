@@ -55,6 +55,8 @@ import {
   polygonBBox,
   polygonIoU,
   primaryReviewReason,
+  REQUEST_KINDS,
+  REQUEST_STATUSES,
   REVIEW_REASONS,
   type RemovalReason,
   type ReviewReason,
@@ -88,6 +90,7 @@ import {
   requireContributor,
   requireProfile,
 } from './lib/auth';
+import { resolveSurvivor } from './lib/bodies';
 import { markGeoStale } from './lib/bodyGeo';
 import { queueLibraryRefresh, stampChanged } from './lib/bodyLibrary';
 import { recomputeBodySummary } from './lib/bodySummary';
@@ -3111,7 +3114,16 @@ export interface MergeChangeSet {
     mergedIntoId: Id<'waterBodies'> | null;
   }[];
   moved: {
-    table: 'reports' | 'hazards' | 'bounties' | 'bodyFeatures' | 'putIns' | 'waterBodyFavorites';
+    table:
+      | 'reports'
+      | 'hazards'
+      | 'bounties'
+      | 'bodyFeatures'
+      | 'putIns'
+      | 'waterBodyFavorites'
+      | 'waterBodyRequests'
+      | 'corpusPlaceNames'
+      | 'contentFlags';
     id: string;
     waterBodyId: Id<'waterBodies'>;
   }[];
@@ -3139,6 +3151,111 @@ function dedupFieldsOf(body: Doc<'waterBodies'>): MergeChangeSet['dedupBefore'][
     mergedIntoId: body.mergedIntoId ?? null,
   };
 }
+
+/** The most rows of one kind a merge re-targets — far past any body's asks. */
+const RETARGET_CAP = 1_000;
+
+/**
+ * Re-target what was asked of a merged-away body to its survivor: every request on it, its open place
+ * names, and its open and in-review flags. A flag whose flagger already has an open flag on the
+ * survivor stays where it is (one open flag per person per target is the flag table's own rule), and
+ * is counted. Returns the ids moved, for the merge's change set.
+ */
+export async function retargetAsks(
+  ctx: MutationCtx,
+  loserId: Id<'waterBodies'>,
+  survivorId: Id<'waterBodies'>,
+): Promise<{
+  requests: Id<'waterBodyRequests'>[];
+  placeNames: Id<'corpusPlaceNames'>[];
+  flags: Id<'contentFlags'>[];
+  flagsLeft: number;
+}> {
+  const requests: Id<'waterBodyRequests'>[] = [];
+  for (const kind of REQUEST_KINDS) {
+    for (const status of REQUEST_STATUSES) {
+      const rows = await ctx.db
+        .query('waterBodyRequests')
+        .withIndex('by_water_body', (q) =>
+          q.eq('waterBodyId', loserId).eq('kind', kind).eq('status', status),
+        )
+        .take(RETARGET_CAP);
+      for (const r of rows) {
+        await ctx.db.patch(r._id, { waterBodyId: survivorId });
+        requests.push(r._id);
+      }
+    }
+  }
+  const names = await ctx.db
+    .query('corpusPlaceNames')
+    .withIndex('by_water_body_status', (q) => q.eq('waterBodyId', loserId).eq('status', 'open'))
+    .take(RETARGET_CAP);
+  for (const n of names) await ctx.db.patch(n._id, { waterBodyId: survivorId });
+  const flags: Id<'contentFlags'>[] = [];
+  let flagsLeft = 0;
+  for (const status of ['open', 'reviewing'] as const) {
+    const rows = await ctx.db
+      .query('contentFlags')
+      .withIndex('by_target_status_reason', (q) =>
+        q.eq('targetType', 'waterbody').eq('targetId', loserId).eq('status', status),
+      )
+      .take(RETARGET_CAP);
+    for (const f of rows) {
+      const already = await ctx.db
+        .query('contentFlags')
+        .withIndex('by_target_status_reason', (q) =>
+          q
+            .eq('targetType', 'waterbody')
+            .eq('targetId', survivorId)
+            .eq('status', status)
+            .eq('reason', f.reason),
+        )
+        .filter((q) => q.eq(q.field('flaggerId'), f.flaggerId))
+        .first();
+      if (already !== null) {
+        flagsLeft++;
+        continue;
+      }
+      await ctx.db.patch(f._id, { targetId: survivorId });
+      flags.push(f._id);
+    }
+  }
+  return { requests, placeNames: names.map((n) => n._id), flags, flagsLeft };
+}
+
+/** Bodies one repair page re-targets. */
+const RETARGET_PAGE = 10;
+
+/**
+ * **The repair for bodies merged before a merge moved their asks**: each merged body's requests,
+ * open place names and open flags re-targeted to its survivor (followed through the chain), a page
+ * of merged bodies at a time, chaining itself. Idempotent — a body with nothing left on it is a
+ * no-op — and bounded by the merged bodies, read through `by_dedup_status`.
+ */
+export const retargetMergedAsks = internalMutation({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, { cursor }) => {
+    const page = await ctx.db
+      .query('waterBodies')
+      .withIndex('by_dedup_status', (q) => q.eq('dedupStatus', 'merged'))
+      .paginate({ cursor: cursor ?? null, numItems: RETARGET_PAGE });
+    let moved = 0;
+    for (const loser of page.page) {
+      const survivor = await resolveSurvivor(ctx, loser._id);
+      if (!survivor || survivor._id === loser._id) continue;
+      const asks = await retargetAsks(ctx, loser._id, survivor._id);
+      const n = asks.requests.length + asks.placeNames.length + asks.flags.length;
+      if (n > 0) await queueLibraryRefresh(ctx, [survivor._id]);
+      moved += n;
+    }
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, internal.waterBodies.retargetMergedAsks, {
+        cursor: page.continueCursor,
+      });
+    }
+    return { moved, isDone: page.isDone };
+  },
+});
 
 /**
  * Fold one body into another: re-point every child, tombstone the loser, audit it.
@@ -3203,6 +3320,10 @@ export async function mergeBodyInto(
     for (const child of [...reports, ...hazards, ...bounties, ...features, ...putIns]) {
       await ctx.db.patch(child._id, { waterBodyId: survivorId });
     }
+    // What was asked of the loser moves with it (B01-3b): every request (the founder's ruling), and
+    // the open place names and open flags — so a later decision refreshes the survivor's row, and its
+    // History shows them. Recorded in the change set, for the unmerge.
+    const asks = await retargetAsks(ctx, loserId, survivorId);
     // The bay join mirrors the report's body (A09); the bays themselves move to the survivor below,
     // so the `subAreaId` on each row stays valid and only the body needs following.
     for (const report of reports) {
@@ -3349,6 +3470,9 @@ export async function mergeBodyInto(
         ...features.map((row) => ({ table: 'bodyFeatures' as const, id: row._id })),
         ...putIns.map((row) => ({ table: 'putIns' as const, id: row._id })),
         ...repointedFavoriteIds.map((id) => ({ table: 'waterBodyFavorites' as const, id })),
+        ...asks.requests.map((id) => ({ table: 'waterBodyRequests' as const, id })),
+        ...asks.placeNames.map((id) => ({ table: 'corpusPlaceNames' as const, id })),
+        ...asks.flags.map((id) => ({ table: 'contentFlags' as const, id })),
       ].map((row) => ({ ...row, waterBodyId: loserId })),
       deletedFavorites,
       subAreasBefore: subAreasBefore.map(snapshotDoc),
