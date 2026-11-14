@@ -20,7 +20,7 @@ describe('bodyMapBase', () => {
       samplePoints: [{ lat: 43.62, lng: -72.15 }],
     });
     const byId = new Map(scene.items.map((i) => [i.id, i]));
-    expect(byId.get('body:j57mascoma0000000000000000000')).toMatchObject({
+    expect(byId.get('body:j57mascoma0000000000000000000000')).toMatchObject({
       layer: 'outline',
       style: 'body',
     });
@@ -48,6 +48,23 @@ describe('bodyMapBase', () => {
     expect(byId.get('lot:l0')).toMatchObject({ layer: 'putIns', mark: 'lot' });
     expect(byId.get('sample:0')).toMatchObject({ layer: 'samples', at: [-72.15, 43.62] });
     expect(new Set(scene.items.map((i) => i.id)).size).toBe(scene.items.length);
+  });
+
+  it('draws each body that touches this one as a quiet neighbor on the outline layer', () => {
+    const scene = bodyMapBase({
+      ...MASCOMA_BASE_INPUT,
+      neighbors: [{ id: 'n1', name: 'Crystal Lake', polygon: MASCOMA_SOUTH }],
+    });
+    expect(scene.items.find((i) => i.id === 'neighbor:n1')).toMatchObject({
+      kind: 'outline',
+      layer: 'outline',
+      style: 'neighbor',
+      geometry: MASCOMA_SOUTH,
+    });
+    // None given (or none touching): nothing drawn.
+    expect(bodyMapBase(MASCOMA_BASE_INPUT).items.some((i) => i.id.startsWith('neighbor:'))).toBe(
+      false,
+    );
   });
 
   it('names a landmark with no catalog by its kind alone', () => {
@@ -95,6 +112,21 @@ describe('basinLabel', () => {
         },
       ),
     );
+  });
+
+  it('reads a near-vertical basin as 90°, never the −90° rounding would carry it to', () => {
+    // fast-check's counterexample: −89.96° rounded to a tenth was −90.0, out of (−90°, 90°].
+    const [tilt, w, h] = [0.9130080365203957, 0.0018779228041964438, 0.010704908353208255];
+    const ring = [
+      [-72 - w, 43 - h + tilt * w],
+      [-72 + w, 43 - h - tilt * w],
+      [-72 + w, 43 + h - tilt * w],
+      [-72 - w, 43 + h + tilt * w],
+      [-72 - w, 43 - h + tilt * w],
+    ];
+    const { angle } = basinLabel({ type: 'Polygon', coordinates: [ring] });
+    expect(angle).toBeGreaterThan(-90);
+    expect(angle).toBeLessThanOrEqual(90);
   });
 
   it('falls back to a point on the water when the vertices’ mean is not', () => {

@@ -4,9 +4,10 @@ import type { BodyMapScene, LngLat, MapItem } from './mapDescriptors';
 
 /**
  * The frame's own scene: what the console map draws whichever tab is open — the body's outline,
- * its bays (each named along its basin), its named places, its put-ins and lots, its weather sample
- * points. Every item is addressed the way `?lit=` addresses it (`body:`, `bay:`, `landmark:`,
- * `putIn:`, `lot:`, `sample:`), so a tab that lights a row lights its thing on the map too.
+ * the bodies that touch it, its bays (each named along its basin), its named places, its put-ins
+ * and lots, its weather sample points. Every item is addressed the way `?lit=` addresses it
+ * (`body:`, `neighbor:`, `bay:`, `landmark:`, `putIn:`, `lot:`, `sample:`), so a tab that lights a
+ * row lights its thing on the map too.
  */
 
 type Coord = { lat: number; lng: number };
@@ -32,6 +33,15 @@ export interface BodyMapBaseInput {
   putIns: readonly { id: string; coord: Coord; name?: string }[];
   lots: readonly { id: string; coord: Coord; name?: string }[];
   samplePoints: readonly Coord[];
+  /**
+   * Bodies whose outlines touch or nearly touch this one (`consoleExtras`' touching test): drawn
+   * quiet and dashed under the body's own shore, so a lake drawn twice shows as two.
+   */
+  neighbors?: readonly {
+    id: string;
+    name: string;
+    polygon: GeoJSON.Polygon | GeoJSON.MultiPolygon;
+  }[];
 }
 
 const at = (c: Coord): LngLat => [c.lng, c.lat];
@@ -73,7 +83,10 @@ export function basinLabel(geom: GeoJSON.Polygon | GeoJSON.MultiPolygon): {
   const angle = (0.5 * Math.atan2(2 * sxy, sxx - syy) * 180) / Math.PI;
   const mean = { lat: my, lng: mx };
   const center = pointInPolygon(mean, geom) ? mean : representativePoint(geom);
-  return { at: at(center), angle: Number(angle.toFixed(1)) };
+  // Rounding to a tenth can carry −89.96° to −90°, and atan2 of a −0 gives −180° outright: both
+  // are the same axis as 90°, which is the one that reads left to right.
+  const rounded = Number(angle.toFixed(1));
+  return { at: at(center), angle: rounded <= -90 ? rounded + 180 : rounded };
 }
 
 /** The frame's scene for one body. */
@@ -87,6 +100,15 @@ export function bodyMapBase(input: BodyMapBaseInput): BodyMapScene {
       style: 'body',
     },
   ];
+  for (const n of input.neighbors ?? []) {
+    items.push({
+      kind: 'outline',
+      id: `neighbor:${n.id}`,
+      layer: 'outline',
+      geometry: n.polygon,
+      style: 'neighbor',
+    });
+  }
   for (const bay of input.bays) {
     items.push({
       kind: 'outline',
