@@ -1,17 +1,15 @@
 import { type ReactElement, type ReactNode, useRef } from 'react';
-
+import { isFailed, type Loadable } from '@/components/admin/reads/consoleReads';
+import { ReadNote } from '@/components/admin/reads/ReadNote';
 import { Avatar } from '@/components/kit/avatar';
 import { Button } from '@/components/kit/button';
 import { KeyValueList, KeyValueRow } from '@/components/kit/grid-list';
 import { Note } from '@/components/kit/note';
 import { SkeletonText } from '@/components/kit/skeleton';
 import { usePaneKeys } from '@/lib/keys';
-
 import { ConsoleTopStart } from '../../shell/ConsoleShell';
 import { BodyHistorySection } from './BodyLeftColumn';
 import type { Removal } from './bodyModel';
-import { isFailed, type Loadable } from './consoleReads';
-import { ReadFailed } from './kit-candidates/read-failed';
 import type { BodyGoneData } from './useBodyConsole';
 
 /**
@@ -86,17 +84,9 @@ export function BodyConsoleGone({
           {towns !== null && <TownsRow towns={towns} />}
           {reports !== null && <ReportsRow reports={reports} />}
         </KeyValueList>
-        {isFailed(towns) || isFailed(reports) ? (
-          <ReadFailed
-            data-for="body-gone-facts"
-            onRetry={() => {
-              if (isFailed(towns)) towns.retry();
-              if (isFailed(reports)) reports.retry();
-            }}
-          >
-            What the record holds about it couldn’t be read
-          </ReadFailed>
-        ) : null}
+        <ReadNote data-for="body-gone-facts" reads={[towns, reports]}>
+          What the record holds about it couldn’t be read
+        </ReadNote>
       </div>
       {history !== null && (
         <div className="w-full max-w-(--size-inspector)">

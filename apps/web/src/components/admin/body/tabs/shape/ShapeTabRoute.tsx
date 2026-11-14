@@ -1,8 +1,14 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { Link, useNavigate } from '@tanstack/react-router';
+import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 
-import { isFailed, loaded, mapLoadable, read, useConsoleReads } from '../../frame/consoleReads';
+import {
+  isFailed,
+  loaded,
+  mapLoadable,
+  read,
+  useConsoleReads,
+} from '@/components/admin/reads/consoleReads';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { useNeighbors } from '../../frame/touching';
 import { ShapeTabView } from './ShapeTab';
@@ -25,6 +31,7 @@ export function ShapeTabRoute({ bodyId, lit = null, onLitChange }: BodyTabProps)
   });
   const neighbors = useNeighbors(loaded(r.extras));
   const navigate = useNavigate();
+  const { from } = useSearch({ strict: false }) as { from?: string };
   const made = loaded(r.made);
   return (
     <ShapeTabView
@@ -46,7 +53,10 @@ export function ShapeTabRoute({ bodyId, lit = null, onLitChange }: BodyTabProps)
       bays={mapLoadable(r.subAreas, (rows) => shapeBays(rows, made))}
       baysMadeFailed={isFailed(r.made) ? r.made : null}
       merge={mapLoadable(r.extras, (facts) => shapeMerge(facts, neighbors))}
-      bodyLink={(id) => <Link to="/admin/body/$id" params={{ id }} />}
+      // A neighbor opens with the same way back as this body: to the list the operator came from.
+      bodyLink={(id) => (
+        <Link to="/admin/body/$id" params={{ id }} search={from === undefined ? {} : { from }} />
+      )}
       lit={lit}
       onLitChange={(next) => onLitChange?.(next)}
       onAddBay={() => void navigate({ to: '/admin/water/$id', params: { id: bodyId } })}

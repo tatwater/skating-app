@@ -1,5 +1,6 @@
 import { type ReactNode, useId, useRef } from 'react';
-
+import { isFailed, type Loadable } from '@/components/admin/reads/consoleReads';
+import { ReadNote } from '@/components/admin/reads/ReadNote';
 import { Avatar } from '@/components/kit/avatar';
 import { Badge, Tag } from '@/components/kit/badge';
 import { BulletList } from '@/components/kit/bullet-list';
@@ -15,8 +16,6 @@ import { cn } from '@/lib/utils';
 import { type Completeness, completenessSegments, missingSentence } from '../completeness';
 import type { BodyAsk, BodyHistoryView, BodyIdentity, OutlineTrust } from './bodyModel';
 import { historyHead, historyTime } from './bodyModel';
-import { isFailed, type Loadable } from './consoleReads';
-import { ReadFailed } from './kit-candidates/read-failed';
 
 /**
  * The Body console's left column (§5.4): the body's lockup, its figures, how complete its record
@@ -108,11 +107,10 @@ export function BodyLeftColumn({
           title="Asked of this body"
           {...(readyAsks !== undefined && !asksMore ? { count: readyAsks.length } : {})}
         >
-          {isFailed(asks) ? (
-            <ReadFailed data-for="body-asks" onRetry={asks.retry}>
-              What is asked of this body couldn’t be read
-            </ReadFailed>
-          ) : readyAsks === undefined ? (
+          <ReadNote data-for="body-asks" reads={[asks]}>
+            What is asked of this body couldn’t be read
+          </ReadNote>
+          {isFailed(asks) ? null : readyAsks === undefined ? (
             <Skeleton className="h-(--space-14)" />
           ) : readyAsks.length === 0 ? null : (
             <BulletList
@@ -176,11 +174,10 @@ export function BodyHistorySection({
           }
         : {})}
     >
-      {isFailed(history) ? (
-        <ReadFailed data-for="body-history" onRetry={history.retry}>
-          The history couldn’t be read
-        </ReadFailed>
-      ) : ready === undefined ? (
+      <ReadNote data-for="body-history" reads={[history]}>
+        The history couldn’t be read
+      </ReadNote>
+      {isFailed(history) ? null : ready === undefined ? (
         <Skeleton className="h-(--space-20)" />
       ) : (
         <>
@@ -272,6 +269,17 @@ const KICK = 'text-kick leading-none font-medium tracking-kick text-fg3 uppercas
  * it loads, the strip's place holds; with no stored answer, it says so and draws no strip.
  */
 function CompletenessBlock({ completeness }: { completeness: Loadable<Completeness | null> }) {
+  return (
+    <>
+      <CompletenessState completeness={completeness} />
+      <ReadNote data-for="body-complete" reads={[completeness]}>
+        Completeness couldn’t be read
+      </ReadNote>
+    </>
+  );
+}
+
+function CompletenessState({ completeness }: { completeness: Loadable<Completeness | null> }) {
   const completeId = useId();
   if (isFailed(completeness)) {
     return (
@@ -280,9 +288,6 @@ function CompletenessBlock({ completeness }: { completeness: Loadable<Completene
         className="mt-(--space-1) flex min-w-0 flex-col gap-(--space-1_5)"
       >
         <span className={KICK}>Complete</span>
-        <ReadFailed data-for="body-complete" onRetry={completeness.retry}>
-          Completeness couldn’t be read
-        </ReadFailed>
       </div>
     );
   }
@@ -445,11 +450,13 @@ function Identity({
           </Stack>
         </KeyValueRow>
       </KeyValueList>
-      {extrasFailed !== null && (
-        <ReadFailed data-for="body-extras" className="mt-(--space-3)" onRetry={extrasFailed.retry}>
-          The towns and the outline’s trust couldn’t be read
-        </ReadFailed>
-      )}
+      <ReadNote
+        data-for="body-extras"
+        className="mt-(--space-3) empty:mt-0"
+        reads={extrasFailed === null ? [] : [extrasFailed]}
+      >
+        The towns and the outline’s trust couldn’t be read
+      </ReadNote>
     </>
   );
 }

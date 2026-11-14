@@ -1,9 +1,8 @@
 import type { api } from '@skating/convex/api';
 import { sqMetersToAcres } from '@skating/core';
 import type { FunctionReturnType } from 'convex/server';
-
+import { type Loadable, mapLoadable } from '@/components/admin/reads/consoleReads';
 import { dayMonth, firstName, ringsText } from '../../frame/bodyModel';
-import { type Loadable, mapLoadable } from '../../frame/consoleReads';
 import type { Neighbor, TouchingFacts } from '../../frame/touching';
 import type { BodyMapScene } from '../../map/mapDescriptors';
 

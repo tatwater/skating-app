@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-
+import type { ReadFailure } from '@/components/admin/reads/consoleReads';
 import { MASCOMA_BAY_PROVENANCE, MASCOMA_SUB_AREAS, on } from '../../frame/bodyFixtures';
-import type { ReadFailure } from '../../frame/consoleReads';
 import { MASCOMA_POLYGON } from '../../frame/mascomaFixtures';
 import {
   CAPPED_NONE,
@@ -130,7 +129,7 @@ describe('the bays', () => {
 });
 
 describe('merge', () => {
-  const failure: ReadFailure = { failed: true, retry: () => {} };
+  const failure: ReadFailure = { failed: true, pending: false, retry: () => {} };
   const pond = { id: 'k1', name: 'Crystal Lake', polygon: MASCOMA_POLYGON };
 
   it('shows no block only when the test ran over everything near and found nothing', () => {

@@ -1,9 +1,8 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-
+import type { ReadFailure } from '@/components/admin/reads/consoleReads';
 import { KeysProvider } from '@/lib/keys';
-import type { ReadFailure } from '../../frame/consoleReads';
 import { stubJsdomAnimations } from '../jsdomStubs';
 import { ShapeTabView, type ShapeTabViewProps } from './ShapeTab';
 import { CAPPED_SOME, NOT_CHECKED } from './shapeModel';
@@ -34,7 +33,7 @@ function view(props: Partial<ShapeTabViewProps> = {}) {
   );
 }
 
-const failure = (): ReadFailure => ({ failed: true, retry: vi.fn() });
+const failure = (): ReadFailure => ({ failed: true, pending: false, retry: vi.fn() });
 
 describe('ShapeTabView', () => {
   it('draws the outline and the bays, each bay saying how and when it was made', () => {

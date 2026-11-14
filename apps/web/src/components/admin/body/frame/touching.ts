@@ -3,7 +3,13 @@ import type { Id } from '@skating/convex/dataModel';
 import { waterBodyDisplayName } from '@skating/core';
 import { useRef } from 'react';
 
-import { isFailed, type Loadable, type ReadFailure, read, useConsoleReads } from './consoleReads';
+import {
+  isFailed,
+  type Loadable,
+  read,
+  retryAll,
+  useConsoleReads,
+} from '@/components/admin/reads/consoleReads';
 
 /**
  * **The bodies that touch this one** — `bodyConsole.consoleExtras`' `touchingBodyIds`, each read by
@@ -73,14 +79,4 @@ export function useNeighbors(facts: TouchingFacts | undefined): Loadable<readonl
   }
   held.current = { values, out };
   return out;
-}
-
-/** One failure for several reads: *Try again* runs each of them again. */
-export function retryAll(failures: readonly ReadFailure[]): ReadFailure {
-  return {
-    failed: true,
-    retry: () => {
-      for (const f of failures) f.retry();
-    },
-  };
 }

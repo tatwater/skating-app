@@ -1,6 +1,7 @@
 import { COMPLETENESS_FIELDS, type CompletenessField } from '@skating/core';
 
 import type { LedSegment } from '@/components/kit/trace-chart';
+import { listWords } from '@/lib/words';
 
 /**
  * **How complete a body's record is, as the pages draw it.** The rule is core's
@@ -43,8 +44,5 @@ export function completenessSegments(c: Completeness): LedSegment[] {
 /** "Missing bathymetry", "Missing depth and bathymetry", "Missing wind, depth and bathymetry". */
 export function missingSentence(missing: readonly CompletenessField[]): string | null {
   if (missing.length === 0) return null;
-  const words = missing.map((f) => COMPLETENESS_WORDS[f]);
-  const list =
-    words.length === 1 ? words[0] : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`;
-  return `Missing ${list}`;
+  return `Missing ${listWords(missing.map((f) => COMPLETENESS_WORDS[f]))}`;
 }

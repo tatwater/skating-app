@@ -10,15 +10,19 @@ import {
   useMemo,
   useState,
 } from 'react';
-import { Skeleton } from '@/components/kit/skeleton';
 import { ReadBoundary } from '@/components/kit/read-boundary';
+import { RetryNote } from '@/components/kit/retry-note';
+import { Skeleton } from '@/components/kit/skeleton';
 import { toast } from '@/components/kit/toast';
 import { useTheme } from '@/components/theme-provider';
+import { cn } from '@/lib/utils';
+import { listWords } from '@/lib/words';
 import { errorText } from '../../adminUi';
 import { useUndo } from '../../shell/undo';
 import { BodyMap } from '../map/BodyMap';
 import { mergeScenes } from '../map/bodyScene';
 import type { BodyMapScene } from '../map/mapDescriptors';
+import { TabBoundary } from '../TabBoundary';
 import { SHAPE_TAB } from '../tabs/shape/ShapeTabRoute';
 import { campaignText } from '../tabs/shape/shapeModel';
 import { BodyConsoleGone } from './BodyConsoleGone';
@@ -30,7 +34,6 @@ import {
   searchFor,
   validateBodySearch,
 } from './bodySearch';
-import { ReadFailed } from './kit-candidates/read-failed';
 import { NotBuiltTab } from './NotBuiltTab';
 import {
   type BodyTabProps,
@@ -86,7 +89,6 @@ export function BodyConsoleRoute({ registry = BODY_TAB_REGISTRY }: { registry?: 
   const boost = useBoostCommit(bodyId);
   const [tabScene, setTabScene] = useState<BodyMapScene | null>(null);
   // A pane that threw is tried again by remounting it: its boundary resets on a new key.
-  const [attempt, setAttempt] = useState({ map: 0, tab: 0 });
   const lit = search.lit ?? null;
   const readyScene = data.state === 'ready' ? data.scene : null;
   const scene = useMemo(
@@ -121,24 +123,14 @@ export function BodyConsoleRoute({ registry = BODY_TAB_REGISTRY }: { registry?: 
     data.state === 'loading' ? (
       <Skeleton className="h-(--space-20)" />
     ) : isBuilt(slot) ? (
-      <ReadBoundary
-        resetKey={`${slot.key}:${attempt.tab}`}
-        fallback={() => (
-          <ReadFailed
-            data-for="body-tab"
-            onRetry={() => setAttempt((a) => ({ ...a, tab: a.tab + 1 }))}
-          >
-            {slot.label} couldn’t be read
-          </ReadFailed>
-        )}
-      >
+      <TabBoundary bodyId={bodyId} tab={slot.key} label={slot.label}>
         <TabWiring
           Wiring={slot.Wiring as ComponentType<BodyTabProps>}
           bodyId={bodyId}
           lit={lit}
           onLitChange={onLitChange}
         />
-      </ReadBoundary>
+      </TabBoundary>
     ) : (
       <NotBuiltTab label={slot.label} oldEditorHref={oldEditorHref} />
     );
@@ -177,15 +169,12 @@ export function BodyConsoleRoute({ registry = BODY_TAB_REGISTRY }: { registry?: 
         data.state === 'ready' && scene !== null ? (
           <ReadBoundary
             // The open tab's drawing is read inside it: another tab is another try.
-            resetKey={`${bodyId}:${slot.key}:${attempt.map}`}
-            fallback={() => (
+            resetKey={`${bodyId}:${slot.key}`}
+            fallback={(retry) => (
               <div className="p-gutter">
-                <ReadFailed
-                  data-for="body-map"
-                  onRetry={() => setAttempt((a) => ({ ...a, map: a.map + 1 }))}
-                >
+                <RetryNote data-for="body-map" onRetry={retry}>
                   The map couldn’t be drawn
-                </ReadFailed>
+                </RetryNote>
               </div>
             )}
           >
@@ -231,23 +220,26 @@ const NO_ATTENTION: ReadonlySet<never> = new Set();
  * over the open tab's dock. Nothing when there is neither.
  */
 function mapFoot(failures: MapFailures | null, dock: ReactNode): ReactNode {
-  if (failures === null) return dock ?? undefined;
   return (
     <>
-      <div className="m-(--space-3) max-w-(--size-inspector) border border-solid border-line bg-panel p-(--space-2_5)">
-        <ReadFailed data-for="body-map-reads" onRetry={failures.retry}>
-          The map couldn’t read {listWords(failures.what)}
-        </ReadFailed>
+      {/* Mounted with or without a failure, so the notice's words are announced as they come. */}
+      <div
+        className={cn(
+          failures !== null &&
+            'm-(--space-3) max-w-(--size-inspector) border border-solid border-line bg-panel p-(--space-2_5)',
+        )}
+      >
+        <RetryNote
+          data-for="body-map-reads"
+          onRetry={failures?.retry}
+          pending={failures?.pending ?? false}
+        >
+          {failures === null ? null : `The map couldn’t read ${listWords(failures.what)}`}
+        </RetryNote>
       </div>
       {dock}
     </>
   );
-}
-
-/** "the bays", "the bays and the lots", "the bays, the put-ins and the lots". */
-export function listWords(words: readonly string[]): string {
-  if (words.length <= 1) return words[0] ?? '';
-  return `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`;
 }
 
 function TabWiring({ Wiring, ...props }: BodyTabProps & { Wiring: ComponentType<BodyTabProps> }) {

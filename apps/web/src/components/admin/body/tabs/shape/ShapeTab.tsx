@@ -1,5 +1,6 @@
 import { cloneElement, type ReactElement, type ReactNode, useRef } from 'react';
-
+import { isFailed, type Loadable, type ReadFailure } from '@/components/admin/reads/consoleReads';
+import { ReadNote } from '@/components/admin/reads/ReadNote';
 import { Tag } from '@/components/kit/badge';
 import { buttonVariants } from '@/components/kit/button';
 import { EntryTile } from '@/components/kit/entry-tile';
@@ -19,9 +20,6 @@ import {
 import { UnavailableButton } from '@/components/kit/unavailable-button';
 import { usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
-
-import { isFailed, type Loadable, type ReadFailure } from '../../frame/consoleReads';
-import { ReadFailed } from '../../frame/kit-candidates/read-failed';
 import type { ShapeBay, ShapeMerge, ShapeOutline } from './shapeModel';
 
 /**
@@ -95,11 +93,10 @@ export function ShapeTabView({
       className={cn('flex flex-col gap-(--space-8)', className)}
     >
       <Section title="Outline">
-        {isFailed(outline) ? (
-          <ReadFailed data-for="shape-outline" onRetry={outline.retry}>
-            The outline couldn’t be read
-          </ReadFailed>
-        ) : outline === undefined ? (
+        <ReadNote data-for="shape-outline" reads={[outline]}>
+          The outline couldn’t be read
+        </ReadNote>
+        {isFailed(outline) ? null : outline === undefined ? (
           <Skeleton className="h-(--space-20)" />
         ) : (
           <KeyValueList keyWidth="6.5rem" className="gap-y-(--space-2_5)">
@@ -119,11 +116,10 @@ export function ShapeTabView({
       </Section>
 
       <Section title="Bays" {...(readyBays !== undefined ? { count: readyBays.length } : {})}>
-        {isFailed(bays) ? (
-          <ReadFailed data-for="shape-bays" onRetry={bays.retry}>
-            The bays couldn’t be read
-          </ReadFailed>
-        ) : readyBays === undefined ? (
+        <ReadNote data-for="shape-bays" reads={[bays]}>
+          The bays couldn’t be read
+        </ReadNote>
+        {isFailed(bays) ? null : readyBays === undefined ? (
           <Skeleton className="h-(--space-14)" />
         ) : readyBays.length === 0 ? (
           <ListEnd>No bays</ListEnd>
@@ -165,15 +161,17 @@ export function ShapeTabView({
             </TableBody>
           </Table>
         )}
-        {baysMadeFailed !== null && readyBays !== undefined && readyBays.length > 0 && (
-          <ReadFailed
-            data-for="shape-bays-made"
-            className="mt-(--space-3)"
-            onRetry={baysMadeFailed.retry}
-          >
-            How each bay was made couldn’t be read
-          </ReadFailed>
-        )}
+        <ReadNote
+          data-for="shape-bays-made"
+          className="mt-(--space-3) empty:mt-0"
+          reads={
+            baysMadeFailed !== null && readyBays !== undefined && readyBays.length > 0
+              ? [baysMadeFailed]
+              : []
+          }
+        >
+          How each bay was made couldn’t be read
+        </ReadNote>
       </Section>
 
       <Section title="Add a bay">
@@ -226,9 +224,9 @@ function MergeSection({
   if (isFailed(merge)) {
     return (
       <Section title="Merge into another body">
-        <ReadFailed data-for="shape-merge" onRetry={merge.retry}>
+        <ReadNote data-for="shape-merge" reads={[merge]}>
           Whether another body touches this one couldn’t be read
-        </ReadFailed>
+        </ReadNote>
       </Section>
     );
   }
@@ -240,11 +238,10 @@ function MergeSection({
         <p className="m-0 text-assist leading-list text-fg3">
           For a lake drawn twice: everything on it moves to the body you pick.
         </p>
-        {isFailed(touching) ? (
-          <ReadFailed data-for="shape-touching" onRetry={touching.retry}>
-            The bodies that touch this one couldn’t be read
-          </ReadFailed>
-        ) : touching === undefined ? (
+        <ReadNote data-for="shape-touching" reads={[touching]}>
+          The bodies that touch this one couldn’t be read
+        </ReadNote>
+        {isFailed(touching) ? null : touching === undefined ? (
           <Skeleton className="h-(--space-10) w-full" />
         ) : (
           touching.length > 0 && (

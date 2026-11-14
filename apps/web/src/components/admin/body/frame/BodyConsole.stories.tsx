@@ -1,12 +1,11 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
-
+import type { ReadFailure } from '@/components/admin/reads/consoleReads';
 import { computedColor, sameColor } from '@/components/kit/measure';
+import { RetryNote } from '@/components/kit/retry-note';
 import { faceLoaded, must } from '@/components/kit/storyKit';
 import { BodyBoard } from './bodyBoard';
 import { CAPPED_HISTORY, NEIGHBOR_ID, NEIGHBOR_POLYGON } from './bodyFixtures';
-import type { ReadFailure } from './consoleReads';
-import { ReadFailed } from './kit-candidates/read-failed';
 
 /**
  * Boards 5.4.1 Body | Shape and 5.4.1 Shape | Scrolled: the Body console as an admin first finds
@@ -176,7 +175,7 @@ export const NotRecorded: Story = {
   },
 };
 
-const failure = (): ReadFailure => ({ failed: true, retry: fn() });
+const failure = (): ReadFailure => ({ failed: true, pending: false, retry: fn() });
 
 /**
  * Every read beside the body's own failed: each block says so in its own place, with *Try again*,
@@ -192,7 +191,7 @@ export const ReadsFailed: Story = {
     history: failure(),
     foot: (
       <div className="m-(--space-3) max-w-(--size-inspector) border border-solid border-line bg-panel p-(--space-2_5)">
-        <ReadFailed onRetry={fn()}>The map couldn’t read the bays and the lots</ReadFailed>
+        <RetryNote onRetry={fn()}>The map couldn’t read the bays and the lots</RetryNote>
       </div>
     ),
   },
@@ -200,7 +199,8 @@ export const ReadsFailed: Story = {
     const page = within(canvasElement);
     await faceLoaded(slot(canvasElement, 'record-lockup-name'));
     await expect(page.getByRole('heading', { level: 1, name: 'Mascoma Lake' })).toBeVisible();
-    const notes = slots(canvasElement, 'read-failed');
+    // Every block's note is mounted; the ones that speak are the failures.
+    const notes = slots(canvasElement, 'retry-note').filter((n) => n.textContent !== '');
     await expect(notes.map((n) => n.textContent?.replace('Try again', ''))).toEqual([
       'Completeness couldn’t be read',
       'The towns and the outline’s trust couldn’t be read',

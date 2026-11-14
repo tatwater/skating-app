@@ -5,9 +5,8 @@
  * the same scene, since a story can't fetch the basemap's tiles.
  */
 import { type ReactNode, useLayoutEffect, useRef, useState } from 'react';
-
+import { isFailed } from '@/components/admin/reads/consoleReads';
 import { StatusLamp } from '@/components/kit/status-bar';
-
 import { ConsoleShell } from '../../shell/ConsoleShell';
 import { CONSOLE_MODES } from '../../shell/consoleNav';
 import { seasonTape } from '../../shell/consoleTime';
@@ -34,7 +33,6 @@ import {
 } from './bodyFixtures';
 import { attentionTabs } from './bodyModel';
 import type { BodyTabKey } from './bodySearch';
-import { isFailed } from './consoleReads';
 import { MASCOMA_POLYGON } from './mascomaFixtures';
 import { NotBuiltTab } from './NotBuiltTab';
 import { BODY_TAB_LABELS } from './tabRegistry';

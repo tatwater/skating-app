@@ -2,11 +2,22 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { polygonBBox, waterBodyDisplayName } from '@skating/core';
 import { useMemo, useState } from 'react';
+import {
+  isFailed,
+  type Loadable,
+  loaded,
+  mapLoadable,
+  type ReadFailure,
+  read,
+  retryAll,
+  useConsoleReads,
+} from '@/components/admin/reads/consoleReads';
 import type { BBoxLike } from '@/lib/mapSurface';
 import { useRole } from '@/lib/useRole';
 import type { Completeness } from '../completeness';
 import { type BodyMapBaseInput, bodyMapBase } from '../map/bodyMapBase';
 import type { BodyMapScene } from '../map/mapDescriptors';
+import { BAY_REQUESTS_READ_CAP, PLACE_NAMES_READ_CAP } from '../readCaps';
 import {
   attentionTabs,
   type BodyAsk,
@@ -23,16 +34,7 @@ import {
   removalOf,
 } from './bodyModel';
 import type { BodyTabKey } from './bodySearch';
-import {
-  isFailed,
-  type Loadable,
-  loaded,
-  mapLoadable,
-  type ReadFailure,
-  read,
-  useConsoleReads,
-} from './consoleReads';
-import { retryAll, useNeighbors } from './touching';
+import { useNeighbors } from './touching';
 
 /**
  * **The Body console's reads.** The body (`waterBodies.get`) decides which page this is; around it,
@@ -63,10 +65,9 @@ const VERB_LIMIT = 10;
  * The most rows the two asks reads without a `more` flag return (the server's `QUEUE_CAP`s,
  * unexported: `corpusPlaceNames.openForBody` and `corpusRequests.openBayRequestsForBody`, whose
  * groups' `askers` sum to the rows read). A read that comes back this full may have stopped short,
- * so the asks are never counted as whole (a server request: a `more` flag on each).
+ * so the asks are never counted as whole (a server request: a `more` flag on each). The place
+ * names' cap is the Places tab's own, so the frame and the tab can't disagree on it.
  */
-const PLACE_NAMES_READ_CAP = 400;
-const BAY_REQUESTS_READ_CAP = 200;
 
 /** A Convex id's shape, so a hand-edited link never reaches a read as junk. */
 const ID_SHAPE = /^[0-9a-z]{30,34}$/;
@@ -92,6 +93,8 @@ export interface MapFailures {
   /** What the map couldn't read, in words ("the bays", "the put-ins"). */
   what: readonly string[];
   retry: () => void;
+  /** Tried again; the fresh answers aren't in. */
+  pending: boolean;
 }
 
 export type BodyConsoleData =
@@ -304,7 +307,9 @@ export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleDa
   const mapFailures: MapFailures | null =
     mapFailed.length === 0
       ? null
-      : { what: mapFailed.map(([, w]) => w), retry: retryAll(mapFailed.map(([f]) => f)).retry };
+      : (({ retry, pending }) => ({ what: mapFailed.map(([, w]) => w), retry, pending }))(
+          retryAll(mapFailed.map(([f]) => f)),
+        );
 
   const done = completeness !== undefined && !isFailed(completeness) ? completeness : null;
   return {

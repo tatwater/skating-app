@@ -2,11 +2,9 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-
+import type { ReadFailure } from '@/components/admin/reads/consoleReads';
 import { KeysProvider } from '@/lib/keys';
-
 import { stubJsdomAnimations } from '../tabs/jsdomStubs';
-
 import { BodyConsoleMissing, BodyConsoleView } from './BodyConsoleView';
 import {
   BODY_NOW,
@@ -19,7 +17,6 @@ import {
   MASCOMA_TRUST,
 } from './bodyFixtures';
 import { attentionTabs } from './bodyModel';
-import type { ReadFailure } from './consoleReads';
 import { NotBuiltTab } from './NotBuiltTab';
 
 beforeAll(stubJsdomAnimations);
@@ -160,7 +157,7 @@ describe('BodyConsoleView', () => {
 
   it('says in its own place each read that failed, and tries it again', async () => {
     const user = userEvent.setup();
-    const failure = (): ReadFailure => ({ failed: true, retry: vi.fn() });
+    const failure = (): ReadFailure => ({ failed: true, pending: false, retry: vi.fn() });
     const [complete, extras, asks, history] = [failure(), failure(), failure(), failure()];
     render(
       <Page completeness={complete} towns={extras} trust={extras} asks={asks} history={history} />,

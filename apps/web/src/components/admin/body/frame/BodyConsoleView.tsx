@@ -2,15 +2,14 @@ import { type ReactNode, useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/kit/button';
 import { Note } from '@/components/kit/note';
+import { RetryNote } from '@/components/kit/retry-note';
 import { usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
-
 import { ConsoleStatus, ConsoleTopStart } from '../../shell/ConsoleShell';
 import { BodyInspector } from './BodyInspector';
 import { BodyLeftColumn, type BodyLeftColumnProps } from './BodyLeftColumn';
 import type { BodyAsk } from './bodyModel';
 import type { BodyTabKey } from './bodySearch';
-import { ReadFailed } from './kit-candidates/read-failed';
 
 /**
  * The Body console (`/admin/body/$id`, §5.4), drawn from props: the left column (the body), the map
@@ -119,9 +118,9 @@ export function BodyConsoleMissing(
         {props.state === 'missing' ? (
           <Note>No such body. The link may be broken.</Note>
         ) : (
-          <ReadFailed data-for="body-console" onRetry={props.onRetry}>
+          <RetryNote data-for="body-console" onRetry={props.onRetry}>
             This body couldn’t be read
-          </ReadFailed>
+          </RetryNote>
         )}
       </div>
     </div>

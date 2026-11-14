@@ -16,9 +16,9 @@ vi.mock('convex/react', () => ({
     ),
 }));
 
+import { isFailed, type ReadFailure } from '@/components/admin/reads/consoleReads';
 import { MASCOMA_RECORD, NEIGHBOR_POLYGON } from './bodyFixtures';
-import { isFailed, type ReadFailure } from './consoleReads';
-import { retryAll, type TouchingFacts, useNeighbors } from './touching';
+import { type TouchingFacts, useNeighbors } from './touching';
 
 const body = (id: string, name: string) => ({
   available: true,
@@ -86,15 +86,5 @@ describe('useNeighbors', () => {
       { id: 'a', name: 'A', polygon: NEIGHBOR_POLYGON },
       { id: 'b', name: 'B', polygon: NEIGHBOR_POLYGON },
     ]);
-  });
-});
-
-describe('retryAll', () => {
-  it('runs every failure’s Try again', () => {
-    const a = { failed: true as const, retry: vi.fn() };
-    const b = { failed: true as const, retry: vi.fn() };
-    retryAll([a, b]).retry();
-    expect(a.retry).toHaveBeenCalledTimes(1);
-    expect(b.retry).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,13 +1,11 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-
+import type { ReadFailure } from '@/components/admin/reads/consoleReads';
 import { KeysProvider } from '@/lib/keys';
-
 import { stubJsdomAnimations } from '../tabs/jsdomStubs';
 import { BodyConsoleGone, type BodyConsoleGoneProps } from './BodyConsoleGone';
 import { BODY_NOW, CAPPED_HISTORY } from './bodyFixtures';
-import type { ReadFailure } from './consoleReads';
 
 beforeAll(stubJsdomAnimations);
 
@@ -26,7 +24,7 @@ const page = (props: Partial<BodyConsoleGoneProps> = {}) => (
   </KeysProvider>
 );
 
-const failure = (): ReadFailure => ({ failed: true, retry: vi.fn() });
+const failure = (): ReadFailure => ({ failed: true, pending: false, retry: vi.fn() });
 
 describe('BodyConsoleGone', () => {
   it('says a rejected body has been removed, and how, by whom and why', () => {

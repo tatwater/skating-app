@@ -54,17 +54,24 @@ vi.mock('@tanstack/react-router', () => ({
   Link: ({
     to,
     params,
+    search,
     children,
     className,
     onClick,
   }: {
     to: string;
     params?: { id: string };
+    search?: { from?: string };
     children?: ReactNode;
     className?: string;
     onClick?: () => void;
   }) => (
-    <a href={to.replace('$id', params?.id ?? '')} className={className} onClick={onClick}>
+    <a
+      href={to.replace('$id', params?.id ?? '')}
+      data-from={search?.from}
+      className={className}
+      onClick={onClick}
+    >
       {children}
     </a>
   ),
@@ -90,7 +97,7 @@ import { getFunctionName } from 'convex/server';
 import { KeysProvider } from '@/lib/keys';
 import { stubJsdomAnimations } from '../tabs/jsdomStubs';
 import { SHAPE_TAB } from '../tabs/shape/ShapeTabRoute';
-import { BodyConsoleRoute, listWords } from './BodyConsoleRoute';
+import { BodyConsoleRoute } from './BodyConsoleRoute';
 import {
   MASCOMA_BAY_PROVENANCE,
   MASCOMA_EXTRAS,
@@ -279,10 +286,10 @@ describe('BodyConsoleRoute', () => {
     set(api.bodyConsole.history, { entries: [], capped: false });
     const note = screen
       .getByText('The history couldn’t be read')
-      .closest('[data-slot="read-failed"]');
+      .closest('[data-slot="retry-note"]');
     await user.click(within(note as HTMLElement).getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('Nothing recorded')).toBeInTheDocument();
     expect(askedFor(api.bodyConsole.history).length).toBeGreaterThan(0);
-    expect(screen.getByText('Nothing recorded')).toBeInTheDocument();
   });
 
   it('opens the tab the URL names, and a slot with no tab says so', () => {
@@ -312,7 +319,7 @@ describe('BodyConsoleRoute', () => {
         <BodyConsoleRoute registry={registerBodyTabs({ names: { Wiring: Throwing } })} />
       </Mounted>,
     );
-    expect(screen.getByText('Names couldn’t be read')).toBeInTheDocument();
+    expect(screen.getByText('Names couldn’t be shown')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1, name: 'Mascoma Lake' })).toBeInTheDocument();
     throws = false;
     await user.click(screen.getByRole('button', { name: 'Try again' }));
@@ -359,13 +366,14 @@ describe('BodyConsoleRoute', () => {
       },
       { waterBodyId: NEIGHBOR_ID },
     );
+    mocks.search = { from: '/admin/bodies?lane=inactive' };
     render(<Mounted />);
     const merge = screen.getByRole('region', { name: 'Merge into another body' });
     expect(within(merge).getByText('Crystal Lake')).toBeInTheDocument();
-    expect(within(merge).getByRole('link', { name: 'Open →' })).toHaveAttribute(
-      'href',
-      `/admin/body/${NEIGHBOR_ID}`,
-    );
+    const open = within(merge).getByRole('link', { name: 'Open →' });
+    expect(open).toHaveAttribute('href', `/admin/body/${NEIGHBOR_ID}`);
+    // The neighbor opens with this body's way back: to the list the operator came from.
+    expect(open).toHaveAttribute('data-from', '/admin/bodies?lane=inactive');
   });
 
   it('says a broken link is broken, without reading anything for a malformed id', () => {
@@ -507,16 +515,5 @@ describe('BodyConsoleRoute', () => {
     );
     expect(screen.queryByText('The map couldn’t be drawn')).toBeNull();
     expect(screen.getByTestId('ground')).toBeInTheDocument();
-  });
-});
-
-describe('listWords', () => {
-  it('joins what the map couldn’t read as a sentence', () => {
-    expect(listWords(['the bays'])).toBe('the bays');
-    expect(listWords(['the bays', 'the lots'])).toBe('the bays and the lots');
-    expect(listWords(['the bays', 'the put-ins', 'the lots'])).toBe(
-      'the bays, the put-ins and the lots',
-    );
-    expect(listWords([])).toBe('');
   });
 });
