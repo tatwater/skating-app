@@ -126,19 +126,24 @@ type SkeletonStatProps = Omit<SkeletonProps, 'children'> & {
  * fallback's after Martian Mono loaded (13 px short on `$75.80`, about one run in five on a cold
  * cache). Text is re-laid out when its face arrives, and asking for the glyphs is what loads the
  * face at all. Mono digits, `$` and `.` share one advance, so the box is the value's.
+ *
+ * The zeros are `visibility: hidden`, not transparent ink: forced colors (Windows high contrast)
+ * repaint `color`, which would show a loading stat as `0000`, and hidden text is never found by
+ * find-in-page. `LINE`'s padding leaves a content box one cap tall, so the zeros' line box hangs
+ * below the skeleton; `overflow-hidden` keeps that overhang from becoming scrollable overflow.
  */
 function SkeletonStat({ chars, className, ...props }: SkeletonStatProps) {
   return (
     <Skeleton
       className={cn(
         LINE,
-        'w-fit font-(family-name:--family-mono) text-stat leading-none tracking-value',
-        'whitespace-nowrap text-transparent select-none',
+        'w-fit overflow-hidden font-(family-name:--family-mono) text-stat leading-none',
+        'tracking-value whitespace-nowrap',
         className,
       )}
       {...props}
     >
-      {'0'.repeat(Math.max(0, chars))}
+      <span className="invisible">{'0'.repeat(Math.max(0, chars))}</span>
     </Skeleton>
   );
 }
