@@ -1516,6 +1516,67 @@ Raised by the builders as kit candidates or gaps; each is the governor's to prom
 old admin page leaves `data-surface="skater"` on `<html>` — the old page wants it absent, and no
 shell on that path takes it off.
 
+### The Bodies library on the server (B01-3, the design)
+
+The library lists about 25,000 bodies; a lane, a state tab, seven facets and eight sortable columns
+cannot be answered from `waterBodies` (a polygon per row, no index on most of what the list shows).
+So the list reads a **stored row per body**, written where the facts change.
+
+**The row** (`bodyLibraryRows`): exactly what the list shows, sorts by and filters on — name, the
+aliases and a `searchText` of name, aliases and every id (ours, `waterBodyKey`, OSM, NHD, 3DHP,
+GNIS); class; states; area and its size option; standing and its lane; completeness as core's
+`bodyCompleteness` stores it (`have`, `of`, `missing`, and its facet option); open asks and whether
+one waits on a skater; reports this season (with the season they count) and whether the body was
+ever reported; the outline's origin, put-ins, curation, an intake reason and awaiting enrichment;
+and when a moderator last changed the body or its bays, landmarks or put-ins.
+
+- **One row per body per scope**: `*` and each state it touches, so a state tab is an index prefix
+  and a border body (Champlain) is listed under both states. Merged bodies have no row.
+- **Indexes**: each sort column twice — `[scope, key, nameKey]` for *All bodies* and
+  `[scope, lane, key, nameKey]` for a standing lane. Every sort key is a required number or string;
+  an unknown area or change date is stored as two keys (`-1` for the descending order, the largest
+  number for the ascending one), so an unknown sorts last both ways and no index ranges over an
+  optional field. *Changed this week* is a lower-bounded range on the change key.
+- **Search** is a search index over `searchText`, filtered by scope and lane: a body is found by any
+  name or id; while searching the order is the match.
+- **Facets** narrow inside the index read (`filter` before `paginate`, with `maximumRowsRead`), never
+  after a page: a page is the true next run of matches in the index's order, and a narrow facet costs
+  more pages, never a wrong one. Seven facets times eight columns cannot each be an index; this is
+  the one place the list's filter is evaluated in the query rather than ranged by an index.
+- **Counts** (`bodyLibraryCounts`) — lane totals, the corpus, the state tabs and every facet option,
+  per lane and scope — move with the rows: the one writer of a row applies the difference between
+  its old and new options in the same transaction, so a count is the tally of the rows by
+  construction. A facet's counts are exact while no other facet is applied (the menu's rule: what
+  an option would leave with the others as they are); otherwise the read says it has none.
+
+**Kept current at the writes.** One writer (`lib/bodyLibrary.ts`) recomputes a body's rows from the
+records and applies the count differences:
+
+- **Every audited action** (`writeAudit`): a row whose target is a body, a bay, a landmark, a put-in,
+  a lot (each body it serves), a corpus request or a place name refreshes that body in the same
+  transaction; a moderator's action on the body, its bays, landmarks or put-ins stamps *Changed*.
+  Writers that audit before they write call the refresh again after.
+- **Every report write and report moderation** (`recomputeBodySummary`, which each of them already
+  calls): reports this season, ever reported, and the put-ins reports derive.
+- **The machine's bulk writes with no audit row** (the canonical import, depth, elevation, wind,
+  contour coverage, the access join, the landmark and place-name loads, the prunes and duplicate
+  resolution) queue the bodies they touched (`bodyLibraryQueue`); a cron drains the queue each
+  minute, bounded, and a hard-deleted body's rows go with its queue entry.
+- **The season turning** (1 July) re-counts the rows whose reports belong to the last season.
+- **A drift repair** walks the oldest-refreshed rows a few at a time. Nothing a moderator does
+  depends on it; it catches what is deferred below.
+- **Deferred, in files the author-deletion PR rewrites:** a skater's new corpus request
+  (`corpusRequests.ts`) and a new flag on a body (`contentFlags.ts`) change its asks without an
+  audit row; each needs one line (`queueLibraryRefresh`) at its insert. Until then the drift repair
+  picks them up.
+
+**Reads** (`bodies.ts`, gated on `body.read`): `listPage` (lane, state, search, facets, sort, paged
+— a starting page up to the library's most, so a return reloads as many rows as were showing);
+`listSummary` (lane counts, the corpus, the state tabs, the list's total and facet counts, and what
+the read can honor); `preview` (reports this season by vantage and all time, the open asks, the
+towns). **Backfill**: `bodyLibrary.backfill`, paged by body and resumable, then
+`bodyLibrary.backfillChangedAt` over the audit log.
+
 ## Ruled out
 
 - **A second app or a separate deployment for admin** — D37 stands; the Convex function is the
