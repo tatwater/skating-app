@@ -1558,14 +1558,28 @@ records and applies the count differences:
   Writers that audit before they write call the refresh again after. A transaction runs at
   most four of these refreshes; a bulk writer's further rows (a request's siblings, a rollover or
   prune page, a seed's bays) stamp *Changed* and queue the body instead, so each page keeps the
-  read budget it was sized against.
+  read budget it was sized against. **A transaction's fifth refresh and on lands through the queue,
+  within a minute** (the governor's ruling, 2026-11-14).
 - **Every report write and report moderation** (`recomputeBodySummary`, which each of them already
   calls): reports this season, ever reported, and the put-ins reports derive.
 - **The machine's bulk writes with no audit row** (the canonical import, depth, elevation, wind,
   contour coverage, the access join, the landmark and place-name loads, the prunes and duplicate
   resolution) queue the bodies they touched (`bodyLibraryQueue`); a cron drains the queue each
   minute, bounded, and a hard-deleted body's rows go with its queue entry.
-- **The season turning** (1 July) re-counts the rows whose reports belong to the last season.
+- **The season turning** (1 July) re-counts the rows still counting the last season's reports, ten
+  bodies an hour. The rows and the *reported this season* filter read honestly at once — a row
+  counted for an earlier season reads as zero reports this season — while the stored counts behind
+  the facet's number and the reports sort lag until the turn finishes: a body an hour per ten
+  reported last season, about 30 hours for 300. It happens on 1 July, when nobody is skating
+  (accepted by the governor, 2026-11-14).
+- **A body whose refresh throws never blocks the rest.** Every refresh outside the writer runs in
+  a nested transaction of its own (`refreshBodyLibrary`), so a failure rolls back only that body's
+  work — never the moderator's write, the report, or the rest of a drain, repair or backfill page.
+  The failure goes on the body's queue entry with an attempt count and its error's class (never its
+  message), at the back; after three attempts the entry is **parked**: skipped by the drain and the
+  drift repair, counted in `bodyLibrary:state`, and listed by `bodyLibrary.parked` (Machinery,
+  `machinery.read`). A parked body is tried again by its next audited write — success clears the
+  entry — or released by `bodyLibrary:retryParked`.
 - **A drift repair** walks the oldest-refreshed rows a few at a time. Nothing a moderator does
   depends on it; it catches what is deferred below.
 - **Deferred, in files the author-deletion PR rewrites:** a skater's new corpus request
@@ -1578,7 +1592,9 @@ records and applies the count differences:
   them. Until then a hazard write pays a refresh that writes nothing.
 
 **Reads** (`bodies.ts`, gated on `body.read`): `listPage` (lane, state, search, facets, sort, paged
-— a starting page up to the library's most, so a return reloads as many rows as were showing);
+— a starting page up to the library's most, so a return reloads as many rows as were showing; a
+page that came back short because its scan budget ran out says so, `scanBudgetSpent`, and is not
+done — the list keeps loading and draws no end, the governor's condition on facets in the read);
 `listSummary` (lane counts, the corpus, the state tabs, the list's total and facet counts, and what
 the read can honor); `preview` (reports this season by vantage and all time, the open asks, the
 towns). **Backfill**: `bodyLibrary.backfill`, paged by body and resumable, then
@@ -1605,6 +1621,18 @@ register's shape differ, the prop type won; where the page draws words, the read
 | BS14 | `standing.retentionForBody` | The newest use and its kind, the boost and when it was set, favorites (to 1,000), saved put-ins |
 | BS15 | `bodyConsole.dailyHazards` | A hazard is on the lake until the vote that healed it; one archived without such a vote counts through its last confirmation (`unknownEnds`); the watch's opening day beside it |
 | BS16 | Deferred | Editing a feature's shape needs an audit verb (as BS9) |
+
+**The governor's rulings on the deferred items (2026-11-14).** A moderator's aliases are their own
+bounded field on the body, `moderatorAliases` — at most 20, each at most 120 characters, trimmed,
+de-duplicated case-insensitively against the display name and each other — never name claims: a
+`user` claim keeps meaning *a moderator picked the display name*. The library row's aliases and
+search text fold them in. **Built after the author-deletion PR (#110) merges**, with the four
+deferred writes (BS9's `setAliases` and `setClass`, BS11's choosing a depth source and filing a
+survey, BS13, BS16), since their verbs and undo rows land in files it rewrites — and with the
+one-line call sites waiting on the same files: `queueLibraryRefresh` at a skater's new corpus
+request (`corpusRequests.ts`) and new flag on a body (`contentFlags.ts`), `library = false` at the
+hazard callers of `recomputeBodySummary`, and `moderation.listActions` filtering by verb through
+`by_target_action`.
 
 ## Ruled out
 

@@ -227,7 +227,8 @@ function facetFilter(f: F, selection: LibraryFacetSelection, season: number) {
  * **One page of a lane.** Ordered by the sort column's index (ties by name), or by the match while
  * searching; the state tab is the index's scope; facets narrow inside the read, which scans at most
  * {@link PAGE_MAX_ROWS_READ} rows a page — so a narrow facet returns a short page with more to come,
- * never a wrong one. A first page may ask for up to the library's most (`clampPageSize`), so a return
+ * never a wrong one, and says so: `scanBudgetSpent` is true when the page came back short because
+ * the scan ran out, not because the list ended (`isDone` stays false; the page keeps loading). A first page may ask for up to the library's most (`clampPageSize`), so a return
  * from a body reloads as many rows as were showing.
  *
  * Lanes: `all`, a standing lane, or `changed` (a moderator's action in the last seven days, newest
@@ -291,7 +292,14 @@ export const listPage = query({
         .filter((f: F) => facetFilter(f, selection, season))
         .paginate(opts);
     }
-    return { ...page, page: page.page.map((row) => rowView(row, season, q)) };
+    return {
+      ...page,
+      page: page.page.map((row) => rowView(row, season, q)),
+      // The page stopped because its scan budget ran out, not because the list ended: there may be
+      // more matches past it, so the list keeps loading (`isDone` is false) and draws no end.
+      scanBudgetSpent:
+        !page.isDone && (page.pageStatus === 'SplitRequired' || page.page.length < opts.numItems),
+    };
   },
 });
 

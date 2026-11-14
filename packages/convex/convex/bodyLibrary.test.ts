@@ -134,6 +134,24 @@ async function seedReport(
   );
 }
 
+async function seedBodyIn(
+  ctx: Parameters<Parameters<T['run']>[0]>[0],
+  name: string,
+): Promise<Id<'waterBodies'>> {
+  return ctx.db.insert('waterBodies', {
+    name,
+    searchText: name,
+    type: 'lakePond',
+    source: 'osm',
+    polygon: square(0.01),
+    bbox: { minLat: 43.99, minLng: -72.01, maxLat: 44.01, maxLng: -71.99 },
+    centroid: { lat: 44.0, lng: -72.0 },
+    states: [],
+    dedupStatus: 'clean',
+    createdAt: Date.now(),
+  });
+}
+
 const backfill = async (t: T) => {
   let cursor: string | undefined;
   for (;;) {
@@ -569,6 +587,60 @@ describe('the list', () => {
       paginationOpts: page(),
     });
     expect(season.page).toEqual([]);
+  });
+
+  test('a narrow facet whose first matches sit past the first scan window keeps loading to them', async () => {
+    const t = harness();
+    const { as } = await seedUser(t);
+    const template = await t.run(async (ctx) => {
+      const id = await seedBodyIn(ctx, 'Template');
+      await refreshBodyLibrary(ctx, id);
+      const row = await ctx.db
+        .query('bodyLibraryRows')
+        .withIndex('by_body', (q) => q.eq('waterBodyId', id).eq('scope', '*'))
+        .first();
+      const { _id, _creationTime, ...fields } = row as Doc<'bodyLibraryRows'>;
+      await ctx.db.delete(_id);
+      return fields;
+    });
+    // 2,100 rows before the first bay in name order: past one page's 2,000-row scan.
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 2_100; i++) {
+        const key = `a ${String(i).padStart(5, '0')}`;
+        await ctx.db.insert('bodyLibraryRows', { ...template, name: key, nameKey: key });
+      }
+      for (const name of ['z bay 1', 'z bay 2', 'z bay 3']) {
+        await ctx.db.insert('bodyLibraryRows', {
+          ...template,
+          name,
+          nameKey: name,
+          bodyClass: 'bay',
+        });
+      }
+    });
+    const first = await as.query(api.bodies.listPage, {
+      lane: 'active',
+      sort: { column: 'name', dir: 'asc' },
+      facets: { class: ['bay'] },
+      paginationOpts: page(50),
+    });
+    expect(first.page).toEqual([]);
+    expect(first.isDone).toBe(false);
+    expect(first.scanBudgetSpent).toBe(true);
+    const found: string[] = [];
+    let cursor: string | null = first.continueCursor;
+    for (let i = 0; i < 5 && cursor !== null; i++) {
+      const next: typeof first = await as.query(api.bodies.listPage, {
+        lane: 'active',
+        sort: { column: 'name', dir: 'asc' },
+        facets: { class: ['bay'] },
+        paginationOpts: { numItems: 50, cursor },
+      });
+      found.push(...next.page.map((r) => r.name));
+      cursor = next.isDone ? null : next.continueCursor;
+      if (next.isDone) expect(next.scanBudgetSpent).toBe(false);
+    }
+    expect(found).toEqual(['z bay 1', 'z bay 2', 'z bay 3']);
   });
 
   test('a search finds a body by alias and by id, and names the alias it matched', async () => {
