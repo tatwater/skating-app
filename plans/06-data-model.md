@@ -56,6 +56,9 @@ One line per table: what it's for, and the decision or phase that made it. Group
 | `landmarkSourceBaselines` | what each catalog source (`vt.osm`, `ny.gnis`) read on the complete landmark loads this deployment accepted — the bar a later load must clear before it retires a catalog row; one row per accepted load, the newest is the bar — D202 |
 | `waterBodyRequests` | a skater asking for a body: activate, admit (resolved live against 3DHP), restore, contest access, takedown, and — the sub-area queue — name a bay; and a place a report named that no map has, filed by the report write — D179, D201, D202 |
 | `adminAreas` · `adminAreaCells` | town / county / state polygons and their cells, for the place a point resolves to — Phase 05 |
+| `bodyLibraryRows` | the Bodies library's row: what the console's list shows, sorts by and filters on, one per body per scope (`*` and each state it touches), written only by `lib/bodyLibrary.ts` at the writes that change its facts — B01 §12.8 |
+| `bodyLibraryCounts` | the library's counts — each lane's total, the state tabs, every facet option, per lane and scope — moved by the row writer by the difference of each change, so a count is the tally of the rows — B01 §12.8 |
+| `bodyLibraryQueue` | bodies whose library row is owed a refresh by the machine's bulk writes (imports, enrichment loads, prunes), drained by the minute cron — B01 §12.8 |
 | `bodySummaryRefreshes` | when each body's map summary card next changes by the passage of time — a report aging out of the window, the season turning; the summary sweep reads only the due rows, kept beside every card write |
 | `regionStats` | per-state deciles of area, depth, elevation — the comparison basis for generated captions — D70 |
 | `bathymetryCoverage` | which bodies have contour tiles and whose credit line to render — A06b |

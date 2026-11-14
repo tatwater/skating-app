@@ -91,6 +91,7 @@ import {
 } from '@skating/core';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx } from '../_generated/server';
+import { refreshBodyLibrary } from './bodyLibrary';
 
 /**
  * How many recent rows the recompute will read per body.
@@ -124,6 +125,15 @@ export async function recomputeBodySummary(
    * at batch 8 of 1,611.
    */
   known?: Doc<'waterBodies'>,
+  /**
+   * Also refresh the body's Bodies library row (B01-3): its reports this season, whether it was
+   * ever reported, and the put-ins its reports derive. On for every report write that calls this;
+   * the summary sweeps pass `false` — the passage of time moves none of those figures inside a
+   * season, and their pages are sized for the card alone. No library fact counts hazards, so the
+   * hazard writes could pass `false` too; their call sites are in files the author-deletion PR is
+   * rewriting, so until it lands they pay a refresh that writes nothing.
+   */
+  library = true,
 ): Promise<void> {
   const windowStart = summaryWindowStart(now);
   const season = currentSeason(now);
@@ -187,6 +197,9 @@ export async function recomputeBodySummary(
       : null,
   );
   if (!body) return;
+  // In a nested transaction of its own (`refreshBodyLibrary`), so a body whose library refresh throws
+  // never fails the report write that got here; the cost is a second read of the body there.
+  if (library) await refreshBodyLibrary(ctx, waterBodyId, { now });
   // **Skip the write when nothing changed.** A recompute runs on every report and hazard transition,
   // and a no-op patch is still a document write, a mutation conflict surface and a subscription
   // invalidation for every client watching this lake. Comparing `updatedAt` is deliberately excluded

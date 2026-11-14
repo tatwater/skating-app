@@ -1004,6 +1004,7 @@ export const create = mutation({
     });
     await audit(ctx, actor._id, 'create_sub_area', subAreaId, `Drew "${name}" on ${parent.name}`, {
       waterBodyId: args.waterBodyId,
+      via: 'drawn',
       clipped: geometry.clipped,
       retainedFraction: geometry.retainedFraction,
     });
@@ -2092,7 +2093,11 @@ export const importSeed = internalMutation({
         targetType: 'waterBodySubArea',
         targetId: subAreaId,
         reason: `Seeded "${row.name.trim()}" on ${parent.name} (A02 curation session)`,
-        metadata: { waterBodyId: row.waterBodyId, retainedFraction: clip.retainedFraction },
+        metadata: {
+          waterBodyId: row.waterBodyId,
+          via: 'seed',
+          retainedFraction: clip.retainedFraction,
+        },
         createdAt: now,
       });
       restamp.add(row.waterBodyId);
@@ -2195,6 +2200,8 @@ export const listForBody = query({
         ...(row.mouthStale !== undefined ? { mouthStale: row.mouthStale } : {}),
         ...(row.mouthReview !== undefined ? { mouthReview: row.mouthReview } : {}),
         removed: row.removedAt !== undefined,
+        // When it was made (B01-3, Shape's bays); how and by whom is `bodyConsole.bayProvenance`.
+        createdAt: row.createdAt,
         // Why the *system* retired it, if it did — the editor renders this next to the row, which is
         // the whole point of storing it rather than logging it (A02).
         ...(row.systemDelistReason !== undefined
@@ -2316,7 +2323,11 @@ export const importBaySubAreas = internalMutation({
         targetType: 'waterBodySubArea',
         targetId: subAreaId,
         reason: `A07a campaign: "${name}" is an arm of ${parent.name}, not a lake beside it`,
-        metadata: { waterBodyId: parent._id, retainedFraction: clip.retainedFraction },
+        metadata: {
+          waterBodyId: parent._id,
+          via: 'catalog',
+          retainedFraction: clip.retainedFraction,
+        },
         createdAt: now,
       });
       restamp.add(parent._id);

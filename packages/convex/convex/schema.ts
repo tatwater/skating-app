@@ -12,9 +12,12 @@
  * This renames the doc's `users` table to `profiles`; update 06-data-model.md to match.
  */
 
+// ── B01-3: the Bodies library ──
 import {
   CLAIM_SOURCES,
   COLD_CHAIN_THRESHOLDS_F,
+  COMPLETE_OPTIONS,
+  COMPLETENESS_FIELDS,
   CONDITION_SOURCES,
   CONFIDENCE_LEVELS,
   CORPUS_NAME_DISMISS_REASONS,
@@ -25,7 +28,10 @@ import {
   ICE_TYPES,
   LANDMARK_KINDS,
   LANDMARK_SOURCES,
+  LIBRARY_LANES,
+  LIBRARY_STANDINGS,
   OBSERVED_FROM,
+  OUTLINE_OPTIONS,
   PRECIP_TYPES,
   PROFILE_VISIBILITIES,
   RATING_TARGET_TYPES,
@@ -34,6 +40,7 @@ import {
   REQUEST_STATUSES,
   REVIEW_REASONS,
   SIGHTINGS,
+  SIZE_OPTIONS,
   SKATE_END_PRECISIONS,
   SKATE_QUALITIES,
   SKY_CONDITIONS,
@@ -1246,6 +1253,9 @@ export default defineSchema({
     // `.eq()` on the reason never reads the rows that carry none — `undefined` sorts before every
     // value, but an equality range simply does not include it, which is what makes this cheap.
     .index('by_review_reason', ['reviewReason', 'displayScore'])
+    // ── B01-3: the bodies merged into this one, for its History (equality only: the field is
+    // optional and the index not sparse). ──
+    .index('by_merged_into', ['mergedIntoId'])
     // **`searchText`, not `name` — the last step of the four** (A07a). `[name, ...aliases]` joined, so
     // a lake is findable under every name a publisher gave it: Auburn's water supply stores as NHD's
     // `The Basin` and a skater types "Lake Auburn". 583 bodies carry a distinct second name.
@@ -3492,7 +3502,10 @@ export default defineSchema({
     // human, and its unmerge rate is the only empirical check on the bar — which means counting merges
     // per day, which means reading this table by time. Without the index that is a scan of an
     // append-only audit log, i.e. the exact unbounded-growth shape the Phase 07-2 rule forbids.
-    .index('by_created_at', ['createdAt']),
+    .index('by_created_at', ['createdAt'])
+    // ── B01-3: a body's history filtered by verb (Access's rulings, a tab's receipts) — an equality
+    // on all three, so the filter is a range rather than a filter over a capped page. ──
+    .index('by_target_action', ['targetType', 'targetId', 'action']),
 
   /**
    * **A moderator's verdict on someone's content, kept with the person** (D248). One row per
@@ -4592,4 +4605,131 @@ export default defineSchema({
   })
     .index('by_user', ['userId']) // the upsert, and account erasure
     .index('by_seen_at', ['seenAt']), // who was seen lately: a bounded range
+
+  // ── B01-3: the Bodies library ───────────────────────────────────────────────────────────────
+
+  /**
+   * **The Bodies library's row** — exactly what the list shows, sorts by and filters on, one per
+   * body per scope (`*` and each state it touches), so a state tab is an index prefix. Written only
+   * by `lib/bodyLibrary.ts`, which recomputes a body from its records at the writes that change it
+   * and moves `bodyLibraryCounts` with it (B01 §12.8, *The Bodies library on the server*). Merged
+   * bodies have no row.
+   *
+   * Every sort key is required: an area or a change date nobody recorded is stored as two keys, the
+   * largest number for the ascending order and `-1` for the descending one (`unknownLastKeys`), so
+   * an unknown sorts last both ways and no index ranges over an optional field. The display fields
+   * beside them (`areaSqM`, `changedAt`) stay optional — `null` to the page, never a zero.
+   */
+  bodyLibraryRows: defineTable({
+    waterBodyId: v.id('waterBodies'),
+    scope: v.string(),
+    lane: literals(LIBRARY_LANES),
+    standing: literals(LIBRARY_STANDINGS),
+    name: v.string(),
+    nameKey: v.string(),
+    aliases: v.array(v.string()),
+    searchText: v.string(),
+    bodyClass: literals(WATER_BODY_CLASSES),
+    classKey: v.string(),
+    states: v.array(v.string()),
+    statesKey: v.string(),
+    areaSqM: v.optional(v.number()),
+    areaAsc: v.number(),
+    areaDesc: v.number(),
+    size: v.optional(literals(SIZE_OPTIONS)),
+    outline: literals(OUTLINE_OPTIONS),
+    hasPutIns: v.boolean(),
+    completeHave: v.number(),
+    completeOf: v.number(),
+    missing: v.array(literals(COMPLETENESS_FIELDS)),
+    complete: literals(COMPLETE_OPTIONS),
+    asks: v.number(),
+    /** A kind of ask reached its read cap: `asks` is a floor. */
+    asksCapped: v.boolean(),
+    asksWaiting: v.boolean(),
+    /** Reports in the season's record (`seasonRecordSpan`), and the season they were counted for. */
+    reports: v.number(),
+    /** The report scan stopped inside the season's record: `reports` is a floor. */
+    reportsCapped: v.boolean(),
+    reportsSeason: v.number(),
+    everReported: v.boolean(),
+    curated: v.boolean(),
+    intake: v.boolean(),
+    awaitingEnrichment: v.boolean(),
+    /** A moderator's last action on the body, its bays, landmarks or put-ins. */
+    changedAt: v.optional(v.number()),
+    changedAsc: v.number(),
+    changedDesc: v.number(),
+    refreshedAt: v.number(),
+  })
+    .index('by_body', ['waterBodyId', 'scope'])
+    // The season turning: an earlier season's rows that still count reports (required numbers).
+    .index('by_reports_season', ['reportsSeason', 'reports'])
+    // The drift repair: the rows refreshed longest ago.
+    .index('by_refreshed_at', ['refreshedAt'])
+    // All bodies, by each column (ties by name).
+    .index('by_scope_name', ['scope', 'nameKey'])
+    .index('by_scope_class', ['scope', 'classKey', 'nameKey'])
+    .index('by_scope_state', ['scope', 'statesKey', 'nameKey'])
+    .index('by_scope_area_asc', ['scope', 'areaAsc', 'nameKey'])
+    .index('by_scope_area_desc', ['scope', 'areaDesc', 'nameKey'])
+    .index('by_scope_complete', ['scope', 'completeHave', 'nameKey'])
+    .index('by_scope_asks', ['scope', 'asks', 'nameKey'])
+    .index('by_scope_reports', ['scope', 'reports', 'nameKey'])
+    .index('by_scope_changed_asc', ['scope', 'changedAsc', 'nameKey'])
+    .index('by_scope_changed_desc', ['scope', 'changedDesc', 'nameKey'])
+    // One standing lane, by each column.
+    .index('by_scope_lane_name', ['scope', 'lane', 'nameKey'])
+    .index('by_scope_lane_class', ['scope', 'lane', 'classKey', 'nameKey'])
+    .index('by_scope_lane_state', ['scope', 'lane', 'statesKey', 'nameKey'])
+    .index('by_scope_lane_area_asc', ['scope', 'lane', 'areaAsc', 'nameKey'])
+    .index('by_scope_lane_area_desc', ['scope', 'lane', 'areaDesc', 'nameKey'])
+    .index('by_scope_lane_complete', ['scope', 'lane', 'completeHave', 'nameKey'])
+    .index('by_scope_lane_asks', ['scope', 'lane', 'asks', 'nameKey'])
+    .index('by_scope_lane_reports', ['scope', 'lane', 'reports', 'nameKey'])
+    .index('by_scope_lane_changed_asc', ['scope', 'lane', 'changedAsc', 'nameKey'])
+    .index('by_scope_lane_changed_desc', ['scope', 'lane', 'changedDesc', 'nameKey'])
+    .searchIndex('search_text', { searchField: 'searchText', filterFields: ['scope', 'lane'] }),
+
+  /**
+   * **The library's counts** — a lane's total, the corpus, the state tabs and every facet option, per
+   * lane (`all` and each standing lane) and scope. Moved only by the library row's writer, by the
+   * difference between a row's old and new options in the same transaction (`countDeltas`), so each
+   * count is the tally of the rows by construction. About a thousand rows.
+   */
+  bodyLibraryCounts: defineTable({
+    lane: v.string(),
+    scope: v.string(),
+    key: v.string(),
+    count: v.number(),
+  })
+    .index('by_lane_scope_key', ['lane', 'scope', 'key'])
+    // A lane's state tabs: every scope's total.
+    .index('by_lane_key_scope', ['lane', 'key', 'scope']),
+
+  /**
+   * **Bodies whose library row is owed a refresh** — queued by the machine's bulk writes that leave
+   * no audit row (the imports, the enrichment loads, the prunes) and by a refresh that failed,
+   * drained by the minute cron. One row per body; a moderator's write never waits on it.
+   */
+  bodyLibraryQueue: defineTable({
+    waterBodyId: v.id('waterBodies'),
+    queuedAt: v.number(),
+    /** Refreshes that failed; the entry goes to the back of the queue after each. */
+    attempts: v.optional(v.number()),
+    /** The last failure's error class (`ConvexError`, `TypeError`…) — never its message. */
+    lastErrorClass: v.optional(v.string()),
+    /** A moderator's *Changed* the refresh owes, carried until it lands (a body with no rows yet). */
+    changedAt: v.optional(v.number()),
+    /**
+     * Parked after the last allowed attempt: the drain, the drift repair and the season turning skip
+     * it until the body is next written through the audit path, or `bodyLibrary:retryParked`
+     * releases it.
+     */
+    parkedAt: v.optional(v.number()),
+  })
+    .index('by_body', ['waterBodyId'])
+    // The drain: `eq('parkedAt', undefined)` — the waiting entries, oldest first. The parked read:
+    // `gt('parkedAt', 0)`, a lower bound past the unparked majority.
+    .index('by_parked_queued', ['parkedAt', 'queuedAt']),
 });

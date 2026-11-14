@@ -60,6 +60,7 @@ import { loadLiveAlertsForBody } from './accessAlerts';
 import { MAX_ACCESS_ROWS_PER_BODY, MAX_PUT_IN_ROWS_SCANNED } from './lib/accessLimits';
 import { writeAudit } from './lib/audit';
 import { requireCapability, requireContributor } from './lib/auth';
+import { queueLibraryRefresh, refreshBodyLibrary } from './lib/bodyLibrary';
 import { ACCESS_ALERT_TARGETS, ACCESS_AMENITIES, APPROACH_KINDS } from './lib/enums';
 import { assertOwnedPhotos, resolvePhotoUrls } from './lib/photoAccess';
 import { activateOnEvidence } from './lib/standing';
@@ -303,6 +304,8 @@ export const matchAndImportParking = internalMutation({
       if (nearby.length === 0) withoutBody++;
       for (const { body } of nearby) {
         const outcome = await linkParkingToBody(ctx, parkingAreaId, body._id, true);
+        // A lot's status or links moved: the body's lots fact may have.
+        await queueLibraryRefresh(ctx, [body._id]);
         if (outcome === 'created') linksCreated++;
         if (outcome === 'promoted') linksPromoted++;
       }
@@ -456,6 +459,7 @@ export const matchAndImportPutIns = internalMutation({
     // One recompute per distinct body rather than one per put-in: a lake with six launches would
     // otherwise re-read and re-derive the same set six times inside one batch.
     for (const waterBodyId of touchedBodies) await recomputeAccessKind(ctx, waterBodyId);
+    await queueLibraryRefresh(ctx, touchedBodies);
     // Standing (A07b): a body the access pass just found a way onto qualifies for the active map —
     // the same rule the seed applies. Only on a *new* launch: re-stamping the same OSM slipway is not
     // new evidence. (Since D245 the rollover keeps a body with a saved launch, so what this guards is
@@ -917,8 +921,12 @@ export const setOfficialParking = mutation({
       )
       .take(MAX_ACCESS_ROWS_PER_BODY);
     const wanted = new Set(args.waterBodyIds.map(String));
+    const unlinked: Id<'waterBodies'>[] = [];
     for (const link of existingLinks) {
-      if (!wanted.has(String(link.waterBodyId)) && !link.inferred) await ctx.db.delete(link._id);
+      if (!wanted.has(String(link.waterBodyId)) && !link.inferred) {
+        await ctx.db.delete(link._id);
+        unlinked.push(link.waterBodyId);
+      }
     }
     for (const waterBodyId of args.waterBodyIds) {
       await linkParkingToBody(ctx, parkingAreaId, waterBodyId, false);
@@ -933,6 +941,8 @@ export const setOfficialParking = mutation({
       metadata: { coord: args.coord, waterBodyIds: args.waterBodyIds, name, prev },
       createdAt: now,
     });
+    // The audit row refreshed the bodies this lot serves now; the ones it stopped serving lost it.
+    for (const waterBodyId of unlinked) await refreshBodyLibrary(ctx, waterBodyId);
     return parkingAreaId;
   },
 });
