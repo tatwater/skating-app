@@ -372,7 +372,7 @@ describe('bays, landmarks and history', () => {
     const t = harness();
     const { mod, id } = await scene(t);
     await t.run(async (ctx) => {
-      for (let i = 0; i <= 64; i++) {
+      for (let i = 0; i <= 200; i++) {
         await ctx.db.insert('putIns', {
           waterBodyId: id,
           coord: { lat: 44 + i * 1e-4, lng: -72 },
@@ -407,6 +407,97 @@ describe('bays, landmarks and history', () => {
     });
     const all = await mod.as.query(api.bodyConsole.history, { waterBodyId: id });
     expect(all.entries[0]).toMatchObject({ targetId: landmarks.catalog, action: 'remove' });
+  });
+
+  test('the history is the audit rows of the whole family, and capped: false means all of them', async () => {
+    const t = harness();
+    const { mod, id, bay, landmarks } = await scene(t);
+    const other = await seedBody(t, { name: 'Elsewhere', at: [-71, 43] });
+    const family = await t.run(async (ctx) => {
+      // A body merged into this one, a removed bay, a hidden put-in, a lot, and a catalog landmark a
+      // merge folded — none carrying the fields a "touched" filter would have looked for.
+      const absorbed = await ctx.db.insert('waterBodies', {
+        name: 'Absorbed',
+        searchText: 'Absorbed',
+        type: 'lakePond',
+        source: 'osm',
+        polygon: square(-72, 44, 0.002),
+        bbox: boxOf(-72, 44, 0.002),
+        centroid: { lat: 44, lng: -72 },
+        dedupStatus: 'merged',
+        mergedIntoId: id,
+        createdAt: NOW,
+      });
+      await ctx.db.patch(bay, { removedAt: NOW - DAY });
+      const putIn = await ctx.db.insert('putIns', {
+        waterBodyId: id,
+        coord: { lat: 44, lng: -72 },
+        source: 'osm',
+        status: 'hidden',
+        createdAt: NOW,
+      });
+      const lot = await ctx.db.insert('parkingAreas', {
+        coord: { lat: 44, lng: -72 },
+        source: 'osm',
+        status: 'visible',
+        amenities: [],
+        createdAt: NOW,
+      });
+      await ctx.db.insert('parkingAreaBodies', {
+        parkingAreaId: lot,
+        waterBodyId: id,
+        inferred: true,
+        createdAt: NOW,
+      });
+      await ctx.db.patch(landmarks.catalog, {
+        removedAt: NOW - DAY / 4,
+        mergedIntoId: landmarks.placed,
+      });
+      const rows = [
+        ['merge_waterbody', 'waterbody', absorbed, NOW - DAY / 3],
+        ['remove', 'waterBodySubArea', bay, NOW - DAY / 5],
+        ['hide', 'putIn', putIn, NOW - DAY / 6],
+        ['set_parking_area', 'parkingArea', lot, NOW - DAY / 7],
+        ['remove', 'bodyLandmark', landmarks.catalog, NOW - DAY / 8],
+        ['set_curated_boost', 'waterbody', other, NOW - DAY / 9],
+      ] as const;
+      for (const [action, targetType, targetId, createdAt] of rows) {
+        await ctx.db.insert('moderationActions', {
+          actorId: mod.id,
+          action,
+          targetType,
+          targetId,
+          reason: action,
+          createdAt,
+        });
+      }
+      const ids = new Set<string>([
+        id,
+        absorbed,
+        bay,
+        putIn,
+        lot,
+        landmarks.placed,
+        landmarks.catalog,
+      ]);
+      const all = await ctx.db.query('moderationActions').collect();
+      return all
+        .filter((r) => ids.has(r.targetId))
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .map((r) => r._id as string);
+    });
+    const read = await mod.as.query(api.bodyConsole.history, { waterBodyId: id, limit: 100 });
+    expect(read.capped).toBe(false);
+    expect(read.entries.map((e) => e.id)).toEqual(family);
+    expect(read.entries.map((e) => e.targetType)).toEqual(
+      expect.arrayContaining([
+        'waterbody',
+        'waterBodySubArea',
+        'putIn',
+        'parkingArea',
+        'bodyLandmark',
+      ]),
+    );
   });
 
   test('landmarks say who placed them; a proposal says who asked', async () => {

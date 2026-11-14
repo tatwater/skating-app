@@ -19,6 +19,7 @@ import {
   archiveSeasonLabel,
   currentSeason,
   distanceToPolygonMeters,
+  MAX_LANDMARKS_PER_BODY,
   polygonBBox,
   type Season,
 } from '@skating/core';
@@ -233,57 +234,92 @@ export const bayProvenance = query({
 const HISTORY_MAX = 100;
 /** Audit rows read across every target before the read says it stopped. */
 const HISTORY_ROW_BUDGET = 2_000;
-/** Landmarks whose history is read: the ones a person touched, newest first. */
-const HISTORY_LANDMARKS = 100;
+/** Every target a history reads, across its whole family; past it the read says `capped`. */
+const HISTORY_MAX_TARGETS = 800;
 /** Put-ins whose history is read. */
-const HISTORY_PUT_INS = 64;
+const HISTORY_PUT_INS = 200;
+/** Lots serving the body whose history is read. */
+const HISTORY_LOTS = 64;
+/** Bodies merged into this one whose own rows are read. */
+const HISTORY_ABSORBED = 50;
 
 type Target = { targetType: Doc<'moderationActions'>['targetType']; targetId: string };
 
 /**
- * The targets a body's history covers: the body, its bays, the landmarks a person touched, its
- * put-ins — and `truncated` when a kind had more than its bound, so History never reads as whole.
+ * **A body's family — every target whose audit rows concern it**: the body; the bodies merged into
+ * it (their rows went with them); its bays, put-ins and landmarks whatever their state — removed,
+ * hidden, folded by a merge, or re-parented here; the lots that serve it. Membership is the
+ * relation, never which fields a row happens to carry. Ordered so the targets most likely to hold
+ * rows come first (the body, the absorbed, bays, put-ins, lots, then landmarks a person touched),
+ * and `truncated` when any kind ran past its bound or the family past {@link HISTORY_MAX_TARGETS}.
  */
-async function historyTargets(
+export async function historyTargets(
   ctx: QueryCtx,
   waterBodyId: Id<'waterBodies'>,
 ): Promise<{ targets: Target[]; truncated: boolean }> {
   const targets: Target[] = [{ targetType: 'waterbody', targetId: waterBodyId }];
+  let truncated = false;
+  const add = (targetType: Target['targetType'], ids: readonly string[], bound: number) => {
+    if (ids.length > bound) truncated = true;
+    for (const targetId of ids.slice(0, bound)) targets.push({ targetType, targetId });
+  };
+  const absorbed = await ctx.db
+    .query('waterBodies')
+    .withIndex('by_merged_into', (q) => q.eq('mergedIntoId', waterBodyId))
+    .take(HISTORY_ABSORBED + 1);
+  add(
+    'waterbody',
+    absorbed.map((b) => b._id),
+    HISTORY_ABSORBED,
+  );
   const bays = await ctx.db
     .query('waterBodySubAreas')
     .withIndex('by_parent', (q) => q.eq('waterBodyId', waterBodyId))
     .take(MAX_BAYS + 1);
-  for (const b of bays.slice(0, MAX_BAYS)) {
-    targets.push({ targetType: 'waterBodySubArea', targetId: b._id });
-  }
-  // A catalog landmark nobody touched has no audit rows; the touched ones are a person's.
-  const touched = (await landmarksForBody(ctx, waterBodyId))
-    .filter(
-      (l) =>
-        l.createdByUserId !== undefined ||
-        l.moderatorEditedAt !== undefined ||
-        l.movedAt !== undefined ||
-        // Any removal: a moderator's takedown, and a merge's fold, which writes its own receipt.
-        l.removedAt !== undefined,
-    )
-    .sort((a, b) => b.updatedAt - a.updatedAt);
-  for (const l of touched.slice(0, HISTORY_LANDMARKS)) {
-    targets.push({ targetType: 'bodyLandmark', targetId: l._id });
-  }
+  add(
+    'waterBodySubArea',
+    bays.map((b) => b._id),
+    MAX_BAYS,
+  );
   const putIns = await ctx.db
     .query('putIns')
     .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
     .take(HISTORY_PUT_INS + 1);
-  for (const p of putIns.slice(0, HISTORY_PUT_INS)) {
-    targets.push({ targetType: 'putIn', targetId: p._id });
+  add(
+    'putIn',
+    putIns.map((p) => p._id),
+    HISTORY_PUT_INS,
+  );
+  const lots = await ctx.db
+    .query('parkingAreaBodies')
+    .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
+    .take(HISTORY_LOTS + 1);
+  add('parkingArea', [...new Set(lots.map((l) => l.parkingAreaId as string))], HISTORY_LOTS);
+  // Every landmark, live and removed; the ones a person touched first, then the rest, newest first.
+  const landmarks = await landmarksForBody(ctx, waterBodyId);
+  if (landmarks.filter((l) => l.removedAt !== undefined).length >= MAX_LANDMARKS_PER_BODY) {
+    // The removed read stops at its cap: older removals may hold rows the read can't see.
+    truncated = true;
   }
-  const truncated =
-    bays.length > MAX_BAYS || touched.length > HISTORY_LANDMARKS || putIns.length > HISTORY_PUT_INS;
+  const touched = (l: Doc<'bodyLandmarks'>) =>
+    l.createdByUserId !== undefined ||
+    l.moderatorEditedAt !== undefined ||
+    l.movedAt !== undefined ||
+    l.removedAt !== undefined;
+  const ordered = [...landmarks].sort(
+    (a, b) => Number(touched(b)) - Number(touched(a)) || b.updatedAt - a.updatedAt,
+  );
+  add(
+    'bodyLandmark',
+    ordered.map((l) => l._id),
+    Math.max(0, HISTORY_MAX_TARGETS - targets.length),
+  );
   return { targets, truncated };
 }
 
 /**
- * **A body's history, with its bays', landmarks' and put-ins'** — newest first, each row with who
+ * **A body's history, with its family's** (`historyTargets`: absorbed bodies, bays, put-ins, lots,
+ * landmarks, whatever their state) — newest first, each row with who
  * acted (`null` for the machine) and whether the viewer can undo it. `action` narrows to one verb as
  * an index range, never a filter over a capped page. Bounded: each target's newest `limit` rows,
  * {@link HISTORY_ROW_BUDGET} rows in all — `capped` when the budget ran out before every target was

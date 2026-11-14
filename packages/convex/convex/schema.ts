@@ -1253,6 +1253,9 @@ export default defineSchema({
     // `.eq()` on the reason never reads the rows that carry none — `undefined` sorts before every
     // value, but an equality range simply does not include it, which is what makes this cheap.
     .index('by_review_reason', ['reviewReason', 'displayScore'])
+    // ── B01-3: the bodies merged into this one, for its History (equality only: the field is
+    // optional and the index not sparse). ──
+    .index('by_merged_into', ['mergedIntoId'])
     // **`searchText`, not `name` — the last step of the four** (A07a). `[name, ...aliases]` joined, so
     // a lake is findable under every name a publisher gave it: Auburn's water supply stores as NHD's
     // `The Basin` and a skater types "Lake Auburn". 583 bodies carry a distinct second name.
