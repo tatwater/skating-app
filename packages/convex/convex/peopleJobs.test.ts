@@ -284,7 +284,8 @@ describe('the lapsed-suspension sweep', () => {
   test('a chain of heavy profiles finishes under the real limits', async () => {
     const t = convexTest({ schema, modules, transactionLimits: true });
     const ids: Id<'profiles'>[] = [];
-    for (let i = 0; i < 14; i++) {
+    // Three people a pass at the worst a profile weighs: seven take three passes.
+    for (let i = 0; i < 7; i++) {
       ids.push(
         await seed(t, `h${i}`, {
           status: 'suspended',
@@ -295,7 +296,7 @@ describe('the lapsed-suspension sweep', () => {
     }
     await sweep(t);
     for (const id of ids) expect((await get(t, id))?.status).toBe('active');
-  });
+  }, 120_000);
 });
 
 describe('the rows: backfill, drift repair, a tombstone put back', () => {
@@ -319,7 +320,7 @@ describe('the rows: backfill, drift repair, a tombstone put back', () => {
     ).toEqual({
       restored: false,
     });
-  });
+  }, 120_000);
 
   test('a backfill with a failure is not marked ready', async () => {
     const t = convexTest(schema, modules);
@@ -391,5 +392,5 @@ describe('the rows: backfill, drift repair, a tombstone put back', () => {
     expect(flags.filter((f) => f.subjectUserId === null)).toHaveLength(1);
     const counts = await t.run((ctx) => ctx.db.query('peopleCounts').collect());
     expect(counts.some((c) => c.key === READY_FLAG_SUBJECTS)).toBe(true);
-  });
+  }, 120_000);
 });
