@@ -2100,6 +2100,125 @@ Shape, its Names/Places/Access/Water tabs, and its Imagery/Hazards/Standing/Link
   on dev (`bodyLibrary:backfillAll`, then `bodyLibrary:backfillChangedAt`) before a deployment shows
   real rows.
 
+### The Bodies reads made right (B01-3b, the first server follow-up)
+
+What the dev verification of #112 found (2026-11-14), and the first of two server PRs that answer
+it; the second carries the writes and the reads the list's page asked for.
+
+**Why `consoleExtras` timed out on the largest lake.** Both timeouts logged the cover's warning
+(about 350 level-13 cells against its 256), so the cover looked like the cause. It wasn't: past 256
+cells at a rung, `bodiesCoveringBox` skips that rung and finer (bounded, never an unbounded
+fallback), and read 215 cells in under 0.1 s. The second went to the touching test — about 1,300
+point-to-outline distance checks against a 14,151-vertex outline and its twelve neighbors' (1.4 s,
+reproduced). The skip did hide something: a small neighbor indexed only at the finest rung was
+never a candidate. Only `consoleExtras` asked the cover for a body's whole box; the map's viewport
+reads and `listedBodiesNearCoord` (with `marginMeters`) ask for a viewport or a point's margin and
+truncate by design.
+
+**What it does now.** A body's touching bodies and places are computed at the write and stored
+(`bodyGeoFacts`, `lib/bodyGeo.ts`, the `bodyGeo` jobs). An outline's change, a body's creation,
+import, merge or deletion marks it stale (and the neighbors whose relation moves); a five-minute
+cron recomputes stale bodies in an action, where the geometry has room. Its box is tiled so every
+tile reads the finest rung whole (`coverTiles`: halved along the longer side until each covers at
+most 256 cells there, at most 32 tiles; `neighborsCapped` past that). The answer is stored only if
+the outline it was computed for is still the body's. A body that fails three times parks
+(`lib/attempts.ts`) and waits for the daily retry; one failure never blocks the rest. A body never
+computed reads `null` — *not computed* — and a body computed in no boundary reads empty lists.
+The console's reads do no work that grows with an outline: the largest-lake test seeds a
+14,151-vertex body with twelve 3,000-vertex neighbors and holds every Body read under 250 ms in the
+simulated backend.
+
+**Compute cost, before and after.** Dev's numbers are user execution time on the largest lake
+(the Convex limit is 1 s); the synthetic numbers are wall time in `convex-test` on the same
+outline size, warm. They are different clocks; the point is the column of timeouts going away.
+
+| Read | Dev, before (ms) | What it reads now | Synthetic largest lake, after (ms) |
+| --- | --- | --- | --- |
+| `bodyConsole.consoleExtras` | 1,002 — **timed out** | The body, its stored facts, a library row per stored neighbor | 23 (167 on the first, cold call) |
+| `bodies.preview` | 52 | Unchanged, plus the stored towns | 35 |
+| `bodyConsole.history` | 210 (2,318 wall) | One link range per body in the merge chain | 22 |
+| `bodyConsole.places` | ~280 wall | The stored facts | 22 |
+| `bodyConsole.bayProvenance` | 112 wall | Unchanged | 22 |
+| `bodyConsole.landmarkProvenance` | 93 | Unchanged | 21 |
+| `bodyConsole.dailyHazards` | 41 | Unchanged range, stamped ends | 22 |
+| `standing.retentionForBody` | 85 | Two bounded put-in reads | 23 |
+| `bodies.listPage` | 327 (max) | Unchanged | 2 |
+| `bodies.listSummary` | 62 | Unchanged | 1 |
+| `bodyGeo` computation (action) | — | The body, its candidates per tile, its places' cells | ~5,000–6,000 for the giant and its twelve neighbors |
+
+**The rest of the PR.**
+
+- **History is one indexed range per body** (D259). Audit rows link to every body they concern
+  (`auditBodyLinks`, written by `writeAudit`; `auditLinks:backfill` for the rows before). A body's
+  History reads its own links and those of every body merged into it, newest first. `capped` means
+  only that more rows exist than returned (or the merge chain ran past 50). `bodyOnly` narrows to
+  rows on the body itself, and those equal `moderation.listActions`' rows for it (tested).
+- **A merge moves what was asked of the merged-away body**: its requests of every kind and status
+  (the founder's ruling), and — the coordinator's extension — its open place names and its open or
+  reviewing flags (a flagger's flag stays where it is when they already have an open one on the
+  survivor). The moved rows are in the merge's change set beside the reports, hazards and the rest it
+  already recorded. **No unmerge exists yet** (`undoPolicy`: *later, §4 Corpus*), so "undo puts them
+  back" holds when it is built from that change set, not before.
+  `waterBodies:retargetMergedAsks` moves the asks of the bodies merged before this existed (eight on
+  dev).
+- **The winters' strip counts recorded ends.** A hazard records when it left the lake
+  (`leftLakeAt`): the vote that archived it (archival is a ratchet, so there is one such vote) or its
+  merge into another pin. Set once, never moved. `dailyHazards` counts a recorded end through its
+  day and no further; an archived pin without one (every pin archived before this) stays *unknown*
+  after its first day. Days run through the end of the caller's UTC day; the window opens 1 July, the
+  span the Hazards tab's list covers. Each counted hazard's first-report day and whether its end is
+  recorded come back in `hazards`. Nothing reads as ended on weaker evidence than before: an
+  unstamped end is never guessed, and a still-active pin counts through today whatever its stamp.
+- **Every read that takes a body id follows a merge** through `resolveSurvivor` (`lib/bodies.ts`):
+  the console's reads, `bodies.preview`, `standing.retentionForBody`, a lake's open names and bay
+  asks.
+- **A hidden put-in no longer keeps a body active.** `hasSavedPutIn` read 25 rows of any status and
+  answered *yes* when they filled, so a body with 25 or more stored rows and no unsuppressed launch
+  (a run of hides; launches all at a hidden coordinate) was kept. `savedPutInsOf` reads the visible
+  rows, then the hidden coordinates, through `by_water_body_status`, 25 each; it answers exactly when
+  both reads are whole and keeps the body when either isn't. The rollover walk is unchanged;
+  `retentionForBody` asks the same function with wider reads. The fixture counts two shapes of nine
+  that the old rule answered differently, both towards dormant, both bodies with no launch.
+  **Counting them on dev:** a dry `standing:demoteInactiveBodies` pass over every page before the
+  deploy and after; the difference in `demoted` is the bodies this changes.
+- **Exactly the cap is whole.** The library's asks (each source) and reports, and the place-name
+  queue, read one past their caps. `bodyLibrary:requeueCapped` re-counts the rows stored under the
+  old meaning. `corpusPlaceNames.openForBody` and `corpusRequests.openBayRequestsForBody` say `more`.
+- **The deferred call sites** (the governor's ruling above): a skater's new request and a new flag on
+  a body queue the body's library refresh; the hazard callers of `recomputeBodySummary` pass
+  `library = false`.
+- **The audit feed names its targets** (S5): `listActions` rows carry `targetLabel`, a body's name
+  from its stored library row, a person's display name.
+- **`SEARCH_MIN_CHARS` is core's**; the list's page re-exports it.
+
+**API shapes this PR changes** (every other read is as it was):
+
+- `bodyConsole.consoleExtras`: adds `touching` (`[{ waterBodyId, name, ring }] | null`) and
+  `geoComputedAt`; `towns` and `touchingBodyIds` come from the stored facts, `null` until computed,
+  and `towns` is `[]` (not `null`) for a body in no town.
+- `bodyConsole.places`: adds `computedAt`; `null` only until computed, empty lists for a body in no
+  boundary (it was `null` for both).
+- `bodyConsole.history`: adds the `bodyOnly` argument; `capped` means only more rows than returned.
+- `bodyConsole.dailyHazards`: adds `hazards`; the window opens 1 July (it opened 1 October) and runs
+  through the caller's whole day.
+- `bodies.preview`: adds `townsComputedAt`.
+- `standing.retentionForBody`: adds `putInKeeps`; `savedPutIns` counts at most 1,000 visible rows
+  against at most 200 hidden coordinates, `savedPutInsCapped` past either.
+- `moderation.listActions`: rows add an optional `targetLabel`.
+- `corpusPlaceNames.openForBody`: was an array, now `{ names, more }`.
+- `corpusRequests.openBayRequestsForBody`: was an array, now `{ bays, more }`. The old lake editor's
+  two call sites read the new fields — the PR's only web change besides the search constant.
+
+**After merge, on dev, in order** (each an internal function; the operator runs it with
+`convex run`, no identity): `convex dev --once`; `bodyGeo:seedAll` then `bodyGeo:computeAll`;
+`auditLinks:backfill`; `waterBodies:retargetMergedAsks`; `bodyLibrary:requeueCapped`.
+
+**Waiting for the second server PR:** a search across standings; a row-and-facts read for rejected
+and removed bodies; askers and intake reasons on the preview's asks; `moreTowns` with each town's
+state; `bodies.rowsByIds`; a light completeness read; the bathymetry search record; town lines; and
+the four writes (`setAliases` with `moderatorAliases` and `setClass`; choosing a depth source and
+filing a survey; the imagery pass override; editing a feature's shape).
+
 ## Ruled out
 
 - **A second app or a separate deployment for admin** — D37 stands; the Convex function is the
