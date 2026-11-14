@@ -1,6 +1,7 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { stubJsdomAnimations } from '../jsdomStubs';
 
 const convex = vi.hoisted(() => ({
   results: new Map<string, unknown>(),
@@ -10,13 +11,17 @@ const convex = vi.hoisted(() => ({
 vi.mock('convex/react', async () => {
   const { getFunctionName } = await import('convex/server');
   return {
-    useQuery: (ref: Parameters<typeof getFunctionName>[0], args: unknown) => {
-      const name = getFunctionName(ref);
-      convex.calls.push({ name, args });
-      if (args === 'skip') return undefined;
-      const r = convex.results.get(name);
-      return typeof r === 'function' ? r(args) : r;
-    },
+    useQueries: (
+      queries: Record<string, { query: Parameters<typeof getFunctionName>[0]; args: unknown }>,
+    ) =>
+      Object.fromEntries(
+        Object.entries(queries).map(([key, { query, args }]) => {
+          const name = getFunctionName(query);
+          convex.calls.push({ name, args });
+          const r = convex.results.get(name);
+          return [key, typeof r === 'function' ? r(args) : r];
+        }),
+      ),
     useMutation: (ref: Parameters<typeof getFunctionName>[0]) => {
       const name = getFunctionName(ref);
       const made = convex.mutations.get(name) ?? vi.fn(async () => null);
@@ -32,11 +37,16 @@ vi.mock('@/components/admin/shell/undo', () => ({ useUndo: () => undo }));
 const nav = vi.hoisted(() => ({ navigate: vi.fn() }));
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => nav.navigate }));
 
+import { seasonOf } from '@skating/core';
 import { ConvexError } from 'convex/values';
 import { HAZARDS_TAB, HazardsTab } from './HazardsTab';
-import { FEB_ARCHIVED, FEB_HAZARDS, MASCOMA_FEATURES } from './hazardsFixtures';
+import { dailyFrom, FEB_ARCHIVED, FEB_HAZARDS, MASCOMA_FEATURES } from './hazardsFixtures';
+import { winterWindow } from './hazardsModel';
+import { resetReadPauses } from './tabReads';
 
 const BODY = 'k1';
+
+beforeAll(stubJsdomAnimations);
 
 beforeEach(() => {
   convex.results.clear();
@@ -50,8 +60,17 @@ beforeEach(() => {
     body: { _id: BODY, name: 'Mascoma Lake' },
   });
   convex.results.set('bodyFeatures:listForBody', MASCOMA_FEATURES);
-  convex.results.set('hazards:listForBody', (args: { includeArchived?: boolean }) =>
-    args.includeArchived ? [...FEB_HAZARDS, ...FEB_ARCHIVED] : [],
+  convex.results.set('hazards:listForBody', () => []);
+  resetReadPauses();
+  // Whatever winter the clock is in: this one bare, the last with one archived hazard in it.
+  convex.results.set('bodyConsole:dailyHazards', (args: { season: number; now: number }) =>
+    args.season === seasonOf(args.now)
+      ? dailyFrom(args.season, [], args.now)
+      : dailyFrom(
+          args.season,
+          [{ first: winterWindow(args.season).start + 60 * 86_400_000, active: false }],
+          args.now,
+        ),
   );
   convex.results.set('recurrence:listForBodyAdmin', [
     { _id: 'r1' },
@@ -62,10 +81,14 @@ beforeEach(() => {
 });
 
 describe('HazardsTab', () => {
-  it('draws nothing until the body lands', () => {
+  it('holds its place until the body lands, and says so when it can’t be read', () => {
     convex.results.delete('waterBodies:get');
-    const { container } = render(<HazardsTab bodyId={BODY} />);
-    expect(container).toBeEmptyDOMElement();
+    const { container, rerender } = render(<HazardsTab bodyId={BODY} />);
+    expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
+    expect(screen.queryByText(/Nothing marked/)).toBeNull();
+    convex.results.set('waterBodies:get', new Error('boom'));
+    rerender(<HazardsTab bodyId={BODY} />);
+    expect(screen.getByText('This body couldn’t be read')).toBeVisible();
   });
 
   it('reads this season’s hazards, the archived, the features and the waiting patterns', () => {
@@ -77,10 +100,44 @@ describe('HazardsTab', () => {
       .filter((c) => c.name === 'hazards:listForBody')
       .map((c) => (c.args as { season: number }).season);
     expect(new Set(seasons).size).toBe(1);
-    // No writer for these yet: not drawn.
-    expect(
-      screen.queryByRole('button', { name: /Mark a hazard|Add a feature|Edit shape/ }),
-    ).toBeNull();
+    // No writer for these yet: drawn, and not available yet.
+    expect(screen.getByRole('button', { name: /Mark a hazard/ })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: /Add a feature/ })).toHaveAttribute(
+      'data-unavailable',
+    );
+  });
+
+  it('reads this winter’s day-by-day count beside last winter’s, against an hour’s clock', () => {
+    render(<HazardsTab bodyId={BODY} />);
+    const daily = convex.calls
+      .filter((c) => c.name === 'bodyConsole:dailyHazards')
+      .map((c) => c.args as { season: number; now: number });
+    const current = daily[0]?.season ?? Number.NaN;
+    expect(new Set(daily.map((d) => d.season))).toEqual(new Set([current, current - 1]));
+    expect(daily.every((d) => d.now % 3_600_000 === 0)).toBe(true);
+    expect(screen.getByRole('img', { name: /some unknown/ })).toBeVisible();
+  });
+
+  it('a failed read says so in its place; Try again reads every read afresh', async () => {
+    convex.results.set('hazards:listForBody', new Error('boom'));
+    render(<HazardsTab bodyId={BODY} />);
+    expect(screen.getByText('The hazards on the lake couldn’t be read')).toBeVisible();
+    convex.results.set('hazards:listForBody', () => []);
+    await userEvent.click(screen.getAllByRole('button', { name: 'Try again' })[0] as HTMLElement);
+    expect(await screen.findByText('Nothing marked yet')).toBeVisible();
+  });
+
+  it('a populated winter lists its hazards over its strip, its archived ones in their group', () => {
+    convex.results.set('hazards:listForBody', (args: { includeArchived?: boolean }) =>
+      args.includeArchived ? [...FEB_HAZARDS, ...FEB_ARCHIVED] : FEB_HAZARDS,
+    );
+    render(<HazardsTab bodyId={BODY} />);
+    expect(screen.getByText('Black Point to Wood Island')).toBeVisible();
+    expect(screen.getByRole('button', { name: /Archived this winter/ })).toHaveTextContent('2');
+    expect(document.querySelector('[data-slot="hazards-winters"]')).not.toBeNull();
   });
 
   it('demotes with the reason and announces it to Undo; a refusal reads in the server’s words', async () => {
@@ -133,12 +190,20 @@ describe('HazardsTab', () => {
     expect(nav.navigate).toHaveBeenCalledWith({ to: '/admin/recurrence' });
   });
 
-  it('without the capabilities: no Demote, and the queue isn’t read', () => {
+  it('without the capabilities: no tools, and the queue isn’t read', () => {
     role.caps = new Set();
     render(<HazardsTab bodyId={BODY} />);
-    expect(screen.queryByRole('button', { name: 'Demote' })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: /Demote|Mark a hazard|Add a feature|Edit shape/ }),
+    ).toBeNull();
     expect(screen.queryByText('Promotion')).toBeNull();
-    expect(convex.calls.find((c) => c.name === 'recurrence:listForBodyAdmin')?.args).toBe('skip');
+    expect(convex.calls.find((c) => c.name === 'recurrence:listForBodyAdmin')).toBeUndefined();
+  });
+
+  it('a body that isn’t listed draws nothing', () => {
+    convex.results.set('waterBodies:get', { available: false });
+    const { container } = render(<HazardsTab bodyId={BODY} />);
+    expect(container).toBeEmptyDOMElement();
   });
 
   it('registers its wiring and a map whose data keeps its identity', () => {
@@ -161,6 +226,10 @@ describe('HazardsTab', () => {
       'feature:f-narrows',
     ]);
     convex.results.delete('bodyFeatures:listForBody');
+    rerender(<Probe />);
+    expect(seen.at(-1)).toBeUndefined();
+    // A failed read draws nothing of its own on the map.
+    convex.results.set('bodyFeatures:listForBody', new Error('boom'));
     rerender(<Probe />);
     expect(seen.at(-1)).toBeUndefined();
   });

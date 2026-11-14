@@ -2,31 +2,66 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { type HazardShape, hazardFootprint, type Season, seasonOf } from '@skating/core';
 import { useNavigate } from '@tanstack/react-router';
-import { useMutation, useQuery } from 'convex/react';
+import { useMutation } from 'convex/react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { errorText } from '@/components/admin/adminUi';
+import { ReadBoundary } from '@/components/admin/bodies/ReadBoundary';
 import { useUndo } from '@/components/admin/shell/undo';
 import { useRole } from '@/lib/useRole';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
+import { LoadingSection, TabBody } from '../tabParts';
 import { featureGlyph } from './featureGlyph';
-import { type FeatureRowWithGlyph, HazardsTabView } from './HazardsTabView';
+import { type FeatureRowWithGlyph, HazardsTabView, type Read, UNAVAILABLE } from './HazardsTabView';
 import { type HazardsMapData, hazardsMapScene, seasonOfLit, winterLit } from './hazardsMap';
-import { archivedRows, type FeatureInput, featureRows, hazardRows } from './hazardsModel';
+import {
+  archivedRows,
+  type DailyHazards,
+  type FeatureInput,
+  featureRows,
+  hazardRows,
+  type Winters,
+  wintersFrom,
+} from './hazardsModel';
+import { ReadFailed } from './kit-candidates/read-failed';
+import { read, useTabReads } from './tabReads';
 
 /**
- * Body › Hazards, wired: the season's hazards (`hazards.listForBody`, the map layer's own read, so
- * the list and the map can't disagree — stale ones included, annotated, never filtered), the
- * archived ones (the same read with `includeArchived`), the known features
- * (`bodyFeatures.listForBody`), and the recurrence patterns still waiting
- * (`recurrence.listForBodyAdmin`). Demote writes `bodyFeatures.demote` (`corpus.preIce`) with
- * its reason, announced to the shell's Undo (which says when there is none).
+ * Body › Hazards, wired:
  *
- * Not drawn, for want of a writer or a read (seam requests): Mark a hazard and Add a feature
- * (map modes, which wait), Edit shape (no mutation), the two winters' strip (no per-day read) and
- * the watch's opening date (admin-only today).
+ * - **the season's hazards** (`hazards.listForBody`, the map layer's own read, so the list and the
+ *   map can't disagree — stale ones included, annotated, never filtered) and the archived ones (the
+ *   same read with `includeArchived`);
+ * - **the winters, a day at a time** (`bodyConsole.dailyHazards`): the season on screen, and last
+ *   winter beside an empty current one. Each day's known count, and the archived hazards that may
+ *   have been on the lake — drawn as *at least*, never as a smaller count or as clear — with the
+ *   watch's opening day;
+ * - **the known features** (`bodyFeatures.listForBody`) and the recurrence patterns still waiting
+ *   (`recurrence.listForBodyAdmin`, `body.read`).
+ *
+ * Demote writes `bodyFeatures.demote` (`corpus.preIce`) with its reason, announced to the shell's
+ * Undo (which says when there is none). Mark a hazard, Add a feature and Edit shape have no writer
+ * yet: for a viewer who could use them, each is drawn and says *Not available yet*.
+ *
+ * Every read is keyed on its values and comes back as a value, a wait or a failure, which the view
+ * draws in its own place with *Try again*; the tab opens on the current winter, empty or not, and
+ * a past one only by choosing it (the lit address carries the choice, so the map follows).
  */
-export function HazardsTab({ bodyId: id, lit: framed = null, onLitChange }: BodyTabProps) {
+export function HazardsTab(props: BodyTabProps) {
+  return (
+    <ReadBoundary
+      resetKey={props.bodyId}
+      fallback={<ReadFailed>This tab couldn’t be drawn</ReadFailed>}
+    >
+      <HazardsReads {...props} />
+    </ReadBoundary>
+  );
+}
+
+/** The reads this tab and its map share: one key, so Try again re-runs them for both. */
+const readsKey = (bodyId: string) => `hazards:${bodyId}`;
+
+function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabProps) {
   const waterBodyId = id as Id<'waterBodies'>;
   const now = useHourClock();
   const current = seasonOf(now);
@@ -37,51 +72,76 @@ export function HazardsTab({ bodyId: id, lit: framed = null, onLitChange }: Body
   // The winter on screen is the lit address's: the current one unless a past one was chosen.
   const season: Season = seasonOfLit(lit, current);
   const setSeason = (next: Season) => setLit(winterLit(next, current));
-  const result = useQuery(api.waterBodies.get, { waterBodyId });
-  const hazards = useQuery(api.hazards.listForBody, { waterBodyId, season });
-  const withArchived = useQuery(api.hazards.listForBody, {
-    waterBodyId,
-    season,
-    includeArchived: true,
-  });
-  const features = useQuery(api.bodyFeatures.listForBody, { waterBodyId });
   const { can } = useRole();
-  const clusters = useQuery(
-    api.recurrence.listForBodyAdmin,
-    can('body.read') ? { waterBodyId } : 'skip',
-  );
+  const { got, retry } = useTabReads(readsKey(id), {
+    body: read(api.waterBodies.get, { waterBodyId }),
+    hazards: read(api.hazards.listForBody, { waterBodyId, season }),
+    withArchived: read(api.hazards.listForBody, { waterBodyId, season, includeArchived: true }),
+    features: read(api.bodyFeatures.listForBody, { waterBodyId }),
+    clusters: can('body.read') ? read(api.recurrence.listForBodyAdmin, { waterBodyId }) : null,
+    daily: read(api.bodyConsole.dailyHazards, { waterBodyId, season, now }),
+    // Last winter's record sits beside the current one; a past winter is drawn alone.
+    lastWinter:
+      season === current
+        ? read(api.bodyConsole.dailyHazards, { waterBodyId, season: season - 1, now })
+        : null,
+  });
   const demote = useMutation(api.bodyFeatures.demote);
   const { announce } = useUndo();
   const navigate = useNavigate();
 
-  const featureView = useMemo(
-    () => (features === undefined ? undefined : withGlyphs(features)),
-    [features],
+  const features = got.features;
+  const featureView = useMemo(() => readOf(features, (f) => withGlyphs(f)), [features]);
+  const { hazards, withArchived, clusters, daily, lastWinter } = got;
+  const winters = useMemo(
+    (): Read<Winters> => wintersOf(daily, season === current ? lastWinter : null, now),
+    [daily, lastWinter, season, current, now],
   );
 
-  if (result === undefined || result === null || !result.available) return null;
-  const name = result.body.name ?? 'this body';
+  const body = got.body;
+  if (body === undefined) {
+    return (
+      <TabBody aria-busy="true">
+        <LoadingSection lines={3} />
+        <LoadingSection lines={2} />
+      </TabBody>
+    );
+  }
+  if (body instanceof Error) {
+    return <ReadFailed onRetry={retry}>This body couldn’t be read</ReadFailed>;
+  }
+  if (body === null || !body.available) return null;
+  const name = body.body.name ?? 'this body';
+  const featureTools = can('corpus.preIce');
+  const opened = daily instanceof Error || daily === undefined ? null : daily.watchOpensOn;
   return (
     <HazardsTabView
       season={season}
       currentSeason={current}
       onSeasonChange={setSeason}
       bodyName={name.replace(/ (Lake|Pond|Reservoir)$/, '')}
-      watchOpenedAt={null}
-      hazards={hazards === undefined ? undefined : hazardRows(hazards, now)}
-      archived={withArchived === undefined ? undefined : archivedRows(withArchived)}
+      watchOpenedAt={season === current ? opened : null}
+      hazards={readOf(hazards, (h) => hazardRows(h, now))}
+      archived={readOf(withArchived, archivedRows)}
       features={featureView}
-      winters={null}
+      winters={winters}
       patternsWaiting={
-        clusters === undefined
-          ? null
-          : clusters.filter(
-              (c) => c.suppressedAt === undefined && c.promotedToFeatureId === undefined,
-            ).length
+        can('body.read')
+          ? readOf(
+              clusters,
+              (c) =>
+                c.filter((x) => x.suppressedAt === undefined && x.promotedToFeatureId === undefined)
+                  .length,
+            )
+          : null
       }
+      onRetry={retry}
       onOpenRecurrence={() => void navigate({ to: '/admin/recurrence' })}
-      {...(can('corpus.preIce')
+      {...(featureTools
         ? {
+            onMarkHazard: UNAVAILABLE,
+            onAddFeature: UNAVAILABLE,
+            onEditShape: UNAVAILABLE,
             onDemote: async (featureId: string, reason: string) => {
               try {
                 await demote({ bodyFeatureId: featureId as Id<'bodyFeatures'>, reason });
@@ -99,6 +159,24 @@ export function HazardsTab({ bodyId: id, lit: framed = null, onLitChange }: Body
       onLitChange={setLit}
     />
   );
+}
+
+/** A read as the view takes it: mapped when it landed, `'error'` when it failed. */
+function readOf<T, U>(r: T | undefined | Error, map: (value: T) => U): Read<U> {
+  if (r === undefined) return undefined;
+  if (r instanceof Error) return 'error';
+  return map(r);
+}
+
+/** The winters, once every strip's read has landed; a failure in either fails the block. */
+function wintersOf(
+  daily: DailyHazards | undefined | Error,
+  lastWinter: DailyHazards | undefined | Error | null,
+  now: number,
+): Read<Winters> {
+  if (daily instanceof Error || lastWinter instanceof Error) return 'error';
+  if (daily === undefined || lastWinter === undefined) return undefined;
+  return wintersFrom(lastWinter === null ? [daily] : [daily, lastWinter], now) ?? undefined;
 }
 
 /** Each feature's row with its glyph, drawn from its own footprint. */
@@ -125,17 +203,24 @@ function withGlyphs(features: readonly FeatureInput[]): FeatureRowWithGlyph[] {
 
 /**
  * The map's data: the hazards of the winter the lit address is in (the one the list shows) and the
- * features, kept until either read changes.
+ * features, kept until either read changes. A failed read draws nothing of its own on the map; the
+ * tab says what failed.
  */
 function useHazardsMapData(bodyId: string, lit: string | null): HazardsMapData | undefined {
   const waterBodyId = bodyId as Id<'waterBodies'>;
   const current = seasonOf(useHourClock());
   const season = seasonOfLit(lit, current);
-  const hazards = useQuery(api.hazards.listForBody, { waterBodyId, season });
-  const features = useQuery(api.bodyFeatures.listForBody, { waterBodyId });
+  const { got } = useTabReads(readsKey(bodyId), {
+    hazards: read(api.hazards.listForBody, { waterBodyId, season }),
+    features: read(api.bodyFeatures.listForBody, { waterBodyId }),
+  });
+  const { hazards, features } = got;
   return useMemo(
     () =>
-      hazards === undefined || features === undefined
+      hazards === undefined ||
+      features === undefined ||
+      hazards instanceof Error ||
+      features instanceof Error
         ? undefined
         : { hazards, features, season, current },
     [hazards, features, season, current],
@@ -148,12 +233,17 @@ export const HAZARDS_TAB: BodyTabRegistration<HazardsMapData> = {
   map: { useData: useHazardsMapData, describe: hazardsMapScene },
 };
 
-/** Ages are hours and days: the clock moves on hourly. */
+/**
+ * Ages are hours and days: the clock moves on hourly, on the hour, so the reads it keys hold their
+ * arguments for the hour.
+ */
 function useHourClock(): number {
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(() => onTheHour(Date.now()));
   useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 3_600_000);
+    const id = window.setInterval(() => setNow(onTheHour(Date.now())), 60_000);
     return () => window.clearInterval(id);
   }, []);
   return now;
 }
+
+const onTheHour = (at: number) => Math.floor(at / 3_600_000) * 3_600_000;

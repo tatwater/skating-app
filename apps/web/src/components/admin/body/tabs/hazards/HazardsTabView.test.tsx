@@ -1,7 +1,9 @@
-import { render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
-import { HazardsTabView, type HazardsTabViewProps } from './HazardsTabView';
+import fc from 'fast-check';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { stubJsdomAnimations } from '../jsdomStubs';
+import { HazardsTabView, type HazardsTabViewProps, UNAVAILABLE } from './HazardsTabView';
 import {
   BODY_NOW,
   FEB_ARCHIVED,
@@ -12,7 +14,7 @@ import {
   SEASON,
   WATCH_OPENED,
 } from './hazardsFixtures';
-import { archivedRows, hazardRows } from './hazardsModel';
+import { archivedRows, dayWords, hazardRows, wintersFrom, winterWindow } from './hazardsModel';
 
 const base: HazardsTabViewProps = {
   season: SEASON,
@@ -27,12 +29,15 @@ const base: HazardsTabViewProps = {
   patternsWaiting: 2,
   onOpenRecurrence: vi.fn(),
   onDemote: vi.fn(async () => {}),
-  onMarkHazard: vi.fn(),
-  onAddFeature: vi.fn(),
-  onEditShape: vi.fn(),
+  onRetry: vi.fn(),
+  onMarkHazard: vi.fn<() => void>(),
+  onAddFeature: vi.fn<() => void>(),
+  onEditShape: vi.fn<(id: string) => void>(),
   lit: null,
   onLitChange: vi.fn(),
 };
+
+beforeAll(stubJsdomAnimations);
 
 const FEB = {
   hazards: hazardRows(FEB_HAZARDS, FEB_NOW),
@@ -50,18 +55,25 @@ describe('HazardsTabView — the default board', () => {
         'No one has marked a hazard on Mascoma since the watch opened 3 Oct 2026. No reports is not a reading of the ice.',
       ),
     ).toBeVisible();
-    // The two winters: this one bare, last one's record.
+    // The two winters: this one bare, last one's record — its archived hazards unknown, not gone.
     expect(
       within(onLake).getByRole('img', {
-        name: /^2026–27: Nothing marked yet; 2025–26: \d+ in all$/,
+        name: /^2026–27: None marked; 2025–26: \d+ days with hazards marked, \d+ with some unknown$/,
       }),
+    ).toBeVisible();
+    expect(within(onLake).getByText('Today: None marked')).toBeVisible();
+    expect(
+      within(onLake).getByText(
+        '2025–26: 8 archived hazards have no recorded end. From their first report on, every day counts them as unknown, never as gone.',
+      ),
     ).toBeVisible();
   });
 
-  it('without the watch’s date, says this winter instead', () => {
-    render(<HazardsTabView {...base} watchOpenedAt={null} winters={null} />);
+  it('without the watch’s date, says this winter instead; the strips hold their place loading', () => {
+    render(<HazardsTabView {...base} watchOpenedAt={null} winters={undefined} />);
     expect(screen.getByText(/No one has marked a hazard on Mascoma this winter\./)).toBeVisible();
     expect(screen.queryByRole('img', { name: /2026–27/ })).toBeNull();
+    expect(document.querySelector('[data-slot="hazards-winters-loading"]')).not.toBeNull();
   });
 
   it('draws the known features with their tools, the promotion count and Mark a hazard', async () => {
@@ -158,9 +170,226 @@ describe('HazardsTabView — the default board', () => {
     expect(onSeasonChange).toHaveBeenLastCalledWith(2022);
   });
 
-  it('says so while loading', () => {
-    render(<HazardsTabView {...base} hazards={undefined} features={undefined} />);
-    expect(screen.getByText('Loading the hazards')).toBeVisible();
+  it('holds each section’s place while it loads, and claims nothing', () => {
+    render(
+      <HazardsTabView
+        {...base}
+        hazards={undefined}
+        features={undefined}
+        patternsWaiting={undefined}
+      />,
+    );
+    expect(screen.getByRole('region', { name: 'On the lake' })).toHaveAttribute(
+      'aria-busy',
+      'true',
+    );
+    expect(screen.queryByText(/Nothing marked/)).toBeNull();
+    expect(screen.queryByText(/pre-ice pass/)).toBeNull();
+  });
+
+  it('says nothing was marked only once the archived read has landed', () => {
+    const { rerender } = render(<HazardsTabView {...base} archived={undefined} />);
+    expect(screen.queryByText('Nothing marked yet')).toBeNull();
+    rerender(<HazardsTabView {...base} archived="error" />);
+    expect(screen.queryByText('Nothing marked yet')).toBeNull();
+    expect(screen.getByText('The archived hazards couldn’t be read')).toBeVisible();
+  });
+
+  it('a winter whose every hazard was voted gone says so, and lists them open', () => {
+    render(<HazardsTabView {...base} archived={FEB.archived} />);
+    expect(screen.queryByText('Nothing marked yet')).toBeNull();
+    expect(screen.getByText('All voted gone')).toBeVisible();
+    expect(
+      screen.getByText(
+        'All 2 hazards marked on Mascoma since the watch opened 3 Oct 2026 were since voted gone by skaters. A vote is a report, not a reading of the ice.',
+      ),
+    ).toBeVisible();
+    expect(screen.getAllByText(/Last seen/)).toHaveLength(2);
+  });
+
+  it('a past winter with one hazard voted gone words it singly', () => {
+    render(<HazardsTabView {...base} season={SEASON - 1} archived={FEB.archived.slice(0, 1)} />);
+    expect(
+      screen.getByText(/^The one hazard marked on Mascoma in 2025–26 was since voted gone/),
+    ).toBeVisible();
+  });
+});
+
+describe('HazardsTabView — reads that failed', () => {
+  it('each says so in its place with Try again, and none reads as empty', async () => {
+    const onRetry = vi.fn();
+    render(
+      <HazardsTabView
+        {...base}
+        hazards="error"
+        features="error"
+        patternsWaiting="error"
+        onRetry={onRetry}
+      />,
+    );
+    expect(screen.getByText('The hazards on the lake couldn’t be read')).toBeVisible();
+    expect(screen.getByText('The known features couldn’t be read')).toBeVisible();
+    expect(screen.getByText('The pre-ice pass couldn’t be read')).toBeVisible();
+    expect(screen.queryByText(/Nothing marked|Nothing was marked|voted gone/)).toBeNull();
+    const again = screen.getAllByRole('button', { name: 'Try again' });
+    expect(again).toHaveLength(3);
+    await userEvent.click(again[0] as HTMLElement);
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed day-by-day count says so; the list still stands', () => {
+    render(<HazardsTabView {...base} {...FEB} winters="error" />);
+    expect(screen.getByText('The winter’s day-by-day count couldn’t be read')).toBeVisible();
+    expect(screen.getByText('Black Point to Wood Island')).toBeVisible();
+  });
+
+  it('a failed archived read inside a list says so in its group', async () => {
+    render(<HazardsTabView {...base} hazards={FEB.hazards} archived="error" />);
+    await userEvent.click(screen.getByRole('button', { name: /Archived this winter/ }));
+    expect(await screen.findByText('The archived hazards couldn’t be read')).toBeVisible();
+  });
+});
+
+describe('HazardsTabView — the winters, a day at a time', () => {
+  it('before 1 October the winter is honestly empty and says when its record begins', () => {
+    const now = new Date(2026, 7, 20, 12, 0).getTime();
+    const winters = wintersFrom(
+      [{ season: SEASON, days: [], unknownEnds: 0, capped: false, watchOpensOn: null }],
+      now,
+    );
+    render(<HazardsTabView {...base} watchOpenedAt={null} winters={winters ?? undefined} />);
+    expect(screen.getByText('The record for 2026–27 begins 1 Oct 2026.')).toBeVisible();
+    expect(screen.queryByText(/^Today:/)).toBeNull();
+  });
+
+  it('a count that stopped short is stated in words, and today reads as a floor', () => {
+    const start = winterWindow(SEASON).start;
+    const winters = wintersFrom(
+      [
+        {
+          season: SEASON,
+          days: [{ at: start + 2 * 86_400_000, count: 4, unknown: 0 }],
+          unknownEnds: 0,
+          capped: true,
+          watchOpensOn: null,
+        },
+      ],
+      start + 2 * 86_400_000 + 3_600_000,
+    );
+    render(<HazardsTabView {...base} {...FEB} winters={winters ?? undefined} />);
+    expect(screen.getByText('Today: At least 4 on the lake')).toBeVisible();
+    expect(
+      screen.getByText(
+        'The count stopped short of every hazard reported; each day is at least what it shows.',
+      ),
+    ).toBeVisible();
+  });
+
+  it('no day ever draws fewer hazards than its count, and every unknown carries its mark (fast-check)', () => {
+    const { start, days } = winterWindow(SEASON - 1);
+    const DAY_MS = 86_400_000;
+    fc.assert(
+      fc.property(
+        fc.uniqueArray(
+          fc.record({
+            day: fc.integer({ min: 0, max: days - 1 }),
+            count: fc.nat(30),
+            unknown: fc.nat(30),
+          }),
+          { selector: (e) => e.day, maxLength: 12 },
+        ),
+        fc.boolean(),
+        (entries, capped) => {
+          const winters = wintersFrom(
+            [
+              {
+                season: SEASON - 1,
+                days: entries.map((e) => ({
+                  at: start + e.day * DAY_MS + 3_600_000,
+                  count: e.count,
+                  unknown: e.unknown,
+                })),
+                unknownEnds: entries.filter((e) => e.unknown > 0).length,
+                capped,
+                watchOpensOn: null,
+              },
+            ],
+            BODY_NOW,
+          );
+          const { container } = render(
+            <HazardsTabView
+              {...base}
+              season={SEASON - 1}
+              hazards={FEB.hazards}
+              winters={winters ?? undefined}
+            />,
+          );
+          for (const e of entries) {
+            const g = container.querySelector<SVGGElement>(
+              `[data-slot="day-strip-day"][data-day="${e.day}"]`,
+            );
+            if (e.count + e.unknown === 0) {
+              expect(g).toBeNull();
+              continue;
+            }
+            expect(g).not.toBeNull();
+            const el = g as SVGGElement;
+            expect(Number(el.dataset.known)).toBe(e.count);
+            const bar = el.querySelector('[data-slot="day-strip-bar"]');
+            expect(bar !== null).toBe(e.count > 0);
+            const blocks = el.querySelectorAll('[data-slot="day-strip-unknown"]');
+            expect(blocks).toHaveLength(e.unknown);
+            if (e.unknown > 0) expect(el.dataset.unknown).toBe(String(e.unknown));
+            const title = el.querySelector('title')?.textContent ?? '';
+            expect(title).toBe(dayWords({ count: e.count, unknown: e.unknown }, capped));
+            if (e.count > 0) expect(title).toContain(String(e.count));
+            if (e.unknown > 0) expect(title).toContain('unknown');
+            // The bar is the whole count, on the strip's one step for every day.
+            if (bar !== null && blocks.length > 0) {
+              const step = Number(bar.getAttribute('height')) / e.count;
+              const block = Number(blocks[0]?.getAttribute('height'));
+              expect(block).toBeCloseTo((step * 2) / 3, 6);
+            }
+          }
+          cleanup();
+        },
+      ),
+      { numRuns: 40 },
+    );
+  });
+});
+
+describe('HazardsTabView — tools not built yet', () => {
+  it('draws Mark a hazard, Add a feature and Edit shape, each saying it is not available yet', () => {
+    render(
+      <HazardsTabView
+        {...base}
+        onMarkHazard={UNAVAILABLE}
+        onAddFeature={UNAVAILABLE}
+        onEditShape={UNAVAILABLE}
+      />,
+    );
+    for (const name of [/Mark a hazard/, /Add a feature/]) {
+      expect(screen.getByRole('button', { name })).toHaveAttribute('aria-disabled', 'true');
+    }
+    for (const b of screen.getAllByRole('button', { name: 'Edit shape' })) {
+      expect(b).toHaveAttribute('data-unavailable');
+    }
+  });
+
+  it('a past winter draws none of them', () => {
+    render(
+      <HazardsTabView
+        {...base}
+        season={SEASON - 1}
+        onMarkHazard={UNAVAILABLE}
+        onAddFeature={UNAVAILABLE}
+        onEditShape={UNAVAILABLE}
+      />,
+    );
+    expect(
+      screen.queryByRole('button', { name: /Mark a hazard|Add a feature|Edit shape/ }),
+    ).toBeNull();
   });
 });
 

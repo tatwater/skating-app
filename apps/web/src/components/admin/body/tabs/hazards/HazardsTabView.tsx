@@ -1,5 +1,5 @@
 import type { Season } from '@skating/core';
-import { type ComponentProps, type CSSProperties, useRef, useState } from 'react';
+import { type ComponentProps, type CSSProperties, type ReactNode, useRef, useState } from 'react';
 
 import {
   AlertDialog,
@@ -17,7 +17,6 @@ import {
 import { Badge } from '@/components/kit/badge';
 import { Button } from '@/components/kit/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/kit/collapsible';
-import { type DayStrip, DayStrips } from '@/components/kit/day-strips';
 import {
   DropdownMenu,
   DropdownMenuCaret,
@@ -26,20 +25,30 @@ import {
   DropdownMenuTrigger,
 } from '@/components/kit/dropdown-menu';
 import { Kbd } from '@/components/kit/kbd';
+import { Note } from '@/components/kit/note';
 import { Section } from '@/components/kit/section-slug';
+import { SkeletonBlock } from '@/components/kit/skeleton';
 import { ToggleGroup, ToggleGroupItem } from '@/components/kit/toggle-group';
 import { Toolbar, ToolbarButton } from '@/components/kit/toolbar';
+import { sayUnavailable, UnavailableButton } from '@/components/kit/unavailable-button';
 import { usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
+import { LoadingSection } from '../tabParts';
 import type { GlyphCell } from './featureGlyph';
 import { featureLit, hazardLit, winterLit } from './hazardsMap';
 import {
   type ArchivedRow,
+  dayWords,
   type FeatureRow,
   type HazardRow,
+  lineSummary,
   seasonChoices,
   seasonWord,
+  type WinterLine,
+  type Winters,
 } from './hazardsModel';
+import { ReadFailed } from './kit-candidates/read-failed';
+import { UncertainDayStrips } from './kit-candidates/uncertain-day-strips';
 
 /**
  * Board 5.4.7, Body › Hazards, the default view: the winters as a bar over the tab, this winter's
@@ -48,27 +57,25 @@ import {
  * hazard* floating at the pane's foot.
  *
  * **D3.** An empty list says nothing was marked, never that nothing is there. A stale hazard keeps
- * its row, faded, never gone; an archived one was voted healed by skaters, which is a report. A
- * past winter is read-only and says so in a solid badge.
+ * its row, faded, never gone; an archived one was voted gone by skaters, which is a report. A day
+ * on a strip with archived hazards that may have been on the lake reads *at least* its known count
+ * and carries the unknown mark — never a smaller count, never clear, never ended. A read that
+ * failed says so in its place, with *Try again*; it is never drawn as empty. A past winter is
+ * read-only and says so in a solid badge.
  *
- * Everything arrives as props. The hazard clocks (the ring) and the Winter and Live boards are
- * not this view's: rows carry their state as words.
+ * Everything arrives as props. The hazard clocks (the ring) and the Winter and Live boards' pinned
+ * day are not this view's: rows carry their state as words.
  */
 
 export type FeatureRowWithGlyph = FeatureRow & {
   glyph: { cols: number; rows: number; cells: GlyphCell[] } | null;
 };
 
-export type Winters = {
-  days: number;
-  months: readonly { at: number; label: string }[];
-  current: (number | null)[];
-  previous: (number | null)[] | null;
-  /** Today's day index on the current strip. */
-  today: number | null;
-  /** The watch's opening, as a day index. */
-  opens: number | null;
-};
+/** A read as the view draws it: its value, `undefined` while on its way, or `'error'`. */
+export type Read<T> = T | undefined | 'error';
+
+/** A tool whose writer isn't built: drawn, and saying *Not available yet*. */
+export const UNAVAILABLE = 'unavailable';
 
 export type HazardsTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
   season: Season;
@@ -76,35 +83,55 @@ export type HazardsTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
   onSeasonChange: (season: Season) => void;
   /** "Mascoma" — the body as the copy names it. */
   bodyName: string;
-  /** When this winter's watch opened; `null` when the console can't read it. */
+  /** When this winter's watch opened (the record's day, a UTC midnight); `null` when not yet. */
   watchOpenedAt: number | null;
-  /** Hazards on the lake this season, freshest first. `undefined` while loading. */
-  hazards: readonly HazardRow[] | undefined;
-  archived: readonly ArchivedRow[] | undefined;
-  features: readonly FeatureRowWithGlyph[] | undefined;
-  /** Hazards on the lake each day, this winter and last; `null` when no read serves it. */
-  winters: Winters | null;
+  /** Hazards on the lake this season, freshest first. */
+  hazards: Read<readonly HazardRow[]>;
+  archived: Read<readonly ArchivedRow[]>;
+  features: Read<readonly FeatureRowWithGlyph[]>;
+  /** Hazards on the lake each day: the season on screen, and last winter beside an empty one. */
+  winters: Read<Winters>;
   /** Patterns waiting in the pre-ice pass; `null` when the viewer can't read the queue. */
-  patternsWaiting: number | null;
+  patternsWaiting: Read<number> | null;
+  /** Run every failed read again. Absent: no *Try again*. */
+  onRetry?: () => void;
   onOpenRecurrence?: () => void;
   /** Demote a known feature, with the reason taking it away asks for. Absent: not drawn. */
   onDemote?: (id: string, reason: string) => Promise<void>;
-  /** Mark a hazard by hand (a map mode). Absent: not drawn. */
-  onMarkHazard?: () => void;
-  /** Add a known feature (a map mode). Absent: not drawn. */
-  onAddFeature?: () => void;
-  /** Redraw a feature's footprint (a map mode). Absent: not drawn. */
-  onEditShape?: (id: string) => void;
+  /** Mark a hazard by hand (a map mode). Absent: not drawn; `'unavailable'`: not built yet. */
+  onMarkHazard?: (() => void) | typeof UNAVAILABLE;
+  /** Add a known feature (a map mode). Absent: not drawn; `'unavailable'`: not built yet. */
+  onAddFeature?: (() => void) | typeof UNAVAILABLE;
+  /** Redraw a feature's footprint (a map mode). Absent: not drawn; `'unavailable'`: not built yet. */
+  onEditShape?: ((id: string) => void) | typeof UNAVAILABLE;
   lit: string | null;
   onLitChange: (lit: string | null) => void;
 };
 
-const DATE = new Intl.DateTimeFormat('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+/** What each unbuilt tool will do, for its *Not available yet*. */
+const TOOLS = {
+  mark: 'Marking a hazard by hand comes with the map’s hazard tools.',
+  add: 'Drawing a known feature comes with the map’s hazard tools.',
+  edit: 'Redrawing a known feature’s footprint comes with the map’s hazard tools.',
+};
+
+/*
+ * A record's day is a UTC midnight (the watch's opening, a winter's 1 October), so it is written
+ * in UTC: in the viewer's zone it would read as the day before west of Greenwich.
+ */
+const DAY = new Intl.DateTimeFormat('en-US', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
 function dateWords(at: number): string {
-  const parts = DATE.formatToParts(at);
+  const parts = DAY.formatToParts(at);
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
   return `${get('day')} ${get('month')} ${get('year')}`;
 }
+
+const isList = <T,>(r: Read<readonly T[]>): r is readonly T[] => Array.isArray(r);
 
 export function HazardsTabView({
   season,
@@ -117,6 +144,7 @@ export function HazardsTabView({
   features,
   winters,
   patternsWaiting,
+  onRetry,
   onOpenRecurrence,
   onDemote,
   onMarkHazard,
@@ -137,20 +165,36 @@ export function HazardsTabView({
   const [demoting, setDemoting] = useState<FeatureRowWithGlyph | null>(null);
 
   usePaneKeys(pane, [
-    { key: 'M', run: () => mark?.(), enabled: mark !== undefined, label: 'Mark a hazard' },
-    { key: 'F', run: () => add?.(), enabled: add !== undefined, label: 'Add a feature' },
+    {
+      key: 'M',
+      run: () => (mark === UNAVAILABLE ? sayUnavailable(TOOLS.mark) : mark?.()),
+      enabled: mark !== undefined,
+      label: 'Mark a hazard',
+    },
+    {
+      key: 'F',
+      run: () => (add === UNAVAILABLE ? sayUnavailable(TOOLS.add) : add?.()),
+      enabled: add !== undefined,
+      label: 'Add a feature',
+    },
   ]);
 
-  const empty = hazards !== undefined && hazards.length === 0;
+  const listed = isList(hazards) && hazards.length > 0;
+  // Nothing on the list is a claim only once the archived read says what was voted gone.
+  const quiet = isList(hazards) && hazards.length === 0;
   const featureBlock = (
     <FeatureList
-      features={features ?? []}
+      features={features}
+      onRetry={onRetry}
       lit={lit}
       onLitChange={onLitChange}
       demote={demote}
       edit={edit}
       onAsk={setDemoting}
     />
+  );
+  const strips = (
+    <WinterBlock winters={winters} season={season} current={current} onRetry={onRetry} />
   );
 
   return (
@@ -168,59 +212,74 @@ export function HazardsTabView({
 
       <Section
         title="On the lake"
-        count={hazards?.length}
+        count={isList(hazards) ? hazards.length : undefined}
         end={current ? undefined : <Badge tone="lit">Read-only</Badge>}
+        aria-busy={hazards === undefined || undefined}
       >
         {hazards === undefined ? (
-          <p className="m-0 text-assist text-fg3">Loading the hazards</p>
-        ) : empty ? (
-          <div data-slot="hazards-empty" className="flex flex-col gap-(--space-1_5)">
-            <span className="text-body leading-(--lead-snug) text-fg">
-              {current ? 'Nothing marked yet' : 'Nothing was marked'}
-            </span>
-            <span className="text-assist leading-(--lead-list) text-fg3">
-              {current
-                ? `No one has marked a hazard on ${bodyName} ${watchOpenedAt === null ? 'this winter' : `since the watch opened ${dateWords(watchOpenedAt)}`}.`
-                : `No one marked a hazard on ${bodyName} in ${seasonWord(season)}.`}{' '}
-              No reports is not a reading of the ice.
-            </span>
-          </div>
+          <LoadingSection lines={3} />
+        ) : hazards === 'error' ? (
+          <ReadFailed data-slot="hazards-failed" onRetry={onRetry}>
+            The hazards on the lake couldn’t be read
+          </ReadFailed>
+        ) : listed ? (
+          <>
+            {strips}
+            <HazardList
+              rows={hazards}
+              lit={lit}
+              onLitChange={onLitChange}
+              litOf={(hazardId) => hazardLit(hazardId, season, currentSeason)}
+              // Clearing a hazard in a past winter stays in that winter.
+              cleared={winterLit(season, currentSeason)}
+            />
+          </>
         ) : (
-          <HazardList
-            rows={hazards}
-            lit={lit}
-            onLitChange={onLitChange}
-            litOf={(hazardId) => hazardLit(hazardId, season, currentSeason)}
-            // Clearing a hazard in a past winter stays in that winter.
-            cleared={winterLit(season, currentSeason)}
+          <QuietWinter
+            archived={archived}
+            current={current}
+            season={season}
+            bodyName={bodyName}
+            watchOpenedAt={watchOpenedAt}
+            onRetry={onRetry}
+            strips={strips}
           />
         )}
-        {winters !== null && empty && <WinterStrips winters={winters} season={season} />}
-        {!empty && hazards !== undefined && (
+        {(listed || (quiet && isList(archived) && archived.length > 0)) && (
           <div className="flex flex-col">
-            <Collapsible>
-              <CollapsibleTrigger count={archived?.length ?? 0}>
+            <Collapsible defaultOpen={!listed}>
+              <CollapsibleTrigger count={isList(archived) ? archived.length : undefined}>
                 {current ? 'Archived this winter' : `Archived in ${seasonWord(season)}`}
               </CollapsibleTrigger>
               <CollapsibleContent>
-                <ArchivedList rows={archived ?? []} />
+                <ArchivedList rows={archived} onRetry={onRetry} />
               </CollapsibleContent>
             </Collapsible>
-            <Collapsible>
-              <CollapsibleTrigger count={features?.length ?? 0}>Known features</CollapsibleTrigger>
-              <CollapsibleContent>{featureBlock}</CollapsibleContent>
-            </Collapsible>
+            {listed && (
+              <Collapsible>
+                <CollapsibleTrigger count={isList(features) ? features.length : undefined}>
+                  Known features
+                </CollapsibleTrigger>
+                <CollapsibleContent>{featureBlock}</CollapsibleContent>
+              </Collapsible>
+            )}
           </div>
         )}
       </Section>
 
-      {(empty || hazards === undefined) && (
-        <Section title="Known features" count={features?.length ?? 0}>
+      {!listed && (
+        <Section title="Known features" count={isList(features) ? features.length : undefined}>
           {featureBlock}
-          {add !== undefined && (
-            <Button size="sm" className="self-start" onClick={add}>
+          {add === UNAVAILABLE ? (
+            <UnavailableButton size="sm" className="self-start" what={TOOLS.add}>
               Add a feature <Kbd variant="dim">F</Kbd>
-            </Button>
+            </UnavailableButton>
+          ) : (
+            add !== undefined && (
+              <Button size="sm" className="self-start" onClick={add}>
+                Add a feature <Kbd variant="dim">F</Kbd>
+              </Button>
+            )
           )}
         </Section>
       )}
@@ -236,19 +295,31 @@ export function HazardsTabView({
             )
           }
         >
-          <p className="m-0 text-row leading-(--lead-list) text-fg1">
-            {patternsWaiting === 0
-              ? `No patterns on ${bodyName} wait in the pre-ice pass`
-              : `${patternsWaiting} ${patternsWaiting === 1 ? 'pattern' : 'patterns'} on ${bodyName} ${patternsWaiting === 1 ? 'waits' : 'wait'} in the pre-ice pass`}
-          </p>
+          {patternsWaiting === undefined ? (
+            <LoadingSection lines={1} />
+          ) : patternsWaiting === 'error' ? (
+            <ReadFailed onRetry={onRetry}>The pre-ice pass couldn’t be read</ReadFailed>
+          ) : (
+            <p className="m-0 text-row leading-(--lead-list) text-fg1">
+              {patternsWaiting === 0
+                ? `No patterns on ${bodyName} wait in the pre-ice pass`
+                : `${patternsWaiting} ${patternsWaiting === 1 ? 'pattern' : 'patterns'} on ${bodyName} ${patternsWaiting === 1 ? 'waits' : 'wait'} in the pre-ice pass`}
+            </p>
+          )}
         </Section>
       )}
 
       {mark !== undefined && (
         <Toolbar floating full aria-label="Hazards">
-          <ToolbarButton onClick={mark}>
-            Mark a hazard <Kbd variant="dim">M</Kbd>
-          </ToolbarButton>
+          {mark === UNAVAILABLE ? (
+            <UnavailableButton what={TOOLS.mark}>
+              Mark a hazard <Kbd variant="dim">M</Kbd>
+            </UnavailableButton>
+          ) : (
+            <ToolbarButton onClick={mark}>
+              Mark a hazard <Kbd variant="dim">M</Kbd>
+            </ToolbarButton>
+          )}
         </Toolbar>
       )}
 
@@ -265,7 +336,160 @@ export function HazardsTabView({
   );
 }
 
-/** The winters as tabs over the whole tab: they pick which winter it reads. */
+/**
+ * The winter with nothing on the list: what was voted gone, or that nothing was marked — said
+ * only once the archived read has landed, since an archived hazard is a hazard that was marked.
+ */
+function QuietWinter({
+  archived,
+  current,
+  season,
+  bodyName,
+  watchOpenedAt,
+  onRetry,
+  strips,
+}: {
+  archived: Read<readonly ArchivedRow[]>;
+  current: boolean;
+  season: Season;
+  bodyName: string;
+  watchOpenedAt: number | null;
+  onRetry: (() => void) | undefined;
+  strips: ReactNode;
+}) {
+  if (archived === undefined) return <LoadingSection lines={2} />;
+  if (archived === 'error') {
+    return (
+      <>
+        <ReadFailed data-slot="archived-failed" onRetry={onRetry}>
+          The archived hazards couldn’t be read
+        </ReadFailed>
+        {strips}
+      </>
+    );
+  }
+  const n = archived.length;
+  const when = current
+    ? watchOpenedAt === null
+      ? 'this winter'
+      : `since the watch opened ${dateWords(watchOpenedAt)}`
+    : `in ${seasonWord(season)}`;
+  return (
+    <>
+      <div data-slot="hazards-empty" className="flex flex-col gap-(--space-1_5)">
+        <span className="text-body leading-(--lead-snug) text-fg">
+          {n > 0 ? 'All voted gone' : current ? 'Nothing marked yet' : 'Nothing was marked'}
+        </span>
+        <span className="text-assist leading-(--lead-list) text-fg3">
+          {n > 0
+            ? `${n === 1 ? 'The one hazard' : `All ${n} hazards`} marked on ${bodyName} ${when} ${n === 1 ? 'was' : 'were'} since voted gone by skaters. A vote is a report, not a reading of the ice.`
+            : `No one ${current ? 'has marked' : 'marked'} a hazard on ${bodyName} ${when}. No reports is not a reading of the ice.`}
+        </span>
+      </div>
+      {strips}
+    </>
+  );
+}
+
+/** The strips' box while they load: their own proportions, one strip or two. */
+const STRIPS_ASPECT = { one: 'aspect-[340/32]', two: 'aspect-[340/62]' };
+
+/**
+ * The winters' strips, the words a strip can't carry — today's count, when the record begins, an
+ * archived hazard's missing end, a count that stopped short — and the read's own states.
+ */
+function WinterBlock({
+  winters,
+  season,
+  current,
+  onRetry,
+}: {
+  winters: Read<Winters>;
+  season: Season;
+  current: boolean;
+  onRetry: (() => void) | undefined;
+}) {
+  if (winters === undefined) {
+    return (
+      <SkeletonBlock
+        aria-hidden="true"
+        data-slot="hazards-winters-loading"
+        className={current ? STRIPS_ASPECT.two : STRIPS_ASPECT.one}
+      />
+    );
+  }
+  if (winters === 'error') {
+    return (
+      <ReadFailed data-slot="hazards-winters-failed" onRetry={onRetry}>
+        The winter’s day-by-day count couldn’t be read
+      </ReadFailed>
+    );
+  }
+  const first = winters.lines[0];
+  const todayDay = first !== undefined && winters.today !== null ? first.days[winters.today] : null;
+  const many = winters.lines.length > 1;
+  const notes = winters.lines.flatMap((line) => lineNotes(line, many));
+  return (
+    <div data-slot="hazards-winters" className="flex flex-col gap-(--space-2_5)">
+      <UncertainDayStrips
+        strips={winters.lines.map((line, k) => ({
+          key: String(line.season),
+          label: seasonWord(line.season),
+          values: line.days.map((d) => (d === null ? null : d.count)),
+          unknown: line.days.map((d) => d?.unknown ?? 0),
+          current: k === 0 && line.season === season,
+          ...(k === 0 && winters.today !== null ? { today: winters.today } : {}),
+          ...(k === 0 && winters.opens !== null ? { opens: winters.opens } : {}),
+          summary: lineSummary(line),
+          dayTitle: (i: number) => dayWords(line.days[i] ?? null, line.capped),
+        }))}
+        months={winters.months}
+        days={winters.days}
+      />
+      {first !== undefined && todayDay !== null && todayDay !== undefined && (
+        <p data-slot="hazards-today" className="m-0 text-assist leading-(--lead-list) text-fg2">
+          Today: {dayWords(todayDay, first.capped)}
+        </p>
+      )}
+      {winters.begins !== null && first !== undefined && (
+        <p data-slot="hazards-begins" className="m-0 text-assist leading-(--lead-list) text-fg3">
+          The record for {seasonWord(first.season)} begins {dateWords(winters.begins)}.
+        </p>
+      )}
+      {notes.map((n) => (
+        <Note key={n.key} data-slot={n.slot}>
+          {n.text}
+        </Note>
+      ))}
+    </div>
+  );
+}
+
+/** What one strip can't say in bars: archived hazards with no end, a count that stopped short. */
+function lineNotes(
+  line: WinterLine,
+  named: boolean,
+): { key: string; slot: string; text: string }[] {
+  const out: { key: string; slot: string; text: string }[] = [];
+  const lead = named ? `${seasonWord(line.season)}: ` : '';
+  const n = line.unknownEnds;
+  if (n > 0) {
+    out.push({
+      key: `${line.season}.ends`,
+      slot: 'hazards-unknown-ends',
+      text: `${lead}${n === 1 ? '1 archived hazard has' : `${n} archived hazards have`} no recorded end. From ${n === 1 ? 'its' : 'their'} first report on, every day counts ${n === 1 ? 'it' : 'them'} as unknown, never as gone.`,
+    });
+  }
+  if (line.capped) {
+    out.push({
+      key: `${line.season}.capped`,
+      slot: 'hazards-capped',
+      text: `${lead}The count stopped short of every hazard reported; each day is at least what it shows.`,
+    });
+  }
+  return out;
+}
+
 function SeasonBar({
   season,
   currentSeason,
@@ -415,7 +639,21 @@ function GoneSlots({ n, of }: { n: number; of: number }) {
   );
 }
 
-function ArchivedList({ rows }: { rows: readonly ArchivedRow[] }) {
+function ArchivedList({
+  rows,
+  onRetry,
+}: {
+  rows: Read<readonly ArchivedRow[]>;
+  onRetry: (() => void) | undefined;
+}) {
+  if (rows === undefined) return <LoadingSection lines={2} />;
+  if (rows === 'error') {
+    return (
+      <ReadFailed data-slot="archived-failed" onRetry={onRetry}>
+        The archived hazards couldn’t be read
+      </ReadFailed>
+    );
+  }
   if (rows.length === 0) return null;
   return (
     <ul className="m-0 flex list-none flex-col p-0">
@@ -440,19 +678,29 @@ function ArchivedList({ rows }: { rows: readonly ArchivedRow[] }) {
 
 function FeatureList({
   features,
+  onRetry,
   lit,
   onLitChange,
   demote,
   edit,
   onAsk,
 }: {
-  features: readonly FeatureRowWithGlyph[];
+  features: Read<readonly FeatureRowWithGlyph[]>;
+  onRetry: (() => void) | undefined;
   lit: string | null;
   onLitChange: (lit: string | null) => void;
   demote: HazardsTabViewProps['onDemote'];
   edit: HazardsTabViewProps['onEditShape'];
   onAsk: (f: FeatureRowWithGlyph) => void;
 }) {
+  if (features === undefined) return <LoadingSection lines={2} />;
+  if (features === 'error') {
+    return (
+      <ReadFailed data-slot="features-failed" onRetry={onRetry}>
+        The known features couldn’t be read
+      </ReadFailed>
+    );
+  }
   if (features.length === 0) return null;
   return (
     <ul aria-label="Known features" className="m-0 flex list-none flex-col p-0">
@@ -484,10 +732,16 @@ function FeatureList({
               <span className="text-assist leading-(--lead-snug) text-fg3">{f.sub}</span>
             </span>
             <span className="flex flex-col items-stretch gap-(--space-1_5)">
-              {edit !== undefined && (
-                <Button size="xs" onClick={() => edit(f.id)}>
+              {edit === UNAVAILABLE ? (
+                <UnavailableButton size="xs" what={TOOLS.edit}>
                   Edit shape
-                </Button>
+                </UnavailableButton>
+              ) : (
+                edit !== undefined && (
+                  <Button size="xs" onClick={() => edit(f.id)}>
+                    Edit shape
+                  </Button>
+                )
               )}
               {demote !== undefined && (
                 <Button size="xs" onClick={() => onAsk(f)}>
@@ -529,31 +783,6 @@ function Glyph({ glyph }: { glyph: FeatureRowWithGlyph['glyph'] }) {
         />
       ))}
     </svg>
-  );
-}
-
-function WinterStrips({ winters, season }: { winters: Winters; season: Season }) {
-  const strips: DayStrip[] = [
-    {
-      key: 'current',
-      label: seasonWord(season),
-      values: winters.current,
-      current: true,
-      ...(winters.today !== null ? { today: winters.today } : {}),
-      ...(winters.opens !== null ? { opens: winters.opens } : {}),
-      summary: 'Nothing marked yet',
-    },
-    ...(winters.previous === null
-      ? []
-      : [{ key: 'previous', label: seasonWord(season - 1), values: winters.previous }]),
-  ];
-  return (
-    <DayStrips
-      data-slot="hazards-winters"
-      strips={strips}
-      months={winters.months}
-      days={winters.days}
-    />
   );
 }
 

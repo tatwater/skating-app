@@ -206,22 +206,132 @@ export function dayIndex(at: number, season: Season): number | null {
   return i >= 0 && i < days ? i : null;
 }
 
-/** How many hazards were on the lake each day of a season, as a read would hand them. */
-export type DailyOnLake = { season: Season; days: readonly { at: number; count: number }[] };
+/**
+ * How many hazards were on the lake each day of a winter, as `bodyConsole.dailyHazards` hands it.
+ *
+ * - `count` — hazards **known** to be on the lake that day (from a hazard's first report; one still
+ *   active, through today);
+ * - `unknown` — archived hazards that **may** have been: nothing stored says when an archived
+ *   hazard left the lake, so every day after its first report is unknown — never clear, never
+ *   ended;
+ * - `unknownEnds` — how many archived hazards that is; `capped` — the read stopped at its most
+ *   hazards, so every day is a floor; `watchOpensOn` — the season record's opening day, `null`
+ *   while the watch waits.
+ *
+ * Days after today are absent; a day before today with no entry had nothing marked.
+ */
+export type DailyHazards = {
+  season: Season;
+  days: readonly { at: number; count: number; unknown: number }[];
+  unknownEnds: number;
+  capped: boolean;
+  watchOpensOn: number | null;
+};
+
+/** One day on a strip: hazards known on the lake, and how many more may have been. */
+export type DayOnLake = { count: number; unknown: number };
 
 /**
- * One strip's values on the window: a count per day, `0` on a day the read covers with nothing on
- * the lake, and `null` on a day that hasn't happened yet (this winter after today) — never zero.
+ * One strip's days on the window: `{ count: 0, unknown: 0 }` on a day the read covers with nothing
+ * marked, and `null` on a day that hasn't happened yet (this winter after today) — never zero.
+ * **A day the read holds is never dropped**, whatever this clock says: a server day past the
+ * viewer's today still draws, so no rendering ever shows fewer hazards than the read counted.
  */
-export function stripValues(read: DailyOnLake, now: number): (number | null)[] {
+export function stripDays(
+  read: Pick<DailyHazards, 'season' | 'days'>,
+  now: number,
+): (DayOnLake | null)[] {
   const { start, days } = winterWindow(read.season);
   const today = Math.floor((now - start) / DAY);
-  const values: (number | null)[] = Array.from({ length: days }, (_, i) => (i <= today ? 0 : null));
+  const out: (DayOnLake | null)[] = Array.from({ length: days }, (_, i) =>
+    i <= today ? { count: 0, unknown: 0 } : null,
+  );
   for (const d of read.days) {
     const i = dayIndex(d.at, read.season);
-    if (i !== null && values[i] !== null) values[i] = (values[i] ?? 0) + d.count;
+    if (i === null) continue;
+    const held = out[i] ?? { count: 0, unknown: 0 };
+    out[i] = {
+      count: held.count + Math.max(0, d.count),
+      unknown: held.unknown + Math.max(0, d.unknown),
+    };
   }
-  return values;
+  return out;
+}
+
+/**
+ * A day in words, as its strip's title and today's line write it. **D3**: a day with any unknown
+ * reads "at least" its known count and names the unknown; a day of a read that stopped short
+ * (`capped`) is a floor too; a day with nothing marked reads *none marked*, never clear.
+ */
+export function dayWords(day: DayOnLake | null, capped: boolean): string {
+  if (day === null) return 'Not yet';
+  const { count, unknown } = day;
+  if (unknown > 0) {
+    return count > 0
+      ? `At least ${count} on the lake, ${unknown} unknown`
+      : `${unknown} unknown: may have been on the lake`;
+  }
+  if (capped)
+    return count > 0 ? `At least ${count} on the lake` : 'None counted; the count stopped short';
+  return count > 0 ? `${count} on the lake` : 'None marked';
+}
+
+/** One winter's strip as the tab draws it. */
+export type WinterLine = {
+  season: Season;
+  days: (DayOnLake | null)[];
+  capped: boolean;
+  unknownEnds: number;
+};
+
+/** The winters the tab draws: the season on screen first, then any it is set beside. */
+export type Winters = {
+  /** The days on the axis (the season on screen's). */
+  days: number;
+  months: readonly { at: number; label: string }[];
+  lines: readonly WinterLine[];
+  /** Today's day index on the first strip, while today is inside its window. */
+  today: number | null;
+  /** The watch's opening day on the first strip, when the record says. */
+  opens: number | null;
+  /** When the first strip's record begins (1 October), while that is still ahead. */
+  begins: number | null;
+};
+
+/** The strips from their reads, the season on screen first. */
+export function wintersFrom(reads: readonly DailyHazards[], now: number): Winters | null {
+  const first = reads[0];
+  if (first === undefined) return null;
+  const { start, days } = winterWindow(first.season);
+  const today = Math.floor((now - start) / DAY);
+  return {
+    days,
+    months: monthTicks(first.season),
+    lines: reads.map((r) => ({
+      season: r.season,
+      days: stripDays(r, now),
+      capped: r.capped,
+      unknownEnds: r.unknownEnds,
+    })),
+    today: today >= 0 && today < days ? today : null,
+    opens: first.watchOpensOn === null ? null : dayIndex(first.watchOpensOn, first.season),
+    begins: now < start && seasonOf(now) === first.season ? start : null,
+  };
+}
+
+/** "3 days with hazards marked, 2 with some unknown" — what a reader hears for a strip. */
+export function lineSummary(line: WinterLine): string {
+  let marked = 0;
+  let unsure = 0;
+  for (const d of line.days) {
+    if (d === null || d.count + d.unknown === 0) continue;
+    marked++;
+    if (d.unknown > 0) unsure++;
+  }
+  if (marked === 0) return line.capped ? 'None counted; the count stopped short' : 'None marked';
+  const days = `${marked} ${marked === 1 ? 'day' : 'days'} with hazards marked`;
+  const some = unsure === 0 ? '' : `, ${unsure} with some unknown`;
+  return `${days}${some}${line.capped ? '; each a floor' : ''}`;
 }
 
 /** The month ticks on the window: each 1st, as "OCT". */

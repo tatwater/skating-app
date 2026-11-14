@@ -1,14 +1,14 @@
 import { hazardFootprint } from '@skating/core';
 import { featureGlyph } from './featureGlyph';
-import type { FeatureRowWithGlyph, Winters } from './HazardsTabView';
+import type { FeatureRowWithGlyph } from './HazardsTabView';
 import type { HazardsMapData } from './hazardsMap';
 import {
-  type DailyOnLake,
+  type DailyHazards,
   type FeatureInput,
   featureRows,
   type HazardInput,
-  monthTicks,
-  stripValues,
+  type Winters,
+  wintersFrom,
   winterWindow,
 } from './hazardsModel';
 
@@ -20,7 +20,8 @@ import {
  */
 export const BODY_NOW = new Date(2026, 9, 14, 12, 0).getTime();
 export const SEASON = 2026;
-export const WATCH_OPENED = new Date(2026, 9, 3, 12, 0).getTime();
+/** The watch's opening as the season record stores it: a day, read as its UTC midnight. */
+export const WATCH_OPENED = Date.UTC(2026, 9, 3);
 
 const day = (y: number, m: number, d: number) => new Date(y, m - 1, d, 12, 0).getTime();
 
@@ -69,49 +70,81 @@ export const MASCOMA_FEATURE_ROWS: FeatureRowWithGlyph[] = featureRows(MASCOMA_F
   },
 );
 
-/** When each of last winter's hazards was on the lake (first reported → archived or stale). */
-const LAST_WINTER: [number, number, number, number][] = [
-  [12, 3, 1, 8],
-  [12, 14, 12, 21],
-  [12, 28, 2, 9],
-  [1, 24, 1, 26],
-  [2, 8, 2, 20],
-  [2, 9, 3, 16],
-  [2, 10, 2, 23],
-  [2, 15, 2, 18],
-  [2, 17, 3, 2],
-  [3, 8, 3, 13],
+/**
+ * Last winter's hazards on Mascoma as the store holds them: the day each was first reported, and
+ * whether it is still active (stale, never voted gone) or archived. An archived hazard's end isn't
+ * stored, so the read counts it on its first day and as unknown every day after, to the winter's
+ * end — the strip shows that honestly, never as a lake gone clear.
+ */
+const LAST_WINTER: { m: number; d: number; active: boolean }[] = [
+  { m: 12, d: 3, active: false },
+  { m: 12, d: 14, active: false },
+  { m: 12, d: 28, active: false },
+  { m: 1, d: 24, active: false },
+  { m: 2, d: 8, active: false },
+  { m: 2, d: 9, active: true },
+  { m: 2, d: 10, active: false },
+  { m: 2, d: 15, active: false },
+  { m: 2, d: 17, active: true },
+  { m: 3, d: 8, active: false },
 ];
 
 const UTC_DAY = 86_400_000;
 
-/** Last winter's per-day count, as the read would hand it. */
-export const LAST_WINTER_DAILY: DailyOnLake = (() => {
-  const { start, days } = winterWindow(SEASON - 1);
-  const counts = new Map<number, number>();
-  for (const [m0, d0, m1, d1] of LAST_WINTER) {
-    const y0 = m0 >= 10 ? 2025 : 2026;
-    const y1 = m1 >= 10 ? 2025 : 2026;
-    for (let t = Date.UTC(y0, m0 - 1, d0); t < Date.UTC(y1, m1 - 1, d1); t += UTC_DAY) {
-      counts.set(t, (counts.get(t) ?? 0) + 1);
+/**
+ * A winter's day-by-day read, built the way `bodyConsole.dailyHazards` builds it: an active hazard
+ * counts from its first report through today (or the winter's end), an archived one counts on its
+ * first day and is unknown after. Stories and tests only.
+ */
+export function dailyFrom(
+  season: number,
+  hazards: readonly { first: number; active: boolean }[],
+  now: number,
+  extra: Partial<Pick<DailyHazards, 'capped' | 'watchOpensOn'>> = {},
+): DailyHazards {
+  const { start, days } = winterWindow(season);
+  const last = Math.min(now, start + days * UTC_DAY);
+  const tally = new Map<number, { count: number; unknown: number }>();
+  for (const h of hazards) {
+    const firstDay = Math.floor(h.first / UTC_DAY) * UTC_DAY;
+    for (let t = Math.max(firstDay, start); t < last; t += UTC_DAY) {
+      const d = tally.get(t) ?? { count: 0, unknown: 0 };
+      if (h.active || t === firstDay) d.count++;
+      else d.unknown++;
+      tally.set(t, d);
     }
   }
   return {
-    season: SEASON - 1,
-    days: [...counts]
-      .filter(([t]) => t >= start && t < start + days * UTC_DAY)
-      .map(([at, count]) => ({ at, count })),
+    season,
+    days: [...tally].sort(([a], [b]) => a - b).map(([at, d]) => ({ at, ...d })),
+    unknownEnds: hazards.filter((h) => !h.active).length,
+    capped: extra.capped ?? false,
+    watchOpensOn: extra.watchOpensOn ?? null,
   };
-})();
+}
 
-export const MASCOMA_WINTERS: Winters = {
-  days: winterWindow(SEASON).days,
-  months: monthTicks(SEASON),
-  current: stripValues({ season: SEASON, days: [] }, BODY_NOW),
-  previous: stripValues(LAST_WINTER_DAILY, BODY_NOW),
-  today: 13,
-  opens: 2,
-};
+/** Last winter's read, on the Body row's pinned day. */
+export const LAST_WINTER_DAILY: DailyHazards = dailyFrom(
+  SEASON - 1,
+  LAST_WINTER.map((h) => ({
+    first: Date.UTC(h.m >= 10 ? SEASON - 1 : SEASON, h.m - 1, h.d, 15),
+    active: h.active,
+  })),
+  BODY_NOW,
+);
+
+/** This winter's read on 14 Oct: nothing marked, the watch open since 3 Oct. */
+export const THIS_WINTER_DAILY: DailyHazards = dailyFrom(SEASON, [], BODY_NOW, {
+  watchOpensOn: WATCH_OPENED,
+});
+
+/** Last winter on its own, as a past winter is drawn when chosen. */
+export const PAST_WINTERS = wintersFrom([LAST_WINTER_DAILY], BODY_NOW) as Winters;
+
+export const MASCOMA_WINTERS = wintersFrom(
+  [THIS_WINTER_DAILY, LAST_WINTER_DAILY],
+  BODY_NOW,
+) as Winters;
 
 /** 17 Feb 2026's list, for the rows (as `hazards.listForBody` hands them). */
 export const FEB_NOW = new Date(2026, 1, 17, 12, 0).getTime();

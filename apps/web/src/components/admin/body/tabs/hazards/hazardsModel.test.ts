@@ -17,13 +17,17 @@ import {
   ageWords,
   archivedRows,
   dayIndex,
+  dayWords,
   featureRows,
   hazardRows,
   isCurrent,
+  lineSummary,
   monthTicks,
   seasonChoices,
   seasonWord,
-  stripValues,
+  stripDays,
+  type WinterLine,
+  wintersFrom,
   winterWindow,
 } from './hazardsModel';
 
@@ -242,21 +246,147 @@ describe('the winters, a bar per day', () => {
     );
   });
 
-  it('a day that hasn’t happened is null, never zero; a counted day keeps its count', () => {
+  it('a day that hasn’t happened is null, never zero; a counted day keeps both its parts', () => {
     const now = Date.UTC(2026, 9, 14, 16);
-    const values = stripValues(
-      { season: 2026, days: [{ at: Date.UTC(2026, 9, 5, 3), count: 2 }] },
+    const days = stripDays(
+      { season: 2026, days: [{ at: Date.UTC(2026, 9, 5, 3), count: 2, unknown: 1 }] },
       now,
     );
-    expect(values.slice(0, 14)).toEqual([0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-    expect(values.slice(14).every((v) => v === null)).toBe(true);
-    // A count on a day that hasn't happened is not drawn.
+    const none = { count: 0, unknown: 0 };
+    expect(days.slice(0, 5)).toEqual([none, none, none, none, { count: 2, unknown: 1 }]);
+    expect(days.slice(5, 14).every((d) => d?.count === 0 && d.unknown === 0)).toBe(true);
+    expect(days.slice(14).every((d) => d === null)).toBe(true);
+    // Last winter, whole: every day real, the archived ones unknown to the winter's end.
+    const last = stripDays(LAST_WINTER_DAILY, BODY_NOW);
+    expect(last.every((d) => d !== null)).toBe(true);
+    expect(last.at(-1)).toEqual({ count: 2, unknown: 8 });
+  });
+
+  it('never drops a day the read holds, even one past this clock’s today', () => {
+    const now = Date.UTC(2026, 9, 14, 16);
+    const days = stripDays(
+      { season: 2026, days: [{ at: Date.UTC(2026, 11, 1), count: 3, unknown: 0 }] },
+      now,
+    );
+    expect(days[61]).toEqual({ count: 3, unknown: 0 });
+    // Out of the window is out.
     expect(
-      stripValues({ season: 2026, days: [{ at: Date.UTC(2026, 11, 1), count: 3 }] }, now)[61],
-    ).toBeNull();
-    // Last winter, whole: every day real.
-    expect(stripValues(LAST_WINTER_DAILY, BODY_NOW).every((v) => v !== null)).toBe(true);
-    expect(Math.max(...(stripValues(LAST_WINTER_DAILY, BODY_NOW) as number[]))).toBe(5);
+      stripDays({ season: 2026, days: [{ at: Date.UTC(2026, 8, 1), count: 3, unknown: 0 }] }, now)
+        .flatMap((d) => (d === null ? [] : [d.count]))
+        .every((c) => c === 0),
+    ).toBe(true);
+  });
+
+  it('every day the read holds keeps at least its count and its unknown (fast-check)', () => {
+    const season = 2026;
+    const { start, days } = winterWindow(season);
+    const entry = fc.record({
+      day: fc.integer({ min: 0, max: days - 1 }),
+      offset: fc.integer({ min: 0, max: DAY - 1 }),
+      count: fc.nat(40),
+      unknown: fc.nat(40),
+    });
+    fc.assert(
+      fc.property(
+        fc.uniqueArray(entry, { selector: (e) => e.day, maxLength: 60 }),
+        fc.integer({ min: start - 30 * DAY, max: start + 200 * DAY }),
+        (entries, now) => {
+          const read = {
+            season,
+            days: entries.map((e) => ({
+              at: start + e.day * DAY + e.offset,
+              count: e.count,
+              unknown: e.unknown,
+            })),
+          };
+          const drawn = stripDays(read, now);
+          for (const e of entries) {
+            const d = drawn[e.day];
+            expect(d).not.toBeNull();
+            expect(d?.count).toBeGreaterThanOrEqual(e.count);
+            expect(d?.unknown).toBeGreaterThanOrEqual(e.unknown);
+          }
+        },
+      ),
+    );
+  });
+});
+
+describe('a day in words', () => {
+  it('reads the board’s days', () => {
+    expect(dayWords(null, false)).toBe('Not yet');
+    expect(dayWords({ count: 0, unknown: 0 }, false)).toBe('None marked');
+    expect(dayWords({ count: 3, unknown: 0 }, false)).toBe('3 on the lake');
+    expect(dayWords({ count: 3, unknown: 2 }, false)).toBe('At least 3 on the lake, 2 unknown');
+    expect(dayWords({ count: 0, unknown: 2 }, false)).toBe('2 unknown: may have been on the lake');
+    expect(dayWords({ count: 3, unknown: 0 }, true)).toBe('At least 3 on the lake');
+    expect(dayWords({ count: 0, unknown: 0 }, true)).toBe('None counted; the count stopped short');
+  });
+
+  it('never claims fewer than the count, and names any unknown (fast-check)', () => {
+    fc.assert(
+      fc.property(fc.nat(1000), fc.nat(1000), fc.boolean(), (count, unknown, capped) => {
+        const words = dayWords({ count, unknown }, capped);
+        const numbers = (words.match(/\d+/g) ?? []).map(Number);
+        // The first number is the known count whenever there is one; nothing reads as clear.
+        if (count > 0) expect(numbers[0]).toBe(count);
+        if (count > 0 && (unknown > 0 || capped)) expect(words).toMatch(/^At least /);
+        if (unknown > 0) {
+          expect(words).toContain(`${unknown} unknown`);
+          expect(words).not.toMatch(/None|clear|gone|safe/i);
+        }
+        expect(words).not.toMatch(/clear|safe|gone|ended/i);
+      }),
+    );
+  });
+});
+
+describe('the winters as the tab draws them', () => {
+  it('this winter before 1 October is empty, and says when its record begins', () => {
+    const now = Date.UTC(2026, 7, 20, 15);
+    const w = wintersFrom(
+      [{ season: 2026, days: [], unknownEnds: 0, capped: false, watchOpensOn: null }],
+      now,
+    );
+    expect(w?.begins).toBe(Date.UTC(2026, 9, 1));
+    expect(w?.today).toBeNull();
+    expect(w?.lines[0]?.days.every((d) => d === null)).toBe(true);
+    expect(w && lineSummary(w.lines[0] as WinterLine)).toBe('None marked');
+  });
+
+  it('marks today and the watch’s opening, and carries each strip’s floor and missing ends', () => {
+    const w = wintersFrom(
+      [
+        {
+          season: 2026,
+          days: [{ at: Date.UTC(2026, 9, 5), count: 1, unknown: 0 }],
+          unknownEnds: 0,
+          capped: true,
+          watchOpensOn: Date.UTC(2026, 9, 3),
+        },
+        LAST_WINTER_DAILY,
+      ],
+      Date.UTC(2026, 9, 14, 16),
+    );
+    expect(w?.today).toBe(13);
+    expect(w?.opens).toBe(2);
+    expect(w?.begins).toBeNull();
+    expect(w?.lines.map((l) => [l.season, l.capped, l.unknownEnds])).toEqual([
+      [2026, true, 0],
+      [2025, false, 8],
+    ]);
+    expect(lineSummary(w?.lines[0] as WinterLine)).toBe('1 day with hazards marked; each a floor');
+    expect(lineSummary(w?.lines[1] as WinterLine)).toMatch(
+      /^\d+ days with hazards marked, \d+ with some unknown$/,
+    );
+    expect(wintersFrom([], 0)).toBeNull();
+  });
+
+  it('a past winter has no today and no beginning ahead', () => {
+    const w = wintersFrom([LAST_WINTER_DAILY], Date.UTC(2026, 9, 14, 16));
+    expect(w?.today).toBeNull();
+    expect(w?.begins).toBeNull();
+    expect(w?.opens).toBeNull();
   });
 
   it('the strip’s ink stops at the last real day; x runs left to right', () => {

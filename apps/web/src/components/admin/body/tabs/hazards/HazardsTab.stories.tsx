@@ -5,17 +5,20 @@ import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 import { computedColor, sameColor } from '@/components/kit/measure';
 import { faceLoaded, must } from '@/components/kit/storyKit';
 import { ThemePair } from '../../../../../../.storybook/theme';
-import { HazardsTabView } from './HazardsTabView';
+import { HazardsTabView, type HazardsTabViewProps, UNAVAILABLE } from './HazardsTabView';
 import {
+  dailyFrom,
   FEB_ARCHIVED,
   FEB_HAZARDS,
   FEB_NOW,
+  LAST_WINTER_DAILY,
   MASCOMA_FEATURE_ROWS,
   MASCOMA_WINTERS,
+  PAST_WINTERS,
   SEASON,
   WATCH_OPENED,
 } from './hazardsFixtures';
-import { archivedRows, hazardRows } from './hazardsModel';
+import { archivedRows, hazardRows, wintersFrom, winterWindow } from './hazardsModel';
 
 /**
  * Board 5.4.7, Body › Hazards' inspector on the Body row's pinned day (14 Oct 2026), at the
@@ -37,11 +40,12 @@ const meta = {
     features: MASCOMA_FEATURE_ROWS,
     winters: MASCOMA_WINTERS,
     patternsWaiting: 2,
+    onRetry: fn(),
     onOpenRecurrence: fn(),
     onDemote: fn(async () => {}),
-    onMarkHazard: fn(),
-    onAddFeature: fn(),
-    onEditShape: fn(),
+    onMarkHazard: fn() as HazardsTabViewProps['onMarkHazard'],
+    onAddFeature: fn() as HazardsTabViewProps['onAddFeature'],
+    onEditShape: fn() as HazardsTabViewProps['onEditShape'],
     lit: null,
     onLitChange: fn(),
   },
@@ -117,7 +121,7 @@ export const OnTheLake: Story = {
 
 /** A past winter: read-only, in a solid badge; no tools. */
 export const PastWinter: Story = {
-  args: { season: SEASON - 1, hazards: [] },
+  args: { season: SEASON - 1, hazards: [], winters: PAST_WINTERS },
   play: async ({ canvasElement }) => {
     const badge = must(quad(canvasElement).querySelector<HTMLElement>('[data-slot="badge"]'));
     await expect(badge).toHaveTextContent('Read-only');
@@ -127,13 +131,108 @@ export const PastWinter: Story = {
   },
 };
 
-/** As the console wires it today: no per-day read, no watch date, no map modes. */
+/**
+ * As the console wires it today: the tools with no writer drawn, each saying *Not available yet*;
+ * last winter's archived hazards unknown to the winter's end, said in words under the strips.
+ */
 export const Wired: Story = {
   args: {
-    winters: null,
+    onMarkHazard: UNAVAILABLE,
+    onAddFeature: UNAVAILABLE,
+    onEditShape: UNAVAILABLE,
+  },
+  play: async ({ canvasElement }) => {
+    const q = within(quad(canvasElement));
+    await expect(q.getByRole('button', { name: /Mark a hazard/ })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    await expect(q.getByText(/archived hazards have no recorded end/)).toBeVisible();
+  },
+};
+
+/** Every read on its way: each section holds its place, and nothing is claimed. */
+export const Loading: Story = {
+  args: {
+    hazards: undefined,
+    archived: undefined,
+    features: undefined,
+    winters: undefined,
+    patternsWaiting: undefined,
+  },
+  play: async ({ canvasElement }) => {
+    const q = quad(canvasElement);
+    await expect(q.querySelector('[data-slot="hazards-empty"]')).toBeNull();
+    await expect(within(q).getByRole('region', { name: 'On the lake' })).toHaveAttribute(
+      'aria-busy',
+      'true',
+    );
+  },
+};
+
+/** Every read failed: each says so in its place, with Try again; nothing reads as empty. */
+export const Failed: Story = {
+  args: { hazards: 'error', features: 'error', patternsWaiting: 'error' },
+  play: async ({ canvasElement, args }) => {
+    const q = within(quad(canvasElement));
+    await expect(q.queryByText(/Nothing marked/)).toBeNull();
+    await userEvent.click(must(q.getAllByRole('button', { name: 'Try again' })[0]));
+    await expect(args.onRetry).toHaveBeenCalled();
+  },
+};
+
+const FEB_START = winterWindow(SEASON - 1).start;
+
+/**
+ * A winter's strip over its list, with days that are only floors: two hazards still up, three
+ * archived (unknown from the day after each first report), and a count that stopped short.
+ */
+export const UnknownDays: Story = {
+  args: {
+    season: SEASON - 1,
+    hazards: hazardRows(FEB_HAZARDS, FEB_NOW),
+    archived: archivedRows(FEB_ARCHIVED),
+    winters: wintersFrom(
+      [
+        dailyFrom(
+          SEASON - 1,
+          [
+            { first: FEB_START + 70 * 86_400_000, active: false },
+            { first: FEB_START + 95 * 86_400_000, active: true },
+            { first: FEB_START + 110 * 86_400_000, active: false },
+            { first: FEB_START + 120 * 86_400_000, active: false },
+            { first: FEB_START + 130 * 86_400_000, active: true },
+          ],
+          FEB_NOW,
+          { capped: true },
+        ),
+      ],
+      FEB_NOW,
+    ) as NonNullable<ReturnType<typeof wintersFrom>>,
+  },
+  play: async ({ canvasElement }) => {
+    const q = quad(canvasElement);
+    const unknown = q.querySelectorAll('[data-slot="day-strip-unknown"]');
+    await expect(unknown.length).toBeGreaterThan(0);
+    await expect(within(q).getByText(/each day is at least what it shows/)).toBeVisible();
+  },
+};
+
+/** Between 1 July and 1 October: this winter is honestly empty and says when its record begins. */
+export const BeforeTheRecord: Story = {
+  args: {
     watchOpenedAt: null,
-    onMarkHazard: undefined,
-    onAddFeature: undefined,
-    onEditShape: undefined,
+    winters: wintersFrom(
+      [
+        { season: SEASON, days: [], unknownEnds: 0, capped: false, watchOpensOn: null },
+        LAST_WINTER_DAILY,
+      ],
+      new Date(2026, 7, 20, 12, 0).getTime(),
+    ) as NonNullable<ReturnType<typeof wintersFrom>>,
+  },
+  play: async ({ canvasElement }) => {
+    await expect(
+      within(quad(canvasElement)).getByText('The record for 2026–27 begins 1 Oct 2026.'),
+    ).toBeVisible();
   },
 };
