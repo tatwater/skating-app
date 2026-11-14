@@ -9,6 +9,7 @@ import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { QueryCtx } from '../_generated/server';
 import { HIDE_SUPPRESS_METERS, isSuppressed } from './putInSuppression';
+import { takeCappedResult } from './scan';
 
 /** How many recent reports feed the derived-cluster read — bounds the per-body scan (read-cap). */
 const PUTIN_REPORT_SCAN_LIMIT = 200;
@@ -69,7 +70,7 @@ export interface PutInMarker {
  * The most stored put-in rows read for one body — a read bound well past any body's launches (the
  * busiest carry a few dozen), so a pathological body cannot make the map's read unbounded.
  */
-export const PUT_IN_ROWS_CAP = 1_000;
+const PUT_IN_ROWS_CAP = 1_000;
 
 /**
  * Split a body's stored `putIns` rows into official markers, **persisted derived** markers, and the
@@ -86,17 +87,21 @@ export const PUT_IN_ROWS_CAP = 1_000;
  * `listForBody` derives a departed skater's put-in exactly as it does everyone else's, and nothing
  * writes a `derived` row any more. The reader stays because rows written by the old path exist on dev
  * and a marker vanishing is precisely the outcome all of this was trying to prevent.
+ *
+ * `capped`: the body has more stored rows than {@link PUT_IN_ROWS_CAP}, so the buckets hold only the
+ * rows read — the read probes one past the bound, so a body with exactly that many is not capped.
  */
 export async function loadPutInRows(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>) {
-  const rows = await ctx.db
-    .query('putIns')
-    .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
-    .take(PUT_IN_ROWS_CAP);
+  const { rows, truncated: capped } = await takeCappedResult(
+    ctx.db.query('putIns').withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId)),
+    PUT_IN_ROWS_CAP,
+    `putIns for ${waterBodyId}`,
+  );
   const official = rows.filter((r) => r.source === 'official' && r.status === 'visible');
   const osm = rows.filter((r) => r.source === 'osm' && r.status === 'visible');
   const persisted = rows.filter((r) => r.source === 'derived' && r.status === 'visible');
   const hidden = rows.filter((r) => r.status === 'hidden');
-  return { official, osm, persisted, hidden };
+  return { official, osm, persisted, hidden, capped };
 }
 
 /**

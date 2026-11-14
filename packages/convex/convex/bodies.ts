@@ -46,6 +46,7 @@ import { townsForBody } from './adminAreas';
 import { requireCapability } from './lib/auth';
 import { type LibraryRow, openAsksFor, readCount } from './lib/bodyLibrary';
 import { FLAG_REASONS } from './lib/enums';
+import { OPEN_FLAG_STATUSES } from './lib/openFlags';
 import { literals } from './lib/validators';
 
 /** How long the caller's clock may drift from the server's. */
@@ -570,7 +571,7 @@ async function previewAsks(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>): Promi
     }
   }
   // The flag index orders by reason before time: each reason is its own newest-first range.
-  for (const status of ['open', 'reviewing'] as const) {
+  for (const status of OPEN_FLAG_STATUSES) {
     for (const reason of FLAG_REASONS) {
       const flags = await ctx.db
         .query('contentFlags')

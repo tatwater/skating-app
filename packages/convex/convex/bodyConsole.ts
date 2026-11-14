@@ -182,7 +182,7 @@ export const consoleExtras = query({
 
 // ── Bays ─────────────────────────────────────────────────────────────────────────────────────
 
-/** The most bays a body's provenance read covers. */
+/** The most bays whose audit rows a body's history reads (past it, `truncated`). */
 const MAX_BAYS = 100;
 
 /** How a bay was made, from its creating audit row. */
@@ -610,8 +610,8 @@ export const landmarkProposers = query({
         q.eq('waterBodyId', waterBodyId).eq('kind', 'name_landmark').eq('status', 'open'),
       )
       // The requests `corpusRequests.openLandmarkRequestsForBody` lists — the same range, order and
-      // cap — so every proposal the tab shows has its proposer.
-      .take(QUEUE_CAP + 1);
+      // cap (it reads one more only to say `more`) — so every proposal the tab shows has its proposer.
+      .take(QUEUE_CAP);
     const out = [];
     for (const r of open) {
       out.push({

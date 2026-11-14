@@ -47,7 +47,7 @@ import {
   query,
 } from './_generated/server';
 import { requireCapability } from './lib/auth';
-import { loadPutInRows, PUT_IN_ROWS_CAP } from './lib/putInMarkers';
+import { loadPutInRows } from './lib/putInMarkers';
 import { isSuppressed } from './lib/putInSuppression';
 import { takeCappedResult } from './lib/scan';
 import {
@@ -291,7 +291,8 @@ const FAVORITES_CAP = 1_000;
  *   says); absent with no boost;
  * - `favorites` — how many skaters favorited it, counted to {@link FAVORITES_CAP} (`favoritesCapped`);
  * - `savedPutIns` — its saved put-ins, by the rollover's rule (`hasSavedPutIn`): the `visible` rows
- *   (official, mapped, or a persisted derived one) no moderator's hidden coordinate suppresses.
+ *   (official, mapped, or a persisted derived one) no moderator's hidden coordinate suppresses, among
+ *   the stored rows read (`savedPutInsCapped` when there are more).
  *
  * `null` for a body that doesn't exist.
  */
@@ -321,7 +322,7 @@ export const retentionForBody = query({
       .query('waterBodyFavorites')
       .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
       .take(FAVORITES_CAP + 1);
-    const { official, osm, persisted, hidden } = await loadPutInRows(ctx, waterBodyId);
+    const { official, osm, persisted, hidden, capped } = await loadPutInRows(ctx, waterBodyId);
     const saved = [...official, ...osm, ...persisted].filter((r) => !isSuppressed(r.coord, hidden));
     return {
       ...(lastActivity !== undefined ? { lastActivity } : {}),
@@ -329,9 +330,11 @@ export const retentionForBody = query({
       favorites: Math.min(favorites.length, FAVORITES_CAP),
       favoritesCapped: favorites.length > FAVORITES_CAP,
       savedPutIns: saved.length,
-      /** The stored put-in read stopped at its bound: `savedPutIns` is a floor. */
-      savedPutInsCapped:
-        official.length + osm.length + persisted.length + hidden.length >= PUT_IN_ROWS_CAP,
+      /**
+       * The body has more stored put-ins than the read takes: `savedPutIns` counts only the rows read
+       * (an unread row may be another launch, or a hidden coordinate that suppresses one counted).
+       */
+      savedPutInsCapped: capped,
     };
   },
 });

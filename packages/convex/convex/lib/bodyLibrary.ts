@@ -55,6 +55,7 @@ import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { MAX_ACCESS_ROWS_PER_BODY } from './accessLimits';
 import type { ModerationTargetType } from './audit';
+import { OPEN_FLAG_STATUSES } from './openFlags';
 import { PUT_IN_REPORT_SCAN, putInMarkersForBody } from './putInMarkers';
 
 /** The newest reports a refresh reads: the season's count and the put-in clusters share them. */
@@ -144,7 +145,7 @@ export async function openAsksFor(
     requests += rows.length;
   }
   let flags = 0;
-  for (const status of ['open', 'reviewing'] as const) {
+  for (const status of OPEN_FLAG_STATUSES) {
     const rows = await ctx.db
       .query('contentFlags')
       .withIndex('by_target_status_reason', (q) =>

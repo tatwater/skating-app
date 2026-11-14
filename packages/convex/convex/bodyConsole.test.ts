@@ -1201,22 +1201,28 @@ describe('a capped read takes its rows in the order it presents them', () => {
 });
 
 describe('retention’s saved put-ins at the read’s bound', () => {
-  test('a count the stored read stopped at says it is a floor', async () => {
+  test('exactly the bound is the whole count; one past it says the count is partial', async () => {
     const t = harness();
     const { as } = await seedUser(t);
     const id = await seedBody(t, { name: 'Many Launches' });
-    await t.run(async (ctx) => {
-      for (let i = 0; i < 1_000; i++) {
-        await ctx.db.insert('putIns', {
-          waterBodyId: id,
-          coord: { lat: 44 + i * 0.001, lng: -72 },
-          source: 'official',
-          status: 'visible',
-          createdAt: NOW,
-        });
-      }
+    const launch = (i: number) => ({
+      waterBodyId: id,
+      coord: { lat: 44 + i * 0.001, lng: -72 },
+      source: 'official' as const,
+      status: 'visible' as const,
+      createdAt: NOW,
     });
-    const r = await as.query(api.standing.retentionForBody, { waterBodyId: id });
-    expect(r).toMatchObject({ savedPutIns: 1_000, savedPutInsCapped: true });
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 1_000; i++) await ctx.db.insert('putIns', launch(i));
+    });
+    expect(await as.query(api.standing.retentionForBody, { waterBodyId: id })).toMatchObject({
+      savedPutIns: 1_000,
+      savedPutInsCapped: false,
+    });
+    await t.run((ctx) => ctx.db.insert('putIns', launch(1_000)));
+    expect(await as.query(api.standing.retentionForBody, { waterBodyId: id })).toMatchObject({
+      savedPutIns: 1_000,
+      savedPutInsCapped: true,
+    });
   });
 });

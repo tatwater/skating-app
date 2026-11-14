@@ -1969,7 +1969,7 @@ cap can cut an item the returned order says belongs.
 | `bodyConsole.places`, `consoleExtras` towns | Sampled points | — | Sampled, said in the read's description; touching bodies among the 12 most prominent, with `capped` |
 | `bodyConsole.dailyHazards` | A winter's hazards by first report, oldest first (500) | Per day | Yes, past 500 in one winter on one body: `capped` says so |
 | `standing.retentionForBody`: favorites | A body's favorites (1,000) | A count | No: `favoritesCapped` |
-| `standing.retentionForBody`: saved put-ins | A body's stored put-ins (1,000) | A count | **Fixed:** `savedPutInsCapped` now says when the count is a floor |
+| `standing.retentionForBody`: saved put-ins | A body's stored put-ins (1,000, probing one past) | A count | **Fixed:** `savedPutInsCapped` now says when the body has more rows than the read took, so the count is of the rows read (an unread hidden coordinate could suppress one counted, so not a floor) |
 | Library row: asks, reports | Each ask source (100 each); reports newest first (300) | Counts | No: `asksCapped`, `reportsCapped` |
 | `bodyLibrary.parked` | Parked entries, oldest parked first (50) | The same | No: `capped` |
 
