@@ -95,6 +95,10 @@ crons.interval(
 // window is a month, and the range it reads holds only rows already due (`erasure.eraseDue`).
 crons.interval('erase withdrawn content', { hours: 1 }, internal.erasure.eraseDue, {});
 
+// Settle the photos erasures let go of (D248). Each sweep run's end starts this too; its own hourly
+// tick means a debt is picked up even in an hour whose sweep failed, since the debts are rows.
+crons.interval('settle photos erasure let go of', { hours: 1 }, internal.erasure.settleOwed, {});
+
 // The inbox's season purge (A08 §1.5): every notification created before this season's July 1 goes,
 // read or not. Daily, bounded, and a no-op for eleven months — the day after the boundary is the one
 // that matters, and a bounded pass means it clears over a few ticks rather than one huge transaction.

@@ -421,9 +421,13 @@ async function owePhotoSettlements(ctx: MutationCtx, work: readonly PhotoWork[],
 
 /**
  * Settle every uploader who is owed one, one uploader at a time: the oldest debt names the next
- * uploader, whose settlement takes all of their debts and hands back here when it is done. One chain
- * a run, so an uploader is settled once a run; and a chain that dies is picked up by the next run's
- * end, since the debts are rows, not arguments.
+ * uploader, whose settlement takes their debts and hands back here when it is done. Started at each
+ * sweep run's end and by its own hourly cron, so a debt is picked up whatever became of the run that
+ * made it, since the debts are rows, not arguments. A settlement claims the debts it takes by
+ * re-stamping them to now: a second chain running meanwhile starts on a different uploader, and an
+ * uploader whose settlement dies the same way every time falls behind everyone else's debts instead of
+ * blocking them. Two chains on one uploader's untaken debts are safe — a settled photo is gone and a
+ * cleared debt is skipped — only repeated.
  */
 export const settleOwed = internalMutation({
   args: { pageSize: v.optional(v.number()) },
@@ -442,7 +446,10 @@ export const settleOwed = internalMutation({
     }),
 });
 
-/** Photo ids one settlement takes on before it starts reading: its arguments are bounded too. */
+/**
+ * Photo ids one settlement takes on before it starts reading — more only when one debt alone names
+ * more: its arguments are bounded too (an array holds at most 8,192 values).
+ */
 const SETTLE_TAKE_IDS = 500;
 /** Clearing one debt: its row read and deleted. */
 const CLEAR_ONE = 2 * ROW_MAX.photoSettlement;
@@ -461,10 +468,11 @@ const SETTLE_ONE = 2 * ROW_MAX.photo + ROW_MAX.small;
  * hazards** — resuming after the last hazard read (by creation time), so a hazard filed since (which
  * sets no back-link on its photos) is read before anything it shows can go — and checked there against
  * a Report that took it since (the photo's back-link) and the access photos. The deletes go as many as
- * the budget affords; the rest carry on with the same position, the list only ever shrinking (one
- * tick's photos, in chunks of `SETTLE_CHUNK`: a scheduled function's arguments are bounded too).
- * Every pass strikes, deletes, or reads a page further. A photo whose blob outlives the delete stays
- * as the orphan sweep's pointer, stripped and marked `erasedAt`, and leaves its uploader's export.
+ * the budget affords; the rest carry on with the same position, the list only ever shrinking (the
+ * photos of the debts it took on, up to `SETTLE_TAKE_IDS`: a scheduled function's arguments are
+ * bounded too). Every pass strikes, deletes, or reads a page further. A photo whose blob outlives the
+ * delete stays as the orphan sweep's pointer, stripped and marked `erasedAt`, and leaves its
+ * uploader's export.
  */
 export const settlePhotos = internalMutation({
   args: {
@@ -514,42 +522,10 @@ export const settlePhotos = internalMutation({
             ...seam,
           });
         }
-        return { settled, more: false };
+        return { settled, more: owed !== undefined && owed.length > 0 };
       };
 
-      if (photoIds === undefined) {
-        // Take on the uploader's oldest debts, as many as the arguments carry well.
-        const rows = await reads.take(
-          'photoSettlement',
-          sizePage(reads, 'photoSettlement', { cap: 16 }),
-          (n) =>
-            ctx.db
-              .query('photoSettlements')
-              .withIndex('by_uploader', (q) => q.eq('uploaderId', uploaderId))
-              .take(n),
-        );
-        if (rows.length === 0) {
-          // Nothing more owed by this uploader: the next uploader's turn.
-          await ctx.scheduler.runAfter(0, internal.erasure.settleOwed, seam);
-          return { settled: 0, more: false };
-        }
-        const taken: Id<'photoSettlements'>[] = [];
-        const ids = new Set<Id<'photos'>>();
-        for (const row of rows) {
-          if (taken.length > 0 && ids.size >= SETTLE_TAKE_IDS) break;
-          taken.push(row._id);
-          for (const id of row.photoIds) ids.add(id);
-        }
-        await ctx.scheduler.runAfter(0, internal.erasure.settlePhotos, {
-          uploaderId,
-          photoIds: [...ids],
-          owed: taken,
-          phase: 'reports',
-          ...seam,
-        });
-        return { settled: 0, more: true };
-      }
-
+      // First, so a clear is never mistaken for a take: a clear carries no photos of its own.
       if (phase === 'clear') {
         const rest = [...(owed ?? [])];
         let cleared = 0;
@@ -573,6 +549,51 @@ export const settlePhotos = internalMutation({
         );
         return { settled: 0, cleared, more: true };
       }
+
+      if (photoIds === undefined) {
+        // Take on the uploader's oldest debts, as many as the arguments carry well.
+        const rows = await reads.take(
+          'photoSettlement',
+          // Each debt taken is also re-stamped: a claim, written back.
+          sizePage(reads, 'photoSettlement', { cap: 16, work: ROW_MAX.photoSettlement }),
+          (n) =>
+            ctx.db
+              .query('photoSettlements')
+              .withIndex('by_uploader', (q) => q.eq('uploaderId', uploaderId))
+              .take(n),
+        );
+        if (rows.length === 0) {
+          // Nothing more owed by this uploader: the next uploader's turn.
+          await ctx.scheduler.runAfter(0, internal.erasure.settleOwed, seam);
+          return { settled: 0, more: false };
+        }
+        const taken: Id<'photoSettlements'>[] = [];
+        const ids = new Set<Id<'photos'>>();
+        for (const row of rows) {
+          // The first debt always; another only while the whole of it still fits under the cap.
+          const fresh = [...new Set(row.photoIds)].filter((id) => !ids.has(id));
+          if (taken.length > 0 && ids.size + fresh.length > SETTLE_TAKE_IDS) break;
+          taken.push(row._id);
+          for (const id of fresh) ids.add(id);
+        }
+        // Claim what was taken by moving it to the back of the queue: a settlement that dies the same
+        // way every time sends its uploader behind everyone else's debts instead of blocking them,
+        // and a second chain running meanwhile starts on a different uploader.
+        const claimedAt = Date.now();
+        for (const id of taken) {
+          reads.touch('photoSettlement');
+          await ctx.db.patch(id, { owedAt: claimedAt });
+        }
+        await ctx.scheduler.runAfter(0, internal.erasure.settlePhotos, {
+          uploaderId,
+          photoIds: [...ids],
+          owed: taken,
+          phase: 'reports',
+          ...seam,
+        });
+        return { settled: 0, more: true };
+      }
+
       if (phase === 'reports') {
         const page = await reads.page('report', sizePage(reads, 'report', { cap }), (numItems) =>
           ctx.db

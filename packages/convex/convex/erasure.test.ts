@@ -1218,7 +1218,13 @@ describe("a photo is erased only when nothing of its uploader's still uses it", 
     await t.finishAllScheduledFunctions(vi.runAllTimers);
     const settlements = (
       await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect())
-    ).filter((job) => job.name.includes('settlePhotos') && job.args[0]?.phase === 'reports');
+    ).filter(
+      // A settlement's start: the take's hand-off to the Reports' first page (no cursor yet).
+      (job) =>
+        job.name.includes('settlePhotos') &&
+        job.args[0]?.phase === 'reports' &&
+        job.args[0]?.cursor === undefined,
+    );
     expect(settlements).toHaveLength(1);
     for (const id of [...reports, ...photos]) expect(await get(t, id)).toBeNull();
   });
@@ -1316,6 +1322,40 @@ describe("a photo is erased only when nothing of its uploader's still uses it", 
     expect(await owed(t)).toEqual([]);
   });
 
+  test("a settlement that dies on one uploader sends them to the back, not in everyone else's way", async () => {
+    const { t, author, other } = await setup();
+    const debt = async (uploaderId: Id<'profiles'>, owedAt: number) => {
+      const photoId = await t.run(async (ctx) =>
+        ctx.db.insert('photos', {
+          storageId: await ctx.storage.store(new Blob(['full'])),
+          thumbStorageId: await ctx.storage.store(new Blob(['thumb'])),
+          uploaderId,
+          placeOnMap: false,
+          createdAt: T0,
+        }),
+      );
+      await t.run((ctx) =>
+        ctx.db.insert('photoSettlements', { uploaderId, photoIds: [photoId], owedAt }),
+      );
+      return photoId;
+    };
+    await debt(author.id, T0 - 2000);
+    const theirs = await debt(other.id, T0 - 1000);
+    // The chain starts on the oldest debt, takes it on, and dies right there.
+    expect((await t.mutation(internal.erasure.settleOwed, {})).uploaderId).toBe(author.id);
+    vi.runOnlyPendingTimers();
+    await t.finishInProgressScheduledFunctions();
+    await t.run(async (ctx) => {
+      for (const job of await ctx.db.system.query('_scheduled_functions').collect()) {
+        if (job.state.kind === 'pending') await ctx.scheduler.cancel(job._id);
+      }
+    });
+    // The next start goes to the other uploader, whose debt is now the oldest, and settles it.
+    expect((await t.mutation(internal.erasure.settleOwed, {})).uploaderId).toBe(other.id);
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await get(t, theirs)).toBeNull();
+  });
+
   test('an uploader deleted while a settlement is owed leaves no debt row and no photo behind', async () => {
     const { t, author, waterBodyId } = await setup();
     const { reportIds, photoIds } = await seedPost(t, author.id, waterBodyId, 1);
@@ -1335,6 +1375,62 @@ describe("a photo is erased only when nothing of its uploader's still uses it", 
     expect(await get(t, photoId)).toBeNull();
     // And a settlement that still finds the debt gone has nothing to do.
     await sweep(t);
+    expect(await owed(t)).toEqual([]);
+  });
+
+  test('a settlement takes on a second debt only if all of it fits under the ids cap', async () => {
+    const { t, author } = await setup();
+    /** `n` bare photos of the author's, and a debt naming them. */
+    const debtOf = (n: number) =>
+      t.run(async (ctx) => {
+        const ids: Id<'photos'>[] = [];
+        for (let i = 0; i < n; i++) {
+          ids.push(
+            await ctx.db.insert('photos', {
+              storageId: await ctx.storage.store(new Blob([`full ${i}`])),
+              thumbStorageId: await ctx.storage.store(new Blob([`thumb ${i}`])),
+              uploaderId: author.id,
+              placeOnMap: false,
+              createdAt: Date.now(),
+            }),
+          );
+        }
+        await ctx.db.insert('photoSettlements', {
+          uploaderId: author.id,
+          photoIds: ids,
+          owedAt: Date.now(),
+        });
+        return ids;
+      });
+    const all = [...(await debtOf(300)), ...(await debtOf(300))];
+    await t.mutation(internal.erasure.settlePhotos, { uploaderId: author.id });
+    // 300 + 300 is past 500: the first settlement carries the first debt alone.
+    const [start] = (
+      await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect())
+    ).filter((job) => job.name.includes('settlePhotos') && job.state.kind === 'pending');
+    expect(start?.args[0]?.photoIds).toHaveLength(300);
+    expect(start?.args[0]?.owed).toHaveLength(1);
+    // A few photos a pass at their worst case: some 120 passes for the 600.
+    await t.finishAllScheduledFunctions(vi.runAllTimers, 1_000);
+    for (const id of all) expect(await get(t, id)).toBeNull();
+    expect(await owed(t)).toEqual([]);
+  });
+
+  test('a clear pass clears, given its debts and nothing else', async () => {
+    const { t, author } = await setup();
+    const debt = await t.run((ctx) =>
+      ctx.db.insert('photoSettlements', {
+        uploaderId: author.id,
+        photoIds: [],
+        owedAt: Date.now(),
+      }),
+    );
+    const result = await t.mutation(internal.erasure.settlePhotos, {
+      uploaderId: author.id,
+      owed: [debt],
+      phase: 'clear',
+    });
+    expect(result).toMatchObject({ cleared: 1 });
     expect(await owed(t)).toEqual([]);
   });
 
