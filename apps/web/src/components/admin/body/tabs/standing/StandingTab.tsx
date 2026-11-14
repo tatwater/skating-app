@@ -52,7 +52,11 @@ const NOT_RECORDED: RetentionFacts = {
 
 function StandingReads({ bodyId: id }: BodyTabProps) {
   const bodyId = id as Id<'waterBodies'>;
-  const { reads: got, retry } = useConsoleReadSet({
+  const {
+    reads: got,
+    retry,
+    pending,
+  } = useConsoleReadSet({
     body: read(api.waterBodies.get, { waterBodyId: bodyId }),
     retention: read(api.standing.retentionForBody, { waterBodyId: bodyId }),
   });
@@ -124,6 +128,7 @@ function StandingReads({ bodyId: id }: BodyTabProps) {
       activeSince={body.activatedAt ?? null}
       retention={retention}
       onRetry={retry}
+      retryPending={pending}
       now={now}
       canSetStanding={can('body.standing')}
       canRemove={can('body.remove')}

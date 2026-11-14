@@ -202,6 +202,33 @@ export function winterWindow(season: Season): { start: number; days: number } {
   return { start, days: Math.round((Date.UTC(season + 1, 3, 1) - start) / DAY) };
 }
 
+/** A winter that holds a 29 February (2023–24): the axis every winter is drawn on. */
+const AXIS_SEASON = 2023;
+/** Days on the winters' one axis: 1 October to 31 March, with a slot for 29 February. */
+export const AXIS_DAYS = winterWindow(AXIS_SEASON).days;
+/** The 29 February slot's index on the axis. */
+const LEAP_SLOT = Math.round(
+  (Date.UTC(AXIS_SEASON + 1, 1, 29) - winterWindow(AXIS_SEASON).start) / DAY,
+);
+
+/**
+ * A winter's day index as its place on the winters' one axis. The axis keeps a slot for 29
+ * February every winter, so two winters line up date for date — a winter with no 29 February
+ * leaves that slot empty, and its days from 1 March on move one along, never a day off.
+ */
+export function axisIndex(i: number, season: Season): number {
+  return winterWindow(season).days === AXIS_DAYS || i < LEAP_SLOT ? i : i + 1;
+}
+
+/** A winter's days placed on the axis: the 29 February slot of a winter without one is empty. */
+export function onAxis<T>(days: readonly (T | null)[], season: Season): (T | null)[] {
+  const out: (T | null)[] = Array.from({ length: AXIS_DAYS }, () => null);
+  days.forEach((d, i) => {
+    out[axisIndex(i, season)] = d;
+  });
+  return out;
+}
+
 /**
  * The clock a winter's day-by-day read (`bodyConsole.dailyHazards`) is handed, from the hour the
  * tab's clock holds. The server counts a hazard through the clock it is given, the clock itself
@@ -290,13 +317,13 @@ export type WinterLine = {
 
 /** The winters the tab draws: the season on screen first, then any it is set beside. */
 export type Winters = {
-  /** The days on the axis (the season on screen's). */
+  /** The days on the winters' one axis ({@link AXIS_DAYS}, a slot for 29 February kept). */
   days: number;
   months: readonly { at: number; label: string }[];
   lines: readonly WinterLine[];
-  /** Today's day index on the first strip, while today is inside its window. */
+  /** Today's place on the axis (the first strip's), while today is inside its window. */
   today: number | null;
-  /** The watch's opening day on the first strip, when the record says. */
+  /** The watch's opening day's place on the axis (the first strip's), when the record says. */
   opens: number | null;
   /** When the first strip's record begins (1 October), while that is still ahead. */
   begins: number | null;
@@ -308,17 +335,19 @@ export function wintersFrom(reads: readonly DailyHazards[], now: number): Winter
   if (first === undefined) return null;
   const { start, days } = winterWindow(first.season);
   const today = Math.floor((now - start) / DAY);
+  const opens = first.watchOpensOn === null ? null : dayIndex(first.watchOpensOn, first.season);
+  // Every strip on one axis, date for date (a leap winter beside a common one never a day off).
   return {
-    days,
-    months: monthTicks(first.season),
+    days: AXIS_DAYS,
+    months: monthTicks(AXIS_SEASON),
     lines: reads.map((r) => ({
       season: r.season,
-      days: stripDays(r, now),
+      days: onAxis(stripDays(r, now), r.season),
       capped: r.capped,
       unknownEnds: r.unknownEnds,
     })),
-    today: today >= 0 && today < days ? today : null,
-    opens: first.watchOpensOn === null ? null : dayIndex(first.watchOpensOn, first.season),
+    today: today >= 0 && today < days ? axisIndex(today, first.season) : null,
+    opens: opens === null ? null : axisIndex(opens, first.season),
     begins: now < start && seasonOf(now) === first.season ? start : null,
   };
 }

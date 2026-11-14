@@ -75,6 +75,8 @@ export type ImageryTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
   archiveUnconfigured?: boolean;
   /** Read the archive again after a failure. Absent: no *Try again*. */
   onRetry?: () => void;
+  /** The failed reads were tried again; their fresh answers aren't in. */
+  retryPending?: boolean;
   lit: string | null;
   onLitChange: (id: string) => void;
   /**
@@ -114,6 +116,7 @@ export function ImageryTabView({
   archiveError = false,
   archiveUnconfigured = false,
   onRetry,
+  retryPending = false,
   lit,
   onLitChange,
   onOverride: override,
@@ -218,7 +221,7 @@ export function ImageryTabView({
               No imagery archive is set up for this deployment, so no passes can be read here.
             </Note>
           ) : archiveError ? (
-            <RetryNote data-slot="archive-failed" onRetry={onRetry}>
+            <RetryNote data-slot="archive-failed" onRetry={onRetry} pending={retryPending}>
               The imagery archive couldn’t be read. That is about the archive, not the lake.
             </RetryNote>
           ) : (

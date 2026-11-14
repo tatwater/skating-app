@@ -3,7 +3,7 @@ import type { Id } from '@skating/convex/dataModel';
 import { type HazardShape, hazardFootprint, type Season, seasonOf } from '@skating/core';
 import { useNavigate } from '@tanstack/react-router';
 import { useMutation } from 'convex/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { errorText } from '@/components/admin/adminUi';
 import {
@@ -71,7 +71,11 @@ function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabPr
   const season: Season = seasonOfLit(lit, current);
   const setSeason = (next: Season) => setLit(winterLit(next, current));
   const { can } = useRole();
-  const { reads: got, retry } = useConsoleReadSet({
+  const {
+    reads: got,
+    retry,
+    pending,
+  } = useConsoleReadSet({
     body: read(api.waterBodies.get, { waterBodyId }),
     hazards: read(api.hazards.listForBody, { waterBodyId, season }),
     withArchived: read(api.hazards.listForBody, { waterBodyId, season, includeArchived: true }),
@@ -98,13 +102,21 @@ function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabPr
 
   const features = got.features;
   const featureView = useMemo(() => readOf(features, (f) => withGlyphs(f)), [features]);
-  const { hazards, withArchived, clusters, daily, lastWinter } = got;
+  const { hazards, withArchived, clusters } = got;
+  // The day-by-day reads take the hour: a new hour is a new read, which keeps the winter it had
+  // until its fresh answer lands rather than going back to a skeleton once an hour.
+  const heldDaily = useHeldThroughClock(got.daily, `daily:${id}:${season}`, now);
+  const daily = heldDaily.value;
+  const lastWinter = useHeldThroughClock(got.lastWinter, `daily:${id}:${season - 1}`, now).value;
   // Last winter is drawn only beside an empty current one (the view's rule): over a list it is
   // neither waited on nor a failure of the strip that is drawn.
   const beside = season === current && !(Array.isArray(hazards) && hazards.length > 0);
+  // Drawn against the hour the winter on screen was read for: a held answer read before the day
+  // turned has no entry for the new day, which this hour's clock would draw as *No hazard reports*.
+  const drawnAt = heldDaily.at;
   const winters = useMemo(
-    (): Read<Winters> => wintersOf(daily, beside ? lastWinter : null, now),
-    [daily, lastWinter, beside, now],
+    (): Read<Winters> => wintersOf(daily, beside ? lastWinter : null, drawnAt),
+    [daily, lastWinter, beside, drawnAt],
   );
 
   const body = got.body;
@@ -151,6 +163,7 @@ function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabPr
           : null
       }
       onRetry={retry}
+      retryPending={pending}
       onOpenRecurrence={() => void navigate({ to: '/admin/recurrence' })}
       {...(featureTools
         ? {
@@ -245,6 +258,26 @@ export const HAZARDS_TAB: BodyTabRegistration<HazardsMapData> = {
   Wiring: HazardsTab,
   map: { useData: useHazardsMapData, describe: hazardsMapScene },
 };
+
+/**
+ * A read whose argument moves with the clock, held through the clock's turn: while the new read is
+ * on its way, the last answer for the same `key` (the body and winter) stands, with `at`, the clock
+ * it was read for — so it is drawn against that clock, never a later one it doesn't cover.
+ * A failure is never held over (the next load after it is a load), and another key starts clean.
+ */
+function useHeldThroughClock<T>(
+  value: Loadable<T>,
+  key: string,
+  clock: number,
+): { value: Loadable<T>; at: number } {
+  const held = useRef<{ key: string; value: T; at: number } | null>(null);
+  if (isFailed(value)) held.current = null;
+  else if (value !== undefined) held.current = { key, value: value as T, at: clock };
+  if (value === undefined && held.current !== null && held.current.key === key) {
+    return { value: held.current.value, at: held.current.at };
+  }
+  return { value, at: clock };
+}
 
 /** The reads' clock: on the hour, so the reads it keys hold their arguments for the hour. */
 function useHourClock(): number {

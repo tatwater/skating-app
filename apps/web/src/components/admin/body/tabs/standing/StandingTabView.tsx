@@ -51,6 +51,8 @@ export type StandingTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
   retention: RetentionFacts | undefined | 'error';
   /** Read again after a failure. Absent: no *Try again*. */
   onRetry?: () => void;
+  /** The failed reads were tried again; their fresh answers aren't in. */
+  retryPending?: boolean;
   now: number;
   /** The viewer holds `body.standing` (set dormant, bring back). */
   canSetStanding: boolean;
@@ -92,6 +94,7 @@ export function StandingTabView({
   activeSince,
   retention,
   onRetry,
+  retryPending = false,
   now,
   canSetStanding,
   canRemove,
@@ -214,7 +217,9 @@ export function StandingTabView({
           </Section>
         ) : retention === 'error' ? (
           <Section title="What keeps it active" data-slot="standing-retention">
-            <RetryNote onRetry={onRetry}>What keeps it active couldn’t be read</RetryNote>
+            <RetryNote onRetry={onRetry} pending={retryPending}>
+              What keeps it active couldn’t be read
+            </RetryNote>
           </Section>
         ) : (
           <Retention facts={retention} now={now} />

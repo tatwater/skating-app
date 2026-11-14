@@ -17,7 +17,14 @@ import {
   WATCH_OPENED,
 } from './hazardsFixtures';
 import { seasonOfLit } from './hazardsMap';
-import { archivedRows, dayWords, hazardRows, wintersFrom, winterWindow } from './hazardsModel';
+import {
+  archivedRows,
+  axisIndex,
+  dayWords,
+  hazardRows,
+  wintersFrom,
+  winterWindow,
+} from './hazardsModel';
 
 const base: HazardsTabViewProps = {
   season: SEASON,
@@ -278,6 +285,26 @@ describe('HazardsTabView — reads that failed', () => {
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
+  it('holds every note as Trying again… while its reads are tried again', async () => {
+    const onRetry = vi.fn();
+    render(
+      <HazardsTabView
+        {...base}
+        hazards="error"
+        features="error"
+        patternsWaiting="error"
+        onRetry={onRetry}
+        retryPending
+      />,
+    );
+    const pending = screen.getAllByRole('button', { name: 'Trying again…' });
+    expect(pending).toHaveLength(3);
+    await userEvent.click(pending[0] as HTMLElement);
+    expect(onRetry).not.toHaveBeenCalled();
+    // Still the failure's words — never a count, never clear.
+    expect(screen.queryByText(/No hazard reports|archived by skaters/)).toBeNull();
+  });
+
   it('a failed day-by-day count says so; the list still stands', () => {
     render(<HazardsTabView {...base} {...FEB} winters="error" />);
     expect(screen.getByText('The winter’s day-by-day count couldn’t be read')).toBeVisible();
@@ -368,7 +395,8 @@ describe('HazardsTabView — the winters, a day at a time', () => {
           );
           for (const e of entries) {
             const g = container.querySelector<SVGGElement>(
-              `[data-slot="day-strip-day"][data-day="${e.day}"]`,
+              // The winter's day on the winters' one axis (a common winter's March moves one along).
+              `[data-slot="day-strip-day"][data-day="${axisIndex(e.day, SEASON - 1)}"]`,
             );
             if (e.count + e.unknown === 0) {
               expect(g).toBeNull();

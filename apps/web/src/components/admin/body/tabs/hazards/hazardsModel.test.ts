@@ -429,6 +429,84 @@ describe('the winters as the tab draws them', () => {
     expect(wintersFrom([], 0)).toBeNull();
   });
 
+  it('lines up leap and common winters date for date, on one axis of 1 Oct to 31 Mar', () => {
+    const DAYMS = 86_400_000;
+    // A date in a winter (1 Oct – 31 Mar), as the day after 1 October it falls on.
+    const winterDay = (season: number, offset: number) => Date.UTC(season, 9, 1) + offset * DAYMS;
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 2000, max: 2090 }),
+        fc.integer({ min: 0, max: 181 }),
+        fc.integer({ min: 1, max: 9 }),
+        (season, offset, count) => {
+          const at = winterDay(season, offset);
+          const date = new Date(at);
+          // The same calendar date in the winter before (when it has one: 29 February may not).
+          const before = Date.UTC(
+            season - 1 + (date.getUTCMonth() < 9 ? 1 : 0),
+            date.getUTCMonth(),
+            date.getUTCDate(),
+          );
+          const sameDate = new Date(before).getUTCDate() === date.getUTCDate();
+          const w = wintersFrom(
+            [
+              {
+                season,
+                days: [{ at, count, unknown: 0 }],
+                unknownEnds: 0,
+                capped: false,
+                watchOpensOn: null,
+              },
+              {
+                season: season - 1,
+                days: sameDate ? [{ at: before, count, unknown: 0 }] : [],
+                unknownEnds: 0,
+                capped: false,
+                watchOpensOn: null,
+              },
+            ],
+            Date.UTC(season + 1, 5, 1),
+          );
+          if (w === null) throw new Error('no winters');
+          // One axis for both, whichever holds a 29 February.
+          for (const line of w.lines) expect(line.days).toHaveLength(w.days);
+          const here = w.lines[0]?.days.findIndex((d) => d !== null && d.count > 0);
+          // Nothing dropped: the day's count is on the axis.
+          expect(w.lines[0]?.days[here as number]?.count).toBe(count);
+          if (sameDate) {
+            const there = w.lines[1]?.days.findIndex((d) => d !== null && d.count > 0);
+            expect(there).toBe(here);
+          }
+          // The month ticks fall on the 1st of each month in either winter.
+          const tick = w.months.find(
+            (m) =>
+              m.label ===
+              new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'UTC' })
+                .format(at)
+                .toUpperCase(),
+          );
+          if (date.getUTCDate() === 1) expect(here).toBe(tick?.at);
+        },
+      ),
+    );
+    // 31 March is the axis's last day in a leap winter and a common one alike.
+    for (const season of [2023, 2025]) {
+      const w = wintersFrom(
+        [
+          {
+            season,
+            days: [{ at: Date.UTC(season + 1, 2, 31), count: 1, unknown: 0 }],
+            unknownEnds: 0,
+            capped: false,
+            watchOpensOn: null,
+          },
+        ],
+        Date.UTC(season + 1, 5, 1),
+      );
+      expect(w?.lines[0]?.days.at(-1)).toEqual({ count: 1, unknown: 0 });
+    }
+  });
+
   it('a past winter has no today and no beginning ahead', () => {
     const w = wintersFrom([LAST_WINTER_DAILY], Date.UTC(2026, 9, 14, 16));
     expect(w?.today).toBeNull();

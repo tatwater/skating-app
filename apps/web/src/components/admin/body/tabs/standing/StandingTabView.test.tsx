@@ -56,6 +56,12 @@ describe('StandingTabView', () => {
     ).toBeVisible();
   });
 
+  it('holds the retention note as Trying again… while it is tried again', () => {
+    render(<StandingTabView {...base} retention="error" onRetry={vi.fn()} retryPending />);
+    expect(screen.getByText('What keeps it active couldn’t be read')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Trying again…' })).toBeVisible();
+  });
+
   it('names what no read serves yet instead of drawing a zero', () => {
     render(<StandingTabView {...base} retention={RETENTION_PART_UNREAD} />);
     expect(screen.queryByText(/Favorites/)).toBeNull();

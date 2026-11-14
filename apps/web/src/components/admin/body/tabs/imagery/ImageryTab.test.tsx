@@ -34,6 +34,8 @@ const archive = vi.hoisted(() => ({
     unknown
   >,
   calls: [] as unknown[],
+  /** The timeline as it answers each call, when a test drives it by the call (else `value`). */
+  respond: null as ((args: { enabled: boolean }) => Record<string, unknown>) | null,
 }));
 const where = vi.hoisted(() => ({ archiveUrl: 'https://archive.example' }));
 vi.mock('@/lib/env', async (importOriginal) => {
@@ -47,9 +49,9 @@ vi.mock('@/lib/env', async (importOriginal) => {
   };
 });
 vi.mock('@/components/useFreezeUpTimeline', () => ({
-  useFreezeUpTimeline: (args: unknown) => {
+  useFreezeUpTimeline: (args: { enabled: boolean }) => {
     archive.calls.push(args);
-    return archive.value;
+    return archive.respond?.(args) ?? archive.value;
   },
 }));
 
@@ -77,6 +79,7 @@ beforeEach(() => {
   convex.mutations.clear();
   undo.announce.mockClear();
   archive.calls = [];
+  archive.respond = null;
   archive.value = {
     timeline: { stops: MASCOMA_STOPS, season: 'winter-2026-27' },
     loading: false,
@@ -176,6 +179,48 @@ describe('ImageryTab', () => {
       expect(archive.calls.some((c) => (c as { enabled: boolean }).enabled === false)).toBe(true),
     );
     await vi.waitFor(() => expect(archive.calls.at(-1)).toMatchObject({ enabled: true }));
+  });
+
+  it('holds the archive’s note as Trying again… until its fresh answer lands', async () => {
+    convex.results.set('waterBodies:get', { available: true, body: MASCOMA });
+    archive.value = { ...archive.value, timeline: null, index: null, error: true };
+    const { rerender } = render(<ImageryTab bodyId={BODY} />);
+    const note = document.querySelector('[data-slot="archive-failed"]') as HTMLElement;
+    // As the timeline does: let go of (disabled), then asked afresh, its failure cleared, loading.
+    let letGo = false;
+    archive.respond = ({ enabled }) => {
+      if (!enabled) letGo = true;
+      return letGo && enabled ? { ...archive.value, error: false, loading: true } : archive.value;
+    };
+    await userEvent.click(within(note).getByRole('button', { name: 'Try again' }));
+    await vi.waitFor(() => expect(archive.calls.at(-1)).toMatchObject({ enabled: true }));
+    rerender(<ImageryTab bodyId={BODY} />);
+    // The note held where it stood through the fresh ask.
+    expect(document.querySelector('[data-slot="archive-failed"]')).toBe(note);
+    expect(within(note).getByRole('button', { name: 'Trying again…' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    // The fresh answer is a failure again: the note offers Try again once more.
+    archive.respond = null;
+    archive.value = { ...archive.value, error: true, loading: false };
+    rerender(<ImageryTab bodyId={BODY} />);
+    expect(within(note).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+  });
+
+  it('a retried archive that answers draws its passes, the note gone', async () => {
+    convex.results.set('waterBodies:get', { available: true, body: MASCOMA });
+    const answered = archive.value;
+    archive.value = { ...archive.value, timeline: null, index: null, error: true };
+    const { rerender } = render(<ImageryTab bodyId={BODY} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await vi.waitFor(() => expect(archive.calls.at(-1)).toMatchObject({ enabled: true }));
+    archive.value = { ...answered, loading: true };
+    rerender(<ImageryTab bodyId={BODY} />);
+    archive.value = answered;
+    rerender(<ImageryTab bodyId={BODY} />);
+    expect(screen.queryByText(/The imagery archive couldn’t be read/)).toBeNull();
+    expect(screen.getAllByRole('row')).toHaveLength(8);
   });
 
   it('the dock and the inspector share the lit pass when the frame holds it', async () => {

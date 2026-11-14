@@ -126,6 +126,16 @@ describe('ImageryTabView', () => {
     expect(screen.queryByText('Passes')).toBeNull();
   });
 
+  it('holds the archive’s note as Trying again… while it is tried again', () => {
+    render(
+      <ImageryTabView {...base} rows={undefined} archiveError onRetry={vi.fn()} retryPending />,
+    );
+    expect(screen.getByRole('button', { name: 'Trying again…' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+  });
+
   it('an archive that couldn’t be read, or has no address, says so — never a word about the lake', async () => {
     const onRetry = vi.fn();
     const { rerender } = render(

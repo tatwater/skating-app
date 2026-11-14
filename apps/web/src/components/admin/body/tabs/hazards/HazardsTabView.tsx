@@ -1,5 +1,13 @@
 import type { Season } from '@skating/core';
-import { type ComponentProps, type CSSProperties, type ReactNode, useRef, useState } from 'react';
+import {
+  type ComponentProps,
+  type CSSProperties,
+  createContext,
+  type ReactNode,
+  useContext,
+  useRef,
+  useState,
+} from 'react';
 
 import {
   AlertDialog,
@@ -27,7 +35,7 @@ import {
 } from '@/components/kit/dropdown-menu';
 import { Kbd } from '@/components/kit/kbd';
 import { Note } from '@/components/kit/note';
-import { RetryNote } from '@/components/kit/retry-note';
+import { RetryNote, type RetryNoteProps } from '@/components/kit/retry-note';
 import { Section } from '@/components/kit/section-slug';
 import { SkeletonBlock } from '@/components/kit/skeleton';
 import { ToggleGroup, ToggleGroupItem } from '@/components/kit/toggle-group';
@@ -83,6 +91,14 @@ export type Read<T> = T | undefined | 'error';
 
 /** A tool whose writer isn't built: drawn, and saying *Not available yet*. */
 
+/** Whether the tab's failed reads are being tried again: every note in the tab holds as pending. */
+const RetryPending = createContext(false);
+
+/** The kit note, pending while the tab's reads are tried again. */
+function TabRetryNote(props: Omit<RetryNoteProps, 'pending'>) {
+  return <RetryNote {...props} pending={useContext(RetryPending)} />;
+}
+
 export type HazardsTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
   season: Season;
   currentSeason: Season;
@@ -101,6 +117,8 @@ export type HazardsTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
   patternsWaiting: Read<number> | null;
   /** Run every failed read again. Absent: no *Try again*. */
   onRetry?: () => void;
+  /** The failed reads were tried again; their fresh answers aren't in (the notes say so). */
+  retryPending?: boolean;
   onOpenRecurrence?: () => void;
   /** Demote a known feature, with the reason taking it away asks for. Absent: not drawn. */
   onDemote?: (id: string, reason: string) => Promise<void>;
@@ -135,6 +153,7 @@ export function HazardsTabView({
   winters,
   patternsWaiting,
   onRetry,
+  retryPending = false,
   onOpenRecurrence,
   onDemote,
   onMarkHazard,
@@ -200,142 +219,144 @@ export function HazardsTabView({
   );
 
   return (
-    <div
-      ref={pane}
-      data-slot="hazards-tab"
-      className={cn(
-        'flex flex-col gap-(--space-5_5)',
-        mark !== undefined && 'pb-(--space-14)',
-        className,
-      )}
-      {...props}
-    >
-      <SeasonBar season={season} currentSeason={currentSeason} onSeasonChange={onSeasonChange} />
-
-      <Section
-        title="On the lake"
-        count={isList(hazards) ? hazards.length : undefined}
-        end={current ? undefined : <Badge tone="lit">Read-only</Badge>}
-        aria-busy={hazards === undefined || undefined}
+    <RetryPending.Provider value={retryPending}>
+      <div
+        ref={pane}
+        data-slot="hazards-tab"
+        className={cn(
+          'flex flex-col gap-(--space-5_5)',
+          mark !== undefined && 'pb-(--space-14)',
+          className,
+        )}
+        {...props}
       >
-        {hazards === undefined ? (
-          <LoadingSection lines={3} />
-        ) : hazards === 'error' ? (
-          <RetryNote data-slot="hazards-failed" onRetry={onRetry}>
-            The hazards on the lake couldn’t be read
-          </RetryNote>
-        ) : listed ? (
-          <>
-            {strips}
-            <HazardList
-              rows={hazards}
-              lit={lit}
-              onLitChange={onLitChange}
-              litOf={(hazardId) => hazardLit(hazardId, season, currentSeason)}
-              // Clearing a hazard in a past winter stays in that winter.
-              cleared={winterLit(season, currentSeason)}
+        <SeasonBar season={season} currentSeason={currentSeason} onSeasonChange={onSeasonChange} />
+
+        <Section
+          title="On the lake"
+          count={isList(hazards) ? hazards.length : undefined}
+          end={current ? undefined : <Badge tone="lit">Read-only</Badge>}
+          aria-busy={hazards === undefined || undefined}
+        >
+          {hazards === undefined ? (
+            <LoadingSection lines={3} />
+          ) : hazards === 'error' ? (
+            <TabRetryNote data-slot="hazards-failed" onRetry={onRetry}>
+              The hazards on the lake couldn’t be read
+            </TabRetryNote>
+          ) : listed ? (
+            <>
+              {strips}
+              <HazardList
+                rows={hazards}
+                lit={lit}
+                onLitChange={onLitChange}
+                litOf={(hazardId) => hazardLit(hazardId, season, currentSeason)}
+                // Clearing a hazard in a past winter stays in that winter.
+                cleared={winterLit(season, currentSeason)}
+              />
+            </>
+          ) : (
+            <QuietWinter
+              archived={archived}
+              current={current}
+              season={season}
+              bodyName={bodyName}
+              watchOpenedAt={watchOpenedAt}
+              onRetry={onRetry}
+              strips={strips}
             />
-          </>
-        ) : (
-          <QuietWinter
-            archived={archived}
-            current={current}
-            season={season}
-            bodyName={bodyName}
-            watchOpenedAt={watchOpenedAt}
-            onRetry={onRetry}
-            strips={strips}
+          )}
+          {(listed || (quiet && isList(archived) && archived.length > 0)) && (
+            <div className="flex flex-col">
+              {/* Keyed on the state, so a winter that turns quiet opens its group afresh. */}
+              <Collapsible key={listed ? 'listed' : 'quiet'} defaultOpen={!listed}>
+                <CollapsibleTrigger count={isList(archived) ? archived.length : undefined}>
+                  {HAZARDS_WORDS.archivedGroup(wordsContext({ current, season }))}
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <ArchivedList rows={archived} onRetry={onRetry} />
+                </CollapsibleContent>
+              </Collapsible>
+              {listed && (
+                <Collapsible>
+                  <CollapsibleTrigger count={isList(features) ? features.length : undefined}>
+                    Known features
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>{featureBlock}</CollapsibleContent>
+                </Collapsible>
+              )}
+            </div>
+          )}
+        </Section>
+
+        {!listed && (
+          <Section title="Known features" count={isList(features) ? features.length : undefined}>
+            {featureBlock}
+            {add === UNAVAILABLE ? (
+              <UnavailableButton size="sm" className="self-start" what={TOOLS.add}>
+                Add a feature <Kbd variant="dim">F</Kbd>
+              </UnavailableButton>
+            ) : (
+              add !== undefined && (
+                <Button size="sm" className="self-start" onClick={add}>
+                  Add a feature <Kbd variant="dim">F</Kbd>
+                </Button>
+              )
+            )}
+          </Section>
+        )}
+
+        {patternsWaiting !== null && (
+          <Section
+            title="Promotion"
+            end={
+              onOpenRecurrence === undefined ? undefined : (
+                <Button variant="link" size="xs" onClick={onOpenRecurrence}>
+                  Recurrence
+                </Button>
+              )
+            }
+          >
+            {patternsWaiting === undefined ? (
+              <LoadingSection lines={1} />
+            ) : patternsWaiting === 'error' ? (
+              <TabRetryNote onRetry={onRetry}>The pre-ice pass couldn’t be read</TabRetryNote>
+            ) : (
+              <p className="m-0 text-row leading-(--lead-list) text-fg1">
+                {HAZARDS_WORDS.patternsLine(
+                  wordsContext({ body: bodyName, patterns: patternsWaiting }),
+                )}
+              </p>
+            )}
+          </Section>
+        )}
+
+        {mark !== undefined && (
+          <Toolbar floating full aria-label="Hazards">
+            {mark === UNAVAILABLE ? (
+              <UnavailableButton what={TOOLS.mark}>
+                Mark a hazard <Kbd variant="dim">M</Kbd>
+              </UnavailableButton>
+            ) : (
+              <ToolbarButton onClick={mark}>
+                Mark a hazard <Kbd variant="dim">M</Kbd>
+              </ToolbarButton>
+            )}
+          </Toolbar>
+        )}
+
+        {demote !== undefined && (
+          <DemoteDialog
+            feature={demoting}
+            onClose={() => setDemoting(null)}
+            onDemote={async (reason) => {
+              if (demoting !== null) await demote(demoting.id, reason);
+            }}
           />
         )}
-        {(listed || (quiet && isList(archived) && archived.length > 0)) && (
-          <div className="flex flex-col">
-            {/* Keyed on the state, so a winter that turns quiet opens its group afresh. */}
-            <Collapsible key={listed ? 'listed' : 'quiet'} defaultOpen={!listed}>
-              <CollapsibleTrigger count={isList(archived) ? archived.length : undefined}>
-                {HAZARDS_WORDS.archivedGroup(wordsContext({ current, season }))}
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <ArchivedList rows={archived} onRetry={onRetry} />
-              </CollapsibleContent>
-            </Collapsible>
-            {listed && (
-              <Collapsible>
-                <CollapsibleTrigger count={isList(features) ? features.length : undefined}>
-                  Known features
-                </CollapsibleTrigger>
-                <CollapsibleContent>{featureBlock}</CollapsibleContent>
-              </Collapsible>
-            )}
-          </div>
-        )}
-      </Section>
-
-      {!listed && (
-        <Section title="Known features" count={isList(features) ? features.length : undefined}>
-          {featureBlock}
-          {add === UNAVAILABLE ? (
-            <UnavailableButton size="sm" className="self-start" what={TOOLS.add}>
-              Add a feature <Kbd variant="dim">F</Kbd>
-            </UnavailableButton>
-          ) : (
-            add !== undefined && (
-              <Button size="sm" className="self-start" onClick={add}>
-                Add a feature <Kbd variant="dim">F</Kbd>
-              </Button>
-            )
-          )}
-        </Section>
-      )}
-
-      {patternsWaiting !== null && (
-        <Section
-          title="Promotion"
-          end={
-            onOpenRecurrence === undefined ? undefined : (
-              <Button variant="link" size="xs" onClick={onOpenRecurrence}>
-                Recurrence
-              </Button>
-            )
-          }
-        >
-          {patternsWaiting === undefined ? (
-            <LoadingSection lines={1} />
-          ) : patternsWaiting === 'error' ? (
-            <RetryNote onRetry={onRetry}>The pre-ice pass couldn’t be read</RetryNote>
-          ) : (
-            <p className="m-0 text-row leading-(--lead-list) text-fg1">
-              {HAZARDS_WORDS.patternsLine(
-                wordsContext({ body: bodyName, patterns: patternsWaiting }),
-              )}
-            </p>
-          )}
-        </Section>
-      )}
-
-      {mark !== undefined && (
-        <Toolbar floating full aria-label="Hazards">
-          {mark === UNAVAILABLE ? (
-            <UnavailableButton what={TOOLS.mark}>
-              Mark a hazard <Kbd variant="dim">M</Kbd>
-            </UnavailableButton>
-          ) : (
-            <ToolbarButton onClick={mark}>
-              Mark a hazard <Kbd variant="dim">M</Kbd>
-            </ToolbarButton>
-          )}
-        </Toolbar>
-      )}
-
-      {demote !== undefined && (
-        <DemoteDialog
-          feature={demoting}
-          onClose={() => setDemoting(null)}
-          onDemote={async (reason) => {
-            if (demoting !== null) await demote(demoting.id, reason);
-          }}
-        />
-      )}
-    </div>
+      </div>
+    </RetryPending.Provider>
   );
 }
 
@@ -364,9 +385,9 @@ function QuietWinter({
   if (archived === 'error') {
     return (
       <>
-        <RetryNote data-slot="archived-failed" onRetry={onRetry}>
+        <TabRetryNote data-slot="archived-failed" onRetry={onRetry}>
           The archived hazards couldn’t be read
-        </RetryNote>
+        </TabRetryNote>
         {strips}
       </>
     );
@@ -426,9 +447,9 @@ function WinterBlock({
   }
   if (winters === 'error') {
     return (
-      <RetryNote data-slot="hazards-winters-failed" onRetry={onRetry}>
+      <TabRetryNote data-slot="hazards-winters-failed" onRetry={onRetry}>
         The winter’s day-by-day count couldn’t be read
-      </RetryNote>
+      </TabRetryNote>
     );
   }
   const lines = alone ? winters.lines.slice(0, 1) : winters.lines;
@@ -669,9 +690,9 @@ function ArchivedList({
   if (rows === undefined) return <LoadingSection lines={2} />;
   if (rows === 'error') {
     return (
-      <RetryNote data-slot="archived-failed" onRetry={onRetry}>
+      <TabRetryNote data-slot="archived-failed" onRetry={onRetry}>
         The archived hazards couldn’t be read
-      </RetryNote>
+      </TabRetryNote>
     );
   }
   if (rows.length === 0) return null;
@@ -722,9 +743,9 @@ function FeatureList({
   if (features === undefined) return <LoadingSection lines={2} />;
   if (features === 'error') {
     return (
-      <RetryNote data-slot="features-failed" onRetry={onRetry}>
+      <TabRetryNote data-slot="features-failed" onRetry={onRetry}>
         The known features couldn’t be read
-      </RetryNote>
+      </TabRetryNote>
     );
   }
   if (features.length === 0) return null;

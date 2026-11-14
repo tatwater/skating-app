@@ -71,12 +71,32 @@ function usePasses(bodyId: string, lit: string | null | undefined) {
     () => (timeline.timeline === null ? undefined : passRows(timeline.timeline.stops)),
     [timeline.timeline],
   );
+  // The registry holds no wait for a reader outside Convex, so the archive's own is held here: from
+  // Try again (`asked`), through the commit it is asked afresh (`asking`, the timeline's own fetch
+  // started in that commit's effects, declared before this one), until its loading settles — a
+  // failure again or the passes. Meanwhile the note stays, as *Trying again…*.
+  const [archiveWait, setArchiveWait] = useState<'none' | 'asked' | 'asking'>('none');
+  useEffect(() => {
+    if (archiveWait === 'asked' && archive.live) setArchiveWait('asking');
+    else if (archiveWait === 'asking' && !timeline.loading) setArchiveWait('none');
+  }, [archiveWait, archive.live, timeline.loading]);
+  const waiting = archiveWait !== 'none';
   // Try again re-runs the failed body read and lets go of the archive.
   const tryAgain = () => {
     retry();
+    if (timeline.error) setArchiveWait('asked');
     archive.retry();
   };
-  return { result, body, band, rows, timeline, retry: tryAgain };
+  return {
+    result,
+    body,
+    band,
+    rows,
+    timeline,
+    retry: tryAgain,
+    archiveError: timeline.error || waiting,
+    archivePending: waiting,
+  };
 }
 
 /** The lit address, the frame's or the tab's own. */
@@ -95,7 +115,10 @@ export function ImageryTab(props: BodyTabProps) {
 function ImageryReads(props: BodyTabProps) {
   const { lit, setLit } = useLit(props);
   const waterBodyId = props.bodyId as Id<'waterBodies'>;
-  const { result, body, band, rows, timeline, retry } = usePasses(props.bodyId, lit);
+  const { result, body, band, rows, timeline, retry, archiveError, archivePending } = usePasses(
+    props.bodyId,
+    lit,
+  );
   const setMode = useMutation(api.waterBodies.setSatelliteImagery);
   const { can } = useRole();
   const { announce } = useUndo();
@@ -125,9 +148,10 @@ function ImageryReads(props: BodyTabProps) {
     <ImageryTabView
       season={timeline.season === null ? null : winterWord(timeline.season)}
       rows={rows}
-      archiveError={timeline.error}
+      archiveError={archiveError}
       archiveUnconfigured={!env.imageryArchiveUrl}
       onRetry={retry}
+      retryPending={archivePending}
       lit={granuleId}
       onLitChange={(id) => setLit(passAddress(band, id))}
       // The pass override's writer isn't on the server yet: drawn, and not available yet.

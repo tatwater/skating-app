@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { stubJsdomAnimations } from '../jsdomStubs';
@@ -45,6 +45,8 @@ import { dailyFrom, FEB_ARCHIVED, FEB_HAZARDS, MASCOMA_FEATURES } from './hazard
 import { dailyClock, winterWindow } from './hazardsModel';
 
 const BODY = 'k1';
+/** The line under the strips for the clock's own day (each test that reads it pins the clock). */
+const dayLine = () => document.querySelector('[data-slot="hazards-today"]')?.textContent;
 
 beforeAll(stubJsdomAnimations);
 
@@ -127,6 +129,98 @@ describe('HazardsTab', () => {
     const { start, days } = winterWindow(current - 1);
     expect(daily.find((d) => d.season === current - 1)?.now).toBe(start + days * 86_400_000);
     expect(screen.getByRole('img', { name: /some unknown/ })).toBeVisible();
+  });
+
+  it('keeps the winter it has through the hour’s turn, never back to a skeleton', () => {
+    // Mid-winter, so this winter's strip is drawn.
+    vi.useFakeTimers({ now: Date.UTC(2027, 0, 16, 17, 59), toFake: ['Date', 'setInterval'] });
+    try {
+      const first = dailyClock(2026, Date.UTC(2027, 0, 16, 17));
+      convex.results.set('bodyConsole:dailyHazards', (args: { season: number; now: number }) =>
+        // The next hour's read hasn't answered yet; the first hour's has.
+        args.season === 2026 && args.now !== first
+          ? undefined
+          : dailyFrom(
+              args.season,
+              [{ first: winterWindow(args.season).start, active: true }],
+              args.now,
+            ),
+      );
+      render(<HazardsTab bodyId={BODY} />);
+      const strips = () => screen.queryByRole('img', { name: /hazard reports/ });
+      expect(strips()).not.toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(2 * 60_000);
+      });
+      // A new hour, a new read on its way: the winter stays drawn from the last answer.
+      expect(
+        convex.calls.some(
+          (c) => c.name === 'bodyConsole:dailyHazards' && (c.args as { now: number }).now !== first,
+        ),
+      ).toBe(true);
+      expect(strips()).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('across the day’s turn, a held winter never reads today as clear', () => {
+    // The hour before midnight UTC: the held answer covers the old day, not the new one.
+    vi.useFakeTimers({ now: Date.UTC(2027, 0, 16, 23, 59), toFake: ['Date', 'setInterval'] });
+    try {
+      const first = dailyClock(2026, Date.UTC(2027, 0, 16, 23));
+      convex.results.set('bodyConsole:dailyHazards', (args: { season: number; now: number }) =>
+        args.season === 2026 && args.now !== first
+          ? undefined
+          : dailyFrom(
+              args.season,
+              [{ first: winterWindow(args.season).start, active: true }],
+              args.now,
+            ),
+      );
+      render(<HazardsTab bodyId={BODY} />);
+      expect(dayLine()).toContain('1 reported on the lake');
+      act(() => {
+        vi.advanceTimersByTime(2 * 60_000);
+      });
+      // A new day, its read on its way: the hazard still on the lake never reads as gone.
+      expect(dayLine()).not.toContain('No hazard reports');
+      expect(dayLine()).toContain('1 reported on the lake');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('after a failure, the next hour’s load is a load, not the answer from before it', () => {
+    vi.useFakeTimers({ now: Date.UTC(2027, 0, 16, 16, 59), toFake: ['Date', 'setInterval'] });
+    try {
+      const at = (h: number) => dailyClock(2026, Date.UTC(2027, 0, 16, h));
+      let failing = false;
+      convex.results.set('bodyConsole:dailyHazards', (args: { season: number; now: number }) => {
+        if (args.season !== 2026) return dailyFrom(args.season, [], args.now);
+        if (args.now === at(16) && !failing) {
+          return dailyFrom(
+            args.season,
+            [{ first: winterWindow(2026).start, active: true }],
+            at(16),
+          );
+        }
+        return args.now === at(16) ? new Error('down') : undefined;
+      });
+      const { rerender } = render(<HazardsTab bodyId={BODY} />);
+      expect(dayLine()).toContain('1 reported on the lake');
+      failing = true;
+      rerender(<HazardsTab bodyId={BODY} />);
+      expect(screen.getByText('The winter’s day-by-day count couldn’t be read')).toBeVisible();
+      act(() => {
+        vi.advanceTimersByTime(2 * 60_000);
+      });
+      // The next hour's read is on its way: a skeleton, never the answer from before the failure.
+      expect(dayLine()).toBeUndefined();
+      expect(document.querySelector('[data-slot="hazards-winters-loading"]')).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('over a list, last winter’s read neither holds nor fails the strip that is drawn', () => {
