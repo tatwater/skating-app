@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { act, cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import fc from 'fast-check';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -132,6 +132,16 @@ describe('HazardsTabView — the default board', () => {
     await userEvent.click(confirm);
     await userEvent.click(within(dialog).getByRole('button', { name: /again/ }));
     expect(onDemote).toHaveBeenCalledWith('f-narrows', 'The bridge was replaced');
+  });
+
+  it('cancelling a demotion closes the dialog and demotes nothing', async () => {
+    const onDemote = vi.fn(async () => {});
+    render(<HazardsTabView {...base} onDemote={onDemote} />);
+    await userEvent.click(screen.getAllByRole('button', { name: 'Demote' })[0] as HTMLElement);
+    const dialog = await screen.findByRole('alertdialog');
+    await userEvent.click(within(dialog).getByRole('button', { name: /Cancel/ }));
+    await vi.waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(onDemote).not.toHaveBeenCalled();
   });
 
   it('a refused demotion keeps the dialog and says why', async () => {
@@ -375,6 +385,25 @@ describe('HazardsTabView — tools not built yet', () => {
     for (const b of screen.getAllByRole('button', { name: 'Edit shape' })) {
       expect(b).toHaveAttribute('data-unavailable');
     }
+  });
+
+  it('their keys act only while the pane has focus: the built ones run, the unbuilt ones say so', async () => {
+    const onMarkHazard = vi.fn<() => void>();
+    const onAddFeature = vi.fn<() => void>();
+    const { rerender } = render(
+      <HazardsTabView {...base} onMarkHazard={onMarkHazard} onAddFeature={onAddFeature} />,
+    );
+    act(() => screen.getByRole('button', { name: '2026–27' }).focus());
+    await userEvent.keyboard('m');
+    await userEvent.keyboard('f');
+    expect(onMarkHazard).toHaveBeenCalledTimes(1);
+    expect(onAddFeature).toHaveBeenCalledTimes(1);
+    rerender(<HazardsTabView {...base} onMarkHazard={UNAVAILABLE} onAddFeature={UNAVAILABLE} />);
+    act(() => screen.getByRole('button', { name: '2026–27' }).focus());
+    await userEvent.keyboard('m');
+    await userEvent.keyboard('f');
+    expect(onMarkHazard).toHaveBeenCalledTimes(1);
+    expect(onAddFeature).toHaveBeenCalledTimes(1);
   });
 
   it('a past winter draws none of them', () => {
