@@ -833,6 +833,8 @@ knows what needs them, does it where they found it, and watches the machinery wo
 - Retraction screens (D248, server built, no client reaches them) — **Phase B04** ([plan](./phases/B04-skater-contributions.md)) owns them: a request's *Withdraw*, a flag's and a no-public-access report's *Withdraw*, an alert author's *Retract*, a hazard's *Withdraw*, and the delete confirmations' 30 days
 - The phone's "It's open" for an alert's author on their own pinned alert (D248) — built in `AccessSection` on the shared rule, not yet on a device (no RN render harness); its pass rides **Phase B04**'s EAS preview pass (§8.4)
 - Telling people about the 30 days (D248): the app's delete confirmations, and the privacy policy (the legal checklist)
+- The Bodies list (B01-3, the first of four Bodies page PRs) needs the library backfills on dev — `bodyLibrary:backfillAll`, then `bodyLibrary:backfillChangedAt` — before it shows real rows; its server requests (a search across standings, askers and intake reasons on the preview's asks, each town's state, rows by id, `SEARCH_MIN_CHARS` in core, a rejected body's row and facts) wait on a follow-up server PR → the plan's *The Bodies list*
+- The Body console's three PRs (the frame and Shape; Names, Places, Access and Water; Imagery, Hazards, Standing and Links), after the list — the founder's call on sizes, 2026-11-14
 
 ## Phase B03 — The skater web app
 🟢 **Complete** 2026-11-07 · PRs #95–#104 · [plan](./phases/B03-skater-web.md) · D237 D238 D239 D240 D241 D242 D243 D244
