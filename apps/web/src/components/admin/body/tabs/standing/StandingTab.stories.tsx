@@ -11,8 +11,9 @@ import {
   BODY_NOW,
   DORMANT_BY_HAND,
   MASCOMA_RETENTION,
-  MASCOMA_RETENTION_WIRED,
   REMOVED,
+  RETENTION_FAVORITES_FLOOR,
+  RETENTION_PART_UNREAD,
 } from './standingFixtures';
 
 /**
@@ -103,15 +104,43 @@ export const PickRemoved: Story = {
   },
 };
 
-/** What the console reads today: favorites and the last use have no read, so no lanes for them. */
+/** Facts a read didn't serve draw no lanes and are named, never drawn as zero. */
 export const NotRecordedYet: Story = {
-  args: { retention: MASCOMA_RETENTION_WIRED },
+  args: { retention: RETENTION_PART_UNREAD },
   play: async ({ canvasElement }) => {
     const q = quad(canvasElement);
     await expect(q.querySelectorAll('[data-slot="lane"]')).toHaveLength(2);
     await expect(must(q.querySelector('[data-slot="standing-not-recorded"]'))).toHaveTextContent(
       'Not recorded yet: favorites and the last report.',
     );
+  },
+};
+
+/** More favorites than the server counts: the lane reads a floor. */
+export const FavoritesFloor: Story = {
+  args: { retention: RETENTION_FAVORITES_FLOOR },
+  play: async ({ canvasElement }) => {
+    await expect(within(quad(canvasElement)).getByText('1,000+ skaters')).toBeVisible();
+  },
+};
+
+/** The retention read on its way: the lanes hold their place, and nothing is claimed. */
+export const RetentionLoading: Story = {
+  args: { retention: undefined },
+  play: async ({ canvasElement }) => {
+    const q = quad(canvasElement);
+    await expect(q.querySelector('[data-slot="lane"]')).toBeNull();
+    await expect(q.querySelector('[data-slot="standing-foot"]')).toBeNull();
+  },
+};
+
+/** The retention read failed: it says so, with Try again. */
+export const RetentionFailed: Story = {
+  args: { retention: 'error', onRetry: fn() },
+  play: async ({ canvasElement, args }) => {
+    const q = within(quad(canvasElement));
+    await userEvent.click(q.getByRole('button', { name: 'Try again' }));
+    await expect(args.onRetry).toHaveBeenCalled();
   },
 };
 

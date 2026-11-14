@@ -2,10 +2,16 @@ import { INACTIVE_SEASONS, retentionReason, seasonOf, seasonStartMs } from '@ska
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { BODY_NOW, MASCOMA_RETENTION, MASCOMA_RETENTION_WIRED } from './standingFixtures';
+import {
+  BODY_NOW,
+  MASCOMA_RETENTION,
+  RETENTION_FAVORITES_FLOOR,
+  RETENTION_PART_UNREAD,
+} from './standingFixtures';
 import {
   activityHoldsThrough,
   activityLapsesAt,
+  FAVORITES_COUNTED,
   RETENTION_YEARS,
   type RetentionFacts,
   retentionModel,
@@ -103,7 +109,7 @@ describe('retentionModel', () => {
   });
 
   it('never draws a reason that is not held, and never zero for one not read', () => {
-    const wired = retentionModel(MASCOMA_RETENTION_WIRED, BODY_NOW);
+    const wired = retentionModel(RETENTION_PART_UNREAD, BODY_NOW);
     expect(wired.lanes.map((l) => l.key)).toEqual(['curated', 'put_in']);
     expect(wired.notRecorded).toBe('favorites and the last report');
     expect(wired.foot).toBe('Any one keeps it.');
@@ -161,5 +167,16 @@ describe('retentionModel', () => {
         }
       }),
     );
+  });
+});
+
+describe('favorites past the count', () => {
+  it('read as a floor, never as whole; a count under it reads as itself, digits grouped', () => {
+    const lane = (facts: RetentionFacts) =>
+      retentionModel(facts, BODY_NOW).lanes.find((l) => l.key === 'favorited')?.value;
+    expect(lane(RETENTION_FAVORITES_FLOOR)).toBe('1,000+ skaters');
+    expect(lane({ ...RETENTION_FAVORITES_FLOOR, favoritesCapped: false })).toBe('1,000 skaters');
+    expect(lane({ ...MASCOMA_RETENTION, favorites: 1 })).toBe('1 skater');
+    expect(FAVORITES_COUNTED).toBe(1_000);
   });
 });

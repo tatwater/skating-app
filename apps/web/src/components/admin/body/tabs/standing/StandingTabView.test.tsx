@@ -11,8 +11,8 @@ import {
   DORMANT_BY_HAND,
   DORMANT_ON_RULING,
   MASCOMA_RETENTION,
-  MASCOMA_RETENTION_WIRED,
   REMOVED,
+  RETENTION_PART_UNREAD,
 } from './standingFixtures';
 
 const base: StandingTabViewProps = {
@@ -57,7 +57,7 @@ describe('StandingTabView', () => {
   });
 
   it('names what no read serves yet instead of drawing a zero', () => {
-    render(<StandingTabView {...base} retention={MASCOMA_RETENTION_WIRED} />);
+    render(<StandingTabView {...base} retention={RETENTION_PART_UNREAD} />);
     expect(screen.queryByText(/Favorites/)).toBeNull();
     expect(screen.getByText('Not recorded yet: favorites and the last report.')).toBeVisible();
   });

@@ -19,11 +19,18 @@ export const MASCOMA_RETENTION: RetentionFacts = {
   lastActivity: { at: new Date(2026, 9, 10, 12, 0).getTime(), kind: 'report' },
 };
 
-/** As the console reads it today: favorites and the last use have no read yet. */
-export const MASCOMA_RETENTION_WIRED: RetentionFacts = {
+/** Facts no read served (drawn as not recorded, never as zero): the model's own guard. */
+export const RETENTION_PART_UNREAD: RetentionFacts = {
   ...MASCOMA_RETENTION,
   favorites: null,
   lastActivity: null,
+};
+
+/** A favorite count past what the server counts: a floor, drawn "1,000+". */
+export const RETENTION_FAVORITES_FLOOR: RetentionFacts = {
+  ...MASCOMA_RETENTION,
+  favorites: 1_000,
+  favoritesCapped: true,
 };
 
 export const DORMANT_BY_HAND: BodyStanding = {

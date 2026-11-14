@@ -28,8 +28,10 @@ export type RetentionFacts = {
   lastActivity: { at: number; kind: ActivityKind } | undefined | null;
   /** The map boost and when it was set (`at` null when the record doesn't say). */
   curatedBoost: { value: number; at: number | null } | undefined | null;
-  /** How many skaters favorited it. */
+  /** How many skaters favorited it — counted to {@link FAVORITES_COUNTED}, then a floor. */
   favorites: number | null;
+  /** The count stopped at its most: there are at least `favorites`, drawn "1,000+". */
+  favoritesCapped?: boolean;
   /** How many saved put-ins it has (D245): a visible, unsuppressed stored launch. */
   savedPutIns: number | null;
 };
@@ -54,6 +56,9 @@ export type RetentionModel = {
   /** What no read serves yet, in words, or `null` when everything was read. */
   notRecorded: string | null;
 };
+
+/** How far the server counts favorites before it says it stopped (`standing.retentionForBody`). */
+export const FAVORITES_COUNTED = 1_000;
 
 /** How many years ahead the lanes show (board 5.4.8: today to four years on). */
 export const RETENTION_YEARS = 4;
@@ -111,7 +116,8 @@ const KIND_WORD: Record<ActivityKind, string> = {
   hazard: 'a hazard',
 };
 
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+const plural = (n: number, one: string, many: string) =>
+  `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
 
 /**
  * The lanes for an **active** body. A reason that doesn't hold draws no lane; a reason nobody has
@@ -140,7 +146,10 @@ export function retentionModel(facts: RetentionFacts, now: number): RetentionMod
     lanes.push({
       key: 'favorited',
       label: 'Favorites',
-      value: plural(facts.favorites, 'skater', 'skaters'),
+      // Past the count's end the number is a floor, never presented as whole.
+      value: facts.favoritesCapped
+        ? `${facts.favorites.toLocaleString('en-US')}+ skaters`
+        : plural(facts.favorites, 'skater', 'skaters'),
       end: null,
     });
   }

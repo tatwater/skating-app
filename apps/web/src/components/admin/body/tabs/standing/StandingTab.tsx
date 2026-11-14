@@ -1,45 +1,98 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { type RemovalReason, standingOf } from '@skating/core';
-import { useMutation, useQuery } from 'convex/react';
-import { useEffect, useState } from 'react';
+import { useMutation } from 'convex/react';
+import type { FunctionReturnType } from 'convex/server';
+import { useEffect, useMemo, useState } from 'react';
 
 import { errorText } from '@/components/admin/adminUi';
+import { ReadBoundary } from '@/components/admin/bodies/ReadBoundary';
 import { useUndo } from '@/components/admin/shell/undo';
 import { useRole } from '@/lib/useRole';
 
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
+import { ReadFailed } from '../hazards/kit-candidates/read-failed';
+import { read, useTabReads } from '../hazards/tabReads';
+import { LoadingSection, TabBody } from '../tabParts';
 import { StandingTabView } from './StandingTabView';
 import type { RetentionFacts } from './standingModel';
 
 /**
- * Body › Standing, wired: the body's standing from `waterBodies.get`, its saved put-ins from
- * `putIns.listForBody` (D245: a stored, unsuppressed launch — every marker that is a row), and the
- * three writes the old editor's Standing card made — `standing.setStanding` (`body.standing`),
- * `waterBodies.remove` and `waterBodies.restore` (`body.remove`) — each announced to the shell's
+ * Body › Standing, wired: the body's standing from `waterBodies.get`, what keeps it active from
+ * `standing.retentionForBody` — the newest use by the rollover's own rule, the map boost and when
+ * it was set, favorites (counted to 1,000, a floor past that) and saved put-ins (D245) — and the
+ * three writes the old editor's Standing card made: `standing.setStanding` (`body.standing`),
+ * `waterBodies.remove` and `waterBodies.restore` (`body.remove`), each announced to the shell's
  * Undo, which offers the server's undo when there is one.
  *
- * Favorites and the last use have no read yet (a seam request): those lanes are *Not recorded
- * yet*, never zero.
+ * Each read is keyed on its values; a failed one says so in its place with *Try again*, and a
+ * retention read on its way holds the lanes' place — never drawn as nothing keeping the body.
  */
-export function StandingTab({ bodyId: id }: BodyTabProps) {
+export function StandingTab(props: BodyTabProps) {
+  return (
+    <ReadBoundary
+      resetKey={props.bodyId}
+      fallback={<ReadFailed>This tab couldn’t be drawn</ReadFailed>}
+    >
+      <StandingReads {...props} />
+    </ReadBoundary>
+  );
+}
+
+type Retention = NonNullable<FunctionReturnType<typeof api.standing.retentionForBody>>;
+
+/** The retention read as the lanes take it: absent facts are none, never unread. */
+export function retentionFacts(r: Retention): RetentionFacts {
+  return {
+    lastActivity: r.lastActivity,
+    curatedBoost: r.curatedBoost,
+    favorites: r.favorites,
+    favoritesCapped: r.favoritesCapped,
+    savedPutIns: r.savedPutIns,
+  };
+}
+
+function StandingReads({ bodyId: id }: BodyTabProps) {
   const bodyId = id as Id<'waterBodies'>;
-  const result = useQuery(api.waterBodies.get, { waterBodyId: bodyId });
-  const putIns = useQuery(api.putIns.listForBody, { waterBodyId: bodyId });
+  const { got, retry } = useTabReads(`standing:${bodyId}`, {
+    body: read(api.waterBodies.get, { waterBodyId: bodyId }),
+    retention: read(api.standing.retentionForBody, { waterBodyId: bodyId }),
+  });
   const setStanding = useMutation(api.standing.setStanding);
   const remove = useMutation(api.waterBodies.remove);
   const restore = useMutation(api.waterBodies.restore);
   const { can } = useRole();
   const { announce } = useUndo();
   const now = useHourClock();
+  const retentionRead = got.retention;
+  const retention = useMemo(
+    () =>
+      retentionRead === undefined || retentionRead === null
+        ? undefined
+        : retentionRead instanceof Error
+          ? ('error' as const)
+          : retentionFacts(retentionRead),
+    [retentionRead],
+  );
 
-  if (result === undefined) return null;
+  const result = got.body;
+  if (result === undefined) {
+    return (
+      <TabBody aria-busy="true">
+        <LoadingSection lines={4} />
+        <LoadingSection lines={3} />
+      </TabBody>
+    );
+  }
+  if (result instanceof Error) {
+    return <ReadFailed onRetry={retry}>This body couldn’t be read</ReadFailed>;
+  }
   if (result === null || !result.available) {
     return (
       <StandingTabView
         standing={{ standing: 'unlisted' }}
         activeSince={null}
-        retention={null}
+        retention={undefined}
         now={now}
         canSetStanding={false}
         canRemove={false}
@@ -58,19 +111,12 @@ export function StandingTab({ bodyId: id }: BodyTabProps) {
     await announce({ title, target });
   };
 
-  const retention: RetentionFacts = {
-    lastActivity: null,
-    curatedBoost:
-      body.curatedBoost === undefined ? undefined : { value: body.curatedBoost, at: null },
-    favorites: null,
-    savedPutIns: putIns === undefined ? null : putIns.filter((m) => m.id !== undefined).length,
-  };
-
   return (
     <StandingTabView
       standing={standingOf(body)}
       activeSince={body.activatedAt ?? null}
       retention={retention}
+      onRetry={retry}
       now={now}
       canSetStanding={can('body.standing')}
       canRemove={can('body.remove')}

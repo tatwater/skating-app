@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { stubJsdomAnimations } from '../jsdomStubs';
 
 const convex = vi.hoisted(() => ({
   results: new Map<string, unknown>(),
@@ -9,8 +10,12 @@ const convex = vi.hoisted(() => ({
 vi.mock('convex/react', async () => {
   const { getFunctionName } = await import('convex/server');
   return {
-    useQuery: (ref: Parameters<typeof getFunctionName>[0]) =>
-      convex.results.get(getFunctionName(ref)),
+    useQueries: (
+      queries: Record<string, { query: Parameters<typeof getFunctionName>[0]; args: unknown }>,
+    ) =>
+      Object.fromEntries(
+        Object.entries(queries).map(([k, q]) => [k, convex.results.get(getFunctionName(q.query))]),
+      ),
     useMutation: (ref: Parameters<typeof getFunctionName>[0]) => {
       const name = getFunctionName(ref);
       const existing = convex.mutations.get(name);
@@ -31,11 +36,15 @@ vi.mock('@/components/admin/shell/undo', () => ({ useUndo: () => undo }));
 import type { Id } from '@skating/convex/dataModel';
 import { ConvexError } from 'convex/values';
 
+import { resetReadPauses } from '../hazards/tabReads';
 import { STANDING_TAB, StandingTab } from './StandingTab';
 
 const BODY = 'k1' as Id<'waterBodies'>;
 
+beforeAll(stubJsdomAnimations);
+
 beforeEach(() => {
+  resetReadPauses();
   convex.results.clear();
   convex.mutations.clear();
   undo.announce.mockClear();
@@ -48,9 +57,13 @@ const body = (extra: object = {}) => ({
 });
 
 describe('StandingTab', () => {
-  it('draws nothing until the body lands', () => {
-    const { container } = render(<StandingTab bodyId={BODY} />);
-    expect(container).toBeEmptyDOMElement();
+  it('holds its place until the body lands, and says so when it can’t be read', () => {
+    const { container, rerender } = render(<StandingTab bodyId={BODY} />);
+    expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
+    expect(screen.queryByRole('radio')).toBeNull();
+    convex.results.set('waterBodies:get', new Error('boom'));
+    rerender(<StandingTab bodyId={BODY} />);
+    expect(screen.getByText('This body couldn’t be read')).toBeVisible();
   });
 
   it('an unavailable body has no standing to choose', () => {
@@ -59,18 +72,63 @@ describe('StandingTab', () => {
     expect(screen.getByText(/Not on the map/)).toBeVisible();
   });
 
-  it('reads the standing, the boost and the saved put-ins; the rest is not recorded yet', () => {
+  it('reads what keeps it active: the boost, favorites, saved put-ins and the newest use', () => {
+    const at = Date.now() - 86_400_000;
     convex.results.set('waterBodies:get', body({ curatedBoost: 0.3 }));
-    convex.results.set('putIns:listForBody', [
-      { id: 'p1', source: 'official' },
-      { id: 'p2', source: 'derived' },
-      { source: 'derived' },
-    ]);
+    convex.results.set('standing:retentionForBody', {
+      lastActivity: { at, kind: 'track' },
+      curatedBoost: { value: 0.3, at: null },
+      favorites: 4,
+      favoritesCapped: false,
+      savedPutIns: 2,
+    });
     render(<StandingTab bodyId={BODY} />);
     expect(screen.getByRole('radio', { name: /^Active/ })).toBeChecked();
     expect(screen.getByText('2 put-ins')).toBeVisible();
+    expect(screen.getByText('4 skaters')).toBeVisible();
     expect(screen.getByText('Map boost')).toBeVisible();
-    expect(screen.getByText('Not recorded yet: favorites and the last report.')).toBeVisible();
+    expect(screen.getByText(/· a track$/)).toBeVisible();
+    expect(screen.queryByText(/Not recorded yet/)).toBeNull();
+  });
+
+  it('a favorite count past the server’s is a floor; nothing at all says nothing keeps it', () => {
+    convex.results.set('waterBodies:get', body());
+    convex.results.set('standing:retentionForBody', {
+      favorites: 1_000,
+      favoritesCapped: true,
+      savedPutIns: 0,
+    });
+    const { unmount } = render(<StandingTab bodyId={BODY} />);
+    expect(screen.getByText('1,000+ skaters')).toBeVisible();
+    unmount();
+    convex.results.set('standing:retentionForBody', {
+      favorites: 0,
+      favoritesCapped: false,
+      savedPutIns: 0,
+    });
+    render(<StandingTab bodyId={BODY} />);
+    expect(
+      screen.getByText(/^Nothing keeps it: the 1 Jul \d{4} rollover sets it dormant\.$/),
+    ).toBeVisible();
+  });
+
+  it('while the retention read is on its way the lanes hold their place; a failure says so', async () => {
+    convex.results.set('waterBodies:get', body());
+    const { rerender } = render(<StandingTab bodyId={BODY} />);
+    expect(screen.queryByText(/Nothing keeps it/)).toBeNull();
+    expect(
+      document.querySelector('[data-slot="standing-retention"][aria-busy="true"]'),
+    ).not.toBeNull();
+    convex.results.set('standing:retentionForBody', new Error('boom'));
+    rerender(<StandingTab bodyId={BODY} />);
+    expect(screen.getByText('What keeps it active couldn’t be read')).toBeVisible();
+    convex.results.set('standing:retentionForBody', {
+      favorites: 2,
+      favoritesCapped: false,
+      savedPutIns: 0,
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('2 skaters')).toBeVisible();
   });
 
   it('sets dormant with the note, then announces it to Undo', async () => {

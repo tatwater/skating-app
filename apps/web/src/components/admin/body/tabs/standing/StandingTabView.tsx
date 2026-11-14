@@ -22,6 +22,8 @@ import {
   SelectValue,
 } from '@/components/kit/select';
 import { cn } from '@/lib/utils';
+import { ReadFailed } from '../hazards/kit-candidates/read-failed';
+import { LoadingSection } from '../tabParts';
 import { type RetentionFacts, retentionModel } from './standingModel';
 
 /**
@@ -42,8 +44,13 @@ export type StandingTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
   standing: BodyStanding;
   /** When an active body last became active; `null` when the record doesn't say. */
   activeSince: number | null;
-  /** What the retention rule reads, for an active body. `null`: none of it was read. */
-  retention: RetentionFacts | null;
+  /**
+   * What the retention rule reads, for an active body: the facts, `undefined` while the read is on
+   * its way, `'error'` when it failed.
+   */
+  retention: RetentionFacts | undefined | 'error';
+  /** Read again after a failure. Absent: no *Try again*. */
+  onRetry?: () => void;
   now: number;
   /** The viewer holds `body.standing` (set dormant, bring back). */
   canSetStanding: boolean;
@@ -84,6 +91,7 @@ export function StandingTabView({
   standing,
   activeSince,
   retention,
+  onRetry,
   now,
   canSetStanding,
   canRemove,
@@ -199,9 +207,18 @@ export function StandingTabView({
         )}
       </Section>
 
-      {standing.standing === 'active' && retention !== null && (
-        <Retention facts={retention} now={now} />
-      )}
+      {standing.standing === 'active' &&
+        (retention === undefined ? (
+          <Section title="What keeps it active" data-slot="standing-retention" aria-busy="true">
+            <LoadingSection lines={3} />
+          </Section>
+        ) : retention === 'error' ? (
+          <Section title="What keeps it active" data-slot="standing-retention">
+            <ReadFailed onRetry={onRetry}>What keeps it active couldn’t be read</ReadFailed>
+          </Section>
+        ) : (
+          <Retention facts={retention} now={now} />
+        ))}
     </div>
   );
 }
