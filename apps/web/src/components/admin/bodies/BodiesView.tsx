@@ -45,6 +45,8 @@ export type BodiesViewProps = {
   onRetryList?: () => void;
   /** Re-runs the preview's failed reads. */
   onRetryPreview?: () => void;
+  /** The preview's failed reads were tried again; their fresh answers aren't in. */
+  previewPending?: boolean;
   /** Each lane's count, when a read gives one. */
   laneCounts: Readonly<Partial<Record<string, Count | null>>>;
   /** How many bodies the corpus holds, when a read says. */
@@ -73,6 +75,7 @@ export function BodiesView({
   onLoadMore,
   onRetryList,
   onRetryPreview,
+  previewPending = false,
   laneCounts,
   corpus,
   preview,
@@ -276,13 +279,9 @@ export function BodiesView({
           now={now}
           {...(bodyLink !== undefined && { bodyLink })}
           onOpen={onOpenBody}
-          {...(onRetryPreview !== undefined && {
-            // The button gives way to the read it re-runs: focus stays in the pane, not the page.
-            onRetry: () => {
-              onRetryPreview();
-              inspector.current?.focus();
-            },
-          })}
+          // The note holds (Trying again…) and keeps focus while the reads run again.
+          {...(onRetryPreview !== undefined && { onRetry: onRetryPreview })}
+          pending={previewPending}
         />
       </section>
     </div>

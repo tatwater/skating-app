@@ -89,7 +89,7 @@ import { LIBRARY_MAX_START, LIBRARY_PAGE_SIZE } from '@skating/core';
 import { getFunctionName } from 'convex/server';
 
 import { KeysProvider } from '@/lib/keys';
-
+import { resetConsoleReads } from '../reads/consoleReads';
 import { BodiesRoute, resetShownMemory, startingPageSize } from './BodiesRoute';
 import { resetScrollMemory } from './BodiesTable';
 import { listKey, queryOf } from './bodiesSearch';
@@ -175,6 +175,7 @@ beforeEach(() => {
   mocks.pagedError = null;
   mocks.denied = new Set();
   mocks.results.set(name(api.bodies.listSummary), SUMMARY);
+  resetConsoleReads();
 });
 afterEach(() => vi.restoreAllMocks());
 
@@ -263,13 +264,123 @@ describe('the list', () => {
     const asked = mocks.pagedCalls.length;
     mocks.pagedError = null;
     mocks.paged = { results: [row('a', 'Crystal Lake')], status: 'Exhausted' };
-    const button = screen.getByRole('button', { name: 'Try again' });
+    const note = document.querySelector('[data-slot=bodies-error]') as HTMLElement;
+    expect(note).toHaveAttribute('role', 'status');
+    expect(note).toHaveAttribute('aria-live', 'polite');
+    const button = within(note).getByRole('button', { name: 'Try again' });
     // Reachable by the keyboard: a button in the tab order, pressed with Enter.
     act(() => button.focus());
     await userEvent.keyboard('{Enter}');
     expect(mocks.pagedCalls.length).toBeGreaterThan(asked);
     expect(screen.queryByText('Couldn’t read this list')).toBeNull();
     expect(screen.getByText('Crystal Lake')).toBeInTheDocument();
+    // The note emptied where it stood (the same live region) and kept the focus: not the page.
+    expect(document.querySelector('[data-slot=bodies-error]')).toBe(note);
+    expect(document.activeElement).toBe(note);
+  });
+
+  it('holds a retried list as Trying again… until its first page lands, the note mounted throughout', async () => {
+    mocks.pagedError = new Error('Not allowed');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { rerender } = mount();
+    const note = document.querySelector('[data-slot=bodies-error]') as HTMLElement;
+    mocks.pagedError = null;
+    mocks.paged = { results: [], status: 'LoadingFirstPage' };
+    await userEvent.click(within(note).getByRole('button', { name: 'Try again' }));
+    // The boundary reset and the first page is on its way: pending, never "None here".
+    expect(within(note).getByRole('button', { name: 'Trying again…' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    expect(screen.queryByText('None here')).toBeNull();
+    mocks.paged = { results: [row('a', 'Crystal Lake')], status: 'Exhausted' };
+    rerender(view());
+    expect(document.querySelector('[data-slot=bodies-error]')).toBe(note);
+    expect(note).toBeEmptyDOMElement();
+    expect(screen.getByText('Crystal Lake')).toBeInTheDocument();
+  });
+
+  it('a list that failed mid-way holds as Trying again… from the press, never its old rows between', async () => {
+    mocks.paged = { results: [row('a', 'Crystal Lake')], status: 'CanLoadMore' };
+    const { rerender } = mount();
+    mocks.pagedError = new Error('down');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    rerender(view());
+    const note = document.querySelector('[data-slot=bodies-error]') as HTMLElement;
+    expect(note).toHaveTextContent('Couldn’t read this list');
+    mocks.pagedError = null;
+    mocks.paged = { results: [], status: 'LoadingFirstPage' };
+    const records: MutationRecord[] = [];
+    const seen = new MutationObserver((r) => records.push(...r));
+    seen.observe(document.body, { childList: true, subtree: true });
+    await userEvent.click(within(note).getByRole('button', { name: 'Try again' }));
+    records.push(...seen.takeRecords());
+    seen.disconnect();
+    // A removed node keeps the words it had: the failure's never left the note (so they aren't
+    // announced again), and the rows read before the failure were never drawn back (then taken).
+    const gone = (text: string) =>
+      records.some((r) => [...r.removedNodes].some((n) => n.textContent?.includes(text)));
+    expect(gone('Couldn’t read this list')).toBe(false);
+    expect(gone('Crystal Lake')).toBe(false);
+    expect(screen.queryByText('Crystal Lake')).toBeNull();
+    expect(within(note).getByRole('button', { name: 'Trying again…' })).toBeInTheDocument();
+  });
+
+  it('a list drawn again after another lane starts on its first page, never the rows from before', () => {
+    mocks.paged = { results: [row('a', 'Crystal Lake')], status: 'Exhausted' };
+    const { rerender } = mount();
+    expect(screen.getByText('Crystal Lake')).toBeInTheDocument();
+    mocks.search = { lane: 'opened' };
+    rerender(view());
+    mocks.search = {};
+    mocks.paged = { results: [], status: 'LoadingFirstPage' };
+    const records: MutationRecord[] = [];
+    const seen = new MutationObserver((r) => records.push(...r));
+    seen.observe(document.body, { childList: true, subtree: true });
+    rerender(view());
+    records.push(...seen.takeRecords());
+    seen.disconnect();
+    // A removed node keeps the words it had: the old rows were never drawn (then taken away).
+    expect(
+      records.some((r) => [...r.removedNodes].some((n) => n.textContent?.includes('Crystal Lake'))),
+    ).toBe(false);
+    expect(screen.queryByText('Crystal Lake')).toBeNull();
+    expect(grid()).toHaveAttribute('aria-busy', 'true');
+  });
+
+  it('a list that failed and was left starts clean when it comes back — no old failure, no old retry', async () => {
+    mocks.pagedError = new Error('down');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { rerender } = mount();
+    // Tried again, and left (another filter) before its first page landed.
+    mocks.pagedError = null;
+    mocks.paged = { results: [], status: 'LoadingFirstPage' };
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(screen.getByRole('button', { name: 'Trying again…' })).toBeInTheDocument();
+    mocks.search = { state: 'VT' };
+    mocks.paged = { results: [row('b', 'Post Pond')], status: 'Exhausted' };
+    rerender(view());
+    expect(screen.getByText('Post Pond')).toBeInTheDocument();
+    // Back to the first list, its first page on its way: loading — not a failure, and not
+    // Trying again….
+    mocks.search = {};
+    mocks.paged = { results: [], status: 'LoadingFirstPage' };
+    rerender(view());
+    expect(grid()).toHaveAttribute('aria-busy', 'true');
+    expect(screen.queryByText('Couldn’t read this list')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Try/ })).toBeNull();
+  });
+
+  it('announces a failure in a live region that was there before it', () => {
+    mocks.paged = { results: [row('a', 'Crystal Lake')], status: 'CanLoadMore' };
+    const { rerender } = mount();
+    const note = document.querySelector('[data-slot=bodies-error]') as HTMLElement;
+    expect(note).toBeEmptyDOMElement();
+    mocks.pagedError = new Error('down');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    rerender(view());
+    expect(document.querySelector('[data-slot=bodies-error]')).toBe(note);
+    expect(note).toHaveTextContent('Couldn’t read this list');
   });
 
   it('comes back to a list with as many rows as it was showing, up to the library’s most', () => {
@@ -419,24 +530,45 @@ describe('the counts', () => {
     expect(screen.queryByText(/in the corpus/)).toBeNull();
   });
 
-  it('try a failed summary again: the read is dropped for a render and taken up anew', async () => {
+  it('try a failed summary again once — the read dropped for one render, the note holding as pending and keeping focus, no count shown meanwhile', async () => {
     mocks.results.set(name(api.bodies.listSummary), new Error('nope'));
-    mount();
-    mocks.results.set(name(api.bodies.listSummary), SUMMARY);
+    const { rerender } = mount();
+    const bar = () => screen.getByRole('status', { name: 'Status' });
+    const note = within(bar()).getByRole('status');
+    expect(note).toHaveAttribute('aria-live', 'polite');
     const log = logOf(api.bodies.listSummary);
     const before = log.length;
-    await userEvent.click(
-      within(screen.getByRole('status', { name: 'Status' })).getByRole('button', {
-        name: 'Try again',
-      }),
-    );
-    const summaries = log
+    // The server hasn't answered yet: the read comes back on its way.
+    mocks.results.set(name(api.bodies.listSummary), undefined);
+    const button = within(note).getByRole('button', { name: 'Try again' });
+    act(() => button.focus());
+    await userEvent.keyboard('{Enter}');
+    rerender(view());
+    // Pending: the note holds, Try again again does nothing more, and no count is drawn — not 0,
+    // not the last one held.
+    const pending = within(note).getByRole('button', { name: 'Trying again…' });
+    await userEvent.click(pending);
+    expect(within(lanes()).queryByText('1,412')).toBeNull();
+    expect(within(lanes()).queryByText('0')).toBeNull();
+    const dropped = log
       .slice(before)
-      .map((reads) => reads.includes(name(api.bodies.listSummary)));
-    expect(summaries).toContain(false);
-    expect(summaries.at(-1)).toBe(true);
-    expect(screen.queryByText('Counts couldn’t be read')).toBeNull();
+      .filter((reads) => !reads.includes(name(api.bodies.listSummary)));
+    expect(dropped.length).toBeGreaterThan(0);
+    // The fresh answer lands: counted, the note empty where it stood, focus still in it.
+    mocks.results.set(name(api.bodies.listSummary), SUMMARY);
+    rerender(view());
     expect(within(lanes()).getByText('1,412')).toBeInTheDocument();
+    expect(within(bar()).getByRole('status')).toBe(note);
+    expect(note).toBeEmptyDOMElement();
+    expect(document.activeElement).toBe(note);
+    // Dropped in one run of renders only: never let go of twice for the one retry.
+    const runs = log
+      .slice(before)
+      .map((reads) => reads.includes(name(api.bodies.listSummary)))
+      .join('')
+      .split('true')
+      .filter((r) => r !== '');
+    expect(runs).toHaveLength(1);
   });
 });
 
@@ -589,8 +721,9 @@ describe('the preview', () => {
     expect(within(pane()).getByText('2 on the ice · 1 from shore')).toBeInTheDocument();
     expect(within(pane()).queryByText('Couldn’t read the history')).toBeNull();
     expect(within(pane()).queryByRole('button', { name: 'Try again' })).toBeNull();
-    // The button gave way to its read; the focus stays in the pane.
-    expect(pane()).toHaveFocus();
+    // The note emptied where it stood and kept the focus — never dropped to the page.
+    expect(document.activeElement).not.toBe(document.body);
+    expect(pane().contains(document.activeElement)).toBe(true);
   });
 
   it('holds the body’s shape while it loads', () => {

@@ -5,6 +5,7 @@ import type { FunctionArgs, FunctionReturnType } from 'convex/server';
 
 import { VANTAGE_LABELS } from '../metrics/metricsModel';
 import type { Count } from '../overview/overviewModel';
+import { isFailed, type ReadFailure } from '../reads/consoleReads';
 import { actionLabel } from '../shell/actionLabels';
 import { dayMonth, seasonYears } from '../shell/consoleTime';
 import { askFrom } from './askWords';
@@ -247,8 +248,8 @@ export function allTimeCount(allTime: PreviewFacts['allTime']): PreviewCount {
   };
 }
 
-/** The body's own facts: `undefined` while `bodies.preview` loads, an `Error` if it failed. */
-type FactsRead = PreviewFacts | null | undefined | Error;
+/** The body's own facts: `undefined` while `bodies.preview` loads, a failure if it failed. */
+type FactsRead = PreviewFacts | null | undefined | ReadFailure;
 
 /** What the preview's reads say about a body. */
 export function previewFrom({
@@ -262,13 +263,13 @@ export function previewFrom({
   body: BodyDoc;
   putIns: PutIns | undefined;
   subAreas: SubAreas | undefined;
-  /** `null` when the viewer can't read the audit; an `Error` if the read failed. */
-  history: BodyHistory | null | undefined | Error;
+  /** `null` when the viewer can't read the audit; a failure if the read failed. */
+  history: BodyHistory | null | undefined | ReadFailure;
   facts: FactsRead;
   /** The clock the facts were read against. */
   now: number;
 }): BodyPreviewData {
-  const ready = facts !== undefined && !(facts instanceof Error) ? facts : null;
+  const ready = facts !== undefined && !isFailed(facts) ? facts : null;
   return {
     id: body._id,
     name: body.name,
@@ -287,22 +288,21 @@ export function previewFrom({
     meanDepthM: body.meanDepthM ?? null,
     maxDepthM: body.maxDepthM ?? null,
     elevationM: body.elevationM ?? null,
-    facts: facts === undefined ? 'loading' : facts instanceof Error ? 'error' : 'ready',
+    facts: facts === undefined ? 'loading' : isFailed(facts) ? 'error' : 'ready',
     season: ready === null ? null : seasonCount(ready.season, now),
     allTime: ready === null ? null : allTimeCount(ready.allTime),
     // Core's rule, as the stored row holds it; a body with no row yet is not recorded.
     complete: ready?.complete ?? null,
     asks: ready === null ? null : ready.asks.map(askFrom),
-    history:
-      history instanceof Error
-        ? 'error'
-        : history == null
-          ? null
-          : history.entries.map((row) => ({
-              id: row.id,
-              at: row.createdAt,
-              actor: firstName(row.actor),
-              words: actionLabel(row.action, row.targetType),
-            })),
+    history: isFailed(history)
+      ? 'error'
+      : history == null
+        ? null
+        : history.entries.map((row) => ({
+            id: row.id,
+            at: row.createdAt,
+            actor: firstName(row.actor),
+            words: actionLabel(row.action, row.targetType),
+          })),
   };
 }

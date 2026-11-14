@@ -47,9 +47,18 @@ type BodyPreviewProps = {
   onOpen?: (id: string) => void;
   /** Re-runs the preview's failed reads (its *Try again*). */
   onRetry?: () => void;
+  /** The failed reads were tried again; their fresh answers aren't in. */
+  pending?: boolean;
 };
 
-export function BodyPreview({ data, now, bodyLink, onOpen, onRetry }: BodyPreviewProps) {
+export function BodyPreview({
+  data,
+  now,
+  bodyLink,
+  onOpen,
+  onRetry,
+  pending = false,
+}: BodyPreviewProps) {
   return (
     <div data-slot="body-preview" className="flex h-full min-h-0 flex-col">
       <div
@@ -70,6 +79,7 @@ export function BodyPreview({ data, now, bodyLink, onOpen, onRetry }: BodyPrevie
           data-slot="preview-error"
           className="mt-(--space-3) empty:mt-0"
           onRetry={onRetry}
+          pending={pending}
         >
           {data === 'error' ? 'Couldn’t read this body' : null}
         </RetryNote>
@@ -80,7 +90,7 @@ export function BodyPreview({ data, now, bodyLink, onOpen, onRetry }: BodyPrevie
         ) : data === 'error' ? null : 'unavailable' in data ? (
           <RowOnly row={data.unavailable} now={now} />
         ) : (
-          <PreviewBody data={data} now={now} onRetry={onRetry} />
+          <PreviewBody data={data} now={now} onRetry={onRetry} pending={pending} />
         )}
       </div>
       {data != null && data !== 'error' && !('unavailable' in data) && (
@@ -246,10 +256,12 @@ function PreviewBody({
   data,
   now,
   onRetry,
+  pending,
 }: {
   data: BodyPreviewData;
   now: number;
   onRetry: (() => void) | undefined;
+  pending: boolean;
 }) {
   const depth = depthText(data.meanDepthM, data.maxDepthM);
   const figures = [
@@ -324,6 +336,7 @@ function PreviewBody({
           data-slot="preview-facts-error"
           className="mt-(--space-2) empty:mt-0"
           onRetry={onRetry}
+          pending={pending}
         >
           {data.facts === 'error' ? 'Reports, completeness and asks couldn’t be read' : null}
         </RetryNote>
@@ -380,6 +393,7 @@ function PreviewBody({
         data-slot="preview-history-error"
         className="mt-(--space-5_5) empty:mt-0"
         onRetry={onRetry}
+        pending={pending}
       >
         {data.history === 'error' ? 'Couldn’t read the history' : null}
       </RetryNote>

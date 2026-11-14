@@ -2,36 +2,26 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { clampPageSize, LIBRARY_PAGE_SIZE } from '@skating/core';
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
-import { usePaginatedQuery, useQueries } from 'convex/react';
-import {
-  type ReactElement,
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { type PaginationStatus, usePaginatedQuery } from 'convex/react';
+import { type ReactElement, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ReadBoundary } from '@/components/kit/read-boundary';
-import { RetryNote } from '@/components/kit/retry-note';
 import { useRole } from '@/lib/useRole';
+
+import { isFailed, type Loadable, loaded, read, useConsoleReadSet } from '../reads/consoleReads';
+import { ReadNote } from '../reads/ReadNote';
 
 import { useMinuteNow } from '../shell/presence';
 import { BodiesView, type BodiesViewProps } from './BodiesView';
 import { type BodiesListData, type BodyPreviewData, UNREAD_LIST } from './bodiesData';
 import {
-  type BodyDoc,
-  type BodyHistory,
+  type LibraryRow,
   type ListArgs,
   type ListSummary,
   laneCountsFrom,
   listArgsOf,
   listFrom,
-  type PreviewFacts,
-  type PutIns,
   previewFrom,
-  type SubAreas,
   servesFrom,
 } from './bodiesReads';
 import { type BodiesQuery, type BodiesSearch, listKey, queryOf, searchFor } from './bodiesSearch';
@@ -44,7 +34,13 @@ import { BODY_LANES } from './bodyLanes';
  *
  * - **The list** is `bodies.listPage` through the paginated hook, starting at the library's page
  *   size — or, coming back to a list, as many rows as were showing (up to the library's most), so
- *   the remembered scroll lands where it was. A failed page is the list's own error state.
+ *   the remembered scroll lands where it was. The hook throws a failed page into React, so it runs
+ *   in a small reader under the kit `ReadBoundary` and hands its pages up; the page itself is drawn
+ *   once, outside the boundary, so its failure note (a live region mounted before its words) is
+ *   announced, holds as *Trying again…* while the boundary resets and the first page reloads, and
+ *   keeps focus when it empties.
+ * - **The counts and the preview** go through the console's one read layer (`reads/`): the same
+ *   registry, pending state, Sentry rule and `RetryNote` as the Body console's reads.
  * - **The counts** are `bodies.listSummary`. The lanes' counts are held through a change of place
  *   (they don't move with a filter); the list's total and the facet counts are only ever this
  *   query's, so a count is never a stale one. A lane no server read lists (Opened recently) reads
@@ -86,6 +82,7 @@ export function BodiesRoute({ bodyPath = BODY_CONSOLE_PATH }: BodiesRouteProps) 
   // A lane no server read lists (Opened recently) still counts the others: All's summary.
   const summary = useSummary(canRead ? (args ?? { lane: 'all', now: listNow }) : null);
   const preview = usePreview(query.bodyId, canRead, can('audit.read'));
+  const paged = usePaged(key);
 
   const go = (next: BodiesQuery, how?: { replace?: boolean }) =>
     void navigate({
@@ -95,40 +92,38 @@ export function BodiesRoute({ bodyPath = BODY_CONSOLE_PATH }: BodiesRouteProps) 
     });
   const bodyLink = (id: string): ReactElement => <Link to={bodyPath(id)} />;
 
+  // A failed or retrying summary shows no count at all — never a zero, never the last one held.
+  const counted = isFailed(summary.state) ? undefined : summary.held;
   const view: Omit<BodiesViewProps, 'list'> = {
     query,
     onQueryChange: go,
-    laneCounts: laneCountsFrom(summary.held, BODY_LANES),
-    corpus: summary.held?.corpus ?? null,
+    laneCounts: laneCountsFrom(counted, BODY_LANES),
+    corpus: counted?.corpus ?? null,
     preview: preview.data,
     onRetryPreview: preview.retry,
+    previewPending: preview.pending,
     now,
     bodyLink,
     onOpenBody: (id) => void navigate({ to: bodyPath(id) }),
-    status: summary.failed
-      ? [
-          <RetryNote key="counts" data-slot="counts-error" onRetry={summary.retry}>
-            Counts couldn’t be read
-          </RetryNote>,
-        ]
-      : [],
+    // Mounted whatever the counts' state, so its words are announced when they come.
+    status: [
+      <ReadNote key="counts" data-slot="counts-error" reads={[summary.state]}>
+        Counts couldn’t be read
+      </ReadNote>,
+    ],
   };
 
   if (args === null) return <BodiesView {...view} list={UNREAD_LIST} />;
-  const failedList: BodiesListData = {
-    ...UNREAD_LIST,
-    status: 'error',
-    serves: servesFrom(summary.current ?? summary.laneHeld),
-  };
   return (
-    // A failed page is the list's own failure; its Try again resets the boundary, and the list,
-    // drawn again, subscribes anew (the failed one was let go of while the failure showed).
-    <ReadBoundary
-      resetKey={key}
-      fallback={(retry) => <BodiesView {...view} list={failedList} onRetryList={retry} />}
-    >
-      <PagedList args={args} memoryKey={key} summary={summary} view={view} />
-    </ReadBoundary>
+    <>
+      <ReadBoundary
+        resetKey={key}
+        fallback={(retry) => <PagedFailed memoryKey={key} retry={retry} onFailed={paged.fail} />}
+      >
+        <PagedRead args={args} memoryKey={key} onPage={paged.put} />
+      </ReadBoundary>
+      <PagedView view={view} paged={paged} summary={summary} />
+    </>
   );
 }
 
@@ -150,16 +145,75 @@ export function startingPageSize(memoryKey: string): number {
   return clampPageSize(Math.max(LIBRARY_PAGE_SIZE, shownMemory.get(memoryKey) ?? 0));
 }
 
-function PagedList({
+/** What the paginated read last handed up, for the list it was read for. */
+type Page = {
+  key: string;
+  results: readonly LibraryRow[];
+  status: PaginationStatus;
+  loadMore: (n: number) => void;
+};
+
+type PagedState = {
+  key: string;
+  page: Page | null;
+  /** The read failed for this list: its boundary's retry. */
+  failure: (() => void) | null;
+  /** Try again was pressed and the first page hasn't landed. */
+  retrying: boolean;
+  /** A page the reader read, or `null` when the reader is gone (failed, or another lane drawn). */
+  put: (page: Page | null) => void;
+  fail: (key: string, retry: () => void) => void;
+  retry: () => void;
+};
+
+/** The paginated read's state, held by the page (the reader runs under the boundary). */
+function usePaged(key: string): PagedState {
+  const [page, setPage] = useState<Page | null>(null);
+  const [failure, setFailure] = useState<{ key: string; retry: () => void } | null>(null);
+  const [retrying, setRetrying] = useState<string | null>(null);
+  const put = useRef((next: Page | null) => {
+    // A reader that is gone leaves no page behind: a fresh reader starts on its first page, so a
+    // retry holds as pending and a list drawn again never shows the rows of the reader before.
+    setPage(next);
+    if (next === null) return;
+    // A reader that reads is answered: no failure stands — for its list, or for one left earlier,
+    // which would otherwise come back with that list.
+    setFailure(null);
+    // The first page landed (or the read moved on): the retry is answered.
+    setRetrying((r) => (r === next.key && next.status === 'LoadingFirstPage' ? r : null));
+  }).current;
+  const fail = useRef((failedKey: string, retry: () => void) => {
+    setFailure({ key: failedKey, retry });
+    // A failure after Try again is the fresh answer: no longer pending.
+    setRetrying((r) => (r === failedKey ? null : r));
+  }).current;
+  const own = page !== null && page.key === key ? page : null;
+  const failed = failure !== null && failure.key === key ? failure : null;
+  return {
+    key,
+    page: own,
+    failure: failed?.retry ?? null,
+    retrying: retrying === key && (own === null || own.status === 'LoadingFirstPage'),
+    put,
+    fail,
+    retry: () => {
+      if (failed === null) return;
+      setRetrying(key);
+      setFailure(null);
+      failed.retry();
+    },
+  };
+}
+
+/** The paginated read, under the boundary: it draws nothing, and hands each page up. */
+function PagedRead({
   args,
   memoryKey,
-  summary,
-  view,
+  onPage,
 }: {
   args: ListArgs;
   memoryKey: string;
-  summary: SummaryRead;
-  view: Omit<BodiesViewProps, 'list'>;
+  onPage: (page: Page | null) => void;
 }): ReactNode {
   // Read once per list: the size only starts a list, and changing it mid-list would restart none.
   const initialNumItems = useMemo(() => startingPageSize(memoryKey), [memoryKey]);
@@ -169,70 +223,98 @@ function PagedList({
   useEffect(() => {
     if (results.length > 0) shownMemory.set(memoryKey, results.length);
   }, [memoryKey, results.length]);
+  useEffect(() => {
+    onPage({ key: memoryKey, results, status, loadMore });
+  }, [onPage, memoryKey, results, status, loadMore]);
+  // Gone (its read failed into the boundary, or another lane is drawn): its pages go with it.
+  useEffect(() => () => onPage(null), [onPage]);
+  return null;
+}
+
+/** The boundary's fallback: it draws nothing, and tells the page the read failed and how to retry. */
+function PagedFailed({
+  memoryKey,
+  retry,
+  onFailed,
+}: {
+  memoryKey: string;
+  retry: () => void;
+  onFailed: (key: string, retry: () => void) => void;
+}): ReactNode {
+  useEffect(() => {
+    onFailed(memoryKey, retry);
+  }, [onFailed, memoryKey, retry]);
+  return null;
+}
+
+/** The list as the page draws it: its pages, its failure (held while retrying), or on its way. */
+function PagedView({
+  view,
+  paged,
+  summary,
+}: {
+  view: Omit<BodiesViewProps, 'list'>;
+  paged: PagedState;
+  summary: SummaryRead;
+}): ReactNode {
+  const { page, failure, retrying } = paged;
+  const { current, laneHeld } = summary;
   // Rows keep their identity between renders (a minute's tick, a row selected), so the table
   // rebuilds its model only when a page or the summary lands.
-  const { current, laneHeld } = summary;
-  const list = useMemo(
-    () => listFrom({ rows: results, status, current, held: laneHeld }),
-    [results, status, current, laneHeld],
+  const list = useMemo((): BodiesListData => {
+    if (failure !== null || retrying) {
+      return {
+        ...UNREAD_LIST,
+        status: 'error',
+        retryPending: retrying,
+        serves: servesFrom(current ?? laneHeld),
+      };
+    }
+    return listFrom({
+      rows: page?.results ?? [],
+      status: page?.status ?? 'LoadingFirstPage',
+      current,
+      held: laneHeld,
+    });
+  }, [page, failure, retrying, current, laneHeld]);
+  return (
+    <BodiesView
+      {...view}
+      list={list}
+      onLoadMore={() => page?.loadMore(LIBRARY_PAGE_SIZE)}
+      onRetryList={paged.retry}
+    />
   );
-  return <BodiesView {...view} list={list} onLoadMore={() => loadMore(LIBRARY_PAGE_SIZE)} />;
 }
 
 // ── The counts ───────────────────────────────────────────────────────────────────────────────
 
 type SummaryRead = {
-  /** This query's summary; `undefined` while it loads or if it failed. */
+  /** The summary read's state for this query: on its way, failed (or retrying), or its value. */
+  state: Loadable<ListSummary>;
+  /** This query's summary; `undefined` while it loads, fails or retries. */
   current: ListSummary | undefined;
   /** The last summary that landed, for any query — the lanes' counts and the corpus. */
   held: ListSummary | undefined;
   /** The last summary that landed for this lane — its state tabs and what the read honors. */
   laneHeld: ListSummary | undefined;
-  failed: boolean;
-  /** Re-runs a failed summary. */
-  retry: () => void;
 };
 
-const NOTHING_PAUSED: ReadonlySet<string> = new Set();
-
-/**
- * Reads to try again: `retry(keys)` drops those reads' subscriptions for one render and takes them
- * up again, so the server runs them anew. Until it answers, Convex's client still holds the failure
- * it had, so the read reads as failed until its new answer lands. A read another component also
- * subscribes to (the same query and arguments) keeps its server subscription, and isn't run anew.
- */
-function useRetry(): { paused: ReadonlySet<string>; retry: (keys: Iterable<string>) => void } {
-  const [paused, setPaused] = useState(NOTHING_PAUSED);
-  useEffect(() => {
-    if (paused.size > 0) setPaused(NOTHING_PAUSED);
-  }, [paused]);
-  const retry = useCallback((keys: Iterable<string>) => setPaused(new Set(keys)), []);
-  return { paused, retry };
-}
-
 function useSummary(args: ListArgs | null): SummaryRead {
-  const { paused, retry } = useRetry();
   const summaryArgs = args === null ? null : (({ sort: _sort, ...rest }) => rest)(args);
-  const json = JSON.stringify(summaryArgs);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the arguments' value.
-  const queries = useMemo(() => {
-    const out: Parameters<typeof useQueries>[0] = {};
-    if (summaryArgs !== null && !paused.has('summary')) {
-      out.summary = { query: api.bodies.listSummary, args: summaryArgs };
-    }
-    return out;
-  }, [json, paused]);
-  const got = useQueries(queries).summary as ListSummary | undefined | Error;
-  const current = got instanceof Error ? undefined : got;
+  const { reads } = useConsoleReadSet({
+    summary: summaryArgs === null ? null : read(api.bodies.listSummary, summaryArgs),
+  });
+  const state = reads.summary;
+  const current = loaded(state);
   const held = useRef<{ lane: string; value: ListSummary } | undefined>(undefined);
   if (current !== undefined && args !== null) held.current = { lane: args.lane, value: current };
   const last = held.current;
   return {
+    state,
     current,
     held: last?.value,
     laneHeld: last !== undefined && last.lane === args?.lane ? last.value : undefined,
-    failed: got instanceof Error,
-    retry: () => retry(['summary']),
   };
 }
 
@@ -254,67 +336,52 @@ const minute = (at: number) => Math.floor(at / 60_000) * 60_000;
 
 // ── The preview ──────────────────────────────────────────────────────────────────────────────
 
-type GetRead = { available: true; body: BodyDoc } | { available: false } | null;
-
-type PreviewReads = {
-  body?: GetRead | Error;
-  putIns?: PutIns | Error;
-  subAreas?: SubAreas | Error;
-  facts?: PreviewFacts | null | Error;
-  history?: BodyHistory | Error;
-};
-
-/** The open body's preview, from its reads; `retry` re-runs only the reads that failed. */
+/**
+ * The open body's preview, through the read layer: `retry` re-runs the reads that failed, and
+ * `pending` holds the notes as *Trying again…* until their fresh answers land.
+ */
 function usePreview(
   bodyId: string | null,
   canRead: boolean,
   canReadAudit: boolean,
-): { data: BodyPreviewData | null | undefined | 'error' | 'unavailable'; retry: () => void } {
-  const { paused, retry } = useRetry();
+): {
+  data: BodyPreviewData | null | undefined | 'error' | 'unavailable';
+  retry: () => void;
+  pending: boolean;
+} {
   const id =
     canRead && bodyId !== null && ID_SHAPE.test(bodyId) ? (bodyId as Id<'waterBodies'>) : null;
   const now = useClockFor(id ?? '');
-  const queries = useMemo<Parameters<typeof useQueries>[0]>(() => {
-    if (id === null) return {};
-    const waterBodyId = id;
-    const reads: Parameters<typeof useQueries>[0] = {
-      body: { query: api.waterBodies.get, args: { waterBodyId } },
-      putIns: { query: api.putIns.listForBody, args: { waterBodyId } },
-      subAreas: { query: api.subAreas.listForBody, args: { waterBodyId } },
-      facts: { query: api.bodies.preview, args: { waterBodyId, now } },
-      ...(canReadAudit && {
-        history: { query: api.bodyConsole.history, args: { waterBodyId, limit: HISTORY_ROWS } },
-      }),
-    };
-    return Object.fromEntries(Object.entries(reads).filter(([key]) => !paused.has(key)));
-  }, [id, now, canReadAudit, paused]);
-  const got = useQueries(queries) as PreviewReads;
-  const failed = Object.entries(got).flatMap(([key, r]) => (r instanceof Error ? [key] : []));
-  return { data: previewOf(id, got, canReadAudit, now), retry: () => retry(failed) };
-}
-
-function previewOf(
-  id: Id<'waterBodies'> | null,
-  got: PreviewReads,
-  canReadAudit: boolean,
-  now: number,
-): BodyPreviewData | null | undefined | 'error' | 'unavailable' {
-  if (id === null) return null;
-  const body = got.body;
-  if (body === undefined) return undefined;
-  if (body instanceof Error) return 'error';
-  if (body === null) return null;
-  // A rejected body isn't served whole; the page draws it from its list row.
-  if (!body.available) return 'unavailable';
-  const quiet = <T,>(r: T | Error | undefined) => (r instanceof Error ? undefined : r);
-  return previewFrom({
-    body: body.body,
-    putIns: quiet(got.putIns),
-    subAreas: quiet(got.subAreas),
-    history: canReadAudit ? got.history : null,
-    facts: got.facts,
-    now,
+  const waterBodyId = id as Id<'waterBodies'>;
+  const { reads, retry, pending } = useConsoleReadSet({
+    body: id === null ? null : read(api.waterBodies.get, { waterBodyId }),
+    putIns: id === null ? null : read(api.putIns.listForBody, { waterBodyId }),
+    subAreas: id === null ? null : read(api.subAreas.listForBody, { waterBodyId }),
+    facts: id === null ? null : read(api.bodies.preview, { waterBodyId, now }),
+    history:
+      id === null || !canReadAudit
+        ? null
+        : read(api.bodyConsole.history, { waterBodyId, limit: HISTORY_ROWS }),
   });
+  if (id === null) return { data: null, retry, pending };
+  const body = reads.body;
+  let data: BodyPreviewData | null | undefined | 'error' | 'unavailable';
+  if (body === undefined) data = undefined;
+  else if (isFailed(body)) data = 'error';
+  else if (body === null) data = null;
+  // A rejected body isn't served whole; the page draws it from its list row.
+  else if (!body.available) data = 'unavailable';
+  else {
+    data = previewFrom({
+      body: body.body,
+      putIns: loaded(reads.putIns),
+      subAreas: loaded(reads.subAreas),
+      history: canReadAudit ? reads.history : null,
+      facts: reads.facts,
+      now,
+    });
+  }
+  return { data, retry, pending };
 }
 
 /** How many of a body's latest changes the preview lists. */

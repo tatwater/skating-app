@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { FAILED_READ } from '../reads/readFailureFixtures';
+
 import {
   allTimeCount,
   type BodyDoc,
@@ -387,8 +389,8 @@ describe('the preview from its reads', () => {
       body,
       putIns: undefined,
       subAreas: undefined,
-      history: new Error('nope'),
-      facts: new Error('nope'),
+      history: FAILED_READ,
+      facts: FAILED_READ,
       now: NOW,
     });
     expect(failed).toMatchObject({ facts: 'error', season: null, history: 'error' });

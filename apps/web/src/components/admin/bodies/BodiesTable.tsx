@@ -511,7 +511,7 @@ export function BodiesTable({
                 : entries.map((entry, i) => renderEntry(entry, i))}
           </tbody>
         </Table>
-        {!loading && <ListFoot list={list} rows={rowsTotal} q={q} onRetry={onRetry} />}
+        <ListFoot list={list} rows={rowsTotal} q={q} onRetry={onRetry} />
       </div>
     </div>
   );
@@ -544,16 +544,23 @@ function ListFoot({
         return `All ${list.total !== null ? countText(list.total) : rows.toLocaleString('en-US')}`;
     }
   })();
-  if (list.status === 'error') {
-    return (
-      <RetryNote data-slot="bodies-end" className="px-gutter pt-(--space-3)" onRetry={onRetry}>
-        {words}
-      </RetryNote>
-    );
-  }
   return (
-    <ListEnd data-slot="bodies-end" data-status={list.status}>
-      {words}
-    </ListEnd>
+    <>
+      {/* Mounted in every state, so a failure's words are announced as they come, Try again holds
+          as pending while the first page reloads, and focus stays here when the words go. */}
+      <RetryNote
+        data-slot="bodies-error"
+        className="px-gutter pt-(--space-3) empty:p-0"
+        onRetry={onRetry}
+        pending={list.retryPending === true}
+      >
+        {list.status === 'error' ? words : null}
+      </RetryNote>
+      {list.status !== 'error' && list.status !== 'loading' && (
+        <ListEnd data-slot="bodies-end" data-status={list.status}>
+          {words}
+        </ListEnd>
+      )}
+    </>
   );
 }

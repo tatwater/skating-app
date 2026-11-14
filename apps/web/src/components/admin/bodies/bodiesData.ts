@@ -61,6 +61,8 @@ export interface BodiesListData {
   /** How many the list holds after filters, when the read says. */
   total: Count | null;
   serves: ListServes;
+  /** The list's read failed and Try again was pressed: hold the note as *Trying again…*. */
+  retryPending?: boolean;
   /** The menu's counts; `null` while the read gives none (a search, two facets, loading). */
   facetCounts: FacetCounts | null;
   /** The state tabs, in order (All is always first and is not here). */
