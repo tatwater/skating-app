@@ -18,6 +18,11 @@ describe('identityArgs — a script write made as a person, and through what (D2
     }
   });
 
+  it('sends the subject trimmed, as it was checked', () => {
+    const args = identityArgs({ as: ' user_123\n', via: 'seed-destinations' });
+    expect(JSON.parse(args[1] ?? '')).toEqual({ subject: 'user_123', via: 'seed-destinations' });
+  });
+
   it('refuses a call as nobody', () => {
     expect(() => identityArgs({ as: '  ', via: 'seed-destinations' })).toThrow(/Clerk user id/);
   });

@@ -18,12 +18,15 @@ export interface RunAs {
 /** The `--identity` arguments for a call: none for a bare (admin-credential) call. */
 export function identityArgs(runAs: RunAs | undefined): string[] {
   if (runAs === undefined) return [];
-  if (runAs.as.trim() === '') throw new Error('A call made as a person needs their Clerk user id.');
+  // Trimmed once, here, and sent as checked: a stray space or newline from the shell would otherwise
+  // pass the check and name no one on the server.
+  const subject = runAs.as.trim();
+  if (subject === '') throw new Error('A call made as a person needs their Clerk user id.');
   if (!isAuditVia(runAs.via)) {
     throw new Error(
       `"${runAs.via}" can't name what this write is made through: use the script's name in ` +
         `lowercase words joined by hyphens, at most ${AUDIT_VIA_MAX_LENGTH} characters.`,
     );
   }
-  return ['--identity', JSON.stringify({ subject: runAs.as, via: runAs.via })];
+  return ['--identity', JSON.stringify({ subject, via: runAs.via })];
 }
