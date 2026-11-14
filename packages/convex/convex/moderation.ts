@@ -515,8 +515,21 @@ export async function setContentStatus(
     // Every member a Post's verdict moved, and from what to what — on the Post's own row, so its undo
     // can put each member back to its own prior status (founder call, 2026-11-13).
     const cascaded: PostCascade[] = [];
-    // A Post restore of one its Reports took down: the member that did, for the undo to put back.
+    // A verdict on a Post that was down only because its Reports were records what it clears (the
+    // true-inverse rule): the member that took it down, on the Post's newest row, so this verdict's
+    // undo puts the Post back down that same way and a member restored later still brings it back.
+    // Any verdict, not only a restore: a removal moves it out of that state just the same.
     let clearsDerivedFromReportId: string | undefined;
+    if (args.targetType === 'post' && priorStatus === 'hidden') {
+      const newest = await ctx.db
+        .query('moderationActions')
+        .withIndex('by_target', (q) => q.eq('targetType', 'post').eq('targetId', targetId))
+        .order('desc')
+        .first();
+      const derived =
+        newest?.metadata?.derivedFromReportId ?? newest?.metadata?.rederivedFromReportId;
+      if (typeof derived === 'string') clearsDerivedFromReportId = derived;
+    }
     if (args.targetType === 'report') {
       await applyReportStatus(ctx, target as Doc<'reports'>, args.status, audit);
     } else if (args.targetType === 'post') {
@@ -553,19 +566,6 @@ export async function setContentStatus(
                 ? POST_UNRESTORABLE
                 : POST_RESTORE_NEEDS_A_CHOICE,
           );
-        }
-        // A restore records what it clears (the true-inverse rule): a Post that was down only because
-        // its Reports were carries that marker on its newest row, and this restore's undo puts it
-        // back, so a member restored later brings the Post back as it would have.
-        if (post.moderationStatus === 'hidden') {
-          const newest = await ctx.db
-            .query('moderationActions')
-            .withIndex('by_target', (q) => q.eq('targetType', 'post').eq('targetId', post._id))
-            .order('desc')
-            .first();
-          const derived =
-            newest?.metadata?.derivedFromReportId ?? newest?.metadata?.rederivedFromReportId;
-          if (typeof derived === 'string') clearsDerivedFromReportId = derived;
         }
         await ctx.db.patch(post._id, { moderationStatus: 'visible' });
         for (const report of plan.revive) {
@@ -710,12 +710,15 @@ export async function revertPostVerdict(
   actor: Doc<'profiles'>,
   { row, reason }: { row: Doc<'moderationActions'>; reason: string },
 ): Promise<void> {
-  const { priorStatus, cascaded, clearsDerivedFromReportId } = row.metadata as {
-    priorStatus: ModerationStatus;
-    cascaded: PostCascade[];
-    /** On a restore of a Post its Reports took down: the member that did (U1). */
-    clearsDerivedFromReportId?: string;
-  };
+  const { priorStatus, cascaded, clearsDerivedFromReportId, rederivedFromReportId } =
+    row.metadata as {
+      priorStatus: ModerationStatus;
+      cascaded: PostCascade[];
+      /** On a verdict on a Post its Reports took down: the member that did (U1). */
+      clearsDerivedFromReportId?: string;
+      /** On an undo that put such a Post back down: the same member. */
+      rederivedFromReportId?: string;
+    };
   const postId = ctx.db.normalizeId('posts', row.targetId);
   const post = postId ? await ctx.db.get(postId) : null;
   if (!post) throw new ConvexError('Target not found');
@@ -778,6 +781,11 @@ export async function revertPostVerdict(
       // undone and is not a Post's derived change.
       ...(priorStatus === 'hidden' && clearsDerivedFromReportId !== undefined
         ? { rederivedFromReportId: clearsDerivedFromReportId }
+        : {}),
+      // Undoing that undo takes the Post out of that state again, so it records what it clears as
+      // the verdict did: the chain undo → redo → undo still lands on a Post a member brings back.
+      ...(priorStatus !== 'hidden' && rederivedFromReportId !== undefined
+        ? { clearsDerivedFromReportId: rederivedFromReportId }
         : {}),
     },
     createdAt: now,

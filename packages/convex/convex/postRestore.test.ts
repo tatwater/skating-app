@@ -467,6 +467,46 @@ describe('undo keeps a Post that was down only because its Reports were (U1)', (
     expect(await statusOf(t, postId)).toBe('visible');
   });
 
+  test('undo, redo, undo: the marker survives the chain, so a member restored later still brings the Post back', async () => {
+    const { t, mod, postId, reportIds, set } = await setup();
+    const [r1, r2] = reportIds as [Id<'reports'>, Id<'reports'>];
+    await set('report', r1, 'hidden');
+    await set('report', r2, 'hidden');
+    await set('post', postId, 'visible', [r1]);
+    const restore = await newestOn(t, 'post', postId);
+    await mod.as.mutation(api.undo.run, { actionId: restore._id, reason: 'restored too soon' });
+    const undoRow = await newestOn(t, 'post', postId);
+
+    // The redo takes the Post out of that state again, and says what it clears, as the restore did.
+    await mod.as.mutation(api.undo.run, { actionId: undoRow._id, reason: 'it was right' });
+    expect(await statusOf(t, postId)).toBe('visible');
+    const redo = await newestOn(t, 'post', postId);
+    expect(redo.metadata).toMatchObject({ clearsDerivedFromReportId: r2 });
+
+    await mod.as.mutation(api.undo.run, { actionId: redo._id, reason: 'no, too soon' });
+    expect(await statusOf(t, postId)).toBe('hidden');
+    expect((await newestOn(t, 'post', postId)).metadata).toMatchObject({
+      rederivedFromReportId: r2,
+    });
+    await set('report', r2, 'visible');
+    expect(await statusOf(t, postId)).toBe('visible');
+  });
+
+  test('undoing a removal of such a Post puts it back down the same way, too', async () => {
+    const { t, mod, postId, reportIds, set } = await setup();
+    const [r1, r2] = reportIds as [Id<'reports'>, Id<'reports'>];
+    await set('report', r1, 'hidden');
+    await set('report', r2, 'hidden');
+    await set('post', postId, 'removed');
+    const removal = await newestOn(t, 'post', postId);
+    expect(removal.metadata).toMatchObject({ clearsDerivedFromReportId: r2 });
+
+    await mod.as.mutation(api.undo.run, { actionId: removal._id, reason: 'removed by mistake' });
+    expect(await statusOf(t, postId)).toBe('hidden');
+    await set('report', r2, 'visible');
+    expect(await statusOf(t, postId)).toBe('visible');
+  });
+
   test('a restore of a Post a moderator hid on its own records nothing to put back', async () => {
     const { t, postId, set } = await setup();
     await set('post', postId, 'hidden');
