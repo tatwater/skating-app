@@ -43,6 +43,7 @@ import {
 } from './bodiesModel';
 import { isSearch } from './bodiesSearch';
 import { type BodyLane, laneStanding } from './bodyLanes';
+import { TryAgain } from './TryAgain';
 
 /**
  * The library's list (boards 5.1–5.3, middle): a real table over the lane's rows — TanStack Table
@@ -183,6 +184,8 @@ type BodiesTableProps = {
   onOpen: (id: string) => void;
   /** Near the end with more to come. */
   onLoadMore?: () => void;
+  /** Re-runs a failed list. */
+  onRetry?: () => void;
   /** This list, as it stands — the scroll is remembered under it. */
   memoryKey: string;
   /** / was pressed in the rows. */
@@ -201,6 +204,7 @@ export function BodiesTable({
   onSelect,
   onOpen,
   onLoadMore,
+  onRetry,
   memoryKey,
   onSearchKey,
   gridRef,
@@ -509,14 +513,24 @@ export function BodiesTable({
                 : entries.map((entry, i) => renderEntry(entry, i))}
           </tbody>
         </Table>
-        {!loading && <ListFoot list={list} rows={rowsTotal} q={q} />}
+        {!loading && <ListFoot list={list} rows={rowsTotal} q={q} onRetry={onRetry} />}
       </div>
     </div>
   );
 }
 
 /** The list-end tab: what the list is, or why it stops where it does. */
-function ListFoot({ list, rows, q }: { list: BodiesListData; rows: number; q: string }) {
+function ListFoot({
+  list,
+  rows,
+  q,
+  onRetry,
+}: {
+  list: BodiesListData;
+  rows: number;
+  q: string;
+  onRetry: (() => void) | undefined;
+}) {
   const words = (() => {
     switch (list.status) {
       case 'unread':
@@ -533,8 +547,15 @@ function ListFoot({ list, rows, q }: { list: BodiesListData; rows: number; q: st
     }
   })();
   return (
-    <ListEnd data-slot="bodies-end" data-status={list.status}>
-      {words}
-    </ListEnd>
+    <>
+      <ListEnd data-slot="bodies-end" data-status={list.status}>
+        {words}
+      </ListEnd>
+      {list.status === 'error' && onRetry !== undefined && (
+        <div className="px-gutter pt-(--space-3)">
+          <TryAgain onRetry={onRetry} />
+        </div>
+      )}
+    </>
   );
 }

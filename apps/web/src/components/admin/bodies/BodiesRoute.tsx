@@ -3,7 +3,15 @@ import type { Id } from '@skating/convex/dataModel';
 import { clampPageSize, LIBRARY_PAGE_SIZE } from '@skating/core';
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { usePaginatedQuery, useQueries } from 'convex/react';
-import { type ReactElement, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type ReactElement,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import { useRole } from '@/lib/useRole';
 
@@ -27,6 +35,7 @@ import {
 import { type BodiesQuery, type BodiesSearch, listKey, queryOf, searchFor } from './bodiesSearch';
 import { BODY_LANES } from './bodyLanes';
 import { ReadBoundary } from './ReadBoundary';
+import { TryAgain } from './TryAgain';
 
 /**
  * The Bodies library, wired: its place from the URL (validated by `validateBodiesSearch`, which the
@@ -77,6 +86,8 @@ export function BodiesRoute({ bodyPath = BODY_CONSOLE_PATH }: BodiesRouteProps) 
   // A lane no server read lists (Opened recently) still counts the others: All's summary.
   const summary = useSummary(canRead ? (args ?? { lane: 'all', now: listNow }) : null);
   const preview = usePreview(query.bodyId, canRead, can('audit.read'));
+  // A failed list is tried again by a new attempt: the boundary resets and the list subscribes anew.
+  const [attempt, setAttempt] = useState(0);
 
   const go = (next: BodiesQuery, how?: { replace?: boolean }) =>
     void navigate({
@@ -91,11 +102,19 @@ export function BodiesRoute({ bodyPath = BODY_CONSOLE_PATH }: BodiesRouteProps) 
     onQueryChange: go,
     laneCounts: laneCountsFrom(summary.held, BODY_LANES),
     corpus: summary.held?.corpus ?? null,
-    preview,
+    preview: preview.data,
+    onRetryPreview: preview.retry,
     now,
     bodyLink,
     onOpenBody: (id) => void navigate({ to: bodyPath(id) }),
-    status: summary.failed ? ['Counts couldn’t be read'] : [],
+    status: summary.failed
+      ? [
+          <span key="counts" data-slot="counts-error" className="flex items-center gap-(--space-2)">
+            Counts couldn’t be read
+            <TryAgain onRetry={summary.retry} />
+          </span>,
+        ]
+      : [],
   };
 
   if (args === null) return <BodiesView {...view} list={UNREAD_LIST} />;
@@ -105,7 +124,12 @@ export function BodiesRoute({ bodyPath = BODY_CONSOLE_PATH }: BodiesRouteProps) 
     serves: servesFrom(summary.current ?? summary.laneHeld),
   };
   return (
-    <ReadBoundary resetKey={key} fallback={<BodiesView {...view} list={failedList} />}>
+    <ReadBoundary
+      resetKey={`${key}#${attempt}`}
+      fallback={
+        <BodiesView {...view} list={failedList} onRetryList={() => setAttempt((n) => n + 1)} />
+      }
+    >
       <PagedList args={args} memoryKey={key} summary={summary} view={view} />
     </ReadBoundary>
   );
@@ -168,17 +192,34 @@ type SummaryRead = {
   /** The last summary that landed for this lane — its state tabs and what the read honors. */
   laneHeld: ListSummary | undefined;
   failed: boolean;
+  /** Re-runs a failed summary. */
+  retry: () => void;
 };
 
+/**
+ * A read to try again: `retry` drops its subscription for one render and takes it up again, so the
+ * server runs it anew rather than the client answering with the failure it holds.
+ */
+function useRetry(): { paused: boolean; retry: () => void } {
+  const [paused, setPaused] = useState(false);
+  useEffect(() => {
+    if (paused) setPaused(false);
+  }, [paused]);
+  return { paused, retry: useCallback(() => setPaused(true), []) };
+}
+
 function useSummary(args: ListArgs | null): SummaryRead {
+  const { paused, retry } = useRetry();
   const summaryArgs = args === null ? null : (({ sort: _sort, ...rest }) => rest)(args);
   const json = JSON.stringify(summaryArgs);
   // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the arguments' value.
   const queries = useMemo(() => {
     const out: Parameters<typeof useQueries>[0] = {};
-    if (summaryArgs !== null) out.summary = { query: api.bodies.listSummary, args: summaryArgs };
+    if (summaryArgs !== null && !paused) {
+      out.summary = { query: api.bodies.listSummary, args: summaryArgs };
+    }
     return out;
-  }, [json]);
+  }, [json, paused]);
   const got = useQueries(queries).summary as ListSummary | undefined | Error;
   const current = got instanceof Error ? undefined : got;
   const held = useRef<{ lane: string; value: ListSummary } | undefined>(undefined);
@@ -189,6 +230,7 @@ function useSummary(args: ListArgs | null): SummaryRead {
     held: last?.value,
     laneHeld: last !== undefined && last.lane === args?.lane ? last.value : undefined,
     failed: got instanceof Error,
+    retry,
   };
 }
 
@@ -217,12 +259,23 @@ function usePreview(
   bodyId: string | null,
   canRead: boolean,
   canReadAudit: boolean,
+): { data: BodyPreviewData | null | undefined | 'error' | 'unavailable'; retry: () => void } {
+  const { paused, retry } = useRetry();
+  const data = usePreviewData(bodyId, canRead, canReadAudit, paused);
+  return { data, retry };
+}
+
+function usePreviewData(
+  bodyId: string | null,
+  canRead: boolean,
+  canReadAudit: boolean,
+  paused: boolean,
 ): BodyPreviewData | null | undefined | 'error' | 'unavailable' {
   const id =
     canRead && bodyId !== null && ID_SHAPE.test(bodyId) ? (bodyId as Id<'waterBodies'>) : null;
   const now = useClockFor(id ?? '');
   const queries = useMemo<Parameters<typeof useQueries>[0]>(() => {
-    if (id === null) return {};
+    if (id === null || paused) return {};
     const waterBodyId = id;
     return {
       body: { query: api.waterBodies.get, args: { waterBodyId } },
@@ -233,7 +286,7 @@ function usePreview(
         history: { query: api.bodyConsole.history, args: { waterBodyId, limit: HISTORY_ROWS } },
       }),
     };
-  }, [id, now, canReadAudit]);
+  }, [id, now, canReadAudit, paused]);
   const got = useQueries(queries) as {
     body?: GetRead | Error;
     putIns?: PutIns | Error;

@@ -41,6 +41,10 @@ export type BodiesViewProps = {
   list: BodiesListData;
   /** Near the list's end with more to come. */
   onLoadMore?: () => void;
+  /** Re-runs a failed list (its *Try again*). */
+  onRetryList?: () => void;
+  /** Re-runs the preview's failed reads. */
+  onRetryPreview?: () => void;
   /** Each lane's count, when a read gives one. */
   laneCounts: Readonly<Partial<Record<string, Count | null>>>;
   /** How many bodies the corpus holds, when a read says. */
@@ -65,6 +69,8 @@ export function BodiesView({
   onQueryChange,
   list,
   onLoadMore,
+  onRetryList,
+  onRetryPreview,
   laneCounts,
   corpus,
   preview,
@@ -236,6 +242,7 @@ export function BodiesView({
               inspector.current?.focus();
             }}
             {...(onLoadMore !== undefined && { onLoadMore })}
+            {...(onRetryList !== undefined && { onRetry: onRetryList })}
             memoryKey={listKey(query)}
             onSearchKey={() => search.current?.focus()}
             gridRef={grid}
@@ -264,6 +271,7 @@ export function BodiesView({
           now={now}
           {...(bodyLink !== undefined && { bodyLink })}
           onOpen={onOpenBody}
+          {...(onRetryPreview !== undefined && { onRetry: onRetryPreview })}
         />
       </section>
     </div>

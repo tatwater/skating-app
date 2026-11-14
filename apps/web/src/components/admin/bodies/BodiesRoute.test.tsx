@@ -19,6 +19,8 @@ const mocks = vi.hoisted(() => ({
   results: new Map<string, unknown>(),
   /** The arguments each read was last asked with (`'skip'` for one not asked). */
   calls: new Map<string, unknown>(),
+  /** Each `useQueries` call's reads, in order — a retry drops a read for one render. */
+  queryLog: [] as string[][],
   paged: { results: [], status: 'LoadingFirstPage' } as Paged,
   pagedError: null as Error | null,
   pagedCalls: [] as Array<{ args: unknown; initialNumItems: number }>,
@@ -35,14 +37,16 @@ vi.mock('convex/react', async () => {
     return typeof r === 'function' ? (r as (a: unknown) => unknown)(args) : r;
   };
   return {
-    useQueries: (queries: Record<string, { query: never; args: unknown }>) =>
-      Object.fromEntries(
+    useQueries: (queries: Record<string, { query: never; args: unknown }>) => {
+      mocks.queryLog.push(Object.values(queries).map(({ query }) => getFunctionName(query)));
+      return Object.fromEntries(
         Object.entries(queries).map(([key, { query, args }]) => {
           const name = getFunctionName(query);
           mocks.calls.set(name, args);
           return [key, answer(name, args)];
         }),
-      ),
+      );
+    },
     usePaginatedQuery: (ref: never, args: unknown, opts: { initialNumItems: number }) => {
       mocks.calls.set(getFunctionName(ref), args);
       mocks.pagedCalls.push({ args, initialNumItems: opts.initialNumItems });
@@ -157,6 +161,7 @@ beforeEach(() => {
   mocks.results.clear();
   mocks.calls.clear();
   mocks.pagedCalls.length = 0;
+  mocks.queryLog.length = 0;
   mocks.paged = { results: [], status: 'LoadingFirstPage' };
   mocks.pagedError = null;
   mocks.denied = new Set();
@@ -237,6 +242,22 @@ describe('the list', () => {
     expect(screen.getByText('Couldn’t read this list')).toBeInTheDocument();
     expect(within(lanes()).getByText('1,412')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1, name: 'Active bodies' })).toBeInTheDocument();
+  });
+
+  it('tries a failed list again from its own button, subscribing anew', async () => {
+    mocks.pagedError = new Error('Not allowed');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    mount();
+    const asked = mocks.pagedCalls.length;
+    mocks.pagedError = null;
+    mocks.paged = { results: [row('a', 'Crystal Lake')], status: 'Exhausted' };
+    const button = screen.getByRole('button', { name: 'Try again' });
+    // Reachable by the keyboard: a button in the tab order, pressed with Enter.
+    act(() => button.focus());
+    await userEvent.keyboard('{Enter}');
+    expect(mocks.pagedCalls.length).toBeGreaterThan(asked);
+    expect(screen.queryByText('Couldn’t read this list')).toBeNull();
+    expect(screen.getByText('Crystal Lake')).toBeInTheDocument();
   });
 
   it('comes back to a list with as many rows as it was showing, up to the library’s most', () => {
@@ -385,6 +406,26 @@ describe('the counts', () => {
     expect(within(lanes()).queryByText('1,412')).toBeNull();
     expect(screen.queryByText(/in the corpus/)).toBeNull();
   });
+
+  it('try a failed summary again: the read is dropped for a render and taken up anew', async () => {
+    mocks.results.set(name(api.bodies.listSummary), new Error('nope'));
+    mount();
+    mocks.results.set(name(api.bodies.listSummary), SUMMARY);
+    mocks.queryLog.length = 0;
+    await userEvent.click(
+      within(screen.getByRole('status', { name: 'Status' })).getByRole('button', {
+        name: 'Try again',
+      }),
+    );
+    // Each render asks the summary's reads, then the preview's: the even entries are the summary's.
+    const summaries = mocks.queryLog
+      .filter((_, i) => i % 2 === 0)
+      .map((reads) => reads.includes(name(api.bodies.listSummary)));
+    expect(summaries).toContain(false);
+    expect(summaries.at(-1)).toBe(true);
+    expect(screen.queryByText('Counts couldn’t be read')).toBeNull();
+    expect(within(lanes()).getByText('1,412')).toBeInTheDocument();
+  });
 });
 
 describe('the place in the URL', () => {
@@ -512,6 +553,24 @@ describe('the preview', () => {
     mocks.results.set(name(api.waterBodies.get), new Error('nope'));
     rerender(view());
     expect(within(pane()).getByText('Couldn’t read this body')).toBeInTheDocument();
+  });
+
+  it('tries the preview’s failed reads again, each from its own button', async () => {
+    open();
+    mocks.results.set(name(api.bodies.preview), new Error('nope'));
+    mocks.results.set(name(api.bodyConsole.history), new Error('nope'));
+    mount();
+    expect(within(pane()).getAllByRole('button', { name: 'Try again' })).toHaveLength(2);
+    mocks.results.set(name(api.bodies.preview), facts);
+    mocks.results.set(name(api.bodyConsole.history), { entries: [], capped: false });
+    mocks.queryLog.length = 0;
+    await userEvent.click(
+      within(pane()).getAllByRole('button', { name: 'Try again' })[0] as Element,
+    );
+    expect(mocks.queryLog.some((reads) => !reads.includes(name(api.bodies.preview)))).toBe(true);
+    expect(within(pane()).getByText('2 on the ice · 1 from shore')).toBeInTheDocument();
+    expect(within(pane()).queryByText('Couldn’t read the history')).toBeNull();
+    expect(within(pane()).queryByRole('button', { name: 'Try again' })).toBeNull();
   });
 
   it('holds the body’s shape while it loads', () => {

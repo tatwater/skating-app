@@ -19,6 +19,7 @@ import { historyWhen } from '../shell/consoleTime';
 import type { BodyPreviewData, PreviewCount } from './bodiesData';
 import { acresText, type BodyRow, changedWhen, STANDING_LABEL } from './bodiesModel';
 import { coordText, OutlineStill } from './OutlineStill';
+import { TryAgain } from './TryAgain';
 
 /**
  * The preview pane (boards 5.1–5.3, right): the body the list has open, read before it's opened
@@ -44,9 +45,11 @@ type BodyPreviewProps = {
   bodyLink?: (id: string) => ReactElement;
   /** Opens the body's console (⏎ in the pane; the route says where). */
   onOpen?: (id: string) => void;
+  /** Re-runs the preview's failed reads (its *Try again*). */
+  onRetry?: () => void;
 };
 
-export function BodyPreview({ data, now, bodyLink, onOpen }: BodyPreviewProps) {
+export function BodyPreview({ data, now, bodyLink, onOpen, onRetry }: BodyPreviewProps) {
   return (
     <div data-slot="body-preview" className="flex h-full min-h-0 flex-col">
       <div
@@ -67,13 +70,20 @@ export function BodyPreview({ data, now, bodyLink, onOpen }: BodyPreviewProps) {
         ) : data === null ? (
           <ListEnd className="mt-(--space-3)">No body open</ListEnd>
         ) : data === 'error' ? (
-          <ListEnd data-slot="preview-error" className="mt-(--space-3)">
-            Couldn’t read this body
-          </ListEnd>
+          <>
+            <ListEnd data-slot="preview-error" className="mt-(--space-3)">
+              Couldn’t read this body
+            </ListEnd>
+            {onRetry !== undefined && (
+              <div className="pt-(--space-3)">
+                <TryAgain onRetry={onRetry} />
+              </div>
+            )}
+          </>
         ) : 'unavailable' in data ? (
           <RowOnly row={data.unavailable} now={now} />
         ) : (
-          <PreviewBody data={data} now={now} />
+          <PreviewBody data={data} now={now} onRetry={onRetry} />
         )}
       </div>
       {data != null && data !== 'error' && !('unavailable' in data) && (
@@ -235,7 +245,15 @@ function ReportsTile({ label, count }: { label: string; count: PreviewCount }) {
   );
 }
 
-function PreviewBody({ data, now }: { data: BodyPreviewData; now: number }) {
+function PreviewBody({
+  data,
+  now,
+  onRetry,
+}: {
+  data: BodyPreviewData;
+  now: number;
+  onRetry: (() => void) | undefined;
+}) {
   const depth = depthText(data.meanDepthM, data.maxDepthM);
   const figures = [
     ...(data.areaSqM !== null ? [{ label: 'Area', value: `${acresText(data.areaSqM)} ac` }] : []),
@@ -296,6 +314,11 @@ function PreviewBody({ data, now }: { data: BodyPreviewData; now: number }) {
         ) : data.facts === 'error' ? (
           <Note data-slot="preview-facts-error" className="mt-(--space-2)">
             Reports, completeness and asks couldn’t be read
+            {onRetry !== undefined && (
+              <span className="mt-(--space-2) block">
+                <TryAgain onRetry={onRetry} />
+              </span>
+            )}
           </Note>
         ) : (
           (data.season !== null || data.allTime !== null) && (
@@ -361,6 +384,11 @@ function PreviewBody({ data, now }: { data: BodyPreviewData; now: number }) {
       {data.history === 'error' ? (
         <Section title="Last changed" className="mt-(--space-5_5)">
           <ListEnd data-slot="preview-history-error">Couldn’t read the history</ListEnd>
+          {onRetry !== undefined && (
+            <div className="pt-(--space-3)">
+              <TryAgain onRetry={onRetry} />
+            </div>
+          )}
         </Section>
       ) : (
         data.history !== null && (
