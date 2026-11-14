@@ -1446,7 +1446,7 @@ the People page and the skater screens that reach it are owed (the roadmap's reg
   Convex's real transaction limits (`convexTest({ transactionLimits: true })`) with rows near the
   document limit, and `packages/guards` holds every read in the erasure and record modules to a charge.
   **A photo is erased only when nothing of its uploader's uses it** — an unknown is never "unused":
-  `erasure.settlePhotos` reads the uploader's Reports and hazards a charged page per transaction, and
+  `erasure.settleStep` reads the uploader's Reports and hazards a charged page per step, and
   deletes a photo only in a transaction that has itself read to the end of their hazards (resuming
   after the last one read, so one filed mid-settlement is seen), beside the photo's back-link and
   access-photo checks, as many as the budget affords; the rest carry on, the list only shrinking.
@@ -1554,10 +1554,10 @@ third to each continuing job: **progress** (does every pass erase, stamp or adva
 | `erasure.ts` `eraseHazard` origin Report | `reports` `get` | one | R | Report stops listing it | charged |
 | `erasure.ts` `dropErasedMember` (new job) | `posts` `get`; members `get` | 1 + ≤ 9 | R | the Post's album, sort key, search words, clock | charged, 11 MiB; one write — **fixed** (ran in the sweep, three helpers re-reading ten members: ~33 MiB) |
 | `erasure.ts` `refreshMemberClocks` (new job) | `posts`, members, holds | a few members a pass | R, F | members' clocks | charged; the first member always fits, so every pass advances |
-| `erasure.ts` `settlePhotos` Reports | `reports` · `by_author` | paginate by budget | R | strikes photos in use | charged |
-| `erasure.ts` `settlePhotos` hazards | `hazards` · `by_author` `gt(_creationTime)` | take by budget | R | strikes photos in use | charged; resumes after the last hazard read, so one filed mid-settlement is seen — **fixed** (a paginate cursor at the end of a range reads nothing new) |
-| `erasure.ts` `settlePhotos` deletes | `photos` `get`, `accessPhotos` · `by_photo` | as many as the budget affords | R, S | **a photo is erased** | charged; only in a transaction that read to the end of the hazards; the rest carry on, the list only shrinking — **fixed** (Greptile #110: every remaining photo in one transaction) |
-| `erasure.ts` debts (`photoSettlements`) | insert one row per erased item with photos, in the erasing transaction; `settleOwed` · `by_owed_at` `take(1)`; the settlement's take · `by_uploader`, ≤ 6 rows, each re-stamped as a claim, carrying ≤ 500 ids — more only when the first debt alone names more; clear: each row `get` + delete | 1; ≤ 6; while the budget lasts | R (an item's photo ids) | **erases photos later; a debt is cleared only after its settlement has finished** | charged — **fixed** (the photo list rode the sweep's arguments and was lost with a pass that threw; now the debt is a row, and each run's end picks up every row still owed) |
+| `erasure.ts` `settleStep` reports | `reports` · `by_author` | paginate by budget | R | strikes photos in use | charged |
+| `erasure.ts` `settleStep` hazards | `hazards` · `by_author` `gt(_creationTime)` | take by budget | R | strikes photos in use | charged; resumes after the last hazard read, so one filed mid-settlement is seen — **fixed** (a paginate cursor at the end of a range reads nothing new) |
+| `erasure.ts` `settleStep` deletes | `photos` `get`, `accessPhotos` · `by_photo` | as many as the budget affords | R, S | **a photo is erased** | charged; only in a transaction that read to the end of the hazards; the rest carry on, the list only shrinking — **fixed** (Greptile #110: every remaining photo in one transaction) |
+| `erasure.ts` debts (`photoSettlements`, `photoSettlementQueue`) | the erasing transaction inserts debts of ≤ 500 photo ids and reads the uploader's queue row (`by_uploader` `first()`) to add one; `settleOwed` · `by_parked_queued` `take(1)` a turn; `settleStep`'s place `first()`, take · `by_uploader` ≤ 16 debts, clear: each debt `get` + delete | 1 a turn; ≤ 16; while the budget lasts | 64 KiB (≤ 500 ids) | **erases photos later; a debt cleared only after its settlement finished; a failing uploader parked, never in anyone else's way** | charged — **fixed** (the list rode the sweep's arguments, then a claim by re-stamping let a failing uploader with more debts than one take starve everyone: Greptile #110). Each step is its own nested transaction; failures are counted on the queue row and park the uploader after three |
 | `accountDeletion.ts` `erasePrivate` debts | `photoSettlements` · `by_uploader` `take(size)` | 200 rows a pass | R (an item's photo ids) | drops a deleted person's debts; their photos go with the `photos` stage | not charged, as no read of `erasePrivate` is; realistically under 1 KiB a row (an item's few photo ids), but an item's list has no cap below Convex's 8,192 values, so 200 rows at worst could pass 16 MiB — **not changed**, like the stage's other drains |
 | `erasure.ts` `backfillClocks` | each erasable table · `by_creation_time` `gt(after)` | rows by budget, a withdrawn row's stamp, hold and clock kept back | R | **starts a clock** | charged; resumed by creation time (erasure deletes rows mid-walk) — **fixed** (each row's hold re-read the Report and its Post uncounted: ~24 MiB on a page of eight) |
 | `contentRecord.ts` `backfillVerdicts` | `moderationActions`, paginate; newest row · `by_target` desc; the item `get` | sized by budget | R | which item to replay, once | charged; an item is replayed at its newest row — **fixed** (200 audit rows a page) |
@@ -1605,12 +1605,12 @@ below are at the 12 MiB budget; *R* 1 MiB, *V* 8 KiB, *C* 16 KiB, *F* a flag (*R
 | `authorDeletions.stampWithdrawal` members | b | members until the budget ends | member R + stamp R | Post R + 5 members |
 | `authorDeletions.backfillCommentDeletions` | a | ≤ 200 comments | C (a match hands off, no more reads) | ≤ 3.2 MiB |
 | `authorDeletions.commentLastWord` | a | ≤ 11 rows, the stamp kept back | R | ≤ 12 MiB |
-| `erasure.eraseDue` | b | one item at a time while `ITEM_NEED` fits | head + hold + clock or eraser's fixed reads + one drained row (`ITEM_NEED`, 10 MiB + 2V for a Report); drains size themselves by the rest | ≤ 12 MiB |
-| `erasure.settlePhotos` Reports | a | 12 Reports | R | 12 MiB |
-| `erasure.settleOwed` (each sweep run's end, and its own hourly cron) | a (fixed) | the oldest debt | R | 1 MiB |
-| `erasure.settlePhotos` take | a | ≤ 6 debts, each read and re-stamped as a claim (≤ 500 ids carried, or the first debt's whole list) | R + claim R | ≤ 12 MiB |
-| `erasure.settlePhotos` clear | b | debts while one fits | R + delete R | ≤ 12 MiB |
-| `erasure.settlePhotos` hazards + deletes | a then b | 9 hazards, one photo kept back; photos while one fits | R; a photo R + access check V + delete R | ≤ 12 MiB |
+| `erasure.eraseDue` | b, each item nested | one item at a time while `PASS_NEED` fits (the due row, the item's `ITEM_NEED`, a failure's record; ≤ 11 MiB + 80 KiB for a Report) | the due row R; the item in `eraseOne` (its hold, its eraser's fixed reads, one drained row, its uploader's queue row); a failure: the item's row touched | ≤ 12 MiB |
+| `erasure.settleStep` reports | a | 11 Reports, its place kept back | R | ≤ 12 MiB |
+| `erasure.settleOwed` (each sweep run's end, and its own hourly cron) | b, each step nested | turns while a turn fits (its place, a step's least `MIN_STEP`, a failure's record) | a place 64 KiB; the step gets the rest of the budget and spends what it charges; a failure: the place touched | ≤ 12 MiB |
+| `erasure.settleStep` take | a | ≤ 16 debts (≤ 500 ids carried) | 64 KiB | ≤ 1.2 MiB |
+| `erasure.settleStep` clear | b | debts while one fits | 64 KiB + delete 64 KiB | ≤ 12 MiB |
+| `erasure.settleStep` hazards + deletes | a then b | 9 hazards, one photo kept back; photos while one fits | R; a photo R + access check V + delete R | ≤ 12 MiB |
 | `erasure.backfillClocks` | a then b | 5 Reports (more of lighter kinds), one row's work kept back; withdrawn rows while their work fits | R; a withdrawn row: stamp R + hold (4F + 2V) + clock R | ≤ 12 MiB |
 | `erasure.dropErasedMember` | a (fixed) | the Post and ≤ 10 members (9 when the erased one is listed) | — | ≤ 12 MiB with the Post's write; more members than a Post can hold throws, traced |
 | `erasure.refreshMemberClocks` | b | members while one fits | member R + hold (2F + V) + clock R | Post R + its hold + 2 members |
@@ -1620,6 +1620,47 @@ Each job has a test on its dearest page under Convex's real limits (`chains.test
 holds this line.** A static check could insist page sizes go through `sizePage`, but the bug class is a
 `work` that understates a branch, and only running the branch shows that. `ReadBudget.row` is that
 check, at runtime, on every branch a test reaches.
+
+**B01-1b: one failing item never starves the rest (2026-11-14, after Greptile's fifth round on #110).**
+Greptile found the settlement could starve: it claimed an uploader's debts by re-stamping the six it
+took, so an uploader with seven older debts whose settlement kept failing was chosen again through
+the seventh, every time. The property now held by construction, for both recurring jobs: **one item
+failing — any pass, any reason, every time — never stops, delays past the run, or reorders anyone
+else's.** Each item's work is its own nested transaction (`eraseOne` for a due item, `settleStep` for
+a step of an uploader's settlement), so a failure rolls back only that item; the walk records the
+attempt and the error's class (never its message) and goes on in the same run; after three the item
+is **parked** — out of the due range (an item) or skipped by the walk (an uploader), counted and
+listed in `erasure.parked` (`machinery.read`), released only by `erasure.retryParked`. Parking never
+clears a debt, deletes a photo or erases anything. Where the state lives: **on the item's own row**
+for the sweep (`eraseAttempts`, `eraseErrorClass`, `eraseParkedAt` on each erasable table, with
+`by_erase_parked`) — the item already carries its clock, the sweep already reads the row, and the
+state goes when the item does; and **one row per owed uploader** for the settlement
+(`photoSettlementQueue`) — the settlement succeeds or fails per uploader, an uploader has no row of
+their own to carry it, and the same row holds the settlement's position, so a run that dies resumes
+where it was. A new debt does not release a parked uploader: what fails is reading their history,
+which a new debt does not change. Fast-check properties hold both walks over any mix with any
+subset always failing (`erasure.test.ts`, "fairness under failure, under any mix").
+
+**The other recurring jobs, and whether one poison item can block them** (read, not run; none
+changed here — they are outside D248 and go to the follow-up with the text caps). The one-time,
+hand-run backfills (`authorDeletions.*`, `contentRecord.backfillVerdicts`, `erasure.backfillClocks`)
+may fail loudly and stop; each logs where to re-run from (`traced`).
+
+| Cron | Blocks forever? | Why |
+| --- | --- | --- |
+| flush notification queue | yes | oldest due rows in one transaction, no per-row isolation; a throw rolls back the pass and the next starts at the same row |
+| prompt unreported skates | yes | oldest 50 pending activities in one transaction; its own comment says a throwing tick re-reads the same rows forever |
+| sweep body summaries (due mode) | yes | oldest 50 due cards in one transaction; only a success moves a card past now |
+| watch for the imagery season to open | yes, by design | one site's fetch failing fails the whole tick; the site list is fixed |
+| sweep orphan photos | yes, without any failure | the oldest 500 photos past grace, in-use ones skipped unmarked: once 500 in-use photos are old, it re-reads them forever |
+| refresh hazard weather | partially | per-hazard try/catch, but a failed one stays at the head; ~1,000 such freeze it |
+| finalize account deletions | partially | a job per account, but a failing one stays in the oldest-first 20 |
+| sweep expired exports | partially | an undeletable bundle stays at the head of 500 |
+| pump live satellite imagery | partially | a granule stuck in flight holds one of 100 slots |
+| reconcile weather cell registry, repair weather archive gaps, demote inactive bodies at the rollover | partially | a page that throws ends the walk; the next run starts over and dies at the same page |
+| recompute hazard recurrence at the rollover | partially | attempts saved and a body skipped after three, but a failure ends the day's chain inside a 7-day window |
+| refresh nws alerts | partially | a state whose write throws skips the states after it while that alert is live |
+| expire bounties, expire access alerts, the prune and purge jobs, roll up operator metrics, sweep water-body coverage, append daily (bay) weather archive, expire departed skaters' photos, poll for new satellite imagery, rebuild the live imagery index | no | per-item isolation, a cursor that moves past failures, deletes or status patches only, or no per-item work |
 
 ### The B01-2 server register (owed to the server agent)
 
