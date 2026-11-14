@@ -8,9 +8,8 @@ import {
   type PublicAccess,
   type PublicAccessVerdict,
 } from '@skating/core';
-
+import { isFailed, type Loadable } from '@/components/admin/reads/consoleReads';
 import type { BodyMapScene, MapItem } from '../../map/mapDescriptors';
-import { FAILED, type Loaded } from '../places/useTabReads';
 
 type LatLng = { lat: number; lng: number };
 
@@ -37,7 +36,7 @@ export type Ruling = {
    * before this one, and whether the read stopped short (`capped`: more may exist, so the number is
    * a floor). `hidden` for a viewer who can't read the audit trail; loading or failed as a read.
    */
-  history: Loaded<{ earlier: number; capped: boolean }> | 'hidden';
+  history: Loadable<{ earlier: number; capped: boolean }> | 'hidden';
 };
 
 export type PutInRow = {
@@ -50,7 +49,7 @@ export type PutInRow = {
   /** The routed walk, to draw. */
   approach: LatLng[] | null;
   /** Where it is, by the nearest landmark's name; `null` when none is close. */
-  where: Loaded<string | null>;
+  where: Loadable<string | null>;
 };
 
 export type LotRow = { id: string; name: string | null; at: LatLng };
@@ -145,9 +144,9 @@ export const RULING_HISTORY_LIMIT = 20;
 export function rulingFrom(
   access: PublicAccess | undefined,
   bodyId: string,
-  history: Loaded<{ entries: readonly HistoryRow[]; capped: boolean }> | 'hidden',
+  history: Loadable<{ entries: readonly HistoryRow[]; capped: boolean }> | 'hidden',
 ): Ruling {
-  if (history === 'hidden' || history === undefined || history === FAILED) {
+  if (history === 'hidden' || history === undefined || isFailed(history)) {
     return { ...rulingOf(access, undefined), history };
   }
   const own = history.entries.filter((e) => e.targetType === 'waterbody' && e.targetId === bodyId);
@@ -159,7 +158,7 @@ export function rulingFrom(
 
 /** The earlier rulings, in words: "1 earlier ruling", "19+ earlier rulings"; nothing when none. */
 export function earlierWords(history: Ruling['history']): string | null {
-  if (typeof history !== 'object') return null;
+  if (typeof history !== 'object' || isFailed(history)) return null;
   const { earlier, capped } = history;
   if (capped) {
     return earlier === 0
@@ -195,9 +194,9 @@ export const WHERE_RADIUS_M = 1_000;
 /** The nearest landmark within reach of a point, by name; loading and failed pass through. */
 export function whereOf(
   at: LatLng,
-  landmarks: Loaded<ReadonlyArray<{ name: string; point: LatLng }>>,
-): Loaded<string | null> {
-  if (landmarks === undefined || landmarks === FAILED) return landmarks;
+  landmarks: Loadable<ReadonlyArray<{ name: string; point: LatLng }>>,
+): Loadable<string | null> {
+  if (landmarks === undefined || isFailed(landmarks)) return landmarks;
   let best: { name: string; d: number } | null = null;
   for (const l of landmarks) {
     const d = haversineMeters(at, l.point);
@@ -233,7 +232,7 @@ export function accessFrom(
   input: AccessInput,
   ruling: Ruling,
   postedAccess: PostedAccess | undefined,
-  landmarks: Loaded<ReadonlyArray<{ name: string; point: LatLng }>>,
+  landmarks: Loadable<ReadonlyArray<{ name: string; point: LatLng }>>,
 ): AccessData {
   const putIns: PutInRow[] = input.putIns
     .map((p): PutInRow => {
@@ -272,8 +271,8 @@ export function accessFrom(
       official: a.official,
     })),
     failures: [
-      ...(ruling.history === FAILED ? ['who ruled'] : []),
-      ...(landmarks === FAILED ? ['where each launch is'] : []),
+      ...(isFailed(ruling.history) ? ['who ruled'] : []),
+      ...(isFailed(landmarks) ? ['where each launch is'] : []),
     ],
   };
 }

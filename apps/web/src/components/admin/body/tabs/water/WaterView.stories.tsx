@@ -1,11 +1,9 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
-
+import { FAILED_READ } from '@/components/admin/reads/readFailureFixtures';
 import { Button } from '@/components/kit/button';
 import { computedColor, sameColor } from '@/components/kit/measure';
 import { faceLoaded, must } from '@/components/kit/storyKit';
-
-import { FAILED } from '../places/useTabReads';
 import { InspectorFrame } from '../tabStoryFrame';
 import { WaterView } from './WaterView';
 import { CHAMPLAIN_WATER, MASCOMA_WATER, MASCOMA_WATER_AS_READ } from './waterFixtures';
@@ -159,7 +157,7 @@ export const BathymetryLoading: Story = {
 /** The bathymetry state couldn't be read: said in place, and once at the top with Try again. */
 export const BathymetryFailed: Story = {
   args: {
-    data: { ...MASCOMA_WATER_AS_READ, bathymetry: FAILED, failures: ['the bathymetry state'] },
+    data: { ...MASCOMA_WATER_AS_READ, bathymetry: FAILED_READ, failures: ['the bathymetry state'] },
     onRetry: fn(),
   },
   play: async ({ canvasElement, args }) => {
@@ -173,9 +171,9 @@ export const BathymetryFailed: Story = {
 
 /** The record couldn't be read: the tab says so, with Try again. */
 export const RecordFailed: Story = {
-  args: { data: FAILED, onRetry: fn() },
+  args: { data: FAILED_READ, onRetry: fn() },
   play: async ({ canvasElement }) => {
-    await expect(slot(canvasElement, 'retry-note')).toHaveTextContent(
+    await expect(slot(canvasElement, 'read-failures')).toHaveTextContent(
       'Couldn’t read this body’s record.',
     );
   },

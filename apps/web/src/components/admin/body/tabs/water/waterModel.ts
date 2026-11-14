@@ -6,9 +6,8 @@ import {
   isMeasuredDepthSource,
   spansMultipleSampleCells,
 } from '@skating/core';
-
+import { isFailed, type Loadable } from '@/components/admin/reads/consoleReads';
 import type { BodyMapScene, MapItem } from '../../map/mapDescriptors';
-import { FAILED, type Loaded } from '../places/useTabReads';
 
 type LatLng = { lat: number; lng: number };
 
@@ -68,7 +67,7 @@ export type WaterData = {
   depth: Depth;
   sampling: Sampling;
   /** The bathymetry state, in its read's state (`bodyConsole.consoleExtras`). */
-  bathymetry: Loaded<Bathymetry>;
+  bathymetry: Loadable<Bathymetry>;
   box: BBox | null;
   /** What couldn't be read, in words ("the bathymetry state"). */
   failures: string[];
@@ -175,12 +174,12 @@ export function spansKm(box: BBox): { ew: number; ns: number } {
 export function waterFrom(
   body: WaterBody,
   // Required, never defaulted: a default would read the extras still loading as landed.
-  extrasRead: Loaded<{ hasBathymetry: boolean }>,
+  extrasRead: Loadable<{ hasBathymetry: boolean }>,
   extras: { candidates?: readonly DepthRung[] } = {},
 ): WaterData {
   const box = body.bbox ?? null;
-  const bathymetry: Loaded<Bathymetry> =
-    extrasRead === undefined || extrasRead === FAILED
+  const bathymetry: Loadable<Bathymetry> =
+    extrasRead === undefined || isFailed(extrasRead)
       ? extrasRead
       : bathymetryOf(extrasRead.hasBathymetry);
   return {
@@ -198,7 +197,7 @@ export function waterFrom(
     },
     bathymetry,
     box,
-    failures: extrasRead === FAILED ? ['the bathymetry state'] : [],
+    failures: isFailed(extrasRead) ? ['the bathymetry state'] : [],
   };
 }
 

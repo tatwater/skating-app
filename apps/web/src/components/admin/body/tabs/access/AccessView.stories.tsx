@@ -1,10 +1,8 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
-
+import { FAILED_READ } from '@/components/admin/reads/readFailureFixtures';
 import { computedColor, sameColor } from '@/components/kit/measure';
 import { faceLoaded, must } from '@/components/kit/storyKit';
-
-import { FAILED } from '../places/useTabReads';
 import { InspectorFrame } from '../tabStoryFrame';
 import { AccessView } from './AccessView';
 import { BOARD_TODAY, MASCOMA_ACCESS, NO_ACCESS } from './accessFixtures';
@@ -197,9 +195,14 @@ export const ReadsFailed: Story = {
     onRetry: fn(),
     data: {
       ...MASCOMA_ACCESS,
-      ruling: { ...MASCOMA_ACCESS.ruling, before: undefined, decidedBy: null, history: FAILED },
+      ruling: {
+        ...MASCOMA_ACCESS.ruling,
+        before: undefined,
+        decidedBy: null,
+        history: FAILED_READ,
+      },
       putIns: MASCOMA_ACCESS.putIns.map((p) =>
-        p.source === 'official' ? p : { ...p, where: FAILED },
+        p.source === 'official' ? p : { ...p, where: FAILED_READ },
       ),
       failures: ['who ruled', 'where each launch is'],
     },
@@ -219,9 +222,9 @@ export const ReadsFailed: Story = {
 
 /** The record or the access read couldn't be read: the tab says so, with Try again. */
 export const AccessFailed: Story = {
-  args: { data: FAILED, onRetry: fn() },
+  args: { data: FAILED_READ, onRetry: fn() },
   play: async ({ canvasElement }) => {
-    await expect(slot(canvasElement, 'retry-note')).toHaveTextContent(
+    await expect(slot(canvasElement, 'read-failures')).toHaveTextContent(
       'Couldn’t read this body’s record or its access.',
     );
   },

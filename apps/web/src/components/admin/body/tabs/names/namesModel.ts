@@ -5,9 +5,8 @@ import {
   WATER_BODY_CLASSES,
   type WaterBodyClass,
 } from '@skating/core';
-
+import { isFailed, type Loadable } from '@/components/admin/reads/consoleReads';
 import type { BodyMapScene, LngLat, MapItem } from '../../map/mapDescriptors';
-import { FAILED, type Loaded } from '../places/useTabReads';
 
 type LatLng = { lat: number; lng: number };
 
@@ -67,7 +66,7 @@ export type AdminPlaces = { towns: string[]; county: string | null };
 
 export type Place = {
   /** The towns and county, in their read's state; `null` when no boundary holds the body. */
-  admin: Loaded<AdminPlaces | null>;
+  admin: Loadable<AdminPlaces | null>;
   /** The states the record says the body is in, as two-letter codes; empty when it says none. */
   states: string[];
   /** The boundary lines that cross the map's view of the body, `null` until a read serves them. */
@@ -150,7 +149,7 @@ export type PlacesInput = { towns: string[]; counties: string[]; states: string[
 export function namesFromBody(
   body: NamesBody,
   // Required, never defaulted: a default would read a boundary read still loading as landed.
-  places: Loaded<PlacesInput>,
+  places: Loadable<PlacesInput>,
   extras: { classOptions?: ClassOption[] | null; townLines?: TownLine[] | null } = {},
 ): NamesData {
   const rungs = nameRungs(body.name, body.nameClaims);
@@ -173,7 +172,7 @@ export function namesFromBody(
       states: [...(body.states ?? [])],
       townLines: extras.townLines ?? null,
     },
-    failures: places === FAILED ? ['the towns and county'] : [],
+    failures: isFailed(places) ? ['the towns and county'] : [],
   };
 }
 
@@ -181,8 +180,8 @@ export function namesFromBody(
  * The towns and county from the boundary read. Counties are read at the interior point only (a body
  * rarely spans two), so the first is the county.
  */
-export function adminOf(places: Loaded<PlacesInput>): Loaded<AdminPlaces | null> {
-  if (places === undefined || places === FAILED || places === null) return places;
+export function adminOf(places: Loadable<PlacesInput>): Loadable<AdminPlaces | null> {
+  if (places === undefined || isFailed(places) || places === null) return places;
   return { towns: [...places.towns], county: places.counties[0] ?? null };
 }
 

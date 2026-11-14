@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FAILED } from '../places/useTabReads';
+import { FAILED_READ } from '@/components/admin/reads/readFailureFixtures';
 import { MASCOMA_NAMES } from './namesFixtures';
 import {
   aliasesOf,
@@ -114,8 +114,8 @@ describe('namesFromBody', () => {
   it('keeps the boundary read’s state: loading stays loading, a failure is named', () => {
     const body = { name: 'Mascoma Lake', type: 'reservoir' as const };
     expect(namesFromBody(body, undefined).place.admin).toBeUndefined();
-    const failed = namesFromBody(body, FAILED);
-    expect(failed.place.admin).toBe(FAILED);
+    const failed = namesFromBody(body, FAILED_READ);
+    expect(failed.place.admin).toBe(FAILED_READ);
     expect(failed.failures).toEqual(['the towns and county']);
   });
 

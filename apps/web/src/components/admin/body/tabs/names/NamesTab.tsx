@@ -2,10 +2,14 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { useMutation } from 'convex/react';
 import { useMemo } from 'react';
-
+import {
+  isFailed,
+  type Loadable,
+  read,
+  useConsoleReadSet,
+} from '@/components/admin/reads/consoleReads';
 import { useRole } from '@/lib/useRole';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
-import { FAILED, type Loaded, read, useTabReads } from '../places/useTabReads';
 import { useTabAction } from '../useTabAction';
 import { NamesView } from './NamesView';
 import { type NamesData, namesFromBody, namesMapScene } from './namesModel';
@@ -16,25 +20,29 @@ import { type NamesData, namesFromBody, namesMapScene } from './namesModel';
  * until one changes. The record still loading — or not available, which the frame says itself — is
  * loading; the record failing is the tab's failure.
  */
-export function useNamesRead(bodyId: string): { data: Loaded<NamesData>; retry: () => void } {
+export function useNamesRead(bodyId: string): {
+  data: Loadable<NamesData>;
+  retry: () => void;
+  pending: boolean;
+} {
   const waterBodyId = bodyId as Id<'waterBodies'>;
-  const { reads, retry } = useTabReads({
+  const { reads, retry, pending } = useConsoleReadSet({
     body: read(api.waterBodies.get, { waterBodyId }),
     places: read(api.bodyConsole.places, { waterBodyId }),
   });
   const { body: got, places } = reads;
-  const body = got === FAILED ? FAILED : got?.available ? got.body : undefined;
-  const data = useMemo<Loaded<NamesData>>(
-    () => (body === undefined || body === FAILED ? body : namesFromBody(body, places)),
+  const body = isFailed(got) ? got : got?.available ? got.body : undefined;
+  const data = useMemo<Loadable<NamesData>>(
+    () => (body === undefined || isFailed(body) ? body : namesFromBody(body, places)),
     [body, places],
   );
-  return { data, retry };
+  return { data, retry, pending };
 }
 
 /** The drawing's data: the tab's, once the record is read. */
 export function useNamesData(bodyId: string): NamesData | undefined {
   const { data } = useNamesRead(bodyId);
-  return data === FAILED ? undefined : data;
+  return isFailed(data) ? undefined : data;
 }
 
 /**
@@ -46,7 +54,7 @@ export function useNamesData(bodyId: string): NamesData | undefined {
  */
 export function NamesTab({ bodyId, lit = null }: BodyTabProps) {
   const waterBodyId = bodyId as Id<'waterBodies'>;
-  const { data, retry } = useNamesRead(bodyId);
+  const { data, retry, pending } = useNamesRead(bodyId);
   const setName = useMutation(api.waterBodies.setWaterBodyName);
   const { act } = useTabAction();
   const { can } = useRole();
@@ -63,6 +71,7 @@ export function NamesTab({ bodyId, lit = null }: BodyTabProps) {
     <NamesView
       data={data}
       onRetry={retry}
+      retryPending={pending}
       lit={lit}
       onChooseName={choose}
       onCommunityName={choose}

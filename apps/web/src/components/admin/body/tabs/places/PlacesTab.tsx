@@ -2,14 +2,12 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { useMutation } from 'convex/react';
 import { useMemo, useState } from 'react';
-
+import { read, useConsoleReadSet } from '@/components/admin/reads/consoleReads';
 import { useRole } from '@/lib/useRole';
-
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { useTabAction } from '../useTabAction';
 import { PlacesView } from './PlacesView';
 import { type PlacesData, placesFrom, placesMapScene, rowsOf } from './placesModel';
-import { read, useTabReads } from './useTabReads';
 
 /**
  * The Places tab's reads and its data — the landmarks with when and by whom each was added, the
@@ -17,11 +15,15 @@ import { read, useTabReads } from './useTabReads';
  * on the reads, so the map's `useData` keeps its identity until one changes. Who asked is read only
  * for a viewer who can see the asks (`inbox.read`); without it the tab has no askers at all.
  */
-export function usePlacesRead(bodyId: string): { data: PlacesData; retry: () => void } {
+export function usePlacesRead(bodyId: string): {
+  data: PlacesData;
+  retry: () => void;
+  pending: boolean;
+} {
   const waterBodyId = bodyId as Id<'waterBodies'>;
   const { can, isLoading } = useRole();
   const seesAskers = can('inbox.read');
-  const { reads, retry } = useTabReads({
+  const { reads, retry, pending } = useConsoleReadSet({
     landmarks: read(api.landmarks.listForEditor, { waterBodyId }),
     bays: read(api.subAreas.listForBody, { waterBodyId }),
     names: read(api.corpusPlaceNames.openForBody, { waterBodyId }),
@@ -36,7 +38,7 @@ export function usePlacesRead(bodyId: string): { data: PlacesData; retry: () => 
     () => placesFrom({ landmarks, bays, names, proposals, provenance, proposers: askers }),
     [landmarks, bays, names, proposals, provenance, askers],
   );
-  return { data, retry };
+  return { data, retry, pending };
 }
 
 /** The drawing's data: the tab's, as the map reads it. */
@@ -57,7 +59,7 @@ export function usePlacesData(bodyId: string): PlacesData | undefined {
  * (`corpusRequests.approve` / `decline`, `inbox.request`). The map tools are task modes, not built.
  */
 export function PlacesTab({ bodyId, lit = null, onLitChange }: BodyTabProps) {
-  const { data, retry } = usePlacesRead(bodyId);
+  const { data, retry, pending } = usePlacesRead(bodyId);
   // A row's hover washes its row; the frame's contract has no hovered item yet to carry it to the
   // marker (a contract request), so it stays the view's.
   const [hovered, setHovered] = useState<string | null>(null);
@@ -77,6 +79,7 @@ export function PlacesTab({ bodyId, lit = null, onLitChange }: BodyTabProps) {
     <PlacesView
       data={data}
       onRetry={retry}
+      retryPending={pending}
       lit={lit}
       onLitChange={onLitChange}
       hovered={hovered}

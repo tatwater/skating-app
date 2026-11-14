@@ -1,6 +1,6 @@
 import type { PublicAccessVerdict } from '@skating/core';
 import { type ReactNode, useRef } from 'react';
-
+import { isFailed, type Loadable } from '@/components/admin/reads/consoleReads';
 import { Badge, Tag } from '@/components/kit/badge';
 import { Button } from '@/components/kit/button';
 import { EntryTile } from '@/components/kit/entry-tile';
@@ -9,10 +9,8 @@ import { Section } from '@/components/kit/section-slug';
 import { sayUnavailable, UnavailableButton } from '@/components/kit/unavailable-button';
 import { usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
-import { RetryNote } from '../places/kit-candidates/retry-note';
-import { LoadingLine, NOT_RECORDED, ReadFailed, ReadFailures } from '../places/tabStates';
-import { FAILED, type Loaded } from '../places/useTabReads';
 import { LIT_ROW, LoadingSection, litAttr, TabBody } from '../tabParts';
+import { CouldntRead, LoadingLine, NOT_RECORDED, ReadFailures } from '../tabStates';
 import { type AccessData, earlierWords, litId, type PutInRow } from './accessModel';
 import { ReasonAsk } from './ReasonAsk';
 import { RulingStrip } from './RulingStrip';
@@ -34,9 +32,11 @@ import { RulingStrip } from './RulingStrip';
 
 export type AccessViewProps = {
   /** The tab's data; `undefined` while it loads, `failed` when the record or access failed. */
-  data: Loaded<AccessData>;
+  data: Loadable<AccessData>;
   /** Ask again for every read that failed. */
   onRetry?: () => void;
+  /** Tried again; the fresh answers aren't in. */
+  retryPending?: boolean;
   lit?: string | null;
   /** The clock the ruling's days are counted to. */
   now: number;
@@ -77,6 +77,7 @@ const SOURCE_HEAD: Record<PutInRow['source'], { title: ReactNode; aside: string 
 export function AccessView({
   data,
   onRetry,
+  retryPending = false,
   lit = null,
   now,
   onRule,
@@ -99,14 +100,15 @@ export function AccessView({
       </TabBody>
     );
   }
-  if (data === FAILED) {
+  if (isFailed(data)) {
     return (
       <TabBody data-slot="access-tab">
-        {onRetry ? (
-          <RetryNote onRetry={onRetry}>Couldn’t read this body’s record or its access.</RetryNote>
-        ) : (
-          <ReadFailed />
-        )}
+        <ReadFailures
+          failures={[]}
+          whole="Couldn’t read this body’s record or its access."
+          onRetry={onRetry}
+          pending={data.pending}
+        />
       </TabBody>
     );
   }
@@ -115,7 +117,7 @@ export function AccessView({
     .filter((g) => g.rows.length > 0);
   return (
     <TabBody ref={root} data-slot="access-tab">
-      <ReadFailures failures={data.failures} onRetry={onRetry} />
+      <ReadFailures failures={data.failures} onRetry={onRetry} pending={retryPending} />
       <RulingSection data={data} lit={lit} now={now} onRule={onRule} />
       <Section title="Put-ins" count={data.putIns.length} data-slot="put-ins">
         {groups.length > 0 && (
@@ -259,7 +261,7 @@ function RulingSection({
           <LoadingLine width="60%" />
         </span>
       )}
-      {ruling.verdict !== null && ruling.decidedAt !== null && ruling.history === FAILED && (
+      {ruling.verdict !== null && ruling.decidedAt !== null && isFailed(ruling.history) && (
         <span data-slot="ruling-history-failed" className="text-assist leading-list text-fg3">
           Who ruled and what stood before couldn’t be read
         </span>
@@ -267,6 +269,7 @@ function RulingSection({
       {ruling.verdict !== null &&
         ruling.decidedAt !== null &&
         typeof ruling.history === 'object' &&
+        !isFailed(ruling.history) &&
         ruling.before === undefined && (
           // The history landed without the row that made this ruling: say so, never a blank.
           <span data-slot="ruling-history-absent" className="text-assist leading-list text-fg3">
@@ -368,8 +371,8 @@ function PutInItem({
           <span className="truncate text-assist text-fg3">
             {p.where === undefined ? (
               <LoadingLine width="7rem" />
-            ) : p.where === FAILED ? (
-              <ReadFailed />
+            ) : isFailed(p.where) ? (
+              <CouldntRead />
             ) : (
               (p.where ?? '')
             )}

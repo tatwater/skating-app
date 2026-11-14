@@ -2,7 +2,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faLink } from '@fortawesome/sharp-regular-svg-icons';
 import type { DepthSource } from '@skating/core';
 import { type ReactNode, useState } from 'react';
-
+import { isFailed, type Loadable } from '@/components/admin/reads/consoleReads';
 import { Button } from '@/components/kit/button';
 import { KeyValueList, KeyValueRow } from '@/components/kit/grid-list';
 import { Input, InputGroup, InputGroupIcon, InputGroupKbd } from '@/components/kit/input';
@@ -10,12 +10,10 @@ import { RadioGroup } from '@/components/kit/radio';
 import { RadioCell } from '@/components/kit/radio-cell';
 import { Section } from '@/components/kit/section-slug';
 import { UnavailableButton } from '@/components/kit/unavailable-button';
+import { UnavailableField } from '@/components/kit/unavailable-field';
 import { cn } from '@/lib/utils';
-import { RetryNote } from '../places/kit-candidates/retry-note';
-import { UnavailableField } from '../places/kit-candidates/unavailable-field';
-import { LoadingLine, NOT_RECORDED, ReadFailed, ReadFailures } from '../places/tabStates';
-import { FAILED, type Loaded } from '../places/useTabReads';
 import { LIT_ROW, LoadingSection, litAttr, TabBody } from '../tabParts';
+import { CouldntRead, LoadingLine, NOT_RECORDED, ReadFailures } from '../tabStates';
 import {
   type DepthRung,
   depthFigure,
@@ -46,9 +44,11 @@ const NOT_YET = {
 
 export type WaterViewProps = {
   /** The tab's data; `undefined` while it loads, `failed` when the record couldn't be read. */
-  data: Loaded<WaterData>;
+  data: Loadable<WaterData>;
   /** Ask again for every read that failed. */
   onRetry?: () => void;
+  /** Tried again; the fresh answers aren't in. */
+  retryPending?: boolean;
   lit?: string | null;
   /** Use this source's number for the mean or the max. */
   onChooseDepth?: (measurement: 'mean' | 'max', source: DepthSource) => void;
@@ -76,6 +76,7 @@ const HEAD = 'text-kick leading-none font-medium tracking-kick text-fg3 uppercas
 export function WaterView({
   data,
   onRetry,
+  retryPending = false,
   lit = null,
   onChooseDepth,
   onSurvey,
@@ -92,20 +93,21 @@ export function WaterView({
       </TabBody>
     );
   }
-  if (data === FAILED) {
+  if (isFailed(data)) {
     return (
       <TabBody data-slot="water-tab">
-        {onRetry ? (
-          <RetryNote onRetry={onRetry}>Couldn’t read this body’s record.</RetryNote>
-        ) : (
-          <ReadFailed />
-        )}
+        <ReadFailures
+          failures={[]}
+          whole="Couldn’t read this body’s record."
+          onRetry={onRetry}
+          pending={data.pending}
+        />
       </TabBody>
     );
   }
   return (
     <TabBody data-slot="water-tab">
-      <ReadFailures failures={data.failures} onRetry={onRetry} />
+      <ReadFailures failures={data.failures} onRetry={onRetry} pending={retryPending} />
       <DepthSection data={data} lit={lit} onChoose={onChooseDepth} canChoose={canChooseDepth} />
       <SamplingSection data={data} lit={lit} />
       <BathymetrySection
@@ -334,7 +336,7 @@ function BathymetrySection({
 } & Pick<WaterViewProps, 'onSurvey' | 'enrichmentLink'>) {
   const [draft, setDraft] = useState('');
   const b = data.bathymetry;
-  const missing = typeof b === 'object' && b.missing;
+  const missing = typeof b === 'object' && !isFailed(b) && b.missing;
   const field = (disabled: boolean) => (
     <InputGroup>
       <InputGroupIcon>
@@ -356,9 +358,8 @@ function BathymetrySection({
       data-slot="bathymetry"
       data-gap={missing ? '' : undefined}
       aria-busy={b === undefined || undefined}
-      // The one gap left on the record turns the title chip amber (Review 14). The kit's slug has
-      // no tone yet (a kit extension owed); until it does, the chip is toned from here.
-      className="data-gap:[&_[data-slot=section-chip]]:bg-warn data-gap:[&_[data-slot=section-chip]]:text-bg"
+      // The one gap left on the record turns the title chip amber (Review 14).
+      tone={missing ? 'warn' : 'default'}
       end={enrichmentLink}
     >
       {b === undefined ? (
@@ -366,8 +367,8 @@ function BathymetrySection({
           <LoadingLine width="100%" />
           <LoadingLine width="70%" />
         </span>
-      ) : b === FAILED ? (
-        <ReadFailed />
+      ) : isFailed(b) ? (
+        <CouldntRead />
       ) : (
         <KeyValueList keyWidth="6.5rem">
           <KeyValueRow label="Searched">

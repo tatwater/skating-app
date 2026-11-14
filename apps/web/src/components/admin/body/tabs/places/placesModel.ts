@@ -1,7 +1,12 @@
 import { LANDMARK_KIND_LABELS, type LandmarkKind } from '@skating/core';
-
+import {
+  isFailed,
+  type Loadable,
+  mapLoadable,
+  retryAll,
+} from '@/components/admin/reads/consoleReads';
 import type { BodyMapScene, MapItem } from '../../map/mapDescriptors';
-import { FAILED, type Loaded } from './useTabReads';
+import { PLACE_NAMES_READ_CAP } from '../../readCaps';
 
 type LatLng = { lat: number; lng: number };
 
@@ -29,10 +34,10 @@ export type LandmarkRow = {
   /** Its ids in those catalogs: `{ catalog: 'OSM', id: 'node/158821324' }`. */
   ids: Array<{ catalog: string; id: string }>;
   /** The bay it falls in, by name; `null` when it is in none. */
-  bay: Loaded<string | null>;
+  bay: Loadable<string | null>;
   areaSqM: number | null;
   /** When it was added and by whom; `null` when the provenance read doesn't know it. */
-  added: Loaded<Added | null>;
+  added: Loadable<Added | null>;
 };
 
 export type PlaceNameAsk = {
@@ -64,16 +69,16 @@ export type ProposalAsk = {
   similar: { landmarkId: string; name: string; point: LatLng; meters: number } | null;
 };
 
-export type Asker = Loaded<Person | 'erased' | null> | 'hidden';
+export type Asker = Loadable<Person | 'erased' | null> | 'hidden';
 
 export type PlaceAsk = PlaceNameAsk | ProposalAsk;
 
 export type PlacesData = {
-  asks: Loaded<PlaceAsk[]>;
+  asks: Loadable<PlaceAsk[]>;
   /** More is asked than the reads returned: the asks' count is a floor. */
   asksCapped: boolean;
   /** The live landmarks, in the list's order (by the list's word, then name). */
-  landmarks: Loaded<LandmarkRow[]>;
+  landmarks: Loadable<LandmarkRow[]>;
   /** What couldn't be read, in words ("the landmarks", "who asked"). */
   failures: string[];
 };
@@ -120,21 +125,21 @@ export type EditorLandmarkInput = {
 
 /** A read's map, looked up: loading and failed pass through; a missing key is `fallback`. */
 function lookUp<V, F>(
-  map: Loaded<ReadonlyMap<string, V>>,
+  map: Loadable<ReadonlyMap<string, V>>,
   key: string,
   fallback: F,
-): Loaded<V | F> {
-  if (map === undefined || map === FAILED) return map;
+): Loadable<V | F> {
+  if (map === undefined || isFailed(map)) return map;
   return map.get(key) ?? fallback;
 }
 
 /** The live landmarks, ready for the list and the card: removed ones stay out of the default view. */
 export function landmarkRows(
   rows: readonly EditorLandmarkInput[],
-  bayNames: Loaded<ReadonlyMap<string, string>>,
+  bayNames: Loadable<ReadonlyMap<string, string>>,
   // Required, never defaulted: a default would turn a read still loading (`undefined`) into one
   // that landed empty.
-  added: Loaded<ReadonlyMap<string, Added>>,
+  added: Loadable<ReadonlyMap<string, Added>>,
 ): LandmarkRow[] {
   return rows
     .filter((r) => r.removedAt === undefined)
@@ -172,7 +177,7 @@ export function placeAsks(
     similarLandmark?: { landmarkId: string; name: string; point: LatLng; meters: number };
   }>,
   // Required, never defaulted (a default would read a loading `undefined` as `hidden`).
-  askers: Loaded<ReadonlyMap<string, Person | 'erased'>> | 'hidden',
+  askers: Loadable<ReadonlyMap<string, Person | 'erased'>> | 'hidden',
 ): PlaceAsk[] {
   return [
     ...[...names]
@@ -257,48 +262,44 @@ export function askersByRequest(
   );
 }
 
-/**
- * The most open place names `corpusPlaceNames.openForBody` returns (its `QUEUE_CAP`, unexported):
- * a read that comes back this full may have stopped short (a server request: a `capped` flag).
- */
-export const PLACE_NAMES_READ_CAP = 400;
+/** The most open place names `corpusPlaceNames.openForBody` returns: the console's one cap. */
+export { PLACE_NAMES_READ_CAP } from '../../readCaps';
 
-/** A read's map, built once it lands; loading and failed pass through. */
-function mapOf<T, M>(read: Loaded<T>, build: (value: T) => M): Loaded<M> {
-  if (read === undefined) return undefined;
-  if (read === FAILED) return FAILED;
-  return build(read);
-}
+/** A read's map, built once it lands; loading and failed pass through (the read layer's own). */
+const mapOf = mapLoadable;
 
 /** The Places tab's reads, as they stand. */
 export type PlacesReads = {
-  landmarks: Loaded<readonly EditorLandmarkInput[]>;
-  bays: Loaded<ReadonlyArray<{ _id: string; name: string }>>;
-  names: Loaded<Parameters<typeof placeAsks>[0]>;
-  proposals: Loaded<{ proposals: Parameters<typeof placeAsks>[1]; more: boolean }>;
-  provenance: Loaded<readonly ProvenanceInput[]>;
+  landmarks: Loadable<readonly EditorLandmarkInput[]>;
+  bays: Loadable<ReadonlyArray<{ _id: string; name: string }>>;
+  names: Loadable<Parameters<typeof placeAsks>[0]>;
+  proposals: Loadable<{ proposals: Parameters<typeof placeAsks>[1]; more: boolean }>;
+  provenance: Loadable<readonly ProvenanceInput[]>;
   /** `hidden` for a viewer who can't see who asks. */
-  proposers: Loaded<ReadonlyArray<{ requestId: string; requester: PersonInput | null }>> | 'hidden';
+  proposers:
+    | Loadable<ReadonlyArray<{ requestId: string; requester: PersonInput | null }>>
+    | 'hidden';
 };
 
 /** The tab's data from its reads, each part in its read's state. Pure. */
 export function placesFrom(r: PlacesReads): PlacesData {
   const failures: string[] = [];
-  if (r.landmarks === FAILED) failures.push('the landmarks');
-  if (r.names === FAILED || r.proposals === FAILED) failures.push('what is asked');
-  if (r.bays === FAILED) failures.push('the bays');
-  if (r.provenance === FAILED) failures.push('when each landmark was added');
-  if (r.proposers === FAILED) failures.push('who asked');
+  if (isFailed(r.landmarks)) failures.push('the landmarks');
+  if (isFailed(r.names) || isFailed(r.proposals)) failures.push('what is asked');
+  if (isFailed(r.bays)) failures.push('the bays');
+  if (isFailed(r.provenance)) failures.push('when each landmark was added');
+  if (isFailed(r.proposers)) failures.push('who asked');
 
   const askers =
     r.proposers === 'hidden' ? ('hidden' as const) : mapOf(r.proposers, askersByRequest);
-  let asks: Loaded<PlaceAsk[]>;
-  if (r.names === FAILED || r.proposals === FAILED) asks = FAILED;
-  else if (r.names === undefined || r.proposals === undefined) asks = undefined;
+  let asks: Loadable<PlaceAsk[]>;
+  if (isFailed(r.names) || isFailed(r.proposals)) {
+    asks = retryAll([r.names, r.proposals].filter(isFailed));
+  } else if (r.names === undefined || r.proposals === undefined) asks = undefined;
   else asks = placeAsks(r.names, r.proposals.proposals, askers);
 
   const landmarks =
-    r.landmarks === undefined || r.landmarks === FAILED
+    r.landmarks === undefined || isFailed(r.landmarks)
       ? r.landmarks
       : landmarkRows(
           r.landmarks,
@@ -315,8 +316,8 @@ export function placesFrom(r: PlacesReads): PlacesData {
   };
 }
 
-const valueOrNull = <T>(read: Loaded<T>): T | null =>
-  read === undefined || read === FAILED ? null : read;
+const valueOrNull = <T>(read: Loadable<T>): T | null =>
+  read === undefined || isFailed(read) ? null : read;
 
 const plural = (n: number, one: string, many: string) =>
   `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
@@ -361,8 +362,8 @@ export const litId = {
 };
 
 /** The rows of a list read that landed; none while it loads or if it failed. */
-export function rowsOf<T>(list: Loaded<readonly T[]>): readonly T[] {
-  return list === undefined || list === FAILED ? [] : list;
+export function rowsOf<T>(list: Loadable<readonly T[]>): readonly T[] {
+  return list === undefined || isFailed(list) ? [] : list;
 }
 
 /** The landmark a lit id selects, when it is one of the live ones. */

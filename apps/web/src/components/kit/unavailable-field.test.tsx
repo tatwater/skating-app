@@ -8,9 +8,8 @@ vi.mock('@/components/kit/toast', async (original) => ({
   toast: (t: unknown) => toasts.push(t),
 }));
 
+import { stubJsdomAnimations } from '@/components/admin/body/tabs/jsdomStubs';
 import { Input } from '@/components/kit/input';
-
-import { stubJsdomAnimations } from '../../jsdomStubs';
 import { UnavailableField } from './unavailable-field';
 
 beforeAll(stubJsdomAnimations);

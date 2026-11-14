@@ -5,6 +5,7 @@ import {
   type LandmarkKind,
 } from '@skating/core';
 import { useRef, useState } from 'react';
+import { isFailed } from '@/components/admin/reads/consoleReads';
 import { Tag, TagRun } from '@/components/kit/badge';
 import { Button } from '@/components/kit/button';
 import {
@@ -24,6 +25,7 @@ import { usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
 import { ReasonAsk } from '../access/ReasonAsk';
 import { LIT_ROW, LoadingSection, litAttr, TabBody } from '../tabParts';
+import { CouldntRead, LoadingLine, ReadFailures } from '../tabStates';
 import { LandmarkCard, type LandmarkEdit } from './LandmarkCard';
 import {
   type Asker,
@@ -38,8 +40,6 @@ import {
   rowsOf,
   selectedLandmark,
 } from './placesModel';
-import { CappedCount, LoadingLine, ReadFailed, ReadFailures } from './tabStates';
-import { FAILED } from './useTabReads';
 
 /**
  * Body › Places (board 5.4.3), the default view: what is asked of the body's places, then its
@@ -62,6 +62,8 @@ export type PlacesViewProps = {
   data: PlacesData | undefined;
   /** Ask again for every read that failed. */
   onRetry?: () => void;
+  /** Tried again; the fresh answers aren't in. */
+  retryPending?: boolean;
   lit?: string | null;
   onLitChange?: (id: string | null) => void;
   hovered?: string | null;
@@ -93,7 +95,7 @@ const MAP_TOOLS = {
 /** A list's count on its rule: its length, a floor when its read stopped short, none until it lands. */
 function listCount(list: PlacesData['asks'], capped: boolean) {
   if (!Array.isArray(list)) return {};
-  return capped ? { end: <CappedCount count={list.length} /> } : { count: list.length };
+  return { count: { count: list.length, capped } };
 }
 
 /** A list's lines held while its read is on its way. */
@@ -111,6 +113,7 @@ function LoadingLines({ lines }: { lines: number }) {
 export function PlacesView({
   data,
   onRetry,
+  retryPending = false,
   lit = null,
   onLitChange,
   hovered = null,
@@ -144,7 +147,7 @@ export function PlacesView({
         className="transition-opacity duration-(--duration-fast) ease-standard data-dimmed:pointer-events-none data-dimmed:opacity-(--opacity-dim)"
         inert={selected !== null}
       >
-        <ReadFailures failures={data.failures} onRetry={onRetry} />
+        <ReadFailures failures={data.failures} onRetry={onRetry} pending={retryPending} />
         <Section
           title="Asked"
           {...listCount(data.asks, data.asksCapped)}
@@ -153,8 +156,8 @@ export function PlacesView({
         >
           {data.asks === undefined ? (
             <LoadingLines lines={3} />
-          ) : data.asks === FAILED ? (
-            <ReadFailed />
+          ) : isFailed(data.asks) ? (
+            <CouldntRead />
           ) : (
             data.asks.length > 0 && (
               <ul className="flex flex-col">
@@ -193,8 +196,8 @@ export function PlacesView({
         >
           {data.landmarks === undefined ? (
             <LoadingLines lines={12} />
-          ) : data.landmarks === FAILED ? (
-            <ReadFailed />
+          ) : isFailed(data.landmarks) ? (
+            <CouldntRead />
           ) : (
             data.landmarks.length > 0 && (
               <ul className="flex flex-col" aria-label="Landmarks">
@@ -349,7 +352,7 @@ function AskRow({
 function AskerLine({ asker }: { asker: Asker }) {
   if (asker === 'hidden') return null;
   if (asker === undefined) return <LoadingLine width="9rem" />;
-  if (asker === FAILED) return <span className={ASSIST}>Who asked couldn’t be read</span>;
+  if (isFailed(asker)) return <span className={ASSIST}>Who asked couldn’t be read</span>;
   if (asker === 'erased') return <span className={ASSIST}>Asked from an account since erased</span>;
   // Every ask names its asker: `null` is an ask past what the askers' read covers, not one unrecorded.
   if (asker === null) return <span className={ASSIST}>Who asked is past what this read shows</span>;

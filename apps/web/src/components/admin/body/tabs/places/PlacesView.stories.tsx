@@ -1,14 +1,12 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useState } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
-
+import { FAILED_READ } from '@/components/admin/reads/readFailureFixtures';
 import { faceLoaded, must } from '@/components/kit/storyKit';
-
 import { InspectorFrame } from '../tabStoryFrame';
 import { PlacesView, type PlacesViewProps } from './PlacesView';
 import { HOVERED_DAM, MASCOMA_PLACES, SELECTED_UPPER } from './placesFixtures';
 import { rowsOf } from './placesModel';
-import { FAILED } from './useTabReads';
 
 /**
  * Boards 5.4.3 and 5.4.3 | Landmark, Body › Places: the tab's column at the board's size. Render
@@ -298,9 +296,9 @@ export const ReadsFailed: Story = {
     data: {
       ...MASCOMA_PLACES,
       asks: rowsOf(MASCOMA_PLACES.asks).map((a) =>
-        a.kind === 'proposal' ? { ...a, asker: FAILED } : a,
+        a.kind === 'proposal' ? { ...a, asker: FAILED_READ } : a,
       ),
-      landmarks: FAILED,
+      landmarks: FAILED_READ,
       failures: ['the landmarks', 'who asked'],
     },
   },

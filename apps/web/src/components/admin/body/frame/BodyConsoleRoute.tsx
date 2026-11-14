@@ -27,8 +27,8 @@ import { ACCESS_TAB } from '../tabs/access';
 import { NAMES_TAB } from '../tabs/names';
 import { PLACES_TAB } from '../tabs/places';
 import { SHAPE_TAB } from '../tabs/shape/ShapeTabRoute';
-import { WATER_TAB } from '../tabs/water';
 import { campaignText } from '../tabs/shape/shapeModel';
+import { WATER_TAB } from '../tabs/water';
 import { BodyConsoleGone } from './BodyConsoleGone';
 import { BodyConsoleMissing, BodyConsoleView } from './BodyConsoleView';
 import {

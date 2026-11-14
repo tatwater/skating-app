@@ -1,6 +1,6 @@
 import { LANDMARK_KIND_LABELS, LANDMARK_KINDS, type LandmarkKind } from '@skating/core';
 import { type ReactNode, useRef, useState } from 'react';
-
+import { isFailed, type Loadable } from '@/components/admin/reads/consoleReads';
 import { Tag, TagRun } from '@/components/kit/badge';
 import { Button } from '@/components/kit/button';
 import { ChipInput } from '@/components/kit/chip-input';
@@ -20,6 +20,7 @@ import {
 import { sayUnavailable, UnavailableButton } from '@/components/kit/unavailable-button';
 import { usePaneKeys } from '@/lib/keys';
 import { BLOCK_GAP, dayMonthYear } from '../tabParts';
+import { CouldntRead, LoadingLine, NotRecorded } from '../tabStates';
 import {
   type Added,
   acres,
@@ -28,8 +29,6 @@ import {
   type LandmarkRow,
   PROMOTABLE,
 } from './placesModel';
-import { LoadingLine, NotRecorded, ReadFailed } from './tabStates';
-import { FAILED, type Loaded } from './useTabReads';
 
 /**
  * Board 5.4.3 | Landmark: the selected landmark on the inset card over the list. Its fields save as
@@ -193,8 +192,8 @@ export function LandmarkCard({
               <KeyValueRow label="Bay">
                 {l.bay === undefined ? (
                   <LoadingLine width="7rem" />
-                ) : l.bay === FAILED ? (
-                  <ReadFailed />
+                ) : isFailed(l.bay) ? (
+                  <CouldntRead />
                 ) : (
                   l.bay
                 )}
@@ -245,9 +244,9 @@ export function LandmarkCard({
 }
 
 /** When and by whom a landmark was added, in the read's state. */
-function AddedValue({ added }: { added: Loaded<Added | null> }) {
+function AddedValue({ added }: { added: Loadable<Added | null> }) {
   if (added === undefined) return <LoadingLine width="7rem" />;
-  if (added === FAILED) return <ReadFailed />;
+  if (isFailed(added)) return <CouldntRead />;
   if (added === null) return <NotRecorded />;
   return (
     <span className="flex flex-col items-start gap-(--space-1)">

@@ -3,11 +3,15 @@ import type { Id } from '@skating/convex/dataModel';
 import type { PublicAccessVerdict } from '@skating/core';
 import { useMutation } from 'convex/react';
 import { useEffect, useMemo, useState } from 'react';
-
+import {
+  isFailed,
+  type Loadable,
+  read,
+  retryAll,
+  useConsoleReadSet,
+} from '@/components/admin/reads/consoleReads';
 import { useRole } from '@/lib/useRole';
-
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
-import { FAILED, type Loaded, read, useTabReads } from '../places/useTabReads';
 import { useTabAction } from '../useTabAction';
 import { AccessView } from './AccessView';
 import {
@@ -33,11 +37,15 @@ import {
  * identity until one changes. The record or the access read failing is the tab's failure; the
  * landmarks and the history each say so in place.
  */
-export function useAccessRead(bodyId: string): { data: Loaded<AccessData>; retry: () => void } {
+export function useAccessRead(bodyId: string): {
+  data: Loadable<AccessData>;
+  retry: () => void;
+  pending: boolean;
+} {
   const waterBodyId = bodyId as Id<'waterBodies'>;
   const { can, isLoading } = useRole();
   const readsAudit = can('audit.read');
-  const { reads, retry } = useTabReads({
+  const { reads, retry, pending } = useConsoleReadSet({
     body: read(api.waterBodies.get, { waterBodyId }),
     access: read(api.accessPoints.accessForBody, { waterBodyId }),
     landmarks: read(api.landmarks.listForBody, { waterBodyId }),
@@ -50,11 +58,11 @@ export function useAccessRead(bodyId: string): { data: Loaded<AccessData>; retry
       : null,
   });
   const { body: got, access, landmarks, rulings } = reads;
-  const body = got === FAILED ? FAILED : got?.available ? got.body : undefined;
+  const body = isFailed(got) ? got : got?.available ? got.body : undefined;
   // While the role loads, the history is on its way, not withheld.
   const history = readsAudit ? rulings : isLoading ? undefined : 'hidden';
-  const data = useMemo<Loaded<AccessData>>(() => {
-    if (body === FAILED || access === FAILED) return FAILED;
+  const data = useMemo<Loadable<AccessData>>(() => {
+    if (isFailed(body) || isFailed(access)) return retryAll([body, access].filter(isFailed));
     if (body === undefined || access === undefined) return undefined;
     return accessFrom(
       access,
@@ -63,19 +71,19 @@ export function useAccessRead(bodyId: string): { data: Loaded<AccessData>; retry
       landmarks,
     );
   }, [body, access, landmarks, history, bodyId]);
-  return { data, retry };
+  return { data, retry, pending };
 }
 
 /** The drawing's data: the tab's, once its record and access are read. */
 export function useAccessData(bodyId: string): AccessData | undefined {
   const { data } = useAccessRead(bodyId);
-  return data === FAILED ? undefined : data;
+  return isFailed(data) ? undefined : data;
 }
 
 export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
   const waterBodyId = bodyId as Id<'waterBodies'>;
   const { can } = useRole();
-  const { data, retry } = useAccessRead(bodyId);
+  const { data, retry, pending } = useAccessRead(bodyId);
   const setPublicAccess = useMutation(api.waterBodies.setPublicAccess);
   const setOfficial = useMutation(api.putIns.setOfficial);
   const hide = useMutation(api.putIns.hide);
@@ -94,6 +102,7 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
     <AccessView
       data={data}
       onRetry={retry}
+      retryPending={pending}
       lit={lit}
       now={now}
       canPlace={can('body.access')}

@@ -1,9 +1,8 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
-
+import { FAILED_READ } from '@/components/admin/reads/readFailureFixtures';
 import { computedColor, JUNCTION_TOLERANCE_PX, sameColor } from '@/components/kit/measure';
 import { faceLoaded, must } from '@/components/kit/storyKit';
-import { FAILED } from '../places/useTabReads';
 import { InspectorFrame } from '../tabStoryFrame';
 import { NamesView } from './NamesView';
 import {
@@ -157,7 +156,7 @@ export const BoundariesFailed: Story = {
   args: {
     data: {
       ...MASCOMA_NAMES_AS_READ,
-      place: { ...MASCOMA_NAMES_AS_READ.place, admin: FAILED },
+      place: { ...MASCOMA_NAMES_AS_READ.place, admin: FAILED_READ },
       failures: ['the towns and county'],
     },
     onRetry: fn(),
@@ -173,9 +172,9 @@ export const BoundariesFailed: Story = {
 
 /** The record itself couldn't be read: the tab says so, with Try again. */
 export const RecordFailed: Story = {
-  args: { data: FAILED, onRetry: fn() },
+  args: { data: FAILED_READ, onRetry: fn() },
   play: async ({ canvasElement }) => {
-    await expect(slot(canvasElement, 'retry-note')).toHaveTextContent(
+    await expect(slot(canvasElement, 'read-failures')).toHaveTextContent(
       'Couldn’t read this body’s record.',
     );
   },

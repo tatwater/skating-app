@@ -15,7 +15,7 @@ import { UnavailableField } from './unavailable-field';
  * `UnavailableButton`'s pattern for a field. Promoted to the kit, it would sit beside it.
  */
 const meta = {
-  title: 'Kit candidates/UnavailableField',
+  title: 'Kit/UnavailableField',
   component: UnavailableField,
   globals: { surface: 'admin', mode: 'dark' },
   args: {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-
+import { isFailed } from '@/components/admin/reads/consoleReads';
+import { FAILED_READ } from '@/components/admin/reads/readFailureFixtures';
 import { MASCOMA_PLACES } from './placesFixtures';
 import {
   ADDED_BY,
@@ -25,7 +26,6 @@ import {
   placesMapScene,
   selectedLandmark,
 } from './placesModel';
-import { FAILED } from './useTabReads';
 
 const editorRow = (over: Record<string, unknown> = {}) => ({
   _id: 'lm1',
@@ -70,12 +70,12 @@ describe('landmarkRows', () => {
       ['mod', ['MODERATOR'], null],
       ['other-bay', ['OSM', 'GNIS'], undefined],
     ]);
-    expect(rows(FAILED)[1]?.[2]).toBe(FAILED);
+    expect(rows(FAILED_READ)[1]?.[2]).toBe(FAILED_READ);
     // A bay the read doesn't hold (removed since) is none.
     expect(rows(new Map())[1]?.[2]).toBeNull();
     // A name is never a failure, whatever it spells.
     expect(rows(new Map([['bay-x', 'failed']]))[1]?.[2]).toBe('failed');
-    expect(rows(new Map([['bay-x', 'failed']]))[1]?.[2]).not.toBe(FAILED);
+    expect(rows(new Map([['bay-x', 'failed']]))[1]?.[2]).not.toBe(FAILED_READ);
   });
 
   it('orders by the list’s word, then name', () => {
@@ -205,7 +205,7 @@ describe('selection and the map', () => {
   });
 
   it('draws nothing of a list still loading or failed, and lights nothing in it', () => {
-    for (const state of [undefined, FAILED] as const) {
+    for (const state of [undefined, FAILED_READ] as const) {
       const data: PlacesData = { ...MASCOMA_PLACES, asks: state, landmarks: state };
       expect(placesMapScene(data, 'landmark:lm-upper')).toEqual({ items: [], lit: null });
       expect(selectedLandmark(data, 'landmark:lm-upper')).toBeNull();
@@ -302,15 +302,16 @@ describe('placesFrom', () => {
 
     const failed = placesFrom(
       reads({
-        landmarks: FAILED,
-        proposals: FAILED,
-        bays: FAILED,
-        provenance: FAILED,
-        proposers: FAILED,
+        landmarks: FAILED_READ,
+        proposals: FAILED_READ,
+        bays: FAILED_READ,
+        provenance: FAILED_READ,
+        proposers: FAILED_READ,
       }),
     );
-    expect(failed.asks).toBe(FAILED);
-    expect(failed.landmarks).toBe(FAILED);
+    // Two reads behind the asks: one failure for both.
+    expect(isFailed(failed.asks)).toBe(true);
+    expect(failed.landmarks).toBe(FAILED_READ);
     expect(failed.failures).toEqual([
       'the landmarks',
       'what is asked',
@@ -320,8 +321,8 @@ describe('placesFrom', () => {
     ]);
 
     // Who asked failing leaves the asks standing, each saying it.
-    const askers = placesFrom(reads({ proposers: FAILED }));
-    expect((askers.asks as ProposalAsk[])[1]?.asker).toBe(FAILED);
+    const askers = placesFrom(reads({ proposers: FAILED_READ }));
+    expect((askers.asks as ProposalAsk[])[1]?.asker).toBe(FAILED_READ);
   });
 
   it('draws no askers at all for a viewer who can’t see them', () => {

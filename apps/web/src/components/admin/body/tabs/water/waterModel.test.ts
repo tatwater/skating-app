@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FAILED } from '../places/useTabReads';
+import { FAILED_READ } from '@/components/admin/reads/readFailureFixtures';
 import { CHAMPLAIN_WATER, MASCOMA_BBOX, MASCOMA_WATER } from './waterFixtures';
 import {
   acrossKm,
@@ -135,8 +135,8 @@ describe('the bathymetry state', () => {
 
   it('keeps the read’s state: loading stays loading, a failure is named', () => {
     expect(waterFrom({ name: 'x' }, undefined).failures).toEqual([]);
-    const failed = waterFrom({ name: 'x' }, FAILED);
-    expect(failed.bathymetry).toBe(FAILED);
+    const failed = waterFrom({ name: 'x' }, FAILED_READ);
+    expect(failed.bathymetry).toBe(FAILED_READ);
     expect(failed.failures).toEqual(['the bathymetry state']);
   });
 });

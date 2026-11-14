@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FAILED } from '../places/useTabReads';
+import { FAILED_READ } from '@/components/admin/reads/readFailureFixtures';
 import { BOARD_TODAY, MASCOMA_ACCESS } from './accessFixtures';
 import {
   accessFrom,
@@ -135,7 +135,7 @@ describe('accessFrom', () => {
     expect(whereOf({ lat: 43.5, lng: -72.5 }, [])).toBeNull();
     // The landmarks' read in its state: loading stays loading, a failure stays a failure.
     expect(whereOf({ lat: 43.5, lng: -72.5 }, undefined)).toBeUndefined();
-    expect(whereOf({ lat: 43.5, lng: -72.5 }, FAILED)).toBe(FAILED);
+    expect(whereOf({ lat: 43.5, lng: -72.5 }, FAILED_READ)).toBe(FAILED_READ);
   });
 
   it('names what failed: the landmarks, and the ruling’s history', () => {
@@ -144,8 +144,8 @@ describe('accessFrom', () => {
       parking: [],
       alerts: [],
     };
-    const data = accessFrom(one, rulingFrom(undefined, 'wb1', FAILED), undefined, FAILED);
-    expect(data.putIns[0]?.where).toBe(FAILED);
+    const data = accessFrom(one, rulingFrom(undefined, 'wb1', FAILED_READ), undefined, FAILED_READ);
+    expect(data.putIns[0]?.where).toBe(FAILED_READ);
     expect(data.failures).toEqual(['who ruled', 'where each launch is']);
     expect(accessFrom(one, rulingFrom(undefined, 'wb1', 'hidden'), undefined, []).failures).toEqual(
       [],
@@ -212,7 +212,7 @@ describe('the ruling’s history', () => {
   });
 
   it('keeps the read’s state when it is loading, failed or withheld', () => {
-    for (const state of [undefined, FAILED, 'hidden'] as const) {
+    for (const state of [undefined, FAILED_READ, 'hidden'] as const) {
       const ruling = rulingFrom(open, 'wb1', state);
       expect(ruling.history).toBe(state);
       expect(ruling.before).toBeUndefined();

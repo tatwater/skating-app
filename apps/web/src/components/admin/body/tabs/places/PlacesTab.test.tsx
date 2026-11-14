@@ -257,7 +257,8 @@ describe('PlacesTab', () => {
       await userEvent.click(within(note).getByRole('button', { name: 'Try again' }));
       await vi.advanceTimersByTimeAsync(100);
       rerender(<PlacesTab bodyId="wb1" />);
-      expect(screen.queryByRole('status')).toBeNull();
+      // The note stays mounted (its next words will be announced), and says nothing now.
+      expect(screen.getByRole('status')).toBeEmptyDOMElement();
     } finally {
       vi.useRealTimers();
     }

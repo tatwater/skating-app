@@ -1,6 +1,6 @@
 import type { WaterBodyClass } from '@skating/core';
 import { type ReactNode, useState } from 'react';
-
+import { isFailed, type Loadable } from '@/components/admin/reads/consoleReads';
 import { Badge, Tag, TagRun } from '@/components/kit/badge';
 import { Button } from '@/components/kit/button';
 import { ChipInput } from '@/components/kit/chip-input';
@@ -16,12 +16,10 @@ import { Input, InputGroup, InputGroupKbd } from '@/components/kit/input';
 import { RadioGroup, RadioRow } from '@/components/kit/radio';
 import { Section } from '@/components/kit/section-slug';
 import { UnavailableButton } from '@/components/kit/unavailable-button';
+import { UnavailableField } from '@/components/kit/unavailable-field';
 import { cn } from '@/lib/utils';
-import { RetryNote } from '../places/kit-candidates/retry-note';
-import { UnavailableField } from '../places/kit-candidates/unavailable-field';
-import { LoadingLine, NOT_RECORDED, ReadFailed, ReadFailures } from '../places/tabStates';
-import { FAILED, type Loaded } from '../places/useTabReads';
 import { LIT_ROW, LoadingSection, litAttr, TabBody } from '../tabParts';
+import { CouldntRead, LoadingLine, NOT_RECORDED, ReadFailures } from '../tabStates';
 import {
   type AdminPlaces,
   CATALOG_NAMES,
@@ -54,9 +52,11 @@ const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().t
 
 export type NamesViewProps = {
   /** The tab's data; `undefined` while it loads, `failed` when the record couldn't be read. */
-  data: Loaded<NamesData>;
+  data: Loadable<NamesData>;
   /** Ask again for every read that failed. */
   onRetry?: () => void;
+  /** Tried again; the fresh answers aren't in. */
+  retryPending?: boolean;
   /** The lit item (the deep link's highlight), controlled by the frame. */
   lit?: string | null;
   /** Display this catalog spelling, or (`null`) go back to the catalogs' ranking. */
@@ -76,6 +76,7 @@ export type NamesViewProps = {
 export function NamesView({
   data,
   onRetry,
+  retryPending = false,
   lit = null,
   onChooseName,
   onCommunityName,
@@ -94,20 +95,21 @@ export function NamesView({
       </TabBody>
     );
   }
-  if (data === FAILED) {
+  if (isFailed(data)) {
     return (
       <TabBody data-slot="names-tab">
-        {onRetry ? (
-          <RetryNote onRetry={onRetry}>Couldn’t read this body’s record.</RetryNote>
-        ) : (
-          <ReadFailed />
-        )}
+        <ReadFailures
+          failures={[]}
+          whole="Couldn’t read this body’s record."
+          onRetry={onRetry}
+          pending={data.pending}
+        />
       </TabBody>
     );
   }
   return (
     <TabBody data-slot="names-tab">
-      <ReadFailures failures={data.failures} onRetry={onRetry} />
+      <ReadFailures failures={data.failures} onRetry={onRetry} pending={retryPending} />
       <NameSection data={data} lit={lit} onChoose={onChooseName} onCommunity={onCommunityName} />
       <Section title="Aliases" count={data.aliases.length} data-slot="aliases">
         {onAliasesChange ? (
@@ -389,14 +391,14 @@ function LocationSection({ data }: { data: NamesData }) {
   const fromBoundaries = (fact: (a: AdminPlaces) => ReactNode) =>
     admin === undefined ? (
       <LoadingLine width="7rem" />
-    ) : admin === FAILED ? (
-      <ReadFailed />
+    ) : isFailed(admin) ? (
+      <CouldntRead />
     ) : admin === null ? (
       <span className="text-fg3">{NOT_RECORDED}</span>
     ) : (
       fact(admin)
     );
-  const known = typeof admin === 'object' && admin !== null;
+  const known = typeof admin === 'object' && admin !== null && !isFailed(admin);
   return (
     <Section title="Location" data-slot="location">
       <KeyValueList keyWidth="6.5rem">
