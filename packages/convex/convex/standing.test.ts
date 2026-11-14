@@ -1031,6 +1031,8 @@ describe('the season rollover', () => {
     const a = await seedBody(t, 'osm/a');
     const poison = await seedBody(t, 'osm/poison');
     const c = await seedBody(t, 'osm/c');
+    // A boosted body is kept, by the same rule, on the body-at-a-time path too.
+    const kept = await seedBody(t, 'osm/kept', { curatedBoost: 0.3 });
     const real = libStanding.demoteBody;
     const spy = vi.spyOn(libStanding, 'demoteBody').mockImplementation(async (ctx, body, opts) => {
       if (body._id === poison) throw new Error('poison');
@@ -1041,7 +1043,14 @@ describe('the season rollover', () => {
         season: SEASON,
         apply: true,
       });
-      expect(result).toMatchObject({ scanned: 3, demoted: 2, failed: 1 });
+      expect(result).toMatchObject({
+        scanned: 4,
+        demoted: 2,
+        retained: 1,
+        failed: 1,
+        retainedBy: { curated: 1 },
+      });
+      expect(isActive((await get(t, kept)) as Doc<'waterBodies'>)).toBe(true);
       expect(isActive((await get(t, a)) as Doc<'waterBodies'>)).toBe(false);
       expect(isActive((await get(t, c)) as Doc<'waterBodies'>)).toBe(false);
       expect(isActive((await get(t, poison)) as Doc<'waterBodies'>)).toBe(true);

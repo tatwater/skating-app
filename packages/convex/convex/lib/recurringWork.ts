@@ -170,19 +170,6 @@ export async function clearFailure(ctx: MutationCtx, job: FailingJob, key: strin
   if (row) await ctx.db.delete(row._id);
 }
 
-/** A job's parked work, least recently tried first, parked before `before` — the daily retry's list. */
-export function parkedFailures(
-  ctx: QueryCtx,
-  job: FailingJob,
-  before: number,
-  n: number,
-): Promise<Doc<'jobFailures'>[]> {
-  return ctx.db
-    .query('jobFailures')
-    .withIndex('by_job_parked', (q) => q.eq('job', job).gt('parkedAt', 0).lt('parkedAt', before))
-    .take(n);
-}
-
 /**
  * A run's outcomes at once, for a walk an action drives: each failure recorded, each success that
  * had been failing cleared. One transaction per batch, so a run of a few hundred items costs a few

@@ -99,6 +99,27 @@ async function seedBody(t: T, externalId: string): Promise<Id<'waterBodies'>> {
   return body._id;
 }
 
+/** A minimal Report, for rows that must point at a real one. */
+async function seedReport(t: T, authorId: Id<'profiles'>, waterBodyId: Id<'waterBodies'>) {
+  return t.run((ctx) =>
+    ctx.db.insert('reports', {
+      authorId,
+      waterBodyId,
+      point: { lat: 0.5, lng: 0.5 },
+      skateEndTime: T0 - DAY,
+      reportTime: T0 - DAY,
+      source: 'native' as const,
+      iceTypes: [],
+      surfaceTags: [],
+      photoIds: [],
+      moderationStatus: 'visible' as const,
+      hazardIdsCreated: [],
+      createdAt: T0 - DAY,
+      updatedAt: T0 - DAY,
+    }),
+  );
+}
+
 /** Make `asItem` fail for the keys in `poison` — the one seam every isolated item runs through. */
 function poisonItems(poison: Set<string>) {
   const real = recurringWork.asItem;
@@ -536,6 +557,180 @@ describe('recurringJobs.health — one place to see it', () => {
     expect(health.jobs.find((j) => j.job === 'sweep orphan photos')).toMatchObject({
       failing: 200,
       capped: true,
+    });
+  });
+});
+
+// ── The edges: a retry that fails again, a pass out of budget, what the read counts ─────────────
+
+describe('the retries and passes at their edges', () => {
+  test('the daily retry leaves what still fails parked — re-stamped as just tried, noted as retried', async () => {
+    const t = harness();
+    const skater = await seedUser(t, 'skater');
+    const activity = await seedActivity(t, skater.id, 0);
+    const bodyId = await seedBody(t, 'osm/edge');
+    await t.run(async (ctx) => {
+      await ctx.db.patch(activity, {
+        promptAttempts: 3,
+        promptErrorClass: 'Error',
+        promptParkedAt: T0 - DAY,
+      });
+      await ctx.db.insert('bodySummaryRefreshes', {
+        waterBodyId: bodyId,
+        refreshAt: T0 - DAY,
+        attempts: 3,
+        lastErrorClass: 'Error',
+        parkedAt: T0 - DAY,
+      });
+    });
+    poisonItems(new Set([skater.id as string, bodyId as string]));
+    expect(await t.mutation(internal.recurringJobs.retryParkedDaily, {})).toEqual({
+      freed: 0,
+      failed: 2,
+      more: false,
+    });
+    const row = await t.run((ctx) => ctx.db.get(activity));
+    expect(row).toMatchObject({ promptAttempts: 4, promptParkedAt: T0, promptRetriedAt: T0 });
+    const card = await t.run((ctx) => ctx.db.query('bodySummaryRefreshes').first());
+    expect(card).toMatchObject({ attempts: 4, parkedAt: T0, retriedAt: T0 });
+    // Once a run: tried again in the same run's continuation, it is past the cutoff.
+    expect(await t.mutation(internal.recurringJobs.retryParkedDaily, { cutoff: T0 })).toEqual({
+      freed: 0,
+      failed: 0,
+      more: false,
+    });
+  });
+
+  test('a retry out of budget continues itself from where it was', async () => {
+    const t = harness();
+    vi.spyOn(recurringWork, 'affords').mockResolvedValue(false);
+    expect(await t.mutation(internal.recurringJobs.retryParkedDaily, {})).toEqual({
+      freed: 0,
+      failed: 0,
+      more: true,
+    });
+    expect(await t.mutation(internal.notifications.retryParkedNotifications, {})).toMatchObject({
+      more: true,
+    });
+    const jobs = await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
+    expect(jobs.map((j) => j.name).sort()).toEqual([
+      'notifications:retryParkedNotifications',
+      'recurringJobs:retryParkedDaily',
+    ]);
+    for (const job of jobs) await t.run((ctx) => ctx.scheduler.cancel(job._id));
+  });
+
+  test('a pass that cannot afford one item fails loudly rather than rescheduling for ever', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await seedActivity(t, user.id, 0);
+    await t.run(async (ctx) => {
+      const storageId = await ctx.storage.store(new Blob(['p']));
+      await ctx.db.insert('photos', {
+        storageId,
+        thumbStorageId: storageId,
+        uploaderId: user.id,
+        placeOnMap: false,
+        createdAt: T0 - 40 * DAY,
+      });
+    });
+    vi.spyOn(recurringWork, 'affords').mockResolvedValue(false);
+    await expect(t.mutation(internal.storageHygiene.sweepOrphanPhotos, {})).rejects.toThrow(
+      /no progress/,
+    );
+    await expect(t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {})).rejects.toThrow(
+      /no progress/,
+    );
+  });
+
+  test("a skater's linked or superseded due rows are settled inside their own prompt", async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    const linked = await seedActivity(t, user.id, 0);
+    const loser = await seedActivity(t, user.id, 1);
+    const reportId = await seedReport(t, user.id, await seedBody(t, 'osm/linked'));
+    await t.run(async (ctx) => {
+      await ctx.db.patch(linked, {
+        linkedReportId: reportId,
+        promptAttempts: 1,
+        promptErrorClass: 'Error',
+      });
+      await ctx.db.patch(loser, { supersededByActivityId: linked });
+    });
+    expect(await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {})).toMatchObject({
+      settled: 2,
+      failed: 0,
+    });
+    expect(await t.run((ctx) => ctx.db.get(linked))).toMatchObject({ promptState: 'converted' });
+    expect((await t.run((ctx) => ctx.db.get(linked)))?.promptAttempts).toBeUndefined();
+    expect(await t.run((ctx) => ctx.db.get(loser))).toMatchObject({ promptState: 'dismissed' });
+  });
+
+  test('a digest pulls only fresh rows: one past its window is expired, the rest sent as one', async () => {
+    const t = harness();
+    const fan = await seedUser(t, 'digest-fan');
+    await t.run((ctx) =>
+      ctx.db.patch(fan.id, { notificationPrefs: { ...NOTIF_PREFS, nearbyReportDigest: true } }),
+    );
+    const a = await seedBody(t, 'osm/digest-a');
+    const b = await seedBody(t, 'osm/digest-b');
+    const reportId = await seedReport(t, fan.id, a);
+    const digest = (waterBodyId: Id<'waterBodies'>, extra: Record<string, number>) =>
+      t.run((ctx) =>
+        ctx.db.insert('notificationQueue', {
+          userId: fan.id,
+          waterBodyId,
+          kind: 'digest' as const,
+          type: 'nearby_report_digest' as const,
+          coalesceKey: `${fan.id}:${waterBodyId}:digest`,
+          latestReportId: reportId,
+          count: 1,
+          flushAfter: T0 - 1,
+          createdAt: T0 - 1,
+          ...extra,
+        }),
+      );
+    await digest(a, {});
+    // Failed earlier and moved on, but it first fell due long ago: past its window.
+    await digest(b, { firstDueAt: T0 - NOTIFICATION_FRESH_MS - HOUR, attempts: 1 });
+    expect(await t.mutation(internal.notifications.flushNotificationQueue, {})).toMatchObject({
+      delivered: 1,
+      expired: 1,
+    });
+    const [sent] = await inbox(t, fan.id);
+    expect(sent?.payload.bodies).toHaveLength(1);
+  });
+
+  test('the read counts parked prompts and cards too', async () => {
+    const t = harness();
+    const admin = await seedUser(t, 'admin', 'admin');
+    const skater = await seedUser(t, 'skater');
+    const activity = await seedActivity(t, skater.id, 0);
+    const bodyId = await seedBody(t, 'osm/read');
+    await t.run(async (ctx) => {
+      await ctx.db.patch(activity, {
+        promptAttempts: 3,
+        promptErrorClass: 'RangeError',
+        promptParkedAt: T0 - HOUR,
+      });
+      await ctx.db.insert('bodySummaryRefreshes', {
+        waterBodyId: bodyId,
+        refreshAt: T0,
+        attempts: 3,
+        lastErrorClass: 'OverBudget',
+        parkedAt: T0 - 2 * HOUR,
+      });
+    });
+    const health = await admin.as.query(api.recurringJobs.health, {});
+    expect(health.jobs.find((j) => j.job === 'prompt unreported skates')).toMatchObject({
+      parked: 1,
+      oldestParkedAt: T0 - HOUR,
+      errorClasses: { RangeError: 1 },
+    });
+    expect(health.jobs.find((j) => j.job === 'sweep body summaries')).toMatchObject({
+      parked: 1,
+      oldestParkedAt: T0 - 2 * HOUR,
+      errorClasses: { OverBudget: 1 },
     });
   });
 });
