@@ -30,6 +30,7 @@ import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
 import { townsForBody } from './adminAreas';
+import { auditRowsOn } from './lib/auditReads';
 import { requireCapability } from './lib/auth';
 import { hasContoursFor } from './lib/bodyLibrary';
 import { MODERATION_ACTIONS } from './lib/enums';
@@ -508,22 +509,12 @@ export const history = query({
       }
       // One past the page, so a target with more than it returns says so.
       const take = Math.min(n + 1, budget);
-      const read =
-        action === undefined
-          ? await ctx.db
-              .query('moderationActions')
-              .withIndex('by_target', (q) =>
-                q.eq('targetType', targetType).eq('targetId', targetId),
-              )
-              .order('desc')
-              .take(take)
-          : await ctx.db
-              .query('moderationActions')
-              .withIndex('by_target_action', (q) =>
-                q.eq('targetType', targetType).eq('targetId', targetId).eq('action', action),
-              )
-              .order('desc')
-              .take(take);
+      // The same read `moderation.listActions` makes for a target (`lib/auditReads`): one rule.
+      const read = await auditRowsOn(
+        ctx,
+        { targetType, targetId, ...(action !== undefined ? { action } : {}) },
+        take,
+      );
       budget -= read.length;
       rows.push(...read);
     }
@@ -541,6 +532,8 @@ export const history = query({
         createdAt: row.createdAt,
         actor: await personOf(ctx, row.actorId),
         ...(row.undoesActionId !== undefined ? { undoesActionId: row.undoesActionId } : {}),
+        // What the actor made the write through (D256), as History reads it everywhere.
+        ...(row.via !== undefined ? { via: row.via } : {}),
         undo: await undoState(ctx, viewer, row),
       });
     }

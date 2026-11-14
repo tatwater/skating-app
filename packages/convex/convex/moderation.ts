@@ -18,6 +18,7 @@ import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
 import { writeAudit } from './lib/audit';
+import { auditRowsOn } from './lib/auditReads';
 import { requireCapability } from './lib/auth';
 import {
   AUTHOR_DELETE_REASON,
@@ -1364,14 +1365,24 @@ export const listActions = query({
     const viewer = await requireCapability(ctx, 'audit.read');
     const limit = Math.min(args.limit ?? QUEUE_LIMIT, QUEUE_LIMIT);
 
-    const { targetType, targetId, actorId } = args;
+    const { targetType, targetId, actorId, action } = args;
+    // Normalized at the edge: a target is both halves or neither, and a verb filter is read in the
+    // index, which only a target's history has (`by_target_action`) — never filtered over a page
+    // already capped, which would hand back a short list as if it were whole.
+    if ((targetType === undefined) !== (targetId === undefined)) {
+      throw new ConvexError('A target needs both its type and its id');
+    }
+    if (action !== undefined && targetType === undefined) {
+      throw new ConvexError('Filtering by action needs a target');
+    }
     let rows: Doc<'moderationActions'>[];
     if (targetType !== undefined && targetId !== undefined) {
-      rows = await ctx.db
-        .query('moderationActions')
-        .withIndex('by_target', (q) => q.eq('targetType', targetType).eq('targetId', targetId))
-        .order('desc')
-        .take(limit);
+      // The same read the Body console's history makes for a target (`lib/auditReads`): one rule.
+      rows = await auditRowsOn(
+        ctx,
+        { targetType, targetId, ...(action !== undefined ? { action } : {}) },
+        limit,
+      );
     } else if (actorId !== undefined) {
       rows = await ctx.db
         .query('moderationActions')
@@ -1384,9 +1395,7 @@ export const listActions = query({
 
     // Who holds ledger editing is for holders only (D227), in History as on the People row.
     const visible = withoutLedgerGrantsFor(viewer, rows);
-    const filtered =
-      args.action !== undefined ? visible.filter((r) => r.action === args.action) : visible;
-    return Promise.all(filtered.map((a) => toActionView(ctx, viewer, a)));
+    return Promise.all(visible.map((a) => toActionView(ctx, viewer, a)));
   },
 });
 
