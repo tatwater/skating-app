@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { stubJsdomAnimations } from '../jsdomStubs';
 
 const convex = vi.hoisted(() => ({
   results: new Map<string, unknown>(),
@@ -9,8 +10,12 @@ const convex = vi.hoisted(() => ({
 vi.mock('convex/react', async () => {
   const { getFunctionName } = await import('convex/server');
   return {
-    useQuery: (ref: Parameters<typeof getFunctionName>[0]) =>
-      convex.results.get(getFunctionName(ref)),
+    useQueries: (
+      queries: Record<string, { query: Parameters<typeof getFunctionName>[0]; args: unknown }>,
+    ) =>
+      Object.fromEntries(
+        Object.entries(queries).map(([k, q]) => [k, convex.results.get(getFunctionName(q.query))]),
+      ),
     useMutation: (ref: Parameters<typeof getFunctionName>[0]) => {
       const name = getFunctionName(ref);
       const made = convex.mutations.get(name) ?? vi.fn(async () => null);
@@ -27,12 +32,16 @@ vi.mock('@/components/admin/shell/undo', () => ({ useUndo: () => undo }));
 import type { Id } from '@skating/convex/dataModel';
 import { ConvexError } from 'convex/values';
 
+import { resetReadPauses } from '../hazards/tabReads';
 import { LINKS_TAB, LinksTab } from './LinksTab';
 import { MASCOMA } from './linksFixtures';
 
 const BODY = 'k1' as Id<'waterBodies'>;
 
+beforeAll(stubJsdomAnimations);
+
 beforeEach(() => {
+  resetReadPauses();
   convex.results.clear();
   convex.mutations.clear();
   undo.announce.mockClear();
@@ -40,12 +49,42 @@ beforeEach(() => {
 });
 
 describe('LinksTab', () => {
-  it('draws nothing until the body lands, or when it is unavailable', () => {
+  it('holds its place until the body lands, says so when it fails, and draws nothing unlisted', async () => {
     const { container, rerender } = render(<LinksTab bodyId={BODY} />);
-    expect(container).toBeEmptyDOMElement();
+    expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
+    convex.results.set('waterBodies:get', new Error('boom'));
+    rerender(<LinksTab bodyId={BODY} />);
+    expect(screen.getByText('This body couldn’t be read')).toBeVisible();
+    convex.results.set('waterBodies:get', { available: true, body: { _id: BODY, ...MASCOMA } });
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('Built from the lake')).toBeVisible();
     convex.results.set('waterBodies:get', { available: false });
     rerender(<LinksTab bodyId={BODY} />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it('builds every outbound link from the body’s own facts, each opening in a new tab', () => {
+    const body = {
+      _id: BODY,
+      name: 'Sunapee Lake',
+      states: ['NH'],
+      interiorPoint: { lat: 43.4, lng: -72.05 },
+      surfaceAreaSqM: 16_700_000,
+    };
+    convex.results.set('waterBodies:get', { available: true, body });
+    render(<LinksTab bodyId={BODY} />);
+    const links = screen.getAllByRole('link');
+    expect(links.length).toBeGreaterThanOrEqual(3);
+    for (const a of links) {
+      expect(a).toHaveAttribute('target', '_blank');
+      expect(a).toHaveAttribute('rel', expect.stringContaining('noreferrer'));
+    }
+    const hrefs = links.map((a) => a.getAttribute('href') ?? '');
+    // Windy and Copernicus open on this body's interior point, not the fixture lake's.
+    expect(hrefs.some((h) => h.includes('windy.com') && h.includes('43.4'))).toBe(true);
+    expect(hrefs.some((h) => h.includes('copernicus') && h.includes('43.4'))).toBe(true);
+    expect(hrefs.some((h) => h.includes('43.6174'))).toBe(false);
+    expect(hrefs).toContain('/water/k1');
   });
 
   it('writes the whole list and announces it to Undo', async () => {
@@ -95,11 +134,18 @@ describe('LinksTab', () => {
       data = LINKS_TAB.map?.useData(BODY, null);
       return null;
     }
-    render(<Probe />);
-    // Convex's own result: the identity the frame keys its redraw on.
-    expect(data).toBe(result);
+    const { rerender } = render(<Probe />);
+    const first = data;
+    rerender(<Probe />);
+    // Kept while Convex's result holds: the identity the frame keys its redraw on.
+    expect(data).toBe(first);
     expect(LINKS_TAB.map?.describe(data as never, null).lit).toBe('interior:point');
-    expect(LINKS_TAB.map?.describe({ available: false }, null)).toEqual({ items: [] });
-    expect(LINKS_TAB.map?.describe(undefined, null)).toEqual({ items: [] });
+    expect(LINKS_TAB.map?.describe({ body: null }, null)).toEqual({ items: [] });
+    convex.results.set('waterBodies:get', { available: false });
+    rerender(<Probe />);
+    expect(data).toEqual({ body: null });
+    convex.results.set('waterBodies:get', new Error('boom'));
+    rerender(<Probe />);
+    expect(data).toBeUndefined();
   });
 });
