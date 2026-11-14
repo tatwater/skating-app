@@ -741,19 +741,26 @@ describe('profiles.getPublicProfile (D13)', () => {
     expect(JSON.stringify(profile)).not.toContain('dateOfBirth');
     expect(JSON.stringify(profile)).not.toContain('homeCoord');
 
-    // A moderator/admin viewer DOES receive the raw number (the admin-only surface, D50).
-    const modId = await t
-      .withIdentity({ subject: 'clerk_mod' })
-      .mutation(
-        api.profiles.upsertFromClerk,
-        withAck({ displayName: 'Mod', username: 'mod', dateOfBirth: ADULT_DOB }),
-      );
-    await t.run((ctx) => ctx.db.patch(modId, { role: 'moderator' }));
-    const modView = await t
-      .withIdentity({ subject: 'clerk_mod' })
-      .query(api.profiles.getPublicProfile, { username: 'ada' });
-    if (!modView || modView.private) throw new Error('expected public profile');
-    expect(modView.reputationPoints).toBe(0);
+    // The raw number is admin-only (D50): a moderator gets the class, never the points; an admin gets
+    // the number.
+    const staffView = async (subject: string, role: 'moderator' | 'admin') => {
+      const staffId = await t
+        .withIdentity({ subject })
+        .mutation(
+          api.profiles.upsertFromClerk,
+          withAck({ displayName: subject, username: subject, dateOfBirth: ADULT_DOB }),
+        );
+      await t.run((ctx) => ctx.db.patch(staffId, { role }));
+      const view = await t
+        .withIdentity({ subject })
+        .query(api.profiles.getPublicProfile, { username: 'ada' });
+      if (!view || view.private) throw new Error('expected public profile');
+      return view;
+    };
+    const modView = await staffView('clerk_mod', 'moderator');
+    expect(modView.reputationPoints).toBeUndefined();
+    expect(modView.trustClass).toBe(profile.trustClass);
+    expect((await staffView('clerk_admin', 'admin')).reputationPoints).toBe(0);
   });
 
   test('a private profile returns name + avatar only to others', async () => {
