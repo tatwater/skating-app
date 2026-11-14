@@ -247,9 +247,9 @@ describe('undo: roles (D226)', () => {
       targetId: user.id,
       metadata: { priorRole: 'member' },
     });
-    await expect(admin.as.mutation(api.undo.run, { actionId: revoke, reason: 'r' })).rejects.toThrow(
-      /already a member/i,
-    );
+    await expect(
+      admin.as.mutation(api.undo.run, { actionId: revoke, reason: 'r' }),
+    ).rejects.toThrow(/already a member/i);
   });
 });
 
