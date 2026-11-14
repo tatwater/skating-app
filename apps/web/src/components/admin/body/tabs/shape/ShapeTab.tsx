@@ -1,8 +1,8 @@
 import { type ReactNode, useRef } from 'react';
 
 import { Tag } from '@/components/kit/badge';
+import { EntryTile } from '@/components/kit/entry-tile';
 import { KeyValueList, KeyValueRow } from '@/components/kit/grid-list';
-import { Kbd } from '@/components/kit/kbd';
 import { Section } from '@/components/kit/section-slug';
 import { Skeleton } from '@/components/kit/skeleton';
 import {
@@ -136,69 +136,28 @@ export function ShapeTabView({
       <Section title="Add a bay">
         <div className="flex flex-col gap-(--space-2)">
           {WAYS.map((w) => (
-            <WayTile
+            <EntryTile
               key={w.way}
-              name={w.name}
-              sub={w.sub}
+              data-slot="bay-way"
+              title={w.name}
+              description={w.sub}
               kbd={w.key}
-              gesture={GESTURES[w.way]}
+              aria-keyshortcuts={w.key}
+              glyphSlot="wide"
+              glyph={
+                <svg aria-hidden="true" viewBox="0 0 88 40">
+                  {GESTURES[w.way]}
+                </svg>
+              }
+              // The Shape board's tile is a step taller than Access's (54 px).
+              className="min-h-(--space-14)"
               disabled={onAddBay === undefined}
-              onPress={() => onAddBay?.(w.way)}
+              onClick={() => onAddBay?.(w.way)}
             />
           ))}
         </div>
       </Section>
     </div>
-  );
-}
-
-/** One way to start a bay: the gesture drawn small, its name and what it takes, its key. */
-function WayTile({
-  name,
-  sub,
-  kbd,
-  gesture,
-  disabled,
-  onPress,
-}: {
-  name: string;
-  sub: string;
-  kbd: string;
-  gesture: ReactNode;
-  disabled: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      data-slot="bay-way"
-      disabled={disabled}
-      aria-keyshortcuts={kbd}
-      onClick={onPress}
-      className={cn(
-        'flex h-(--space-14) w-full cursor-pointer items-center gap-(--space-3_5) rounded-control border border-solid border-line2 bg-transparent ps-(--space-2) pe-(--space-3) text-start outline-none',
-        'transition-[background-color,border-color] duration-(--duration-fast) ease-standard',
-        'lit:bg-lift-05 lit:border-fg3 focus-visible:shadow-focus',
-        'disabled:cursor-default disabled:opacity-(--opacity-muted)',
-      )}
-    >
-      <svg
-        aria-hidden="true"
-        viewBox="0 0 88 40"
-        className="block h-(--space-8) w-[4.125rem] flex-none"
-      >
-        {gesture}
-      </svg>
-      <span className="flex min-w-0 flex-col gap-(--space-1_5)">
-        <span className="text-kick leading-none font-semibold tracking-head whitespace-nowrap text-fg uppercase">
-          {name}
-        </span>
-        <span className="truncate text-assist leading-tight text-fg3">{sub}</span>
-      </span>
-      <Kbd className="ms-auto" disabled={disabled}>
-        {kbd}
-      </Kbd>
-    </button>
   );
 }
 
