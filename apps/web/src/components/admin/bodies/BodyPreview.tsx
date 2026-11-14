@@ -7,6 +7,7 @@ import { HistoryList, HistoryRow } from '@/components/kit/grid-list';
 import { Kbd } from '@/components/kit/kbd';
 import { ListEnd } from '@/components/kit/list-end';
 import { Note } from '@/components/kit/note';
+import { RetryNote } from '@/components/kit/retry-note';
 import { Section } from '@/components/kit/section-slug';
 import { SkeletonBlock, SkeletonText } from '@/components/kit/skeleton';
 import { StatGrid, StatTile } from '@/components/kit/stat-tile';
@@ -19,7 +20,6 @@ import { historyWhen } from '../shell/consoleTime';
 import type { BodyPreviewData, PreviewCount } from './bodiesData';
 import { acresText, type BodyRow, changedWhen, STANDING_LABEL } from './bodiesModel';
 import { coordText, OutlineStill } from './OutlineStill';
-import { TryAgain } from './TryAgain';
 
 /**
  * The preview pane (boards 5.1–5.3, right): the body the list has open, read before it's opened
@@ -65,22 +65,19 @@ export function BodyPreview({ data, now, bodyLink, onOpen, onRetry }: BodyPrevie
         className="min-h-0 flex-1 overflow-y-auto px-gutter pb-(--space-20)"
         aria-busy={data === undefined || undefined}
       >
+        {/* Mounted whatever the pane holds, so a failure's words are announced as they arrive. */}
+        <RetryNote
+          data-slot="preview-error"
+          className="mt-(--space-3) empty:mt-0"
+          onRetry={onRetry}
+        >
+          {data === 'error' ? 'Couldn’t read this body' : null}
+        </RetryNote>
         {data === undefined ? (
           <PreviewLoading />
         ) : data === null ? (
           <ListEnd className="mt-(--space-3)">No body open</ListEnd>
-        ) : data === 'error' ? (
-          <>
-            <ListEnd data-slot="preview-error" className="mt-(--space-3)">
-              Couldn’t read this body
-            </ListEnd>
-            {onRetry !== undefined && (
-              <div className="pt-(--space-3)">
-                <TryAgain onRetry={onRetry} />
-              </div>
-            )}
-          </>
-        ) : 'unavailable' in data ? (
+        ) : data === 'error' ? null : 'unavailable' in data ? (
           <RowOnly row={data.unavailable} now={now} />
         ) : (
           <PreviewBody data={data} now={now} onRetry={onRetry} />
@@ -311,16 +308,7 @@ function PreviewBody({
             <StatTile label="This season" value="" unit="reports" sub="" loading chars={2} />
             <StatTile label="All-time" value="" unit="reports" sub="" loading chars={3} />
           </StatGrid>
-        ) : data.facts === 'error' ? (
-          <Note data-slot="preview-facts-error" className="mt-(--space-2)">
-            Reports, completeness and asks couldn’t be read
-            {onRetry !== undefined && (
-              <span className="mt-(--space-2) block">
-                <TryAgain onRetry={onRetry} />
-              </span>
-            )}
-          </Note>
-        ) : (
+        ) : data.facts === 'error' ? null : (
           (data.season !== null || data.allTime !== null) && (
             <StatGrid
               columns={2}
@@ -332,6 +320,13 @@ function PreviewBody({
             </StatGrid>
           )
         )}
+        <RetryNote
+          data-slot="preview-facts-error"
+          className="mt-(--space-2) empty:mt-0"
+          onRetry={onRetry}
+        >
+          {data.facts === 'error' ? 'Reports, completeness and asks couldn’t be read' : null}
+        </RetryNote>
         {data.complete !== null && (
           <div
             data-slot="preview-complete"
@@ -381,34 +376,32 @@ function PreviewBody({
           </ul>
         </Section>
       )}
-      {data.history === 'error' ? (
-        <Section title="Last changed" className="mt-(--space-5_5)">
-          <ListEnd data-slot="preview-history-error">Couldn’t read the history</ListEnd>
-          {onRetry !== undefined && (
-            <div className="pt-(--space-3)">
-              <TryAgain onRetry={onRetry} />
-            </div>
+      <RetryNote
+        data-slot="preview-history-error"
+        className="mt-(--space-5_5) empty:mt-0"
+        onRetry={onRetry}
+      >
+        {data.history === 'error' ? 'Couldn’t read the history' : null}
+      </RetryNote>
+      {data.history === 'error'
+        ? null
+        : data.history !== null && (
+            <Section title="Last changed" count={data.history.length} className="mt-(--space-5_5)">
+              {data.history.length > 0 && (
+                <HistoryList>
+                  {data.history.map((row) => (
+                    <HistoryRow
+                      key={row.id}
+                      when={historyWhen(row.at, now)}
+                      who={row.actor ?? 'The machinery'}
+                    >
+                      {row.words}
+                    </HistoryRow>
+                  ))}
+                </HistoryList>
+              )}
+            </Section>
           )}
-        </Section>
-      ) : (
-        data.history !== null && (
-          <Section title="Last changed" count={data.history.length} className="mt-(--space-5_5)">
-            {data.history.length > 0 && (
-              <HistoryList>
-                {data.history.map((row) => (
-                  <HistoryRow
-                    key={row.id}
-                    when={historyWhen(row.at, now)}
-                    who={row.actor ?? 'The machinery'}
-                  >
-                    {row.words}
-                  </HistoryRow>
-                ))}
-              </HistoryList>
-            )}
-          </Section>
-        )
-      )}
     </>
   );
 }

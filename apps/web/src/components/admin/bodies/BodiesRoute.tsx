@@ -13,6 +13,8 @@ import {
   useState,
 } from 'react';
 
+import { ReadBoundary } from '@/components/kit/read-boundary';
+import { RetryNote } from '@/components/kit/retry-note';
 import { useRole } from '@/lib/useRole';
 
 import { useMinuteNow } from '../shell/presence';
@@ -34,8 +36,6 @@ import {
 } from './bodiesReads';
 import { type BodiesQuery, type BodiesSearch, listKey, queryOf, searchFor } from './bodiesSearch';
 import { BODY_LANES } from './bodyLanes';
-import { ReadBoundary } from './ReadBoundary';
-import { TryAgain } from './TryAgain';
 
 /**
  * The Bodies library, wired: its place from the URL (validated by `validateBodiesSearch`, which the
@@ -86,8 +86,6 @@ export function BodiesRoute({ bodyPath = BODY_CONSOLE_PATH }: BodiesRouteProps) 
   // A lane no server read lists (Opened recently) still counts the others: All's summary.
   const summary = useSummary(canRead ? (args ?? { lane: 'all', now: listNow }) : null);
   const preview = usePreview(query.bodyId, canRead, can('audit.read'));
-  // A failed list is tried again by a new attempt: the boundary resets and the list subscribes anew.
-  const [attempt, setAttempt] = useState(0);
 
   const go = (next: BodiesQuery, how?: { replace?: boolean }) =>
     void navigate({
@@ -109,10 +107,9 @@ export function BodiesRoute({ bodyPath = BODY_CONSOLE_PATH }: BodiesRouteProps) 
     onOpenBody: (id) => void navigate({ to: bodyPath(id) }),
     status: summary.failed
       ? [
-          <span key="counts" data-slot="counts-error" className="flex items-center gap-(--space-2)">
+          <RetryNote key="counts" data-slot="counts-error" onRetry={summary.retry}>
             Counts couldn’t be read
-            <TryAgain onRetry={summary.retry} />
-          </span>,
+          </RetryNote>,
         ]
       : [],
   };
@@ -124,11 +121,11 @@ export function BodiesRoute({ bodyPath = BODY_CONSOLE_PATH }: BodiesRouteProps) 
     serves: servesFrom(summary.current ?? summary.laneHeld),
   };
   return (
+    // A failed page is the list's own failure; its Try again resets the boundary, and the list,
+    // drawn again, subscribes anew (the failed one was let go of while the failure showed).
     <ReadBoundary
-      resetKey={`${key}#${attempt}`}
-      fallback={
-        <BodiesView {...view} list={failedList} onRetryList={() => setAttempt((n) => n + 1)} />
-      }
+      resetKey={key}
+      fallback={(retry) => <BodiesView {...view} list={failedList} onRetryList={retry} />}
     >
       <PagedList args={args} memoryKey={key} summary={summary} view={view} />
     </ReadBoundary>

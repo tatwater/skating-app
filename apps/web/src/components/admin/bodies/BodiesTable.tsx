@@ -20,6 +20,7 @@ import {
 } from 'react';
 
 import { ListEnd } from '@/components/kit/list-end';
+import { RetryNote } from '@/components/kit/retry-note';
 import { SearchMark } from '@/components/kit/search-mark';
 import { SkeletonText } from '@/components/kit/skeleton';
 import { Table, TableCell, TableHead, TableRow } from '@/components/kit/table';
@@ -43,7 +44,6 @@ import {
 } from './bodiesModel';
 import { isSearch } from './bodiesSearch';
 import { type BodyLane, laneStanding } from './bodyLanes';
-import { TryAgain } from './TryAgain';
 
 /**
  * The library's list (boards 5.1–5.3, middle): a real table over the lane's rows — TanStack Table
@@ -544,16 +544,16 @@ function ListFoot({
         return `All ${list.total !== null ? countText(list.total) : rows.toLocaleString('en-US')}`;
     }
   })();
-  return (
-    <>
-      <ListEnd data-slot="bodies-end" data-status={list.status}>
+  if (list.status === 'error') {
+    return (
+      <RetryNote data-slot="bodies-end" className="px-gutter pt-(--space-3)" onRetry={onRetry}>
         {words}
-      </ListEnd>
-      {list.status === 'error' && onRetry !== undefined && (
-        <div className="px-gutter pt-(--space-3)">
-          <TryAgain onRetry={onRetry} />
-        </div>
-      )}
-    </>
+      </RetryNote>
+    );
+  }
+  return (
+    <ListEnd data-slot="bodies-end" data-status={list.status}>
+      {words}
+    </ListEnd>
   );
 }
