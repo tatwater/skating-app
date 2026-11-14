@@ -486,44 +486,102 @@ function TraceChart({
 
 // ── LED segments ─────────────────────────────────────────────────────────────────────────────
 
-type LedStripProps = Omit<MeterPrimitive.Root.Props, 'children' | 'min'> & {
-  /** How many segments are lit. */
-  value: number;
-  /** How many segments there are. */
-  max: number;
+/**
+ * A segment's state. `unknown` is a part nobody can say about yet (its fact isn't recorded): drawn
+ * dashed, never as missing — and never counted, so it is never read as a zero.
+ */
+type LedSegment = 'on' | 'off' | 'unknown';
+
+type LedStripProps = Omit<MeterPrimitive.Root.Props, 'children' | 'min' | 'value' | 'max'> & {
   /** `lit` — the bright ink with its glow (completeness); `on` — the list-body gray (a count). */
   tone?: 'lit' | 'on';
   /** Spans its column, the segments sharing the width (the Body panel's strip). */
   full?: boolean;
-};
+  /**
+   * The segments' size. `count` (7 px wide, 8 px tall) is a compact count; `row` (5 px wide) sits
+   * on a table row's baseline (Bodies 5.1); `tall` (10 px) is a spanning strip set large (Bodies'
+   * preview). Default `count`.
+   */
+  size?: 'count' | 'row' | 'tall';
+} & (
+    | {
+        /** How many segments are lit. Clamped to `0…max`. */
+        value: number;
+        /** How many segments there are. */
+        max: number;
+        segments?: never;
+      }
+    | {
+        /** One state per segment, in order — when a part can be unknown, or which part is missing matters. */
+        segments: readonly LedSegment[];
+        value?: never;
+        max?: never;
+      }
+  );
 
-function LedStrip({ value, max, tone = 'lit', full = false, className, ...props }: LedStripProps) {
-  const lit = Math.max(0, Math.min(max, Math.round(value)));
+/** The segment run a strip draws: its parts, from either form of the props. */
+function ledSegments(props: {
+  value?: number;
+  max?: number;
+  segments?: readonly LedSegment[];
+}): LedSegment[] {
+  if (props.segments !== undefined) return [...props.segments];
+  const max = Math.max(0, Math.floor(props.max ?? 0));
+  const lit = Math.max(0, Math.min(max, Math.round(props.value ?? 0)));
+  return Array.from({ length: max }, (_, i) => (i < lit ? 'on' : 'off'));
+}
+
+function LedStrip({
+  value,
+  max,
+  segments,
+  tone = 'lit',
+  full = false,
+  size = 'count',
+  className,
+  style,
+  ...props
+}: LedStripProps) {
+  const parts = ledSegments({ value, max, segments } as Parameters<typeof ledSegments>[0]);
+  const lit = parts.filter((s) => s === 'on').length;
   return (
     <MeterPrimitive.Root
       data-slot="led-strip"
       data-tone={tone}
+      data-size={size}
       min={0}
-      max={max}
+      max={parts.length}
       value={lit}
+      getAriaValueText={() => `${lit} of ${parts.length}`}
       className={cn(
-        full ? 'grid w-full gap-segment' : 'inline-flex items-end gap-(--space-0_5)',
+        full ? 'grid w-full gap-segment' : 'inline-flex items-end gap-(--space-0_5) align-baseline',
         className,
       )}
-      style={full ? { gridTemplateColumns: `repeat(${max}, minmax(0, 1fr))` } : undefined}
+      style={
+        full ? { gridTemplateColumns: `repeat(${parts.length}, minmax(0, 1fr))`, ...style } : style
+      }
       {...props}
     >
-      {Array.from({ length: max }, (_, i) => (
+      {parts.map((state, i) => (
         <span
           // biome-ignore lint/suspicious/noArrayIndexKey: segments are positional
           key={i}
           aria-hidden="true"
           data-slot="led-segment"
-          data-on={i < lit ? '' : undefined}
+          data-state={state}
+          data-on={state === 'on' ? '' : undefined}
           className={cn(
-            'block h-(--space-2) bg-line',
-            !full && 'w-[0.4375rem]',
-            i < lit && (tone === 'lit' ? 'bg-fg shadow-[0_0_4px_var(--glow)]' : 'bg-fg2'),
+            'block',
+            size === 'tall' ? 'h-(--space-2_5)' : 'h-(--space-2)',
+            !full && (size === 'row' ? 'w-[0.3125rem]' : 'w-[0.4375rem]'),
+            state === 'off' && 'bg-line',
+            state === 'unknown' && 'border border-dashed border-line2 bg-transparent',
+            state === 'on' &&
+              (tone === 'lit'
+                ? size === 'tall'
+                  ? 'bg-fg shadow-[0_0_5px_var(--glow)]'
+                  : 'bg-fg shadow-[0_0_4px_var(--glow)]'
+                : 'bg-fg2'),
           )}
         />
       ))}
@@ -967,8 +1025,10 @@ function SparkbarSet({
 export {
   barAt,
   endLabelYs,
+  type LedSegment,
   LedStrip,
   type LedStripProps,
+  ledSegments,
   paperColor,
   SparkbarSet,
   type SparkbarSetProps,

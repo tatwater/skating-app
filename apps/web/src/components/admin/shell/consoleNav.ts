@@ -52,12 +52,14 @@ export function usesOldShell(path: string): boolean {
 
 /** A mode the console has built: one rail item, one letter after G. */
 export type ConsoleMode = {
-  id: 'overview';
+  id: 'overview' | 'bodies';
   /** The rail's name for it, capitalized. */
   name: string;
   to: string;
   /** Matched exactly, not as a tree (Overview is `/admin`, which every mode sits under). */
   exact?: boolean;
+  /** Other trees the mode owns beside `to` (Bodies owns each body's console, `/admin/body/…`). */
+  also?: readonly string[];
   goKey: GoLetter;
   /** The capability the mode's page reads with; without it the item isn't drawn. */
   capability: Capability;
@@ -76,12 +78,26 @@ export const CONSOLE_MODES: readonly ConsoleMode[] = [
     goKey: 'O',
     capability: 'inbox.read',
   },
+  {
+    id: 'bodies',
+    name: 'Bodies',
+    to: '/admin/bodies',
+    // The library and each body's console are one mode: the rail stays on Bodies inside a body.
+    also: ['/admin/body'],
+    goKey: 'B',
+    // `body.read` is the capability map's line for reading a body (the operator view); the old
+    // Water bodies page reads with it too, and so does every read the library makes —
+    // `bodies.listPage`, `bodies.listSummary` and `bodies.preview` each gate on it.
+    capability: 'body.read',
+  },
 ];
 
 /** The mode `path` is in, if it's one the console has built. */
 export function modeAt(path: string): ConsoleMode | undefined {
   const bare = path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path;
-  return CONSOLE_MODES.find((m) => (m.exact ? bare === m.to : under(bare, m.to)));
+  return CONSOLE_MODES.find((m) =>
+    m.exact ? bare === m.to : [m.to, ...(m.also ?? [])].some((tree) => under(bare, tree)),
+  );
 }
 
 /** An old page, linked from the rail's Legacy menu until its mode lands. */

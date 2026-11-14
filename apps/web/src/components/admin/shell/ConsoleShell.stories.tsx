@@ -200,7 +200,7 @@ export const ModeratorLegacy: Story = {
   },
 };
 
-/** G then L opens Legacy; G then O goes to the Overview; the rail wears the letters meanwhile. */
+/** G then L opens Legacy; G then O goes to the Overview, G then B to Bodies; the rail wears the letters meanwhile. */
 export const GoMode: Story = {
   render: () => <Console />,
   play: async ({ canvasElement }) => {
@@ -209,7 +209,7 @@ export const GoMode: Story = {
     await userEvent.keyboard('g');
     await waitFor(() => expect(shell).toHaveAttribute('data-go'));
     const chips = [...shell.querySelectorAll('[data-slot="rail-go"]')].map((c) => c.textContent);
-    await expect(chips).toEqual(['GO', 'GL', 'GA']);
+    await expect(chips).toEqual(['GO', 'GB', 'GL', 'GA']);
     await userEvent.keyboard('l');
     const menu = await within(document.body).findByRole('menu');
     await expect(await within(menu).findAllByRole('menuitem')).toHaveLength(LEGACY_PAGES.length);

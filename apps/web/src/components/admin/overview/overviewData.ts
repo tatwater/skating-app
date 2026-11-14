@@ -11,7 +11,7 @@
 import type { api } from '@skating/convex/api';
 import type { FunctionReturnType } from 'convex/server';
 
-import type { AuditAction, AuditTarget } from '../shell/actionLabels';
+import { type AuditAction, type AuditTarget, actorWords } from '../shell/actionLabels';
 import { type Count, DAY, feedWhen, shortAge, sumCounts } from './overviewModel';
 
 const HOUR = DAY / 24;
@@ -403,13 +403,11 @@ const TARGET_WORDS: Record<AuditTarget, string> = {
 
 /**
  * Staff are named by first name (the boards' rule); a skater acting on their own — an
- * `author_delete`, or their "It's open" on their own pinned access alert — is named in full.
+ * `author_delete`, or their "It's open" on their own pinned access alert — is named in full. The
+ * rule is the audit's one (`actorWords`), shared with a body's history.
  */
 function actorName(row: ActionRow): string | null {
-  if (row.actor === null) return null;
-  const full = row.actor.displayName.trim() || row.actor.username;
-  if (row.action === 'author_delete' || row.action === 'author_resolve_access_alert') return full;
-  return full.split(/\s+/u)[0] ?? full;
+  return actorWords(row.actor, row.action);
 }
 
 /**

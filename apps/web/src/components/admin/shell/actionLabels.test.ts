@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { actionLabel } from './actionLabels';
+import { actionLabel, actorWords } from './actionLabels';
 
 describe('actionLabel', () => {
   it('names the target for the shared content verbs', () => {
@@ -32,5 +32,20 @@ describe('actionLabel', () => {
       expect(label).not.toMatch(/_|\{t\}/);
       expect(label[0]).toBe(label[0]?.toUpperCase());
     }
+  });
+});
+
+describe('actorWords', () => {
+  const sarah = { displayName: 'Sarah Berman', username: 'sarah' };
+
+  it('names staff by first name, an author acting on their own in full, the machine by none', () => {
+    expect(actorWords(sarah, 'hide')).toBe('Sarah');
+    expect(actorWords(sarah, 'author_delete')).toBe('Sarah Berman');
+    expect(actorWords(sarah, 'author_resolve_access_alert')).toBe('Sarah Berman');
+    expect(actorWords(null, 'activate_body')).toBeNull();
+  });
+
+  it('falls back to the username when no display name is set', () => {
+    expect(actorWords({ displayName: '  ', username: 'rtremblay' }, 'hide')).toBe('rtremblay');
   });
 });

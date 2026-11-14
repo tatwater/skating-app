@@ -1,6 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { dayMonth, historyWhen, seasonTape, type TapeFacts } from './consoleTime';
+import { dayMonth, historyWhen, seasonTape, seasonYears, type TapeFacts } from './consoleTime';
 
 const NY = 'America/New_York';
 const at = (iso: string) => new Date(iso).getTime();
@@ -44,6 +44,14 @@ describe('seasonTape', () => {
         },
       ),
     );
+  });
+});
+
+describe('seasonYears', () => {
+  it('writes a season by the two years it spans, the turn of a century too', () => {
+    expect(seasonYears(2023)).toBe('2023–24');
+    expect(seasonYears(2099)).toBe('2099–00');
+    expect(seasonYears(2008)).toBe('2008–09');
   });
 });
 

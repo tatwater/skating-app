@@ -153,11 +153,16 @@ export function seasonTape(
 
   marks.sort((a, b) => a.at - b.at);
   return {
-    season: `Winter ${year}–${String((year + 1) % 100).padStart(2, '0')}`,
+    season: `Winter ${seasonYears(year)}`,
     ticks,
     marks,
     ...(live !== undefined ? { badge: `Day ${live}` } : {}),
   };
+}
+
+/** A season by the two years it spans, as the console writes it: `2023` is "2023–24". */
+export function seasonYears(season: number): string {
+  return `${season}–${String((season + 1) % 100).padStart(2, '0')}`;
 }
 
 /** "14 Oct": the day and month `at` falls on in `timeZone`, months from `MONTHS`. */

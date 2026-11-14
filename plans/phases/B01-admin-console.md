@@ -1773,6 +1773,11 @@ one branch (`b01-3-server`).
   - The kit `Logo` keys its dark ink on the old `.dark` class until the old pages retire.
   - Cost (S2): no ledger rows exist.
   - A strip with no record still draws its full-height hairline on hover.
+- **Founder rulings (2026-11-14):**
+  - A write refused for its length is not counted by the server; the "at the cap" band is the
+    signal that writes are meeting the cap.
+  - The audit feed shows an actor's "Name via script-name" in full on hover; the Actor column
+    stays as it is for now.
 
 **B01-1c (2026-11-14): the server follow-up that waited on #110.** One branch,
 `b01-1c-server-followup`, opened after #112.
@@ -2036,6 +2041,64 @@ one-line call sites waiting on the same files: `queueLibraryRefresh` at a skater
 request (`corpusRequests.ts`) and new flag on a body (`contentFlags.ts`), `library = false` at the
 hazard callers of `recomputeBodySummary`, and `moderation.listActions` filtering by verb through
 `by_target_action`.
+
+### The Bodies list (B01-3, the page)
+
+The library at `/admin/bodies` (boards 5.1–5.3), on the server's reads above; the rail's Bodies
+mode (G then B) lights for it. The first of four Bodies page PRs — the Body console's frame and
+Shape, its Names/Places/Access/Water tabs, and its Imagery/Hazards/Standing/Links tabs follow.
+
+- **What it reads.** `bodies.listPage` through Convex's paginated hook: lane, state tab, facets,
+  search and order are the server's, and the page sorts and filters nothing itself. It starts at
+  `LIBRARY_PAGE_SIZE`, or as many rows as it was showing when left (to `LIBRARY_MAX_START`); a page
+  its scan budget cut short keeps the list loading, and the end is drawn only once the read is done.
+  `bodies.listSummary` counts the lanes, the corpus, the state tabs, the total and the facets; the
+  total and the menu's counts are only ever this query's — no number while loading, failed,
+  retrying, searching, with two facets, or for the reports facet while the season turns — and
+  *Changed this week* reads "500+" at its cap. Both read against the list's clock (the minute it was
+  opened), so a new minute never restarts the paging. The preview words `bodies.preview`'s facts:
+  reports this season by vantage (empty before 1 October, saying when the record begins) and all
+  time, floors marked "+", every open ask counted (`askCount`) with "Newest 20 of N" when its list
+  is partial, the town and the others, and completeness as stored (core's ten); its history is
+  `bodyConsole.history`. A rejected body, which `waterBodies.get` doesn't serve, is drawn from its
+  row with a line that the full preview isn't available.
+- **Where a body opens.** Until the Body console lands, the preview's action (and ⏎) opens the body
+  in the old editor, *Open in the editor →* — never a link to a page that isn't there.
+- **Every read's states.** Skeletons while on their way; a failure said in its own place with *Try
+  again* (the kit `RetryNote`: a live region mounted before its words, so it is announced;
+  *Trying again…* until the fresh answer; focus kept in the note when it empties). The counts and the
+  preview go through the console's one read layer (`components/admin/reads/consoleReads.ts`: one
+  registry of paused reads, pending, Sentry once per failure by the read). The paginated list runs
+  in a small reader under the kit `ReadBoundary` that hands its pages up, so the page and its
+  failure note are drawn once, outside the boundary. `null` is *Not recorded yet*, never a zero.
+- **Kit pieces with it:** `LedStrip`'s segments, `FilterChip` and its row and count, `FacetMenu`,
+  `SearchMark`, `TableGroupRow`, `RetryNote`, `ReadBoundary`, and `Section`'s capped count ("400+")
+  and amber chip.
+- **Deliberately absent:** board 5.3's matches in other standings and its tally (no read answers
+  across standings yet); a rejected body's full preview; *Opened recently*'s rows (its lane, this
+  browser's own list, comes with the Body console, which writes it).
+- **Where the mock and the code differ** (founder calls; the code stands until ruled): the state
+  tabs carry no counts; completeness is out of ten, not twelve; the ask kicker is *Bay name · Inbox*,
+  not the raw `name_bay`.
+- **Wording the mock did not supply** (all asks' words in `components/admin/bodies/askWords.ts`,
+  approved as written by the founder on 2026-11-14): request kinds *Activation*, *Admission*, *Restoration*, *Access contested*, *Takedown*,
+  *Landmark name*; what a nameless request asks for — *Make it active*, *Add it to the map*,
+  *Bring it back*, *Reopen its access*, *Take it down*, *Name a bay*, *Name a landmark*; a flag's
+  reason — *Dangerously false ice report*, *Spam*, *Harassment*, *Inappropriate*, *Rated
+  unhelpful*, *No public access*, *Other*; *Flag · Inbox*; *Newest N of M*; *Open in the editor*;
+  *Couldn't read this list*, *Counts couldn't be read*, *Couldn't read this body*, *Couldn't read
+  the history*, *Reports, completeness and asks couldn't be read*, *Put-ins and bays couldn't be
+  read*, *Try again*, *Trying again…*;
+  *The full preview isn't available for a rejected body*; *Record begins 1 Oct* (Metrics' words).
+- **Server requests it raises** (accepted for a follow-up server PR): a search across standings
+  (`bodies.listPage` answering the other lanes); the number of askers and the intake reasons on
+  `bodies.preview.asks[]`; `moreTowns` with each town's state; `bodies.rowsByIds` (rows by id, for
+  *Opened recently*); `SEARCH_MIN_CHARS` in core; a row-and-facts read for a rejected or removed body,
+  with when and why it left.
+- **Owed:** each page commits twice (the reader hands it up), the price of drawing the note outside
+  the boundary; the preview's notes share one pending flag across its reads; the library backfills
+  on dev (`bodyLibrary:backfillAll`, then `bodyLibrary:backfillChangedAt`) before a deployment shows
+  real rows.
 
 ## Ruled out
 

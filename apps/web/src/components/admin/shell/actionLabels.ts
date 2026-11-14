@@ -95,3 +95,24 @@ const VERB: Record<AuditAction, string> = {
 export function actionLabel(action: AuditAction, targetType: AuditTarget): string {
   return VERB[action].replace('{t}', TARGET[targetType]);
 }
+
+/** Verbs a skater does to their own content: their row names them in full, not as staff. */
+const AUTHOR_ACTIONS: ReadonlySet<AuditAction> = new Set([
+  'author_delete',
+  'author_resolve_access_alert',
+]);
+
+/**
+ * Who acted, as an audit row names them — one rule for every reader of the audit (the Overview's
+ * feed, a body's history): staff by first name (the boards' rule), a skater acting on their own
+ * content in full, and the machine by no name (`null`).
+ */
+export function actorWords(
+  actor: { displayName: string; username: string } | null,
+  action: AuditAction,
+): string | null {
+  if (actor === null) return null;
+  const full = actor.displayName.trim() || actor.username;
+  if (AUTHOR_ACTIONS.has(action)) return full;
+  return full.split(/\s+/u)[0] ?? full;
+}

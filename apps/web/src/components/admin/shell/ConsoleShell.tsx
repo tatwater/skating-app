@@ -2,6 +2,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faArrowUpRightFromSquare,
   faBoxArchive,
+  faMapLocationDot,
   faTachographDigital,
   type IconDefinition,
 } from '@fortawesome/sharp-light-svg-icons';
@@ -55,6 +56,7 @@ import type { ConsoleMode, LegacyPage } from './consoleNav';
 
 const MODE_ICON: Record<ConsoleMode['id'], IconDefinition> = {
   overview: faTachographDigital,
+  bodies: faMapLocationDot,
 };
 
 /** A built mode as the rail draws it. */
