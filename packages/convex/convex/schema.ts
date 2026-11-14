@@ -4359,8 +4359,8 @@ export default defineSchema({
     refreshedAt: v.number(),
   })
     .index('by_body', ['waterBodyId', 'scope'])
-    // The season turning: rows whose reports belong to an earlier season (a required number).
-    .index('by_reports_season', ['reportsSeason'])
+    // The season turning: an earlier season's rows that still count reports (required numbers).
+    .index('by_reports_season', ['reportsSeason', 'reports'])
     // The drift repair: the rows refreshed longest ago.
     .index('by_refreshed_at', ['refreshedAt'])
     // All bodies, by each column (ties by name).

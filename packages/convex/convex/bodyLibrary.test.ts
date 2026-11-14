@@ -366,6 +366,18 @@ describe('kept current at the writes', () => {
     expect((await rowsOf(t, id))[0]).toMatchObject({ curated: true, refreshedAt: NOW + DAY });
   });
 
+  test('an unchanged row is marked read at most daily, so the drift repair moves on', async () => {
+    const t = harness();
+    const id = await seedBody(t, { name: 'Steady' });
+    await backfill(t);
+    vi.setSystemTime(NOW + DAY / 2);
+    await t.mutation(internal.bodyLibrary.repairDrift, {});
+    expect((await rowsOf(t, id))[0]?.refreshedAt).toBe(NOW);
+    vi.setSystemTime(NOW + 2 * DAY);
+    await t.mutation(internal.bodyLibrary.repairDrift, {});
+    expect((await rowsOf(t, id))[0]?.refreshedAt).toBe(NOW + 2 * DAY);
+  });
+
   test('Changed is backfilled from the audit log: a moderator on a bay counts, the machine does not', async () => {
     const t = harness();
     const mod = await seedUser(t);

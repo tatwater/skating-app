@@ -58,6 +58,8 @@ import { PUT_IN_REPORT_SCAN, putInMarkersForBody } from './putInMarkers';
 export const REPORT_SCAN = 300;
 /** The most open asks of one kind a refresh counts. */
 const ASK_CAP = 100;
+/** An unchanged row's `refreshedAt` is moved on when older than this (the drift repair's progress). */
+const REFRESHED_STALE_MS = 86_400_000;
 /** The most rows one body can have (every state it touches, and `*`). */
 const MAX_SCOPES = 16;
 
@@ -416,6 +418,9 @@ export async function refreshBodyLibrary(
     } else if (!sameRow(stripSystem(old), row)) {
       // `replace` rather than `patch`: a field that became unknown (an area cleared) is dropped.
       await ctx.db.replace(old._id, row);
+    } else if (old.refreshedAt < now - REFRESHED_STALE_MS) {
+      // Unchanged, but read again: say so, at most daily, so the drift repair moves on from it.
+      await ctx.db.patch(old._id, { refreshedAt: now });
     }
   }
   for (const stale of byScope.values()) await ctx.db.delete(stale._id);

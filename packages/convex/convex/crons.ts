@@ -339,12 +339,7 @@ crons.interval(
 );
 /** The season turning re-counts the rows of the last season; any other hour reads an empty range. */
 crons.interval('turn the bodies library season', { hours: 1 }, internal.bodyLibrary.turnSeason, {});
-/** The drift repair: the oldest-refreshed rows, a few a tick — the corpus about weekly. */
-crons.interval(
-  'repair bodies library drift',
-  { minutes: 10 },
-  internal.bodyLibrary.repairDrift,
-  {},
-);
+/** The drift repair: the oldest-refreshed rows, a few a tick — the corpus about every four days. */
+crons.interval('repair bodies library drift', { minutes: 2 }, internal.bodyLibrary.repairDrift, {});
 
 export default crons;

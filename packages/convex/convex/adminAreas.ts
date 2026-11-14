@@ -213,7 +213,7 @@ export function placeSamplePoints(
 
 /**
  * **The places a body lies in** — its towns (the interior point's first), counties and states, read at
- * {@link placeSamplePoints}. **Sampled, not a polygon overlay**: a town the shore only grazes between
+ * {@link placeSamplePoints} (counties at the interior point). **Sampled, not a polygon overlay**: a town the shore only grazes between
  * two samples can be missed, and a body is never placed in a town it doesn't touch. A point already
  * inside a town found is not looked up again. `null` when no boundary contains any point (open water
  * outside the imported region) — not recorded, never "no town".
@@ -224,8 +224,9 @@ export async function townsForBody(
 ): Promise<{ towns: string[]; counties: string[]; states: string[] } | null> {
   const found: Record<'town' | 'county', Doc<'adminAreas'>[]> = { town: [], county: [] };
   const states = new Set<string>();
-  for (const point of placeSamplePoints(body)) {
-    for (const level of ['town', 'county'] as const) {
+  for (const [i, point] of placeSamplePoints(body).entries()) {
+    // Counties are large polygons and a body rarely spans two: read at the interior point only.
+    for (const level of i === 0 ? (['town', 'county'] as const) : (['town'] as const)) {
       if (found[level].some((a) => pointInArea(point, a))) continue;
       const area = await findContainingArea(ctx, level, point);
       if (area) {

@@ -105,8 +105,12 @@ export const backfillChangedAt = internalMutation({
   },
 });
 
-/** Bodies the minute cron refreshes from the queue. */
-export const DRAIN_BATCH = 40;
+/**
+ * Bodies the minute cron refreshes from the queue. Small, because a refresh reads a body's polygon and
+ * its newest reports: ten of the busiest are well inside a transaction's read limit. After a full
+ * canonical campaign (every body queued), run `backfillAll` rather than wait on the queue.
+ */
+export const DRAIN_BATCH = 10;
 
 /** The minute cron: refresh the bodies the machine's bulk writes queued. */
 export const drainQueue = internalMutation({
@@ -115,32 +119,40 @@ export const drainQueue = internalMutation({
 });
 
 /** Bodies one season-turning tick re-counts. */
-const SEASON_BATCH = 40;
+const SEASON_BATCH = 10;
+/** How many seasons back the turning looks for rows still counting reports. */
+const SEASONS_BACK = 3;
 
 /**
- * The season turning (1 July): re-count the rows whose reports belong to an earlier season. An
- * index range below the current season, so a tick outside the first days of July reads nothing.
+ * The season turning (1 July): re-count the rows that still count an earlier season's reports. Only
+ * those need it — a row counting none reads the same in any season, and the list reads an earlier
+ * season's count as this season's empty record until the row is re-counted. An equality on the
+ * season and a lower bound on the count, so a tick outside the first days of July reads nothing.
  */
 export const turnSeason = internalMutation({
   args: {},
   handler: async (ctx) => {
     const now = Date.now();
-    const rows = await ctx.db
-      .query('bodyLibraryRows')
-      .withIndex('by_reports_season', (q) => q.lt('reportsSeason', currentSeason(now)))
-      .take(SEASON_BATCH * 4);
-    const bodies = [...new Set(rows.map((r) => r.waterBodyId))].slice(0, SEASON_BATCH);
+    const current = currentSeason(now);
+    const bodies = new Set<Id<'waterBodies'>>();
+    for (let s = current - 1; s >= current - SEASONS_BACK && bodies.size < SEASON_BATCH; s--) {
+      const rows = await ctx.db
+        .query('bodyLibraryRows')
+        .withIndex('by_reports_season', (q) => q.eq('reportsSeason', s).gt('reports', 0))
+        .take(SEASON_BATCH * 4);
+      for (const r of rows) if (bodies.size < SEASON_BATCH) bodies.add(r.waterBodyId);
+    }
     for (const id of bodies) await refreshBodyLibrary(ctx, id, { now });
-    return { refreshed: bodies.length };
+    return { refreshed: bodies.size };
   },
 });
 
 /** Bodies one drift-repair tick refreshes. */
-const DRIFT_BATCH = 20;
+const DRIFT_BATCH = 10;
 
 /**
  * The drift repair: the rows refreshed longest ago, a few bodies a tick — the whole corpus in about
- * a week at the cron's pace. It catches what no write refreshes yet (a skater's new corpus request
+ * four days at the cron's pace. It catches what no write refreshes yet (a skater's new corpus request
  * or flag, whose files the author-deletion PR is rewriting); nothing a moderator does waits on it.
  */
 export const repairDrift = internalMutation({
