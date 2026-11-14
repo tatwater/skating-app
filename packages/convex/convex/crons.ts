@@ -359,4 +359,26 @@ crons.interval('turn the bodies library season', { hours: 1 }, internal.bodyLibr
 /** The drift repair: the oldest-refreshed rows, a few a tick — the corpus about every four days. */
 crons.interval('repair bodies library drift', { minutes: 2 }, internal.bodyLibrary.repairDrift, {});
 
+// ── People (B01 §5.7) ──
+/**
+ * A lapsed suspension's stored status is reset to active (D222): each person in their own nested
+ * transaction, a failure counted and walked past, three in a row parked. Never an account in its
+ * deletion window, being finalized, or deleted.
+ */
+crons.interval(
+  'reset lapsed suspensions',
+  { minutes: 15 },
+  internal.peopleJobs.sweepLapsedSuspensions,
+  {},
+);
+/** Parked suspension resets tried again once a day, least recently tried first. */
+crons.daily(
+  'retry parked suspension resets',
+  { hourUTC: 9, minuteUTC: 50 },
+  internal.peopleJobs.retryLapsedDaily,
+  {},
+);
+/** The People rows' drift repair: the oldest-refreshed rows re-derived from their profiles. */
+crons.interval('repair people rows drift', { minutes: 10 }, internal.peopleJobs.repairDrift, {});
+
 export default crons;

@@ -86,27 +86,75 @@ const recordBudget = () => new ReadBudget(TX_BUDGET - ROW_MAX.profile);
 
 const VERDICT_TARGETS = ['report', 'post', 'comment', 'hazard', 'accessAlert'] as const;
 
+/** The body an item on the record is about: on the row, or through its Report (a comment, a Post). */
+async function bodyOf(
+  ctx: QueryCtx,
+  reads: ReadBudget,
+  targetType: VerdictTargetType,
+  target: ContentDoc,
+): Promise<{ waterBodyId: Id<'waterBodies'>; name: string | null } | null> {
+  let waterBodyId: Id<'waterBodies'> | undefined;
+  if (targetType === 'report' || targetType === 'hazard' || targetType === 'accessAlert') {
+    waterBodyId = (target as Doc<'reports'> | Doc<'hazards'> | Doc<'accessAlerts'>).waterBodyId;
+  } else {
+    const reportId =
+      targetType === 'comment'
+        ? (target as Doc<'comments'>).reportId
+        : (target as Doc<'posts'>).reportIds[0];
+    const report = reportId ? await reads.one('report', () => ctx.db.get(reportId)) : null;
+    waterBodyId = report?.waterBodyId;
+  }
+  if (waterBodyId === undefined) return null;
+  const id = waterBodyId;
+  const row = await reads.one('bodyLibraryRow', () =>
+    ctx.db
+      .query('bodyLibraryRows')
+      .withIndex('by_body', (q) => q.eq('waterBodyId', id).eq('scope', '*'))
+      .first(),
+  );
+  return { waterBodyId, name: row?.name ?? null };
+}
+
 /**
  * The person's standing verdicts, newest first, a page at a time — each with the content still
- * readable where it is kept, labeled when its author deleted it afterward. Each verdict reads its
- * action and its item, so a page is sized by what those can weigh: a short page is not the end,
- * `isDone` is. Staff only.
+ * readable where it is kept, labeled when its author deleted it afterward, and the body it is on
+ * (named from the Bodies library). `targetType` narrows it to one kind. Each verdict reads its action,
+ * its item, and for a comment or a Post the Report that names the body, so a page is sized by what
+ * those can weigh: a short page is not the end, `isDone` is. The counts by kind are
+ * `lib/contentVerdicts.readVerdictCounts`, over the same range (`people.person`'s `hidden`). Staff
+ * only.
  */
 export const personVerdicts = query({
-  args: { userId: v.id('profiles'), cursor: v.optional(v.union(v.string(), v.null())) },
-  handler: async (ctx, { userId, cursor }) => {
+  args: {
+    userId: v.id('profiles'),
+    targetType: v.optional(literals(VERDICT_TARGETS)),
+    cursor: v.optional(v.union(v.string(), v.null())),
+  },
+  handler: async (ctx, { userId, targetType, cursor }) => {
     await requireCapability(ctx, 'people.read');
     const reads = recordBudget();
-    const perRow = ROW_MAX.verdict + ROW_MAX.moderationAction + DOC_MAX;
+    const perRow =
+      ROW_MAX.verdict +
+      ROW_MAX.moderationAction +
+      DOC_MAX +
+      ROW_MAX.report +
+      ROW_MAX.bodyLibraryRow;
     const page = await reads.page(
       'verdict',
       reads.rows('verdict', RECORD_PAGE, 0, perRow),
       (numItems) =>
-        ctx.db
-          .query('contentVerdicts')
-          .withIndex('by_subject_standing', (q) =>
-            q.eq('subjectUserId', userId).eq('standing', true),
-          )
+        (targetType === undefined
+          ? ctx.db
+              .query('contentVerdicts')
+              .withIndex('by_subject_standing', (q) =>
+                q.eq('subjectUserId', userId).eq('standing', true),
+              )
+          : ctx.db
+              .query('contentVerdicts')
+              .withIndex('by_subject_standing_type', (q) =>
+                q.eq('subjectUserId', userId).eq('standing', true).eq('targetType', targetType),
+              )
+        )
           .order('desc')
           .paginate({ cursor: cursor ?? null, numItems }),
     );
@@ -116,6 +164,7 @@ export const personVerdicts = query({
           reads.one('moderationAction', () => ctx.db.get(verdict.actionId)),
           loadTarget(ctx, reads, verdict.targetType, verdict.targetId),
         ]);
+        const body = target ? await bodyOf(ctx, reads, verdict.targetType, target) : null;
         return {
           targetType: verdict.targetType,
           targetId: verdict.targetId,
@@ -125,6 +174,8 @@ export const personVerdicts = query({
           byUserId: action?.actorId ?? null,
           content: target ? contentOf(verdict.targetType, target) : null,
           authorDeletedAt: target ? withdrawnAt(verdict.targetType, target) : null,
+          waterBodyId: body?.waterBodyId ?? null,
+          waterBodyName: body?.name ?? null,
         };
       }),
     );

@@ -70,6 +70,8 @@ export const ROW_MAX = {
   // An uploader's place in the settlement queue: its position, and at most `SETTLE_CHUNK_IDS` photo ids
   // and a handful of debt ids taken on.
   settleQueue: 64 * 1024,
+  // A Bodies library row carries the body's name, which no writer caps.
+  bodyLibraryRow: DOC_MAX,
   // Ids, literals, numbers and a coordinate — no free text.
   verdict: SLACK,
   small: SLACK,

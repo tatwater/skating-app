@@ -203,6 +203,8 @@ export async function closeRow(
     reason: note || `${status === 'approved' ? 'Approved' : 'Declined'} a ${row.kind} request`,
     metadata: {
       kind: row.kind,
+      // When it was filed, for a staffer's time to decide (People).
+      filedAt: row.createdAt,
       ...(row.waterBodyId ? { waterBodyId: row.waterBodyId } : {}),
       ...(admittedWaterBodyId ? { admittedWaterBodyId } : {}),
       ...(subAreaId ? { subAreaId } : {}),
