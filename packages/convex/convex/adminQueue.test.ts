@@ -294,7 +294,7 @@ describe('waterBodies.listDedupCandidates (D36 queue)', () => {
     const card = before.groups[0];
     // The lake every flag points at is on the card, and the card says what it isn't showing.
     expect(card?.members.map((m) => m._id)).toContain(lake);
-    expect(card).toMatchObject({ truncated: true, hidden: 1 });
+    expect(card).toMatchObject({ hidden: 1 });
 
     await as(t, 'mod').mutation(api.waterBodies.dismissDuplicates, {
       waterBodyIds: card?.members.map((m) => m._id) ?? [],
@@ -303,8 +303,39 @@ describe('waterBodies.listDedupCandidates (D36 queue)', () => {
     expect(after.groups.map((g) => g.key)).not.toContain(card?.key);
     // The one flag the card didn't show is its own card now, with the lake.
     expect(after.total).toBe(1);
-    expect(after.groups[0]).toMatchObject({ truncated: false, hidden: 0 });
+    expect(after.groups[0]).toMatchObject({ hidden: 0 });
     expect(after.groups[0]?.members).toHaveLength(2);
+  });
+
+  test('a cut group sorts by its whole size, ahead of a group that shows all six', async () => {
+    const t = harness();
+    await seedProfile(t, 'mod', { role: 'moderator' });
+    const { small, big } = await t.run(async (ctx) => {
+      // Read first, so a tie would keep it first: six bodies, all on the card.
+      const small = await seedBody(ctx, { name: 'Small Lake' });
+      for (let i = 0; i < 5; i++) {
+        await seedBody(ctx, {
+          name: `Small ${i}`,
+          dedupStatus: 'suspected_duplicate',
+          duplicateCandidateIds: [small],
+        });
+      }
+      // Nine bodies, three of them left off the card.
+      const big = await seedBody(ctx, { name: 'Big Lake' });
+      for (let i = 0; i < 8; i++) {
+        await seedBody(ctx, {
+          name: `Big ${i}`,
+          dedupStatus: 'suspected_duplicate',
+          duplicateCandidateIds: [big],
+        });
+      }
+      return { small, big };
+    });
+
+    const queue = await as(t, 'mod').query(api.waterBodies.listDedupCandidates, {});
+    expect(queue.groups.map((g) => g.hidden)).toEqual([3, 0]);
+    expect(queue.groups[0]?.members.map((m) => m._id)).toContain(big);
+    expect(queue.groups[1]?.members.map((m) => m._id)).toContain(small);
   });
 
   test('folds a mutually-flagged pair into ONE card, not two', async () => {
@@ -479,8 +510,8 @@ describe('waterBodies.listDedupCandidates (D36 queue)', () => {
         );
         expect(linked).toBe(true);
       }
-      // A cut card says so, and how many bodies it leaves out.
-      expect(card.truncated).toBe(card.hidden > 0);
+      // A card leaves bodies out only when it is full.
+      if (card.hidden > 0) expect(card.members).toHaveLength(6);
 
       await as(t, 'mod').mutation(api.waterBodies.dismissDuplicates, {
         waterBodyIds: [...shown],

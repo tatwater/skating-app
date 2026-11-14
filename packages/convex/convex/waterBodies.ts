@@ -5917,17 +5917,18 @@ export const listDedupCandidates = query({
           .sort()
           .join('+'),
         members,
-        truncated: hidden > 0,
         hidden,
       };
     });
 
     // Near-certain groups first (D36), then the biggest: a three-body group is either the matcher
     // chaining two lakes together or a genuinely messy piece of the corpus, and both want a human
-    // sooner than a routine pair does.
+    // sooner than a routine pair does. Biggest by the whole group, not the cut: a card leaving bodies
+    // out is bigger than one showing all six.
     const tier = (g: (typeof groups)[number]) =>
       g.members.some((m) => m.dedupStatus === 'near_certain') ? 0 : 1;
-    groups.sort((a, b) => tier(a) - tier(b) || b.members.length - a.members.length);
+    const size = (g: (typeof groups)[number]) => g.members.length + g.hidden;
+    groups.sort((a, b) => tier(a) - tier(b) || size(b) - size(a));
 
     return {
       groups: groups.map((g) => ({ ...g, members: g.members.map(dedupSummary) })),

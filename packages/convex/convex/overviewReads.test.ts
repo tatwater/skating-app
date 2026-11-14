@@ -590,7 +590,7 @@ describe('console.corpusCounts — the Corpus card’s tasks', () => {
     expect(queue.total).toBe(7);
     expect(c.duplicates).toEqual({ count: queue.total, capped: queue.truncated });
     const cut = queue.groups.find((g) => g.members.some((m) => m.name.startsWith('Big')));
-    expect(cut).toMatchObject({ truncated: true });
+    expect(cut).toMatchObject({ hidden: 2 });
     expect(cut?.members).toHaveLength(6);
     const orphans = queue.groups.filter((g) => g.members.some((m) => m.name.startsWith('Orphan')));
     expect(orphans.map((g) => g.members.length)).toEqual([1, 1]);

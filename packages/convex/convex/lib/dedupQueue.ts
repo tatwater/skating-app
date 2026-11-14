@@ -77,9 +77,10 @@ export function sharedCandidates(flagged: readonly Flag[]): BodyId[] {
  *
  * Each group comes back **in walk order**: breadth-first from its first flagged row (in read order),
  * a body's own candidates before the flagged rows that name it. A card shows a prefix of this order,
- * so every body it shows is linked to one shown before it, and a flagged row's candidates are shown
- * with it wherever the card's limit allows. Dismissing what a card shows therefore always clears a
- * link (the cut that listed six flagged rows and hid the lake they all named cleared none).
+ * so every body it shows is linked to one shown before it (the first flagged row's candidates come
+ * straight after it; a later row's may fall past the limit). Dismissing what a card shows therefore
+ * always clears a link (the cut that listed six flagged rows and hid the lake they all named cleared
+ * none).
  */
 export function dedupGroups(flagged: readonly Flag[], exists: (id: BodyId) => boolean): BodyId[][] {
   const flaggedIds = new Set(flagged.map((f) => f._id));
