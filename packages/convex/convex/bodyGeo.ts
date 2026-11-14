@@ -245,7 +245,14 @@ export const store = internalMutation({
     };
     if (row) await ctx.db.patch(row._id, fields);
     else await ctx.db.insert('bodyGeoFacts', { waterBodyId: args.waterBodyId, ...fields });
-    await markGeoStale(ctx, moved as Id<'waterBodies'>[], now);
+    // A neighbor whose relation moved is recomputed — unless it is gone or merged away, which has
+    // no facts to keep (marking it would leave a stale row no computation clears).
+    const live: Id<'waterBodies'>[] = [];
+    for (const id of moved as Id<'waterBodies'>[]) {
+      const other = await ctx.db.get(id);
+      if (other && other.dedupStatus !== 'merged') live.push(id);
+    }
+    await markGeoStale(ctx, live, now);
     return { stored: true };
   },
 });
@@ -338,7 +345,7 @@ async function computeOne(ctx: ActionCtx, waterBodyId: Id<'waterBodies'>): Promi
 }
 
 /** An error's class for the attempts record — its kind only, never its message. */
-function errorClassOf(err: unknown): string {
+export function errorClassOf(err: unknown): string {
   if (err instanceof ConvexError) return 'ConvexError';
   if (err instanceof Error) return /^[A-Za-z]{1,40}$/.test(err.name) ? err.name : 'Error';
   return 'unknown';
@@ -346,6 +353,8 @@ function errorClassOf(err: unknown): string {
 
 /** Bodies one run takes, and how many at once. */
 const RUN_BATCH = 60;
+/** The most due bodies one pass looks through, past the ones this run already tried. */
+const DUE_WINDOW = 200;
 const CONCURRENCY = 6;
 /** A run hands over before an action's limit. */
 const RUN_MS = 4 * 60_000;
@@ -353,26 +362,40 @@ const RUN_MS = 4 * 60_000;
 /**
  * **Recompute the due bodies**: up to {@link RUN_BATCH} a pass, {@link CONCURRENCY} at a time, each
  * isolated — a body that fails is recorded (`lib/attempts.ts`) and the rest go on; parked bodies wait
- * for the daily retry (`parked: true`). With `chain`, keeps going (re-scheduling itself) until none
- * is due.
+ * for the daily retry (`parked: true`), which walks them the same way. **A run tries each body at
+ * most once**, so a failure counts one attempt per run, never three in a row; every pass tries at
+ * least one body it hasn't, so a run always ends. With `chain`, a run past its time hands on to a
+ * fresh one until none is due.
+ *
+ * `done` is `false` when the run stopped with bodies still due: its time ran out, its batch filled
+ * (without `chain`), or every due body it can see ({@link DUE_WINDOW}) already failed in this run —
+ * the next run (the cron's, or the day's) takes them, a fresh attempt each.
  */
 export const computeDue = internalAction({
   args: { parked: v.optional(v.boolean()), chain: v.optional(v.boolean()) },
-  handler: async (ctx, { parked = false, chain = false }) => {
+  handler: async (
+    ctx,
+    { parked = false, chain = false },
+  ): Promise<{ computed: number; failed: number; done: boolean }> => {
     const started = Date.now();
     let computed = 0;
     let failed = 0;
+    const tried = new Set<string>();
     for (;;) {
-      const ids = await ctx.runQuery(internal.bodyGeo.due, { limit: RUN_BATCH, parked });
-      if (ids.length === 0) return { computed, failed, done: true };
-      let progress = 0;
+      const ask = Math.min(DUE_WINDOW, RUN_BATCH + tried.size);
+      const seen: Id<'waterBodies'>[] = await ctx.runQuery(internal.bodyGeo.due, {
+        limit: ask,
+        parked,
+      });
+      const ids = seen.filter((id) => !tried.has(id)).slice(0, RUN_BATCH);
+      if (ids.length === 0) return { computed, failed, done: seen.length < ask };
       for (let i = 0; i < ids.length; i += CONCURRENCY) {
         const slice = ids.slice(i, i + CONCURRENCY);
+        for (const id of slice) tried.add(id);
         const results = await Promise.allSettled(slice.map((id) => computeOne(ctx, id)));
         for (const [j, r] of results.entries()) {
           if (r.status === 'fulfilled') {
             computed++;
-            progress++;
           } else {
             failed++;
             await ctx.runMutation(internal.bodyGeo.recordFailure, {
@@ -383,14 +406,8 @@ export const computeDue = internalAction({
           }
         }
       }
-      if (parked) return { computed, failed, done: true };
-      // A pass where every body failed still moves: each failure is an attempt toward parking, so
-      // the due list changes. A pass that computed nothing and failed nothing cannot happen (it had
-      // ids); if one did, stopping is the loud answer rather than looping.
-      if (progress === 0 && failed === 0)
-        throw new ConvexError('bodyGeo.computeDue made no progress');
       if (Date.now() - started > RUN_MS) {
-        if (chain) await ctx.scheduler.runAfter(0, internal.bodyGeo.computeDue, { chain });
+        if (chain) await ctx.scheduler.runAfter(0, internal.bodyGeo.computeDue, { parked, chain });
         return { computed, failed, done: false };
       }
       if (!chain && computed + failed >= RUN_BATCH) return { computed, failed, done: false };

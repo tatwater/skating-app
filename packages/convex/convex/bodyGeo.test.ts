@@ -9,7 +9,15 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { placesFrom } from './bodyGeo';
-import { coverTiles, markGeoStale, outlineStamp, simplifiedRing, touches } from './lib/bodyGeo';
+import {
+  coverTiles,
+  markGeoStale,
+  outlineStamp,
+  samplePoints,
+  simplifiedRing,
+  touches,
+  vertexCount,
+} from './lib/bodyGeo';
 import { rebuildBodyLibrary } from './lib/bodyLibrary';
 import { syncAdminAreaCells, syncWaterBodyCells } from './lib/cellIndex';
 import schema from './schema';
@@ -132,6 +140,17 @@ describe('pure helpers', () => {
     const ring = simplifiedRing(ellipse(0, 0, 1, 1, 1000), 48);
     expect(ring.length).toBe(49);
     expect(ring[0]).toEqual(ring[48]);
+  });
+  test('a multipolygon counts every ring, and keeps its largest outer ring', () => {
+    const small = ellipse(5, 5, 0.1, 0.1, 10);
+    const big = ellipse(0, 0, 1, 1, 100);
+    const multi = {
+      type: 'MultiPolygon' as const,
+      coordinates: [small.coordinates, big.coordinates],
+    };
+    expect(vertexCount(multi)).toBe(11 + 101);
+    expect(samplePoints(multi, 200)).toHaveLength(112);
+    expect(simplifiedRing(multi, 200)).toHaveLength(101);
   });
   test('the stamp moves with the outline, not with anything else', () => {
     const a = { polygon: ellipse(0, 0, 1, 1, 10), bbox: boxOf(0, 0, 1, 1) };

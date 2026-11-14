@@ -219,4 +219,28 @@ describe('the backfill', () => {
     expect(links).toHaveLength(1);
     expect(links[0]).toMatchObject({ waterBodyId: a, self: true, action: 'set_curated_boost' });
   });
+
+  test('chains page by page to the end of the log', async () => {
+    const t = harness();
+    const { mod, a, b } = await seed(t);
+    await t.run(async (ctx) => {
+      for (const [i, targetId] of [a, b, a].entries()) {
+        await ctx.db.insert('moderationActions', {
+          actorId: mod,
+          action: 'set_curated_boost',
+          targetType: 'waterbody',
+          targetId,
+          reason: 'r',
+          createdAt: NOW - 5000 + i,
+        });
+      }
+    });
+    expect(await t.mutation(internal.auditLinks.backfill, { pageSize: 1 })).toMatchObject({
+      linked: 1,
+      isDone: false,
+    });
+    await t.finishAllScheduledFunctions(() => {});
+    const links = await t.run((ctx) => ctx.db.query('auditBodyLinks').collect());
+    expect(links.map((l) => l.waterBodyId).sort()).toEqual([a, a, b].sort());
+  });
 });
