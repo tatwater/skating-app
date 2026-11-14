@@ -1590,7 +1590,7 @@ below are at the 12 MiB budget; *R* 1 MiB, *V* 8 KiB, *C* 16 KiB, *F* a flag (*R
 | Job | Design | Page | One row's worst case (own read + work), every branch | Worst-case pass |
 | --- | --- | --- | --- | --- |
 | `contentRecord.backfillVerdicts` | a | 4 audit rows | R + newest row R + item R (found → hand-off; gone → continue) | 12 MiB |
-| `contentRecord.replayVerdictHistory` | a | ≤ 6 rows, finish kept back | R + stray lookup and delete 2V + ended verdict lookup and write 2V; finish: item R + standing verdict 2V + clock (R + 4F + 2V + R) | ≤ 12 MiB |
+| `contentRecord.replayVerdictHistory` | a | 4 rows, the finish (≈ 7 MiB) kept back | R + stray lookup and delete 2V + ended verdict lookup and write 2V; finish: item R + standing verdict 2V + clock (R + 4F + 2V + R) | ≤ 12 MiB |
 | `authorDeletions.backfillFromAudit` | a | 6 audit rows | R + item R (`author_delete` rows; gone or live → continue) | 12 MiB |
 | `authorDeletions.stampWithdrawal` history | a | 5 rows, item read and stamp kept back | R + an undo's lookup R (restores) | ≤ 12 MiB |
 | `authorDeletions.stampWithdrawal` members | b | members until the budget ends | member R + stamp R | Post R + 5 members |
@@ -1598,8 +1598,8 @@ below are at the 12 MiB budget; *R* 1 MiB, *V* 8 KiB, *C* 16 KiB, *F* a flag (*R
 | `authorDeletions.commentLastWord` | a | ≤ 11 rows, the stamp kept back | R | ≤ 12 MiB |
 | `erasure.eraseDue` | b | one item at a time while `ITEM_NEED` fits | head + hold + clock or eraser's fixed reads + one drained row (`ITEM_NEED`, ≤ 10 MiB for a Report); drains size themselves by the rest | ≤ 12 MiB |
 | `erasure.settlePhotos` Reports | a | 12 Reports | R | 12 MiB |
-| `erasure.settlePhotos` hazards + deletes | a then b | 10 hazards, one photo kept back; photos while one fits | R; a photo R + access check V + delete R | ≤ 12 MiB |
-| `erasure.backfillClocks` | a then b | 11 rows, one row's work kept back; withdrawn rows while their work fits | R; a withdrawn row: stamp R + hold (4F + 2V) + clock R | ≤ 12 MiB |
+| `erasure.settlePhotos` hazards + deletes | a then b | 9 hazards, one photo kept back; photos while one fits | R; a photo R + access check V + delete R | ≤ 12 MiB |
+| `erasure.backfillClocks` | a then b | 5 Reports (more of lighter kinds), one row's work kept back; withdrawn rows while their work fits | R; a withdrawn row: stamp R + hold (4F + 2V) + clock R | ≤ 12 MiB |
 | `erasure.dropErasedMember` | a (fixed) | the Post and ≤ 9 members | — | 11 MiB; more members than a Post can hold throws, traced |
 | `erasure.refreshMemberClocks` | b | members while one fits | member R + hold (2F + V) + clock R | Post R + its hold + 2 members |
 | `lib/contentVerdicts.endStanding` | — | 16 standing verdicts a read, until none | V (not budget-charged: a live writer's loop over rows the writers keep to one) | the writers' invariant |
