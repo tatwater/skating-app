@@ -19,6 +19,7 @@ import {
 import { useState } from 'react';
 
 import { AppShell, ShellRailItem } from '@/components/kit/app-shell';
+import { Logo } from '@/components/kit/logo';
 import { RailViewer } from '@/components/kit/rail-item';
 import { ColleagueFaces, SearchTrigger, SeasonTape } from '@/components/kit/top-bar-parts';
 import type { GoLetter } from '@/lib/keys';
@@ -68,18 +69,17 @@ export function OverviewBoard({
   className = 'h-[56.25rem] w-[90rem]',
 }: BoardProps) {
   const [tab, setTab] = useState<'home' | 'metrics'>('home');
-  const trouble = data.machinery ? machineryTrouble(data.machinery) : { stalled: 0, failed: 0 };
   const heads = overviewHeads({
     inbox: data.inbox ? inboxTotal(data.inbox) : { count: 0, capped: false },
     refits: data.corpus?.chordRefits ?? { count: 0, capped: false },
-    ...trouble,
+    ...machineryTrouble(data.machinery),
   });
   return (
     <AppShell
       className={className}
       railHead={
-        <span className="mb-(--space-2_5) flex h-(--space-8) items-center justify-center text-logo font-extrabold tracking-logo text-fg italic">
-          GLI
+        <span className="mb-(--space-2_5) flex h-(--space-8) items-center justify-center">
+          <Logo className="h-(--space-4)" />
         </span>
       }
       rail={MODES.map((m) => (

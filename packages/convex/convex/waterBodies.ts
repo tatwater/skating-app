@@ -91,6 +91,7 @@ import {
 import { recomputeBodySummary } from './lib/bodySummary';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { rankCandidates, scanCells } from './lib/cellScan';
+import { cutCard, DEDUP_GROUP_CAP, dedupGroups, readDedupFlags } from './lib/dedupQueue';
 import {
   CANONICAL_SOURCES,
   GEOMETRY_SOURCES,
@@ -102,7 +103,7 @@ import { closeFlag } from './lib/flagResolution';
 import { landmarksForBody, repointLandmarksOnMerge } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
 import { mirrorReportSubAreas } from './lib/reportSubAreas';
-import { takeCapped, takeCappedResult } from './lib/scan';
+import { takeCapped } from './lib/scan';
 import { richnessFor, scoreFields, zoomSortKey } from './lib/scoring';
 import { activateBody, demoteBody, transitionStanding } from './lib/standing';
 import { bbox, geoJson, latLng, literals } from './lib/validators';
@@ -5850,11 +5851,6 @@ export const listPendingReview = query({
   },
 });
 
-/** How many flagged rows the queue reads before it says so. Two per pair, so this is ~125 pairs. */
-const DEDUP_QUEUE_CAP = 250;
-/** The most bodies one card may hold. A component larger than this is a matcher bug, not a merge. */
-const DEDUP_GROUP_CAP = 6;
-
 /**
  * Everything about a flagged body **except its outline** — the comparison table's input.
  *
@@ -5897,26 +5893,9 @@ export const listDedupCandidates = query({
   args: {},
   handler: async (ctx) => {
     await requireCapability(ctx, 'corpus.read');
-    // Both match-on-create tiers land in the queue, near-certain first (D36) — a body flagged as
-    // almost certainly a duplicate is the one a moderator should merge before anything else, and
-    // before more reports accumulate on the wrong row.
-    const near = await takeCappedResult(
-      ctx.db
-        .query('waterBodies')
-        .withIndex('by_dedup_status', (q) => q.eq('dedupStatus', 'near_certain')),
-      DEDUP_QUEUE_CAP,
-      'waterBodies.listDedupCandidates (near_certain)',
-    );
-    const suspected = await takeCappedResult(
-      ctx.db
-        .query('waterBodies')
-        .withIndex('by_dedup_status', (q) => q.eq('dedupStatus', 'suspected_duplicate')),
-      Math.max(0, DEDUP_QUEUE_CAP - near.rows.length),
-      'waterBodies.listDedupCandidates (suspected_duplicate)',
-    );
-    const flagged = [...near.rows, ...suspected.rows];
+    const { flagged, truncated } = await readDedupFlags(ctx);
 
-    // Every body the card has to name, flagged or not — a candidate may be a clean canonical body
+    // Every body the card has to name, flagged or not: a candidate may be a clean canonical body
     // (D36's original case) that never carries a flag of its own.
     const byId = new Map<Id<'waterBodies'>, Doc<'waterBodies'>>(flagged.map((b) => [b._id, b]));
     for (const body of flagged) {
@@ -5927,67 +5906,35 @@ export const listDedupCandidates = query({
       }
     }
 
-    // Connected components, walking edges out of flagged rows only (both directions: a mutual pair
-    // and a one-way D36 stamp must both come out as one card).
-    const neighbors = new Map<Id<'waterBodies'>, Set<Id<'waterBodies'>>>();
-    const link = (a: Id<'waterBodies'>, b: Id<'waterBodies'>) => {
-      if (!byId.has(a) || !byId.has(b)) return;
-      for (const [from, to] of [
-        [a, b],
-        [b, a],
-      ] as const) {
-        const set = neighbors.get(from) ?? new Set<Id<'waterBodies'>>();
-        set.add(to);
-        neighbors.set(from, set);
-      }
-    };
-    for (const body of flagged) {
-      for (const id of body.duplicateCandidateIds ?? []) link(body._id, id);
-    }
-
-    const seen = new Set<Id<'waterBodies'>>();
-    const groups: { key: string; members: DedupSummary[]; truncated: boolean }[] = [];
-    for (const body of flagged) {
-      if (seen.has(body._id)) continue;
-      const members: Doc<'waterBodies'>[] = [];
-      const stack = [body._id];
-      let truncated = false;
-      while (stack.length > 0) {
-        const id = stack.pop();
-        if (id === undefined || seen.has(id)) continue;
-        seen.add(id);
-        const doc = byId.get(id);
-        if (!doc) continue;
-        if (members.length >= DEDUP_GROUP_CAP) {
-          truncated = true;
-          continue;
-        }
-        members.push(doc);
-        for (const next of neighbors.get(id) ?? []) stack.push(next);
-      }
-      // A flag whose only candidate has since been deleted leaves a group of one. It still belongs
-      // in the queue — the flag is real and someone has to clear it — and the card says so.
-      const key = members
-        .map((m) => m._id)
-        .sort()
-        .join('+');
-      groups.push({ key, members: members.map(dedupSummary), truncated });
-    }
-
-    // Near-certain groups first (D36), then the biggest — a three-body group is either the matcher
-    // chaining two lakes together or a genuinely messy piece of the corpus, and both want a human
-    // sooner than a routine pair does.
-    groups.sort((a, b) => {
-      const tier = (g: (typeof groups)[number]) =>
-        g.members.some((m) => m.dedupStatus === 'near_certain') ? 0 : 1;
-      return tier(a) - tier(b) || b.members.length - a.members.length;
+    // The shared grouping, so the Overview's count of this queue can never disagree with it. A flag
+    // whose only candidate has since been deleted is a group of one: the flag is real and someone
+    // has to clear it.
+    const groups = dedupGroups(flagged, (id) => byId.has(id)).map((walk) => {
+      const { members, hidden } = cutCard(walk, (id) => byId.get(id));
+      return {
+        key: members
+          .map((m) => m._id)
+          .sort()
+          .join('+'),
+        members,
+        hidden,
+      };
     });
 
+    // Near-certain groups first (D36), then the biggest: a three-body group is either the matcher
+    // chaining two lakes together or a genuinely messy piece of the corpus, and both want a human
+    // sooner than a routine pair does. Biggest by the whole group, not the cut: a card leaving bodies
+    // out is bigger than one showing all six.
+    const tier = (g: (typeof groups)[number]) =>
+      g.members.some((m) => m.dedupStatus === 'near_certain') ? 0 : 1;
+    const size = (g: (typeof groups)[number]) => g.members.length + g.hidden;
+    groups.sort((a, b) => tier(a) - tier(b) || size(b) - size(a));
+
     return {
-      groups,
+      groups: groups.map((g) => ({ ...g, members: g.members.map(dedupSummary) })),
       total: groups.length,
       flaggedRows: flagged.length,
-      truncated: near.truncated || suspected.truncated,
+      truncated,
     };
   },
 });

@@ -3,10 +3,16 @@ import type { ComponentProps, ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
 /**
- * A chart's key, at the end of its section's rule: a swatch and a name per series, in mono caps
- * (the boards' `.lg2`). A bar's swatch is an 8 px square in its fill; a line's is a 16 px hairline
- * in its stroke. Local to Metrics — the kit's `MatrixLegend` is the temperature scale's, and stays
- * that.
+ * A chart's furniture outside the plot (custom; promoted from Metrics, B01-3):
+ *
+ * - **`ChartLegend`** — a chart's key, at the end of its section's rule: a swatch and a name per
+ *   series, in mono caps (the boards' `.lg2`). A bar's swatch is an 8 px square in its fill; a
+ *   line's is a 16 px hairline in its stroke. The kit's `MatrixLegend` is the temperature scale's,
+ *   and stays that.
+ * - **`ChartNote`** — a chart with nothing to draw says so where its marks would be: what lands
+ *   here, then why it is empty (the calibration board's "Measured pairs land here / None yet this
+ *   winter"), centered over the plot and the chart's own empty frame. It fills its nearest
+ *   positioned box, so the chart's wrapper is `relative`.
  */
 
 type LegendItem = {
@@ -59,4 +65,23 @@ function ChartLegend({ items, className, ...props }: ChartLegendProps) {
   );
 }
 
-export { ChartLegend, type ChartLegendProps, type LegendItem };
+type ChartNoteProps = {
+  /** What lands here ("The flag queue lands here"). */
+  title: ReactNode;
+  /** Why it is empty ("Not recorded yet", "Record begins 1 Oct"). */
+  detail?: ReactNode;
+};
+
+function ChartNote({ title, detail }: ChartNoteProps) {
+  return (
+    <div
+      data-slot="chart-note"
+      className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-(--space-1) text-center"
+    >
+      <span className="text-assist leading-none text-fg2">{title}</span>
+      {detail != null && <span className="text-mono-sm leading-none text-fg3">{detail}</span>}
+    </div>
+  );
+}
+
+export { ChartLegend, type ChartLegendProps, ChartNote, type ChartNoteProps, type LegendItem };

@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
-import { ChartLegend } from './ChartLegend';
+import { ChartLegend } from '@/components/kit/chart-legend';
 import { CoverageByState, ListedBodiesBar } from './CoverageByState';
 import { KeepingUpStats, ResolveHistogram } from './KeepingUp';
 import {
@@ -13,7 +13,7 @@ import {
   RECORDED_COVERAGE,
 } from './metricsFixtures';
 import { metricsNotRecorded } from './metricsModel';
-import { AgeValue, DayTick, SeasonNotOpen } from './metricsParts';
+import { AgeValue, ColumnHead, DayTick, SeasonNotOpen } from './metricsParts';
 import { MostReported, ShowingUpStats, VantageSplit } from './ShowingUp';
 
 describe('ChartLegend', () => {
@@ -37,6 +37,20 @@ describe('ChartLegend', () => {
       'Hours waiting',
       'Safety',
     ]);
+  });
+});
+
+describe('ColumnHead', () => {
+  it('is a second-level heading in the kit’s column type, over its rule', () => {
+    render(<ColumnHead id="keeping-up">Keeping up</ColumnHead>);
+    const head = screen.getByRole('heading', { level: 2, name: 'Keeping up' });
+    expect(head).toHaveAttribute('data-slot', 'metrics-column-head');
+    expect(head).toHaveAttribute('id', 'keeping-up');
+    // The rule sits a fixed gap under the caps only while the line is the type's own height: a
+    // merge that drops the leading (the kit's base one precedes its size) pushes it down.
+    expect(head.className.split(' ')).toEqual(
+      expect.arrayContaining(['text-logo', 'leading-none', 'border-line2']),
+    );
   });
 });
 
@@ -277,5 +291,21 @@ describe('the season before its window opens', () => {
     render(<VantageSplit counts={{ on_ice: 2, shore: 11, secondhand: 1, unstated: 0 }} />);
     expect(screen.queryByText(/Record begins/)).toBeNull();
     expect(screen.getByText('11')).toBeInTheDocument();
+  });
+});
+
+describe('Showing up — contributors this week', () => {
+  const week = { reports: null, accounts: null, signedIn: null };
+  const tile = () => screen.getByText('Contributors').parentElement as HTMLElement;
+
+  it('keeps the count when who is new can’t be told, and says so', () => {
+    render(<ShowingUpStats week={{ ...week, contributors: { people: 6, firstTime: null } }} />);
+    expect(tile()).toHaveTextContent('6');
+    expect(tile()).toHaveTextContent('First-timers not recorded');
+  });
+
+  it('names the first-timers when it can', () => {
+    render(<ShowingUpStats week={{ ...week, contributors: { people: 6, firstTime: 2 } }} />);
+    expect(tile()).toHaveTextContent('2 for the first time');
   });
 });

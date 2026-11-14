@@ -4,6 +4,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { formatClock, NotFoundView, OfflinePlate, OfflineView, SplashView } from './SystemScreens';
 
 const AT = new Date('2027-01-16T14:42:00Z').getTime();
+/**
+ * The plate's clock reads in the reader's own zone, so its fixture is a local wall time (midday),
+ * never a UTC instant: 14:42Z is 18:12 in Tehran and 20:27 in Kathmandu, and a fixed `:42` would
+ * fail in every half- and quarter-hour zone.
+ */
+const LOCAL_MIDDAY = new Date(2027, 0, 16, 12, 42).getTime();
 const region = <img alt="" data-testid="region" />;
 
 describe('formatClock', () => {
@@ -47,10 +53,8 @@ describe('OfflineView', () => {
 describe('OfflinePlate', () => {
   it('says how old the page is, or that it may be out of date', () => {
     const onRetry = vi.fn();
-    const { rerender } = render(<OfflinePlate since={AT} onRetry={onRetry} />);
-    expect(screen.getByRole('status')).toHaveTextContent(
-      /What’s on screen is from \d{1,2}:42 (AM|PM)\./,
-    );
+    const { rerender } = render(<OfflinePlate since={LOCAL_MIDDAY} onRetry={onRetry} />);
+    expect(screen.getByRole('status')).toHaveTextContent('What’s on screen is from 12:42 PM.');
     rerender(<OfflinePlate since={null} onRetry={onRetry} />);
     expect(screen.getByRole('status')).toHaveTextContent('What’s on screen may be out of date.');
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));

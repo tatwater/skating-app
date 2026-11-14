@@ -1,5 +1,6 @@
 import { type ComponentProps, createContext, type ReactNode, useContext } from 'react';
 
+import { DisplayWord } from '@/components/kit/display-word';
 import { StatTile } from '@/components/kit/stat-tile';
 import { cn } from '@/lib/utils';
 
@@ -7,23 +8,25 @@ import { type AgePart, type DayKey, dayLabel, NOT_RECORDED } from './metricsMode
 
 /**
  * The small pieces every Metrics section shares: the two column heads, the "This season" tag at a
- * rule's end, a chart's empty note, a compound age value and a season axis' day tick.
+ * rule's end, a compound age value and a season axis' day tick.
  */
 
 /** A column's head ("Keeping up"): display caps over a rule the column's width. */
 export function ColumnHead({ children, className, ...props }: ComponentProps<'h2'>) {
   return (
-    <h2
+    <DisplayWord
+      size="column"
       data-slot="metrics-column-head"
+      render={(renderProps) => <h2 {...renderProps} {...props} />}
+      // The kit's column word, over the rule the column's width; a block, where the word alone is a
+      // line.
       className={cn(
-        'm-0 border-0 border-b-(length:--stroke-hair) border-solid border-line2 pb-(--space-1_5)',
-        'text-logo leading-none font-semibold tracking-head text-fg uppercase',
+        'block border-0 border-b-(length:--stroke-hair) border-solid border-line2 pb-(--space-1_5)',
         className,
       )}
-      {...props}
     >
       {children}
-    </h2>
+    </DisplayWord>
   );
 }
 
@@ -36,23 +39,6 @@ export function SpanTag({ children }: { children: ReactNode }) {
     >
       {children}
     </span>
-  );
-}
-
-/**
- * A chart with nothing to draw says so where its marks would be: what lands here, then why it is
- * empty (the calibration board's "Measured pairs land here / None yet this winter"). Centered over
- * the plot, over the chart's own empty frame.
- */
-export function ChartNote({ title, detail }: { title: ReactNode; detail?: ReactNode }) {
-  return (
-    <div
-      data-slot="chart-note"
-      className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-(--space-1) text-center"
-    >
-      <span className="text-assist leading-none text-fg2">{title}</span>
-      {detail != null && <span className="text-mono-sm leading-none text-fg3">{detail}</span>}
-    </div>
   );
 }
 

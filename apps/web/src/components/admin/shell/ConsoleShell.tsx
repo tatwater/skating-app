@@ -22,6 +22,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/kit/dropdown-menu';
+import { Logo } from '@/components/kit/logo';
 import { RailViewer } from '@/components/kit/rail-item';
 import { Separator } from '@/components/kit/separator';
 import type { KeyHint } from '@/components/kit/status-bar';
@@ -135,9 +136,9 @@ export function ConsoleShell({
         railHead={
           <span
             data-slot="console-logo"
-            className="mb-(--space-2_5) flex h-(--space-8) items-center justify-center text-logo font-extrabold tracking-logo text-fg italic"
+            className="mb-(--space-2_5) flex h-(--space-8) items-center justify-center"
           >
-            GLI
+            <Logo className="h-(--space-4)" />
           </span>
         }
         rail={

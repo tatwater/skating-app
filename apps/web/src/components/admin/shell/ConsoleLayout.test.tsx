@@ -4,7 +4,7 @@
  * only what the viewer's role holds (D217).
  */
 
-import { type Capability, canUse } from '@skating/core';
+import { type Capability, canUse, seasonOf } from '@skating/core';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
@@ -15,6 +15,10 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   role: undefined as 'member' | 'moderator' | 'admin' | undefined,
   loading: false,
+  /** What each read answers, by function name; the viewer's own profile when none is set. */
+  results: new Map<string, unknown>(),
+  asked: [] as string[],
+  beats: 0,
 }));
 
 vi.mock('@tanstack/react-router', () => ({
@@ -38,10 +42,22 @@ vi.mock('../../../lib/useRole', () => ({
     can: (c: Capability) => canUse(mocks.role, false, c, {}),
   }),
 }));
-vi.mock('convex/react', () => ({
-  useQuery: () => ({ displayName: 'Teagan Atwater' }),
-  useConvex: () => ({ query: vi.fn(), mutation: vi.fn() }),
-}));
+vi.mock('convex/react', async () => {
+  const { getFunctionName } = await import('convex/server');
+  return {
+    useQuery: (ref: Parameters<typeof getFunctionName>[0], args: unknown) => {
+      if (args === 'skip') return undefined;
+      const name = getFunctionName(ref);
+      mocks.asked.push(name);
+      return mocks.results.has(name) ? mocks.results.get(name) : { displayName: 'Teagan Atwater' };
+    },
+    useMutation: () => () => {
+      mocks.beats++;
+      return Promise.resolve(null);
+    },
+    useConvex: () => ({ query: vi.fn(), mutation: vi.fn() }),
+  };
+});
 vi.mock('../../../lib/useConnection', () => ({ useConnection: () => ({ status: 'online' }) }));
 vi.mock('../../Splash', () => ({ Splash: () => <p>splash</p> }));
 vi.mock('./ConsolePalette', () => ({
@@ -52,6 +68,12 @@ const { ConsoleLayout } = await import('./ConsoleLayout');
 const { modKey } = await import('../../../lib/keys');
 
 beforeEach(() => {
+  mocks.results = new Map([
+    ['seasonWatch:tape', undefined],
+    ['console:colleagues', []],
+  ]);
+  mocks.asked = [];
+  mocks.beats = 0;
   mocks.pathname = '/admin';
   mocks.navigate = vi.fn();
   mocks.role = 'moderator';
@@ -200,5 +222,51 @@ describe('the top and status bars', () => {
       await userEvent.keyboard(`{${mod}>}k{/${mod}}`);
     });
     expect(screen.queryByText('palette open')).toBeNull();
+  });
+});
+
+describe('the top bar and presence', () => {
+  it('draws the watch’s record on the tape, and colleagues’ faces — never the viewer', () => {
+    mocks.results.set('seasonWatch:tape', {
+      season: seasonOf(Date.now()),
+      countsFrom: '2026-10-01',
+      watch: null,
+      imageryNudgeOn: null,
+      imageryNudgeLowC: null,
+      winterFrom: null,
+      lastWinterFirst: null,
+    });
+    mocks.results.set('console:colleagues', [
+      { id: 'sarah', name: 'Sarah Berman', src: null, present: true },
+      { id: 'me', name: 'Teagan Atwater', src: null, present: true },
+    ]);
+    render(<ConsoleLayout />);
+    expect(mocks.asked).toContain('seasonWatch:tape');
+    expect(mocks.asked).toContain('console:colleagues');
+    expect(screen.getByLabelText('Sarah Berman')).toBeInTheDocument();
+    // The viewer is never among the faces (the rail's foot names them).
+    expect(
+      screen
+        .queryAllByLabelText('Teagan Atwater')
+        .filter((el) => el.closest('[data-slot="shell-top"]')),
+    ).toEqual([]);
+  });
+
+  it('sends the heartbeat for staff, and asks a member for nothing of presence', async () => {
+    render(<ConsoleLayout />);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(mocks.beats).toBe(1);
+    mocks.role = 'member';
+    mocks.beats = 0;
+    mocks.asked = [];
+    render(<ConsoleLayout />);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(mocks.beats).toBe(0);
+    expect(mocks.asked).not.toContain('console:colleagues');
+    expect(mocks.asked).not.toContain('seasonWatch:tape');
   });
 });

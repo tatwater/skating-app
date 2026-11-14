@@ -170,6 +170,31 @@ export const ThresholdMark: Story = {
   },
 };
 
+/**
+ * The imagery gate (Body console): a white tick standing 4 px over and under the track, centered on
+ * the value the pass must reach. A pass short of its gate steps back to the dim fill.
+ */
+export const GateMark: Story = {
+  args: { value: 42, mark: 60, markTone: 'lit', tone: 'dim', 'aria-label': 'Clear of cloud' },
+  play: async ({ canvasElement }) => {
+    const meter = within(canvasElement).getByRole('meter');
+    const track = part(meter, 'meter-track').getBoundingClientRect();
+    const mark = part(meter, 'meter-mark');
+    const box = mark.getBoundingClientRect();
+    // Centered on 60 %: its middle, not its left edge, is the value.
+    await expect(box.left + box.width / 2 - track.left).toBeCloseTo(track.width * 0.6, 1);
+    await expect(box.width).toBe(1);
+    await expect(track.top - box.top).toBeCloseTo(4, 2);
+    await expect(box.bottom - track.bottom).toBeCloseTo(4, 2);
+    await expect(getComputedStyle(mark).backgroundColor).toEqual(
+      sameColor(computedColor(mark, 'var(--fg)')),
+    );
+    await expect(getComputedStyle(part(meter, 'meter-fill')).backgroundColor).toEqual(
+      sameColor(computedColor(mark, 'var(--fg3)')),
+    );
+  },
+};
+
 /** The mark reads the range: on a 0–2,000 meter, 1,400 sits at 70 %. */
 export const ThresholdMarkOnARange: Story = {
   args: { value: 14, min: 0, max: 2000, mark: 1400 },
@@ -281,6 +306,8 @@ function Board() {
         showValue
       />
       <Meter aria-label="OpenRouteService today" value={18} max={2000} />
+      <Meter aria-label="Lake in the pass" value={83} mark={50} markTone="lit" />
+      <Meter aria-label="Clear of cloud" value={42} mark={60} markTone="lit" tone="dim" />
       <div className="flex items-center gap-(--space-3)">
         <span className={KICKER}>Loading</span>
         <CellLoader />
@@ -300,7 +327,7 @@ export const FourUp: Story = {
       for (const track of q.querySelectorAll('[data-slot="meter-track"]')) {
         await expect(track.getBoundingClientRect().height).toBe(4);
       }
-      await expect(within(q).getAllByRole('meter')).toHaveLength(4);
+      await expect(within(q).getAllByRole('meter')).toHaveLength(6);
       // A readout never wraps, however long its label: one line of its own type.
       for (const v of q.querySelectorAll<HTMLElement>('[data-slot="meter-value"]')) {
         const size = parseFloat(getComputedStyle(v).fontSize);

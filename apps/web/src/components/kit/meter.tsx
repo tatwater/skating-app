@@ -13,7 +13,10 @@ import { cn } from '@/lib/utils';
  *   hairline ground (`line`), the fill the list-body ink (`fg2`) — a quiet gray, not a color.
  * - **Amber and red at thresholds.** `warnAt` and `badAt` (in the meter's own units) tint the fill
  *   once the value reaches them — amber waits on a person, red won't recover without one. A `mark`
- *   draws the threshold as an amber tick across the track (Machinery's 70 % line).
+ *   draws the threshold as a tick across the track: amber by default (Machinery's 70 % line, 3 px
+ *   proud of the track), or `markTone="lit"` — the white gate the Body console's imagery pass must
+ *   clear (`.gm b`: 4 px proud, centered on its value). A value short of its gate can step back to
+ *   the `dim` fill.
  * - **Labeled or bare.** `label` sets a kicker over the track; `showValue` sets the mono readout at
  *   its right. A bare meter must be named (`aria-label`) — it sits under a value that says what it is.
  * - **It never animates under reduced motion**; otherwise the fill eases on the base duration.
@@ -21,10 +24,11 @@ import { cn } from '@/lib/utils';
  * `CellLoader` is the indeterminate form: seven cells that fill from the middle out.
  */
 
-type MeterTone = 'default' | 'warn' | 'bad';
+type MeterTone = 'default' | 'dim' | 'warn' | 'bad';
 
 const FILL: Record<MeterTone, string> = {
   default: 'bg-fg2',
+  dim: 'bg-fg3',
   warn: 'bg-warn',
   bad: 'bg-bad',
 };
@@ -54,8 +58,15 @@ type MeterProps = Omit<MeterPrimitive.Root.Props, 'children'> & {
   badAt?: number;
   /** Forces a tone, past the thresholds. */
   tone?: MeterTone;
-  /** A threshold drawn as an amber tick across the track, in the meter's units. */
+  /** A threshold drawn as a tick across the track, in the meter's units. */
   mark?: number;
+  /** The tick's look: amber (`warn`, a quota's threshold) or white (`lit`, a gate to clear). */
+  markTone?: 'warn' | 'lit';
+};
+
+const MARK: Record<NonNullable<MeterProps['markTone']>, string> = {
+  warn: 'bg-warn -top-(--stroke-run) h-[calc(var(--stroke-now)+2*var(--stroke-run))]',
+  lit: 'bg-fg -top-(--stroke-now) h-[calc(3*var(--stroke-now))] -ms-[calc(var(--stroke-hair)/2)]',
 };
 
 function Meter({
@@ -65,6 +76,7 @@ function Meter({
   badAt,
   tone,
   mark,
+  markTone = 'warn',
   min = 0,
   max = 100,
   value,
@@ -120,8 +132,9 @@ function Meter({
         {mark !== undefined && (
           <span
             data-slot="meter-mark"
+            data-tone={markTone}
             aria-hidden="true"
-            className="absolute -top-(--stroke-run) h-[calc(var(--stroke-now)+2*var(--stroke-run))] w-(--stroke-hair) bg-warn"
+            className={cn('absolute w-(--stroke-hair)', MARK[markTone])}
             style={{ left: `${(100 * (mark - min)) / (max - min)}%` }}
           />
         )}

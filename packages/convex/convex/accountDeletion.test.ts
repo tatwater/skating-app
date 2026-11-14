@@ -1071,6 +1071,9 @@ describe('bucket 1 — erase (private artifacts)', () => {
       await ctx.db.insert('signInDays', { userId: user.id, day: '2026-01-14', firstAt: T0 });
       await ctx.db.insert('signInDays', { userId: user.id, day: '2026-01-15', firstAt: T0 });
       await ctx.db.insert('signInDays', { userId: other.id, day: '2026-01-15', firstAt: T0 });
+      // When they were last in the console (B01), and a colleague's, which must survive.
+      await ctx.db.insert('consolePresence', { userId: user.id, seenAt: T0 });
+      await ctx.db.insert('consolePresence', { userId: other.id, seenAt: T0 });
     });
 
     await finalize(t, user.id);
@@ -1085,6 +1088,7 @@ describe('bucket 1 — erase (private artifacts)', () => {
       blocks: (await ctx.db.query('blocks').collect()).length,
       tickets: (await ctx.db.query('supportTickets').collect()).length,
       signInDays: (await ctx.db.query('signInDays').collect()).map((r) => r.userId),
+      presence: (await ctx.db.query('consolePresence').collect()).map((r) => r.userId),
     }));
     expect(counts).toEqual({
       connections: 0,
@@ -1096,6 +1100,7 @@ describe('bucket 1 — erase (private artifacts)', () => {
       blocks: 0, // both directions — a block against a tombstone would filter forever
       tickets: 0,
       signInDays: [other.id], // a behavioral record of one person; the other person's stays
+      presence: [other.id],
     });
   });
 

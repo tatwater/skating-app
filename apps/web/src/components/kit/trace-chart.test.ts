@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { endLabelYs, spreadLabels, stageSummary, type Trace, traceGeometry } from './trace-chart';
+import {
+  barAt,
+  endLabelYs,
+  spreadLabels,
+  stageSummary,
+  type Trace,
+  traceGeometry,
+} from './trace-chart';
 
 const traces: Trace[] = [
   { key: 'a', label: 'A', values: [34, 31, 19, null, 28, 33] },
@@ -121,5 +128,40 @@ describe('stageSummary', () => {
       '2 done, 1 running, 2 waiting',
     );
     expect(stageSummary(['late', 'stalled', 'failed'])).toBe('1 late, 1 stalled, 1 failed');
+  });
+});
+
+describe('barAt', () => {
+  // Three 10-wide bars, 4 apart: 0–10, 14–24, 28–38.
+  const bars = [
+    { left: 0, right: 10 },
+    { left: 14, right: 24 },
+    { left: 28, right: 38 },
+  ];
+
+  it('answers for the bar under the pointer', () => {
+    expect(barAt(bars, 5)).toBe(0);
+    expect(barAt(bars, 19)).toBe(1);
+    expect(barAt(bars, 33)).toBe(2);
+  });
+
+  it('splits each gap at its middle, so no pixel between bars is dead', () => {
+    expect(barAt(bars, 11.9)).toBe(0);
+    expect(barAt(bars, 12.1)).toBe(1);
+    expect(barAt(bars, 25.9)).toBe(1);
+    expect(barAt(bars, 26.1)).toBe(2);
+  });
+
+  it('reaches half a gap past the ends, and no further', () => {
+    expect(barAt(bars, -2)).toBe(0);
+    expect(barAt(bars, -2.1)).toBeNull();
+    expect(barAt(bars, 40)).toBe(2);
+    expect(barAt(bars, 40.1)).toBeNull();
+  });
+
+  it('has nothing to say without bars, and a lone bar has no gap to reach into', () => {
+    expect(barAt([], 3)).toBeNull();
+    expect(barAt([{ left: 0, right: 10 }], 10)).toBe(0);
+    expect(barAt([{ left: 0, right: 10 }], 10.1)).toBeNull();
   });
 });

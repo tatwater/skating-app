@@ -28,8 +28,9 @@ import { cn } from '@/lib/utils';
  *
  * - **Tones, not colors.** A series names a tone slot; the container maps every slot to a
  *   `--chart-<tone>` variable over the theme's grayscale and meaning accents: `lead` (the bright
- *   ink, this season), `muted` and `faint` (comparisons, last season), `warn` and `bad` (by
- *   meaning only), and `water` — the ice accent, **only for water and transient modes**, never a
+ *   ink, this season), `muted` and `faint` (comparisons, last season), `quiet` (context counted
+ *   under the lead — the strong rule's gray, the boards' `g4` bars), `warn` and `bad` (by meaning
+ *   only), and `water` — the ice accent, **only for water and transient modes**, never a
  *   date or a value. Each series then gets `--color-<key>`, so marks and the tooltip swatch share
  *   one source, and a light or dark map re-colors the chart without a prop.
  * - **Hover is a vertical hairline at the hovered x and a square plate** in the kit Tooltip's
@@ -50,17 +51,30 @@ import { cn } from '@/lib/utils';
 
 // ── Config and tones ─────────────────────────────────────────────────────────────────────────
 
-/** The slots a series can wear. `water` is the ice accent: water and transient modes only. */
-type ChartTone = 'lead' | 'muted' | 'faint' | 'warn' | 'bad' | 'water';
+/**
+ * The slots a series can wear. `quiet` is context under the lead (the open flags under the hours
+ * waiting); `water` is the ice accent: water and transient modes only.
+ */
+type ChartTone = 'lead' | 'muted' | 'faint' | 'quiet' | 'warn' | 'bad' | 'water';
 
 const TONE_VARS: Record<ChartTone, string> = {
   lead: 'var(--fg)',
   muted: 'var(--fg2)',
   faint: 'var(--fg3)',
+  quiet: 'var(--line2)',
   warn: 'var(--warn)',
   bad: 'var(--bad)',
   water: 'var(--acc)',
 };
+
+/**
+ * A tone's color — the very value the container gives `--chart-<tone>` and so the marks in that
+ * tone. A legend beside a chart (`ChartLegend`) takes its swatches from here, so a swatch can never
+ * read a different gray from its bars.
+ */
+function chartToneColor(tone: ChartTone): string {
+  return TONE_VARS[tone];
+}
 
 type ChartSeries = {
   /** The series' name, as the hover plate says it ("This winter"). */
@@ -460,4 +474,5 @@ export {
   type ChartTooltipContentProps,
   ChartXAxis,
   ChartYAxis,
+  chartToneColor,
 };

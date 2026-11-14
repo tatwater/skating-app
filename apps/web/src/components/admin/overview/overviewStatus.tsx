@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 
 import { StatusLamp, StatusText } from '@/components/kit/status-bar';
 import type { ConnectionStatus } from '@/lib/useConnection';
@@ -20,8 +20,8 @@ export function overviewStatus({
   corpus,
 }: {
   inbox?: InboxCardData | undefined;
-  /** `null` until a read serves the jobs: the bar then names no machinery trouble. */
-  machinery?: MachineryCardData | null | undefined;
+  /** `null` until a read serves the jobs, or `'withheld'`: the bar then names no machinery trouble. */
+  machinery?: MachineryCardData | null | undefined | 'withheld';
   corpus?: CorpusCardData | undefined;
 }): ReactNode[] {
   const groups: ReactNode[] = [];
@@ -36,7 +36,7 @@ export function overviewStatus({
     );
   }
 
-  if (machinery) {
+  if (machinery && machinery !== 'withheld') {
     const n = (state: string) => machinery.jobs.filter((j) => j.state === state).length;
     const hand = [
       n('stalled') > 0 ? `${n('stalled')} stalled` : null,
@@ -76,10 +76,13 @@ const LAMP_WORDS: Record<LiveState, string> = {
   off: 'Convex not live',
 };
 
-/**
- * The connection lamp, in the live mark's states. The kit lamp has no hollow state yet, so *Not
- * live* reads idle (dim, still) until it does.
- */
+/** Lit while live, still while checking, hollow (`off`) when not live — the live mark's three. */
+const LAMP_STATE = { live: 'live', checking: 'idle', off: 'off' } as const satisfies Record<
+  LiveState,
+  NonNullable<ComponentProps<typeof StatusLamp>['state']>
+>;
+
+/** The connection lamp, in the live mark's states. */
 export function OverviewLamp({ state }: { state: LiveState }) {
-  return <StatusLamp state={state === 'live' ? 'live' : 'idle'}>{LAMP_WORDS[state]}</StatusLamp>;
+  return <StatusLamp state={LAMP_STATE[state]}>{LAMP_WORDS[state]}</StatusLamp>;
 }

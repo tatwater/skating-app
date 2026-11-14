@@ -30,13 +30,14 @@ const day = (month: number, date: number, year = month >= 6 ? 2026 : 2027) =>
 
 export const MACHINERY: MachineryCardData = {
   jobs: [
-    { id: 'corpus-load', name: 'Corpus · load bodies', state: 'stalled', at: '41 min' },
-    { id: 'depth-load', name: 'Depth load', state: 'failed', at: 'Fri 22:14' },
-    { id: 'orphan-photos', name: 'Retention · orphan photos', state: 'failed', at: '04:12' },
-    { id: 'weather-appends', name: 'Weather appends', state: 'late', at: '02:04' },
-    { id: 'forecast-prune', name: 'Forecast cache prune', state: 'retried', at: '10:06' },
-    { id: 'imagery', name: 'Imagery', state: 'ok', at: '3 min' },
-    { id: 'ice-watch', name: 'Ice watch check', state: 'ok', at: '08:10' },
+    // Quiet for 41 minutes: a stalled run's time is its silence.
+    { id: 'corpus-load', name: 'Corpus · load bodies', state: 'stalled', at: NOW - 41 * MIN },
+    { id: 'depth-load', name: 'Depth load', state: 'failed', at: at(1, 22, 14) },
+    { id: 'orphan-photos', name: 'Retention · orphan photos', state: 'failed', at: at(0, 4, 12) },
+    { id: 'weather-appends', name: 'Weather appends', state: 'late', at: at(0, 2, 4) },
+    { id: 'forecast-prune', name: 'Forecast cache prune', state: 'retried', at: at(0, 10, 6) },
+    { id: 'imagery', name: 'Imagery', state: 'ok', at: NOW - 3 * MIN },
+    { id: 'ice-watch', name: 'Ice watch check', state: 'ok', at: at(0, 8, 10) },
   ],
   more: 28,
   moreAllOk: true,
@@ -190,7 +191,7 @@ export const HOME: OverviewHomeData = {
       support: { count: 2, capped: false },
     },
     oldestOpenAt: NOW - 4 * DAY - 3 * HOUR,
-    medianAgeMs: 1.5 * DAY,
+    medianOpenedAt: NOW - 1.5 * DAY,
   },
   corpus: {
     duplicates: { count: 283, capped: false },

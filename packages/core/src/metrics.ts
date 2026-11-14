@@ -189,7 +189,7 @@ export const METRICS = {
   active_contributors: {
     label: 'Active contributors',
     description:
-      'Distinct authors who posted a report or hazard in the trailing 7 days — the number that decides whether every other rate here is signal or noise.',
+      'Distinct people with a standing contribution in the trailing 7 days — a report, a hazard, an access alert, a not-publicly-accessible report, a put-in placed or a corpus request (D253) — the number that decides whether every other rate here is signal or noise.',
     kind: 'rollup',
     shape: 'scalar',
   },
@@ -381,6 +381,71 @@ export const METRICS = {
     kind: 'rollup',
     shape: 'buckets',
     edges: HOUR_BUCKETS,
+  },
+
+  // ── The console's Overview › Metrics (B01) ──────────────────────────────────
+  // Day-scoped and replayable: the day backfill writes them for any past day from rows still on disk.
+  comments_created: {
+    label: 'Comments',
+    description:
+      'Visible comments written this day, with how many reports they were on (meta.reports) — the Metrics pulse’s comments strip.',
+    kind: 'rollup',
+    shape: 'scalar',
+  },
+  photos_added: {
+    label: 'Photos',
+    description:
+      'Photos uploaded this day that belong to a report, with how many reports (meta.reports). A photo never attached is not counted.',
+    kind: 'rollup',
+    shape: 'scalar',
+  },
+  /**
+   * Kudos (the founder, 2026-11-13): **positive reactions**, by kind (`POSITIVE_REACTION_KINDS`).
+   * Today the one kind is a helpful rating; a thumbs-down is never counted and never subtracts. A later
+   * reaction kind is a new key in `meta`, not a new metric.
+   */
+  positive_reactions: {
+    label: 'Kudos',
+    description:
+      'Positive reactions given this day, by kind — today the helpful ratings on reports and hazards. A thumbs-down is not a negative kudos and is never counted.',
+    kind: 'rollup',
+    shape: 'meta',
+  },
+  signed_in: {
+    label: 'Signed in',
+    description:
+      'People who opened the app signed in this day (signInDays). Not written for days before that record began.',
+    kind: 'rollup',
+    shape: 'scalar',
+  },
+  daily_contributors: {
+    label: 'Contributors',
+    description:
+      'Distinct people with a standing contribution this day: a report whose skate ended on it, or a hazard, an access alert, a not-publicly-accessible report, a put-in placed or a corpus request made on it (D253). Comments are not contributions.',
+    kind: 'rollup',
+    shape: 'scalar',
+  },
+  // Point-in-time: stamped on the day they were measured and overwritten by the next tick.
+  accounts_total: {
+    label: 'Accounts',
+    description:
+      'Every account that exists, at rollup time. `meta.capped` when the scan stopped short, which makes the number a floor.',
+    kind: 'rollup',
+    shape: 'scalar',
+  },
+  season_reach: {
+    label: 'Season reach',
+    description:
+      'The season so far, from 1 October: its reports, comments, report photos, kudos and hazards; what they were spread over (posts, reports, people, bodies) and the people signed in and contributing, each counted once; reports by vantage; and the same counts by state. A figure whose walk stopped short is listed in `meta.capped`.',
+    kind: 'rollup',
+    shape: 'meta',
+  },
+  most_reported: {
+    label: 'Most-reported bodies',
+    description:
+      'The season’s most-reported bodies, from 1 October: visible reports, their photos, distinct people and the last report, top twenty.',
+    kind: 'rollup',
+    shape: 'meta',
   },
 
   // ── Additional tracked stats (numbers first, charts if they earn them) ─────

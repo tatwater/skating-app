@@ -1,17 +1,10 @@
 import { createColumnHelper, metaHelper, tableFeatures, useTable } from '@tanstack/react-table';
-import { type KeyboardEvent, type PointerEvent, useMemo, useRef, useState } from 'react';
-import { BarChart, Cell } from 'recharts';
+import { useMemo } from 'react';
 
-import {
-  ChartBar,
-  type ChartConfig,
-  ChartContainer,
-  ChartXAxis,
-  ChartYAxis,
-} from '@/components/kit/chart';
 import { Section } from '@/components/kit/section-slug';
 import { StatGrid, StatTile } from '@/components/kit/stat-tile';
 import { DataTable, type TableColumnMeta } from '@/components/kit/table';
+import { SparkbarSet, Sparkbars } from '@/components/kit/trace-chart';
 import { cn } from '@/lib/utils';
 
 import {
@@ -24,7 +17,6 @@ import {
   PULSE_KEYS,
   PULSE_LABELS,
   type PulseKey,
-  type PulseSeries,
   pulseSub,
   pulseTicks,
   type ShowingUpData,
@@ -91,7 +83,12 @@ export function ShowingUpStats({ week }: { week: ShowingUpData['week'] }) {
           value={contributors.people}
           unit="this week"
           sub={
-            contributors.firstTime > 0 ? `${contributors.firstTime} for the first time` : undefined
+            // Who among them is new can be unknown while the count is not: say so, never a zero.
+            contributors.firstTime === null
+              ? 'First-timers not recorded'
+              : contributors.firstTime > 0
+                ? `${contributors.firstTime} for the first time`
+                : undefined
           }
         />
       )}
@@ -103,59 +100,20 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 
 // ── Each day: the season's pulse ─────────────────────────────────────────────────────────────
 
-/** A strip's bar ink: a zero is a stub in the rule gray, the latest and the hovered day are lit. */
-function barInk(value: number | null, latest: boolean, hovered: boolean): string {
-  if (value === 0) return hovered ? 'var(--fg2)' : 'var(--line)';
-  return latest || hovered ? 'var(--fg)' : 'var(--fg2)';
-}
-
 /**
  * The least a strip's scale tops out at: each strip scales to its own busiest day, but a strip
  * whose busiest day is one or two (a hazard, a new account) stands short rather than shouting.
  */
 const PULSE_FLOOR = 3;
 
-/** A zero still stands one hair tall, so a day with nothing reads as measured. */
-const zeroStub = (value: unknown) => (value === 0 ? 1 : 0);
-
-function Strip({
-  pulseKey,
-  series,
-  days,
-  active,
-}: {
-  pulseKey: PulseKey;
-  series: PulseSeries;
-  days: readonly DayKey[];
-  active: number | null;
-}) {
-  const rows = days.map((day, i) => ({ day, v: series.daily[i] ?? null }));
-  const max = Math.max(PULSE_FLOOR, ...series.daily.map((v) => v ?? 0));
-  const config: ChartConfig = { v: { label: PULSE_LABELS[pulseKey], tone: 'muted' } };
-  const last = days.length - 1;
-  return (
-    <ChartContainer config={config} className="h-full p-0">
-      <BarChart data={rows} margin={{ top: 0, right: 0, bottom: 0, left: 0 }} barCategoryGap={1.5}>
-        <ChartXAxis dataKey="day" hide />
-        <ChartYAxis hide domain={[0, max]} />
-        <ChartBar dataKey="v" maxBarSize={400} minPointSize={zeroStub}>
-          {rows.map((row, i) => (
-            <Cell key={row.day} fill={barInk(row.v, i === last, i === active)} />
-          ))}
-        </ChartBar>
-      </BarChart>
-    </ChartContainer>
-  );
-}
-
 const stripCount = PULSE_KEYS.length;
 
 /**
- * One strip of daily bars per kind of activity, its season total beside it, all on one day axis.
- * Hovering anywhere over the strips — or stepping with ← → once the pulse has focus — draws one
- * hairline through every strip at that day and one plate with each strip's value. The strips are
- * small multiples of the kit `Chart`; the shared hover is the pulse's own, since a chart's tooltip
- * knows only its own series.
+ * One strip of daily bars per kind of activity, its season total beside it, all on one day axis —
+ * the kit's `SparkbarSet` of `Sparkbars`: hovering anywhere over the strips, or stepping with ← →
+ * once the set has focus, draws one hairline through every strip at that day and one plate with
+ * each strip's value. A day nothing recorded is an empty slot on its strip, never a zero stub, and
+ * the plate says *Not recorded yet* for it.
  */
 export function PulseStrips({
   days,
@@ -167,59 +125,33 @@ export function PulseStrips({
   /** A day to show hovered from the start (a board's drawn hover state). */
   defaultActive?: number | null;
 }) {
-  const [active, setActive] = useState<number | null>(defaultActive);
-  const column = useRef<HTMLDivElement>(null);
   const begins = useRecordBegins();
-  const n = days.length;
-
-  const dayAt = (clientX: number): number | null => {
-    const box = column.current?.getBoundingClientRect();
-    if (!box || box.width === 0 || n === 0) return null;
-    const i = Math.floor(((clientX - box.left) / box.width) * n);
-    return i >= 0 && i < n ? i : null;
-  };
-  const onPointerMove = (event: PointerEvent<HTMLDivElement>) => setActive(dayAt(event.clientX));
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const step = { ArrowLeft: -1, ArrowRight: 1 }[event.key];
-    if (step !== undefined && n > 0) {
-      event.preventDefault();
-      setActive((at) => Math.max(0, Math.min(n - 1, (at ?? n) + step)));
-    } else if (event.key === 'Home' || event.key === 'End') {
-      event.preventDefault();
-      setActive(event.key === 'Home' ? 0 : n - 1);
-    } else if (event.key === 'Escape') setActive(null);
-  };
-
-  const x = active === null ? 0 : ((active + 0.5) / n) * 100;
-  const onRight = active !== null && active < n / 2;
   const ticks = pulseTicks(days);
+  // Before the window opens, every strip says when its record begins.
+  const seriesOf = (key: PulseKey) => (begins === null ? pulse[key] : null);
 
   return (
-    // The pulse is read a day at a time, so to a keyboard and a screen reader it is a slider over
-    // the season's days: ← → step, Home and End jump, and the day it rests on is spoken.
-    <div
-      data-slot="pulse"
-      role="slider"
-      tabIndex={0}
+    <SparkbarSet
       aria-label="Each day"
-      aria-orientation="horizontal"
-      aria-valuemin={0}
-      aria-valuemax={Math.max(0, n - 1)}
-      aria-valuenow={active ?? Math.max(0, n - 1)}
-      aria-valuetext={n > 0 ? dayTitle(days[active ?? n - 1] as DayKey) : undefined}
-      onPointerMove={onPointerMove}
-      onPointerLeave={() => setActive(null)}
-      onKeyDown={onKeyDown}
-      onBlur={() => setActive(null)}
+      length={days.length}
+      title={(i) => dayTitle(days[i] as DayKey)}
+      rows={(i) =>
+        PULSE_KEYS.map((key) => {
+          const value = seriesOf(key)?.daily[i] ?? null;
+          return {
+            label: PULSE_LABELS[key],
+            value: value === null ? null : value.toLocaleString('en-US'),
+          };
+        })
+      }
+      defaultActive={defaultActive}
       className={cn(
-        'relative grid items-end gap-x-(--space-3_5) gap-y-[0.5625rem] outline-none',
+        'grid items-end gap-x-(--space-3_5) gap-y-[0.5625rem]',
         'grid-cols-[6.875rem_minmax(0,1fr)_4rem]',
-        'focus-visible:shadow-focus',
       )}
     >
       {PULSE_KEYS.map((key, r) => {
-        // Before the window opens, every strip says when its record begins.
-        const series = begins === null ? pulse[key] : null;
+        const series = seriesOf(key);
         const row = { gridRow: r + 1 };
         return (
           <div key={key} className="contents" data-slot="pulse-strip" data-key={key}>
@@ -240,7 +172,15 @@ export function PulseStrips({
                   {begins ?? NOT_RECORDED}
                 </span>
               ) : (
-                <Strip pulseKey={key} series={series} days={days} active={active} />
+                <Sparkbars
+                  aria-label={`${PULSE_LABELS[key]}, each day`}
+                  tone="muted"
+                  lightLatest
+                  max={PULSE_FLOOR}
+                  values={series.daily}
+                  // The season's days on one strip: the bars' gap is a hairline and a half.
+                  className="h-full gap-[1.5px]"
+                />
               )}
             </div>
             <span
@@ -277,60 +217,7 @@ export function PulseStrips({
           </span>
         ))}
       </div>
-      <div
-        ref={column}
-        aria-hidden={active === null}
-        className="pointer-events-none relative self-stretch"
-        style={{ gridRow: `1 / span ${stripCount}`, gridColumn: 2 }}
-      >
-        {active !== null && days[active] !== undefined && (
-          <>
-            <span
-              data-slot="pulse-hairline"
-              className="absolute -top-1 bottom-0 w-(--stroke-hair) bg-fg2"
-              style={{ left: `${x}%` }}
-            />
-            <div
-              data-slot="pulse-plate"
-              role="status"
-              className={cn(
-                'absolute -top-1 z-(--z-raised) grid w-max grid-cols-[auto_auto] gap-x-(--space-4_5) gap-y-(--space-1_5)',
-                'px-(--space-3) py-(--space-2_5)',
-                'rounded-container border border-solid border-line2 bg-plate-solid shadow-plate',
-              )}
-              style={
-                onRight
-                  ? { left: `calc(${x}% + var(--space-2_5))` }
-                  : { right: `calc(${100 - x}% + var(--space-2_5))` }
-              }
-            >
-              <span
-                data-slot="pulse-plate-title"
-                className="col-span-2 text-kick leading-none font-medium tracking-head text-fg uppercase"
-              >
-                {dayTitle(days[active] as DayKey)}
-              </span>
-              {PULSE_KEYS.map((key) => {
-                const value = pulse[key]?.daily[active] ?? null;
-                return (
-                  <span key={key} className="contents">
-                    <span className="text-assist leading-none whitespace-nowrap text-fg2">
-                      {PULSE_LABELS[key]}
-                    </span>
-                    <b
-                      data-slot="pulse-plate-value"
-                      className="text-right font-(family-name:--family-mono) text-mono-sm leading-none font-medium tracking-value text-fg tabular-nums"
-                    >
-                      {value === null ? '—' : value.toLocaleString('en-US')}
-                    </b>
-                  </span>
-                );
-              })}
-            </div>
-          </>
-        )}
-      </div>
-    </div>
+    </SparkbarSet>
   );
 }
 

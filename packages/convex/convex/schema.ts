@@ -1402,7 +1402,12 @@ export default defineSchema({
     outcome: literals(['ok', 'capped', 'failed', 'refused', 'skipped'] as const),
     detail: v.optional(v.string()),
     counts: v.optional(v.record(v.string(), v.number())),
-  }).index('by_started', ['startedAt']),
+  })
+    .index('by_started', ['startedAt'])
+    // ── B01 server reads: the Overview's Machinery card ──
+    // Each job's last run: the pump beats every few minutes, so the newest rows overall would bury the
+    // six-hourly poll. Every field is required — no sparse-index trap.
+    .index('by_kind_started', ['kind', 'startedAt']),
 
   // Once per key per New York day (A06i): an operator alert — a misconfigured job polls every six
   // hours, and four identical emails a day is how an inbox learns to ignore the fifth — or a full
@@ -1670,6 +1675,11 @@ export default defineSchema({
     // The depth loader's lookup by our own key (A09). `eq()` only — an optional field's index is not
     // sparse, so a range here would walk every un-keyed legacy row first.
     .index('by_sub_area_key', ['subAreaKey'])
+    // ── B01 server reads: the Overview's Corpus card ──
+    // Chord re-fits waiting across bodies (D215). Both fields are optional, so their indexes are not
+    // sparse: every read is an `eq()` on an outcome, or a range with a lower bound, never bare.
+    .index('by_mouth_review', ['mouthReview.outcome'])
+    .index('by_mouth_stale', ['mouthStale'])
     .searchIndex('search_subarea', { searchField: 'searchText' }),
 
   // The sub-area spatial index (A02) — the third table on A01's shared ladder-grid mechanism, same
@@ -2604,7 +2614,12 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index('by_report', ['reportId'])
-    .index('by_author', ['authorId']), // profile #comments count + enumerate a user's comments (D13)
+    .index('by_author', ['authorId']) // profile #comments count + enumerate a user's comments (D13)
+    // ── B01 server reads: the Overview's Metrics ──
+    // The day rollup's comments (`comments_created`; a comment is not a contribution, D253) and the
+    // season's reach, read by a bounded time range. `createdAt` is required, so nothing sorts as
+    // `undefined` ahead of it.
+    .index('by_created_at', ['createdAt']),
 
   hazards: defineTable({
     waterBodyId: v.id('waterBodies'),
@@ -2747,7 +2762,11 @@ export default defineSchema({
     // footprint is recomputed from and what `unmerge` walks. An equality read on a field almost every
     // row leaves unset, so it costs nothing to carry and turns "what was merged into this?" from a
     // scan of the body's hazards into a lookup.
-    .index('by_merged_into', ['mergedIntoHazardId']),
+    .index('by_merged_into', ['mergedIntoHazardId'])
+    // ── B01 server reads: the Overview's Metrics ──
+    // *First-time contributors*: a person's earliest hazard is the first row of this range.
+    // `by_author_and_water_body` orders by body, not by time, so it can't answer "the first one".
+    .index('by_author_created', ['createdByUserId', 'createdAt']),
   // NOTE: no spatial index for hazards (Phase 09a call 6). Hazards are only ever queried per body —
   // the map renders them for the selected lake, the mobile cache stores them per cached body, and the
   // proximity evaluator runs against that same cached set. A third spatial index
@@ -3209,7 +3228,10 @@ export default defineSchema({
     .index('by_water_body_name', ['waterBodyId', 'kind', 'status', 'nameKey'])
     // Every `admit` that resolved to the same catalog feature — the sibling set a decision closes.
     // `eq()` only: the field is optional and the index is not sparse.
-    .index('by_candidate_external_id', ['candidateExternalId', 'status']),
+    .index('by_candidate_external_id', ['candidateExternalId', 'status'])
+    // ── B01 server reads: what a contribution is (D253) ──
+    // A request to add or activate a body, or a proposed name, is a contribution: read by time.
+    .index('by_created_at', ['createdAt']),
 
   contentFlags: defineTable({
     flaggerId: v.id('profiles'),
@@ -3256,7 +3278,12 @@ export default defineSchema({
     // index is keyed by status first so the rollup reads only terminal rows in the day's range —
     // `actioned`/`dismissed` accumulate forever, and a scan of all of them would grow without bound.
     .index('by_created_at', ['createdAt'])
-    .index('by_status_resolved_at', ['status', 'resolvedAt']),
+    .index('by_status_resolved_at', ['status', 'resolvedAt'])
+    // ── B01 server reads: what a contribution is (D253) ──
+    // A "not publicly accessible" report is a contribution; no other flag is. One reason by time
+    // for the day and season reads, and one person's of that reason for *first-time*.
+    .index('by_reason_created', ['reason', 'createdAt'])
+    .index('by_flagger_reason_created', ['flaggerId', 'reason', 'createdAt']),
 
   moderationActions: defineTable({
     /**
@@ -3386,7 +3413,11 @@ export default defineSchema({
     .index('by_target', ['targetType', 'targetId'])
     .index('by_rater', ['raterId'])
     // Enforce one rating per (rater, target) via a point lookup on this compound index (D50).
-    .index('by_rater_target', ['raterId', 'targetType', 'targetId']),
+    .index('by_rater_target', ['raterId', 'targetType', 'targetId'])
+    // ── B01 server reads: the Overview's Metrics ──
+    // Kudos are positive reactions (the founder, 2026-11-13): the day rollup reads a day's ratings by
+    // time and counts the helpful ones (`positive_reactions`). Backfillable — the rows are on disk.
+    .index('by_created_at', ['createdAt']),
 
   photos: defineTable({
     storageId: v.string(), // Convex file storage ref (optimized full image, D31)
@@ -3678,7 +3709,14 @@ export default defineSchema({
     // reference scan (A03 / `lib/photoOrphans`). Without it the sweep would have to scan the whole
     // table to decide whether one person's photo is referenced, and the alternative it would fall
     // back to is deleting it.
-    .index('by_created_by', ['createdByUserId']),
+    .index('by_created_by', ['createdByUserId'])
+    // ── B01 server reads: what a contribution is (D253) ──
+    // A put-in a person placed (`official`) is a contribution: one source's put-ins by time, so the
+    // derived markers the clustering writes in bulk are never read for it.
+    .index('by_source_created', ['source', 'createdAt'])
+    // And one person's placed put-ins by time, for *first-time*: `by_created_by` also holds every
+    // derived marker a moderator hid (the hide is attributed to them), which would crowd them out.
+    .index('by_created_by_source_created', ['createdByUserId', 'source', 'createdAt']),
 
   /**
    * Where the car goes (A06d / D72) — modeled apart from `putIns`, and many-to-many with bodies.
@@ -3888,7 +3926,13 @@ export default defineSchema({
     // A departing user's alerts (A03/D62), and the author-side half of the orphan-photo scan.
     .index('by_author', ['createdByUserId'])
     // Offline-flush dedup (A10 §9.1) — `eq()` only, the optional-index rule.
-    .index('by_idempotency_key', ['idempotencyKey']),
+    .index('by_idempotency_key', ['idempotencyKey'])
+    // ── B01 server reads: what a contribution is (D253) ──
+    // An alert is a contribution (unless retracted): the day and season reads range it by time.
+    .index('by_created_at', ['createdAt'])
+    // And one person's alerts by time, for *first-time*: `by_author` orders by creation, and
+    // `createdAt` is when the alert was observed, which an offline flush can backdate.
+    .index('by_author_created', ['createdByUserId', 'createdAt']),
 
   /**
    * Photos of an access point (A06d Workstream 4 / D88) — *"is this the right dirt road"*.
@@ -4087,6 +4131,11 @@ export default defineSchema({
    * days or more* of the last seven, and *Signed in* per day through the season. It is a behavioral
    * record, so it carries the profile id and the day and nothing else, and account deletion erases
    * it (D33). Forward-only by nature: an open leaves no other trace to rebuild it from.
+   *
+   * **Kept for the current season and one past season** (the founder, 2026-11-13; D254): enough for
+   * this season's figures and a past season chosen on the Overview, and no longer a record of a
+   * person kept forever. `analyticsRollup.pruneSignInDays` erases every day before the previous
+   * season's 1 July, daily; the rollups' own `signed_in` day counts outlive the rows.
    */
   signInDays: defineTable({
     userId: v.id('profiles'),
@@ -4226,4 +4275,24 @@ export default defineSchema({
     .index('by_started', ['startedAt'])
     .index('by_kind_started', ['kind', 'startedAt'])
     .index('by_campaign', ['campaignId', 'startedAt']),
+
+  // ── B01 server reads: colleague presence ──────────────────────────────────────────────────────
+
+  /**
+   * **Who on staff is in the console now** (B01, the top bar's faces). One row per staff member,
+   * written by `console.heartbeat` while a console page is open — at most once a heartbeat interval,
+   * so a person costs one small write a minute and nothing while away. Staff only (a moderator or
+   * above, `console.presence`): nothing here is about skaters. It carries the profile id and the
+   * last instant seen, and nothing else — not the page, not the device.
+   *
+   * Bounded by staff, not by time: the row is replaced in place, never appended. The read is a range
+   * on `seenAt` over the last few minutes. Erased with the account (D33), and dropped when a person
+   * leaves staff (the heartbeat refuses them, and the read skips anyone no longer staff).
+   */
+  consolePresence: defineTable({
+    userId: v.id('profiles'),
+    seenAt: v.number(),
+  })
+    .index('by_user', ['userId']) // the upsert, and account erasure
+    .index('by_seen_at', ['seenAt']), // who was seen lately: a bounded range
 });

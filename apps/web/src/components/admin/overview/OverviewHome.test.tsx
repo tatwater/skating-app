@@ -4,18 +4,26 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { StatusBar } from '@/components/kit/status-bar';
 
-const convex = vi.hoisted(() => ({ results: new Map<string, unknown>(), calls: [] as unknown[] }));
+const convex = vi.hoisted(() => ({
+  results: new Map<string, unknown>(),
+  calls: [] as unknown[],
+  asked: [] as string[],
+}));
 vi.mock('convex/react', async () => {
   const { getFunctionName } = await import('convex/server');
   return {
+    // A skipped read is never sent and never answers, as Convex's own `useQuery` does.
     useQuery: (ref: Parameters<typeof getFunctionName>[0], args: unknown) => {
+      if (args === 'skip') return undefined;
       convex.calls.push(args);
+      convex.asked.push(getFunctionName(ref));
       return convex.results.get(getFunctionName(ref));
     },
   };
 });
 
 import { api } from '@skating/convex/api';
+import { metricDay, metricDayStart } from '@skating/core';
 import { getFunctionName } from 'convex/server';
 
 import { LiveMark } from './LiveMark';
@@ -141,7 +149,7 @@ describe('OverviewHome', () => {
       <OverviewHome
         data={{
           machinery: {
-            jobs: [{ id: 'x', name: 'Rollovers', state: 'never', at: '—' }],
+            jobs: [{ id: 'x', name: 'Rollovers', state: 'never', at: null }],
             more: 0,
             moreAllOk: true,
           },
@@ -219,6 +227,23 @@ describe('OverviewPage', () => {
     const head = screen.getByRole('region', { name: 'Needs a hand' });
     expect(head.querySelectorAll('[data-slot="badge"]')).toHaveLength(2);
   });
+
+  it('sets the word in the kit’s page type, its box the type’s own height', () => {
+    render(
+      <OverviewPage
+        value="home"
+        onValueChange={() => {}}
+        tabs={[{ value: 'home', label: 'Home', panel: null }]}
+      />,
+    );
+    const word = screen.getByRole('heading', { level: 1, name: 'Overview' });
+    expect(word).toHaveAttribute('data-slot', 'page-word');
+    // The tabs sit on the word's foot only while its line is its type: a merge that drops the
+    // leading (the kit's base one precedes its size) lets the word ride half a line higher.
+    expect(word.className.split(' ')).toEqual(
+      expect.arrayContaining(['text-disp-lg', 'leading-none']),
+    );
+  });
 });
 
 describe('LiveMark', () => {
@@ -232,6 +257,18 @@ describe('LiveMark', () => {
     expect(screen.getByText('Refresh the page to catch up')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Refresh' }));
     expect(onRefresh).toHaveBeenCalledOnce();
+  });
+
+  it('wears the kit’s live badge: lit while live, dim while checking, hollow when not live', () => {
+    for (const [state, tone] of [
+      ['live', 'default'],
+      ['checking', 'dim'],
+      ['off', 'off'],
+    ] as const) {
+      const { unmount } = render(<LiveMark state={state} lastCheckedAt={null} />);
+      expect(document.querySelector('[data-slot="badge"]')).toHaveAttribute('data-tone', tone);
+      unmount();
+    }
   });
 
   it('shows the spinner while checking, and no time before it has ever heard', async () => {
@@ -270,6 +307,7 @@ describe('the status bar’s integration points', () => {
         inbox: {
           lanes: { ...must(HOME.inbox).lanes, safety: { count: 0, capped: false } },
           oldestOpenAt: null,
+          medianOpenedAt: null,
         },
         machinery: { jobs: [], more: 3, moreAllOk: true },
         corpus: { ...must(HOME.corpus), preIcePass: { state: 'done', at: 1 } },
@@ -278,32 +316,144 @@ describe('the status bar’s integration points', () => {
     render(<OverviewLamp state="live" />);
     expect(screen.getByText('Convex live')).toBeInTheDocument();
   });
+
+  it('lights the lamp in the live mark’s three states: lit, still, hollow', () => {
+    for (const [state, lamp] of [
+      ['live', 'live'],
+      ['checking', 'idle'],
+      ['off', 'off'],
+    ] as const) {
+      const { unmount } = render(<OverviewLamp state={state} />);
+      expect(screen.getByRole('status')).toHaveAttribute('data-state', lamp);
+      unmount();
+    }
+  });
 });
 
 describe('useOverviewHome', () => {
   beforeEach(() => {
     convex.results.clear();
     convex.calls.length = 0;
+    convex.asked.length = 0;
   });
 
+  const admin = () => true;
+  const moderator = (cap: string) => cap !== 'machinery.read' && cap !== 'inbox.support.read';
+
   it('is undefined block by block until each read lands', () => {
-    const { result } = renderHook(() => useOverviewHome());
+    const { result } = renderHook(() => useOverviewHome({ season: 2026, now: NOW, can: admin }));
     expect(result.current).toEqual({
       inbox: undefined,
       people: undefined,
       corpus: undefined,
+      machinery: undefined,
+      watch: undefined,
+      winter: undefined,
+      imagery: undefined,
+      firstSkate: undefined,
       feed: undefined,
     });
     expect(convex.calls).toContainEqual({ limit: FEED_LIMIT });
+    // The season tiles on the page's UTC day, so a new day re-runs the first-skate look.
+    expect(convex.calls).toContainEqual({ season: 2026, now: metricDayStart(metricDay(NOW)) });
+    // Machinery is read on the minute, so a job falls late as the clock moves.
+    expect(convex.calls).toContainEqual({ now: Math.floor(NOW / 60_000) * 60_000 });
   });
 
-  it('adapts each read, with the extras the route passes', () => {
+  it('holds Machinery through the minute’s turn, and keeps the feed while only Machinery moves', () => {
+    const name = getFunctionName(api.machinery.overviewJobs);
+    const jobs = { jobs: [], more: 0, moreAllOk: true, untracked: 0 };
+    convex.results.set(name, jobs);
+    convex.results.set(getFunctionName(api.moderation.listActions), []);
+    const { result, rerender } = renderHook(
+      ({ now }: { now: number }) => useOverviewHome({ season: 2026, now, can: admin }),
+      { initialProps: { now: NOW } },
+    );
+    const feed = result.current.feed;
+    expect(result.current.machinery).toEqual({ jobs: [], more: 0, moreAllOk: true });
+    // The next minute's read is a new subscription, still loading: the card keeps the last.
+    convex.results.delete(name);
+    rerender({ now: NOW + 60_000 });
+    expect(result.current.machinery).toEqual({ jobs: [], more: 0, moreAllOk: true });
+    // It lands; the feed's rows haven't moved, so neither has the feed (nor its *Last checked*).
+    convex.results.set(name, { ...jobs, more: 1 });
+    rerender({ now: NOW + 60_000 });
+    expect(result.current.machinery).toMatchObject({ more: 1 });
+    expect(result.current.feed).toBe(feed);
+  });
+
+  it('holds the season tiles through the day’s turn, never across a change of season', () => {
+    const name = getFunctionName(api.seasonWatch.homeSummary);
+    const summary = (season: number) => ({
+      season,
+      countsFrom: `${season}-10-01`,
+      watch: null,
+      winter: { state: 'not-yet' },
+      imagery: { state: 'not-started', granules: 0, lastLandedAt: null, lastFrameAt: null },
+      firstSkate: { first: null, lastWinter: null },
+    });
+    const tomorrow = NOW + 86_400_000;
+    convex.results.set(name, summary(2026));
+    const { result, rerender } = renderHook(
+      ({ now, season }: { now: number; season: number }) =>
+        useOverviewHome({ season, now, can: admin }),
+      { initialProps: { now: NOW, season: 2026 } },
+    );
+    expect(result.current.winter).toEqual({ state: 'not-yet' });
+    // The next day's read is a new subscription, still loading: the tiles keep the last.
+    convex.results.delete(name);
+    rerender({ now: tomorrow, season: 2026 });
+    expect(result.current.winter).toEqual({ state: 'not-yet' });
+    // Another season chosen: its tiles load, rather than showing this season's meanwhile.
+    rerender({ now: tomorrow, season: 2025 });
+    expect(result.current.winter).toBeUndefined();
+    convex.results.set(name, summary(2025));
+    rerender({ now: tomorrow, season: 2025 });
+    // A past season with no watch record never waited: not recorded, never "Waiting" — nor "No
+    // night has met the rule", which nothing recorded either.
+    expect(result.current.watch).toBeNull();
+    expect(result.current.imagery).toBeNull();
+    expect(result.current.winter).toBeNull();
+  });
+
+  it('asks only for what the viewer may read; Machinery is left out for a moderator', () => {
+    const { result } = renderHook(() =>
+      useOverviewHome({ season: 2026, now: NOW, can: moderator }),
+    );
+    expect(convex.asked).not.toContain(getFunctionName(api.machinery.overviewJobs));
+    expect(result.current.machinery).toBe('withheld');
+  });
+
+  it('adapts each read, the Corpus counts over the intake rows, and the feeds in time order', () => {
     convex.results.set(getFunctionName(api.console.overview), {
-      inbox: { ...must(HOME.inbox).lanes, oldestOpenAt: 5 },
-      people: { ...must(HOME.people), totalUsers: undefined },
+      inbox: { ...must(HOME.inbox).lanes, oldestOpenAt: 5, medianOpenedAt: 6 },
+      people: { ...must(HOME.people), totalUsers: null },
     });
     convex.results.set(getFunctionName(api.waterBodies.reviewQueueCounts), {
       'name-conflict': { count: 3, capped: false, advisory: true },
+      'duplicate-candidate': { count: 8, capped: false, advisory: false },
+    });
+    convex.results.set(getFunctionName(api.console.corpusCounts), {
+      duplicates: { count: 4, capped: false },
+      chordRefits: { count: 2, capped: false },
+      placeNames: { count: 237, capped: false },
+      preIcePass: null,
+      enrichment: null,
+      campaignAt: 7,
+    });
+    convex.results.set(getFunctionName(api.machinery.overviewJobs), {
+      jobs: [{ id: 'imagery-poll', name: 'Imagery poll', state: 'failed', at: NOW - 3_600_000 }],
+      more: 22,
+      moreAllOk: false,
+      untracked: 22,
+    });
+    convex.results.set(getFunctionName(api.seasonWatch.homeSummary), {
+      season: 2026,
+      countsFrom: '2026-10-01',
+      watch: null,
+      winter: { state: 'not-yet' },
+      imagery: { state: 'ended', granules: 4, lastLandedAt: null, lastFrameAt: 9 },
+      firstSkate: { first: null, lastWinter: null },
     });
     convex.results.set(getFunctionName(api.moderation.listActions), [
       {
@@ -317,20 +467,34 @@ describe('useOverviewHome', () => {
         undo: { kind: 'none' },
       },
     ]);
-    const { result } = renderHook(() =>
-      useOverviewHome({
-        chordRefits: { count: 2, capped: false },
-        placeNames: { count: 237, capped: false },
-        preIcePass: { state: 'not-run' },
-        enrichment: { count: 58, capped: false },
-        campaignAt: 7,
-      }),
-    );
-    expect(result.current.inbox?.oldestOpenAt).toBe(5);
-    expect(result.current.people?.totalUsers).toBeNull();
-    expect(result.current.corpus?.nameConflicts).toEqual({ count: 3, capped: false });
-    expect(result.current.corpus?.chordRefits).toEqual({ count: 2, capped: false });
-    expect(result.current.corpus?.campaignAt).toBe(7);
-    expect(result.current.feed?.[0]).toMatchObject({ actor: 'Sarah', action: 'Hid' });
+    convex.results.set(getFunctionName(api.console.systemFeed), [
+      {
+        id: 'import:r',
+        at: 2,
+        actor: null,
+        action: 'Run failed',
+        target: { type: 'importRun', id: 'r', label: 'VT canonical water' },
+      },
+    ]);
+    const { result } = renderHook(() => useOverviewHome({ season: 2026, now: NOW, can: admin }));
+    const r = result.current;
+    expect(r.inbox?.oldestOpenAt).toBe(5);
+    expect(r.inbox?.medianOpenedAt).toBe(6);
+    expect(r.people?.totalUsers).toBeNull();
+    expect(r.corpus?.nameConflicts).toEqual({ count: 3, capped: false });
+    // Decisions, not rows: the Corpus counts replace the intake reasons' sum.
+    expect(r.corpus?.duplicates).toEqual({ count: 4, capped: false });
+    expect(r.corpus?.preIcePass).toBeNull();
+    expect(r.machinery).toEqual({
+      jobs: [{ id: 'imagery-poll', name: 'Imagery poll', state: 'failed', at: NOW - 3_600_000 }],
+      more: 22,
+      moreAllOk: false,
+    });
+    expect(r.watch).toEqual({ state: 'waiting', countsFrom: new Date(2026, 9, 1).getTime() });
+    expect(r.imagery).toMatchObject({ state: 'ended', lastFrameAt: 9 });
+    expect(r.feed?.map((row) => [row.actor, row.action])).toEqual([
+      [null, 'Run failed'],
+      ['Sarah', 'Hid'],
+    ]);
   });
 });

@@ -101,6 +101,8 @@ const buttonVariants = cva(
         default: 'h-btn gap-[0.8em]',
         sm: 'h-btn-sm gap-[0.7em]',
         xs: 'h-btn-xs gap-[0.6em]',
+        /** In a row: the chip that fits a 22 px row (Home's "Inbox →"), 18 on the console. */
+        row: 'h-btn-row gap-[0.6em]',
         icon: 'size-btn text-row leading-none',
         'icon-sm': 'size-btn-sm text-row leading-none',
         'icon-xs': 'size-btn-xs text-assist leading-none',
@@ -111,18 +113,18 @@ const buttonVariants = cva(
       // `leading-none` follows the size: tailwind-merge drops a leading set before a font size.
       {
         variant: FACED,
-        size: ['default', 'sm', 'xs'],
+        size: ['default', 'sm', 'xs', 'row'],
         className: 'text-kick leading-none font-semibold uppercase',
       },
       { variant: ['outline', 'primary', 'danger'], className: 'tracking-head' },
       // Faced insets, in `em` so they track the label's own type step (D233).
       { variant: FACED, size: 'default', className: 'px-[1.4em]' },
       { variant: FACED, size: 'sm', className: 'px-[1em]' },
-      { variant: FACED, size: 'xs', className: 'px-[0.8em]' },
+      { variant: FACED, size: ['xs', 'row'], className: 'px-[0.8em]' },
       // A bare label bleeds: the box is content + the hit pad, given back as negative margin.
       {
         variant: 'bare',
-        size: ['default', 'sm', 'xs'],
+        size: ['default', 'sm', 'xs', 'row'],
         className: 'bleed h-auto justify-start gap-[0.5em]',
       },
       // A bare icon keeps its square and grows its pointer area instead.

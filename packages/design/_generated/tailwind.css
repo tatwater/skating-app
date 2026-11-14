@@ -97,6 +97,7 @@
   --spacing-key: var(--size-key);
   --spacing-pill: var(--size-pill);
   --spacing-badge: var(--size-badge);
+  --spacing-btn-row: var(--size-btn-row);
   --spacing-btn-xs: var(--size-btn-xs);
   --spacing-btn-sm: var(--size-btn-sm);
   --spacing-btn: var(--size-btn);
@@ -105,6 +106,7 @@
   --spacing-avatar-sm: var(--size-avatar-sm);
   --spacing-avatar: var(--size-avatar);
   --spacing-avatar-lg: var(--size-avatar-lg);
+  --spacing-avatar-xl: var(--size-avatar-xl);
   --spacing-search: var(--size-search);
   --spacing-lanes: var(--size-lanes);
   --spacing-tape: var(--size-tape);
@@ -116,6 +118,9 @@
   --spacing-sheet: var(--size-sheet);
   --spacing-gutter: var(--gap-gutter);
   --spacing-heading: var(--gap-heading);
+  --spacing-section: var(--gap-section);
+  --spacing-unit: var(--gap-unit);
+  --spacing-segment: var(--gap-segment);
   --spacing-bar-x: var(--gap-bar-x);
   --spacing-bar-gap: var(--gap-bar-gap);
   --spacing-hit-x: var(--gap-hit-x);

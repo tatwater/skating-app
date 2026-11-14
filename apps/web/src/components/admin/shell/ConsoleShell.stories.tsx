@@ -242,6 +242,20 @@ export const FourUp: Story = {
       quads.map((q) => getComputedStyle(slot(q, 'app-shell')).backgroundColor),
     );
     await expect(grounds.size).toBeGreaterThan(1);
+    // The rail's head is the Gli logo — white in the dark quads, black in the light — in the
+    // wordmark's old box, so nothing under it moved.
+    for (const q of quads) {
+      const head = slot(q, 'console-logo');
+      const logo = within(head).getByRole('img', { name: 'Gli' });
+      await expect(head.getBoundingClientRect().height).toBeCloseTo(32, 1);
+      await expect(logo.getBoundingClientRect().height).toBeCloseTo(16, 1);
+      const painted = [...logo.querySelectorAll('img')].filter(
+        (img) => getComputedStyle(img).display !== 'none',
+      );
+      await expect(painted.map((img) => img.dataset.slot)).toEqual([
+        q.dataset.mode === 'dark' ? 'logo-on-dark' : 'logo-on-light',
+      ]);
+    }
   },
 };
 

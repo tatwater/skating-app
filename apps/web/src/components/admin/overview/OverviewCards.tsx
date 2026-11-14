@@ -1,5 +1,6 @@
 import type { ComponentProps } from 'react';
 
+import { StatusDot, type StatusDotTone } from '@/components/kit/status-dot';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/kit/tooltip';
 
 import { CountCard, CountFoot, CountRow, RowLink, SectionNote } from './CountCard';
@@ -11,6 +12,7 @@ import {
   inboxFootAges,
   inboxTotal,
   type JobState,
+  jobWhen,
   type MachineryCardData,
   type PeopleCardData,
   suspensionDetail,
@@ -23,7 +25,6 @@ import {
   sumCounts,
   type ValueTone,
 } from './overviewModel';
-import { StatusDot, type StatusDotTone } from './StatusDot';
 
 /**
  * Home's four count cards: Inbox by lane, Corpus by task, Machinery by job, People. Each takes its
@@ -164,8 +165,13 @@ const JOB: Record<JobState, { dot: StatusDotTone; tone: ValueTone; word: string 
 
 export function MachineryCard({
   data,
+  now,
   ...props
-}: Omit<CardProps<MachineryCardData>, 'data'> & { data: MachineryCardData | null | undefined }) {
+}: Omit<CardProps<MachineryCardData>, 'data'> & {
+  data: MachineryCardData | null | undefined;
+  /** The instant each job's time is written against, in the reader's zone. */
+  now: number;
+}) {
   // The status is a column of its own, right-aligned; the time a fixed column after it, wide
   // enough for a weekday and a time ("Sat 22:14").
   const columns = 'minmax(0, 1fr) auto 4.75rem';
@@ -191,7 +197,7 @@ export function MachineryCard({
             label={job.name}
             detail={look.word}
             detailTone={look.tone}
-            value={job.at}
+            value={jobWhen(job.at, now)}
             tone="dim"
           />
         );

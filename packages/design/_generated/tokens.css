@@ -97,6 +97,7 @@
   --size-key: 1.125rem;
   --size-pill: 1.0625rem;
   --size-badge: 1.25rem;
+  --size-btn-row: 1.75rem;
   --size-btn-xs: 1.75rem;
   --size-btn-sm: 1.875rem;
   --size-btn: 2.25rem;
@@ -105,6 +106,7 @@
   --size-avatar-sm: 1.375rem;
   --size-avatar: 1.75rem;
   --size-avatar-lg: 1.875rem;
+  --size-avatar-xl: 2rem;
   --size-search: 28.75rem;
   --size-lanes: 14.75rem;
   --size-tape: 15rem;
@@ -116,6 +118,9 @@
   --size-sheet: 62.5rem;
   --gap-gutter: 1.75rem;
   --gap-heading: 0.75rem;
+  --gap-section: 1.875rem;
+  --gap-unit: 0.4375rem;
+  --gap-segment: 0.1875rem;
   --gap-bar-x: 1.5rem;
   --gap-bar-gap: 1.75rem;
   --gap-hit-x: 0.75rem;
@@ -183,6 +188,7 @@
   --box-shadow-modal: 0px 24px 72px 0px var(--shade-deep);
   --box-shadow-focus: 0px 0px 0px 3px var(--bg), 0px 0px 0px 4px var(--fg);
   --opacity-dim: 0.28;
+  --opacity-fade: 0.38;
   --opacity-disabled: 0.4;
   --opacity-muted: 0.5;
   --z-raised: 1;
@@ -306,6 +312,7 @@
   --size-key: 1rem;
   --size-pill: 1.0625rem;
   --size-badge: 1.25rem;
+  --size-btn-row: 1.125rem;
   --size-btn-xs: 1.375rem;
   --size-btn-sm: 1.5rem;
   --size-btn: 1.75rem;
@@ -314,6 +321,7 @@
   --size-avatar-sm: 1rem;
   --size-avatar: 1.25rem;
   --size-avatar-lg: 1.625rem;
+  --size-avatar-xl: 2rem;
   --size-search: 12.5rem;
   --size-lanes: 14.75rem;
   --size-tape: 15rem;
@@ -325,6 +333,9 @@
   --size-sheet: 62.5rem;
   --gap-gutter: 1.25rem;
   --gap-heading: 0.75rem;
+  --gap-section: 1.875rem;
+  --gap-unit: 0.4375rem;
+  --gap-segment: 0.1875rem;
   --gap-bar-x: 1.375rem;
   --gap-bar-gap: 0.875rem;
   --gap-hit-x: 0.5rem;
@@ -757,6 +768,7 @@
   --size-key: 1rem;
   --size-pill: 1.0625rem;
   --size-badge: 1.25rem;
+  --size-btn-row: 1.125rem;
   --size-btn-xs: 1.375rem;
   --size-btn-sm: 1.5rem;
   --size-btn: 1.75rem;
@@ -765,6 +777,7 @@
   --size-avatar-sm: 1rem;
   --size-avatar: 1.25rem;
   --size-avatar-lg: 1.625rem;
+  --size-avatar-xl: 2rem;
   --size-search: 12.5rem;
   --size-lanes: 14.75rem;
   --size-tape: 15rem;
@@ -776,6 +789,9 @@
   --size-sheet: 62.5rem;
   --gap-gutter: 1.25rem;
   --gap-heading: 0.75rem;
+  --gap-section: 1.875rem;
+  --gap-unit: 0.4375rem;
+  --gap-segment: 0.1875rem;
   --gap-bar-x: 1.375rem;
   --gap-bar-gap: 0.875rem;
   --gap-hit-x: 0.5rem;
@@ -881,6 +897,7 @@
   --size-key: 1rem;
   --size-pill: 1.0625rem;
   --size-badge: 1.25rem;
+  --size-btn-row: 1.125rem;
   --size-btn-xs: 1.375rem;
   --size-btn-sm: 1.5rem;
   --size-btn: 1.75rem;
@@ -889,6 +906,7 @@
   --size-avatar-sm: 1rem;
   --size-avatar: 1.25rem;
   --size-avatar-lg: 1.625rem;
+  --size-avatar-xl: 2rem;
   --size-search: 12.5rem;
   --size-lanes: 14.75rem;
   --size-tape: 15rem;
@@ -900,6 +918,9 @@
   --size-sheet: 62.5rem;
   --gap-gutter: 1.25rem;
   --gap-heading: 0.75rem;
+  --gap-section: 1.875rem;
+  --gap-unit: 0.4375rem;
+  --gap-segment: 0.1875rem;
   --gap-bar-x: 1.375rem;
   --gap-bar-gap: 0.875rem;
   --gap-hit-x: 0.5rem;
@@ -1005,6 +1026,7 @@
   --size-key: 1.125rem;
   --size-pill: 1.0625rem;
   --size-badge: 1.25rem;
+  --size-btn-row: 1.75rem;
   --size-btn-xs: 1.75rem;
   --size-btn-sm: 1.875rem;
   --size-btn: 2.25rem;
@@ -1013,6 +1035,7 @@
   --size-avatar-sm: 1.375rem;
   --size-avatar: 1.75rem;
   --size-avatar-lg: 1.875rem;
+  --size-avatar-xl: 2rem;
   --size-search: 28.75rem;
   --size-lanes: 14.75rem;
   --size-tape: 15rem;
@@ -1024,6 +1047,9 @@
   --size-sheet: 62.5rem;
   --gap-gutter: 1.75rem;
   --gap-heading: 0.75rem;
+  --gap-section: 1.875rem;
+  --gap-unit: 0.4375rem;
+  --gap-segment: 0.1875rem;
   --gap-bar-x: 1.5rem;
   --gap-bar-gap: 1.75rem;
   --gap-hit-x: 0.75rem;
@@ -1129,6 +1155,7 @@
   --size-key: 1.125rem;
   --size-pill: 1.0625rem;
   --size-badge: 1.25rem;
+  --size-btn-row: 1.75rem;
   --size-btn-xs: 1.75rem;
   --size-btn-sm: 1.875rem;
   --size-btn: 2.25rem;
@@ -1137,6 +1164,7 @@
   --size-avatar-sm: 1.375rem;
   --size-avatar: 1.75rem;
   --size-avatar-lg: 1.875rem;
+  --size-avatar-xl: 2rem;
   --size-search: 28.75rem;
   --size-lanes: 14.75rem;
   --size-tape: 15rem;
@@ -1148,6 +1176,9 @@
   --size-sheet: 62.5rem;
   --gap-gutter: 1.75rem;
   --gap-heading: 0.75rem;
+  --gap-section: 1.875rem;
+  --gap-unit: 0.4375rem;
+  --gap-segment: 0.1875rem;
   --gap-bar-x: 1.5rem;
   --gap-bar-gap: 1.75rem;
   --gap-hit-x: 0.75rem;
