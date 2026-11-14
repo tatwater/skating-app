@@ -201,8 +201,9 @@ export const LoadingUncounted: Story = {
   play: async ({ canvasElement }) => {
     const sk = (c: string) =>
       must(canvasElement.querySelector<HTMLElement>(`[data-case="${c}"] [data-slot="skeleton"]`));
-    await expect(sk('default').style.width).toBe('calc(4 * (1ch + var(--track-value)))');
-    await expect(sk('chars').style.width).toBe('calc(6 * (1ch + var(--track-value)))');
+    // The skeleton is as wide as that many mono glyphs: four by default, or the `chars` asked for.
+    await expect(sk('default').textContent).toBe('0000');
+    await expect(sk('chars').textContent).toBe('000000');
     // No sub-line asked for, none held.
     await expect(canvasElement.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(2);
   },

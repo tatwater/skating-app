@@ -1,5 +1,5 @@
 import * as tokens from '@skating/design/tokens';
-import { type ComponentProps, type CSSProperties, useEffect, useRef } from 'react';
+import { type ComponentProps, useEffect, useRef } from 'react';
 
 import { useReducedMotion } from '@/lib/useReducedMotion';
 import { cn } from '@/lib/utils';
@@ -120,19 +120,26 @@ type SkeletonStatProps = Omit<SkeletonProps, 'children'> & {
 /**
  * A stat value: the stat step in mono, one line box tall, exactly `chars` mono characters wide
  * (each character's advance plus the value tracking, as the real value sets it).
+ *
+ * The width is laid out from `chars` invisible mono zeros, not computed as `calc(n * 1ch)`: an empty
+ * box's `ch` was resolved once against whatever face was there, and Chromium left it on the
+ * fallback's after Martian Mono loaded (13 px short on `$75.80`, about one run in five on a cold
+ * cache). Text is re-laid out when its face arrives, and asking for the glyphs is what loads the
+ * face at all. Mono digits, `$` and `.` share one advance, so the box is the value's.
  */
-function SkeletonStat({ chars, className, style, ...props }: SkeletonStatProps) {
-  const width: CSSProperties['width'] = `calc(${chars} * (1ch + var(--track-value)))`;
+function SkeletonStat({ chars, className, ...props }: SkeletonStatProps) {
   return (
     <Skeleton
       className={cn(
         LINE,
-        'font-(family-name:--family-mono) text-stat leading-none tracking-value',
+        'w-fit font-(family-name:--family-mono) text-stat leading-none tracking-value',
+        'whitespace-nowrap text-transparent select-none',
         className,
       )}
-      style={{ width, ...style }}
       {...props}
-    />
+    >
+      {'0'.repeat(Math.max(0, chars))}
+    </Skeleton>
   );
 }
 
