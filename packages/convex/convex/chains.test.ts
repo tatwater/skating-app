@@ -543,4 +543,87 @@ describe('every chain reaches its end on its dearest page', () => {
     expect(await t.run((ctx) => ctx.db.query('photoSettlements').collect())).toEqual([]);
     expect(await t.run((ctx) => ctx.db.query('photoSettlementQueue').collect())).toEqual([]);
   });
+
+  test('eraseDue: a heavy Report that carries a failure count clears it in the pass that makes progress', async () => {
+    const { t, author, waterBodyId } = await setup();
+    const reportId = await heavyReport(t, author.id, waterBodyId, {
+      moderationStatus: 'removed',
+      authorDeletedAt: T0,
+      eraseAt: T0 + WITHDRAWN_ERASE_MS,
+      eraseAttempts: 2,
+      eraseErrorClass: 'Error',
+    });
+    for (let i = 0; i < 12; i++) {
+      await t.run((ctx) =>
+        ctx.db.insert('contentRevisions', {
+          targetType: 'report',
+          targetId: reportId,
+          authorId: author.id,
+          snapshot: { notes: `${i} ${HEAVY}` },
+          replacedAt: T0 + i,
+        }),
+      );
+    }
+    vi.setSystemTime(T0 + 31 * DAY);
+    // Its first pass drains what fits and stops part-way: the count goes with that progress.
+    await t.mutation(internal.erasure.eraseDue, {});
+    const partWay = await t.run((ctx) => ctx.db.get(reportId));
+    expect(partWay).not.toBeNull();
+    expect(partWay?.eraseAttempts).toBeUndefined();
+    expect(partWay?.eraseErrorClass).toBeUndefined();
+    await runOut(t, async () => {});
+    expect(await t.run((ctx) => ctx.db.get(reportId))).toBeNull();
+  });
+
+  test('retryParkedDaily: heavy parked Reports and parked settlements, all healed, all freed', async () => {
+    const { t, author, other, waterBodyId } = await setup();
+    const reportIds: Id<'reports'>[] = [];
+    for (let i = 0; i < 3; i++) {
+      reportIds.push(
+        await heavyReport(t, author.id, waterBodyId, {
+          moderationStatus: 'removed',
+          authorDeletedAt: T0,
+          eraseAttempts: 3,
+          eraseErrorClass: 'Error',
+          eraseParkedAt: T0 + i,
+        }),
+      );
+    }
+    const photoIds: Id<'photos'>[] = [];
+    for (const uploader of [author.id, other.id]) {
+      const photoId = await t.run(async (ctx) =>
+        ctx.db.insert('photos', {
+          storageId: await ctx.storage.store(new Blob(['full'])),
+          thumbStorageId: await ctx.storage.store(new Blob(['thumb'])),
+          uploaderId: uploader,
+          caption: HEAVY,
+          placeOnMap: false,
+          createdAt: T0,
+        }),
+      );
+      photoIds.push(photoId);
+      await t.run(async (ctx) => {
+        const debt = await ctx.db.insert('photoSettlements', {
+          uploaderId: uploader,
+          photoIds: [photoId],
+          owedAt: T0,
+        });
+        await ctx.db.insert('photoSettlementQueue', {
+          uploaderId: uploader,
+          queuedAt: T0,
+          phase: 'hazards',
+          photoIds: [photoId],
+          owed: [debt],
+          attempts: 3,
+          lastErrorClass: 'Error',
+          parkedAt: T0,
+        });
+      });
+    }
+    vi.setSystemTime(T0 + 31 * DAY);
+    await runOut(t, () => t.mutation(internal.erasure.retryParkedDaily, {}));
+    for (const id of reportIds) expect(await t.run((ctx) => ctx.db.get(id))).toBeNull();
+    for (const id of photoIds) expect(await t.run((ctx) => ctx.db.get(id))).toBeNull();
+    expect(await t.run((ctx) => ctx.db.query('photoSettlementQueue').collect())).toEqual([]);
+  });
 });
