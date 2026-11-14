@@ -473,14 +473,20 @@ export const LegendMatchesBars: Story = {
   ),
   play: async ({ canvasElement }) => {
     await drawn(canvasElement, BAR);
-    const fills = await paints(() => qa(canvasElement, BAR), 'fill', 'the bars');
-    const swatches = () => [
-      ...canvasElement.querySelectorAll<HTMLElement>('[data-slot="chart-legend-swatch"]'),
-    ];
-    await steady(() => expect(swatches()).toHaveLength(Object.keys(OPEN_FLAGS).length));
-    for (const swatch of swatches()) {
-      await expect(fills).toContainEqual(sameColor(getComputedStyle(swatch).backgroundColor));
-    }
+    // Bars and swatches read together on every try: a series still mounting has no bars yet, so a
+    // fill list read once can lack a tone the legend rightly shows (a CI-only failure on #111).
+    await steady(() => {
+      const fills = qa(canvasElement, BAR)
+        .filter((el) => el.isConnected)
+        .map((el) => getComputedStyle(el).fill);
+      const swatches = [
+        ...canvasElement.querySelectorAll<HTMLElement>('[data-slot="chart-legend-swatch"]'),
+      ];
+      expect(swatches).toHaveLength(Object.keys(OPEN_FLAGS).length);
+      for (const swatch of swatches) {
+        expect(fills).toContainEqual(sameColor(getComputedStyle(swatch).backgroundColor));
+      }
+    });
     for (const tone of ['lead', 'muted', 'faint', 'quiet', 'warn', 'bad', 'water'] as const) {
       await expect(chartToneColor(tone)).toMatch(/^var\(--/);
     }
