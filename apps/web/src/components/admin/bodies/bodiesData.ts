@@ -140,6 +140,10 @@ export interface BodyPreviewData {
   allTime: PreviewCount | null;
   complete: Completeness | null;
   asks: readonly PreviewAsk[] | null;
+  /** How many asks are open in all (a floor when capped); `null` while the facts aren't in. */
+  askCount: Count | null;
+  /** `asks` is the newest of them, not all: the list says "Newest 20 of 21", never reads whole. */
+  asksPartial: boolean;
   /** What changed last; `null` for a viewer who can't read the audit, `'error'` when it failed. */
   history: readonly PreviewHistoryRow[] | null | 'error';
 }

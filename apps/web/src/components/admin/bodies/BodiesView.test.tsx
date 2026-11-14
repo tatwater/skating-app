@@ -401,6 +401,27 @@ describe('the preview', () => {
     expect(screen.queryByText(/Open in Body/)).toBeNull();
   });
 
+  it('counts every open ask, and says plainly when the list is only the newest of them', () => {
+    const { rerender } = render(
+      <Harness
+        preview={{ ...PREVIEW_MASCOMA, askCount: { count: 21, capped: false }, asksPartial: true }}
+      />,
+    );
+    const asks = () => screen.getByRole('region', { name: 'Asked of this body' });
+    expect(within(asks()).getByText('Newest 3 of 21')).toBeInTheDocument();
+    expect(asks().querySelector('[data-slot=section-count]')).toHaveTextContent('21');
+    rerender(
+      <Harness
+        preview={{ ...PREVIEW_MASCOMA, askCount: { count: 400, capped: true }, asksPartial: true }}
+      />,
+    );
+    expect(within(asks()).getByText('Newest 3 of 400+')).toBeInTheDocument();
+    expect(asks().querySelector('[data-slot=section-count]')).toHaveTextContent('400+');
+    // A whole list says nothing of the kind.
+    rerender(<Harness />);
+    expect(screen.queryByText(/^Newest /)).toBeNull();
+  });
+
   it('names the other towns with the body’s one state', () => {
     render(<Harness />);
     expect(screen.getByText('+1')).toBeInTheDocument();

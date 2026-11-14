@@ -110,6 +110,34 @@ export const CountLarge: Story = {
   },
 };
 
+/** A count its read stopped short on is a floor, with its plus. */
+export const CountCapped: Story = {
+  args: { title: 'Landmarks', count: { count: 400, capped: true } },
+  play: async ({ canvasElement }) => {
+    await expect(part(canvasElement, 'section-count')).toHaveTextContent(/^400\+$/);
+    await expect(part(canvasElement, 'section-count')).toHaveAttribute('data-capped');
+  },
+};
+
+/** The amber chip: a section holding a gap that waits on a person. */
+export const Warn: Story = {
+  args: { title: 'Bathymetry', tone: 'warn' },
+  play: async ({ canvasElement }) => {
+    await expect(part(canvasElement, 'section-chip')).toHaveAttribute('data-tone', 'warn');
+  },
+};
+
+/** The amber chip and a capped count, in all four maps. */
+export const WarnFourUp: Story = {
+  render: () => (
+    <div className="flex w-[22rem] flex-col gap-(--space-5)">
+      <SectionSlug title="Bathymetry" tone="warn" />
+      <SectionSlug title="Landmarks" count={{ count: 400, capped: true }} />
+    </div>
+  ),
+  parameters: { fourUp: true },
+};
+
 /**
  * A link at the rule's end (the section's own page) ends the rule too. It is taller than the chip,
  * but the row isn't: the end hangs centered on the row, so the heading gap stays the chip's.

@@ -364,7 +364,18 @@ function PreviewBody({
         )}
       </div>
       {data.asks !== null && data.asks.length > 0 && (
-        <Section title="Asked of this body" count={data.asks.length} className="mt-(--space-5_5)">
+        <Section
+          title="Asked of this body"
+          // Every open ask, a floor when the count stopped short — not the list's length.
+          count={data.askCount ?? data.asks.length}
+          className="mt-(--space-5_5)"
+        >
+          {data.asksPartial && data.askCount !== null && (
+            // The list is the newest of them: said plainly, so it never reads as every ask.
+            <span data-slot="preview-asks-partial" className="text-assist leading-list text-fg3">
+              Newest {data.asks.length.toLocaleString('en-US')} of {countText(data.askCount)}
+            </span>
+          )}
           <ul data-slot="preview-asks" className="m-0 flex list-none flex-col p-0">
             {data.asks.map((ask) => (
               <li

@@ -218,6 +218,8 @@ export const PREVIEW_MASCOMA: BodyPreviewData = {
   season: { count: 3, capped: false, sub: '2 on the ice · 1 from shore' },
   allTime: { count: 86, capped: false, sub: 'Since 2023–24' },
   complete: { have: 9, of: COMPLETENESS_FIELDS, missing: ['bathymetry'] },
+  askCount: { count: 3, capped: false },
+  asksPartial: false,
   asks: [
     {
       id: 'a1',
@@ -296,6 +298,8 @@ export const PREVIEW_MOREY: BodyPreviewData = {
   season: { count: 2, capped: false, sub: '2 on the ice' },
   allTime: { count: 41, capped: false, sub: 'Since 2023–24' },
   complete: { have: 9, of: COMPLETENESS_FIELDS, missing: ['bathymetry'] },
+  askCount: { count: 0, capped: false },
+  asksPartial: false,
   asks: [],
   history: [
     { id: 'm1', at: daysAgo(1), actor: 'Sarah', words: 'Dismissed a flag' },

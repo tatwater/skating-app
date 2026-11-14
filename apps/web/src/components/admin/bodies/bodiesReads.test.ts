@@ -240,6 +240,8 @@ const facts = (over: Partial<PreviewFacts> = {}): PreviewFacts =>
     },
     allTime: { count: 86, capped: false, firstSeason: 2023 },
     asks: [],
+    askCount: { count: 0, capped: false },
+    asksListCapped: false,
     town: 'Enfield',
     moreTowns: ['Canaan'],
     complete: { have: 9, of: 10, missing: ['bathymetry'] },
@@ -362,6 +364,28 @@ describe('the preview from its reads', () => {
       { id: 'r1', at: 5, actor: 'Sarah', words: 'Hid a report' },
       { id: 'r2', at: 4, actor: null, words: expect.any(String) },
     ]);
+  });
+
+  it('carries the count of every open ask, and says when the list is only the newest of them', () => {
+    const asks = [{ id: 'f1', kind: 'flag' as const, reason: 'spam' as const, createdAt: 1 }];
+    const p = previewFrom({
+      body,
+      putIns: [],
+      subAreas: [],
+      history: null,
+      facts: facts({ asks, askCount: { count: 21, capped: false }, asksListCapped: true }),
+      now: NOW,
+    });
+    expect(p).toMatchObject({ askCount: { count: 21, capped: false }, asksPartial: true });
+    const whole = previewFrom({
+      body,
+      putIns: [],
+      subAreas: [],
+      history: null,
+      facts: facts({ asks, askCount: { count: 1, capped: false }, asksListCapped: false }),
+      now: NOW,
+    });
+    expect(whole).toMatchObject({ askCount: { count: 1, capped: false }, asksPartial: false });
   });
 
   it('holds the facts’ blocks while they load, and says when they failed — never zeros', () => {

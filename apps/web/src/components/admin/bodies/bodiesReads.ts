@@ -294,6 +294,8 @@ export function previewFrom({
     // Core's rule, as the stored row holds it; a body with no row yet is not recorded.
     complete: ready?.complete ?? null,
     asks: ready === null ? null : ready.asks.map(askFrom),
+    askCount: ready === null ? null : ready.askCount,
+    asksPartial: ready?.asksListCapped === true,
     history: isFailed(history)
       ? 'error'
       : history == null
