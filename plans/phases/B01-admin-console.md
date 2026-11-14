@@ -1876,7 +1876,7 @@ same day, D257). Server only; the page is owed.
 - **A deletion is never overwritten** (found by #113's review, owed here): suspend, ban and lift are
   refused on an account in its deletion window, being finalized or deleted; a restriction is refused
   only once it is being finalized or deleted. Every undo that would put a status back goes through the
-  same writers and is shown unavailable first. **Detecting a row already broken on dev:** a tombstone
+  same writers and is shown unavailable first (undo state reads the light People row, which carries no ledger grant, so only the last-editor refusal waits for the write). **Detecting a row already broken on dev:** a tombstone
   a discipline write overwrote has `deletedAt` set and a status other than `deleted`; the rows
   backfill logs each it meets (`peopleJobs.backfillRows`), and `peopleJobs.restoreTombstoneStatus`
   puts one back. An overwritten finalization lock (`deleting`) heals on its own: the hourly
