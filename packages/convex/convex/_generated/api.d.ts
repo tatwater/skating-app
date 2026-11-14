@@ -57,6 +57,7 @@ import type * as lib_activityConnections from "../lib/activityConnections.js";
 import type * as lib_apiMeter from "../lib/apiMeter.js";
 import type * as lib_attempts from "../lib/attempts.js";
 import type * as lib_audit from "../lib/audit.js";
+import type * as lib_auditReads from "../lib/auditReads.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_authorDeletion from "../lib/authorDeletion.js";
 import type * as lib_authorView from "../lib/authorView.js";
@@ -221,6 +222,7 @@ declare const fullApi: ApiFromModules<{
   "lib/apiMeter": typeof lib_apiMeter;
   "lib/attempts": typeof lib_attempts;
   "lib/audit": typeof lib_audit;
+  "lib/auditReads": typeof lib_auditReads;
   "lib/auth": typeof lib_auth;
   "lib/authorDeletion": typeof lib_authorDeletion;
   "lib/authorView": typeof lib_authorView;
