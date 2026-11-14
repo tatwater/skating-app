@@ -1772,6 +1772,11 @@ one branch (`b01-3-server`).
   - The kit `Logo` keys its dark ink on the old `.dark` class until the old pages retire.
   - Cost (S2): no ledger rows exist.
   - A strip with no record still draws its full-height hairline on hover.
+- **Founder rulings (2026-11-14):**
+  - A write refused for its length is not counted by the server; the "at the cap" band is the
+    signal that writes are meeting the cap.
+  - The audit feed shows an actor's "Name via script-name" in full on hover; the Actor column
+    stays as it is for now.
 
 ### The B01-2 server register (owed to the server agent)
 
