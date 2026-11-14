@@ -12,8 +12,8 @@ import type { PreviewFacts } from './bodiesReads';
  *
  * The board supplied "Bay name", "Place name · 12 emails" and the quoted title. The rest — the
  * other request kinds, what a request that names nothing asks for, and a flag's reason — the mock
- * did not supply; they are the integrator's words, standing until the founder rules (the phase
- * doc lists them under *wording the mock did not supply*).
+ * did not supply; the founder approved them as written on 2026-11-14 (the phase doc lists them
+ * under *wording the mock did not supply*).
  */
 
 /** A request's kind, as an ask's kicker names it. */

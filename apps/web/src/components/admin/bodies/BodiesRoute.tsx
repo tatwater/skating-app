@@ -46,8 +46,9 @@ import { BODY_LANES } from './bodyLanes';
  *   query's, so a count is never a stale one. A lane no server read lists (Opened recently) reads
  *   All's summary for them, so the rail is counted whichever lane the page opens on.
  * - **The preview** reads the open body and its facts; the body, its facts and its history each say
- *   so in their block when their read fails. A failed put-ins or bays read is drawn as not recorded
- *   (no dots, no figure), never as a zero.
+ *   so in their block when their read fails. A failed put-ins or bays read draws no dots and no
+ *   figure, and says so under the still — never drawn like a body that has none. A body merged away
+ *   opens as its survivor (the URL moves there), so the pane's reads are always of one body.
  *
  * The list and its counts are read against the **list's clock**: the minute the list was opened,
  * held while it stays open, so a new minute never restarts the paging. Every read waits on
@@ -97,6 +98,16 @@ export function BodiesRoute({ bodyPath = BODY_PATH, openLabel }: BodiesRouteProp
     });
   const bodyLink = (id: string): ReactElement => <Link to={bodyPath(id)} />;
 
+  // A body merged away (a stale link, or back from merging it) opens as its survivor: the URL moves
+  // there, so every read in the preview — and the row the list marks — is the survivor's.
+  const survivor = preview.survivor;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: moves once per survivor found, from the place it was found at.
+  useEffect(() => {
+    if (survivor !== null && survivor !== query.bodyId) {
+      go({ ...query, bodyId: survivor }, { replace: true });
+    }
+  }, [survivor]);
+
   // A failed or retrying summary shows no count at all — never a zero, never the last one held.
   const counted = isFailed(summary.state) ? undefined : summary.held;
   const view: Omit<BodiesViewProps, 'list'> = {
@@ -111,12 +122,17 @@ export function BodiesRoute({ bodyPath = BODY_PATH, openLabel }: BodiesRouteProp
     bodyLink,
     onOpenBody: (id) => void navigate({ to: bodyPath(id) }),
     ...(openLabel !== undefined && { openLabel }),
-    // Mounted whatever the counts' state, so its words are announced when they come.
-    status: [
-      <ReadNote key="counts" data-slot="counts-error" reads={[summary.state]}>
+    // Mounted whatever the counts' state, so its words are announced when they come; at the
+    // lanes' foot, a block the one-line status bar would clip.
+    countsNote: (
+      <ReadNote
+        data-slot="counts-error"
+        className="shrink-0 border-0 border-t border-solid border-line px-(--space-4_5) py-(--space-3) empty:border-0 empty:p-0"
+        reads={[summary.state]}
+      >
         Counts couldn’t be read
-      </ReadNote>,
-    ],
+      </ReadNote>
+    ),
   };
 
   if (args === null) return <BodiesView {...view} list={UNREAD_LIST} />;
@@ -354,6 +370,8 @@ function usePreview(
   data: BodyPreviewData | null | undefined | 'error' | 'unavailable';
   retry: () => void;
   pending: boolean;
+  /** The body `bodyId` was merged into, which `waterBodies.get` serves in its place; else `null`. */
+  survivor: string | null;
 } {
   const id =
     canRead && bodyId !== null && ID_SHAPE.test(bodyId) ? (bodyId as Id<'waterBodies'>) : null;
@@ -369,10 +387,16 @@ function usePreview(
         ? null
         : read(api.bodyConsole.history, { waterBodyId, limit: HISTORY_ROWS }),
   });
-  if (id === null) return { data: null, retry, pending };
+  if (id === null) return { data: null, retry, pending, survivor: null };
   const body = reads.body;
+  // `waterBodies.get` follows a merge to the survivor; the other reads are of the id asked. The
+  // pane never draws the one's outline over the other's facts: it holds while the place moves on.
+  const survivor =
+    body !== undefined && body !== null && !isFailed(body) && body.available && body.body._id !== id
+      ? body.body._id
+      : null;
   let data: BodyPreviewData | null | undefined | 'error' | 'unavailable';
-  if (body === undefined) data = undefined;
+  if (body === undefined || survivor !== null) data = undefined;
   else if (isFailed(body)) data = 'error';
   else if (body === null) data = null;
   // A rejected body isn't served whole; the page draws it from its list row.
@@ -380,14 +404,15 @@ function usePreview(
   else {
     data = previewFrom({
       body: body.body,
-      putIns: loaded(reads.putIns),
-      subAreas: loaded(reads.subAreas),
+      // A failure is passed on, so the pane says so rather than drawing no put-ins as none.
+      putIns: reads.putIns,
+      subAreas: reads.subAreas,
       history: canReadAudit ? reads.history : null,
       facts: reads.facts,
       now,
     });
   }
-  return { data, retry, pending };
+  return { data, retry, pending, survivor };
 }
 
 /** How many of a body's latest changes the preview lists. */

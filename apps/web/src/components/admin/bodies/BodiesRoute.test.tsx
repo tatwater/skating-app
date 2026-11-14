@@ -523,9 +523,11 @@ describe('the counts', () => {
   it('say when they couldn’t be read, and leave every count out', () => {
     mocks.results.set(name(api.bodies.listSummary), new Error('nope'));
     mount();
-    expect(screen.getByRole('status', { name: 'Status' })).toHaveTextContent(
+    // Said at the lanes' foot (the counts are theirs), not in the one-line status bar.
+    expect(lanes().querySelector('[data-slot=counts-error]')).toHaveTextContent(
       'Counts couldn’t be read',
     );
+    expect(screen.getByRole('status', { name: 'Status' })).not.toHaveTextContent(/Counts/);
     expect(within(lanes()).queryByText('1,412')).toBeNull();
     expect(screen.queryByText(/in the corpus/)).toBeNull();
   });
@@ -533,8 +535,8 @@ describe('the counts', () => {
   it('try a failed summary again once — the read dropped for one render, the note holding as pending and keeping focus, no count shown meanwhile', async () => {
     mocks.results.set(name(api.bodies.listSummary), new Error('nope'));
     const { rerender } = mount();
-    const bar = () => screen.getByRole('status', { name: 'Status' });
-    const note = within(bar()).getByRole('status');
+    const foot = () => lanes().querySelector('[data-slot=counts-error]');
+    const note = foot() as HTMLElement;
     expect(note).toHaveAttribute('aria-live', 'polite');
     const log = logOf(api.bodies.listSummary);
     const before = log.length;
@@ -558,7 +560,7 @@ describe('the counts', () => {
     mocks.results.set(name(api.bodies.listSummary), SUMMARY);
     rerender(view());
     expect(within(lanes()).getByText('1,412')).toBeInTheDocument();
-    expect(within(bar()).getByRole('status')).toBe(note);
+    expect(foot()).toBe(note);
     expect(note).toBeEmptyDOMElement();
     expect(document.activeElement).toBe(note);
     // Dropped in one run of renders only: never let go of twice for the one retry.
@@ -695,6 +697,8 @@ describe('the preview', () => {
       within(pane()).getByText('Reports, completeness and asks couldn’t be read'),
     ).toBeInTheDocument();
     expect(within(pane()).getByText('Couldn’t read the history')).toBeInTheDocument();
+    // A failed put-ins read is said, never drawn like a body with none.
+    expect(within(pane()).getByText('Put-ins and bays couldn’t be read')).toBeInTheDocument();
     mocks.results.set(name(api.waterBodies.get), new Error('nope'));
     rerender(view());
     expect(within(pane()).getByText('Couldn’t read this body')).toBeInTheDocument();
@@ -725,6 +729,25 @@ describe('the preview', () => {
     // The note emptied where it stood and kept the focus — never dropped to the page.
     expect(document.activeElement).not.toBe(document.body);
     expect(pane().contains(document.activeElement)).toBe(true);
+  });
+
+  it('moves a body merged away to its survivor, never drawing the one over the other’s facts', () => {
+    open();
+    const survivor = 'k17survivorsurvivorsurvivor00000';
+    mocks.results.set(name(api.waterBodies.get), {
+      available: true,
+      body: { ...body, _id: survivor },
+    });
+    mount();
+    // The pane holds while the place moves to the survivor, whose reads are all the survivor's.
+    expect(pane().querySelector('[data-slot=preview-scroll]')).toHaveAttribute('aria-busy', 'true');
+    expect(within(pane()).queryByRole('heading', { name: 'Mascoma Lake' })).toBeNull();
+    expect(mocks.navigate).toHaveBeenCalledTimes(1);
+    expect(mocks.navigate).toHaveBeenLastCalledWith({
+      to: '.',
+      search: { body: survivor },
+      replace: true,
+    });
   });
 
   it('holds the body’s shape while it loads', () => {

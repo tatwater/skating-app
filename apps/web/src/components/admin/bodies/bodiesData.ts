@@ -146,6 +146,13 @@ export interface BodyPreviewData {
   asksPartial: boolean;
   /** What changed last; `null` for a viewer who can't read the audit, `'error'` when it failed. */
   history: readonly PreviewHistoryRow[] | null | 'error';
+  /** `history` is the newest of more: its count is a floor ("7+"), never the whole. */
+  historyCapped?: boolean;
+  /**
+   * The put-ins or bays read failed: the still draws neither, and says so — a failure never drawn
+   * like a body that has none.
+   */
+  marksError?: boolean;
 }
 
 /** A count of reports in the preview: a floor when the read stopped short, with its sub-line. */

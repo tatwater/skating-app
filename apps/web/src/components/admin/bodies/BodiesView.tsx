@@ -66,6 +66,11 @@ export type BodiesViewProps = {
   onOpenBody: (id: string) => void;
   /** The page's status-bar groups ("Last campaign 12 Oct"). */
   status?: readonly ReactNode[];
+  /**
+   * The counts' failure note, drawn at the lanes' foot (the counts are theirs) — a note and its
+   * *Try again* are a block, which the one-line status bar would clip.
+   */
+  countsNote?: ReactNode;
   className?: string;
 };
 
@@ -86,6 +91,7 @@ export function BodiesView({
   openLabel = OPEN_LABEL,
   onOpenBody,
   status = [],
+  countsNote,
   className,
 }: BodiesViewProps) {
   const middle = useRef<HTMLElement>(null);
@@ -191,6 +197,7 @@ export function BodiesView({
             }),
           }))}
         />
+        {countsNote}
       </section>
 
       <section

@@ -420,6 +420,68 @@ describe('the preview from its reads', () => {
     expect(failed).toMatchObject({ facts: 'error', season: null, history: 'error' });
   });
 
+  it('says when the history is only the newest of more, and names an author acting on their own in full', () => {
+    const capped = previewFrom({
+      body,
+      putIns: [],
+      subAreas: [],
+      history: {
+        entries: [
+          {
+            id: 'r3',
+            createdAt: 6,
+            actor: { userId: 'u2', displayName: 'Rob Tremblay', username: 'rob' },
+            action: 'author_delete',
+            targetType: 'report',
+          },
+        ],
+        capped: true,
+      } as unknown as BodyHistory,
+      facts: facts(),
+      now: NOW,
+    });
+    expect(capped).toMatchObject({ historyCapped: true, history: [{ actor: 'Rob Tremblay' }] });
+    const whole = previewFrom({
+      body,
+      putIns: [],
+      subAreas: [],
+      history,
+      facts: facts(),
+      now: NOW,
+    });
+    expect(whole.historyCapped).toBeUndefined();
+  });
+
+  it('says a failed put-ins or bays read, never drawing it as none', () => {
+    const failed = previewFrom({
+      body,
+      putIns: FAILED_READ,
+      subAreas: [{}] as never,
+      history: null,
+      facts: facts(),
+      now: NOW,
+    });
+    expect(failed).toMatchObject({ putIns: null, bays: 1, marksError: true });
+    const bays = previewFrom({
+      body,
+      putIns: [],
+      subAreas: FAILED_READ,
+      history: null,
+      facts: facts(),
+      now: NOW,
+    });
+    expect(bays).toMatchObject({ putIns: [], bays: null, marksError: true });
+    const none = previewFrom({
+      body,
+      putIns: [],
+      subAreas: [],
+      history: null,
+      facts: facts(),
+      now: NOW,
+    });
+    expect(none.marksError).toBeUndefined();
+  });
+
   it('leaves completeness unrecorded for a body with no library row yet, and history out unread', () => {
     const p = previewFrom({
       body,

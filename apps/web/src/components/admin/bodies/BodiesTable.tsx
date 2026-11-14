@@ -459,7 +459,12 @@ export function BodiesTable({
         data-slot="bodies-scroll"
         className="min-h-0 flex-1 overflow-y-auto pb-(--space-14)"
         onScroll={(event) => {
-          scrollMemory.set(memoryKey, event.currentTarget.scrollTop);
+          // Only once this list's place is restored: the scroll the browser clamps as the last
+          // list's rows give way to this one's skeleton is no place of this list's, and would
+          // overwrite the one it remembers.
+          if (restored.current === memoryKey) {
+            scrollMemory.set(memoryKey, event.currentTarget.scrollTop);
+          }
           maybeLoadMore();
         }}
       >
@@ -541,7 +546,9 @@ function ListFoot({
         return 'Loading more';
       case 'done':
         if (rows === 0) return isSearch(q) ? `Nothing matches “${q.trim()}”` : 'None here';
-        return `All ${list.total !== null ? countText(list.total) : rows.toLocaleString('en-US')}`;
+        // Every row is in: a total the summary stopped counting at ("500+") gives way to the
+        // rows' own exact count.
+        return `All ${list.total !== null && !list.total.capped ? countText(list.total) : rows.toLocaleString('en-US')}`;
     }
   })();
   return (

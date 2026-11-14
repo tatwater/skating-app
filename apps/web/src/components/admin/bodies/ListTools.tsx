@@ -197,9 +197,15 @@ function SearchField({
   const [text, setText] = useState(q);
   const sent = useRef(q);
   const timer = useRef<number | undefined>(undefined);
+  // The latest `onSearch`: a search that lands after the wait goes to the place as it stands then
+  // (a row opened, a lane picked meanwhile), never the place the first key was typed in.
+  const latest = useRef(onSearch);
+  latest.current = onSearch;
   // The URL moved on its own (a lane change, the back button): the field follows it.
   useEffect(() => {
     if (q !== sent.current) {
+      // What was being typed is dropped with the field's words, never sent after them.
+      window.clearTimeout(timer.current);
       sent.current = q;
       setText(q);
     }
@@ -223,7 +229,7 @@ function SearchField({
           window.clearTimeout(timer.current);
           timer.current = window.setTimeout(() => {
             sent.current = next.trim();
-            onSearch(next.trim());
+            latest.current(next.trim());
           }, SEARCH_DEBOUNCE_MS);
         }}
         onKeyDown={(event) => {

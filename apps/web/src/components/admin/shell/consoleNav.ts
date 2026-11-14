@@ -86,8 +86,8 @@ export const CONSOLE_MODES: readonly ConsoleMode[] = [
     also: ['/admin/body'],
     goKey: 'B',
     // `body.read` is the capability map's line for reading a body (the operator view); the old
-    // Water bodies page reads with it too. The library's standing lanes are served by
-    // `standing.listLane`, which the server gates on `corpus.read` — the same moderator line.
+    // Water bodies page reads with it too, and so does every read the library makes —
+    // `bodies.listPage`, `bodies.listSummary` and `bodies.preview` each gate on it.
     capability: 'body.read',
   },
 ];

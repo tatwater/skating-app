@@ -6,7 +6,7 @@ import type { FunctionArgs, FunctionReturnType } from 'convex/server';
 import { VANTAGE_LABELS } from '../metrics/metricsModel';
 import type { Count } from '../overview/overviewModel';
 import { isFailed, type ReadFailure } from '../reads/consoleReads';
-import { actionLabel } from '../shell/actionLabels';
+import { actionLabel, actorWords } from '../shell/actionLabels';
 import { dayMonth, seasonYears } from '../shell/consoleTime';
 import { askFrom } from './askWords';
 import type {
@@ -212,13 +212,6 @@ export function polygonsOf(
 /** A recorded area; a body never measured reads `0` or nothing. */
 const area = (sqm: number | undefined) => (sqm === undefined || sqm <= 0 ? null : sqm);
 
-/** Staff by first name; the machine by no name (`null`). */
-function firstName(actor: BodyHistory['entries'][number]['actor']): string | null {
-  if (actor === null) return null;
-  const full = actor.displayName.trim() || actor.username;
-  return full.split(/\s+/u)[0] ?? full;
-}
-
 /** "2 on the ice · 1 from shore": how the season's reports were made, the kinds with any. */
 export function vantageWords(byVantage: PreviewFacts['season']['byVantage']): string | null {
   const parts = (['on_ice', 'shore', 'secondhand', 'unstated'] as const)
@@ -261,8 +254,9 @@ export function previewFrom({
   now,
 }: {
   body: BodyDoc;
-  putIns: PutIns | undefined;
-  subAreas: SubAreas | undefined;
+  /** `undefined` while on its way; a failure if the read failed. */
+  putIns: PutIns | undefined | ReadFailure;
+  subAreas: SubAreas | undefined | ReadFailure;
   /** `null` when the viewer can't read the audit; a failure if the read failed. */
   history: BodyHistory | null | undefined | ReadFailure;
   facts: FactsRead;
@@ -270,6 +264,8 @@ export function previewFrom({
   now: number;
 }): BodyPreviewData {
   const ready = facts !== undefined && !isFailed(facts) ? facts : null;
+  const pins = isFailed(putIns) ? undefined : putIns;
+  const bays = isFailed(subAreas) ? undefined : subAreas;
   return {
     id: body._id,
     name: body.name,
@@ -282,8 +278,9 @@ export function previewFrom({
       polygons: polygonsOf(body.polygon),
       bbox: [body.bbox.minLng, body.bbox.minLat, body.bbox.maxLng, body.bbox.maxLat],
     },
-    putIns: putIns === undefined ? null : putIns.map((p) => p.coord),
-    bays: subAreas === undefined ? null : subAreas.length,
+    putIns: pins === undefined ? null : pins.map((p) => p.coord),
+    bays: bays === undefined ? null : bays.length,
+    ...((isFailed(putIns) || isFailed(subAreas)) && { marksError: true }),
     areaSqM: area(body.surfaceAreaSqM),
     meanDepthM: body.meanDepthM ?? null,
     maxDepthM: body.maxDepthM ?? null,
@@ -303,8 +300,11 @@ export function previewFrom({
         : history.entries.map((row) => ({
             id: row.id,
             at: row.createdAt,
-            actor: firstName(row.actor),
+            // The audit's one naming rule: staff by first name, an author acting on their own in full.
+            actor: actorWords(row.actor, row.action),
             words: actionLabel(row.action, row.targetType),
           })),
+    // The history read stopped short (its rows or its targets): the count is a floor.
+    ...(!isFailed(history) && history != null && history.capped && { historyCapped: true }),
   };
 }

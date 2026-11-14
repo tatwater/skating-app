@@ -1,10 +1,10 @@
-import { act, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { KeysProvider } from '@/lib/keys';
-import { resetScrollMemory } from './BodiesTable';
+import { BodiesTable, resetScrollMemory } from './BodiesTable';
 import { BodiesView, type BodiesViewProps } from './BodiesView';
 import { type BodiesListData, UNREAD_LIST } from './bodiesData';
 import {
@@ -18,6 +18,7 @@ import {
 } from './bodiesFixtures';
 import type { BodyRow } from './bodiesModel';
 import { type BodiesQuery, queryOf } from './bodiesSearch';
+import { laneById } from './bodyLanes';
 import { SEARCH_DEBOUNCE_MS } from './ListTools';
 
 /**
@@ -212,6 +213,32 @@ describe('the search', () => {
     expect(spy.mock.lastCall?.[0]).toMatchObject({ q: '', sort: { column: 'reports' } });
   });
 
+  it('lands a settled search on the place as it stands then, not where the typing began', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const spy = vi.fn();
+    render(<Harness spy={spy} initial={queryOf({})} />);
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    await user.type(screen.getByRole('searchbox', { name: 'Find a body' }), 'mor');
+    // A row opened before the wait ran out stays open when the search lands.
+    await user.click(within(grid()).getByText('Mascoma Lake'));
+    act(() => vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS));
+    expect(spy.mock.lastCall?.[0]).toMatchObject({ q: 'mor', bodyId: 'mascoma-lake' });
+  });
+
+  it('drops what was being typed when the place moves on its own', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const spy = vi.fn();
+    render(<Harness spy={spy} initial={queryOf({ q: 'mor' })} />);
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    await user.type(screen.getByRole('searchbox', { name: 'Find a body' }), 'e');
+    // Another lane clears the search before the wait runs out: the typing never lands on it.
+    await user.click(screen.getByRole('button', { name: /^Dormant · moderator/ }));
+    act(() => vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS));
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.lastCall?.[0]).toMatchObject({ q: '' });
+    expect(screen.getByRole('searchbox', { name: 'Find a body' })).toHaveValue('');
+  });
+
   it('draws board 5.3: the tally, the divider and the marks', () => {
     render(<Harness initial={queryOf({ q: 'mor' })} list={LIST_SEARCH} />);
     expect(screen.getByText('2 active · 4 dormant')).toBeInTheDocument();
@@ -334,6 +361,11 @@ describe('the list’s reading', () => {
     expect(screen.getByText('All 1,412')).toBeInTheDocument();
     rerender(<Harness list={{ ...LIST_ACTIVE, status: 'done', total: null }} />);
     expect(screen.getByText(`All ${LIST_ACTIVE.rows.length}`)).toBeInTheDocument();
+    // A total counted to a cap is a floor; once every row is in, the rows say exactly.
+    rerender(
+      <Harness list={{ ...LIST_ACTIVE, status: 'done', total: { count: 20, capped: true } }} />,
+    );
+    expect(screen.getByText(`All ${LIST_ACTIVE.rows.length}`)).toBeInTheDocument();
   });
 
   it('asks for the next page at once when one came back short, and again after an empty one', () => {
@@ -422,8 +454,62 @@ describe('the preview', () => {
     expect(screen.queryByText(/^Newest /)).toBeNull();
   });
 
+  it('writes a history read that stopped short as a floor, never the whole', () => {
+    render(<Harness preview={{ ...PREVIEW_MASCOMA, historyCapped: true }} />);
+    const history = screen.getByRole('region', { name: 'Last changed' });
+    const rows = (PREVIEW_MASCOMA.history as readonly unknown[]).length;
+    expect(history.querySelector('[data-slot=section-count]')).toHaveTextContent(`${rows}+`);
+  });
+
+  it('says a failed put-ins or bays read, with Try again, rather than drawing none', async () => {
+    const onRetry = vi.fn();
+    render(
+      <Harness
+        preview={{ ...PREVIEW_MASCOMA, putIns: null, bays: null, marksError: true }}
+        onRetryPreview={onRetry}
+      />,
+    );
+    const note = document.querySelector('[data-slot=preview-marks-error]') as HTMLElement;
+    expect(note).toHaveTextContent('Put-ins and bays couldn’t be read');
+    await userEvent.click(within(note).getByRole('button', { name: 'Try again' }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
   it('names the other towns with the body’s one state', () => {
     render(<Harness />);
     expect(screen.getByText('+1')).toBeInTheDocument();
+  });
+});
+
+describe('the list’s place', () => {
+  it('keeps a list’s scroll through the scroll another list’s skeleton clamps, and lands there', () => {
+    const lane = laneById('active');
+    const props = {
+      lane,
+      q: '',
+      sort: lane.sort,
+      selectedId: null,
+      now: NOW,
+      onSort: () => {},
+      onSelect: () => {},
+      onOpen: () => {},
+    };
+    const loading: BodiesListData = { ...LIST_ACTIVE, rows: [], status: 'loading' };
+    const table = (list: BodiesListData, memoryKey: string) => (
+      <KeysProvider>
+        <BodiesTable {...props} list={list} memoryKey={memoryKey} />
+      </KeysProvider>
+    );
+    const { container, rerender } = render(table(LIST_ACTIVE, 'b'));
+    const scroller = () => container.querySelector('[data-slot=bodies-scroll]') as HTMLElement;
+    scroller().scrollTop = 500;
+    fireEvent.scroll(scroller());
+    rerender(table(LIST_ACTIVE, 'a'));
+    // Back to b: its skeleton clamps the scroll before its rows land — no place of b's.
+    rerender(table(loading, 'b'));
+    scroller().scrollTop = 0;
+    fireEvent.scroll(scroller());
+    rerender(table(LIST_ACTIVE, 'b'));
+    expect(scroller().scrollTop).toBe(500);
   });
 });

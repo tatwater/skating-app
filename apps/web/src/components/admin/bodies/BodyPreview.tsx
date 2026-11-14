@@ -290,6 +290,15 @@ function PreviewBody({
           name={data.name}
         />
       )}
+      {/* A failed put-ins or bays read is said, never drawn like a body that has none. */}
+      <RetryNote
+        data-slot="preview-marks-error"
+        className="mt-(--space-3) empty:mt-0"
+        onRetry={onRetry}
+        pending={pending}
+      >
+        {data.marksError === true ? 'Put-ins and bays couldn’t be read' : null}
+      </RetryNote>
       <div
         data-slot="preview-lockup"
         className="flex flex-col gap-(--space-2) border-0 border-b border-dotted border-line pt-(--space-3_5) pb-(--space-3)"
@@ -418,7 +427,12 @@ function PreviewBody({
       {data.history === 'error'
         ? null
         : data.history !== null && (
-            <Section title="Last changed" count={data.history.length} className="mt-(--space-5_5)">
+            <Section
+              title="Last changed"
+              // The newest of more when the read stopped short: a floor ("7+"), never the whole.
+              count={{ count: data.history.length, capped: data.historyCapped === true }}
+              className="mt-(--space-5_5)"
+            >
               {data.history.length > 0 && (
                 <HistoryList>
                   {data.history.map((row) => (

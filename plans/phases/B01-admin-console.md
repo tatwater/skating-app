@@ -2023,14 +2023,15 @@ Shape, its Names/Places/Access/Water tabs, and its Imagery/Hazards/Standing/Link
 - **Where the mock and the code differ** (founder calls; the code stands until ruled): the state
   tabs carry no counts; completeness is out of ten, not twelve; the ask kicker is *Bay name · Inbox*,
   not the raw `name_bay`.
-- **Wording the mock did not supply** (all asks' words in `components/admin/bodies/askWords.ts`):
-  request kinds *Activation*, *Admission*, *Restoration*, *Access contested*, *Takedown*,
+- **Wording the mock did not supply** (all asks' words in `components/admin/bodies/askWords.ts`,
+  approved as written by the founder on 2026-11-14): request kinds *Activation*, *Admission*, *Restoration*, *Access contested*, *Takedown*,
   *Landmark name*; what a nameless request asks for — *Make it active*, *Add it to the map*,
   *Bring it back*, *Reopen its access*, *Take it down*, *Name a bay*, *Name a landmark*; a flag's
   reason — *Dangerously false ice report*, *Spam*, *Harassment*, *Inappropriate*, *Rated
   unhelpful*, *No public access*, *Other*; *Flag · Inbox*; *Newest N of M*; *Open in the editor*;
   *Couldn't read this list*, *Counts couldn't be read*, *Couldn't read this body*, *Couldn't read
-  the history*, *Reports, completeness and asks couldn't be read*, *Try again*, *Trying again…*;
+  the history*, *Reports, completeness and asks couldn't be read*, *Put-ins and bays couldn't be
+  read*, *Try again*, *Trying again…*;
   *The full preview isn't available for a rejected body*; *Record begins 1 Oct* (Metrics' words).
 - **Server requests it raises** (accepted for a follow-up server PR): a search across standings
   (`bodies.listPage` answering the other lanes); the number of askers and the intake reasons on
