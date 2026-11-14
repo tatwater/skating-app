@@ -435,19 +435,16 @@ describe('console.corpusCounts — the Corpus card’s tasks', () => {
   test('duplicates count as decisions, re-fits across bodies, open place names, the last campaign', async () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');
-    const a = await seedBody(t, 'Mud Pond', {
-      reviewReason: 'duplicate-candidate',
-      displayScore: 1,
-    });
-    const b = await seedBody(t, 'Mud Pond', {
-      reviewReason: 'duplicate-candidate',
-      displayScore: 1,
-    });
+    const a = await seedBody(t, 'Mud Pond', { dedupStatus: 'near_certain', displayScore: 1 });
+    const b = await seedBody(t, 'Mud Pond', { dedupStatus: 'near_certain', displayScore: 1 });
     await t.run(async (ctx) => {
       await ctx.db.patch(a, { duplicateCandidateIds: [b] });
       await ctx.db.patch(b, { duplicateCandidateIds: [a] });
     });
-    await seedBody(t, 'Lone Pond', { reviewReason: 'same-source-duplicate', displayScore: 1 });
+    await seedBody(t, 'Lone Pond', { dedupStatus: 'suspected_duplicate', displayScore: 1 });
+    // An intake review reason alone is not a dedup flag: the queue doesn't hold it, so neither
+    // does the count.
+    await seedBody(t, 'Intake Pond', { reviewReason: 'duplicate-candidate', displayScore: 1 });
     const parent = await seedBody(t, 'Big Lake');
     const bay = (extra: Record<string, unknown>) =>
       t.run((ctx) =>
@@ -519,15 +516,66 @@ describe('console.corpusCounts — the Corpus card’s tasks', () => {
     expect(c.enrichment).toBeNull();
   });
 
-  test('more decisions than the cap, with neither reason’s read stopping short, reads as a floor', async () => {
+  test('more decisions than the card shows, the queue read whole, reads as a floor', async () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');
-    // 150 unpaired rows of each reason: 300 decisions, each read whole.
-    for (const reviewReason of ['duplicate-candidate', 'same-source-duplicate'] as const) {
-      for (let i = 0; i < 150; i++) await seedBody(t, `Pond ${i}`, { reviewReason });
+    // 210 unpaired flags: 210 decisions, inside the queue's read, past the card's figure.
+    for (let i = 0; i < 210; i++) {
+      await seedBody(t, `Pond ${i}`, { dedupStatus: 'suspected_duplicate' });
     }
+    const queue = await mod.as.query(api.waterBodies.listDedupCandidates, {});
+    expect(queue).toMatchObject({ total: 210, truncated: false });
     const c = await mod.as.query(api.console.corpusCounts, {});
     expect(c.duplicates).toEqual({ count: 200, capped: true });
+  });
+
+  test('a queue read that stops short is a floor, never a whole number', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    // Past the queue's 250-row read: whatever it counts, more are behind it.
+    for (let i = 0; i < 251; i++) {
+      await seedBody(t, `Pond ${i}`, { dedupStatus: 'near_certain' });
+    }
+    const queue = await mod.as.query(api.waterBodies.listDedupCandidates, {});
+    expect(queue.truncated).toBe(true);
+    const c = await mod.as.query(api.console.corpusCounts, {});
+    expect(c.duplicates.capped).toBe(true);
+  });
+
+  test('the count is the queue’s total over every shape the queue folds', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const body = (name: string, dedupStatus: Doc<'waterBodies'>['dedupStatus']) =>
+      seedBody(t, name, { dedupStatus });
+    const link = (from: Id<'waterBodies'>, to: Id<'waterBodies'>[]) =>
+      t.run((ctx) => ctx.db.patch(from, { duplicateCandidateIds: to }));
+    // A mutual pair (one decision).
+    const p1 = await body('Pair A', 'near_certain');
+    const p2 = await body('Pair B', 'near_certain');
+    await link(p1, [p2]);
+    await link(p2, [p1]);
+    // A one-way D36 stamp against a clean canonical body (one).
+    const canon = await body('Canonical', 'clean');
+    await link(await body('Drawn', 'suspected_duplicate'), [canon]);
+    // A chain of three flagged rows (one).
+    const c1 = await body('Chain 1', 'suspected_duplicate');
+    const c2 = await body('Chain 2', 'suspected_duplicate');
+    const c3 = await body('Chain 3', 'near_certain');
+    await link(c1, [c2]);
+    await link(c2, [c3]);
+    // Two flags naming the same deleted body (two: a missing body links nothing).
+    const gone = await body('Gone', 'clean');
+    await link(await body('Orphan 1', 'suspected_duplicate'), [gone]);
+    await link(await body('Orphan 2', 'suspected_duplicate'), [gone]);
+    await t.run((ctx) => ctx.db.delete(gone));
+    // A merged tombstone and a clean row with candidates: neither is in the queue.
+    await link(await body('Merged', 'merged'), [p1]);
+    await link(await body('Clean', 'clean'), [p2]);
+
+    const queue = await mod.as.query(api.waterBodies.listDedupCandidates, {});
+    const c = await mod.as.query(api.console.corpusCounts, {});
+    expect(queue.total).toBe(5);
+    expect(c.duplicates).toEqual({ count: queue.total, capped: queue.truncated });
   });
 
   test('a member is refused', async () => {

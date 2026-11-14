@@ -16,7 +16,6 @@ import {
   type Count,
   callerNow,
   cappedCount,
-  duplicateDecisions,
   medianOpenedAt,
   type REQUEST_KINDS,
   roleMeets,
@@ -25,6 +24,7 @@ import { v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
 import { hasCapability, isLockedOut, requireCapability } from './lib/auth';
+import { readDedupQueue } from './lib/dedupQueue';
 import { accountsTotal } from './lib/metricReads';
 import { readOpenFlags } from './lib/openFlags';
 
@@ -180,17 +180,15 @@ export const overview = query({
 
 // ── The Corpus card's tasks ─────────────────────────────────────────────────────────────────────
 
-/** The intake reasons whose rows are duplicate candidates, counted as decisions. */
-const DUPLICATE_REASONS = ['duplicate-candidate', 'same-source-duplicate'] as const;
-
 /**
  * The Corpus card's tasks that `waterBodies.reviewQueueCounts` doesn't count (B01 §5.1). Its own
  * query, not part of `overview`: these change when a campaign runs or a moderator decides, and
  * `overview` re-runs on every flag filed — a body row carries its outline, so re-reading them on
  * every flag would be the expensive half of the Overview for nothing.
  *
- * - `duplicates` — the duplicate rows counted as **decisions**: rows that name each other are one
- *   merge-or-keep, not two rows (the register's S4).
+ * - `duplicates` — the dedup queue's `total`, from the queue's own read: rows that name each other
+ *   are one merge-or-keep, not two rows (the register's S4), and a body D36 flagged on create counts
+ *   the same as one a campaign flagged.
  * - `chordRefits` — bays whose mouth a moved shoreline re-fitted or left stale (D215), across bodies.
  * - `placeNames` — place names from the email groups still open (D202).
  * - `campaignAt` — when the last corpus run started (a merge or a canonical load).
@@ -202,19 +200,8 @@ export const corpusCounts = query({
   handler: async (ctx) => {
     await requireCapability(ctx, 'corpus.read');
 
-    let readCapped = false;
-    const rows: Array<{ id: string; partners: string[] }> = [];
-    for (const reason of DUPLICATE_REASONS) {
-      const page = await ctx.db
-        .query('waterBodies')
-        .withIndex('by_review_reason', (q) => q.eq('reviewReason', reason))
-        .take(COUNT_CAP + 1);
-      readCapped ||= page.length > COUNT_CAP;
-      for (const body of page.slice(0, COUNT_CAP)) {
-        rows.push({ id: body._id, partners: body.duplicateCandidateIds ?? [] });
-      }
-    }
-    const decisions = duplicateDecisions(rows);
+    // The dedup queue's own read and grouping, so this is its `total` by construction.
+    const dedup = await readDedupQueue(ctx);
 
     // A bay can be both re-fitted and stale; it is one re-fit to look at.
     const refits = new Set<Id<'waterBodySubAreas'>>();
@@ -251,11 +238,10 @@ export const corpusCounts = query({
     }
 
     return {
-      // Two reasons' worth of rows can add up to more decisions than the cap with neither read
-      // stopping short: past it, the figure is a floor and says so.
+      // A queue read that stopped short leaves a floor, and the figure says so.
       duplicates: {
-        count: Math.min(decisions, COUNT_CAP),
-        capped: readCapped || decisions > COUNT_CAP,
+        count: Math.min(dedup.groups.length, COUNT_CAP),
+        capped: dedup.truncated || dedup.groups.length > COUNT_CAP,
       },
       chordRefits: {
         count: Math.min(refits.size, COUNT_CAP),

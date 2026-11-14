@@ -36,43 +36,6 @@ export function medianAge(openedAts: readonly number[], now: number): number | n
 }
 
 /**
- * How many decisions a set of duplicate rows asks for: rows that name one another (through their
- * candidate partners, directly or by a chain) are one decision — merge them or keep them apart —
- * however many rows the intake flagged. Two rows flagged against each other are one decision, not
- * two. A partner that was not read counts toward joining rows, never as a decision of its own.
- */
-export function duplicateDecisions(
-  rows: ReadonlyArray<{ id: string; partners: readonly string[] }>,
-): number {
-  const parent = new Map<string, string>();
-  const find = (x: string): string => {
-    let root = x;
-    while (parent.get(root) !== root) root = parent.get(root) ?? root;
-    // Path compression, iteratively — a long chain must not grow the stack.
-    let at = x;
-    while (parent.get(at) !== root) {
-      const next = parent.get(at) as string;
-      parent.set(at, root);
-      at = next;
-    }
-    return root;
-  };
-  const add = (x: string) => {
-    if (!parent.has(x)) parent.set(x, x);
-  };
-  for (const row of rows) {
-    add(row.id);
-    for (const partner of row.partners) {
-      add(partner);
-      const a = find(row.id);
-      const b = find(partner);
-      if (a !== b) parent.set(a, b);
-    }
-  }
-  return new Set(rows.map((r) => find(r.id))).size;
-}
-
-/**
  * Day histograms added bucket by bucket over the days that were recorded; `null` when none was —
  * nothing measured is not a measured nothing. A short day pads with zeros to the widest.
  */

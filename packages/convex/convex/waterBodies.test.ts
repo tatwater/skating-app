@@ -345,6 +345,29 @@ describe('waterBodies.create (path-only, D14/D36)', () => {
     // machine's guess (D3). A moderator merges it; the classifier never does.
     expect(body?.removedAt).toBeUndefined();
   });
+
+  test('a body flagged on create is in the merge queue AND the Overview’s duplicates count', async () => {
+    // `create` stamps `dedupStatus` and the candidates but never a review reason; the Overview once
+    // counted only review reasons, so this flag sat in the queue while the Overview said none.
+    const t = convexTestWithGeo();
+    const asMember = await seedUser(t, 'clerk_member');
+    const asMod = await seedUser(t, 'clerk_mod', 'moderator');
+    const first = await seedTrackCreateArgs(t, 'clerk_member', { name: 'Hidden Pond' });
+    const firstId = await asMember.mutation(api.waterBodies.create, first);
+    const second = await seedTrackCreateArgs(t, 'clerk_member', {
+      name: 'Hidden Pond',
+      lat: 20.0005,
+    });
+    const secondId = await asMember.mutation(api.waterBodies.create, second);
+    const body = await t.run((ctx) => ctx.db.get(secondId));
+    expect(body?.reviewReason).toBeUndefined();
+
+    const queue = await asMod.query(api.waterBodies.listDedupCandidates, {});
+    expect(queue.total).toBe(1);
+    expect(queue.groups[0]?.members.map((m) => m._id).sort()).toEqual([firstId, secondId].sort());
+    const counts = await asMod.query(api.console.corpusCounts, {});
+    expect(counts.duplicates).toEqual({ count: queue.total, capped: false });
+  });
 });
 
 describe('waterBodies.approve (role gating + audit log, D37)', () => {

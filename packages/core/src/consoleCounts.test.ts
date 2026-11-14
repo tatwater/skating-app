@@ -1,12 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import {
-  cappedCount,
-  duplicateDecisions,
-  medianAge,
-  medianOpenedAt,
-  sumRecorded,
-} from './consoleCounts';
+import { cappedCount, medianAge, medianOpenedAt, sumRecorded } from './consoleCounts';
 
 describe('cappedCount', () => {
   it('says when the read stopped short', () => {
@@ -65,61 +59,6 @@ describe("medianOpenedAt — the foot ages on the reader's clock", () => {
         },
       ),
     );
-  });
-});
-
-describe('duplicateDecisions — dedup rows as decisions', () => {
-  it('counts a flagged pair once', () => {
-    expect(
-      duplicateDecisions([
-        { id: 'a', partners: ['b'] },
-        { id: 'b', partners: ['a'] },
-      ]),
-    ).toBe(1);
-  });
-
-  it('joins a chain, and keeps separate groups apart', () => {
-    expect(
-      duplicateDecisions([
-        { id: 'a', partners: ['b'] },
-        { id: 'c', partners: ['b'] },
-        { id: 'x', partners: ['y'] },
-        { id: 'lonely', partners: [] },
-      ]),
-    ).toBe(3);
-  });
-
-  it('is zero with nothing flagged', () => {
-    expect(duplicateDecisions([])).toBe(0);
-  });
-
-  const rowsArb = fc
-    .array(
-      fc.record({
-        id: fc.integer({ min: 0, max: 30 }).map(String),
-        partners: fc.array(fc.integer({ min: 0, max: 30 }).map(String), { maxLength: 4 }),
-      }),
-      { maxLength: 25 },
-    )
-    .map((rows) => rows.filter((r, i) => rows.findIndex((s) => s.id === r.id) === i));
-
-  it('never exceeds the rows, is at least one with any, and ignores their order', () => {
-    fc.assert(
-      fc.property(rowsArb, (rows) => {
-        const n = duplicateDecisions(rows);
-        expect(n).toBeLessThanOrEqual(rows.length);
-        if (rows.length > 0) expect(n).toBeGreaterThanOrEqual(1);
-        expect(duplicateDecisions([...rows].reverse())).toBe(n);
-      }),
-    );
-  });
-
-  it('survives a chain far longer than the stack', () => {
-    const rows = Array.from({ length: 50_000 }, (_, i) => ({
-      id: `r${i}`,
-      partners: [`r${i + 1}`],
-    }));
-    expect(duplicateDecisions(rows)).toBe(1);
   });
 });
 
