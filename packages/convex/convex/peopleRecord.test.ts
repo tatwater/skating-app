@@ -326,3 +326,72 @@ describe('people.reportTrend', () => {
     expect(short?.months.map((m) => m.month)).toEqual(['2026-11']);
   });
 });
+
+describe('time to decide on rows from before they recorded the filing', () => {
+  test('a flag decision reads its flag; a drawn body’s, unknown, makes the median not recorded', async () => {
+    const { t } = await setup();
+    await seed(t, 'adm', { role: 'admin' });
+    const mod = await seed(t, 'mod', { role: 'moderator' });
+    const filer = await seed(t, 'filer');
+    const flagId = await t.run((ctx) =>
+      ctx.db.insert('contentFlags', {
+        flaggerId: filer,
+        targetType: 'user',
+        targetId: filer,
+        reason: 'spam',
+        status: 'dismissed',
+        createdAt: Date.now() - 30 * 60_000,
+      }),
+    );
+    await t.run((ctx) =>
+      writeAudit(ctx, {
+        actorId: mod,
+        action: 'dismiss_flag',
+        targetType: 'contentFlag',
+        targetId: flagId,
+        reason: 'no',
+      }),
+    );
+    const s = await as(t, 'adm').query(api.people.staffStats, { userId: mod });
+    expect(s?.timeToDecide).toEqual({ medianMs: 30 * 60_000, decided: 1, capped: false });
+    await t.run((ctx) =>
+      writeAudit(ctx, {
+        actorId: mod,
+        action: 'approve_waterbody',
+        targetType: 'waterbody',
+        targetId: 'old',
+        reason: 'ok',
+      }),
+    );
+    const after = await as(t, 'adm').query(api.people.staffStats, { userId: mod });
+    expect(after?.timeToDecide).toEqual({ medianMs: null, decided: 2, capped: false });
+  });
+
+  test('an admin reads a person’s open appeals; a moderator gets none of them', async () => {
+    const { t } = await setup();
+    await seed(t, 'adm', { role: 'admin' });
+    await seed(t, 'mod', { role: 'moderator' });
+    const rob = await seed(t, 'rob');
+    await t.run(async (ctx) => {
+      await ctx.db.insert('supportTickets', {
+        userId: rob,
+        clerkUserId: 'rob',
+        category: 'account',
+        status: 'open',
+        body: 'Appeal',
+        createdAt: Date.now(),
+      });
+      await ctx.db.insert('supportTickets', {
+        userId: rob,
+        clerkUserId: 'rob',
+        category: 'bug',
+        status: 'open',
+        body: 'Map',
+        createdAt: Date.now(),
+      });
+    });
+    const a = await as(t, 'adm').query(api.people.person, { userId: rob });
+    expect(a?.open.appeals).toHaveLength(1);
+    expect((await as(t, 'mod').query(api.people.person, { userId: rob }))?.open.appeals).toBeNull();
+  });
+});
