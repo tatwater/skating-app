@@ -48,7 +48,7 @@ import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, type MutationCtx, mutation, query } from './_generated/server';
-import { type AttemptState, nextAttemptState } from './lib/attempts';
+import { failedAttempt } from './lib/attempts';
 import { canReceiveNotifications, getCurrentProfile, requireProfile } from './lib/auth';
 import {
   DELIVERY_BATCH,
@@ -428,7 +428,9 @@ interface FlushResult {
 const BATCH_LIMITS = {
   bytesRead: 8 * MiB,
   documentsRead: 8000,
-  databaseQueries: 2500,
+  // Above the batch's own soft stop (`FLUSH_READ_BUDGET`, reads), so a healthy batch stops itself
+  // before it meets this hard limit.
+  databaseQueries: 3200,
   documentsWritten: 4000,
 };
 
@@ -515,16 +517,17 @@ export async function recordQueueFailure(
   now: number,
   opts: { cutoff?: number; byDailyRetry?: boolean },
 ): Promise<'failed' | 'parked'> {
-  const next = nextAttemptState(
+  const { next, parked } = failedAttempt(
     {
       attempts: row.attempts,
       errorClass: row.lastErrorClass,
       parkedAt: row.parkedAt,
       retriedAt: row.retriedAt,
     },
-    { kind: 'failed', errorClass, ...(opts.byDailyRetry ? { byDailyRetry: true } : {}) },
+    errorClass,
     now,
-  ) as AttemptState;
+    opts.byDailyRetry,
+  );
   await ctx.db.patch(row._id, {
     attempts: next.attempts,
     lastErrorClass: next.errorClass,
@@ -533,7 +536,7 @@ export async function recordQueueFailure(
     firstDueAt: row.firstDueAt ?? row.flushAfter,
     ...(opts.cutoff !== undefined ? { flushAfter: Math.max(row.flushAfter, opts.cutoff + 1) } : {}),
   });
-  return next.parkedAt !== undefined && row.parkedAt === undefined ? 'parked' : 'failed';
+  return parked ? 'parked' : 'failed';
 }
 
 /** Parked rows the hourly retry tries a pass, at most. */

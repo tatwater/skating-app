@@ -58,7 +58,7 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
-import { type AttemptState, nextAttemptState } from './lib/attempts';
+import { failedAttempt } from './lib/attempts';
 import { getCurrentProfile, requireContributor, requireProfile } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { ACTIVITY_PROMPT_STATES } from './lib/enums';
@@ -609,16 +609,17 @@ export async function recordPromptFailure(
   now: number,
   opts: { cutoff?: number; byDailyRetry?: boolean },
 ): Promise<'failed' | 'parked'> {
-  const next = nextAttemptState(
+  const { next, parked } = failedAttempt(
     {
       attempts: row.promptAttempts,
       errorClass: row.promptErrorClass,
       parkedAt: row.promptParkedAt,
       retriedAt: row.promptRetriedAt,
     },
-    { kind: 'failed', errorClass, ...(opts.byDailyRetry ? { byDailyRetry: true } : {}) },
+    errorClass,
     now,
-  ) as AttemptState;
+    opts.byDailyRetry,
+  );
   await ctx.db.patch(row._id, {
     promptAttempts: next.attempts,
     promptErrorClass: next.errorClass,
@@ -626,7 +627,7 @@ export async function recordPromptFailure(
     promptRetriedAt: next.retriedAt,
     ...(opts.cutoff !== undefined ? { promptFailedRun: opts.cutoff } : {}),
   });
-  return next.parkedAt !== undefined && row.promptParkedAt === undefined ? 'parked' : 'failed';
+  return parked ? 'parked' : 'failed';
 }
 
 /** A row's attempt state, cleared: its prompt went through (`lib/attempts`, progress). */

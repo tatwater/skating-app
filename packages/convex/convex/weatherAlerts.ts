@@ -238,7 +238,7 @@ export const refreshAlerts = internalAction({
         written.push(state);
         refreshed++;
       } catch (err) {
-        console.error(`NWS alerts for ${state} could not be written`, err);
+        // `asItem` has logged it; only its class is kept here.
         failed.push({ key: state, errorClass: errorClassOf(err) });
       }
     }

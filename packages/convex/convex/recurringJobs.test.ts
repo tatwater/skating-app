@@ -733,4 +733,96 @@ describe('the retries and passes at their edges', () => {
       errorClasses: { OverBudget: 1 },
     });
   });
+
+  test('the read counts a failing queue row from its own index, past any number of healthy ones', async () => {
+    const t = harness();
+    const admin = await seedUser(t, 'admin', 'admin');
+    const bodyId = await seedBody(t, 'osm/queue-read');
+    const user = await seedUser(t, 'queued');
+    for (let i = 0; i < 30; i++) await queueFavorite(t, user.id, bodyId);
+    const failing = await queueFavorite(t, user.id, bodyId);
+    await t.run((ctx) =>
+      ctx.db.patch(failing, { attempts: 1, lastErrorClass: 'Error', firstDueAt: T0 - MINUTE }),
+    );
+    const health = await admin.as.query(api.recurringJobs.health, {});
+    expect(health.jobs.find((j) => j.job === 'flush notification queue')).toMatchObject({
+      failing: 1,
+      parked: 0,
+      oldestFailingSince: T0 - MINUTE,
+      errorClasses: { Error: 1 },
+      capped: false,
+    });
+  });
+
+  test('the daily retry clears a gone body and goes on to the next failing one', async () => {
+    const t = harness();
+    const live = await seedBody(t, 'osm/rollover-live');
+    const gone = await seedBody(t, 'osm/rollover-gone');
+    await t.run(async (ctx) => {
+      // The gone body failed first, so it is the least recently failed — the one picked first.
+      for (const [key, at] of [
+        [gone, T0 - 2 * DAY],
+        [live, T0 - DAY],
+      ] as const) {
+        await ctx.db.insert('jobFailures', {
+          job: 'standingRollover',
+          key,
+          scope: '2027',
+          attempts: 1,
+          errorClass: 'Error',
+          firstFailedAt: at,
+          lastFailedAt: at,
+        });
+      }
+      await ctx.db.delete(gone);
+    });
+    expect(await t.mutation(internal.recurringJobs.retryParkedDaily, {})).toEqual({
+      freed: 2,
+      failed: 0,
+      more: false,
+    });
+    expect(await t.run((ctx) => ctx.db.query('jobFailures').collect())).toEqual([]);
+  });
+
+  test("a registry walk reads only its own tier's failures since it began, however many old ones there are", async () => {
+    const t = harness();
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 1005; i++) {
+        await ctx.db.insert('jobFailures', {
+          job: 'weatherCells',
+          key: `cell:filter:old-${i}`,
+          scope: 'filter',
+          attempts: 1,
+          errorClass: 'Error',
+          firstFailedAt: T0 - DAY,
+          lastFailedAt: T0 - DAY,
+        });
+      }
+      await ctx.db.insert('jobFailures', {
+        job: 'weatherCells',
+        key: 'cell:browse:new',
+        scope: 'browse',
+        attempts: 1,
+        errorClass: 'Error',
+        firstFailedAt: T0,
+        lastFailedAt: T0,
+      });
+    });
+    const since = (scope: string) =>
+      t.query(internal.recurringJobs.failedSince, { job: 'weatherCells', since: T0, scope });
+    // The other tier's failure in this walk does not hold this one back, nor do a thousand old ones.
+    expect(await since('filter')).toBe(false);
+    expect(await since('browse')).toBe(true);
+    // A complete walk forgets its own tier's old failures, oldest first, and leaves the other's.
+    expect(
+      await t.mutation(internal.recurringJobs.forgetBefore, {
+        job: 'weatherCells',
+        before: T0,
+        scope: 'filter',
+      }),
+    ).toBe(1000);
+    const left = await t.run((ctx) => ctx.db.query('jobFailures').collect());
+    expect(left.filter((r) => r.scope === 'filter')).toHaveLength(5);
+    expect(left.filter((r) => r.scope === 'browse')).toHaveLength(1);
+  });
 });

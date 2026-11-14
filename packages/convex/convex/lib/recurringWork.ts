@@ -19,7 +19,7 @@
 import type { FunctionReference } from 'convex/server';
 import type { Doc } from '../_generated/dataModel';
 import type { ActionCtx, MutationCtx, QueryCtx } from '../_generated/server';
-import { nextAttemptState } from './attempts';
+import { failedAttempt } from './attempts';
 import type { FailingJob, LappingJob } from './enums';
 import { asFailure, errorClassOf } from './readBudget';
 
@@ -136,7 +136,7 @@ export async function recordFailure(
   opts: { byDailyRetry?: boolean; scope?: string; park?: boolean } = {},
 ): Promise<'failed' | 'parked'> {
   const row = await failureOf(ctx, job, key);
-  const next = nextAttemptState(
+  const { next, parked } = failedAttempt(
     row
       ? {
           attempts: row.attempts,
@@ -145,29 +145,72 @@ export async function recordFailure(
           retriedAt: row.retriedAt,
         }
       : {},
-    { kind: 'failed', errorClass, ...(opts.byDailyRetry ? { byDailyRetry: true } : {}) },
+    errorClass,
     now,
+    opts.byDailyRetry,
   );
-  // A failure always changes the state.
-  const state = next as NonNullable<typeof next>;
-  const parkedAt = opts.park === false ? undefined : state.parkedAt;
+  const neverParked = opts.park === false;
   const fields = {
-    attempts: state.attempts ?? 1,
+    attempts: next.attempts ?? 1,
     errorClass,
     lastFailedAt: now,
-    parkedAt,
-    retriedAt: state.retriedAt,
+    parkedAt: neverParked ? undefined : next.parkedAt,
+    retriedAt: next.retriedAt,
     ...(opts.scope !== undefined ? { scope: opts.scope } : {}),
   };
   if (row) await ctx.db.patch(row._id, fields);
   else await ctx.db.insert('jobFailures', { job, key, firstFailedAt: now, ...fields });
-  return parkedAt !== undefined && row?.parkedAt === undefined ? 'parked' : 'failed';
+  return parked && !neverParked ? 'parked' : 'failed';
 }
 
 /** Progress: the item went through, so whatever it was failing with is cleared. */
 export async function clearFailure(ctx: MutationCtx, job: FailingJob, key: string): Promise<void> {
   const row = await failureOf(ctx, job, key);
   if (row) await ctx.db.delete(row._id);
+}
+
+/**
+ * Whether a job (in `scope`, when given — a registry walk's tier) failed anything at or after
+ * `since` — read by when each failure last happened, so it sees only this walk's failures however
+ * many older ones there are.
+ */
+export async function failedSinceAt(
+  ctx: QueryCtx,
+  job: FailingJob,
+  since: number,
+  scope?: string,
+): Promise<boolean> {
+  const range = ctx.db
+    .query('jobFailures')
+    .withIndex('by_job_last_failed', (q) => q.eq('job', job).gte('lastFailedAt', since));
+  const row = await (scope === undefined
+    ? range
+    : range.filter((q) => q.eq(q.field('scope'), scope))
+  ).first();
+  return row !== null;
+}
+
+/**
+ * Forget up to `cap` of a job's failures (in `scope`, when given) that last failed before `before`,
+ * oldest first — what a complete walk or lap did not see fail again, so the work went through or is
+ * gone. Oldest first, so a backlog past the cap clears over the next complete walks.
+ */
+export async function forgetFailuresBefore(
+  ctx: MutationCtx,
+  job: FailingJob,
+  before: number,
+  cap: number,
+  scope?: string,
+): Promise<number> {
+  const range = ctx.db
+    .query('jobFailures')
+    .withIndex('by_job_last_failed', (q) => q.eq('job', job).lt('lastFailedAt', before));
+  const rows = await (scope === undefined
+    ? range
+    : range.filter((q) => q.eq(q.field('scope'), scope))
+  ).take(cap);
+  for (const row of rows) await ctx.db.delete(row._id);
+  return rows.length;
 }
 
 /**

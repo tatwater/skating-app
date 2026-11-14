@@ -442,16 +442,9 @@ export const maybeCheckSeasonOpen = internalAction({
   handler: async (ctx): Promise<SeasonWatchResult> => {
     const nowMs = Date.now();
     const season = archiveSeasonAt(nowMs);
+    let result: SeasonWatchResult;
     try {
-      const result = await tick(ctx, nowMs);
-      // A tick that went through clears the count of days it failed (D257).
-      await ctx.runMutation(internal.recurringJobs.settle, {
-        job: 'seasonWatch',
-        failed: [],
-        succeeded: [season],
-        park: false,
-      });
-      return result;
+      result = await tick(ctx, nowMs);
     } catch (err) {
       // **All or nothing, by design — so it fails loudly instead of being isolated** (D257). A tick
       // that decided on the sites that answered would shrink the sample, and a shrinking sample is how
@@ -471,6 +464,15 @@ export const maybeCheckSeasonOpen = internalAction({
       // and even when the tick itself failed: a dead weather API must not hold back yesterday's news.
       await ctx.runMutation(internal.imageryIngest.sendNextEmail, { today: newYorkDate(nowMs) });
     }
+    // A tick that went through clears the count of days it failed (D257) — outside the `try`, so a
+    // failure to clear can never be counted as the tick having failed.
+    await ctx.runMutation(internal.recurringJobs.settle, {
+      job: 'seasonWatch',
+      failed: [],
+      succeeded: [season],
+      park: false,
+    });
+    return result;
   },
 });
 

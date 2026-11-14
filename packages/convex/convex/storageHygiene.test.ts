@@ -478,6 +478,28 @@ describe('sweepOrphanPhotos (D257: a lap from a saved position, owed to the sett
       lapDone: true,
     });
   });
+
+  test("a failing photo that is gone by the next lap: the lap's end forgets its failure", async () => {
+    const t = harness();
+    const userId = await seedUser(t, 'uploader');
+    const bodyId = await seedBody(t);
+    const kept = await seedPhoto(t, userId, Date.now() - PHOTO_ORPHAN_GRACE_MS - HOUR_MS);
+    await seedHazard(t, userId, bodyId, [kept], Date.now());
+    // A photo that failed in an earlier lap and has since been deleted by its uploader.
+    await t.run((ctx) =>
+      ctx.db.insert('jobFailures', {
+        job: 'orphanPhotos',
+        key: 'a-photo-since-deleted',
+        attempts: 3,
+        errorClass: 'Error',
+        firstFailedAt: Date.now() - 3 * 24 * HOUR_MS,
+        lastFailedAt: Date.now() - 24 * HOUR_MS,
+        parkedAt: Date.now() - 24 * HOUR_MS,
+      }),
+    );
+    expect(await sweepOrphans(t)).toMatchObject({ examined: 1, failed: 0, lapDone: true });
+    expect(await t.run((ctx) => ctx.db.query('jobFailures').collect())).toEqual([]);
+  });
 });
 
 describe('sweepOrphanPhotos under failure (D257)', () => {

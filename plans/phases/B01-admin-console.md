@@ -1788,7 +1788,7 @@ heavy one for few, and the item runs under those limits.
 | Job | Item's own limits (read · docs · queries · writes) | Reserve past it | Worst-case test |
 | --- | --- | --- | --- |
 | `storageHygiene.sweepOrphanPhotos` | 2 MiB · 20 · 20 · 10 | 3 MiB, for the next photo and each owed uploader's queue place | thirty photos near the limit, half in use: the lap ends, the orphans go |
-| `notifications.flushNotificationQueue` | the batch 8 MiB · 8,000 · 2,500 · 4,000; a row 3 MiB · 2,000 · 200 · 500 | 1 MiB | twenty recipients near the limit: the batch fails as a batch, every row lands one at a time |
+| `notifications.flushNotificationQueue` | the batch 8 MiB · 8,000 · 3,200 · 4,000 (above its own 3,000-read soft stop); a row 3 MiB · 2,000 · 200 · 500 | 1 MiB | twenty recipients near the limit: the batch fails as a batch, every row lands one at a time |
 | `gpsActivities.sweepUnpromptedActivities` | a skater 8 MiB · 3,000 · 300 · 300 | 1 MiB, plus 1 MiB per due row read | twelve skaters and recordings near the limit: each is asked |
 | `waterBodies.refreshDueBodySummaries` | a card 8 MiB · 2,000 · 100 · 50 | 1 MiB | cards with four Reports near the limit each: several batches, every card refreshed |
 | `recurringJobs.retryParkedDaily` | 8 MiB · 3,000 · 300 · 300 | 1 MiB | (covered by the three properties' retries) |
@@ -1811,6 +1811,15 @@ heavy one for few, and the item runs under those limits.
 - *The orphan walk owes every in-use photo with no back-link every lap* (hazard photos, pre-A10 Report
   photos): the settlement then reads that uploader's history once a day. Correct and bounded; a cost
   that grows with hazard photos.
+- *Found in review and left:* the Machinery read counts prompts and cards only once parked (their
+  failing-but-not-parked rows would need an index of their own, as the queue's `by_attempts` is); a
+  hazard-weather or weather-gap failure whose work goes away (the hazard resolves, the cell leaves the
+  registry) keeps its row until cleared by hand — neither walk has a complete pass that proves the work
+  gone, as the orphan lap's end and the registry's complete walk do; four indexes the new ones replace
+  (`notificationQueue.by_flush`, `.by_coalesce`, `bodySummaryRefreshes.by_refresh_at`,
+  `gpsActivities.by_prompt_state_detected`) are unread now and wait for the narrow step after deploy;
+  the orphan walk reads each photo's failure row to clear it (a query a photo); and the position walk
+  (same value and a later creation time, then a greater value) is written in four places.
 - *A registry walk with a row that always fails* never prunes or completes until it heals: the
   registry keeps vacated cells (a few Open-Meteo calls), and the import debounce sees an hour-old
   in-flight claim as dead and walks again.

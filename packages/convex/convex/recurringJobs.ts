@@ -38,6 +38,8 @@ import { FAILING_JOBS, type FailingJob } from './lib/enums';
 import { traced } from './lib/readBudget';
 import {
   affords,
+  failedSinceAt,
+  forgetFailuresBefore,
   type ItemBudget,
   MiB,
   recordFailure,
@@ -91,35 +93,23 @@ export const failingKeys = internalQuery({
   },
 });
 
-/** Whether a job failed anything at or after `since` — a registry walk prunes only when it did not. */
+/**
+ * Whether a job (in `scope`, when given) failed anything at or after `since` — a registry walk prunes
+ * only when it did not. Scoped by the walk's tier, since both tiers' walks run at once.
+ */
 export const failedSince = internalQuery({
-  args: { job: literals(FAILING_JOBS), since: v.number() },
-  handler: async (ctx, { job, since }): Promise<boolean> => {
-    const rows = await ctx.db
-      .query('jobFailures')
-      .withIndex('by_job_key', (q) => q.eq('job', job))
-      .take(FAILING_KEYS_CAP + 1);
-    // Past the cap, unknown: a walk that can't tell must not prune.
-    return rows.length > FAILING_KEYS_CAP || rows.some((r) => r.lastFailedAt >= since);
-  },
+  args: { job: literals(FAILING_JOBS), since: v.number(), scope: v.optional(v.string()) },
+  handler: (ctx, { job, since, scope }): Promise<boolean> => failedSinceAt(ctx, job, since, scope),
 });
 
-/** Forget a job's failures a complete run did not see again — the work is gone or went through. */
+/**
+ * Forget a job's failures (in `scope`, when given) a complete run did not see again — the work is
+ * gone or went through. Oldest first, at most `FAILING_KEYS_CAP` a call.
+ */
 export const forgetBefore = internalMutation({
-  args: { job: literals(FAILING_JOBS), before: v.number() },
-  handler: async (ctx, { job, before }): Promise<number> => {
-    const rows = await ctx.db
-      .query('jobFailures')
-      .withIndex('by_job_key', (q) => q.eq('job', job))
-      .take(FAILING_KEYS_CAP);
-    let forgotten = 0;
-    for (const row of rows) {
-      if (row.lastFailedAt >= before) continue;
-      await ctx.db.delete(row._id);
-      forgotten++;
-    }
-    return forgotten;
-  },
+  args: { job: literals(FAILING_JOBS), before: v.number(), scope: v.optional(v.string()) },
+  handler: (ctx, { job, before, scope }): Promise<number> =>
+    forgetFailuresBefore(ctx, job, before, FAILING_KEYS_CAP, scope),
 });
 
 // ── The daily retry ─────────────────────────────────────────────────────────────────────────────
@@ -379,28 +369,25 @@ export const health = query({
     const now = callerNow ?? Date.now();
     const jobs: JobHealth[] = [];
 
+    // Every row with a failure on it, parked or not, from its own index: a filter over the due range
+    // would scan every healthy row in the queue to find the few that failed. Most attempts first, so
+    // a capped count still reaches the parked rows (three or more) before the merely failing.
     const queue = await cappedHeavy(ctx, (n) =>
       ctx.db
         .query('notificationQueue')
-        .withIndex('by_parked_flush', (q) => q.gt('parkedAt', 0))
-        .take(n),
-    );
-    const queueFailing = await cappedHeavy(ctx, (n) =>
-      ctx.db
-        .query('notificationQueue')
-        .withIndex('by_parked_flush', (q) => q.eq('parkedAt', undefined))
-        .filter((q) => q.gt(q.field('attempts'), 0))
+        .withIndex('by_attempts', (q) => q.gt('attempts', 0))
+        .order('desc')
         .take(n),
     );
     jobs.push(
       tally(
         'flush notification queue',
-        [...queue.rows, ...queueFailing.rows].map((r) => ({
+        queue.rows.map((r) => ({
           ...(r.parkedAt !== undefined ? { parkedAt: r.parkedAt } : {}),
           ...(r.firstDueAt !== undefined ? { since: r.firstDueAt } : {}),
           ...(r.lastErrorClass !== undefined ? { errorClass: r.lastErrorClass } : {}),
         })),
-        queue.capped || queueFailing.capped,
+        queue.capped,
       ),
     );
 

@@ -26,6 +26,7 @@ import {
   affords,
   asItem,
   clearFailure,
+  forgetFailuresBefore,
   type ItemBudget,
   lapOf,
   MiB,
@@ -260,6 +261,15 @@ export const sweepOrphanPhotos = internalMutation({
       }
       if (owe.size > 0) await ctx.scheduler.runAfter(0, internal.erasure.settleOwed, {});
       if (lapDone) {
+        // A lap visits every photo past grace, and each one examined either clears its failure or
+        // fails again in this lap: a failure from before the lap began is a photo that is gone, and
+        // left alone it would read as failing on the Machinery read for ever.
+        await forgetFailuresBefore(
+          ctx,
+          'orphanPhotos',
+          lap?.lapStartedAt ?? now,
+          LAP_END_FORGET_CAP,
+        );
         await saveLap(ctx, 'orphanPhotos', lap, undefined, now);
       } else {
         await saveLap(ctx, 'orphanPhotos', lap, position, now, {
@@ -299,6 +309,8 @@ type PhotoOutcome = 'gone' | 'deleted' | 'retained' | 'kept' | 'candidate';
 
 /** How long a lap's chain is trusted between passes before a cron tick takes the lap over. */
 const LAP_LEASE_MS = HOUR_MS;
+/** Failures of gone photos a lap's end forgets at most (inside the pass's reserve); the rest next lap. */
+const LAP_END_FORGET_CAP = 100;
 
 /**
  * One photo of the orphan walk: its own read, its access-photo check, and — for a photo an erasure
@@ -405,10 +417,11 @@ export const sweepExpiredExports = internalMutation({
           .withIndex('by_expires_at', (q) =>
             q.eq('expiresAt', from.value).gt('_creationTime', from.creationTime),
           )
-          .take(max)),
+          .take(max + 1)),
       );
     }
-    if (expired.length < max) {
+    // One past the page, to tell a full page from the end of the range.
+    if (expired.length <= max) {
       expired.push(
         ...(await ctx.db
           .query('dataExports')
@@ -417,12 +430,14 @@ export const sweepExpiredExports = internalMutation({
               ? q.gt('expiresAt', from.value).lt('expiresAt', now)
               : q.lt('expiresAt', now),
           )
-          .take(max - expired.length)),
+          .take(max + 1 - expired.length)),
       );
     }
+    const more = expired.length > max;
+    expired.length = Math.min(expired.length, max);
     const last = expired.at(-1);
     const next =
-      expired.length === max && last !== undefined
+      more && last !== undefined
         ? { value: last.expiresAt, creationTime: last._creationTime }
         : undefined;
     if (next !== undefined || from !== undefined) {

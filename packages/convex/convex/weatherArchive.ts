@@ -616,10 +616,13 @@ export const backfillWeatherCells = internalAction({
     // there. So the run prunes nothing and is not marked complete — the registry keeps what it had,
     // which costs a few Open-Meteo calls and loses nothing. What failed is counted (`jobFailures`,
     // never parked), and the next walk — the weekly net or an import's — tries it again.
+    // Scoped to this tier: both tiers' walks run at once, and one tier's failure says nothing about
+    // whether the other's walk saw everything.
     if (
       await ctx.runQuery(internal.recurringJobs.failedSince, {
         job: 'weatherCells',
         since: startedAt,
+        scope: targetTier,
       })
     ) {
       console.error(
@@ -657,6 +660,7 @@ export const backfillWeatherCells = internalAction({
     await ctx.runMutation(internal.recurringJobs.forgetBefore, {
       job: 'weatherCells',
       before: startedAt,
+      scope: targetTier,
     });
     return { done: true, scanned, pruned };
   },
@@ -710,7 +714,8 @@ async function upsertIsolated(
   if (failed.length > 0) {
     await ctx.runMutation(internal.recurringJobs.settle, {
       job: 'weatherCells',
-      failed,
+      // Scoped to the tier, so this walk's completion reads only its own failures.
+      failed: failed.map((f) => ({ ...f, scope: tier })),
       succeeded: [],
       park: false,
     });
@@ -1597,7 +1602,7 @@ export const sweepWeatherDayGaps = internalAction({
         repaired += await asItem(key, () => repairCellGaps(ctx, tier, cell, fromMs, toMs, now));
         if (wasFailing.has(key)) recovered.push(key);
       } catch (err) {
-        console.error(`weatherArchive: gap repair for ${cell.cellKey} failed`, err);
+        // `asItem` has logged it; only its class is kept here.
         failed.push({ key, errorClass: errorClassOf(err) });
       }
     }

@@ -177,8 +177,9 @@ describe('hazardWeather.refreshHazardWeather', () => {
       return real(key, work);
     });
     try {
+      // Only the good one is stored; the one that threw is counted as failed, not refreshed.
       expect(await t.action(internal.hazardWeather.refreshHazardWeather, {})).toEqual({
-        refreshed: 2,
+        refreshed: 1,
         failed: 1,
       });
       const badRow = await t.run((ctx) => ctx.db.get(bad));

@@ -284,8 +284,11 @@ export const finalizeDueDeletions = internalMutation({
     // due range: every due account is queued once a lap, a failing one only ever takes its own turn.
     const finalizeLap = await lapOf(ctx, 'finalizeDeletions');
     const finalizeFrom = positionOf(finalizeLap);
-    const due = await accountsAfter(ctx, finalizeFrom, FINALIZE_PER_TICK, dueAt);
-    await saveTurn(ctx, 'finalizeDeletions', finalizeLap, due, FINALIZE_PER_TICK, now);
+    // One past the page, to tell a full page from the end of the range: a page that ends the range
+    // wraps now, rather than leaving the next tick an empty read.
+    const dueRead = await accountsAfter(ctx, finalizeFrom, FINALIZE_PER_TICK + 1, dueAt);
+    const due = dueRead.slice(0, FINALIZE_PER_TICK);
+    await saveTurn(ctx, 'finalizeDeletions', finalizeLap, dueRead, FINALIZE_PER_TICK, now);
 
     let started = 0;
     let skipped = 0;
@@ -326,16 +329,17 @@ export const finalizeDueDeletions = internalMutation({
     // failing would otherwise hold the page.
     const redactLap = await lapOf(ctx, 'redactGhosts');
     const redactFrom = positionOf(redactLap);
-    const pending = await accountsAfter(
+    const pendingRead = await accountsAfter(
       ctx,
       // A saved place an account has since passed into the due range is behind the range's start.
       redactFrom !== undefined && redactFrom.value > dueAt
         ? redactFrom
         : { value: dueAt, creationTime: Number.POSITIVE_INFINITY },
-      REDACT_PER_TICK,
+      REDACT_PER_TICK + 1,
       undefined,
     );
-    await saveTurn(ctx, 'redactGhosts', redactLap, pending, REDACT_PER_TICK, now);
+    const pending = pendingRead.slice(0, REDACT_PER_TICK);
+    await saveTurn(ctx, 'redactGhosts', redactLap, pendingRead, REDACT_PER_TICK, now);
     let redacting = 0;
     for (const profile of pending) {
       if (profile.deletionRequestedAt === undefined) continue;
@@ -384,18 +388,21 @@ async function accountsAfter(
   return rows;
 }
 
-/** Save where a turn-taking walk stopped: after its last row, or — a short page — back to the start. */
+/**
+ * Save where a turn-taking walk stopped: after the last of its `n` rows when `read` (one past the
+ * page) shows more behind them, or — the range ended — back to the start.
+ */
 async function saveTurn(
   ctx: MutationCtx,
   job: 'finalizeDeletions' | 'redactGhosts',
   lap: Doc<'jobPositions'> | null,
-  taken: readonly Doc<'profiles'>[],
+  read: readonly Doc<'profiles'>[],
   n: number,
   now: number,
 ): Promise<void> {
-  const last = taken.at(-1);
+  const last = read[n - 1];
   const at =
-    taken.length === n && last?.deletionRequestedAt !== undefined
+    read.length > n && last?.deletionRequestedAt !== undefined
       ? { value: last.deletionRequestedAt, creationTime: last._creationTime }
       : undefined;
   // Nothing to write when nothing moves: no position before, none after.

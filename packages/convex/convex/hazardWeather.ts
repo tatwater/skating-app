@@ -226,6 +226,7 @@ export const refreshHazardWeather = internalAction({
     const wasFailing = new Set(failingKeys);
     const failed: { key: string; errorClass: string }[] = [];
     const recovered: string[] = [];
+    let refreshed = 0;
     for (const job of jobs) {
       if (job.weatherAdjustedAt !== undefined && now - job.weatherAdjustedAt < minIntervalMs) {
         continue; // refreshed recently enough — the effective cadence gate
@@ -233,15 +234,17 @@ export const refreshHazardWeather = internalAction({
       // Isolate each hazard: an unexpected throw from the resolver/mutation (e.g. a transient OCC or cache
       // write conflict) skips just this hazard, not the whole tick. `fetchOpenMeteoHourly` already swallows
       // network/HTTP errors into `null`; this catches everything else so one bad job can't starve the rest.
-      // Fail-open: a skipped hazard keeps its last-good multiplier (or none ⇒ 1) and retries next tick.
+      // Fail-open: a skipped hazard keeps its last-good multiplier (or none ⇒ 1); an empty fetch retries
+      // next tick, a throw after the cadence gate (below).
       try {
         const stored = await asItem(job.hazardId, () =>
           refreshOneHazard(ctx, job, now, lookbackMs),
         );
+        if (stored) refreshed++;
         // A fetch that came back empty is a blip, not progress: a count stands until a refresh lands.
         if (stored && wasFailing.has(job.hazardId)) recovered.push(job.hazardId);
       } catch (err) {
-        console.warn(`hazard weather refresh failed for ${job.hazardId}`, err);
+        // `asItem` has logged it; only its class is kept here.
         failed.push({ key: job.hazardId, errorClass: errorClassOf(err) });
       }
     }
@@ -264,7 +267,9 @@ export const refreshHazardWeather = internalAction({
         park: false,
       });
     }
-    return { refreshed: jobs.length, failed: failed.length };
+    // Hazards whose multiplier was stored this tick — not the ones the gate passed over, came back
+    // empty or threw.
+    return { refreshed, failed: failed.length };
   },
 });
 

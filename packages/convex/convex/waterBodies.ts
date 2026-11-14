@@ -81,7 +81,7 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
-import { type AttemptState, nextAttemptState } from './lib/attempts';
+import { failedAttempt } from './lib/attempts';
 import { snapshotDoc, writeAudit, writeSnapshot } from './lib/audit';
 import {
   getCurrentProfile,
@@ -6773,16 +6773,17 @@ export async function recordCardFailure(
   now: number,
   opts: { cutoff?: number; byDailyRetry?: boolean },
 ): Promise<'failed' | 'parked'> {
-  const next = nextAttemptState(
+  const { next, parked } = failedAttempt(
     {
       attempts: row.attempts,
       errorClass: row.lastErrorClass,
       parkedAt: row.parkedAt,
       retriedAt: row.retriedAt,
     },
-    { kind: 'failed', errorClass, ...(opts.byDailyRetry ? { byDailyRetry: true } : {}) },
+    errorClass,
     now,
-  ) as AttemptState;
+    opts.byDailyRetry,
+  );
   await ctx.db.patch(row._id, {
     attempts: next.attempts,
     lastErrorClass: next.errorClass,
@@ -6790,7 +6791,7 @@ export async function recordCardFailure(
     retriedAt: next.retriedAt,
     ...(opts.cutoff !== undefined ? { refreshAt: Math.max(row.refreshAt, opts.cutoff + 1) } : {}),
   });
-  return next.parkedAt !== undefined && row.parkedAt === undefined ? 'parked' : 'failed';
+  return parked ? 'parked' : 'failed';
 }
 
 /**

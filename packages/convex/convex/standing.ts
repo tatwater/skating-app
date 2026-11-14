@@ -526,7 +526,12 @@ export const rolloverOne = internalMutation({
     asItem(waterBodyId, async () => {
       const id = ctx.db.normalizeId('waterBodies', waterBodyId);
       const body = id ? await ctx.db.get(id) : null;
-      if (!body) return { verdict: 'gone' };
+      // A body that is gone (merged away, deleted) has nothing left to decide: its failure goes with
+      // it, or the daily retry would pick the same row again every turn and never reach the rest.
+      if (!body) {
+        await clearFailure(ctx, 'standingRollover', waterBodyId);
+        return { verdict: 'gone' };
+      }
       const verdict = await rolloverBody(ctx, body, season, apply === true);
       await clearFailure(ctx, 'standingRollover', waterBodyId);
       return { verdict: typeof verdict === 'string' ? verdict : `retained:${verdict.retained}` };

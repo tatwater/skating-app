@@ -3631,9 +3631,10 @@ export default defineSchema({
    * alerts, the season watch's tick. One row per (job, key) while it keeps failing, the state
    * `lib/attempts` decides — failures in a row, the last one's class (never its message), parked
    * after three — and deleted by the first attempt that goes through. `key` is the work's id or key,
-   * never content; `scope` is what the retry needs beside it (a rollover's season). The queue-shaped
-   * jobs keep this state on their own rows instead, since their due range must leave a parked row
-   * out (`notificationQueue`, `gpsActivities`, `bodySummaryRefreshes`).
+   * never content; `scope` is what the retry needs beside it (a rollover's season) or which walk it
+   * belongs to (a registry walk's tier). The queue-shaped jobs keep this state on their own rows
+   * instead, since their due range must leave a parked row out (`notificationQueue`,
+   * `gpsActivities`, `bodySummaryRefreshes`).
    */
   jobFailures: defineTable({
     job: literals(FAILING_JOBS),
@@ -3649,7 +3650,11 @@ export default defineSchema({
     .index('by_job_key', ['job', 'key'])
     // A job's parked work, oldest first: `eq(job).gt(parkedAt, 0)` — the field is optional and the
     // index not sparse. `eq(job).eq(parkedAt, undefined)` is what is failing but not yet parked.
-    .index('by_job_parked', ['job', 'parkedAt']),
+    .index('by_job_parked', ['job', 'parkedAt'])
+    // A job's failures by when they last failed (the field is required): what failed since a walk
+    // began, and what a complete walk or lap did not see fail again — read without a capped scan of
+    // every key, so a large backlog of old failures never hides a new one or outlives its forgetting.
+    .index('by_job_last_failed', ['job', 'lastFailedAt']),
 
   /**
    * **Where a walk that laps its table is** (D257): the orphan-photo walk, the account-deletion and
@@ -4438,6 +4443,9 @@ export default defineSchema({
     // The flush's due range with parked rows left out (D257): `eq(parkedAt, undefined)` then the
     // time; the parked range is `gt(parkedAt, 0)` — the field is optional and the index not sparse.
     .index('by_parked_flush', ['parkedAt', 'flushAfter'])
+    // The rows with failures on them, parked or not, for the Machinery read (D257): `gt(attempts,
+    // 0)` — the field is optional and the index not sparse — so the read never scans healthy rows.
+    .index('by_attempts', ['attempts'])
     .index('by_coalesce', ['coalesceKey'])
     // Where a new event coalesces (D257): the key's row that is not parked. A parked row keeps only
     // what it already held — a new event never lands in it, where nothing would deliver it.
