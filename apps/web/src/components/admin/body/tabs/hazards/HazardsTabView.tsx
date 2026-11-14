@@ -248,7 +248,8 @@ export function HazardsTabView({
         )}
         {(listed || (quiet && isList(archived) && archived.length > 0)) && (
           <div className="flex flex-col">
-            <Collapsible defaultOpen={!listed}>
+            {/* Keyed on the state, so a winter that turns quiet opens its group afresh. */}
+            <Collapsible key={listed ? 'listed' : 'quiet'} defaultOpen={!listed}>
               <CollapsibleTrigger count={isList(archived) ? archived.length : undefined}>
                 {current ? 'Archived this winter' : `Archived in ${seasonWord(season)}`}
               </CollapsibleTrigger>

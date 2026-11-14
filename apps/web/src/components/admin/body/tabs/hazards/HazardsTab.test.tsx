@@ -41,7 +41,7 @@ import { seasonOf } from '@skating/core';
 import { ConvexError } from 'convex/values';
 import { HAZARDS_TAB, HazardsTab } from './HazardsTab';
 import { dailyFrom, FEB_ARCHIVED, FEB_HAZARDS, MASCOMA_FEATURES } from './hazardsFixtures';
-import { winterWindow } from './hazardsModel';
+import { dailyClock, winterWindow } from './hazardsModel';
 import { resetReadPauses } from './tabReads';
 
 const BODY = 'k1';
@@ -64,7 +64,7 @@ beforeEach(() => {
   resetReadPauses();
   // Whatever winter the clock is in: this one bare, the last with one archived hazard in it.
   convex.results.set('bodyConsole:dailyHazards', (args: { season: number; now: number }) =>
-    args.season === seasonOf(args.now)
+    args.season === seasonOf(Date.now())
       ? dailyFrom(args.season, [], args.now)
       : dailyFrom(
           args.season,
@@ -118,7 +118,29 @@ describe('HazardsTab', () => {
     const current = daily[0]?.season ?? Number.NaN;
     expect(new Set(daily.map((d) => d.season))).toEqual(new Set([current, current - 1]));
     expect(daily.every((d) => d.now % 3_600_000 === 0)).toBe(true);
+    // This winter's clock is past every instant of this hour; last winter's is its own end.
+    const hour = Math.floor(Date.now() / 3_600_000) * 3_600_000;
+    const thisWinter = daily.find((d) => d.season === current);
+    expect(thisWinter?.now).toBe(dailyClock(current, hour));
+    const { start, days } = winterWindow(current - 1);
+    expect(daily.find((d) => d.season === current - 1)?.now).toBe(start + days * 86_400_000);
     expect(screen.getByRole('img', { name: /some unknown/ })).toBeVisible();
+  });
+
+  it('over a list, last winter’s read neither holds nor fails the strip that is drawn', () => {
+    convex.results.set('hazards:listForBody', (args: { includeArchived?: boolean }) =>
+      args.includeArchived ? [...FEB_HAZARDS, ...FEB_ARCHIVED] : FEB_HAZARDS,
+    );
+    const thisWinter = convex.results.get('bodyConsole:dailyHazards') as (args: {
+      season: number;
+      now: number;
+    }) => unknown;
+    convex.results.set('bodyConsole:dailyHazards', (args: { season: number; now: number }) =>
+      args.season === seasonOf(Date.now()) ? thisWinter(args) : new Error('boom'),
+    );
+    render(<HazardsTab bodyId={BODY} />);
+    expect(document.querySelector('[data-slot="hazards-winters"]')).not.toBeNull();
+    expect(screen.queryByText('The winter’s day-by-day count couldn’t be read')).toBeNull();
   });
 
   it('a failed read says so in its place; Try again reads every read afresh', async () => {

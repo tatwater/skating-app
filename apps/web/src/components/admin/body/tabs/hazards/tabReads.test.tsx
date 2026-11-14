@@ -23,7 +23,7 @@ vi.mock('convex/react', async () => {
 
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { failedAmong, read, resetReadPauses, retryReads, useTabReads } from './tabReads';
+import { read, resetReadPauses, retryReads, useTabReads } from './tabReads';
 
 const BODY = 'k1' as Id<'waterBodies'>;
 
@@ -103,11 +103,5 @@ describe('useTabReads', () => {
     });
     expect(screen.getByText(/a: waiting/)).toBeVisible();
     await waitFor(() => expect(convex.calls.at(-1)).toHaveProperty('body'));
-  });
-
-  it('failedAmong finds the first failure', () => {
-    const e = new Error('x');
-    expect(failedAmong(undefined, 1, e, new Error('y'))).toBe(e);
-    expect(failedAmong(undefined, 1)).toBeUndefined();
   });
 });

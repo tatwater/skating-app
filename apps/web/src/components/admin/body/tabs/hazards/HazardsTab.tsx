@@ -17,6 +17,7 @@ import { type HazardsMapData, hazardsMapScene, seasonOfLit, winterLit } from './
 import {
   archivedRows,
   type DailyHazards,
+  dailyClock,
   type FeatureInput,
   featureRows,
   hazardRows,
@@ -81,11 +82,19 @@ function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabPr
     withArchived: read(api.hazards.listForBody, { waterBodyId, season, includeArchived: true }),
     features: read(api.bodyFeatures.listForBody, { waterBodyId }),
     clusters: can('body.read') ? read(api.recurrence.listForBodyAdmin, { waterBodyId }) : null,
-    daily: read(api.bodyConsole.dailyHazards, { waterBodyId, season, now }),
+    daily: read(api.bodyConsole.dailyHazards, {
+      waterBodyId,
+      season,
+      now: dailyClock(season, now),
+    }),
     // Last winter's record sits beside the current one; a past winter is drawn alone.
     lastWinter:
       season === current
-        ? read(api.bodyConsole.dailyHazards, { waterBodyId, season: season - 1, now })
+        ? read(api.bodyConsole.dailyHazards, {
+            waterBodyId,
+            season: season - 1,
+            now: dailyClock(season - 1, now),
+          })
         : null,
   });
   const demote = useMutation(api.bodyFeatures.demote);
@@ -95,9 +104,12 @@ function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabPr
   const features = got.features;
   const featureView = useMemo(() => readOf(features, (f) => withGlyphs(f)), [features]);
   const { hazards, withArchived, clusters, daily, lastWinter } = got;
+  // Last winter is drawn only beside an empty current one (the view's rule): over a list it is
+  // neither waited on nor a failure of the strip that is drawn.
+  const beside = season === current && !(Array.isArray(hazards) && hazards.length > 0);
   const winters = useMemo(
-    (): Read<Winters> => wintersOf(daily, season === current ? lastWinter : null, now),
-    [daily, lastWinter, season, current, now],
+    (): Read<Winters> => wintersOf(daily, beside ? lastWinter : null, now),
+    [daily, lastWinter, beside, now],
   );
 
   const body = got.body;

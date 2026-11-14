@@ -199,6 +199,19 @@ export function winterWindow(season: Season): { start: number; days: number } {
   return { start, days: Math.round((Date.UTC(season + 1, 3, 1) - start) / DAY) };
 }
 
+/**
+ * The clock a winter's day-by-day read (`bodyConsole.dailyHazards`) is handed, from the hour the
+ * tab's clock holds. The server counts a hazard through the clock it is given, the clock itself
+ * excluded, so the hour's start would leave out every hazard reported since — and in a day's first
+ * hour every hazard still on the lake would miss today, which would then read *None marked* (D3).
+ * So it is the hour's end, whose day is still today's; and never past the winter's end, so a
+ * winter that is over keeps one argument and is not asked again every hour.
+ */
+export function dailyClock(season: Season, hour: number): number {
+  const { start, days } = winterWindow(season);
+  return Math.min(hour + HOUR, start + days * DAY);
+}
+
 /** The UTC day an instant falls on, as an index into `winterWindow(season)`; out of it, `null`. */
 export function dayIndex(at: number, season: Season): number | null {
   const { start, days } = winterWindow(season);

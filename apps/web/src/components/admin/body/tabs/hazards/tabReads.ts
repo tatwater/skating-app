@@ -142,11 +142,6 @@ export function useTabReads<S extends Record<string, TabRead | null>>(
   return { got, retry, live };
 }
 
-/** The first failure among `results`, if any. */
-export function failedAmong(...results: readonly unknown[]): Error | undefined {
-  return results.find((r): r is Error => r instanceof Error);
-}
-
 /** Forget every pause (tests start clean). */
 export function resetReadPauses(): void {
   paused.clear();

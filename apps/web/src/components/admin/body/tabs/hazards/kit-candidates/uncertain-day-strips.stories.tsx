@@ -72,7 +72,10 @@ export const Default: Story = {
   },
 };
 
-/** A busy day shrinks its strip's step so it stays clear of the strip above. */
+/**
+ * A busy day shrinks its strip's step so it stays clear of the strip above; on a step that small
+ * the unknown part is one bar a day.
+ */
 export const TallDay: Story = {
   args: {
     strips: [
@@ -84,8 +87,11 @@ export const TallDay: Story = {
   },
   play: async ({ canvasElement }) => {
     const tall = canvasElement.querySelector('[data-day="1"]');
-    const blocks = tall?.querySelectorAll('[data-slot="day-strip-unknown"]') ?? [];
-    await expect(blocks).toHaveLength(14);
+    const marks = [
+      ...(tall?.querySelectorAll<SVGRectElement>('[data-slot="day-strip-unknown"]') ?? []),
+    ];
+    // Every unknown is counted in the day's mark, never dropped by the smaller step.
+    await expect(marks.reduce((n, m) => n + Number(m.dataset.count ?? 1), 0)).toBe(14);
   },
 };
 

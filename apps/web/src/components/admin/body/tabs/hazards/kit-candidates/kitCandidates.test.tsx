@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ReadFailed } from './read-failed';
 import {
   dayParts,
+  roomAbove,
   stripStep,
   type UncertainDayStrip,
   UncertainDayStrips,
@@ -64,6 +65,30 @@ describe('UncertainDayStrips', () => {
     expect(container.querySelector('[data-slot="day-strip-ahead"]')).not.toBeNull();
     expect(container.querySelector('[data-slot="day-strip-today"]')).not.toBeNull();
     expect(container.querySelector('[data-slot="day-strip-opens"]')).not.toBeNull();
+  });
+
+  it('on a step too small for blocks, a day’s unknown part is one bar that counts them all', () => {
+    const { container } = render(
+      <UncertainDayStrips strips={[strip([10, 0], [30, 0])]} months={[]} days={2} />,
+    );
+    const marks = container.querySelectorAll<SVGRectElement>('[data-slot="day-strip-unknown"]');
+    expect(marks).toHaveLength(1);
+    expect(marks[0]?.dataset.count).toBe('30');
+    const step = stripStep(strip([10, 0], [30, 0]));
+    expect(Number(marks[0]?.getAttribute('height'))).toBeCloseTo(30 * step, 6);
+  });
+
+  it('the first strip’s tall day grows the drawing upward, never over what is above it', () => {
+    expect(roomAbove([strip([1, 2])])).toBe(0);
+    expect(roomAbove([])).toBe(0);
+    // 8 on the kit's step of 3 is 24, ten more than the 14 above the first baseline.
+    const tall = [strip([8, 0])];
+    expect(roomAbove(tall)).toBeCloseTo(10, 6);
+    const { container } = render(<UncertainDayStrips strips={tall} months={[]} days={2} />);
+    const svg = container.querySelector('svg');
+    expect(svg?.getAttribute('viewBox')).toBe('0 -10 340 42');
+    const bar = container.querySelector('[data-slot="day-strip-bar"]');
+    expect(Number(bar?.getAttribute('y'))).toBeGreaterThanOrEqual(-10);
   });
 
   it('a reader hears each strip’s summary, or its known total', () => {

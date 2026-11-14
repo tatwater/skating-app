@@ -16,7 +16,9 @@ import { cn } from '@/lib/utils';
  *   an empty day, and never as a day that ended.
  * - **The step shrinks to fit, never the count.** A strip whose tallest day would climb into the
  *   strip above draws every bar of that strip on a smaller step, so each day keeps its proportion;
- *   a reader hears the numbers, not the heights.
+ *   a reader hears the numbers, not the heights. On a step too small for a block to read, a day's
+ *   unknown part is one brighter bar of the same height — one mark a day, never one per hazard.
+ *   The first strip has nothing above it but the page, so the drawing grows upward to hold it.
  * - **A day that hasn't happened is `null`**: the baseline goes dotted from the last real day on,
  *   and nothing is drawn — never a zero.
  * - **Each marked day carries its words** (`dayTitle`), as an SVG title a pointer or a reader finds.
@@ -65,6 +67,8 @@ const STRIPS_FOOT = 18;
 const STRIPS_HEADROOM = STRIPS_PITCH - 6;
 /** The gap over each unknown block, as a share of its step. */
 const UNKNOWN_GAP = 1 / 3;
+/** The smallest step the unknown part is drawn on block by block; below it, one bar a day. */
+const UNKNOWN_BLOCK_STEP = 1.5;
 
 /** One day's known count and unknown part, as the strip draws them. */
 export function dayParts(
@@ -76,14 +80,27 @@ export function dayParts(
   return { known: Math.max(0, v), unknown: Math.max(0, strip.unknown?.[day] ?? 0) };
 }
 
-/** The step a strip draws on: the kit's, or smaller when its tallest day would leave its room. */
-export function stripStep(strip: UncertainDayStrip): number {
+/** A strip's tallest day, known and unknown together. */
+function tallestDay(strip: UncertainDayStrip): number {
   let tallest = 0;
   for (let i = 0; i < strip.values.length; i++) {
     const p = dayParts(strip, i);
     if (p !== null) tallest = Math.max(tallest, p.known + p.unknown);
   }
+  return tallest;
+}
+
+/** The step a strip draws on: the kit's, or smaller when its tallest day would leave its room. */
+export function stripStep(strip: UncertainDayStrip): number {
+  const tallest = tallestDay(strip);
   return tallest * STRIPS_STEP <= STRIPS_HEADROOM ? STRIPS_STEP : STRIPS_HEADROOM / tallest;
+}
+
+/** How far the first strip's tallest day climbs above the drawing's top edge: the room it needs. */
+export function roomAbove(strips: readonly UncertainDayStrip[]): number {
+  const first = strips[0];
+  if (first === undefined) return 0;
+  return Math.max(0, tallestDay(first) * stripStep(first) - STRIPS_TOP);
 }
 
 const MONO = 'font-(family-name:--family-mono)';
@@ -96,6 +113,7 @@ function UncertainDayStrips({
   className,
   ...props
 }: UncertainDayStripsProps) {
+  const room = roomAbove(strips);
   const height = STRIPS_TOP + (strips.length - 1) * STRIPS_PITCH + STRIPS_FOOT;
   const dx = (STRIPS_WIDTH - STRIPS_LABEL) / Math.max(1, days);
   const lastBase = STRIPS_TOP + (strips.length - 1) * STRIPS_PITCH;
@@ -103,7 +121,7 @@ function UncertainDayStrips({
   return (
     <svg
       data-slot="day-strips"
-      viewBox={`0 0 ${STRIPS_WIDTH} ${height}`}
+      viewBox={`0 ${-room} ${STRIPS_WIDTH} ${height + room}`}
       role="img"
       aria-label={strips
         .map(
@@ -174,19 +192,31 @@ function UncertainDayStrips({
                       className="fill-fg3"
                     />
                   )}
-                  {Array.from({ length: p.unknown }, (_, u) => (
-                    <rect
-                      // An unknown block is its place in the stack.
-                      // biome-ignore lint/suspicious/noArrayIndexKey: a block is its place
-                      key={u}
-                      data-slot="day-strip-unknown"
-                      x={x}
-                      y={top - (u + 1) * step}
-                      width={width}
-                      height={step * (1 - UNKNOWN_GAP)}
-                      className="fill-fg1"
-                    />
-                  ))}
+                  {step >= UNKNOWN_BLOCK_STEP
+                    ? Array.from({ length: p.unknown }, (_, u) => (
+                        <rect
+                          // An unknown block is its place in the stack.
+                          // biome-ignore lint/suspicious/noArrayIndexKey: a block is its place
+                          key={u}
+                          data-slot="day-strip-unknown"
+                          x={x}
+                          y={top - (u + 1) * step}
+                          width={width}
+                          height={step * (1 - UNKNOWN_GAP)}
+                          className="fill-fg1"
+                        />
+                      ))
+                    : p.unknown > 0 && (
+                        <rect
+                          data-slot="day-strip-unknown"
+                          data-count={p.unknown}
+                          x={x}
+                          y={top - p.unknown * step}
+                          width={width}
+                          height={p.unknown * step}
+                          className="fill-fg1"
+                        />
+                      )}
                 </g>
               );
             })}

@@ -134,7 +134,7 @@ describe('HazardsTabView — the default board', () => {
     expect(onDemote).toHaveBeenCalledWith('f-narrows', 'The bridge was replaced');
   });
 
-  it('cancelling a demotion closes the dialog and demotes nothing', async () => {
+  it('canceling a demotion closes the dialog and demotes nothing', async () => {
     const onDemote = vi.fn(async () => {});
     render(<HazardsTabView {...base} onDemote={onDemote} />);
     await userEvent.click(screen.getAllByRole('button', { name: 'Demote' })[0] as HTMLElement);
@@ -214,6 +214,15 @@ describe('HazardsTabView — the default board', () => {
         'All 2 hazards marked on Mascoma since the watch opened 3 Oct 2026 were since voted gone by skaters. A vote is a report, not a reading of the ice.',
       ),
     ).toBeVisible();
+    expect(screen.getAllByText(/Last seen/)).toHaveLength(2);
+  });
+
+  it('a listed winter that turns quiet opens its archived group, though it was closed', () => {
+    const { rerender } = render(
+      <HazardsTabView {...base} hazards={FEB.hazards} archived={FEB.archived} />,
+    );
+    expect(screen.queryAllByText(/Last seen/)).toHaveLength(0);
+    rerender(<HazardsTabView {...base} hazards={[]} archived={FEB.archived} />);
     expect(screen.getAllByText(/Last seen/)).toHaveLength(2);
   });
 
@@ -347,8 +356,12 @@ describe('HazardsTabView — the winters, a day at a time', () => {
             expect(Number(el.dataset.known)).toBe(e.count);
             const bar = el.querySelector('[data-slot="day-strip-bar"]');
             expect(bar !== null).toBe(e.count > 0);
-            const blocks = el.querySelectorAll('[data-slot="day-strip-unknown"]');
-            expect(blocks).toHaveLength(e.unknown);
+            const blocks = [
+              ...el.querySelectorAll<SVGRectElement>('[data-slot="day-strip-unknown"]'),
+            ];
+            // Every unknown carries its mark: a block each, or one bar that counts them all.
+            const marked = blocks.reduce((n, b) => n + Number(b.dataset.count ?? 1), 0);
+            expect(marked).toBe(e.unknown);
             if (e.unknown > 0) expect(el.dataset.unknown).toBe(String(e.unknown));
             const title = el.querySelector('title')?.textContent ?? '';
             expect(title).toBe(dayWords({ count: e.count, unknown: e.unknown }, capped));
@@ -358,7 +371,8 @@ describe('HazardsTabView — the winters, a day at a time', () => {
             if (bar !== null && blocks.length > 0) {
               const step = Number(bar.getAttribute('height')) / e.count;
               const block = Number(blocks[0]?.getAttribute('height'));
-              expect(block).toBeCloseTo((step * 2) / 3, 6);
+              const whole = blocks[0]?.dataset.count !== undefined;
+              expect(block).toBeCloseTo(whole ? step * e.unknown : (step * 2) / 3, 6);
             }
           }
           cleanup();

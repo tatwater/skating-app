@@ -16,6 +16,7 @@ import { hazardLit, hazardsMapScene, seasonOfLit, winterLit } from './hazardsMap
 import {
   ageWords,
   archivedRows,
+  dailyClock,
   dayIndex,
   dayWords,
   featureRows,
@@ -309,6 +310,32 @@ describe('the winters, a bar per day', () => {
         },
       ),
     );
+  });
+});
+
+describe('the day-by-day read’s clock', () => {
+  it('passes every instant of the hour, and its day is still today’s (fast-check)', () => {
+    const { start, days } = winterWindow(2025);
+    const end = start + days * DAY;
+    fc.assert(
+      fc.property(fc.integer({ min: start, max: end - 1 }), (at) => {
+        const clock = dailyClock(2025, Math.floor(at / HOUR) * HOUR);
+        // A hazard reported any time this hour counts, today included (the server's end is
+        // exclusive) — even in a day's first hour.
+        expect(clock).toBeGreaterThan(at);
+        // And no day past today is ever asked for.
+        expect(Math.floor((clock - 1) / DAY)).toBe(Math.floor(at / DAY));
+      }),
+    );
+  });
+
+  it('a winter that is over keeps one clock, its end', () => {
+    const { start, days } = winterWindow(2024);
+    const end = start + days * DAY;
+    expect(dailyClock(2024, end + 5 * HOUR)).toBe(end);
+    expect(dailyClock(2024, end + 400 * DAY)).toBe(end);
+    // Before its window opens, the hour's end.
+    expect(dailyClock(2024, start - 10 * DAY)).toBe(start - 10 * DAY + HOUR);
   });
 });
 
