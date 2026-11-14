@@ -44,7 +44,7 @@ import {
   query,
 } from './_generated/server';
 import { requireCapability } from './lib/auth';
-import { queueLibraryRefresh } from './lib/bodyLibrary';
+import { queueLibraryRefresh, refreshBodyLibrary } from './lib/bodyLibrary';
 import {
   assertNotABayName,
   assertNotDuplicate,
@@ -695,6 +695,8 @@ export const create = mutation({
         { _id: id, waterBodyId: args.waterBodyId },
         actor._id,
       );
+      // The name left the body's open asks after the audit row's refresh: the library reads it again.
+      await refreshBodyLibrary(ctx, args.waterBodyId);
     }
     return id;
   },

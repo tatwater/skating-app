@@ -55,6 +55,8 @@ export const CHANGED_WITHIN_MS = 7 * 86_400_000;
 export const PAGE_MAX_ROWS_READ = 2_000;
 /** The most rows the *Changed this week* count reads before it says it stopped. */
 const CHANGED_COUNT_CAP = 500;
+/** Count keys one lane and scope can hold: the total and every facet option, with room to spare. */
+const COUNT_KEYS_CAP = 1 + Object.values(LIBRARY_FACETS).reduce((n, o) => n + o.length, 0) + 32;
 
 export const BODY_COLUMNS = [
   'name',
@@ -154,28 +156,16 @@ function rowView(row: LibraryRow, season: number, q: string): LibraryRowView {
 
 // ── The list ─────────────────────────────────────────────────────────────────────────────────
 
-type IndexSpec = { index: string; key?: string };
-
 /** The index a column sorts by, for one lane or all of them. */
-function indexFor(column: BodyColumn, dir: 'asc' | 'desc', laned: boolean): IndexSpec {
+function indexFor(column: BodyColumn, dir: 'asc' | 'desc', laned: boolean): string {
   const base = laned ? 'by_scope_lane_' : 'by_scope_';
   switch (column) {
-    case 'name':
-      return { index: `${base}name` };
-    case 'class':
-      return { index: `${base}class` };
-    case 'state':
-      return { index: `${base}state` };
     case 'acres':
-      return { index: `${base}area_${dir}` };
-    case 'complete':
-      return { index: `${base}complete` };
-    case 'asks':
-      return { index: `${base}asks` };
-    case 'reports':
-      return { index: `${base}reports` };
+      return `${base}area_${dir}`;
     case 'changed':
-      return { index: `${base}changed_${dir}`, key: dir === 'asc' ? 'changedAsc' : 'changedDesc' };
+      return `${base}changed_${dir}`;
+    default:
+      return `${base}${column}`;
   }
 }
 
@@ -284,9 +274,9 @@ export const listPage = query({
         args.lane === 'changed' && args.sort?.column !== 'changed'
           ? ({ column: 'changed', dir: 'desc' } as const)
           : (args.sort ?? ({ column: 'name', dir: 'asc' } as const));
-      const spec = indexFor(sort.column, sort.dir, laned);
+      const index = indexFor(sort.column, sort.dir, laned);
       // biome-ignore lint/suspicious/noExplicitAny: the index name is chosen per column at runtime.
-      const ranged = (ctx.db.query('bodyLibraryRows') as any).withIndex(spec.index, (r: any) => {
+      const ranged = (ctx.db.query('bodyLibraryRows') as any).withIndex(index, (r: any) => {
         const scoped = r.eq('scope', scope);
         const withLane = laned ? scoped.eq('lane', args.lane) : scoped;
         if (args.lane !== 'changed') return withLane;
@@ -358,11 +348,18 @@ export const listSummary = query({
     let facetCounts: Partial<Record<LibraryFacet, Record<string, number>>> | null = null;
     if (q === '' && lane !== null) {
       const served = servedCounts(selection);
+      // Every key of this lane and scope in one range (the total and each facet option — a few dozen
+      // rows), rather than a point read per option.
+      const stored = await ctx.db
+        .query('bodyLibraryCounts')
+        .withIndex('by_lane_scope_key', (r) => r.eq('lane', lane).eq('scope', scope))
+        .take(COUNT_KEYS_CAP);
+      const countOf = new Map(stored.map((r) => [r.key, r.count]));
       facetCounts = {};
       for (const facet of served.facets) {
         const counts: Record<string, number> = {};
         for (const option of LIBRARY_FACETS[facet]) {
-          counts[option] = await readCount(ctx, lane, scope, facetKey(facet, option));
+          counts[option] = countOf.get(facetKey(facet, option)) ?? 0;
         }
         facetCounts[facet] = counts;
       }
@@ -370,7 +367,7 @@ export const listSummary = query({
         const [only] = appliedFacets(selection);
         const count =
           only === undefined
-            ? await readCount(ctx, lane, scope, TOTAL_KEY)
+            ? (countOf.get(TOTAL_KEY) ?? 0)
             : (selection[only] ?? []).reduce((n, o) => n + (facetCounts?.[only]?.[o] ?? 0), 0);
         total = { count, capped: false };
       }

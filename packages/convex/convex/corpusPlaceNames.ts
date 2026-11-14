@@ -402,5 +402,7 @@ export const fileAsSpelling = mutation({
       decidedAt: now,
       updatedAt: now,
     });
+    // The name left the body's open asks after the audit row's refresh: the library reads it again.
+    await refreshBodyLibrary(ctx, landmark.waterBodyId);
   },
 });

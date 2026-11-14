@@ -42,7 +42,7 @@ const NOTIF_PREFS = {
   greatReportNearby: false,
 };
 
-/** A square centred at (lng, lat) with half-width `h` degrees. */
+/** A square centered at (lng, lat) with half-width `h` degrees. */
 function square(lng: number, lat: number, h: number): Polygon {
   return {
     type: 'Polygon',
@@ -174,6 +174,36 @@ describe('consoleExtras', () => {
     });
     const places = await as.query(api.bodyConsole.places, { waterBodyId: id });
     expect(places).toEqual({ towns: ['Enfield'], counties: [], states: ['NH'] });
+  });
+
+  test('a pond beside a large lake touches it, though the lake’s sampled ring passes it by', async () => {
+    const t = harness();
+    const { as } = await seedUser(t);
+    // A lake 0.1° across whose ring has 4,000 vertices: sampled 48 times, its east shore is tested
+    // every ~0.008°, and the pond sits between two samples, ~8 m off that shore.
+    const h = 0.05;
+    const n = 1000;
+    const edge = (from: [number, number], to: [number, number]) =>
+      Array.from({ length: n }, (_, i) => [
+        from[0] + ((to[0] - from[0]) * i) / n,
+        from[1] + ((to[1] - from[1]) * i) / n,
+      ]);
+    const [w, e, s, nn] = [-72 - h, -72 + h, 44 - h, 44 + h];
+    const ring = [
+      ...edge([w, s], [e, s]),
+      ...edge([e, s], [e, nn]),
+      ...edge([e, nn], [w, nn]),
+      ...edge([w, nn], [w, s]),
+      [w, s],
+    ];
+    const lake = await seedBody(t, {
+      name: 'Big Lake',
+      half: h,
+      polygon: { type: 'Polygon', coordinates: [ring] },
+    });
+    const pond = await seedBody(t, { name: 'Side Pond', at: [e + 0.0011, 44.0035], half: 0.001 });
+    const x = await as.query(api.bodyConsole.consoleExtras, { waterBodyId: pond });
+    expect(x.touchingBodyIds).toEqual([lake]);
   });
 
   test('a catalog body is trusted since its campaign; no boundary is no town', async () => {
@@ -474,5 +504,29 @@ describe('standing.retentionForBody', () => {
     });
     await t.run((ctx) => ctx.db.delete(bare));
     expect(await as.query(api.standing.retentionForBody, { waterBodyId: bare })).toBeNull();
+  });
+
+  test('saved put-ins by the rollover’s rule: a persisted derived row counts, a hidden coord does not', async () => {
+    const t = harness();
+    const { as } = await seedUser(t);
+    const id = await seedBody(t, { name: 'Legacy Launch' });
+    const row = (coord: { lat: number; lng: number }, source: 'derived' | 'osm') => ({
+      waterBodyId: id,
+      coord,
+      source,
+      status: 'visible' as const,
+      createdAt: NOW,
+    });
+    await t.run(async (ctx) => {
+      await ctx.db.insert('putIns', row({ lat: 44, lng: -72 }, 'derived'));
+      await ctx.db.insert('putIns', row({ lat: 44.005, lng: -72 }, 'osm'));
+    });
+    const saved = async () =>
+      (await as.query(api.standing.retentionForBody, { waterBodyId: id }))?.savedPutIns;
+    expect(await saved()).toBe(2);
+    await t.run((ctx) =>
+      ctx.db.insert('putIns', { ...row({ lat: 44.005, lng: -72 }, 'osm'), status: 'hidden' }),
+    );
+    expect(await saved()).toBe(1);
   });
 });

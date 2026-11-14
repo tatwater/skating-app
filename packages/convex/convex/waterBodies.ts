@@ -88,7 +88,7 @@ import {
   requireContributor,
   requireProfile,
 } from './lib/auth';
-import { queueLibraryRefresh, refreshBodyLibrary } from './lib/bodyLibrary';
+import { queueLibraryRefresh } from './lib/bodyLibrary';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { rankCandidates, scanCells } from './lib/cellScan';
@@ -3374,10 +3374,9 @@ export async function mergeBodyInto(
     // more full pass inside it is the transaction size nobody wants to debug.
     await ctx.scheduler.runAfter(0, internal.recurrence.enqueueBody, { waterBodyId: survivorId });
     await ctx.scheduler.runAfter(0, internal.recurrence.enqueueBody, { waterBodyId: loserId });
-    // The Bodies library: the loser leaves it, and the survivor gained the loser's reports, put-ins
-    // and landmarks — after every row above moved, so the refresh reads the merge whole.
-    await refreshBodyLibrary(ctx, loserId);
-    await refreshBodyLibrary(ctx, survivorId);
+    // The Bodies library moved with the two summary recomputes above: they run after every row the
+    // merge moves and after the loser's tombstone, so the loser left the library and the survivor
+    // was re-read with the loser's reports, put-ins and landmarks.
     return { repointed };
   }
 }

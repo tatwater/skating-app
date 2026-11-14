@@ -127,9 +127,11 @@ export async function recomputeBodySummary(
   known?: Doc<'waterBodies'>,
   /**
    * Also refresh the body's Bodies library row (B01-3): its reports this season, whether it was
-   * ever reported, and the put-ins its reports derive. On for every content write that calls this;
+   * ever reported, and the put-ins its reports derive. On for every report write that calls this;
    * the summary sweeps pass `false` — the passage of time moves none of those figures inside a
-   * season, and their pages are sized for the card alone.
+   * season, and their pages are sized for the card alone. No library fact counts hazards, so the
+   * hazard writes could pass `false` too; their call sites are in files the author-deletion PR is
+   * rewriting, so until it lands they pay a refresh that writes nothing.
    */
   library = true,
 ): Promise<void> {
@@ -195,11 +197,13 @@ export async function recomputeBodySummary(
       : null,
   );
   if (!body) return;
+  // The body in hand, never a second read of its polygon (see `known`). The summary this writes is no
+  // part of the library row, so the doc read before the patch below is current for it.
+  if (library) await refreshBodyLibrary(ctx, waterBodyId, { now, known: body });
   // **Skip the write when nothing changed.** A recompute runs on every report and hazard transition,
   // and a no-op patch is still a document write, a mutation conflict surface and a subscription
   // invalidation for every client watching this lake. Comparing `updatedAt` is deliberately excluded
   // from the comparison, or the check could never be true.
-  if (library) await refreshBodyLibrary(ctx, waterBodyId, { now });
   if (summaryUnchanged(body.summary, summary)) return;
   await ctx.db.patch(waterBodyId, { summary });
 }

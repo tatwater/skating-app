@@ -819,6 +819,75 @@ describe('which body an audited action belongs to', () => {
     expect(row).toMatchObject({ asks: 2, asksWaiting: true, hasPutIns: true });
   });
 
+  test('a transaction refreshes a few bodies inline; a bulk writer’s rest are stamped and queued', async () => {
+    const t = harness();
+    const mod = await seedUser(t);
+    const { INLINE_AUDIT_REFRESHES } = await import('./lib/bodyLibrary');
+    const ids: Id<'waterBodies'>[] = [];
+    for (let i = 0; i < INLINE_AUDIT_REFRESHES + 2; i++) {
+      ids.push(await seedBody(t, { name: `Pond ${i}` }));
+    }
+    await backfill(t);
+    await t.run(async (ctx) => {
+      const { writeAudit } = await import('./lib/audit');
+      for (const id of ids) {
+        await ctx.db.patch(id, { curatedBoost: 1 });
+        await writeAudit(ctx, {
+          actorId: mod.id,
+          action: 'set_curated_boost',
+          targetType: 'waterbody',
+          targetId: id,
+          reason: 'r',
+          createdAt: NOW,
+        });
+      }
+    });
+    const starRow = async (id: Id<'waterBodies'>) =>
+      (await rowsOf(t, id)).find((r) => r.scope === '*');
+    for (const [i, id] of ids.entries()) {
+      // Every body is stamped Changed in the transaction; only the first few are re-read in it.
+      expect(await starRow(id)).toMatchObject({
+        changedAt: NOW,
+        curated: i < INLINE_AUDIT_REFRESHES,
+      });
+    }
+    expect((await t.query(internal.bodyLibrary.state, {})).queued).toBe(2);
+    await t.mutation(internal.bodyLibrary.drainQueue, {});
+    for (const id of ids)
+      expect(await starRow(id)).toMatchObject({ changedAt: NOW, curated: true });
+    await expectCountsAreTheTally(t);
+  });
+
+  test('placing a corpus name with a new landmark takes it off the body’s asks', async () => {
+    const t = harness();
+    const mod = await seedUser(t);
+    const id = await seedBody(t, { name: 'Named Lake' });
+    const nameId = await t.run((ctx) =>
+      ctx.db.insert('corpusPlaceNames', {
+        name: 'The Gut',
+        askKey: 'gut',
+        aliases: [],
+        messages: 1,
+        skatedMessages: 0,
+        states: [],
+        waterBodyId: id,
+        status: 'open',
+        createdAt: NOW,
+        updatedAt: NOW,
+      }),
+    );
+    await backfill(t);
+    expect((await rowsOf(t, id))[0]?.asks).toBe(1);
+    await mod.as.mutation(api.landmarks.create, {
+      waterBodyId: id,
+      name: 'The Gut',
+      kind: 'island',
+      point: { lat: 44, lng: -72 },
+      corpusNameId: nameId,
+    });
+    expect((await rowsOf(t, id))[0]).toMatchObject({ asks: 0, asksWaiting: false });
+  });
+
   test('a body whose newest reports are all hidden is still ever reported by an older one', async () => {
     const t = harness();
     const id = await seedBody(t, { name: 'Hidden Run' });

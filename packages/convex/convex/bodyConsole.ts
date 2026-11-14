@@ -17,7 +17,6 @@
 
 import {
   archiveSeasonLabel,
-  bboxIntersects,
   currentSeason,
   distanceToPolygonMeters,
   polygonBBox,
@@ -73,18 +72,29 @@ function vertexCount(geom: Polygon | MultiPolygon): number {
   return polys.reduce((n, p) => n + p.reduce((m, r) => m + r.length, 0), 0);
 }
 
-/** Whether `other`'s outer rings come within {@link TOUCH_METERS} of `body`, by sampled vertices. */
-function touches(body: Polygon | MultiPolygon, other: Polygon | MultiPolygon): boolean {
-  for (const ring of ringsOf(other)) {
+/** Whether `from`'s outer rings come within {@link TOUCH_METERS} of `to`, by sampled vertices. */
+function samplesNear(from: Polygon | MultiPolygon, to: Polygon | MultiPolygon): boolean {
+  for (const ring of ringsOf(from)) {
     const step = Math.max(1, Math.floor(ring.length / TOUCH_SAMPLES));
     for (let i = 0; i < ring.length; i += step) {
       const p = ring[i];
       if (p === undefined || p.length < 2) continue;
       const point = { lng: p[0] as number, lat: p[1] as number };
-      if (distanceToPolygonMeters(point, body) <= TOUCH_METERS) return true;
+      if (distanceToPolygonMeters(point, to) <= TOUCH_METERS) return true;
     }
   }
   return false;
+}
+
+/**
+ * Whether two outlines come within {@link TOUCH_METERS}, sampled **both ways**: a large lake's ring
+ * sampled {@link TOUCH_SAMPLES} times is kilometers between samples, so a pond beside it is found
+ * only by sampling the pond's ring against the lake. The other's outline is tested whole only below
+ * {@link TOUCH_MAX_VERTICES}, the bound the body itself is held to.
+ */
+function touches(body: Polygon | MultiPolygon, other: Polygon | MultiPolygon): boolean {
+  if (samplesNear(other, body)) return true;
+  return vertexCount(other) <= TOUCH_MAX_VERTICES && samplesNear(body, other);
 }
 
 /** Degrees of latitude in {@link TOUCH_METERS}, for the box the candidates are read in. */
@@ -93,8 +103,8 @@ const TOUCH_PAD_DEG = TOUCH_METERS / 111_000;
 /**
  * **The frame's extras.** `towns` — sampled at the interior point and along the shore (`null` when
  * no boundary contains the body); `hasBathymetry` — contours were drawn for it; `outlineTrustedSince`
- * — when a person last vouched for the outline (a drawn body's approval, a redraw), else when the
- * import campaign that last re-affirmed it ran, else `null`; `touchingBodyIds` — listed bodies whose
+ * — when a person last vouched for the outline (a drawn body's approval), else when the import
+ * campaign that last re-affirmed it ran, else `null`; `touchingBodyIds` — listed bodies whose
  * outline comes within {@link TOUCH_METERS}, among the {@link TOUCH_CANDIDATES} most prominent whose
  * box meets this one (`null` for an outline too large to test; `capped` when there were more).
  */
@@ -141,10 +151,9 @@ export const consoleExtras = query({
         minLng: box.minLng - TOUCH_PAD_DEG * 1.5,
         maxLng: box.maxLng + TOUCH_PAD_DEG * 1.5,
       };
+      // Already refined to the padded box and to listed bodies, most prominent first.
       const near = await bodiesCoveringBox(ctx, padded, { limit: TOUCH_CANDIDATES + 1 });
-      const others = [...near.byId.values()].filter(
-        (b) => b._id !== waterBodyId && bboxIntersects(b.bbox, padded),
-      );
+      const others = [...near.byId.values()].filter((b) => b._id !== waterBodyId);
       touching = {
         ids: others
           .slice(0, TOUCH_CANDIDATES)

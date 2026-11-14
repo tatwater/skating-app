@@ -14,7 +14,8 @@
  * ## Where it is called
  *
  * - **`writeAudit`** — every audited action whose target belongs to a body ({@link bodiesOfTarget}).
- *   A moderator's action on the body, its bays, landmarks or put-ins also stamps *Changed*.
+ *   A moderator's action on the body, its bays, landmarks or put-ins also stamps *Changed*. Inline
+ *   for the first {@link INLINE_AUDIT_REFRESHES} of a transaction; a bulk writer's rest are queued.
  * - **`recomputeBodySummary`** — every report write and report moderation already calls it.
  * - **{@link queueLibraryRefresh}** — the machine's bulk writes that leave no audit row; the minute
  *   cron drains the queue ({@link drainLibraryQueue}).
@@ -504,8 +505,22 @@ export async function bodiesOfTarget(
 }
 
 /**
+ * Audit-driven refreshes one transaction runs inline. A refresh is ~20 index reads, the body's
+ * polygon and its newest {@link REPORT_SCAN} reports, so the bulk writers that audit row after row —
+ * a request's siblings closed together (up to 200 on one body), a rollover or prune page demoting
+ * 100–500 bodies, a seed's bays — would otherwise spend the 4,096-read and 16 MiB budgets their
+ * pages were sized against. A single moderator action audits a handful of rows and stays inline.
+ */
+export const INLINE_AUDIT_REFRESHES = 4;
+
+/** Inline refreshes run so far, per transaction (the mutation's `ctx`, as `UNDOING` keys it). */
+const auditRefreshes = new WeakMap<object, number>();
+
+/**
  * The audit hook: refresh the bodies an action belongs to, stamping *Changed* when a moderator acted
  * on the body or its bays, landmarks or put-ins. Called by `writeAudit` after the row is written.
+ * Past {@link INLINE_AUDIT_REFRESHES} in one transaction, the body is queued for the minute cron
+ * instead — its *Changed* stamped now, so the drain carries it.
  */
 export async function noteAuditedAction(
   ctx: MutationCtx,
@@ -519,7 +534,14 @@ export async function noteAuditedAction(
   const { bodies, changes } = await bodiesOfTarget(ctx, entry.targetType, entry.targetId);
   const stamp = changes && entry.actorId !== undefined;
   for (const id of bodies) {
-    await refreshBodyLibrary(ctx, id, stamp ? { changedAt: entry.createdAt } : {});
+    const used = auditRefreshes.get(ctx) ?? 0;
+    if (used < INLINE_AUDIT_REFRESHES) {
+      auditRefreshes.set(ctx, used + 1);
+      await refreshBodyLibrary(ctx, id, stamp ? { changedAt: entry.createdAt } : {});
+    } else {
+      if (stamp) await stampChanged(ctx, id, entry.createdAt);
+      await queueLibraryRefresh(ctx, [id], entry.createdAt);
+    }
   }
 }
 

@@ -1555,7 +1555,10 @@ records and applies the count differences:
 - **Every audited action** (`writeAudit`): a row whose target is a body, a bay, a landmark, a put-in,
   a lot (each body it serves), a corpus request or a place name refreshes that body in the same
   transaction; a moderator's action on the body, its bays, landmarks or put-ins stamps *Changed*.
-  Writers that audit before they write call the refresh again after.
+  Writers that audit before they write call the refresh again after. A transaction runs at
+  most four of these refreshes; a bulk writer's further rows (a request's siblings, a rollover or
+  prune page, a seed's bays) stamp *Changed* and queue the body instead, so each page keeps the
+  read budget it was sized against.
 - **Every report write and report moderation** (`recomputeBodySummary`, which each of them already
   calls): reports this season, ever reported, and the put-ins reports derive.
 - **The machine's bulk writes with no audit row** (the canonical import, depth, elevation, wind,
@@ -1569,6 +1572,10 @@ records and applies the count differences:
   (`corpusRequests.ts`) and a new flag on a body (`contentFlags.ts`) change its asks without an
   audit row; each needs one line (`queueLibraryRefresh`) at its insert. Until then the drift repair
   picks them up.
+  The hazard writes (`hazards.ts`, `hazardConfirmations.ts`, `lib/hazardMerge.ts`, and the hazard
+  hide in `moderation.ts`) call `recomputeBodySummary`, which refreshes the library; no library fact
+  counts hazards, so each could pass `library = false` — one argument per call site, deferred with
+  them. Until then a hazard write pays a refresh that writes nothing.
 
 **Reads** (`bodies.ts`, gated on `body.read`): `listPage` (lane, state, search, facets, sort, paged
 — a starting page up to the library's most, so a return reloads as many rows as were showing);
