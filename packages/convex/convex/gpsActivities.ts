@@ -58,11 +58,21 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
+import { type AttemptState, nextAttemptState } from './lib/attempts';
 import { getCurrentProfile, requireContributor, requireProfile } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { ACTIVITY_PROMPT_STATES } from './lib/enums';
 import { isListed } from './lib/listing';
 import { enqueueActorNotification } from './lib/notificationQueue';
+import { traced } from './lib/readBudget';
+import {
+  affords,
+  asItem,
+  type ItemBudget,
+  MiB,
+  type Position,
+  runIsolated,
+} from './lib/recurringWork';
 import { activateOnEvidence } from './lib/standing';
 import { geoJson, literals } from './lib/validators';
 import { stampCandidates, trackSubAreaStamp } from './subAreas';
@@ -397,11 +407,10 @@ export const setPromptState = mutation({
  */
 export const ACTIVITY_PROMPT_DELAY_MS = 3 * 60 * 60 * 1000;
 /**
- * Due activities examined per sweep tick; the rest wait for the next hour. Small on purpose: every
- * due row costs a `CANDIDATE_WINDOW_CAP` read of its start-time window, so the tick's worst case is
- * `PROMPT_SWEEP_CAP × CANDIDATE_WINDOW_CAP` documents, which has to stay inside one transaction's
- * read limit — a tick that blows it throws, delivers nothing, and re-reads the same rows next hour
- * for ever.
+ * Due activities a pass reads at most. A pass continues itself until the run's due range is done
+ * (D257), and reads only while it can still afford a skater's prompt at its whole limits, so a heavy
+ * window costs a pass, not the run — it used to be one transaction of fifty rows and fifty windows,
+ * which a throw (or a read past the limit) failed whole, re-reading the same rows every hour for ever.
  */
 const PROMPT_SWEEP_CAP = 50;
 /**
@@ -431,52 +440,244 @@ const CANDIDATE_WINDOW_CAP = 50;
  * un-linked and un-dismissed before delivering.
  */
 export const sweepUnpromptedActivities = internalMutation({
-  args: { now: v.optional(v.number()) },
-  handler: async (ctx, args) => {
-    const now = args.now ?? Date.now();
-    // A plain `take`, not `takeCapped`: a full batch is the design here (the rest wait for the next
-    // tick, the same shape as the storage sweeps), not a truncated answer, so the D5 "results are
-    // truncated" warning would fire on every busy tick for a set that is meant to fill.
-    const due = await ctx.db
+  args: {
+    now: v.optional(v.number()),
+    /**
+     * The run (D257): every pass of a run reads what was due by the moment it started, walking
+     * forward from where the last pass stopped (`after`) — so a run tries each row once.
+     */
+    cutoff: v.optional(v.number()),
+    after: v.optional(v.object({ value: v.number(), creationTime: v.number() })),
+  },
+  handler: (ctx, args): Promise<PromptSweepResult> =>
+    traced(
+      'gpsActivities.sweepUnpromptedActivities',
+      args,
+      async (): Promise<PromptSweepResult> => {
+        const now = args.now ?? Date.now();
+        const cutoff = args.cutoff ?? now;
+        const dueBefore = cutoff - ACTIVITY_PROMPT_DELAY_MS;
+        // The batch: due rows from where the last pass stopped, read while the pass can still afford a
+        // skater's prompt at its whole limits past them. A row that failed earlier in this run (a pass
+        // that stopped part-way re-reads behind its stop) is passed: one attempt a run.
+        const read: Doc<'gpsActivities'>[] = [];
+        let position: Position | undefined = args.after;
+        let exhausted = false;
+        while (read.length < PROMPT_SWEEP_CAP && (await affords(ctx, SKATER_READ))) {
+          const row = await nextDueActivity(ctx, position, dueBefore);
+          if (!row) {
+            exhausted = true;
+            break;
+          }
+          position = { value: row.detectedAt, creationTime: row._creationTime };
+          read.push(row);
+        }
+        // Each skater's due rows together — the dedup decides across them — in their own nested
+        // transaction, so one skater whose prompt fails never holds up anyone else's.
+        const byUser = new Map<Id<'profiles'>, Doc<'gpsActivities'>[]>();
+        for (const row of read) {
+          if (row.promptFailedRun === cutoff) continue;
+          const rows = byUser.get(row.userId);
+          if (rows) rows.push(row);
+          else byUser.set(row.userId, [row]);
+        }
+        const out = { prompted: 0, superseded: 0, settled: 0, failed: 0, parked: 0 };
+        let stoppedAt: Doc<'gpsActivities'> | undefined;
+        for (const [userId, dueRows] of byUser) {
+          if (!(await affords(ctx, SKATER_ITEM))) {
+            stoppedAt = dueRows[0];
+            break;
+          }
+          const one = await runIsolated<PromptCounts>(
+            ctx,
+            internal.gpsActivities.promptSkater,
+            { userId, dueIds: dueRows.map((r) => r._id), now },
+            SKATER_ITEM.limits,
+          );
+          if (one.ok) {
+            out.prompted += one.value.prompted;
+            out.superseded += one.value.superseded;
+            out.settled += one.value.settled;
+            continue;
+          }
+          out.failed++;
+          for (const row of dueRows) {
+            const r = await recordPromptFailure(ctx, row, one.errorClass, now, { cutoff });
+            if (r === 'parked') out.parked++;
+          }
+          console.error(`gpsActivities.sweep: a skater's prompt failed (${one.errorClass})`);
+        }
+        // A stop part-way resumes at the first skater not reached: the rows behind it were settled
+        // (out of the range) or failed in this run (passed).
+        if (stoppedAt !== undefined) {
+          const i = read.indexOf(stoppedAt);
+          const before = i > 0 ? read[i - 1] : undefined;
+          position = before
+            ? { value: before.detectedAt, creationTime: before._creationTime }
+            : args.after;
+        }
+        const more = !exhausted || stoppedAt !== undefined;
+        // A fresh transaction always affords a skater; a pass that read and tried nothing and still has
+        // work would reschedule itself over the same place for ever.
+        if (more && read.length === 0 && byUser.size === 0) {
+          throw new Error('gpsActivities.sweepUnpromptedActivities: a pass made no progress');
+        }
+        if (more && stoppedAt === read[0] && read.length > 0) {
+          throw new Error(
+            'gpsActivities.sweepUnpromptedActivities: a pass could not afford one skater',
+          );
+        }
+        if (more) {
+          await ctx.scheduler.runAfter(0, internal.gpsActivities.sweepUnpromptedActivities, {
+            cutoff,
+            ...(position !== undefined ? { after: position } : {}),
+            ...(args.now !== undefined ? { now: args.now } : {}),
+          });
+        }
+        return { scanned: read.length, ...out, more };
+      },
+    ),
+});
+
+/** What one pass of the prompt sweep did. */
+type PromptSweepResult = {
+  scanned: number;
+  prompted: number;
+  superseded: number;
+  settled: number;
+  failed: number;
+  parked: number;
+  more: boolean;
+};
+
+/** What one skater's prompt did. */
+type PromptCounts = { prompted: number; superseded: number; settled: number };
+
+/**
+ * One skater's prompt, isolated (D257): the dedup across their candidates and the nudge — generous
+ * for any real skater (a window is twenty minutes of one person's skating).
+ */
+const SKATER_ITEM: ItemBudget = {
+  limits: { bytesRead: 8 * MiB, documentsRead: 3000, databaseQueries: 300, documentsWritten: 300 },
+  reserve: { bytesRead: 1 * MiB, documentsRead: 200, databaseQueries: 100, documentsWritten: 200 },
+};
+/** Reading one more due row (a recording is at most a document) with a skater's prompt past it. */
+const SKATER_READ: ItemBudget = {
+  limits: SKATER_ITEM.limits,
+  reserve: { ...SKATER_ITEM.reserve, bytesRead: SKATER_ITEM.reserve.bytesRead + MiB },
+};
+
+/** The next due, unparked row after `at` (`by_prompt_parked_detected`: detected, then created). */
+async function nextDueActivity(
+  ctx: MutationCtx,
+  at: Position | undefined,
+  dueBefore: number,
+): Promise<Doc<'gpsActivities'> | null> {
+  if (at !== undefined) {
+    const tied = await ctx.db
       .query('gpsActivities')
-      .withIndex('by_prompt_state_detected', (q) =>
-        q.eq('promptState', 'pending').lte('detectedAt', now - ACTIVITY_PROMPT_DELAY_MS),
+      .withIndex('by_prompt_parked_detected', (q) =>
+        q
+          .eq('promptState', 'pending')
+          .eq('promptParkedAt', undefined)
+          .eq('detectedAt', at.value)
+          .gt('_creationTime', at.creationTime),
       )
-      .take(PROMPT_SWEEP_CAP);
+      .first();
+    if (tied && tied.detectedAt <= dueBefore) return tied;
+  }
+  return ctx.db
+    .query('gpsActivities')
+    .withIndex('by_prompt_parked_detected', (q) => {
+      const head = q.eq('promptState', 'pending').eq('promptParkedAt', undefined);
+      return at !== undefined
+        ? head.gt('detectedAt', at.value).lte('detectedAt', dueBefore)
+        : head.lte('detectedAt', dueBefore);
+    })
+    .first();
+}
 
-    // Every due row must leave the `pending` range on the tick that reads it, or the sweep re-reads
-    // it every hour for ever — and it holds one of the batch's slots while it does. Two shapes can't
-    // be settled by the dedup below because it never sees them: a row that is already superseded (a
-    // client handed a loser back to `pending` — `setPromptState` accepts any state) and a row that
-    // already carries a link (reported, so there is nothing to ask). Settle those here.
-    //
-    // The rest are deduped per user, against everything of theirs that could be the same skate — not
-    // only the due rows. A copy that arrived an hour ago is still `pending` and not yet due, but it
-    // is the copy the ladder may prefer, and picking a winner without it would supersede the better
-    // recording later.
-    const byUser = new Map<Id<'profiles'>, Doc<'gpsActivities'>[]>();
-    let settled = 0;
-    for (const row of due) {
-      // Link first: a linked row is `converted` whether or not it was also superseded (the loser
-      // loop below leaves a loser its link when the winner has a report of its own).
-      if (row.linkedReportId !== undefined) {
-        await ctx.db.patch(row._id, { promptState: 'converted' });
-        settled++;
-        continue;
-      }
-      if (row.supersededByActivityId !== undefined) {
-        await ctx.db.patch(row._id, { promptState: 'dismissed' });
-        settled++;
-        continue;
-      }
-      const rows = byUser.get(row.userId);
-      if (rows) rows.push(row);
-      else byUser.set(row.userId, [row]);
-    }
+/**
+ * Record a failed prompt on a row, by the rule (`lib/attempts`): one more in a row, its class, the
+ * run it failed in (so the run passes it); parked at the third — out of the due range, still on the
+ * skater's own list of unreported skates, tried again by the daily retry.
+ */
+export async function recordPromptFailure(
+  ctx: MutationCtx,
+  row: Doc<'gpsActivities'>,
+  errorClass: string,
+  now: number,
+  opts: { cutoff?: number; byDailyRetry?: boolean },
+): Promise<'failed' | 'parked'> {
+  const next = nextAttemptState(
+    {
+      attempts: row.promptAttempts,
+      errorClass: row.promptErrorClass,
+      parkedAt: row.promptParkedAt,
+      retriedAt: row.promptRetriedAt,
+    },
+    { kind: 'failed', errorClass, ...(opts.byDailyRetry ? { byDailyRetry: true } : {}) },
+    now,
+  ) as AttemptState;
+  await ctx.db.patch(row._id, {
+    promptAttempts: next.attempts,
+    promptErrorClass: next.errorClass,
+    promptParkedAt: next.parkedAt,
+    promptRetriedAt: next.retriedAt,
+    ...(opts.cutoff !== undefined ? { promptFailedRun: opts.cutoff } : {}),
+  });
+  return next.parkedAt !== undefined && row.promptParkedAt === undefined ? 'parked' : 'failed';
+}
 
-    let prompted = 0;
-    let superseded = 0;
-    for (const [userId, dueRows] of byUser) {
+/** A row's attempt state, cleared: its prompt went through (`lib/attempts`, progress). */
+const CLEARED_PROMPT = {
+  promptAttempts: undefined,
+  promptErrorClass: undefined,
+  promptParkedAt: undefined,
+  promptRetriedAt: undefined,
+  promptFailedRun: undefined,
+};
+
+/**
+ * **One skater's due rows, prompted** — as its own nested transaction (D257). The rows are re-read: a
+ * row already settled (by a link, a dismissal, or this skater's prompt from another pass) is skipped.
+ * What it does is the sweep's rule as it always was (A08 §2.4, §2.4a): a linked row is `converted`,
+ * an already-superseded one `dismissed`; the rest are deduped against everything of the skater's
+ * that could be the same skate, and each winner is asked once.
+ */
+export const promptSkater = internalMutation({
+  args: {
+    userId: v.id('profiles'),
+    dueIds: v.array(v.id('gpsActivities')),
+    now: v.number(),
+  },
+  handler: (ctx, { userId, dueIds, now }): Promise<PromptCounts> =>
+    asItem(userId, async () => {
+      let settled = 0;
+      const dueRows: Doc<'gpsActivities'>[] = [];
+      for (const id of dueIds) {
+        const row = await ctx.db.get(id);
+        if (row?.promptState !== 'pending' || row.userId !== userId) continue;
+        // Its prompt is going through: whatever it failed with before is cleared, in this write.
+        const cleared = row.promptAttempts !== undefined || row.promptParkedAt !== undefined;
+        if (cleared) await ctx.db.patch(row._id, CLEARED_PROMPT);
+        // Link first: a linked row is `converted` whether or not it was also superseded (the loser
+        // loop below leaves a loser its link when the winner has a report of its own).
+        if (row.linkedReportId !== undefined) {
+          await ctx.db.patch(row._id, { promptState: 'converted' });
+          settled++;
+          continue;
+        }
+        if (row.supersededByActivityId !== undefined) {
+          await ctx.db.patch(row._id, { promptState: 'dismissed' });
+          settled++;
+          continue;
+        }
+        dueRows.push(row);
+      }
+      let prompted = 0;
+      let superseded = 0;
+      if (dueRows.length === 0) return { prompted, superseded, settled };
       const candidates = await sameSkateCandidates(ctx, userId, dueRows);
       const candidateById = new Map(candidates.map((c) => [c._id, c]));
       const result = dedupActivities(candidates.map(toDedupActivity));
@@ -567,7 +768,7 @@ export const sweepUnpromptedActivities = internalMutation({
         !isMinor(recipient.dateOfBirth, now) &&
         recipient.canPostReports !== false;
 
-      const dueIds = new Set(dueRows.map((r) => r._id));
+      const dueIdSet = new Set(dueRows.map((r) => r._id));
       for (const winner of result.winners) {
         const id = winner.id as Id<'gpsActivities'>;
         const answered = inherited.get(id);
@@ -575,7 +776,7 @@ export const sweepUnpromptedActivities = internalMutation({
         // which has to land *now*: that loser was superseded above and is out of the candidate set
         // from here on, so an answer not applied on this tick is gone, and the winner would be asked
         // about a skate the person already answered for (the very double prompt A08 §2.4a exists to stop).
-        if (answered === undefined && !dueIds.has(id)) continue;
+        if (answered === undefined && !dueIdSet.has(id)) continue;
         const row = await ctx.db.get(id);
         // Re-read: a link or a dismissal may have landed above, or between the scan and here.
         if (row?.promptState !== 'pending' || row.linkedReportId !== undefined) continue;
@@ -594,9 +795,8 @@ export const sweepUnpromptedActivities = internalMutation({
           flushAfter: now, // already waited hours; the next flush tick delivers
         });
       }
-    }
-    return { scanned: due.length, prompted, superseded, settled };
-  },
+      return { prompted, superseded, settled };
+    }),
 });
 
 /**

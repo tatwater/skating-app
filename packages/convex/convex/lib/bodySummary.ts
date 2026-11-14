@@ -230,10 +230,24 @@ async function syncSummaryRefresh(
     if (keep) await ctx.db.delete(keep._id);
     return;
   }
+  // A recompute that got here went through: any failures the sweep counted on the row, and any
+  // parking, are cleared in the same write (D257, `lib/attempts`: progress clears).
+  const failing =
+    keep !== undefined && (keep.attempts !== undefined || keep.parkedAt !== undefined);
   if (!keep) {
     await ctx.db.insert('bodySummaryRefreshes', { waterBodyId, refreshAt });
-  } else if (keep.refreshAt !== refreshAt) {
-    await ctx.db.patch(keep._id, { refreshAt });
+  } else if (keep.refreshAt !== refreshAt || failing) {
+    await ctx.db.patch(keep._id, {
+      refreshAt,
+      ...(failing
+        ? {
+            attempts: undefined,
+            lastErrorClass: undefined,
+            parkedAt: undefined,
+            retriedAt: undefined,
+          }
+        : {}),
+    });
   }
 }
 

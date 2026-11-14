@@ -221,7 +221,9 @@ export async function enqueueActorNotification(
   const flushAfter = args.flushAfter ?? now + SETTLE_MS;
   const existing = await ctx.db
     .query('notificationQueue')
-    .withIndex('by_coalesce', (q) => q.eq('coalesceKey', coalesceKey))
+    .withIndex('by_coalesce_parked', (q) =>
+      q.eq('coalesceKey', coalesceKey).eq('parkedAt', undefined),
+    )
     .first();
   if (existing) {
     const trigger = existing.trigger ? mergeTriggers(existing.trigger, args.trigger) : args.trigger;
@@ -479,4 +481,22 @@ async function targetVisible(
   if (!id) return false;
   const doc = await ctx.db.get(id);
   return doc?.moderationStatus === 'visible';
+}
+
+/**
+ * How long a notification stays worth sending (D257): **twelve hours from when it first fell due.**
+ * Past that it is expired — deleted, counted, never delivered — because every notification is about a
+ * moment (a report near you, a thumb, a comment), and one that lands a day late reads as news. The
+ * clock is the row's first due time, which a failure does not move (`firstDueAt`), so retrying never
+ * makes a notification fresh again; it applies to every row, so a flush that was down for a day
+ * expires its backlog rather than sending yesterday as today.
+ */
+export const NOTIFICATION_FRESH_MS = 12 * 60 * 60 * 1000;
+
+/** Whether a queue row is past its freshness window — expired rather than delivered. */
+export function isStaleQueueRow(
+  row: Pick<Doc<'notificationQueue'>, 'flushAfter' | 'firstDueAt'>,
+  now: number,
+): boolean {
+  return now - (row.firstDueAt ?? row.flushAfter) > NOTIFICATION_FRESH_MS;
 }

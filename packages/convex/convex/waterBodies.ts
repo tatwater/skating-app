@@ -81,6 +81,7 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
+import { type AttemptState, nextAttemptState } from './lib/attempts';
 import { snapshotDoc, writeAudit, writeSnapshot } from './lib/audit';
 import {
   getCurrentProfile,
@@ -103,6 +104,7 @@ import {
 import { closeFlag } from './lib/flagResolution';
 import { landmarksForBody, repointLandmarksOnMerge } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
+import { affords, asItem, type ItemBudget, MiB, runIsolated } from './lib/recurringWork';
 import { mirrorReportSubAreas } from './lib/reportSubAreas';
 import { takeCapped } from './lib/scan';
 import { richnessFor, scoreFields, zoomSortKey } from './lib/scoring';
@@ -6684,32 +6686,112 @@ const SUMMARY_BACKFILL_STALE_MS = 2 * 60 * 60 * 1000;
  */
 const SUMMARY_BACKFILL_RETRY_MS = 6 * 60 * 60 * 1000;
 
-/** Bodies the due sweep recomputes per transaction — the same byte budget as the walk's page. */
+/** Bodies the due sweep recomputes per transaction at most — each in its own nested one (D257). */
 const DUE_SUMMARY_BATCH = 50;
 
 /**
- * One batch of the due sweep: recompute every card whose `bodySummaryRefreshes.refreshAt` has
- * passed, oldest first.
+ * One card's recompute, isolated (D257): its body's window of Reports and active hazards. Generous
+ * for any real lake; a card whose recompute reads past it fails like a throw and is counted.
+ */
+const CARD_ITEM: ItemBudget = {
+  limits: { bytesRead: 8 * MiB, documentsRead: 2000, databaseQueries: 100, documentsWritten: 50 },
+  reserve: { bytesRead: 1 * MiB, documentsRead: 100, databaseQueries: 50, documentsWritten: 50 },
+};
+
+/**
+ * One batch of the due sweep: recompute every card whose `bodySummaryRefreshes.refreshAt` had passed
+ * when the run began, oldest first, each in its own nested transaction.
  *
- * **Reads only what is due.** One range on `by_refresh_at` — bounded below as well as above, though
- * `refreshAt` is required and no row can lack it — then one body per due row. A tick where no
- * report has aged out reads nothing but an empty index range. Each recompute moves its row past
- * `now` or deletes it (`summaryRefreshAt` is always later than `now`), so a batch never returns the
- * same row twice and the loop above it terminates.
+ * **Reads only what is due.** One range on `by_parked_refresh_at` — parked cards left out, bounded
+ * below — then one body per due row. Each recompute moves its row past `now` or deletes it
+ * (`summaryRefreshAt` is always later than `now`), and so does a failure: **one card that can't be
+ * recomputed never holds up the rest** (D257). It is counted on its row (`lib/attempts`) and moved
+ * just past the run's cutoff, so the run tries it once; three failures in a row park it — out of the
+ * range, its card left as it last was (never cleared: that would drop its hazards), listed by the
+ * Machinery read, tried again by the daily retry.
  */
 export const refreshDueBodySummaries = internalMutation({
-  args: { batchSize: v.optional(v.number()) },
-  handler: async (ctx, { batchSize }) => {
+  args: { batchSize: v.optional(v.number()), cutoff: v.optional(v.number()) },
+  handler: async (
+    ctx,
+    { batchSize, cutoff: runCutoff },
+  ): Promise<{ refreshed: number; failed: number; parked: number; more: boolean }> => {
     const numItems = Math.min(200, Math.max(1, batchSize ?? DUE_SUMMARY_BATCH));
     const now = Date.now();
-    const due = await ctx.db
-      .query('bodySummaryRefreshes')
-      .withIndex('by_refresh_at', (q) => q.gte('refreshAt', 0).lte('refreshAt', now))
-      .take(numItems);
-    for (const row of due) await recomputeBodySummary(ctx, row.waterBodyId, now, undefined, false);
-    return { refreshed: due.length, more: due.length === numItems };
+    const cutoff = runCutoff ?? now;
+    let refreshed = 0;
+    let failed = 0;
+    let parked = 0;
+    for (let n = 0; ; n++) {
+      if (n >= numItems || !(await affords(ctx, CARD_ITEM))) {
+        return { refreshed, failed, parked, more: true };
+      }
+      const row = await ctx.db
+        .query('bodySummaryRefreshes')
+        .withIndex('by_parked_refresh_at', (q) =>
+          q.eq('parkedAt', undefined).gte('refreshAt', 0).lte('refreshAt', cutoff),
+        )
+        .first();
+      if (!row) return { refreshed, failed, parked, more: false };
+      const one = await runIsolated<null>(
+        ctx,
+        internal.waterBodies.refreshOneBodySummary,
+        { waterBodyId: row.waterBodyId, now },
+        CARD_ITEM.limits,
+      );
+      if (one.ok) {
+        refreshed++;
+        continue;
+      }
+      failed++;
+      if ((await recordCardFailure(ctx, row, one.errorClass, now, { cutoff })) === 'parked') {
+        parked++;
+        console.error(`waterBodies.refreshDueBodySummaries: parked the card of ${row.waterBodyId}`);
+      }
+    }
   },
 });
+
+/** One card's recompute as its own nested transaction (D257). */
+export const refreshOneBodySummary = internalMutation({
+  args: { waterBodyId: v.id('waterBodies'), now: v.number() },
+  handler: (ctx, { waterBodyId, now }): Promise<null> =>
+    asItem(waterBodyId, async () => {
+      await recomputeBodySummary(ctx, waterBodyId, now, undefined, false);
+      return null;
+    }),
+});
+
+/**
+ * Record a failed recompute on the card's refresh row (`lib/attempts`): one more in a row, its class,
+ * moved just past the run's cutoff; parked at the third. The daily retry leaves it parked, re-stamped.
+ */
+export async function recordCardFailure(
+  ctx: MutationCtx,
+  row: Doc<'bodySummaryRefreshes'>,
+  errorClass: string,
+  now: number,
+  opts: { cutoff?: number; byDailyRetry?: boolean },
+): Promise<'failed' | 'parked'> {
+  const next = nextAttemptState(
+    {
+      attempts: row.attempts,
+      errorClass: row.lastErrorClass,
+      parkedAt: row.parkedAt,
+      retriedAt: row.retriedAt,
+    },
+    { kind: 'failed', errorClass, ...(opts.byDailyRetry ? { byDailyRetry: true } : {}) },
+    now,
+  ) as AttemptState;
+  await ctx.db.patch(row._id, {
+    attempts: next.attempts,
+    lastErrorClass: next.errorClass,
+    parkedAt: next.parkedAt,
+    retriedAt: next.retriedAt,
+    ...(opts.cutoff !== undefined ? { refreshAt: Math.max(row.refreshAt, opts.cutoff + 1) } : {}),
+  });
+  return next.parkedAt !== undefined && row.parkedAt === undefined ? 'parked' : 'failed';
+}
 
 /**
  * Whether the full walk has filled `bodySummaryRefreshes` on this deployment: `done`, `running`
@@ -6835,12 +6917,14 @@ export const sweepDueBodySummaries = internalAction({
     let refreshed = 0;
     let batches = 0;
     let more = true;
-    // Each batch moves every row it read past `now`, so this ends; the guard is for a bug, not a
+    // The run's cutoff (D257): a card that fails is moved just past it, so the run tries it once.
+    const cutoff = Date.now();
+    // Each batch moves every row it read past `cutoff`, so this ends; the guard is for a bug, not a
     // budget — 200 batches is 10,000 cards due in one hour, fifty times today's whole set.
     while (more && batches < 200) {
       const batch: { refreshed: number; more: boolean } = await ctx.runMutation(
         internal.waterBodies.refreshDueBodySummaries,
-        {},
+        { cutoff },
       );
       refreshed += batch.refreshed;
       more = batch.more;

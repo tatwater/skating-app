@@ -405,7 +405,7 @@ describe('the due sweep — bodySummaryRefreshes', () => {
       );
     }
     const first = await t.mutation(internal.waterBodies.refreshDueBodySummaries, { batchSize: 2 });
-    expect(first).toEqual({ refreshed: 2, more: true });
+    expect(first).toEqual({ refreshed: 2, failed: 0, parked: 0, more: true });
     expect((await summaryOf(t, ids[0] as Id<'waterBodies'>))?.recentReportCount).toBe(0);
     expect((await summaryOf(t, ids[2] as Id<'waterBodies'>))?.recentReportCount).toBe(9);
 
