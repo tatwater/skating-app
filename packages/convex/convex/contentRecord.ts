@@ -355,105 +355,120 @@ export const replayVerdictHistory = internalMutation({
     pageSize: v.optional(v.number()),
     clocks: v.optional(v.boolean()),
   },
-  handler: async (ctx, args) => {
-    const { targetType, targetId, subjectUserId, pass, cursor, resume, pageSize, clocks } = args;
-    const reads = new ReadBudget();
-    // A row; in the write pass, the row keyed by it and the one it ends, each looked up and written.
-    const perRow = ROW_MAX.moderationAction + 4 * ROW_MAX.verdict;
-    const page = await reads.page(
-      'moderationAction',
-      reads.rows('moderationAction', pageSize ?? BACKFILL_PAGE, FINISH, perRow),
-      (numItems) =>
-        ctx.db
-          .query('moderationActions')
-          .withIndex('by_target', (q) => q.eq('targetType', targetType).eq('targetId', targetId))
-          .order('asc')
-          .paginate({ cursor: cursor ?? null, numItems }),
-    );
-    const upsert = async (verdict: ReplayedVerdict) => {
-      const existing = await reads.one('verdict', () =>
-        ctx.db
-          .query('contentVerdicts')
-          .withIndex('by_action', (q) => q.eq('actionId', verdict.actionId))
-          .first(),
+  handler: (ctx, args) =>
+    traced('contentRecord.replayVerdictHistory', args, async () => {
+      const { targetType, targetId, subjectUserId, pass, cursor, resume, pageSize, clocks } = args;
+      const reads = new ReadBudget();
+      // A row's work beside its read, in the write pass: the row keyed by it and the one it ends, each
+      // looked up and written. The finish is kept back.
+      const work = 4 * ROW_MAX.verdict;
+      const page = await reads.page(
+        'moderationAction',
+        sizePage(reads, 'moderationAction', {
+          cap: pageSize ?? BACKFILL_PAGE,
+          work,
+          reserve: FINISH,
+        }),
+        (numItems) =>
+          ctx.db
+            .query('moderationActions')
+            .withIndex('by_target', (q) => q.eq('targetType', targetType).eq('targetId', targetId))
+            .order('asc')
+            .paginate({ cursor: cursor ?? null, numItems }),
       );
-      if (!existing) {
-        await ctx.db.insert('contentVerdicts', { subjectUserId, targetType, targetId, ...verdict });
-        return 1;
-      }
-      if (
-        existing.standing === verdict.standing &&
-        existing.endedByActionId === verdict.endedByActionId
-      ) {
-        return 0;
-      }
-      reads.touch('verdict');
-      await ctx.db.patch(existing._id, {
-        standing: verdict.standing,
-        endedAt: verdict.endedAt,
-        endedByActionId: verdict.endedByActionId,
-      });
-      return 1;
-    };
-    let state: ReplayState = args.state ?? REPLAY_START;
-    let written = 0;
-    for (const row of page.page) {
-      const step = replayStep(state, row);
-      if (pass === 'write') {
-        if (!step.minted) {
-          // A row keyed by an action that mints nothing is not what the rules make.
-          const stray = await reads.one('verdict', () =>
-            ctx.db
-              .query('contentVerdicts')
-              .withIndex('by_action', (q) => q.eq('actionId', row._id))
-              .first(),
-          );
-          if (stray) {
-            reads.touch('verdict');
-            await ctx.db.delete(stray._id);
-            written++;
-          }
+      const upsert = async (verdict: ReplayedVerdict) => {
+        const existing = await reads.one('verdict', () =>
+          ctx.db
+            .query('contentVerdicts')
+            .withIndex('by_action', (q) => q.eq('actionId', verdict.actionId))
+            .first(),
+        );
+        if (!existing) {
+          await ctx.db.insert('contentVerdicts', {
+            subjectUserId,
+            targetType,
+            targetId,
+            ...verdict,
+          });
+          return 1;
         }
-        if (step.ended) written += await upsert(step.ended);
+        if (
+          existing.standing === verdict.standing &&
+          existing.endedByActionId === verdict.endedByActionId
+        ) {
+          return 0;
+        }
+        reads.touch('verdict');
+        await ctx.db.patch(existing._id, {
+          standing: verdict.standing,
+          endedAt: verdict.endedAt,
+          endedByActionId: verdict.endedByActionId,
+        });
+        return 1;
+      };
+      let state: ReplayState = args.state ?? REPLAY_START;
+      let written = 0;
+      for (const row of page.page) {
+        const step = replayStep(state, row);
+        if (pass === 'write')
+          await reads.row(work, async () => {
+            if (!step.minted) {
+              // A row keyed by an action that mints nothing is not what the rules make.
+              const stray = await reads.one('verdict', () =>
+                ctx.db
+                  .query('contentVerdicts')
+                  .withIndex('by_action', (q) => q.eq('actionId', row._id))
+                  .first(),
+              );
+              if (stray) {
+                reads.touch('verdict');
+                await ctx.db.delete(stray._id);
+                written++;
+              }
+            }
+            if (step.ended) written += await upsert(step.ended);
+          });
+        state = step.state;
       }
-      state = step.state;
-    }
-    const base = {
-      targetType,
-      targetId,
-      subjectUserId,
-      resume,
-      ...(pageSize !== undefined ? { pageSize } : {}),
-      ...(clocks !== undefined ? { clocks } : {}),
-    };
-    if (!page.isDone) {
-      await ctx.scheduler.runAfter(0, internal.contentRecord.replayVerdictHistory, {
-        ...base,
-        pass,
-        cursor: page.continueCursor,
-        state,
-      });
-      return { written, more: true };
-    }
-    // The end of its history: what it leaves standing stands, and the clock follows — on an item
-    // still there (one erased while the replay ran has no record to keep, as at the hand-off).
-    if (await loadTarget(ctx, reads, targetType, targetId)) {
-      if (state.standing) written += await upsert({ ...state.standing, standing: true });
-      await holdMoved(ctx, targetType, targetId, Date.now(), reads);
-    }
-    if (pass === 'scan') {
-      await ctx.scheduler.runAfter(0, internal.contentRecord.replayVerdictHistory, {
-        ...base,
-        pass: 'write' as const,
-      });
-    } else {
-      await ctx.scheduler.runAfter(0, internal.contentRecord.backfillVerdicts, {
-        cursor: resume.cursor,
-        skip: resume.skip,
+      const base = {
+        targetType,
+        targetId,
+        subjectUserId,
+        resume,
         ...(pageSize !== undefined ? { pageSize } : {}),
         ...(clocks !== undefined ? { clocks } : {}),
+      };
+      if (!page.isDone) {
+        await ctx.scheduler.runAfter(0, internal.contentRecord.replayVerdictHistory, {
+          ...base,
+          pass,
+          cursor: page.continueCursor,
+          state,
+        });
+        return { written, more: true };
+      }
+      // The end of its history: what it leaves standing stands, and the clock follows — on an item
+      // still there (one erased while the replay ran has no record to keep, as at the hand-off).
+      const standing = state.standing;
+      await reads.row(FINISH, async () => {
+        if (await loadTarget(ctx, reads, targetType, targetId)) {
+          if (standing) written += await upsert({ ...standing, standing: true });
+          await holdMoved(ctx, targetType, targetId, Date.now(), reads);
+        }
       });
-    }
-    return { written, more: pass === 'scan' };
-  },
+      if (pass === 'scan') {
+        await ctx.scheduler.runAfter(0, internal.contentRecord.replayVerdictHistory, {
+          ...base,
+          pass: 'write' as const,
+        });
+      } else {
+        await ctx.scheduler.runAfter(0, internal.contentRecord.backfillVerdicts, {
+          cursor: resume.cursor,
+          skip: resume.skip,
+          ...(pageSize !== undefined ? { pageSize } : {}),
+          ...(clocks !== undefined ? { clocks } : {}),
+        });
+      }
+      return { written, more: pass === 'scan' };
+    }),
 });

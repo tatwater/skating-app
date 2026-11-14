@@ -30,7 +30,7 @@
  * the next pass walks forward with no cursor; `pageSize` is the test seam for that continuation.
  */
 
-import { postPhotoIds } from '@skating/core';
+import { POST_MAX_REPORTS, postPhotoIds } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
@@ -48,7 +48,7 @@ import {
 } from './lib/eraseClock';
 import { deletePhotoAndBlobs } from './lib/photoOrphans';
 import { postSearchText } from './lib/postSync';
-import { ReadBudget, ROW_MAX, type RowKind } from './lib/readBudget';
+import { ReadBudget, ROW_MAX, type RowKind, sizePage, traced } from './lib/readBudget';
 import { literals } from './lib/validators';
 
 export { ROW_MAX } from './lib/readBudget';
@@ -292,69 +292,82 @@ export const eraseDue = internalMutation({
      */
     photos: v.optional(photoWorkValidator),
   },
-  handler: async (ctx, { pageSize, photos: carried = [] }) => {
-    const size = pageSizeFor(pageSize);
-    const now = Date.now();
-    const erased: Partial<Record<Erasable, number>> = {};
-    const photos: PhotoWork[] = [];
-    // The seam scales the write budget, so a test can force any item across passes.
-    const tick: Tick = { reads: new ReadBudget(), writes: size * WRITES_PER_ROW };
-    let held = 0;
-    let more = false;
-    kinds: for (const kind of ERASED_KINDS) {
-      const eraser = ERASERS[kind];
-      for (let taken = 0; ; taken++) {
-        if (taken >= size) {
-          more = true;
-          break;
+  handler: (ctx, args) =>
+    traced('erasure.eraseDue', args, async () => {
+      const { pageSize, photos: carried = [] } = args;
+      const size = pageSizeFor(pageSize);
+      const now = Date.now();
+      const erased: Partial<Record<Erasable, number>> = {};
+      const photos: PhotoWork[] = [];
+      // The seam scales the write budget, so a test can force any item across passes.
+      const tick: Tick = { reads: new ReadBudget(), writes: size * WRITES_PER_ROW };
+      let held = 0;
+      let more = false;
+      kinds: for (const kind of ERASED_KINDS) {
+        const eraser = ERASERS[kind];
+        for (let taken = 0; ; taken++) {
+          if (taken >= size) {
+            more = true;
+            break;
+          }
+          // Out of budget: the rest waits for the next pass, still due.
+          if (!tick.reads.affords(ITEM_NEED[kind]) || tick.writes <= 0) {
+            more = true;
+            break kinds;
+          }
+          const doc = await dueHead(ctx, tick.reads, kind, now);
+          if (!doc) break;
+          // The second guard: re-read the withdrawal and the holds now. A row that is held (or no
+          // longer withdrawn) has its clock cleared or moved, which takes it out of the range.
+          const next = await refreshClockOf(ctx, tick.reads, kind, doc, now);
+          if (next === undefined || next > now) {
+            held++;
+            continue;
+          }
+          if (!(await eraser(ctx, tick, doc, now, photos))) {
+            // Part-way: what it removed is gone, the item itself is whole and still due.
+            more = true;
+            break kinds;
+          }
+          await writeAudit(ctx, {
+            action: 'erase',
+            targetType: kind,
+            targetId: doc._id,
+            reason: ERASE_REASON[kind],
+            createdAt: now,
+          });
+          erased[kind] = (erased[kind] ?? 0) + 1;
         }
-        // Out of budget: the rest waits for the next pass, still due.
-        if (!tick.reads.affords(ITEM_NEED[kind]) || tick.writes <= 0) {
-          more = true;
-          break kinds;
-        }
-        const doc = await dueHead(ctx, tick.reads, kind, now);
-        if (!doc) break;
-        // The second guard: re-read the withdrawal and the holds now. A row that is held (or no
-        // longer withdrawn) has its clock cleared or moved, which takes it out of the range.
-        const next = await refreshClockOf(ctx, tick.reads, kind, doc, now);
-        if (next === undefined || next > now) {
-          held++;
-          continue;
-        }
-        if (!(await eraser(ctx, tick, doc, now, photos))) {
-          // Part-way: what it removed is gone, the item itself is whole and still due.
-          more = true;
-          break kinds;
-        }
-        await writeAudit(ctx, {
-          action: 'erase',
-          targetType: kind,
-          targetId: doc._id,
-          reason: ERASE_REASON[kind],
-          createdAt: now,
-        });
-        erased[kind] = (erased[kind] ?? 0) + 1;
       }
-    }
-    // After every row they hung from is gone: each uploader's set is settled by a job that can read
-    // their whole history, a charged page at a time — once the run ends, or once a chunk is waiting.
-    const pending = [...carried, ...photos].filter((work) => work.photoIds.length > 0);
-    const waiting = pending.reduce((n, work) => n + work.photoIds.length, 0);
-    const settleNow = !more || waiting >= SETTLE_CHUNK;
-    if (settleNow) await queuePhotoSettlement(ctx, pending);
-    if (more) {
-      await ctx.scheduler.runAfter(0, internal.erasure.eraseDue, {
-        ...(pageSize !== undefined ? { pageSize } : {}),
-        ...(settleNow || pending.length === 0
-          ? {}
-          : {
-              photos: pending.map((w) => ({ uploaderId: w.uploaderId, photoIds: [...w.photoIds] })),
-            }),
-      });
-    }
-    return { erased, held, more };
-  },
+      // Every pass moves: it erases an item, clears or moves a clock, or deletes a row an item carries
+      // (`ITEM_NEED` holds a fresh budget to that). One that did none of those and still has work would
+      // reschedule itself forever over the same head — so it fails, loudly, instead.
+      const moved =
+        Object.keys(erased).length > 0 || held > 0 || tick.writes < size * WRITES_PER_ROW;
+      if (more && !moved) {
+        throw new Error('erasure.eraseDue: a pass made no progress on the head of the due range');
+      }
+      // After every row they hung from is gone: each uploader's set is settled by a job that can read
+      // their whole history, a charged page at a time — once the run ends, or once a chunk is waiting.
+      const pending = [...carried, ...photos].filter((work) => work.photoIds.length > 0);
+      const waiting = pending.reduce((n, work) => n + work.photoIds.length, 0);
+      const settleNow = !more || waiting >= SETTLE_CHUNK;
+      if (settleNow) await queuePhotoSettlement(ctx, pending);
+      if (more) {
+        await ctx.scheduler.runAfter(0, internal.erasure.eraseDue, {
+          ...(pageSize !== undefined ? { pageSize } : {}),
+          ...(settleNow || pending.length === 0
+            ? {}
+            : {
+                photos: pending.map((w) => ({
+                  uploaderId: w.uploaderId,
+                  photoIds: [...w.photoIds],
+                })),
+              }),
+        });
+      }
+      return { erased, held, more };
+    }),
 });
 
 // ── The erasers ────────────────────────────────────────────────────────────────────────────────
@@ -461,93 +474,97 @@ export const settlePhotos = internalMutation({
     /** Test seam: rows per page, clamped to what the page can afford. */
     pageSize: v.optional(v.number()),
   },
-  handler: async (ctx, { uploaderId, photoIds, phase = 'reports', cursor, after, pageSize }) => {
-    const reads = new ReadBudget();
-    const cap = pageSize ?? Number.POSITIVE_INFINITY;
-    const carryOn = (
-      rest: Id<'photos'>[],
-      next: { phase: 'reports'; cursor?: string } | { phase: 'hazards'; after?: number },
-    ) =>
-      ctx.scheduler.runAfter(0, internal.erasure.settlePhotos, {
-        uploaderId,
-        photoIds: rest,
-        ...next,
-        ...(pageSize !== undefined ? { pageSize } : {}),
-      });
-    if (phase === 'reports') {
-      const page = await reads.page('report', reads.rows('report', cap), (numItems) =>
+  handler: (ctx, args) =>
+    traced('erasure.settlePhotos', { ...args, photoIds: args.photoIds.length }, async () => {
+      const { uploaderId, photoIds, phase = 'reports', cursor, after, pageSize } = args;
+      const reads = new ReadBudget();
+      const cap = pageSize ?? Number.POSITIVE_INFINITY;
+      const carryOn = (
+        rest: Id<'photos'>[],
+        next: { phase: 'reports'; cursor?: string } | { phase: 'hazards'; after?: number },
+      ) =>
+        ctx.scheduler.runAfter(0, internal.erasure.settlePhotos, {
+          uploaderId,
+          photoIds: rest,
+          ...next,
+          ...(pageSize !== undefined ? { pageSize } : {}),
+        });
+      if (phase === 'reports') {
+        const page = await reads.page('report', sizePage(reads, 'report', { cap }), (numItems) =>
+          ctx.db
+            .query('reports')
+            .withIndex('by_author', (q) => q.eq('authorId', uploaderId))
+            .paginate({ cursor: cursor ?? null, numItems }),
+        );
+        const used = new Set<string>(page.page.flatMap((row) => row.photoIds));
+        const remaining = photoIds.filter((id) => !used.has(id));
+        if (remaining.length === 0) return { settled: 0, more: false };
+        await carryOn(
+          remaining,
+          page.isDone ? { phase: 'hazards' } : { phase: 'reports', cursor: page.continueCursor },
+        );
+        return { settled: 0, more: true };
+      }
+      // Creation order, which no write moves (a hazard refiled to another lake would move under
+      // `by_author_and_water_body` and could slip behind a cursor unread), resumed after the last one
+      // read — creation times in a table are strictly increasing — so a hazard filed since is read too.
+      const n = sizePage(reads, 'hazard', { cap, reserve: SETTLE_ONE });
+      const hazards = await reads.take('hazard', n, (k) =>
         ctx.db
-          .query('reports')
-          .withIndex('by_author', (q) => q.eq('authorId', uploaderId))
-          .paginate({ cursor: cursor ?? null, numItems }),
+          .query('hazards')
+          .withIndex('by_author', (q) =>
+            after === undefined
+              ? q.eq('createdByUserId', uploaderId)
+              : q.eq('createdByUserId', uploaderId).gt('_creationTime', after),
+          )
+          .take(k),
       );
-      const used = new Set<string>(page.page.flatMap((row) => row.photoIds));
+      const used = new Set<string>(hazards.flatMap((row) => row.photoIds));
       const remaining = photoIds.filter((id) => !used.has(id));
       if (remaining.length === 0) return { settled: 0, more: false };
-      await carryOn(
-        remaining,
-        page.isDone ? { phase: 'hazards' } : { phase: 'reports', cursor: page.continueCursor },
-      );
-      return { settled: 0, more: true };
-    }
-    // Creation order, which no write moves (a hazard refiled to another lake would move under
-    // `by_author_and_water_body` and could slip behind a cursor unread), resumed after the last one
-    // read — creation times in a table are strictly increasing — so a hazard filed since is read too.
-    const n = Math.max(1, reads.rows('hazard', cap, SETTLE_ONE));
-    const hazards = await reads.take('hazard', n, (k) =>
-      ctx.db
-        .query('hazards')
-        .withIndex('by_author', (q) =>
-          after === undefined
-            ? q.eq('createdByUserId', uploaderId)
-            : q.eq('createdByUserId', uploaderId).gt('_creationTime', after),
-        )
-        .take(k),
-    );
-    const used = new Set<string>(hazards.flatMap((row) => row.photoIds));
-    const remaining = photoIds.filter((id) => !used.has(id));
-    if (remaining.length === 0) return { settled: 0, more: false };
-    const readTo = hazards.at(-1)?._creationTime ?? after;
-    const position = readTo !== undefined ? { after: readTo } : {};
-    if (hazards.length === n) {
-      await carryOn(remaining, { phase: 'hazards', ...position });
-      return { settled: 0, more: true };
-    }
-    // This transaction read to the end of their hazards: what is left, nothing of theirs uses but a
-    // Report that took it since or an access point — read here, beside the delete.
-    const now = Date.now();
-    let settled = 0;
-    let done = 0;
-    while (done < remaining.length && reads.affords(SETTLE_ONE)) {
-      const photoId = remaining[done] as Id<'photos'>;
-      done++;
-      const photo = await reads.one('photo', () => ctx.db.get(photoId));
-      if (!photo || photo.erasedAt !== undefined) continue;
-      if (photo.reportId !== undefined) continue;
-      const onAccess = await reads.one('small', () =>
-        ctx.db
-          .query('accessPhotos')
-          .withIndex('by_photo', (q) => q.eq('photoId', photoId))
-          .first(),
-      );
-      if (onAccess) continue;
-      reads.touch('photo');
-      settled++;
-      if (await deletePhotoAndBlobs(ctx, photo)) continue;
-      // A blob outlived the attempt: the row is the only pointer to it (the orphan sweep retries),
-      // and no longer anything of its uploader's.
-      await ctx.db.patch(photoId, {
-        caption: undefined,
-        takenAt: undefined,
-        coord: undefined,
-        placeOnMap: false,
-        erasedAt: now,
-      });
-    }
-    const rest = remaining.slice(done);
-    if (rest.length > 0) await carryOn(rest, { phase: 'hazards', ...position });
-    return { settled, more: rest.length > 0 };
-  },
+      const readTo = hazards.at(-1)?._creationTime ?? after;
+      const position = readTo !== undefined ? { after: readTo } : {};
+      if (hazards.length === n) {
+        await carryOn(remaining, { phase: 'hazards', ...position });
+        return { settled: 0, more: true };
+      }
+      // This transaction read to the end of their hazards: what is left, nothing of theirs uses but a
+      // Report that took it since or an access point — read here, beside the delete.
+      const now = Date.now();
+      let settled = 0;
+      let done = 0;
+      while (done < remaining.length && reads.affords(SETTLE_ONE)) {
+        const photoId = remaining[done] as Id<'photos'>;
+        done++;
+        settled += await reads.row(SETTLE_ONE, async () => {
+          const photo = await reads.one('photo', () => ctx.db.get(photoId));
+          if (!photo || photo.erasedAt !== undefined) return 0;
+          if (photo.reportId !== undefined) return 0;
+          const onAccess = await reads.one('small', () =>
+            ctx.db
+              .query('accessPhotos')
+              .withIndex('by_photo', (q) => q.eq('photoId', photoId))
+              .first(),
+          );
+          if (onAccess) return 0;
+          reads.touch('photo');
+          if (await deletePhotoAndBlobs(ctx, photo)) return 1;
+          // A blob outlived the attempt: the row is the only pointer to it (the orphan sweep retries),
+          // and no longer anything of its uploader's.
+          await ctx.db.patch(photoId, {
+            caption: undefined,
+            takenAt: undefined,
+            coord: undefined,
+            placeOnMap: false,
+            erasedAt: now,
+          });
+          return 1;
+        });
+      }
+      const rest = remaining.slice(done);
+      if (rest.length > 0) await carryOn(rest, { phase: 'hazards', ...position });
+      return { settled, more: rest.length > 0 };
+    }),
 });
 
 /**
@@ -718,29 +735,35 @@ async function eraseReport(
  */
 export const dropErasedMember = internalMutation({
   args: { postId: v.id('posts'), reportId: v.id('reports') },
-  handler: async (ctx, { postId, reportId }) => {
-    const reads = new ReadBudget();
-    const post = await reads.one('post', () => ctx.db.get(postId));
-    if (!post) return;
-    const reportIds = post.reportIds.filter((id) => id !== reportId);
-    const members: Doc<'reports'>[] = [];
-    for (const id of reportIds) {
-      const member = await reads.one('report', () => ctx.db.get(id));
-      if (member) members.push(member);
-    }
-    let latest: number | undefined;
-    for (const member of members) {
-      if (member.moderationStatus !== 'visible') continue;
-      if (latest === undefined || member.skateEndTime > latest) latest = member.skateEndTime;
-    }
-    const derived = {
-      reportIds,
-      photoIds: postPhotoIds(members),
-      searchText: postSearchText(post, members),
-      ...(latest !== undefined ? { latestSkateEndTime: latest } : {}),
-    };
-    await refreshClockOf(ctx, reads, 'post', { ...post, ...derived }, Date.now(), {}, derived);
-  },
+  handler: (ctx, args) =>
+    traced('erasure.dropErasedMember', args, async () => {
+      const { postId, reportId } = args;
+      const reads = new ReadBudget();
+      const post = await reads.one('post', () => ctx.db.get(postId));
+      if (!post) return;
+      const reportIds = post.reportIds.filter((id) => id !== reportId);
+      // The plan: the Post and the rest of its at most `POST_MAX_REPORTS` members, each read once.
+      if (reportIds.length >= POST_MAX_REPORTS) {
+        throw new Error(`erasure.dropErasedMember: a Post with ${post.reportIds.length} members`);
+      }
+      const members: Doc<'reports'>[] = [];
+      for (const id of reportIds) {
+        const member = await reads.one('report', () => ctx.db.get(id));
+        if (member) members.push(member);
+      }
+      let latest: number | undefined;
+      for (const member of members) {
+        if (member.moderationStatus !== 'visible') continue;
+        if (latest === undefined || member.skateEndTime > latest) latest = member.skateEndTime;
+      }
+      const derived = {
+        reportIds,
+        photoIds: postPhotoIds(members),
+        searchText: postSearchText(post, members),
+        ...(latest !== undefined ? { latestSkateEndTime: latest } : {}),
+      };
+      await refreshClockOf(ctx, reads, 'post', { ...post, ...derived }, Date.now(), {}, derived);
+    }),
 });
 
 /**
@@ -750,33 +773,40 @@ export const dropErasedMember = internalMutation({
  */
 export const refreshMemberClocks = internalMutation({
   args: { postId: v.id('posts'), done: v.optional(v.array(v.id('reports'))) },
-  handler: async (ctx, { postId, done = [] }) => {
-    const reads = new ReadBudget();
-    const post = await reads.one('post', () => ctx.db.get(postId));
-    if (!post) return { refreshed: 0, more: false };
-    const postHeld = await postHoldOf(ctx, reads, post._id);
-    const now = Date.now();
-    const perMember = 2 * ROW_MAX.report + HOLD_COST.post;
-    // By id, never by position: a member erased between passes leaves `reportIds`, and a position
-    // would then skip the member after it — whose clock would never start.
-    const seen = new Set<string>(done);
-    const todo = post.reportIds.filter((id) => !seen.has(id));
-    const refreshed: Id<'reports'>[] = [];
-    for (const id of todo) {
-      if (!reads.affords(perMember)) break;
-      refreshed.push(id);
-      const member = await reads.one('report', () => ctx.db.get(id));
-      if (member) await refreshClockOf(ctx, reads, 'report', member, now, { postHeld });
-    }
-    const more = refreshed.length < todo.length;
-    if (more) {
-      await ctx.scheduler.runAfter(0, internal.erasure.refreshMemberClocks, {
-        postId,
-        done: [...done, ...refreshed],
-      });
-    }
-    return { refreshed: refreshed.length, more };
-  },
+  handler: (ctx, args) =>
+    traced('erasure.refreshMemberClocks', args, async () => {
+      const { postId, done = [] } = args;
+      const reads = new ReadBudget();
+      const post = await reads.one('post', () => ctx.db.get(postId));
+      if (!post) return { refreshed: 0, more: false };
+      const postHeld = await postHoldOf(ctx, reads, post._id);
+      const now = Date.now();
+      const perMember = 2 * ROW_MAX.report + HOLD_COST.post;
+      // By id, never by position: a member erased between passes leaves `reportIds`, and a position
+      // would then skip the member after it — whose clock would never start.
+      const seen = new Set<string>(done);
+      const todo = post.reportIds.filter((id) => !seen.has(id));
+      const refreshed: Id<'reports'>[] = [];
+      for (const id of todo) {
+        if (!reads.affords(perMember)) break;
+        refreshed.push(id);
+        await reads.row(perMember, async () => {
+          const member = await reads.one('report', () => ctx.db.get(id));
+          if (member) await refreshClockOf(ctx, reads, 'report', member, now, { postHeld });
+        });
+      }
+      if (todo.length > 0 && refreshed.length === 0) {
+        throw new Error('erasure.refreshMemberClocks: a pass reached no member');
+      }
+      const more = refreshed.length < todo.length;
+      if (more) {
+        await ctx.scheduler.runAfter(0, internal.erasure.refreshMemberClocks, {
+          postId,
+          done: [...done, ...refreshed],
+        });
+      }
+      return { refreshed: refreshed.length, more };
+    }),
 });
 
 /** A Post: reached only once every member is erased (`lib/eraseClock` holds it until then). */
@@ -891,66 +921,78 @@ export const backfillClocks = internalMutation({
     after: v.optional(v.number()),
     pageSize: v.optional(v.number()),
   },
-  handler: async (ctx, { kind, after, pageSize }) => {
-    const kinds = Object.keys(ERASABLE) as Erasable[];
-    const current = (kind ?? kinds[0]) as Erasable;
-    if (!kinds.includes(current)) throw new ConvexError(`Unknown kind ${kind}`);
-    const size = Math.min(Math.max(pageSize ?? BACKFILL_PAGE, 1), BACKFILL_PAGE);
-    const now = Date.now();
-    const reads = new ReadBudget();
-    // A withdrawn row's own work beside its read: a stamp, its hold, its clock. Kept back for one
-    // row, so every pass gets through at least one; most rows are not withdrawn and cost only the read.
-    const work = 2 * ROW_MAX[current] + HOLD_COST[current];
-    // By creation time (which no write moves), resumed after the last row looked at — never by a
-    // position on a page, since erasure deletes rows of these tables while the walk runs.
-    const requested = Math.max(1, reads.rows(current, size, work));
-    const rows = (await reads.take(current, requested, (n) =>
-      // Typed as one table: every erasable table has the same `by_creation_time` index.
-      ctx.db
-        .query(ERASABLE[current] as 'reports')
-        .withIndex('by_creation_time', (q) =>
-          after === undefined ? q : q.gt('_creationTime', after),
+  handler: (ctx, args) =>
+    traced('erasure.backfillClocks', args, async () => {
+      const { kind, after, pageSize } = args;
+      const kinds = Object.keys(ERASABLE) as Erasable[];
+      const current = (kind ?? kinds[0]) as Erasable;
+      if (!kinds.includes(current)) throw new ConvexError(`Unknown kind ${kind}`);
+      const size = Math.min(Math.max(pageSize ?? BACKFILL_PAGE, 1), BACKFILL_PAGE);
+      const now = Date.now();
+      const reads = new ReadBudget();
+      // A withdrawn row's own work beside its read: a stamp, its hold, its clock. Kept back for one
+      // row, so every pass gets through at least one; most rows are not withdrawn and cost only the read.
+      const work = 2 * ROW_MAX[current] + HOLD_COST[current];
+      // By creation time (which no write moves), resumed after the last row looked at — never by a
+      // position on a page, since erasure deletes rows of these tables while the walk runs.
+      const requested = sizePage(reads, current, { cap: size, reserve: work });
+      const rows = (await reads.take(current, requested, (n) =>
+        // Typed as one table: every erasable table has the same `by_creation_time` index.
+        ctx.db
+          .query(ERASABLE[current] as 'reports')
+          .withIndex('by_creation_time', (q) =>
+            after === undefined ? q : q.gt('_creationTime', after),
+          )
+          .take(n),
+      )) as ErasableDoc[];
+      let set = 0;
+      let stamped = 0;
+      let lookedTo = after;
+      let looked = 0;
+      for (const doc of rows) {
+        const alertToStamp =
+          current === 'accessAlert' &&
+          authorRetracted(doc as Doc<'accessAlerts'>) &&
+          (doc as Doc<'accessAlerts'>).retractedAt === undefined;
+        const needsClock =
+          alertToStamp || (withdrawnAtOf(current, doc) !== undefined && doc.eraseAt === undefined);
+        if (needsClock && !reads.affords(work)) break;
+        looked++;
+        lookedTo = doc._creationTime;
+        if (!needsClock) continue;
+        if (
+          await reads.row(work, async () => {
+            let fresh = doc;
+            if (alertToStamp) {
+              // Retracted by its author before `retractedAt` existed: no time for its 30 days, and no
+              // history row to recover one from. They start at the backfill — never in the past. A
+              // moderator's retraction is not a withdrawal and is left alone.
+              reads.touch('accessAlert');
+              await ctx.db.patch(doc._id as Id<'accessAlerts'>, { retractedAt: now });
+              fresh = { ...(doc as Doc<'accessAlerts'>), retractedAt: now };
+              stamped++;
+            }
+            if (withdrawnAtOf(current, fresh) === undefined || fresh.eraseAt !== undefined)
+              return false;
+            return (await refreshClockOf(ctx, reads, current, fresh, now)) !== undefined;
+          })
         )
-        .take(n),
-    )) as ErasableDoc[];
-    let set = 0;
-    let stamped = 0;
-    let lookedTo = after;
-    let looked = 0;
-    for (const doc of rows) {
-      const alertToStamp =
-        current === 'accessAlert' &&
-        authorRetracted(doc as Doc<'accessAlerts'>) &&
-        (doc as Doc<'accessAlerts'>).retractedAt === undefined;
-      const needsClock =
-        alertToStamp || (withdrawnAtOf(current, doc) !== undefined && doc.eraseAt === undefined);
-      if (needsClock && !reads.affords(work)) break;
-      looked++;
-      lookedTo = doc._creationTime;
-      if (!needsClock) continue;
-      let fresh = doc;
-      if (alertToStamp) {
-        // Retracted by its author before `retractedAt` existed: no time for its 30 days, and no
-        // history row to recover one from. They start at the backfill — never in the past. A
-        // moderator's retraction is not a withdrawal and is left alone.
-        reads.touch('accessAlert');
-        await ctx.db.patch(doc._id as Id<'accessAlerts'>, { retractedAt: now });
-        fresh = { ...(doc as Doc<'accessAlerts'>), retractedAt: now };
-        stamped++;
+          set++;
       }
-      if (withdrawnAtOf(current, fresh) === undefined || fresh.eraseAt !== undefined) continue;
-      if ((await refreshClockOf(ctx, reads, current, fresh, now)) !== undefined) set++;
-    }
-    // A short read, every row of it looked at, was the rest of this kind.
-    const kindDone = looked === rows.length && rows.length < requested;
-    const next = kindDone ? kinds[kinds.indexOf(current) + 1] : current;
-    if (next !== undefined) {
-      await ctx.scheduler.runAfter(0, internal.erasure.backfillClocks, {
-        kind: next,
-        ...(next === current && lookedTo !== undefined ? { after: lookedTo } : {}),
-        ...(pageSize !== undefined ? { pageSize } : {}),
-      });
-    }
-    return { kind: current, set, stamped, more: next !== undefined };
-  },
+      // The first row's work is kept back, so a pass that looked at none of its rows is a plan error.
+      if (rows.length > 0 && looked === 0) {
+        throw new Error(`erasure.backfillClocks: a pass looked at no ${current} row`);
+      }
+      // A short read, every row of it looked at, was the rest of this kind.
+      const kindDone = looked === rows.length && rows.length < requested;
+      const next = kindDone ? kinds[kinds.indexOf(current) + 1] : current;
+      if (next !== undefined) {
+        await ctx.scheduler.runAfter(0, internal.erasure.backfillClocks, {
+          kind: next,
+          ...(next === current && lookedTo !== undefined ? { after: lookedTo } : {}),
+          ...(pageSize !== undefined ? { pageSize } : {}),
+        });
+      }
+      return { kind: current, set, stamped, more: next !== undefined };
+    }),
 });
