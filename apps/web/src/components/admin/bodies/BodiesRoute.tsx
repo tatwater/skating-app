@@ -1,12 +1,13 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { clampPageSize, LIBRARY_PAGE_SIZE } from '@skating/core';
-import { Link, useNavigate, useSearch } from '@tanstack/react-router';
+import { Link, useNavigate, useRouterState, useSearch } from '@tanstack/react-router';
 import { type PaginationStatus, usePaginatedQuery } from 'convex/react';
 import { type ReactElement, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ReadBoundary } from '@/components/kit/read-boundary';
 import { useRole } from '@/lib/useRole';
+import { ID_SHAPE } from '../body/frame/bodySearch';
 
 import { isFailed, type Loadable, loaded, read, useConsoleReadSet } from '../reads/consoleReads';
 import { ReadNote } from '../reads/ReadNote';
@@ -54,22 +55,20 @@ import { BODY_LANES } from './bodyLanes';
  * held while it stays open, so a new minute never restarts the paging. Every read waits on
  * `body.read`; a viewer without it sees *Not recorded yet*.
  *
+ * Mounted by `routes/admin.bodies.tsx`, which binds `validateBodiesSearch`. *Open in Body* goes to
+ * the Body console carrying the list's own address as `from`, so the console's way back puts the
+ * list back exactly as it was.
+ *
  * Every change of place is a navigation to the same route with the new search, so the back button,
  * a reload and a return from the Body console put the list back as it was. Moving down the list
  * replaces the entry rather than stacking one per row.
  */
 
-/**
- * Where the list opens a body. The Body console lands with its own change; until then a body opens
- * in the old editor, which still does that work — never a page that isn't there.
- */
-export const BODY_PATH = (id: string) => `/admin/water/${encodeURIComponent(id)}`;
-
-/** A Convex id's shape, so a hand-edited `?body=` never reaches a query as junk. */
-const ID_SHAPE = /^[0-9a-z]{30,34}$/;
+/** Where the list opens a body: its Body console, the id escaped as every other link to it is. */
+export const BODY_PATH = (id: string) => `/admin/body/${encodeURIComponent(id)}`;
 
 export type BodiesRouteProps = {
-  /** Where a body opens (the old editor until the Body console lands). */
+  /** Where a body opens (its Body console). */
   bodyPath?: (id: string) => string;
   /** The open action's words, matching `bodyPath`. */
   openLabel?: string;
@@ -80,6 +79,8 @@ export function BodiesRoute({ bodyPath = BODY_PATH, openLabel }: BodiesRouteProp
   const navigate = useNavigate();
   const { can } = useRole();
   const now = useMinuteNow();
+  // The list's own address, whole: the Body console's way back.
+  const from = useRouterState({ select: (s) => s.location.href });
   const query = queryOf(search);
   const key = listKey(query);
   const listNow = useClockFor(key);
@@ -96,7 +97,7 @@ export function BodiesRoute({ bodyPath = BODY_PATH, openLabel }: BodiesRouteProp
       search: searchFor(next) as never,
       ...(how?.replace === true && { replace: true }),
     });
-  const bodyLink = (id: string): ReactElement => <Link to={bodyPath(id)} />;
+  const bodyLink = (id: string): ReactElement => <Link to={bodyPath(id)} search={{ from }} />;
 
   // A body merged away (a stale link, or back from merging it) opens as its survivor: the URL moves
   // there, so every read in the preview — and the row the list marks — is the survivor's.
@@ -120,7 +121,7 @@ export function BodiesRoute({ bodyPath = BODY_PATH, openLabel }: BodiesRouteProp
     previewPending: preview.pending,
     now,
     bodyLink,
-    onOpenBody: (id) => void navigate({ to: bodyPath(id) }),
+    onOpenBody: (id) => void navigate({ to: bodyPath(id), search: { from } }),
     ...(openLabel !== undefined && { openLabel }),
     // Mounted whatever the counts' state, so its words are announced when they come; at the
     // lanes' foot, a block the one-line status bar would clip.

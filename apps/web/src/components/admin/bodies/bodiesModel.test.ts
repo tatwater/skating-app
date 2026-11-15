@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-
 import { BOARD_NOON } from '@/test/boardNow';
+import { depthText } from './BodyPreview';
 
 import {
   acresText,
@@ -138,5 +138,16 @@ describe('the page’s kicker', () => {
         narrowedBy: ['NH', 'Bay'],
       }),
     ).toBe('NH · Bay');
+  });
+});
+
+describe('the preview’s depth', () => {
+  it('reads plainly only where a measured source vouches for it; otherwise an estimate', () => {
+    expect(depthText(9.4, 24, 'state_agency', 'state_agency')).toBe('9.4 / 24 m');
+    expect(depthText(8.1, 24, 'globathy', 'state_agency')).toBe('~8.1 / 24 m');
+    expect(depthText(null, 24, null, 'hydrolakes_modeled')).toBe('~24 m');
+    // The record doesn't say where it came from: nothing vouches for it.
+    expect(depthText(9.4, null)).toBe('~9.4 m');
+    expect(depthText(null, null)).toBeNull();
   });
 });

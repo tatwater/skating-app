@@ -437,8 +437,11 @@ export const Junctions: Story = {
     const first = must(rows(pal)[0]).getBoundingClientRect();
     await near(first.top - kicker.bottom, resolvePx(pal, 'var(--space-1_5)'));
     const bar = resolvePx(pal, 'var(--stroke-note)');
-    await expect(getComputedStyle(must(highlightedRow(pal))).boxShadow).toEqual(
-      sameShadow({ lengths: [bar, 0, 0, 0], inset: true }),
+    // The bar slides in on the row's own transition: retried, so only its end state passes.
+    await waitFor(() =>
+      expect(getComputedStyle(must(highlightedRow(pal))).boxShadow).toEqual(
+        sameShadow({ lengths: [bar, 0, 0, 0], inset: true }),
+      ),
     );
     // Wider than a dialog, and inside the gutter of a narrow frame.
     await expect(box.width).toBeGreaterThan(resolvePx(pal, 'var(--size-sheet-sm)'));

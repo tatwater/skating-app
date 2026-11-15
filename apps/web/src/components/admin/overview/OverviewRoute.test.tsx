@@ -204,7 +204,7 @@ describe('the Overview at /admin', () => {
   it('opens a feed row on its old page', async () => {
     render(<OverviewRoute />);
     await userEvent.click(screen.getByText('Body'));
-    expect(mocks.navigate).toHaveBeenCalledWith({ to: '/admin/water/w1' });
+    expect(mocks.navigate).toHaveBeenCalledWith({ to: '/admin/body/w1' });
     await userEvent.click(screen.getByText('Comment'));
     expect(mocks.navigate).toHaveBeenCalledWith({ to: '/admin/flags' });
   });

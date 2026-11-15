@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -67,8 +67,19 @@ vi.mock('convex/react', async () => {
 vi.mock('@tanstack/react-router', () => ({
   useSearch: () => mocks.search,
   useNavigate: () => mocks.navigate,
-  Link: ({ to, children, ...props }: { to: string; children?: ReactNode }) => (
-    <a href={to} {...props}>
+  useRouterState: ({ select }: { select: (s: { location: { href: string } }) => unknown }) =>
+    select({ location: { href: '/admin/bodies?lane=dormant' } }),
+  Link: ({
+    to,
+    search,
+    children,
+    ...props
+  }: {
+    to: string;
+    search?: { from?: string };
+    children?: ReactNode;
+  }) => (
+    <a href={to} data-from={search?.from} {...props}>
       {children}
     </a>
   ),
@@ -90,7 +101,7 @@ import { getFunctionName } from 'convex/server';
 
 import { KeysProvider } from '@/lib/keys';
 import { resetConsoleReads } from '../reads/consoleReads';
-import { BodiesRoute, resetShownMemory, startingPageSize } from './BodiesRoute';
+import { BODY_PATH, BodiesRoute, resetShownMemory, startingPageSize } from './BodiesRoute';
 import { resetScrollMemory } from './BodiesTable';
 import { listKey, queryOf } from './bodiesSearch';
 
@@ -591,6 +602,11 @@ describe('the place in the URL', () => {
     await userEvent.click(screen.getByRole('button', { name: /^Active/ }));
     expect(mocks.navigate).toHaveBeenLastCalledWith({ to: '.', search: {} });
   });
+
+  it('opens a body at its console, the id escaped as every other link to it is', () => {
+    expect(BODY_PATH(ID)).toBe(`/admin/body/${ID}`);
+    expect(BODY_PATH('k1/7')).toBe('/admin/body/k1%2F7');
+  });
 });
 
 describe('the preview', () => {
@@ -668,15 +684,18 @@ describe('the preview', () => {
       'aria-valuenow',
       '9',
     );
-    expect(
-      within(pane())
-        .getByText(/Open in the editor/)
-        .closest('a'),
-    ).toHaveAttribute('href', `/admin/water/${ID}`);
+    const link = within(pane())
+      .getByText(/Open in Body/)
+      .closest('a');
+    expect(link).toHaveAttribute('href', `/admin/body/${ID}`);
+    expect(link).toHaveAttribute('data-from', '/admin/bodies?lane=dormant');
     act(() => pane().focus());
     await userEvent.keyboard('{Enter}');
-    // The Body console isn't here yet: the body opens in the old editor, never a page that isn't.
-    expect(mocks.navigate).toHaveBeenLastCalledWith({ to: `/admin/water/${ID}` });
+    expect(mocks.navigate).toHaveBeenLastCalledWith({
+      to: `/admin/body/${ID}`,
+      // The list's own address rides along, so the console's way back finds it as it was.
+      search: { from: '/admin/bodies?lane=dormant' },
+    });
   });
 
   it('skips the history for a viewer who can’t read the audit', () => {
@@ -717,13 +736,17 @@ describe('the preview', () => {
     const button = within(pane()).getAllByRole('button', { name: 'Try again' })[0] as HTMLElement;
     act(() => button.focus());
     await userEvent.keyboard('{Enter}');
+    // Waits for the state it describes — the reads taken back and the fresh answer drawn — rather
+    // than sampling the renders once, at whatever moment the press resolved.
+    await waitFor(() =>
+      expect(within(pane()).getByText('2 on the ice · 1 from shore')).toBeInTheDocument(),
+    );
     const after = log.slice(before);
     // The failed reads were dropped for a render and taken up again; the body's read never was.
     expect(after.map((reads) => reads.includes(name(api.bodies.preview)))).toContain(false);
     expect(after.map((reads) => reads.includes(name(api.bodyConsole.history)))).toContain(false);
     expect(after.at(-1)).toEqual(expect.arrayContaining([name(api.bodies.preview)]));
     expect(after.every((reads) => reads.includes(name(api.waterBodies.get)))).toBe(true);
-    expect(within(pane()).getByText('2 on the ice · 1 from shore')).toBeInTheDocument();
     expect(within(pane()).queryByText('Couldn’t read the history')).toBeNull();
     expect(within(pane()).queryByRole('button', { name: 'Try again' })).toBeNull();
     // The note emptied where it stood and kept the focus — never dropped to the page.
@@ -780,7 +803,7 @@ describe('the preview', () => {
     expect(
       within(pane()).getByText('The full preview isn’t available for a rejected body.'),
     ).toBeInTheDocument();
-    expect(within(pane()).queryByText(/Open in the editor/)).toBeNull();
+    expect(within(pane()).queryByText(/Open in Body/)).toBeNull();
     act(() => pane().focus());
     await userEvent.keyboard('{Enter}');
     expect(mocks.navigate).not.toHaveBeenCalled();

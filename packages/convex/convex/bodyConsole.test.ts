@@ -852,17 +852,79 @@ describe('dailyHazards', () => {
           firstReportedDay: today - 6 * DAY,
           endRecorded: true,
           endDay: today - 3 * DAY,
+          type: 'pressure_ridge',
+          passage: false,
         },
-        { hazardId: ids.late, firstReportedDay: today, endRecorded: false, endDay: null },
+        {
+          hazardId: ids.late,
+          firstReportedDay: today,
+          endRecorded: false,
+          endDay: null,
+          type: 'pressure_ridge',
+          passage: false,
+        },
         {
           hazardId: ids.july,
           firstReportedDay: Date.UTC(2026, 6, 15),
           endRecorded: false,
           endDay: null,
+          type: 'pressure_ridge',
+          passage: false,
         },
       ]),
     );
     expect(r.hazards).toHaveLength(3);
+  });
+
+  test('a reported crossing is counted apart, for the days it was live; a hazard beside it still counts (B01-3d)', async () => {
+    const t = harness();
+    const { as, id: mod } = await seedUser(t);
+    const id = await seedBody(t, { name: 'Crossed' });
+    const today = Math.floor(NOW / DAY) * DAY;
+    const start = today - 10 * DAY;
+    const ids = await t.run(async (ctx) => {
+      const pin = (type: Doc<'hazards'>['type']) =>
+        ctx.db.insert('hazards', {
+          waterBodyId: id,
+          type,
+          geometryKind: 'point_radius',
+          geometry: { type: 'Point' as const, coordinates: [-72, 44] },
+          radiusMeters: 15,
+          bbox: boxOf(-72, 44, 0.001),
+          createdByUserId: mod,
+          photoIds: [],
+          moderationStatus: 'visible',
+          confirmCount: 0,
+          goneCount: 0,
+          createdAt: start,
+          firstReportedAt: start,
+          lastConfirmedAt: start,
+          status: 'active',
+        });
+      return { crossing: await pin('ridge_crossing'), ridge: await pin('pressure_ridge') };
+    });
+    const r = await as.query(api.bodyConsole.dailyHazards, { waterBodyId: id, now: NOW });
+    const day = (d: number) =>
+      r.days.find((x) => x.at === start + d * DAY) ?? { count: 0, unknown: 0, crossings: 0 };
+    // Live 72 hours from its last confirmation: days 0–3, never counted as a hazard.
+    expect(day(0)).toMatchObject({ count: 1, crossings: 1 });
+    expect(day(3)).toMatchObject({ count: 1, crossings: 1 });
+    expect(day(4)).toMatchObject({ count: 1, crossings: 0 });
+    expect(r.days.every((d) => d.count === 1 && d.unknown === 0)).toBe(true);
+    expect(r.hazards).toEqual(
+      expect.arrayContaining([
+        {
+          hazardId: ids.crossing,
+          firstReportedDay: start,
+          endRecorded: true,
+          endDay: start + 3 * DAY,
+          type: 'ridge_crossing',
+          passage: true,
+        },
+        expect.objectContaining({ hazardId: ids.ridge, type: 'pressure_ridge', passage: false }),
+      ]),
+    );
+    expect(r.unknownEnds).toBe(0);
   });
 
   test('a season or clock out of range reads as this season, at the server’s day', async () => {

@@ -20,7 +20,10 @@ import {
   archiveSeasonLabel,
   callerNow,
   currentSeason,
+  hoursToMs,
+  isPassageMarker,
   libraryStandingOf,
+  PASSAGE_EXPIRY_H,
   resolveSeason,
   type Season,
   seasonEndMs,
@@ -32,7 +35,7 @@ import { type QueryCtx, query } from './_generated/server';
 import { auditLinksOnBody } from './lib/auditReads';
 import { requireCapability } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
-import { geoFactsOf, townsWithStateOf } from './lib/bodyGeo';
+import { geoFactsOf, townRowsOf, townsWithStateOf } from './lib/bodyGeo';
 import { hasContoursFor } from './lib/bodyLibrary';
 import { MODERATION_ACTIONS } from './lib/enums';
 import { landmarksForBody } from './lib/landmarkRows';
@@ -40,6 +43,7 @@ import { QUEUE_CAP } from './lib/requestDecisions';
 import { undoState } from './lib/undo';
 import { literals } from './lib/validators';
 import { subAreasForBody } from './subAreas';
+import { depthChoicesOf } from './waterBodies';
 
 /** A person as the console names them; `null` for the machine or an erased account. */
 type PersonView = { userId: Id<'profiles'>; username: string; displayName: string } | null;
@@ -466,7 +470,11 @@ export function daysCovered(from: number, to: number, window: { start: number; e
  *
  * Days run through the end of the caller's UTC day (never past it, never past the season). `hazards`
  * lists each counted hazard's first-report day and whether its end is recorded (with its end day),
- * so the tab can mark first reports without another read. `unknownEnds` counts the archived hazards
+ * so the tab can mark first reports without another read, and each one's `type` (`passage: true` for a
+ * reported crossing). **A reported crossing is not counted as a hazard** (D64: it is a passage marker,
+ * a report that someone crossed there): each day's `crossings` counts the crossings live that day,
+ * from first report until expiry or recorded leaving. A crossing never makes a day read safer or
+ * more dangerous; it is its own mark. `unknownEnds` counts the archived hazards
  * with no recorded end. Hidden and merged-away pins are not counted. Bounded at
  * {@link DAILY_HAZARD_CAP}; `capped` past it. `watchOpensOn` is the season record's opening day.
  */
@@ -495,9 +503,9 @@ export const dailyHazards = query({
           .lt('firstReportedAt', window.end),
       )
       .take(DAILY_HAZARD_CAP + 1);
-    const days = new Map<number, { count: number; unknown: number }>();
-    const bump = (day: number, field: 'count' | 'unknown') => {
-      const d = days.get(day) ?? { count: 0, unknown: 0 };
+    const days = new Map<number, { count: number; unknown: number; crossings: number }>();
+    const bump = (day: number, field: 'count' | 'unknown' | 'crossings') => {
+      const d = days.get(day) ?? { count: 0, unknown: 0, crossings: 0 };
       d[field]++;
       days.set(day, d);
     };
@@ -507,11 +515,37 @@ export const dailyHazards = query({
       firstReportedDay: number;
       endRecorded: boolean;
       endDay: number | null;
+      type: Doc<'hazards'>['type'];
+      passage: boolean;
     }[] = [];
     for (const h of hazards.slice(0, DAILY_HAZARD_CAP)) {
       if (h.moderationStatus !== 'visible' || h.mergedIntoHazardId !== undefined) continue;
-      const active = h.status === 'active';
       const firstDay = Math.floor(h.firstReportedAt / DAY_MS) * DAY_MS;
+      // **A reported crossing is not a hazard** (D64): a passage marker says someone got across a
+      // ridge there. It never enters a day's hazard count or its unknowns; it is counted on its own,
+      // for the days it was live — from its first report until its expiry (the last confirmation plus
+      // `PASSAGE_EXPIRY_H`, applied at read for skaters) or its recorded leaving, whichever came first,
+      // never past the caller's day. A count of crossings is only that: no day reads safer for one.
+      if (isPassageMarker(h.type)) {
+        const ends = Math.min(
+          h.lastConfirmedAt + hoursToMs(PASSAGE_EXPIRY_H),
+          h.leftLakeAt ?? Number.POSITIVE_INFINITY,
+        );
+        const ended = ends <= now;
+        const endDay = ended ? Math.floor(ends / DAY_MS) * DAY_MS : null;
+        listed.push({
+          hazardId: h._id,
+          firstReportedDay: firstDay,
+          endRecorded: ended,
+          endDay,
+          type: h.type,
+          passage: true,
+        });
+        const through = endDay === null ? lastDay : Math.min(endDay + DAY_MS, lastDay);
+        for (const day of daysCovered(h.firstReportedAt, through, window)) bump(day, 'crossings');
+        continue;
+      }
+      const active = h.status === 'active';
       // A recorded end counts through its day; a pin still active is on the lake today, whatever any
       // stamp says (an unmerge clears the merge's stamp, but an active pin never reads one).
       const endDay =
@@ -522,6 +556,8 @@ export const dailyHazards = query({
         firstReportedDay: firstDay,
         endRecorded: endDay !== null,
         endDay,
+        type: h.type,
+        passage: false,
       });
       const through = endDay === null ? lastDay : Math.min(endDay + DAY_MS, lastDay);
       for (const day of daysCovered(h.firstReportedAt, active ? lastDay : through, window)) {
@@ -538,7 +574,7 @@ export const dailyHazards = query({
       season,
       days: [...days.entries()]
         .sort(([a], [b]) => a - b)
-        .map(([at, d]) => ({ at, count: d.count, unknown: d.unknown })),
+        .map(([at, d]) => ({ at, count: d.count, unknown: d.unknown, crossings: d.crossings })),
       unknownEnds,
       hazards: listed,
       capped: hazards.length > DAILY_HAZARD_CAP,
@@ -664,23 +700,74 @@ export const townLines = query({
     await requireCapability(ctx, 'body.read');
     const geo = await geoFactsOf(ctx, (await bodyOrThrow(ctx, waterBodyId))._id);
     if (geo === null) return null;
-    const towns = townsWithStateOf(geo) ?? [];
+    // Each town beside its boundary — the same rows, in the same order, `townsWithStateOf` lists.
+    const towns = townRowsOf(geo) ?? [];
     const out: { name: string; state: string | null; ring: number[][] | null }[] = [];
-    for (const [i, town] of towns.slice(0, TOWN_LINES_MAX).entries()) {
-      const areaId = geo.townIds?.[i];
+    for (const { name, state, id: areaId } of towns.slice(0, TOWN_LINES_MAX)) {
       const outline =
-        areaId === undefined
+        areaId === null
           ? null
           : await ctx.db
               .query('adminAreaOutlines')
               .withIndex('by_area', (q) => q.eq('adminAreaId', areaId))
               .first();
-      out.push({ ...town, ring: outline?.ring ?? null });
+      out.push({ name, state, ring: outline?.ring ?? null });
     }
     return {
       towns: out,
       capped: towns.length > TOWN_LINES_MAX,
       computedAt: geo.computedAt as number,
     };
+  },
+});
+
+// ── Identity: what the Names tab shows beside the name ──────────────────────────────────────
+
+/**
+ * **A body's class claims and a moderator's identity facts** (B01-3d) — what the Names tab shows
+ * beside the name: each catalog's class claim (`null`, *not recorded*, for a body imported before the
+ * import stored them — no backfill can recover them), the moderator's class (`null` when none), and
+ * the moderator's own aliases. A merged-away id reads its survivor's.
+ */
+export const identity = query({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }) => {
+    await requireCapability(ctx, 'body.read');
+    const body = await bodyOrThrow(ctx, waterBodyId);
+    return {
+      bodyClass: body.type,
+      classClaims: body.classClaims ?? null,
+      moderatorClass: body.moderatorClass ?? null,
+      moderatorAliases: body.moderatorAliases ?? [],
+    };
+  },
+});
+
+// ── Depth choices: what the Water tab offers ────────────────────────────────────────────────
+
+/**
+ * **A body's depth choices, per measure** (B01-3d) — every source's value the depth ladder kept
+ * (best-ranked first), which one is in use, whether a moderator chose it, and an operator's typed
+ * value when one holds the measure (no source can be chosen over it). The same list
+ * `chooseDepthSource` accepts (`depthChoicesOf`). A merged-away id reads its survivor's.
+ */
+export const depthChoices = query({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }) => {
+    await requireCapability(ctx, 'body.read');
+    const body = await bodyOrThrow(ctx, waterBodyId);
+    const side = (measure: 'mean' | 'max') => {
+      const source = measure === 'mean' ? body.meanDepthSource : body.maxDepthSource;
+      const value = measure === 'mean' ? body.meanDepthM : body.maxDepthM;
+      return {
+        choices: depthChoicesOf(body, measure).map((c) => ({
+          ...c,
+          inUse: c.source === source && c.valueM === value,
+        })),
+        chosen: body.depthChoice?.[measure] ?? null,
+        operatorValueM: source === 'operator' ? (value ?? null) : null,
+      };
+    };
+    return { mean: side('mean'), max: side('max'), recorded: body.depthCandidates !== undefined };
   },
 });

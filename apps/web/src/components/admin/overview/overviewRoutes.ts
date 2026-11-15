@@ -1,10 +1,15 @@
 import type { FeedTarget } from './overviewData';
 import type { OverviewTarget } from './overviewLinks';
 
+/** A body's console: the Bodies mode's page for one body. */
+function bodyConsolePath(id: string): string {
+  return `/admin/body/${encodeURIComponent(id)}`;
+}
+
 /**
  * Where Home's links go in the app as it stands: the old pages, until each target's mode lands
- * (the same rule as the palette, which opens a body in the old lake editor and a person in the
- * old user page). `overviewHref` names the console's own routes; this names the pages that exist.
+ * (the same rule as the palette, which opens a body in its Body console and a person in the old
+ * user page). Bodies has landed, so a body opens in its Body console. `overviewHref` names the console's own routes; this names the pages that exist.
  *
  * Every Inbox lane, Corpus task and People list lands on the old page that does that work; the old
  * pages take no filter, so the lane or list is the page, not a preset on it. `null` is a target
@@ -39,8 +44,8 @@ export function consolePathFor(to: OverviewTarget): string | null {
     case 'people':
       return '/admin/users';
     case 'body':
-      // The Body console, until it lands: the old body editor.
-      return `/admin/water/${encodeURIComponent(to.id)}`;
+      // A most-reported row opens that body's Body console (the governor's ruling at B01-2).
+      return bodyConsolePath(to.id);
     case 'ledger':
       // No page holds the ledger until Machinery lands; Home draws no link to it while cost is unread.
       return null;
@@ -58,7 +63,7 @@ export function consolePathFor(to: OverviewTarget): string | null {
 function auditPath(type: string, id: string): string | null {
   switch (type) {
     case 'waterbody':
-      return `/admin/water/${encodeURIComponent(id)}`;
+      return bodyConsolePath(id);
     case 'user':
       return `/admin/users/${encodeURIComponent(id)}`;
     case 'report':

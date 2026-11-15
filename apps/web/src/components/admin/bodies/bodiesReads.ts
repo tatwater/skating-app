@@ -272,6 +272,11 @@ export function previewFrom({
     bodyClass: body.type,
     states: body.states ?? [],
     town: ready?.town ?? null,
+    ...(ready !== null &&
+      ready.town === null &&
+      ready.townsComputedAt === null && {
+        townsNotComputed: true,
+      }),
     moreTowns: ready?.moreTowns ?? [],
     centroid: body.centroid,
     outline: {
@@ -284,6 +289,8 @@ export function previewFrom({
     areaSqM: area(body.surfaceAreaSqM),
     meanDepthM: body.meanDepthM ?? null,
     maxDepthM: body.maxDepthM ?? null,
+    meanDepthSource: body.meanDepthSource ?? null,
+    maxDepthSource: body.maxDepthSource ?? null,
     elevationM: body.elevationM ?? null,
     facts: facts === undefined ? 'loading' : isFailed(facts) ? 'error' : 'ready',
     season: ready === null ? null : seasonCount(ready.season, now),

@@ -297,6 +297,15 @@ export const MODERATION_ACTIONS = [
   'approve_waterbody',
   'reject_waterbody',
   'set_curated_boost', // adjust a body's D49 display prominence (admin, Phase 02a)
+  // B01-3d: a moderator's own aliases for a body, and its class (each its own fact, never a claim).
+  'set_aliases',
+  'set_class',
+  // B01-3d: a moderator's choice of the source a body's mean or max depth reads from.
+  'choose_depth_source',
+  // B01-3d: a known feature redrawn (its geometry, box and bay; never the body's outline).
+  'update_body_feature_shape',
+  // B01-3d: an admin's call on one satellite pass over a body (show anyway, hide, or clear).
+  'set_imagery_override',
   // Operator-entered reference links — a lake association's URL (A06c §2.7). The only *stored* link in
   // the phase; every other one in the drawer is derived from the row at render time (P2/D71), so
   // this is the only link surface with a writer to audit at all.

@@ -99,7 +99,7 @@ describe('ConsolePalette', () => {
     pick({ id: 'person:u1' });
     expect(onGo.mock.calls.map(([t]) => t.to)).toEqual([
       '/admin/flags',
-      '/admin/water/b1',
+      '/admin/body/b1',
       '/admin/users/u1',
     ]);
   });

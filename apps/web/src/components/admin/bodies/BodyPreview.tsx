@@ -1,4 +1,4 @@
-import { waterBodyClassLabel } from '@skating/core';
+import { type DepthSource, isMeasuredDepthSource, waterBodyClassLabel } from '@skating/core';
 import { type ComponentProps, cloneElement, type ReactElement, type ReactNode } from 'react';
 
 import { Badge } from '@/components/kit/badge';
@@ -25,8 +25,7 @@ import { coordText, OutlineStill } from './OutlineStill';
  * The preview pane (boards 5.1–5.3, right): the body the list has open, read before it's opened
  * in full — its outline, its lockup (class and place, the name, area, depth, elevation), its
  * reports this season and all-time, how complete its record is, what's asked of it, and what
- * changed last. One action at its foot: open the body (⏎) — *Open in the editor →* until the Body
- * console lands, then *Open in Body →*.
+ * changed last. One action at its foot: *Open in Body →* (⏎), to the body's console.
  *
  * Each block draws what its read returned and nothing else: a block whose read doesn't exist yet
  * (`null`) is left out, never drawn as a zero; a read on its way holds its block's shape, and a read
@@ -122,8 +121,8 @@ export function BodyPreview({
   );
 }
 
-/** Where the list opens a body, in words: the old editor, until the Body console lands. */
-export const OPEN_LABEL = 'Open in the editor';
+/** Where the list opens a body, in words: its Body console. */
+export const OPEN_LABEL = 'Open in Body';
 
 function OpenLabel({ label }: { label: string }) {
   return (
@@ -158,6 +157,7 @@ function placeKicker(data: BodyPreviewData): ReactNode {
     <>
       {waterBodyClassLabel(data.bodyClass)}
       {where !== null && ` · ${where}`}
+      {data.townsNotComputed === true && ' · Towns not computed yet'}
       {data.moreTowns.length > 0 && (
         <>
           {' · '}
@@ -183,12 +183,24 @@ function otherTowns(data: BodyPreviewData): string {
   return data.moreTowns.map((t) => `${t}${state}`).join(' · ');
 }
 
-/** "9.4 / 24 m", either half alone when only one is recorded. */
-function depthText(mean: number | null, max: number | null): string | null {
-  const f = (m: number) => (m < 10 ? m.toFixed(1) : Math.round(m).toString());
-  if (mean !== null && max !== null) return `${f(mean)} / ${f(max)} m`;
-  if (max !== null) return `${f(max)} m`;
-  if (mean !== null) return `${f(mean)} m`;
+/**
+ * "9.4 / 24 m", either half alone when only one is recorded. A depth only a measured source vouches
+ * for reads plainly; a modeled or unrecorded one reads as an estimate ("~8.1"), as on the console's
+ * figures and Water (D3).
+ */
+export function depthText(
+  mean: number | null,
+  max: number | null,
+  meanSource: DepthSource | null = null,
+  maxSource: DepthSource | null = null,
+): string | null {
+  const figure = (m: number) => (m < 10 ? m.toFixed(1) : Math.round(m).toString());
+  const sure = (source: DepthSource | null) => source !== null && isMeasuredDepthSource(source);
+  const fm = (m: number) => `${sure(meanSource) ? '' : '~'}${figure(m)}`;
+  const fx = (m: number) => `${sure(maxSource) ? '' : '~'}${figure(m)}`;
+  if (mean !== null && max !== null) return `${fm(mean)} / ${fx(max)} m`;
+  if (max !== null) return `${fx(max)} m`;
+  if (mean !== null) return `${fm(mean)} m`;
   return null;
 }
 
@@ -270,7 +282,12 @@ function PreviewBody({
   onRetry: (() => void) | undefined;
   pending: boolean;
 }) {
-  const depth = depthText(data.meanDepthM, data.maxDepthM);
+  const depth = depthText(
+    data.meanDepthM,
+    data.maxDepthM,
+    data.meanDepthSource ?? null,
+    data.maxDepthSource ?? null,
+  );
   const figures = [
     ...(data.areaSqM !== null ? [{ label: 'Area', value: `${acresText(data.areaSqM)} ac` }] : []),
     ...(depth !== null ? [{ label: 'Depth', value: depth }] : []),

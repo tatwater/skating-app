@@ -2,17 +2,29 @@ import type { ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
 
-import { HazardMark, KEY_GLYPH, LotMark, PhotoMark, PutInMark } from './map-marks';
+import {
+  HazardMark,
+  KEY_GLYPH,
+  LotMark,
+  PhotoMark,
+  PLACE_KEY_LABELS,
+  PlaceMark,
+  type PlaceMarkKind,
+  PutInMark,
+} from './map-marks';
 
 /**
  * The map's key, on both surfaces: a slim bar along the map's bottom edge, each kind the map is
  * drawing as its own mark at 12 px (`map-marks`' glyphs) and a name. A map lists only what it
- * shows, and a name is a noun for what the mark *is* — never a word about the ice.
+ * shows, and a name is a noun for what the mark *is* — never a word about the ice. The named
+ * places on a body (each landmark kind), its sample points and a skater's proposals are kinds too,
+ * in their one word each (`PLACE_KEY_LABELS`).
  */
 
 type MapKeyKind =
   | 'putIn'
   | 'lot'
+  | PlaceMarkKind
   | 'hazard'
   | 'healing'
   | 'passage'
@@ -48,9 +60,31 @@ function LineGlyph({ dashed }: { dashed: boolean }) {
   );
 }
 
+/** A place kind's entry: its one word and its plate. */
+const place = (kind: PlaceMarkKind) => ({
+  label: PLACE_KEY_LABELS[kind],
+  glyph: () => <PlaceMark kind={kind} glyph />,
+});
+
+/** In the key's order: access first, then the places, then what is on the ice, then the lines. */
 const ENTRIES: Record<MapKeyKind, { label: string; glyph: () => ReactNode }> = {
   putIn: { label: 'Put-in', glyph: () => <PutInMark glyph /> },
   lot: { label: 'Lot', glyph: () => <LotMark glyph /> },
+  island: place('island'),
+  beach: place('beach'),
+  bridge: place('bridge'),
+  dam: place('dam'),
+  waterway: place('waterway'),
+  settlement: place('settlement'),
+  establishment: place('establishment'),
+  point: place('point'),
+  bay: place('bay'),
+  narrows: place('narrows'),
+  marina: place('marina'),
+  lighthouse: place('lighthouse'),
+  other: place('other'),
+  proposal: place('proposal'),
+  sample: place('sample'),
   hazard: { label: 'Hazard', glyph: () => <HazardMark glyph /> },
   healing: { label: 'Healing hazard', glyph: () => <HazardMark glyph tone="healing" /> },
   passage: { label: 'Ridge crossing', glyph: () => <HazardMark glyph tone="passage" /> },

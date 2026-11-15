@@ -7,9 +7,10 @@
  * re-stamps reports and hazards, a restore re-clips. Nothing here patches a row back by hand.
  */
 
-import { type BodyStanding, standingOf } from '@skating/core';
+import { type BodyStanding, type DepthSource, standingOf } from '@skating/core';
 import { ConvexError } from 'convex/values';
 import type { Doc, Id } from '../_generated/dataModel';
+import { setOverrideImpl } from '../imageryOverrides';
 import {
   type LandmarkEditPrev,
   type LandmarkRestorePrev,
@@ -18,6 +19,7 @@ import {
   unrestoreLandmarkImpl,
   updateLandmarkImpl,
 } from '../landmarks';
+import { demotePutInImpl, promotePutInImpl } from '../putIns';
 import { setStandingImpl } from '../standing';
 import {
   type RedrawSnapshot,
@@ -28,10 +30,13 @@ import {
   setSubAreaCuratedBoostImpl,
 } from '../subAreas';
 import {
+  chooseDepthSourceImpl,
   type DepthFields,
   removeBodyImpl,
   restoreBodyImpl,
   restoreDepthImpl,
+  setAliasesImpl,
+  setClassImpl,
   setCuratedBoostImpl,
   setIncludedByRequestImpl,
   setPublicAccessImpl,
@@ -105,6 +110,8 @@ const undoReferenceLinks: UndoHandler = {
     setReferenceLinksImpl(ctx, actor, {
       waterBodyId: row.targetId as Id<'waterBodies'>,
       links: meta(row).prev.referenceLinks as { label: string; url: string }[],
+      // The undo is the same compare-and-set: refused if the list moved since this row wrote it.
+      expected: meta(row).referenceLinks as { label: string; url: string }[],
       reason,
     }).then(() => undefined),
 };
@@ -438,12 +445,143 @@ const WATER_BODY: TargetUndo = {
   },
 };
 
+/** set_aliases → the list it replaced, through the same write (and its refusals). */
+const undoAliases: UndoHandler = {
+  blocked: needsPrev,
+  undoTakesAway: () => UNDO_POLICY.set_aliases.takesAway(undefined),
+  run: ({ ctx, actor, row, reason }) =>
+    setAliasesImpl(ctx, actor, {
+      waterBodyId: row.targetId as Id<'waterBodies'>,
+      aliases: (meta(row).prev.moderatorAliases as string[] | undefined) ?? [],
+      expected: (meta(row).moderatorAliases as string[] | undefined) ?? [],
+      reason,
+    }).then(() => undefined),
+};
+
+/** set_class → the class it replaced: the moderator's, or the catalogs' class it displaced. */
+const undoClass: UndoHandler = {
+  blocked: needsPrev,
+  undoTakesAway: () => UNDO_POLICY.set_class.takesAway(undefined),
+  run: ({ ctx, actor, row, reason }) => {
+    const prev = meta(row).prev as {
+      moderatorClass: Doc<'waterBodies'>['type'] | null;
+      type: Doc<'waterBodies'>['type'];
+    };
+    return setClassImpl(ctx, actor, {
+      waterBodyId: row.targetId as Id<'waterBodies'>,
+      bodyClass: prev.moderatorClass,
+      catalogClass: prev.type,
+      reason,
+    }).then(() => undefined);
+  },
+};
+
+/** choose_depth_source → the choice it replaced (or the ladder), through the same write. */
+const undoDepthSource: UndoHandler = {
+  blocked: needsPrev,
+  undoTakesAway: () => UNDO_POLICY.choose_depth_source.takesAway(undefined),
+  run: ({ ctx, actor, row, reason }) => {
+    const m = meta(row) as { measure: 'mean' | 'max'; prev: { choice: DepthSource | null } };
+    return chooseDepthSourceImpl(ctx, actor, {
+      waterBodyId: row.targetId as Id<'waterBodies'>,
+      measure: m.measure,
+      source: m.prev.choice,
+      reason,
+    }).then(() => undefined);
+  },
+};
+
+/**
+ * set_imagery_override → the call it replaced (or none), through the same write. Putting back a hide
+ * takes a pass from skaters — and so does putting back *no call* over a show, since the gate that hid
+ * the pass decides again.
+ */
+const undoImageryOverride: UndoHandler = {
+  blocked: needsPrev,
+  undoTakesAway: (row) => {
+    const m = meta(row) as { action: unknown; prev: { action: unknown } };
+    return (
+      UNDO_POLICY.set_imagery_override.takesAway(m.prev.action) ||
+      (m.prev.action === null && m.action === 'show')
+    );
+  },
+  run: ({ ctx, actor, row, reason }) => {
+    const m = meta(row) as {
+      season: string;
+      granuleId: string;
+      prev: { action: 'show' | 'hide' | null; reason: string | null };
+    };
+    return setOverrideImpl(ctx, actor, {
+      waterBodyId: row.targetId as Id<'waterBodies'>,
+      season: m.season,
+      granuleId: m.granuleId,
+      action: m.prev.action,
+      ...(m.prev.reason !== null ? { reason: m.prev.reason } : {}),
+      undoReason: reason,
+    }).then(() => undefined);
+  },
+};
+
+/**
+ * set_put_in → a promotion undone (the source and name it replaced), or that undo undone (promoted
+ * again). A row from `setOfficial` placing a new point has no undo yet.
+ */
+const undoPutIn: UndoHandler = {
+  blocked: (row) => {
+    const direction = (meta(row) as { direction?: unknown }).direction;
+    return direction === 'promoted' || direction === 'demoted'
+      ? null
+      : 'Undoing a newly placed official put-in is not built yet.';
+  },
+  undoTakesAway: (row) =>
+    UNDO_POLICY.set_put_in.takesAway((meta(row) as { direction?: unknown }).direction),
+  run: async ({ ctx, actor, row, reason }) => {
+    const m = meta(row) as {
+      putInId: Id<'putIns'>;
+      coord: { lat: number; lng: number };
+      direction: 'promoted' | 'demoted';
+      name?: string;
+      prev: {
+        source: 'osm' | 'derived' | 'official';
+        name: string | null;
+        createdByUserId?: Id<'profiles'> | null;
+      };
+    };
+    if (m.direction === 'promoted') {
+      await demotePutInImpl(ctx, actor, {
+        putInId: m.putInId,
+        prev: {
+          source: m.prev.source as 'osm' | 'derived',
+          name: m.prev.name,
+          createdByUserId: m.prev.createdByUserId ?? null,
+        },
+        expected: { coord: m.coord, name: m.name ?? null },
+        reason,
+      });
+      return;
+    }
+    // The demotion recorded where the launch was and what it was called once demoted: re-promoting
+    // a launch an import moved or renamed since is refused, as the other direction is (Greptile).
+    await promotePutInImpl(ctx, actor, {
+      putInId: m.putInId,
+      ...(m.prev.name !== null ? { name: m.prev.name } : {}),
+      reason,
+      expected: { coord: m.coord, name: m.name ?? null },
+    });
+  },
+};
+
 /** Verb-level handlers (verbs only this area writes). */
 export const BODY_UNDO_HANDLERS: Partial<Record<ModerationAction, UndoHandler>> = {
   set_curated_boost: undoCuratedBoost,
   set_reference_links: undoReferenceLinks,
+  set_aliases: undoAliases,
+  set_class: undoClass,
   set_water_body_name: undoWaterBodyName,
   set_lake_depth: undoLakeDepth,
+  choose_depth_source: undoDepthSource,
+  set_put_in: undoPutIn,
+  set_imagery_override: undoImageryOverride,
   set_satellite_imagery: undoSatelliteImagery,
   set_weather_sample_points: undoWeatherSamplePoints,
   set_public_access: undoPublicAccess,

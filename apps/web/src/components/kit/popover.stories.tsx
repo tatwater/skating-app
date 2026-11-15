@@ -4,7 +4,7 @@ import { expect, userEvent, waitFor, within } from 'storybook/test';
 
 import { Button } from './button';
 import { Kbd } from './kbd';
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
+import { computedColor, focusRing, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import {
   Popover,
   PopoverBody,
@@ -95,7 +95,9 @@ export const FilterMenuStory: Story = {
     const trigger = within(canvasElement).getByRole('button', { name: 'Filter' });
     await userEvent.tab();
     await expect(trigger).toHaveFocus();
-    await expect(getComputedStyle(trigger).boxShadow).not.toBe('none');
+    // The ring fades in on the button's transition: retried until both its layers are whole. (Never
+    // `not.toBe('none')` — the outline face's inset ring is a box-shadow too, so that holds at rest.)
+    await waitFor(() => expect(getComputedStyle(trigger).boxShadow).toEqual(focusRing()));
     await userEvent.keyboard('{Enter}');
     const plate = await waitFor(() => must(popup()));
     await expect(plate).toHaveAccessibleName('Filter');

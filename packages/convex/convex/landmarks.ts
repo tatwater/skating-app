@@ -60,6 +60,7 @@ import {
   removedLandmarksForBody,
   subAreaFor,
 } from './lib/landmarkRows';
+import { assertListUnchanged } from './lib/listCas';
 import { isListed } from './lib/listing';
 import { approveNamedLandmarkRequest } from './lib/requestDecisions';
 import { latLng, literals } from './lib/validators';
@@ -714,6 +715,8 @@ export const update = mutation({
     kind: v.optional(literals(LANDMARK_KINDS)),
     point: v.optional(latLng),
     aliases: v.optional(v.array(v.string())),
+    /** The spellings this edit was built on (B01-3d): refused, with the current ones, if they moved. */
+    expectedAliases: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const actor = await requireCapability(ctx, 'body.places');
@@ -739,12 +742,14 @@ export async function updateLandmarkImpl(
     kind?: LandmarkKind;
     point?: { lat: number; lng: number };
     aliases?: string[];
+    expectedAliases?: string[];
     reason?: string;
   },
 ): Promise<void> {
   {
     const row = await ctx.db.get(args.landmarkId);
     if (!row) throw new ConvexError('That landmark no longer exists');
+    assertListUnchanged(row.aliases, args.expectedAliases, 'this landmark’s other spellings');
     const names = cleanNames(args.name ?? row.name, args.aliases ?? row.aliases);
     const point = args.point ?? row.point;
     const rows = await liveLandmarksForBody(ctx, row.waterBodyId);

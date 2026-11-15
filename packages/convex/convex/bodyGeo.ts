@@ -29,6 +29,7 @@ import { placeSamplePoints } from './adminAreas';
 import { nextAttemptState } from './lib/attempts';
 import {
   coverTiles,
+  hasTownEntries,
   markGeoStale,
   outlineStamp,
   paddedBox,
@@ -186,6 +187,7 @@ export function placesFrom(
   towns: string[];
   townStates: string[];
   townIds: Id<'adminAreas'>[];
+  townEntries: { name: string; state: string; id: Id<'adminAreas'> }[];
   counties: string[];
   states: string[];
 } {
@@ -194,6 +196,9 @@ export function placesFrom(
   // Each town's state, in the same order (B01-3c): a border lake's towns are in two states.
   const townStates: string[] = [];
   const townIds: Id<'adminAreas'>[] = [];
+  // Keyed on name and state (B01-3d): a border lake's Franklin, VT and Franklin, NH are two towns.
+  // `towns` stays keyed on the name alone, as the pages written before read it.
+  const townEntries: { name: string; state: string; id: Id<'adminAreas'> }[] = [];
   const counties: string[] = [];
   const states = new Set<string>();
   points.forEach((point, i) => {
@@ -215,6 +220,12 @@ export function placesFrom(
             pointInPolygon(point, a.polygon as Geom),
         );
       if (hit === undefined) continue;
+      if (
+        level === 'town' &&
+        !townEntries.some((e) => e.name === hit.name && e.state === hit.state)
+      ) {
+        townEntries.push({ name: hit.name, state: hit.state, id: hit.id as Id<'adminAreas'> });
+      }
       const list = level === 'town' ? towns : counties;
       if (!list.includes(hit.name)) {
         list.push(hit.name);
@@ -226,7 +237,7 @@ export function placesFrom(
       states.add(hit.state);
     }
   });
-  return { towns, townStates, townIds, counties, states: [...states] };
+  return { towns, townStates, townIds, townEntries, counties, states: [...states] };
 }
 
 // ── The write ────────────────────────────────────────────────────────────────────────────────
@@ -343,6 +354,10 @@ export const store = internalMutation({
     townStates: v.optional(v.array(v.string())),
     /** Each town's boundary, in `towns`' order. */
     townIds: v.optional(v.array(v.id('adminAreas'))),
+    /** The towns keyed on name and state, each with its boundary. */
+    townEntries: v.optional(
+      v.array(v.object({ name: v.string(), state: v.string(), id: v.id('adminAreas') })),
+    ),
     counties: v.array(v.string()),
     states: v.array(v.string()),
     /** The places-layer mark the places were computed under (`inputs.areasAt`). */
@@ -399,6 +414,7 @@ export const store = internalMutation({
       towns: args.towns,
       townStates: args.townStates ?? [],
       townIds: args.townIds ?? [],
+      townEntries: args.townEntries ?? [],
       counties: args.counties,
       states: args.states,
       ...clear,
@@ -630,18 +646,29 @@ export const SEED_PAGE = 250;
 
 /** Mark every library body stale, a page at a time, chaining itself — the backfill's first step. */
 export const seedAll = internalMutation({
-  args: { cursor: v.optional(v.string()) },
-  handler: async (ctx, { cursor }) => {
+  args: {
+    cursor: v.optional(v.string()),
+    /** A smaller page (at most {@link SEED_PAGE}) — for a test to reach the chain cheaply. */
+    pageSize: v.optional(v.number()),
+  },
+  handler: async (ctx, { cursor, pageSize }) => {
+    const size =
+      pageSize !== undefined && Number.isFinite(pageSize)
+        ? Math.min(SEED_PAGE, Math.max(1, Math.floor(pageSize)))
+        : SEED_PAGE;
     const page = await ctx.db
       .query('bodyLibraryRows')
       .withIndex('by_scope_name', (q) => q.eq('scope', '*'))
-      .paginate({ cursor: cursor ?? null, numItems: SEED_PAGE });
+      .paginate({ cursor: cursor ?? null, numItems: size });
     await markGeoStale(
       ctx,
       page.page.map((r) => r.waterBodyId),
     );
     if (!page.isDone) {
-      await ctx.scheduler.runAfter(0, internal.bodyGeo.seedAll, { cursor: page.continueCursor });
+      await ctx.scheduler.runAfter(0, internal.bodyGeo.seedAll, {
+        cursor: page.continueCursor,
+        ...(pageSize !== undefined ? { pageSize: size } : {}),
+      });
     }
     return { marked: page.page.length, isDone: page.isDone };
   },
@@ -744,7 +771,10 @@ async function isBehind(
   const townCount = (row.towns ?? []).length;
   if (
     townCount > 0 &&
-    ((row.townStates ?? []).length !== townCount || (row.townIds ?? []).length !== townCount)
+    ((row.townStates ?? []).length !== townCount ||
+      (row.townIds ?? []).length !== townCount ||
+      // Keyed on name and state (B01-3d): the readers' own rule.
+      !hasTownEntries(row))
   ) {
     return true;
   }
