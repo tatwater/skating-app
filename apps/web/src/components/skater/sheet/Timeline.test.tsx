@@ -300,6 +300,32 @@ describe('Timeline', () => {
       expect(onSetEnd).not.toHaveBeenCalled();
     });
 
+    it('the ghost start says it is not set, and a key that places it hands the focus to the caret', () => {
+      render(<Live zone={TZ} endMs={local(16, 12)} nowMs={local(18, 40)} />);
+      const ghost = screen.getByRole('slider', { name: 'Place the start, drag to set' });
+      expect(ghost).toHaveAttribute('aria-valuetext', 'Not set yet');
+      ghost.focus();
+      fireEvent.keyDown(ghost, { key: 'ArrowLeft' });
+      const start = screen.getByRole('slider', { name: 'Start time' });
+      expect(start).toHaveTextContent('START 3:11');
+      expect(start).toHaveFocus();
+      fireEvent.keyDown(start, { key: 'ArrowLeft' });
+      expect(screen.getByRole('slider', { name: 'Start time' })).toHaveTextContent('START 3:10');
+    });
+
+    it('a dimmed ruler takes no keys: it is inert while a sub-mode has the map', () => {
+      const model = timelineModel({
+        timeZone: TZ,
+        nowMs: local(18, 40),
+        endMs: local(16, 12),
+        sun,
+      });
+      const { container, rerender } = render(<Timeline model={model} onSetEnd={() => {}} dim />);
+      expect(container.querySelector('fieldset')).toHaveAttribute('inert');
+      rerender(<Timeline model={model} onSetEnd={() => {}} />);
+      expect(container.querySelector('fieldset')).not.toHaveAttribute('inert');
+    });
+
     it('the label sits in a fixed box of tabular figures, so changing digits shift nothing', () => {
       render(<Live zone={TZ} endMs={local(9, 59)} nowMs={local(18, 40)} />);
       const label = screen.getByRole('slider', { name: 'End time' }).firstElementChild;

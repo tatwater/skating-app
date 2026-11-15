@@ -532,11 +532,44 @@ describe('a track added after the lake (the author’s lake and day stand)', () 
       trackRefusal(onLake(), plan, { waterBodyId: 'crystal', name: 'Crystal Lake' }, ZONE),
     ).toBe('That track is on Crystal Lake, not Mascoma Lake. Add it as another report to keep it.');
     expect(trackRefusal(onLake(), plan, null, ZONE)).toBe(
-      "That track isn't on Mascoma Lake. Start a report from it to keep it.",
+      "We couldn't place that track on Mascoma Lake. Start a report from it to keep it.",
     );
     expect(trackRefusal(onLake(NOW - 3 * 86_400_000), plan, mascoma, ZONE)).toMatch(
       /^That track is from \w+day, \w+ \d+, not the day of this report\.$/,
     );
+  });
+
+  it('a defaulted end (a phone’s "now") is no answer: another day’s track fits, and its times replace it', () => {
+    const r = onLake();
+    const defaulted = {
+      ...r,
+      sheet: sheetReducer(r.sheet, {
+        type: 'select',
+        field: 'endTime',
+        key: 'pinned',
+        value: { ms: NOW, precision: 'minute' },
+        defaulted: true,
+      }),
+    };
+    const yesterday = { startTime: NOW - 26 * 3_600_000, endTime: NOW - 25 * 3_600_000 };
+    expect(trackRefusal(defaulted, yesterday, mascoma, ZONE)).toBeNull();
+    const post = openPostSheet(
+      'body',
+      { waterBodyId: 'mascoma', bodyName: 'Mascoma Lake' },
+      NOW,
+      mint,
+    );
+    const seeded = seedFromTrack(
+      { ...post, reports: [defaulted] },
+      defaulted.id,
+      'a1',
+      yesterday,
+      mascoma,
+    ).reports[0];
+    expect(selectedValues(seeded?.sheet as never, 'endTime')).toEqual([
+      { ms: yesterday.endTime, precision: 'gps' },
+    ]);
+    expect(seeded?.sheet.scalars.skateStartTime).toBe(yesterday.startTime);
   });
 
   it('the import refuses it and leaves the Report as the author had it', async () => {

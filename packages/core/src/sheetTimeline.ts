@@ -113,10 +113,28 @@ export function caretLabel(kind: 'start' | 'end', ms: number, timeZone: string):
   return `${kind === 'start' ? 'START' : 'END'} ${clockLabel(ms, timeZone)}`;
 }
 
+/**
+ * One formatter per zone and shape: constructing `Intl` is the expensive half, and a dragged caret
+ * asks for its label and its value text on every pointer move.
+ */
+function cachedFormat(
+  cache: Map<string, Intl.DateTimeFormat>,
+  timeZone: string,
+  options: Intl.DateTimeFormatOptions,
+): Intl.DateTimeFormat {
+  let format = cache.get(timeZone);
+  if (format === undefined) {
+    format = new Intl.DateTimeFormat('en-US', { ...options, timeZone });
+    cache.set(timeZone, format);
+  }
+  return format;
+}
+const valueTextFormats = new Map<string, Intl.DateTimeFormat>();
+const clockFormats = new Map<string, Intl.DateTimeFormat>();
+
 /** "Saturday 4:12 PM" in the zone — a caret's value for a screen reader, which sees no ruler. */
 export function caretValueText(ms: number, timeZone: string): string {
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone,
+  return cachedFormat(valueTextFormats, timeZone, {
     hour: 'numeric',
     minute: '2-digit',
     weekday: 'long',
@@ -125,7 +143,7 @@ export function caretValueText(ms: number, timeZone: string): string {
 
 /** "4:12" in the zone — the marks carry their word ("END", "SUNSET") beside it. */
 export function clockLabel(ms: number, timeZone: string): string {
-  return new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', minute: '2-digit' })
+  return cachedFormat(clockFormats, timeZone, { hour: 'numeric', minute: '2-digit' })
     .format(ms)
     .replace(/\s?[AP]M$/i, '');
 }

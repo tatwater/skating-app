@@ -66,7 +66,8 @@ export function PhoneInstrumentStrip({
         >
           {whenLine(report, timeZone, now)}
         </span>
-        <AddTrack report={report} timeZone={timeZone} className="-ml-(--space-2)" />
+        {/* Under the when line, from its left edge: the import's own end alignment is the map's. */}
+        <AddTrack report={report} timeZone={timeZone} className="-ml-(--space-2) *:items-start" />
       </div>
     </section>
   );

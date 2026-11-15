@@ -9,6 +9,7 @@ import {
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
+  useEffect,
   useRef,
   useState,
 } from 'react';
@@ -93,9 +94,19 @@ export function Timeline({
     }
     setDrag(null);
   };
+  // The waiting START? is its own element: once a key places the start, the real caret replaces it
+  // on the render the commit brings, so the focus follows to the caret and the next key keeps
+  // stepping it. One shot: a commit that brings no caret leaves nothing armed for a later render.
+  const focusStart = useRef(false);
+  useEffect(() => {
+    if (!focusStart.current) return;
+    focusStart.current = false;
+    ref.current?.querySelector<HTMLElement>('[data-caret="start"]')?.focus();
+  });
   /** The keyboard's drag: a step per key, committed at once, clamped as a drag is. */
   const key =
-    (kind: 'start' | 'end', fromMs: number) => (e: ReactKeyboardEvent<HTMLButtonElement>) => {
+    (kind: 'start' | 'end', fromMs: number, placing = false) =>
+    (e: ReactKeyboardEvent<HTMLButtonElement>) => {
       const commit = kind === 'end' ? (endLocked ? undefined : onSetEnd) : onSetStart;
       if (!commit) return;
       const { min, max } = timelineCaretBounds(model, kind);
@@ -118,7 +129,9 @@ export function Timeline({
       if (to === null) return;
       e.preventDefault();
       const next = Math.min(max, Math.max(min, to));
-      if (next !== fromMs) commit(next);
+      if (next === fromMs) return;
+      if (placing) focusStart.current = true;
+      commit(next);
     };
   /** A draggable caret's slider semantics, at the minute it stands on now (dragged or not). */
   const slider = (kind: 'start' | 'end', ms: number) => {
@@ -153,6 +166,8 @@ export function Timeline({
   return (
     <fieldset
       ref={ref}
+      // Stepped back in a sub-mode: `sheet-dim` stops the pointer, `inert` the keyboard.
+      inert={dim || undefined}
       className={cn(
         'relative mx-9 h-[72px] select-none border-0 p-0 font-mono',
         dim && 'sheet-dim',
@@ -246,7 +261,9 @@ export function Timeline({
                 type="button"
                 {...slider('start', ms)}
                 aria-label="Place the start, drag to set"
-                onKeyDown={key('start', restMs)}
+                // No start yet: the minute it waits at is not a value the author gave.
+                {...(drag?.kind === 'start' ? {} : { 'aria-valuetext': 'Not set yet' })}
+                onKeyDown={key('start', restMs, true)}
                 onPointerDown={begin('start', restMs)}
                 onPointerMove={move}
                 onPointerUp={end}
@@ -300,6 +317,7 @@ export function Timeline({
           <button
             key={m.kind}
             type="button"
+            data-caret={m.kind}
             {...(draggable ? slider(m.kind, m.ms) : { 'aria-label': m.label })}
             {...(draggable ? { onKeyDown: key(m.kind, m.ms) } : {})}
             onPointerDown={begin(m.kind, m.ms)}

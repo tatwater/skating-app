@@ -5,8 +5,8 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
   type PostSheet,
-  reportEndMs,
   type SheetReport,
+  selectedChips,
   sheetReducer,
   updateReport,
 } from '@skating/core';
@@ -18,6 +18,7 @@ import { bucketPointCount, useAnalytics } from '@/lib/analytics';
 import { type GpxIngestPlan, planGpxFile } from '@/lib/gpxParse';
 import { getSheet, updateSheet } from '@/lib/sheetStore';
 import { cn } from '@/lib/utils';
+import { dayKey } from './photoSort';
 import { setReportBody } from './sheetModel';
 import type { GpxImportSlotProps } from './sheetSlots';
 
@@ -28,9 +29,20 @@ export function ingestMessage(error: unknown): string {
 }
 
 /**
+ * The end time the *author* gave, if any. A phone's daylight preselect of "now" is the sheet's
+ * doing (`defaulted`), not an answer: it neither refuses a track from another day nor stands
+ * against the track's exact times.
+ */
+function authoredEndMs(report: SheetReport): number | undefined {
+  const [chip] = selectedChips(report.sheet, 'endTime');
+  return chip === undefined || chip.defaulted === true ? undefined : chip.value.ms;
+}
+
+/**
  * The track lands on the Report: the activity linked, and the lake, the day and the times seeded
  * where the sheet is blank — never over what the author already answered. The times are the
  * track's own (`gps`), so the ruler draws them exactly; the lake is the one the server resolved.
+ * A defaulted end (a phone's "now") is not an answer, so the track's times replace it.
  */
 export function seedFromTrack(
   post: PostSheet,
@@ -45,7 +57,7 @@ export function seedFromTrack(
   if (lake !== null && report.sheet.waterBodyId === undefined)
     next = setReportBody(next, reportId, lake);
   return updateReport(next, reportId, (r) => {
-    if (reportEndMs(r) !== undefined) return r;
+    if (authoredEndMs(r) !== undefined) return r;
     let sheet = sheetReducer(r.sheet, {
       type: 'select',
       field: 'endTime',
@@ -67,7 +79,8 @@ export function seedFromTrack(
  * sentence that says why not. The author's lake and day stand: a track on another lake, or off every
  * lake we know, or from another day than the one the author chose, is not linked to this Report and
  * nothing on it moves (the track is in their activities either way, for a Report of its own). A
- * Report with no lake yet takes the track's; one with no end time yet takes the track's times.
+ * Report with no lake yet takes the track's; one with no end time yet — or only the sheet's
+ * defaulted "now" — takes the track's times.
  */
 export function trackRefusal(
   report: SheetReport,
@@ -79,23 +92,14 @@ export function trackRefusal(
   if (chosen !== undefined && lake?.waterBodyId !== chosen) {
     const here = report.bodyName ?? 'this lake';
     return lake === null
-      ? `That track isn't on ${here}. Start a report from it to keep it.`
+      ? `We couldn't place that track on ${here}. Start a report from it to keep it.`
       : `That track is on ${lake.name}, not ${here}. Add it as another report to keep it.`;
   }
-  const end = reportEndMs(report);
-  if (end !== undefined && dayOf(end, timeZone) !== dayOf(plan.endTime, timeZone)) {
+  const end = authoredEndMs(report);
+  if (end !== undefined && dayKey(end, timeZone) !== dayKey(plan.endTime, timeZone)) {
     return `That track is from ${longDay(plan.endTime, timeZone)}, not the day of this report.`;
   }
   return null;
-}
-
-function dayOf(ms: number, timeZone: string): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(ms);
 }
 
 function longDay(ms: number, timeZone: string): string {
@@ -209,7 +213,6 @@ export function GpxImportView({
       {link ? (
         <Button
           size="xs"
-          variant="link"
           loading={busy}
           data-attr="gpx-add-track"
           onClick={() => inputRef.current?.click()}
