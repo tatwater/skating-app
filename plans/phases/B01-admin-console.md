@@ -3177,11 +3177,19 @@ Imagery/Hazards/Standing/Links), cherry-picked serially onto `b01-3` off the kit
   switch to another body already read, and its save targeted the new body). One place keys a body's
   subtree: `BodyTabHost` mounts every tab and its dock keyed by body and tab; the map's drawing
   probe, the left column and the list's preview are keyed by body too. Kept across bodies on
-  purpose: nothing. And every write is bound to its body (`frame/currentBody.tsx`): nothing is sent
-  once the page has moved (a save the operator already pressed, still queued behind another, is
-  dropped with its draft); a write already on its way lands but its refusal and receipt are
-  dropped (History keeps the row). The binding is to the body the subtree was mounted for, so a
-  missed reset still couldn't send, and the page's body moves at commit, not mid-render. Each tab
+  purpose: nothing. And every write is bound (`frame/currentBody.tsx`), with one explicit
+  lifetime: a binding is one console's hold on one body, made by `BodyBindingProvider` (above the
+  console's loading and tab branches, and in each tab host), alive from its commit until that
+  console goes away for any reason — the body changes, a loading or failed state takes its place,
+  the tab host unmounts, the route is left, the shell remounts — and never revived (coming back is
+  a new console). A consumer holds the binding current at its mount; every write goes through
+  `sendFor`, and the list queue checks the binding before taking up, sending and taking in each
+  save. So nothing is sent once its console has gone (a save already pressed and queued is
+  dropped), and a write already on its way lands but its refusal and receipt are dropped (History
+  keeps the row). Proved by a model-based test (`bodyBinding.model.test.tsx`, fast-check over
+  opening cached, uncached and failing bodies, tab switches, single and queued saves answered late,
+  leaving and returning, remounts — on the real provider, host, queue and `sendFor`), and by named
+  examples in the real route (Links, Standing, Access's Hide). Each tab
   and the preview have a switch test. **Open (a founder call):** a receipt toast already showing
   when the page switches stays its ten seconds over the next body, its title unnamed ("Links
   saved") and its Undo for the body it came from — close receipts on a switch, or name the body in

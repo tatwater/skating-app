@@ -122,7 +122,7 @@ function ImageryReads(props: BodyTabProps) {
   const setMode = useMutation(api.waterBodies.setSatelliteImagery);
   const { can } = useRole();
   const { announce } = useUndo();
-  const here = useBodyBound(props.bodyId);
+  const here = useBodyBound();
   // Copernicus' window is the last 14 days from now: moved on daily.
   const now = useTickingNow(86_400_000);
 

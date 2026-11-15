@@ -2,46 +2,69 @@ import { render } from '@testing-library/react';
 import { ConvexError } from 'convex/values';
 import { describe, expect, it, vi } from 'vitest';
 
-import { CurrentBodyProvider, sendFor, useBodyBound } from './currentBody';
+import { BodyBindingProvider, sendFor, useBodyBound } from './currentBody';
 
 /** A subtree that is *not* keyed by its body: the missed reset the second layer exists for. */
-function Unkeyed({ bodyId, seen }: { bodyId: string; seen: (here: () => boolean) => void }) {
-  seen(useBodyBound(bodyId));
+function Probe({ seen }: { seen: (here: () => boolean) => void }) {
+  seen(useBodyBound());
   return null;
 }
 
-describe('useBodyBound', () => {
-  it('holds the body its subtree was mounted for: a missed reset, now reading another body, sends nothing', () => {
+describe('useBodyBound — one console, one body, one lifetime', () => {
+  const holder = () => {
     let here: () => boolean = () => true;
-    const seen = (h: () => boolean) => {
-      here = h;
-    };
+    return { seen: (h: () => boolean) => void (here = h), here: () => here() };
+  };
+
+  it('holds the binding it mounted under: a missed reset, now under another body, sends nothing', () => {
+    const h = holder();
     const { rerender } = render(
-      <CurrentBodyProvider bodyId="wb1">
-        <Unkeyed bodyId="wb1" seen={seen} />
-      </CurrentBodyProvider>,
+      <BodyBindingProvider bodyId="wb1">
+        <Probe seen={h.seen} />
+      </BodyBindingProvider>,
     );
-    expect(here()).toBe(true);
-    // The page and the subtree's own prop both move to wb2, but the subtree (and its draft) is wb1's.
+    expect(h.here()).toBe(true);
     rerender(
-      <CurrentBodyProvider bodyId="wb2">
-        <Unkeyed bodyId="wb2" seen={seen} />
-      </CurrentBodyProvider>,
+      <BodyBindingProvider bodyId="wb2">
+        <Probe seen={h.seen} />
+      </BodyBindingProvider>,
     );
-    expect(here()).toBe(false);
+    expect(h.here()).toBe(false);
   });
 
-  it('outside a frame there is no other body to move to', () => {
-    let here: () => boolean = () => false;
-    render(
-      <Unkeyed
-        bodyId="wb1"
-        seen={(h) => {
-          here = h;
-        }}
-      />,
+  it('dies when its console goes away — a loading state for another body, a route left (Greptile’s P1)', () => {
+    const h = holder();
+    const { rerender } = render(
+      <BodyBindingProvider bodyId="wb1">
+        <Probe seen={h.seen} />
+      </BodyBindingProvider>,
     );
-    expect(here()).toBe(true);
+    // An uncached body: the page draws its loading state, and the console with its provider is gone.
+    rerender(<p>Loading</p>);
+    expect(h.here()).toBe(false);
+  });
+
+  it('coming back to the same body is a new console: the old binding never revives', () => {
+    const h = holder();
+    const { rerender } = render(
+      <BodyBindingProvider bodyId="wb1">
+        <Probe seen={h.seen} />
+      </BodyBindingProvider>,
+    );
+    rerender(<p>Away</p>);
+    // Back to the same body: a new console, a new binding; the first console's stays dead.
+    rerender(
+      <BodyBindingProvider bodyId="wb1">
+        <Probe seen={() => {}} />
+      </BodyBindingProvider>,
+    );
+    expect(h.here()).toBe(false);
+  });
+
+  it('outside a frame there is no other console to move to', () => {
+    const h = holder();
+    render(<Probe seen={h.seen} />);
+    expect(h.here()).toBe(true);
   });
 });
 

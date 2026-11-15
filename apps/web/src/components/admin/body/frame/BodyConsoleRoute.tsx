@@ -7,9 +7,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
-  useRef,
   useState,
 } from 'react';
 import { ReadBoundary } from '@/components/kit/read-boundary';
@@ -19,7 +17,6 @@ import { toast } from '@/components/kit/toast';
 import { useTheme } from '@/components/theme-provider';
 import { cn } from '@/lib/utils';
 import { listWords } from '@/lib/words';
-import { errorText } from '../../adminUi';
 import { rememberOpened } from '../../bodies/openedRecently';
 import { useUndo } from '../../shell/undo';
 import { BodyMap } from '../map/BodyMap';
@@ -45,7 +42,7 @@ import {
   searchFor,
   validateBodySearch,
 } from './bodySearch';
-import { CurrentBodyProvider } from './currentBody';
+import { BodyBindingProvider, sendFor } from './currentBody';
 import { NotBuiltTab } from './NotBuiltTab';
 import {
   type BodyTabProps,
@@ -164,83 +161,87 @@ export function BodyConsoleRoute({ registry = BODY_TAB_REGISTRY }: { registry?: 
     );
 
   return (
-    <BodyConsoleView
-      bodyKey={bodyId}
-      {...(data.state === 'ready'
-        ? {
-            identity: data.identity,
-            completeness: data.completeness,
-            towns: data.towns,
-            trust: data.trust,
-            asks: data.asks,
-            asksMore: data.asksMore,
-            history: data.history,
-            attention: data.attention,
-          }
-        : {
-            identity: undefined,
-            completeness: undefined,
-            towns: undefined,
-            trust: undefined,
-            asks: undefined,
-            history: undefined,
-            attention: NO_ATTENTION,
-          })}
-      lit={lit}
-      now={Date.now()}
-      tab={tab}
-      onTabChange={(next) => go(searchFor(search, { tab: next }))}
-      onOpenAsk={(ask) => go(searchFor(search, { tab: ask.tab, lit: ask.id }))}
-      {...(data.state === 'ready' && data.canSetBoost ? { onBoostCommit: boost } : {})}
-      onReturn={onReturn}
-      status={status}
-      map={
-        data.state === 'ready' && scene !== null ? (
-          <ReadBoundary
-            // The open tab's drawing is read inside it: another tab is another try.
-            resetKey={`${bodyId}:${slot.key}`}
-            fallback={(retry) => (
-              <div className="p-gutter">
-                <RetryNote data-for="body-map" onRetry={retry}>
-                  The map couldn’t be drawn
-                </RetryNote>
-              </div>
-            )}
-          >
-            {slot.map !== undefined && (
-              <TabSceneProbe
-                key={`${bodyId}:${slot.key}`}
-                map={slot.map}
-                bodyId={bodyId}
-                lit={lit}
-                onScene={setTabScene}
-              />
-            )}
-            <BodyMap
-              bbox={data.bbox}
-              scene={scene}
-              // A new body is a fresh rack as much as a new tab is: a neighbor already read for its
-              // name opens at once, with no loading in between to remount the map.
-              resetKey={`${bodyId}:${tab}`}
-              mode={mode}
-              foot={mapFoot(
-                data.mapFailures,
-                slot.Dock === undefined ? null : (
-                  <BodyTabHost
-                    key={slot.key}
-                    Wiring={slot.Dock}
-                    bodyId={bodyId}
-                    lit={lit}
-                    onLitChange={onLitChange}
-                  />
-                ),
+    // The console's binding (`currentBody`), above its loading and tab branches: the left column's
+    // writes hold it; a tab holds its own host's, which dies no later.
+    <BodyBindingProvider bodyId={bodyId}>
+      <BodyConsoleView
+        bodyKey={bodyId}
+        {...(data.state === 'ready'
+          ? {
+              identity: data.identity,
+              completeness: data.completeness,
+              towns: data.towns,
+              trust: data.trust,
+              asks: data.asks,
+              asksMore: data.asksMore,
+              history: data.history,
+              attention: data.attention,
+            }
+          : {
+              identity: undefined,
+              completeness: undefined,
+              towns: undefined,
+              trust: undefined,
+              asks: undefined,
+              history: undefined,
+              attention: NO_ATTENTION,
+            })}
+        lit={lit}
+        now={Date.now()}
+        tab={tab}
+        onTabChange={(next) => go(searchFor(search, { tab: next }))}
+        onOpenAsk={(ask) => go(searchFor(search, { tab: ask.tab, lit: ask.id }))}
+        {...(data.state === 'ready' && data.canSetBoost ? { onBoostCommit: boost } : {})}
+        onReturn={onReturn}
+        status={status}
+        map={
+          data.state === 'ready' && scene !== null ? (
+            <ReadBoundary
+              // The open tab's drawing is read inside it: another tab is another try.
+              resetKey={`${bodyId}:${slot.key}`}
+              fallback={(retry) => (
+                <div className="p-gutter">
+                  <RetryNote data-for="body-map" onRetry={retry}>
+                    The map couldn’t be drawn
+                  </RetryNote>
+                </div>
               )}
-            />
-          </ReadBoundary>
-        ) : null
-      }
-      tabPanel={tabPanel}
-    />
+            >
+              {slot.map !== undefined && (
+                <TabSceneProbe
+                  key={`${bodyId}:${slot.key}`}
+                  map={slot.map}
+                  bodyId={bodyId}
+                  lit={lit}
+                  onScene={setTabScene}
+                />
+              )}
+              <BodyMap
+                bbox={data.bbox}
+                scene={scene}
+                // A new body is a fresh rack as much as a new tab is: a neighbor already read for its
+                // name opens at once, with no loading in between to remount the map.
+                resetKey={`${bodyId}:${tab}`}
+                mode={mode}
+                foot={mapFoot(
+                  data.mapFailures,
+                  slot.Dock === undefined ? null : (
+                    <BodyTabHost
+                      key={slot.key}
+                      Wiring={slot.Dock}
+                      bodyId={bodyId}
+                      lit={lit}
+                      onLitChange={onLitChange}
+                    />
+                  ),
+                )}
+              />
+            </ReadBoundary>
+          ) : null
+        }
+        tabPanel={tabPanel}
+      />
+    </BodyBindingProvider>
   );
 }
 
@@ -285,9 +286,9 @@ export function BodyTabHost({
   ...props
 }: BodyTabProps & { Wiring: ComponentType<BodyTabProps> }) {
   return (
-    <CurrentBodyProvider bodyId={props.bodyId}>
+    <BodyBindingProvider bodyId={props.bodyId}>
       <Wiring key={props.bodyId} {...props} />
-    </CurrentBodyProvider>
+    </BodyBindingProvider>
   );
 }
 
@@ -323,42 +324,27 @@ function TabSceneProbe({
  * Sets the map boost and puts its receipt (with Undo) in the toast. Resolves whether the change
  * landed, so the slider can go back to the record when it didn't.
  */
-function useBoostCommit(bodyId: string): (value: number) => Promise<boolean> {
+function useBoostCommit(bodyId: string): (value: number, here: () => boolean) => Promise<boolean> {
   const set = useMutation(api.waterBodies.setCuratedBoost);
   const { announce } = useUndo();
-  // The body the page shows now: a boost composed for another sends nothing, and one landing after
-  // the page moved on puts up no receipt over the next body (History keeps it). Moved at commit, as
-  // `CurrentBodyProvider` moves its own: a navigation's render runs in a transition while the last
-  // body is still on screen.
-  const shown = useRef(bodyId);
-  useLayoutEffect(() => {
-    shown.current = bodyId;
-  }, [bodyId]);
   return useCallback(
-    (value: number) => {
+    (value: number, here: () => boolean) => {
       const rounded = Math.round(value * 10) / 10;
-      const here = () => shown.current === bodyId;
-      if (!here()) return Promise.resolve(true);
-      const failed = (e: unknown) => {
-        if (here()) toast({ title: errorText(e), tone: 'bad' });
-      };
-      return set({ waterBodyId: bodyId as Id<'waterBodies'>, curatedBoost: rounded }).then(
+      // The left column's binding (`currentBody`), the one check every write makes: nothing is
+      // sent once its console has gone, and nothing is said after.
+      return sendFor(
+        here,
+        () => set({ waterBodyId: bodyId as Id<'waterBodies'>, curatedBoost: rounded }),
         () =>
-          !here()
-            ? true
-            : announce({
-                title: `Map boost · ${rounded.toFixed(1)}`,
-                target: { targetType: 'waterbody', targetId: bodyId },
-              }).then(
-                () => true,
-                // The boost landed; only its receipt didn't.
-                (e: unknown) => {
-                  failed(e);
-                  return true;
-                },
-              ),
+          announce({
+            title: `Map boost · ${rounded.toFixed(1)}`,
+            target: { targetType: 'waterbody', targetId: bodyId },
+          }),
+      ).then(
+        () => true,
+        // `sendFor` throws only while the binding holds: the refusal is this console's to say.
         (e: unknown) => {
-          failed(e);
+          toast({ title: e instanceof Error ? e.message : String(e), tone: 'bad' });
           return false;
         },
       );

@@ -33,6 +33,12 @@ export type ListWriter<T> = {
 export function createListWriter<T>(
   send: (next: readonly T[]) => Promise<boolean>,
   same: (a: readonly T[], b: readonly T[]) => boolean = sameList,
+  /**
+   * The console's binding (`frame/currentBody`): checked before every step — before a queued
+   * change is taken up, before it is sent, before its answer is taken in — so a queue whose console
+   * has gone sends nothing more and says nothing. The binding never revives.
+   */
+  alive: () => boolean = () => true,
 ): ListWriter<T> {
   let server: readonly T[] = [];
   /**
@@ -49,10 +55,13 @@ export function createListWriter<T>(
     },
     push(change) {
       const run = chain.then(async () => {
+        if (!alive()) return false;
         const base = acked?.list ?? server;
         const next = change(base);
         if (same(next, base)) return true;
+        if (!alive()) return false;
         const ok = await send(next);
+        if (!alive()) return false;
         // Already on screen (the echo rendered before the acknowledgment): the server's list is the
         // newest, and its rows carry the ids the page draws. Holding `next` instead would keep
         // building on ids no row has — a row added here, then edited, would change nothing.
@@ -73,6 +82,7 @@ export function useListWriter<T>(
   server: readonly T[],
   send: (next: readonly T[]) => Promise<boolean>,
   same: (a: readonly T[], b: readonly T[]) => boolean = sameList,
+  alive: () => boolean = () => true,
 ): ListWriter<T>['push'] {
   // The latest `send` (its closure holds the latest props), reached through a ref so the writer
   // and its queue outlive renders.
@@ -80,7 +90,7 @@ export function useListWriter<T>(
   sendRef.current = send;
   const writer = useRef<ListWriter<T> | null>(null);
   if (writer.current === null)
-    writer.current = createListWriter<T>((next) => sendRef.current(next), same);
+    writer.current = createListWriter<T>((next) => sendRef.current(next), same, alive);
   writer.current.observe(server);
   return writer.current.push;
 }

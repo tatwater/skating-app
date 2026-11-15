@@ -1,55 +1,63 @@
 import {
   createContext,
   type ReactNode,
-  useCallback,
   useContext,
   useLayoutEffect,
-  useRef,
+  useMemo,
   useState,
 } from 'react';
 
 import { errorText } from '../../adminUi';
 
 /**
- * **A write lands on the body it was composed for, or nowhere.** The frame keys every body-scoped
- * subtree by body, so a draft dies with its body — and, in case a reset is ever missed, every write
- * also checks this: the body the page shows now. A tab's write wrapper asks `useBodyBound(bodyId)`,
- * which holds the body its subtree was mounted for (the subtree is that body's for life — a prop
- * that later names another body is exactly the missed reset this guards) and refuses to send when
- * the page has moved on; a write already on its way lands (it was the right body when sent) but its
- * receipt is dropped, so another body's toast never shows over this one — History keeps the row and
- * its undo.
+ * **A write lands on the body it was composed for, while that body's console is on screen — or
+ * nowhere.** The frame keys every body-scoped subtree by body, so a draft dies with its body; and,
+ * in case a reset is ever missed, every write also asks its **binding**.
+ *
+ * **One lifetime, explicit.** A binding is one console's hold on one body. `BodyBindingProvider`
+ * creates it for its body and it is alive from that render's commit until the console goes away
+ * for any reason: the body changes (a new binding is made, the old one dies at that commit), the
+ * page shows a loading or failed state instead (the provider unmounts), the tab host unmounts, the
+ * route is left, the shell remounts. Unmount invalidates — nothing else revives it: a new console
+ * for the same body is a new binding, so coming back to a body never resurrects its old queue.
+ *
+ * A consumer holds the binding that was current when it mounted (`useBodyBound`), never a later
+ * one: a subtree that missed its reset still holds its own body's binding, now dead, and sends
+ * nothing. A write checks it before it sends, and again before it surfaces anything (a refusal, a
+ * receipt and its Undo): a write already on its way lands (it was the right body when sent), but
+ * says nothing over another body's console — History keeps the row.
  */
-const CurrentBody = createContext<{ readonly current: string } | null>(null);
+type Binding = { readonly body: string; alive: boolean };
 
-/**
- * The frame's: the body the page *shows*, read by every write as it sends and as it lands. Moved
- * at commit, never during a render: a navigation renders in a transition, and the body on screen
- * stays the last one (and takes presses) until that render commits.
- */
-export function CurrentBodyProvider({ bodyId, children }: { bodyId: string; children: ReactNode }) {
-  const ref = useRef(bodyId);
+const BindingContext = createContext<Binding | null>(null);
+
+export function BodyBindingProvider({ bodyId, children }: { bodyId: string; children: ReactNode }) {
+  // A fresh binding for this mount and this body; it comes alive at commit, so a navigation that
+  // is still rendering (in a transition) leaves the body on screen bound until it commits.
+  const binding = useMemo<Binding>(() => ({ body: bodyId, alive: false }), [bodyId]);
   useLayoutEffect(() => {
-    ref.current = bodyId;
-  }, [bodyId]);
-  return <CurrentBody.Provider value={ref}>{children}</CurrentBody.Provider>;
+    binding.alive = true;
+    return () => {
+      binding.alive = false;
+    };
+  }, [binding]);
+  return <BindingContext.Provider value={binding}>{children}</BindingContext.Provider>;
 }
 
 /**
- * Is the page still on the body this subtree was mounted for (`bodyId` at mount)? Outside a frame
- * (a story, a test of one view) there is no other body to move to, so it always is.
+ * Is the console this subtree mounted under still the one on screen? The binding is the one current
+ * at mount. Outside a frame (a story, a test of one view) there is no other console, so it is.
  */
-export function useBodyBound(bodyId: string): () => boolean {
-  const ref = useContext(CurrentBody);
-  // The mount's body, not the latest prop: a subtree that missed its reset and now reads another
-  // body's id still holds the first body's draft, and must send nothing for the second.
-  const [bound] = useState(bodyId);
-  return useCallback(() => ref === null || ref.current === bound, [ref, bound]);
+export function useBodyBound(): () => boolean {
+  const current = useContext(BindingContext);
+  const [held] = useState(current);
+  return useMemo(() => () => held === null || held.alive, [held]);
 }
 
 /**
- * A tab's write, bound to its body: nothing is sent once the page has moved on; a refusal is thrown
- * in the server's words only while the page is still there; the receipt is put up only then too.
+ * A write, bound: nothing is sent unless the binding is alive; a refusal is thrown (in the
+ * server's words) only while it still is; the receipt is put up only then too, and its failure is
+ * never a refusal (the write landed; History keeps the row).
  */
 export async function sendFor(
   here: () => boolean,
@@ -67,7 +75,6 @@ export async function sendFor(
   try {
     await receipt();
   } catch {
-    // The write landed; only its receipt didn't (History keeps the row) — never a refusal, as
-    // `useTabAction` and the boost say it.
+    // The write landed; only its receipt didn't.
   }
 }

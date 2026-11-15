@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
@@ -665,5 +665,139 @@ describe('BodyConsoleRoute', () => {
     );
     // Letting go where the record already stands sends nothing (`boostToSend`, above).
     expect(mocks.mutate).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * The binding's named examples, in the real route with the real tabs (the model-based test in
+   * `bodyBinding.model.test.tsx` proves it over any session): saves queued or on their way on one
+   * body never send, and never speak, once that body's console has gone — to an uncached body, a
+   * body that fails to load, or out of the Bodies area and back.
+   */
+  describe('the binding — named examples', () => {
+    const releases: ((ok: boolean) => void)[] = [];
+    const hold = () => {
+      releases.length = 0;
+      mocks.mutate.mockImplementation(
+        () =>
+          new Promise<void>((resolve, reject) => {
+            releases.push((ok) => (ok ? resolve() : reject(new Error('refused'))));
+          }) as never,
+      );
+      onTestFinished(() => {
+        mocks.mutate.mockImplementation(() => Promise.resolve());
+      });
+    };
+    const landAll = async (ok = true) => {
+      for (let i = 0; i < 6 && releases.length > 0; i++) {
+        await act(async () => releases.shift()?.(ok));
+      }
+      await act(async () => new Promise((r) => setTimeout(r, 0)));
+    };
+    const LINKS = [
+      { label: 'Mascoma Lake Association', url: 'https://mascomalake.org' },
+      { label: 'Lake level at Mascoma Lake Dam', url: 'https://des.nh.gov/dams' },
+    ];
+    const withLinks = () =>
+      set(api.waterBodies.get, {
+        available: true,
+        body: { ...MASCOMA_RECORD, bbox: undefined, referenceLinks: LINKS },
+      });
+    /** Two saves on Links: one on its way, one queued behind it. */
+    const twoLinkSaves = async () => {
+      const user = userEvent.setup();
+      await user.click(screen.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
+      await user.type(screen.getByRole('textbox', { name: /Label/ }), ' (1){Enter}');
+      await user.click(screen.getByRole('button', { name: 'Cancel' }));
+      await user.click(screen.getAllByRole('button', { name: 'Edit' })[1] as HTMLElement);
+      await user.type(screen.getByRole('textbox', { name: /Label/ }), ' (2){Enter}');
+      expect(mocks.mutate).toHaveBeenCalledTimes(1);
+    };
+    const toNeighbor = (as: 'uncached' | 'fails') => {
+      set(api.waterBodies.get, as === 'uncached' ? undefined : new Error('no such body'), {
+        waterBodyId: NEIGHBOR_ID,
+      });
+      mocks.params = { id: NEIGHBOR_ID };
+    };
+
+    it('Greptile’s sequence: two Links saves queued on A, then an uncached B — the second never goes', async () => {
+      withLinks();
+      mocks.search = { tab: 'links' };
+      hold();
+      const { rerender } = render(<Mounted />);
+      await twoLinkSaves();
+      toNeighbor('uncached');
+      rerender(<Mounted />);
+      await landAll();
+      expect(mocks.mutate).toHaveBeenCalledTimes(1);
+      expect(mocks.announce).not.toHaveBeenCalled();
+    });
+
+    it('A, then a body that fails to load: A’s queue dies there, and its refusal says nothing', async () => {
+      withLinks();
+      mocks.search = { tab: 'links' };
+      hold();
+      const { rerender } = render(<Mounted />);
+      await twoLinkSaves();
+      toNeighbor('fails');
+      rerender(<Mounted />);
+      await landAll(false);
+      expect(mocks.mutate).toHaveBeenCalledTimes(1);
+      expect(screen.queryByText('refused')).toBeNull();
+    });
+
+    it('A, out of the Bodies area, back to A: the old queue is not resurrected', async () => {
+      withLinks();
+      mocks.search = { tab: 'links' };
+      hold();
+      const { rerender } = render(<Mounted />);
+      await twoLinkSaves();
+      rerender(<p>Inbox</p>);
+      rerender(<Mounted />);
+      await landAll();
+      expect(mocks.mutate).toHaveBeenCalledTimes(1);
+      expect(mocks.announce).not.toHaveBeenCalled();
+    });
+
+    it('Standing’s form: a write started on A says nothing over an uncached B', async () => {
+      set(api.standing.retentionForBody, null);
+      mocks.search = { tab: 'standing' };
+      hold();
+      const { rerender } = render(<Mounted />);
+      const user = userEvent.setup();
+      await user.click(screen.getByRole('radio', { name: /^Dormant/ }));
+      await user.type(screen.getByRole('textbox', { name: /Note for skaters/ }), 'Dam work{Enter}');
+      expect(mocks.mutate).toHaveBeenCalledTimes(1);
+      toNeighbor('uncached');
+      rerender(<Mounted />);
+      // It lands (it was the right body when sent), and its receipt stays unsaid over B.
+      await landAll();
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(mocks.announce).not.toHaveBeenCalled();
+    });
+
+    it('a dialog-driven write (Access’s Hide) started on A says nothing over an uncached B', async () => {
+      set(api.accessPoints.accessForBody, {
+        putIns: [
+          { id: 'pi1', coord: { lat: 43.6489, lng: -72.1793 }, name: 'NW launch', source: 'osm' },
+        ],
+        parking: [],
+        blockedIds: [],
+        alerts: [],
+      });
+      mocks.search = { tab: 'access' };
+      hold();
+      const { rerender } = render(<Mounted />);
+      const user = userEvent.setup();
+      await user.click(screen.getAllByRole('button', { name: 'Hide' })[0] as HTMLElement);
+      const dialog = await screen.findByRole('alertdialog');
+      await user.type(within(dialog).getByRole('textbox'), 'A private dock');
+      await user.click(within(dialog).getByRole('button', { name: /^Hide/ }));
+      expect(mocks.mutate).toHaveBeenCalledTimes(1);
+      toNeighbor('uncached');
+      rerender(<Mounted />);
+      await landAll();
+      expect(mocks.announce).not.toHaveBeenCalled();
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+    });
   });
 });

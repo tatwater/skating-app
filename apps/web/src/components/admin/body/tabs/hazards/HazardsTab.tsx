@@ -102,7 +102,7 @@ function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabPr
   });
   const demote = useMutation(api.bodyFeatures.demote);
   const { announce } = useUndo();
-  const here = useBodyBound(waterBodyId);
+  const here = useBodyBound();
   const navigate = useNavigate();
 
   const features = got.features;

@@ -2,9 +2,8 @@ import { useCallback, useMemo } from 'react';
 
 import { toast } from '@/components/kit/toast';
 
-import { errorText } from '../../adminUi';
 import { type Receipt, useUndo } from '../../shell/undo';
-import { useBodyBound } from '../frame/currentBody';
+import { sendFor, useBodyBound } from '../frame/currentBody';
 
 /**
  * How the Body console's tabs run a write: the mutation, then the receipt toast with Undo while the
@@ -15,30 +14,25 @@ import { useBodyBound } from '../frame/currentBody';
  * - **`actInDialog`**, from a reason dialog: a refusal comes back as the server's words for the
  *   dialog to show over the kept reason (`null` when it landed), so nothing is typed twice.
  */
-export function useTabAction(bodyId: string): {
+export function useTabAction(): {
   act: (write: () => Promise<unknown>, receipt: Receipt) => Promise<boolean>;
   actInDialog: (write: () => Promise<unknown>, receipt: Receipt) => Promise<string | null>;
 } {
   const { announce } = useUndo();
-  // The body this tab's drafts belong to (`currentBody`): nothing is sent for it once the page
-  // has moved to another body, and a receipt landing after the move is dropped.
-  const here = useBodyBound(bodyId);
+  // The console this tab mounted under (`currentBody`): nothing is sent once it has gone, and a
+  // refusal or receipt landing after is dropped.
+  const here = useBodyBound();
   const actInDialog = useCallback(
     async (write: () => Promise<unknown>, receipt: Receipt): Promise<string | null> => {
-      if (!here()) return null;
+      // The one bound write (`sendFor`): nothing sent once the console has gone; a refusal comes
+      // back (in the server's words) only while it is here; the receipt only then too, and its
+      // failure is never a refusal — never a rejection that leaves a reason dialog waiting.
       try {
-        await write();
+        await sendFor(here, write, () => announce(receipt));
+        return null;
       } catch (err) {
-        return here() ? errorText(err) : null;
+        return err instanceof Error ? err.message : String(err);
       }
-      if (!here()) return null;
-      try {
-        await announce(receipt);
-      } catch {
-        // The write landed; only its receipt didn't (History keeps the row). Never a refusal,
-        // and never a rejection that leaves a reason dialog waiting on an answer.
-      }
-      return null;
     },
     [announce, here],
   );

@@ -42,7 +42,7 @@ function LinksReads({ bodyId: id }: BodyTabProps) {
   const setLinks = useMutation(api.waterBodies.setReferenceLinks);
   const { can } = useRole();
   const { announce } = useUndo();
-  const here = useBodyBound(bodyId);
+  const here = useBodyBound();
   // Copernicus' window is the last 14 days from now: moved on daily.
   const now = useTickingNow(86_400_000);
 

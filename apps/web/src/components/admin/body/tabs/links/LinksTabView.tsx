@@ -17,6 +17,7 @@ import { Input } from '@/components/kit/input';
 import { Section } from '@/components/kit/section-slug';
 import { SortableRows } from '@/components/kit/sortable-rows';
 import { cn } from '@/lib/utils';
+import { useBodyBound } from '../../frame/currentBody';
 import { useListWriter } from '../listWriter';
 import {
   carryIds,
@@ -129,6 +130,7 @@ export function LinksTabView({
   // **Every save goes through one queue** (`listWriter`): reorder, add, edit and remove each hand
   // it a change by link id, applied to the newest list the server acknowledged — so a remove
   // pressed while a reorder saves can't put the old order back, and two saves never overlap.
+  const here = useBodyBound();
   const push = useListWriter<KeyedLink>(
     staff,
     async (next) => {
@@ -144,6 +146,8 @@ export function LinksTabView({
     },
     // The keys are the page's own: a link the queue added is the same link once its echo shows.
     sameLinks,
+    // The console's binding: a queue whose console has gone takes up nothing more.
+    here,
   );
   const save = async (change: (base: readonly KeyedLink[]) => readonly KeyedLink[]) => {
     setInFlight((n) => n + 1);

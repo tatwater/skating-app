@@ -68,7 +68,7 @@ function StandingReads({ bodyId: id }: BodyTabProps) {
   const restore = useMutation(api.waterBodies.restore);
   const { can } = useRole();
   const { announce } = useUndo();
-  const here = useBodyBound(bodyId);
+  const here = useBodyBound();
   // The instant the lanes start from, moved on hourly: the finest thing they draw is a day.
   const now = useTickingNow(3_600_000);
   const retentionRead = got.retention;
