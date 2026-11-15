@@ -3146,6 +3146,47 @@ Imagery/Hazards/Standing/Links), cherry-picked serially onto `b01-3` off the kit
   server, which counts a crossing as a report on the lake (BS18). Needs eyes on a real map: a fresh
   crossing on the preview reads as the two-bar mark, not a red field, and sits under the lit plate
   as the marks do.
+- **Every write control and what its write does** (Greptile's P1 on #120: *Make official* inserted
+  a second put-in). Read from each mutation's server source, since a test that mocks the Convex
+  hook can't see it. Each control has a test that applies the mutation's real effect to the reads
+  and shows the lever gone or inert with a second press writing nothing. *Undo* is what the
+  server's undo policy offers on the receipt.
+
+  | Tab | Control | Mutation (ids) | What the server does | The page after | Undo |
+  |---|---|---|---|---|---|
+  | Frame | Map boost | `waterBodies.setCuratedBoost` (the body) | Patches the boost; a dormant body rising above zero is brought back | The slider follows the record; letting go where it stands sends nothing | Set back |
+  | Names | Display this; Back to the ranking; a community name | `waterBodies.setWaterBodyName` (the body, a name or `null`) | Sets the name with a `user` claim over the catalogs', or drops the claim and restores the catalogs' first | The chosen rung loses its lever; Back goes when nothing is overridden; ⏎ on the held name sends nothing | Set back |
+  | Places | A landmark's name, kind, other spellings | `landmarks.update` (the landmark, one field) | Patches that field in place | The card shows the record; the same value sends nothing; spellings queue | Set back |
+  | Places | Already here | `corpusPlaceNames.fileAsSpelling` (the name, the landmark) | Adds the name to the landmark's spellings; closes the name as *placed* | The ask leaves the list | The landmark's edit only; the name stays placed |
+  | Places | Dismiss | `corpusPlaceNames.dismiss` (the name, a reason) | Closes the name as *dismissed* | The ask leaves the list | Not built ("not built yet") |
+  | Places | Same place | `corpusRequests.approve` (the request, the landmark it may be) | Decides the request as approved, answered by that landmark; tells the asker | The ask leaves the list | Later (Inbox) |
+  | Places | Decline | `corpusRequests.decline` (the request, a note) | Decides it as declined with the note the asker reads | The ask leaves the list | Later (Inbox) |
+  | Access | Rule accessible; Rule no public access; Clear the ruling | `waterBodies.setPublicAccess` (the body, a verdict or `null`) | Sets the ruling; *accessible* brings a listed body back; closes open *no public access* flags | The lever for the ruling now standing goes | Set back |
+  | Access | Hide | `putIns.hide` (the body, the launch's point, a reason) | Inserts a hidden row there, which hides every launch within 150 m (the dialog says "with every launch close by") | The launch leaves the list | Not built for a body target |
+  | Access | **Make official** | `putIns.setOfficial` | **Inserts a second, official put-in** at the point (no parking, no walk) and leaves the launch | **Mismatch → *Not available yet*** (BS20) | — |
+  | Imagery | Satellite link | `waterBodies.setSatelliteImagery` (the body, a mode) | Patches the mode | The chosen mode holds; pressing it again sends nothing | Set back |
+  | Imagery | Show anyway; Hide from skaters | — | No writer on the server (BS13) | *Not available yet* | — |
+  | Hazards | Demote | `bodyFeatures.demote` (the feature, a reason) | Sets the feature inactive; the active read drops it; frees its source hazard | The feature leaves the list | Later |
+  | Standing | Set dormant; Bring back | `standing.setStanding` (the body, a standing, a note) | Sets the standing with the note; refuses a move it can't make | The pick follows the record; the form goes | Set back |
+  | Standing | Remove from the map; Restore | `waterBodies.remove` / `restore` (the body) | Stamps or clears `removedAt` and its reason | The form goes; Restore is picked from Active | Each other |
+  | Links | Reorder, add, edit, remove | `waterBodies.setReferenceLinks` (the body, the whole list) | Replaces the list | Through the one queue (above) | Set back |
+
+  The one mismatch, *Make official*, became *Not available yet*; nothing else said one thing and did
+  another.
+- **A body's own state dies with it** (Greptile's P1 on #121: Standing's pick and note followed a
+  switch to another body already read, and its save targeted the new body). One place keys a body's
+  subtree: `BodyTabHost` mounts every tab and its dock keyed by body and tab; the map's drawing
+  probe, the left column and the list's preview are keyed by body too. Kept across bodies on
+  purpose: nothing. And every write is bound to its body (`frame/currentBody.tsx`): nothing is sent
+  once the page has moved, and a write already on its way lands but its refusal and receipt are
+  dropped (History keeps the row). Each tab and the preview have a switch test. The People pages
+  (the `b01-4-people-person` branch, read, not changed) already remount the person's page by user
+  id, and their receipts name the person; a late one still shows after a switch, under that
+  person's name.
+- **A write's completion acts only on the attempt that started it** (Greptile's P2 on #121). Links'
+  editor openings each have an id; the reason dialog, Hazards' demote, Imagery's hide ask, Standing's
+  form and the map boost tie their answers to their own opening or commit. The dialogs refuse to
+  close while sending, so no dismissed attempt exists mid-write.
 
 ### The Bodies server register (owed to the server agent)
 
@@ -3174,6 +3215,7 @@ yet* (or the fact as unknown) until its read lands.
 | BS17 | A compare-and-set on the whole-list writers (`waterBodies.setReferenceLinks`, `landmarks.update`'s `aliases`): the list or version the write was built on, refused when it moved | Two moderators editing one body's links or spellings at once: today the later write silently drops the earlier | ⚪ owed |
 | BS18 | `bodyConsole.dailyHazards` counts a reported crossing (`ridge_crossing`) as a hazard on the lake, every day from its first report through today (its 72-hour expiry is applied at read, never stored), with a first-report mark, and returns no type to tell it apart: leave passage markers out, or return the type | The day strips and their counts | ⚪ owed |
 | BS19 | `recurrence.listForBodyAdmin` stops at 1,000 clusters and says nothing: a `more` | Hazards' *patterns waiting* count, today drawn as whole | ⚪ owed |
+| BS20 | `putIns.promote({ putInId, name?, reason? })`, `body.access`: makes the selected visible `osm` or `derived` row `official` **in place** — its id, point, bay, `parkingAreaId`, `approachMeters`, `approachRouted`, `approachAscentM`, `approachPath` and `approachKindOverride` kept; the name set only when given; a `set_put_in` audit row with `metadata.prev` (source, name), `accessKind` recomputed, the standing rule `setOfficial` applies (an official put-in brings a dormant body back) kept. Undo puts the source and name back, leaving the row and its walk. `setOfficial` stays for placing a new point. | Access's *Make official*, drawn *Not available yet* until then | ⚪ owed |
 
 ### The Bodies reads the pages asked for (B01-3c, the second server follow-up)
 
