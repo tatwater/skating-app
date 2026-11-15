@@ -2066,15 +2066,26 @@ export const importContourCoverage = internalMutation({
     let cleared = 0;
     if (searched !== undefined) {
       const at = Date.now();
-      for (const s of searched.slice(0, BATHYMETRY_SEARCHES_PER_RUN)) {
-        const label = s.label.trim().slice(0, 120);
+      // Refused past the bounds, never silently cut (Greptile on #122).
+      if (searched.length > BATHYMETRY_SEARCHES_PER_RUN) {
+        throw new ConvexError(
+          `A run records at most ${BATHYMETRY_SEARCHES_PER_RUN} searched datasets`,
+        );
+      }
+      for (const s of searched) {
+        const label = s.label.trim();
         const states = [
           ...new Set(
             s.states.map((c) => c.trim().toUpperCase()).filter((c) => /^[A-Z]{2}$/.test(c)),
           ),
-        ].slice(0, 10);
+        ];
         if (label === '' || states.length === 0) {
           throw new ConvexError('A searched dataset needs a name and at least one state');
+        }
+        if (label.length > 120 || states.length > 10) {
+          throw new ConvexError(
+            'A searched dataset’s name is at most 120 characters, and it covers at most 10 states',
+          );
         }
         for (const state of states) {
           await ctx.db.insert('bathymetrySearches', { label, state, searchedAt: at });

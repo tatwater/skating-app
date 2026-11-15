@@ -8,6 +8,7 @@ import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { ASKERS_CAP, OTHER_STANDING_ROWS, ROWS_BY_IDS_MAX } from './bodies';
+import { REMOVED_REPORT_CAP } from './bodyConsole';
 import { rebuildBodyLibrary } from './lib/bodyLibrary';
 import schema from './schema';
 
@@ -377,5 +378,61 @@ describe('the bathymetry search record', () => {
         searched: [{ label: 'No states', states: ['x'] }],
       }),
     ).rejects.toThrow(/at least one state/);
+  });
+});
+
+describe('Greptile on #122', () => {
+  test('a removed body’s hidden reports never use up its visible count', async () => {
+    const t = harness();
+    const mod = await person(t, 'moderator');
+    const author = await person(t);
+    const id = await body(t, 'Hidden Reports', { removedAt: NOW, removalReason: 'other' });
+    await t.run(async (ctx) => {
+      const report = (at: number, moderationStatus: 'visible' | 'hidden') =>
+        ctx.db.insert('reports', {
+          authorId: author.id,
+          waterBodyId: id,
+          point: { lat: 44, lng: -72 },
+          skateEndTime: at,
+          reportTime: at,
+          source: 'native',
+          iceTypes: [],
+          surfaceTags: [],
+          photoIds: [],
+          hazardIdsCreated: [],
+          moderationStatus,
+          createdAt: at,
+          updatedAt: at,
+        });
+      for (let i = 0; i < REMOVED_REPORT_CAP + 1; i++) await report(NOW - i, 'hidden');
+      await report(NOW - 10_000, 'visible');
+      await report(NOW - 20_000, 'visible');
+    });
+    expect(
+      (await mod.as.query(api.bodyConsole.removedFacts, { waterBodyId: id }))?.reports,
+    ).toEqual({ count: 2, capped: false });
+  });
+
+  test('a run past the searched bounds is refused, never cut', async () => {
+    const t = harness();
+    await expect(
+      t.mutation(internal.waterBodies.importContourCoverage, {
+        source: 'osm',
+        externalIds: [],
+        searched: Array.from({ length: 21 }, (_, i) => ({ label: `D${i}`, states: ['VT'] })),
+      }),
+    ).rejects.toThrow(/at most 20/);
+    await expect(
+      t.mutation(internal.waterBodies.importContourCoverage, {
+        source: 'osm',
+        externalIds: [],
+        searched: [
+          {
+            label: 'Wide',
+            states: ['VT', 'NH', 'ME', 'MA', 'NY', 'CT', 'RI', 'NJ', 'PA', 'OH', 'MI'],
+          },
+        ],
+      }),
+    ).rejects.toThrow(/at most 10 states/);
   });
 });

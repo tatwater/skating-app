@@ -549,8 +549,10 @@ export const dailyHazards = query({
 
 // ── A body the normal reads cannot serve ─────────────────────────────────────────────────────
 
-/** Reports a removed body's facts read at most (newest first); past it, `capped`. */
+/** Visible reports a removed body's facts count at most (newest first); past it, `capped`. */
 export const REMOVED_REPORT_CAP = 200;
+/** Reports, visible or hidden, that count scans at most. */
+export const REMOVED_REPORT_SCAN = 1_000;
 
 /**
  * **A removed or rejected body's row and facts** (B01-3c) — what the list's preview and the Body
@@ -579,11 +581,18 @@ export const removedFacts = query({
       standing === 'removed' || standing === 'rejected'
         ? await leftRow(ctx, body._id, standing)
         : null;
-    const reports = await ctx.db
+    // Visible reports, counted to the cap — hidden ones never use it up (Greptile on #122). The scan
+    // is bounded by rows read, not matches: a body with more hidden reports than that reads `capped`.
+    const visible = await ctx.db
       .query('reports')
       .withIndex('by_water_body_skate_end_time', (q) => q.eq('waterBodyId', body._id))
       .order('desc')
-      .take(REMOVED_REPORT_CAP + 1);
+      .filter((q) => q.eq(q.field('moderationStatus'), 'visible'))
+      .paginate({
+        cursor: null,
+        numItems: REMOVED_REPORT_CAP + 1,
+        maximumRowsRead: REMOVED_REPORT_SCAN,
+      });
     const geo = await geoFactsOf(ctx, body._id);
     return {
       id: body._id,
@@ -607,9 +616,9 @@ export const removedFacts = query({
             },
       towns: townsWithStateOf(geo),
       reports: {
-        count: reports.slice(0, REMOVED_REPORT_CAP).filter((r) => r.moderationStatus === 'visible')
-          .length,
-        capped: reports.length > REMOVED_REPORT_CAP,
+        count: Math.min(visible.page.length, REMOVED_REPORT_CAP),
+        // More visible reports than the cap, or the scan stopped before the body's last report.
+        capped: visible.page.length > REMOVED_REPORT_CAP || !visible.isDone,
       },
     };
   },

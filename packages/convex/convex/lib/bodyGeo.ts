@@ -127,7 +127,9 @@ export function touches(body: Geom, other: Geom, otherWhole: boolean): boolean {
 
 /** The largest outer ring of an outline, kept to at most `max` points and closed. */
 export function simplifiedRing(geom: Geom, max = NEIGHBOR_RING_POINTS): [number, number][] {
-  const ring = outerRings(geom).sort((a, b) => b.length - a.length)[0] ?? [];
+  // The largest ring by area, not by vertex count: a town's detailed island would otherwise stand in
+  // for its mainland (Greptile on #122).
+  const ring = outerRings(geom).sort((a, b) => ringArea(b) - ringArea(a))[0] ?? [];
   const open = ring.length > 1 ? ring.slice(0, -1) : ring;
   const step = Math.max(1, open.length / max);
   const out: [number, number][] = [];
@@ -138,6 +140,17 @@ export function simplifiedRing(geom: Geom, max = NEIGHBOR_RING_POINTS): [number,
   const first = out[0];
   if (first !== undefined) out.push([first[0], first[1]]);
   return out;
+}
+
+/** A ring's planar area in square degrees (shoelace) — enough to tell its parts apart by size. */
+function ringArea(ring: readonly number[][]): number {
+  let sum = 0;
+  for (let i = 0; i + 1 < ring.length; i++) {
+    const a = ring[i] as number[];
+    const b = ring[i + 1] as number[];
+    sum += (a[0] as number) * (b[1] as number) - (b[0] as number) * (a[1] as number);
+  }
+  return Math.abs(sum) / 2;
 }
 
 /** Degrees of latitude in {@link TOUCH_METERS}, for the box the candidates are read in. */

@@ -84,9 +84,15 @@ async function main(): Promise<void> {
       s === undefined ||
       s.label === '' ||
       s.states.length === 0 ||
+      s.states.length > 10 ||
+      s.label.length > 120 ||
       s.states.some((c) => !/^[A-Za-z]{2}$/.test(c))
     );
   });
+  if (searched.length > 20) {
+    process.stderr.write('[coverage] refusing: a run records at most 20 --searched datasets.\n');
+    process.exit(1);
+  }
   if (malformed.length > 0) {
     process.stderr.write(
       `[coverage] refusing: ${malformed.join(' ')} — each --searched is NAME:ST[,ST…] with two-letter state codes.\n`,
