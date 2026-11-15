@@ -26,6 +26,7 @@ import type { Id } from '../_generated/dataModel';
 import type { MutationCtx } from '../_generated/server';
 import type { FLAG_REASONS, FLAG_TARGET_TYPES } from './enums';
 import { holdMoved } from './eraseClock';
+import { flagSubjectOf } from './flagSubject';
 
 type FlagTargetType = (typeof FLAG_TARGET_TYPES)[number];
 type FlagReason = (typeof FLAG_REASONS)[number];
@@ -177,6 +178,7 @@ export async function fileOrBumpAutoFlag(
     reason: args.reason,
     ...(args.note !== undefined ? { note: args.note } : {}),
     status: 'open',
+    subjectUserId: await flagSubjectOf(ctx, args.targetType, args.targetId),
     // `flaggerId` names a real person who did NOT file a report — the rater whose thumb crossed the
     // line. `origin` is what keeps `content_flag_resolved` from telling them "the report you filed
     // was actioned" about a report they never filed (A08 §2.3).

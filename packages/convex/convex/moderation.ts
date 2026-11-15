@@ -12,7 +12,7 @@
  * lifecycle `status` (D3) — see the hazards schema note.
  */
 
-import { disputesReview, isLeaving } from '@skating/core';
+import { disputesReview, effectiveBountyLimitOf } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
@@ -38,7 +38,9 @@ import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import { MODERATION_ACTIONS, MODERATION_STATUSES, MODERATION_TARGET_TYPES } from './lib/enums';
 import { authorRetracted, ERASABLE, refreshEraseClock } from './lib/eraseClock';
 import { closeFlag } from './lib/flagResolution';
-import { refuseDisciplineOfLastLedgerEditor, withoutLedgerGrantsFor } from './lib/ledgerEditors';
+import { withoutLedgerGrantsFor } from './lib/ledgerEditors';
+import { assertWrite, DISCIPLINE_REFUSALS, type PersonWrite, reasonFor } from './lib/peopleCan';
+import { refreshPersonRow } from './lib/peopleRows';
 import { refreshPostLatestSkateEnd, refreshPostSearchText } from './lib/postSync';
 import { mirrorReportSubAreas } from './lib/reportSubAreas';
 import { type UndoState, undoState } from './lib/undo';
@@ -950,6 +952,8 @@ export const resolveFlag = mutation({
       targetType: 'contentFlag',
       targetId: args.flagId,
       reason: args.reason,
+      // When it was filed, for a staffer's time to decide (People).
+      metadata: { filedAt: flag.createdAt },
       createdAt: now,
     });
     return args.flagId;
@@ -1438,24 +1442,30 @@ export const listActions = query({
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Load a user a moderator is about to act on, with two safety guards: a moderator can't act on
- * **their own** account (no self-ban lockout) and can't act on an **admin** unless they're an admin
- * themselves (a volunteer/compromised moderator can never touch the app owner — D37 draws the trust
- * line at admin).
+ * Load a user a moderator is about to act on, refused through the one rule the People page's `can`
+ * reads (`lib/peopleCan`): never your own account, never an admin unless you are one (D37), never an
+ * account being deleted or deleted — and for the status levers, never one in its deletion window nor
+ * the last ledger editor (D252).
  */
 async function loadModeratableUser(
   ctx: MutationCtx,
   actor: Doc<'profiles'>,
   userId: Id<'profiles'>,
+  write: PersonWrite,
 ): Promise<Doc<'profiles'>> {
   const target = await ctx.db.get(userId);
   if (!target) throw new ConvexError('User not found');
-  if (target._id === actor._id) throw new ConvexError('You cannot moderate your own account');
-  if (target.role === 'admin' && actor.role !== 'admin') {
-    throw new ConvexError('Only an admin can moderate an admin');
-  }
+  await assertWrite(ctx, actor, target, write);
   return target;
 }
+
+/** A status write starts the lapsed-suspension sweep's record over (`peopleJobs`). */
+const LAPSE_CLEARED = {
+  lapseAttempts: undefined,
+  lapseErrorClass: undefined,
+  lapseParkedAt: undefined,
+  lapseRetriedAt: undefined,
+} as const;
 
 async function auditUser(
   ctx: MutationCtx,
@@ -1465,6 +1475,7 @@ async function auditUser(
   reason: string,
   metadata?: Record<string, unknown>,
 ): Promise<void> {
+  await refreshPersonRow(ctx, userId);
   await writeAudit(ctx, {
     actorId,
     action,
@@ -1506,16 +1517,16 @@ export async function banImpl(
 ): Promise<Id<'profiles'>> {
   {
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
-    const target = await loadModeratableUser(ctx, actor, userId);
-    // Never no ledger editor (D252): banning the last one who can act is refused, here and in an undo
-    // that puts a ban back, which comes through this same writer.
-    await refuseDisciplineOfLastLedgerEditor(ctx, target);
+    // Refused on an account in or past its deletion, and for the last ledger editor (D252), here and
+    // in an undo that puts a ban back, which comes through this same writer.
+    const target = await loadModeratableUser(ctx, actor, userId, { kind: 'ban' });
 
     await ctx.db.patch(userId, {
       status: 'banned',
       statusReason: reason,
       suspendedUntil: undefined,
       moderatedByUserId: actor._id,
+      ...LAPSE_CLEARED,
     });
     await auditUser(ctx, actor._id, 'ban', userId, reason, { prev: statusPrev(target) });
     // Fire-and-forget: a mutation can't fetch. Permanent bans only touch Clerk (founder decision).
@@ -1556,15 +1567,16 @@ export async function suspendImpl(
     if (suspendedUntil <= Date.now()) {
       throw new ConvexError('Suspension must end in the future');
     }
-    const target = await loadModeratableUser(ctx, actor, userId);
-    // The same for a suspension (D252): a suspended editor can't edit or pass the grant on.
-    await refuseDisciplineOfLastLedgerEditor(ctx, target);
+    // The same rule for a suspension: a suspended editor can't edit or pass the grant on (D252),
+    // and a suspension that later lapsed would unlock an account partway through its deletion.
+    const target = await loadModeratableUser(ctx, actor, userId, { kind: 'suspend' });
 
     await ctx.db.patch(userId, {
       status: 'suspended',
       statusReason: reason,
       suspendedUntil,
       moderatedByUserId: actor._id,
+      ...LAPSE_CLEARED,
     });
     await auditUser(ctx, actor._id, 'suspend', userId, reason, {
       suspendedUntil,
@@ -1589,39 +1601,42 @@ export async function suspendImpl(
  * suspended). Idempotent: unbanning an already-active account still records the moderator's decision.
  */
 export const unbanUser = mutation({
-  args: { userId: v.id('profiles'), reason: v.string() },
+  // Giving back asks no reason (D226): one typed is kept, and none gets a default.
+  args: { userId: v.id('profiles'), reason: v.optional(v.string()) },
   handler: async (ctx, { userId, reason }) => {
     const actor = await requireCapability(ctx, 'people.discipline');
     return unbanImpl(ctx, actor, { userId, reason });
   },
 });
 
-/** Why a lift is refused on an account on its way out, or gone (worded once for the tests). */
+/** Why a lift is refused on an account on its way out, or gone (`lib/peopleCan`'s words). */
 export const LIFT_REFUSALS = {
-  deleting: 'This account is being deleted, so its suspension or ban can’t be lifted.',
-  deleted: 'This account is deleted, so there is nothing to lift.',
+  deleting: DISCIPLINE_REFUSALS.liftLeaving,
+  deleted: DISCIPLINE_REFUSALS.liftDeleted,
 } as const;
 
 export async function unbanImpl(
   ctx: MutationCtx,
   actor: Doc<'profiles'>,
-  { userId, reason }: { userId: Id<'profiles'>; reason: string },
+  { userId, reason: given }: { userId: Id<'profiles'>; reason?: string },
 ): Promise<Id<'profiles'>> {
   {
-    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
-    const target = await loadModeratableUser(ctx, actor, userId);
+    const { reason, defaulted } = reasonFor(given, false, 'Lifted');
     // A lift puts the account back to `active`, which would bring a deleted one back and let a
     // departing one write again (D33, D62). Refused here, so an undo that lifts is refused too.
-    if (target.status === 'deleted') throw new ConvexError(LIFT_REFUSALS.deleted);
-    if (isLeaving(target)) throw new ConvexError(LIFT_REFUSALS.deleting);
+    const target = await loadModeratableUser(ctx, actor, userId, { kind: 'lift' });
 
     await ctx.db.patch(userId, {
       status: 'active',
       statusReason: undefined,
       suspendedUntil: undefined,
       moderatedByUserId: actor._id,
+      ...LAPSE_CLEARED,
     });
-    await auditUser(ctx, actor._id, 'unban', userId, reason, { prev: statusPrev(target) });
+    await auditUser(ctx, actor._id, 'unban', userId, reason, {
+      prev: statusPrev(target),
+      ...(defaulted ? { reasonDefaulted: true } : {}),
+    });
     await ctx.scheduler.runAfter(0, internal.clerkAdmin.setBanned, {
       clerkUserId: target.clerkUserId,
       banned: false,
@@ -1647,7 +1662,8 @@ export const setBountyPostLimit = mutation({
     userId: v.id('profiles'),
     /** Absent ⇒ back to the global cap. */
     limit: v.optional(v.number()),
-    reason: v.string(),
+    /** Asked only when the limit goes down (D226). */
+    reason: v.optional(v.string()),
   },
   handler: async (ctx, { userId, limit, reason }) => {
     const actor = await requireCapability(ctx, 'people.discipline');
@@ -1658,29 +1674,48 @@ export const setBountyPostLimit = mutation({
 export async function setBountyLimitImpl(
   ctx: MutationCtx,
   actor: Doc<'profiles'>,
-  { userId, limit, reason }: { userId: Id<'profiles'>; limit?: number; reason: string },
+  { userId, limit, reason: given }: { userId: Id<'profiles'>; limit?: number; reason?: string },
 ): Promise<Id<'profiles'>> {
-  if (reason.trim().length === 0) throw new ConvexError('A reason is required');
   if (limit !== undefined && (!Number.isInteger(limit) || limit < 0)) {
     throw new ConvexError('A bounty limit has to be a whole number, zero or more');
   }
-  const target = await loadModeratableUser(ctx, actor, userId);
+  const target = await loadModeratableUser(ctx, actor, userId, { kind: 'bountyLimit' });
+  // Lowering the limit in force takes something away and asks why; raising or clearing it does not.
+  const { reason, defaulted } = reasonFor(
+    given,
+    effectiveBountyLimitOf(limit) < effectiveBountyLimitOf(target.activeBountyPostLimit),
+    'Bounty limit raised',
+  );
 
   await ctx.db.patch(userId, { activeBountyPostLimit: limit });
   await auditUser(ctx, actor._id, 'set_posting_permission', userId, reason, {
     permission: 'bounties',
     limit: limit ?? null,
     prev: { limit: target.activeBountyPostLimit ?? null },
+    ...(defaulted ? { reasonDefaulted: true } : {}),
   });
   return userId;
 }
 
-/** Which `profiles` boolean each posting surface maps to (D57). */
+/**
+ * Which `profiles` boolean each right maps to (D57). Flagging (D222) joins the family rather than
+ * getting a verb of its own: it is the same shape — one person's boolean right, off with a reason, on
+ * without one — so it shares the audit verb, its undo and History's wording.
+ */
 const POSTING_PERMISSION_FIELD = {
   reports: 'canPostReports',
   hazards: 'canPostHazards',
   comments: 'canPostComments',
+  flagging: 'canFlag',
 } as const;
+
+/** The default audit reason when a right is given back without one (D226). */
+const RESTORED_REASON: Record<keyof typeof POSTING_PERMISSION_FIELD, string> = {
+  reports: 'Report posting restored',
+  hazards: 'Hazard posting restored',
+  comments: 'Commenting restored',
+  flagging: 'Flagging restored',
+};
 
 /**
  * Restrict or restore a single posting right (D57) — the lever finer than suspend/ban. A user who
@@ -1691,9 +1726,10 @@ const POSTING_PERMISSION_FIELD = {
 export const setPostingPermission = mutation({
   args: {
     userId: v.id('profiles'),
-    permission: literals(['reports', 'hazards', 'comments']),
+    permission: literals(['reports', 'hazards', 'comments', 'flagging']),
     allowed: v.boolean(),
-    reason: v.string(),
+    /** Asked only when a right is taken away (D226). */
+    reason: v.optional(v.string()),
   },
   handler: async (ctx, { userId, permission, allowed, reason }) => {
     const actor = await requireCapability(ctx, 'people.discipline');
@@ -1710,11 +1746,16 @@ export async function setPostingPermissionImpl(
     userId,
     permission,
     allowed,
-    reason,
-  }: { userId: Id<'profiles'>; permission: PostingPermission; allowed: boolean; reason: string },
+    reason: given,
+  }: { userId: Id<'profiles'>; permission: PostingPermission; allowed: boolean; reason?: string },
 ): Promise<Id<'profiles'>> {
-  if (reason.trim().length === 0) throw new ConvexError('A reason is required');
-  const target = await loadModeratableUser(ctx, actor, userId);
+  const { reason, defaulted } = reasonFor(given, !allowed, RESTORED_REASON[permission]);
+  // Flagging off on a staffer is refused here too: the one rule (`lib/peopleCan`).
+  const target = await loadModeratableUser(ctx, actor, userId, {
+    kind: 'right',
+    permission,
+    allowed,
+  });
 
   const field = POSTING_PERMISSION_FIELD[permission];
   await ctx.db.patch(userId, { [field]: allowed });
@@ -1723,6 +1764,7 @@ export async function setPostingPermissionImpl(
     allowed,
     // Missing means allowed (D57), so the prior value is always a boolean.
     prev: { allowed: target[field] !== false },
+    ...(defaulted ? { reasonDefaulted: true } : {}),
   });
   return userId;
 }

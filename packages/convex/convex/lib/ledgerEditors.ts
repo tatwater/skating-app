@@ -13,8 +13,8 @@
  *   can step down only once another admin holds it, and the last holder can't be demoted out of
  *   admin until someone else is given it.
  * - **Nor through discipline.** Suspending or banning the last editor who can act is refused the same
- *   way ({@link refuseDisciplineOfLastLedgerEditor}, called by `moderation.banImpl` and
- *   `moderation.suspendImpl`, which an undo putting a ban or suspension back runs too).
+ *   way, with the same message (`lib/peopleCan.disciplineRefusal`, which `moderation.banImpl` and
+ *   `moderation.suspendImpl` refuse by, and an undo putting a ban or suspension back runs too).
  * - **A demotion clears it.** Leaving admin takes the grant with it, in the same mutation and with its
  *   own audit row, so a later promotion back to admin (or the undo of the demotion) does not quietly
  *   restore it; a holder gives it again on purpose.
@@ -26,14 +26,32 @@ import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { writeAudit } from './audit';
 import { hasCapability, isLockedOut, isSuspendedNow } from './auth';
+import {
+  factsOfRow,
+  readPreparation,
+  refreshPersonRow,
+  rememberedLedgerEditors,
+  rememberLedgerEditors,
+} from './peopleRows';
+import { DOC_MAX, ReadBudget } from './readBudget';
 
 type Profile = Doc<'profiles'>;
+
+/** What "can still act" and "the last editor" read of a person. */
+export type LedgerFacts = Pick<
+  Profile,
+  '_id' | 'role' | 'canEditLedger' | 'status' | 'suspendedUntil' | 'deletionRequestedAt'
+>;
 
 /**
  * How many admins a ledger query reads at most. Admins are a handful; the bound is there so the read
  * stays bounded however the table grows.
  */
 const ADMIN_READ_LIMIT = 500;
+/** Before the rows backfill: the admins' profiles the check may read, at their worst. */
+const PRE_ROWS_ADMIN_BUDGET = 6 * DOC_MAX;
+/** Editors a write confirms from their profiles, at most — a "select few" (D227). */
+const CONFIRM_IN_WRITES = 4;
 
 /**
  * May `viewer` learn who holds ledger editing (D227)? Only an admin who holds it and is not on their
@@ -74,31 +92,83 @@ export function isLedgerEditor(profile: Pick<Profile, 'role' | 'canEditLedger'>)
  * D62). A suspended holder can't edit or pass the grant on, so they don't count toward "never no
  * editor" — or the last holder who can act could step down and strand it.
  */
-function canStillAct(profile: Profile): boolean {
+function canStillAct(profile: LedgerFacts): boolean {
   return !isLockedOut(profile) && !isSuspendedNow(profile, Date.now()) && !isLeaving(profile);
 }
 
 /** An editor who can still act. This is who counts toward "never no editor". */
-function canStillEdit(profile: Profile): boolean {
+function canStillEdit(profile: LedgerFacts): boolean {
   return isLedgerEditor(profile) && canStillAct(profile);
 }
 
-/** Editors who can still act, other than `exceptId`. */
+/** Admins' People rows read at most when looking for another editor. */
+const ADMIN_ROWS = 200;
+
+/**
+ * Editors who can still act, other than `exceptId` (D227's "never no editor").
+ *
+ * Once the People rows exist (the rows backfill is ready, `readPreparation`), the editors are read from admins' light rows — role,
+ * grant (`ledgerEditor`), status, suspension and window are all on the row, written by the same writes
+ * that change them on the profile. A read (the person page's `can`, undo state) answers from the rows
+ * and loads no profile; a write confirms each counted editor from its profile (at most
+ * {@link CONFIRM_IN_WRITES}), so a stale row can only undercount and refuse. Before the rows exist, the
+ * admins' profiles are read under the check's own allowance. Either way the set is read **once per
+ * request** and shared by every question — History and Decisions ask once a row — and forgotten when
+ * the request writes a People row (`lib/peopleRows`), so a mutation sees its own write.
+ */
 export async function otherLedgerEditors(
   ctx: QueryCtx | MutationCtx,
   exceptId: Id<'profiles'>,
 ): Promise<number> {
-  const admins = await ctx.db
-    .query('profiles')
-    .withIndex('by_role', (q) => q.eq('role', 'admin'))
-    .take(ADMIN_READ_LIMIT);
-  return admins.filter((p) => p._id !== exceptId && canStillEdit(p)).length;
+  const editors = await ledgerEditorsNow(ctx);
+  return [...editors].filter((id) => id !== exceptId).length;
+}
+
+function ledgerEditorsNow(ctx: QueryCtx | MutationCtx): Promise<Set<string>> {
+  let read = rememberedLedgerEditors(ctx);
+  if (read === undefined) {
+    read = readLedgerEditors(ctx);
+    rememberLedgerEditors(ctx, read);
+  }
+  return read;
+}
+
+async function readLedgerEditors(ctx: QueryCtx | MutationCtx): Promise<Set<string>> {
+  const { pending } = await readPreparation(ctx);
+  if (pending.includes('rows')) {
+    // Its own allowance (never shared with another helper's, so it can't be starved): as many admins
+    // as six profiles at their worst; past that the count is short, which refuses (safe). Only until
+    // the rows backfill has run.
+    const budget = new ReadBudget(PRE_ROWS_ADMIN_BUDGET);
+    const admins = await budget.take('profile', budget.rows('profile', ADMIN_READ_LIMIT), (n) =>
+      ctx.db
+        .query('profiles')
+        .withIndex('by_role', (q) => q.eq('role', 'admin'))
+        .take(n),
+    );
+    return new Set(admins.filter(canStillEdit).map((p) => p._id));
+  }
+  const rows = await ctx.db
+    .query('peopleRows')
+    .withIndex('by_staff', (q) => q.eq('staffRank', 0))
+    .take(ADMIN_ROWS);
+  const counted = rows.filter((r) => r.ledgerEditor && canStillEdit(factsOfRow(r)));
+  // A read answers from the rows. A write — whose answer decides whether the ledger can be left with
+  // no editor — confirms each from its profile, so a stale row can only undercount (refuse), never
+  // let the last real editor go: a select few profiles, once a mutation.
+  if (!('insert' in ctx.db)) return new Set(counted.map((r) => r.userId));
+  const confirmed = new Set<string>();
+  for (const row of counted.slice(0, CONFIRM_IN_WRITES)) {
+    const profile = await ctx.db.get(row.userId);
+    if (profile && canStillEdit(profile)) confirmed.add(profile._id);
+  }
+  return confirmed;
 }
 
 /** Whether `target` is the only editor who can still act — taking it from them is refused. */
 export async function isLastLedgerEditor(
   ctx: QueryCtx | MutationCtx,
-  target: Profile,
+  target: LedgerFacts,
 ): Promise<boolean> {
   return canStillEdit(target) && (await otherLedgerEditors(ctx, target._id)) === 0;
 }
@@ -106,18 +176,22 @@ export async function isLastLedgerEditor(
 export const LAST_EDITOR_MESSAGE =
   'They are the last person who can edit the ledger; give another admin ledger editing first';
 
-/**
- * The discipline half of "never no editor" (B01, the governor's ruling on D227): a suspension or a
- * ban takes away the last editor who can act just as a revoke or a demotion would — a suspended or
- * banned holder can't edit or pass the grant on — so it is refused with the same message. To be
- * called before the status changes, by every path that suspends or bans: `moderation.banImpl` and
- * `moderation.suspendImpl`, which an undo that puts a suspension or ban back also runs.
- */
-export async function refuseDisciplineOfLastLedgerEditor(
+/** Why `target` can't be given ledger editing, or `null` — the People row's `can` and the write's. */
+export function ledgerGrantRefusal(target: LedgerFacts): string | null {
+  if (target.role !== 'admin') return 'Only an admin can be given ledger editing';
+  if (!canStillAct(target)) return 'This account is not active';
+  if (target.canEditLedger === true) return 'They can already edit the ledger';
+  return null;
+}
+
+/** Why ledger editing can't be taken from `target`, or `null`. */
+export async function ledgerRevokeRefusal(
   ctx: QueryCtx | MutationCtx,
-  target: Profile,
-): Promise<void> {
-  if (await isLastLedgerEditor(ctx, target)) throw new ConvexError(LAST_EDITOR_MESSAGE);
+  target: LedgerFacts,
+): Promise<string | null> {
+  if (target.canEditLedger !== true) return 'They cannot edit the ledger';
+  if (await isLastLedgerEditor(ctx, target)) return LAST_EDITOR_MESSAGE;
+  return null;
 }
 
 /**
@@ -131,13 +205,11 @@ export async function grantLedgerEditorImpl(
 ): Promise<void> {
   const target = await ctx.db.get(userId);
   if (!target) throw new ConvexError('User not found');
-  if (target.role !== 'admin') {
-    throw new ConvexError('Only an admin can be given ledger editing');
-  }
-  if (!canStillAct(target)) throw new ConvexError('This account is not active');
-  if (target.canEditLedger === true) throw new ConvexError('They can already edit the ledger');
+  const refused = ledgerGrantRefusal(target);
+  if (refused !== null) throw new ConvexError(refused);
 
   await ctx.db.patch(userId, { canEditLedger: true });
+  await refreshPersonRow(ctx, userId);
   await writeAudit(ctx, {
     ...(actor ? { actorId: actor._id } : {}),
     action: 'grant_ledger_editor',
@@ -160,15 +232,18 @@ export async function revokeLedgerEditorImpl(
   if (reason.trim().length === 0) throw new ConvexError('A reason is required');
   const target = await ctx.db.get(userId);
   if (!target) throw new ConvexError('User not found');
-  if (target.canEditLedger !== true) throw new ConvexError('They cannot edit the ledger');
+  const refused = await ledgerRevokeRefusal(ctx, target);
+  if (refused !== null) throw new ConvexError(refused);
   await takeLedgerGrant(ctx, actor, target, reason.trim(), {});
+  await refreshPersonRow(ctx, userId);
 }
 
 /**
  * The demotion half (called by `admin.ts` before it changes a role): when `target` holds the grant and
  * `newRole` is not admin, the grant goes too, with its own `revoke_ledger_editor` row written **before**
  * the role row — so the role change stays the newest row on the person and keeps its undo, and this
- * row reads as following from it. Refused, like a revoke, when it would leave no editor.
+ * row reads as following from it. Refused, like a revoke, when it would leave no editor. The person's
+ * People row is the caller's to refresh, once, after its role patch.
  */
 export async function clearLedgerGrantOnDemotion(
   ctx: MutationCtx,

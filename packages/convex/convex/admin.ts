@@ -14,6 +14,8 @@ import { type MutationCtx, mutation, query } from './_generated/server';
 import { writeAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { clearLedgerGrantOnDemotion } from './lib/ledgerEditors';
+import { reasonFor, roleChangeTakesAway, writeRefusal } from './lib/peopleCan';
+import { refreshPersonRow } from './lib/peopleRows';
 import { trustClassFor } from './lib/reputation';
 import { literals } from './lib/validators';
 
@@ -86,7 +88,12 @@ export const userSearch = query({
  * trust, and role management out of the app entirely). Another admin can always change your role.
  */
 export const grantRole = mutation({
-  args: { userId: v.id('profiles'), role: literals(['moderator', 'admin']), reason: v.string() },
+  args: {
+    userId: v.id('profiles'),
+    role: literals(['moderator', 'admin']),
+    /** Asked only for a demotion (admin to moderator); a promotion takes an optional note (D226). */
+    reason: v.optional(v.string()),
+  },
   handler: async (ctx, { userId, role, reason }) => {
     const actor = await requireCapability(ctx, 'people.role');
     return grantRoleImpl(ctx, actor, { userId, role, reason });
@@ -99,12 +106,18 @@ export type ElevatedRole = 'moderator' | 'admin';
 export async function grantRoleImpl(
   ctx: MutationCtx,
   actor: Doc<'profiles'>,
-  { userId, role, reason }: { userId: Id<'profiles'>; role: ElevatedRole; reason: string },
+  { userId, role, reason: given }: { userId: Id<'profiles'>; role: ElevatedRole; reason?: string },
 ): Promise<Id<'profiles'>> {
-  if (reason.trim().length === 0) throw new ConvexError('A reason is required');
-  if (userId === actor._id) throw new ConvexError('You cannot change your own role');
   const target = await ctx.db.get(userId);
   if (!target) throw new ConvexError('User not found');
+  // The rule the People page's role menu reads (`lib/peopleCan`).
+  const why = await writeRefusal(ctx, actor, target, { kind: 'role', role });
+  if (why !== null) throw new ConvexError(why);
+  const { reason, defaulted } = reasonFor(
+    given,
+    roleChangeTakesAway(target.role, role),
+    role === 'admin' ? 'Made an admin' : 'Made a moderator',
+  );
 
   // An admin moved down to moderator loses ledger editing with the role (D227), audited first.
   await clearLedgerGrantOnDemotion(ctx, actor, target, role);
@@ -115,9 +128,10 @@ export async function grantRoleImpl(
     targetType: 'user',
     targetId: userId,
     reason,
-    metadata: { role, priorRole: target.role },
+    metadata: { role, priorRole: target.role, ...(defaulted ? { reasonDefaulted: true } : {}) },
     createdAt: Date.now(),
   });
+  await refreshPersonRow(ctx, userId);
   return userId;
 }
 
@@ -127,7 +141,8 @@ export async function grantRoleImpl(
  * An admin's ledger editing goes with the role (D227), and the last editor can't be revoked.
  */
 export const revokeRole = mutation({
-  args: { userId: v.id('profiles'), reason: v.string() },
+  // A demotion asks why (D226); revoking from someone with no role takes nothing away.
+  args: { userId: v.id('profiles'), reason: v.optional(v.string()) },
   handler: async (ctx, { userId, reason }) => {
     const actor = await requireCapability(ctx, 'people.role');
     return revokeRoleImpl(ctx, actor, { userId, reason });
@@ -138,12 +153,18 @@ export const revokeRole = mutation({
 export async function revokeRoleImpl(
   ctx: MutationCtx,
   actor: Doc<'profiles'>,
-  { userId, reason }: { userId: Id<'profiles'>; reason: string },
+  { userId, reason: given }: { userId: Id<'profiles'>; reason?: string },
 ): Promise<Id<'profiles'>> {
-  if (reason.trim().length === 0) throw new ConvexError('A reason is required');
   if (userId === actor._id) throw new ConvexError('You cannot revoke your own role');
   const target = await ctx.db.get(userId);
   if (!target) throw new ConvexError('User not found');
+  const why = await writeRefusal(ctx, actor, target, { kind: 'role', role: 'member' });
+  if (why !== null) throw new ConvexError(why);
+  const { reason, defaulted } = reasonFor(
+    given,
+    roleChangeTakesAway(target.role, 'member'),
+    'No role to revoke',
+  );
 
   // Leaving admin takes ledger editing with it (D227), audited first; refused for the last editor.
   await clearLedgerGrantOnDemotion(ctx, actor, target, 'member');
@@ -154,8 +175,9 @@ export async function revokeRoleImpl(
     targetType: 'user',
     targetId: userId,
     reason,
-    metadata: { priorRole: target.role },
+    metadata: { priorRole: target.role, ...(defaulted ? { reasonDefaulted: true } : {}) },
     createdAt: Date.now(),
   });
+  await refreshPersonRow(ctx, userId);
   return userId;
 }

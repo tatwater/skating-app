@@ -3,8 +3,8 @@
  * (`convex/lib/readBudget.ts`), so no pass reads past Convex's limit however heavy its rows. A raw
  * read added outside a charge is the regression this catches: in the modules below, every database
  * read — `ctx.db.get`, `.first()`, `.unique()`, `.take(`, `.paginate(`, `.collect()` — must sit inside
- * the parentheses of a charging call (`reads.one/take/page`, `budget.one/take/page`, or `drain(`,
- * which charges what its `take` returns). `.collect()` and `.unique()` are refused outright: neither
+ * the parentheses of a charging call (`reads.one/take/page/measured/capped`, the same on `budget`,
+ * `drain(` — which charges what its `take` returns — or the People pages' `takeCapped(`). `.collect()` and `.unique()` are refused outright: neither
  * has a bound a budget can size.
  *
  * A lint over the source text, not a proof: a read reached through a helper in another module is
@@ -16,7 +16,15 @@ import { resolve } from 'node:path';
 import { expect, test } from 'vitest';
 
 const CONVEX = resolve(__dirname, '../../convex/convex');
-const MODULES = ['erasure.ts', 'contentRecord.ts', 'authorDeletions.ts', 'lib/eraseClock.ts'];
+const MODULES = [
+  'erasure.ts',
+  'contentRecord.ts',
+  'authorDeletions.ts',
+  'lib/eraseClock.ts',
+  // The People pages (B01-4): every public read and job, each read charged on every axis.
+  'people.ts',
+  'peopleJobs.ts',
+];
 
 /**
  * The source with comments and string contents blanked, offsets preserved. One pass, so whichever
@@ -34,7 +42,8 @@ function code(source: string): string {
 /** Spans `[open, close]` of every charging call's argument list. */
 function chargedSpans(text: string): [number, number][] {
   const spans: [number, number][] = [];
-  const opener = /\b(?:reads|budget)\.(?:one|take|page)\(|\bdrain\(/g;
+  const opener =
+    /\b(?:reads|budget)\.(?:one|take|page|measured|capped)\(|\bdrain\(|\btakeCapped\(/g;
   for (let m = opener.exec(text); m; m = opener.exec(text)) {
     let depth = 0;
     for (let i = m.index + m[0].length - 1; i < text.length; i++) {

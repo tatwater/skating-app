@@ -8,7 +8,9 @@ import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
-import { LAST_EDITOR_MESSAGE, refuseDisciplineOfLastLedgerEditor } from './lib/ledgerEditors';
+import { LAST_EDITOR_MESSAGE } from './lib/ledgerEditors';
+import { disciplineRefusal } from './lib/peopleCan';
+import { markReady, refreshPersonRow } from './lib/peopleRows';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -265,6 +267,46 @@ describe('ledger.revokeEditor', () => {
     expect((await profile(t, founder.id))?.canEditLedger).toBeUndefined();
   });
 
+  test('once the People rows exist, a holder the row shows cannot act never takes a confirmation from one who can', async () => {
+    // The check confirms only a few holders' profiles, in name order. Three that sort first and
+    // can't act — suspended, on their way out, banned — are passed over on their rows alone, so the
+    // fourth, who can, is still found.
+    const t = convexTest(schema, modules);
+    const day = 86_400_000;
+    const ids = [
+      (
+        await seedUser(t, 'a1', 'admin', {
+          canEditLedger: true,
+          status: 'suspended',
+          suspendedUntil: Date.now() + day,
+        })
+      ).id,
+      (await seedUser(t, 'a2', 'admin', { canEditLedger: true, deletionRequestedAt: Date.now() }))
+        .id,
+      (await seedUser(t, 'a3', 'admin', { canEditLedger: true })).id,
+    ];
+    const target = await editor(t, 'target');
+    const zed = await editor(t, 'zed');
+    await t.run(async (ctx) => {
+      await ctx.db.patch(ids[2] as Id<'profiles'>, { status: 'banned' });
+      for (const id of [...ids, target.id, zed.id]) await refreshPersonRow(ctx, id);
+      await markReady(ctx, 'rows');
+    });
+    await zed.as.mutation(api.ledger.revokeEditor, { userId: target.id, reason: 'x' });
+    expect((await profile(t, target.id))?.canEditLedger).toBeUndefined();
+    // The revoke refreshed the row, so the next check reads it as no longer a holder.
+    const row = await t.run((ctx) =>
+      ctx.db
+        .query('peopleRows')
+        .withIndex('by_user', (q) => q.eq('userId', target.id))
+        .first(),
+    );
+    expect(row?.ledgerEditor).toBe(false);
+    await expect(
+      zed.as.mutation(api.ledger.revokeEditor, { userId: zed.id, reason: 'x' }),
+    ).rejects.toThrow(/last person/i);
+  });
+
   test('refuses someone who does not hold it', async () => {
     const t = convexTest(schema, modules);
     const founder = await editor(t, 'founder');
@@ -305,6 +347,14 @@ describe('a demotion clears it (D227)', () => {
       actorId: founder.id,
       metadata: { cause: 'role_change', role: 'member' },
     });
+    // The People row is refreshed once, after the role patch: no holder, no longer staff.
+    const row = await t.run((ctx) =>
+      ctx.db
+        .query('peopleRows')
+        .withIndex('by_user', (q) => q.eq('userId', other.id))
+        .first(),
+    );
+    expect(row).toMatchObject({ role: 'member', staffRank: 2, ledgerEditor: false });
   });
 
   test('moving an editor down to moderator clears it too; a promotion back does not restore it', async () => {
@@ -401,11 +451,11 @@ describe('a demotion clears it (D227)', () => {
     const other = await editor(t, 'other');
     const mod = await seedUser(t, 'mod', 'moderator');
 
-    await founder.as.mutation(api.admin.grantRole, {
-      userId: other.id,
-      role: 'admin',
-      reason: 'x',
-    });
+    // Granting the role they hold is refused as no change at all (the People page's role menu, one
+    // rule), and the grant is untouched.
+    await expect(
+      founder.as.mutation(api.admin.grantRole, { userId: other.id, role: 'admin', reason: 'x' }),
+    ).rejects.toThrow('This is their role now.');
     expect((await profile(t, other.id))?.canEditLedger).toBe(true);
     await founder.as.mutation(api.admin.revokeRole, { userId: mod.id, reason: 'x' });
     expect((await rowsOn(t, mod.id)).map((r) => r.action)).toEqual(['revoke_role']);
@@ -413,15 +463,19 @@ describe('a demotion clears it (D227)', () => {
 });
 
 describe('discipline never leaves the ledger without an editor (the governor’s ruling on D227)', () => {
+  /** A stand-in admin acting: the last-editor refusal turns on the target alone (`lib/peopleCan`). */
+  const ACTOR = { _id: 'acting-admin' as Id<'profiles'>, role: 'admin' as const };
+  const refusal = (t: T, id: Id<'profiles'>, lever: 'suspend' | 'ban') =>
+    t.run(async (ctx) => {
+      const target = await ctx.db.get(id);
+      return target ? disciplineRefusal(ctx, ACTOR, target, lever) : 'no such profile';
+    });
+
   test('suspending or banning the last editor who can act is refused, with the demotion’s message', async () => {
     const t = convexTest(schema, modules);
     const only = await editor(t, 'only');
-    await expect(
-      t.run(async (ctx) => {
-        const target = await ctx.db.get(only.id);
-        if (target) await refuseDisciplineOfLastLedgerEditor(ctx, target);
-      }),
-    ).rejects.toThrow(LAST_EDITOR_MESSAGE);
+    expect(await refusal(t, only.id, 'suspend')).toBe(LAST_EDITOR_MESSAGE);
+    expect(await refusal(t, only.id, 'ban')).toBe(LAST_EDITOR_MESSAGE);
   });
 
   test('allowed once another editor can act, and for anyone who does not hold it', async () => {
@@ -429,12 +483,10 @@ describe('discipline never leaves the ledger without an editor (the governor’s
     const first = await editor(t, 'first');
     await editor(t, 'second');
     const plain = await seedUser(t, 'plain', 'admin');
-    await t.run(async (ctx) => {
-      for (const id of [first.id, plain.id]) {
-        const target = await ctx.db.get(id);
-        if (target) await refuseDisciplineOfLastLedgerEditor(ctx, target);
-      }
-    });
+    for (const id of [first.id, plain.id]) {
+      expect(await refusal(t, id, 'suspend')).toBeNull();
+      expect(await refusal(t, id, 'ban')).toBeNull();
+    }
   });
 
   test('a suspended second editor does not count: the first is still the last who can act', async () => {
@@ -445,12 +497,7 @@ describe('discipline never leaves the ledger without an editor (the governor’s
       status: 'suspended',
       suspendedUntil: Date.now() + 86_400_000,
     });
-    await expect(
-      t.run(async (ctx) => {
-        const target = await ctx.db.get(first.id);
-        if (target) await refuseDisciplineOfLastLedgerEditor(ctx, target);
-      }),
-    ).rejects.toThrow(LAST_EDITOR_MESSAGE);
+    expect(await refusal(t, first.id, 'suspend')).toBe(LAST_EDITOR_MESSAGE);
   });
 
   const DAY = 86_400_000;

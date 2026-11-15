@@ -10,6 +10,7 @@ import { SCOPE_ALL } from '@skating/core';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { QueryCtx } from '../_generated/server';
 import type { ModerationAction, ModerationTargetType } from './audit';
+import { personRowOf, rowlessProfile } from './peopleRows';
 
 /**
  * **The name an audit row's target goes by**, for the feed (S5): a body's from its stored library
@@ -31,9 +32,15 @@ export async function auditTargetLabel(
     return row?.name ?? null;
   }
   if (targetType === 'user') {
+    // The person's light People row, never their profile: a feed or History names a person once a
+    // row, and a profile can weigh a whole document. Someone with no row yet (before the People rows
+    // backfill) is read in full while the request's profile budget lasts, then left unnamed.
     const id = ctx.db.normalizeId('profiles', targetId);
-    const person = id === null ? null : await ctx.db.get(id);
-    return person === null ? null : person.displayName.trim() || person.username;
+    if (id === null) return null;
+    const row = await personRowOf(ctx, id);
+    if (row) return row.displayName.trim() || row.username;
+    const person = await rowlessProfile(ctx, id);
+    return person ? person.displayName.trim() || person.username : null;
   }
   return null;
 }

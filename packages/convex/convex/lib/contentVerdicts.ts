@@ -54,6 +54,37 @@ export function verdictKindOf(action: string): 'hidden' | 'removed' | 'retracted
   return action === 'hide' ? 'hidden' : action === 'retract_access_alert' ? 'retracted' : 'removed';
 }
 
+/** A person's standing verdicts counted at most, for the People page's Hidden content row. */
+export const VERDICT_COUNT_CAP = 500;
+
+/**
+ * How much of a person's content stands under a verdict, by kind — the People page's *Hidden
+ * content* row ("5 items · 2 reports · 2 comments"). Read from the same range `personVerdicts` pages
+ * through (`by_subject_standing`), so the counts and the list agree; `capped` past
+ * {@link VERDICT_COUNT_CAP}, when each count is a floor.
+ */
+export async function readVerdictCounts(
+  ctx: QueryCtx,
+  subjectUserId: Id<'profiles'>,
+): Promise<{ total: number; byKind: Record<VerdictTargetType, number>; capped: boolean }> {
+  const rows = await ctx.db
+    .query('contentVerdicts')
+    .withIndex('by_subject_standing', (q) =>
+      q.eq('subjectUserId', subjectUserId).eq('standing', true),
+    )
+    .take(VERDICT_COUNT_CAP + 1);
+  const counted = rows.slice(0, VERDICT_COUNT_CAP);
+  const byKind: Record<VerdictTargetType, number> = {
+    report: 0,
+    post: 0,
+    comment: 0,
+    hazard: 0,
+    accessAlert: 0,
+  };
+  for (const row of counted) byKind[row.targetType]++;
+  return { total: counted.length, byKind, capped: rows.length > VERDICT_COUNT_CAP };
+}
+
 /** Standing verdicts read per page — the writers keep at most one standing on an item. */
 const STANDING_PAGE = 16;
 

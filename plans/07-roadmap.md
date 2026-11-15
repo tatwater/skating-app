@@ -796,7 +796,7 @@ lack of signal.*
 - The founder's device pass of the sheet on the Android preview build (every door; offline; the silhouette picker) — and `convex dev --once` before it (`contentRevisions`, `author_delete`)
 
 ## Phase B01 — The admin console: one surface, organized by what an operator is doing
-🟡 **In progress** 2026-10-14 · [plan](./phases/B01-admin-console.md) · D216 D217 D218 D219 D220 D221 D222 D223 D224 D225 D226 D227 D245 D246 D247 D248 D249 D250 D251 D252 D253 D254 D255 D258 D259
+🟡 **In progress** 2026-10-14 · [plan](./phases/B01-admin-console.md) · D216 D217 D218 D219 D220 D221 D222 D223 D224 D225 D226 D227 D245 D246 D247 D248 D249 D250 D251 D252 D253 D254 D255 D256 D257 D258 D259
 
 Phase 07 built `/admin` as work queues plus a control room, and every phase since added a page
 for its own feature; sixteen nav items later the surface is organized by table, not by task — an
@@ -827,6 +827,7 @@ knows what needs them, does it where they found it, and watches the machinery wo
 - The dev inbox seed (§8 §2) — the founder's OK is given; the examples are the build's to invent
 - `planConventions.test.ts` accepts the `B` era (done in this phase's first commit)
 - The Post-restore chooser on mobile — the server refuses an empty Post restore and takes chosen Reports (2026-11-13); the web chooser is `components/moderation/RestorePost`, the phone has none yet (and no restore of a Post today)
+- The People server's after-merge procedure on dev (the phase doc's "the backfills, and the one procedure that runs them" holds the table, the check's shape and the run design): (1) `convex dev --once`. (2) `convex run peopleJobs:backfillRows '{}'` — it runs the three People backfills in turn (rows, flag subjects, undo chains). Estimate: unmeasured. (3) `convex run peopleJobs:preparation '{}'` until it returns `ready: true`. (4) For each job in its `rerun`: `convex run <job> '{"alone":true}'` (a new run, which supersedes any older one), then step 3 again. (5) For each id `backfillRows` logs as an overwritten tombstone: `convex run peopleJobs:restoreTombstoneStatus '{"userId":"<id>"}'`.
 - D258's after-merge step on dev: `convex dev --once` (new tables, fields, indexes and the two retry crons; widen-only, nothing to backfill). Still owed from the recurring-jobs audit (§12.8 "B01-1d"): the live imagery pump's in-flight slots, the hazard-recurrence rollover's day chain, the hazard-weather list read's weight, the Bodies library queue on `lib/attempts`, and a parked map card drawn as stale on the clients
 - D248's two backfills on dev, once #108 is deployed (`convex dev --once`): `authorDeletions:backfillFromAudit` and `authorDeletions:backfillCommentDeletions`. Until they run, a moderator can still restore a Report or Comment its author deleted before the stamp existed
 - D248's verdict record on dev, after the next PR deploys: `authorDeletions:backfillFromAudit` again (it now also withdraws a member hidden after its Post was deleted), then `contentRecord:backfillVerdicts`, which starts `erasure:backfillClocks` when it finishes — in that order, so no clock runs before the verdict that holds it exists

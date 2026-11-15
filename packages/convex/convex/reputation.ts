@@ -13,6 +13,7 @@
 import { deriveEarnedBadges } from '@skating/core';
 import { v } from 'convex/values';
 import { internalMutation } from './_generated/server';
+import { notePoints } from './lib/peopleRows';
 import { computeBadgeStats } from './lib/reputation';
 
 export const backfillReputation = internalMutation({
@@ -50,6 +51,8 @@ export const backfillReputation = internalMutation({
         badgesChanged
       ) {
         await ctx.db.patch(p._id, { reputationPoints, bountyPoints, badges });
+        // The People list's copy of the points (`lib/peopleRows`), as `bumpReputation` keeps it.
+        await notePoints(ctx, p._id, reputationPoints);
         patched++;
       }
     }

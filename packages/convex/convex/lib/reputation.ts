@@ -22,6 +22,7 @@ import {
 } from '@skating/core';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
+import { notePoints } from './peopleRows';
 import { takeCapped } from './scan';
 
 /** Thumbs tallied for one report/hazard. A single item drawing more than this is a story in itself. */
@@ -62,7 +63,10 @@ export async function bumpReputation(
   if (delta === 0) return;
   const profile = await ctx.db.get(userId);
   if (!profile) return;
-  await ctx.db.patch(userId, { reputationPoints: Math.max(0, profile.reputationPoints + delta) });
+  const reputationPoints = Math.max(0, profile.reputationPoints + delta);
+  await ctx.db.patch(userId, { reputationPoints });
+  // The People list's copy, so it can show the trust class without reading the profile.
+  await notePoints(ctx, userId, reputationPoints);
 }
 
 /** Adjust a profile's `bountyPoints` by `delta`, clamped at 0 (absent ⇒ treated as 0). No-op if missing. */

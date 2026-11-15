@@ -2,6 +2,7 @@ import { convexTest } from 'convex-test';
 import { describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+import { personRowOf, refreshPersonRow } from './lib/peopleRows';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -294,10 +295,15 @@ describe('backfillReputation', () => {
     // A clean backfill changes nothing (parity holds).
     expect((await t.mutation(internal.reputation.backfillReputation, {})).patched).toBe(0);
 
-    // Corrupt the denormalized counter, then backfill restores it from the ledger.
-    await t.run((ctx) => ctx.db.patch(author.id, { reputationPoints: 999 }));
+    // Corrupt the denormalized counter (and the People row's copy of it), then backfill restores it
+    // from the ledger — the row's copy with it.
+    await t.run(async (ctx) => {
+      await ctx.db.patch(author.id, { reputationPoints: 999 });
+      await refreshPersonRow(ctx, author.id);
+    });
     const res = await t.mutation(internal.reputation.backfillReputation, {});
     expect(res.patched).toBe(1);
     expect((await profile(t, author.id))?.reputationPoints).toBe(expected);
+    expect((await t.run((ctx) => personRowOf(ctx, author.id)))?.reputationPoints).toBe(expected);
   }, 15000);
 });

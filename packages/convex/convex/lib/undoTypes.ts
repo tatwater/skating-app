@@ -6,6 +6,7 @@
 
 import type { Doc } from '../_generated/dataModel';
 import type { MutationCtx } from '../_generated/server';
+import type { PersonWrite } from './peopleCan';
 
 export interface UndoCall {
   ctx: MutationCtx;
@@ -27,6 +28,12 @@ export interface UndoHandler {
   /** Why this row can't be undone — by anyone, or (when it depends on who asks) by `viewer`. */
   blocked?: (row: Doc<'moderationActions'>, viewer?: UndoViewer) => string | null;
   undoTakesAway: (row: Doc<'moderationActions'>) => boolean;
+  /**
+   * For an undo on a person: the write it runs (the previous state, put back), so its refusal is the
+   * one the forward write of that state gives (`lib/peopleCan.writeRefusal`) — what History offers is
+   * what the write accepts. The handler's `run` makes this same write.
+   */
+  personWrite?: (row: Doc<'moderationActions'>) => PersonWrite;
   run: (call: UndoCall) => Promise<void>;
 }
 

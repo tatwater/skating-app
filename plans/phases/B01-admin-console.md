@@ -956,7 +956,7 @@ merge and sub-areas; no split), D222 (discipline: no mute; photos' moderation ax
 blue means a transient mode; go-mode; the temperature scale; *bodies*), D224 (a clouded pass shown
 to skaters, per frame, from the Imagery tab). D225 (Reports, a ninth mode; in-context
 moderator controls kept) and D226 (undo for every operator action; a reason only when something is
-taken away). **Added 2026-10-16:** D227 (invoices edited by named people — Teagan from the start — not a role). **Refined 2026-10-17:** D227's grant is a row on an admin's People page that only a holder sees and changes; never no holder; a demotion clears it. **Ported 2026-11-10:** D245 (a saved put-in keeps a body active through the standing rollover; minted on the sweep branch as D228, §7). **Added 2026-11-13:** D249 (the season flips on 1 July, its Metrics window opens on 1 October, empty between), D250 (kudos are positive reactions), D251 (a flag under review is open), D252 (discipline never leaves the ledger without an editor), D253 (what a contribution is), D254 (the sign-in record keeps the current season and one past), D255 (a body's completeness is ten things).
+taken away). **Added 2026-10-16:** D227 (invoices edited by named people — Teagan from the start — not a role). **Refined 2026-10-17:** D227's grant is a row on an admin's People page that only a holder sees and changes; never no holder; a demotion clears it. **Ported 2026-11-10:** D245 (a saved put-in keeps a body active through the standing rollover; minted on the sweep branch as D228, §7). **Added 2026-11-13:** D249 (the season flips on 1 July, its Metrics window opens on 1 October, empty between), D250 (kudos are positive reactions), D251 (a flag under review is open), D252 (discipline never leaves the ledger without an editor), D253 (what a contribution is), D254 (the sign-in record keeps the current season and one past), D255 (a body's completeness is ten things). **Added 2026-11-14:** D257 (People reads a light row per person; flagged means the person or their content; a staffer's figures, defined once).
 
 ## §10 — Season statistics: the options (picked 2026-10-12: all of tiers 1 and 2)
 
@@ -2021,6 +2021,347 @@ one branch (`b01-3-server`).
   - H3: no console write calls the undo toast yet; `undo.latestOwn` serves it until one does.
   - S5's target names: a body's name needs #112's stored library row, not the body's outline.
   - `listActions`' verb filter in the index: it needs #112's `by_target_action`.
+
+**B01-4 (2026-11-14): the People server** (boards 8.1, 8.2, 8.5, 8.6; the founder's rulings of the
+same day, D257). Server only; the page is owed.
+
+- **The list reads a stored row per person** (`peopleRows`, `lib/peopleRows`), not `profiles`: a
+  profile can weigh a whole document (two cached isochrone polygons), so a page of fifty could pass
+  the read limit, and the lanes need indexes `profiles` doesn't have. The row is derived from the
+  profile alone and written at every write that moves a fact it carries — the profile's creation and
+  renames, the avatar mirror, every discipline and role write, the deletion request, its cancel, the
+  finalization lock, the tombstone, the lapsed-suspension sweep; trust points take a light path (they
+  move on every rating and no lane reads them). A drift repair re-derives the rows refreshed longest
+  ago, ten every ten minutes, so a write that missed its refresh heals within days. The restriction
+  marker and the suspension's end therefore live on the row, not on `profiles` (the brief's
+  "restriction marker on profiles" became the row's `restricted`).
+- **Counts, one rule per lane** (`lib/peopleFigures`, read by `people.lanes` and the Overview's
+  People card alike): Everyone, Staff (admins + moderators), Banned, Restricted, Leaving and Deleted
+  are `peopleCounts`, moved by the row writer in the row's own transaction — exact once the rows
+  backfill marks itself done, and until then named in the read's `pending` (never `capped`); Suspended (still running at the page's clock)
+  and Newest (the last seven days) are counted from the very index range the list pages, to 200;
+  Flagged and Appeals open group the open queue their list pages (open flags; waiting account
+  tickets), to 200. A property test drives random histories of writes and holds every lane's count
+  to the rows its own list yields.
+- **Orders, as the boards state them:** Everyone by name; Staff admins first, each by name;
+  Suspended soonest to lapse first, an open-ended one last, a lapsed one gone at once; Banned and
+  Deleted most recent first (a ban older than the row's record last); Restricted most recently
+  restricted first; Flagged and Appeals oldest first; Newest newest first; Leaving the window that
+  ends soonest first. A search ignores the lane and orders by match.
+- **`can` is the write's answer** (`lib/peopleCan`): one function per lever family decides both the
+  refusal a write throws and the `can` `people.person` returns, and undo state refuses through it too.
+  A property test tries every lever as every viewer on every state a person can be in.
+- **A deletion is never overwritten** (found by #113's review, owed here): suspend, ban and lift are
+  refused on an account in its deletion window, being finalized or deleted; a restriction is refused
+  only once it is being finalized or deleted. Every undo that would put a status back goes through the
+  same writers and is shown unavailable first (undo state reads the light People row, which carries no ledger grant, so only the last-editor refusal waits for the write). **Detecting a row already broken on dev:** a tombstone
+  a discipline write overwrote has `deletedAt` set and a status other than `deleted`; the rows
+  backfill logs each it meets (`peopleJobs.backfillRows`), and `peopleJobs.restoreTombstoneStatus`
+  puts one back. An overwritten finalization lock (`deleting`) heals on its own: the hourly
+  finalization sweep re-drives any account past its window that isn't deleted, and re-locks it.
+- **Flagged means the person or their content** (D257): `contentFlags.subjectUserId`, stamped at
+  filing by both writers (a person's flag, `lib/autoFlag`), `null` for a body; `by_subject_status`
+  reads a person's flags; `backfillFlagSubjects` stamps the rest. Until it has run, the flagged
+  figures name it in their `pending`.
+- **Give-backs ask no reason** (D226 at the writes): a lift, a restored right (flagging included), a
+  raised or cleared bounty limit and a promotion take an optional reason and otherwise get a default,
+  marked `reasonDefaulted` so History can leave it out (`reasonGiven: false` on the row); a demotion
+  and every take-away still require one, and an undo asks one exactly when it takes something away (a
+  role undo by rank, a bounty-limit undo by the limit in force).
+- **`canFlag`** joins the posting-permission family (`setPostingPermission`, `permission:
+  'flagging'`): the same shape (one boolean right, off with a reason, on without), so it shares the
+  verb, its undo and History's words. `contentFlags.flag` refuses a member whose flagging is off;
+  staff are exempt, and switching it off on a staffer is refused.
+- **The lapsed-suspension sweep** (D222, ruling 10): `peopleJobs.sweepLapsedSuspensions` every 15
+  minutes, over `profiles.by_suspension_due` (suspended, not parked, not in the deletion window, a
+  lower-bounded range on the end); each reset is its own nested transaction writing an actorless
+  `unban` ("The suspension ran its course"); a failure is counted on the profile (`lib/attempts`), the
+  walk moves past it, three runs park it; `retryLapsedDaily` tries every parked one once a day, least
+  recently tried first; `peopleJobs.parkedLapses` lists them (`machinery.read`). A new suspension, ban
+  or lift starts the record over. A fast-check property holds fairness over any mix of outcomes.
+- **Time to decide** reads when the item was filed from the decision's own row: the flag, request and
+  drawn-body decisions now record `filedAt`. A drawn-body decision from before that can't be timed
+  without reading its outline, so a week holding one reads *not recorded* until it passes.
+
+**B01-4: every read, weighed.** *P* a profile (1 MiB, its isochrones), *R* a row with an uncapped
+field, *F* a flag (its note capped), *S* a row of ids, numbers and short strings (≤ 8 KiB): a People
+row is *S* (its reason line is cut to 280 characters).
+
+| Read | Table · index | Bound | Row | Capped or partial says so |
+| --- | --- | --- | --- | --- |
+| `people.lanes` | `peopleCounts`; `peopleRows` ranges; open flags · `by_status` ×2; account tickets · `by_status_category` ×2; a queue lane's rows (`by_user`, one per person it names) | 64; 201 ×2; 201 ×2; 51 ×2; one each | S, S, F, S, S | `reasons` (the table below); `capped` exactly when there are any |
+| `people.listPage` | one lane's range (`paginate`), or `search_people`; the queues as above; a queue lane's rows | ≤ 100 a page | S | `partial` and `reasons` (the table below) |
+| `people.person` | the profile; `by_target_action` 1 row (its actor from the People row); flags · `by_target_status_reason` and `by_subject_status`; tickets · `by_clerk_user_created`; `by_flagger`; verdict counts; the last-editor check (admins' rows, once a request) | 51 / 101 a status; 201; 201; 501; 200 rows | P, R, F, S, F, S, S | `onUser`, `onContent` (also before the subject backfill), `flagsFiled`, `appealsCapped`, `hidden.capped` |
+| `people.history` | `by_target` (user); verdicts · `by_subject_standing` ×2 and `by_subject_ended`, each its action row; flags · `by_subject_status` ×2, each its decision rows | `limit + 1` each (≤ 101) | R | a capped source keeps only rows newer than what it didn't read; `capped` |
+| `people.decisions` | `by_actor`, filtered in the query, `paginate` | 100 a page, 2,000 scanned | R | `isDone` |
+| `people.staffStats` | `by_actor` + `_creationTime` (`paginate`, nine weeks); per row this week its chain's first row (`lib/undoChains`) and its filing; grant rows; revoke rows | 2,000; 1 a row; 50; 50 | R | a week the read didn't cover; `undoneByOthers.capped`, `timeToDecide.capped`; `tenureCapped` when a role walk stopped short or read its last row without the entering grant |
+| `people.staffSeason` (new) | `by_actor` + `_creationTime` over the season's own range (`paginate`); per decision its chain's first row; per takedown its verdict (`contentVerdicts.by_action`), the row that ended it and that row's chain | 2,000 rows, 4 MiB as they weigh; ≤ 600 decisions checked | R | `overturned.capped`; `overturned: null` and `empty` while the season's record hasn't opened |
+| `people.reportTrend` | `reports.by_author_skate_end_time`, `paginate` | 3,000 rows, 8 MiB as they weigh | R | `capped`; `monthsCapped` only when the read stopped inside the window |
+| `contentRecord.personVerdicts` | adds the comment's or Post's Report and the body's library row | charged (`ROW_MAX.bodyLibraryRow`) | R | a short page is not the end |
+| `peopleJobs` sweep / retry | `by_suspension_due` / `by_suspension_parked` `first()` a step; nested reset | while a step fits (head *P* + nested 2*P* + a failure's touch *P*) | P | each pass logs its position (`traced`) |
+| `peopleJobs.backfillRows` / `backfillFlagSubjects` / `repairDrift` | `profiles` / `contentFlags` · `by_creation_time`; `peopleRows.by_refreshed_at` | sized by budget (*P* + 2*P* nested; *F* + a target at *R*; 10 rows) | P, F, S | not marked ready after any failure |
+
+**B01-4: every read that loads profiles** (Greptile on #115, P1 — a profile can weigh a whole
+document, its cached isochrone polygons, so a read that loads many can pass the 16 MiB limit). The
+caller's own profile (`requireCapability`) is one more in every row.
+
+| Read | Profiles it can load, at worst | Worst bytes | Shape |
+| --- | --- | --- | --- |
+| `people.lanes`, `people.listPage` (and search) | none | — | light `peopleRows` only |
+| Overview's People card (`lib/peopleFigures`) | none (the `accounts_total` snapshot aside) | — | counts, light rows, the queues |
+| `people.person` | the target | 1 MiB | **reshaped:** the status note's actor from the People row; the last-editor check reads admins' light rows once a request, where it read every admin's profile once per lever |
+| `people.history` | none | — | **reshaped:** each row's actor from the People row (`PersonRef`, names `null` only before the rows backfill); undo state reads the target's light row (and at most the last-editor check above, once a read) — it read one profile per row |
+| `people.decisions` | none | — | **reshaped:** as History |
+| `people.staffStats`, `people.reportTrend` | the target | 1 MiB | one `get` |
+| `peopleJobs.parkedLapses` | a page: profiles until 8 MiB as they really weigh (`maximumBytesRead`) | 8 MiB | **reshaped:** paged with a cursor — it read 51 profiles in one go |
+| `peopleJobs` sweep / retry | the head, and the nested reset's two reads, a step at a time | charged by `lib/readBudget` per step | the nested call's limit is now the budget left (`nestedAllowance`): a fixed limit is measured from what the caller already read, so a heavy head left the reset nothing and every heavy reset failed — which the old test, its profiles half the weight it meant, never reached; and, as in the erasure sweep, a nested call that fails is charged its whole allowance (its reads count though it rolled back), which ends the pass |
+| `backfillRows`, `repairDrift` | a profile and its nested refresh (two reads) a step | charged per step | as the sweep |
+| `backfillFlagSubjects` | a flag's target when it is a person | charged at the limit | one at a time within the budget |
+| `restoreTombstoneStatus`, `lapseOne` | one (read twice) | 2 MiB | one person |
+| `lib/ledgerEditors.otherLedgerEditors` (every revoke, demotion, suspension or ban of a holder, and every question about one) | a read: none once the rows exist; a write: ≤ 4 counted editors confirmed from their profiles; before the rows backfill, ≤ 6 admins under the check's own allowance | 0 for a read; 4 MiB for a write | **reshaped twice:** read from admins' light rows — role, grant, status, suspension and window are all on the row — **once per request** and shared by every question, forgotten when the request writes a People row; a write confirms what it counted, so a stale row only ever refuses |
+
+**Per-row callers** (Greptile's second review of #115: a helper that loads profiles, called once a
+row inside a paged read, had escaped the table above). Every helper here that can load a profile, and
+each caller that runs it per row:
+
+| Helper | Loads | Per-row callers | Worst case per page |
+| --- | --- | --- | --- |
+| `isLastLedgerEditor` / `otherLedgerEditors` | no profile in a read once the rows exist (the editors set, light rows, once a request); a write confirms ≤ 4 | `writeRefusal` for suspend, ban, a demotion and a ledger revoke — so `people.person`'s `can`, and undo state on every History and Decisions row | one light read of ≤ 200 admin rows a page, however many rows ask |
+| `writeRefusal` (the `can` helper, `loadModeratableUser`, undo's refusal) | none of its own; the target's facts come from the caller (a profile in a write; the light row in undo state) | undo state per History / Decisions row | as above |
+| undo state's person facts (`lib/undo`) | the People row; a person without one (before the backfill) read once per request, charged to `requestBudget` | every History and Decisions row on a person | in History and Decisions, what the request's one budget has left (the page's own reads charge it too); in a request that charges none of its own reads (the audit feed, a body's History, the toast) ≤ 4 profiles (`REQUEST_PROFILE_BUDGET`); then the undo says it can't be checked yet (`UNDO_NEEDS_ROWS`) |
+| History and Decisions actor naming (`personRef`) | the People row only | every row | none |
+| `withoutLedgerGrantsFor` | none (the viewer's own profile, already read) | every row | none |
+| main's `undoState` → `authorDeletedAtOn` | the content item a row is on | every content row in History | pre-existing engine behavior; a content row's weight is its own (a report's notes capped at 5,000 characters) |
+| main's `moderation.listActions` → `toActionView` | each row's actor's profile | every audit-feed row | **outside this PR** and unchanged: up to 100 actor profiles a page; worth moving onto People rows when the feed is next open |
+
+`requestBudget` (`lib/readBudget`) is the guard: the helpers above that can still load a profile
+charge it at a profile's worst, so a helper that starts loading profiles once a row throws in a test.
+Worst-case tests under Convex's real limits (`peopleHeavy.test.ts`): a Decisions page where every row
+is a ban or a lift of a different ledger holder at the document limit, and a Decisions page of rows
+on sixteen heavy people without rows.
+
+**B01-4: every read of every People query and job, on every limit** (Greptile's third review of #115:
+the count of reads per row, the third axis in three reviews). Convex limits a transaction to 16 MiB
+read, 32,000 documents, 4,096 database calls, and a query to one second; `lib/readBudget` now counts
+calls and documents beside bytes (`TX_CALLS` 3,500, `TX_DOCS` 28,000, `TX_BUDGET` 12 MiB, headroom
+left for what no helper charges) and every People query and job reads through one budget, asked
+before each read (`affordsRead`); a row with no worst case below the document limit (an audit row, a
+request) is read **as it really weighs** with its worst case reserved first (`measured`), and a
+paged read under its own real-weight cap is charged that cap (`capped`). `packages/guards`'
+read-budget lint now covers `people.ts` and `peopleJobs.ts`: a read there outside a charging call
+fails the build.
+
+| Function | Reads (direct and through helpers) | Loop · bound | Worst calls · documents | Worst bytes | When a bound is hit |
+| --- | --- | --- | --- | --- | --- |
+| `people.lanes` | counts (64); open flags ×2 (201); account tickets ×2 (51); two lane ranges (201, reserved); each queue lane's People rows | per person a queue names · ≤ 200 + 100 | ≈ 310 · ≈ 1,300 | ≈ 10.7 MiB charged at every cap, within the request's 11 MiB | `count.capped` with `reasons` |
+| `people.listPage` | as above for the queues; one lane page (`page`, ≤ 100 rows) or search | per queue person · ≤ 200 | ≈ 410 · ≈ 1,400 | ≈ 9 MiB | `partial` with `reasons` |
+| `people.person` | target; counts; status row (`measured`); flags ×4 (`takeCapped`, 51/101); tickets (51); filed (101); verdict counts (501, reserved); editors (200 rows, reserved, once) | none per row | ≈ 15 · ≈ 1,200 | ≤ 12 MiB by the budget | each figure's `capped`; a take the budget can't afford reads fewer and says capped |
+| `people.history` | target; counts; the person's rows (`capped` 2 MiB real); verdicts ×3 (`takeCapped`), each its action row (`measured`); flags ×2, each its deciding row (`measured`); per merged row: actor and target name (People rows, memoized), undo state (main's engine: `undoRowOf` ≤ 16, the newest row, the content's author stamp, the person's row) | per item · ≤ `limit` (≤ 100) a source; per merged row ≤ 100 | sources ≤ 7 + 500 measured; rows ≈ 6 a row → ≤ 1,100 · ≤ 3,000 | sources within the budget; **the undo engine's per-row reads are main's, unbudgeted** (audit rows uncapped; a report at its worst) | a source cut keeps its horizon; `capped` |
+| `people.decisions` | one `paginate` (`capped` 2 MiB real, 2,000 scanned); per row as History | per row · ≤ 100 | ≤ 700 · ≤ 3,600 | the page within its cap; the engine's per-row reads as above | `isDone: false` |
+| `people.staffStats` | target; marker; role rows walked one at a time first (`measured`, ≤ 50 a verb); one `paginate` of the nine weeks' decisions (`capped` 4 MiB real, 2,000); per decision its chain's first row when not in the page (`measured`); per filed decision its filing (`measured`, older rows only) | per decision · ≤ 2,000, budget-stopped | ≤ 3,500 · ≤ 28,000 by the budget | ≤ 12 MiB by the budget | `undoneByOthers.capped`, `timeToDecide.capped` / `medianMs: null`, `tenureCapped` — never a throw. **Reshaped:** chains are read from stored facts (no walk); the season moved to its own query |
+| `people.staffSeason` (new) | target; marker; one `paginate` of the season's own range (`capped` 4 MiB real, 2,000); per decision its chain's first row when not in the page; per takedown its verdict, the ending row and that row's chain (`measured`) | per decision · ≤ 600 checked (the query's time bound), budget-stopped | ≤ 2,403 · ≤ 4,402 | ≤ 12 MiB by the budget | `overturned.capped` — never a throw; a season no one can name is this season (`resolveSeason`) |
+| `people.reportTrend` | target; one `paginate` (`capped` 8 MiB real, 3,000) | none | 2 · 3,001 | 9 MiB | `capped`, `monthsCapped` |
+| `contentRecord.personVerdicts` | as before (charged by `lib/readBudget`, guarded) | — | — | — | a short page is not the end |
+| `peopleJobs.parkedLapses` | one `paginate` (`capped` 8 MiB real) | none | 1 · 50 | 8 MiB | `isDone: false` |
+| sweep / retry | per step: due head (≤ 2 `one`), nested reset (its own transaction under the budget left) | steps while `STEP_NEED` fits | per pass ≤ 10 calls | ≤ 12 MiB | the pass ends and reschedules from its position |
+| `backfillRows` / `repairDrift` / `backfillFlagSubjects` | as before, each step charged | steps while a step fits | — | ≤ 12 MiB | reschedules; not ready after a failure |
+| `backfillUndoChains` (new) | one `paginate` (`capped` 4 MiB real, 200); per undo row its parent and first row (`measured`) | per row · ≤ 200, budget-stopped | ≤ 401 · ≤ 600 | ≤ 12 MiB | the page again from its start (placed rows passed over); not ready after a failure |
+
+**Undo chains are stored, not walked.** `lib/audit.ts` — the one writer of audit rows, which already
+tags every row an undo writes — now also records each undo row's chain first row and depth and stamps
+the chain's newest depth and its writer on the first row (two point reads and a patch in the write
+that undoes). A row stands while the undos above it are even in number, so "did this stand?" is a
+property of the row and its first row, at any chain length (Greptile's P2: a ninth undo is no longer
+past a truncation). `peopleJobs.backfillUndoChains` places chains written before; until it has run
+the undo figures name it in their `pending`.
+
+**Owed:** the lapsed-suspension sweep's parked count in `recurringJobs:health` (D258's one place to
+look). That read counts small `jobFailures` rows and never loads a profile; the sweep keeps its
+attempts on the profile, so joining it means mirroring a parked lapse into `jobFailures` at the
+sweep's failure write — not a one-line change, so it waits; `peopleJobs.parkedLapses` lists them
+meanwhile. #116's turn-taking finalization sweep leaves the never-touch rule as it was: the sweep's
+due range excludes a deletion window, a lock and a tombstone by index, and the reset re-reads the
+profile (the tests re-run after the merge).
+
+**Open for a ruling:** an audit row's `reason` and `metadata` are uncapped, so no audit read has a
+worst case below the document limit; everything here reads them by count and by real weight. The undo
+engine's per-row reads on main (History and Decisions shape each row through `undoState`, and
+`moderation.listActions` does the same for the feed) can't be held to a budget until audit rows have
+one. Recommendation: cap `reason` at the write (2,000 characters, refused past it, like the other text
+caps) and make the engine's per-row reads part of a budget — a change to main's audit writer and undo
+engine, so it waits for the founder's word.
+
+**One reading of undo chains** (`lib/undoChains`, Greptile's second review). An undo can be undone, so a
+chain is change → undo → undo of the undo → … . Its net effect: pairs cancel from the newest end, so a
+change undone once is gone and undone twice is back, with its own time — decided by the chain's links,
+never by the rows' times. Every reader that asks "did this stand?" asks it: staff tenure
+(`canceledRows` over the role rows), "later undone by someone else" and "overturned this season"
+(`standingUndoOf`, which reads the chain forward from a row, each link the engine's own `undoRowOf`; a
+restore that ended a verdict and was itself undone no longer counts). History's undo state is main's
+engine (an undone row shows *undone*, an undo shows its own state) and the status note names whoever
+wrote the row that set the status — both read the newest row, not a chain. A fast-check property
+replays arbitrary grants, revokes, moves and undos of any depth through the real writes and holds the
+reported dates to a plain replay (`peopleTenure.test.ts`); grant, undo, undo-the-undo is its first
+shrunk counterexample under the old reading.
+
+Each reshaped read has a test at the worst a profile weighs, under Convex's real limits
+(`peopleHeavy.test.ts`): twenty heavy parked profiles, twenty heavy admins five of them holders, sixty
+History rows by thirty heavy moderators and a holder banned and lifted twenty times, a heavy staffer's
+decisions and figures, and the per-row cases below.
+
+**B01-4: what each lane depends on, and how a cap shows** (Greptile on #115, P2). A lane's count and
+its list read the same upstreams, and any cap among them is named in both: `lanes` returns each
+count with `reasons` (and `capped` exactly when there are any), `listPage` returns `partial` and the
+same `reasons`. A list also carries every row's open flags and appeals, so a list's `reasons` include
+the flag and ticket queues whatever the lane. A backfill not yet finished is not a cap: it is the
+lane's and the page's `pending` (round 4, below).
+
+| Lane | Upstream reads and their caps | Reasons | Pending |
+| --- | --- | --- | --- |
+| Everyone, Staff, Banned, Restricted, Leaving, Deleted | `peopleCounts`; the lane's `peopleRows` range | — | `rows` |
+| Suspended, Newest | the lane's range, counted to 200 | `count_capped` (the count only; the list pages on) | `rows` |
+| Flagged | open flags · `by_status` per status to 200 (+1); each flag's subject; each person's row | `flags_capped`, `rows_missing` | `rows`, `flagSubjects` |
+| Appeals open (admins) | waiting tickets · `by_status` per status to 200 (+1); each person's row | `tickets_capped`, `rows_missing` | `rows` |
+| Search | `search_people` | — | `rows` (and `flagSubjects`, as every list's rows carry open flags) |
+
+A queue lane's count is the people its list can show — those with a row (`listablePeople`, ≤ 200 light
+reads, read whole by the count and by every page) — so the two never disagree, and someone the queue
+names without a row is `rows_missing` in the count and on every page. The Overview's flagged figure
+counts through the same function. One test at cap + 1 for each upstream
+of each lane (`peopleTruth.test.ts`).
+
+**B01-4: the backfills, and the one procedure that runs them** (Greptile's fourth to sixth reviews of
+#115: the roadmap listed two of the three backfills; the documented recovery passed an argument one
+backfill refused, and the documented completion check left one out; then a delayed pass of an old run
+could finish on a failure count a recovery had zeroed, and mark a backfill ready with a row missing).
+Every one-time job a People read rests on is one entry in `PEOPLE_BACKFILLS` (`lib/peopleRuns`), in
+run order. The operator starts the first and each run starts the next backfill when it ends, whatever
+its outcome; on a database with nothing to backfill each ends at once, ready, so a fresh deployment
+takes the same procedure. All three take the same arguments with the same meaning (`BACKFILL_ARGS`):
+`run` and `pass` (the run a pass belongs to and its token; left out, the call starts a new run),
+`cursor` (where a pass resumes, opaque) and `alone` (a new run that doesn't start the ones after).
+The check reads the three backfill rows only, so the sweep's frequent writes don't touch a People
+read.
+
+| Job | Started by | Reads that say `pending` until it is ready |
+| --- | --- | --- |
+| `peopleJobs:backfillRows` | the operator (step 2) | `people.lanes` (every lane, and the top level), `people.listPage` (every lane and search), `console.overview` → `people` (every figure but *N users*) |
+| `peopleJobs:backfillFlagSubjects` | `backfillRows`, when a run ends | `people.lanes` (Flagged, and the top level), `people.listPage` (every page: rows carry open flags), `people.person`, `people.history`, `console.overview` → `people` |
+| `peopleJobs:backfillUndoChains` | `backfillFlagSubjects`, when a run ends | `people.staffStats`, `people.staffSeason` |
+
+The ledger's "never no editor" check also reads whether the rows are ready (through the same
+reading), but it isn't a figure: before the rows exist it reads admins' profiles under its own
+allowance and only ever refuses (safe).
+
+**A run has an identity** — for every chained People job: the three backfills, the lapsed-suspension
+sweep and its daily retry (`lib/peopleRuns`, table `peopleJobRuns`, one row per job).
+
+- **A lease.** Starting a job — by the operator, by another backfill's end, by the recovery, by a cron
+  tick — mints the next run number and makes it the job's current run, in the same transaction, so
+  every older run is non-current before the new one does anything. Every pass carries its run and a
+  pass token, and takes the lease first; a pass whose run isn't current, or whose token was already
+  spent (its arguments replayed by hand), returns at once: it writes no progress, no failures, no
+  `ready`, and schedules nothing. Each pass moves the token on, so a run is one chain. At most one run of a job can make progress or declare
+  completion, so "the old run finishes later" is harmless by construction — the stalled recovery
+  included. For the sweep and the retry it also means two cron ticks never walk the same range at
+  once, so no lapse takes two attempts in one run.
+- **Failures belong to the run.** The row's `failed` is the current run's own count; only the start
+  that makes a new run current zeroes it, and the old run can no longer write.
+- **`ready` is a conclusion, and correctable.** It is written only when the current run reaches the
+  end of its range: true exactly when that run recorded no failures, false otherwise (a run with
+  failures takes back an earlier conclusion). A new run given a `cursor` begins part-way and never
+  sees what lies before it, so it can keep an earlier clean conclusion but never reach one (the
+  documented re-run starts from the start). A later run that finds what the backfill exists to fix —
+  a profile whose row is missing or stale, a flag without its subject, an undo without its place —
+  clears it in that pass, so reads go back to "not ready" honestly until a run ends clean. That was
+  chosen over a check that verifies the fact on every read: verifying "every profile has a row" means
+  reading every profile, which no read can afford.
+- **What finds a gap after `ready`.** Nothing can open one: every write that creates what a backfill
+  fixes does the backfill's work in its own transaction — the one profile insert refreshes the
+  person's row, both flag writers stamp the subject, the one audit writer places the chain — and
+  `packages/guards` holds the first two to it (`auditWriters.test.ts` already holds the third). A row
+  that goes stale is caught by the drift repair (the oldest-refreshed rows, every ten minutes); a run
+  of the backfill (the documented re-run) meets any gap left by a bug and says so.
+
+**The check** — `peopleJobs.preparation` (internal: only the deployment's key can call it), `{}` →
+`{ ready, pending: PeopleBackfill[], rerun: string[], backfills: [{ backfill, job, run, ready, running,
+stalled, cursor, failed, updatedAt }] }`, each backfill as its current run has it. `ready` is every
+backfill ready. `rerun` is the jobs to run again: not ready, not running (or running but `stalled` —
+nothing recorded for ten minutes, so a pass threw or was delayed), and not about to be started by an
+earlier backfill whose chain is still running. The documented re-run starts a new run, which
+supersedes any old one.
+
+**Three answers, three fields** — for the web builders:
+
+- **Not ready** — `pending: ('rows' | 'flagSubjects' | 'undoChains')[]`, on `people.lanes` (top level
+  and each lane), `people.listPage`, `people.person`, `people.history`, `people.staffStats`,
+  `people.staffSeason` and the Overview's `people` card. Non-empty means the figures resting on it may
+  be *wrong*, not merely short: say "still being prepared", never a number with a "+".
+- **Capped** — `capped: true` on a `Count` (and `tenureCapped`, `flagsCapped`, `appealsCapped`), or a
+  lane's `reasons` / a page's `partial`: a read stopped at its cap, so the figure is a floor ("200+").
+- **Not recorded** — `null` (`contradictions`, `timeToDecide.medianMs` with an unrecorded filing,
+  `staffSince` with no role row, `overturned` in a season not yet open): nothing on record to show.
+
+A dependent figure is never folded into `capped` while a backfill is pending.
+
+**Tests.** `peopleRuns.test.ts` is a fast-check property, run for each of the five chained jobs: run
+A (delayed) and run B (the recovery, or the next tick, started once A reads as stalled) through
+arbitrary interleavings of their passes, with failures and items added mid-run. It holds that a
+superseded run's pass changes nothing and schedules nothing, that the job terminates, and that the
+conclusion is true: a backfill is `ready` exactly when its last run ended with no failures, and never
+while an item is unfixed; a lapse run with no failures left none it began with. Greptile's sequence is
+a named case. `peopleBackfills.test.ts` performs the procedure below literally, including a recovery
+issued while an old pass is still scheduled.
+
+**After merge, on dev** — word for word the same in the roadmap's Owed list and the PR body. The text
+is `AFTER_MERGE_PROCEDURE` in `lib/peopleRuns`, which `peopleBackfills.test.ts` performs literally:
+its `convex run` commands are parsed out of the text and run with exactly those names and argument
+objects, on an empty database and on seeded ones, a failure and a stalled run included.
+`packages/guards`' `peopleBackfills.test.ts` holds this doc and the roadmap to it, and this table to
+the registry. Each `convex` command runs as `pnpm --filter @skating/convex exec convex …` from main.
+
+(1) `convex dev --once`. (2) `convex run peopleJobs:backfillRows '{}'` — it runs the three People backfills in turn (rows, flag subjects, undo chains). Estimate: unmeasured. (3) `convex run peopleJobs:preparation '{}'` until it returns `ready: true`. (4) For each job in its `rerun`: `convex run <job> '{"alone":true}'` (a new run, which supersedes any older one), then step 3 again. (5) For each id `backfillRows` logs as an overwritten tombstone: `convex run peopleJobs:restoreTombstoneStatus '{"userId":"<id>"}'`.
+
+**B01-4: one rule for what is offered** (Greptile on #115, P2). An undo is a write of the previous
+state, so its refusal is computed by `lib/peopleCan.writeRefusal` on the write the undo's handler
+runs (`personWrite`, which `run` dispatches on too) — every person verb: each posting right, flagging,
+the bounty limit, suspend, ban, lift, role grant and revoke, ledger grant and revoke. The forward
+writes refuse through the same function, and `people.person`'s `can` asks it (with `needsReason`, the
+take-away rule). A fast-check property drives arbitrary sequences of person actions, role and ledger
+changes and account states, and holds every offered undo to succeeding and every refused one to not
+being offered, and every lever `can` draws to its write (`peopleUndo.test.ts`); the reported case — a
+member's flagging off, promoted, flagging given back, its undo — is pinned as an example.
+
+**B01-4: staff since** (Greptile on #115, P2). `grant_role` also records moves between moderator and
+admin, so *staff since* is the grant that moved them in from member (`priorRole: 'member'`) after the
+latest revoke; when that entry isn't on record the answer is `null`, never a later move's date. A grant
+with no `priorRole` — rows from before it was recorded — can't be told from an entry and counts as not
+recorded. *Role since* is the newest role row when it gave the role held now, else `null`. Undo
+chains read as `lib/undoChains` reads them (below).
+
+Reads whose rows are audit rows (*R*) are bounded by count, not charged: an audit row's reason and
+metadata are uncapped, so a page of them is weighed by its real size where a `paginate` can say so
+(`maximumBytesRead`) and otherwise by count — realistically under 2 KiB a row. One `paginate` per
+query is Convex's rule, so `history` and `staffStats`' season read use `take`.
+
+**What is *not recorded* (`null`) and what is capped.** `null`: contradictions never counted; raw
+trust points for a viewer without `people.trustScore`; the status note's actor and time when no audit
+row set the status; Time to decide with no decision, or with one whose filing time isn't known;
+Overturned while the season's record hasn't opened (1 July to 1 October); Staff since and role since
+without a grant row (the first admin); a list row's status time and restriction time when the row
+first met that state in the backfill. Capped (a floor): everything in the table's last column.
+
+**Open for a ruling:** the Overview's *N users* still reads the 6-hourly `accounts_total` rollup,
+shared with Metrics' total, while the Everyone lane counts live — the same definition (every account
+but a tombstone), refreshed differently; and the Overview's *open appeals* counts tickets where the
+lane counts people. Both were left as they were (the brief: the Overview's numbers change only where
+a ruling changes a rule).
+
+**Owed to the record sheet's PR** (ruling 1): the verdict and withdrawal lists' mock round and any
+read solely for them; overturn on the sheet. **Owed to the web builders:** `RestorePost.tsx` names
+the person by `@username` in its "why down" line (the rule is real names) and is a Dialog where the
+boards draw a sheet. **Deferred:** the decisions' target names (S5), and bounty asks this season on
+the Bounties lever.
 
 ### The B01-2 server register (owed to the server agent)
 

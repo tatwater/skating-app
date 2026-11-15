@@ -106,6 +106,7 @@ async function seedOldRow(
   row: {
     action:
       | 'grant_role'
+      | 'revoke_role'
       | 'pin_access_alert'
       | 'unpin_access_alert'
       | 'set_approach_kind'
@@ -235,10 +236,19 @@ describe('undo: roles (D226)', () => {
       /before undo existed/i,
     );
 
-    await admin.as.mutation(api.admin.revokeRole, { userId: user.id, reason: 'tidy' });
-    const revoke = await newestOn(t, 'user', user.id);
+    // Revoking a member's role is refused now — no change (the People page's role menu, one rule) —
+    // but a revoke of a member recorded before that still says why it can't be undone.
     await expect(
-      admin.as.mutation(api.undo.run, { actionId: revoke._id, reason: 'r' }),
+      admin.as.mutation(api.admin.revokeRole, { userId: user.id, reason: 'tidy' }),
+    ).rejects.toThrow('This is their role now.');
+    const revoke = await seedOldRow(t, admin.id, {
+      action: 'revoke_role',
+      targetType: 'user',
+      targetId: user.id,
+      metadata: { priorRole: 'member' },
+    });
+    await expect(
+      admin.as.mutation(api.undo.run, { actionId: revoke, reason: 'r' }),
     ).rejects.toThrow(/already a member/i);
   });
 });

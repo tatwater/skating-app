@@ -2,6 +2,7 @@ import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+import { markReady, refreshPersonRow } from './lib/peopleRows';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -50,6 +51,7 @@ async function seedFlag(
   reason: 'unsafe_false_report' | 'no_public_access' | 'spam',
   targetType: 'report' | 'waterbody' | 'user',
   targetId: string,
+  subjectUserId: Id<'profiles'> | null = null,
 ) {
   await t.run((ctx) =>
     ctx.db.insert('contentFlags', {
@@ -58,9 +60,19 @@ async function seedFlag(
       targetId,
       reason,
       status: 'open',
+      // Whose it is, as the writers stamp it; these targets are made up, so nobody's by default.
+      ...(targetType === 'user' ? {} : { subjectUserId }),
       createdAt: Date.now(),
     }),
   );
+}
+
+/** Every profile's People row, as the writers and the backfill keep them. */
+async function syncPeople(t: ReturnType<typeof convexTest>) {
+  await t.run(async (ctx) => {
+    for (const p of await ctx.db.query('profiles').collect()) await refreshPersonRow(ctx, p._id);
+    await markReady(ctx, 'rows');
+  });
 }
 
 async function seedRequest(
@@ -94,6 +106,7 @@ describe('console.overview (B01 §5.1)', () => {
     await seedRequest(t, skater.id, 'activate');
     await seedRequest(t, skater.id, 'name_bay');
     await seedRequest(t, skater.id, 'name_landmark');
+    await syncPeople(t);
 
     const o = await mod.as.query(api.console.overview, {});
     expect(o.inbox.safety).toEqual({ count: 1, capped: false });
@@ -104,6 +117,38 @@ describe('console.overview (B01 §5.1)', () => {
     expect(o.inbox.drawnBodies).toEqual({ count: 0, capped: false });
     expect(o.inbox.oldestOpenAt).not.toBeNull();
     expect(o.people.flaggedPeople).toEqual({ count: 1, capped: false });
+  });
+
+  test('flagged people are the people flagged and the people whose content is (one rule with the lane)', async () => {
+    const t = convexTest(schema, modules);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const filer = await seedUser(t, 'f');
+    const flagged = await seedUser(t, 'flagged');
+    const author = await seedUser(t, 'author');
+    await seedFlag(t, filer.id, 'spam', 'user', flagged.id);
+    await seedFlag(t, filer.id, 'spam', 'report', 'r1', author.id);
+    await seedFlag(t, filer.id, 'unsafe_false_report', 'report', 'r2', author.id);
+    await syncPeople(t);
+    await t.run((ctx) => markReady(ctx, 'flagSubjects'));
+    const o = await mod.as.query(api.console.overview, {});
+    expect(o.people.flaggedPeople).toEqual({ count: 2, capped: false });
+    expect(o.people.pending).toEqual([]);
+    const lanes = await mod.as.query(api.people.lanes, {});
+    expect(lanes.lanes.find((l) => l.lane === 'flagged')?.count).toEqual(o.people.flaggedPeople);
+    // A content flag the subject backfill hasn't reached: the card says not ready, not capped.
+    await t.run((ctx) =>
+      ctx.db.insert('contentFlags', {
+        flaggerId: filer.id,
+        targetType: 'report',
+        targetId: 'r3',
+        reason: 'spam',
+        status: 'open',
+        createdAt: Date.now(),
+      }),
+    );
+    const later = (await mod.as.query(api.console.overview, {})).people;
+    expect(later.flaggedPeople).toEqual({ count: 2, capped: false });
+    expect(later.pending).toEqual(['flagSubjects']);
   });
 
   test('support is counted only for a viewer who may open it (PII, D37)', async () => {
@@ -141,6 +186,7 @@ describe('console.overview (B01 §5.1)', () => {
       await ctx.db.patch(leaver.id, { deletionRequestedAt: now - DAY });
       await ctx.db.patch(mod.id, { createdAt: now - 30 * DAY });
     });
+    await syncPeople(t);
 
     const p = (await mod.as.query(api.console.overview, {})).people;
     expect(p.moderators.count).toBe(1);
@@ -203,6 +249,7 @@ describe('console.overview (B01 §5.1)', () => {
         });
       }
     });
+    await syncPeople(t);
     const p = (await mod.as.query(api.console.overview, {})).people;
     expect(p.suspended).toEqual({ count: 200, capped: true });
   });
@@ -226,6 +273,7 @@ describe('console.overview (B01 §5.1)', () => {
       await seedFlag(t, flagger.id, 'spam', 'user', target.id);
     }
     await seedFlag(t, mod.id, 'spam', 'user', other.id);
+    await syncPeople(t);
     const o = await mod.as.query(api.console.overview, {});
     expect(o.people.flaggedPeople).toEqual({ count: 2, capped: false });
   });

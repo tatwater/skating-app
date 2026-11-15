@@ -2732,6 +2732,8 @@ export const approve = mutation({
       targetType: 'waterbody',
       targetId: args.waterBodyId,
       reason: 'Approved user-created water body',
+      // When it was drawn, for a staffer's time to decide (People).
+      metadata: { filedAt: body.createdAt },
       createdAt: Date.now(),
     });
     return args.waterBodyId;
@@ -3068,6 +3070,8 @@ export const reject = mutation({
       targetType: 'waterbody',
       targetId: args.waterBodyId,
       reason: args.reason?.trim() || 'Rejected user-created water body',
+      // When it was drawn, for a staffer's time to decide (People).
+      metadata: { filedAt: body.createdAt },
       createdAt: Date.now(),
     });
     return args.waterBodyId;

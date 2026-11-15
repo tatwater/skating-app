@@ -22,6 +22,8 @@ import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { asUndoOf } from './audit';
 import { hasCapability } from './auth';
 import { authorDeletedAtOn, authorDeletedRefusal } from './authorDeletion';
+import { type PersonFacts, writeRefusal } from './peopleCan';
+import { factsOfRow, personRowOf, rowlessProfile } from './peopleRows';
 import { UNDO_HANDLERS } from './undoHandlers';
 import { UNDO_POLICY, undoCapability, WORKSTREAM_MODE } from './undoPolicy';
 import { meta, type UndoHandler, type UndoViewer } from './undoTypes';
@@ -52,9 +54,10 @@ const UNDO_TAG_READ = 16;
  * the undo happened to write. An undo writes its cascade first (a Post's undo moves its members, each
  * with a row tagged as undoing the Post's), and its own row last, so the newest tagged row on the
  * target is the one. With no tagged row on the target in the read, the newest tagged row stands in:
- * it still says the row was undone, which is what the state decides.
+ * it still says the row was undone, which is what the state decides. `lib/undoChains` follows a
+ * chain of undos link by link through this.
  */
-async function undoRowOf(
+export async function undoRowOf(
   ctx: QueryCtx | MutationCtx,
   row: Doc<'moderationActions'>,
 ): Promise<Doc<'moderationActions'> | null> {
@@ -110,6 +113,11 @@ export async function undoState(
   if ((await authorDeletedAtOn(ctx, row.targetType, row.targetId)) !== undefined) {
     return { state: 'unavailable', why: authorDeletedRefusal(meta(row).priorStatus, true) };
   }
+  // A change to a person is refused through the same rule its forward write uses (`lib/peopleCan`):
+  // an account being deleted, or deleted, can't be disciplined back or forth — so History never
+  // offers an undo the write would turn down.
+  const refusal = await personUndoRefusal(ctx, viewer, row, handler);
+  if (refusal !== null) return { state: 'unavailable', why: refusal };
   if (!hasCapability(viewer, undoCapability(rule, row.targetType))) {
     return { state: 'unavailable', why: 'Undoing this takes a role you do not hold.' };
   }
@@ -122,6 +130,37 @@ export async function undoState(
     };
   }
   return { state: 'available', needsReason: handler.undoTakesAway(row) };
+}
+
+/** Why an undo on someone without a People row can't be checked on this page (before the backfill). */
+export const UNDO_NEEDS_ROWS =
+  'This can be checked once the People rows are built; open the person to undo it.';
+
+/**
+ * Why an undo on a person can't run now: the refusal the forward write of the state it puts back
+ * would give (`writeRefusal`, on the handler's own `personWrite`) — one rule, never a parallel list.
+ * The person's facts come from their light People row (a profile can weigh a whole document, and
+ * History asks once a line); a person with no row yet is read in full.
+ */
+async function personUndoRefusal(
+  ctx: QueryCtx | MutationCtx,
+  viewer: UndoViewer,
+  row: Doc<'moderationActions'>,
+  handler: UndoHandler,
+): Promise<string | null> {
+  if (row.targetType !== 'user' || handler.personWrite === undefined) return null;
+  const id = ctx.db.normalizeId('profiles', row.targetId);
+  if (!id) return 'This account no longer exists.';
+  const light = await personRowOf(ctx, id);
+  // Someone with no row yet (before the rows backfill) is read in full, charged to the request's
+  // budget; once a page of such rows has spent it, the rest say so rather than read past the limit.
+  // A query reads each such person once, however many rows name them.
+  const target: PersonFacts | null | undefined = light
+    ? factsOfRow(light)
+    : await rowlessProfile(ctx, id);
+  if (target === undefined) return UNDO_NEEDS_ROWS;
+  if (!target) return 'This account no longer exists.';
+  return writeRefusal(ctx, viewer, target, handler.personWrite(row));
 }
 
 /** Undo `actionId` as `actor` (already gated by the caller), with `reason` when one is needed. */
