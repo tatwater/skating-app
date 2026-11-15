@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -736,13 +736,17 @@ describe('the preview', () => {
     const button = within(pane()).getAllByRole('button', { name: 'Try again' })[0] as HTMLElement;
     act(() => button.focus());
     await userEvent.keyboard('{Enter}');
+    // Waits for the state it describes — the reads taken back and the fresh answer drawn — rather
+    // than sampling the renders once, at whatever moment the press resolved.
+    await waitFor(() =>
+      expect(within(pane()).getByText('2 on the ice · 1 from shore')).toBeInTheDocument(),
+    );
     const after = log.slice(before);
     // The failed reads were dropped for a render and taken up again; the body's read never was.
     expect(after.map((reads) => reads.includes(name(api.bodies.preview)))).toContain(false);
     expect(after.map((reads) => reads.includes(name(api.bodyConsole.history)))).toContain(false);
     expect(after.at(-1)).toEqual(expect.arrayContaining([name(api.bodies.preview)]));
     expect(after.every((reads) => reads.includes(name(api.waterBodies.get)))).toBe(true);
-    expect(within(pane()).getByText('2 on the ice · 1 from shore')).toBeInTheDocument();
     expect(within(pane()).queryByText('Couldn’t read the history')).toBeNull();
     expect(within(pane()).queryByRole('button', { name: 'Try again' })).toBeNull();
     // The note emptied where it stood and kept the focus — never dropped to the page.

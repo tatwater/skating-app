@@ -128,6 +128,15 @@ const retrying = new Map<string, { sawLoading: boolean; until: number }>();
 /** The failures that have gone to Sentry, by read: cleared when the read answers again. */
 const reported = new Set<string>();
 let version = 0;
+/** The registry's own timers (a pause's limit, a wait's end): forgotten with the registry. */
+const timers = new Set<ReturnType<typeof setTimeout>>();
+function later(run: () => void, ms: number): void {
+  const t = setTimeout(() => {
+    timers.delete(t);
+    run();
+  }, ms);
+  timers.add(t);
+}
 const listeners = new Set<() => void>();
 
 function emit(): void {
@@ -157,12 +166,12 @@ export function retryReads(ids: Iterable<string>): void {
     retrying.set(id, { sawLoading: false, until: now + PAUSE_LIMIT_MS + PENDING_HOLD_MS });
     any = true;
     dropped.delete(id);
-    setTimeout(() => limit(id), PAUSE_LIMIT_MS);
+    later(() => limit(id), PAUSE_LIMIT_MS);
   }
   if (!any) return;
   emit();
   // A failure still held when the wait runs out is the fresh answer: draw it.
-  setTimeout(emit, PAUSE_LIMIT_MS + PENDING_HOLD_MS + 1);
+  later(emit, PAUSE_LIMIT_MS + PENDING_HOLD_MS + 1);
 }
 
 /**
@@ -174,7 +183,7 @@ export function retryReads(ids: Iterable<string>): void {
 function limit(id: string): void {
   if (!paused.has(id)) return;
   if (!dropped.has(id) && (holders.get(id) ?? 0) > 0) {
-    setTimeout(() => limit(id), PAUSE_LIMIT_MS);
+    later(() => limit(id), PAUSE_LIMIT_MS);
     return;
   }
   resume([id]);
@@ -197,7 +206,7 @@ function resume(ids: Iterable<string>): void {
     }
   }
   // A failure still held when the longer wait runs out is the fresh answer: draw it.
-  if (held) setTimeout(emit, PENDING_HOLD_MS + 1);
+  if (held) later(emit, PENDING_HOLD_MS + 1);
   if (any) emit();
 }
 
@@ -217,6 +226,9 @@ function release(ids: readonly string[]): void {
 
 /** Forget every pause, wait and report (tests start clean). */
 export function resetConsoleReads(): void {
+  // A retry's timers belong to the registry it was made in: one test's never lands in the next.
+  for (const t of timers) clearTimeout(t);
+  timers.clear();
   paused.clear();
   dropped.clear();
   retrying.clear();
