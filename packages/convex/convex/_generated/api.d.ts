@@ -130,6 +130,7 @@ import type * as lib_standing from "../lib/standing.js";
 import type * as lib_storageBlobs from "../lib/storageBlobs.js";
 import type * as lib_textLengths from "../lib/textLengths.js";
 import type * as lib_undo from "../lib/undo.js";
+import type * as lib_undoChains from "../lib/undoChains.js";
 import type * as lib_undoHandlers from "../lib/undoHandlers.js";
 import type * as lib_undoHandlersBody from "../lib/undoHandlersBody.js";
 import type * as lib_undoHandlersCorpus from "../lib/undoHandlersCorpus.js";
@@ -301,6 +302,7 @@ declare const fullApi: ApiFromModules<{
   "lib/storageBlobs": typeof lib_storageBlobs;
   "lib/textLengths": typeof lib_textLengths;
   "lib/undo": typeof lib_undo;
+  "lib/undoChains": typeof lib_undoChains;
   "lib/undoHandlers": typeof lib_undoHandlers;
   "lib/undoHandlersBody": typeof lib_undoHandlersBody;
   "lib/undoHandlersCorpus": typeof lib_undoHandlersCorpus;

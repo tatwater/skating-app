@@ -395,3 +395,36 @@ describe('time to decide on rows from before they recorded the filing', () => {
     expect((await as(t, 'mod').query(api.people.person, { userId: rob }))?.open.appeals).toBeNull();
   });
 });
+
+describe('a decision undone and then redone stands', () => {
+  test('undone by others counts only an undo that still stands', async () => {
+    const { t } = await setup();
+    await seed(t, 'adm', { role: 'admin' });
+    const matt = await seed(t, 'matt', { role: 'moderator' });
+    const skater = await seed(t, 'skater');
+    await as(t, 'matt').mutation(api.moderation.setPostingPermission, {
+      userId: skater,
+      permission: 'hazards',
+      allowed: false,
+      reason: 'pins',
+    });
+    const newest = async () =>
+      (
+        await t.run((ctx) =>
+          ctx.db
+            .query('moderationActions')
+            .withIndex('by_target', (q) => q.eq('targetType', 'user').eq('targetId', skater))
+            .order('desc')
+            .take(1),
+        )
+      )[0]?._id as Id<'moderationActions'>;
+    await as(t, 'adm').mutation(api.undo.run, { actionId: await newest() });
+    let s = await as(t, 'adm').query(api.people.staffStats, { userId: matt });
+    expect(s?.decisions.undoneByOthers.count).toBe(1);
+    expect(s?.overturned?.count).toBe(1);
+    await as(t, 'adm').mutation(api.undo.run, { actionId: await newest(), reason: 'r' });
+    s = await as(t, 'adm').query(api.people.staffStats, { userId: matt });
+    expect(s?.decisions.undoneByOthers.count).toBe(0);
+    expect(s?.overturned?.count).toBe(0);
+  });
+});

@@ -69,6 +69,7 @@ import {
 import { OPEN_ENDED, personRowOf } from './lib/peopleRows';
 import { trustClassFor } from './lib/reputation';
 import { type UndoState, undoState } from './lib/undo';
+import { cancelledRows, standingUndoOf } from './lib/undoChains';
 
 const MINUTE = 60_000;
 const DAY_MS = 86_400_000;
@@ -931,14 +932,15 @@ async function undoneByOther(
   row: Doc<'moderationActions'>,
   staffer: Id<'profiles'>,
 ): Promise<boolean> {
-  const undos = await ctx.db
-    .query('moderationActions')
-    .withIndex('by_undoes', (q) => q.eq('undoesActionId', row._id))
-    .take(16);
-  return undos.some((u) => u.actorId !== undefined && u.actorId !== staffer);
+  // The undo that stands (`lib/undoChains`): one undone again by a later undo doesn't count.
+  const undo = await standingUndoOf(ctx, row);
+  return undo !== null && undo.actorId !== undefined && undo.actorId !== staffer;
 }
 
-/** Whether the verdict `row` recorded was reversed by someone else: their restore, overturn or undo. */
+/**
+ * Whether the verdict `row` recorded was reversed by someone else: their restore, overturn or undo —
+ * and that reversal still stands (an undone restore put the verdict back).
+ */
 async function verdictReversedByOther(
   ctx: QueryCtx,
   row: Doc<'moderationActions'>,
@@ -951,11 +953,11 @@ async function verdictReversedByOther(
   if (!verdict || verdict.standing || verdict.endedByActionId === undefined) return false;
   const ending = await ctx.db.get(verdict.endedByActionId);
   if (!ending || ending.actorId === undefined || ending.actorId === staffer) return false;
-  return (
+  const reverses =
     ending.action === 'restore' ||
     ending.action === 'overturn_verdict' ||
-    ending.undoesActionId !== undefined
-  );
+    ending.undoesActionId !== undefined;
+  return reverses && (await standingUndoOf(ctx, ending)) === null;
 }
 
 /** When the item a filed decision decided was filed: from the row, or (older rows) the flag or ask. */
@@ -993,7 +995,8 @@ function roleMove(row: Doc<'moderationActions'>): { to: UserRole; from: UserRole
  *   entering grant isn't on record, the answer is `null`, never a later move's date.
  * - **role since** is the newest role row, when the role it gave is the one they hold now; if the
  *   newest row gave another role, the move to the present role was never recorded: `null`.
- * - A role change and its undo cancel out for both: the undo puts back what was, so neither is a move.
+ * - Undo chains read as `lib/undoChains` reads them: a change and the undo standing on it cancel out,
+ *   and a change undone twice is back, with its own time.
  */
 export function staffTenure(
   grants: readonly Doc<'moderationActions'>[],
@@ -1005,14 +1008,11 @@ export function staffTenure(
 } {
   // A role change and its undo cancel out: neither is a move (a revoke undone a minute later never
   // ended their time on staff). An undo whose undone row is older than the read stays a move.
+  // A change and the undo that stands on it cancel out; undone twice, the change is back
+  // (`lib/undoChains`, the one reading of undo chains).
   const all = [...grants, ...revokes];
-  const ids = new Set<string>(all.map((r) => r._id));
-  const undone = new Set<string>(
-    all.flatMap((r) => (r.undoesActionId && ids.has(r.undoesActionId) ? [r.undoesActionId] : [])),
-  );
-  const live = all
-    .filter((r) => !undone.has(r._id) && !(r.undoesActionId && ids.has(r.undoesActionId)))
-    .sort((x, y) => y.createdAt - x.createdAt);
+  const cancelled = cancelledRows(all);
+  const live = all.filter((r) => !cancelled.has(r._id)).sort((x, y) => y.createdAt - x.createdAt);
   const lastRevoke = live.find((r) => r.action === 'revoke_role');
   const entry = live.find(
     (g) =>
