@@ -57,7 +57,7 @@ const meta = {
     history: ROB_HISTORY,
     staffStats: null,
     staffSeason: null,
-    decisions: { rows: [], isDone: true, continueCursor: '' },
+    decisions: { rows: [], isDone: true, capped: false, continueCursor: '' },
     viewerId: IDS.teagan,
     onWrite: fn(),
     onUndone: fn(),

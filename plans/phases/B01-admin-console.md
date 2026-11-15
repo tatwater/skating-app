@@ -3299,13 +3299,17 @@ token; the head's name is the 15 px logo step (no name step); lever rows are 32 
 draws 34; the role menu's item takes two lines.
 
 **Owed:**
-- To the server follow-up: `people.listPage` taking an `endCursor` (until then a change in an
-  earlier page drops the deeper pages while they re-read); staff rows' `lastSeenInConsoleAt`,
-  `roleSince` and `decisionsThisWeek`; each Flagged and Appeals row's oldest open flag or ticket
-  time; `lanesFor` from core (the page holds a copy of the server's rule); `{ actionId,
-  undoNeedsReason }` from every People write; `ledger.since`; `rights.since`; the bounty season
-  line; explicit `can` entries for every lever; a profile-opens flag; flag target labels and appeal
-  text; who undid a row.
+- A web pass on the server follow-up (B01-4b), which supplies what was owed to it here:
+  `people.listPage` taking an `endCursor` (until the page passes it, a change in an earlier page
+  drops the deeper pages while they re-read); staff rows' `lastSeenInConsoleAt`, `roleSince` and
+  `decisionsThisWeek`; each Flagged and Appeals row's oldest open flag or ticket time; `{ actionId,
+  undoNeedsReason }` from every People write; `ledger.since`; `rightsSince`; the bounty season line;
+  explicit `can` entries for every lever; a profile-opens flag; flag target labels and appeal text;
+  who undid a row — and the capped answers beside them the page doesn't draw yet
+  (`statusNote.atCapped`, `decisions.capped`, `open.flagLabelsCapped`, `ledger.sinceCapped`,
+  `rightsSinceCapped`), so a capped start still reads as not recorded. The merge filled the
+  fixtures with the new fields and made the list row's staff overlay take `null`; `lanesFor` now
+  reads core's `peopleLanesFor`.
 - The record sheet (verdicts and withdrawals, above; boards 8.7–8.9) is not built. The *On the
   record* row appears today on the one count main's server supplies (the standing list); it should
   appear whenever any of the sheet's three lists (Standing, Deleted, Reversed) has items, and its

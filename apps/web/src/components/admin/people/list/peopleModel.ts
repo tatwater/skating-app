@@ -45,8 +45,8 @@ type ServerPage = FunctionReturnType<typeof api.people.listPage>;
  * a staffer's facts and a queue row's oldest open item; today's server has neither, and every use
  * falls back to today's behavior when they're absent.
  */
-export type PersonListRow = ServerPage['rows'][number] & {
-  /** A staffer's facts (the server follow-up). */
+export type PersonListRow = Omit<ServerPage['rows'][number], 'staff' | 'oldestOpenAt'> & {
+  /** A staffer's facts (the server follow-up); `null` on a row that isn't staff. */
   staff?: {
     /** When they were last in the console; `null` when never recorded. */
     lastSeenInConsoleAt?: number | null;
@@ -54,7 +54,7 @@ export type PersonListRow = ServerPage['rows'][number] & {
     roleSince?: number | null;
     /** Decisions this week, a floor when capped; `null` when not recorded. */
     decisionsThisWeek?: Count | number | null;
-  };
+  } | null;
   /** A Flagged or Appeals open row's oldest open flag or ticket (the server follow-up). */
   oldestOpenAt?: number | null;
 };

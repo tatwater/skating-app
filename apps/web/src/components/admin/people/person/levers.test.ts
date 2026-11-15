@@ -181,7 +181,7 @@ describe('Account', () => {
   it('a step down when another editor exists asks why', () => {
     const page = {
       ...TEAGAN_PAGE,
-      ledger: { editor: true, last: false },
+      ledger: { editor: true, last: false, since: null, sinceCapped: false },
       can: { ...TEAGAN_PAGE.can, ledger: { grant: no('x'), revoke: yes(true) } },
     };
     const b = row(accountRows(page, { now: NOW, self: true }), 'ledger')?.buttons[0];
@@ -217,6 +217,7 @@ describe('Account', () => {
         reason: null,
         suspendedUntil: NOW - 1,
         lapsed: true,
+        atCapped: false,
       },
     });
     expect(row(accountRows(lapsed, { now: NOW, self: false }), 'suspension')).toMatchObject({
@@ -238,6 +239,7 @@ describe('Account', () => {
         reason: null,
         suspendedUntil: null,
         lapsed: false,
+        atCapped: false,
       },
     });
     expect(row(accountRows(open, { now: NOW, self: false }), 'suspension')?.status).toBe(
@@ -262,6 +264,7 @@ describe('Account', () => {
         suspendedUntil: NOW + 60_000,
         // As of the minute the page opened.
         lapsed: false,
+        atCapped: false,
       },
     });
     const later = accountRows(p, { now: NOW + 2 * 60_000, self: false });
@@ -278,6 +281,7 @@ describe('Account', () => {
       reason: null,
       suspendedUntil,
       lapsed,
+      atCapped: false,
     });
     const shapes = [
       ['dated', note(NOW + 86_400_000, false), 'Extend'],
@@ -311,9 +315,12 @@ describe('Account', () => {
 
     it.each(shapes)('%s: without can.extend (today’s server), suspend decides', (_, n, label) => {
       const p = personOf({ status: 'suspended', statusNote: n });
+      // A server that sends no `extend`: the field is required now, so it's taken away by hand.
+      const { extend: _extend, ...withoutExtend } = p.can;
       for (const suspend of [yes, no]) {
+        const can = { ...withoutExtend, suspend } as PersonRead['can'];
         const drawn = labels(
-          accountRows({ ...p, can: { ...p.can, suspend } }, { now: NOW, self: false }),
+          accountRows({ ...p, can }, { now: NOW, self: false }),
           'suspension',
         ).includes(label);
         expect(drawn).toBe(suspend.ok);
@@ -425,6 +432,7 @@ const personArb = fc
                 reason: null,
                 suspendedUntil: x.open ? null : NOW + 86_400_000,
                 lapsed: x.lapsed,
+                atCapped: false,
               }
             : null,
         rights: {
@@ -434,7 +442,9 @@ const personArb = fc
           comments: x.comments,
           flagging: x.flagging,
         },
-        ledger: x.ledgerShown ? { editor: x.editor, last: x.last } : null,
+        ledger: x.ledgerShown
+          ? { editor: x.editor, last: x.last, since: null, sinceCapped: false }
+          : null,
         can: {
           restrict: x.can.restrict,
           flaggingOff: x.can.flaggingOff,
@@ -443,9 +453,13 @@ const personArb = fc
           lift: x.can.lift,
           role: x.can.role,
           ledger: x.ledgerShown ? { grant: x.can.grant, revoke: x.can.revoke } : null,
-          // The server follow-up's explicit answer, or none (today's server).
+          restore: { reports: x.can.restrict, hazards: x.can.restrict, comments: x.can.restrict },
+          flaggingOn: x.can.flaggingOff,
+          bountyRaise: x.can.restrict,
+          bountyLower: x.can.restrict,
+          // The server follow-up's explicit answer, or none (a server without it).
           ...(x.can.extend !== undefined && { extend: x.can.extend }),
-        },
+        } as PersonRead['can'],
       }),
   );
 

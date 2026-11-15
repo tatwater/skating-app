@@ -842,7 +842,10 @@ const RIGHT_FIELDS = {
 } as const;
 type Right = keyof typeof RIGHT_FIELDS;
 
-/** When each right now off was last turned off, from one capped read of the person's right rows. */
+/**
+ * When each right now off was taken away — the start of the restriction, a repeat that changed nothing
+ * passed over (`startOfCurrentState`) — from one capped read of the person's right rows.
+ */
 async function rightsSinceOf(
   ctx: QueryCtx,
   budget: ReadBudget,
@@ -1282,9 +1285,9 @@ export const person = query({
        */
       bountySeason,
       /**
-       * When each right now taken away was last taken (the newest `set_posting_permission` row that
-       * turned it off); `null` for a right they have, or when no row read says — `rightsSinceCapped`
-       * when the read stopped before finding one.
+       * When each right now taken away was taken — the `set_posting_permission` row that turned it
+       * off, a later one that changed nothing passed over (`lib/stateSince`); `null` for a right they
+       * have, or when no row read says — `rightsSinceCapped` when the read stopped before finding one.
        */
       rightsSince: rightsSince.since,
       rightsSinceCapped: rightsSince.capped,
@@ -1439,9 +1442,10 @@ async function labelOf(
 /**
  * What a row's refusal hook (`UndoHandler.refusal`) reads **outside** the share `undoStates` reserves
  * for it through `ReadBudget.waves` (B01-3h) — the rows it reads through its share are reserved there,
- * on this same budget, so they aren't counted here again. Outside it: a launch's body's hidden
- * launches (`launchRefusal`, up to {@link SUPPRESSION_ROWS_READ}) and a row's snapshot (one call, at
- * most 8 chunks) — calls and documents the per-row plan has to count itself.
+ * on this same budget, so they aren't counted here again: when the plan has used the budget up, those
+ * rows say "check elsewhere" (`UNDO_CHECKED_ELSEWHERE`), and nothing over-reads. Outside it: a
+ * launch's body's hidden launches (`launchRefusal`, up to {@link SUPPRESSION_ROWS_READ}) and a row's
+ * snapshot (one call, at most 8 chunks) — calls and documents the per-row plan has to count itself.
  */
 const REFUSAL_CALLS = 2;
 const REFUSAL_DOCS = SUPPRESSION_ROWS_READ + 8;

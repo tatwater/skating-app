@@ -50,7 +50,7 @@ function draw(over: Partial<PersonViewProps> = {}) {
     history: ROB_HISTORY,
     staffStats: null,
     staffSeason: null,
-    decisions: { rows: [], isDone: true, continueCursor: '' },
+    decisions: { rows: [], isDone: true, capped: false, continueCursor: '' },
     now: NOW,
     viewerId: IDS.teagan,
     onAct,
@@ -271,7 +271,7 @@ describe('each read states itself', () => {
         history={ROB_HISTORY}
         staffStats={null}
         staffSeason={null}
-        decisions={{ rows: [], isDone: true, continueCursor: '' }}
+        decisions={{ rows: [], isDone: true, capped: false, continueCursor: '' }}
         now={NOW}
         viewerId={IDS.teagan}
         onAct={async () => null}
@@ -446,7 +446,7 @@ describe('staff pages', () => {
           ...ROB_HISTORY,
           rows: [{ ...first, undo: { state: 'undone', byActionId: first.id } }, ...rest],
         }}
-        decisions={{ rows: [], isDone: true, continueCursor: '' }}
+        decisions={{ rows: [], isDone: true, capped: false, continueCursor: '' }}
         now={NOW}
         viewerId={IDS.teagan}
         onAct={onAct}
@@ -478,7 +478,7 @@ describe('staff pages', () => {
           ...ROB_HISTORY,
           rows: [{ ...first, undo: { state: 'undone', byActionId: first.id } }, ...rest],
         }}
-        decisions={{ rows: [], isDone: true, continueCursor: '' }}
+        decisions={{ rows: [], isDone: true, capped: false, continueCursor: '' }}
         now={NOW}
         viewerId={IDS.teagan}
         onAct={onAct}
