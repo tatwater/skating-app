@@ -3189,7 +3189,7 @@ Imagery/Hazards/Standing/Links), cherry-picked serially onto `b01-3` off the kit
   probe, the left column and the list's preview are keyed by body too. Kept across bodies on
   purpose: nothing — every draft, pick, open dialog and typed reason dies with its console. **A
   save, once pressed, is not a draft:** it completes against the body it was composed for, wherever
-  the page goes next — the rule as built in the follow-up, *The save lifetime* under B01-3e below
+  the page goes next — D265, as built in the follow-up, *The save lifetime* under B01-3e below
   (it replaced the first rule, which dropped a save whose console had gone).
 - **A write's completion acts only on the attempt that started it** (Greptile's P2 on #121). Links'
   editor openings each have an id; the reason dialog, Hazards' demote, Imagery's hide ask, Standing's
@@ -3737,7 +3737,7 @@ draws 34; the role menu's item takes two lines.
 Built on #121's head with B01-3d merged in as its first commit; what the pages made of B01-3c's
 reads and B01-3d's writes, the save rule the stack's last P1 asked for, and the owed small items.
 
-- **The save lifetime** (the stack's last P1: *saves outlive the body*). A draft dies with its
+- **The save lifetime (D265)** (the stack's last P1: *saves outlive the body*). A draft dies with its
   console; a pressed save never does.
   - **A save carries the body it was composed for** and completes against that body whatever the
     page does next — a tab switch, another body, an uncached body loading, leaving the Bodies area.

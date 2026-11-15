@@ -8107,6 +8107,30 @@ bodies' own rows.
 
 **Related:** D226, D256, [`phase-B01`](./phases/B01-admin-console.md) §12.8.
 
+## D265 — A pressed save always reaches the body it was written for; its result names that body (B01)
+
+**2026-11-15, built in B01-3e.** The Body console's first rule bound every write to the console that
+sent it and dropped a save whose console had gone — a tab switch, another body, an uncached body
+loading, leaving the Bodies area. A save the moderator pressed could vanish without a word, and a
+receipt still showing after a switch read as the next body's ("Links saved", its Undo for another).
+
+**The rule.** A draft — a pick, an open dialog, a typed reason — dies with its console. A **pressed
+save** does not: it carries the body it was composed for and completes against that body wherever the
+page goes. Every write goes through one path (`sendFor`), which always sends and refuses only a write
+naming another body than its console's own (a missed reset). Whole-list saves queue above the
+consoles, per body, in the admin shell; each names the list it was built on, and a list that moved is
+re-applied on top or the queue says plainly that it couldn't be. **Every result names its body:** a
+receipt is "Links saved · Mascoma Lake" (a `subject` on the shared undo receipt), so its Undo is
+unambiguous on any page; a refusal is said in place while its console is on screen, otherwise in a
+toast naming the body and what failed. A refused write is never taken for a landed one.
+
+**Why:** a save is the moderator's decision, not page state; losing it silently is worse than saying
+it landed elsewhere. Proved by a model-based test over navigation, late answers and other moderators'
+writes: every pressed save sent exactly once to its body, none dropped, no draft travels, no result
+unnamed off its console, nothing resurrected.
+
+**Related:** D3, D216, [`phase-B01`](./phases/B01-admin-console.md) §12.8.
+
 ## D266 — A body is in a town when 25 m of its shoreline is; states and region follow (B01)
 
 **2026-11-15, built in B01-3g.** Region membership, a body's towns, counties and states came from
@@ -8128,4 +8152,3 @@ set the measure as shoreline, not reach; one rule on one layer means the merge, 
 console cannot disagree; a missing answer must fail loudly, never read as a corpus out of region.
 
 **Related:** D48, D226, [`phase-B01`](./phases/B01-admin-console.md) *The region rule (B01-3g)*.
-
