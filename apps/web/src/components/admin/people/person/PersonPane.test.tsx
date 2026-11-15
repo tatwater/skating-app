@@ -44,8 +44,18 @@ vi.mock('convex/react', async () => {
   };
 });
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ to, children, ...props }: { to: string; children?: ReactNode }) => (
-    <a href={to} {...props}>
+  // A link names its search apart from its path; the href puts them back together.
+  Link: ({
+    to,
+    search,
+    children,
+    ...props
+  }: {
+    to: string;
+    search?: Record<string, string>;
+    children?: ReactNode;
+  }) => (
+    <a href={search === undefined ? to : `${to}?${new URLSearchParams(search)}`} {...props}>
       {children}
     </a>
   ),
