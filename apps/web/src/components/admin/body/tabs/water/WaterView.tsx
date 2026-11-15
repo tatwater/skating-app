@@ -12,7 +12,7 @@ import { Section } from '@/components/kit/section-slug';
 import { UnavailableButton } from '@/components/kit/unavailable-button';
 import { UnavailableField } from '@/components/kit/unavailable-field';
 import { cn } from '@/lib/utils';
-import { LIT_ROW, LoadingSection, litAttr, TabBody } from '../tabParts';
+import { LIT_ROW, LoadingSection, litAttr, TabBody, useDraft } from '../tabParts';
 import { CouldntRead, LoadingLine, NOT_RECORDED, ReadFailures } from '../tabStates';
 import {
   type DepthRung,
@@ -134,8 +134,9 @@ function DepthSection({
   const { rungs, meanFrom, maxFrom, others } = data.depth;
   // A viewer who could choose picks a cell either way; with no write yet, the button says so.
   const picks = onChoose !== undefined || canChoose;
-  const [mean, setMean] = useState<DepthSource | null>(meanFrom);
-  const [max, setMax] = useState<DepthSource | null>(maxFrom);
+  // Back on the record's sources whenever they move, so a pick never outlives the value it left.
+  const [mean, setMean] = useDraft<DepthSource | null>(meanFrom);
+  const [max, setMax] = useDraft<DepthSource | null>(maxFrom);
   const height = (r: DepthRung) =>
     sourceWords(r.source, data.state).note !== null ? ROW_NOTED : ROW;
   const rule = 'border-0 border-b border-dotted border-line last:border-b-0';

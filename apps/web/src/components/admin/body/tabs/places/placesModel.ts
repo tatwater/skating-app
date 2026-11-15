@@ -96,10 +96,16 @@ export function kindWord(kind: LandmarkKind): string {
 /** Only water named as a place can become a bay: a bay, a narrows, or Other (D202). */
 export const PROMOTABLE: ReadonlySet<LandmarkKind> = new Set(['bay', 'narrows', 'other']);
 
-/** A catalog written out where it is the subject. */
+/**
+ * A catalog written out where it is the subject — and the words for a row no catalog lists, whose
+ * tag is its source ({@link landmarkRows}), so the card never says the same key twice.
+ */
 export const CATALOG_NAMES: Readonly<Record<string, string>> = {
   OSM: 'OpenStreetMap',
   GNIS: 'USGS Geographic Names',
+  MODERATOR: 'A moderator',
+  CORPUS: 'The community’s emails',
+  PROPOSAL: 'A skater’s proposal',
 };
 
 /** `osm:way/123` → `{ catalog: 'OSM', id: 'way/123' }`; anything unprefixed keeps its words. */

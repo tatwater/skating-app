@@ -118,6 +118,11 @@ describe('sampling', () => {
     expect(samplingNote('Lake Champlain', CHAMPLAIN_WATER.sampling)).toMatch(/at each end\.$/);
     expect(samplingNote('x', { ...MASCOMA_WATER.sampling, acrossKm: null })).toBeNull();
   });
+
+  it('gives a nameless body a subject, never a sentence that opens on a blank', () => {
+    expect(samplingNote('', MASCOMA_WATER.sampling)).toMatch(/^This body is 4.9 km across\./);
+    expect(samplingNote('  ', CHAMPLAIN_WATER.sampling)).toMatch(/^This body is /);
+  });
 });
 
 describe('the bathymetry state', () => {

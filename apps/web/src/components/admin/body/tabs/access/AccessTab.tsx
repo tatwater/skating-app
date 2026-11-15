@@ -121,10 +121,16 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
       onMakeOfficial={
         can('body.access')
           ? (p) =>
-              void act(() => setOfficial({ waterBodyId, coord: p.at, name: p.name }), {
-                title: `Made ${p.name} official`,
-                target,
-              })
+              void act(
+                () =>
+                  setOfficial({
+                    waterBodyId,
+                    coord: p.at,
+                    // The placeholder is the tab's words, not a name: an unnamed launch stays so.
+                    ...(p.unnamed ? {} : { name: p.name }),
+                  }),
+                { title: `Made ${p.name} official`, target },
+              )
           : undefined
       }
       onHide={

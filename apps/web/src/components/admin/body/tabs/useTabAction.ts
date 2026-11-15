@@ -26,7 +26,12 @@ export function useTabAction(): {
       } catch (err) {
         return errorText(err);
       }
-      await announce(receipt);
+      try {
+        await announce(receipt);
+      } catch {
+        // The write landed; only its receipt didn't (History keeps the row). Never a refusal,
+        // and never a rejection that leaves a reason dialog waiting on an answer.
+      }
       return null;
     },
     [announce],

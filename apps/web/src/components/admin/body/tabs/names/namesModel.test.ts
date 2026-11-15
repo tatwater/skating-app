@@ -85,6 +85,23 @@ describe('namesFromBody', () => {
     expect(data.community).toBe(true);
     expect(data.overridden).toBe(false);
     expect(data.place.states).toEqual([]);
+    // Named by a moderator's claim alone: still the community's, its typo still fixable.
+    const named = namesFromBody(
+      {
+        name: 'Low Plains',
+        type: 'lakePond',
+        nameClaims: [{ source: 'user', value: 'Low Plains' }],
+      },
+      null,
+    );
+    expect(named.community).toBe(true);
+  });
+
+  it('never calls a named body with no claim at all the community’s — the server won’t rename it', () => {
+    // A body a skater drew: its author's name, and no claim to restore it from.
+    const drawn = namesFromBody({ name: 'Back Cove Rink', type: 'lakePond' }, null);
+    expect(drawn.community).toBe(false);
+    expect(drawn.rungs).toEqual([]);
   });
 
   it('keeps the current class among the options, so Now always has a row', () => {
@@ -216,6 +233,25 @@ describe('townNames', () => {
         { lat: 1, lng: 1 },
       ]),
     ).toBeNull();
+  });
+
+  it('reads a due north–south run the same whichever end it was drawn from, its left the west', () => {
+    const north = must(
+      townNames([
+        { lat: 43, lng: -72 },
+        { lat: 43.01, lng: -72 },
+      ]),
+    );
+    const south = must(
+      townNames([
+        { lat: 43.01, lng: -72 },
+        { lat: 43, lng: -72 },
+      ]),
+    );
+    expect(south.angle).toBeCloseTo(north.angle, 5);
+    expect(south.left[0]).toBeCloseTo(north.left[0], 9);
+    expect(north.left[0]).toBeLessThan(-72);
+    expect(south.left[0]).toBeLessThan(-72);
   });
 });
 

@@ -60,12 +60,15 @@ export function NamesTab({ bodyId, lit = null }: BodyTabProps) {
   const { can } = useRole();
   const target = { targetType: 'waterbody' as const, targetId: bodyId };
   const canEdit = can('body.identity');
+  const write = (name: string | null, title: string) =>
+    void act(() => setName({ waterBodyId, name }), { title, target });
   const choose = canEdit
     ? (name: string | null) =>
-        void act(() => setName({ waterBodyId, name }), {
-          title: name === null ? 'Back to the catalogs’ ranking' : `Displaying “${name}”`,
-          target,
-        })
+        write(name, name === null ? 'Back to the catalogs’ ranking' : `Displaying “${name}”`)
+    : undefined;
+  // A body no catalog names has no ranking to go back to: clearing leaves it nameless.
+  const community = canEdit
+    ? (name: string | null) => write(name, name === null ? 'Cleared the name' : `Named “${name}”`)
     : undefined;
   return (
     <NamesView
@@ -74,7 +77,7 @@ export function NamesTab({ bodyId, lit = null }: BodyTabProps) {
       retryPending={pending}
       lit={lit}
       onChooseName={choose}
-      onCommunityName={choose}
+      onCommunityName={community}
       canEditAliases={canEdit}
       canEditClass={canEdit}
     />

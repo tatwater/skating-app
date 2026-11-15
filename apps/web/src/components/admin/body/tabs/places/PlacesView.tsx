@@ -82,8 +82,11 @@ export type PlacesViewProps = {
   onSamePlace?: (ask: ProposalAsk) => void;
   /** Decline a proposal; the skaters read the note. Resolves the refusal, or `null`. */
   onDecline?: (askId: string, note: string) => Promise<string | null>;
-  /** Save one change to a landmark (its card's fields save as they change). */
-  onEditLandmark?: (id: string, edit: LandmarkEdit) => void;
+  /**
+   * Save one change to a landmark (its card's fields save as they change); a promise, when given,
+   * settles once the server has answered.
+   */
+  onEditLandmark?: (id: string, edit: LandmarkEdit) => unknown;
 };
 
 const MAP_TOOLS = {

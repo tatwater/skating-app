@@ -45,6 +45,7 @@ vi.mock('@/components/kit/toast', async (original) => ({
 
 import { api } from '@skating/convex/api';
 import { getFunctionName } from 'convex/server';
+import { resetConsoleReads } from '@/components/admin/reads/consoleReads';
 
 import { stubJsdomAnimations } from '../jsdomStubs';
 import { NamesTab } from './NamesTab';
@@ -64,6 +65,8 @@ const BODY = {
 };
 
 beforeEach(() => {
+  // The read layer's registry (paused reads, retries, reports) is module state: start each test clean.
+  resetConsoleReads();
   mocks.results.clear();
   mocks.calls.length = 0;
   mocks.can = new Set(['body.identity']);
@@ -172,6 +175,51 @@ describe('NamesTab', () => {
     render(<NamesTab bodyId="wb1" />);
     expect(screen.getByRole('status')).toHaveTextContent('Couldn’t read this body’s record.');
     expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+  });
+
+  it('names a community body and clears it in the community’s words, not the catalogs’', async () => {
+    mocks.results.set(getFunctionName(api.waterBodies.get), {
+      available: true,
+      body: { ...BODY, name: 'Low Plains', nameClaims: [{ source: 'user', value: 'Low Plains' }] },
+    });
+    render(<NamesTab bodyId="wb1" />);
+    const field = screen.getByRole('textbox', { name: 'Community name' });
+    await userEvent.clear(field);
+    await userEvent.type(field, 'Low Plains Pond{Enter}');
+    expect(mocks.announce).toHaveBeenLastCalledWith(
+      expect.objectContaining({ title: 'Named “Low Plains Pond”' }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Clear the name' }));
+    expect(mocks.calls.at(-1)).toEqual([
+      'waterBodies:setWaterBodyName',
+      { waterBodyId: 'wb1', name: null },
+    ]);
+    expect(mocks.announce).toHaveBeenLastCalledWith(
+      expect.objectContaining({ title: 'Cleared the name' }),
+    );
+  });
+
+  it('offers no typed name for a body a skater drew: the server keeps its author’s name', () => {
+    mocks.results.set(getFunctionName(api.waterBodies.get), {
+      available: true,
+      body: { ...BODY, name: 'Back Cove Rink', source: 'user', nameClaims: undefined },
+    });
+    render(<NamesTab bodyId="wb1" />);
+    expect(screen.queryByRole('textbox', { name: 'Community name' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Clear the name' })).toBeNull();
+    expect(screen.getByRole('region', { name: /^Name/ })).toHaveTextContent('Back Cove Rink');
+  });
+
+  it('keeps the checked class on the record’s class as it moves', () => {
+    const { rerender } = render(<NamesTab bodyId="wb1" />);
+    const checked = () => screen.getByRole('radio', { checked: true });
+    expect(checked()).toHaveAccessibleName(/Lake or pond/i);
+    mocks.results.set(getFunctionName(api.waterBodies.get), {
+      available: true,
+      body: { ...BODY, type: 'reservoir' },
+    });
+    rerender(<NamesTab bodyId="wb1" />);
+    expect(checked()).toHaveAccessibleName(/Reservoir/i);
   });
 
   it('holds its place while the record loads, and for a body that is not listed', () => {

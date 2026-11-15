@@ -18,7 +18,7 @@ import { Section } from '@/components/kit/section-slug';
 import { UnavailableButton } from '@/components/kit/unavailable-button';
 import { UnavailableField } from '@/components/kit/unavailable-field';
 import { cn } from '@/lib/utils';
-import { LIT_ROW, LoadingSection, litAttr, TabBody } from '../tabParts';
+import { LIT_ROW, LoadingSection, litAttr, TabBody, useDraft } from '../tabParts';
 import { CouldntRead, LoadingLine, NOT_RECORDED, ReadFailures } from '../tabStates';
 import {
   type AdminPlaces,
@@ -42,13 +42,14 @@ import {
  * never hidden; what no read records (each catalog's own claims) says *Not recorded yet*.
  */
 
+// A rung of the board's per-catalog ladder may spell the displayed name without being Now.
+const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
 /** What the unbuilt controls will do, in the operator's words. */
 const NOT_YET = {
   aliases: 'Adding and removing the names skaters use comes with the aliases editor.',
   cls: 'Changing a body’s class comes with the class editor.',
 };
-
-const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 export type NamesViewProps = {
   /** The tab's data; `undefined` while it loads, `failed` when the record couldn't be read. */
@@ -165,6 +166,14 @@ function NameSection({
   onCommunity: NamesViewProps['onCommunityName'];
 }) {
   if (data.community) return <CommunityName data={data} onName={onCommunity} />;
+  if (data.rungs.length === 0) {
+    // Named, with no claim to rank or restore (a body a skater drew): the name, as it stands.
+    return (
+      <Section title="Name" data-slot="name-plain">
+        <span className="text-body leading-list text-fg">{data.name}</span>
+      </Section>
+    );
+  }
   return (
     <Section title="Name" data-slot="name-ladder">
       <ol className="flex flex-col">
@@ -234,7 +243,8 @@ function CommunityName({
   data: NamesData;
   onName: NamesViewProps['onCommunityName'];
 }) {
-  const [draft, setDraft] = useState(data.name);
+  // The record's name again once it moves (the save landing, an Undo), never a stale draft.
+  const [draft, setDraft] = useDraft(data.name);
   const trimmed = draft.trim();
   return (
     <Section title="Name" data-slot="community-name">
@@ -292,7 +302,8 @@ function ClassSection({
   onChange: NamesViewProps['onClassChange'];
   canEdit: boolean;
 }) {
-  const [pick, setPick] = useState<WaterBodyClass>(data.cls);
+  // Back on the record's class whenever it moves, so the checked row is never a class it left.
+  const [pick, setPick] = useDraft<WaterBodyClass>(data.cls);
   const [extra, setExtra] = useState<WaterBodyClass | null>(null);
   const base: ClassOption[] = data.classOptions ?? [{ cls: data.cls, sources: [] }];
   const options =

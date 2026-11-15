@@ -19,7 +19,8 @@ import {
 } from '@/components/kit/select';
 import { sayUnavailable, UnavailableButton } from '@/components/kit/unavailable-button';
 import { usePaneKeys } from '@/lib/keys';
-import { BLOCK_GAP, dayMonthYear } from '../tabParts';
+import { statusDate } from '../../frame/bodyModel';
+import { BLOCK_GAP, useDraft } from '../tabParts';
 import { CouldntRead, LoadingLine, NotRecorded } from '../tabStates';
 import {
   type Added,
@@ -68,10 +69,21 @@ export function LandmarkCard({
   landmark: LandmarkRow;
   canPlace: boolean;
   onBack: () => void;
-  onEdit?: ((edit: LandmarkEdit) => void) | undefined;
+  /** Save one edit; a promise, when given, settles once the server has answered. */
+  onEdit?: ((edit: LandmarkEdit) => unknown) | undefined;
 }) {
   const card = useRef<HTMLElement>(null);
-  const [name, setName] = useState(l.name);
+  // The record's name again once it moves (the save landing, an Undo), so a stale draft is never
+  // shown or sent back.
+  const [name, setName] = useDraft(l.name);
+  // The name on its way to the server: ⏎ then a blur sends it once, not twice. Let go when the
+  // answer lands (a refusal can be sent again) or the record's name moves.
+  const sent = useRef<string | null>(null);
+  const [sentFor, setSentFor] = useState(l.name);
+  if (sentFor !== l.name) {
+    setSentFor(l.name);
+    sent.current = null;
+  }
   const promotable = PROMOTABLE.has(l.kind);
   usePaneKeys(card, [
     { key: 'M', run: () => sayUnavailable(TOOLS.move), enabled: canPlace },
@@ -79,8 +91,17 @@ export function LandmarkCard({
   ]);
   const saveName = () => {
     const trimmed = name.trim();
-    if (trimmed !== '' && trimmed !== l.name) onEdit?.({ name: trimmed });
-    else setName(l.name);
+    if (trimmed === sent.current) return;
+    if (trimmed !== '' && trimmed !== l.name) {
+      sent.current = trimmed;
+      const landing = onEdit?.({ name: trimmed });
+      if (landing instanceof Promise) {
+        const clear = () => {
+          if (sent.current === trimmed) sent.current = null;
+        };
+        void landing.then(clear, clear);
+      }
+    } else setName(l.name);
   };
   return (
     <InsetCard
@@ -213,8 +234,11 @@ export function LandmarkCard({
               <span className="flex flex-col gap-(--space-1_5)">
                 {l.catalogs.map((c) => (
                   <span key={c}>
-                    {CATALOG_NAMES[c] ?? c}
-                    <Tag className="ms-(--space-2)">{c}</Tag>
+                    {/* A catalog with no written name is its tag alone: never the key twice. */}
+                    {CATALOG_NAMES[c]}
+                    <Tag className={CATALOG_NAMES[c] !== undefined ? 'ms-(--space-2)' : undefined}>
+                      {c}
+                    </Tag>
                   </span>
                 ))}
               </span>
@@ -250,7 +274,7 @@ function AddedValue({ added }: { added: Loadable<Added | null> }) {
   if (added === null) return <NotRecorded />;
   return (
     <span className="flex flex-col items-start gap-(--space-1)">
-      <span>{dayMonthYear(added.at)}</span>
+      <span>{statusDate(added.at)}</span>
       {typeof added.by === 'string' ? (
         <span className="text-fg3">{added.by}</span>
       ) : (

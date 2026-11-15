@@ -15,6 +15,8 @@ import {
   AlertDialogTrigger,
 } from '@/components/kit/alert-dialog';
 
+import { errorText } from '../../../adminUi';
+
 /**
  * The reason dialog, for a Body console action that takes something away (D226: a reason only
  * then) — ruling no public access, hiding a put-in, declining or dismissing an ask. On the kit's
@@ -90,11 +92,18 @@ export function ReasonAsk({
             waiting={(!optional && trimmed.length === 0) || busy}
             onClick={() => {
               setBusy(true);
-              void onConfirm(trimmed).then((refused) => {
-                setBusy(false);
-                if (refused === null) setOpen(false);
-                else setRefusal(refused);
-              });
+              void onConfirm(trimmed).then(
+                (refused) => {
+                  setBusy(false);
+                  if (refused === null) setOpen(false);
+                  else setRefusal(refused);
+                },
+                // A sender that threw rather than answering: never a dialog stuck waiting.
+                (err: unknown) => {
+                  setBusy(false);
+                  setRefusal(errorText(err));
+                },
+              );
             }}
           >
             {confirm}

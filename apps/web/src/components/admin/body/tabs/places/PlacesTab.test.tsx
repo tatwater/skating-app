@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   announce: vi.fn(async () => {}),
   refuse: null as string | null,
   roleLoading: false,
+  /** A write held on its way until the test lets it land. */
+  gate: null as Promise<void> | null,
 }));
 
 vi.mock('convex/react', async () => {
@@ -29,6 +31,7 @@ vi.mock('convex/react', async () => {
       ),
     useMutation: (ref: Parameters<typeof getFunctionName>[0]) => async (args: unknown) => {
       mocks.calls.push([getFunctionName(ref), args]);
+      if (mocks.gate !== null) await mocks.gate;
       if (mocks.refuse !== null) {
         const { ConvexError } = await import('convex/values');
         throw new ConvexError(mocks.refuse);
@@ -40,9 +43,15 @@ vi.mock('@/lib/useRole', () => ({
   useRole: () => ({ can: (c: string) => mocks.can.has(c), isLoading: mocks.roleLoading }),
 }));
 vi.mock('../../../shell/undo', () => ({ useUndo: () => ({ announce: mocks.announce }) }));
+const toasts = vi.hoisted(() => [] as unknown[]);
+vi.mock('@/components/kit/toast', async (original) => ({
+  ...(await original<typeof import('@/components/kit/toast')>()),
+  toast: (t: unknown) => toasts.push(t),
+}));
 
 import { api } from '@skating/convex/api';
 import { getFunctionName } from 'convex/server';
+import { resetConsoleReads } from '@/components/admin/reads/consoleReads';
 
 import { stubJsdomAnimations } from '../jsdomStubs';
 import { PlacesTab } from './PlacesTab';
@@ -55,12 +64,16 @@ const ALL = ['body.places', 'corpus.placeNames', 'inbox.request', 'inbox.read'];
 const PASS = new Date(2026, 8, 29, 12).getTime();
 
 beforeEach(() => {
+  // The read layer's registry (paused reads, retries, reports) is module state: start each test clean.
+  resetConsoleReads();
   mocks.results.clear();
   mocks.calls.length = 0;
   mocks.can = new Set(ALL);
   mocks.announce.mockClear();
   mocks.refuse = null;
   mocks.roleLoading = false;
+  mocks.gate = null;
+  toasts.length = 0;
   const set = (ref: Parameters<typeof getFunctionName>[0], value: unknown) =>
     mocks.results.set(getFunctionName(ref), value);
   set(api.landmarks.listForEditor, [
@@ -171,6 +184,72 @@ describe('PlacesTab', () => {
       title: 'Saved · Mascoma Dam',
       target: { targetType: 'bodyLandmark', targetId: 'lm-dam' },
     });
+  });
+
+  it('sends a name once when ⏎ is followed by a blur, and again after a refusal', async () => {
+    let land = () => {};
+    mocks.gate = new Promise<void>((resolve) => {
+      land = resolve;
+    });
+    mocks.refuse = 'A landmark on this lake already has that name';
+    render(<PlacesTab bodyId="wb1" lit="landmark:lm-dam" />);
+    const name = screen.getByRole('textbox', { name: 'Name' });
+    await userEvent.clear(name);
+    await userEvent.type(name, 'Mascoma Dam{Enter}');
+    // The answer hasn't landed: leaving the field doesn't send it a second time.
+    await userEvent.tab();
+    expect(mocks.calls).toHaveLength(1);
+    mocks.gate = null;
+    land();
+    await waitFor(() =>
+      expect(toasts).toEqual([expect.objectContaining({ title: 'Not saved', tone: 'bad' })]),
+    );
+    expect(mocks.announce).not.toHaveBeenCalled();
+    // Refused: the same name can be sent again.
+    mocks.refuse = null;
+    await userEvent.type(name, '{Enter}');
+    await waitFor(() => expect(mocks.calls).toHaveLength(2));
+    expect(mocks.calls[1]).toEqual([
+      'landmarks:update',
+      { landmarkId: 'lm-dam', name: 'Mascoma Dam' },
+    ]);
+  });
+
+  it('shows the record’s name again once it moves — an Undo never leaves its draft to re-save', async () => {
+    const { rerender } = render(<PlacesTab bodyId="wb1" lit="landmark:lm-dam" />);
+    const name = () => screen.getByRole('textbox', { name: 'Name' });
+    await userEvent.clear(name());
+    await userEvent.type(name(), 'Mascoma Dam{Enter}');
+    expect(mocks.calls).toHaveLength(1);
+    const rows = mocks.results.get(fn(api.landmarks.listForEditor)) as Array<{ name: string }>;
+    const named = (n: string) => {
+      mocks.results.set(fn(api.landmarks.listForEditor), [{ ...rows[0], name: n }]);
+      rerender(<PlacesTab bodyId="wb1" lit="landmark:lm-dam" />);
+    };
+    named('Mascoma Dam');
+    // The save is undone: the record goes back, and so does the field.
+    named('Mascoma Lake Dam');
+    expect(name()).toHaveValue('Mascoma Lake Dam');
+    await userEvent.click(name());
+    await userEvent.tab();
+    expect(mocks.calls).toHaveLength(1);
+  });
+
+  it('writes out a landmark no catalog lists by its source, never its key twice', () => {
+    mocks.results.set(fn(api.landmarks.listForEditor), [
+      {
+        _id: 'lm-mod',
+        name: 'Warming hut',
+        kind: 'other',
+        point: { lat: 43.65, lng: -72.18 },
+        aliases: [],
+        source: 'moderator',
+        externalIds: [],
+      },
+    ]);
+    render(<PlacesTab bodyId="wb1" lit="landmark:lm-mod" />);
+    const source = screen.getByText('A moderator').closest('span') as HTMLElement;
+    expect(source).toHaveTextContent('A moderatorMODERATOR');
   });
 
   it('draws no lever a viewer without the capabilities holds, and no map tool', () => {

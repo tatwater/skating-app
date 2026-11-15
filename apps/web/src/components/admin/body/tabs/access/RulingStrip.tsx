@@ -1,6 +1,6 @@
 import type { PublicAccessVerdict } from '@skating/core';
 import { PersonLockup } from '@/components/kit/person-lockup';
-import { dayMonthYear } from '../tabParts';
+import { statusDate } from '../../frame/bodyModel';
 import { dayCount, daysSince, type Person, verdictWords } from './accessModel';
 
 /**
@@ -29,7 +29,7 @@ export function RulingStrip({
       <span className={`${kick} text-fg3`}>Before</span>
       <span className="flex justify-between">
         <span className={`${kick} text-fg`} data-slot="ruling-date">
-          {dayMonthYear(decidedAt)}
+          {statusDate(decidedAt)}
         </span>
         <span className={`${kick} text-fg3`}>Today</span>
       </span>

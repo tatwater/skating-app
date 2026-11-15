@@ -213,9 +213,11 @@ export function samplingNote(name: string, sampling: Sampling): string | null {
   if (sampling.acrossKm === null) return null;
   const km = `${sampling.acrossKm.toFixed(1)} km`;
   const spacing = DEFAULT_SAMPLE_SPACING_KM;
+  // A nameless body (thousands are) still gets a subject, never a sentence that opens on a blank.
+  const subject = name.trim() === '' ? 'This body' : name;
   return sampling.wide
-    ? `${name} is ${km} across. Forecast models resolve at 2 to ${spacing} km, so a body wider than ${spacing} km can read a different forecast at each end.`
-    : `${name} is ${km} across. Forecast models resolve at 2 to ${spacing} km, so points closer than ${spacing} km read the same forecast; a second point is offered only on a body wider than that.`;
+    ? `${subject} is ${km} across. Forecast models resolve at 2 to ${spacing} km, so a body wider than ${spacing} km can read a different forecast at each end.`
+    : `${subject} is ${km} across. Forecast models resolve at 2 to ${spacing} km, so points closer than ${spacing} km read the same forecast; a second point is offered only on a body wider than that.`;
 }
 
 /** The lit-item ids Water answers to. */

@@ -77,7 +77,11 @@ export type NamesData = {
   name: string;
   /** The catalogs' spellings, ranked. Empty for a body no catalog named. */
   rungs: NameRung[];
-  /** No catalog names this body: the name is the community's, typed by a moderator. */
+  /**
+   * No catalog names this body, and it is nameless or named only by a moderator: the name is the
+   * community's, typed — the server's own rule for a typed name. A body with a name and no claim at
+   * all (one a skater drew) is not: its name stays where its author put it, drawn as it stands.
+   */
   community: boolean;
   /** A moderator chose the displayed name over the catalogs' ranking. */
   overridden: boolean;
@@ -153,14 +157,14 @@ export function namesFromBody(
   extras: { classOptions?: ClassOption[] | null; townLines?: TownLine[] | null } = {},
 ): NamesData {
   const rungs = nameRungs(body.name, body.nameClaims);
-  const overridden = (body.nameClaims ?? []).some(
-    (c) => c.source === 'user' && same(c.value, body.name),
-  );
+  const claims = body.nameClaims ?? [];
+  const overridden = claims.some((c) => c.source === 'user' && same(c.value, body.name));
   const options = extras.classOptions ?? null;
   return {
     name: body.name,
     rungs,
-    community: rungs.length === 0,
+    // `setWaterBodyName`'s rule: no catalog claim, and nameless or named by a moderator's claim.
+    community: rungs.length === 0 && (body.name === '' || claims.some((c) => c.source === 'user')),
     overridden,
     aliases: aliasesOf(body.name, body.nameClaims),
     cls: body.type,
@@ -253,7 +257,9 @@ export function townNames(
   // East and north in meters along the run, then its angle on screen (y down: clockwise from east).
   let dx = (b.lng - a.lng) * cos;
   let dy = b.lat - a.lat;
-  if (dx < 0) {
+  // Read west to east — and a due north–south run south to north, so its left is its west side
+  // and it reads the same whichever end it was drawn from.
+  if (dx < 0 || (dx === 0 && dy < 0)) {
     dx = -dx;
     dy = -dy;
   }

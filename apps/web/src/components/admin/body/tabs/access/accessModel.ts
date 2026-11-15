@@ -42,6 +42,8 @@ export type Ruling = {
 export type PutInRow = {
   id: string;
   name: string;
+  /** No source named it: `name` is the placeholder, words to read — never a name to store. */
+  unnamed?: boolean;
   source: 'official' | 'osm' | 'derived';
   at: LatLng;
   /** The walk from its lot, in meters; `null` with no lot linked. */
@@ -242,6 +244,7 @@ export function accessFrom(
         id: p.id,
         // The server resolves a compass name for any launch on a body with an interior point.
         name: p.name ?? 'Unnamed put-in',
+        ...(p.name === undefined ? { unnamed: true } : {}),
         source,
         at: p.coord,
         walkM:

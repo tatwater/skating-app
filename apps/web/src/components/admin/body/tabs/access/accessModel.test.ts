@@ -110,6 +110,9 @@ describe('accessFrom', () => {
       ['d', 'derived', null, null],
     ]);
     expect(data.putIns[0]?.name).toBe('Unnamed put-in');
+    // The placeholder is words to read, flagged so it is never stored as a name.
+    expect(data.putIns[0]?.unnamed).toBe(true);
+    expect(data.putIns[1]?.unnamed).toBeUndefined();
     expect(data.putIns[1]?.approach).toHaveLength(2);
     expect(data.alerts).toEqual([
       { id: 'a', label: 'Gate locked', on: 'Dam lot', official: false },

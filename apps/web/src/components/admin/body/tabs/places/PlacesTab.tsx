@@ -88,7 +88,7 @@ export function PlacesTab({ bodyId, lit = null, onLitChange }: BodyTabProps) {
       onEditLandmark={
         can('body.places')
           ? (id, edit) =>
-              void act(() => update({ landmarkId: id as Id<'bodyLandmarks'>, ...edit }), {
+              act(() => update({ landmarkId: id as Id<'bodyLandmarks'>, ...edit }), {
                 title: `Saved · ${'name' in edit ? edit.name : nameOf(id)}`,
                 target: { targetType: 'bodyLandmark', targetId: id },
               })

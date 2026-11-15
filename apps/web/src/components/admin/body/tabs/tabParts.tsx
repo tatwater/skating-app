@@ -1,11 +1,12 @@
-import type { ComponentProps } from 'react';
+import { type ComponentProps, useState } from 'react';
 
 import { SkeletonText } from '@/components/kit/skeleton';
 import { cn } from '@/lib/utils';
 
 /**
  * What the Body console's inspector tabs share and the kit doesn't: the column their sections
- * stack in, the place a section holds while its read is on its way, and the lit-item wash.
+ * stack in, the place a section holds while its read is on its way, the lit-item wash, and a
+ * control's draft of a value the server owns.
  */
 
 /** The gap between an inspector's sections: the boards' 30 px `.blk` (the `gap.section` token). */
@@ -46,16 +47,17 @@ export const LIT_ROW =
 export const litAttr = (lit: string | null | undefined, id: string) =>
   lit === id ? { 'data-lit': '' } : {};
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-/** "29 Sep 2026", in the viewer's zone: a status date in a panel carries its year (Review 13 #7). */
-export function dayMonthYear(at: number): string {
-  const d = new Date(at);
-  return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
-}
-
-/** "12 Sep": a table cell or history row keeps day and month. */
-export function dayMonth(at: number): string {
-  const d = new Date(at);
-  return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+/**
+ * A control's draft of a value the server owns: the operator's pick or typing until the value
+ * itself moves — their own save landing, an Undo, another moderator's write — and then the value
+ * again, so a control never shows (or re-saves) what the record no longer holds.
+ */
+export function useDraft<T>(value: T): [T, (next: T) => void] {
+  const [draft, setDraft] = useState(value);
+  const [seen, setSeen] = useState(value);
+  if (!Object.is(seen, value)) {
+    setSeen(value);
+    setDraft(value);
+  }
+  return [draft, setDraft];
 }

@@ -39,6 +39,7 @@ vi.mock('../../../shell/undo', () => ({ useUndo: () => ({ announce: mocks.announ
 
 import { api } from '@skating/convex/api';
 import { getFunctionName } from 'convex/server';
+import { resetConsoleReads } from '@/components/admin/reads/consoleReads';
 
 import { stubJsdomAnimations } from '../jsdomStubs';
 import { AccessTab } from './AccessTab';
@@ -48,6 +49,8 @@ beforeAll(stubJsdomAnimations);
 const RULED = Date.now() - 3 * 86_400_000;
 
 beforeEach(() => {
+  // The read layer's registry (paused reads, retries, reports) is module state: start each test clean.
+  resetConsoleReads();
   mocks.results.clear();
   mocks.queryArgs.clear();
   mocks.calls.length = 0;
@@ -139,6 +142,21 @@ describe('AccessTab', () => {
         'putIns:setOfficial',
         { waterBodyId: 'wb1', coord: { lat: 43.6489, lng: -72.1793 }, name: 'NW launch' },
       ],
+    ]);
+  });
+
+  it('makes an unnamed launch official without storing the tab’s placeholder as its name', async () => {
+    mocks.results.set(getFunctionName(api.accessPoints.accessForBody), {
+      putIns: [{ id: 'pi2', coord: { lat: 43.6489, lng: -72.1793 }, source: 'derived' }],
+      parking: [],
+      blockedIds: [],
+      alerts: [],
+    });
+    render(<AccessTab bodyId="wb1" />);
+    expect(screen.getByText('Unnamed put-in')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Make official' }));
+    expect(mocks.calls).toEqual([
+      ['putIns:setOfficial', { waterBodyId: 'wb1', coord: { lat: 43.6489, lng: -72.1793 } }],
     ]);
   });
 

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -34,6 +34,7 @@ vi.mock('@/components/kit/toast', async (original) => ({
 
 import { api } from '@skating/convex/api';
 import { getFunctionName } from 'convex/server';
+import { resetConsoleReads } from '@/components/admin/reads/consoleReads';
 
 import { stubJsdomAnimations } from '../jsdomStubs';
 import { WaterTab } from './WaterTab';
@@ -44,6 +45,8 @@ const fn = (ref: Parameters<typeof getFunctionName>[0]) => getFunctionName(ref);
 const bathymetry = () => screen.getByRole('region', { name: /Bathymetry/ });
 
 beforeEach(() => {
+  // The read layer's registry (paused reads, retries, reports) is module state: start each test clean.
+  resetConsoleReads();
   mocks.results.clear();
   mocks.can = new Set();
   toasts.length = 0;
@@ -79,6 +82,24 @@ describe('WaterTab', () => {
     expect(screen.getByText(/Other sources’ depths: Not recorded yet/)).toBeTruthy();
     expect(screen.queryByRole('button')).toBeNull();
     expect(screen.queryByRole('textbox')).toBeNull();
+  });
+
+  it('keeps each depth’s pick on the source in use as the record moves — never a choice nobody made', () => {
+    mocks.can = new Set(['body.water']);
+    const { rerender } = render(<WaterTab bodyId="wb1" />);
+    const meanPick = () =>
+      within(screen.getByRole('radiogroup', { name: 'Mean depth' })).getByRole('radio', {
+        checked: true,
+      });
+    expect(meanPick()).toHaveAccessibleName('NH state survey, 9.4 m');
+    const got = mocks.results.get(fn(api.waterBodies.get)) as { body: object };
+    mocks.results.set(fn(api.waterBodies.get), {
+      available: true,
+      body: { ...got.body, meanDepthM: 10, meanDepthSource: 'operator' },
+    });
+    rerender(<WaterTab bodyId="wb1" />);
+    expect(meanPick()).toHaveAccessibleName('A moderator, 10 m');
+    expect(screen.queryByRole('button', { name: /for the mean/ })).toBeNull();
   });
 
   it('says whether contour lines were drawn, the gap amber, and that the search isn’t recorded', () => {
