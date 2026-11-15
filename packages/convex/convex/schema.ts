@@ -528,10 +528,10 @@ export default defineSchema({
     /** The current run's number: the only run whose passes may write. */
     run: v.number(),
     /**
-     * A backfill: the last run to reach the end of its range had no failures (and began at the start,
-     * or kept an earlier such conclusion), and none since found a gap.
+     * A backfill: the last run to reach the end of its range had no failures, and none since found a
+     * gap. Absent on a sweep's record — a sweep is never "ready", only run.
      */
-    ready: v.boolean(),
+    ready: v.optional(v.boolean()),
     /** The current run has a pass scheduled or under way. */
     running: v.boolean(),
     /** Where the current run's next pass resumes (`null`: the start, or the run ended). */

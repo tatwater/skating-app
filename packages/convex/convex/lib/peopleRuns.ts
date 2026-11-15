@@ -160,8 +160,14 @@ export async function takeLease(
     pass: 0,
     updatedAt: Date.now(),
   };
-  if (row) await ctx.db.patch(row._id, fields);
-  else await ctx.db.insert('peopleJobRuns', { job, ready: false, ...fields });
+  // Only a backfill carries `ready`; a sweep's record never does (an old one's is cleared here).
+  if (row) await ctx.db.patch(row._id, isBackfill(job) ? fields : { ...fields, ready: undefined });
+  else
+    await ctx.db.insert('peopleJobRuns', {
+      job,
+      ...fields,
+      ...(isBackfill(job) ? { ready: false } : {}),
+    });
   return { job, run: fields.run, pass: 0, failed: 0, chains: fields.chains };
 }
 
@@ -192,7 +198,7 @@ export async function endRun(ctx: MutationCtx, lease: Lease, failed: number): Pr
   const row = await runRow(ctx, lease.job);
   if (row?.run !== lease.run)
     throw new Error(`peopleRuns: ${lease.job} run ${lease.run} lost its lease`);
-  const ready = failed === 0 && (row.partial !== true || row.ready);
+  const ready = failed === 0 && (row.partial !== true || row.ready === true);
   await ctx.db.patch(row._id, {
     running: false,
     cursor: null,

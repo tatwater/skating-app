@@ -1556,6 +1556,35 @@ describe('the mirror check laps: kept mirrors never hold a stale one behind them
   });
 });
 
+describe('a sweep’s run record carries no ready', () => {
+  test('the lapse sweep and the daily retry record runs, never readiness; a backfill’s does', async () => {
+    const t = await setup();
+    await t.run(async (ctx) => {
+      // An old record from before the field went optional: cleared by the next run.
+      await ctx.db.insert('peopleJobRuns', {
+        job: 'lapseSweep',
+        run: 1,
+        ready: false,
+        running: false,
+        cursor: null,
+        failed: 0,
+        chains: true,
+        pass: 0,
+        updatedAt: T0,
+      });
+    });
+    await t.mutation(internal.peopleJobs.sweepLapsedSuspensions, {});
+    await t.mutation(internal.peopleJobs.retryLapsedDaily, {});
+    const rows = await t.run((ctx) => ctx.db.query('peopleJobRuns').collect());
+    for (const job of ['lapseSweep', 'lapseRetry']) {
+      const row = rows.find((r) => r.job === job);
+      expect(row, job).toBeDefined();
+      expect('ready' in (row as object), job).toBe(false);
+    }
+    expect(rows.find((r) => r.job === 'rows')?.ready).toBe(true);
+  });
+});
+
 // ── The avatar URL cap ──
 
 describe('an avatar URL past the cap is not stored', () => {
