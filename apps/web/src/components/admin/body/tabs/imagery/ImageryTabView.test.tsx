@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { UNAVAILABLE } from '@/components/kit/unavailable-button';
 import { stubJsdomAnimations } from '../jsdomStubs';
 import { ImageryDockView } from './ImageryDockView';
-import { ImageryTabView, type ImageryTabViewProps } from './ImageryTabView';
+import { ImageryTabView, type ImageryTabViewProps, NOT_MEASURED } from './ImageryTabView';
 import {
   granuleOf,
   INFERRED_STOP,
@@ -14,7 +14,7 @@ import {
   MASCOMA_STOPS,
   SEASON,
 } from './imageryFixtures';
-import { passRows } from './imageryModel';
+import { CLEAR_GATE_PCT, passRows } from './imageryModel';
 
 beforeAll(stubJsdomAnimations);
 
@@ -129,14 +129,21 @@ describe('ImageryTabView', () => {
     );
   });
 
-  it('a pass with nothing measured shows no figure, and says so to a reader', () => {
+  it('a pass with nothing measured says so in words — never a blank, an empty track or a zero', () => {
     render(<ImageryTabView {...base} rows={passRows([INFERRED_STOP])} />);
-    // No meter claims a value it doesn't have; the gates still stand on their tracks.
+    // No meter claims a value it doesn't have, and no empty track stands in for one (it reads as
+    // zero); each gate keeps its threshold in words.
     expect(within(card()).queryAllByRole('meter')).toEqual([]);
-    expect(card().querySelectorAll('[data-slot="meter-mark"]')).toHaveLength(2);
-    expect(card().querySelectorAll('[data-slot="meter-fill"]')).toHaveLength(0);
-    // Twice in the card, twice in the table.
-    expect(screen.getAllByText('Not measured')).toHaveLength(4);
+    expect(card().querySelectorAll('[data-slot="meter-track"], [data-slot="meter"]')).toHaveLength(
+      0,
+    );
+    expect(card().textContent).toContain(`Needs ${CLEAR_GATE_PCT}%`);
+    // Twice in the card, twice in the table — each one on screen, not only for a reader.
+    const said = screen.getAllByText(NOT_MEASURED);
+    expect(said).toHaveLength(4);
+    for (const el of said) expect(el).not.toHaveClass('sr-only');
+    expect(document.querySelector('[data-slot="passes-loading"]')).toBeNull();
+    expect(screen.queryByText(/^0$|null/)).toBeNull();
   });
 
   it('holds the card’s place before the passes land, and says when none reached the body', () => {

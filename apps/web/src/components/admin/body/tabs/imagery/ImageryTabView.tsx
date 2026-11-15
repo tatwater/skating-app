@@ -438,11 +438,19 @@ export function ImageryTabView({
 }
 
 /** A percentage cell; the figure that hid the pass is the bright one; not measured is absent. */
+/**
+ * A pass no manifest measured over this lake (its coverage `basis` inferred from the footprint, or
+ * unknown): its cloud and coverage are said to be unmeasured, never left blank or drawn as a zero.
+ */
+export const NOT_MEASURED = 'Not measured';
+
 function Figure({ value, failed }: { value: number | null; failed: boolean }) {
   return (
     <TableCell align="end" mono className={cn(failed && 'text-fg')}>
       {value === null ? (
-        <span className="sr-only">Not measured</span>
+        <span data-slot="not-measured" className="font-sans text-kick whitespace-nowrap text-fg3">
+          {NOT_MEASURED}
+        </span>
       ) : (
         <>
           {value}
@@ -522,26 +530,35 @@ function GateRow({
           {unit}
         </span>
       </span>
-      <Meter
-        aria-label={label}
-        value={value === null ? null : Math.min(100, Math.max(0, value))}
-        mark={threshold}
-        markTone="lit"
-        tone={fails ? 'dim' : 'default'}
-        getAriaValueText={() => `${value}${unit}, needs ${threshold}${unit}`}
-      />
-      <span
-        data-slot="gate-value"
-        aria-hidden="true"
-        className="text-right font-(family-name:--family-mono) text-mono-sm leading-none font-medium whitespace-nowrap text-fg2 tabular-nums group-data-fails/gate:text-fg"
-      >
-        {value !== null && (
-          <>
+      {value === null ? (
+        // Unmeasured: said in words across the meter and the figure — an empty meter would read
+        // as zero, and a blank as nothing to say.
+        <span
+          data-slot="gate-value"
+          className="col-span-2 text-assist leading-none whitespace-nowrap text-fg3"
+        >
+          {NOT_MEASURED}
+        </span>
+      ) : (
+        <>
+          <Meter
+            aria-label={label}
+            value={Math.min(100, Math.max(0, value))}
+            mark={threshold}
+            markTone="lit"
+            tone={fails ? 'dim' : 'default'}
+            getAriaValueText={() => `${value}${unit}, needs ${threshold}${unit}`}
+          />
+          <span
+            data-slot="gate-value"
+            aria-hidden="true"
+            className="text-right font-(family-name:--family-mono) text-mono-sm leading-none font-medium whitespace-nowrap text-fg2 tabular-nums group-data-fails/gate:text-fg"
+          >
             {value}
             {unit !== '' && <span className="ms-unit text-fg3">{unit}</span>}
-          </>
-        )}
-      </span>
+          </span>
+        </>
+      )}
     </div>
   );
 }
