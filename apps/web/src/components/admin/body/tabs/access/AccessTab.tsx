@@ -10,7 +10,6 @@ import {
   retryAll,
   useConsoleReadSet,
 } from '@/components/admin/reads/consoleReads';
-import { UNAVAILABLE } from '@/components/kit/unavailable-button';
 import { useRole } from '@/lib/useRole';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { useTabAction } from '../useTabAction';
@@ -29,8 +28,8 @@ import {
  * is (`landmarks.listForBody`), and the ruling's history for who ruled, what stood before and how
  * many rulings came earlier (`bodyConsole.history` by verb, `audit.read`). Writes, each behind its
  * capability and announced for undo: the ruling (`waterBodies.setPublicAccess`, `access.rule` — no
- * public access asks its reason), and a mapped launch hidden (`putIns.hide`, `body.access`).
- * Making a launch official isn't available yet (the server has no promote in place). Placing
+ * public access asks its reason), and a mapped launch made official in place (`putIns.promote`)
+ * or hidden (`putIns.hide`), `body.access`. Placing
  * put-ins and lots, linking a lot and the posted-rules editor are task modes.
  */
 /**
@@ -87,6 +86,7 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
   const { data, retry, pending } = useAccessRead(bodyId);
   const setPublicAccess = useMutation(api.waterBodies.setPublicAccess);
   const hide = useMutation(api.putIns.hide);
+  const promote = useMutation(api.putIns.promote);
   const { act, actInDialog } = useTabAction(bodyId);
   const now = useDayClock();
 
@@ -118,9 +118,21 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
             }
           : undefined
       }
-      // Not available yet: `putIns.setOfficial` inserts a second, official put-in beside the launch
-      // (no parking, no walk) instead of promoting it, so the launch would stay, twice.
-      {...(can('body.access') ? { onMakeOfficial: UNAVAILABLE } : {})}
+      // `putIns.promote`: the launch made official on its own row — its point, bay, lot and walk
+      // kept; the placeholder is the tab's words, never a name, so an unnamed launch stays so.
+      onMakeOfficial={
+        can('body.access')
+          ? (p) =>
+              void act(
+                () =>
+                  promote({
+                    putInId: p.id as Id<'putIns'>,
+                    ...(p.unnamed ? {} : { name: p.name }),
+                  }),
+                { title: `Made ${p.name} official`, target },
+              )
+          : undefined
+      }
       onHide={
         can('body.access')
           ? (p, reason) =>

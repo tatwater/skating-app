@@ -142,15 +142,22 @@ describe('AccessTab', () => {
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
   });
 
-  it('draws Make official as not available yet, and never inserts a second put-in beside the launch', async () => {
-    // `putIns.setOfficial` inserts a new official row at the point (no parking, no walk) and
-    // leaves the launch visible, so a press would show it twice; there is no promote in place.
+  it('makes a mapped launch official in place (`putIns.promote`), under its name', async () => {
     render(<AccessTab bodyId="wb1" />);
-    const lever = screen.getByRole('button', { name: 'Make official' });
-    expect(lever).toHaveAttribute('aria-disabled', 'true');
-    await userEvent.click(lever);
-    await userEvent.click(lever);
-    expect(mocks.calls).toEqual([]);
+    await userEvent.click(screen.getByRole('button', { name: 'Make official' }));
+    expect(mocks.calls).toEqual([['putIns:promote', { putInId: 'pi1', name: 'NW launch' }]]);
+  });
+
+  it('makes an unnamed launch official without storing the tab’s placeholder as its name', async () => {
+    mocks.results.set(getFunctionName(api.accessPoints.accessForBody), {
+      putIns: [{ id: 'pi2', coord: { lat: 43.6489, lng: -72.1793 }, source: 'derived' }],
+      parking: [],
+      blockedIds: [],
+      alerts: [],
+    });
+    render(<AccessTab bodyId="wb1" />);
+    await userEvent.click(screen.getByRole('button', { name: 'Make official' }));
+    expect(mocks.calls).toEqual([['putIns:promote', { putInId: 'pi2' }]]);
   });
 
   it('hides a launch with its reason', async () => {
@@ -376,10 +383,46 @@ describe('AccessTab', () => {
       expect(mocks.calls).toHaveLength(1);
     });
 
-    it('Make official writes nothing at all (not available yet)', async () => {
-      render(<AccessTab bodyId="wb1" />);
+    it('Make official', async () => {
+      // `promote` makes the row official on itself — its point, lot and walk kept.
+      const access = getFunctionName(api.accessPoints.accessForBody);
+      mocks.results.set(access, {
+        putIns: [
+          {
+            id: 'pi1',
+            coord: { lat: 43.6489, lng: -72.1793 },
+            name: 'NW launch',
+            source: 'osm',
+            parkingAreaId: 'lot',
+            approachMeters: 214,
+            approachRouted: true,
+          },
+        ],
+        parking: [{ id: 'lot', coord: { lat: 43.649, lng: -72.18 }, name: 'Dam lot' }],
+        blockedIds: [],
+        alerts: [],
+      });
+      mocks.server = (name, args) => {
+        if (name !== 'putIns:promote') return;
+        const prior = mocks.results.get(access) as { putIns: Record<string, unknown>[] };
+        mocks.results.set(access, {
+          ...prior,
+          putIns: prior.putIns.map((p) =>
+            p.id === args.putInId ? { ...p, source: 'official' } : p,
+          ),
+        });
+      };
+      const { rerender } = render(<AccessTab bodyId="wb1" />);
       await userEvent.click(screen.getByRole('button', { name: 'Make official' }));
-      expect(mocks.calls).toEqual([]);
+      await waitFor(() => expect(mocks.calls).toHaveLength(1));
+      rerender(<AccessTab bodyId="wb1" />);
+      // One launch, now official, its walk kept — never a second row beside it.
+      await waitFor(() =>
+        expect(screen.queryByRole('button', { name: 'Make official' })).toBeNull(),
+      );
+      expect(screen.getAllByText('NW launch')).toHaveLength(1);
+      expect(screen.getByText('214')).toBeTruthy();
+      expect(mocks.calls).toHaveLength(1);
     });
   });
 

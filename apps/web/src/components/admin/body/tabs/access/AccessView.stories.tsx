@@ -3,7 +3,6 @@ import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 import { FAILED_READ } from '@/components/admin/reads/readFailureFixtures';
 import { computedColor, sameColor } from '@/components/kit/measure';
 import { faceLoaded, must } from '@/components/kit/storyKit';
-import { UNAVAILABLE } from '@/components/kit/unavailable-button';
 import { InspectorFrame } from '../tabStoryFrame';
 import { AccessView } from './AccessView';
 import { BOARD_TODAY, MASCOMA_ACCESS, NO_ACCESS } from './accessFixtures';
@@ -38,8 +37,7 @@ const EVERY_LEVER = {
   data: MASCOMA_ACCESS,
   canPlace: true,
   onRule: fn(async () => null),
-  // As the tab wires it: the server has no promote in place yet, so the lever says so.
-  onMakeOfficial: UNAVAILABLE,
+  onMakeOfficial: fn(),
   onHide: fn(async () => null),
 };
 
