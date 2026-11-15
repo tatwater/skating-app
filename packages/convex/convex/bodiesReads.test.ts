@@ -226,6 +226,37 @@ describe('removedFacts', () => {
       (await mod.as.query(api.bodyConsole.removedFacts, { waterBodyId: served }))?.left,
     ).toBeNull();
   });
+
+  test('a rejected body removed later reads as rejected, with its rejection’s row', async () => {
+    const t = harness();
+    const mod = await person(t, 'moderator');
+    const id = await body(t, 'Both', {
+      source: 'user',
+      reviewStatus: 'rejected',
+      removedAt: NOW - 100,
+      removedByUserId: mod.id,
+      removalReason: 'other',
+    });
+    await t.run(async (ctx) => {
+      for (const [action, at] of [
+        ['reject_waterbody', NOW - 1000],
+        ['remove', NOW - 100],
+      ] as const) {
+        await ctx.db.insert('moderationActions', {
+          actorId: mod.id,
+          action,
+          targetType: 'waterbody',
+          targetId: id,
+          reason: action,
+          createdAt: at,
+        });
+      }
+    });
+    expect(await mod.as.query(api.bodyConsole.removedFacts, { waterBodyId: id })).toMatchObject({
+      standing: 'rejected',
+      left: { action: 'reject_waterbody', at: NOW - 1000, removalReason: null },
+    });
+  });
 });
 
 describe('the preview and the frame', () => {
@@ -268,6 +299,36 @@ describe('the preview and the frame', () => {
     const extras = await mod.as.query(api.bodyConsole.consoleExtras, { waterBodyId: id });
     expect(extras.complete).toEqual(p?.complete);
     expect(extras.complete).not.toBeNull();
+  });
+
+  test('a landmark ask’s askers are the asks for the same place, as the inbox counts them', async () => {
+    const t = harness();
+    const mod = await person(t, 'moderator');
+    const id = await body(t, 'Long Lake');
+    const [a, b, c] = [await person(t), await person(t), await person(t)];
+    await t.run(async (ctx) => {
+      const ask = (requesterId: Id<'profiles'>, lat: number, at: number) =>
+        ctx.db.insert('waterBodyRequests', {
+          kind: 'name_landmark',
+          status: 'open',
+          requesterId,
+          coord: { lat, lng: -72 },
+          waterBodyId: id,
+          name: 'Long Point',
+          nameKey: 'long point',
+          createdAt: at,
+        });
+      // Two people name one spot; a third names another spot by the same name, 20 km off.
+      await ask(a?.id as Id<'profiles'>, 44, NOW - 30);
+      await ask(b?.id as Id<'profiles'>, 44, NOW - 20);
+      await ask(c?.id as Id<'profiles'>, 44.18, NOW - 10);
+    });
+    const p = await mod.as.query(api.bodies.preview, { waterBodyId: id });
+    const counts = (p?.asks ?? [])
+      .filter((x) => x.kind === 'request')
+      .map((x) => (x.kind === 'request' ? x.askers?.count : null));
+    // Newest first: the far spot's one asker, then the near spot's two, twice.
+    expect(counts).toEqual([1, 2, 2]);
   });
 });
 

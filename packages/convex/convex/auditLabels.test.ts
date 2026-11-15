@@ -104,7 +104,7 @@ describe('auditTargetLabels', () => {
     expect(calls).toBe(4);
   });
 
-  test('a full page of 100 distinct targets: every row labelled, at most 100 reads', async () => {
+  test('a full page of 100 distinct targets: every row labeled, at most 100 reads', async () => {
     const t = convexTest(schema, modules);
     await seed(t, 100, 100);
     const calls = await t.run(async (raw) => {

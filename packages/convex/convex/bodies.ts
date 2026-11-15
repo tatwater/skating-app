@@ -29,6 +29,7 @@ import {
   type LibraryFacet,
   type LibraryFacetSelection,
   type LibraryListLane,
+  landmarkAsksAreSamePlace,
   matchedAlias,
   type OBSERVED_FROM,
   REQUEST_KINDS,
@@ -52,6 +53,7 @@ import { geoFactsOf, townsWithStateOf } from './lib/bodyGeo';
 import { type LibraryRow, openAsksFor, readCount } from './lib/bodyLibrary';
 import { FLAG_REASONS } from './lib/enums';
 import { OPEN_FLAG_STATUSES } from './lib/openFlags';
+import { landmarkAskOf, openSiblings, QUEUE_CAP, requestKeyOf } from './lib/requestDecisions';
 import { literals } from './lib/validators';
 
 /** How long the caller's clock may drift from the server's. */
@@ -410,8 +412,8 @@ export type RowByIdEntry = {
  * **The list's rows for a handful of ids** (B01-3c) — *Opened recently*. Ids are trimmed and
  * de-duplicated in the order given, then held to {@link ROWS_BY_IDS_MAX} (`dropped` counts the rest,
  * duplicates included); every id kept comes back in order with what became of it, never silently
- * left out. A row is one indexed read; only an id with no row reads its body (to follow a merge, at
- * most eight hops, as every body read does).
+ * left out. A row is one indexed read; only an id with no row reads its body (to follow a merge from
+ * its pointer, hop-capped as every body read is).
  */
 export const rowsByIds = query({
   args: { ids: v.array(v.string()), now: v.optional(v.number()) },
@@ -446,7 +448,9 @@ export const rowsByIds = query({
         entries.push({ requested, status: 'unlisted', row: null });
         continue;
       }
-      const survivor = await resolveSurvivor(ctx, id);
+      // Walked on from the pointer already in hand: the body, with its outline, is read once.
+      const survivor =
+        body.mergedIntoId === undefined ? null : await resolveSurvivor(ctx, body.mergedIntoId);
       const row = survivor === null ? null : await rowOf(survivor._id);
       entries.push(
         row === null
@@ -620,10 +624,11 @@ export type PreviewAsk =
       note: string | null;
       createdAt: number;
       /**
-       * How many distinct people have this same question open on the body — this ask and its twins
-       * (the same kind and, for a named ask, the same name key), counted to {@link ASKERS_CAP}
-       * (`capped` past it). Added in B01-3c; always present in the read, optional in the type so the
-       * pages' fixtures written before it still type.
+       * How many distinct people have this same question open on the body — this ask and the open
+       * asks one decision on it closes (`openSiblings`, the inbox's rule: the same kind; for a bay
+       * the same name key, for a landmark the same place), counted to {@link ASKERS_CAP} (`capped`
+       * past it). Added in B01-3c; always present in the read, optional in the type so the pages'
+       * fixtures written before it still type.
        */
       askers?: { count: number; capped: boolean };
     }
@@ -729,8 +734,8 @@ export const preview = query({
  * cap never drops an ask the newest-first order says belongs on the list.
  */
 async function previewAsks(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>): Promise<PreviewAsk[]> {
-  // A request carries its name key until its askers are counted, then sheds it.
-  const out: (PreviewAsk & { nameKey?: string })[] = [];
+  // A request carries its row until its askers are counted, then sheds it.
+  const out: (PreviewAsk & { source?: Doc<'waterBodyRequests'> })[] = [];
   for (const kind of REQUEST_KINDS) {
     const requests = await ctx.db
       .query('waterBodyRequests')
@@ -748,7 +753,7 @@ async function previewAsks(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>): Promi
         note: r.note ?? null,
         createdAt: r.createdAt,
         askers: { count: 1, capped: false },
-        ...(r.nameKey !== undefined ? { nameKey: r.nameKey } : {}),
+        source: r,
       });
     }
   }
@@ -786,46 +791,80 @@ async function previewAsks(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>): Promi
     });
   }
   const shown = out.sort((a, b) => b.createdAt - a.createdAt).slice(0, PREVIEW_ASK_CAP);
-  // The askers of each shown request, one bounded read per distinct question (at most 20).
+  // The askers of each shown request, one bounded read per distinct question (at most 20). A
+  // landmark's question is its place, which no key names: the lake's open landmark asks are read
+  // once and each landmark ask counted from them.
   const askers = new Map<string, { count: number; capped: boolean }>();
+  let landmarkAsks: { rows: Doc<'waterBodyRequests'>[]; capped: boolean } | null = null;
   for (const ask of shown) {
-    if (ask.kind !== 'request') continue;
-    const key = `${ask.requestKind}\u0001${ask.nameKey ?? ''}`;
+    if (ask.kind !== 'request' || ask.source === undefined) continue;
+    const r = ask.source;
+    const key =
+      r.kind === 'name_landmark'
+        ? r._id
+        : `${r.kind}\u0001${r.kind === 'name_bay' ? requestKeyOf(r) : ''}`;
     let counted = askers.get(key);
     if (counted === undefined) {
-      counted = await askersOf(ctx, waterBodyId, ask.requestKind, ask.nameKey);
+      if (r.kind === 'name_landmark') {
+        landmarkAsks ??= await openLandmarkAsks(ctx, waterBodyId);
+        counted = landmarkAskersOf(r, landmarkAsks);
+      } else {
+        counted = await askersOf(ctx, r);
+      }
       askers.set(key, counted);
     }
     ask.askers = counted;
   }
-  return shown.map(({ nameKey: _key, ...ask }) => ask as PreviewAsk);
+  return shown.map(({ source: _row, ...ask }) => ask as PreviewAsk);
 }
 
-/** The distinct people with one question open on a body, counted to {@link ASKERS_CAP}. */
+/** Distinct people, counted to {@link ASKERS_CAP} — `capped` past it, or when the read stopped short. */
+function peopleCount(
+  requesterIds: readonly Id<'profiles'>[],
+  readCapped: boolean,
+): { count: number; capped: boolean } {
+  const people = new Set(requesterIds).size;
+  return { count: Math.min(people, ASKERS_CAP), capped: readCapped || people > ASKERS_CAP };
+}
+
+/**
+ * The distinct people with one question open on a body — the ask and the open asks a decision on it
+ * closes (`openSiblings`, the inbox's and the decision's one rule), counted to {@link ASKERS_CAP}.
+ * Never for a landmark ask: `openSiblings` pages for one, and a query may page only once.
+ */
 async function askersOf(
   ctx: QueryCtx,
-  waterBodyId: Id<'waterBodies'>,
-  kind: Doc<'waterBodyRequests'>['kind'],
-  nameKey: string | undefined,
+  request: Doc<'waterBodyRequests'>,
 ): Promise<{ count: number; capped: boolean }> {
-  const rows =
-    nameKey === undefined
-      ? await ctx.db
-          .query('waterBodyRequests')
-          .withIndex('by_water_body', (q) =>
-            q.eq('waterBodyId', waterBodyId).eq('kind', kind).eq('status', 'open'),
-          )
-          .take(ASKERS_CAP + 1)
-      : await ctx.db
-          .query('waterBodyRequests')
-          .withIndex('by_water_body_name', (q) =>
-            q
-              .eq('waterBodyId', waterBodyId)
-              .eq('kind', kind)
-              .eq('status', 'open')
-              .eq('nameKey', nameKey),
-          )
-          .take(ASKERS_CAP + 1);
-  const people = new Set(rows.slice(0, ASKERS_CAP).map((r) => r.requesterId));
-  return { count: people.size, capped: rows.length > ASKERS_CAP };
+  const siblings = await openSiblings(ctx, request, ASKERS_CAP);
+  return peopleCount(
+    [request.requesterId, ...siblings.rows.map((r) => r.requesterId)],
+    siblings.capped,
+  );
+}
+
+/** A lake's open landmark asks, read once for every landmark ask the preview shows. */
+async function openLandmarkAsks(
+  ctx: QueryCtx,
+  waterBodyId: Id<'waterBodies'>,
+): Promise<{ rows: Doc<'waterBodyRequests'>[]; capped: boolean }> {
+  const rows = await ctx.db
+    .query('waterBodyRequests')
+    .withIndex('by_water_body', (q) =>
+      q.eq('waterBodyId', waterBodyId).eq('kind', 'name_landmark').eq('status', 'open'),
+    )
+    .take(QUEUE_CAP + 1);
+  return { rows: rows.slice(0, QUEUE_CAP), capped: rows.length > QUEUE_CAP };
+}
+
+/** A landmark ask's askers: the open asks for the same place (`openSiblings`' rule for a landmark). */
+function landmarkAskersOf(
+  request: Doc<'waterBodyRequests'>,
+  lake: { rows: Doc<'waterBodyRequests'>[]; capped: boolean },
+): { count: number; capped: boolean } {
+  const asked = landmarkAskOf(request);
+  const same = lake.rows.filter(
+    (r) => r._id !== request._id && landmarkAsksAreSamePlace(asked, landmarkAskOf(r)),
+  );
+  return peopleCount([request.requesterId, ...same.map((r) => r.requesterId)], lake.capped);
 }

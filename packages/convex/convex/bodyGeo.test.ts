@@ -452,6 +452,14 @@ describe('no read does geometry that grows with an outline', () => {
       ],
       ['listSummary', () => as.query(api.bodies.listSummary, { lane: 'all' })],
       ['history', () => as.query(api.bodyConsole.history, { waterBodyId: giant })],
+      // The reads B01-3c added.
+      ['townLines', () => as.query(api.bodyConsole.townLines, { waterBodyId: giant })],
+      ['removedFacts', () => as.query(api.bodyConsole.removedFacts, { waterBodyId: giant })],
+      ['rowsByIds', () => as.query(api.bodies.rowsByIds, { ids: [giant] })],
+      [
+        'searchOtherStandings',
+        () => as.query(api.bodies.searchOtherStandings, { lane: 'active', q: 'largest' }),
+      ],
     ];
     // The bound: under a query's one second, in this simulated backend — the touching test alone
     // took 1.4 s here before it moved to the write, and every read now takes ~20–35 ms locally. Each

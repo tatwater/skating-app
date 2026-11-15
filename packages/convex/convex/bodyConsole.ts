@@ -560,8 +560,9 @@ export const REMOVED_REPORT_CAP = 200;
  * - `name`, `bodyClass`, `states`, `areaSqM` — from what is stored on the body;
  * - `standing` — the library's standing (`rejected`, `removed`, or any other, for a body that is
  *   served normally: this read then still answers, and `left` is `null`);
- * - `left` — when it left, why, and who decided, from its newest `remove` or `reject_waterbody`
- *   audit row (`removalReason` from a removal's record; `reason` is the row's text);
+ * - `left` — when it left, why, and who decided, from the audit row its standing names: the newest
+ *   `remove` for a removed body, the newest `reject_waterbody` for a rejected one (`removalReason`
+ *   from a removal's record; `reason` is the row's text);
  * - `towns` — with their states, when computed (`null` until then);
  * - `reports` — visible reports, newest first, counted to {@link REMOVED_REPORT_CAP} (`capped`).
  *
@@ -574,7 +575,10 @@ export const removedFacts = query({
     const body = await resolveSurvivor(ctx, requested);
     if (!body) return null;
     const standing = libraryStandingOf(body);
-    const left = await leftRow(ctx, body._id);
+    const left =
+      standing === 'removed' || standing === 'rejected'
+        ? await leftRow(ctx, body._id, standing)
+        : null;
     const reports = await ctx.db
       .query('reports')
       .withIndex('by_water_body_skate_end_time', (q) => q.eq('waterBodyId', body._id))
@@ -589,7 +593,7 @@ export const removedFacts = query({
       areaSqM: body.surfaceAreaSqM ?? null,
       standing,
       left:
-        left === null || (standing !== 'rejected' && standing !== 'removed')
+        left === null
           ? null
           : {
               action: left.action as 'remove' | 'reject_waterbody',
@@ -611,23 +615,25 @@ export const removedFacts = query({
   },
 });
 
-/** A body's newest removal or rejection audit row — two indexed reads. */
+/**
+ * The audit row of the leaving the body's standing says — its newest `remove` for a removed body, its
+ * newest `reject_waterbody` for a rejected one — one indexed read. Chosen by the standing, never the
+ * newer of the two: a rejected body removed later still reads as rejected (`standingOf` ranks the
+ * rejection first), and its page must not pair that with the removal's row.
+ */
 async function leftRow(
   ctx: QueryCtx,
   waterBodyId: Id<'waterBodies'>,
+  standing: 'removed' | 'rejected',
 ): Promise<Doc<'moderationActions'> | null> {
-  const rows: Doc<'moderationActions'>[] = [];
-  for (const action of ['remove', 'reject_waterbody'] as const) {
-    const row = await ctx.db
-      .query('moderationActions')
-      .withIndex('by_target_action', (q) =>
-        q.eq('targetType', 'waterbody').eq('targetId', waterBodyId).eq('action', action),
-      )
-      .order('desc')
-      .first();
-    if (row) rows.push(row);
-  }
-  return rows.sort((a, b) => b.createdAt - a.createdAt)[0] ?? null;
+  const action = standing === 'removed' ? 'remove' : 'reject_waterbody';
+  return ctx.db
+    .query('moderationActions')
+    .withIndex('by_target_action', (q) =>
+      q.eq('targetType', 'waterbody').eq('targetId', waterBodyId).eq('action', action),
+    )
+    .order('desc')
+    .first();
 }
 
 // ── Town lines ───────────────────────────────────────────────────────────────────────────────
