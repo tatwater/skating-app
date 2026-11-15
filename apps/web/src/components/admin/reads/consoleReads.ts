@@ -119,11 +119,24 @@ const PAUSE_LIMIT_MS = 1_000;
 export const PENDING_HOLD_MS = 3_000;
 
 const paused = new Set<string>();
+/** Reads let go of that some holder has rendered without: its own effect will take them back. */
+const dropped = new Set<string>();
+/** How many mounted holders hold each read. */
+const holders = new Map<string, number>();
 /** Reads tried again whose fresh answer hasn't landed: whether they've been back on their way. */
 const retrying = new Map<string, { sawLoading: boolean; until: number }>();
 /** The failures that have gone to Sentry, by read: cleared when the read answers again. */
 const reported = new Set<string>();
 let version = 0;
+/** The registry's own timers (a pause's limit, a wait's end): forgotten with the registry. */
+const timers = new Set<ReturnType<typeof setTimeout>>();
+function later(run: () => void, ms: number): void {
+  const t = setTimeout(() => {
+    timers.delete(t);
+    run();
+  }, ms);
+  timers.add(t);
+}
 const listeners = new Set<() => void>();
 
 function emit(): void {
@@ -152,23 +165,72 @@ export function retryReads(ids: Iterable<string>): void {
     paused.add(id);
     retrying.set(id, { sawLoading: false, until: now + PAUSE_LIMIT_MS + PENDING_HOLD_MS });
     any = true;
-    setTimeout(() => resume([id]), PAUSE_LIMIT_MS);
+    dropped.delete(id);
+    later(() => limit(id), PAUSE_LIMIT_MS);
   }
   if (!any) return;
   emit();
   // A failure still held when the wait runs out is the fresh answer: draw it.
-  setTimeout(emit, PAUSE_LIMIT_MS + PENDING_HOLD_MS + 1);
+  later(emit, PAUSE_LIMIT_MS + PENDING_HOLD_MS + 1);
+}
+
+/**
+ * The pause's limit: let go of a read no mounted holder is there to take back (its holder unmounted
+ * mid-retry). A holder still mounted that hasn't rendered its drop yet (a slow render) keeps the
+ * pause — lifting it unseen would mean no holder ever dropped the read, and the server would never
+ * run it again — and the limit waits again.
+ */
+function limit(id: string): void {
+  if (!paused.has(id)) return;
+  if (!dropped.has(id) && (holders.get(id) ?? 0) > 0) {
+    later(() => limit(id), PAUSE_LIMIT_MS);
+    return;
+  }
+  resume([id]);
 }
 
 function resume(ids: Iterable<string>): void {
+  const now = Date.now();
   let any = false;
-  for (const id of ids) if (paused.delete(id)) any = true;
+  let held = false;
+  for (const id of ids) {
+    if (!paused.delete(id)) continue;
+    any = true;
+    dropped.delete(id);
+    // A pause that outlasted its limit (a slow render): the hold on the client's old failure runs
+    // from the read taken back, never from Try again — else that failure would read as fresh.
+    const wait = retrying.get(id);
+    if (wait !== undefined && wait.until < now + PENDING_HOLD_MS) {
+      wait.until = now + PENDING_HOLD_MS;
+      held = true;
+    }
+  }
+  // A failure still held when the longer wait runs out is the fresh answer: draw it.
+  if (held) later(emit, PENDING_HOLD_MS + 1);
   if (any) emit();
+}
+
+/** Count a mounted holder of each read in, so the pause's limit never lets go of one unseen. */
+function hold(ids: readonly string[]): void {
+  for (const id of ids) holders.set(id, (holders.get(id) ?? 0) + 1);
+}
+
+/** Count a holder of each read out, when it unmounts or stops holding it. */
+function release(ids: readonly string[]): void {
+  for (const id of ids) {
+    const n = (holders.get(id) ?? 1) - 1;
+    if (n <= 0) holders.delete(id);
+    else holders.set(id, n);
+  }
 }
 
 /** Forget every pause, wait and report (tests start clean). */
 export function resetConsoleReads(): void {
+  // A retry's timers belong to the registry it was made in: one test's never lands in the next.
+  for (const t of timers) clearTimeout(t);
+  timers.clear();
   paused.clear();
+  dropped.clear();
   retrying.clear();
   reported.clear();
 }
@@ -282,9 +344,18 @@ export function useConsoleReadSet<S extends ReadSpecs>(
   // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on which reads are let go, by value.
   useEffect(() => {
     if (letGo.length === 0) return;
+    for (const id of letGo) dropped.add(id);
     const timer = setTimeout(() => resume(letGo), 0);
     return () => clearTimeout(timer);
   }, [letGoKey]);
+
+  // Which reads this holder holds while mounted: the pause's limit never lets go of one unseen.
+  const heldKey = [...ids.values()].join('\n');
+  useEffect(() => {
+    const held = heldKey === '' ? [] : heldKey.split('\n');
+    hold(held);
+    return () => release(held);
+  }, [heldKey]);
 
   // The wait's bookkeeping, after the commit: a read back on its way, a fresh answer landed.
   const bookKey = JSON.stringify([loading, settled]);
@@ -342,9 +413,15 @@ export function useExternalRead(id: string): { live: boolean; retry: () => void 
   const isPaused = paused.has(id);
   useEffect(() => {
     if (!isPaused) return;
+    dropped.add(id);
     const timer = setTimeout(() => resume([id]), 0);
     return () => clearTimeout(timer);
   }, [isPaused, id]);
+  // Held while mounted, as a Convex read's holder is: a slow render still sees `live` go false.
+  useEffect(() => {
+    hold([id]);
+    return () => release([id]);
+  }, [id]);
   const retry = useCallback(() => {
     retryReads([id]);
     // An external reader's fresh answer is its own to say: no pending wait is held for it.

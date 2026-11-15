@@ -272,6 +272,11 @@ export function previewFrom({
     bodyClass: body.type,
     states: body.states ?? [],
     town: ready?.town ?? null,
+    ...(ready !== null &&
+      ready.town === null &&
+      ready.townsComputedAt === null && {
+        townsNotComputed: true,
+      }),
     moreTowns: ready?.moreTowns ?? [],
     centroid: body.centroid,
     outline: {

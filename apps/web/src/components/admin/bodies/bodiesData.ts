@@ -118,6 +118,8 @@ export interface BodyPreviewData {
   states: readonly string[];
   /** The town it's in ("Enfield"), when a read names one. */
   town: string | null;
+  /** The body's towns aren't computed yet (`townsComputedAt` unset): not the same as no town. */
+  townsNotComputed?: boolean;
   /** Other towns it reaches. */
   moreTowns: readonly string[];
   centroid: { lat: number; lng: number };

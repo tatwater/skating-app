@@ -1,3 +1,4 @@
+import type { LandmarkKind } from '@skating/core';
 import type { ComponentProps, ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
@@ -27,6 +28,11 @@ type MarkSvgProps = Omit<ComponentProps<'svg'>, 'children' | 'viewBox'>;
 interface MarkState {
   /** Recede behind a mark that is chosen — never below half, so it still reads as one (D3). */
   dim?: boolean;
+  /**
+   * Step back while another mark is hovered (Review 13): `opacity-fade`. A hazard's face never
+   * goes below half for it (D3) — it fades as far as `dim` and no further.
+   */
+  fade?: boolean;
   /** The mark being pointed at: corner brackets around it. */
   highlight?: boolean;
   /** The key's glyph: the face alone at key size — no halo, no state. */
@@ -39,6 +45,9 @@ function Mark({
   kind,
   face,
   dim = false,
+  fade = false,
+  floor = false,
+  halo = true,
   highlight = false,
   glyph = false,
   className,
@@ -50,6 +59,10 @@ function Mark({
     kind: string;
     /** Half the colored square's side. */
     face: number;
+    /** Never below half, even for a hover's fade (a hazard, D3). */
+    floor?: boolean;
+    /** The ground halo under the face; a mark drawn as an outline goes without. */
+    halo?: boolean;
     children: ReactNode;
   }) {
   if (glyph) {
@@ -74,20 +87,28 @@ function Mark({
       data-slot={slot}
       data-kind={kind}
       data-dim={dim ? '' : undefined}
+      data-fade={fade ? '' : undefined}
       data-highlight={highlight ? '' : undefined}
       width={MARK_BOX}
       height={MARK_BOX}
       viewBox={`${-H} ${-H} ${MARK_BOX} ${MARK_BOX}`}
-      className={cn('block overflow-visible', dim && 'opacity-55', className)}
+      className={cn(
+        'block overflow-visible transition-opacity duration-(--duration-fast) ease-standard',
+        (dim || (fade && floor)) && 'opacity-55',
+        fade && !floor && !dim && 'opacity-(--opacity-fade)',
+        className,
+      )}
       {...props}
     >
-      <rect
-        x={-face - 2}
-        y={-face - 2}
-        width={2 * face + 4}
-        height={2 * face + 4}
-        className="fill-(--map-ground)"
-      />
+      {halo && (
+        <rect
+          x={-face - 2}
+          y={-face - 2}
+          width={2 * face + 4}
+          height={2 * face + 4}
+          className="fill-(--map-ground)"
+        />
+      )}
       {children}
       {highlight && (
         <path
@@ -167,6 +188,7 @@ function HazardMark({
       slot="hazard-mark"
       kind="hazard"
       face={8}
+      floor
       data-tone={tone}
       highlight={selected || highlight}
       {...props}
@@ -181,6 +203,195 @@ function HazardMark({
   );
 }
 
+// ── Places ───────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A named place on a body (a landmark of each kind), a weather sample point, or a skater's
+ * proposal, in the same frame as the marks above: the boards' `v4` plates (map.js `SYM.plates`),
+ * grown to a put-in's 14 px face so a landmark sits beside a put-in at one weight. Color is
+ * rationed as the other marks ration it: gray for land and things on it, the dim ice for water you
+ * can name (a river, a bay, a narrows), amber for a beach as the boards draw it. Nothing here is
+ * red: a landmark is never a hazard.
+ *
+ * - **One word per kind** (Review 13 #3): a settlement is a *Town*, a waterway a *River*, an
+ *   establishment a *Camp* — {@link PLACE_KEY_LABELS}, which the map key reads.
+ * - **A proposal is drawn as proposed**: a dashed frame and a question mark where a landmark has a
+ *   filled plate, since a skater's proposal has no kind until a moderator gives it one.
+ * - **A sample point** is an outline with a dot, and goes without the halo.
+ */
+type PlaceMarkKind = LandmarkKind | 'sample' | 'proposal';
+
+/** The plates' half side (11 px squares), scaled up to the kit's face. */
+const PLATE = 5.5;
+/** A put-in's face, half side. */
+const PLACE_FACE = 7;
+
+function Plate({ className }: { className: string }) {
+  return <rect x={-PLATE} y={-PLATE} width={2 * PLATE} height={2 * PLATE} className={className} />;
+}
+
+/** Each kind's face, drawn in the plates' 11 px box centered on 0. */
+const PLACE_FACES: Record<PlaceMarkKind, () => ReactNode> = {
+  island: () => (
+    <>
+      <Plate className="fill-line2" />
+      <circle
+        r={2.6}
+        fill="none"
+        strokeWidth={1}
+        strokeDasharray="1.2 1.2"
+        className="stroke-fg1"
+      />
+    </>
+  ),
+  beach: () => (
+    <>
+      <Plate className="fill-warn" />
+      <path d="M-3 2 h6 M-2 -1 h4" strokeWidth={1.3} className="stroke-bg" />
+    </>
+  ),
+  bridge: () => (
+    <>
+      <Plate className="fill-fg1" />
+      <path d="M-3.5 -1.5 h7 M-3.5 1.5 h7" strokeWidth={1.3} className="stroke-bg" />
+    </>
+  ),
+  dam: () => (
+    <>
+      <Plate className="fill-fg1" />
+      <rect x={-3.5} y={-1.5} width={7} height={3} className="fill-bg" />
+    </>
+  ),
+  waterway: () => (
+    <>
+      <Plate className="fill-acc-dim" />
+      <path
+        d="M-3.5 0 q1.75 -2.5 3.5 0 t3.5 0"
+        fill="none"
+        strokeWidth={1.3}
+        className="stroke-bg"
+      />
+    </>
+  ),
+  settlement: () => (
+    <>
+      <Plate className="fill-fg3" />
+      <rect x={-2} y={-2} width={4} height={4} className="fill-bg" />
+    </>
+  ),
+  establishment: () => (
+    <>
+      <Plate className="fill-fg3" />
+      <path d="M0 -3 l3 5 h-6 z" className="fill-bg" />
+    </>
+  ),
+  point: () => (
+    <>
+      <Plate className="fill-fg2" />
+      <path d="M-3 2 l3 -4.5 l3 4.5" fill="none" strokeWidth={1.3} className="stroke-bg" />
+    </>
+  ),
+  bay: () => (
+    <>
+      <Plate className="fill-acc-dim" />
+      <path d="M-3.5 -2 q3.5 6 7 0" fill="none" strokeWidth={1.3} className="stroke-bg" />
+    </>
+  ),
+  narrows: () => (
+    <>
+      <Plate className="fill-acc-dim" />
+      <path
+        d="M-2.5 -3.5 q2 3.5 0 7 M2.5 -3.5 q-2 3.5 0 7"
+        fill="none"
+        strokeWidth={1.2}
+        className="stroke-bg"
+      />
+    </>
+  ),
+  marina: () => (
+    <>
+      <Plate className="fill-fg2" />
+      <path d="M0 -3.5 v6 M-3 0.5 q3 4 6 0" fill="none" strokeWidth={1.2} className="stroke-bg" />
+    </>
+  ),
+  lighthouse: () => (
+    <>
+      <Plate className="fill-fg2" />
+      <path d="M-1.5 3.5 l0.7 -6 h1.6 l0.7 6 z" className="fill-bg" />
+    </>
+  ),
+  other: () => (
+    <>
+      <Plate className="fill-fg3" />
+      <circle r={1.8} className="fill-bg" />
+    </>
+  ),
+  sample: () => (
+    <>
+      <rect
+        x={-3.5}
+        y={-3.5}
+        width={7}
+        height={7}
+        fill="none"
+        strokeWidth={1.2}
+        className="stroke-fg2"
+      />
+      <circle r={1.2} className="fill-fg2" />
+    </>
+  ),
+  proposal: () => (
+    <>
+      <rect
+        x={-5}
+        y={-5}
+        width={10}
+        height={10}
+        strokeDasharray="1.6 1.2"
+        className="fill-map-plate stroke-fg"
+      />
+      {/* The question mark, drawn — a glyph would bring its text into the key's words. */}
+      <path
+        data-slot="proposal-query"
+        d="M-1.6 -1.3 q0 -1.9 1.6 -1.9 t1.6 1.7 q0 1.1 -1.6 1.5 v0.9"
+        fill="none"
+        strokeWidth={1.2}
+        className="stroke-fg"
+      />
+      <circle cy={2.6} r={0.65} className="fill-fg" />
+    </>
+  ),
+};
+
+/** The map key's word for each kind — one word, a noun for what the mark *is*. */
+const PLACE_KEY_LABELS: Record<PlaceMarkKind, string> = {
+  island: 'Island',
+  point: 'Point',
+  beach: 'Beach',
+  bay: 'Bay',
+  narrows: 'Narrows',
+  waterway: 'River',
+  bridge: 'Bridge',
+  marina: 'Marina',
+  lighthouse: 'Lighthouse',
+  dam: 'Dam',
+  settlement: 'Town',
+  establishment: 'Camp',
+  other: 'Place',
+  sample: 'Sample point',
+  proposal: 'Proposal',
+};
+
+type PlaceMarkProps = MarkSvgProps & MarkState & { kind: PlaceMarkKind };
+
+function PlaceMark({ kind, ...props }: PlaceMarkProps) {
+  return (
+    <Mark slot="place-mark" kind={kind} face={PLACE_FACE} halo={kind !== 'sample'} {...props}>
+      <g transform={`scale(${PLACE_FACE / PLATE})`}>{PLACE_FACES[kind]()}</g>
+    </Mark>
+  );
+}
+
 export {
   HazardMark,
   type HazardTone,
@@ -189,5 +400,9 @@ export {
   MARK_BOX,
   type MarkState,
   PhotoMark,
+  PLACE_KEY_LABELS,
+  PlaceMark,
+  type PlaceMarkKind,
+  type PlaceMarkProps,
   PutInMark,
 };

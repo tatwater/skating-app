@@ -26,6 +26,10 @@ const frame = (over: Partial<IndexedFrame> = {}): IndexedFrame => ({
 function fakeMap() {
   const sources = new Map<string, { type: string; url: string; tileSize?: number }>();
   const layers = new Map<string, unknown>();
+  /** The `beforeId` each layer was added with. */
+  const befores = new Map<string, string | undefined>();
+  /** The `beforeId` each layer was last moved to (a reveal raises its lane there). */
+  const moves = new Map<string, string | undefined>();
   const handlers = new Map<string, ((event: unknown) => void)[]>();
   /** Paint per layer, because two lanes are live at once and the whole design is which is visible. */
   const paint = new Map<string, Record<string, unknown>>();
@@ -37,6 +41,8 @@ function fakeMap() {
   return {
     sources,
     layers,
+    befores,
+    moves,
     paint,
     ops,
     loadedSources,
@@ -52,8 +58,9 @@ function fakeMap() {
         sources.set(id, spec);
         ops.push(`+source:${id}`);
       },
-      addLayer: (spec: { id: string }) => {
+      addLayer: (spec: { id: string }, before?: string) => {
         layers.set(spec.id, spec);
+        befores.set(spec.id, before);
         ops.push(`+layer:${spec.id}`);
       },
       removeLayer: (id: string) => {
@@ -68,7 +75,8 @@ function fakeMap() {
         paint.set(layer, { ...(paint.get(layer) ?? {}), [key]: value });
         ops.push(`paint:${layer}:${key}=${String(value)}`);
       },
-      moveLayer: (id: string) => {
+      moveLayer: (id: string, before?: string) => {
+        moves.set(id, before);
         ops.push(`move:${id}`);
       },
       on: (type: string, fn: (event: unknown) => void) => {
@@ -133,6 +141,54 @@ describe('useFreezeUpFrame — mounting a pass', () => {
     const harness = fakeMap();
     mount(harness, frame());
     expect(harness.sources.get(LANE0.sourceId)?.tileSize).toBe(512);
+  });
+
+  it('places a pass where the host’s layer order says, and under the roads without one', () => {
+    const skater = fakeMap();
+    mount(skater, frame());
+    expect(skater.befores.get(LANE0.layerId)).toBe('roads_minor');
+    const consoleMap = fakeMap();
+    renderHook(() =>
+      useFreezeUpFrame({
+        mapRef: { current: consoleMap.map },
+        loaded: true,
+        frame: frame(),
+        season: 'winter-2025-26',
+        anchor: () => 'body-console-field-dots',
+      }),
+    );
+    expect(consoleMap.befores.get(LANE0.layerId)).toBe('body-console-field-dots');
+  });
+
+  it('raises a revealed pass to the host’s anchor too, and to the roads when the host has none yet', () => {
+    // The reveal moves its lane on every show — the first frame's included, once its tiles report —
+    // so an anchor read only at add would put each revealed pass back under the roads.
+    const consoleMap = fakeMap();
+    consoleMap.loadedSources.add(LANE0.sourceId);
+    renderHook(() =>
+      useFreezeUpFrame({
+        mapRef: { current: consoleMap.map },
+        loaded: true,
+        frame: frame(),
+        season: 'winter-2025-26',
+        anchor: () => 'body-console-field-dots',
+      }),
+    );
+    expect(consoleMap.moves.get(LANE0.layerId)).toBe('body-console-field-dots');
+    // A host whose own layers aren't in yet says nothing: the reveal's own anchor stands.
+    const early = fakeMap();
+    early.loadedSources.add(LANE0.sourceId);
+    renderHook(() =>
+      useFreezeUpFrame({
+        mapRef: { current: early.map },
+        loaded: true,
+        frame: frame(),
+        season: 'winter-2025-26',
+        anchor: () => undefined,
+      }),
+    );
+    expect(early.befores.get(LANE0.layerId)).toBe('roads_minor');
+    expect(early.moves.get(LANE0.layerId)).toBe('roads_minor');
   });
 
   it('does nothing at all when there is no frame to show', () => {

@@ -354,3 +354,113 @@ describe('a loadable', () => {
     expect(isFailed(null)).toBe(false);
   });
 });
+
+describe('the registry’s reset', () => {
+  it('cancels a retry’s own timers, so one test’s wait never lands in the next', () => {
+    set(api.waterBodies.get, new Error('down'));
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      let renders = 0;
+      const { result } = renderHook(() => {
+        renders++;
+        return useConsoleReads({ body: read(api.waterBodies.get, { waterBodyId: ID }) });
+      });
+      act(() => (result.current.body as ReadFailure).retry());
+      resetConsoleReads();
+      const before = renders;
+      act(() => {
+        vi.advanceTimersByTime(PENDING_HOLD_MS * 3);
+      });
+      // Neither the pause's limit nor the wait's end outlived the registry: nothing re-rendered.
+      expect(renders).toBe(before);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('a retry on a slow render', () => {
+  it('holds the pause until a mounted holder has dropped the read, however late its render', async () => {
+    resetConsoleReads();
+    mocks.calls.length = 0;
+    mocks.results.set(getFunctionName(api.waterBodies.get), new Error('down'));
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      const { result } = renderHook(() =>
+        useConsoleReads({ body: read(api.waterBodies.get, { waterBodyId: ID }) }),
+      );
+      const failure = result.current.body as ReadFailure;
+      const before = mocks.calls.length;
+      // Try again, and the holder's render of the drop is slower than the pause's own limit (a
+      // loaded page, a slow device): the limit's timer runs before React gets to the holder.
+      failure.retry();
+      vi.advanceTimersByTime(1_500);
+      // React gets to the holder: it renders the drop, then takes the read back a task later.
+      await act(async () => {
+        vi.advanceTimersByTime(0);
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(0);
+      });
+      // The holder still dropped the read for a render and took it back: the server ran it again.
+      const after = mocks.calls.slice(before);
+      expect(after.some((names) => !names.includes('body'))).toBe(true);
+      expect(after.at(-1)).toContain('body');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('holds the old failure as pending from the read taken back when the pause outlasted its wait', async () => {
+    mocks.results.set(getFunctionName(api.waterBodies.get), new Error('down'));
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      const { result } = renderHook(() =>
+        useConsoleReads({ body: read(api.waterBodies.get, { waterBodyId: ID }) }),
+      );
+      (result.current.body as ReadFailure).retry();
+      // The holder's render of the drop comes later than the whole pending hold would have run.
+      vi.advanceTimersByTime(PENDING_HOLD_MS + 2_000);
+      await act(async () => {
+        vi.advanceTimersByTime(0);
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(0);
+      });
+      // Taken back, the client hands back the failure it held: still *Trying again…*, not fresh.
+      expect(result.current.body).toMatchObject({ failed: true, pending: true });
+      act(() => {
+        vi.advanceTimersByTime(PENDING_HOLD_MS + 1);
+      });
+      expect(result.current.body).toMatchObject({ failed: true, pending: false });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('lets an external reader go for a commit however late its render', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      const seen: boolean[] = [];
+      const { result } = renderHook(() => {
+        const archive = useExternalRead('archive:slow');
+        seen.push(archive.live);
+        return archive;
+      });
+      result.current.retry();
+      // The pause's limit runs before React gets to the reader.
+      vi.advanceTimersByTime(1_500);
+      await act(async () => {
+        vi.advanceTimersByTime(0);
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(0);
+      });
+      // The reader saw itself let go of (so it asks again), and is live after.
+      expect(seen).toContain(false);
+      expect(result.current.live).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { usesOldShell } from '../shell/consoleNav';
+import { modeAt, usesOldShell } from '../shell/consoleNav';
 import { type ActionRow, CORPUS_TASKS, INBOX_LANES } from './overviewData';
 import type { OverviewTarget } from './overviewLinks';
 import { consolePathFor, feedTargetPath } from './overviewRoutes';
@@ -43,11 +43,15 @@ describe('Home’s links, until the new modes land', () => {
     { kind: 'body', id: 'k1/7' },
   ];
 
-  it.each(targets)('sends %o to an old page still standing', (target) => {
-    const path = consolePathFor(target);
-    expect(path).not.toBeNull();
-    expect(usesOldShell(path as string)).toBe(true);
-  });
+  it.each(targets)(
+    'sends %o to an old page still standing, or a mode that has landed',
+    (target) => {
+      const path = consolePathFor(target) as string;
+      expect(path).not.toBeNull();
+      if (target.kind === 'body') expect(modeAt(path)?.id).toBe('bodies');
+      else expect(usesOldShell(path)).toBe(true);
+    },
+  );
 
   it('sends the lanes to the pages that work them', () => {
     expect(consolePathFor({ kind: 'inbox', lane: 'safety' })).toBe('/admin/flags');
@@ -57,8 +61,8 @@ describe('Home’s links, until the new modes land', () => {
     expect(consolePathFor({ kind: 'corpus', task: 'duplicates' })).toBe('/admin/water/review');
   });
 
-  it('opens a most-reported body in the old body editor, the id escaped', () => {
-    expect(consolePathFor({ kind: 'body', id: 'k1/7' })).toBe('/admin/water/k1%2F7');
+  it('opens a most-reported body in its Body console, the id escaped', () => {
+    expect(consolePathFor({ kind: 'body', id: 'k1/7' })).toBe('/admin/body/k1%2F7');
   });
 
   it('has no page for the ledger yet', () => {
@@ -71,15 +75,19 @@ describe('the audit feed’s rows', () => {
     expect(allListed).toBe(true);
   });
 
-  it.each(TARGET_TYPES)('opens a %s on an old page still standing', (type) => {
-    const path = feedTargetPath({ type, id: 'k1/7', label: 'x' });
-    expect(path).not.toBeNull();
-    expect(usesOldShell(path as string)).toBe(true);
-  });
+  it.each(TARGET_TYPES)(
+    'opens a %s on an old page still standing, or a mode that has landed',
+    (type) => {
+      const path = feedTargetPath({ type, id: 'k1/7', label: 'x' }) as string;
+      expect(path).not.toBeNull();
+      if (type === 'waterbody') expect(modeAt(path)?.id).toBe('bodies');
+      else expect(usesOldShell(path)).toBe(true);
+    },
+  );
 
   it('opens a body or a person on its own page, the id escaped', () => {
     expect(feedTargetPath({ type: 'waterbody', id: 'k1/7', label: 'Lake' })).toBe(
-      '/admin/water/k1%2F7',
+      '/admin/body/k1%2F7',
     );
     expect(feedTargetPath({ type: 'user', id: 'u1', label: 'Rob' })).toBe('/admin/users/u1');
   });

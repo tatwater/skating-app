@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { KeysProvider } from '@/lib/keys';
+import { expectKeyboardOperable } from '@/test/keyboardAudit';
 import { BodiesTable, resetScrollMemory } from './BodiesTable';
 import { BodiesView, type BodiesViewProps } from './BodiesView';
 import { type BodiesListData, UNREAD_LIST } from './bodiesData';
@@ -91,6 +92,15 @@ describe('the page', () => {
     expect(chosen).toHaveTextContent('Mascoma Lake');
     expect(screen.getByRole('heading', { level: 2, name: 'Mascoma Lake' })).toBeInTheDocument();
     expect(screen.getByText('Reservoir · Enfield, NH ·')).toBeInTheDocument();
+  });
+
+  it('says in the preview’s kicker that the towns aren’t computed yet, never that there are none', () => {
+    render(
+      <Harness
+        preview={{ ...PREVIEW_MASCOMA, town: null, moreTowns: [], townsNotComputed: true }}
+      />,
+    );
+    expect(screen.getByText('Reservoir · NH · Towns not computed yet')).toBeInTheDocument();
   });
 
   it('picks a lane as a fresh list: no body, search, tab, filter or order carried over', async () => {
@@ -194,6 +204,41 @@ describe('the keyboard', () => {
     act(() => screen.getByRole('button', { name: 'All' }).focus());
     await userEvent.keyboard('f');
     expect(await screen.findByRole('dialog', { name: 'Filter' })).toBeInTheDocument();
+  });
+});
+
+describe('the keyboard reaches what a click does', () => {
+  it('the lanes, the tools, the rows and the preview all answer the keyboard', () => {
+    const { container } = render(
+      <Harness list={LIST_BIG} initial={queryOf({ size: '1000-up' })} />,
+    );
+    expect(expectKeyboardOperable(container).length).toBeGreaterThan(0);
+  });
+});
+
+describe('the cursor in view', () => {
+  it.each([
+    ['ArrowDown', ['ArrowDown']],
+    ['End', ['End']],
+    ['Home', ['End', 'Home']],
+    ['type-ahead', ['m']],
+  ])('%s scrolls the cursor’s row into view at its nearest edge, never smoothly', (_n, keys) => {
+    const scrolled: { id: string; options: unknown }[] = [];
+    const spy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(function (
+      this: Element,
+      options?: boolean | ScrollIntoViewOptions,
+    ) {
+      scrolled.push({ id: this.id, options });
+    });
+    try {
+      render(<Harness initial={queryOf({})} />);
+      grid().focus();
+      for (const key of keys) fireEvent.keyDown(grid(), { key });
+      expect(scrolled.at(-1)?.id).toBe(grid().getAttribute('aria-activedescendant'));
+      expect(scrolled.at(-1)?.options).toEqual({ block: 'nearest' });
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 
@@ -514,7 +559,7 @@ describe('the preview', () => {
     expect(screen.getByText('Couldn’t read the history')).toBeInTheDocument();
     rerender(<Harness preview="error" />);
     expect(screen.getByText('Couldn’t read this body')).toBeInTheDocument();
-    expect(screen.queryByText(/Open in the editor/)).toBeNull();
+    expect(screen.queryByText(/Open in Body/)).toBeNull();
   });
 
   it('counts every open ask, and says plainly when the list is only the newest of them', () => {

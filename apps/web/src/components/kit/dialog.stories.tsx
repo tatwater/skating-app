@@ -18,6 +18,7 @@ import { Kbd } from './kbd';
 import {
   computedColor,
   contrastBetween,
+  focusRing,
   JUNCTION_TOLERANCE_PX,
   resolvePx,
   sameColor,
@@ -124,7 +125,9 @@ export const Default: Story = {
     const trigger = within(canvasElement).getByRole('button', { name: 'Keys' });
     await userEvent.tab();
     await expect(trigger).toHaveFocus();
-    await expect(getComputedStyle(trigger).boxShadow).not.toBe('none');
+    // The ring fades in on the button's transition: retried until both its layers are whole. (Never
+    // `not.toBe('none')` — the outline face's inset ring is a box-shadow too, so that holds at rest.)
+    await waitFor(() => expect(getComputedStyle(trigger).boxShadow).toEqual(focusRing()));
     await userEvent.keyboard('{Enter}');
     const dialog = await waitFor(() => must(popup()));
     await expect(dialog).toHaveAttribute('role', 'dialog');

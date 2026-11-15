@@ -580,7 +580,7 @@ export const FourUp: Story = {
         <MapScaleBar metersPerPixel={9} />
         <MapZoom />
       </MapDock>
-      <MapHoverPlate at={{ x: 180, y: 250 }} title="Island · OSM">
+      <MapHoverPlate at={{ x: 180, y: 250 }} title="Island · OSM" caption="Named by OSM">
         Wood Island
       </MapHoverPlate>
     </MapPane>
@@ -598,6 +598,12 @@ export const FourUp: Story = {
       const plate = slot(q, 'map-hover-plate');
       await expect(getComputedStyle(plate).backgroundColor).toEqual(
         sameColor(computedColor(q, 'var(--map-plate)')),
+      );
+      // The caption is the plate's last line, a step quieter than the name.
+      const caption = slot(q, 'map-hover-plate-caption');
+      await expect(caption).toHaveTextContent('Named by OSM');
+      await expect(getComputedStyle(caption).color).toEqual(
+        sameColor(computedColor(q, 'var(--fg3)')),
       );
       const ice = computedColor(q, 'var(--acc)');
       await expect(getComputedStyle(slot(q, 'map-mode-bar')).borderTopColor).toEqual(

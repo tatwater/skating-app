@@ -1,6 +1,14 @@
+import { LANDMARK_KINDS } from '@skating/core';
 import { render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { HazardMark, LotMark, PhotoMark, PutInMark } from './map-marks';
+import {
+  HazardMark,
+  LotMark,
+  PhotoMark,
+  PLACE_KEY_LABELS,
+  PlaceMark,
+  PutInMark,
+} from './map-marks';
 
 const slot = (container: HTMLElement, name: string) =>
   container.querySelector(`[data-slot="${name}"]`) as HTMLElement | null;
@@ -65,5 +73,50 @@ describe('marks', () => {
     expect(container.querySelectorAll('rect')).toHaveLength(1);
     expect(svg).not.toHaveAttribute('data-dim');
     expect(slot(container, 'put-in-mark-brackets')).toBeNull();
+  });
+});
+
+describe('place marks', () => {
+  it('draws every landmark kind as a plate on the ground halo, at a put-in’s weight', () => {
+    for (const kind of LANDMARK_KINDS) {
+      const { container, unmount } = render(<PlaceMark kind={kind} />);
+      const svg = slot(container, 'place-mark');
+      expect(svg).toHaveAttribute('data-kind', kind);
+      expect(svg).toHaveAttribute('width', '34');
+      // The halo is the face (14) plus 2 on each side.
+      expect(svg?.querySelector('rect')).toHaveAttribute('width', '18');
+      unmount();
+    }
+  });
+
+  it('names every kind with one word — a noun, never a word about the ice', () => {
+    expect(PLACE_KEY_LABELS.settlement).toBe('Town');
+    expect(PLACE_KEY_LABELS.waterway).toBe('River');
+    expect(PLACE_KEY_LABELS.establishment).toBe('Camp');
+    for (const word of Object.values(PLACE_KEY_LABELS)) {
+      expect(word).not.toMatch(/safe|skat|good|open|clear/i);
+      expect(word.split(' ').length).toBeLessThanOrEqual(2);
+    }
+  });
+
+  it('draws a sample point without a halo, and a proposal dashed with a question mark', () => {
+    const { container, rerender } = render(<PlaceMark kind="sample" />);
+    expect(container.querySelector('rect')).toHaveAttribute('width', '7');
+    rerender(<PlaceMark kind="proposal" />);
+    const frame = container.querySelectorAll('rect')[1];
+    expect(frame).toHaveAttribute('stroke-dasharray', '1.6 1.2');
+    expect(container.querySelector('[data-slot="proposal-query"]')).not.toBeNull();
+    expect(container.textContent).toBe('');
+  });
+
+  it('fades for a hover elsewhere, but a hazard never goes below half for it', () => {
+    const { container, rerender } = render(<PlaceMark kind="island" fade />);
+    expect(slot(container, 'place-mark')?.getAttribute('class')).toContain(
+      'opacity-(--opacity-fade)',
+    );
+    rerender(<HazardMark fade />);
+    const hazard = slot(container, 'hazard-mark')?.getAttribute('class') ?? '';
+    expect(hazard).toContain('opacity-55');
+    expect(hazard).not.toContain('opacity-fade');
   });
 });
