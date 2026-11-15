@@ -684,3 +684,25 @@ export const townLines = query({
     };
   },
 });
+
+// ── Identity: what the Names tab shows beside the name ──────────────────────────────────────
+
+/**
+ * **A body's class claims and a moderator's identity facts** (B01-3d) — what the Names tab shows
+ * beside the name: each catalog's class claim (`null`, *not recorded*, for a body imported before the
+ * import stored them — no backfill can recover them), the moderator's class (`null` when none), and
+ * the moderator's own aliases. A merged-away id reads its survivor's.
+ */
+export const identity = query({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }) => {
+    await requireCapability(ctx, 'body.read');
+    const body = await bodyOrThrow(ctx, waterBodyId);
+    return {
+      bodyClass: body.type,
+      classClaims: body.classClaims ?? null,
+      moderatorClass: body.moderatorClass ?? null,
+      moderatorAliases: body.moderatorAliases ?? [],
+    };
+  },
+});

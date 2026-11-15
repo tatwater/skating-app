@@ -188,6 +188,15 @@ describe('setClass and the class claims', () => {
         { source: 'osm', value: 'lakePond' },
       ],
     });
+    expect(await mod.as.query(api.bodyConsole.identity, { waterBodyId: id })).toEqual({
+      bodyClass: 'lakePond',
+      classClaims: [
+        { source: 'nhd', value: 'reservoir' },
+        { source: 'osm', value: 'lakePond' },
+      ],
+      moderatorClass: 'lakePond',
+      moderatorAliases: [],
+    });
     // Clearing puts the catalogs' first claim back.
     await mod.as.mutation(api.waterBodies.setClass, { waterBodyId: id, bodyClass: null });
     const cleared = await get(t, id);
@@ -199,6 +208,10 @@ describe('setClass and the class claims', () => {
     const t = harness();
     const mod = await person(t);
     const id = await imported(t, 'way/1', { type: 'reservoir' });
+    // Imported before claims were stored: the tab reads *not recorded*.
+    expect(
+      (await mod.as.query(api.bodyConsole.identity, { waterBodyId: id })).classClaims,
+    ).toBeNull();
     await mod.as.mutation(api.waterBodies.setClass, { waterBodyId: id, bodyClass: 'lakePond' });
     await mod.as.mutation(api.undo.run, { actionId: (await lastAction(t, 'set_class'))._id });
     const undone = await get(t, id);
