@@ -115,7 +115,7 @@ describe('namesFromBody', () => {
     expect(already.classOptions).toHaveLength(1);
   });
 
-  it('takes the towns and the first county from the boundary read when it lands', () => {
+  it('takes the towns and every county from the boundary read when it lands', () => {
     const body = { name: 'Mascoma Lake', type: 'reservoir' as const, states: ['NH'] };
     const data = namesFromBody(body, {
       towns: ['Enfield', 'Lebanon'],
@@ -123,11 +123,14 @@ describe('namesFromBody', () => {
       states: ['NH'],
       computedAt: 1,
     });
-    expect(data.place.admin).toEqual({ towns: ['Enfield', 'Lebanon'], county: 'Grafton County' });
+    expect(data.place.admin).toEqual({
+      towns: ['Enfield', 'Lebanon'],
+      counties: ['Grafton County'],
+    });
     expect(
       namesFromBody(body, { towns: ['Enfield'], counties: [], states: [], computedAt: 1 }).place
         .admin,
-    ).toEqual({ towns: ['Enfield'], county: null });
+    ).toEqual({ towns: ['Enfield'], counties: [] });
   });
 
   it('says the towns aren’t computed yet until the geometry is — never that it is in none', () => {
@@ -135,7 +138,7 @@ describe('namesFromBody', () => {
     expect(namesFromBody(body, null).place.admin).toBe('not-computed');
     expect(
       namesFromBody(body, { towns: [], counties: [], states: [], computedAt: 1 }).place.admin,
-    ).toEqual({ towns: [], county: null });
+    ).toEqual({ towns: [], counties: [] });
   });
 
   it('keeps the boundary read’s state: loading stays loading, a failure is named', () => {

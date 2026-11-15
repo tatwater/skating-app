@@ -202,6 +202,24 @@ export function coverTiles(box: Box): { tiles: Box[]; truncated: boolean } {
 
 export { markGeoStale } from './geoStale';
 
+/**
+ * **The places rule a facts row's towns, counties and states were computed by** — 2 is the outline's
+ * reach into the town layer (D266); a row without it holds the sampled answer from before, which no
+ * read shows as the answer ({@link placesOf}).
+ */
+export const PLACES_RULE = 2;
+
+/**
+ * A computed row's places, or `null` when they were not computed by {@link PLACES_RULE} — never
+ * computed, or computed by the sampled rule before it and not recomputed since (a parked body keeps
+ * that row until its recompute goes through). Its touching bodies are read from the row as before.
+ */
+export function placesOf<R extends Pick<Doc<'bodyGeoFacts'>, 'placesRule'>>(
+  geo: R | null,
+): R | null {
+  return geo !== null && geo.placesRule === PLACES_RULE ? geo : null;
+}
+
 /** A body's stored geometry facts, or `null` when none were ever computed. */
 export async function geoFactsOf(
   ctx: QueryCtx,

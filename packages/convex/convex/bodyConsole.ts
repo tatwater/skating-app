@@ -35,7 +35,7 @@ import { type QueryCtx, query } from './_generated/server';
 import { auditLinksOnBody } from './lib/auditReads';
 import { requireCapability } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
-import { geoFactsOf, townRowsOf, townsWithStateOf } from './lib/bodyGeo';
+import { geoFactsOf, placesOf, townRowsOf, townsWithStateOf } from './lib/bodyGeo';
 import { hasContoursFor } from './lib/bodyLibrary';
 import { MODERATION_ACTIONS } from './lib/enums';
 import { landmarksForBody } from './lib/landmarkRows';
@@ -132,9 +132,12 @@ export const consoleExtras = query({
             return kept;
           })();
 
+    // The places only when computed by today's rule (D266) — a row still holding the sampled answer
+    // reads "not computed", as a body never computed does.
+    const placed = placesOf(geo);
     return {
       // `null` until computed (`geoComputedAt`); computed, the towns it lies in — empty for none.
-      towns: geo === null ? null : (geo.towns ?? []),
+      towns: placed === null ? null : (placed.towns ?? []),
       hasBathymetry,
       outlineTrustedSince,
       outlineTrustedVia,
@@ -143,7 +146,7 @@ export const consoleExtras = query({
       touchingCapped: geo?.neighborsCapped ?? false,
       geoComputedAt: geo?.computedAt ?? null,
       /** `towns`, each with its state (B01-3c); `null` until computed. */
-      townsWithState: townsWithStateOf(geo),
+      townsWithState: townsWithStateOf(placed),
       /**
        * Completeness as the body's library row stores it (core's ten) — the frame's one field, so it
        * no longer calls `bodies.preview` and its report scan for it (B01-3c). `null` with no row.
@@ -342,15 +345,16 @@ export const history = query({
 // ── Places ───────────────────────────────────────────────────────────────────────────────────
 
 /**
- * **The places a body lies in** — towns (the interior point's first), counties and states, sampled
- * at the interior point and along the shore, stored at the write (`lib/bodyGeo.ts`). `null` until
- * they are computed; computed and in no boundary, empty lists with `computedAt`.
+ * **The places a body lies in** — every loaded town its outline reaches into by more than the margin
+ * (the one holding the most shore first), their counties and states (D266), stored at the write
+ * (`lib/bodyGeo.ts`). `null` until they are computed by today's rule; computed and in no town, empty
+ * lists with `computedAt`.
  */
 export const places = query({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { waterBodyId }) => {
     await requireCapability(ctx, 'body.read');
-    const geo = await geoFactsOf(ctx, (await bodyOrThrow(ctx, waterBodyId))._id);
+    const geo = placesOf(await geoFactsOf(ctx, (await bodyOrThrow(ctx, waterBodyId))._id));
     if (geo === null) return null;
     return {
       towns: geo.towns ?? [],
@@ -650,7 +654,7 @@ export const removedFacts = query({
                   : null,
               by: await personOf(ctx, left.actorId),
             },
-      towns: townsWithStateOf(geo),
+      towns: townsWithStateOf(placesOf(geo)),
       reports: {
         count: Math.min(visible.page.length, REMOVED_REPORT_CAP),
         // More visible reports than the cap, or the scan stopped before the body's last report.
@@ -683,8 +687,8 @@ async function leftRow(
 
 // ── Town lines ───────────────────────────────────────────────────────────────────────────────
 
-/** Towns whose lines one read returns at most (a body lies in a few; the largest in 13 on dev). */
-export const TOWN_LINES_MAX = 24;
+/** Towns whose lines one read returns at most (a body lies in a few; Lake Champlain in 40 on dev, D266). */
+export const TOWN_LINES_MAX = 48;
 
 /**
  * **The Names map's town lines** (B01-3c) — each town the body lies in, with its state and its
@@ -698,7 +702,7 @@ export const townLines = query({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { waterBodyId }) => {
     await requireCapability(ctx, 'body.read');
-    const geo = await geoFactsOf(ctx, (await bodyOrThrow(ctx, waterBodyId))._id);
+    const geo = placesOf(await geoFactsOf(ctx, (await bodyOrThrow(ctx, waterBodyId))._id));
     if (geo === null) return null;
     // Each town beside its boundary — the same rows, in the same order, `townsWithStateOf` lists.
     const towns = townRowsOf(geo) ?? [];

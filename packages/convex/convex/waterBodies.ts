@@ -479,21 +479,6 @@ export function footprintMoved(
   return vertexCount(existing.polygon) !== vertexCount(next.polygon);
 }
 
-/**
- * Whether a re-import moves the point a body's places are first read at (`placeSamplePoints`: the
- * interior point, else the representative point, else the centroid) — its first town and its county
- * come from there, so its geometry facts are behind even when the outline is unchanged (B01-3b).
- */
-export function placePointMoved(
-  existing: Pick<Doc<'waterBodies'>, 'interiorPoint' | 'representativePoint' | 'centroid'>,
-  next: { interiorPoint?: LatLng; centroid: LatLng },
-): boolean {
-  const a = existing.interiorPoint ?? existing.representativePoint ?? existing.centroid;
-  // The patch writes `representativePoint` and `centroid` from the record's centroid.
-  const b = next.interiorPoint ?? next.centroid;
-  return a.lat !== b.lat || a.lng !== b.lng;
-}
-
 /** Total positions across every ring — a shape fingerprint that costs no geometry math. */
 function vertexCount(geometry: unknown): number {
   const g = geometry as { type?: string; coordinates?: unknown[] };
@@ -746,9 +731,9 @@ export const importCanonical = internalMutation({
         const stampMoved =
           outlineStamp(existing) !==
           outlineStamp({ polygon: item.polygon as never, bbox: item.bbox });
-        if (stampMoved || placePointMoved(existing, item)) {
-          // Its touching bodies and places were computed for the old outline — or its places at the
-          // old interior point, which the same patch rewrites (`shapeFields`) (B01-3b).
+        if (stampMoved) {
+          // Its touching bodies and places were computed for the old outline (B01-3b). Its places
+          // come from the outline alone since D266, so an interior point moving marks nothing.
           await markGeoStale(ctx, [existing._id]);
         }
         if (outlineMoved) {

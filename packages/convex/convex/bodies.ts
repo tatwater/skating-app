@@ -49,7 +49,7 @@ import type { Doc, Id } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
 import { requireCapability } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
-import { geoFactsOf, townsWithStateOf } from './lib/bodyGeo';
+import { geoFactsOf, placesOf, townsWithStateOf } from './lib/bodyGeo';
 import { type LibraryRow, openAsksFor, readCount } from './lib/bodyLibrary';
 import { FLAG_REASONS } from './lib/enums';
 import { OPEN_FLAG_STATUSES } from './lib/openFlags';
@@ -690,7 +690,9 @@ export const preview = query({
     // a list shorter than the count says so ("20 of N").
     const openAsks = await openAsksFor(ctx, waterBodyId);
     // The places stored at the write (`lib/bodyGeo.ts`) — no geometry in this read.
-    const geo = await geoFactsOf(ctx, body._id);
+    // Places only when computed by today's rule (D266); a row holding the sampled answer reads as not
+    // computed yet.
+    const geo = placesOf(await geoFactsOf(ctx, body._id));
     const towns = geo === null ? [] : (geo.towns ?? []);
     const withState = townsWithStateOf(geo) ?? [];
 

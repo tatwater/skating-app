@@ -7,6 +7,7 @@ import { KeysProvider } from '@/lib/keys';
 import { expectKeyboardOperable } from '@/test/keyboardAudit';
 import { BodiesTable, resetScrollMemory } from './BodiesTable';
 import { BodiesView, type BodiesViewProps } from './BodiesView';
+import { otherTowns, TOOLTIP_TOWNS } from './BodyPreview';
 import { type BodiesListData, UNREAD_LIST } from './bodiesData';
 import {
   CORPUS,
@@ -101,6 +102,14 @@ describe('the page', () => {
       />,
     );
     expect(screen.getByText('Reservoir · NH · Towns not computed yet')).toBeInTheDocument();
+  });
+
+  it('names a big lake’s other towns up to a dozen, then counts the rest', () => {
+    const many = Array.from({ length: 39 }, (_, i) => `Town ${i + 1}`);
+    const words = otherTowns({ states: ['NY', 'VT'], moreTowns: many });
+    expect(words.split(' · ')).toHaveLength(TOOLTIP_TOWNS);
+    expect(words.endsWith('Town 12 and 27 more')).toBe(true);
+    expect(otherTowns({ states: ['NH'], moreTowns: ['Canaan'] })).toBe('Canaan, NH');
   });
 
   it('picks a lane as a fresh list: no body, search, tab, filter or order carried over', async () => {

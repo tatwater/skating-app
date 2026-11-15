@@ -1998,14 +1998,15 @@ export default defineSchema({
 
   // Administrative-boundary polygons for point→place labels (Phase 05). A report's `point` (put-in
   // pin / GPS start) resolves against these to `{ town?, county?, state? }`, stamped onto
-  // `reports.place` at create. Imported from the same per-state OSM extracts as the water ETL
-  // (`boundary=administrative`, admin_level 4/6/7–8; same ODbL). Reused by GPS (Phase 08) + hazards
-  // (Phase 09a). Small (5 states of towns/counties ≈ single-digit thousands of rows).
+  // `reports.place` at create. TIGER/Line 2024 states, counties and county subdivisions (the town
+  // layer, simplified to ~5 m), loaded by `scripts/admin-areas`; the subdivisions also decide a
+  // body's towns, counties, states and region membership (D266). Reused by GPS (Phase 08) + hazards
+  // (Phase 09a). Small (5 states: 2,546 rows on dev).
   adminAreas: defineTable({
     name: v.string(), // this row's own name — "Burlington" (town) / "Chittenden County" (county)
     level: literals(ADMIN_AREA_LEVELS), // admin granularity
     state: v.string(), // 2-letter code, denormalized onto the label
-    externalId: v.string(), // OSM relation id (way/123 · relation/456) — idempotent upsert key
+    externalId: v.string(), // `tiger/<GEOID>` — the upsert key; a subdivision's GEOID starts with its county's
     polygon: geoJson, // boundary
     bbox, // cheap point-containment prefilter before the Turf pointInPolygon test
     /** Representative interior point; display/debug only, never a lookup key (A01). */
@@ -5189,6 +5190,11 @@ export default defineSchema({
     retriedAt: v.optional(v.number()),
     /** The newest places-layer mark (`geoInputMarks`) the places were computed under. */
     areasAt: v.optional(v.number()),
+    /**
+     * The rule the places were computed by (`lib/bodyGeo.ts` `PLACES_RULE`, D266): absent on a row
+     * whose places were read at sampled points, which no read shows as the answer.
+     */
+    placesRule: v.optional(v.number()),
     /** When the drift repair last checked this row's inputs against the stored answer. */
     checkedAt: v.optional(v.number()),
   })

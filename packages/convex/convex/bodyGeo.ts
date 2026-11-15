@@ -12,7 +12,14 @@
  *    body is computed, its reads say `null` ("not computed").
  */
 
-import { allLevels, bboxIntersects, cellForPoint, pointInPolygon } from '@skating/core';
+import {
+  bboxIntersects,
+  cellRangeCovering,
+  countyKeyOfSubdivision,
+  createReach,
+  isUndefinedSubdivision,
+  REGION_MARGIN_M,
+} from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
 import { internal } from './_generated/api';
@@ -25,13 +32,13 @@ import {
   type MutationCtx,
   type QueryCtx,
 } from './_generated/server';
-import { placeSamplePoints } from './adminAreas';
 import { nextAttemptState } from './lib/attempts';
 import {
   coverTiles,
   hasTownEntries,
   markGeoStale,
   outlineStamp,
+  PLACES_RULE,
   paddedBox,
   simplifiedRing,
   TOUCH_CANDIDATES,
@@ -55,13 +62,12 @@ const boxV = v.object({
   maxLat: v.number(),
   maxLng: v.number(),
 });
-const pointV = v.object({ lat: v.number(), lng: v.number() });
 
 /** Above this many vertices a candidate's outline is not returned whole (only its samples count). */
 const WHOLE_MAX_VERTICES = 20_000;
 /** Candidate rows one tile's cover reads. */
 const TILE_LIMIT = TOUCH_CANDIDATES + 1;
-/** Admin-area candidate rows one cell may give, as `findContainingArea` reads them. */
+/** Town rows one cell may give, as `findContainingArea` reads them — past it the read throws. */
 const AREA_CELL_CAP = 64;
 
 // ── The reads the action makes ───────────────────────────────────────────────────────────────
@@ -85,7 +91,6 @@ export const inputs = internalQuery({
       areasAt: await latestAreasMark(ctx),
       polygon: body.polygon,
       bbox: body.bbox,
-      places: placeSamplePoints(body),
     };
   },
 });
@@ -124,65 +129,118 @@ export const candidates = internalQuery({
   },
 });
 
+/** Cell reads one candidates page makes at most — well inside a query's 4,096 calls. */
+export const CANDIDATE_CELL_READS = 2_000;
 /**
- * The admin areas whose cells hold each point, by level — the action tests containment. Read the way
- * `findContainingArea` reads them (each rung's cell, capped), so the two agree on candidates.
+ * Town boundaries one page reads. A boundary's polygon is uncapped, so each is charged at a whole
+ * document (1 MiB): the read budget's twelve MiB (`lib/readBudget`, `TX_BUDGET`) holds eleven. The
+ * real rows run to 98 KB on dev, so a page is in fact about a megabyte.
  */
-export const areaCandidates = internalQuery({
-  args: { points: v.array(pointV) },
-  handler: async (ctx, { points }) => {
-    const areas = new Map<string, Doc<'adminAreas'>>();
-    const perPoint: { town: string[]; county: string[] }[] = [];
-    for (const point of points.slice(0, 16)) {
-      const ids: { town: string[]; county: string[] } = { town: [], county: [] };
-      for (const level of ['town', 'county'] as const) {
-        for (const z of allLevels(ADMIN_AREA_LADDER)) {
-          const cell = cellForPoint(point, z);
-          const rows = await ctx.db
-            .query('adminAreaCells')
-            .withIndex('by_cell', (q) =>
-              q.eq('z', cell.z).eq('x', cell.x).eq('y', cell.y).eq('level', level),
-            )
-            .take(AREA_CELL_CAP);
-          for (const row of rows) {
-            if (!areas.has(row.adminAreaId)) {
-              const area = await ctx.db.get(row.adminAreaId);
-              if (area) areas.set(row.adminAreaId, area);
-            }
-            if (areas.has(row.adminAreaId)) ids[level].push(row.adminAreaId);
-          }
+export const TOWN_PAGE = 11;
+/** County rows one page reads — charged as {@link TOWN_PAGE}'s are. */
+export const COUNTY_PAGE = 11;
+/**
+ * The candidates' box is the body's padded by this many degrees — over {@link REGION_MARGIN_M} at
+ * every latitude loaded (a degree of longitude is 75 km at 47.5°N, so 15 m is 0.0002°).
+ */
+export const REACH_PAD_DEG = 0.0005;
+
+const cursorV = v.object({ z: v.number(), i: v.number() });
+
+/**
+ * **Every town whose cells meet `box`**, a page at a time: the town rows of each ladder rung's cells
+ * covering the box, from `from` (a rung and a cell's place in its range) for at most
+ * {@link CANDIDATE_CELL_READS} cells, with where to go on (`next: null` at the end). A town is indexed
+ * by its bounding box, so every town within the margin of the body is a candidate. A cell holding
+ * more rows than {@link AREA_CELL_CAP} throws rather than answer short.
+ */
+export const townCandidates = internalQuery({
+  args: { box: boxV, from: v.optional(cursorV) },
+  handler: async (ctx, { box, from }) => {
+    const ids = new Set<Id<'adminAreas'>>();
+    let reads = 0;
+    for (let z = from?.z ?? ADMIN_AREA_LADDER.minZ; z <= ADMIN_AREA_LADDER.maxZ; z++) {
+      const range = cellRangeCovering(box, z);
+      const width = range.maxX - range.minX + 1;
+      for (let i = z === from?.z ? from.i : 0; i < range.count; i++) {
+        if (reads >= CANDIDATE_CELL_READS) return { ids: [...ids], next: { z, i } };
+        const x = range.minX + (i % width);
+        const y = range.minY + Math.floor(i / width);
+        const rows = await ctx.db
+          .query('adminAreaCells')
+          .withIndex('by_cell', (q) => q.eq('z', z).eq('x', x).eq('y', y).eq('level', 'town'))
+          .take(AREA_CELL_CAP + 1);
+        reads++;
+        if (rows.length > AREA_CELL_CAP) {
+          throw new ConvexError(`a town cell holds more than ${AREA_CELL_CAP} rows (z ${z})`);
         }
+        for (const row of rows) ids.add(row.adminAreaId);
       }
-      perPoint.push(ids);
     }
-    return {
-      perPoint,
-      areas: [...areas.values()].map((a) => ({
-        id: a._id as string,
+    return { ids: [...ids], next: null };
+  },
+});
+
+/** One page of candidate towns, whole — at most {@link TOWN_PAGE}; a row gone or not a town is left out. */
+export const townPage = internalQuery({
+  args: { ids: v.array(v.id('adminAreas')) },
+  handler: async (ctx, { ids }) => {
+    if (ids.length > TOWN_PAGE) throw new ConvexError(`at most ${TOWN_PAGE} towns a page`);
+    const out: {
+      id: Id<'adminAreas'>;
+      name: string;
+      state: string;
+      externalId: string;
+      polygon: unknown;
+    }[] = [];
+    for (const id of ids) {
+      const a = await ctx.db.get(id);
+      if (a === null || a.level !== 'town') continue;
+      out.push({
+        id: a._id,
         name: a.name,
         state: a.state,
-        bbox: a.bbox,
+        externalId: a.externalId,
         polygon: a.polygon,
-      })),
-    };
+      });
+    }
+    return out;
+  },
+});
+
+/** Counties by their boundary key (`tiger/<GEOID>`) — at most {@link COUNTY_PAGE}; one not loaded is left out. */
+export const countyPage = internalQuery({
+  args: { keys: v.array(v.string()) },
+  handler: async (ctx, { keys }) => {
+    if (keys.length > COUNTY_PAGE) throw new ConvexError(`at most ${COUNTY_PAGE} counties a page`);
+    const out: { key: string; name: string }[] = [];
+    for (const key of keys) {
+      const row = await ctx.db
+        .query('adminAreas')
+        .withIndex('by_external_id', (q) => q.eq('externalId', key))
+        .first();
+      if (row !== null && row.level === 'county') out.push({ key, name: row.name });
+    }
+    return out;
   },
 });
 
 // ── The pure work the action does ────────────────────────────────────────────────────────────
 
+/** A town the rule reached, as {@link townPage} returned it (its polygon no longer needed). */
+export type ReachedTown = { id: Id<'adminAreas'>; name: string; state: string; externalId: string };
+
 /**
- * **The places a body lies in** — the one rule (it replaced `adminAreas.townsForBody`): towns (the
- * interior point's first), counties (at the interior point only) and states, read at
- * `placeSamplePoints`. **Sampled, not a polygon overlay**: a town the shore only grazes between two
- * samples can be missed, and a body is never placed in a town it doesn't touch. Empty lists when no
- * boundary holds any point — computed and in none, which the reads tell from "not computed".
+ * **The places a body lies in, from the towns its outline reaches** (D266, `@skating/core`'s
+ * `createReach`) — one rule for its towns, counties and states. `reached` is the rule's answer in its
+ * order (the town holding the most shore first). A "County subdivisions not defined" water unit is
+ * not a town and is never listed as one, but its county and state count. Counties follow from each
+ * town's GEOID (`countyNames` by county key), states from the towns. Empty lists for a body in no
+ * loaded town — computed and in none, which the reads tell from "not computed".
  */
 export function placesFrom(
-  points: readonly { lat: number; lng: number }[],
-  found: {
-    perPoint: { town: string[]; county: string[] }[];
-    areas: { id: string; name: string; state: string; bbox: Box; polygon: unknown }[];
-  },
+  reached: readonly ReachedTown[],
+  countyNames: ReadonlyMap<string, string>,
 ): {
   towns: string[];
   townStates: string[];
@@ -191,7 +249,6 @@ export function placesFrom(
   counties: string[];
   states: string[];
 } {
-  const byId = new Map(found.areas.map((a) => [a.id, a]));
   const towns: string[] = [];
   // Each town's state, in the same order (B01-3c): a border lake's towns are in two states.
   const townStates: string[] = [];
@@ -201,43 +258,92 @@ export function placesFrom(
   const townEntries: { name: string; state: string; id: Id<'adminAreas'> }[] = [];
   const counties: string[] = [];
   const states = new Set<string>();
-  points.forEach((point, i) => {
-    for (const level of ['town', 'county'] as const) {
-      // Counties are large and a body rarely spans two: read at the interior point only.
-      if (level === 'county' && i > 0) continue;
-      const ids = found.perPoint[i]?.[level] ?? [];
-      const hit = ids
-        .map((id) => byId.get(id))
-        .find(
-          (a) =>
-            a !== undefined &&
-            bboxIntersects(a.bbox, {
-              minLat: point.lat,
-              maxLat: point.lat,
-              minLng: point.lng,
-              maxLng: point.lng,
-            }) &&
-            pointInPolygon(point, a.polygon as Geom),
-        );
-      if (hit === undefined) continue;
-      if (
-        level === 'town' &&
-        !townEntries.some((e) => e.name === hit.name && e.state === hit.state)
-      ) {
-        townEntries.push({ name: hit.name, state: hit.state, id: hit.id as Id<'adminAreas'> });
-      }
-      const list = level === 'town' ? towns : counties;
-      if (!list.includes(hit.name)) {
-        list.push(hit.name);
-        if (level === 'town') {
-          townStates.push(hit.state);
-          townIds.push(hit.id as Id<'adminAreas'>);
-        }
-      }
-      states.add(hit.state);
+  for (const area of reached) {
+    states.add(area.state);
+    const countyKey = countyKeyOfSubdivision(area.externalId);
+    const county = countyKey === null ? undefined : countyNames.get(countyKey);
+    if (county !== undefined && !counties.includes(county)) counties.push(county);
+    if (isUndefinedSubdivision(area.externalId)) continue;
+    if (!townEntries.some((e) => e.name === area.name && e.state === area.state)) {
+      townEntries.push({ name: area.name, state: area.state, id: area.id });
     }
-  });
-  return { towns, townStates, townIds, townEntries, counties, states: [...states] };
+    if (!towns.includes(area.name)) {
+      towns.push(area.name);
+      townStates.push(area.state);
+      townIds.push(area.id);
+    }
+  }
+  return { towns, townStates, townIds, townEntries, counties, states: [...states].sort() };
+}
+
+/** Whether a candidates page's `next` is past where it started (a rung later, or a cell on). */
+export function movedOn(
+  from: { z: number; i: number } | undefined,
+  next: { z: number; i: number },
+): boolean {
+  return from === undefined || next.z > from.z || (next.z === from.z && next.i > from.i);
+}
+
+/**
+ * **Which loaded towns this outline reaches into**, read and tested a page at a time: the candidates
+ * by cell (paged, each page must move on), the towns {@link TOWN_PAGE} at a time into one run of the
+ * rule, then the counties of the towns it reached. Nothing here holds more than one page of town
+ * polygons at once.
+ */
+async function placesOf(
+  ctx: ActionCtx,
+  geom: Geom,
+  bbox: Box,
+): Promise<ReturnType<typeof placesFrom>> {
+  const box = {
+    minLat: bbox.minLat - REACH_PAD_DEG,
+    maxLat: bbox.maxLat + REACH_PAD_DEG,
+    minLng: bbox.minLng - REACH_PAD_DEG,
+    maxLng: bbox.maxLng + REACH_PAD_DEG,
+  };
+  const ids: Id<'adminAreas'>[] = [];
+  const seen = new Set<string>();
+  let from: { z: number; i: number } | undefined;
+  for (;;) {
+    const page: { ids: Id<'adminAreas'>[]; next: { z: number; i: number } | null } =
+      await ctx.runQuery(internal.bodyGeo.townCandidates, { box, ...(from ? { from } : {}) });
+    for (const id of page.ids) {
+      if (!seen.has(id)) {
+        seen.add(id);
+        ids.push(id);
+      }
+    }
+    if (page.next === null) break;
+    // A page that hands back where it started would loop for ever: fail the body instead.
+    if (!movedOn(from, page.next)) throw new Error('town candidates made no progress');
+    from = page.next;
+  }
+  const run = createReach(geom, { marginM: REGION_MARGIN_M });
+  const byId = new Map<string, ReachedTown>();
+  for (let k = 0; k < ids.length; k += TOWN_PAGE) {
+    const rows = await ctx.runQuery(internal.bodyGeo.townPage, {
+      ids: ids.slice(k, k + TOWN_PAGE),
+    });
+    run.add(rows.map((r) => ({ id: r.id, polygon: r.polygon as Geom })));
+    for (const { polygon: _, ...town } of rows) byId.set(town.id, town);
+  }
+  const reached = run.result().ids.map((id) => byId.get(id) as ReachedTown);
+  const keys = [
+    ...new Set(
+      reached
+        .map((t) => countyKeyOfSubdivision(t.externalId))
+        .filter((k): k is string => k !== null),
+    ),
+  ];
+  const countyNames = new Map<string, string>();
+  for (let k = 0; k < keys.length; k += COUNTY_PAGE) {
+    for (const c of await ctx.runQuery(internal.bodyGeo.countyPage, {
+      keys: keys.slice(k, k + COUNTY_PAGE),
+    })) {
+      countyNames.set(c.key, c.name);
+    }
+  }
+  return placesFrom(reached, countyNames);
 }
 
 // ── The write ────────────────────────────────────────────────────────────────────────────────
@@ -408,6 +514,7 @@ export const store = internalMutation({
       computedAt: now,
       checkedAt: now,
       areasAt: args.areasAt,
+      placesRule: PLACES_RULE,
       stamp: args.stamp,
       neighbors: args.neighbors,
       neighborsCapped: args.neighborsCapped,
@@ -539,8 +646,7 @@ async function computeOne(ctx: ActionCtx, waterBodyId: Id<'waterBodies'>): Promi
       touches(geom, (b.polygon ?? { type: 'Polygon', coordinates: [b.ring] }) as Geom, b.whole),
     )
     .map((b) => ({ waterBodyId: b.id, name: b.name, ring: b.ring, stamp: b.stamp }));
-  const found = await ctx.runQuery(internal.bodyGeo.areaCandidates, { points: input.places });
-  const places = placesFrom(input.places, found);
+  const places = await placesOf(ctx, geom, input.bbox);
   await ctx.runMutation(internal.bodyGeo.store, {
     waterBodyId,
     stamp: input.stamp,
@@ -766,6 +872,8 @@ async function isBehind(
   if (!body || body.dedupStatus === 'merged') return true;
   if (outlineStamp(body) !== row.stamp) return true;
   if ((row.areasAt ?? 0) < areasAt) return true;
+  // Places computed by an earlier rule (the sampled points before D266) are behind.
+  if (row.placesRule !== PLACES_RULE) return true;
   // Computed before towns carried their states and boundaries (B01-3c) — or stored without them —
   // is behind, so the drift fills them in: the lists must run beside `towns`, one entry per town.
   const townCount = (row.towns ?? []).length;

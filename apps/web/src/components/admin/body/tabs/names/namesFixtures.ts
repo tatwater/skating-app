@@ -23,7 +23,7 @@ export const MASCOMA_NAMES: NamesData = {
   perCatalogClaims: 'kept',
   failures: [],
   place: {
-    admin: { towns: ['Enfield', 'Lebanon'], county: 'Grafton' },
+    admin: { towns: ['Enfield', 'Lebanon'], counties: ['Grafton'] },
     states: ['NH'],
     townLines: [
       {
@@ -58,7 +58,7 @@ export const MASCOMA_NAMES_AS_READ: NamesData = {
   classOptions: null,
   perCatalogClaims: null,
   place: {
-    admin: { towns: ['Enfield', 'Lebanon'], county: 'Grafton County' },
+    admin: { towns: ['Enfield', 'Lebanon'], counties: ['Grafton County'] },
     states: ['NH'],
     townLines: null,
   },
@@ -77,7 +77,11 @@ export const AUBURN_NAMES: NamesData = {
   cls: 'lakePond',
   classOptions: null,
   perCatalogClaims: null,
-  place: { admin: { towns: ['Auburn'], county: 'Androscoggin' }, states: ['ME'], townLines: null },
+  place: {
+    admin: { towns: ['Auburn'], counties: ['Androscoggin'] },
+    states: ['ME'],
+    townLines: null,
+  },
   failures: [],
 };
 
@@ -92,6 +96,6 @@ export const LOW_PLAINS_NAMES: NamesData = {
   classOptions: null,
   perCatalogClaims: null,
   // Computed, and no boundary holds it: in no town or county.
-  place: { admin: { towns: [], county: null }, states: ['NH'], townLines: null },
+  place: { admin: { towns: [], counties: [] }, states: ['NH'], townLines: null },
   failures: [],
 };
