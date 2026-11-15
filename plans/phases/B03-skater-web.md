@@ -1138,3 +1138,23 @@ tab's draft, and its Post clears the slot and every stored photo. The same happe
 author presses *Post* in the first tab. It costs a draft's stored copy, never sends anything the
 author did not press, and predates this fix; the cure is per-draft records or one tab owning the
 resend.
+
+### 8.8 A lake's X removed it, and the photo sort put it back
+
+The founder (2026-11-15): the X on a lake's tab didn't remove it, so a tab opened by accident could not
+be closed. The X did remove it — `removeLake` takes the Report out and moves its photos to the Post's
+pool, unplaced, as the dialog says — and then `PhotoSorter` opened it again. The sort remembered only
+the ids the pool held, so a removed Report's photos looked new; it looked their place up and laid them
+onto a tab for their lake and day. Every lake whose photos have a place came back, which is every tab
+the sort opens on its own. The sort's memory now notes every photo the sheet has shown on a Report
+(`photoSort.openSortMemory` / `photosToSort`): a photo is sorted once, when it first reaches the pool,
+and a removed lake stays removed across closing the sheet and reloading — unless the author picks a
+new photo there, which opens a tab for that photo alone.
+
+The class, checked: a removed lake's photos wait in the pool and the flush refuses an unplaced pool
+photo, so they never post on their own (the dialog now says so — place each or remove it before
+posting); removing the only lake starts it over on *Which lake?* with its photos kept; a photo's X and
+its menu's *Leave out* release the file only once the sheet has taken the removal (a sent Post refuses
+it, and the photo kept its record but lost its file). `sheetRemoval.properties.test.ts` drives picks,
+removals, reopens and reloads against the real store and blob store, on the shared seed policy now in
+`sheetStore.propertyRuns.ts`; with the fix taken out it fails on the founder's sequence.
