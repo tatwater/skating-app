@@ -32,8 +32,10 @@ describe('Shape’s scene keeps its bays visible', () => {
 
 describe('Imagery’s scene keeps its pass visible', () => {
   it('draws the lit pass with the Aerial layer on, placed over the body’s opaque fill', () => {
-    const band = MASCOMA_PASSES[0]?.band ?? 'visual';
-    const scene = imageryMapScene({ rows: MASCOMA_PASSES, band, season: 'winter-2026-27' }, null);
+    // Nothing lit reads as the default band's latest pass: the fixture's rows are all `visual`.
+    const rows = MASCOMA_PASSES.filter((p) => p.band === 'visual');
+    expect(rows.length).toBeGreaterThan(0);
+    const scene = imageryMapScene({ rows, band: 'visual', season: 'winter-2026-27' }, null);
     const drawn = drawScene(scene, layerSwitches(scene.layers));
     expect(drawn.raster).not.toBeNull();
     // The reveal inserts the pass before this layer: above the fill, never under it.
