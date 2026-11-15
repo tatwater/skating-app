@@ -416,6 +416,31 @@ describe('writes', () => {
     expect(dialog.contains(document.activeElement)).toBe(true);
   });
 
+  it('a dialog holds while its write is on its way: Esc and Cancel wait, the refusal stands', async () => {
+    let settle: (refused: string | null) => void = () => {};
+    const onAct = vi.fn(
+      () =>
+        new Promise<string | null>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    draw({ onAct });
+    await userEvent.click(within(lever('reports')).getByRole('button', { name: 'Restrict' }));
+    const dialog = await screen.findByRole('alertdialog');
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Spam');
+    await userEvent.click(within(dialog).getByRole('button', { name: /Restrict/ }));
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByRole('alertdialog')).toBe(dialog);
+    act(() => settle('Someone changed this since'));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Someone changed this since',
+    );
+    // Settled, it closes again.
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+  });
+
   it('a ban takes two presses and a reason', async () => {
     const { onAct } = draw();
     await userEvent.click(within(lever('ban')).getByRole('button', { name: 'Ban' }));
@@ -545,6 +570,8 @@ describe('writes', () => {
       'Another change is still on its way',
     );
     await act(async () => resolve(null));
+    // Once the first change settles, the note goes.
+    await waitFor(() => expect(within(lever('suspension')).queryByRole('alert')).toBeNull());
   });
 });
 

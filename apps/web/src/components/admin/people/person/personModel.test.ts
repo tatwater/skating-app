@@ -53,7 +53,7 @@ const DAY = 24 * HOUR;
 const local = (m: number, d: number, h = 12, min = 0, y = 2026) =>
   new Date(y, m - 1, d, h, min).getTime();
 
-/** No labelled value is blank, a bare zero standing for an answer, or "undefined". */
+/** No labeled value is blank, a bare zero standing for an answer, or "undefined". */
 function assertSaid(f: Fact) {
   expect(f.value.trim()).not.toBe('');
   expect(f.value).not.toContain('undefined');
@@ -257,6 +257,13 @@ describe('the status note', () => {
     );
     expect(lapsed.badge).toBe('Suspended · ran its course');
     expect(lapsed.lifts).toBe('Ran its course Wed 14 Oct 11:00 · lifting on its own');
+    // The read said not yet (the minute the page opened); the live clock has passed the end since.
+    const passed = statusNoteWords(
+      { ...base, action: 'suspend', suspendedUntil: NOW - HOUR, lapsed: false },
+      NOW,
+    );
+    expect(passed.badge).toBe('Suspended · ran its course');
+    expect(passed.lifts).toBe('Ran its course Wed 14 Oct 11:00 · lifting on its own');
     const scripted = statusNoteWords(
       {
         ...base,

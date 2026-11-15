@@ -62,7 +62,8 @@ export type PersonViewProps = {
   history: Loadable<HistoryRead | null> | 'not-shown';
   staffStats: Loadable<StaffStatsRead | null>;
   staffSeason: Loadable<StaffSeasonRead | null>;
-  decisions: Loadable<DecisionsRead>;
+  /** `'not-shown'` for a viewer who can't read the audit. */
+  decisions: Loadable<DecisionsRead> | 'not-shown';
   /** The clock every time on the page is read against. */
   now: number;
   /** The zone times are written in; the reader's own when absent. */
@@ -167,22 +168,22 @@ export function PersonView({
               now={now}
               {...tz}
             />
-            {staff ? (
-              <DecisionsBlock
-                decisions={decisions}
-                thisWeek={
-                  statsValue === null
-                    ? null
-                    : `${countText(statsValue.decisions.thisWeek)} this week`
-                }
-                now={now}
-                {...tz}
-                onUndo={onUndo}
-                onMore={onMoreDecisions}
-              />
-            ) : (
-              historyBlock
-            )}
+            {staff
+              ? decisions !== 'not-shown' && (
+                  <DecisionsBlock
+                    decisions={decisions}
+                    thisWeek={
+                      statsValue === null
+                        ? null
+                        : `${countText(statsValue.decisions.thisWeek)} this week`
+                    }
+                    now={now}
+                    {...tz}
+                    onUndo={onUndo}
+                    onMore={onMoreDecisions}
+                  />
+                )
+              : historyBlock}
           </div>
         </div>
       </>

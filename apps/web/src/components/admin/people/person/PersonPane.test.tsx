@@ -155,6 +155,15 @@ describe('the reads', () => {
     expect(screen.queryByRole('heading', { name: 'History' })).toBeNull();
   });
 
+  it('without the audit read, a staff page draws no staff strip and no Decisions', () => {
+    mocks.denied.add('audit.read');
+    answer({ 'people:person': { ...ROB, role: 'moderator' as const } });
+    render(<PersonPane userId={ROB_ID} />);
+    expect(mocks.calls.has('people:staffStats')).toBe(false);
+    expect(document.querySelector('[data-slot="staff-strip"]')).toBeNull();
+    expect(document.querySelector('[data-slot="person-decisions"]')).toBeNull();
+  });
+
   it('a failed read says so in its block', () => {
     answer({ 'people:history': new Error('boom') });
     render(<PersonPane userId={ROB_ID} />);
@@ -177,6 +186,59 @@ describe('the reads', () => {
     await user.click(screen.getByRole('button', { name: 'Show more' }));
     expect(mocks.calls.get('people:decisions')).toEqual({ userId: ROB_ID, limit: 100 });
     expect(screen.queryByRole('button', { name: 'Show more' })).toBeNull();
+  });
+});
+
+describe('one person at a time', () => {
+  it('Show more keeps the rows drawn, and its focus, while the larger page loads', async () => {
+    answer({
+      'people:person': { ...ROB, role: 'moderator' as const },
+      'people:staffStats': SARAH_STATS,
+      'people:staffSeason': SEASON,
+      'people:decisions': { rows: ROB_HISTORY.rows, isDone: false, continueCursor: 'c' },
+    });
+    render(<PersonPane userId={ROB_ID} />);
+    const user = userEvent.setup({ advanceTimers: () => {} });
+    const rows = () =>
+      document.querySelectorAll('[data-slot="person-decisions"] [data-slot="feed-row"]');
+    expect(rows()).toHaveLength(ROB_HISTORY.rows.length);
+    // The larger page is on its way.
+    mocks.results.delete('people:decisions');
+    await user.click(screen.getByRole('button', { name: 'Show more' }));
+    expect(mocks.calls.get('people:decisions')).toEqual({ userId: ROB_ID, limit: 50 });
+    expect(rows()).toHaveLength(ROB_HISTORY.rows.length);
+    expect(screen.getByRole('button', { name: 'Show more' })).toHaveFocus();
+  });
+
+  it('a refusal, and the decisions asked for, stay with the person they were for', async () => {
+    answer({
+      'people:person': { ...ROB, role: 'moderator' as const },
+      'people:staffStats': SARAH_STATS,
+      'people:staffSeason': SEASON,
+      'people:decisions': { rows: ROB_HISTORY.rows, isDone: false, continueCursor: 'c' },
+    });
+    mocks.mutations.set(
+      'moderation:unbanUser',
+      vi.fn(async () => {
+        throw new ConvexError('Refused for this one');
+      }),
+    );
+    const { rerender } = render(<PersonPane userId={ROB_ID} />);
+    const user = userEvent.setup({ advanceTimers: () => {} });
+    const suspension = () => {
+      const el = document.querySelector<HTMLElement>('[data-lever="suspension"]');
+      if (el === null) throw new Error('suspension');
+      return el;
+    };
+    await user.click(within(suspension()).getByRole('button', { name: 'Lift' }));
+    expect(await within(suspension()).findByRole('alert')).toHaveTextContent(
+      'Refused for this one',
+    );
+    await user.click(screen.getByRole('button', { name: 'Show more' }));
+    const other = 'other'.padEnd(32, '0');
+    rerender(<PersonPane userId={other} />);
+    expect(within(suspension()).queryByRole('alert')).toBeNull();
+    expect(mocks.calls.get('people:decisions')).toEqual({ userId: other, limit: 25 });
   });
 });
 

@@ -265,9 +265,12 @@ export function accountRows(p: PersonRead, opts: { now: number; self: boolean })
   const suspended = p.status === 'suspended';
   if (suspended) {
     const until = note?.suspendedUntil ?? null;
-    const lapsed = note?.lapsed === true;
+    // The read's `lapsed` is as of the minute the page opened; the end passing since is lapsed too.
+    const lapsed = note?.lapsed === true || (until !== null && until <= opts.now);
     const buttons: LeverButton[] = [];
-    if (can.suspend.ok && !lapsed) {
+    // Extending adds to the end already set: an open-ended suspension has none, and a term from now
+    // would shorten it — so it offers Lift alone.
+    if (can.suspend.ok && !lapsed && until !== null) {
       buttons.push({ id: 'suspend', label: 'Extend', opens: { kind: 'suspend', extend: true } });
     }
     if (can.lift.ok) {

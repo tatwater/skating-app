@@ -24,7 +24,7 @@ import type {
   ReasonAsk,
   RoleItem,
 } from './levers';
-import { type PersonRead, ROLE_WORDS } from './personModel';
+import { type PersonRead, ROLE_ARTICLE, ROLE_WORDS } from './personModel';
 import { SuspendDialog } from './SuspendDialog';
 import type { useActing } from './useActing';
 
@@ -68,8 +68,8 @@ export function LeverBlock({ title, rows, person, acting, now, timeZone }: Lever
     acting.act(id, action, { region: region.current, inline });
 
   const button = (b: LeverButton) => {
+    // The key goes on the outermost element directly: a key spread into JSX is a React warning.
     const common = {
-      key: b.id,
       size: 'sm' as const,
       'data-lever-button': b.id,
     };
@@ -141,6 +141,7 @@ export function LeverBlock({ title, rows, person, acting, now, timeZone }: Lever
     }
     return (
       <Button
+        key={b.id}
         {...common}
         variant={b.danger === true ? 'danger' : 'outline'}
         loading={busy}
@@ -236,7 +237,7 @@ export function LeverBlock({ title, rows, person, acting, now, timeZone }: Lever
           key={shown.serial}
           open={open}
           onOpenChange={close}
-          title={`Make ${person.displayName} ${shown.item.role === 'member' ? 'a skater' : `a ${shown.item.role}`}?`}
+          title={`Make ${person.displayName} ${ROLE_ARTICLE[shown.item.role]}?`}
           description={
             shown.item.note !== null
               ? `They lose what the ${ROLE_WORDS[person.role].toLowerCase()} role gives, and ledger editing with it.`

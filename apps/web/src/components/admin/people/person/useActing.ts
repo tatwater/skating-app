@@ -18,6 +18,8 @@ export function useActing(onAct: (action: PersonAction) => Promise<string | null
   const [busy, setBusy] = useState<string | null>(null);
   const [refusals, setRefusals] = useState<Readonly<Record<string, string>>>({});
   const running = useRef<string | null>(null);
+  /** Controls told "another change is on its way": their note goes when that change settles. */
+  const held = useRef(new Set<string>());
 
   const act = useCallback(
     async (
@@ -26,9 +28,12 @@ export function useActing(onAct: (action: PersonAction) => Promise<string | null
       opts: { region: HTMLElement | null; inline: boolean },
     ): Promise<string | null> => {
       if (running.current !== null) {
-        const held = 'Another change is still on its way';
-        if (opts.inline) setRefusals((r) => ({ ...r, [id]: held }));
-        return held;
+        const wait = 'Another change is still on its way';
+        if (opts.inline) {
+          held.current.add(id);
+          setRefusals((r) => ({ ...r, [id]: wait }));
+        }
+        return wait;
       }
       running.current = id;
       const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -42,7 +47,14 @@ export function useActing(onAct: (action: PersonAction) => Promise<string | null
       }
       running.current = null;
       setBusy(null);
-      if (refused !== null && opts.inline) setRefusals((r) => ({ ...r, [id]: refused as string }));
+      const waited = [...held.current];
+      held.current.clear();
+      setRefusals((r) => {
+        const next = { ...r };
+        for (const w of waited) delete next[w];
+        if (refused !== null && opts.inline) next[id] = refused;
+        return next;
+      });
       // After the commit the settled state draws: put focus back inside the region — unless a
       // dialog refused, which stays open with the refusal and keeps its own focus.
       if (refused === null || opts.inline) {

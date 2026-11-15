@@ -63,7 +63,7 @@ describe('a feed row in words', () => {
     expect(say({ action: 'erase' })).toBe('Erased an account · Rob Tremblay');
   });
 
-  it('names other targets by their label, an unlabelled one generically, and marks an undo', () => {
+  it('names other targets by their label, an unlabeled one generically, and marks an undo', () => {
     expect(
       rowSentence(
         rowOf({ action: 'hide', targetType: 'report', targetLabel: 'Mascoma Lake' }),

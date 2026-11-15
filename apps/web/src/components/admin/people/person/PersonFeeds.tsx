@@ -211,7 +211,6 @@ function FeedRows({
         return (
           <HistoryRow
             key={row.id}
-            id={`person-feed-${row.id}`}
             data-slot="feed-row"
             data-state={row.undo.state}
             when={historyWhen(row.createdAt, now, timeZone)}

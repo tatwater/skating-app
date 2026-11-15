@@ -1,13 +1,13 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { Link } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { useRole } from '@/lib/useRole';
 
 import { isFailed, read, useConsoleReadSet } from '../../reads/consoleReads';
 import { actionLabel } from '../../shell/actionLabels';
-import { useMinuteNow } from '../../shell/presence';
+import { useHeldRead, useMinuteNow } from '../../shell/presence';
 import { useUndo } from '../../shell/undo';
 import { type LinkTo, personHref } from './PersonFeeds';
 import { PersonView } from './PersonView';
@@ -28,6 +28,9 @@ import { usePersonWrites } from './usePersonWrites';
  * - **The clock**: the reads are asked at the minute the person was opened, held while the page
  *   stays open (a new minute never restarts a subscription); the words on the page ("1 day left")
  *   read the live minute.
+ * - **Each person is a fresh mount**: a refusal, a busy lever, an open dialog, the decisions asked
+ *   for and the held minute belong to the person they were for — the router keeps a route's
+ *   component across a change of params, and the list swaps the id in place.
  * - **An id of the wrong shape** never reaches a query: it is *No such person* at once.
  */
 export type PersonPaneProps = {
@@ -47,10 +50,15 @@ const DECISIONS_MOST = 100;
 /** History's rows (the read's default). */
 const HISTORY_ROWS = 50;
 
-export function PersonPane({ userId, returnTo, className }: PersonPaneProps) {
+export function PersonPane(props: PersonPaneProps) {
+  return <PersonPage key={props.userId} {...props} />;
+}
+
+function PersonPage({ userId, returnTo, className }: PersonPaneProps) {
   const { can, userId: viewerId } = useRole();
   const live = useMinuteNow();
-  const held = useHeldClock(userId);
+  // The minute this person was opened, held while the page stays open.
+  const [held] = useState(() => minute(Date.now()));
   const [decisionRows, setDecisionRows] = useState(DECISIONS_FIRST);
   const valid = ID_SHAPE.test(userId);
   const id = userId as Id<'profiles'>;
@@ -67,19 +75,29 @@ export function PersonPane({ userId, returnTo, className }: PersonPaneProps) {
       valid && audit ? read(api.people.decisions, { userId: id, limit: decisionRows }) : null,
   });
 
+  // *Show more* asks a larger page, a new subscription: the rows already drawn hold while it loads,
+  // so the list (and the button holding focus) never blanks into a skeleton.
+  const heldDecisions = useHeldRead(
+    isFailed(reads.decisions) ? undefined : reads.decisions,
+    !valid || !audit,
+  );
+  const decisions = reads.decisions === undefined ? heldDecisions : reads.decisions;
+
   const person = reads.person;
   const loaded =
     person === undefined || person === null || isFailed(person) ? null : (person as PersonRead);
-  const onAct = usePersonWrites(
-    loaded === null
-      ? null
-      : {
-          userId: loaded.userId,
-          displayName: loaded.displayName,
-          defaultBountyLimit: loaded.rights.defaultBountyLimit,
-        },
-    live,
+  // The write path's person, rebuilt only when what it names changes (not on every render).
+  const targetId = loaded?.userId ?? null;
+  const targetName = loaded?.displayName ?? null;
+  const targetDefault = loaded?.rights.defaultBountyLimit ?? null;
+  const target = useMemo(
+    () =>
+      targetId === null || targetName === null || targetDefault === null
+        ? null
+        : { userId: targetId, displayName: targetName, defaultBountyLimit: targetDefault },
+    [targetId, targetName, targetDefault],
   );
+  const onAct = usePersonWrites(target, live);
   const { undo } = useUndo();
   const back = returnTo ?? personHref({ kind: 'people' });
   const linkTo: LinkTo = (to) => <Link to={to.kind === 'people' ? back : personHref(to)} />;
@@ -90,9 +108,11 @@ export function PersonPane({ userId, returnTo, className }: PersonPaneProps) {
       person={!valid || !people ? null : person}
       trend={reads.trend}
       history={audit ? reads.history : 'not-shown'}
-      staffStats={reads.staffStats}
-      staffSeason={reads.staffSeason}
-      decisions={reads.decisions}
+      // Without the audit read the staff reads aren't asked: no strip, no Decisions — never a
+      // skeleton waiting on a read that will not come.
+      staffStats={audit ? reads.staffStats : null}
+      staffSeason={audit ? reads.staffSeason : null}
+      decisions={audit ? decisions : 'not-shown'}
       now={live}
       viewerId={viewerId ?? null}
       linkTo={linkTo}
@@ -110,17 +130,6 @@ export function PersonPane({ userId, returnTo, className }: PersonPaneProps) {
       {...(className !== undefined && { className })}
     />
   );
-}
-
-/** The minute `key` was opened, held while it stays open; a new key takes the minute it opens at. */
-function useHeldClock(key: string): number {
-  const [clock, setClock] = useState(() => ({ key, at: minute(Date.now()) }));
-  if (clock.key !== key) {
-    const next = { key, at: minute(Date.now()) };
-    setClock(next);
-    return next.at;
-  }
-  return clock.at;
 }
 
 const minute = (at: number) => Math.floor(at / 60_000) * 60_000;

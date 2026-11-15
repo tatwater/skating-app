@@ -230,6 +230,27 @@ describe('Account', () => {
     expect(row(accountRows(open, { now: NOW, self: false }), 'suspension')?.status).toBe(
       'Until lifted',
     );
+    // Nothing to extend from: a term from now would shorten it, so Lift stands alone.
+    expect(labels(accountRows(open, { now: NOW, self: false }), 'suspension')).toEqual(['Lift']);
+  });
+
+  it('a suspension whose end passed after the page opened has run its course', () => {
+    const p = personOf({
+      status: 'suspended',
+      statusNote: {
+        action: 'suspend',
+        at: NOW - 86_400_000,
+        by: null,
+        via: null,
+        reason: null,
+        suspendedUntil: NOW + 60_000,
+        // As of the minute the page opened.
+        lapsed: false,
+      },
+    });
+    const later = accountRows(p, { now: NOW + 2 * 60_000, self: false });
+    expect(row(later, 'suspension')).toMatchObject({ status: 'Ran its course', tone: 'quiet' });
+    expect(labels(later, 'suspension')).toEqual(['Lift']);
   });
 
   it('a deleted account offers nothing the server would refuse', () => {

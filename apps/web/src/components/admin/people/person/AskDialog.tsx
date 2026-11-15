@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useRef, useState } from 'react';
 
 import {
   AlertDialog,
@@ -58,8 +58,17 @@ export function AskDialog({
   destructive = false,
   onConfirm,
 }: AskDialogProps) {
+  // Esc and Cancel wait while the write is on its way: closed under it, a refusal would land with
+  // nowhere to stand (the shell's undo dialog holds the same way).
+  const busy = useRef(false);
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
+    <AlertDialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next && busy.current) return;
+        onOpenChange(next);
+      }}
+    >
       <AlertDialogContent data-slot="person-ask-dialog">
         {/* The popup's subtree unmounts while closed, so each opening starts clean. */}
         <AskBody
@@ -70,6 +79,9 @@ export function AskDialog({
           ready={ready}
           destructive={destructive}
           onConfirm={onConfirm}
+          onBusy={(b) => {
+            busy.current = b;
+          }}
           onDone={() => onOpenChange(false)}
         >
           {children}
@@ -88,9 +100,14 @@ function AskBody({
   ready,
   destructive,
   onConfirm,
+  onBusy,
   onDone,
   children,
-}: Omit<AskDialogProps, 'open' | 'onOpenChange'> & { onDone: () => void; ready: boolean }) {
+}: Omit<AskDialogProps, 'open' | 'onOpenChange'> & {
+  onBusy: (busy: boolean) => void;
+  onDone: () => void;
+  ready: boolean;
+}) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
@@ -122,8 +139,10 @@ function AskBody({
           onClick={() => {
             if (busy) return;
             setBusy(true);
+            onBusy(true);
             void onConfirm(reason ? trimmed : '').then((refused) => {
               setBusy(false);
+              onBusy(false);
               if (refused === null) onDone();
               else setRefusal(refused);
             });

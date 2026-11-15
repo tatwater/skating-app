@@ -112,18 +112,30 @@ const DAY = 24 * HOUR;
 export const plural = (n: number, one: string, many: string) =>
   `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
 
+/** One formatter a zone (`''` is the reader's own): building one is the costly part of a call. */
+const FORMATTERS = new Map<string, Intl.DateTimeFormat>();
+function formatter(timeZone?: string): Intl.DateTimeFormat {
+  const key = timeZone ?? '';
+  let f = FORMATTERS.get(key);
+  if (f === undefined) {
+    f = new Intl.DateTimeFormat('en-GB', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+      timeZone,
+    });
+    FORMATTERS.set(key, f);
+  }
+  return f;
+}
+
 /** The parts of `at` in `timeZone` (the reader's own when absent). */
 function parts(at: number, timeZone?: string) {
-  const f = new Intl.DateTimeFormat('en-GB', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-    timeZone,
-  }).formatToParts(at);
+  const f = formatter(timeZone).formatToParts(at);
   const get = (type: string) => f.find((p) => p.type === type)?.value ?? '';
   return {
     weekday: get('weekday'),
@@ -242,9 +254,11 @@ export function statusNoteWords(
 ): StatusNoteWords {
   const suspended = note.action === 'suspend';
   const until = note.suspendedUntil;
+  // The read's `lapsed` is as of the minute the page opened; the end passing since is lapsed too.
+  const lapsed = note.lapsed || (until !== null && until <= now);
   let badge: string;
   if (!suspended) badge = 'Banned';
-  else if (note.lapsed) badge = 'Suspended · ran its course';
+  else if (lapsed) badge = 'Suspended · ran its course';
   else if (until === null) badge = 'Suspended · until lifted';
   else badge = `Suspended · ${timeLeftWords(until, now).toLowerCase()}`;
   const named = note.by === null ? null : personName(note.by);
@@ -263,7 +277,7 @@ export function statusNoteWords(
     when: note.at === null ? null : `${verb} ${momentWords(note.at, now, timeZone)}`,
     lifts:
       suspended && until !== null
-        ? note.lapsed
+        ? lapsed
           ? `Ran its course ${momentWords(until, now, timeZone)} · lifting on its own`
           : `Lifts on its own ${momentWords(until, now, timeZone)}`
         : null,
