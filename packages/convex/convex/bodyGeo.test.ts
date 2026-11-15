@@ -221,6 +221,7 @@ describe('computed at the write, read without geometry', () => {
       towns: [],
       counties: [],
       states: [],
+      areasAt: 0,
     });
     expect((await facts(t, id))?.computedAt).toBeUndefined();
     expect((await facts(t, id))?.staleAt).toBe(NOW);
@@ -244,6 +245,7 @@ describe('computed at the write, read without geometry', () => {
       towns: [],
       counties: [],
       states: [],
+      areasAt: 0,
     });
     // Stored, and still stale: the answer may be behind the mark.
     expect(await facts(t, id)).toMatchObject({ computedAt: NOW + 1_000, staleAt: NOW + 1_000 });

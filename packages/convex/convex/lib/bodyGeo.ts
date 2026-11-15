@@ -13,9 +13,10 @@
  *
  * ## How it stays current
  *
- * A body's facts are marked stale ({@link markGeoStale}) where its outline changes — the canonical
- * import when the outline's stamp moves, a drawn body's creation — and where a neighbor's relation
- * moves (a body whose computation finds, or stops finding, it touching). The `bodyGeo` jobs
+ * A body's facts are marked stale where any input of theirs changes (`lib/geoStale.ts` lists the
+ * marks; the cell index is the choke point for creations, moved boxes and listing changes), where a
+ * neighbor's relation or stored outline moves, and by a drift repair for whatever those miss. The
+ * `bodyGeo` jobs
  * recompute stale bodies in an action, where the geometry has room, and store the answer through a
  * mutation that keeps it only if the outline it was computed for is still the body's. A body never
  * computed reads `null` ("not computed"), never an empty list.
@@ -24,7 +25,7 @@
 import { allLevels, cellRangeCovering, distanceToPolygonMeters } from '@skating/core';
 import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from '../_generated/dataModel';
-import type { MutationCtx, QueryCtx } from '../_generated/server';
+import type { QueryCtx } from '../_generated/server';
 import { WATER_BODY_LADDER } from './cellIndex';
 
 /** Two outlines this close count as touching (the stored outlines are simplified to ~5 m). */
@@ -157,27 +158,7 @@ export function coverTiles(box: Box): { tiles: Box[]; truncated: boolean } {
 
 // ── Stale marks ──────────────────────────────────────────────────────────────────────────────
 
-/**
- * Mark bodies' geometry facts stale, so the next `bodyGeo` run recomputes them. A body already stale
- * has its mark moved to now: a computation that read its inputs before this mark sees the mark move
- * and leaves the body stale (`bodyGeo.store`), so a relation that moved mid-computation is never lost.
- */
-export async function markGeoStale(
-  ctx: MutationCtx,
-  ids: Iterable<Id<'waterBodies'>>,
-  now: number = Date.now(),
-): Promise<void> {
-  for (const waterBodyId of new Set(ids)) {
-    const row = await ctx.db
-      .query('bodyGeoFacts')
-      .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
-      .first();
-    if (row === null) await ctx.db.insert('bodyGeoFacts', { waterBodyId, staleAt: now });
-    else if (row.staleAt === undefined || row.staleAt < now) {
-      await ctx.db.patch(row._id, { staleAt: now });
-    }
-  }
-}
+export { markGeoStale } from './geoStale';
 
 /** A body's stored geometry facts, or `null` when none were ever computed. */
 export async function geoFactsOf(

@@ -4786,6 +4786,8 @@ export default defineSchema({
           waterBodyId: v.id('waterBodies'),
           name: v.string(),
           ring: v.array(v.array(v.number())),
+          /** The neighbor's outline stamp the ring was cut from (`outlineStamp`). */
+          stamp: v.optional(v.string()),
         }),
       ),
     ),
@@ -4798,12 +4800,42 @@ export default defineSchema({
     errorClass: v.optional(v.string()),
     parkedAt: v.optional(v.number()),
     retriedAt: v.optional(v.number()),
+    /** The newest places-layer mark (`geoInputMarks`) the places were computed under. */
+    areasAt: v.optional(v.number()),
+    /** When the drift repair last checked this row's inputs against the stored answer. */
+    checkedAt: v.optional(v.number()),
   })
     .index('by_body', ['waterBodyId'])
+    // The drift repair: the rows checked longest ago (`gt(0)`; every store sets it).
+    .index('by_checked', ['checkedAt'])
     // The work: unparked bodies owed a recompute, oldest first (`eq(undefined)` then `gt(0)`).
     .index('by_parked_stale', ['parkedAt', 'staleAt'])
     // The daily retry: parked bodies, least recently tried first (`gt(0)`).
     .index('by_parked', ['parkedAt']),
+
+  /**
+   * **Who holds a copy of whose outline** (B01-3b): one row per (body, touching body it stored), with
+   * the stamp of the outline its ring was cut from — so when an outline's stamp changes, every body
+   * that stored it is found by index and marked stale (`bodyGeo.store`), and the drift repair can tell
+   * a held copy that is behind. Written only by `bodyGeo.store`, at most twelve per body.
+   */
+  bodyGeoLinks: defineTable({
+    waterBodyId: v.id('waterBodies'),
+    neighborId: v.id('waterBodies'),
+    neighborStamp: v.string(),
+  })
+    .index('by_holder', ['waterBodyId'])
+    .index('by_neighbor', ['neighborId']),
+
+  /**
+   * **When an input of the geometry facts outside the bodies changed** (B01-3b) — today the places
+   * layer (`adminAreas`): one row per load batch, inserted and never read in the write, so parallel
+   * loads never contend. The newest `at` is the bar a body's `areasAt` is checked against.
+   */
+  geoInputMarks: defineTable({
+    input: v.literal('adminAreas'),
+    at: v.number(),
+  }).index('by_input_at', ['input', 'at']),
 
   /**
    * **Bodies whose library row is owed a refresh** — queued by the machine's bulk writes that leave

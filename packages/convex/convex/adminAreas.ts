@@ -16,6 +16,7 @@ import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, internalQuery, type QueryCtx, query } from './_generated/server';
 import { ADMIN_AREA_LADDER, syncAdminAreaCells } from './lib/cellIndex';
 import { ADMIN_AREA_LEVELS } from './lib/enums';
+import { noteAdminAreasChanged } from './lib/geoStale';
 import { bbox, geoJson, latLng, literals } from './lib/validators';
 
 /** An admin-boundary row as the offline `scripts/admin-areas` pipeline prepares it. */
@@ -76,6 +77,8 @@ export const importCanonical = internalMutation({
       // stored ones, so a re-import moves a redrawn boundary rather than stacking duplicate rows.
       await syncAdminAreaCells(ctx, id, { bbox: item.bbox, level: item.level });
     }
+    // The places layer moved: facts computed before this are behind (B01-3b, the drift repair).
+    if (inserted + updated > 0) await noteAdminAreasChanged(ctx);
     return { inserted, updated };
   },
 });

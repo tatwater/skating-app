@@ -619,6 +619,24 @@ describe('decide — what approving performs', () => {
     });
     expect(standingOf(body).standing).toBe('active');
     expect(body.activatedAt).toBeDefined();
+    // Its library row is written by the admit's audit row, and its geometry is computed by the next
+    // run with no other write (B01-3b: the admit re-cells the body, which marks its facts).
+    const libraryRow = await t.run((ctx) =>
+      ctx.db
+        .query('bodyLibraryRows')
+        .withIndex('by_body', (q) => q.eq('waterBodyId', body._id).eq('scope', '*'))
+        .first(),
+    );
+    expect(libraryRow).not.toBeNull();
+    await t.action(internal.bodyGeo.computeDue, {});
+    const facts = await t.run((ctx) =>
+      ctx.db
+        .query('bodyGeoFacts')
+        .withIndex('by_body', (q) => q.eq('waterBodyId', body._id))
+        .first(),
+    );
+    expect(facts).toMatchObject({ computedAt: expect.any(Number) });
+    expect(facts?.staleAt).toBeUndefined();
     // Reachable on the map at once.
     const res2 = await t.query(api.waterBodies.resolveBodyForCoord, { coord: FAR });
     expect(res2?.waterBodyId).toEqual(body._id);

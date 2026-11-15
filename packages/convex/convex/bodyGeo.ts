@@ -22,6 +22,8 @@ import {
   internalAction,
   internalMutation,
   internalQuery,
+  type MutationCtx,
+  type QueryCtx,
 } from './_generated/server';
 import { placeSamplePoints } from './adminAreas';
 import { nextAttemptState } from './lib/attempts';
@@ -73,6 +75,7 @@ export const inputs = internalQuery({
     return {
       stamp: outlineStamp(body),
       staleAt: facts?.staleAt ?? null,
+      areasAt: await latestAreasMark(ctx),
       polygon: body.polygon,
       bbox: body.bbox,
       places: placeSamplePoints(body),
@@ -107,6 +110,7 @@ export const candidates = internalQuery({
             whole,
             polygon: whole ? b.polygon : null,
             ring: simplifiedRing(geom),
+            stamp: outlineStamp(b),
           };
         }),
     };
@@ -210,7 +214,93 @@ const neighborV = v.object({
   waterBodyId: v.id('waterBodies'),
   name: v.string(),
   ring: v.array(v.array(v.number())),
+  stamp: v.string(),
 });
+
+/** The newest places-layer mark (`geoInputMarks`), or 0 when the layer never changed since. */
+export async function latestAreasMark(ctx: QueryCtx): Promise<number> {
+  const mark = await ctx.db
+    .query('geoInputMarks')
+    .withIndex('by_input_at', (q) => q.eq('input', 'adminAreas'))
+    .order('desc')
+    .first();
+  return mark?.at ?? 0;
+}
+
+/** Holders {@link markHolders} marks inline; past this many, a chained job marks them all. */
+export const FANOUT_INLINE = 25;
+/** Holders one {@link fanOut} page marks. */
+const FANOUT_PAGE = 200;
+/** The most links one body holds — twelve neighbors, with room. */
+const LINKS_PER_BODY = 32;
+
+/**
+ * **Mark every body that holds a copy of this one's outline** (`bodyGeoLinks.by_neighbor`) — called
+ * when its outline's stamp changed, or it is gone. Up to {@link FANOUT_INLINE} inline; past that, a
+ * chained job pages them all, so a lake held by hundreds of ponds never fans out unbounded in one
+ * mutation. Terminates: a holder's recompute fans out only if *its own* stamp changed.
+ */
+async function markHolders(ctx: MutationCtx, neighborId: Id<'waterBodies'>, now: number) {
+  const holders = await ctx.db
+    .query('bodyGeoLinks')
+    .withIndex('by_neighbor', (q) => q.eq('neighborId', neighborId))
+    .take(FANOUT_INLINE + 1);
+  if (holders.length > FANOUT_INLINE) {
+    await ctx.scheduler.runAfter(0, internal.bodyGeo.fanOut, { neighborId });
+    return;
+  }
+  await markGeoStale(
+    ctx,
+    holders.map((l) => l.waterBodyId),
+    now,
+  );
+}
+
+/** One page of a fan-out too wide to mark inline, chaining to the end. */
+export const fanOut = internalMutation({
+  args: { neighborId: v.id('waterBodies'), cursor: v.optional(v.string()) },
+  handler: async (ctx, { neighborId, cursor }) => {
+    const page = await ctx.db
+      .query('bodyGeoLinks')
+      .withIndex('by_neighbor', (q) => q.eq('neighborId', neighborId))
+      .paginate({ cursor: cursor ?? null, numItems: FANOUT_PAGE });
+    await markGeoStale(
+      ctx,
+      page.page.map((l) => l.waterBodyId),
+    );
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, internal.bodyGeo.fanOut, {
+        neighborId,
+        cursor: page.continueCursor,
+      });
+    }
+    return { marked: page.page.length, isDone: page.isDone };
+  },
+});
+
+/** Replace a body's links with the neighbors it now holds (at most twelve). */
+async function writeLinks(
+  ctx: MutationCtx,
+  holder: Id<'waterBodies'>,
+  neighbors: readonly { waterBodyId: Id<'waterBodies'>; stamp: string }[],
+) {
+  const old = await ctx.db
+    .query('bodyGeoLinks')
+    .withIndex('by_holder', (q) => q.eq('waterBodyId', holder))
+    .take(LINKS_PER_BODY);
+  const want = new Map(neighbors.map((n) => [n.waterBodyId as string, n.stamp]));
+  for (const link of old) {
+    if (want.get(link.neighborId) === link.neighborStamp) want.delete(link.neighborId);
+    else await ctx.db.delete(link._id);
+  }
+  for (const [neighborId, neighborStamp] of want) {
+    await ctx.db.insert('bodyGeoLinks', {
+      waterBodyId: holder,
+      neighborId: neighborId as Id<'waterBodies'>,
+      neighborStamp,
+    });
+  }
+}
 
 /**
  * Store a body's computed facts — only if the outline they were computed for is still its own (else
@@ -230,6 +320,8 @@ export const store = internalMutation({
     towns: v.array(v.string()),
     counties: v.array(v.string()),
     states: v.array(v.string()),
+    /** The places-layer mark the places were computed under (`inputs.areasAt`). */
+    areasAt: v.number(),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -247,6 +339,9 @@ export const store = internalMutation({
         );
         await ctx.db.delete(row._id);
       }
+      // Gone: its links go, and every body holding its outline drops it on recompute.
+      await writeLinks(ctx, args.waterBodyId, []);
+      await markHolders(ctx, args.waterBodyId, now);
       return { stored: false };
     }
     if (outlineStamp(body) !== args.stamp) return { stored: false };
@@ -263,6 +358,8 @@ export const store = internalMutation({
     const fields = {
       staleAt: markedSince,
       computedAt: now,
+      checkedAt: now,
+      areasAt: args.areasAt,
       stamp: args.stamp,
       neighbors: args.neighbors,
       neighborsCapped: args.neighborsCapped,
@@ -273,6 +370,12 @@ export const store = internalMutation({
     };
     if (row) await ctx.db.patch(row._id, fields);
     else await ctx.db.insert('bodyGeoFacts', { waterBodyId: args.waterBodyId, ...fields });
+    await writeLinks(ctx, args.waterBodyId, args.neighbors);
+    // Its outline changed since its last answer: every body that holds a copy of it is behind. Only
+    // this body's own stamp moving fans out, so a holder's recompute (its stamp unchanged) ends there.
+    if (row?.stamp !== undefined && row.stamp !== args.stamp) {
+      await markHolders(ctx, args.waterBodyId, now);
+    }
     // A neighbor whose relation moved is recomputed — unless it is gone or merged away, which has
     // no facts to keep (marking it would leave a stale row no computation clears).
     const live: Id<'waterBodies'>[] = [];
@@ -332,6 +435,7 @@ type Candidate = {
   whole: boolean;
   polygon: unknown;
   ring: [number, number][];
+  stamp: string;
 };
 
 /** Compute one body's facts in the action, start to finish. Throws on a failure the caller records. */
@@ -348,6 +452,7 @@ async function computeOne(ctx: ActionCtx, waterBodyId: Id<'waterBodies'>): Promi
       towns: [],
       counties: [],
       states: [],
+      areasAt: 0,
     });
     return;
   }
@@ -377,7 +482,7 @@ async function computeOne(ctx: ActionCtx, waterBodyId: Id<'waterBodies'>): Promi
     .filter((b) =>
       touches(geom, (b.polygon ?? { type: 'Polygon', coordinates: [b.ring] }) as Geom, b.whole),
     )
-    .map((b) => ({ waterBodyId: b.id, name: b.name, ring: b.ring }));
+    .map((b) => ({ waterBodyId: b.id, name: b.name, ring: b.ring, stamp: b.stamp }));
   const found = await ctx.runQuery(internal.bodyGeo.areaCandidates, { points: input.places });
   const places = placesFrom(input.places, found);
   await ctx.runMutation(internal.bodyGeo.store, {
@@ -387,6 +492,7 @@ async function computeOne(ctx: ActionCtx, waterBodyId: Id<'waterBodies'>): Promi
     neighbors,
     neighborsCapped: coverTruncated || ranked.length > TOUCH_CANDIDATES,
     ...places,
+    areasAt: input.areasAt,
   });
 }
 
@@ -498,5 +604,110 @@ export const seedAll = internalMutation({
       await ctx.scheduler.runAfter(0, internal.bodyGeo.seedAll, { cursor: page.continueCursor });
     }
     return { marked: page.page.length, isDone: page.isDone };
+  },
+});
+
+// ── The drift repair ─────────────────────────────────────────────────────────────────────────
+
+/** Facts rows one drift tick checks at most. */
+export const DRIFT_BATCH = 40;
+/** Read budget a drift tick keeps back: each check reads a body, up to its 1 MiB outline. */
+const DRIFT_BYTES_RESERVE = 2 * 1024 * 1024;
+/** Library rows one missing-row page reads (small documents; one index probe each). */
+export const MISSING_PAGE = 500;
+
+/**
+ * **The self-healing net** for a write the marks missed: the computed rows checked longest ago, each
+ * against what it was computed from — the body (gone or merged, or its outline's stamp moved), the
+ * places layer (a mark newer than `areasAt`), and each outline it holds a copy of (a neighbor's
+ * current answer was cut from a different outline than the held ring). A row that is behind is marked
+ * stale; every row checked is stamped `checkedAt`, so the tick walks the whole table and starts over.
+ * Bounded by {@link DRIFT_BATCH} and the read budget; a row it can't afford is left for the next tick.
+ */
+export const repairDrift = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const areasAt = await latestAreasMark(ctx);
+    const rows = await ctx.db
+      .query('bodyGeoFacts')
+      .withIndex('by_checked', (q) => q.gt('checkedAt', 0))
+      .take(DRIFT_BATCH);
+    let checked = 0;
+    let marked = 0;
+    for (const row of rows) {
+      const m = await ctx.meta.getTransactionMetrics();
+      if (m.bytesRead.remaining < DRIFT_BYTES_RESERVE) break;
+      checked++;
+      if (row.staleAt === undefined && (await isBehind(ctx, row, areasAt))) {
+        await markGeoStale(ctx, [row.waterBodyId], now);
+        marked++;
+      }
+      await ctx.db.patch(row._id, { checkedAt: now });
+    }
+    return { checked, marked };
+  },
+});
+
+/** Whether a computed row no longer matches its inputs (see {@link repairDrift}). */
+async function isBehind(
+  ctx: QueryCtx,
+  row: Doc<'bodyGeoFacts'>,
+  areasAt: number,
+): Promise<boolean> {
+  const body = await ctx.db.get(row.waterBodyId);
+  if (!body || body.dedupStatus === 'merged') return true;
+  if (outlineStamp(body) !== row.stamp) return true;
+  if ((row.areasAt ?? 0) < areasAt) return true;
+  const links = await ctx.db
+    .query('bodyGeoLinks')
+    .withIndex('by_holder', (q) => q.eq('waterBodyId', row.waterBodyId))
+    .take(LINKS_PER_BODY);
+  for (const link of links) {
+    const held = await ctx.db
+      .query('bodyGeoFacts')
+      .withIndex('by_body', (q) => q.eq('waterBodyId', link.neighborId))
+      .first();
+    // The neighbor's own answer says which outline it is now; one still owed a recompute is judged
+    // when it lands (its store fans out if its stamp moved).
+    if (held === null) return true;
+    if (
+      held.staleAt === undefined &&
+      held.stamp !== undefined &&
+      held.stamp !== link.neighborStamp
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * **Bodies with no facts row at all** — a creation path the cell index's mark didn't see. One page of
+ * the body-wide library rows, each probed for its facts row and marked when it has none, chaining to
+ * the end; the daily cron starts it.
+ */
+export const repairMissing = internalMutation({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, { cursor }) => {
+    const page = await ctx.db
+      .query('bodyLibraryRows')
+      .withIndex('by_scope_name', (q) => q.eq('scope', '*'))
+      .paginate({ cursor: cursor ?? null, numItems: MISSING_PAGE });
+    const missing: Id<'waterBodies'>[] = [];
+    for (const r of page.page) {
+      const row = await ctx.db
+        .query('bodyGeoFacts')
+        .withIndex('by_body', (q) => q.eq('waterBodyId', r.waterBodyId))
+        .first();
+      if (row === null) missing.push(r.waterBodyId);
+    }
+    await markGeoStale(ctx, missing);
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, internal.bodyGeo.repairMissing, {
+        cursor: page.continueCursor,
+      });
+    }
+    return { marked: missing.length, isDone: page.isDone };
   },
 });

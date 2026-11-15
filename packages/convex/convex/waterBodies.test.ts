@@ -308,6 +308,14 @@ describe('waterBodies.create (path-only, D14/D36)', () => {
     // ...and the skate is now bound to the water it discovered, so the report flow carries on.
     const activity = await t.run((ctx) => ctx.db.get(args.activityId));
     expect(activity?.waterBodyId).toBe(id);
+    // Its geometry facts are owed at once (B01-3b): the creation re-celled it, which marks them.
+    const facts = await t.run((ctx) =>
+      ctx.db
+        .query('bodyGeoFacts')
+        .withIndex('by_body', (q) => q.eq('waterBodyId', id))
+        .first(),
+    );
+    expect(facts?.staleAt).toEqual(expect.any(Number));
   });
 
   test('refuses to mint a duplicate silently — the user must say "none of these" (D36)', async () => {

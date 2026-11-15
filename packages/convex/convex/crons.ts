@@ -367,5 +367,9 @@ crons.interval('compute body geometry facts', { minutes: 5 }, internal.bodyGeo.c
 crons.interval('retry parked body geometry', { hours: 24 }, internal.bodyGeo.computeDue, {
   parked: true,
 });
+/** The drift repair: computed facts checked against their inputs, the longest-unchecked first. */
+crons.interval('repair body geometry drift', { minutes: 5 }, internal.bodyGeo.repairDrift, {});
+/** Bodies with no geometry facts row at all, found from the library and marked. */
+crons.interval('find bodies missing geometry', { hours: 24 }, internal.bodyGeo.repairMissing, {});
 
 export default crons;
