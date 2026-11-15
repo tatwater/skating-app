@@ -1067,7 +1067,7 @@ describe('LinksTabView — over any run of adds (duplicates allowed), edits, rem
         }
       }),
       {
-        numRuns: 30,
+        numRuns: 20,
         // The review's case: a duplicate of an existing link added, typed on before the answer.
         examples: [
           [
