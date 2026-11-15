@@ -20,6 +20,7 @@ import {
 import { sayUnavailable, UnavailableButton } from '@/components/kit/unavailable-button';
 import { statusDate } from '../../frame/bodyModel';
 import { useTabKeys } from '../../frame/tabKeys';
+import { useListWriter } from '../listWriter';
 import { BLOCK_GAP, useDraft } from '../tabParts';
 import { CouldntRead, LoadingLine, NotRecorded } from '../tabStates';
 import {
@@ -84,6 +85,20 @@ export function LandmarkCard({
     setSentFor(l.name);
     sent.current = null;
   }
+  // The other spellings are a whole list: a second chip added while the first is saving is
+  // applied to the list the server acknowledged, never the one this render holds (`listWriter`).
+  const pushAliases = useListWriter(l.aliases, async (next) => {
+    const landing = onEdit?.({ aliases: [...next] });
+    return landing instanceof Promise ? (await landing) !== false : true;
+  });
+  const editAliases = (aliases: readonly string[]) => {
+    const added = aliases.filter((a) => !l.aliases.includes(a));
+    const removed = l.aliases.filter((a) => !aliases.includes(a));
+    void pushAliases((base) => [
+      ...base.filter((a) => !removed.includes(a)),
+      ...added.filter((a) => !base.includes(a)),
+    ]);
+  };
   const promotable = PROMOTABLE.has(l.kind);
   useTabKeys(card, [
     { key: 'M', run: () => sayUnavailable(TOOLS.move), enabled: canPlace },
@@ -172,7 +187,7 @@ export function LandmarkCard({
                   aria-label="Other spellings"
                   value={l.aliases}
                   placeholder="Add a spelling skaters use"
-                  onValueChange={(aliases) => onEdit({ aliases })}
+                  onValueChange={editAliases}
                 />
               ) : (
                 <span className="text-body leading-list text-fg1">

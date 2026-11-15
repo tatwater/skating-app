@@ -219,6 +219,29 @@ describe('PlacesTab', () => {
     ]);
   });
 
+  it('a spelling added while another is saving lands on top of it, never over it', async () => {
+    let land = () => {};
+    mocks.gate = new Promise<void>((resolve) => {
+      land = resolve;
+    });
+    render(<PlacesTab bodyId="wb1" lit="landmark:lm-dam" />);
+    const spellings = screen.getByRole('combobox', { name: 'Other spellings' });
+    await userEvent.type(spellings, 'the Dam{Enter}');
+    // The first save hasn't landed (and the page still shows the record without it).
+    await userEvent.type(spellings, 'Shaker Dam{Enter}');
+    expect(mocks.calls).toEqual([
+      ['landmarks:update', { landmarkId: 'lm-dam', aliases: ['the Dam'] }],
+    ]);
+    mocks.gate = null;
+    land();
+    // The second is built on the first, acknowledged — not on the render's empty list.
+    await waitFor(() => expect(mocks.calls).toHaveLength(2));
+    expect(mocks.calls[1]).toEqual([
+      'landmarks:update',
+      { landmarkId: 'lm-dam', aliases: ['the Dam', 'Shaker Dam'] },
+    ]);
+  });
+
   it('shows the record’s name again once it moves — an Undo never leaves its draft to re-save', async () => {
     const { rerender } = render(<PlacesTab bodyId="wb1" lit="landmark:lm-dam" />);
     const name = () => screen.getByRole('textbox', { name: 'Name' });
