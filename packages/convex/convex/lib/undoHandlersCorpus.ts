@@ -233,8 +233,8 @@ const undoPromotion: UndoHandler = {
 const undoFeatureShape: UndoHandler = {
   blocked: (row) => (meta(row).prev?.snapshot === true ? null : PREDATES),
   undoTakesAway: () => UNDO_POLICY.update_body_feature_shape.takesAway(undefined),
-  // A merge leaves the feature on the lake it merged away, and a redrawn or re-imported outline can
-  // leave the shape it puts back off the lake — neither writes a row on the feature, so the shape is
+  // A merge moves the feature to the survivor's box, and a redrawn or re-imported outline can leave
+  // the shape it puts back off the lake — neither writes a row on the feature, so the shape is
   // checked against the rows as they stand, by the redraw's own rule.
   refusal: async (ctx, row) => {
     const id = ctx.db.normalizeId('bodyFeatures', row.targetId);

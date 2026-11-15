@@ -327,8 +327,9 @@ function checkedShape(
 /**
  * Why a redraw of this feature is refused as the rows stand, or `null` — one rule for the write and
  * for whether its undo is offered (B01-3d): a feature gone or demoted, a lake merged away (a merge
- * leaves its features on the loser), and — given a `shape` — a shape the write would turn down, which
- * includes one an outline redrawn or re-imported since has left off the lake.
+ * re-points its features to the survivor, so this is the guard for a row left behind), and — given a
+ * `shape` — a shape the write would turn down, which includes one an outline redrawn or re-imported
+ * since has left off the lake.
  */
 export function shapeRefusal(
   feature: Doc<'bodyFeatures'> | null,

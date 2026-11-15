@@ -13,7 +13,7 @@ import { OVERRIDES_READ } from './imageryOverrides';
 import { DOC_MAX, REQUEST_PROFILE_BUDGET, requestBudget } from './lib/readBudget';
 import { savedPutInsOf } from './lib/standing';
 import { undoState } from './lib/undo';
-import { UNDO_CHECKED_ELSEWHERE } from './lib/undoReads';
+import { UNDO_CHECKED_ELSEWHERE, undoRead } from './lib/undoReads';
 import schema from './schema';
 import { MAX_MODERATOR_ALIAS_CHARS, MAX_MODERATOR_ALIASES } from './waterBodies';
 
@@ -1473,5 +1473,21 @@ describe('undo after an un-audited change: write → change → undo → redo', 
       return undoState(ctx, viewer, row);
     });
     expect(state).toEqual({ state: 'unavailable', why: UNDO_CHECKED_ELSEWHERE });
+  });
+
+  test('reads in flight together are charged one after another: the second waits for the first’s weight', async () => {
+    const t = harness();
+    const a = await imported(t, 'way/1');
+    const b = await imported(t, 'way/2');
+    const got = await t.run(async (ctx) => {
+      // Room for one body's worst case and a byte: the first read leaves less than that for the second.
+      requestBudget(ctx).spend(REQUEST_PROFILE_BUDGET - DOC_MAX - 1);
+      const [first, second] = await Promise.all([
+        undoRead(ctx, 'waterBody', a),
+        undoRead(ctx, 'waterBody', b),
+      ]);
+      return { first: first?._id ?? null, secondRead: second !== undefined };
+    });
+    expect(got).toEqual({ first: a, secondRead: false });
   });
 });
