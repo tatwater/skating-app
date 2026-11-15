@@ -27,11 +27,19 @@ type Common = {
 
 const NO_SWITCHES: Partial<Record<BodyMapLayer, boolean>> = {};
 
+/**
+ * The rack's switches. **A tab change restores that tab's defaults**: the operator's own switches
+ * belong to the key they were made under, and are cleared — not parked — when the key changes, so
+ * Bays turned off in Shape comes back on after a visit to Names. (The deliberate rememberings are
+ * elsewhere and say so: the map's camera through a theme switch, the list's scroll per list.)
+ */
 function useRack(scene: BodyMapScene, resetKey: string) {
   const [operator, setOperator] = useState<{
     key: string;
     on: Partial<Record<BodyMapLayer, boolean>>;
   }>({ key: resetKey, on: {} });
+  // A new key drops the switches made under the old one, during the render that sees it.
+  if (operator.key !== resetKey) setOperator({ key: resetKey, on: {} });
   const own = operator.key === resetKey ? operator.on : NO_SWITCHES;
   const switches = useMemo(() => layerSwitches(scene.layers, own), [scene.layers, own]);
   const drawn = useMemo(() => drawScene(scene, switches), [scene, switches]);

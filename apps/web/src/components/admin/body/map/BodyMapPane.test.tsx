@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { expectKeyboardOperable } from '@/test/keyboardAudit';
 import { MASCOMA_BOUNDS, MASCOMA_SCENE } from '../frame/bodyFixtures';
 import { stubJsdomAnimations } from '../tabs/jsdomStubs';
 import { BodyMapStillView } from './BodyMap';
@@ -113,6 +114,38 @@ describe('BodyMapPane', () => {
     await user.click(putIns);
     expect(putIn()).not.toBeNull();
     expect(document.querySelector('[data-slot="map-hover-plate"]')).toBeNull();
+  });
+});
+
+describe('the map pane and the keyboard', () => {
+  it('answers the keyboard wherever it answers a click: the rack, the zoom, the marks', () => {
+    const { container } = render(<Still />);
+    expect(expectKeyboardOperable(container).length).toBeGreaterThan(0);
+  });
+});
+
+describe('the rack’s switches', () => {
+  it('a tab change restores the tab’s defaults: switches made on Shape don’t come back after Names', async () => {
+    const user = userEvent.setup();
+    const at = (key: string) => (
+      <BodyMapStillView
+        bbox={MASCOMA_BOUNDS}
+        scene={MASCOMA_SCENE}
+        resetKey={key}
+        width={W}
+        height={H}
+      />
+    );
+    const { rerender } = render(at('k1:shape'));
+    const putIns = () => screen.getByRole('switch', { name: /Put-ins/ });
+    expect(putIns()).toBeChecked();
+    await user.click(putIns());
+    expect(putIns()).not.toBeChecked();
+    rerender(at('k1:names'));
+    expect(putIns()).toBeChecked();
+    rerender(at('k1:shape'));
+    // Cleared when the key changed, not parked for the next visit.
+    expect(putIns()).toBeChecked();
   });
 });
 
