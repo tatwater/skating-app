@@ -88,6 +88,26 @@ describe('the built modes', () => {
     expect(CAPABILITIES['body.read'].role).toBe('moderator');
   });
 
+  it('finds People at the list and on every person’s page, and nowhere that only shares a prefix', () => {
+    expect(modeAt('/admin/people')?.id).toBe('people');
+    expect(modeAt('/admin/people/')?.id).toBe('people');
+    expect(modeAt('/admin/people/k17abc')?.id).toBe('people');
+    expect(modeAt('/admin/peoplex')).toBeUndefined();
+    expect(modeAt('/admin/users')).toBeUndefined();
+  });
+
+  it('gates People on reading people, a moderator line, and goes there on G then P', () => {
+    const people = CONSOLE_MODES.find((m) => m.id === 'people');
+    expect(people).toMatchObject({ to: '/admin/people', goKey: 'P', capability: 'people.read' });
+    expect(CAPABILITIES['people.read'].role).toBe('moderator');
+  });
+
+  it('retired the old user pages: no old shell, no Legacy line', () => {
+    expect(usesOldShell('/admin/users')).toBe(false);
+    expect(usesOldShell('/admin/users/k17abc')).toBe(false);
+    expect(LEGACY_PAGES.some((p) => p.to.startsWith('/admin/users'))).toBe(false);
+  });
+
   it('never sends a tree a mode owns to the old shell', () => {
     for (const mode of CONSOLE_MODES) {
       for (const tree of mode.also ?? []) expect(usesOldShell(`${tree}/x`)).toBe(false);

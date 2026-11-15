@@ -26,8 +26,17 @@ vi.mock('convex/react', async () => {
 vi.mock('@tanstack/react-router', () => ({
   useSearch: () => mocks.search,
   useNavigate: () => mocks.navigate,
-  Link: ({ to, children, ...props }: { to: string; children?: ReactNode }) => (
-    <a href={to} {...props}>
+  Link: ({
+    to,
+    search,
+    children,
+    ...props
+  }: {
+    to: string;
+    search?: Record<string, string>;
+    children?: ReactNode;
+  }) => (
+    <a href={search === undefined ? to : `${to}?${new URLSearchParams(search)}`} {...props}>
       {children}
     </a>
   ),
@@ -100,6 +109,7 @@ beforeEach(() => {
       appealsOpen: count(0),
       leaving: count(0),
       totalUsers: null,
+      pending: [],
     },
   });
   mocks.results.set(getFunctionName(api.waterBodies.reviewQueueCounts), {
@@ -198,7 +208,9 @@ describe('the Overview at /admin', () => {
     expect(row('Safety')).toHaveAttribute('href', '/admin/flags');
     expect(row('Requests')).toHaveAttribute('href', '/admin/water/requests');
     expect(row('Duplicates')).toHaveAttribute('href', '/admin/water/review');
-    expect(row('Banned')).toHaveAttribute('href', '/admin/users');
+    // People has landed: its lists open as its lanes.
+    expect(row('Banned')).toHaveAttribute('href', '/admin/people?lane=banned');
+    expect(row('New this week')).toHaveAttribute('href', '/admin/people?lane=newest');
   });
 
   it('opens a feed row on its old page', async () => {

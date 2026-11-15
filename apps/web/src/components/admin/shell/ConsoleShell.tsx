@@ -4,6 +4,7 @@ import {
   faBoxArchive,
   faMapLocationDot,
   faTachographDigital,
+  faUsers,
   type IconDefinition,
 } from '@fortawesome/sharp-light-svg-icons';
 import {
@@ -57,6 +58,7 @@ import type { ConsoleMode, LegacyPage } from './consoleNav';
 const MODE_ICON: Record<ConsoleMode['id'], IconDefinition> = {
   overview: faTachographDigital,
   bodies: faMapLocationDot,
+  people: faUsers,
 };
 
 /** A built mode as the rail draws it. */

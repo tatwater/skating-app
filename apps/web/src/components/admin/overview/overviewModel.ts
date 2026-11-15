@@ -47,20 +47,6 @@ const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 export const DAY = 24 * HOUR;
 
-/**
- * A list row's age, short: "12 min", "5 h", "1.5 d", "4 d". Under two days it keeps a tenth (a
- * day and a half reads differently from a day); past that, whole days, rounded down — an item is
- * "4 d" old until it is five. Never negative: a clock skew reads as "0 min".
- */
-export function shortAge(ms: number): string {
-  const age = Number.isFinite(ms) ? Math.max(0, ms) : 0;
-  if (age < HOUR) return `${Math.floor(age / MINUTE)} min`;
-  if (age < DAY) return `${Math.floor(age / HOUR)} h`;
-  const days = age / DAY;
-  const shown = days < 2 ? Math.floor(days * 10) / 10 : Math.floor(days);
-  return `${shown} d`;
-}
-
 const pad2 = (n: number) => String(n).padStart(2, '0');
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 const MONTHS = [

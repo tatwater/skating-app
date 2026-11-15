@@ -99,9 +99,10 @@ export const Machinery: Story = {
     await expect(getComputedStyle(health).backgroundColor).toEqual(
       sameColor(computedColor(nav, 'var(--lift-08)')),
     );
-    // On, every count reads lit; elsewhere, by meaning.
+    // Counts read by meaning, chosen or not — a red count stays red on the chosen lane (board 8.1's
+    // amber Suspended); only a quiet count lights with its lane.
     const tone = (name: RegExp) => part(row(nav, name), 'lane-count').dataset.tone;
-    await expect(tone(/Health/)).toBe('lit');
+    await expect(tone(/Health/)).toBe('bad');
     await expect(tone(/Corpus/)).toBe('warn');
     await expect(tone(/Retention/)).toBe('bad');
     await expect(tone(/Notifications/)).toBe('default');

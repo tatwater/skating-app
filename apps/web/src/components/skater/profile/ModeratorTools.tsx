@@ -101,7 +101,7 @@ export function ModeratorToolsView({
           Moderator tools
         </span>
         <a
-          href={`/admin/users/${user.userId}`}
+          href={`/admin/people/${encodeURIComponent(user.userId)}`}
           target="_blank"
           rel="noreferrer"
           className={buttonVariants({ variant: 'link', size: 'sm', className: 'ml-auto' })}

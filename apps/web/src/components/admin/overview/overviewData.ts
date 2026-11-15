@@ -10,9 +10,10 @@
  */
 import type { api } from '@skating/convex/api';
 import type { FunctionReturnType } from 'convex/server';
-
+import { shortAge } from '@/lib/ages';
 import { type AuditAction, type AuditTarget, actorWords } from '../shell/actionLabels';
-import { type Count, DAY, feedWhen, shortAge, sumCounts } from './overviewModel';
+
+import { type Count, DAY, feedWhen, sumCounts } from './overviewModel';
 
 const HOUR = DAY / 24;
 
@@ -239,6 +240,12 @@ export interface PeopleCardData {
   leaving: Count;
   /** Everyone with an account (the 6-hourly rollup); `null` until it has run. */
   totalUsers: Count | null;
+  /**
+   * The People backfills not yet finished after a deploy: while `rows` is, every figure but
+   * `totalUsers` may be wrong (not merely a floor); while `flagSubjects` is, `flaggedPeople` may be.
+   * The card says so instead of a number.
+   */
+  pending: ConsoleOverview['people']['pending'];
 }
 
 export function peopleFromOverview(people: ConsoleOverview['people']): PeopleCardData {
