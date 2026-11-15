@@ -47,6 +47,10 @@ import {
 const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 /** What the unbuilt controls will do, in the operator's words. */
+/** Each catalog's class: stored by the import from now, so an older body has none until then. */
+export const CLASS_CLAIMS_NOT_RECORDED =
+  'Each catalog’s class: not recorded until this body’s next import campaign';
+
 const NOT_YET = {
   aliases: 'Adding and removing the names skaters use comes with the aliases editor.',
   cls: 'Changing a body’s class comes with the class editor.',
@@ -69,6 +73,10 @@ export type NamesViewProps = {
   onAliasesChange?: (aliases: string[]) => void;
   /** Set the class. */
   onClassChange?: (cls: WaterBodyClass) => void;
+  /** Put the import's class back over a moderator's (`setClass(null)`). */
+  onClassClear?: () => void;
+  /** The server's refusal of the last aliases save, said under the field (`null` none). */
+  aliasesError?: string | null;
   /** The viewer could edit the aliases: with no `onAliasesChange` yet, the field says so. */
   canEditAliases?: boolean;
   /** The viewer could change the class: with no `onClassChange` yet, the control says so. */
@@ -84,6 +92,8 @@ export function NamesView({
   onCommunityName,
   onAliasesChange,
   onClassChange,
+  onClassClear,
+  aliasesError = null,
   canEditAliases = false,
   canEditClass = false,
 }: NamesViewProps) {
@@ -114,13 +124,23 @@ export function NamesView({
       <ReadFailures failures={data.failures} onRetry={onRetry} pending={retryPending} />
       <NameSection data={data} lit={lit} onChoose={onChooseName} onCommunity={onCommunityName} />
       <Section title="Aliases" count={data.aliases.length} data-slot="aliases">
-        {onAliasesChange ? (
-          <ChipInput
-            aria-label="Aliases"
-            value={data.aliases}
-            onValueChange={onAliasesChange}
-            placeholder="Add a name skaters use"
-          />
+        {onAliasesChange && data.aliasesEditable ? (
+          <>
+            <ChipInput
+              aria-label="Aliases"
+              value={data.aliases}
+              onValueChange={onAliasesChange}
+              placeholder="Add a name skaters use"
+            />
+            {aliasesError !== null && (
+              <p role="alert" data-slot="aliases-refused" className="m-0 text-assist text-bad">
+                {aliasesError}
+              </p>
+            )}
+          </>
+        ) : onAliasesChange ? (
+          // The moderator's own list is on its way: the field holds its place, not the catalogs'.
+          <LoadingLine width="10rem" />
         ) : canEditAliases ? (
           <UnavailableField what={NOT_YET.aliases} label="Aliases">
             <ChipInput
@@ -149,7 +169,13 @@ export function NamesView({
           )
         )}
       </Section>
-      <ClassSection data={data} lit={lit} onChange={onClassChange} canEdit={canEditClass} />
+      <ClassSection
+        data={data}
+        lit={lit}
+        onChange={onClassChange}
+        onClear={onClassClear}
+        canEdit={canEditClass}
+      />
       <LocationSection data={data} />
     </TabBody>
   );
@@ -296,11 +322,13 @@ function ClassSection({
   data,
   lit,
   onChange,
+  onClear,
   canEdit,
 }: {
   data: NamesData;
   lit: string | null;
   onChange: NamesViewProps['onClassChange'];
+  onClear?: NamesViewProps['onClassClear'];
   canEdit: boolean;
 }) {
   // Back on the record's class whenever it moves, so the checked row is never a class it left.
@@ -385,8 +413,13 @@ function ClassSection({
       </RadioGroup>
       {data.classOptions === null && (
         <span data-slot="class-claims" className="text-assist leading-list text-fg3">
-          Each catalog’s class: {NOT_RECORDED}
+          {CLASS_CLAIMS_NOT_RECORDED}
         </span>
+      )}
+      {onClear && data.moderatorClass != null && pick === data.cls && (
+        <Button className="self-start" onClick={onClear}>
+          Back to the catalogs’ class
+        </Button>
       )}
       {onChange && pick !== data.cls && (
         <Button className="self-start" onClick={() => onChange(pick)}>

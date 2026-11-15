@@ -96,8 +96,12 @@ export type NamesData = {
   community: boolean;
   /** A moderator chose the displayed name over the catalogs' ranking. */
   overridden: boolean;
-  /** Names skaters use that the body doesn't display. */
+  /** Names skaters use that the body doesn't display: the moderator's, once that read lands. */
   aliases: string[];
+  /** The aliases above are the moderator's own list (`bodyConsole.identity`), the one an edit writes. */
+  aliasesEditable?: boolean;
+  /** A moderator set the class over the catalogs' (`moderatorClass`); `null` the import's. */
+  moderatorClass?: WaterBodyClass | null;
   cls: WaterBodyClass;
   /** Each catalog's answer; `null` until the claims are stored. Always holds the current class. */
   classOptions: ClassOption[] | null;
@@ -173,19 +177,31 @@ export function namesFromBody(
   body: NamesBody,
   // Required, never defaulted: a default would read a boundary read still loading as landed.
   places: Loadable<PlacesInput>,
-  extras: { classOptions?: ClassOption[] | null; townLines?: TownLine[] | null } = {},
+  extras: {
+    classOptions?: ClassOption[] | null;
+    townLines?: TownLine[] | null;
+    /** `bodyConsole.identity`: the moderator's aliases and class (the aliases are what's edited). */
+    identity?: Loadable<NamesIdentity>;
+  } = {},
 ): NamesData {
+  const identity =
+    extras.identity === undefined || isFailed(extras.identity) ? null : extras.identity;
   const rungs = nameRungs(body.name, body.nameClaims);
   const claims = body.nameClaims ?? [];
   const overridden = claims.some((c) => c.source === 'user' && same(c.value, body.name));
-  const options = extras.classOptions ?? null;
+  const options =
+    extras.classOptions ?? (identity === null ? null : classOptionsOf(identity.classClaims));
   return {
     name: body.name,
     rungs,
     // `setWaterBodyName`'s rule: no catalog claim, and nameless or named by a moderator's claim.
     community: rungs.length === 0 && (body.name === '' || claims.some((c) => c.source === 'user')),
     overridden,
-    aliases: aliasesOf(body.name, body.nameClaims),
+    // The moderator's aliases are the list the editor writes (`setAliases`); until that read lands,
+    // the catalogs' other spellings are shown as they stand.
+    aliases: identity === null ? aliasesOf(body.name, body.nameClaims) : identity.moderatorAliases,
+    aliasesEditable: identity !== null,
+    moderatorClass: identity?.moderatorClass ?? null,
     cls: body.type,
     classOptions: options === null ? null : withCurrentClass(options, body.type),
     perCatalogClaims: null,
@@ -195,8 +211,30 @@ export function namesFromBody(
       states: [...(body.states ?? [])],
       townLines: extras.townLines ?? null,
     },
-    failures: isFailed(places) ? ['the towns and county'] : [],
+    failures: [
+      ...(isFailed(places) ? ['the towns and county'] : []),
+      ...(extras.identity !== undefined && isFailed(extras.identity)
+        ? ['the moderator’s aliases and class']
+        : []),
+    ],
   };
+}
+
+/** `bodyConsole.identity`'s answer. */
+export type NamesIdentity = {
+  bodyClass: WaterBodyClass;
+  /** Each catalog's class, `null` until the import stores them (a body's next campaign). */
+  classClaims: { source: string; value: WaterBodyClass }[] | null;
+  moderatorClass: WaterBodyClass | null;
+  moderatorAliases: string[];
+};
+
+/** The class claims as options: each class with the catalogs that say so; `null` not recorded. */
+export function classOptionsOf(claims: NamesIdentity['classClaims']): ClassOption[] | null {
+  if (claims === null) return null;
+  const by = new Map<WaterBodyClass, string[]>();
+  for (const c of claims) by.set(c.value, [...(by.get(c.value) ?? []), c.source.toUpperCase()]);
+  return [...by].map(([cls, sources]) => ({ cls, sources }));
 }
 
 /**

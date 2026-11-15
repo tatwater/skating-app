@@ -1,7 +1,8 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
+import type { WaterBodyClass } from '@skating/core';
 import { useMutation } from 'convex/react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   isFailed,
   type Loadable,
@@ -9,10 +10,19 @@ import {
   useConsoleReadSet,
 } from '@/components/admin/reads/consoleReads';
 import { useRole } from '@/lib/useRole';
+import { useUndo } from '../../../shell/undo';
+import { listChanged, sendFor, useBodyHold } from '../../frame/currentBody';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
+import { useListWriter } from '../listWriter';
 import { useTabAction } from '../useTabAction';
 import { NamesView } from './NamesView';
-import { type NamesData, namesFromBody, namesMapScene } from './namesModel';
+import {
+  classLabel,
+  type NamesData,
+  type NamesIdentity,
+  namesFromBody,
+  namesMapScene,
+} from './namesModel';
 
 /**
  * The Names tab's reads and its data: the body's record (`waterBodies.get`) and the boundaries it
@@ -29,12 +39,16 @@ export function useNamesRead(bodyId: string): {
   const { reads, retry, pending } = useConsoleReadSet({
     body: read(api.waterBodies.get, { waterBodyId }),
     places: read(api.bodyConsole.places, { waterBodyId }),
+    identity: read(api.bodyConsole.identity, { waterBodyId }),
   });
-  const { body: got, places } = reads;
+  const { body: got, places, identity } = reads;
   const body = isFailed(got) ? got : got?.available ? got.body : undefined;
   const data = useMemo<Loadable<NamesData>>(
-    () => (body === undefined || isFailed(body) ? body : namesFromBody(body, places)),
-    [body, places],
+    () =>
+      body === undefined || isFailed(body)
+        ? body
+        : namesFromBody(body, places, { identity: identity as Loadable<NamesIdentity> }),
+    [body, places, identity],
   );
   return { data, retry, pending };
 }
@@ -70,6 +84,47 @@ export function NamesTab({ bodyId, lit = null }: BodyTabProps) {
   const community = canEdit
     ? (name: string | null) => write(name, name === null ? 'Cleared the name' : `Named “${name}”`)
     : undefined;
+
+  // **The aliases are a whole list** (`setAliases`, at most 20, each at most 120 characters): one
+  // queue for the body, above the page, each save naming the list it was built on (`expected`);
+  // a list another moderator moved is re-applied on top. The server's refusals are said in place.
+  const setAliases = useMutation(api.waterBodies.setAliases);
+  const setClass = useMutation(api.waterBodies.setClass);
+  const hold = useBodyHold();
+  const { announce } = useUndo();
+  const [aliasesError, setAliasesError] = useState<string | null>(null);
+  const shown = data !== undefined && !isFailed(data) ? data.aliases : [];
+  const pushAliases = useListWriter<string>(
+    `names-aliases:${bodyId}`,
+    shown,
+    async (next, base) => {
+      setAliasesError(null);
+      try {
+        await sendFor(hold, {
+          body: bodyId,
+          write: () => setAliases({ waterBodyId, aliases: [...next], expected: [...base] }),
+          receipt: (subject) => announce({ title: 'Aliases saved', target, subject }),
+          what: 'The aliases',
+        });
+        return true;
+      } catch (err) {
+        const current = listChanged(err);
+        if (current !== null) return { current: current as string[] };
+        setAliasesError(err instanceof Error ? err.message : String(err));
+        return false;
+      }
+    },
+  );
+  const editAliases = (aliases: string[]) => {
+    const added = aliases.filter((a) => !shown.includes(a));
+    const removed = shown.filter((a) => !aliases.includes(a));
+    void pushAliases((base) => [
+      ...base.filter((a) => !removed.includes(a)),
+      ...added.filter((a) => !base.includes(a)),
+    ]);
+  };
+  const classWrite = (bodyClass: WaterBodyClass | null, title: string) =>
+    void act(() => setClass({ waterBodyId, bodyClass }), { title, target });
   return (
     <NamesView
       data={data}
@@ -80,6 +135,15 @@ export function NamesTab({ bodyId, lit = null }: BodyTabProps) {
       onCommunityName={community}
       canEditAliases={canEdit}
       canEditClass={canEdit}
+      {...(canEdit
+        ? {
+            onAliasesChange: editAliases,
+            aliasesError,
+            onClassChange: (cls: WaterBodyClass) =>
+              classWrite(cls, `Class set to ${classLabel(cls)}`),
+            onClassClear: () => classWrite(null, 'Back to the catalogs’ class'),
+          }
+        : {})}
     />
   );
 }

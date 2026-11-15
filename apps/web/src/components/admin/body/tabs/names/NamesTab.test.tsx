@@ -55,6 +55,7 @@ import { resetConsoleReads } from '@/components/admin/reads/consoleReads';
 import { BodyTabHost } from '../../frame/BodyConsoleRoute';
 import { stubJsdomAnimations } from '../jsdomStubs';
 import { NamesTab } from './NamesTab';
+import { CLASS_CLAIMS_NOT_RECORDED } from './NamesView';
 
 beforeAll(stubJsdomAnimations);
 
@@ -128,30 +129,97 @@ describe('NamesTab', () => {
     expect(screen.getAllByText('Lake Auburn').length).toBeGreaterThan(0);
   });
 
-  it('draws the alias editor and the class change Not available yet: the server has neither write', async () => {
-    render(<NamesTab bodyId="wb1" />);
-    const aliases = screen.getByRole('group', { name: 'Aliases' });
-    expect(aliases).toHaveAttribute('aria-disabled', 'true');
-    await userEvent.click(aliases);
-    expect(toasts).toEqual([
-      expect.objectContaining({
-        title: 'Not available yet',
-        description: expect.stringContaining('aliases editor'),
-      }),
-    ]);
-    const another = screen.getByRole('button', { name: /Another class/ });
-    expect(another).toHaveAttribute('aria-disabled', 'true');
-    await userEvent.click(another);
-    expect(toasts).toHaveLength(2);
-    expect(screen.queryByRole('button', { name: /Set as/ })).toBeNull();
+  /** `bodyConsole.identity`, as the server answers it. */
+  const identityOf = (over: Record<string, unknown> = {}) => ({
+    bodyClass: 'lakePond',
+    classClaims: null,
+    moderatorClass: null,
+    moderatorAliases: [],
+    ...over,
   });
 
-  it('says what no read records: each catalog’s class, and the catalogs that agree', () => {
+  it('saves the aliases as a whole list naming the list it was built on, and says a refusal in place', async () => {
+    const identity = getFunctionName(api.bodyConsole.identity);
+    mocks.results.set(identity, identityOf({ moderatorAliases: ['The Basin'] }));
+    // `setAliases` stores the list; the identity read answers with it.
+    mocks.server = (name, args) => {
+      if (name === 'waterBodies:setAliases') {
+        mocks.results.set(identity, identityOf({ moderatorAliases: args.aliases }));
+      }
+    };
+    const { rerender } = render(<NamesTab bodyId="wb1" />);
+    const field = screen.getByRole('combobox', { name: 'Aliases' });
+    await userEvent.type(field, 'Big Pond{Enter}');
+    await waitFor(() =>
+      expect(mocks.calls).toEqual([
+        [
+          'waterBodies:setAliases',
+          { waterBodyId: 'wb1', aliases: ['The Basin', 'Big Pond'], expected: ['The Basin'] },
+        ],
+      ]),
+    );
+    expect(mocks.announce).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Aliases saved' }),
+    );
+    rerender(<NamesTab bodyId="wb1" />);
+    // The server's refusal (past 20, past 120 characters) is said under the field.
+    mocks.fail = true;
+    await userEvent.type(screen.getByRole('combobox', { name: 'Aliases' }), 'Another{Enter}');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Water body not found');
+  });
+
+  it('sets the class, and puts the catalogs’ class back over a moderator’s', async () => {
+    const get = getFunctionName(api.waterBodies.get);
+    const identity = getFunctionName(api.bodyConsole.identity);
+    mocks.results.set(identity, identityOf());
+    mocks.server = (name, args) => {
+      if (name !== 'waterBodies:setClass') return;
+      const cls = (args.bodyClass as string | null) ?? 'lakePond';
+      mocks.results.set(get, { available: true, body: { ...BODY, type: cls } });
+      mocks.results.set(identity, identityOf({ bodyClass: cls, moderatorClass: args.bodyClass }));
+    };
+    const { rerender } = render(<NamesTab bodyId="wb1" />);
+    await userEvent.click(screen.getByRole('button', { name: /Another class/ }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Reservoir' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Set as Reservoir' }));
+    expect(mocks.calls).toEqual([
+      ['waterBodies:setClass', { waterBodyId: 'wb1', bodyClass: 'reservoir' }],
+    ]);
+    rerender(<NamesTab bodyId="wb1" />);
+    // Held now: no Set as; the way back to the catalogs' class instead.
+    expect(screen.queryByRole('button', { name: /Set as/ })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Back to the catalogs’ class' }));
+    expect(mocks.calls.at(-1)).toEqual([
+      'waterBodies:setClass',
+      { waterBodyId: 'wb1', bodyClass: null },
+    ]);
+    rerender(<NamesTab bodyId="wb1" />);
+    expect(screen.queryByRole('button', { name: 'Back to the catalogs’ class' })).toBeNull();
+    expect(mocks.calls).toHaveLength(2);
+  });
+
+  it('says what no read records: each catalog’s class until the body’s next campaign, and the catalogs that agree', () => {
+    mocks.results.set(getFunctionName(api.bodyConsole.identity), identityOf());
     render(<NamesTab bodyId="wb1" />);
-    expect(screen.getByText(/Each catalog’s class: Not recorded yet/)).toBeTruthy();
+    expect(screen.getByText(CLASS_CLAIMS_NOT_RECORDED)).toBeTruthy();
     expect(
       screen.getByText(/Other catalogs that gave the same spelling: Not recorded yet/),
     ).toBeTruthy();
+  });
+
+  it('draws each catalog’s class once the import has stored them', () => {
+    mocks.results.set(
+      getFunctionName(api.bodyConsole.identity),
+      identityOf({
+        classClaims: [
+          { source: 'osm', value: 'lakePond' },
+          { source: 'nhd', value: 'reservoir' },
+        ],
+      }),
+    );
+    render(<NamesTab bodyId="wb1" />);
+    expect(screen.queryByText(CLASS_CLAIMS_NOT_RECORDED)).toBeNull();
+    expect(screen.getByRole('radio', { name: /Reservoir/ })).toBeTruthy();
   });
 
   it('places the body in its towns and county, from the boundaries', () => {
