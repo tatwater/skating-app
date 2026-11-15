@@ -266,7 +266,7 @@ describe('LinksTabView — over any run of opening, typing, Done, Cancel and reo
           let row = -1;
           // Each opening's id, and the openings whose saves are on their way, oldest first.
           let opening = 0;
-          const saves: number[] = [];
+          const saves: { opening: number; text: string }[] = [];
           // Each row's label, as the Done presses left it, in order.
           const expected = [ASSOC.label, DAM.label];
           const editor = () => screen.queryByRole('textbox', { name: /Label/ });
@@ -283,12 +283,12 @@ describe('LinksTabView — over any run of opening, typing, Done, Cancel and reo
               await user.type(editor() as HTMLElement, o.text);
               draft += o.text;
             } else if (o.kind === 'done' && draft !== null) {
-              const changes = draft !== expected[row] && !saves.includes(opening);
+              const changes = draft !== expected[row] && !saves.some((v) => v.opening === opening);
               await user.click(screen.getByRole('button', { name: 'Done' }));
               // A Done that changes the link queues a save (it may wait behind another).
               if (changes) {
                 expected[row] = draft;
-                saves.push(opening);
+                saves.push({ opening, text: draft });
               }
               // A change waits open for its own save; one that changes nothing closes at once.
               if (editor() === null) draft = null;
@@ -298,10 +298,10 @@ describe('LinksTabView — over any run of opening, typing, Done, Cancel and reo
             } else if (o.kind === 'land' && releases.length > 0) {
               const from = saves.shift();
               await land(releases);
-              // Only the editor whose own save this was may close; any other stands, its draft
-              // whole.
+              // Only the editor whose own save this was may close — and only if its draft is still
+              // what it sent; any other stands, its draft whole.
               if (draft !== null) {
-                if (from === opening) {
+                if (from?.opening === opening && from.text === draft) {
                   expect(editor()).toBeNull();
                   draft = null;
                 } else {
@@ -632,5 +632,97 @@ describe('SortableRows', () => {
     });
     expect(rows()).toEqual(['Alpha', 'Bravo', 'Charlie']);
     expect(onReorder).not.toHaveBeenCalled();
+  });
+});
+
+describe('LinksTabView — a finished save never discards what was typed since it was sent', () => {
+  /** A held save that the test lands or refuses. */
+  function Answerable({
+    sent,
+    answers,
+  }: {
+    sent: StaffLink[][];
+    answers: ((refusal?: Error) => void)[];
+  }) {
+    const [links, setLinks] = useState<readonly StaffLink[]>(MASCOMA.referenceLinks ?? []);
+    return (
+      <LinksTabView
+        {...base}
+        body={{ ...MASCOMA, referenceLinks: links }}
+        onSave={async (next) => {
+          sent.push(next);
+          await new Promise<void>((resolve, reject) =>
+            answers.push((refusal) => (refusal === undefined ? resolve() : reject(refusal))),
+          );
+          setTimeout(() => setLinks(next), 0);
+        }}
+      />
+    );
+  }
+  const answer = async (answers: ((refusal?: Error) => void)[], refusal?: Error) => {
+    await act(async () => answers.shift()?.(refusal));
+    await act(async () => new Promise((r) => setTimeout(r, 5)));
+  };
+  const label = () => screen.getByRole('textbox', { name: 'Label' }) as HTMLInputElement;
+
+  it('an edit: typed on before the answer, the editor stays open with the newer text, and saves again', async () => {
+    const user = userEvent.setup();
+    const sent: StaffLink[][] = [];
+    const answers: ((refusal?: Error) => void)[] = [];
+    render(<Answerable sent={sent} answers={answers} />);
+    await user.click(screen.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
+    await user.clear(label());
+    await user.type(label(), 'The Association');
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    // Typing on while the save is out.
+    await user.type(label(), ' of Mascoma');
+    await answer(answers);
+    expect(sent).toEqual([[{ ...ASSOC, label: 'The Association' }, DAM]]);
+    // Still open, the newer text whole — an unsaved edit over the saved value.
+    expect(label().value).toBe('The Association of Mascoma');
+    expect(screen.getByRole('button', { name: 'Done' })).not.toHaveAttribute('aria-busy', 'true');
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    expect(sent.at(-1)).toEqual([{ ...ASSOC, label: 'The Association of Mascoma' }, DAM]);
+    await answer(answers);
+    expect(screen.queryByRole('textbox', { name: 'Label' })).toBeNull();
+  });
+
+  it('a refused edit: the editor stays open with the newer text, and saves again', async () => {
+    const user = userEvent.setup();
+    const sent: StaffLink[][] = [];
+    const answers: ((refusal?: Error) => void)[] = [];
+    render(<Answerable sent={sent} answers={answers} />);
+    await user.click(screen.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
+    await user.clear(label());
+    await user.type(label(), 'The Association');
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    await user.type(label(), ' of Mascoma');
+    await answer(answers, new Error('Not allowed'));
+    expect(label().value).toBe('The Association of Mascoma');
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    expect(sent.at(-1)).toEqual([{ ...ASSOC, label: 'The Association of Mascoma' }, DAM]);
+  });
+
+  it('an add: typed on before the answer, the next Done edits the link it added — never a second one', async () => {
+    const user = userEvent.setup();
+    const sent: StaffLink[][] = [];
+    const answers: ((refusal?: Error) => void)[] = [];
+    render(<Answerable sent={sent} answers={answers} />);
+    await user.click(screen.getByRole('button', { name: 'Add a link' }));
+    await user.type(label(), 'Town page');
+    await user.type(screen.getByRole('textbox', { name: 'Address' }), 'https://enfield.nh.gov');
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    await user.type(label(), 's');
+    await answer(answers);
+    expect(label().value).toBe('Town pages');
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    expect(sent.at(-1)).toEqual([
+      ASSOC,
+      DAM,
+      { label: 'Town pages', url: 'https://enfield.nh.gov' },
+    ]);
+    await answer(answers);
+    expect(screen.queryByRole('textbox', { name: 'Label' })).toBeNull();
+    expect(screen.getAllByText(/^Town page/)).toHaveLength(1);
   });
 });

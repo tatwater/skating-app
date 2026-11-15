@@ -335,6 +335,8 @@ function PickForm({
             value={note}
             maxLength={STANDING_NOTE_MAX}
             placeholder="Drawn down for dam work until January"
+            // A sent note is held while its write is out: words typed then could never be sent.
+            readOnly={busy}
             onChange={(e) => setNote(e.target.value)}
           />
           <InputGroupKbd>⏎</InputGroupKbd>
@@ -358,6 +360,8 @@ function PickForm({
         </span>
         <Select
           value={reason}
+          // The sent reason is held while its write is out (a pick then could never be sent).
+          readOnly={busy}
           onValueChange={(v) => setReason(v as RemovalReason)}
           items={REMOVAL_REASONS.map((r) => ({ value: r, label: REMOVAL_LABEL[r] }))}
         >

@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -95,6 +95,42 @@ describe('StandingTabView', () => {
     await userEvent.type(input, 'Dam work{Enter}{Enter}');
     expect(onSetDormant).toHaveBeenCalledTimes(1);
     land();
+  });
+
+  it('a sent note is held while its write is out — never typed into and then thrown away', async () => {
+    let refuse: (why: Error) => void = () => {};
+    const onSetDormant = vi.fn(
+      () =>
+        new Promise<void>((_, reject) => {
+          refuse = reject;
+        }),
+    );
+    render(<StandingTabView {...base} onSetDormant={onSetDormant} />);
+    await userEvent.click(radio('Dormant'));
+    const input = screen.getByRole('textbox', { name: 'Note for skaters · optional' });
+    await userEvent.type(input, 'Dam work{Enter}');
+    expect(input).toHaveAttribute('readonly');
+    await userEvent.type(input, ' until May');
+    expect(input).toHaveValue('Dam work');
+    await act(async () => refuse(new Error('Not allowed')));
+    expect(input).not.toHaveAttribute('readonly');
+    await userEvent.type(input, ' until May');
+    expect(input).toHaveValue('Dam work until May');
+  });
+
+  it('a sent removal reason is held while its write is out', async () => {
+    const onRemove = vi.fn(() => new Promise<void>(() => {}));
+    render(<StandingTabView {...base} onRemove={onRemove} />);
+    await userEvent.click(radio('Removed'));
+    await userEvent.click(screen.getByRole('combobox', { name: 'Reason' }));
+    await userEvent.click(await screen.findByRole('option', { name: 'Not skateable' }));
+    const remove = screen.getByRole('button', { name: 'Remove from the map' });
+    await userEvent.click(remove);
+    if (onRemove.mock.calls.length === 0) {
+      await userEvent.click(screen.getByRole('button', { name: /again/ }));
+    }
+    expect(onRemove).toHaveBeenCalledWith('unskateable');
+    expect(screen.getByRole('combobox', { name: 'Reason' })).toHaveAttribute('data-readonly');
   });
 
   it('Remove from the map waits, armed, until a reason is chosen', async () => {

@@ -424,7 +424,12 @@ export function ImageryTabView({
           </AlertDialogHeader>
           <AlertDialogBody>
             {error !== null && <AlertDialogError>{error}</AlertDialogError>}
-            <AlertDialogReason value={reason} onChange={(e) => setReason(e.target.value)} />
+            {/* A sent reason is held while its one-shot write is out (it can't be sent again). */}
+            <AlertDialogReason
+              value={reason}
+              readOnly={busy}
+              onChange={(e) => setReason(e.target.value)}
+            />
           </AlertDialogBody>
           <AlertDialogFooter>
             <AlertDialogCancel />

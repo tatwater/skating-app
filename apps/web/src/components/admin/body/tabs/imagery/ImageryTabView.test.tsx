@@ -122,6 +122,30 @@ describe('ImageryTabView', () => {
     expect(onOverride).toHaveBeenCalledTimes(1);
   });
 
+  it('a sent reason is held while its hide is out — never typed into and then thrown away', async () => {
+    let refuse: (why: Error) => void = () => {};
+    const onOverride = vi.fn(
+      () =>
+        new Promise<void>((_, reject) => {
+          refuse = reject;
+        }),
+    );
+    render(<ImageryTabView {...base} onOverride={onOverride} />);
+    await userEvent.click(within(card()).getByRole('button', { name: /Hide from skaters/ }));
+    const dialog = await screen.findByRole('alertdialog');
+    const field = within(dialog).getByRole('textbox');
+    await userEvent.type(field, 'Smoke');
+    await userEvent.click(within(dialog).getByRole('button', { name: /Hide from skaters/ }));
+    await userEvent.click(within(dialog).getByRole('button', { name: /again/ }));
+    expect(field).toHaveAttribute('readonly');
+    await userEvent.type(field, ' over the basin');
+    expect(field).toHaveValue('Smoke');
+    await act(async () => refuse(new Error('Not allowed')));
+    expect(field).not.toHaveAttribute('readonly');
+    await userEvent.type(field, ' over the basin');
+    expect(field).toHaveValue('Smoke over the basin');
+  });
+
   it('draws no call without a writer', () => {
     const { onOverride: _, ...rest } = base;
     render(<ImageryTabView {...rest} />);

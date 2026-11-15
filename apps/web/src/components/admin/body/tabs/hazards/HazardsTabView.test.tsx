@@ -150,6 +150,32 @@ describe('HazardsTabView — the default board', () => {
     expect(onDemote).toHaveBeenCalledWith('f-narrows', 'The bridge was replaced');
   });
 
+  it('a sent reason is held while its demotion is out — never typed into and then thrown away', async () => {
+    const answers: ((refusal?: Error) => void)[] = [];
+    const onDemote = vi.fn(
+      () =>
+        new Promise<void>((resolve, reject) =>
+          answers.push((refusal) => (refusal === undefined ? resolve() : reject(refusal))),
+        ),
+    );
+    render(<HazardsTabView {...base} onDemote={onDemote} />);
+    await userEvent.click(screen.getAllByRole('button', { name: 'Demote' })[1] as HTMLElement);
+    const dialog = await screen.findByRole('alertdialog');
+    const field = within(dialog).getByRole('textbox');
+    await userEvent.type(field, 'The bridge was replaced');
+    await userEvent.click(within(dialog).getByRole('button', { name: /Demote/ }));
+    await userEvent.click(within(dialog).getByRole('button', { name: /again/ }));
+    // Out: the reason it sent is what the field holds, and it takes no more.
+    expect(field).toHaveAttribute('readonly');
+    await userEvent.type(field, ' last spring');
+    expect(field).toHaveValue('The bridge was replaced');
+    // Refused: the field is the moderator's again, the reason whole.
+    await act(async () => answers.shift()?.(new Error('Not allowed')));
+    expect(field).not.toHaveAttribute('readonly');
+    await userEvent.type(field, ' last spring');
+    expect(field).toHaveValue('The bridge was replaced last spring');
+  });
+
   it('a demotion on its way can’t be dismissed, so its late answer never closes one opened since', async () => {
     let land: () => void = () => {};
     const onDemote = vi.fn(

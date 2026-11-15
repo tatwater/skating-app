@@ -55,6 +55,11 @@ type Editing = {
   error: string | null;
   /** This opening of the editor: a save it sent closes it, and nothing it didn't send does. */
   opening: number;
+  /**
+   * An added link whose draft moved on while its save was out: the link it saved, whose row the
+   * editor takes over once the echo shows — so the next Done edits it, never adds a second.
+   */
+  adopt?: StaffLink;
 };
 
 export function LinksTabView({
@@ -98,18 +103,40 @@ export function LinksTabView({
   // (or another), a late save closes nothing, takes no focus and discards nothing typed since.
   const openings = useRef(0);
   const open = (e: Omit<Editing, 'opening'>) => setEditing({ ...e, opening: ++openings.current });
-  const openNow = useRef<number | null>(null);
-  openNow.current = editing?.opening ?? null;
-  const landed = (opening: number, key: string) => {
-    if (openNow.current !== null && openNow.current !== opening) return;
+  const openNow = useRef<Editing | null>(null);
+  openNow.current = editing;
+  // **A finished save closes its editor only if the draft is still what it sent.** Typed on since,
+  // the editor stays open holding the newer text — an unsaved edit over the saved value, nothing
+  // lost and nothing claimed saved that wasn't.
+  const landed = (opening: number, key: string, sent: StaffLink | null) => {
+    const now = openNow.current;
+    if (now !== null && now.opening !== opening) return;
+    if (now !== null && sent !== null) {
+      const draft = { label: now.label.trim(), url: now.url.trim() };
+      if (draft.label !== sent.label || draft.url !== sent.url) {
+        if (key === 'new') {
+          setEditing((e) => (e !== null && e.opening === opening ? { ...e, adopt: sent } : e));
+        }
+        return;
+      }
+    }
     refocus.current = key;
     setEditing(null);
   };
+  // An added link's editor takes over the added link's row once its echo shows.
+  useEffect(() => {
+    const adopt = editing?.adopt;
+    if (editing === null || editing.key !== 'new' || adopt === undefined) return;
+    const found = [...staff].reverse().find((l) => l.label === adopt.label && l.url === adopt.url);
+    if (found !== undefined) setEditing({ ...editing, key: found.key, adopt: undefined });
+  }, [staff, editing]);
   // The openings with a save on its way: an opening's own Done and Remove don't send twice (a ref,
   // so two presses in one frame see it); a reopened editor isn't held by the old one's save.
   const sending = useRef(new Set<number>());
   const [busyOpenings, setBusyOpenings] = useState<ReadonlySet<number>>(new Set());
-  const editorBusy = editing !== null && busyOpenings.has(editing.opening);
+  // Busy while its own save is out, or while an added link's echo is still on its way.
+  const editorBusy =
+    editing !== null && (busyOpenings.has(editing.opening) || editing.adopt !== undefined);
   const editorSave = async (
     opening: number,
     change: (base: readonly KeyedLink[]) => readonly KeyedLink[],
@@ -159,7 +186,9 @@ export function LinksTabView({
   };
 
   const commitEdit = async () => {
-    if (editing === null || sending.current.has(editing.opening)) return;
+    if (editing === null || sending.current.has(editing.opening) || editing.adopt !== undefined) {
+      return;
+    }
     const draft = { label: editing.label, url: editing.url };
     const error = referenceLinkError(draft);
     if (error !== null) {
@@ -174,7 +203,7 @@ export function LinksTabView({
         ? linkChanges.add({ ...clean, key: `link-${++minted.current}` })
         : linkChanges.edit(key, clean),
     );
-    if (ok) landed(opening, key);
+    if (ok) landed(opening, key, clean);
   };
 
   const removeEdited = async () => {
@@ -185,7 +214,8 @@ export function LinksTabView({
     if (sending.current.has(editing.opening)) return;
     const { key, opening } = editing;
     const ok = await editorSave(opening, linkChanges.remove(key));
-    if (ok) landed(opening, key);
+    // A removed link has no row left to edit: its editor goes whatever was typed.
+    if (ok) landed(opening, key, null);
   };
 
   const offeredCount = derived.filter((d) => d.offered).length;
