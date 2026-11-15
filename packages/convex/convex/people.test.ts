@@ -507,7 +507,7 @@ describe('people.person', () => {
     const other = await seed(t, 'other', { role: 'admin' });
     await ready(t);
     const seen = await as(t, 'holder').query(api.people.person, { userId: other });
-    expect(seen?.ledger).toEqual({ editor: false, last: false, since: null });
+    expect(seen?.ledger).toEqual({ editor: false, last: false, since: null, sinceCapped: false });
     expect(seen?.can.ledger?.grant).toEqual({ ok: true, needsReason: false });
     expect(seen?.can.ledger?.revoke.ok).toBe(false);
     expect((await as(t, 'plain').query(api.people.person, { userId: other }))?.ledger).toBeNull();

@@ -25,6 +25,7 @@ import { fulfillBountyOnHelpful } from './bounties';
 import { getCurrentProfile, requireContributor } from './lib/auth';
 import { fileOrBumpAutoFlag } from './lib/autoFlag';
 import { enqueueActorNotification } from './lib/notificationQueue';
+import { blockedEitherWay } from './lib/reportVisibility';
 import { awardPointEvent, checkAndAwardBadges, tallyThumbs } from './lib/reputation';
 import { literals } from './lib/validators';
 
@@ -51,26 +52,6 @@ async function loadRatingTarget(
   if (!hazard) return null;
   if (hazard.moderationStatus !== 'visible') return null;
   return { authorId: hazard.createdByUserId };
-}
-
-/** Is there a block relationship (either direction) between two users? (D32 — bidirectional.) */
-async function hasBlockRelationship(
-  ctx: QueryCtx,
-  a: Id<'profiles'>,
-  b: Id<'profiles'>,
-): Promise<boolean> {
-  const forward = await ctx.db
-    .query('blocks')
-    .withIndex('by_blocker', (q) => q.eq('blockerId', a))
-    .filter((q) => q.eq(q.field('blockedId'), b))
-    .first();
-  if (forward) return true;
-  const backward = await ctx.db
-    .query('blocks')
-    .withIndex('by_blocker', (q) => q.eq('blockerId', b))
-    .filter((q) => q.eq(q.field('blockedId'), a))
-    .first();
-  return backward !== null;
 }
 
 /** This rater's existing vote on a target, if any (one row per `(rater, target)`, decision 4). */
@@ -170,7 +151,8 @@ export const rate = mutation({
 
     // Block-aware discard: a thumbs-down across a block relationship is a possible grudge (founder
     // call). We leave any existing legitimate vote untouched and record nothing. Thumbs-up always counts.
-    if (verdict === 'unhelpful' && (await hasBlockRelationship(ctx, rater._id, target.authorId))) {
+    // A block either way (D32): two point reads (`lib/reportVisibility.blockedEitherWay`).
+    if (verdict === 'unhelpful' && (await blockedEitherWay(ctx, rater._id, target.authorId))) {
       return null;
     }
 

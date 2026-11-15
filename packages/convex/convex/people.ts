@@ -408,8 +408,11 @@ async function withStaffColumns(
         // Not found: not recorded — unless the read stopped at its cap, when it can't say.
         lastSeenInConsoleAt: seen.get(row.userId) ?? null,
         lastSeenCapped: presence.capped && !seen.has(row.userId),
-        roleSince: light?.tenureCapped ? null : (light?.roleSince ?? null),
-        roleSinceCapped: light?.tenureCapped === true,
+        // A staffer whose row was never stamped (before the procedure's step 6, or a stamp that
+        // failed) can't say yet: capped, never "not recorded" while the strip has a date.
+        roleSince:
+          light?.tenureCapped || light?.tenureAt === undefined ? null : (light?.roleSince ?? null),
+        roleSinceCapped: light?.tenureCapped === true || light?.tenureAt === undefined,
         decisionsThisWeek: { count: decided.get(row.userId) ?? 0, capped: !page.isDone },
       },
     };
@@ -824,12 +827,15 @@ async function rightsSinceOf(
   return { since, capped: !page.isDone && off.some((r) => since[r] === null) };
 }
 
-/** When a holder's ledger grant was given: the newest `grant_ledger_editor` row on them. */
+/**
+ * When a holder's ledger grant was given: the newest `grant_ledger_editor` row on them. `capped` when
+ * the request's budget couldn't afford the read — `null` then is "can't say", not "not recorded".
+ */
 async function ledgerSinceOf(
   ctx: QueryCtx,
   budget: ReadBudget,
   userId: Id<'profiles'>,
-): Promise<number | null> {
+): Promise<{ at: number | null; capped: boolean }> {
   const row = await budget.measured('moderationAction', () =>
     ctx.db
       .query('moderationActions')
@@ -839,7 +845,7 @@ async function ledgerSinceOf(
       .order('desc')
       .first(),
   );
-  return row?.createdAt ?? null;
+  return { at: row?.createdAt ?? null, capped: row === undefined };
 }
 
 /** Distinct flagged things the person page names, at most. */
@@ -1064,7 +1070,9 @@ export const person = query({
     // ── When a holder's grant was given (holders only), while the budget is whole ──
     const ledgerVisible = target.role === 'admin' && seesLedgerGrants(viewer);
     const ledgerSince =
-      ledgerVisible && isLedgerEditor(target) ? await ledgerSinceOf(ctx, budget, userId) : null;
+      ledgerVisible && isLedgerEditor(target)
+        ? await ledgerSinceOf(ctx, budget, userId)
+        : { at: null, capped: false };
 
     // ── The bounty season line: their asks this season, from the create gate's record ──
     const bountySeason = await bountySeasonOf(ctx, budget, userId, now);
@@ -1178,8 +1186,12 @@ export const person = query({
             editor: isLedgerEditor(target),
             /** The last editor who can act: their switch can't be turned off (D227). */
             last: await isLastLedgerEditor(ctx, target),
-            /** When the grant they hold was given; `null` when not a holder, or no row says. */
-            since: ledgerSince,
+            /**
+             * When the grant they hold was given; `null` when not a holder, or no row says — or, with
+             * `sinceCapped`, when the read couldn't be afforded and it can't be said.
+             */
+            since: ledgerSince.at,
+            sinceCapped: ledgerSince.capped,
           }
         : null,
       /**

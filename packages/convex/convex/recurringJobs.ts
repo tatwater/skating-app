@@ -22,6 +22,7 @@
  * | compute body geometry facts | a body | on `bodyGeoFacts`, mirrored | out of the due range; retried daily (`bodyGeo.computeDue` parked) |
  * | repair body geometry drift | a facts row | `jobFailures` | never parked: the row goes to the back and the body is marked for recompute |
  * | find bodies missing geometry | a library row | `jobFailures` | never parked: the weekly walk is the retry |
+ * | reset lapsed suspensions | a person | on the profile, mirrored | out of the due range; retried daily (`peopleJobs.retryLapsedDaily`) |
  */
 
 import { v } from 'convex/values';

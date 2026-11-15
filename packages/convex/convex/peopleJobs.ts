@@ -690,6 +690,8 @@ export const restoreTombstoneStatus = internalMutation({
       lapseParkedAt: undefined,
       lapseRetriedAt: undefined,
     });
+    // The sweep's attempt state goes, so its Machinery mirror goes with it (D258).
+    await clearFailure(ctx, 'lapses', userId);
     await refreshPersonRow(ctx, userId);
     return { restored: true };
   },
