@@ -2892,50 +2892,40 @@ Imagery/Hazards/Standing/Links), cherry-picked serially onto `b01-3` off the kit
   and `UNAVAILABLE` (once, beside it), `Section`'s capped count and `warn` chip, `DayStrips` with
   first-report marks, a caption and an undrawn unknown part that keeps its words (replacing the old
   strips), and one `listWords` (`lib/words`).
-- **Server requests — one list, from the list and the three wiring branches.** All accepted for the
-  follow-up server PR (the governor, 2026-11-14), none built before #112 merges; until then each
-  page says what it can't do rather than drawing it.
-  1. **Search across standings** (`bodies.listPage` answering the other lanes, e.g. an `otherThan`
-     lane): board 5.3's "Dormant 4" group and its tally are not drawn until it lands.
-  2. **`bodies.preview.asks[]`: the number of askers and the intake reasons** — the board's
-     "asked by 3" and *Intake · name conflict* / *OSM vs NHD*. (The preview now counts every open
-     ask, `askCount`, and says "Newest 20 of N" when its list is partial.)
-  3. **`bodies.preview.moreTowns` as `{ name, state }`** — a border body's "Also in" names towns
-     without their state.
-  4. **`bodies.rowsByIds`** — *Opened recently* draws only what `waterBodies.get` carries.
-  5. **`SEARCH_MIN_CHARS` in core** — the list keeps a copy of the server's 2 for what it draws.
-  6. **A row-and-facts read for a rejected or removed body, with when and why it left** — the
-     list's preview of a rejected body is its row and a line; the console's removed page reads the
-     audit row for how it left.
-  7. **`capped` / `more` flags** on `corpusPlaceNames.openForBody` and
-     `corpusRequests.openBayRequestsForBody` — at their cap the console treats each as stopped short,
-     never whole. (`bodyConsole.landmarkProposers` and `bayProvenance` now cover every proposal and
-     bay their tabs list — the server's last fix before #112 merged.)
-  8. **`bodyConsole.history`: capping only over the targets a verb applies to, and a body-only
-     option** — a verb read on a large family can come back capped though the body's own rows fit.
-  9. **A light completeness read, or `complete` in `consoleExtras`** — the frame reads
-     `bodies.preview` (reports up to 1,000, asks, towns) for one stored answer.
-  10. **Neighbor names and simplified outlines in `consoleExtras`** — the touching bodies are read
-      one `waterBodies.get` each (outline and all) for a name and a dashed line.
-  11. **`dailyHazards`: counting through the end of the caller's UTC day, opening its window at the
-      season's start (1 July, not 1 October), and following a merge as `waterBodies.get` does** —
-      `retentionForBody` too. Today a September hazard is listed but on no strip, so the strip says
-      no *Today* over a list.
-  12. **A bathymetry search record** — what was searched for contours, and where (Water says *Not
-      recorded yet*).
-  13. **Town lines for the Names map** — the boundaries' geometry; the map draws no town lines.
-  14. **`dailyHazards.days[]`: `reported`** — of a day's `count`, how many are hazards with no
-      recorded end first reported that day. The strip's marks come from the archived list, which
-      the tab reads for the winter on screen only, so last winter beside an empty one (and a winter
-      whose archived list failed) draws no marks and says so; with `reported`, every winter is
-      marked from its one day-by-day read. (BS15's deferred honest end — the hazard writers stamping
-      when a hazard left the lake — then turns an archived hazard's mark into bars for its span.)
-      It also closes a gap the reviews found: the archived list leaves out a crossing past its
-      window, which the day-by-day count still holds, so today a strip can mark fewer archived
-      hazards than it counts (the note then says how many are marked).
-  15. **`hazards.listForBody` and `bodyConsole.dailyHazards` agreeing on an expired crossing** — the
-      list drops an active crossing past its window and the day-by-day count keeps it, so a quiet
-      winter's *No hazard reports yet* can sit beside a strip and a *Today* line that count one.
+- **Server requests — one list, from the list and the three wiring branches.** #118 (the first
+  server follow-up, merged 2026-11-14) delivered, and the pages now read:
+  - ~~`SEARCH_MIN_CHARS` in core~~;
+  - ~~`more` on `corpusPlaceNames.openForBody` and `corpusRequests.openBayRequestsForBody`~~ (the
+    client's mirrored caps are gone);
+  - ~~`bodyConsole.history`'s `bodyOnly` and an honest `capped`~~;
+  - ~~neighbor names and simplified rings in `consoleExtras`~~ (`touching`; nothing is read per
+    neighbor);
+  - ~~`dailyHazards` through the caller's whole UTC day, from 1 July, following a merge~~ (and
+    `retentionForBody`);
+  - ~~each counted hazard's first-report day and whether its end is recorded~~ (`hazards`, the
+    marks' source);
+  - ~~the list and the day-by-day read agreeing on expired crossings~~;
+  - ~~`putInKeeps`, the rollover's own answer~~;
+  - ~~"not computed yet" told from "in no town"~~ (`computedAt`, `geoComputedAt`, `townsComputedAt`).
+
+  What remains waits for the next server PR, and until then each page says what it can't do rather
+  than drawing it:
+  1. **Search across standings** (`bodies.listPage` answering the other lanes): board 5.3's
+     "Dormant 4" group and its tally are not drawn until it lands.
+  2. **A row-and-facts read for a rejected or removed body, with when and why it left.**
+  3. **`bodies.preview.asks[]`: the number of askers and the intake reasons.**
+  4. **`bodies.preview.moreTowns` as `{ name, state }`.**
+  5. **`bodies.rowsByIds`**: *Opened recently* draws only what `waterBodies.get` carries.
+  6. **A light completeness read, or `complete` in `consoleExtras`**: the frame reads
+     `bodies.preview` for one stored answer.
+  7. **A bathymetry search record**: Water says *Not recorded yet*.
+  8. **Town lines for the Names map.**
+  9. **The four writes**: `setAliases` and `setClass`, choosing a depth source and filing a
+     survey, the pass override, and `updateShape`.
+  10. **An `active` flag on each of `dailyHazards`' hazards**: the read says whether an end is
+      recorded, not whether a hazard is still up, so the strip tells an archived hazard from an
+      active one by the next day's unknown part. A hazard first reported today is a bar until
+      tomorrow says which.
 - **Where the mock and the code differ** (each a founder call; the code stands until ruled):
   the list's state tabs carry no counts (the board's do), completeness is out of ten (the boards'
   twelve), and the ask kicker is *Bay name · Inbox* (the board's raw `name_bay`); the frame's
@@ -2943,9 +2933,9 @@ Imagery/Hazards/Standing/Links), cherry-picked serially onto `b01-3` off the kit
   stays when the touching test couldn't run or stopped short, with its note; Names and Water draw
   extra *Not recorded yet* lines on their ladders (each catalog's own claims, the other sources'
   depths); Names' Location comes from `bodyConsole.places`, where the board draws it; Hazards' quiet
-  winter heads *No open reports · N archived* (the board's *All voted gone*), and over a list the
-  strip's *Today* line is hidden (open founder question); Standing's favorites read "1,000+" past
-  the read's cap.
+  winter heads *No open reports · N archived* (the board's *All voted gone*); the strip runs the
+  whole season, 1 July to 30 June (the boards draw October to March), so a hazard reported before
+  October never falls off it; Standing's favorites read "1,000+" past the read's cap.
 - **The hazard strip — ruled by the founder, 2026-11-14** (it closes the question of last winter's
   unknown part). A hazard whose end isn't recorded — every archived hazard today — draws **one mark,
   on the day it was first reported, and nothing after**, never a stack of "unknown" days; a hazard
@@ -2955,13 +2945,15 @@ Imagery/Hazards/Standing/Links), cherry-picked serially onto `b01-3` off the kit
   *first reported*, never ended, and pass the all-clear test; the server's `unknown` is still said
   for the day (an unknown-only day draws nothing but keeps its words on an unseen target) and in
   the strip's summary. A day draws the server's `count` less its marks as bars, so it never draws
-  fewer known hazards than the count. The marks are one per archived hazard in the archived list
-  (`hazards.listForBody` with `includeArchived`), on its first report's UTC day; the tab reads that
-  list for the winter on screen only, so last winter beside an empty winter draws no marks — its
-  `count` as bars, its unknown in words — under a note that says the day isn't marked for that
-  winter (server request 14). Property-tested: each hazard with no recorded end yields exactly one
-  mark, on its first-report day; no day draws fewer than `count`; the caption is there whenever a
-  mark is.
+  fewer known hazards than the count. Since #118 the marks come from the day-by-day read itself
+  (`hazards`, each first-report day and whether its end is recorded), so every strip is marked —
+  last winter's beside this one too; an archived hazard is told from an active one by the next
+  day's unknown part (server request 10). The strip runs the season's whole window, 1 July to 30
+  June, on one axis with a slot for 29 February; every month is ticked, the quarters named. The
+  *Today* line stands over a list as beside an empty winter, since both now cover the same span.
+  Property-tested: each archived hazard with no recorded end yields exactly one mark, on its
+  first-report day; an ended or active one never; no day draws fewer than `count`; the caption is
+  there whenever a mark is.
 - **Wording the mock did not supply.** The list's ask words, all in
   `components/admin/bodies/askWords.ts`: request kinds *Activation*, *Admission*, *Restoration*,
   *Access contested*, *Takedown*, *Landmark name*; what a nameless request asks for — *Make it
@@ -2977,11 +2969,11 @@ Imagery/Hazards/Standing/Links), cherry-picked serially onto `b01-3` off the kit
   reported. How long it stayed on the lake isn't recorded; the days after it are not a reading of
   the ice.*; *N archived reports have no recorded end. Each is marked on the day it was first
   reported; from then on, every day counts them as unknown: each hazard may still have been on
-  the lake.* (or, when the list holds fewer than the count, *M are marked on the day first
-  reported, and the rest counted that day without a mark*), and on a strip without marks *… Each is counted on the day it was first reported,
-  but that day isn't marked for this winter; …*; *The count stopped short of every hazard
+  the lake.* (or, while one was first reported today, *M are marked on the day first reported,
+  and the rest counted that day without a mark*), *Not computed yet*, *In no town*, *In no
+  county*, *Towns not computed yet*; *The count stopped short of every hazard
   reported; each day is at least what it shows*, *No reports counted; the count stopped short*,
-  *The record for … begins …*, *Archived this winter*, *Gone votes* and the counted, attributed
+  *Archived this winter*, *Gone votes* and the counted, attributed
   "N skaters voted it gone". The failure lines: *Couldn't read this list*, *Counts couldn't be
   read*, *Couldn't read this body*, *This body couldn't be read*, *Couldn't read the history*,
   *Reports, completeness and asks couldn't be read*, *Couldn't read …* (a tab's list of what
@@ -2991,9 +2983,10 @@ Imagery/Hazards/Standing/Links), cherry-picked serially onto `b01-3` off the kit
   Oct* (Metrics' words).
 - **States no board draws yet:** the console's removed and merged pages ("This body was merged into
   X", a link, no redirect); every failure note and its pending state; the map's failure notice in
-  its foot; *Record begins* before 1 October; the unknown and capped notes (a floor, "at least N",
-  "Latest N"); the hazard strip's first-report marks and their caption, and a winter drawn without
-  marks under its note; the list's preview of a rejected body.
+  its foot; *Record begins* before 1 October (Metrics); the unknown and capped notes (a floor, "at
+  least N", "Latest N"); the hazard strip's first-report marks and their caption, and its
+  season-long axis; *Not computed yet* for a body's towns and touching bodies; the list's preview
+  of a rejected body.
 - **Owed** (accepted, 2026-11-14): **a design question for the founder — a hazard the map cannot
   show.** A hazard whose footprint can't be grown (malformed geometry, a buffer error) is drawn
   nowhere on the map (core's rule: "nowhere rather than somewhere wrong"), while the list counts it,
