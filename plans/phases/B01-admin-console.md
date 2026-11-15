@@ -2419,9 +2419,12 @@ Every shape change is additive except where noted.
   viewer who doesn't hold ledger editing `This isn’t available for this account right now.` where it
   gave `They are the last person who can edit the ledger; give another admin ledger editing first`;
   holders still read the sentence, and the write's own refusal is unchanged.
-- **Every person write returns its audit row** (H3): `{ userId, actionId }` from the five discipline
-  writes, the two role writes and the two ledger writes (they returned the id, or nothing; no client
-  read it).
+- **Every person write returns its audit row** (H3): `{ userId, actionId, undoNeedsReason }` from the
+  five discipline writes, the two role writes and the two ledger writes (they returned the id, or
+  nothing; no client read it). `undoNeedsReason` is `lib/undo.undoNeedsReason` — the rule `undoState`,
+  and so `undo.latestOwn` and `undo.run`, answers by: the undo of a give-back takes something away and
+  asks; the undo of a take-away gives back and doesn't. One test holds the three to one answer for every
+  person verb, so the toast needs no lookup.
 - **Ids at the edge.** The People queries take the person's id as a string and normalize it once:
   anything that isn't a profile id is `null` — no such person — rather than a validator error.
   `people.decisions` can now return `null` for that case.
