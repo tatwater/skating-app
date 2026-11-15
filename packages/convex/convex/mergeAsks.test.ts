@@ -101,18 +101,24 @@ async function seed(t: T) {
       });
     const openName = await name('open', 'gut');
     const dismissedName = await name('dismissed', 'old');
-    const flag = (flaggerId: Id<'profiles'>, targetId: string) =>
+    const flag = (
+      flaggerId: Id<'profiles'>,
+      targetId: string,
+      reason: 'no_public_access' | 'other' = 'no_public_access',
+      status: 'open' | 'reviewing' = 'open',
+    ) =>
       ctx.db.insert('contentFlags', {
         flaggerId,
         targetType: 'waterbody',
         targetId,
-        reason: 'no_public_access',
-        status: 'open',
+        reason,
+        status,
         createdAt: NOW,
       });
     const movedFlag = await flag(skater, loser);
-    // The moderator flagged both bodies: their flag on the loser stays (one open flag per target).
-    await flag(mod, survivor);
+    // The moderator flagged both bodies: their flag on the loser stays (one open flag per target) —
+    // though the survivor's says something else and is already in review.
+    await flag(mod, survivor, 'other', 'reviewing');
     const keptFlag = await flag(mod, loser);
     return {
       mod,

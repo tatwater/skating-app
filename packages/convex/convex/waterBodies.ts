@@ -107,6 +107,7 @@ import {
 import { closeFlag } from './lib/flagResolution';
 import { landmarksForBody, repointLandmarksOnMerge } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
+import { OPEN_FLAG_STATUSES } from './lib/openFlags';
 import { mirrorReportSubAreas } from './lib/reportSubAreas';
 import { takeCapped } from './lib/scan';
 import { richnessFor, scoreFields, zoomSortKey } from './lib/scoring';
@@ -3157,9 +3158,9 @@ const RETARGET_CAP = 1_000;
 
 /**
  * Re-target what was asked of a merged-away body to its survivor: every request on it, its open place
- * names, and its open and in-review flags. A flag whose flagger already has an open flag on the
- * survivor stays where it is (one open flag per person per target is the flag table's own rule), and
- * is counted. Returns the ids moved, for the merge's change set.
+ * names, and its open and in-review flags. A flag whose flagger already has an open or in-review flag
+ * on the survivor, for any reason, stays where it is (one open flag per person per target is the flag
+ * table's own rule), and is counted. Returns the ids moved, for the merge's change set.
  */
 export async function retargetAsks(
   ctx: MutationCtx,
@@ -3193,7 +3194,22 @@ export async function retargetAsks(
   for (const n of names) await ctx.db.patch(n._id, { waterBodyId: survivorId });
   const flags: Id<'contentFlags'>[] = [];
   let flagsLeft = 0;
-  for (const status of ['open', 'reviewing'] as const) {
+  // Whether this flagger already has an open flag on the survivor — of any reason, open or in review:
+  // the table's rule is one open flag per (flagger, target), whatever it says.
+  const flaggedSurvivor = async (flaggerId: Id<'profiles'>) => {
+    for (const status of OPEN_FLAG_STATUSES) {
+      const hit = await ctx.db
+        .query('contentFlags')
+        .withIndex('by_target_status_reason', (q) =>
+          q.eq('targetType', 'waterbody').eq('targetId', survivorId).eq('status', status),
+        )
+        .filter((q) => q.eq(q.field('flaggerId'), flaggerId))
+        .first();
+      if (hit !== null) return true;
+    }
+    return false;
+  };
+  for (const status of OPEN_FLAG_STATUSES) {
     const rows = await ctx.db
       .query('contentFlags')
       .withIndex('by_target_status_reason', (q) =>
@@ -3201,18 +3217,7 @@ export async function retargetAsks(
       )
       .take(RETARGET_CAP);
     for (const f of rows) {
-      const already = await ctx.db
-        .query('contentFlags')
-        .withIndex('by_target_status_reason', (q) =>
-          q
-            .eq('targetType', 'waterbody')
-            .eq('targetId', survivorId)
-            .eq('status', status)
-            .eq('reason', f.reason),
-        )
-        .filter((q) => q.eq(q.field('flaggerId'), f.flaggerId))
-        .first();
-      if (already !== null) {
+      if (await flaggedSurvivor(f.flaggerId)) {
         flagsLeft++;
         continue;
       }
