@@ -310,17 +310,18 @@ export const dismiss = mutation({
   handler: async (ctx, { id, reason, note }) => {
     const actor = await requireCapability(ctx, 'corpus.placeNames');
     const row = await openRow(ctx, id);
-    const trimmed = note?.trim();
+    // The note as the row keeps it — the audit line quotes the same words, never more than were stored.
+    const kept = note?.trim().slice(0, 280);
     const now = Date.now();
     await ctx.db.patch(row._id, {
       status: 'dismissed',
       dismissReason: reason,
-      ...(trimmed ? { dismissNote: trimmed.slice(0, 280) } : {}),
+      ...(kept ? { dismissNote: kept } : {}),
       decidedByUserId: actor._id,
       decidedAt: now,
       updatedAt: now,
     });
-    const noted = trimmed ? ` — ${trimmed}` : '';
+    const noted = kept ? ` — ${kept}` : '';
     await audit(
       ctx,
       actor._id,
