@@ -133,6 +133,35 @@ describe('the reads', () => {
   });
 });
 
+describe('the clock', () => {
+  it('turns a suspension that ends while the list is open to run its course, the read held', () => {
+    vi.useFakeTimers();
+    try {
+      const until = ROB.suspension?.until as number;
+      vi.setSystemTime(until - 30_000);
+      mocks.search = { lane: 'suspended' };
+      mocks.results.set(PAGE_READ, page([ROB]));
+      mount();
+      const sub = () =>
+        screen
+          .getByRole('option', { name: /Rob Tremblay/ })
+          .querySelector('[data-slot="people-row-sub"]');
+      expect(sub()).toHaveTextContent(/^Until Thu 15 Oct/);
+      const asked = pageCalls().length;
+      // The minute turns past the end: the row says so, and the list is not read again.
+      act(() => vi.advanceTimersByTime(60_000));
+      expect(sub()).toHaveTextContent(/^Ran its course Thu 15 Oct/);
+      expect(
+        pageCalls()
+          .slice(asked)
+          .every((a) => a.now === pageCalls()[0]?.now),
+      ).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('the chain of pages', () => {
   it('asks for the next page from where the last ended, and draws each row once', () => {
     mocks.results.set(PAGE_READ, (args: PageArgs) =>

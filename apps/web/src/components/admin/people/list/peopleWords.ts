@@ -1,6 +1,6 @@
 import type { PeopleLane, Restriction } from '@skating/core';
 
-import { NOT_RECORDED, STILL_PREPARING } from '../answers';
+import { NOT_RECORDED, ranItsCourse, STILL_PREPARING } from '../answers';
 
 /**
  * **Every word the People list says that the boards didn't supply** — in one place, so the founder
@@ -122,6 +122,8 @@ const RESTRICTION_WORDS: Record<Restriction, string> = {
 export const SUB_WORDS = {
   until: (date: string) => `Until ${date}`,
   untilLifted: 'Until lifted',
+  /** Its end has passed on the page's clock; the sweep lifts it within minutes. */
+  ranItsCourse,
   restricted: (rights: readonly Restriction[]) =>
     `Restricted: ${listWords(rights.map((r) => RESTRICTION_WORDS[r]))}`,
   deleted: (date: string) => `Deleted ${date}`,

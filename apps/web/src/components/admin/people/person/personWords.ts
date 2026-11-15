@@ -1,4 +1,4 @@
-import { NOT_RECORDED, STILL_PREPARING } from '../answers';
+import { NOT_RECORDED, ranItsCourse, STILL_PREPARING } from '../answers';
 
 /**
  * **Every word the person page coined** — each string the boards (8.1, 8.2, 8.5, 8.6) did not
@@ -30,7 +30,7 @@ export const WORDS = {
   suspendedLeft: (left: string) => `Suspended · ${left}`,
   suspendedOpenEnded: 'Suspended · until lifted',
   suspendedLapsed: 'Suspended · ran its course',
-  ranItsCourse: (moment: string) => `Ran its course ${moment} · lifting on its own`,
+  ranItsCourse,
   nameNotReady: 'Name still being prepared',
   whoAndWhenUnrecorded: 'Who and when: not recorded yet',
   whenUnrecorded: 'When: not recorded yet',

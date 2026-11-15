@@ -142,6 +142,16 @@ describe('a row', () => {
     expect(view.handle).toBe('rtremblay');
   });
 
+  it('reads a suspension whose end has passed as run its course, never a date still ahead', () => {
+    const until = ROB.suspension?.until as number;
+    expect(rowView(ROB, 'suspended', NO_FACTS, until - 60_000).sub).toMatch(/^Until Thu 15 Oct/);
+    for (const now of [until, until + 60_000, until + 3 * DAY]) {
+      const sub = rowView(ROB, 'suspended', NO_FACTS, now).sub ?? '';
+      expect(sub).toMatch(/^Ran its course Thu 15 Oct · lifting on its own/);
+      expect(sub).not.toContain('Until');
+    }
+  });
+
   it('names staff by role, and gives a staffer no age: no read says when they were last here', () => {
     expect(rowView(MATT, 'staff', NO_FACTS, NOW)).toMatchObject({
       sub: 'Moderator',

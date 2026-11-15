@@ -179,7 +179,7 @@ export function rowView(
     handle: row.username,
     src: row.profileImageUrl,
     chips: rowChips(row),
-    sub: subLine(row, lane, facts),
+    sub: subLine(row, lane, facts, now),
     reason: reasonLine(row),
     age: rowAge(row, lane === null ? 'joined' : PEOPLE_LANE_INFO[lane].age, now),
   };
@@ -201,14 +201,24 @@ export function rowChips(row: PersonListRow): RowChip[] {
   return chips;
 }
 
-function subLine(row: PersonListRow, lane: PeopleLane | null, facts: RowFacts): string | null {
+function subLine(
+  row: PersonListRow,
+  lane: PeopleLane | null,
+  facts: RowFacts,
+  now: number,
+): string | null {
   const parts: string[] = [];
   if (row.role === 'admin' || row.role === 'moderator') parts.push(ROLE_WORDS[row.role]);
   if (row.suspension !== null) {
+    const { until } = row.suspension;
     parts.push(
-      row.suspension.until === null
+      until === null
         ? SUB_WORDS.untilLifted
-        : SUB_WORDS.until(weekdayDate(row.suspension.until)),
+        : // The read is held at the list's clock; the row reads the live minute, so an end that has
+          // passed while the list stayed open is never drawn as still ahead.
+          until <= now
+          ? SUB_WORDS.ranItsCourse(weekdayDate(until))
+          : SUB_WORDS.until(weekdayDate(until)),
     );
   }
   if (row.restrictions.length > 0) parts.push(SUB_WORDS.restricted(row.restrictions));
