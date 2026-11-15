@@ -2213,6 +2213,25 @@ outline size, warm. They are different clocks; the point is the column of timeou
 `convex run`, no identity): `convex dev --once`; `bodyGeo:seedAll` then `bodyGeo:computeAll`;
 `auditLinks:backfill`; `waterBodies:retargetMergedAsks`; `bodyLibrary:requeueCapped`.
 
+**What the self-review changed** (before the PR opened):
+
+- An unmerged hazard drops the stamp its merge wrote, so an archiving vote later records its real
+  end; before, it kept the merge's day and the strip read the days between as clear.
+- A merge leaves a flagger's flag on the merged-away body when they already have an open or
+  in-review flag on the survivor for *any* reason (it checked the same reason and status), and
+  `contentFlags.flag` files a flag through a merged-away id on its survivor.
+- The geometry jobs: a stale mark that lands while a body is computed survives that body's store (a
+  mark on a stale row moves `staleAt`, and `store` takes the mark `inputs` read); `consoleExtras` drops
+  a rejected neighbor as it drops a merged one; the daily retry walks every parked body, not the cron's
+  batch of 60; `seedAll` pages 250 (a re-seed rewrote up to 1,000 facts rows of ~16 KB); a tile's
+  candidates skip the outlines the action already holds.
+- A lot's audit row links to up to 64 of the bodies it serves (it took the library refresh's 16, so a
+  seventeenth never saw it); History's body-only verb reads `by_body_self_action_time`.
+- `corpusPlaceNames.openForBody` reads most discussed first (`by_water_body_status_messages`), so a
+  lake past the cap shows its most discussed names; `reportsCapped` asks whether the first report left
+  unread is inside the record; `retentionForBody.putInKeeps` is the rollover's own read.
+- `adminAreas.townsForBody` is gone; `bodyGeo.placesFrom` is the one rule.
+
 **Waiting for the second server PR:** a search across standings; a row-and-facts read for rejected
 and removed bodies; askers and intake reasons on the preview's asks; `moreTowns` with each town's
 state; `bodies.rowsByIds`; a light completeness read; the bathymetry search record; town lines; and

@@ -159,7 +159,13 @@ export const areaCandidates = internalQuery({
 
 // ── The pure work the action does ────────────────────────────────────────────────────────────
 
-/** The places the sample points fall in: towns (the interior point's first), counties, states. */
+/**
+ * **The places a body lies in** — the one rule (it replaced `adminAreas.townsForBody`): towns (the
+ * interior point's first), counties (at the interior point only) and states, read at
+ * `placeSamplePoints`. **Sampled, not a polygon overlay**: a town the shore only grazes between two
+ * samples can be missed, and a body is never placed in a town it doesn't touch. Empty lists when no
+ * boundary holds any point — computed and in none, which the reads tell from "not computed".
+ */
 export function placesFrom(
   points: readonly { lat: number; lng: number }[],
   found: {

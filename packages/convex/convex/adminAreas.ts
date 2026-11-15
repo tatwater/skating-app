@@ -181,7 +181,7 @@ export async function resolvePlaceForCoord(
   return place.town || place.county || place.state ? place : undefined;
 }
 
-/** How many points along a body's shore {@link townsForBody} looks up, beside its interior point. */
+/** How many points along a body's shore the places are read at, beside its interior point (`bodyGeo`). */
 export const TOWN_SAMPLE_POINTS = 12;
 
 /**
@@ -209,35 +209,6 @@ export function placeSamplePoints(
     if (p !== undefined && p.length >= 2) shore.push({ lng: p[0] as number, lat: p[1] as number });
   }
   return [first, ...shore];
-}
-
-/**
- * **The places a body lies in** — its towns (the interior point's first), counties and states, read at
- * {@link placeSamplePoints} (counties at the interior point). **Sampled, not a polygon overlay**: a town the shore only grazes between
- * two samples can be missed, and a body is never placed in a town it doesn't touch. A point already
- * inside a town found is not looked up again. `null` when no boundary contains any point (open water
- * outside the imported region) — not recorded, never "no town".
- */
-export async function townsForBody(
-  ctx: QueryCtx,
-  body: Pick<Doc<'waterBodies'>, 'polygon' | 'interiorPoint' | 'representativePoint' | 'centroid'>,
-): Promise<{ towns: string[]; counties: string[]; states: string[] } | null> {
-  const found: Record<'town' | 'county', Doc<'adminAreas'>[]> = { town: [], county: [] };
-  const states = new Set<string>();
-  for (const [i, point] of placeSamplePoints(body).entries()) {
-    // Counties are large polygons and a body rarely spans two: read at the interior point only.
-    for (const level of i === 0 ? (['town', 'county'] as const) : (['town'] as const)) {
-      if (found[level].some((a) => pointInArea(point, a))) continue;
-      const area = await findContainingArea(ctx, level, point);
-      if (area) {
-        found[level].push(area);
-        states.add(area.state);
-      }
-    }
-  }
-  if (found.town.length === 0 && found.county.length === 0) return null;
-  const names = (rows: Doc<'adminAreas'>[]) => [...new Set(rows.map((r) => r.name))];
-  return { towns: names(found.town), counties: names(found.county), states: [...states] };
 }
 
 /**

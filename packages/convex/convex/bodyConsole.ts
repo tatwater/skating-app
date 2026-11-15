@@ -6,8 +6,9 @@
  * - {@link consoleExtras} — the towns, whether contours were drawn, when the outline was trusted, and
  *   the bodies that touch it (the identity list, completeness's bathymetry, neighbors on the map).
  * - {@link bayProvenance} — when and how each bay was made (Shape's bays).
- * - {@link history} — the body's history with its whole family's (`historyTargets`), newest first,
- *   optionally one verb (the console's History, Access's rulings, a tab's receipts).
+ * - {@link history} — every audit row that concerns the body or a body merged into it
+ *   (`auditBodyLinks`), newest first, optionally one verb or only the body's own rows (the console's
+ *   History, Access's rulings, a tab's receipts).
  * - {@link places} — the towns, counties and states the body lies in (Places, Names).
  * - {@link landmarkProvenance} — who made each landmark and when; {@link landmarkProposers} — who
  *   asked for each open landmark (Places).

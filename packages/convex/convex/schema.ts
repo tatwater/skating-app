@@ -4743,11 +4743,6 @@ export default defineSchema({
     // A lane's state tabs: every scope's total.
     .index('by_lane_key_scope', ['lane', 'key', 'scope']),
 
-  /**
-   * **Bodies whose library row is owed a refresh** — queued by the machine's bulk writes that leave
-   * no audit row (the imports, the enrichment loads, the prunes) and by a refresh that failed,
-   * drained by the minute cron. One row per body; a moderator's write never waits on it.
-   */
   // ── B01-3b: which bodies an audit row concerns ──
   /**
    * **One row per (audit row, body it concerns)** — written by `writeAudit` with the resolver the
@@ -4810,6 +4805,11 @@ export default defineSchema({
     // The daily retry: parked bodies, least recently tried first (`gt(0)`).
     .index('by_parked', ['parkedAt']),
 
+  /**
+   * **Bodies whose library row is owed a refresh** — queued by the machine's bulk writes that leave
+   * no audit row (the imports, the enrichment loads, the prunes) and by a refresh that failed,
+   * drained by the minute cron. One row per body; a moderator's write never waits on it.
+   */
   bodyLibraryQueue: defineTable({
     waterBodyId: v.id('waterBodies'),
     queuedAt: v.number(),
