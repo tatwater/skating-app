@@ -18,10 +18,13 @@ export const UNDO_CHECKED_ELSEWHERE =
 
 const SEEN = new WeakMap<object, Map<string, Promise<unknown>>>();
 /**
- * The request's last refusal read. `measured` asks whether a worst case fits *before* its read and
- * charges the real weight only *after* it, so reads in flight together (`moderation.listActions`
- * shapes its lines with `Promise.all`) would each see the budget untouched and could, between them,
- * read past the transaction's limit. Each read waits for the one before it to be charged.
+ * The request's last refusal read. `measured` holds a read's worst case while it is in flight and
+ * settles it to the real weight after, so reads in flight together (`moderation.listActions` and
+ * People's History and Decisions shape their lines with `Promise.all`) can't overspend between them —
+ * but each would hold a whole document, and a page's later lines would be answered
+ * {@link UNDO_CHECKED_ELSEWHERE} for worst cases never actually read. Each read waits for the one
+ * before it to settle, so it asks of what was really spent. The cost is time: one round trip after
+ * another, at most two a line (the phase doc's B01-3f "Owed").
  */
 const TAIL = new WeakMap<object, Promise<unknown>>();
 
@@ -38,9 +41,11 @@ export async function undoRead<T extends TableNames>(
   const seen = isQuery ? (SEEN.get(ctx) ?? new Map<string, Promise<unknown>>()) : null;
   const known = seen?.get(id);
   if (known) return known as Promise<Doc<T> | null | undefined>;
-  const read = (TAIL.get(ctx) ?? Promise.resolve()).then(() =>
-    requestBudget(ctx).measured(kind, () => ctx.db.get(id) as Promise<Doc<T> | null>),
-  );
+  const read = (TAIL.get(ctx) ?? Promise.resolve()).then(() => {
+    // Named `budget` so `packages/guards`' read lint sees the read inside its charge.
+    const budget = requestBudget(ctx);
+    return budget.measured(kind, () => ctx.db.get(id) as Promise<Doc<T> | null>);
+  });
   // A failed read must not stall the reads queued behind it; its own caller still sees the failure.
   TAIL.set(
     ctx,
