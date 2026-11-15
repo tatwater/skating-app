@@ -126,13 +126,44 @@ function TableBody({ className, ...props }: ComponentProps<'tbody'>) {
 }
 
 type TableRowProps = ComponentProps<'tr'> & {
-  /** Pressing the row does something: it washes when lit and takes a pointer. */
+  /**
+   * Pressing the row does something: it washes when lit and takes a pointer. **A clickable row is
+   * a keyboard control too**: with an `onClick` and no focus plan of the caller's own (no
+   * `tabIndex`, no `onKeyDown`), it takes a Tab stop, ⏎ and Space press it, and ↑↓ Home End move
+   * between the clickable rows beside it. A caller that manages focus itself (a grid with an active
+   * descendant, `DataTable`'s one tab stop) passes `tabIndex` and keeps its own keys.
+   */
   clickable?: boolean;
   /** The chosen row (only a clickable row can be). */
   selected?: boolean;
   /** An inert or finished item, in the faint ink. */
   dim?: boolean;
 };
+
+/** A clickable row's own keys: ⏎ and Space press it; ↑↓ Home End move to its clickable siblings. */
+function rowKeys(event: KeyboardEvent<HTMLTableRowElement>) {
+  // A key from a control in a cell (a link, a button) is that control's.
+  if (event.target !== event.currentTarget || event.defaultPrevented) return;
+  const tr = event.currentTarget;
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    tr.click();
+    return;
+  }
+  const siblings = [
+    ...(tr.parentElement?.querySelectorAll<HTMLElement>(':scope > [data-clickable][tabindex]') ??
+      []),
+  ];
+  const at = siblings.indexOf(tr);
+  const go = (i: number) => {
+    event.preventDefault();
+    siblings[Math.max(0, Math.min(siblings.length - 1, i))]?.focus();
+  };
+  if (event.key === 'ArrowDown') go(at + 1);
+  else if (event.key === 'ArrowUp') go(at - 1);
+  else if (event.key === 'Home') go(0);
+  else if (event.key === 'End') go(siblings.length - 1);
+}
 
 function TableRow({
   clickable = false,
@@ -142,6 +173,12 @@ function TableRow({
   ...props
 }: TableRowProps) {
   const chosen = clickable && selected;
+  // A clickable row with no focus plan of its caller's is reached and pressed from the keyboard.
+  const keyed =
+    clickable &&
+    props.onClick !== undefined &&
+    props.tabIndex === undefined &&
+    props.onKeyDown === undefined;
   return (
     <tr
       data-slot="table-row"
@@ -163,6 +200,7 @@ function TableRow({
         className,
       )}
       {...props}
+      {...(keyed && { tabIndex: 0, onKeyDown: rowKeys })}
     />
   );
 }

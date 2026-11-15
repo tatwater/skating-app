@@ -1,8 +1,9 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ReadFailure } from '@/components/admin/reads/consoleReads';
 import { KeysProvider } from '@/lib/keys';
+import { expectKeyboardOperable } from '@/test/keyboardAudit';
 import { stubJsdomAnimations } from '../jsdomStubs';
 import { ShapeTabView, type ShapeTabViewProps } from './ShapeTab';
 import { CAPPED_SOME, NOT_CHECKED } from './shapeModel';
@@ -36,6 +37,32 @@ function view(props: Partial<ShapeTabViewProps> = {}) {
 const failure = (): ReadFailure => ({ failed: true, pending: false, retry: vi.fn() });
 
 describe('ShapeTabView', () => {
+  it('answers the keyboard wherever it answers a click: bays, touching bodies, the ways', () => {
+    const onLitChange = vi.fn();
+    const { container } = render(
+      view({
+        onLitChange,
+        onAddBay: () => {},
+        merge: {
+          touching: [{ id: 'k2', name: 'Mascoma North Pond', lit: 'neighbor:k2' }],
+          note: null,
+        },
+        bodyLink: (id) => <a href={`/admin/body/${id}`}>Open</a>,
+      }),
+    );
+    expect(expectKeyboardOperable(container).length).toBeGreaterThanOrEqual(5);
+    // A bay row is a Tab stop, and ⏎ lights it as a press does.
+    const row = container.querySelector<HTMLElement>('[data-id="bay:n"]');
+    expect(row).toHaveAttribute('tabindex', '0');
+    row?.focus();
+    fireEvent.keyDown(row as HTMLElement, { key: 'Enter' });
+    expect(onLitChange).toHaveBeenLastCalledWith('bay:n');
+    const neighbor = container.querySelector<HTMLElement>('[data-id="neighbor:k2"]');
+    neighbor?.focus();
+    fireEvent.keyDown(neighbor as HTMLElement, { key: ' ' });
+    expect(onLitChange).toHaveBeenLastCalledWith('neighbor:k2');
+  });
+
   it('draws the outline and the bays, each bay saying how and when it was made', () => {
     render(view());
     expect(screen.getByText('OpenStreetMap')).toBeInTheDocument();
