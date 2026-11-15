@@ -10,7 +10,7 @@ import {
   FRAME_STEP_DEG,
   isUndefinedSubdivision,
   REACH_TOUCH_M,
-  REGION_MARGIN_M,
+  REGION_SHORE_M,
   type ReachArea,
   type ReachCache,
   type ReachResult,
@@ -67,8 +67,8 @@ const sorted = (r: ReachResult) => [...r.ids].sort();
 
 // ── The brute-force reference: the same rule, no grid, no bands, no box tests, Turf's PIP ─────
 
-function reference(body: Polygon, areas: readonly ReachArea[], marginM: number): ReachResult {
-  const margin = Math.max(marginM, REACH_TOUCH_M);
+function reference(body: Polygon, areas: readonly ReachArea[], need: number): ReachResult {
+  const r = REACH_TOUCH_M;
   const lats = body.coordinates.flat().map((p) => p[1] as number);
   const lat0 =
     Math.round(lats.reduce((a, b) => a + b, 0) / lats.length / FRAME_STEP_DEG) * FRAME_STEP_DEG;
@@ -76,72 +76,65 @@ function reference(body: Polygon, areas: readonly ReachArea[], marginM: number):
   const proj = (p: Position) => [(p[0] as number) * kx, (p[1] as number) * M_PER_DEG] as const;
   const unproj = (x: number, y: number) => ({ lng: x / kx, lat: y / M_PER_DEG });
   const segs = (g: Polygon) =>
-    g.coordinates.flatMap((ring) =>
-      ring.slice(1).map((p, i) => [...proj(ring[i] as Position), ...proj(p)] as const),
-    );
-  const bodySegs = segs(body).filter(([a, b, c, d]) => a !== c || b !== d);
+    g.coordinates
+      .flatMap((ring) =>
+        ring.slice(1).map((p, i) => [...proj(ring[i] as Position), ...proj(p)] as const),
+      )
+      .filter(([a, b, c, d]) => a !== c || b !== d);
+  const bodySegs = segs(body);
+  const lens = bodySegs.map(([ax, ay, bx, by]) => Math.hypot(bx - ax, by - ay));
   const leftover = bodySegs.map(() => [[0, 1]] as [number, number][]);
-  const verdict = new Map<string, { deep: boolean; touch: boolean; shore: number }>();
+  const shore = new Map<string, number>();
   for (const area of areas) {
-    const areaSegs = segs(area.polygon as Polygon).filter(([a, b, c, d]) => a !== c || b !== d);
-    const run = (r: number, track: boolean) => {
-      let deep = false;
-      let near = false;
-      let shore = 0;
-      bodySegs.forEach(([ax, ay, bx, by], i) => {
-        const cov: [number, number][] = [];
-        for (const [cx, cy, ex, ey] of areaSegs) {
-          const h = capsuleInterval(ax, ay, bx - ax, by - ay, cx, cy, ex, ey, r);
-          if (h) cov.push(h);
+    const areaSegs = segs(area.polygon as Polygon);
+    let inside = 0;
+    bodySegs.forEach(([ax, ay, bx, by], i) => {
+      const cov: [number, number][] = [];
+      for (const [cx, cy, ex, ey] of areaSegs) {
+        const h = capsuleInterval(ax, ay, bx - ax, by - ay, cx, cy, ex, ey, r);
+        if (h) cov.push(h);
+      }
+      cov.sort((p, q) => p[0] - q[0]);
+      const gaps: [number, number][] = [];
+      let t = 0;
+      for (const [s0, e0] of cov) {
+        if (s0 - t > 1e-12) gaps.push([t, s0]);
+        t = Math.max(t, e0);
+      }
+      if (1 - t > 1e-12) gaps.push([t, 1]);
+      const len = lens[i] as number;
+      inside += (1 - gaps.reduce((n, [s0, e0]) => n + e0 - s0, 0)) * len;
+      const out: [number, number][] = [];
+      for (const [s0, e0] of gaps) {
+        const m = (s0 + e0) / 2;
+        if (pointInPolygon(unproj(ax + (bx - ax) * m, ay + (by - ay) * m), area.polygon)) {
+          inside += (e0 - s0) * len;
+        } else out.push([s0, e0]);
+      }
+      const next: [number, number][] = [];
+      for (const [s0, e0] of leftover[i] ?? []) {
+        for (const [s1, e1] of out) {
+          const s2 = Math.max(s0, s1);
+          const e2 = Math.min(e0, e1);
+          if (e2 - s2 > 1e-12) next.push([s2, e2]);
         }
-        if (cov.length) near = true;
-        cov.sort((p, q) => p[0] - q[0]);
-        const gaps: [number, number][] = [];
-        let t = 0;
-        for (const [s, e] of cov) {
-          if (s - t > 1e-12) gaps.push([t, s]);
-          t = Math.max(t, e);
-        }
-        if (1 - t > 1e-12) gaps.push([t, 1]);
-        const out: [number, number][] = [];
-        for (const [s, e] of gaps) {
-          const m = (s + e) / 2;
-          if (pointInPolygon(unproj(ax + (bx - ax) * m, ay + (by - ay) * m), area.polygon)) {
-            deep = true;
-            shore += (e - s) * Math.hypot(bx - ax, by - ay);
-          } else out.push([s, e]);
-        }
-        if (track) {
-          const next: [number, number][] = [];
-          for (const [s0, e0] of leftover[i] ?? []) {
-            for (const [s1, e1] of out) {
-              const s = Math.max(s0, s1);
-              const e = Math.min(e0, e1);
-              if (e - s > 1e-12) next.push([s, e]);
-            }
-          }
-          leftover[i] = next;
-        }
-      });
-      return { deep, near, shore };
-    };
-    const d = run(margin, true);
-    const t = run(REACH_TOUCH_M, false);
-    const first = (area.polygon as Polygon).coordinates[0]?.[0] as Position;
-    const held =
-      !t.near && pointInPolygon({ lng: first[0] as number, lat: first[1] as number }, body);
-    verdict.set(area.id, { deep: d.deep || held, touch: t.deep || held, shore: t.shore });
+      }
+      leftover[i] = next;
+    });
+    shore.set(area.id, inside);
   }
-  const pick = (f: (v: { deep: boolean; touch: boolean }) => boolean) =>
-    [...verdict.entries()]
-      .filter(([, v]) => f(v))
-      .sort((p, q) => q[1].shore - p[1].shore || (p[0] < q[0] ? -1 : 1))
-      .map(([id]) => id);
-  const deep = pick((v) => v.deep);
-  if (deep.length) return { ids: deep, basis: 'reach' };
-  if (leftover.some((l) => l.length > 0)) return { ids: [], basis: 'outside' };
-  const touch = pick((v) => v.touch);
-  return touch.length ? { ids: touch, basis: 'near-line' } : { ids: [], basis: 'outside' };
+  const ranked = [...shore.entries()]
+    .filter(([, m]) => m > 0)
+    .sort((p, q) => q[1] - p[1] || (p[0] < q[0] ? -1 : 1));
+  const held = ranked.filter(([, m]) => m >= need).map(([id]) => id);
+  if (held.length) return { ids: held, basis: 'shore' };
+  const out = leftover.reduce(
+    (n, l, i) => n + l.reduce((m, [s0, e0]) => m + (e0 - s0), 0) * (lens[i] as number),
+    0,
+  );
+  const total = lens.reduce((a, b) => a + b, 0);
+  if (out >= need || ranked.length === 0 || total === 0) return { ids: [], basis: 'outside' };
+  return { ids: [(ranked[0] as [string, number])[0]], basis: 'small' };
 }
 
 // ── Arbitraries ──────────────────────────────────────────────────────────────────────────────
@@ -216,6 +209,7 @@ function reorder(p: Polygon, shift: number, reverse: boolean): Polygon {
 
 describe('areasReached', () => {
   const S = 1_000;
+  const N = REGION_SHORE_M;
 
   it('a body wholly inside one town is in it; wholly outside every town is in none', () => {
     check(
@@ -226,7 +220,7 @@ describe('areasReached', () => {
         150,
       ),
       (body) => {
-        expect(areasReached(body, grid(S))).toEqual({ ids: ['A'], basis: 'reach' });
+        expect(areasReached(body, grid(S))).toEqual({ ids: ['A'], basis: 'shore' });
       },
     );
     check(
@@ -242,23 +236,28 @@ describe('areasReached', () => {
     );
   });
 
-  it('reaching past a line by more than the margin is in; grazing it by less is not', () => {
-    // A long body lying outside the grid's west edge, poking `d` meters into town A.
+  it('a town holding the constant’s worth of shoreline is in; one holding less is not', () => {
+    // A long body lying outside the grid's west edge, poking `d` meters into town A: the shoreline in
+    // A is its two sides of `d` and its end of `h`.
     const poke = (d: number, h: number) => rect(-600, 400, d, 400 + h);
     check(
-      fc.record({
-        d: fc.double({ min: REGION_MARGIN_M + 0.5, max: 500, noNaN: true }),
-        h: fc.double({ min: 30, max: 400, noNaN: true }),
-      }),
+      fc
+        .record({
+          d: fc.double({ min: 0.5, max: 300, noNaN: true }),
+          h: fc.double({ min: 5, max: 300, noNaN: true }),
+        })
+        .filter(({ d, h }) => 2 * d + h >= N + 0.5),
       ({ d, h }) => {
-        expect(areasReached(poke(d, h), grid(S))).toEqual({ ids: ['A'], basis: 'reach' });
+        expect(areasReached(poke(d, h), grid(S))).toEqual({ ids: ['A'], basis: 'shore' });
       },
     );
     check(
-      fc.record({
-        d: fc.double({ min: 0.05, max: REGION_MARGIN_M - 0.5, noNaN: true }),
-        h: fc.double({ min: 30, max: 400, noNaN: true }),
-      }),
+      fc
+        .record({
+          d: fc.double({ min: 0.05, max: 10, noNaN: true }),
+          h: fc.double({ min: 0.5, max: 24, noNaN: true }),
+        })
+        .filter(({ d, h }) => 2 * d + h <= N - 0.5),
       ({ d, h }) => {
         expect(areasReached(poke(d, h), grid(S))).toEqual({ ids: [], basis: 'outside' });
       },
@@ -268,54 +267,60 @@ describe('areasReached', () => {
   it('a body split by a town line lists both towns', () => {
     check(
       fc.record({
-        west: fc.double({ min: REGION_MARGIN_M + 0.5, max: 400, noNaN: true }),
-        east: fc.double({ min: REGION_MARGIN_M + 0.5, max: 400, noNaN: true }),
+        west: fc.double({ min: N, max: 400, noNaN: true }),
+        east: fc.double({ min: N, max: 400, noNaN: true }),
         y: fc.double({ min: 100, max: 600, noNaN: true }),
       }),
       ({ west, east, y }) => {
         const r = areasReached(rect(S - west, y, S + east, y + 200), grid(S));
-        expect(r.basis).toBe('reach');
+        expect(r.basis).toBe('shore');
         expect(sorted(r)).toEqual(['A', 'B']);
       },
     );
   });
 
-  it('a shore within the margin of a town line lists the one town it lies in', () => {
+  it('a shore near a town line counts for the town it lies in; one on the line counts for both', () => {
     check(
       fc.record({
-        off: fc.double({ min: -(REGION_MARGIN_M - 0.5), max: REGION_MARGIN_M - 0.5, noNaN: true }),
+        off: fc.double({ min: 0.05, max: 10, noNaN: true }),
+        side: fc.constantFrom(-1, 1),
         y: fc.double({ min: 100, max: 600, noNaN: true }),
       }),
-      ({ off, y }) => {
-        // The east shore runs along the A/B line, `off` meters to either side of it.
-        expect(areasReached(rect(300, y, S + off, y + 200), grid(S))).toEqual({
-          ids: ['A'],
-          basis: 'reach',
-        });
+      ({ off, side, y }) => {
+        // The east shore runs along the A/B line, `off` meters to one side of it.
+        const r = areasReached(rect(300, y, S + side * off, y + 200), grid(S));
+        if (side < 0) expect(r).toEqual({ ids: ['A'], basis: 'shore' });
+        // Pushed `off` into B: B holds 2·off of the shore plus the 200 m east side.
+        else expect(sorted(r)).toEqual(['A', 'B']);
       },
     );
+    // Exactly on the line: both abut the water, so both count.
+    expect(sorted(areasReached(rect(300, 300, S, 500), grid(S)))).toEqual(['A', 'B']);
   });
 
-  it('a body smaller than the margin is in every town it touches, never in none', () => {
-    // A 10 m pond on the A/B line: neither side is reached by 15 m, nothing lies outside the towns.
-    const pond = rect(S - 5, 500, S + 5, 510);
-    expect(areasReached(pond, grid(S))).toEqual({ ids: ['A', 'B'], basis: 'near-line' });
-    // Wholly inside A, but within the margin of its line: still A.
-    expect(areasReached(rect(S - 9, 500, S - 1, 508), grid(S))).toEqual({
-      ids: ['A'],
-      basis: 'near-line',
+  it('a body whose whole shoreline is short counts for the town holding the most of it', () => {
+    // A 6 m pond on the A/B line, two thirds of it in B.
+    expect(areasReached(rect(S - 2, 500, S + 4, 506), grid(S))).toEqual({
+      ids: ['B'],
+      basis: 'small',
+    });
+    // Its shore split into pieces each under the constant, but nothing of it outside the towns.
+    expect(areasReached(rect(S - 8, S - 8, S + 8, S + 8), grid(S))).toMatchObject({
+      basis: 'small',
     });
   });
 
-  it('a body in no town, near one by less than the margin, is outside', () => {
+  it('a body in no town, its shore in one for less than the constant, is outside', () => {
     expect(areasReached(rect(-30, 500, -5, 520), grid(S))).toEqual({ ids: [], basis: 'outside' });
+    expect(areasReached(rect(-300, 500, 5, 510), grid(S))).toEqual({ ids: [], basis: 'outside' });
   });
 
-  it('a body holding a whole town is in it — an island town, a water unit inside a lake', () => {
+  it('open water alone lists no town; an island’s shore counts for the town it is in', () => {
+    // A lake holding a whole water unit: the unit holds none of the shoreline.
     const lake = rect(-500, -500, 2_500, 2_500);
     const unit: ReachArea = { id: 'U', polygon: rect(800, 800, 1_200, 1_200) };
-    expect(areasReached(lake, [unit])).toEqual({ ids: ['U'], basis: 'reach' });
-    // An island (a hole in the lake) holding the whole unit: the unit is not in the water.
+    expect(areasReached(lake, [unit])).toEqual({ ids: [], basis: 'outside' });
+    // An island (a hole in the lake) inside the unit: its shore is the unit's.
     const ringed = poly(
       [
         [-500, -500],
@@ -324,21 +329,22 @@ describe('areasReached', () => {
         [-500, 2_500],
       ],
       [
-        [700, 700],
-        [700, 1_300],
-        [1_300, 1_300],
-        [1_300, 700],
+        [900, 900],
+        [900, 1_100],
+        [1_100, 1_100],
+        [1_100, 900],
       ],
     );
-    expect(areasReached(ringed, [unit])).toEqual({ ids: [], basis: 'outside' });
-    // An island town: the town is the island and the water around it; the island's shore is in it.
-    const islandTown: ReachArea = { id: 'I', polygon: rect(600, 600, 1_400, 1_400) };
-    expect(areasReached(ringed, [islandTown]).ids).toEqual(['I']);
+    expect(areasReached(ringed, [unit]).ids).toEqual(['U']);
   });
 
-  it('lists the town holding the most shore first', () => {
-    const r = areasReached(rect(S - 100, 300, S + 600, 500), grid(S));
-    expect(r.ids).toEqual(['B', 'A']);
+  it('lists the town holding the most shore first, and reports what each holds', () => {
+    const run = createReach(rect(S - 100, 300, S + 600, 500));
+    run.add(grid(S));
+    expect(run.result().ids).toEqual(['B', 'A']);
+    // A holds 100 + 200 + 100 m, B 600 + 200 + 600 m (each crossing adds its 2 cm on the line).
+    expect(run.shore().get('A')).toBeCloseTo(400, 1);
+    expect(run.shore().get('B')).toBeCloseTo(1_400, 1);
   });
 
   it('does not depend on vertex order or where a ring starts', () => {
@@ -373,7 +379,7 @@ describe('areasReached', () => {
         body: star(
           fc.double({ min: 900, max: 2_100, noNaN: true }),
           fc.double({ min: 900, max: 2_100, noNaN: true }),
-          5,
+          2,
           800,
         ),
       }),
@@ -383,8 +389,8 @@ describe('areasReached', () => {
     );
   });
 
-  it('is monotone in the margin: a wider margin never reaches a town a narrower one did not', () => {
-    const deepSet = (r: ReachResult) => (r.basis === 'reach' ? new Set(r.ids) : new Set<string>());
+  it('is monotone in the constant: a larger one never lists a town a smaller one did not', () => {
+    const held = (r: ReachResult) => (r.basis === 'shore' ? new Set(r.ids) : new Set<string>());
     check(
       fc.record({
         areas: tiling(S),
@@ -394,13 +400,13 @@ describe('areasReached', () => {
           10,
           600,
         ),
-        m1: fc.double({ min: 0, max: 60, noNaN: true }),
-        dm: fc.double({ min: 0, max: 60, noNaN: true }),
+        n1: fc.double({ min: 0.5, max: 200, noNaN: true }),
+        dn: fc.double({ min: 0, max: 400, noNaN: true }),
       }),
-      ({ areas, body, m1, dm }) => {
-        const narrow = deepSet(areasReached(body, areas, { marginM: m1 }));
-        const wide = deepSet(areasReached(body, areas, { marginM: m1 + dm }));
-        for (const id of wide) expect(narrow.has(id)).toBe(true);
+      ({ areas, body, n1, dn }) => {
+        const small = held(areasReached(body, areas, { shoreM: n1 }));
+        const large = held(areasReached(body, areas, { shoreM: n1 + dn }));
+        for (const id of large) expect(small.has(id)).toBe(true);
       },
     );
   });
@@ -412,15 +418,14 @@ describe('areasReached', () => {
         body: star(
           fc.double({ min: -100, max: 1_000, noNaN: true }),
           fc.double({ min: -100, max: 1_000, noNaN: true }),
-          5,
+          2,
           400,
         ),
-        margin: fc.constantFrom(0, 5, REGION_MARGIN_M, 40),
+        need: fc.constantFrom(1, 10, REGION_SHORE_M, 200),
       }),
-      ({ areas, body, margin }) => {
-        expect(areasReached(body, areas, { marginM: margin })).toEqual(
-          reference(body, areas, margin),
-        );
+      ({ areas, body, need }) => {
+        const got = areasReached(body, areas, { shoreM: need });
+        expect(got).toEqual(reference(body, areas, need));
       },
       40,
     );
@@ -475,7 +480,7 @@ describe('areasReached', () => {
       type: 'Polygon',
       coordinates: [[at(100, 100), at(200, 100), at(200, 200), at(100, 200)]],
     };
-    expect(areasReached(open, grid(S))).toEqual({ ids: ['A'], basis: 'reach' });
+    expect(areasReached(open, grid(S))).toEqual({ ids: ['A'], basis: 'shore' });
     const multi = {
       type: 'MultiPolygon' as const,
       coordinates: [rect(100, 100, 200, 200).coordinates, rect(1_500, 100, 1_600, 200).coordinates],

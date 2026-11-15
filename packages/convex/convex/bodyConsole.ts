@@ -345,7 +345,7 @@ export const history = query({
 // ── Places ───────────────────────────────────────────────────────────────────────────────────
 
 /**
- * **The places a body lies in** — every loaded town its outline reaches into by more than the margin
+ * **The places a body lies in** — every loaded town holding at least 25 m of its shoreline
  * (the one holding the most shore first), their counties and states (D266), stored at the write
  * (`lib/bodyGeo.ts`). `null` until they are computed by today's rule; computed and in no town, empty
  * lists with `computedAt`.

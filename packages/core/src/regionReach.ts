@@ -1,53 +1,61 @@
 /**
- * **Which loaded towns a body's outline reaches into** (D266) — the one rule behind region
- * membership, a body's town list, its counties and its states. The import asks it whether a body is
- * ours at all (in at least one loaded town); the geometry facts ask it for the towns a body lies in.
- * Both ask the same function, against the same layer: the TIGER county subdivisions (towns, and the
- * "not defined" water units between them), which tile each loaded state.
+ * **Which loaded towns a body's shoreline lies in** (D266) — the one rule behind region membership,
+ * a body's town list, its counties and its states. The import asks it whether a body is ours at all
+ * (in at least one loaded town); the geometry facts ask it for the towns a body lies in. Both ask the
+ * same function, against the same layer: the TIGER county subdivisions (towns, and the "not defined"
+ * water units between them), which tile each loaded state.
  *
  * ## The rule
  *
- * A body is in a town when its outline **reaches inside that town's boundary by more than the
- * margin** ({@link REGION_MARGIN_M}): some point of the outline lies inside the town and farther than
- * the margin from every one of the town's edges. A body that holds a whole town (an island town, a
- * water unit inside a big lake) is in it too. When no town is reached that deeply:
+ * A body is in a town when **at least {@link REGION_SHORE_M} of its shoreline lies inside that town**
+ * — every ring of the outline, islands included, clipped exactly against the town and measured in
+ * meters on the ground. Open water alone never lists a town: a town (or a water unit inside a big
+ * lake) that holds none of the shoreline is not one the body is in. When no town holds that much:
  *
- * - **outside** — some point of the outline lies outside every loaded town by more than the margin:
- *   the body is elsewhere and only grazes the line. It is in no town, so out of region.
- * - **near a line** — every point of the outline lies inside a town or within the margin of a line:
- *   a body smaller than the margin's own uncertainty. It is in every town it touches at all, so it
- *   is never left in none.
+ * - **outside** — at least {@link REGION_SHORE_M} of the shoreline lies outside every loaded town:
+ *   the body is elsewhere, and its shore only grazes ours. It is in no town, so out of region.
+ * - **small** — less than that lies outside: a body whose whole shoreline is shorter than the
+ *   constant, or one whose shore is split among towns in pieces each shorter. It is in the town
+ *   holding the most of its shoreline, so a body inside the towns is never left in none.
  *
- * ## Exact along every edge, not at sampled points
+ * ## A shore along a line
  *
- * For each outline edge, the stretches within the margin of a town edge are found as intervals — a
- * line meets a capsule (the points within `r` of a segment) in one interval, solved in closed form.
- * What is left of the edge lies farther than the margin from every town edge, so each leftover piece
- * is wholly inside the town or wholly outside it, and one point-in-polygon test settles it. An edge
- * crossing (a town line running across a pond) is a covered interval like any other; nothing depends
- * on a vertex landing in the right place.
+ * A stretch of shore within {@link REACH_TOUCH_M} of a town's edge lies *on* that edge, and counts for
+ * the town on either side — both abut the water. That is the rule's own uncertainty: the stored
+ * boundaries are good to about 5–7 m, so a shore that runs along a town or state line within that
+ * distance can count for one side, both or neither, depending on a few meters of boundary error
+ * (`plans/phases/B01-admin-console.md` §12.9.4 has the measured cases).
  *
- * Distances are measured in a local equirectangular frame (meters), centered on the body's latitude
+ * ## Exact along every edge
+ *
+ * For each shoreline edge, the stretches within {@link REACH_TOUCH_M} of a town edge are found as
+ * intervals — a line meets a capsule (the points within `r` of a segment) in one interval, solved in
+ * closed form. Every leftover piece lies off the town's boundary, so it is wholly inside the town or
+ * wholly outside it, and one point-in-polygon test settles it. An edge crossing (a town line across a
+ * pond) is a two-centimeter covered interval like any other; nothing depends on a vertex landing in
+ * the right place.
+ *
+ * Lengths are measured in a local equirectangular frame (meters), centered on the body's latitude
  * rounded to {@link FRAME_STEP_DEG}. Across the half-degree a frame serves the east-west scale drifts
- * under 0.5%, about 7 cm at the margin, and the frame step lets a long run share prepared towns.
+ * under 0.5% (about 12 cm on 25 m), and the frame step lets a long run share prepared towns.
  */
 
 import type { MultiPolygon, Polygon, Position } from 'geojson';
 
 /**
- * **How far an outline must reach past a town line to count as inside it, in meters.**
+ * **How much of a body's shoreline must lie in a town for the body to be in it, in meters.**
  *
- * The town layer is TIGER/Line simplified to about 5 m; measured against the raw TIGER line, its
- * worst error is 7.2 m (New Hampshire's state line; p99 under 5 m in every state). A body's outline
- * carries its own ~5 m simplification (D48). The two together are about 12 m of honest uncertainty
- * about which side of a line a stretch of shore sits on, rounded up to 15 m — about twice the
- * boundary's worst. A body that reaches past a line by less than this may not cross it at all.
+ * The question is access from the land, not where the water is (founder, 2026-11-15): a body counts
+ * for a town — and so for its state — when enough of its shore is in that town for a put-in to be
+ * there. Twenty-five meters is a short beach or a launch; a shore that only grazes a town for less
+ * is a sliver of someone else's lake, and a body in Quebec whose shore crosses into Vermont for ten
+ * meters is not a Vermont lake.
  */
-export const REGION_MARGIN_M = 15;
+export const REGION_SHORE_M = 25;
 
 /**
- * The margin a **touch** is measured at — one centimeter, not zero, so an edge crossing always has an
- * interval to sit in and floating-point never leaves a crossing uncovered.
+ * How close a stretch of shore must run to a town's edge to lie **on** it — one centimeter, not zero,
+ * so an edge crossing always has an interval to sit in and floating-point never leaves one uncovered.
  */
 export const REACH_TOUCH_M = 0.01;
 
@@ -66,7 +74,7 @@ export interface ReachArea {
 }
 
 /** Why the rule answered as it did — see the module note. */
-export type ReachBasis = 'reach' | 'near-line' | 'outside';
+export type ReachBasis = 'shore' | 'small' | 'outside';
 
 export interface ReachResult {
   /** The areas the body is in, the one holding the most of its shore first; ties by id. */
@@ -80,6 +88,8 @@ export interface Reach {
   add(areas: readonly ReachArea[]): void;
   /** The answer over every area added so far. */
   result(): ReachResult;
+  /** Meters of shoreline in each area added (on its edge included) — what the answer decided on. */
+  shore(): ReadonlyMap<string, number>;
 }
 
 /** Areas prepared in one frame, kept across bodies — a long run shares them (see {@link createReach}). */
@@ -185,7 +195,7 @@ function bandsOf(r: Rings, edges: Float64Array): Bands {
 }
 
 /** Even-odd containment over every ring (holes and parts alike) — for points off the boundary. */
-function inside(b: Bands, x: number, y: number): boolean {
+function inside_(b: Bands, x: number, y: number): boolean {
   const row = b.rows[Math.floor((y - b.minY) / b.height)];
   if (row === undefined) return false;
   let odd = false;
@@ -356,32 +366,14 @@ function intersect(a: number[], b: number[]): number[] {
 
 // ── The run ──────────────────────────────────────────────────────────────────────────────────
 
-interface Verdict {
-  /** Reached by more than the margin, or held whole. */
-  deep: boolean;
-  /** Touched at all (at {@link REACH_TOUCH_M}), or held whole. */
-  touch: boolean;
-  /** Meters of outline inside the area — the order the towns are listed in. */
-  shore: number;
-}
-
-/** What one pass of the body's edges against one area found, at one margin. */
-interface Pass {
-  deep: boolean;
-  near: boolean;
-  shore: number;
-}
-
 /**
- * Start a run of the rule over one body. `marginM` defaults to {@link REGION_MARGIN_M}; `cache`
- * shares prepared areas across bodies in the same frame (a long batch run passes one map).
+ * Start a run of the rule over one body. `shoreM` defaults to {@link REGION_SHORE_M}; `cache` shares
+ * prepared areas across bodies in the same frame (a long batch run passes one map).
  */
-export function createReach(
-  body: Geom,
-  opts: { marginM?: number; cache?: ReachCache } = {},
-): Reach {
-  const margin = Math.max(opts.marginM ?? REGION_MARGIN_M, REACH_TOUCH_M);
+export function createReach(body: Geom, opts: { shoreM?: number; cache?: ReachCache } = {}): Reach {
+  const need = opts.shoreM ?? REGION_SHORE_M;
   const cache = opts.cache;
+  const r = REACH_TOUCH_M;
   let sumLat = 0;
   let nLat = 0;
   for (const ring of ringsOf(body)) {
@@ -394,10 +386,19 @@ export function createReach(
   const shape = project(body, frame.kx, frame.ky);
   const edges = edgesOf(shape);
   const edgeCount = edges.length / 4;
-  const bodyBands = bandsOf(shape, edges);
-  /** Each edge's stretches still outside every area by more than the margin; `null` is all of it. */
+  const lengths = new Float64Array(edgeCount);
+  let total = 0;
+  for (let i = 0; i < edgeCount; i++) {
+    lengths[i] = Math.hypot(
+      (edges[i * 4 + 2] as number) - (edges[i * 4] as number),
+      (edges[i * 4 + 3] as number) - (edges[i * 4 + 1] as number),
+    );
+    total += lengths[i] as number;
+  }
+  /** Each edge's stretches still outside every area added; `null` is all of it. */
   const remaining: (number[] | null)[] = new Array(edgeCount).fill(null);
-  const verdicts = new Map<string, Verdict>();
+  /** Meters of shoreline in each area (on its edge included). */
+  const shore = new Map<string, number>();
 
   function prepared(area: ReachArea): PreparedArea {
     if (!cache) return prepareArea(area.polygon, frame.kx, frame.ky);
@@ -409,9 +410,9 @@ export function createReach(
     return made;
   }
 
-  /** One pass of every edge near the area, at margin `r`; `track` narrows `remaining`. */
-  function pass(a: PreparedArea, r: number, track: boolean): Pass {
-    const out: Pass = { deep: false, near: false, shore: 0 };
+  /** The shoreline inside `a` or on its edge, in meters — narrowing `remaining` as it goes. */
+  function measure(a: PreparedArea): number {
+    let inside = 0;
     const seen = new Uint32Array(a.edges.length / 4);
     let stamp = 0;
     const E = a.edges;
@@ -453,70 +454,59 @@ export function createReach(
           }
         }
       }
-      if (covered.length > 0) out.near = true;
+      const len = lengths[i] as number;
       const gaps = gapsOf(covered);
+      // On the edge: every covered stretch (the union, so overlapping capsules count once).
+      let off = 0;
+      for (let g = 0; g < gaps.length; g += 2) off += (gaps[g + 1] as number) - (gaps[g] as number);
+      inside += (1 - off) * len;
       const outside: number[] = [];
-      const len = Math.hypot(dx, dy);
       for (let g = 0; g < gaps.length; g += 2) {
         const s = gaps[g] as number;
         const e = gaps[g + 1] as number;
         const t = (s + e) / 2;
-        if (inside(a.bands, ax + dx * t, ay + dy * t)) {
-          out.deep = true;
-          out.shore += (e - s) * len;
-        } else {
-          outside.push(s, e);
-        }
+        if (inside_(a.bands, ax + dx * t, ay + dy * t)) inside += (e - s) * len;
+        else outside.push(s, e);
       }
-      if (track) remaining[i] = intersect(remaining[i] ?? [0, 1], outside);
+      remaining[i] = intersect(remaining[i] ?? [0, 1], outside);
     }
-    return out;
+    return inside;
   }
 
   return {
     add(areas) {
       for (const area of areas) {
-        if (verdicts.has(area.id)) continue;
+        if (shore.has(area.id)) continue;
         const a = prepared(area);
-        if (a.rings.length === 0) {
-          verdicts.set(area.id, { deep: false, touch: false, shore: 0 });
-          continue;
-        }
         const far =
-          a.maxX < shape.minX - margin ||
-          a.minX > shape.maxX + margin ||
-          a.maxY < shape.minY - margin ||
-          a.minY > shape.maxY + margin;
-        if (far || edgeCount === 0) {
-          verdicts.set(area.id, { deep: false, touch: false, shore: 0 });
-          continue;
-        }
-        const deep = pass(a, margin, true);
-        const touch = pass(a, REACH_TOUCH_M, false);
-        // Held whole: no edge of the town comes near the outline, and a point of it is in the body.
-        const ring = a.rings[0] as Float64Array;
-        const held = !touch.near && inside(bodyBands, ring[0] as number, ring[1] as number);
-        verdicts.set(area.id, {
-          deep: deep.deep || held,
-          touch: touch.deep || held,
-          shore: touch.shore,
-        });
+          a.rings.length === 0 ||
+          a.maxX < shape.minX - r ||
+          a.minX > shape.maxX + r ||
+          a.maxY < shape.minY - r ||
+          a.minY > shape.maxY + r;
+        shore.set(area.id, far ? 0 : measure(a));
       }
     },
     result() {
-      const ranked = (pick: (v: Verdict) => boolean) =>
-        [...verdicts.entries()]
-          .filter(([, v]) => pick(v))
-          .sort((p, q) => q[1].shore - p[1].shore || (p[0] < q[0] ? -1 : p[0] > q[0] ? 1 : 0))
-          .map(([id]) => id);
-      const reached = ranked((v) => v.deep);
-      if (reached.length > 0) return { ids: reached, basis: 'reach' };
-      const out = remaining.some((r) => r === null || r.length > 0);
-      if (out) return { ids: [], basis: 'outside' };
-      const touched = ranked((v) => v.touch);
-      return touched.length > 0
-        ? { ids: touched, basis: 'near-line' }
-        : { ids: [], basis: 'outside' };
+      const ranked = [...shore.entries()]
+        .filter(([, m]) => m > 0)
+        .sort((p, q) => q[1] - p[1] || (p[0] < q[0] ? -1 : p[0] > q[0] ? 1 : 0));
+      const held = ranked.filter(([, m]) => m >= need).map(([id]) => id);
+      if (held.length > 0) return { ids: held, basis: 'shore' };
+      let out = 0;
+      remaining.forEach((pieces, i) => {
+        const len = lengths[i] as number;
+        if (pieces === null) out += len;
+        else
+          for (let k = 0; k < pieces.length; k += 2)
+            out += ((pieces[k + 1] as number) - (pieces[k] as number)) * len;
+      });
+      const first = ranked[0];
+      if (out >= need || first === undefined || total === 0) return { ids: [], basis: 'outside' };
+      return { ids: [first[0]], basis: 'small' };
+    },
+    shore() {
+      return shore;
     },
   };
 }
@@ -525,7 +515,7 @@ export function createReach(
 export function areasReached(
   body: Geom,
   areas: readonly ReachArea[],
-  opts: { marginM?: number; cache?: ReachCache } = {},
+  opts: { shoreM?: number; cache?: ReachCache } = {},
 ): ReachResult {
   const run = createReach(body, opts);
   run.add(areas);

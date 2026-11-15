@@ -18,7 +18,6 @@ import {
   countyKeyOfSubdivision,
   createReach,
   isUndefinedSubdivision,
-  REGION_MARGIN_M,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
@@ -140,8 +139,8 @@ export const TOWN_PAGE = 11;
 /** County rows one page reads — charged as {@link TOWN_PAGE}'s are. */
 export const COUNTY_PAGE = 11;
 /**
- * The candidates' box is the body's padded by this many degrees — over {@link REGION_MARGIN_M} at
- * every latitude loaded (a degree of longitude is 75 km at 47.5°N, so 15 m is 0.0002°).
+ * The candidates' box is the body's padded by this many degrees (about 40 m) — so a town whose edge
+ * the shore runs along, a few meters off its box, is still tested.
  */
 export const REACH_PAD_DEG = 0.0005;
 
@@ -151,7 +150,7 @@ const cursorV = v.object({ z: v.number(), i: v.number() });
  * **Every town whose cells meet `box`**, a page at a time: the town rows of each ladder rung's cells
  * covering the box, from `from` (a rung and a cell's place in its range) for at most
  * {@link CANDIDATE_CELL_READS} cells, with where to go on (`next: null` at the end). A town is indexed
- * by its bounding box, so every town within the margin of the body is a candidate. A cell holding
+ * by its bounding box, so every town whose box meets the body's padded box is a candidate. A cell holding
  * more rows than {@link AREA_CELL_CAP} throws rather than answer short.
  */
 export const townCandidates = internalQuery({
@@ -227,11 +226,11 @@ export const countyPage = internalQuery({
 
 // ── The pure work the action does ────────────────────────────────────────────────────────────
 
-/** A town the rule reached, as {@link townPage} returned it (its polygon no longer needed). */
+/** A town the rule placed the body in, as {@link townPage} returned it (its polygon no longer needed). */
 export type ReachedTown = { id: Id<'adminAreas'>; name: string; state: string; externalId: string };
 
 /**
- * **The places a body lies in, from the towns its outline reaches** (D266, `@skating/core`'s
+ * **The places a body lies in, from the towns holding its shoreline** (D266, `@skating/core`'s
  * `createReach`) — one rule for its towns, counties and states. `reached` is the rule's answer in its
  * order (the town holding the most shore first). A "County subdivisions not defined" water unit is
  * not a town and is never listed as one, but its county and state count. Counties follow from each
@@ -285,9 +284,9 @@ export function movedOn(
 }
 
 /**
- * **Which loaded towns this outline reaches into**, read and tested a page at a time: the candidates
+ * **Which loaded towns hold this body's shoreline**, read and tested a page at a time: the candidates
  * by cell (paged, each page must move on), the towns {@link TOWN_PAGE} at a time into one run of the
- * rule, then the counties of the towns it reached. Nothing here holds more than one page of town
+ * rule, then the counties of the towns it placed the body in. Nothing here holds more than one page of town
  * polygons at once.
  */
 async function placesOf(
@@ -318,7 +317,7 @@ async function placesOf(
     if (!movedOn(from, page.next)) throw new Error('town candidates made no progress');
     from = page.next;
   }
-  const run = createReach(geom, { marginM: REGION_MARGIN_M });
+  const run = createReach(geom);
   const byId = new Map<string, ReachedTown>();
   for (let k = 0; k < ids.length; k += TOWN_PAGE) {
     const rows = await ctx.runQuery(internal.bodyGeo.townPage, {

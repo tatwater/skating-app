@@ -505,15 +505,15 @@ describe('computed at the write, read without geometry', () => {
     expect(lines?.towns[0]?.ring?.length).toBeLessThanOrEqual(97);
   });
 
-  test('a town the shore crosses into is listed; one it only grazes is not; a body in none is computed empty', async () => {
+  test('a town holding 25 m of the shore is listed; one holding less is not; a body in none is computed empty', async () => {
     const t = harness();
     const as = await seedModerator(t);
     // Two towns meeting on the meridian 72°W; a pond across the line, and one 5 m short of it.
     await seedArea(t, 'West', 'town', 'VT', 'tiger/5000100001', rectangle(-72.2, 43.9, -72, 44.1));
     await seedArea(t, 'East', 'town', 'NH', 'tiger/3300100002', rectangle(-72, 43.9, -71.8, 44.1));
     const across = await seedBody(t, 'Across', [-72, 44], [0.005, 0.005]);
-    // ~5 m of shore east of the line (a degree of longitude is ~80 km here).
-    const grazing = await seedBody(t, 'Grazing', [-72.005 + 0.00006, 44.05], [0.005, 0.002]);
+    // Its east tip 0.4 m past the line: about 20 m of shore in East, under the 25 m it takes.
+    const grazing = await seedBody(t, 'Grazing', [-72.005 + 0.000005, 44.05], [0.005, 0.002]);
     const nowhere = await seedBody(t, 'Nowhere', [-70, 44], [0.005, 0.005]);
     await stale(t, [across, grazing, nowhere]);
     await compute(t);

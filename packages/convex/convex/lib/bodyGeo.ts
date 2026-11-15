@@ -203,9 +203,9 @@ export function coverTiles(box: Box): { tiles: Box[]; truncated: boolean } {
 export { markGeoStale } from './geoStale';
 
 /**
- * **The places rule a facts row's towns, counties and states were computed by** — 2 is the outline's
- * reach into the town layer (D266); a row without it holds the sampled answer from before, which no
- * read shows as the answer ({@link placesOf}).
+ * **The places rule a facts row's towns, counties and states were computed by** — 2 is the body's
+ * shoreline in the town layer (D266: 25 m in a town); a row without it holds the sampled answer from
+ * before, which no read shows as the answer ({@link placesOf}).
  */
 export const PLACES_RULE = 2;
 
