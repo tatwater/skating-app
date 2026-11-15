@@ -25,7 +25,11 @@ export function useActing(onAct: (action: PersonAction) => Promise<string | null
       action: PersonAction,
       opts: { region: HTMLElement | null; inline: boolean },
     ): Promise<string | null> => {
-      if (running.current !== null) return 'Another change is still on its way';
+      if (running.current !== null) {
+        const held = 'Another change is still on its way';
+        if (opts.inline) setRefusals((r) => ({ ...r, [id]: held }));
+        return held;
+      }
       running.current = id;
       const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       setBusy(id);
