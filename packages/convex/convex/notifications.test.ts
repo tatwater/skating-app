@@ -557,6 +557,9 @@ describe('notifications — nearby digest (X₁)', () => {
     const nearby = await seedProfile(t, 'nearby', { prefs: { nearbyReportDigest: true } });
     const fan = await seedProfile(t, 'fan');
     const due = Date.now() - 1;
+    // A digest row per lake, as the fan-out keys them (`user:body:digest`) — a digest names each
+    // body once, so three rows on one body would be one entry.
+    const digestBodies = [bodyId, await seedBody(t, 'osm/2'), await seedBody(t, 'osm/3')];
     // Insert straight into the queue, in an order that puts two of `nearby`'s three digest rows
     // inside the first batch and the third past the cap — `by_flush` ties on `flushAfter` and falls
     // back to creation order, which is exactly how one day's reports interleave users.
@@ -564,10 +567,10 @@ describe('notifications — nearby digest (X₁)', () => {
       t.run((ctx) =>
         ctx.db.insert('notificationQueue', {
           userId: nearby.id,
-          waterBodyId: bodyId,
+          waterBodyId: digestBodies[n - 1] as Id<'waterBodies'>,
           kind: 'digest' as const,
           type: 'nearby_report_digest' as const,
-          coalesceKey: `${nearby.id}:body${n}:digest`,
+          coalesceKey: `${nearby.id}:${digestBodies[n - 1]}:digest`,
           latestReportId: reportId,
           count: 1,
           flushAfter: due,

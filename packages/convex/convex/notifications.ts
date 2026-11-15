@@ -779,12 +779,32 @@ async function flushRows(
       const rows = await dueDigestRowsFor(row.userId);
       // One consolidated digest per user: enumerate the bodies (each with its own coalesced
       // count), carry the grand `totalCount`, and key the collapse-id per user so a later push
-      // replaces cleanly.
-      const bodies = rows.flatMap((r) =>
-        r.waterBodyId !== undefined && r.latestReportId !== undefined
-          ? [{ waterBodyId: r.waterBodyId, reportId: r.latestReportId, count: r.count }]
-          : [],
-      );
+      // replaces cleanly. A body is listed once however many rows carry it (D258 lets one key hold
+      // several: a row from before the rule, a parked one being retried, a zone change, a late
+      // flush) — its counts summed, its report the newest row's.
+      const byBody = new Map<
+        Id<'waterBodies'>,
+        { waterBodyId: Id<'waterBodies'>; reportId: Id<'reports'>; count: number; at: number }
+      >();
+      for (const r of rows) {
+        if (r.waterBodyId === undefined || r.latestReportId === undefined) continue;
+        const seen = byBody.get(r.waterBodyId);
+        if (!seen) {
+          byBody.set(r.waterBodyId, {
+            waterBodyId: r.waterBodyId,
+            reportId: r.latestReportId,
+            count: r.count,
+            at: r.createdAt,
+          });
+          continue;
+        }
+        seen.count += r.count;
+        if (r.createdAt >= seen.at) {
+          seen.reportId = r.latestReportId;
+          seen.at = r.createdAt;
+        }
+      }
+      const bodies = [...byBody.values()].map(({ at: _at, ...b }) => b);
       const totalCount = bodies.reduce((sum, b) => sum + b.count, 0);
       inserted.push(
         await ctx.db.insert('notifications', {

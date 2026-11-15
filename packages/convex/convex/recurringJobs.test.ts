@@ -1058,7 +1058,10 @@ describe('the freshness rule holds at enqueue and at flush, by construction', ()
               throw new Error('poison');
             return real(row, now);
           });
+          // Every row ever written, with its clock — the pre-rule rows from the start, so one the first
+          // flush sends is counted by (d) like any other.
           const clocks = new Map<string, number>();
+          for (const r of await rowsOf(t)) clocks.set(r._id, notificationQueue.dueClockOf(r));
           for (const c of cmds) {
             const before = await rowsOf(t);
             const sentBefore = (await inboxOf(t)).length;
@@ -1154,6 +1157,92 @@ describe('the freshness rule holds at enqueue and at flush, by construction', ()
       expired: 1,
     });
     expect(await rowsOf(t)).toEqual([]);
+  });
+
+  test('a row that failed is never joined, though its run moved it just past the moment the event lands — a pre-rule row stamped by that failure included', async () => {
+    const { t, actorNotice, reportNotice, seedLegacy } = await freshnessSetup();
+    // A pre-rule actor row an hour old, and a row of the rule's own that fell due a minute ago.
+    const legacyRow = await seedLegacy({ k: 'actor', u: 0, x: 0, ageMs: HOUR, dueInMs: -1 });
+    await reportNotice(1, 0);
+    vi.setSystemTime(Date.now() + DEBOUNCE + MINUTE);
+    const now = Date.now();
+    // Both fail in a run whose cutoff is now: each is moved to just past it, its clock kept.
+    for (const row of await rowsOf(t)) {
+      await t.run((ctx) => recordQueueFailure(ctx, row, 'Error', now, { cutoff: now }));
+    }
+    const failed = await rowsOf(t);
+    for (const r of failed) {
+      expect(r.flushAfter).toBe(now + 1);
+      expect(r.firstDueAt).toBeLessThan(now);
+    }
+    // An event in that same moment: each gets a row of its own, with a clock that starts after it.
+    await actorNotice(0, 0);
+    await reportNotice(1, 0);
+    const rows = await rowsOf(t);
+    expect(rows).toHaveLength(4);
+    for (const was of failed) {
+      expect(rows.find((r) => r._id === was._id)).toEqual(was);
+    }
+    // The pre-rule row's stamped clock is its `createdAt`, an hour before the setup's clock.
+    expect(rows.find((r) => r._id === legacyRow)?.firstDueAt).toBe(T0 - HOUR);
+    for (const r of rows.filter((r) => !failed.some((f) => f._id === r._id))) {
+      expect(r.firstDueAt).toBeGreaterThan(now);
+    }
+  });
+
+  test('a body is listed once in a digest, however many rows carry it — counts summed, the newest report kept', async () => {
+    const t = harness();
+    const fan = await seedUser(t, 'digest-twice');
+    await t.run((ctx) =>
+      ctx.db.patch(fan.id, { notificationPrefs: { ...NOTIF_PREFS, nearbyReportDigest: true } }),
+    );
+    const a = await seedBody(t, 'osm/digest-twice-a');
+    const b = await seedBody(t, 'osm/digest-twice-b');
+    const older = await seedReport(t, fan.id, a);
+    const newer = await seedReport(t, fan.id, a);
+    const tonight = T0 + 5 * HOUR;
+    // Tonight's digest row for body a from before the rule, two reports in.
+    await t.run((ctx) =>
+      ctx.db.insert('notificationQueue', {
+        userId: fan.id,
+        waterBodyId: a,
+        kind: 'digest' as const,
+        type: 'nearby_report_digest' as const,
+        coalesceKey: `${fan.id}:${a}:digest`,
+        latestReportId: older,
+        count: 2,
+        flushAfter: tonight,
+        createdAt: T0 - HOUR,
+      }),
+    );
+    const notice = (waterBodyId: Id<'waterBodies'>, reportId: Id<'reports'>) =>
+      t.run((ctx) =>
+        enqueueReportNotice(ctx, {
+          userId: fan.id,
+          waterBodyId,
+          reportId,
+          kind: 'digest',
+          type: 'nearby_report_digest',
+          flushAfter: tonight,
+          now: Date.now(),
+        }),
+      );
+    // A report on body a since the rule: never joined to the old row, so a row of its own.
+    await notice(a, newer);
+    await notice(b, older);
+    expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toHaveLength(3);
+    vi.setSystemTime(tonight);
+    expect(await t.mutation(internal.notifications.flushNotificationQueue, {})).toMatchObject({
+      delivered: 1,
+    });
+    const [sent] = await inbox(t, fan.id);
+    expect(sent?.payload).toMatchObject({
+      bodies: [
+        { waterBodyId: a, reportId: newer, count: 3 },
+        { waterBodyId: b, reportId: older, count: 1 },
+      ],
+      totalCount: 4,
+    });
   });
 
   test('a row written before the rule (no clock of its own) is read by its earliest clock, never as fresh', async () => {

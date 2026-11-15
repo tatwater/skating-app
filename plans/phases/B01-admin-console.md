@@ -1828,7 +1828,13 @@ event — a fresh event on it gets its own row, so it can never expire undeliver
 (Greptile #116's legacy-row case; a backfill would only stamp the same guess, and old rows drain
 within a day). The actor path's old
 "a due row takes the incoming deadline" branch was the moving deadline, and is gone: a re-thumb after a
-row fell due is its own notification.
+row fell due is its own notification. Review found the one deadline still moving: a failure moves a
+row's due time just past its run's cutoff, so to an event at that cutoff a failed row read as still
+settling — and a pre-D258 row's first failure stamps its old clock, so the "no clock of its own" guard
+let it through, to expire the fresh event with it. The join now asks that the row's clock has not
+started (`firstDueAt` after now), which keeps out both. And since one key can now hold several rows
+(a pre-D258 one, a parked one being retried, a zone change, a late flush), a digest names each body
+once, its counts summed.
 
 **Owed, with the reason:**
 - *Pump live satellite imagery*: a Machine that stays live keeps its granule in flight and one of a

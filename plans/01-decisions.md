@@ -8003,9 +8003,10 @@ item that keeps failing, or keeps being kept, takes only its own turn.
 - **A notification is sent only fresh: within twelve hours of when its row first fell due.** Past that
   it is expired — deleted, counted, never delivered — whether it was parked, retried or simply left
   behind by a flush that was down. The row's due clock is set once, when the row is written, and
-  nothing moves it, nor its due time; a new event joins only a row that is unparked, still settling and
-  due no later than the event would be alone, otherwise it starts a row of its own, so an old row never makes a fresh event expire and a fresh event never makes
-  an old row look fresh. A row from before this rule has no clock of its own: it is read by its
+  nothing moves it, nor its due time but for a failure (just past the run that tried it); a new event
+  joins only a row whose clock has not started — unparked, still settling and due no later than the
+  event would be alone, never one that has failed — otherwise it starts a row of its own, so an old row never makes a fresh event expire and a fresh event never makes
+  an old row look fresh. A digest names each body once, however many rows carry it. A row from before this rule has no clock of its own: it is read by its
   earliest one (`createdAt` for an actor row, `flushAfter` for a report notice), never as fresh, and
   never takes a new event — a fresh event on it would expire with it — so the event gets its own row.
   (Not a one-time backfill: it could only stamp the same guess, and the code would need the branch until
