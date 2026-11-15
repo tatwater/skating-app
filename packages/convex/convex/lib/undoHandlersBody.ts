@@ -7,7 +7,7 @@
  * re-stamps reports and hazards, a restore re-clips. Nothing here patches a row back by hand.
  */
 
-import { type BodyStanding, standingOf } from '@skating/core';
+import { type BodyStanding, type DepthSource, standingOf } from '@skating/core';
 import { ConvexError } from 'convex/values';
 import type { Doc, Id } from '../_generated/dataModel';
 import {
@@ -28,6 +28,7 @@ import {
   setSubAreaCuratedBoostImpl,
 } from '../subAreas';
 import {
+  chooseDepthSourceImpl,
   type DepthFields,
   removeBodyImpl,
   restoreBodyImpl,
@@ -470,6 +471,21 @@ const undoClass: UndoHandler = {
   },
 };
 
+/** choose_depth_source → the choice it replaced (or the ladder), through the same write. */
+const undoDepthSource: UndoHandler = {
+  blocked: needsPrev,
+  undoTakesAway: () => UNDO_POLICY.choose_depth_source.takesAway(undefined),
+  run: ({ ctx, actor, row, reason }) => {
+    const m = meta(row) as { measure: 'mean' | 'max'; prev: { choice: DepthSource | null } };
+    return chooseDepthSourceImpl(ctx, actor, {
+      waterBodyId: row.targetId as Id<'waterBodies'>,
+      measure: m.measure,
+      source: m.prev.choice,
+      reason,
+    }).then(() => undefined);
+  },
+};
+
 /** Verb-level handlers (verbs only this area writes). */
 export const BODY_UNDO_HANDLERS: Partial<Record<ModerationAction, UndoHandler>> = {
   set_curated_boost: undoCuratedBoost,
@@ -478,6 +494,7 @@ export const BODY_UNDO_HANDLERS: Partial<Record<ModerationAction, UndoHandler>> 
   set_class: undoClass,
   set_water_body_name: undoWaterBodyName,
   set_lake_depth: undoLakeDepth,
+  choose_depth_source: undoDepthSource,
   set_satellite_imagery: undoSatelliteImagery,
   set_weather_sample_points: undoWeatherSamplePoints,
   set_public_access: undoPublicAccess,

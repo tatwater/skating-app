@@ -234,3 +234,134 @@ describe('setClass and the class claims', () => {
     ).rejects.toThrow(/merged into another/);
   });
 });
+
+describe('chooseDepthSource and the depth candidates', () => {
+  const offer = (
+    max: [string, number][],
+    mean: [string, number][] = [],
+  ): { depths: Record<string, unknown>[] } => ({
+    depths: [
+      ...max.map(([source, m]) => ({
+        source: 'osm',
+        externalId: 'way/1',
+        maxDepthM: m,
+        maxDepthSource: source,
+      })),
+      ...mean.map(([source, m]) => ({
+        source: 'osm',
+        externalId: 'way/1',
+        meanDepthM: m,
+        meanDepthSource: source,
+      })),
+    ],
+  });
+  const load = (t: T, o: ReturnType<typeof offer>) =>
+    t.mutation(internal.waterBodies.importDepths, o as never);
+
+  test('the ladder keeps every source’s offer and still picks the best — the default path unchanged', async () => {
+    const t = harness();
+    const mod = await person(t);
+    const id = await imported(t, 'way/1');
+    const first = await load(
+      t,
+      offer(
+        [
+          ['osm_tag', 22],
+          ['state_agency', 24],
+          ['lagos_us', 23],
+        ],
+        [['hydrolakes_modeled', 8.1]],
+      ),
+    );
+    // lagos_us arrives below state_agency: kept as a candidate, not a changed depth — as before.
+    expect(first).toMatchObject({ updated: 3, skipped: 1 });
+    expect(await get(t, id)).toMatchObject({ maxDepthM: 24, maxDepthSource: 'state_agency' });
+    const choices = await mod.as.query(api.bodyConsole.depthChoices, { waterBodyId: id });
+    expect(choices.max.choices.map((c) => [c.source, c.valueM, c.inUse])).toEqual([
+      ['state_agency', 24, true],
+      ['lagos_us', 23, false],
+      ['osm_tag', 22, false],
+    ]);
+    expect(choices).toMatchObject({ recorded: true, max: { chosen: null, operatorValueM: null } });
+    // A lower rung re-offered only refreshes its candidate: no depth changes, none counted.
+    const again = await load(t, offer([['lagos_us', 23.4]]));
+    expect(again).toMatchObject({ updated: 0, skipped: 1 });
+    expect((await get(t, id))?.maxDepthM).toBe(24);
+  });
+
+  test('a choice holds against better rungs, follows its source’s fresh value, hands back, and undoes', async () => {
+    const t = harness();
+    const mod = await person(t);
+    const id = await imported(t, 'way/1');
+    await load(
+      t,
+      offer([
+        ['state_agency', 24],
+        ['lagos_us', 23],
+      ]),
+    );
+    const choose = (source: string | null) =>
+      mod.as.mutation(api.waterBodies.chooseDepthSource, {
+        waterBodyId: id,
+        measure: 'max',
+        source: source as never,
+      });
+    await choose('lagos_us');
+    expect(await get(t, id)).toMatchObject({ maxDepthM: 23, maxDepthSource: 'lagos_us' });
+    expect((await libraryRow(t, id)) !== null).toBe(true);
+    await load(
+      t,
+      offer([
+        ['state_agency', 25],
+        ['lagos_us', 23.5],
+      ]),
+    );
+    expect(await get(t, id)).toMatchObject({ maxDepthM: 23.5, maxDepthSource: 'lagos_us' });
+    await choose(null);
+    expect(await get(t, id)).toMatchObject({ maxDepthM: 25, maxDepthSource: 'state_agency' });
+    expect((await get(t, id))?.depthChoice).toBeUndefined();
+    // Undo the hand-back: the choice again; undo that undo: the ladder again.
+    await mod.as.mutation(api.undo.run, {
+      actionId: (await lastAction(t, 'choose_depth_source'))._id,
+    });
+    expect(await get(t, id)).toMatchObject({
+      maxDepthSource: 'lagos_us',
+      depthChoice: { max: 'lagos_us' },
+    });
+    await mod.as.mutation(api.undo.run, {
+      actionId: (await lastAction(t, 'choose_depth_source'))._id,
+    });
+    expect(await get(t, id)).toMatchObject({ maxDepthSource: 'state_agency' });
+  });
+
+  test('refused: a source with no value, an inverted pair, a typed depth, a merged-away body, a member', async () => {
+    const t = harness();
+    const mod = await person(t);
+    const member = await person(t, 'member');
+    const id = await imported(t, 'way/1');
+    await load(
+      t,
+      offer(
+        [
+          ['state_agency', 24],
+          ['osm_tag', 5],
+        ],
+        [['hydrolakes_modeled', 8]],
+      ),
+    );
+    const choose = (measure: 'mean' | 'max', source: string, as = mod.as, waterBodyId = id) =>
+      as.mutation(api.waterBodies.chooseDepthSource, {
+        waterBodyId,
+        measure,
+        source: source as never,
+      });
+    await expect(choose('max', 'cslap')).rejects.toThrow(/no depth/);
+    await expect(choose('max', 'osm_tag')).rejects.toThrow(/deeper than the max/);
+    await expect(choose('max', 'state_agency', member.as)).rejects.toThrow();
+    await mod.as.mutation(api.waterBodies.setDepth, { waterBodyId: id, maxDepthM: 30 });
+    await expect(choose('max', 'state_agency')).rejects.toThrow(/typed this depth/);
+    const survivor = await imported(t, 'way/2');
+    await t.run((ctx) => ctx.db.patch(id, { dedupStatus: 'merged', mergedIntoId: survivor }));
+    await expect(choose('mean', 'hydrolakes_modeled')).rejects.toThrow(/merged into another/);
+  });
+});

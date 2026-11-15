@@ -4444,6 +4444,119 @@ export const setDepth = mutation({
 });
 
 /** The depth fields a `set_lake_depth` row records as `prev`, and its undo puts back. */
+// ── A moderator's choice of depth source (B01-3d) ──────────────────────────────────────────────
+
+/**
+ * A body's depth choices for one measure: every candidate the ladder kept, or — for a body whose
+ * depths loaded before candidates were kept — the stored winner alone. One rule for what the Water
+ * tab offers and what `chooseDepthSource` accepts.
+ */
+export function depthChoicesOf(
+  body: Doc<'waterBodies'>,
+  measure: 'mean' | 'max',
+): { source: DepthSource; valueM: number }[] {
+  const kept = (body.depthCandidates ?? []).filter((c) => c.measure === measure);
+  const stored =
+    measure === 'mean'
+      ? { source: body.meanDepthSource, valueM: body.meanDepthM }
+      : { source: body.maxDepthSource, valueM: body.maxDepthM };
+  const out = kept.map((c) => ({ source: c.source, valueM: c.valueM }));
+  if (
+    stored.source !== undefined &&
+    stored.valueM !== undefined &&
+    stored.source !== 'operator' &&
+    !out.some((c) => c.source === stored.source)
+  ) {
+    out.push({ source: stored.source, valueM: stored.valueM });
+  }
+  return out.sort((a, b) => DEPTH_SOURCE_RANK[a.source] - DEPTH_SOURCE_RANK[b.source]);
+}
+
+/**
+ * Moderator: choose which source a body's mean or max depth reads from (B01-3d, `body.water`) —
+ * `source: null` hands the measure back to the ladder (the best-ranked candidate). A depth is a fact
+ * about the lake's basin; choosing one says nothing about ice.
+ */
+export const chooseDepthSource = mutation({
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    measure: literals(['mean', 'max']),
+    source: v.union(literals(DEPTH_SOURCES), v.null()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await requireCapability(ctx, 'body.water');
+    return chooseDepthSourceImpl(ctx, actor, args);
+  },
+});
+
+/**
+ * `chooseDepthSource`'s body, shared with its undo (the same write of the previous choice). Refused:
+ * a merged-away body; a measure an operator typed (clear it first — the operator rung outranks every
+ * source); a source with no candidate for the measure; a choice that would leave the mean deeper than
+ * the max.
+ */
+export async function chooseDepthSourceImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    waterBodyId,
+    measure,
+    source,
+    reason,
+  }: {
+    waterBodyId: Id<'waterBodies'>;
+    measure: 'mean' | 'max';
+    source: DepthSource | null;
+    reason?: string;
+  },
+): Promise<Id<'waterBodies'>> {
+  const body = await editableBody(ctx, waterBodyId);
+  const storedSource = measure === 'mean' ? body.meanDepthSource : body.maxDepthSource;
+  if (storedSource === 'operator') {
+    throw new ConvexError('A moderator typed this depth — clear it before choosing a source');
+  }
+  const choices = depthChoicesOf(body, measure);
+  const pick =
+    source === null ? (choices[0] ?? null) : (choices.find((c) => c.source === source) ?? null);
+  if (source !== null && pick === null) {
+    throw new ConvexError('That source has no depth for this body');
+  }
+  const valueField = measure === 'mean' ? 'meanDepthM' : 'maxDepthM';
+  const sourceField = measure === 'mean' ? 'meanDepthSource' : 'maxDepthSource';
+  const other = measure === 'mean' ? body.maxDepthM : body.meanDepthM;
+  if (pick !== null && other !== undefined) {
+    const mean = measure === 'mean' ? pick.valueM : other;
+    const max = measure === 'max' ? pick.valueM : other;
+    if (mean > max) throw new ConvexError('That depth would leave the mean deeper than the max');
+  }
+  const prev = {
+    choice: body.depthChoice?.[measure] ?? null,
+    valueM: (measure === 'mean' ? body.meanDepthM : body.maxDepthM) ?? null,
+    source: storedSource ?? null,
+  };
+  const choice = { ...(body.depthChoice ?? {}) };
+  if (source === null) delete choice[measure];
+  else choice[measure] = source;
+  await ctx.db.patch(waterBodyId, {
+    ...(pick !== null ? { [valueField]: pick.valueM, [sourceField]: pick.source } : {}),
+    depthChoice: choice.mean === undefined && choice.max === undefined ? undefined : choice,
+  });
+  await writeAudit(ctx, {
+    actorId: actor._id,
+    action: 'choose_depth_source',
+    targetType: 'waterbody',
+    targetId: waterBodyId,
+    reason:
+      reason ??
+      (source === null
+        ? `Handed the ${measure} depth back to the ladder`
+        : `Chose ${source} for the ${measure} depth`),
+    metadata: { measure, choice: source, valueM: pick?.valueM ?? null, prev },
+    createdAt: Date.now(),
+  });
+  return waterBodyId;
+}
+
 export type DepthFields = Pick<
   Doc<'waterBodies'>,
   'meanDepthM' | 'meanDepthSource' | 'maxDepthM' | 'maxDepthSource' | 'depthSourceNote'
@@ -4997,6 +5110,16 @@ async function applyDepthLadder(
   const rejectedValues: string[] = [];
   const inversions: string[] = [];
   let operatorHeld = false;
+  // Every plausible offer is kept as a candidate (B01-3d), whatever the ladder does with it.
+  const candidates = [...(body.depthCandidates ?? [])];
+  const noteCandidate = (measure: 'mean' | 'max', source: DepthSource, valueM: number) => {
+    const at = candidates.findIndex((c) => c.measure === measure && c.source === source);
+    if (at >= 0) {
+      if (candidates[at]?.valueM === valueM) return;
+      candidates[at] = { measure, source, valueM };
+    } else candidates.push({ measure, source, valueM });
+    patch.depthCandidates = candidates;
+  };
 
   const consider = (
     label: 'mean' | 'max',
@@ -5005,6 +5128,15 @@ async function applyDepthLadder(
     existing: DepthSource | undefined,
   ): { valueM: number; source: DepthSource } | undefined => {
     if (value === undefined || source === undefined) return undefined;
+    const plausible = Number.isFinite(value) && value > 0 && value <= MAX_PLAUSIBLE_DEPTH_M;
+    if (plausible) noteCandidate(label, source, value);
+    // A moderator chose this measure's source: only that source moves it (its fresher value).
+    const chosen = body.depthChoice?.[label];
+    if (chosen !== undefined) {
+      return plausible && source === chosen && existing !== 'operator'
+        ? { valueM: value, source }
+        : undefined;
+    }
     if (!winsLadder(source, existing)) {
       if (existing === 'operator') operatorHeld = true;
       return undefined;
@@ -5047,12 +5179,15 @@ async function applyDepthLadder(
     patch.maxDepthSource = undefined;
   }
 
+  // A new candidate alone is stored, but is not a changed depth: the run's counts and the library
+  // refresh follow the depth itself, as before candidates were kept (B01-3d).
+  const depthChanged = Object.keys(patch).some((k) => k !== 'depthCandidates');
   if (Object.keys(patch).length === 0) {
     return { changed: false, operatorHeld, rejectedValues, inversions };
   }
   await ctx.db.patch(body._id, patch);
-  await queueLibraryRefresh(ctx, [body._id]);
-  return { changed: true, operatorHeld, rejectedValues, inversions };
+  if (depthChanged) await queueLibraryRefresh(ctx, [body._id]);
+  return { changed: depthChanged, operatorHeld, rejectedValues, inversions };
 }
 
 /** One measurement as the pair check sees it: what would be written, or what is already there. */

@@ -1189,6 +1189,32 @@ export default defineSchema({
     // chart, max from the 2015 DEC survey") without a second field nobody fills. Cleared when no
     // operator-sourced depth remains, so a note can never outlive the claim it substantiates.
     depthSourceNote: v.optional(v.string()),
+    /**
+     * **Every source's depth offer, not only the winner's** (B01-3d) — one per (measure, source), a
+     * plausible value only, written by the depth ladder as it considers each offer; what the Water
+     * tab lists as choices. Absent on a body whose depths loaded before it (the stored winner is then
+     * the one choice known).
+     */
+    depthCandidates: v.optional(
+      v.array(
+        v.object({
+          measure: literals(['mean', 'max']),
+          source: literals(DEPTH_SOURCES),
+          valueM: v.number(),
+        }),
+      ),
+    ),
+    /**
+     * **A moderator's choice of depth source, per measure** (B01-3d, `chooseDepthSource`) — the
+     * ladder then keeps that source's value for the measure (refreshed when the source re-offers it)
+     * instead of the best-ranked one. Absent: the ladder decides.
+     */
+    depthChoice: v.optional(
+      v.object({
+        mean: v.optional(literals(DEPTH_SOURCES)),
+        max: v.optional(literals(DEPTH_SOURCES)),
+      }),
+    ),
     // Lake **surface elevation** (A06c §1.1) — a real freeze-ORDER signal: a 1,700 ft pond in the
     // Greens is skateable weeks before a valley lake twenty minutes away. One source, not a ladder
     // (see `@skating/core`'s `elevation.ts` for why depth needed five rungs and this needs one),

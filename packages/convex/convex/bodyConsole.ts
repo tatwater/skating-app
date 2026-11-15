@@ -40,6 +40,7 @@ import { QUEUE_CAP } from './lib/requestDecisions';
 import { undoState } from './lib/undo';
 import { literals } from './lib/validators';
 import { subAreasForBody } from './subAreas';
+import { depthChoicesOf } from './waterBodies';
 
 /** A person as the console names them; `null` for the machine or an erased account. */
 type PersonView = { userId: Id<'profiles'>; username: string; displayName: string } | null;
@@ -707,5 +708,34 @@ export const identity = query({
       moderatorClass: body.moderatorClass ?? null,
       moderatorAliases: body.moderatorAliases ?? [],
     };
+  },
+});
+
+// ── Depth choices: what the Water tab offers ────────────────────────────────────────────────
+
+/**
+ * **A body's depth choices, per measure** (B01-3d) — every source's value the depth ladder kept
+ * (best-ranked first), which one is in use, whether a moderator chose it, and an operator's typed
+ * value when one holds the measure (no source can be chosen over it). The same list
+ * `chooseDepthSource` accepts (`depthChoicesOf`). A merged-away id reads its survivor's.
+ */
+export const depthChoices = query({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }) => {
+    await requireCapability(ctx, 'body.read');
+    const body = await bodyOrThrow(ctx, waterBodyId);
+    const side = (measure: 'mean' | 'max') => {
+      const source = measure === 'mean' ? body.meanDepthSource : body.maxDepthSource;
+      const value = measure === 'mean' ? body.meanDepthM : body.maxDepthM;
+      return {
+        choices: depthChoicesOf(body, measure).map((c) => ({
+          ...c,
+          inUse: c.source === source && c.valueM === value,
+        })),
+        chosen: body.depthChoice?.[measure] ?? null,
+        operatorValueM: source === 'operator' ? (value ?? null) : null,
+      };
+    };
+    return { mean: side('mean'), max: side('max'), recorded: body.depthCandidates !== undefined };
   },
 });
