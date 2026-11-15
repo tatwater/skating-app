@@ -401,11 +401,13 @@ const undoCreateLandmark: UndoHandler = {
 };
 
 /**
- * Why a landmark's undo is refused on a clash its write's rule found — what clashed, and that a list
- * of changes can't see it in advance (B01-3h).
+ * Why a landmark's undo is refused on a clash its write's rule found — what clashed; and, when the
+ * refusal comes from running it (`runUndo`, which a list of changes may have offered), that a list
+ * can't check this in advance (B01-3h).
  */
-export function undoClashRefusal(clash: string): string {
-  return `${clash.replace(/\.$/, '')}, so this undo can’t bring the old name back — a list of changes can’t check that in advance.`;
+export function undoClashRefusal(clash: string, fromRun: boolean): string {
+  const base = `${clash.replace(/\.$/, '')}, so this undo can’t bring the old name back`;
+  return fromRun ? `${base} — a list of changes can’t check that in advance.` : `${base}.`;
 }
 
 /** edit_landmark → the name, aliases, kind and point it replaced. */
@@ -432,7 +434,9 @@ const undoEditLandmark: UndoHandler = {
       meta(row).aliases as string[] | undefined,
       'this landmark’s other spellings',
     );
-    if (spellings !== null || read.scope === 'list') return spellings;
+    // A list checks the spellings only; `runUndo` leaves the rule to the write it runs, which reads
+    // the lists once and says a clash plainly (`clashMessage`) — never twice in one mutation.
+    if (spellings !== null || read.scope === 'list' || 'insert' in ctx.db) return spellings;
     const prev = meta(row).prev as LandmarkEditPrev;
     const names = normalizeLandmarkNames(prev.name, prev.aliases);
     if (names === null) return null;
@@ -443,7 +447,7 @@ const undoEditLandmark: UndoHandler = {
       { kind: prev.kind, point: prev.point, ...names },
       current._id,
     );
-    return clash === null ? null : undoClashRefusal(clash);
+    return clash === null ? null : undoClashRefusal(clash, false);
   },
   run: async ({ ctx, actor, row, reason }) => {
     const prev = meta(row).prev as LandmarkEditPrev;
@@ -456,6 +460,7 @@ const undoEditLandmark: UndoHandler = {
       name: prev.name,
       aliases: prev.aliases,
       ...(after !== undefined ? { expectedAliases: after } : {}),
+      clashMessage: (clash) => undoClashRefusal(clash, true),
       kind: prev.kind,
       // Only a point that moved goes back, so an unmoved one keeps its bay stamp and its row says so.
       ...(moved ? { point: prev.point } : {}),
@@ -625,7 +630,11 @@ const undoPutIn: UndoHandler = {
   // overtakes this body's row: the launch is read as it stands, by the write's own checks. A launch
   // row is bounded at its writers (`ROW_MAX.launch`, B01-3h), so the body's hidden launches the
   // suppression rule reads can be reserved: the launch and up to `SUPPRESSION_ROWS_READ` of them.
-  refusalCost: () => ({ bytes: ROW_MAX.launch * (1 + SUPPRESSION_ROWS_READ), reads: 2 }),
+  refusalCost: () => ({
+    bytes: ROW_MAX.launch * (1 + SUPPRESSION_ROWS_READ),
+    reads: 2,
+    docs: 1 + SUPPRESSION_ROWS_READ,
+  }),
   refusal: async (ctx, row, read) => {
     const m = meta(row) as {
       putInId: Id<'putIns'>;

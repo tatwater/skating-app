@@ -166,6 +166,53 @@ describe('a moderator’s name or URL past its cap is refused, plainly', () => {
     await mod.as.mutation(api.undo.run, { actionId: (await lastAction(t, 'rename_sub_area'))._id });
     expect(await t.run((ctx) => ctx.db.get(bayId))).toMatchObject({ name: stored });
   });
+
+  test('an edit around a link’s URL or a lot’s name stored past its cap keeps it; a new one is held', async () => {
+    const t = harness();
+    const mod = await admin(t);
+    const id = await body(t);
+    const storedUrl = `https://example.org/${long(MAX_URL_CHARS)}`;
+    await t.run((ctx) => ctx.db.patch(id, { referenceLinks: [{ label: 'Old', url: storedUrl }] }));
+    await mod.as.mutation(api.waterBodies.setReferenceLinks, {
+      waterBodyId: id,
+      links: [
+        { label: 'Old', url: storedUrl },
+        { label: 'New', url: 'https://example.org/new' },
+      ],
+    });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.referenceLinks).toHaveLength(2);
+    await expect(
+      mod.as.mutation(api.waterBodies.setReferenceLinks, {
+        waterBodyId: id,
+        links: [{ label: 'Another', url: `${storedUrl}/more` }],
+      }),
+    ).rejects.toThrow(`A link is at most ${MAX_URL_CHARS} characters`);
+
+    const lot = { coord: { lat: 44, lng: -72 }, amenities: [], waterBodyIds: [id] };
+    const parkingAreaId = await mod.as.mutation(api.accessPoints.setOfficialParking, {
+      ...lot,
+      name: 'Town Lot',
+    });
+    const storedName = long(MAX_PLACE_NAME_CHARS + 20);
+    await t.run((ctx) => ctx.db.patch(parkingAreaId, { name: storedName }));
+    await mod.as.mutation(api.accessPoints.setOfficialParking, {
+      ...lot,
+      parkingAreaId,
+      name: storedName,
+      fee: true,
+    });
+    expect(await t.run((ctx) => ctx.db.get(parkingAreaId))).toMatchObject({
+      name: storedName,
+      fee: true,
+    });
+    await expect(
+      mod.as.mutation(api.accessPoints.setOfficialParking, {
+        ...lot,
+        parkingAreaId,
+        name: `${storedName}y`,
+      }),
+    ).rejects.toThrow(/A lot’s name is/);
+  });
 });
 
 describe('an import skips a row past a cap and counts it — never the campaign', () => {
@@ -179,6 +226,40 @@ describe('an import skips a row past a cap and counts it — never the campaign'
       ],
     } as never);
     expect(out).toMatchObject({ inserted: 1, tooLong: 2 });
+  });
+
+  test('bodies: a skipped re-import still re-affirms the row it names, taking nothing else from it', async () => {
+    const t = harness();
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [item('way/1')],
+      campaignId: 'c1',
+    } as never);
+    const out = await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [item('way/1', long(MAX_PLACE_NAME_CHARS + 1))],
+      campaignId: 'c2',
+    } as never);
+    expect(out).toMatchObject({ updated: 0, tooLong: 1 });
+    const [row] = await t.run((ctx) => ctx.db.query('waterBodies').collect());
+    // Step 6's prune reads the stamp: the catalogs still list this body.
+    expect(row).toMatchObject({ name: 'Mirror Lake', lastCampaignId: 'c2' });
+    const pruned = await t.mutation(internal.waterBodies.pruneNotInCampaign, {
+      campaignId: 'c2',
+    } as never);
+    expect(pruned).toMatchObject({ deleted: 0 });
+  });
+
+  test('bays from the catalogs: a name past its cap', async () => {
+    const t = harness();
+    const mod = await admin(t);
+    await body(t);
+    const out = await t.mutation(internal.subAreas.importBaySubAreas, {
+      actorUserId: mod.id,
+      bays: [
+        { name: long(MAX_PLACE_NAME_CHARS + 1), polygon: SQUARE, parentIds: { osmId: 'way/1' } },
+      ],
+      dryRun: false,
+    });
+    expect(out).toMatchObject({ results: [{ ok: false, reason: 'name_too_long' }] });
   });
 
   test('launches: a name or id past its cap is skipped; a walk past its cap is thinned, its ends kept', async () => {
@@ -346,7 +427,8 @@ describe('the landmark undo: the edit’s own rule where one landmark is in view
     const editOfA = (await t.run((ctx) => ctx.db.query('moderationActions').collect())).find(
       (r) => r.action === 'edit_landmark' && r.targetId === a,
     ) as Doc<'moderationActions'>;
-    const why = undoClashRefusal('"Long Point" is already a landmark here');
+    const clash = '"Long Point" is already a landmark here';
+    const why = undoClashRefusal(clash, false);
     // One landmark's own history: the full rule.
     const own = await mod.as.query(api.moderation.listActions, {
       targetType: 'bodyLandmark',
@@ -357,9 +439,12 @@ describe('the landmark undo: the edit’s own rule where one landmark is in view
     const feed = await mod.as.query(api.moderation.listActions, {});
     const edits = feed.filter((r) => r.action === 'edit_landmark');
     expect(edits.map((r) => r.undo.state)).toEqual(['available', 'available', 'available']);
-    // runUndo refuses with the same plain message, and writes nothing.
+    // runUndo (which the feed offered) refuses plainly, saying a list couldn't check it, and writes
+    // nothing.
     const before = await t.run((ctx) => ctx.db.get(a));
-    await expect(mod.as.mutation(api.undo.run, { actionId: editOfA._id })).rejects.toThrow(why);
+    await expect(mod.as.mutation(api.undo.run, { actionId: editOfA._id })).rejects.toThrow(
+      undoClashRefusal(clash, true),
+    );
     expect(await t.run((ctx) => ctx.db.get(a))).toEqual(before);
     // The others undo.
     const editOfB = edits.find((r) => r.targetId === b);

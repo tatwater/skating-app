@@ -625,20 +625,15 @@ export const importCanonical = internalMutation({
     for (const item of bodies) {
       // A name or catalog id past its cap (B01-3h) skips the row, counted — never the campaign.
       const overCap =
-        (!externalIdFits(item.externalId) ? 'its catalog id' : null) ??
+        ([item.externalId, item.osmId, item.nhdId, item.threeDhpId, item.gnisId].some(
+          (id) => id !== undefined && !externalIdFits(id),
+        )
+          ? 'a catalog id'
+          : null) ??
         (nameTooLong(item.name, 'Its name') !== null ? 'its name' : null) ??
         ((item.nameClaims ?? []).some((c: { value: string }) => nameTooLong(c.value, '') !== null)
           ? 'a catalog’s name for it'
           : null);
-      if (overCap !== null) {
-        tooLong++;
-        unresolved.push({
-          externalId: item.externalId.slice(0, MAX_EXTERNAL_ID_CHARS),
-          action: 'skipped',
-          reason: `${overCap} is past its cap`,
-        });
-        continue;
-      }
       // Held rather than inlined: the `conflict` branch needs the same rows back, and re-reading
       // them would double the index reads in the heaviest mutation in the app.
       const matches = await lookupByCatalogIds(ctx, item);
@@ -646,6 +641,20 @@ export const importCanonical = internalMutation({
         { osmId: item.osmId, nhdId: item.nhdId, threeDhpId: item.threeDhpId },
         matches,
       );
+      if (overCap !== null) {
+        tooLong++;
+        unresolved.push({
+          externalId: item.externalId.slice(0, MAX_EXTERNAL_ID_CHARS),
+          action: 'skipped',
+          reason: `${overCap} is past its cap`,
+        });
+        // The body is still in the master list: its row is re-affirmed with nothing else taken from
+        // the record, or step 6's prune would read the skip as the catalogs dropping it.
+        if (verdict.action === 'patch' && campaignId) {
+          await ctx.db.patch(verdict.key, { lastCampaignId: campaignId });
+        }
+        continue;
+      }
 
       if (verdict.action === 'conflict') {
         conflicts++;
@@ -4310,10 +4319,14 @@ export async function setReferenceLinksImpl(
         `A body carries at most ${MAX_REFERENCE_LINKS} reference links — this is an association or two, not a directory.`,
       );
     }
-    // An undo puts back links the row had, even one past a cap added since (B01-3h).
+    // Only a URL this edit introduces is held to the cap: an undo puts back links the row had, and
+    // an edit around a link stored past a cap added since keeps it (B01-3h).
     const undoing = isUndoing(ctx);
+    const stored = new Set((body.referenceLinks ?? []).map((l) => l.url.trim()));
     for (const link of links) {
-      const error = referenceLinkError(link, { capUrl: !undoing });
+      const error = referenceLinkError(link, {
+        capUrl: !undoing && !stored.has(link.url.trim()),
+      });
       if (error) throw new ConvexError(error);
     }
 
@@ -6446,6 +6459,22 @@ export const searchByName = query({
 
 /** Merged-away hits one search resolves to their survivors at most — a read of the survivor each. */
 const SURVIVOR_READS = 8;
+/** Hops one merged-away hit follows to its survivor — the chain bound `getById` reads by. */
+const MERGE_HOPS = 8;
+
+/** `names` trimmed, blanks and the shown `name` dropped, each once — case and space aside. */
+function otherNames(name: string, names: readonly string[]): string[] {
+  const seen = new Set([name.trim().toLowerCase()]);
+  const out: string[] = [];
+  for (const raw of names) {
+    const value = raw.trim();
+    const key = value.toLowerCase();
+    if (value === '' || seen.has(key)) continue;
+    seen.add(key);
+    out.push(value);
+  }
+  return out;
+}
 
 /**
  * `searchByName`'s body. A body is found by its name, its catalogs' names and a moderator's aliases —
@@ -6481,29 +6510,49 @@ export async function searchByNameImpl(
     const bodyRoom = Math.max(1, max - bayShare);
 
     const results: SearchHit[] = [];
-    const seen = new Set<string>();
+    const shown = new Map<string, SearchHit>();
+    // A name a merged-away duplicate was found by, carried onto its survivor's hit.
+    const carry = (into: SearchHit, names: readonly string[]) => {
+      const aliases = otherNames(into.name, [...(into.aliases ?? []), ...names]);
+      if (aliases.length > 0) into.aliases = aliases;
+    };
     let survivorReads = 0;
     for (const hit of raw) {
       // A merged-away duplicate's names are its survivor's now: the hit stands for the survivor, the
-      // name it was found by carried as the alias that matched. One read each, a few a search.
+      // names it was found by carried as its aliases. The chain is followed as `getById` follows it
+      // (a survivor merged away since), one read a hop, a few a search; a survivor already on the
+      // page takes the names with no read.
       let body: Doc<'waterBodies'> | null = hit;
-      let foundBy: string[] = [];
-      if (hit.dedupStatus === 'merged' && hit.mergedIntoId !== undefined) {
-        if (survivorReads >= SURVIVOR_READS) continue;
+      const foundBy: string[] = [];
+      for (
+        let hops = 0;
+        body !== null && body.dedupStatus === 'merged' && body.mergedIntoId !== undefined;
+        hops++
+      ) {
+        foundBy.push(body.name, ...bodyAliasesFor(body as BodyNames));
+        const into: Id<'waterBodies'> = body.mergedIntoId;
+        const already = shown.get(into);
+        if (already) carry(already, foundBy);
+        if (already || hops >= MERGE_HOPS || survivorReads >= SURVIVOR_READS) {
+          body = null;
+          break;
+        }
         survivorReads++;
-        body = await ctx.db.get(hit.mergedIntoId);
-        foundBy = [hit.name, ...bodyAliasesFor(hit as BodyNames)];
+        body = await ctx.db.get(into);
       }
-      if (!body || seen.has(body._id) || !isListed(body)) continue;
+      if (!body) continue;
+      const already = shown.get(body._id);
+      if (already) {
+        carry(already, foundBy);
+        continue;
+      }
+      if (!isListed(body)) continue;
       // A removed body is map-only (founder call, 2026-09-16): findable by someone standing on it,
       // never by someone typing its name. A dormant one is searchable, badged (A07b).
       const standing = standingOf(body);
       if (standing.standing === 'removed') continue;
-      seen.add(body._id);
-      const aliases = [...bodyAliasesFor(body as BodyNames), ...foundBy].filter(
-        (a, i, all) => a.trim() !== '' && all.indexOf(a) === i && a !== body.name,
-      );
-      results.push({
+      const aliases = otherNames(body.name, [...bodyAliasesFor(body as BodyNames), ...foundBy]);
+      const result: SearchHit = {
         kind: 'body',
         _id: body._id,
         waterBodyId: body._id,
@@ -6515,7 +6564,9 @@ export async function searchByNameImpl(
         states: body.states ?? [],
         ...(body.surfaceAreaSqM !== undefined ? { surfaceAreaSqM: body.surfaceAreaSqM } : {}),
         ...(standing.standing !== 'active' ? { inactive: true } : {}),
-      });
+      };
+      results.push(result);
+      shown.set(body._id, result);
       if (results.length >= bodyRoom) break;
     }
 

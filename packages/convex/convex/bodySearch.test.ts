@@ -180,6 +180,26 @@ describe('a moderator’s alias in skater search', () => {
     expect(both.filter((h) => h.waterBodyId === survivor)).toHaveLength(1);
     expect(both.map((h) => h.waterBodyId)).not.toContain(loser);
   });
+
+  test('a duplicate merged into a body merged away since finds the last survivor; one already found takes its names', async () => {
+    const t = harness();
+    const mod = await moderator(t);
+    const first = await imported(t, 'way/1', 'Spruce Hollow', -72);
+    const middle = await imported(t, 'way/2', 'Fir Pond', -71.9);
+    const last = await imported(t, 'way/3', 'Spruce Lake', -71.8);
+    await mod.as.mutation(api.waterBodies.merge, { survivorId: middle, loserId: first });
+    await mod.as.mutation(api.waterBodies.merge, { survivorId: last, loserId: middle });
+    // Two hops: the first duplicate's survivor was merged away since.
+    const viaChain = await search(t, 'Spruce Hollow');
+    expect(viaChain.map((h) => h.waterBodyId)).toEqual([last]);
+    expect(viaChain[0]).toMatchObject({ matchedAlias: 'Spruce Hollow' });
+    // The survivor hit by its own name and through its duplicates: one hit, carrying their names.
+    const spruce = await search(t, 'Spruce Lake');
+    expect(spruce.filter((h) => h.waterBodyId === last)).toHaveLength(1);
+    expect(spruce.find((h) => h.waterBodyId === last)?.aliases).toEqual(
+      expect.arrayContaining(['Spruce Hollow']),
+    );
+  });
 });
 
 describe('the repair pass (backfillSearchText)', () => {

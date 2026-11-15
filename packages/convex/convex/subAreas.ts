@@ -2302,6 +2302,11 @@ export const importBaySubAreas = internalMutation({
         results.push({ name: bay.name, ok: false, reason: 'unnamed' });
         continue;
       }
+      // A name past the cap skips this bay, never the campaign (B01-3h).
+      if (bayNamesTooLong(name, []) !== null) {
+        results.push({ name, ok: false, reason: 'name_too_long' });
+        continue;
+      }
       const parent = await resolveParentByCatalogIds(ctx, bay.parentIds);
       if (!parent || !isListed(parent) || standingOf(parent).standing === 'removed') {
         // The ETL only emits a sub-area whose parent is in the same master list, so this means the

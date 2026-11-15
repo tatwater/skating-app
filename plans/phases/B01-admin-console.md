@@ -3039,8 +3039,9 @@ and the answer the same whatever order reads settle in. Reserve, never queue.
   undo's duplicate-name and bay-name rule (`landmarkEditRefusal`, shared with the edit) runs where one
   landmark is in view — the toast, one landmark's own history, `runUndo` — and a list page checks the
   spellings only, because that rule reads the body's whole landmark list (up to 1,500 rows) and its
-  bays' outlines, about 3.5–4 MiB at worst against a page's 4 MiB. Where it bites, it says so: "…, so
-  this undo can't bring the old name back — a list of changes can't check that in advance." Those
+  bays' outlines, about 3.5–4 MiB at worst against a page's 4 MiB. Where it bites, it says so: `runUndo` answers
+  "…, so this undo can't bring the old name back — a list of changes can't check that in advance.",
+  and the single views say the first half before it is offered. Those
   list reads are uncharged in the one-landmark views (the forward write reads the same lists under the
   mutation's own limits). **Owed:** a stored light list of a body's bay and landmark names, kept by
   every writer of either, would let a page check it — a derived fact, not this PR's. A landmark's

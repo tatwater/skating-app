@@ -8,7 +8,7 @@
 
 import fc from 'fast-check';
 import { describe, expect, test } from 'vitest';
-import { DOC_MAX, OverBudget, ReadBudget, type Share, TX_CALLS } from './readBudget';
+import { DOC_MAX, OverBudget, ReadBudget, type Share, TX_CALLS, TX_DOCS } from './readBudget';
 
 /** A row that weighs about `bytes` (a string field of that length). */
 const rowOf = (bytes: number) => ({ text: 'x'.repeat(Math.max(0, bytes - 64)) });
@@ -144,6 +144,46 @@ describe('ReadBudget.waves', () => {
     );
     expect(budget.affordsCalls(TX_CALLS - 1, TX_CALLS - 1)).toBe(true);
     expect(budget.affordsCalls(TX_CALLS, 1)).toBe(false);
+  });
+
+  test('a row past its bound (written before its caps) is charged what it weighs, never thrown, never below zero', async () => {
+    const launch = 12 * 1024;
+    const budget = new ReadBudget(launch * 4);
+    // One heavy old launch, then the hidden ones: the take still fits its declared plan.
+    const got = await budget.waves(
+      [1],
+      () => ({ bytes: launch * 3, reads: 2, docs: 3 }),
+      async (_n, share) => {
+        const row = await share.read('launch', () => settleAfter(0, rowOf(launch * 5)));
+        const hidden = await share.take('launch', 2, () => settleAfter(0, [rowOf(100)]));
+        return [row.text.length, hidden.length];
+      },
+      () => null,
+    );
+    expect(got[0]?.[1]).toBe(1);
+    // Charged past the reservation, down to an empty budget and no lower.
+    expect(budget.bytes).toBe(0);
+  });
+
+  test('a take reserves its documents, and hands back the ones it didn’t scan', async () => {
+    const budget = new ReadBudget(4 * DOC_MAX);
+    await expect(
+      budget.waves(
+        [1],
+        () => ({ bytes: 2 * DOC_MAX, reads: 1 }),
+        (_n, share) => share.take('small', 5, () => settleAfter(0, [])),
+        () => null,
+      ),
+    ).rejects.toThrow(/declared/);
+    await budget.waves(
+      [1],
+      () => ({ bytes: 2 * DOC_MAX, reads: 1, docs: 5 }),
+      (_n, share) => share.take('small', 5, () => settleAfter(0, [rowOf(10)])),
+      () => null,
+    );
+    // One document scanned of the five reserved: the other four came back.
+    expect(budget.affordsCalls(1, TX_DOCS - 1)).toBe(true);
+    expect(budget.affordsCalls(1, TX_DOCS)).toBe(false);
   });
 
   test('a share reads only while its item runs: a read after its answer is a plan error', async () => {

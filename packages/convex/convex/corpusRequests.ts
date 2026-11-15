@@ -30,6 +30,7 @@ import {
   ADMIT_KNOWN_WATER_MARGIN_M,
   bodySearchTextFor,
   catalogQueryUrl,
+  externalIdFits,
   groupLandmarkAsks,
   isActive,
   type LandmarkAsk,
@@ -1208,9 +1209,6 @@ async function admitCandidate(
   now: number,
 ): Promise<Id<'waterBodies'>> {
   const c = request.candidate;
-  const tooLong = c ? nameTooLong(c.name, 'The catalog’s name for this water') : null;
-  if (tooLong !== null)
-    throw new ConvexError(`${tooLong} Decline this, or name it from the lake editor.`);
   if (!c) {
     throw new ConvexError(
       request.resolveError
@@ -1253,6 +1251,16 @@ async function admitCandidate(
     return twin._id;
   }
 
+  // Only a new row takes the catalog's name and id, so only it is held to their caps (B01-3h); a twin
+  // keeps its own.
+  const tooLong = nameTooLong(c.name, 'The catalog’s name for this water');
+  if (tooLong !== null)
+    throw new ConvexError(`${tooLong} Decline this, or name it from the lake editor.`);
+  if ([c.externalId, c.gnisId].some((id) => id !== undefined && !externalIdFits(id))) {
+    throw new ConvexError(
+      'The catalog’s id for this water is too long to store. Decline this, or draw it by hand in the lake editor.',
+    );
+  }
   const place = await resolvePlaceForCoord(ctx, c.centroid);
   const scores = scoreFields({ surfaceAreaSqM: c.surfaceAreaSqM, active: true });
   const id = await ctx.db.insert('waterBodies', {

@@ -871,6 +871,9 @@ export const accessForBody = query({
 // The operator write path — where D72's amendment actually lives
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
+/** The most lakes one lot's record names (B01-3h) — bounds its audit row; real lots serve a few. */
+export const MAX_LOT_LAKES = 50;
+
 /**
  * Create or update an `official` parking area (moderator).
  *
@@ -883,9 +886,6 @@ export const accessForBody = query({
  * The associations written here are `inferred: false`, which is what protects them: a later ETL run
  * may promote an inference to an assertion but never the reverse.
  */
-/** The most lakes one lot's record names (B01-3h) — bounds its audit row; real lots serve a few. */
-export const MAX_LOT_LAKES = 50;
-
 export const setOfficialParking = mutation({
   args: {
     parkingAreaId: v.optional(v.id('parkingAreas')),
@@ -901,18 +901,22 @@ export const setOfficialParking = mutation({
     const actor = await requireCapability(ctx, 'body.access');
     const now = Date.now();
     const name = args.name?.trim() || undefined;
-    const tooLong = nameTooLong(name ?? '', 'A lot’s name');
-    if (tooLong !== null) throw new ConvexError(tooLong);
     if (args.waterBodyIds.length > MAX_LOT_LAKES) {
       throw new ConvexError(`A lot serves at most ${MAX_LOT_LAKES} lakes`);
     }
 
     let parkingAreaId = args.parkingAreaId;
+    const existing = parkingAreaId ? await ctx.db.get(parkingAreaId) : null;
+    if (parkingAreaId && !existing) throw new ConvexError('Parking area not found');
+    // Only a name this edit introduces is held to the cap: an edit around a lot's name stored past
+    // it keeps that name (B01-3h).
+    if (name === undefined || name !== existing?.name?.trim()) {
+      const tooLong = nameTooLong(name ?? '', 'A lot’s name');
+      if (tooLong !== null) throw new ConvexError(tooLong);
+    }
     // What an edit replaced, for the Access tab's undo (D226, §3); a new lot replaced nothing.
     let prev: Record<string, unknown> | null = null;
-    if (parkingAreaId) {
-      const existing = await ctx.db.get(parkingAreaId);
-      if (!existing) throw new ConvexError('Parking area not found');
+    if (parkingAreaId && existing) {
       prev = {
         coord: existing.coord,
         name: existing.name ?? null,

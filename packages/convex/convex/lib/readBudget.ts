@@ -110,6 +110,8 @@ export type RowKind = keyof typeof ROW_MAX;
 export interface WaveCost {
   bytes: number;
   reads: number;
+  /** Documents those reads scan at worst (a `take` scans up to its `n`); absent: one a read. */
+  docs?: number;
 }
 
 /** One item's reservation in {@link ReadBudget.waves}: each read is charged against it. */
@@ -122,10 +124,12 @@ export interface Share {
 /** Thrown when a transaction reads past what it planned: a bug in the plan, never a data condition. */
 export class OverBudget extends Error {}
 
-/** What a row read as `kind` is charged: its real size, at most its kind's worst case; 0 if gone. */
+/** What a row read is charged: its real size; 0 if gone. */
 function weighed(row: unknown): number {
   // The real size, even past the kind's bound: a row written before its writers' caps (B01-3h) is
   // charged what it weighs and the read carries on — the bound is the plan, never a reason to throw.
+  // So a plan check counts each read at most its bound, and what a row weighs past it is charged to
+  // the budget as a whole, never below zero (`measured`, `waves`).
   return row === null || row === undefined ? 0 : getDocumentSize(row as never);
 }
 
@@ -251,7 +255,9 @@ export class ReadBudget {
       charged = weighed(row);
       return row;
     } finally {
-      this.left += ROW_MAX[kind] - charged;
+      // A row past its bound is charged what it weighs, down to an empty budget and never below:
+      // what follows sees nothing left and stops, rather than a negative balance.
+      this.left = Math.max(0, this.left + ROW_MAX[kind] - charged);
     }
   }
 
@@ -280,13 +286,14 @@ export class ReadBudget {
     const out = new Array<R>(items.length);
     let next = 0;
     while (next < items.length) {
-      const wave: { index: number; cost: WaveCost }[] = [];
+      const wave: { index: number; cost: WaveCost; docs: number }[] = [];
       for (; next < items.length; next++) {
         const cost = costOf(items[next] as T);
-        if (cost.bytes > this.left || !this.affordsCalls(cost.reads, cost.reads)) break;
+        const docs = cost.docs ?? cost.reads;
+        if (cost.bytes > this.left || !this.affordsCalls(cost.reads, docs)) break;
         this.left -= cost.bytes;
-        this.reserveCalls(cost.reads, cost.reads);
-        wave.push({ index: next, cost });
+        this.reserveCalls(cost.reads, docs);
+        wave.push({ index: next, cost, docs });
       }
       if (wave.length === 0) {
         for (; next < items.length; next++) out[next] = overflow(items[next] as T);
@@ -294,47 +301,59 @@ export class ReadBudget {
       }
       // Settled, not raced: every item's hand-back lands before the next wave, or the throw.
       const settled = await Promise.allSettled(
-        wave.map(async ({ index, cost }) => {
+        wave.map(async ({ index, cost, docs }) => {
+          // Against the plan, each read at most its kind's worst case; what a row weighs past that
+          // (written before its writers' caps) is `excess`, charged to the budget as a whole — so a
+          // heavy old row never makes the item's next read look like a plan error.
           let spent = 0;
+          let excess = 0;
           let reads = 0;
+          let scanned = 0;
           let answered = false;
+          const charge = (kind: RowKind, rows: readonly unknown[]) => {
+            let plan = 0;
+            for (const row of rows) {
+              const weight = weighed(row);
+              plan += Math.min(weight, ROW_MAX[kind]);
+              excess += Math.max(0, weight - ROW_MAX[kind]);
+            }
+            return plan;
+          };
+          const admit = (bytes: number, n: number) => {
+            // Its reservation is already handed back: a read now would be charged to nothing.
+            if (answered) throw new OverBudget('read budget: an item read after its answer');
+            if (spent + bytes > cost.bytes || reads + 1 > cost.reads || scanned + n > docs) {
+              throw new OverBudget(`read budget: an item read past the ${cost.bytes} it declared`);
+            }
+            reads++;
+            scanned += n;
+            spent += bytes;
+          };
           const share: Share = {
             read: async <D>(kind: RowKind, get: () => Promise<D>): Promise<D> => {
-              // Its reservation is already handed back: a read now would be charged to nothing.
-              if (answered) throw new OverBudget('read budget: an item read after its answer');
-              if (spent + ROW_MAX[kind] > cost.bytes || reads + 1 > cost.reads) {
-                throw new OverBudget(
-                  `read budget: an item read past the ${cost.bytes} it declared`,
-                );
-              }
-              reads++;
-              spent += ROW_MAX[kind];
+              admit(ROW_MAX[kind], 1);
               let charged = 0;
               try {
                 const row = await get();
-                charged = weighed(row);
+                charged = charge(kind, [row]);
                 return row;
               } finally {
                 spent -= ROW_MAX[kind] - charged;
               }
             },
             take: async <D>(kind: RowKind, n: number, read: () => Promise<D[]>): Promise<D[]> => {
-              if (answered) throw new OverBudget('read budget: an item read after its answer');
               const reserve = n * ROW_MAX[kind];
-              if (spent + reserve > cost.bytes || reads + 1 > cost.reads) {
-                throw new OverBudget(
-                  `read budget: an item read past the ${cost.bytes} it declared`,
-                );
-              }
-              reads++;
-              spent += reserve;
+              admit(reserve, n);
               let charged = 0;
+              let got = n;
               try {
                 const rows = await read();
-                charged = rows.reduce((sum, row) => sum + weighed(row), 0);
+                charged = charge(kind, rows);
+                got = rows.length;
                 return rows;
               } finally {
                 spent -= reserve - charged;
+                scanned -= n - got;
               }
             },
           };
@@ -342,9 +361,9 @@ export class ReadBudget {
             out[index] = await run(items[index] as T, share);
           } finally {
             answered = true;
-            this.left += cost.bytes - spent;
+            this.left = Math.max(0, this.left + cost.bytes - spent - excess);
             this.callsLeft += cost.reads - reads;
-            this.docsLeft += cost.reads - reads;
+            this.docsLeft += docs - scanned;
           }
         }),
       );

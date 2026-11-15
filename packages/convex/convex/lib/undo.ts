@@ -104,13 +104,18 @@ function newestOnTarget(
   return found;
 }
 
-/** Whether `row` can be undone by `viewer`, and if not, why — {@link undoStates} for one row. */
+/**
+ * Whether `row` can be undone by `viewer`, and if not, why — {@link undoStates} for one row. `list`
+ * unless the caller says the row is the one in view (`one`: the toast, `runUndo`) — so a page that
+ * still asks row by row (People's) never runs a refusal only a single view can afford.
+ */
 export async function undoState(
   ctx: QueryCtx | MutationCtx,
   viewer: UndoViewer,
   row: Doc<'moderationActions'>,
+  scope: UndoScope = 'list',
 ): Promise<UndoState> {
-  return (await undoStates(ctx, viewer, [row], 'one'))[0] as UndoState;
+  return (await undoStates(ctx, viewer, [row], scope))[0] as UndoState;
 }
 
 /**
@@ -298,7 +303,7 @@ export async function runUndo(
 ): Promise<void> {
   const row = await ctx.db.get(actionId);
   if (!row) throw new ConvexError('That action no longer exists');
-  const state = await undoState(ctx, actor, row);
+  const state = await undoState(ctx, actor, row, 'one');
   switch (state.state) {
     case 'undone':
       throw new ConvexError('That action has already been undone');

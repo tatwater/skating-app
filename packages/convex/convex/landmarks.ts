@@ -761,6 +761,8 @@ export async function updateLandmarkImpl(
     aliases?: string[];
     expectedAliases?: string[];
     reason?: string;
+    /** How a clash with another landmark or a bay is said — an undo says it its own way (B01-3h). */
+    clashMessage?: (clash: string) => string;
   },
 ): Promise<void> {
   {
@@ -778,7 +780,7 @@ export async function updateLandmarkImpl(
       { kind, point, ...names },
       row._id,
     );
-    if (clash !== null) throw new ConvexError(clash);
+    if (clash !== null) throw new ConvexError(args.clashMessage ? args.clashMessage(clash) : clash);
     const now = Date.now();
     const moved = args.point !== undefined;
     await ctx.db.patch(row._id, {
