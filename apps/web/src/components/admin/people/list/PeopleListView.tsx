@@ -65,8 +65,8 @@ export type PeopleListViewProps = {
   onRetryList?: () => void;
   /** The person open beside the list. */
   selectedId: string | null;
-  /** ⏎, Space or a press on a row: open that person. */
-  onOpenPerson: (id: string) => void;
+  /** ⏎, Space or a press on a row: open that person (focus follows only from the keys). */
+  onOpenPerson: (id: string, from: 'keys' | 'press') => void;
   /** The instant ages are read against. */
   now: number;
   /** The open person's page; without one, the column says no one is open. */

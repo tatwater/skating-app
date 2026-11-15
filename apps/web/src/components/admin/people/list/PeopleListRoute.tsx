@@ -99,11 +99,12 @@ export function PeopleListRoute({ detail }: PeopleListRouteProps = {}) {
       onLoadMore={pages.loadMore}
       {...(pages.failure !== null && { onRetryList: pages.failure.retry })}
       selectedId={selectedId}
-      onOpenPerson={(id) => {
+      onOpenPerson={(id, from) => {
         // Opening another person beside one already open replaces the entry, so back returns to
         // the list rather than walking every person looked at.
         void navigate({ href: personHref(id, query), replace: selectedId !== null });
-        detailPane.current?.focus();
+        // From the keys, focus follows into their page; a press leaves it where the pointer is.
+        if (from === 'keys') detailPane.current?.focus();
       }}
       now={now}
       detail={selectedId === null ? undefined : (detail ?? <Outlet />)}

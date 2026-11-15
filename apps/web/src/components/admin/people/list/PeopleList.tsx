@@ -62,8 +62,8 @@ export type PeopleListProps = {
   status: ListStatus;
   /** The person open beside the list. */
   selectedId: string | null;
-  /** ⏎, Space or a press on a row. */
-  onOpen: (id: string) => void;
+  /** ⏎, Space or a press on a row; `from` says which, so only the keys move focus on. */
+  onOpen: (id: string, from: 'keys' | 'press') => void;
   /** Near the end with more to come. */
   onLoadMore?: () => void;
   /** Re-runs the failed page. */
@@ -200,7 +200,7 @@ export function PeopleList({
     if (event.key === 'Enter' || (event.key === ' ' && !running)) {
       if (at < 0 || event.shiftKey) return;
       event.preventDefault();
-      onOpen((rows[at] as RowView).id);
+      onOpen((rows[at] as RowView).id, 'keys');
       return;
     }
     // No name holds a slash, so / goes to the search even mid-run.
@@ -251,7 +251,7 @@ export function PeopleList({
       selected={row.id === selectedId}
       onPress={() => {
         setCursorId(row.id);
-        onOpen(row.id);
+        onOpen(row.id, 'press');
       }}
     />
   );

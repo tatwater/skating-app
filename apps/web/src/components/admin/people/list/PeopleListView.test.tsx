@@ -185,7 +185,7 @@ describe('the list', () => {
     const { props, redraw } = draw();
     expect(screen.getByText('No one open')).toBeInTheDocument();
     await userEvent.click(screen.getByText('Rob Tremblay'));
-    expect(props.onOpenPerson).toHaveBeenCalledWith(ROB.userId);
+    expect(props.onOpenPerson).toHaveBeenCalledWith(ROB.userId, 'press');
     redraw({ selectedId: ROB.userId, detail: <p>Rob’s page</p> });
     expect(screen.getByText('Rob’s page')).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /Rob/ })).toHaveAttribute('aria-selected', 'true');

@@ -300,6 +300,8 @@ describe('where it goes', () => {
       href: `/admin/people/${KATE.userId}`,
       replace: true,
     });
+    // A press leaves focus where the pointer is.
+    expect(screen.getByRole('region', { name: 'Person' })).not.toHaveFocus();
   });
 
   it('keeps the open person through a search, replacing the entry as it is typed', () => {

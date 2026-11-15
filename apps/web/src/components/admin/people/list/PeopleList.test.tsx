@@ -71,9 +71,9 @@ describe('the keys', () => {
     await userEvent.keyboard('{Home}{ArrowUp}');
     expect(active(list)).toHaveTextContent('Rob Tremblay');
     await userEvent.keyboard('{Enter}');
-    expect(props.onOpen).toHaveBeenLastCalledWith(ROB.userId);
+    expect(props.onOpen).toHaveBeenLastCalledWith(ROB.userId, 'keys');
     await userEvent.keyboard('{ArrowDown} ');
-    expect(props.onOpen).toHaveBeenLastCalledWith(KATE.userId);
+    expect(props.onOpen).toHaveBeenLastCalledWith(KATE.userId, 'keys');
     // ⇧⏎ is not an open.
     await userEvent.keyboard('{Shift>}{Enter}{/Shift}');
     expect(props.onOpen).toHaveBeenCalledTimes(2);
@@ -125,7 +125,7 @@ describe('the keys', () => {
   it('opens a person on a press, which moves the cursor there', async () => {
     const { list, props } = draw();
     await userEvent.click(within(list).getByText('Luc Pelletier'));
-    expect(props.onOpen).toHaveBeenCalledWith(LUC.userId);
+    expect(props.onOpen).toHaveBeenCalledWith(LUC.userId, 'press');
     expect(active(list)).toHaveTextContent('Luc Pelletier');
   });
 });

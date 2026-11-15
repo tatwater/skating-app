@@ -138,7 +138,7 @@ export const Keys: Story = {
     await userEvent.keyboard('{ArrowDown}');
     await userEvent.keyboard('k');
     await userEvent.keyboard('{Enter}');
-    await expect(args.onOpenPerson).toHaveBeenCalledWith(KATE.userId);
+    await expect(args.onOpenPerson).toHaveBeenCalledWith(KATE.userId, 'keys');
     await userEvent.keyboard('/');
     await waitFor(() =>
       expect(page.getByRole('searchbox', { name: 'Search any account' })).toHaveFocus(),

@@ -55,7 +55,7 @@ export type PeopleBoardProps = Omit<
   lanesRead?: LanesRead | null;
   /** Heard on every change of place and every person opened, for a story's assertions. */
   onQueryChange?: PeopleListViewProps['onQueryChange'];
-  onOpenPerson?: (id: string) => void;
+  onOpenPerson?: PeopleListViewProps['onOpenPerson'];
   /** The frame's size; the boards' 1440 × 900 by default. */
   className?: string;
 };
@@ -149,9 +149,9 @@ export function PeopleBoard({
           onQueryChange?.(next);
         }}
         selectedId={selected}
-        onOpenPerson={(id) => {
+        onOpenPerson={(id, from) => {
           setSelected(id);
-          onOpenPerson?.(id);
+          onOpenPerson?.(id, from);
         }}
         now={NOW}
       />
