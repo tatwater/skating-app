@@ -314,4 +314,69 @@ describe('StandingTab', () => {
       expect(screen.getByRole('radio', { name: /^Active/ })).toBeChecked();
     });
   });
+
+  /**
+   * Each write control, once the record returns what the server answers (`setStanding` sets the
+   * standing — dormant with its reason; `remove` stamps `removedAt` and its reason; `restore`
+   * clears them): its lever is gone and a second press writes nothing.
+   */
+  describe('after the server answers, a write control is gone and a second press writes nothing', () => {
+    it('Set dormant', async () => {
+      convex.results.set('waterBodies:get', body());
+      convex.mutations.set(
+        'standing:setStanding',
+        vi.fn(async () => {
+          convex.results.set(
+            'waterBodies:get',
+            body({ dormant: { since: Date.now(), reason: 'moderator' } }),
+          );
+          return null;
+        }),
+      );
+      const { rerender } = render(<StandingTab bodyId={BODY} />);
+      await userEvent.click(screen.getByRole('radio', { name: /^Dormant/ }));
+      await userEvent.type(screen.getByRole('textbox'), 'Dam work{Enter}');
+      rerender(<StandingTab bodyId={BODY} />);
+      await vi.waitFor(() => expect(screen.getByRole('radio', { name: /^Dormant/ })).toBeChecked());
+      expect(screen.queryByRole('button', { name: /Set dormant/ })).toBeNull();
+      expect(convex.mutations.get('standing:setStanding')).toHaveBeenCalledTimes(1);
+    });
+
+    it('Remove from the map, then Restore', async () => {
+      convex.results.set('waterBodies:get', body());
+      convex.mutations.set(
+        'waterBodies:remove',
+        vi.fn(async (args: { reason: string }) => {
+          convex.results.set(
+            'waterBodies:get',
+            body({ removedAt: Date.now(), removalReason: args.reason }),
+          );
+          return null;
+        }),
+      );
+      convex.mutations.set(
+        'waterBodies:restore',
+        vi.fn(async () => {
+          convex.results.set('waterBodies:get', body());
+          return null;
+        }),
+      );
+      const { rerender } = render(<StandingTab bodyId={BODY} />);
+      await userEvent.click(screen.getByRole('radio', { name: /^Removed/ }));
+      await userEvent.click(screen.getByRole('combobox', { name: 'Reason' }));
+      await userEvent.click((await screen.findAllByRole('option'))[0] as HTMLElement);
+      await userEvent.click(screen.getByRole('button', { name: 'Remove from the map' }));
+      rerender(<StandingTab bodyId={BODY} />);
+      await vi.waitFor(() =>
+        expect(screen.queryByRole('button', { name: 'Remove from the map' })).toBeNull(),
+      );
+      expect(convex.mutations.get('waterBodies:remove')).toHaveBeenCalledTimes(1);
+      // Restore is picked from Active, the one way back from a removal.
+      await userEvent.click(screen.getByRole('radio', { name: /^Active/ }));
+      await userEvent.click(screen.getByRole('button', { name: /Restore/ }));
+      rerender(<StandingTab bodyId={BODY} />);
+      await vi.waitFor(() => expect(screen.queryByRole('button', { name: /Restore/ })).toBeNull());
+      expect(convex.mutations.get('waterBodies:restore')).toHaveBeenCalledTimes(1);
+    });
+  });
 });

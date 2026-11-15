@@ -306,4 +306,24 @@ describe('ImageryTab', () => {
       expect(convex.mutations.get('waterBodies:setSatelliteImagery')).toHaveBeenCalledTimes(1);
     });
   });
+
+  it('the satellite link, once the record holds the mode it sent, writes nothing more for that mode', async () => {
+    // `setSatelliteImagery` patches the body's `satelliteImagery` (absent for auto).
+    convex.results.set('waterBodies:get', { available: true, body: MASCOMA });
+    convex.mutations.set(
+      'waterBodies:setSatelliteImagery',
+      vi.fn(async (args: { mode: string }) => {
+        convex.results.set('waterBodies:get', {
+          available: true,
+          body: { ...MASCOMA, ...(args.mode === 'auto' ? {} : { satelliteImagery: args.mode }) },
+        });
+        return null;
+      }),
+    );
+    const { rerender } = render(<ImageryTab bodyId={BODY} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Always offer' }));
+    rerender(<ImageryTab bodyId={BODY} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Always offer' }));
+    expect(convex.mutations.get('waterBodies:setSatelliteImagery')).toHaveBeenCalledTimes(1);
+  });
 });

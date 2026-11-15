@@ -437,4 +437,30 @@ describe('HazardsTab', () => {
       expect(screen.queryByRole('alertdialog')).toBeNull();
     });
   });
+
+  it('Demote, once the server answers (the feature goes inactive; the active read drops it), is gone for that feature', async () => {
+    convex.mutations.set(
+      'bodyFeatures:demote',
+      vi.fn(async (args: { bodyFeatureId: string }) => {
+        convex.results.set(
+          'bodyFeatures:listForBody',
+          (MASCOMA_FEATURES as { _id: string }[]).filter((f) => f._id !== args.bodyFeatureId),
+        );
+        return null;
+      }),
+    );
+    const { rerender } = render(<HazardsTab bodyId={BODY} />);
+    const before = screen.getAllByRole('button', { name: 'Demote' }).length;
+    await userEvent.click(screen.getAllByRole('button', { name: 'Demote' })[0] as HTMLElement);
+    const dialog = await screen.findByRole('alertdialog');
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Not a spring');
+    await userEvent.click(within(dialog).getByRole('button', { name: /Demote/ }));
+    await userEvent.click(within(dialog).getByRole('button', { name: /again/ }));
+    rerender(<HazardsTab bodyId={BODY} />);
+    await vi.waitFor(() =>
+      expect(screen.getAllByRole('button', { name: 'Demote' })).toHaveLength(before - 1),
+    );
+    expect(screen.queryByText('Mascoma River inlet')).toBeNull();
+    expect(convex.mutations.get('bodyFeatures:demote')).toHaveBeenCalledTimes(1);
+  });
 });
