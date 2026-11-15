@@ -24,6 +24,7 @@ const meta = {
       who: 'Teagan',
       reason: 'Drawn over the town beach, not a pond',
     },
+    removalShown: true,
     towns: ['Enfield, NH'],
     reports: { count: 3, capped: false },
     record: { name: 'Shaker Pond', kind: 'Lake or pond', states: ['NH'], area: '12 ac' },

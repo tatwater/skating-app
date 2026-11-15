@@ -13,6 +13,7 @@ beforeAll(stubJsdomAnimations);
 const REJECTED: BodyConsoleGoneProps = {
   survivor: null,
   removal: { verb: 'Rejected', when: '2 Oct 2026', who: 'Teagan', reason: 'Drawn over a beach' },
+  removalShown: true,
   towns: ['Enfield, NH'],
   reports: { count: 1000, capped: true },
   history: { entries: [], capped: false },
@@ -96,10 +97,23 @@ describe('BodyConsoleGone', () => {
   });
 
   it('leaves out what isn’t recorded, and History without the audit trail', () => {
-    render(page({ towns: null, reports: null, history: null }));
+    render(page({ towns: null, reports: null, history: null, removalShown: false }));
     expect(screen.queryByText('Towns')).toBeNull();
     expect(screen.queryByText('Reports')).toBeNull();
     expect(screen.queryByText('Rejected')).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'History' })).toBeNull();
+  });
+
+  it('draws how it left without the audit trail, and no name the server withheld', () => {
+    render(
+      page({
+        history: null,
+        removal: { verb: 'Removed', when: '2 Oct 2026', who: null, reason: null },
+      }),
+    );
+    expect(screen.getByText('Removed')).toBeInTheDocument();
+    expect(screen.getByText('2 Oct 2026')).toBeInTheDocument();
+    expect(screen.queryByText(/Not recorded/)).toBeNull();
     expect(screen.queryByRole('heading', { name: 'History' })).toBeNull();
   });
 

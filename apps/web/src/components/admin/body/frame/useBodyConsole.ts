@@ -76,10 +76,13 @@ export interface BodyGoneData {
   /** The body it was merged into, when the merge can be followed; `null` for a rejected body. */
   survivor: { id: string; name: string } | null;
   /**
-   * How it left, from the history read: `null` when the rows read don't say. Drawn only when the
-   * viewer reads the audit trail (`history` isn't `null`).
+   * How it left: `null` when no row says. A removed or rejected body's from
+   * `bodyConsole.removedFacts` — the server's rule for who may see it, the same as the list's
+   * preview (a `by` it withholds is simply not drawn); a merged body's from the history read.
    */
   removal: Loadable<Removal | null>;
+  /** Whether the viewer is served how it left at all (`body.read`; for a merge, `audit.read`). */
+  removalShown: boolean;
   /** The towns it lies in (empty: in no town), for a rejected body; not computed yet, said so. */
   towns: Loadable<readonly string[] | typeof NOT_COMPUTED | null> | null;
   /** Its reports since the record began, for a rejected body; `null`: the read found no body. */
@@ -244,9 +247,6 @@ export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleDa
         capped: h.capped,
       }));
 
-  const facts = loaded(removed);
-  const removedLeft: Removal | null =
-    facts?.left == null ? null : removalFromLeft(facts.left, timeZone);
   if (body === null || scene === null) {
     const survivor = r.body.available
       ? { id: r.body.body._id, name: waterBodyDisplayName(r.body.body.name) }
@@ -255,14 +255,17 @@ export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleDa
       state: 'gone',
       gone: {
         survivor,
-        // How it left: the row its standing names (`removedFacts.left`, who decided by name), else
-        // the history read's own rows.
+        // How it left. A removed or rejected body: exactly what `removedFacts` serves this viewer
+        // (one rule, the server's — the preview draws the same). A merge: the history read's rows.
         removal:
-          removedLeft !== null
-            ? removedLeft
+          survivor === null
+            ? mapLoadable(removed, (f) =>
+                f?.left == null ? null : removalFromLeft(f.left, timeZone),
+              )
             : mapLoadable(r.history, (h) =>
                 removalOf(h.entries as readonly HistoryAction[], bodyId, timeZone),
               ),
+        removalShown: survivor === null ? canRead || isLoading : canAudit || isLoading,
         record:
           survivor !== null
             ? null

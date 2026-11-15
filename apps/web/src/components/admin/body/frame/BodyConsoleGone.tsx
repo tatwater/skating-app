@@ -39,6 +39,7 @@ const int = new Intl.NumberFormat('en-US');
 export function BodyConsoleGone({
   survivor,
   removal,
+  removalShown,
   towns,
   reports,
   history,
@@ -84,7 +85,7 @@ export function BodyConsoleGone({
         )}
         <KeyValueList keyWidth="5.5rem" className="mt-(--space-2) w-full gap-y-(--space-2_5)">
           {record !== null && <RecordRows record={record} />}
-          {history !== null && <RemovalRow removal={removal} merged={survivor !== null} />}
+          {removalShown && <RemovalRow removal={removal} merged={survivor !== null} />}
           {towns !== null && <TownsRow towns={towns} />}
           {reports !== null && <ReportsRow reports={reports} />}
         </KeyValueList>
@@ -125,7 +126,11 @@ function RemovalRow({ removal, merged }: { removal: Loadable<Removal | null>; me
   if (removal === null) {
     return (
       <KeyValueRow label={merged ? 'Merged' : 'Removed'}>
-        <Faint>The history read doesn’t say when or by whom</Faint>
+        <Faint>
+          {merged
+            ? 'The history read doesn’t say when or by whom'
+            : 'The record doesn’t say when it left'}
+        </Faint>
       </KeyValueRow>
     );
   }

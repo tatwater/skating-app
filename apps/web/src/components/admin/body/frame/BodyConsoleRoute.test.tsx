@@ -20,6 +20,8 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   push: vi.fn(),
   can: true,
+  /** Capabilities this viewer lacks, beside `can`. */
+  denied: new Set<string>(),
   /** The viewer's role still on its way (`can` says no until it lands). */
   roleLoading: false,
   mutate: vi.fn(() => Promise.resolve()),
@@ -77,7 +79,10 @@ vi.mock('@tanstack/react-router', () => ({
   ),
 }));
 vi.mock('@/lib/useRole', () => ({
-  useRole: () => ({ can: () => mocks.can, isLoading: mocks.roleLoading }),
+  useRole: () => ({
+    can: (c: string) => mocks.can && !mocks.denied.has(c),
+    isLoading: mocks.roleLoading,
+  }),
 }));
 vi.mock('../../shell/undo', () => ({ useUndo: () => ({ announce: mocks.announce }) }));
 const toasts = vi.hoisted(() => [] as { title: string; description?: string }[]);
@@ -156,6 +161,7 @@ beforeEach(() => {
   mocks.search = {};
   mocks.params = { id: MASCOMA_ID };
   mocks.can = true;
+  mocks.denied = new Set();
   mocks.roleLoading = false;
   mocks.navigate.mockReset();
   mocks.push.mockReset();
@@ -492,6 +498,56 @@ describe('BodyConsoleRoute', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Mascoma Lake' })).toBeInTheDocument();
   });
 
+  const removedFacts = (by: { displayName: string } | null) => ({
+    id: MASCOMA_ID,
+    name: 'Mascoma Lake',
+    bodyClass: 'lakePond',
+    states: ['NH'],
+    areaSqM: 4_623_575,
+    standing: 'removed',
+    left: {
+      action: 'remove',
+      at: on(10, 2),
+      reason: 'Posted by the owner',
+      removalReason: 'landowner_request',
+      by,
+    },
+    towns: [{ name: 'Enfield', state: 'NH' }],
+    reports: { count: 3, capped: false },
+  });
+
+  it.each([
+    ['with', new Set<string>()],
+    ['without', new Set(['audit.read'])],
+  ])(
+    'draws how a removed body left exactly as removedFacts serves it, %s audit.read',
+    (_, denied) => {
+      mocks.denied = denied;
+      set(api.waterBodies.get, { available: false });
+      set(api.bodyConsole.removedFacts, removedFacts({ displayName: 'Teagan Atwater' }));
+      set(api.bodyConsole.history, { entries: [], capped: false });
+      render(<Mounted />);
+      const row = document.querySelector('[data-slot="body-gone-removal"]') as HTMLElement;
+      expect(row).toHaveTextContent('2 Oct 2026');
+      expect(row).toHaveTextContent('Teagan');
+      expect(row).toHaveTextContent('Landowner request');
+      expect(row).toHaveTextContent('“Posted by the owner”');
+      // History is the audit trail's alone.
+      expect(screen.queryByRole('heading', { name: 'History' }) === null).toBe(denied.size > 0);
+    },
+  );
+
+  it('draws no one where the server withholds who decided — never “not recorded”', () => {
+    mocks.denied = new Set(['audit.read']);
+    set(api.waterBodies.get, { available: false });
+    set(api.bodyConsole.removedFacts, removedFacts(null));
+    render(<Mounted />);
+    const row = document.querySelector('[data-slot="body-gone-removal"]') as HTMLElement;
+    expect(row).toHaveTextContent('2 Oct 2026');
+    expect(row).not.toHaveTextContent('Teagan');
+    expect(row).not.toHaveTextContent(/Not recorded/);
+  });
+
   it('says a rejected body has been removed, and what the record still holds', () => {
     set(api.waterBodies.get, { available: false });
     // What the record still holds (`bodyConsole.removedFacts`).
@@ -502,7 +558,13 @@ describe('BodyConsoleRoute', () => {
       states: ['NH'],
       areaSqM: 4_623_575,
       standing: 'rejected',
-      left: null,
+      left: {
+        action: 'reject_waterbody',
+        at: on(10, 2),
+        reason: 'Drawn over the town beach',
+        removalReason: null,
+        by: { displayName: 'Teagan Atwater' },
+      },
       towns: [
         { name: 'Enfield', state: 'NH' },
         { name: 'Lebanon', state: 'NH' },
