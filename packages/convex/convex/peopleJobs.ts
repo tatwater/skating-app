@@ -244,9 +244,15 @@ async function lapLapseMirrors(ctx: MutationCtx, reads: ReadBudget, now: number)
   let last: LapPosition | undefined;
   let stopped = false;
   for (const mirror of mirrors) {
+    // A profile at its worst and the two touches after it (this mirror's delete, the lap's save) —
+    // or stop here, this mirror unjudged; the next run picks up at it. A touch charged past the budget
+    // would throw, and fail the run's last pass with it.
+    if (!reads.affords(ROW_MAX.profile + 2 * ROW_MAX.small)) {
+      stopped = true;
+      break;
+    }
     const id = ctx.db.normalizeId('profiles', mirror.key);
     const profile = id === null ? null : await reads.measured('profile', () => ctx.db.get(id));
-    // Past the budget: stop here, this mirror unjudged; the next run picks up at it.
     if (profile === undefined) {
       stopped = true;
       break;
@@ -461,24 +467,27 @@ export const retryLapsedDaily = internalMutation({
         if (!head) break;
         after = { at: head.lapseParkedAt as number, creation: head._creationTime };
         const allowance = nestedAllowance(reads);
+        let outcome: LapseOutcome;
         try {
-          const outcome = await ctx.runMutation(
+          outcome = await ctx.runMutation(
             internal.peopleJobs.lapseOne,
             { userId: head._id, now },
             { transactionLimits: { bytesRead: allowance } },
           );
-          reads.spend(PERSON_WORK);
-          if (outcome === 'reset') reset++;
-          else skipped++;
-          // Still parked but passed by (in their deletion window): mirrored if it isn't yet — a lapse
-          // parked before the mirror existed gets one here, so Machinery's count heals in a day.
-          if (outcome === 'leaving') await ensureLapseMirror(ctx, reads, head, now);
         } catch (err) {
           reads.spend(allowance);
           reads.touch('profile');
           failed++;
           await recordLapseFailure(ctx, head, errorClassOf(err), now, true);
+          continue;
         }
+        reads.spend(PERSON_WORK);
+        if (outcome === 'reset') reset++;
+        else skipped++;
+        // Still parked but passed by (in their deletion window): mirrored if it isn't yet — a lapse
+        // parked before the mirror existed gets one here, so Machinery's count heals in a day. Outside
+        // the attempt: the reset went through, so nothing here is ever recorded as the lapse failing.
+        if (outcome === 'leaving') await ensureLapseMirror(ctx, reads, head, now);
       }
       if (more && reset + failed + skipped === 0) {
         throw new Error('peopleJobs.retryLapsedDaily: a pass made no progress');

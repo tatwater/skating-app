@@ -9,7 +9,14 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import type { QueryCtx } from './_generated/server';
-import { composed, fitComposed, typed, writeAudit, writePersonAudit } from './lib/audit';
+import {
+  composed,
+  composedOf,
+  fitComposed,
+  typed,
+  writeAudit,
+  writePersonAudit,
+} from './lib/audit';
 import { rebuildBodyLibrary } from './lib/bodyLibrary';
 import { LAST_EDITOR_MESSAGE } from './lib/ledgerEditors';
 import { LEDGER_NEUTRAL_REFUSAL } from './lib/peopleCan';
@@ -172,11 +179,7 @@ describe('a reason the system composes is shortened to fit, never refused (D261)
         (fixedParts, values) => {
           const fixed = [...fixedParts];
           while (fixed.length < values.length + 1) fixed.push('');
-          const reason = {
-            composed: true as const,
-            fixed,
-            values: values.slice(0, fixed.length - 1),
-          };
+          const reason = composedOf(fixed, values.slice(0, fixed.length - 1));
           const whole = fixed.reduce((o, p, i) => o + p + (reason.values[i] ?? ''), '');
           const fitted = fitComposed(reason);
           expect(fitted.length).toBeLessThanOrEqual(AUDIT_REASON_MAX);
@@ -289,6 +292,13 @@ test('the People entry takes only a tagged reason (a type check, never run)', ()
   const never = (ctx: Parameters<typeof writePersonAudit>[0]) => {
     // @ts-expect-error A bare string can't be a person write's reason: it must be typed or composed.
     void writePersonAudit(ctx, { action: 'ban', targetType: 'user', targetId: 'x', reason: 'r' });
+    void writePersonAudit(ctx, {
+      action: 'ban',
+      targetType: 'user',
+      targetId: 'x',
+      // @ts-expect-error Nor a literal spelled to look like one: only `typed` and `composed` make them.
+      reason: { typed: 'r' },
+    });
     void writePersonAudit(ctx, {
       action: 'ban',
       targetType: 'user',
@@ -871,7 +881,9 @@ describe('per-row lookups run concurrently, never one round trip after another (
         if (prop === 'get') return (...args: [never]) => track(() => target.get(...args));
         if (prop === 'query') return (...args: [never]) => wrap(target.query(...args));
         const value = (target as never)[prop];
-        return typeof value === 'function' ? (value as Function).bind(target) : value;
+        return typeof value === 'function'
+          ? (value as (...args: never) => unknown).bind(target)
+          : value;
       },
     });
     return { ctx: { ...ctx, db } as QueryCtx, rounds: () => rounds };
@@ -973,6 +985,29 @@ describe('per-row lookups run concurrently, never one round trip after another (
     );
     expect(most).toBe(10);
     expect(out).toEqual({ results: Array.from({ length: 17 }, (_, i) => i * 2), stoppedAt: 17 });
+  });
+
+  test('waves: never more at once than the caller’s room, stopping where it is spent', async () => {
+    let room = 7;
+    let inFlight = 0;
+    let most = 0;
+    const out = await inWaves(
+      new ReadBudget(),
+      Array.from({ length: 25 }, (_, i) => i),
+      1024,
+      async (i) => {
+        inFlight++;
+        most = Math.max(most, inFlight);
+        await Promise.resolve();
+        inFlight--;
+        room--;
+        return i;
+      },
+      () => room,
+    );
+    // The budget would hold all 25 in one wave; the room holds seven, and none past them.
+    expect(most).toBe(7);
+    expect(out).toEqual({ results: [0, 1, 2, 3, 4, 5, 6], stoppedAt: 7 });
   });
 });
 

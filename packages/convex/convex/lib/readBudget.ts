@@ -380,8 +380,10 @@ export const WAVE_MAX = 50;
 /**
  * Run `work` over `items` in waves of concurrent calls — a query has one second, and a per-row lookup
  * awaited row after row spends it on round trips — each wave as large as the budget can hold at its
- * worst (`perItem` bytes an item may read; at least one, at most {@link WAVE_MAX}). Results come back in
- * order; the walk stops at the first item whose `work` returns `undefined` (its read didn't fit), and
+ * worst (`perItem` bytes an item may read; at least one, at most {@link WAVE_MAX}), and no larger than
+ * `room` — how many more items the caller's own bound lets start (a count of calls, say), asked before
+ * each wave, so a wave never carries the walk past it. Results come back in order; the walk stops at
+ * the first item whose `work` returns `undefined` (its read didn't fit), or when `room` is spent, and
  * says where (`stoppedAt`), so the caller's figure is capped rather than thrown.
  */
 export async function inWaves<T, R>(
@@ -389,13 +391,15 @@ export async function inWaves<T, R>(
   items: readonly T[],
   perItem: number,
   work: (item: T) => Promise<R | undefined>,
-  canStart: () => boolean = () => true,
+  room: () => number = () => Number.POSITIVE_INFINITY,
 ): Promise<{ results: R[]; stoppedAt: number | null }> {
   const results: R[] = [];
   let i = 0;
   while (i < items.length) {
-    if (!canStart()) return { results, stoppedAt: i };
-    const size = Math.max(1, Math.min(WAVE_MAX, Math.floor(budget.bytes / Math.max(1, perItem))));
+    const may = Math.floor(room());
+    if (may < 1) return { results, stoppedAt: i };
+    const fits = Math.floor(budget.bytes / Math.max(1, perItem));
+    const size = Math.max(1, Math.min(WAVE_MAX, may, fits));
     const wave = items.slice(i, i + size);
     const done = await Promise.all(wave.map(work));
     for (const [k, r] of done.entries()) {

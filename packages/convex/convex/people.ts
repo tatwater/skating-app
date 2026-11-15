@@ -626,14 +626,13 @@ export const listPage = query({
     };
 
     if (search !== null) {
-      const page = await budget
-        .page('personRow', size, (n) =>
-          ctx.db
-            .query('peopleRows')
-            .withSearchIndex('search_people', (s) => s.search('searchText', search))
-            .paginate(paged(n)),
-        )
-        .then(capped);
+      const read = await budget.page('personRow', size, (n) =>
+        ctx.db
+          .query('peopleRows')
+          .withSearchIndex('search_people', (s) => s.search('searchText', search))
+          .paginate(paged(n)),
+      );
+      const page = capped(read);
       return {
         rows: shape(page.page),
         isDone: page.isDone,
@@ -915,7 +914,6 @@ async function labelFlags(
     return doc;
   };
   const labelOf = async (flag: OpenFlag): Promise<string | null | undefined> => {
-    if (flag.targetType === 'user' && flag.targetId === person._id) return personName;
     let bodyId: Id<'waterBodies'> | null;
     try {
       bodyId = await flagBodyId(ctx, flag, get);
@@ -940,17 +938,24 @@ async function labelFlags(
     const key = `${flag.targetType}:${flag.targetId}`;
     if (!byKey.has(key) && byKey.size < FLAG_LABELS) byKey.set(key, flag);
   }
-  const keys = [...byKey.keys()];
+  // A flag on the person is labelled by their own name, which needs no read: labelled whatever the
+  // budget, never left behind a body the waves below stopped short of.
+  const labels = new Map<string, string | null>();
+  const toRead: string[] = [];
+  for (const [key, flag] of byKey) {
+    if (flag.targetType === 'user' && flag.targetId === person._id) labels.set(key, personName);
+    else toRead.push(key);
+  }
   const read = await inWaves(
     budget,
-    keys,
+    toRead,
     2 * ROW_MAX.report + ROW_MAX.bodyLibraryRow,
     async (key) => {
       const label = await labelOf(byKey.get(key) as OpenFlag);
       return label === undefined ? undefined : { key, label };
     },
   );
-  const labels = new Map(read.results.map((r) => [r.key, r.label]));
+  for (const r of read.results) labels.set(r.key, r.label);
   let capped = read.stoppedAt !== null;
   for (const flag of flags) {
     const key = `${flag.targetType}:${flag.targetId}`;
@@ -1364,6 +1369,18 @@ async function labelOf(
 const ROW_SHAPE_CALLS = 8;
 const ROW_SHAPE_DOCS = 24;
 
+/**
+ * How many of `n` rows {@link shapeRows} can shape once `calls` more calls reading `docs` documents
+ * have been made: each row's calls and documents counted at {@link ROW_SHAPE_CALLS} and
+ * {@link ROW_SHAPE_DOCS}.
+ */
+function shapeable(budget: ReadBudget, n: number, calls = 0, docs = 0): number {
+  const byCalls = Math.floor((budget.calls - calls) / ROW_SHAPE_CALLS);
+  let k = Math.max(0, Math.min(n, byCalls));
+  while (k > 0 && !budget.affordsCalls(calls + ROW_SHAPE_CALLS * k, docs + ROW_SHAPE_DOCS * k)) k--;
+  return k;
+}
+
 /** Rows shaped in order, each counted ahead against the request's budget (≤ 100 rows: it fits). */
 export async function shapeRows(
   ctx: QueryCtx,
@@ -1375,8 +1392,7 @@ export async function shapeRows(
   // Every row's calls are counted before any starts (as many rows as fit; the caller says capped for
   // the rest), and then all are shaped at once: a page of fifty is a few rounds of reads, not a
   // hundred and fifty round trips one after another — a query has one second.
-  let n = rows.length;
-  while (n > 0 && !budget.affordsCalls(ROW_SHAPE_CALLS * n, ROW_SHAPE_DOCS * n)) n--;
+  const n = shapeable(budget, rows.length);
   budget.reserveCalls(ROW_SHAPE_CALLS * n, ROW_SHAPE_DOCS * n);
   return Promise.all(rows.slice(0, n).map((row) => toRow(ctx, viewer, row, actors)));
 }
@@ -1604,12 +1620,10 @@ export const history = query({
       sources.map((s) => ({ ...s, rows: s.rows.filter((r) => keep.has(r._id)) })),
       n,
     );
-    const actors: Actors = new Map();
+    const shaped = await shapeRows(ctx, viewer, merged.rows, new Map());
     return {
-      ...(await (async () => {
-        const shaped = await shapeRows(ctx, viewer, merged.rows, actors);
-        return { rows: shaped, capped: merged.capped || shaped.length < merged.rows.length };
-      })()),
+      rows: shaped,
+      capped: merged.capped || shaped.length < merged.rows.length,
       /** Flags older than the subject stamp aren't found by person until its backfill has run. */
       pending: (stored.flagSubjectsReady ? [] : ['flagSubjects']) as PeopleBackfill[],
       createdAt: target.createdAt,
@@ -1640,6 +1654,9 @@ export const decisions = query({
     if (userId === null) return null;
     const ledgerVisible = seesLedgerGrants(viewer);
     const budget = queryBudget(ctx);
+    // A page asks only for the rows it can shape after its own read: a row read but not shaped would
+    // lie behind the page's cursor, and the next page would start past it — never shown.
+    const size = Math.max(1, shapeable(budget, clampLimit(limit), 1, DECISIONS_SCAN));
     const page = await budget.capped(DECISIONS_BYTES, DECISIONS_SCAN, () =>
       ctx.db
         .query('moderationActions')
@@ -1651,19 +1668,19 @@ export const decisions = query({
         })
         .paginate({
           cursor: cursor ?? null,
-          numItems: clampLimit(limit),
+          numItems: size,
           maximumRowsRead: DECISIONS_SCAN,
           maximumBytesRead: DECISIONS_BYTES,
         }),
     );
-    const actors: Actors = new Map();
+    const shaped = await shapeRows(ctx, viewer, page.page, new Map());
+    // Rows the request couldn't afford to shape (only when not even one row's calls were left):
+    // `capped`, and the page isn't the end.
+    const short = shaped.length < page.page.length;
     return {
-      ...(await (async () => {
-        const shaped = await shapeRows(ctx, viewer, page.page, actors);
-        // Rows the request couldn't afford to shape: `capped`, and the page isn't the end.
-        const short = shaped.length < page.page.length;
-        return { rows: shaped, isDone: page.isDone && !short, capped: short };
-      })()),
+      rows: shaped,
+      isDone: page.isDone && !short,
+      capped: short,
       continueCursor: page.continueCursor,
     };
   },
@@ -1792,7 +1809,9 @@ export const staffStats = query({
     // across both loops below (a row whose answer is in hand costs none), past which each figure says
     // capped, as a budget stop does.
     const callsAtStart = budget.calls;
-    const overTime = () => callsAtStart - budget.calls >= STAFF_CHECKED;
+    // Each row below costs at most one call, so a wave holds no more rows than calls are left: the
+    // bound is exact, never overshot by a wave started just under it.
+    const callsLeft = () => STAFF_CHECKED - (callsAtStart - budget.calls);
     const undoers = new Map<string, number>();
     // In waves of concurrent reads (a chain's first row each), never one row's round trip after
     // another's: a query has one second.
@@ -1804,7 +1823,7 @@ export const staffStats = query({
         const root = await rootOf(r);
         return root === undefined ? undefined : { r, root };
       },
-      () => !overTime(),
+      callsLeft,
     );
     undoShort = roots.stoppedAt !== null;
     for (const { r, root } of roots.results) {
@@ -1828,7 +1847,7 @@ export const staffStats = query({
         const filedAt = await filedAtOf(ctx, budget, r);
         return filedAt === undefined ? undefined : { r, filedAt };
       },
-      () => !overTime(),
+      callsLeft,
     );
     decideShort = filings.stoppedAt !== null;
     for (const { r, filedAt } of filings.results) {
