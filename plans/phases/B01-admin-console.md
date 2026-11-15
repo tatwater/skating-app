@@ -2490,6 +2490,20 @@ Every shape change is additive except where noted.
   documents ahead, #127's refusal hook included (a launch reads up to 200 hidden launches), and a page
   the budget can't shape whole shapes fewer and says capped (a test runs a page of launch lines at
   that peak).
+- **A "since" is the start of the current unbroken state** (Greptile's 5/5 note on 88c0cdd6:
+  "repeated restrictions reset their date"). One rule, `lib/stateSince.startOfCurrentState`: walking
+  a run of audit rows newest first, a write that changed nothing (its `prev` equals what it set) is
+  passed over, and the answer is the first real change if it led to the current state; if the rows read
+  end first, "can't say" (`capped`) when more were unread, "not recorded" when the record ends. It
+  serves each right's restriction (`rightsSince`) and the status note's start (`statusNote.at`, with
+  `atCapped`, walking up to ten rows of the verb). The ledger grant and the tenure dates were already
+  starts: a grant to a holder and a move to the role held are refused, so no row there is a no-op. A
+  fast-check property holds the rule over random sequences of real changes and repeats by different
+  staff. Person writes that accept a no-op and still write a row (for the founder's call on whether
+  they should): a right set to the value it has (`setPostingPermission`), a bounty limit set to the one
+  in force (`setBountyPostLimit`, recorded with the give-back's default reason), a ban of a banned
+  account (`banUser`), a lift of an active account (`unbanUser`), and a suspension of a suspended
+  account to the same end (`suspendUser`). Role and ledger writes refuse their no-ops.
 - **Tagged reasons at the type.** The People writers take only a tagged reason (`writePersonAudit`):
   `typed()` (refused past the cap) or `composed` (shortened to fit), each a branded shape no literal
   can spell. The other writers keep a compatible type (a string is held to the cap as typed). The

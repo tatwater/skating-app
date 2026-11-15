@@ -83,6 +83,7 @@ import {
 import { profileAccess } from './lib/reportVisibility';
 import { trustClassFor } from './lib/reputation';
 import { readTenure, rootReader, tenureCappedOf } from './lib/staffTenure';
+import { startOfCurrentState } from './lib/stateSince';
 import { type UndoState, undoState } from './lib/undo';
 import { stands, undoneBy } from './lib/undoChains';
 import { SUPPRESSION_ROWS_READ } from './putIns';
@@ -802,6 +803,9 @@ async function bountySeasonOf(
   };
 }
 
+/** A status verb's rows a status note walks back at most, looking for the write that began it. */
+const STATUS_ROWS = 10;
+
 /** A person's posting-right rows read at most, newest first, and their real weight at most. */
 const RIGHT_ROWS = 50;
 const RIGHT_ROWS_BYTES = DOC_MAX;
@@ -854,14 +858,31 @@ async function rightsSinceOf(
         maximumBytesRead: RIGHT_ROWS_BYTES,
       }),
   );
-  for (const row of page.page) {
-    const m = (row.metadata ?? {}) as { permission?: string; allowed?: boolean };
-    const right = m.permission as Right | undefined;
-    if (right && off.includes(right) && m.allowed === false && since[right] === null) {
-      since[right] = row.createdAt;
-    }
+  // Each right's off-run began at its newest real change (`lib/stateSince`): a moderator restricting a
+  // right already off changed nothing, and doesn't move the date.
+  let capped = false;
+  for (const right of off) {
+    const start = startOfCurrentState(
+      page.page,
+      (row) => {
+        const m = (row.metadata ?? {}) as {
+          permission?: string;
+          allowed?: boolean;
+          prev?: { allowed?: boolean };
+        };
+        return {
+          at: row.createdAt,
+          after: m.permission === right ? m.allowed : undefined,
+          before: m.prev?.allowed,
+        };
+      },
+      false,
+      page.isDone,
+    );
+    since[right] = start.since;
+    capped ||= start.capped;
   }
-  return { since, capped: !page.isDone && off.some((r) => since[r] === null) };
+  return { since, capped };
 }
 
 /**
@@ -1021,6 +1042,7 @@ export const person = query({
     let statusNote: {
       action: 'ban' | 'suspend';
       at: number | null;
+      atCapped: boolean;
       by: PersonRef | null;
       via: string | null;
       reason: string | null;
@@ -1029,19 +1051,52 @@ export const person = query({
     } | null = null;
     if (target.status === 'suspended' || target.status === 'banned') {
       const verb = target.status === 'banned' ? 'ban' : 'suspend';
-      const row =
-        (await budget.measured('moderationAction', () =>
+      // When the status began, and who began it (`lib/stateSince`): a ban of a banned account, or a
+      // suspension's new window, changed nothing about the status, so the walk passes over it to the
+      // write that did. A few rows of the verb, newest first, each read as it weighs.
+      const seen: Doc<'moderationActions'>[] = [];
+      let complete = false;
+      let before = Number.POSITIVE_INFINITY;
+      for (let i = 0; i < STATUS_ROWS; i++) {
+        const next = await budget.measured('moderationAction', () =>
           ctx.db
             .query('moderationActions')
             .withIndex('by_target_action', (q) =>
-              q.eq('targetType', 'user').eq('targetId', userId).eq('action', verb),
+              q
+                .eq('targetType', 'user')
+                .eq('targetId', userId)
+                .eq('action', verb)
+                .lt('_creationTime', before),
             )
             .order('desc')
             .first(),
-        )) ?? null;
+        );
+        if (next === undefined) break;
+        if (next === null) {
+          complete = true;
+          break;
+        }
+        seen.push(next);
+        before = next._creationTime;
+        const prev = (next.metadata as { prev?: { status?: string } } | undefined)?.prev?.status;
+        if (prev === undefined || prev !== target.status) break;
+      }
+      const start = startOfCurrentState(
+        seen,
+        (r) => ({
+          at: r.createdAt,
+          after: target.status as string,
+          before: (r.metadata as { prev?: { status?: string } } | undefined)?.prev?.status,
+        }),
+        target.status as string,
+        complete,
+      );
+      const row = start.row;
       statusNote = {
         action: verb,
         at: row?.createdAt ?? null,
+        /** The status began before the rows read: `at` is "can't say", not "not recorded". */
+        atCapped: start.capped,
         by: await personRef(ctx, row?.actorId),
         via: row?.via ?? null,
         reason: target.statusReason ?? null,

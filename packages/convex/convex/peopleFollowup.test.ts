@@ -22,6 +22,7 @@ import { LEDGER_NEUTRAL_REFUSAL } from './lib/peopleCan';
 import { markReady, refreshPersonRow } from './lib/peopleRows';
 import { ReadBudget } from './lib/readBudget';
 import { readTenure } from './lib/staffTenure';
+import { startOfCurrentState } from './lib/stateSince';
 import { MIRRORS_CHECKED } from './peopleJobs';
 import schema from './schema';
 
@@ -942,6 +943,97 @@ describe('a person at the worst case on every axis at once: every read answers, 
     for (const lane of ['flagged', 'appeals', 'staff', 'suspended', 'restricted']) {
       expect((await a.query(api.people.listPage, { lane })).rows.length, lane).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('a “since” is the start of the current unbroken state (lib/stateSince)', () => {
+  test('property: the last real transition into the current state; capped exactly when it lies past the rows read', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.record({ by: fc.integer({ min: 0, max: 3 }), off: fc.boolean() }), {
+          minLength: 1,
+          maxLength: 30,
+        }),
+        fc.integer({ min: 1, max: 30 }),
+        (ops, window) => {
+          // Each op records what it found and what it set; repeats by other staff change nothing.
+          let state = false;
+          const history = ops.map((op, i) => {
+            const row = { at: i + 1, before: state, after: op.off, by: op.by };
+            state = op.off;
+            return row;
+          });
+          const newestFirst = [...history].reverse();
+          const read = newestFirst.slice(0, window);
+          const complete = window >= history.length;
+          const got = startOfCurrentState(
+            read,
+            (r) => ({ at: r.at, after: r.after, before: r.before }),
+            state,
+            complete,
+          );
+          const last = newestFirst.find((r) => r.before !== r.after);
+          if (last === undefined) {
+            // Never changed from where the record starts: no start on record.
+            expect(got).toMatchObject({ since: null, capped: !complete });
+          } else if (read.includes(last)) {
+            expect(got).toMatchObject({ since: last.at, capped: false });
+          } else {
+            expect(got).toMatchObject({ since: null, capped: true });
+          }
+        },
+      ),
+      { numRuns: 300 },
+    );
+  });
+
+  test('a second moderator restricting a right already off, or banning a banned account, moves no date', async () => {
+    const t = await setup();
+    await seed(t, 'mod', { role: 'moderator' });
+    await seed(t, 'mod2', { role: 'moderator' });
+    const skater = await seed(t, 'skater');
+    const restrict = (who: string) =>
+      as(t, who).mutation(api.moderation.setPostingPermission, {
+        userId: skater,
+        permission: 'comments',
+        allowed: false,
+        reason: 'r',
+      });
+    vi.setSystemTime(T0 - 3 * DAY);
+    await restrict('mod');
+    await as(t, 'mod').mutation(api.moderation.banUser, { userId: skater, reason: 'first' });
+    vi.setSystemTime(T0 - DAY);
+    await restrict('mod2');
+    await as(t, 'mod2').mutation(api.moderation.banUser, { userId: skater, reason: 'again' });
+    vi.setSystemTime(T0);
+    const p = await as(t, 'mod').query(api.people.person, { userId: skater });
+    expect(p?.rightsSince.comments).toBe(T0 - 3 * DAY);
+    expect(p?.statusNote).toMatchObject({ action: 'ban', at: T0 - 3 * DAY, atCapped: false });
+    expect(p?.statusNote?.by?.username).toBe('mod');
+  });
+
+  test('a suspension’s new window keeps its start; a walk that runs out of rows says can’t say', async () => {
+    const t = await setup();
+    await seed(t, 'mod', { role: 'moderator' });
+    const skater = await seed(t, 'skater');
+    vi.setSystemTime(T0 - 20 * DAY);
+    await as(t, 'mod').mutation(api.moderation.suspendUser, {
+      userId: skater,
+      reason: 'r',
+      suspendedUntil: T0 + 30 * DAY,
+    });
+    for (let i = 0; i < 12; i++) {
+      vi.setSystemTime(T0 - 19 * DAY + i * DAY);
+      await as(t, 'mod').mutation(api.moderation.suspendUser, {
+        userId: skater,
+        reason: 'r',
+        suspendedUntil: T0 + 31 * DAY + i,
+      });
+    }
+    vi.setSystemTime(T0);
+    const p = await as(t, 'mod').query(api.people.person, { userId: skater });
+    // Twelve new windows after the start: past the ten rows the note walks back, so it can't say.
+    expect(p?.statusNote).toMatchObject({ at: null, atCapped: true });
   });
 });
 
