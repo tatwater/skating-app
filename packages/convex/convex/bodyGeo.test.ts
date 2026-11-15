@@ -430,5 +430,8 @@ describe('no read does geometry that grows with an outline', () => {
       }
       expect([name, best < 800]).toEqual([name, true]);
     }
-  });
+    // The setup is the heavy part — the action computes the giant against twelve 3,000-vertex
+    // neighbors (5–6 s locally, several times that on a CI runner with coverage) — so the test has
+    // its own timeout; the bound under test is the per-read one above.
+  }, 180_000);
 });
