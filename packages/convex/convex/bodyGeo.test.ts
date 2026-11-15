@@ -192,6 +192,7 @@ describe('pure helpers', () => {
     expect(out).toEqual({
       towns: ['Enfield'],
       townStates: ['NH'],
+      townIds: [expect.any(String)],
       counties: ['Grafton'],
       states: ['NH'],
     });
@@ -396,6 +397,19 @@ describe('computed at the write, read without geometry', () => {
     expect(
       (await as.query(api.bodyConsole.consoleExtras, { waterBodyId: id })).townsWithState,
     ).toEqual([{ name: 'Enfield', state: 'NH' }]);
+    // Town lines: no outline stored for a boundary loaded before them, until the backfill writes it.
+    expect(await as.query(api.bodyConsole.townLines, { waterBodyId: id })).toEqual({
+      towns: [{ name: 'Enfield', state: 'NH', ring: null }],
+      capped: false,
+      computedAt: NOW,
+    });
+    expect(await t.mutation(internal.adminAreas.backfillOutlines, {})).toMatchObject({
+      written: 2,
+      isDone: true,
+    });
+    const lines = await as.query(api.bodyConsole.townLines, { waterBodyId: id });
+    expect(lines?.towns[0]?.ring?.length).toBeGreaterThan(3);
+    expect(lines?.towns[0]?.ring?.length).toBeLessThanOrEqual(97);
   });
 });
 

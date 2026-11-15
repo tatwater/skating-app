@@ -1306,6 +1306,17 @@ export default defineSchema({
   }).index('by_external_id', ['source', 'externalId']),
 
   /**
+   * **A boundary's outline, simplified for drawing** (B01-3c) — the Names map's town lines: the
+   * largest outer ring of an `adminAreas` polygon kept to 96 points, written beside the boundary at
+   * its import (and by `adminAreas:backfillOutlines` for the rows before), so a body's town lines are
+   * a few small reads, never a boundary's whole polygon.
+   */
+  adminAreaOutlines: defineTable({
+    adminAreaId: v.id('adminAreas'),
+    ring: v.array(v.array(v.number())),
+  }).index('by_area', ['adminAreaId']),
+
+  /**
    * **What a contour search covered, and when** (B01-3c): one row per (contour dataset, state) a
    * coverage run searched — the dataset's name as the Water tab shows it — written by the run that
    * replaces `bathymetryCoverage` (`importContourCoverage`, its first batch). A body reads the newest
@@ -4913,6 +4924,8 @@ export default defineSchema({
     towns: v.optional(v.array(v.string())),
     /** Each town's state, in `towns`' order (B01-3c); absent on a row computed before it existed. */
     townStates: v.optional(v.array(v.string())),
+    /** Each town's boundary, in `towns`' order (B01-3c) — for its drawn outline. */
+    townIds: v.optional(v.array(v.id('adminAreas'))),
     counties: v.optional(v.array(v.string())),
     states: v.optional(v.array(v.string())),
     attempts: v.optional(v.number()),

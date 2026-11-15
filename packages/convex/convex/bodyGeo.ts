@@ -181,11 +181,18 @@ export function placesFrom(
     perPoint: { town: string[]; county: string[] }[];
     areas: { id: string; name: string; state: string; bbox: Box; polygon: unknown }[];
   },
-): { towns: string[]; townStates: string[]; counties: string[]; states: string[] } {
+): {
+  towns: string[];
+  townStates: string[];
+  townIds: Id<'adminAreas'>[];
+  counties: string[];
+  states: string[];
+} {
   const byId = new Map(found.areas.map((a) => [a.id, a]));
   const towns: string[] = [];
   // Each town's state, in the same order (B01-3c): a border lake's towns are in two states.
   const townStates: string[] = [];
+  const townIds: Id<'adminAreas'>[] = [];
   const counties: string[] = [];
   const states = new Set<string>();
   points.forEach((point, i) => {
@@ -210,12 +217,15 @@ export function placesFrom(
       const list = level === 'town' ? towns : counties;
       if (!list.includes(hit.name)) {
         list.push(hit.name);
-        if (level === 'town') townStates.push(hit.state);
+        if (level === 'town') {
+          townStates.push(hit.state);
+          townIds.push(hit.id as Id<'adminAreas'>);
+        }
       }
       states.add(hit.state);
     }
   });
-  return { towns, townStates, counties, states: [...states] };
+  return { towns, townStates, townIds, counties, states: [...states] };
 }
 
 // ── The write ────────────────────────────────────────────────────────────────────────────────
@@ -330,6 +340,8 @@ export const store = internalMutation({
     towns: v.array(v.string()),
     /** Each town's state, in `towns`' order. */
     townStates: v.optional(v.array(v.string())),
+    /** Each town's boundary, in `towns`' order. */
+    townIds: v.optional(v.array(v.id('adminAreas'))),
     counties: v.array(v.string()),
     states: v.array(v.string()),
     /** The places-layer mark the places were computed under (`inputs.areasAt`). */
@@ -381,6 +393,7 @@ export const store = internalMutation({
       neighborsCapped: args.neighborsCapped,
       towns: args.towns,
       townStates: args.townStates ?? [],
+      townIds: args.townIds ?? [],
       counties: args.counties,
       states: args.states,
       ...clear,
@@ -709,7 +722,9 @@ async function isBehind(
   if (outlineStamp(body) !== row.stamp) return true;
   if ((row.areasAt ?? 0) < areasAt) return true;
   // Computed before towns carried their states (B01-3c): behind, so the drift fills them in.
-  if ((row.towns ?? []).length > 0 && row.townStates === undefined) return true;
+  if ((row.towns ?? []).length > 0 && (row.townStates === undefined || row.townIds === undefined)) {
+    return true;
+  }
   const links = await ctx.db
     .query('bodyGeoLinks')
     .withIndex('by_holder', (q) => q.eq('waterBodyId', row.waterBodyId))

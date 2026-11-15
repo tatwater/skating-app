@@ -36,6 +36,7 @@ const NOT_INPUTS: Record<string, string> = {
   'hazards.ts:insertHazard': 'a hazard footprint',
   'lib/hazardMerge.ts:refreshMergedFootprint': 'a merged hazard’s footprint',
   'bodyFeatures.ts:insertBodyFeature': 'a known feature on a body',
+  'adminAreas.ts:deleteAreaOutline': 'a boundary’s drawn outline (`adminAreaOutlines`, B01-3c)',
 };
 
 /** The marks a write of each kind needs in its enclosing function. */

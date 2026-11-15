@@ -629,3 +629,43 @@ async function leftRow(
   }
   return rows.sort((a, b) => b.createdAt - a.createdAt)[0] ?? null;
 }
+
+// ── Town lines ───────────────────────────────────────────────────────────────────────────────
+
+/** Towns whose lines one read returns at most (a body lies in a few; the largest in 13 on dev). */
+export const TOWN_LINES_MAX = 24;
+
+/**
+ * **The Names map's town lines** (B01-3c) — each town the body lies in, with its state and its
+ * boundary's outline as stored at the boundary's import (`adminAreaOutlines`, at most 96 points), so
+ * the read is one small row per town, never a boundary's polygon. `ring: null` for a town whose
+ * outline isn't stored yet (`adminAreas:backfillOutlines`) or on facts computed before towns carried
+ * their boundary (the drift repair recomputes those). At most {@link TOWN_LINES_MAX} towns (`capped`
+ * past it). `null` until the body's places are computed.
+ */
+export const townLines = query({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }) => {
+    await requireCapability(ctx, 'body.read');
+    const geo = await geoFactsOf(ctx, (await bodyOrThrow(ctx, waterBodyId))._id);
+    if (geo === null) return null;
+    const towns = townsWithStateOf(geo) ?? [];
+    const out: { name: string; state: string | null; ring: number[][] | null }[] = [];
+    for (const [i, town] of towns.slice(0, TOWN_LINES_MAX).entries()) {
+      const areaId = geo.townIds?.[i];
+      const outline =
+        areaId === undefined
+          ? null
+          : await ctx.db
+              .query('adminAreaOutlines')
+              .withIndex('by_area', (q) => q.eq('adminAreaId', areaId))
+              .first();
+      out.push({ ...town, ring: outline?.ring ?? null });
+    }
+    return {
+      towns: out,
+      capped: towns.length > TOWN_LINES_MAX,
+      computedAt: geo.computedAt as number,
+    };
+  },
+});
