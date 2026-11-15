@@ -74,6 +74,37 @@ export async function undoRowOf(
   );
 }
 
+/** The newest audit row on each target a read has asked about — shared by rows on the same target. */
+const NEWEST = new WeakMap<object, Map<string, Promise<Doc<'moderationActions'> | null>>>();
+
+/**
+ * The newest audit row on `row`'s target. In a query, read once per target a request — a page of
+ * rows on the same target shares it; in a mutation, always read afresh (a write may have added one).
+ */
+function newestOnTarget(
+  ctx: QueryCtx | MutationCtx,
+  row: Doc<'moderationActions'>,
+): Promise<Doc<'moderationActions'> | null> {
+  const read = () =>
+    ctx.db
+      .query('moderationActions')
+      .withIndex('by_target', (q) =>
+        q.eq('targetType', row.targetType).eq('targetId', row.targetId),
+      )
+      .order('desc')
+      .first();
+  if ('insert' in ctx.db) return read();
+  const seen = NEWEST.get(ctx) ?? new Map<string, Promise<Doc<'moderationActions'> | null>>();
+  NEWEST.set(ctx, seen);
+  const key = `${row.targetType}:${row.targetId}`;
+  let pending = seen.get(key);
+  if (pending === undefined) {
+    pending = read();
+    seen.set(key, pending);
+  }
+  return pending;
+}
+
 /**
  * Whether `row` can be undone by `viewer`, and if not, why. Bounded: two index reads (one of at most
  * {@link UNDO_TAG_READ} rows), and one `get` of an item an author could have deleted.
@@ -99,11 +130,7 @@ export async function undoState(
   const undoneBy = await undoRowOf(ctx, row);
   if (undoneBy) return { state: 'undone', byActionId: undoneBy._id };
 
-  const newest = await ctx.db
-    .query('moderationActions')
-    .withIndex('by_target', (q) => q.eq('targetType', row.targetType).eq('targetId', row.targetId))
-    .order('desc')
-    .first();
+  const newest = await newestOnTarget(ctx, row);
   if (newest && newest._id !== row._id && newest._creationTime > row._creationTime) {
     return { state: 'overtaken', byActionId: newest._id };
   }

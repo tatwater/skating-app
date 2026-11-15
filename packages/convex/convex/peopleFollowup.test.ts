@@ -8,13 +8,16 @@ import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
+import type { QueryCtx } from './_generated/server';
 import { composed, fitComposed, typed, writeAudit, writePersonAudit } from './lib/audit';
 import { rebuildBodyLibrary } from './lib/bodyLibrary';
 import { LAST_EDITOR_MESSAGE } from './lib/ledgerEditors';
 import { LEDGER_NEUTRAL_REFUSAL } from './lib/peopleCan';
+import { listablePeople } from './lib/peopleFigures';
 import { markReady, refreshPersonRow } from './lib/peopleRows';
-import { ReadBudget } from './lib/readBudget';
+import { inWaves, ReadBudget } from './lib/readBudget';
 import { readTenure } from './lib/staffTenure';
+import { shapeRows } from './people';
 import { MIRRORS_CHECKED } from './peopleJobs';
 import schema from './schema';
 
@@ -835,6 +838,141 @@ describe('a person at the worst case on every axis at once: every read answers, 
     for (const lane of ['flagged', 'appeals', 'staff', 'suspended', 'restricted']) {
       expect((await a.query(api.people.listPage, { lane })).rows.length, lane).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('per-row lookups run concurrently, never one round trip after another (a query has one second)', () => {
+  /** A ctx whose reads count rounds: a round starts when a read begins while none is in flight. */
+  function counting(ctx: QueryCtx) {
+    let inFlight = 0;
+    let rounds = 0;
+    const track = <R>(read: () => Promise<R>): Promise<R> => {
+      if (inFlight === 0) rounds++;
+      inFlight++;
+      return read().finally(() => {
+        inFlight--;
+      });
+    };
+    const TERMINAL = new Set(['first', 'unique', 'take', 'collect', 'paginate']);
+    // biome-ignore lint/suspicious/noExplicitAny: a query builder, wrapped call for call
+    const wrap = (q: any): any =>
+      new Proxy(q, {
+        get(target, prop) {
+          const value = target[prop];
+          if (typeof value !== 'function') return value;
+          return (...args: unknown[]) =>
+            TERMINAL.has(String(prop))
+              ? track(() => value.apply(target, args))
+              : wrap(value.apply(target, args));
+        },
+      });
+    const db = new Proxy(ctx.db, {
+      get(target, prop) {
+        if (prop === 'get') return (...args: [never]) => track(() => target.get(...args));
+        if (prop === 'query') return (...args: [never]) => wrap(target.query(...args));
+        const value = (target as never)[prop];
+        return typeof value === 'function' ? (value as Function).bind(target) : value;
+      },
+    });
+    return { ctx: { ...ctx, db } as QueryCtx, rounds: () => rounds };
+  }
+
+  test('a Decisions page of fifty rows on fifty bodies: a handful of rounds, not one per row', async () => {
+    const t = await setup();
+    const adm = await seed(t, 'adm', { role: 'admin' });
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 50; i++) {
+        const body = await ctx.db.insert('waterBodies', {
+          name: `Pond ${i}`,
+          searchText: 'pond',
+          type: 'lakePond' as const,
+          source: 'osm' as const,
+          polygon: {
+            type: 'Polygon' as const,
+            coordinates: [
+              [
+                [0, 0],
+                [0, 1],
+                [1, 1],
+                [0, 0],
+              ],
+            ],
+          },
+          bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+          centroid: { lat: 0.5, lng: 0.5 },
+          dedupStatus: 'clean' as const,
+          createdAt: T0,
+        });
+        await ctx.db.insert('moderationActions', {
+          actorId: adm,
+          action: 'set_curated_boost',
+          targetType: 'waterbody',
+          targetId: body,
+          reason: 'r',
+          createdAt: T0 - i,
+        });
+      }
+    });
+    const rounds = await t.run(async (raw) => {
+      const viewer = (await raw.db.get(adm)) as Doc<'profiles'>;
+      const rows = await raw.db.query('moderationActions').collect();
+      const counted = counting(raw as unknown as QueryCtx);
+      const shaped = await shapeRows(counted.ctx, viewer, rows, new Map());
+      expect(shaped).toHaveLength(50);
+      return counted.rounds();
+    });
+    // Serially this was three or more rounds a row (≈150); concurrently, a few for the whole page.
+    expect(rounds).toBeLessThanOrEqual(6);
+  });
+
+  test('a queue lane’s rows are one round', async () => {
+    const t = await setup();
+    const ids = await t.run(async (ctx) => {
+      const out: Id<'profiles'>[] = [];
+      for (let i = 0; i < 40; i++)
+        out.push(
+          await ctx.db.insert('profiles', {
+            clerkUserId: `q${i}`,
+            displayName: `q${i}`,
+            username: `q${i}`,
+            driveTimePrefMinutes: 60,
+            profileVisibility: 'public' as const,
+            notificationPrefs: NOTIF_PREFS,
+            dateOfBirth: Date.UTC(1990, 0, 1),
+            reputationPoints: 0,
+            role: 'member' as const,
+            status: 'active' as const,
+            createdAt: T0,
+          }),
+        );
+      return out;
+    });
+    const rounds = await t.run(async (raw) => {
+      const counted = counting(raw as unknown as QueryCtx);
+      await listablePeople(counted.ctx, ids);
+      return counted.rounds();
+    });
+    expect(rounds).toBe(1);
+  });
+
+  test('waves: as many at once as the budget holds at its worst, in order, stopping where one can’t', async () => {
+    const budget = new ReadBudget(10 * 1024);
+    let inFlight = 0;
+    let most = 0;
+    const out = await inWaves(
+      budget,
+      Array.from({ length: 25 }, (_, i) => i),
+      1024,
+      async (i) => {
+        inFlight++;
+        most = Math.max(most, inFlight);
+        await Promise.resolve();
+        inFlight--;
+        return i === 17 ? undefined : i * 2;
+      },
+    );
+    expect(most).toBe(10);
+    expect(out).toEqual({ results: Array.from({ length: 17 }, (_, i) => i * 2), stoppedAt: 17 });
   });
 });
 

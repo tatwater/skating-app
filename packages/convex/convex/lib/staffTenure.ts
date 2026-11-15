@@ -11,7 +11,7 @@ import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { personRowOf } from './peopleRows';
 import { readPreparation } from './peopleRuns';
-import { DOC_MAX, ReadBudget } from './readBudget';
+import { DOC_MAX, inWaves, ReadBudget, ROW_MAX } from './readBudget';
 import { chainRootId, isStandingChange } from './undoChains';
 
 type Audit = Doc<'moderationActions'>;
@@ -26,14 +26,25 @@ export const ROLE_ROWS = 50;
  */
 export function rootReader(ctx: QueryCtx, budget: ReadBudget, known: readonly Audit[]) {
   const byId = new Map<string, Audit>(known.map((r) => [r._id, r]));
+  // Reads in flight, shared: rows read in a wave together that share a first row read it once.
+  const reading = new Map<string, Promise<Audit | null | undefined>>();
   return async (row: Audit): Promise<Audit | undefined> => {
     const id = chainRootId(row);
     // A row no undo is its own first row: already in hand, never read again.
     if (id === row._id) return row;
     const have = byId.get(id);
     if (have) return have;
-    const read = await budget.measured('moderationAction', () => ctx.db.get(id));
-    if (read === undefined) return undefined;
+    let pending = reading.get(id);
+    if (pending === undefined) {
+      pending = budget.measured('moderationAction', () => ctx.db.get(id));
+      reading.set(id, pending);
+    }
+    const read = await pending;
+    if (read === undefined) {
+      // Past the budget: forget it, so a later ask may try again once reads have settled.
+      reading.delete(id);
+      return undefined;
+    }
     // The first row is gone: judge the row on its own — nothing known above it, so it stands.
     if (read === null) return { ...row, undoTop: row.undoDepth ?? 0, undoTopActorId: undefined };
     byId.set(id, read);
@@ -114,7 +125,9 @@ export async function readTenure(
   const roleRows: Audit[] = [];
   let roleShort = false;
   let roleFull = false;
-  for (const action of ['grant_role', 'revoke_role'] as const) {
+  // The two verbs walked side by side (each walk is a chain of reads, each starting where the last
+  // stopped); one verb's rows don't wait on the other's.
+  const walk = async (action: 'grant_role' | 'revoke_role') => {
     let before = Number.POSITIVE_INFINITY;
     for (let i = 0; i < ROLE_ROWS; i++) {
       const row = await budget.measured('moderationAction', () =>
@@ -140,21 +153,26 @@ export async function readTenure(
       // The walk's last row read: older ones may lie past it (one that found its end is whole).
       if (i === ROLE_ROWS - 1) roleFull = true;
     }
-  }
+  };
+  await Promise.all([walk('grant_role'), walk('revoke_role')]);
+  roleRows.sort((a, b) => b._creationTime - a._creationTime);
   // Before the undo-chain backfill, an undo written before chains were kept carries no place, and
   // the change it undid still reads as standing: the dates can't be told yet — `pending`, not capped.
   const roleUnplaced =
     !chainsReady && roleRows.some((r) => r.undoesActionId !== undefined && !r.undoRoot);
   const roleRoot = rootReader(ctx, budget, roleRows);
   const roots = new Map<string, Audit>();
-  for (const r of roleShort || roleUnplaced ? [] : roleRows) {
-    const root = await roleRoot(r);
-    if (root === undefined) {
-      roleShort = true;
-      break;
-    }
-    roots.set(r._id, root);
-  }
+  const read = await inWaves(
+    budget,
+    roleShort || roleUnplaced ? [] : roleRows,
+    ROW_MAX.moderationAction,
+    async (r) => {
+      const root = await roleRoot(r);
+      return root === undefined ? undefined : { r, root };
+    },
+  );
+  if (read.stoppedAt !== null) roleShort = true;
+  for (const { r, root } of read.results) roots.set(r._id, root);
   const tenure =
     roleShort || roleUnplaced
       ? { staffSince: null, roleSince: null }

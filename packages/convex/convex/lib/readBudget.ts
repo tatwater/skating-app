@@ -211,9 +211,12 @@ export class ReadBudget {
   async measured<T>(kind: RowKind, read: () => Promise<T>): Promise<T | undefined> {
     if (!this.affordsRead(kind)) return undefined;
     this.call(1);
+    // The worst case is held while the read is in flight and settled to the real size after, so reads
+    // started together (`inWaves`) can never between them spend past what the budget had.
+    this.left -= ROW_MAX[kind];
     const row = await read();
     const size = row === null || row === undefined ? 0 : getDocumentSize(row as never);
-    this.left -= Math.min(size, ROW_MAX[kind]);
+    this.left += ROW_MAX[kind] - Math.min(size, ROW_MAX[kind]);
     return row;
   }
 
@@ -369,4 +372,37 @@ export function errorClassOf(err: unknown): string {
 /** Rethrow a nested call's failure with its class as data, so the caller can record it. */
 export function asFailure(err: unknown): Error {
   return new ConvexError({ failed: errorClassOf(err) });
+}
+
+/** Items one wave starts together, at most — a query's time is its slowest round, not its reads. */
+export const WAVE_MAX = 50;
+
+/**
+ * Run `work` over `items` in waves of concurrent calls — a query has one second, and a per-row lookup
+ * awaited row after row spends it on round trips — each wave as large as the budget can hold at its
+ * worst (`perItem` bytes an item may read; at least one, at most {@link WAVE_MAX}). Results come back in
+ * order; the walk stops at the first item whose `work` returns `undefined` (its read didn't fit), and
+ * says where (`stoppedAt`), so the caller's figure is capped rather than thrown.
+ */
+export async function inWaves<T, R>(
+  budget: ReadBudget,
+  items: readonly T[],
+  perItem: number,
+  work: (item: T) => Promise<R | undefined>,
+  canStart: () => boolean = () => true,
+): Promise<{ results: R[]; stoppedAt: number | null }> {
+  const results: R[] = [];
+  let i = 0;
+  while (i < items.length) {
+    if (!canStart()) return { results, stoppedAt: i };
+    const size = Math.max(1, Math.min(WAVE_MAX, Math.floor(budget.bytes / Math.max(1, perItem))));
+    const wave = items.slice(i, i + size);
+    const done = await Promise.all(wave.map(work));
+    for (const [k, r] of done.entries()) {
+      if (r === undefined) return { results, stoppedAt: i + k };
+      results.push(r);
+    }
+    i += wave.length;
+  }
+  return { results, stoppedAt: null };
 }

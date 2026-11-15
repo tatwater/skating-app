@@ -76,7 +76,9 @@ import { OPEN_ENDED, type PeopleBackfill, personRowOf, readPreparation } from '.
 import {
   CHARGED_QUERY_BUDGET,
   DOC_MAX,
+  inWaves,
   type ReadBudget,
+  ROW_MAX,
   type RowKind,
   requestBudget,
 } from './lib/readBudget';
@@ -904,8 +906,7 @@ async function labelFlags(
   person: Doc<'profiles'>,
   flags: OpenFlag[],
 ): Promise<boolean> {
-  const labels = new Map<string, string | null>();
-  const bodyNames = new Map<string, string | null>();
+  const bodyNames = new Map<string, Promise<string | null>>();
   const personName = person.displayName.trim() || person.username;
   // Each read on the way to the body: started only while a whole document fits, charged its weight.
   const get = async <T extends TableNames>(id: Id<T>): Promise<Doc<T> | null> => {
@@ -923,29 +924,39 @@ async function labelFlags(
       throw err;
     }
     if (bodyId === null) return null;
+    // Each lake read once, whichever flags in the wave name it.
     const known = bodyNames.get(bodyId);
     if (known !== undefined) return known;
     // A body's library row, whose name no writer caps.
     if (!budget.affordsRead('bodyLibraryRow') || !budget.affordsCalls(1, 1)) return undefined;
     budget.reserve('bodyLibraryRow', 1);
-    const name = await auditTargetLabel(ctx, 'waterbody', bodyId);
+    const name = auditTargetLabel(ctx, 'waterbody', bodyId);
     bodyNames.set(bodyId, name);
     return name;
   };
-  let capped = false;
+  // The distinct things flagged, at most `FLAG_LABELS`, labelled in waves of concurrent reads.
+  const byKey = new Map<string, OpenFlag>();
+  for (const flag of flags) {
+    const key = `${flag.targetType}:${flag.targetId}`;
+    if (!byKey.has(key) && byKey.size < FLAG_LABELS) byKey.set(key, flag);
+  }
+  const keys = [...byKey.keys()];
+  const read = await inWaves(
+    budget,
+    keys,
+    2 * ROW_MAX.report + ROW_MAX.bodyLibraryRow,
+    async (key) => {
+      const label = await labelOf(byKey.get(key) as OpenFlag);
+      return label === undefined ? undefined : { key, label };
+    },
+  );
+  const labels = new Map(read.results.map((r) => [r.key, r.label]));
+  let capped = read.stoppedAt !== null;
   for (const flag of flags) {
     const key = `${flag.targetType}:${flag.targetId}`;
     if (!labels.has(key)) {
-      if (labels.size >= FLAG_LABELS) {
-        capped = true;
-        continue;
-      }
-      const label = await labelOf(flag);
-      if (label === undefined) {
-        capped = true;
-        continue;
-      }
-      labels.set(key, label);
+      capped = true;
+      continue;
     }
     const label = labels.get(key);
     if (label) flag.targetLabel = label;
@@ -1354,19 +1365,20 @@ const ROW_SHAPE_CALLS = 8;
 const ROW_SHAPE_DOCS = 24;
 
 /** Rows shaped in order, each counted ahead against the request's budget (≤ 100 rows: it fits). */
-async function shapeRows(
+export async function shapeRows(
   ctx: QueryCtx,
   viewer: Doc<'profiles'>,
   rows: readonly Doc<'moderationActions'>[],
   actors: Actors,
 ): Promise<PersonActionRow[]> {
   const budget = queryBudget(ctx);
-  const out: PersonActionRow[] = [];
-  for (const row of rows) {
-    budget.reserveCalls(ROW_SHAPE_CALLS, ROW_SHAPE_DOCS);
-    out.push(await toRow(ctx, viewer, row, actors));
-  }
-  return out;
+  // Every row's calls are counted before any starts (as many rows as fit; the caller says capped for
+  // the rest), and then all are shaped at once: a page of fifty is a few rounds of reads, not a
+  // hundred and fifty round trips one after another — a query has one second.
+  let n = rows.length;
+  while (n > 0 && !budget.affordsCalls(ROW_SHAPE_CALLS * n, ROW_SHAPE_DOCS * n)) n--;
+  budget.reserveCalls(ROW_SHAPE_CALLS * n, ROW_SHAPE_DOCS * n);
+  return Promise.all(rows.slice(0, n).map((row) => toRow(ctx, viewer, row, actors)));
 }
 
 async function toRow(
@@ -1375,15 +1387,21 @@ async function toRow(
   row: Doc<'moderationActions'>,
   actors: Actors,
 ): Promise<PersonActionRow> {
-  let actor: PersonRef | null = null;
+  let actorRead: Promise<PersonRef | null> = Promise.resolve(null);
   if (row.actorId !== undefined) {
     let read = actors.get(row.actorId);
     if (read === undefined) {
       read = personRef(ctx, row.actorId);
       actors.set(row.actorId, read);
     }
-    actor = await read;
+    actorRead = read;
   }
+  // The row's three lookups at once: who, what it names, and its undo state.
+  const [actor, label, undo] = await Promise.all([
+    actorRead,
+    labelOf(ctx, row),
+    undoState(ctx, viewer, row),
+  ]);
   return {
     id: row._id,
     action: row.action,
@@ -1397,8 +1415,8 @@ async function toRow(
     actor,
     ...(row.undoesActionId !== undefined ? { undoesActionId: row.undoesActionId } : {}),
     ...(row.via !== undefined ? { via: row.via } : {}),
-    ...(await labelOf(ctx, row)),
-    undo: await undoState(ctx, viewer, row),
+    ...label,
+    undo,
   };
 }
 
@@ -1588,8 +1606,10 @@ export const history = query({
     );
     const actors: Actors = new Map();
     return {
-      rows: await shapeRows(ctx, viewer, merged.rows, actors),
-      capped: merged.capped,
+      ...(await (async () => {
+        const shaped = await shapeRows(ctx, viewer, merged.rows, actors);
+        return { rows: shaped, capped: merged.capped || shaped.length < merged.rows.length };
+      })()),
       /** Flags older than the subject stamp aren't found by person until its backfill has run. */
       pending: (stored.flagSubjectsReady ? [] : ['flagSubjects']) as PeopleBackfill[],
       createdAt: target.createdAt,
@@ -1638,8 +1658,12 @@ export const decisions = query({
     );
     const actors: Actors = new Map();
     return {
-      rows: await shapeRows(ctx, viewer, page.page, actors),
-      isDone: page.isDone,
+      ...(await (async () => {
+        const shaped = await shapeRows(ctx, viewer, page.page, actors);
+        // Rows the request couldn't afford to shape: `capped`, and the page isn't the end.
+        const short = shaped.length < page.page.length;
+        return { rows: shaped, isDone: page.isDone && !short, capped: short };
+      })()),
       continueCursor: page.continueCursor,
     };
   },
@@ -1770,16 +1794,20 @@ export const staffStats = query({
     const callsAtStart = budget.calls;
     const overTime = () => callsAtStart - budget.calls >= STAFF_CHECKED;
     const undoers = new Map<string, number>();
-    for (const r of weekRows) {
-      if (overTime()) {
-        undoShort = true;
-        break;
-      }
-      const root = await rootOf(r);
-      if (root === undefined) {
-        undoShort = true;
-        break;
-      }
+    // In waves of concurrent reads (a chain's first row each), never one row's round trip after
+    // another's: a query has one second.
+    const roots = await inWaves(
+      budget,
+      weekRows,
+      ROW_MAX.moderationAction,
+      async (r) => {
+        const root = await rootOf(r);
+        return root === undefined ? undefined : { r, root };
+      },
+      () => !overTime(),
+    );
+    undoShort = roots.stoppedAt !== null;
+    for (const { r, root } of roots.results) {
       const by = undoneBy(r, root);
       if (byOther(by)) {
         undone++;
@@ -1792,16 +1820,18 @@ export const staffStats = query({
     // A filing time the budget ran out before reading is capped, not unrecorded.
     let decideShort = false;
     const filed = weekRows.filter((x) => FILED_DECISIONS.has(x.action));
-    for (const r of filed) {
-      if (overTime()) {
-        decideShort = true;
-        break;
-      }
-      const filedAt = await filedAtOf(ctx, budget, r);
-      if (filedAt === undefined) {
-        decideShort = true;
-        break;
-      }
+    const filings = await inWaves(
+      budget,
+      filed,
+      ROW_MAX.waterBodyRequest,
+      async (r) => {
+        const filedAt = await filedAtOf(ctx, budget, r);
+        return filedAt === undefined ? undefined : { r, filedAt };
+      },
+      () => !overTime(),
+    );
+    decideShort = filings.stoppedAt !== null;
+    for (const { r, filedAt } of filings.results) {
       if (filedAt === null) unknown++;
       else durations.push(Math.max(0, r.createdAt - filedAt));
     }
@@ -1918,14 +1948,15 @@ export const staffSeason = query({
     );
     let count = 0;
     let short = !page.isDone || inSeason.length > SEASON_CHECKED;
-    for (const r of inSeason.slice(0, SEASON_CHECKED)) {
-      const reversed = await reversedByOther(ctx, budget, rootOf, r, staffer);
-      if (reversed === undefined) {
-        short = true;
-        break;
-      }
-      if (reversed) count++;
-    }
+    // In waves of concurrent checks, each up to three audit rows and a verdict at their worst.
+    const checked = await inWaves(
+      budget,
+      inSeason.slice(0, SEASON_CHECKED),
+      3 * ROW_MAX.moderationAction + ROW_MAX.verdict,
+      (r) => reversedByOther(ctx, budget, rootOf, r, staffer),
+    );
+    if (checked.stoppedAt !== null) short = true;
+    count = checked.results.filter(Boolean).length;
     return {
       ...head,
       overturned: { count, capped: short } as Count,

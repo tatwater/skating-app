@@ -152,12 +152,13 @@ export async function listablePeople(
   ctx: QueryCtx,
   ids: readonly Id<'profiles'>[],
 ): Promise<{ rows: Doc<'peopleRows'>[]; missing: boolean }> {
-  const rows: Doc<'peopleRows'>[] = [];
   const budget = requestBudget(ctx);
-  for (const id of ids) {
-    const row = await budget.one('personRow', () => personRowOf(ctx, id));
-    if (row) rows.push(row);
-  }
+  // Every row charged before any read starts (`one` charges as it is called), then read at once: a
+  // lane of two hundred is one round of reads, not two hundred one after another.
+  const read = await Promise.all(
+    ids.map((id) => budget.one('personRow', () => personRowOf(ctx, id))),
+  );
+  const rows = read.filter((row): row is Doc<'peopleRows'> => row !== null);
   return { rows, missing: rows.length < ids.length };
 }
 
