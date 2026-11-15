@@ -2985,8 +2985,10 @@ that server's (#115); the rail's People mode (G then P, `people.read`) lights fo
   every change of place (another lane, a person opened, leaving).
 - **The person page** renders `people.person` and its five companions; every lever is drawn from
   `can` exactly as the write would answer it, and every write goes through one action hook to the
-  shell's undo toast (which uses the write's own audit row when a write names it and what undoing
-  it asks, and otherwise asks `undo.latestOwn`).
+  shell's undo toast. The toast skips its `undo.latestOwn` lookup only when a write returns both
+  its audit row and whether undoing it asks a reason (`{ actionId, undoNeedsReason }`, asked of the
+  server follow-up); with either missing it looks, which is also how it learns that another staffer
+  acted in between (then no Undo).
 - **The three answers, every block.** *Still being prepared* while a People backfill hasn't finished
   (no number, no "+": a lane draws no count, the lanes' foot names which, the head shows only the
   order, a note over the rows says the list may not have everyone, the list never ends on "All";
@@ -3015,6 +3017,12 @@ that server's (#115); the rail's People mode (G then P, `people.read`) lights fo
 - Receipts carry no pronouns (none is known); *Staff since* reads "Admin since …" as the value.
 - No photos on the person page; no *Restore all*; the hidden-content row is drawn with no sheet yet.
 - *Make admin* in the role menu confirms first.
+- One heading outline for the joined page: the lane's word is the only `h1`, the person's name an
+  `h2` in the board's look, its blocks `h3` (or `h2` when no name is drawn).
+- A capped count is plural ("1+ open flags"); Metrics' *Oldest* keeps a tenth under two days
+  ("1.5 d"), as every row does now that one formatter answers both.
+- A suspension that ends while the list is open reads *Ran its course … · lifting on its own* (the
+  person page's words) on the live minute; the list's reads stay held.
 
 **Words the boards did not supply** are each in one module for the founder to read together: the
 list's in `apps/web/src/components/admin/people/list/peopleWords.ts`, the person page's in
@@ -3039,8 +3047,8 @@ draws 34; the role menu's item takes two lines.
   text; who undid a row.
 - The record sheet (verdicts and withdrawals, above) awaits a design round.
 - The kit promotions (`SearchLane`, `PersonLockup`, `LeverRow`) await the Body console's kit PRs.
-- One `useClockFor` across Bodies and People; the old pages' `charts/Charts` `TrendBars` lost its
-  last reader with the old user page.
+- One `useClockFor` and one `ID_SHAPE` across Bodies and People — each duplicated in the Bodies
+  directory, which the open Body console PRs are changing.
 
 ## Ruled out
 
