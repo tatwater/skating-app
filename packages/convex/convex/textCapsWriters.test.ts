@@ -262,6 +262,23 @@ describe('an import skips a row past a cap and counts it — never the campaign'
     expect(out).toMatchObject({ results: [{ ok: false, reason: 'name_too_long' }] });
   });
 
+  test('a record past a cap whose ids reach several bodies still flags them, as any merge verdict does', async () => {
+    const t = harness();
+    const a = await body(t, 'way/1');
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...item('nhd/9'), source: 'nhd', osmId: undefined, nhdId: 'nhd/9' }],
+    } as never);
+    const out = await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...item('way/1', long(MAX_PLACE_NAME_CHARS + 1)), nhdId: 'nhd/9' }],
+    } as never);
+    expect(out).toMatchObject({ inserted: 0, updated: 0 });
+    const rows = await t.run((ctx) => ctx.db.query('waterBodies').collect());
+    expect(rows).toHaveLength(2);
+    // Both are in the dedup queue, so the prune's protection list keeps them.
+    expect(rows.every((r) => r.dedupStatus !== 'clean')).toBe(true);
+    expect((await t.run((ctx) => ctx.db.get(a)))?.name).toBe('Mirror Lake');
+  });
+
   test('launches: a name or id past its cap is skipped; a walk past its cap is thinned, its ends kept', async () => {
     const t = harness();
     await body(t);

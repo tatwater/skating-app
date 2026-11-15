@@ -69,11 +69,11 @@ describe('ReadBudget.measured', () => {
     expect(reads.bytes).toBe(TX_BUDGET - getDocumentSize(row as never));
   });
 
-  test('a row past its worst case near the end of the budget empties it, never below zero', async () => {
+  test('a row past its worst case near the end of the budget is charged exactly; what follows stops', async () => {
     const reads = new ReadBudget(ROW_MAX.verdict);
     const row = rowOf(ROW_MAX.verdict * 2);
     await expect(reads.measured('verdict', async () => row)).resolves.toBe(row);
-    expect(reads.bytes).toBe(0);
+    expect(reads.bytes).toBe(ROW_MAX.verdict - getDocumentSize(row as never));
     // What follows sees nothing left and stops.
     expect(await reads.measured('verdict', async () => row)).toBeUndefined();
   });

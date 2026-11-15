@@ -129,7 +129,8 @@ function weighed(row: unknown): number {
   // The real size, even past the kind's bound: a row written before its writers' caps (B01-3h) is
   // charged what it weighs and the read carries on — the bound is the plan, never a reason to throw.
   // So a plan check counts each read at most its bound, and what a row weighs past it is charged to
-  // the budget as a whole, never below zero (`measured`, `waves`).
+  // the budget as a whole, exactly — the balance may go below zero, and then nothing more is read.
+  // Never floored: a floor would make the balance depend on the order reads settle in.
   return row === null || row === undefined ? 0 : getDocumentSize(row as never);
 }
 
@@ -255,9 +256,10 @@ export class ReadBudget {
       charged = weighed(row);
       return row;
     } finally {
-      // A row past its bound is charged what it weighs, down to an empty budget and never below:
-      // what follows sees nothing left and stops, rather than a negative balance.
-      this.left = Math.max(0, this.left + ROW_MAX[kind] - charged);
+      // A row past its bound (written before its caps) is charged exactly what it weighs, even past
+      // an empty budget: a sum, so the balance is the same whatever order reads settle in (Greptile
+      // on #131), and what follows sees no room and stops — every check asks `left >= bytes`.
+      this.left += ROW_MAX[kind] - charged;
     }
   }
 
@@ -274,7 +276,7 @@ export class ReadBudget {
    * So which items are read and which overflow depends only on the items' order and what the earlier
    * waves really weighed — never on the order their promises resolve in: the same data gives the same
    * page, as a query must. Nothing is read that wasn't reserved (a read past its item's share is a
-   * plan error, thrown), and the budget never goes below zero. A wave costs one round per read in its
+   * plan error, thrown); with every row within its bound the budget never goes below zero. A wave costs one round per read in its
    * longest item; the page, one wave per budget's worth of worst cases.
    */
   async waves<T, R>(
@@ -361,7 +363,8 @@ export class ReadBudget {
             out[index] = await run(items[index] as T, share);
           } finally {
             answered = true;
-            this.left = Math.max(0, this.left + cost.bytes - spent - excess);
+            // Exact, never floored: a sum, so the same whatever order the wave's items finish in.
+            this.left += cost.bytes - spent - excess;
             this.callsLeft += cost.reads - reads;
             this.docsLeft += docs - scanned;
           }

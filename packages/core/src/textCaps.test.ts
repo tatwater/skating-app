@@ -12,7 +12,8 @@ import {
 describe('the text caps (B01-3h)', () => {
   it('a name at the cap passes; one past it says what and how long', () => {
     expect(nameTooLong('x'.repeat(MAX_PLACE_NAME_CHARS), 'A bay’s name')).toBeNull();
-    expect(nameTooLong(` ${'x'.repeat(MAX_PLACE_NAME_CHARS)} `, 'A bay’s name')).toBeNull();
+    // Measured as given: padding counts, since some writers store the string as it arrived.
+    expect(nameTooLong(` ${'x'.repeat(MAX_PLACE_NAME_CHARS)} `, 'A bay’s name')).not.toBeNull();
     expect(nameTooLong('x'.repeat(MAX_PLACE_NAME_CHARS + 1), 'A bay’s name')).toBe(
       `A bay’s name is ${MAX_PLACE_NAME_CHARS + 1} characters; keep it to ${MAX_PLACE_NAME_CHARS}.`,
     );

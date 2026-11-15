@@ -641,21 +641,6 @@ export const importCanonical = internalMutation({
         { osmId: item.osmId, nhdId: item.nhdId, threeDhpId: item.threeDhpId },
         matches,
       );
-      if (overCap !== null) {
-        tooLong++;
-        unresolved.push({
-          externalId: item.externalId.slice(0, MAX_EXTERNAL_ID_CHARS),
-          action: 'skipped',
-          reason: `${overCap} is past its cap`,
-        });
-        // The body is still in the master list: its row is re-affirmed with nothing else taken from
-        // the record, or step 6's prune would read the skip as the catalogs dropping it.
-        if (verdict.action === 'patch' && campaignId) {
-          await ctx.db.patch(verdict.key, { lastCampaignId: campaignId });
-        }
-        continue;
-      }
-
       if (verdict.action === 'conflict') {
         conflicts++;
         unresolved.push({
@@ -687,6 +672,23 @@ export const importCanonical = internalMutation({
           action: 'merge',
           reason: `${verdict.matchedBy.join('+')} resolve to ${1 + verdict.absorb.length} rows`,
         });
+        continue;
+      }
+
+      // Past a cap (B01-3h), after the conflict and merge safeguards above have flagged what they
+      // flag (Greptile on #131): the row is skipped, counted — and a body it matches is re-affirmed
+      // with nothing else taken from the record, or step 6's prune would read the skip as the
+      // catalogs dropping it.
+      if (overCap !== null) {
+        tooLong++;
+        unresolved.push({
+          externalId: item.externalId.slice(0, MAX_EXTERNAL_ID_CHARS),
+          action: 'skipped',
+          reason: `${overCap} is past its cap`,
+        });
+        if (verdict.action === 'patch' && campaignId) {
+          await ctx.db.patch(verdict.key, { lastCampaignId: campaignId });
+        }
         continue;
       }
 

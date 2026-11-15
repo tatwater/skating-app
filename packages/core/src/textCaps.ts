@@ -31,9 +31,12 @@ export const MAX_LANDMARK_EXTERNAL_IDS = 32;
  */
 export const MAX_APPROACH_PATH_POINTS = 256;
 
-/** Why `name` is too long for its `what`, or `null`. */
+/**
+ * Why `name` is too long for its `what`, or `null` — measured as given, padding included, since some
+ * writers store the string as it arrived (Greptile on #131).
+ */
 export function nameTooLong(name: string, what: string): string | null {
-  const n = name.trim().length;
+  const n = name.length;
   return n > MAX_PLACE_NAME_CHARS
     ? `${what} is ${n} characters; keep it to ${MAX_PLACE_NAME_CHARS}.`
     : null;

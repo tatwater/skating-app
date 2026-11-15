@@ -74,7 +74,45 @@ const property = fc.asyncProperty(scenario, async ({ budgetBytes, items, ticksA,
   if (first >= 0) expect(a.answers.slice(first).every((x) => x === 'overflow')).toBe(true);
 });
 
+/** Rows past their kind's bound (written before its caps): the balance is still order-independent. */
+const pastBounds = fc.asyncProperty(
+  fc.array(fc.array(fc.integer({ min: 0, max: 3 * 12 * 1024 }), { minLength: 1, maxLength: 2 }), {
+    maxLength: 8,
+  }),
+  fc.integer({ min: 0, max: 200 * 1024 }),
+  fc.array(fc.integer({ min: 0, max: 6 }), { minLength: 1, maxLength: 12 }),
+  fc.array(fc.integer({ min: 0, max: 6 }), { minLength: 1, maxLength: 12 }),
+  async (items, budgetBytes, ticksA, ticksB) => {
+    const run = async (ticks: number[]) => {
+      const budget = new ReadBudget(budgetBytes);
+      let k = 0;
+      const answers = await budget.waves(
+        items,
+        (sizes) => ({ bytes: sizes.length * 12 * 1024, reads: sizes.length }),
+        async (sizes, share) =>
+          (
+            await Promise.all(
+              sizes.map((size) =>
+                share.read('launch', () =>
+                  settleAfter(ticks[k++ % ticks.length] ?? 0, rowOf(size)),
+                ),
+              ),
+            )
+          ).length,
+        () => -1,
+      );
+      return { answers, left: budget.bytes };
+    };
+    expect(await run(ticksB)).toEqual(await run(ticksA));
+  },
+);
+
 describe('ReadBudget.waves', () => {
+  test('rows past their bound: the same answers and balance whatever the settling order', async () => {
+    await fc.assert(pastBounds, { seed: 7, numRuns: 40 });
+    await fc.assert(pastBounds, { numRuns: 20 });
+  });
+
   for (const seed of [1, 42, 20_261_115]) {
     test(`exact, total and order-independent (seed ${seed})`, async () => {
       await fc.assert(property, { seed, numRuns: 60 });
@@ -146,7 +184,7 @@ describe('ReadBudget.waves', () => {
     expect(budget.affordsCalls(TX_CALLS, 1)).toBe(false);
   });
 
-  test('a row past its bound (written before its caps) is charged what it weighs, never thrown, never below zero', async () => {
+  test('a row past its bound (written before its caps) is charged exactly what it weighs, never thrown', async () => {
     const launch = 12 * 1024;
     const budget = new ReadBudget(launch * 4);
     // One heavy old launch, then the hidden ones: the take still fits its declared plan.
@@ -161,8 +199,9 @@ describe('ReadBudget.waves', () => {
       () => null,
     );
     expect(got[0]?.[1]).toBe(1);
-    // Charged past the reservation, down to an empty budget and no lower.
-    expect(budget.bytes).toBe(0);
+    // Charged exactly, past the reservation and the budget: what follows sees no room.
+    expect(budget.bytes).toBeLessThan(0);
+    expect(budget.affordsRead('small')).toBe(false);
   });
 
   test('a take reserves its documents, and hands back the ones it didn’t scan', async () => {
