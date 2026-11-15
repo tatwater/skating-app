@@ -10,6 +10,7 @@ import { BodyInspector } from './BodyInspector';
 import { BodyLeftColumn, type BodyLeftColumnProps } from './BodyLeftColumn';
 import type { BodyAsk } from './bodyModel';
 import type { BodyTabKey } from './bodySearch';
+import { useKeepFocus } from './keepFocus';
 import { TabKeysProvider } from './tabKeys';
 
 /**
@@ -66,6 +67,8 @@ export function BodyConsoleView({
   const root = useRef<HTMLDivElement | null>(null);
   const panel = useRef<HTMLDivElement | null>(null);
   const inspector = useRef<HTMLDivElement | null>(null);
+  // A write that settles never drops the keyboard to the page: focus comes back to the panel.
+  useKeepFocus(panel);
   // Arriving at a body with nothing focused (the list's Open, a deep link): focus goes to the
   // panel, so the open tab's keys work at once. A neighbor's link pressed in a tab counts as nothing
   // focused: its row is the old body's and leaves with it. Focus somewhere that stays (the tab strip,

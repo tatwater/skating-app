@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { type ReactNode, useState } from 'react';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -11,6 +11,7 @@ import { expectKeyboardOperable } from '@/test/keyboardAudit';
 import { AccessView } from './access/AccessView';
 import { BOARD_TODAY, MASCOMA_ACCESS } from './access/accessFixtures';
 import type { AccessData } from './access/accessModel';
+import type { FeatureRowWithGlyph } from './hazards/HazardsTabView';
 import { HazardsTabView } from './hazards/HazardsTabView';
 import {
   FEB_ARCHIVED,
@@ -31,6 +32,7 @@ import {
   MASCOMA_PASSES,
   MASCOMA_SATELLITE,
 } from './imagery/imageryFixtures';
+import type { PassRow } from './imagery/imageryModel';
 import { passRows } from './imagery/imageryModel';
 import { stubJsdomAnimations } from './jsdomStubs';
 import { LinksTabView } from './links/LinksTabView';
@@ -438,5 +440,267 @@ describe('a landmark’s card hands focus back to its row', () => {
     expect(document.activeElement).toHaveAttribute('data-landmark-id', 'lm-upper');
     await user.keyboard('l');
     expect(said()).toEqual([expect.stringMatching(/Dropping a landmark/)]);
+  });
+});
+
+// ── A settling action never drops the keyboard to the page ────────────────────────────────────
+
+/** Focus is in the tab's region (the inspector's panel), and not on the page. */
+function expectFocusKept() {
+  const panel = screen.getByRole('tabpanel');
+  expect(document.activeElement).not.toBe(document.body);
+  expect(panel.contains(document.activeElement)).toBe(true);
+}
+
+/** Presses the control named `name` from the keyboard: focus it, ⏎. */
+async function press(
+  user: ReturnType<typeof userEvent.setup>,
+  name: RegExp | string,
+  root?: HTMLElement,
+) {
+  const scope = root === undefined ? screen : within(root);
+  scope.getAllByRole('button', { name })[0]?.focus();
+  await user.keyboard('{Enter}');
+}
+
+/** Each tab with an action that changes what it draws once its write lands. */
+function AccessSettles() {
+  const [data, setData] = useState(MASCOMA_ACCESS);
+  return (
+    <AccessView
+      data={data}
+      now={BOARD_TODAY}
+      onRule={async (verdict) => {
+        setData({ ...data, ruling: { ...data.ruling, verdict: verdict ?? null, before: 'open' } });
+        return null;
+      }}
+    />
+  );
+}
+
+function WaterSettles() {
+  const [data, setData] = useState(MASCOMA_WATER);
+  return (
+    <WaterView
+      data={data}
+      canChooseDepth
+      onChooseDepth={(measurement, source) =>
+        setData({
+          ...data,
+          depth: { ...data.depth, [measurement === 'mean' ? 'meanFrom' : 'maxFrom']: source },
+        })
+      }
+    />
+  );
+}
+
+function HazardsSettles() {
+  const [features, setFeatures] = useState<readonly FeatureRowWithGlyph[]>(MASCOMA_FEATURE_ROWS);
+  return (
+    <HazardsTabView
+      season={HAZARD_SEASON}
+      currentSeason={HAZARD_SEASON}
+      onSeasonChange={() => {}}
+      bodyName="Mascoma"
+      watchOpenedAt={WATCH_OPENED}
+      hazards={[]}
+      archived={[]}
+      features={features}
+      winters={MASCOMA_WINTERS}
+      patternsWaiting={null}
+      onDemote={async (id) => setFeatures(features.filter((f) => f.id !== id))}
+      lit={null}
+      onLitChange={() => {}}
+    />
+  );
+}
+
+function ImagerySettles() {
+  const [rows, setRows] = useState<readonly PassRow[]>(MASCOMA_PASSES);
+  return (
+    <ImageryTabView
+      season={IMAGERY_SEASON}
+      rows={rows}
+      lit={granuleOf(10)}
+      onLitChange={() => {}}
+      onOverride={async (id, verdict) => {
+        setRows(
+          rows.map((r) =>
+            r.id === id
+              ? {
+                  ...r,
+                  seen: verdict === 'show' ? 'shown-anyway' : 'hidden-by-staff',
+                  override: { verdict, by: 'Teagan', at: BOARD_TODAY },
+                }
+              : r,
+          ),
+        );
+      }}
+      satellite={MASCOMA_SATELLITE}
+    />
+  );
+}
+
+function StandingSettles() {
+  const [standing, setStanding] = useState(DORMANT_BY_HAND);
+  return (
+    <StandingTabView
+      standing={standing}
+      activeSince={null}
+      retention={MASCOMA_RETENTION}
+      now={STANDING_NOW}
+      canSetStanding
+      canRemove={false}
+      onSetActive={async () => setStanding(ACTIVE)}
+      onSetDormant={async () => {}}
+    />
+  );
+}
+
+function PlacesSettles() {
+  const [data, setData] = useState(MASCOMA_PLACES);
+  return (
+    <PlacesView
+      data={data}
+      canPlace
+      onLitChange={() => {}}
+      onDecline={async (askId) => {
+        setData({
+          ...data,
+          asks: Array.isArray(data.asks) ? data.asks.filter((a) => a.id !== askId) : data.asks,
+        });
+        return null;
+      }}
+    />
+  );
+}
+
+describe('a settling action never drops the keyboard to the page', () => {
+  it('Access: ruling no public access takes the button that ruled away; focus stays', async () => {
+    const user = userEvent.setup();
+    render(<InConsole panel={<AccessSettles />} />);
+    await press(user, 'Rule no public access');
+    const dialog = await screen.findByRole('alertdialog');
+    await user.type(within(dialog).getByRole('textbox'), 'Every approach is posted');
+    await press(user, /^Rule no public access/, dialog);
+    await vi.waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expectFocusKept();
+  });
+
+  it('Water: choosing a depth’s source takes its button away; focus stays', async () => {
+    const user = userEvent.setup();
+    render(<InConsole panel={<WaterSettles />} />);
+    // Pick another source for the mean from the keyboard, then use it.
+    const mean = screen.getAllByRole('radiogroup')[0] as HTMLElement;
+    (
+      within(mean)
+        .getAllByRole('radio')
+        .find((r) => r.getAttribute('aria-checked') === 'true') ??
+      within(mean).getAllByRole('radio')[0]
+    )?.focus();
+    await user.keyboard('{ArrowDown}');
+    const choose = screen.queryAllByRole('button', { name: /^Use .* for the (mean|max)/ });
+    expect(choose.length).toBeGreaterThan(0);
+    choose[0]?.focus();
+    await user.keyboard('{Enter}');
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expectFocusKept();
+  });
+
+  it('Hazards: a demoted feature leaves the list; focus stays', async () => {
+    const user = userEvent.setup();
+    render(<InConsole panel={<HazardsSettles />} />);
+    await press(user, 'Demote');
+    const dialog = await screen.findByRole('alertdialog');
+    await user.type(within(dialog).getByRole('textbox'), 'Not a spring');
+    await press(user, /Demote/, dialog);
+    await press(user, /again/, dialog);
+    await vi.waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expectFocusKept();
+  });
+
+  it('Imagery: showing a hidden pass turns its button into another; focus stays', async () => {
+    const user = userEvent.setup();
+    render(<InConsole panel={<ImagerySettles />} />);
+    await press(user, /Show to skaters anyway/);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expectFocusKept();
+  });
+
+  it('Standing: making a dormant body active again; focus stays', async () => {
+    const user = userEvent.setup();
+    render(<InConsole panel={<StandingSettles />} />);
+    const active = screen.getByRole('radio', { name: /^Active/ });
+    active.focus();
+    await user.keyboard(' ');
+    const set = screen.queryAllByRole('button', { name: /active/i });
+    set.at(-1)?.focus();
+    await user.keyboard('{Enter}');
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expectFocusKept();
+  });
+
+  it('Places: a declined proposal leaves the asks; focus stays', async () => {
+    const user = userEvent.setup();
+    render(<InConsole panel={<PlacesSettles />} />);
+    await press(user, /^Decline/);
+    const dialog = await screen.findByRole('alertdialog');
+    await user.type(within(dialog).getByRole('textbox'), 'Not on this lake');
+    await press(user, /^Decline/, dialog);
+    await vi.waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expectFocusKept();
+  });
+
+  it('Names: a class chosen from the keyboard; focus stays on its row', async () => {
+    const user = userEvent.setup();
+    function NamesSettles() {
+      const [data, setData] = useState(MASCOMA_NAMES);
+      return (
+        <NamesView data={data} canEditClass onClassChange={(cls) => setData({ ...data, cls })} />
+      );
+    }
+    render(<InConsole panel={<NamesSettles />} />);
+    const radios = screen.queryAllByRole('radio');
+    radios[0]?.focus();
+    await user.keyboard('{ArrowDown}');
+    expectFocusKept();
+  });
+
+  it('focus taken elsewhere on purpose is left there, even when what had it goes', async () => {
+    function Goes() {
+      const [shown, setShown] = useState(true);
+      return shown ? (
+        <button type="button" onClick={() => setShown(false)}>
+          Goes
+        </button>
+      ) : (
+        <p>Gone</p>
+      );
+    }
+    render(<InConsole panel={<Goes />} />);
+    const goes = screen.getByRole('button', { name: 'Goes' });
+    goes.focus();
+    const list = screen.getByRole('listbox', { name: 'Asked of this body' });
+    list.focus();
+    await act(async () => {
+      goes.click();
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expect(list).toHaveFocus();
   });
 });
