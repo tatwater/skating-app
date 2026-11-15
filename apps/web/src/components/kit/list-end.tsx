@@ -19,6 +19,8 @@ import { cn } from '@/lib/utils';
  * - **Under a last row it sits `space-0_5` down**; an empty list's tab sits the same `space-0_5`
  *   under the bar above it. A list that follows (the decided list) owns its own gap.
  * - The drawing is hidden from readers; the label is the text.
+ * - **Not drawn until its measures are numbers** (a stroke token not yet resolved reads empty): the
+ *   label stands alone until then.
  */
 
 /** The fitted drawing, in px relative to the tab's box. */
@@ -77,7 +79,13 @@ function ListEnd({ className, children, ...props }: ListEndProps) {
     // (Both are rendered with the effect; the guard is for the type.)
     /* v8 ignore next */
     if (el === null || text === null) return;
-    const measure = () => setDrawn(fitTab(el, text));
+    // Drawn only once every measure is a number: before the token sheet reaches the element (a test
+    // page, a frame not yet styled) a stroke token reads empty, and a NaN would draw nothing but
+    // warnings — and two terminals keyed on the same NaN.
+    const measure = () => {
+      const fit = fitTab(el, text);
+      setDrawn(Object.values(fit).every(Number.isFinite) ? fit : null);
+    };
     measure();
     // The list's width, the label's text, the user's font size and a late web font all move it.
     const observer = new ResizeObserver(measure);
