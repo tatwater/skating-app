@@ -37,6 +37,7 @@ import type { Id } from '@skating/convex/dataModel';
 import { ConvexError } from 'convex/values';
 
 import { resetConsoleReads } from '@/components/admin/reads/consoleReads';
+import { BodyTabHost } from '../../frame/BodyConsoleRoute';
 import { STANDING_TAB, StandingTab } from './StandingTab';
 
 const BODY = 'k1' as Id<'waterBodies'>;
@@ -261,5 +262,56 @@ describe('StandingTab', () => {
 
   it('registers its wiring and no map of its own', () => {
     expect(STANDING_TAB).toEqual({ Wiring: StandingTab });
+  });
+
+  /**
+   * Greptile's P1 on #121: another body already read opened on this tab with the same standing,
+   * and the view kept the first body's pick and note while its save now targeted the new body.
+   * The frame keys the tab by body (`BodyTabHost`), and every write is bound to its body.
+   */
+  describe('a switch to another body that is already read', () => {
+    const OTHER = 'k2' as Id<'waterBodies'>;
+    const both = () => {
+      convex.results.set('waterBodies:get', body());
+      convex.results.set('standing:retentionForBody', null);
+    };
+
+    it('drops the pick and the note, and nothing typed for one body is sent for the other', async () => {
+      both();
+      const { rerender } = render(<BodyTabHost Wiring={StandingTab} bodyId={BODY} />);
+      await userEvent.click(screen.getByRole('radio', { name: /^Dormant/ }));
+      await userEvent.type(screen.getByRole('textbox'), 'Drawn down at Mascoma');
+      // The other body, the same standing, read already: it opens at once.
+      convex.results.set('waterBodies:get', body({ _id: OTHER }));
+      rerender(<BodyTabHost Wiring={StandingTab} bodyId={OTHER} />);
+      expect(screen.queryByDisplayValue('Drawn down at Mascoma')).toBeNull();
+      expect(screen.getByRole('radio', { name: /^Active/ })).toBeChecked();
+      expect(screen.queryByRole('textbox')).toBeNull();
+      expect(convex.mutations.get('standing:setStanding')).not.toHaveBeenCalled();
+    });
+
+    it('a write started on one body that lands after the switch changes nothing on the next, and puts up no receipt', async () => {
+      both();
+      let land: () => void = () => {};
+      convex.mutations.set(
+        'standing:setStanding',
+        vi.fn(
+          () =>
+            new Promise((resolve) => {
+              land = () => resolve(null);
+            }),
+        ),
+      );
+      const { rerender } = render(<BodyTabHost Wiring={StandingTab} bodyId={BODY} />);
+      await userEvent.click(screen.getByRole('radio', { name: /^Dormant/ }));
+      await userEvent.type(screen.getByRole('textbox'), 'Dam work{Enter}');
+      expect(convex.mutations.get('standing:setStanding')).toHaveBeenCalledTimes(1);
+      convex.results.set('waterBodies:get', body({ _id: OTHER }));
+      rerender(<BodyTabHost Wiring={StandingTab} bodyId={OTHER} />);
+      land();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(undo.announce).not.toHaveBeenCalled();
+      expect(screen.getByRole('radio', { name: /^Active/ })).toBeChecked();
+    });
   });
 });

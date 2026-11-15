@@ -412,6 +412,27 @@ describe('BodyConsoleRoute', () => {
     expect(putIns()).toBeChecked();
   });
 
+  it('a new body opening at once remounts the open tab and the left column — nothing of the last body carries', async () => {
+    // Shape has no draft of its own (its ways aren't built), so this holds the frame's own rule:
+    // the tab's subtree and the left column are the body's, keyed by it (`BodyTabHost`).
+    const { rerender } = render(<Mounted />);
+    const panelNode = () => screen.getByRole('tabpanel').firstElementChild;
+    const before = panelNode();
+    const slider = screen.getByRole('slider', { name: 'Map boost' });
+    set(
+      api.waterBodies.get,
+      {
+        available: true,
+        body: { ...MASCOMA_RECORD, _id: NEIGHBOR_ID, name: 'Mascoma North Pond', bbox: undefined },
+      },
+      { waterBodyId: NEIGHBOR_ID },
+    );
+    mocks.params = { id: NEIGHBOR_ID };
+    rerender(<Mounted />);
+    expect(panelNode()).not.toBe(before);
+    expect(screen.getByRole('slider', { name: 'Map boost' })).not.toBe(slider);
+  });
+
   it('opens an ask on its tab with it lit', async () => {
     const user = userEvent.setup();
     render(<Mounted />);

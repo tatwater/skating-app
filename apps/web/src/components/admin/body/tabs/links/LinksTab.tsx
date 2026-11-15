@@ -3,11 +3,11 @@ import type { Id } from '@skating/convex/dataModel';
 import { useMutation } from 'convex/react';
 import { useMemo } from 'react';
 
-import { errorText } from '@/components/admin/adminUi';
 import { isFailed, read, useConsoleReadSet } from '@/components/admin/reads/consoleReads';
 import { ReadNote } from '@/components/admin/reads/ReadNote';
 import { useUndo } from '@/components/admin/shell/undo';
 import { useRole } from '@/lib/useRole';
+import { sendFor, useBodyBound } from '../../frame/currentBody';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { LoadingSection, TabBody, useTickingNow } from '../tabParts';
 import { LinksTabView } from './LinksTabView';
@@ -42,6 +42,7 @@ function LinksReads({ bodyId: id }: BodyTabProps) {
   const setLinks = useMutation(api.waterBodies.setReferenceLinks);
   const { can } = useRole();
   const { announce } = useUndo();
+  const here = useBodyBound(bodyId);
   // Copernicus' window is the last 14 days from now: moved on daily.
   const now = useTickingNow(86_400_000);
 
@@ -72,17 +73,17 @@ function LinksReads({ bodyId: id }: BodyTabProps) {
       now={now}
       canEdit={can('body.identity')}
       lakeSheetHref={`/water/${encodeURIComponent(bodyId)}`}
-      onSave={async (links) => {
-        try {
-          await setLinks({ waterBodyId: bodyId, links });
-        } catch (err) {
-          throw new Error(errorText(err));
-        }
-        await announce({
-          title: 'Links saved',
-          target: { targetType: 'waterbody', targetId: bodyId },
-        });
-      }}
+      onSave={(links) =>
+        sendFor(
+          here,
+          () => setLinks({ waterBodyId: bodyId, links }),
+          () =>
+            announce({
+              title: 'Links saved',
+              target: { targetType: 'waterbody', targetId: bodyId },
+            }),
+        )
+      }
     />
   );
 }

@@ -5,7 +5,6 @@ import { useNavigate } from '@tanstack/react-router';
 import { useMutation } from 'convex/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { errorText } from '@/components/admin/adminUi';
 import {
   isFailed,
   type Loadable,
@@ -17,6 +16,7 @@ import { useMinuteNow } from '@/components/admin/shell/presence';
 import { useUndo } from '@/components/admin/shell/undo';
 import { UNAVAILABLE } from '@/components/kit/unavailable-button';
 import { useRole } from '@/lib/useRole';
+import { sendFor, useBodyBound } from '../../frame/currentBody';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { LoadingSection, TabBody } from '../tabParts';
 import { featureGlyph } from './featureGlyph';
@@ -102,6 +102,7 @@ function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabPr
   });
   const demote = useMutation(api.bodyFeatures.demote);
   const { announce } = useUndo();
+  const here = useBodyBound(waterBodyId);
   const navigate = useNavigate();
 
   const features = got.features;
@@ -174,17 +175,16 @@ function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabPr
             onMarkHazard: UNAVAILABLE,
             onAddFeature: UNAVAILABLE,
             onEditShape: UNAVAILABLE,
-            onDemote: async (featureId: string, reason: string) => {
-              try {
-                await demote({ bodyFeatureId: featureId as Id<'bodyFeatures'>, reason });
-              } catch (err) {
-                throw new Error(errorText(err));
-              }
-              await announce({
-                title: 'Known feature demoted',
-                target: { targetType: 'bodyFeature', targetId: featureId },
-              });
-            },
+            onDemote: (featureId: string, reason: string) =>
+              sendFor(
+                here,
+                () => demote({ bodyFeatureId: featureId as Id<'bodyFeatures'>, reason }),
+                () =>
+                  announce({
+                    title: 'Known feature demoted',
+                    target: { targetType: 'bodyFeature', targetId: featureId },
+                  }),
+              ),
           }
         : {})}
       lit={lit}

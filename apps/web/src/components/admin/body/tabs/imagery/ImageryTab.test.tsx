@@ -58,6 +58,7 @@ vi.mock('@/components/useFreezeUpTimeline', () => ({
 import type { Id } from '@skating/convex/dataModel';
 import { ConvexError } from 'convex/values';
 import { resetConsoleReads } from '@/components/admin/reads/consoleReads';
+import { BodyTabHost } from '../../frame/BodyConsoleRoute';
 import { IMAGERY_TAB, ImageryDock, ImageryTab } from './ImageryTab';
 import { granuleOf, MASCOMA_STOPS } from './imageryFixtures';
 
@@ -274,5 +275,35 @@ describe('ImageryTab', () => {
     archive.value = { ...archive.value, timeline: null, index: null };
     rerender(<ImageryDock bodyId={BODY} />);
     expect(screen.queryByRole('slider')).toBeNull();
+  });
+
+  describe('a switch to another body that is already read', () => {
+    const OTHER = 'k2' as Id<'waterBodies'>;
+
+    it('a satellite write started on one body that lands after the switch puts up no receipt over the next', async () => {
+      convex.results.set('waterBodies:get', { available: true, body: MASCOMA });
+      let land: () => void = () => {};
+      convex.mutations.set(
+        'waterBodies:setSatelliteImagery',
+        vi.fn(
+          () =>
+            new Promise((resolve) => {
+              land = () => resolve(null);
+            }),
+        ),
+      );
+      const { rerender } = render(<BodyTabHost Wiring={ImageryTab} bodyId={BODY} />);
+      await userEvent.click(screen.getByRole('button', { name: 'Always offer' }));
+      convex.results.set('waterBodies:get', {
+        available: true,
+        body: { ...MASCOMA, _id: OTHER, name: 'Crystal Lake' },
+      });
+      rerender(<BodyTabHost Wiring={ImageryTab} bodyId={OTHER} />);
+      land();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(undo.announce).not.toHaveBeenCalled();
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(convex.mutations.get('waterBodies:setSatelliteImagery')).toHaveBeenCalledTimes(1);
+    });
   });
 });

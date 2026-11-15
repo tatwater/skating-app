@@ -33,6 +33,7 @@ import type { Id } from '@skating/convex/dataModel';
 import { ConvexError } from 'convex/values';
 
 import { resetConsoleReads } from '@/components/admin/reads/consoleReads';
+import { BodyTabHost } from '../../frame/BodyConsoleRoute';
 import { LINKS_TAB, LinksTab } from './LinksTab';
 import { MASCOMA } from './linksFixtures';
 
@@ -169,5 +170,48 @@ describe('LinksTab', () => {
     convex.results.set('waterBodies:get', new Error('boom'));
     rerender(<Probe />);
     expect(data).toBeUndefined();
+  });
+
+  describe('a switch to another body that is already read', () => {
+    const OTHER = 'k2' as Id<'waterBodies'>;
+    const open = (id: Id<'waterBodies'>) =>
+      convex.results.set('waterBodies:get', { available: true, body: { _id: id, ...MASCOMA } });
+
+    it('drops the open editor and its draft; nothing typed for one body is sent for the other', async () => {
+      open(BODY);
+      const { rerender } = render(<BodyTabHost Wiring={LinksTab} bodyId={BODY} />);
+      await userEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
+      await userEvent.type(screen.getByRole('textbox', { name: /Label/ }), ' (Mascoma only)');
+      open(OTHER);
+      rerender(<BodyTabHost Wiring={LinksTab} bodyId={OTHER} />);
+      expect(screen.queryByRole('textbox', { name: /Label/ })).toBeNull();
+      expect(screen.queryByDisplayValue(/Mascoma only/)).toBeNull();
+      expect(convex.mutations.get('waterBodies:setReferenceLinks')).not.toHaveBeenCalled();
+    });
+
+    it('a save started on one body that lands after the switch changes nothing on the next, and puts up no receipt', async () => {
+      open(BODY);
+      let land: () => void = () => {};
+      convex.mutations.set(
+        'waterBodies:setReferenceLinks',
+        vi.fn(
+          () =>
+            new Promise((resolve) => {
+              land = () => resolve(null);
+            }),
+        ),
+      );
+      const { rerender } = render(<BodyTabHost Wiring={LinksTab} bodyId={BODY} />);
+      await userEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
+      await userEvent.type(screen.getByRole('textbox', { name: /Label/ }), '!{Enter}');
+      expect(convex.mutations.get('waterBodies:setReferenceLinks')).toHaveBeenCalledTimes(1);
+      open(OTHER);
+      rerender(<BodyTabHost Wiring={LinksTab} bodyId={OTHER} />);
+      land();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(undo.announce).not.toHaveBeenCalled();
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(convex.mutations.get('waterBodies:setReferenceLinks')).toHaveBeenCalledTimes(1);
+    });
   });
 });

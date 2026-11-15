@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => ({
   announce: vi.fn(async () => {}),
   /** The server's own effect of a write on the reads, applied when the write is called. */
   server: null as ((name: string, args: Record<string, unknown>) => void) | null,
+  /** A write held on its way until the test lets it land. */
+  hold: null as Promise<void> | null,
 }));
 
 vi.mock('convex/react', async () => {
@@ -31,6 +33,7 @@ vi.mock('convex/react', async () => {
       ),
     useMutation: (ref: Parameters<typeof getFunctionName>[0]) => async (args: unknown) => {
       mocks.calls.push([getFunctionName(ref), args]);
+      if (mocks.hold !== null) await mocks.hold;
       mocks.server?.(getFunctionName(ref), args as Record<string, unknown>);
     },
   };
@@ -43,7 +46,7 @@ vi.mock('../../../shell/undo', () => ({ useUndo: () => ({ announce: mocks.announ
 import { api } from '@skating/convex/api';
 import { getFunctionName } from 'convex/server';
 import { resetConsoleReads } from '@/components/admin/reads/consoleReads';
-
+import { BodyTabHost } from '../../frame/BodyConsoleRoute';
 import { stubJsdomAnimations } from '../jsdomStubs';
 import { AccessTab } from './AccessTab';
 
@@ -61,6 +64,7 @@ beforeEach(() => {
   mocks.roleLoading = false;
   mocks.announce.mockClear();
   mocks.server = null;
+  mocks.hold = null;
   const set = (ref: Parameters<typeof getFunctionName>[0], value: unknown) =>
     mocks.results.set(getFunctionName(ref), value);
   set(api.waterBodies.get, {
@@ -376,6 +380,50 @@ describe('AccessTab', () => {
       render(<AccessTab bodyId="wb1" />);
       await userEvent.click(screen.getByRole('button', { name: 'Make official' }));
       expect(mocks.calls).toEqual([]);
+    });
+  });
+
+  describe('a switch to another body that is already read', () => {
+    const toOther = () => {
+      const prior = mocks.results.get(getFunctionName(api.waterBodies.get)) as {
+        body: Record<string, unknown>;
+      };
+      mocks.results.set(getFunctionName(api.waterBodies.get), {
+        available: true,
+        body: { ...prior.body, _id: 'wb2', name: 'Crystal Lake' },
+      });
+    };
+
+    it('drops every open dialog and its typed reason; nothing typed for one body is sent for the other', async () => {
+      const { rerender } = render(<BodyTabHost Wiring={AccessTab} bodyId="wb1" />);
+      await userEvent.click(screen.getByRole('button', { name: 'Hide' }));
+      const dialog = await screen.findByRole('alertdialog');
+      await userEvent.type(within(dialog).getByRole('textbox'), 'A private dock');
+      toOther();
+      rerender(<BodyTabHost Wiring={AccessTab} bodyId="wb2" />);
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+      expect(screen.queryByDisplayValue('A private dock')).toBeNull();
+      // The ruling's reason dialog, opened on the next body, starts clean.
+      await userEvent.click(screen.getByRole('button', { name: 'Rule no public access' }));
+      expect(within(await screen.findByRole('alertdialog')).getByRole('textbox')).toHaveValue('');
+      expect(mocks.calls).toEqual([]);
+    });
+
+    it('a ruling started on one body that lands after the switch puts up no receipt over the next', async () => {
+      let land: () => void = () => {};
+      mocks.hold = new Promise<void>((r) => {
+        land = r;
+      });
+      const { rerender } = render(<BodyTabHost Wiring={AccessTab} bodyId="wb1" />);
+      await userEvent.click(screen.getByRole('button', { name: 'Clear the ruling' }));
+      toOther();
+      rerender(<BodyTabHost Wiring={AccessTab} bodyId="wb2" />);
+      land();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(mocks.announce).not.toHaveBeenCalled();
+      expect(mocks.calls).toEqual([
+        ['waterBodies:setPublicAccess', { waterBodyId: 'wb1', verdict: null }],
+      ]);
     });
   });
 });

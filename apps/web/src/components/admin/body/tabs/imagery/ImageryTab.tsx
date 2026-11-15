@@ -4,7 +4,6 @@ import { bandsIn, copernicusUrl, linkCoordinate, type SatelliteImageryMode } fro
 import { useMutation } from 'convex/react';
 import { useEffect, useMemo, useState } from 'react';
 
-import { errorText } from '@/components/admin/adminUi';
 import {
   isFailed,
   read,
@@ -17,6 +16,7 @@ import { UNAVAILABLE } from '@/components/kit/unavailable-button';
 import { useFreezeUpTimeline } from '@/components/useFreezeUpTimeline';
 import { env } from '@/lib/env';
 import { useRole } from '@/lib/useRole';
+import { sendFor, useBodyBound } from '../../frame/currentBody';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { LoadingSection, TabBody, useTickingNow } from '../tabParts';
 import { ImageryDockView } from './ImageryDockView';
@@ -122,6 +122,7 @@ function ImageryReads(props: BodyTabProps) {
   const setMode = useMutation(api.waterBodies.setSatelliteImagery);
   const { can } = useRole();
   const { announce } = useUndo();
+  const here = useBodyBound(props.bodyId);
   // Copernicus' window is the last 14 days from now: moved on daily.
   const now = useTickingNow(86_400_000);
 
@@ -165,17 +166,16 @@ function ImageryReads(props: BodyTabProps) {
       }}
       {...(can('body.water')
         ? {
-            onSatelliteChange: async (mode: SatelliteImageryMode) => {
-              try {
-                await setMode({ waterBodyId, mode });
-              } catch (err) {
-                throw new Error(errorText(err));
-              }
-              await announce({
-                title: 'Satellite link set',
-                target: { targetType: 'waterbody', targetId: waterBodyId },
-              });
-            },
+            onSatelliteChange: (mode: SatelliteImageryMode) =>
+              sendFor(
+                here,
+                () => setMode({ waterBodyId, mode }),
+                () =>
+                  announce({
+                    title: 'Satellite link set',
+                    target: { targetType: 'waterbody', targetId: waterBodyId },
+                  }),
+              ),
           }
         : {})}
     />

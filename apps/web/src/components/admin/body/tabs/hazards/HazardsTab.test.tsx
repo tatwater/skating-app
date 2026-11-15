@@ -40,6 +40,7 @@ vi.mock('@tanstack/react-router', () => ({ useNavigate: () => nav.navigate }));
 import { seasonOf } from '@skating/core';
 import { ConvexError } from 'convex/values';
 import { resetConsoleReads } from '@/components/admin/reads/consoleReads';
+import { BodyTabHost } from '../../frame/BodyConsoleRoute';
 import { HAZARDS_TAB, HazardsTab } from './HazardsTab';
 import { dailyFrom, FEB_ARCHIVED, FEB_HAZARDS, MASCOMA_FEATURES } from './hazardsFixtures';
 import { axisIndex, dailyClock, winterWindow } from './hazardsModel';
@@ -389,5 +390,51 @@ describe('HazardsTab', () => {
     convex.results.set('bodyFeatures:listForBody', new Error('boom'));
     rerender(<Probe />);
     expect(seen.at(-1)).toBeUndefined();
+  });
+
+  describe('a switch to another body that is already read', () => {
+    const OTHER = 'k2';
+    const toOther = () =>
+      convex.results.set('waterBodies:get', {
+        available: true,
+        body: { _id: OTHER, name: 'Crystal Lake' },
+      });
+
+    it('drops the open demotion and its typed reason; nothing is demoted for the next body', async () => {
+      const { rerender } = render(<BodyTabHost Wiring={HazardsTab} bodyId={BODY} />);
+      await userEvent.click(screen.getAllByRole('button', { name: 'Demote' })[0] as HTMLElement);
+      const dialog = await screen.findByRole('alertdialog');
+      await userEvent.type(within(dialog).getByRole('textbox'), 'Not a spring');
+      toOther();
+      rerender(<BodyTabHost Wiring={HazardsTab} bodyId={OTHER} />);
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+      expect(screen.queryByDisplayValue('Not a spring')).toBeNull();
+      expect(convex.mutations.get('bodyFeatures:demote')).not.toHaveBeenCalled();
+    });
+
+    it('a demotion started on one body that lands after the switch puts up no receipt over the next', async () => {
+      let land: () => void = () => {};
+      convex.mutations.set(
+        'bodyFeatures:demote',
+        vi.fn(
+          () =>
+            new Promise((resolve) => {
+              land = () => resolve(null);
+            }),
+        ),
+      );
+      const { rerender } = render(<BodyTabHost Wiring={HazardsTab} bodyId={BODY} />);
+      await userEvent.click(screen.getAllByRole('button', { name: 'Demote' })[0] as HTMLElement);
+      const dialog = await screen.findByRole('alertdialog');
+      await userEvent.type(within(dialog).getByRole('textbox'), 'Not a spring');
+      await userEvent.click(within(dialog).getByRole('button', { name: /Demote/ }));
+      await userEvent.click(within(dialog).getByRole('button', { name: /again/ }));
+      toOther();
+      rerender(<BodyTabHost Wiring={HazardsTab} bodyId={OTHER} />);
+      land();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(undo.announce).not.toHaveBeenCalled();
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+    });
   });
 });

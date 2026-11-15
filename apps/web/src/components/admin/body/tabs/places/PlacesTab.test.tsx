@@ -55,7 +55,7 @@ vi.mock('@/components/kit/toast', async (original) => ({
 import { api } from '@skating/convex/api';
 import { getFunctionName } from 'convex/server';
 import { resetConsoleReads } from '@/components/admin/reads/consoleReads';
-
+import { BodyTabHost } from '../../frame/BodyConsoleRoute';
 import { stubJsdomAnimations } from '../jsdomStubs';
 import { PlacesTab } from './PlacesTab';
 
@@ -540,6 +540,50 @@ describe('PlacesTab', () => {
       rerender(<PlacesTab bodyId="wb1" lit="landmark:lm-dam" />);
       await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), '{Enter}');
       expect(mocks.calls).toHaveLength(1);
+    });
+  });
+
+  describe('a switch to another body that is already read', () => {
+    it('drops the card’s typed name and an open decline with its note; nothing is sent for the other body', async () => {
+      const { rerender } = render(
+        <BodyTabHost Wiring={PlacesTab} bodyId="wb1" lit="landmark:lm-dam" />,
+      );
+      const name = screen.getByRole('textbox', { name: 'Name' });
+      await userEvent.clear(name);
+      await userEvent.type(name, 'Mascoma Dam');
+      rerender(<BodyTabHost Wiring={PlacesTab} bodyId="wb2" lit={null} />);
+      expect(screen.queryByDisplayValue('Mascoma Dam')).toBeNull();
+      // The decline's note, typed on one body, never reaches the next.
+      rerender(<BodyTabHost Wiring={PlacesTab} bodyId="wb1" lit={null} />);
+      await userEvent.click(screen.getByRole('button', { name: 'Decline' }));
+      await userEvent.type(
+        within(await screen.findByRole('alertdialog')).getByRole('textbox'),
+        'Already on the map',
+      );
+      rerender(<BodyTabHost Wiring={PlacesTab} bodyId="wb2" lit={null} />);
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+      expect(screen.queryByDisplayValue('Already on the map')).toBeNull();
+      expect(mocks.calls).toEqual([]);
+    });
+
+    it('a decline started on one body that lands after the switch puts up no receipt over the next', async () => {
+      let land = () => {};
+      mocks.gate = new Promise<void>((resolve) => {
+        land = resolve;
+      });
+      const { rerender } = render(<BodyTabHost Wiring={PlacesTab} bodyId="wb1" />);
+      await userEvent.click(screen.getByRole('button', { name: 'Decline' }));
+      const dialog = await screen.findByRole('alertdialog');
+      await userEvent.type(within(dialog).getByRole('textbox'), 'Already on the map');
+      await userEvent.click(within(dialog).getByRole('button', { name: /^Decline/ }));
+      rerender(<BodyTabHost Wiring={PlacesTab} bodyId="wb2" />);
+      land();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(mocks.announce).not.toHaveBeenCalled();
+      expect(toasts).toEqual([]);
+      expect(mocks.calls).toEqual([
+        ['corpusRequests:decline', { requestId: 'rq1', note: 'Already on the map' }],
+      ]);
     });
   });
 });

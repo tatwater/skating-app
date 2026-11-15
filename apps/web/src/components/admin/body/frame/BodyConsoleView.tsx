@@ -109,6 +109,9 @@ export function BodyConsoleView({
       )}
     >
       <BodyLeftColumn
+        // A body's own: the boost under the hand, the asks' cursor, History's place — none of it
+        // carries to the next body.
+        key={bodyKey}
         {...left}
         onOpenAsk={(ask) => {
           onOpenAsk(ask);

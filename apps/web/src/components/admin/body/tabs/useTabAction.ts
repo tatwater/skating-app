@@ -4,6 +4,7 @@ import { toast } from '@/components/kit/toast';
 
 import { errorText } from '../../adminUi';
 import { type Receipt, useUndo } from '../../shell/undo';
+import { useBodyBound } from '../frame/currentBody';
 
 /**
  * How the Body console's tabs run a write: the mutation, then the receipt toast with Undo while the
@@ -14,18 +15,23 @@ import { type Receipt, useUndo } from '../../shell/undo';
  * - **`actInDialog`**, from a reason dialog: a refusal comes back as the server's words for the
  *   dialog to show over the kept reason (`null` when it landed), so nothing is typed twice.
  */
-export function useTabAction(): {
+export function useTabAction(bodyId: string): {
   act: (write: () => Promise<unknown>, receipt: Receipt) => Promise<boolean>;
   actInDialog: (write: () => Promise<unknown>, receipt: Receipt) => Promise<string | null>;
 } {
   const { announce } = useUndo();
+  // The body this tab's drafts belong to (`currentBody`): nothing is sent for it once the page
+  // has moved to another body, and a receipt landing after the move is dropped.
+  const here = useBodyBound(bodyId);
   const actInDialog = useCallback(
     async (write: () => Promise<unknown>, receipt: Receipt): Promise<string | null> => {
+      if (!here()) return null;
       try {
         await write();
       } catch (err) {
-        return errorText(err);
+        return here() ? errorText(err) : null;
       }
+      if (!here()) return null;
       try {
         await announce(receipt);
       } catch {
@@ -34,7 +40,7 @@ export function useTabAction(): {
       }
       return null;
     },
-    [announce],
+    [announce, here],
   );
   const act = useCallback(
     async (write: () => Promise<unknown>, receipt: Receipt): Promise<boolean> => {
