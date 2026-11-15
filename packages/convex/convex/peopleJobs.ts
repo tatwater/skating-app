@@ -43,7 +43,14 @@ import {
   takeLease,
 } from './lib/peopleRuns';
 import { DOC_MAX, errorClassOf, ReadBudget, ROW_MAX, traced } from './lib/readBudget';
-import { clearFailure, forgetGoneMirrors, mirrorFailure } from './lib/recurringWork';
+import {
+  clearFailure,
+  type Position as LapPosition,
+  lapOf,
+  mirrorFailure,
+  positionOf,
+  saveLap,
+} from './lib/recurringWork';
 import { STAMP_WORK, stampTenure } from './lib/staffTenure';
 
 const DAY = 86_400_000;
@@ -170,8 +177,67 @@ async function nextDue(
   );
 }
 
-/** Mirrored lapse failures the daily retry re-checks at its end, at most. */
-const MIRRORS_CHECKED = 20;
+/** Mirrored lapse failures the daily retry re-checks at its end, at most a run. */
+export const MIRRORS_CHECKED = 20;
+
+/**
+ * One page of the parked-lapse mirrors, from where the last run stopped (`jobPositions`, the
+ * orphan-photo walk's lap): each is kept while its profile still holds the sweep's attempt state, and
+ * forgotten otherwise; a short page finishes the lap, and the next run starts at the head. In mirror
+ * order (`by_job_last_failed`), ties on the time broken by creation, so no row is passed twice or not
+ * at all. Every profile read is charged as it really weighs; past the budget the page stops where it
+ * is, and a row left unread is kept, never judged gone.
+ */
+async function lapLapseMirrors(ctx: MutationCtx, reads: ReadBudget, now: number): Promise<void> {
+  reads.reserve('small', 1);
+  const lap = await lapOf(ctx, 'lapseMirrors');
+  const at = positionOf(lap);
+  const mirrors: Doc<'jobFailures'>[] = [];
+  if (at !== undefined) {
+    const ties = await reads.take('small', MIRRORS_CHECKED, (n) =>
+      ctx.db
+        .query('jobFailures')
+        .withIndex('by_job_last_failed', (q) =>
+          q.eq('job', 'lapses').eq('lastFailedAt', at.value).gt('_creationTime', at.creationTime),
+        )
+        .take(n),
+    );
+    mirrors.push(...ties);
+  }
+  const rest = MIRRORS_CHECKED - mirrors.length;
+  if (rest > 0) {
+    const later = await reads.take('small', rest, (n) =>
+      ctx.db
+        .query('jobFailures')
+        .withIndex('by_job_last_failed', (q) =>
+          q.eq('job', 'lapses').gt('lastFailedAt', at?.value ?? Number.NEGATIVE_INFINITY),
+        )
+        .take(n),
+    );
+    mirrors.push(...later);
+  }
+  let last: LapPosition | undefined;
+  let stopped = false;
+  for (const mirror of mirrors) {
+    const id = ctx.db.normalizeId('profiles', mirror.key);
+    const profile = id === null ? null : await reads.measured('profile', () => ctx.db.get(id));
+    // Past the budget: stop here, this mirror unjudged; the next run picks up at it.
+    if (profile === undefined) {
+      stopped = true;
+      break;
+    }
+    const parked =
+      profile !== null && profile.status === 'suspended' && profile.lapseAttempts !== undefined;
+    if (!parked) {
+      reads.touch('small');
+      await ctx.db.delete(mirror._id);
+    }
+    last = { value: mirror.lastFailedAt, creationTime: mirror._creationTime };
+  }
+  const finished = !stopped && mirrors.length < MIRRORS_CHECKED;
+  reads.touch('small');
+  await saveLap(ctx, 'lapseMirrors', lap, finished ? undefined : (last ?? at), now);
+}
 
 /** A walk's position as the run's recorded cursor (for the record only; passes carry `after`). */
 function positionKey(after: Position | undefined): string | null {
@@ -402,15 +468,9 @@ export const retryLapsedDaily = internalMutation({
       } else {
         await endRun(ctx, lease, lease.failed + failed);
         // Mirrors whose lapse went another way — the account erased, or its status changed by a
-        // writer outside this module — are forgotten a few a day, only while the pass can afford it.
-        await forgetGoneMirrors(ctx, 'lapses', MIRRORS_CHECKED, async (key) => {
-          const id = ctx.db.normalizeId('profiles', key);
-          if (id === null) return false;
-          const p = await reads.measured('profile', () => ctx.db.get(id));
-          // Past the budget, kept: unread is not gone.
-          if (p === undefined) return true;
-          return p !== null && p.status === 'suspended' && p.lapseAttempts !== undefined;
-        });
+        // writer outside this module — are forgotten a page a day, lapping the mirrors from a saved
+        // place, so the ones it keeps never hold a stale one behind them.
+        await lapLapseMirrors(ctx, reads, now);
       }
       return { reset, failed, skipped, more };
     }),

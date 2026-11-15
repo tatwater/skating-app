@@ -726,5 +726,8 @@ export const LAPPING_JOBS = [
   'finalizeDeletions',
   'redactGhosts',
   'expiredExports',
+  // The daily check of the parked-lapse mirrors (B01-4b): it laps the mirrors, so ones it keeps
+  // never hold a stale one behind them.
+  'lapseMirrors',
 ] as const;
 export type LappingJob = (typeof LAPPING_JOBS)[number];
