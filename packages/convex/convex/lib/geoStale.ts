@@ -7,7 +7,10 @@
  * - `syncWaterBodyCells` — **the choke point**: a body's creation, a box that moved, a listing that
  *   changed (approve, reject, merge, delete) all re-cell the body, and a changed cell set, or a body
  *   with no facts row yet, marks it here;
- * - `importCanonical` — an outline that moved inside the same box (`footprintMoved`);
+ * - `importCanonical` — an outline that moved inside the same box (`footprintMoved`), or a moved
+ *   interior point (`placePointMoved`);
+ * - `noteAdminAreasChanged` — the places layer: `adminAreas.importCanonical` when a boundary is new
+ *   or changed, and the two boundary deletes;
  * - `bodyGeo.store` — the bodies whose relation to a recomputed body moved, and every body that holds
  *   a copy of an outline whose stamp changed (`bodyGeoLinks`);
  * - the drift repair (`bodyGeo.repairDrift`, `bodyGeo.repairMissing`) — whatever the rest missed.

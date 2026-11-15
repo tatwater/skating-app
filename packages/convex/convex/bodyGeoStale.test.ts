@@ -162,6 +162,65 @@ describe('every creation path marks a body’s facts', () => {
     await drain(t);
     expect((await facts(t, body?._id as Id<'waterBodies'>))?.computedAt).toBe(NOW);
   });
+
+  test('a re-import that moves only the interior point marks the body; an unchanged one does not', async () => {
+    const t = harness();
+    const record = {
+      source: 'osm' as const,
+      externalId: 'way/1',
+      osmId: 'way/1',
+      name: 'Imported',
+      type: 'lakePond' as const,
+      polygon: square(-72, 44),
+      bbox: boxAt(-72, 44),
+      centroid: { lat: 44, lng: -72 },
+      surfaceAreaSqM: 1_000_000,
+    };
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [record] });
+    await drain(t);
+    const id = (await t.run((ctx) => ctx.db.query('waterBodies').collect()))[0]?._id;
+    // The same record again: nothing a body's facts read moved.
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [record] });
+    expect((await facts(t, id as Id<'waterBodies'>))?.staleAt).toBeUndefined();
+    // Only the interior point: the first town and the county are read there.
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...record, interiorPoint: { lat: 44.005, lng: -72.005 } }],
+    });
+    expect((await facts(t, id as Id<'waterBodies'>))?.staleAt).toEqual(expect.any(Number));
+  });
+});
+
+describe('the places layer', () => {
+  const area = (name: string) => ({
+    externalId: 'relation/town',
+    name,
+    level: 'town' as const,
+    state: 'VT',
+    polygon: square(-72, 44),
+    bbox: boxAt(-72, 44),
+    centroid: { lat: 44, lng: -72 },
+  });
+  const marks = (t: T) =>
+    t.run(async (ctx) => (await ctx.db.query('geoInputMarks').collect()).length);
+
+  test('an insert, a change and a delete each mark it; an unchanged re-import does not', async () => {
+    const t = harness();
+    await t.mutation(internal.adminAreas.importCanonical, { areas: [area('Town')] });
+    expect(await marks(t)).toBe(1);
+    await t.mutation(internal.adminAreas.importCanonical, { areas: [area('Town')] });
+    expect(await marks(t)).toBe(1);
+    await t.mutation(internal.adminAreas.importCanonical, { areas: [area('Renamed')] });
+    expect(await marks(t)).toBe(2);
+    await t.mutation(internal.adminAreas.deleteByExternalIds, { externalIds: ['relation/town'] });
+    expect(await marks(t)).toBe(3);
+    await t.mutation(internal.adminAreas.importCanonical, { areas: [area('Town')] });
+    expect(await marks(t)).toBe(4);
+    // Retiring the OSM-sourced rows is a delete too; a dry run writes nothing.
+    await t.mutation(internal.adminAreas.retireOsmSourcedAreas, {});
+    expect(await marks(t)).toBe(4);
+    await t.mutation(internal.adminAreas.retireOsmSourcedAreas, { apply: true });
+    expect(await marks(t)).toBe(5);
+  });
 });
 
 describe('a neighbor’s outline', () => {
@@ -178,6 +237,28 @@ describe('a neighbor’s outline', () => {
     const now = await t.run((ctx) => ctx.db.get(a));
     expect(held?.stamp).toBe(outlineStamp(now as never));
     expect(held?.ring).toEqual(simplifiedRing(now?.polygon as Polygon));
+  });
+
+  test('a reshape at the same vertex count inside the same box still reaches the holders', async () => {
+    const t = harness();
+    const a = await seedBody(t, 'A', -72);
+    await seedBody(t, 'B', -72 + 2 * R);
+    await redraw(t, a, 4);
+    await drain(t);
+    expect(await heldCopiesAreCurrent(t)).toBe(true);
+    // One mid-edge point of A's west side pulled in: same count, same box, a different shoreline.
+    await t.run(async (ctx) => {
+      const body = await ctx.db.get(a);
+      if (!body) throw new Error('no body');
+      const ring = (body.polygon as Polygon).coordinates[0] as number[][];
+      const nudged = ring.map((p, i) =>
+        i === 14 ? [(p[0] as number) + R / 2, p[1] as number] : p,
+      );
+      await ctx.db.patch(a, { polygon: { type: 'Polygon', coordinates: [nudged] } });
+      await markGeoStale(ctx, [a]);
+    });
+    await drain(t);
+    expect(await heldCopiesAreCurrent(t)).toBe(true);
   });
 
   test('an outline held by more bodies than the inline bound is fanned out by a chained job', async () => {
@@ -276,5 +357,47 @@ describe('the drift repair', () => {
       isDone: true,
     });
     expect((await facts(t, c))?.staleAt).toEqual(expect.any(Number));
+  });
+
+  test('a row computed before the links and marks existed is found and recomputed', async () => {
+    const t = harness();
+    const a = await seedBody(t, 'A', -72);
+    await drain(t);
+    // As an earlier build left it: computed, never checked, no links.
+    await t.run(async (ctx) => {
+      const row = await ctx.db
+        .query('bodyGeoFacts')
+        .withIndex('by_body', (q) => q.eq('waterBodyId', a))
+        .first();
+      if (row) await ctx.db.patch(row._id, { checkedAt: undefined, areasAt: undefined });
+    });
+    vi.setSystemTime(NOW + 1_000);
+    expect(await t.mutation(internal.bodyGeo.repairDrift, {})).toMatchObject({ marked: 1 });
+    expect((await facts(t, a))?.staleAt).toBe(NOW + 1_000);
+    await drain(t);
+    expect((await facts(t, a))?.checkedAt).toBe(NOW + 1_000);
+  });
+
+  test('a held copy of a parked neighbor is judged against that neighbor’s outline', async () => {
+    const t = harness();
+    const a = await seedBody(t, 'A', -72);
+    const b = await seedBody(t, 'B', -72 + 2 * R);
+    await drain(t);
+    // A is parked (its answer never lands, so it never fans out), and its outline moves.
+    await t.run(async (ctx) => {
+      const row = await ctx.db
+        .query('bodyGeoFacts')
+        .withIndex('by_body', (q) => q.eq('waterBodyId', a))
+        .first();
+      if (row) await ctx.db.patch(row._id, { staleAt: NOW, parkedAt: NOW, attempts: 3 });
+    });
+    await redraw(t, a, 9, false);
+    vi.setSystemTime(NOW + 1_000);
+    expect(await t.mutation(internal.bodyGeo.repairDrift, {})).toMatchObject({ marked: 1 });
+    expect((await facts(t, b))?.staleAt).toBe(NOW + 1_000);
+    await drain(t);
+    const held = (await facts(t, b))?.neighbors?.[0];
+    const now = await t.run((ctx) => ctx.db.get(a));
+    expect(held?.stamp).toBe(outlineStamp(now as never));
   });
 });

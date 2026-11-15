@@ -629,10 +629,10 @@ export const repairDrift = internalMutation({
   handler: async (ctx) => {
     const now = Date.now();
     const areasAt = await latestAreasMark(ctx);
-    const rows = await ctx.db
-      .query('bodyGeoFacts')
-      .withIndex('by_checked', (q) => q.gt('checkedAt', 0))
-      .take(DRIFT_BATCH);
+    // The whole index, deliberately with no lower bound: a row never checked (`checkedAt` absent
+    // sorts first) is either owed its first computation (skipped below, then stamped) or was computed
+    // before the links and marks existed — behind by construction (`isBehind`).
+    const rows = await ctx.db.query('bodyGeoFacts').withIndex('by_checked').take(DRIFT_BATCH);
     let checked = 0;
     let marked = 0;
     for (const row of rows) {
@@ -655,6 +655,8 @@ async function isBehind(
   row: Doc<'bodyGeoFacts'>,
   areasAt: number,
 ): Promise<boolean> {
+  // Computed before every store stamped `checkedAt`: no links, no held stamps, no places mark.
+  if (row.checkedAt === undefined) return true;
   const body = await ctx.db.get(row.waterBodyId);
   if (!body || body.dedupStatus === 'merged') return true;
   if (outlineStamp(body) !== row.stamp) return true;
@@ -668,9 +670,18 @@ async function isBehind(
       .query('bodyGeoFacts')
       .withIndex('by_body', (q) => q.eq('waterBodyId', link.neighborId))
       .first();
+    if (held === null) return true;
+    if (held.parkedAt !== undefined) {
+      // A parked neighbor never lands an answer, so it never fans out: judge the held copy against
+      // its outline as it stands — when the read budget still has room for one more outline.
+      const m = await ctx.meta.getTransactionMetrics();
+      if (m.bytesRead.remaining < DRIFT_BYTES_RESERVE) continue;
+      const neighbor = await ctx.db.get(link.neighborId);
+      if (!neighbor || outlineStamp(neighbor) !== link.neighborStamp) return true;
+      continue;
+    }
     // The neighbor's own answer says which outline it is now; one still owed a recompute is judged
     // when it lands (its store fans out if its stamp moved).
-    if (held === null) return true;
     if (
       held.staleAt === undefined &&
       held.stamp !== undefined &&

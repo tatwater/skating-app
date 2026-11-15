@@ -40,6 +40,9 @@ export const importCanonical = internalMutation({
   handler: async (ctx, { areas }) => {
     let inserted = 0;
     let updated = 0;
+    // Whether anything a body's places are read from moved — a re-run on unchanged data must not
+    // send every body's facts back for a recompute (B01-3b).
+    let placesMoved = false;
     for (const item of areas) {
       const existing = await ctx.db
         .query('adminAreas')
@@ -48,6 +51,7 @@ export const importCanonical = internalMutation({
 
       let id: Id<'adminAreas'>;
       if (existing) {
+        if (!placesMoved && areaPlacesMoved(existing, item)) placesMoved = true;
         await ctx.db.patch(existing._id, {
           name: item.name,
           level: item.level,
@@ -78,10 +82,25 @@ export const importCanonical = internalMutation({
       await syncAdminAreaCells(ctx, id, { bbox: item.bbox, level: item.level });
     }
     // The places layer moved: facts computed before this are behind (B01-3b, the drift repair).
-    if (inserted + updated > 0) await noteAdminAreasChanged(ctx);
+    if (inserted > 0 || placesMoved) await noteAdminAreasChanged(ctx);
     return { inserted, updated };
   },
 });
+
+/** Whether a re-imported boundary differs in anything `bodyGeo.placesFrom` reads. */
+function areaPlacesMoved(
+  existing: Pick<Doc<'adminAreas'>, 'name' | 'level' | 'state' | 'bbox' | 'polygon'>,
+  item: Pick<Doc<'adminAreas'>, 'name' | 'level' | 'state' | 'bbox' | 'polygon'>,
+): boolean {
+  if (existing.name !== item.name || existing.level !== item.level) return true;
+  if (existing.state !== item.state) return true;
+  const a = existing.bbox;
+  const b = item.bbox;
+  if (a.minLat !== b.minLat || a.minLng !== b.minLng) return true;
+  if (a.maxLat !== b.maxLat || a.maxLng !== b.maxLng) return true;
+  if (existing.polygon.type !== item.polygon.type) return true;
+  return JSON.stringify(existing.polygon.coordinates) !== JSON.stringify(item.polygon.coordinates);
+}
 
 /** A degenerate (zero-area) bbox at a point — lets `bboxIntersects` do a cheap point-in-bbox test. */
 function pointBBox(point: { lat: number; lng: number }) {
@@ -340,6 +359,8 @@ export const deleteByExternalIds = internalMutation({
       await ctx.db.delete(row._id);
       deleted++;
     }
+    // A boundary gone is the places layer moved: facts computed before this are behind (B01-3b).
+    if (deleted > 0) await noteAdminAreasChanged(ctx);
     return { deleted, cellsDeleted, missing };
   },
 });
@@ -403,6 +424,8 @@ export const retireOsmSourcedAreas = internalMutation({
       await ctx.db.delete(row._id);
       deleted++;
     }
+    // A boundary gone is the places layer moved: facts computed before this are behind (B01-3b).
+    if (deleted > 0) await noteAdminAreasChanged(ctx);
     return {
       scanned: page.page.length,
       wouldDelete,

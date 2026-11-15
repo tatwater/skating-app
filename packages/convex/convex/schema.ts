@@ -4806,7 +4806,7 @@ export default defineSchema({
     checkedAt: v.optional(v.number()),
   })
     .index('by_body', ['waterBodyId'])
-    // The drift repair: the rows checked longest ago (`gt(0)`; every store sets it).
+    // The drift repair: the rows checked longest ago — never-checked rows (absent) first, on purpose.
     .index('by_checked', ['checkedAt'])
     // The work: unparked bodies owed a recompute, oldest first (`eq(undefined)` then `gt(0)`).
     .index('by_parked_stale', ['parkedAt', 'staleAt'])

@@ -62,10 +62,38 @@ export function vertexCount(geom: Geom): number {
   return polys.reduce((n, p) => n + p.reduce((m, r) => m + r.length, 0), 0);
 }
 
-/** What an outline's facts were computed for: its size and its box. Moves when the outline does. */
+/** One scratch view for {@link coordinateHash}: a double's two 32-bit words. */
+const HASH_VIEW = new DataView(new ArrayBuffer(8));
+
+/**
+ * A 32-bit FNV-1a hash over every coordinate of an outline, ring boundaries included — so a
+ * shoreline redrawn at the same vertex count inside the same box still moves the stamp.
+ */
+function coordinateHash(coordinates: unknown): string {
+  let h = 0x811c9dc5;
+  const visit = (v: unknown) => {
+    if (Array.isArray(v)) {
+      h = Math.imul(h ^ (0x9e3779b9 + v.length), 0x01000193);
+      for (const x of v) visit(x);
+    } else if (typeof v === 'number') {
+      HASH_VIEW.setFloat64(0, v);
+      h = Math.imul(h ^ HASH_VIEW.getUint32(0), 0x01000193);
+      h = Math.imul(h ^ HASH_VIEW.getUint32(4), 0x01000193);
+    }
+  };
+  visit(coordinates);
+  return (h >>> 0).toString(36);
+}
+
+/**
+ * What an outline's facts were computed for: its size, its box and a hash of its coordinates. Moves
+ * when the outline does — a reshape at the same vertex count inside the same box included, which a
+ * size-and-box stamp alone missed (the holders of its outline were never fanned out to).
+ */
 export function outlineStamp(body: Pick<Doc<'waterBodies'>, 'polygon' | 'bbox'>): string {
   const b = body.bbox;
-  return `${vertexCount(body.polygon as unknown as Geom)}:${b.minLng},${b.minLat},${b.maxLng},${b.maxLat}`;
+  const geom = body.polygon as unknown as Geom;
+  return `${vertexCount(geom)}:${b.minLng},${b.minLat},${b.maxLng},${b.maxLat}:${coordinateHash(geom.coordinates)}`;
 }
 
 /** {@link TOUCH_SAMPLES} points across a whole outline, every outer ring in one sequence. */

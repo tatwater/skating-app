@@ -156,6 +156,12 @@ describe('pure helpers', () => {
     const a = { polygon: ellipse(0, 0, 1, 1, 10), bbox: boxOf(0, 0, 1, 1) };
     expect(outlineStamp(a)).toBe(outlineStamp({ ...a }));
     expect(outlineStamp(a)).not.toBe(outlineStamp({ ...a, polygon: ellipse(0, 0, 1, 1, 11) }));
+    // A reshape at the same vertex count inside the same box moves it too.
+    const ring = a.polygon.coordinates[0] as number[][];
+    const nudged = ring.map((p, i) => (i === 3 ? [(p[0] as number) * 0.9, p[1] as number] : p));
+    expect(outlineStamp(a)).not.toBe(
+      outlineStamp({ ...a, polygon: { type: 'Polygon', coordinates: [nudged] } }),
+    );
   });
   test('a candidate too large to test whole is tested by its samples only', () => {
     const lake = ellipse(0, 0, 0.01, 0.01, 64);

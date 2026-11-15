@@ -444,6 +444,21 @@ export function footprintMoved(
   return vertexCount(existing.polygon) !== vertexCount(next.polygon);
 }
 
+/**
+ * Whether a re-import moves the point a body's places are first read at (`placeSamplePoints`: the
+ * interior point, else the representative point, else the centroid) — its first town and its county
+ * come from there, so its geometry facts are behind even when the outline is unchanged (B01-3b).
+ */
+export function placePointMoved(
+  existing: Pick<Doc<'waterBodies'>, 'interiorPoint' | 'representativePoint' | 'centroid'>,
+  next: { interiorPoint?: LatLng; centroid: LatLng },
+): boolean {
+  const a = existing.interiorPoint ?? existing.representativePoint ?? existing.centroid;
+  // The patch writes `representativePoint` and `centroid` from the record's centroid.
+  const b = next.interiorPoint ?? next.centroid;
+  return a.lat !== b.lat || a.lng !== b.lng;
+}
+
 /** Total positions across every ring — a shape fingerprint that costs no geometry math. */
 function vertexCount(geometry: unknown): number {
   const g = geometry as { type?: string; coordinates?: unknown[] };
@@ -686,9 +701,13 @@ export const importCanonical = internalMutation({
         // expensive one — worse with every bay drawn. The check is `footprintMoved`: identical bbox
         // and identical geodesic area means OSM handed us the same shoreline, and a containment
         // answer that was true a moment ago is still true.
-        if (footprintMoved(existing, item)) {
-          // Its touching bodies and places were computed for the old outline (B01-3b).
+        const outlineMoved = footprintMoved(existing, item);
+        if (outlineMoved || placePointMoved(existing, item)) {
+          // Its touching bodies and places were computed for the old outline — or its places at the
+          // old interior point, which the same patch rewrites (`shapeFields`) (B01-3b).
           await markGeoStale(ctx, [existing._id]);
+        }
+        if (outlineMoved) {
           const resynced = await reclipSubAreasToParent(ctx, existing._id, {
             ...existing,
             polygon: item.polygon,
