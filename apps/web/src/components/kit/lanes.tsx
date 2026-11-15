@@ -21,7 +21,8 @@ import { cn } from '@/lib/utils';
  *   quiet-bright ink; an optional tail (a catalog tag, a solid status badge) and the **count** in
  *   mono at the row's end — quiet, lit (`lit`), amber or red by meaning.
  * - **On** (the selected lane): the bright ink on the lit plate, with the 2 px bar inset on its left
- *   edge. **Dim**: a lane with nothing in it, in the quiet ink — still a lane you can open.
+ *   edge; a quiet count lights with it, an amber or red one keeps its meaning. **Dim**: a lane with
+ *   nothing in it, in the quiet ink — still a lane you can open.
  * - **Keyboard**: one tab stop (the selected lane); ↑ ↓ move between lanes across groups, Home and
  *   End jump to the ends, and typing jumps to the next lane that starts with what you typed (a
  *   letter pressed again cycles through the lanes starting with it). Enter (or a click) picks the
@@ -223,7 +224,14 @@ type LaneRowProps = {
 };
 
 function LaneRow({ lane, on, tabbable, linked, render, rowRef, onFocus, onClick }: LaneRowProps) {
-  const tone = on ? 'lit' : (lane.countTone ?? 'default');
+  // A count whose ink means something (amber waits on a person, red failed) keeps it when its lane
+  // is chosen — choosing the lane answers neither (board 8.1); only the quiet count lights.
+  const tone =
+    lane.countTone === 'warn' || lane.countTone === 'bad'
+      ? lane.countTone
+      : on
+        ? 'lit'
+        : (lane.countTone ?? 'default');
   const hasCount = lane.count !== undefined && lane.count !== '';
   return useRender({
     defaultTagName: 'button',

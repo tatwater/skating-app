@@ -9,7 +9,6 @@ import { cn } from '@/lib/utils';
 
 import { countText } from '../../overview/overviewModel';
 import { ConsoleStatus } from '../../shell/ConsoleShell';
-import { LaneCount } from './kit-candidates/lane-count';
 import { SearchLane } from './kit-candidates/search-lane';
 import { PeopleList } from './PeopleList';
 import { PEOPLE_LANE_INFO } from './peopleLanes';
@@ -206,17 +205,14 @@ export function PeopleListView({
               lanes: lanes.map((l) => {
                 const count = laneCount(laneEntries?.[l]);
                 const meta = PEOPLE_LANE_INFO[l];
-                const toned =
-                  count !== null && meta.tone !== undefined && (count.count > 0 || count.capped);
                 return {
                   id: l,
                   label: meta.label,
-                  // A count whose ink means something keeps it when its lane is chosen (board 8.1),
-                  // which the kit's own count doesn't yet: it is drawn in the tail instead.
+                  ...(count !== null && { count: countText(count) }),
+                  // Amber while anyone waits — chosen or not (the kit keeps a meaning's ink).
                   ...(count !== null &&
-                    (toned && meta.tone !== undefined
-                      ? { tail: <LaneCount tone={meta.tone}>{countText(count)}</LaneCount> }
-                      : { count: countText(count) })),
+                    meta.tone !== undefined &&
+                    (count.count > 0 || count.capped) && { countTone: meta.tone }),
                   ...(count !== null && count.count === 0 && !count.capped && { dim: true }),
                 };
               }),
