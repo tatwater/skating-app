@@ -62,6 +62,7 @@ import {
 } from './_generated/server';
 import { lastUsedOn, markUsedOn } from './lib/dailyThrottle';
 import { fetchHourlyRows, openMeteoMeter } from './lib/openMeteoHourly';
+import { errorClassOf } from './lib/readBudget';
 import { composeSeasonEmail, newYorkDate, type SeasonEmail } from './lib/seasonWatchEmails';
 import {
   namedSiteLow,
@@ -440,13 +441,38 @@ export const maybeCheckSeasonOpen = internalAction({
   args: {},
   handler: async (ctx): Promise<SeasonWatchResult> => {
     const nowMs = Date.now();
+    const season = archiveSeasonAt(nowMs);
+    let result: SeasonWatchResult;
     try {
-      return await tick(ctx, nowMs);
+      result = await tick(ctx, nowMs);
+    } catch (err) {
+      // **All or nothing, by design — so it fails loudly instead of being isolated** (D258). A tick
+      // that decided on the sites that answered would shrink the sample, and a shrinking sample is how
+      // one freezing pond opens a season; so there is no item to isolate. What changes is that a
+      // failing tick is no longer silent past the logs: each failed day is counted with its class,
+      // never parked (parking would stop the watch), and Machinery shows how many days in a row and
+      // since when. The tick still throws, so Convex records it as failed.
+      await ctx.runMutation(internal.recurringJobs.settle, {
+        job: 'seasonWatch',
+        failed: [{ key: season, errorClass: errorClassOf(err) }],
+        succeeded: [],
+        park: false,
+      });
+      throw err;
     } finally {
       // Whatever is queued — including what this tick just found — goes out last, one a day (D212),
       // and even when the tick itself failed: a dead weather API must not hold back yesterday's news.
       await ctx.runMutation(internal.imageryIngest.sendNextEmail, { today: newYorkDate(nowMs) });
     }
+    // A tick that went through clears the count of days it failed (D258) — outside the `try`, so a
+    // failure to clear can never be counted as the tick having failed.
+    await ctx.runMutation(internal.recurringJobs.settle, {
+      job: 'seasonWatch',
+      failed: [],
+      succeeded: [season],
+      park: false,
+    });
+    return result;
   },
 });
 

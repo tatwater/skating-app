@@ -1,0 +1,348 @@
+/**
+ * **One failing item never blocks a recurring job** (D258) — the pieces every cron-driven job shares,
+ * so the jobs that walk a queue, lap a table or page the corpus fail the same way.
+ *
+ * - **Each item is its own nested transaction** ({@link runIsolated}), with limits of its own
+ *   ({@link ItemBudget}): an item that throws, or reads past its limits, rolls back only itself, and
+ *   the walk records it and goes on in the same run. An action that drives a walk gets the same from
+ *   one mutation per item ({@link runItem}).
+ * - **The walk asks before each item** ({@link affords}): it starts one only while the transaction
+ *   can still pay that item's whole limits and what the walk does after it, from the real metrics
+ *   (`ctx.meta.getTransactionMetrics`), and otherwise stops and continues — so a heavy item is never
+ *   starved into failing by the ones before it.
+ * - **A failure counts; progress clears; three in a row park; held is neither** — the one rule,
+ *   `lib/attempts`. Work with a row of its own keeps the state on it (the notification queue, the
+ *   recorder's activities, the map-card refreshes), because the due range has to leave a parked row
+ *   out; work without one keeps it in `jobFailures` ({@link recordFailure}, {@link clearFailure}).
+ * - **Only the class crosses** — never a message, which can carry content ({@link asItem}).
+ */
+import type { FunctionReference } from 'convex/server';
+import type { Doc } from '../_generated/dataModel';
+import type { ActionCtx, MutationCtx, QueryCtx } from '../_generated/server';
+import { type AttemptState, failedAttempt } from './attempts';
+import type { FailingJob, LappingJob } from './enums';
+import { asFailure, errorClassOf } from './readBudget';
+
+export const MiB = 1 << 20;
+
+/** The transaction limits a nested item runs under, and those its caller checks before it. */
+export interface Limits {
+  bytesRead: number;
+  documentsRead: number;
+  databaseQueries: number;
+  documentsWritten: number;
+}
+
+/**
+ * What one item may spend — its nested transaction's own `limits` — and what the walk keeps back
+ * past it (`reserve`): the read of the next item, the write that records an outcome, the walk's own
+ * bookkeeping at the end of the pass.
+ */
+export interface ItemBudget {
+  limits: Limits;
+  reserve: Limits;
+}
+
+const KEYS = ['bytesRead', 'documentsRead', 'databaseQueries', 'documentsWritten'] as const;
+
+/**
+ * Whether this transaction can still afford one more item at its whole limits, with the reserve past
+ * it — read from what the transaction has really spent so far, so a light item leaves room for many
+ * and a heavy one for few.
+ */
+export async function affords(ctx: QueryCtx, budget: ItemBudget): Promise<boolean> {
+  const m = await ctx.meta.getTransactionMetrics();
+  return KEYS.every((k) => m[k].remaining >= budget.limits[k] + budget.reserve[k]);
+}
+
+/** An isolated item's outcome: its value, or the class of what it threw. */
+export type Isolated<T> = { ok: true; value: T } | { ok: false; errorClass: string };
+
+/**
+ * Run one item as its own nested transaction under `limits`. A throw — or a read past its limits —
+ * rolls back only the item's writes (its reads still count against the caller, which {@link affords}
+ * planned for) and comes back as its class.
+ */
+export async function runIsolated<T>(
+  ctx: MutationCtx,
+  fn: FunctionReference<'mutation', 'internal'>,
+  args: Record<string, unknown>,
+  limits: Limits,
+): Promise<Isolated<T>> {
+  try {
+    // Typed by the caller (`T`): a reference into the caller's own module would otherwise make its
+    // handler's type depend on itself through `_generated/api`.
+    const value = (await ctx.runMutation(fn, args, { transactionLimits: limits })) as T;
+    return { ok: true, value };
+  } catch (err) {
+    return { ok: false, errorClass: errorClassOf(err) };
+  }
+}
+
+/** The same for a walk an action drives: one mutation per item, each its own transaction. */
+export async function runItem<T>(
+  ctx: ActionCtx,
+  fn: FunctionReference<'mutation', 'internal'>,
+  args: Record<string, unknown>,
+): Promise<Isolated<T>> {
+  try {
+    const value = (await ctx.runMutation(fn, args)) as T;
+    return { ok: true, value };
+  } catch (err) {
+    return { ok: false, errorClass: errorClassOf(err) };
+  }
+}
+
+/**
+ * An item's body: whatever it throws leaves with its class as data, since an error crossing a nested
+ * call (or a function boundary) is rebuilt without it. The throw still rolls the item back. `key`
+ * names the item — its id or key, never content — and is the one seam a test uses to make an item
+ * fail, whatever the job.
+ */
+export async function asItem<T>(key: string, work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (err) {
+    console.error(`recurring item ${key} failed`, err);
+    throw asFailure(err);
+  }
+}
+
+// ── jobFailures: the state of work with no row of its own ─────────────────────────────────────
+
+/** A job's failure row for one key, if it has one. */
+export function failureOf(
+  ctx: QueryCtx,
+  job: FailingJob,
+  key: string,
+): Promise<Doc<'jobFailures'> | null> {
+  return ctx.db
+    .query('jobFailures')
+    .withIndex('by_job_key', (q) => q.eq('job', job).eq('key', key))
+    .first();
+}
+
+/**
+ * Record one failed attempt at a job's item, by the rule (`lib/attempts`): one more in a row, its
+ * class, parked at the third — unless `park` is false, for work that must keep being tried (the
+ * season watch, whose tick is the whole job). Returns whether this failure parked it.
+ */
+export async function recordFailure(
+  ctx: MutationCtx,
+  job: FailingJob,
+  key: string,
+  errorClass: string,
+  now: number,
+  opts: { byDailyRetry?: boolean; scope?: string; park?: boolean } = {},
+): Promise<'failed' | 'parked'> {
+  const row = await failureOf(ctx, job, key);
+  const { next, parked } = failedAttempt(
+    row
+      ? {
+          attempts: row.attempts,
+          errorClass: row.errorClass,
+          parkedAt: row.parkedAt,
+          retriedAt: row.retriedAt,
+        }
+      : {},
+    errorClass,
+    now,
+    opts.byDailyRetry,
+  );
+  const neverParked = opts.park === false;
+  const fields = {
+    attempts: next.attempts ?? 1,
+    errorClass,
+    lastFailedAt: now,
+    parkedAt: neverParked ? undefined : next.parkedAt,
+    retriedAt: next.retriedAt,
+    ...(opts.scope !== undefined ? { scope: opts.scope } : {}),
+  };
+  if (row) await ctx.db.patch(row._id, fields);
+  else await ctx.db.insert('jobFailures', { job, key, firstFailedAt: now, ...fields });
+  return parked && !neverParked ? 'parked' : 'failed';
+}
+
+/**
+ * Mirror the attempt state a queue-shaped job keeps on its own row into `jobFailures` (D258), so the
+ * Machinery read counts small rows and never loads the heavy document. Written beside every change
+ * to the row's state, and cleared (`clearFailure`) wherever the row's state is cleared or the row goes.
+ */
+export async function mirrorFailure(
+  ctx: MutationCtx,
+  job: FailingJob,
+  key: string,
+  state: AttemptState,
+  now: number,
+): Promise<void> {
+  const row = await failureOf(ctx, job, key);
+  const fields = {
+    attempts: state.attempts ?? 1,
+    errorClass: state.errorClass ?? 'Error',
+    lastFailedAt: now,
+    parkedAt: state.parkedAt,
+    retriedAt: state.retriedAt,
+  };
+  if (row) await ctx.db.patch(row._id, fields);
+  else await ctx.db.insert('jobFailures', { job, key, firstFailedAt: now, ...fields });
+}
+
+/**
+ * One `stillFailing` check: a document read (at most the document limit) and a delete, with room kept
+ * past it for what the caller does after.
+ */
+const MIRROR_CHECK: ItemBudget = {
+  limits: { bytesRead: MiB, documentsRead: 4, databaseQueries: 2, documentsWritten: 1 },
+  reserve: { bytesRead: MiB, documentsRead: 100, databaseQueries: 50, documentsWritten: 50 },
+};
+
+/**
+ * Forget up to `n` of a job's mirrored failures whose work is gone or no longer failing — the ones
+ * the job's own writers never saw go (a row erased with its account, say). Oldest first; each is
+ * checked by `stillFailing`, which may read the heavy document: this runs in a background job, a few
+ * at a time, never in the Machinery read — and only while the transaction can still afford a check at
+ * a whole document ({@link affords}), since it runs at the end of a pass that has spent its budget on
+ * its own items, and a check that read past the limit would fail that whole pass.
+ */
+export async function forgetGoneMirrors(
+  ctx: MutationCtx,
+  job: FailingJob,
+  n: number,
+  stillFailing: (key: string) => Promise<boolean>,
+): Promise<number> {
+  const rows = await ctx.db
+    .query('jobFailures')
+    .withIndex('by_job_last_failed', (q) => q.eq('job', job))
+    .take(n);
+  let forgotten = 0;
+  for (const row of rows) {
+    if (!(await affords(ctx, MIRROR_CHECK))) break;
+    if (await stillFailing(row.key)) continue;
+    await ctx.db.delete(row._id);
+    forgotten++;
+  }
+  return forgotten;
+}
+
+/** Progress: the item went through, so whatever it was failing with is cleared. */
+export async function clearFailure(ctx: MutationCtx, job: FailingJob, key: string): Promise<void> {
+  const row = await failureOf(ctx, job, key);
+  if (row) await ctx.db.delete(row._id);
+}
+
+/**
+ * Whether a job (in `scope`, when given — a registry walk's tier) failed anything at or after
+ * `since` — read by when each failure last happened, so it sees only this walk's failures however
+ * many older ones there are.
+ */
+export async function failedSinceAt(
+  ctx: QueryCtx,
+  job: FailingJob,
+  since: number,
+  scope?: string,
+): Promise<boolean> {
+  const range = ctx.db
+    .query('jobFailures')
+    .withIndex('by_job_last_failed', (q) => q.eq('job', job).gte('lastFailedAt', since));
+  const row = await (scope === undefined
+    ? range
+    : range.filter((q) => q.eq(q.field('scope'), scope))
+  ).first();
+  return row !== null;
+}
+
+/**
+ * Forget up to `cap` of a job's failures (in `scope`, when given) that last failed before `before`,
+ * oldest first — what a complete walk or lap did not see fail again, so the work went through or is
+ * gone. Oldest first, so a backlog past the cap clears over the next complete walks.
+ */
+export async function forgetFailuresBefore(
+  ctx: MutationCtx,
+  job: FailingJob,
+  before: number,
+  cap: number,
+  scope?: string,
+): Promise<number> {
+  const range = ctx.db
+    .query('jobFailures')
+    .withIndex('by_job_last_failed', (q) => q.eq('job', job).lt('lastFailedAt', before));
+  const rows = await (scope === undefined
+    ? range
+    : range.filter((q) => q.eq(q.field('scope'), scope))
+  ).take(cap);
+  for (const row of rows) await ctx.db.delete(row._id);
+  return rows.length;
+}
+
+/**
+ * A run's outcomes at once, for a walk an action drives: each failure recorded, each success that
+ * had been failing cleared. One transaction per batch, so a run of a few hundred items costs a few
+ * writes, not one call each.
+ */
+export async function settleFailures(
+  ctx: MutationCtx,
+  job: FailingJob,
+  outcomes: {
+    failed: readonly { key: string; errorClass: string; scope?: string }[];
+    succeeded: readonly string[];
+  },
+  now: number,
+  opts: { park?: boolean } = {},
+): Promise<{ parked: number }> {
+  let parked = 0;
+  for (const { key, errorClass, scope } of outcomes.failed) {
+    const r = await recordFailure(ctx, job, key, errorClass, now, {
+      ...(scope !== undefined ? { scope } : {}),
+      ...(opts.park !== undefined ? { park: opts.park } : {}),
+    });
+    if (r === 'parked') parked++;
+  }
+  for (const key of outcomes.succeeded) await clearFailure(ctx, job, key);
+  return { parked };
+}
+
+// ── jobPositions: where a lapping walk is ──────────────────────────────────────────────────────
+
+/** A position in an index: the indexed number, and the creation time that breaks its ties. */
+export interface Position {
+  value: number;
+  creationTime: number;
+}
+
+/** A lapping job's saved place, if it has one. */
+export function lapOf(ctx: QueryCtx, job: LappingJob): Promise<Doc<'jobPositions'> | null> {
+  return ctx.db
+    .query('jobPositions')
+    .withIndex('by_job', (q) => q.eq('job', job))
+    .first();
+}
+
+/** The position a lap row holds, if it is mid-lap. */
+export function positionOf(row: Doc<'jobPositions'> | null): Position | undefined {
+  return row?.value !== undefined && row.creationTime !== undefined
+    ? { value: row.value, creationTime: row.creationTime }
+    : undefined;
+}
+
+/** Write a lapping job's place: mid-lap at `at`, or (no `at`) the lap finished and the next to start. */
+export async function saveLap(
+  ctx: MutationCtx,
+  job: LappingJob,
+  row: Doc<'jobPositions'> | null,
+  at: Position | undefined,
+  now: number,
+  extra: { run?: string; leaseUntil?: number; lapStartedAt?: number } = {},
+): Promise<void> {
+  const finished = at === undefined;
+  const fields = {
+    value: at?.value,
+    creationTime: at?.creationTime,
+    run: finished ? undefined : extra.run,
+    leaseUntil: finished ? undefined : extra.leaseUntil,
+    lapStartedAt: finished ? undefined : (extra.lapStartedAt ?? row?.lapStartedAt ?? now),
+    lapsCompleted: (row?.lapsCompleted ?? 0) + (finished ? 1 : 0),
+    updatedAt: now,
+  };
+  if (row) await ctx.db.patch(row._id, fields);
+  else await ctx.db.insert('jobPositions', { job, ...fields });
+}

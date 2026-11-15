@@ -92,6 +92,7 @@ import {
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx } from '../_generated/server';
 import { refreshBodyLibrary } from './bodyLibrary';
+import { clearFailure } from './recurringWork';
 
 /**
  * How many recent rows the recompute will read per body.
@@ -225,14 +226,30 @@ async function syncSummaryRefresh(
     .take(8);
   const [keep, ...extra] = rows;
   for (const row of extra) await ctx.db.delete(row._id);
+  // A recompute that got here went through: any failures the sweep counted on the row, and any
+  // parking, are cleared in the same write (D258, `lib/attempts`: progress clears) — and so is the
+  // row's mirror, whether the row is rewritten or, with nothing left to age out, deleted below.
+  const failing =
+    keep !== undefined && (keep.attempts !== undefined || keep.parkedAt !== undefined);
+  if (failing) await clearFailure(ctx, 'cards', waterBodyId);
   if (refreshAt === null) {
     if (keep) await ctx.db.delete(keep._id);
     return;
   }
   if (!keep) {
     await ctx.db.insert('bodySummaryRefreshes', { waterBodyId, refreshAt });
-  } else if (keep.refreshAt !== refreshAt) {
-    await ctx.db.patch(keep._id, { refreshAt });
+  } else if (keep.refreshAt !== refreshAt || failing) {
+    await ctx.db.patch(keep._id, {
+      refreshAt,
+      ...(failing
+        ? {
+            attempts: undefined,
+            lastErrorClass: undefined,
+            parkedAt: undefined,
+            retriedAt: undefined,
+          }
+        : {}),
+    });
   }
 }
 

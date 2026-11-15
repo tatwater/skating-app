@@ -71,6 +71,8 @@ export const ROW_MAX = {
   moderationAction: DOC_MAX,
   // Geometry and a suppression reason are uncapped.
   hazardRecurrence: DOC_MAX,
+  // A body's outline is uncapped (D258: the rollover's page is sized by it).
+  waterBody: DOC_MAX,
   // A photo settlement owed: at most `SETTLE_CHUNK_IDS` photo ids (an erased item's list is written in
   // chunks of that many), about 40 bytes each.
   photoSettlement: 64 * 1024,

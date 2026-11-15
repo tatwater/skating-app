@@ -557,6 +557,9 @@ describe('notifications — nearby digest (X₁)', () => {
     const nearby = await seedProfile(t, 'nearby', { prefs: { nearbyReportDigest: true } });
     const fan = await seedProfile(t, 'fan');
     const due = Date.now() - 1;
+    // A digest row per lake, as the fan-out keys them (`user:body:digest`) — a digest names each
+    // body once, so three rows on one body would be one entry.
+    const digestBodies = [bodyId, await seedBody(t, 'osm/2'), await seedBody(t, 'osm/3')];
     // Insert straight into the queue, in an order that puts two of `nearby`'s three digest rows
     // inside the first batch and the third past the cap — `by_flush` ties on `flushAfter` and falls
     // back to creation order, which is exactly how one day's reports interleave users.
@@ -564,10 +567,10 @@ describe('notifications — nearby digest (X₁)', () => {
       t.run((ctx) =>
         ctx.db.insert('notificationQueue', {
           userId: nearby.id,
-          waterBodyId: bodyId,
+          waterBodyId: digestBodies[n - 1] as Id<'waterBodies'>,
           kind: 'digest' as const,
           type: 'nearby_report_digest' as const,
-          coalesceKey: `${nearby.id}:body${n}:digest`,
+          coalesceKey: `${nearby.id}:${digestBodies[n - 1]}:digest`,
           latestReportId: reportId,
           count: 1,
           flushAfter: due,
@@ -995,7 +998,7 @@ describe('notifications — the inbox read path', () => {
     expect((await t.run((ctx) => ctx.db.get(priorId)))?.moderationStatus).toBe('visible');
   });
 
-  test('a fresh action merging into a due-but-unflushed row gets its own settle window (PR #52 review)', async () => {
+  test('a fresh action after a row fell due gets its own row and its own settle window (PR #52 review, D258)', async () => {
     const t = convexTestWithGeo();
     const author = await seedProfile(t, 'author');
     const first = await seedProfile(t, 'first');
@@ -1033,7 +1036,8 @@ describe('notifications — the inbox read path', () => {
     expect((await queued())[0]?.flushAfter).toBe(settling);
 
     // The window passes without a flush tick. A retraction and re-thumb now must not ride the
-    // expired deadline: the row takes a fresh window, so the next tick leaves it alone.
+    // expired deadline — nor move the due row's clock (D258): it starts a row of its own with a
+    // fresh window, and the due row delivers what it holds on the next tick.
     await t.run((ctx) => ctx.db.patch(row._id, { flushAfter: Date.now() - 1 }));
     await second.as.mutation(api.ratings.rate, {
       targetType: 'report',
@@ -1046,10 +1050,15 @@ describe('notifications — the inbox read path', () => {
       verdict: 'helpful',
     });
     const rows = await queued();
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.flushAfter).toBeGreaterThan(Date.now());
+    expect(rows).toHaveLength(2);
+    const fresh = rows.find((r) => r._id !== row._id);
+    expect(fresh?.flushAfter).toBeGreaterThan(Date.now());
+    expect(fresh?.firstDueAt).toBe(fresh?.flushAfter);
+    // The due row keeps the clock it was written with.
+    expect(rows.find((r) => r._id === row._id)?.firstDueAt).toBe(settling);
     await t.mutation(internal.notifications.flushNotificationQueue, {});
-    expect(await t.run((ctx) => ctx.db.query('notifications').collect())).toHaveLength(0);
+    expect(await t.run((ctx) => ctx.db.query('notifications').collect())).toHaveLength(1);
+    expect((await queued()).map((r) => r._id)).toEqual([fresh?._id]);
   });
 
   test('unreadCount never exceeds its documented cap', async () => {

@@ -219,25 +219,17 @@ export async function enqueueActorNotification(
 
   const coalesceKey = actorCoalesceKey(args.recipientId, args.targetId, kind);
   const flushAfter = args.flushAfter ?? now + SETTLE_MS;
-  const existing = await ctx.db
-    .query('notificationQueue')
-    .withIndex('by_coalesce', (q) => q.eq('coalesceKey', coalesceKey))
-    .first();
+  const existing = await coalescingRow(ctx, coalesceKey, now, flushAfter);
   if (existing) {
     const trigger = existing.trigger ? mergeTriggers(existing.trigger, args.trigger) : args.trigger;
     await ctx.db.patch(existing._id, {
       trigger,
       count: triggerCount(trigger),
-      // Keep the earliest while the row is still settling: a burst settles from its *first* event,
-      // so a busy report can't be starved of its notification by a stream of later ones each
-      // pushing the window out. But a row that is already *due* — its window has passed and the
-      // cron simply hasn't ticked yet — must not lend its expired deadline to a fresh action: the
-      // new thumb would flush on the next tick with seconds of settle rather than the window it
-      // was promised. So a due row takes the incoming deadline instead. Starvation can't come back
-      // through this: the row only moves when it was already flushable, so each extension costs one
-      // more window and needs a new action to land in the gap between due and the next tick.
-      flushAfter:
-        existing.flushAfter <= now ? flushAfter : Math.min(existing.flushAfter, flushAfter),
+      // The row's due time stays: a burst settles from its *first* event, so a busy report can't be
+      // starved of its notification by a stream of later ones each pushing the window out. Only a row
+      // still settling, and due no later than this event, is joined (`coalescingRow`) — a row already
+      // due delivers what it holds, and the new action starts a row of its own with the whole settle
+      // window it was promised (D258: a row's due time and clock are set once).
     });
     return true;
   }
@@ -248,6 +240,8 @@ export async function enqueueActorNotification(
     coalesceKey,
     count: triggerCount(args.trigger),
     flushAfter,
+    // The row's due clock, set once, here (D258): the freshness rule reads it and nothing moves it.
+    firstDueAt: flushAfter,
     createdAt: now,
     trigger: args.trigger,
   });
@@ -479,4 +473,82 @@ async function targetVisible(
   if (!id) return false;
   const doc = await ctx.db.get(id);
   return doc?.moderationStatus === 'visible';
+}
+
+/**
+ * How long a notification stays worth sending (D258): **twelve hours from when its row first fell
+ * due.** Past that it is expired — deleted, counted, never delivered — because every notification is
+ * about a moment (a report near you, a thumb, a comment), and one that lands a day late reads as news.
+ *
+ * **The clock is the row's, set once when the row is written, and nothing moves it** (`firstDueAt`) —
+ * not a failure, not a retry, not a later event — **and neither does its due time**: a later event
+ * joins a row only while that row is still settling and due no later than the event would be alone
+ * (`coalescingRow`), so it is delivered with the row, never later than alone, and the row's window
+ * covers it. An event that arrives once a row is due or parked, or that would be due earlier than the
+ * row (a digest for a recipient who has since changed zone), starts a row of its own. So an old row can never make a fresh event
+ * expire early, and a fresh event can never make an old row look fresh. The rule applies to every
+ * row, so a flush that was down for a day expires its backlog rather than sending yesterday as today.
+ */
+export const NOTIFICATION_FRESH_MS = 12 * 60 * 60 * 1000;
+
+/**
+ * A row's due clock. Every row written since D258 carries it (`firstDueAt`). A row written before
+ * carries none, and is read by the earliest clock it does carry — its `createdAt` for an actor row
+ * (whose `flushAfter` a later event could push out), its `flushAfter` for a report notice (which only
+ * ever moved earlier) — so an old row is never read as fresher than it is. Such a row never takes a
+ * new event (`coalescingRow`): a fresh event gets a row and a clock of its own, so it can never expire
+ * with the old one. The first failure stamps the old clock onto the row, so it never moves after —
+ * and since that clock has started, the row is still never joined.
+ *
+ * (Why not a one-time backfill instead: it could only stamp the same guess — an actor row's first due
+ * time was overwritten by the old "a due row takes the incoming deadline" rule — and until it finished
+ * the code would need this branch anyway. Old rows drain within a day; the branch costs nothing after.)
+ */
+export function dueClockOf(
+  row: Pick<Doc<'notificationQueue'>, 'flushAfter' | 'firstDueAt' | 'createdAt' | 'trigger'>,
+): number {
+  if (row.firstDueAt !== undefined) return row.firstDueAt;
+  return row.trigger !== undefined ? row.createdAt : row.flushAfter;
+}
+
+/** Whether a queue row is past its freshness window — expired rather than delivered. */
+export function isStaleQueueRow(
+  row: Pick<Doc<'notificationQueue'>, 'flushAfter' | 'firstDueAt' | 'createdAt' | 'trigger'>,
+  now: number,
+): boolean {
+  return now - dueClockOf(row) > NOTIFICATION_FRESH_MS;
+}
+
+/**
+ * The row a new event due at `dueAt` may coalesce into (D258): same key, not parked, **its clock not
+ * yet started** (`firstDueAt` after `now`), **still settling** (due after `now`), and due **no later
+ * than the event** — so joining moves neither the row's due time nor its clock, and never delivers the
+ * event later than it would have been alone. A row already due, parked, failed or from before D258
+ * keeps only what it holds; the event gets its own row.
+ */
+export function coalescingRow(
+  ctx: MutationCtx,
+  coalesceKey: string,
+  now: number,
+  dueAt: number,
+): Promise<Doc<'notificationQueue'> | null> {
+  return ctx.db
+    .query('notificationQueue')
+    .withIndex('by_coalesce_parked', (q) =>
+      q.eq('coalesceKey', coalesceKey).eq('parkedAt', undefined),
+    )
+    .filter((q) =>
+      q.and(
+        // The row's clock has not started. Not a row from before D258 (no clock of its own — absent
+        // sorts below every number): its only clock is an old one (`dueClockOf`), and a fresh event on
+        // it would expire with it, undelivered. Nor one that has failed: a failure moves its due time
+        // just past its run's cutoff (`recordQueueFailure`), so it can read as still settling to an
+        // event at that cutoff, while its clock — stamped onto a pre-D258 row by that same failure —
+        // stays where it first fell due.
+        q.gt(q.field('firstDueAt'), now),
+        q.gt(q.field('flushAfter'), now),
+        q.lte(q.field('flushAfter'), dueAt),
+      ),
+    )
+    .first();
 }

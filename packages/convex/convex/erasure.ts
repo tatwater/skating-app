@@ -97,7 +97,7 @@ const ERASE_REASON: Record<Erasable, string> = {
  * `settleStep` works from those rows, reading the uploader's Reports and hazards a charged page per
  * step until it has the whole answer, and only then deletes what nothing uses.
  */
-interface PhotoWork {
+export interface PhotoWork {
   uploaderId: Id<'profiles'>;
   photoIds: readonly Id<'photos'>[];
 }
@@ -557,8 +557,10 @@ async function eraseComment(
  * `SETTLE_CHUNK_IDS` (an insert reads nothing), and the uploader's place in the settlement queue if
  * they have none — at the back. A parked uploader stays parked: a new debt does not release them,
  * because what fails is reading their history, which a new debt does not change; their debts wait.
+ * The orphan-photo walk owes through here too (D258), so a photo nothing points at is deleted by
+ * the settlement's one complete check of "is this still shown anywhere".
  */
-async function owePhotos(ctx: MutationCtx, reads: ReadBudget, work: PhotoWork, now: number) {
+export async function owePhotos(ctx: MutationCtx, reads: ReadBudget, work: PhotoWork, now: number) {
   const ids = [...new Set(work.photoIds)];
   if (ids.length === 0) return;
   for (let i = 0; i < ids.length; i += SETTLE_CHUNK_IDS) {

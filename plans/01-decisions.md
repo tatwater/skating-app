@@ -8028,6 +8028,61 @@ has to be the same number its list or its write would give.
 **Related:** D3, D37, D50, D57, D62, D222, D226, D227, D248, D251, D252,
 [`phase-B01`](./phases/B01-admin-console.md) §12.8.
 
+## D258 — One failing item never blocks a recurring job (B01)
+
+**2026-11-14, the server follow-up to the recurring-jobs audit** (B01 §12.8). Every cron-driven job
+that walks a queue, laps a table or pages the corpus fails the way the erasure sweep does (D248): each
+item runs in its own nested transaction under limits of its own (`lib/recurringWork`), the walk asks the
+transaction's real metrics before each item, and a failure is counted by the one rule (`lib/attempts`
+— a failure counts, progress clears, three in a row park, held is neither) and the walk moves on in
+the same run. Work with a row of its own keeps its state there, because its due range must leave a
+parked row out (the notification queue, the recorder's activities, the map-card refreshes); work
+without one keeps it in `jobFailures`. A walk that laps a table keeps its place in `jobPositions`, so an
+item that keeps failing, or keeps being kept, takes only its own turn.
+
+- **A notification is sent only fresh: within twelve hours of when its row first fell due.** Past that
+  it is expired — deleted, counted, never delivered — whether it was parked, retried or simply left
+  behind by a flush that was down. The row's due clock is set once, when the row is written, and
+  nothing moves it, nor its due time but for a failure (just past the run that tried it); a new event
+  joins only a row whose clock has not started — unparked, still settling and due no later than the
+  event would be alone, never one that has failed — otherwise it starts a row of its own, so an old row never makes a fresh event expire and a fresh event never makes
+  an old row look fresh. A digest names each body once, however many rows carry it. A row from before this rule has no clock of its own: it is read by its
+  earliest one (`createdAt` for an actor row, `flushAfter` for a report notice), never as fresh, and
+  never takes a new event — a fresh event on it would expire with it — so the event gets its own row.
+  (Not a one-time backfill: it could only stamp the same guess, and the code would need the branch until
+  it finished; old rows drain within a day.) A
+  parked notification is retried hourly, not daily, so a fault fixed within the morning still delivers.
+- **"Newest" follows the content, not the row.** A digest links, for each lake, the report created
+  last (`latestAt`, the report's own time) — never by a row's creation time, which a later event
+  joining the row does not move, nor by when a notice arrived, since a fan-out page for an older
+  report can land after a newer one's (a join moves a row's report only forward). A deadline never
+  moves; which report is newest does.
+- **A dry run writes nothing.** A failure is recorded or cleared only by a run that applies its
+  decisions; a dry rollover's only write is its own run row, and it schedules nothing.
+- **A fallback never repeats the read that failed.** A page is sized from its worst-case row in the
+  first place (or bounded by weight); a page that still fails is retried smaller from the same place,
+  down to one document, which always fits.
+- **The orphan-photo walk owes; the photo settlement decides.** "Is this photo still shown anywhere"
+  has one complete check — the settlement's (D248) — and the walk passes only what that check would
+  keep without reading anyone's history (a Report's back-link, an access point).
+- **What fails toward caution stays as it was.** A parked map card keeps what it showed, hazards
+  included; a hazard whose weather refresh throws keeps its last multiplier; a rollover body that can't
+  be decided stays active; a registry walk with failures prunes nothing.
+- **Some work is counted but never parked**, because parking would stop what must keep going: the
+  season watch's tick (all or nothing by design), a hazard's weather (the cadence gate spaces its
+  tries), a state's NWS alerts, a registry walk's rows. For the walks that lap once a day (orphan
+  photos, weather gaps), the lap is the daily retry, and parking is a marker the Machinery read shows.
+- **Account deletion is never parked.** Each tick of the finalize and redaction sweeps takes its turn
+  after the last one's and wraps, so a failing account delays nobody else's; how many accounts are past
+  their date is on the Machinery read.
+
+**Why:** the audit found jobs on main that one poison item blocked for ever (the flush, the prompt
+sweep, the card sweep), one stuck already (the orphan sweep re-read the same oldest 500 photos), walks
+that died at the same page every run, and sweeps that a pile of failing items would freeze — the
+account deletion among them, a promise with a date.
+
+**Related:** D3, D33, D62, D161, D248, [`phase-B01`](./phases/B01-admin-console.md) §12.8.
+
 ## D259 — The audit log reaches its bodies through a link table, not a field on the row (B01)
 
 **2026-11-14, built in B01-3b.** A body's History read every target related to the body (each bay,

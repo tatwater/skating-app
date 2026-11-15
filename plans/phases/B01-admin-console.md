@@ -1743,6 +1743,184 @@ may fail loudly and stop; each logs where to re-run from (`traced`).
 | refresh nws alerts | partially | a state whose write throws skips the states after it while that alert is live |
 | expire bounties, expire access alerts, the prune and purge jobs, roll up operator metrics, sweep water-body coverage, append daily (bay) weather archive, expire departed skaters' photos, poll for new satellite imagery, rebuild the live imagery index | no | per-item isolation, a cursor that moves past failures, deletes or status patches only, or no per-item work |
 
+**B01-1d (2026-11-14): the recurring jobs, fixed** (D258). Every job the table above marks *yes* or
+*partially*, read against the code first, then changed so one failing item never stops, delays past
+its run, or reorders anyone else's work. The shared pieces are `lib/recurringWork` (an item in its own
+nested transaction under limits of its own, the walk asking the transaction's real metrics before each
+item, `jobFailures` for work with no row of its own, `jobPositions` for a walk that laps its table) and
+`lib/attempts`, the rule the erasure already used. `recurringJobs.health` (`machinery.read`) is the one
+read Machinery will draw: per job, failing and parked counts, the oldest parked time and oldest
+failure, and the error classes — counts only, from small rows only (`jobFailures`, where the
+queue-shaped jobs mirror the state they keep on their own rows, and where the finalize sweep counts an
+account more than a day past its date and the export sweep a bundle whose blob would not delete),
+every count capped and saying so.
+
+**Where the audit's list was wrong or short:**
+- *Sweep orphan photos* was worse than stuck: its read of 500 photos at up to a document each (the
+  caption is uncapped) and its one-transaction reference scan (4,000 Reports and 4,000 hazards per
+  uploader) could each fail the same page every day by weight alone, with no item throwing.
+- *Prompt unreported skates* could also fail by weight: fifty due recordings and fifty windows of fifty
+  recordings each, a path per row, in one transaction.
+- *Demote inactive bodies at the rollover* was understated as "partially": a run that fails is retried
+  only through 14 July, so a page that always throws left every body past it undecided for the season.
+- *Refresh hazard weather*: a fetch that comes back empty is deliberately left un-stamped and is not a
+  poison item (Open-Meteo down leaves them all at the front, and they all go when it returns); only a
+  throw was. Its list read of 1,000 hazards at up to a document each is unbounded by weight (owed).
+- *Finalize account deletions*: the ghost redaction beside it had the same shape (the oldest 200
+  pending, re-read every hour).
+- *Flush notification queue*: a new event coalesced into whatever row held its key, so once a row is
+  parked a new event would have landed in it and never been sent (found while fixing; now a parked row
+  is passed over by a new index).
+- The *no* row was spot-checked, not re-read in full (the departed-photo sweep and the season purge
+  hold up); the Bodies library's three crons came after the audit and park on their own.
+
+| Cron | Was | Now | Parked means | Test |
+| --- | --- | --- | --- | --- |
+| sweep orphan photos | the oldest 500 past grace, re-read for ever | a lap from a saved place (`jobPositions`), a chain owning it by run and lease; the photos the settlement would keep without reading history (a back-link, an access point) passed, the rest owed to the settlement (`erasure.owePhotos`), whose complete check is the one rule; an erased photo's blob retried directly | a marker: the daily lap is the retry | `storageHygiene.test.ts` "600 old photos in use…", "…a hazard filed mid-walk…", "sweepOrphanPhotos under failure" (fast-check) |
+| flush notification queue | one transaction, a throw re-ran first | the batch whole, then a row at a time if it fails; a failure counted on the row, moved past the run's cutoff; twelve-hour freshness on every row | out of `by_parked_flush`; retried hourly, expired past the window | `recurringJobs.test.ts` "flush notification queue, under failure" (fast-check), "the freshness rule…", "…never coalesces into a parked row" |
+| prompt unreported skates | fifty rows, one transaction | each skater's due rows in their own nested transaction; the run walks forward from a position it carries | out of `by_prompt_parked_detected`, still on the skater's list; retried daily | "prompt unreported skates, under failure" (fast-check) |
+| sweep body summaries (due mode) | fifty cards, one transaction | each card in its own nested transaction; a failure moves it past the run's cutoff | out of `by_parked_refresh_at`, its card left as it was (hazards included); retried daily | "sweep body summaries (due mode), under failure" (fast-check) |
+| demote inactive bodies at the rollover | a page that threw ended the run | the page whole, then a body at a time; the rule is one helper (`rolloverBody`), unchanged | the body stays active; the daily retry decides it, parked or not, since the walk runs once a season | `standing.test.ts` "a page that throws…" |
+| reconcile weather cell registry | a page that threw ended the walk | pages bounded by weight; a write whole, then a row at a time; a run with failures prunes nothing and is not marked complete | never parked; the next walk retries | `weatherArchive.test.ts` "a page whose write throws…" |
+| repair weather archive gaps | a cell that threw ended the walk | each cell an item; counted, the walk goes on | a marker: the daily run is the retry | "one cell that throws no longer ends the walk…" |
+| refresh hazard weather | a throw stayed at the front | a throw is stamped to the back, its last multiplier kept, counted | never parked: the cadence gate spaces its tries | `hazardWeather.test.ts` "a hazard whose refresh throws…" |
+| refresh nws alerts | a state's failed write skipped the rest | each state's write an item; it keeps what it had | never parked | `weatherAlerts.test.ts` "a state whose write throws…" |
+| watch for the imagery season to open | a failed tick was silent past the logs | all or nothing kept (a shrinking sample opens seasons); each failed day counted with its class | never parked | `imageryIngest.test.ts` "an Open-Meteo failure throws…", "a tick that goes through clears…" |
+| finalize account deletions (and the redaction) | the oldest twenty (two hundred), every hour | a turn after the last tick's, wrapping | never parked; overdue accounts on the read | `accountDeletion.test.ts` "accounts whose chains keep failing…" |
+| sweep expired exports | the oldest five hundred | a turn after the last tick's, wrapping | — | `storageHygiene.test.ts` "bundles whose blob will not delete…" |
+
+Each queue-shaped job's property holds, over any set of items and any subset that always fails: every
+healthy item goes through in its first run, a failing one is tried once a run and parked after exactly
+three failures in a row, the walk does not try it again, the retry frees it once it heals with nobody
+releasing anything, and no item is delivered twice. The lap walk's version: every photo once a lap,
+counted while it fails, cleared by the lap after it heals. One seam makes any item fail in a test:
+`lib/recurringWork.asItem`, which every isolated item runs through.
+
+**Sized, under Convex's real limits** (`recurringChains.test.ts`, every row near the document limit):
+these walks use design (b) with real metrics — before each item the walk asks whether the transaction
+can still pay the item's own limits and a reserve past it, so a light item leaves room for many and a
+heavy one for few, and the item runs under those limits.
+
+| Job | Item's own limits (read · docs · queries · writes) | Reserve past it | Worst-case test |
+| --- | --- | --- | --- |
+| `storageHygiene.sweepOrphanPhotos` | 2 MiB · 20 · 20 · 10 | 3 MiB, for the next photo and each owed uploader's queue place | thirty photos near the limit, half in use: the lap ends, the orphans go |
+| `notifications.flushNotificationQueue` | the batch 8 MiB · 8,000 · 3,200 · 4,000 (above its own 3,000-read soft stop); a row 3 MiB · 2,000 · 200 · 500 | 1 MiB | twenty recipients near the limit: the batch fails as a batch, every row lands one at a time |
+| `gpsActivities.sweepUnpromptedActivities` | a skater 8 MiB · 3,000 · 300 · 300 | 1 MiB, plus 1 MiB per due row read | twelve skaters and recordings near the limit: each is asked |
+| `waterBodies.refreshDueBodySummaries` | a card 8 MiB · 2,000 · 100 · 50 | 1 MiB | cards with four Reports near the limit each: several batches, every card refreshed |
+| `recurringJobs.retryParkedDaily` | 8 MiB · 3,000 · 300 · 300 | 1 MiB | (covered by the three properties' retries) |
+| `recurringJobs.health` | small rows only: `jobFailures`, to 200 a job | — | fourteen parked queue rows near the limit: counted from their mirrors |
+| `standing.demoteInactiveBodies` | a body 8 MiB · 2,000 · 200 · 500 | 1 MiB | twelve outlines near the limit: pages sized from them, every body decided |
+
+**The jobs #118 added (B01-3b), read against the same question** (merged into this branch 2026-11-14):
+
+| Cron | Blocks forever? | Why |
+| --- | --- | --- |
+| compute body geometry facts | no | each due body computed on its own (`Promise.allSettled`), a failure recorded on its facts row by `lib/attempts` and parked at the third; a run passes what it already tried; the unparked range leaves parked rows out |
+| retry parked body geometry | no | the same walk over parked rows, least recently tried first; a failure re-stamps the row to the back |
+| repair body geometry drift | in principle | one transaction over the 40 longest-unchecked rows, stopping by the real read budget; a row whose check *throws* (not one that is merely behind) would fail the tick, and the next tick reads the same rows. Nothing throws on valid data today; owed — isolate each row's check |
+| find bodies missing geometry | partially | a page of library rows that throws ends the chain, and the next weekly run starts over and dies at the same page — the "same page" shape; the page reads small rows and probes one index each, so nothing throws today; owed |
+
+Their parked count is not on `recurringJobs.health`: a geometry facts row carries the computed lists
+and can be heavy, so counting them would load heavy documents; owed — a small mirror, as the queues
+have, or the geometry module's own parked read.
+
+**First read and fallback, worst case — and a fallback never repeats the read that failed** (Greptile
+#116). Every walk with a "page failed" path, what its first read can weigh, and what its fallback reads:
+
+| Walk | First read, worst case | Fallback, worst case | Every-document-at-the-limit test |
+| --- | --- | --- | --- |
+| rollover | a page sized from the heaviest outline: each body charged at 1 MiB (`lib/readBudget`), one body's decision (9 MiB) kept back — at most three bodies; each body then decided in its own nested transaction under 8 MiB | the same page at half the size it really read (three, whatever was asked for — so 3, then 1), from the same position; one body that still fails is read alone (1 MiB, always fits), recorded and passed; a body that is not active is passed without a nested transaction or a second read of its outline | twelve heavy outlines: reaches its end |
+| registry reconcile | a page of bodies (and of bays) read by `maximumBytesRead` 6 MiB — at most 6 MiB and one document past it | the page's writes a row at a time (each one small registry row); the page is never re-read | twelve heavy outlines: every body registered |
+| archive gaps | a page of registered cells by `maximumBytesRead` 6 MiB; each cell its own item | none — a cell that fails is recorded and the walk goes on | forty heavy cells: reaches its end |
+| orphan photos | one photo a step (`first()`, at most 1 MiB), each examined in its own nested transaction under 2 MiB | none — a photo that fails is recorded and the lap goes on | thirty photos with captions near the limit: the lap ends |
+| flush notification queue | a batch read by `maximumBytesRead` 2 MiB (at most 250 rows) under the batch's 8 MiB | one row at a time (`first()`, at most 1 MiB), each under 3 MiB — a smaller read than the batch, never the batch again | forty queue rows near the limit: every row lands |
+| prompt sweep | one due row at a time (`first()`, at most 1 MiB) while a skater's prompt still fits | none — a skater that fails is recorded on their rows | twelve heavy recordings and recipients: each asked |
+| card sweep | one refresh row at a time (small), each card in its own nested transaction under 8 MiB | none — a card that fails is recorded on its row | cards with heavy Reports: every card refreshed |
+
+**What "latest" means, and every comparison that orders by a timestamp** (Greptile #116, P2: the
+digest picked its report by a row's `createdAt`, which a later event joining the row does not move —
+after a zone change and back, two rows flushed together and the older report won). The class is a
+decision made from a proxy timestamp the thing it stands for can drift from. Each comparison, its
+field, and why:
+
+| Where | Decides | Field | Why it is the right one |
+| --- | --- | --- | --- |
+| the digest (`flushRows`) | which report a lake's line links | `latestAt`: the linked report's own creation time, moved only forward by a join (`createdAt` on a pre-D258 row, which is never joined and drains within the day) | follows the content, not arrival order — a fan-out page for an older report can land after a newer one's; the fix |
+| freshness (`isStaleQueueRow`) | expire or deliver | `dueClockOf`: `firstDueAt`, or a pre-D258 row's earliest clock | a deadline, and it must never move |
+| joining (`coalescingRow`) | whether an event may join a row | `firstDueAt` after now; `flushAfter` after now and no later than the event's | the row's clock has not started, and joining never delays the event |
+| a failure (`recordQueueFailure`) | when the row is tried next | `flushAfter` moved past the run's cutoff | delivery time only; the clock (`firstDueAt`) is left alone |
+| the flush and retry order | which row first | `flushAfter`; `parkedAt` (least recently tried) | order only — no decision about content |
+| the Machinery read | oldest failure, oldest parked | `firstFailedAt`, `parkedAt` | `firstFailedAt` is written once per failing stretch, so it is how long something has been stuck; `parkedAt` is re-stamped by every retry that fails (`lib/attempts`), so "oldest parked" reads as least recently tried, never as how long parked |
+| forgetting a failure, "failed since" (`forgetFailuresBefore`, `failedSinceAt`) | whether a walk saw a failure again | `lastFailedAt` against the walk's or lap's start | re-written on every failure, so one from before the walk began is one the complete walk did not see fail again |
+| the lap walks | where to resume | photo `createdAt`, export `expiresAt`, account `deletionRequestedAt`, recording `detectedAt` | positions in an index; a value that changes (a re-requested deletion) only moves an item within the lap, which wraps |
+
+**A dry run writes nothing** (Greptile #116). The only dry mode among these jobs is the rollover's
+(`apply` false). It now records no failure and clears none — a failure is cleared only by an applied
+decision — and the purity property found one more write: the dry run's success scheduled a weather
+registry reconcile (`importRuns.finish` fires one for `standing_rollover`); `finish` now takes
+`applied: false` and schedules nothing. The property: over any corpus, any bodies whose decision
+throws, any pages that shrink to the single-body path, and any failures already recorded (parked or
+mid-retry), every table is unchanged but for the dry run's own `-dry` run row — kept, since it is how
+a dry run's counts are read — and nothing is scheduled.
+
+**The freshness rule, by construction** (Greptile #116): a notification row's due clock (`firstDueAt`)
+is written with the row and nothing moves it, nor its due time; a new event joins only a row that is
+unparked, still settling and due no later than the event would be alone (an event stamped earlier — a
+digest for a recipient who changed zone — starts a row of its own), otherwise it starts a row of its own; a row written before D258 is read by its earliest clock
+(`createdAt` for an actor row, `flushAfter` for a report notice), never as fresh, and never takes a new
+event — a fresh event on it gets its own row, so it can never expire undelivered with the old one
+(Greptile #116's legacy-row case; a backfill would only stamp the same guess, and old rows drain
+within a day). The actor path's old
+"a due row takes the incoming deadline" branch was the moving deadline, and is gone: a re-thumb after a
+row fell due is its own notification. Review found the one deadline still moving: a failure moves a
+row's due time just past its run's cutoff, so to an event at that cutoff a failed row read as still
+settling — and a pre-D258 row's first failure stamps its old clock, so the "no clock of its own" guard
+let it through, to expire the fresh event with it. The join now asks that the row's clock has not
+started (`firstDueAt` after now), which keeps out both. And since one key can now hold several rows
+(a pre-D258 one, a parked one being retried, a zone change, a late flush), a digest names each body
+once, its counts summed.
+
+**Owed, with the reason:**
+- *Pump live satellite imagery*: a Machine that stays live keeps its granule in flight and one of a
+  hundred slots; every other failure already counts attempts, fails the granule and alerts. Bounded by
+  how long a cut can run; not changed.
+- *Recompute hazard recurrence at the rollover*: already saves attempts and skips a body after three;
+  a failure ending the day's chain inside the seven-day window is the remaining shape, and its retry
+  is the next day. Not changed here.
+- *Refresh hazard weather*'s list read (1,000 hazards and their bodies at up to a document each) is
+  unbounded by weight.
+- *The Bodies library queue* keeps its own copy of the park rule (`lib/bodyLibrary.recordRefreshFailure`):
+  it keeps the first `parkedAt` where `lib/attempts` re-stamps it, and has no daily-retry stamp, so the
+  switch is not behavior-neutral — left as it is.
+- *A parked map card* keeps its last counts and quality dots past their window. Clearing it would drop
+  its hazards, which reads as all-clear, so it stays; drawing it as stale needs the clients.
+- *The orphan walk owes every in-use photo with no back-link every lap* (hazard photos, pre-A10 Report
+  photos): the settlement then reads that uploader's history once a day. Correct and bounded; a cost
+  that grows with hazard photos.
+- *Found in review and left:* a
+  hazard-weather or weather-gap failure whose work goes away (the hazard resolves, the cell leaves the
+  registry) keeps its row until cleared by hand — neither walk has a complete pass that proves the work
+  gone, as the orphan lap's end and the registry's complete walk do; four indexes the new ones replace
+  (`notificationQueue.by_flush`, `.by_coalesce`, `bodySummaryRefreshes.by_refresh_at`,
+  `gpsActivities.by_prompt_state_detected`) are unread now and wait for the narrow step after deploy;
+  the orphan walk reads each photo's failure row to clear it (a query a photo); and the position walk
+  (same value and a later creation time, then a greater value) is written in four places.
+- *The rollover's pages are small*: sized from a heavy outline with one decision kept back, a page
+  holds at most three bodies, so a season's pass is several thousand page calls (once a year). The
+  action walks at most 400 of them, or four minutes, and continues itself with its position and
+  tallies, so the pass never nears the action limit; one run row records it at the end.
+- *Overdue deletions are counted by the finalize sweep itself*: if that hourly tick fails outright,
+  its count rolls back with it, and Machinery shows nothing overdue exactly when nothing is being
+  finalized. A signal that survives the sweep's own failure needs a read of its own (owed).
+- *A re-thumb after a row fell due is its own notification* (the moving deadline it replaces is
+  gone): the actor can be named twice, minutes apart.
+- *The mirrors* (`jobFailures` rows for the queue-shaped jobs) can briefly outlive a row erased some
+  other way (an account's erasure, the season purge) until a retry's background check forgets it, a few
+  a run.
+- *A registry walk with a row that always fails* never prunes or completes until it heals: the
+  registry keeps vacated cells (a few Open-Meteo calls), and the import debounce sees an hour-old
+  in-flight claim as dead and walks again.
+
 **B01-3 (2026-11-13): the Overview's server reads, and the page reading them.** Server and web on
 one branch (`b01-3-server`).
 
@@ -1994,6 +2172,14 @@ that undoes). A row stands while the undos above it are even in number, so "did 
 property of the row and its first row, at any chain length (Greptile's P2: a ninth undo is no longer
 past a truncation). `peopleJobs.backfillUndoChains` places chains written before; until it has run
 (`ready:undoChains`) the undo figures say capped.
+
+**Owed:** the lapsed-suspension sweep's parked count in `recurringJobs:health` (D258's one place to
+look). That read counts small `jobFailures` rows and never loads a profile; the sweep keeps its
+attempts on the profile, so joining it means mirroring a parked lapse into `jobFailures` at the
+sweep's failure write — not a one-line change, so it waits; `peopleJobs.parkedLapses` lists them
+meanwhile. #116's turn-taking finalization sweep leaves the never-touch rule as it was: the sweep's
+due range excludes a deletion window, a lock and a tombstone by index, and the reset re-reads the
+profile (the tests re-run after the merge).
 
 **Open for a ruling:** an audit row's `reason` and `metadata` are uncapped, so no audit read has a
 worst case below the document limit; everything here reads them by count and by real weight. The undo

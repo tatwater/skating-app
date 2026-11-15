@@ -1,9 +1,10 @@
 import { weatherCellFor } from '@skating/core';
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
-import { describe, expect, test, vi } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+import * as recurringWork from './lib/recurringWork';
 import schema from './schema';
 import {
   APPEND_PAST_DAYS,
@@ -403,6 +404,61 @@ describe('weatherArchive: the cell registry', () => {
   });
 });
 
+/** Make `asItem` fail for the keys in `poison` (D258's one seam). */
+function poisonItems(poison: (key: string) => boolean) {
+  const real = recurringWork.asItem;
+  return vi.spyOn(recurringWork, 'asItem').mockImplementation(async (key, work) => {
+    if (poison(key)) throw new Error('poison');
+    return real(key, work);
+  });
+}
+
+describe('weatherArchive: the registry walk under failure (D258)', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  test('a page whose write throws is written a row at a time; the row that still fails is counted, nothing is pruned and the run is not marked complete', async () => {
+    const t = convexTest(schema, modules);
+    await seedBody(t, { lat: 44.0163, lng: -72.0331 }, 338);
+    await seedBody(t, { lat: 45.5, lng: -71.2 }, 200);
+    // A registered cell no body occupies any more: a complete walk would prune it.
+    await t.run((ctx) =>
+      ctx.db.insert('weatherCells', {
+        cellKey: 'vacated',
+        tier: 'filter' as const,
+        lat: 40,
+        lng: -70,
+        bodyCount: 1,
+        runId: 'old',
+        updatedAt: 0,
+      }),
+    );
+    const poisonCell = weatherCellFor('filter', 45.5, -71.2).key;
+    poisonItems((key) => key === poisonCell);
+
+    const result = await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+    expect(result).toMatchObject({ done: true, pruned: 0, failed: 1 });
+    const cells = await t.run((ctx) => ctx.db.query('weatherCells').collect());
+    // The healthy cell was written; the vacated one was kept, since the walk was not complete.
+    expect(cells.map((c) => c.cellKey).sort()).toEqual(
+      [weatherCellFor('filter', 44.0163, -72.0331).key, 'vacated'].sort(),
+    );
+    expect(await t.run((ctx) => ctx.db.query('jobFailures').collect())).toMatchObject([
+      { job: 'weatherCells', key: `cell:filter:${poisonCell}`, attempts: 1 },
+    ]);
+    const sync = await t.run((ctx) => ctx.db.query('weatherCellSyncs').first());
+    expect(sync?.completedAt).toBeUndefined();
+
+    // Healed: the next walk is complete — it prunes, finishes, and forgets the failure.
+    vi.restoreAllMocks();
+    const again = await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+    expect(again).toMatchObject({ done: true, pruned: 1 });
+    expect(await t.run((ctx) => ctx.db.query('jobFailures').collect())).toEqual([]);
+    expect(
+      (await t.run((ctx) => ctx.db.query('weatherCellSyncs').first()))?.completedAt,
+    ).toBeDefined();
+  });
+});
+
 describe('weatherArchive: the season gate (D161)', () => {
   test('does not spend anything before the season is recorded open', async () => {
     const t = convexTest(schema, modules);
@@ -560,6 +616,54 @@ describe('weatherArchive: the recovery ladder (D161)', () => {
     const filled = after.find((r) => r.dayMs === dayMsOf(dates[1] ?? ''));
     expect(filled).toBeDefined();
     expect(filled?.missing).not.toBe(true);
+  });
+
+  test('one cell that throws no longer ends the walk: it is counted, the cells after it are repaired, and the next run that gets through clears it (D258)', async () => {
+    const t = convexTest(schema, modules);
+    await seedBody(t, { lat: 44.0163, lng: -72.0331 }, 338);
+    await seedBody(t, { lat: 45.5, lng: -71.2 }, 200);
+    await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+    const cells = (await t.run((ctx) => ctx.db.query('weatherCells').collect())).sort((a, b) =>
+      a.cellKey.localeCompare(b.cellKey),
+    );
+    const [first, second] = cells;
+    if (!first || !second) throw new Error('expected two cells');
+    // Both hold days -5 and -3 but not -4.
+    const dates = recentDates(6);
+    await t.run(async (ctx) => {
+      for (const cell of cells) {
+        for (const d of [dates[0], dates[2]].filter((x): x is string => x !== undefined)) {
+          await ctx.db.insert('weatherDays', {
+            cellKey: cell.cellKey,
+            tier: 'filter' as const,
+            dayMs: dayMsOf(d),
+            localDate: d,
+            source: 'forecast' as const,
+            hours: 24,
+            fetchedAt: Date.now(),
+          });
+        }
+      }
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okJson(unixResponse(dates))),
+    );
+    // The first cell in the walk's order fails.
+    const spy = poisonItems((key) => key === `filter:${first.cellKey}`);
+    const result = await t.action(internal.weatherArchive.sweepWeatherDayGaps, { tier: 'filter' });
+    expect(result.repaired).toBeGreaterThan(0);
+    const days = await t.run((ctx) => ctx.db.query('weatherDays').collect());
+    const hole = dayMsOf(dates[1] ?? '');
+    expect(days.some((r) => r.cellKey === second.cellKey && r.dayMs === hole)).toBe(true);
+    expect(days.some((r) => r.cellKey === first.cellKey && r.dayMs === hole)).toBe(false);
+    expect(await t.run((ctx) => ctx.db.query('jobFailures').collect())).toMatchObject([
+      { job: 'weatherGaps', key: `filter:${first.cellKey}`, attempts: 1 },
+    ]);
+    spy.mockRestore();
+    await t.action(internal.weatherArchive.sweepWeatherDayGaps, { tier: 'filter' });
+    expect(await t.run((ctx) => ctx.db.query('jobFailures').collect())).toEqual([]);
+    vi.restoreAllMocks();
   });
 
   test('records an unrecoverable hole as missing, never as zeroes (step 4)', async () => {
