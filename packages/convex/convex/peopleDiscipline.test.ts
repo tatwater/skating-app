@@ -360,3 +360,32 @@ describe('a flag names whose it is, at filing', () => {
     void filer;
   });
 });
+
+describe('never no ledger editor, whatever a stale row says', () => {
+  test('a write confirms the editors it counted, so a row that missed its refresh only ever refuses', async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert('peopleCounts', { key: 'ready:rows', count: 1 });
+    });
+    await seed(t, 'adm', { role: 'admin', canEditLedger: true });
+    const other = await seed(t, 'other', { role: 'admin', canEditLedger: true });
+    const admId = (await t.run((ctx) => ctx.db.query('profiles').collect())).find(
+      (p) => p.username === 'adm',
+    )?._id as Id<'profiles'>;
+    await seed(t, 'third', { role: 'admin', canEditLedger: true });
+    await t
+      .withIdentity({ subject: 'third' })
+      .mutation(api.ledger.revokeEditor, { userId: admId, reason: 'r' });
+    // `third` loses the grant on the profile without its row being refreshed, so the row still counts
+    // them. A read answers from the rows; the write confirms from the profiles and refuses.
+    await t.run(async (ctx) => {
+      const third = (await ctx.db.query('profiles').collect()).find((p) => p.username === 'third');
+      if (third) await ctx.db.patch(third._id, { canEditLedger: undefined });
+    });
+    await expect(
+      t
+        .withIdentity({ subject: 'other' })
+        .mutation(api.ledger.revokeEditor, { userId: other, reason: 'r' }),
+    ).rejects.toThrow('They are the last person who can edit the ledger');
+  });
+});

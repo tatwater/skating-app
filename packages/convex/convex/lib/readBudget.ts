@@ -224,10 +224,15 @@ export async function traced<T>(
  * transaction's read limit in production. One budget per request (keyed on its context).
  */
 const REQUEST_BUDGETS = new WeakMap<object, ReadBudget>();
+/**
+ * Four profiles at their worst: what a request's unplanned reads may spend, leaving the page's own
+ * reads (its rows, the caller's profile) and the ledger check's own allowance well inside 16 MiB.
+ */
+export const REQUEST_PROFILE_BUDGET = 4 * DOC_MAX;
 export function requestBudget(ctx: object): ReadBudget {
   let budget = REQUEST_BUDGETS.get(ctx);
   if (budget === undefined) {
-    budget = new ReadBudget();
+    budget = new ReadBudget(REQUEST_PROFILE_BUDGET);
     REQUEST_BUDGETS.set(ctx, budget);
   }
   return budget;

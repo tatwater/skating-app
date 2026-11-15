@@ -8,6 +8,7 @@ import { describe, expect, test } from 'vitest';
 import { api } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { markReady, READY_FLAG_SUBJECTS, READY_ROWS, refreshPersonRow } from './lib/peopleRows';
+import { UNDO_NEEDS_ROWS } from './lib/undo';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -221,6 +222,11 @@ describe('no People read loads profiles past the read limit', () => {
     });
     const d = await a.query(api.people.decisions, { userId: adm, limit: 100 });
     expect(d.rows).toHaveLength(16);
-    expect(d.rows.some((r) => r.undo.state === 'unavailable')).toBe(true);
+    // Four profiles fit the request's budget; the other twelve say why they can't be checked here.
+    const states = d.rows.map((r) => r.undo);
+    expect(states.filter((u) => u.state === 'available')).toHaveLength(4);
+    expect(
+      states.filter((u) => u.state === 'unavailable' && u.why === UNDO_NEEDS_ROWS),
+    ).toHaveLength(12);
   });
 });

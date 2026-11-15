@@ -33,7 +33,7 @@ import {
   rememberedLedgerEditors,
   rememberLedgerEditors,
 } from './peopleRows';
-import { requestBudget } from './readBudget';
+import { DOC_MAX, ReadBudget } from './readBudget';
 
 type Profile = Doc<'profiles'>;
 
@@ -48,6 +48,10 @@ export type LedgerFacts = Pick<
  * stays bounded however the table grows.
  */
 const ADMIN_READ_LIMIT = 500;
+/** Before the rows backfill: the admins' profiles the check may read, at their worst. */
+const PRE_ROWS_ADMIN_BUDGET = 6 * DOC_MAX;
+/** Editors a write confirms from their profiles, at most — a "select few" (D227). */
+const CONFIRM_IN_WRITES = 4;
 
 /**
  * May `viewer` learn who holds ledger editing (D227)? Only an admin who holds it and is not on their
@@ -104,13 +108,13 @@ const ADMIN_ROWS = 200;
  * Editors who can still act, other than `exceptId` (D227's "never no editor").
  *
  * Once the People rows exist (`ready:rows`), the editors are read from admins' light rows — role,
- * grant (`ledgerEditor`), status, suspension and deletion window are all on the row, written by the
- * same writes that change them on the profile — so the check loads no profile at all. Before the rows
- * exist, the admins' profiles are read as they always were, each charged to the request's budget
- * (`requestBudget`). Either way the set is read **once per request** and shared by every question —
- * the person page asks for several levers, History and Decisions once a row — and dropped the moment
- * the request writes a People row (the row writer forgets it, `lib/peopleRows`), so a mutation's
- * own write is seen.
+ * grant (`ledgerEditor`), status, suspension and window are all on the row, written by the same writes
+ * that change them on the profile. A read (the person page's `can`, undo state) answers from the rows
+ * and loads no profile; a write confirms each counted editor from its profile (at most
+ * {@link CONFIRM_IN_WRITES}), so a stale row can only undercount and refuse. Before the rows exist, the
+ * admins' profiles are read under the check's own allowance. Either way the set is read **once per
+ * request** and shared by every question — History and Decisions ask once a row — and forgotten when
+ * the request writes a People row (`lib/peopleRows`), so a mutation sees its own write.
  */
 export async function otherLedgerEditors(
   ctx: QueryCtx | MutationCtx,
@@ -135,8 +139,10 @@ async function readLedgerEditors(ctx: QueryCtx | MutationCtx): Promise<Set<strin
     .withIndex('by_key', (q) => q.eq('key', READY_ROWS))
     .first();
   if (ready === null) {
-    // As many as the request's budget affords; past that the count is short, which refuses (safe).
-    const budget = requestBudget(ctx);
+    // Its own allowance (never shared with another helper's, so it can't be starved): as many admins
+    // as six profiles at their worst; past that the count is short, which refuses (safe). Only until
+    // the rows backfill has run.
+    const budget = new ReadBudget(PRE_ROWS_ADMIN_BUDGET);
     const admins = await budget.take('profile', budget.rows('profile', ADMIN_READ_LIMIT), (n) =>
       ctx.db
         .query('profiles')
@@ -149,9 +155,17 @@ async function readLedgerEditors(ctx: QueryCtx | MutationCtx): Promise<Set<strin
     .query('peopleRows')
     .withIndex('by_staff', (q) => q.eq('staffRank', 0))
     .take(ADMIN_ROWS);
-  return new Set(
-    rows.filter((r) => r.ledgerEditor && canStillEdit(factsOfRow(r))).map((r) => r.userId),
-  );
+  const counted = rows.filter((r) => r.ledgerEditor && canStillEdit(factsOfRow(r)));
+  // A read answers from the rows. A write — whose answer decides whether the ledger can be left with
+  // no editor — confirms each from its profile, so a stale row can only undercount (refuse), never
+  // let the last real editor go: a select few profiles, once a mutation.
+  if (!('insert' in ctx.db)) return new Set(counted.map((r) => r.userId));
+  const confirmed = new Set<string>();
+  for (const row of counted.slice(0, CONFIRM_IN_WRITES)) {
+    const profile = await ctx.db.get(row.userId);
+    if (profile && canStillEdit(profile)) confirmed.add(profile._id);
+  }
+  return confirmed;
 }
 
 /** Whether `target` is the only editor who can still act — taking it from them is refused. */

@@ -69,7 +69,7 @@ import {
 import { OPEN_ENDED, personRowOf } from './lib/peopleRows';
 import { trustClassFor } from './lib/reputation';
 import { type UndoState, undoState } from './lib/undo';
-import { cancelledRows, standingUndoOf } from './lib/undoChains';
+import { canceledRows, standingUndoOf } from './lib/undoChains';
 
 const MINUTE = 60_000;
 const DAY_MS = 86_400_000;
@@ -1006,13 +1006,12 @@ export function staffTenure(
   staffSince: { at: number; role: UserRole } | null;
   roleSince: { at: number; role: UserRole } | null;
 } {
-  // A role change and its undo cancel out: neither is a move (a revoke undone a minute later never
-  // ended their time on staff). An undo whose undone row is older than the read stays a move.
-  // A change and the undo that stands on it cancel out; undone twice, the change is back
-  // (`lib/undoChains`, the one reading of undo chains).
+  // A change and the undo that stands on it cancel out: neither is a move (a revoke undone a minute
+  // later never ended their time on staff); undone twice, the change is back (`lib/undoChains`, the
+  // one reading of undo chains). An undo whose undone row is older than the read stays a move.
   const all = [...grants, ...revokes];
-  const cancelled = cancelledRows(all);
-  const live = all.filter((r) => !cancelled.has(r._id)).sort((x, y) => y.createdAt - x.createdAt);
+  const canceled = canceledRows(all);
+  const live = all.filter((r) => !canceled.has(r._id)).sort((x, y) => y.createdAt - x.createdAt);
   const lastRevoke = live.find((r) => r.action === 'revoke_role');
   const entry = live.find(
     (g) =>

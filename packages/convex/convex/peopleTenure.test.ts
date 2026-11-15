@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { markReady, READY_ROWS, refreshPersonRow } from './lib/peopleRows';
-import { cancelledRows } from './lib/undoChains';
+import { canceledRows } from './lib/undoChains';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -56,7 +56,7 @@ async function seed(t: T, subject: string, role: Role) {
   });
 }
 
-describe('cancelledRows', () => {
+describe('canceledRows', () => {
   const row = (id: string, at: number, undoes?: string) =>
     ({
       _id: id,
@@ -65,18 +65,23 @@ describe('cancelledRows', () => {
       ...(undoes ? { undoesActionId: undoes } : {}),
     }) as unknown as Doc<'moderationActions'>;
   test('pairs cancel from the newest end: undone once is gone, twice is back', () => {
-    expect([...cancelledRows([row('a', 1), row('b', 2, 'a')])].sort()).toEqual(['a', 'b']);
-    expect([...cancelledRows([row('a', 1), row('b', 2, 'a'), row('c', 3, 'b')])].sort()).toEqual([
+    expect([...canceledRows([row('a', 1), row('b', 2, 'a')])].sort()).toEqual(['a', 'b']);
+    expect([...canceledRows([row('a', 1), row('b', 2, 'a'), row('c', 3, 'b')])].sort()).toEqual([
       'b',
       'c',
     ]);
     expect(
-      [
-        ...cancelledRows([row('a', 1), row('b', 2, 'a'), row('c', 3, 'b'), row('d', 4, 'c')]),
-      ].sort(),
+      [...canceledRows([row('a', 1), row('b', 2, 'a'), row('c', 3, 'b'), row('d', 4, 'c')])].sort(),
     ).toEqual(['a', 'b', 'c', 'd']);
     // An undo of a row not read cancels nothing it can see.
-    expect(cancelledRows([row('b', 2, 'x')]).size).toBe(0);
+    expect(canceledRows([row('b', 2, 'x')]).size).toBe(0);
+  });
+
+  test('decided by the links, not the times: a chain whose times run backward reads the same', () => {
+    expect([...canceledRows([row('a', 3), row('b', 2, 'a'), row('c', 1, 'b')])].sort()).toEqual([
+      'b',
+      'c',
+    ]);
   });
 });
 

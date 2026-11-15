@@ -55,9 +55,10 @@ const UNDO_TAG_READ = 16;
  * the undo happened to write. An undo writes its cascade first (a Post's undo moves its members, each
  * with a row tagged as undoing the Post's), and its own row last, so the newest tagged row on the
  * target is the one. With no tagged row on the target in the read, the newest tagged row stands in:
- * it still says the row was undone, which is what the state decides.
+ * it still says the row was undone, which is what the state decides. `lib/undoChains` follows a
+ * chain of undos link by link through this.
  */
-async function undoRowOf(
+export async function undoRowOf(
   ctx: QueryCtx | MutationCtx,
   row: Doc<'moderationActions'>,
 ): Promise<Doc<'moderationActions'> | null> {
@@ -132,16 +133,16 @@ export async function undoState(
   return { state: 'available', needsReason: handler.undoTakesAway(row) };
 }
 
+/** Why an undo on someone without a People row can't be checked on this page (before the backfill). */
+export const UNDO_NEEDS_ROWS =
+  'This can be checked once the People rows are built; open the person to undo it.';
+
 /**
  * Why an undo on a person can't run now: the refusal the forward write of the state it puts back
  * would give (`writeRefusal`, on the handler's own `personWrite`) — one rule, never a parallel list.
  * The person's facts come from their light People row (a profile can weigh a whole document, and
  * History asks once a line); a person with no row yet is read in full.
  */
-/** Why an undo on someone without a People row can't be checked on this page (before the backfill). */
-export const UNDO_NEEDS_ROWS =
-  'This can be checked once the People rows are built; open the person to undo it.';
-
 async function personUndoRefusal(
   ctx: QueryCtx | MutationCtx,
   viewer: UndoViewer,
