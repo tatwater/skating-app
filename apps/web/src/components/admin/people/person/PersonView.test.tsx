@@ -275,6 +275,36 @@ describe('each read states itself', () => {
     ).toBeGreaterThan(0);
   });
 
+  it('a staff read answering null means not staff, never a failure: no strip, nothing to retry', () => {
+    // The role moved under the page: one staff read already says they aren't staff.
+    for (const over of [
+      { staffStats: SARAH_STATS, staffSeason: null },
+      { staffStats: null, staffSeason: SEASON },
+    ]) {
+      const { unmount } = draw({ person: SARAH_PAGE, ...over });
+      expect(document.querySelector('[data-slot="staff-strip"]')).toBeNull();
+      expect(screen.queryByText('Couldn’t be read')).toBeNull();
+      unmount();
+    }
+  });
+
+  it('a trend answering null is not recorded, not a failure', () => {
+    draw({ trend: null });
+    expect(fact('reports')).toHaveTextContent('Not recorded yet');
+    expect(fact('reports')).not.toHaveTextContent('Couldn’t be read');
+    // The note's region stays mounted (so a failure is announced), empty: nothing failed.
+    expect(document.querySelector('[data-slot="trend-error"]')).toBeEmptyDOMElement();
+  });
+
+  it('every cell that says it couldn’t be read has Try again beside it', () => {
+    draw({ person: SARAH_PAGE, staffStats: SARAH_STATS, staffSeason: failure(), trend: failure() });
+    const failed = document.querySelectorAll('[data-state="unrecorded"]');
+    expect(
+      [...failed].filter((c) => c.textContent?.includes('Couldn’t be read')).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: 'Try again' }).length).toBeGreaterThan(1);
+  });
+
   it('loading staff and feed reads hold their shapes', () => {
     draw({
       person: SARAH_PAGE,

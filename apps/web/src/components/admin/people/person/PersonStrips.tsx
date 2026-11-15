@@ -55,11 +55,21 @@ function FactTile({ label, fact, slot }: { label: string; fact: Fact | undefined
   );
 }
 
-/** A fact from a loadable read: `undefined` while loading, the failed fact if it failed. */
+/**
+ * A cell whose read answered `null` — nothing on record for this person (the reads answer `null`
+ * for an id with no account, and the staff reads for someone not on staff). Not a failure: there is
+ * nothing to try again.
+ */
+const UNRECORDED: Fact = { value: '—', tone: 'dim', sub: WORDS.notRecorded, state: 'unrecorded' };
+
+/**
+ * A fact from a loadable read: `undefined` while loading, the failed fact (whose strip note offers
+ * *Try again*) only when the read failed, and *Not recorded yet* when it answered `null`.
+ */
 function factOf<T>(read: Loadable<T | null>, make: (value: T) => Fact): Fact | undefined {
   if (read === undefined) return undefined;
   if (isFailed(read)) return FAILED;
-  if (read === null) return FAILED;
+  if (read === null) return UNRECORDED;
   return make(read as T);
 }
 
@@ -185,8 +195,9 @@ export function StaffStrip({
   now: number;
   timeZone?: string;
 }) {
-  // Not staff after all (the role moved under the page): no strip.
-  if (stats === null) return null;
+  // Not staff after all (the role moved under the page): either staff read answering `null` says
+  // so — the staff reads answer `null` for someone not on staff, never for a failure — so no strip.
+  if (stats === null || season === null) return null;
   const value = stats === undefined || isFailed(stats) ? null : stats;
   const bars = value === null ? [] : weekBars(value, now);
   return (
