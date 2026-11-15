@@ -61,7 +61,7 @@ import {
   query,
 } from './_generated/server';
 import { resolvePlaceForCoord } from './adminAreas';
-import { writeAudit } from './lib/audit';
+import { composed, writeAudit } from './lib/audit';
 import {
   getCurrentProfile,
   requireCapability,
@@ -1286,7 +1286,7 @@ async function admitCandidate(
     action: 'set_included_by_request',
     targetType: 'waterbody',
     targetId: id,
-    reason: `Admitted from the catalog on a skater’s request (3DHP ${c.externalId})`,
+    reason: composed`Admitted from the catalog on a skater’s request (3DHP ${c.externalId})`,
     metadata: { includedByRequest: true, requestId: request._id, serviceUrl: c.serviceUrl },
     createdAt: now,
   });

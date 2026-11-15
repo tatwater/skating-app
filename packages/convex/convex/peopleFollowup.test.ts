@@ -4,9 +4,11 @@
  */
 import { AUDIT_REASON_MAX, AUDIT_REASON_TOO_LONG } from '@skating/core';
 import { convexTest } from 'convex-test';
+import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
+import { composed, fitComposed, writeAudit } from './lib/audit';
 import { rebuildBodyLibrary } from './lib/bodyLibrary';
 import { LAST_EDITOR_MESSAGE } from './lib/ledgerEditors';
 import { LEDGER_NEUTRAL_REFUSAL } from './lib/peopleCan';
@@ -103,6 +105,157 @@ describe('an audit reason is capped at the one place it enters the log (D261)', 
     );
     const history = await as(t, 'mod').query(api.people.history, { userId: skater });
     expect(history?.rows.some((r) => r.reason.length === AUDIT_REASON_MAX * 2)).toBe(true);
+  });
+});
+
+describe('a reason the system composes is shortened to fit, never refused (D261)', () => {
+  const LONG = 'N'.repeat(3_000);
+  const BODY = {
+    searchText: 'x',
+    type: 'lakePond' as const,
+    source: 'osm' as const,
+    polygon: {
+      type: 'Polygon' as const,
+      coordinates: [
+        [
+          [0, 0],
+          [0, 1],
+          [1, 1],
+          [0, 0],
+        ],
+      ],
+    },
+    bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+    centroid: { lat: 0.5, lng: 0.5 },
+    dedupStatus: 'clean' as const,
+    createdAt: T0,
+  };
+  const newestReason = (t: T, targetId: string) =>
+    t.run(async (ctx) => {
+      const rows = (await ctx.db.query('moderationActions').collect()).filter(
+        (r) => r.targetId === targetId,
+      );
+      return rows[rows.length - 1]?.reason ?? null;
+    });
+
+  test('fitting: at most the cap, the fixed words kept in order, whole when it fits', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.string({ maxLength: 40 }), { minLength: 1, maxLength: 4 }),
+        fc.array(fc.string({ maxLength: 5_000 }), { maxLength: 3 }),
+        (fixedParts, values) => {
+          const fixed = [...fixedParts];
+          while (fixed.length < values.length + 1) fixed.push('');
+          const reason = {
+            composed: true as const,
+            fixed,
+            values: values.slice(0, fixed.length - 1),
+          };
+          const whole = fixed.reduce((o, p, i) => o + p + (reason.values[i] ?? ''), '');
+          const fitted = fitComposed(reason);
+          expect(fitted.length).toBeLessThanOrEqual(AUDIT_REASON_MAX);
+          if (whole.length <= AUDIT_REASON_MAX) expect(fitted).toBe(whole);
+          expect(fitted.startsWith(fixed[0] as string)).toBe(true);
+          let at = 0;
+          for (const part of fixed) {
+            const i = fitted.indexOf(part, at);
+            expect(i).toBeGreaterThanOrEqual(0);
+            at = i + part.length;
+          }
+        },
+      ),
+      { numRuns: 200 },
+    );
+  });
+
+  test('a merge into a body with a 3,000-character name goes through, its reason fitted', async () => {
+    const t = await setup();
+    await seed(t, 'adm', { role: 'admin' });
+    const [survivor, loser] = await t.run(async (ctx) => [
+      await ctx.db.insert('waterBodies', { ...BODY, name: LONG }),
+      await ctx.db.insert('waterBodies', { ...BODY, name: 'Loser Pond' }),
+    ]);
+    await as(t, 'adm').mutation(api.waterBodies.merge, { survivorId: survivor, loserId: loser });
+    const reason = await newestReason(t, loser);
+    expect(reason?.length).toBeLessThanOrEqual(AUDIT_REASON_MAX);
+    expect(reason?.startsWith('Merged into NNN')).toBe(true);
+    expect(reason?.endsWith('…')).toBe(true);
+  });
+
+  test('a landmark and a place name with 3,000-character names: removed and dismissed, reasons fitted', async () => {
+    const t = await setup();
+    await seed(t, 'adm', { role: 'admin' });
+    const { landmark, place } = await t.run(async (ctx) => {
+      const body = await ctx.db.insert('waterBodies', { ...BODY, name: 'Pond' });
+      const landmark = await ctx.db.insert('bodyLandmarks', {
+        waterBodyId: body,
+        name: LONG,
+        kind: 'other',
+        point: { lat: 0.5, lng: 0.5 },
+        source: 'gnis',
+        externalIds: ['gnis:x'],
+        aliases: [],
+        createdAt: 0,
+        updatedAt: 0,
+      });
+      const place = await ctx.db.insert('corpusPlaceNames', {
+        name: LONG,
+        askKey: 'long',
+        aliases: [],
+        messages: 3,
+        skatedMessages: 1,
+        states: ['VT'],
+        waterBodyId: body,
+        status: 'open',
+        createdAt: T0,
+        updatedAt: T0,
+      });
+      return { landmark, place };
+    });
+    await as(t, 'adm').mutation(api.landmarks.remove, { landmarkId: landmark });
+    await as(t, 'adm').mutation(api.corpusPlaceNames.dismiss, {
+      id: place,
+      reason: 'not_a_place',
+      note: 'x'.repeat(500),
+    } as never);
+    const reasons = await t.run(async (ctx) =>
+      (await ctx.db.query('moderationActions').collect()).map((r) => r.reason),
+    );
+    const removed = reasons.find((r) => r.startsWith('Removed "'));
+    const dismissed = reasons.find((r) => r.startsWith('Dismissed "'));
+    for (const r of [removed, dismissed]) {
+      expect(r?.length).toBeLessThanOrEqual(AUDIT_REASON_MAX);
+      expect(r).toContain('…');
+    }
+  });
+
+  test('a system write (no actor, as a job writes) with a composed reason is written, not refused', async () => {
+    const t = await setup();
+    const id = await t.run(async (ctx) => {
+      const body = await ctx.db.insert('waterBodies', { ...BODY, name: 'Pond' });
+      await writeAudit(ctx, {
+        action: 'remove',
+        targetType: 'waterbody',
+        targetId: body,
+        reason: composed`Auto-delisted "${LONG}": no longer fits ${LONG}. Redraw it.`,
+      });
+      return body;
+    });
+    const reason = await newestReason(t, id);
+    expect(reason?.length).toBeLessThanOrEqual(AUDIT_REASON_MAX);
+    expect(reason?.startsWith('Auto-delisted "N')).toBe(true);
+    expect(reason?.endsWith('. Redraw it.')).toBe(true);
+    // What a person typed stays refused past the cap, through the same writer.
+    await expect(
+      t.run((ctx) =>
+        writeAudit(ctx, {
+          action: 'remove',
+          targetType: 'waterbody',
+          targetId: id,
+          reason: 'y'.repeat(AUDIT_REASON_MAX + 1),
+        }),
+      ),
+    ).rejects.toThrow(AUDIT_REASON_TOO_LONG);
   });
 });
 

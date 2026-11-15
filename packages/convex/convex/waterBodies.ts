@@ -84,7 +84,7 @@ import {
   query,
 } from './_generated/server';
 import { failedAttempt } from './lib/attempts';
-import { snapshotDoc, writeAudit, writeSnapshot } from './lib/audit';
+import { type AuditReason, composed, snapshotDoc, writeAudit, writeSnapshot } from './lib/audit';
 import {
   getCurrentProfile,
   requireCapability,
@@ -2785,7 +2785,7 @@ export async function removeBodyImpl(
     action: 'remove',
     targetType: 'waterbody',
     targetId: args.waterBodyId,
-    reason: args.note ?? `Removed from map (${args.reason})`,
+    reason: args.note ?? composed`Removed from map (${args.reason})`,
     metadata: { removalReason: args.reason },
     createdAt: now,
   });
@@ -3117,7 +3117,7 @@ export const merge = mutation({
       survivor,
       loser,
       actorId: actor._id,
-      reason: reason?.trim() || `Merged into ${survivor.name}`,
+      reason: reason?.trim() || composed`Merged into ${survivor.name}`,
     });
     return survivorId;
   },
@@ -3321,7 +3321,7 @@ export async function mergeBodyInto(
     survivor: Doc<'waterBodies'>;
     loser: Doc<'waterBodies'>;
     actorId?: Id<'profiles'>;
-    reason: string;
+    reason: AuditReason;
   },
 ): Promise<{ repointed: Record<string, number> }> {
   const survivorId = survivor._id;
@@ -3729,12 +3729,11 @@ export const retireAbsorbedBodies = internalMutation({
         name: absorbed.name || '(unnamed)',
       });
       if (apply === true) {
+        const campaign = campaignId ? ` (${campaignId})` : '';
         await mergeBodyInto(ctx, {
           survivor,
           loser: absorbed,
-          reason:
-            `Absorbed by the merge${campaignId ? ` (${campaignId})` : ''}: one catalog published ` +
-            `this lake twice and D136's same-source lane collapsed it into ${survivor.name || 'the survivor'}.`,
+          reason: composed`Absorbed by the merge${campaign}: one catalog published this lake twice and D136's same-source lane collapsed it into ${survivor.name || 'the survivor'}.`,
         });
       }
     }
@@ -3840,7 +3839,7 @@ export async function setCuratedBoostImpl(
         reason ??
         (curatedBoost === undefined
           ? 'Cleared curatedBoost'
-          : `Set curatedBoost to ${curatedBoost}`),
+          : composed`Set curatedBoost to ${curatedBoost}`),
       metadata: {
         curatedBoost: curatedBoost ?? null,
         minVisibleZoom: after?.minVisibleZoom,
@@ -3921,7 +3920,7 @@ export async function setReferenceLinksImpl(
         reason ??
         (trimmed.length === 0
           ? 'Cleared the reference links'
-          : `Set ${trimmed.length} reference link${trimmed.length === 1 ? '' : 's'}`),
+          : composed`Set ${trimmed.length} reference link${trimmed.length === 1 ? '' : 's'}`),
       // **`prev` alongside the new value (A06c §6.1).** An audit row that records only what a field *became*
       // can answer "who changed this" and never "changed it from what", which is most of what someone
       // reading the timeline actually wants. Same convention as `setDepth`.
@@ -3995,8 +3994,8 @@ export async function setSatelliteImageryImpl(
       reason:
         reason ??
         (mode === 'auto'
-          ? `Satellite link back to automatic (now ${after ? 'offered' : 'withheld'})`
-          : `Satellite link forced ${mode} (was ${before ? 'offered' : 'withheld'})`),
+          ? composed`Satellite link back to automatic (now ${after ? 'offered' : 'withheld'})`
+          : composed`Satellite link forced ${mode} (was ${before ? 'offered' : 'withheld'})`),
       metadata: {
         satelliteImagery: mode,
         available: after,
@@ -4076,7 +4075,7 @@ export async function setWeatherSamplePointsImpl(
       reason:
         reason ??
         (points.length > 0
-          ? `Set ${points.length} weather sample point${points.length === 1 ? '' : 's'}`
+          ? composed`Set ${points.length} weather sample point${points.length === 1 ? '' : 's'}`
           : 'Cleared weather sample points (back to the centroid default)'),
       // The count of the grid it replaced; the grid itself is the snapshot (D226).
       metadata: { count: points.length, prev: { count: prevPoints.length, snapshot: true } },
@@ -4246,7 +4245,7 @@ export async function writeDepth(
   }: {
     body: Doc<'waterBodies'>;
     patch: Partial<DepthFields>;
-    reason: string;
+    reason: AuditReason;
     metadata: Record<string, unknown>;
   },
 ): Promise<void> {
@@ -4505,7 +4504,7 @@ export async function setWaterBodyNameImpl(
         reason:
           reason ??
           (restored
-            ? `Cleared the name override; back to "${restored}"`
+            ? composed`Cleared the name override; back to "${restored}"`
             : 'Cleared the community name; back to unnamed (no catalog claim)'),
         metadata: { name: restored, prev: { name: body.name, overridden } },
         createdAt: Date.now(),
@@ -4543,8 +4542,8 @@ export async function setWaterBodyNameImpl(
         reason:
           reason ??
           (body.name
-            ? `Community name "${chosen}" instead of "${body.name}" (no catalog claim)`
-            : `Community name "${chosen}" for an unnamed body (no catalog claim)`),
+            ? composed`Community name "${chosen}" instead of "${body.name}" (no catalog claim)`
+            : composed`Community name "${chosen}" for an unnamed body (no catalog claim)`),
         metadata: { name: chosen, source: 'user', prev: { name: body.name, overridden } },
         createdAt: Date.now(),
       });
@@ -4572,7 +4571,8 @@ export async function setWaterBodyNameImpl(
       action: 'set_water_body_name',
       targetType: 'waterbody',
       targetId: waterBodyId,
-      reason: reason ?? `Display "${match.value}" (${match.source}) instead of "${body.name}"`,
+      reason:
+        reason ?? composed`Display "${match.value}" (${match.source}) instead of "${body.name}"`,
       metadata: { name: match.value, source: match.source, prev: { name: body.name, overridden } },
       createdAt: Date.now(),
     });
@@ -4619,7 +4619,7 @@ export const clearDepthOverride = mutation({
     await writeDepth(ctx, actor, {
       body,
       patch,
-      reason: `Released the operator override on ${released.join(' and ')} depth — the import may refill it`,
+      reason: composed`Released the operator override on ${released.join(' and ')} depth — the import may refill it`,
       metadata: { released },
     });
     return waterBodyId;

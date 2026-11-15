@@ -16,7 +16,7 @@ import { ConvexError, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
 import { mutation, query } from './_generated/server';
 import { recomputeAccessKind } from './accessPoints';
-import { writeAudit } from './lib/audit';
+import { composed, writeAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { refreshBodyLibrary } from './lib/bodyLibrary';
 import { type PutInMarker, putInMarkersForBody } from './lib/putInMarkers';
@@ -125,7 +125,8 @@ export const setOfficial = mutation({
       targetType: 'waterbody',
       targetId: waterBodyId,
       reason:
-        reason ?? (trimmedName ? `Set official put-in: ${trimmedName}` : 'Set official put-in'),
+        reason ??
+        (trimmedName ? composed`Set official put-in: ${trimmedName}` : 'Set official put-in'),
       // The **snapped** coord, which is what was stored — an audit row recording the raw click
       // would describe a marker that never existed.
       metadata: { coord: snapped, putInId: id, ...(trimmedName ? { name: trimmedName } : {}) },

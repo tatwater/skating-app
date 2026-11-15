@@ -24,3 +24,32 @@ test('only lib/audit.ts inserts into moderationActions', () => {
     .map((p) => relative(CONVEX, p));
   expect(writers).toEqual([join('lib', 'audit.ts')]);
 });
+
+/**
+ * A reason the system builds from stored names or text is a `composed` one (D261): the audit writer
+ * shortens it to fit, where a plain string — what a person typed — is refused past the cap. A raw
+ * template with a value, passed to an audit writer, would be refused on a long name instead.
+ */
+test('every reason an audit writer composes is tagged composed', () => {
+  const writers = /\b(?:writeAudit|audit|auditLandmark|auditUser|writeDepth|mergeBodyInto)\(/g;
+  const raw: string[] = [];
+  for (const p of sources(CONVEX)) {
+    const text = readFileSync(p, 'utf8');
+    for (let m = writers.exec(text); m; m = writers.exec(text)) {
+      let depth = 0;
+      let end = m.index;
+      for (let i = m.index + m[0].length - 1; i < text.length; i++) {
+        if (text[i] === '(') depth++;
+        else if (text[i] === ')' && --depth === 0) {
+          end = i;
+          break;
+        }
+      }
+      const span = text.slice(m.index, end);
+      for (const t of span.matchAll(/(composed)?`[^`]*\$\{/g)) {
+        if (!t[1]) raw.push(`${relative(CONVEX, p)}: ${t[0].slice(0, 60)}`);
+      }
+    }
+  }
+  expect(raw).toEqual([]);
+});

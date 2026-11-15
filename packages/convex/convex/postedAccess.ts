@@ -18,7 +18,7 @@ import { ConvexError, type Infer, v } from 'convex/values';
 import type { Doc } from './_generated/dataModel';
 import type { MutationCtx } from './_generated/server';
 import { mutation } from './_generated/server';
-import { writeAudit } from './lib/audit';
+import { checkedReason, composed, writeAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { postedAccess as postedAccessValidator } from './lib/validators';
 
@@ -133,7 +133,11 @@ export async function setPostedAccessImpl(
     action: 'set_posted_access',
     targetType: target.type,
     targetId: target.id,
-    reason: reason ? `${describeChange(next)} — ${reason}` : describeChange(next),
+    // A person's reason is held to the cap as typed (D261); the line the system puts before it is
+    // composed, so a reason at the cap still fits once the change is described.
+    reason: reason
+      ? composed`${describeChange(next)} — ${checkedReason(reason)}`
+      : describeChange(next),
     // `prev` alongside the new value (the A06c §6.1 convention): an audit row that records only what a
     // field *became* can answer "who changed this" and never "changed it from what", which is most
     // of what someone reading a wrong closure back would want.

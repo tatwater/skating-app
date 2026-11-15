@@ -2487,11 +2487,30 @@ table — the merge's own pattern — stays the place for any payload that is a 
 the largest metadata is a few KB, and an audit row's worst case could come down from the document
 limit to the reason cap plus about 16 KB.
 
-**A risk D261 introduces, for the same ruling:** a few system-written reasons interpolate a name
-(`Drew "‹name›" on ‹body›`, `Auto-delisted "‹name›": …`, `Added "‹name›"`). With names uncapped, a
-name near 2,000 characters would make that write refuse rather than truncate. No such name exists in
-the corpus as far as the code shows (place and body names come from OSM, GNIS and staff), and the
-name caps above remove it; until then it is a refusal, never a long row.
+**Composed reasons are shortened, never refused** (the coordinator's ruling, 2026-11-15, closing the
+risk D261 opened). D261's cap is for what a person types. A reason the system builds from fixed words
+and stored names or text is written with the `composed` tag (`lib/audit.composed`); `writeAudit` keeps
+its fixed words and trims the quoted values — the longest first, each cut marked with an ellipsis —
+until it fits 2,000 characters, and the write goes through. A plain string is still refused past the
+cap with its plain message; a writer that quotes a person's typed reason inside a composed one checks
+it first (`checkedReason`). `packages/guards`' `auditWriters.test.ts` fails on a raw template with a
+value passed to an audit writer. The composing writers:
+
+| File | Writers | Fixed words around |
+| --- | --- | --- |
+| `subAreas.ts` | auto-delist (with an actor), create (drawn and by chord), redraw, redraw by chord, rename / aliases, delist, restore, curated boost, the A02 seed, the A07a campaign | a bay's and its lake's names, the delist reason |
+| `landmarks.ts`, `lib/landmarkRows.ts` | add, edit, remove, restore; drawn as a bay; folded into / removed by a merge | a landmark's and its twin's names |
+| `corpusPlaceNames.ts` | dismiss (with the moderator's note), reopen, spelled as a landmark's alias | a place name, the dismissal reason and note |
+| `waterBodies.ts` | remove from map, merge (operator default and the catalog campaign's absorption), satellite mode, sample points, name override cleared, community name, display name, curated boost, reference links, depth override released | a body's names, a campaign id, counts and modes |
+| `putIns.ts` | set official put-in | the put-in's name |
+| `corpusRequests.ts` | admit from the catalog | a catalog id |
+| `lib/requestDecisions.ts` | a request's default decision line | the decision and the request kind |
+| `postedAccess.ts` | the posted-access change, with the person's reason quoted | the change, and the typed reason (checked first) |
+
+No recurring job composes a reason from stored text today: the lapse sweep, the standing rollover,
+the hazard auto-merge and the erasure write fixed reasons; the auto-delist and the catalog absorption
+that do compose run from the ETL and operator writes. A composed reason can't fail its write, so none
+could be parked by it.
 
 ### The B01-2 server register (owed to the server agent)
 

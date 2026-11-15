@@ -22,7 +22,7 @@ import { ConvexError } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
-import { writeAudit } from './audit';
+import { type AuditReason, composed, writeAudit } from './audit';
 
 type BayCandidates = readonly (SubAreaCandidate<Doc<'waterBodySubAreas'>> & {
   bbox?: Doc<'waterBodySubAreas'>['bbox'];
@@ -220,7 +220,7 @@ export async function auditLandmark(
   actorId: Id<'profiles'> | undefined,
   action: 'create_landmark' | 'edit_landmark' | 'promote_landmark' | 'remove' | 'restore',
   landmarkId: Id<'bodyLandmarks'>,
-  reason: string,
+  reason: AuditReason,
   metadata?: Record<string, unknown>,
 ): Promise<void> {
   await writeAudit(ctx, {
@@ -257,7 +257,7 @@ export async function retireAsPromoted(
     actorId,
     'promote_landmark',
     landmarkId,
-    `"${row.name}" drawn as a bay`,
+    composed`"${row.name}" drawn as a bay`,
     {
       subAreaId,
     },
@@ -454,8 +454,8 @@ export async function repointLandmarksOnMerge(
         'remove',
         row._id,
         twin.removedAt === undefined
-          ? `Folded into "${twin.name}" by a merge`
-          : `"${row.name}" was removed on the lake it merged into`,
+          ? composed`Folded into "${twin.name}" by a merge`
+          : composed`"${row.name}" was removed on the lake it merged into`,
         { mergedIntoId: twin._id },
       );
       folded++;
