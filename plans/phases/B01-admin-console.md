@@ -2230,35 +2230,61 @@ names without a row is `rows_missing` in the count and on every page. The Overvi
 counts through the same function. One test at cap + 1 for each upstream
 of each lane (`peopleTruth.test.ts`).
 
-**B01-4: the backfills, and the one procedure that runs them** (Greptile's fourth and fifth reviews
-of #115: the roadmap listed two of the three backfills; then the documented recovery passed an argument
-one backfill refused, and the documented completion check left one out). Every one-time job a People
-read rests on is one entry in `PEOPLE_BACKFILLS` (`lib/peopleRows`), in run order. The operator starts
-the first and each starts the next when it ends, whatever its outcome; each is ready only by a run with
-no failures, and on a database with nothing to backfill each is ready at once, so a fresh deployment
+**B01-4: the backfills, and the one procedure that runs them** (Greptile's fourth to sixth reviews of
+#115: the roadmap listed two of the three backfills; the documented recovery passed an argument one
+backfill refused, and the documented completion check left one out; then a delayed pass of an old run
+could finish on a failure count a recovery had zeroed, and mark a backfill ready with a row missing).
+Every one-time job a People read rests on is one entry in `PEOPLE_BACKFILLS` (`lib/peopleRuns`), in
+run order. The operator starts the first and each run starts the next backfill when it ends, whatever
+its outcome; on a database with nothing to backfill each ends at once, ready, so a fresh deployment
 takes the same procedure. All three take the same arguments with the same meaning (`BACKFILL_ARGS`):
-`cursor` (where a pass resumes, opaque; left out, a new run from the start) and `alone` (don't start
-the ones after). Each pass records its state in `peopleBackfills` — ready, running, its cursor, its
-failures, whether it chains — and `lib/peopleRows.readPreparation` is the only reading of it: the
-operator's check (`peopleJobs.preparation`) is that reading, and so is every read's `pending`, so the
-check and the pages can't disagree about what is finished.
+`run` (the run a pass belongs to; left out, the call starts a new run), `cursor` (where a pass
+resumes, opaque) and `alone` (a new run that doesn't start the ones after).
 
 | Job | Started by | Reads that say `pending` until it is ready |
 | --- | --- | --- |
 | `peopleJobs:backfillRows` | the operator (step 2) | `people.lanes` (every lane, and the top level), `people.listPage` (every lane and search), `console.overview` → `people` (every figure but *N users*) |
-| `peopleJobs:backfillFlagSubjects` | `backfillRows`, when it ends | `people.lanes` (Flagged, and the top level), `people.listPage` (every page: rows carry open flags), `people.person`, `people.history`, `console.overview` → `people` |
-| `peopleJobs:backfillUndoChains` | `backfillFlagSubjects`, when it ends | `people.staffStats`, `people.staffSeason` |
+| `peopleJobs:backfillFlagSubjects` | `backfillRows`, when a run ends | `people.lanes` (Flagged, and the top level), `people.listPage` (every page: rows carry open flags), `people.person`, `people.history`, `console.overview` → `people` |
+| `peopleJobs:backfillUndoChains` | `backfillFlagSubjects`, when a run ends | `people.staffStats`, `people.staffSeason` |
 
 The ledger's "never no editor" check also reads whether the rows are ready (through the same
 reading), but it isn't a figure: before the rows exist it reads admins' profiles under its own
 allowance and only ever refuses (safe).
 
+**A run has an identity** — for every chained People job: the three backfills, the lapsed-suspension
+sweep and its daily retry (`lib/peopleRuns`, table `peopleJobRuns`, one row per job).
+
+- **A lease.** Starting a job — by the operator, by another backfill's end, by the recovery, by a cron
+  tick — mints the next run number and makes it the job's current run, in the same transaction, so
+  every older run is non-current before the new one does anything. Every pass carries its run and
+  takes the lease first; a pass whose run isn't current returns at once: it writes no progress, no
+  failures, no `ready`, and schedules nothing. At most one run of a job can make progress or declare
+  completion, so "the old run finishes later" is harmless by construction — the stalled recovery
+  included. For the sweep and the retry it also means two cron ticks never walk the same range at
+  once, so no lapse takes two attempts in one run.
+- **Failures belong to the run.** The row's `failed` is the current run's own count; only the start
+  that makes a new run current zeroes it, and the old run can no longer write.
+- **`ready` is a conclusion, and correctable.** It is written only when the current run reaches the
+  end of its range: true exactly when that run recorded no failures, false otherwise (a run with
+  failures takes back an earlier conclusion). A later run that finds what the backfill exists to fix —
+  a profile whose row is missing or stale, a flag without its subject, an undo without its place —
+  clears it on the spot, so reads go back to "not ready" honestly until a run ends clean. That was
+  chosen over a check that verifies the fact on every read: verifying "every profile has a row" means
+  reading every profile, which no read can afford.
+- **What finds a gap after `ready`.** Nothing can open one: every write that creates what a backfill
+  fixes does the backfill's work in its own transaction — the one profile insert refreshes the
+  person's row, both flag writers stamp the subject, the one audit writer places the chain — and
+  `packages/guards` holds the first two to it (`auditWriters.test.ts` already holds the third). A row
+  that goes stale is caught by the drift repair (the oldest-refreshed rows, every ten minutes); a run
+  of the backfill (the documented re-run) meets any gap left by a bug and says so.
+
 **The check** — `peopleJobs.preparation` (internal: only the deployment's key can call it), `{}` →
-`{ ready, pending: PeopleBackfill[], rerun: string[], backfills: [{ backfill, job, ready, running,
-stalled, cursor, failed, updatedAt }] }`. `ready` is every backfill ready. `rerun` is the jobs to run
-again: not ready, not running (or running but `stalled` — nothing recorded for ten minutes, so a pass
-threw and its write rolled back, leaving the last recorded `cursor`), and not about to be started by an
-earlier backfill whose chain is still running. Once ready a backfill stays ready: a re-run is a repair.
+`{ ready, pending: PeopleBackfill[], rerun: string[], backfills: [{ backfill, job, run, ready, running,
+stalled, cursor, failed, updatedAt }] }`, each backfill as its current run has it. `ready` is every
+backfill ready. `rerun` is the jobs to run again: not ready, not running (or running but `stalled` —
+nothing recorded for ten minutes, so a pass threw or was delayed), and not about to be started by an
+earlier backfill whose chain is still running. The documented re-run starts a new run, which
+supersedes any old one.
 
 **Three answers, three fields** — for the web builders:
 
@@ -2273,14 +2299,23 @@ earlier backfill whose chain is still running. Once ready a backfill stays ready
 
 A dependent figure is never folded into `capped` while a backfill is pending.
 
-**After merge, on dev** — word for word the same in the roadmap's Owed list and the PR body; the text
-is `AFTER_MERGE_PROCEDURE` in `lib/peopleRows`, which `peopleBackfills.test.ts` performs literally (its
-`convex run` commands parsed out of the text and run with exactly those names and argument objects) on
-an empty database and seeded ones, a failure and a stalled pass included; `packages/guards`'
-`peopleBackfills.test.ts` holds this doc and the roadmap to it, and this table to the registry. Each
-`convex` command runs as `pnpm --filter @skating/convex exec convex …` from main.
+**Tests.** `peopleRuns.test.ts` is a fast-check property, run for each of the five chained jobs: run
+A (delayed) and run B (the recovery, or the next tick, started once A reads as stalled) through
+arbitrary interleavings of their passes, with failures and items added mid-run. It holds that a
+superseded run's pass changes nothing and schedules nothing, that the job terminates, and that the
+conclusion is true: a backfill is `ready` exactly when its last run ended with no failures, and never
+while an item is unfixed; a lapse run with no failures left none it began with. Greptile's sequence is
+a named case. `peopleBackfills.test.ts` performs the procedure below literally, including a recovery
+issued while an old pass is still scheduled.
 
-(1) `convex dev --once`. (2) `convex run peopleJobs:backfillRows '{}'` — it runs the three People backfills in turn (rows, flag subjects, undo chains). Estimate: unmeasured. (3) `convex run peopleJobs:preparation '{}'` until it returns `ready: true`. (4) For each job in its `rerun`: `convex run <job> '{"alone":true}'`, then step 3 again. (5) For each id `backfillRows` logs as an overwritten tombstone: `convex run peopleJobs:restoreTombstoneStatus '{"userId":"<id>"}'`.
+**After merge, on dev** — word for word the same in the roadmap's Owed list and the PR body. The text
+is `AFTER_MERGE_PROCEDURE` in `lib/peopleRuns`, which `peopleBackfills.test.ts` performs literally:
+its `convex run` commands are parsed out of the text and run with exactly those names and argument
+objects, on an empty database and on seeded ones, a failure and a stalled run included.
+`packages/guards`' `peopleBackfills.test.ts` holds this doc and the roadmap to it, and this table to
+the registry. Each `convex` command runs as `pnpm --filter @skating/convex exec convex …` from main.
+
+(1) `convex dev --once`. (2) `convex run peopleJobs:backfillRows '{}'` — it runs the three People backfills in turn (rows, flag subjects, undo chains). Estimate: unmeasured. (3) `convex run peopleJobs:preparation '{}'` until it returns `ready: true`. (4) For each job in its `rerun`: `convex run <job> '{"alone":true}'` (a new run, which supersedes any older one), then step 3 again. (5) For each id `backfillRows` logs as an overwritten tombstone: `convex run peopleJobs:restoreTombstoneStatus '{"userId":"<id>"}'`.
 
 **B01-4: one rule for what is offered** (Greptile on #115, P2). An undo is a write of the previous
 state, so its refusal is computed by `lib/peopleCan.writeRefusal` on the write the undo's handler
