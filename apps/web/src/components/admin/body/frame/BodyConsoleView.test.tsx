@@ -310,6 +310,30 @@ describe('BodyConsoleView', () => {
     );
   });
 
+  it('letting go back at the record while a change is on its way sends the way back', async () => {
+    const answers: ((landed: boolean) => void)[] = [];
+    const onBoostCommit = vi.fn(
+      (_value: number) =>
+        new Promise<boolean>((resolve) => {
+          answers.push(resolve);
+        }),
+    );
+    render(<Page onBoostCommit={onBoostCommit} />);
+    const slider = screen.getByRole('slider', { name: 'Map boost' });
+    slider.focus();
+    await userEvent.keyboard('{ArrowRight}');
+    // Back where the record (0.3) stands, the first change still on its way: weighed against the
+    // change, not the record, so it is sent — the change landing alone would stand at 0.4.
+    await userEvent.keyboard('{ArrowLeft}');
+    expect(onBoostCommit.mock.calls.map(([v]) => v)).toEqual([0.4, 0.3]);
+    await act(async () => answers[0]?.(true));
+    await act(async () => answers[1]?.(true));
+    expect(screen.getByRole('slider', { name: 'Map boost' })).toHaveAttribute(
+      'aria-valuenow',
+      '0.3',
+    );
+  });
+
   it('never draws a capped history as whole', () => {
     render(<Page history={CAPPED_HISTORY} />);
     expect(screen.getByText('Latest 6')).toBeInTheDocument();

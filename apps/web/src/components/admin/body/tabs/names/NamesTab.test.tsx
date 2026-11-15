@@ -356,10 +356,12 @@ describe('NamesTab', () => {
       const field = screen.getByRole('textbox', { name: 'Community name' });
       await userEvent.clear(field);
       await userEvent.type(field, 'Low Plains Pond');
-      community('wb2', 'High Meadow');
+      // The other body holds the same name, so its record moving can't reset the draft (`useDraft`
+      // follows the record): only the body's own subtree can.
+      community('wb2', 'Low Plains');
       rerender(<BodyTabHost Wiring={NamesTab} bodyId="wb2" />);
       const next = screen.getByRole('textbox', { name: 'Community name' });
-      expect(next).toHaveValue('High Meadow');
+      expect(next).toHaveValue('Low Plains');
       await userEvent.type(next, '{Enter}');
       expect(mocks.calls).toEqual([]);
     });

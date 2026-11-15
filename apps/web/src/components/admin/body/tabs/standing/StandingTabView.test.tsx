@@ -118,6 +118,20 @@ describe('StandingTabView', () => {
     );
   });
 
+  it('a refusal is said only under the pick whose write raised it', async () => {
+    const onSetDormant = vi.fn(async () => {
+      throw new Error('Only an active body can be set dormant');
+    });
+    render(<StandingTabView {...base} onSetDormant={onSetDormant} />);
+    await userEvent.click(radio('Dormant'));
+    await userEvent.click(screen.getByRole('button', { name: /Set dormant/ }));
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    // Another pick's form never wears it.
+    await userEvent.click(radio('Removed'));
+    expect(screen.getByRole('button', { name: 'Remove from the map' })).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it('draws no control the viewer lacks: a moderator never sees Removed', () => {
     render(<StandingTabView {...base} canRemove={false} />);
     expect(screen.queryByRole('radio', { name: /^Removed/ })).toBeNull();

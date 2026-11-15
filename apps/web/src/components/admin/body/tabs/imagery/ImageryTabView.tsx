@@ -169,13 +169,18 @@ export function ImageryTabView({
     setAsking(true);
   };
   const [satError, setSatError] = useState<string | null>(null);
+  // Only the latest choice's refusal is said: an earlier one refused late never shows under a
+  // choice made since.
+  const satChoices = useRef(0);
   const setSatellite = async (mode: SatelliteImageryMode) => {
     if (!onSatelliteChange) return;
+    const mine = ++satChoices.current;
     setSatError(null);
     try {
       await onSatelliteChange(mode);
     } catch (err) {
-      setSatError(err instanceof Error ? err.message : String(err));
+      if (satChoices.current === mine)
+        setSatError(err instanceof Error ? err.message : String(err));
     }
   };
   const go = (to: number) => {

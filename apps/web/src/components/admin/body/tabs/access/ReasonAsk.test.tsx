@@ -57,15 +57,13 @@ describe('ReasonAsk', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     expect(screen.getByRole('alertdialog')).toBeTruthy();
     expect(within(dialog).getByRole('textbox')).toHaveValue('A private dock');
-    // Its own answer closes it; reopened, it starts clean and no old answer touches it.
+    // Its own answer closes it; reopened, it starts clean. (No later opening can exist while a send
+    // is on its way — the dialog won't close — so there is no late answer to hand a new opening.)
     answer(null);
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     await userEvent.click(screen.getByRole('button', { name: 'Hide' }));
     const again = await screen.findByRole('alertdialog');
-    await userEvent.type(within(again).getByRole('textbox'), 'Second thoughts');
-    answer('Late refusal');
-    expect(within(again).queryByText('Late refusal')).toBeNull();
-    expect(within(again).getByRole('textbox')).toHaveValue('Second thoughts');
+    expect(within(again).getByRole('textbox')).toHaveValue('');
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 });

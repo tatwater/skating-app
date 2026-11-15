@@ -284,22 +284,24 @@ function PickForm({
   const [note, setNote] = useState('');
   const [reason, setReason] = useState<RemovalReason | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // A refusal belongs to the pick whose write raised it: the form is one component across picks,
+  // so another pick's form never says it.
+  const [refusal, setRefusal] = useState<{ pick: Pick; text: string } | null>(null);
+  const error = refusal?.pick === pick ? refusal.text : null;
 
-  // One write at a time (⏎ in the note submits the form again otherwise), and each answer acts
-  // only on the attempt that sent it.
-  const attempt = useRef(0);
+  // One write at a time (⏎ in the note submits the form again otherwise), so each answer is the
+  // only attempt's.
   const sending = useRef(false);
   async function run(write: () => Promise<void>) {
     if (sending.current) return;
     sending.current = true;
-    const mine = ++attempt.current;
+    const raisedFor = pick;
     setBusy(true);
-    setError(null);
+    setRefusal(null);
     try {
       await write();
     } catch (err) {
-      if (attempt.current === mine) setError(err instanceof Error ? err.message : String(err));
+      setRefusal({ pick: raisedFor, text: err instanceof Error ? err.message : String(err) });
     } finally {
       sending.current = false;
       setBusy(false);

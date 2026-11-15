@@ -551,7 +551,10 @@ describe('PlacesTab', () => {
       const name = screen.getByRole('textbox', { name: 'Name' });
       await userEvent.clear(name);
       await userEvent.type(name, 'Mascoma Dam');
-      rerender(<BodyTabHost Wiring={PlacesTab} bodyId="wb2" lit={null} />);
+      // The same card lit on the other body (its reads answer alike), so only the body's own
+      // subtree, not a closed card, can drop the draft.
+      rerender(<BodyTabHost Wiring={PlacesTab} bodyId="wb2" lit="landmark:lm-dam" />);
+      expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('Mascoma Lake Dam');
       expect(screen.queryByDisplayValue('Mascoma Dam')).toBeNull();
       // The decline's note, typed on one body, never reaches the next.
       rerender(<BodyTabHost Wiring={PlacesTab} bodyId="wb1" lit={null} />);

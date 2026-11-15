@@ -3178,8 +3178,14 @@ Imagery/Hazards/Standing/Links), cherry-picked serially onto `b01-3` off the kit
   subtree: `BodyTabHost` mounts every tab and its dock keyed by body and tab; the map's drawing
   probe, the left column and the list's preview are keyed by body too. Kept across bodies on
   purpose: nothing. And every write is bound to its body (`frame/currentBody.tsx`): nothing is sent
-  once the page has moved, and a write already on its way lands but its refusal and receipt are
-  dropped (History keeps the row). Each tab and the preview have a switch test. The People pages
+  once the page has moved (a save the operator already pressed, still queued behind another, is
+  dropped with its draft); a write already on its way lands but its refusal and receipt are
+  dropped (History keeps the row). The binding is to the body the subtree was mounted for, so a
+  missed reset still couldn't send, and the page's body moves at commit, not mid-render. Each tab
+  and the preview have a switch test. **Open (a founder call):** a receipt toast already showing
+  when the page switches stays its ten seconds over the next body, its title unnamed ("Links
+  saved") and its Undo for the body it came from — close receipts on a switch, or name the body in
+  them. The People pages
   (the `b01-4-people-person` branch, read, not changed) already remount the person's page by user
   id, and their receipts name the person; a late one still shows after a switch, under that
   person's name.

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -231,6 +231,23 @@ describe('ImageryTabView', () => {
     const { onSatelliteChange: _, ...rest } = base;
     rerender(<ImageryTabView {...rest} />);
     expect(screen.getByRole('button', { name: 'Never' })).toHaveAttribute('data-disabled');
+  });
+
+  it('an earlier satellite choice refused late never shows under a choice made since', async () => {
+    const answers: ((refusal?: Error) => void)[] = [];
+    const onSatelliteChange = vi.fn(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          answers.push((refusal) => (refusal === undefined ? resolve() : reject(refusal)));
+        }),
+    );
+    render(<ImageryTabView {...base} onSatelliteChange={onSatelliteChange} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Never' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Always offer' }));
+    expect(onSatelliteChange).toHaveBeenCalledTimes(2);
+    await act(async () => answers[0]?.(new Error('Not saved: the first choice')));
+    await act(async () => answers[1]?.());
+    expect(screen.queryByText('Not saved: the first choice')).toBeNull();
   });
 
   it('a refused call says why', async () => {

@@ -7,6 +7,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -163,85 +164,83 @@ export function BodyConsoleRoute({ registry = BODY_TAB_REGISTRY }: { registry?: 
     );
 
   return (
-    <CurrentBodyProvider bodyId={bodyId}>
-      <BodyConsoleView
-        bodyKey={bodyId}
-        {...(data.state === 'ready'
-          ? {
-              identity: data.identity,
-              completeness: data.completeness,
-              towns: data.towns,
-              trust: data.trust,
-              asks: data.asks,
-              asksMore: data.asksMore,
-              history: data.history,
-              attention: data.attention,
-            }
-          : {
-              identity: undefined,
-              completeness: undefined,
-              towns: undefined,
-              trust: undefined,
-              asks: undefined,
-              history: undefined,
-              attention: NO_ATTENTION,
-            })}
-        lit={lit}
-        now={Date.now()}
-        tab={tab}
-        onTabChange={(next) => go(searchFor(search, { tab: next }))}
-        onOpenAsk={(ask) => go(searchFor(search, { tab: ask.tab, lit: ask.id }))}
-        {...(data.state === 'ready' && data.canSetBoost ? { onBoostCommit: boost } : {})}
-        onReturn={onReturn}
-        status={status}
-        map={
-          data.state === 'ready' && scene !== null ? (
-            <ReadBoundary
-              // The open tab's drawing is read inside it: another tab is another try.
-              resetKey={`${bodyId}:${slot.key}`}
-              fallback={(retry) => (
-                <div className="p-gutter">
-                  <RetryNote data-for="body-map" onRetry={retry}>
-                    The map couldn’t be drawn
-                  </RetryNote>
-                </div>
-              )}
-            >
-              {slot.map !== undefined && (
-                <TabSceneProbe
-                  key={`${bodyId}:${slot.key}`}
-                  map={slot.map}
-                  bodyId={bodyId}
-                  lit={lit}
-                  onScene={setTabScene}
-                />
-              )}
-              <BodyMap
-                bbox={data.bbox}
-                scene={scene}
-                // A new body is a fresh rack as much as a new tab is: a neighbor already read for its
-                // name opens at once, with no loading in between to remount the map.
-                resetKey={`${bodyId}:${tab}`}
-                mode={mode}
-                foot={mapFoot(
-                  data.mapFailures,
-                  slot.Dock === undefined ? null : (
-                    <BodyTabHost
-                      key={slot.key}
-                      Wiring={slot.Dock}
-                      bodyId={bodyId}
-                      lit={lit}
-                      onLitChange={onLitChange}
-                    />
-                  ),
-                )}
+    <BodyConsoleView
+      bodyKey={bodyId}
+      {...(data.state === 'ready'
+        ? {
+            identity: data.identity,
+            completeness: data.completeness,
+            towns: data.towns,
+            trust: data.trust,
+            asks: data.asks,
+            asksMore: data.asksMore,
+            history: data.history,
+            attention: data.attention,
+          }
+        : {
+            identity: undefined,
+            completeness: undefined,
+            towns: undefined,
+            trust: undefined,
+            asks: undefined,
+            history: undefined,
+            attention: NO_ATTENTION,
+          })}
+      lit={lit}
+      now={Date.now()}
+      tab={tab}
+      onTabChange={(next) => go(searchFor(search, { tab: next }))}
+      onOpenAsk={(ask) => go(searchFor(search, { tab: ask.tab, lit: ask.id }))}
+      {...(data.state === 'ready' && data.canSetBoost ? { onBoostCommit: boost } : {})}
+      onReturn={onReturn}
+      status={status}
+      map={
+        data.state === 'ready' && scene !== null ? (
+          <ReadBoundary
+            // The open tab's drawing is read inside it: another tab is another try.
+            resetKey={`${bodyId}:${slot.key}`}
+            fallback={(retry) => (
+              <div className="p-gutter">
+                <RetryNote data-for="body-map" onRetry={retry}>
+                  The map couldn’t be drawn
+                </RetryNote>
+              </div>
+            )}
+          >
+            {slot.map !== undefined && (
+              <TabSceneProbe
+                key={`${bodyId}:${slot.key}`}
+                map={slot.map}
+                bodyId={bodyId}
+                lit={lit}
+                onScene={setTabScene}
               />
-            </ReadBoundary>
-          ) : null
-        }
-        tabPanel={tabPanel}
-      />
-    </CurrentBodyProvider>
+            )}
+            <BodyMap
+              bbox={data.bbox}
+              scene={scene}
+              // A new body is a fresh rack as much as a new tab is: a neighbor already read for its
+              // name opens at once, with no loading in between to remount the map.
+              resetKey={`${bodyId}:${tab}`}
+              mode={mode}
+              foot={mapFoot(
+                data.mapFailures,
+                slot.Dock === undefined ? null : (
+                  <BodyTabHost
+                    key={slot.key}
+                    Wiring={slot.Dock}
+                    bodyId={bodyId}
+                    lit={lit}
+                    onLitChange={onLitChange}
+                  />
+                ),
+              )}
+            />
+          </ReadBoundary>
+        ) : null
+      }
+      tabPanel={tabPanel}
+    />
   );
 }
 
@@ -328,9 +327,13 @@ function useBoostCommit(bodyId: string): (value: number) => Promise<boolean> {
   const set = useMutation(api.waterBodies.setCuratedBoost);
   const { announce } = useUndo();
   // The body the page shows now: a boost composed for another sends nothing, and one landing after
-  // the page moved on puts up no receipt over the next body (History keeps it).
+  // the page moved on puts up no receipt over the next body (History keeps it). Moved at commit, as
+  // `CurrentBodyProvider` moves its own: a navigation's render runs in a transition while the last
+  // body is still on screen.
   const shown = useRef(bodyId);
-  shown.current = bodyId;
+  useLayoutEffect(() => {
+    shown.current = bodyId;
+  }, [bodyId]);
   return useCallback(
     (value: number) => {
       const rounded = Math.round(value * 10) / 10;
