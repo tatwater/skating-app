@@ -9,6 +9,7 @@ import { useRole } from '@/lib/useRole';
 import { Splash } from '../../Splash';
 import { ListWritersProvider } from '../body/tabs/listWriter';
 import { liveStateOf, OverviewLamp } from '../overview/overviewStatus';
+import { minuteOf } from '../reads/readArgs';
 import { ConsolePalette } from './ConsolePalette';
 import { ConsoleShell, type RailMode } from './ConsoleShell';
 import { CONSOLE_MODES, LEGACY_PAGES, modeAt } from './consoleNav';
@@ -44,7 +45,7 @@ export function ConsoleLayout() {
   const server = useUndoServer();
   useAdminSurface();
   const now = useMinuteNow();
-  const minute = Math.floor(now / 60_000) * 60_000;
+  const minute = minuteOf(now);
 
   // The season the tape draws, sent: a read keyed on nothing would keep its cached season across
   // 1 July, and the tape drops facts for another season than its own.

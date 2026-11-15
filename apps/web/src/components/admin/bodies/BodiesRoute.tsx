@@ -7,7 +7,6 @@ import { type ReactElement, type ReactNode, useEffect, useMemo, useRef, useState
 
 import { ReadBoundary } from '@/components/kit/read-boundary';
 import { useRole } from '@/lib/useRole';
-import { ID_SHAPE } from '../body/frame/bodySearch';
 
 import {
   isFailed,
@@ -18,6 +17,7 @@ import {
   useConsoleReadSet,
 } from '../reads/consoleReads';
 import { ReadNote } from '../reads/ReadNote';
+import { ID_SHAPE, useClockFor } from '../reads/readArgs';
 
 import { useMinuteNow } from '../shell/presence';
 import { BodiesView, type BodiesViewProps } from './BodiesView';
@@ -388,22 +388,6 @@ function useOtherStandings(args: ListArgs | null): OtherStandings | undefined {
   });
   return asked === null ? undefined : loaded(reads.others);
 }
-
-/**
- * The minute a place was opened at, held while it stays open: the clock a list (or a preview) is
- * read against, so the clock moving on never restarts a read. A new `key` reads the clock again.
- */
-function useClockFor(key: string): number {
-  const [clock, setClock] = useState(() => ({ key, at: minute(Date.now()) }));
-  if (clock.key !== key) {
-    const next = { key, at: minute(Date.now()) };
-    setClock(next);
-    return next.at;
-  }
-  return clock.at;
-}
-
-const minute = (at: number) => Math.floor(at / 60_000) * 60_000;
 
 // ── Opened recently ──────────────────────────────────────────────────────────────────────────
 

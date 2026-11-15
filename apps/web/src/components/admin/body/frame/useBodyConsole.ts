@@ -14,6 +14,7 @@ import {
 } from '@/components/admin/reads/consoleReads';
 import type { BBoxLike } from '@/lib/mapSurface';
 import { useRole } from '@/lib/useRole';
+import { ID_SHAPE } from '../../reads/readArgs';
 import type { Completeness } from '../completeness';
 import { type BodyMapBaseInput, bodyMapBase } from '../map/bodyMapBase';
 import type { BodyMapScene } from '../map/mapDescriptors';
@@ -37,7 +38,7 @@ import {
   removalOf,
   statusDate,
 } from './bodyModel';
-import { type BodyTabKey, ID_SHAPE } from './bodySearch';
+import type { BodyTabKey } from './bodySearch';
 import { neighborsOf } from './touching';
 
 /**
