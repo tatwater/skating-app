@@ -2476,18 +2476,19 @@ Every shape change is additive except where noted.
   parked before the mirror existed, so Machinery's count is whole within a day of deploy. The other
   walks this PR adds were checked: the presence prune deletes what it reads (no kept rows), the sweep
   and the retry walk their whole range a run.
-- **Concurrent lookups, the time axis.** A query has one second: per-row lookups run in waves
-  (`readBudget.inWaves`), never one round trip after another. `ReadBudget.measured` holds the worst
-  case while a read is in flight and settles to the real size, so reads started together can't
-  overspend. Decisions and History shape every row at once (rows on one target share the
-  newest-on-target read), a queue lane's rows are one round, and staffStats, staffSeason, the role
-  walk's roots and the flag labels run in waves. Tests count rounds structurally. Waves are as large
-  as the budget holds at the worst case, so where an item's worst case is several documents
-  (staffSeason's checks, the labels) a wave is still one or two items. Making those wider needs
-  budget accounting that charges a wave its real weight, which is a design call left open. One
-  exception came with #127: an undo's refusal reads (`lib/undoReads`) still run one after another
-  across a page, each waiting for the one before it to settle, so a Decisions page of body writes
-  spends up to two round trips a line on them (B01-3f's "Owed").
+- **The time axis is owed, in its own PR.** A query has one second, and `people.decisions` still awaits
+  its rows one after another: about 480 ms for a page of 50, measured on dev, from roughly three point
+  reads a row. So do History, the person page's flag labels, staffStats' and staffSeason's per-row
+  checks and a queue lane's rows. The fix waits on the shared reservation B01-3i is landing
+  (`ReadBudget.measured` reserving a read's worst case and handing back the difference), so one budget
+  has one rule. It comes next as `b01-4c-people-rounds`, with a round bound per page and a guard test.
+  The concurrency first built here is parked on a local branch to be redone on that rule.
+  `staffStats` keeps its time bound in the meantime: at most 400 reads across its per-row loops, counted
+  as they are made.
+  The per-row plan is charged, not just declared: Decisions and History count each row's calls and
+  documents ahead, #127's refusal hook included (a launch reads up to 200 hidden launches), and a page
+  the budget can't shape whole shapes fewer and says capped (a test runs a page of launch lines at
+  that peak).
 - **Tagged reasons at the type.** The People writers take only a tagged reason (`writePersonAudit`):
   `typed()` (refused past the cap) or `composed` (shortened to fit), each a branded shape no literal
   can spell. The other writers keep a compatible type (a string is held to the cap as typed). The

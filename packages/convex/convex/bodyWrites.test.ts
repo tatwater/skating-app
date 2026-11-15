@@ -10,10 +10,18 @@ import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { MAX_FEATURE_POSITIONS } from './bodyFeatures';
 import { OVERRIDES_READ } from './imageryOverrides';
-import { DOC_MAX, REQUEST_PROFILE_BUDGET, requestBudget } from './lib/readBudget';
+import {
+  CHARGED_QUERY_BUDGET,
+  DOC_MAX,
+  REQUEST_PROFILE_BUDGET,
+  requestBudget,
+  TX_DOCS,
+} from './lib/readBudget';
 import { savedPutInsOf } from './lib/standing';
 import { undoState } from './lib/undo';
 import { UNDO_CHECKED_ELSEWHERE, undoRead } from './lib/undoReads';
+import { ROW_SHAPE_DOCS, shapeRows } from './people';
+import { SUPPRESSION_ROWS_READ } from './putIns';
 import schema from './schema';
 import { MAX_MODERATOR_ALIAS_CHARS, MAX_MODERATOR_ALIASES } from './waterBodies';
 
@@ -1489,6 +1497,48 @@ describe('undo after an un-audited change: write → change → undo → redo', 
       return { first: first?._id ?? null, secondRead: second !== undefined };
     });
     expect(got).toEqual({ first: a, secondRead: false });
+  });
+
+  test('the per-row plan is charged, not declared: a page of launch lines at the hidden-read peak stays in budget, and a short budget shapes fewer and says capped', async () => {
+    const t = harness();
+    const promoted = await launch(t);
+    const promote = await t.run((ctx) => ctx.db.get(promoted.actionId));
+    await t.run(async (ctx) => {
+      // The launch refusal's document peak: its body's hidden launches read to the cap.
+      for (let i = 0; i < SUPPRESSION_ROWS_READ; i++) {
+        await ctx.db.insert('putIns', {
+          waterBodyId: promoted.id,
+          coord: { lat: 44.5 + i * 1e-3, lng: -72.5 },
+          source: 'osm',
+          status: 'hidden',
+          createdAt: NOW,
+        });
+      }
+      // A page of 99 more lines on the same launch, each answered through the same refusal.
+      for (let i = 0; i < 99; i++) {
+        const { _id, _creationTime, ...row } = promote as Doc<'moderationActions'>;
+        void _id;
+        void _creationTime;
+        await ctx.db.insert('moderationActions', { ...row, createdAt: NOW - 1 - i });
+      }
+    });
+    const page = await promoted.admin.as.query(api.people.decisions, {
+      userId: promoted.admin.id,
+      limit: 100,
+    });
+    expect(page?.rows.length).toBe(100);
+    // The same rows with the documents a page had already spent leaving room for three: three are
+    // shaped and the rest left for the caller to call capped — charged, never thrown.
+    const shaped = await t.run(async (ctx) => {
+      const budget = requestBudget(ctx, CHARGED_QUERY_BUDGET);
+      budget.reserveCalls(0, TX_DOCS - 3 * ROW_SHAPE_DOCS - 1);
+      const viewer = (await ctx.db.get(promoted.admin.id)) as Doc<'profiles'>;
+      const rows = (await ctx.db.query('moderationActions').collect()).filter(
+        (r) => r.action === (promote as Doc<'moderationActions'>).action,
+      );
+      return (await shapeRows(ctx as never, viewer, rows, new Map())).length;
+    });
+    expect(shaped).toBe(3);
   });
 
   test('a staffer’s Decisions (People) asks the same refusal: each axis’s worst verb answers, never throws', async () => {
