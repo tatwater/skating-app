@@ -4430,8 +4430,8 @@ export default defineSchema({
     /**
      * The flush's attempt state (D258, `lib/attempts`): failed deliveries in a row, the last
      * failure's class (never its message), when it was parked (or last tried by the retry), when the
-     * retry last tried it, and when it first fell due — the clock the freshness rule reads, since a
-     * failure moves `flushAfter` past the run. All absent on a healthy row.
+     * retry last tried it (all absent on a healthy row) — and `firstDueAt`, the row's due clock, set
+     * once when the row is written and never moved: the freshness rule reads it (D258).
      */
     attempts: v.optional(v.number()),
     lastErrorClass: v.optional(v.string()),

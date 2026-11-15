@@ -995,7 +995,7 @@ describe('notifications — the inbox read path', () => {
     expect((await t.run((ctx) => ctx.db.get(priorId)))?.moderationStatus).toBe('visible');
   });
 
-  test('a fresh action merging into a due-but-unflushed row gets its own settle window (PR #52 review)', async () => {
+  test('a fresh action after a row fell due gets its own row and its own settle window (PR #52 review, D258)', async () => {
     const t = convexTestWithGeo();
     const author = await seedProfile(t, 'author');
     const first = await seedProfile(t, 'first');
@@ -1033,7 +1033,8 @@ describe('notifications — the inbox read path', () => {
     expect((await queued())[0]?.flushAfter).toBe(settling);
 
     // The window passes without a flush tick. A retraction and re-thumb now must not ride the
-    // expired deadline: the row takes a fresh window, so the next tick leaves it alone.
+    // expired deadline — nor move the due row's clock (D258): it starts a row of its own with a
+    // fresh window, and the due row delivers what it holds on the next tick.
     await t.run((ctx) => ctx.db.patch(row._id, { flushAfter: Date.now() - 1 }));
     await second.as.mutation(api.ratings.rate, {
       targetType: 'report',
@@ -1046,10 +1047,15 @@ describe('notifications — the inbox read path', () => {
       verdict: 'helpful',
     });
     const rows = await queued();
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.flushAfter).toBeGreaterThan(Date.now());
+    expect(rows).toHaveLength(2);
+    const fresh = rows.find((r) => r._id !== row._id);
+    expect(fresh?.flushAfter).toBeGreaterThan(Date.now());
+    expect(fresh?.firstDueAt).toBe(fresh?.flushAfter);
+    // The due row keeps the clock it was written with.
+    expect(rows.find((r) => r._id === row._id)?.firstDueAt).toBe(settling);
     await t.mutation(internal.notifications.flushNotificationQueue, {});
-    expect(await t.run((ctx) => ctx.db.query('notifications').collect())).toHaveLength(0);
+    expect(await t.run((ctx) => ctx.db.query('notifications').collect())).toHaveLength(1);
+    expect((await queued()).map((r) => r._id)).toEqual([fresh?._id]);
   });
 
   test('unreadCount never exceeds its documented cap', async () => {

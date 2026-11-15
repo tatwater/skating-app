@@ -15,6 +15,7 @@ import { MAX_ATTEMPTS } from './lib/attempts';
 import * as notificationQueue from './lib/notificationQueue';
 import { NOTIFICATION_FRESH_MS } from './lib/notificationQueue';
 import * as recurringWork from './lib/recurringWork';
+import { enqueueReportNotice } from './notifications';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -824,5 +825,192 @@ describe('the retries and passes at their edges', () => {
     const left = await t.run((ctx) => ctx.db.query('jobFailures').collect());
     expect(left.filter((r) => r.scope === 'filter')).toHaveLength(5);
     expect(left.filter((r) => r.scope === 'browse')).toHaveLength(1);
+  });
+});
+
+// ── The freshness rule, by construction (D258) ──────────────────────────────────────────────────
+
+describe('the freshness rule holds at enqueue and at flush, by construction', () => {
+  const DEBOUNCE = 2 * MINUTE;
+
+  async function freshnessSetup() {
+    const t = harness();
+    const fans = [await seedUser(t, 'fan0'), await seedUser(t, 'fan1')];
+    const bodies = [await seedBody(t, 'osm/fresh-0'), await seedBody(t, 'osm/fresh-1')];
+    const reportId = await seedReport(
+      t,
+      fans[0]?.id as Id<'profiles'>,
+      bodies[0] as Id<'waterBodies'>,
+    );
+    const activities: Id<'gpsActivities'>[][] = [];
+    for (const [u, fan] of fans.entries()) {
+      activities.push([
+        await seedActivity(t, fan.id, 10 * u),
+        await seedActivity(t, fan.id, 10 * u + 1),
+      ]);
+    }
+    const reportNotice = (u: number, b: number) =>
+      t.run((ctx) =>
+        enqueueReportNotice(ctx, {
+          userId: fans[u]?.id as Id<'profiles'>,
+          waterBodyId: bodies[b] as Id<'waterBodies'>,
+          reportId,
+          kind: 'favorite',
+          type: 'favorite_report',
+          flushAfter: Date.now() + DEBOUNCE,
+          now: Date.now(),
+        }),
+      );
+    const actorNotice = (u: number, a: number) =>
+      t.run((ctx) =>
+        notificationQueue.enqueueActorNotification(ctx, {
+          recipientId: fans[u]?.id as Id<'profiles'>,
+          targetId: activities[u]?.[a] as string,
+          trigger: { kind: 'activity', activityId: activities[u]?.[a] as Id<'gpsActivities'> },
+          now: Date.now(),
+        }),
+      );
+    return { t, reportNotice, actorNotice };
+  }
+
+  const rowsOf = (t: T) => t.run((ctx) => ctx.db.query('notificationQueue').collect());
+  const inboxOf = (t: T) => t.run((ctx) => ctx.db.query('notifications').collect());
+
+  type Cmd =
+    | { k: 'report'; u: number; b: number }
+    | { k: 'actor'; u: number; a: number }
+    | { k: 'advance'; ms: number }
+    | { k: 'flush' }
+    | { k: 'poison'; u: number }
+    | { k: 'heal' }
+    | { k: 'retry' };
+
+  const cmd: fc.Arbitrary<Cmd> = fc.oneof(
+    fc.record({ k: fc.constant('report' as const), u: fc.nat(1), b: fc.nat(1) }),
+    fc.record({ k: fc.constant('actor' as const), u: fc.nat(1), a: fc.nat(1) }),
+    // Outages of any length, up to most of a day.
+    fc.record({ k: fc.constant('advance' as const), ms: fc.integer({ min: 0, max: 20 * HOUR }) }),
+    fc.constant({ k: 'flush' as const }),
+    fc.record({ k: fc.constant('poison' as const), u: fc.nat(1) }),
+    fc.constant({ k: 'heal' as const }),
+    fc.constant({ k: 'retry' as const }),
+  );
+
+  test('over any interleaving of both enqueue paths, flushes, outages, parking and the retry: nothing past its window is sent, nothing fresh is lost to an older clock, no clock moves, nothing is sent twice', async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.array(cmd, { minLength: 1, maxLength: 24 }), async (cmds) => {
+        vi.restoreAllMocks();
+        vi.setSystemTime(T0);
+        const { t, reportNotice, actorNotice } = await freshnessSetup();
+        const users = (await t.run((ctx) => ctx.db.query('profiles').collect())).map((p) => p._id);
+        const poisoned = new Set<string>();
+        const real = notificationQueue.isStaleQueueRow;
+        vi.spyOn(notificationQueue, 'isStaleQueueRow').mockImplementation((row, now) => {
+          if (poisoned.has((row as unknown as { userId: string }).userId))
+            throw new Error('poison');
+          return real(row, now);
+        });
+        const clocks = new Map<string, number>();
+        for (const c of cmds) {
+          const before = await rowsOf(t);
+          const sentBefore = (await inboxOf(t)).length;
+          const now = Date.now();
+          if (c.k === 'report' || c.k === 'actor') {
+            if (c.k === 'report') await reportNotice(c.u, c.b);
+            else await actorNotice(c.u, c.a);
+            const after = await rowsOf(t);
+            // The event joined a row still settling, or a new one: its clock never began before it.
+            const touched = after.filter((r) => {
+              const was = before.find((b) => b._id === r._id);
+              return !was || JSON.stringify(was) !== JSON.stringify(r);
+            });
+            for (const r of touched) expect(r.firstDueAt).toBeGreaterThan(now);
+          } else if (c.k === 'advance') vi.setSystemTime(now + c.ms);
+          else if (c.k === 'poison') poisoned.add(users[c.u] as string);
+          else if (c.k === 'heal') poisoned.clear();
+          else {
+            if (c.k === 'flush')
+              await t.mutation(internal.notifications.flushNotificationQueue, {});
+            else await t.mutation(internal.notifications.retryParkedNotifications, {});
+            await t.finishInProgressScheduledFunctions();
+            const after = await rowsOf(t);
+            const gone = before.filter((b) => !after.some((a) => a._id === b._id));
+            const sent = (await inboxOf(t)).slice(sentBefore);
+            // (a) and (b): a row that left was sent exactly when it was inside its window.
+            const freshGone = gone.filter(
+              (g) => now - (g.firstDueAt as number) <= NOTIFICATION_FRESH_MS,
+            );
+            const keys = (rows: { coalesceKey?: string; payload?: { coalesceKey?: string } }[]) =>
+              rows.map((r) => r.coalesceKey ?? r.payload?.coalesceKey).sort();
+            expect(keys(sent)).toEqual(keys(freshGone));
+          }
+          // (c): every row has its clock, and it never changes.
+          for (const r of await rowsOf(t)) {
+            expect(r.firstDueAt).toBeDefined();
+            const seen = clocks.get(r._id);
+            if (seen !== undefined) expect(r.firstDueAt).toBe(seen);
+            clocks.set(r._id, r.firstDueAt as number);
+          }
+        }
+        // (d): never more inbox rows than rows ever written.
+        expect((await inboxOf(t)).length).toBeLessThanOrEqual(clocks.size);
+      }),
+      { numRuns: 25 },
+    );
+  }, 180_000);
+
+  test('the report path (Greptile): after a long outage a new notice gets its own row and is sent; the expired row is not', async () => {
+    const { t, reportNotice } = await freshnessSetup();
+    await reportNotice(0, 0);
+    vi.setSystemTime(T0 + NOTIFICATION_FRESH_MS + HOUR); // the flush was down
+    await reportNotice(0, 0);
+    const rows = await rowsOf(t);
+    expect(rows).toHaveLength(2);
+    expect(await t.mutation(internal.notifications.flushNotificationQueue, {})).toMatchObject({
+      delivered: 0,
+      expired: 1,
+    });
+    vi.setSystemTime(Date.now() + DEBOUNCE + 1);
+    expect(await t.mutation(internal.notifications.flushNotificationQueue, {})).toMatchObject({
+      delivered: 1,
+    });
+  });
+
+  test('the actor path (Greptile): a new event never moves an old row on, so yesterday never passes for today', async () => {
+    const { t, actorNotice } = await freshnessSetup();
+    await actorNotice(0, 0);
+    const [old] = await rowsOf(t);
+    vi.setSystemTime(T0 + NOTIFICATION_FRESH_MS + HOUR);
+    await actorNotice(0, 0);
+    const rows = await rowsOf(t);
+    expect(rows).toHaveLength(2);
+    expect(rows.find((r) => r._id === old?._id)?.flushAfter).toBe(old?.flushAfter);
+    await t.mutation(internal.notifications.flushNotificationQueue, {});
+    expect(await t.run((ctx) => ctx.db.get(old?._id as Id<'notificationQueue'>))).toBeNull();
+    expect(await inboxOf(t)).toHaveLength(0);
+  });
+
+  test('a row written before the rule (no clock of its own) is read by its earliest clock, never as fresh', async () => {
+    const { t } = await freshnessSetup();
+    const [fan] = await t.run((ctx) => ctx.db.query('profiles').collect());
+    const activityId = (await t.run((ctx) => ctx.db.query('gpsActivities').first()))?._id;
+    // An actor row from before D258: created a day ago, its flush time pushed to now by later events.
+    const row = await t.run((ctx) =>
+      ctx.db.insert('notificationQueue', {
+        userId: fan?._id as Id<'profiles'>,
+        kind: 'activity' as const,
+        type: 'activity_detected' as const,
+        coalesceKey: 'legacy',
+        count: 1,
+        flushAfter: Date.now() - 1,
+        createdAt: Date.now() - DAY,
+        trigger: { kind: 'activity' as const, activityId: activityId as Id<'gpsActivities'> },
+      }),
+    );
+    expect(await t.mutation(internal.notifications.flushNotificationQueue, {})).toMatchObject({
+      delivered: 0,
+      expired: 1,
+    });
+    expect(await t.run((ctx) => ctx.db.get(row))).toBeNull();
   });
 });

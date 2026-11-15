@@ -51,8 +51,10 @@ import { internalMutation, type MutationCtx, mutation, query } from './_generate
 import { failedAttempt } from './lib/attempts';
 import { canReceiveNotifications, getCurrentProfile, requireProfile } from './lib/auth';
 import {
+  coalescingRow,
   DELIVERY_BATCH,
   DIGEST_TIMEZONE,
+  dueClockOf,
   isStaleQueueRow,
   recipientWants,
   settleReadCost,
@@ -80,7 +82,7 @@ type QueueKind = Doc<'notificationQueue'>['kind'];
 type NotificationType = Doc<'notificationQueue'>['type'];
 
 /** Upsert a coalescing queue row for `(user, body, kind)` — bump an existing pending row, else insert. */
-async function enqueue(
+export async function enqueueReportNotice(
   ctx: MutationCtx,
   params: {
     userId: Id<'profiles'>;
@@ -93,12 +95,8 @@ async function enqueue(
   },
 ): Promise<void> {
   const coalesceKey = `${params.userId}:${params.waterBodyId}:${params.kind}`;
-  const existing = await ctx.db
-    .query('notificationQueue')
-    .withIndex('by_coalesce_parked', (q) =>
-      q.eq('coalesceKey', coalesceKey).eq('parkedAt', undefined),
-    )
-    .first();
+  // Only a row still settling, never one already due or parked (D258): see `coalescingRow`.
+  const existing = await coalescingRow(ctx, coalesceKey, params.now);
   if (existing) {
     await ctx.db.patch(existing._id, {
       count: existing.count + 1,
@@ -116,6 +114,8 @@ async function enqueue(
     latestReportId: params.reportId,
     count: 1,
     flushAfter: params.flushAfter,
+    // The row's due clock, set once, here (D258).
+    firstDueAt: params.flushAfter,
     createdAt: params.now,
   });
 }
@@ -191,7 +191,7 @@ export async function enqueueReportNotifications(
   for (const userId of recipients) {
     const user = await ctx.db.get(userId);
     if (!user || !recipientWants(user, 'favorite_report')) continue;
-    await enqueue(ctx, {
+    await enqueueReportNotice(ctx, {
       userId,
       waterBodyId: report.waterBodyId,
       reportId: report._id,
@@ -280,7 +280,7 @@ export const fanOutNearbyNotifications = internalMutation({
         // at the old target — coalescing keeps the earliest `flushAfter`, so the failure direction is
         // "slightly early", never "never". Re-resolving every queued row on a profile write would be
         // a lot of machinery for one late-by-an-hour digest.
-        await enqueue(ctx, {
+        await enqueueReportNotice(ctx, {
           userId: p._id,
           waterBodyId: report.waterBodyId,
           reportId: report._id,
@@ -298,7 +298,7 @@ export const fanOutNearbyNotifications = internalMutation({
         isDriveTimeBand(p.greatRadiusMinutes) &&
         bandWithinRadius(band, p.greatRadiusMinutes)
       ) {
-        await enqueue(ctx, {
+        await enqueueReportNotice(ctx, {
           userId: p._id,
           waterBodyId: report.waterBodyId,
           reportId: report._id,
@@ -533,7 +533,7 @@ export async function recordQueueFailure(
     lastErrorClass: next.errorClass,
     parkedAt: next.parkedAt,
     retriedAt: next.retriedAt,
-    firstDueAt: row.firstDueAt ?? row.flushAfter,
+    firstDueAt: dueClockOf(row),
     ...(opts.cutoff !== undefined ? { flushAfter: Math.max(row.flushAfter, opts.cutoff + 1) } : {}),
   });
   return parked ? 'parked' : 'failed';
