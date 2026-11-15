@@ -87,6 +87,7 @@ import type * as lib_exportBundles from "../lib/exportBundles.js";
 import type * as lib_feedCards from "../lib/feedCards.js";
 import type * as lib_flagResolution from "../lib/flagResolution.js";
 import type * as lib_fly from "../lib/fly.js";
+import type * as lib_geoStale from "../lib/geoStale.js";
 import type * as lib_geocoder from "../lib/geocoder.js";
 import type * as lib_hazardMerge from "../lib/hazardMerge.js";
 import type * as lib_hazardValidators from "../lib/hazardValidators.js";
@@ -255,6 +256,7 @@ declare const fullApi: ApiFromModules<{
   "lib/feedCards": typeof lib_feedCards;
   "lib/flagResolution": typeof lib_flagResolution;
   "lib/fly": typeof lib_fly;
+  "lib/geoStale": typeof lib_geoStale;
   "lib/geocoder": typeof lib_geocoder;
   "lib/hazardMerge": typeof lib_hazardMerge;
   "lib/hazardValidators": typeof lib_hazardValidators;
