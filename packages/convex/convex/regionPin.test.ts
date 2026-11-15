@@ -147,13 +147,6 @@ async function seedTowns(t: T) {
 }
 
 const get = (t: T, id: Id<'waterBodies'>) => t.run((ctx) => ctx.db.get(id));
-const facts = (t: T, id: Id<'waterBodies'>) =>
-  t.run((ctx) =>
-    ctx.db
-      .query('bodyGeoFacts')
-      .withIndex('by_body', (q) => q.eq('waterBodyId', id))
-      .first(),
-  );
 const recompute = (t: T) => t.action(internal.bodyGeo.computeDue, {});
 const lastAction = (t: T, action: Doc<'moderationActions'>['action']) =>
   t.run(async (ctx) => {
@@ -193,11 +186,12 @@ describe('setModeratorTowns', () => {
     });
   });
 
-  test('the facts list a pinned town whatever the shoreline says — with its county and state — and mark it', async () => {
+  test('a pin reaches every reader at once — the body’s states, skater search, the library, the facts — and its clear takes back only what it added (Greptile on #130)', async () => {
     const t = harness();
     await seedTowns(t);
     const admin = await person(t);
-    const id = await imported(t, 'way/1');
+    // The rule says New York; nothing holds its shore in any loaded town here.
+    const id = await imported(t, 'way/1', ['NY']);
     await recompute(t);
     expect(await admin.as.query(api.bodyConsole.places, { waterBodyId: id })).toMatchObject({
       towns: [],
@@ -205,19 +199,61 @@ describe('setModeratorTowns', () => {
     });
     await admin.as.mutation(api.waterBodies.setModeratorTowns, {
       waterBodyId: id,
-      townKeys: [NORTH_EAST],
+      townKeys: [NORTH_EAST, SOUTHBRIDGE],
     });
-    await recompute(t);
+    // No recompute: every reader has it in the write's own transaction.
+    expect(await get(t, id)).toMatchObject({ states: ['MA', 'NY'], regionStates: ['NY'] });
+    const hit = (await t.query(api.waterBodies.searchByName, { query: 'Pond way' })).find(
+      (h) => h._id === id,
+    );
+    expect(hit?.states).toEqual(['MA', 'NY']);
+    const scopes = await t.run(async (ctx) =>
+      (
+        await ctx.db
+          .query('bodyLibraryRows')
+          .withIndex('by_body', (q) => q.eq('waterBodyId', id))
+          .collect()
+      ).map((r) => r.scope),
+    );
+    expect(scopes).toEqual(expect.arrayContaining(['MA', 'NY']));
     expect(await admin.as.query(api.bodyConsole.places, { waterBodyId: id })).toMatchObject({
-      towns: ['North East'],
+      towns: ['North East', 'Southbridge Town'],
       counties: ['Dutchess'],
-      states: ['NY'],
-      pinned: [{ name: 'North East', state: 'NY' }],
+      states: ['MA', 'NY'],
+      pinned: [
+        { name: 'North East', state: 'NY' },
+        { name: 'Southbridge Town', state: 'MA' },
+      ],
       pinnedMissing: [],
     });
-    expect((await facts(t, id))?.townEntries).toEqual([
-      expect.objectContaining({ name: 'North East', pinned: true }),
+    // A recompute rebuilds both halves and changes nothing a reader sees.
+    await t.run((ctx) =>
+      ctx.db
+        .query('bodyGeoFacts')
+        .withIndex('by_body', (q) => q.eq('waterBodyId', id))
+        .first()
+        .then((r) => (r ? ctx.db.patch(r._id, { staleAt: NOW }) : undefined)),
+    );
+    await recompute(t);
+    expect((await admin.as.query(api.bodyConsole.places, { waterBodyId: id }))?.towns).toEqual([
+      'North East',
+      'Southbridge Town',
     ]);
+    // Clearing the pins takes back Massachusetts and leaves the rule's New York.
+    await admin.as.mutation(api.waterBodies.setModeratorTowns, { waterBodyId: id, townKeys: [] });
+    expect(await get(t, id)).toMatchObject({ states: ['NY'], regionStates: ['NY'] });
+    expect(await admin.as.query(api.bodyConsole.places, { waterBodyId: id })).toMatchObject({
+      towns: [],
+      pinned: [],
+    });
+    // Its undo puts the pins, and the state they add, back at once.
+    await admin.as.mutation(api.undo.run, {
+      actionId: (await lastAction(t, 'set_moderator_towns'))._id,
+    });
+    expect((await get(t, id))?.states).toEqual(['MA', 'NY']);
+    expect(
+      (await admin.as.query(api.bodyConsole.places, { waterBodyId: id }))?.pinned,
+    ).toHaveLength(2);
   });
 
   test('a boundary reload keeps the pin on the same town; a town that is gone is shown missing, never dropped or thrown on', async () => {
@@ -360,7 +396,10 @@ describe('the pin against the other writers', () => {
     await t.run((ctx) => ctx.db.patch(loser, { dedupStatus: 'near_certain' }));
     await admin.as.mutation(api.waterBodies.merge, { survivorId: survivor, loserId: loser });
     expect((await get(t, survivor))?.moderatorTownKeys).toEqual([NORTH_EAST, SOUTHBRIDGE]);
+    // The state the loser's pin added comes with it, at once.
+    expect((await get(t, survivor))?.states).toEqual(['MA', 'NY']);
     expect((await get(t, loser))?.moderatorTownKeys).toBeUndefined();
+    expect((await get(t, loser))?.states).toEqual(['NY']);
     const merge = await lastAction(t, 'merge_waterbody');
     const snap = await t.run((ctx) =>
       ctx.db
@@ -390,28 +429,39 @@ describe('the pin against the other writers', () => {
     expect((await get(t, id))?.removedAt).toBeUndefined();
   });
 
-  test('nothing but the moderator write, its undo and a merge writes the field', () => {
-    // A guard over the functions' own source: any other writer of the pin fails here.
+  test('nothing but the moderator write, its undo and a merge writes the pins — and each rebuilds the states it feeds', () => {
+    // A guard over the functions' own source: any other writer of the pins, or of the rule's states
+    // apart from the one builder, fails here.
     const dir = dirname(fileURLToPath(import.meta.url));
     const files = [
       ...readdirSync(dir).map((f) => f),
       ...readdirSync(join(dir, 'lib')).map((f) => `lib/${f}`),
     ].filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts') && !f.startsWith('_generated'));
-    const writers = files.filter((f) =>
-      /moderatorTownKeys\s*:/.test(
-        readFileSync(join(dir, f), 'utf8')
-          // The schema declares the field; reads are `body.moderatorTownKeys`, never `moderatorTownKeys:`.
-          .replace(/moderatorTownKeys: v\.optional[^\n]*/g, '')
-          // An audit row's metadata names the list it records, which is no write of the field.
-          .replace(/metadata: \{ moderatorTownKeys[^\n]*/g, ''),
-      ),
-    );
-    expect(writers.sort()).toEqual(['waterBodies.ts']);
-    const source = readFileSync(join(dir, 'waterBodies.ts'), 'utf8');
-    const lines = source
-      .split('\n')
-      .filter((l) => /moderatorTownKeys\s*:/.test(l) && !/metadata:|v\.optional/.test(l));
-    // The write itself, and the merge's two (the survivor's union, the loser's clear).
-    expect(lines).toHaveLength(3);
+    const writersOf = (field: string) =>
+      files.filter((f) =>
+        new RegExp(`\\b${field}\\s*:`).test(
+          readFileSync(join(dir, f), 'utf8')
+            // The schema declares the field; reads are `body.<field>`, never `<field>:`.
+            .replace(new RegExp(`${field}: v\\.optional[^\\n]*`, 'g'), '')
+            // An audit row's metadata names the list it records, which is no write of the field.
+            .replace(new RegExp(`metadata: \\{ ${field}[^\\n]*`, 'g'), ''),
+        ),
+      );
+    expect(writersOf('moderatorTownKeys').sort()).toEqual(['waterBodies.ts']);
+    // The rule's states are written by the one builder alone.
+    expect(writersOf('regionStates').sort()).toEqual(['waterBodies.ts']);
+    const source = readFileSync(join(dir, 'waterBodies.ts'), 'utf8').split('\n');
+    expect(source.filter((l) => /^\s+regionStates: \S/.test(l) && !/readonly/.test(l))).toEqual([
+      '    regionStates: [...regionStates],',
+    ]);
+    // Each write of the pins rebuilds the states in the same patch: the write itself, and the merge's
+    // two (the survivor's union, the loser's clear).
+    const pinWrites = source
+      .map((l, i) => ({ l, i }))
+      .filter(({ l }) => /moderatorTownKeys\s*:/.test(l) && !/metadata:|v\.optional/.test(l));
+    expect(pinWrites).toHaveLength(3);
+    for (const { i } of pinWrites) {
+      expect(source.slice(i - 2, i + 3).join('\n')).toMatch(/regionStatesFields\(/);
+    }
   });
 });

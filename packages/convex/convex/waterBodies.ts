@@ -28,6 +28,7 @@ import {
   type DepthSource,
   distinctNameClaims,
   ELEVATION_SOURCES,
+  effectiveStates,
   haversineMeters,
   type IdMatch,
   isActive,
@@ -96,7 +97,7 @@ import {
   requireProfile,
 } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
-import { markGeoStale, outlineStamp } from './lib/bodyGeo';
+import { markGeoStale, outlineStamp, refreshPinnedFacts } from './lib/bodyGeo';
 import { queueLibraryRefresh, stampChanged } from './lib/bodyLibrary';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
@@ -648,11 +649,10 @@ export const importCanonical = internalMutation({
       const existing = verdict.action === 'patch' ? await ctx.db.get(verdict.key) : null;
       // A moderator's pinned towns outrank the rule (B01-3g): their states are the body's too, and a
       // pinned body is never read as out of region.
-      const pinnedStates = (existing?.moderatorTownKeys ?? [])
-        .map(stateOfSubdivision)
-        .filter((code): code is string => code !== null);
-      const outside = states.length === 0 && pinnedStates.length === 0;
-      if (states.length === 0 && pinnedStates.length > 0) keptByPin++;
+      const pins = existing?.moderatorTownKeys ?? [];
+      const pinned = pins.some((k) => stateOfSubdivision(k) !== null);
+      const outside = states.length === 0 && !pinned;
+      if (states.length === 0 && pinned) keptByPin++;
       if (outside) {
         outsideRegion.push({ externalId: item.externalId, waterBodyId: existing?._id ?? null });
         console.log(
@@ -716,7 +716,8 @@ export const importCanonical = internalMutation({
           representativePoint: item.centroid,
           surfaceAreaSqM: item.surfaceAreaSqM,
           // Out of region: kept as stored, never relabeled out of the map (see `regionStatesOf`).
-          states: outside ? existing.states : [...new Set([...states, ...pinnedStates])].sort(),
+          // The rule's ingredient kept apart from the pins; out of region, the stored one stands.
+          ...regionStatesFields(outside ? ruleStatesOf(existing) : states, pins),
           ...scores,
           ...shapeFields(item),
           ...mergeFields(item),
@@ -805,7 +806,7 @@ export const importCanonical = internalMutation({
           centroid: item.centroid,
           representativePoint: item.centroid,
           surfaceAreaSqM: item.surfaceAreaSqM,
-          states,
+          ...regionStatesFields(states, []),
           ...scores,
           ...shapeFields(item),
           ...mergeFields(item),
@@ -3579,16 +3580,21 @@ export async function mergeBodyInto(
       MAX_MODERATOR_TOWNS,
     );
     if (pinsBefore.loser.length > 0) {
-      await ctx.db.patch(survivorId, { moderatorTownKeys: pins });
-      await markGeoStale(ctx, [survivorId]);
+      await ctx.db.patch(survivorId, {
+        moderatorTownKeys: pins,
+        ...regionStatesFields(ruleStatesOf(survivor), pins),
+      });
+      await refreshPinnedFacts(ctx, survivorId, pins);
     }
 
     // Soft-tombstone the loser: reads chase `mergedIntoId` to the survivor; `isListed` treats
-    // `merged` as unlisted, so drop its cell rows too.
+    // `merged` as unlisted, so drop its cell rows too. Its pins went to the survivor: none left.
     await ctx.db.patch(loserId, {
       dedupStatus: 'merged',
       mergedIntoId: survivorId,
-      moderatorTownKeys: undefined,
+      ...(pinsBefore.loser.length > 0
+        ? { moderatorTownKeys: undefined, ...regionStatesFields(ruleStatesOf(loser), []) }
+        : {}),
     });
     // …and clear the flag at the **other end of the pair**, which nothing used to do. A07a's
     // reconciliation flags every member of a duplicate group mutually, so the survivor is normally
@@ -4113,6 +4119,27 @@ export async function setAliasesImpl(
 /** The most towns a moderator may pin one body in (B01-3g). */
 export const MAX_MODERATOR_TOWNS = 8;
 
+/** The region rule's states as a body stores them: `regionStates`, else (no pin ever) `states`. */
+export function ruleStatesOf(body: Pick<Doc<'waterBodies'>, 'regionStates' | 'states'>): string[] {
+  return body.regionStates ?? body.states ?? [];
+}
+
+/**
+ * **The one builder of a body's stored `states`** (B01-3g, D266): the rule's ingredient kept as
+ * `regionStates`, and `states` rebuilt from it and the pinned towns (`effectiveStates`). Every writer
+ * of either ingredient — the import, the pin's write and its undo, a merge — patches through this, in
+ * its own transaction, so skater search, the library and the console all read the states at once.
+ */
+export function regionStatesFields(
+  regionStates: readonly string[],
+  pinnedTownKeys: readonly string[],
+): { regionStates: string[]; states: string[] } {
+  return {
+    regionStates: [...regionStates],
+    states: effectiveStates(regionStates, pinnedTownKeys),
+  };
+}
+
 /**
  * Moderator: **hold a body in region, in the towns named** (B01-3g, D266) — the founder's
  * determination where the shoreline rule alone would put a body out (two bodies kept by hand sit
@@ -4140,7 +4167,8 @@ export const setModeratorTowns = mutation({
  * `setModeratorTowns`'s body, shared with its undo (D226). A key must name a county subdivision of a
  * loaded state, and — for a person's pick — a town row loaded now; an undo puts back exactly the list
  * it replaced (`restoring`), even a key whose town has since gone, which the facts then show as
- * missing rather than dropping it. Marks the body's facts stale: its towns are recomputed.
+ * missing rather than dropping it. The body's `states` and its facts' pinned towns are rebuilt in
+ * the same transaction; the computed towns don't depend on pins and stay as they are.
  */
 export async function setModeratorTownsImpl(
   ctx: MutationCtx,
@@ -4184,8 +4212,12 @@ export async function setModeratorTownsImpl(
       throw new ConvexError(`No loaded town has the key ${key}`);
     }
   }
-  await ctx.db.patch(waterBodyId, { moderatorTownKeys: next.length > 0 ? next : undefined });
-  await markGeoStale(ctx, [waterBodyId]);
+  // The pins and the states they feed, together; the facts' pinned half in the same transaction.
+  await ctx.db.patch(waterBodyId, {
+    moderatorTownKeys: next.length > 0 ? next : undefined,
+    ...regionStatesFields(ruleStatesOf(body), next),
+  });
+  await refreshPinnedFacts(ctx, waterBodyId, next);
   await writeAudit(ctx, {
     actorId: actor._id,
     action: 'set_moderator_towns',

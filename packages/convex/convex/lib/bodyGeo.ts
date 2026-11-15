@@ -23,10 +23,15 @@
  * computed reads `null` ("not computed"), never an empty list.
  */
 
-import { allLevels, cellRangeCovering, distanceToPolygonMeters } from '@skating/core';
+import {
+  allLevels,
+  cellRangeCovering,
+  countyKeyOfSubdivision,
+  distanceToPolygonMeters,
+} from '@skating/core';
 import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from '../_generated/dataModel';
-import type { QueryCtx } from '../_generated/server';
+import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { WATER_BODY_LADDER } from './cellIndex';
 
 /** Two outlines this close count as touching (the stored outlines are simplified to ~5 m). */
@@ -214,10 +219,99 @@ export const PLACES_RULE = 2;
  * computed, or computed by the sampled rule before it and not recomputed since (a parked body keeps
  * that row until its recompute goes through). Its touching bodies are read from the row as before.
  */
-export function placesOf<R extends Pick<Doc<'bodyGeoFacts'>, 'placesRule'>>(
-  geo: R | null,
-): R | null {
-  return geo !== null && geo.placesRule === PLACES_RULE ? geo : null;
+export function placesOf(geo: Doc<'bodyGeoFacts'> | null): Doc<'bodyGeoFacts'> | null {
+  if (geo === null || geo.placesRule !== PLACES_RULE) return null;
+  return withPinnedTowns(geo);
+}
+
+/**
+ * The computed places with a moderator's pinned towns merged in (B01-3g) — after the computed ones,
+ * never twice (keyed on name and state), their counties and states added. Kept apart in storage, so a
+ * pin's write and a recompute each rebuild only their own half.
+ */
+function withPinnedTowns(geo: Doc<'bodyGeoFacts'>): Doc<'bodyGeoFacts'> {
+  const pins = geo.pinnedTowns ?? [];
+  if (pins.length === 0) return geo;
+  const townEntries = [...(geo.townEntries ?? [])];
+  for (const p of pins) {
+    if (!townEntries.some((e) => e.name === p.name && e.state === p.state)) {
+      townEntries.push({ name: p.name, state: p.state, id: p.id });
+    }
+  }
+  const towns = [...(geo.towns ?? [])];
+  const townStates = [...(geo.townStates ?? [])];
+  const townIds = [...(geo.townIds ?? [])];
+  for (const p of pins) {
+    if (towns.includes(p.name)) continue;
+    towns.push(p.name);
+    townStates.push(p.state);
+    townIds.push(p.id);
+  }
+  const counties = [...(geo.counties ?? [])];
+  for (const p of pins)
+    if (p.county !== undefined && !counties.includes(p.county)) counties.push(p.county);
+  const states = [...new Set([...(geo.states ?? []), ...pins.map((p) => p.state)])].sort();
+  return { ...geo, towns, townStates, townIds, townEntries, counties, states };
+}
+
+/**
+ * **A moderator's pinned towns as the facts hold them** (B01-3g): each key's town row now — name,
+ * state, boundary and county (from its GEOID) — and the keys no town row has now (`pinnedMissing`),
+ * kept to be shown rather than dropped. At most eight keys, two indexed reads each.
+ */
+export async function pinnedFactsFor(
+  ctx: QueryCtx,
+  keys: readonly string[],
+): Promise<{
+  pinnedTowns: NonNullable<Doc<'bodyGeoFacts'>['pinnedTowns']>;
+  pinnedMissing: string[];
+}> {
+  const pinnedTowns: NonNullable<Doc<'bodyGeoFacts'>['pinnedTowns']> = [];
+  const pinnedMissing: string[] = [];
+  for (const key of keys) {
+    const town = await ctx.db
+      .query('adminAreas')
+      .withIndex('by_external_id', (q) => q.eq('externalId', key))
+      .first();
+    if (town === null || town.level !== 'town') {
+      pinnedMissing.push(key);
+      continue;
+    }
+    const countyKey = countyKeyOfSubdivision(key);
+    const county =
+      countyKey === null
+        ? null
+        : await ctx.db
+            .query('adminAreas')
+            .withIndex('by_external_id', (q) => q.eq('externalId', countyKey))
+            .first();
+    pinnedTowns.push({
+      key,
+      name: town.name,
+      state: town.state,
+      id: town._id,
+      ...(county !== null && county.level === 'county' ? { county: county.name } : {}),
+    });
+  }
+  return { pinnedTowns, pinnedMissing };
+}
+
+/**
+ * Rebuild a body's pinned towns in its facts, in the writer's own transaction (the pin's write, its
+ * undo, a merge) — so no reader sees the pins as they were. A body with no facts row yet is owed its
+ * first computation, which builds them.
+ */
+export async function refreshPinnedFacts(
+  ctx: MutationCtx,
+  waterBodyId: Id<'waterBodies'>,
+  keys: readonly string[],
+): Promise<void> {
+  const row = await ctx.db
+    .query('bodyGeoFacts')
+    .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
+    .first();
+  if (row === null) return;
+  await ctx.db.patch(row._id, await pinnedFactsFor(ctx, keys));
 }
 
 /** A body's stored geometry facts, or `null` when none were ever computed. */

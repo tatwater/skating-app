@@ -791,6 +791,13 @@ export default defineSchema({
      */
     moderatorTownKeys: v.optional(v.array(v.string())),
     /**
+     * **The region rule's states, kept apart from the pins** (B01-3g) — the import's answer, so
+     * `states` (the one every reader uses) is always rebuilt from the two ingredients
+     * (`regionStatesFields`): clearing a pin removes exactly the state it added and nothing the rule
+     * found. Absent on a row no pin has touched: its `states` are wholly the rule's.
+     */
+    regionStates: v.optional(v.array(v.string())),
+    /**
      * `[name, ...aliases]` joined — **the field the search index actually covers.**
      *
      * Denormalized on every name write, never set by a client, same shape and same
@@ -5189,13 +5196,21 @@ export default defineSchema({
      * read it; every read that offers a town's state reads this.
      */
     townEntries: v.optional(
+      v.array(v.object({ name: v.string(), state: v.string(), id: v.id('adminAreas') })),
+    ),
+    /**
+     * **A moderator's pinned towns** (B01-3g), kept apart from the computed ones — rebuilt in the same
+     * transaction as every write of the pins (`lib/bodyGeo.ts` `refreshPinnedFacts`) and by each
+     * recompute, so the readers (`placesOf`, which merges them in) never show the pins as they were.
+     */
+    pinnedTowns: v.optional(
       v.array(
         v.object({
+          key: v.string(),
           name: v.string(),
           state: v.string(),
           id: v.id('adminAreas'),
-          /** Held there by a moderator (`waterBodies.moderatorTownKeys`), not only computed. */
-          pinned: v.optional(v.boolean()),
+          county: v.optional(v.string()),
         }),
       ),
     ),

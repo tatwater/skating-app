@@ -3020,7 +3020,9 @@ GEOID (`tiger/SSCCCsssss`: its first five digits are its county's).
 
 **One function, two readers.** `@skating/core`'s `createReach` (`regionReach.ts`) is the rule: exact
 along every edge (a line meets the 1 cm capsule around each town edge in one closed-form interval; what
-is left of the edge is wholly in or out, settled by one point-in-polygon test), pageable (towns are
+is left of the edge is wholly in or out, settled by one point-in-polygon test; each segment's ground
+length comes from its own endpoints at its own mid-latitude, so nothing depends on vertex order, a
+ring's start or its closing vertex — Greptile on #130 found the frame once did), pageable (towns are
 added a page at a time, order-free), with a brute-force reference and fast-check properties under
 pinned seeds plus one random run (monotone in the constant; invariant to vertex order and ring start;
 equal to the reference; split by a line lists both; on a line lists both; short shores go to the most;
@@ -3094,8 +3096,13 @@ keys (a boundary reload keeps the document, and a key survives even a delete and
 holds a body in region in the towns named. `setModeratorTowns` is a whole-list write (`expected`,
 `list_changed`), audited (`set_moderator_towns`) and undone through the same write; its undo is
 refused, so never offered, when a merge moved the list, and asks a reason when it clears every pin
-(the `set_included_by_request` rule). The facts list pinned towns whatever the rule says, marked
-`pinned`, with their counties and states; a key whose town is gone is kept in `pinnedMissing`. The
+(the `set_included_by_request` rule). A body's states are built from two ingredients kept apart —
+the rule's (`regionStates`) and the pinned towns' — by one builder (`regionStatesFields`), which
+the pin's write, its undo, a merge and the import all patch through, so skater search, the library
+and the console read a pin's state in the write's own transaction, and clearing a pin removes exactly
+the state it added (Greptile on #130). The facts keep the pinned towns apart too (`pinnedTowns`,
+rebuilt in the same transaction as every pin write and by each recompute) and the readers merge them
+in, so no reader shows the pins as they were; a key whose town is gone is kept in `pinnedMissing`. The
 import adds pinned states and never reads a pinned body as out of region (`keptByPin`). A merge folds
 the loser's pins into the survivor within the cap and records both in its change set; a removal
 leaves them. A guard reads the functions' source: nothing else writes the field.
