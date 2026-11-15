@@ -97,6 +97,7 @@ import type * as lib_imageryPump from "../lib/imageryPump.js";
 import type * as lib_landmarkProposals from "../lib/landmarkProposals.js";
 import type * as lib_landmarkRows from "../lib/landmarkRows.js";
 import type * as lib_ledgerEditors from "../lib/ledgerEditors.js";
+import type * as lib_listCas from "../lib/listCas.js";
 import type * as lib_listing from "../lib/listing.js";
 import type * as lib_metricReads from "../lib/metricReads.js";
 import type * as lib_metrics from "../lib/metrics.js";
@@ -277,6 +278,7 @@ declare const fullApi: ApiFromModules<{
   "lib/landmarkProposals": typeof lib_landmarkProposals;
   "lib/landmarkRows": typeof lib_landmarkRows;
   "lib/ledgerEditors": typeof lib_ledgerEditors;
+  "lib/listCas": typeof lib_listCas;
   "lib/listing": typeof lib_listing;
   "lib/metricReads": typeof lib_metricReads;
   "lib/metrics": typeof lib_metrics;
