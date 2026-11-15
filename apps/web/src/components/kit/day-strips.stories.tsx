@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, within } from 'storybook/test';
+import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { DayStrips } from './day-strips';
 import { computedColor, sameColor } from './measure';
 
@@ -96,6 +96,68 @@ export const TallDay: Story = {
     ];
     // Every mark is counted in the day's bar of marks, never dropped by the smaller step.
     await expect(marks.reduce((n, m) => n + Number(m.dataset.count ?? 1), 0)).toBe(14);
+  },
+};
+
+/**
+ * Every day a pointer reads, read without one: a hidden table of the days by date, and one tab stop
+ * the arrows walk, saying the day. A seeded winter: a capped day (its words a floor) and days not yet
+ * recorded, which read as such — never as zero.
+ */
+export const ReadableDays: Story = {
+  args: {
+    strips: [
+      {
+        key: 'now',
+        label: '2026–27',
+        values: [0, 3, 50, null, null],
+        unknown: [1, 0, 0, 0, 0],
+        current: true,
+        today: 2,
+        summary: '2 days with hazard reports',
+        dayTitle: (i: number) =>
+          [
+            'No report known, 1 may still have been on the lake',
+            '3 reported on the lake',
+            'At least 50 reported on the lake',
+          ][i] ?? 'Not yet',
+      },
+    ],
+    months: [],
+    days: 5,
+    dayLabel: (i: number) => `${i + 1} Oct`,
+    name: 'Hazard reports on the lake',
+  },
+  play: async ({ canvasElement }) => {
+    const c = within(canvasElement);
+    await expect(c.getByRole('img')).toHaveAccessibleName('2026–27: 2 days with hazard reports');
+    const table = c.getByRole('table', { name: 'Hazard reports on the lake by day', hidden: true });
+    const rows = [...table.querySelectorAll('tbody tr')].map((r) =>
+      [...r.children].map((cell) => cell.textContent),
+    );
+    await expect(rows).toEqual([
+      ['1 Oct', 'No report known, 1 may still have been on the lake'],
+      ['2 Oct', '3 reported on the lake'],
+      ['3 Oct', 'At least 50 reported on the lake'],
+    ]);
+    const keys = c.getByRole('slider', { name: 'Hazard reports on the lake' });
+    await userEvent.tab();
+    await expect(keys).toHaveFocus();
+    await expect(keys).toHaveAttribute(
+      'aria-valuetext',
+      '3 Oct, 2026–27: At least 50 reported on the lake',
+    );
+    await userEvent.keyboard('{ArrowRight}');
+    // A day not yet recorded: said so, never a zero.
+    await expect(keys).toHaveAttribute('aria-valuetext', '4 Oct, 2026–27: Not yet');
+    await waitFor(() =>
+      expect(canvasElement.querySelector('[data-slot="day-strips-readout"]')).toHaveTextContent(
+        '4 Oct, 2026–27: Not yet',
+      ),
+    );
+    await expect(canvasElement.querySelector('[data-slot="day-strips-cursor"]')).not.toBeNull();
+    await userEvent.keyboard('{Home}');
+    await expect(keys).toHaveAttribute('aria-valuenow', '0');
   },
 };
 

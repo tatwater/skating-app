@@ -319,6 +319,31 @@ describe('every tab answers the keyboard wherever it answers a click', () => {
   });
 });
 
+describe('every picture a pointer reads day by day is read from the keyboard too', () => {
+  it.each(Object.entries(LEVERS))('%s', (_tab, node) => {
+    const { container } = render(inKeys(node));
+    const pictures = container.querySelectorAll<SVGElement>('[data-slot="day-strips"]');
+    // Hazards draws its winters so; a tab that draws none has nothing to check.
+    if (_tab === 'Hazards') expect(pictures.length).toBeGreaterThan(0);
+    for (const strips of pictures) {
+      const frame = strips.closest('[data-slot="day-strips-frame"]') as HTMLElement;
+      const keys = frame.querySelector<HTMLElement>('[role="slider"]') as HTMLElement;
+      // One tab stop, which the arrows move and which says the day it is on.
+      expect(keys.tabIndex).toBe(0);
+      keys.focus();
+      fireEvent.keyDown(keys, { key: 'Home' });
+      expect(keys.getAttribute('aria-valuenow')).toBe('0');
+      fireEvent.keyDown(keys, { key: 'ArrowRight' });
+      expect(keys.getAttribute('aria-valuenow')).toBe('1');
+      // Its words: the day, the strip, what the strip holds that day.
+      expect(keys.getAttribute('aria-valuetext')).toMatch(/^\d{1,2} [A-Z][a-z]{2}, .+: .+$/);
+      // The picture names its table of days.
+      const table = document.getElementById(strips.getAttribute('aria-details') ?? '');
+      expect(table?.tagName).toBe('TABLE');
+    }
+  });
+});
+
 describe('no tab draws an absent fact as a blank', () => {
   it('a launch with no landmark near it says so, not an empty line', () => {
     render(inKeys(BARE.Access));

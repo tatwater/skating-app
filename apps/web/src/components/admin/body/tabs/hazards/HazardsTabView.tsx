@@ -52,6 +52,7 @@ import type { GlyphCell } from './featureGlyph';
 import { featureLit, hazardLit, winterLit } from './hazardsMap';
 import {
   type ArchivedRow,
+  axisDayLabel,
   dayWords,
   drawnDay,
   type FeatureRow,
@@ -475,6 +476,8 @@ function WinterBlock({
         }))}
         months={winters.months}
         days={winters.days}
+        dayLabel={axisDayLabel}
+        name={HAZARDS_WORDS.stripsName(wordsContext())}
       />
       {first !== undefined && todayDay !== null && todayDay !== undefined && (
         <p data-slot="hazards-today" className="m-0 text-assist leading-(--lead-list) text-fg2">

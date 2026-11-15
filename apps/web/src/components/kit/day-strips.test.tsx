@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
@@ -191,5 +191,82 @@ describe('DayStrips', () => {
       ),
       { numRuns: 60 },
     );
+  });
+});
+
+describe('DayStrips — every day a pointer can read, readable without one', () => {
+  // A seeded winter: a capped day (its words a floor), a quiet day, days not yet happened.
+  const words = (i: number) =>
+    i === 1 ? 'At least 50 reported on the lake' : i === 0 ? '2 reported on the lake' : 'Quiet';
+  const strips: DayStrip[] = [
+    {
+      key: 'now',
+      label: '2026–27',
+      values: [2, 50, 0, null],
+      unknown: [0, 0, 1, 0],
+      dayTitle: (i) => (i >= 3 ? 'Not yet' : words(i)),
+      today: 2,
+    },
+    {
+      key: 'last',
+      label: '2025–26',
+      values: [1, 0, 0, 0],
+      dayTitle: () => '1 reported on the lake',
+    },
+  ];
+  const label = (i: number) => ['1 Oct', '2 Oct', '3 Oct', '4 Oct'][i] ?? '';
+  const view = () => (
+    <DayStrips strips={strips} months={[]} days={4} dayLabel={label} name="Hazard reports" />
+  );
+
+  it('tells a reader each day a pointer can find, by date and strip, in the pointer’s words', () => {
+    render(view());
+    const table = screen.getByRole('table', { name: 'Hazard reports by day' });
+    const rows = [...table.querySelectorAll('tbody tr')].map((r) =>
+      [...r.children].map((c) => c.textContent),
+    );
+    expect(rows).toEqual([
+      ['1 Oct', '2 reported on the lake', '1 reported on the lake'],
+      ['2 Oct', 'At least 50 reported on the lake', '1 reported on the lake'],
+      ['3 Oct', 'Quiet', '1 reported on the lake'],
+    ]);
+    // The picture points at its table.
+    expect(screen.getByRole('img').getAttribute('aria-details')).toBe(table.id);
+  });
+
+  it('a day not yet recorded reads as such, never as zero', () => {
+    render(
+      <DayStrips
+        strips={[{ key: 'a', label: 'A', values: [1, null] }]}
+        months={[]}
+        days={2}
+        dayLabel={label}
+      />,
+    );
+    const slider = screen.getByRole('slider');
+    slider.focus();
+    fireEvent.keyDown(slider, { key: 'End' });
+    expect(slider).toHaveAttribute('aria-valuetext', '2 Oct, A: Not recorded');
+  });
+
+  it('one tab stop walks the days with the arrows, Home and End, and the strips with ↑↓', () => {
+    render(view());
+    const slider = screen.getByRole('slider', { name: 'Hazard reports' });
+    expect(slider).toHaveAttribute('tabindex', '0');
+    // It opens on today.
+    expect(slider).toHaveAttribute('aria-valuetext', '3 Oct, 2026–27: Quiet');
+    fireEvent.keyDown(slider, { key: 'ArrowLeft' });
+    expect(slider).toHaveAttribute(
+      'aria-valuetext',
+      '2 Oct, 2026–27: At least 50 reported on the lake',
+    );
+    fireEvent.keyDown(slider, { key: 'Home' });
+    expect(slider).toHaveAttribute('aria-valuenow', '0');
+    fireEvent.keyDown(slider, { key: 'ArrowDown' });
+    expect(slider).toHaveAttribute('aria-valuetext', '1 Oct, 2025–26: 1 reported on the lake');
+    fireEvent.keyDown(slider, { key: 'End' });
+    expect(slider).toHaveAttribute('aria-valuenow', '3');
+    fireEvent.keyDown(slider, { key: 'ArrowUp' });
+    expect(slider).toHaveAttribute('aria-valuetext', '4 Oct, 2026–27: Not yet');
   });
 });

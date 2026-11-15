@@ -278,6 +278,11 @@ export function axisIndex(i: number, season: Season): number {
   return winterWindow(season).days === AXIS_DAYS || i < LEAP_SLOT ? i : i + 1;
 }
 
+/** An axis day's date in words ("12 Jan"), the same for every winter set on the axis. */
+export function axisDayLabel(i: number): string {
+  return dayMonth(winterWindow(AXIS_SEASON).start + i * DAY, 'UTC');
+}
+
 /** A winter's days placed on the axis: the 29 February slot of a winter without one is empty. */
 export function onAxis<T>(days: readonly (T | null)[], season: Season): (T | null)[] {
   const out: (T | null)[] = Array.from({ length: AXIS_DAYS }, () => null);

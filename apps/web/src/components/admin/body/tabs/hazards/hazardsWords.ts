@@ -138,6 +138,8 @@ export const HAZARDS_WORDS = {
     return `${days}${firsts}${some}${c.capped ? '; each a floor' : ''}`;
   },
 
+  /** What the winters' strips count, for their keyboard stop and their table of days. */
+  stripsName: (_c: WordsContext): string => 'Hazard reports on the lake',
   /**
    * The strips' caption, drawn whenever a mark is: what a mark is, and that the days after it say
    * nothing about the lake.
