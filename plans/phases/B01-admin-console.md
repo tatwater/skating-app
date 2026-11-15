@@ -1326,7 +1326,7 @@ Verbatim in every brief, with the placeholders filled:
   the code it guards — flip the comparison, drop the clause — and watch the test fail. A test that
   stays green under the mutation guards nothing. The report says which mutations were run.
 - **The story-flake class.** Every CI-only red in B03 was a read landing mid-flight on a
-  frame-starved runner: green locally, red on CI. Its six shapes:
+  frame-starved runner: green locally, red on CI. Its shapes (six from B03, a seventh from B01):
   1. *A node held across an `await`* — Recharts remounts its bars every entrance frame, and a
      detached node computes every property to `''`.
   2. *A transitioning value compared as a string* — a `box-shadow` read at 99.97% of its transition
@@ -1340,6 +1340,19 @@ Verbatim in every brief, with the placeholders filled:
      earlier story fetched it, so the value depends on file order.
   6. *A debounce outrunning `findBy`* — in the jsdom project, a 200 ms debounce on a starved runner
      outran the old 1 s budget.
+  7. *A list sampled once, judged later* (B01, "Legend Matches Bars" on #111, "Quiet Tone" on
+     #119) — a helper waited until *some* bars were drawn, returned their fills, and the
+     assertions ran on that sample; a chart's series don't all draw on the same frame, so CI caught
+     six gray bars and neither red one. The read and its assertion belong in one retry.
+
+  Which overlay reads must wait (B01-3's audit of every kit story's `getComputedStyle` read): the
+  overlays animate only opacity on open and close (sheet, drawer and toast translate too), so a
+  background, border, shadow or text color read right after one opens is safe; an opacity or
+  translate read waits for the animation's end. A control's own state change is different: the
+  buttons, rows and menu items transition `color`, `background-color` and `box-shadow`, so a read
+  after a focus, highlight or hover retries until the end state — and asserts that state exactly,
+  since a retry passes on the first frame that meets it: an outline button's inset ring is a
+  `box-shadow`, so `not.toBe('none')` holds at rest; the ring is `focusRing()`.
 
   The standing fixes: `waitFor` the thing itself (the focus, the attribute), never elapsed frames;
   `await Promise.all(el.getAnimations().map((a) => a.finished))` before measuring; a fresh query and
