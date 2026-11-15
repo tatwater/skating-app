@@ -8,6 +8,7 @@ import { Note } from '@/components/kit/note';
 import { SkeletonText } from '@/components/kit/skeleton';
 import { usePaneKeys } from '@/lib/keys';
 import { ConsoleTopStart } from '../../shell/ConsoleShell';
+import { NOT_RECORDED } from '../tabs/tabStates';
 import { BodyHistorySection } from './BodyLeftColumn';
 import type { Removal } from './bodyModel';
 import { IN_NO_TOWN_WORDS, NOT_COMPUTED, NOT_COMPUTED_WORDS } from './bodyModel';
@@ -41,6 +42,7 @@ export function BodyConsoleGone({
   towns,
   reports,
   history,
+  record,
   survivorLink,
   onReturn,
   now,
@@ -70,8 +72,8 @@ export function BodyConsoleGone({
             </>
           ) : (
             <>
-              This body has been removed. The map and the console no longer open it, so its name and
-              outline can’t be shown here.
+              This body has been removed. The map and the console no longer open it; what its record
+              still holds is below.
             </>
           )}
         </Note>
@@ -81,11 +83,12 @@ export function BodyConsoleGone({
           </Button>
         )}
         <KeyValueList keyWidth="5.5rem" className="mt-(--space-2) w-full gap-y-(--space-2_5)">
+          {record !== null && <RecordRows record={record} />}
           {history !== null && <RemovalRow removal={removal} merged={survivor !== null} />}
           {towns !== null && <TownsRow towns={towns} />}
           {reports !== null && <ReportsRow reports={reports} />}
         </KeyValueList>
-        <ReadNote data-for="body-gone-facts" reads={[towns, reports]}>
+        <ReadNote data-for="body-gone-facts" reads={[towns, reports, record ?? null]}>
           What the record holds about it couldn’t be read
         </ReadNote>
       </div>
@@ -185,6 +188,32 @@ function ReportsRow({ reports }: { reports: Loadable<{ count: number; capped: bo
         </span>
       )}
     </KeyValueRow>
+  );
+}
+
+/** The stored record of a body that left: its name, class, states and area. */
+function RecordRows({ record }: { record: Exclude<BodyConsoleGoneProps['record'], null> }) {
+  if (isFailed(record) || record === null) return null;
+  if (record === undefined) {
+    return (
+      <KeyValueRow label="Name">
+        <SkeletonText width="9rem" className="text-row leading-list" />
+      </KeyValueRow>
+    );
+  }
+  return (
+    <>
+      <KeyValueRow label="Name">
+        <span data-slot="body-gone-name">{record.name}</span>
+      </KeyValueRow>
+      <KeyValueRow label="Class">{record.kind}</KeyValueRow>
+      {record.states.length > 0 && (
+        <KeyValueRow label="States">{record.states.join(', ')}</KeyValueRow>
+      )}
+      <KeyValueRow label="Area">
+        {record.area === null ? <Faint>{NOT_RECORDED}</Faint> : record.area}
+      </KeyValueRow>
+    </>
   );
 }
 

@@ -1,7 +1,7 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { polygonBBox, waterBodyDisplayName } from '@skating/core';
-import { useMemo, useState } from 'react';
+import { polygonBBox, waterBodyClassLabel, waterBodyDisplayName } from '@skating/core';
+import { useMemo } from 'react';
 import {
   isFailed,
   type Loadable,
@@ -18,6 +18,7 @@ import type { Completeness } from '../completeness';
 import { type BodyMapBaseInput, bodyMapBase } from '../map/bodyMapBase';
 import type { BodyMapScene } from '../map/mapDescriptors';
 import {
+  acresText,
   attentionTabs,
   type BodyAsk,
   type BodyHistoryView,
@@ -25,6 +26,7 @@ import {
   bodyAsks,
   bodyHistory,
   bodyIdentity,
+  firstName,
   type HistoryAction,
   latestOnBody,
   NOT_COMPUTED,
@@ -32,6 +34,7 @@ import {
   outlineTrust,
   type Removal,
   removalOf,
+  statusDate,
 } from './bodyModel';
 import { type BodyTabKey, ID_SHAPE } from './bodySearch';
 import { neighborsOf } from './touching';
@@ -81,6 +84,16 @@ export interface BodyGoneData {
   /** Its reports since the record began, for a rejected body; `null`: the read found no body. */
   reports: Loadable<{ count: number; capped: boolean } | null> | null;
   history: Loadable<BodyHistoryView> | null;
+  /**
+   * What the stored record still says of a body that left (`bodyConsole.removedFacts`): its name,
+   * class, states and area. `null` for a merged body (the survivor's page has them), or none read.
+   */
+  record?: Loadable<{
+    name: string;
+    kind: string;
+    states: readonly string[];
+    area: string | null;
+  } | null>;
 }
 
 /** The map's reads that failed: named for the notice, and run again together. */
@@ -117,19 +130,6 @@ export type BodyConsoleData =
       canSetBoost: boolean;
     };
 
-/** The minute a body was opened at, held while it stays open: the clock its reads are asked at. */
-function useOpenedAt(bodyId: string): number {
-  const [clock, setClock] = useState(() => ({ bodyId, at: minute(Date.now()) }));
-  if (clock.bodyId !== bodyId) {
-    const next = { bodyId, at: minute(Date.now()) };
-    setClock(next);
-    return next.at;
-  }
-  return clock.at;
-}
-
-const minute = (at: number) => Math.floor(at / 60_000) * 60_000;
-
 export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleData {
   const valid = ID_SHAPE.test(bodyId);
   const waterBodyId = bodyId as Id<'waterBodies'>;
@@ -139,7 +139,6 @@ export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleDa
   // A read the viewer's role withholds: on its way while the role loads (`can` says no until it
   // lands), never `null` — which says *not recorded*, a claim about the body.
   const withheld = isLoading ? undefined : null;
-  const now = useOpenedAt(bodyId);
   const on = valid;
   const r = useConsoleReads({
     body: on ? read(api.waterBodies.get, { waterBodyId }) : null,
@@ -151,11 +150,17 @@ export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleDa
     placeNames: on ? read(api.corpusPlaceNames.openForBody, { waterBodyId }) : null,
     landmarkAsks: on ? read(api.corpusRequests.openLandmarkRequestsForBody, { waterBodyId }) : null,
     extras: on && canRead ? read(api.bodyConsole.consoleExtras, { waterBodyId }) : null,
-    facts: on && canRead ? read(api.bodies.preview, { waterBodyId, now }) : null,
     history:
       on && canAudit ? read(api.bodyConsole.history, { waterBodyId, limit: HISTORY_LIMIT }) : null,
   });
 
+  // A body that left (rejected: the body's read answers only that it is unavailable): what its
+  // record still holds — its towns with their states, its report floor, how it left —
+  // `bodyConsole.removedFacts`, read only for such a body.
+  const left = loaded(r.body)?.available === false;
+  const removed = useConsoleReads({
+    facts: on && canRead && left ? read(api.bodyConsole.removedFacts, { waterBodyId }) : null,
+  }).facts;
   const result = loaded(r.body);
   const body = result?.available === true && result.body._id === bodyId ? result.body : null;
   const historyRows = loaded(r.history);
@@ -237,6 +242,16 @@ export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleDa
         capped: h.capped,
       }));
 
+  const facts = loaded(removed);
+  const removedLeft: Removal | null =
+    facts?.left == null
+      ? null
+      : {
+          verb: facts.left.action === 'remove' ? 'Removed' : 'Rejected',
+          when: statusDate(facts.left.at, timeZone),
+          who: facts.left.by === null ? null : firstName(facts.left.by.displayName),
+          reason: facts.left.reason === '' ? null : facts.left.reason,
+        };
   if (body === null || scene === null) {
     const survivor = r.body.available
       ? { id: r.body.body._id, name: waterBodyDisplayName(r.body.body.name) }
@@ -245,17 +260,46 @@ export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleDa
       state: 'gone',
       gone: {
         survivor,
-        removal: mapLoadable(r.history, (h) =>
-          removalOf(h.entries as readonly HistoryAction[], bodyId, timeZone),
-        ),
+        // How it left: the row its standing names (`removedFacts.left`, who decided by name), else
+        // the history read's own rows.
+        removal:
+          removedLeft !== null
+            ? removedLeft
+            : mapLoadable(r.history, (h) =>
+                removalOf(h.entries as readonly HistoryAction[], bodyId, timeZone),
+              ),
+        record:
+          survivor !== null
+            ? null
+            : !canRead
+              ? withheld
+              : mapLoadable(removed, (f) =>
+                  f === null
+                    ? null
+                    : {
+                        name: waterBodyDisplayName(f.name),
+                        kind: waterBodyClassLabel(f.bodyClass),
+                        states: f.states,
+                        area: f.areaSqM === null ? null : acresText(f.areaSqM),
+                      },
+                ),
         // A merged body's facts went with it to the survivor; a rejected one's are still its own.
-        towns: survivor !== null ? null : !canRead ? withheld : mapLoadable(r.extras, townsOf),
+        towns:
+          survivor !== null
+            ? null
+            : !canRead
+              ? withheld
+              : mapLoadable(removed, (f) =>
+                  f === null || f.towns === null
+                    ? NOT_COMPUTED
+                    : f.towns.map((t) => (t.state === null ? t.name : `${t.name}, ${t.state}`)),
+                ),
         reports:
           survivor !== null
             ? null
             : !canRead
               ? withheld
-              : mapLoadable(r.facts, (f) => (f === null ? null : f.allTime)),
+              : mapLoadable(removed, (f) => (f === null ? null : f.reports)),
         history,
       },
     };
@@ -270,9 +314,11 @@ export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleDa
     ...(timeZone !== undefined ? { timeZone } : {}),
   });
 
+  // The library row's completeness, on the extras (`consoleExtras.complete`): one small field, no
+  // longer `bodies.preview` and its report scan.
   const completeness: Loadable<Completeness | null> = !canRead
     ? withheld
-    : mapLoadable(r.facts, (f) => f?.complete ?? null);
+    : mapLoadable(r.extras, (e) => (e.complete ?? null) as Completeness | null);
 
   const askReads = [r.bayAsks, r.placeNames, r.landmarkAsks];
   const askFailures = askReads.filter(isFailed);
@@ -329,7 +375,14 @@ export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleDa
 /** The towns from the extras: not computed yet until the body's geometry is; empty is no town. */
 function townsOf(e: {
   towns: readonly string[] | null;
+  townsWithState?: readonly { name: string; state: string | null }[] | null;
   geoComputedAt: number | null;
 }): readonly string[] | typeof NOT_COMPUTED {
-  return e.geoComputedAt === null || e.towns === null ? NOT_COMPUTED : e.towns;
+  if (e.geoComputedAt === null || e.towns === null) return NOT_COMPUTED;
+  // Each town with its own state, as the boundaries store it ("Franklin, VT" and "Franklin, NH" are
+  // two) — never a state inferred from the body's; a town whose state isn't stored reads bare.
+  if (e.townsWithState != null) {
+    return e.townsWithState.map((t) => (t.state === null ? t.name : `${t.name}, ${t.state}`));
+  }
+  return e.towns;
 }

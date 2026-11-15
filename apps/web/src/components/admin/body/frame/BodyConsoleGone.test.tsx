@@ -31,7 +31,7 @@ describe('BodyConsoleGone', () => {
   it('says a rejected body has been removed, and how, by whom and why', () => {
     render(page());
     expect(screen.getByText(/This body has been removed/)).toBeInTheDocument();
-    expect(screen.getByText(/its name and outline can’t be shown here/)).toBeInTheDocument();
+    expect(screen.getByText(/what its record still holds is below/)).toBeInTheDocument();
     expect(screen.getByText('Rejected')).toBeInTheDocument();
     expect(screen.getByText('Teagan')).toBeInTheDocument();
     expect(screen.getByText('“Drawn over a beach”')).toBeInTheDocument();
@@ -107,5 +107,19 @@ describe('BodyConsoleGone', () => {
     open.focus();
     await user.keyboard('{Shift>}{Enter}{/Shift}');
     expect(onReturn).toHaveBeenCalledTimes(1);
+  });
+
+  it('draws what the stored record still holds — name, class, states, area — and not recorded for an unknown area', () => {
+    const { rerender } = render(
+      page({
+        record: { name: 'Mascoma Lake', kind: 'Lake', states: ['NH'], area: '1,143 ac' },
+      }),
+    );
+    expect(document.querySelector('[data-slot="body-gone-name"]')).toHaveTextContent(
+      'Mascoma Lake',
+    );
+    expect(screen.getByText('1,143 ac')).toBeInTheDocument();
+    rerender(page({ record: { name: 'Mascoma Lake', kind: 'Lake', states: [], area: null } }));
+    expect(screen.getByText('Not recorded yet')).toBeInTheDocument();
   });
 });

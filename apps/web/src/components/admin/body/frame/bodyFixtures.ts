@@ -145,7 +145,14 @@ export const MASCOMA_TOWNS: readonly string[] = ['Enfield, NH', 'Lebanon, NH'];
 
 /** `consoleExtras` for Mascoma: the 12 Oct campaign re-affirmed the outline; nothing touches it. */
 export const MASCOMA_EXTRAS = {
-  towns: ['Enfield, NH', 'Lebanon, NH'],
+  towns: ['Enfield', 'Lebanon'],
+  // Each town with its own state, as the boundaries store it.
+  townsWithState: [
+    { name: 'Enfield', state: 'NH' },
+    { name: 'Lebanon', state: 'NH' },
+  ],
+  // The library row's completeness (the frame's one field).
+  complete: { have: 9, of: 10, missing: ['bathymetry'] },
   hasBathymetry: false,
   outlineTrustedSince: on(10, 12),
   outlineTrustedVia: 'campaign' as const,

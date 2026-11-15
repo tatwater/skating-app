@@ -204,10 +204,6 @@ beforeEach(() => {
   set(api.corpusPlaceNames.openForBody, { names: [], more: false });
   set(api.corpusRequests.openLandmarkRequestsForBody, { proposals: [], more: false });
   set(api.bodyConsole.consoleExtras, MASCOMA_EXTRAS);
-  set(api.bodies.preview, {
-    complete: { have: 9, of: 10, missing: ['bathymetry'] },
-    allTime: { count: 42, capped: false, firstSeason: 2023 },
-  });
   set(api.bodyConsole.history, { entries: MASCOMA_HISTORY.map(historyRow), capped: false });
 });
 
@@ -241,15 +237,14 @@ describe('BodyConsoleRoute', () => {
     expect(askedFor(api.bodyConsole.history)).toContain(
       JSON.stringify({ waterBodyId: MASCOMA_ID, limit: 50 }),
     );
-    expect(
-      askedFor(api.bodies.preview).every((a) => JSON.parse(a).waterBodyId === MASCOMA_ID),
-    ).toBe(true);
+    // Completeness rides on the extras now: the preview and its report scan are never asked.
+    expect(askedFor(api.bodies.preview)).toEqual([]);
     // The main read was whole and held the ruling: no read of the one verb.
     expect(askedFor(api.bodyConsole.history).some((a) => a.includes('action'))).toBe(false);
   });
 
   it('says *Not recorded yet* for a body with no stored completeness — never a guess', () => {
-    set(api.bodies.preview, null);
+    set(api.bodyConsole.consoleExtras, { ...MASCOMA_EXTRAS, complete: null });
     render(<Mounted />);
     expect(screen.getByText('Not recorded yet')).toBeInTheDocument();
     expect(screen.queryByRole('meter', { name: /Complete/ })).toBeNull();
@@ -304,13 +299,11 @@ describe('BodyConsoleRoute', () => {
   it('says in its own place each read that failed, and tries it again', async () => {
     const user = userEvent.setup();
     set(api.bodyConsole.history, new Error('history down'));
-    set(api.bodies.preview, new Error('preview down'));
     set(api.subAreas.listForBody, new Error('bays down'));
     set(api.accessPoints.accessForBody, new Error('lots down'));
     render(<Mounted />);
     expect(screen.getByRole('heading', { level: 1, name: 'Mascoma Lake' })).toBeInTheDocument();
     expect(screen.getByText('The history couldn’t be read')).toBeInTheDocument();
-    expect(screen.getByText('Completeness couldn’t be read')).toBeInTheDocument();
     expect(screen.getByText('The bays couldn’t be read')).toBeInTheDocument();
     expect(screen.getByText('The map couldn’t read the bays and the lots')).toBeInTheDocument();
     mocks.asked.length = 0;
@@ -501,6 +494,21 @@ describe('BodyConsoleRoute', () => {
 
   it('says a rejected body has been removed, and what the record still holds', () => {
     set(api.waterBodies.get, { available: false });
+    // What the record still holds (`bodyConsole.removedFacts`).
+    set(api.bodyConsole.removedFacts, {
+      id: MASCOMA_ID,
+      name: 'Mascoma Lake',
+      bodyClass: 'lakePond',
+      states: ['NH'],
+      areaSqM: 4_623_575,
+      standing: 'rejected',
+      left: null,
+      towns: [
+        { name: 'Enfield', state: 'NH' },
+        { name: 'Lebanon', state: 'NH' },
+      ],
+      reports: { count: 42, capped: false },
+    });
     set(api.bodyConsole.history, {
       entries: [
         {
@@ -608,7 +616,7 @@ describe('BodyConsoleRoute', () => {
     expect(screen.getByText('Not computed yet')).toBeInTheDocument();
     expect(screen.queryByText('Not recorded yet')).toBeNull();
     unmount();
-    set(api.bodyConsole.consoleExtras, { ...MASCOMA_EXTRAS, towns: [] });
+    set(api.bodyConsole.consoleExtras, { ...MASCOMA_EXTRAS, towns: [], townsWithState: [] });
     render(<Mounted />);
     expect(screen.getByText('In no town')).toBeInTheDocument();
   });
