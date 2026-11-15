@@ -88,8 +88,13 @@ export function LandmarkCard({
   // The other spellings are a whole list: a second chip added while the first is saving is
   // applied to the list the server acknowledged, never the one this render holds (`listWriter`).
   const pushAliases = useListWriter(l.aliases, async (next) => {
-    const landing = onEdit?.({ aliases: [...next] });
-    return landing instanceof Promise ? (await landing) !== false : true;
+    try {
+      const landing = onEdit?.({ aliases: [...next] });
+      return landing instanceof Promise ? (await landing) !== false : true;
+    } catch {
+      // A write that throws (the tab's `act` never does) is a refusal, never an unhandled one.
+      return false;
+    }
   });
   const editAliases = (aliases: readonly string[]) => {
     const added = aliases.filter((a) => !l.aliases.includes(a));

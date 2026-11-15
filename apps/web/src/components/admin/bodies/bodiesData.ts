@@ -1,3 +1,4 @@
+import type { DepthSource } from '@skating/core';
 import type { Count } from '../overview/overviewModel';
 import type { BodyColumnId, BodyRow, Completeness } from './bodiesModel';
 import type { FacetCounts, FacetId } from './bodyFacets';
@@ -129,6 +130,12 @@ export interface BodyPreviewData {
   areaSqM: number | null;
   meanDepthM: number | null;
   maxDepthM: number | null;
+  /**
+   * Where each depth came from (`null` when the record doesn't say): only a measured source reads
+   * plainly; a modeled or unrecorded one is an estimate, written "~8.1" (D3).
+   */
+  meanDepthSource?: DepthSource | null;
+  maxDepthSource?: DepthSource | null;
   elevationM: number | null;
   /**
    * Where the body's own facts stand (`bodies.preview`: the reports, completeness, the asks and the

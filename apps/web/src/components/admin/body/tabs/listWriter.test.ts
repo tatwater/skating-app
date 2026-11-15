@@ -63,11 +63,19 @@ function world(initial: readonly Item[]) {
         return change(base);
       });
     },
-    /** The server answers the oldest write: committed then acknowledged, or refused. */
-    answer(ok: boolean): number | undefined {
+    /**
+     * The server answers the oldest write: committed then acknowledged, or refused. `echoFirst`:
+     * the page renders the committed list before the acknowledgment lands (the console's order —
+     * Convex shows a write before its promise resolves, and the receipt is a further round trip).
+     */
+    answer(ok: boolean, echoFirst = false): number | undefined {
       const w = inFlight.shift();
       if (w === undefined) return undefined;
       if (ok) server = w.next;
+      if (ok && echoFirst) {
+        shown = server;
+        writer.observe(server);
+      }
       w.resolve(ok);
       return w.tag;
     },
@@ -91,7 +99,7 @@ function world(initial: readonly Item[]) {
 
 type Op =
   | { kind: 'press'; what: 'add' | 'remove' | 'edit' | 'order'; pick: number; seed: number }
-  | { kind: 'answer'; ok: boolean }
+  | { kind: 'answer'; ok: boolean; echoFirst?: boolean }
   | { kind: 'render' }
   | { kind: 'external'; pick: number };
 
@@ -102,9 +110,14 @@ const op: fc.Arbitrary<Op> = fc.oneof(
     pick: fc.nat(),
     seed: fc.nat(),
   }),
-  // Acknowledgements as often as presses, so some land fast and some queue behind slow ones.
+  // Acknowledgments as often as presses, so some land fast and some queue behind slow ones; some
+  // land after the page already shows the write.
   fc.record({ kind: fc.constant('answer' as const), ok: fc.boolean() }),
-  fc.record({ kind: fc.constant('answer' as const), ok: fc.constant(true) }),
+  fc.record({
+    kind: fc.constant('answer' as const),
+    ok: fc.constant(true),
+    echoFirst: fc.boolean(),
+  }),
   fc.record({ kind: fc.constant('render' as const) }),
   fc.record({ kind: fc.constant('external' as const), pick: fc.nat() }),
 );
@@ -146,7 +159,32 @@ describe('createListWriter', () => {
     expect(w.idle).toBe(true);
   });
 
-  it('a render that hasn’t caught up with an acknowledgement never rolls the base back', async () => {
+  it('a write the page already shows when it is acknowledged builds the next on the page’s own list', async () => {
+    // Rows carrying page-only ids (Links' keys): the queue's copy of a row it added has an id the
+    // page never drew, so once the page shows the write, the next change must apply to the page's.
+    type Row = { key: string; label: string };
+    let page: readonly Row[] = [{ key: 'p1', label: 'A' }];
+    const sent: (readonly Row[])[] = [];
+    const words = (a: readonly Row[], b: readonly Row[]) =>
+      a.length === b.length && a.every((r, i) => r.label === b[i]?.label);
+    const writer = createListWriter<Row>(async (next) => {
+      sent.push(next);
+      // The echo renders first, with the page's own id for the new row.
+      page = next.map((r, i) => ({ key: `p${i + 1}`, label: r.label }));
+      writer.observe(page);
+      return true;
+    }, words);
+    writer.observe(page);
+    await writer.push((base) => [...base, { key: 'queue-minted', label: 'B' }]);
+    // Edit the new row by the id the page drew for it.
+    await writer.push((base) => base.map((r) => (r.key === 'p2' ? { ...r, label: 'Bb' } : r)));
+    expect(sent.map((l) => l.map((r) => r.label))).toEqual([
+      ['A', 'B'],
+      ['A', 'Bb'],
+    ]);
+  });
+
+  it('a render that hasn’t caught up with an acknowledgment never rolls the base back', async () => {
     const w = world([{ id: 'a', label: 'A' }]);
     w.press(CHANGES.add('b'));
     await settle();
@@ -194,7 +232,7 @@ describe('createListWriter', () => {
             w.press(change, replay.length - 1);
             await settle();
           } else if (o.kind === 'answer') {
-            const i = w.answer(o.ok);
+            const i = w.answer(o.ok, o.echoFirst);
             if (i !== undefined) (replay[i] as { ok: boolean | null }).ok = o.ok;
             await settle();
           } else if (o.kind === 'render') {
@@ -220,7 +258,7 @@ describe('createListWriter', () => {
         // Nothing doubled.
         expect(new Set(w.server.map((x) => x.id)).size).toBe(w.server.length);
         // Every write was built on the server's list as it stood: never older than the last
-        // acknowledgement.
+        // acknowledgment.
         for (const { base, server } of w.bases) expect(sameList(base, server)).toBe(true);
       }),
       { numRuns: 300 },

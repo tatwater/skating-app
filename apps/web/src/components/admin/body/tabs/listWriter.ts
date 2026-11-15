@@ -9,8 +9,11 @@ import { useRef } from 'react';
  * the newest list the server has acknowledged:
  *
  * - the queue's own last acknowledged write, until the server's echo of it has been seen (an
- *   acknowledgement lands a beat before the render that shows it);
- * - otherwise the server's list as last seen, which carries any other moderator's change.
+ *   acknowledgment can land a beat before the render that shows it);
+ * - otherwise the server's list as last seen, which carries any other moderator's change — and
+ *   always once that list already shows the write when it is acknowledged (the console's usual
+ *   order: Convex shows a write before its promise resolves, and the receipt is a further round
+ *   trip), so a tab's own ids for the rows it draws are the ones its next change names.
  *
  * A change that changes nothing sends nothing. A refused write drops its change and nothing built
  * on it — the next change applies to what the server holds.
@@ -34,7 +37,7 @@ export function createListWriter<T>(
   let server: readonly T[] = [];
   /**
    * The last write the server acknowledged, and the server's list as last seen when it did. A list
-   * seen since that differs from `seenAtAck` is newer than the acknowledgement, so it holds the
+   * seen since that differs from `seenAtAck` is newer than the acknowledgment, so it holds the
    * write (or something later); one equal to it is a render that hasn't caught up yet.
    */
   let acked: { list: readonly T[]; seenAtAck: readonly T[] } | null = null;
@@ -50,7 +53,10 @@ export function createListWriter<T>(
         const next = change(base);
         if (same(next, base)) return true;
         const ok = await send(next);
-        if (ok) acked = { list: next, seenAtAck: server };
+        // Already on screen (the echo rendered before the acknowledgment): the server's list is the
+        // newest, and its rows carry the ids the page draws. Holding `next` instead would keep
+        // building on ids no row has — a row added here, then edited, would change nothing.
+        if (ok) acked = same(server, next) ? null : { list: next, seenAtAck: server };
         return ok;
       });
       chain = run.catch(() => undefined);
@@ -59,10 +65,14 @@ export function createListWriter<T>(
   };
 }
 
-/** The hook: one writer for the component's life, shown the server's list on every render. */
+/**
+ * The hook: one writer for the component's life, shown the server's list on every render. `same`
+ * says when two lists save the same (Links' rows carry page-only ids, which it must ignore).
+ */
 export function useListWriter<T>(
   server: readonly T[],
   send: (next: readonly T[]) => Promise<boolean>,
+  same: (a: readonly T[], b: readonly T[]) => boolean = sameList,
 ): ListWriter<T>['push'] {
   // The latest `send` (its closure holds the latest props), reached through a ref so the writer
   // and its queue outlive renders.
@@ -70,7 +80,7 @@ export function useListWriter<T>(
   sendRef.current = send;
   const writer = useRef<ListWriter<T> | null>(null);
   if (writer.current === null)
-    writer.current = createListWriter<T>((next) => sendRef.current(next));
+    writer.current = createListWriter<T>((next) => sendRef.current(next), same);
   writer.current.observe(server);
   return writer.current.push;
 }

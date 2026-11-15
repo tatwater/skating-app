@@ -61,10 +61,11 @@ describe('the lockup', () => {
     expect(
       bodyFigures({ ...modeled, meanDepthM: undefined, maxDepthSource: 'hydrolakes_modeled' })[1],
     ).toEqual({ label: 'Depth max', value: '~24 m' });
-    // A depth whose source isn't recorded: nothing says it was modeled.
+    // A depth whose source isn't recorded: nothing vouches for it, so it reads as an estimate too,
+    // as core's caption reads it.
     expect(
       bodyFigures({ ...MASCOMA_RECORD, meanDepthSource: undefined, maxDepthSource: undefined })[1],
-    ).toEqual({ label: 'Depth avg / max', value: '9.4 / 24 m' });
+    ).toEqual({ label: 'Depth avg / max', value: '~9.4 / ~24 m' });
   });
 
   it('writes acres and lengths the boards’ way', () => {

@@ -214,7 +214,13 @@ function DepthSection({
                       {words.name}
                     </span>
                     {words.note !== null && (
-                      <span className="text-assist leading-none whitespace-nowrap text-fg3">
+                      // A moderator's note runs to 160 characters: kept to its row, never over the
+                      // figures beside it, and whole on hover (clipped across only, so the tight
+                      // leading never cuts a descender).
+                      <span
+                        title={words.note}
+                        className="overflow-x-clip text-ellipsis whitespace-nowrap text-assist leading-none text-fg3"
+                      >
                         {words.note}
                       </span>
                     )}

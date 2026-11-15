@@ -175,11 +175,11 @@ export interface Figure {
 }
 
 export function bodyFigures(b: BodyRecord): Figure[] {
-  // A modeled depth reads as an estimate ("~8.1"), as on Water and the skater's header: a global
-  // model's guess must never look like a sounding (D3). A depth whose source isn't recorded reads
-  // plainly — nothing says it was modeled.
+  // A depth reads plainly only when a measured source vouches for it; a modeled one, or one whose
+  // source isn't recorded, reads as an estimate ("~8.1") — a global model's guess must never look
+  // like a sounding (D3), and core's `lakeCaption` reads an unrecorded source the same way.
   const depthOf = (m: number, source: BodyRecord['meanDepthSource']) =>
-    `${source !== undefined && !isMeasuredDepthSource(source) ? '~' : ''}${meters(m)}`;
+    `${source !== undefined && isMeasuredDepthSource(source) ? '' : '~'}${meters(m)}`;
   const mean = b.meanDepthM === undefined ? null : depthOf(b.meanDepthM, b.meanDepthSource);
   const max = b.maxDepthM === undefined ? null : depthOf(b.maxDepthM, b.maxDepthSource);
   const depth =

@@ -1,4 +1,4 @@
-import { waterBodyClassLabel } from '@skating/core';
+import { type DepthSource, isMeasuredDepthSource, waterBodyClassLabel } from '@skating/core';
 import { type ComponentProps, cloneElement, type ReactElement, type ReactNode } from 'react';
 
 import { Badge } from '@/components/kit/badge';
@@ -183,12 +183,24 @@ function otherTowns(data: BodyPreviewData): string {
   return data.moreTowns.map((t) => `${t}${state}`).join(' · ');
 }
 
-/** "9.4 / 24 m", either half alone when only one is recorded. */
-function depthText(mean: number | null, max: number | null): string | null {
-  const f = (m: number) => (m < 10 ? m.toFixed(1) : Math.round(m).toString());
-  if (mean !== null && max !== null) return `${f(mean)} / ${f(max)} m`;
-  if (max !== null) return `${f(max)} m`;
-  if (mean !== null) return `${f(mean)} m`;
+/**
+ * "9.4 / 24 m", either half alone when only one is recorded. A depth only a measured source vouches
+ * for reads plainly; a modeled or unrecorded one reads as an estimate ("~8.1"), as on the console's
+ * figures and Water (D3).
+ */
+export function depthText(
+  mean: number | null,
+  max: number | null,
+  meanSource: DepthSource | null = null,
+  maxSource: DepthSource | null = null,
+): string | null {
+  const figure = (m: number) => (m < 10 ? m.toFixed(1) : Math.round(m).toString());
+  const sure = (source: DepthSource | null) => source !== null && isMeasuredDepthSource(source);
+  const fm = (m: number) => `${sure(meanSource) ? '' : '~'}${figure(m)}`;
+  const fx = (m: number) => `${sure(maxSource) ? '' : '~'}${figure(m)}`;
+  if (mean !== null && max !== null) return `${fm(mean)} / ${fx(max)} m`;
+  if (max !== null) return `${fx(max)} m`;
+  if (mean !== null) return `${fm(mean)} m`;
   return null;
 }
 
@@ -270,7 +282,12 @@ function PreviewBody({
   onRetry: (() => void) | undefined;
   pending: boolean;
 }) {
-  const depth = depthText(data.meanDepthM, data.maxDepthM);
+  const depth = depthText(
+    data.meanDepthM,
+    data.maxDepthM,
+    data.meanDepthSource ?? null,
+    data.maxDepthSource ?? null,
+  );
   const figures = [
     ...(data.areaSqM !== null ? [{ label: 'Area', value: `${acresText(data.areaSqM)} ac` }] : []),
     ...(depth !== null ? [{ label: 'Depth', value: depth }] : []),
