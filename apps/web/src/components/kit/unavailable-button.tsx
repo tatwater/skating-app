@@ -27,6 +27,14 @@ type UnavailableButtonProps = Omit<ButtonProps, 'onClick' | 'disabled' | 'childr
 /** The title both the tooltip and the toast wear. */
 const NOT_YET = 'Not available yet';
 
+/**
+ * A handler prop's third state, beside a function (the write) and `undefined` (the viewer can't):
+ * the write isn't built yet, so the control is drawn and says *Not available yet*. One marker for
+ * every view that draws such a control.
+ */
+const UNAVAILABLE = 'unavailable' as const;
+type Unavailable = typeof UNAVAILABLE;
+
 /** Shows the toast that says the tool isn't here yet — what a press, or its key, does. */
 function sayUnavailable(what: ReactNode, manager?: ToastManager): void {
   toast({ title: NOT_YET, description: what }, manager);
@@ -52,4 +60,11 @@ function UnavailableButton({ what, manager, children, ...props }: UnavailableBut
   );
 }
 
-export { NOT_YET, sayUnavailable, UnavailableButton, type UnavailableButtonProps };
+export {
+  NOT_YET,
+  sayUnavailable,
+  UNAVAILABLE,
+  type Unavailable,
+  UnavailableButton,
+  type UnavailableButtonProps,
+};
