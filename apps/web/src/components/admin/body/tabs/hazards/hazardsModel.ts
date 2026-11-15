@@ -6,6 +6,8 @@ import {
   type HazardFreshness,
   type HazardType,
   type Season,
+  seasonEndMs,
+  seasonStartMs,
   verdictLabel,
 } from '@skating/core';
 
@@ -54,7 +56,7 @@ export function seasonChoices(current: Season): { bar: Season[]; earlier: Season
 // ── Rows ────────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * A hazard as the tab keeps it from `hazards.listForBody` (`HazardView`). **What the read returns
+ * What a hazard row reads from `hazards.listForBody` (its `HazardView`). **What the read returns
  * and the tab doesn't keep, and why**:
  * - the geometry, the footprint and the cluster's member ids: the map's (`hazardsMap` reads the
  *   same subscription);
@@ -64,7 +66,6 @@ export function seasonChoices(current: Season): { bar: Season[]; earlier: Season
  * - the moderation and merge fields: the read returns only visible, unmerged hazards.
  * `bodyFeatures.listForBody` and `bodyConsole.dailyHazards` are kept whole.
  */
-/** What a hazard row reads from `hazards.listForBody` (its `HazardView`). */
 export type HazardInput = {
   _id: string;
   type: string;
@@ -194,8 +195,8 @@ export function featureRows(features: readonly FeatureInput[]): FeatureRow[] {
  * October are drawn like any other: a hazard first reported in September is a mark in September.
  */
 export function winterWindow(season: Season): { start: number; days: number } {
-  const start = Date.UTC(season, 6, 1);
-  return { start, days: Math.round((Date.UTC(season + 1, 6, 1) - start) / DAY) };
+  const start = seasonStartMs(season);
+  return { start, days: Math.round((seasonEndMs(season) - start) / DAY) };
 }
 
 /** A winter that holds a 29 February (2023–24): the axis every winter is drawn on. */
@@ -226,13 +227,14 @@ export function onAxis<T>(days: readonly (T | null)[], season: Season): (T | nul
 }
 
 /**
- * The clock a winter's day-by-day read (`bodyConsole.dailyHazards`) is handed: the tab's hour —
- * the server counts through the whole of that UTC day — and never past the season's end, so a
- * season that is over keeps one argument and is not asked again every hour.
+ * The clock a winter's day-by-day read (`bodyConsole.dailyHazards`) is handed: the start of the
+ * tab's UTC day — the server counts through the whole of it, so the answer turns only on the day,
+ * and an hour's turn asks nothing new — and never past the season's end, so a season that is over
+ * keeps one argument.
  */
 export function dailyClock(season: Season, hour: number): number {
   const { start, days } = winterWindow(season);
-  return Math.min(hour, start + days * DAY);
+  return Math.min(Math.floor(hour / DAY) * DAY, start + days * DAY);
 }
 
 /** The UTC day an instant falls on, as an index into `winterWindow(season)`; out of it, `null`. */
@@ -320,7 +322,7 @@ export function firstReports(
  * A day as the strip draws it: the marks, and the bars for the rest of the known count. The
  * server counts a hazard with no recorded end on its first-report day, so its mark stands in for
  * that day's share of the bar — **never fewer known hazards drawn than the server's `count`**, and
- * more only when the list holds a first report the count doesn't.
+ * more only when the marks exceed it (a read whose `hazards` disagree with its own `days`).
  */
 export function drawnDay(day: DayOnLake): { bars: number; marks: number } {
   return { bars: Math.max(0, day.count - day.reported), marks: day.reported };
@@ -333,9 +335,9 @@ export const knownOn = (day: DayOnLake): number => Math.max(day.count, day.repor
  * One strip's days on the window: `{ count: 0, unknown: 0, reported: 0 }` on a day the read covers
  * with nothing marked, and `null` on a day that hasn't happened yet (this winter after today) —
  * never zero. `reported` is each day's first reports ({@link firstReports}); absent, none is drawn.
- * **A day the read or the list holds is never dropped**, whatever this clock says: a server day or
- * a first report past the viewer's today still draws, so no rendering ever shows fewer hazards
- * than either counted.
+ * **A day the read holds is never dropped**, whatever this clock says: a server day or a first
+ * report past the viewer's today still draws, so no rendering ever shows fewer hazards than the
+ * read counted.
  */
 export function stripDays(
   read: Pick<DailyHazards, 'season' | 'days'>,
@@ -380,12 +382,6 @@ export type WinterLine = {
   days: (DayOnLake | null)[];
   capped: boolean;
   unknownEnds: number;
-  /**
-   * The archived list covers this winter, so its first reports are drawn as marks. When it
-   * doesn't (last winter beside this one: the tab reads the archived list for the winter on screen
-   * only), the strip draws no marks — the server's count as bars, the unknown in words — and says
-   * which day each archived hazard was first reported isn't read.
-   */
 };
 
 /** The winters the tab draws: the season on screen first, then any it is set beside. */

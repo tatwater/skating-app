@@ -179,7 +179,7 @@ export function ImageryTabView({
     if (next !== undefined) onLitChange(next.id);
   };
 
-  // The call's key is its label's letter, and acts only while this pane has focus.
+  // The call's key is its label's letter, and acts while focus is anywhere in the inspector.
   useTabKeys(pane, [
     {
       key: 'S',

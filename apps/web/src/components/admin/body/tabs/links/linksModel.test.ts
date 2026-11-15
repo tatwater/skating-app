@@ -139,6 +139,21 @@ describe('the map', () => {
 });
 
 describe('carryIds — a link keeps its id across an edit', () => {
+  it('an edit that makes a link read like another never takes the other’s id', () => {
+    let n = 0;
+    const fresh = () => `id${++n}`;
+    const a = { label: 'A', url: 'https://a.org' };
+    const b = { label: 'B', url: 'https://b.org' };
+    // Twins: the first is edited; the second, untouched, keeps its own id.
+    const twins = carryIds([], [a, a], fresh);
+    const firstEdited = carryIds(twins, [{ ...a, label: 'A2' }, a], fresh);
+    expect(firstEdited.map((l) => l.key)).toEqual(twins.map((l) => l.key));
+    // The first is edited to read like the second: each keeps the id of its own place.
+    const pair = carryIds([], [a, b], fresh);
+    const nowTwins = carryIds(pair, [b, b], fresh);
+    expect(nowTwins.map((l) => l.key)).toEqual(pair.map((l) => l.key));
+  });
+
   const link = fc.record({
     label: fc.constantFrom('A', 'B', 'C', 'D'),
     url: fc.constantFrom('https://a.org', 'https://b.org'),

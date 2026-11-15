@@ -118,6 +118,26 @@ describe('LinksTab', () => {
     expect(undo.announce).not.toHaveBeenCalled();
   });
 
+  it('an editor open on one body never opens on the next body’s link', async () => {
+    convex.results.set('waterBodies:get', { available: true, body: { _id: BODY, ...MASCOMA } });
+    const { rerender } = render(<LinksTab bodyId={BODY} />);
+    await userEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
+    expect(screen.getByRole('textbox', { name: /Label/ })).toBeVisible();
+    // The next body's read is already in hand (no loading state between them).
+    const other = 'k2' as Id<'waterBodies'>;
+    convex.results.set('waterBodies:get', {
+      available: true,
+      body: {
+        _id: other,
+        ...MASCOMA,
+        referenceLinks: [{ label: 'Pond association', url: 'https://pond.org' }],
+      },
+    });
+    rerender(<LinksTab bodyId={other} />);
+    expect(screen.queryByRole('textbox', { name: /Label/ })).toBeNull();
+    expect(screen.getByText('Pond association')).toBeVisible();
+  });
+
   it('a viewer without body.identity reads the links and edits none', () => {
     role.caps = new Set();
     convex.results.set('waterBodies:get', { available: true, body: { _id: BODY, ...MASCOMA } });

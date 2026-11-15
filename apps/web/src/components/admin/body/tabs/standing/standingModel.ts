@@ -24,13 +24,11 @@ import { dayMonth, statusDate } from '../../frame/bodyModel';
 export type ActivityKind = 'report' | 'track' | 'hazard';
 
 /**
- * What keeps a body active. `standing.retentionForBody` returns exactly these fields, and every one
- * is kept. `waterBodies.get`'s standing, its reason, note and dates are the tab's; the rest of the
- * record is the frame's or another tab's.
- */
-/**
- * What the retention rule reads about one body. `null` is *not recorded* (no read serves it yet),
- * drawn as absent and never as zero; `0` is a real zero.
+ * What the retention rule reads about one body — what keeps it active. `null` is *not recorded*
+ * (no read serves it yet), drawn as absent and never as zero; `0` is a real zero.
+ * `standing.retentionForBody` returns exactly these fields, and every one is kept.
+ * `waterBodies.get`'s standing, its reason, note and dates are the tab's; the rest of the record is
+ * the frame's or another tab's.
  */
 export type RetentionFacts = {
   /** The newest report, matched track or hazard on the body; `undefined` ⇒ none ever. */

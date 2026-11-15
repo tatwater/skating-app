@@ -173,3 +173,92 @@ describe('SortableRows — the lift and its rows', () => {
     );
   });
 });
+
+/** The kit with its props in the test's hands: rows, grips on or off, a save pending. */
+function Controlled({
+  rows,
+  disabled,
+  pending,
+  onReorder,
+}: {
+  rows: Row[];
+  disabled?: boolean;
+  pending?: boolean;
+  onReorder: (ids: string[]) => void;
+}) {
+  return (
+    <SortableRows<Row>
+      aria-label="Rows"
+      items={rows}
+      idOf={(r) => r.id}
+      labelOf={(r) => r.label}
+      disabled={disabled}
+      pending={pending}
+      onReorder={onReorder}
+      renderRow={(row, { grip }) => (
+        <span data-row={row.id}>
+          {grip}
+          {row.label}
+        </span>
+      )}
+    />
+  );
+}
+
+const ABC: Row[] = [
+  { id: 'a', label: 'Alpha' },
+  { id: 'b', label: 'Beta' },
+  { id: 'c', label: 'Gamma' },
+];
+
+describe('SortableRows — a lift put down ends its drag', () => {
+  it('grips turned off mid-drag: a later hover and release over a grip reorder nothing', () => {
+    const calls: string[][] = [];
+    const onReorder = (ids: string[]) => calls.push(ids);
+    const { rerender } = render(<Controlled rows={ABC} onReorder={onReorder} />);
+    fireEvent.pointerDown(grip('Alpha'), { button: 0, pointerId: 1 });
+    // The grips go off under the pointer (their buttons leave, the release is never heard).
+    rerender(<Controlled rows={ABC} disabled onReorder={onReorder} />);
+    rerender(<Controlled rows={ABC} onReorder={onReorder} />);
+    // The same mouse (its pointer id never changes) passes over a grip, and lets go on it.
+    fireEvent.pointerMove(grip('Gamma'), { pointerId: 1, clientY: 500 });
+    expect(drawn()).toEqual(['a', 'b', 'c']);
+    fireEvent.pointerUp(grip('Gamma'), { pointerId: 1, clientY: 500 });
+    expect(calls).toEqual([]);
+    expect(drawn()).toEqual(['a', 'b', 'c']);
+  });
+
+  it('rows changed mid-drag: the drag draws no preview with nothing lifted, and drops nothing', () => {
+    const calls: string[][] = [];
+    const onReorder = (ids: string[]) => calls.push(ids);
+    const { rerender } = render(<Controlled rows={ABC} onReorder={onReorder} />);
+    fireEvent.pointerDown(grip('Alpha'), { button: 0, pointerId: 1 });
+    const next = [...ABC, { id: 'd', label: 'Delta' }];
+    rerender(<Controlled rows={next} onReorder={onReorder} />);
+    expect(grip('Alpha')).toHaveAttribute('aria-pressed', 'false');
+    // A reader hears the lift was put down.
+    expect(screen.getByText('Alpha was put down.')).toBeInTheDocument();
+    fireEvent.pointerMove(grip('Alpha'), { pointerId: 1, clientY: 500 });
+    expect(drawn()).toEqual(['a', 'b', 'c', 'd']);
+    fireEvent.pointerUp(grip('Alpha'), { pointerId: 1, clientY: 500 });
+    expect(calls).toEqual([]);
+  });
+
+  it('a drop being saved holds its order when the grips go off mid-save', () => {
+    const calls: string[][] = [];
+    const onReorder = (ids: string[]) => calls.push(ids);
+    const { rerender } = render(<Controlled rows={ABC} pending={false} onReorder={onReorder} />);
+    // ⌥↓: Alpha one place down, dropped at once; the save starts.
+    fireEvent.keyDown(grip('Alpha'), { key: 'ArrowDown', altKey: true });
+    expect(calls).toEqual([['b', 'a', 'c']]);
+    rerender(<Controlled rows={ABC} pending onReorder={onReorder} />);
+    expect(drawn()).toEqual(['b', 'a', 'c']);
+    // An edit opens mid-save, which turns the grips off: the dropped order stays.
+    rerender(<Controlled rows={ABC} pending disabled onReorder={onReorder} />);
+    expect(drawn()).toEqual(['b', 'a', 'c']);
+    // The save lands: the new order arrives.
+    const landed = [ABC[1], ABC[0], ABC[2]] as Row[];
+    rerender(<Controlled rows={landed} pending={false} disabled onReorder={onReorder} />);
+    expect(drawn()).toEqual(['b', 'a', 'c']);
+  });
+});

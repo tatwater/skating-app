@@ -1,6 +1,7 @@
-import { act, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { type ReactNode, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FAILED_READ } from '@/components/admin/reads/readFailureFixtures';
@@ -698,10 +699,71 @@ describe('a settling action never drops the keyboard to the page', () => {
     goes.focus();
     const list = screen.getByRole('listbox', { name: 'Asked of this body' });
     list.focus();
+    // Gone in its own act, so the watch has its turn in the wait after it.
+    act(() => goes.click());
+    expect(screen.getByText('Gone')).toBeInTheDocument();
     await act(async () => {
-      goes.click();
       await new Promise((r) => setTimeout(r, 10));
     });
     expect(list).toHaveFocus();
+  });
+
+  it('a press outside on something that takes no focus is leaving too: focus is not pulled back', async () => {
+    let hide = () => {};
+    function Goes() {
+      const [shown, setShown] = useState(true);
+      hide = () => setShown(false);
+      return shown ? <button type="button">Goes</button> : <p>Gone</p>;
+    }
+    render(<InConsole panel={<Goes />} />);
+    const goes = screen.getByRole('button', { name: 'Goes' });
+    goes.focus();
+    // A press on the map, which takes no focus here: the browser drops focus to the page.
+    fireEvent.pointerDown(screen.getByText('map'));
+    goes.blur();
+    // What had focus goes (its own act, so it is gone before the wait), then the watch's turn.
+    act(() => hide());
+    expect(screen.getByText('Gone')).toBeInTheDocument();
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('a menu opened from the tab keeps the watch: picking the item that takes its trigger away', async () => {
+    function Menu() {
+      const [state, setState] = useState<'closed' | 'open' | 'picked'>('closed');
+      if (state === 'picked') return <p>Picked</p>;
+      return (
+        <>
+          <button type="button" onClick={() => setState('open')}>
+            Another class
+          </button>
+          {state === 'open' &&
+            createPortal(
+              <div role="menu">
+                <button
+                  type="button"
+                  role="menuitem"
+                  ref={(el) => el?.focus()}
+                  onClick={() => setState('picked')}
+                >
+                  The last one
+                </button>
+              </div>,
+              document.body,
+            )}
+        </>
+      );
+    }
+    const user = userEvent.setup();
+    render(<InConsole panel={<Menu />} />);
+    await press(user, 'Another class');
+    expect(screen.getByRole('menuitem')).toHaveFocus();
+    await user.keyboard('{Enter}');
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expectFocusKept();
   });
 });

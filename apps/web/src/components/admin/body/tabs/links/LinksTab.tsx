@@ -65,6 +65,9 @@ function LinksReads({ bodyId: id }: BodyTabProps) {
   if (result === null || !result.available) return null;
   return (
     <LinksTabView
+      // One body's view: its link ids (`carryIds`), its open editor and its lift never carry to the
+      // next body, where a carried id would name a link the editor never opened.
+      key={bodyId}
       body={result.body}
       now={now}
       canEdit={can('body.identity')}

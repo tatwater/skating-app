@@ -344,14 +344,14 @@ describe('the winters, a bar per day', () => {
 });
 
 describe('the day-by-day read’s clock', () => {
-  it('is the hour itself, whose day the server counts whole (fast-check)', () => {
+  it('is the start of the UTC day, which the server counts whole (fast-check)', () => {
     const { start, days } = winterWindow(2025);
     const end = start + days * DAY;
     fc.assert(
       fc.property(fc.integer({ min: start, max: end - 1 }), (at) => {
         const hour = Math.floor(at / HOUR) * HOUR;
         // No end-of-hour workaround: the server counts through the whole of the clock's UTC day.
-        expect(dailyClock(2025, hour)).toBe(hour);
+        expect(dailyClock(2025, hour)).toBe(Math.floor(hour / DAY) * DAY);
         expect(Math.floor(dailyClock(2025, hour) / DAY)).toBe(Math.floor(at / DAY));
       }),
     );
@@ -362,8 +362,8 @@ describe('the day-by-day read’s clock', () => {
     const end = start + days * DAY;
     expect(dailyClock(2024, end + 5 * HOUR)).toBe(end);
     expect(dailyClock(2024, end + 400 * DAY)).toBe(end);
-    // Before its window opens, the hour itself.
-    expect(dailyClock(2024, start - 10 * DAY)).toBe(start - 10 * DAY);
+    // Before its window opens, that day.
+    expect(dailyClock(2024, start - 10 * DAY + 5 * HOUR)).toBe(start - 10 * DAY);
   });
 });
 

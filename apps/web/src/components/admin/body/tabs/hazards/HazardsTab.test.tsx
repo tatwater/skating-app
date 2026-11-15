@@ -121,8 +121,8 @@ describe('HazardsTab', () => {
       .map((c) => c.args as { season: number; now: number });
     const current = daily[0]?.season ?? Number.NaN;
     expect(new Set(daily.map((d) => d.season))).toEqual(new Set([current, current - 1]));
-    expect(daily.every((d) => d.now % 3_600_000 === 0)).toBe(true);
-    // This winter's clock is the hour (the server counts its whole day); last winter's, its end.
+    expect(daily.every((d) => d.now % 86_400_000 === 0)).toBe(true);
+    // This winter's clock is today's start (the server counts its whole day); last winter's, its end.
     const hour = Math.floor(Date.now() / 3_600_000) * 3_600_000;
     const thisWinter = daily.find((d) => d.season === current);
     expect(thisWinter?.now).toBe(dailyClock(current, hour));
@@ -146,13 +146,13 @@ describe('HazardsTab', () => {
     expect(document.querySelector('[data-slot="hazards-winters-loading"]')).not.toBeNull();
   });
 
-  it('keeps the winter it has through the hour’s turn, never back to a skeleton', () => {
-    // Mid-winter, so this winter's strip is drawn.
-    vi.useFakeTimers({ now: Date.UTC(2027, 0, 16, 17, 59), toFake: ['Date', 'setInterval'] });
+  it('keeps the winter it has through the day’s turn, never back to a skeleton', () => {
+    // Mid-winter, so this winter's strip is drawn; the minute before midnight UTC.
+    vi.useFakeTimers({ now: Date.UTC(2027, 0, 16, 23, 59), toFake: ['Date', 'setInterval'] });
     try {
-      const first = dailyClock(2026, Date.UTC(2027, 0, 16, 17));
+      const first = dailyClock(2026, Date.UTC(2027, 0, 16, 23));
       convex.results.set('bodyConsole:dailyHazards', (args: { season: number; now: number }) =>
-        // The next hour's read hasn't answered yet; the first hour's has.
+        // The next day's read hasn't answered yet; the first day's has.
         args.season === 2026 && args.now !== first
           ? undefined
           : dailyFrom(
@@ -167,7 +167,7 @@ describe('HazardsTab', () => {
       act(() => {
         vi.advanceTimersByTime(2 * 60_000);
       });
-      // A new hour, a new read on its way: the winter stays drawn from the last answer.
+      // A new day, a new read on its way: the winter stays drawn from the last answer.
       expect(
         convex.calls.some(
           (c) => c.name === 'bodyConsole:dailyHazards' && (c.args as { now: number }).now !== first,
@@ -206,8 +206,8 @@ describe('HazardsTab', () => {
     }
   });
 
-  it('after a failure, the next hour’s load is a load, not the answer from before it', () => {
-    vi.useFakeTimers({ now: Date.UTC(2027, 0, 16, 16, 59), toFake: ['Date', 'setInterval'] });
+  it('after a failure, the next day’s load is a load, not the answer from before it', () => {
+    vi.useFakeTimers({ now: Date.UTC(2027, 0, 16, 23, 59), toFake: ['Date', 'setInterval'] });
     try {
       const at = (h: number) => dailyClock(2026, Date.UTC(2027, 0, 16, h));
       let failing = false;
@@ -230,7 +230,7 @@ describe('HazardsTab', () => {
       act(() => {
         vi.advanceTimersByTime(2 * 60_000);
       });
-      // The next hour's read is on its way: a skeleton, never the answer from before the failure.
+      // The next day's read is on its way: a skeleton, never the answer from before the failure.
       expect(dayLine()).toBeUndefined();
       expect(document.querySelector('[data-slot="hazards-winters-loading"]')).not.toBeNull();
     } finally {

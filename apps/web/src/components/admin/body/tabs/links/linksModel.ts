@@ -79,9 +79,10 @@ export type KeyedLink = StaffLink & { key: string };
  * **Each link's id, kept across an edit.** The record's links carry no id of their own, and a key
  * made from a link's words changes when its words do — so an edited link would look like a new row
  * (and a lift or a focus held on it would lose it). `carryIds` gives the new list the ids of the
- * old one: a link with the same words keeps its id (a reorder); a link whose words changed takes
- * the id of the link that stood in its place (an edit); anything else is new. Pure; `fresh` mints
- * an id.
+ * old one: a link with the same words in the same place keeps its id first (so an edit that makes
+ * one link read like another, or like its twin, never takes the other's id), then one with the same
+ * words anywhere (a reorder); a link whose words changed takes the id of the link that stood in its
+ * place (an edit); anything else is new. Pure; `fresh` mints an id.
  */
 export function carryIds(
   prev: readonly KeyedLink[],
@@ -89,11 +90,23 @@ export function carryIds(
   fresh: () => string,
 ): KeyedLink[] {
   const used = new Set<string>();
-  const ids: (string | null)[] = next.map((link) => {
-    const same = prev.find((p) => !used.has(p.key) && p.label === link.label && p.url === link.url);
-    if (same === undefined) return null;
-    used.add(same.key);
-    return same.key;
+  const same = (p: KeyedLink | undefined, link: StaffLink): p is KeyedLink =>
+    p !== undefined && !used.has(p.key) && p.label === link.label && p.url === link.url;
+  const ids: (string | null)[] = next.map(() => null);
+  const claim = (i: number, p: KeyedLink) => {
+    ids[i] = p.key;
+    used.add(p.key);
+  };
+  // The same words in the same place: untouched by the edit, whatever moved around it.
+  next.forEach((link, i) => {
+    const p = prev[i];
+    if (same(p, link)) claim(i, p);
+  });
+  // The same words elsewhere: a reorder.
+  next.forEach((link, i) => {
+    if (ids[i] !== null) return;
+    const p = prev.find((q) => same(q, link));
+    if (p !== undefined) claim(i, p);
   });
   return next.map((link, i) => {
     let id = ids[i] ?? null;

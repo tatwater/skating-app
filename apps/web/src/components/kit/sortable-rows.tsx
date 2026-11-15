@@ -87,6 +87,7 @@ export function SortableRows<T>({
   // The preview order while a row is lifted; `null` at rest.
   const [draft, setDraft] = useState<string[] | null>(null);
   const [lifted, setLifted] = useState<string | null>(null);
+  const [message, setMessage] = useState('');
   // The lift is put down when the rows it describes change under it, or the grips go off: during
   // the render that sees it, so no frame draws a preview of rows that aren't there.
   const keys = [...committed].sort().join('\u0000');
@@ -94,6 +95,11 @@ export function SortableRows<T>({
   if ((draft !== null || lifted !== null) && (keys !== liftedOver || disabled)) {
     setDraft(null);
     setLifted(null);
+    // A reader who lifted the row hears that it was put down, not silence.
+    if (lifted !== null) {
+      const item = byId.get(lifted);
+      setMessage(`${item === undefined ? 'The lifted row' : labelOf(item)} was put down.`);
+    }
   }
   if (liftedOver !== keys) setLiftedOver(keys);
   // **A drop holds its order while it is saved** (when the caller says so, through `pending`): the
@@ -104,11 +110,12 @@ export function SortableRows<T>({
   const joined = committed.join('\u0000');
   const [held, setHeld] = useState<{ order: string[]; from: string; saw: boolean } | null>(null);
   if (held !== null) {
-    if (joined !== held.from || disabled) setHeld(null);
+    // The grips going off (an edit opened mid-save) doesn't end the save: the drop holds until the
+    // rows move or the save ends, so they never snap back for the round trip.
+    if (joined !== held.from) setHeld(null);
     else if (saving && !held.saw) setHeld({ ...held, saw: true });
     else if (!saving && held.saw) setHeld(null);
   }
-  const [message, setMessage] = useState('');
   const rowRefs = useRef(new Map<string, HTMLElement>());
   const gripRefs = useRef(new Map<string, HTMLButtonElement>());
   // Every row in `items` exactly once: the preview's order for the rows it holds, any it doesn't
@@ -204,6 +211,12 @@ export function SortableRows<T>({
   const onPointerMove = (event: PointerEvent<HTMLButtonElement>) => {
     const d = drag.current;
     if (d === null || d.pointerId !== event.pointerId) return;
+    // A lift put down under the pointer (its rows changed, the grips went off) ends the drag too:
+    // the pointer never rebuilds a preview with nothing lifted, nor hovers rows into a new order.
+    if (lifted !== d.id) {
+      drag.current = null;
+      return;
+    }
     const current = draft ?? committed;
     const others = current.filter((id) => id !== d.id);
     const midpoints = others.map((id) => {
@@ -221,6 +234,8 @@ export function SortableRows<T>({
     const d = drag.current;
     if (d === null || d.pointerId !== event.pointerId) return;
     drag.current = null;
+    // Its lift was put down mid-drag: nothing is dropped.
+    if (lifted !== d.id) return;
     if (event.type === 'pointercancel') cancel(d.id);
     else drop(d.id, draft ?? committed);
   };
