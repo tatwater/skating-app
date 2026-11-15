@@ -75,6 +75,7 @@ async function seedBody(
     bodies: [
       {
         source: 'osm',
+        states: ['VT'],
         externalId,
         osmId: externalId,
         name: 'Quiet Pond',
@@ -505,6 +506,7 @@ describe('decide — what approving performs', () => {
       bodies: [
         {
           source: 'osm',
+          states: ['VT'],
           externalId: 'osm/way/9',
           osmId: 'osm/way/9',
           name: 'Unseen Pond',
@@ -679,6 +681,7 @@ describe('decide — what approving performs', () => {
       bodies: [
         {
           source: '3dhp',
+          states: ['VT'],
           externalId: 'I6PYK',
           threeDhpId: 'I6PYK',
           name: 'Taken Down Pond',

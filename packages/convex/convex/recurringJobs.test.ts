@@ -74,6 +74,7 @@ async function seedBody(t: T, externalId: string): Promise<Id<'waterBodies'>> {
     bodies: [
       {
         source: 'osm' as const,
+        states: ['VT'],
         externalId,
         osmId: externalId,
         name: `Pond ${externalId}`,

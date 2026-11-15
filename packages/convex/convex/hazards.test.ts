@@ -1777,6 +1777,7 @@ describe('hazards.refileToFootprintBody', () => {
       bbox: { minLat: lat - half, minLng: lng - half, maxLat: lat + half, maxLng: lng + half },
       centroid: { lat, lng },
       surfaceAreaSqM: 1e6,
+      states: ['VT'],
     };
     const id = (await t.run((ctx) =>
       ctx.db.insert('waterBodies', {

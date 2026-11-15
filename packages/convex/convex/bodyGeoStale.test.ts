@@ -170,6 +170,7 @@ describe('every creation path marks a body’s facts', () => {
       bodies: [
         {
           source: 'osm',
+          states: ['VT'],
           externalId: 'way/1',
           osmId: 'way/1',
           name: 'Imported',
@@ -199,6 +200,7 @@ describe('every creation path marks a body’s facts', () => {
       bbox: boxAt(-72, 44),
       centroid: { lat: 44, lng: -72 },
       surfaceAreaSqM: 1_000_000,
+      states: ['VT'],
     };
     await t.mutation(internal.waterBodies.importCanonical, { bodies: [record] });
     await drain(t);

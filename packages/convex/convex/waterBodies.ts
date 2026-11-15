@@ -192,33 +192,39 @@ function sanitizeLimit(limit: number | undefined): number {
 }
 
 /**
- * A body's `states`, from whichever producer actually knows.
+ * **A body's `states`: the producer's region answer, and nothing else** (D266).
  *
- * ## Two producers, and only one of them used to be heard
+ * The merge computes them per body with the one region rule (`@skating/core`'s `createReach`): the
+ * states of the loaded towns holding at least 25 m of its shoreline. That answer is the
+ * only source. The OSM lane's `--state` tag — "this batch came from Vermont" — used to stand in when
+ * a record carried none, and it stamped seven bodies in Quebec, Pennsylvania and New Jersey with a
+ * state they are not in; there is no tag any more, and no fallback of any kind.
  *
- * The **OSM lane** imports one state extract at a time, so it knows only "this batch came from
- * Vermont" — and a border-spanning body accumulates its states by being imported once per extract,
- * which is what `--state` and the union are for. The **merge** loads a single pass with no per-state
- * batches, computes `statesFor` per body against the state-level admin areas, and knows the whole
- * answer at once.
- *
- * The handler only ever read the first of those. Adding `states` to the validator without this would
- * have accepted the field and then written nothing from it: 27,074 rows with no state at all, and
- * every regional filter in the app — the feed, drive-time, the state chips — silently empty.
- *
- * So: **an explicit list from the producer is authoritative and replaces**; a `--state` tag is a
- * partial observation and unions. The rule is the same one `assertedCatalogIds` follows for the
- * catalog ids, and for the same reason — the difference between a complete record and a partial one
- * has to be expressed by the caller, because nothing in here can tell them apart.
+ * - `undefined` — the producer computed no region answer (no town boundaries were loaded when it
+ *   ran). That is a broken artifact, not a body in no state, so the batch **throws** and nothing in
+ *   it is written; treating it as "in no state" would turn a missing layer into a whole corpus
+ *   refused as out of region.
+ * - `[]` — the boundaries were loaded and the body reaches into none: **out of region**. A new one
+ *   is not inserted; one already stored keeps the states it has (no import relabels a body out of
+ *   the map) and is named in the import's summary for a person to decide.
+ * - a list — authoritative; it replaces. A code outside the five loaded states throws.
  */
-function resolveStates(
-  existing: string[] | undefined,
-  incoming: string[] | undefined,
-  state: string | undefined,
-): string[] | undefined {
-  if (incoming?.length) return [...new Set(incoming)].sort();
-  if (!state) return existing;
-  return [...new Set([...(existing ?? []), state])].sort();
+function regionStatesOf(item: { externalId: string; states?: string[] }): string[] {
+  if (item.states === undefined) {
+    throw new ConvexError(
+      `Body ${item.externalId} carries no states: the producer ran without the town boundaries, so ` +
+        'it never decided whether the body is in region. Rebuild the merge with them loaded; ' +
+        'nothing in this batch was written.',
+    );
+  }
+  for (const code of item.states) {
+    if (!isKnownStateCode(code)) {
+      throw new ConvexError(
+        `Unknown state code: ${code}. Expected one of: ${KNOWN_STATE_CODES.join(', ')}.`,
+      );
+    }
+  }
+  return [...new Set(item.states)].sort();
 }
 
 /**
@@ -253,12 +259,9 @@ const canonicalBody = v.object({
   name: v.string(),
   type: literals(WATER_BODY_CLASSES),
   /**
-   * The states this body touches — **computed by the producer, not by the loader's `--state` flag.**
-   *
-   * The OSM lane got this for free by importing one state extract at a time and letting the loader
-   * tag each batch. A merged corpus is loaded in a *single pass*, so there are no per-state batches
-   * and `statesFor` computes it per body against the state-level admin areas — giving a
-   * border-spanning body every state it touches rather than the first.
+   * The states this body is in — **computed by the producer's region rule (D266), and required.**
+   * Absent throws (the producer ran without boundaries); empty is out of region — see
+   * `regionStatesOf`. Optional in the validator only so the refusal can say why.
    *
    * **This field was missing from this validator while the ETL emitted it**, which is a wire break
    * rather than an omission: Convex object validators are exact, so every batch of a merged load
@@ -569,33 +572,32 @@ async function lookupByCatalogIds(
  * landowner takedown (D48). Re-running on unchanged data is a no-op on the final state.
  */
 export const importCanonical = internalMutation({
-  // `state` (2-letter code) is the extract's source region; it's unioned into each body's `states`
-  // so a border-spanning body imported from multiple state extracts accumulates them all (D5/2.5).
+  // No `state` argument (D266): a body's states are its record's own, from the region rule. The
+  // validator is exact, so a loader still passing the old extract tag is refused outright.
   args: {
     bodies: v.array(canonicalBody),
-    state: v.optional(v.string()),
     /**
      * The campaign this load belongs to. Stamped on every row it inserts or patches, so step 6's
      * prune can ask "did the master list re-affirm this body?" without re-deriving any rule.
      */
     campaignId: v.optional(v.string()),
   },
-  handler: async (ctx, { bodies, state, campaignId }) => {
-    // Defense-in-depth against the ETL's `--state` guard: reject an unknown region code before any
-    // write so a bad tag can never be unioned into a body's `states` (Phase 02b review).
-    if (state !== undefined && !isKnownStateCode(state)) {
-      throw new ConvexError(
-        `Unknown state code: ${state}. Expected one of: ${KNOWN_STATE_CODES.join(', ')}.`,
-      );
-    }
+  handler: async (ctx, { bodies, campaignId }) => {
+    // Every record's region answer first, before any write: one broken record refuses the batch.
+    const statesByItem = bodies.map(regionStatesOf);
     let inserted = 0;
     let updated = 0;
     let landmarksRetired = 0;
     let queuedForMerge = 0;
     let conflicts = 0;
+    // Out of region (D266): new bodies not inserted, stored ones kept as they are — both named.
+    let outOfRegion = 0;
+    let outOfRegionKept = 0;
+    const outsideRegion: { externalId: string; waterBodyId: Id<'waterBodies'> | null }[] = [];
     const unresolved: { externalId: string; action: string; reason: string }[] = [];
 
-    for (const item of bodies) {
+    for (const [index, item] of bodies.entries()) {
+      const states = statesByItem[index] as string[];
       // Held rather than inlined: the `conflict` branch needs the same rows back, and re-reading
       // them would double the index reads in the heaviest mutation in the app.
       const matches = await lookupByCatalogIds(ctx, item);
@@ -639,6 +641,19 @@ export const importCanonical = internalMutation({
       }
 
       const existing = verdict.action === 'patch' ? await ctx.db.get(verdict.key) : null;
+      const outside = states.length === 0;
+      if (outside) {
+        outsideRegion.push({ externalId: item.externalId, waterBodyId: existing?._id ?? null });
+        console.log(
+          `importCanonical: ${item.externalId} reaches into no loaded town — ` +
+            (existing ? 'kept with its stored states' : 'not inserted'),
+        );
+        if (!existing) {
+          outOfRegion++;
+          continue;
+        }
+        outOfRegionKept++;
+      }
 
       if (existing) {
         // Patch geometry/name/area + re-derived scores; removed*/reviewStatus/dedupStatus/
@@ -689,7 +704,8 @@ export const importCanonical = internalMutation({
           centroid: item.centroid,
           representativePoint: item.centroid,
           surfaceAreaSqM: item.surfaceAreaSqM,
-          states: resolveStates(existing.states, item.states, state),
+          // Out of region: kept as stored, never relabeled out of the map (see `regionStatesOf`).
+          states: outside ? existing.states : states,
           ...scores,
           ...shapeFields(item),
           ...mergeFields(item),
@@ -778,7 +794,7 @@ export const importCanonical = internalMutation({
           centroid: item.centroid,
           representativePoint: item.centroid,
           surfaceAreaSqM: item.surfaceAreaSqM,
-          states: resolveStates(undefined, item.states, state),
+          states,
           ...scores,
           ...shapeFields(item),
           ...mergeFields(item),
@@ -809,6 +825,12 @@ export const importCanonical = internalMutation({
       queuedForMerge,
       conflicts,
       landmarksRetired,
+      /** New bodies in no loaded town, not inserted (D266). */
+      outOfRegion,
+      /** Stored bodies a re-import places in no loaded town: patched, their states kept (D266). */
+      outOfRegionKept,
+      /** Both, named — capped as `unresolved` is. */
+      outsideRegion: outsideRegion.slice(0, 20),
       unresolved: unresolved.slice(0, 20),
     };
   },
