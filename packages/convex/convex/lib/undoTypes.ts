@@ -5,7 +5,7 @@
  */
 
 import type { Doc } from '../_generated/dataModel';
-import type { MutationCtx } from '../_generated/server';
+import type { MutationCtx, QueryCtx } from '../_generated/server';
 import type { PersonWrite } from './peopleCan';
 
 export interface UndoCall {
@@ -34,6 +34,12 @@ export interface UndoHandler {
    * what the write accepts. The handler's `run` makes this same write.
    */
   personWrite?: (row: Doc<'moderationActions'>) => PersonWrite;
+  /**
+   * Why running this undo now would be refused, read from the row as it stands (B01-3d): the same
+   * refusal the forward write of the recorded state gives, so History never offers an undo the write
+   * turns down — after an un-audited change (an import, a loader, a merge's moves) as after any other.
+   */
+  refusal?: (ctx: QueryCtx | MutationCtx, row: Doc<'moderationActions'>) => Promise<string | null>;
   run: (call: UndoCall) => Promise<void>;
 }
 

@@ -15,7 +15,7 @@ import { distanceToPolygonMeters, OPERATOR_PUT_IN_SNAP_MAX_M, snapToEdge } from 
 import { ConvexError, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
-import { type MutationCtx, mutation, query } from './_generated/server';
+import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
 import { recomputeAccessKind } from './accessPoints';
 import { writeAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
@@ -215,15 +215,29 @@ async function promotableRow(
   putInId: Id<'putIns'>,
 ): Promise<{ row: Doc<'putIns'>; body: Doc<'waterBodies'> }> {
   const row = await ctx.db.get(putInId);
-  if (!row) throw new ConvexError('That put-in no longer exists');
-  if (row.status !== 'visible') {
-    throw new ConvexError('That put-in is hidden — a moderator said it is not a way in');
-  }
+  const refused = await launchRefusal(ctx, row);
+  if (refused !== null || !row) throw new ConvexError(refused ?? 'That put-in no longer exists');
   const body = await ctx.db.get(row.waterBodyId);
   if (!body) throw new ConvexError('Water body not found');
   if (body.dedupStatus === 'merged') {
     throw new ConvexError('This body was merged into another — edit the body it was merged into');
   }
+  return { row, body };
+}
+
+/**
+ * Why a promotion, or its undo, is refused on this launch as it stands — gone, hidden, or at a spot a
+ * moderator hid another launch — or `null`. One rule for the write and for whether its undo is offered
+ * (B01-3d): a hide is audited on the put-in, and an import moves or drops launches with no row, so
+ * neither overtakes the body's `set_put_in` row. (A merged-away body is the merge's own row on it.)
+ */
+export async function launchRefusal(
+  ctx: QueryCtx | MutationCtx,
+  row: Doc<'putIns'> | null,
+): Promise<string | null> {
+  if (!row) return 'That put-in no longer exists';
+  if (row.status !== 'visible')
+    return 'That put-in is hidden — a moderator said it is not a way in';
   const hidden = await ctx.db
     .query('putIns')
     .withIndex('by_water_body_status', (q) =>
@@ -231,9 +245,41 @@ async function promotableRow(
     )
     .take(SUPPRESSION_ROWS_READ);
   if (isSuppressed(row.coord, hidden)) {
-    throw new ConvexError('A moderator hid a put-in at this spot — it is not a way in');
+    return 'A moderator hid a put-in at this spot — it is not a way in';
   }
-  return { row, body };
+  return null;
+}
+
+/** A launch as an undo recorded it: where it was and what it was called. */
+export interface LaunchAsRecorded {
+  coord: { lat: number; lng: number };
+  name: string | null;
+}
+
+/**
+ * Why promoting or demoting a launch is refused for its source and the launch the undo recorded, or
+ * `null` — the checks `launchRefusal` leaves to the direction.
+ */
+export function directionRefusal(
+  row: Doc<'putIns'>,
+  direction: 'promote' | 'demote',
+  expected: LaunchAsRecorded | undefined,
+): string | null {
+  if (direction === 'promote' && row.source === 'official')
+    return 'That put-in is already official';
+  if (direction === 'demote' && row.source !== 'official')
+    return 'That put-in is no longer official';
+  if (
+    expected !== undefined &&
+    (row.coord.lat !== expected.coord.lat ||
+      row.coord.lng !== expected.coord.lng ||
+      (row.name ?? null) !== expected.name)
+  ) {
+    return direction === 'promote'
+      ? 'That put-in changed since — undo is not safe now'
+      : 'That put-in changed since it was made official — undo is not safe now';
+  }
+  return null;
 }
 
 /** Hidden coordinates a promotion checks its launch against (a body holds a handful). */
@@ -269,18 +315,13 @@ export async function promotePutInImpl(
     name?: string | undefined;
     reason?: string | undefined;
     /** The launch as the undo it redoes left it — refused if it moved or was renamed since. */
-    expected?: { coord: { lat: number; lng: number }; name: string | null };
+    expected?: LaunchAsRecorded;
   },
 ): Promise<{ putInId: Id<'putIns'>; actionId: Id<'moderationActions'>; undoNeedsReason: boolean }> {
   const { row, body } = await promotableRow(ctx, args.putInId);
-  if (row.source === 'official') throw new ConvexError('That put-in is already official');
-  if (
-    args.expected !== undefined &&
-    (row.coord.lat !== args.expected.coord.lat ||
-      row.coord.lng !== args.expected.coord.lng ||
-      (row.name ?? null) !== args.expected.name)
-  ) {
-    throw new ConvexError('That put-in changed since — undo is not safe now');
+  const refused = directionRefusal(row, 'promote', args.expected);
+  if (refused !== null || row.source === 'official') {
+    throw new ConvexError(refused ?? 'That put-in is already official');
   }
   const name = putInName(args.name);
   const prev: PromotionPrev = {
@@ -330,19 +371,13 @@ export async function demotePutInImpl(
   args: {
     putInId: Id<'putIns'>;
     prev: PromotionPrev;
-    expected: { coord: { lat: number; lng: number }; name: string | null };
+    expected: LaunchAsRecorded;
     reason: string;
   },
 ): Promise<void> {
   const { row, body } = await promotableRow(ctx, args.putInId);
-  if (row.source !== 'official') throw new ConvexError('That put-in is no longer official');
-  if (
-    row.coord.lat !== args.expected.coord.lat ||
-    row.coord.lng !== args.expected.coord.lng ||
-    (row.name ?? null) !== args.expected.name
-  ) {
-    throw new ConvexError('That put-in changed since it was made official — undo is not safe now');
-  }
+  const refused = directionRefusal(row, 'demote', args.expected);
+  if (refused !== null) throw new ConvexError(refused);
   await ctx.db.patch(row._id, {
     source: args.prev.source,
     name: args.prev.name ?? undefined,

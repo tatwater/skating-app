@@ -16,17 +16,28 @@ export interface ListChanged<T> {
   current: T[];
 }
 
+/** The message a moved list is refused with, or `null` when it has not moved (or nothing is expected). */
+export function listChangedRefusal<T extends Value>(
+  stored: readonly T[],
+  expected: readonly T[] | undefined,
+  what: string,
+): string | null {
+  if (expected === undefined) return null;
+  if (JSON.stringify(stored) === JSON.stringify(expected)) return null;
+  return `Someone else changed ${what} since you opened it. Here is the list as it stands now — apply your change to it and save again.`;
+}
+
 /** Refuse when `expected` is given and the stored list no longer equals it. */
 export function assertListUnchanged<T extends Value>(
   stored: readonly T[],
   expected: readonly T[] | undefined,
   what: string,
 ): void {
-  if (expected === undefined) return;
-  if (JSON.stringify(stored) === JSON.stringify(expected)) return;
+  const message = listChangedRefusal(stored, expected, what);
+  if (message === null) return;
   throw new ConvexError({
     code: 'list_changed',
-    message: `Someone else changed ${what} since you opened it. Here is the list as it stands now — apply your change to it and save again.`,
+    message,
     current: [...stored],
   } as unknown as Value);
 }
