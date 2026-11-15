@@ -173,6 +173,19 @@ describe('NamesTab', () => {
     expect(location()).toHaveTextContent('CountyIn no county');
   });
 
+  it('never says a body in a town is in no county: a town without its county is not recorded', () => {
+    mocks.results.set(getFunctionName(api.bodyConsole.places), {
+      towns: ['Enfield'],
+      counties: [],
+      states: ['NH'],
+      computedAt: 1,
+    });
+    render(<NamesTab bodyId="wb1" />);
+    expect(location()).toHaveTextContent('TownsEnfield');
+    expect(location()).toHaveTextContent('CountyNot recorded yet');
+    expect(location()).not.toHaveTextContent('In no county');
+  });
+
   it('says the boundaries couldn’t be read, in place and in the note, and offers Try again', () => {
     mocks.results.set(getFunctionName(api.bodyConsole.places), new Error('down'));
     render(<NamesTab bodyId="wb1" />);

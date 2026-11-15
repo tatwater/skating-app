@@ -18,7 +18,7 @@ import { Section } from '@/components/kit/section-slug';
 import { UnavailableButton } from '@/components/kit/unavailable-button';
 import { UnavailableField } from '@/components/kit/unavailable-field';
 import { cn } from '@/lib/utils';
-import { NOT_COMPUTED, NOT_COMPUTED_WORDS } from '../../frame/bodyModel';
+import { IN_NO_TOWN_WORDS, NOT_COMPUTED, NOT_COMPUTED_WORDS } from '../../frame/bodyModel';
 import { LIT_ROW, LoadingSection, litAttr, TabBody, useDraft } from '../tabParts';
 import { CouldntRead, LoadingLine, NOT_RECORDED, ReadFailures } from '../tabStates';
 import {
@@ -428,12 +428,21 @@ function LocationSection({ data }: { data: NamesData }) {
                 ))}
               </span>
             ) : (
-              <span className="text-fg3">In no town</span>
+              <span className="text-fg3">{IN_NO_TOWN_WORDS}</span>
             ),
           )}
         </KeyValueRow>
         <KeyValueRow label="County">
-          {fromBoundaries((a) => a.county ?? <span className="text-fg3">In no county</span>)}
+          {fromBoundaries(
+            (a) =>
+              a.county ?? (
+                // Every town lies in a county: towns without one is a gap in the record, not a
+                // body in no county (the county is sampled at the interior point only).
+                <span className="text-fg3">
+                  {a.towns.length > 0 ? NOT_RECORDED : 'In no county'}
+                </span>
+              ),
+          )}
         </KeyValueRow>
         <KeyValueRow label={states.length > 1 ? 'States' : 'State'}>
           {states.length === 0 ? (
