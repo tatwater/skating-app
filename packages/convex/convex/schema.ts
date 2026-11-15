@@ -3307,7 +3307,11 @@ export default defineSchema({
     .index('by_computed_season_and_priority', ['computedForSeason', 'priority'])
     // The skater-facing read. `publiclyVisible` sits in the key so the bar is applied *at the index*
     // rather than after the read — the difference between "admin-only" and "admin-only unless you look".
-    .index('by_water_body_public', ['waterBodyId', 'publiclyVisible']),
+    .index('by_water_body_public', ['waterBodyId', 'publiclyVisible'])
+    // A body's patterns in the order its reads present them — highest priority first — so a capped
+    // read takes the top N, never the first N stored (B01-3d). `priority` is required on every row.
+    .index('by_water_body_priority', ['waterBodyId', 'priority'])
+    .index('by_water_body_public_priority', ['waterBodyId', 'publiclyVisible', 'priority']),
 
   /**
    * The recurrence job's scratch queue (A05c / §3.4).

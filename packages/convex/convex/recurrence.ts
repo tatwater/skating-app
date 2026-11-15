@@ -455,11 +455,13 @@ export const listForBody = query({
   handler: async (ctx, { waterBodyId }) => {
     const body = await resolveSurvivor(ctx, waterBodyId);
     if (!body) return [];
+    // Highest priority first from the index, so the cap keeps the top patterns (B01-3d).
     const rows = await ctx.db
       .query('hazardRecurrence')
-      .withIndex('by_water_body_public', (q) =>
+      .withIndex('by_water_body_public_priority', (q) =>
         q.eq('waterBodyId', body._id).eq('publiclyVisible', true),
       )
+      .order('desc')
       .take(MAX_BODY_CLUSTERS);
     // Nothing to yield *to*, so nothing to read this lake's hazards for. While the master switch is
     // off that is every single call, and a full active-hazard collect on every drawer open, on both
@@ -554,9 +556,12 @@ export const listForBodyAdmin = query({
     await requireCapability(ctx, 'body.read');
     const body = await resolveSurvivor(ctx, waterBodyId);
     if (!body) return [];
+    // Read in the order it presents — highest priority first — so a body past the bound keeps its top
+    // patterns rather than the first ones stored, then sorted (equal priorities keep the index's order).
     const rows = await ctx.db
       .query('hazardRecurrence')
-      .withIndex('by_water_body', (q) => q.eq('waterBodyId', body._id))
+      .withIndex('by_water_body_priority', (q) => q.eq('waterBodyId', body._id))
+      .order('desc')
       .take(MAX_BODY_CLUSTERS);
     return rows.sort((a, b) => b.priority - a.priority);
   },

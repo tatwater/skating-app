@@ -729,6 +729,61 @@ describe('recurrence.waitingCountForBody (BS19)', () => {
     await insert(1);
     expect(await count()).toMatchObject({ capped: true });
   });
+
+  test('the admin and public lists read highest priority first: past the bound, the newest top pattern is kept', async () => {
+    const t = harness();
+    const mod = await person(t);
+    const id = await imported(t, 'way/1');
+    const hazardId = await t.run((ctx) =>
+      ctx.db.insert('hazards', {
+        waterBodyId: id,
+        type: 'pressure_ridge',
+        geometryKind: 'point_radius',
+        geometry: { type: 'Point', coordinates: [-72, 44] },
+        radiusMeters: 20,
+        bbox: { minLat: 43.99, minLng: -72.01, maxLat: 44.01, maxLng: -71.99 },
+        createdByUserId: mod.id,
+        photoIds: [],
+        moderationStatus: 'visible',
+        confirmCount: 0,
+        goneCount: 0,
+        createdAt: NOW,
+        firstReportedAt: NOW - 400 * 86_400_000,
+        lastConfirmedAt: NOW,
+        status: 'archived',
+      }),
+    );
+    await t.run(async (ctx) => {
+      // 1,000 ordinary patterns first, then the most important one, stored last.
+      for (let i = 0; i <= 1_000; i++) {
+        await ctx.db.insert('hazardRecurrence', {
+          waterBodyId: id,
+          family: 'ridge',
+          geometryKind: 'point_radius',
+          geometry: { type: 'Point', coordinates: [-72, 44] },
+          radiusMeters: 30,
+          bbox: { minLat: 43.99, minLng: -72.01, maxLat: 44.01, maxLng: -71.99 },
+          memberHazardIds: [hazardId],
+          representativeHazardId: hazardId,
+          seasonsObserved: [2024, 2025],
+          windowSeasons: 5,
+          firstReportedDayOfSeasonP25: 180,
+          firstReportedDayOfSeasonP75: 200,
+          distinctAuthorCount: 1,
+          priority: i === 1_000 ? 1_000_000 : i,
+          publiclyVisible: true,
+          computedAt: NOW,
+          computedForSeason: 2026,
+        } as never);
+      }
+    });
+    const admin = await mod.as.query(api.recurrence.listForBodyAdmin, { waterBodyId: id });
+    expect(admin).toHaveLength(1_000);
+    expect(admin[0]?.priority).toBe(1_000_000);
+    expect(admin.at(-1)?.priority).toBe(1);
+    const shown = await t.query(api.recurrence.listForBody, { waterBodyId: id });
+    expect(shown[0]?.priority).toBe(1_000_000);
+  });
 });
 
 describe('whole-list writes refuse a list that moved under them (BS17)', () => {
