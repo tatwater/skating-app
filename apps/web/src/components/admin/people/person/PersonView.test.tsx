@@ -32,6 +32,7 @@ import {
   TEAGAN_PAGE,
   TEAGAN_STATS,
 } from './personFixtures';
+import { weekBars } from './personModel';
 
 beforeAll(() => {
   for (const [name, value] of [
@@ -596,7 +597,7 @@ describe('dialogs and plates', () => {
     await waitFor(() =>
       expect(
         fact('decision-weeks').querySelector('[data-slot="sparkbar-set-plate"]'),
-      ).toHaveTextContent('8–14 OctDecisions18'),
+      ).toHaveTextContent(`${weekBars(SARAH_STATS, NOW)[8]?.title}Decisions18`),
     );
   });
 });
