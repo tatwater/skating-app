@@ -6,7 +6,6 @@ import {
   isSearching,
   listKey,
   peopleListHref,
-  personHref,
   queryOf,
   searchFor,
   serverSearch,
@@ -32,6 +31,8 @@ describe('the URL', () => {
     expect(validatePeopleSearch({ q: '   ' })).toEqual({});
     expect(validatePeopleSearch({ q: '  rob  ' })).toEqual({ q: 'rob' });
     expect(validatePeopleSearch({ q: 123 })).toEqual({ q: '123' });
+    // A hand-typed `?q=true` reaches the page as the boolean the router read it as.
+    expect(validatePeopleSearch({ q: true })).toEqual({ q: 'true' });
     const long = validatePeopleSearch({ q: 'x'.repeat(200) }).q ?? '';
     expect(long).toHaveLength(PEOPLE_SEARCH_MAX_CHARS);
   });
@@ -89,11 +90,10 @@ describe('the page’s place', () => {
     expect(listKey({ lane: 'staff', q: '@rob' })).toBe(listKey({ lane: 'banned', q: 'rob' }));
   });
 
-  it('carries the list’s place into a person’s path and back', () => {
-    expect(personHref('k1/7', { lane: 'suspended', q: 'rob t' })).toBe(
-      '/admin/people/k1%2F7?lane=suspended&q=rob+t',
+  it('writes the list’s own path, the way a person’s page goes back to it', () => {
+    expect(peopleListHref({ lane: 'suspended', q: 'rob t' })).toBe(
+      '/admin/people?lane=suspended&q=rob+t',
     );
-    expect(personHref('k1', { lane: 'everyone', q: '' })).toBe('/admin/people/k1');
     expect(peopleListHref({ lane: 'staff', q: '' })).toBe('/admin/people?lane=staff');
     expect(peopleListHref({ lane: 'everyone', q: '' })).toBe('/admin/people');
   });

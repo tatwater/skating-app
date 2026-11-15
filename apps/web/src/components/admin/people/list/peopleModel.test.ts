@@ -159,14 +159,19 @@ describe('a row', () => {
       '1 open flag on their content',
     );
     expect(flagWords(both, false, { flagsPending: false, flagsFloor: true })).toBe('3+ open flags');
+    // A floor of one may be more than one: plural, as every floor on the People pages is.
+    expect(
+      flagWords({ onUser: 0, onContent: 1 }, true, { flagsPending: false, flagsFloor: true }),
+    ).toBe('1+ open flags on their content');
     expect(flagWords(both, false, { flagsPending: true, flagsFloor: false })).toBeNull();
     expect(flagWords({ onUser: 0, onContent: 0 }, false, NO_FACTS)).toBeNull();
   });
 
   it('marks appeals a floor when the ticket queue was capped, and draws none for a moderator', () => {
     expect(rowView(ROB, 'appeals', { ...NO_FACTS, appealsFloor: true }, NOW).sub).toContain(
-      '1+ appeal',
+      '1+ appeals',
     );
+    expect(rowView(ROB, 'appeals', NO_FACTS, NOW).sub).toMatch(/1 appeal$/);
     const moderatorView = rowView({ ...ROB, appeals: null }, 'suspended', NO_FACTS, NOW);
     expect(moderatorView.sub).not.toContain('appeal');
   });

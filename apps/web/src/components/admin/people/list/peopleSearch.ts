@@ -16,15 +16,20 @@ import { z } from 'zod';
  * a blank or overlong search is trimmed to nothing or to the server's limit, and the default lane
  * is no param at all (`/admin/people` is Everyone).
  *
- * TanStack Router JSON-parses a param that looks like a number, so a search takes a number back to
- * its string (`?q=123`).
+ * TanStack Router JSON-parses a param that looks like a number or a boolean, so a search takes one
+ * back to its string (a hand-typed `?q=123`, `?q=true`). The page itself always navigates with a
+ * search object, which the router writes so that it reads back as the string it was.
  */
 
 /** The lane `/admin/people` opens on, written as no param. */
 export const DEFAULT_LANE: PeopleLane = 'everyone';
 
 const asText = (raw: unknown): string | undefined =>
-  typeof raw === 'string' ? raw : typeof raw === 'number' ? String(raw) : undefined;
+  typeof raw === 'string'
+    ? raw
+    : typeof raw === 'number' || typeof raw === 'boolean'
+      ? String(raw)
+      : undefined;
 
 export const peopleSearchSchema = z.object({
   lane: z.preprocess((raw) => {
@@ -95,14 +100,13 @@ export function listKey(query: PeopleQuery): string {
   return search === null ? `lane:${query.lane}` : `search:${search}`;
 }
 
-/** The list's own path for `query` — where a person's page returns to. */
+/**
+ * The list's own path for `query` — where a person's page returns to. A path for a link, which
+ * `routerTarget` hands the router as a search object; never navigate to it as an `href`, which the
+ * router would read with JSON's rules.
+ */
 export function peopleListHref(query: PeopleQuery): string {
   return `/admin/people${queryString(searchFor(query))}`;
-}
-
-/** A person's page, carrying the list's place so it can come back to it. */
-export function personHref(id: string, query: PeopleQuery): string {
-  return `/admin/people/${encodeURIComponent(id)}${queryString(searchFor(query))}`;
 }
 
 function queryString(search: PeopleSearch): string {

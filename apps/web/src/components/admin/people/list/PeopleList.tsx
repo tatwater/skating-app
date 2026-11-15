@@ -237,7 +237,13 @@ export function PeopleList({
     setFocused(true);
     const pressed = pressing.current;
     pressing.current = false;
-    if (pressed || cursor >= 0 || rows.length === 0) return;
+    if (pressed || rows.length === 0) return;
+    // Back from the keys (Tab, or Esc from the person's page) with the cursor scrolled away: its
+    // row comes into view, so the row the keys act on is the row in sight.
+    if (cursor >= 0) {
+      bringIntoView(cursor);
+      return;
+    }
     const open = rows.findIndex((r) => r.id === selectedId);
     moveTo(open >= 0 ? open : 0);
   };

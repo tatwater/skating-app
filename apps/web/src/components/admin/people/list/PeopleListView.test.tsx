@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The status bar portals into the shell's chrome; here it draws in place, so its words can be read.
@@ -240,11 +241,15 @@ describe('the search', () => {
     beforeEach(() => vi.useFakeTimers());
     afterEach(() => vi.useRealTimers());
 
-    it('sends the search with the lane it was typed over, once typing rests', () => {
+    it('sends the search with the lane it was typed over, once typing rests, in place', () => {
       const { props } = draw();
       fireEvent.change(search(), { target: { value: 'rob' } });
       act(() => vi.advanceTimersByTime(300));
-      expect(props.onQueryChange).toHaveBeenCalledWith({ lane: 'suspended', q: 'rob' });
+      // Typing refines the place: it replaces the entry rather than stacking one per pause.
+      expect(props.onQueryChange).toHaveBeenCalledWith(
+        { lane: 'suspended', q: 'rob' },
+        { replace: true },
+      );
     });
 
     it('drops typing pending when another lane opens', () => {
@@ -287,5 +292,22 @@ describe('the keys', () => {
     expect(fireEvent.keyDown(search(), { key: '/' })).toBe(true);
     expect(fireEvent.keyDown(lane(/^Staff/), { key: '/', metaKey: true })).toBe(true);
     expect(fireEvent.keyDown(head, { key: 'x' })).toBe(true);
+  });
+
+  it('leaves / alone in a dialog the person’s page opened (a portal, out of the page)', () => {
+    const portal = document.createElement('div');
+    document.body.append(portal);
+    try {
+      draw({
+        selectedId: ROB.userId,
+        detail: createPortal(<button type="button">In the dialog</button>, portal),
+      });
+      const inDialog = screen.getByRole('button', { name: 'In the dialog' });
+      act(() => inDialog.focus());
+      expect(fireEvent.keyDown(inDialog, { key: '/' })).toBe(true);
+      expect(inDialog).toHaveFocus();
+    } finally {
+      portal.remove();
+    }
   });
 });

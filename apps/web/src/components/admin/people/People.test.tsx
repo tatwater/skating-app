@@ -150,7 +150,9 @@ describe('a person beside the list', () => {
     expect(mocks.calls.get(getFunctionName(api.people.person))).toBeUndefined();
     fireEvent.click(within(list()).getByText('Kate Donovan'));
     expect(mocks.navigate).toHaveBeenCalledWith({
-      href: `/admin/people/${KATE.userId}?lane=suspended`,
+      to: '/admin/people/$id',
+      params: { id: KATE.userId },
+      search: { lane: 'suspended' },
       replace: true,
     });
   });
@@ -189,7 +191,9 @@ describe('back to the list', () => {
     fireEvent.keyDown(list(), { key: 'ArrowDown' });
     fireEvent.keyDown(list(), { key: 'Enter' });
     expect(mocks.navigate).toHaveBeenCalledWith({
-      href: `/admin/people/${ROB.userId}`,
+      to: '/admin/people/$id',
+      params: { id: ROB.userId },
+      search: {},
       replace: false,
     });
     expect(personPane()).toHaveFocus();

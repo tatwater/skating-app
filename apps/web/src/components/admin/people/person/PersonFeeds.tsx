@@ -1,4 +1,12 @@
-import { type ComponentProps, cloneElement, type ReactElement, type ReactNode } from 'react';
+import {
+  type ComponentProps,
+  cloneElement,
+  type FocusEvent,
+  type ReactElement,
+  type ReactNode,
+  useLayoutEffect,
+  useRef,
+} from 'react';
 
 import { Button, buttonVariants } from '@/components/kit/button';
 import { GridList, HistoryRow } from '@/components/kit/grid-list';
@@ -18,6 +26,7 @@ import {
   type DecisionsRead,
   type HistoryRead,
   type PersonRead,
+  personName,
   plural,
 } from './personModel';
 import { WORDS } from './personWords';
@@ -106,7 +115,20 @@ export function OpenAbout({
   return (
     <Section
       title="Open about this person"
-      count={{ count, capped: flagsCapped || appealsCapped }}
+      // While flags on their content are still being prepared the figure may be wrong, not merely
+      // short: the rule ends in those words, never a number (and never a zero).
+      {...(pending
+        ? {
+            end: (
+              <span
+                data-slot="open-count-pending"
+                className="text-kick leading-none font-medium tracking-micro text-fg3"
+              >
+                {WORDS.pending}
+              </span>
+            ),
+          }
+        : { count: { count, capped: flagsCapped || appealsCapped } })}
       data-slot="open-about"
       className="pt-(--space-5_5)"
     >
@@ -155,10 +177,13 @@ export function OpenAbout({
 
 function Who({ row }: { row: ActionRow }) {
   const { name, via } = rowActor(row);
+  // A face only for a person named: *System*, and a name still being prepared, are words — never
+  // a circle of initials drawn from them.
+  const named = row.actor !== null && personName(row.actor) !== null;
   return (
     <span className="inline-flex items-center gap-(--space-1_5)">
       <span>
-        {row.actor !== null ? <PersonLockup size="sm" name={name} /> : name}
+        {named ? <PersonLockup size="sm" name={name} /> : name}
         {via !== null && (
           <>
             {' via '}
@@ -228,6 +253,35 @@ function FeedRows({
   );
 }
 
+/**
+ * Focus that sat on a feed's control — *Show more*, a row's *Undo* — and went with it (the button
+ * gone once the page holds all it may, the read says it is done, or the row is undone) comes back to
+ * the feed itself, never to the page. Spread on the feed's `Section`.
+ */
+function useFocusKept() {
+  const block = useRef<HTMLElement>(null);
+  const held = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    const el = held.current;
+    if (el === null || el.isConnected) return;
+    held.current = null;
+    const active = document.activeElement;
+    if (active === null || active === document.body) block.current?.focus({ preventScroll: true });
+  });
+  return {
+    ref: block,
+    tabIndex: -1,
+    onFocus: (event: FocusEvent<HTMLElement>) => {
+      held.current = event.target === event.currentTarget ? null : (event.target as HTMLElement);
+    },
+    onBlur: (event: FocusEvent<HTMLElement>) => {
+      // Focus moved on to something else: nothing to keep. A control taken out from under focus
+      // sends it nowhere (`relatedTarget` is null), so it stays held for the effect above.
+      if (event.relatedTarget !== null) held.current = null;
+    },
+  };
+}
+
 /** A feed row's cells while it loads: the time, the sentence. */
 const ROW_CELLS = ['3rem', '60%'] as const;
 
@@ -257,6 +311,7 @@ export function HistoryBlock({
   timeZone?: string;
   onUndo: (row: ActionRow) => void;
 }) {
+  const kept = useFocusKept();
   if (history === 'not-shown') return null;
   const value = history === undefined || isFailed(history) ? null : history;
   const rows = value?.rows ?? [];
@@ -265,8 +320,9 @@ export function HistoryBlock({
       title="History"
       {...(value !== null && { count: { count: rows.length, capped: value.capped } })}
       data-slot="person-history"
-      className="pt-(--space-5_5)"
+      className="pt-(--space-5_5) outline-none"
       aria-busy={history === undefined || undefined}
+      {...kept}
     >
       <ReadNote reads={[history]} data-slot="history-error">
         {WORDS.historyFailed}
@@ -322,6 +378,7 @@ export function DecisionsBlock({
   onUndo: (row: ActionRow) => void;
   onMore?: (() => void) | undefined;
 }) {
+  const kept = useFocusKept();
   const value = decisions === undefined || isFailed(decisions) ? null : decisions;
   return (
     <Section
@@ -334,8 +391,9 @@ export function DecisionsBlock({
         ),
       })}
       data-slot="person-decisions"
-      className="pt-(--space-5_5)"
+      className="pt-(--space-5_5) outline-none"
       aria-busy={decisions === undefined || undefined}
+      {...kept}
     >
       <ReadNote reads={[decisions]} data-slot="decisions-error">
         {WORDS.decisionsFailed}

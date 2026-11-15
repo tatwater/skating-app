@@ -134,12 +134,26 @@ describe('the keys', () => {
 
   it('still starts the cursor when the keys focus the list after a press that never focused it', async () => {
     const { list } = draw();
-    // A touch that turned into a scroll: the press is cancelled, focus never came.
+    // A touch that turned into a scroll: the press is canceled, focus never came.
     fireEvent.pointerDown(list);
     fireEvent.pointerCancel(list);
     await userEvent.tab();
     expect(list).toHaveFocus();
     expect(active(list)).toHaveTextContent('Rob Tremblay');
+  });
+
+  it('brings the cursor’s row back into view when the keys return to the list', async () => {
+    const { list } = draw();
+    act(() => list.focus());
+    await userEvent.keyboard('{End}');
+    const luc = active(list);
+    expect(luc).toHaveTextContent('Luc Pelletier');
+    // Away (the person's page), the list scrolled by the wheel meanwhile, then back by the keys.
+    act(() => list.blur());
+    scrolled.length = 0;
+    act(() => list.focus());
+    expect(active(list)).toBe(luc);
+    expect(scrolled.at(-1)).toBe(luc);
   });
 });
 

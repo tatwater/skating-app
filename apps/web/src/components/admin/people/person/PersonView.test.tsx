@@ -202,7 +202,32 @@ describe('every nullable fact absent, block by block', () => {
     expect(fact('open-flags')).toHaveTextContent('Still being prepared');
     expect(fact('open-flags')).not.toHaveTextContent('+');
     expect(slot('open-pending')).toHaveTextContent('still being prepared');
+    // The block's own figure rests on the same backfill: words at the rule's end, never a number.
+    expect(slot('open-about').querySelector('[data-slot="section-count"]')).toBeNull();
+    expect(slot('open-count-pending')).toHaveTextContent('Still being prepared');
     expect(slot('history-pending')).toBeInTheDocument();
+  });
+
+  it('nothing open yet while flags are prepared: the words, never a zero', () => {
+    draw({ person: { ...ROB_PENDING, open: { ...ROB_PENDING.open, flags: [], appeals: [] } } });
+    expect(slot('open-about').querySelector('[data-slot="section-count"]')).toBeNull();
+    expect(slot('open-about')).not.toHaveTextContent(/\b0\b/);
+  });
+
+  it('a name still being prepared is words, never a face of its initials', () => {
+    const unnamed = { userId: IDS.matt, displayName: null, username: null, profileImageUrl: null };
+    const note = ROB.statusNote;
+    const first = ROB_HISTORY.rows[0];
+    if (note === null || first === undefined) throw new Error('board 8.1 has both');
+    draw({
+      person: { ...ROB, statusNote: { ...note, by: unnamed } },
+      history: { ...ROB_HISTORY, rows: [{ ...first, actor: unnamed }] },
+    });
+    expect(slot('status-by')).toHaveTextContent('Name still being prepared');
+    expect(slot('status-by').querySelector('[data-slot="person-lockup"]')).toBeNull();
+    const row = slot('person-history').querySelector('[data-slot="feed-row"]') as HTMLElement;
+    expect(row).toHaveTextContent('Name still being prepared');
+    expect(row.querySelector('[data-slot="person-lockup"]')).toBeNull();
   });
 
   it('a capped history says more happened before', () => {
@@ -313,6 +338,50 @@ describe('staff pages', () => {
     });
     await userEvent.click(slot('decisions-more'));
     expect(onMoreDecisions).toHaveBeenCalled();
+  });
+
+  it('Show more’s focus stays in Decisions when the button goes (the page holds all it may)', async () => {
+    const props = {
+      person: SARAH_PAGE,
+      trend: SARAH_TREND,
+      history: SARAH_HISTORY,
+      staffStats: SARAH_STATS,
+      staffSeason: SEASON,
+      decisions: SARAH_DECISIONS,
+    };
+    const { rerender, onAct, onUndo } = draw({ ...props, onMoreDecisions: vi.fn() });
+    act(() => slot('decisions-more').focus());
+    rerender(
+      <PersonView {...props} now={NOW} viewerId={IDS.teagan} onAct={onAct} onUndo={onUndo} />,
+    );
+    expect(document.querySelector('[data-slot="decisions-more"]')).toBeNull();
+    expect(slot('person-decisions')).toHaveFocus();
+  });
+
+  it('a row’s Undo, gone once the row is undone, leaves focus in its feed', () => {
+    const props = { person: ROB, trend: ROB_TREND, staffStats: null, staffSeason: null };
+    const { rerender, onAct, onUndo } = draw(props);
+    const history = slot('person-history');
+    const undo = within(history).getAllByRole('button', { name: 'Undo' })[0] as HTMLElement;
+    act(() => undo.focus());
+    const [first, ...rest] = ROB_HISTORY.rows;
+    if (first === undefined) throw new Error('board 8.1 has rows');
+    rerender(
+      <PersonView
+        {...props}
+        history={{
+          ...ROB_HISTORY,
+          rows: [{ ...first, undo: { state: 'undone', byActionId: first.id } }, ...rest],
+        }}
+        decisions={{ rows: [], isDone: true, continueCursor: '' }}
+        now={NOW}
+        viewerId={IDS.teagan}
+        onAct={onAct}
+        onUndo={onUndo}
+      />,
+    );
+    expect(undo.isConnected).toBe(false);
+    expect(slot('person-history')).toHaveFocus();
   });
 
   it('at the most a page holds, it says more happened before', () => {

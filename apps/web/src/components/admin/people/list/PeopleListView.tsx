@@ -67,8 +67,11 @@ export type PeopleListViewProps = {
   /** Each lane's count read, when the lanes' read has answered. */
   laneEntries: Readonly<Partial<Record<PeopleLane, LaneEntry>>> | null;
   query: PeopleQuery;
-  /** A change of place: another lane, or the search. */
-  onQueryChange: (next: PeopleQuery) => void;
+  /**
+   * A change of place: another lane, or the search. `replace` for the search as it is typed, which
+   * refines the place rather than leaving it (the back button goes to the lane, not each keystroke).
+   */
+  onQueryChange: (next: PeopleQuery, how?: { replace?: boolean }) => void;
   list: PeopleListData;
   onLoadMore?: () => void;
   onRetryList?: () => void;
@@ -143,13 +146,16 @@ export function PeopleListView({
     <div
       data-slot="people-page"
       onKeyDown={(event) => {
-        // / goes to the search from anywhere on the page but a field (which types it).
+        // / goes to the search from anywhere on the page but a field (which types it) — and never
+        // from a dialog or a menu the page opened: a portal's keys bubble here through React, but
+        // its focus belongs to it, not to the search behind it.
         if (
           event.key !== '/' ||
           event.defaultPrevented ||
           event.ctrlKey ||
           event.metaKey ||
           event.altKey ||
+          !event.currentTarget.contains(event.target as Node) ||
           isTextEntry(event.target as Element)
         ) {
           return;
@@ -183,7 +189,7 @@ export function PeopleListView({
           label={SEARCH_LABEL}
           place={JSON.stringify([lane, selectedId])}
           inputRef={search}
-          onSearch={(q) => onQueryChange({ lane, q })}
+          onSearch={(q) => onQueryChange({ lane, q }, { replace: true })}
         />
         <Lanes
           label="People"

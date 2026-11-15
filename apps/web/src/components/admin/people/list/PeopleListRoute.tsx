@@ -15,7 +15,6 @@ import {
   listKey,
   type PeopleQuery,
   type PeopleSearch,
-  personHref,
   queryOf,
   searchFor,
   serverSearch,
@@ -36,9 +35,9 @@ import { COUNTS_FAILED } from './peopleWords';
  *   `people.read`; a viewer without it sees *Not recorded yet*.
  * - **Every change of place is a navigation**, so the back button, a reload and a return from a
  *   person put the list back as it was. Another lane closes the open person (it opens fresh, as the
- *   Bodies library does); a search keeps them open and replaces the entry as it is typed. Opening a
- *   person carries the lane and the search in their path (`personHref`), so their page returns
- *   here.
+ *   Bodies library does); a search replaces the entry as it is typed (as the Bodies search does),
+ *   and keeps an open person open. Opening a person carries the lane and the search with their
+ *   path, so their page returns here.
  */
 
 export type PeopleListRouteProps = {
@@ -74,15 +73,29 @@ export function PeopleListRoute({ detail }: PeopleListRouteProps = {}) {
       ? null
       : Object.fromEntries(lanesRead.shown.lanes.map((l) => [l.lane, l]));
 
-  const goToList = (next: PeopleQuery) =>
-    void navigate({ to: '/admin/people', search: searchFor(next) as never });
-  const onQueryChange = (next: PeopleQuery) => {
+  // Through the router's own search, never a hand-built query string: the router reads a string
+  // query as JSON, so a search like `true`, `null` or `1.50` would come back changed or dropped.
+  const goToList = (next: PeopleQuery, replace: boolean) =>
+    void navigate({
+      to: '/admin/people',
+      search: searchFor(next) as never,
+      ...(replace && { replace: true }),
+    });
+  const goToPerson = (id: string, next: PeopleQuery, replace: boolean) =>
+    void navigate({
+      to: '/admin/people/$id',
+      params: { id },
+      search: searchFor(next) as never,
+      replace,
+    });
+  const onQueryChange = (next: PeopleQuery, how?: { replace?: boolean }) => {
     if (next.lane !== query.lane || selectedId === null) {
-      goToList(next);
+      // Another lane is a new place; a search typed over this one refines it, in place.
+      goToList(next, how?.replace === true);
       return;
     }
     // A search typed beside an open person keeps them open; the typing replaces the entry.
-    void navigate({ href: personHref(selectedId, next), replace: true });
+    goToPerson(selectedId, next, true);
   };
 
   return (
@@ -104,7 +117,7 @@ export function PeopleListRoute({ detail }: PeopleListRouteProps = {}) {
       onOpenPerson={(id, from) => {
         // Opening another person beside one already open replaces the entry, so back returns to
         // the list rather than walking every person looked at.
-        void navigate({ href: personHref(id, query), replace: selectedId !== null });
+        goToPerson(id, query, selectedId !== null);
         // From the keys, focus follows into their page; a press leaves it where the pointer is.
         if (from === 'keys') detailPane.current?.focus();
       }}

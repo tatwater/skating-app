@@ -126,14 +126,14 @@ export const SUB_WORDS = {
     `Restricted: ${listWords(rights.map((r) => RESTRICTION_WORDS[r]))}`,
   deleted: (date: string) => `Deleted ${date}`,
   deletionCompletes: (date: string) => `Deletion completes ${date}`,
-  appeals: (n: number, floor: boolean) => `${n}${floor ? '+' : ''} ${plural(n, 'appeal')}`,
+  appeals: (n: number, floor: boolean) => `${n}${floor ? '+' : ''} ${plural(n, 'appeal', floor)}`,
   reason: (reason: string) => `Reason: “${reason}”`,
 } as const;
 
 /** A row's open flags: "1 open flag", and on Flagged, where they are. */
 export function flagPhrase(onUser: number, onContent: number, split: boolean, floor: boolean) {
   const total = onUser + onContent;
-  const head = `${total}${floor ? '+' : ''} open ${plural(total, 'flag')}`;
+  const head = `${total}${floor ? '+' : ''} open ${plural(total, 'flag', floor)}`;
   if (!split) return head;
   if (onUser === 0) return `${head} on their content`;
   if (onContent === 0) return `${head} on them`;
@@ -146,7 +146,11 @@ export const ENDS_NOW = 'Ends now';
 
 // ── Joining words ────────────────────────────────────────────────────────────────────────────
 
-const plural = (n: number, word: string) => (n === 1 ? word : `${word}s`);
+/**
+ * A word for `n` of a thing — and plural for a floor, which may be more than one ("1+ appeals"), as
+ * the status bar's "1+ appeals open" and the person page's "1+ items" say it.
+ */
+const plural = (n: number, word: string, floor = false) => (n === 1 && !floor ? word : `${word}s`);
 
 /** "a", "a and b", "a, b and c". */
 export function listWords(words: readonly string[]): string {

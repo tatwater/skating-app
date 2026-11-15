@@ -30,6 +30,7 @@ import {
   type HistoryRead,
   momentWords,
   type PersonRead,
+  personName,
   type StaffSeasonRead,
   type StaffStatsRead,
   statusNoteWords,
@@ -282,8 +283,11 @@ function StatusNoteBlock({
       </Note>
     );
   }
-  if (person.statusNote === null) return null;
-  const w = statusNoteWords(person.statusNote, now, timeZone);
+  const note = person.statusNote;
+  if (note === null) return null;
+  const w = statusNoteWords(note, now, timeZone);
+  // A name still being prepared is words, never a face drawn from its initials.
+  const unnamed = note.by !== null && personName(note.by) === null;
   return (
     <Note
       data-slot="status-note"
@@ -312,7 +316,13 @@ function StatusNoteBlock({
         ) : (
           <>
             <span className="inline-flex items-center gap-(--space-1_5) text-fg1">
-              {w.by === 'system' ? WORDS.system : <PersonLockup size="sm" name={w.by.name} />}
+              {w.by === 'system' ? (
+                WORDS.system
+              ) : unnamed ? (
+                w.by.name
+              ) : (
+                <PersonLockup size="sm" name={w.by.name} />
+              )}
               {w.by !== 'system' && w.by.via !== null && (
                 <>
                   {' via '}

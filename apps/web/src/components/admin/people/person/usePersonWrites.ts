@@ -98,14 +98,12 @@ export function usePersonWrites(
       // its undo lookup returns (a moment), with Undo while the server offers one; a lookup that
       // fails leaves the receipt without Undo (History keeps the row). It never holds this result.
       const actionId = actionIdOf(answered);
+      const undoNeedsReason = undoNeedsReasonOf(answered);
       const receipt: Receipt = {
         ...receiptFor(action, person, now),
         target: { targetType: 'user', targetId: userId },
         ...(actionId !== null && { actionId }),
-        ...(actionId !== null &&
-          undoNeedsReasonOf(answered) !== null && {
-            undoNeedsReason: undoNeedsReasonOf(answered) === true,
-          }),
+        ...(actionId !== null && undoNeedsReason !== null && { undoNeedsReason }),
       };
       void announce(receipt).catch(() => {});
       return null;

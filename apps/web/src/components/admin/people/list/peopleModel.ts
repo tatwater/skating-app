@@ -4,7 +4,7 @@ import type { FunctionReturnType } from 'convex/server';
 
 import { shortAge } from '@/lib/ages';
 
-import { type Count, countText } from '../../overview/overviewModel';
+import { type Count, countText, dayMonth } from '../../overview/overviewModel';
 import { type AgeFrom, PEOPLE_LANE_INFO } from './peopleLanes';
 import {
   ALL_COUNTS_PREPARING,
@@ -271,25 +271,13 @@ export function rowAge(row: PersonListRow, from: AgeFrom, now: number): string |
 // ── Words ────────────────────────────────────────────────────────────────────────────────────
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
-const MONTHS = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-] as const;
 
-/** "Thu 15 Oct" — a day in the reader's zone, as the board writes a date in a sub-line. */
+/**
+ * "Thu 15 Oct" — a day in the reader's zone, as the board writes a date in a sub-line: the weekday
+ * before the console's own day-and-month (`dayMonth`).
+ */
 export function weekdayDate(at: number): string {
-  const d = new Date(at);
-  return `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
+  return `${WEEKDAYS[new Date(at).getDay()]} ${dayMonth(at)}`;
 }
 
 export { listWords } from './peopleWords';

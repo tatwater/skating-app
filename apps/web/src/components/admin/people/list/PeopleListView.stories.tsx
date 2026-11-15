@@ -188,7 +188,7 @@ export const Capped: Story = {
     );
     await expect(
       within(canvasElement).getByRole('option', { name: /Rob Tremblay/ }),
-    ).toHaveTextContent('1+ open flag on their content');
+    ).toHaveTextContent('1+ open flags on their content');
   },
 };
 

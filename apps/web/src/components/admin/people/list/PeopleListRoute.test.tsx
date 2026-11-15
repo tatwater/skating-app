@@ -284,7 +284,9 @@ describe('where it goes', () => {
     act(() => list.focus());
     await userEvent.keyboard('{Enter}');
     expect(mocks.navigate).toHaveBeenCalledWith({
-      href: `/admin/people/${ROB.userId}?lane=suspended`,
+      to: '/admin/people/$id',
+      params: { id: ROB.userId },
+      search: { lane: 'suspended' },
       replace: false,
     });
     expect(screen.getByRole('region', { name: 'Person' })).toHaveFocus();
@@ -297,7 +299,9 @@ describe('where it goes', () => {
     expect(screen.getByText('the person’s page')).toBeInTheDocument();
     await userEvent.click(screen.getByText('Kate Donovan'));
     expect(mocks.navigate).toHaveBeenCalledWith({
-      href: `/admin/people/${KATE.userId}`,
+      to: '/admin/people/$id',
+      params: { id: KATE.userId },
+      search: {},
       replace: true,
     });
     // A press leaves focus where the pointer is.
@@ -315,7 +319,9 @@ describe('where it goes', () => {
       });
       act(() => vi.advanceTimersByTime(300));
       expect(mocks.navigate).toHaveBeenCalledWith({
-        href: `/admin/people/${ROB.userId}?q=rob`,
+        to: '/admin/people/$id',
+        params: { id: ROB.userId },
+        search: { q: 'rob' },
         replace: true,
       });
     } finally {
@@ -323,7 +329,7 @@ describe('where it goes', () => {
     }
   });
 
-  it('runs a search from the list at the list', () => {
+  it('runs a search from the list at the list, replacing the entry as it is typed', () => {
     vi.useFakeTimers();
     try {
       mocks.results.set(PAGE_READ, page([ROB]));
@@ -332,7 +338,31 @@ describe('where it goes', () => {
         target: { value: 'rob' },
       });
       act(() => vi.advanceTimersByTime(300));
-      expect(mocks.navigate).toHaveBeenCalledWith({ to: '/admin/people', search: { q: 'rob' } });
+      expect(mocks.navigate).toHaveBeenCalledWith({
+        to: '/admin/people',
+        search: { q: 'rob' },
+        replace: true,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('hands the router a search that reads as JSON as the string it is', () => {
+    vi.useFakeTimers();
+    try {
+      mocks.params = { id: ROB.userId };
+      mocks.results.set(PAGE_READ, page([ROB]));
+      mount();
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Search any account' }), {
+        target: { value: 'true' },
+      });
+      act(() => vi.advanceTimersByTime(300));
+      // Never a hand-built `?q=true`, which the router would read back as the boolean.
+      expect(mocks.navigate).toHaveBeenLastCalledWith(
+        expect.objectContaining({ search: { q: 'true' } }),
+      );
+      expect(mocks.navigate.mock.lastCall?.[0]).not.toHaveProperty('href');
     } finally {
       vi.useRealTimers();
     }
