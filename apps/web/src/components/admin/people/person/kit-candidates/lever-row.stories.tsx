@@ -114,7 +114,7 @@ export const Rows_: Story = {
 /** One row with a second line. */
 export const WithDetail: Story = {
   args: {
-    label: 'Hidden content',
+    label: 'On the record',
     status: '5 items',
     tone: 'quiet',
     detail: '2 reports · 2 comments · 1 post',

@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils';
  *   restricted); then the action — a kit `Button`, or a joined `ButtonGroup` (Extend | Lift) —
  *   centered on the row. The key column is the boards' 112 px.
  * - **An optional second line** spans the row under the three (`detail`): the season's figures under
- *   *Bounties*, the kinds under *Hidden content*. Emphasis (`<b>`) takes the body ink.
+ *   *Bounties*, the kinds under *On the record*. Emphasis (`<b>`) takes the body ink.
  * - **Rows sit on dotted rules**, a table row tall at least; the last row has none (a list ends on
  *   its spacing). Rows are not interactive: no hover wash — the action is its own button.
  * - A row is a named group (its key), so its action reads in context ("Comments, Restore").

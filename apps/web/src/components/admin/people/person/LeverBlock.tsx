@@ -193,7 +193,7 @@ export function LeverBlock({ title, rows, person, acting, now, timeZone }: Lever
             row.unavailable === true ? (
               // The board's Review, drawn as the working button would be; until its sheet is built
               // it says so (the kit's tooltip and toast), never a dead click.
-              <UnavailableButton size="sm" data-slot="not-available" what={WORDS.reviewHiddenWhat}>
+              <UnavailableButton size="sm" data-slot="not-available" what={WORDS.reviewRecordWhat}>
                 {WORDS.review}
               </UnavailableButton>
             ) : row.buttons.length === 0 ? null : row.joined === true ? (

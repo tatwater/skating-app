@@ -103,18 +103,18 @@ describe('Can do', () => {
 });
 
 describe('Account', () => {
-  it('draws board 8.1: Role, Suspension (Extend | Lift joined), Ban, Hidden content', () => {
+  it('draws board 8.1: Role, Suspension (Extend | Lift joined), Ban, On the record', () => {
     const rows = accountRows(ROB, { now: NOW, self: false });
     expect(rows.map((r) => [r.label, r.status])).toEqual([
       ['Role', 'Skater'],
       ['Suspension', '1 day left'],
       ['Ban', 'Account kept for appeal'],
-      ['Hidden content', '4 items'],
+      ['On the record', '4 items'],
     ]);
     expect(row(rows, 'suspension')).toMatchObject({ joined: true, tone: 'warn' });
     expect(labels(rows, 'suspension')).toEqual(['Extend', 'Lift']);
     expect(row(rows, 'ban')?.buttons[0]).toMatchObject({ label: 'Ban', danger: true });
-    expect(row(rows, 'hidden')).toMatchObject({
+    expect(row(rows, 'record')).toMatchObject({
       second: '2 reports · 2 comments',
       unavailable: true,
       buttons: [],
@@ -329,7 +329,7 @@ describe('Account', () => {
     expect(allButtons(rows)).toEqual([]);
   });
 
-  it('hidden content counts each kind, never photos; capped is a floor', () => {
+  it('the record counts each kind, never photos; capped is a floor', () => {
     expect(
       hiddenKinds({
         total: 6,
@@ -347,7 +347,7 @@ describe('Account', () => {
       }),
       { now: NOW, self: false },
     );
-    expect(row(one, 'hidden')?.status).toBe('1 item');
+    expect(row(one, 'record')?.status).toBe('1 item');
     const many = accountRows(
       personOf({
         hidden: {
@@ -358,9 +358,9 @@ describe('Account', () => {
       }),
       { now: NOW, self: false },
     );
-    expect(row(many, 'hidden')?.status).toBe('500+ items');
+    expect(row(many, 'record')?.status).toBe('500+ items');
     // Under the cap every kind's count is a floor as well, never an exact number.
-    expect(row(many, 'hidden')?.second).toBe('500+ reports');
+    expect(row(many, 'record')?.second).toBe('500+ reports');
     expect(
       hiddenKinds({
         total: 500,

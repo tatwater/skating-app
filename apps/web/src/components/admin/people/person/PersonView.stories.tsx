@@ -244,7 +244,7 @@ export const Capped: Story = {
     await expect(fact(canvasElement, 'open-flags')).toHaveTextContent('50+');
     await expect(fact(canvasElement, 'reports')).toHaveTextContent('3,000+');
     await expect(fact(canvasElement, 'decisions')).toHaveTextContent('2,000+');
-    await expect(lever(canvasElement, 'hidden')).toHaveTextContent('500+ items');
+    await expect(lever(canvasElement, 'record')).toHaveTextContent('500+ items');
     await expect(slot(canvasElement, 'history-capped')).toBeInTheDocument();
     await expect(slot(canvasElement, 'trend-capped')).toBeInTheDocument();
   },

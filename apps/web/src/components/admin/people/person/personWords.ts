@@ -67,7 +67,8 @@ export const WORDS = {
   lapsed: 'Ran its course',
   bannedStatus: 'Banned · account kept for appeal',
   review: 'Review',
-  reviewHiddenWhat: 'Reviewing and restoring their hidden content comes with its own sheet',
+  onTheRecord: 'On the record',
+  reviewRecordWhat: 'Reviewing what is on their record comes with its own sheet',
   switchOn: 'Switch on',
 
   // ── The dialogs ──
@@ -123,7 +124,7 @@ export const WORDS = {
   decisionsShown: (n: string) => `${n} shown · more happened before these`,
   showMore: 'Show more',
   flagsPending: 'Flags on their content are still being prepared',
-  hiddenUncounted: 'More than one read covers',
+  recordUncounted: 'More than one read covers',
   openCapped: 'More may be open than one read covers',
   verdictsPending: 'Decisions on flags about their content are still being prepared',
   accountCreated: 'Account created',

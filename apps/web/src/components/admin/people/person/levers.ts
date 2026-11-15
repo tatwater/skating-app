@@ -220,7 +220,7 @@ export function roleItems(p: PersonRead): RoleItem[] {
     });
 }
 
-/** "Account": the role, ledger editing, the suspension, the ban, and hidden content. */
+/** "Account": the role, ledger editing, the suspension, the ban, and what is on the record. */
 export function accountRows(p: PersonRead, opts: { now: number; self: boolean }): LeverRow[] {
   const { can } = p;
   const rows: LeverRow[] = [];
@@ -357,15 +357,17 @@ export function accountRows(p: PersonRead, opts: { now: number; self: boolean })
     });
   }
 
-  // Left out only when nothing is hidden for certain: a count that stopped at its cap stays.
+  // *On the record* (the sheet's standing list: what is hidden or removed under a verdict). Left out
+  // only when nothing stands for certain — a count that stopped at its cap stays. The row widens to
+  // the sheet's Deleted and Reversed lists once the server counts them.
   if (!settledEmpty({ count: p.hidden.total, capped: p.hidden.capped, pending: false })) {
     rows.push({
-      key: 'hidden',
-      label: 'Hidden content',
+      key: 'record',
+      label: WORDS.onTheRecord,
       // A floor that read none says so in words, never as a zero.
       status:
         p.hidden.total === 0
-          ? WORDS.hiddenUncounted
+          ? WORDS.recordUncounted
           : `${countText({ count: p.hidden.total, capped: p.hidden.capped })} ${p.hidden.total === 1 && !p.hidden.capped ? 'item' : 'items'}`,
       tone: 'quiet',
       second: hiddenKinds(p.hidden),

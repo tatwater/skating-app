@@ -3015,13 +3015,15 @@ that server's (#115); the rail's People mode (G then P, `people.read`) lights fo
   or ticket.
 - The staff page has no *Switch off* on flagging: the server refuses switching it off on staff.
 - Receipts carry no pronouns (none is known); *Staff since* reads "Admin since …" as the value.
-- No photos on the person page; no *Restore all*; the hidden-content row is drawn with no sheet yet.
+- No photos on the person page; no *Restore all*; the *On the record* row (the founder's name for it:
+  the sheet covers hidden, removed, retracted and author-deleted items) is drawn with no sheet yet.
 - *Make admin* in the role menu confirms first.
 - A narrow screen (a phone): the open person takes the page with *Back to the list*; with no one
   open, the lanes over the list. The person page's strips wrap two to a row below an inspector and
   a search's width, and the head's chips wrap under the name.
 - A block is left out only for a complete, genuinely empty answer (`settledEmpty`): *Open about this
-  person* stays, saying so, when its read was capped or flags are still being prepared.
+  person* stays, saying so, when its read was capped or flags are still being prepared; *On the
+  record* stays for a capped standing count.
 - One heading outline for the joined page: the lane's word is the only `h1`, the person's name an
   `h2` in the board's look, its blocks `h3` (or `h2` when no name is drawn).
 - A capped count is plural ("1+ open flags"); Metrics' *Oldest* keeps a tenth under two days
@@ -3035,7 +3037,7 @@ list's in `apps/web/src/components/admin/people/list/peopleWords.ts`, the person
 
 **Kit.** Both pages draw the kit's `PersonLockup`, extended here: a person list's `row` and the
 page `head` sizes, a heading name (`nameAs`), the search mark, a photo, and analytics masking on
-every size (its `sm` and `md` draw as before). The hidden-content row's *Review* is the kit's
+every size (its `sm` and `md` draw as before). The *On the record* row's *Review* is the kit's
 `UnavailableButton` (its sheet isn't built); refused levers keep the lever row's own refusal
 tooltip, the server's no with its reason. Nothing on the person page is an unbuilt field, so the
 kit's `UnavailableField` has no use here. Candidates still beside their pages: `SearchLane`
@@ -3054,7 +3056,10 @@ draws 34; the role menu's item takes two lines.
   undoNeedsReason }` from every People write; `ledger.since`; `rights.since`; the bounty season
   line; explicit `can` entries for every lever; a profile-opens flag; flag target labels and appeal
   text; who undid a row.
-- The record sheet (verdicts and withdrawals, above) awaits a design round.
+- The record sheet (verdicts and withdrawals, above; boards 8.7–8.9) is not built. The *On the
+  record* row appears today on the one count main's server supplies (the standing list); it should
+  appear whenever any of the sheet's three lists (Standing, Deleted, Reversed) has items, and its
+  rule widens when the server supplies the other two counts.
 - The kit promotions (`SearchLane`, `LeverRow`) await a kit pass.
 - One `useClockFor` and one `ID_SHAPE` across Bodies and People — each duplicated in the Bodies
   directory, which the open Body console PRs are changing.

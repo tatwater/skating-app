@@ -12,7 +12,7 @@ import { NOW, personOf, ROB } from './personFixtures';
 
 /**
  * **Nothing is left out unless the server gave a complete, genuinely empty answer.** Every block on
- * the person page that can leave itself out — *Open about this person*, the *Hidden content* row —
+ * the person page that can leave itself out — *Open about this person*, the *On the record* row —
  * goes through one rule (`settledEmpty`); these hold it over every state its read can answer in: a
  * number, a floor (capped), a figure still being prepared (pending), and none. (A failed person
  * read takes the whole page's note, with *Try again*; a `null` one is no such person.)
@@ -89,7 +89,7 @@ describe('Open about this person, over every state of its read', () => {
   });
 });
 
-describe('the Hidden content row, over every state of its count', () => {
+describe('the On the record row, over every state of its standing count', () => {
   it('is drawn unless nothing is hidden for certain, and never reads zero', () => {
     assertSeeded(
       fc.property(fc.nat(3), fc.boolean(), (total, capped) => {
@@ -100,7 +100,7 @@ describe('the Hidden content row, over every state of its count', () => {
             capped,
           },
         });
-        const row = accountRows(p, { now: NOW, self: false }).find((r) => r.key === 'hidden');
+        const row = accountRows(p, { now: NOW, self: false }).find((r) => r.key === 'record');
         expect(row === undefined).toBe(total === 0 && !capped);
         if (row !== undefined) expect(row.status).not.toMatch(/^0\+? /);
       }),
