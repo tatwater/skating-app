@@ -41,7 +41,7 @@ import { hasContoursFor } from './lib/bodyLibrary';
 import { MODERATION_ACTIONS } from './lib/enums';
 import { landmarksForBody } from './lib/landmarkRows';
 import { QUEUE_CAP } from './lib/requestDecisions';
-import { undoState } from './lib/undo';
+import { type UndoState, undoStates } from './lib/undo';
 import type { UndoViewer } from './lib/undoTypes';
 import { literals } from './lib/validators';
 import { subAreasForBody } from './subAreas';
@@ -356,31 +356,32 @@ export async function historyPage(
       }
       return found;
     };
-    const rows = await Promise.all(newest.slice(0, n).map((link) => ctx.db.get(link.actionId)));
-    const entries = await Promise.all(
-      rows
-        .filter((row): row is Doc<'moderationActions'> => row !== null)
-        .map(async (row) => {
-          const [actor, undo] = await Promise.all([
-            actorOf(row.actorId),
-            undoState(ctx, viewer, row),
-          ]);
-          return {
-            id: row._id,
-            action: row.action,
-            targetType: row.targetType,
-            targetId: row.targetId,
-            reason: row.reason,
-            ...(row.metadata !== undefined ? { metadata: row.metadata } : {}),
-            createdAt: row.createdAt,
-            actor,
-            ...(row.undoesActionId !== undefined ? { undoesActionId: row.undoesActionId } : {}),
-            // What the actor made the write through (D256), as History reads it everywhere.
-            ...(row.via !== undefined ? { via: row.via } : {}),
-            undo,
-          };
-        }),
-    );
+    const rows = (
+      await Promise.all(newest.slice(0, n).map((link) => ctx.db.get(link.actionId)))
+    ).filter((row): row is Doc<'moderationActions'> => row !== null);
+    // The page's undo states in one reading (`undoStates`): its refusal checks in page order.
+    const [actors, undos] = await Promise.all([
+      Promise.all(rows.map((row) => actorOf(row.actorId))),
+      undoStates(ctx, viewer, rows),
+    ]);
+    const entries = rows.map((row, i) => {
+      const actor = actors[i] as PersonView;
+      const undo = undos[i] as UndoState;
+      return {
+        id: row._id,
+        action: row.action,
+        targetType: row.targetType,
+        targetId: row.targetId,
+        reason: row.reason,
+        ...(row.metadata !== undefined ? { metadata: row.metadata } : {}),
+        createdAt: row.createdAt,
+        actor,
+        ...(row.undoesActionId !== undefined ? { undoesActionId: row.undoesActionId } : {}),
+        // What the actor made the write through (D256), as History reads it everywhere.
+        ...(row.via !== undefined ? { via: row.via } : {}),
+        undo,
+      };
+    });
     return { entries, capped };
   }
 }

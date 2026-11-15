@@ -1,16 +1,18 @@
 /**
- * **The rows an undo's refusal reads** (B01-3d) — whether an undo would be refused depends, for a few
- * verbs, on the row as it stands now (a body's depth candidates and outline, a launch, a feature, a
- * landmark), and History asks that of every line it draws. Those reads are a body's outline at worst,
- * so each one is read **as it really weighs** against the request's budget (`requestBudget`, shared
- * with the profiles History reads for the same page), and a query reads each row once however many
- * lines ask. Once the budget is spent the answer is {@link UNDO_CHECKED_ELSEWHERE}, never a read past
- * the transaction's limit. A mutation reads afresh. (A refusal's other reads — a snapshot, a body's
- * hidden launches — are not charged here.)
+ * **The rows an undo's refusal reads** (B01-3d; B01-3h) — whether an undo would be refused depends,
+ * for a few verbs, on the row as it stands now (a body's depth candidates and outline, a launch, a
+ * feature, a landmark), and History asks that of every line it draws. A page's refusals run in
+ * `lib/undo`'s `undoStates`, in page order, in waves over the request's budget (`ReadBudget.waves`):
+ * each reserves its declared worst case (`refusalCost`) before it reads, reads through the reader
+ * made here (a query reads each row once however many lines ask), and hands back what it didn't
+ * weigh. The rows past what the budget can reserve answer {@link UNDO_CHECKED_ELSEWHERE}, never a
+ * read past the transaction's limit — the same rows for the same data, whatever order reads settle
+ * in. (A refusal's other reads — a snapshot, a body's hidden launches — are not charged here.)
  */
 import type { Doc, Id, TableNames } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
-import { type RowKind, requestBudget } from './readBudget';
+import type { RowKind, Share } from './readBudget';
+import type { UndoRead } from './undoTypes';
 
 /** Why an undo could not be checked on this page: its rows are past what the page may read. */
 export const UNDO_CHECKED_ELSEWHERE =
@@ -19,24 +21,21 @@ export const UNDO_CHECKED_ELSEWHERE =
 const SEEN = new WeakMap<object, Map<string, Promise<unknown>>>();
 
 /**
- * One row for an undo's refusal: the document, `null` when it is gone, or `undefined` when the
- * request's budget can't afford its worst case (the caller answers {@link UNDO_CHECKED_ELSEWHERE}).
+ * The read a refusal is handed: a query reads each row once however many lines ask (a sibling's read
+ * in flight, or an earlier wave's, costs nothing more); any other read is charged to the share its
+ * row was admitted with (`ReadBudget.waves`). A mutation reads afresh.
  */
-export async function undoRead<T extends TableNames>(
-  ctx: QueryCtx | MutationCtx,
-  kind: RowKind,
-  id: Id<T>,
-): Promise<Doc<T> | null | undefined> {
+export function undoReader(ctx: QueryCtx | MutationCtx, share: Share): UndoRead {
   const isQuery = !('insert' in ctx.db);
-  const seen = isQuery ? (SEEN.get(ctx) ?? new Map<string, Promise<unknown>>()) : null;
-  const known = seen?.get(id);
-  if (known) return known as Promise<Doc<T> | null | undefined>;
-  // `measured` reserves the worst case before it reads, so reads of a page's rows in flight together
-  // share the budget exactly — no queue between them (B01-3h).
-  const read = requestBudget(ctx).measured(kind, () => ctx.db.get(id) as Promise<Doc<T> | null>);
-  if (seen) {
-    seen.set(id, read);
-    SEEN.set(ctx, seen);
-  }
-  return read;
+  return <T extends TableNames>(kind: RowKind, id: Id<T>) => {
+    const seen = isQuery ? (SEEN.get(ctx) ?? new Map<string, Promise<unknown>>()) : null;
+    const known = seen?.get(id);
+    if (known) return known as Promise<Doc<T> | null>;
+    const read = share.read(kind, () => ctx.db.get(id) as Promise<Doc<T> | null>);
+    if (seen) {
+      seen.set(id, read);
+      SEEN.set(ctx, seen);
+    }
+    return read;
+  };
 }

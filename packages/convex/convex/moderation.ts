@@ -43,7 +43,7 @@ import { assertWrite, DISCIPLINE_REFUSALS, type PersonWrite, reasonFor } from '.
 import { refreshPersonRow } from './lib/peopleRows';
 import { refreshPostLatestSkateEnd, refreshPostSearchText } from './lib/postSync';
 import { mirrorReportSubAreas } from './lib/reportSubAreas';
-import { type UndoState, undoState } from './lib/undo';
+import { type UndoState, undoStates } from './lib/undo';
 import { literals } from './lib/validators';
 
 /** The audit action implied by a target moderation status (D37). */
@@ -1364,12 +1364,12 @@ interface ActionView {
 
 async function toActionView(
   ctx: QueryCtx,
-  viewer: Doc<'profiles'>,
   a: Doc<'moderationActions'>,
   shared: {
     labels: Map<string, string | null>;
     actors: Map<string, Promise<QueueUser | null>>;
   },
+  undo: UndoState,
 ): Promise<ActionView> {
   // Labels and actors are read once per distinct target and person across the page (B01-3c).
   const targetLabel = shared.labels.get(targetKey(a)) ?? null;
@@ -1379,8 +1379,7 @@ async function toActionView(
     actor = loadQueueUser(ctx, a.actorId);
     shared.actors.set(actorKey, actor);
   }
-  // The row's actor and undo state at once (B01-3h): no read of one line waits on another's.
-  const [undo, who] = await Promise.all([undoState(ctx, viewer, a), actor]);
+  const who = await actor;
   return {
     ...(targetLabel !== null ? { targetLabel } : {}),
     ...(a.undoesActionId !== undefined ? { undoesActionId: a.undoesActionId } : {}),
@@ -1461,8 +1460,14 @@ export async function listActionsPage(
     const visible = withoutLedgerGrantsFor(viewer, rows);
     // At most one label read per distinct target and one profile read per distinct actor, plus each
     // row's undo state (a few indexed reads) — a full page of 100 stays well inside 4,096 calls.
-    const shared = { labels: await auditTargetLabels(ctx, visible), actors: new Map() };
-    return Promise.all(visible.map((a) => toActionView(ctx, viewer, a, shared)));
+    // The labels and the page's undo states at once — the undo states in one reading, their refusal
+    // checks in page order (`undoStates`, B01-3h) — then every row's actor at once.
+    const [labels, undos] = await Promise.all([
+      auditTargetLabels(ctx, visible),
+      undoStates(ctx, viewer, visible),
+    ]);
+    const shared = { labels, actors: new Map() };
+    return Promise.all(visible.map((a, i) => toActionView(ctx, a, shared, undos[i] as UndoState)));
   }
 }
 

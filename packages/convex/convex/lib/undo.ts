@@ -24,8 +24,10 @@ import { hasCapability } from './auth';
 import { authorDeletedAtOn, authorDeletedRefusal } from './authorDeletion';
 import { type PersonFacts, writeRefusal } from './peopleCan';
 import { factsOfRow, personRowOf, rowlessProfile } from './peopleRows';
+import { ROW_MAX, requestBudget } from './readBudget';
 import { UNDO_HANDLERS } from './undoHandlers';
 import { UNDO_POLICY, undoCapability, WORKSTREAM_MODE } from './undoPolicy';
+import { UNDO_CHECKED_ELSEWHERE, undoReader } from './undoReads';
 import { meta, type UndoHandler, type UndoViewer } from './undoTypes';
 
 /** How long after acting the toast offers its undo (D226). History has no limit. */
@@ -102,18 +104,67 @@ function newestOnTarget(
   return found;
 }
 
-/**
- * Whether `row` can be undone by `viewer`, and if not, why. Bounded: two index reads at once (one of
- * at most {@link UNDO_TAG_READ} rows; the target's newest, once a query), one `get` of an item an
- * author could have deleted, and the handful of rows a verb's `refusal` reads (`lib/undoReads`) —
- * about three rounds. **Made to be called for a page's rows concurrently** (B01-3h): nothing in it
- * waits on another line, and the refusal reads reserve their budget before they start.
- */
+/** Whether `row` can be undone by `viewer`, and if not, why — {@link undoStates} for one row. */
 export async function undoState(
   ctx: QueryCtx | MutationCtx,
   viewer: UndoViewer,
   row: Doc<'moderationActions'>,
 ): Promise<UndoState> {
+  return (await undoStates(ctx, viewer, [row]))[0] as UndoState;
+}
+
+/**
+ * **Whether each row of a page can be undone by `viewer`, and if not, why** (B01-3h) — the one
+ * reading every History, feed and People page takes for its rows, in a handful of rounds whatever the
+ * page's length:
+ *
+ * 1. Every row at once, up to its refusal: the policy and the handler (no read), then the undoing
+ *    row and the target's newest together (the newest once a query per target), the blocked rule,
+ *    an author's deletion, a person's write rule, the viewer's capability and leaving.
+ * 2. The rows still standing whose verb checks the row as it stands, **in page order**, in waves
+ *    over the request's budget (`ReadBudget.waves`): each refusal reserves its declared worst case
+ *    before it reads; the rows past what the budget can reserve say "check elsewhere"
+ *    ({@link UNDO_CHECKED_ELSEWHERE}). Which ones depends only on the data, never on which promise
+ *    settles first — the same page every time.
+ */
+export async function undoStates(
+  ctx: QueryCtx | MutationCtx,
+  viewer: UndoViewer,
+  rows: readonly Doc<'moderationActions'>[],
+): Promise<UndoState[]> {
+  const first = await Promise.all(rows.map((row) => stateBeforeRefusal(ctx, viewer, row)));
+  const out = new Array<UndoState>(rows.length);
+  const pending: { index: number; row: Doc<'moderationActions'>; handler: UndoHandler }[] = [];
+  first.forEach((state, index) => {
+    const row = rows[index] as Doc<'moderationActions'>;
+    if ('handler' in state) {
+      if (state.handler.refusal) pending.push({ index, row, handler: state.handler });
+      else out[index] = { state: 'available', needsReason: state.handler.undoTakesAway(row) };
+    } else out[index] = state;
+  });
+  const checked = await requestBudget(ctx).waves(
+    pending,
+    ({ handler }) => handler.refusalCost ?? { bytes: ROW_MAX.waterBody, reads: 1 },
+    async ({ row, handler }, share): Promise<UndoState> => {
+      const why = (await handler.refusal?.(ctx, row, undoReader(ctx, share))) ?? null;
+      return why
+        ? { state: 'unavailable', why }
+        : { state: 'available', needsReason: handler.undoTakesAway(row) };
+    },
+    (): UndoState => ({ state: 'unavailable', why: UNDO_CHECKED_ELSEWHERE }),
+  );
+  pending.forEach(({ index }, k) => {
+    out[index] = checked[k] as UndoState;
+  });
+  return out;
+}
+
+/** A row's undo state up to its refusal check: decided, or its handler, still to check. */
+async function stateBeforeRefusal(
+  ctx: QueryCtx | MutationCtx,
+  viewer: UndoViewer,
+  row: Doc<'moderationActions'>,
+): Promise<UndoState | { handler: UndoHandler }> {
   const rule = UNDO_POLICY[row.action];
   if (rule.undo.kind === 'none') return { state: 'unavailable', why: rule.undo.why };
   if (rule.undo.kind === 'later') {
@@ -159,12 +210,10 @@ export async function undoState(
       why: 'Your account is being deleted, so you can no longer undo.',
     };
   }
-  // The row as it stands now refuses this write (B01-3d): never offered, since it would be turned
-  // down. Asked last — it reads a body's outline at worst, from the page's shared budget, which a line
+  // The row as it stands now may refuse this write (B01-3d) — asked last, in the page's waves
+  // (`undoStates`): it reads a body's outline at worst, from the page's shared budget, which a line
   // this viewer could never undo anyway should not spend.
-  const refused = (await handler.refusal?.(ctx, row)) ?? null;
-  if (refused) return { state: 'unavailable', why: refused };
-  return { state: 'available', needsReason: handler.undoTakesAway(row) };
+  return { handler };
 }
 
 /** Why an undo on someone without a People row can't be checked on this page (before the backfill). */

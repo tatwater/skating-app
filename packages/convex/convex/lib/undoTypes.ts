@@ -4,9 +4,16 @@
  * import cycle through `undoHandlers.ts`.
  */
 
-import type { Doc } from '../_generated/dataModel';
+import type { Doc, Id, TableNames } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import type { PersonWrite } from './peopleCan';
+import type { RowKind, WaveCost } from './readBudget';
+
+/**
+ * A refusal's read of one row: the document, or `null` when it is gone — charged to the reservation
+ * its row was admitted with, and read once a query however many lines ask.
+ */
+export type UndoRead = <T extends TableNames>(kind: RowKind, id: Id<T>) => Promise<Doc<T> | null>;
 
 export interface UndoCall {
   ctx: MutationCtx;
@@ -39,7 +46,16 @@ export interface UndoHandler {
    * refusal the forward write of the recorded state gives, so History never offers an undo the write
    * turns down — after an un-audited change (an import, a loader, a merge's moves) as after any other.
    */
-  refusal?: (ctx: QueryCtx | MutationCtx, row: Doc<'moderationActions'>) => Promise<string | null>;
+  refusal?: (
+    ctx: QueryCtx | MutationCtx,
+    row: Doc<'moderationActions'>,
+    read: UndoRead,
+  ) => Promise<string | null>;
+  /**
+   * What `refusal` reads at worst, through `read` — reserved before it runs (B01-3h,
+   * `ReadBudget.waves`). Absent: one row of a document's weight.
+   */
+  refusalCost?: WaveCost;
   run: (call: UndoCall) => Promise<void>;
 }
 

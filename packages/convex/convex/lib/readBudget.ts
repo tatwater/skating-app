@@ -94,6 +94,17 @@ export const ROW_MAX = {
 } as const;
 export type RowKind = keyof typeof ROW_MAX;
 
+/** What one item of {@link ReadBudget.waves} may read at worst: bytes, and how many reads. */
+export interface WaveCost {
+  bytes: number;
+  reads: number;
+}
+
+/** One item's reservation in {@link ReadBudget.waves}: each read is charged against it. */
+export interface Share {
+  read<D>(kind: RowKind, get: () => Promise<D>): Promise<D>;
+}
+
 /** Thrown when a transaction reads past what it planned: a bug in the plan, never a data condition. */
 export class OverBudget extends Error {}
 
@@ -202,20 +213,16 @@ export class ReadBudget {
    * read once per item in a loop. Returns `undefined`, reading nothing, when the worst case doesn't
    * fit: the caller stops there and says its answer is capped.
    *
-   * **The worst case is reserved before the read starts and the difference handed back after it**
-   * (B01-3h), so reads in flight together each see the others' reservations: the accounting is exact
-   * when a page runs its rows concurrently. A read that can't be reserved while others are in flight
-   * waits for their hand-backs rather than giving up — a light row hands back nearly all of its
-   * reservation — and gives up only when nothing is in flight to hand anything back.
+   * The worst case is reserved before the read starts and the difference handed back after it, in a
+   * `finally` (B01-3h): a serial caller sees exactly what it always did, and reads in flight together
+   * never pass the limit between them. Which of several concurrent reads are refused would depend on
+   * the order they reach here, though — a page that reads per row concurrently takes its rows in
+   * {@link ReadBudget.waves} instead, whose answer is the same whatever the order promises resolve in.
    */
   async measured<T>(kind: RowKind, read: () => Promise<T>): Promise<T | undefined> {
-    while (!this.affordsRead(kind)) {
-      if (this.inFlight === 0) return undefined;
-      await new Promise<void>((resolve) => this.handBacks.push(resolve));
-    }
+    if (!this.affordsRead(kind)) return undefined;
     this.call(1);
     this.left -= ROW_MAX[kind];
-    this.inFlight++;
     let size = ROW_MAX[kind];
     try {
       const row = await read();
@@ -223,14 +230,81 @@ export class ReadBudget {
       return row;
     } finally {
       this.left += ROW_MAX[kind] - Math.min(size, ROW_MAX[kind]);
-      this.inFlight--;
-      for (const wake of this.handBacks.splice(0)) wake();
     }
   }
 
-  /** `measured` reads in flight, and the reads waiting for one of them to hand budget back. */
-  private inFlight = 0;
-  private handBacks: (() => void)[] = [];
+  /**
+   * **A page's per-row reads, concurrent and deterministic** (B01-3h). Items are admitted **in their
+   * order**, a wave at a time: the longest run from the next item whose declared worst cases
+   * (`costOf`: bytes and reads) the budget can reserve now. A wave's items run concurrently, each
+   * reading through its own {@link Share} of what was reserved for it; when the whole wave is done,
+   * what each didn't use is handed back (in a `finally`, so a throw hands it back too) and the next
+   * wave is admitted. When not even the next item fits, it and every item after it get `overflow` —
+   * the page's "check elsewhere".
+   *
+   * So which items are read and which overflow depends only on the items' order and what the earlier
+   * waves really weighed — never on the order their promises resolve in: the same data gives the same
+   * page, as a query must. Nothing is read that wasn't reserved (a read past its item's share is a
+   * plan error, thrown), and the budget never goes below zero. A wave costs one round per read in its
+   * longest item; the page, one wave per budget's worth of worst cases.
+   */
+  async waves<T, R>(
+    items: readonly T[],
+    costOf: (item: T) => WaveCost,
+    run: (item: T, share: Share) => Promise<R>,
+    overflow: (item: T) => R,
+  ): Promise<R[]> {
+    const out = new Array<R>(items.length);
+    let next = 0;
+    while (next < items.length) {
+      const wave: { index: number; cost: WaveCost }[] = [];
+      for (; next < items.length; next++) {
+        const cost = costOf(items[next] as T);
+        if (cost.bytes > this.left || !this.affordsCalls(cost.reads, cost.reads)) break;
+        this.left -= cost.bytes;
+        this.reserveCalls(cost.reads, cost.reads);
+        wave.push({ index: next, cost });
+      }
+      if (wave.length === 0) {
+        for (; next < items.length; next++) out[next] = overflow(items[next] as T);
+        break;
+      }
+      // Settled, not raced: every item's hand-back lands before the next wave, or the throw.
+      const settled = await Promise.allSettled(
+        wave.map(async ({ index, cost }) => {
+          let spent = 0;
+          let reads = 0;
+          const share: Share = {
+            read: async <D>(kind: RowKind, get: () => Promise<D>): Promise<D> => {
+              if (spent + ROW_MAX[kind] > cost.bytes || reads + 1 > cost.reads) {
+                throw new OverBudget(
+                  `read budget: an item read past the ${cost.bytes} it declared`,
+                );
+              }
+              reads++;
+              spent += ROW_MAX[kind];
+              let size = ROW_MAX[kind];
+              try {
+                const row = await get();
+                size = row === null || row === undefined ? 0 : getDocumentSize(row as never);
+                return row;
+              } finally {
+                spent -= ROW_MAX[kind] - Math.min(size, ROW_MAX[kind]);
+              }
+            },
+          };
+          try {
+            out[index] = await run(items[index] as T, share);
+          } finally {
+            this.left += cost.bytes - spent;
+          }
+        }),
+      );
+      const failed = settled.find((s) => s.status === 'rejected');
+      if (failed) throw (failed as PromiseRejectedResult).reason;
+    }
+    return out;
+  }
 
   /**
    * A read under its own real-weight cap (a `paginate` with `maximumBytesRead: bytes`, at most `rows`
