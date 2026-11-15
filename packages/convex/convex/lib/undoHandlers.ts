@@ -29,6 +29,7 @@ import {
 } from '../moderation';
 import type { ModerationAction, ModerationTargetType } from './audit';
 import { AUTHOR_DELETED_OVERTURN } from './authorDeletion';
+import type { PersonWrite } from './peopleCan';
 import { BODY_TARGET_UNDO, BODY_UNDO_HANDLERS } from './undoHandlersBody';
 import { CORPUS_TARGET_UNDO, CORPUS_UNDO_HANDLERS } from './undoHandlersCorpus';
 import { UNDO_POLICY } from './undoPolicy';
@@ -133,22 +134,38 @@ interface StatusPrev {
   suspendedUntil: number | null;
 }
 
-/** Put a person's lifecycle back to `prev` through the verb that produces it. */
+/** The write that puts a lifecycle back to `prev`: a ban, a suspension (with its end), or a lift. */
+function statusWrite(prev: StatusPrev): PersonWrite {
+  if (prev.status === 'banned') return { kind: 'ban' };
+  if (prev.status === 'suspended' && prev.suspendedUntil !== null) return { kind: 'suspend' };
+  return { kind: 'lift' };
+}
+
+/** Put a person's lifecycle back to `prev` through the verb that produces it ({@link statusWrite}). */
 async function restoreStatus(call: UndoCall, prev: StatusPrev): Promise<void> {
   const userId = call.row.targetId as Id<'profiles'>;
   const reason = call.reason;
-  if (prev.status === 'banned') {
+  const write = statusWrite(prev);
+  if (write.kind === 'ban') {
     await banImpl(call.ctx, call.actor, { userId, reason });
-  } else if (prev.status === 'suspended' && prev.suspendedUntil !== null) {
+  } else if (write.kind === 'suspend') {
     await suspendImpl(call.ctx, call.actor, {
       userId,
       reason,
-      suspendedUntil: prev.suspendedUntil,
+      suspendedUntil: prev.suspendedUntil as number,
     });
   } else {
     await unbanImpl(call.ctx, call.actor, { userId, reason });
   }
 }
+
+/** What a ban or suspension replaced (rows from before undo assume active). */
+const disciplinePrev = (row: Doc<'moderationActions'>): StatusPrev =>
+  (meta(row).prev as StatusPrev | undefined) ?? {
+    status: 'active',
+    statusReason: null,
+    suspendedUntil: null,
+  };
 
 /** A suspension that has since run out can't be put back; everything else can. */
 function statusPrevBlocked(prev: StatusPrev | undefined, now: number): string | null {
@@ -169,15 +186,8 @@ const undoDiscipline: UndoHandler = {
     const prev = meta(row).prev as StatusPrev | undefined;
     return prev !== undefined && prev.status !== 'active';
   },
-  run: (call) =>
-    restoreStatus(
-      call,
-      (meta(call.row).prev as StatusPrev | undefined) ?? {
-        status: 'active',
-        statusReason: null,
-        suspendedUntil: null,
-      },
-    ),
+  personWrite: (row) => statusWrite(disciplinePrev(row)),
+  run: (call) => restoreStatus(call, disciplinePrev(call.row)),
 };
 
 /** unban → the ban or suspension it lifted. */
@@ -189,6 +199,7 @@ const undoLift: UndoHandler = {
     return statusPrevBlocked(prev, Date.now());
   },
   undoTakesAway: () => true,
+  personWrite: (row) => statusWrite(meta(row).prev as StatusPrev),
   run: (call) => restoreStatus(call, meta(call.row).prev as StatusPrev),
 };
 
@@ -200,6 +211,16 @@ const undoPostingPermission: UndoHandler = {
     return UNDO_POLICY.set_posting_permission.takesAway(
       permission === 'bounties' ? { from: limit ?? null, to: prev?.limit ?? null } : prev?.allowed,
     );
+  },
+  personWrite: (row) => {
+    const { prev, permission } = meta(row);
+    return permission === 'bounties'
+      ? { kind: 'bountyLimit' }
+      : {
+          kind: 'right',
+          permission: permission as PostingPermission,
+          allowed: prev.allowed as boolean,
+        };
   },
   run: async ({ ctx, actor, row, reason }) => {
     const { prev, permission } = meta(row);

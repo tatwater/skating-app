@@ -14,7 +14,7 @@ import { type MutationCtx, mutation, query } from './_generated/server';
 import { writeAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { clearLedgerGrantOnDemotion } from './lib/ledgerEditors';
-import { reasonFor, roleChangeTakesAway, roleRefusal } from './lib/peopleCan';
+import { reasonFor, roleChangeTakesAway, writeRefusal } from './lib/peopleCan';
 import { refreshPersonRow } from './lib/peopleRows';
 import { trustClassFor } from './lib/reputation';
 import { literals } from './lib/validators';
@@ -111,7 +111,7 @@ export async function grantRoleImpl(
   const target = await ctx.db.get(userId);
   if (!target) throw new ConvexError('User not found');
   // The rule the People page's role menu reads (`lib/peopleCan`).
-  const why = await roleRefusal(ctx, actor, target, role);
+  const why = await writeRefusal(ctx, actor, target, { kind: 'role', role });
   if (why !== null) throw new ConvexError(why);
   const { reason, defaulted } = reasonFor(
     given,
@@ -158,7 +158,7 @@ export async function revokeRoleImpl(
   if (userId === actor._id) throw new ConvexError('You cannot revoke your own role');
   const target = await ctx.db.get(userId);
   if (!target) throw new ConvexError('User not found');
-  const why = await roleRefusal(ctx, actor, target, 'member');
+  const why = await writeRefusal(ctx, actor, target, { kind: 'role', role: 'member' });
   if (why !== null) throw new ConvexError(why);
   const { reason, defaulted } = reasonFor(
     given,

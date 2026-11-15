@@ -10,7 +10,7 @@ import { describe, expect, test } from 'vitest';
 import { api } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { markReady, READY_FLAG_SUBJECTS, READY_ROWS, refreshPersonRow } from './lib/peopleRows';
-import { lowerMedian, mergeSources, monthsBetween } from './people';
+import { lowerMedian, mergeSources, monthsBetween, staffTenure } from './people';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -160,6 +160,68 @@ describe('mergeSources', () => {
   });
 });
 
+describe('staffTenure', () => {
+  const grant = (at: number, role: string, priorRole?: string) =>
+    ({
+      action: 'grant_role',
+      createdAt: at,
+      metadata: { role, ...(priorRole !== undefined ? { priorRole } : {}) },
+    }) as unknown as Doc<'moderationActions'>;
+  const revoke = (at: number, priorRole: string) =>
+    ({
+      action: 'revoke_role',
+      createdAt: at,
+      metadata: { priorRole },
+    }) as unknown as Doc<'moderationActions'>;
+
+  test('a recorded entry is staff since; the newest move is role since', () => {
+    expect(
+      staffTenure([grant(5, 'admin', 'moderator'), grant(2, 'moderator', 'member')], null, 'admin'),
+    ).toEqual({
+      staffSince: { at: 2, role: 'moderator' },
+      roleSince: { at: 5, role: 'admin' },
+    });
+  });
+
+  test('an unrecorded entry, then a promotion: staff since is not recorded, never the promotion', () => {
+    expect(staffTenure([grant(5, 'admin', 'moderator')], null, 'admin')).toEqual({
+      staffSince: null,
+      roleSince: { at: 5, role: 'admin' },
+    });
+  });
+
+  test('revoked, then granted again: staff since is the new entry', () => {
+    expect(
+      staffTenure(
+        [grant(9, 'admin', 'member'), grant(1, 'moderator', 'member')],
+        revoke(4, 'moderator'),
+        'admin',
+      ),
+    ).toEqual({ staffSince: { at: 9, role: 'admin' }, roleSince: { at: 9, role: 'admin' } });
+    // Revoked with no grant on record since: neither is known.
+    expect(
+      staffTenure([grant(1, 'moderator', 'member')], revoke(4, 'moderator'), 'moderator'),
+    ).toEqual({
+      staffSince: null,
+      roleSince: null,
+    });
+  });
+
+  test('a grant with no priorRole (from before it was recorded) can’t be told from an entry: not recorded', () => {
+    expect(staffTenure([grant(3, 'moderator')], null, 'moderator')).toEqual({
+      staffSince: null,
+      roleSince: { at: 3, role: 'moderator' },
+    });
+  });
+
+  test('a newest move to a role they no longer hold means the change to the present one went unrecorded', () => {
+    expect(staffTenure([grant(3, 'moderator', 'member')], null, 'admin')).toEqual({
+      staffSince: { at: 3, role: 'moderator' },
+      roleSince: null,
+    });
+  });
+});
+
 // ── Lanes and pages ──
 
 describe('people.lanes and people.listPage', () => {
@@ -254,7 +316,7 @@ describe('people.lanes and people.listPage', () => {
     expect(page.rows.map((r) => r.userId)).toEqual([author, target]);
     expect(page.rows[0]?.openFlags).toEqual({ onUser: 0, onContent: 1 });
     expect(page.rows[1]?.openFlags).toEqual({ onUser: 1, onContent: 0 });
-    expect(page.flagsCapped).toBe(false);
+    expect(page).toMatchObject({ partial: false, reasons: [] });
     const paged = await as(t, 'mod').query(api.people.listPage, { lane: 'flagged', pageSize: 1 });
     expect(paged.isDone).toBe(false);
     const rest = await as(t, 'mod').query(api.people.listPage, {
@@ -397,7 +459,7 @@ describe('people.person', () => {
     await ready(t);
     const seen = await as(t, 'holder').query(api.people.person, { userId: other });
     expect(seen?.ledger).toEqual({ editor: false, last: false });
-    expect(seen?.can.ledger?.grant).toEqual({ ok: true });
+    expect(seen?.can.ledger?.grant).toEqual({ ok: true, needsReason: false });
     expect(seen?.can.ledger?.revoke.ok).toBe(false);
     expect((await as(t, 'plain').query(api.people.person, { userId: other }))?.ledger).toBeNull();
   });

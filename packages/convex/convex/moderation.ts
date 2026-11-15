@@ -39,13 +39,7 @@ import { MODERATION_ACTIONS, MODERATION_STATUSES, MODERATION_TARGET_TYPES } from
 import { authorRetracted, ERASABLE, refreshEraseClock } from './lib/eraseClock';
 import { closeFlag } from './lib/flagResolution';
 import { withoutLedgerGrantsFor } from './lib/ledgerEditors';
-import {
-  assertDiscipline,
-  DISCIPLINE_REFUSALS,
-  flaggingOffRefusal,
-  type Lever,
-  reasonFor,
-} from './lib/peopleCan';
+import { assertWrite, DISCIPLINE_REFUSALS, type PersonWrite, reasonFor } from './lib/peopleCan';
 import { refreshPersonRow } from './lib/peopleRows';
 import { refreshPostLatestSkateEnd, refreshPostSearchText } from './lib/postSync';
 import { mirrorReportSubAreas } from './lib/reportSubAreas';
@@ -1339,7 +1333,7 @@ async function groupAccessReports(
 }
 
 /** An audit row as the dashboard/history panel presents it — the action plus who took it. */
-export interface ActionView {
+interface ActionView {
   id: string;
   action: Doc<'moderationActions'>['action'];
   targetType: Doc<'moderationActions'>['targetType'];
@@ -1356,7 +1350,7 @@ export interface ActionView {
   undo: UndoState;
 }
 
-export async function toActionView(
+async function toActionView(
   ctx: QueryCtx,
   viewer: Doc<'profiles'>,
   a: Doc<'moderationActions'>,
@@ -1443,11 +1437,11 @@ async function loadModeratableUser(
   ctx: MutationCtx,
   actor: Doc<'profiles'>,
   userId: Id<'profiles'>,
-  lever: Lever,
+  write: PersonWrite,
 ): Promise<Doc<'profiles'>> {
   const target = await ctx.db.get(userId);
   if (!target) throw new ConvexError('User not found');
-  await assertDiscipline(ctx, actor, target, lever);
+  await assertWrite(ctx, actor, target, write);
   return target;
 }
 
@@ -1511,7 +1505,7 @@ export async function banImpl(
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     // Refused on an account in or past its deletion, and for the last ledger editor (D252), here and
     // in an undo that puts a ban back, which comes through this same writer.
-    const target = await loadModeratableUser(ctx, actor, userId, 'ban');
+    const target = await loadModeratableUser(ctx, actor, userId, { kind: 'ban' });
 
     await ctx.db.patch(userId, {
       status: 'banned',
@@ -1561,7 +1555,7 @@ export async function suspendImpl(
     }
     // The same rule for a suspension: a suspended editor can't edit or pass the grant on (D252),
     // and a suspension that later lapsed would unlock an account partway through its deletion.
-    const target = await loadModeratableUser(ctx, actor, userId, 'suspend');
+    const target = await loadModeratableUser(ctx, actor, userId, { kind: 'suspend' });
 
     await ctx.db.patch(userId, {
       status: 'suspended',
@@ -1616,7 +1610,7 @@ export async function unbanImpl(
     const { reason, defaulted } = reasonFor(given, false, 'Lifted');
     // A lift puts the account back to `active`, which would bring a deleted one back and let a
     // departing one write again (D33, D62). Refused here, so an undo that lifts is refused too.
-    const target = await loadModeratableUser(ctx, actor, userId, 'lift');
+    const target = await loadModeratableUser(ctx, actor, userId, { kind: 'lift' });
 
     await ctx.db.patch(userId, {
       status: 'active',
@@ -1671,7 +1665,7 @@ export async function setBountyLimitImpl(
   if (limit !== undefined && (!Number.isInteger(limit) || limit < 0)) {
     throw new ConvexError('A bounty limit has to be a whole number, zero or more');
   }
-  const target = await loadModeratableUser(ctx, actor, userId, 'restrict');
+  const target = await loadModeratableUser(ctx, actor, userId, { kind: 'bountyLimit' });
   // Lowering the limit in force takes something away and asks why; raising or clearing it does not.
   const { reason, defaulted } = reasonFor(
     given,
@@ -1742,11 +1736,12 @@ export async function setPostingPermissionImpl(
   }: { userId: Id<'profiles'>; permission: PostingPermission; allowed: boolean; reason?: string },
 ): Promise<Id<'profiles'>> {
   const { reason, defaulted } = reasonFor(given, !allowed, RESTORED_REASON[permission]);
-  const target = await loadModeratableUser(ctx, actor, userId, 'restrict');
-  if (permission === 'flagging' && !allowed) {
-    const why = flaggingOffRefusal(target);
-    if (why !== null) throw new ConvexError(why);
-  }
+  // Flagging off on a staffer is refused here too: the one rule (`lib/peopleCan`).
+  const target = await loadModeratableUser(ctx, actor, userId, {
+    kind: 'right',
+    permission,
+    allowed,
+  });
 
   const field = POSTING_PERMISSION_FIELD[permission];
   await ctx.db.patch(userId, { [field]: allowed });

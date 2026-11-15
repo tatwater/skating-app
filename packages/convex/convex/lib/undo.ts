@@ -22,7 +22,7 @@ import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { asUndoOf } from './audit';
 import { hasCapability } from './auth';
 import { authorDeletedAtOn, authorDeletedRefusal } from './authorDeletion';
-import { disciplineRefusal, type PersonFacts, roleRefusal } from './peopleCan';
+import { type PersonFacts, writeRefusal } from './peopleCan';
 import { OPEN_ENDED, personRowOf } from './peopleRows';
 import { UNDO_HANDLERS } from './undoHandlers';
 import { UNDO_POLICY, undoCapability, WORKSTREAM_MODE } from './undoPolicy';
@@ -115,7 +115,7 @@ export async function undoState(
   // A change to a person is refused through the same rule its forward write uses (`lib/peopleCan`):
   // an account being deleted, or deleted, can't be disciplined back or forth — so History never
   // offers an undo the write would turn down.
-  const refusal = await personUndoRefusal(ctx, viewer, row);
+  const refusal = await personUndoRefusal(ctx, viewer, row, handler);
   if (refusal !== null) return { state: 'unavailable', why: refusal };
   if (!hasCapability(viewer, undoCapability(rule, row.targetType))) {
     return { state: 'unavailable', why: 'Undoing this takes a role you do not hold.' };
@@ -132,23 +132,20 @@ export async function undoState(
 }
 
 /**
- * Why an undo on a person can't run now, from the lever it would pull: a ban or suspension's undo
- * puts back the status it replaced (a ban, a suspension, or a lift); a lift's undo puts back the ban
- * or suspension; a right's undo restricts or restores; a role's undo changes the role. One `get`.
+ * Why an undo on a person can't run now: the refusal the forward write of the state it puts back
+ * would give (`writeRefusal`, on the handler's own `personWrite`) — one rule, never a parallel list.
+ * The person's facts come from their light People row (a profile can weigh a whole document, and
+ * History asks once a line); a person with no row yet is read in full.
  */
 async function personUndoRefusal(
   ctx: QueryCtx | MutationCtx,
   viewer: UndoViewer,
   row: Doc<'moderationActions'>,
+  handler: UndoHandler,
 ): Promise<string | null> {
-  if (row.targetType !== 'user') return null;
-  const statusVerb = row.action === 'ban' || row.action === 'suspend' || row.action === 'unban';
-  const roleVerb = row.action === 'grant_role' || row.action === 'revoke_role';
-  if (!statusVerb && !roleVerb && row.action !== 'set_posting_permission') return null;
+  if (row.targetType !== 'user' || handler.personWrite === undefined) return null;
   const id = ctx.db.normalizeId('profiles', row.targetId);
   if (!id) return 'This account no longer exists.';
-  // The People row's copy of the facts the rule reads — light, where a profile can weigh a whole
-  // document and History reads this once a line. A person with no row yet is read in full.
   const light = await personRowOf(ctx, id);
   const target: PersonFacts | null = light
     ? {
@@ -161,18 +158,11 @@ async function personUndoRefusal(
             : undefined,
         deletionRequestedAt:
           light.leavingUntil > 0 ? light.leavingUntil - DELETION_GRACE_MS : undefined,
+        ...(light.ledgerEditor ? { canEditLedger: light.ledgerEditor } : {}),
       }
     : await ctx.db.get(id);
   if (!target) return 'This account no longer exists.';
-  if (roleVerb) {
-    const prior = (meta(row).priorRole as Doc<'profiles'>['role'] | undefined) ?? 'member';
-    return roleRefusal(ctx, viewer, target, prior);
-  }
-  if (!statusVerb) return disciplineRefusal(ctx, viewer, target, 'restrict');
-  const prev = meta(row).prev as { status?: string } | undefined;
-  const puttingBack = prev?.status ?? 'active';
-  const lever = puttingBack === 'banned' ? 'ban' : puttingBack === 'suspended' ? 'suspend' : 'lift';
-  return disciplineRefusal(ctx, viewer, target, lever);
+  return writeRefusal(ctx, viewer, target, handler.personWrite(row));
 }
 
 /** Undo `actionId` as `actor` (already gated by the caller), with `reason` when one is needed. */

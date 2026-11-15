@@ -106,7 +106,7 @@ export interface FlaggedPerson {
 export function flaggedPeopleFrom(
   flags: readonly Doc<'contentFlags'>[],
   flagsCapped: boolean,
-): { people: FlaggedPerson[]; count: Count } {
+): { people: FlaggedPerson[]; count: Count; unknown: boolean } {
   const byPerson = new Map<string, FlaggedPerson>();
   let unknown = false;
   for (const flag of flags) {
@@ -130,7 +130,7 @@ export function flaggedPeopleFrom(
   const people = [...byPerson.values()].sort(
     (a, b) => a.oldestAt - b.oldestAt || (a.userId < b.userId ? -1 : 1),
   );
-  return { people, count: { count: people.length, capped: flagsCapped || unknown } };
+  return { people, count: { count: people.length, capped: flagsCapped || unknown }, unknown };
 }
 
 /** The open flag queue, read once for a page: the Overview's and the lanes' one read. */

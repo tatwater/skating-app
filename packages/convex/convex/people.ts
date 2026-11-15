@@ -43,20 +43,17 @@ import { readVerdictCounts } from './lib/contentVerdicts';
 import {
   isLastLedgerEditor,
   isLedgerEditor,
-  ledgerGrantRefusal,
-  ledgerRevokeRefusal,
   seesLedgerGrants,
   withoutLedgerGrantsFor,
 } from './lib/ledgerEditors';
 import { OPEN_FLAG_STATUSES } from './lib/openFlags';
 import {
-  type Can,
-  disciplineRefusal,
-  flaggingOffRefusal,
   no,
-  roleRefusal,
+  type PersonWrite,
   viewerCan,
-  YES,
+  writeRefusal,
+  writeTakesAway,
+  yes,
 } from './lib/peopleCan';
 import {
   appealsFrom,
@@ -70,7 +67,7 @@ import {
 } from './lib/peopleFigures';
 import { OPEN_ENDED, personRowOf } from './lib/peopleRows';
 import { trustClassFor } from './lib/reputation';
-import { type ActionView, toActionView } from './moderation';
+import { type UndoState, undoState } from './lib/undo';
 
 const MINUTE = 60_000;
 const DAY_MS = 86_400_000;
@@ -89,38 +86,119 @@ function lanesFor(viewer: Doc<'profiles'>): PeopleLane[] {
 }
 
 /**
+ * Why a lane's count or list may not be whole — each the cap or the gap of one read it depends on,
+ * so the page can word it:
+ * - `rows_backfill` — the People rows backfill hasn't finished: a stored count and a list may miss
+ *   people;
+ * - `rows_missing` — a queue lane named someone who has no row yet, so the list left them out;
+ * - `flags_capped` — the open flag queue was read to its cap (Flagged, and every row's open flags);
+ * - `flag_subjects_pending` — an open content flag predates its subject stamp (the same);
+ * - `tickets_capped` — a waiting support status was read to its cap (Appeals open, and every row's
+ *   appeals);
+ * - `count_capped` — a time-bound lane's count stopped at its cap (its list pages on).
+ */
+export type PartialReason =
+  | 'rows_backfill'
+  | 'rows_missing'
+  | 'flags_capped'
+  | 'flag_subjects_pending'
+  | 'tickets_capped'
+  | 'count_capped';
+
+/** Every upstream read a People lane can depend on, read once for a request. */
+async function readUpstream(ctx: QueryCtx, viewer: Doc<'profiles'>) {
+  const stored = await readStoredCounts(ctx);
+  const queue = await readOpenFlagQueue(ctx);
+  const flagged = flaggedPeopleFrom(queue.flags, queue.capped);
+  const waiting = hasCapability(viewer, 'inbox.support.read')
+    ? await readWaitingTickets(ctx)
+    : null;
+  const appeals = waiting === null ? null : appealsFrom(waiting.tickets, waiting.capped);
+  return {
+    stored,
+    flagged,
+    appeals,
+    /** What each upstream read leaves out, by reason. */
+    gaps: {
+      rows_backfill: !stored.rowsReady,
+      flags_capped: queue.capped,
+      flag_subjects_pending: flagged.unknown,
+      tickets_capped: waiting?.capped === true,
+    },
+  };
+}
+type Upstream = Awaited<ReturnType<typeof readUpstream>>;
+
+/** The reasons from `keys` whose read had a gap. */
+function reasonsOf(up: Upstream, keys: readonly (keyof Upstream['gaps'])[]): PartialReason[] {
+  return keys.filter((k) => up.gaps[k]);
+}
+
+/** The upstream reads each lane's own membership depends on (its count and its list alike). */
+const LANE_DEPENDS: Record<PeopleLane, readonly (keyof Upstream['gaps'])[]> = {
+  everyone: ['rows_backfill'],
+  staff: ['rows_backfill'],
+  suspended: ['rows_backfill'],
+  banned: ['rows_backfill'],
+  restricted: ['rows_backfill'],
+  flagged: ['flags_capped', 'flag_subjects_pending', 'rows_backfill'],
+  appeals: ['tickets_capped', 'rows_backfill'],
+  newest: ['rows_backfill'],
+  leaving: ['rows_backfill'],
+  deleted: ['rows_backfill'],
+};
+
+/**
  * The sidebar: each lane the viewer has, in the board's order, with its count — read the way the
- * lane's own list is read (`lib/peopleFigures`), so a count is the rows its list yields.
+ * lane's own list is read (`lib/peopleFigures`), so a count is the rows its list yields — and the
+ * reasons it may be short: `count.capped` is true exactly when `reasons` is not empty.
  */
 export const lanes = query({
   args: nowArg,
   handler: async (ctx, args) => {
     const viewer = await requireCapability(ctx, 'people.read');
     const now = clock(args.now);
-    const stored = await readStoredCounts(ctx);
+    const up = await readUpstream(ctx, viewer);
+    const { stored } = up;
     const admins = stored.count('admins');
     const moderators = stored.count('moderators');
-    const queue = await readOpenFlagQueue(ctx);
-    const counts: Record<PeopleLane, () => Promise<Count>> = {
-      everyone: async () => stored.count('everyone'),
-      staff: async () => ({
-        count: admins.count + moderators.count,
-        capped: admins.capped || moderators.capped,
-      }),
-      suspended: async () => (await countTimeLane(ctx, 'suspended', now, stored.rowsReady)).count,
-      banned: async () => stored.count('banned'),
-      restricted: async () => stored.count('restricted'),
-      flagged: async () => flaggedPeopleFrom(queue.flags, queue.capped).count,
-      appeals: async () => {
-        const waiting = await readWaitingTickets(ctx);
-        return appealsFrom(waiting.tickets, waiting.capped).peopleCount;
-      },
-      newest: async () => (await countTimeLane(ctx, 'newest', now, stored.rowsReady)).count,
-      leaving: async () => stored.count('leaving'),
-      deleted: async () => stored.count('deleted'),
+    const time = async (lane: 'suspended' | 'newest') => {
+      const { count } = await countTimeLane(ctx, lane, now, true);
+      return { count: count.count, over: count.capped };
     };
-    const out: Array<{ lane: PeopleLane; count: Count }> = [];
-    for (const lane of lanesFor(viewer)) out.push({ lane, count: await counts[lane]() });
+    // A queue lane counts the people its list can show: those with a row (light reads, ≤ 200).
+    let missing = false;
+    const listable = async (ids: Id<'profiles'>[]) => {
+      let count = 0;
+      for (const id of ids) {
+        if (await personRowOf(ctx, id)) count++;
+        else missing = true;
+      }
+      return { count, over: false };
+    };
+    const counts: Record<PeopleLane, () => Promise<{ count: number; over: boolean }>> = {
+      everyone: async () => ({ count: stored.count('everyone').count, over: false }),
+      staff: async () => ({ count: admins.count + moderators.count, over: false }),
+      suspended: () => time('suspended'),
+      banned: async () => ({ count: stored.count('banned').count, over: false }),
+      restricted: async () => ({ count: stored.count('restricted').count, over: false }),
+      flagged: () => listable(up.flagged.people.map((p) => p.userId)),
+      appeals: () => listable((up.appeals?.people ?? []).map((p) => p.userId)),
+      newest: () => time('newest'),
+      leaving: async () => ({ count: stored.count('leaving').count, over: false }),
+      deleted: async () => ({ count: stored.count('deleted').count, over: false }),
+    };
+    const out: Array<{ lane: PeopleLane; count: Count; reasons: PartialReason[] }> = [];
+    for (const lane of lanesFor(viewer)) {
+      missing = false;
+      const { count, over } = await counts[lane]();
+      const reasons: PartialReason[] = [
+        ...reasonsOf(up, LANE_DEPENDS[lane]),
+        ...(missing ? (['rows_missing'] as const) : []),
+        ...(over ? (['count_capped'] as const) : []),
+      ];
+      out.push({ lane, count: { count, capped: reasons.length > 0 }, reasons });
+    }
     return { lanes: out, ready: stored.rowsReady };
   },
 });
@@ -233,21 +311,28 @@ export const listPage = query({
       throw new ConvexError('Appeals are support tickets, which only an admin can read');
     }
     const cursor = args.cursor ?? null;
-    const stored = await readStoredCounts(ctx);
-    const queue = await readOpenFlagQueue(ctx);
-    const flagged = flaggedPeopleFrom(queue.flags, queue.capped);
+    const up = await readUpstream(ctx, viewer);
+    const { flagged, appeals } = up;
     const flagsBy = new Map(
       flagged.people.map((p) => [p.userId as string, { onUser: p.onUser, onContent: p.onContent }]),
     );
-    const waiting = hasCapability(viewer, 'inbox.support.read')
-      ? await readWaitingTickets(ctx)
-      : null;
-    const appeals = waiting === null ? null : appealsFrom(waiting.tickets, waiting.capped);
     const appealsBy =
       appeals === null ? null : new Map(appeals.people.map((p) => [p.userId as string, p.appeals]));
     const shape = (rows: Doc<'peopleRows'>[]) =>
       rows.map((r) => toListRow(r, now, flagsBy, appealsBy));
-    const meta = { flagsCapped: flagged.count.capped, partial: !stored.rowsReady };
+    // What this page may be missing: the lane's own reads (a search reads only the rows), and the
+    // queues every row's open flags and appeals come from.
+    const own = search !== null ? (['rows_backfill'] as const) : LANE_DEPENDS[lane];
+    const truth = (missing: boolean) => {
+      const reasons = [
+        ...new Set<PartialReason>([
+          ...reasonsOf(up, own),
+          ...reasonsOf(up, ['flags_capped', 'flag_subjects_pending', 'tickets_capped']),
+          ...(missing ? (['rows_missing'] as const) : []),
+        ]),
+      ];
+      return { partial: reasons.length > 0, reasons };
+    };
 
     if (search !== null) {
       const page = await ctx.db
@@ -258,7 +343,7 @@ export const listPage = query({
         rows: shape(page.page),
         isDone: page.isDone,
         continueCursor: page.continueCursor,
-        ...meta,
+        ...truth(false),
       };
     }
 
@@ -281,9 +366,7 @@ export const listPage = query({
         rows: shape(rows),
         isDone: end >= ids.length,
         continueCursor: String(end),
-        ...meta,
-        // A person the queue names with no row yet (before the rows backfill) can't be listed.
-        partial: meta.partial || missing > 0,
+        ...truth(missing > 0),
       };
     }
 
@@ -296,7 +379,7 @@ export const listPage = query({
       rows: shape(page.page),
       isDone: page.isDone,
       continueCursor: page.continueCursor,
-      ...meta,
+      ...truth(false),
     };
   },
 });
@@ -304,33 +387,27 @@ export const listPage = query({
 // ── A person ───────────────────────────────────────────────────────────────────────────────────
 
 /** A person named on the page: enough to draw their face and link to them. */
-interface PersonRef {
+/**
+ * A person named on the page, from their light People row — never their profile, which can weigh a
+ * whole document. `displayName` and `username` are `null` only for someone with no row yet (before
+ * the rows backfill has reached them).
+ */
+export interface PersonRef {
   userId: Id<'profiles'>;
-  displayName: string;
-  username: string;
+  displayName: string | null;
+  username: string | null;
   profileImageUrl: string | null;
 }
 
 async function personRef(ctx: QueryCtx, id: Id<'profiles'> | undefined): Promise<PersonRef | null> {
   if (id === undefined) return null;
   const row = await personRowOf(ctx, id);
-  if (row) {
-    return {
-      userId: id,
-      displayName: row.displayName,
-      username: row.username,
-      profileImageUrl: row.profileImageUrl ?? null,
-    };
-  }
-  const p = await ctx.db.get(id);
-  return p
-    ? {
-        userId: id,
-        displayName: p.displayName,
-        username: p.username,
-        profileImageUrl: p.profileImageUrl ?? null,
-      }
-    : null;
+  return {
+    userId: id,
+    displayName: row?.displayName ?? null,
+    username: row?.username ?? null,
+    profileImageUrl: row?.profileImageUrl ?? null,
+  };
 }
 
 /** Open flags read for a person, at most this many a status and kind. */
@@ -465,27 +542,25 @@ export const person = query({
       capped: flaggedBy.length > LANE_COUNT_CAP,
     };
 
-    // ── The levers, and whether this viewer may pull each ──
+    // ── The levers, and whether this viewer may pull each: the write's own refusal ──
     const discipline = viewerCan(viewer, 'people.discipline');
-    const lever = async (l: 'restrict' | 'suspend' | 'ban' | 'lift'): Promise<Can> => {
-      if (!discipline) return no(cannotUse(viewer, 'discipline'));
-      const why = await disciplineRefusal(ctx, viewer, target, l);
-      return why === null ? YES : no(why);
-    };
-    const restrict = await lever('restrict');
-    const flaggingOff =
-      restrict.ok && flaggingOffRefusal(target) !== null
-        ? no(flaggingOffRefusal(target) as string)
-        : restrict;
     const roles = viewerCan(viewer, 'people.role');
-    const roleCan = async (role: UserRole): Promise<Can> => {
-      if (!roles) return no(cannotUse(viewer, 'role'));
-      const why = await roleRefusal(ctx, viewer, target, role);
-      return why === null ? YES : no(why);
+    const answer = async (write: PersonWrite, allowed: boolean, family: 'discipline' | 'role') => {
+      if (!allowed) return no(cannotUse(viewer, family));
+      const why = await writeRefusal(ctx, viewer, target, write);
+      return why === null ? yes(writeTakesAway(target, write)) : no(why);
     };
+    const lever = (write: PersonWrite) => answer(write, discipline, 'discipline');
+    const restrict = await lever({ kind: 'right', permission: 'reports', allowed: false });
+    const flaggingOff = await lever({ kind: 'right', permission: 'flagging', allowed: false });
+    const roleCan = (role: UserRole) => answer({ kind: 'role', role }, roles, 'role');
     const ledgerVisible = target.role === 'admin' && seesLedgerGrants(viewer);
-    const grantWhy = ledgerVisible ? ledgerGrantRefusal(target) : null;
-    const revokeWhy = ledgerVisible ? await ledgerRevokeRefusal(ctx, target) : null;
+    const grantWhy = ledgerVisible
+      ? await writeRefusal(ctx, viewer, target, { kind: 'ledgerGrant' })
+      : null;
+    const revokeWhy = ledgerVisible
+      ? await writeRefusal(ctx, viewer, target, { kind: 'ledgerRevoke' })
+      : null;
 
     const hidden = await readVerdictCounts(ctx, userId);
     const contradictions = target.contradictionCount;
@@ -546,9 +621,9 @@ export const person = query({
       can: {
         restrict,
         flaggingOff,
-        suspend: await lever('suspend'),
-        ban: await lever('ban'),
-        lift: await lever('lift'),
+        suspend: await lever({ kind: 'suspend' }),
+        ban: await lever({ kind: 'ban' }),
+        lift: await lever({ kind: 'lift' }),
         role: {
           admin: await roleCan('admin'),
           moderator: await roleCan('moderator'),
@@ -556,8 +631,8 @@ export const person = query({
         },
         ledger: ledgerVisible
           ? {
-              grant: grantWhy === null ? YES : no(grantWhy),
-              revoke: revokeWhy === null ? YES : no(revokeWhy),
+              grant: grantWhy === null ? yes(false) : no(grantWhy),
+              revoke: revokeWhy === null ? yes(true) : no(revokeWhy),
             }
           : null,
       },
@@ -583,21 +658,51 @@ const clampLimit = (limit: number | undefined) =>
     : Math.min(HISTORY_MAX, Math.max(1, Math.floor(limit)));
 
 /** A history or decisions row: the audit row as History draws it, with its undo state. */
-export type PersonActionRow = ActionView & {
+export interface PersonActionRow {
+  id: Id<'moderationActions'>;
+  action: Doc<'moderationActions'>['action'];
+  targetType: Doc<'moderationActions'>['targetType'];
+  targetId: string;
+  reason: string;
   /** `false` when the server filled the reason in for a give-back that asked none (D226). */
   reasonGiven: boolean;
-};
+  metadata?: unknown;
+  createdAt: number;
+  /** Who acted, from their People row; `null` for the system. */
+  actor: PersonRef | null;
+  /** Set on the row an undo wrote: the row it undid (D226). */
+  undoesActionId?: Id<'moderationActions'>;
+  /** The script or agent the actor made the write through (D256). */
+  via?: string;
+  /** Whether the viewer can undo this row now, and if not, why (D226). */
+  undo: UndoState;
+}
 
 async function toRow(
   ctx: QueryCtx,
   viewer: Doc<'profiles'>,
   row: Doc<'moderationActions'>,
+  actors: Map<string, PersonRef | null>,
 ): Promise<PersonActionRow> {
-  const view = await toActionView(ctx, viewer, row);
+  let actor: PersonRef | null = null;
+  if (row.actorId !== undefined) {
+    if (!actors.has(row.actorId)) actors.set(row.actorId, await personRef(ctx, row.actorId));
+    actor = actors.get(row.actorId) ?? null;
+  }
   return {
-    ...view,
+    id: row._id,
+    action: row.action,
+    targetType: row.targetType,
+    targetId: row.targetId,
+    reason: row.reason,
     reasonGiven:
       (row.metadata as { reasonDefaulted?: boolean } | undefined)?.reasonDefaulted !== true,
+    ...(row.metadata !== undefined ? { metadata: row.metadata } : {}),
+    createdAt: row.createdAt,
+    actor,
+    ...(row.undoesActionId !== undefined ? { undoesActionId: row.undoesActionId } : {}),
+    ...(row.via !== undefined ? { via: row.via } : {}),
+    undo: await undoState(ctx, viewer, row),
   };
 }
 
@@ -737,8 +842,9 @@ export const history = query({
       sources.map((s) => ({ ...s, rows: s.rows.filter((r) => keep.has(r._id)) })),
       n,
     );
+    const actors = new Map<string, PersonRef | null>();
     return {
-      rows: await Promise.all(merged.rows.map((r) => toRow(ctx, viewer, r))),
+      rows: await Promise.all(merged.rows.map((r) => toRow(ctx, viewer, r, actors))),
       // Flags older than the subject stamp aren't found by person until its backfill has run.
       capped: merged.capped || !stored.flagSubjectsReady,
       createdAt: target.createdAt,
@@ -777,8 +883,9 @@ export const decisions = query({
         numItems: clampLimit(limit),
         maximumRowsRead: DECISIONS_SCAN,
       });
+    const actors = new Map<string, PersonRef | null>();
     return {
-      rows: await Promise.all(page.page.map((r) => toRow(ctx, viewer, r))),
+      rows: await Promise.all(page.page.map((r) => toRow(ctx, viewer, r, actors))),
       isDone: page.isDone,
       continueCursor: page.continueCursor,
     };
@@ -859,6 +966,46 @@ async function filedAtOf(ctx: QueryCtx, row: Doc<'moderationActions'>): Promise<
   }
   // A drawn body's decision from before the row recorded it: reading the body means its outline.
   return null;
+}
+
+/** Role rows read at most for *staff since*. */
+const ROLE_ROWS = 50;
+
+/** What a role row says: the role it gave and the one it replaced (absent on rows from before). */
+function roleMove(row: Doc<'moderationActions'>): { to: UserRole; from: UserRole | undefined } {
+  const m = (row.metadata ?? {}) as { role?: UserRole; priorRole?: UserRole };
+  return { to: row.action === 'revoke_role' ? 'member' : (m.role ?? 'member'), from: m.priorRole };
+}
+
+/**
+ * When a staffer became staff, and when they took the role they hold — each `null` (not recorded)
+ * unless a row on record says so (the newest {@link ROLE_ROWS} grants are read: the newest entry is
+ * among them whenever it is on record within them, and an older one never stands in for it):
+ * - **staff since** is the grant that moved them *in* from member (`priorRole: 'member'`) after the
+ *   latest revoke. A grant that moved them between moderator and admin is not an entry, and a grant
+ *   with no `priorRole` (a row from before it was recorded) can't be told from one — so when the
+ *   entering grant isn't on record, the answer is `null`, never a later move's date.
+ * - **role since** is the newest role row, when the role it gave is the one they hold now; if the
+ *   newest row gave another role, the move to the present role was never recorded: `null`.
+ */
+export function staffTenure(
+  grants: readonly Doc<'moderationActions'>[],
+  lastRevoke: Doc<'moderationActions'> | null,
+  role: UserRole,
+): {
+  staffSince: { at: number; role: UserRole } | null;
+  roleSince: { at: number; role: UserRole } | null;
+} {
+  const after = grants.filter((g) => lastRevoke === null || g.createdAt > lastRevoke.createdAt);
+  const entry = after.find((g) => roleMove(g).from === 'member');
+  const newest = [...grants, ...(lastRevoke ? [lastRevoke] : [])].sort(
+    (x, y) => y.createdAt - x.createdAt,
+  )[0];
+  return {
+    staffSince: entry === undefined ? null : { at: entry.createdAt, role: roleMove(entry).to },
+    roleSince:
+      newest !== undefined && roleMove(newest).to === role ? { at: newest.createdAt, role } : null,
+  };
 }
 
 /**
@@ -955,25 +1102,18 @@ export const staffStats = query({
       overturned = { count, capped: seasonRows.length > SEASON_ROWS };
     }
 
-    // ── Staff since, from the grant rows ──
+    // ── Staff since and role since, from the role rows ──
     const grants = await auditRowsOn(
       ctx,
       { targetType: 'user', targetId: staffer, action: 'grant_role' },
-      50,
+      ROLE_ROWS,
     );
-    const [lastRevoke] = await auditRowsOn(
+    const revokes = await auditRowsOn(
       ctx,
       { targetType: 'user', targetId: staffer, action: 'revoke_role' },
       1,
     );
-    const sinceRevoke = grants.filter(
-      (g) => lastRevoke === undefined || g.createdAt > lastRevoke.createdAt,
-    );
-    const firstGrant = sinceRevoke[sinceRevoke.length - 1];
-    const roleGrant = sinceRevoke.find(
-      (g) => (g.metadata as { role?: string } | undefined)?.role === target.role,
-    );
-    const grantsCapped = grants.length >= 50;
+    const { staffSince, roleSince } = staffTenure(grants, revokes[0] ?? null, target.role);
 
     return {
       decisions: {
@@ -987,14 +1127,8 @@ export const staffStats = query({
       },
       overturned,
       season: { season, opensOn: seasonRecordWindow(season, now).opensOn, empty: span === null },
-      staffSince:
-        firstGrant === undefined || grantsCapped
-          ? null
-          : {
-              at: firstGrant.createdAt,
-              role: (firstGrant.metadata as { role?: UserRole }).role ?? null,
-            },
-      roleSince: roleGrant === undefined ? null : { at: roleGrant.createdAt, role: target.role },
+      staffSince,
+      roleSince,
       weeks,
     };
   },

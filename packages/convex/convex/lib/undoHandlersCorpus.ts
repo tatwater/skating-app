@@ -66,6 +66,7 @@ const undoRoleChange: UndoHandler = {
       prior !== undefined && UNDO_POLICY[row.action].takesAway({ from: newRoleOf(row), to: prior })
     );
   },
+  personWrite: (row) => ({ kind: 'role', role: priorRoleOf(row) ?? 'member' }),
   run: (call) => restoreRole(call, priorRoleOf(call.row) as Role),
 };
 
@@ -77,6 +78,7 @@ const undoRoleChange: UndoHandler = {
  */
 const undoLedgerGrant: UndoHandler = {
   undoTakesAway: () => UNDO_POLICY.revoke_ledger_editor.takesAway(),
+  personWrite: () => ({ kind: 'ledgerRevoke' }),
   run: ({ ctx, actor, row, reason }) =>
     revokeLedgerEditorImpl(ctx, actor, { userId: row.targetId as Id<'profiles'>, reason }),
 };
@@ -88,6 +90,7 @@ const undoLedgerRevoke: UndoHandler = {
       ? 'This went with a role change. Undoing that does not give it back; a holder gives it again.'
       : null,
   undoTakesAway: () => UNDO_POLICY.grant_ledger_editor.takesAway(),
+  personWrite: () => ({ kind: 'ledgerGrant' }),
   run: ({ ctx, actor, row, reason }) =>
     grantLedgerEditorImpl(ctx, actor, { userId: row.targetId as Id<'profiles'>, reason }),
 };

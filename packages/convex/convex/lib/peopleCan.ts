@@ -20,7 +20,13 @@ import { canUse, isLeaving, ROLE_RANK } from '@skating/core';
 import { ConvexError } from 'convex/values';
 import type { Doc } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
-import { isLastLedgerEditor, LAST_EDITOR_MESSAGE, type LedgerFacts } from './ledgerEditors';
+import {
+  isLastLedgerEditor,
+  LAST_EDITOR_MESSAGE,
+  type LedgerFacts,
+  ledgerGrantRefusal,
+  ledgerRevokeRefusal,
+} from './ledgerEditors';
 
 type Profile = Doc<'profiles'>;
 
@@ -33,8 +39,8 @@ export type PersonFacts = LedgerFacts;
 type Ctx = QueryCtx | MutationCtx;
 
 /** Whether a control may be drawn and pressed, and if not, why — in words the page can show. */
-export type Can = { ok: true } | { ok: false; why: string };
-export const YES: Can = { ok: true };
+export type Can = { ok: true; needsReason: boolean } | { ok: false; why: string };
+export const yes = (needsReason: boolean): Can => ({ ok: true, needsReason });
 export const no = (why: string): Can => ({ ok: false, why });
 
 export type Lever = 'restrict' | 'suspend' | 'ban' | 'lift';
@@ -84,14 +90,77 @@ export async function disciplineRefusal(
   return null;
 }
 
-/** Refuse unless {@link disciplineRefusal} allows it. */
-export async function assertDiscipline(
+/**
+ * Every write the People page can make to a person, as the one rule sees it. Each forward write
+ * refuses through {@link writeRefusal} with its own write; `people.person`'s `can` asks it for each
+ * lever; and an undo — a write of the previous state — asks it for the write that undo would run
+ * (`lib/undoHandlers`' `personWrite`), so what History offers is what the write accepts.
+ */
+export type PersonWrite =
+  | { kind: 'right'; permission: 'reports' | 'hazards' | 'comments' | 'flagging'; allowed: boolean }
+  | { kind: 'bountyLimit' }
+  | { kind: 'suspend' }
+  | { kind: 'ban' }
+  | { kind: 'lift' }
+  | { kind: 'role'; role: Profile['role'] }
+  | { kind: 'ledgerGrant' }
+  | { kind: 'ledgerRevoke' };
+
+/** Why `actor` may not make `write` to `target`, or `null` — the one rule. */
+export async function writeRefusal(
+  ctx: Ctx,
+  actor: Pick<Profile, '_id' | 'role'>,
+  target: PersonFacts,
+  write: PersonWrite,
+): Promise<string | null> {
+  switch (write.kind) {
+    case 'right': {
+      const refused = await disciplineRefusal(ctx, actor, target, 'restrict');
+      if (refused !== null) return refused;
+      return write.permission === 'flagging' && !write.allowed ? flaggingOffRefusal(target) : null;
+    }
+    case 'bountyLimit':
+      return disciplineRefusal(ctx, actor, target, 'restrict');
+    case 'suspend':
+    case 'ban':
+    case 'lift':
+      return disciplineRefusal(ctx, actor, target, write.kind);
+    case 'role':
+      return roleRefusal(ctx, actor, target, write.role);
+    case 'ledgerGrant':
+      return ledgerGrantRefusal(target);
+    case 'ledgerRevoke':
+      return ledgerRevokeRefusal(ctx, target);
+  }
+}
+
+/**
+ * Whether `write` takes something away from `target`, so the page asks a reason (D226) — the rule
+ * the writes require one by. A bounty limit takes away when it lowers the limit in force, which the
+ * page knows from the value chosen; restricting is the lever drawn, so it is `true` here.
+ */
+export function writeTakesAway(target: Pick<Profile, 'role'>, write: PersonWrite): boolean {
+  switch (write.kind) {
+    case 'right':
+      return !write.allowed;
+    case 'role':
+      return roleChangeTakesAway(target.role, write.role);
+    case 'lift':
+    case 'ledgerGrant':
+      return false;
+    default:
+      return true;
+  }
+}
+
+/** Refuse unless {@link writeRefusal} allows it. */
+export async function assertWrite(
   ctx: MutationCtx,
-  actor: Profile,
-  target: Profile,
-  lever: Lever,
+  actor: Pick<Profile, '_id' | 'role'>,
+  target: PersonFacts,
+  write: PersonWrite,
 ): Promise<void> {
-  const why = await disciplineRefusal(ctx, actor, target, lever);
+  const why = await writeRefusal(ctx, actor, target, write);
   if (why !== null) throw new ConvexError(why);
 }
 
