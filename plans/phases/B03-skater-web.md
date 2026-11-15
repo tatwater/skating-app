@@ -1159,3 +1159,22 @@ its menu's *Leave out* release the file only once the sheet has taken the remova
 it, and the photo kept its record but lost its file). `sheetRemoval.properties.test.ts` drives picks,
 removals, reopens and reloads against the real store and blob store, on the shared seed policy now in
 `sheetStore.propertyRuns.ts`; with the fix taken out it fails on the founder's sequence.
+
+### 8.9 A track after the lake, and a caret that says its minute
+
+**No track could be added once a lake was chosen** (founder, 2026-11-15). The console B03 replaced drew
+*+ Add your track* on the instrument, and board 5.1 draws *Add your GPS track* at the end of the map
+key (9.8 in the phone's strip); the re-skin mounted the GPX import only on the *Which lake?* card, which
+gives way to the instrument the moment a lake is picked. `AddTrack` puts the same import back on the
+instrument and the phone strip for every create Report without a track — a second Report, after a
+failed send, after a reload — behind the same `gpx-import` flag. The docs seed a track's lake and
+times only where the sheet is blank (`seedFromTrack`) and do not say what a track that disagrees should
+do, so the conservative reading: a track on another lake, off every known lake, or from another day
+than the author's chosen end is refused with a sentence and not linked (`trackRefusal`); the author's
+lake and day stand and nothing is re-sorted. The track stays in their activities (the server ingested
+it to resolve its lake). Garmin is not built anywhere — the card and Settings say *Coming soon* (D24) —
+so there is no Garmin connection to restore, before the lake or after.
+
+**A dragged caret read "END …" until it settled.** It now shows the minute a release would save, by
+core's `caretLabel` — the settled caret's own rule, in the lake's zone — in a fixed box of tabular
+figures; each caret is a slider with arrow, page and Home/End steps and an `aria-valuetext`.
