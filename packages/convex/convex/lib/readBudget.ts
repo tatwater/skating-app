@@ -318,13 +318,21 @@ export async function traced<T>(
  * calls — the undo state's facts for someone without a row, a target's name — charge the same object,
  * so a helper that starts loading profiles once a row runs the request's budget out and stops (or
  * throws in a test) instead of passing the transaction's read limit in production.
+ *
+ * The first call opens it. A query that charges every read it makes opens it with
+ * {@link CHARGED_QUERY_BUDGET} before any helper runs; any other request — the audit feed, a body's
+ * History, the undo toast, a mutation — charges none of its own reads here, so its helpers get only
+ * {@link REQUEST_PROFILE_BUDGET}, never the whole transaction's allowance on top of reads it didn't count.
  */
 const REQUEST_BUDGETS = new WeakMap<object, ReadBudget>();
-export function requestBudget(ctx: object): ReadBudget {
+/** Four profiles at their worst: the unplanned reads of a request that doesn't charge its own. */
+export const REQUEST_PROFILE_BUDGET = 4 * DOC_MAX;
+/** A query that charges every read: the transaction's budget less the caller's own profile. */
+export const CHARGED_QUERY_BUDGET = TX_BUDGET - ROW_MAX.profile;
+export function requestBudget(ctx: object, opening: number = REQUEST_PROFILE_BUDGET): ReadBudget {
   let budget = REQUEST_BUDGETS.get(ctx);
   if (budget === undefined) {
-    // The transaction's budget less the caller's own profile (`requireCapability`, read first).
-    budget = new ReadBudget(TX_BUDGET - ROW_MAX.profile);
+    budget = new ReadBudget(opening);
     REQUEST_BUDGETS.set(ctx, budget);
   }
   return budget;

@@ -10,9 +10,9 @@
  * a row and its chain's first row decide it, at any length.
  *
  * Every People read that asks "did this stand?" asks here: a staffer's tenure, "later undone by
- * someone else" and "overturned" (`people.staffStats`). Rows written before the facts existed get them
- * from `peopleJobs.backfillUndoChains`; until it has run (`ready:undoChains`) those figures say they
- * may be short.
+ * someone else" (`people.staffStats`) and "overturned" (`people.staffSeason`). Rows written before
+ * the facts existed get them from `peopleJobs.backfillUndoChains`; until it has run
+ * (`ready:undoChains`) those figures say they may be short.
  */
 
 import type { Doc, Id } from '../_generated/dataModel';

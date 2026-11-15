@@ -309,6 +309,13 @@ describe('people.staffStats and people.decisions', () => {
     // A past season, chosen: read whole, in its own range.
     const past = await as(t, 'mod').query(api.people.staffSeason, { userId: mod, season: 2025 });
     expect(past?.overturned).toEqual({ count: 0, capped: false });
+    // A season no one can name — past what a date can hold, or not a whole year — is this season,
+    // never a thrown date error or an empty past.
+    for (const season of [300_000, 2025.5]) {
+      expect(
+        await as(t, 'mod').query(api.people.staffSeason, { userId: mod, season }),
+      ).toMatchObject({ season: 2026, empty: true });
+    }
   });
 });
 

@@ -27,6 +27,7 @@ import {
   type PeopleLane,
   type Restriction,
   ROLE_RANK,
+  resolveSeason,
   restrictionsOf,
   type Season,
   seasonOf,
@@ -61,6 +62,7 @@ import {
   appealsFrom,
   countTimeLane,
   flaggedPeopleFrom,
+  LANE_COUNT_CAP,
   laneRange,
   listablePeople,
   readOpenFlagQueue,
@@ -68,7 +70,13 @@ import {
   readWaitingAppeals,
 } from './lib/peopleFigures';
 import { OPEN_ENDED, personRowOf, READY_UNDO_CHAINS } from './lib/peopleRows';
-import { DOC_MAX, type ReadBudget, type RowKind, requestBudget } from './lib/readBudget';
+import {
+  CHARGED_QUERY_BUDGET,
+  DOC_MAX,
+  type ReadBudget,
+  type RowKind,
+  requestBudget,
+} from './lib/readBudget';
 import { trustClassFor } from './lib/reputation';
 import { type UndoState, undoState } from './lib/undo';
 import { chainRootId, isStandingChange, stands, undoneBy } from './lib/undoChains';
@@ -100,9 +108,12 @@ async function takeCapped<T>(
   return { rows: rows.slice(0, cap), capped: rows.length >= n };
 }
 
-/** A query's budget: the transaction's, less the caller's own profile (`requireCapability`). */
-/** The request's one budget (`requestBudget`), shared with every helper the query calls. */
-const queryBudget = (ctx: QueryCtx) => requestBudget(ctx);
+/**
+ * The request's one budget (`requestBudget`), shared with every helper the query calls: opened at the
+ * transaction's, less the caller's own profile (`requireCapability`). Every handler here calls this
+ * (directly or through {@link readUpstream}) before any helper charges the request.
+ */
+const queryBudget = (ctx: QueryCtx) => requestBudget(ctx, CHARGED_QUERY_BUDGET);
 
 // ── Lanes ──────────────────────────────────────────────────────────────────────────────────────
 
@@ -136,7 +147,7 @@ export type PartialReason =
 async function readUpstream(ctx: QueryCtx, viewer: Doc<'profiles'>) {
   // The shared helpers' reads, charged ahead to the request's budget: the counts, each open-flag
   // status and each waiting-ticket status read one past their cap.
-  const budget = requestBudget(ctx);
+  const budget = queryBudget(ctx);
   budget.reserve('small', 64);
   const stored = await readStoredCounts(ctx);
   budget.reserve('contentFlag', COUNT_CAP + 1);
@@ -195,10 +206,13 @@ export const lanes = query({
     const viewer = await requireCapability(ctx, 'people.read');
     const now = clock(args.now);
     const up = await readUpstream(ctx, viewer);
+    const budget = queryBudget(ctx);
     const { stored } = up;
     const admins = stored.count('admins');
     const moderators = stored.count('moderators');
     const time = async (lane: 'suspended' | 'newest') => {
+      // The lane's own range, read to its cap and one past it: charged ahead, as the queues' are.
+      budget.reserve('personRow', LANE_COUNT_CAP + 1);
       const { count } = await countTimeLane(ctx, lane, now, true);
       return { count: count.count, over: count.capped };
     };
@@ -740,11 +754,7 @@ export interface PersonActionRow {
   undo: UndoState;
 }
 
-/**
- * Each actor's row read once a page. The rows are shaped concurrently (`Promise.all`), so the memo
- * holds the read itself, not its answer: an answer stored after an `await` would land only once every
- * row had already started its own read.
- */
+/** Each actor's row read once a page (the memo holds the read itself, so a repeat waits on it). */
 type Actors = Map<string, Promise<PersonRef | null>>;
 
 /** Target names a request has read, once each (many rows name the same person or body). */
@@ -770,8 +780,9 @@ async function labelOf(
  * What shaping one History or Decisions row reads through helpers on main and in this PR — undo state
  * (the undo tagged rows ≤ 16, the newest row on the target, the content's author stamp, the person's
  * row, a rowless fallback), the actor's and the target's names — counted ahead: calls and documents.
- * Their bytes are audit rows and content items read as they really weigh (an audit row's reason has
- * no cap; the phase doc's open ruling).
+ * Their bytes are **not** charged (only a rowless profile is, by `rowlessProfile`): the undo engine
+ * reads audit rows and content items whose worst case is the document limit (an audit row's reason
+ * has no cap) — the phase doc's open ruling.
  */
 const ROW_SHAPE_CALLS = 8;
 const ROW_SHAPE_DOCS = 24;
@@ -783,7 +794,7 @@ async function shapeRows(
   rows: readonly Doc<'moderationActions'>[],
   actors: Actors,
 ): Promise<PersonActionRow[]> {
-  const budget = requestBudget(ctx);
+  const budget = queryBudget(ctx);
   const out: PersonActionRow[] = [];
   for (const row of rows) {
     budget.reserveCalls(ROW_SHAPE_CALLS, ROW_SHAPE_DOCS);
@@ -1069,9 +1080,9 @@ export const decisions = query({
 const WEEKS = 9;
 const WEEK_MS = 7 * DAY_MS;
 /**
- * A staffer's decisions read at most — one read for the weeks and the season both — by count and by
- * their real weight (`maximumBytesRead`): an audit row's reason is uncapped, so no worst case per row
- * would let a useful number through.
+ * A staffer's decisions read at most — the nine weeks' read (`staffStats`), and a season's own read
+ * (`staffSeason`) — by count and by their real weight (`maximumBytesRead`): an audit row's reason is
+ * uncapped, so no worst case per row would let a useful number through.
  */
 const DECISION_ROWS = 2_000;
 const DECISION_BYTES = 4 * DOC_MAX;
@@ -1171,18 +1182,18 @@ export function staffTenure(
  *   someone else undid on net (`lib/undoChains`);
  * - **timeToDecide** — the lower median, over this week's decisions on filed items (flags, requests,
  *   drawn bodies), of filed to decided; `null` when none, or when any one's filing time isn't known;
- * - **overturned** this season — their decisions someone else reversed on net (an undo, or a restore
- *   or overturn that ended the verdict and still stands); `null` while the season's record hasn't
- *   opened (1 July to 1 October, or a season not begun), with `season.opensOn` to say when it does;
  * - **staffSince** and **roleSince** — {@link staffTenure}; `null` when no row on record says so;
  * - **weeks** — decisions in each of the last nine weeks, oldest first.
  *
- * **Fits by construction**: one read of the staffer's decisions serves both windows (real-weight
- * capped), and every further read — a chain's first row, a verdict, the row that ended it, a filing
- * — goes through one budget that counts bytes, calls and documents and is asked before each read; when
- * it runs out the loop stops and the figure says `capped` (the median reading `null` as well). The
- * role rows are read first, so those loops can't starve the dates. Before the undo-chain backfill has
- * run, the undo figures say `capped`, and so do the dates when an undo among the role rows predates it.
+ * *Overturned this season* is its own query, {@link staffSeason}.
+ *
+ * **Fits by construction**: one read of the staffer's decisions over the nine weeks (real-weight
+ * capped), and every further read — a chain's first row, a filing — goes through one budget that
+ * counts bytes, calls and documents and is asked before each read; when it runs out the loop stops
+ * and the figure says `capped` (the median reading `null` as well). The role rows are read before
+ * those loops, so they can't starve the dates; a walk that reads its last allowed row without finding
+ * the entering grant says `tenureCapped`. Before the undo-chain backfill has run, the undo figures say
+ * `capped`, and so do the dates when an undo among the role rows predates it.
  *
  * `null` for anyone who isn't staff. Moderators read it on an admin's page too: the audit feed
  * already shows them everything it counts.
@@ -1237,7 +1248,6 @@ export const staffStats = query({
     for (const action of ['grant_role', 'revoke_role'] as const) {
       let before = Number.POSITIVE_INFINITY;
       for (let i = 0; i < ROLE_ROWS; i++) {
-        if (i === ROLE_ROWS - 1) roleFull = true;
         const row = await budget.measured('moderationAction', () =>
           ctx.db
             .query('moderationActions')
@@ -1258,6 +1268,8 @@ export const staffStats = query({
         if (row === null) break;
         roleRows.push(row);
         before = row._creationTime;
+        // The walk's last row read: older ones may lie past it (one that found its end is whole).
+        if (i === ROLE_ROWS - 1) roleFull = true;
       }
     }
     // Before the undo-chain backfill, an undo written before chains were kept carries no place, and
@@ -1360,8 +1372,8 @@ export const staffSeason = query({
     const budget = queryBudget(ctx);
     const target = await budget.one('profile', () => ctx.db.get(args.userId));
     if (!target || ROLE_RANK[target.role] < ROLE_RANK.moderator) return null;
-    const season: Season =
-      args.season !== undefined && Number.isInteger(args.season) ? args.season : seasonOf(now);
+    // A season no one can name (`NaN`, a fraction, a year past what a date can hold) is this season.
+    const season: Season = resolveSeason(args.season, seasonOf(now));
     const span = seasonRecordSpan(season, now);
     const head = { season, opensOn: seasonRecordWindow(season, now).opensOn, empty: span === null };
     if (span === null) return { ...head, overturned: null };

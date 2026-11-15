@@ -413,6 +413,37 @@ describe('the figures say capped rather than throw or mislead', () => {
     });
   });
 
+  test('a role walk that reads its last row without the entering grant says capped; one short is whole', async () => {
+    for (const [rows, capped] of [
+      [49, false],
+      [50, true],
+    ] as const) {
+      const t = await setup();
+      const matt = await seed(t, 'matt', 'moderator');
+      const adm = await seed(t, 'adm', 'admin');
+      await t.run(async (ctx) => {
+        // Moves between admin and moderator only: none of them is the entering grant.
+        for (let i = 0; i < rows; i++) {
+          await ctx.db.insert('moderationActions', {
+            actorId: adm,
+            action: 'grant_role',
+            targetType: 'user',
+            targetId: matt,
+            reason: 'r',
+            metadata: { role: 'moderator', priorRole: 'admin' },
+            createdAt: T0 - rows + i,
+          });
+        }
+      });
+      const s = await t
+        .withIdentity({ subject: 'adm' })
+        .query(api.people.staffStats, { userId: matt });
+      // Forty-nine rows and then the end: the record is whole, and the entry was never recorded.
+      // Fifty: the entry may lie past the walk.
+      expect(s).toMatchObject({ staffSince: null, tenureCapped: capped });
+    }
+  });
+
   test('the lanes and a lane page with every queue at its cap, every row at its heaviest', async () => {
     const t = await setup();
     await seed(t, 'adm', 'admin');
