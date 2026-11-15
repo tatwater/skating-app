@@ -107,6 +107,7 @@ import {
 } from './lib/enums';
 import { closeFlag } from './lib/flagResolution';
 import { landmarksForBody, repointLandmarksOnMerge } from './lib/landmarkRows';
+import { assertListUnchanged } from './lib/listCas';
 import { isListed } from './lib/listing';
 import { OPEN_FLAG_STATUSES } from './lib/openFlags';
 import {
@@ -3980,10 +3981,19 @@ export async function editableBody(
 
 /** Moderator: set a body's own aliases (B01-3d) — an empty list clears them. */
 export const setAliases = mutation({
-  args: { waterBodyId: v.id('waterBodies'), aliases: v.array(v.string()) },
-  handler: async (ctx, { waterBodyId, aliases }) => {
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    aliases: v.array(v.string()),
+    /** The list this edit was built on: refused, with the current list, if it moved. */
+    expected: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, { waterBodyId, aliases, expected }) => {
     const actor = await requireCapability(ctx, 'body.identity');
-    return setAliasesImpl(ctx, actor, { waterBodyId, aliases });
+    return setAliasesImpl(ctx, actor, {
+      waterBodyId,
+      aliases,
+      ...(expected !== undefined ? { expected } : {}),
+    });
   },
 });
 
@@ -3995,9 +4005,16 @@ export async function setAliasesImpl(
     waterBodyId,
     aliases,
     reason,
-  }: { waterBodyId: Id<'waterBodies'>; aliases: readonly string[]; reason?: string },
+    expected,
+  }: {
+    waterBodyId: Id<'waterBodies'>;
+    aliases: readonly string[];
+    expected?: readonly string[];
+    reason?: string;
+  },
 ): Promise<Id<'waterBodies'>> {
   const body = await editableBody(ctx, waterBodyId);
+  assertListUnchanged(body.moderatorAliases ?? [], expected, 'this body’s aliases');
   const next = normalizeModeratorAliases(aliases, body.name);
   const prev = body.moderatorAliases ?? [];
   await ctx.db.patch(waterBodyId, { moderatorAliases: next.length > 0 ? next : undefined });
@@ -4128,10 +4145,16 @@ export const setReferenceLinks = mutation({
   args: {
     waterBodyId: v.id('waterBodies'),
     links: v.array(v.object({ label: v.string(), url: v.string() })),
+    /** The list this edit was built on (B01-3d): refused, with the current list, if it moved. */
+    expected: v.optional(v.array(v.object({ label: v.string(), url: v.string() }))),
   },
-  handler: async (ctx, { waterBodyId, links }) => {
+  handler: async (ctx, { waterBodyId, links, expected }) => {
     const actor = await requireCapability(ctx, 'body.identity');
-    return setReferenceLinksImpl(ctx, actor, { waterBodyId, links });
+    return setReferenceLinksImpl(ctx, actor, {
+      waterBodyId,
+      links,
+      ...(expected !== undefined ? { expected } : {}),
+    });
   },
 });
 
@@ -4142,16 +4165,23 @@ export async function setReferenceLinksImpl(
   {
     waterBodyId,
     links,
+    expected,
     reason,
   }: {
     waterBodyId: Id<'waterBodies'>;
     links: { label: string; url: string }[];
+    expected?: { label: string; url: string }[];
     reason?: string;
   },
 ): Promise<Id<'waterBodies'>> {
   {
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
+    assertListUnchanged(
+      (body.referenceLinks ?? []).map((l) => ({ label: l.label, url: l.url })),
+      expected,
+      'this body’s reference links',
+    );
     if (links.length > MAX_REFERENCE_LINKS) {
       throw new ConvexError(
         `A body carries at most ${MAX_REFERENCE_LINKS} reference links — this is an association or two, not a directory.`,
@@ -4276,10 +4306,19 @@ export async function setSatelliteImageryImpl(
  * avoiding. An empty array clears back to the centroid default.
  */
 export const setWeatherSamplePoints = mutation({
-  args: { waterBodyId: v.id('waterBodies'), points: v.array(latLng) },
-  handler: async (ctx, { waterBodyId, points }) => {
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    points: v.array(latLng),
+    /** The points this edit was built on: refused, with the current points, if they moved. */
+    expected: v.optional(v.array(latLng)),
+  },
+  handler: async (ctx, { waterBodyId, points, expected }) => {
     const actor = await requireCapability(ctx, 'body.water');
-    return setWeatherSamplePointsImpl(ctx, actor, { waterBodyId, points });
+    return setWeatherSamplePointsImpl(ctx, actor, {
+      waterBodyId,
+      points,
+      ...(expected !== undefined ? { expected } : {}),
+    });
   },
 });
 
@@ -4294,11 +4333,17 @@ export async function setWeatherSamplePointsImpl(
     waterBodyId,
     points,
     reason,
-  }: { waterBodyId: Id<'waterBodies'>; points: LatLng[]; reason?: string },
+    expected,
+  }: { waterBodyId: Id<'waterBodies'>; points: LatLng[]; expected?: LatLng[]; reason?: string },
 ): Promise<Id<'waterBodies'>> {
   {
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
+    assertListUnchanged(
+      (body.weatherSamplePoints ?? []).map((p) => ({ lat: p.lat, lng: p.lng })),
+      expected?.map((p) => ({ lat: p.lat, lng: p.lng })),
+      'this body’s weather sample points',
+    );
     if (points.length > MAX_SUGGESTED_SAMPLE_POINTS) {
       throw new ConvexError(
         `A body can carry at most ${MAX_SUGGESTED_SAMPLE_POINTS} sample points — each one is a forecast fetch and a cache row.`,

@@ -730,3 +730,100 @@ describe('recurrence.waitingCountForBody (BS19)', () => {
     expect(await count()).toMatchObject({ capped: true });
   });
 });
+
+describe('whole-list writes refuse a list that moved under them (BS17)', () => {
+  test('two interleaved writers: with the list they built on the second is refused with the current list; without it, the later wins', async () => {
+    const t = harness();
+    const a = await person(t);
+    const b = await person(t);
+    const id = await imported(t, 'way/1');
+    const link = (label: string) => ({ label, url: `https://example.org/${label}` });
+    await a.as.mutation(api.waterBodies.setReferenceLinks, {
+      waterBodyId: id,
+      links: [link('one')],
+    });
+    // Both open the body on [one]; A saves first.
+    const opened = [link('one')];
+    await a.as.mutation(api.waterBodies.setReferenceLinks, {
+      waterBodyId: id,
+      links: [...opened, link('a')],
+      expected: opened,
+    });
+    const refused = await b.as
+      .mutation(api.waterBodies.setReferenceLinks, {
+        waterBodyId: id,
+        links: [...opened, link('b')],
+        expected: opened,
+      })
+      .then(
+        () => null,
+        (err: { data?: { code: string; current: unknown } }) => err.data,
+      );
+    expect(refused).toMatchObject({ code: 'list_changed', current: [link('one'), link('a')] });
+    // B re-applies on top of the current list.
+    await b.as.mutation(api.waterBodies.setReferenceLinks, {
+      waterBodyId: id,
+      links: [link('one'), link('a'), link('b')],
+      expected: [link('one'), link('a')],
+    });
+    // Without `expected`, as the open pages save today, the later write wins.
+    await a.as.mutation(api.waterBodies.setReferenceLinks, { waterBodyId: id, links: [link('z')] });
+    expect((await get(t, id))?.referenceLinks).toEqual([link('z')]);
+  });
+
+  test('the same check on aliases and a landmark’s spellings; an undo is refused once the list moved', async () => {
+    const t = harness();
+    const mod = await person(t);
+    const id = await imported(t, 'way/1');
+    await mod.as.mutation(api.waterBodies.setAliases, { waterBodyId: id, aliases: ['First'] });
+    await expect(
+      mod.as.mutation(api.waterBodies.setAliases, {
+        waterBodyId: id,
+        aliases: ['Second'],
+        expected: [],
+      }),
+    ).rejects.toThrow(/Someone else changed this body’s aliases/);
+    // An undo of a list write that has since been overwritten is refused, not applied over it.
+    const first = await lastAction(t, 'set_aliases');
+    await mod.as.mutation(api.waterBodies.setAliases, {
+      waterBodyId: id,
+      aliases: ['Third'],
+      expected: ['First'],
+    });
+    await expect(mod.as.mutation(api.undo.run, { actionId: first._id })).rejects.toThrow();
+    expect((await get(t, id))?.moderatorAliases).toEqual(['Third']);
+    // The newest one undoes, through the same check.
+    await mod.as.mutation(api.undo.run, { actionId: (await lastAction(t, 'set_aliases'))._id });
+    expect((await get(t, id))?.moderatorAliases).toEqual(['First']);
+
+    const landmarkId = await t.run((ctx) =>
+      ctx.db.insert('bodyLandmarks', {
+        waterBodyId: id,
+        name: 'Long Point',
+        kind: 'point',
+        point: { lat: 44, lng: -72 },
+        aliases: ['The Point'],
+        source: 'gnis',
+        externalIds: ['gnis:lp'],
+        createdAt: NOW,
+        updatedAt: NOW,
+      } as never),
+    );
+    await expect(
+      mod.as.mutation(api.landmarks.update, {
+        landmarkId,
+        aliases: ['Longpoint'],
+        expectedAliases: [],
+      }),
+    ).rejects.toThrow(/other spellings/);
+    await mod.as.mutation(api.landmarks.update, {
+      landmarkId,
+      aliases: ['The Point', 'Longpoint'],
+      expectedAliases: ['The Point'],
+    });
+    expect((await t.run((ctx) => ctx.db.get(landmarkId)))?.aliases).toEqual([
+      'The Point',
+      'Longpoint',
+    ]);
+  });
+});

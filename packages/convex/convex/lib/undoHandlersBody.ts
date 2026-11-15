@@ -109,6 +109,8 @@ const undoReferenceLinks: UndoHandler = {
     setReferenceLinksImpl(ctx, actor, {
       waterBodyId: row.targetId as Id<'waterBodies'>,
       links: meta(row).prev.referenceLinks as { label: string; url: string }[],
+      // The undo is the same compare-and-set: refused if the list moved since this row wrote it.
+      expected: meta(row).referenceLinks as { label: string; url: string }[],
       reason,
     }).then(() => undefined),
 };
@@ -450,6 +452,7 @@ const undoAliases: UndoHandler = {
     setAliasesImpl(ctx, actor, {
       waterBodyId: row.targetId as Id<'waterBodies'>,
       aliases: (meta(row).prev.moderatorAliases as string[] | undefined) ?? [],
+      expected: (meta(row).moderatorAliases as string[] | undefined) ?? [],
       reason,
     }).then(() => undefined),
 };
