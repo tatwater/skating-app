@@ -92,7 +92,7 @@ import {
   requireProfile,
 } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
-import { markGeoStale } from './lib/bodyGeo';
+import { markGeoStale, outlineStamp } from './lib/bodyGeo';
 import { queueLibraryRefresh, stampChanged } from './lib/bodyLibrary';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
@@ -711,7 +711,11 @@ export const importCanonical = internalMutation({
         // and identical geodesic area means OSM handed us the same shoreline, and a containment
         // answer that was true a moment ago is still true.
         const outlineMoved = footprintMoved(existing, item);
-        if (outlineMoved || placePointMoved(existing, item)) {
+        // The geometry facts' rule is the outline stamp (every coordinate), not the clip's cheaper
+        // check: a reshape at the same vertex count, box and area still moves them (B01-3c).
+        const stampMoved =
+          outlineStamp(existing) !== outlineStamp({ polygon: item.polygon as never, bbox: item.bbox });
+        if (stampMoved || placePointMoved(existing, item)) {
           // Its touching bodies and places were computed for the old outline — or its places at the
           // old interior point, which the same patch rewrites (`shapeFields`) (B01-3b).
           await markGeoStale(ctx, [existing._id]);

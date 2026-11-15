@@ -3,13 +3,13 @@
  * from a body's outline and box, its neighbors' outlines and the places layer, and stored; a writer
  * that changes one of those without a mark leaves them behind.
  *
- * The marks go through choke points: `syncWaterBodyCells` (every body creation, moved box and listing
- * change re-cells the body, and marks its facts there), `markGeoStale` (an outline moved inside its
- * box), and `noteAdminAreasChanged` (the places layer). This lint finds, in the convex sources, every
+ * The marks go through choke points: `syncWaterBodyCells` (every body creation re-cells the body, and
+ * a body with no facts row is marked there — nothing else is, since B01-3c), `markGeoStale` (an
+ * outline whose stamp moved, a merge, a deletion), and `noteAdminAreasChanged` (the places layer). This lint finds, in the convex sources, every
  * `ctx.db.insert('waterBodies', …)` and every `ctx.db.patch`/`insert`/`replace` whose literal names a
  * `polygon` or `bbox` key, and requires the enclosing top-level function to call the matching choke
- * point. **A patch or replace that names a `polygon` needs `markGeoStale` in its own block**: the cell
- * index marks only a changed cell set, so an outline redrawn inside its box is never marked there, and
+ * point. **A patch or replace that names a `polygon` or a `bbox` needs `markGeoStale` in its own
+ * block**: the cell index marks only a new body, so a moved outline or box is never marked there, and
  * a mark in a sibling branch (the import's insert) says nothing about the patch. In `adminAreas.ts`, a
  * delete needs the places mark too (a boundary gone moves the layer). Writes to tables that are not
  * inputs (bays, hazards, known features) are listed by the function that makes them.
@@ -41,7 +41,7 @@ const NOT_INPUTS: Record<string, string> = {
 /** The marks a write of each kind needs in its enclosing function. */
 const BODY_MARKS = ['syncWaterBodyCells(', 'markGeoStale('];
 const AREA_MARKS = ['noteAdminAreasChanged('];
-/** The mark an outline patch needs in its own block. */
+/** The mark an outline or box patch needs in its own block. */
 const OUTLINE_MARK = 'markGeoStale(';
 
 function sources(dir: string): string[] {
@@ -122,7 +122,9 @@ test('every write of a body or an admin area outline is followed by its geometry
         continue;
       }
       const outlinePatch =
-        !areaWrite && (m[1] === 'patch' || m[1] === 'replace') && /\bpolygon\s*[:,}]/.test(span);
+        !areaWrite &&
+        (m[1] === 'patch' || m[1] === 'replace') &&
+        /\b(?:polygon|bbox)\s*[:,}]/.test(span);
       if (outlinePatch) {
         outlinePatches++;
         if (!enclosingBlock(text, at).includes(OUTLINE_MARK)) unmarked.push(`${file}:${line}`);

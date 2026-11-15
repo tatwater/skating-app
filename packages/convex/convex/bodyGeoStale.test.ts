@@ -17,6 +17,7 @@ import { markGeoStale, outlineStamp, simplifiedRing } from './lib/bodyGeo';
 import { rebuildBodyLibrary } from './lib/bodyLibrary';
 import { syncWaterBodyCells } from './lib/cellIndex';
 import { noteAdminAreasChanged } from './lib/geoStale';
+import { demoteBody } from './lib/standing';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -138,6 +139,29 @@ async function heldCopiesAreCurrent(t: T): Promise<boolean> {
     return true;
   });
 }
+
+describe('only a geometry change marks a body (B01-3c)', () => {
+  test('a rollover’s demotion and a prominence change re-cell a body but mark nothing', async () => {
+    const t = harness();
+    const id = await seedBody(t, 'Kept Shape', -72);
+    await drain(t);
+    await t.run(async (ctx) => {
+      const body = await ctx.db.get(id);
+      if (!body) throw new Error('no body');
+      // A zoom rung far from the seeded one moves the body's cells.
+      await syncWaterBodyCells(ctx, id, { bbox: body.bbox, minVisibleZoom: 14, listed: true });
+      await demoteBody(ctx, body, { reason: 'inactive' });
+    });
+    const cells = await t.run((ctx) =>
+      ctx.db
+        .query('waterBodyCells')
+        .withIndex('by_body', (q) => q.eq('waterBodyId', id))
+        .collect(),
+    );
+    expect(cells.every((c) => c.minVisibleZoom !== 8)).toBe(true);
+    expect((await facts(t, id))?.staleAt).toBeUndefined();
+  });
+});
 
 describe('every creation path marks a body’s facts', () => {
   test('a body the import inserts is owed its facts with no other write', async () => {
