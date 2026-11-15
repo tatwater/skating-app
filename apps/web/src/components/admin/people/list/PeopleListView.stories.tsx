@@ -4,7 +4,13 @@ import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { computedColor, resolvePx, sameColor } from '@/components/kit/measure';
 import { faceLoaded, must } from '@/components/kit/storyKit';
-
+import { PersonView } from '../person/PersonView';
+import {
+  NOW as PERSON_NOW,
+  ROB_HISTORY,
+  ROB as ROB_PAGE,
+  ROB_TREND,
+} from '../person/personFixtures';
 import { resetScrollMemory } from './PeopleList';
 import { PeopleBoard } from './peopleBoard';
 import {
@@ -301,5 +307,93 @@ export const Heads: Story = {
     await waitFor(() => expect(slot(canvasElement, 'page-word')).toHaveTextContent('Search'));
     await check('search');
     await expect([...heights]).toHaveLength(1);
+  },
+};
+
+/** Rob's page, as the person route draws it in the third column. */
+const robPage = (
+  <PersonView
+    person={ROB_PAGE}
+    trend={ROB_TREND}
+    history={ROB_HISTORY}
+    staffStats={null}
+    staffSeason={null}
+    decisions={{ rows: [], isDone: true, continueCursor: '' }}
+    now={PERSON_NOW}
+    viewerId={null}
+    onAct={async () => null}
+    onUndo={() => {}}
+    className="h-full"
+  />
+);
+
+/** Nothing on the page wider than its box: no sideways scroll anywhere in it. */
+async function expectNoSidewaysScroll(root: HTMLElement) {
+  for (const el of [root, ...root.querySelectorAll<HTMLElement>('[data-pane]')]) {
+    if (getComputedStyle(el).display === 'none') continue;
+    await expect(el.scrollWidth, el.dataset.pane ?? 'page').toBeLessThanOrEqual(el.clientWidth + 1);
+  }
+}
+
+/** A phone (390 px): the open person takes the page, with the way back; nothing scrolls sideways. */
+export const PhonePerson: Story = {
+  args: {
+    className: 'h-[52.75rem] w-[24.375rem]',
+    initialQuery: { lane: 'suspended', q: '' },
+    initialSelected: ROB.userId,
+    list: { status: 'done', rows: [ROB], reasons: [], pending: [] },
+    detail: robPage,
+    onCloseDetail: fn(),
+  },
+  play: async ({ canvasElement, args }) => {
+    const page = slot(canvasElement, 'people-page');
+    await waitFor(() => expect(page).toHaveAttribute('data-narrow'));
+    const detail = must(page.querySelector<HTMLElement>('[data-pane="detail"]'));
+    // The person's page has the page's width (less nothing): usable, not a sliver.
+    await expect(detail.getBoundingClientRect().width).toBeGreaterThanOrEqual(
+      page.getBoundingClientRect().width - 1,
+    );
+    // The lanes and the list stay mounted (their place kept) but give the page to the person.
+    for (const name of ['lanes', 'middle']) {
+      const el = must(page.querySelector<HTMLElement>(`[data-pane="${name}"]`));
+      await expect(getComputedStyle(el).display).toBe('none');
+    }
+    await expectNoSidewaysScroll(page);
+    await userEvent.click(within(detail).getByRole('button', { name: 'Back to the list' }));
+    await expect(args.onCloseDetail).toHaveBeenCalled();
+  },
+};
+
+/** A phone with no one open: the lanes over the list; nothing scrolls sideways. */
+export const PhoneList: Story = {
+  args: {
+    className: 'h-[52.75rem] w-[24.375rem]',
+    initialQuery: { lane: 'everyone', q: '' },
+    initialSelected: null,
+    list: { status: 'done', rows: [KATE, LUC], reasons: [], pending: [] },
+  },
+  play: async ({ canvasElement }) => {
+    const page = slot(canvasElement, 'people-page');
+    await waitFor(() => expect(page).toHaveAttribute('data-narrow'));
+    await expect(within(page).getByRole('listbox')).toBeVisible();
+    await expect(within(page).getByRole('navigation', { name: 'People' })).toBeVisible();
+    await expectNoSidewaysScroll(page);
+  },
+};
+
+/** The board's width with Rob's page open: the three columns, as drawn — nothing changes. */
+export const BoardPerson: Story = {
+  args: { detail: robPage },
+  play: async ({ canvasElement }) => {
+    const page = slot(canvasElement, 'people-page');
+    await expect(page).not.toHaveAttribute('data-narrow');
+    const middle = must(page.querySelector<HTMLElement>('[data-pane="middle"]'));
+    await expect(middle.getBoundingClientRect().width).toBeCloseTo(
+      resolvePx(middle, 'var(--size-list)'),
+      0,
+    );
+    await expect(
+      getComputedStyle(must(page.querySelector('[data-pane="lanes"]'))).display,
+    ).not.toBe('none');
   },
 };

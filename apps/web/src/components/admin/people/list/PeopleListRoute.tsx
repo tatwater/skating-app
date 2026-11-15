@@ -125,6 +125,7 @@ export function PeopleListRoute({ detail }: PeopleListRouteProps = {}) {
       now={now}
       detail={selectedId === null ? undefined : (detail ?? <Outlet />)}
       detailRef={detailPane}
+      onCloseDetail={() => goToList(query, false)}
       countsNote={
         // Mounted whatever the counts' state, so its words are announced when they come.
         <ReadNote

@@ -1,9 +1,11 @@
+import { useRef } from 'react';
+
 import { ChartLegend } from '@/components/kit/chart-legend';
 import { StatGrid, StatTile } from '@/components/kit/stat-tile';
 import { SparkbarSet, Sparkbars } from '@/components/kit/trace-chart';
-
 import { isFailed, type Loadable } from '../../reads/consoleReads';
 import { ReadNote } from '../../reads/ReadNote';
+import { useColumnsFit } from '../../shell/columnsFit';
 import {
   contradictionsFact,
   countText,
@@ -73,6 +75,18 @@ function factOf<T>(read: Loadable<T | null>, make: (value: T) => Fact): Fact | u
   return make(read as T);
 }
 
+/**
+ * A strip keeps the board's one row while its pane is at least a list and an inspector wide; on a
+ * narrower one (a phone, where the person takes the page) its cells wrap two to a row rather than
+ * crowd — the console's narrow-screen rule (`useColumnsFit`), measured on the strip itself.
+ */
+function useStripFits() {
+  const ref = useRef<HTMLDivElement>(null);
+  const fits = useColumnsFit(ref, STRIP_TOKENS);
+  return { ref, fits };
+}
+const STRIP_TOKENS = ['--size-list', '--size-inspector'] as const;
+
 /** The columns: the stat cells, then the trend a quarter wider (the boards' strip). */
 const columns = (cells: number) => `repeat(${cells}, minmax(0, 1fr)) minmax(0, 1.25fr)`;
 
@@ -87,14 +101,15 @@ export function SkaterStrip({
   person: PersonRead;
   trend: Loadable<TrendRead | null>;
 }) {
+  const strip = useStripFits();
   const points = person.strip.trustPoints;
   const cells = points === null ? 3 : 4;
   const trendValue = trend === undefined || isFailed(trend) || trend === null ? null : trend;
   return (
-    <div data-slot="skater-strip" className="flex flex-col gap-(--space-2)">
+    <div ref={strip.ref} data-slot="skater-strip" className="flex flex-col gap-(--space-2)">
       <StatGrid
-        columns={cells + 1}
-        style={{ gridTemplateColumns: columns(cells) }}
+        columns={strip.fits ? cells + 1 : 2}
+        {...(strip.fits && { style: { gridTemplateColumns: columns(cells) } })}
         className="py-(--space-3)"
       >
         <FactTile
@@ -202,12 +217,17 @@ export function StaffStrip({
 }) {
   // Not staff after all (the role moved under the page): either staff read answering `null` says
   // so — the staff reads answer `null` for someone not on staff, never for a failure — so no strip.
+  const strip = useStripFits();
   if (stats === null || season === null) return null;
   const value = stats === undefined || isFailed(stats) ? null : stats;
   const bars = value === null ? [] : weekBars(value, now);
   return (
-    <div data-slot="staff-strip" className="flex flex-col gap-(--space-2)">
-      <StatGrid columns={5} style={{ gridTemplateColumns: columns(4) }} className="py-(--space-3)">
+    <div ref={strip.ref} data-slot="staff-strip" className="flex flex-col gap-(--space-2)">
+      <StatGrid
+        columns={strip.fits ? 5 : 2}
+        {...(strip.fits && { style: { gridTemplateColumns: columns(4) } })}
+        className="py-(--space-3)"
+      >
         <FactTile
           key="decisions"
           slot="decisions"

@@ -217,7 +217,8 @@ function PersonHead({ person }: { person: PersonRead }) {
   return (
     <header
       data-slot="person-head"
-      className="flex items-center gap-(--space-3_5) border-0 border-b border-solid border-line py-(--space-3_5)"
+      // Its chips wrap under the name on a narrow pane rather than run over it.
+      className="flex flex-wrap items-center gap-x-(--space-3_5) gap-y-(--space-2_5) border-0 border-b border-solid border-line py-(--space-3_5)"
     >
       <PersonLockup
         size="xl"

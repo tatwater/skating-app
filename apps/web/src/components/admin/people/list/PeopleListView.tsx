@@ -1,6 +1,7 @@
 import type { PeopleLane } from '@skating/core';
-import { type ReactNode, type Ref, useMemo, useRef } from 'react';
+import { type ReactNode, type Ref, useEffect, useMemo, useRef } from 'react';
 
+import { Button } from '@/components/kit/button';
 import { Lanes } from '@/components/kit/lanes';
 import { ListEnd } from '@/components/kit/list-end';
 import { Note } from '@/components/kit/note';
@@ -9,6 +10,7 @@ import { cn } from '@/lib/utils';
 
 import { countText } from '../../overview/overviewModel';
 import { ConsoleStatus } from '../../shell/ConsoleShell';
+import { useColumnsFit } from '../../shell/columnsFit';
 import { SearchLane } from './kit-candidates/search-lane';
 import { PeopleList } from './PeopleList';
 import { PEOPLE_LANE_INFO } from './peopleLanes';
@@ -29,6 +31,7 @@ import type { ListStatus } from './peopleReads';
 import { isSearching, listKey, type PeopleQuery, serverSearch } from './peopleSearch';
 import {
   appealsOpen as appealsOpenWords,
+  BACK_TO_LIST,
   LANES_GROUP,
   NO_ONE_OPEN,
   noMatch,
@@ -87,8 +90,16 @@ export type PeopleListViewProps = {
   countsNote?: ReactNode;
   /** The person column, for the route to move focus into when a person opens from the keys. */
   detailRef?: Ref<HTMLElement>;
+  /**
+   * Closes the open person (back to the list). On a narrow screen, where the person takes the page,
+   * it is the way back — its button, and Esc or ⇧⏎ in the person's page.
+   */
+  onCloseDetail?: () => void;
   className?: string;
 };
+
+/** The three columns' width tokens: below their sum, the page is master–detail. */
+const COLUMNS = ['--size-lanes', '--size-list', '--size-inspector'] as const;
 
 export function PeopleListView({
   lanes,
@@ -104,10 +115,32 @@ export function PeopleListView({
   detail,
   countsNote,
   detailRef,
+  onCloseDetail,
   className,
 }: PeopleListViewProps) {
   const search = useRef<HTMLInputElement>(null);
   const listbox = useRef<HTMLDivElement>(null);
+  const page = useRef<HTMLDivElement>(null);
+  // The console's narrow-screen rule (`useColumnsFit`): three columns while they fit, else the
+  // open person takes the page and, with none open, the lanes and the list do.
+  const fits = useColumnsFit(page, COLUMNS);
+  const personOpen = selectedId !== null && detail !== undefined;
+  const narrow = !fits;
+  // Back to the list from a person on a narrow screen: focus goes to the list once it is drawn.
+  const focusListWhenShown = useRef(false);
+  useEffect(() => {
+    if (personOpen || !focusListWhenShown.current) return;
+    focusListWhenShown.current = false;
+    listbox.current?.focus();
+  }, [personOpen]);
+  const backToList = () => {
+    if (narrow && onCloseDetail !== undefined) {
+      focusListWhenShown.current = true;
+      onCloseDetail();
+      return;
+    }
+    listbox.current?.focus();
+  };
   const searching = isSearching(query);
   const mark = serverSearch(query.q) ?? '';
   const lane = query.lane;
@@ -144,7 +177,9 @@ export function PeopleListView({
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: a key the page hears from any of its panes, not a control of its own
     <div
+      ref={page}
       data-slot="people-page"
+      data-narrow={narrow ? '' : undefined}
       onKeyDown={(event) => {
         // / goes to the search from anywhere on the page but a field (which types it) — and never
         // from a dialog or a menu the page opened: a portal's keys bubble here through React, but
@@ -164,7 +199,10 @@ export function PeopleListView({
         search.current?.focus();
       }}
       className={cn(
-        'grid h-full min-h-0 grid-cols-[var(--size-lanes)_var(--size-list)_minmax(0,1fr)]',
+        'h-full min-h-0',
+        narrow
+          ? 'flex flex-col overflow-x-hidden'
+          : 'grid grid-cols-[var(--size-lanes)_var(--size-list)_minmax(0,1fr)]',
         className,
       )}
     >
@@ -182,7 +220,11 @@ export function PeopleListView({
       <section
         data-pane="lanes"
         aria-label="Lanes"
-        className="flex min-h-0 min-w-0 flex-col border-0 border-r border-solid border-line pt-(--space-3_5)"
+        // Narrow: over the list, its own height; hidden (kept mounted) while a person has the page.
+        className={cn(
+          'flex min-h-0 min-w-0 flex-col border-0 border-solid border-line pt-(--space-3_5)',
+          narrow ? cn('shrink-0 border-b', personOpen && 'hidden') : 'border-r',
+        )}
       >
         <SearchLane
           value={query.q}
@@ -234,7 +276,10 @@ export function PeopleListView({
       <section
         data-pane="middle"
         aria-label="List"
-        className="flex min-h-0 min-w-0 flex-col border-0 border-r border-solid border-line"
+        className={cn(
+          'flex min-h-0 min-w-0 flex-col border-0 border-solid border-line',
+          narrow ? cn('flex-1', personOpen && 'hidden') : 'border-r',
+        )}
       >
         <div
           data-slot="people-head"
@@ -309,10 +354,23 @@ export function PeopleListView({
             return;
           }
           event.preventDefault();
-          listbox.current?.focus();
+          backToList();
         }}
-        className="flex min-h-0 min-w-0 flex-col outline-none focus-visible:shadow-[inset_0_0_0_var(--stroke-hair)_var(--fg)]"
+        className={cn(
+          'flex min-h-0 min-w-0 flex-col outline-none focus-visible:shadow-[inset_0_0_0_var(--stroke-hair)_var(--fg)]',
+          narrow && (personOpen ? 'flex-1' : 'hidden'),
+        )}
       >
+        {narrow && personOpen && onCloseDetail !== undefined && (
+          <div
+            data-slot="people-back"
+            className="flex shrink-0 border-0 border-b border-solid border-line px-gutter py-(--space-2)"
+          >
+            <Button size="xs" onClick={backToList}>
+              {BACK_TO_LIST}
+            </Button>
+          </div>
+        )}
         {detail ?? <ListEnd className="mt-(--space-3)">{NO_ONE_OPEN}</ListEnd>}
       </section>
     </div>

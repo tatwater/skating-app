@@ -95,6 +95,9 @@ export const LOADING_MORE = 'Loading more';
 export const LIST_FAILED = 'Couldn’t read this list';
 export const REST_FAILED = 'Couldn’t read the rest of this list';
 
+/** The way back to the list from a person on a narrow screen, where the person takes the page. */
+export const BACK_TO_LIST = 'Back to the list';
+
 /** The person column with no one open. */
 export const NO_ONE_OPEN = 'No one open';
 

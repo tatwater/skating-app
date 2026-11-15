@@ -12,6 +12,10 @@ vi.mock('../../shell/ConsoleShell', async (original) => ({
   ),
 }));
 
+// The narrow-screen rule is measured; here a test says which side of it the page is on.
+const columns = vi.hoisted(() => ({ fit: true }));
+vi.mock('../../shell/columnsFit', () => ({ useColumnsFit: () => columns.fit }));
+
 import { resetScrollMemory } from './PeopleList';
 import { PeopleListView, type PeopleListViewProps } from './PeopleListView';
 import {
@@ -35,7 +39,10 @@ import { stubLayout } from './testLayout';
  */
 
 beforeAll(stubLayout);
-beforeEach(() => resetScrollMemory());
+beforeEach(() => {
+  resetScrollMemory();
+  columns.fit = true;
+});
 
 const entriesOf = (read: LanesRead) => Object.fromEntries(read.lanes.map((l) => [l.lane, l]));
 
@@ -309,5 +316,45 @@ describe('the keys', () => {
     } finally {
       portal.remove();
     }
+  });
+});
+
+describe('a narrow screen (the console’s master–detail rule)', () => {
+  const pane = (name: string) => document.querySelector<HTMLElement>(`[data-pane="${name}"]`);
+
+  it('keeps the board’s three columns while they fit', () => {
+    draw({ selectedId: ROB.userId, detail: <p>Rob’s page</p> });
+    expect(document.querySelector('[data-slot="people-page"]')).not.toHaveAttribute('data-narrow');
+    for (const name of ['lanes', 'middle', 'detail']) expect(pane(name)).not.toHaveClass('hidden');
+    expect(screen.queryByRole('button', { name: 'Back to the list' })).toBeNull();
+  });
+
+  it('gives the page to the open person, with the way back', async () => {
+    columns.fit = false;
+    const onCloseDetail = vi.fn();
+    draw({ selectedId: ROB.userId, detail: <p>Rob’s page</p>, onCloseDetail });
+    expect(pane('lanes')).toHaveClass('hidden');
+    expect(pane('middle')).toHaveClass('hidden');
+    expect(pane('detail')).not.toHaveClass('hidden');
+    await userEvent.click(screen.getByRole('button', { name: 'Back to the list' }));
+    expect(onCloseDetail).toHaveBeenCalledTimes(1);
+  });
+
+  it('with no one open, gives it to the lanes and the list', () => {
+    columns.fit = false;
+    draw();
+    expect(pane('lanes')).not.toHaveClass('hidden');
+    expect(pane('middle')).not.toHaveClass('hidden');
+    expect(pane('detail')).toHaveClass('hidden');
+  });
+
+  it('Esc in the person’s page goes back, and focus lands on the list once it is drawn', () => {
+    columns.fit = false;
+    const onCloseDetail = vi.fn();
+    const { redraw } = draw({ selectedId: ROB.userId, detail: <p>Rob’s page</p>, onCloseDetail });
+    fireEvent.keyDown(screen.getByText('Rob’s page'), { key: 'Escape' });
+    expect(onCloseDetail).toHaveBeenCalledTimes(1);
+    redraw({ selectedId: null, detail: undefined, onCloseDetail });
+    expect(screen.getByRole('listbox')).toHaveFocus();
   });
 });
