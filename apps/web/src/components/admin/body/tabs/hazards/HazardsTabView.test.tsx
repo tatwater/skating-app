@@ -150,6 +150,29 @@ describe('HazardsTabView — the default board', () => {
     expect(onDemote).toHaveBeenCalledWith('f-narrows', 'The bridge was replaced');
   });
 
+  it('a demotion on its way can’t be dismissed, so its late answer never closes one opened since', async () => {
+    let land: () => void = () => {};
+    const onDemote = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          land = resolve;
+        }),
+    );
+    render(<HazardsTabView {...base} onDemote={onDemote} />);
+    await userEvent.click(screen.getAllByRole('button', { name: 'Demote' })[1] as HTMLElement);
+    const dialog = await screen.findByRole('alertdialog');
+    await userEvent.type(within(dialog).getByRole('textbox'), 'The bridge was replaced');
+    await userEvent.click(within(dialog).getByRole('button', { name: /Demote/ }));
+    await userEvent.click(within(dialog).getByRole('button', { name: /again/ }));
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(within(dialog).getByRole('button', { name: /Cancel/ }));
+    expect(screen.getByRole('alertdialog')).toBeTruthy();
+    expect(within(dialog).getByRole('textbox')).toHaveValue('The bridge was replaced');
+    land();
+    await vi.waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(onDemote).toHaveBeenCalledTimes(1);
+  });
+
   it('canceling a demotion closes the dialog and demotes nothing', async () => {
     const onDemote = vi.fn(async () => {});
     render(<HazardsTabView {...base} onDemote={onDemote} />);

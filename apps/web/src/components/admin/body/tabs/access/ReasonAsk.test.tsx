@@ -38,4 +38,34 @@ describe('ReasonAsk', () => {
     expect(onConfirm).toHaveBeenLastCalledWith('A private dock');
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
   });
+
+  it('a send on its way can’t be dismissed, so a late answer never closes a dialog opened since', async () => {
+    let answer: (refused: string | null) => void = () => {};
+    const onConfirm = vi.fn(
+      () =>
+        new Promise<string | null>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    render(<Ask onConfirm={onConfirm} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Hide' }));
+    const dialog = await screen.findByRole('alertdialog');
+    await userEvent.type(within(dialog).getByRole('textbox'), 'A private dock');
+    await userEvent.click(within(dialog).getByRole('button', { name: /^Hide/ }));
+    // Esc and Cancel while it is on its way: the dialog stays, its reason whole.
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByRole('alertdialog')).toBeTruthy();
+    expect(within(dialog).getByRole('textbox')).toHaveValue('A private dock');
+    // Its own answer closes it; reopened, it starts clean and no old answer touches it.
+    answer(null);
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    await userEvent.click(screen.getByRole('button', { name: 'Hide' }));
+    const again = await screen.findByRole('alertdialog');
+    await userEvent.type(within(again).getByRole('textbox'), 'Second thoughts');
+    answer('Late refusal');
+    expect(within(again).queryByText('Late refusal')).toBeNull();
+    expect(within(again).getByRole('textbox')).toHaveValue('Second thoughts');
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
 });

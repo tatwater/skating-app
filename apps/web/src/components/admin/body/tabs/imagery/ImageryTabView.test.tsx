@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -98,6 +98,28 @@ describe('ImageryTabView', () => {
     await userEvent.click(confirm);
     await userEvent.click(within(dialog).getByRole('button', { name: /again/ }));
     expect(onOverride).toHaveBeenCalledWith(granuleOf(13), 'hide', 'Smoke over the north basin');
+  });
+
+  it('a hide on its way can’t be dismissed, so its late answer never closes an ask opened since', async () => {
+    let land: () => void = () => {};
+    const onOverride = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          land = resolve;
+        }),
+    );
+    render(<ImageryTabView {...base} onOverride={onOverride} />);
+    await userEvent.click(within(card()).getByRole('button', { name: /Hide from skaters/ }));
+    const dialog = await screen.findByRole('alertdialog');
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Smoke over the north basin');
+    await userEvent.click(within(dialog).getByRole('button', { name: /Hide from skaters/ }));
+    await userEvent.click(within(dialog).getByRole('button', { name: /again/ }));
+    await userEvent.keyboard('{Escape}');
+    expect(screen.getByRole('alertdialog')).toBeTruthy();
+    expect(within(dialog).getByRole('textbox')).toHaveValue('Smoke over the north basin');
+    land();
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(onOverride).toHaveBeenCalledTimes(1);
   });
 
   it('draws no call without a writer', () => {

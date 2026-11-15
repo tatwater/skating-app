@@ -282,6 +282,34 @@ describe('BodyConsoleView', () => {
     expect(figures).not.toHaveTextContent(/(^|[^~])9\.4 \//);
   });
 
+  it('a boost refused late never moves the slider from where it has since been let go', async () => {
+    const answers: ((landed: boolean) => void)[] = [];
+    const onBoostCommit = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          answers.push(resolve);
+        }),
+    );
+    render(<Page onBoostCommit={onBoostCommit} />);
+    const slider = screen.getByRole('slider', { name: 'Map boost' });
+    slider.focus();
+    await userEvent.keyboard('{ArrowRight}');
+    await userEvent.keyboard('{ArrowRight}');
+    expect(onBoostCommit).toHaveBeenCalledTimes(2);
+    // The first commit is refused after the second was let go: the slider stays at the second.
+    await act(async () => answers[0]?.(false));
+    expect(screen.getByRole('slider', { name: 'Map boost' })).toHaveAttribute(
+      'aria-valuenow',
+      '0.5',
+    );
+    // The latest one refused: back to the record.
+    await act(async () => answers[1]?.(false));
+    expect(screen.getByRole('slider', { name: 'Map boost' })).toHaveAttribute(
+      'aria-valuenow',
+      '0.3',
+    );
+  });
+
   it('never draws a capped history as whole', () => {
     render(<Page history={CAPPED_HISTORY} />);
     expect(screen.getByText('Latest 6')).toBeInTheDocument();

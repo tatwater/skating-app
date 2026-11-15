@@ -81,6 +81,22 @@ describe('StandingTabView', () => {
     expect(onSetDormant).toHaveBeenCalledWith('Dam work');
   });
 
+  it('a second ⏎ in the note while its write is on its way sends nothing more', async () => {
+    let land: () => void = () => {};
+    const onSetDormant = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          land = resolve;
+        }),
+    );
+    render(<StandingTabView {...base} onSetDormant={onSetDormant} />);
+    await userEvent.click(radio('Dormant'));
+    const input = screen.getByRole('textbox', { name: 'Note for skaters · optional' });
+    await userEvent.type(input, 'Dam work{Enter}{Enter}');
+    expect(onSetDormant).toHaveBeenCalledTimes(1);
+    land();
+  });
+
   it('Remove from the map waits, armed, until a reason is chosen', async () => {
     const onRemove = vi.fn(async () => {});
     render(<StandingTabView {...base} onRemove={onRemove} />);

@@ -5,7 +5,7 @@ import {
   type RemovalReason,
   standingReasonLabel,
 } from '@skating/core';
-import { type ComponentProps, type FormEvent, useId, useState } from 'react';
+import { type ComponentProps, type FormEvent, useId, useRef, useState } from 'react';
 
 import { Badge } from '@/components/kit/badge';
 import { Button } from '@/components/kit/button';
@@ -286,14 +286,22 @@ function PickForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // One write at a time (⏎ in the note submits the form again otherwise), and each answer acts
+  // only on the attempt that sent it.
+  const attempt = useRef(0);
+  const sending = useRef(false);
   async function run(write: () => Promise<void>) {
+    if (sending.current) return;
+    sending.current = true;
+    const mine = ++attempt.current;
     setBusy(true);
     setError(null);
     try {
       await write();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (attempt.current === mine) setError(err instanceof Error ? err.message : String(err));
     } finally {
+      sending.current = false;
       setBusy(false);
     }
   }

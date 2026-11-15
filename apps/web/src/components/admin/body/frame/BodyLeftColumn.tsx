@@ -294,6 +294,7 @@ function BoostSlider({
   recordRef.current = record;
   const [shown, setShown] = useState(record);
   const [seen, setSeen] = useState(record);
+  const commits = useRef(0);
   if (seen !== record) {
     setSeen(record);
     setShown(record);
@@ -313,8 +314,11 @@ function BoostSlider({
       onValueCommitted={(v) => {
         const next = boostToSend(one(v), recordRef.current);
         if (onCommit === undefined || next === null) return;
+        // Only the latest commit's refusal puts the slider back: an older one landing late never
+        // moves it from where the operator has since let go.
+        const mine = ++commits.current;
         void Promise.resolve(onCommit(next)).then((landed) => {
-          if (landed === false) setShown(recordRef.current);
+          if (landed === false && commits.current === mine) setShown(recordRef.current);
         });
       }}
     />

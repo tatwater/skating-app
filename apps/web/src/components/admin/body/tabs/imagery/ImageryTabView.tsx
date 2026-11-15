@@ -136,6 +136,10 @@ export function ImageryTabView({
 
   const [asking, setAsking] = useState(false);
   const [reason, setReason] = useState('');
+  const askOpening = useRef(0);
+  const wasAsking = useRef(false);
+  if (asking && !wasAsking.current) askOpening.current++;
+  wasAsking.current = asking;
 
   const write = async (verdict: 'show' | 'hide', why?: string) => {
     if (row === undefined || !onOverride) return false;
@@ -423,8 +427,10 @@ export function ImageryTabView({
               destructive
               waiting={reason.trim().length === 0 || busy}
               onClick={() => {
+                // The ask open now: its answer closes this opening, never one opened since.
+                const mine = askOpening.current;
                 void write('hide', reason.trim()).then((ok) => {
-                  if (ok) setAsking(false);
+                  if (ok && askOpening.current === mine) setAsking(false);
                 });
               }}
             >

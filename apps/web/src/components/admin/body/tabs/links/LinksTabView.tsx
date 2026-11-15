@@ -47,7 +47,14 @@ export type LinksTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
   lakeSheetHref: string | null;
 };
 
-type Editing = { key: string | 'new'; label: string; url: string; error: string | null };
+type Editing = {
+  key: string | 'new';
+  label: string;
+  url: string;
+  error: string | null;
+  /** This opening of the editor: a save it sent closes it, and nothing it didn't send does. */
+  opening: number;
+};
 
 export function LinksTabView({
   body,
@@ -85,27 +92,34 @@ export function LinksTabView({
   });
   const editable = canEdit && onSave !== undefined;
   const [editing, setEditing] = useState<Editing | null>(null);
-  // The editor open now, for a save landing late (queued behind a reorder): after Cancel and
-  // another link's Edit, it closes nothing it didn't open and takes no focus from that editor.
-  const openKey = useRef<string | null>(null);
-  openKey.current = editing?.key ?? null;
-  const landed = (key: string) => {
-    if (openKey.current !== null && openKey.current !== key) return;
+  // **A save's completion acts only on the editor opening that sent it** — never on whatever editor
+  // stands in that place now. Each opening has its own id: after Cancel and Edit on the same link
+  // (or another), a late save closes nothing, takes no focus and discards nothing typed since.
+  const openings = useRef(0);
+  const open = (e: Omit<Editing, 'opening'>) => setEditing({ ...e, opening: ++openings.current });
+  const openNow = useRef<number | null>(null);
+  openNow.current = editing?.opening ?? null;
+  const landed = (opening: number, key: string) => {
+    if (openNow.current !== null && openNow.current !== opening) return;
     refocus.current = key;
     setEditing(null);
   };
-  // The open editor's own save on its way: its Done and Remove don't send twice (a ref, so two
-  // presses in one frame see it).
-  const [editorBusy, setEditorBusy] = useState(false);
-  const editorSending = useRef(false);
-  const editorSave = async (change: (base: readonly KeyedLink[]) => readonly KeyedLink[]) => {
-    editorSending.current = true;
-    setEditorBusy(true);
+  // The openings with a save on its way: an opening's own Done and Remove don't send twice (a ref,
+  // so two presses in one frame see it); a reopened editor isn't held by the old one's save.
+  const sending = useRef(new Set<number>());
+  const [busyOpenings, setBusyOpenings] = useState<ReadonlySet<number>>(new Set());
+  const editorBusy = editing !== null && busyOpenings.has(editing.opening);
+  const editorSave = async (
+    opening: number,
+    change: (base: readonly KeyedLink[]) => readonly KeyedLink[],
+  ) => {
+    sending.current.add(opening);
+    setBusyOpenings(new Set(sending.current));
     try {
       return await save(change);
     } finally {
-      editorSending.current = false;
-      setEditorBusy(false);
+      sending.current.delete(opening);
+      setBusyOpenings(new Set(sending.current));
     }
   };
   // Writes in flight: the grips hold a dropped order until the server's echo moves the rows.
@@ -141,7 +155,7 @@ export function LinksTabView({
   };
 
   const commitEdit = async () => {
-    if (editing === null || editorSending.current) return;
+    if (editing === null || sending.current.has(editing.opening)) return;
     const draft = { label: editing.label, url: editing.url };
     const error = referenceLinkError(draft);
     if (error !== null) {
@@ -149,13 +163,14 @@ export function LinksTabView({
       return;
     }
     const clean = { label: draft.label.trim(), url: draft.url.trim() };
-    const key = editing.key;
+    const { key, opening } = editing;
     const ok = await editorSave(
+      opening,
       key === 'new'
         ? linkChanges.add({ ...clean, key: `link-${++minted.current}` })
         : linkChanges.edit(key, clean),
     );
-    if (ok) landed(key);
+    if (ok) landed(opening, key);
   };
 
   const removeEdited = async () => {
@@ -163,10 +178,10 @@ export function LinksTabView({
       setEditing(null);
       return;
     }
-    if (editorSending.current) return;
-    const key = editing.key;
-    const ok = await editorSave(linkChanges.remove(key));
-    if (ok) landed(key);
+    if (sending.current.has(editing.opening)) return;
+    const { key, opening } = editing;
+    const ok = await editorSave(opening, linkChanges.remove(key));
+    if (ok) landed(opening, key);
   };
 
   const offeredCount = derived.filter((d) => d.offered).length;
@@ -195,7 +210,7 @@ export function LinksTabView({
             <Button
               size="xs"
               data-slot="link-add"
-              onClick={() => setEditing({ key: 'new', label: '', url: '', error: null })}
+              onClick={() => open({ key: 'new', label: '', url: '', error: null })}
             >
               Add a link
             </Button>
@@ -229,7 +244,7 @@ export function LinksTabView({
                   onEdit={
                     editable && editing === null
                       ? () =>
-                          setEditing({
+                          open({
                             key: link.key,
                             label: link.label,
                             url: link.url,

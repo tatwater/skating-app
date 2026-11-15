@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import fc from 'fast-check';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -142,6 +143,37 @@ describe('LinksTabView — saves queue: none is built from a list older than the
     expect(screen.getByRole('textbox', { name: /Label/ })).toHaveValue(`${ASSOC.label} (draft)`);
   });
 
+  it('a queued save landing after Cancel never closes the same link’s editor reopened since', async () => {
+    // Greptile's P2 on #121: the old guard checked the link's key, so reopening the same link let
+    // the first save close the new editor and discard what was typed since.
+    const user = userEvent.setup();
+    const sent: StaffLink[][] = [];
+    const releases: (() => void)[] = [];
+    render(<Held sent={sent} releases={releases} />);
+    await reorder(user);
+    const editDam = () =>
+      within(
+        screen
+          .getByText(/Lake level at Mascoma Lake Dam|Dam level/)
+          .closest('[data-slot="sortable-row"]') as HTMLElement,
+      ).getByRole('button', { name: 'Edit' });
+    await user.click(editDam());
+    const label = screen.getByRole('textbox', { name: /Label/ });
+    await user.clear(label);
+    await user.type(label, 'Dam level{Enter}');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    // The same link, opened again, and a new draft started in it.
+    await user.click(editDam());
+    await user.type(screen.getByRole('textbox', { name: /Address/ }), '/levels');
+    await land(releases);
+    await land(releases);
+    expect(sent[1]).toEqual([{ label: 'Dam level', url: DAM.url }, ASSOC]);
+    // The reopened editor stands, its draft whole, and its own Done isn't held by the old save.
+    expect(screen.getByRole('textbox', { name: /Address/ })).toHaveValue(`${DAM.url}/levels`);
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    expect(sent).toHaveLength(3);
+  });
+
   it('a link added is editable once it shows, when the echo lands before the save resolves', async () => {
     // The console's own order: Convex shows the write before its promise resolves, and the
     // receipt (`announce`) is a further round trip — so the echo renders before the queue's ack.
@@ -203,6 +235,122 @@ describe('LinksTabView — saves queue: none is built from a list older than the
     await land(releases);
     expect(sent).toEqual([[ASSOC, DAM, { label: 'Town beach', url: 'https://enfield.nh.us' }]]);
     expect(rows()).toEqual([ASSOC.label, DAM.label, 'Town beach']);
+  });
+});
+
+describe('LinksTabView — over any run of opening, typing, Done, Cancel and reopening (fast-check)', () => {
+  type Op =
+    | { kind: 'edit'; row: number }
+    | { kind: 'type'; text: string }
+    | { kind: 'done' }
+    | { kind: 'cancel' }
+    | { kind: 'land' };
+  const op: fc.Arbitrary<Op> = fc.oneof(
+    fc.record({ kind: fc.constant('edit' as const), row: fc.nat(1) }),
+    fc.record({ kind: fc.constant('type' as const), text: fc.constantFrom('x', 'yz') }),
+    fc.record({ kind: fc.constant('done' as const) }),
+    fc.record({ kind: fc.constant('cancel' as const) }),
+    fc.record({ kind: fc.constant('land' as const) }),
+  );
+
+  it('a late save never closes or clears an editor it didn’t open, and every Done lands in order', async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.array(op, { maxLength: 10 }), async (ops) => {
+        const user = userEvent.setup();
+        const sent: StaffLink[][] = [];
+        const releases: (() => void)[] = [];
+        const { unmount } = render(<Held sent={sent} releases={releases} />);
+        try {
+          // What the open editor's label must read, or null with none open.
+          let draft: string | null = null;
+          let row = -1;
+          // Each opening's id, and the openings whose saves are on their way, oldest first.
+          let opening = 0;
+          const saves: number[] = [];
+          // Each row's label, as the Done presses left it, in order.
+          const expected = [ASSOC.label, DAM.label];
+          const editor = () => screen.queryByRole('textbox', { name: /Label/ });
+          for (const o of ops) {
+            if (o.kind === 'edit' && draft === null) {
+              const edits = screen.queryAllByRole('button', { name: 'Edit' });
+              const button = edits[o.row];
+              if (button === undefined) continue;
+              await user.click(button);
+              opening++;
+              row = o.row;
+              draft = (editor() as HTMLInputElement).value;
+            } else if (o.kind === 'type' && draft !== null) {
+              await user.type(editor() as HTMLElement, o.text);
+              draft += o.text;
+            } else if (o.kind === 'done' && draft !== null) {
+              const changes = draft !== expected[row] && !saves.includes(opening);
+              await user.click(screen.getByRole('button', { name: 'Done' }));
+              // A Done that changes the link queues a save (it may wait behind another).
+              if (changes) {
+                expected[row] = draft;
+                saves.push(opening);
+              }
+              // A change waits open for its own save; one that changes nothing closes at once.
+              if (editor() === null) draft = null;
+            } else if (o.kind === 'cancel' && draft !== null) {
+              await user.click(screen.getByRole('button', { name: 'Cancel' }));
+              draft = null;
+            } else if (o.kind === 'land' && releases.length > 0) {
+              const from = saves.shift();
+              await land(releases);
+              // Only the editor whose own save this was may close; any other stands, its draft
+              // whole.
+              if (draft !== null) {
+                if (from === opening) {
+                  expect(editor()).toBeNull();
+                  draft = null;
+                } else {
+                  expect((editor() as HTMLInputElement | null)?.value).toBe(draft);
+                }
+              }
+            }
+          }
+          // Drain every save.
+          for (let i = 0; i < 20 && releases.length > 0; i++) await land(releases);
+          if (sent.length > 0) {
+            expect((sent.at(-1) as StaffLink[]).map((l) => l.label)).toEqual(expected);
+          }
+        } finally {
+          unmount();
+        }
+      }),
+      {
+        numRuns: 60,
+        // The review's sequence, seeded so every run covers it: a save on its way, Cancel, the
+        // same link and the other reopened, a draft typed, then the old save lands.
+        examples: [
+          [
+            [
+              { kind: 'edit', row: 1 },
+              { kind: 'type', text: 'x' },
+              { kind: 'done' },
+              { kind: 'cancel' },
+              { kind: 'edit', row: 1 },
+              { kind: 'type', text: 'yz' },
+              { kind: 'land' },
+              { kind: 'done' },
+              { kind: 'land' },
+            ],
+          ],
+          [
+            [
+              { kind: 'edit', row: 0 },
+              { kind: 'type', text: 'x' },
+              { kind: 'done' },
+              { kind: 'cancel' },
+              { kind: 'edit', row: 1 },
+              { kind: 'type', text: 'x' },
+              { kind: 'land' },
+            ],
+          ],
+        ],
+      },
+    );
   });
 });
 

@@ -1,4 +1,4 @@
-import { type ReactElement, type ReactNode, useState } from 'react';
+import { type ReactElement, type ReactNode, useRef, useState } from 'react';
 
 import {
   AlertDialog,
@@ -57,6 +57,8 @@ export function ReasonAsk({
   const [reason, setReason] = useState('');
   const [refusal, setRefusal] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // This opening of the dialog: a send's answer acts only on the opening that sent it.
+  const opening = useRef(0);
   const trimmed = reason.trim();
   return (
     <AlertDialog
@@ -64,6 +66,7 @@ export function ReasonAsk({
       onOpenChange={(next) => {
         if (busy) return;
         if (next) {
+          opening.current++;
           setReason('');
           setRefusal(null);
         }
@@ -92,16 +95,19 @@ export function ReasonAsk({
             waiting={(!optional && trimmed.length === 0) || busy}
             onClick={() => {
               setBusy(true);
+              const mine = opening.current;
+              const current = () => opening.current === mine;
               void onConfirm(trimmed).then(
                 (refused) => {
                   setBusy(false);
+                  if (!current()) return;
                   if (refused === null) setOpen(false);
                   else setRefusal(refused);
                 },
                 // A sender that threw rather than answering: never a dialog stuck waiting.
                 (err: unknown) => {
                   setBusy(false);
-                  setRefusal(errorText(err));
+                  if (current()) setRefusal(errorText(err));
                 },
               );
             }}

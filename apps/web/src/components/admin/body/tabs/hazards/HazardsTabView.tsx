@@ -851,6 +851,13 @@ function DemoteDialog({
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // This opening (one feature asked about): a demote's answer acts only on the opening that sent it.
+  const opening = useRef(0);
+  const openFor = useRef<string | null>(null);
+  if ((feature?.id ?? null) !== openFor.current) {
+    openFor.current = feature?.id ?? null;
+    opening.current++;
+  }
   return (
     <AlertDialog
       open={feature !== null}
@@ -883,12 +890,18 @@ function DemoteDialog({
             onClick={() => {
               setBusy(true);
               setError(null);
+              const mine = opening.current;
               void onDemote(reason.trim())
                 .then(() => {
+                  if (opening.current !== mine) return;
                   setReason('');
                   onClose();
                 })
-                .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
+                .catch((err: unknown) => {
+                  if (opening.current === mine) {
+                    setError(err instanceof Error ? err.message : String(err));
+                  }
+                })
                 .finally(() => setBusy(false));
             }}
           >
