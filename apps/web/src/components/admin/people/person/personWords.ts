@@ -5,8 +5,8 @@
  * another admin first*, *Median, filed to decided*…) stay beside the code that draws them.
  *
  * Never "You", never a pronoun for a person (none is known), never a word about the ice. Ages and
- * durations here are the written-out forms (`personTime.ts`); a list row's short form ("4 d") is the
- * list's.
+ * durations here are the written-out forms (`lib/ages`); a list row's short form ("4 d") is the
+ * list's, from the same module.
  */
 export const WORDS = {
   // ── The three answers that are not numbers ──

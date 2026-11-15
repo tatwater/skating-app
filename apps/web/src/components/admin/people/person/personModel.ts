@@ -2,7 +2,7 @@ import type { api } from '@skating/convex/api';
 import { CONTRADICTION_FLAG_THRESHOLD } from '@skating/core';
 import type { FunctionReturnType } from 'convex/server';
 
-import { timeLeftInWords } from './personTime';
+import { timeLeftInWords } from '@/lib/ages';
 import { WORDS } from './personWords';
 
 /**

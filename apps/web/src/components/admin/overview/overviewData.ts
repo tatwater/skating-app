@@ -10,9 +10,10 @@
  */
 import type { api } from '@skating/convex/api';
 import type { FunctionReturnType } from 'convex/server';
-
+import { shortAge } from '@/lib/ages';
 import { type AuditAction, type AuditTarget, actorWords } from '../shell/actionLabels';
-import { type Count, DAY, feedWhen, shortAge, sumCounts } from './overviewModel';
+
+import { type Count, DAY, feedWhen, sumCounts } from './overviewModel';
 
 const HOUR = DAY / 24;
 

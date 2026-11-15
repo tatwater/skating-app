@@ -1,18 +1,17 @@
 import { type ComponentProps, cloneElement, type ReactElement, type ReactNode } from 'react';
 
-import { Avatar } from '@/components/kit/avatar';
 import { Button, buttonVariants } from '@/components/kit/button';
 import { GridList, HistoryRow } from '@/components/kit/grid-list';
 import { Note } from '@/components/kit/note';
 import { Section } from '@/components/kit/section-slug';
 import { SkeletonRow } from '@/components/kit/skeleton';
-
+import { ageInWords } from '@/lib/ages';
 import { cn } from '@/lib/utils';
-
 import { FLAG_WORDS } from '../../bodies/askWords';
 import { isFailed, type Loadable } from '../../reads/consoleReads';
 import { ReadNote } from '../../reads/ReadNote';
 import { historyWhen } from '../../shell/consoleTime';
+import { PersonLockup } from '../list/kit-candidates/person-lockup';
 import { rowActor, rowReason, rowSentence, undoneWords } from './feedWords';
 import {
   type ActionRow,
@@ -21,7 +20,6 @@ import {
   type PersonRead,
   plural,
 } from './personModel';
-import { ageInWords } from './personTime';
 import { WORDS } from './personWords';
 
 /**
@@ -159,9 +157,8 @@ function Who({ row }: { row: ActionRow }) {
   const { name, via } = rowActor(row);
   return (
     <span className="inline-flex items-center gap-(--space-1_5)">
-      {row.actor !== null && <Avatar name={name} size="sm" aria-hidden="true" />}
       <span>
-        {name}
+        {row.actor !== null ? <PersonLockup size="sm" name={name} /> : name}
         {via !== null && (
           <>
             {' via '}

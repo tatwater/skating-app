@@ -2,6 +2,7 @@ import type { ComponentProps } from 'react';
 
 import { StatusDot, type StatusDotTone } from '@/components/kit/status-dot';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/kit/tooltip';
+import { shortAge } from '@/lib/ages';
 
 import { CountCard, CountFoot, CountRow, RowLink, SectionNote } from './CountCard';
 import {
@@ -17,14 +18,7 @@ import {
   type PeopleCardData,
   suspensionDetail,
 } from './overviewData';
-import {
-  countText,
-  countTone,
-  dayMonth,
-  shortAge,
-  sumCounts,
-  type ValueTone,
-} from './overviewModel';
+import { countText, countTone, dayMonth, sumCounts, type ValueTone } from './overviewModel';
 
 /**
  * Home's four count cards: Inbox by lane, Corpus by task, Machinery by job, People. Each takes its

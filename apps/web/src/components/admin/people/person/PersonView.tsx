@@ -1,17 +1,16 @@
 import { ROLE_RANK } from '@skating/core';
 import type { ReactNode } from 'react';
 
-import { Avatar } from '@/components/kit/avatar';
 import { Badge } from '@/components/kit/badge';
 import { Button } from '@/components/kit/button';
 import { ListEnd } from '@/components/kit/list-end';
 import { Note } from '@/components/kit/note';
 import { RetryNote } from '@/components/kit/retry-note';
 import { SkeletonBlock, SkeletonText } from '@/components/kit/skeleton';
-import { PersonName } from '@/components/PersonName';
 import { cn } from '@/lib/utils';
 
 import { isFailed, type Loadable } from '../../reads/consoleReads';
+import { PersonLockup } from '../list/kit-candidates/person-lockup';
 import { LeverBlock } from './LeverBlock';
 import { accountRows, canDoRows, type PersonAction } from './levers';
 import {
@@ -220,30 +219,13 @@ function PersonHead({ person }: { person: PersonRead }) {
       data-slot="person-head"
       className="flex items-center gap-(--space-3_5) border-0 border-b border-solid border-line py-(--space-3_5)"
     >
-      <span className="flex min-w-0 items-center gap-(--space-2_5)">
-        <Avatar
-          name={person.displayName}
-          {...(person.profileImageUrl !== null && { src: person.profileImageUrl })}
-          size="xl"
-          tone="head"
-          aria-hidden="true"
-        />
-        <span className="flex min-w-0 flex-col items-start gap-(--space-1_5)">
-          <h1
-            data-slot="person-name"
-            // The boards' 15 px tracked caps: the type scale's 15 px step is the logo's (no name step).
-            className="m-0 truncate text-logo leading-none font-semibold tracking-rail text-fg uppercase"
-          >
-            <PersonName>{person.displayName}</PersonName>
-          </h1>
-          <span
-            data-slot="person-handle"
-            className="font-(family-name:--family-mono) text-mono-sm leading-none text-fg2"
-          >
-            <PersonName>@{person.username}</PersonName>
-          </span>
-        </span>
-      </span>
+      <PersonLockup
+        size="xl"
+        nameAs="h1"
+        name={person.displayName}
+        handle={person.username}
+        src={person.profileImageUrl}
+      />
       <span className="ms-auto flex shrink-0 items-center gap-(--space-2_5)">
         {person.trustClass !== null && (
           <Badge variant="outline" tone="lit" data-slot="trust-class">
@@ -330,8 +312,7 @@ function StatusNoteBlock({
         ) : (
           <>
             <span className="inline-flex items-center gap-(--space-1_5) text-fg1">
-              {w.by !== 'system' && <Avatar name={w.by.name} size="sm" aria-hidden="true" />}
-              {w.by === 'system' ? WORDS.system : w.by.name}
+              {w.by === 'system' ? WORDS.system : <PersonLockup size="sm" name={w.by.name} />}
               {w.by !== 'system' && w.by.via !== null && (
                 <>
                   {' via '}

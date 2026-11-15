@@ -45,7 +45,6 @@ import {
   weekBars,
   weeksTotal,
 } from './personModel';
-import { ageInWords, timeLeftInWords } from './personTime';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -180,21 +179,6 @@ describe('words', () => {
     expect(dayKeyWords('2026-10-01')).toBe('1 Oct');
     expect(monthKeyWords('2026-02')).toBe('Feb 2026');
     expect(utcDayWords(Date.UTC(2026, 7, 17))).toBe('17 Aug');
-  });
-
-  it('writes the time left out, never abbreviated', () => {
-    expect(timeLeftInWords(NOW + 31 * HOUR, NOW)).toBe('1 day left');
-    expect(timeLeftInWords(NOW + 4 * DAY + HOUR, NOW)).toBe('4 days left');
-    expect(timeLeftInWords(NOW + 5 * HOUR, NOW)).toBe('5 hours left');
-    expect(timeLeftInWords(NOW + HOUR, NOW)).toBe('1 hour left');
-    expect(timeLeftInWords(NOW + 10 * 60_000, NOW)).toBe('Less than an hour left');
-  });
-
-  it('writes ages with "ago"', () => {
-    expect(ageInWords(NOW - 2 * DAY, NOW)).toBe('2 days ago');
-    expect(ageInWords(NOW - 5 * HOUR, NOW)).toBe('5 hours ago');
-    expect(ageInWords(NOW - 3 * 60_000, NOW)).toBe('3 minutes ago');
-    expect(ageInWords(NOW + 1000, NOW)).toBe('Just now');
   });
 
   it('names a person by their name, then their handle, else not at all', () => {

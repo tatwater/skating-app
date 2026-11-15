@@ -2,7 +2,9 @@ import type { api } from '@skating/convex/api';
 import { type PeopleLane, TRUST_CLASS_LABELS } from '@skating/core';
 import type { FunctionReturnType } from 'convex/server';
 
-import { type Count, countText, shortAge } from '../../overview/overviewModel';
+import { shortAge } from '@/lib/ages';
+
+import { type Count, countText } from '../../overview/overviewModel';
 import { type AgeFrom, PEOPLE_LANE_INFO } from './peopleLanes';
 import {
   ALL_COUNTS_PREPARING,

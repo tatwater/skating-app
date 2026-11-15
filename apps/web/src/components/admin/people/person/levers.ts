@@ -1,5 +1,5 @@
+import { timeLeftInWords } from '@/lib/ages';
 import { countText, type PersonRead, plural, ROLE_WORDS, type Role } from './personModel';
-import { timeLeftInWords } from './personTime';
 import { WORDS } from './personWords';
 
 /**
