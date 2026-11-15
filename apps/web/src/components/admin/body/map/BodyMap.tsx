@@ -11,14 +11,14 @@ import { FIT_PADDING, useBodyMapCanvas } from './useBodyMapCanvas';
  * The console map, whole: a scene in, the map drawn. `BodyMap` is the app's (a live MapLibre
  * canvas); `BodyMapStillView` is a story's (the same chrome over an SVG still of the same scene,
  * at a fixed size). The rack's switches start from the open tab's layers and the operator's own
- * switches last until the tab changes (`resetKey`).
+ * switches last until the tab or the body changes (`resetKey`).
  */
 
 type Common = {
   /** The body's bounds: what the camera frames and may not wander far from. */
   bbox: BBoxLike;
   scene: BodyMapScene;
-  /** A new key (the open tab) puts the rack back to the scene's own layers. */
+  /** A new key (the body and its open tab) puts the rack back to the scene's own layers. */
   resetKey: string;
   /** What the open tab mounts at the map's foot (its dock). */
   foot?: ReactNode;

@@ -35,7 +35,10 @@ export interface ShapeBay {
   name: string;
   /** "612" — whole acres; under one, a tenth ("0.4"), never a zero for water that's there. */
   acres: string;
-  /** How and when it was made, and by whom, as far as the record says ("Seeded · 2 Sep · Teagan"). */
+  /**
+   * How and when it was made, and by whom, as far as the record says ("Seeded · 2 Sep · Teagan");
+   * *Not recorded yet* when the record was read and holds none of it; `null` while unread.
+   */
   sub: string | null;
   /** Something about it waits on a person (a chord that wants a re-fit). */
   attention: string | null;
@@ -121,13 +124,19 @@ export function shapeOutline(body: ShapeBody): ShapeOutline {
   };
 }
 
+/** What a bay's sub-line says when the record holds nothing about how, when or by whom. */
+export const BAY_NOT_RECORDED = 'Not recorded yet';
+
 /**
  * A bay's sub-line: how it was made (its creating row's `via`; a chord's stored mouth says so when
- * no row does), the day it was made, and who made it — each only as far as the record says.
+ * no row does), the day it was made, and who made it — each only as far as the record says. With
+ * how each was made read and none of it there, it says so; unread (on its way, failed, or withheld
+ * from the viewer), nothing is claimed about the record: `null`, and the row draws no sub-line.
  */
 function baySub(
   s: ShapeSubArea,
   made: BayProvenance | undefined,
+  provenanceRead: boolean,
   timeZone?: string,
 ): string | null {
   const via = made?.createdVia ?? null;
@@ -138,7 +147,8 @@ function baySub(
     at !== undefined ? dayMonth(at, timeZone) : null,
     made?.createdBy ? firstName(made.createdBy.displayName) : null,
   ].filter((p): p is string => p !== null);
-  return parts.length === 0 ? null : parts.join(' · ');
+  if (parts.length > 0) return parts.join(' · ');
+  return provenanceRead ? BAY_NOT_RECORDED : null;
 }
 
 /**
@@ -157,7 +167,7 @@ export function shapeBays(
       id: `bay:${s._id}`,
       name: s.name,
       acres: acresFigure(s.surfaceAreaSqM),
-      sub: baySub(s, made.get(s._id), timeZone),
+      sub: baySub(s, made.get(s._id), provenance !== undefined, timeZone),
       attention:
         s.mouthStale !== undefined
           ? 'Its chord no longer fits the shore'

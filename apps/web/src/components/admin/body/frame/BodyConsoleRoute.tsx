@@ -191,7 +191,9 @@ export function BodyConsoleRoute({ registry = BODY_TAB_REGISTRY }: { registry?: 
             <BodyMap
               bbox={data.bbox}
               scene={scene}
-              resetKey={tab}
+              // A new body is a fresh rack as much as a new tab is: a neighbor already read for its
+              // name opens at once, with no loading in between to remount the map.
+              resetKey={`${bodyId}:${tab}`}
               mode={mode}
               foot={mapFoot(
                 data.mapFailures,

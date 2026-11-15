@@ -7,7 +7,7 @@ import { expectNoBlanks } from '@/test/blanksAudit';
 import { expectKeyboardOperable } from '@/test/keyboardAudit';
 import { stubJsdomAnimations } from '../jsdomStubs';
 import { ShapeTabView, type ShapeTabViewProps } from './ShapeTab';
-import { CAPPED_SOME, NOT_CHECKED } from './shapeModel';
+import { CAPPED_SOME, NOT_CHECKED, BAY_NOT_RECORDED as NOT_RECORDED } from './shapeModel';
 
 beforeAll(stubJsdomAnimations);
 
@@ -42,7 +42,11 @@ describe('ShapeTabView', () => {
     const { container } = render(
       view({
         outline: { ...OUTLINE, lastImport: null },
-        bays: [{ id: 'bay:x', name: 'Shaker cove', acres: '0.4', sub: null, attention: null }],
+        bays: [
+          { id: 'bay:x', name: 'Shaker cove', acres: '0.4', sub: NOT_RECORDED, attention: null },
+          // How it was made not yet read (or withheld): no sub-line, and no claim about the record.
+          { id: 'bay:y', name: 'Fish bay', acres: '3', sub: null, attention: null },
+        ],
         merge: { touching: [{ id: 'k2', name: 'Unnamed body', lit: 'neighbor:k2' }], note: null },
         bodyLink: (id) => <a href={`/admin/body/${id}`}>Open</a>,
       }),
@@ -50,10 +54,22 @@ describe('ShapeTabView', () => {
     expectNoBlanks(container);
     // A bay made with nothing recorded about how says so, rather than standing bare.
     expect(
-      within(container.querySelector('[data-id="bay:x"]') as HTMLElement).getByText(
-        'Not recorded yet',
-      ),
+      within(container.querySelector('[data-id="bay:x"]') as HTMLElement).getByText(NOT_RECORDED),
     ).toBeInTheDocument();
+    const unread = container.querySelector('[data-id="bay:y"]') as HTMLElement;
+    expect(within(unread).queryByText(NOT_RECORDED)).toBeNull();
+    expect(unread.querySelector('td')?.textContent).toBe('Fish bay');
+  });
+
+  it('never says *Not recorded yet* beside a note that how each bay was made couldn’t be read', () => {
+    render(
+      view({
+        bays: [{ id: 'bay:x', name: 'Shaker cove', acres: '0.4', sub: null, attention: null }],
+        baysMadeFailed: failure(),
+      }),
+    );
+    expect(screen.getByText('How each bay was made couldn’t be read')).toBeInTheDocument();
+    expect(screen.queryByText(NOT_RECORDED)).toBeNull();
   });
 
   it('answers the keyboard wherever it answers a click: bays, touching bodies, the ways', () => {

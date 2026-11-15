@@ -67,8 +67,9 @@ export function BodyConsoleView({
   const panel = useRef<HTMLDivElement | null>(null);
   const inspector = useRef<HTMLDivElement | null>(null);
   // Arriving at a body with nothing focused (the list's Open, a deep link): focus goes to the
-  // panel, so the open tab's keys work at once. Focus somewhere already (a neighbor's link pressed
-  // in a tab) stays where it is.
+  // panel, so the open tab's keys work at once. A neighbor's link pressed in a tab counts as nothing
+  // focused: its row is the old body's and leaves with it. Focus somewhere that stays (the tab strip,
+  // the left column) stays where it is.
   // biome-ignore lint/correctness/useExhaustiveDependencies: an arrival is a new body
   useEffect(() => {
     const active = document.activeElement;

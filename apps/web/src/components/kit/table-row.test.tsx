@@ -23,7 +23,7 @@ function Rows({ onPick, plan }: { onPick: (id: string) => void; plan?: boolean }
           >
             <TableCell>
               Row {id}
-              <a href={`#${id}`}>link {id}</a>
+              <a href={`#${id}`}>Row {id}’s page</a>
             </TableCell>
           </TableRow>
         ))}
@@ -60,10 +60,24 @@ describe('TableRow, clickable', () => {
     expect(row('a')).toHaveFocus();
   });
 
+  it('leaves a modified key to the page: ⇧⏎ and ⌘⏎ never press the row, ⇧↓ never moves', () => {
+    const onPick = vi.fn();
+    render(<Rows onPick={onPick} />);
+    row('a').focus();
+    fireEvent.keyDown(row('a'), { key: 'Enter', shiftKey: true });
+    fireEvent.keyDown(row('a'), { key: 'Enter', metaKey: true });
+    fireEvent.keyDown(row('a'), { key: 'Enter', ctrlKey: true });
+    fireEvent.keyDown(row('a'), { key: ' ', altKey: true });
+    expect(onPick).not.toHaveBeenCalled();
+    const shifted = fireEvent.keyDown(row('a'), { key: 'ArrowDown', shiftKey: true });
+    expect(shifted).toBe(true);
+    expect(row('a')).toHaveFocus();
+  });
+
   it('leaves a key from a control in a cell to that control', () => {
     const onPick = vi.fn();
     render(<Rows onPick={onPick} />);
-    const link = screen.getByText('link a');
+    const link = screen.getByText('Row a’s page');
     fireEvent.keyDown(link, { key: 'Enter' });
     expect(onPick).not.toHaveBeenCalled();
   });

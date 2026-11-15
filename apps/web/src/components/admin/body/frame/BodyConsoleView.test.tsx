@@ -68,10 +68,11 @@ const ARRIVALS: [string, (user: ReturnType<typeof userEvent.setup>) => Promise<v
   ['the list’s Open or a deep link', async () => {}],
   ['a press on the tab strip', (user) => user.click(screen.getByRole('tab', { name: /Names/ }))],
   [
-    'the tab strip’s arrows',
+    'the tab strip’s arrows and ⏎ (the arrows alone only move focus along the strip)',
     async (user) => {
       screen.getByRole('tab', { name: /Shape/ }).focus();
-      await user.keyboard('{ArrowRight}');
+      await user.keyboard('{ArrowRight}{Enter}');
+      expect(screen.getByRole('tab', { name: /Names/ })).toHaveFocus();
     },
   ],
   [

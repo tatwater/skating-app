@@ -140,10 +140,14 @@ type TableRowProps = ComponentProps<'tr'> & {
   dim?: boolean;
 };
 
-/** A clickable row's own keys: ⏎ and Space press it; ↑↓ Home End move to its clickable siblings. */
+/**
+ * A clickable row's own keys: ⏎ and Space press it; ↑↓ Home End move to its clickable siblings.
+ * Only bare keys: ⇧⏎ is the page's (back to the list) and ⌘⏎ a pane's, never a press of the row.
+ */
 function rowKeys(event: KeyboardEvent<HTMLTableRowElement>) {
   // A key from a control in a cell (a link, a button) is that control's.
   if (event.target !== event.currentTarget || event.defaultPrevented) return;
+  if (event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) return;
   const tr = event.currentTarget;
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault();

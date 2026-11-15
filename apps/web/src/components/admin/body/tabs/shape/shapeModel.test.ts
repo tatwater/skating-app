@@ -3,6 +3,7 @@ import type { ReadFailure } from '@/components/admin/reads/consoleReads';
 import { MASCOMA_BAY_PROVENANCE, MASCOMA_SUB_AREAS, on } from '../../frame/bodyFixtures';
 import { MASCOMA_POLYGON } from '../../frame/mascomaFixtures';
 import {
+  BAY_NOT_RECORDED,
   CAPPED_NONE,
   CAPPED_SOME,
   campaignText,
@@ -107,10 +108,11 @@ describe('the bays', () => {
     // No creating row: a chord's stored mouth still says how; else only when.
     expect(shapeBays([bay], made(null))[0]?.sub).toBe('Added · 1 Oct');
     expect(shapeBays([{ ...bay, mouth: {} }], made(null))[0]?.sub).toBe('Drawn by chord · 1 Oct');
-    // Nothing recorded at all: no sub-line, never a guess.
-    expect(
-      shapeBays([{ _id: 'b', name: 'B', surfaceAreaSqM: 4047, removed: false }])[0]?.sub,
-    ).toBeNull();
+    // Nothing in the bays read and how each was made unread: no sub-line, never a guess.
+    const bare = { _id: 'b', name: 'B', surfaceAreaSqM: 4047, removed: false };
+    expect(shapeBays([bare])[0]?.sub).toBeNull();
+    // Read, and none of it recorded for this bay: it says so.
+    expect(shapeBays([bare], [])[0]?.sub).toBe(BAY_NOT_RECORDED);
   });
 
   it('leaves a removed bay to History, and says what waits on a person', () => {

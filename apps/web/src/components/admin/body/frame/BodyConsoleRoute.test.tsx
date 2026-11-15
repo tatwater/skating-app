@@ -345,6 +345,36 @@ describe('BodyConsoleRoute', () => {
     expect(mocks.push).toHaveBeenCalledWith('/admin/bodies?q=mascoma');
   });
 
+  it('goes back to the list on ⇧⏎ from a bay row, without lighting the bay', async () => {
+    const user = userEvent.setup();
+    mocks.search = { from: '/admin/bodies?q=mascoma' };
+    const { container } = render(<Mounted />);
+    container.querySelector<HTMLElement>('[data-id="bay:bay-north"]')?.focus();
+    await user.keyboard('{Shift>}{Enter}{/Shift}');
+    expect(mocks.push).toHaveBeenCalledWith('/admin/bodies?q=mascoma');
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  it('puts the map’s switches back for a new body on the same tab, though it opens at once', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<Mounted />);
+    const putIns = () => screen.getByRole('switch', { name: /Put-ins/ });
+    await user.click(putIns());
+    expect(putIns()).not.toBeChecked();
+    // The neighbor was already read (for Merge's name), so the console never shows it loading.
+    set(
+      api.waterBodies.get,
+      {
+        available: true,
+        body: { ...MASCOMA_RECORD, _id: NEIGHBOR_ID, name: 'Mascoma North Pond', bbox: undefined },
+      },
+      { waterBodyId: NEIGHBOR_ID },
+    );
+    mocks.params = { id: NEIGHBOR_ID };
+    rerender(<Mounted />);
+    expect(putIns()).toBeChecked();
+  });
+
   it('opens an ask on its tab with it lit', async () => {
     const user = userEvent.setup();
     render(<Mounted />);

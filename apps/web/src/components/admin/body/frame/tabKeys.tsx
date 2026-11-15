@@ -7,7 +7,8 @@ import { type PaneBinding, usePaneKeys } from '@/lib/keys';
  * tab's single-letter keys listen on the whole inspector — the tab strip and the panel under it —
  * not on the tab's own root. However the tab is reached, focus is somewhere in the inspector:
  *
- * - by a press or the arrow keys on the tab strip: on the tab's trigger;
+ * - by a press on the tab strip, or its arrows then ⏎ or Space (the arrows alone only move focus
+ *   along the strip; the open tab stays open, and its keys still answer): on the tab's trigger;
  * - by an ask on the left: on the panel (the console moves it there);
  * - by the list's Open or a deep link: on the panel (the console moves focus there on arrival
  *   when nothing else holds it).
