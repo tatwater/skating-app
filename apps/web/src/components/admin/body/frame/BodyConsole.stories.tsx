@@ -6,6 +6,7 @@ import { RetryNote } from '@/components/kit/retry-note';
 import { faceLoaded, must } from '@/components/kit/storyKit';
 import { BodyBoard } from './bodyBoard';
 import { CAPPED_HISTORY, NEIGHBOR_ID, NEIGHBOR_POLYGON } from './bodyFixtures';
+import { NOT_COMPUTED } from './bodyModel';
 
 /**
  * Boards 5.4.1 Body | Shape and 5.4.1 Shape | Scrolled: the Body console as an admin first finds
@@ -157,16 +158,18 @@ export const LitBay: Story = {
 };
 
 /**
- * A body the record has no answer for yet: no stored completeness, no boundary around it, no one
- * vouching for its outline. Each is drawn as absent or *Not recorded yet* — never a zero, never a
- * guess, and never an amber square for a gap the record can't name.
+ * A body the record has no answer for yet: no stored completeness, its towns not computed yet, no
+ * one vouching for its outline. Each is drawn as absent, *Not recorded yet* or *Not computed yet* —
+ * never a zero, never a guess, never "in no town", and never an amber square for a gap the record
+ * can't name.
  */
 export const NotRecorded: Story = {
   name: 'Not recorded',
-  args: { completeness: null, towns: null, trust: null },
+  args: { completeness: null, towns: NOT_COMPUTED, trust: null },
   play: async ({ canvasElement }) => {
     const page = within(canvasElement);
-    await expect(page.queryByText('Towns')).toBeNull();
+    await expect(page.getByText('Not computed yet')).toBeVisible();
+    await expect(page.queryByText('In no town')).toBeNull();
     await expect(page.queryByText('Trusted')).toBeNull();
     await expect(page.getByText('Not recorded yet')).toBeVisible();
     await expect(page.queryByRole('meter', { name: /Complete/ })).toBeNull();

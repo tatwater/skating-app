@@ -6,6 +6,7 @@ import { KeysProvider } from '@/lib/keys';
 import { stubJsdomAnimations } from '../tabs/jsdomStubs';
 import { BodyConsoleGone, type BodyConsoleGoneProps } from './BodyConsoleGone';
 import { BODY_NOW, CAPPED_HISTORY } from './bodyFixtures';
+import { NOT_COMPUTED } from './bodyModel';
 
 beforeAll(stubJsdomAnimations);
 
@@ -66,6 +67,15 @@ describe('BodyConsoleGone', () => {
   it('never draws a capped history as whole', () => {
     render(page({ history: CAPPED_HISTORY }));
     expect(screen.getByText('More history exists than is shown here.')).toBeInTheDocument();
+  });
+
+  it('says a rejected body’s towns aren’t computed yet, and that it is in no town — never a blank', () => {
+    const { rerender } = render(page({ towns: NOT_COMPUTED }));
+    expect(screen.getByText('Not computed yet')).toBeInTheDocument();
+    expect(screen.queryByText('In no town')).toBeNull();
+    rerender(page({ towns: [] }));
+    expect(screen.getByText('In no town')).toBeInTheDocument();
+    expect(screen.queryByText('Not computed yet')).toBeNull();
   });
 
   it('leaves out what isn’t recorded, and History without the audit trail', () => {

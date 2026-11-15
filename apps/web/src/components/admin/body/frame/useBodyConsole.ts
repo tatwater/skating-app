@@ -51,7 +51,7 @@ import { neighborsOf } from './touching';
  *   bodies merged into it), newest first, each row naming its target (`targetLabel`). `capped`
  *   means only that more rows exist than were returned, and then it is never drawn as whole. When
  *   it stopped short of who ruled on access or who set the boost, that verb is read on the body
- *   alone (`bodyOnly`), its latest row.
+ *   alone (`bodyOnly`), its latest rows — the absorbed bodies' own rows come with it.
  *
  * **A body the reads can't serve** — rejected, or merged into another — is its own page: it says the
  * body has been removed (or merged, and into which) and what the record still holds. **`null` is
@@ -60,8 +60,12 @@ import { neighborsOf } from './touching';
 
 /** How many history rows the frame reads (the server's most is 100). */
 export const HISTORY_LIMIT = 50;
-/** The body's own latest row of one verb: who ruled on access, who set the boost. */
-const VERB_LIMIT = 1;
+/**
+ * Rows of one verb read to find the body's own latest: who ruled on access, who set the boost.
+ * Never one: `bodyOnly` still reads each body merged into this one on its own rows, so a newer
+ * ruling on an absorbed body can come first, and the body's own must still be among the rows.
+ */
+const VERB_LIMIT = 10;
 
 /** A body the console can't open, and what the record still says about it. */
 export interface BodyGoneData {
@@ -291,6 +295,8 @@ export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleDa
     [r.landmarks, 'the landmarks'],
     [r.putIns, 'the put-ins'],
     [r.access, 'the lots'],
+    // The neighbors come with the extras: when that read failed, the map says it drew none.
+    [extras, 'the bodies that touch it'],
   ];
   const mapFailed = mapReads.filter(([v]) => isFailed(v)) as [ReadFailure, string][];
   const mapFailures: MapFailures | null =

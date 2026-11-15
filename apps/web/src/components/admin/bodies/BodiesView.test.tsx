@@ -94,6 +94,15 @@ describe('the page', () => {
     expect(screen.getByText('Reservoir · Enfield, NH ·')).toBeInTheDocument();
   });
 
+  it('says in the preview’s kicker that the towns aren’t computed yet, never that there are none', () => {
+    render(
+      <Harness
+        preview={{ ...PREVIEW_MASCOMA, town: null, moreTowns: [], townsNotComputed: true }}
+      />,
+    );
+    expect(screen.getByText('Reservoir · NH · Towns not computed yet')).toBeInTheDocument();
+  });
+
   it('picks a lane as a fresh list: no body, search, tab, filter or order carried over', async () => {
     const spy = vi.fn();
     render(<Harness spy={spy} initial={queryOf({ body: 'x', q: 'mor', size: '1000-up' })} />);

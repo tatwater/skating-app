@@ -10,7 +10,7 @@ import { usePaneKeys } from '@/lib/keys';
 import { ConsoleTopStart } from '../../shell/ConsoleShell';
 import { BodyHistorySection } from './BodyLeftColumn';
 import type { Removal } from './bodyModel';
-import { NOT_COMPUTED, NOT_COMPUTED_WORDS } from './bodyModel';
+import { IN_NO_TOWN_WORDS, NOT_COMPUTED, NOT_COMPUTED_WORDS } from './bodyModel';
 import type { BodyGoneData } from './useBodyConsole';
 
 /**
@@ -155,7 +155,7 @@ function TownsRow({ towns }: { towns: Loadable<readonly string[] | typeof NOT_CO
     return (
       <KeyValueRow label="Towns">
         <span className="text-fg3">
-          {towns === NOT_COMPUTED ? NOT_COMPUTED_WORDS : 'In no town'}
+          {towns === NOT_COMPUTED ? NOT_COMPUTED_WORDS : IN_NO_TOWN_WORDS}
         </span>
       </KeyValueRow>
     );

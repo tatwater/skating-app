@@ -181,9 +181,38 @@ function limit(id: string): void {
 }
 
 function resume(ids: Iterable<string>): void {
+  const now = Date.now();
   let any = false;
-  for (const id of ids) if (paused.delete(id)) any = true;
+  let held = false;
+  for (const id of ids) {
+    if (!paused.delete(id)) continue;
+    any = true;
+    dropped.delete(id);
+    // A pause that outlasted its limit (a slow render): the hold on the client's old failure runs
+    // from the read taken back, never from Try again — else that failure would read as fresh.
+    const wait = retrying.get(id);
+    if (wait !== undefined && wait.until < now + PENDING_HOLD_MS) {
+      wait.until = now + PENDING_HOLD_MS;
+      held = true;
+    }
+  }
+  // A failure still held when the longer wait runs out is the fresh answer: draw it.
+  if (held) setTimeout(emit, PENDING_HOLD_MS + 1);
   if (any) emit();
+}
+
+/** Count a mounted holder of each read in, so the pause's limit never lets go of one unseen. */
+function hold(ids: readonly string[]): void {
+  for (const id of ids) holders.set(id, (holders.get(id) ?? 0) + 1);
+}
+
+/** Count a holder of each read out, when it unmounts or stops holding it. */
+function release(ids: readonly string[]): void {
+  for (const id of ids) {
+    const n = (holders.get(id) ?? 1) - 1;
+    if (n <= 0) holders.delete(id);
+    else holders.set(id, n);
+  }
 }
 
 /** Forget every pause, wait and report (tests start clean). */
@@ -312,14 +341,8 @@ export function useConsoleReadSet<S extends ReadSpecs>(
   const heldKey = [...ids.values()].join('\n');
   useEffect(() => {
     const held = heldKey === '' ? [] : heldKey.split('\n');
-    for (const id of held) holders.set(id, (holders.get(id) ?? 0) + 1);
-    return () => {
-      for (const id of held) {
-        const n = (holders.get(id) ?? 1) - 1;
-        if (n <= 0) holders.delete(id);
-        else holders.set(id, n);
-      }
-    };
+    hold(held);
+    return () => release(held);
   }, [heldKey]);
 
   // The wait's bookkeeping, after the commit: a read back on its way, a fresh answer landed.
@@ -378,9 +401,15 @@ export function useExternalRead(id: string): { live: boolean; retry: () => void 
   const isPaused = paused.has(id);
   useEffect(() => {
     if (!isPaused) return;
+    dropped.add(id);
     const timer = setTimeout(() => resume([id]), 0);
     return () => clearTimeout(timer);
   }, [isPaused, id]);
+  // Held while mounted, as a Convex read's holder is: a slow render still sees `live` go false.
+  useEffect(() => {
+    hold([id]);
+    return () => release([id]);
+  }, [id]);
   const retry = useCallback(() => {
     retryReads([id]);
     // An external reader's fresh answer is its own to say: no pending wait is held for it.

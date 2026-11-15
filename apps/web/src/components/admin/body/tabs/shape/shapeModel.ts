@@ -194,8 +194,7 @@ export interface ShapeMerge {
   note: string | null;
 }
 
-/** For an outline too large to test, the read says it didn't run: not computed, never "none". */
-/** The body's geometry isn't computed yet, so neither is what touches it. */
+/** The body's geometry isn't computed yet, so neither is what touches it: never "none". */
 export const NOT_COMPUTED_YET = 'Whether another body touches this one isn’t computed yet.';
 /** More bodies stood nearby than the test read. */
 export const CAPPED_NONE =
@@ -203,9 +202,9 @@ export const CAPPED_NONE =
 export const CAPPED_SOME = 'Among the most prominent bodies nearby; smaller ones weren’t checked.';
 
 /**
- * The Merge block, from the touching test and the neighbors' reads — `null` (no block) only when the
- * test ran over everything near and found none, the board's rule. A test that couldn't run, or
- * stopped short, keeps the block and says so.
+ * The Merge block, from the touching test and the neighbors it names — `null` (no block) only when
+ * the test ran over everything near and found none, the board's rule. A test not computed yet, or
+ * one that stopped short, keeps the block and says so.
  */
 export function shapeMerge(
   facts: TouchingFacts,

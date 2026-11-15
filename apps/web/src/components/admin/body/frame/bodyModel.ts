@@ -72,6 +72,8 @@ export interface HistoryAction {
 export const NOT_COMPUTED = 'not-computed' as const;
 /** How a fact not computed yet reads — never *Not recorded yet*, which says the record lacks it. */
 export const NOT_COMPUTED_WORDS = 'Not computed yet';
+/** How computed towns that came back empty read: the boundaries hold the body in none. */
+export const IN_NO_TOWN_WORDS = 'In no town';
 
 // ── Formats ──────────────────────────────────────────────────────────────────────────────────
 

@@ -15,7 +15,13 @@ import { LedStrip } from '@/components/kit/trace-chart';
 import { cn } from '@/lib/utils';
 import { type Completeness, completenessSegments, missingSentence } from '../completeness';
 import type { BodyAsk, BodyHistoryView, BodyIdentity, OutlineTrust } from './bodyModel';
-import { historyHead, historyTime, NOT_COMPUTED, NOT_COMPUTED_WORDS } from './bodyModel';
+import {
+  historyHead,
+  historyTime,
+  IN_NO_TOWN_WORDS,
+  NOT_COMPUTED,
+  NOT_COMPUTED_WORDS,
+} from './bodyModel';
 
 /**
  * The Body console's left column (§5.4): the body's lockup, its figures, how complete its record
@@ -457,7 +463,7 @@ function Identity({
               {towns === NOT_COMPUTED ? (
                 <Faint>{NOT_COMPUTED_WORDS}</Faint>
               ) : towns.length === 0 ? (
-                <Faint>In no town</Faint>
+                <Faint>{IN_NO_TOWN_WORDS}</Faint>
               ) : (
                 <Stack>
                   {towns.map((t) => (

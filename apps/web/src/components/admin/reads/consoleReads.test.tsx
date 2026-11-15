@@ -386,4 +386,57 @@ describe('a retry on a slow render', () => {
       vi.useRealTimers();
     }
   });
+
+  it('holds the old failure as pending from the read taken back when the pause outlasted its wait', async () => {
+    mocks.results.set(getFunctionName(api.waterBodies.get), new Error('down'));
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      const { result } = renderHook(() =>
+        useConsoleReads({ body: read(api.waterBodies.get, { waterBodyId: ID }) }),
+      );
+      (result.current.body as ReadFailure).retry();
+      // The holder's render of the drop comes later than the whole pending hold would have run.
+      vi.advanceTimersByTime(PENDING_HOLD_MS + 2_000);
+      await act(async () => {
+        vi.advanceTimersByTime(0);
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(0);
+      });
+      // Taken back, the client hands back the failure it held: still *Trying again…*, not fresh.
+      expect(result.current.body).toMatchObject({ failed: true, pending: true });
+      act(() => {
+        vi.advanceTimersByTime(PENDING_HOLD_MS + 1);
+      });
+      expect(result.current.body).toMatchObject({ failed: true, pending: false });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('lets an external reader go for a commit however late its render', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      const seen: boolean[] = [];
+      const { result } = renderHook(() => {
+        const archive = useExternalRead('archive:slow');
+        seen.push(archive.live);
+        return archive;
+      });
+      result.current.retry();
+      // The pause's limit runs before React gets to the reader.
+      vi.advanceTimersByTime(1_500);
+      await act(async () => {
+        vi.advanceTimersByTime(0);
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(0);
+      });
+      // The reader saw itself let go of (so it asks again), and is live after.
+      expect(seen).toContain(false);
+      expect(result.current.live).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

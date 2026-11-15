@@ -254,16 +254,22 @@ describe('BodyConsoleRoute', () => {
       waterBodyId: MASCOMA_ID,
       action: 'set_public_access',
       bodyOnly: true,
-      limit: 1,
+      limit: 10,
     };
+    const ruling = MASCOMA_HISTORY.find((h) => h.action === 'set_public_access') as HistoryAction;
     set(
       api.bodyConsole.history,
       {
         entries: [
+          // A body merged into this one, ruled on later than this body was: its row comes first.
           historyRow({
-            ...(MASCOMA_HISTORY.find((h) => h.action === 'set_public_access') as HistoryAction),
-            actor: { displayName: 'Sarah B', username: 's' },
+            ...ruling,
+            id: 'absorbed-ruling',
+            targetId: NEIGHBOR_ID,
+            createdAt: ruling.createdAt + 1,
+            actor: { displayName: 'Pat Q', username: 'p' },
           }),
+          historyRow({ ...ruling, actor: { displayName: 'Sarah B', username: 's' } }),
         ],
         capped: true,
       },
@@ -272,9 +278,11 @@ describe('BodyConsoleRoute', () => {
     render(<Mounted />);
     expect(screen.getByText('Latest 2')).toBeInTheDocument();
     expect(screen.getByText('More history exists than is shown here.')).toBeInTheDocument();
-    // Who ruled is the body's own latest ruling, read on the body alone (`bodyOnly`).
+    // Who ruled is the body's own latest ruling, read on the body alone (`bodyOnly`) — read past
+    // its first row, which can be an absorbed body's own.
     expect(askedFor(api.bodyConsole.history)).toContain(JSON.stringify(rulingArgs));
     expect(screen.getByText('Sarah')).toBeInTheDocument();
+    expect(screen.queryByText('Pat')).toBeNull();
     // The boost's row was in the main read: no read of that verb.
     expect(askedFor(api.bodyConsole.history).some((x) => x.includes('set_curated_boost'))).toBe(
       false,
@@ -301,6 +309,12 @@ describe('BodyConsoleRoute', () => {
     await user.click(within(note as HTMLElement).getByRole('button', { name: 'Try again' }));
     expect(await screen.findByText('Nothing recorded')).toBeInTheDocument();
     expect(askedFor(api.bodyConsole.history).length).toBeGreaterThan(0);
+  });
+
+  it('says the map couldn’t read the bodies that touch it when the extras failed', () => {
+    set(api.bodyConsole.consoleExtras, new Error('extras down'));
+    render(<Mounted />);
+    expect(screen.getByText('The map couldn’t read the bodies that touch it')).toBeInTheDocument();
   });
 
   it('opens the tab the URL names, and a slot with no tab says so', () => {
