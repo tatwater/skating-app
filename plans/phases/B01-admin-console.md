@@ -1911,12 +1911,12 @@ row is *S* (its reason line is cut to 280 characters).
 
 | Read | Table · index | Bound | Row | Capped or partial says so |
 | --- | --- | --- | --- | --- |
-| `people.lanes` | `peopleCounts`; `peopleRows` ranges; open flags · `by_status` ×2; tickets · `by_status` ×2 | 64; 201 ×2; 201 ×2; 201 ×2 | S, S, F, S | a stored count before `ready:rows`; a range or queue past 200 |
+| `people.lanes` | `peopleCounts`; `peopleRows` ranges; open flags · `by_status` ×2; tickets · `by_status` ×2; a queue lane's rows (`by_user`, one per person it names) | 64; 201 ×2; 201 ×2; 201 ×2; one each | S, S, F, S, S | `reasons` (the table below); `capped` exactly when there are any |
 | `people.listPage` | one lane's range (`paginate`), or `search_people`; the queues as above; a queue lane's rows | ≤ 100 a page | S | `partial` and `reasons` (the table below) |
 | `people.person` | the profile; `by_target_action` 1 row (its actor from the People row); flags · `by_target_status_reason` and `by_subject_status`; tickets · `by_clerk_user_created`; `by_flagger`; verdict counts; the last-editor check (admins' rows, ≤ 3 profiles, once a read) | 51 / 101 a status; 201; 201; 501; 200 rows + 3 | P, R, F, S, F, S, S + P | `onUser`, `onContent` (also before the subject backfill), `flagsFiled`, `appealsCapped`, `hidden.capped` |
 | `people.history` | `by_target` (user); verdicts · `by_subject_standing` ×2 and `by_subject_ended`, each its action row; flags · `by_subject_status` ×2, each its decision rows | `limit + 1` each (≤ 101) | R | a capped source keeps only rows newer than what it didn't read; `capped` |
 | `people.decisions` | `by_actor`, filtered in the query, `paginate` | 100 a page, 2,000 scanned | R | `isDone` |
-| `people.staffStats` | `by_actor` + `_creationTime` (`paginate`, nine weeks); `by_undoes` per row this week; the season `by_actor` range, each with `by_undoes` and its verdict; grant rows | 2,000; 16 each; 301; 50 | R | a week the read didn't cover; `overturned.capped`; `staffSince` `null` at 50 grants |
+| `people.staffStats` | `by_actor` + `_creationTime` (`paginate`, nine weeks); `by_undoes` per row this week; the season `by_actor` range, each with `by_undoes` and its verdict; grant rows; the latest revoke | 2,000; 16 each; 301; 50; 1 | R | a week the read didn't cover; `overturned.capped`; `staffSince` / `roleSince` `null` when the row that says so isn't among those read |
 | `people.reportTrend` | `reports.by_author_skate_end_time`, `paginate` | 3,000 rows, 8 MiB as they weigh | R | `capped`; `monthsCapped` only when the read stopped inside the window |
 | `contentRecord.personVerdicts` | adds the comment's or Post's Report and the body's library row | charged (`ROW_MAX.bodyLibraryRow`) | R | a short page is not the end |
 | `peopleJobs` sweep / retry | `by_suspension_due` / `by_suspension_parked` `first()` a step; nested reset | while a step fits (head *P* + nested 2*P* + a failure's touch *P*) | P | each pass logs its position (`traced`) |
@@ -1935,7 +1935,7 @@ caller's own profile (`requireCapability`) is one more in every row.
 | `people.decisions` | none | — | **reshaped:** as History |
 | `people.staffStats`, `people.reportTrend` | the target | 1 MiB | one `get` |
 | `peopleJobs.parkedLapses` | a page: profiles until 8 MiB as they really weigh (`maximumBytesRead`) | 8 MiB | **reshaped:** paged with a cursor — it read 51 profiles in one go |
-| `peopleJobs` sweep / retry | the head, and the nested reset's two reads, a step at a time | charged by `lib/readBudget` per step | the nested call's limit is now the budget left (`nestedAllowance`): a fixed limit is measured from what the caller already read, so a heavy head left the reset nothing and every heavy reset failed — which the old test, its profiles half the weight it meant, never reached |
+| `peopleJobs` sweep / retry | the head, and the nested reset's two reads, a step at a time | charged by `lib/readBudget` per step | the nested call's limit is now the budget left (`nestedAllowance`): a fixed limit is measured from what the caller already read, so a heavy head left the reset nothing and every heavy reset failed — which the old test, its profiles half the weight it meant, never reached; and, as in the erasure sweep, a nested call that fails is charged its whole allowance (its reads count though it rolled back), which ends the pass |
 | `backfillRows`, `repairDrift` | a profile and its nested refresh (two reads) a step | charged per step | as the sweep |
 | `backfillFlagSubjects` | a flag's target when it is a person | charged at the limit | one at a time within the budget |
 | `restoreTombstoneStatus`, `lapseOne` | one (read twice) | 2 MiB | one person |
@@ -1960,8 +1960,10 @@ the flag and ticket queues whatever the lane.
 | Appeals open (admins) | waiting tickets · `by_status` per status to 200 (+1); each person's row | `tickets_capped`, `rows_backfill`, `rows_missing` |
 | Search | `search_people` | `rows_backfill` |
 
-A queue lane's count is the people its list can show — those with a row — so the two never disagree;
-someone the queue names without a row is `rows_missing` in both. One test at cap + 1 for each upstream
+A queue lane's count is the people its list can show — those with a row (`listablePeople`, ≤ 200 light
+reads, read whole by the count and by every page) — so the two never disagree, and someone the queue
+names without a row is `rows_missing` in the count and on every page. The Overview's flagged figure
+counts through the same function. One test at cap + 1 for each upstream
 of each lane (`peopleTruth.test.ts`).
 
 **B01-4: one rule for what is offered** (Greptile on #115, P2). An undo is a write of the previous
@@ -1978,7 +1980,9 @@ member's flagging off, promoted, flagging given back, its undo — is pinned as 
 admin, so *staff since* is the grant that moved them in from member (`priorRole: 'member'`) after the
 latest revoke; when that entry isn't on record the answer is `null`, never a later move's date. A grant
 with no `priorRole` — rows from before it was recorded — can't be told from an entry and counts as not
-recorded. *Role since* is the newest role row when it gave the role held now, else `null`.
+recorded. *Role since* is the newest role row when it gave the role held now, else `null`. A role
+change and its undo cancel out for both (a revoke undone a minute later never ended their time on
+staff).
 
 Reads whose rows are audit rows (*R*) are bounded by count, not charged: an audit row's reason and
 metadata are uncapped, so a page of them is weighed by its real size where a `paginate` can say so

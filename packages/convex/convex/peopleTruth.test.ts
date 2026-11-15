@@ -205,9 +205,24 @@ describe('each upstream cap or gap shows in the count and the list', () => {
     const page = await adm.query(api.people.listPage, { lane: 'flagged' });
     expect(page.rows).toEqual([]);
     expect(page).toMatchObject({ partial: true, reasons: ['rows_missing'] });
-    // The count says the same: none it can list, and why.
+    // Someone listable first, the rowless one after: every page says what the lane is missing.
+    const [listable] = await many(t, 1);
+    await t.run((ctx) =>
+      ctx.db.insert('contentFlags', {
+        flaggerId: filer as Id<'profiles'>,
+        targetType: 'user',
+        targetId: listable as Id<'profiles'>,
+        reason: 'spam',
+        status: 'open',
+        createdAt: Date.now() - DAY,
+      }),
+    );
+    const first = await adm.query(api.people.listPage, { lane: 'flagged', pageSize: 1 });
+    expect(first.rows.map((r) => r.userId)).toEqual([listable]);
+    expect(first).toMatchObject({ isDone: true, partial: true, reasons: ['rows_missing'] });
+    // The count says the same: the one it can list, and why it is short.
     expect(await lane(t, 'flagged')).toMatchObject({
-      count: { count: 0, capped: true },
+      count: { count: 1, capped: true },
       reasons: ['rows_missing'],
     });
   });

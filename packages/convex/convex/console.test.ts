@@ -106,6 +106,7 @@ describe('console.overview (B01 §5.1)', () => {
     await seedRequest(t, skater.id, 'activate');
     await seedRequest(t, skater.id, 'name_bay');
     await seedRequest(t, skater.id, 'name_landmark');
+    await syncPeople(t);
 
     const o = await mod.as.query(api.console.overview, {});
     expect(o.inbox.safety).toEqual({ count: 1, capped: false });
@@ -271,6 +272,7 @@ describe('console.overview (B01 §5.1)', () => {
       await seedFlag(t, flagger.id, 'spam', 'user', target.id);
     }
     await seedFlag(t, mod.id, 'spam', 'user', other.id);
+    await syncPeople(t);
     const o = await mod.as.query(api.console.overview, {});
     expect(o.people.flaggedPeople).toEqual({ count: 2, capped: false });
   });

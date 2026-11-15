@@ -150,6 +150,29 @@ function sameFacts(a: PersonRowFields, b: PersonRowFields): boolean {
   return facts(a) === facts(b);
 }
 
+/**
+ * The facts the discipline and ledger rules read of a person (`lib/peopleCan`, `lib/ledgerEditors`),
+ * from their light row — where a profile can weigh a whole document. `canEditLedger` is set only for
+ * an admin who holds the grant (the row's `ledgerEditor`).
+ */
+export function factsOfRow(
+  row: Doc<'peopleRows'>,
+): Pick<
+  Doc<'profiles'>,
+  '_id' | 'role' | 'canEditLedger' | 'status' | 'suspendedUntil' | 'deletionRequestedAt'
+> {
+  return {
+    _id: row.userId,
+    role: row.role,
+    status: row.status,
+    suspendedUntil:
+      row.suspendedUntil > 0 && row.suspendedUntil < OPEN_ENDED ? row.suspendedUntil : undefined,
+    deletionRequestedAt: row.leavingUntil > 0 ? row.leavingUntil - DELETION_GRACE_MS : undefined,
+    // A read-side copy, never a grant: the grant is set only by `lib/ledgerEditors` (D227).
+    ...(row.ledgerEditor ? { canEditLedger: row.ledgerEditor } : {}),
+  };
+}
+
 export function personRowOf(
   ctx: QueryCtx,
   userId: Id<'profiles'>,

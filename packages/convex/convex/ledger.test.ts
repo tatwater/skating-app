@@ -10,6 +10,7 @@ import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { LAST_EDITOR_MESSAGE } from './lib/ledgerEditors';
 import { disciplineRefusal } from './lib/peopleCan';
+import { markReady, READY_ROWS, refreshPersonRow } from './lib/peopleRows';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -266,6 +267,46 @@ describe('ledger.revokeEditor', () => {
     expect((await profile(t, founder.id))?.canEditLedger).toBeUndefined();
   });
 
+  test('once the People rows exist, a holder the row shows cannot act never takes a confirmation from one who can', async () => {
+    // The check confirms only a few holders' profiles, in name order. Three that sort first and
+    // can't act — suspended, on their way out, banned — are passed over on their rows alone, so the
+    // fourth, who can, is still found.
+    const t = convexTest(schema, modules);
+    const day = 86_400_000;
+    const ids = [
+      (
+        await seedUser(t, 'a1', 'admin', {
+          canEditLedger: true,
+          status: 'suspended',
+          suspendedUntil: Date.now() + day,
+        })
+      ).id,
+      (await seedUser(t, 'a2', 'admin', { canEditLedger: true, deletionRequestedAt: Date.now() }))
+        .id,
+      (await seedUser(t, 'a3', 'admin', { canEditLedger: true })).id,
+    ];
+    const target = await editor(t, 'target');
+    const zed = await editor(t, 'zed');
+    await t.run(async (ctx) => {
+      await ctx.db.patch(ids[2] as Id<'profiles'>, { status: 'banned' });
+      for (const id of [...ids, target.id, zed.id]) await refreshPersonRow(ctx, id);
+      await markReady(ctx, READY_ROWS);
+    });
+    await zed.as.mutation(api.ledger.revokeEditor, { userId: target.id, reason: 'x' });
+    expect((await profile(t, target.id))?.canEditLedger).toBeUndefined();
+    // The revoke refreshed the row, so the next check reads it as no longer a holder.
+    const row = await t.run((ctx) =>
+      ctx.db
+        .query('peopleRows')
+        .withIndex('by_user', (q) => q.eq('userId', target.id))
+        .first(),
+    );
+    expect(row?.ledgerEditor).toBe(false);
+    await expect(
+      zed.as.mutation(api.ledger.revokeEditor, { userId: zed.id, reason: 'x' }),
+    ).rejects.toThrow(/last person/i);
+  });
+
   test('refuses someone who does not hold it', async () => {
     const t = convexTest(schema, modules);
     const founder = await editor(t, 'founder');
@@ -306,6 +347,14 @@ describe('a demotion clears it (D227)', () => {
       actorId: founder.id,
       metadata: { cause: 'role_change', role: 'member' },
     });
+    // The People row is refreshed once, after the role patch: no holder, no longer staff.
+    const row = await t.run((ctx) =>
+      ctx.db
+        .query('peopleRows')
+        .withIndex('by_user', (q) => q.eq('userId', other.id))
+        .first(),
+    );
+    expect(row).toMatchObject({ role: 'member', staffRank: 2, ledgerEditor: false });
   });
 
   test('moving an editor down to moderator clears it too; a promotion back does not restore it', async () => {

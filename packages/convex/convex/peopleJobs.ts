@@ -41,6 +41,11 @@ const DAY = 86_400_000;
  * failure's record — the erasure sweep's rule. A nested call's limit counts against the same
  * transaction (its reads are the caller's too), so it is the remaining budget, never a fixed figure: a
  * fixed one is measured from what the caller already read, and a heavy head would leave it nothing.
+ *
+ * The rest of the rule goes with it: a nested call that **failed** may have read all of its allowance
+ * before it threw (a rollback undoes its writes, not its reads), so the caller charges the allowance,
+ * not {@link PERSON_WORK} — which ends the pass, and the next one goes on from there. A success read
+ * only what the writer reads, so it is charged {@link PERSON_WORK}.
  */
 function nestedAllowance(reads: ReadBudget): number {
   return Math.max(0, reads.bytes - ROW_MAX.profile);
@@ -51,6 +56,9 @@ function nestedAllowance(reads: ReadBudget): number {
  * the row's refresh re-reads it after the patch), and the small rows beside it.
  */
 const PERSON_WORK = 2 * DOC_MAX + 64 * 1024;
+
+/** What one nested per-person call needs left in the budget: its work, and a failure's record. */
+const NESTED_NEED = PERSON_WORK + ROW_MAX.profile;
 
 // ── The lapsed-suspension sweep ────────────────────────────────────────────────────────────────
 
@@ -204,15 +212,17 @@ export const sweepLapsedSuspensions = internalMutation({
         reads.charge('small');
         if (!head) break;
         after = { at: head.suspendedUntil as number, creation: head._creationTime };
+        const allowance = nestedAllowance(reads);
         let outcome: LapseOutcome;
         try {
           outcome = await ctx.runMutation(
             internal.peopleJobs.lapseOne,
             { userId: head._id, now: cutoff },
-            { transactionLimits: { bytesRead: nestedAllowance(reads) } },
+            { transactionLimits: { bytesRead: allowance } },
           );
         } catch (err) {
-          reads.spend(PERSON_WORK);
+          // Its reads count here even though it rolled back: charged at its whole allowance.
+          reads.spend(allowance);
           failed++;
           reads.touch('profile');
           if (await recordLapseFailure(ctx, head, errorClassOf(err), cutoff, false)) {
@@ -302,17 +312,18 @@ export const retryLapsedDaily = internalMutation({
         reads.charge('small');
         if (!head) break;
         after = { at: head.lapseParkedAt as number, creation: head._creationTime };
+        const allowance = nestedAllowance(reads);
         try {
           const outcome = await ctx.runMutation(
             internal.peopleJobs.lapseOne,
             { userId: head._id, now },
-            { transactionLimits: { bytesRead: nestedAllowance(reads) } },
+            { transactionLimits: { bytesRead: allowance } },
           );
           reads.spend(PERSON_WORK);
           if (outcome === 'reset') reset++;
           else skipped++;
         } catch (err) {
-          reads.spend(PERSON_WORK);
+          reads.spend(allowance);
           reads.touch('profile');
           failed++;
           await recordLapseFailure(ctx, head, errorClassOf(err), now, true);
@@ -404,19 +415,23 @@ export const repairDrift = internalMutation({
       let repaired = 0;
       let failed = 0;
       for (const row of rows) {
+        // A failure charges its whole allowance, which leaves the rest for the next run.
+        if (!reads.affords(NESTED_NEED)) break;
+        const allowance = nestedAllowance(reads);
         try {
           await ctx.runMutation(
             internal.peopleJobs.refreshOne,
             { userId: row.userId, touch: true },
-            { transactionLimits: { bytesRead: nestedAllowance(reads) } },
+            { transactionLimits: { bytesRead: allowance } },
           );
           repaired++;
+          reads.spend(PERSON_WORK);
         } catch (err) {
+          reads.spend(allowance);
           failed++;
           console.error(`peopleJobs.repairDrift: ${row.userId} failed (${errorClassOf(err)})`);
           await ctx.db.patch(row._id, { refreshedAt: now });
         }
-        reads.spend(PERSON_WORK);
       }
       return { repaired, failed };
     }),
@@ -454,22 +469,31 @@ export const backfillRows = internalMutation({
       );
       let failed = args.failed ?? 0;
       const overwritten = [...(args.overwritten ?? [])];
+      let last: Doc<'profiles'> | undefined;
+      // A failure charges its whole allowance, which ends this pass; the next goes on after `last`.
+      let stopped = false;
       for (const profile of profiles) {
+        if (!reads.affords(NESTED_NEED)) {
+          stopped = true;
+          break;
+        }
         if (deletionOverwritten(profile) && overwritten.length < 100) overwritten.push(profile._id);
+        const allowance = nestedAllowance(reads);
         try {
           await ctx.runMutation(
             internal.peopleJobs.refreshOne,
             { userId: profile._id },
-            { transactionLimits: { bytesRead: nestedAllowance(reads) } },
+            { transactionLimits: { bytesRead: allowance } },
           );
+          reads.spend(PERSON_WORK);
         } catch (err) {
+          reads.spend(allowance);
           failed++;
           console.error(`peopleJobs.backfillRows: ${profile._id} failed (${errorClassOf(err)})`);
         }
-        reads.spend(PERSON_WORK);
+        last = profile;
       }
-      const last = profiles[profiles.length - 1];
-      if (last !== undefined && profiles.length === n) {
+      if (last !== undefined && (stopped || profiles.length === n)) {
         await ctx.scheduler.runAfter(0, internal.peopleJobs.backfillRows, {
           after: last._creationTime,
           failed,

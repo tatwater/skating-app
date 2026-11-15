@@ -61,6 +61,7 @@ import {
   flaggedPeopleFrom,
   LANE_COUNT_CAP,
   laneRange,
+  listablePeople,
   readOpenFlagQueue,
   readStoredCounts,
   readWaitingTickets,
@@ -167,16 +168,14 @@ export const lanes = query({
       return { count: count.count, over: count.capped };
     };
     // A queue lane counts the people its list can show: those with a row (light reads, ≤ 200).
-    let missing = false;
     const listable = async (ids: Id<'profiles'>[]) => {
-      let count = 0;
-      for (const id of ids) {
-        if (await personRowOf(ctx, id)) count++;
-        else missing = true;
-      }
-      return { count, over: false };
+      const { rows, missing } = await listablePeople(ctx, ids);
+      return { count: rows.length, over: false, missing };
     };
-    const counts: Record<PeopleLane, () => Promise<{ count: number; over: boolean }>> = {
+    const counts: Record<
+      PeopleLane,
+      () => Promise<{ count: number; over: boolean; missing?: boolean }>
+    > = {
       everyone: async () => ({ count: stored.count('everyone').count, over: false }),
       staff: async () => ({ count: admins.count + moderators.count, over: false }),
       suspended: () => time('suspended'),
@@ -190,8 +189,7 @@ export const lanes = query({
     };
     const out: Array<{ lane: PeopleLane; count: Count; reasons: PartialReason[] }> = [];
     for (const lane of lanesFor(viewer)) {
-      missing = false;
-      const { count, over } = await counts[lane]();
+      const { count, over, missing = false } = await counts[lane]();
       const reasons: PartialReason[] = [
         ...reasonsOf(up, LANE_DEPENDS[lane]),
         ...(missing ? (['rows_missing'] as const) : []),
@@ -224,7 +222,10 @@ export interface PersonListRow {
   leavingUntil: number | null;
   deletedAt: number | null;
   createdAt: number;
-  /** Open flags on them and on their content, from the open queue (see the page's `flagsCapped`). */
+  /**
+   * Open flags on them and on their content, from the open queue — a floor when the page's `reasons`
+   * name `flags_capped` or `flag_subjects_pending`.
+   */
   openFlags: { onUser: number; onContent: number };
   /** Appeals still waiting — admins only (`null` for a viewer without support). */
   appeals: number | null;
@@ -352,21 +353,16 @@ export const listPage = query({
         lane === 'flagged'
           ? flagged.people.map((p) => p.userId)
           : (appeals?.people ?? []).map((p) => p.userId);
+      // The whole lane's rows (≤ 200 light reads), so a person missing on any page is said on every
+      // page, as the lane's count says it; the page is a slice of the people the list can show.
+      const { rows, missing } = await listablePeople(ctx, ids);
       const start = cursor === null ? 0 : Math.max(0, Number.parseInt(cursor, 10) || 0);
-      const slice = ids.slice(start, start + pageSize);
-      const rows: Doc<'peopleRows'>[] = [];
-      let missing = 0;
-      for (const id of slice) {
-        const row = await personRowOf(ctx, id);
-        if (row) rows.push(row);
-        else missing++;
-      }
-      const end = start + slice.length;
+      const end = Math.min(rows.length, start + pageSize);
       return {
-        rows: shape(rows),
-        isDone: end >= ids.length,
+        rows: shape(rows.slice(start, end)),
+        isDone: end >= rows.length,
         continueCursor: String(end),
-        ...truth(missing > 0),
+        ...truth(missing),
       };
     }
 
@@ -386,7 +382,6 @@ export const listPage = query({
 
 // ── A person ───────────────────────────────────────────────────────────────────────────────────
 
-/** A person named on the page: enough to draw their face and link to them. */
 /**
  * A person named on the page, from their light People row — never their profile, which can weigh a
  * whole document. `displayName` and `username` are `null` only for someone with no row yet (before
@@ -678,16 +673,27 @@ export interface PersonActionRow {
   undo: UndoState;
 }
 
+/**
+ * Each actor's row read once a page. The rows are shaped concurrently (`Promise.all`), so the memo
+ * holds the read itself, not its answer: an answer stored after an `await` would land only once every
+ * row had already started its own read.
+ */
+type Actors = Map<string, Promise<PersonRef | null>>;
+
 async function toRow(
   ctx: QueryCtx,
   viewer: Doc<'profiles'>,
   row: Doc<'moderationActions'>,
-  actors: Map<string, PersonRef | null>,
+  actors: Actors,
 ): Promise<PersonActionRow> {
   let actor: PersonRef | null = null;
   if (row.actorId !== undefined) {
-    if (!actors.has(row.actorId)) actors.set(row.actorId, await personRef(ctx, row.actorId));
-    actor = actors.get(row.actorId) ?? null;
+    let read = actors.get(row.actorId);
+    if (read === undefined) {
+      read = personRef(ctx, row.actorId);
+      actors.set(row.actorId, read);
+    }
+    actor = await read;
   }
   return {
     id: row._id,
@@ -842,7 +848,7 @@ export const history = query({
       sources.map((s) => ({ ...s, rows: s.rows.filter((r) => keep.has(r._id)) })),
       n,
     );
-    const actors = new Map<string, PersonRef | null>();
+    const actors: Actors = new Map();
     return {
       rows: await Promise.all(merged.rows.map((r) => toRow(ctx, viewer, r, actors))),
       // Flags older than the subject stamp aren't found by person until its backfill has run.
@@ -883,7 +889,7 @@ export const decisions = query({
         numItems: clampLimit(limit),
         maximumRowsRead: DECISIONS_SCAN,
       });
-    const actors = new Map<string, PersonRef | null>();
+    const actors: Actors = new Map();
     return {
       rows: await Promise.all(page.page.map((r) => toRow(ctx, viewer, r, actors))),
       isDone: page.isDone,
@@ -987,20 +993,34 @@ function roleMove(row: Doc<'moderationActions'>): { to: UserRole; from: UserRole
  *   entering grant isn't on record, the answer is `null`, never a later move's date.
  * - **role since** is the newest role row, when the role it gave is the one they hold now; if the
  *   newest row gave another role, the move to the present role was never recorded: `null`.
+ * - A role change and its undo cancel out for both: the undo puts back what was, so neither is a move.
  */
 export function staffTenure(
   grants: readonly Doc<'moderationActions'>[],
-  lastRevoke: Doc<'moderationActions'> | null,
+  revokes: readonly Doc<'moderationActions'>[],
   role: UserRole,
 ): {
   staffSince: { at: number; role: UserRole } | null;
   roleSince: { at: number; role: UserRole } | null;
 } {
-  const after = grants.filter((g) => lastRevoke === null || g.createdAt > lastRevoke.createdAt);
-  const entry = after.find((g) => roleMove(g).from === 'member');
-  const newest = [...grants, ...(lastRevoke ? [lastRevoke] : [])].sort(
-    (x, y) => y.createdAt - x.createdAt,
-  )[0];
+  // A role change and its undo cancel out: neither is a move (a revoke undone a minute later never
+  // ended their time on staff). An undo whose undone row is older than the read stays a move.
+  const all = [...grants, ...revokes];
+  const ids = new Set<string>(all.map((r) => r._id));
+  const undone = new Set<string>(
+    all.flatMap((r) => (r.undoesActionId && ids.has(r.undoesActionId) ? [r.undoesActionId] : [])),
+  );
+  const live = all
+    .filter((r) => !undone.has(r._id) && !(r.undoesActionId && ids.has(r.undoesActionId)))
+    .sort((x, y) => y.createdAt - x.createdAt);
+  const lastRevoke = live.find((r) => r.action === 'revoke_role');
+  const entry = live.find(
+    (g) =>
+      g.action === 'grant_role' &&
+      (lastRevoke === undefined || g.createdAt > lastRevoke.createdAt) &&
+      roleMove(g).from === 'member',
+  );
+  const newest = live[0];
   return {
     staffSince: entry === undefined ? null : { at: entry.createdAt, role: roleMove(entry).to },
     roleSince:
@@ -1017,8 +1037,9 @@ export function staffTenure(
  * - **overturned** this season — their decisions someone else reversed (undid, restored or
  *   overturned the verdict); `null` while the season's record hasn't opened (1 July to 1 October, or
  *   a season not begun), with `season.opensOn` to say when it does;
- * - **staffSince** — the grant that made them staff (after any revoke), and **roleSince** the grant to
- *   the role they hold; each `null` (not recorded) when no grant row exists, as for the first admin;
+ * - **staffSince** and **roleSince** — {@link staffTenure}: the grant that moved them in from member
+ *   after the latest revoke, and the newest role row when it gave the role they hold; each `null`
+ *   (not recorded) when no row on record says so, as for the first admin;
  * - **weeks** — decisions in each of the last nine weeks, oldest first.
  *
  * `null` for anyone who isn't staff. Moderators read it on an admin's page too: the audit feed
@@ -1111,9 +1132,9 @@ export const staffStats = query({
     const revokes = await auditRowsOn(
       ctx,
       { targetType: 'user', targetId: staffer, action: 'revoke_role' },
-      1,
+      ROLE_ROWS,
     );
-    const { staffSince, roleSince } = staffTenure(grants, revokes[0] ?? null, target.role);
+    const { staffSince, roleSince } = staffTenure(grants, revokes, target.role);
 
     return {
       decisions: {

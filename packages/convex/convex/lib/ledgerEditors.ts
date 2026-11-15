@@ -26,7 +26,7 @@ import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { writeAudit } from './audit';
 import { hasCapability, isLockedOut, isSuspendedNow } from './auth';
-import { READY_ROWS, refreshPersonRow } from './peopleRows';
+import { factsOfRow, READY_ROWS, refreshPersonRow } from './peopleRows';
 
 type Profile = Doc<'profiles'>;
 
@@ -101,9 +101,11 @@ const VERIFY_PROFILES = 3;
  * Once the People rows exist (`ready:rows`), the candidates come from admins' light rows
  * (`peopleRows.ledgerEditor`) and at most {@link VERIFY_PROFILES} of their profiles are read to confirm
  * each can still act — so the read is a few profiles, never every admin's (a profile can weigh a
- * whole document). A stale row can only undercount (a holder it misses, or one it names that the
- * profile no longer confirms), which refuses a revoke rather than allowing one: never no editor.
- * Before the rows exist, the admins' profiles are read as they always were.
+ * whole document). A holder the row already shows can't act (banned, suspended, on their way out) is
+ * passed over without a read, so it never takes one of the few confirmations from a holder who can.
+ * A stale row can only undercount (a holder it misses, or one it names that the profile no longer
+ * confirms), which refuses a revoke rather than allowing one: never no editor. Before the rows exist,
+ * the admins' profiles are read as they always were.
  */
 export async function otherLedgerEditors(
   ctx: QueryCtx | MutationCtx,
@@ -127,7 +129,7 @@ export async function otherLedgerEditors(
   let confirmed = 0;
   let read = 0;
   for (const row of rows) {
-    if (!row.ledgerEditor || row.userId === exceptId) continue;
+    if (!row.ledgerEditor || row.userId === exceptId || !canStillEdit(factsOfRow(row))) continue;
     if (read >= VERIFY_PROFILES) break;
     read++;
     const profile = await ctx.db.get(row.userId);
@@ -221,13 +223,15 @@ export async function revokeLedgerEditorImpl(
   const refused = await ledgerRevokeRefusal(ctx, target);
   if (refused !== null) throw new ConvexError(refused);
   await takeLedgerGrant(ctx, actor, target, reason.trim(), {});
+  await refreshPersonRow(ctx, userId);
 }
 
 /**
  * The demotion half (called by `admin.ts` before it changes a role): when `target` holds the grant and
  * `newRole` is not admin, the grant goes too, with its own `revoke_ledger_editor` row written **before**
  * the role row — so the role change stays the newest row on the person and keeps its undo, and this
- * row reads as following from it. Refused, like a revoke, when it would leave no editor.
+ * row reads as following from it. Refused, like a revoke, when it would leave no editor. The person's
+ * People row is the caller's to refresh, once, after its role patch.
  */
 export async function clearLedgerGrantOnDemotion(
   ctx: MutationCtx,
@@ -251,7 +255,6 @@ async function takeLedgerGrant(
 ): Promise<void> {
   if (await isLastLedgerEditor(ctx, target)) throw new ConvexError(LAST_EDITOR_MESSAGE);
   await ctx.db.patch(target._id, { canEditLedger: undefined });
-  await refreshPersonRow(ctx, target._id);
   await writeAudit(ctx, {
     actorId: actor._id,
     action: 'revoke_ledger_editor',

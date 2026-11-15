@@ -15,7 +15,7 @@
  * and every row it writes is tagged as the undo.
  */
 
-import { DELETION_GRACE_MS, isLeaving } from '@skating/core';
+import { isLeaving } from '@skating/core';
 import { ConvexError } from 'convex/values';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
@@ -23,7 +23,7 @@ import { asUndoOf } from './audit';
 import { hasCapability } from './auth';
 import { authorDeletedAtOn, authorDeletedRefusal } from './authorDeletion';
 import { type PersonFacts, writeRefusal } from './peopleCan';
-import { OPEN_ENDED, personRowOf } from './peopleRows';
+import { factsOfRow, personRowOf } from './peopleRows';
 import { UNDO_HANDLERS } from './undoHandlers';
 import { UNDO_POLICY, undoCapability, WORKSTREAM_MODE } from './undoPolicy';
 import { meta, type UndoHandler, type UndoViewer } from './undoTypes';
@@ -147,20 +147,7 @@ async function personUndoRefusal(
   const id = ctx.db.normalizeId('profiles', row.targetId);
   if (!id) return 'This account no longer exists.';
   const light = await personRowOf(ctx, id);
-  const target: PersonFacts | null = light
-    ? {
-        _id: id,
-        role: light.role,
-        status: light.status,
-        suspendedUntil:
-          light.suspendedUntil > 0 && light.suspendedUntil < OPEN_ENDED
-            ? light.suspendedUntil
-            : undefined,
-        deletionRequestedAt:
-          light.leavingUntil > 0 ? light.leavingUntil - DELETION_GRACE_MS : undefined,
-        ...(light.ledgerEditor ? { canEditLedger: light.ledgerEditor } : {}),
-      }
-    : await ctx.db.get(id);
+  const target: PersonFacts | null = light ? factsOfRow(light) : await ctx.db.get(id);
   if (!target) return 'This account no longer exists.';
   return writeRefusal(ctx, viewer, target, handler.personWrite(row));
 }

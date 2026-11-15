@@ -200,6 +200,28 @@ describe('the lapsed-suspension sweep', () => {
     expect(freed?.lapseAttempts).toBeUndefined();
   });
 
+  test('a failed reset is charged its whole allowance: the pass ends there, and the next goes on', async () => {
+    const t = convexTest({ schema, modules, transactionLimits: true });
+    const poison = await seed(t, 'poison', { status: 'suspended', suspendedUntil: T0 - 3 * MIN });
+    const rest = [
+      await seed(t, 'r1', { status: 'suspended', suspendedUntil: T0 - 2 * MIN }),
+      await seed(t, 'r2', { status: 'suspended', suspendedUntil: T0 - MIN }),
+    ];
+    const real = audit.writeAudit;
+    vi.spyOn(audit, 'writeAudit').mockImplementation(async (ctx, entry) => {
+      if (entry.targetId === poison) throw new Error('poison');
+      return real(ctx, entry);
+    });
+    expect(await t.mutation(internal.peopleJobs.sweepLapsedSuspensions, {})).toMatchObject({
+      reset: 0,
+      failed: 1,
+      more: true,
+    });
+    await drain(t);
+    for (const id of rest) expect((await get(t, id))?.status).toBe('active');
+    expect((await get(t, poison))?.lapseAttempts).toBe(1);
+  });
+
   test('a new suspension starts the record over', async () => {
     const t = convexTest(schema, modules);
     await seed(t, 'mod', { role: 'moderator' });
@@ -285,7 +307,7 @@ describe('the lapsed-suspension sweep', () => {
   test('a chain of heavy profiles finishes under the real limits', async () => {
     const t = convexTest({ schema, modules, transactionLimits: true });
     const ids: Id<'profiles'>[] = [];
-    // Two people a pass at the worst a profile weighs (its head, its nested reset, a failure's record): seven take four passes.
+    // Three people a pass at the worst a profile weighs (each step keeps its head, its nested reset and a failure's record in reach): seven take three passes.
     for (let i = 0; i < 7; i++) {
       ids.push(
         await seed(t, `h${i}`, {
@@ -333,6 +355,44 @@ describe('the rows: backfill, drift repair, a tombstone put back', () => {
     const counts = await t.run((ctx) => ctx.db.query('peopleCounts').collect());
     expect(counts.some((c) => c.key === READY_ROWS)).toBe(false);
     expect(errors).toHaveBeenCalled();
+  });
+
+  test('a failed refresh ends the backfill’s pass; the next goes on after it, and nothing is marked ready', async () => {
+    const t = convexTest(schema, modules);
+    const first = await seed(t, 'a', {}, false);
+    const second = await seed(t, 'b', {}, false);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const lib = await import('./lib/peopleRows');
+    vi.spyOn(lib, 'refreshPersonRow').mockRejectedValueOnce(new Error('poison'));
+    expect(await t.mutation(internal.peopleJobs.backfillRows, {})).toEqual({ done: false });
+    await drain(t);
+    const rows = await t.run((ctx) => ctx.db.query('peopleRows').collect());
+    expect(rows.map((r) => r.userId)).toEqual([second]);
+    expect(rows.some((r) => r.userId === first)).toBe(false);
+    const counts = await t.run((ctx) => ctx.db.query('peopleCounts').collect());
+    expect(counts.some((c) => c.key === READY_ROWS)).toBe(false);
+  });
+
+  test('a failed drift repair leaves the rest of its rows for the next run', async () => {
+    const t = convexTest(schema, modules);
+    await seed(t, 'p');
+    await seed(t, 'q');
+    await t.run(async (ctx) => {
+      for (const row of await ctx.db.query('peopleRows').collect()) {
+        await ctx.db.patch(row._id, { refreshedAt: T0 - 2 * DAY });
+      }
+    });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const lib = await import('./lib/peopleRows');
+    vi.spyOn(lib, 'refreshPersonRow').mockRejectedValueOnce(new Error('poison'));
+    expect(await t.mutation(internal.peopleJobs.repairDrift, {})).toEqual({
+      repaired: 0,
+      failed: 1,
+    });
+    expect(await t.mutation(internal.peopleJobs.repairDrift, {})).toEqual({
+      repaired: 1,
+      failed: 0,
+    });
   });
 
   test('the drift repair re-derives a row a write missed, and moves a failing one to the back', async () => {

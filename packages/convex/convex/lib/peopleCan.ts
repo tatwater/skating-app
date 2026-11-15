@@ -31,9 +31,9 @@ import {
 type Profile = Doc<'profiles'>;
 
 /**
- * What the rule reads of a person: a profile, or the People row's copy of these facts (undo state,
- * which reads a row per History line, takes the light row; it carries no ledger grant, so the
- * last-editor refusal is then left to the write).
+ * What the rule reads of a person: a profile, or the People row's copy of these facts
+ * (`lib/peopleRows.factsOfRow` — undo state reads a row per History line, and the row carries the
+ * ledger grant, so the last-editor refusal is the same from either).
  */
 export type PersonFacts = LedgerFacts;
 type Ctx = QueryCtx | MutationCtx;

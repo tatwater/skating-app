@@ -18,7 +18,13 @@ import type { QueryCtx } from '../_generated/server';
 import { flagSubject } from './flagSubject';
 import { accountsTotal } from './metricReads';
 import { readOpenFlags } from './openFlags';
-import { OPEN_ENDED, READY_FLAG_SUBJECTS, READY_ROWS, type StoredCountKey } from './peopleRows';
+import {
+  OPEN_ENDED,
+  personRowOf,
+  READY_FLAG_SUBJECTS,
+  READY_ROWS,
+  type StoredCountKey,
+} from './peopleRows';
 
 const DAY_MS = 86_400_000;
 
@@ -133,6 +139,24 @@ export function flaggedPeopleFrom(
   return { people, count: { count: people.length, capped: flagsCapped || unknown }, unknown };
 }
 
+/**
+ * The People rows of the people a queue lane names, in the queue's order, and whether any of them has
+ * no row yet (it can't be listed). Light reads, at most one per person the queue names (≤ 200). The
+ * queue lanes' counts and lists — and the Overview's flagged figure — all count through this, so a
+ * count is the people its list can show.
+ */
+export async function listablePeople(
+  ctx: QueryCtx,
+  ids: readonly Id<'profiles'>[],
+): Promise<{ rows: Doc<'peopleRows'>[]; missing: boolean }> {
+  const rows: Doc<'peopleRows'>[] = [];
+  for (const id of ids) {
+    const row = await personRowOf(ctx, id);
+    if (row) rows.push(row);
+  }
+  return { rows, missing: rows.length < ids.length };
+}
+
 /** The open flag queue, read once for a page: the Overview's and the lanes' one read. */
 export function readOpenFlagQueue(ctx: QueryCtx) {
   return readOpenFlags(ctx, LANE_COUNT_CAP);
@@ -223,7 +247,19 @@ export async function peopleCardFigures(
     suspended: suspended.count,
     nextSuspensionEnds: soonestLapse(suspended.first),
     banned: stored.count('banned'),
-    flaggedPeople: flaggedPeopleFrom(flags.flags, flags.capped).count,
+    // The Flagged lane's own count (`people.lanes`): the people its list can show, a floor whenever
+    // the queue, a flag's subject, the rows backfill or a person's row is missing.
+    flaggedPeople: await (async () => {
+      const flagged = flaggedPeopleFrom(flags.flags, flags.capped);
+      const { rows, missing } = await listablePeople(
+        ctx,
+        flagged.people.map((p) => p.userId),
+      );
+      return {
+        count: rows.length,
+        capped: flagged.count.capped || missing || !stored.rowsReady,
+      };
+    })(),
     appealsOpen: tickets === null ? null : appealsFrom(tickets.tickets, tickets.capped).tickets,
     leaving: stored.count('leaving'),
     // The 6-hourly rollup, as Metrics' total reads it, so the two figures stay one number.

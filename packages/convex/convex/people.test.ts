@@ -161,14 +161,17 @@ describe('mergeSources', () => {
 });
 
 describe('staffTenure', () => {
-  const grant = (at: number, role: string, priorRole?: string) =>
+  const grant = (at: number, role: string, priorRole?: string, undoes?: string) =>
     ({
+      _id: `g${at}`,
       action: 'grant_role',
       createdAt: at,
       metadata: { role, ...(priorRole !== undefined ? { priorRole } : {}) },
+      ...(undoes !== undefined ? { undoesActionId: undoes } : {}),
     }) as unknown as Doc<'moderationActions'>;
   const revoke = (at: number, priorRole: string) =>
     ({
+      _id: `r${at}`,
       action: 'revoke_role',
       createdAt: at,
       metadata: { priorRole },
@@ -176,7 +179,7 @@ describe('staffTenure', () => {
 
   test('a recorded entry is staff since; the newest move is role since', () => {
     expect(
-      staffTenure([grant(5, 'admin', 'moderator'), grant(2, 'moderator', 'member')], null, 'admin'),
+      staffTenure([grant(5, 'admin', 'moderator'), grant(2, 'moderator', 'member')], [], 'admin'),
     ).toEqual({
       staffSince: { at: 2, role: 'moderator' },
       roleSince: { at: 5, role: 'admin' },
@@ -184,7 +187,7 @@ describe('staffTenure', () => {
   });
 
   test('an unrecorded entry, then a promotion: staff since is not recorded, never the promotion', () => {
-    expect(staffTenure([grant(5, 'admin', 'moderator')], null, 'admin')).toEqual({
+    expect(staffTenure([grant(5, 'admin', 'moderator')], [], 'admin')).toEqual({
       staffSince: null,
       roleSince: { at: 5, role: 'admin' },
     });
@@ -194,28 +197,46 @@ describe('staffTenure', () => {
     expect(
       staffTenure(
         [grant(9, 'admin', 'member'), grant(1, 'moderator', 'member')],
-        revoke(4, 'moderator'),
+        [revoke(4, 'moderator')],
         'admin',
       ),
     ).toEqual({ staffSince: { at: 9, role: 'admin' }, roleSince: { at: 9, role: 'admin' } });
     // Revoked with no grant on record since: neither is known.
     expect(
-      staffTenure([grant(1, 'moderator', 'member')], revoke(4, 'moderator'), 'moderator'),
+      staffTenure([grant(1, 'moderator', 'member')], [revoke(4, 'moderator')], 'moderator'),
     ).toEqual({
       staffSince: null,
       roleSince: null,
     });
   });
 
+  test('a revoke undone, and a promotion undone, cancel out: the first entry and the role before stand', () => {
+    expect(
+      staffTenure(
+        [
+          grant(9, 'moderator', 'admin', 'g8'),
+          grant(8, 'admin', 'moderator'),
+          grant(6, 'moderator', 'member', 'r5'),
+          grant(1, 'moderator', 'member'),
+        ],
+        [revoke(5, 'moderator')],
+        'moderator',
+      ),
+    ).toEqual({
+      staffSince: { at: 1, role: 'moderator' },
+      roleSince: { at: 1, role: 'moderator' },
+    });
+  });
+
   test('a grant with no priorRole (from before it was recorded) can’t be told from an entry: not recorded', () => {
-    expect(staffTenure([grant(3, 'moderator')], null, 'moderator')).toEqual({
+    expect(staffTenure([grant(3, 'moderator')], [], 'moderator')).toEqual({
       staffSince: null,
       roleSince: { at: 3, role: 'moderator' },
     });
   });
 
   test('a newest move to a role they no longer hold means the change to the present one went unrecorded', () => {
-    expect(staffTenure([grant(3, 'moderator', 'member')], null, 'admin')).toEqual({
+    expect(staffTenure([grant(3, 'moderator', 'member')], [], 'admin')).toEqual({
       staffSince: { at: 3, role: 'moderator' },
       roleSince: null,
     });
