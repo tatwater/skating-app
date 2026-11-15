@@ -1,11 +1,6 @@
-import {
-  countText,
-  type PersonRead,
-  plural,
-  ROLE_WORDS,
-  type Role,
-  timeLeftWords,
-} from './personModel';
+import { countText, type PersonRead, plural, ROLE_WORDS, type Role } from './personModel';
+import { timeLeftInWords } from './personTime';
+import { WORDS } from './personWords';
 
 /**
  * The page's levers, from the person read — pure. **`can` is the law**: a control the server would
@@ -70,6 +65,11 @@ export type RoleItem = {
   label: string;
   /** A demotion asks a reason; a promotion asks none. */
   needsReason: boolean;
+  /**
+   * Asks a plain confirm (no reason) first: making someone an admin, whose powers start at once —
+   * an undo won't reach what they do in the meantime. Making a moderator acts straight away.
+   */
+  confirm: boolean;
   /** "Also revokes ledger editing", where the read says it applies. */
   note: string | null;
 };
@@ -89,9 +89,9 @@ export type LeverRow = {
 };
 
 const RIGHT_WORDS: Record<Exclude<Permission, 'flagging'>, { label: string; verb: string }> = {
-  reports: { label: 'Reports', verb: 'post reports' },
-  hazards: { label: 'Hazards', verb: 'mark hazards' },
-  comments: { label: 'Comments', verb: 'comment' },
+  reports: { label: 'Reports', verb: WORDS.rightVerb.reports },
+  hazards: { label: 'Hazards', verb: WORDS.rightVerb.hazards },
+  comments: { label: 'Comments', verb: WORDS.rightVerb.comments },
 };
 
 const LAST_EDITOR = {
@@ -115,8 +115,8 @@ export function canDoRows(p: PersonRead): LeverRow[] {
               opens: {
                 kind: 'reason',
                 ask: {
-                  title: `Restrict ${w.label.toLowerCase()}?`,
-                  description: `${p.displayName} won’t be able to ${w.verb} until it’s restored. Everything else they can do stays as it is.`,
+                  title: WORDS.restrictTitle(w.label.toLowerCase()),
+                  description: WORDS.restrictBody(p.displayName, w.verb),
                   confirm: 'Restrict',
                   action: (reason) => ({ kind: 'right', permission, allowed: false, reason }),
                 },
@@ -132,7 +132,7 @@ export function canDoRows(p: PersonRead): LeverRow[] {
     return {
       key: permission,
       label: w.label,
-      status: allowed ? 'Allowed' : 'Restricted',
+      status: allowed ? 'Allowed' : WORDS.restricted,
       tone: allowed ? 'ok' : 'bad',
       buttons,
     };
@@ -162,8 +162,8 @@ export function canDoRows(p: PersonRead): LeverRow[] {
       opens: {
         kind: 'reason',
         ask: {
-          title: 'Switch off flagging?',
-          description: `${p.displayName}’s flags will be refused until it’s switched back on. What they already filed stays in the queue.`,
+          title: WORDS.flaggingOffTitle,
+          description: WORDS.flaggingOffBody(p.displayName),
           confirm: 'Switch off',
           action: (reason) => ({ kind: 'right', permission: 'flagging', allowed: false, reason }),
         },
@@ -172,14 +172,14 @@ export function canDoRows(p: PersonRead): LeverRow[] {
   } else if (!rights.flagging && can.restrict.ok) {
     flagButtons.push({
       id: 'flagging-switch',
-      label: 'Switch on',
+      label: WORDS.switchOn,
       opens: { kind: 'now', action: { kind: 'right', permission: 'flagging', allowed: true } },
     });
   }
   rows.push({
     key: 'flagging',
     label: 'Flagging',
-    status: rights.flagging ? `Allowed · ${filed}` : `Switched off · ${filed}`,
+    status: rights.flagging ? `Allowed · ${filed}` : WORDS.switchedOff(filed),
     tone: rights.flagging ? 'ok' : 'bad',
     buttons: flagButtons,
   });
@@ -197,6 +197,7 @@ export function roleItems(p: PersonRead): RoleItem[] {
         role,
         label: role === 'member' ? 'Make skater' : `Make ${role}`,
         needsReason: verdict.ok && verdict.needsReason,
+        confirm: role === 'admin' && !(verdict.ok && verdict.needsReason),
         note: revokesLedger && role !== 'admin' ? 'Also revokes ledger editing' : null,
       };
     });
@@ -239,10 +240,8 @@ export function accountRows(p: PersonRead, opts: { now: number; self: boolean })
           opens: {
             kind: 'reason',
             ask: {
-              title: opts.self ? 'Step down from ledger editing?' : 'Revoke ledger editing?',
-              description: opts.self
-                ? 'You won’t be able to edit the ledger or give it to anyone. Another admin can give it back.'
-                : `${p.displayName} won’t be able to edit the ledger or give it to anyone.`,
+              title: opts.self ? WORDS.stepDownTitle : WORDS.revokeLedgerTitle,
+              description: WORDS.ledgerOffBody(p.displayName),
               confirm: word,
               action: (reason) => ({ kind: 'ledger', grant: false, reason }),
             },
@@ -280,10 +279,10 @@ export function accountRows(p: PersonRead, opts: { now: number; self: boolean })
       key: 'suspension',
       label: 'Suspension',
       status: lapsed
-        ? 'Ran its course'
+        ? WORDS.lapsed
         : until === null
-          ? 'Until lifted'
-          : timeLeftWords(until, opts.now),
+          ? WORDS.untilLifted
+          : timeLeftInWords(until, opts.now),
       tone: lapsed ? 'quiet' : 'warn',
       buttons,
       joined: buttons.length > 1,
@@ -302,7 +301,7 @@ export function accountRows(p: PersonRead, opts: { now: number; self: boolean })
     rows.push({
       key: 'ban',
       label: 'Ban',
-      status: 'Banned · account kept for appeal',
+      status: WORDS.bannedStatus,
       tone: 'bad',
       buttons: can.lift.ok
         ? [{ id: 'lift', label: 'Lift', opens: { kind: 'now', action: { kind: 'lift' } } }]
@@ -322,9 +321,8 @@ export function accountRows(p: PersonRead, opts: { now: number; self: boolean })
           opens: {
             kind: 'reason',
             ask: {
-              title: `Ban ${p.displayName}?`,
-              description:
-                'They’re signed out and can’t sign in again until the ban is lifted. The account and everything they posted are kept for an appeal.',
+              title: WORDS.banTitle(p.displayName),
+              description: WORDS.banBody,
               confirm: 'Ban',
               destructive: true,
               action: (reason) => ({ kind: 'ban', reason }),

@@ -60,7 +60,7 @@ vi.mock('../../shell/undo', () => ({
 import { resetConsoleReads } from '../../reads/consoleReads';
 import { PersonPane } from './PersonPane';
 import { NOW, ROB, ROB_HISTORY, ROB_TREND, SARAH_STATS, SEASON } from './personFixtures';
-import { usePersonWrites } from './usePersonWrites';
+import { actionIdOf, usePersonWrites } from './usePersonWrites';
 
 const ROB_ID = ROB.userId;
 
@@ -292,6 +292,10 @@ describe('the writes', () => {
     // A promotion from the role menu.
     await user.click(within(lever('role')).getByRole('button', { name: /Change role/ }));
     await user.click(await screen.findByRole('menuitem', { name: /Make admin/ }));
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: /Make admin/ }),
+    );
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     await waitFor(() =>
       expect(mocks.mutations.get('admin:grantRole')).toHaveBeenCalledWith({
         userId: ROB_ID,
@@ -378,6 +382,34 @@ describe('the write hook', () => {
       reason: 'Floods',
     });
     expect(mocks.announce).toHaveBeenCalledTimes(8);
+  });
+
+  it('reports success as soon as the server answers — the toast never holds it up', async () => {
+    let lookup: () => void = () => {};
+    mocks.announce.mockImplementationOnce(() => new Promise<void>((r) => (lookup = r)));
+    const result = await hook()({ kind: 'lift' });
+    expect(result).toBeNull();
+    expect(mocks.announce).toHaveBeenCalledTimes(1);
+    lookup();
+  });
+
+  it('a toast that fails is absorbed; the write still landed', async () => {
+    mocks.announce.mockImplementationOnce(async () => {
+      throw new Error('lookup failed');
+    });
+    expect(await hook()({ kind: 'lift' })).toBeNull();
+  });
+
+  it('carries the audit row a write answers with, when it does', async () => {
+    mocks.mutations.set(
+      'moderation:unbanUser',
+      vi.fn(async () => ({ actionId: 'row1' })),
+    );
+    await hook()({ kind: 'lift' });
+    expect(mocks.announce).toHaveBeenLastCalledWith(expect.objectContaining({ actionId: 'row1' }));
+    expect(actionIdOf(ROB_ID)).toBeNull();
+    expect(actionIdOf(null)).toBeNull();
+    expect(actionIdOf({ actionId: 3 })).toBeNull();
   });
 
   it('says so when there is no person to write to, and when the network fails', async () => {

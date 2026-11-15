@@ -17,7 +17,6 @@ import {
   TEAGAN_STATS,
 } from './personFixtures';
 import {
-  agoWords,
   type Count,
   capitalize,
   contradictionsFact,
@@ -38,7 +37,6 @@ import {
   reportsFact,
   staffSinceFact,
   statusNoteWords,
-  timeLeftWords,
   timeToDecideFact,
   trendBars,
   trendLabel,
@@ -47,6 +45,7 @@ import {
   weekBars,
   weeksTotal,
 } from './personModel';
+import { ageInWords, timeLeftInWords } from './personTime';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -143,7 +142,7 @@ describe('the three answers', () => {
         for (const f of [
           decisionsFact(read),
           timeToDecideFact(read),
-          staffSinceFact(read, 'admin', NOW),
+          staffSinceFact(read, 'admin', NOW).fact,
         ]) {
           assertSaid(f);
         }
@@ -184,18 +183,18 @@ describe('words', () => {
   });
 
   it('writes the time left out, never abbreviated', () => {
-    expect(timeLeftWords(NOW + 31 * HOUR, NOW)).toBe('1 day left');
-    expect(timeLeftWords(NOW + 4 * DAY + HOUR, NOW)).toBe('4 days left');
-    expect(timeLeftWords(NOW + 5 * HOUR, NOW)).toBe('5 hours left');
-    expect(timeLeftWords(NOW + HOUR, NOW)).toBe('1 hour left');
-    expect(timeLeftWords(NOW + 10 * 60_000, NOW)).toBe('Less than an hour left');
+    expect(timeLeftInWords(NOW + 31 * HOUR, NOW)).toBe('1 day left');
+    expect(timeLeftInWords(NOW + 4 * DAY + HOUR, NOW)).toBe('4 days left');
+    expect(timeLeftInWords(NOW + 5 * HOUR, NOW)).toBe('5 hours left');
+    expect(timeLeftInWords(NOW + HOUR, NOW)).toBe('1 hour left');
+    expect(timeLeftInWords(NOW + 10 * 60_000, NOW)).toBe('Less than an hour left');
   });
 
   it('writes ages with "ago"', () => {
-    expect(agoWords(NOW - 2 * DAY, NOW)).toBe('2 days ago');
-    expect(agoWords(NOW - 5 * HOUR, NOW)).toBe('5 hours ago');
-    expect(agoWords(NOW - 3 * 60_000, NOW)).toBe('3 minutes ago');
-    expect(agoWords(NOW + 1000, NOW)).toBe('Just now');
+    expect(ageInWords(NOW - 2 * DAY, NOW)).toBe('2 days ago');
+    expect(ageInWords(NOW - 5 * HOUR, NOW)).toBe('5 hours ago');
+    expect(ageInWords(NOW - 3 * 60_000, NOW)).toBe('3 minutes ago');
+    expect(ageInWords(NOW + 1000, NOW)).toBe('Just now');
   });
 
   it('names a person by their name, then their handle, else not at all', () => {
@@ -376,21 +375,34 @@ describe('the staff strip', () => {
     expect(overturnedFact(SEASON_UNRECORDED).state).toBe('unrecorded');
   });
 
-  it('staff since, with the role held and since when', () => {
-    expect(staffSinceFact(SARAH_STATS, 'admin', NOW)).toMatchObject({
-      value: '12 Jan',
-      sub: 'Admin since 3 Mar',
+  it('an admin’s page: Admin since, with when they joined staff beneath only if it differs', () => {
+    const at = (s: typeof SARAH_STATS) => staffSinceFact(s, 'admin', NOW);
+    expect(at(SARAH_STATS)).toEqual({
+      label: 'Admin since',
+      fact: { value: '3 Mar', tone: 'default', sub: 'Moderator from 12 Jan', state: 'value' },
     });
-    expect(staffSinceFact(TEAGAN_STATS, 'admin', NOW)).toMatchObject({
-      value: '2 Jan',
-      sub: 'Admin from the start',
+    expect(at(TEAGAN_STATS).fact).toMatchObject({ value: '2 Jan', sub: 'Admin from the start' });
+    expect(at({ ...SARAH_STATS, staffSince: null }).fact).toEqual({
+      value: '3 Mar',
+      tone: 'default',
+      state: 'value',
     });
-    expect(staffSinceFact({ ...SARAH_STATS, roleSince: null }, 'admin', NOW).sub).toBe(
-      'Admin · since not recorded yet',
-    );
-    expect(staffSinceFact(STATS_PENDING, 'admin', NOW).state).toBe('pending');
-    expect(staffSinceFact(STATS_CAPPED, 'admin', NOW).state).toBe('capped');
-    expect(staffSinceFact(STATS_UNRECORDED, 'admin', NOW).state).toBe('unrecorded');
+    expect(at({ ...SARAH_STATS, roleSince: null }).fact.state).toBe('unrecorded');
+    expect(at(STATS_PENDING).fact.state).toBe('pending');
+    expect(at(STATS_CAPPED).fact.state).toBe('capped');
+    expect(at(STATS_UNRECORDED).fact.state).toBe('unrecorded');
+  });
+
+  it('a moderator’s page: Staff since, with the role’s own day beneath when it differs', () => {
+    const mod = (over: Partial<typeof SARAH_STATS>) =>
+      staffSinceFact({ ...SARAH_STATS, ...over }, 'moderator', NOW);
+    expect(mod({ roleSince: { at: SARAH_STATS.staffSince?.at ?? 0, role: 'moderator' } })).toEqual({
+      label: 'Staff since',
+      fact: { value: '12 Jan', tone: 'default', sub: 'Moderator from the start', state: 'value' },
+    });
+    expect(
+      mod({ roleSince: { at: new Date(2026, 5, 1, 12).getTime(), role: 'moderator' } }).fact.sub,
+    ).toBe('Moderator since 1 Jun');
   });
 
   it('nine weeks, the last running to today', () => {

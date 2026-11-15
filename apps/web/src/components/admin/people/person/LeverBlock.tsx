@@ -25,6 +25,7 @@ import type {
   RoleItem,
 } from './levers';
 import { type PersonRead, ROLE_ARTICLE, ROLE_WORDS } from './personModel';
+import { WORDS } from './personWords';
 import { SuspendDialog } from './SuspendDialog';
 import type { useActing } from './useActing';
 
@@ -51,7 +52,7 @@ type Open =
   | { id: string; kind: 'reason'; ask: ReasonAsk }
   | { id: string; kind: 'suspend'; extend: boolean }
   | { id: string; kind: 'bounty' }
-  | { id: string; kind: 'demote'; item: RoleItem };
+  | { id: string; kind: 'role'; item: RoleItem };
 
 export function LeverBlock({ title, rows, person, acting, now, timeZone }: LeverBlockProps) {
   const region = useRef<HTMLElement>(null);
@@ -118,7 +119,8 @@ export function LeverBlock({ title, rows, person, acting, now, timeZone }: Lever
                 // A note under the label makes the row two lines tall.
                 className={item.note !== null ? 'h-auto py-(--space-1_5)' : undefined}
                 onClick={() => {
-                  if (item.needsReason) show({ id: b.id, kind: 'demote', item });
+                  // A demotion asks why; making an admin asks a plain confirm; a moderator, nothing.
+                  if (item.needsReason || item.confirm) show({ id: b.id, kind: 'role', item });
                   else void run(b.id, { kind: 'role', role: item.role }, true);
                 }}
               >
@@ -187,7 +189,7 @@ export function LeverBlock({ title, rows, person, acting, now, timeZone }: Lever
           const action =
             row.unavailable === true ? (
               <Badge variant="outline" tone="dim" data-slot="not-available">
-                Not available yet
+                {WORDS.notAvailable}
               </Badge>
             ) : row.buttons.length === 0 ? null : row.joined === true ? (
               <ButtonGroup aria-label={row.label}>{row.buttons.map(button)}</ButtonGroup>
@@ -232,21 +234,31 @@ export function LeverBlock({ title, rows, person, acting, now, timeZone }: Lever
           onConfirm={(reason) => run(shown.id, shown.ask.action(reason), false)}
         />
       )}
-      {shown?.kind === 'demote' && (
+      {shown?.kind === 'role' && (
         <AskDialog
           key={shown.serial}
           open={open}
           onOpenChange={close}
-          title={`Make ${person.displayName} ${ROLE_ARTICLE[shown.item.role]}?`}
+          title={WORDS.roleTitle(person.displayName, ROLE_ARTICLE[shown.item.role])}
           description={
-            shown.item.note !== null
-              ? `They lose what the ${ROLE_WORDS[person.role].toLowerCase()} role gives, and ledger editing with it.`
-              : `They lose what the ${ROLE_WORDS[person.role].toLowerCase()} role gives.`
+            !shown.item.needsReason
+              ? WORDS.makeAdminBody
+              : shown.item.note !== null
+                ? WORDS.demoteWithLedgerBody(ROLE_WORDS[person.role].toLowerCase())
+                : WORDS.demoteBody(ROLE_WORDS[person.role].toLowerCase())
           }
           confirm={shown.item.label}
-          reason
+          reason={shown.item.needsReason}
           onConfirm={(reason) =>
-            run(shown.id, { kind: 'role', role: shown.item.role, reason }, false)
+            run(
+              shown.id,
+              {
+                kind: 'role',
+                role: shown.item.role,
+                ...(shown.item.needsReason && { reason }),
+              },
+              false,
+            )
           }
         />
       )}

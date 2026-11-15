@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 
 import type { PersonAction } from './levers';
+import { WORDS } from './personWords';
 
 /**
  * The page's side of a write: which control is busy, the server's refusal in its place, and focus
@@ -28,7 +29,7 @@ export function useActing(onAct: (action: PersonAction) => Promise<string | null
       opts: { region: HTMLElement | null; inline: boolean },
     ): Promise<string | null> => {
       if (running.current !== null) {
-        const wait = 'Another change is still on its way';
+        const wait = WORDS.anotherOnItsWay;
         if (opts.inline) {
           held.current.add(id);
           setRefusals((r) => ({ ...r, [id]: wait }));
@@ -43,7 +44,7 @@ export function useActing(onAct: (action: PersonAction) => Promise<string | null
       try {
         refused = await onAct(action);
       } catch {
-        refused = 'Something went wrong — check your connection and try again.';
+        refused = WORDS.somethingWrong;
       }
       running.current = null;
       setBusy(null);

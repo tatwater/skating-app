@@ -16,13 +16,13 @@ import { historyWhen } from '../../shell/consoleTime';
 import { rowActor, rowReason, rowSentence, undoneWords } from './feedWords';
 import {
   type ActionRow,
-  agoWords,
   type DecisionsRead,
   type HistoryRead,
-  PENDING_WORDS,
   type PersonRead,
   plural,
 } from './personModel';
+import { ageInWords } from './personTime';
+import { WORDS } from './personWords';
 
 /**
  * The page's feeds: what is open about the person, their History, and — on a staff page — their
@@ -85,17 +85,6 @@ export function GoLink({
   );
 }
 
-const TARGET_WORDS: Record<string, string> = {
-  report: 'a report',
-  comment: 'a comment',
-  photo: 'a photo',
-  user: 'the person',
-  hazard: 'a hazard',
-  accessAlert: 'an access alert',
-  waterbody: 'a body',
-  post: 'a post',
-};
-
 // ── Open about this person ───────────────────────────────────────────────────────────────────
 
 /**
@@ -130,7 +119,7 @@ export function OpenAbout({
               key={f.flagId}
               data-slot="open-flag"
               when={<Tag>Inbox</Tag>}
-              who={agoWords(f.createdAt, now)}
+              who={ageInWords(f.createdAt, now)}
               action={
                 <GoLink to={{ kind: 'flags' }} linkTo={linkTo}>
                   Handle
@@ -138,7 +127,7 @@ export function OpenAbout({
               }
             >
               <b className="font-medium text-fg">{FLAG_WORDS[f.reason]} flag</b> on{' '}
-              {TARGET_WORDS[f.targetType] ?? 'their content'}
+              {WORDS.flagOn[f.targetType] ?? WORDS.flagOnUnknown}
             </HistoryRow>
           ))}
           {(appeals ?? []).map((a) => (
@@ -146,7 +135,7 @@ export function OpenAbout({
               key={a.ticketId}
               data-slot="open-appeal"
               when={<Tag>Support</Tag>}
-              who={agoWords(a.createdAt, now)}
+              who={ageInWords(a.createdAt, now)}
               action={
                 <GoLink to={{ kind: 'support' }} linkTo={linkTo}>
                   Handle
@@ -154,16 +143,12 @@ export function OpenAbout({
               }
             >
               <b className="font-medium text-fg">Appeal</b> ·{' '}
-              {a.status === 'open' ? 'waiting' : a.status.replace(/_/g, ' ')}
+              {a.status === 'open' ? WORDS.appealWaiting : a.status.replace(/_/g, ' ')}
             </HistoryRow>
           ))}
         </GridList>
       )}
-      {pending && (
-        <Note data-slot="open-pending">
-          Flags on their content are {PENDING_WORDS.toLowerCase()}
-        </Note>
-      )}
+      {pending && <Note data-slot="open-pending">{WORDS.flagsPending}</Note>}
     </Section>
   );
 }
@@ -226,7 +211,7 @@ function FeedRows({
                 </span>
               ) : row.undo.state === 'overtaken' ? (
                 <span data-slot="feed-overtaken" className="text-assist leading-list text-fg3">
-                  Changed since
+                  {WORDS.changedSince}
                 </span>
               ) : undefined
             }
@@ -287,7 +272,7 @@ export function HistoryBlock({
       aria-busy={history === undefined || undefined}
     >
       <ReadNote reads={[history]} data-slot="history-error">
-        The history couldn’t be read
+        {WORDS.historyFailed}
       </ReadNote>
       {history === undefined && <FeedSkeleton />}
       {value !== null && (
@@ -303,23 +288,21 @@ export function HistoryBlock({
                   data-slot="history-capped"
                   className="col-span-full py-(--space-1_5) text-assist leading-list text-fg3"
                 >
-                  More happened before these
+                  {WORDS.moreBefore}
                 </li>
               )}
               <HistoryRow
                 data-slot="history-created"
                 when={historyWhen(value.createdAt, now, timeZone)}
               >
-                Account created
+                {WORDS.accountCreated}
               </HistoryRow>
             </>
           }
         />
       )}
       {value !== null && value.pending.length > 0 && (
-        <Note data-slot="history-pending">
-          Decisions on flags about their content are {PENDING_WORDS.toLowerCase()}
-        </Note>
+        <Note data-slot="history-pending">{WORDS.verdictsPending}</Note>
       )}
     </Section>
   );
@@ -358,11 +341,11 @@ export function DecisionsBlock({
       aria-busy={decisions === undefined || undefined}
     >
       <ReadNote reads={[decisions]} data-slot="decisions-error">
-        The decisions couldn’t be read
+        {WORDS.decisionsFailed}
       </ReadNote>
       {decisions === undefined && <FeedSkeleton />}
       {value !== null && value.rows.length === 0 && (
-        <Note data-slot="decisions-none">No decisions on record</Note>
+        <Note data-slot="decisions-none">{WORDS.noDecisions}</Note>
       )}
       {value !== null && value.rows.length > 0 && (
         <FeedRows
@@ -376,12 +359,11 @@ export function DecisionsBlock({
         <div className="flex items-center gap-(--space-3)">
           {onMore !== undefined ? (
             <Button size="xs" data-slot="decisions-more" onClick={onMore}>
-              Show more
+              {WORDS.showMore}
             </Button>
           ) : (
             <span data-slot="decisions-capped" className="text-assist leading-list text-fg3">
-              {plural(value.rows.length, 'decision', 'decisions')} shown · more happened before
-              these
+              {WORDS.decisionsShown(plural(value.rows.length, 'decision', 'decisions'))}
             </span>
           )}
         </div>

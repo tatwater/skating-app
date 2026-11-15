@@ -4,8 +4,9 @@ import { useMutation } from 'convex/react';
 import { useCallback } from 'react';
 
 import { errorText } from '../../adminUi';
-import { useUndo } from '../../shell/undo';
+import { type Receipt, useUndo } from '../../shell/undo';
 import type { PersonAction } from './levers';
+import { WORDS } from './personWords';
 import { receiptFor } from './receipts';
 
 /**
@@ -41,12 +42,15 @@ export function usePersonWrites(
 
   return useCallback(
     async (action: PersonAction): Promise<string | null> => {
-      if (person === null) return 'This person couldn’t be read';
+      if (person === null) return WORDS.personFailed;
       const userId = person.userId as Id<'profiles'>;
+      // What the write answered: today the person's id (or nothing); once each write returns
+      // `{ actionId }`, the receipt carries it (below) and the toast needs no lookup.
+      let answered: unknown;
       try {
         switch (action.kind) {
           case 'right':
-            await setPostingPermission({
+            answered = await setPostingPermission({
               userId,
               permission: action.permission,
               allowed: action.allowed,
@@ -54,41 +58,52 @@ export function usePersonWrites(
             });
             break;
           case 'bountyLimit':
-            await setBountyPostLimit({
+            answered = await setBountyPostLimit({
               userId,
               ...(action.limit !== null && { limit: action.limit }),
               ...(action.reason !== undefined && { reason: action.reason }),
             });
             break;
           case 'suspend':
-            await suspendUser({ userId, reason: action.reason, suspendedUntil: action.until });
+            answered = await suspendUser({
+              userId,
+              reason: action.reason,
+              suspendedUntil: action.until,
+            });
             break;
           case 'lift':
-            await unbanUser({ userId });
+            answered = await unbanUser({ userId });
             break;
           case 'ban':
-            await banUser({ userId, reason: action.reason });
+            answered = await banUser({ userId, reason: action.reason });
             break;
           case 'role': {
             const reason = action.reason !== undefined ? { reason: action.reason } : {};
-            if (action.role === 'member') await revokeRole({ userId, ...reason });
-            else await grantRole({ userId, role: action.role, ...reason });
+            answered =
+              action.role === 'member'
+                ? await revokeRole({ userId, ...reason })
+                : await grantRole({ userId, role: action.role, ...reason });
             break;
           }
           case 'ledger':
-            if (action.grant) await grantEditor({ userId });
-            else await revokeEditor({ userId, reason: action.reason ?? '' });
+            answered = action.grant
+              ? await grantEditor({ userId })
+              : await revokeEditor({ userId, reason: action.reason ?? '' });
             break;
         }
       } catch (err) {
         return errorText(err);
       }
-      // The receipt, with its Undo while the server offers one. A failure to ask is the shell's
-      // to absorb: the receipt still shows, without its Undo (History keeps the row).
-      await announce({
+      // The write landed: say so now. The receipt follows on its own — the shell's toast shows once
+      // its undo lookup returns (a moment), with Undo while the server offers one; a lookup that
+      // fails leaves the receipt without Undo (History keeps the row). It never holds this result.
+      const actionId = actionIdOf(answered);
+      const receipt: Receipt & { actionId?: string } = {
         ...receiptFor(action, person, now),
         target: { targetType: 'user', targetId: userId },
-      });
+        ...(actionId !== null && { actionId }),
+      };
+      void announce(receipt).catch(() => {});
       return null;
     },
     [
@@ -106,4 +121,14 @@ export function usePersonWrites(
       revokeEditor,
     ],
   );
+}
+
+/**
+ * The audit row a write answered with, when it answers `{ actionId }` (the People server's
+ * follow-up); `null` for today's writes, which return the person's id or nothing.
+ */
+export function actionIdOf(answered: unknown): string | null {
+  if (typeof answered !== 'object' || answered === null) return null;
+  const id = (answered as { actionId?: unknown }).actionId;
+  return typeof id === 'string' ? id : null;
 }

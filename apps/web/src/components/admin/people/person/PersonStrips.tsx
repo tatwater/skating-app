@@ -18,6 +18,7 @@ import {
   type StaffStatsRead,
   staffSinceFact,
   type TrendRead,
+  tenureLabel,
   timeToDecideFact,
   trendBars,
   trendLabel,
@@ -25,6 +26,7 @@ import {
   weekBars,
   weeksTotal,
 } from './personModel';
+import { WORDS } from './personWords';
 
 /**
  * The stat strips: the skater's (every person) and, under it on a staff page, the staffer's. Each
@@ -34,11 +36,11 @@ import {
  */
 
 /** A failed cell: the dash, and the words — its strip's note carries *Try again*. */
-const FAILED: Fact = { value: '—', tone: 'dim', sub: 'Couldn’t be read', state: 'unrecorded' };
+const FAILED: Fact = { value: '—', tone: 'dim', sub: WORDS.couldNotRead, state: 'unrecorded' };
 
 function FactTile({ label, fact, slot }: { label: string; fact: Fact | undefined; slot: string }) {
   if (fact === undefined) {
-    return <StatTile data-fact={slot} label={label} value="00" sub="Loading" loading />;
+    return <StatTile data-fact={slot} label={label} value="00" sub={WORDS.loading} loading />;
   }
   return (
     <StatTile
@@ -108,11 +110,11 @@ export function SkaterStrip({
         )}
         <div key="trend" data-fact="report-trend" className="flex min-w-0 flex-col gap-(--space-1)">
           <span className={KICK}>
-            {trendValue === null ? 'Reports by month' : trendLabel(trendValue)}
+            {trendValue === null ? WORDS.reportsByMonth : trendLabel(trendValue)}
           </span>
           {trendValue === null ? (
             <span className="text-trim text-assist leading-list text-fg3">
-              {trend === undefined ? 'Loading' : 'Couldn’t be read'}
+              {trend === undefined ? WORDS.loading : WORDS.couldNotRead}
             </span>
           ) : (
             <ReportTrend trend={trendValue} />
@@ -120,7 +122,7 @@ export function SkaterStrip({
         </div>
       </StatGrid>
       <ReadNote reads={[trend]} data-slot="trend-error">
-        Their reports couldn’t be read
+        {WORDS.reportsFailed}
       </ReadNote>
     </div>
   );
@@ -140,8 +142,8 @@ function ReportTrend({ trend }: { trend: TrendRead }) {
           return b === undefined
             ? []
             : [
-                { label: 'Kept', value: b.kept.toLocaleString('en-US') },
-                { label: 'Hidden', value: b.hidden.toLocaleString('en-US') },
+                { label: WORDS.kept, value: b.kept.toLocaleString('en-US') },
+                { label: WORDS.hidden, value: b.hidden.toLocaleString('en-US') },
               ];
         }}
       >
@@ -161,7 +163,7 @@ function ReportTrend({ trend }: { trend: TrendRead }) {
       />
       {trend.monthsCapped && (
         <span data-slot="trend-capped" className="text-assist leading-list text-fg3">
-          Older months not all read
+          {WORDS.olderMonthsUnread}
         </span>
       )}
     </div>
@@ -211,8 +213,8 @@ export function StaffStrip({
         <FactTile
           key="since"
           slot="staff-since"
-          label="Staff since"
-          fact={factOf(stats, (s) => staffSinceFact(s, person.role, now, timeZone))}
+          label={tenureLabel(person.role)}
+          fact={factOf(stats, (s) => staffSinceFact(s, person.role, now, timeZone).fact)}
         />
         <div
           key="weeks"
@@ -222,7 +224,7 @@ export function StaffStrip({
           <span className={KICK}>Decisions · {plural(bars.length || 9, 'week', 'weeks')}</span>
           {value === null ? (
             <span className="text-trim text-assist leading-list text-fg3">
-              {stats === undefined ? 'Loading' : 'Couldn’t be read'}
+              {stats === undefined ? WORDS.loading : WORDS.couldNotRead}
             </span>
           ) : (
             <>
@@ -236,7 +238,7 @@ export function StaffStrip({
                     ? []
                     : [
                         {
-                          label: 'Decisions',
+                          label: WORDS.decisions,
                           value: countText({ count: b.count, capped: b.capped }),
                         },
                       ];
@@ -256,7 +258,7 @@ export function StaffStrip({
         </div>
       </StatGrid>
       <ReadNote reads={[stats, season]} data-slot="staff-error">
-        Their staff figures couldn’t be read
+        {WORDS.staffFailed}
       </ReadNote>
     </div>
   );

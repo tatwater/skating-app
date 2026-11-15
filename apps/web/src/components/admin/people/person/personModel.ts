@@ -2,6 +2,9 @@ import type { api } from '@skating/convex/api';
 import { CONTRADICTION_FLAG_THRESHOLD } from '@skating/core';
 import type { FunctionReturnType } from 'convex/server';
 
+import { timeLeftInWords } from './personTime';
+import { WORDS } from './personWords';
+
 /**
  * The person page's reads, as the page words them — pure, so each rule is tested without Convex.
  * `PersonPane` runs the queries; the blocks draw what these return.
@@ -33,8 +36,8 @@ export type Count = { count: number; capped: boolean };
 
 // ── Facts: a value, or one of the three answers ─────────────────────────────────────────────
 
-export const PENDING_WORDS = 'Still being prepared';
-export const NOT_RECORDED = 'Not recorded yet';
+export const PENDING_WORDS = WORDS.pending;
+export const NOT_RECORDED = WORDS.notRecorded;
 
 export type FactTone = 'default' | 'warn' | 'bad' | 'dim';
 export type FactState = 'value' | 'capped' | 'pending' | 'unrecorded' | 'empty';
@@ -177,23 +180,6 @@ export function utcDayWords(at: number): string {
   return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
 }
 
-/** How long until `until`, written out: "1 day left", "5 hours left", "Less than an hour left". */
-export function timeLeftWords(until: number, now: number): string {
-  const left = until - now;
-  if (left >= DAY) return `${plural(Math.floor(left / DAY), 'day', 'days')} left`;
-  if (left >= HOUR) return `${plural(Math.floor(left / HOUR), 'hour', 'hours')} left`;
-  return 'Less than an hour left';
-}
-
-/** How long ago, written out (a pane's ages say "ago"): "2 days ago", "5 hours ago". */
-export function agoWords(at: number, now: number): string {
-  const age = Math.max(0, now - at);
-  if (age >= DAY) return `${plural(Math.floor(age / DAY), 'day', 'days')} ago`;
-  if (age >= HOUR) return `${plural(Math.floor(age / HOUR), 'hour', 'hours')} ago`;
-  const minutes = Math.floor(age / 60_000);
-  return minutes < 1 ? 'Just now' : `${plural(minutes, 'minute', 'minutes')} ago`;
-}
-
 /** The role, in the console's words: a member is a skater. */
 export const ROLE_WORDS: Record<Role, string> = {
   admin: 'Admin',
@@ -257,17 +243,17 @@ export function statusNoteWords(
   // The read's `lapsed` is as of the minute the page opened; the end passing since is lapsed too.
   const lapsed = note.lapsed || (until !== null && until <= now);
   let badge: string;
-  if (!suspended) badge = 'Banned';
-  else if (lapsed) badge = 'Suspended · ran its course';
-  else if (until === null) badge = 'Suspended · until lifted';
-  else badge = `Suspended · ${timeLeftWords(until, now).toLowerCase()}`;
+  if (!suspended) badge = WORDS.banned;
+  else if (lapsed) badge = WORDS.suspendedLapsed;
+  else if (until === null) badge = WORDS.suspendedOpenEnded;
+  else badge = WORDS.suspendedLeft(timeLeftInWords(until, now).toLowerCase());
   const named = note.by === null ? null : personName(note.by);
   const by: StatusNoteWords['by'] =
     note.by === null
       ? note.at === null
         ? null
         : 'system'
-      : { name: named === null ? 'Name still being prepared' : firstName(named), via: note.via };
+      : { name: named === null ? WORDS.nameNotReady : firstName(named), via: note.via };
   const verb = suspended ? 'Suspended' : 'Banned';
   return {
     badge,
@@ -278,7 +264,7 @@ export function statusNoteWords(
     lifts:
       suspended && until !== null
         ? lapsed
-          ? `Ran its course ${momentWords(until, now, timeZone)} · lifting on its own`
+          ? WORDS.ranItsCourse(momentWords(until, now, timeZone))
           : `Lifts on its own ${momentWords(until, now, timeZone)}`
         : null,
   };
@@ -305,7 +291,7 @@ export function openFlagsFact(
   flags: PersonRead['strip']['openFlags'],
   contentPending: boolean,
 ): Fact {
-  const onUser = `${countText(flags.onUser)} on the person`;
+  const onUser = WORDS.onThePerson(countText(flags.onUser));
   if (contentPending) return { ...pendingFact(), sub: `${PENDING_WORDS} · ${onUser}` };
   const total = flags.onContent.count + flags.onUser.count;
   return {
@@ -362,10 +348,12 @@ export function decisionsFact(stats: StaffStatsRead): Fact {
   const undone = stats.decisions.undoneByOthers;
   const sub =
     stats.pending.length > 0
-      ? `Undone by others · ${PENDING_WORDS.toLowerCase()}`
+      ? WORDS.undonePending
       : undone.count === 0 && !undone.capped
-        ? 'None undone by others'
-        : `${countText(undone)} later undone by ${undone.count === 1 && !undone.capped ? 'someone else' : 'others'}`;
+        ? WORDS.noneUndone
+        : undone.count === 1 && !undone.capped
+          ? WORDS.undoneByOne(countText(undone))
+          : WORDS.undoneByMany(countText(undone));
   return {
     value: countText(stats.decisions.thisWeek),
     unit: 'this week',
@@ -383,12 +371,12 @@ export function timeToDecideFact(stats: StaffStatsRead): Fact {
     return {
       value: DASH,
       tone: 'dim',
-      sub: 'Too many decided this week to time',
+      sub: WORDS.medianTooMany,
       state: 'capped',
     };
   }
   if (t.medianMs === null) {
-    return unrecordedFact(t.decided === 0 ? 'No filed items decided this week' : NOT_RECORDED);
+    return unrecordedFact(t.decided === 0 ? WORDS.noneDecided : NOT_RECORDED);
   }
   const minutes = Math.round(t.medianMs / 60_000);
   if (minutes < 120)
@@ -424,29 +412,53 @@ export function overturnedFact(season: StaffSeasonRead): Fact {
   });
 }
 
-/** Staff since — the day they came onto staff — with the role they hold and since when. */
+/** The tenure cell's label: *Admin since* on an admin's page, *Staff since* on a moderator's. */
+export const tenureLabel = (role: Role) => (role === 'admin' ? 'Admin since' : 'Staff since');
+
+/**
+ * The tenure cell. On an admin's page it is *Admin since* — the day they became an admin (the
+ * board's value) — with the day they first joined staff under it when that was earlier ("Moderator
+ * from 12 Jan"), or *Admin from the start*. On a moderator's page it is *Staff since*, with the
+ * role's own day under it when that differs. Dates from `roleSince` / `staffSince`; pending, capped
+ * and not recorded said as such.
+ */
 export function staffSinceFact(
   stats: StaffStatsRead,
   role: Role,
   now: number,
   timeZone?: string,
-): Fact {
-  if (stats.pending.length > 0) return pendingFact();
-  const since = stats.staffSince;
-  if (since === null) {
-    return stats.tenureCapped
-      ? { value: DASH, tone: 'dim', sub: 'Older than what one read covers', state: 'capped' }
-      : unrecordedFact();
+): { label: string; fact: Fact } {
+  const admin = role === 'admin';
+  const label = tenureLabel(role);
+  if (stats.pending.length > 0) return { label, fact: pendingFact() };
+  const main = admin ? stats.roleSince : stats.staffSince;
+  const other = admin ? stats.staffSince : stats.roleSince;
+  if (main === null) {
+    return {
+      label,
+      fact: stats.tenureCapped
+        ? { value: DASH, tone: 'dim', sub: WORDS.tenureTooOld, state: 'capped' }
+        : unrecordedFact(),
+    };
   }
-  const held = ROLE_WORDS[role];
-  const roleSince = stats.roleSince;
+  // The other day, beneath, only when it is known and differs; the same day is "from the start".
   const sub =
-    roleSince === null
-      ? `${held} · since ${NOT_RECORDED.toLowerCase()}`
-      : roleSince.at === since.at
-        ? `${held} from the start`
-        : `${held} since ${dateWords(roleSince.at, now, timeZone)}`;
-  return { value: dateWords(since.at, now, timeZone), tone: 'default', sub, state: 'value' };
+    other === null
+      ? undefined
+      : other.at === main.at
+        ? WORDS.roleFromTheStart(ROLE_WORDS[role])
+        : admin
+          ? WORDS.staffFrom(ROLE_WORDS[other.role], dateWords(other.at, now, timeZone))
+          : WORDS.roleSince(ROLE_WORDS[role], dateWords(other.at, now, timeZone));
+  return {
+    label,
+    fact: {
+      value: dateWords(main.at, now, timeZone),
+      tone: 'default',
+      ...(sub !== undefined && { sub }),
+      state: 'value',
+    },
+  };
 }
 
 export type WeekBar = { key: string; title: string; count: number; capped: boolean };

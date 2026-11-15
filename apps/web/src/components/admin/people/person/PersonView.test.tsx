@@ -287,7 +287,7 @@ describe('staff pages', () => {
     expect(fact('decisions')).toHaveTextContent('2 later undone by others');
     expect(fact('time-to-decide')).toHaveTextContent('41 min');
     expect(fact('overturned')).toHaveTextContent('1');
-    expect(fact('staff-since')).toHaveTextContent('12 JanAdmin since 3 Mar');
+    expect(fact('staff-since')).toHaveTextContent('Admin since3 MarModerator from 12 Jan');
     expect(fact('decision-weeks')).toHaveTextContent('90 in all');
     expect(slot('person-left')).toContainElement(slot('person-history'));
     expect(slot('person-right')).toContainElement(slot('person-decisions'));
@@ -537,6 +537,21 @@ describe('writes', () => {
     await userEvent.click(within(menu).getByRole('menuitem', { name: /Make moderator/ }));
     expect(onAct).toHaveBeenCalledWith({ kind: 'role', role: 'moderator' });
     expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('making an admin asks a plain confirm first — no reason', async () => {
+    const { onAct } = draw();
+    await userEvent.click(within(lever('role')).getByRole('button', { name: /Change role/ }));
+    await userEvent.click(
+      within(await screen.findByRole('menu')).getByRole('menuitem', { name: /Make admin/ }),
+    );
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent('Make Rob Tremblay an admin?');
+    expect(dialog).toHaveTextContent('An undo won’t reach what they do in the meantime.');
+    expect(within(dialog).queryByRole('textbox')).toBeNull();
+    expect(onAct).not.toHaveBeenCalled();
+    await userEvent.click(within(dialog).getByRole('button', { name: /Make admin/ }));
+    expect(onAct).toHaveBeenCalledWith({ kind: 'role', role: 'admin' });
   });
 
   it('a ledger grant acts at once', async () => {

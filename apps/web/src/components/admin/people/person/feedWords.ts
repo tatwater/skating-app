@@ -7,6 +7,7 @@ import {
   ROLE_ARTICLE,
   type Role,
 } from './personModel';
+import { WORDS } from './personWords';
 
 /**
  * A History or Decisions row in words: the verb and its object — the target's name where the read
@@ -28,7 +29,7 @@ const RIGHT_NOUN = { reports: 'reports', hazards: 'hazards', comments: 'comments
 /** The row's sentence, without its reason. */
 export function rowSentence(row: ActionRow, now: number, timeZone?: string): string {
   const label = row.targetLabel;
-  const who = label ?? 'an account';
+  const who = label ?? WORDS.anAccount;
   const m = (row.metadata ?? {}) as Meta;
   let words: string;
   if (row.targetType !== 'user') {
@@ -38,54 +39,54 @@ export function rowSentence(row: ActionRow, now: number, timeZone?: string): str
       case 'suspend':
         words =
           typeof m.suspendedUntil === 'number'
-            ? `Suspended ${who} until ${dateWords(m.suspendedUntil, now, timeZone)}`
-            : `Suspended ${who}`;
+            ? WORDS.suspendedUntil(who, dateWords(m.suspendedUntil, now, timeZone))
+            : WORDS.suspendedWho(who);
         break;
       case 'ban':
-        words = `Banned ${who}`;
+        words = WORDS.bannedWho(who);
         break;
       case 'unban':
         words =
           m.prev?.status === 'banned'
-            ? `Lifted the ban on ${who}`
+            ? WORDS.liftedBan(who)
             : m.prev?.status === 'suspended'
-              ? `Lifted the suspension on ${who}`
-              : `Lifted a ban or suspension on ${who}`;
+              ? WORDS.liftedSuspension(who)
+              : WORDS.liftedEither(who);
         break;
       case 'set_posting_permission':
         if (m.permission === 'bounties') {
           words =
             m.limit === null || m.limit === undefined
-              ? `Put the bounty limit for ${who} back to the default`
-              : `Set the bounty limit for ${who} to ${m.limit}`;
+              ? WORDS.bountyDefaultFor(who)
+              : WORDS.bountySetFor(who, m.limit);
         } else if (m.permission === 'flagging') {
+          words = m.allowed === true ? WORDS.flaggingOnFor(who) : WORDS.flaggingOffFor(who);
+        } else if (m.permission !== undefined) {
           words =
             m.allowed === true
-              ? `Switched flagging back on for ${who}`
-              : `Switched off flagging for ${who}`;
-        } else if (m.permission !== undefined) {
-          words = `${m.allowed === true ? 'Restored' : 'Restricted'} ${RIGHT_NOUN[m.permission]} for ${who}`;
+              ? WORDS.restoredFor(RIGHT_NOUN[m.permission], who)
+              : WORDS.restrictedFor(RIGHT_NOUN[m.permission], who);
         } else {
-          words = `Changed posting rights for ${who}`;
+          words = WORDS.rightsChangedFor(who);
         }
         break;
       case 'grant_role':
-        words = `Made ${who} ${ROLE_ARTICLE[m.role ?? 'moderator']}`;
+        words = WORDS.madeRole(who, ROLE_ARTICLE[m.role ?? 'moderator']);
         break;
       case 'revoke_role':
-        words = `Made ${who} ${ROLE_ARTICLE.member}`;
+        words = WORDS.madeRole(who, ROLE_ARTICLE.member);
         break;
       case 'grant_ledger_editor':
-        words = `Gave ${who} ledger editing`;
+        words = WORDS.gaveLedger(who);
         break;
       case 'revoke_ledger_editor':
-        words = `Took ledger editing from ${who}`;
+        words = WORDS.tookLedger(who);
         break;
       default:
         words = `${actionLabel(row.action, row.targetType)}${label !== undefined ? ` · ${label}` : ''}`;
     }
   }
-  return row.undoesActionId !== undefined ? `${words} · an undo` : words;
+  return row.undoesActionId !== undefined ? `${words} · ${WORDS.anUndo}` : words;
 }
 
 /** The typed reason, or `null` for a give-back the server filled in. */
@@ -106,9 +107,9 @@ const AUTHOR_ACTIONS: ReadonlySet<string> = new Set([
  */
 export function rowActor(row: ActionRow): { name: string; via: string | null } {
   const via = row.via ?? null;
-  if (row.actor === null) return { name: 'System', via };
+  if (row.actor === null) return { name: WORDS.system, via };
   const name = personName(row.actor);
-  if (name === null) return { name: 'Name still being prepared', via };
+  if (name === null) return { name: WORDS.nameNotReady, via };
   return { name: AUTHOR_ACTIONS.has(row.action) ? name : firstName(name), via };
 }
 
@@ -118,5 +119,5 @@ export function undoneWords(row: ActionRow, rows: readonly ActionRow[]): string 
   const byId = row.undo.byActionId;
   const by = rows.find((r) => r.id === byId);
   const name = by?.actor ? personName(by.actor) : null;
-  return name === null ? 'Undone' : `Undone · ${firstName(name)}`;
+  return name === null ? WORDS.undone : `${WORDS.undone} · ${firstName(name)}`;
 }

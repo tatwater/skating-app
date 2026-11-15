@@ -5,6 +5,7 @@ import { NumberField } from '@/components/kit/number-field';
 import { RadioGroup, RadioRow } from '@/components/kit/radio';
 
 import { AskDialog } from './AskDialog';
+import { WORDS } from './personWords';
 
 /**
  * Set a person's bounty limit: the default, or a limit of their own (zero stops bounties outright and
@@ -46,8 +47,8 @@ export function BountyDialog({
     <AskDialog
       open={open}
       onOpenChange={onOpenChange}
-      title={`Set ${name}’s bounty limit?`}
-      description="How many open bounties they can post in a day. Zero stops bounties and leaves everything else as it is."
+      title={WORDS.bountyTitle(name)}
+      description={WORDS.bountyBody}
       confirm="Set limit"
       reason={valid && lowersLimit(current, next)}
       ready={valid && !unchanged}
@@ -59,13 +60,13 @@ export function BountyDialog({
         onValueChange={(v) => setMode(v === 'own' ? 'own' : 'default')}
         data-slot="bounty-mode"
       >
-        <RadioRow value="default" label={`The default · ${defaultLimit} a day`} />
-        <RadioRow value="own" label="A limit of their own" />
+        <RadioRow value="default" label={WORDS.bountyDefault(defaultLimit)} />
+        <RadioRow value="own" label={WORDS.bountyOwn} />
       </RadioGroup>
       {mode === 'own' && (
         <NumberField
-          label="Open bounties"
-          unit="per day"
+          label={WORDS.bountyField}
+          unit={WORDS.perDay}
           min={0}
           step={1}
           value={value}

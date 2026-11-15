@@ -4,6 +4,7 @@ import { RadioGroup, RadioRow } from '@/components/kit/radio';
 
 import { AskDialog } from './AskDialog';
 import { momentWords } from './personModel';
+import { WORDS } from './personWords';
 
 /**
  * Suspend, or extend a suspension: how long, then why. A suspension lifts on its own when it runs
@@ -64,20 +65,16 @@ export function SuspendDialog({
     <AskDialog
       open={open}
       onOpenChange={onOpenChange}
-      title={extend ? `Extend ${name}’s suspension?` : `Suspend ${name}?`}
+      title={extend ? WORDS.extendTitle(name) : WORDS.suspendTitle(name)}
       description={
-        extend
-          ? 'The time is added to the end already set. It still lifts on its own.'
-          : replacesBan
-            ? 'This replaces the ban. They can’t use their account until it lifts on its own.'
-            : 'They can’t use their account until it lifts on its own. Everything they posted stays up.'
+        extend ? WORDS.extendBody : replacesBan ? WORDS.replacesBanBody : WORDS.suspendBody
       }
       confirm={extend ? 'Extend' : 'Suspend'}
       reason
       onConfirm={(reason) => onConfirm({ until: liftsAt(ms, now, from), reason })}
     >
       <RadioGroup
-        aria-label={extend ? 'Extend by' : 'For how long'}
+        aria-label={extend ? WORDS.extendBy : WORDS.forHowLong}
         value={choice}
         onValueChange={(v) => setChoice(String(v))}
         data-slot="suspend-durations"
@@ -86,8 +83,8 @@ export function SuspendDialog({
           <RadioRow
             key={d.id}
             value={d.id}
-            label={extend ? `${d.label} more` : d.label}
-            description={`Lifts ${momentWords(liftsAt(d.ms, now, from), now, timeZone)}`}
+            label={extend ? WORDS.durationMore(d.label) : d.label}
+            description={WORDS.liftsAt(momentWords(liftsAt(d.ms, now, from), now, timeZone))}
           />
         ))}
       </RadioGroup>

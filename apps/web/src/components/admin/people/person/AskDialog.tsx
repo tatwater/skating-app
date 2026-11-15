@@ -14,6 +14,8 @@ import {
   AlertDialogTitle,
 } from '@/components/kit/alert-dialog';
 
+import { WORDS } from './personWords';
+
 /**
  * The person page's one dialog: the kit reason dialog, asked before a write that needs something
  * the row can't hold — a reason (only when something is taken away), a duration, a limit.
@@ -124,7 +126,7 @@ function AskBody({
         {children}
         {reason && (
           <AlertDialogReason
-            label="Reason · kept in the audit log"
+            label={WORDS.reasonLabel}
             value={text}
             onChange={(e) => setText(e.target.value)}
           />

@@ -140,16 +140,25 @@ describe('Account', () => {
         role: 'moderator',
         label: 'Make moderator',
         needsReason: true,
+        confirm: false,
         note: 'Also revokes ledger editing',
       },
       {
         role: 'member',
         label: 'Make skater',
         needsReason: true,
+        confirm: false,
         note: 'Also revokes ledger editing',
       },
     ]);
     expect(roleItems(SARAH_PAGE).every((i) => i.note === null)).toBe(true);
+  });
+
+  it('making an admin asks a plain confirm; making a moderator acts straight away', () => {
+    expect(roleItems(ROB).map((i) => [i.role, i.needsReason, i.confirm])).toEqual([
+      ['admin', false, true],
+      ['moderator', false, false],
+    ]);
   });
 
   it('draws board 8.6: Role with no menu; the only editor’s Step down disabled with the board’s tooltip', () => {

@@ -37,6 +37,7 @@ import {
   TRUST_WORDS,
   type TrendRead,
 } from './personModel';
+import { WORDS } from './personWords';
 import { useActing } from './useActing';
 
 /**
@@ -107,7 +108,7 @@ export function PersonView({
         data-slot="no-such-person"
         className="flex flex-col items-start gap-(--space-3) pt-(--space-5)"
       >
-        <ListEnd>No such person</ListEnd>
+        <ListEnd>{WORDS.noSuchPerson}</ListEnd>
         <GoLink to={{ kind: 'people' }} linkTo={linkTo}>
           People
         </GoLink>
@@ -124,7 +125,7 @@ export function PersonView({
           onRetry={person.retry}
           pending={person.pending}
         >
-          This person couldn’t be read
+          {WORDS.personFailed}
         </RetryNote>
         <HistoryBlock history={history} now={now} {...tz} onUndo={onUndo} />
       </>
@@ -286,7 +287,7 @@ function StatusNoteBlock({
   if (person.status === 'deleted') {
     return (
       <Note data-slot="status-note" className="mt-(--space-3_5)">
-        <strong>Deleted</strong>
+        <strong>{WORDS.deleted}</strong>
         {person.deletedAt !== null ? ` · ${dateWords(person.deletedAt, now, timeZone)}` : ''}
       </Note>
     );
@@ -294,8 +295,8 @@ function StatusNoteBlock({
   if (person.leavingUntil !== null) {
     return (
       <Note data-slot="status-note" className="mt-(--space-3_5)">
-        <strong>Leaving</strong> · The account is deleted{' '}
-        {momentWords(person.leavingUntil, now, timeZone)}
+        <strong>{WORDS.leaving}</strong> ·{' '}
+        {WORDS.deletedOn(momentWords(person.leavingUntil, now, timeZone))}
       </Note>
     );
   }
@@ -316,7 +317,7 @@ function StatusNoteBlock({
           {w.reason !== null ? (
             <strong className="font-regular">“{w.reason}”</strong>
           ) : (
-            'Not recorded yet'
+            WORDS.notRecorded
           )}
         </span>
       </span>
@@ -325,12 +326,12 @@ function StatusNoteBlock({
         className="flex flex-wrap items-center gap-(--space-2_5) text-assist text-fg3"
       >
         {w.by === null ? (
-          <span>Who and when: not recorded yet</span>
+          <span>{WORDS.whoAndWhenUnrecorded}</span>
         ) : (
           <>
             <span className="inline-flex items-center gap-(--space-1_5) text-fg1">
               {w.by !== 'system' && <Avatar name={w.by.name} size="sm" aria-hidden="true" />}
-              {w.by === 'system' ? 'System' : w.by.name}
+              {w.by === 'system' ? WORDS.system : w.by.name}
               {w.by !== 'system' && w.by.via !== null && (
                 <>
                   {' via '}
@@ -338,7 +339,7 @@ function StatusNoteBlock({
                 </>
               )}
             </span>
-            <span>{w.when ?? 'When: not recorded yet'}</span>
+            <span>{w.when ?? WORDS.whenUnrecorded}</span>
           </>
         )}
       </span>
