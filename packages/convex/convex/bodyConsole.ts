@@ -20,7 +20,10 @@ import {
   archiveSeasonLabel,
   callerNow,
   currentSeason,
+  hoursToMs,
+  isPassageMarker,
   libraryStandingOf,
+  PASSAGE_EXPIRY_H,
   resolveSeason,
   type Season,
   seasonEndMs,
@@ -467,7 +470,11 @@ export function daysCovered(from: number, to: number, window: { start: number; e
  *
  * Days run through the end of the caller's UTC day (never past it, never past the season). `hazards`
  * lists each counted hazard's first-report day and whether its end is recorded (with its end day),
- * so the tab can mark first reports without another read. `unknownEnds` counts the archived hazards
+ * so the tab can mark first reports without another read, and each one's `type` (`passage: true` for a
+ * reported crossing). **A reported crossing is not counted as a hazard** (D64: it is a passage marker,
+ * a report that someone crossed there): each day's `crossings` counts the crossings live that day,
+ * from first report until expiry or recorded leaving. A crossing never makes a day read safer or
+ * more dangerous; it is its own mark. `unknownEnds` counts the archived hazards
  * with no recorded end. Hidden and merged-away pins are not counted. Bounded at
  * {@link DAILY_HAZARD_CAP}; `capped` past it. `watchOpensOn` is the season record's opening day.
  */
@@ -496,9 +503,9 @@ export const dailyHazards = query({
           .lt('firstReportedAt', window.end),
       )
       .take(DAILY_HAZARD_CAP + 1);
-    const days = new Map<number, { count: number; unknown: number }>();
-    const bump = (day: number, field: 'count' | 'unknown') => {
-      const d = days.get(day) ?? { count: 0, unknown: 0 };
+    const days = new Map<number, { count: number; unknown: number; crossings: number }>();
+    const bump = (day: number, field: 'count' | 'unknown' | 'crossings') => {
+      const d = days.get(day) ?? { count: 0, unknown: 0, crossings: 0 };
       d[field]++;
       days.set(day, d);
     };
@@ -508,11 +515,37 @@ export const dailyHazards = query({
       firstReportedDay: number;
       endRecorded: boolean;
       endDay: number | null;
+      type: Doc<'hazards'>['type'];
+      passage: boolean;
     }[] = [];
     for (const h of hazards.slice(0, DAILY_HAZARD_CAP)) {
       if (h.moderationStatus !== 'visible' || h.mergedIntoHazardId !== undefined) continue;
-      const active = h.status === 'active';
       const firstDay = Math.floor(h.firstReportedAt / DAY_MS) * DAY_MS;
+      // **A reported crossing is not a hazard** (D64): a passage marker says someone got across a
+      // ridge there. It never enters a day's hazard count or its unknowns; it is counted on its own,
+      // for the days it was live — from its first report until its expiry (the last confirmation plus
+      // `PASSAGE_EXPIRY_H`, applied at read for skaters) or its recorded leaving, whichever came first,
+      // never past the caller's day. A count of crossings is only that: no day reads safer for one.
+      if (isPassageMarker(h.type)) {
+        const ends = Math.min(
+          h.lastConfirmedAt + hoursToMs(PASSAGE_EXPIRY_H),
+          h.leftLakeAt ?? Number.POSITIVE_INFINITY,
+        );
+        const ended = ends <= now;
+        const endDay = ended ? Math.floor(ends / DAY_MS) * DAY_MS : null;
+        listed.push({
+          hazardId: h._id,
+          firstReportedDay: firstDay,
+          endRecorded: ended,
+          endDay,
+          type: h.type,
+          passage: true,
+        });
+        const through = endDay === null ? lastDay : Math.min(endDay + DAY_MS, lastDay);
+        for (const day of daysCovered(h.firstReportedAt, through, window)) bump(day, 'crossings');
+        continue;
+      }
+      const active = h.status === 'active';
       // A recorded end counts through its day; a pin still active is on the lake today, whatever any
       // stamp says (an unmerge clears the merge's stamp, but an active pin never reads one).
       const endDay =
@@ -523,6 +556,8 @@ export const dailyHazards = query({
         firstReportedDay: firstDay,
         endRecorded: endDay !== null,
         endDay,
+        type: h.type,
+        passage: false,
       });
       const through = endDay === null ? lastDay : Math.min(endDay + DAY_MS, lastDay);
       for (const day of daysCovered(h.firstReportedAt, active ? lastDay : through, window)) {
@@ -539,7 +574,7 @@ export const dailyHazards = query({
       season,
       days: [...days.entries()]
         .sort(([a], [b]) => a - b)
-        .map(([at, d]) => ({ at, count: d.count, unknown: d.unknown })),
+        .map(([at, d]) => ({ at, count: d.count, unknown: d.unknown, crossings: d.crossings })),
       unknownEnds,
       hazards: listed,
       capped: hazards.length > DAILY_HAZARD_CAP,
