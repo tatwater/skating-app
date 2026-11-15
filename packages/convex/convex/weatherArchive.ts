@@ -1259,22 +1259,34 @@ export const pruneVacatedMemberships = internalMutation({
   },
 });
 
-/** A page of registered cells for a tier, ordered by key so a batched sweep resumes cleanly. */
+/**
+ * A page of registered cells for a tier, ordered by key so a batched sweep resumes cleanly — bounded
+ * by weight as well as rows (D258), so `isDone`, not a short page, says the tier is done.
+ */
 export const pageTierCells = internalQuery({
   args: { tier: literals(WEATHER_TIERS), afterKey: v.optional(v.string()), limit: v.number() },
-  handler: async (ctx, { tier, afterKey, limit }) => {
-    const q = ctx.db
+  handler: async (
+    ctx,
+    { tier, afterKey, limit },
+  ): Promise<{
+    cells: { cellKey: string; lat: number; lng: number; elevationM?: number }[];
+    isDone: boolean;
+  }> => {
+    const page = await ctx.db
       .query('weatherCells')
       .withIndex('by_tier_key', (ix) =>
         afterKey === undefined ? ix.eq('tier', tier) : ix.eq('tier', tier).gt('cellKey', afterKey),
-      );
-    const cells = await q.take(limit);
-    return cells.map((c) => ({
-      cellKey: c.cellKey,
-      lat: c.lat,
-      lng: c.lng,
-      ...(c.elevationM !== undefined ? { elevationM: c.elevationM } : {}),
-    }));
+      )
+      .paginate({ cursor: null, numItems: limit, maximumBytesRead: PAGE_BYTES });
+    return {
+      cells: page.page.map((c) => ({
+        cellKey: c.cellKey,
+        lat: c.lat,
+        lng: c.lng,
+        ...(c.elevationM !== undefined ? { elevationM: c.elevationM } : {}),
+      })),
+      isDone: page.isDone,
+    };
   },
 });
 
@@ -1518,7 +1530,7 @@ export const refreshTierDays = internalAction({
     pastDays: v.optional(v.number()),
   },
   handler: async (ctx, { tier, afterKey, pastDays }): Promise<{ done: boolean; cells: number }> => {
-    const cells = await ctx.runQuery(internal.weatherArchive.pageTierCells, {
+    const { cells, isDone: tierDone } = await ctx.runQuery(internal.weatherArchive.pageTierCells, {
       tier,
       ...(afterKey === undefined ? {} : { afterKey }),
       limit: CELL_BATCH_SIZE,
@@ -1546,7 +1558,7 @@ export const refreshTierDays = internalAction({
       if (tier === 'filter') await rebuildDigestFor(ctx, cell);
     }
 
-    if (cells.length === CELL_BATCH_SIZE && lastKey !== undefined) {
+    if (!tierDone && lastKey !== undefined) {
       await ctx.scheduler.runAfter(0, internal.weatherArchive.refreshTierDays, {
         tier,
         afterKey: lastKey,
@@ -1575,7 +1587,7 @@ export const sweepWeatherDayGaps = internalAction({
     const toMs = today - DAY_MS;
     const fromMs = toMs - (GAP_SWEEP_DAYS - 1) * DAY_MS;
 
-    const cells = await ctx.runQuery(internal.weatherArchive.pageTierCells, {
+    const { cells, isDone: tierDone } = await ctx.runQuery(internal.weatherArchive.pageTierCells, {
       tier,
       ...(afterKey === undefined ? {} : { afterKey }),
       limit: CELL_BATCH_SIZE,
@@ -1614,7 +1626,7 @@ export const sweepWeatherDayGaps = internalAction({
       });
     }
 
-    if (cells.length === CELL_BATCH_SIZE && lastKey !== undefined) {
+    if (!tierDone && lastKey !== undefined) {
       await ctx.scheduler.runAfter(0, internal.weatherArchive.sweepWeatherDayGaps, {
         tier,
         afterKey: lastKey,
@@ -2063,7 +2075,7 @@ export const rebuildCellDigest = internalMutation({
 export const rebuildFilterDigests = internalAction({
   args: { afterKey: v.optional(v.string()) },
   handler: async (ctx, { afterKey }): Promise<{ done: boolean; cells: number }> => {
-    const cells = await ctx.runQuery(internal.weatherArchive.pageTierCells, {
+    const { cells, isDone: tierDone } = await ctx.runQuery(internal.weatherArchive.pageTierCells, {
       tier: 'filter',
       ...(afterKey === undefined ? {} : { afterKey }),
       limit: CELL_BATCH_SIZE,
@@ -2074,7 +2086,7 @@ export const rebuildFilterDigests = internalAction({
       lastKey = cell.cellKey;
       await rebuildDigestFor(ctx, cell);
     }
-    if (cells.length === CELL_BATCH_SIZE && lastKey !== undefined) {
+    if (!tierDone && lastKey !== undefined) {
       await ctx.scheduler.runAfter(0, internal.weatherArchive.rebuildFilterDigests, {
         afterKey: lastKey,
       });

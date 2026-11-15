@@ -62,9 +62,18 @@ import {
 } from './lib/notificationQueue';
 import { resolveNotifications } from './lib/notificationResolve';
 import { traced } from './lib/readBudget';
-import { affords, asItem, type ItemBudget, MiB, runIsolated } from './lib/recurringWork';
+import {
+  affords,
+  asItem,
+  clearFailure,
+  forgetGoneMirrors,
+  type ItemBudget,
+  MiB,
+  mirrorFailure,
+  runIsolated,
+} from './lib/recurringWork';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
-import { takeCapped, takeCappedResult } from './lib/scan';
+import { takeCapped } from './lib/scan';
 import { subAreaDriveCoordFor } from './subAreas';
 
 /**
@@ -434,6 +443,9 @@ const BATCH_LIMITS = {
   documentsWritten: 4000,
 };
 
+/** The most the batch's own read of the queue takes by weight (`maximumBytesRead`). */
+const BATCH_PAGE_BYTES = 2 * MiB;
+
 /** One row delivered alone: its row, recipient, block set, digest pull or trigger re-read. */
 const ROW_ITEM: ItemBudget = {
   limits: { bytesRead: 3 * MiB, documentsRead: 2000, databaseQueries: 200, documentsWritten: 500 },
@@ -536,8 +548,12 @@ export async function recordQueueFailure(
     firstDueAt: dueClockOf(row),
     ...(opts.cutoff !== undefined ? { flushAfter: Math.max(row.flushAfter, opts.cutoff + 1) } : {}),
   });
+  await mirrorFailure(ctx, 'notifications', row._id, next, now);
   return parked ? 'parked' : 'failed';
 }
+
+/** Mirrored failures a retry run checks for work that went some other way, at most. */
+const MIRRORS_CHECKED = 10;
 
 /** Parked rows the hourly retry tries a pass, at most. */
 const RETRY_PER_PASS = 50;
@@ -599,6 +615,14 @@ export const retryParkedNotifications = internalMutation({
           notificationIds: inserted.slice(i, i + DELIVERY_BATCH),
         });
       }
+      // Mirrored failures of rows that went some other way (erased with an account, the season purge).
+      if (!more) {
+        await forgetGoneMirrors(ctx, 'notifications', MIRRORS_CHECKED, async (key) => {
+          const id = ctx.db.normalizeId('notificationQueue', key);
+          const row = id ? await ctx.db.get(id) : null;
+          return row?.attempts !== undefined;
+        });
+      }
       if (more) {
         await ctx.scheduler.runAfter(0, internal.notifications.retryParkedNotifications, {
           cutoff,
@@ -616,24 +640,27 @@ async function flushRows(
   ctx: MutationCtx,
   { now, cutoff, only }: { now: number; cutoff: number; only?: Id<'notificationQueue'> },
 ): Promise<FlushResult> {
-  // "Exactly cap rows" would be ambiguous between a complete drain and a full batch, and here that
-  // decides whether to continue — the helper's cap+1 probe settles it. `paged`: a full batch is
-  // paging, not an answer that came back short, so it isn't logged as a truncation. Parked rows are
-  // out of the range (D258); `only` is one row, the one-by-one path's or the retry's.
+  // Whether more is behind the batch decides whether to continue — the page's `isDone` settles it.
+  // Parked rows are out of the range (D258); `only` is one row, the one-by-one path's or the retry's.
   const onlyRow = only !== undefined ? await ctx.db.get(only) : null;
-  const { rows: due, truncated: batchFull } =
+  // The batch's read is bounded by weight as well as rows (D258): a queue row's coalesced actors are
+  // uncapped, so a page of heavy rows ends early — and continues — rather than reading past the
+  // batch's limits and failing it into the one-by-one path every pass.
+  const head =
     only !== undefined
-      ? { rows: onlyRow ? [onlyRow] : [], truncated: false }
-      : await takeCappedResult(
-          ctx.db
-            .query('notificationQueue')
-            .withIndex('by_parked_flush', (q) =>
-              q.eq('parkedAt', undefined).lte('flushAfter', cutoff),
-            ),
-          FLUSH_BATCH_CAP,
-          'notifications.flushNotificationQueue',
-          { paged: true },
-        );
+      ? null
+      : await ctx.db
+          .query('notificationQueue')
+          .withIndex('by_parked_flush', (q) =>
+            q.eq('parkedAt', undefined).lte('flushAfter', cutoff),
+          )
+          .paginate({
+            cursor: null,
+            numItems: FLUSH_BATCH_CAP,
+            maximumBytesRead: BATCH_PAGE_BYTES,
+          });
+  const due = head ? head.page : onlyRow ? [onlyRow] : [];
+  const batchFull = head ? !head.isDone : false;
 
   let delivered = 0;
   let dropped = 0;
@@ -683,9 +710,11 @@ async function flushRows(
   // A delete fetches the row it removes, so it is charged like a read. Every row the batch
   // processes ends in one (delivered or dropped), as does every digest row the pull reaches — left
   // uncharged, a full batch would sit ~250 + one digest's worth under the tally it reports.
-  async function remove(id: Id<'notificationQueue'>): Promise<void> {
-    await ctx.db.delete(id);
+  async function remove(row: Doc<'notificationQueue'>): Promise<void> {
+    await ctx.db.delete(row._id);
     reads += 1;
+    // A row that had failed takes its mirrored state with it (D258).
+    if (row.attempts !== undefined) await clearFailure(ctx, 'notifications', row._id);
   }
 
   // Every row this tick inserts, handed to the transports in bounded batches once the writes are
@@ -715,7 +744,7 @@ async function flushRows(
     const fresh: Doc<'notificationQueue'>[] = [];
     for (const r of due) {
       if (isStaleQueueRow(r, now)) {
-        await remove(r._id);
+        await remove(r);
         expired++;
       } else fresh.push(r);
     }
@@ -735,7 +764,7 @@ async function flushRows(
     }
     // Past its window: expired, never delivered late as if fresh (D258).
     if (isStaleQueueRow(row, now)) {
-      await remove(row._id);
+      await remove(row);
       expired++;
       continue;
     }
@@ -743,7 +772,7 @@ async function flushRows(
     // The type's own toggle is re-read too: a person who switched "comments on my reports" off
     // during the settle window meant it to apply to the comment that was already queued.
     if (!profile || !recipientWants(profile, row.type)) {
-      await remove(row._id);
+      await remove(row);
       dropped++;
       continue;
     }
@@ -766,7 +795,7 @@ async function flushRows(
           createdAt: now,
         }),
       );
-      for (const r of rows) await remove(r._id);
+      for (const r of rows) await remove(r);
       digested.add(row.userId);
       delivered++;
       continue;
@@ -777,7 +806,7 @@ async function flushRows(
       // enqueues its own row.
       const payload = await settleTrigger(ctx, row.trigger, await blockedFor(row.userId));
       reads += settleReadCost(row.trigger);
-      await remove(row._id);
+      await remove(row);
       if (!payload) {
         dropped++;
         continue;
@@ -806,7 +835,7 @@ async function flushRows(
         createdAt: now,
       }),
     );
-    await remove(row._id);
+    await remove(row);
     delivered++;
   }
 

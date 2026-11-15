@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { PHOTO_ORPHAN_GRACE_MS } from './lib/photoOrphans';
+import { recordQueueFailure } from './notifications';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -245,13 +246,13 @@ describe('D258 chains under real limits', () => {
     }
   });
 
-  test('the Machinery read: heavy queue rows, recordings and profiles — it stays inside its limits and says where it stopped', async () => {
+  test('the Machinery read: fourteen parked queue rows near the document limit — it reads only their small mirrors', async () => {
     const t = harness();
     const admin = await heavyUser(t, 'admin', 'admin');
     const waterBodyId = await seedBody(t);
-    await t.run(async (ctx) => {
-      for (let i = 0; i < 14; i++) {
-        await ctx.db.insert('notificationQueue', {
+    for (let i = 0; i < 14; i++) {
+      const row = await t.run((ctx) =>
+        ctx.db.insert('notificationQueue', {
           userId: admin.id,
           waterBodyId,
           kind: 'favorite' as const,
@@ -259,17 +260,119 @@ describe('D258 chains under real limits', () => {
           coalesceKey: HEAVY.slice(0, 900 * 1024) + i,
           count: 1,
           flushAfter: T0,
+          firstDueAt: T0,
           createdAt: T0,
-          attempts: 3,
-          lastErrorClass: 'Error',
-          parkedAt: T0,
+        }),
+      );
+      for (let k = 0; k < 3; k++) {
+        await t.run(async (ctx) => {
+          const r = await ctx.db.get(row);
+          if (r) await recordQueueFailure(ctx, r, 'Error', T0, {});
+        });
+      }
+    }
+    const health = await admin.as.query(api.recurringJobs.health, { now: T0 });
+    expect(health.jobs.find((j) => j.job === 'flush notification queue')).toMatchObject({
+      parked: 14,
+      capped: false,
+    });
+  });
+});
+
+/** An outline near the document limit: a ring of tens of thousands of points around the unit square. */
+function heavyPolygon() {
+  const n = 40_000;
+  const ring: [number, number][] = [];
+  for (let i = 0; i < n; i++) {
+    const a = (2 * Math.PI * i) / n;
+    ring.push([0.5 + 0.4 * Math.cos(a), 0.5 + 0.4 * Math.sin(a)]);
+  }
+  ring.push(ring[0] as [number, number]);
+  return { type: 'Polygon' as const, coordinates: [ring] };
+}
+
+async function heavyBody(t: T, i: number): Promise<Id<'waterBodies'>> {
+  return t.run((ctx) =>
+    ctx.db.insert('waterBodies', {
+      name: `Heavy ${i}`,
+      searchText: `Heavy ${i}`,
+      type: 'lakePond' as const,
+      source: 'osm' as const,
+      polygon: heavyPolygon(),
+      bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+      centroid: { lat: 0.5 + i * 0.3, lng: 0.5 + i * 0.3 },
+      dedupStatus: 'clean' as const,
+      createdAt: Date.now(),
+    }),
+  );
+}
+
+describe('D258 walks whose every document is at the document limit', () => {
+  test('the rollover: twelve outlines near the limit — pages sized from the heaviest, the walk reaches its end', async () => {
+    const t = harness();
+    const ids: Id<'waterBodies'>[] = [];
+    for (let i = 0; i < 12; i++) ids.push(await heavyBody(t, i));
+    const result = await t.action(internal.standing.runStandingRollover, {
+      season: 2029,
+      apply: true,
+    });
+    expect(result).toMatchObject({ scanned: 12, demoted: 12, failed: 0 });
+  });
+
+  test('the registry walk: twelve outlines near the limit — pages end by weight, every body registered', async () => {
+    const t = harness();
+    for (let i = 0; i < 12; i++) await heavyBody(t, i);
+    await runOut(t, () =>
+      t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' }),
+    );
+    const members = await t.run((ctx) => ctx.db.query('bodyWeatherCells').collect());
+    expect(members).toHaveLength(12);
+  });
+
+  test('the gap walk: forty registered cells near the limit — pages end by weight, the walk reaches its end', async () => {
+    const t = harness();
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 40; i++) {
+        await ctx.db.insert('weatherCells', {
+          cellKey: `${String(i).padStart(3, '0')}:${'k'.repeat(400 * 1024)}`,
+          tier: 'filter' as const,
+          lat: 44,
+          lng: -72,
+          bodyCount: 1,
+          runId: 'r',
+          updatedAt: 0,
         });
       }
     });
-    const health = await admin.as.query(api.recurringJobs.health, { now: T0 });
-    expect(health.jobs.find((j) => j.job === 'flush notification queue')).toMatchObject({
-      parked: 10,
-      capped: true,
-    });
+    await runOut(t, () =>
+      t.action(internal.weatherArchive.sweepWeatherDayGaps, { tier: 'filter' }),
+    );
+  });
+
+  test('the flush: forty queue rows near the limit — the batch reads by weight and every row lands', async () => {
+    const t = harness();
+    const waterBodyId = await seedBody(t);
+    const { id: fan } = await heavyUser(t, 'fan');
+    const rows: Id<'notificationQueue'>[] = [];
+    for (let i = 0; i < 40; i++) {
+      rows.push(
+        await t.run((ctx) =>
+          ctx.db.insert('notificationQueue', {
+            userId: fan,
+            waterBodyId,
+            kind: 'favorite' as const,
+            type: 'favorite_report' as const,
+            coalesceKey: `${i}:${'c'.repeat(400 * 1024)}`,
+            count: 1,
+            flushAfter: Date.now() - 1,
+            firstDueAt: Date.now() - 1,
+            createdAt: Date.now() - 1,
+          }),
+        ),
+      );
+    }
+    await runOut(t, () => t.mutation(internal.notifications.flushNotificationQueue, {}));
+    for (const id of rows) expect(await t.run((ctx) => ctx.db.get(id))).toBeNull();
+    expect(await t.run((ctx) => ctx.db.query('notifications').collect())).toHaveLength(40);
   });
 });
