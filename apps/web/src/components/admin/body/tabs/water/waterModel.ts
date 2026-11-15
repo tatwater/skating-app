@@ -7,6 +7,7 @@ import {
   spansMultipleSampleCells,
 } from '@skating/core';
 import { isFailed, type Loadable } from '@/components/admin/reads/consoleReads';
+import { dayMonth } from '../../frame/bodyModel';
 import type { BodyMapScene, MapItem } from '../../map/mapDescriptors';
 
 type LatLng = { lat: number; lng: number };
@@ -128,10 +129,39 @@ export function depthOf(body: WaterBody, extra: readonly DepthRung[] = []): Dept
  * The bathymetry state from whether contours were drawn for the body (`consoleExtras`). What was
  * searched, and when, no read records yet.
  */
-export function bathymetryOf(hasBathymetry: boolean): Bathymetry {
+export function bathymetryOf(
+  hasBathymetry: boolean,
+  /** `consoleExtras.bathymetrySearched`: the newest recorded contour search of the body's states. */
+  searched: { label: string; at: number } | null = null,
+): Bathymetry {
+  const when = searched === null ? null : { source: searched.label, when: dayMonth(searched.at) };
   return hasBathymetry
-    ? { searched: null, found: 'Contour lines drawn', missing: false }
-    : { searched: null, found: 'No contour lines', missing: true };
+    ? { searched: when, found: 'Contour lines drawn', missing: false }
+    : { searched: when, found: 'No contour lines', missing: true };
+}
+
+/** `bodyConsole.depthChoices`, as the tab reads it. */
+export type DepthChoicesRead = {
+  mean: { choices: { source: DepthSource; valueM: number; inUse: boolean }[] };
+  max: { choices: { source: DepthSource; valueM: number; inUse: boolean }[] };
+  /** The loader keeps every offer (`depthCandidates`); `false` for a body loaded before it did. */
+  recorded: boolean;
+};
+
+/** Every source's offer, mean and max together, as the ladder's rungs. */
+export function candidatesOf(read: DepthChoicesRead): DepthRung[] {
+  const rungs = new Map<DepthSource, DepthRung>();
+  for (const [key, side] of [
+    ['mean', read.mean],
+    ['max', read.max],
+  ] as const) {
+    for (const c of side.choices) {
+      const rung = rungs.get(c.source) ?? { source: c.source, mean: null, max: null };
+      rung[key] = c.valueM;
+      rungs.set(c.source, rung);
+    }
+  }
+  return [...rungs.values()];
 }
 
 /** A source's name on the ladder, and the line under it when the name alone would mislead. */
@@ -190,14 +220,17 @@ export function spansKm(box: BBox): { ew: number; ns: number } {
 export function waterFrom(
   body: WaterBody,
   // Required, never defaulted: a default would read the extras still loading as landed.
-  extrasRead: Loadable<{ hasBathymetry: boolean }>,
+  extrasRead: Loadable<{
+    hasBathymetry: boolean;
+    bathymetrySearched?: { label: string; at: number } | null;
+  }>,
   extras: { candidates?: readonly DepthRung[] } = {},
 ): WaterData {
   const box = body.bbox ?? null;
   const bathymetry: Loadable<Bathymetry> =
     extrasRead === undefined || isFailed(extrasRead)
       ? extrasRead
-      : bathymetryOf(extrasRead.hasBathymetry);
+      : bathymetryOf(extrasRead.hasBathymetry, extrasRead.bathymetrySearched ?? null);
   return {
     name: body.name,
     state: body.states?.[0] ?? null,

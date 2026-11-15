@@ -11,6 +11,9 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   results: new Map<string, unknown>(),
   can: new Set<string>(),
+  calls: [] as Array<[string, unknown]>,
+  announce: vi.fn(async () => {}),
+  server: null as ((name: string, args: Record<string, unknown>) => void) | null,
 }));
 
 vi.mock('convex/react', async () => {
@@ -23,8 +26,13 @@ vi.mock('convex/react', async () => {
           mocks.results.get(getFunctionName(query)),
         ]),
       ),
+    useMutation: (ref: Parameters<typeof getFunctionName>[0]) => async (args: unknown) => {
+      mocks.calls.push([getFunctionName(ref), args]);
+      mocks.server?.(getFunctionName(ref), args as Record<string, unknown>);
+    },
   };
 });
+vi.mock('../../../shell/undo', () => ({ useUndo: () => ({ announce: mocks.announce }) }));
 vi.mock('@/lib/useRole', () => ({ useRole: () => ({ can: (c: string) => mocks.can.has(c) }) }));
 const toasts = vi.hoisted(() => [] as unknown[]);
 vi.mock('@/components/kit/toast', async (original) => ({
@@ -49,6 +57,9 @@ beforeEach(() => {
   resetConsoleReads();
   mocks.results.clear();
   mocks.can = new Set();
+  mocks.calls.length = 0;
+  mocks.announce.mockClear();
+  mocks.server = null;
   toasts.length = 0;
   mocks.results.set(fn(api.waterBodies.get), {
     available: true,
@@ -172,5 +183,62 @@ describe('WaterTab', () => {
     expect(container.firstElementChild).not.toBe(first);
     expect(screen.queryByText(/9\.4/)).toBeNull();
     expect(screen.queryByText(/Mascoma/)).toBeNull();
+  });
+
+  /** `bodyConsole.depthChoices`, as the server answers it for a body whose offers are kept. */
+  const choices = (meanFrom: string) => ({
+    mean: {
+      choices: [
+        { source: 'state_agency', valueM: 9.4, inUse: meanFrom === 'state_agency' },
+        { source: 'hydrolakes_modeled', valueM: 8.1, inUse: meanFrom === 'hydrolakes_modeled' },
+      ],
+    },
+    max: { choices: [{ source: 'state_agency', valueM: 24, inUse: true }] },
+    recorded: true,
+  });
+
+  it('chooses where the mean comes from (`chooseDepthSource`), and once the record holds it asks nothing more', async () => {
+    mocks.can = new Set(['body.water']);
+    const get = fn(api.waterBodies.get);
+    mocks.results.set(fn(api.bodyConsole.depthChoices), choices('state_agency'));
+    mocks.server = (name, args) => {
+      if (name !== 'waterBodies:chooseDepthSource') return;
+      const prior = mocks.results.get(get) as { body: Record<string, unknown> };
+      mocks.results.set(get, {
+        available: true,
+        body: { ...prior.body, meanDepthM: 8.1, meanDepthSource: args.source },
+      });
+      mocks.results.set(fn(api.bodyConsole.depthChoices), choices(args.source as string));
+    };
+    const { rerender } = render(<WaterTab bodyId="wb1" />);
+    await userEvent.click(screen.getByRole('radio', { name: 'HydroLAKES, 8.1 m' }));
+    await userEvent.click(screen.getByRole('button', { name: /Use HydroLAKES for the mean/ }));
+    expect(mocks.calls).toEqual([
+      [
+        'waterBodies:chooseDepthSource',
+        { waterBodyId: 'wb1', measure: 'mean', source: 'hydrolakes_modeled' },
+      ],
+    ]);
+    expect(mocks.announce).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Mean depth from HydroLAKES' }),
+    );
+    rerender(<WaterTab bodyId="wb1" />);
+    expect(screen.queryByRole('button', { name: /Use HydroLAKES for the mean/ })).toBeNull();
+    expect(mocks.calls).toHaveLength(1);
+  });
+
+  it('says what was searched for contours, and when, once a search is recorded', () => {
+    mocks.results.set(fn(api.bodyConsole.consoleExtras), {
+      towns: ['Enfield'],
+      hasBathymetry: false,
+      outlineTrustedSince: null,
+      outlineTrustedVia: null,
+      touchingBodyIds: [],
+      touchingCapped: false,
+      bathymetrySearched: { label: 'NH GRANIT lake contours', at: Date.UTC(2026, 8, 12, 12) },
+    });
+    render(<WaterTab bodyId="wb1" />);
+    expect(bathymetry()).toHaveTextContent('NH GRANIT lake contours');
+    expect(bathymetry()).toHaveTextContent('12 Sep');
   });
 });
