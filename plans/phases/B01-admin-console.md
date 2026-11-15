@@ -3011,6 +3011,27 @@ Imagery/Hazards/Standing/Links), cherry-picked serially onto `b01-3` off the kit
   regions, *Trying again…*, focus kept), and *Trying again…* on the tabs-b views' notes
   (Imagery's archive holds its own wait, since the registry keeps none for a reader outside
   Convex).
+- **The console's interaction rules, set by the PRs' review round** (each held by a test over
+  every tab, `tabs/tabAudits.test.tsx`):
+  - **What answers a click answers the keyboard** (`src/test/keyboardAudit`). The kit's clickable
+    `TableRow` is now a Tab stop that ⏎ and Space press, with ↑↓ Home End between rows.
+  - **A cursor that isn't the focused element is scrolled into view** on every keyboard move, at
+    once, never smoothly (BulletList fixed; MiddleList and the Bodies grid already did it).
+  - **A tab's keys work wherever focus lands when the tab is reached**: they listen on the whole
+    inspector (`frame/tabKeys`). Arriving at a body with nothing focused puts focus in the panel.
+  - **A tab change restores that tab's defaults**: the map's switches, the lit item, the panel's
+    scroll. State saved for one key is cleared, never parked: Hazards' held winter too. The map's
+    camera through a theme switch and the list's scroll per list are remembered on purpose.
+  - **No absent fact renders as a blank** (`src/test/blanksAudit`), and each model lists what its
+    reads return that it doesn't keep, and why. The audit carried two facts through:
+    - each proposal's first-asked date (*Asked 11 Oct 2026* / *Asked: Not recorded yet*);
+    - a landmark's staff edits (*Changed*: *Edited … · Moved …*).
+    It also wrote out three absences: *Who ruled: Not recorded yet*, and a bay with nothing
+    recorded about its making.
+  - **A write that settles never drops the keyboard to the page** (`frame/keepFocus` on the panel;
+    Links returns focus to the link's own Edit, and a saved drop keeps its grip). A kit draft never
+    outlives its items: SortableRows puts a lift down when its rows change, and links keep ids
+    across an edit (`carryIds`).
 - **Left by the three PRs' reviews** (each a call or a follow-up, none blocking):
   - the map pans only within three times the body's box, which keeps the min zoom out of reach on
     a wide pane; widening the fence changes "pans only within the body's reach" (founder call);
@@ -3023,7 +3044,9 @@ Imagery/Hazards/Standing/Links), cherry-picked serially onto `b01-3` off the kit
     from the dock's slider; a dragged staff link snaps back until its save lands;
   - in the list: the survivor redirect (a merged body's id swapped for its survivor) moves the
     search's place and drops typing in progress; a heading sorted while a search waits is
-    re-ranked by match when the search lands.
+    re-ranked by match when the search lands;
+  - staff links have no id on the server: the console carries ids across an edit on the client
+    (`carryIds`), which holds for one operator; a stored id per link would hold across operators.
 - **The map contract settled before any tab landed.** Adopted from the tab builders: a `proposal`
   mark; `approach` and `dimension` lines and a `measure` label (a dimension is drawn in pixels with
   fixed ticks); a footprint's `field` — the hazard dot field, dimmed by freshness and a step further
