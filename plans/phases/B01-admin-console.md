@@ -2320,7 +2320,7 @@ objects, on an empty database and on seeded ones, a failure and a stalled run in
 `packages/guards`' `peopleBackfills.test.ts` holds this doc and the roadmap to it, and this table to
 the registry. Each `convex` command runs as `pnpm --filter @skating/convex exec convex …` from main.
 
-(1) `convex dev --once`. (2) `convex run peopleJobs:backfillRows '{}'` — it runs the three People backfills in turn (rows, flag subjects, undo chains). Estimate: unmeasured. (3) `convex run peopleJobs:preparation '{}'` until it returns `ready: true`. (4) For each job in its `rerun`: `convex run <job> '{"alone":true}'` (a new run, which supersedes any older one), then step 3 again. (5) For each id `backfillRows` logs as an overwritten tombstone: `convex run peopleJobs:restoreTombstoneStatus '{"userId":"<id>"}'`.
+(1) `convex dev --once`. (2) `convex run peopleJobs:backfillRows '{}'` — it runs the three People backfills in turn (rows, flag subjects, undo chains). Estimate: unmeasured. (3) `convex run peopleJobs:preparation '{}'` until it returns `ready: true`. (4) For each job in its `rerun`: `convex run <job> '{"alone":true}'` (a new run, which supersedes any older one), then step 3 again. (5) For each id `backfillRows` logs as an overwritten tombstone: `convex run peopleJobs:restoreTombstoneStatus '{"userId":"<id>"}'`. (6) Only if steps 2–5 ran before the People follow-up (B01-4b) was deployed: `convex run peopleJobs:backfillRows '{"alone":true}'` once, which stamps each staffer's tenure on their row, then step 3 again.
 
 **B01-4: one rule for what is offered** (Greptile on #115, P2). An undo is a write of the previous
 state, so its refusal is computed by `lib/peopleCan.writeRefusal` on the write the undo's handler
@@ -2391,8 +2391,9 @@ Every shape change is additive except where noted.
   console page heartbeat, replaced in place, erased with the account — and nothing about skaters. The
   lane shows it only within the current season and the one before (`signInRetentionFromMs`, the sign-in
   record's own rule, D254); older is `null`, not recorded, and a read stopped at its cap says
-  `lastSeenCapped` rather than `null`. The row itself is not pruned by season (the sign-in prune is
-  another job's); it is bounded by staff, not time.
+  `lastSeenCapped` rather than `null`. The row itself follows the same rule (the coordinator's ruling,
+  2026-11-15): the daily sign-in prune (`analyticsRollup.pruneSignInDays`) removes presence rows last
+  seen before the previous season's 1 July, a page per transaction beside the days, each its own delete.
 - **A staffer's tenure, defined once** (`lib/staffTenure`): the strip's undo-aware staff since and role
   since, now one function. `people.staffStats` reads it live; every role write stamps it on the
   person's row (`roleSince`, `staffSince`, `tenureCapped`, `tenureAt`), as do the rows backfill (in
@@ -2454,7 +2455,43 @@ Every shape change is additive except where noted.
 - **The page's two assumptions, checked.** Suspending a banned account replaces the ban (the status
   becomes `suspended` and the Clerk lock is lifted) — right. An open-ended suspension, or one that ran
   its course but isn't reset yet, can only be lifted — **wrong**: the suspend write accepts a new
-  window on any suspended account (`can.extend` says so). Whether to refuse it is a ruling.
+  window on any suspended account (`can.extend` says so). Ruled 2026-11-15: the server stays as it is,
+  and the page draws what `can.extend` allows.
+- **After merge, on dev:** the People procedure above, step 6 included — if #115's backfills ran
+  before this deployed, `peopleJobs:backfillRows '{"alone":true}'` once stamps each staffer's tenure
+  (tested literally in `peopleBackfills.test.ts`). The two new indexes (`blocks.by_blocker_blocked`,
+  `bountyGateEvents.by_requester_created`) build with the deploy.
+
+**Owed: audit metadata, writer by writer** (the coordinator's ask, 2026-11-15 — facts for the ruling,
+from the code, not from dev; nothing capped in this PR). Every audit row passes through
+`lib/audit.writeAudit`; its `metadata` is free-form. By the largest each writer can produce today:
+
+| Writers (verbs) | Metadata | Largest today | Near the document limit? |
+| --- | --- | --- | --- |
+| Content status (hide, restore, remove, author_delete, overturn; the hazard and alert retractions) | statuses, ids, a subject id; a Post's `cascaded` list | ≤ `POST_MAX_REPORTS` (10) cascade entries — under 2 KB | no |
+| Flag and request decisions, drawn-body approve/reject, sub-area create/redraw/restore, curated boost, imagery mode, included-by-request, standing, recurrences' promote, body features | ids, enums, numbers, `filedAt`, a fraction | a few hundred bytes | no |
+| `merge_waterbody` | survivor id, per-table **counts**, `changeSet: true` | under 1 KB — **the moved-rows list, the deleted favorites and the sub-area and landmark snapshots already go to the snapshot table** (`writeSnapshot`), not metadata | no |
+| `set_weather_sample_points` | counts, `snapshot: true` (the points are in the snapshot table) | under 100 bytes | no |
+| `dismiss_duplicate` | `waterBodyIds` | ≤ `DEDUP_GROUP_CAP` (6) ids — under 1 KB | no |
+| `set_reference_links` | the links, before and after | ≤ 2 × `MAX_REFERENCE_LINKS` (8) links, labels ≤ 80 characters; URLs uncapped | only through a URL no writer caps |
+| `set_parking_area` | coord, the bodies a lot serves, its name, `prev` | the lot's body list (uncapped at the write) and an uncapped name | in theory |
+| Status writes (suspend, ban, lift, the lapse sweep's reset) | `prev` with the profile's `statusReason` | a reason from before D261 is uncapped; from now on ≤ 2,000 characters | old rows only, in theory |
+| Names (`set_water_body_name`, landmarks' create/edit, `corpusPlaceNames`) | the name, before and after | body and place names are uncapped at their writers | in theory |
+| `suppress_recurrence` / `unsuppress_recurrence` | `prev` with the suppression reason | uncapped (as `ROW_MAX.hazardRecurrence` notes) | in theory |
+| `set_lake_depth` | the depth source's before and after | ids and numbers | no |
+
+**Proposal:** cap the three free texts that leak into metadata at their own writers (a body or place
+name at 200 characters, a lot's body list at the link cap the lot's History already uses, 64; reference
+URLs at 2,048), and copy a status or suppression reason into `prev` cut to the D261 cap. The snapshot
+table — the merge's own pattern — stays the place for any payload that is a list of rows. With those,
+the largest metadata is a few KB, and an audit row's worst case could come down from the document
+limit to the reason cap plus about 16 KB.
+
+**A risk D261 introduces, for the same ruling:** a few system-written reasons interpolate a name
+(`Drew "‹name›" on ‹body›`, `Auto-delisted "‹name›": …`, `Added "‹name›"`). With names uncapped, a
+name near 2,000 characters would make that write refuse rather than truncate. No such name exists in
+the corpus as far as the code shows (place and body names come from OSM, GNIS and staff), and the
+name caps above remove it; until then it is a refusal, never a long row.
 
 ### The B01-2 server register (owed to the server agent)
 
