@@ -149,6 +149,15 @@ export const linkChanges = {
       base.filter((l) => l.key !== key),
 };
 
+/**
+ * Two staff lists that save the same: the same words in the same order. The keys are the page's
+ * own (`carryIds`), so the write queue compares without them — a link it added carries a key the
+ * page never drew, and its echo must still read as the write landing.
+ */
+export function sameLinks(a: readonly StaffLink[], b: readonly StaffLink[]): boolean {
+  return a.length === b.length && a.every((l, i) => l.label === b[i]?.label && l.url === b[i]?.url);
+}
+
 /** "43.6174°N 72.1360°W" — the interior point as the map's plate reads it. */
 export function coordWords(c: LatLng): string {
   const lat = `${Math.abs(c.lat).toFixed(4)}°${c.lat >= 0 ? 'N' : 'S'}`;

@@ -117,6 +117,77 @@ describe('LinksTabView — saves queue: none is built from a list older than the
     expect(rows()).toEqual([DAM.label]);
   });
 
+  it('a queued save landing after Cancel never closes the editor opened since', async () => {
+    const user = userEvent.setup();
+    const sent: StaffLink[][] = [];
+    const releases: (() => void)[] = [];
+    render(<Held sent={sent} releases={releases} />);
+    await reorder(user);
+    const editOf = (label: string) =>
+      within(
+        screen.getByText(label).closest('[data-slot="sortable-row"]') as HTMLElement,
+      ).getByRole('button', { name: 'Edit' });
+    await user.click(editOf(DAM.label));
+    const label = screen.getByRole('textbox', { name: /Label/ });
+    await user.clear(label);
+    await user.type(label, 'Dam level{Enter}');
+    // Queued behind the reorder; the moderator cancels and opens the other link.
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await user.click(editOf(ASSOC.label));
+    await user.type(screen.getByRole('textbox', { name: /Label/ }), ' (draft)');
+    await land(releases);
+    await land(releases);
+    expect(sent[1]).toEqual([{ label: 'Dam level', url: DAM.url }, ASSOC]);
+    // The other editor is still open, its draft kept.
+    expect(screen.getByRole('textbox', { name: /Label/ })).toHaveValue(`${ASSOC.label} (draft)`);
+  });
+
+  it('a link added is editable once it shows, when the echo lands before the save resolves', async () => {
+    // The console's own order: Convex shows the write before its promise resolves, and the
+    // receipt (`announce`) is a further round trip — so the echo renders before the queue's ack.
+    function EchoFirst({ sent }: { sent: StaffLink[][] }) {
+      const [links, setLinks] = useState<readonly StaffLink[]>(MASCOMA.referenceLinks ?? []);
+      return (
+        <LinksTabView
+          {...base}
+          body={{ ...MASCOMA, referenceLinks: links }}
+          onSave={async (next) => {
+            sent.push(next);
+            setLinks(next);
+            await new Promise((r) => setTimeout(r, 0));
+          }}
+        />
+      );
+    }
+    const user = userEvent.setup();
+    const sent: StaffLink[][] = [];
+    render(<EchoFirst sent={sent} />);
+    await user.click(screen.getByRole('button', { name: 'Add a link' }));
+    await user.type(screen.getByRole('textbox', { name: /Label/ }), 'Town beach');
+    await user.type(
+      screen.getByRole('textbox', { name: /Address/ }),
+      'https://enfield.nh.us{Enter}',
+    );
+    await act(async () => new Promise((r) => setTimeout(r, 5)));
+    expect(rows()).toEqual([ASSOC.label, DAM.label, 'Town beach']);
+    // The new link, edited: the edit is sent, never dropped as a change to a link the queue
+    // doesn't know by that id.
+    const editNew = within(
+      screen.getByText('Town beach').closest('[data-slot="sortable-row"]') as HTMLElement,
+    ).getByRole('button', { name: 'Edit' });
+    await user.click(editNew);
+    const label = screen.getByRole('textbox', { name: /Label/ });
+    await user.clear(label);
+    await user.type(label, 'Town beach lot{Enter}');
+    await act(async () => new Promise((r) => setTimeout(r, 5)));
+    expect(sent[1]).toEqual([
+      ASSOC,
+      DAM,
+      { label: 'Town beach lot', url: 'https://enfield.nh.us' },
+    ]);
+    expect(rows()).toEqual([ASSOC.label, DAM.label, 'Town beach lot']);
+  });
+
   it('a second ⏎ in the open editor never sends its save twice', async () => {
     const user = userEvent.setup();
     const sent: StaffLink[][] = [];

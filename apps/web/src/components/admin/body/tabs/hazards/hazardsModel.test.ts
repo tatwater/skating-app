@@ -1,4 +1,4 @@
-import { HAZARD_TYPE_LABELS, HAZARD_TYPES } from '@skating/core';
+import { HAZARD_TYPE_LABELS, HAZARD_TYPES, isPassageMarker } from '@skating/core';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { dayX, lastReal } from '@/components/kit/day-strips';
@@ -876,8 +876,10 @@ describe('every hazard type maps to a deliberate mark and wording — none by de
     }
   });
 
-  it('only ridge_crossing is a crossing', () => {
+  it('only ridge_crossing is a crossing — the same answer as core’s passage-marker rule', () => {
     expect(HAZARD_TYPES.filter((t) => hazardKind(t) === 'crossing')).toEqual(['ridge_crossing']);
+    // One rule, one answer: the skater app reads a passage through `isPassageMarker`.
+    for (const t of HAZARD_TYPES) expect(hazardKind(t) === 'crossing').toBe(isPassageMarker(t));
   });
 
   it('a type this build doesn’t know is read as a danger — the conservative reading', () => {
@@ -922,8 +924,43 @@ describe('every hazard type maps to a deliberate mark and wording — none by de
       },
       null,
     );
-    const item = scene.items[0] as { at: [number, number] };
+    const item = scene.items[0];
+    if (item?.kind !== 'point') throw new Error('A crossing draws a point.');
     expect(item.at[0]).toBeCloseTo(-72.15, 2);
     expect(item.at[1]).toBeCloseTo(43.63, 2);
+  });
+
+  it('an area crossing’s mark sits at its middle — the ring’s closing vertex counted once', () => {
+    const scene = hazardsMapScene(
+      {
+        season: 2025,
+        current: 2025,
+        hazards: [
+          {
+            ...at('ridge_crossing'),
+            geometryKind: 'polygon' as const,
+            geometry: {
+              type: 'Polygon',
+              coordinates: [
+                [
+                  [-72.16, 43.62],
+                  [-72.14, 43.62],
+                  [-72.14, 43.64],
+                  [-72.16, 43.64],
+                  [-72.16, 43.62],
+                ],
+              ],
+            },
+            radiusMeters: undefined,
+          },
+        ],
+        features: [],
+      },
+      null,
+    );
+    const item = scene.items[0];
+    if (item?.kind !== 'point') throw new Error('A crossing draws a point.');
+    expect(item.at[0]).toBeCloseTo(-72.15, 6);
+    expect(item.at[1]).toBeCloseTo(43.63, 6);
   });
 });

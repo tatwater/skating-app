@@ -437,13 +437,13 @@ export function ImageryTabView({
   );
 }
 
-/** A percentage cell; the figure that hid the pass is the bright one; not measured is absent. */
 /**
  * A pass no manifest measured over this lake (its coverage `basis` inferred from the footprint, or
  * unknown): its cloud and coverage are said to be unmeasured, never left blank or drawn as a zero.
  */
 export const NOT_MEASURED = 'Not measured';
 
+/** A percentage cell; the figure that hid the pass is the bright one; not measured says so. */
 function Figure({ value, failed }: { value: number | null; failed: boolean }) {
   return (
     <TableCell align="end" mono className={cn(failed && 'text-fg')}>
@@ -489,8 +489,8 @@ function SeenCell({ row }: { row: PassRow }) {
  * One gate a pass must clear (board 5.4.6's `.gate`): the name over what it needs, the kit `Meter`
  * with its white gate tick (`markTone="lit"` — passing is not a warning, so not amber), and the
  * figure with its unit. A value under its gate is the bright one: the name and figure go to the
- * bright ink and the fill steps back to `dim`. **Not measured is absent, never zero**: an empty
- * track, no figure, and a reader hears *Not measured*.
+ * bright ink and the fill steps back to `dim`. **Not measured is said, never drawn as zero**: no
+ * meter or track at all (an empty one reads as zero), *Not measured* in words across both columns.
  *
  * **The gate that hid the pass always fails here** (`blocked`, core's own verdict), whatever the
  * figure: the figure is rounded (59.6 % clear reads "60 %" under a 60 % gate) and a pass with no

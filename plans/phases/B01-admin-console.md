@@ -3091,7 +3091,8 @@ Imagery/Hazards/Standing/Links), cherry-picked serially onto `b01-3` off the kit
   | Tab | Shown | Qualified by | Drawn |
   |---|---|---|---|
   | Frame | Area | The outline it is computed from (`geometrySource`, the trust) | Exact for that outline; its source tag and *Trusted since* beside it |
-  | Frame | Depth avg / max | `meanDepthSource`, `maxDepthSource` | *New:* "~9.4" for a modeled source; plain when the source isn't recorded |
+  | Frame | Depth avg / max | `meanDepthSource`, `maxDepthSource` | *New:* plain only where a measured source vouches for it; "~9.4" for a modeled or unrecorded one, as core's `lakeCaption` reads it |
+  | Bodies list | The preview's depth | The same two sources | *New* (the same drop, from #114): the same rule |
   | Frame | Elevation | `elevationSource` (moderator, 3DEP, GLO-90) | Not drawn: a DEM sample is a measurement at the interior point, the skater's header draws it plainly too, and freeze order is a hundreds-of-feet question |
   | Frame | Towns | `townsComputedAt` | *Not computed yet*, never *In no town* |
   | Frame | Asks, History | The reads' `more`, `capped` | Never counted as whole: a note, *Latest N* |
@@ -3120,10 +3121,12 @@ Imagery/Hazards/Standing/Links), cherry-picked serially onto `b01-3` off the kit
   (`setReferenceLinks`) and a landmark's other spellings (`landmarks.update`'s `aliases`). Both go
   through `tabs/listWriter.ts`: a save path hands it a change by id, applied one write at a time to
   the newest list the server acknowledged (its own last write until the echo is seen, else the
-  server's list, which carries another moderator's change). Chosen over blocking every control
-  while a write is pending: it is small, and a press is never refused. A fast-check property drives
-  arbitrary interleavings of presses, fast, slow and refused acknowledgements, renders and outside
-  changes, over both the generic changes and Links' own. Every other write sends one value — Names'
+  server's list, which carries another moderator's change — and always when the echo renders
+  before the acknowledgment, the console's usual order, since the receipt is a further round trip;
+  Links compares lists by their words, its row ids being the page's own). Chosen over blocking
+  every control while a write is pending: it is small, and a press is never refused. A fast-check
+  property drives arbitrary interleavings of presses, fast, slow, echo-first and refused
+  acknowledgments, renders and outside changes, over both the generic changes and Links' own. Every other write sends one value — Names'
   name, a landmark's name and kind, Access's ruling and its put-in levers, Standing's standing,
   Imagery's satellite link — so a second press while the first is pending sends a second value and
   the later wins, nothing built from a stale copy; each dialog's own busy state keeps its reason

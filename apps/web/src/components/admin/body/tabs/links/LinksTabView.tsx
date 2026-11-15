@@ -25,6 +25,7 @@ import {
   type KeyedLink,
   linkChanges,
   type StaffLink,
+  sameLinks,
 } from './linksModel';
 
 /**
@@ -84,6 +85,15 @@ export function LinksTabView({
   });
   const editable = canEdit && onSave !== undefined;
   const [editing, setEditing] = useState<Editing | null>(null);
+  // The editor open now, for a save landing late (queued behind a reorder): after Cancel and
+  // another link's Edit, it closes nothing it didn't open and takes no focus from that editor.
+  const openKey = useRef<string | null>(null);
+  openKey.current = editing?.key ?? null;
+  const landed = (key: string) => {
+    if (openKey.current !== null && openKey.current !== key) return;
+    refocus.current = key;
+    setEditing(null);
+  };
   // The open editor's own save on its way: its Done and Remove don't send twice (a ref, so two
   // presses in one frame see it).
   const [editorBusy, setEditorBusy] = useState(false);
@@ -105,17 +115,22 @@ export function LinksTabView({
   // **Every save goes through one queue** (`listWriter`): reorder, add, edit and remove each hand
   // it a change by link id, applied to the newest list the server acknowledged — so a remove
   // pressed while a reorder saves can't put the old order back, and two saves never overlap.
-  const push = useListWriter<KeyedLink>(staff, async (next) => {
-    if (!onSave) return false;
-    setSaveError(null);
-    try {
-      await onSave(next.map(({ label, url }) => ({ label, url })));
-      return true;
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : String(err));
-      return false;
-    }
-  });
+  const push = useListWriter<KeyedLink>(
+    staff,
+    async (next) => {
+      if (!onSave) return false;
+      setSaveError(null);
+      try {
+        await onSave(next.map(({ label, url }) => ({ label, url })));
+        return true;
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : String(err));
+        return false;
+      }
+    },
+    // The keys are the page's own: a link the queue added is the same link once its echo shows.
+    sameLinks,
+  );
   const save = async (change: (base: readonly KeyedLink[]) => readonly KeyedLink[]) => {
     setInFlight((n) => n + 1);
     try {
@@ -140,10 +155,7 @@ export function LinksTabView({
         ? linkChanges.add({ ...clean, key: `link-${++minted.current}` })
         : linkChanges.edit(key, clean),
     );
-    if (ok) {
-      refocus.current = key;
-      setEditing(null);
-    }
+    if (ok) landed(key);
   };
 
   const removeEdited = async () => {
@@ -154,10 +166,7 @@ export function LinksTabView({
     if (editorSending.current) return;
     const key = editing.key;
     const ok = await editorSave(linkChanges.remove(key));
-    if (ok) {
-      refocus.current = key;
-      setEditing(null);
-    }
+    if (ok) landed(key);
   };
 
   const offeredCount = derived.filter((d) => d.offered).length;

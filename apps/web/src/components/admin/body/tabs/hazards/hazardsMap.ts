@@ -63,7 +63,14 @@ function crossingAt(s: Shaped, area: Area): LngLat {
     const [lng, lat] = g.coordinates as [number, number];
     return [lng, lat];
   }
-  const ring = (area.type === 'Polygon' ? area.coordinates[0] : area.coordinates[0]?.[0]) ?? [];
+  const closed = (area.type === 'Polygon' ? area.coordinates[0] : area.coordinates[0]?.[0]) ?? [];
+  // A ring repeats its first vertex to close: counted twice, it would pull the mark toward it.
+  const first = closed[0];
+  const last = closed[closed.length - 1];
+  const ring =
+    closed.length > 1 && first?.[0] === last?.[0] && first?.[1] === last?.[1]
+      ? closed.slice(0, -1)
+      : closed;
   const n = Math.max(1, ring.length);
   return [
     ring.reduce((t, p) => t + (p[0] ?? 0), 0) / n,
