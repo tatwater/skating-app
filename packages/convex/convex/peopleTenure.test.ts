@@ -8,7 +8,7 @@ import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { markReady, READY_ROWS, READY_UNDO_CHAINS, refreshPersonRow } from './lib/peopleRows';
+import { markReady, refreshPersonRow } from './lib/peopleRows';
 import { stands } from './lib/undoChains';
 import schema from './schema';
 
@@ -100,8 +100,8 @@ describe('tenure equals the replay', () => {
           await seed(t, 'adm', 'admin');
           const target = await seed(t, 'target', 'member');
           await t.run(async (ctx) => {
-            await markReady(ctx, READY_ROWS);
-            await markReady(ctx, READY_UNDO_CHAINS);
+            await markReady(ctx, 'rows');
+            await markReady(ctx, 'undoChains');
           });
           const adm = t.withIdentity({ subject: 'adm' });
           let state: State = { role: 'member', staffSince: null, roleSince: null };

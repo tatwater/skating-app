@@ -9,7 +9,7 @@ import { api } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { FLAGGING_RESTRICTED } from './contentFlags';
 import { DISCIPLINE_REFUSALS } from './lib/peopleCan';
-import { markReady, READY_ROWS, refreshPersonRow } from './lib/peopleRows';
+import { markReady, refreshPersonRow } from './lib/peopleRows';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -364,7 +364,7 @@ describe('a flag names whose it is, at filing', () => {
 describe('never no ledger editor, whatever a stale row says', () => {
   test('a write confirms the editors it counted, so a row that missed its refresh only ever refuses', async () => {
     const t = convexTest(schema, modules);
-    await t.run((ctx) => markReady(ctx, READY_ROWS));
+    await t.run((ctx) => markReady(ctx, 'rows'));
     await seed(t, 'adm', { role: 'admin', canEditLedger: true });
     const other = await seed(t, 'other', { role: 'admin', canEditLedger: true });
     const admId = (await t.run((ctx) => ctx.db.query('profiles').collect())).find(

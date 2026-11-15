@@ -28,7 +28,7 @@ import { writeAudit } from './audit';
 import { hasCapability, isLockedOut, isSuspendedNow } from './auth';
 import {
   factsOfRow,
-  READY_ROWS,
+  readPreparation,
   refreshPersonRow,
   rememberedLedgerEditors,
   rememberLedgerEditors,
@@ -107,7 +107,7 @@ const ADMIN_ROWS = 200;
 /**
  * Editors who can still act, other than `exceptId` (D227's "never no editor").
  *
- * Once the People rows exist (`ready:rows`), the editors are read from admins' light rows — role,
+ * Once the People rows exist (the rows backfill is ready, `readPreparation`), the editors are read from admins' light rows — role,
  * grant (`ledgerEditor`), status, suspension and window are all on the row, written by the same writes
  * that change them on the profile. A read (the person page's `can`, undo state) answers from the rows
  * and loads no profile; a write confirms each counted editor from its profile (at most
@@ -134,11 +134,8 @@ function ledgerEditorsNow(ctx: QueryCtx | MutationCtx): Promise<Set<string>> {
 }
 
 async function readLedgerEditors(ctx: QueryCtx | MutationCtx): Promise<Set<string>> {
-  const ready = await ctx.db
-    .query('peopleCounts')
-    .withIndex('by_key', (q) => q.eq('key', READY_ROWS))
-    .first();
-  if (ready === null) {
+  const { pending } = await readPreparation(ctx);
+  if (pending.includes('rows')) {
     // Its own allowance (never shared with another helper's, so it can't be starved): as many admins
     // as six profiles at their worst; past that the count is short, which refuses (safe). Only until
     // the rows backfill has run.

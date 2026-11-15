@@ -492,13 +492,33 @@ export default defineSchema({
    * **The People lanes' stored counts** (B01 §5.7): one row per key — `everyone`, `admins`,
    * `moderators`, `banned`, `restricted`, `leaving`, `deleted` — moved only by the writer of
    * `peopleRows`, in the transaction that moves a row, so each is the tally of rows in its lane.
-   * A marker key per People backfill says it has finished (`PEOPLE_BACKFILLS` in `lib/peopleRows`):
-   * until then a read resting on it names the backfill in its `pending`.
+   * Whether a backfill has finished is not here: it is `peopleBackfills`.
    */
   peopleCounts: defineTable({
     key: v.string(),
     count: v.number(),
   }).index('by_key', ['key']),
+
+  /**
+   * **The People backfills' state** (B01 §5.7): one row per backfill in `PEOPLE_BACKFILLS`
+   * (`lib/peopleRows`, the only reader and writer), written by every pass. The one source of what is
+   * finished: `peopleJobs.preparation` (the operator's check) and every read's `pending` are computed
+   * from these rows. No row means the backfill has never run a pass.
+   */
+  peopleBackfills: defineTable({
+    backfill: v.union(v.literal('rows'), v.literal('flagSubjects'), v.literal('undoChains')),
+    /** A run reached the end with no failures. Once set, never unset: a re-run is a repair. */
+    ready: v.boolean(),
+    /** A pass is scheduled or under way. */
+    running: v.boolean(),
+    /** Where the next pass resumes (`null`: from the start, or the run ended). */
+    cursor: v.union(v.string(), v.null()),
+    /** Items that failed in the current (or last) run. */
+    failed: v.number(),
+    /** The run starts the backfills after it when it ends (not an `alone` re-run). */
+    chains: v.boolean(),
+    updatedAt: v.number(),
+  }).index('by_backfill', ['backfill']),
 
   /**
    * Short-lived OAuth `state` nonces (Phase 08, Strava).

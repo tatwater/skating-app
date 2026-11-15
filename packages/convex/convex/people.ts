@@ -69,7 +69,7 @@ import {
   readStoredCounts,
   readWaitingAppeals,
 } from './lib/peopleFigures';
-import { OPEN_ENDED, type PeopleBackfill, personRowOf, READY_UNDO_CHAINS } from './lib/peopleRows';
+import { OPEN_ENDED, type PeopleBackfill, personRowOf, readPreparation } from './lib/peopleRows';
 import {
   CHARGED_QUERY_BUDGET,
   DOC_MAX,
@@ -117,6 +117,12 @@ const queryBudget = (ctx: QueryCtx) => requestBudget(ctx, CHARGED_QUERY_BUDGET);
 
 // ── Lanes ──────────────────────────────────────────────────────────────────────────────────────
 
+/** The backfills' state (`lib/peopleRows.readPreparation`, the one reading), its rows charged ahead. */
+function preparationOf(budget: ReadBudget, ctx: QueryCtx) {
+  budget.reserve('small', 4);
+  return readPreparation(ctx);
+}
+
 /** The lanes a viewer gets: every lane but Appeals open, which needs support's PII read (D37). */
 function lanesFor(viewer: Doc<'profiles'>): PeopleLane[] {
   const support = hasCapability(viewer, 'inbox.support.read');
@@ -139,7 +145,7 @@ async function readUpstream(ctx: QueryCtx, viewer: Doc<'profiles'>) {
   // The shared helpers' reads, charged ahead to the request's budget: the counts, each open-flag
   // status and each waiting-ticket status read one past their cap.
   const budget = queryBudget(ctx);
-  budget.reserve('small', 64);
+  budget.reserve('small', 64 + 4);
   const stored = await readStoredCounts(ctx);
   budget.reserve('contentFlag', COUNT_CAP + 1);
   budget.reserve('contentFlag', COUNT_CAP + 1);
@@ -513,7 +519,8 @@ export const person = query({
     const budget = queryBudget(ctx);
     const target = await budget.one('profile', () => ctx.db.get(userId));
     if (!target) return null;
-    budget.reserve('small', 64);
+    // The counts and the backfills' state, twice over (here and in the ledger check).
+    budget.reserve('small', 64 + 8);
     // The helpers' reads are reserved before the page's own: each `takeCapped` below sizes itself by
     // what is left, so a reserve after them could find a heavily flagged person's reads had spent it,
     // and throw. The ledger check reads admins' People rows once for every lever, and only for a
@@ -924,7 +931,7 @@ export const history = query({
     const target = await budget.one('profile', () => ctx.db.get(userId));
     if (!target) return null;
     const n = clampLimit(limit);
-    budget.reserve('small', 64);
+    budget.reserve('small', 64 + 4);
     const stored = await readStoredCounts(ctx);
     const sources: Source[] = [];
     type Audit = Doc<'moderationActions'>;
@@ -1232,13 +1239,7 @@ export const staffStats = query({
     if (!target || ROLE_RANK[target.role] < ROLE_RANK.moderator) return null;
     const ledgerVisible = seesLedgerGrants(viewer);
     const staffer = target._id;
-    const chainsReady =
-      (await budget.one('small', () =>
-        ctx.db
-          .query('peopleCounts')
-          .withIndex('by_key', (q) => q.eq('key', READY_UNDO_CHAINS))
-          .first(),
-      )) !== null;
+    const chainsReady = (await preparationOf(budget, ctx)).pending.includes('undoChains') === false;
 
     // ── One read of their decisions over the nine weeks ──
     const today = lastDays(now, 1);
@@ -1406,13 +1407,7 @@ export const staffSeason = query({
     if (span === null) return { ...head, overturned: null, pending: [] as PeopleBackfill[] };
     const ledgerVisible = seesLedgerGrants(viewer);
     const staffer = target._id;
-    const chainsReady =
-      (await budget.one('small', () =>
-        ctx.db
-          .query('peopleCounts')
-          .withIndex('by_key', (q) => q.eq('key', READY_UNDO_CHAINS))
-          .first(),
-      )) !== null;
+    const chainsReady = (await preparationOf(budget, ctx)).pending.includes('undoChains') === false;
     const page = await budget.capped(DECISION_BYTES, DECISION_ROWS, () =>
       ctx.db
         .query('moderationActions')

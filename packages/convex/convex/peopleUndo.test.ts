@@ -10,7 +10,7 @@ import fc from 'fast-check';
 import { describe, expect, test } from 'vitest';
 import { api } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { markReady, READY_FLAG_SUBJECTS, READY_ROWS, refreshPersonRow } from './lib/peopleRows';
+import { markReady, refreshPersonRow } from './lib/peopleRows';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -186,8 +186,8 @@ describe('offered is accepted, for undo and for can', () => {
           await seed(t, 'mod', { role: 'moderator' });
           const target = await seed(t, 'target');
           await t.run(async (ctx) => {
-            await markReady(ctx, READY_ROWS);
-            await markReady(ctx, READY_FLAG_SUBJECTS);
+            await markReady(ctx, 'rows');
+            await markReady(ctx, 'flagSubjects');
           });
           for (const s of steps) await apply(t, target, admId, s);
           const v = t.withIdentity({ subject: viewer });

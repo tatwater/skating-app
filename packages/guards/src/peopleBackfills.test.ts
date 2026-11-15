@@ -1,13 +1,14 @@
 /**
- * Every `ready:` flag a People read checks is set by a backfill the operator's one command reaches
- * (B01 §5.7, "After merge"). The flags are declared in `convex/lib/peopleRows.ts` and listed, in run
- * order, in its `PEOPLE_BACKFILLS`; `peopleJobs:backfillRows` starts the chain and each job starts the
- * next. A flag spelled anywhere else, a `READY_*` constant missing from the registry, a job that never
- * marks its flag or never starts the next, or a phase doc whose backfill table leaves one out — each is
- * a read that could say "not ready" forever, which is what this catches.
+ * The People backfills' after-merge procedure is one thing (B01 §5.7). The registry
+ * (`PEOPLE_BACKFILLS` in `convex/lib/peopleRows.ts`) lists the backfills in run order; every one takes
+ * the same arguments (`BACKFILL_ARGS`), records each pass in `peopleBackfills` through that module, and
+ * starts the next when it ends; `lib/peopleRows.readPreparation` is the only reading of that table, so
+ * the operator's check (`peopleJobs.preparation`) and every read's `pending` can't disagree. The
+ * procedure's text is `AFTER_MERGE_PROCEDURE` in the same module, which `packages/convex`'s
+ * `peopleBackfills.test.ts` performs literally; the phase doc and the roadmap must quote it word for
+ * word, and the phase doc's table must name every backfill in order.
  *
- * A lint over the source text, not a proof (`peopleBackfills.test.ts` in `packages/convex` runs the
- * chain itself).
+ * A lint over the source text, not a proof.
  */
 
 import { readdirSync, readFileSync } from 'node:fs';
@@ -19,18 +20,19 @@ const CONVEX = resolve(REPO, 'packages/convex/convex');
 const REGISTRY = join(CONVEX, 'lib/peopleRows.ts');
 const JOBS = join(CONVEX, 'peopleJobs.ts');
 const PHASE_DOC = resolve(REPO, 'plans/phases/B01-admin-console.md');
+const ROADMAP = resolve(REPO, 'plans/07-roadmap.md');
 /** The first line of the phase doc's backfill table. */
-const TABLE_HEADER = '| Job | Started by | Sets | Reads that say `pending` until it is set |';
+const TABLE_HEADER = '| Job | Started by | Reads that say `pending` until it is ready |';
 
 function sources(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
     const p = join(dir, e.name);
     if (e.isDirectory()) return e.name === '_generated' ? [] : sources(p);
-    return e.name.endsWith('.ts') ? [p] : [];
+    return e.name.endsWith('.ts') && !e.name.endsWith('.test.ts') ? [p] : [];
   });
 }
 
-/** The source with comments blanked (strings kept), so a flag named in prose is not a use. */
+/** The source with comments blanked (strings kept), so a name in prose is not a use. */
 function withoutComments(source: string): string {
   return source.replace(
     /\/\*[\s\S]*?\*\/|\/\/[^\n]*|(['"`])(?:\\.|(?!\1)[^\\\n])*\1/g,
@@ -38,52 +40,46 @@ function withoutComments(source: string): string {
   );
 }
 
-const registrySource = withoutComments(readFileSync(REGISTRY, 'utf8'));
+const squash = (text: string) => text.replace(/\s+/g, ' ').trim();
 
-/** `READY_*` constants the registry module declares, by name, with their flag. */
-const declared = new Map(
-  [...registrySource.matchAll(/export const (READY_[A-Z_]+) = '(ready:[A-Za-z]+)';/g)].map((m) => [
-    m[1] as string,
-    m[2] as string,
-  ]),
-);
+const registrySource = withoutComments(readFileSync(REGISTRY, 'utf8'));
 
 /** `PEOPLE_BACKFILLS`' entries, in order. */
 const entries = (() => {
   const body = /export const PEOPLE_BACKFILLS = \[([\s\S]*?)\] as const/.exec(registrySource)?.[1];
-  return [
-    ...(body ?? '').matchAll(
-      /\{\s*backfill: '(\w+)',\s*job: 'peopleJobs:(\w+)',\s*flag: (READY_[A-Z_]+)\s*\}/g,
-    ),
-  ].map((m) => ({ backfill: m[1] as string, job: m[2] as string, flag: m[3] as string }));
+  return [...(body ?? '').matchAll(/\{\s*backfill: '(\w+)',\s*job: 'peopleJobs:(\w+)'\s*\}/g)].map(
+    (m) => ({ backfill: m[1] as string, job: m[2] as string }),
+  );
 })();
 
-test('the registry parses, and lists every READY_* constant once', () => {
-  expect(declared.size).toBeGreaterThan(0);
-  expect(entries.length).toBeGreaterThan(0);
-  expect(entries.map((e) => e.flag).sort()).toEqual([...declared.keys()].sort());
+/** `AFTER_MERGE_PROCEDURE`, as the string it evaluates to. */
+const procedure = (() => {
+  const body = /export const AFTER_MERGE_PROCEDURE = \[([\s\S]*?)\]\.join\(' '\)/.exec(
+    registrySource,
+  )?.[1];
+  const parts = [...(body ?? '').matchAll(/'((?:\\.|[^'\\])*)'|"((?:\\.|[^"\\])*)"/g)].map((m) =>
+    (m[1] ?? m[2] ?? '').replace(/\\(.)/g, '$1'),
+  );
+  return parts.join(' ');
+})();
+
+test('the registry and the procedure parse', () => {
+  expect(entries.map((e) => e.backfill)).toEqual(['rows', 'flagSubjects', 'undoChains']);
+  expect(procedure).toMatch(/^\(1\) `convex dev --once`\. \(2\) /);
+  expect(procedure).toContain(`\`convex run peopleJobs:${entries[0]?.job} '{}'\``);
 });
 
-test('a ready: flag is spelled only in the registry module', () => {
+test('the backfills’ state is read and written only by the registry module', () => {
   const elsewhere = sources(CONVEX)
-    .filter((p) => p !== REGISTRY)
-    .filter((p) => /['"`]ready:/.test(withoutComments(readFileSync(p, 'utf8'))))
+    .filter((p) => p !== REGISTRY && !p.endsWith('schema.ts'))
+    .filter((p) =>
+      /['"`]peopleBackfills['"`]|['"`]ready:/.test(withoutComments(readFileSync(p, 'utf8'))),
+    )
     .map((p) => relative(CONVEX, p));
   expect(elsewhere).toEqual([]);
 });
 
-test('every READY_* constant read anywhere is one the registry lists', () => {
-  const listed = new Set(entries.map((e) => e.flag));
-  const unlisted = sources(CONVEX).flatMap((p) =>
-    [...withoutComments(readFileSync(p, 'utf8')).matchAll(/\bREADY_[A-Z_]+\b/g)]
-      .map((m) => m[0])
-      .filter((name) => !listed.has(name))
-      .map((name) => `${relative(CONVEX, p)}: ${name}`),
-  );
-  expect(unlisted).toEqual([]);
-});
-
-test('each job marks its own flag and starts the next; the last starts none', () => {
+test('each backfill takes the shared arguments, records its end, and starts the next; the last starts none', () => {
   const jobs = withoutComments(readFileSync(JOBS, 'utf8'));
   const handler = (name: string) => {
     const start = jobs.indexOf(`export const ${name} = internalMutation(`);
@@ -93,29 +89,35 @@ test('each job marks its own flag and starts the next; the last starts none', ()
   };
   entries.forEach((entry, i) => {
     const body = handler(entry.job);
-    expect(body, entry.job).toContain(`markReady(ctx, ${entry.flag})`);
+    expect(body, entry.job).toContain('args: BACKFILL_ARGS,');
+    expect(body, entry.job).toContain(`backfillFailedSoFar(ctx, '${entry.backfill}', args)`);
+    expect(body, entry.job).toMatch(
+      new RegExp(`saveBackfill\\(ctx, '${entry.backfill}', args, \\{ running: false,`),
+    );
     const next = entries[i + 1];
     const starts = [
       ...body.matchAll(/runAfter\(\s*0,\s*internal\.peopleJobs\.(\w+),\s*\{\s*\}\s*\)/g),
-    ]
-      .map((m) => m[1])
-      .filter((job) => job !== entry.job);
+    ].map((m) => m[1]);
     expect(starts, entry.job).toEqual(next === undefined ? [] : [next.job]);
   });
+  // The operator's check is the one reading.
+  expect(jobs).toMatch(
+    /export const preparation = internalQuery\(\{\s*args: \{\},\s*handler: \(ctx\) => readPreparation\(ctx\),/,
+  );
 });
 
-test('the phase doc’s backfill table names every job and its flag, in order', () => {
+test('the phase doc and the roadmap quote the procedure word for word', () => {
+  for (const doc of [PHASE_DOC, ROADMAP]) {
+    const quoted = squash(readFileSync(doc, 'utf8')).includes(squash(procedure));
+    expect(quoted, `${relative(REPO, doc)} quotes AFTER_MERGE_PROCEDURE`).toBe(true);
+  }
+});
+
+test('the phase doc’s backfill table names every job, in order', () => {
   const doc = readFileSync(PHASE_DOC, 'utf8');
   const header = doc.indexOf(TABLE_HEADER);
   expect(header, 'the backfill table').toBeGreaterThanOrEqual(0);
   const table = doc.slice(header, doc.indexOf('\n\n', header));
-  expect(table.match(/^\| `peopleJobs:/gm)?.length, 'one row per job').toBe(entries.length);
-  let at = header;
-  for (const entry of entries) {
-    const row = doc.indexOf(`| \`peopleJobs:${entry.job}`, at + 1);
-    expect(row, entry.job).toBeGreaterThan(at);
-    const line = doc.slice(row, doc.indexOf('\n', row));
-    expect(line, entry.job).toContain(declared.get(entry.flag) as string);
-    at = row;
-  }
+  const rows = [...table.matchAll(/^\| `peopleJobs:(\w+)`/gm)].map((m) => m[1]);
+  expect(rows).toEqual(entries.map((e) => e.job));
 });

@@ -7,13 +7,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { writeAudit } from './lib/audit';
-import {
-  markReady,
-  READY_FLAG_SUBJECTS,
-  READY_ROWS,
-  READY_UNDO_CHAINS,
-  refreshPersonRow,
-} from './lib/peopleRows';
+import { markReady, refreshPersonRow } from './lib/peopleRows';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -67,9 +61,9 @@ const as = (t: T, subject: string) => t.withIdentity({ subject });
 async function setup() {
   const t = convexTest(schema, modules);
   await t.run(async (ctx) => {
-    await markReady(ctx, READY_ROWS);
-    await markReady(ctx, READY_FLAG_SUBJECTS);
-    await markReady(ctx, READY_UNDO_CHAINS);
+    await markReady(ctx, 'rows');
+    await markReady(ctx, 'flagSubjects');
+    await markReady(ctx, 'undoChains');
   });
   const bodyId = await t.run((ctx) =>
     ctx.db.insert('waterBodies', {

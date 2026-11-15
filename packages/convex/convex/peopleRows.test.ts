@@ -14,8 +14,6 @@ import {
   markReady,
   notePoints,
   OPEN_ENDED,
-  READY_FLAG_SUBJECTS,
-  READY_ROWS,
   REASON_LINE_CHARS,
   reasonLine,
   refreshPersonRow,
@@ -196,12 +194,12 @@ describe('refreshPersonRow', () => {
     const counts = await t.run((ctx) => ctx.db.query('peopleCounts').collect());
     expect(counts.find((c) => c.key === 'everyone')?.count).toBe(0);
     await t.run(async (ctx) => {
-      await markReady(ctx, READY_ROWS);
-      await markReady(ctx, READY_ROWS);
+      await markReady(ctx, 'rows');
+      await markReady(ctx, 'rows');
     });
     expect(
-      (await t.run((ctx) => ctx.db.query('peopleCounts').collect())).filter(
-        (c) => c.key === READY_ROWS,
+      (await t.run((ctx) => ctx.db.query('peopleBackfills').collect())).filter(
+        (c) => c.backfill === 'rows' && c.ready,
       ),
     ).toHaveLength(1);
   });
@@ -319,8 +317,8 @@ describe('a lane’s count is the rows its list yields, over any history', () =>
         const ids: Id<'profiles'>[] = [];
         for (let i = 0; i < PEOPLE; i++) ids.push(await seed(t, `p${i}`));
         await t.run(async (ctx) => {
-          await markReady(ctx, READY_ROWS);
-          await markReady(ctx, READY_FLAG_SUBJECTS);
+          await markReady(ctx, 'rows');
+          await markReady(ctx, 'flagSubjects');
         });
         for (const o of ops) {
           const id = ids[o.who] as Id<'profiles'>;

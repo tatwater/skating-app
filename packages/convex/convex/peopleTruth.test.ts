@@ -9,7 +9,7 @@ import { describe, expect, test } from 'vitest';
 import { api } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { APPEALS_CAP, LANE_COUNT_CAP } from './lib/peopleFigures';
-import { markReady, READY_FLAG_SUBJECTS, READY_ROWS, refreshPersonRow } from './lib/peopleRows';
+import { markReady, refreshPersonRow } from './lib/peopleRows';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -65,8 +65,8 @@ async function setup({ ready = true }: { ready?: boolean } = {}) {
     const id = await ctx.db.insert('profiles', profile('adm', { role: 'admin' }));
     await refreshPersonRow(ctx, id);
     if (ready) {
-      await markReady(ctx, READY_ROWS);
-      await markReady(ctx, READY_FLAG_SUBJECTS);
+      await markReady(ctx, 'rows');
+      await markReady(ctx, 'flagSubjects');
     }
   });
   return { t, adm: t.withIdentity({ subject: 'adm' }) };

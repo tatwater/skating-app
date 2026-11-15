@@ -10,7 +10,7 @@ import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { LAST_EDITOR_MESSAGE } from './lib/ledgerEditors';
 import { disciplineRefusal } from './lib/peopleCan';
-import { markReady, READY_ROWS, refreshPersonRow } from './lib/peopleRows';
+import { markReady, refreshPersonRow } from './lib/peopleRows';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -290,7 +290,7 @@ describe('ledger.revokeEditor', () => {
     await t.run(async (ctx) => {
       await ctx.db.patch(ids[2] as Id<'profiles'>, { status: 'banned' });
       for (const id of [...ids, target.id, zed.id]) await refreshPersonRow(ctx, id);
-      await markReady(ctx, READY_ROWS);
+      await markReady(ctx, 'rows');
     });
     await zed.as.mutation(api.ledger.revokeEditor, { userId: target.id, reason: 'x' });
     expect((await profile(t, target.id))?.canEditLedger).toBeUndefined();

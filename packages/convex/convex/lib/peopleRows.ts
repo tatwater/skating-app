@@ -1,5 +1,5 @@
 /**
- * The one writer of `peopleRows` and `peopleCounts` (B01 §5.7).
+ * The one writer of `peopleRows`, `peopleCounts` and `peopleBackfills` (B01 §5.7).
  *
  * A People list can't page through `profiles`: a profile can weigh up to the document limit (its
  * cached drive isochrones are polygons), so a page of fifty could pass a transaction's read limit. The
@@ -22,6 +22,7 @@
  */
 
 import { DELETION_GRACE_MS, restrictionsOf } from '@skating/core';
+import { v } from 'convex/values';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { ROW_MAX, requestBudget } from './readBudget';
@@ -34,7 +35,7 @@ export const REASON_LINE_CHARS = 280;
 
 export type PersonRowFields = Omit<Doc<'peopleRows'>, '_id' | '_creationTime'>;
 
-/** The stored lane counts, and the markers that say a backfill finished. */
+/** The stored lane counts. */
 export const STORED_COUNT_KEYS = [
   'everyone',
   'admins',
@@ -45,22 +46,23 @@ export const STORED_COUNT_KEYS = [
   'deleted',
 ] as const;
 export type StoredCountKey = (typeof STORED_COUNT_KEYS)[number];
-export const READY_ROWS = 'ready:rows';
-export const READY_FLAG_SUBJECTS = 'ready:flagSubjects';
-export const READY_UNDO_CHAINS = 'ready:undoChains';
+
+// ── The backfills: one registry, one state table, one reading ──────────────────────────────────
 
 /**
- * **Every one-time job the People reads rest on, in the order they run, and the flag each sets** —
- * the registry the after-merge steps are written from. The operator starts the first
- * (`peopleJobs:backfillRows`); each starts the next when it ends, whatever its outcome, and marks only
- * its own flag, and only by a run with no failures. On a database with nothing to backfill each finds
- * nothing and sets its flag at once. `peopleBackfills.test.ts` holds every `READY_*` flag here to an
- * entry, and `packages/guards` holds `ready:` flags to this module.
+ * **Every one-time job the People reads rest on, in the order they run** — the registry the
+ * after-merge procedure is written from. The operator starts the first (`peopleJobs:backfillRows`);
+ * each starts the next when it ends, whatever its outcome, and is ready only by a run with no
+ * failures. On a database with nothing to backfill each finds nothing and is ready at once. Every job
+ * takes {@link BACKFILL_ARGS}, the same arguments with the same meaning. Each pass records its state in
+ * `peopleBackfills` ({@link saveBackfill}), and every answer to "is it finished?" — the operator's
+ * check and every read's `pending` — is {@link readPreparation}. `packages/guards` holds the table to
+ * this module.
  */
 export const PEOPLE_BACKFILLS = [
-  { backfill: 'rows', job: 'peopleJobs:backfillRows', flag: READY_ROWS },
-  { backfill: 'flagSubjects', job: 'peopleJobs:backfillFlagSubjects', flag: READY_FLAG_SUBJECTS },
-  { backfill: 'undoChains', job: 'peopleJobs:backfillUndoChains', flag: READY_UNDO_CHAINS },
+  { backfill: 'rows', job: 'peopleJobs:backfillRows' },
+  { backfill: 'flagSubjects', job: 'peopleJobs:backfillFlagSubjects' },
+  { backfill: 'undoChains', job: 'peopleJobs:backfillUndoChains' },
 ] as const;
 
 /**
@@ -69,9 +71,133 @@ export const PEOPLE_BACKFILLS = [
  */
 export type PeopleBackfill = (typeof PEOPLE_BACKFILLS)[number]['backfill'];
 
-/** The backfills whose flag is not among `keys` (the `peopleCounts` keys read), in the registry's order. */
-export function pendingBackfills(keys: ReadonlySet<string>): PeopleBackfill[] {
-  return PEOPLE_BACKFILLS.filter((b) => !keys.has(b.flag)).map((b) => b.backfill);
+/**
+ * Every backfill's arguments — one shape, one meaning, so one recovery sentence is true of all three:
+ * - `cursor` — where the pass resumes, opaque. Left out, the call starts a new run from the start
+ *   (its failures counted afresh); a backfill passes it to its own next pass.
+ * - `alone` — this run doesn't start the backfills after it when it ends (a re-run after a fix).
+ */
+export const BACKFILL_ARGS = {
+  cursor: v.optional(v.union(v.string(), v.null())),
+  alone: v.optional(v.boolean()),
+};
+export interface BackfillArgs {
+  cursor?: string | null;
+  alone?: boolean;
+}
+
+/**
+ * **The after-merge procedure, as the docs quote it word for word** — the phase doc, the roadmap's
+ * Owed list and the PR body. `peopleBackfills.test.ts` runs its `convex run` commands literally, as
+ * parsed out of this text (the same function names and argument objects), on an empty database and a
+ * seeded one, a failure included; `packages/guards` holds the docs to this text. Change the procedure
+ * here and the test and the docs follow, or fail.
+ */
+export const AFTER_MERGE_PROCEDURE = [
+  '(1) `convex dev --once`.',
+  "(2) `convex run peopleJobs:backfillRows '{}'` — it runs the three People backfills in turn (rows, flag subjects, undo chains). Estimate: unmeasured.",
+  "(3) `convex run peopleJobs:preparation '{}'` until it returns `ready: true`.",
+  '(4) For each job in its `rerun`: `convex run <job> \'{"alone":true}\'`, then step 3 again.',
+  '(5) For each id `backfillRows` logs as an overwritten tombstone: `convex run peopleJobs:restoreTombstoneStatus \'{"userId":"<id>"}\'`.',
+].join(' ');
+
+/** A pass that hasn't written its state in this long has stopped (a pass takes seconds). */
+export const BACKFILL_STALL_MS = 10 * 60_000;
+
+/** One backfill's state, as the check reports it. */
+export interface BackfillState {
+  backfill: PeopleBackfill;
+  job: string;
+  ready: boolean;
+  running: boolean;
+  /** Running, but no pass has recorded anything for {@link BACKFILL_STALL_MS}: a pass threw. */
+  stalled: boolean;
+  cursor: string | null;
+  failed: number;
+  updatedAt: number | null;
+}
+
+export interface Preparation {
+  /** Every backfill is ready. */
+  ready: boolean;
+  /** The backfills not ready, in the registry's order — what a read names in its `pending`. */
+  pending: PeopleBackfill[];
+  /**
+   * The jobs to run again (`{"alone":true}`): not ready, not running, and not about to be started by
+   * an earlier backfill whose chain is still running.
+   */
+  rerun: string[];
+  backfills: BackfillState[];
+}
+
+/** The backfills' state: one small read (a row per backfill), the only reading there is. */
+export async function readPreparation(
+  ctx: QueryCtx,
+  now: number = Date.now(),
+): Promise<Preparation> {
+  const rows = await ctx.db.query('peopleBackfills').take(PEOPLE_BACKFILLS.length + 1);
+  const byName = new Map(rows.map((r) => [r.backfill as string, r]));
+  let chainRunning = false;
+  const rerun: string[] = [];
+  const backfills = PEOPLE_BACKFILLS.map(({ backfill, job }): BackfillState => {
+    const row = byName.get(backfill);
+    const running = row?.running === true;
+    const stalled = running && now - (row?.updatedAt ?? 0) > BACKFILL_STALL_MS;
+    const ready = row?.ready === true;
+    if (!ready && !(running && !stalled) && !chainRunning) rerun.push(job);
+    if (running && !stalled && row?.chains === true) chainRunning = true;
+    return {
+      backfill,
+      job,
+      ready,
+      running,
+      stalled,
+      cursor: row?.cursor ?? null,
+      failed: row?.failed ?? 0,
+      updatedAt: row?.updatedAt ?? null,
+    };
+  });
+  const pending = backfills.filter((b) => !b.ready).map((b) => b.backfill);
+  return { ready: pending.length === 0, pending, rerun, backfills };
+}
+
+async function backfillRow(ctx: QueryCtx, backfill: PeopleBackfill) {
+  return ctx.db
+    .query('peopleBackfills')
+    .withIndex('by_backfill', (q) => q.eq('backfill', backfill))
+    .first();
+}
+
+/** The failures a pass starts from: none for a new run (no `cursor`), else what its run recorded. */
+export async function backfillFailedSoFar(
+  ctx: QueryCtx,
+  backfill: PeopleBackfill,
+  args: BackfillArgs,
+): Promise<number> {
+  if (args.cursor === undefined) return 0;
+  return (await backfillRow(ctx, backfill))?.failed ?? 0;
+}
+
+/**
+ * Record a pass: still `running` at `cursor`, or ended (`running: false`) — ready by a run with no
+ * failures, and never unready again once ready.
+ */
+export async function saveBackfill(
+  ctx: MutationCtx,
+  backfill: PeopleBackfill,
+  args: BackfillArgs,
+  state: { running: boolean; cursor: string | null; failed: number },
+): Promise<void> {
+  const row = await backfillRow(ctx, backfill);
+  const ended = !state.running;
+  const fields = {
+    ...state,
+    chains: args.alone !== true,
+    ready: (row?.ready ?? false) || (ended && state.failed === 0),
+    updatedAt: Date.now(),
+  };
+  if (row) await ctx.db.patch(row._id, fields);
+  else await ctx.db.insert('peopleBackfills', { backfill, ...fields });
 }
 
 /**
@@ -270,13 +396,9 @@ async function bumpCount(ctx: MutationCtx, key: string, delta: number): Promise<
   else await ctx.db.insert('peopleCounts', { key, count: delta });
 }
 
-/** Mark a backfill finished (idempotent). */
-export async function markReady(ctx: MutationCtx, key: string): Promise<void> {
-  const row = await ctx.db
-    .query('peopleCounts')
-    .withIndex('by_key', (q) => q.eq('key', key))
-    .first();
-  if (!row) await ctx.db.insert('peopleCounts', { key, count: 1 });
+/** Mark a backfill finished, as a run with no failures does (idempotent; for tests and seeds). */
+export async function markReady(ctx: MutationCtx, backfill: PeopleBackfill): Promise<void> {
+  await saveBackfill(ctx, backfill, {}, { running: false, cursor: null, failed: 0 });
 }
 
 /**

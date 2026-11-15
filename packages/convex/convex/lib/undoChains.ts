@@ -12,7 +12,7 @@
  * Every People read that asks "did this stand?" asks here: a staffer's tenure, "later undone by
  * someone else" (`people.staffStats`) and "overturned" (`people.staffSeason`). Rows written before
  * the facts existed get them from `peopleJobs.backfillUndoChains`; until it has run
- * (`ready:undoChains`) those figures name it in their `pending`.
+ * those figures name it in their `pending`.
  */
 
 import type { Doc, Id } from '../_generated/dataModel';

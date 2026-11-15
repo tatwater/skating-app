@@ -8,13 +8,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { asUndoOf, writeAudit } from './lib/audit';
-import {
-  markReady,
-  READY_FLAG_SUBJECTS,
-  READY_ROWS,
-  READY_UNDO_CHAINS,
-  refreshPersonRow,
-} from './lib/peopleRows';
+import { markReady, refreshPersonRow } from './lib/peopleRows';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -64,9 +58,9 @@ async function setup(ready = true) {
   const t = convexTest({ schema, modules, transactionLimits: true });
   if (ready) {
     await t.run(async (ctx) => {
-      await markReady(ctx, READY_ROWS);
-      await markReady(ctx, READY_FLAG_SUBJECTS);
-      await markReady(ctx, READY_UNDO_CHAINS);
+      await markReady(ctx, 'rows');
+      await markReady(ctx, 'flagSubjects');
+      await markReady(ctx, 'undoChains');
     });
   }
   return t;
@@ -221,7 +215,7 @@ describe('staffStats at its maximum supported input', () => {
     const matt = await seed(t, 'matt', 'moderator');
     const adm = await seed(t, 'adm', 'admin');
     await t.run(async (ctx) => {
-      await markReady(ctx, READY_ROWS);
+      await markReady(ctx, 'rows');
       // A decision and three undos on it, written before the chains were kept.
       let prev = await ctx.db.insert('moderationActions', {
         actorId: matt,
@@ -342,7 +336,7 @@ describe('the figures say capped rather than throw or mislead', () => {
       reason: 'r',
     };
     const ids = await t.run(async (ctx) => {
-      await markReady(ctx, READY_ROWS);
+      await markReady(ctx, 'rows');
       const change = await ctx.db.insert('moderationActions', {
         ...base,
         actorId: matt,
@@ -379,7 +373,7 @@ describe('the figures say capped rather than throw or mislead', () => {
     const matt = await seed(t, 'matt', 'moderator');
     const adm = await seed(t, 'adm', 'admin');
     await t.run(async (ctx) => {
-      await markReady(ctx, READY_ROWS);
+      await markReady(ctx, 'rows');
       const role = { actorId: adm, targetType: 'user' as const, targetId: matt, reason: 'r' };
       const grant = await ctx.db.insert('moderationActions', {
         ...role,

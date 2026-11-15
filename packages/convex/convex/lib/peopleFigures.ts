@@ -21,10 +21,8 @@ import { readOpenFlags } from './openFlags';
 import {
   OPEN_ENDED,
   type PeopleBackfill,
-  pendingBackfills,
   personRowOf,
-  READY_FLAG_SUBJECTS,
-  READY_ROWS,
+  readPreparation,
   type StoredCountKey,
 } from './peopleRows';
 import { requestBudget } from './readBudget';
@@ -47,15 +45,16 @@ export interface StoredCounts {
   pending: PeopleBackfill[];
 }
 
-/** The stored counts and markers — a handful of tiny rows. */
+/** The stored counts and the backfills' state — two handfuls of tiny rows. */
 export async function readStoredCounts(ctx: QueryCtx): Promise<StoredCounts> {
   const rows = await ctx.db.query('peopleCounts').take(64);
   const byKey = new Map(rows.map((r) => [r.key, r.count]));
+  const { pending } = await readPreparation(ctx);
   return {
     count: (key) => ({ count: Math.max(0, byKey.get(key) ?? 0), capped: false }),
-    rowsReady: byKey.has(READY_ROWS),
-    flagSubjectsReady: byKey.has(READY_FLAG_SUBJECTS),
-    pending: pendingBackfills(new Set(byKey.keys())),
+    rowsReady: !pending.includes('rows'),
+    flagSubjectsReady: !pending.includes('flagSubjects'),
+    pending,
   };
 }
 

@@ -26,17 +26,17 @@
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
-import { internalMutation, type MutationCtx, query } from './_generated/server';
+import { internalMutation, internalQuery, type MutationCtx, query } from './_generated/server';
 import { nextAttemptState } from './lib/attempts';
 import { writeAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { flagSubjectOf } from './lib/flagSubject';
 import {
-  markReady,
-  READY_FLAG_SUBJECTS,
-  READY_ROWS,
-  READY_UNDO_CHAINS,
+  BACKFILL_ARGS,
+  backfillFailedSoFar,
+  readPreparation,
   refreshPersonRow,
+  saveBackfill,
 } from './lib/peopleRows';
 import { DOC_MAX, errorClassOf, ReadBudget, ROW_MAX, traced } from './lib/readBudget';
 
@@ -477,26 +477,21 @@ function deletionOverwritten(profile: Doc<'profiles'>): boolean {
  * (`deletedAt` set, status not `deleted`), for `restoreTombstoneStatus`.
  */
 export const backfillRows = internalMutation({
-  args: {
-    after: v.optional(v.number()),
-    failed: v.optional(v.number()),
-    overwritten: v.optional(v.array(v.id('profiles'))),
-    /** Run this backfill only, not the ones after it (a re-run after a fix). */
-    alone: v.optional(v.boolean()),
-  },
+  args: BACKFILL_ARGS,
   handler: (ctx, args) =>
     traced('peopleJobs.backfillRows', args, async () => {
       const reads = new ReadBudget();
+      reads.reserve('small', 2);
+      let failed = await backfillFailedSoFar(ctx, 'rows', args);
+      const after = Number(args.cursor ?? 0);
       const per = ROW_MAX.profile + PERSON_WORK;
       const n = reads.rows('profile', 50, 0, per);
       const profiles = await reads.take('profile', n, (k) =>
         ctx.db
           .query('profiles')
-          .withIndex('by_creation_time', (q) => q.gt('_creationTime', args.after ?? 0))
+          .withIndex('by_creation_time', (q) => q.gt('_creationTime', after))
           .take(k),
       );
-      let failed = args.failed ?? 0;
-      const overwritten = [...(args.overwritten ?? [])];
       let last: Doc<'profiles'> | undefined;
       // A failure charges its whole allowance, which ends this pass; the next goes on after `last`.
       let stopped = false;
@@ -505,7 +500,11 @@ export const backfillRows = internalMutation({
           stopped = true;
           break;
         }
-        if (deletionOverwritten(profile) && overwritten.length < 100) overwritten.push(profile._id);
+        if (deletionOverwritten(profile)) {
+          console.error(
+            `peopleJobs.backfillRows: tombstone whose status was overwritten: ${profile._id}`,
+          );
+        }
         const allowance = nestedAllowance(reads);
         try {
           await ctx.runMutation(
@@ -522,25 +521,18 @@ export const backfillRows = internalMutation({
         last = profile;
       }
       if (last !== undefined && (stopped || profiles.length === n)) {
-        await ctx.scheduler.runAfter(0, internal.peopleJobs.backfillRows, {
-          after: last._creationTime,
-          failed,
-          overwritten,
-          ...(args.alone ? { alone: true } : {}),
-        });
+        const cursor = String(last._creationTime);
+        await saveBackfill(ctx, 'rows', args, { running: true, cursor, failed });
+        await ctx.scheduler.runAfter(0, internal.peopleJobs.backfillRows, { ...args, cursor });
         return { done: false };
       }
-      if (overwritten.length > 0) {
-        console.error(
-          `peopleJobs.backfillRows: tombstones whose status was overwritten: ${overwritten.join(', ')}`,
-        );
-      }
-      if (failed === 0) await markReady(ctx, READY_ROWS);
-      else console.error(`peopleJobs.backfillRows: ${failed} failed; not marked ready — re-run it`);
-      // The next in `PEOPLE_BACKFILLS`, whatever this one's outcome: each marks only its own flag.
+      await saveBackfill(ctx, 'rows', args, { running: false, cursor: null, failed });
+      if (failed > 0)
+        console.error(`peopleJobs.backfillRows: ${failed} failed; not ready — re-run it`);
+      // The next in `PEOPLE_BACKFILLS`, whatever this one's outcome: each is ready only by its own run.
       if (!args.alone)
         await ctx.scheduler.runAfter(0, internal.peopleJobs.backfillFlagSubjects, {});
-      return { done: true, failed, overwritten };
+      return { done: true, failed };
     }),
 });
 
@@ -578,22 +570,20 @@ const FLAG_STEP = ROW_MAX.contentFlag + DOC_MAX + ROW_MAX.contentFlag;
  * throws is logged and skipped; the subjects are marked ready only by a run with no failures.
  */
 export const backfillFlagSubjects = internalMutation({
-  args: {
-    after: v.optional(v.number()),
-    failed: v.optional(v.number()),
-    alone: v.optional(v.boolean()),
-  },
+  args: BACKFILL_ARGS,
   handler: (ctx, args) =>
     traced('peopleJobs.backfillFlagSubjects', args, async () => {
       const reads = new ReadBudget();
+      reads.reserve('small', 2);
+      let failed = await backfillFailedSoFar(ctx, 'flagSubjects', args);
+      const after = Number(args.cursor ?? 0);
       const n = reads.rows('contentFlag', 200, 0, FLAG_STEP);
       const flags = await reads.take('contentFlag', n, (k) =>
         ctx.db
           .query('contentFlags')
-          .withIndex('by_creation_time', (q) => q.gt('_creationTime', args.after ?? 0))
+          .withIndex('by_creation_time', (q) => q.gt('_creationTime', after))
           .take(k),
       );
-      let failed = args.failed ?? 0;
       for (const flag of flags) {
         if (flag.subjectUserId !== undefined) continue;
         try {
@@ -610,18 +600,18 @@ export const backfillFlagSubjects = internalMutation({
       }
       const last = flags[flags.length - 1];
       if (last !== undefined && flags.length === n) {
+        const cursor = String(last._creationTime);
+        await saveBackfill(ctx, 'flagSubjects', args, { running: true, cursor, failed });
         await ctx.scheduler.runAfter(0, internal.peopleJobs.backfillFlagSubjects, {
-          after: last._creationTime,
-          failed,
-          ...(args.alone ? { alone: true } : {}),
+          ...args,
+          cursor,
         });
         return { done: false };
       }
-      if (failed === 0) await markReady(ctx, READY_FLAG_SUBJECTS);
-      else
-        console.error(
-          `peopleJobs.backfillFlagSubjects: ${failed} failed; not marked ready — re-run it`,
-        );
+      await saveBackfill(ctx, 'flagSubjects', args, { running: false, cursor: null, failed });
+      if (failed > 0) {
+        console.error(`peopleJobs.backfillFlagSubjects: ${failed} failed; not ready — re-run it`);
+      }
       if (!args.alone) await ctx.scheduler.runAfter(0, internal.peopleJobs.backfillUndoChains, {});
       return { done: true, failed };
     }),
@@ -636,14 +626,16 @@ const CHAIN_PAGE_BYTES = 4 * DOC_MAX;
  * chain's first row and its depth, and that first row the newest depth and who wrote it. Walks the
  * audit log oldest first (an undo is always newer than what it undoes, so its parent is placed
  * before it), a page at a time under a real-weight cap, each row's two point reads within the
- * budget; chained to the end, logging its cursor, and marks `ready:undoChains` only by a run with no
+ * budget; chained to the end, recording its cursor, and ready only by a run with no
  * failures. Idempotent: a row already placed is passed over.
  */
 export const backfillUndoChains = internalMutation({
-  args: { cursor: v.optional(v.union(v.string(), v.null())), failed: v.optional(v.number()) },
+  args: BACKFILL_ARGS,
   handler: (ctx, args) =>
     traced('peopleJobs.backfillUndoChains', args, async () => {
       const reads = new ReadBudget();
+      reads.reserve('small', 2);
+      let failed = await backfillFailedSoFar(ctx, 'undoChains', args);
       const page = await reads.capped(CHAIN_PAGE_BYTES, CHAIN_PAGE, () =>
         ctx.db.query('moderationActions').paginate({
           cursor: args.cursor ?? null,
@@ -651,7 +643,6 @@ export const backfillUndoChains = internalMutation({
           maximumBytesRead: CHAIN_PAGE_BYTES,
         }),
       );
-      let failed = args.failed ?? 0;
       let stoppedAt: number | null = null;
       let placed = 0;
       for (const [i, row] of page.page.entries()) {
@@ -687,26 +678,34 @@ export const backfillUndoChains = internalMutation({
         }
       }
       // Out of budget part-way: the same page again from its start (placed rows are passed over).
-      if (stoppedAt !== null) {
-        if (placed === 0) throw new Error('peopleJobs.backfillUndoChains: a pass made no progress');
+      if (stoppedAt !== null && placed === 0) {
+        throw new Error('peopleJobs.backfillUndoChains: a pass made no progress');
+      }
+      if (stoppedAt !== null || !page.isDone) {
+        const cursor = stoppedAt !== null ? (args.cursor ?? null) : page.continueCursor;
+        await saveBackfill(ctx, 'undoChains', args, { running: true, cursor, failed });
         await ctx.scheduler.runAfter(0, internal.peopleJobs.backfillUndoChains, {
-          cursor: args.cursor ?? null,
-          failed,
+          ...args,
+          cursor,
         });
         return { done: false };
       }
-      if (!page.isDone) {
-        await ctx.scheduler.runAfter(0, internal.peopleJobs.backfillUndoChains, {
-          cursor: page.continueCursor,
-          failed,
-        });
-        return { done: false };
+      await saveBackfill(ctx, 'undoChains', args, { running: false, cursor: null, failed });
+      if (failed > 0) {
+        console.error(`peopleJobs.backfillUndoChains: ${failed} failed; not ready — re-run it`);
       }
-      if (failed === 0) await markReady(ctx, READY_UNDO_CHAINS);
-      else
-        console.error(
-          `peopleJobs.backfillUndoChains: ${failed} failed; not marked ready — re-run it`,
-        );
       return { done: true, failed };
     }),
+});
+
+/**
+ * **The operator's check** (step 3 of `AFTER_MERGE_PROCEDURE`): every People backfill's state — ready,
+ * running, stalled, its last recorded position and failures — the jobs to run again, and `ready` when
+ * all of them are. It is `lib/peopleRows.readPreparation`, the same reading every People read's
+ * `pending` comes from, so the check and the pages can't disagree about what is finished. Internal:
+ * callable only with the deployment's key (`convex run`).
+ */
+export const preparation = internalQuery({
+  args: {},
+  handler: (ctx) => readPreparation(ctx),
 });

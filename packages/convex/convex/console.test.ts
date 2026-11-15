@@ -2,7 +2,7 @@ import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api } from './_generated/api';
 import type { Id } from './_generated/dataModel';
-import { markReady, READY_FLAG_SUBJECTS, READY_ROWS, refreshPersonRow } from './lib/peopleRows';
+import { markReady, refreshPersonRow } from './lib/peopleRows';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -71,7 +71,7 @@ async function seedFlag(
 async function syncPeople(t: ReturnType<typeof convexTest>) {
   await t.run(async (ctx) => {
     for (const p of await ctx.db.query('profiles').collect()) await refreshPersonRow(ctx, p._id);
-    await markReady(ctx, READY_ROWS);
+    await markReady(ctx, 'rows');
   });
 }
 
@@ -129,7 +129,7 @@ describe('console.overview (B01 §5.1)', () => {
     await seedFlag(t, filer.id, 'spam', 'report', 'r1', author.id);
     await seedFlag(t, filer.id, 'unsafe_false_report', 'report', 'r2', author.id);
     await syncPeople(t);
-    await t.run((ctx) => markReady(ctx, READY_FLAG_SUBJECTS));
+    await t.run((ctx) => markReady(ctx, 'flagSubjects'));
     const o = await mod.as.query(api.console.overview, {});
     expect(o.people.flaggedPeople).toEqual({ count: 2, capped: false });
     expect(o.people.pending).toEqual([]);

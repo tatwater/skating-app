@@ -10,7 +10,7 @@ import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { MAX_ATTEMPTS } from './lib/attempts';
 import * as audit from './lib/audit';
-import { READY_FLAG_SUBJECTS, READY_ROWS, refreshPersonRow } from './lib/peopleRows';
+import { type PeopleBackfill, readPreparation, refreshPersonRow } from './lib/peopleRows';
 import { LAPSED_REASON } from './peopleJobs';
 import schema from './schema';
 
@@ -72,6 +72,11 @@ async function seed(t: T, subject: string, over: Partial<Doc<'profiles'>> = {}, 
 
 const get = (t: T, id: Id<'profiles'>) => t.run((ctx) => ctx.db.get(id));
 const drain = (t: T) => t.finishAllScheduledFunctions(vi.runAllTimers, 10_000);
+
+async function isReady(t: T, backfill: PeopleBackfill) {
+  const { pending } = await t.run((ctx) => readPreparation(ctx));
+  return !pending.includes(backfill);
+}
 async function sweep(t: T) {
   await t.mutation(internal.peopleJobs.sweepLapsedSuspensions, {});
   await drain(t);
@@ -332,8 +337,7 @@ describe('the rows: backfill, drift repair, a tombstone put back', () => {
     await drain(t);
     const rows = await t.run((ctx) => ctx.db.query('peopleRows').collect());
     expect(rows).toHaveLength(13);
-    const ready = await t.run((ctx) => ctx.db.query('peopleCounts').collect());
-    expect(ready.some((c) => c.key === READY_ROWS)).toBe(true);
+    expect(await isReady(t, 'rows')).toBe(true);
     expect(errors.mock.calls.some((c) => String(c[0]).includes(broken))).toBe(true);
     await t.mutation(internal.peopleJobs.restoreTombstoneStatus, { userId: broken });
     expect((await get(t, broken))?.status).toBe('deleted');
@@ -352,8 +356,7 @@ describe('the rows: backfill, drift repair, a tombstone put back', () => {
     vi.spyOn(real, 'refreshPersonRow').mockRejectedValueOnce(new Error('poison'));
     await t.mutation(internal.peopleJobs.backfillRows, {});
     await drain(t);
-    const counts = await t.run((ctx) => ctx.db.query('peopleCounts').collect());
-    expect(counts.some((c) => c.key === READY_ROWS)).toBe(false);
+    expect(await isReady(t, 'rows')).toBe(false);
     expect(errors).toHaveBeenCalled();
   });
 
@@ -369,8 +372,7 @@ describe('the rows: backfill, drift repair, a tombstone put back', () => {
     const rows = await t.run((ctx) => ctx.db.query('peopleRows').collect());
     expect(rows.map((r) => r.userId)).toEqual([second]);
     expect(rows.some((r) => r.userId === first)).toBe(false);
-    const counts = await t.run((ctx) => ctx.db.query('peopleCounts').collect());
-    expect(counts.some((c) => c.key === READY_ROWS)).toBe(false);
+    expect(await isReady(t, 'rows')).toBe(false);
   });
 
   test('a failed drift repair leaves the rest of its rows for the next run', async () => {
@@ -450,7 +452,6 @@ describe('the rows: backfill, drift repair, a tombstone put back', () => {
     const flags = await t.run((ctx) => ctx.db.query('contentFlags').collect());
     expect(flags.filter((f) => f.subjectUserId === author)).toHaveLength(14);
     expect(flags.filter((f) => f.subjectUserId === null)).toHaveLength(1);
-    const counts = await t.run((ctx) => ctx.db.query('peopleCounts').collect());
-    expect(counts.some((c) => c.key === READY_FLAG_SUBJECTS)).toBe(true);
+    expect(await isReady(t, 'flagSubjects')).toBe(true);
   });
 });
