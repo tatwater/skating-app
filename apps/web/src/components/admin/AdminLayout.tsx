@@ -74,7 +74,8 @@ const NAV: NavItem[] = [
   { to: '/admin', label: 'Overview', exact: true },
   { to: '/admin/dashboard', label: 'Dashboard' },
   { to: '/admin/flags', label: 'Flags' },
-  { to: '/admin/users', label: 'Users' },
+  // People replaced the old user pages; the line is the way back to it in the console.
+  { to: '/admin/people', label: 'People' },
   { to: '/admin/water', label: 'Water bodies' },
   // Its own entry rather than a tab inside Water bodies: this is the *intake* queue — what the merge
   // could not settle — and burying it one click deep is how 2,010 stored rows went unseen for a

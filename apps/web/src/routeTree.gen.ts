@@ -29,6 +29,7 @@ import { Route as AdminFeaturesRouteImport } from './routes/admin.features'
 import { Route as AdminFlagsRouteImport } from './routes/admin.flags'
 import { Route as AdminIceCalibrationRouteImport } from './routes/admin.ice-calibration'
 import { Route as AdminImportsRouteImport } from './routes/admin.imports'
+import { Route as AdminPeopleRouteImport } from './routes/admin.people'
 import { Route as AdminRecurrenceRouteImport } from './routes/admin.recurrence'
 import { Route as AdminSeasonsRouteImport } from './routes/admin.seasons'
 import { Route as AdminSupportRouteImport } from './routes/admin.support'
@@ -42,6 +43,7 @@ import { Route as SkaterSettingsSectionRouteImport } from './routes/_skater.sett
 import { Route as SkaterUUsernameRouteImport } from './routes/_skater.u.$username'
 import { Route as SkaterWaterIdRouteImport } from './routes/_skater.water.$id'
 import { Route as AdminBodyIdRouteImport } from './routes/admin.body.$id'
+import { Route as AdminPeopleIdRouteImport } from './routes/admin.people.$id'
 import { Route as AdminUsersIndexRouteImport } from './routes/admin.users.index'
 import { Route as AdminUsersIdRouteImport } from './routes/admin.users.$id'
 import { Route as AdminWaterIndexRouteImport } from './routes/admin.water.index'
@@ -150,6 +152,11 @@ const AdminImportsRoute = AdminImportsRouteImport.update({
   path: '/imports',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminPeopleRoute = AdminPeopleRouteImport.update({
+  id: '/people',
+  path: '/people',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminRecurrenceRoute = AdminRecurrenceRouteImport.update({
   id: '/recurrence',
   path: '/recurrence',
@@ -215,6 +222,11 @@ const AdminBodyIdRoute = AdminBodyIdRouteImport.update({
   path: '/body/$id',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminPeopleIdRoute = AdminPeopleIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AdminPeopleRoute,
+} as any)
 const AdminUsersIndexRoute = AdminUsersIndexRouteImport.update({
   id: '/users/',
   path: '/users/',
@@ -275,6 +287,7 @@ export interface FileRoutesByFullPath {
   '/admin/flags': typeof AdminFlagsRoute
   '/admin/ice-calibration': typeof AdminIceCalibrationRoute
   '/admin/imports': typeof AdminImportsRoute
+  '/admin/people': typeof AdminPeopleRouteWithChildren
   '/admin/recurrence': typeof AdminRecurrenceRoute
   '/admin/seasons': typeof AdminSeasonsRoute
   '/admin/support': typeof AdminSupportRoute
@@ -288,6 +301,7 @@ export interface FileRoutesByFullPath {
   '/u/$username': typeof SkaterUUsernameRoute
   '/water/$id': typeof SkaterWaterIdRoute
   '/admin/body/$id': typeof AdminBodyIdRoute
+  '/admin/people/$id': typeof AdminPeopleIdRoute
   '/admin/users/$id': typeof AdminUsersIdRoute
   '/admin/water/$id': typeof AdminWaterIdRoute
   '/admin/water/place-names': typeof AdminWaterPlaceNamesRoute
@@ -314,6 +328,7 @@ export interface FileRoutesByTo {
   '/admin/flags': typeof AdminFlagsRoute
   '/admin/ice-calibration': typeof AdminIceCalibrationRoute
   '/admin/imports': typeof AdminImportsRoute
+  '/admin/people': typeof AdminPeopleRouteWithChildren
   '/admin/recurrence': typeof AdminRecurrenceRoute
   '/admin/seasons': typeof AdminSeasonsRoute
   '/admin/support': typeof AdminSupportRoute
@@ -328,6 +343,7 @@ export interface FileRoutesByTo {
   '/u/$username': typeof SkaterUUsernameRoute
   '/water/$id': typeof SkaterWaterIdRoute
   '/admin/body/$id': typeof AdminBodyIdRoute
+  '/admin/people/$id': typeof AdminPeopleIdRoute
   '/admin/users/$id': typeof AdminUsersIdRoute
   '/admin/water/$id': typeof AdminWaterIdRoute
   '/admin/water/place-names': typeof AdminWaterPlaceNamesRoute
@@ -358,6 +374,7 @@ export interface FileRoutesById {
   '/admin/flags': typeof AdminFlagsRoute
   '/admin/ice-calibration': typeof AdminIceCalibrationRoute
   '/admin/imports': typeof AdminImportsRoute
+  '/admin/people': typeof AdminPeopleRouteWithChildren
   '/admin/recurrence': typeof AdminRecurrenceRoute
   '/admin/seasons': typeof AdminSeasonsRoute
   '/admin/support': typeof AdminSupportRoute
@@ -372,6 +389,7 @@ export interface FileRoutesById {
   '/_skater/u/$username': typeof SkaterUUsernameRoute
   '/_skater/water/$id': typeof SkaterWaterIdRoute
   '/admin/body/$id': typeof AdminBodyIdRoute
+  '/admin/people/$id': typeof AdminPeopleIdRoute
   '/admin/users/$id': typeof AdminUsersIdRoute
   '/admin/water/$id': typeof AdminWaterIdRoute
   '/admin/water/place-names': typeof AdminWaterPlaceNamesRoute
@@ -403,6 +421,7 @@ export interface FileRouteTypes {
     | '/admin/flags'
     | '/admin/ice-calibration'
     | '/admin/imports'
+    | '/admin/people'
     | '/admin/recurrence'
     | '/admin/seasons'
     | '/admin/support'
@@ -416,6 +435,7 @@ export interface FileRouteTypes {
     | '/u/$username'
     | '/water/$id'
     | '/admin/body/$id'
+    | '/admin/people/$id'
     | '/admin/users/$id'
     | '/admin/water/$id'
     | '/admin/water/place-names'
@@ -442,6 +462,7 @@ export interface FileRouteTypes {
     | '/admin/flags'
     | '/admin/ice-calibration'
     | '/admin/imports'
+    | '/admin/people'
     | '/admin/recurrence'
     | '/admin/seasons'
     | '/admin/support'
@@ -456,6 +477,7 @@ export interface FileRouteTypes {
     | '/u/$username'
     | '/water/$id'
     | '/admin/body/$id'
+    | '/admin/people/$id'
     | '/admin/users/$id'
     | '/admin/water/$id'
     | '/admin/water/place-names'
@@ -485,6 +507,7 @@ export interface FileRouteTypes {
     | '/admin/flags'
     | '/admin/ice-calibration'
     | '/admin/imports'
+    | '/admin/people'
     | '/admin/recurrence'
     | '/admin/seasons'
     | '/admin/support'
@@ -499,6 +522,7 @@ export interface FileRouteTypes {
     | '/_skater/u/$username'
     | '/_skater/water/$id'
     | '/admin/body/$id'
+    | '/admin/people/$id'
     | '/admin/users/$id'
     | '/admin/water/$id'
     | '/admin/water/place-names'
@@ -666,6 +690,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminImportsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/people': {
+      id: '/admin/people'
+      path: '/people'
+      fullPath: '/admin/people'
+      preLoaderRoute: typeof AdminPeopleRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/recurrence': {
       id: '/admin/recurrence'
       path: '/recurrence'
@@ -756,6 +787,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/body/$id'
       preLoaderRoute: typeof AdminBodyIdRouteImport
       parentRoute: typeof AdminRoute
+    }
+    '/admin/people/$id': {
+      id: '/admin/people/$id'
+      path: '/$id'
+      fullPath: '/admin/people/$id'
+      preLoaderRoute: typeof AdminPeopleIdRouteImport
+      parentRoute: typeof AdminPeopleRoute
     }
     '/admin/users/': {
       id: '/admin/users/'
@@ -855,6 +893,18 @@ const SkaterRouteChildren: SkaterRouteChildren = {
 const SkaterRouteWithChildren =
   SkaterRoute._addFileChildren(SkaterRouteChildren)
 
+interface AdminPeopleRouteChildren {
+  AdminPeopleIdRoute: typeof AdminPeopleIdRoute
+}
+
+const AdminPeopleRouteChildren: AdminPeopleRouteChildren = {
+  AdminPeopleIdRoute: AdminPeopleIdRoute,
+}
+
+const AdminPeopleRouteWithChildren = AdminPeopleRoute._addFileChildren(
+  AdminPeopleRouteChildren,
+)
+
 interface AdminRouteChildren {
   AdminBodiesRoute: typeof AdminBodiesRoute
   AdminDashboardRoute: typeof AdminDashboardRoute
@@ -862,6 +912,7 @@ interface AdminRouteChildren {
   AdminFlagsRoute: typeof AdminFlagsRoute
   AdminIceCalibrationRoute: typeof AdminIceCalibrationRoute
   AdminImportsRoute: typeof AdminImportsRoute
+  AdminPeopleRoute: typeof AdminPeopleRouteWithChildren
   AdminRecurrenceRoute: typeof AdminRecurrenceRoute
   AdminSeasonsRoute: typeof AdminSeasonsRoute
   AdminSupportRoute: typeof AdminSupportRoute
@@ -885,6 +936,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminFlagsRoute: AdminFlagsRoute,
   AdminIceCalibrationRoute: AdminIceCalibrationRoute,
   AdminImportsRoute: AdminImportsRoute,
+  AdminPeopleRoute: AdminPeopleRouteWithChildren,
   AdminRecurrenceRoute: AdminRecurrenceRoute,
   AdminSeasonsRoute: AdminSeasonsRoute,
   AdminSupportRoute: AdminSupportRoute,

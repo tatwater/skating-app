@@ -22,7 +22,6 @@ import type { GoLetter } from '@/lib/keys';
 export const OLD_SHELL_TREES = [
   '/admin/dashboard',
   '/admin/flags',
-  '/admin/users',
   '/admin/water',
   '/admin/features',
   '/admin/recurrence',
@@ -52,7 +51,7 @@ export function usesOldShell(path: string): boolean {
 
 /** A mode the console has built: one rail item, one letter after G. */
 export type ConsoleMode = {
-  id: 'overview' | 'bodies';
+  id: 'overview' | 'bodies' | 'people';
   /** The rail's name for it, capitalized. */
   name: string;
   to: string;
@@ -90,6 +89,15 @@ export const CONSOLE_MODES: readonly ConsoleMode[] = [
     // `bodies.listPage`, `bodies.listSummary` and `bodies.preview` each gate on it.
     capability: 'body.read',
   },
+  {
+    id: 'people',
+    name: 'People',
+    // The list and each person's page are one tree (`/admin/people/$id` draws beside the list).
+    to: '/admin/people',
+    goKey: 'P',
+    // Every People read gates on `people.read` (`people.lanes`, `people.listPage`, `people.person`).
+    capability: 'people.read',
+  },
 ];
 
 /** The mode `path` is in, if it's one the console has built. */
@@ -119,7 +127,6 @@ export const LEGACY_PAGES: readonly LegacyPage[] = [
   // modes that replace it land (Instruments, Machinery).
   { label: 'Dashboard', to: '/admin/dashboard', capability: 'inbox.read' },
   { label: 'Flags', to: '/admin/flags', capability: 'inbox.read' },
-  { label: 'Users', to: '/admin/users', capability: 'people.read' },
   { label: 'Water bodies', to: '/admin/water', capability: 'body.read' },
   { label: 'Intake review', to: '/admin/water/review', capability: 'corpus.read' },
   { label: 'Standing', to: '/admin/water/standing', capability: 'corpus.read' },

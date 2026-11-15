@@ -2,6 +2,7 @@ import type { ComponentProps } from 'react';
 
 import { StatusDot, type StatusDotTone } from '@/components/kit/status-dot';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/kit/tooltip';
+import { shortAge } from '@/lib/ages';
 
 import { CountCard, CountFoot, CountRow, RowLink, SectionNote } from './CountCard';
 import {
@@ -17,14 +18,7 @@ import {
   type PeopleCardData,
   suspensionDetail,
 } from './overviewData';
-import {
-  countText,
-  countTone,
-  dayMonth,
-  shortAge,
-  sumCounts,
-  type ValueTone,
-} from './overviewModel';
+import { countText, countTone, dayMonth, sumCounts, type ValueTone } from './overviewModel';
 
 /**
  * Home's four count cards: Inbox by lane, Corpus by task, Machinery by job, People. Each takes its
@@ -217,16 +211,23 @@ export function PeopleCard({ data, ...props }: CardProps<PeopleCardData>) {
   if (data === undefined) return <CountCard title="People" loadingRows={7} {...props} />;
   const staff = sumCounts([data.admins, data.moderators]);
   const suspension = suspensionDetail(data.suspended, data.nextSuspensionEnds, dayMonth);
+  const end =
+    data.totalUsers != null ? (
+      <SectionNote>{countText(data.totalUsers)} users</SectionNote>
+    ) : undefined;
+  // A backfill not yet finished: the figures resting on it may be wrong, so none is drawn — never a
+  // number. Every figure rests on the rows; only Flagged people rests on the flags' subjects too (as
+  // the People lanes' own counts say it).
+  const flagsPending = data.pending.includes('flagSubjects');
+  if (data.pending.includes('rows')) {
+    return (
+      <CountCard title="People" end={end} {...props}>
+        <CountRow label="Still being prepared" value="" tone="dim" to={{ kind: 'people' }} />
+      </CountCard>
+    );
+  }
   return (
-    <CountCard
-      title="People"
-      end={
-        data.totalUsers != null ? (
-          <SectionNote>{countText(data.totalUsers)} users</SectionNote>
-        ) : undefined
-      }
-      {...props}
-    >
+    <CountCard title="People" end={end} {...props}>
       <CountRow
         label="Staff"
         detail={`${countText(data.admins)} admin · ${countText(data.moderators)} mod`}
@@ -255,9 +256,15 @@ export function PeopleCard({ data, ...props }: CardProps<PeopleCardData>) {
       />
       <CountRow
         label="Flagged people"
-        detail={<RowLink to={{ kind: 'inbox', lane: 'contentFlags' }}>Inbox</RowLink>}
-        value={countText(data.flaggedPeople)}
-        tone={countTone(data.flaggedPeople)}
+        detail={
+          flagsPending ? (
+            'Still being prepared'
+          ) : (
+            <RowLink to={{ kind: 'inbox', lane: 'contentFlags' }}>Inbox</RowLink>
+          )
+        }
+        value={flagsPending ? '' : countText(data.flaggedPeople)}
+        tone={flagsPending ? 'dim' : countTone(data.flaggedPeople)}
       />
       {data.appealsOpen !== null && (
         <CountRow

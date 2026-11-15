@@ -7,18 +7,14 @@ import {
   clockSeconds,
   countText,
   countTone,
-  DAY,
   dayMonth,
   feedWhen,
   liveMarkState,
   overviewHeads,
   QUIET_FACTOR,
-  shortAge,
   sumCounts,
 } from './overviewModel';
 
-const HOUR = 3_600_000;
-const MIN = 60_000;
 /** Local wall time `daysAgo` before the board's Saturday. */
 const at = (daysAgo: number, h: number, m = 0) => {
   const d = new Date(BOARD_NOON);
@@ -56,43 +52,6 @@ describe('counts', () => {
     expect(countTone({ count: 1, capped: false }, 'bad')).toBe('bad');
     expect(countTone({ count: 3, capped: false })).toBe('default');
     expect(countTone({ count: 0, capped: true }, 'warn')).toBe('warn');
-  });
-});
-
-describe('shortAge', () => {
-  it('reads minutes, hours, a day and a half, then whole days rounded down', () => {
-    expect(shortAge(0)).toBe('0 min');
-    expect(shortAge(41 * MIN)).toBe('41 min');
-    expect(shortAge(5 * HOUR + 59 * MIN)).toBe('5 h');
-    expect(shortAge(1.5 * DAY)).toBe('1.5 d');
-    expect(shortAge(1.99 * DAY)).toBe('1.9 d');
-    expect(shortAge(4 * DAY + 23 * HOUR)).toBe('4 d');
-  });
-
-  it('never reads negative or NaN, whatever the clock skew', () => {
-    expect(shortAge(-5 * MIN)).toBe('0 min');
-    expect(shortAge(Number.NaN)).toBe('0 min');
-    expect(shortAge(Number.POSITIVE_INFINITY)).toBe('0 min');
-    // Any age a clock can produce: a century either side of now.
-    fc.assert(
-      fc.property(fc.double({ min: -100 * 365 * DAY, max: 100 * 365 * DAY }), (ms) => {
-        expect(shortAge(ms)).toMatch(/^\d+(\.\d)? (min|h|d)$/u);
-      }),
-    );
-  });
-
-  it('never reads younger for an older item', () => {
-    const value = (s: string) => {
-      const [n, unit] = s.split(' ');
-      const scale = unit === 'min' ? MIN : unit === 'h' ? HOUR : DAY;
-      return Number(n) * scale;
-    };
-    fc.assert(
-      fc.property(fc.nat(400 * DAY), fc.nat(400 * DAY), (a, b) => {
-        const [young, old] = a <= b ? [a, b] : [b, a];
-        expect(value(shortAge(old))).toBeGreaterThanOrEqual(value(shortAge(young)));
-      }),
-    );
   });
 });
 

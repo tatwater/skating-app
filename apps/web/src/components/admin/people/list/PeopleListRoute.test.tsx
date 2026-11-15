@@ -1,0 +1,485 @@
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import type { ReactNode } from 'react';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+/**
+ * The People list as the app mounts it: its place from the URL, the People server's reads (mocked
+ * at the Convex hook), the chain of pages, and every state a read can be in — on its way, done,
+ * short, failed, not ready — said as such. Never a fixture on screen but the server's rows.
+ */
+
+const mocks = vi.hoisted(() => ({
+  /** A read's result by function name: a value, or a function of the read's arguments. */
+  results: new Map<string, unknown>(),
+  /** Every set of arguments each read was asked with, in order. */
+  calls: new Map<string, unknown[]>(),
+  search: {} as Record<string, unknown>,
+  params: {} as Record<string, string>,
+  navigate: vi.fn(),
+  denied: new Set<string>(),
+}));
+
+vi.mock('convex/react', async () => {
+  const { getFunctionName } = await import('convex/server');
+  return {
+    useQueries: (queries: Record<string, { query: never; args: unknown }>) =>
+      Object.fromEntries(
+        Object.entries(queries).map(([key, { query, args }]) => {
+          const name = getFunctionName(query);
+          mocks.calls.set(name, [...(mocks.calls.get(name) ?? []), args]);
+          const r = mocks.results.get(name);
+          return [key, typeof r === 'function' ? (r as (a: unknown) => unknown)(args) : r];
+        }),
+      ),
+  };
+});
+vi.mock('@tanstack/react-router', () => ({
+  useSearch: () => mocks.search,
+  useParams: () => mocks.params,
+  useNavigate: () => mocks.navigate,
+  Outlet: () => <p>the person’s page</p>,
+}));
+vi.mock('../../shell/ConsoleShell', async (original) => ({
+  ...(await original<typeof import('../../shell/ConsoleShell')>()),
+  ConsoleStatus: ({ groups }: { groups: readonly ReactNode[] }) => (
+    <output aria-label="Status">{groups}</output>
+  ),
+}));
+vi.mock('@/lib/useRole', () => ({
+  useRole: () => ({ can: (c: string) => !mocks.denied.has(c) }),
+}));
+
+import { api } from '@skating/convex/api';
+import { PEOPLE_PAGE_SIZE } from '@skating/core';
+import { getFunctionName } from 'convex/server';
+
+import { resetConsoleReads } from '../../reads/consoleReads';
+import { resetScrollMemory } from './PeopleList';
+import { PeopleListRoute } from './PeopleListRoute';
+import { KATE, LANES, LUC, MATT, page, ROB, SARAH, TEAGAN } from './peopleFixtures';
+import { resetShownMemory, startingPageSize } from './peopleReads';
+import { measureViewports, stubLayout } from './testLayout';
+
+const LANES_READ = getFunctionName(api.people.lanes);
+const PAGE_READ = getFunctionName(api.people.listPage);
+type PageArgs = {
+  lane: string;
+  search?: string;
+  cursor: string | null;
+  pageSize: number;
+  now: number;
+};
+
+let viewports: ReturnType<typeof measureViewports>;
+afterEach(() => vi.restoreAllMocks());
+
+beforeAll(stubLayout);
+beforeEach(() => {
+  viewports = measureViewports(vi.spyOn);
+  resetScrollMemory();
+  resetShownMemory();
+  resetConsoleReads();
+  mocks.results.clear();
+  mocks.calls.clear();
+  mocks.search = {};
+  mocks.params = {};
+  mocks.navigate.mockReset();
+  mocks.denied = new Set();
+  mocks.results.set(LANES_READ, LANES);
+});
+
+const pageCalls = () => (mocks.calls.get(PAGE_READ) ?? []) as PageArgs[];
+const lastPageCall = () => pageCalls().at(-1);
+const mount = () => render(<PeopleListRoute />);
+
+describe('the reads', () => {
+  it('asks for the lanes and the lane’s first page, on the list’s minute', () => {
+    mocks.search = { lane: 'suspended' };
+    mocks.results.set(PAGE_READ, page([ROB]));
+    mount();
+    const args = lastPageCall();
+    expect(args).toMatchObject({ lane: 'suspended', cursor: null, pageSize: PEOPLE_PAGE_SIZE });
+    expect(args).not.toHaveProperty('search');
+    expect((args?.now ?? 1) % 60_000).toBe(0);
+    expect(mocks.calls.get(LANES_READ)?.at(-1)).toEqual({ now: args?.now });
+    expect(screen.getByRole('option', { name: /Rob Tremblay/ })).toBeInTheDocument();
+    expect(screen.getByText('All 1')).toBeInTheDocument();
+  });
+
+  it('sends the search as the server runs it, and the lane it was typed over', () => {
+    mocks.search = { lane: 'staff', q: '@sarah' };
+    mocks.results.set(PAGE_READ, page([SARAH]));
+    mount();
+    expect(lastPageCall()).toMatchObject({ lane: 'staff', search: 'sarah' });
+  });
+
+  it('opens a moderator’s link to Appeals open on Everyone, and asks for no appeals', () => {
+    mocks.denied = new Set(['inbox.support.read']);
+    mocks.search = { lane: 'appeals' };
+    mocks.results.set(PAGE_READ, page([]));
+    mount();
+    expect(lastPageCall()).toMatchObject({ lane: 'everyone' });
+    expect(screen.queryByRole('button', { name: /Appeals/ })).toBeNull();
+  });
+
+  it('makes no read for a viewer who can’t read people, and says Not recorded yet', () => {
+    mocks.denied = new Set(['people.read']);
+    mount();
+    expect(mocks.calls.get(PAGE_READ)).toBeUndefined();
+    expect(mocks.calls.get(LANES_READ)).toBeUndefined();
+    expect(screen.getByText('Not recorded yet')).toBeInTheDocument();
+  });
+
+  it('draws skeletons while the first page is on its way', () => {
+    mount();
+    expect(screen.getByRole('listbox')).toHaveAttribute('aria-busy', 'true');
+  });
+});
+
+describe('the clock', () => {
+  it('turns a suspension that ends while the list is open to run its course, the read held', () => {
+    vi.useFakeTimers();
+    try {
+      const until = ROB.suspension?.until as number;
+      vi.setSystemTime(until - 30_000);
+      mocks.search = { lane: 'suspended' };
+      mocks.results.set(PAGE_READ, page([ROB]));
+      mount();
+      const sub = () =>
+        screen
+          .getByRole('option', { name: /Rob Tremblay/ })
+          .querySelector('[data-slot="people-row-sub"]');
+      expect(sub()).toHaveTextContent(/^Until Thu 15 Oct/);
+      const asked = pageCalls().length;
+      // The minute turns past the end: the row says so, and the list is not read again.
+      act(() => vi.advanceTimersByTime(60_000));
+      expect(sub()).toHaveTextContent(/^Ran its course Thu 15 Oct/);
+      expect(
+        pageCalls()
+          .slice(asked)
+          .every((a) => a.now === pageCalls()[0]?.now),
+      ).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('the chain of pages', () => {
+  it('asks for the next page from where the last ended, and draws each row once', () => {
+    mocks.results.set(PAGE_READ, (args: PageArgs) =>
+      args.cursor === null
+        ? { ...page([TEAGAN, SARAH], { isDone: false }), continueCursor: 'c1' }
+        : args.cursor === 'c1'
+          ? page([SARAH, MATT])
+          : undefined,
+    );
+    mount();
+    // jsdom lays nothing out, so the list is always near its end: the next page is asked at once.
+    expect(pageCalls().some((a) => a.cursor === 'c1' && a.pageSize === PEOPLE_PAGE_SIZE)).toBe(
+      true,
+    );
+    const names = screen
+      .getAllByRole('option')
+      .map((o) => o.querySelector('[data-slot="person-name"]')?.textContent);
+    expect(names).toEqual(['Teagan Atwater', 'Sarah Berman', 'Matt Steinberg']);
+    expect(screen.getByText('All 3')).toBeInTheDocument();
+  });
+
+  it('keeps loading while a page is on its way, and draws no end until every row is in', () => {
+    mocks.results.set(PAGE_READ, (args: PageArgs) =>
+      args.cursor === null
+        ? { ...page([KATE], { isDone: false }), continueCursor: 'c1' }
+        : undefined,
+    );
+    mount();
+    expect(screen.getByText('Loading more')).toBeInTheDocument();
+    expect(screen.getByRole('listbox')).toHaveAttribute('aria-busy', 'true');
+  });
+
+  it('re-anchors the pages after one whose end moved', () => {
+    let end = 'c1';
+    mocks.results.set(PAGE_READ, (args: PageArgs) =>
+      args.cursor === null
+        ? { ...page([KATE], { isDone: false }), continueCursor: end }
+        : page([LUC]),
+    );
+    const { rerender } = mount();
+    expect(pageCalls().some((a) => a.cursor === 'c1')).toBe(true);
+    end = 'c1b';
+    rerender(<PeopleListRoute />);
+    rerender(<PeopleListRoute />);
+    expect(lastPageCall()?.cursor).toBe('c1b');
+    expect(screen.getAllByRole('option')).toHaveLength(2);
+  });
+
+  it('stops the chain where a reactive first page now ends the list', () => {
+    let done = false;
+    mocks.results.set(PAGE_READ, (args: PageArgs) =>
+      args.cursor === null
+        ? { ...page([KATE], { isDone: done }), continueCursor: 'c1' }
+        : page([LUC]),
+    );
+    const { rerender } = mount();
+    done = true;
+    rerender(<PeopleListRoute />);
+    mocks.calls.clear();
+    rerender(<PeopleListRoute />);
+    expect(pageCalls().every((a) => a.cursor === null)).toBe(true);
+    expect(screen.getByText('All 1')).toBeInTheDocument();
+  });
+
+  it('starts a list left and come back to as long as it was showing', () => {
+    mocks.results.set(PAGE_READ, page([KATE, LUC, ROB]));
+    const { unmount } = mount();
+    unmount();
+    expect(startingPageSize('lane:everyone')).toBe(PEOPLE_PAGE_SIZE);
+    const many = Array.from({ length: 70 }, (_, i) => ({ ...KATE, userId: `k${i}` as never }));
+    mocks.results.set(PAGE_READ, page(many));
+    mount();
+    expect(startingPageSize('lane:everyone')).toBe(70);
+  });
+
+  it('joins what every page says it may be missing', () => {
+    mocks.results.set(PAGE_READ, (args: PageArgs) =>
+      args.cursor === null
+        ? {
+            ...page([KATE], { isDone: false }),
+            continueCursor: 'c1',
+            reasons: ['flags_capped'],
+            partial: true,
+          }
+        : { ...page([LUC]), pending: ['rows'] },
+    );
+    mount();
+    expect(screen.getByText(/more open flags than one read covers/)).toBeInTheDocument();
+    expect(screen.getByText(/this list may not have everyone yet/)).toBeInTheDocument();
+  });
+});
+
+describe('a narrow screen', () => {
+  it('goes back to the list in place of the person’s entry, so the back gesture never reopens them', async () => {
+    mocks.params = { id: ROB.userId };
+    mocks.search = { lane: 'suspended' };
+    mocks.results.set(PAGE_READ, page([ROB]));
+    const columns = await import('../../shell/columnsFit');
+    const fit = vi.spyOn(columns, 'useColumnsFit').mockReturnValue(false);
+    try {
+      render(<PeopleListRoute detail={<p>Rob’s page</p>} />);
+      await userEvent.click(screen.getByRole('button', { name: 'Back to the list' }));
+      expect(mocks.navigate).toHaveBeenLastCalledWith({
+        to: '/admin/people',
+        search: { lane: 'suspended' },
+        replace: true,
+      });
+    } finally {
+      fit.mockRestore();
+    }
+  });
+});
+
+describe('a list out of sight', () => {
+  it('reads no page past the first while hidden, behind a lane that goes on, and one more once shown', () => {
+    viewports.show(0);
+    mocks.search = { lane: 'flagged' };
+    mocks.results.set(PAGE_READ, (args: PageArgs) =>
+      args.cursor === null
+        ? {
+            ...page([KATE], { isDone: false }),
+            continueCursor: 'c1',
+            reasons: ['flags_capped'],
+            partial: true,
+          }
+        : page([LUC]),
+    );
+    mount();
+    expect(pageCalls().filter((a) => a.cursor !== null)).toHaveLength(0);
+    act(() => viewports.show(600));
+    const next = new Set(
+      pageCalls()
+        .filter((a) => a.cursor !== null)
+        .map((a) => a.cursor),
+    );
+    expect([...next]).toEqual(['c1']);
+  });
+});
+
+describe('the server follow-up’s page', () => {
+  it('reads a page carrying splitCursor and pageStatus as before, and sends no endCursor', () => {
+    mocks.results.set(PAGE_READ, {
+      ...page([KATE, LUC]),
+      splitCursor: 'split',
+      pageStatus: 'SplitRecommended',
+    });
+    mount();
+    expect(screen.getAllByRole('option')).toHaveLength(2);
+    expect(screen.getByText('All 2')).toBeInTheDocument();
+    expect(pageCalls().every((a) => !('endCursor' in a))).toBe(true);
+  });
+});
+
+describe('failures', () => {
+  it('says a failed list in its own place, and tries it again', async () => {
+    mocks.results.set(PAGE_READ, new Error('boom'));
+    mount();
+    expect(screen.getByText('Couldn’t read this list')).toBeInTheDocument();
+    mocks.results.set(PAGE_READ, undefined);
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(screen.getByRole('button', { name: /Trying again/ })).toBeInTheDocument();
+  });
+
+  it('keeps the rows it has when a later page fails', () => {
+    mocks.results.set(PAGE_READ, (args: PageArgs) =>
+      args.cursor === null
+        ? { ...page([KATE], { isDone: false }), continueCursor: 'c1' }
+        : new Error('boom'),
+    );
+    mount();
+    expect(screen.getByText('Couldn’t read the rest of this list')).toBeInTheDocument();
+    expect(screen.getAllByRole('option')).toHaveLength(1);
+  });
+
+  it('shows no count when the counts fail — never a zero, never the last ones held', () => {
+    mocks.results.set(PAGE_READ, page([KATE]));
+    mocks.results.set(LANES_READ, new Error('boom'));
+    mount();
+    expect(screen.getByText('Counts couldn’t be read')).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="lane-count"]')).toBeNull();
+  });
+
+  it('holds the last counts while the next list’s are on their way', () => {
+    mocks.results.set(PAGE_READ, page([KATE]));
+    const { rerender } = mount();
+    expect(document.querySelector('[data-slot="lane-count"]')).not.toBeNull();
+    mocks.results.set(LANES_READ, undefined);
+    mocks.search = { lane: 'staff' };
+    rerender(<PeopleListRoute />);
+    expect(
+      within(screen.getByRole('button', { name: /^Everyone/ })).getByText('38'),
+    ).toBeInTheDocument();
+  });
+});
+
+describe('where it goes', () => {
+  it('opens another lane at the list, closing the open person', async () => {
+    mocks.params = { id: ROB.userId };
+    mocks.results.set(PAGE_READ, page([ROB]));
+    mount();
+    await userEvent.click(screen.getByRole('button', { name: /^Staff/ }));
+    expect(mocks.navigate).toHaveBeenCalledWith({ to: '/admin/people', search: { lane: 'staff' } });
+  });
+
+  it('opens a person with the list’s place in their path, focus following', async () => {
+    mocks.search = { lane: 'suspended' };
+    mocks.results.set(PAGE_READ, page([ROB]));
+    mount();
+    const list = screen.getByRole('listbox');
+    act(() => list.focus());
+    await userEvent.keyboard('{Enter}');
+    expect(mocks.navigate).toHaveBeenCalledWith({
+      to: '/admin/people/$id',
+      params: { id: ROB.userId },
+      search: { lane: 'suspended' },
+      replace: false,
+    });
+    expect(screen.getByRole('region', { name: 'Person' })).toHaveFocus();
+  });
+
+  it('opens one person over another in place, and draws the person’s page beside the list', async () => {
+    mocks.params = { id: ROB.userId };
+    mocks.results.set(PAGE_READ, page([ROB, KATE]));
+    mount();
+    expect(screen.getByText('the person’s page')).toBeInTheDocument();
+    await userEvent.click(screen.getByText('Kate Donovan'));
+    expect(mocks.navigate).toHaveBeenCalledWith({
+      to: '/admin/people/$id',
+      params: { id: KATE.userId },
+      search: {},
+      replace: true,
+    });
+    // A press leaves focus where the pointer is.
+    expect(screen.getByRole('region', { name: 'Person' })).not.toHaveFocus();
+  });
+
+  it('keeps the open person through a search, replacing the entry as it is typed', () => {
+    vi.useFakeTimers();
+    try {
+      mocks.params = { id: ROB.userId };
+      mocks.results.set(PAGE_READ, page([ROB]));
+      mount();
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Search any account' }), {
+        target: { value: 'rob' },
+      });
+      act(() => vi.advanceTimersByTime(300));
+      expect(mocks.navigate).toHaveBeenCalledWith({
+        to: '/admin/people/$id',
+        params: { id: ROB.userId },
+        search: { q: 'rob' },
+        replace: true,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('gives the lane chosen back after a search beside an open person its own entry', async () => {
+    mocks.params = { id: ROB.userId };
+    mocks.search = { lane: 'suspended', q: 'rob' };
+    mocks.results.set(PAGE_READ, page([ROB]));
+    mount();
+    await userEvent.click(screen.getByRole('button', { name: /^Suspended/ }));
+    expect(mocks.navigate).toHaveBeenLastCalledWith({
+      to: '/admin/people/$id',
+      params: { id: ROB.userId },
+      search: { lane: 'suspended' },
+      replace: false,
+    });
+  });
+
+  it('runs a search from the list at the list, replacing the entry as it is typed', () => {
+    vi.useFakeTimers();
+    try {
+      mocks.results.set(PAGE_READ, page([ROB]));
+      mount();
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Search any account' }), {
+        target: { value: 'rob' },
+      });
+      act(() => vi.advanceTimersByTime(300));
+      expect(mocks.navigate).toHaveBeenCalledWith({
+        to: '/admin/people',
+        search: { q: 'rob' },
+        replace: true,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('hands the router a search that reads as JSON as the string it is', () => {
+    vi.useFakeTimers();
+    try {
+      mocks.params = { id: ROB.userId };
+      mocks.results.set(PAGE_READ, page([ROB]));
+      mount();
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Search any account' }), {
+        target: { value: 'true' },
+      });
+      act(() => vi.advanceTimersByTime(300));
+      // Never a hand-built `?q=true`, which the router would read back as the boolean.
+      expect(mocks.navigate).toHaveBeenLastCalledWith(
+        expect.objectContaining({ search: { q: 'true' } }),
+      );
+      expect(mocks.navigate.mock.lastCall?.[0]).not.toHaveProperty('href');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('draws a page handed in place of the outlet', () => {
+    mocks.params = { id: ROB.userId };
+    mocks.results.set(PAGE_READ, page([ROB]));
+    render(<PeopleListRoute detail={<p>handed in</p>} />);
+    expect(screen.getByText('handed in')).toBeInTheDocument();
+  });
+});
