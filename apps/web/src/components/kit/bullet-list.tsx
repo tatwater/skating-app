@@ -10,7 +10,9 @@ import { cn } from '@/lib/utils';
  *
  * - **One Tab stop.** A `listbox`; focus stays on it and a cursor moves through the rows
  *   (`aria-activedescendant`), so Tab goes straight on to the next pane.
- * - **↑↓ within, Home/End to the ends, typing jumps** (type-ahead on titles). **⏎ or Space opens**
+ * - **↑↓ within, Home/End to the ends, typing jumps** (type-ahead on titles), and the cursor's row
+ *   is scrolled into view (nearest edge, at once — never a smooth scroll, so reduced motion holds):
+ *   focus stays on the list, so the browser won't reveal the row on its own. **⏎ or Space opens**
  *   the row (`onOpen`, and the caller moves focus into the right pane); a press opens it too.
  * - **A wash only because a press does something**: hover and the cursor share one quiet lift.
  *
@@ -43,12 +45,17 @@ function BulletList({ label, items, selectedId = null, onOpen, className }: Bull
   const typed = useRef({ text: '', at: 0 });
   const at = Math.min(cursor, Math.max(0, items.length - 1));
   const rowId = (i: number) => `${base}-row-${i}`;
+  // A keyboard move brings the cursor's row into view; a press never scrolls what was pressed.
+  const moveCursor = (to: number) => {
+    setCursor(to);
+    document.getElementById(rowId(to))?.scrollIntoView?.({ block: 'nearest' });
+  };
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (items.length === 0) return;
     const move = (to: number) => {
       e.preventDefault();
-      setCursor(Math.max(0, Math.min(items.length - 1, to)));
+      moveCursor(Math.max(0, Math.min(items.length - 1, to)));
     };
     if (e.key === 'ArrowDown') return move(at + 1);
     if (e.key === 'ArrowUp') return move(at - 1);
@@ -74,7 +81,7 @@ function BulletList({ label, items, selectedId = null, onOpen, className }: Bull
       if (hit !== undefined) {
         e.preventDefault();
         e.stopPropagation();
-        setCursor(hit);
+        moveCursor(hit);
       }
     }
   };
