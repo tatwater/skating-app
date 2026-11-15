@@ -468,6 +468,43 @@ describe('buildBodyTimeline — an admin’s pass overrides (B01-3d)', () => {
     });
     expect(t).toMatchObject({ stops: [], landableCount: 0, hiddenByOverride: 1 });
   });
+
+  it('counts a hide only where the pass would have been a stop', () => {
+    const t = buildBodyTimeline(
+      season([frame({ granuleId: 'moosehead', footprint: OVER_MOOSEHEAD })]),
+      CHAMPLAIN,
+      { overrides: new Map([['moosehead', 'hide' as const]]) },
+    );
+    expect(t).toMatchObject({ stops: [], notCovered: 1, hiddenByOverride: 0 });
+  });
+
+  it('⚠ a cloudy pass shown anyway lends no lake to a sliver beside it', () => {
+    const rows = new Map([
+      ['sliver', { coveragePct: 0.2, clearPct: 0.95 }],
+      ['rest', { coveragePct: 0.8, clearPct: 0.1 }],
+    ]);
+    const stats = (id: string) => {
+      const row = rows.get(id);
+      return row
+        ? {
+            granuleId: id,
+            capturedAt: '2026-02-15T15:51:05Z',
+            bodies: [{ waterBodyId: 'champlain', ...row, pixels: 4107 }],
+          }
+        : undefined;
+    };
+    const t = buildBodyTimeline(
+      season([
+        frame({ granuleId: 'sliver', capturedAt: '2026-02-15T15:51:05Z' }),
+        frame({ granuleId: 'rest', capturedAt: '2026-02-16T15:51:05Z' }),
+      ]),
+      CHAMPLAIN,
+      { stats, overrides: new Map([['rest', 'show' as const]]) },
+    );
+    expect(t.stops[0]).toMatchObject({ landable: false, blockedBy: 'coverage' });
+    expect(t.stops[0]?.companion).toBeUndefined();
+    expect(t.stops[1]).toMatchObject({ landable: true, shownAnyway: 'cloud' });
+  });
 });
 
 describe('candidateFramesFor — what to fetch manifests for', () => {

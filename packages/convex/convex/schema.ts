@@ -763,9 +763,17 @@ export default defineSchema({
     ),
     /**
      * **A moderator's class for this water** (B01-3d, `setClass`) — its own fact, outranking the
-     * catalogs': `type` is set from it, and a re-import keeps it. Absent when no moderator chose.
+     * catalogs': `type` is set from it, and a re-import keeps it (a clear puts back `baseClass`).
+     * Absent when no moderator chose.
      */
     moderatorClass: v.optional(literals(WATER_BODY_CLASSES)),
+    /**
+     * **The class without a moderator's** (B01-3d) — the import's ranking, written on every touch
+     * even while `moderatorClass` holds `type`; on a body no import touched (a drawn one), the class
+     * a moderator's first override displaced. What `type` returns to when `moderatorClass` is
+     * cleared. Never the first class claim: the merge ranks the claims by its own order.
+     */
+    baseClass: v.optional(literals(WATER_BODY_CLASSES)),
     /**
      * **A moderator's own aliases** (B01-3d, `setAliases`) — at most 20, each at most 120 characters,
      * trimmed, de-duplicated case-insensitively against the display name and each other. Never name
@@ -1631,7 +1639,8 @@ export default defineSchema({
     at: v.number(),
   })
     .index('by_body_granule', ['waterBodyId', 'granuleId'])
-    .index('by_body_season', ['waterBodyId', 'season']),
+    // Newest call first within a season, so a capped read keeps the newest.
+    .index('by_body_season_at', ['waterBodyId', 'season', 'at']),
 
   imageryFrames: defineTable({
     season: v.string(),

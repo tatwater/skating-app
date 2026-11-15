@@ -2876,8 +2876,10 @@ leaves a removed one editable.
   de-duplicated case-insensitively against the display name and each other, refused past 20 or past
   120 characters; folded into the library row's aliases and search text (`aliasesOf`).
 - **Class** (`waterBodies.setClass`, `body.identity`): `moderatorClass` is its own fact; `type`
-  follows it and a re-import keeps it; clearing puts back the catalogs' first claim, else the class
-  the override displaced (read from the override's audit row). **The import now stores each
+  follows it and a re-import keeps it; clearing puts back `baseClass` — the import's own ranking,
+  kept on every touch even under the override (never the first claim: the merge ranks classes by its
+  own order, so the first claim is often not the class it stored); on a body no import touched, the
+  class the first override displaced. **The import now stores each
   catalog's class claim** (`classClaims`, one per source, at most eight; the ETL carries them through).
   Every body on dev — all 24,961 — predates it and reads *not recorded* for the per-catalog lines
   until its next campaign: the merge threw the claims away, so no backfill can recover them.
@@ -2886,18 +2888,23 @@ leaves a removed one editable.
   plausible offer as a candidate (`depthCandidates`); a candidate alone is stored but is not a changed
   depth, so a load's counts and the library refresh are as before (tested). A choice holds its
   source against better rungs and follows that source's fresh value; `null` hands the measure back
-  to the ladder. Refused: a source with no value, a typed (operator) depth, a mean left deeper than
-  the max. `bodyConsole.depthChoices` lists what `chooseDepthSource` accepts (`depthChoicesOf`).
+  to the ladder (the best-ranked candidate the pair allows — the best-ranked alone may be the one the
+  ladder dropped for inverting it). Refused: a source with no value, a typed (operator) depth, a
+  mean left deeper than the max. `bodyConsole.depthChoices` lists what `chooseDepthSource` accepts
+  (`depthChoicesOf`).
   **What it can affect:** the depth every read shows, the shallow classification and the decay model
   that read a body's depth. A depth is the basin's; choosing one says nothing about ice.
 - **A known feature's shape** (`bodyFeatures.updateShape`, `corpus.preIce`, as creating one is): the
-  hazards' shape gate, at most 2,000 positions, a footprint on its lake's box. It changes the
+  hazards' shape gate and its 500-position ceiling, a footprint on its lake's box. It changes the
   feature's geometry, box and bay stamp — never the body's outline, its geometry facts or a library
   fact (tested). The replaced shape is the audit row's snapshot.
 - **The imagery pass override** (`imageryOverrides.set` / `.clear`, `machinery.imagery` — the board's
   *admin's override*): show a pass the gates hid (no reason, who and when recorded) or hide a shown
-  one (a reason, at most 500 characters). `passOverrides` (public, granule and call only) and
-  `forBody` (who, when, reason). `@skating/core`'s `buildBodyTimeline` honors an `overrides` map; with
+  one (a reason, at most 500 characters); at most 200 calls per body and season, bound at the write
+  so the skater read is whole. `passOverrides` (public, granule and call only) and `forBody` (who,
+  when, reason; newest first). `@skating/core`'s `buildBodyTimeline` honors an `overrides` map — a
+  shown cloudy pass lends no lake to a seam, a hide is counted only where the pass would have been a
+  stop; with
   none — the default, and what the apps pass today — the timeline is unchanged (tested). An override
   is a statement about one pass of a satellite, never about the lake. **Owed:** the apps'
   `useFreezeUpTimeline` passing `passOverrides` (web and mobile).

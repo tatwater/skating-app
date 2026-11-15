@@ -8,6 +8,8 @@ import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
+import { MAX_FEATURE_POSITIONS } from './bodyFeatures';
+import { OVERRIDES_READ } from './imageryOverrides';
 import schema from './schema';
 import { MAX_MODERATOR_ALIAS_CHARS, MAX_MODERATOR_ALIASES } from './waterBodies';
 
@@ -197,11 +199,33 @@ describe('setClass and the class claims', () => {
       moderatorClass: 'lakePond',
       moderatorAliases: [],
     });
-    // Clearing puts the catalogs' first claim back.
+    // Clearing puts the import's class back.
     await mod.as.mutation(api.waterBodies.setClass, { waterBodyId: id, bodyClass: null });
     const cleared = await get(t, id);
     expect(cleared?.type).toBe('reservoir');
     expect(cleared?.moderatorClass).toBeUndefined();
+  });
+
+  test('clearing puts back the import’s ranked class, not the first claim — as the latest import ranked it', async () => {
+    const t = harness();
+    const mod = await person(t);
+    // The merge ranks a reservoir over a lake, whichever catalog the members listed first.
+    const claims = [
+      { source: 'osm', value: 'lakePond' },
+      { source: 'nhd', value: 'reservoir' },
+    ];
+    const id = await imported(t, 'way/1', { type: 'reservoir', classClaims: claims });
+    await mod.as.mutation(api.waterBodies.setClass, { waterBodyId: id, bodyClass: 'wetland' });
+    // Re-ranked by a campaign while the moderator's class holds `type`.
+    await imported(t, 'way/1', { type: 'river', classClaims: claims });
+    expect((await get(t, id))?.type).toBe('wetland');
+    await mod.as.mutation(api.waterBodies.setClass, { waterBodyId: id, bodyClass: null });
+    expect((await get(t, id))?.type).toBe('river');
+    // The undo of the clear is the moderator's class again; its undo, the import's.
+    await mod.as.mutation(api.undo.run, { actionId: (await lastAction(t, 'set_class'))._id });
+    expect((await get(t, id))?.type).toBe('wetland');
+    await mod.as.mutation(api.undo.run, { actionId: (await lastAction(t, 'set_class'))._id });
+    expect((await get(t, id))?.type).toBe('river');
   });
 
   test('a body with no claims recorded: clearing puts back the class the override displaced; undo and its undo', async () => {
@@ -334,6 +358,40 @@ describe('chooseDepthSource and the depth candidates', () => {
     expect(await get(t, id)).toMatchObject({ maxDepthSource: 'state_agency' });
   });
 
+  test('handed back, the measure takes the best-ranked candidate the pair allows, as the ladder settled it', async () => {
+    const t = harness();
+    const mod = await person(t);
+    const id = await imported(t, 'way/1');
+    // lagos_us's mean inverts the state survey's max, so the ladder dropped it for globathy's.
+    await load(
+      t,
+      offer(
+        [['state_agency', 10]],
+        [
+          ['lagos_us', 12],
+          ['globathy', 6],
+        ],
+      ),
+    );
+    expect(await get(t, id)).toMatchObject({ meanDepthM: 6, meanDepthSource: 'globathy' });
+    const choose = (source: string | null) =>
+      mod.as.mutation(api.waterBodies.chooseDepthSource, {
+        waterBodyId: id,
+        measure: 'mean',
+        source: source as never,
+      });
+    await expect(choose('lagos_us')).rejects.toThrow(/deeper than the max/);
+    await choose('globathy');
+    await choose(null);
+    expect(await get(t, id)).toMatchObject({ meanDepthM: 6, meanDepthSource: 'globathy' });
+    // The undo of the first choice is a hand-back too, and lands the same way.
+    await choose('globathy');
+    await mod.as.mutation(api.undo.run, {
+      actionId: (await lastAction(t, 'choose_depth_source'))._id,
+    });
+    expect(await get(t, id)).toMatchObject({ meanDepthM: 6, meanDepthSource: 'globathy' });
+  });
+
   test('refused: a source with no value, an inverted pair, a typed depth, a merged-away body, a member', async () => {
     const t = harness();
     const mod = await person(t);
@@ -438,9 +496,14 @@ describe('bodyFeatures.updateShape', () => {
       });
     const long = {
       type: 'LineString',
-      coordinates: Array.from({ length: 2_001 }, (_, i) => [-72 + i * 1e-6, 44]),
+      coordinates: Array.from({ length: MAX_FEATURE_POSITIONS + 1 }, (_, i) => [
+        -72 + i * 1e-6,
+        44,
+      ]),
     };
-    await expect(redraw(long)).rejects.toThrow(/at most 2000/);
+    await expect(redraw(long)).rejects.toThrow(`at most ${MAX_FEATURE_POSITIONS} points`);
+    // The cap is the hazards' gate's own: a shape at it is accepted, never refused as invalid.
+    await redraw({ ...long, coordinates: long.coordinates.slice(0, MAX_FEATURE_POSITIONS) });
     await expect(
       redraw({
         type: 'LineString',
@@ -531,6 +594,59 @@ describe('the imagery pass overrides', () => {
     expect(
       await t.query(api.imageryOverrides.passOverrides, { waterBodyId: id, season: S }),
     ).toEqual([]);
+    // Undoing a show over no call lets the gate hide the pass again — a pass taken from skaters.
+    await admin.as.mutation(api.imageryOverrides.set, {
+      waterBodyId: id,
+      season: S,
+      granuleId: G,
+      action: 'show',
+    });
+    const showRow = await lastAction(t, 'set_imagery_override');
+    await expect(admin.as.mutation(api.undo.run, { actionId: showRow._id })).rejects.toThrow(
+      /needs a reason/,
+    );
+    await admin.as.mutation(api.undo.run, { actionId: showRow._id, reason: 'the gate was right' });
+    expect(
+      await t.query(api.imageryOverrides.passOverrides, { waterBodyId: id, season: S }),
+    ).toEqual([]);
+  });
+
+  test('a season holds a bounded number of calls, so the skater read is whole; the tab reads newest first', async () => {
+    const t = harness();
+    const admin = await person(t, 'admin' as never);
+    const id = await imported(t, 'way/1');
+    await t.run(async (ctx) => {
+      for (let i = 0; i < OVERRIDES_READ; i++) {
+        await ctx.db.insert('imageryPassOverrides', {
+          waterBodyId: id,
+          season: S,
+          granuleId: `g${i}`,
+          action: 'show',
+          byUserId: admin.id,
+          // g0 the newest of these, every one older than a call made now.
+          at: i === 0 ? NOW - 1_000 : NOW - 100_000 + i,
+        });
+      }
+    });
+    const set = (granuleId: string, action: 'show' | 'hide') =>
+      admin.as.mutation(api.imageryOverrides.set, {
+        waterBodyId: id,
+        season: S,
+        granuleId,
+        action,
+        ...(action === 'hide' ? { reason: 'smoke' } : {}),
+      });
+    await expect(set('one-more', 'show')).rejects.toThrow(`at most ${OVERRIDES_READ} calls`);
+    // A call already held is changed in place.
+    await set('g5', 'hide');
+    const tab = await admin.as.query(api.imageryOverrides.forBody, { waterBodyId: id, season: S });
+    expect(tab.capped).toBe(false);
+    expect(tab.overrides).toHaveLength(OVERRIDES_READ);
+    expect(tab.overrides[0]?.granuleId).toBe('g5');
+    expect(tab.overrides[1]?.granuleId).toBe('g0');
+    expect(
+      await t.query(api.imageryOverrides.passOverrides, { waterBodyId: id, season: S }),
+    ).toHaveLength(OVERRIDES_READ);
   });
 
   test('refused: a hide without a reason, a long reason, a malformed pass, a moderator, a merged-away body', async () => {

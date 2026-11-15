@@ -487,11 +487,20 @@ const undoDepthSource: UndoHandler = {
   },
 };
 
-/** set_imagery_override → the call it replaced (or none), through the same write. */
+/**
+ * set_imagery_override → the call it replaced (or none), through the same write. Putting back a hide
+ * takes a pass from skaters — and so does putting back *no call* over a show, since the gate that hid
+ * the pass decides again.
+ */
 const undoImageryOverride: UndoHandler = {
   blocked: needsPrev,
-  undoTakesAway: (row) =>
-    UNDO_POLICY.set_imagery_override.takesAway((meta(row).prev as { action: unknown }).action),
+  undoTakesAway: (row) => {
+    const m = meta(row) as { action: unknown; prev: { action: unknown } };
+    return (
+      UNDO_POLICY.set_imagery_override.takesAway(m.prev.action) ||
+      (m.prev.action === null && m.action === 'show')
+    );
+  },
   run: ({ ctx, actor, row, reason }) => {
     const m = meta(row) as {
       season: string;
@@ -504,7 +513,7 @@ const undoImageryOverride: UndoHandler = {
       granuleId: m.granuleId,
       action: m.prev.action,
       ...(m.prev.reason !== null ? { reason: m.prev.reason } : {}),
-      ...(reason !== undefined ? { undoReason: reason } : {}),
+      undoReason: reason,
     }).then(() => undefined);
   },
 };

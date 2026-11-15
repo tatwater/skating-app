@@ -29,6 +29,7 @@ import { placeSamplePoints } from './adminAreas';
 import { nextAttemptState } from './lib/attempts';
 import {
   coverTiles,
+  hasTownEntries,
   markGeoStale,
   outlineStamp,
   paddedBox,
@@ -761,8 +762,8 @@ async function isBehind(
     townCount > 0 &&
     ((row.townStates ?? []).length !== townCount ||
       (row.townIds ?? []).length !== townCount ||
-      // Keyed on name and state (B01-3d): at least one entry per distinct name.
-      (row.townEntries ?? []).length < townCount)
+      // Keyed on name and state (B01-3d): the readers' own rule.
+      !hasTownEntries(row))
   ) {
     return true;
   }

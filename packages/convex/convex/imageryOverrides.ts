@@ -16,11 +16,15 @@ import { writeAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { literals } from './lib/validators';
+import { editableBody } from './waterBodies';
 
 /** The longest reason a hide records; the longest granule id and season label accepted. */
 export const MAX_OVERRIDE_REASON_CHARS = 500;
 const MAX_KEY_CHARS = 120;
-/** Overrides one body's reads return at most (a season holds a few dozen passes per body). */
+/**
+ * The most calls one body holds in a season (a season holds a few dozen passes per body) — bound at
+ * the write, so the skater read, which takes this many, is always whole.
+ */
 export const OVERRIDES_READ = 200;
 
 type Action = 'show' | 'hide';
@@ -61,7 +65,7 @@ export const clear = mutation({
 /**
  * The one write behind `set`, `clear` and their undo (the same write of the previous call). Refused:
  * a merged-away body, a malformed pass key, a hide without a reason, a reason past
- * {@link MAX_OVERRIDE_REASON_CHARS}.
+ * {@link MAX_OVERRIDE_REASON_CHARS}, a new call past {@link OVERRIDES_READ} in the season.
  */
 export async function setOverrideImpl(
   ctx: MutationCtx,
@@ -75,11 +79,7 @@ export async function setOverrideImpl(
     undoReason?: string;
   },
 ): Promise<Id<'waterBodies'>> {
-  const body = await ctx.db.get(args.waterBodyId);
-  if (!body) throw new ConvexError('Water body not found');
-  if (body.dedupStatus === 'merged') {
-    throw new ConvexError('This body was merged into another — edit the body it was merged into');
-  }
+  const body = await editableBody(ctx, args.waterBodyId);
   const season = keyOf(args.season, 'season');
   const granuleId = keyOf(args.granuleId, 'satellite pass');
   const reason = args.reason?.replace(/\s+/g, ' ').trim() ?? '';
@@ -96,6 +96,17 @@ export async function setOverrideImpl(
   const prev = existing
     ? { action: existing.action, reason: existing.reason ?? null }
     : { action: null, reason: null };
+  if (args.action !== null && existing?.season !== season) {
+    const held = await ctx.db
+      .query('imageryPassOverrides')
+      .withIndex('by_body_season_at', (q) => q.eq('waterBodyId', body._id).eq('season', season))
+      .take(OVERRIDES_READ);
+    if (held.length >= OVERRIDES_READ) {
+      throw new ConvexError(
+        `A body holds at most ${OVERRIDES_READ} calls on passes in a season — clear one first`,
+      );
+    }
+  }
   const now = Date.now();
   if (args.action === null) {
     if (existing) await ctx.db.delete(existing._id);
@@ -148,7 +159,9 @@ export const passOverrides = query({
     if (!body) return [];
     const rows = await ctx.db
       .query('imageryPassOverrides')
-      .withIndex('by_body_season', (q) => q.eq('waterBodyId', body._id).eq('season', season.trim()))
+      .withIndex('by_body_season_at', (q) =>
+        q.eq('waterBodyId', body._id).eq('season', season.trim()),
+      )
       .take(OVERRIDES_READ);
     return rows.map((r) => ({ granuleId: r.granuleId, action: r.action }));
   },
@@ -164,9 +177,13 @@ export const forBody = query({
     await requireCapability(ctx, 'body.read');
     const body = await resolveSurvivor(ctx, waterBodyId);
     if (!body) return { overrides: [], capped: false };
+    // Newest first from the index, so the cap never drops a newer call for an older one.
     const rows = await ctx.db
       .query('imageryPassOverrides')
-      .withIndex('by_body_season', (q) => q.eq('waterBodyId', body._id).eq('season', season.trim()))
+      .withIndex('by_body_season_at', (q) =>
+        q.eq('waterBodyId', body._id).eq('season', season.trim()),
+      )
+      .order('desc')
       .take(OVERRIDES_READ + 1);
     const people = new Map<string, { userId: Id<'profiles'>; displayName: string } | null>();
     const out = [];
@@ -185,9 +202,6 @@ export const forBody = query({
         by,
       });
     }
-    return {
-      overrides: out.sort((a, b) => b.at - a.at),
-      capped: rows.length > OVERRIDES_READ,
-    };
+    return { overrides: out, capped: rows.length > OVERRIDES_READ };
   },
 });

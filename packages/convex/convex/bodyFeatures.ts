@@ -14,6 +14,7 @@
 
 import {
   bboxIntersects,
+  HAZARD_MAX_VERTICES,
   type HazardShape,
   hazardBbox,
   isPubliclyVisible,
@@ -255,8 +256,12 @@ export async function demoteImpl(
 
 // ── A feature's shape (B01-3d) ────────────────────────────────────────────────────────────────
 
-/** The most positions a known feature's geometry carries — a ridge or an inlet, not a shoreline. */
-export const MAX_FEATURE_POSITIONS = 2_000;
+/**
+ * The most positions a known feature's geometry carries — a ridge or an inlet, not a shoreline. The
+ * hazards' shape gate's own ceiling, checked first so a long geometry is refused with its count
+ * before the gate's self-intersection pass runs over it.
+ */
+export const MAX_FEATURE_POSITIONS = HAZARD_MAX_VERTICES;
 
 /** A feature's shape as one edit sets it: its kind, its geometry, and the width that goes with it. */
 export interface FeatureShape {
@@ -264,6 +269,27 @@ export interface FeatureShape {
   geometry: unknown;
   radiusMeters?: number;
   bufferMeters?: number;
+}
+
+/**
+ * A feature's shape as the hazards' gate and footprint math read it — one rule for a feature created
+ * and one redrawn. Built from the feature's own `geometryKind`, NOT re-inferred from whether
+ * `radiusMeters` is set — a line feature (a promoted `recurring_pressure_ridge`) has a
+ * `bufferMeters`, no `radiusMeters`, and must stay a line, not get mis-classified as a polygon and
+ * rejected by the shape gate.
+ */
+function featureHazardShape(shape: FeatureShape): HazardShape {
+  return shape.geometryKind === 'point_radius'
+    ? {
+        geometryKind: 'point_radius',
+        geometry: shape.geometry as HazardShape['geometry'],
+        radiusMeters: shape.radiusMeters ?? 0,
+      }
+    : {
+        geometryKind: shape.geometryKind,
+        geometry: shape.geometry as HazardShape['geometry'],
+        ...(shape.bufferMeters !== undefined ? { bufferMeters: shape.bufferMeters } : {}),
+      };
 }
 
 /** How many positions a GeoJSON geometry holds, every ring and line counted. */
@@ -289,18 +315,7 @@ function checkedShape(
   if (positionCount(coords) > MAX_FEATURE_POSITIONS) {
     throw new ConvexError(`A known feature's shape is at most ${MAX_FEATURE_POSITIONS} points`);
   }
-  const hazardShape: HazardShape =
-    shape.geometryKind === 'point_radius'
-      ? {
-          geometryKind: 'point_radius',
-          geometry: shape.geometry as HazardShape['geometry'],
-          radiusMeters: shape.radiusMeters ?? 0,
-        }
-      : {
-          geometryKind: shape.geometryKind,
-          geometry: shape.geometry as HazardShape['geometry'],
-          ...(shape.bufferMeters !== undefined ? { bufferMeters: shape.bufferMeters } : {}),
-        };
+  const hazardShape = featureHazardShape(shape);
   if (!isValidHazardShape(hazardShape)) throw new ConvexError('Invalid body-feature geometry');
   const bbox = hazardBbox(hazardShape);
   if (!bboxIntersects(bbox, bodyBox)) {
@@ -387,22 +402,8 @@ export async function insertBodyFeature(
   >,
 ): Promise<Id<'bodyFeatures'>> {
   // Reuse the hazard footprint math so a feature's bbox is computed identically to a hazard's — a
-  // promoted ridge must not shift or resize just because it changed tables. The shape is built from
-  // the feature's own `geometryKind`, NOT re-inferred from whether `radiusMeters` is set — a line
-  // feature (a promoted `recurring_pressure_ridge`) has a `bufferMeters`, no `radiusMeters`, and must
-  // stay a line, not get mis-classified as a polygon and rejected by the shape gate.
-  const shape: HazardShape =
-    args.geometryKind === 'point_radius'
-      ? {
-          geometryKind: 'point_radius',
-          geometry: args.geometry as HazardShape['geometry'],
-          radiusMeters: args.radiusMeters ?? 0,
-        }
-      : {
-          geometryKind: args.geometryKind,
-          geometry: args.geometry as HazardShape['geometry'],
-          ...(args.bufferMeters !== undefined ? { bufferMeters: args.bufferMeters } : {}),
-        };
+  // promoted ridge must not shift or resize just because it changed tables.
+  const shape = featureHazardShape(args);
 
   // Same single gate hazards use. `create` takes raw GeoJSON from an admin, and a malformed ring or a
   // MultiLineString would otherwise reach `turf/buffer` and throw mid-mutation or store a junk bbox.

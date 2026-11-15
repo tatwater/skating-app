@@ -293,7 +293,9 @@ function attachSeams(stops: TimelineStop[], minCoverage: number): void {
       // cloud has nothing to contribute, and pairing one in could take a coverage-blocked stop over
       // {@link MIN_BODY_COVERAGE} and land the thumb on a view that is half white rectangle, with
       // the coverage caveat deleted and only the primary's clear fraction left in the caption.
-      if (other.blockedBy === 'cloud') continue;
+      // An admin's *show anyway* on a cloudy pass is about that pass alone: it lands its own stop,
+      // and lends no lake to another's.
+      if (other.blockedBy === 'cloud' || other.shownAnyway === 'cloud') continue;
       const theirs = other.stats?.coveragePct ?? null;
       if (theirs === null) continue;
       // A companion that adds nothing is not a seam, it is a second copy of the same view.
@@ -505,10 +507,6 @@ export function buildBodyTimeline(
 
   for (const frame of banded) {
     const override = options.overrides?.get(frame.granuleId);
-    if (override === 'hide') {
-      hiddenByOverride++;
-      continue;
-    }
     const frameStats = options.stats?.(frame.granuleId);
 
     // ⚠ Held to one orbit direction, or the lake visibly moves between dates — see
@@ -539,11 +537,18 @@ export function buildBodyTimeline(
         continue;
       }
       basis = 'inferred';
-      coverageInferred++;
     } else {
       basis = 'unknown';
-      coverageUnknown++;
     }
+
+    // An admin's hide takes the pass off the timeline — counted where it would have been a stop, so
+    // a pass of the other orbit or one that never reached the lake is not counted as hidden.
+    if (override === 'hide') {
+      hiddenByOverride++;
+      continue;
+    }
+    if (basis === 'inferred') coverageInferred++;
+    else if (basis === 'unknown') coverageUnknown++;
 
     // Coverage first: "we barely saw it" is a more fundamental objection than "what we saw was
     // cloudy", and captioning a sliver as cloudy would explain the wrong problem.

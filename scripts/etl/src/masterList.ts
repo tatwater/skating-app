@@ -109,7 +109,7 @@ export type KeptBody = Merged & {
   /** Every publisher's name for this water, winner first — see `nameClaimsOf`. */
   nameClaims: { source: ClaimSource; value: string }[];
   /** Every catalog's class for this water (B01-3d): what the Names tab shows per catalog. */
-  classClaims: { source: string; value: string }[];
+  classClaims: { source: ClaimSource; value: WaterBodyClass }[];
 };
 
 /**

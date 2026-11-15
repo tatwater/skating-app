@@ -678,8 +678,10 @@ export const importCanonical = internalMutation({
           // `name` + `nameClaims` + `searchText` together, because a moderator's pick outranks the
           // import and the three must never disagree. See `nameFields`.
           ...nameFields(existing, item),
-          // A moderator's class outranks the catalogs' (B01-3d), as a moderator's name does.
+          // A moderator's class outranks the catalogs' (B01-3d), as a moderator's name does; the
+          // import's own ranking is kept beside it, for a clear to put back.
           type: existing.moderatorClass ?? item.type,
+          baseClass: item.type,
           ...classClaimFields(item),
           // **`source` is deliberately NOT patched, and it is not the same question as
           // `geometrySource`** (second audit, 2026-08-06 — noted because this was "fixed" and then
@@ -773,6 +775,7 @@ export const importCanonical = internalMutation({
         const id = await ctx.db.insert('waterBodies', {
           ...nameFields(undefined, item),
           type: item.type,
+          baseClass: item.type,
           ...classClaimFields(item),
           source: item.source,
           externalId: item.externalId,
@@ -3959,8 +3962,11 @@ export function normalizeModeratorAliases(aliases: readonly string[], name: stri
   return out;
 }
 
-/** The body a moderator edits, refused when it was merged away (its survivor is the one to edit). */
-async function editableBody(
+/**
+ * The body a moderator edits, refused when it was merged away (its survivor is the one to edit); a
+ * removed body stays editable. The one gate every B01-3d write on a body shares.
+ */
+export async function editableBody(
   ctx: MutationCtx,
   waterBodyId: Id<'waterBodies'>,
 ): Promise<Doc<'waterBodies'>> {
@@ -4012,17 +4018,17 @@ export async function setAliasesImpl(
 }
 
 /**
- * The class a body had before a moderator's class displaced it: the catalogs' first stored claim, else
- * what the newest override's audit row recorded it had (one indexed read). `undefined` with no
- * override to undo.
+ * The class an override set before `baseClass` was kept displaced: what the newest override's audit
+ * row recorded the body had (one bounded indexed read). `undefined` with no override to clear.
+ *
+ * Never the first class claim: the merge ranks the catalogs' classes by its own order (and demotes an
+ * unnamed bay with no parent), so the first claim is often not the class the import stored.
  */
 async function classBeforeOverride(
   ctx: MutationCtx,
   body: Doc<'waterBodies'>,
 ): Promise<Doc<'waterBodies'>['type'] | undefined> {
   if (body.moderatorClass === undefined) return undefined;
-  const claimed = body.classClaims?.[0]?.value;
-  if (claimed !== undefined) return claimed;
   const rows = await ctx.db
     .query('moderationActions')
     .withIndex('by_target_action', (q) =>
@@ -4056,9 +4062,10 @@ export const setClass = mutation({
 
 /**
  * `setClass`'s body, shared with its undo: the moderator's class is its own fact (`moderatorClass`),
- * never a catalog claim, and `type` follows it; clearing puts back the class the catalogs ranked
- * first (the first stored claim, else the class the body has, for a body with no claims recorded).
- * The audit row records both so the undo is this write of the previous state.
+ * never a catalog claim, and `type` follows it; clearing puts back the class without a moderator's
+ * (`baseClass` — the import's ranking, kept on every touch; on a body no import touched, the class
+ * the first override displaced, kept here). The audit row records both so the undo is this write of
+ * the previous state.
  */
 export async function setClassImpl(
   ctx: MutationCtx,
@@ -4078,10 +4085,15 @@ export async function setClassImpl(
 ): Promise<Id<'waterBodies'>> {
   const body = await editableBody(ctx, waterBodyId);
   const prev = { moderatorClass: body.moderatorClass ?? null, type: body.type };
-  const restored = bodyClass ?? catalogClass ?? (await classBeforeOverride(ctx, body)) ?? body.type;
+  // With no moderator's class, `type` is the class without one — kept, so a clear can put it back
+  // even on a body no import keeps it for (a drawn one).
+  const baseClass = body.baseClass ?? (body.moderatorClass === undefined ? body.type : undefined);
+  const restored =
+    bodyClass ?? baseClass ?? catalogClass ?? (await classBeforeOverride(ctx, body)) ?? body.type;
   await ctx.db.patch(waterBodyId, {
     type: restored,
     moderatorClass: bodyClass ?? undefined,
+    ...(body.baseClass === undefined && baseClass !== undefined ? { baseClass } : {}),
   });
   await writeAudit(ctx, {
     actorId: actor._id,
@@ -4443,7 +4455,6 @@ export const setDepth = mutation({
   },
 });
 
-/** The depth fields a `set_lake_depth` row records as `prev`, and its undo puts back. */
 // ── A moderator's choice of depth source (B01-3d) ──────────────────────────────────────────────
 
 /**
@@ -4474,7 +4485,8 @@ export function depthChoicesOf(
 
 /**
  * Moderator: choose which source a body's mean or max depth reads from (B01-3d, `body.water`) —
- * `source: null` hands the measure back to the ladder (the best-ranked candidate). A depth is a fact
+ * `source: null` hands the measure back to the ladder (the best-ranked candidate that leaves the mean
+ * no deeper than the max; none, and the value stays until the next load decides). A depth is a fact
  * about the lake's basin; choosing one says nothing about ice.
  */
 export const chooseDepthSource = mutation({
@@ -4516,18 +4528,24 @@ export async function chooseDepthSourceImpl(
     throw new ConvexError('A moderator typed this depth — clear it before choosing a source');
   }
   const choices = depthChoicesOf(body, measure);
+  const other = measure === 'mean' ? body.maxDepthM : body.meanDepthM;
+  // Whether a value keeps the pair valid — a mean never deeper than the max.
+  const pairHolds = (valueM: number) =>
+    other === undefined || (measure === 'mean' ? valueM <= other : other <= valueM);
+  // Handed back: the best-ranked candidate the pair allows, as the ladder settles it — the
+  // best-ranked alone could be the one the ladder dropped for inverting the pair, which would refuse
+  // the hand-back (and the undo of a first choice) on a body the ladder had settled.
   const pick =
-    source === null ? (choices[0] ?? null) : (choices.find((c) => c.source === source) ?? null);
+    source === null
+      ? (choices.find((c) => pairHolds(c.valueM)) ?? null)
+      : (choices.find((c) => c.source === source) ?? null);
   if (source !== null && pick === null) {
     throw new ConvexError('That source has no depth for this body');
   }
   const valueField = measure === 'mean' ? 'meanDepthM' : 'maxDepthM';
   const sourceField = measure === 'mean' ? 'meanDepthSource' : 'maxDepthSource';
-  const other = measure === 'mean' ? body.maxDepthM : body.meanDepthM;
-  if (pick !== null && other !== undefined) {
-    const mean = measure === 'mean' ? pick.valueM : other;
-    const max = measure === 'max' ? pick.valueM : other;
-    if (mean > max) throw new ConvexError('That depth would leave the mean deeper than the max');
+  if (pick !== null && !pairHolds(pick.valueM)) {
+    throw new ConvexError('That depth would leave the mean deeper than the max');
   }
   const prev = {
     choice: body.depthChoice?.[measure] ?? null,
@@ -4557,6 +4575,7 @@ export async function chooseDepthSourceImpl(
   return waterBodyId;
 }
 
+/** The depth fields a `set_lake_depth` row records as `prev`, and its undo puts back. */
 export type DepthFields = Pick<
   Doc<'waterBodies'>,
   'meanDepthM' | 'meanDepthSource' | 'maxDepthM' | 'maxDepthSource' | 'depthSourceNote'
@@ -5130,18 +5149,18 @@ async function applyDepthLadder(
     if (value === undefined || source === undefined) return undefined;
     const plausible = Number.isFinite(value) && value > 0 && value <= MAX_PLAUSIBLE_DEPTH_M;
     if (plausible) noteCandidate(label, source, value);
-    // A moderator chose this measure's source: only that source moves it (its fresher value).
+    // A moderator chose this measure's source: only that source moves it (its fresher value), and an
+    // operator's rung still holds it — reported, and an implausible value refused, as on the ladder.
     const chosen = body.depthChoice?.[label];
-    if (chosen !== undefined) {
-      return plausible && source === chosen && existing !== 'operator'
-        ? { valueM: value, source }
-        : undefined;
-    }
-    if (!winsLadder(source, existing)) {
+    const admitted =
+      chosen === undefined
+        ? winsLadder(source, existing)
+        : source === chosen && existing !== 'operator';
+    if (!admitted) {
       if (existing === 'operator') operatorHeld = true;
       return undefined;
     }
-    if (!Number.isFinite(value) || value <= 0 || value > MAX_PLAUSIBLE_DEPTH_M) {
+    if (!plausible) {
       rejectedValues.push(`${label} ${value}`);
       return undefined;
     }
