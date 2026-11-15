@@ -157,7 +157,11 @@ export function coverTiles(box: Box): { tiles: Box[]; truncated: boolean } {
 
 // ── Stale marks ──────────────────────────────────────────────────────────────────────────────
 
-/** Mark bodies' geometry facts stale, so the next `bodyGeo` run recomputes them. */
+/**
+ * Mark bodies' geometry facts stale, so the next `bodyGeo` run recomputes them. A body already stale
+ * has its mark moved to now: a computation that read its inputs before this mark sees the mark move
+ * and leaves the body stale (`bodyGeo.store`), so a relation that moved mid-computation is never lost.
+ */
 export async function markGeoStale(
   ctx: MutationCtx,
   ids: Iterable<Id<'waterBodies'>>,
@@ -169,7 +173,9 @@ export async function markGeoStale(
       .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
       .first();
     if (row === null) await ctx.db.insert('bodyGeoFacts', { waterBodyId, staleAt: now });
-    else if (row.staleAt === undefined) await ctx.db.patch(row._id, { staleAt: now });
+    else if (row.staleAt === undefined || row.staleAt < now) {
+      await ctx.db.patch(row._id, { staleAt: now });
+    }
   }
 }
 

@@ -103,7 +103,9 @@ export const consoleExtras = query({
       }
     }
 
-    // A neighbor since gone or merged leaves the list: its library row is the cheap check.
+    // A neighbor since gone, merged or rejected leaves the list — the unlisted bodies, which the
+    // computation never takes as candidates: its library row is the cheap check (a gone or merged
+    // body has none; a rejected one is filed `rejected`).
     const touching =
       geo === null
         ? null
@@ -114,7 +116,7 @@ export const consoleExtras = query({
                 .query('bodyLibraryRows')
                 .withIndex('by_body', (q) => q.eq('waterBodyId', n.waterBodyId).eq('scope', '*'))
                 .first();
-              if (row !== null)
+              if (row !== null && row.standing !== 'rejected')
                 kept.push({ waterBodyId: n.waterBodyId, name: row.name, ring: n.ring });
             }
             return kept;

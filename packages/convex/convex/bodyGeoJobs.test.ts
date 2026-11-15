@@ -10,7 +10,7 @@ import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
-import { errorClassOf } from './bodyGeo';
+import { errorClassOf, SEED_PAGE } from './bodyGeo';
 import { markGeoStale } from './lib/bodyGeo';
 import { rebuildBodyLibrary } from './lib/bodyLibrary';
 import schema from './schema';
@@ -134,6 +134,34 @@ describe('computeDue', () => {
     });
   });
 
+  test('the daily retry walks every parked body, past the cron’s batch', async () => {
+    const t = harness();
+    const ids: Id<'waterBodies'>[] = [];
+    for (let i = 0; i < 61; i++) ids.push(await seedBody(t, `Parked ${i}`, -120 + i * 0.05));
+    await t.run(async (ctx) => {
+      await markGeoStale(ctx, ids);
+      for (const id of ids) {
+        const row = await ctx.db
+          .query('bodyGeoFacts')
+          .withIndex('by_body', (q) => q.eq('waterBodyId', id))
+          .first();
+        if (row)
+          await ctx.db.patch(row._id, { attempts: 3, errorClass: 'TypeError', parkedAt: NOW });
+      }
+    });
+    hooks.throwWestOf = -100;
+    vi.setSystemTime(NOW + 86_400_000);
+    // Each tried once, none twice; every one re-stamped for tomorrow's walk.
+    expect(await t.action(internal.bodyGeo.computeDue, { parked: true })).toMatchObject({
+      computed: 0,
+      failed: 61,
+      done: true,
+    });
+    for (const id of ids) {
+      expect(await facts(t, id)).toMatchObject({ attempts: 4, retriedAt: NOW + 86_400_000 });
+    }
+  });
+
   test('a run past its time hands on to a fresh run, which finishes', async () => {
     const t = harness();
     const ids = [await seedBody(t, 'Slow', -120), await seedBody(t, 'Other', -72)];
@@ -148,14 +176,14 @@ describe('computeDue', () => {
 describe('seedAll', () => {
   test('pages the library to the end, chaining', async () => {
     const t = harness();
-    // Past one page of 1,000 rows.
-    for (let i = 0; i < 1_001; i++) await seedBody(t, `B${i}`, -72 + i * 0.001);
+    // Past one page.
+    for (let i = 0; i <= SEED_PAGE; i++) await seedBody(t, `B${i}`, -72 + i * 0.001);
     expect(await t.mutation(internal.bodyGeo.seedAll, {})).toEqual({
-      marked: 1_000,
+      marked: SEED_PAGE,
       isDone: false,
     });
     await t.finishAllScheduledFunctions(() => {});
     const rows = await t.run((ctx) => ctx.db.query('bodyGeoFacts').collect());
-    expect(rows).toHaveLength(1_001);
+    expect(rows).toHaveLength(SEED_PAGE + 1);
   });
 });

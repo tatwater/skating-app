@@ -215,6 +215,7 @@ describe('computed at the write, read without geometry', () => {
     await t.mutation(internal.bodyGeo.store, {
       waterBodyId: id,
       stamp: 'an older outline',
+      staleAt: NOW,
       neighbors: [],
       neighborsCapped: false,
       towns: [],
@@ -223,6 +224,52 @@ describe('computed at the write, read without geometry', () => {
     });
     expect((await facts(t, id))?.computedAt).toBeUndefined();
     expect((await facts(t, id))?.staleAt).toBe(NOW);
+  });
+
+  test('a mark that arrives while a body is computed keeps it stale for the next run', async () => {
+    const t = harness();
+    const id = await seedBody(t, 'Busy', [-72, 44], [0.01, 0.01]);
+    await stale(t, [id]);
+    const input = await t.query(internal.bodyGeo.inputs, { waterBodyId: id });
+    expect(input?.staleAt).toBe(NOW);
+    // A neighbor's answer moves its relation to this body while this body is being computed.
+    vi.setSystemTime(NOW + 1_000);
+    await stale(t, [id]);
+    await t.mutation(internal.bodyGeo.store, {
+      waterBodyId: id,
+      stamp: input?.stamp as string,
+      staleAt: input?.staleAt ?? null,
+      neighbors: [],
+      neighborsCapped: false,
+      towns: [],
+      counties: [],
+      states: [],
+    });
+    // Stored, and still stale: the answer may be behind the mark.
+    expect(await facts(t, id)).toMatchObject({ computedAt: NOW + 1_000, staleAt: NOW + 1_000 });
+    // The next run recomputes it under the mark it reads, and clears it.
+    await compute(t);
+    expect((await facts(t, id))?.staleAt).toBeUndefined();
+  });
+
+  test('a rejected neighbor leaves the touching list, as a merged one does', async () => {
+    const t = harness();
+    const as = await seedModerator(t);
+    const a = await seedBody(t, 'A', [-72, 44], [0.01, 0.01]);
+    const b = await seedBody(t, 'B', [-72 + 0.0201, 44], [0.0101, 0.01]);
+    await stale(t, [a, b]);
+    await compute(t);
+    await compute(t);
+    expect(
+      (await as.query(api.bodyConsole.consoleExtras, { waterBodyId: a })).touchingBodyIds,
+    ).toEqual([b]);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(b, { reviewStatus: 'rejected' });
+      await rebuildBodyLibrary(ctx, b);
+    });
+    const after = await as.query(api.bodyConsole.consoleExtras, { waterBodyId: a });
+    expect(after.touchingBodyIds).toEqual([]);
+    expect(after.touching).toEqual([]);
   });
 
   test('failures are recorded by class, park after three, and a parked body waits for the daily retry', async () => {

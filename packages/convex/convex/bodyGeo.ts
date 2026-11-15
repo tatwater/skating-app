@@ -57,14 +57,22 @@ const AREA_CELL_CAP = 64;
 
 // ── The reads the action makes ───────────────────────────────────────────────────────────────
 
-/** What the action needs of the body: its outline, box, stamp and place sample points. */
+/**
+ * What the action needs of the body: its outline, box, stamp and place sample points — and its stale
+ * mark as it stands now, so the store can tell a mark that arrives while the body is computed.
+ */
 export const inputs = internalQuery({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { waterBodyId }) => {
     const body = await ctx.db.get(waterBodyId);
     if (!body || body.dedupStatus === 'merged') return null;
+    const facts = await ctx.db
+      .query('bodyGeoFacts')
+      .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
+      .first();
     return {
       stamp: outlineStamp(body),
+      staleAt: facts?.staleAt ?? null,
       polygon: body.polygon,
       bbox: body.bbox,
       places: placeSamplePoints(body),
@@ -75,27 +83,32 @@ export const inputs = internalQuery({
 /**
  * One tile's candidates: the most prominent listed bodies whose cells cover it (the map's cover,
  * whole at every rung because the tile fits), each with its outline — or, past
- * {@link WHOLE_MAX_VERTICES}, without it — and whether the cover stopped short.
+ * {@link WHOLE_MAX_VERTICES}, without it — and whether the cover stopped short. `skip` names bodies
+ * the caller already holds (the body itself, and the candidates earlier tiles returned): they still
+ * count against the tile's limit, but their outlines are not shipped again.
  */
 export const candidates = internalQuery({
-  args: { box: boxV },
-  handler: async (ctx, { box }) => {
+  args: { box: boxV, skip: v.optional(v.array(v.id('waterBodies'))) },
+  handler: async (ctx, { box, skip }) => {
     const near = await bodiesCoveringBox(ctx, box, { limit: TILE_LIMIT });
+    const known = new Set<string>(skip ?? []);
     return {
       truncated: near.truncated,
-      bodies: [...near.byId.values()].map((b) => {
-        const geom = b.polygon as unknown as Geom;
-        const whole = vertexCount(geom) <= WHOLE_MAX_VERTICES;
-        return {
-          id: b._id,
-          name: b.name,
-          prominence: b.displayScore ?? 0,
-          bbox: b.bbox,
-          whole,
-          polygon: whole ? b.polygon : null,
-          ring: simplifiedRing(geom),
-        };
-      }),
+      bodies: [...near.byId.values()]
+        .filter((b) => !known.has(b._id))
+        .map((b) => {
+          const geom = b.polygon as unknown as Geom;
+          const whole = vertexCount(geom) <= WHOLE_MAX_VERTICES;
+          return {
+            id: b._id,
+            name: b.name,
+            prominence: b.displayScore ?? 0,
+            bbox: b.bbox,
+            whole,
+            polygon: whole ? b.polygon : null,
+            ring: simplifiedRing(geom),
+          };
+        }),
     };
   },
 });
@@ -196,13 +209,16 @@ const neighborV = v.object({
 /**
  * Store a body's computed facts — only if the outline they were computed for is still its own (else
  * it stays stale for the next run). A body whose relation to this one moved (newly touching, or no
- * longer) is marked stale, so the relation is kept on both sides. A body gone or merged loses its
- * facts. Clears its attempts (progress).
+ * longer) is marked stale, so the relation is kept on both sides. A mark that arrived after the inputs
+ * were read (`staleAt` moved past the one they saw) keeps the body stale: the answer is stored and the
+ * next run recomputes it. A body gone or merged loses its facts. Clears its attempts (progress).
  */
 export const store = internalMutation({
   args: {
     waterBodyId: v.id('waterBodies'),
     stamp: v.string(),
+    /** The stale mark the inputs were read under (`inputs.staleAt`); `null` when there was none. */
+    staleAt: v.union(v.number(), v.null()),
     neighbors: v.array(neighborV),
     neighborsCapped: v.boolean(),
     towns: v.array(v.string()),
@@ -232,8 +248,14 @@ export const store = internalMutation({
     const after = new Set(args.neighbors.map((n) => n.waterBodyId as string));
     const moved = [...before, ...after].filter((id) => before.has(id) !== after.has(id));
     const clear = nextAttemptState(row ?? {}, { kind: 'progress' }, now) ?? {};
+    // Marked again while this was computed: an outline or a neighbor's relation moved since the
+    // inputs were read, so this answer may already be behind — kept stale for the next run.
+    const markedSince =
+      row?.staleAt !== undefined && (args.staleAt === null || row.staleAt > args.staleAt)
+        ? row.staleAt
+        : undefined;
     const fields = {
-      staleAt: undefined,
+      staleAt: markedSince,
       computedAt: now,
       stamp: args.stamp,
       neighbors: args.neighbors,
@@ -295,6 +317,17 @@ export const due = internalQuery({
   },
 });
 
+/** One candidate as {@link candidates} returns it. */
+type Candidate = {
+  id: Id<'waterBodies'>;
+  name: string;
+  prominence: number;
+  bbox: Box;
+  whole: boolean;
+  polygon: unknown;
+  ring: [number, number][];
+};
+
 /** Compute one body's facts in the action, start to finish. Throws on a failure the caller records. */
 async function computeOne(ctx: ActionCtx, waterBodyId: Id<'waterBodies'>): Promise<void> {
   const input = await ctx.runQuery(internal.bodyGeo.inputs, { waterBodyId });
@@ -303,6 +336,7 @@ async function computeOne(ctx: ActionCtx, waterBodyId: Id<'waterBodies'>): Promi
     await ctx.runMutation(internal.bodyGeo.store, {
       waterBodyId,
       stamp: '',
+      staleAt: null,
       neighbors: [],
       neighborsCapped: false,
       towns: [],
@@ -314,10 +348,15 @@ async function computeOne(ctx: ActionCtx, waterBodyId: Id<'waterBodies'>): Promi
   const geom = input.polygon as unknown as Geom;
   const padded = paddedBox(input.bbox);
   const { tiles, truncated: tilesTruncated } = coverTiles(padded);
-  const seen = new Map<string, Awaited<ReturnType<typeof runTile>>['bodies'][number]>();
+  const seen = new Map<Id<'waterBodies'>, Candidate>();
   let coverTruncated = tilesTruncated;
-  async function runTile(box: Box) {
-    return ctx.runQuery(internal.bodyGeo.candidates, { box });
+  async function runTile(box: Box): Promise<{ truncated: boolean; bodies: Candidate[] }> {
+    // The body and the candidates already held still count against the tile's limit, but their
+    // outlines are not read back again: a giant is a candidate in every one of its tiles.
+    return ctx.runQuery(internal.bodyGeo.candidates, {
+      box,
+      skip: [waterBodyId, ...seen.keys()],
+    });
   }
   for (const tile of tiles) {
     const got = await runTile(tile);
@@ -338,6 +377,7 @@ async function computeOne(ctx: ActionCtx, waterBodyId: Id<'waterBodies'>): Promi
   await ctx.runMutation(internal.bodyGeo.store, {
     waterBodyId,
     stamp: input.stamp,
+    staleAt: input.staleAt,
     neighbors,
     neighborsCapped: coverTruncated || ranked.length > TOUCH_CANDIDATES,
     ...places,
@@ -368,8 +408,9 @@ const RUN_MS = 4 * 60_000;
  * fresh one until none is due.
  *
  * `done` is `false` when the run stopped with bodies still due: its time ran out, its batch filled
- * (without `chain`), or every due body it can see ({@link DUE_WINDOW}) already failed in this run —
- * the next run (the cron's, or the day's) takes them, a fresh attempt each.
+ * (without `chain`, and never for the daily retry, which walks every parked body while its time
+ * lasts), or every due body it can see ({@link DUE_WINDOW}) already failed in this run — the next run
+ * (the cron's, or the day's) takes them, a fresh attempt each.
  */
 export const computeDue = internalAction({
   args: { parked: v.optional(v.boolean()), chain: v.optional(v.boolean()) },
@@ -410,7 +451,11 @@ export const computeDue = internalAction({
         if (chain) await ctx.scheduler.runAfter(0, internal.bodyGeo.computeDue, { parked, chain });
         return { computed, failed, done: false };
       }
-      if (!chain && computed + failed >= RUN_BATCH) return { computed, failed, done: false };
+      // The cron's run stops at a batch; the daily retry walks every parked body while its time lasts
+      // (one it fails is re-stamped to the back, so each pass's due list starts with untried ones).
+      if (!chain && !parked && computed + failed >= RUN_BATCH) {
+        return { computed, failed, done: false };
+      }
     }
   },
 });
@@ -424,8 +469,12 @@ export const computeAll = internalAction({
   },
 });
 
-/** Library rows one seeding page reads (small rows, about a megabyte). */
-const SEED_PAGE = 1_000;
+/**
+ * Library rows one seeding page reads. Each marks a facts row, read and rewritten whole — up to twelve
+ * neighbors' rings, ~16 KB — so a page of re-seeded bodies stays a few megabytes inside a mutation's
+ * 16 MiB read and write budgets.
+ */
+export const SEED_PAGE = 250;
 
 /** Mark every library body stale, a page at a time, chaining itself — the backfill's first step. */
 export const seedAll = internalMutation({
