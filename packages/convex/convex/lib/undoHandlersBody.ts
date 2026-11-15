@@ -475,7 +475,7 @@ const WATER_BODY: TargetUndo = {
       await removeBodyImpl(ctx, actor, {
         waterBodyId: waterBodyId(row),
         reason: meta(row).prev.removalReason,
-        note: reason,
+        auditReason: reason,
       });
     },
   },

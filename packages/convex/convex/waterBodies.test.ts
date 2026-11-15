@@ -3,6 +3,7 @@ import {
   HARD_MIN_SURFACE_AREA_SQM,
   isActive,
   meetsAreaFloor,
+  REMOVAL_NOTE_MAX_CHARS,
   type ReviewReason,
   satelliteImageryAvailable,
   standingOf,
@@ -1504,6 +1505,75 @@ describe('waterBodies.importCanonical (idempotent OSM upsert, D14/D48)', () => {
     expect(
       await t.query(api.waterBodies.listInViewport, { viewport: VIEWPORT_CONTAINING, zoom: 14 }),
     ).toHaveLength(0);
+  });
+
+  test('a removal’s note reaches History and the removed lane, and the body stays removed across re-import (D266)', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    const bodyId = await onlyBodyId(t);
+    const asAdmin = await seedUser(t, 'clerk_admin', 'admin');
+    await asAdmin.mutation(api.waterBodies.remove, {
+      waterBodyId: bodyId,
+      reason: 'other',
+      note: '  Outside the loaded states — in Quebec  ',
+    });
+    const row = await t.run((ctx) =>
+      ctx.db
+        .query('moderationActions')
+        .withIndex('by_target_action', (q) =>
+          q.eq('targetType', 'waterbody').eq('targetId', bodyId).eq('action', 'remove'),
+        )
+        .first(),
+    );
+    expect(row).toMatchObject({
+      reason: 'Removed from map (other): Outside the loaded states — in Quebec',
+      metadata: { removalReason: 'other', note: 'Outside the loaded states — in Quebec' },
+    });
+    const facts = await asAdmin.query(api.bodyConsole.removedFacts, { waterBodyId: bodyId });
+    expect(facts?.left).toMatchObject({
+      action: 'remove',
+      removalReason: 'other',
+      note: 'Outside the loaded states — in Quebec',
+    });
+    // A re-import never revives it, and the note stays where it was written.
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    expect((await t.run((ctx) => ctx.db.get(bodyId)))?.removedAt).toBeDefined();
+    expect(
+      (await asAdmin.query(api.bodyConsole.removedFacts, { waterBodyId: bodyId }))?.left?.note,
+    ).toBe('Outside the loaded states — in Quebec');
+  });
+
+  test('a removal note past its cap is refused and nothing is written; no note (or only spaces) is today’s removal', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    const bodyId = await onlyBodyId(t);
+    const asAdmin = await seedUser(t, 'clerk_admin', 'admin');
+    await expect(
+      asAdmin.mutation(api.waterBodies.remove, {
+        waterBodyId: bodyId,
+        reason: 'other',
+        note: 'x'.repeat(REMOVAL_NOTE_MAX_CHARS + 1),
+      }),
+    ).rejects.toThrow(/Shorten it to 1,000 or fewer/);
+    expect((await t.run((ctx) => ctx.db.get(bodyId)))?.removedAt).toBeUndefined();
+    await asAdmin.mutation(api.waterBodies.remove, {
+      waterBodyId: bodyId,
+      reason: 'junk',
+      note: '   ',
+    });
+    const row = await t.run((ctx) =>
+      ctx.db
+        .query('moderationActions')
+        .withIndex('by_target_action', (q) =>
+          q.eq('targetType', 'waterbody').eq('targetId', bodyId).eq('action', 'remove'),
+        )
+        .first(),
+    );
+    expect(row?.reason).toBe('Removed from map (junk)');
+    expect(row?.metadata).toEqual({ removalReason: 'junk' });
+    expect(
+      (await asAdmin.query(api.bodyConsole.removedFacts, { waterBodyId: bodyId }))?.left?.note,
+    ).toBeNull();
   });
 
   test('carries the A06c shape stats onto the row, and clears them when a re-import cannot measure them', async () => {

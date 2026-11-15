@@ -604,7 +604,7 @@ export const REMOVED_REPORT_SCAN = 1_000;
  *   served normally: this read then still answers, and `left` is `null`);
  * - `left` — when it left, why, and who decided, from the audit row its standing names: the newest
  *   `remove` for a removed body, the newest `reject_waterbody` for a rejected one (`removalReason`
- *   from a removal's record; `reason` is the row's text);
+ *   from a removal's record; `reason` is the row's text; `note` the remover's own words, when given);
  * - `towns` — with their states, when computed (`null` until then);
  * - `reports` — visible reports, newest first, counted to {@link REMOVED_REPORT_CAP} (`capped`).
  *
@@ -652,6 +652,7 @@ export const removedFacts = query({
                 standing === 'removed' && body.removalReason !== undefined
                   ? body.removalReason
                   : null,
+              note: noteOf(left),
               by: await personOf(ctx, left.actorId),
             },
       towns: townsWithStateOf(placesOf(geo)),
@@ -663,6 +664,12 @@ export const removedFacts = query({
     };
   },
 });
+
+/** A removal's note, as its audit row keeps it in the metadata (`waterBodies.remove`); else `null`. */
+function noteOf(row: Doc<'moderationActions'>): string | null {
+  const note = (row.metadata as { note?: unknown } | undefined)?.note;
+  return typeof note === 'string' ? note : null;
+}
 
 /**
  * The audit row of the leaving the body's standing says — its newest `remove` for a removed body, its

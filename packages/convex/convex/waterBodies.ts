@@ -55,6 +55,7 @@ import {
   polygonBBox,
   polygonIoU,
   primaryReviewReason,
+  REMOVAL_NOTE_MAX_CHARS,
   REQUEST_KINDS,
   REQUEST_STATUSES,
   REVIEW_REASONS,
@@ -67,6 +68,7 @@ import {
   satelliteImageryAvailable,
   searchTextFor,
   standingOf,
+  tooLongMessage,
   WATER_BODY_CLASSES,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
@@ -2833,21 +2835,43 @@ export const approve = mutation({
  * `transitionStanding`.
  */
 export const remove = mutation({
-  args: { waterBodyId: v.id('waterBodies'), reason: literals(REMOVAL_REASONS) },
-  handler: async (ctx, args) => {
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    reason: literals(REMOVAL_REASONS),
+    /**
+     * Why, in a person's own words — trimmed, refused past {@link REMOVAL_NOTE_MAX_CHARS}, and written
+     * beside the fixed reason so History and the removed lane read it. Owed: this writer adopts the
+     * tagged-reason type when #125 lands.
+     */
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, { waterBodyId, reason, note }) => {
     const actor = await requireCapability(ctx, 'body.remove');
-    return removeBodyImpl(ctx, actor, args);
+    const text = note?.trim();
+    const tooLong = tooLongMessage('The note', text, REMOVAL_NOTE_MAX_CHARS);
+    if (tooLong !== null) throw new ConvexError(tooLong);
+    return removeBodyImpl(ctx, actor, {
+      waterBodyId,
+      reason,
+      ...(text !== undefined && text.length > 0 ? { note: text } : {}),
+    });
   },
 });
 
 /**
- * `remove`'s body, shared with the undo of a restore (D226). `note` replaces the audit row's
- * generated reason — an undo's own reason; the mutation never passes it.
+ * `remove`'s body, shared with the undo of a restore (D226). `note` is the person's words, written
+ * beside the fixed reason and kept in the row's metadata; `auditReason` replaces the generated reason
+ * whole — an undo's own reason, which the mutation never passes.
  */
 export async function removeBodyImpl(
   ctx: MutationCtx,
   actor: Doc<'profiles'>,
-  args: { waterBodyId: Id<'waterBodies'>; reason: RemovalReason; note?: string },
+  args: {
+    waterBodyId: Id<'waterBodies'>;
+    reason: RemovalReason;
+    note?: string;
+    auditReason?: string;
+  },
 ): Promise<Id<'waterBodies'>> {
   const body = await ctx.db.get(args.waterBodyId);
   if (!body) throw new ConvexError('Water body not found');
@@ -2866,8 +2890,13 @@ export async function removeBodyImpl(
     action: 'remove',
     targetType: 'waterbody',
     targetId: args.waterBodyId,
-    reason: args.note ?? `Removed from map (${args.reason})`,
-    metadata: { removalReason: args.reason },
+    reason:
+      args.auditReason ??
+      `Removed from map (${args.reason})${args.note !== undefined ? `: ${args.note}` : ''}`,
+    metadata: {
+      removalReason: args.reason,
+      ...(args.note !== undefined ? { note: args.note } : {}),
+    },
     createdAt: now,
   });
   return args.waterBodyId;

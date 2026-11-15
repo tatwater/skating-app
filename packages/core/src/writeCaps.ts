@@ -16,6 +16,11 @@ export const ACCESS_ALERT_NOTE_MAX_CHARS = 500;
 export const PHOTO_CAPTION_MAX_CHARS = 500;
 /** The note a person adds to a flag. */
 export const FLAG_NOTE_MAX_CHARS = 1_000;
+/**
+ * A moderator's note on why a body was removed — the plain words History and the removed lane show
+ * beside the fixed reason (D266's removals).
+ */
+export const REMOVAL_NOTE_MAX_CHARS = 1_000;
 /** An offline write's retry key: the apps send a UUID, about 36 characters. */
 export const IDEMPOTENCY_KEY_MAX_CHARS = 128;
 
