@@ -66,6 +66,10 @@ type Editing = {
   opening: number;
 };
 
+/** Focus has fallen to the page (or is nowhere): the only focus a completion may take back. */
+const focusIsLost = (): boolean =>
+  document.activeElement === null || document.activeElement === document.body;
+
 /** Said when an added link's row can't be told from the list any more (another write moved it). */
 const LOST_ADD =
   'The list changed while this link was saving, so this editor can’t tell which row it is. Cancel, then edit the link from its row.';
@@ -116,6 +120,9 @@ export function LinksTabView({
     const key = refocus.current;
     if (key === null) return;
     refocus.current = null;
+    // Only focus the closed editor left behind (fallen to the page) is taken back — never focus the
+    // moderator has since put somewhere else.
+    if (!focusIsLost()) return;
     const root = section.current;
     const target =
       root?.querySelector<HTMLElement>(
@@ -143,8 +150,10 @@ export function LinksTabView({
   // lost and nothing claimed saved that wasn't.
   const landed = (opening: number, key: string, sent: StaffLink | null) => {
     const now = openNow.current;
-    if (now !== null && now.opening !== opening) return;
-    if (now !== null && sent !== null) {
+    // **A completion acts only if its editor is still the open one**: none open (canceled), or
+    // another opening, and it closes nothing and takes no focus.
+    if (now === null || now.opening !== opening) return;
+    if (sent !== null) {
       const draft = { label: now.label.trim(), url: now.url.trim() };
       if (draft.label !== sent.label || draft.url !== sent.url) {
         // Saved, and typed on since: the same editor, still mounted, now edits what it saved.
@@ -152,7 +161,13 @@ export function LinksTabView({
         return;
       }
     }
-    refocus.current = key;
+    // It hands focus to the link's Edit only from inside its own editor (or from nowhere): never
+    // from a control the moderator has moved to while the save was out.
+    const editor = section.current?.querySelector('[data-slot="link-editor"]') ?? null;
+    const active = document.activeElement;
+    if (focusIsLost() || (editor !== null && active !== null && editor.contains(active))) {
+      refocus.current = key;
+    }
     setEditing(null);
   };
   // The openings with a save on its way: an opening's own Done and Remove don't send twice (a ref,
