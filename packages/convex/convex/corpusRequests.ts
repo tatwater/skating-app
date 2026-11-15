@@ -28,6 +28,7 @@
 
 import {
   ADMIT_KNOWN_WATER_MARGIN_M,
+  bodySearchTextFor,
   catalogQueryUrl,
   groupLandmarkAsks,
   isActive,
@@ -44,7 +45,6 @@ import {
   requestNameKey,
   requestRetraction,
   sameName,
-  searchTextFor,
   standingOf,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
@@ -1253,7 +1253,7 @@ async function admitCandidate(
   const scores = scoreFields({ surfaceAreaSqM: c.surfaceAreaSqM, active: true });
   const id = await ctx.db.insert('waterBodies', {
     name: c.name,
-    searchText: searchTextFor(c.name, []),
+    searchText: bodySearchTextFor({ name: c.name }),
     type: c.cls,
     source: '3dhp',
     externalId: c.externalId,

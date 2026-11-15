@@ -11,10 +11,12 @@
  */
 
 import {
-  aliasesFor,
+  type BodyNames,
   bboxIntersects,
   belongsInCorpus,
   bodiesCoveringPoint,
+  bodyAliasesFor,
+  bodySearchTextFor,
   CLAIM_SOURCES,
   CONFIDENCE_LEVELS,
   canOverwriteElevation,
@@ -65,7 +67,6 @@ import {
   resolveUpsert,
   SATELLITE_IMAGERY_MODES,
   satelliteImageryAvailable,
-  searchTextFor,
   standingOf,
   WATER_BODY_CLASSES,
 } from '@skating/core';
@@ -110,6 +111,7 @@ import { landmarksForBody, repointLandmarksOnMerge } from './lib/landmarkRows';
 import { assertListUnchanged } from './lib/listCas';
 import { isListed } from './lib/listing';
 import { OPEN_FLAG_STATUSES } from './lib/openFlags';
+import { ReadBudget } from './lib/readBudget';
 import {
   affords,
   asItem,
@@ -429,7 +431,13 @@ function nameFields(
   return {
     name: chosen,
     nameClaims: claims.length > 0 ? claims : undefined,
-    searchText: searchTextFor(chosen, aliasesFor(claims, chosen)),
+    // A moderator's aliases survive every import (they are the body's, not a catalog's) and stay
+    // findable: the one builder every search reads (B01-3h).
+    searchText: bodySearchTextFor({
+      name: chosen,
+      nameClaims: claims,
+      moderatorAliases: existing?.moderatorAliases,
+    }),
   };
 }
 
@@ -1214,7 +1222,7 @@ export const importReconciliation = internalMutation({
  */
 
 /**
- * Recompute `searchText` across the corpus — **the repair pass** (A07a).
+ * Recompute `searchText` across the corpus — **the repair pass** (A07a; B01-3h).
  *
  * It was written as step 3 of the four `searchText` had to come through (widen, deploy, backfill,
  * narrow): the field shipped optional, this filled 25,052 rows, the index moved off `name`, and the
@@ -1222,11 +1230,18 @@ export const importReconciliation = internalMutation({
  * can no longer be a fill.
  *
  * What it still is, and why it stays: a *stale* value is reachable in exactly one way — a change to
- * `searchTextFor` or to how claims become aliases, after which every stored string is one rule
- * behind. Recomputing 25,052 rows is then a paged mutation rather than a re-import.
+ * the one builder (`bodySearchTextFor`: the name, the catalogs' claims, a moderator's aliases), after
+ * which every stored string is one rule behind. Every writer of an ingredient rebuilds it in its own
+ * transaction (`packages/guards`' `searchTextWriters.test.ts` holds them to it), so this is only for
+ * that day — B01-3h's change to the rule moved only bodies with moderator aliases.
  *
- * Idempotent and re-runnable: a row already holding what it should is skipped, so this can chase a
- * loader rather than racing it.
+ * **Operator-run, one page a call** (`chain: true` schedules the next page with the same arguments
+ * and logs each cursor to resume from). Dry by default: a dry run reads and counts and writes
+ * nothing. A page is sized by its real bytes under a cap a worst-case outline fits in (`capped`), so
+ * a page of the heaviest bodies still reads; a pass that moved nowhere stops. Each stale body is
+ * written in its own nested transaction (D258): one that fails is reported by id and skipped, never
+ * fatal. Two operators running it at once is harmless — each body's text is recomputed from the body
+ * as it stands, so the later write is the same write — but it is wasted reading; don't.
  */
 export const backfillSearchText = internalMutation({
   args: {
@@ -1234,27 +1249,71 @@ export const backfillSearchText = internalMutation({
     batchSize: v.optional(v.number()),
     /** Actually write. Absent / false ⇒ count only, the same dry-by-default rule the prunes use. */
     apply: v.optional(v.boolean()),
+    /** Schedule the next page with the same arguments until the corpus is done. */
+    chain: v.optional(v.boolean()),
   },
-  handler: async (ctx, { cursor, batchSize, apply }) => {
-    // A body carries its polygon, so the byte cap binds long before the document cap.
-    const numItems = Math.min(500, Math.max(1, batchSize ?? 200));
-    const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
+  handler: async (ctx, { cursor, batchSize, apply, chain }) => {
+    const reads = new ReadBudget();
+    const rows = Math.min(SEARCH_TEXT_PAGE, Math.max(1, Math.floor(batchSize ?? SEARCH_TEXT_PAGE)));
+    const page = await reads.capped(SEARCH_TEXT_PAGE_BYTES, rows, () =>
+      ctx.db.query('waterBodies').paginate({
+        cursor: cursor ?? null,
+        numItems: rows,
+        maximumBytesRead: SEARCH_TEXT_PAGE_BYTES,
+      }),
+    );
 
     let written = 0;
     let alreadyCorrect = 0;
     let withAliases = 0;
+    let deferred = 0;
+    const failed: Id<'waterBodies'>[] = [];
+    let resume: string | null = page.continueCursor;
 
-    for (const body of page.page) {
-      const claims = distinctNameClaims((body.nameClaims ?? []) as NameClaim[]);
-      const aliases = aliasesFor(claims, body.name);
-      const searchText = searchTextFor(body.name, aliases);
-      if (aliases.length > 0) withAliases++;
-      if (body.searchText === searchText) {
+    for (const [i, body] of page.page.entries()) {
+      if (bodyAliasesFor(body as BodyNames).length > 0) withAliases++;
+      if (body.searchText === bodySearchTextFor(body as BodyNames)) {
         alreadyCorrect++;
         continue;
       }
-      if (apply === true) await ctx.db.patch(body._id, { searchText });
-      written++;
+      if (apply !== true) {
+        written++;
+        continue;
+      }
+      if (!(await affords(ctx, SEARCH_TEXT_ITEM))) {
+        // Out of room for another write: the rest of the page is the next call's, from this body.
+        deferred = page.page.length - i;
+        resume = cursor ?? null;
+        break;
+      }
+      const one = await runIsolated<boolean>(
+        ctx,
+        internal.waterBodies.writeSearchTextOne,
+        { waterBodyId: body._id },
+        SEARCH_TEXT_ITEM.limits,
+      );
+      if (!one.ok) {
+        console.error(`backfillSearchText: ${body._id} failed (${one.errorClass}); skipped`);
+        failed.push(body._id);
+        continue;
+      }
+      if (one.value) written++;
+      else alreadyCorrect++;
+    }
+
+    // A page that wrote nothing and read nothing new would only repeat itself.
+    const moved = resume !== (cursor ?? null) || written > 0;
+    const isDone = page.isDone && deferred === 0;
+    if (!isDone) {
+      console.log(`backfillSearchText: resume from ${JSON.stringify(resume)}`);
+      if (chain === true && moved) {
+        await ctx.scheduler.runAfter(0, internal.waterBodies.backfillSearchText, {
+          ...(resume !== null ? { cursor: resume } : {}),
+          ...(batchSize !== undefined ? { batchSize } : {}),
+          ...(apply !== undefined ? { apply } : {}),
+          chain,
+        });
+      }
     }
 
     return {
@@ -1262,13 +1321,41 @@ export const backfillSearchText = internalMutation({
       scanned: page.page.length,
       written,
       alreadyCorrect,
-      // Zero until the merge has re-run and actually emitted claims — which is the point of
-      // reporting it: a backfill that says "0 with aliases" after the re-import means the ETL half
-      // never landed, and that is otherwise invisible until someone searches for a lost name.
+      // Every body with an alias of either kind — a run reporting 0 after a campaign means the
+      // ETL's claims never landed, which is otherwise invisible until someone searches for a name.
       withAliases,
-      cursor: page.continueCursor,
-      isDone: page.isDone,
+      failed,
+      deferred,
+      stopped: !isDone && !moved,
+      cursor: resume,
+      isDone,
     };
+  },
+});
+
+/** Bodies one repair page reads at most; the byte cap usually binds first. */
+const SEARCH_TEXT_PAGE = 200;
+/** A repair page's real-byte cap: room for the heaviest outline (1 MiB) several times over. */
+const SEARCH_TEXT_PAGE_BYTES = 6 * MiB;
+/** One body's rewrite, isolated: a re-read of the body (its outline) and one patch. */
+const SEARCH_TEXT_ITEM: ItemBudget = {
+  limits: { bytesRead: 2 * MiB, documentsRead: 4, databaseQueries: 4, documentsWritten: 1 },
+  reserve: { bytesRead: 256 * 1024, documentsRead: 10, databaseQueries: 10, documentsWritten: 2 },
+};
+
+/**
+ * One body's search text, recomputed from the body as it stands and written if it differs — the
+ * repair pass's isolated item. Returns whether it wrote.
+ */
+export const writeSearchTextOne = internalMutation({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }) => {
+    const body = await ctx.db.get(waterBodyId);
+    if (!body) return false;
+    const searchText = bodySearchTextFor(body as BodyNames);
+    if (body.searchText === searchText) return false;
+    await ctx.db.patch(waterBodyId, { searchText });
+    return true;
   },
 });
 
@@ -2664,7 +2751,7 @@ export const create = mutation({
       name: args.name,
       // A user-drawn body has one name and no catalog claims — but `searchText` is required, so
       // that a row cannot exist which search is structurally unable to reach.
-      searchText: searchTextFor(args.name, []),
+      searchText: bodySearchTextFor({ name: args.name }),
       type: args.type,
       source: 'user',
       polygon: derived.polygon,
@@ -4024,7 +4111,12 @@ export async function setAliasesImpl(
   assertListUnchanged(body.moderatorAliases ?? [], expected, 'this body’s aliases');
   const next = normalizeModeratorAliases(aliases, body.name);
   const prev = body.moderatorAliases ?? [];
-  await ctx.db.patch(waterBodyId, { moderatorAliases: next.length > 0 ? next : undefined });
+  // The search text is rebuilt with them — skater search finds a body by a moderator's alias
+  // (B01-3h), through the one builder every search reads.
+  await ctx.db.patch(waterBodyId, {
+    moderatorAliases: next.length > 0 ? next : undefined,
+    searchText: bodySearchTextFor({ ...body, moderatorAliases: next }),
+  });
   await writeAudit(ctx, {
     actorId: actor._id,
     action: 'set_aliases',
@@ -4957,7 +5049,11 @@ export async function setWaterBodyNameImpl(
       await ctx.db.patch(waterBodyId, {
         name: restored,
         nameClaims: catalog.length > 0 ? catalog : undefined,
-        searchText: searchTextFor(restored, aliasesFor(catalog, restored)),
+        searchText: bodySearchTextFor({
+          name: restored,
+          nameClaims: catalog,
+          moderatorAliases: body.moderatorAliases,
+        }),
       });
       await writeAudit(ctx, {
         actorId: actor._id,
@@ -4995,7 +5091,11 @@ export async function setWaterBodyNameImpl(
       await ctx.db.patch(waterBodyId, {
         name: chosen,
         nameClaims: next,
-        searchText: searchTextFor(chosen, aliasesFor(next, chosen)),
+        searchText: bodySearchTextFor({
+          name: chosen,
+          nameClaims: next,
+          moderatorAliases: body.moderatorAliases,
+        }),
       });
       await writeAudit(ctx, {
         actorId: actor._id,
@@ -5027,7 +5127,11 @@ export async function setWaterBodyNameImpl(
     await ctx.db.patch(waterBodyId, {
       name: match.value,
       nameClaims: next,
-      searchText: searchTextFor(match.value, aliasesFor(next, match.value)),
+      searchText: bodySearchTextFor({
+        name: match.value,
+        nameClaims: next,
+        moderatorAliases: body.moderatorAliases,
+      }),
     });
     await writeAudit(ctx, {
       actorId: actor._id,
