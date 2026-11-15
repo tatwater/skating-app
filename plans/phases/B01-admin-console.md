@@ -3104,8 +3104,13 @@ the state it added (Greptile on #130). The facts keep the pinned towns apart too
 rebuilt in the same transaction as every pin write and by each recompute) and the readers merge them
 in, so no reader shows the pins as they were; a key whose town is gone is kept in `pinnedMissing`. The
 import adds pinned states and never reads a pinned body as out of region (`keptByPin`). A merge folds
-the loser's pins into the survivor within the cap and records both in its change set; a removal
-leaves them. A guard reads the functions' source: nothing else writes the field.
+the loser's pins into the survivor and records both in its change set; a removal leaves them.
+**Nothing a moderator set is dropped by a merge** (Greptile on #130): the survivor takes the union of
+both bodies' pins, aliases and reference links (`mergedModeratorLists`), and a union past a cap is a
+refusal in a sentence (which list, how many, the cap, clear some first) — never a truncation. The
+duplicate card never offers that merge and shows the sentence; the import's automated merge skips
+the pair and names it. Weather sample points are not carried: each lies on its own body's outline.
+The merge's change set keeps both bodies' lists as they were, for the unmerge (not built yet). A guard reads the functions' source: nothing else writes the field.
 
 **The founder's determinations (2026-11-15), by hand, after the PR deploys.** Of the seven: keep the
 Sterling Forest body (Warwick, NY; inside the state park), remove the other six with notes. Of the
