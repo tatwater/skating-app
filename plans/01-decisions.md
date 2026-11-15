@@ -8107,3 +8107,15 @@ bodies' own rows.
 
 **Related:** D226, D256, [`phase-B01`](./phases/B01-admin-console.md) §12.8.
 
+## D261 — An audit reason is at most 2,000 characters (B01)
+
+**2026-11-15, the founder's ruling.** A reason a person types — or a script or job writes — into the
+audit log is at most 2,000 characters, refused past that with a plain message ("A reason can be at most
+2,000 characters."). The cap is enforced at `lib/audit.writeAudit`, the one place a row enters the log,
+so no writer can miss it; rows written before are left as they are.
+
+**Why:** an uncapped reason made every audit row's worst case the document limit, which every read of
+the log has to plan for; and a reason is a line of accountability, not a document.
+
+**Related:** D226, D257, [`phase-B01`](./phases/B01-admin-console.md) §12.8.
+

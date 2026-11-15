@@ -2363,6 +2363,86 @@ the person by `@username` in its "why down" line (the rule is real names) and is
 boards draw a sheet. **Deferred:** the decisions' target names (S5), and bounty asks this season on
 the Bounties lever.
 
+**B01-4b (2026-11-15): the People server's follow-up** (stacked on #115; the list and person pages'
+requests, and the founder's rulings of the same day — D261, and the Overview's figures as the lanes').
+Every shape change is additive except where noted.
+
+- **One rule for the Overview and the lanes.** `lib/peopleFigures.laneCounter` counts every lane as its
+  list is read, and both `people.lanes` and the Overview's People card count through it: *N users*
+  (`totalUsers`) is now the live Everyone lane, *open appeals* (`appealsOpen`) counts people with a row,
+  not tickets, read from the account-ticket range (so a page of other tickets can't hide one). The
+  6-hourly `accounts_total` rollup is no longer read here; Metrics' *total* and its history still read
+  it (`lib/metricReads.accountsTotal`). Shapes unchanged; the values follow the lanes.
+- **The list page.** `people.listPage` takes `endCursor` and reads exactly `(cursor, endCursor]`, as
+  Convex's own reactive pagination does, returning `splitCursor` / `pageStatus` past 200 rows. The
+  queue lanes and the Staff lane are read whole (≤ 200 and ≤ 500 light rows) and keyed by their own
+  order (a JSON key: oldest open item and id; rank, name and id), so a person who leaves or joins an
+  earlier page moves nothing on a later one; a bare-offset cursor from before is still read. Rows add
+  `oldestOpenAt` (Flagged and Appeals: the oldest open flag or waiting ticket — the very key they sort
+  by) and `staff` (Staff lane only: `lastSeenInConsoleAt`, `roleSince`, `roleSinceCapped`,
+  `decisionsThisWeek: Count`). The Staff columns are two reads for the whole page — the presence rows,
+  and the week's audit rows under a real-weight cap (a function gets one `paginate`, which is why the
+  Staff lane is read whole) — never one a row.
+- **Last seen in the console.** `consolePresence` keeps one row per staffer — the last instant a
+  console page heartbeat, replaced in place, erased with the account — and nothing about skaters. The
+  lane shows it only within the current season and the one before (`signInRetentionFromMs`, the sign-in
+  record's own rule, D254); older is `null`, not recorded. The row itself is not pruned by season (the
+  sign-in prune is another job's); it is bounded by staff, not time.
+- **A staffer's tenure, defined once** (`lib/staffTenure`): the strip's undo-aware staff since and role
+  since, now one function. `people.staffStats` reads it live; every role write stamps it on the
+  person's row (`roleSince`, `staffSince`, `tenureCapped`, `tenureAt`), as do the rows backfill (in
+  its own nested call, for each staffer) and the undo-chain backfill when it places a role undo; a
+  refresh keeps the stamp while the role holds. The Staff lane's `roleSince` is that stamp, so the lane
+  and the strip give one date.
+- **The person page.** `person` adds: `rightsSince` (when each right now off was last turned off, from
+  one capped read of the person's `set_posting_permission` rows; `rightsSinceCapped`), `ledger.since`
+  (holders only), `publicProfile: { opens, private, path }` (the profile read's own `profileAccess`),
+  `bountySeason` (this season's asks, over-limit and recent-report counts from `bountyGateEvents` via a
+  new `by_requester_created` index; `null` when the season began before the gate's 180-day record),
+  `open.flags[].targetLabel` (the audit feed's labels — a person, or the body a report, Post, hazard or
+  alert is about — at most 20 distinct, then `open.flagLabelsCapped`), appeals' `body` (admins only,
+  as appeals already are), and explicit `can` entries for every give-back: `restore.{reports, hazards,
+  comments}`, `flaggingOn`, `bountyRaise` (no reason), `bountyLower` (a reason), `extend` (a new window
+  for a running suspension; refused when not suspended). Each is the write's own answer
+  (`lib/peopleCan.writeRefusal`).
+- **The last-editor sentence is a holder's to read.** A read's `can` (and History's undo state) gives a
+  viewer who doesn't hold ledger editing `This isn’t available for this account right now.` where it
+  gave `They are the last person who can edit the ledger; give another admin ledger editing first`;
+  holders still read the sentence, and the write's own refusal is unchanged.
+- **Every person write returns its audit row** (H3): `{ userId, actionId }` from the five discipline
+  writes, the two role writes and the two ledger writes (they returned the id, or nothing; no client
+  read it).
+- **Ids at the edge.** The People queries take the person's id as a string and normalize it once:
+  anything that isn't a profile id is `null` — no such person — rather than a validator error.
+  `people.decisions` can now return `null` for that case.
+- **`staffStats.decisions.undoneByOthers`** adds `by` (up to three undoers, most first, named from their
+  rows, with counts) and `byMore`.
+- **The audit-reason cap (D261).** 2,000 characters, refused at `lib/audit.writeAudit` — the one insert
+  site of the log (the `auditWriters` guard holds that) — so no lever, undo, script or job is missed;
+  rows from before are left alone. `readBudget`'s worst case for an audit row is **left at the document
+  limit**: whether any row on dev exceeds 2,000 characters can't be known without a dev query, and an
+  undo's metadata copies a status reason already on a profile, which no cap reaches back to.
+- **The parked-lapse count in `recurringJobs:health`.** The sweep's attempt state stays on the profile
+  (its due range must leave a parked lapse out); each change is mirrored into `jobFailures` (job
+  `lapses`, keyed by profile id, the queue-shaped jobs' pattern) and cleared wherever the state is
+  cleared (a reset, a suspend, ban or lift); the daily retry forgets mirrors whose lapse went another
+  way, a few a day. Machinery counts small rows only.
+- **Bounds.** The ledger check before the rows backfill reads admins' profiles under the smaller of
+  six documents and what the transaction really has left, and a write confirms an editor from their
+  profile only while a whole one still fits — either way a shortfall undercounts and refuses (safe).
+  `staffStats` makes at most 400 database calls across its per-row loops (Convex gives a query one
+  second); past it the figures say capped. An avatar URL past 2,048 UTF-8 bytes is not stored (the
+  person shows initials) rather than refusing the Clerk sync, keeping a People row light.
+- **The undo engine's per-row worst case** (main's, unchanged): shaping one History or Decisions row
+  reads up to 16 undo-tagged audit rows, the newest row on the target, the content's author stamp, the
+  person's row and a rowless profile — about 19 documents at the document limit each in theory, since
+  an audit row's reason was uncapped and its metadata still is. Its calls and documents are counted
+  ahead; its bytes are not.
+- **The page's two assumptions, checked.** Suspending a banned account replaces the ban (the status
+  becomes `suspended` and the Clerk lock is lifted) — right. An open-ended suspension, or one that ran
+  its course but isn't reset yet, can only be lifted — **wrong**: the suspend write accepts a new
+  window on any suspended account (`can.extend` says so). Whether to refuse it is a ruling.
+
 ### The B01-2 server register (owed to the server agent)
 
 Every seam request the B01-2 builders raised against `packages/convex` and `packages/core`, and
