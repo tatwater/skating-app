@@ -82,6 +82,12 @@ async function setup() {
 
 const as = (t: T, subject: string) => t.withIdentity({ subject });
 
+/** A person write's answer, narrowed to the case that offers its undo (the test says it must). */
+function undoable<R extends { undoable: boolean }>(out: R): Extract<R, { undoable: true }> {
+  if (!out.undoable) throw new Error('expected the write to offer its undo');
+  return out as Extract<R, { undoable: true }>;
+}
+
 // ── D261: the audit-reason cap ──
 
 describe('an audit reason is capped at the one place it enters the log (D261)', () => {
@@ -119,10 +125,12 @@ describe('an audit reason is capped at the one place it enters the log (D261)', 
     const t = await setup();
     await seed(t, 'mod', { role: 'moderator' });
     const skater = await seed(t, 'skater');
-    const banned = await as(t, 'mod').mutation(api.moderation.banUser, {
-      userId: skater,
-      reason: 'x'.repeat(AUDIT_REASON_MAX),
-    });
+    const banned = undoable(
+      await as(t, 'mod').mutation(api.moderation.banUser, {
+        userId: skater,
+        reason: 'x'.repeat(AUDIT_REASON_MAX),
+      }),
+    );
     // Undoing a ban gives back, so it asks no reason: the engine's line quotes the ban's whole one.
     await as(t, 'mod').mutation(api.undo.run, { actionId: banned.actionId });
     expect((await t.run((ctx) => ctx.db.get(skater)))?.status).toBe('active');
@@ -369,7 +377,7 @@ describe('every person write returns the audit row it wrote (the undo toast’s 
       () => a.mutation(api.ledger.revokeEditor, { userId: other, reason: 'r' }),
     ];
     for (const write of writes) {
-      const out = await write();
+      const out = undoable(await write());
       const row = await t.run((ctx) => ctx.db.get(out.actionId));
       expect(row?.targetId).toBe(out.userId);
       // Whether its undo asks a reason: the toast's lookup gives the same answer (one rule).
@@ -479,6 +487,95 @@ describe('undoNeedsReason: the write, the toast and the undo agree for every per
       else await bare;
     });
   }
+});
+
+describe('a person write offers its undo only when the undo is available to this viewer now', () => {
+  const STATES: Record<string, Partial<Doc<'profiles'>>> = {
+    active: {},
+    suspended: { status: 'suspended', suspendedUntil: T0 + DAY },
+    // Run out, not yet reset by the sweep.
+    lapsed: { status: 'suspended', suspendedUntil: T0 - DAY },
+    openEnded: { status: 'suspended' },
+    banned: { status: 'banned' },
+    restricted: { canPostComments: false, canFlag: false, activeBountyPostLimit: 0 },
+    moderator: { role: 'moderator' },
+    admin: { role: 'admin' },
+    holder: { role: 'admin', canEditLedger: true },
+  };
+  // biome-ignore lint/suspicious/noExplicitAny: each write's own answer
+  const WRITES: Record<string, (a: ReturnType<typeof as>, id: Id<'profiles'>) => Promise<any>> = {
+    suspend: (a, id) =>
+      a.mutation(api.moderation.suspendUser, {
+        userId: id,
+        reason: 'r',
+        suspendedUntil: T0 + 2 * DAY,
+      }),
+    ban: (a, id) => a.mutation(api.moderation.banUser, { userId: id, reason: 'r' }),
+    lift: (a, id) => a.mutation(api.moderation.unbanUser, { userId: id }),
+    rightOff: (a, id) =>
+      a.mutation(api.moderation.setPostingPermission, {
+        userId: id,
+        permission: 'reports',
+        allowed: false,
+        reason: 'r',
+      }),
+    rightBack: (a, id) =>
+      a.mutation(api.moderation.setPostingPermission, {
+        userId: id,
+        permission: 'comments',
+        allowed: true,
+      }),
+    bounty: (a, id) =>
+      a.mutation(api.moderation.setBountyPostLimit, { userId: id, limit: 3, reason: 'r' }),
+    promote: (a, id) => a.mutation(api.admin.grantRole, { userId: id, role: 'admin' }),
+    demote: (a, id) => a.mutation(api.admin.revokeRole, { userId: id, reason: 'r' }),
+    ledgerOn: (a, id) => a.mutation(api.ledger.grantEditor, { userId: id }),
+    ledgerOff: (a, id) => a.mutation(api.ledger.revokeEditor, { userId: id, reason: 'r' }),
+  };
+
+  test('returned ⇒ available, not returned ⇒ not available, over every state and every person write', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.constantFrom(...Object.keys(STATES)),
+        fc.constantFrom(...Object.keys(WRITES)),
+        async (state, write) => {
+          vi.setSystemTime(T0);
+          const t = await setup();
+          await seed(t, 'adm', { role: 'admin', canEditLedger: true });
+          const id = await seed(t, 'them', STATES[state]);
+          const a = as(t, 'adm');
+          // A write the server refuses offers nothing: there is no answer to read.
+          const out = await (WRITES[write] as NonNullable<(typeof WRITES)[string]>)(a, id).catch(
+            () => null,
+          );
+          if (out === null) return;
+          const toast = await a.query(api.undo.latestOwn, { targetType: 'user', targetId: id });
+          if (out.undoable) {
+            expect(toast?.actionId, `${state}/${write}`).toBe(out.actionId);
+            expect(toast?.undo, `${state}/${write}`).toEqual({
+              state: 'available',
+              needsReason: out.undoNeedsReason,
+            });
+          } else {
+            expect(out.actionId, `${state}/${write}`).toBeUndefined();
+            expect(toast?.undo.state, `${state}/${write}`).not.toBe('available');
+          }
+        },
+      ),
+      { numRuns: 24 },
+    );
+  });
+
+  test('the cases that can’t be undone now say so: a lift of a run-out suspension, of an active account', async () => {
+    for (const state of ['lapsed', 'active', 'openEnded'] as const) {
+      vi.setSystemTime(T0);
+      const t = await setup();
+      await seed(t, 'adm', { role: 'admin' });
+      const id = await seed(t, 'them', STATES[state]);
+      const out = await as(t, 'adm').mutation(api.moderation.unbanUser, { userId: id });
+      expect(out, state).toEqual({ userId: id, undoable: false });
+    }
+  });
 });
 
 // ── `can`: the ledger sentence for holders only, and every give-back spelled out ──
@@ -954,10 +1051,12 @@ describe('people.listPage: keys, ends, ages and the Staff lane', () => {
     const t = await setup();
     await seed(t, 'adm', { role: 'admin' });
     const skater = await seed(t, 'skater');
-    const grant = await as(t, 'adm').mutation(api.admin.grantRole, {
-      userId: skater,
-      role: 'moderator',
-    });
+    const grant = undoable(
+      await as(t, 'adm').mutation(api.admin.grantRole, {
+        userId: skater,
+        role: 'moderator',
+      }),
+    );
     vi.setSystemTime(T0 + 1_000);
     await as(t, 'adm').mutation(api.undo.run, { actionId: grant.actionId, reason: 'oops' });
     const undo = await t.run((ctx) =>

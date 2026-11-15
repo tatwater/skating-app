@@ -1491,21 +1491,30 @@ async function clearLapseMirror(ctx: MutationCtx, userId: Id<'profiles'>): Promi
  * What a person write returns: the person, and the audit row it wrote — the undo toast's handle on
  * exactly this write, so a colleague's write to the same person in between can't take it away (H3).
  */
-export interface PersonWriteResult {
-  userId: Id<'profiles'>;
-  actionId: Id<'moderationActions'>;
-  /** Whether undoing this write will ask a reason — the undo engine's own rule (`undoNeedsReason`). */
-  undoNeedsReason: boolean;
-}
+/**
+ * What a person write returns (H3): the person, and — only when this viewer can undo the row it wrote
+ * right now (`undoState` says available) — that row and whether its undo asks a reason, so the
+ * console's toast offers Undo without a second read and never offers one the undo would refuse.
+ * `undoable: false` when it can't be undone now (a lift of a suspension that had already run out, a
+ * lift of an account already active, a suspension replacing one that had run out).
+ */
+export type PersonWriteResult = { userId: Id<'profiles'> } & (
+  | { undoable: true; actionId: Id<'moderationActions'>; undoNeedsReason: boolean }
+  | { undoable: false }
+);
 
-/** A person write's answer: its row, and whether that row's undo asks a reason (one rule with undo). */
+/** A person write's answer, from the undo engine's own reading of the row for this viewer. */
 export async function personWriteResult(
   ctx: MutationCtx,
+  actor: Doc<'profiles'>,
   userId: Id<'profiles'>,
   actionId: Id<'moderationActions'>,
 ): Promise<PersonWriteResult> {
   const row = await ctx.db.get(actionId);
-  return { userId, actionId, undoNeedsReason: row ? undoNeedsReason(row) : false };
+  const state = row ? await undoState(ctx, actor, row) : null;
+  return state?.state === 'available'
+    ? { userId, undoable: true, actionId, undoNeedsReason: state.needsReason }
+    : { userId, undoable: false };
 }
 
 async function auditUser(
@@ -1578,7 +1587,7 @@ export async function banImpl(
       clerkUserId: target.clerkUserId,
       banned: true,
     });
-    return personWriteResult(ctx, userId, actionId);
+    return personWriteResult(ctx, actor, userId, actionId);
   }
 }
 
@@ -1636,7 +1645,7 @@ export async function suspendImpl(
         banned: false,
       });
     }
-    return personWriteResult(ctx, userId, actionId);
+    return personWriteResult(ctx, actor, userId, actionId);
   }
 }
 
@@ -1687,7 +1696,7 @@ export async function unbanImpl(
       clerkUserId: target.clerkUserId,
       banned: false,
     });
-    return personWriteResult(ctx, userId, actionId);
+    return personWriteResult(ctx, actor, userId, actionId);
   }
 }
 
@@ -1747,7 +1756,7 @@ export async function setBountyLimitImpl(
       ...(defaulted ? { reasonDefaulted: true } : {}),
     },
   );
-  return personWriteResult(ctx, userId, actionId);
+  return personWriteResult(ctx, actor, userId, actionId);
 }
 
 /**
@@ -1826,5 +1835,5 @@ export async function setPostingPermissionImpl(
       ...(defaulted ? { reasonDefaulted: true } : {}),
     },
   );
-  return personWriteResult(ctx, userId, actionId);
+  return personWriteResult(ctx, actor, userId, actionId);
 }
