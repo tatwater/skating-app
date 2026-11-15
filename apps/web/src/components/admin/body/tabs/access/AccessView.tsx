@@ -63,8 +63,7 @@ const TOOLS = {
   lot: 'Placing a lot on the map comes with the map’s parking and put-in tools.',
   link: 'Linking a lot to a put-in comes with the map’s parking and put-in tools.',
   rules: 'Writing what a sign says comes with the posted-rules editor.',
-  official:
-    'Making a launch official in place, keeping its parking and walk, waits on the server’s promote.',
+  official: 'Making a launch official where it stands, keeping its parking and walk.',
 };
 
 /**

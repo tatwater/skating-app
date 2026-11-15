@@ -83,29 +83,38 @@ function pressRuns(
   key: string,
   ran: ((el: HTMLElement) => number | undefined) | undefined,
 ): boolean {
-  // React freezes a props record, so the press gets a copy with the click wrapped, put where React
-  // reads it; the record goes back after, unless a render during the press already replaced it.
+  // React freezes a props record, so each event gets a copy with the click wrapped, put where React
+  // reads it; the record goes back after, unless a render during the event already replaced it. The
+  // wrap is put in place per event, not once for the press: a render flushed after ⏎/Space goes down
+  // (a pressed face) replaces the record, and a click the key's release causes must still count.
   const node = el as unknown as Record<string, Record<string, unknown>>;
   const slot = Object.keys(el).find((k) => k.startsWith('__reactProps$')) as string;
-  const record = node[slot] as Record<string, unknown>;
-  const original = record.onClick as (...args: unknown[]) => unknown;
   let clicked = 0;
-  const wrapped = {
-    ...record,
-    onClick: (...args: unknown[]) => {
-      clicked++;
-      return original(...args);
-    },
+  const wrappedFor = (fire: () => void) => {
+    const record = node[slot];
+    const original = record?.onClick;
+    if (record === undefined || typeof original !== 'function') {
+      fire();
+      return;
+    }
+    const wrapped = {
+      ...record,
+      onClick: (...args: unknown[]) => {
+        clicked++;
+        return original(...args);
+      },
+    };
+    node[slot] = wrapped;
+    try {
+      fire();
+    } finally {
+      if (node[slot] === wrapped) node[slot] = record;
+    }
   };
-  node[slot] = wrapped;
   const before = ran?.(el);
-  try {
-    el.focus();
-    fireEvent.keyDown(el, { key });
-    fireEvent.keyUp(el, { key });
-  } finally {
-    if (node[slot] === wrapped) node[slot] = record;
-  }
+  el.focus();
+  wrappedFor(() => fireEvent.keyDown(el, { key }));
+  wrappedFor(() => fireEvent.keyUp(el, { key }));
   const after = ran?.(el);
   return clicked > 0 || (before !== undefined && after !== undefined && after > before);
 }

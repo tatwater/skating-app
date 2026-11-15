@@ -615,6 +615,10 @@ describe('BodyConsoleRoute', () => {
       });
     };
     mocks.mutate.mockImplementation(answer as never);
+    // `mockClear` in `beforeEach` keeps an implementation: put the plain one back however this ends.
+    onTestFinished(() => {
+      mocks.mutate.mockImplementation(() => Promise.resolve());
+    });
     const { rerender } = render(<Mounted />);
     const slider = screen.getByRole('slider', { name: 'Map boost' });
     slider.focus();
@@ -630,6 +634,5 @@ describe('BodyConsoleRoute', () => {
     );
     // Letting go where the record already stands sends nothing (`boostToSend`, above).
     expect(mocks.mutate).toHaveBeenCalledTimes(1);
-    mocks.mutate.mockImplementation(() => Promise.resolve());
   });
 });

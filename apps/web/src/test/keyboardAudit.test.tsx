@@ -76,6 +76,40 @@ describe('expectKeyboardOperable', () => {
     expect(() => expectKeyboardOperable(container)).toThrow('Enter doesn’t run its action');
   });
 
+  it('passes a control that wears a pressed face on ⏎/Space down and clicks on their release', () => {
+    // The key going down renders (a new props record) before the release clicks: the click still
+    // counts as the action running.
+    function PressedFace() {
+      const [down, setDown] = useState(false);
+      const keys = (e: KeyboardEvent<HTMLElement>) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          setDown(true);
+        }
+      };
+      const release = (e: KeyboardEvent<HTMLElement>) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          setDown(false);
+          e.currentTarget.click();
+        }
+      };
+      return (
+        <div
+          role="button"
+          tabIndex={0}
+          data-down={down ? '' : undefined}
+          onClick={() => {}}
+          onKeyDown={keys}
+          onKeyUp={release}
+        >
+          Released
+        </div>
+      );
+    }
+    const { container } = render(<PressedFace />);
+    expect(expectKeyboardOperable(container)).toHaveLength(1);
+  });
+
   it('passes a key that runs the action without a click, when the test names its effect', () => {
     let opened = 0;
     const open = () => {
