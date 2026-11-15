@@ -22,7 +22,8 @@ import { cn } from '@/lib/utils';
  * - **Sizes**: `md` — a list row's (the avatar's lockup size, the row's name step at medium
  *   weight); `sm` — in a feed or a line of text (the small avatar, the name in the surrounding ink
  *   and size, the handle usually left out); `xl` — the person a page is about (the head's face, the
- *   name in tracked caps over the handle; `nameAs="h1"` makes the name the page's heading).
+ *   name in tracked caps over the handle). `nameAs` makes the name a heading at the level its page
+ *   needs.
  * - **`mark`** highlights what was searched, in the name and the handle, with the kit's search mark.
  * - The name's ink is inherited, so a selected row can brighten it; the handle stays quiet.
  */
@@ -46,7 +47,7 @@ type PersonLockupProps = Omit<ComponentProps<'span'>, 'children'> & {
    */
   size?: Size;
   /** The element the name is: the page's heading for the person a page is about. */
-  nameAs?: 'span' | 'h1';
+  nameAs?: 'span' | 'h1' | 'h2';
 };
 
 const NAME: Record<Size, string> = {

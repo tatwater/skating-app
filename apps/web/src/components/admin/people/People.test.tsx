@@ -121,7 +121,7 @@ describe('a person beside the list', () => {
     mocks.results.set(PAGE_READ, page([{ ...ROB_ROW, userId: ROB.userId }]));
     open(ROB.userId);
     expect((mocks.calls.get(PAGE_READ) ?? []).at(-1)).toMatchObject({ search: 'rob' });
-    expect(within(personPane()).getByRole('heading', { level: 1 })).toHaveTextContent(
+    expect(within(personPane()).getByRole('heading', { level: 2 })).toHaveTextContent(
       'Rob Tremblay',
     );
     expect(within(list()).getByRole('option', { name: /Rob Tremblay/ })).toHaveAttribute(
@@ -166,6 +166,46 @@ describe('a person beside the list', () => {
   });
 });
 
+/** Every heading's level on the page, in reading order. */
+const outline = () =>
+  [...document.querySelectorAll('h1, h2, h3, h4, h5, h6')].map((h) => Number(h.tagName[1]));
+
+/** One h1, and no level deeper than one past the level before it. */
+function expectOutline() {
+  const levels = outline();
+  expect(levels.filter((l) => l === 1)).toHaveLength(1);
+  expect(levels[0]).toBe(1);
+  levels.forEach((l, i) => {
+    if (i > 0) expect(l).toBeLessThanOrEqual((levels[i - 1] as number) + 1);
+  });
+}
+
+describe('one outline', () => {
+  it('has one h1, the lane’s word; the person’s name under it, their blocks under that', () => {
+    mocks.results.set(PAGE_READ, page([KATE]));
+    open(ROB.userId);
+    expectOutline();
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Everyone');
+    expect(within(personPane()).getByRole('heading', { level: 2 })).toHaveTextContent(
+      'Rob Tremblay',
+    );
+    expect(within(personPane()).getAllByRole('heading', { level: 3 }).length).toBeGreaterThan(1);
+  });
+
+  it('skips no level when the person couldn’t be read, or there is no such person', () => {
+    mocks.results.set(PAGE_READ, page([KATE]));
+    mocks.results.set(getFunctionName(api.people.person), new Error('boom'));
+    const failed = open(ROB.userId);
+    expectOutline();
+    expect(
+      within(personPane()).getByRole('heading', { level: 2, name: /History/ }),
+    ).toBeInTheDocument();
+    failed.unmount();
+    open('not an id');
+    expectOutline();
+  });
+});
+
 describe('back to the list', () => {
   const rows = () =>
     page([KATE, { ...ROB_ROW, userId: ROB.userId }, { ...SARAH_ROW, userId: 'k17sarah' as never }]);
@@ -176,7 +216,7 @@ describe('back to the list', () => {
   ])('%s in the person’s page puts focus on the list, on the person’s row', (_, key) => {
     mocks.results.set(PAGE_READ, rows());
     open(ROB.userId);
-    const inside = within(personPane()).getByRole('heading', { level: 1 });
+    const inside = within(personPane()).getByRole('heading', { level: 2 });
     act(() => personPane().focus());
     expect(fireEvent.keyDown(inside, key)).toBe(false);
     expect(list()).toHaveFocus();

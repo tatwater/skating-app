@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 
 import { isFailed, type Loadable } from '../../reads/consoleReads';
 import { PersonLockup } from '../list/kit-candidates/person-lockup';
+import { SectionLevel } from './headingLevel';
 import { LeverBlock } from './LeverBlock';
 import { accountRows, canDoRows, type PersonAction } from './levers';
 import {
@@ -137,7 +138,7 @@ export function PersonView({
     const historyBlock = <HistoryBlock history={history} now={now} {...tz} onUndo={onUndo} />;
     const statsValue = staffStats === undefined || isFailed(staffStats) ? null : staffStats;
     body = (
-      <>
+      <SectionLevel.Provider value={3}>
         <PersonHead person={p} />
         <StatusNoteBlock person={p} now={now} {...tz} />
         <SkaterStrip person={p} trend={trend} />
@@ -187,7 +188,7 @@ export function PersonView({
               : historyBlock}
           </div>
         </div>
-      </>
+      </SectionLevel.Provider>
     );
   }
 
@@ -222,7 +223,7 @@ function PersonHead({ person }: { person: PersonRead }) {
     >
       <PersonLockup
         size="xl"
-        nameAs="h1"
+        nameAs="h2"
         name={person.displayName}
         handle={person.username}
         src={person.profileImageUrl}

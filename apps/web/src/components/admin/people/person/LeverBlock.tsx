@@ -16,6 +16,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/kit/toolti
 
 import { AskDialog } from './AskDialog';
 import { BountyDialog } from './BountyDialog';
+import { useSectionLevel } from './headingLevel';
 import { LeverList, LeverRow } from './kit-candidates/lever-row';
 import type {
   LeverButton,
@@ -55,6 +56,7 @@ type Open =
   | { id: string; kind: 'role'; item: RoleItem };
 
 export function LeverBlock({ title, rows, person, acting, now, timeZone }: LeverBlockProps) {
+  const level = useSectionLevel();
   const region = useRef<HTMLElement>(null);
   const [open, setOpen] = useState(false);
   // The dialog stays drawn while it closes, so its words don't blank mid-fade; each opening is a
@@ -176,6 +178,7 @@ export function LeverBlock({ title, rows, person, acting, now, timeZone }: Lever
   return (
     <Section
       ref={region}
+      level={level}
       title={title}
       tabIndex={-1}
       className="outline-none"

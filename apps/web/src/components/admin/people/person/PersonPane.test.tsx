@@ -127,7 +127,7 @@ describe('the reads', () => {
     expect(mocks.calls.get('people:staffStats')).toEqual({ userId: ROB_ID, now: NOW });
     expect(mocks.calls.get('people:staffSeason')).toEqual({ userId: ROB_ID, now: NOW });
     expect(mocks.calls.get('people:decisions')).toEqual({ userId: ROB_ID, limit: 25 });
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Rob Tremblay');
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Rob Tremblay');
   });
 
   it('an id of the wrong shape asks nothing and is no such person, with the way back', () => {
@@ -178,7 +178,7 @@ describe('the reads', () => {
     answer({ 'people:history': new Error('boom') });
     render(<PersonPane userId={ROB_ID} />);
     expect(screen.getByText('The history couldn’t be read')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Rob Tremblay');
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Rob Tremblay');
   });
 
   it('a staff page asks for more decisions, doubling to the most a page holds', async () => {

@@ -21,6 +21,7 @@ import { ReadNote } from '../../reads/ReadNote';
 import { historyWhen } from '../../shell/consoleTime';
 import { PersonLockup } from '../list/kit-candidates/person-lockup';
 import { rowActor, rowReason, rowSentence, undoneWords } from './feedWords';
+import { useSectionLevel } from './headingLevel';
 import {
   type ActionRow,
   type DecisionsRead,
@@ -108,12 +109,14 @@ export function OpenAbout({
   now: number;
   linkTo: LinkTo;
 }) {
+  const level = useSectionLevel();
   const { flags, appeals, flagsCapped, appealsCapped } = person.open;
   const pending = person.pending.includes('flagSubjects');
   const count = flags.length + (appeals?.length ?? 0);
   if (count === 0 && !pending) return null;
   return (
     <Section
+      level={level}
       title="Open about this person"
       // While flags on their content are still being prepared the figure may be wrong, not merely
       // short: the rule ends in those words, never a number (and never a zero).
@@ -311,12 +314,14 @@ export function HistoryBlock({
   timeZone?: string;
   onUndo: (row: ActionRow) => void;
 }) {
+  const level = useSectionLevel();
   const kept = useFocusKept();
   if (history === 'not-shown') return null;
   const value = history === undefined || isFailed(history) ? null : history;
   const rows = value?.rows ?? [];
   return (
     <Section
+      level={level}
       title="History"
       {...(value !== null && { count: { count: rows.length, capped: value.capped } })}
       data-slot="person-history"
@@ -378,10 +383,12 @@ export function DecisionsBlock({
   onUndo: (row: ActionRow) => void;
   onMore?: (() => void) | undefined;
 }) {
+  const level = useSectionLevel();
   const kept = useFocusKept();
   const value = decisions === undefined || isFailed(decisions) ? null : decisions;
   return (
     <Section
+      level={level}
       title="Decisions"
       {...(thisWeek !== null && {
         end: (
