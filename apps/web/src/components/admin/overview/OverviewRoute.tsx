@@ -3,13 +3,14 @@ import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 
 import { useOverviewMetrics } from '@/components/admin/metrics/useOverviewMetrics';
+import { routerTarget } from '@/lib/routerTarget';
 import { useConnection } from '@/lib/useConnection';
 import { useRole } from '@/lib/useRole';
 import { useMinuteNow } from '../shell/presence';
 import { OverviewView } from './OverviewView';
 import type { LinkTo } from './overviewLinks';
 import type { LiveState } from './overviewModel';
-import { consolePathFor, feedTargetPath, routerTarget } from './overviewRoutes';
+import { consolePathFor, feedTargetPath } from './overviewRoutes';
 import { type OverviewSearch, overviewTabOf, searchForTab, seasonOfSearch } from './overviewSearch';
 import { liveStateOf } from './overviewStatus';
 import { useOverviewHome } from './useOverviewHome';

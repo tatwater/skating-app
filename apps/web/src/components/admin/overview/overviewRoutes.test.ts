@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-
+import { routerTarget } from '@/lib/routerTarget';
 import { modeAt, usesOldShell } from '../shell/consoleNav';
 import { type ActionRow, CORPUS_TASKS, INBOX_LANES } from './overviewData';
 import type { OverviewTarget } from './overviewLinks';
-import { consolePathFor, feedTargetPath, routerTarget } from './overviewRoutes';
+
+import { consolePathFor, feedTargetPath } from './overviewRoutes';
 
 /** Every target type the audit trail writes — the compile fails if the server adds one. */
 const TARGET_TYPES = [

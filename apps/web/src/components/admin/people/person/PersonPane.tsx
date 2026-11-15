@@ -2,6 +2,7 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { Link } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
+import { routerTarget } from '@/lib/routerTarget';
 import { useRole } from '@/lib/useRole';
 import { isFailed, read, useConsoleReadSet } from '../../reads/consoleReads';
 import { actionLabel } from '../../shell/actionLabels';
@@ -99,7 +100,10 @@ function PersonPage({ userId, returnTo, className }: PersonPaneProps) {
   const onAct = usePersonWrites(target, live);
   const { undo } = useUndo();
   const back = returnTo ?? personHref({ kind: 'people' });
-  const linkTo: LinkTo = (to) => <Link to={to.kind === 'people' ? back : personHref(to)} />;
+  const linkTo: LinkTo = (to) => (
+    // The way back carries the list's lane and search as its query.
+    <Link {...routerTarget(to.kind === 'people' ? back : personHref(to))} />
+  );
 
   return (
     <PersonView

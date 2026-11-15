@@ -105,6 +105,7 @@ export function PeopleListView({
   className,
 }: PeopleListViewProps) {
   const search = useRef<HTMLInputElement>(null);
+  const listbox = useRef<HTMLDivElement>(null);
   const searching = isSearching(query);
   const mark = serverSearch(query.q) ?? '';
   const lane = query.lane;
@@ -280,6 +281,7 @@ export function PeopleListView({
           mark={mark}
           memoryKey={listKey(query)}
           onSearchKey={() => search.current?.focus()}
+          listRef={listbox}
         />
       </section>
 
@@ -288,6 +290,25 @@ export function PeopleListView({
         data-pane="detail"
         aria-label="Person"
         tabIndex={-1}
+        onKeyDown={(event) => {
+          // Esc or ⇧⏎ in the person's page goes back to the list, on the row it was opened from —
+          // never from a field (Esc clears or leaves it), never from a dialog (it closes), never a
+          // key something in the page already used.
+          const back = event.key === 'Escape' || (event.key === 'Enter' && event.shiftKey);
+          if (
+            !back ||
+            event.defaultPrevented ||
+            event.ctrlKey ||
+            event.metaKey ||
+            event.altKey ||
+            !event.currentTarget.contains(event.target as Node) ||
+            isTextEntry(event.target as Element)
+          ) {
+            return;
+          }
+          event.preventDefault();
+          listbox.current?.focus();
+        }}
         className="flex min-h-0 min-w-0 flex-col outline-none focus-visible:shadow-[inset_0_0_0_var(--stroke-hair)_var(--fg)]"
       >
         {detail ?? <ListEnd className="mt-(--space-3)">{NO_ONE_OPEN}</ListEnd>}

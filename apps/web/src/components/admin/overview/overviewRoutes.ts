@@ -7,19 +7,6 @@ function bodyConsolePath(id: string): string {
 }
 
 /**
- * A path as the router takes it: the path, and its query as a search object (a link through the
- * router names its search apart from its path).
- */
-export function routerTarget(path: string): { to: string; search?: Record<string, string> } {
-  const at = path.indexOf('?');
-  if (at === -1) return { to: path };
-  return {
-    to: path.slice(0, at),
-    search: Object.fromEntries(new URLSearchParams(path.slice(at + 1))),
-  };
-}
-
-/**
  * Where Home's links go in the app as it stands: the old pages, until each target's mode lands
  * (the same rule as the palette, which opens a body in its Body console and a person in People).
  * Bodies has landed, so a body opens in its Body console. `overviewHref` names the console's own routes; this names the pages that exist.
