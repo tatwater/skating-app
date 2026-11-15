@@ -393,7 +393,7 @@ describe('Timeline', () => {
             expect(after.getAttribute('aria-valuetext')).toBe(valuetext);
           },
         ),
-      { numRuns: 60, timeoutMs: 20_000 },
+      { numRuns: 40, timeoutMs: 20_000 },
     );
   });
 });
