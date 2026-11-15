@@ -11,12 +11,14 @@ import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+import { recordPromptFailure } from './gpsActivities';
 import { MAX_ATTEMPTS } from './lib/attempts';
 import * as notificationQueue from './lib/notificationQueue';
 import { NOTIFICATION_FRESH_MS } from './lib/notificationQueue';
 import * as recurringWork from './lib/recurringWork';
-import { enqueueReportNotice } from './notifications';
+import { enqueueReportNotice, recordQueueFailure } from './notifications';
 import schema from './schema';
+import { recordCardFailure } from './waterBodies';
 
 const modules = import.meta.glob('./**/*.*s');
 const harness = () => convexTest(schema, modules);
@@ -480,13 +482,14 @@ describe('recurringJobs.health — one place to see it', () => {
     const bodyId = await seedBody(t, 'osm/health');
     const user = await seedUser(t, 'someone');
     const row = await queueFavorite(t, user.id, bodyId);
-    await t.run(async (ctx) => {
-      await ctx.db.patch(row, {
-        attempts: 3,
-        lastErrorClass: 'TypeError',
-        parkedAt: T0 - HOUR,
-        firstDueAt: T0 - 2 * HOUR,
+    // Three failed deliveries, recorded the way the flush records them: parked, and mirrored.
+    for (let i = 0; i < 3; i++) {
+      await t.run(async (ctx) => {
+        const r = await ctx.db.get(row);
+        if (r) await recordQueueFailure(ctx, r, 'TypeError', T0 - HOUR, {});
       });
+    }
+    await t.run(async (ctx) => {
       await ctx.db.insert('jobFailures', {
         job: 'weatherGaps',
         key: 'filter:cell-1',
@@ -507,6 +510,7 @@ describe('recurringJobs.health — one place to see it', () => {
       // An account two days past its 30 days.
       await ctx.db.patch(user.id, { deletionRequestedAt: T0 - 32 * DAY, status: 'deleting' });
     });
+    await t.mutation(internal.accountDeletion.finalizeDueDeletions, {});
     const health = await admin.as.query(api.recurringJobs.health, { now: T0 });
     const job = (name: string) => health.jobs.find((j) => j.job === name);
     expect(job('flush notification queue')).toEqual({
@@ -514,7 +518,7 @@ describe('recurringJobs.health — one place to see it', () => {
       failing: 0,
       parked: 1,
       oldestParkedAt: T0 - HOUR,
-      oldestFailingSince: T0 - 2 * HOUR,
+      oldestFailingSince: T0 - HOUR,
       errorClasses: { TypeError: 1 },
       capped: false,
     });
@@ -528,11 +532,10 @@ describe('recurringJobs.health — one place to see it', () => {
       capped: false,
     });
     expect(job('prompt unreported skates')).toMatchObject({ failing: 0, parked: 0 });
-    expect(health.overdue.find((o) => o.job === 'finalize account deletions')).toEqual({
-      job: 'finalize account deletions',
-      overdue: 1,
-      oldestDueAt: T0 - 2 * DAY,
-      capped: false,
+    expect(job('finalize account deletions')).toMatchObject({
+      failing: 1,
+      parked: 0,
+      errorClasses: { Overdue: 1 },
     });
     // Counts only: nothing in the answer names an item.
     expect(JSON.stringify(health)).not.toContain(user.id);
@@ -702,26 +705,23 @@ describe('the retries and passes at their edges', () => {
     expect(sent?.payload.bodies).toHaveLength(1);
   });
 
-  test('the read counts parked prompts and cards too', async () => {
+  test('the read counts parked prompts and cards too — from their mirrors, never the heavy rows', async () => {
     const t = harness();
     const admin = await seedUser(t, 'admin', 'admin');
     const skater = await seedUser(t, 'skater');
     const activity = await seedActivity(t, skater.id, 0);
     const bodyId = await seedBody(t, 'osm/read');
-    await t.run(async (ctx) => {
-      await ctx.db.patch(activity, {
-        promptAttempts: 3,
-        promptErrorClass: 'RangeError',
-        promptParkedAt: T0 - HOUR,
+    await t.run((ctx) =>
+      ctx.db.insert('bodySummaryRefreshes', { waterBodyId: bodyId, refreshAt: T0 }),
+    );
+    for (let i = 0; i < 3; i++) {
+      await t.run(async (ctx) => {
+        const a = await ctx.db.get(activity);
+        if (a) await recordPromptFailure(ctx, a, 'RangeError', T0 - HOUR, {});
+        const card = await ctx.db.query('bodySummaryRefreshes').first();
+        if (card) await recordCardFailure(ctx, card, 'OverBudget', T0 - 2 * HOUR, {});
       });
-      await ctx.db.insert('bodySummaryRefreshes', {
-        waterBodyId: bodyId,
-        refreshAt: T0,
-        attempts: 3,
-        lastErrorClass: 'OverBudget',
-        parkedAt: T0 - 2 * HOUR,
-      });
-    });
+    }
     const health = await admin.as.query(api.recurringJobs.health, {});
     expect(health.jobs.find((j) => j.job === 'prompt unreported skates')).toMatchObject({
       parked: 1,
@@ -733,26 +733,47 @@ describe('the retries and passes at their edges', () => {
       oldestParkedAt: T0 - 2 * HOUR,
       errorClasses: { OverBudget: 1 },
     });
+    // Healed: the prompt and the card go through and take their mirrors with them.
+    await t.mutation(internal.recurringJobs.retryParkedDaily, {});
+    const after = await admin.as.query(api.recurringJobs.health, {});
+    expect(after.jobs.find((j) => j.job === 'prompt unreported skates')?.parked).toBe(0);
+    expect(after.jobs.find((j) => j.job === 'sweep body summaries')?.parked).toBe(0);
   });
 
-  test('the read counts a failing queue row from its own index, past any number of healthy ones', async () => {
+  test('a failing queue row is counted while it fails, and its count goes with it when it is delivered', async () => {
     const t = harness();
     const admin = await seedUser(t, 'admin', 'admin');
     const bodyId = await seedBody(t, 'osm/queue-read');
     const user = await seedUser(t, 'queued');
-    for (let i = 0; i < 30; i++) await queueFavorite(t, user.id, bodyId);
     const failing = await queueFavorite(t, user.id, bodyId);
-    await t.run((ctx) =>
-      ctx.db.patch(failing, { attempts: 1, lastErrorClass: 'Error', firstDueAt: T0 - MINUTE }),
-    );
+    await t.run(async (ctx) => {
+      const r = await ctx.db.get(failing);
+      if (r) await recordQueueFailure(ctx, r, 'Error', T0, { cutoff: T0 - MINUTE });
+    });
     const health = await admin.as.query(api.recurringJobs.health, {});
     expect(health.jobs.find((j) => j.job === 'flush notification queue')).toMatchObject({
       failing: 1,
       parked: 0,
-      oldestFailingSince: T0 - MINUTE,
       errorClasses: { Error: 1 },
       capped: false,
     });
+    await t.mutation(internal.notifications.flushNotificationQueue, {});
+    expect(await t.run((ctx) => ctx.db.get(failing))).toBeNull();
+    expect(await t.run((ctx) => ctx.db.query('jobFailures').collect())).toEqual([]);
+  });
+
+  test('a mirror whose row went some other way is forgotten by the retry', async () => {
+    const t = harness();
+    const bodyId = await seedBody(t, 'osm/gone-row');
+    const user = await seedUser(t, 'gone');
+    const row = await queueFavorite(t, user.id, bodyId);
+    await t.run(async (ctx) => {
+      const r = await ctx.db.get(row);
+      if (r) await recordQueueFailure(ctx, r, 'Error', T0, {});
+      await ctx.db.delete(row); // erased with an account, say
+    });
+    await t.mutation(internal.notifications.retryParkedNotifications, {});
+    expect(await t.run((ctx) => ctx.db.query('jobFailures').collect())).toEqual([]);
   });
 
   test('the daily retry clears a gone body and goes on to the next failing one', async () => {

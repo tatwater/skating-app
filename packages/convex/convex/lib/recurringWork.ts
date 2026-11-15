@@ -19,7 +19,7 @@
 import type { FunctionReference } from 'convex/server';
 import type { Doc } from '../_generated/dataModel';
 import type { ActionCtx, MutationCtx, QueryCtx } from '../_generated/server';
-import { failedAttempt } from './attempts';
+import { type AttemptState, failedAttempt } from './attempts';
 import type { FailingJob, LappingJob } from './enums';
 import { asFailure, errorClassOf } from './readBudget';
 
@@ -161,6 +161,55 @@ export async function recordFailure(
   if (row) await ctx.db.patch(row._id, fields);
   else await ctx.db.insert('jobFailures', { job, key, firstFailedAt: now, ...fields });
   return parked && !neverParked ? 'parked' : 'failed';
+}
+
+/**
+ * Mirror the attempt state a queue-shaped job keeps on its own row into `jobFailures` (D258), so the
+ * Machinery read counts small rows and never loads the heavy document. Written beside every change
+ * to the row's state, and cleared (`clearFailure`) wherever the row's state is cleared or the row goes.
+ */
+export async function mirrorFailure(
+  ctx: MutationCtx,
+  job: FailingJob,
+  key: string,
+  state: AttemptState,
+  now: number,
+): Promise<void> {
+  const row = await failureOf(ctx, job, key);
+  const fields = {
+    attempts: state.attempts ?? 1,
+    errorClass: state.errorClass ?? 'Error',
+    lastFailedAt: now,
+    parkedAt: state.parkedAt,
+    retriedAt: state.retriedAt,
+  };
+  if (row) await ctx.db.patch(row._id, fields);
+  else await ctx.db.insert('jobFailures', { job, key, firstFailedAt: now, ...fields });
+}
+
+/**
+ * Forget up to `n` of a job's mirrored failures whose work is gone or no longer failing — the ones
+ * the job's own writers never saw go (a row erased with its account, say). Oldest first; each is
+ * checked by `stillFailing`, which may read the heavy document: this runs in a background job, a few
+ * at a time, never in the Machinery read.
+ */
+export async function forgetGoneMirrors(
+  ctx: MutationCtx,
+  job: FailingJob,
+  n: number,
+  stillFailing: (key: string) => Promise<boolean>,
+): Promise<number> {
+  const rows = await ctx.db
+    .query('jobFailures')
+    .withIndex('by_job_last_failed', (q) => q.eq('job', job))
+    .take(n);
+  let forgotten = 0;
+  for (const row of rows) {
+    if (await stillFailing(row.key)) continue;
+    await ctx.db.delete(row._id);
+    forgotten++;
+  }
+  return forgotten;
 }
 
 /** Progress: the item went through, so whatever it was failing with is cleared. */

@@ -4443,9 +4443,6 @@ export default defineSchema({
     // The flush's due range with parked rows left out (D258): `eq(parkedAt, undefined)` then the
     // time; the parked range is `gt(parkedAt, 0)` — the field is optional and the index not sparse.
     .index('by_parked_flush', ['parkedAt', 'flushAfter'])
-    // The rows with failures on them, parked or not, for the Machinery read (D258): `gt(attempts,
-    // 0)` — the field is optional and the index not sparse — so the read never scans healthy rows.
-    .index('by_attempts', ['attempts'])
     .index('by_coalesce', ['coalesceKey'])
     // Where a new event coalesces (D258): the key's row that is not parked. A parked row keeps only
     // what it already held — a new event never lands in it, where nothing would deliver it.

@@ -79,7 +79,15 @@ import { requireProfile } from './lib/auth';
 import { redactAgedContent } from './lib/contentPurge';
 import { reclaimExportBlob } from './lib/exportBundles';
 import { deletePhotoAndBlobs, referencedPhotoIds } from './lib/photoOrphans';
-import { lapOf, type Position, positionOf, saveLap } from './lib/recurringWork';
+import {
+  clearFailure,
+  forgetGoneMirrors,
+  lapOf,
+  type Position,
+  positionOf,
+  recordFailure,
+  saveLap,
+} from './lib/recurringWork';
 
 /**
  * Rows touched per invocation. Small on purpose: every stage runs in its own transaction and
@@ -309,7 +317,18 @@ export const finalizeDueDeletions = internalMutation({
         userId: profile._id,
       });
       started++;
+      // More than a day past its date and still not finalized: counted for Machinery (D258), never
+      // parked — a deletion is attempted every lap until it is done.
+      if (profile.deletionRequestedAt + DELETION_GRACE_MS + OVERDUE_MS < now) {
+        await recordFailure(ctx, 'finalizeDeletions', profile._id, 'Overdue', now, { park: false });
+      }
     }
+    // Counts of accounts that have since been finalized (or whose deletion was canceled) go.
+    await forgetGoneMirrors(ctx, 'finalizeDeletions', OVERDUE_CHECKED, async (key) => {
+      const id = ctx.db.normalizeId('profiles', key);
+      const p = id ? await ctx.db.get(id) : null;
+      return p !== null && p.status !== 'deleted' && p.deletionRequestedAt !== undefined;
+    });
 
     // Ghosts that aren't due yet still keep thinning out. Content three days old at the request is
     // thirty-three days old three weeks later, and "the words are gone" has to keep being true rather
@@ -353,6 +372,11 @@ export const finalizeDueDeletions = internalMutation({
     return { due: due.length, started, skipped, redacting };
   },
 });
+
+/** How far past its date an account is before Machinery counts it overdue. */
+const OVERDUE_MS = 24 * 60 * 60 * 1000;
+/** Overdue counts a tick checks for an account since finalized, at most. */
+const OVERDUE_CHECKED = 10;
 
 /**
  * Up to `n` profiles on `by_deletion_requested_at` after `at` (requested time, then creation), up to
@@ -880,6 +904,8 @@ async function erasePhotos(
  */
 async function writeTombstone(ctx: MutationCtx, profile: Doc<'profiles'>): Promise<void> {
   const clerkUserId = profile.clerkUserId;
+  // Finalized: no longer overdue (D258).
+  await clearFailure(ctx, 'finalizeDeletions', profile._id);
   await ctx.db.patch(profile._id, {
     status: 'deleted',
     deletedAt: Date.now(),

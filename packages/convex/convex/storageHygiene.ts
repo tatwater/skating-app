@@ -449,9 +449,12 @@ export const sweepExpiredExports = internalMutation({
     for (const row of expired) {
       if (!(await reclaimExportBlob(ctx, row))) {
         retained++; // blob still there — keep the row so the next tick can try again
+        // Counted for Machinery (D258), never parked: every lap tries it again.
+        await recordFailure(ctx, 'expiredExports', row._id, 'BlobKept', now, { park: false });
         continue;
       }
       await ctx.db.delete(row._id);
+      await clearFailure(ctx, 'expiredExports', row._id);
       deleted++;
     }
     return { deleted, retained };

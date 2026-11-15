@@ -104,7 +104,14 @@ import {
 import { closeFlag } from './lib/flagResolution';
 import { landmarksForBody, repointLandmarksOnMerge } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
-import { affords, asItem, type ItemBudget, MiB, runIsolated } from './lib/recurringWork';
+import {
+  affords,
+  asItem,
+  type ItemBudget,
+  MiB,
+  mirrorFailure,
+  runIsolated,
+} from './lib/recurringWork';
 import { mirrorReportSubAreas } from './lib/reportSubAreas';
 import { takeCapped } from './lib/scan';
 import { richnessFor, scoreFields, zoomSortKey } from './lib/scoring';
@@ -6791,6 +6798,7 @@ export async function recordCardFailure(
     retriedAt: next.retriedAt,
     ...(opts.cutoff !== undefined ? { refreshAt: Math.max(row.refreshAt, opts.cutoff + 1) } : {}),
   });
+  await mirrorFailure(ctx, 'cards', row.waterBodyId, next, now);
   return parked ? 'parked' : 'failed';
 }
 

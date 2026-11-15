@@ -21,7 +21,6 @@
  * | watch for the imagery season to open | the tick | `jobFailures` | never parked: all-or-nothing by design, counted |
  */
 
-import { DELETION_GRACE_MS } from '@skating/core';
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
@@ -40,6 +39,7 @@ import {
   affords,
   failedSinceAt,
   forgetFailuresBefore,
+  forgetGoneMirrors,
   type ItemBudget,
   MiB,
   recordFailure,
@@ -114,6 +114,9 @@ export const forgetBefore = internalMutation({
 
 // ── The daily retry ─────────────────────────────────────────────────────────────────────────────
 
+/** Mirrored failures the daily retry checks for work that went some other way, at most. */
+const MIRRORS_CHECKED = 10;
+
 /** Parked pieces of each job the daily retry tries a run. */
 export const DAILY_RETRIES = 5;
 
@@ -175,6 +178,23 @@ export const retryParkedDaily = internalMutation({
           else failed++;
         }
       }
+      // Mirrored failures of recordings and cards that went some other way (erased with an account,
+      // a card whose body was removed): checked a few a day.
+      await forgetGoneMirrors(ctx, 'prompts', MIRRORS_CHECKED, async (key) => {
+        const id = ctx.db.normalizeId('gpsActivities', key);
+        const row = id ? await ctx.db.get(id) : null;
+        return row?.promptState === 'pending' && row.promptAttempts !== undefined;
+      });
+      await forgetGoneMirrors(ctx, 'cards', MIRRORS_CHECKED, async (key) => {
+        const id = ctx.db.normalizeId('waterBodies', key);
+        const row = id
+          ? await ctx.db
+              .query('bodySummaryRefreshes')
+              .withIndex('by_water_body', (q) => q.eq('waterBodyId', id))
+              .first()
+          : null;
+        return row?.attempts !== undefined;
+      });
       return { freed, failed, more: false };
     }),
 });
@@ -260,14 +280,11 @@ async function nextStandingRetry(
 // ── The Machinery read ──────────────────────────────────────────────────────────────────────────
 
 /**
- * The most of one job's failing work the read counts; past it the count says it is capped. Work whose
- * row is small (a failure record, a card's refresh row) counts to `HEALTH_CAP`; work whose row can
- * weigh a document (a queue row's coalesced actors, a recording's path, a profile, an export's error)
- * counts to `HEAVY_CAP`, and only while the transaction can still afford that many at a document
- * each — so the read stays inside its limits however heavy the rows, and says so when it stopped.
+ * The most of one job's failing work the read counts; past it the count says it is capped. Every row
+ * it reads is a `jobFailures` row — ids, numbers and a class — so the read is small however heavy the
+ * work it describes.
  */
 export const HEALTH_CAP = 200;
-export const HEAVY_CAP = 10;
 /** One job's failing work: counts, the oldest age, and the error classes — no content, names or ids. */
 export interface JobHealth {
   job: string;
@@ -328,105 +345,22 @@ async function capped<T>(
 }
 
 /**
- * Up to `HEAVY_CAP` rows that may each weigh a document, as many as the transaction can still
- * afford at that weight (from what it has really read), and whether the count stopped short.
- */
-async function cappedHeavy<T>(
-  ctx: QueryCtx,
-  read: (n: number) => Promise<T[]>,
-): Promise<{ rows: T[]; capped: boolean }> {
-  const m = await ctx.meta.getTransactionMetrics();
-  const affordable = Math.floor((m.bytesRead.remaining - HEALTH_RESERVE) / MiB);
-  const n = Math.max(0, Math.min(HEAVY_CAP + 1, affordable));
-  if (n === 0) return { rows: [], capped: true };
-  const rows = await read(n);
-  return {
-    rows: rows.slice(0, HEAVY_CAP),
-    // More than it shows, or a read the budget cut short of the row that would have said.
-    capped: rows.length > HEAVY_CAP || (n <= HEAVY_CAP && rows.length === n),
-  };
-}
-
-/** What the read keeps back for everything after a heavy read: the small tables and the answer. */
-const HEALTH_RESERVE = 3 * MiB;
-
-/**
  * **The recurring jobs' failing work, for Machinery** (`machinery.read`): per job, how much is failing
  * and how much parked, the oldest parked time and the oldest failure, and the error classes — counts
- * only. The account deletions and expired exports have no failure record (each account's chain and
- * each bundle's retry are their own); what they show is how much is **overdue** — past its promise by
- * more than a day — and since when. `erasure.parked` and `bodyLibrary.parked` keep their own reads.
+ * only, from small rows only: the queue-shaped jobs' state is mirrored into `jobFailures`; an account
+ * more than a day past its deletion date and an expired bundle whose blob would not delete are counted
+ * there by their sweeps. `erasure.parked` and `bodyLibrary.parked` keep their own reads.
  *
  * Bounded: each job reads at most `HEALTH_CAP` rows (plus one to tell), and says `capped` past it.
  */
 export const health = query({
   args: { now: v.optional(v.number()) },
-  handler: async (
-    ctx,
-    { now: callerNow },
-  ): Promise<{ jobs: JobHealth[]; overdue: OverdueHealth[] }> => {
+  handler: async (ctx, { now: callerNow }): Promise<{ jobs: JobHealth[] }> => {
     await requireCapability(ctx, 'machinery.read');
-    const now = callerNow ?? Date.now();
+    // Small rows only (D258): every job's failing work is a `jobFailures` row — the queue-shaped jobs'
+    // state is mirrored there — so the read never loads a queue row, a recording or a profile.
+    void callerNow;
     const jobs: JobHealth[] = [];
-
-    // Every row with a failure on it, parked or not, from its own index: a filter over the due range
-    // would scan every healthy row in the queue to find the few that failed. Most attempts first, so
-    // a capped count still reaches the parked rows (three or more) before the merely failing.
-    const queue = await cappedHeavy(ctx, (n) =>
-      ctx.db
-        .query('notificationQueue')
-        .withIndex('by_attempts', (q) => q.gt('attempts', 0))
-        .order('desc')
-        .take(n),
-    );
-    jobs.push(
-      tally(
-        'flush notification queue',
-        queue.rows.map((r) => ({
-          ...(r.parkedAt !== undefined ? { parkedAt: r.parkedAt } : {}),
-          ...(r.firstDueAt !== undefined ? { since: r.firstDueAt } : {}),
-          ...(r.lastErrorClass !== undefined ? { errorClass: r.lastErrorClass } : {}),
-        })),
-        queue.capped,
-      ),
-    );
-
-    const prompts = await cappedHeavy(ctx, (n) =>
-      ctx.db
-        .query('gpsActivities')
-        .withIndex('by_prompt_parked_detected', (q) =>
-          q.eq('promptState', 'pending').gt('promptParkedAt', 0),
-        )
-        .take(n),
-    );
-    jobs.push(
-      tally(
-        'prompt unreported skates',
-        prompts.rows.map((r) => ({
-          ...(r.promptParkedAt !== undefined ? { parkedAt: r.promptParkedAt } : {}),
-          ...(r.promptErrorClass !== undefined ? { errorClass: r.promptErrorClass } : {}),
-        })),
-        prompts.capped,
-      ),
-    );
-
-    const cards = await capped((n) =>
-      ctx.db
-        .query('bodySummaryRefreshes')
-        .withIndex('by_parked_refresh_at', (q) => q.gt('parkedAt', 0))
-        .take(n),
-    );
-    jobs.push(
-      tally(
-        'sweep body summaries',
-        cards.rows.map((r) => ({
-          ...(r.parkedAt !== undefined ? { parkedAt: r.parkedAt } : {}),
-          ...(r.lastErrorClass !== undefined ? { errorClass: r.lastErrorClass } : {}),
-        })),
-        cards.capped,
-      ),
-    );
-
     for (const job of FAILING_JOBS) {
       const rows = await capped((n) =>
         ctx.db
@@ -446,8 +380,7 @@ export const health = query({
         ),
       );
     }
-
-    return { jobs, overdue: await overdueHealth(ctx, now) };
+    return { jobs };
   },
 });
 
@@ -460,50 +393,9 @@ const CRON_OF: Record<FailingJob, string> = {
   hazardWeather: 'refresh hazard weather',
   nwsAlerts: 'refresh nws alerts',
   seasonWatch: 'watch for the imagery season to open',
+  notifications: 'flush notification queue',
+  prompts: 'prompt unreported skates',
+  cards: 'sweep body summaries',
+  finalizeDeletions: 'finalize account deletions',
+  expiredExports: 'sweep expired exports',
 };
-
-/** Work past its promise: how much (to the cap) and since when. */
-export interface OverdueHealth {
-  job: string;
-  overdue: number;
-  oldestDueAt: number | null;
-  capped: boolean;
-}
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-/** Accounts whose deletion is due a day or more, and expired exports a day or more past expiry. */
-async function overdueHealth(ctx: QueryCtx, now: number): Promise<OverdueHealth[]> {
-  const accounts = await cappedHeavy(ctx, (n) =>
-    ctx.db
-      .query('profiles')
-      .withIndex('by_deletion_requested_at', (q) =>
-        q.gt('deletionRequestedAt', 0).lte('deletionRequestedAt', now - DELETION_GRACE_MS - DAY_MS),
-      )
-      .take(n),
-  );
-  const live = accounts.rows.filter((p) => p.status !== 'deleted');
-  const exports = await cappedHeavy(ctx, (n) =>
-    ctx.db
-      .query('dataExports')
-      .withIndex('by_expires_at', (q) => q.lt('expiresAt', now - DAY_MS))
-      .take(n),
-  );
-  return [
-    {
-      job: 'finalize account deletions',
-      overdue: live.length,
-      oldestDueAt:
-        live[0]?.deletionRequestedAt !== undefined
-          ? live[0].deletionRequestedAt + DELETION_GRACE_MS
-          : null,
-      capped: accounts.capped,
-    },
-    {
-      job: 'sweep expired exports',
-      overdue: exports.rows.length,
-      oldestDueAt: exports.rows[0]?.expiresAt ?? null,
-      capped: exports.capped,
-    },
-  ];
-}

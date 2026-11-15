@@ -68,8 +68,10 @@ import { traced } from './lib/readBudget';
 import {
   affords,
   asItem,
+  clearFailure,
   type ItemBudget,
   MiB,
+  mirrorFailure,
   type Position,
   runIsolated,
 } from './lib/recurringWork';
@@ -627,6 +629,7 @@ export async function recordPromptFailure(
     promptRetriedAt: next.retriedAt,
     ...(opts.cutoff !== undefined ? { promptFailedRun: opts.cutoff } : {}),
   });
+  await mirrorFailure(ctx, 'prompts', row._id, next, now);
   return parked ? 'parked' : 'failed';
 }
 
@@ -661,7 +664,10 @@ export const promptSkater = internalMutation({
         if (row?.promptState !== 'pending' || row.userId !== userId) continue;
         // Its prompt is going through: whatever it failed with before is cleared, in this write.
         const cleared = row.promptAttempts !== undefined || row.promptParkedAt !== undefined;
-        if (cleared) await ctx.db.patch(row._id, CLEARED_PROMPT);
+        if (cleared) {
+          await ctx.db.patch(row._id, CLEARED_PROMPT);
+          await clearFailure(ctx, 'prompts', row._id);
+        }
         // Link first: a linked row is `converted` whether or not it was also superseded (the loser
         // loop below leaves a loser its link when the winner has a report of its own).
         if (row.linkedReportId !== undefined) {

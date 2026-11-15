@@ -92,6 +92,7 @@ import {
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx } from '../_generated/server';
 import { refreshBodyLibrary } from './bodyLibrary';
+import { clearFailure } from './recurringWork';
 
 /**
  * How many recent rows the recompute will read per body.
@@ -234,6 +235,7 @@ async function syncSummaryRefresh(
   // parking, are cleared in the same write (D258, `lib/attempts`: progress clears).
   const failing =
     keep !== undefined && (keep.attempts !== undefined || keep.parkedAt !== undefined);
+  if (failing) await clearFailure(ctx, 'cards', waterBodyId);
   if (!keep) {
     await ctx.db.insert('bodySummaryRefreshes', { waterBodyId, refreshAt });
   } else if (keep.refreshAt !== refreshAt || failing) {

@@ -686,6 +686,11 @@ export const IMPORT_RUN_STATUSES = ['running', 'succeeded', 'failed'] as const;
  * - `nwsAlerts` — a state whose alerts could not be written (keyed by state code).
  * - `seasonWatch` — the season watch's daily tick (keyed by season label; all-or-nothing by design,
  *   so it is counted, never parked).
+ * - `notifications`, `prompts`, `cards` — a small **mirror** of the state the queue-shaped jobs keep
+ *   on their own rows (a queue row, a recording, a card's refresh row, keyed by its id or body id),
+ *   so the Machinery read counts small rows and never loads the heavy documents themselves.
+ * - `finalizeDeletions` — an account more than a day past its deletion date (keyed by profile id,
+ *   never parked); `expiredExports` — an expired bundle whose blob would not delete (keyed by id).
  */
 export const FAILING_JOBS = [
   'orphanPhotos',
@@ -695,6 +700,11 @@ export const FAILING_JOBS = [
   'hazardWeather',
   'nwsAlerts',
   'seasonWatch',
+  'notifications',
+  'prompts',
+  'cards',
+  'finalizeDeletions',
+  'expiredExports',
 ] as const;
 export type FailingJob = (typeof FAILING_JOBS)[number];
 
