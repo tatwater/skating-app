@@ -50,6 +50,26 @@ const active = (list: HTMLElement) =>
   document.getElementById(list.getAttribute('aria-activedescendant') ?? '');
 
 describe('the keys', () => {
+  it('puts the cursor on the open person when focus comes back from their page', () => {
+    const detail = document.createElement('section');
+    detail.setAttribute('data-pane', 'detail');
+    const back = document.createElement('button');
+    detail.appendChild(back);
+    document.body.appendChild(detail);
+    try {
+      const { list } = draw({ selectedId: LUC.userId });
+      // The cursor was left on another row before the person opened elsewhere.
+      act(() => list.focus());
+      fireEvent.keyDown(list, { key: 'Home' });
+      expect(active(list)).toHaveTextContent('Rob Tremblay');
+      act(() => back.focus());
+      act(() => list.focus());
+      expect(active(list)).toHaveTextContent('Luc Pelletier');
+    } finally {
+      detail.remove();
+    }
+  });
+
   it('is one tab stop whose cursor starts on the open person, else the first', async () => {
     const { list } = draw({ selectedId: KATE.userId });
     await userEvent.tab();
@@ -222,6 +242,15 @@ describe('how it ends', () => {
 });
 
 describe('paging and scrolling', () => {
+  it('asks for no page while it is out of sight, and picks up again once shown', () => {
+    const onLoadMore = vi.fn();
+    const { rerender, props } = draw({ status: 'more', onLoadMore, paused: true });
+    fireEvent.scroll(screen.getByRole('listbox').parentElement as HTMLElement);
+    expect(onLoadMore).not.toHaveBeenCalled();
+    rerender(<PeopleList {...props} paused={false} />);
+    expect(onLoadMore).toHaveBeenCalled();
+  });
+
   it('asks for the next page at once when what came back doesn’t fill the list', () => {
     const onLoadMore = vi.fn();
     draw({ status: 'more', onLoadMore });

@@ -1,5 +1,6 @@
 import { defaultRangeExtractor, useVirtualizer } from '@tanstack/react-virtual';
 import {
+  type FocusEvent,
   type KeyboardEvent,
   type Ref,
   useEffect,
@@ -81,6 +82,12 @@ export type PeopleListProps = {
   doneWords?: string | null;
   /** What was searched: marked in each row's name and handle. */
   mark?: string;
+  /**
+   * The list is out of sight (a narrow screen gives the page to the person): it keeps its place but
+   * asks for no more pages — a hidden scroller measures nothing, so every page would read as "near
+   * the end" and the whole lane would load.
+   */
+  paused?: boolean;
   /** This list, as it stands — the scroll is remembered under it. */
   memoryKey: string;
   /** / was pressed in the rows. */
@@ -102,6 +109,7 @@ export function PeopleList({
   doneWords = null,
   mark = '',
   memoryKey,
+  paused = false,
   onSearchKey,
   listRef,
   className,
@@ -169,12 +177,12 @@ export function PeopleList({
 
   const maybeLoadMore = () => {
     const el = scroller.current;
-    if (el === null || status !== 'more' || onLoadMore === undefined) return;
+    if (el === null || paused || status !== 'more' || onLoadMore === undefined) return;
     if (el.scrollHeight - el.scrollTop - el.clientHeight < LOAD_AHEAD_PX) onLoadMore();
   };
   // A page shorter than the viewport (or cut short by the server) asks for the next at once.
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-check whenever a page lands.
-  useEffect(maybeLoadMore, [rows.length, status]);
+  useEffect(maybeLoadMore, [rows.length, status, paused]);
 
   const moveTo = (index: number) => {
     const row = rows[index];
@@ -239,18 +247,25 @@ export function PeopleList({
   // the click after it). That row takes the cursor itself, so focus from a press neither moves the
   // cursor nor scrolls: scrolling here would slide another row under the pointer and lose the click.
   const pressing = useRef(false);
-  const onFocus = () => {
+  const onFocus = (event: FocusEvent<HTMLDivElement>) => {
     setFocused(true);
     const pressed = pressing.current;
     pressing.current = false;
     if (pressed || rows.length === 0) return;
+    // Back from the person's page: the cursor goes to that person's row when it is loaded — the row
+    // the page was opened from — whatever the cursor was left on before.
+    const from = event.relatedTarget instanceof Element ? event.relatedTarget : null;
+    const open = rows.findIndex((r) => r.id === selectedId);
+    if (from?.closest('[data-pane="detail"]') != null && open >= 0) {
+      moveTo(open);
+      return;
+    }
     // Back from the keys (Tab, or Esc from the person's page) with the cursor scrolled away: its
     // row comes into view, so the row the keys act on is the row in sight.
     if (cursor >= 0) {
       bringIntoView(cursor);
       return;
     }
-    const open = rows.findIndex((r) => r.id === selectedId);
     moveTo(open >= 0 ? open : 0);
   };
 

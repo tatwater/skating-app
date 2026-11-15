@@ -342,6 +342,21 @@ describe('a narrow screen (the console’s master–detail rule)', () => {
     expect(onCloseDetail).toHaveBeenCalledTimes(1);
   });
 
+  it('asks for no more pages while the person hides the list, and again once it shows', () => {
+    columns.fit = false;
+    const onLoadMore = vi.fn();
+    const list = { status: 'more' as const, rows: [ROB], reasons: [], pending: [] };
+    const { redraw } = draw({
+      selectedId: ROB.userId,
+      detail: <p>Rob’s page</p>,
+      list,
+      onLoadMore,
+    });
+    expect(onLoadMore).not.toHaveBeenCalled();
+    redraw({ selectedId: null, detail: undefined, list, onLoadMore });
+    expect(onLoadMore).toHaveBeenCalled();
+  });
+
   it('with no one open, gives it to the lanes and the list', () => {
     columns.fit = false;
     draw();

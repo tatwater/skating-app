@@ -366,6 +366,7 @@ export function PeopleListView({
           doneWords={endWords(listLane, list.reasons, list.pending, list.rows.length)}
           mark={mark}
           memoryKey={listKey(query)}
+          paused={narrow && personOpen}
           onSearchKey={() => search.current?.focus()}
           listRef={listbox}
         />
