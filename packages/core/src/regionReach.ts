@@ -24,7 +24,7 @@
  * the town on either side — both abut the water. That is the rule's own uncertainty: the stored
  * boundaries are good to about 5–7 m, so a shore that runs along a town or state line within that
  * distance can count for one side, both or neither, depending on a few meters of boundary error
- * (`plans/phases/B01-admin-console.md` §12.9.4 has the measured cases).
+ * (`plans/phases/B01-admin-console.md`, *The region rule (B01-3g)*, has the measured cases).
  *
  * ## Exact along every edge
  *
