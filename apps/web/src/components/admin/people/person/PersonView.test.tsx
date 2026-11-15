@@ -114,7 +114,10 @@ describe('board 8.1 — a suspended skater', () => {
     expect(within(lever('suspension')).getByRole('button', { name: 'Lift' })).toBeInTheDocument();
     expect(lever('hidden')).toHaveTextContent('4 items');
     expect(lever('hidden')).toHaveTextContent('2 reports · 2 comments');
-    expect(within(lever('hidden')).getByText('Not available yet')).toBeInTheDocument();
+    // The board's Review, drawn as the working button; it says it isn't here yet, never a dead click.
+    const review = within(lever('hidden')).getByRole('button', { name: 'Review' });
+    expect(review).toHaveAttribute('aria-disabled', 'true');
+    expect(review).toHaveAttribute('data-unavailable');
     expect(screen.queryByText(/photo/i)).toBeNull();
     expect(screen.queryByText(/Restore all/)).toBeNull();
     const open = slot('open-about');

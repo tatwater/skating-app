@@ -100,7 +100,7 @@ export type LeverRow = {
   buttons: LeverButton[];
   /** Two buttons drawn as one joined group (Extend | Lift). */
   joined?: boolean;
-  /** The row's action slot holds the "Not available yet" mark. */
+  /** The row's action is a tool not built yet: the kit's unavailable button (it says so). */
   unavailable?: boolean;
 };
 

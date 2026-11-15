@@ -66,7 +66,8 @@ export const WORDS = {
   untilLifted: 'Until lifted',
   lapsed: 'Ran its course',
   bannedStatus: 'Banned · account kept for appeal',
-  notAvailable: 'Not available yet',
+  review: 'Review',
+  reviewHiddenWhat: 'Reviewing and restoring their hidden content comes with its own sheet',
   switchOn: 'Switch on',
 
   // ── The dialogs ──

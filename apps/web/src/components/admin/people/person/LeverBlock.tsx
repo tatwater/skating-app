@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react';
 
-import { Badge } from '@/components/kit/badge';
 import { Button } from '@/components/kit/button';
 import { ButtonGroup } from '@/components/kit/button-group';
 import {
@@ -13,6 +12,7 @@ import {
 } from '@/components/kit/dropdown-menu';
 import { Section } from '@/components/kit/section-slug';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/kit/tooltip';
+import { UnavailableButton } from '@/components/kit/unavailable-button';
 
 import { AskDialog } from './AskDialog';
 import { BountyDialog } from './BountyDialog';
@@ -191,9 +191,11 @@ export function LeverBlock({ title, rows, person, acting, now, timeZone }: Lever
             .find((r): r is string => r !== undefined);
           const action =
             row.unavailable === true ? (
-              <Badge variant="outline" tone="dim" data-slot="not-available">
-                {WORDS.notAvailable}
-              </Badge>
+              // The board's Review, drawn as the working button would be; until its sheet is built
+              // it says so (the kit's tooltip and toast), never a dead click.
+              <UnavailableButton size="sm" data-slot="not-available" what={WORDS.reviewHiddenWhat}>
+                {WORDS.review}
+              </UnavailableButton>
             ) : row.buttons.length === 0 ? null : row.joined === true ? (
               <ButtonGroup aria-label={row.label}>{row.buttons.map(button)}</ButtonGroup>
             ) : (
