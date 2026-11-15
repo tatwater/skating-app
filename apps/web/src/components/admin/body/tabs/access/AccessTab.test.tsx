@@ -204,6 +204,28 @@ describe('AccessTab', () => {
     expect(container.querySelector('[data-slot="ruling-strip-loading"]')).not.toBeNull();
   });
 
+  it('says who ruled isn’t recorded when the row that made the ruling names no one', () => {
+    mocks.results.set(historyFn, {
+      entries: [
+        {
+          id: 'ma1',
+          action: 'set_public_access',
+          targetType: 'waterbody',
+          targetId: 'wb1',
+          reason: 'Ruled',
+          createdAt: RULED,
+          actor: null,
+          metadata: { prev: { publicAccess: null } },
+        },
+      ],
+      capped: false,
+    });
+    const { container } = render(<AccessTab bodyId="wb1" />);
+    const strip = container.querySelector('[data-slot="ruling-strip"]') as HTMLElement;
+    expect(strip).not.toBeNull();
+    expect(within(strip).getByText('Who ruled: Not recorded yet')).toBeTruthy();
+  });
+
   it('says who ruled isn’t recorded when the history holds no row that made the ruling', () => {
     // The newest row is a day older than the record's ruling: not the one that made it.
     const older = (capped: boolean) => ({

@@ -1,6 +1,7 @@
 import type { PublicAccessVerdict } from '@skating/core';
 import { PersonLockup } from '@/components/kit/person-lockup';
 import { statusDate } from '../../frame/bodyModel';
+import { NOT_RECORDED } from '../tabStates';
 import { dayCount, daysSince, type Person, verdictWords } from './accessModel';
 
 /**
@@ -53,7 +54,14 @@ export function RulingStrip({
         <span className="text-row leading-(--lead-snug) font-medium text-fg">
           {verdictWords(verdict)}
         </span>
-        {decidedBy !== null && <PersonLockup name={decidedBy.name} />}
+        {decidedBy !== null ? (
+          <PersonLockup name={decidedBy.name} />
+        ) : (
+          // The row that made the ruling names no one: said, never a blank where the name goes.
+          <span data-slot="ruling-by" className="text-assist leading-list text-fg3">
+            Who ruled: {NOT_RECORDED}
+          </span>
+        )}
       </span>
     </div>
   );
