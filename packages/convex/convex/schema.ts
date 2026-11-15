@@ -1305,6 +1305,18 @@ export default defineSchema({
     externalId: v.string(),
   }).index('by_external_id', ['source', 'externalId']),
 
+  /**
+   * **What a contour search covered, and when** (B01-3c): one row per (contour dataset, state) a
+   * coverage run searched — the dataset's name as the Water tab shows it — written by the run that
+   * replaces `bathymetryCoverage` (`importContourCoverage`, its first batch). A body reads the newest
+   * search of each of its states, by index; one no recorded search covers reads *not recorded*.
+   */
+  bathymetrySearches: defineTable({
+    label: v.string(),
+    state: v.string(),
+    searchedAt: v.number(),
+  }).index('by_state_searched', ['state', 'searchedAt']),
+
   // When each imagery season's ingest window opened (A06e §3.3 / D149) — the season watch's verdict
   // (A06i). One row per season, written by `imageryIngest.maybeCheckSeasonOpen`. The opening is never
   // re-decided by a later tick — the gate is a judgment made on the observations available at the

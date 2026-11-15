@@ -5,7 +5,7 @@
 
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
-import { api } from './_generated/api';
+import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { ASKERS_CAP, OTHER_STANDING_ROWS, ROWS_BY_IDS_MAX } from './bodies';
 import { rebuildBodyLibrary } from './lib/bodyLibrary';
@@ -268,5 +268,43 @@ describe('the preview and the frame', () => {
     const extras = await mod.as.query(api.bodyConsole.consoleExtras, { waterBodyId: id });
     expect(extras.complete).toEqual(p?.complete);
     expect(extras.complete).not.toBeNull();
+  });
+});
+
+describe('the bathymetry search record', () => {
+  test('a coverage run records what it searched; a body reads its states’ newest search, else none', async () => {
+    const t = harness();
+    const mod = await person(t, 'moderator');
+    const vt = await body(t, 'Vermont Pond');
+    const me = await body(t, 'Maine Pond', { states: ['ME'] });
+    const extras = (id: Id<'waterBodies'>) =>
+      mod.as.query(api.bodyConsole.consoleExtras, { waterBodyId: id });
+    expect((await extras(vt)).bathymetrySearched).toBeNull();
+    await t.mutation(internal.waterBodies.importContourCoverage, {
+      source: 'osm',
+      externalIds: [],
+      clearFirst: true,
+      searched: [{ label: ' VT ANR lake contours ', states: ['vt', 'NH', 'nope'] }],
+    });
+    expect((await extras(vt)).bathymetrySearched).toEqual({
+      label: 'VT ANR lake contours',
+      at: expect.any(Number),
+    });
+    expect((await extras(me)).bathymetrySearched).toBeNull();
+    // A later batch (no clear) records nothing; a dataset with no state is refused.
+    await t.mutation(internal.waterBodies.importContourCoverage, {
+      source: 'osm',
+      externalIds: [],
+      searched: [{ label: 'Ignored', states: ['ME'] }],
+    });
+    expect((await extras(me)).bathymetrySearched).toBeNull();
+    await expect(
+      t.mutation(internal.waterBodies.importContourCoverage, {
+        source: 'osm',
+        externalIds: [],
+        clearFirst: true,
+        searched: [{ label: 'No states', states: ['x'] }],
+      }),
+    ).rejects.toThrow(/at least one state/);
   });
 });

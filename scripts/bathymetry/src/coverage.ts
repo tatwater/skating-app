@@ -2,6 +2,7 @@
  * Push contour coverage into Convex (A06c-1 / A06c §4.2) — which bodies the tileset actually draws.
  *
  *   pnpm --filter @skating/bathymetry coverage [--prod] [--dry-run] [--allow-empty]
+ *     [--searched=NAME:VT,NH …]   (each contour dataset searched, for the Water tab; B01-3c)
  *
  * Reads the **built** contour features (`.scratch/build/contours.geojsonl`) rather than the join
  * cache, and the distinction is the whole point: the join matched 2,437 source lakes, but only
@@ -59,6 +60,15 @@ async function main(): Promise<void> {
   const dryRun = args.includes('--dry-run');
   const allowEmpty = args.includes('--allow-empty');
   const campaignId = args.find((a) => a.startsWith('--campaign='))?.slice('--campaign='.length);
+  // What this run searched, for the Water tab's *Searched* (B01-3c): `--searched=NAME:VT,NH`, once
+  // per contour dataset the tileset was built from.
+  const searched = args
+    .filter((a) => a.startsWith('--searched='))
+    .map((a) => {
+      const value = a.slice('--searched='.length);
+      const at = value.lastIndexOf(':');
+      return { label: value.slice(0, at), states: value.slice(at + 1).split(',') };
+    });
 
   if (!existsSync(CONTOURS_FILE)) {
     process.stderr.write(
@@ -131,6 +141,7 @@ async function main(): Promise<void> {
           externalIds: batch,
           // Only the first batch clears, which is what makes the whole run a replacement.
           ...(i === 0 ? { clearFirst: true } : {}),
+          ...(i === 0 && searched.length > 0 ? { searched } : {}),
         },
       );
       cleared += parsed.cleared ?? 0;

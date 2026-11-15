@@ -148,9 +148,34 @@ export const consoleExtras = query({
         ownRow === null
           ? null
           : { have: ownRow.completeHave, of: ownRow.completeOf, missing: ownRow.missing },
+      /**
+       * The newest recorded contour search covering one of the body's states — the dataset's name
+       * and when (B01-3c); `null` when no recorded search covers it (*not recorded*).
+       */
+      bathymetrySearched: await bathymetrySearchFor(ctx, body.states ?? []),
     };
   },
 });
+
+/** The states a body's newest contour search is looked up for, at most (a body touches a few). */
+const BATHYMETRY_STATES_READ = 8;
+
+/** The newest recorded contour search of any of `states` — one indexed read each — or `null`. */
+async function bathymetrySearchFor(
+  ctx: QueryCtx,
+  states: readonly string[],
+): Promise<{ label: string; at: number } | null> {
+  let newest: Doc<'bathymetrySearches'> | null = null;
+  for (const state of states.slice(0, BATHYMETRY_STATES_READ)) {
+    const row = await ctx.db
+      .query('bathymetrySearches')
+      .withIndex('by_state_searched', (q) => q.eq('state', state))
+      .order('desc')
+      .first();
+    if (row !== null && (newest === null || row.searchedAt > newest.searchedAt)) newest = row;
+  }
+  return newest === null ? null : { label: newest.label, at: newest.searchedAt };
+}
 
 // ── Bays ─────────────────────────────────────────────────────────────────────────────────────
 

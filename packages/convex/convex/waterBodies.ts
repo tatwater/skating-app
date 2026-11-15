@@ -714,7 +714,8 @@ export const importCanonical = internalMutation({
         // The geometry facts' rule is the outline stamp (every coordinate), not the clip's cheaper
         // check: a reshape at the same vertex count, box and area still moves them (B01-3c).
         const stampMoved =
-          outlineStamp(existing) !== outlineStamp({ polygon: item.polygon as never, bbox: item.bbox });
+          outlineStamp(existing) !==
+          outlineStamp({ polygon: item.polygon as never, bbox: item.bbox });
         if (stampMoved || placePointMoved(existing, item)) {
           // Its touching bodies and places were computed for the old outline — or its places at the
           // old interior point, which the same patch rewrites (`shapeFields`) (B01-3b).
@@ -2046,14 +2047,39 @@ const SHORELINE_CROSS_CHECK_RATIO = 2;
  * — silently, since nothing on the map would look different. `clearFirst` on the opening batch is
  * what makes the whole operation a replacement rather than an accumulation.
  */
+/** Contour datasets one coverage run records at most. */
+export const BATHYMETRY_SEARCHES_PER_RUN = 20;
+
 export const importContourCoverage = internalMutation({
   args: {
     source: literals(CANONICAL_SOURCES),
     externalIds: v.array(v.string()),
     clearFirst: v.optional(v.boolean()),
+    /**
+     * The contour datasets this run searched (B01-3c), recorded on its first batch: each one's name
+     * (at most 120 characters) and the states it covers (two-letter codes, at most ten).
+     */
+    searched: v.optional(v.array(v.object({ label: v.string(), states: v.array(v.string()) }))),
   },
-  handler: async (ctx, { source, externalIds, clearFirst }) => {
+  handler: async (ctx, { source, externalIds, clearFirst, searched }) => {
     let cleared = 0;
+    if (clearFirst && searched !== undefined) {
+      const at = Date.now();
+      for (const s of searched.slice(0, BATHYMETRY_SEARCHES_PER_RUN)) {
+        const label = s.label.trim().slice(0, 120);
+        const states = [
+          ...new Set(
+            s.states.map((c) => c.trim().toUpperCase()).filter((c) => /^[A-Z]{2}$/.test(c)),
+          ),
+        ].slice(0, 10);
+        if (label === '' || states.length === 0) {
+          throw new ConvexError('A searched dataset needs a name and at least one state');
+        }
+        for (const state of states) {
+          await ctx.db.insert('bathymetrySearches', { label, state, searchedAt: at });
+        }
+      }
+    }
     // The Bodies library's bathymetry fact moves only for a body whose coverage changed: one cleared
     // (of any source) and not re-imported here, or one newly covered.
     type CoverageRef = Pick<Doc<'bathymetryCoverage'>, 'source' | 'externalId'>;
