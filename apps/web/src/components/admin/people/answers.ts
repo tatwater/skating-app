@@ -25,3 +25,18 @@ export const floorText = (count: Count): string => countText(count);
  * fifteen minutes): never its end date as if it were still ahead.
  */
 export const ranItsCourse = (moment: string) => `Ran its course ${moment} · lifting on its own`;
+
+// ── When a block may be left out ─────────────────────────────────────────────────────────────
+
+/**
+ * Whether an answer is a complete, genuinely empty one — the only answer a block may be left out
+ * for. A floor (`capped`: a read stopped at its cap) or a figure still being prepared (`pending`)
+ * is never "none", even at zero: the block stays and says which.
+ */
+export function settledEmpty(answer: {
+  count: number;
+  capped: boolean;
+  pending: boolean;
+}): boolean {
+  return answer.count === 0 && !answer.capped && !answer.pending;
+}

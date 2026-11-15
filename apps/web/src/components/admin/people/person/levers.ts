@@ -1,4 +1,5 @@
 import { timeLeftInWords } from '@/lib/ages';
+import { settledEmpty } from '../answers';
 import {
   countText,
   type PersonCan,
@@ -356,11 +357,16 @@ export function accountRows(p: PersonRead, opts: { now: number; self: boolean })
     });
   }
 
-  if (p.hidden.total > 0) {
+  // Left out only when nothing is hidden for certain: a count that stopped at its cap stays.
+  if (!settledEmpty({ count: p.hidden.total, capped: p.hidden.capped, pending: false })) {
     rows.push({
       key: 'hidden',
       label: 'Hidden content',
-      status: `${countText({ count: p.hidden.total, capped: p.hidden.capped })} ${p.hidden.total === 1 && !p.hidden.capped ? 'item' : 'items'}`,
+      // A floor that read none says so in words, never as a zero.
+      status:
+        p.hidden.total === 0
+          ? WORDS.hiddenUncounted
+          : `${countText({ count: p.hidden.total, capped: p.hidden.capped })} ${p.hidden.total === 1 && !p.hidden.capped ? 'item' : 'items'}`,
       tone: 'quiet',
       second: hiddenKinds(p.hidden),
       buttons: [],

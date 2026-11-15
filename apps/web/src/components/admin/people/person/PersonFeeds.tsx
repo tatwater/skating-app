@@ -19,6 +19,7 @@ import { FLAG_WORDS } from '../../bodies/askWords';
 import { isFailed, type Loadable } from '../../reads/consoleReads';
 import { ReadNote } from '../../reads/ReadNote';
 import { historyWhen } from '../../shell/consoleTime';
+import { settledEmpty } from '../answers';
 import { PersonLockup } from '../list/kit-candidates/person-lockup';
 import { rowActor, rowReason, rowSentence, undoneWords } from './feedWords';
 import { useSectionLevel } from './headingLevel';
@@ -113,7 +114,10 @@ export function OpenAbout({
   const { flags, appeals, flagsCapped, appealsCapped } = person.open;
   const pending = person.pending.includes('flagSubjects');
   const count = flags.length + (appeals?.length ?? 0);
-  if (count === 0 && !pending) return null;
+  const capped = flagsCapped || appealsCapped;
+  // Left out only for a complete, genuinely empty answer — never for a floor or a figure still
+  // being prepared, which may hide what is open (the oldest appeals, the flags on their content).
+  if (settledEmpty({ count, capped, pending })) return null;
   return (
     <Section
       level={level}
@@ -131,7 +135,7 @@ export function OpenAbout({
               </span>
             ),
           }
-        : { count: { count, capped: flagsCapped || appealsCapped } })}
+        : count > 0 && { count: { count, capped } })}
       data-slot="open-about"
       className="pt-(--space-5_5)"
     >
@@ -172,6 +176,7 @@ export function OpenAbout({
         </GridList>
       )}
       {pending && <Note data-slot="open-pending">{WORDS.flagsPending}</Note>}
+      {capped && <Note data-slot="open-capped">{WORDS.openCapped}</Note>}
     </Section>
   );
 }

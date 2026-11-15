@@ -122,6 +122,8 @@ export const WORDS = {
   decisionsShown: (n: string) => `${n} shown · more happened before these`,
   showMore: 'Show more',
   flagsPending: 'Flags on their content are still being prepared',
+  hiddenUncounted: 'More than one read covers',
+  openCapped: 'More may be open than one read covers; the oldest may not be listed',
   verdictsPending: 'Decisions on flags about their content are still being prepared',
   accountCreated: 'Account created',
   system: 'System',
