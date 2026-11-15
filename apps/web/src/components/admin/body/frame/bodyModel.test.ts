@@ -51,6 +51,22 @@ describe('the lockup', () => {
     });
   });
 
+  it('writes a modeled depth as an estimate, never as a sounding', () => {
+    const modeled = {
+      ...MASCOMA_RECORD,
+      meanDepthSource: 'globathy' as const,
+      maxDepthSource: 'state_agency' as const,
+    };
+    expect(bodyFigures(modeled)[1]).toEqual({ label: 'Depth avg / max', value: '~9.4 / 24 m' });
+    expect(
+      bodyFigures({ ...modeled, meanDepthM: undefined, maxDepthSource: 'hydrolakes_modeled' })[1],
+    ).toEqual({ label: 'Depth max', value: '~24 m' });
+    // A depth whose source isn't recorded: nothing says it was modeled.
+    expect(
+      bodyFigures({ ...MASCOMA_RECORD, meanDepthSource: undefined, maxDepthSource: undefined })[1],
+    ).toEqual({ label: 'Depth avg / max', value: '9.4 / 24 m' });
+  });
+
   it('writes acres and lengths the boards’ way', () => {
     expect(acresText(4046.86 * 0.4)).toBe('0.4 ac');
     expect(acresText(4_623_575)).toBe('1,143 ac');

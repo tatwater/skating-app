@@ -15,12 +15,14 @@ import {
   CAPPED_HISTORY,
   MASCOMA_ASKS,
   MASCOMA_COMPLETENESS,
+  MASCOMA_HISTORY,
   MASCOMA_HISTORY_ENTRIES,
   MASCOMA_IDENTITY,
+  MASCOMA_RECORD,
   MASCOMA_TOWNS,
   MASCOMA_TRUST,
 } from './bodyFixtures';
-import { attentionTabs } from './bodyModel';
+import { attentionTabs, bodyIdentity } from './bodyModel';
 import { NotBuiltTab } from './NotBuiltTab';
 import { useTabKeys } from './tabKeys';
 
@@ -284,6 +286,17 @@ describe('BodyConsoleView', () => {
     expect(screen.getByText('More is asked of this body than is shown here.')).toBeInTheDocument();
     const slug = screen.getByRole('heading', { name: 'Asked of this body' }).parentElement;
     expect(slug?.textContent).not.toMatch(/3/);
+  });
+
+  it('draws a modeled depth as an estimate in the figures, never as a sounding', () => {
+    const modeled = bodyIdentity(
+      { ...MASCOMA_RECORD, meanDepthSource: 'globathy', maxDepthSource: 'hydrolakes_modeled' },
+      { history: MASCOMA_HISTORY },
+    );
+    render(<Page identity={modeled} />);
+    const figures = document.querySelector('[data-slot="body-figures"]');
+    expect(figures).toHaveTextContent('~9.4 / ~24 m');
+    expect(figures).not.toHaveTextContent(/(^|[^~])9\.4 \//);
   });
 
   it('never draws a capped history as whole', () => {
