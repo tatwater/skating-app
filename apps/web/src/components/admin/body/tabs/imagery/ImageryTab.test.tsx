@@ -125,10 +125,13 @@ describe('ImageryTab', () => {
       waterBodyId: BODY,
       mode: 'on',
     });
-    expect(undo.announce).toHaveBeenCalledWith({
-      title: 'Satellite link set',
-      target: { targetType: 'waterbody', targetId: BODY },
-    });
+    expect(undo.announce).toHaveBeenCalledWith(
+      {
+        title: 'Satellite link set',
+        target: { targetType: 'waterbody', targetId: BODY },
+      },
+      expect.any(Function),
+    );
   });
 
   it('a refused satellite write reads in the server’s words and announces nothing', async () => {

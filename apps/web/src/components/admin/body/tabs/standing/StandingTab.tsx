@@ -119,7 +119,7 @@ function StandingReads({ bodyId: id }: BodyTabProps) {
   const target = { targetType: 'waterbody' as const, targetId: bodyId };
 
   const write = (run: () => Promise<unknown>, title: string) =>
-    sendFor(here, run, () => announce({ title, target }));
+    sendFor(here, run, () => announce({ title, target }, here));
 
   return (
     <StandingTabView

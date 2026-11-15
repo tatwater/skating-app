@@ -191,10 +191,13 @@ describe('StandingTab', () => {
       standing: 'dormant',
       note: 'Dam work',
     });
-    expect(undo.announce).toHaveBeenCalledWith({
-      title: 'Set dormant',
-      target: { targetType: 'waterbody', targetId: BODY },
-    });
+    expect(undo.announce).toHaveBeenCalledWith(
+      {
+        title: 'Set dormant',
+        target: { targetType: 'waterbody', targetId: BODY },
+      },
+      expect.any(Function),
+    );
   });
 
   it('a refusal reads in the server’s words and announces nothing', async () => {
@@ -237,6 +240,7 @@ describe('StandingTab', () => {
     expect(convex.mutations.get('waterBodies:restore')).toHaveBeenCalledWith({ waterBodyId: BODY });
     expect(undo.announce).toHaveBeenLastCalledWith(
       expect.objectContaining({ title: 'Restored to the map' }),
+      expect.any(Function),
     );
   });
 

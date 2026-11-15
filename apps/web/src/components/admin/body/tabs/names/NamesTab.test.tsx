@@ -99,10 +99,13 @@ describe('NamesTab', () => {
     expect(mocks.calls).toEqual([
       ['waterBodies:setWaterBodyName', { waterBodyId: 'wb1', name: 'The Basin' }],
     ]);
-    expect(mocks.announce).toHaveBeenCalledWith({
-      title: 'Displaying “The Basin”',
-      target: { targetType: 'waterbody', targetId: 'wb1' },
-    });
+    expect(mocks.announce).toHaveBeenCalledWith(
+      {
+        title: 'Displaying “The Basin”',
+        target: { targetType: 'waterbody', targetId: 'wb1' },
+      },
+      expect.any(Function),
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Back to the catalogs’ ranking' }));
     expect(mocks.calls[1]).toEqual([
       'waterBodies:setWaterBodyName',
@@ -222,6 +225,7 @@ describe('NamesTab', () => {
     await userEvent.type(field, 'Low Plains Pond{Enter}');
     expect(mocks.announce).toHaveBeenLastCalledWith(
       expect.objectContaining({ title: 'Named “Low Plains Pond”' }),
+      expect.any(Function),
     );
     await userEvent.click(screen.getByRole('button', { name: 'Clear the name' }));
     expect(mocks.calls.at(-1)).toEqual([
@@ -230,6 +234,7 @@ describe('NamesTab', () => {
     ]);
     expect(mocks.announce).toHaveBeenLastCalledWith(
       expect.objectContaining({ title: 'Cleared the name' }),
+      expect.any(Function),
     );
   });
 

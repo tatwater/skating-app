@@ -1,5 +1,6 @@
-import { render } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 import { ConvexError } from 'convex/values';
+import { Suspense, startTransition, use } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { BodyBindingProvider, sendFor, useBodyBound } from './currentBody';
@@ -13,7 +14,12 @@ function Probe({ seen }: { seen: (here: () => boolean) => void }) {
 describe('useBodyBound — one console, one body, one lifetime', () => {
   const holder = () => {
     let here: () => boolean = () => true;
-    return { seen: (h: () => boolean) => void (here = h), here: () => here() };
+    return {
+      seen: (h: () => boolean) => {
+        here = h;
+      },
+      here: () => here(),
+    };
   };
 
   it('holds the binding it mounted under: a missed reset, now under another body, sends nothing', () => {
@@ -58,6 +64,46 @@ describe('useBodyBound — one console, one body, one lifetime', () => {
         <Probe seen={() => {}} />
       </BodyBindingProvider>,
     );
+    expect(h.here()).toBe(false);
+  });
+
+  it('a navigation still rendering (a transition) leaves the body on screen bound until it commits', async () => {
+    const h = holder();
+    // The next body's console holds its transition open until its read lands.
+    let land: () => void = () => {};
+    const read = new Promise<void>((resolve) => {
+      land = resolve;
+    });
+    function Waits() {
+      use(read);
+      return null;
+    }
+    const { rerender } = render(
+      <Suspense fallback={null}>
+        <BodyBindingProvider bodyId="wb1">
+          <Probe seen={h.seen} />
+        </BodyBindingProvider>
+      </Suspense>,
+    );
+    await act(async () => {
+      startTransition(() => {
+        rerender(
+          <Suspense fallback={null}>
+            <BodyBindingProvider bodyId="wb2">
+              <Probe seen={() => {}} />
+              <Waits />
+            </BodyBindingProvider>
+          </Suspense>,
+        );
+      });
+    });
+    // wb1's console is still the one on screen, and still takes presses.
+    expect(h.here()).toBe(true);
+    await act(async () => {
+      land();
+      await read;
+      await new Promise((r) => setTimeout(r, 0));
+    });
     expect(h.here()).toBe(false);
   });
 

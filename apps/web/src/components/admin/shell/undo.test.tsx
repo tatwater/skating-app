@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ConvexError } from 'convex/values';
 import { useState } from 'react';
@@ -26,22 +26,30 @@ beforeAll(() => {
   }
 });
 
-function Harness({ server, receipt }: { server: UndoServer; receipt: Receipt }) {
+function Harness({
+  server,
+  receipt,
+  here,
+}: {
+  server: UndoServer;
+  receipt: Receipt;
+  here?: () => boolean;
+}) {
   const [manager] = useState(createToastManager);
   return (
     <Toaster manager={manager}>
       <UndoProvider server={server} manager={manager}>
-        <Act receipt={receipt} />
+        <Act receipt={receipt} {...(here !== undefined ? { here } : {})} />
       </UndoProvider>
     </Toaster>
   );
 }
 
-function Act({ receipt }: { receipt: Receipt }) {
+function Act({ receipt, here }: { receipt: Receipt; here?: () => boolean }) {
   const { announce, undo } = useUndo();
   return (
     <>
-      <button type="button" onClick={() => void announce(receipt)}>
+      <button type="button" onClick={() => void announce(receipt, here)}>
         Hide it
       </button>
       <button
@@ -98,6 +106,29 @@ describe('the receipt toast', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Hide it' }));
     await toastNamed('Hidden · “Black ice at the beach”');
     expect(screen.queryByRole('button', { name: /^Undo/ })).toBeNull();
+  });
+
+  it('asks the caller’s binding again once the server answers: a receipt whose console went away during the lookup shows nothing', async () => {
+    let answer: (latest: null) => void = () => {};
+    server.latestOwn.mockReturnValue(
+      new Promise<null>((resolve) => {
+        answer = resolve;
+      }),
+    );
+    let still = true;
+    render(<Harness server={server} receipt={receipt} here={() => still} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Hide it' }));
+    expect(server.latestOwn).toHaveBeenCalledWith(TARGET);
+    // The console goes (another body opens) while the lookup is on its way.
+    still = false;
+    await act(async () => answer(null));
+    expect(screen.queryByText('Hidden · “Black ice at the beach”')).toBeNull();
+  });
+
+  it('shows the receipt when the caller’s binding still holds once the server answers', async () => {
+    render(<Harness server={server} receipt={receipt} here={() => true} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Hide it' }));
+    await toastNamed('Hidden · “Black ice at the beach”');
   });
 
   it('still shows the receipt when the undo lookup fails', async () => {

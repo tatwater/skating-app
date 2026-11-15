@@ -171,10 +171,13 @@ function ImageryReads(props: BodyTabProps) {
                 here,
                 () => setMode({ waterBodyId, mode }),
                 () =>
-                  announce({
-                    title: 'Satellite link set',
-                    target: { targetType: 'waterbody', targetId: waterBodyId },
-                  }),
+                  announce(
+                    {
+                      title: 'Satellite link set',
+                      target: { targetType: 'waterbody', targetId: waterBodyId },
+                    },
+                    here,
+                  ),
               ),
           }
         : {})}

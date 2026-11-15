@@ -775,6 +775,19 @@ describe('BodyConsoleRoute', () => {
       expect(mocks.announce).not.toHaveBeenCalled();
     });
 
+    it('the map boost: a commit on A says nothing over an uncached B (the console’s own binding, not a tab’s)', async () => {
+      hold();
+      const { rerender } = render(<Mounted />);
+      const slider = screen.getByRole('slider', { name: 'Map boost' });
+      slider.focus();
+      await userEvent.keyboard('{ArrowRight}');
+      await waitFor(() => expect(mocks.mutate).toHaveBeenCalledTimes(1));
+      toNeighbor('uncached');
+      rerender(<Mounted />);
+      await landAll();
+      expect(mocks.announce).not.toHaveBeenCalled();
+    });
+
     it('a dialog-driven write (Access’s Hide) started on A says nothing over an uncached B', async () => {
       set(api.accessPoints.accessForBody, {
         putIns: [

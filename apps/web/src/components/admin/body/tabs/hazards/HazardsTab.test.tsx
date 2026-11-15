@@ -285,10 +285,13 @@ describe('HazardsTab', () => {
       bodyFeatureId: 'f-spring',
       reason: 'Not a spring',
     });
-    expect(undo.announce).toHaveBeenCalledWith({
-      title: 'Known feature demoted',
-      target: { targetType: 'bodyFeature', targetId: 'f-spring' },
-    });
+    expect(undo.announce).toHaveBeenCalledWith(
+      {
+        title: 'Known feature demoted',
+        target: { targetType: 'bodyFeature', targetId: 'f-spring' },
+      },
+      expect.any(Function),
+    );
   });
 
   it('a refused demotion says why and announces nothing', async () => {

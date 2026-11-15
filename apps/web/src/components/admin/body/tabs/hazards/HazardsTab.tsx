@@ -180,10 +180,13 @@ function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabPr
                 here,
                 () => demote({ bodyFeatureId: featureId as Id<'bodyFeatures'>, reason }),
                 () =>
-                  announce({
-                    title: 'Known feature demoted',
-                    target: { targetType: 'bodyFeature', targetId: featureId },
-                  }),
+                  announce(
+                    {
+                      title: 'Known feature demoted',
+                      target: { targetType: 'bodyFeature', targetId: featureId },
+                    },
+                    here,
+                  ),
               ),
           }
         : {})}

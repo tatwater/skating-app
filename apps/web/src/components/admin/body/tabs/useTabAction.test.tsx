@@ -29,7 +29,7 @@ describe('useTabAction', () => {
   it('announces a landed write, and says a refusal in the server’s words', async () => {
     const { result } = renderHook(() => useTabAction());
     await expect(result.current.act(async () => {}, RECEIPT)).resolves.toBe(true);
-    expect(mocks.announce).toHaveBeenCalledWith(RECEIPT);
+    expect(mocks.announce).toHaveBeenCalledWith(RECEIPT, expect.any(Function));
     await expect(
       result.current.actInDialog(async () => {
         throw new ConvexError('This request has been decided');

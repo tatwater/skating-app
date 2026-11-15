@@ -250,6 +250,14 @@ const GREPTILE: Op[] = [
   { kind: 'answer', ok: true },
 ];
 
+/** A save on one tab, answered after a switch to another tab of the same body. */
+const TAB_SWITCH: Op[] = [
+  { kind: 'open', body: 'A', as: 'cached' },
+  { kind: 'press', n: 2 },
+  { kind: 'tab' },
+  { kind: 'answer', ok: false },
+];
+
 describe('the body binding, over any session (fast-check, model-based)', () => {
   it('Greptile’s sequence: two saves queued on A, then an uncached B — the second is never sent', async () => {
     expect(await session(GREPTILE)).toEqual([]);
@@ -296,12 +304,20 @@ describe('the body binding, over any session (fast-check, model-based)', () => {
     expect(world.surfaced).toBe(0);
   });
 
+  it('a save on one tab, then another tab of the same body: the first tab’s save says nothing over the second', async () => {
+    // The tab host's own binding: without it the console's (still alive) would let it through.
+    // Pinned, not left to chance — the property below finds this only on some seeds.
+    expect(await session(TAB_SWITCH)).toEqual([]);
+    expect(world.sent).toBe(1);
+    expect(world.surfaced).toBe(0);
+  });
+
   it('over any session, nothing is sent or surfaced for a console that is not on screen', async () => {
     await fc.assert(
       fc.asyncProperty(fc.array(op, { maxLength: 24 }), async (ops) => {
         expect(await session(ops)).toEqual([]);
       }),
-      { numRuns: 200, examples: [[GREPTILE]] },
+      { numRuns: 200, examples: [[GREPTILE], [TAB_SWITCH]] },
     );
   });
 });

@@ -148,6 +148,7 @@ describe('PlacesTab', () => {
     ]);
     expect(mocks.announce).toHaveBeenCalledWith(
       expect.objectContaining({ target: { targetType: 'waterBodyRequest', targetId: 'rq1' } }),
+      expect.any(Function),
     );
   });
 
@@ -188,10 +189,13 @@ describe('PlacesTab', () => {
     expect(mocks.calls).toEqual([
       ['landmarks:update', { landmarkId: 'lm-dam', name: 'Mascoma Dam' }],
     ]);
-    expect(mocks.announce).toHaveBeenCalledWith({
-      title: 'Saved · Mascoma Dam',
-      target: { targetType: 'bodyLandmark', targetId: 'lm-dam' },
-    });
+    expect(mocks.announce).toHaveBeenCalledWith(
+      {
+        title: 'Saved · Mascoma Dam',
+        target: { targetType: 'bodyLandmark', targetId: 'lm-dam' },
+      },
+      expect.any(Function),
+    );
   });
 
   it('sends a name once when ⏎ is followed by a blur, and again after a refusal', async () => {

@@ -336,10 +336,13 @@ function useBoostCommit(bodyId: string): (value: number, here: () => boolean) =>
         here,
         () => set({ waterBodyId: bodyId as Id<'waterBodies'>, curatedBoost: rounded }),
         () =>
-          announce({
-            title: `Map boost · ${rounded.toFixed(1)}`,
-            target: { targetType: 'waterbody', targetId: bodyId },
-          }),
+          announce(
+            {
+              title: `Map boost · ${rounded.toFixed(1)}`,
+              target: { targetType: 'waterbody', targetId: bodyId },
+            },
+            here,
+          ),
       ).then(
         () => true,
         // `sendFor` throws only while the binding holds: the refusal is this console's to say.

@@ -33,8 +33,12 @@ const BindingContext = createContext<Binding | null>(null);
 
 export function BodyBindingProvider({ bodyId, children }: { bodyId: string; children: ReactNode }) {
   // A fresh binding for this mount and this body; it comes alive at commit, so a navigation that
-  // is still rendering (in a transition) leaves the body on screen bound until it commits.
-  const binding = useMemo<Binding>(() => ({ body: bodyId, alive: false }), [bodyId]);
+  // is still rendering (in a transition) leaves the body on screen bound until it commits. Held in
+  // state, not a memo: a memo is a cache React may drop (Fast Refresh does), and a dropped one
+  // would mint a new binding and kill the one every mounted consumer holds — its writes then
+  // silently sending nothing. A new body replaces it during render, before the children see it.
+  const [binding, setBinding] = useState<Binding>(() => ({ body: bodyId, alive: false }));
+  if (binding.body !== bodyId) setBinding({ body: bodyId, alive: false });
   useLayoutEffect(() => {
     binding.alive = true;
     return () => {
@@ -57,7 +61,8 @@ export function useBodyBound(): () => boolean {
 /**
  * A write, bound: nothing is sent unless the binding is alive; a refusal is thrown (in the
  * server's words) only while it still is; the receipt is put up only then too, and its failure is
- * never a refusal (the write landed; History keeps the row).
+ * never a refusal (the write landed; History keeps the row). A receipt with a round trip of its own
+ * (`announce` asks the server for the Undo first) takes `here` too, and asks again before it shows.
  */
 export async function sendFor(
   here: () => boolean,

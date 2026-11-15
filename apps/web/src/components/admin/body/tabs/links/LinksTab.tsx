@@ -78,10 +78,13 @@ function LinksReads({ bodyId: id }: BodyTabProps) {
           here,
           () => setLinks({ waterBodyId: bodyId, links }),
           () =>
-            announce({
-              title: 'Links saved',
-              target: { targetType: 'waterbody', targetId: bodyId },
-            }),
+            announce(
+              {
+                title: 'Links saved',
+                target: { targetType: 'waterbody', targetId: bodyId },
+              },
+              here,
+            ),
         )
       }
     />

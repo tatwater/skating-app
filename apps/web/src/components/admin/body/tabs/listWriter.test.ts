@@ -215,6 +215,54 @@ describe('createListWriter', () => {
     expect(w.server.map((x) => x.id)).toEqual(['a', 'b', 'c']);
   });
 
+  describe('the console’s binding (`alive`)', () => {
+    /** A queue bound to `alive`, whose sends wait for the test's answer. */
+    const bound = () => {
+      let alive = true;
+      const sent: (readonly string[])[] = [];
+      const answers: ((ok: boolean) => void)[] = [];
+      const writer = createListWriter<string>(
+        (next) =>
+          new Promise<boolean>((resolve) => {
+            sent.push(next);
+            answers.push(resolve);
+          }),
+        sameList,
+        () => alive,
+      );
+      writer.observe(['a']);
+      return {
+        writer,
+        sent,
+        answer: (ok: boolean) => answers.shift()?.(ok),
+        die: () => {
+          alive = false;
+        },
+      };
+    };
+
+    it('a change queued behind one on its way is never taken up once its console has gone', async () => {
+      const q = bound();
+      const first = q.writer.push((base) => [...base, 'b']);
+      const second = q.writer.push((base) => [...base, 'c']);
+      await settle();
+      expect(q.sent).toEqual([['a', 'b']]);
+      q.die();
+      q.answer(true);
+      // The first landed, but its answer is not taken in; the second is dropped, never sent.
+      await expect(first).resolves.toBe(false);
+      await expect(second).resolves.toBe(false);
+      expect(q.sent).toHaveLength(1);
+    });
+
+    it('a dead queue takes up nothing new', async () => {
+      const q = bound();
+      q.die();
+      await expect(q.writer.push((base) => [...base, 'b'])).resolves.toBe(false);
+      expect(q.sent).toEqual([]);
+    });
+  });
+
   it('over any interleaving: the saved list is every change in press order, none lost or doubled, none built on a stale list', async () => {
     await everyInterleaving(CHANGES);
   });

@@ -98,10 +98,13 @@ describe('LinksTab', () => {
       waterBodyId: BODY,
       links: [MASCOMA.referenceLinks?.[0]],
     });
-    expect(undo.announce).toHaveBeenCalledWith({
-      title: 'Links saved',
-      target: { targetType: 'waterbody', targetId: BODY },
-    });
+    expect(undo.announce).toHaveBeenCalledWith(
+      {
+        title: 'Links saved',
+        target: { targetType: 'waterbody', targetId: BODY },
+      },
+      expect.any(Function),
+    );
   });
 
   it('a refusal reads in the server’s words', async () => {

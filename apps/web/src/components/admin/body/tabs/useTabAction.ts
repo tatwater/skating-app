@@ -26,9 +26,10 @@ export function useTabAction(): {
     async (write: () => Promise<unknown>, receipt: Receipt): Promise<string | null> => {
       // The one bound write (`sendFor`): nothing sent once the console has gone; a refusal comes
       // back (in the server's words) only while it is here; the receipt only then too, and its
-      // failure is never a refusal — never a rejection that leaves a reason dialog waiting.
+      // failure is never a refusal — never a rejection that leaves a reason dialog waiting. The
+      // receipt asks the binding again after its own round trip (`announce`'s `here`).
       try {
-        await sendFor(here, write, () => announce(receipt));
+        await sendFor(here, write, () => announce(receipt, here));
         return null;
       } catch (err) {
         return err instanceof Error ? err.message : String(err);

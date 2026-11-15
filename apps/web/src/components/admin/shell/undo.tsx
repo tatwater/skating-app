@@ -57,7 +57,12 @@ type UndoRequest = {
 };
 
 type UndoApi = {
-  announce: (receipt: Receipt) => Promise<void>;
+  /**
+   * `here`, when given, is the caller's binding (the Body console's `currentBody`): asked again
+   * once the server has answered, so a receipt whose console went away during that round trip
+   * never shows over the next one (History keeps the row).
+   */
+  announce: (receipt: Receipt, here?: () => boolean) => Promise<void>;
   undo: (request: UndoRequest) => void;
 };
 
@@ -143,13 +148,14 @@ export function UndoProvider({
   );
 
   const announce = useCallback(
-    async ({ title, description, target }: Receipt) => {
+    async ({ title, description, target }: Receipt, here?: () => boolean) => {
       let latest: Awaited<ReturnType<UndoServer['latestOwn']>> = null;
       try {
         latest = await server.latestOwn(target);
       } catch {
         // The receipt still shows; only its Undo is left off (History keeps the row).
       }
+      if (here !== undefined && !here()) return;
       const offered = latest !== null && latest.undo.state === 'available' ? latest : null;
       toast(
         {

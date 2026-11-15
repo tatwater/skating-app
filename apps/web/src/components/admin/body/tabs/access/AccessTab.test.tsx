@@ -121,10 +121,13 @@ describe('AccessTab', () => {
     expect(mocks.calls).toEqual([
       ['waterBodies:setPublicAccess', { waterBodyId: 'wb1', verdict: null }],
     ]);
-    expect(mocks.announce).toHaveBeenCalledWith({
-      title: 'Cleared the ruling',
-      target: { targetType: 'waterbody', targetId: 'wb1' },
-    });
+    expect(mocks.announce).toHaveBeenCalledWith(
+      {
+        title: 'Cleared the ruling',
+        target: { targetType: 'waterbody', targetId: 'wb1' },
+      },
+      expect.any(Function),
+    );
   });
 
   it('asks the reason before ruling no public access, and sends it', async () => {
