@@ -24,7 +24,7 @@ import {
   TEAGAN_PAGE,
   yes,
 } from './personFixtures';
-import type { Can, PersonRead } from './personModel';
+import type { Can, PersonCan, PersonRead } from './personModel';
 
 const labels = (rows: readonly LeverRow[], key: string) =>
   (rows.find((r) => r.key === key)?.buttons ?? []).map((b) => b.label);
@@ -223,7 +223,11 @@ describe('Account', () => {
       status: 'Ran its course',
       tone: 'quiet',
     });
-    expect(labels(accountRows(lapsed, { now: NOW, self: false }), 'suspension')).toEqual(['Lift']);
+    // A new window from now: the server allows one on any suspended account.
+    expect(labels(accountRows(lapsed, { now: NOW, self: false }), 'suspension')).toEqual([
+      'Extend',
+      'Lift',
+    ]);
     const open = personOf({
       status: 'suspended',
       statusNote: {
@@ -239,8 +243,11 @@ describe('Account', () => {
     expect(row(accountRows(open, { now: NOW, self: false }), 'suspension')?.status).toBe(
       'Until lifted',
     );
-    // Nothing to extend from: a term from now would shorten it, so Lift stands alone.
-    expect(labels(accountRows(open, { now: NOW, self: false }), 'suspension')).toEqual(['Lift']);
+    // No end to extend from: the action sets one.
+    expect(labels(accountRows(open, { now: NOW, self: false }), 'suspension')).toEqual([
+      'Set an end',
+      'Lift',
+    ]);
   });
 
   it('a suspension whose end passed after the page opened has run its course', () => {
@@ -259,7 +266,59 @@ describe('Account', () => {
     });
     const later = accountRows(p, { now: NOW + 2 * 60_000, self: false });
     expect(row(later, 'suspension')).toMatchObject({ status: 'Ran its course', tone: 'quiet' });
-    expect(labels(later, 'suspension')).toEqual(['Lift']);
+    expect(labels(later, 'suspension')).toEqual(['Extend', 'Lift']);
+  });
+
+  describe('the suspension’s new window follows can, whatever its shape', () => {
+    const note = (suspendedUntil: number | null, lapsed: boolean) => ({
+      action: 'suspend' as const,
+      at: NOW - 86_400_000,
+      by: null,
+      via: null,
+      reason: null,
+      suspendedUntil,
+      lapsed,
+    });
+    const shapes = [
+      ['dated', note(NOW + 86_400_000, false), 'Extend'],
+      ['open-ended', note(null, false), 'Set an end'],
+      ['run its course', note(NOW - 60_000, true), 'Extend'],
+    ] as const;
+    const yes = { ok: true as const, needsReason: true };
+    const no = { ok: false as const, why: 'Refused' };
+
+    it.each(shapes)(
+      '%s: drawn when can.extend allows it, even if suspend would not',
+      (_, n, label) => {
+        const p = personOf({ status: 'suspended', statusNote: n });
+        const allowed = { ...p, can: { ...p.can, suspend: no, extend: yes } };
+        expect(labels(accountRows(allowed, { now: NOW, self: false }), 'suspension')).toContain(
+          label,
+        );
+      },
+    );
+
+    it.each(shapes)(
+      '%s: not drawn when can.extend refuses it, even if suspend would allow',
+      (_, n, label) => {
+        const p = personOf({ status: 'suspended', statusNote: n });
+        const refused = { ...p, can: { ...p.can, suspend: yes, extend: no } };
+        expect(labels(accountRows(refused, { now: NOW, self: false }), 'suspension')).not.toContain(
+          label,
+        );
+      },
+    );
+
+    it.each(shapes)('%s: without can.extend (today’s server), suspend decides', (_, n, label) => {
+      const p = personOf({ status: 'suspended', statusNote: n });
+      for (const suspend of [yes, no]) {
+        const drawn = labels(
+          accountRows({ ...p, can: { ...p.can, suspend } }, { now: NOW, self: false }),
+          'suspension',
+        ).includes(label);
+        expect(drawn).toBe(suspend.ok);
+      }
+    });
   });
 
   it('a deleted account offers nothing the server would refuse', () => {
@@ -337,7 +396,9 @@ const personArb = fc
       role: fc.record({ admin: canArb, moderator: canArb, member: canArb }),
       grant: canArb,
       revoke: canArb,
+      extend: fc.option(canArb, { nil: undefined }),
     }),
+    open: fc.boolean(),
   })
   .map(
     (x): PersonRead =>
@@ -353,7 +414,7 @@ const personArb = fc
                 by: null,
                 via: null,
                 reason: null,
-                suspendedUntil: NOW + 86_400_000,
+                suspendedUntil: x.open ? null : NOW + 86_400_000,
                 lapsed: x.lapsed,
               }
             : null,
@@ -373,6 +434,8 @@ const personArb = fc
           lift: x.can.lift,
           role: x.can.role,
           ledger: x.ledgerShown ? { grant: x.can.grant, revoke: x.can.revoke } : null,
+          // The server follow-up's explicit answer, or none (today's server).
+          ...(x.can.extend !== undefined && { extend: x.can.extend }),
         },
       }),
   );
@@ -391,8 +454,8 @@ function expected(p: PersonRead): string[] {
     if (p.ledger.editor && can.ledger.revoke.ok) ids.push('ledger');
   }
   const suspended = p.status === 'suspended';
-  const lapsed = p.statusNote?.lapsed === true;
-  if (can.suspend.ok && !(suspended && lapsed)) ids.push('suspend');
+  const extend = (can as PersonCan).extend ?? can.suspend;
+  if (suspended ? extend.ok : can.suspend.ok) ids.push('suspend');
   if (can.lift.ok && (suspended || p.status === 'banned')) ids.push('lift');
   if (can.ban.ok && p.status !== 'banned') ids.push('ban');
   return ids.sort();

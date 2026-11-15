@@ -1,5 +1,12 @@
 import { timeLeftInWords } from '@/lib/ages';
-import { countText, type PersonRead, plural, ROLE_WORDS, type Role } from './personModel';
+import {
+  countText,
+  type PersonCan,
+  type PersonRead,
+  plural,
+  ROLE_WORDS,
+  type Role,
+} from './personModel';
 import { WORDS } from './personWords';
 
 /**
@@ -267,10 +274,17 @@ export function accountRows(p: PersonRead, opts: { now: number; self: boolean })
     // The read's `lapsed` is as of the minute the page opened; the end passing since is lapsed too.
     const lapsed = note?.lapsed === true || (until !== null && until <= opts.now);
     const buttons: LeverButton[] = [];
-    // Extending adds to the end already set: an open-ended suspension has none, and a term from now
-    // would shorten it — so it offers Lift alone.
-    if (can.suspend.ok && !lapsed && until !== null) {
-      buttons.push({ id: 'suspend', label: 'Extend', opens: { kind: 'suspend', extend: true } });
+    // A new window on any suspended account, exactly as the server answers it: its own `extend` when
+    // the read carries one, else the rule it writes a suspension by (`suspend`) — never the page's
+    // idea of the suspension's shape. An open-ended one gets an end; one that ran its course, a new
+    // window from now; a dated one, more time on its end (the dialog says which).
+    const extend = (can as PersonCan).extend ?? can.suspend;
+    if (extend.ok) {
+      buttons.push({
+        id: 'suspend',
+        label: until === null ? WORDS.setAnEnd : WORDS.extend,
+        opens: { kind: 'suspend', extend: true },
+      });
     }
     if (can.lift.ok) {
       buttons.push({ id: 'lift', label: 'Lift', opens: { kind: 'now', action: { kind: 'lift' } } });

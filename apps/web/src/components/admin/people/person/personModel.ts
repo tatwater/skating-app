@@ -24,6 +24,12 @@ import { WORDS } from './personWords';
 
 export type PersonRead = NonNullable<FunctionReturnType<typeof api.people.person>>;
 export type Can = PersonRead['can']['suspend'];
+
+/**
+ * `can` as the web reads it from either server: the server follow-up adds an explicit `extend` (a
+ * new window on a suspended account); today's server has none, and the page reads `suspend` for it.
+ */
+export type PersonCan = PersonRead['can'] & { extend?: Can };
 export type HistoryRead = NonNullable<FunctionReturnType<typeof api.people.history>>;
 export type ActionRow = HistoryRead['rows'][number];
 export type DecisionsRead = FunctionReturnType<typeof api.people.decisions>;

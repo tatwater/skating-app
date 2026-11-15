@@ -97,6 +97,14 @@ export const WORDS = {
     'They can’t use their account until it lifts on its own. Everything they posted stays up.',
   replacesBanBody: 'This replaces the ban. They can’t use their account until it lifts on its own.',
   extendBody: 'The time is added to the end already set. It still lifts on its own.',
+  // ── A new window on a suspension with no end, or one that ran its course ──
+  extend: 'Extend',
+  setAnEnd: 'Set an end',
+  setEndTitle: (name: string) => `Set an end to ${name}’s suspension?`,
+  setEndBody: 'It has no end now. Choose when it lifts on its own.',
+  renewTitle: (name: string) => `Suspend ${name} again from now?`,
+  renewBody:
+    'It ran its course. The new time runs from now, and it lifts on its own when that ends.',
   forHowLong: 'For how long',
   extendBy: 'Extend by',
   durationMore: (d: string) => `${d} more`,

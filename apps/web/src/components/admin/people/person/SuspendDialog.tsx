@@ -42,6 +42,21 @@ export type SuspendDialogProps = {
   onConfirm: (args: { until: number; reason: string }) => Promise<string | null>;
 };
 
+/**
+ * What the dialog is doing: a new suspension; more time on a running end (`extend`); an end for an
+ * open-ended one (`setEnd`); or a new window from now for one that ran its course (`renew`). Each
+ * duration's line says when it would lift, so the new end is read before it is chosen.
+ */
+export function shapeOf(
+  extend: boolean,
+  until: number | null,
+  now: number,
+): 'suspend' | 'extend' | 'setEnd' | 'renew' {
+  if (!extend) return 'suspend';
+  if (until === null) return 'setEnd';
+  return until <= now ? 'renew' : 'extend';
+}
+
 /** When a suspension of `ms` would lift: from now, or from the running end when extending. */
 export function liftsAt(ms: number, now: number, extendFrom: number | null): number {
   return Math.max(now, extendFrom ?? now) + ms;
@@ -59,22 +74,32 @@ export function SuspendDialog({
   onConfirm,
 }: SuspendDialogProps) {
   const [choice, setChoice] = useState<string>(SUSPEND_DURATIONS[0].id);
-  const from = extend ? until : null;
+  const shape = shapeOf(extend, until, now);
+  // Time is added to a running end; an open-ended or run-out suspension's new end runs from now.
+  const from = shape === 'extend' ? until : null;
   const ms = SUSPEND_DURATIONS.find((d) => d.id === choice)?.ms ?? DAY;
+  const words = {
+    suspend: {
+      title: WORDS.suspendTitle(name),
+      body: replacesBan ? WORDS.replacesBanBody : WORDS.suspendBody,
+      confirm: 'Suspend',
+    },
+    extend: { title: WORDS.extendTitle(name), body: WORDS.extendBody, confirm: WORDS.extend },
+    setEnd: { title: WORDS.setEndTitle(name), body: WORDS.setEndBody, confirm: WORDS.setAnEnd },
+    renew: { title: WORDS.renewTitle(name), body: WORDS.renewBody, confirm: WORDS.extend },
+  }[shape];
   return (
     <AskDialog
       open={open}
       onOpenChange={onOpenChange}
-      title={extend ? WORDS.extendTitle(name) : WORDS.suspendTitle(name)}
-      description={
-        extend ? WORDS.extendBody : replacesBan ? WORDS.replacesBanBody : WORDS.suspendBody
-      }
-      confirm={extend ? 'Extend' : 'Suspend'}
+      title={words.title}
+      description={words.body}
+      confirm={words.confirm}
       reason
       onConfirm={(reason) => onConfirm({ until: liftsAt(ms, now, from), reason })}
     >
       <RadioGroup
-        aria-label={extend ? WORDS.extendBy : WORDS.forHowLong}
+        aria-label={shape === 'extend' ? WORDS.extendBy : WORDS.forHowLong}
         value={choice}
         onValueChange={(v) => setChoice(String(v))}
         data-slot="suspend-durations"
@@ -83,7 +108,7 @@ export function SuspendDialog({
           <RadioRow
             key={d.id}
             value={d.id}
-            label={extend ? WORDS.durationMore(d.label) : d.label}
+            label={shape === 'extend' ? WORDS.durationMore(d.label) : d.label}
             description={WORDS.liftsAt(momentWords(liftsAt(d.ms, now, from), now, timeZone))}
           />
         ))}

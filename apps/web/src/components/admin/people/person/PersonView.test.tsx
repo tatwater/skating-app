@@ -565,6 +565,46 @@ describe('writes', () => {
     expect(onAct).toHaveBeenCalledWith({ kind: 'suspend', until, reason: 'Again', extend: true });
   });
 
+  it('an open-ended suspension gets an end, from now, saying when it will lift', async () => {
+    const note = ROB.statusNote as NonNullable<typeof ROB.statusNote>;
+    const { onAct } = draw({
+      person: { ...ROB, statusNote: { ...note, suspendedUntil: null, lapsed: false } },
+    });
+    await userEvent.click(within(lever('suspension')).getByRole('button', { name: 'Set an end' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent('It has no end now');
+    await userEvent.click(within(dialog).getByRole('radio', { name: /^3 days/ }));
+    // Each duration says when it would lift, counted from now.
+    expect(dialog).toHaveTextContent(/3 days\s*Lifts/);
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Settled');
+    await userEvent.click(within(dialog).getByRole('button', { name: /Set an end/ }));
+    expect(onAct).toHaveBeenCalledWith({
+      kind: 'suspend',
+      until: NOW + 3 * 86_400_000,
+      reason: 'Settled',
+      extend: true,
+    });
+  });
+
+  it('a suspension that ran its course gets a new window from now, its end said first', async () => {
+    const note = ROB.statusNote as NonNullable<typeof ROB.statusNote>;
+    const { onAct } = draw({
+      person: { ...ROB, statusNote: { ...note, suspendedUntil: NOW - 60_000, lapsed: true } },
+    });
+    await userEvent.click(within(lever('suspension')).getByRole('button', { name: 'Extend' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent('The new time runs from now');
+    await userEvent.click(within(dialog).getByRole('radio', { name: /^1 week/ }));
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Again');
+    await userEvent.click(within(dialog).getByRole('button', { name: /Extend/ }));
+    expect(onAct).toHaveBeenCalledWith({
+      kind: 'suspend',
+      until: NOW + 7 * 86_400_000,
+      reason: 'Again',
+      extend: true,
+    });
+  });
+
   it('suspend starts from now', async () => {
     const { onAct } = draw({ person: SARAH_PAGE, staffStats: SARAH_STATS, staffSeason: SEASON });
     await userEvent.click(within(lever('suspension')).getByRole('button', { name: 'Suspend' }));
