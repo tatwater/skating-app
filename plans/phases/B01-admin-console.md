@@ -2864,6 +2864,53 @@ imagery pass override and its read; `bodyFeatures.updateShape`. Two need a call 
 class claims exist only at import time (the import must start storing them, and old bodies read
 *not recorded* until the next campaign), and what a survey filing records.
 
+### The Bodies writes (B01-3d, the third server follow-up)
+
+Built on B01-3c's reads; opened after #122 merges. Each write takes a capability from the map, writes
+an audit row with its verb (the script's `via` rides through `writeAudit` as on every row), has an
+undo-policy row and a handler whose undo is the forward write of the previous state (refused by the
+same function), refreshes the library row through its audit row, refuses a merged-away body and
+leaves a removed one editable.
+
+- **Aliases** (`waterBodies.setAliases`, `body.identity`): `moderatorAliases`, trimmed, collapsed,
+  de-duplicated case-insensitively against the display name and each other, refused past 20 or past
+  120 characters; folded into the library row's aliases and search text (`aliasesOf`).
+- **Class** (`waterBodies.setClass`, `body.identity`): `moderatorClass` is its own fact; `type`
+  follows it and a re-import keeps it; clearing puts back the catalogs' first claim, else the class
+  the override displaced (read from the override's audit row). **The import now stores each
+  catalog's class claim** (`classClaims`, one per source, at most eight; the ETL carries them through).
+  Every body on dev — all 24,961 — predates it and reads *not recorded* for the per-catalog lines
+  until its next campaign: the merge threw the claims away, so no backfill can recover them.
+  `bodyConsole.identity` serves the claims (or `null`), the moderator's class and aliases.
+- **Depth source** (`waterBodies.chooseDepthSource`, `body.water`): the ladder now keeps every
+  plausible offer as a candidate (`depthCandidates`); a candidate alone is stored but is not a changed
+  depth, so a load's counts and the library refresh are as before (tested). A choice holds its
+  source against better rungs and follows that source's fresh value; `null` hands the measure back
+  to the ladder. Refused: a source with no value, a typed (operator) depth, a mean left deeper than
+  the max. `bodyConsole.depthChoices` lists what `chooseDepthSource` accepts (`depthChoicesOf`).
+  **What it can affect:** the depth every read shows, the shallow classification and the decay model
+  that read a body's depth. A depth is the basin's; choosing one says nothing about ice.
+- **A known feature's shape** (`bodyFeatures.updateShape`, `corpus.preIce`, as creating one is): the
+  hazards' shape gate, at most 2,000 positions, a footprint on its lake's box. It changes the
+  feature's geometry, box and bay stamp — never the body's outline, its geometry facts or a library
+  fact (tested). The replaced shape is the audit row's snapshot.
+- **The imagery pass override** (`imageryOverrides.set` / `.clear`, `machinery.imagery` — the board's
+  *admin's override*): show a pass the gates hid (no reason, who and when recorded) or hide a shown
+  one (a reason, at most 500 characters). `passOverrides` (public, granule and call only) and
+  `forBody` (who, when, reason). `@skating/core`'s `buildBodyTimeline` honors an `overrides` map; with
+  none — the default, and what the apps pass today — the timeline is unchanged (tested). An override
+  is a statement about one pass of a satellite, never about the lake. **Owed:** the apps'
+  `useFreezeUpTimeline` passing `passOverrides` (web and mobile).
+- **Towns keyed on name and state** (the coordinator's ruling on #122): the facts store
+  `townEntries`; every read that offers a town's state reads them, so a border lake's Franklin, VT and
+  Franklin, NH are two. `towns` stays keyed on the name for the pages that read it.
+- **`rowsByIds` on merged ids (the read table):** worst case 12 merged ids, each reading its own body
+  document and up to eight merge hops, each a whole body with its outline — accepted for 12.
+
+**Held — the survey filing** (`fileBathymetrySurvey`): the board shows the field (*A survey the next
+build should load*, *Paste a link or a citation*) but not what appears once one is filed; it waits on
+the founder's call.
+
 ## Ruled out
 
 - **A second app or a separate deployment for admin** — D37 stands; the Convex function is the
