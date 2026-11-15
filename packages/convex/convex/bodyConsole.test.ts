@@ -13,6 +13,7 @@ import { bayViaOf, daysCovered, winterWindow } from './bodyConsole';
 import { markGeoStale } from './lib/bodyGeo';
 import { rebuildBodyLibrary } from './lib/bodyLibrary';
 import { syncAdminAreaCells, syncWaterBodyCells } from './lib/cellIndex';
+import { SAVED_PUT_IN_HIDDEN_READ } from './lib/standing';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -969,6 +970,41 @@ describe('standing.retentionForBody', () => {
     });
     await t.run((ctx) => ctx.db.delete(bare));
     expect(await as.query(api.standing.retentionForBody, { waterBodyId: bare })).toBeNull();
+  });
+
+  test('putInKeeps is the rollover’s answer, though the tab’s wider read counts the body whole', async () => {
+    const t = harness();
+    const { as } = await seedUser(t);
+    const id = await seedBody(t, { name: 'Many Hides' });
+    // One launch, suppressed only by a hide past the rollover's read of hidden coordinates.
+    await t.run(async (ctx) => {
+      await ctx.db.insert('putIns', {
+        waterBodyId: id,
+        coord: { lat: 44.05, lng: -72 },
+        source: 'osm',
+        status: 'visible',
+        createdAt: NOW,
+      });
+      for (let i = 0; i <= SAVED_PUT_IN_HIDDEN_READ; i++) {
+        await ctx.db.insert('putIns', {
+          waterBodyId: id,
+          coord:
+            i === SAVED_PUT_IN_HIDDEN_READ
+              ? { lat: 44.05, lng: -72 }
+              : { lat: 44, lng: -72 + i * 0.005 },
+          source: 'derived',
+          status: 'hidden',
+          createdAt: NOW,
+        });
+      }
+    });
+    // The tab reads every hide: no launch, counted whole. The rollover can't see the last hide, so
+    // it keeps the body — and the tab says so.
+    expect(await as.query(api.standing.retentionForBody, { waterBodyId: id })).toMatchObject({
+      savedPutIns: 0,
+      savedPutInsCapped: false,
+      putInKeeps: true,
+    });
   });
 
   test('saved put-ins by the rollover’s rule: a persisted derived row counts, a hidden coord does not', async () => {

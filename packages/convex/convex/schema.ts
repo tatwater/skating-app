@@ -3243,7 +3243,10 @@ export default defineSchema({
   })
     .index('by_ask_key', ['askKey'])
     .index('by_status_messages', ['status', 'messages'])
-    .index('by_water_body_status', ['waterBodyId', 'status']),
+    .index('by_water_body_status', ['waterBodyId', 'status'])
+    // One lake's names, most discussed first — its open list is the top of this range, never a
+    // capped page sorted after (`openForBody`).
+    .index('by_water_body_status_messages', ['waterBodyId', 'status', 'messages']),
 
   /**
    * What each catalog source read on the complete landmark loads this deployment accepted (D202) —

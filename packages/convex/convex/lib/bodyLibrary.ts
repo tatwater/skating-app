@@ -196,14 +196,15 @@ export async function reportFactsFor(
     .take(REPORT_SCAN + 1);
   const more = read.length > REPORT_SCAN;
   const newest = read.slice(0, REPORT_SCAN);
+  // The first report the scan left unread: the count is a floor only when it is inside the record.
+  const unread = read[REPORT_SCAN];
   const visible = newest.filter((r) => r.moderationStatus === 'visible');
   const reports =
     span === null
       ? 0
       : visible.filter((r) => r.skateEndTime >= span.from && r.skateEndTime < span.to).length;
   const oldest = newest[newest.length - 1];
-  const reportsCapped =
-    span !== null && more && oldest !== undefined && oldest.skateEndTime >= span.from;
+  const reportsCapped = span !== null && unread !== undefined && unread.skateEndTime >= span.from;
   let everReported = visible.length > 0;
   if (!everReported && oldest !== undefined && more) {
     // Every newest report is hidden: an older visible one still counts. Read one bounded window

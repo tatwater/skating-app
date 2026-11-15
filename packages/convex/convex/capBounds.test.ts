@@ -4,6 +4,7 @@
  * asks — and the re-count job for rows stored under the old meaning.
  */
 
+import { currentSeason, seasonRecordSpan } from '@skating/core';
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
 import { describe, expect, test } from 'vitest';
@@ -134,6 +135,41 @@ describe('exactly the cap is whole; one more is capped', () => {
     expect(more.newest).toHaveLength(REPORT_SCAN);
   });
 
+  test('a report past the scan but before the season’s record leaves the count whole', async () => {
+    const t = harness();
+    const { mod, body } = await seed(t);
+    // Mid-winter, so the season's record is open.
+    const winter = Date.UTC(2027, 0, 15, 12);
+    const span = seasonRecordSpan(currentSeason(winter), winter);
+    expect(span).not.toBeNull();
+    const report = (skateEndTime: number) => ({
+      authorId: mod,
+      waterBodyId: body,
+      point: { lat: 44, lng: -72 },
+      skateEndTime,
+      reportTime: skateEndTime,
+      source: 'native' as const,
+      iceTypes: [],
+      surfaceTags: [],
+      photoIds: [],
+      hazardIdsCreated: [],
+      moderationStatus: 'visible' as const,
+      createdAt: winter,
+      updatedAt: winter,
+    });
+    await t.run(async (ctx) => {
+      for (let i = 0; i < REPORT_SCAN; i++) {
+        await ctx.db.insert('reports', report(winter - 3_600_000 - i));
+      }
+      await ctx.db.insert('reports', report((span?.from as number) - 1));
+    });
+    const facts = () => t.run((ctx) => reportFactsFor(ctx, body, winter));
+    expect(await facts()).toMatchObject({ reports: REPORT_SCAN, reportsCapped: false });
+    // One more inside the record, and the scan stops short of it: a floor.
+    await t.run((ctx) => ctx.db.insert('reports', report(winter - 3_600_000 - REPORT_SCAN)));
+    expect(await facts()).toMatchObject({ reports: REPORT_SCAN, reportsCapped: true });
+  });
+
   test('a lake’s open names, and the place-name queue', async () => {
     const t = harness();
     const { body } = await seed(t);
@@ -149,9 +185,13 @@ describe('exactly the cap is whole; one more is capped', () => {
       more: false,
     });
     expect((await as.query(api.corpusPlaceNames.listQueue, {})).capped).toBe(false);
-    await t.run((ctx) => ctx.db.insert('corpusPlaceNames', placeName(body, NAME_QUEUE_CAP)));
+    // The newest name is the most discussed: past the cap, the list is still its most discussed.
+    await t.run((ctx) =>
+      ctx.db.insert('corpusPlaceNames', { ...placeName(body, NAME_QUEUE_CAP), messages: 50 }),
+    );
     const past = await as.query(api.corpusPlaceNames.openForBody, { waterBodyId: body });
     expect({ n: past.names.length, more: past.more }).toEqual({ n: NAME_QUEUE_CAP, more: true });
+    expect(past.names[0]?.name).toBe(`Name ${NAME_QUEUE_CAP}`);
     const queue = await as.query(api.corpusPlaceNames.listQueue, {});
     expect({ n: queue.rows.length, capped: queue.capped }).toEqual({
       n: NAME_QUEUE_CAP,

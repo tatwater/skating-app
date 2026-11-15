@@ -339,8 +339,11 @@ export const retentionForBody = query({
        * suppresses one counted).
        */
       savedPutInsCapped: putIns.capped,
-      /** Whether its put-ins keep it active at the rollover — exact, or `true` when undecidable. */
-      putInKeeps: putIns.keeps,
+      /**
+       * Whether its put-ins keep it active at the rollover — the rollover's own read, not the wider
+       * one above: a body past the rollover's bounds is kept there though this tab counts it whole.
+       */
+      putInKeeps: await hasSavedPutIn(ctx, waterBodyId),
     };
   },
 });

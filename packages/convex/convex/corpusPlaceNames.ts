@@ -243,9 +243,9 @@ export const listQueue = query({
 });
 
 /**
- * Moderator: the open names on one lake — the lake editor's Landmarks card places them. `more` when
- * the lake has more open names than the read takes (the list is then not every name). A merged-away
- * id reads its survivor's.
+ * Moderator: the open names on one lake, most discussed first — the lake editor's Landmarks card
+ * places them. `more` when the lake has more open names than the read takes (the list is then its
+ * most discussed, not every name). A merged-away id reads its survivor's.
  */
 export const openForBody = query({
   args: { waterBodyId: v.id('waterBodies') },
@@ -253,9 +253,13 @@ export const openForBody = query({
     await requireCapability(ctx, 'body.read');
     const body = await resolveSurvivor(ctx, requested);
     if (body === null) return { names: [], more: false };
+    // Most discussed first in the index, so a lake past the cap shows its most discussed names.
     const rows = await ctx.db
       .query('corpusPlaceNames')
-      .withIndex('by_water_body_status', (q) => q.eq('waterBodyId', body._id).eq('status', 'open'))
+      .withIndex('by_water_body_status_messages', (q) =>
+        q.eq('waterBodyId', body._id).eq('status', 'open'),
+      )
+      .order('desc')
       .take(QUEUE_CAP + 1);
     const names = rows
       .slice(0, QUEUE_CAP)
