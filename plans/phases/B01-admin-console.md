@@ -3033,11 +3033,15 @@ that server's (#115); the rail's People mode (G then P, `people.read`) lights fo
 list's in `apps/web/src/components/admin/people/list/peopleWords.ts`, the person page's in
 `…/people/person/personWords.ts`, the three answers in `…/people/answers.ts`.
 
-**Kit.** Candidates stay beside their pages until the Body console's kit PRs land:
-`list/kit-candidates/` (`SearchLane`, the lanes' search; `PersonLockup`, sm / md / xl, the one
-lockup both pages draw) and `person/kit-candidates/` (`LeverRow`). Two kit changes made here, in files
-the open kit PRs don't touch: a lane count's amber or red survives selection (`Lanes`, board 8.1),
-and `ListEnd` draws no tab until its measures are numbers (an unresolved stroke token drew NaN).
+**Kit.** Both pages draw the kit's `PersonLockup`, extended here: a person list's `row` and the
+page `head` sizes, a heading name (`nameAs`), the search mark, a photo, and analytics masking on
+every size (its `sm` and `md` draw as before). The hidden-content row's *Review* is the kit's
+`UnavailableButton` (its sheet isn't built); refused levers keep the lever row's own refusal
+tooltip, the server's no with its reason. Nothing on the person page is an unbuilt field, so the
+kit's `UnavailableField` has no use here. Candidates still beside their pages: `SearchLane`
+(`list/kit-candidates/`) and `LeverRow` (`person/kit-candidates/`). Two other kit changes: a lane
+count's amber or red survives selection (`Lanes`, board 8.1), and `ListEnd` draws no tab until its
+measures are numbers (an unresolved stroke token drew NaN).
 Token differences: the person page's lever key column (112 px) and feed tag column (76 px) have no
 token; the head's name is the 15 px logo step (no name step); lever rows are 32 px where the board
 draws 34; the role menu's item takes two lines.
@@ -3051,7 +3055,7 @@ draws 34; the role menu's item takes two lines.
   line; explicit `can` entries for every lever; a profile-opens flag; flag target labels and appeal
   text; who undid a row.
 - The record sheet (verdicts and withdrawals, above) awaits a design round.
-- The kit promotions (`SearchLane`, `PersonLockup`, `LeverRow`) await the Body console's kit PRs.
+- The kit promotions (`SearchLane`, `LeverRow`) await a kit pass.
 - One `useClockFor` and one `ID_SHAPE` across Bodies and People — each duplicated in the Bodies
   directory, which the open Body console PRs are changing.
 - **The console's one narrow-screen rule** (`shell/columnsFit`): below the width where a mode's
