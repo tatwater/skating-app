@@ -83,6 +83,18 @@ export const ROW_MAX = {
   supportTicket: 5_000 * 4 + SLACK,
   // A People row: names, a handle, an avatar URL, a reason line cut to 280 characters.
   personRow: 4 * 1024,
+  // A body's previous weather grid as its snapshot stores it: at most `MAX_SUGGESTED_SAMPLE_POINTS`
+  // (25) points, each a latitude and a longitude — well inside this, with the row's own fields.
+  pointsSnapshot: 16 * 1024,
+  // A feature's previous shape as its snapshot stores it: at most `MAX_FEATURE_POSITIONS` (500)
+  // positions (an array of two numbers each, about 30 bytes stored), a kind and two numbers.
+  shapeSnapshot: 64 * 1024,
+  // A launch, every field bounded at its writers (B01-3h): a name of at most 200 characters, a catalog
+  // id of 128, a posted note of 160 (each up to four bytes a character), a walk of at most 256 points,
+  // and ids, numbers and literals — 8,852 bytes measured at those bounds in two-byte characters, so
+  // 12 KiB holds four-byte ones. (`putIn` stays at the document limit for the reads whose plans
+  // predate the caps, until the old rows are counted.)
+  launch: 12 * 1024,
   // A landmark's name and spellings, and a known feature's other fields, no writer caps.
   landmark: DOC_MAX,
   bodyFeature: DOC_MAX,
@@ -103,16 +115,18 @@ export interface WaveCost {
 /** One item's reservation in {@link ReadBudget.waves}: each read is charged against it. */
 export interface Share {
   read<D>(kind: RowKind, get: () => Promise<D>): Promise<D>;
+  /** Up to `n` rows of `kind` in one read: `n` worst cases reserved, the difference handed back. */
+  take<D>(kind: RowKind, n: number, read: () => Promise<D[]>): Promise<D[]>;
 }
 
 /** Thrown when a transaction reads past what it planned: a bug in the plan, never a data condition. */
 export class OverBudget extends Error {}
 
 /** What a row read as `kind` is charged: its real size, at most its kind's worst case; 0 if gone. */
-function weighed(kind: RowKind, row: unknown): number {
-  return row === null || row === undefined
-    ? 0
-    : Math.min(getDocumentSize(row as never), ROW_MAX[kind]);
+function weighed(row: unknown): number {
+  // The real size, even past the kind's bound: a row written before its writers' caps (B01-3h) is
+  // charged what it weighs and the read carries on — the bound is the plan, never a reason to throw.
+  return row === null || row === undefined ? 0 : getDocumentSize(row as never);
 }
 
 /**
@@ -234,7 +248,7 @@ export class ReadBudget {
     let charged = 0;
     try {
       const row = await read();
-      charged = weighed(kind, row);
+      charged = weighed(row);
       return row;
     } finally {
       this.left += ROW_MAX[kind] - charged;
@@ -298,10 +312,29 @@ export class ReadBudget {
               let charged = 0;
               try {
                 const row = await get();
-                charged = weighed(kind, row);
+                charged = weighed(row);
                 return row;
               } finally {
                 spent -= ROW_MAX[kind] - charged;
+              }
+            },
+            take: async <D>(kind: RowKind, n: number, read: () => Promise<D[]>): Promise<D[]> => {
+              if (answered) throw new OverBudget('read budget: an item read after its answer');
+              const reserve = n * ROW_MAX[kind];
+              if (spent + reserve > cost.bytes || reads + 1 > cost.reads) {
+                throw new OverBudget(
+                  `read budget: an item read past the ${cost.bytes} it declared`,
+                );
+              }
+              reads++;
+              spent += reserve;
+              let charged = 0;
+              try {
+                const rows = await read();
+                charged = rows.reduce((sum, row) => sum + weighed(row), 0);
+                return rows;
+              } finally {
+                spent -= reserve - charged;
               }
             },
           };

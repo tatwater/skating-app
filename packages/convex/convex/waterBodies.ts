@@ -30,6 +30,7 @@ import {
   type DepthSource,
   distinctNameClaims,
   ELEVATION_SOURCES,
+  externalIdFits,
   haversineMeters,
   type IdMatch,
   isActive,
@@ -44,6 +45,7 @@ import {
   isWetlandClass,
   KNOWN_STATE_CODES,
   type LatLng,
+  MAX_EXTERNAL_ID_CHARS,
   MAX_PLAUSIBLE_DEPTH_M,
   MAX_REFERENCE_LINKS,
   MAX_SUGGESTED_SAMPLE_POINTS,
@@ -51,6 +53,7 @@ import {
   MIN_VISIBLE_ZOOM_FLOOR,
   matchDepthSource,
   type NameClaim,
+  nameTooLong,
   nearestBodyForPoint,
   pathToBody,
   pointInPolygon,
@@ -85,7 +88,7 @@ import {
   query,
 } from './_generated/server';
 import { failedAttempt } from './lib/attempts';
-import { snapshotDoc, writeAudit, writeSnapshot } from './lib/audit';
+import { isUndoing, snapshotDoc, writeAudit, writeSnapshot } from './lib/audit';
 import {
   getCurrentProfile,
   requireCapability,
@@ -616,9 +619,26 @@ export const importCanonical = internalMutation({
     let landmarksRetired = 0;
     let queuedForMerge = 0;
     let conflicts = 0;
+    let tooLong = 0;
     const unresolved: { externalId: string; action: string; reason: string }[] = [];
 
     for (const item of bodies) {
+      // A name or catalog id past its cap (B01-3h) skips the row, counted — never the campaign.
+      const overCap =
+        (!externalIdFits(item.externalId) ? 'its catalog id' : null) ??
+        (nameTooLong(item.name, 'Its name') !== null ? 'its name' : null) ??
+        ((item.nameClaims ?? []).some((c: { value: string }) => nameTooLong(c.value, '') !== null)
+          ? 'a catalog’s name for it'
+          : null);
+      if (overCap !== null) {
+        tooLong++;
+        unresolved.push({
+          externalId: item.externalId.slice(0, MAX_EXTERNAL_ID_CHARS),
+          action: 'skipped',
+          reason: `${overCap} is past its cap`,
+        });
+        continue;
+      }
       // Held rather than inlined: the `conflict` branch needs the same rows back, and re-reading
       // them would double the index reads in the heaviest mutation in the app.
       const matches = await lookupByCatalogIds(ctx, item);
@@ -832,6 +852,8 @@ export const importCanonical = internalMutation({
       queuedForMerge,
       conflicts,
       landmarksRetired,
+      /** Rows skipped for a name or catalog id past its cap (B01-3h). */
+      tooLong,
       unresolved: unresolved.slice(0, 20),
     };
   },
@@ -2691,6 +2713,8 @@ export const create = mutation({
     if (isMinor(profile.dateOfBirth, now)) {
       throw new ConvexError('Users under 18 cannot create water bodies');
     }
+    const tooLong = nameTooLong(args.name, 'A lake’s name');
+    if (tooLong !== null) throw new ConvexError(tooLong);
 
     // Path-only, enforced at the trust boundary (D14/D36, D37 "the server contract is the boundary").
     // There is no freehand drawing in this app and there is no argument by which a client can hand us
@@ -4286,8 +4310,10 @@ export async function setReferenceLinksImpl(
         `A body carries at most ${MAX_REFERENCE_LINKS} reference links — this is an association or two, not a directory.`,
       );
     }
+    // An undo puts back links the row had, even one past a cap added since (B01-3h).
+    const undoing = isUndoing(ctx);
     for (const link of links) {
-      const error = referenceLinkError(link);
+      const error = referenceLinkError(link, { capUrl: !undoing });
       if (error) throw new ConvexError(error);
     }
 
@@ -5087,6 +5113,8 @@ export async function setWaterBodyNameImpl(
       catalog.length === 0 && (!body.name || claims.some((c) => c.source === 'user'));
     if (communityNamed) {
       if (chosen.length === 0) throw new ConvexError('A name is required');
+      const tooLong = isUndoing(ctx) ? null : nameTooLong(chosen, 'A lake’s name');
+      if (tooLong !== null) throw new ConvexError(tooLong);
       const next = composeNameClaims([{ source: 'user', value: chosen }], catalog);
       await ctx.db.patch(waterBodyId, {
         name: chosen,

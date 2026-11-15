@@ -7,7 +7,12 @@
  * re-stamps reports and hazards, a restore re-clips. Nothing here patches a row back by hand.
  */
 
-import { type BodyStanding, type DepthSource, standingOf } from '@skating/core';
+import {
+  type BodyStanding,
+  type DepthSource,
+  normalizeLandmarkNames,
+  standingOf,
+} from '@skating/core';
 import { ConvexError } from 'convex/values';
 import type { Doc, Id } from '../_generated/dataModel';
 import { setOverrideImpl } from '../imageryOverrides';
@@ -19,7 +24,14 @@ import {
   unrestoreLandmarkImpl,
   updateLandmarkImpl,
 } from '../landmarks';
-import { demotePutInImpl, directionRefusal, launchRefusal, promotePutInImpl } from '../putIns';
+import {
+  demotePutInImpl,
+  directionRefusal,
+  hiddenLaunches,
+  launchRefusalOf,
+  promotePutInImpl,
+  SUPPRESSION_ROWS_READ,
+} from '../putIns';
 import { setStandingImpl } from '../standing';
 import {
   type RedrawSnapshot,
@@ -49,8 +61,11 @@ import {
   setWeatherSamplePointsImpl,
 } from '../waterBodies';
 import { type ModerationAction, type ModerationTargetType, readSnapshot } from './audit';
+import { landmarkEditRefusal, liveBaysForNaming, liveLandmarksForBody } from './landmarkRows';
 import { listChangedRefusal } from './listCas';
+import { ROW_MAX } from './readBudget';
 import { UNDO_POLICY } from './undoPolicy';
+import { UNDO_CHECKED_ELSEWHERE } from './undoReads';
 import { meta, PREDATES, type TargetUndo, type UndoCall, type UndoHandler } from './undoTypes';
 
 /** Rows that recorded no `prev` predate undo (D226); everything here needs one. */
@@ -176,15 +191,18 @@ const undoWeatherSamplePoints: UndoHandler = {
   blocked: (row) => (meta(row).prev?.snapshot === true ? null : PREDATES),
   undoTakesAway: () => UNDO_POLICY.set_weather_sample_points.takesAway(),
   // The grid it puts back has to be on the outline as it stands: a redraw or a re-import moves it.
+  refusalCost: () => ({ bytes: ROW_MAX.waterBody + ROW_MAX.pointsSnapshot, reads: 2 }),
   refusal: async (ctx, row, read) => {
     const id = ctx.db.normalizeId('waterBodies', row.targetId);
-    const body = id ? await read('waterBody', id) : null;
+    const body = id ? await read.row('waterBody', id) : null;
     if (body === null) return 'Water body not found';
-    const prev = await readSnapshot<{ weatherSamplePoints: { lat: number; lng: number }[] }>(
-      ctx,
+    const prev = await read.snapshot<{ weatherSamplePoints: { lat: number; lng: number }[] }>(
+      'pointsSnapshot',
       row._id,
     );
     if (prev === null) return PREDATES;
+    // A grid is always one stored document; one split in parts isn't this verb's to check here.
+    if (prev === 'parts') return UNDO_CHECKED_ELSEWHERE;
     return samplePointsRefusal(body, prev.weatherSamplePoints);
   },
   run: async (call) => {
@@ -382,6 +400,14 @@ const undoCreateLandmark: UndoHandler = {
   },
 };
 
+/**
+ * Why a landmark's undo is refused on a clash its write's rule found — what clashed, and that a list
+ * of changes can't see it in advance (B01-3h).
+ */
+export function undoClashRefusal(clash: string): string {
+  return `${clash.replace(/\.$/, '')}, so this undo can’t bring the old name back — a list of changes can’t check that in advance.`;
+}
+
 /** edit_landmark → the name, aliases, kind and point it replaced. */
 const undoEditLandmark: UndoHandler = {
   blocked: (row) => {
@@ -392,16 +418,32 @@ const undoEditLandmark: UndoHandler = {
   },
   undoTakesAway: (row) => UNDO_POLICY.edit_landmark.takesAway(meta(row).prev),
   // A merge's fold and a catalog run change a landmark's spellings with no row on it: the undo
-  // compares the spellings the edit left with the landmark as it stands (B01-3d).
+  // compares the spellings the edit left with the landmark as it stands (B01-3d). Where one landmark
+  // is in view (the toast, its own history, `runUndo`), the edit's own rule runs too — a landmark
+  // already there under the old names, or a bay that answers to one (B01-3h). **A list page checks
+  // the spellings only**: that rule reads the body's whole landmark list and its bays' outlines,
+  // which a page can't afford per row — a deliberate exception, made honest where it bites.
   refusal: async (ctx, row, read) => {
     const id = ctx.db.normalizeId('bodyLandmarks', row.targetId);
-    const current = id ? await read('landmark', id) : null;
+    const current = id ? await read.row('landmark', id) : null;
     if (current === null) return 'That landmark no longer exists';
-    return listChangedRefusal(
+    const spellings = listChangedRefusal(
       current.aliases,
       meta(row).aliases as string[] | undefined,
       'this landmark’s other spellings',
     );
+    if (spellings !== null || read.scope === 'list') return spellings;
+    const prev = meta(row).prev as LandmarkEditPrev;
+    const names = normalizeLandmarkNames(prev.name, prev.aliases);
+    if (names === null) return null;
+    // Uncharged, as the edit reads them (owed: a stored light list of a body's names would bound it).
+    const clash = landmarkEditRefusal(
+      await liveLandmarksForBody(ctx, current.waterBodyId),
+      await liveBaysForNaming(ctx, current.waterBodyId),
+      { kind: prev.kind, point: prev.point, ...names },
+      current._id,
+    );
+    return clash === null ? null : undoClashRefusal(clash);
   },
   run: async ({ ctx, actor, row, reason }) => {
     const prev = meta(row).prev as LandmarkEditPrev;
@@ -518,7 +560,7 @@ const undoDepthSource: UndoHandler = {
   refusal: async (ctx, row, read) => {
     const m = meta(row) as { measure: 'mean' | 'max'; prev: { choice: DepthSource | null } };
     const id = ctx.db.normalizeId('waterBodies', row.targetId);
-    const body = id ? await read('waterBody', id) : null;
+    const body = id ? await read.row('waterBody', id) : null;
     const refused = editRefusal(body);
     if (refused !== null || body === null) return refused;
     const settled = depthChoiceOutcome(body, m.measure, m.prev.choice);
@@ -580,7 +622,10 @@ const undoPutIn: UndoHandler = {
   undoTakesAway: (row) =>
     UNDO_POLICY.set_put_in.takesAway((meta(row) as { direction?: unknown }).direction),
   // A hide is audited on the put-in and an import moves or drops a launch with no row, so neither
-  // overtakes this body's row: the launch is read as it stands, by the write's own checks.
+  // overtakes this body's row: the launch is read as it stands, by the write's own checks. A launch
+  // row is bounded at its writers (`ROW_MAX.launch`, B01-3h), so the body's hidden launches the
+  // suppression rule reads can be reserved: the launch and up to `SUPPRESSION_ROWS_READ` of them.
+  refusalCost: () => ({ bytes: ROW_MAX.launch * (1 + SUPPRESSION_ROWS_READ), reads: 2 }),
   refusal: async (ctx, row, read) => {
     const m = meta(row) as {
       putInId: Id<'putIns'>;
@@ -588,9 +633,13 @@ const undoPutIn: UndoHandler = {
       direction: 'promoted' | 'demoted';
       name?: string;
     };
-    const launch = await read('putIn', m.putInId);
-    const refused = await launchRefusal(ctx, launch);
-    if (refused !== null || launch === null) return refused;
+    const launch = await read.row('launch', m.putInId);
+    if (launch === null) return 'That put-in no longer exists';
+    const hidden = await read.take('launch', SUPPRESSION_ROWS_READ, () =>
+      hiddenLaunches(ctx, launch.waterBodyId).take(SUPPRESSION_ROWS_READ),
+    );
+    const refused = launchRefusalOf(launch, hidden);
+    if (refused !== null) return refused;
     return directionRefusal(launch, m.direction === 'promoted' ? 'demote' : 'promote', {
       coord: m.coord,
       name: m.name ?? null,

@@ -36,6 +36,7 @@ import {
   landmarkAsksAreSamePlace,
   MAX_REQUEST_NAME_LENGTH,
   MAX_REQUEST_NOTE_LENGTH,
+  nameTooLong,
   nearestBodyForPoint,
   parseCatalogResponse,
   REQUEST_KINDS,
@@ -1207,6 +1208,9 @@ async function admitCandidate(
   now: number,
 ): Promise<Id<'waterBodies'>> {
   const c = request.candidate;
+  const tooLong = c ? nameTooLong(c.name, 'The catalog’s name for this water') : null;
+  if (tooLong !== null)
+    throw new ConvexError(`${tooLong} Decline this, or name it from the lake editor.`);
   if (!c) {
     throw new ConvexError(
       request.resolveError

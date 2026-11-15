@@ -23,6 +23,7 @@ import { type ModerationAction, type ModerationTargetType, readSnapshot } from '
 import { grantLedgerEditorImpl, revokeLedgerEditorImpl } from './ledgerEditors';
 import { ROW_MAX } from './readBudget';
 import { UNDO_POLICY } from './undoPolicy';
+import { UNDO_CHECKED_ELSEWHERE } from './undoReads';
 import { meta, PREDATES, type TargetUndo, type UndoCall, type UndoHandler } from './undoTypes';
 
 // ── Roles ─────────────────────────────────────────────────────────────────────────────────────────
@@ -236,15 +237,20 @@ const undoFeatureShape: UndoHandler = {
   // A merge moves the feature to the survivor's box, and a redrawn or re-imported outline can leave
   // the shape it puts back off the lake — neither writes a row on the feature, so the shape is
   // checked against the rows as they stand, by the redraw's own rule.
-  refusalCost: { bytes: ROW_MAX.bodyFeature + ROW_MAX.waterBody, reads: 2 },
+  refusalCost: () => ({
+    bytes: ROW_MAX.bodyFeature + ROW_MAX.waterBody + ROW_MAX.shapeSnapshot,
+    reads: 3,
+  }),
   refusal: async (ctx, row, read) => {
     const id = ctx.db.normalizeId('bodyFeatures', row.targetId);
-    const feature = id ? await read('bodyFeature', id) : null;
-    const body = feature ? await read('waterBody', feature.waterBodyId) : null;
+    const feature = id ? await read.row('bodyFeature', id) : null;
+    const body = feature ? await read.row('waterBody', feature.waterBodyId) : null;
     const unshaped = shapeRefusal(feature, body);
     if (unshaped !== null) return unshaped;
-    const prev = await readSnapshot<FeatureShape>(ctx, row._id);
+    const prev = await read.snapshot<FeatureShape>('shapeSnapshot', row._id);
     if (prev === null) return PREDATES;
+    // A shape is always one stored document; one split in parts isn't this verb's to check here.
+    if (prev === 'parts') return UNDO_CHECKED_ELSEWHERE;
     return shapeRefusal(feature, body, prev);
   },
   run: async ({ ctx, actor, row, reason }) => {

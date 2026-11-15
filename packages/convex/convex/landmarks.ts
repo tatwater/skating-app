@@ -19,6 +19,7 @@
  */
 
 import {
+  externalIdFits,
   LANDMARK_KINDS,
   type LandmarkKind,
   type LandmarkSourceCheck,
@@ -29,6 +30,7 @@ import {
   landmarkSourceReasons,
   landmarkSourcesVouch,
   landmarksAreSamePlace,
+  MAX_LANDMARK_EXTERNAL_IDS,
   MAX_LANDMARKS_PER_BODY,
   nextLandmarkSourceBar,
   normalizeLandmarkNames,
@@ -53,7 +55,9 @@ import {
   identityOf,
   isCatalogsLive,
   LandmarkRowIndex,
+  landmarkEditRefusal,
   landmarksForBody,
+  liveBaysForNaming,
   liveLandmarksForBody,
   placeCorpusName,
   removedLandmarksForBody,
@@ -218,6 +222,8 @@ type ImportCounts = {
   bodyNotListed: number;
   alreadyBay: number;
   invalidName: number;
+  /** Candidates skipped for a catalog id past its cap, or too many ids (B01-3h). */
+  tooLong: number;
   dropped: number;
   /** Rows a complete line would have dropped, held by the per-lake brake (`landmarkDropsHeld`). */
   dropsHeld: number;
@@ -235,6 +241,7 @@ function emptyCounts(): ImportCounts {
     bodyNotListed: 0,
     alreadyBay: 0,
     invalidName: 0,
+    tooLong: 0,
     dropped: 0,
     dropsHeld: 0,
     returned: 0,
@@ -404,6 +411,14 @@ async function importOneBody(
       counts.invalidName++;
       continue;
     }
+    // A catalog id past its cap, or more ids than a landmark keeps, skips the candidate (B01-3h).
+    if (
+      incoming.externalIds.length > MAX_LANDMARK_EXTERNAL_IDS ||
+      !incoming.externalIds.every(externalIdFits)
+    ) {
+      counts.tooLong++;
+      continue;
+    }
     // The row it answers to is kept as it is — and the far Mud Bay the rule leaves alone is no
     // bay's, so it loads like any landmark.
     if (bayNaming({ point: incoming.point, names: [incoming.name, ...incoming.aliases] }, bays)) {
@@ -433,12 +448,15 @@ async function importOneBody(
   // A feature's id accumulates (one that left the catalog still finds its row); a *placement's* —
   // a river mouth's `osm:way/1#in@44.0213,-73.1002` — is this run's alone, or a shore redrawn by a
   // campaign would grow every mouth's ids run after run.
-  const idsOf = (members: readonly Incoming[], also: readonly string[] = []) => [
-    ...new Set([
-      ...also.filter((id) => !id.includes('#')),
-      ...members.flatMap((m) => m.externalIds),
-    ]),
-  ];
+  // At most `MAX_LANDMARK_EXTERNAL_IDS`, the newest kept: an id the catalogs still use outranks one
+  // that left them (B01-3h).
+  const idsOf = (members: readonly Incoming[], also: readonly string[] = []) =>
+    [
+      ...new Set([
+        ...also.filter((id) => !id.includes('#')),
+        ...members.flatMap((m) => m.externalIds),
+      ]),
+    ].slice(-MAX_LANDMARK_EXTERNAL_IDS);
   const spellingsOf = (members: readonly Incoming[]) =>
     members.flatMap((m) => [m.name, ...m.aliases]);
   const corpusOf = (members: readonly Incoming[], floor = 0) =>
@@ -612,7 +630,7 @@ function unchanged(row: Doc<'bodyLandmarks'>, patch: Partial<Doc<'bodyLandmarks'
 // A moderator's hand
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-function cleanNames(name: string, aliases: readonly string[] | undefined) {
+export function cleanNames(name: string, aliases: readonly string[] | undefined) {
   const names = normalizeLandmarkNames(name, aliases ?? []);
   if (!names) throw new ConvexError('A landmark needs a name of 80 characters or fewer');
   return names;
@@ -753,8 +771,14 @@ export async function updateLandmarkImpl(
     const point = args.point ?? row.point;
     const rows = await liveLandmarksForBody(ctx, row.waterBodyId);
     const kind = args.kind ?? row.kind;
-    assertNotDuplicate(rows, { kind, point, ...names }, row._id);
-    await assertNotABayName(ctx, row.waterBodyId, { point, names: [names.name, ...names.aliases] });
+    // One rule with the undo's check where one landmark is in view (`landmarkEditRefusal`).
+    const clash = landmarkEditRefusal(
+      rows,
+      await liveBaysForNaming(ctx, row.waterBodyId),
+      { kind, point, ...names },
+      row._id,
+    );
+    if (clash !== null) throw new ConvexError(clash);
     const now = Date.now();
     const moved = args.point !== undefined;
     await ctx.db.patch(row._id, {

@@ -10,10 +10,24 @@ import type { PersonWrite } from './peopleCan';
 import type { RowKind, WaveCost } from './readBudget';
 
 /**
- * A refusal's read of one row: the document, or `null` when it is gone — charged to the reservation
- * its row was admitted with, and read once a query however many lines ask.
+ * Where an undo's refusal is asked (B01-3h): `one` — a single row in view (the toast, one target's
+ * history), where a refusal may afford the reads a list can't; `list` — a page of rows.
  */
-export type UndoRead = <T extends TableNames>(kind: RowKind, id: Id<T>) => Promise<Doc<T> | null>;
+export type UndoScope = 'one' | 'list';
+
+/**
+ * What a refusal reads through — every read charged to the reservation its row was admitted with
+ * (`ReadBudget.waves`), each row read once a query however many lines ask.
+ */
+export interface UndoRead {
+  readonly scope: UndoScope;
+  /** One row: the document, or `null` when it is gone. */
+  row<T extends TableNames>(kind: RowKind, id: Id<T>): Promise<Doc<T> | null>;
+  /** The action's snapshot when it is one stored document; `null` when none; `'parts'` when split. */
+  snapshot<P>(kind: RowKind, actionId: Id<'moderationActions'>): Promise<P | null | 'parts'>;
+  /** Up to `n` rows of `kind` in one read, `n` worst cases reserved and the difference handed back. */
+  take<D>(kind: RowKind, n: number, read: () => Promise<D[]>): Promise<D[]>;
+}
 
 export interface UndoCall {
   ctx: MutationCtx;
@@ -52,10 +66,10 @@ export interface UndoHandler {
     read: UndoRead,
   ) => Promise<string | null>;
   /**
-   * What `refusal` reads at worst, through `read` — reserved before it runs (B01-3h,
-   * `ReadBudget.waves`). Absent: one row of a document's weight.
+   * What `refusal` reads at worst, through `read`, where it is asked — reserved before it runs
+   * (B01-3h, `ReadBudget.waves`). Absent: one row of a document's weight.
    */
-  refusalCost?: WaveCost;
+  refusalCost?: (scope: UndoScope) => WaveCost;
   run: (call: UndoCall) => Promise<void>;
 }
 
