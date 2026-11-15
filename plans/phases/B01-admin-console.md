@@ -2238,8 +2238,10 @@ Every one-time job a People read rests on is one entry in `PEOPLE_BACKFILLS` (`l
 run order. The operator starts the first and each run starts the next backfill when it ends, whatever
 its outcome; on a database with nothing to backfill each ends at once, ready, so a fresh deployment
 takes the same procedure. All three take the same arguments with the same meaning (`BACKFILL_ARGS`):
-`run` (the run a pass belongs to; left out, the call starts a new run), `cursor` (where a pass
-resumes, opaque) and `alone` (a new run that doesn't start the ones after).
+`run` and `pass` (the run a pass belongs to and its token; left out, the call starts a new run),
+`cursor` (where a pass resumes, opaque) and `alone` (a new run that doesn't start the ones after).
+The check reads the three backfill rows only, so the sweep's frequent writes don't touch a People
+read.
 
 | Job | Started by | Reads that say `pending` until it is ready |
 | --- | --- | --- |
@@ -2256,9 +2258,10 @@ sweep and its daily retry (`lib/peopleRuns`, table `peopleJobRuns`, one row per 
 
 - **A lease.** Starting a job — by the operator, by another backfill's end, by the recovery, by a cron
   tick — mints the next run number and makes it the job's current run, in the same transaction, so
-  every older run is non-current before the new one does anything. Every pass carries its run and
-  takes the lease first; a pass whose run isn't current returns at once: it writes no progress, no
-  failures, no `ready`, and schedules nothing. At most one run of a job can make progress or declare
+  every older run is non-current before the new one does anything. Every pass carries its run and a
+  pass token, and takes the lease first; a pass whose run isn't current, or whose token was already
+  spent (its arguments replayed by hand), returns at once: it writes no progress, no failures, no
+  `ready`, and schedules nothing. Each pass moves the token on, so a run is one chain. At most one run of a job can make progress or declare
   completion, so "the old run finishes later" is harmless by construction — the stalled recovery
   included. For the sweep and the retry it also means two cron ticks never walk the same range at
   once, so no lapse takes two attempts in one run.
@@ -2266,9 +2269,11 @@ sweep and its daily retry (`lib/peopleRuns`, table `peopleJobRuns`, one row per 
   that makes a new run current zeroes it, and the old run can no longer write.
 - **`ready` is a conclusion, and correctable.** It is written only when the current run reaches the
   end of its range: true exactly when that run recorded no failures, false otherwise (a run with
-  failures takes back an earlier conclusion). A later run that finds what the backfill exists to fix —
+  failures takes back an earlier conclusion). A new run given a `cursor` begins part-way and never
+  sees what lies before it, so it can keep an earlier clean conclusion but never reach one (the
+  documented re-run starts from the start). A later run that finds what the backfill exists to fix —
   a profile whose row is missing or stale, a flag without its subject, an undo without its place —
-  clears it on the spot, so reads go back to "not ready" honestly until a run ends clean. That was
+  clears it in that pass, so reads go back to "not ready" honestly until a run ends clean. That was
   chosen over a check that verifies the fact on every read: verifying "every profile has a row" means
   reading every profile, which no read can afford.
 - **What finds a gap after `ready`.** Nothing can open one: every write that creates what a backfill

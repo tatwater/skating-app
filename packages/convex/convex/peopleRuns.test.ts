@@ -289,23 +289,34 @@ async function snapshot(t: T, spec: Spec): Promise<string> {
 /** Run one scheduled pass by hand; a superseded one must change nothing and schedule nothing. */
 async function runPass(t: T, spec: Spec, pass: Pending): Promise<void> {
   await t.run((ctx) => ctx.scheduler.cancel(pass.id));
-  const current = (await runRow(t, spec.job))?.run;
-  if (pass.run !== current) {
+  await runArgs(t, spec, pass.args);
+}
+
+/**
+ * Run a pass's arguments: a pass of a run that isn't current — or whose token was already used, as
+ * when its arguments are replayed by hand — must change nothing and schedule nothing.
+ */
+// biome-ignore lint/suspicious/noExplicitAny: the job's own arguments, passed through
+async function runArgs(t: T, spec: Spec, args: any): Promise<void> {
+  const row = await runRow(t, spec.job);
+  const holds = row?.running === true && row.run === args.run && row.pass === args.pass;
+  if (!holds) {
     const before = await snapshot(t, spec);
     const scheduledBefore = (await pendingPasses(t, spec)).length;
-    await t.mutation(spec.ref, pass.args);
-    expect(await snapshot(t, spec), 'a superseded pass changed nothing').toBe(before);
+    await t.mutation(spec.ref, args);
+    expect(await snapshot(t, spec), 'a stale pass changed nothing').toBe(before);
     expect((await pendingPasses(t, spec)).length, 'and scheduled nothing').toBe(scheduledBefore);
     return;
   }
-  await t.mutation(spec.ref, pass.args);
+  await t.mutation(spec.ref, args);
 }
 
 type Op =
   | { kind: 'step'; which: 'A' | 'B' }
   | { kind: 'restart' }
   | { kind: 'add' }
-  | { kind: 'fail' };
+  | { kind: 'fail' }
+  | { kind: 'replay' };
 
 const opArb: fc.Arbitrary<Op> = fc.oneof(
   {
@@ -315,6 +326,7 @@ const opArb: fc.Arbitrary<Op> = fc.oneof(
   { weight: 1, arbitrary: fc.constant<Op>({ kind: 'restart' }) },
   { weight: 1, arbitrary: fc.constant<Op>({ kind: 'add' }) },
   { weight: 1, arbitrary: fc.constant<Op>({ kind: 'fail' }) },
+  { weight: 1, arbitrary: fc.constant<Op>({ kind: 'replay' }) },
 );
 
 /** Drive the job through `ops` from `seeded` items; returns the final state for the assertions. */
@@ -330,6 +342,8 @@ async function drive(spec: Spec, seeded: number, ops: Op[]) {
   let runB: number | null = null;
   let beganWith = new Set(await remainingNow());
   let added = 0;
+  // biome-ignore lint/suspicious/noExplicitAny: the passes' own arguments
+  const ran: any[] = [];
   for (const op of ops) {
     if (op.kind === 'fail' && spec.failOnce) spec.failOnce();
     if (op.kind === 'add') {
@@ -347,8 +361,14 @@ async function drive(spec: Spec, seeded: number, ops: Op[]) {
     if (op.kind === 'step') {
       const want = op.which === 'A' ? runA : runB;
       const pass = (await pendingPasses(t, spec)).find((p) => p.run === want);
-      if (pass) await runPass(t, spec, pass);
+      if (pass) {
+        await runPass(t, spec, pass);
+        ran.push(pass.args);
+      }
     }
+    // A pass's arguments run again by hand: its token is spent, so it does nothing.
+    const last = ran[ran.length - 1];
+    if (op.kind === 'replay' && last !== undefined) await runArgs(t, spec, last);
   }
   // Every pass left runs, in any order: the job must terminate.
   for (let i = 0; ; i++) {
@@ -414,5 +434,66 @@ describe('the Greptile sequence (rows): a delayed old run can no longer conclude
       running: false,
       failed: 0,
     });
+  });
+});
+
+describe('a new run begun mid-range (rows): it never saw the start, so it cannot conclude ready', () => {
+  test('A fails the first person; B starts at A’s cursor, ends clean, and the backfill stays not ready', async () => {
+    const spec = SPECS[0] as Spec;
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 3; i++) await spec.seed(ctx, i);
+    });
+    failRefresh();
+    await t.mutation(spec.ref, { alone: true });
+    const a = (await runRow(t, 'rows')) as Doc<'peopleJobRuns'>;
+    expect(a).toMatchObject({ run: 1, failed: 1 });
+    // A new run (no `run`) from A's recorded cursor: everything before it is behind B.
+    await t.mutation(spec.ref, { alone: true, cursor: a.cursor });
+    for (;;) {
+      const pass = (await pendingPasses(t, spec))[0];
+      if (!pass) break;
+      await runPass(t, spec, pass);
+    }
+    expect(await t.run((ctx) => spec.remaining(ctx))).toHaveLength(1);
+    expect(await runRow(t, 'rows')).toMatchObject({
+      run: 2,
+      running: false,
+      failed: 0,
+      ready: false,
+    });
+    // The documented re-run, from the start, is what concludes.
+    await t.mutation(spec.ref, { alone: true });
+    for (;;) {
+      const pass = (await pendingPasses(t, spec))[0];
+      if (!pass) break;
+      await runPass(t, spec, pass);
+    }
+    expect(await t.run((ctx) => spec.remaining(ctx))).toEqual([]);
+    expect(await runRow(t, 'rows')).toMatchObject({ run: 3, ready: true });
+    // Begun part-way with nothing to fix, it keeps that conclusion; meeting a gap, it gives it up.
+    const drainAll = async () => {
+      for (;;) {
+        const pass = (await pendingPasses(t, spec))[0];
+        if (!pass) break;
+        await runPass(t, spec, pass);
+      }
+    };
+    const profiles = await t.run((ctx) => ctx.db.query('profiles').collect());
+    const cursor = String(profiles[0]?._creationTime);
+    await t.mutation(spec.ref, { alone: true, cursor });
+    await drainAll();
+    expect(await runRow(t, 'rows')).toMatchObject({ run: 4, ready: true });
+    await t.run(async (ctx) => {
+      const row = await ctx.db
+        .query('peopleRows')
+        .withIndex('by_user', (q) => q.eq('userId', profiles[2]?._id as Id<'profiles'>))
+        .first();
+      if (row) await ctx.db.delete(row._id);
+    });
+    await t.mutation(spec.ref, { alone: true, cursor });
+    await drainAll();
+    expect(await t.run((ctx) => spec.remaining(ctx))).toEqual([]);
+    expect(await runRow(t, 'rows')).toMatchObject({ run: 5, failed: 0, ready: false });
   });
 });

@@ -219,6 +219,7 @@ export const sweepLapsedSuspensions = internalMutation({
     cutoff: v.optional(v.number()),
     after: v.optional(position),
     run: v.optional(v.number()),
+    pass: v.optional(v.number()),
   },
   handler: (ctx, args) =>
     traced('peopleJobs.sweepLapsedSuspensions', args, async () => {
@@ -272,10 +273,13 @@ export const sweepLapsedSuspensions = internalMutation({
         throw new Error('peopleJobs.sweepLapsedSuspensions: a pass made no progress');
       }
       if (more) {
-        await savePass(ctx, lease, { cursor: positionKey(after), failed: lease.failed + failed });
+        const next = await savePass(ctx, lease, {
+          cursor: positionKey(after),
+          failed: lease.failed + failed,
+        });
         await ctx.scheduler.runAfter(0, internal.peopleJobs.sweepLapsedSuspensions, {
           cutoff,
-          run: lease.run,
+          ...next,
           ...(after !== undefined ? { after } : {}),
         });
       } else await endRun(ctx, lease, lease.failed + failed);
@@ -333,6 +337,7 @@ export const retryLapsedDaily = internalMutation({
     runStart: v.optional(v.number()),
     after: v.optional(position),
     run: v.optional(v.number()),
+    pass: v.optional(v.number()),
   },
   handler: (ctx, args) =>
     traced('peopleJobs.retryLapsedDaily', args, async () => {
@@ -377,10 +382,13 @@ export const retryLapsedDaily = internalMutation({
         throw new Error('peopleJobs.retryLapsedDaily: a pass made no progress');
       }
       if (more) {
-        await savePass(ctx, lease, { cursor: positionKey(after), failed: lease.failed + failed });
+        const next = await savePass(ctx, lease, {
+          cursor: positionKey(after),
+          failed: lease.failed + failed,
+        });
         await ctx.scheduler.runAfter(0, internal.peopleJobs.retryLapsedDaily, {
           runStart,
-          run: lease.run,
+          ...next,
           ...(after !== undefined ? { after } : {}),
         });
       } else await endRun(ctx, lease, lease.failed + failed);
@@ -503,23 +511,35 @@ const BACKFILL_JOB = {
   undoChains: { self: internal.peopleJobs.backfillUndoChains, next: null },
 } as const;
 
-/** Record the pass and schedule the run's next one, carrying its run. */
+/**
+ * Record the pass and schedule the run's next one, carrying its run. `gap`: the pass fixed something
+ * the backfill exists to fix, which takes back an earlier `ready` — once a pass, not once an item.
+ */
 async function nextPass(
   ctx: MutationCtx,
   lease: Lease,
   cursor: string | null,
   failed: number,
+  gap: boolean,
 ): Promise<void> {
-  await savePass(ctx, lease, { cursor, failed });
+  if (gap) await foundGap(ctx, lease);
+  const next = await savePass(ctx, lease, { cursor, failed });
   const job = BACKFILL_JOB[lease.job as keyof typeof BACKFILL_JOB].self;
-  await ctx.scheduler.runAfter(0, job, { run: lease.run, cursor });
+  await ctx.scheduler.runAfter(0, job, { ...next, cursor });
 }
 
 /**
  * The run reached the end of its range: it concludes its backfill's readiness, and — unless it was an
- * `alone` run — starts the next backfill's new run, whatever this one's outcome.
+ * `alone` run — starts the next backfill's new run, whatever this one's outcome. A gap its last pass
+ * fixed is recorded first, so a run begun part-way can't keep a conclusion it just disproved.
  */
-async function finishBackfill(ctx: MutationCtx, lease: Lease, failed: number): Promise<void> {
+async function finishBackfill(
+  ctx: MutationCtx,
+  lease: Lease,
+  failed: number,
+  gap: boolean,
+): Promise<void> {
+  if (gap) await foundGap(ctx, lease);
   await endRun(ctx, lease, failed);
   if (failed > 0)
     console.error(`peopleJobs: ${lease.job} run ${lease.run}: ${failed} failed; not ready`);
@@ -541,8 +561,9 @@ function deletionOverwritten(profile: Doc<'profiles'>): boolean {
  *
  * Backfill: every profile's row, by creation time, a budget's worth a pass (each profile charged at
  * the document limit, its refresh nested), chained to the end. A refresh that throws is logged and
- * the walk goes on; the rows are marked ready — the stored counts exact — only by a run with no
- * failures, so re-run from the logged position (or from the start: it is idempotent) after a fix.
+ * the walk goes on; the rows are marked ready — the stored counts exact — only by a run from the start
+ * with no failures, so re-run from the start (it is idempotent) after a fix: a new run begun at a
+ * logged position walks the rest, but can't vouch for what lies before it.
  * It also reports any tombstone whose status a discipline write overwrote before that was refused
  * (`deletedAt` set, status not `deleted`), for `restoreTombstoneStatus`.
  */
@@ -567,6 +588,7 @@ export const backfillRows = internalMutation({
       let last: Doc<'profiles'> | undefined;
       // A failure charges its whole allowance, which ends this pass; the next goes on after `last`.
       let stopped = false;
+      let gap = false;
       for (const profile of profiles) {
         if (!reads.affords(NESTED_NEED)) {
           stopped = true;
@@ -585,7 +607,7 @@ export const backfillRows = internalMutation({
             { transactionLimits: { bytesRead: allowance } },
           );
           reads.spend(PERSON_WORK);
-          if (changed) await foundGap(ctx, lease);
+          if (changed) gap = true;
         } catch (err) {
           reads.spend(allowance);
           failed++;
@@ -594,10 +616,10 @@ export const backfillRows = internalMutation({
         last = profile;
       }
       if (last !== undefined && (stopped || profiles.length === n)) {
-        await nextPass(ctx, lease, String(last._creationTime), failed);
+        await nextPass(ctx, lease, String(last._creationTime), failed, gap);
         return { done: false };
       }
-      await finishBackfill(ctx, lease, failed);
+      await finishBackfill(ctx, lease, failed, gap);
       return { done: true, failed };
     }),
 });
@@ -652,6 +674,7 @@ export const backfillFlagSubjects = internalMutation({
           .withIndex('by_creation_time', (q) => q.gt('_creationTime', after))
           .take(k),
       );
+      let gap = false;
       for (const flag of flags) {
         if (flag.subjectUserId !== undefined) continue;
         try {
@@ -659,7 +682,7 @@ export const backfillFlagSubjects = internalMutation({
           const subject = await flagSubjectOf(ctx, flag.targetType, flag.targetId);
           reads.touch('contentFlag');
           await ctx.db.patch(flag._id, { subjectUserId: subject });
-          await foundGap(ctx, lease);
+          gap = true;
         } catch (err) {
           failed++;
           console.error(
@@ -669,10 +692,10 @@ export const backfillFlagSubjects = internalMutation({
       }
       const last = flags[flags.length - 1];
       if (last !== undefined && flags.length === n) {
-        await nextPass(ctx, lease, String(last._creationTime), failed);
+        await nextPass(ctx, lease, String(last._creationTime), failed, gap);
         return { done: false };
       }
-      await finishBackfill(ctx, lease, failed);
+      await finishBackfill(ctx, lease, failed, gap);
       return { done: true, failed };
     }),
 });
@@ -733,7 +756,6 @@ export const backfillUndoChains = internalMutation({
             await ctx.db.patch(rootId, { undoTop: depth, undoTopActorId: row.actorId });
           }
           await ctx.db.patch(row._id, { undoRoot: rootId, undoDepth: depth });
-          await foundGap(ctx, lease);
           placed++;
         } catch (err) {
           failed++;
@@ -746,10 +768,10 @@ export const backfillUndoChains = internalMutation({
       }
       if (stoppedAt !== null || !page.isDone) {
         const cursor = stoppedAt !== null ? (args.cursor ?? null) : page.continueCursor;
-        await nextPass(ctx, lease, cursor, failed);
+        await nextPass(ctx, lease, cursor, failed, placed > 0);
         return { done: false };
       }
-      await finishBackfill(ctx, lease, failed);
+      await finishBackfill(ctx, lease, failed, placed > 0);
       return { done: true, failed };
     }),
 });

@@ -14,9 +14,11 @@
  *   the start that makes a new run current — never under a run that can still write.
  * - **`ready` is a conclusion, and correctable.** A backfill's `ready` is written only when its current
  *   run reaches the end of its range: true exactly when that run recorded no failures, false
- *   otherwise. A later run that finds what the backfill exists to fix — a profile without its row (or
- *   a stale one), a flag without its subject, an undo without its place — clears it on the spot
- *   ({@link foundGap}), so reads go back to "not ready" honestly until a run ends clean. Between runs,
+ *   otherwise. A run begun part-way (a new run given a `cursor`) never saw the start of the range, so
+ *   it can only keep an earlier clean conclusion, never reach one. A later run that finds what the
+ *   backfill exists to fix — a profile without its row (or a stale one), a flag without its subject,
+ *   an undo without its place — clears it in that pass ({@link foundGap}), so reads go back to "not
+ *   ready" honestly until a run ends clean. Between runs,
  *   nothing can leave a gap: every write that creates what a backfill fixes does the backfill's work in
  *   its own transaction (the one profile insert refreshes its row, both flag writers stamp the subject,
  *   the one audit writer places the chain), which `packages/guards` holds.
@@ -74,18 +76,23 @@ export const PASS_SIZE: Record<PeopleJob, number> = {
 
 /**
  * Every backfill's arguments — one shape, one meaning, so one recovery sentence is true of all three:
- * - `run` — the run a pass belongs to. Left out, the call **starts a new run**, which supersedes any
- *   older one (its delayed passes then do nothing); a backfill passes it to its own next pass.
- * - `cursor` — where the pass resumes, opaque; a new run starts there if given, else at the start.
+ * - `run` and `pass` — the run a pass belongs to and its pass token. Left out, the call **starts a new
+ *   run**, which supersedes any older one (its delayed passes then do nothing); a backfill passes both
+ *   to its own next pass, and only the pass holding the current token may act.
+ * - `cursor` — where the pass resumes, opaque; a new run starts there if given, else at the start. A
+ *   new run begun at a `cursor` can't conclude `ready` (what lies before it is not its own to vouch
+ *   for); only a run from the start can.
  * - `alone` — a new run that doesn't start the backfills after it when it ends (a re-run after a fix).
  */
 export const BACKFILL_ARGS = {
   run: v.optional(v.number()),
+  pass: v.optional(v.number()),
   cursor: v.optional(v.union(v.string(), v.null())),
   alone: v.optional(v.boolean()),
 };
 export interface BackfillArgs {
   run?: number;
+  pass?: number;
   cursor?: string | null;
   alone?: boolean;
 }
@@ -110,10 +117,11 @@ export const BACKFILL_STALL_MS = 10 * 60_000;
 
 // ── The lease ──────────────────────────────────────────────────────────────────────────────────
 
-/** A pass's hold on its job: the current run, its failures so far, and whether it chains. */
+/** A pass's hold on its job: the current run and pass token, its failures so far, whether it chains. */
 export interface Lease {
   job: PeopleJob;
   run: number;
+  pass: number;
   failed: number;
   chains: boolean;
 }
@@ -127,18 +135,19 @@ async function runRow(ctx: QueryCtx, job: PeopleJob): Promise<Doc<'peopleJobRuns
 
 /**
  * Take the lease for a pass. With no `run`, start a new run: mint the next run number, make it current
- * (every older run is non-current from this transaction on), failures zero. With `run`, continue it —
- * or `null` when it is no longer the current run (or has ended), and the pass must do nothing at all.
+ * (every older run is non-current from this transaction on), failures zero. With `run` and `pass`,
+ * continue it — or `null` when it is no longer the current run, has ended, or this pass's token was
+ * already used (a replay), and the pass must do nothing at all.
  */
 export async function takeLease(
   ctx: MutationCtx,
   job: PeopleJob,
-  args: { run?: number; alone?: boolean },
+  args: { run?: number; pass?: number; alone?: boolean; cursor?: string | null },
 ): Promise<Lease | null> {
   const row = await runRow(ctx, job);
   if (args.run !== undefined) {
-    if (!row || row.run !== args.run || !row.running) return null;
-    return { job, run: row.run, failed: row.failed, chains: row.chains };
+    if (!row || row.run !== args.run || !row.running || row.pass !== args.pass) return null;
+    return { job, run: row.run, pass: row.pass, failed: row.failed, chains: row.chains };
   }
   const fields = {
     run: (row?.run ?? 0) + 1,
@@ -146,39 +155,49 @@ export async function takeLease(
     cursor: null,
     failed: 0,
     chains: args.alone !== true,
+    partial: typeof args.cursor === 'string',
+    pass: 0,
     updatedAt: Date.now(),
   };
   if (row) await ctx.db.patch(row._id, fields);
   else await ctx.db.insert('peopleJobRuns', { job, ready: false, ...fields });
-  return { job, run: fields.run, failed: 0, chains: fields.chains };
+  return { job, run: fields.run, pass: 0, failed: 0, chains: fields.chains };
 }
 
-/** Record a pass of the lease's run (taken in this transaction): where the next resumes, failures so far. */
+/**
+ * Record a pass of the lease's run (taken in this transaction) — where the next resumes, failures so
+ * far — and move the pass token on: the returned `{ run, pass }` is what the next pass must carry.
+ */
 export async function savePass(
   ctx: MutationCtx,
   lease: Lease,
   state: { cursor: string | null; failed: number },
-): Promise<void> {
+): Promise<{ run: number; pass: number }> {
   const row = await runRow(ctx, lease.job);
-  if (row?.run !== lease.run)
+  if (row?.run !== lease.run || row.pass !== lease.pass)
     throw new Error(`peopleRuns: ${lease.job} run ${lease.run} lost its lease`);
-  await ctx.db.patch(row._id, { ...state, updatedAt: Date.now() });
+  const pass = row.pass + 1;
+  await ctx.db.patch(row._id, { ...state, pass, updatedAt: Date.now() });
+  return { run: lease.run, pass };
 }
 
 /**
  * End the lease's run at the end of its range. A backfill concludes: `ready` exactly when this run
- * recorded no failures — set or cleared, so a run with failures takes back an earlier conclusion.
+ * recorded no failures — set or cleared, so a run with failures takes back an earlier conclusion. A
+ * run begun part-way never saw the start of the range: clean, it keeps an earlier conclusion (one no
+ * gap it met has cleared), and can't reach one of its own.
  */
 export async function endRun(ctx: MutationCtx, lease: Lease, failed: number): Promise<void> {
   const row = await runRow(ctx, lease.job);
   if (row?.run !== lease.run)
     throw new Error(`peopleRuns: ${lease.job} run ${lease.run} lost its lease`);
+  const ready = failed === 0 && (row.partial !== true || row.ready);
   await ctx.db.patch(row._id, {
     running: false,
     cursor: null,
     failed,
     updatedAt: Date.now(),
-    ...(isBackfill(lease.job) ? { ready: failed === 0 } : {}),
+    ...(isBackfill(lease.job) ? { ready } : {}),
   });
 }
 
@@ -228,17 +247,20 @@ export interface Preparation {
   backfills: BackfillState[];
 }
 
-/** The backfills' state: one small read (a row per job), the only reading there is. */
+/**
+ * The backfills' state: a row per backfill, each read by its own index range — never the whole table,
+ * so a People read (and a mutation that asks, like the ledger's editor check) doesn't depend on the
+ * lapse jobs' rows, which a cron writes every fifteen minutes. The only reading there is.
+ */
 export async function readPreparation(
   ctx: QueryCtx,
   now: number = Date.now(),
 ): Promise<Preparation> {
-  const rows = await ctx.db.query('peopleJobRuns').take(PEOPLE_JOBS.length + 1);
-  const byJob = new Map(rows.map((r) => [r.job as string, r]));
+  const rows = await Promise.all(PEOPLE_BACKFILLS.map(({ backfill }) => runRow(ctx, backfill)));
   let chainRunning = false;
   const rerun: string[] = [];
-  const backfills = PEOPLE_BACKFILLS.map(({ backfill, job }): BackfillState => {
-    const row = byJob.get(backfill);
+  const backfills = PEOPLE_BACKFILLS.map(({ backfill, job }, i): BackfillState => {
+    const row = rows[i] ?? undefined;
     const running = row?.running === true;
     const stalled = running && now - (row?.updatedAt ?? 0) > BACKFILL_STALL_MS;
     const ready = row?.ready === true;

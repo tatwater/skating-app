@@ -122,7 +122,7 @@ test('every chained job takes its lease first; each backfill takes the shared ar
   entries.forEach((entry, i) => {
     const body = leaseFirst(entry.job, entry.backfill);
     expect(body, entry.job).toContain('args: BACKFILL_ARGS,');
-    expect(body, entry.job).toContain('await finishBackfill(ctx, lease, failed);');
+    expect(body, entry.job).toMatch(/await finishBackfill\(ctx, lease, failed, [^)]+\);/);
     const next = entries[i + 1];
     const row = new RegExp(
       `${entry.backfill}: \\{\\s*self: internal\\.peopleJobs\\.${entry.job},\\s*next: ${

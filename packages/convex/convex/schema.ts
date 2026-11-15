@@ -517,7 +517,10 @@ export default defineSchema({
     ),
     /** The current run's number: the only run whose passes may write. */
     run: v.number(),
-    /** A backfill: the last run to reach the end of its range had no failures, and none since found a gap. */
+    /**
+     * A backfill: the last run to reach the end of its range had no failures (and began at the start,
+     * or kept an earlier such conclusion), and none since found a gap.
+     */
     ready: v.boolean(),
     /** The current run has a pass scheduled or under way. */
     running: v.boolean(),
@@ -527,6 +530,16 @@ export default defineSchema({
     failed: v.number(),
     /** The current run starts the backfills after it when it ends (not an `alone` run). */
     chains: v.boolean(),
+    /**
+     * The current run began part-way (a new run given a `cursor`), so it can't conclude a backfill
+     * `ready` on its own. Absent: it began at the start.
+     */
+    partial: v.optional(v.boolean()),
+    /**
+     * The current run's pass token: the next scheduled pass must carry it, and each pass moves it on,
+     * so a run is one chain — a pass's arguments replayed by hand find the token gone and do nothing.
+     */
+    pass: v.number(),
     updatedAt: v.number(),
   }).index('by_job', ['job']),
 
