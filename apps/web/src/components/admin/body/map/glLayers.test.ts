@@ -110,11 +110,27 @@ describe('the layer contract — one order for the frame and every tab’s scene
   const band = (b: string) => MAP_BANDS.indexOf(b as never);
 
   it('adds every layer in its band’s place, bands in MAP_BANDS order, nothing outside a band', () => {
-    const bands = ids.map((id) => bandOf(id));
-    expect(bands.every((b) => b !== null)).toBe(true);
-    for (let i = 1; i < bands.length; i++) {
-      expect(band(bands[i] as string)).toBeGreaterThanOrEqual(band(bands[i - 1] as string));
+    // The band each layer must be in, read from what it is — never from `bandLayers`, which both
+    // `glLayers` and `bandOf` are built from, so checking one against the other could never fail.
+    const kindOf = (id: string): string | null =>
+      id.startsWith('body-console-fill-')
+        ? 'fills'
+        : id === 'body-console-field-dots'
+          ? 'fields'
+          : id.startsWith('body-console-outline-')
+            ? 'outlines'
+            : id.startsWith('body-console-line-')
+              ? 'lines'
+              : id.startsWith('body-console-lit-')
+                ? 'lit'
+                : null;
+    const kinds = ids.map(kindOf);
+    expect(kinds.every((k) => k !== null)).toBe(true);
+    expect(ids.map((id) => bandOf(id))).toEqual(kinds);
+    for (let i = 1; i < kinds.length; i++) {
+      expect(band(kinds[i] as string)).toBeGreaterThanOrEqual(band(kinds[i - 1] as string));
     }
+    expect(bandOf('roads_minor')).toBeNull();
   });
 
   it('a pass (raster) lands over the body’s fill and under the fields, the shore and every line', () => {

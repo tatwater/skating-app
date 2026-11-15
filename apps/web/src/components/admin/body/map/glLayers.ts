@@ -153,10 +153,22 @@ function bandLayers(band: MapBand, palette: BodyMapPalette | null): LayerSpecifi
       ];
     }
     // The style's own layers, a pass (added by the reveal), and the DOM's marks: no GL layer here.
-    default:
+    // Named, not a `default`, so a band added to `MAP_BANDS` has to say what it draws.
+    case 'basemap':
+    case 'raster':
+    case 'marks':
       return [];
   }
 }
+
+/** Each band's layer ids, read once: they never depend on the palette. */
+const BAND_IDS = {} as Record<MapBand, readonly string[]>;
+for (const band of MAP_BANDS) BAND_IDS[band] = bandLayers(band, null).map((l) => l.id);
+
+/** The console's layers above the `raster` band, bottom to top: what a pass goes under. */
+const ABOVE_RASTER = MAP_BANDS.slice(MAP_BANDS.indexOf('raster') + 1).flatMap(
+  (band) => BAND_IDS[band],
+);
 
 /** The layers, every band in `MAP_BANDS` order, painted from `palette` (or unpainted). */
 export function glLayers(palette: BodyMapPalette | null): LayerSpecification[] {
@@ -165,10 +177,7 @@ export function glLayers(palette: BodyMapPalette | null): LayerSpecification[] {
 
 /** The band a console layer belongs to; `null` for a layer that isn't the console's. */
 export function bandOf(layerId: string): MapBand | null {
-  for (const band of MAP_BANDS) {
-    if (bandLayers(band, null).some((l) => l.id === layerId)) return band;
-  }
-  return null;
+  return MAP_BANDS.find((band) => BAND_IDS[band].includes(layerId)) ?? null;
 }
 
 /**
@@ -177,8 +186,6 @@ export function bandOf(layerId: string): MapBand | null {
  * layers are in (the reveal then falls back to its own anchor, under the basemap's roads).
  */
 export function rasterAnchor(layerIds: readonly string[]): string | undefined {
-  const above = MAP_BANDS.slice(MAP_BANDS.indexOf('raster') + 1).flatMap((band) =>
-    bandLayers(band, null).map((l) => l.id),
-  );
-  return above.find((id) => layerIds.includes(id));
+  const held = new Set(layerIds);
+  return ABOVE_RASTER.find((id) => held.has(id));
 }

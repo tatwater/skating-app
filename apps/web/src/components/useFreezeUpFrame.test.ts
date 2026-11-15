@@ -28,6 +28,8 @@ function fakeMap() {
   const layers = new Map<string, unknown>();
   /** The `beforeId` each layer was added with. */
   const befores = new Map<string, string | undefined>();
+  /** The `beforeId` each layer was last moved to (a reveal raises its lane there). */
+  const moves = new Map<string, string | undefined>();
   const handlers = new Map<string, ((event: unknown) => void)[]>();
   /** Paint per layer, because two lanes are live at once and the whole design is which is visible. */
   const paint = new Map<string, Record<string, unknown>>();
@@ -40,6 +42,7 @@ function fakeMap() {
     sources,
     layers,
     befores,
+    moves,
     paint,
     ops,
     loadedSources,
@@ -72,7 +75,8 @@ function fakeMap() {
         paint.set(layer, { ...(paint.get(layer) ?? {}), [key]: value });
         ops.push(`paint:${layer}:${key}=${String(value)}`);
       },
-      moveLayer: (id: string) => {
+      moveLayer: (id: string, before?: string) => {
+        moves.set(id, before);
         ops.push(`move:${id}`);
       },
       on: (type: string, fn: (event: unknown) => void) => {
@@ -154,6 +158,37 @@ describe('useFreezeUpFrame — mounting a pass', () => {
       }),
     );
     expect(consoleMap.befores.get(LANE0.layerId)).toBe('body-console-field-dots');
+  });
+
+  it('raises a revealed pass to the host’s anchor too, and to the roads when the host has none yet', () => {
+    // The reveal moves its lane on every show — the first frame's included, once its tiles report —
+    // so an anchor read only at add would put each revealed pass back under the roads.
+    const consoleMap = fakeMap();
+    consoleMap.loadedSources.add(LANE0.sourceId);
+    renderHook(() =>
+      useFreezeUpFrame({
+        mapRef: { current: consoleMap.map },
+        loaded: true,
+        frame: frame(),
+        season: 'winter-2025-26',
+        anchor: () => 'body-console-field-dots',
+      }),
+    );
+    expect(consoleMap.moves.get(LANE0.layerId)).toBe('body-console-field-dots');
+    // A host whose own layers aren't in yet says nothing: the reveal's own anchor stands.
+    const early = fakeMap();
+    early.loadedSources.add(LANE0.sourceId);
+    renderHook(() =>
+      useFreezeUpFrame({
+        mapRef: { current: early.map },
+        loaded: true,
+        frame: frame(),
+        season: 'winter-2025-26',
+        anchor: () => undefined,
+      }),
+    );
+    expect(early.befores.get(LANE0.layerId)).toBe('roads_minor');
+    expect(early.moves.get(LANE0.layerId)).toBe('roads_minor');
   });
 
   it('does nothing at all when there is no frame to show', () => {

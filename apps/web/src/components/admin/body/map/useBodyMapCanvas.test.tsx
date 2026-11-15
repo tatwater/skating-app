@@ -2,9 +2,10 @@ import { render } from '@testing-library/react';
 import { useMemo } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { freezeUpLaneIds } from '@/components/useFreezeUpFrame';
 import { MASCOMA_BOUNDS, MASCOMA_SCENE } from '../frame/bodyFixtures';
 import { adminToken } from './bodyMapPalette';
-import { DEFAULT_LAYERS, drawScene } from './bodyScene';
+import { DEFAULT_LAYERS, type DrawnScene, drawScene } from './bodyScene';
 import { DOT_SOURCE, LINE_SOURCE, OUTLINE_SOURCE } from './glLayers';
 
 /**
@@ -19,6 +20,8 @@ class FakeMap {
   removed = false;
   sources = new Map<string, { setData: (d: unknown) => void; data: unknown }>();
   layers = new Map<string, { paint: Record<string, unknown> }>();
+  /** The layers' order, bottom to top, as MapLibre keeps it: `before` inserts under that layer. */
+  order: string[] = [];
   handlers = new Map<string, Set<() => void>>();
   minZoom = 0;
   maxZoom = 22;
@@ -40,9 +43,34 @@ class FakeMap {
   getSource(id: string) {
     return this.sources.get(id);
   }
-  addLayer(layer: { id: string; paint?: Record<string, unknown> }) {
+  addLayer(layer: { id: string; paint?: Record<string, unknown> }, before?: string) {
     this.check();
     this.layers.set(layer.id, { paint: { ...(layer.paint ?? {}) } });
+    this.place(layer.id, before);
+  }
+  moveLayer(id: string, before?: string) {
+    this.check();
+    this.order = this.order.filter((l) => l !== id);
+    this.place(id, before);
+  }
+  removeLayer(id: string) {
+    this.layers.delete(id);
+    this.order = this.order.filter((l) => l !== id);
+  }
+  removeSource(id: string) {
+    this.sources.delete(id);
+  }
+  private place(id: string, before?: string) {
+    const at = before === undefined ? -1 : this.order.indexOf(before);
+    if (at < 0) this.order.push(id);
+    else this.order.splice(at, 0, id);
+  }
+  getLayersOrder() {
+    return [...this.order];
+  }
+  /** Every source's tiles are in, so a pass reveals (and is raised) as soon as it is added. */
+  isSourceLoaded() {
+    return true;
   }
   getLayer(id: string) {
     return this.layers.get(id);
@@ -115,16 +143,42 @@ vi.mock('@/lib/mapCanvas', () => ({
   },
 }));
 
+// The archive is configured, so a scene's pass is painted (the reveal draws nothing without it).
+vi.mock('@/lib/env', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/env')>();
+  return {
+    ...actual,
+    env: new Proxy(actual.env, {
+      get: (target, key) =>
+        key === 'imageryArchiveUrl' ? 'https://archive.example' : Reflect.get(target, key),
+    }),
+  };
+});
+
 const { useBodyMapCanvas } = await import('./useBodyMapCanvas');
+
+/** Imagery's lit pass, as its scene hands it to the frame. */
+const PASS: NonNullable<DrawnScene['raster']> = {
+  kind: 'raster',
+  id: 'pass:visual.S2C_A',
+  layer: 'aerial',
+  granuleId: 'S2C_A',
+  band: 'visual',
+  capturedAt: '2026-12-22T15:51:05Z',
+  key: 'frames/winter-2026-27/S2C_A-visual.pmtiles',
+  season: 'winter-2026-27',
+};
 
 function Harness({
   mode,
   bbox = MASCOMA_BOUNDS,
+  raster = null,
 }: {
   mode: 'dark' | 'light';
   bbox?: typeof MASCOMA_BOUNDS;
+  raster?: DrawnScene['raster'];
 }) {
-  const drawn = useMemo(() => drawScene(MASCOMA_SCENE, DEFAULT_LAYERS), []);
+  const drawn = useMemo(() => ({ ...drawScene(MASCOMA_SCENE, DEFAULT_LAYERS), raster }), [raster]);
   const canvas = useBodyMapCanvas({ bbox, mode, drawn });
   return <div data-testid="zoom">{canvas.surface ? 'live' : 'waiting'}</div>;
 }
@@ -183,6 +237,24 @@ describe('useBodyMapCanvas', () => {
     expect(next.layers.get('body-console-outline-body')?.paint['line-color']).toBe(
       adminToken('light', 'fg1'),
     );
+  });
+
+  it('lays a pass over the body’s fill and under the fields, the shore and every line', () => {
+    const map = shell.map as FakeMap;
+    const { rerender } = render(<Harness mode="dark" raster={PASS} />);
+    map.loaded = true;
+    shell.onLoad?.(map);
+    shell.live = true;
+    rerender(<Harness mode="dark" raster={PASS} />);
+    // Added under the contract's next band, then raised there as its tiles report: both placements
+    // read the console's order, never the reveal's own anchor (under the roads, so under the fill).
+    const order = map.getLayersOrder();
+    const pass = order.indexOf(freezeUpLaneIds('primary', 0).layerId);
+    expect(pass).toBeGreaterThan(order.indexOf('body-console-fill-body'));
+    expect(pass).toBeGreaterThan(order.indexOf('body-console-fill-footprint'));
+    expect(order[pass + 1]).toBe('body-console-field-dots');
+    expect(pass).toBeLessThan(order.indexOf('body-console-outline-body'));
+    expect(pass).toBeLessThan(order.indexOf('body-console-line-approach'));
   });
 
   it('frames a pond too small for the ceiling without throwing, and goes live', () => {

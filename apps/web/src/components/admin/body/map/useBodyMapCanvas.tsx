@@ -228,7 +228,11 @@ function useLiveSurface(liveMap: () => maplibregl.Map | null): MapSurface | null
   return surface;
 }
 
-/** Where a pass goes on the console's map: the layer contract's raster band. */
+/**
+ * Where a pass goes on the console's map: the layer contract's raster band. Read from the layers'
+ * ids alone (`getLayersOrder`), never `getStyle()`, which serializes every layer and source on each
+ * placement — and a scrub places a pass at every notch.
+ */
 function consoleRasterAnchor(map: maplibregl.Map): string | undefined {
-  return rasterAnchor((map.getStyle()?.layers ?? []).map((l) => l.id));
+  return rasterAnchor(map.getLayersOrder());
 }

@@ -355,6 +355,30 @@ describe('a loadable', () => {
   });
 });
 
+describe('the registry’s reset', () => {
+  it('cancels a retry’s own timers, so one test’s wait never lands in the next', () => {
+    set(api.waterBodies.get, new Error('down'));
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      let renders = 0;
+      const { result } = renderHook(() => {
+        renders++;
+        return useConsoleReads({ body: read(api.waterBodies.get, { waterBodyId: ID }) });
+      });
+      act(() => (result.current.body as ReadFailure).retry());
+      resetConsoleReads();
+      const before = renders;
+      act(() => {
+        vi.advanceTimersByTime(PENDING_HOLD_MS * 3);
+      });
+      // Neither the pause's limit nor the wait's end outlived the registry: nothing re-rendered.
+      expect(renders).toBe(before);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('a retry on a slow render', () => {
   it('holds the pause until a mounted holder has dropped the read, however late its render', async () => {
     resetConsoleReads();
