@@ -19,7 +19,7 @@ import { isLeaving } from '@skating/core';
 import { ConvexError } from 'convex/values';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
-import { asUndoOf } from './audit';
+import { asUndoOf, composed, fitComposed } from './audit';
 import { hasCapability } from './auth';
 import { authorDeletedAtOn, authorDeletedRefusal } from './authorDeletion';
 import { seesLedgerGrants } from './ledgerEditors';
@@ -206,7 +206,12 @@ export async function runUndo(
   }
   const handler = handlerFor(row);
   if (!handler) throw new ConvexError('Undo for this is not built yet');
+  // The default quotes the row's own reason — stored text, up to the cap (or past it, on a row from
+  // before D261) — so it is composed and fitted here: an undo nobody typed a reason for never fails
+  // on the length of the reason it quotes. A reason the person typed is theirs, held to the cap as is.
   const why =
-    trimmed.length > 0 ? trimmed : `Undid ${row.action.replace(/_/g, ' ')}: ${row.reason}`;
+    trimmed.length > 0
+      ? trimmed
+      : fitComposed(composed`Undid ${row.action.replace(/_/g, ' ')}: ${row.reason}`);
   await asUndoOf(ctx, actionId, () => handler.run({ ctx, actor, row, reason: why }));
 }

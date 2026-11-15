@@ -106,6 +106,28 @@ describe('an audit reason is capped at the one place it enters the log (D261)', 
     const history = await as(t, 'mod').query(api.people.history, { userId: skater });
     expect(history?.rows.some((r) => r.reason.length === AUDIT_REASON_MAX * 2)).toBe(true);
   });
+
+  test('an undo nobody typed a reason for quotes the row’s own, fitted — never refused for it', async () => {
+    const t = await setup();
+    await seed(t, 'mod', { role: 'moderator' });
+    const skater = await seed(t, 'skater');
+    const banned = await as(t, 'mod').mutation(api.moderation.banUser, {
+      userId: skater,
+      reason: 'x'.repeat(AUDIT_REASON_MAX),
+    });
+    // Undoing a ban gives back, so it asks no reason: the engine's line quotes the ban's whole one.
+    await as(t, 'mod').mutation(api.undo.run, { actionId: banned.actionId });
+    expect((await t.run((ctx) => ctx.db.get(skater)))?.status).toBe('active');
+    const undo = await t.run((ctx) =>
+      ctx.db
+        .query('moderationActions')
+        .withIndex('by_undoes', (q) => q.eq('undoesActionId', banned.actionId))
+        .first(),
+    );
+    expect(undo?.reason.startsWith('Undid ban: xxx')).toBe(true);
+    expect(undo?.reason.endsWith('…')).toBe(true);
+    expect(undo?.reason.length).toBe(AUDIT_REASON_MAX);
+  });
 });
 
 describe('a reason the system composes is shortened to fit, never refused (D261)', () => {
@@ -745,6 +767,8 @@ describe('people.listPage: keys, ends, ages and the Staff lane', () => {
     expect(byId.get(mod)?.lastSeenInConsoleAt).toBeNull();
     const stats = await as(t, 'adm').query(api.people.staffStats, { userId: skater });
     expect(byId.get(skater)?.roleSince).toBe(stats?.roleSince?.at);
+    // Seeded straight into the table, never stamped: it can't say yet — capped, not "not recorded".
+    expect(byId.get(mod)).toMatchObject({ roleSince: null, roleSinceCapped: true });
     expect(byId.get(skater)?.roleSince).toBe(T0);
     const admStats = await as(t, 'adm').query(api.people.staffStats, { userId: adm });
     expect(byId.get(adm)?.decisionsThisWeek).toEqual(admStats?.decisions.thisWeek);
@@ -1084,9 +1108,10 @@ describe('a parked lapse is a small row Machinery counts', () => {
     const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
     const rows = await import('./lib/peopleRows');
     for (let i = 0; i < 3; i++) {
-      vi.spyOn(rows, 'refreshPersonRow').mockRejectedValueOnce(new Error('poison'));
+      // Only this spy is restored each time: `restoreAllMocks` would take `quiet` with it.
+      const poison = vi.spyOn(rows, 'refreshPersonRow').mockRejectedValueOnce(new Error('poison'));
       await t.mutation(internal.peopleJobs.sweepLapsedSuspensions, {});
-      vi.restoreAllMocks();
+      poison.mockRestore();
     }
     quiet.mockRestore();
     const health = await as(t, 'adm').query(api.recurringJobs.health, {});
