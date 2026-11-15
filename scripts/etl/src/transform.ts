@@ -219,6 +219,8 @@ export function toCanonicalBody(input: {
   reviewReasons?: readonly string[] | undefined;
   /** Every publisher's name, the losers included — see `CanonicalBody.nameClaims`. */
   nameClaims?: readonly { source: string; value: string }[] | undefined;
+  /** Every catalog's class (B01-3d) — see `CanonicalBody.classClaims`. */
+  classClaims?: readonly { source: string; value: string }[] | undefined;
 }): CanonicalBody {
   const geom = input.geometry;
   if (geom.type !== 'Polygon' && geom.type !== 'MultiPolygon') {
@@ -274,6 +276,7 @@ export function toCanonicalBody(input: {
     // Omitted rather than stored empty, like every other optional above: an unnamed body has no
     // claims, and a row carrying `[]` reads as "we looked and found none" rather than "no name".
     ...(input.nameClaims?.length ? { nameClaims: input.nameClaims.map((c) => ({ ...c })) } : {}),
+    ...(input.classClaims?.length ? { classClaims: input.classClaims.map((c) => ({ ...c })) } : {}),
     ...(interiorPoint ? { interiorPoint } : {}),
     ...stats,
   };

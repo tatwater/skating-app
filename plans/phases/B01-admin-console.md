@@ -2562,6 +2562,13 @@ cap can cut an item the returned order says belongs.
 | `standing.retentionForBody`: saved put-ins | A body's stored put-ins (1,000, probing one past) | A count | **Fixed:** `savedPutInsCapped` now says when the body has more rows than the read took, so the count is of the rows read (an unread hidden coordinate could suppress one counted, so not a floor) |
 | Library row: asks, reports | Each ask source (100 each); reports newest first (300) | Counts | No: `asksCapped`, `reportsCapped` |
 | `bodyLibrary.parked` | Parked entries, oldest parked first (50) | The same | No: `capped` |
+| `recurrence.listForBodyAdmin` | **Fixed (B01-3d):** a body's patterns, highest priority first (`by_water_body_priority`, 1,000) | Highest priority first | No, after the fix: the cap keeps the top 1,000 (it read the first 1,000 stored, then sorted). The array says nothing past 1,000; `waitingCountForBody` is the figure that does |
+| `recurrence.waitingCountForBody` | A body's patterns (1,000, probing one past) | A count | No: `capped` (B01-3d) |
+| `recurrence.listForBody` (skaters) | **Fixed (B01-3d):** a body's public patterns, highest priority first (`by_water_body_public_priority`, 1,000), then those a live sighting stands down | Highest priority first | No, after the fix. **Owed:** its read of the body's active hazards is an unbounded `.collect()` |
+| `recurrence.listQueue` | The cross-lake queue by season and priority, paged | Highest priority first | No: genuinely paginated, filters per page |
+| `recurrence.recomputeBody` | A body's stored patterns to match against (1,000) | Not presented | Matching only; unreachable in practice (a body holds tens) — a body past it would re-insert its unmatched patterns |
+| `bodyFeatures` demote, `hazardWithdrawal` | A body's patterns to find a promotion's or a pin's (1,000) | Not presented | The withdrawal says `unknown` past the bound; the demote's walk-back is bounded the same way |
+| `recurrence` discovery | Stale queue rows (200 a page), and a paged body walk | Not presented | No: each re-runs until a page comes back short |
 
 **The governor's rulings on the deferred items (2026-11-14).** A moderator's aliases are their own
 bounded field on the body, `moderatorAliases` — at most 20, each at most 120 characters, trimmed,
@@ -2863,6 +2870,97 @@ their own PR (they would have taken this one past its size, and two need a call;
 imagery pass override and its read; `bodyFeatures.updateShape`. Two need a call first: per-catalog
 class claims exist only at import time (the import must start storing them, and old bodies read
 *not recorded* until the next campaign), and what a survey filing records.
+
+### The Bodies writes (B01-3d, the third server follow-up)
+
+Built on B01-3c's reads; opened after #122 merges. Each write takes a capability from the map, writes
+an audit row with its verb (the script's `via` rides through `writeAudit` as on every row), has an
+undo-policy row and a handler whose undo is the forward write of the previous state (refused by the
+same function), refreshes the library row through its audit row, refuses a merged-away body and
+leaves a removed one editable.
+
+- **Aliases** (`waterBodies.setAliases`, `body.identity`): `moderatorAliases`, trimmed, collapsed,
+  de-duplicated case-insensitively against the display name and each other, refused past 20 or past
+  120 characters; folded into the library row's aliases and search text (`aliasesOf`).
+- **Class** (`waterBodies.setClass`, `body.identity`): `moderatorClass` is its own fact; `type`
+  follows it and a re-import keeps it; clearing puts back `baseClass` — the import's own ranking,
+  kept on every touch even under the override (never the first claim: the merge ranks classes by its
+  own order, so the first claim is often not the class it stored); on a body no import touched, the
+  class the first override displaced. **The import now stores each
+  catalog's class claim** (`classClaims`, one per source, at most eight; the ETL carries them through).
+  Every body on dev — all 24,961 — predates it and reads *not recorded* for the per-catalog lines
+  until its next campaign: the merge threw the claims away, so no backfill can recover them.
+  `bodyConsole.identity` serves the claims (or `null`), the moderator's class and aliases.
+- **Depth source** (`waterBodies.chooseDepthSource`, `body.water`): the ladder now keeps every
+  plausible offer as a candidate (`depthCandidates`); a candidate alone is stored but is not a changed
+  depth, so a load's counts and the library refresh are as before (tested). A choice holds its
+  source against better rungs and follows that source's fresh value; `null` hands the measure back
+  to the ladder (the best-ranked candidate the pair allows — the best-ranked alone may be the one the
+  ladder dropped for inverting it). Refused: a source with no value, a typed (operator) depth, a
+  mean left deeper than the max. `bodyConsole.depthChoices` lists what `chooseDepthSource` accepts
+  (`depthChoicesOf`).
+  **What it can affect:** the depth every read shows, the shallow classification and the decay model
+  that read a body's depth. A depth is the basin's; choosing one says nothing about ice.
+- **A known feature's shape** (`bodyFeatures.updateShape`, `corpus.preIce`, as creating one is): the
+  hazards' shape gate and its 500-position ceiling, a footprint on its lake's box. It changes the
+  feature's geometry, box and bay stamp — never the body's outline, its geometry facts or a library
+  fact (tested). The replaced shape is the audit row's snapshot.
+- **The imagery pass override** (`imageryOverrides.set` / `.clear`, `machinery.imagery` — the board's
+  *admin's override*): show a pass the gates hid (no reason, who and when recorded) or hide a shown
+  one (a reason, at most 500 characters); at most 200 calls per body and season, bound at the write
+  so the skater read is whole. `passOverrides` (public, granule and call only) and `forBody` (who,
+  when, reason; newest first). `@skating/core`'s `buildBodyTimeline` honors an `overrides` map — a
+  shown cloudy pass lends no lake to a seam, a hide is counted only where the pass would have been a
+  stop; with
+  none — the default, and what the apps pass today — the timeline is unchanged (tested). An override
+  is a statement about one pass of a satellite, never about the lake. **Owed:** the apps'
+  `useFreezeUpTimeline` passing `passOverrides` (web and mobile).
+- **Towns keyed on name and state** (the coordinator's ruling on #122): the facts store
+  `townEntries`; every read that offers a town's state reads them, so a border lake's Franklin, VT and
+  Franklin, NH are two. `towns` stays keyed on the name for the pages that read it.
+- **`rowsByIds` on merged ids (the read table):** worst case 12 merged ids, each reading its own body
+  document and up to eight merge hops, each a whole body with its outline — accepted for 12.
+
+**BS17–BS19 (the Body console pages' findings), checked against the code:**
+
+- **BS17, a whole-list write overwrote a concurrent one.** Confirmed for the two the page named
+  (`setReferenceLinks`, `landmarks.update`'s aliases) and found in three more: `setAliases`,
+  `setWeatherSamplePoints`, `subAreas.rename`'s aliases. Each takes an optional `expected`
+  (`expectedAliases` on the landmark and bay writes); a list that moved is refused with
+  `{ code: 'list_changed', message, current }` in the error's data. Without it, the later write wins as
+  before. The undo of a links or aliases write passes the list its row wrote. Left: single values (the
+  later legitimately wins), writes that name what to act on (`clearDepthOverride`,
+  `dismissDuplicates`), creation, and a lot's or a rule's record (`setOfficialParking`,
+  `setPostedAccess` — owed if the Access tab saves them whole).
+- **BS18, a reported crossing on the day strip.** Confirmed; one correction: a crossing expires 72
+  hours after its **last confirmation**, not its first report (`isPassageExpired`). A crossing is a
+  passage marker (D64), not a hazard: it leaves the day's hazard count and unknowns, and
+  `days[].crossings` counts the crossings live that day (to expiry or recorded leaving, never past the
+  caller's day). Each `hazards[]` entry carries `type` and `passage`.
+- **BS19, patterns waiting.** Confirmed, and worse than logged: `listForBodyAdmin` also sorts by
+  priority *after* its cap, so a body past 1,000 clusters can drop its highest-priority ones.
+  `recurrence.waitingCountForBody` → `{ count, capped }` counts by the tab's rule (`isWaitingPattern`)
+  over one read one past the bound; the list's array shape is left for the page that reads it.
+
+**A launch made official in place** (`putIns.promote`, `body.access`; found by the Access tab, whose
+*Make official* called `setOfficial`, which always inserts a new point). Checked: `setOfficial` snaps
+to the shore, stamps the bay, writes `set_put_in` and recomputes access; `accessForBody` lists stored
+visible rows with no proximity merge (so the tab drew both), while the map's marker read lets an
+official marker win over others within the hide radius. `promote({ putInId, name?, reason? })` makes a
+stored `osm` or persisted `derived` launch official on the same row — point, bay, lot, walk and
+approach-kind override kept, the name set only when given — and returns `{ putInId, actionId,
+undoNeedsReason }`. A live report cluster has no row and never appears in the tab's list; making one
+official is `setOfficial` at its coordinate. Refused: official, hidden, suppressed, a merged-away
+body, missing. The undo puts the source and name back (asking a reason: it takes official status
+away) and is refused once the launch moved, was renamed, hidden or demoted; its undo promotes again.
+`setOfficial` shares the after-write steps (`afterPutInChange`: the body back if shelved, access kind,
+library row). The old lake editor places a clicked point with `setOfficial` — a moderator who clicks on
+an existing launch there gets a second row too (the map hides the first; the console lists both); the
+phone app has no caller.
+
+**Held — the survey filing** (`fileBathymetrySurvey`): the board shows the field (*A survey the next
+build should load*, *Paste a link or a citation*) but not what appears once one is filed; it waits on
+the founder's call.
 
 ## Ruled out
 

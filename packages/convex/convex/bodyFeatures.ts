@@ -12,11 +12,18 @@
  * promote/demote mutations; the operator UI is the lake editor's Known-features tool.
  */
 
-import { type HazardShape, hazardBbox, isPubliclyVisible, isValidHazardShape } from '@skating/core';
+import {
+  bboxIntersects,
+  HAZARD_MAX_VERTICES,
+  type HazardShape,
+  hazardBbox,
+  isPubliclyVisible,
+  isValidHazardShape,
+} from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, query } from './_generated/server';
-import { writeAudit } from './lib/audit';
+import { writeAudit, writeSnapshot } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { BODY_FEATURE_TYPES } from './lib/enums';
@@ -247,6 +254,146 @@ export async function demoteImpl(
   });
 }
 
+// ── A feature's shape (B01-3d) ────────────────────────────────────────────────────────────────
+
+/**
+ * The most positions a known feature's geometry carries — a ridge or an inlet, not a shoreline. The
+ * hazards' shape gate's own ceiling, checked first so a long geometry is refused with its count
+ * before the gate's self-intersection pass runs over it.
+ */
+export const MAX_FEATURE_POSITIONS = HAZARD_MAX_VERTICES;
+
+/** A feature's shape as one edit sets it: its kind, its geometry, and the width that goes with it. */
+export interface FeatureShape {
+  geometryKind: Doc<'bodyFeatures'>['geometryKind'];
+  geometry: unknown;
+  radiusMeters?: number;
+  bufferMeters?: number;
+}
+
+/**
+ * A feature's shape as the hazards' gate and footprint math read it — one rule for a feature created
+ * and one redrawn. Built from the feature's own `geometryKind`, NOT re-inferred from whether
+ * `radiusMeters` is set — a line feature (a promoted `recurring_pressure_ridge`) has a
+ * `bufferMeters`, no `radiusMeters`, and must stay a line, not get mis-classified as a polygon and
+ * rejected by the shape gate.
+ */
+function featureHazardShape(shape: FeatureShape): HazardShape {
+  return shape.geometryKind === 'point_radius'
+    ? {
+        geometryKind: 'point_radius',
+        geometry: shape.geometry as HazardShape['geometry'],
+        radiusMeters: shape.radiusMeters ?? 0,
+      }
+    : {
+        geometryKind: shape.geometryKind,
+        geometry: shape.geometry as HazardShape['geometry'],
+        ...(shape.bufferMeters !== undefined ? { bufferMeters: shape.bufferMeters } : {}),
+      };
+}
+
+/** How many positions a GeoJSON geometry holds, every ring and line counted. */
+function positionCount(coords: unknown): number {
+  if (!Array.isArray(coords)) return 0;
+  if (coords.length > 0 && typeof coords[0] === 'number') return 1;
+  return coords.reduce((n: number, c) => n + positionCount(c), 0);
+}
+
+/**
+ * The shape a feature may take, checked once at the write: the hazards' own gate (a valid point,
+ * line or polygon with its width), at most {@link MAX_FEATURE_POSITIONS} positions, and a footprint
+ * that meets the body's box — a feature is on its lake. Returns the shape and its footprint's box.
+ */
+function checkedShape(
+  shape: FeatureShape,
+  bodyBox: Doc<'waterBodies'>['bbox'],
+): { shape: HazardShape; bbox: Doc<'bodyFeatures'>['bbox'] } {
+  if (shape.geometryKind === 'point_radius' && shape.radiusMeters === undefined) {
+    throw new ConvexError('radiusMeters is required for point_radius body features');
+  }
+  const coords = (shape.geometry as { coordinates?: unknown } | null)?.coordinates;
+  if (positionCount(coords) > MAX_FEATURE_POSITIONS) {
+    throw new ConvexError(`A known feature's shape is at most ${MAX_FEATURE_POSITIONS} points`);
+  }
+  const hazardShape = featureHazardShape(shape);
+  if (!isValidHazardShape(hazardShape)) throw new ConvexError('Invalid body-feature geometry');
+  const bbox = hazardBbox(hazardShape);
+  if (!bboxIntersects(bbox, bodyBox)) {
+    throw new ConvexError('A known feature has to be on its lake');
+  }
+  return { shape: hazardShape, bbox };
+}
+
+/**
+ * Moderator: redraw a known feature (B01-3d, `corpus.preIce`, as creating one is). What it changes:
+ * the feature's geometry, its box, and the bay it is stamped into — never the body's outline or its
+ * geometry facts, and no library fact counts a feature's shape. A demoted feature, or one on a body
+ * merged away, is refused. Audited with the replaced shape as the row's snapshot; undone as this
+ * write of the previous shape.
+ */
+export const updateShape = mutation({
+  args: {
+    bodyFeatureId: v.id('bodyFeatures'),
+    geometryKind: literals(HAZARD_GEOMETRY_KINDS),
+    geometry: geoJson,
+    radiusMeters: v.optional(v.number()),
+    bufferMeters: v.optional(v.number()),
+    reason: v.string(),
+  },
+  handler: async (ctx, { bodyFeatureId, reason, ...shape }) => {
+    const actor = await requireCapability(ctx, 'corpus.preIce');
+    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+    return updateShapeImpl(ctx, actor, { bodyFeatureId, shape, reason: reason.trim() });
+  },
+});
+
+/** `updateShape`'s body, shared with its undo. */
+export async function updateShapeImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    bodyFeatureId,
+    shape,
+    reason,
+  }: { bodyFeatureId: Id<'bodyFeatures'>; shape: FeatureShape; reason: string },
+): Promise<Id<'bodyFeatures'>> {
+  const feature = await ctx.db.get(bodyFeatureId);
+  if (!feature) throw new ConvexError('Known feature not found');
+  if (!feature.active)
+    throw new ConvexError('This feature was demoted — restore it before redrawing');
+  const body = await ctx.db.get(feature.waterBodyId);
+  if (!body || body.dedupStatus === 'merged') {
+    throw new ConvexError('This feature’s lake was merged into another');
+  }
+  const { bbox } = checkedShape(shape, body.bbox);
+  const subArea = await resolveSubAreaForPoint(ctx, feature.waterBodyId, hazardCenter({ bbox }));
+  const prev: FeatureShape = {
+    geometryKind: feature.geometryKind,
+    geometry: feature.geometry,
+    ...(feature.radiusMeters !== undefined ? { radiusMeters: feature.radiusMeters } : {}),
+    ...(feature.bufferMeters !== undefined ? { bufferMeters: feature.bufferMeters } : {}),
+  };
+  await ctx.db.patch(bodyFeatureId, {
+    geometryKind: shape.geometryKind,
+    geometry: shape.geometry as Doc<'bodyFeatures'>['geometry'],
+    radiusMeters: shape.geometryKind === 'point_radius' ? shape.radiusMeters : undefined,
+    bufferMeters: shape.geometryKind === 'point_radius' ? undefined : shape.bufferMeters,
+    bbox,
+    subAreaId: subArea?.subAreaId,
+  });
+  const actionId = await writeAudit(ctx, {
+    actorId: actor._id,
+    action: 'update_body_feature_shape',
+    targetType: 'bodyFeature',
+    targetId: bodyFeatureId,
+    reason,
+    metadata: { geometryKind: shape.geometryKind, prev: { snapshot: true } },
+    createdAt: Date.now(),
+  });
+  await writeSnapshot(ctx, actionId, prev);
+  return bodyFeatureId;
+}
+
 export async function insertBodyFeature(
   ctx: MutationCtx,
   args: Omit<
@@ -255,22 +402,8 @@ export async function insertBodyFeature(
   >,
 ): Promise<Id<'bodyFeatures'>> {
   // Reuse the hazard footprint math so a feature's bbox is computed identically to a hazard's — a
-  // promoted ridge must not shift or resize just because it changed tables. The shape is built from
-  // the feature's own `geometryKind`, NOT re-inferred from whether `radiusMeters` is set — a line
-  // feature (a promoted `recurring_pressure_ridge`) has a `bufferMeters`, no `radiusMeters`, and must
-  // stay a line, not get mis-classified as a polygon and rejected by the shape gate.
-  const shape: HazardShape =
-    args.geometryKind === 'point_radius'
-      ? {
-          geometryKind: 'point_radius',
-          geometry: args.geometry as HazardShape['geometry'],
-          radiusMeters: args.radiusMeters ?? 0,
-        }
-      : {
-          geometryKind: args.geometryKind,
-          geometry: args.geometry as HazardShape['geometry'],
-          ...(args.bufferMeters !== undefined ? { bufferMeters: args.bufferMeters } : {}),
-        };
+  // promoted ridge must not shift or resize just because it changed tables.
+  const shape = featureHazardShape(args);
 
   // Same single gate hazards use. `create` takes raw GeoJSON from an admin, and a malformed ring or a
   // MultiLineString would otherwise reach `turf/buffer` and throw mid-mutation or store a junk bbox.

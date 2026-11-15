@@ -145,6 +145,8 @@ export interface TimelineStop {
   frame: IndexedFrame;
   /** May the thumb come to rest here? */
   landable: boolean;
+  /** An admin showed this pass although the gates hid it — the gate it failed (B01-3d). */
+  shownAnyway?: StopBlockReason;
   /** Set exactly when `landable` is false. */
   blockedBy?: StopBlockReason;
   /** How coverage was decided. `'inferred'`/`'unknown'` mean no manifest backed this stop. */
@@ -186,6 +188,8 @@ export interface BodyTimeline {
   coverageInferred: number;
   /** Stops with neither a manifest nor a footprint. Kept, and counted so they cannot hide. */
   coverageUnknown: number;
+  /** Passes an admin hid from this body's timeline (`overrides`), counted so they cannot vanish. */
+  hiddenByOverride: number;
   /**
    * Which orbit direction these stops were held to, and what else this lake was passed from.
    *
@@ -242,6 +246,12 @@ export interface BodyTimelineOptions {
    * directions, so this filter is what the `vhDb` comparability note has been asking for all along.
    */
   orbitDirection?: string;
+  /**
+   * **An admin's calls on single passes over this body** (B01-3d), by granule id: `show` lands a pass
+   * the gates hid (cloud or coverage), `hide` takes a pass off the timeline. A statement about a
+   * satellite pass, never about the lake. Absent (the default) changes nothing.
+   */
+  overrides?: ReadonlyMap<string, 'show' | 'hide'>;
 }
 
 /**
@@ -283,7 +293,9 @@ function attachSeams(stops: TimelineStop[], minCoverage: number): void {
       // cloud has nothing to contribute, and pairing one in could take a coverage-blocked stop over
       // {@link MIN_BODY_COVERAGE} and land the thumb on a view that is half white rectangle, with
       // the coverage caveat deleted and only the primary's clear fraction left in the caption.
-      if (other.blockedBy === 'cloud') continue;
+      // An admin's *show anyway* on a cloudy pass is about that pass alone: it lands its own stop,
+      // and lends no lake to another's.
+      if (other.blockedBy === 'cloud' || other.shownAnyway === 'cloud') continue;
       const theirs = other.stats?.coveragePct ?? null;
       if (theirs === null) continue;
       // A companion that adds nothing is not a seam, it is a second copy of the same view.
@@ -324,6 +336,7 @@ function emptyTimeline(season: string): BodyTimeline {
     notCovered: 0,
     coverageInferred: 0,
     coverageUnknown: 0,
+    hiddenByOverride: 0,
     orbit: null,
   };
 }
@@ -490,8 +503,10 @@ export function buildBodyTimeline(
   let notCovered = 0;
   let coverageInferred = 0;
   let coverageUnknown = 0;
+  let hiddenByOverride = 0;
 
   for (const frame of banded) {
+    const override = options.overrides?.get(frame.granuleId);
     const frameStats = options.stats?.(frame.granuleId);
 
     // ⚠ Held to one orbit direction, or the lake visibly moves between dates — see
@@ -522,16 +537,33 @@ export function buildBodyTimeline(
         continue;
       }
       basis = 'inferred';
-      coverageInferred++;
     } else {
       basis = 'unknown';
-      coverageUnknown++;
     }
+
+    // An admin's hide takes the pass off the timeline — counted where it would have been a stop, so
+    // a pass of the other orbit or one that never reached the lake is not counted as hidden.
+    if (override === 'hide') {
+      hiddenByOverride++;
+      continue;
+    }
+    if (basis === 'inferred') coverageInferred++;
+    else if (basis === 'unknown') coverageUnknown++;
 
     // Coverage first: "we barely saw it" is a more fundamental objection than "what we saw was
     // cloudy", and captioning a sliver as cloudy would explain the wrong problem.
     const coveragePct = row?.coveragePct ?? null;
     if (coveragePct !== null && coveragePct < minCoverage) {
+      if (override === 'show') {
+        stops.push({
+          frame,
+          landable: true,
+          shownAnyway: 'coverage',
+          basis,
+          ...(row ? { stats: row } : {}),
+        });
+        continue;
+      }
       stops.push({
         frame,
         landable: false,
@@ -548,10 +580,12 @@ export function buildBodyTimeline(
         ? clearPct < minClear
         : frame.cloudCoverPct !== null && frame.cloudCoverPct > maxCloudPct;
 
+    const shown = blocked && override === 'show';
     stops.push({
       frame,
-      landable: !blocked,
-      ...(blocked ? { blockedBy: 'cloud' as const } : {}),
+      landable: !blocked || shown,
+      ...(blocked && !shown ? { blockedBy: 'cloud' as const } : {}),
+      ...(shown ? { shownAnyway: 'cloud' as const } : {}),
       basis,
       ...(row ? { stats: row } : {}),
     });
@@ -566,6 +600,7 @@ export function buildBodyTimeline(
     notCovered,
     coverageInferred,
     coverageUnknown,
+    hiddenByOverride,
     orbit,
   };
 }

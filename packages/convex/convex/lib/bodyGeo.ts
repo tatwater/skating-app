@@ -220,8 +220,33 @@ export async function geoFactsOf(
  * rule for the preview, the frame and Places.
  */
 export function townsWithStateOf(
-  geo: Pick<Doc<'bodyGeoFacts'>, 'towns' | 'townStates'> | null,
+  geo: Pick<Doc<'bodyGeoFacts'>, 'towns' | 'townStates' | 'townEntries'> | null,
 ): { name: string; state: string | null }[] | null {
+  return townRowsOf(geo)?.map(({ name, state }) => ({ name, state })) ?? null;
+}
+
+/**
+ * Whether the facts carry the towns keyed on name and state (B01-3d) — at least one entry per
+ * distinct name. The one rule the readers and the drift repair share: a row without them is read by
+ * the name-keyed lists and is behind.
+ */
+export function hasTownEntries(geo: Pick<Doc<'bodyGeoFacts'>, 'towns' | 'townEntries'>): boolean {
+  return geo.townEntries !== undefined && geo.townEntries.length >= (geo.towns ?? []).length;
+}
+
+/**
+ * A body's towns, each with its state and its boundary, in one order — keyed on name and state where
+ * stored ({@link hasTownEntries}), else the name-keyed lists before it (`null` state or boundary on a
+ * row computed before towns carried them). `null` when nothing was computed.
+ */
+export function townRowsOf(
+  geo: Pick<Doc<'bodyGeoFacts'>, 'towns' | 'townStates' | 'townIds' | 'townEntries'> | null,
+): { name: string; state: string | null; id: Id<'adminAreas'> | null }[] | null {
   if (geo === null) return null;
-  return (geo.towns ?? []).map((name, i) => ({ name, state: geo.townStates?.[i] ?? null }));
+  if (hasTownEntries(geo)) return (geo.townEntries ?? []).map((e) => ({ ...e }));
+  return (geo.towns ?? []).map((name, i) => ({
+    name,
+    state: geo.townStates?.[i] ?? null,
+    id: geo.townIds?.[i] ?? null,
+  }));
 }

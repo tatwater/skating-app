@@ -455,11 +455,13 @@ export const listForBody = query({
   handler: async (ctx, { waterBodyId }) => {
     const body = await resolveSurvivor(ctx, waterBodyId);
     if (!body) return [];
+    // Highest priority first from the index, so the cap keeps the top patterns (B01-3d).
     const rows = await ctx.db
       .query('hazardRecurrence')
-      .withIndex('by_water_body_public', (q) =>
+      .withIndex('by_water_body_public_priority', (q) =>
         q.eq('waterBodyId', body._id).eq('publiclyVisible', true),
       )
+      .order('desc')
       .take(MAX_BODY_CLUSTERS);
     // Nothing to yield *to*, so nothing to read this lake's hazards for. While the master switch is
     // off that is every single call, and a full active-hazard collect on every drawer open, on both
@@ -554,11 +556,44 @@ export const listForBodyAdmin = query({
     await requireCapability(ctx, 'body.read');
     const body = await resolveSurvivor(ctx, waterBodyId);
     if (!body) return [];
+    // Read in the order it presents — highest priority first — so a body past the bound keeps its top
+    // patterns rather than the first ones stored, then sorted (equal priorities keep the index's order).
+    const rows = await ctx.db
+      .query('hazardRecurrence')
+      .withIndex('by_water_body_priority', (q) => q.eq('waterBodyId', body._id))
+      .order('desc')
+      .take(MAX_BODY_CLUSTERS);
+    return rows.sort((a, b) => b.priority - a.priority);
+  },
+});
+
+/** A pattern still waiting in the pre-ice pass: neither suppressed nor promoted to a known feature. */
+export function isWaitingPattern(
+  c: Pick<Doc<'hazardRecurrence'>, 'suppressedAt' | 'promotedToFeatureId'>,
+): boolean {
+  return c.suppressedAt === undefined && c.promotedToFeatureId === undefined;
+}
+
+/**
+ * **How many patterns wait on a body** (B01-3d, BS19) — the Hazards tab's *patterns waiting*, by the
+ * rule the tab counts (`isWaitingPattern`), over one read one past {@link MAX_BODY_CLUSTERS}: `capped`
+ * when the body holds more clusters than that, and the count is then a floor. `listForBodyAdmin`
+ * stops at the same bound and cannot say so; this is the figure to draw.
+ */
+export const waitingCountForBody = query({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }) => {
+    await requireCapability(ctx, 'body.read');
+    const body = await resolveSurvivor(ctx, waterBodyId);
+    if (!body) return { count: 0, capped: false };
     const rows = await ctx.db
       .query('hazardRecurrence')
       .withIndex('by_water_body', (q) => q.eq('waterBodyId', body._id))
-      .take(MAX_BODY_CLUSTERS);
-    return rows.sort((a, b) => b.priority - a.priority);
+      .take(MAX_BODY_CLUSTERS + 1);
+    return {
+      count: rows.slice(0, MAX_BODY_CLUSTERS).filter(isWaitingPattern).length,
+      capped: rows.length > MAX_BODY_CLUSTERS,
+    };
   },
 });
 

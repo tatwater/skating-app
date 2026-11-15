@@ -200,6 +200,8 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
   // undoing that boost shelves it again — the handler asks a reason in that case (undoHandlersBody).
   set_curated_boost: { undo: setPrev, takesAway: never, capability: 'body.identity' },
   set_reference_links: { undo: setPrev, takesAway: never, capability: 'body.identity' },
+  set_aliases: { undo: setPrev, takesAway: never, capability: 'body.identity' },
+  set_class: { undo: setPrev, takesAway: never, capability: 'body.identity' },
   set_water_body_name: { undo: setPrev, takesAway: never, capability: 'body.identity' },
   set_included_by_request: {
     undo: setPrev,
@@ -224,6 +226,13 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
   },
   set_weather_sample_points: { undo: setPrev, takesAway: never, capability: 'body.water' },
   set_lake_depth: { undo: setPrev, takesAway: never, capability: 'body.water' },
+  choose_depth_source: { undo: setPrev, takesAway: never, capability: 'body.water' },
+  // Undoing a show takes a pass from skaters again; undoing a hide gives it back.
+  set_imagery_override: {
+    undo: setPrev,
+    takesAway: (action) => action === 'hide',
+    capability: 'machinery.imagery',
+  },
   set_satellite_imagery: {
     undo: setPrev,
     // `off` withholds the link (D70/D75); `auto` and `on` give it.
@@ -265,6 +274,7 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
     takesAway: never,
     capability: 'corpus.preIce',
   },
+  update_body_feature_shape: { undo: setPrev, takesAway: never, capability: 'corpus.preIce' },
   demote_body_feature: {
     undo: later('§3 Body console', 'Reactivate the feature and re-supersede its source hazard.'),
     takesAway: always,
@@ -305,12 +315,12 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
   rename_sub_area: { undo: setPrev, takesAway: never, capability: 'body.shape' },
 
   // ── Access ──────────────────────────────────────────────────────────────────────────────────────
+  // B01-3d: a promotion's undo puts the launch's source and name back (taking official status away,
+  // so it asks a reason); the undo of that undo promotes again (giving, so it asks none). A new
+  // official point placed by `setOfficial` has no undo yet (its handler refuses that row).
   set_put_in: {
-    undo: later(
-      '§3 Body console',
-      'A new put-in is hidden; an edited one gets its prior name back.',
-    ),
-    takesAway: never,
+    undo: setPrev,
+    takesAway: (direction) => direction !== 'demoted',
     capability: 'body.access',
   },
   set_parking_area: {

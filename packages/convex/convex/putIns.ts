@@ -14,7 +14,8 @@
 import { distanceToPolygonMeters, OPERATOR_PUT_IN_SNAP_MAX_M, snapToEdge } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
-import { mutation, query } from './_generated/server';
+import type { Doc, Id } from './_generated/dataModel';
+import { type MutationCtx, mutation, query } from './_generated/server';
 import { recomputeAccessKind } from './accessPoints';
 import { writeAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
@@ -22,6 +23,7 @@ import { refreshBodyLibrary } from './lib/bodyLibrary';
 import { type PutInMarker, putInMarkersForBody } from './lib/putInMarkers';
 import { isSuppressed } from './lib/putInSuppression';
 import { activateOnEvidence } from './lib/standing';
+import { UNDO_POLICY } from './lib/undoPolicy';
 import { latLng } from './lib/validators';
 
 export {
@@ -135,16 +137,9 @@ export const setOfficial = mutation({
     // saying "you can get on the ice here" is evidence of access, and access is what the seed
     // partitions on. And it keeps the body active through the July rollover for as long as it is
     // saved and not hidden (D245, reversing D177's "a put-in alone does not keep a body active").
-    await activateOnEvidence(ctx, waterBodyId, 'put_in');
-    // The body's denormalized `accessKind` is derived from its visible put-ins, so every mutation
-    // that changes that set owes it a recompute (PR #43 review). A fresh `official` marker carries no
-    // measured approach, so today this is usually a no-op — `bodyAccessKind` ignores an unknown kind.
-    // It is here because the *invariant* is what keeps the chip honest, and the alternative is a rule
-    // that holds by luck: the moment this mutation learns to take an approach, or the ladder learns
-    // to score an unmeasured official marker, the omission becomes a wrong chip nobody looks for.
-    await recomputeAccessKind(ctx, waterBodyId);
-    // The approach this changed came after the audit row's refresh: the library reads it again.
-    await refreshBodyLibrary(ctx, waterBodyId);
+    // Then the denormalized `accessKind`, recomputed from the visible put-ins (PR #43 review), and
+    // the library row — the steps every put-in write owes, shared with `promote`.
+    await afterPutInChange(ctx, waterBodyId, true);
     return id;
   },
 });
@@ -192,3 +187,193 @@ export const hide = mutation({
     return id;
   },
 });
+
+// ── Making a launch official in place (B01-3d) ───────────────────────────────────────────────
+
+/** What a promotion replaced, so its undo can put it back. */
+interface PromotionPrev {
+  source: 'osm' | 'derived';
+  name: string | null;
+  createdByUserId: Id<'profiles'> | null;
+}
+
+/** A launch's name, normalized at the edge: whitespace collapsed, capped like `setOfficial`'s. */
+function putInName(raw: string | undefined): string | undefined {
+  const name = raw?.replace(/\s+/g, ' ').trim();
+  if (!name) return undefined;
+  if (name.length > MAX_PUT_IN_NAME_LENGTH) {
+    throw new ConvexError(
+      `Keep the name under ${MAX_PUT_IN_NAME_LENGTH} characters — it labels a pin on a map.`,
+    );
+  }
+  return name;
+}
+
+/** The stored put-in a promotion acts on, with the refusals every direction shares. */
+async function promotableRow(
+  ctx: MutationCtx,
+  putInId: Id<'putIns'>,
+): Promise<{ row: Doc<'putIns'>; body: Doc<'waterBodies'> }> {
+  const row = await ctx.db.get(putInId);
+  if (!row) throw new ConvexError('That put-in no longer exists');
+  if (row.status !== 'visible') {
+    throw new ConvexError('That put-in is hidden — a moderator said it is not a way in');
+  }
+  const body = await ctx.db.get(row.waterBodyId);
+  if (!body) throw new ConvexError('Water body not found');
+  if (body.dedupStatus === 'merged') {
+    throw new ConvexError('This body was merged into another — edit the body it was merged into');
+  }
+  const hidden = await ctx.db
+    .query('putIns')
+    .withIndex('by_water_body_status', (q) =>
+      q.eq('waterBodyId', row.waterBodyId).eq('status', 'hidden'),
+    )
+    .take(SUPPRESSION_ROWS_READ);
+  if (isSuppressed(row.coord, hidden)) {
+    throw new ConvexError('A moderator hid a put-in at this spot — it is not a way in');
+  }
+  return { row, body };
+}
+
+/** Hidden coordinates a promotion checks its launch against (a body holds a handful). */
+const SUPPRESSION_ROWS_READ = 200;
+
+/**
+ * Moderator: make a stored launch official **in place** (B01-3d, `body.access`) — the Access tab's
+ * *Make official*. The same row, point and bay; its parking, its walk and its approach-kind override
+ * kept; the name set only when one is given. `setOfficial` stays for placing a new point.
+ *
+ * **Which launches:** the stored rows the Access tab lists (`accessForBody`) — an `osm` launch, or a
+ * persisted `derived` one. A live report cluster has no row and never appears in that list; making
+ * one official is placing a point there (`setOfficial` at its coordinate, which then wins over the
+ * cluster on the map). Refused: an official, hidden or suppressed launch, one on a merged-away body,
+ * or a missing one.
+ *
+ * Returns `{ putInId, actionId, undoNeedsReason }` so the console's toast can undo it directly.
+ */
+export const promote = mutation({
+  args: { putInId: v.id('putIns'), name: v.optional(v.string()), reason: v.optional(v.string()) },
+  handler: async (ctx, { putInId, name, reason }) => {
+    const actor = await requireCapability(ctx, 'body.access');
+    return promotePutInImpl(ctx, actor, { putInId, name, reason });
+  },
+});
+
+/** `promote`'s body — also what undoing its undo runs (D226). */
+export async function promotePutInImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  args: {
+    putInId: Id<'putIns'>;
+    name?: string | undefined;
+    reason?: string | undefined;
+    /** The launch as the undo it redoes left it — refused if it moved or was renamed since. */
+    expected?: { coord: { lat: number; lng: number }; name: string | null };
+  },
+): Promise<{ putInId: Id<'putIns'>; actionId: Id<'moderationActions'>; undoNeedsReason: boolean }> {
+  const { row, body } = await promotableRow(ctx, args.putInId);
+  if (row.source === 'official') throw new ConvexError('That put-in is already official');
+  if (
+    args.expected !== undefined &&
+    (row.coord.lat !== args.expected.coord.lat ||
+      row.coord.lng !== args.expected.coord.lng ||
+      (row.name ?? null) !== args.expected.name)
+  ) {
+    throw new ConvexError('That put-in changed since — undo is not safe now');
+  }
+  const name = putInName(args.name);
+  const prev: PromotionPrev = {
+    source: row.source,
+    name: row.name ?? null,
+    createdByUserId: row.createdByUserId ?? null,
+  };
+  await ctx.db.patch(row._id, {
+    source: 'official',
+    createdByUserId: actor._id,
+    ...(name !== undefined ? { name } : {}),
+  });
+  const after = name ?? row.name;
+  const actionId = await writeAudit(ctx, {
+    actorId: actor._id,
+    action: 'set_put_in',
+    targetType: 'waterbody',
+    targetId: body._id,
+    reason:
+      args.reason?.trim() ||
+      (after ? `Made the put-in official: ${after}` : 'Made the put-in official'),
+    metadata: {
+      putInId: row._id,
+      coord: row.coord,
+      direction: 'promoted',
+      ...(after ? { name: after } : {}),
+      prev,
+    },
+    createdAt: Date.now(),
+  });
+  await afterPutInChange(ctx, body._id, true);
+  return {
+    putInId: row._id,
+    actionId,
+    undoNeedsReason: UNDO_POLICY.set_put_in.takesAway('promoted'),
+  };
+}
+
+/**
+ * Undo a promotion: the source and name it replaced, the row, its lot and its walk left as they are.
+ * Refused — by the same checks a promotion takes — when the launch changed since: hidden or
+ * suppressed, moved, no longer official, or renamed.
+ */
+export async function demotePutInImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  args: {
+    putInId: Id<'putIns'>;
+    prev: PromotionPrev;
+    expected: { coord: { lat: number; lng: number }; name: string | null };
+    reason: string;
+  },
+): Promise<void> {
+  const { row, body } = await promotableRow(ctx, args.putInId);
+  if (row.source !== 'official') throw new ConvexError('That put-in is no longer official');
+  if (
+    row.coord.lat !== args.expected.coord.lat ||
+    row.coord.lng !== args.expected.coord.lng ||
+    (row.name ?? null) !== args.expected.name
+  ) {
+    throw new ConvexError('That put-in changed since it was made official — undo is not safe now');
+  }
+  await ctx.db.patch(row._id, {
+    source: args.prev.source,
+    name: args.prev.name ?? undefined,
+    createdByUserId: args.prev.createdByUserId ?? undefined,
+  });
+  await writeAudit(ctx, {
+    actorId: actor._id,
+    action: 'set_put_in',
+    targetType: 'waterbody',
+    targetId: body._id,
+    reason: args.reason,
+    metadata: {
+      putInId: row._id,
+      coord: row.coord,
+      direction: 'demoted',
+      prev: { source: 'official', name: row.name ?? null },
+      ...(args.prev.name !== null ? { name: args.prev.name } : {}),
+    },
+    createdAt: Date.now(),
+  });
+  // A visible launch keeps a body active either way: demoting it never shelves one.
+  await afterPutInChange(ctx, body._id, false);
+}
+
+/** What every put-in write owes after it: the body back if it was shelved, its access kind, its row. */
+async function afterPutInChange(
+  ctx: MutationCtx,
+  waterBodyId: Id<'waterBodies'>,
+  evidence: boolean,
+): Promise<void> {
+  if (evidence) await activateOnEvidence(ctx, waterBodyId, 'put_in');
+  await recomputeAccessKind(ctx, waterBodyId);
+  await refreshBodyLibrary(ctx, waterBodyId);
+}
