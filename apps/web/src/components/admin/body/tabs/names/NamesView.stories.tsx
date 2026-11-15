@@ -129,13 +129,25 @@ export const AsTheAppDrawsIt: Story = {
   },
 };
 
-/** No boundary holds the body: its towns and county are not recorded, said so. */
+/** No boundary holds the body: computed, it is in no town and no county, said so. */
 export const NoBoundary: Story = {
   args: { data: LOW_PLAINS_NAMES },
   play: async ({ canvasElement }) => {
     const location = slot(canvasElement, 'location');
-    await expect(location).toHaveTextContent('TownsNot recorded yet');
-    await expect(location).toHaveTextContent('CountyNot recorded yet');
+    await expect(location).toHaveTextContent('TownsIn no town');
+    await expect(location).toHaveTextContent('CountyIn no county');
+  },
+};
+
+/** The body's geometry isn't computed yet: its towns and county say so, never "not recorded". */
+export const NotComputedYet: Story = {
+  args: {
+    data: { ...LOW_PLAINS_NAMES, place: { ...LOW_PLAINS_NAMES.place, admin: 'not-computed' } },
+  },
+  play: async ({ canvasElement }) => {
+    const location = slot(canvasElement, 'location');
+    await expect(location).toHaveTextContent('TownsNot computed yet');
+    await expect(location).not.toHaveTextContent('Not recorded yet');
     await expect(location).not.toHaveTextContent('TIGER');
   },
 };

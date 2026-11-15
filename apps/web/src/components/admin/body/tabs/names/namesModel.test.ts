@@ -76,7 +76,7 @@ describe('namesFromBody', () => {
     // Not recorded stays null — never zero, never "none".
     expect(data.classOptions).toBeNull();
     expect(data.perCatalogClaims).toBeNull();
-    expect(data.place).toEqual({ admin: null, states: ['ME'], townLines: null });
+    expect(data.place).toEqual({ admin: 'not-computed', states: ['ME'], townLines: null });
     expect(data.failures).toEqual([]);
   });
 
@@ -121,11 +121,21 @@ describe('namesFromBody', () => {
       towns: ['Enfield', 'Lebanon'],
       counties: ['Grafton County'],
       states: ['NH'],
+      computedAt: 1,
     });
     expect(data.place.admin).toEqual({ towns: ['Enfield', 'Lebanon'], county: 'Grafton County' });
     expect(
-      namesFromBody(body, { towns: ['Enfield'], counties: [], states: [] }).place.admin,
+      namesFromBody(body, { towns: ['Enfield'], counties: [], states: [], computedAt: 1 }).place
+        .admin,
     ).toEqual({ towns: ['Enfield'], county: null });
+  });
+
+  it('says the towns aren’t computed yet until the geometry is — never that it is in none', () => {
+    const body = { name: 'Mascoma Lake', type: 'reservoir' as const };
+    expect(namesFromBody(body, null).place.admin).toBe('not-computed');
+    expect(
+      namesFromBody(body, { towns: [], counties: [], states: [], computedAt: 1 }).place.admin,
+    ).toEqual({ towns: [], county: null });
   });
 
   it('keeps the boundary read’s state: loading stays loading, a failure is named', () => {

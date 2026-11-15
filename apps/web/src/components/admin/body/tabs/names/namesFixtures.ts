@@ -91,7 +91,7 @@ export const LOW_PLAINS_NAMES: NamesData = {
   cls: 'lakePond',
   classOptions: null,
   perCatalogClaims: null,
-  // No boundary holds it: the towns are not recorded.
-  place: { admin: null, states: ['NH'], townLines: null },
+  // Computed, and no boundary holds it: in no town or county.
+  place: { admin: { towns: [], county: null }, states: ['NH'], townLines: null },
   failures: [],
 };

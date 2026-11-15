@@ -18,6 +18,7 @@ import { Section } from '@/components/kit/section-slug';
 import { UnavailableButton } from '@/components/kit/unavailable-button';
 import { UnavailableField } from '@/components/kit/unavailable-field';
 import { cn } from '@/lib/utils';
+import { NOT_COMPUTED, NOT_COMPUTED_WORDS } from '../../frame/bodyModel';
 import { LIT_ROW, LoadingSection, litAttr, TabBody, useDraft } from '../tabParts';
 import { CouldntRead, LoadingLine, NOT_RECORDED, ReadFailures } from '../tabStates';
 import {
@@ -404,12 +405,12 @@ function LocationSection({ data }: { data: NamesData }) {
       <LoadingLine width="7rem" />
     ) : isFailed(admin) ? (
       <CouldntRead />
-    ) : admin === null ? (
-      <span className="text-fg3">{NOT_RECORDED}</span>
+    ) : admin === NOT_COMPUTED ? (
+      <span className="text-fg3">{NOT_COMPUTED_WORDS}</span>
     ) : (
       fact(admin)
     );
-  const known = typeof admin === 'object' && admin !== null && !isFailed(admin);
+  const known = typeof admin === 'object' && !isFailed(admin);
   return (
     <Section title="Location" data-slot="location">
       <KeyValueList keyWidth="6.5rem">
@@ -427,12 +428,12 @@ function LocationSection({ data }: { data: NamesData }) {
                 ))}
               </span>
             ) : (
-              <span className="text-fg3">{NOT_RECORDED}</span>
+              <span className="text-fg3">In no town</span>
             ),
           )}
         </KeyValueRow>
         <KeyValueRow label="County">
-          {fromBoundaries((a) => a.county ?? <span className="text-fg3">{NOT_RECORDED}</span>)}
+          {fromBoundaries((a) => a.county ?? <span className="text-fg3">In no county</span>)}
         </KeyValueRow>
         <KeyValueRow label={states.length > 1 ? 'States' : 'State'}>
           {states.length === 0 ? (

@@ -6,7 +6,6 @@ import {
   retryAll,
 } from '@/components/admin/reads/consoleReads';
 import type { BodyMapScene, MapItem } from '../../map/mapDescriptors';
-import { PLACE_NAMES_READ_CAP } from '../../readCaps';
 
 type LatLng = { lat: number; lng: number };
 
@@ -306,9 +305,6 @@ export function askersByRequest(
   );
 }
 
-/** The most open place names `corpusPlaceNames.openForBody` returns: the console's one cap. */
-export { PLACE_NAMES_READ_CAP } from '../../readCaps';
-
 /** A read's map, built once it lands; loading and failed pass through (the read layer's own). */
 const mapOf = mapLoadable;
 
@@ -316,7 +312,8 @@ const mapOf = mapLoadable;
 export type PlacesReads = {
   landmarks: Loadable<readonly EditorLandmarkInput[]>;
   bays: Loadable<ReadonlyArray<{ _id: string; name: string }>>;
-  names: Loadable<Parameters<typeof placeAsks>[0]>;
+  /** The emails' open names, most discussed first, and whether more exist than were returned. */
+  names: Loadable<{ names: Parameters<typeof placeAsks>[0]; more: boolean }>;
   proposals: Loadable<{ proposals: Parameters<typeof placeAsks>[1]; more: boolean }>;
   provenance: Loadable<readonly ProvenanceInput[]>;
   /** `hidden` for a viewer who can't see who asks. */
@@ -340,7 +337,7 @@ export function placesFrom(r: PlacesReads): PlacesData {
   if (isFailed(r.names) || isFailed(r.proposals)) {
     asks = retryAll([r.names, r.proposals].filter(isFailed));
   } else if (r.names === undefined || r.proposals === undefined) asks = undefined;
-  else asks = placeAsks(r.names, r.proposals.proposals, askers);
+  else asks = placeAsks(r.names.names, r.proposals.proposals, askers);
 
   const landmarks =
     r.landmarks === undefined || isFailed(r.landmarks)
@@ -352,9 +349,8 @@ export function placesFrom(r: PlacesReads): PlacesData {
         );
   return {
     asks,
-    asksCapped:
-      (valueOrNull(r.proposals)?.more ?? false) ||
-      (valueOrNull(r.names)?.length ?? 0) >= PLACE_NAMES_READ_CAP,
+    // Each read says itself when it stopped short: no cap mirrored on the client.
+    asksCapped: (valueOrNull(r.proposals)?.more ?? false) || (valueOrNull(r.names)?.more ?? false),
     landmarks,
     failures,
   };

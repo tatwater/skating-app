@@ -100,7 +100,7 @@ const NAMES_BARE: NamesData = {
   aliases: [],
   classOptions: null,
   perCatalogClaims: null,
-  place: { admin: null, states: [], townLines: null },
+  place: { admin: 'not-computed', states: [], townLines: null },
 };
 
 const PLACES_BARE: PlacesData = {

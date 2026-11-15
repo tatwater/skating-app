@@ -13,7 +13,6 @@ import {
   kindWord,
   landmarkRows,
   litId,
-  PLACE_NAMES_READ_CAP,
   type PlaceAsk,
   type PlaceNameAsk,
   type PlacesData,
@@ -305,7 +304,7 @@ describe('placesFrom', () => {
   const reads = (over: Partial<PlacesReads> = {}): PlacesReads => ({
     landmarks: [editorRow({ _id: 'lm1' })],
     bays: [{ _id: 'bay-s', name: 'Mascoma South' }],
-    names: [{ _id: 'n1', name: 'the Narrows', messages: 12 }],
+    names: { names: [{ _id: 'n1', name: 'the Narrows', messages: 12 }], more: false },
     proposals: {
       proposals: [
         { requestId: 'r1', name: 'the flats', coord: { lat: 1, lng: 2 }, askers: 1 },
@@ -377,15 +376,9 @@ describe('placesFrom', () => {
   it('says the asks are a floor when either read stopped short', () => {
     const more = placesFrom(reads({ proposals: { proposals: [], more: true } }));
     expect(more.asksCapped).toBe(true);
-    const full = placesFrom(
-      reads({
-        names: Array.from({ length: PLACE_NAMES_READ_CAP }, (_, i) => ({
-          _id: `n${i}`,
-          name: `Name ${i}`,
-          messages: 1,
-        })),
-      }),
-    );
+    const full = placesFrom(reads({ names: { names: [], more: true } }));
     expect(full.asksCapped).toBe(true);
+    // Both reads whole: no floor, however many names came back.
+    expect(placesFrom(reads()).asksCapped).toBe(false);
   });
 });

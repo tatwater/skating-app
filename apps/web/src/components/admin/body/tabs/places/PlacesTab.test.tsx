@@ -89,7 +89,10 @@ beforeEach(() => {
     },
   ]);
   set(api.subAreas.listForBody, [{ _id: 'bay-n', name: 'Mascoma North' }]);
-  set(api.corpusPlaceNames.openForBody, [{ _id: 'pn1', name: 'the Narrows', messages: 12 }]);
+  set(api.corpusPlaceNames.openForBody, {
+    names: [{ _id: 'pn1', name: 'the Narrows', messages: 12 }],
+    more: false,
+  });
   set(api.corpusRequests.openLandmarkRequestsForBody, {
     proposals: [
       {
@@ -352,7 +355,7 @@ describe('PlacesTab', () => {
     expect(asks()).toHaveAttribute('aria-busy', 'true');
     // The landmarks don't wait on the asks, nor on the bays.
     expect(screen.getAllByText('Mascoma Lake Dam').length).toBeGreaterThan(0);
-    mocks.results.set(fn(api.corpusPlaceNames.openForBody), []);
+    mocks.results.set(fn(api.corpusPlaceNames.openForBody), { names: [], more: false });
     rerender(<PlacesTab bodyId="wb1" />);
     expect(asks()).not.toHaveAttribute('aria-busy');
   });

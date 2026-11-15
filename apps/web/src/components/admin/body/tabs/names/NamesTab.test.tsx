@@ -78,6 +78,7 @@ beforeEach(() => {
     towns: ['Auburn', 'Lewiston'],
     counties: ['Androscoggin County'],
     states: ['ME'],
+    computedAt: 1,
   });
 });
 
@@ -153,11 +154,23 @@ describe('NamesTab', () => {
     expect(location()).toHaveTextContent('US Census BureauTIGER');
   });
 
-  it('says not recorded when no boundary holds the body, never a blank', () => {
+  it('says the towns aren’t computed yet before the geometry is, never a blank', () => {
     mocks.results.set(getFunctionName(api.bodyConsole.places), null);
     render(<NamesTab bodyId="wb1" />);
-    expect(location()).toHaveTextContent('TownsNot recorded yet');
+    expect(location()).toHaveTextContent('TownsNot computed yet');
     expect(location()).not.toHaveTextContent('TIGER');
+  });
+
+  it('says a body no boundary holds is in no town and no county', () => {
+    mocks.results.set(getFunctionName(api.bodyConsole.places), {
+      towns: [],
+      counties: [],
+      states: [],
+      computedAt: 1,
+    });
+    render(<NamesTab bodyId="wb1" />);
+    expect(location()).toHaveTextContent('TownsIn no town');
+    expect(location()).toHaveTextContent('CountyIn no county');
   });
 
   it('says the boundaries couldn’t be read, in place and in the note, and offers Try again', () => {

@@ -6,6 +6,7 @@ import {
   type WaterBodyClass,
 } from '@skating/core';
 import { isFailed, type Loadable } from '@/components/admin/reads/consoleReads';
+import { NOT_COMPUTED } from '../../frame/bodyModel';
 import type { BodyMapScene, LngLat, MapItem } from '../../map/mapDescriptors';
 
 type LatLng = { lat: number; lng: number };
@@ -65,8 +66,11 @@ export type TownLine = { id: string; path: LatLng[]; faces: [string, string] };
 export type AdminPlaces = { towns: string[]; county: string | null };
 
 export type Place = {
-  /** The towns and county, in their read's state; `null` when no boundary holds the body. */
-  admin: Loadable<AdminPlaces | null>;
+  /**
+   * The towns and county, in their read's state; *not computed yet* until the body's geometry is
+   * (`computedAt` unset). Computed, empty lists say the body is in no town or county.
+   */
+  admin: Loadable<AdminPlaces | typeof NOT_COMPUTED>;
   /** The states the record says the body is in, as two-letter codes; empty when it says none. */
   states: string[];
   /** The boundary lines that cross the map's view of the body, `null` until a read serves them. */
@@ -154,8 +158,16 @@ export function aliasesOf(name: string, claims: NamesBody['nameClaims']): string
   return out;
 }
 
-/** `bodyConsole.places`' answer: the towns, counties and states sampled; `null` with none. */
-export type PlacesInput = { towns: string[]; counties: string[]; states: string[] } | null;
+/**
+ * `bodyConsole.places`' answer: the towns, counties and states sampled, and when; `null` until the
+ * body's geometry is computed (never "in no boundary", which is empty lists).
+ */
+export type PlacesInput = {
+  towns: string[];
+  counties: string[];
+  states: string[];
+  computedAt: number;
+} | null;
 
 export function namesFromBody(
   body: NamesBody,
@@ -189,10 +201,13 @@ export function namesFromBody(
 
 /**
  * The towns and county from the boundary read. Counties are read at the interior point only (a body
- * rarely spans two), so the first is the county.
+ * rarely spans two), so the first is the county. Not computed yet until the geometry is.
  */
-export function adminOf(places: Loadable<PlacesInput>): Loadable<AdminPlaces | null> {
-  if (places === undefined || isFailed(places) || places === null) return places;
+export function adminOf(
+  places: Loadable<PlacesInput>,
+): Loadable<AdminPlaces | typeof NOT_COMPUTED> {
+  if (places === undefined || isFailed(places)) return places;
+  if (places === null) return NOT_COMPUTED;
   return { towns: [...places.towns], county: places.counties[0] ?? null };
 }
 
