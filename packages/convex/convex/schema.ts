@@ -3613,6 +3613,18 @@ export default defineSchema({
      */
     undoesActionId: v.optional(v.id('moderationActions')),
     /**
+     * Where this row sits in an undo chain (change → undo → undo of the undo → …), kept at the write
+     * so no read walks a chain (`lib/undoChains`). On an undo row: the chain's first row (`undoRoot`)
+     * and how many undos deep it is (`undoDepth`). On a chain's first row: how deep the chain's newest
+     * undo is (`undoTop`) and who wrote it (`undoTopActorId`). A row stands while the undos above it
+     * are even in number. Written only by `lib/audit.ts`; older rows get them from
+     * `peopleJobs.backfillUndoChains`.
+     */
+    undoRoot: v.optional(v.id('moderationActions')),
+    undoDepth: v.optional(v.number()),
+    undoTop: v.optional(v.number()),
+    undoTopActorId: v.optional(v.id('profiles')),
+    /**
      * What a person made this write **through** — the script or agent, by its short name (D256).
      * The person stays the actor; this is a label, never a permission. Written only by
      * `lib/audit.ts`, from the caller's identity, and only when it passes `isAuditVia`. Older rows

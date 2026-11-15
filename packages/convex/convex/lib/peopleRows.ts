@@ -47,6 +47,7 @@ export const STORED_COUNT_KEYS = [
 export type StoredCountKey = (typeof STORED_COUNT_KEYS)[number];
 export const READY_ROWS = 'ready:rows';
 export const READY_FLAG_SUBJECTS = 'ready:flagSubjects';
+export const READY_UNDO_CHAINS = 'ready:undoChains';
 
 /**
  * The row a profile reads as, given the row it had (`prev`, for the times a change is first seen):

@@ -41,9 +41,13 @@ export async function writeAudit(
   const undoesActionId = row.undoesActionId ?? UNDOING.get(ctx);
   const at = createdAt ?? Date.now();
   const via = row.actorId !== undefined ? await viaOf(ctx) : undefined;
+  // An undo's place in its chain, and the chain's newest depth on its first row (`lib/undoChains`).
+  const chain =
+    undoesActionId !== undefined ? await placeInUndoChain(ctx, undoesActionId, row.actorId) : {};
   const id = await ctx.db.insert('moderationActions', {
     ...row,
     ...(undoesActionId !== undefined ? { undoesActionId } : {}),
+    ...chain,
     ...(via !== undefined ? { via } : {}),
     createdAt: at,
   });
@@ -58,6 +62,31 @@ export async function writeAudit(
     createdAt: at,
   });
   return id;
+}
+
+/**
+ * An undo of `undoneId`: its chain's first row and its depth, and the first row stamped with the
+ * chain's new newest depth and who wrote it — two point reads at most, one patch. Every row an undo
+ * writes is tagged with the row it undoes (a cascade's member rows too), so they share the depth and
+ * the stamp is written once.
+ */
+async function placeInUndoChain(
+  ctx: MutationCtx,
+  undoneId: Id<'moderationActions'>,
+  actorId: Id<'profiles'> | undefined,
+): Promise<{ undoRoot?: Id<'moderationActions'>; undoDepth?: number }> {
+  const undone = await ctx.db.get(undoneId);
+  if (!undone) return {};
+  const rootId = undone.undoRoot ?? undone._id;
+  const depth = (undone.undoDepth ?? 0) + 1;
+  const root = rootId === undone._id ? undone : await ctx.db.get(rootId);
+  if (root && (root.undoTop ?? 0) < depth) {
+    await ctx.db.patch(rootId, {
+      undoTop: depth,
+      ...(actorId !== undefined ? { undoTopActorId: actorId } : { undoTopActorId: undefined }),
+    });
+  }
+  return { undoRoot: rootId, undoDepth: depth };
 }
 
 /**

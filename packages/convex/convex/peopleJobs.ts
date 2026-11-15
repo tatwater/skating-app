@@ -31,7 +31,13 @@ import { nextAttemptState } from './lib/attempts';
 import { writeAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { flagSubjectOf } from './lib/flagSubject';
-import { markReady, READY_FLAG_SUBJECTS, READY_ROWS, refreshPersonRow } from './lib/peopleRows';
+import {
+  markReady,
+  READY_FLAG_SUBJECTS,
+  READY_ROWS,
+  READY_UNDO_CHAINS,
+  refreshPersonRow,
+} from './lib/peopleRows';
 import { DOC_MAX, errorClassOf, ReadBudget, ROW_MAX, traced } from './lib/readBudget';
 
 const DAY = 86_400_000;
@@ -76,7 +82,8 @@ export const LAPSED_REASON = 'The suspension ran its course';
 export const lapseOne = internalMutation({
   args: { userId: v.id('profiles'), now: v.number() },
   handler: async (ctx, { userId, now }): Promise<LapseOutcome> => {
-    const profile = await ctx.db.get(userId);
+    const reads = new ReadBudget();
+    const profile = await reads.one('profile', () => ctx.db.get(userId));
     if (!profile || profile.status === 'deleting' || profile.status === 'deleted') return 'gone';
     if (profile.deletionRequestedAt !== undefined) return 'leaving';
     if (profile.status !== 'suspended') return 'not_suspended';
@@ -120,39 +127,44 @@ type Position = { at: number; creation: number };
  */
 async function nextDue(
   ctx: MutationCtx,
+  reads: ReadBudget,
   cutoff: number,
   after: Position | undefined,
 ): Promise<Doc<'profiles'> | null> {
   if (after !== undefined) {
-    const tie = await ctx.db
+    const tie = await reads.one('profile', () =>
+      ctx.db
+        .query('profiles')
+        .withIndex('by_suspension_due', (q) =>
+          q
+            .eq('status', 'suspended')
+            .eq('lapseParkedAt', undefined)
+            .eq('deletionRequestedAt', undefined)
+            .eq('suspendedUntil', after.at)
+            .gt('_creationTime', after.creation),
+        )
+        .first(),
+    );
+    if (tie) return tie;
+  }
+  const lower = after?.at ?? 0;
+  return reads.one('profile', () =>
+    ctx.db
       .query('profiles')
       .withIndex('by_suspension_due', (q) =>
         q
           .eq('status', 'suspended')
           .eq('lapseParkedAt', undefined)
           .eq('deletionRequestedAt', undefined)
-          .eq('suspendedUntil', after.at)
-          .gt('_creationTime', after.creation),
+          .gt('suspendedUntil', lower)
+          .lte('suspendedUntil', cutoff),
       )
-      .first();
-    if (tie) return tie;
-  }
-  const lower = after?.at ?? 0;
-  return ctx.db
-    .query('profiles')
-    .withIndex('by_suspension_due', (q) =>
-      q
-        .eq('status', 'suspended')
-        .eq('lapseParkedAt', undefined)
-        .eq('deletionRequestedAt', undefined)
-        .gt('suspendedUntil', lower)
-        .lte('suspendedUntil', cutoff),
-    )
-    .first();
+      .first(),
+  );
 }
 
 /** One step's charge: the head (a profile), the nested reset's reads, and a failure's touch. */
-const STEP_NEED = ROW_MAX.profile + PERSON_WORK + ROW_MAX.profile;
+const STEP_NEED = 2 * ROW_MAX.profile + PERSON_WORK + ROW_MAX.profile;
 
 /**
  * Record a failed attempt on the profile (the outer transaction; the nested one rolled back). After
@@ -208,7 +220,7 @@ export const sweepLapsedSuspensions = internalMutation({
           more = true;
           break;
         }
-        const head = await reads.one('profile', () => nextDue(ctx, cutoff, after));
+        const head = await nextDue(ctx, reads, cutoff, after);
         reads.charge('small');
         if (!head) break;
         after = { at: head.suspendedUntil as number, creation: head._creationTime };
@@ -258,30 +270,35 @@ export const sweepLapsedSuspensions = internalMutation({
  */
 async function nextParked(
   ctx: MutationCtx,
+  reads: ReadBudget,
   runStart: number,
   after: Position | undefined,
 ): Promise<Doc<'profiles'> | null> {
   if (after !== undefined) {
-    const tie = await ctx.db
+    const tie = await reads.one('profile', () =>
+      ctx.db
+        .query('profiles')
+        .withIndex('by_suspension_parked', (q) =>
+          q
+            .eq('status', 'suspended')
+            .eq('lapseParkedAt', after.at)
+            .gt('_creationTime', after.creation),
+        )
+        .first(),
+    );
+    if (tie) return tie;
+  }
+  return reads.one('profile', () =>
+    ctx.db
       .query('profiles')
       .withIndex('by_suspension_parked', (q) =>
         q
           .eq('status', 'suspended')
-          .eq('lapseParkedAt', after.at)
-          .gt('_creationTime', after.creation),
+          .gt('lapseParkedAt', after?.at ?? 0)
+          .lt('lapseParkedAt', runStart),
       )
-      .first();
-    if (tie) return tie;
-  }
-  return ctx.db
-    .query('profiles')
-    .withIndex('by_suspension_parked', (q) =>
-      q
-        .eq('status', 'suspended')
-        .gt('lapseParkedAt', after?.at ?? 0)
-        .lt('lapseParkedAt', runStart),
-    )
-    .first();
+      .first(),
+  );
 }
 
 /**
@@ -308,7 +325,7 @@ export const retryLapsedDaily = internalMutation({
           more = true;
           break;
         }
-        const head = await reads.one('profile', () => nextParked(ctx, runStart, after));
+        const head = await nextParked(ctx, reads, runStart, after);
         reads.charge('small');
         if (!head) break;
         after = { at: head.lapseParkedAt as number, creation: head._creationTime };
@@ -356,14 +373,19 @@ export const parkedLapses = query({
   args: { cursor: v.optional(v.union(v.string(), v.null())) },
   handler: async (ctx, { cursor }) => {
     await requireCapability(ctx, 'machinery.read');
-    const page = await ctx.db
-      .query('profiles')
-      .withIndex('by_suspension_parked', (q) => q.eq('status', 'suspended').gt('lapseParkedAt', 0))
-      .paginate({
-        cursor: cursor ?? null,
-        numItems: PARKED_PAGE,
-        maximumBytesRead: PARKED_PAGE_BYTES,
-      });
+    const budget = new ReadBudget();
+    const page = await budget.capped(PARKED_PAGE_BYTES, PARKED_PAGE, () =>
+      ctx.db
+        .query('profiles')
+        .withIndex('by_suspension_parked', (q) =>
+          q.eq('status', 'suspended').gt('lapseParkedAt', 0),
+        )
+        .paginate({
+          cursor: cursor ?? null,
+          numItems: PARKED_PAGE,
+          maximumBytesRead: PARKED_PAGE_BYTES,
+        }),
+    );
     return {
       parked: page.page.map((p) => ({
         userId: p._id,
@@ -520,7 +542,8 @@ export const backfillRows = internalMutation({
 export const restoreTombstoneStatus = internalMutation({
   args: { userId: v.id('profiles') },
   handler: async (ctx, { userId }) => {
-    const profile = await ctx.db.get(userId);
+    const reads = new ReadBudget();
+    const profile = await reads.one('profile', () => ctx.db.get(userId));
     if (!profile || !deletionOverwritten(profile)) return { restored: false };
     await ctx.db.patch(userId, {
       status: 'deleted',
@@ -583,6 +606,89 @@ export const backfillFlagSubjects = internalMutation({
       else
         console.error(
           `peopleJobs.backfillFlagSubjects: ${failed} failed; not marked ready — re-run it`,
+        );
+      return { done: true, failed };
+    }),
+});
+
+/** Audit rows a pass of the undo-chain backfill reads at most, by count and by real weight. */
+const CHAIN_PAGE = 200;
+const CHAIN_PAGE_BYTES = 4 * DOC_MAX;
+
+/**
+ * Backfill: every undo row written before the audit writer kept chains (`lib/undoChains`) gets its
+ * chain's first row and its depth, and that first row the newest depth and who wrote it. Walks the
+ * audit log oldest first (an undo is always newer than what it undoes, so its parent is placed
+ * before it), a page at a time under a real-weight cap, each row's two point reads within the
+ * budget; chained to the end, logging its cursor, and marks `ready:undoChains` only by a run with no
+ * failures. Idempotent: a row already placed is passed over.
+ */
+export const backfillUndoChains = internalMutation({
+  args: { cursor: v.optional(v.union(v.string(), v.null())), failed: v.optional(v.number()) },
+  handler: (ctx, args) =>
+    traced('peopleJobs.backfillUndoChains', args, async () => {
+      const reads = new ReadBudget();
+      const page = await reads.capped(CHAIN_PAGE_BYTES, CHAIN_PAGE, () =>
+        ctx.db.query('moderationActions').paginate({
+          cursor: args.cursor ?? null,
+          numItems: CHAIN_PAGE,
+          maximumBytesRead: CHAIN_PAGE_BYTES,
+        }),
+      );
+      let failed = args.failed ?? 0;
+      let stoppedAt: number | null = null;
+      let placed = 0;
+      for (const [i, row] of page.page.entries()) {
+        if (row.undoesActionId === undefined || row.undoRoot !== undefined) continue;
+        const parentId = row.undoesActionId;
+        const parent = await reads.measured('moderationAction', () => ctx.db.get(parentId));
+        if (parent === undefined) {
+          stoppedAt = i;
+          break;
+        }
+        if (parent === null) continue;
+        const rootId = parent.undoRoot ?? parent._id;
+        const root =
+          rootId === parent._id
+            ? parent
+            : await reads.measured('moderationAction', () => ctx.db.get(rootId));
+        if (root === undefined) {
+          stoppedAt = i;
+          break;
+        }
+        try {
+          const depth = (parent.undoDepth ?? 0) + 1;
+          await ctx.db.patch(row._id, { undoRoot: rootId, undoDepth: depth });
+          placed++;
+          placed++;
+          if (root !== null && (root.undoTop ?? 0) < depth) {
+            await ctx.db.patch(rootId, { undoTop: depth, undoTopActorId: row.actorId });
+          }
+        } catch (err) {
+          failed++;
+          console.error(`peopleJobs.backfillUndoChains: ${row._id} failed (${errorClassOf(err)})`);
+        }
+      }
+      // Out of budget part-way: the same page again from its start (placed rows are passed over).
+      if (stoppedAt !== null) {
+        if (placed === 0) throw new Error('peopleJobs.backfillUndoChains: a pass made no progress');
+        await ctx.scheduler.runAfter(0, internal.peopleJobs.backfillUndoChains, {
+          cursor: args.cursor ?? null,
+          failed,
+        });
+        return { done: false };
+      }
+      if (!page.isDone) {
+        await ctx.scheduler.runAfter(0, internal.peopleJobs.backfillUndoChains, {
+          cursor: page.continueCursor,
+          failed,
+        });
+        return { done: false };
+      }
+      if (failed === 0) await markReady(ctx, READY_UNDO_CHAINS);
+      else
+        console.error(
+          `peopleJobs.backfillUndoChains: ${failed} failed; not marked ready — re-run it`,
         );
       return { done: true, failed };
     }),

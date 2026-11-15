@@ -8,8 +8,8 @@ import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { markReady, READY_ROWS, refreshPersonRow } from './lib/peopleRows';
-import { canceledRows } from './lib/undoChains';
+import { markReady, READY_ROWS, READY_UNDO_CHAINS, refreshPersonRow } from './lib/peopleRows';
+import { stands } from './lib/undoChains';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -56,32 +56,19 @@ async function seed(t: T, subject: string, role: Role) {
   });
 }
 
-describe('canceledRows', () => {
-  const row = (id: string, at: number, undoes?: string) =>
+describe('stands', () => {
+  const row = (depth: number, top = 0) =>
     ({
-      _id: id,
-      createdAt: at,
-      _creationTime: at,
-      ...(undoes ? { undoesActionId: undoes } : {}),
+      _id: 'x',
+      undoDepth: depth,
+      undoTop: top,
+      ...(depth > 0 ? { undoRoot: 'r' } : {}),
     }) as unknown as Doc<'moderationActions'>;
-  test('pairs cancel from the newest end: undone once is gone, twice is back', () => {
-    expect([...canceledRows([row('a', 1), row('b', 2, 'a')])].sort()).toEqual(['a', 'b']);
-    expect([...canceledRows([row('a', 1), row('b', 2, 'a'), row('c', 3, 'b')])].sort()).toEqual([
-      'b',
-      'c',
-    ]);
-    expect(
-      [...canceledRows([row('a', 1), row('b', 2, 'a'), row('c', 3, 'b'), row('d', 4, 'c')])].sort(),
-    ).toEqual(['a', 'b', 'c', 'd']);
-    // An undo of a row not read cancels nothing it can see.
-    expect(canceledRows([row('b', 2, 'x')]).size).toBe(0);
-  });
-
-  test('decided by the links, not the times: a chain whose times run backward reads the same', () => {
-    expect([...canceledRows([row('a', 3), row('b', 2, 'a'), row('c', 1, 'b')])].sort()).toEqual([
-      'b',
-      'c',
-    ]);
+  test('a row stands while the undos above it are even in number, at any length', () => {
+    for (const top of [0, 1, 2, 9, 50]) {
+      expect(stands(row(0), row(0, top))).toBe(top % 2 === 0);
+      expect(stands(row(1), row(0, top))).toBe((top - 1) % 2 === 0);
+    }
   });
 });
 
@@ -112,7 +99,10 @@ describe('tenure equals the replay', () => {
           const t = convexTest(schema, modules);
           await seed(t, 'adm', 'admin');
           const target = await seed(t, 'target', 'member');
-          await t.run((ctx) => markReady(ctx, READY_ROWS));
+          await t.run(async (ctx) => {
+            await markReady(ctx, READY_ROWS);
+            await markReady(ctx, READY_UNDO_CHAINS);
+          });
           const adm = t.withIdentity({ subject: 'adm' });
           let state: State = { role: 'member', staffSince: null, roleSince: null };
           // Each row on the person as written: the state before and after it.
