@@ -79,6 +79,15 @@ import { requireProfile } from './lib/auth';
 import { redactAgedContent } from './lib/contentPurge';
 import { reclaimExportBlob } from './lib/exportBundles';
 import { deletePhotoAndBlobs, referencedPhotoIds } from './lib/photoOrphans';
+import {
+  clearFailure,
+  forgetGoneMirrors,
+  lapOf,
+  type Position,
+  positionOf,
+  recordFailure,
+  saveLap,
+} from './lib/recurringWork';
 
 /**
  * Rows touched per invocation. Small on purpose: every stage runs in its own transaction and
@@ -274,13 +283,20 @@ export const redactGhostContent = internalMutation({
 export const finalizeDueDeletions = internalMutation({
   args: {},
   handler: async (ctx) => {
-    const dueAt = Date.now() - DELETION_GRACE_MS;
-    const due = await ctx.db
-      .query('profiles')
-      .withIndex('by_deletion_requested_at', (q) =>
-        q.gt('deletionRequestedAt', 0).lte('deletionRequestedAt', dueAt),
-      )
-      .take(FINALIZE_PER_TICK);
+    const now = Date.now();
+    const dueAt = now - DELETION_GRACE_MS;
+    // **A turn each, from where the last tick stopped** (D258). This read the oldest twenty due
+    // accounts every hour, so twenty whose chains kept failing would hold every slot and no account
+    // behind them would ever be finalized — a privacy promise broken by somebody else's account. Now
+    // each tick takes the next twenty after the saved position and the walk wraps at the end of the
+    // due range: every due account is queued once a lap, a failing one only ever takes its own turn.
+    const finalizeLap = await lapOf(ctx, 'finalizeDeletions');
+    const finalizeFrom = positionOf(finalizeLap);
+    // One past the page, to tell a full page from the end of the range: a page that ends the range
+    // wraps now, rather than leaving the next tick an empty read.
+    const dueRead = await accountsAfter(ctx, finalizeFrom, FINALIZE_PER_TICK + 1, dueAt);
+    const due = dueRead.slice(0, FINALIZE_PER_TICK);
+    await saveTurn(ctx, 'finalizeDeletions', finalizeLap, dueRead, FINALIZE_PER_TICK, now);
 
     let started = 0;
     let skipped = 0;
@@ -301,7 +317,18 @@ export const finalizeDueDeletions = internalMutation({
         userId: profile._id,
       });
       started++;
+      // More than a day past its date and still not finalized: counted for Machinery (D258), never
+      // parked — a deletion is attempted every lap until it is done.
+      if (profile.deletionRequestedAt + DELETION_GRACE_MS + OVERDUE_MS < now) {
+        await recordFailure(ctx, 'finalizeDeletions', profile._id, 'Overdue', now, { park: false });
+      }
     }
+    // Counts of accounts that have since been finalized (or whose deletion was canceled) go.
+    await forgetGoneMirrors(ctx, 'finalizeDeletions', OVERDUE_CHECKED, async (key) => {
+      const id = ctx.db.normalizeId('profiles', key);
+      const p = id ? await ctx.db.get(id) : null;
+      return p !== null && p.status !== 'deleted' && p.deletionRequestedAt !== undefined;
+    });
 
     // Ghosts that aren't due yet still keep thinning out. Content three days old at the request is
     // thirty-three days old three weeks later, and "the words are gone" has to keep being true rather
@@ -316,10 +343,22 @@ export const finalizeDueDeletions = internalMutation({
     //
     // The remaining cap is a priority order, not a starvation: the oldest pending ghosts are the ones
     // closest to finalization, which is exactly when their content has to be clean.
-    const pending = await ctx.db
-      .query('profiles')
-      .withIndex('by_deletion_requested_at', (q) => q.gt('deletionRequestedAt', dueAt))
-      .take(REDACT_PER_TICK);
+    //
+    // The same turn-taking as the due accounts above (D258): two hundred ghosts whose redaction kept
+    // failing would otherwise hold the page.
+    const redactLap = await lapOf(ctx, 'redactGhosts');
+    const redactFrom = positionOf(redactLap);
+    const pendingRead = await accountsAfter(
+      ctx,
+      // A saved place an account has since passed into the due range is behind the range's start.
+      redactFrom !== undefined && redactFrom.value > dueAt
+        ? redactFrom
+        : { value: dueAt, creationTime: Number.POSITIVE_INFINITY },
+      REDACT_PER_TICK + 1,
+      undefined,
+    );
+    const pending = pendingRead.slice(0, REDACT_PER_TICK);
+    await saveTurn(ctx, 'redactGhosts', redactLap, pendingRead, REDACT_PER_TICK, now);
     let redacting = 0;
     for (const profile of pending) {
       if (profile.deletionRequestedAt === undefined) continue;
@@ -333,6 +372,67 @@ export const finalizeDueDeletions = internalMutation({
     return { due: due.length, started, skipped, redacting };
   },
 });
+
+/** How far past its date an account is before Machinery counts it overdue. */
+const OVERDUE_MS = 24 * 60 * 60 * 1000;
+/** Overdue counts a tick checks for an account since finalized, at most. */
+const OVERDUE_CHECKED = 10;
+
+/**
+ * Up to `n` profiles on `by_deletion_requested_at` after `at` (requested time, then creation), up to
+ * `upTo` when given — always bounded below by the position or by `gt(0)`, since the field is optional
+ * and the index not sparse.
+ */
+async function accountsAfter(
+  ctx: MutationCtx,
+  at: Position | undefined,
+  n: number,
+  upTo: number | undefined,
+): Promise<Doc<'profiles'>[]> {
+  const rows: Doc<'profiles'>[] = [];
+  if (at !== undefined && Number.isFinite(at.creationTime)) {
+    const tied = await ctx.db
+      .query('profiles')
+      .withIndex('by_deletion_requested_at', (q) =>
+        q.eq('deletionRequestedAt', at.value).gt('_creationTime', at.creationTime),
+      )
+      .take(n);
+    rows.push(...tied);
+  }
+  if (rows.length < n) {
+    const rest = await ctx.db
+      .query('profiles')
+      .withIndex('by_deletion_requested_at', (q) => {
+        const from = q.gt('deletionRequestedAt', at?.value ?? 0);
+        return upTo !== undefined ? from.lte('deletionRequestedAt', upTo) : from;
+      })
+      .take(n - rows.length);
+    rows.push(...rest);
+  }
+  return rows;
+}
+
+/**
+ * Save where a turn-taking walk stopped: after the last of its `n` rows when `read` (one past the
+ * page) shows more behind them, or — the range ended — back to the start.
+ */
+async function saveTurn(
+  ctx: MutationCtx,
+  job: 'finalizeDeletions' | 'redactGhosts',
+  lap: Doc<'jobPositions'> | null,
+  read: readonly Doc<'profiles'>[],
+  n: number,
+  now: number,
+): Promise<void> {
+  const last = read[n - 1];
+  const at =
+    read.length > n && last?.deletionRequestedAt !== undefined
+      ? { value: last.deletionRequestedAt, creationTime: last._creationTime }
+      : undefined;
+  // Nothing to write when nothing moves: no position before, none after.
+  if (at === undefined && positionOf(lap) === undefined && lap !== null) return;
+  await saveLap(ctx, job, lap, at, now);
+}
 
 /**
  * The stages, in order. Named rather than numbered so a log line or a resumed job says what it's doing,
@@ -653,6 +753,9 @@ async function erasePrivate(
     if (row.expiresAt > now && row.emailedAt !== undefined) continue; // still theirs to download
     if (await reclaimExportBlob(ctx, row)) {
       reclaimed.push(row);
+      // A bundle the expired-export sweep counted as stuck goes here, not there: its count goes too
+      // (D258), or nothing would ever clear it.
+      await clearFailure(ctx, 'expiredExports', row._id);
     } else if (row.expiresAt > now) {
       await ctx.db.patch(row._id, { expiresAt: now });
     }
@@ -804,6 +907,8 @@ async function erasePhotos(
  */
 async function writeTombstone(ctx: MutationCtx, profile: Doc<'profiles'>): Promise<void> {
   const clerkUserId = profile.clerkUserId;
+  // Finalized: no longer overdue (D258).
+  await clearFailure(ctx, 'finalizeDeletions', profile._id);
   await ctx.db.patch(profile._id, {
     status: 'deleted',
     deletedAt: Date.now(),

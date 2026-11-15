@@ -48,17 +48,32 @@ import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, type MutationCtx, mutation, query } from './_generated/server';
+import { failedAttempt } from './lib/attempts';
 import { canReceiveNotifications, getCurrentProfile, requireProfile } from './lib/auth';
 import {
+  coalescingRow,
   DELIVERY_BATCH,
   DIGEST_TIMEZONE,
+  dueClockOf,
+  isStaleQueueRow,
   recipientWants,
   settleReadCost,
   settleTrigger,
 } from './lib/notificationQueue';
 import { resolveNotifications } from './lib/notificationResolve';
+import { traced } from './lib/readBudget';
+import {
+  affords,
+  asItem,
+  clearFailure,
+  forgetGoneMirrors,
+  type ItemBudget,
+  MiB,
+  mirrorFailure,
+  runIsolated,
+} from './lib/recurringWork';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
-import { takeCapped, takeCappedResult } from './lib/scan';
+import { takeCapped } from './lib/scan';
 import { subAreaDriveCoordFor } from './subAreas';
 
 /**
@@ -76,7 +91,7 @@ type QueueKind = Doc<'notificationQueue'>['kind'];
 type NotificationType = Doc<'notificationQueue'>['type'];
 
 /** Upsert a coalescing queue row for `(user, body, kind)` — bump an existing pending row, else insert. */
-async function enqueue(
+export async function enqueueReportNotice(
   ctx: MutationCtx,
   params: {
     userId: Id<'profiles'>;
@@ -86,18 +101,23 @@ async function enqueue(
     type: NotificationType;
     flushAfter: number;
     now: number;
+    /**
+     * When the report itself was created — what "newest" is decided by (D258), never when this
+     * enqueue ran: a fan-out page for an older report can land after a newer report's.
+     */
+    reportAt: number;
   },
 ): Promise<void> {
   const coalesceKey = `${params.userId}:${params.waterBodyId}:${params.kind}`;
-  const existing = await ctx.db
-    .query('notificationQueue')
-    .withIndex('by_coalesce', (q) => q.eq('coalesceKey', coalesceKey))
-    .first();
+  // Only a row still settling, never one already due or parked (D258): see `coalescingRow`.
+  const existing = await coalescingRow(ctx, coalesceKey, params.now, params.flushAfter);
   if (existing) {
+    // The row links its newest report by the report's own time, so a late-arriving older report is
+    // counted but never replaces a newer one (D258). A row with no `latestAt` takes it, as it did.
+    const newer = existing.latestAt === undefined || params.reportAt >= existing.latestAt;
     await ctx.db.patch(existing._id, {
       count: existing.count + 1,
-      latestReportId: params.reportId,
-      flushAfter: Math.min(existing.flushAfter, params.flushAfter),
+      ...(newer ? { latestReportId: params.reportId, latestAt: params.reportAt } : {}),
     });
     return;
   }
@@ -108,8 +128,11 @@ async function enqueue(
     type: params.type,
     coalesceKey,
     latestReportId: params.reportId,
+    latestAt: params.reportAt,
     count: 1,
     flushAfter: params.flushAfter,
+    // The row's due clock, set once, here (D258).
+    firstDueAt: params.flushAfter,
     createdAt: params.now,
   });
 }
@@ -185,7 +208,7 @@ export async function enqueueReportNotifications(
   for (const userId of recipients) {
     const user = await ctx.db.get(userId);
     if (!user || !recipientWants(user, 'favorite_report')) continue;
-    await enqueue(ctx, {
+    await enqueueReportNotice(ctx, {
       userId,
       waterBodyId: report.waterBodyId,
       reportId: report._id,
@@ -193,6 +216,7 @@ export async function enqueueReportNotifications(
       type: 'favorite_report',
       flushAfter: now + DEBOUNCE_MS,
       now,
+      reportAt: report.createdAt,
     });
   }
 
@@ -274,7 +298,7 @@ export const fanOutNearbyNotifications = internalMutation({
         // at the old target — coalescing keeps the earliest `flushAfter`, so the failure direction is
         // "slightly early", never "never". Re-resolving every queued row on a profile write would be
         // a lot of machinery for one late-by-an-hour digest.
-        await enqueue(ctx, {
+        await enqueueReportNotice(ctx, {
           userId: p._id,
           waterBodyId: report.waterBodyId,
           reportId: report._id,
@@ -282,6 +306,7 @@ export const fanOutNearbyNotifications = internalMutation({
           type: 'nearby_report_digest',
           flushAfter: digestFlushAfterIn(p.timezone ?? DIGEST_TIMEZONE),
           now,
+          reportAt: report.createdAt,
         });
         enqueued++;
       }
@@ -292,7 +317,7 @@ export const fanOutNearbyNotifications = internalMutation({
         isDriveTimeBand(p.greatRadiusMinutes) &&
         bandWithinRadius(band, p.greatRadiusMinutes)
       ) {
-        await enqueue(ctx, {
+        await enqueueReportNotice(ctx, {
           userId: p._id,
           waterBodyId: report.waterBodyId,
           reportId: report._id,
@@ -300,6 +325,7 @@ export const fanOutNearbyNotifications = internalMutation({
           type: 'great_report_nearby',
           flushAfter: now + DEBOUNCE_MS,
           now,
+          reportAt: report.createdAt,
         });
         enqueued++;
       }
@@ -365,190 +391,501 @@ export const fanOutNearbyNotifications = internalMutation({
  * so every transaction moves the queue and the continuation cannot spin.
  */
 export const flushNotificationQueue = internalMutation({
-  args: {},
-  handler: async (ctx) => {
-    const now = Date.now();
-    // "Exactly cap rows" would be ambiguous between a complete drain and a full batch, and here that
-    // decides whether to continue — the helper's cap+1 probe settles it. `paged`: a full batch is
-    // paging, not an answer that came back short, so it isn't logged as a truncation.
-    const { rows: due, truncated: batchFull } = await takeCappedResult(
-      ctx.db.query('notificationQueue').withIndex('by_flush', (q) => q.lte('flushAfter', now)),
-      FLUSH_BATCH_CAP,
-      'notifications.flushNotificationQueue',
-      { paged: true },
-    );
-
-    let delivered = 0;
-    let dropped = 0;
-    // The read tally. Each helper below adds what it costs — an estimate, deliberately on the high
-    // side, so the budget is a floor on headroom rather than a ceiling on accuracy. The probe read
-    // one row past the cap when the batch is full.
-    let reads = due.length + (batchFull ? 1 : 0);
-    // Users whose digest this batch has already delivered (their later rows in `due` are gone).
-    const digested = new Set<Id<'profiles'>>();
-    // Set when the budget stopped the batch before it finished `due`.
-    let stoppedEarly = false;
-
-    // **Eligibility is re-checked at delivery, not only at enqueue** (PR #30 review). Rows survive in
-    // this table across a debounce window or until 8pm, so the state they were queued against is not
-    // the state they are delivered into: a person can request deletion — or be suspended or banned —
-    // in between, and the row would land anyway. Gating only where notifications are *generated* would
-    // have left exactly the backlog a departing user can no longer mute.
-    //
-    // Memoized per tick because a batch is many rows over few users (that's what coalescing is for), so
-    // this costs a handful of reads rather than one per row. An ineligible row is deleted rather than
-    // left: it will never become deliverable again by sitting here, and a ghost's rows are erased by
-    // finalization regardless.
-    const eligibility = new Map<Id<'profiles'>, Doc<'profiles'> | null>();
-    async function deliverable(userId: Id<'profiles'>): Promise<Doc<'profiles'> | null> {
-      const memo = eligibility.get(userId);
-      if (memo !== undefined) return memo;
-      const profile = await ctx.db.get(userId);
-      reads += 1;
-      const ok = profile !== null && canReceiveNotifications(profile) ? profile : null;
-      eligibility.set(userId, ok);
-      return ok;
-    }
-    // The recipient's block set, for the actor rows' re-check — loaded once per recipient per tick
-    // for the same reason eligibility is memoized.
-    const blockSets = new Map<Id<'profiles'>, ReadonlySet<string>>();
-    async function blockedFor(userId: Id<'profiles'>): Promise<ReadonlySet<string>> {
-      const memo = blockSets.get(userId);
-      if (memo) return memo;
-      const set = await loadBlockedAuthorIds(ctx, userId);
-      // Two index scans, one row per block *edge* — a mutual block is two rows and one set entry,
-      // so the +2 is the pad for that as much as for the scans themselves.
-      reads += 2 + set.size;
-      blockSets.set(userId, set);
-      return set;
-    }
-    // A delete fetches the row it removes, so it is charged like a read. Every row the batch
-    // processes ends in one (delivered or dropped), as does every digest row the pull reaches — left
-    // uncharged, a full batch would sit ~250 + one digest's worth under the tally it reports.
-    async function remove(id: Id<'notificationQueue'>): Promise<void> {
-      await ctx.db.delete(id);
-      reads += 1;
-    }
-
-    // Every row this tick inserts, handed to the transports in bounded batches once the writes are
-    // committed (A08 PR 3). The inbox row is the product; the push and the email are what follow it.
-    const inserted: Id<'notifications'>[] = [];
-
+  args: {
     /**
-     * Every due digest row this user has — the whole of their digest, wherever the rows sit in the
-     * `by_flush` order (see the doc above). `by_user` also returns their pending favorite/great/actor
-     * rows; it's per-user-small either way, and they're filtered here rather than through a wider
-     * index nothing else would use.
+     * This run's cutoff (D258): every pass of a run reads what was due by the moment it started, and
+     * a row whose delivery failed is moved just past it — so a run tries each row once.
      */
-    async function dueDigestRowsFor(userId: Id<'profiles'>): Promise<Doc<'notificationQueue'>[]> {
-      const rows = await ctx.db
-        .query('notificationQueue')
-        .withIndex('by_user', (q) => q.eq('userId', userId))
-        .collect();
-      reads += rows.length;
-      return rows.filter((r) => r.kind === 'digest' && r.flushAfter <= now);
-    }
+    cutoff: v.optional(v.number()),
+  },
+  handler: (ctx, args): Promise<Omit<FlushResult, 'inserted'>> =>
+    traced('notifications.flushNotificationQueue', args, async () => {
+      const now = Date.now();
+      const cutoff = args.cutoff ?? now;
+      // The batch, whole, as one nested transaction — the common path. Only if it fails is each due
+      // row delivered alone, so one row that can't be delivered never holds up the rest.
+      const batch = await runIsolated<FlushResult>(
+        ctx,
+        internal.notifications.flushBatch,
+        { now, cutoff },
+        BATCH_LIMITS,
+      );
+      const result: FlushResult = batch.ok ? batch.value : await flushOneByOne(ctx, now, cutoff);
+      // The transports (A08 PR 3): scheduled after every write above, in bounded batches, so a push
+      // or an email only ever follows a row that exists.
+      for (let i = 0; i < result.inserted.length; i += DELIVERY_BATCH) {
+        await ctx.scheduler.runAfter(0, internal.notificationDelivery.deliverBatch, {
+          notificationIds: result.inserted.slice(i, i + DELIVERY_BATCH),
+        });
+      }
+      // More behind this batch, or a budget stop: go again now rather than at the next cron minute.
+      // An overlap with the cron's own tick is harmless — rows are deleted as they deliver, so two
+      // flushes on the same rows conflict, one retries, and it finds them gone.
+      if (result.continued) {
+        await ctx.scheduler.runAfter(0, internal.notifications.flushNotificationQueue, { cutoff });
+      }
+      const { inserted: _inserted, ...counts } = result;
+      return counts;
+    }),
+});
 
-    for (const [i, row] of due.entries()) {
-      // Delivered (and deleted) earlier this batch by its user's digest pull. Skipped ahead of the
-      // budget guard: it costs nothing, and letting it trip the guard would schedule a continuation
-      // for rows that are already gone.
-      if (row.kind === 'digest' && digested.has(row.userId)) continue;
-      // Checked before the row is touched, so a row is delivered whole or not at all; the first row
-      // is exempt (the progress guarantee, see the doc above).
-      if (i > 0 && reads >= FLUSH_READ_BUDGET) {
-        stoppedEarly = true;
-        break;
-      }
-      const profile = await deliverable(row.userId);
-      // The type's own toggle is re-read too: a person who switched "comments on my reports" off
-      // during the settle window meant it to apply to the comment that was already queued.
-      if (!profile || !recipientWants(profile, row.type)) {
-        await remove(row._id);
-        dropped++;
-        continue;
-      }
-      if (row.kind === 'digest') {
-        const rows = await dueDigestRowsFor(row.userId);
-        // One consolidated digest per user: enumerate the bodies (each with its own coalesced
-        // count), carry the grand `totalCount`, and key the collapse-id per user so a later push
-        // replaces cleanly.
-        const bodies = rows.flatMap((r) =>
-          r.waterBodyId !== undefined && r.latestReportId !== undefined
-            ? [{ waterBodyId: r.waterBodyId, reportId: r.latestReportId, count: r.count }]
-            : [],
+/** What one batch of the flush did, and the inbox rows it wrote for the transports. */
+interface FlushResult {
+  delivered: number;
+  dropped: number;
+  expired: number;
+  failed: number;
+  parked: number;
+  reads: number;
+  continued: boolean;
+  inserted: Id<'notifications'>[];
+}
+
+/**
+ * A whole batch's limits as one nested transaction. A batch whose real reads pass them — a burst of
+ * heavy rows — fails as a batch and is delivered a row at a time, which costs a pass, not a row.
+ */
+const BATCH_LIMITS = {
+  bytesRead: 8 * MiB,
+  documentsRead: 8000,
+  // Above the batch's own soft stop (`FLUSH_READ_BUDGET`, reads), so a healthy batch stops itself
+  // before it meets this hard limit.
+  databaseQueries: 3200,
+  documentsWritten: 4000,
+};
+
+/** The most the batch's own read of the queue takes by weight (`maximumBytesRead`). */
+const BATCH_PAGE_BYTES = 2 * MiB;
+
+/** One row delivered alone: its row, recipient, block set, digest pull or trigger re-read. */
+const ROW_ITEM: ItemBudget = {
+  limits: { bytesRead: 3 * MiB, documentsRead: 2000, databaseQueries: 200, documentsWritten: 500 },
+  reserve: { bytesRead: 1 * MiB, documentsRead: 200, databaseQueries: 100, documentsWritten: 100 },
+};
+
+/**
+ * One batch of the flush, or one row (`only`), as a nested transaction: the delivery itself, as it
+ * always was. Only its class leaves it on a failure (`asItem`).
+ */
+export const flushBatch = internalMutation({
+  args: {
+    now: v.number(),
+    cutoff: v.number(),
+    /** Deliver this row alone — the one-by-one path, and the retry of a parked row. */
+    only: v.optional(v.id('notificationQueue')),
+  },
+  handler: (ctx, args): Promise<FlushResult> =>
+    asItem(args.only ?? 'batch', () => flushRows(ctx, args)),
+});
+
+/**
+ * The batch failed: deliver each due row alone, in its own nested transaction, and record the ones
+ * that fail on their rows (`lib/attempts`) — moved just past this run's cutoff, parked at the third
+ * failure in a row. A pass stops at the batch cap or when it can't afford another row at its whole
+ * limits, and continues.
+ */
+async function flushOneByOne(ctx: MutationCtx, now: number, cutoff: number): Promise<FlushResult> {
+  const out: FlushResult = {
+    delivered: 0,
+    dropped: 0,
+    expired: 0,
+    failed: 0,
+    parked: 0,
+    reads: 0,
+    continued: false,
+    inserted: [],
+  };
+  for (let n = 0; ; n++) {
+    if (n >= FLUSH_BATCH_CAP || !(await affords(ctx, ROW_ITEM))) {
+      out.continued = true;
+      break;
+    }
+    const row = await ctx.db
+      .query('notificationQueue')
+      .withIndex('by_parked_flush', (q) => q.eq('parkedAt', undefined).lte('flushAfter', cutoff))
+      .first();
+    if (!row) break;
+    const one = await runIsolated<FlushResult>(
+      ctx,
+      internal.notifications.flushBatch,
+      { now, cutoff, only: row._id },
+      ROW_ITEM.limits,
+    );
+    if (one.ok) {
+      out.delivered += one.value.delivered;
+      out.dropped += one.value.dropped;
+      out.expired += one.value.expired;
+      out.reads += one.value.reads;
+      out.inserted.push(...one.value.inserted);
+      continue;
+    }
+    out.failed++;
+    if ((await recordQueueFailure(ctx, row, one.errorClass, now, { cutoff })) === 'parked') {
+      out.parked++;
+      console.error(`notifications.flush: parked queue row ${row._id} after repeated failures`);
+    }
+  }
+  return out;
+}
+
+/**
+ * Record a failed delivery on the row, by the rule (`lib/attempts`): one more in a row and its class;
+ * parked at the third. The walk moves it just past its run's cutoff, so the run tries it once; the
+ * retry leaves it parked, re-stamped as just tried. Its first due time is kept for the freshness rule.
+ */
+export async function recordQueueFailure(
+  ctx: MutationCtx,
+  row: Doc<'notificationQueue'>,
+  errorClass: string,
+  now: number,
+  opts: { cutoff?: number; byDailyRetry?: boolean },
+): Promise<'failed' | 'parked'> {
+  const { next, parked } = failedAttempt(
+    {
+      attempts: row.attempts,
+      errorClass: row.lastErrorClass,
+      parkedAt: row.parkedAt,
+      retriedAt: row.retriedAt,
+    },
+    errorClass,
+    now,
+    opts.byDailyRetry,
+  );
+  await ctx.db.patch(row._id, {
+    attempts: next.attempts,
+    lastErrorClass: next.errorClass,
+    parkedAt: next.parkedAt,
+    retriedAt: next.retriedAt,
+    firstDueAt: dueClockOf(row),
+    ...(opts.cutoff !== undefined ? { flushAfter: Math.max(row.flushAfter, opts.cutoff + 1) } : {}),
+  });
+  await mirrorFailure(ctx, 'notifications', row._id, next, now);
+  return parked ? 'parked' : 'failed';
+}
+
+/** Mirrored failures a retry run checks for work that went some other way, at most. */
+const MIRRORS_CHECKED = 10;
+
+/** Parked rows the hourly retry tries a pass, at most. */
+const RETRY_PER_PASS = 50;
+
+/**
+ * **Parked notifications, retried hourly** (D258) — hourly rather than daily, because a notification
+ * is only worth sending inside its freshness window (`NOTIFICATION_FRESH_MS`): a row parked by a bad
+ * deploy fixed within the morning still lands, and one past its window is expired here instead.
+ * Least recently tried first, each in its own nested transaction, once a run (only what was parked or
+ * last tried before the run began). Delivered, dropped or expired: gone. Failed again: still parked,
+ * re-stamped and noted as retried.
+ */
+export const retryParkedNotifications = internalMutation({
+  args: { cutoff: v.optional(v.number()) },
+  handler: (
+    ctx,
+    args,
+  ): Promise<{
+    delivered: number;
+    dropped: number;
+    expired: number;
+    failed: number;
+    more: boolean;
+  }> =>
+    traced('notifications.retryParkedNotifications', args, async () => {
+      const now = Date.now();
+      const cutoff = args.cutoff ?? now;
+      const counts = { delivered: 0, dropped: 0, expired: 0, failed: 0 };
+      const inserted: Id<'notifications'>[] = [];
+      let more = false;
+      for (let n = 0; ; n++) {
+        if (n >= RETRY_PER_PASS || !(await affords(ctx, ROW_ITEM))) {
+          more = true;
+          break;
+        }
+        const row = await ctx.db
+          .query('notificationQueue')
+          .withIndex('by_parked_flush', (q) => q.gt('parkedAt', 0).lt('parkedAt', cutoff))
+          .first();
+        if (!row) break;
+        const one = await runIsolated<FlushResult>(
+          ctx,
+          internal.notifications.flushBatch,
+          { now, cutoff: now, only: row._id },
+          ROW_ITEM.limits,
         );
-        const totalCount = bodies.reduce((sum, b) => sum + b.count, 0);
-        inserted.push(
-          await ctx.db.insert('notifications', {
-            userId: row.userId,
-            type: 'nearby_report_digest',
-            payload: { bodies, totalCount, coalesceKey: `${row.userId}:digest` },
-            createdAt: now,
-          }),
-        );
-        for (const r of rows) await remove(r._id);
-        digested.add(row.userId);
-        delivered++;
-        continue;
-      }
-      if (row.trigger !== undefined) {
-        // An actor row (D169): re-read the trigger and deliver only what's still true. A dropped row
-        // is deleted, not retried — the thing that would make it true again is a *new* action, which
-        // enqueues its own row.
-        const payload = await settleTrigger(ctx, row.trigger, await blockedFor(row.userId));
-        reads += settleReadCost(row.trigger);
-        await remove(row._id);
-        if (!payload) {
-          dropped++;
+        if (one.ok) {
+          counts.delivered += one.value.delivered;
+          counts.dropped += one.value.dropped;
+          counts.expired += one.value.expired;
+          inserted.push(...one.value.inserted);
           continue;
         }
-        inserted.push(
-          await ctx.db.insert('notifications', {
-            userId: row.userId,
-            type: row.type,
-            payload: { ...payload, coalesceKey: row.coalesceKey },
-            createdAt: now,
-          }),
-        );
-        delivered++;
+        counts.failed++;
+        await recordQueueFailure(ctx, row, one.errorClass, now, { byDailyRetry: true });
+      }
+      for (let i = 0; i < inserted.length; i += DELIVERY_BATCH) {
+        await ctx.scheduler.runAfter(0, internal.notificationDelivery.deliverBatch, {
+          notificationIds: inserted.slice(i, i + DELIVERY_BATCH),
+        });
+      }
+      // Mirrored failures of rows that went some other way (erased with an account, the season purge).
+      if (!more) {
+        await forgetGoneMirrors(ctx, 'notifications', MIRRORS_CHECKED, async (key) => {
+          const id = ctx.db.normalizeId('notificationQueue', key);
+          const row = id ? await ctx.db.get(id) : null;
+          return row?.attempts !== undefined;
+        });
+      }
+      if (more) {
+        await ctx.scheduler.runAfter(0, internal.notifications.retryParkedNotifications, {
+          cutoff,
+        });
+      }
+      return { ...counts, more };
+    }),
+});
+
+/**
+ * The delivery: a batch of due rows, or one row. See `flushNotificationQueue`'s notes for the
+ * batching, the digest pull and the budget guard — all unchanged by D258, which only wraps this.
+ */
+async function flushRows(
+  ctx: MutationCtx,
+  { now, cutoff, only }: { now: number; cutoff: number; only?: Id<'notificationQueue'> },
+): Promise<FlushResult> {
+  // Whether more is behind the batch decides whether to continue — the page's `isDone` settles it.
+  // Parked rows are out of the range (D258); `only` is one row, the one-by-one path's or the retry's.
+  const onlyRow = only !== undefined ? await ctx.db.get(only) : null;
+  // The batch's read is bounded by weight as well as rows (D258): a queue row's coalesced actors are
+  // uncapped, so a page of heavy rows ends early — and continues — rather than reading past the
+  // batch's limits and failing it into the one-by-one path every pass.
+  const head =
+    only !== undefined
+      ? null
+      : await ctx.db
+          .query('notificationQueue')
+          .withIndex('by_parked_flush', (q) =>
+            q.eq('parkedAt', undefined).lte('flushAfter', cutoff),
+          )
+          .paginate({
+            cursor: null,
+            numItems: FLUSH_BATCH_CAP,
+            maximumBytesRead: BATCH_PAGE_BYTES,
+          });
+  const due = head ? head.page : onlyRow ? [onlyRow] : [];
+  const batchFull = head ? !head.isDone : false;
+
+  let delivered = 0;
+  let dropped = 0;
+  let expired = 0;
+  // The read tally. Each helper below adds what it costs — an estimate, deliberately on the high
+  // side, so the budget is a floor on headroom rather than a ceiling on accuracy. The probe read
+  // one row past the cap when the batch is full.
+  let reads = due.length + (batchFull ? 1 : 0);
+  // Users whose digest this batch has already delivered (their later rows in `due` are gone).
+  const digested = new Set<Id<'profiles'>>();
+  // Set when the budget stopped the batch before it finished `due`.
+  let stoppedEarly = false;
+
+  // **Eligibility is re-checked at delivery, not only at enqueue** (PR #30 review). Rows survive in
+  // this table across a debounce window or until 8pm, so the state they were queued against is not
+  // the state they are delivered into: a person can request deletion — or be suspended or banned —
+  // in between, and the row would land anyway. Gating only where notifications are *generated* would
+  // have left exactly the backlog a departing user can no longer mute.
+  //
+  // Memoized per tick because a batch is many rows over few users (that's what coalescing is for), so
+  // this costs a handful of reads rather than one per row. An ineligible row is deleted rather than
+  // left: it will never become deliverable again by sitting here, and a ghost's rows are erased by
+  // finalization regardless.
+  const eligibility = new Map<Id<'profiles'>, Doc<'profiles'> | null>();
+  async function deliverable(userId: Id<'profiles'>): Promise<Doc<'profiles'> | null> {
+    const memo = eligibility.get(userId);
+    if (memo !== undefined) return memo;
+    const profile = await ctx.db.get(userId);
+    reads += 1;
+    const ok = profile !== null && canReceiveNotifications(profile) ? profile : null;
+    eligibility.set(userId, ok);
+    return ok;
+  }
+  // The recipient's block set, for the actor rows' re-check — loaded once per recipient per tick
+  // for the same reason eligibility is memoized.
+  const blockSets = new Map<Id<'profiles'>, ReadonlySet<string>>();
+  async function blockedFor(userId: Id<'profiles'>): Promise<ReadonlySet<string>> {
+    const memo = blockSets.get(userId);
+    if (memo) return memo;
+    const set = await loadBlockedAuthorIds(ctx, userId);
+    // Two index scans, one row per block *edge* — a mutual block is two rows and one set entry,
+    // so the +2 is the pad for that as much as for the scans themselves.
+    reads += 2 + set.size;
+    blockSets.set(userId, set);
+    return set;
+  }
+  // A delete fetches the row it removes, so it is charged like a read. Every row the batch
+  // processes ends in one (delivered or dropped), as does every digest row the pull reaches — left
+  // uncharged, a full batch would sit ~250 + one digest's worth under the tally it reports.
+  async function remove(row: Doc<'notificationQueue'>): Promise<void> {
+    await ctx.db.delete(row._id);
+    reads += 1;
+    // A row that had failed takes its mirrored state with it (D258).
+    if (row.attempts !== undefined) await clearFailure(ctx, 'notifications', row._id);
+  }
+
+  // Every row this tick inserts, handed to the transports in bounded batches once the writes are
+  // committed (A08 PR 3). The inbox row is the product; the push and the email are what follow it.
+  const inserted: Id<'notifications'>[] = [];
+
+  /**
+   * Every due digest row this user has — the whole of their digest, wherever the rows sit in the
+   * `by_flush` order (see the doc above). `by_user` also returns their pending favorite/great/actor
+   * rows; it's per-user-small either way, and they're filtered here rather than through a wider
+   * index nothing else would use.
+   */
+  async function dueDigestRowsFor(userId: Id<'profiles'>): Promise<Doc<'notificationQueue'>[]> {
+    const rows = await ctx.db
+      .query('notificationQueue')
+      .withIndex('by_user', (q) => q.eq('userId', userId))
+      .collect();
+    reads += rows.length;
+    // A parked row is the retry's, never pulled into a fresh digest (D258) — unless it is the row
+    // being retried; and a row past its window is expired, not sent.
+    const due = rows.filter(
+      (r) =>
+        r.kind === 'digest' &&
+        r.flushAfter <= cutoff &&
+        (r.parkedAt === undefined || r._id === only),
+    );
+    const fresh: Doc<'notificationQueue'>[] = [];
+    for (const r of due) {
+      if (isStaleQueueRow(r, now)) {
+        await remove(r);
+        expired++;
+      } else fresh.push(r);
+    }
+    return fresh;
+  }
+
+  for (const [i, row] of due.entries()) {
+    // Delivered (and deleted) earlier this batch by its user's digest pull. Skipped ahead of the
+    // budget guard: it costs nothing, and letting it trip the guard would schedule a continuation
+    // for rows that are already gone.
+    if (row.kind === 'digest' && digested.has(row.userId)) continue;
+    // Checked before the row is touched, so a row is delivered whole or not at all; the first row
+    // is exempt (the progress guarantee, see the doc above).
+    if (i > 0 && reads >= FLUSH_READ_BUDGET) {
+      stoppedEarly = true;
+      break;
+    }
+    // Past its window: expired, never delivered late as if fresh (D258).
+    if (isStaleQueueRow(row, now)) {
+      await remove(row);
+      expired++;
+      continue;
+    }
+    const profile = await deliverable(row.userId);
+    // The type's own toggle is re-read too: a person who switched "comments on my reports" off
+    // during the settle window meant it to apply to the comment that was already queued.
+    if (!profile || !recipientWants(profile, row.type)) {
+      await remove(row);
+      dropped++;
+      continue;
+    }
+    if (row.kind === 'digest') {
+      const rows = await dueDigestRowsFor(row.userId);
+      // One consolidated digest per user: enumerate the bodies (each with its own coalesced
+      // count), carry the grand `totalCount`, and key the collapse-id per user so a later push
+      // replaces cleanly. A body is listed once however many rows carry it (D258 lets one key hold
+      // several: a row from before the rule, a parked one being retried, a zone change, a late
+      // flush) — its counts summed, its report the newest row's.
+      const byBody = new Map<
+        Id<'waterBodies'>,
+        { waterBodyId: Id<'waterBodies'>; reportId: Id<'reports'>; count: number; at: number }
+      >();
+      for (const r of rows) {
+        if (r.waterBodyId === undefined || r.latestReportId === undefined) continue;
+        // The newest report by its own time (`latestAt`), never by the row's creation time, which a
+        // later event joining the row does not move (D258, Greptile #116). A row from before D258
+        // has only its `createdAt`, and is never joined since, so it drains within the day.
+        const at = r.latestAt ?? r.createdAt;
+        const seen = byBody.get(r.waterBodyId);
+        if (!seen) {
+          byBody.set(r.waterBodyId, {
+            waterBodyId: r.waterBodyId,
+            reportId: r.latestReportId,
+            count: r.count,
+            at,
+          });
+          continue;
+        }
+        seen.count += r.count;
+        if (at >= seen.at) {
+          seen.reportId = r.latestReportId;
+          seen.at = at;
+        }
+      }
+      const bodies = [...byBody.values()].map(({ at: _at, ...b }) => b);
+      const totalCount = bodies.reduce((sum, b) => sum + b.count, 0);
+      inserted.push(
+        await ctx.db.insert('notifications', {
+          userId: row.userId,
+          type: 'nearby_report_digest',
+          payload: { bodies, totalCount, coalesceKey: `${row.userId}:digest` },
+          createdAt: now,
+        }),
+      );
+      for (const r of rows) await remove(r);
+      digested.add(row.userId);
+      delivered++;
+      continue;
+    }
+    if (row.trigger !== undefined) {
+      // An actor row (D169): re-read the trigger and deliver only what's still true. A dropped row
+      // is deleted, not retried — the thing that would make it true again is a *new* action, which
+      // enqueues its own row.
+      const payload = await settleTrigger(ctx, row.trigger, await blockedFor(row.userId));
+      reads += settleReadCost(row.trigger);
+      await remove(row);
+      if (!payload) {
+        dropped++;
         continue;
       }
       inserted.push(
         await ctx.db.insert('notifications', {
           userId: row.userId,
           type: row.type,
-          payload: {
-            waterBodyId: row.waterBodyId,
-            reportId: row.latestReportId,
-            count: row.count,
-            coalesceKey: row.coalesceKey,
-          },
+          payload: { ...payload, coalesceKey: row.coalesceKey },
           createdAt: now,
         }),
       );
-      await remove(row._id);
       delivered++;
+      continue;
     }
+    inserted.push(
+      await ctx.db.insert('notifications', {
+        userId: row.userId,
+        type: row.type,
+        payload: {
+          waterBodyId: row.waterBodyId,
+          reportId: row.latestReportId,
+          count: row.count,
+          coalesceKey: row.coalesceKey,
+        },
+        createdAt: now,
+      }),
+    );
+    await remove(row);
+    delivered++;
+  }
 
-    // The transports (A08 PR 3): scheduled after every write above, in bounded batches, so a push or
-    // an email only ever follows a row that exists.
-    for (let i = 0; i < inserted.length; i += DELIVERY_BATCH) {
-      await ctx.scheduler.runAfter(0, internal.notificationDelivery.deliverBatch, {
-        notificationIds: inserted.slice(i, i + DELIVERY_BATCH),
-      });
-    }
-
-    // More behind this batch, or a budget stop: go again now rather than at the next cron minute.
-    // An overlap with the cron's own tick is harmless — rows are deleted as they deliver, so two
-    // flushes on the same rows conflict, one retries, and it finds them gone.
-    const continued = batchFull || stoppedEarly;
-    if (continued) {
-      await ctx.scheduler.runAfter(0, internal.notifications.flushNotificationQueue, {});
-    }
-    return { delivered, dropped, reads, continued };
-  },
-});
+  const continued = batchFull || stoppedEarly;
+  return {
+    delivered,
+    dropped,
+    expired,
+    failed: 0,
+    parked: 0,
+    reads,
+    continued,
+    inserted,
+  };
+}
 
 // ── The inbox read path (A08 / §1.1) ────────────────────────────────────────────────────────────────
 

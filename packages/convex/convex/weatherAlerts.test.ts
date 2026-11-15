@@ -3,6 +3,7 @@ import type { Polygon } from 'geojson';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+import * as recurringWork from './lib/recurringWork';
 import schema from './schema';
 import { alertFromFeature } from './weatherAlerts';
 
@@ -100,6 +101,40 @@ describe('alertFromFeature', () => {
 });
 
 describe('weatherAlerts.refreshAlerts', () => {
+  /**
+   * D258: a state whose write threw used to end the tick, so the states after it went unrefreshed for
+   * as long as that state's alert stayed live. Now it keeps what it had — like a state that did not
+   * answer — the others are written, and the failure is counted until a write lands.
+   */
+  test('a state whose write throws keeps what it had, and the states after it are still written', async () => {
+    const t = convexTest(schema, modules);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => alertsResponse([feature()])),
+    );
+    const real = recurringWork.asItem;
+    const spy = vi.spyOn(recurringWork, 'asItem').mockImplementation(async (key, work) => {
+      if (key === 'VT') throw new Error('poison');
+      return real(key, work);
+    });
+    try {
+      expect(await t.action(internal.weatherAlerts.refreshAlerts, {})).toEqual({
+        statesRefreshed: 4,
+        statesFailed: 1,
+      });
+      const rows = await t.run((ctx) => ctx.db.query('weatherAlerts').collect());
+      expect(rows.map((r) => r.state).sort()).toEqual(['MA', 'ME', 'NH', 'NY']);
+      expect(await t.run((ctx) => ctx.db.query('jobFailures').collect())).toMatchObject([
+        { job: 'nwsAlerts', key: 'VT', attempts: 1 },
+      ]);
+      spy.mockRestore();
+      await t.action(internal.weatherAlerts.refreshAlerts, {});
+      expect(await t.run((ctx) => ctx.db.query('jobFailures').collect())).toEqual([]);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
   test('polls each covered state once and stores the relevant alerts', async () => {
     const t = convexTest(schema, modules);
     const fetchMock = vi.fn(async () => alertsResponse([feature()]));

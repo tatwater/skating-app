@@ -60,3 +60,23 @@ export function nextAttemptState(
     retriedAt: outcome.byDailyRetry ? now : state.retriedAt,
   };
 }
+
+/**
+ * One more failure by the rule, and whether it is the failure that parked the work — what every job
+ * that records failures (on its own rows or in `jobFailures`) writes, so the parking moment is decided
+ * in one place.
+ */
+export function failedAttempt(
+  state: AttemptState,
+  errorClass: string,
+  now: number,
+  byDailyRetry = false,
+): { next: AttemptState; parked: boolean } {
+  // A failure always changes the state, so this is never null.
+  const next = nextAttemptState(
+    state,
+    { kind: 'failed', errorClass, ...(byDailyRetry ? { byDailyRetry: true } : {}) },
+    now,
+  ) as AttemptState;
+  return { next, parked: next.parkedAt !== undefined && state.parkedAt === undefined };
+}

@@ -142,10 +142,15 @@ export const finish = internalMutation({
     coverage: v.optional(coverageValidator),
     error: v.optional(v.string()),
     notes: v.optional(v.array(v.string())),
+    /**
+     * `false` for a dry run (D258): it changed nothing, so it invalidates nothing — no reconcile is
+     * scheduled for it. Absent means a run that applied what it did, as every loader's does.
+     */
+    applied: v.optional(v.boolean()),
   },
   handler: async (
     ctx,
-    { runId, status, counts, stages, failures, failuresTotal, coverage, error, notes },
+    { runId, status, counts, stages, failures, failuresTotal, coverage, error, notes, applied },
   ) => {
     const run = await ctx.db.get(runId);
     if (!run) throw new Error(`importRuns row ${runId} not found`);
@@ -171,7 +176,11 @@ export const finish = internalMutation({
     //
     // Success only. A failed run is retried, and the retry's success fires this; firing on failure
     // would spend a walk per attempt on a loader stuck in a retry loop.
-    if (status === 'succeeded' && WEATHER_CELL_INVALIDATING_KINDS.includes(run.kind)) {
+    if (
+      status === 'succeeded' &&
+      applied !== false &&
+      WEATHER_CELL_INVALIDATING_KINDS.includes(run.kind)
+    ) {
       await ctx.scheduler.runAfter(
         RECONCILE_DEBOUNCE_MS,
         internal.weatherArchive.maybeSyncWeatherCells,

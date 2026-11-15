@@ -251,24 +251,23 @@ describe('photoReconcile — the answer the capped scan cannot give', () => {
   });
 });
 
-describe('sweepOrphanPhotos escalates instead of skipping forever', () => {
+describe('the orphan walk no longer escalates (D258)', () => {
   /**
-   * Skipping a capped uploader was never the bug — keeping a photo it can't prove is unreferenced is
-   * correct. The bug was that skipping was the *end of it*: the cap is a property of the uploader, not
-   * of the moment, so the same `null` came back every tick and nothing ever reclaimed the blobs. The
-   * cron now hands them to the job that can finish the question.
-   *
-   * This asserts the ordinary path stays inline — nothing is escalated when the fast scan can answer,
-   * which is what keeps the cron cheap for everybody who isn't pathological.
+   * The capped one-shot scan is gone from the orphan walk: it owes each photo nothing cheap says is
+   * shown to the photo settlement, whose check reads the uploader's history a page at a time and so
+   * has no cap to hit. Nothing is handed to the reconcile, however prolific the uploader.
    */
-  test('a determinable uploader is handled inline, with nothing escalated', async () => {
+  test('an orphan is owed to the settlement and deleted there, with nothing escalated', async () => {
     const t = harness();
     const uploader = await seedUploader(t, 'ordinary');
-    await seedPhoto(t, uploader, 'orphan');
+    const orphan = await seedPhoto(t, uploader, 'orphan');
 
     const swept = await t.mutation(internal.storageHygiene.sweepOrphanPhotos, {});
+    expect(swept).toMatchObject({ examined: 1, owed: 1, lapDone: true });
+    await t.mutation(internal.erasure.settleOwed, {});
 
-    expect(swept).toMatchObject({ scanned: 1, deleted: 1, skipped: 0, escalated: 0 });
+    expect(await t.run((ctx) => ctx.db.get(orphan))).toBeNull();
+    expect((await t.run((ctx) => ctx.db.get(uploader)))?.photoReconcileStartedAt).toBeUndefined();
   });
 });
 

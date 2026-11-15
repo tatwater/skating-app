@@ -5,7 +5,13 @@
  */
 import fc from 'fast-check';
 import { describe, expect, test } from 'vitest';
-import { type AttemptOutcome, type AttemptState, MAX_ATTEMPTS, nextAttemptState } from './attempts';
+import {
+  type AttemptOutcome,
+  type AttemptState,
+  failedAttempt,
+  MAX_ATTEMPTS,
+  nextAttemptState,
+} from './attempts';
 
 const outcome: fc.Arbitrary<AttemptOutcome> = fc.oneof(
   fc.constant<AttemptOutcome>({ kind: 'failed', errorClass: 'Error' }),
@@ -60,6 +66,22 @@ describe('the parking rule', () => {
       errorClass: undefined,
       parkedAt: undefined,
       retriedAt: undefined,
+    });
+  });
+
+  test('a failure says whether it is the one that parked the work — only the first, never a retry', () => {
+    let state: AttemptState = {};
+    const parkedAt: boolean[] = [];
+    for (let i = 0; i < MAX_ATTEMPTS + 2; i++) {
+      const { next, parked } = failedAttempt(state, 'Error', i);
+      parkedAt.push(parked);
+      state = next;
+    }
+    expect(parkedAt).toEqual([false, false, true, false, false]);
+    const retried = failedAttempt(state, 'TypeError', 99, true);
+    expect(retried).toEqual({
+      next: { attempts: MAX_ATTEMPTS + 3, errorClass: 'TypeError', parkedAt: 99, retriedAt: 99 },
+      parked: false,
     });
   });
 });
