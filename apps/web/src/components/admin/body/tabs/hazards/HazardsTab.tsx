@@ -278,7 +278,8 @@ export const HAZARDS_TAB: BodyTabRegistration<HazardsMapData> = {
  * A read whose argument moves with the clock, held through the clock's turn: while the new read is
  * on its way, the last answer for the same `key` (the body and winter) stands, with `at`, the clock
  * it was read for — so it is drawn against that clock, never a later one it doesn't cover.
- * A failure is never held over (the next load after it is a load), and another key starts clean.
+ * A failure is never held over (the next load after it is a load), and another key starts clean —
+ * the held answer is cleared, not parked for a return to its key.
  */
 function useHeldThroughClock<T>(
   value: Loadable<T>,
@@ -286,6 +287,9 @@ function useHeldThroughClock<T>(
   clock: number,
 ): { value: Loadable<T>; at: number } {
   const held = useRef<{ key: string; value: T; at: number } | null>(null);
+  // Held for its own key only: a new key (another body or winter) clears it — never parked for the
+  // next visit, where it would stand in for a fresh read with an answer hours old.
+  if (held.current !== null && held.current.key !== key) held.current = null;
   if (isFailed(value)) held.current = null;
   else if (value !== undefined) held.current = { key, value: value as T, at: clock };
   if (value === undefined && held.current !== null && held.current.key === key) {

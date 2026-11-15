@@ -45,8 +45,8 @@ import {
   UNAVAILABLE,
   UnavailableButton,
 } from '@/components/kit/unavailable-button';
-import { usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
+import { useTabKeys } from '../../frame/tabKeys';
 import { LoadingSection } from '../tabParts';
 import type { GlyphCell } from './featureGlyph';
 import { featureLit, hazardLit, winterLit } from './hazardsMap';
@@ -175,7 +175,7 @@ export function HazardsTabView({
   const edit = current ? onEditShape : undefined;
   const [demoting, setDemoting] = useState<FeatureRowWithGlyph | null>(null);
 
-  usePaneKeys(pane, [
+  useTabKeys(pane, [
     {
       key: 'M',
       run: () => (mark === UNAVAILABLE ? sayUnavailable(TOOLS.mark) : mark?.()),

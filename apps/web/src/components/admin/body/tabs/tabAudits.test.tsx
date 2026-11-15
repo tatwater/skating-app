@@ -11,13 +11,44 @@ import { expectKeyboardOperable } from '@/test/keyboardAudit';
 import { AccessView } from './access/AccessView';
 import { BOARD_TODAY, MASCOMA_ACCESS } from './access/accessFixtures';
 import type { AccessData } from './access/accessModel';
+import { HazardsTabView } from './hazards/HazardsTabView';
+import {
+  FEB_ARCHIVED,
+  FEB_HAZARDS,
+  FEB_NOW,
+  SEASON as HAZARD_SEASON,
+  MASCOMA_FEATURE_ROWS,
+  MASCOMA_WINTERS,
+  PAST_WINTERS,
+  WATCH_OPENED,
+} from './hazards/hazardsFixtures';
+import { archivedRows, hazardRows } from './hazards/hazardsModel';
+import { ImageryTabView } from './imagery/ImageryTabView';
+import {
+  granuleOf,
+  SEASON as IMAGERY_SEASON,
+  INFERRED_STOP,
+  MASCOMA_PASSES,
+  MASCOMA_SATELLITE,
+} from './imagery/imageryFixtures';
+import { passRows } from './imagery/imageryModel';
 import { stubJsdomAnimations } from './jsdomStubs';
+import { LinksTabView } from './links/LinksTabView';
+import { MASCOMA as LINKS_BODY, BODY_NOW as LINKS_NOW, SMALL_POND } from './links/linksFixtures';
 import { NamesView } from './names/NamesView';
 import { MASCOMA_NAMES } from './names/namesFixtures';
 import type { NamesData } from './names/namesModel';
 import { PlacesView } from './places/PlacesView';
 import { MASCOMA_LANDMARKS, MASCOMA_PLACES, SELECTED_UPPER } from './places/placesFixtures';
 import type { PlacesData } from './places/placesModel';
+import { StandingTabView } from './standing/StandingTabView';
+import {
+  ACTIVE,
+  ACTIVE_SINCE,
+  DORMANT_BY_HAND,
+  MASCOMA_RETENTION,
+  BODY_NOW as STANDING_NOW,
+} from './standing/standingFixtures';
 import { WaterView } from './water/WaterView';
 import { MASCOMA_WATER } from './water/waterFixtures';
 import type { WaterData } from './water/waterModel';
@@ -90,6 +121,63 @@ const LEVERS: Record<string, ReactNode> = {
     />
   ),
   Water: <WaterView data={MASCOMA_WATER} onChooseDepth={() => {}} canChooseDepth canFileSurvey />,
+  Imagery: (
+    <ImageryTabView
+      season={IMAGERY_SEASON}
+      rows={MASCOMA_PASSES}
+      lit={granuleOf(10)}
+      onLitChange={() => {}}
+      onOverride={async () => {}}
+      onRetry={() => {}}
+      satellite={MASCOMA_SATELLITE}
+      onSatelliteChange={async () => {}}
+    />
+  ),
+  Hazards: (
+    <HazardsTabView
+      season={HAZARD_SEASON}
+      currentSeason={HAZARD_SEASON}
+      onSeasonChange={() => {}}
+      bodyName="Mascoma"
+      watchOpenedAt={WATCH_OPENED}
+      hazards={hazardRows(FEB_HAZARDS, FEB_NOW)}
+      archived={archivedRows(FEB_ARCHIVED)}
+      features={MASCOMA_FEATURE_ROWS}
+      winters={MASCOMA_WINTERS}
+      patternsWaiting={2}
+      onOpenRecurrence={() => {}}
+      onDemote={async () => {}}
+      onRetry={() => {}}
+      onMarkHazard={() => {}}
+      onAddFeature={() => {}}
+      onEditShape={() => {}}
+      lit={null}
+      onLitChange={() => {}}
+    />
+  ),
+  Standing: (
+    <StandingTabView
+      standing={ACTIVE}
+      activeSince={ACTIVE_SINCE}
+      retention={MASCOMA_RETENTION}
+      now={STANDING_NOW}
+      canSetStanding
+      canRemove
+      onSetDormant={async () => {}}
+      onSetActive={async () => {}}
+      onRemove={async () => {}}
+      onRestore={async () => {}}
+    />
+  ),
+  Links: (
+    <LinksTabView
+      body={LINKS_BODY}
+      now={LINKS_NOW}
+      canEdit
+      onSave={async () => {}}
+      lakeSheetHref="/water/k1"
+    />
+  ),
 };
 
 // ── The tabs with every fact absent ───────────────────────────────────────────────────────────
@@ -165,6 +253,25 @@ const WATER_BARE: WaterData = {
   box: null,
 };
 
+const IMAGERY_BARE = passRows([INFERRED_STOP], {});
+
+const HAZARDS_BARE = (
+  <HazardsTabView
+    season={HAZARD_SEASON - 1}
+    currentSeason={HAZARD_SEASON}
+    onSeasonChange={() => {}}
+    bodyName="this body"
+    watchOpenedAt={null}
+    hazards={hazardRows(FEB_HAZARDS, FEB_NOW).map((h) => ({ ...h, place: null }))}
+    archived={archivedRows(FEB_ARCHIVED).map((a) => ({ ...a, place: null }))}
+    features={MASCOMA_FEATURE_ROWS.map((f) => ({ ...f, place: null, glyph: null }))}
+    winters={PAST_WINTERS}
+    patternsWaiting={null}
+    lit={null}
+    onLitChange={() => {}}
+  />
+);
+
 const BARE_LANDMARK = MASCOMA_LANDMARKS[0]?.id ?? '';
 
 const BARE: Record<string, ReactNode> = {
@@ -173,6 +280,32 @@ const BARE: Record<string, ReactNode> = {
   'Places, the list': <PlacesView data={PLACES_BARE} />,
   Access: <AccessView data={ACCESS_BARE} now={BOARD_TODAY} />,
   Water: <WaterView data={WATER_BARE} />,
+  Imagery: (
+    <ImageryTabView
+      season={IMAGERY_SEASON}
+      rows={IMAGERY_BARE}
+      lit={null}
+      onLitChange={() => {}}
+      satellite={{ ...MASCOMA_SATELLITE, name: '', url: null }}
+    />
+  ),
+  Hazards: HAZARDS_BARE,
+  Standing: (
+    <StandingTabView
+      standing={DORMANT_BY_HAND}
+      activeSince={null}
+      retention={{
+        lastActivity: null,
+        curatedBoost: { value: 0.3, at: null },
+        favorites: null,
+        savedPutIns: null,
+      }}
+      now={STANDING_NOW}
+      canSetStanding={false}
+      canRemove={false}
+    />
+  ),
+  Links: <LinksTabView body={SMALL_POND} now={LINKS_NOW} canEdit={false} lakeSheetHref={null} />,
 };
 
 describe('every tab answers the keyboard wherever it answers a click', () => {
@@ -196,24 +329,70 @@ describe('no tab draws an absent fact as a blank', () => {
 
 // ── Each tab's keys, every way it is reached ──────────────────────────────────────────────────
 
-/** Each tab's key, and the words its tool says when pressed: the right tool spoke, and only it. */
-const KEYED: [string, ReactNode, string, RegExp][] = [
-  ['Access', LEVERS.Access, 'p', /Placing a put-in/],
-  ['Places', LEVERS['Places, the list'], 'l', /Dropping a landmark/],
-  ['a landmark’s card in Places', LEVERS.Places, 'm', /Moving a landmark/],
+const marked = vi.fn();
+const overridden = vi.fn(async () => {});
+/** A toast from the tool named by its words: the right tool spoke, and only it. */
+const toldBy = (words: RegExp) => () => toasts.said.length === 1 && words.test(said()[0] ?? '');
+
+/** Each tab with keys, one of its keys, and how to tell the right tool acted. */
+const KEYED: [string, () => ReactNode, string, () => boolean][] = [
+  ['Access', () => LEVERS.Access, 'p', toldBy(/Placing a put-in/)],
+  ['Places', () => LEVERS['Places, the list'], 'l', toldBy(/Dropping a landmark/)],
+  ['a landmark’s card in Places', () => LEVERS.Places, 'm', toldBy(/Moving a landmark/)],
+  [
+    'Hazards',
+    () => (
+      <HazardsTabView
+        season={HAZARD_SEASON}
+        currentSeason={HAZARD_SEASON}
+        onSeasonChange={() => {}}
+        bodyName="Mascoma"
+        watchOpenedAt={WATCH_OPENED}
+        hazards={[]}
+        archived={[]}
+        features={MASCOMA_FEATURE_ROWS}
+        winters={MASCOMA_WINTERS}
+        patternsWaiting={2}
+        onMarkHazard={marked}
+        lit={null}
+        onLitChange={() => {}}
+      />
+    ),
+    'm',
+    () => marked.mock.calls.length === 1,
+  ],
+  [
+    'Imagery',
+    () => (
+      <ImageryTabView
+        season={IMAGERY_SEASON}
+        rows={MASCOMA_PASSES}
+        lit={granuleOf(10)}
+        onLitChange={() => {}}
+        onOverride={overridden}
+        satellite={MASCOMA_SATELLITE}
+      />
+    ),
+    's',
+    () => overridden.mock.calls.length === 1,
+  ],
 ];
 
 /** What each toast said, as its description. */
 const said = () => toasts.said.map((t) => String((t as { description?: unknown }).description));
 
 describe('a tab’s keys work however the tab is reached', () => {
-  for (const [tab, node, key, words] of KEYED) {
+  beforeEach(() => {
+    marked.mockClear();
+    overridden.mockClear();
+  });
+  for (const [tab, node, key, acted] of KEYED) {
     it.each(ARRIVALS)(`${tab}: ${key.toUpperCase()} after %s`, async (_way, arrive) => {
       const user = userEvent.setup();
-      render(<InConsole panel={node} />);
+      render(<InConsole panel={node()} />);
       await arrive(user);
       await user.keyboard(key);
-      expect(said()).toEqual([expect.stringMatching(words)]);
+      expect(acted()).toBe(true);
     });
   }
 });

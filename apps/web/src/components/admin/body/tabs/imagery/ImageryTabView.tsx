@@ -39,9 +39,9 @@ import {
   UNAVAILABLE,
   UnavailableButton,
 } from '@/components/kit/unavailable-button';
-import { usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
 import { dayMonth } from '../../frame/bodyModel';
+import { useTabKeys } from '../../frame/tabKeys';
 import { LoadingSection } from '../tabParts';
 
 import {
@@ -180,7 +180,7 @@ export function ImageryTabView({
   };
 
   // The call's key is its label's letter, and acts only while this pane has focus.
-  usePaneKeys(pane, [
+  useTabKeys(pane, [
     {
       key: 'S',
       run: call,

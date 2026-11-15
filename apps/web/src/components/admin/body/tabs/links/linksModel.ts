@@ -68,6 +68,10 @@ export function derivedRows(body: ReferenceLinkBody, now: number): DerivedRow[] 
   return rows;
 }
 
+/**
+ * A staff link: `waterBodies.get`'s `referenceLinks` entry, kept whole. The record's name, states,
+ * interior point and area build the links from the lake; the rest of the record is the frame's.
+ */
 export type StaffLink = { label: string; url: string };
 export type KeyedLink = StaffLink & { key: string };
 

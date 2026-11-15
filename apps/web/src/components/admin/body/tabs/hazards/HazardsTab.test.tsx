@@ -131,6 +131,21 @@ describe('HazardsTab', () => {
     expect(screen.getByRole('img', { name: /some unknown/ })).toBeVisible();
   });
 
+  it('clears a held winter when the body changes — never parked for a return to it', () => {
+    let answers = true;
+    convex.results.set('bodyConsole:dailyHazards', (args: { season: number; now: number }) =>
+      answers ? dailyFrom(args.season, [], args.now) : undefined,
+    );
+    const { rerender } = render(<HazardsTab bodyId={BODY} />);
+    expect(document.querySelector('[data-slot="hazards-winters"]')).not.toBeNull();
+    answers = false;
+    rerender(<HazardsTab bodyId="k2" />);
+    rerender(<HazardsTab bodyId={BODY} />);
+    // Back on the first body with its read on its way: a skeleton, not the answer from before.
+    expect(document.querySelector('[data-slot="hazards-winters"]')).toBeNull();
+    expect(document.querySelector('[data-slot="hazards-winters-loading"]')).not.toBeNull();
+  });
+
   it('keeps the winter it has through the hour’s turn, never back to a skeleton', () => {
     // Mid-winter, so this winter's strip is drawn.
     vi.useFakeTimers({ now: Date.UTC(2027, 0, 16, 17, 59), toFake: ['Date', 'setInterval'] });

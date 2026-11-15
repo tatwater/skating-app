@@ -29,6 +29,12 @@ export type PassOverride = { verdict: 'show' | 'hide'; by: string; at: number };
  */
 export type PassSeen = 'shown' | 'shown-anyway' | 'hidden' | 'hidden-by-staff';
 
+/**
+ * A pass as the tab keeps it, from the imagery archive's season index and each frame's manifest.
+ * Every measured figure is kept (cloud, clear, coverage, the gate that hid it, the caveat); a
+ * frame's `bodies` count is the season's (how many bodies a granule crossed), not this body's, and
+ * is deliberately not shown.
+ */
 export type PassRow = {
   /** The granule: the pass's id. */
   id: string;

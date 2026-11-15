@@ -54,6 +54,17 @@ export function seasonChoices(current: Season): { bar: Season[]; earlier: Season
 
 // ── Rows ────────────────────────────────────────────────────────────────────────────────────────
 
+/**
+ * A hazard as the tab keeps it from `hazards.listForBody` (`HazardView`). **What the read returns
+ * and the tab doesn't keep, and why**:
+ * - the geometry, the footprint and the cluster's member ids: the map's (`hazardsMap` reads the
+ *   same subscription);
+ * - `reporterName`, `promotedFeatureType` and `placeLine`: never on the list path (only the
+ *   single-hazard read resolves them), so nothing is dropped;
+ * - `expired`: always false on the list (an expired crossing is left out by the read);
+ * - the moderation and merge fields: the read returns only visible, unmerged hazards.
+ * `bodyFeatures.listForBody` and `bodyConsole.dailyHazards` are kept whole.
+ */
 /** What a hazard row reads from `hazards.listForBody` (its `HazardView`). */
 export type HazardInput = {
   _id: string;
