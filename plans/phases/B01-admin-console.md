@@ -2023,7 +2023,7 @@ one branch (`b01-3-server`).
   - `listActions`' verb filter in the index: it needs #112's `by_target_action`.
 
 **B01-4 (2026-11-14): the People server** (boards 8.1, 8.2, 8.5, 8.6; the founder's rulings of the
-same day, D257). Server only; the page is owed.
+same day, D257). Server only; the page is *The People pages (B01-4, the page)*, below.
 
 - **The list reads a stored row per person** (`peopleRows`, `lib/peopleRows`), not `profiles`: a
   profile can weigh a whole document (two cached isochrone polygons), so a page of fifty could pass
@@ -2961,6 +2961,86 @@ phone app has no caller.
 **Held — the survey filing** (`fileBathymetrySurvey`): the board shows the field (*A survey the next
 build should load*, *Paste a link or a citation*) but not what appears once one is filed; it waits on
 the founder's call.
+
+### The People pages (B01-4, the page)
+
+People at `/admin/people` (boards 8.1, 8.2, 8.5, 8.6) on the People server's reads above, in one PR after
+that server's (#115); the rail's People mode (G then P, `people.read`) lights for the list and every person.
+
+- **One page, three columns.** `/admin/people` is a layout: the lanes, the list, and the person
+  route's page (`/admin/people/$id`) drawn in the third column through the outlet, so the list stays
+  put while people open and close. The lane and the search ride in the URL both ways (opening a
+  person carries them; the person's way back returns to them); a deep link opens the list beside the
+  person on the lane it names, Everyone when none, and an id of the wrong shape or with no account
+  is *No such person* with the list still usable. Esc or ⇧⏎ in the person's page puts focus back on
+  the list, on the person's row.
+- **The list.** A search lane over every account (`/` focuses it; the server ignores the lane while
+  a search runs and the match is marked), then the server's lanes, Appeals open only for a viewer
+  with support's read. `people.listPage` is read as a chain of cursor pages through the console's
+  one read layer — it isn't Convex's paginated contract, and each page's `partial`, `reasons` and
+  `pending` must survive. Rows in the server's order: the status chip first, the trust class, the
+  person lockup (the handle is text inside a clickable row, never a nested control), the sub-line,
+  the reason on file, and an age the lane defines (since the status, since the restriction, the
+  time left in the window, otherwise since joining). Typing pending in the search is dropped on
+  every change of place (another lane, a person opened, leaving).
+- **The person page** renders `people.person` and its five companions; every lever is drawn from
+  `can` exactly as the write would answer it, and every write goes through one action hook to the
+  shell's undo toast (which uses the write's own audit row when a write names it and what undoing
+  it asks, and otherwise asks `undo.latestOwn`).
+- **The three answers, every block.** *Still being prepared* while a People backfill hasn't finished
+  (no number, no "+": a lane draws no count, the lanes' foot names which, the head shows only the
+  order, a note over the rows says the list may not have everyone, the list never ends on "All";
+  the Overview's People card hides its figures while the rows are pending, and only *Flagged
+  people* while only the flag subjects are); a floor while a read stopped at its cap ("200+", and
+  why in a sentence per reason; a list short of its lane ends on "N shown"); *Not recorded yet* for
+  `null`. Empty lanes say so in plain words; a failed read says so in its own place with *Try
+  again* (a later page failing keeps the rows already in); a moderator's view simply lacks Appeals
+  open and every support fact.
+- **One of each.** `lib/ages` holds the row's short age (`shortAge`) and the written-out pair
+  (`ageInWords`, `timeLeftInWords`) for the Overview, Metrics, the list and the person page;
+  `people/answers.ts` words the three answers once; `people/clock.ts` holds the read clock both
+  pages use; `lib/routerTarget` splits a path for the router. The old `/admin/users` and
+  `/admin/users/$id` redirect; Users leaves Legacy and the old shell; a profile's moderator tools,
+  the palette and the Overview link to People.
+
+**Where the boards and the code differ** (the code stands until the founder rules):
+- The list column is the `list` token (340), not the board's 380; the kicker's orders were
+  shortened to fit it (*by end date* for *soonest to lapse first*, *latest first*), and a very long
+  count wraps to a second line inside the head's height rather than being cut.
+- A row says "4 d"; a head, a note or a status line writes its units out ("1 day left").
+- The Staff lane draws no age and no "since … · N decisions this week" — no read gives either yet;
+  Flagged and Appeals open age from joining until the server gives each person's oldest open flag
+  or ticket.
+- The staff page has no *Switch off* on flagging: the server refuses switching it off on staff.
+- Receipts carry no pronouns (none is known); *Staff since* reads "Admin since …" as the value.
+- No photos on the person page; no *Restore all*; the hidden-content row is drawn with no sheet yet.
+- *Make admin* in the role menu confirms first.
+
+**Words the boards did not supply** are each in one module for the founder to read together: the
+list's in `apps/web/src/components/admin/people/list/peopleWords.ts`, the person page's in
+`…/people/person/personWords.ts`, the three answers in `…/people/answers.ts`.
+
+**Kit.** Candidates stay beside their pages until the Body console's kit PRs land:
+`list/kit-candidates/` (`SearchLane`, the lanes' search; `PersonLockup`, sm / md / xl, the one
+lockup both pages draw) and `person/kit-candidates/` (`LeverRow`). Two kit changes made here, in files
+the open kit PRs don't touch: a lane count's amber or red survives selection (`Lanes`, board 8.1),
+and `ListEnd` draws no tab until its measures are numbers (an unresolved stroke token drew NaN).
+Token differences: the person page's lever key column (112 px) and feed tag column (76 px) have no
+token; the head's name is the 15 px logo step (no name step); lever rows are 32 px where the board
+draws 34; the role menu's item takes two lines.
+
+**Owed:**
+- To the server follow-up: `people.listPage` taking an `endCursor` (until then a change in an
+  earlier page drops the deeper pages while they re-read); staff rows' `lastSeenInConsoleAt`,
+  `roleSince` and `decisionsThisWeek`; each Flagged and Appeals row's oldest open flag or ticket
+  time; `lanesFor` from core (the page holds a copy of the server's rule); `{ actionId,
+  undoNeedsReason }` from every People write; `ledger.since`; `rights.since`; the bounty season
+  line; explicit `can` entries for every lever; a profile-opens flag; flag target labels and appeal
+  text; who undid a row.
+- The record sheet (verdicts and withdrawals, above) awaits a design round.
+- The kit promotions (`SearchLane`, `PersonLockup`, `LeverRow`) await the Body console's kit PRs.
+- One `useClockFor` across Bodies and People; the old pages' `charts/Charts` `TrendBars` lost its
+  last reader with the old user page.
 
 ## Ruled out
 
