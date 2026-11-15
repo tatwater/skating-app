@@ -14,8 +14,9 @@
  * ## How it stays current
  *
  * A body's facts are marked stale where any input of theirs changes (`lib/geoStale.ts` lists the
- * marks; the cell index is the choke point for creations, moved boxes and listing changes), where a
- * neighbor's relation or stored outline moves, and by a drift repair for whatever those miss. The
+ * marks; the cell index marks a new body, and an outline or box write marks its own — since B01-3c a
+ * standing, listing or prominence change marks nothing), where a neighbor's relation or stored
+ * outline moves, and by a drift repair for whatever those miss. The
  * `bodyGeo` jobs
  * recompute stale bodies in an action, where the geometry has room, and store the answer through a
  * mutation that keeps it only if the outline it was computed for is still the body's. A body never
@@ -126,7 +127,9 @@ export function touches(body: Geom, other: Geom, otherWhole: boolean): boolean {
 
 /** The largest outer ring of an outline, kept to at most `max` points and closed. */
 export function simplifiedRing(geom: Geom, max = NEIGHBOR_RING_POINTS): [number, number][] {
-  const ring = outerRings(geom).sort((a, b) => b.length - a.length)[0] ?? [];
+  // The largest ring by area, not by vertex count: a town's detailed island would otherwise stand in
+  // for its mainland (Greptile on #122).
+  const ring = outerRings(geom).sort((a, b) => ringArea(b) - ringArea(a))[0] ?? [];
   const open = ring.length > 1 ? ring.slice(0, -1) : ring;
   const step = Math.max(1, open.length / max);
   const out: [number, number][] = [];
@@ -137,6 +140,17 @@ export function simplifiedRing(geom: Geom, max = NEIGHBOR_RING_POINTS): [number,
   const first = out[0];
   if (first !== undefined) out.push([first[0], first[1]]);
   return out;
+}
+
+/** A ring's planar area in square degrees (shoelace) — enough to tell its parts apart by size. */
+function ringArea(ring: readonly number[][]): number {
+  let sum = 0;
+  for (let i = 0; i + 1 < ring.length; i++) {
+    const a = ring[i] as number[];
+    const b = ring[i + 1] as number[];
+    sum += (a[0] as number) * (b[1] as number) - (b[0] as number) * (a[1] as number);
+  }
+  return Math.abs(sum) / 2;
 }
 
 /** Degrees of latitude in {@link TOUCH_METERS}, for the box the candidates are read in. */
@@ -198,4 +212,16 @@ export async function geoFactsOf(
     .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
     .first();
   return row !== null && row.computedAt !== undefined ? row : null;
+}
+
+/**
+ * A body's towns with each one's state (B01-3c) — `state: null` on a row computed before towns
+ * carried their states (the drift repair recomputes those); `null` when nothing was computed. One
+ * rule for the preview, the frame and Places.
+ */
+export function townsWithStateOf(
+  geo: Pick<Doc<'bodyGeoFacts'>, 'towns' | 'townStates'> | null,
+): { name: string; state: string | null }[] | null {
+  if (geo === null) return null;
+  return (geo.towns ?? []).map((name, i) => ({ name, state: geo.townStates?.[i] ?? null }));
 }

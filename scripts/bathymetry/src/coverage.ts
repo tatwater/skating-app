@@ -2,6 +2,7 @@
  * Push contour coverage into Convex (A06c-1 / A06c §4.2) — which bodies the tileset actually draws.
  *
  *   pnpm --filter @skating/bathymetry coverage [--prod] [--dry-run] [--allow-empty]
+ *     [--searched=NAME:VT,NH …]   (each contour dataset searched, for the Water tab; B01-3c)
  *
  * Reads the **built** contour features (`.scratch/build/contours.geojsonl`) rather than the join
  * cache, and the distinction is the whole point: the join matched 2,437 source lakes, but only
@@ -59,6 +60,45 @@ async function main(): Promise<void> {
   const dryRun = args.includes('--dry-run');
   const allowEmpty = args.includes('--allow-empty');
   const campaignId = args.find((a) => a.startsWith('--campaign='))?.slice('--campaign='.length);
+  // What this run searched, for the Water tab's *Searched* (B01-3c): `--searched=NAME:VT,NH`, once
+  // per contour dataset the tileset was built from. Checked here, before anything is read or
+  // written (a dry run included): a malformed one refuses the run rather than failing its first
+  // batch on the server, where the loader would report a partial replacement that never happened.
+  const searchedArgs = args.filter((a) => a.startsWith('--searched='));
+  const searched = searchedArgs.map((a) => {
+    const value = a.slice('--searched='.length);
+    const at = value.lastIndexOf(':');
+    const label = at < 0 ? '' : value.slice(0, at).trim();
+    const states =
+      at < 0
+        ? []
+        : value
+            .slice(at + 1)
+            .split(',')
+            .map((s) => s.trim());
+    return { label, states };
+  });
+  const malformed = searchedArgs.filter((_, i) => {
+    const s = searched[i];
+    return (
+      s === undefined ||
+      s.label === '' ||
+      s.states.length === 0 ||
+      s.states.length > 10 ||
+      s.label.length > 120 ||
+      s.states.some((c) => !/^[A-Za-z]{2}$/.test(c))
+    );
+  });
+  if (searched.length > 20) {
+    process.stderr.write('[coverage] refusing: a run records at most 20 --searched datasets.\n');
+    process.exit(1);
+  }
+  if (malformed.length > 0) {
+    process.stderr.write(
+      `[coverage] refusing: ${malformed.join(' ')} — each --searched is NAME:ST[,ST…] with two-letter state codes.\n`,
+    );
+    process.exit(1);
+  }
 
   if (!existsSync(CONTOURS_FILE)) {
     process.stderr.write(
@@ -131,6 +171,8 @@ async function main(): Promise<void> {
           externalIds: batch,
           // Only the first batch clears, which is what makes the whole run a replacement.
           ...(i === 0 ? { clearFirst: true } : {}),
+          // Recorded with the last batch, so a replacement that dies partway records no search.
+          ...(i === batches.length - 1 && searched.length > 0 ? { searched } : {}),
         },
       );
       cleared += parsed.cleared ?? 0;

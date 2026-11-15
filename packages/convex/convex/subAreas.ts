@@ -2501,11 +2501,14 @@ export const adminStatsForBody = query({
         .withIndex('by_sub_area_start_time', (q) =>
           q.eq('subAreaId', bay._id).gte('startTime', from).lt('startTime', to),
         )
-        .take(MOUTH_LINE_SCAN_CAP);
+        .take(MOUTH_LINE_SCAN_CAP + 1);
+      // One past the cap, so exactly the cap is a whole count (B01-3c).
+      const truncatedSkates = skates.length > MOUTH_LINE_SCAN_CAP;
+      const counted = skates.slice(0, MOUTH_LINE_SCAN_CAP);
       out[bay._id] = {
-        leftSubAreaCount: skates.filter((s) => s.leftSubArea === true).length,
-        leftSubAreaTruncated: skates.length === MOUTH_LINE_SCAN_CAP,
-        skatesCount: skates.length,
+        leftSubAreaCount: counted.filter((s) => s.leftSubArea === true).length,
+        leftSubAreaTruncated: truncatedSkates,
+        skatesCount: counted.length,
         ...(bay.subAreaKey !== undefined ? { subAreaKey: bay.subAreaKey } : {}),
         ...(bay.fetchProfileM !== undefined ? { fetchProfileM: bay.fetchProfileM } : {}),
         ...(bay.maxDepthM !== undefined ? { maxDepthM: bay.maxDepthM } : {}),

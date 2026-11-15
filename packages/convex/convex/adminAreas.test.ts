@@ -82,6 +82,22 @@ describe('adminAreas.importCanonical', () => {
     expect(new Set(cells.map((c) => c.adminAreaId))).toEqual(new Set([rows[0]?._id]));
     expect(new Set(cells.map((c) => c.z)).size).toBe(1); // one rung, no leftovers from before
     expect(cells.length).toBeLessThanOrEqual(4); // theorem 2
+
+    // One drawn outline per boundary, written at the import and rewritten in place (B01-3c); a
+    // deleted boundary takes its outline with it.
+    const outlines = await t.run((ctx) => ctx.db.query('adminAreaOutlines').collect());
+    expect(outlines.map((o) => o.adminAreaId)).toEqual([rows[0]?._id]);
+    // A redrawn boundary rewrites its outline in place.
+    await t.mutation(internal.adminAreas.importCanonical, {
+      areas: [area('relation/burlington', 'Burlington City', 'town', 'VT', [0, 0, 2, 1])],
+    });
+    const redrawn = await t.run((ctx) => ctx.db.query('adminAreaOutlines').collect());
+    expect(redrawn).toHaveLength(1);
+    expect(redrawn[0]?.ring).not.toEqual(outlines[0]?.ring);
+    await t.mutation(internal.adminAreas.deleteByExternalIds, {
+      externalIds: ['relation/burlington'],
+    });
+    expect(await t.run((ctx) => ctx.db.query('adminAreaOutlines').collect())).toEqual([]);
   });
 });
 

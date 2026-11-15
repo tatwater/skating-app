@@ -469,17 +469,19 @@ async function rollupDistributions(ctx: MutationCtx, now: number): Promise<void>
   const date = metricDay(now);
   // Deleted accounts are excluded: a distribution meant to answer "do the class thresholds spread
   // people?" shouldn't be diluted by rows that represent nobody.
-  const profiles = await capped(
-    ctx.db.query('profiles').take(PROFILE_SCAN_CAP),
-    PROFILE_SCAN_CAP,
+  // One past the cap, so exactly the cap is a whole count, never "N+" (B01-3c).
+  const scanned = await capped(
+    ctx.db.query('profiles').take(PROFILE_SCAN_CAP + 1),
+    PROFILE_SCAN_CAP + 1,
     'profile distributions',
   );
+  const profiles = scanned.slice(0, PROFILE_SCAN_CAP);
   const live = profiles.filter((p) => p.status !== 'deleted');
   // Every account that exists, for the Overview's *N users* and Metrics' *total*. A floor once the
   // scan stops short, and it says so.
   await writeMetricSnapshot(ctx, 'accounts_total', date, {
     scalar: live.length,
-    ...(profiles.length >= PROFILE_SCAN_CAP ? { meta: { capped: true } } : {}),
+    ...(scanned.length > PROFILE_SCAN_CAP ? { meta: { capped: true } } : {}),
   });
   await writeMetricSnapshot(ctx, 'reputation_points_hist', date, {
     buckets: histogram(

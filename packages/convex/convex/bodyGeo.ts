@@ -38,6 +38,12 @@ import {
   vertexCount,
 } from './lib/bodyGeo';
 import { ADMIN_AREA_LADDER } from './lib/cellIndex';
+import type { FailingJob } from './lib/enums';
+import {
+  clearFailure,
+  mirrorFailure,
+  recordFailure as recordJobFailure,
+} from './lib/recurringWork';
 import { bodiesCoveringBox } from './waterBodies';
 
 type Geom = Polygon | MultiPolygon;
@@ -176,9 +182,18 @@ export function placesFrom(
     perPoint: { town: string[]; county: string[] }[];
     areas: { id: string; name: string; state: string; bbox: Box; polygon: unknown }[];
   },
-): { towns: string[]; counties: string[]; states: string[] } {
+): {
+  towns: string[];
+  townStates: string[];
+  townIds: Id<'adminAreas'>[];
+  counties: string[];
+  states: string[];
+} {
   const byId = new Map(found.areas.map((a) => [a.id, a]));
   const towns: string[] = [];
+  // Each town's state, in the same order (B01-3c): a border lake's towns are in two states.
+  const townStates: string[] = [];
+  const townIds: Id<'adminAreas'>[] = [];
   const counties: string[] = [];
   const states = new Set<string>();
   points.forEach((point, i) => {
@@ -201,11 +216,17 @@ export function placesFrom(
         );
       if (hit === undefined) continue;
       const list = level === 'town' ? towns : counties;
-      if (!list.includes(hit.name)) list.push(hit.name);
+      if (!list.includes(hit.name)) {
+        list.push(hit.name);
+        if (level === 'town') {
+          townStates.push(hit.state);
+          townIds.push(hit.id as Id<'adminAreas'>);
+        }
+      }
       states.add(hit.state);
     }
   });
-  return { towns, counties, states: [...states] };
+  return { towns, townStates, townIds, counties, states: [...states] };
 }
 
 // ── The write ────────────────────────────────────────────────────────────────────────────────
@@ -318,6 +339,10 @@ export const store = internalMutation({
     neighbors: v.array(neighborV),
     neighborsCapped: v.boolean(),
     towns: v.array(v.string()),
+    /** Each town's state, in `towns`' order. */
+    townStates: v.optional(v.array(v.string())),
+    /** Each town's boundary, in `towns`' order. */
+    townIds: v.optional(v.array(v.id('adminAreas'))),
     counties: v.array(v.string()),
     states: v.array(v.string()),
     /** The places-layer mark the places were computed under (`inputs.areasAt`). */
@@ -339,8 +364,13 @@ export const store = internalMutation({
         );
         await ctx.db.delete(row._id);
       }
-      // Gone: its links go, and every body holding its outline drops it on recompute.
+      // Gone: its links go, and every body holding its outline drops it on recompute. Its failures
+      // go too — no walk visits a body with no facts row or library row again, so a drift check or
+      // a missing-row probe that failed on it would otherwise be counted by Machinery forever.
       await writeLinks(ctx, args.waterBodyId, []);
+      for (const job of ['bodyGeo', 'geoDrift', 'geoMissing'] as const) {
+        await clearFailure(ctx, job, args.waterBodyId);
+      }
       await markHolders(ctx, args.waterBodyId, now);
       return { stored: false };
     }
@@ -349,6 +379,9 @@ export const store = internalMutation({
     const after = new Set(args.neighbors.map((n) => n.waterBodyId as string));
     const moved = [...before, ...after].filter((id) => before.has(id) !== after.has(id));
     const clear = nextAttemptState(row ?? {}, { kind: 'progress' }, now) ?? {};
+    if (row?.attempts !== undefined || row?.parkedAt !== undefined) {
+      await clearFailure(ctx, 'bodyGeo', args.waterBodyId);
+    }
     // Marked again while this was computed: an outline or a neighbor's relation moved since the
     // inputs were read, so this answer may already be behind — kept stale for the next run.
     const markedSince =
@@ -364,6 +397,8 @@ export const store = internalMutation({
       neighbors: args.neighbors,
       neighborsCapped: args.neighborsCapped,
       towns: args.towns,
+      townStates: args.townStates ?? [],
+      townIds: args.townIds ?? [],
       counties: args.counties,
       states: args.states,
       ...clear,
@@ -397,12 +432,17 @@ export const recordFailure = internalMutation({
       .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
       .first();
     if (!row) return;
+    const now = Date.now();
     const next = nextAttemptState(
       row,
       { kind: 'failed', errorClass, ...(byDailyRetry ? { byDailyRetry } : {}) },
-      Date.now(),
+      now,
     );
-    if (next) await ctx.db.patch(row._id, next);
+    if (next) {
+      await ctx.db.patch(row._id, next);
+      // Mirrored for Machinery's health read, which counts small rows only (B01-3c, D258).
+      await mirrorFailure(ctx, 'bodyGeo', waterBodyId, next, now);
+    }
   },
 });
 
@@ -609,6 +649,28 @@ export const seedAll = internalMutation({
 
 // ── The drift repair ─────────────────────────────────────────────────────────────────────────
 
+/** A walk's earlier failures one pass reads up front, to clear the items that now go through. */
+const WALK_FAILURES_READ = 200;
+
+/**
+ * Clears a walk's item that went through, if it had been failing — from one read of the job's
+ * failures up front rather than a read per item; past {@link WALK_FAILURES_READ} of them that read is
+ * partial, so each item is then looked up on its own (a capped read never decides "not failing").
+ */
+async function failureClearer(
+  ctx: MutationCtx,
+  job: FailingJob,
+): Promise<(key: string) => Promise<void>> {
+  const rows = await ctx.db
+    .query('jobFailures')
+    .withIndex('by_job_key', (q) => q.eq('job', job))
+    .take(WALK_FAILURES_READ + 1);
+  if (rows.length > WALK_FAILURES_READ) return (key) => clearFailure(ctx, job, key);
+  const failing = new Set(rows.map((f) => f.key));
+  return async (key) => {
+    if (failing.has(key)) await clearFailure(ctx, job, key);
+  };
+}
 /** Facts rows one drift tick checks at most. */
 export const DRIFT_BATCH = 40;
 /** Read budget a drift tick keeps back: each check reads a body, up to its 1 MiB outline. */
@@ -633,19 +695,35 @@ export const repairDrift = internalMutation({
     // sorts first) is either owed its first computation (skipped below, then stamped) or was computed
     // before the links and marks existed — behind by construction (`isBehind`).
     const rows = await ctx.db.query('bodyGeoFacts').withIndex('by_checked').take(DRIFT_BATCH);
+    // The rows failing before, so one that goes through clears its failure.
+    const cleared = await failureClearer(ctx, 'geoDrift');
     let checked = 0;
     let marked = 0;
+    let failed = 0;
     for (const row of rows) {
       const m = await ctx.meta.getTransactionMetrics();
       if (m.bytesRead.remaining < DRIFT_BYTES_RESERVE) break;
       checked++;
-      if (row.staleAt === undefined && (await isBehind(ctx, row, areasAt))) {
+      // One row that throws never stops the tick (B01-3c): it is recorded, marked for recompute (the
+      // conservative answer to "is it behind?"), and stamped so the next tick moves past it.
+      let behind: boolean;
+      try {
+        behind = row.staleAt === undefined && (await isBehind(ctx, row, areasAt));
+        await cleared(row.waterBodyId);
+      } catch (err) {
+        await recordJobFailure(ctx, 'geoDrift', row.waterBodyId, errorClassOf(err), now, {
+          park: false,
+        });
+        failed++;
+        behind = true;
+      }
+      if (behind) {
         await markGeoStale(ctx, [row.waterBodyId], now);
         marked++;
       }
       await ctx.db.patch(row._id, { checkedAt: now });
     }
-    return { checked, marked };
+    return { checked, marked, failed };
   },
 });
 
@@ -661,6 +739,15 @@ async function isBehind(
   if (!body || body.dedupStatus === 'merged') return true;
   if (outlineStamp(body) !== row.stamp) return true;
   if ((row.areasAt ?? 0) < areasAt) return true;
+  // Computed before towns carried their states and boundaries (B01-3c) — or stored without them —
+  // is behind, so the drift fills them in: the lists must run beside `towns`, one entry per town.
+  const townCount = (row.towns ?? []).length;
+  if (
+    townCount > 0 &&
+    ((row.townStates ?? []).length !== townCount || (row.townIds ?? []).length !== townCount)
+  ) {
+    return true;
+  }
   const links = await ctx.db
     .query('bodyGeoLinks')
     .withIndex('by_holder', (q) => q.eq('waterBodyId', row.waterBodyId))
@@ -706,19 +793,33 @@ export const repairMissing = internalMutation({
       .withIndex('by_scope_name', (q) => q.eq('scope', '*'))
       .paginate({ cursor: cursor ?? null, numItems: MISSING_PAGE });
     const missing: Id<'waterBodies'>[] = [];
+    let failed = 0;
+    const now = Date.now();
+    // The probes failing on an earlier walk: one that goes through now clears its failure (the
+    // weekly walk is the retry, so it is also what says the retry worked).
+    const cleared = await failureClearer(ctx, 'geoMissing');
     for (const r of page.page) {
-      const row = await ctx.db
-        .query('bodyGeoFacts')
-        .withIndex('by_body', (q) => q.eq('waterBodyId', r.waterBodyId))
-        .first();
-      if (row === null) missing.push(r.waterBodyId);
+      // One row that throws is recorded and passed; the page and the walk go on (B01-3c).
+      try {
+        const row = await ctx.db
+          .query('bodyGeoFacts')
+          .withIndex('by_body', (q) => q.eq('waterBodyId', r.waterBodyId))
+          .first();
+        if (row === null) missing.push(r.waterBodyId);
+        await cleared(r.waterBodyId);
+      } catch (err) {
+        await recordJobFailure(ctx, 'geoMissing', r.waterBodyId, errorClassOf(err), now, {
+          park: false,
+        });
+        failed++;
+      }
     }
-    await markGeoStale(ctx, missing);
+    await markGeoStale(ctx, missing, now);
     if (!page.isDone) {
       await ctx.scheduler.runAfter(0, internal.bodyGeo.repairMissing, {
         cursor: page.continueCursor,
       });
     }
-    return { marked: missing.length, isDone: page.isDone };
+    return { marked: missing.length, failed, isDone: page.isDone };
   },
 });

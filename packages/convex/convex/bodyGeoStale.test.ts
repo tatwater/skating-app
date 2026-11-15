@@ -11,12 +11,13 @@ import fc from 'fast-check';
 import type { Polygon } from 'geojson';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { internal } from './_generated/api';
-import type { Id } from './_generated/dataModel';
+import type { Doc, Id } from './_generated/dataModel';
 import { FANOUT_INLINE } from './bodyGeo';
 import { markGeoStale, outlineStamp, simplifiedRing } from './lib/bodyGeo';
 import { rebuildBodyLibrary } from './lib/bodyLibrary';
 import { syncWaterBodyCells } from './lib/cellIndex';
 import { noteAdminAreasChanged } from './lib/geoStale';
+import { demoteBody } from './lib/standing';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -138,6 +139,29 @@ async function heldCopiesAreCurrent(t: T): Promise<boolean> {
     return true;
   });
 }
+
+describe('only a geometry change marks a body (B01-3c)', () => {
+  test('a rollover’s demotion and a prominence change re-cell a body but mark nothing', async () => {
+    const t = harness();
+    const id = await seedBody(t, 'Kept Shape', -72);
+    await drain(t);
+    await t.run(async (ctx) => {
+      const body = await ctx.db.get(id);
+      if (!body) throw new Error('no body');
+      // A zoom rung far from the seeded one moves the body's cells.
+      await syncWaterBodyCells(ctx, id, { bbox: body.bbox, minVisibleZoom: 14, listed: true });
+      await demoteBody(ctx, body, { reason: 'inactive' });
+    });
+    const cells = await t.run((ctx) =>
+      ctx.db
+        .query('waterBodyCells')
+        .withIndex('by_body', (q) => q.eq('waterBodyId', id))
+        .collect(),
+    );
+    expect(cells.every((c) => c.minVisibleZoom !== 8)).toBe(true);
+    expect((await facts(t, id))?.staleAt).toBeUndefined();
+  });
+});
 
 describe('every creation path marks a body’s facts', () => {
   test('a body the import inserts is owed its facts with no other write', async () => {
@@ -313,6 +337,31 @@ describe('a neighbor’s outline', () => {
 });
 
 describe('the drift repair', () => {
+  test('a row computed before towns carried their states is behind (B01-3c)', async () => {
+    const t = harness();
+    const old = await seedBody(t, 'Old Towns', -72);
+    // Stored without them (a store from an older action, mid-deploy): empty lists beside a town.
+    const bare = await seedBody(t, 'Bare Towns', -60);
+    await drain(t);
+    await t.run(async (ctx) => {
+      const cases: [Id<'waterBodies'>, Partial<Doc<'bodyGeoFacts'>>][] = [
+        [old, { townStates: undefined }],
+        [bare, { townStates: [], townIds: [] }],
+      ];
+      for (const [id, lists] of cases) {
+        const row = await ctx.db
+          .query('bodyGeoFacts')
+          .withIndex('by_body', (q) => q.eq('waterBodyId', id))
+          .first();
+        if (row) await ctx.db.patch(row._id, { towns: ['Somewhere'], ...lists });
+      }
+    });
+    vi.setSystemTime(NOW + 1_000);
+    expect(await t.mutation(internal.bodyGeo.repairDrift, {})).toMatchObject({ marked: 2 });
+    expect((await facts(t, old))?.staleAt).toBe(NOW + 1_000);
+    expect((await facts(t, bare))?.staleAt).toBe(NOW + 1_000);
+  });
+
   test('finds an outline changed with no mark, a stale held copy, a newer places layer, a missing row', async () => {
     const t = harness();
     const a = await seedBody(t, 'A', -72);
