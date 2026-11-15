@@ -2461,6 +2461,62 @@ state; `bodies.rowsByIds`; a light completeness read; the bathymetry search reco
 the four writes (`setAliases` with `moderatorAliases` and `setClass`; choosing a depth source and
 filing a survey; the imagery pass override; editing a feature's shape).
 
+### The Bodies reads the pages asked for (B01-3c, the second server follow-up)
+
+The reads the list and the Body console's tab PRs asked for, and four carried items. The writes —
+aliases and class, depth source and survey filing, the imagery override, a feature's shape — are
+their own PR (they would have taken this one past its size, and two need a call; see *Owed*).
+
+- **A search across standings** (`bodies.searchOtherStandings`, the list's arguments): beside a
+  lane's search, each other standing's matches counted to 50 (`capped` past it) with the best five
+  rows. None for no search, *All* or *Changed*. One search read per lane, ranked by the match.
+- **Rows by id** (`bodies.rowsByIds`, *Opened recently*): up to 12 ids, trimmed and de-duplicated in
+  order, each with what became of it — `ok`, `merged` (the survivor's row), `unlisted`, `unknown` —
+  and how many were dropped. A row is one indexed read; only an id with no row reads its body.
+- **A removed or rejected body's facts** (`bodyConsole.removedFacts`, `body.read`): stored name,
+  class, states and area, standing, when it left, why and who decided (its newest `remove` or
+  `reject_waterbody` row), towns, and a report count floor (200).
+- **The preview's asks** gain `askers` (distinct people with the same question open, to 50) and the
+  body's `intake` reasons, worst first, each with what is stored beside it (a duplicate's candidate
+  count, a conflict's corroboration level).
+- **Towns with their state**: the facts store each town's state and boundary (`townStates`,
+  `townIds`); the preview gains `townState` and `moreTownsWithState`, the frame and Places
+  `townsWithState`. **The recompute:** a row computed before is *behind* for the drift repair, so it
+  fills in incrementally over the two-week sweep with no step; or at once with `bodyGeo:seedAll`
+  then `bodyGeo:computeAll` — **47 minutes measured** on dev (24,953 bodies, B01-3b's run).
+- **Completeness on the frame** (`consoleExtras.complete`, the library row's), so the frame stops
+  calling `bodies.preview` and its 1,000-report scan for one field.
+- **The bathymetry search record**: the coverage run records each contour dataset it searched and
+  its states (`importContourCoverage`'s `searched`, the loader's `--searched=NAME:VT,NH`), one row per
+  (dataset, state); `consoleExtras.bathymetrySearched` is the newest search of the body's states,
+  `null` (*not recorded*) where none covers it.
+- **Town lines** (`bodyConsole.townLines`): each boundary's largest outer ring kept to 96 points is
+  stored beside it at its import (`adminAreaOutlines`; `adminAreas:backfillOutlines` for the rows
+  before); a body's town lines are one small row per town, at most 24.
+- **Only a geometry change marks a body** (the coordinator's ruling): the cell index marks a body
+  with no facts row (a new body) and nothing else; the import marks by the outline stamp (every
+  coordinate); a merge, a deletion and a boundary change mark as before. A rollover sends no
+  unchanged body back (tested). The guard now requires a mark in the block of any patch naming a
+  polygon *or* a box.
+- **The audit feed's labels, one read per distinct target** (`auditTargetLabels`) and actors once
+  per person: a full page of 100 makes at most 100 label reads (tested at the limit with a counting
+  ctx; it was a read per row, 315 ms on dev). `systemFeed` builds its labels from its own rows; the
+  People history should use `auditTargetLabels`.
+- **The geometry walks survive a bad row**: a drift check that throws is recorded (`geoDrift`), its
+  body marked for recompute and its row moved to the back; a missing-row probe that throws is
+  recorded (`geoMissing`) and passed. The computation's attempt state is mirrored into `jobFailures`
+  (`bodyGeo`), so `recurringJobs.health` counts geometry failures from small rows.
+- **Exactly at the cap** (a quick audit): accounts total, the gate scatter, the contributor trend, a
+  body's recurrence denominators and a bay's mouth line read one past their caps now. Loops that
+  only decide whether to run another pass (`=== PAGE`, then continue) are left: an extra empty pass,
+  never a wrong count.
+
+**Owed — the writes PR:** `setAliases` (`moderatorAliases`, folded into the library row) and
+`setClass`; `chooseDepthSource` with every source's candidate kept, and `fileBathymetrySurvey`; the
+imagery pass override and its read; `bodyFeatures.updateShape`. Two need a call first: per-catalog
+class claims exist only at import time (the import must start storing them, and old bodies read
+*not recorded* until the next campaign), and what a survey filing records.
+
 ## Ruled out
 
 - **A second app or a separate deployment for admin** — D37 stands; the Convex function is the
