@@ -21,6 +21,7 @@ import {
   type FacetSelection,
 } from './bodyFacets';
 import type { BodyLane } from './bodyLanes';
+import { OTHERS_UNFILTERED } from './listWords';
 
 /**
  * The tools over the list (boards 5.1–5.3): the search, then the facet row — the commonest facet
@@ -189,7 +190,7 @@ export function searchTally(list: BodiesListData, laneWord: string): string | nu
     ),
   ];
   // The other standings are counted across the lane's facets: said, never read as filtered.
-  return `${parts.join(' · ')}${list.othersFacetsIgnored ? ' (other standings unfiltered)' : ''}`;
+  return `${parts.join(' · ')}${list.othersFacetsIgnored ? OTHERS_UNFILTERED : ''}`;
 }
 
 function SearchField({

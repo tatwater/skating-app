@@ -22,6 +22,7 @@ import { isFailed, type Loadable, loaded } from '../reads/consoleReads';
 import { historyWhen } from '../shell/consoleTime';
 import type { BodyPreviewData, PreviewCount, RemovedPreviewData } from './bodiesData';
 import { acresText, type BodyRow, changedWhen, STANDING_LABEL } from './bodiesModel';
+import { RECORD_FAILED, reportsSinceWords } from './listWords';
 import { coordText, OutlineStill } from './OutlineStill';
 
 /**
@@ -310,7 +311,7 @@ function RowOnly({
         onRetry={onRetry}
         pending={pending}
       >
-        {isFailed(removed) ? 'What its record still holds couldn’t be read' : null}
+        {isFailed(removed) ? RECORD_FAILED : null}
       </RetryNote>
     </div>
   );
@@ -354,7 +355,7 @@ function RecordList({ record }: { record: RemovedPreviewData }) {
         )}
       </KeyValueRow>
       {/* The console's words for the same count: a floor when capped, never a total. */}
-      <KeyValueRow label="Reports">{countText(record.reports)} since the record began</KeyValueRow>
+      <KeyValueRow label="Reports">{reportsSinceWords(countText(record.reports))}</KeyValueRow>
     </KeyValueList>
   );
 }

@@ -5,7 +5,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 
 import { KeysProvider } from '@/lib/keys';
 import { expectKeyboardOperable } from '@/test/keyboardAudit';
-import { BodiesTable, notListedWords, resetScrollMemory } from './BodiesTable';
+import { BodiesTable, resetScrollMemory } from './BodiesTable';
 import { BodiesView, type BodiesViewProps } from './BodiesView';
 import { otherTowns, TOOLTIP_TOWNS } from './BodyPreview';
 import { type BodiesListData, UNREAD_LIST } from './bodiesData';
@@ -23,6 +23,7 @@ import type { BodyRow } from './bodiesModel';
 import { type BodiesQuery, queryOf } from './bodiesSearch';
 import { laneById } from './bodyLanes';
 import { SEARCH_DEBOUNCE_MS } from './ListTools';
+import { notListedWords } from './listWords';
 
 /**
  * The library page from props: every change of place goes out through `onQueryChange` (the URL),

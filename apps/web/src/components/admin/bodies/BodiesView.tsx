@@ -49,6 +49,8 @@ export type BodiesViewProps = {
   onLoadMore?: () => void;
   /** Re-runs a failed list (its *Try again*). */
   onRetryList?: () => void;
+  /** Re-runs a failed other-standings read (its note's *Try again*). */
+  onRetryOthers?: () => void;
   /** Re-runs the preview's failed reads. */
   onRetryPreview?: () => void;
   /** The preview's failed reads were tried again; their fresh answers aren't in. */
@@ -89,6 +91,7 @@ export function BodiesView({
   list,
   onLoadMore,
   onRetryList,
+  onRetryOthers,
   onRetryPreview,
   previewPending = false,
   laneCounts,
@@ -283,6 +286,7 @@ export function BodiesView({
             }}
             {...(onLoadMore !== undefined && { onLoadMore })}
             {...(onRetryList !== undefined && { onRetry: onRetryList })}
+            {...(onRetryOthers !== undefined && { onRetryOthers })}
             memoryKey={listKey(query)}
             onSearchKey={() => search.current?.focus()}
             gridRef={grid}

@@ -204,6 +204,7 @@ export function listFrom({
   current,
   held,
   others,
+  othersFailed,
 }: {
   rows: readonly LibraryRow[];
   status: PaginationStatus;
@@ -213,6 +214,8 @@ export function listFrom({
   held: ListSummary | undefined;
   /** `bodies.searchOtherStandings` for a search, `undefined` while it loads (or none asked). */
   others?: OtherStandings | undefined;
+  /** That read failed (`pending` once tried again): said in the groups' place. */
+  othersFailed?: { pending: boolean };
 }): BodiesListData {
   return {
     status: listStatusOf(status),
@@ -221,6 +224,7 @@ export function listFrom({
     // (never an empty group or a zero).
     others: others === undefined ? null : othersFrom(others),
     ...(others?.facetsIgnored ? { othersFacetsIgnored: true } : {}),
+    ...(othersFailed !== undefined && { othersFailed }),
     total: current?.total ?? null,
     serves: servesFrom(current ?? held),
     facetCounts: current?.facetCounts ?? null,

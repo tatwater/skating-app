@@ -104,7 +104,8 @@ export function BodiesRoute({ bodyPath = BODY_PATH, openLabel }: BodiesRouteProp
   const args = canRead ? listArgsOf(query, listNow) : null;
   // A lane no server read lists (Opened recently) still counts the others: All's summary.
   const summary = useSummary(canRead ? (args ?? { lane: 'all', now: listNow }) : null);
-  const others = useOtherStandings(args);
+  const othersRead = useOtherStandings(args);
+  const others = othersRead === null ? undefined : loaded(othersRead);
   const opened = useOpenedList(canRead && query.lane.read.kind === 'openedByViewer', listNow);
   const preview = usePreview(query.bodyId, canRead, can('audit.read'));
   const paged = usePaged(key);
@@ -132,6 +133,8 @@ export function BodiesRoute({ bodyPath = BODY_PATH, openLabel }: BodiesRouteProp
   const view: Omit<BodiesViewProps, 'list'> = {
     query,
     onQueryChange: go,
+    // A failed other-standings read is said in the groups' place, never drawn as none there.
+    ...(isFailed(othersRead) && { onRetryOthers: othersRead.retry }),
     laneCounts: {
       ...laneCountsFrom(counted, BODY_LANES),
       ...(opened?.list.status === 'done' && { [query.lane.id]: opened.list.total }),
@@ -170,7 +173,13 @@ export function BodiesRoute({ bodyPath = BODY_PATH, openLabel }: BodiesRouteProp
       >
         <PagedRead args={args} memoryKey={key} onPage={paged.put} />
       </ReadBoundary>
-      <PagedView view={view} paged={paged} summary={summary} others={others} />
+      <PagedView
+        view={view}
+        paged={paged}
+        summary={summary}
+        others={others}
+        othersFailed={isFailed(othersRead) ? { pending: othersRead.pending } : null}
+      />
     </>
   );
 }
@@ -301,14 +310,18 @@ function PagedView({
   paged,
   summary,
   others,
+  othersFailed,
 }: {
   view: Omit<BodiesViewProps, 'list'>;
   paged: PagedState;
   summary: SummaryRead;
   others: OtherStandings | undefined;
+  othersFailed: { pending: boolean } | null;
 }): ReactNode {
   const { page, failure, retrying } = paged;
   const { current, laneHeld } = summary;
+  // The other standings' failure by value, so the list rebuilds only when it changes.
+  const othersPending = othersFailed === null ? null : othersFailed.pending;
   // Rows keep their identity between renders (a minute's tick, a row selected), so the table
   // rebuilds its model only when a page or the summary lands.
   const list = useMemo((): BodiesListData => {
@@ -326,8 +339,9 @@ function PagedView({
       current,
       held: laneHeld,
       others,
+      ...(othersPending !== null && { othersFailed: { pending: othersPending } }),
     });
-  }, [page, failure, retrying, current, laneHeld, others]);
+  }, [page, failure, retrying, current, laneHeld, others, othersPending]);
   return (
     <BodiesView
       {...view}
@@ -371,10 +385,10 @@ function useSummary(args: ListArgs | null): SummaryRead {
 
 /**
  * A search's matches in the other standings (`bodies.searchOtherStandings`): read only for a search
- * in one standing's lane — *All* and *Changed* already hold every standing. `undefined` while it
- * loads, fails or there's no search: no group is drawn then, never an empty one.
+ * in one standing's lane — *All* and *Changed* already hold every standing. The read as the shared
+ * layer holds it (on its way, failed, or its value); `null` when none is asked.
  */
-function useOtherStandings(args: ListArgs | null): OtherStandings | undefined {
+function useOtherStandings(args: ListArgs | null): Loadable<OtherStandings> | null {
   const asked =
     args !== null &&
     (args.q ?? '').trim().length >= 2 &&
@@ -385,7 +399,7 @@ function useOtherStandings(args: ListArgs | null): OtherStandings | undefined {
   const { reads } = useConsoleReadSet({
     others: asked === null ? null : read(api.bodies.searchOtherStandings, asked),
   });
-  return asked === null ? undefined : loaded(reads.others);
+  return asked === null ? null : reads.others;
 }
 
 // ── Opened recently ──────────────────────────────────────────────────────────────────────────

@@ -251,6 +251,26 @@ describe('the list', () => {
     expect(mocks.calls.has(name(api.bodies.searchOtherStandings))).toBe(false);
   });
 
+  it('says a failed other-standings read in the groups’ place, and tries it again', async () => {
+    mocks.search = { lane: 'active', q: 'mor' };
+    mocks.paged = { results: [row('a', 'Lake Morey')], status: 'Exhausted' };
+    mocks.results.set(name(api.bodies.searchOtherStandings), new Error('nope'));
+    mount();
+    const note = document.querySelector('[data-slot="others-error"]') as HTMLElement;
+    expect(note).toHaveTextContent('Other standings couldn’t be checked');
+    // Never drawn as no matches there: no tally that would read as the whole.
+    expect(document.querySelector('[data-slot=search-tally]')).toBeNull();
+    mocks.results.set(name(api.bodies.searchOtherStandings), {
+      q: 'mor',
+      groups: [{ lane: 'inactive', count: 3, capped: false, rows: [row('d', 'Morey Pond')] }],
+      facetsIgnored: false,
+    });
+    await userEvent.click(within(note).getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('1 active · 3 dormant')).toBeInTheDocument();
+    expect(note).toBeInTheDocument();
+    expect(note).toHaveTextContent('');
+  });
+
   it('sends every narrowing to the server — the tab, the facets, the search — and sorts nothing itself', () => {
     mocks.search = { lane: 'all', state: 'VT', size: '1000-up', class: 'bay', q: 'mor' };
     mocks.paged = {

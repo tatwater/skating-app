@@ -44,6 +44,7 @@ import {
 } from './bodiesModel';
 import { isSearch } from './bodiesSearch';
 import { type BodyLane, laneStanding } from './bodyLanes';
+import { notListedWords, OTHERS_FAILED } from './listWords';
 import { spacedRows, withPinned } from './virtualRows';
 
 /**
@@ -188,6 +189,8 @@ type BodiesTableProps = {
   onLoadMore?: () => void;
   /** Re-runs a failed list. */
   onRetry?: () => void;
+  /** Re-runs a failed other-standings read. */
+  onRetryOthers?: () => void;
   /** This list, as it stands — the scroll is remembered under it. */
   memoryKey: string;
   /** / was pressed in the rows. */
@@ -207,6 +210,7 @@ export function BodiesTable({
   onOpen,
   onLoadMore,
   onRetry,
+  onRetryOthers,
   memoryKey,
   onSearchKey,
   gridRef,
@@ -526,25 +530,20 @@ export function BodiesTable({
                 : entries.map((entry, i) => renderEntry(entry, i))}
           </tbody>
         </Table>
+        {/* The other standings' read, failed: said in the groups' place with Try again. Mounted
+            always, so its words are announced, and focus stays when they go. */}
+        <RetryNote
+          data-slot="others-error"
+          className="px-gutter pt-(--space-3) empty:p-0"
+          onRetry={onRetryOthers}
+          pending={list.othersFailed?.pending === true}
+        >
+          {list.othersFailed !== undefined ? OTHERS_FAILED : null}
+        </RetryNote>
         <ListFoot list={list} rows={rowsTotal} q={q} onRetry={onRetry} />
       </div>
     </div>
   );
-}
-
-/**
- * "1 opened isn’t in the library · 1 is no longer a body": Opened recently's ids the library
- * didn't list, said rather than dropped.
- */
-export function notListedWords(n: BodiesListData['notListed']): string | null {
-  if (n === undefined) return null;
-  const parts = [
-    n.unlisted > 0 &&
-      `${n.unlisted} opened ${n.unlisted === 1 ? 'isn’t' : 'aren’t'} in the library`,
-    n.unknown > 0 && `${n.unknown} ${n.unknown === 1 ? 'is' : 'are'} no longer a body`,
-    n.dropped > 0 && `${n.dropped} older not read`,
-  ].filter((p): p is string => p !== false);
-  return parts.length === 0 ? null : parts.join(' · ');
 }
 
 /** The list-end tab: what the list is, or why it stops where it does. */

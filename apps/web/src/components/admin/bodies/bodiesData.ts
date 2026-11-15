@@ -69,6 +69,11 @@ export interface BodiesListData {
    * tally that counts across them is never read as filtered.
    */
   othersFacetsIgnored?: boolean;
+  /**
+   * The other standings' read failed: the kit's note in the groups' place, with Try again
+   * (`pending` while tried again) — never drawn as no matches there.
+   */
+  othersFailed?: { pending: boolean };
   /** How many the list holds after filters, when the read says. */
   total: Count | null;
   serves: ListServes;
