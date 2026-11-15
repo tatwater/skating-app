@@ -26,6 +26,7 @@ import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { writeAudit } from './audit';
 import { hasCapability, isLockedOut, isSuspendedNow } from './auth';
+import { READY_ROWS, refreshPersonRow } from './peopleRows';
 
 type Profile = Doc<'profiles'>;
 
@@ -89,31 +90,80 @@ function canStillEdit(profile: LedgerFacts): boolean {
   return isLedgerEditor(profile) && canStillAct(profile);
 }
 
-/** Editors who can still act, other than `exceptId`. */
+/** Admins' People rows read at most when looking for another editor. */
+const ADMIN_ROWS = 200;
+/** Candidate editors whose profiles are read to confirm them, at most — a "select few" (D227). */
+const VERIFY_PROFILES = 3;
+
+/**
+ * Editors who can still act, other than `exceptId` — counted far enough to answer "any?".
+ *
+ * Once the People rows exist (`ready:rows`), the candidates come from admins' light rows
+ * (`peopleRows.ledgerEditor`) and at most {@link VERIFY_PROFILES} of their profiles are read to confirm
+ * each can still act — so the read is a few profiles, never every admin's (a profile can weigh a
+ * whole document). A stale row can only undercount (a holder it misses, or one it names that the
+ * profile no longer confirms), which refuses a revoke rather than allowing one: never no editor.
+ * Before the rows exist, the admins' profiles are read as they always were.
+ */
 export async function otherLedgerEditors(
   ctx: QueryCtx | MutationCtx,
   exceptId: Id<'profiles'>,
 ): Promise<number> {
-  const admins = await ctx.db
-    .query('profiles')
-    .withIndex('by_role', (q) => q.eq('role', 'admin'))
-    .take(ADMIN_READ_LIMIT);
-  return admins.filter((p) => p._id !== exceptId && canStillEdit(p)).length;
+  const ready = await ctx.db
+    .query('peopleCounts')
+    .withIndex('by_key', (q) => q.eq('key', READY_ROWS))
+    .first();
+  if (ready === null) {
+    const admins = await ctx.db
+      .query('profiles')
+      .withIndex('by_role', (q) => q.eq('role', 'admin'))
+      .take(ADMIN_READ_LIMIT);
+    return admins.filter((p) => p._id !== exceptId && canStillEdit(p)).length;
+  }
+  const rows = await ctx.db
+    .query('peopleRows')
+    .withIndex('by_staff', (q) => q.eq('staffRank', 0))
+    .take(ADMIN_ROWS);
+  let confirmed = 0;
+  let read = 0;
+  for (const row of rows) {
+    if (!row.ledgerEditor || row.userId === exceptId) continue;
+    if (read >= VERIFY_PROFILES) break;
+    read++;
+    const profile = await ctx.db.get(row.userId);
+    if (profile && canStillEdit(profile)) confirmed++;
+  }
+  return confirmed;
 }
+
+/**
+ * One answer per person per read: a query asks it for several levers and History rows, and the
+ * answer can't change inside a query. A mutation always asks afresh, since its own writes can.
+ */
+const LAST_MEMO = new WeakMap<object, Map<string, boolean>>();
 
 /** Whether `target` is the only editor who can still act — taking it from them is refused. */
 export async function isLastLedgerEditor(
   ctx: QueryCtx | MutationCtx,
   target: LedgerFacts,
 ): Promise<boolean> {
-  return canStillEdit(target) && (await otherLedgerEditors(ctx, target._id)) === 0;
+  if (!canStillEdit(target)) return false;
+  const isQuery = !('insert' in ctx.db);
+  const memo = isQuery ? (LAST_MEMO.get(ctx) ?? new Map<string, boolean>()) : null;
+  if (memo?.has(target._id)) return memo.get(target._id) as boolean;
+  const last = (await otherLedgerEditors(ctx, target._id)) === 0;
+  if (memo) {
+    memo.set(target._id, last);
+    LAST_MEMO.set(ctx, memo);
+  }
+  return last;
 }
 
 export const LAST_EDITOR_MESSAGE =
   'They are the last person who can edit the ledger; give another admin ledger editing first';
 
 /** Why `target` can't be given ledger editing, or `null` — the People row's `can` and the write's. */
-export function ledgerGrantRefusal(target: Profile): string | null {
+export function ledgerGrantRefusal(target: LedgerFacts): string | null {
   if (target.role !== 'admin') return 'Only an admin can be given ledger editing';
   if (!canStillAct(target)) return 'This account is not active';
   if (target.canEditLedger === true) return 'They can already edit the ledger';
@@ -123,7 +173,7 @@ export function ledgerGrantRefusal(target: Profile): string | null {
 /** Why ledger editing can't be taken from `target`, or `null`. */
 export async function ledgerRevokeRefusal(
   ctx: QueryCtx | MutationCtx,
-  target: Profile,
+  target: LedgerFacts,
 ): Promise<string | null> {
   if (target.canEditLedger !== true) return 'They cannot edit the ledger';
   if (await isLastLedgerEditor(ctx, target)) return LAST_EDITOR_MESSAGE;
@@ -145,6 +195,7 @@ export async function grantLedgerEditorImpl(
   if (refused !== null) throw new ConvexError(refused);
 
   await ctx.db.patch(userId, { canEditLedger: true });
+  await refreshPersonRow(ctx, userId);
   await writeAudit(ctx, {
     ...(actor ? { actorId: actor._id } : {}),
     action: 'grant_ledger_editor',
@@ -200,6 +251,7 @@ async function takeLedgerGrant(
 ): Promise<void> {
   if (await isLastLedgerEditor(ctx, target)) throw new ConvexError(LAST_EDITOR_MESSAGE);
   await ctx.db.patch(target._id, { canEditLedger: undefined });
+  await refreshPersonRow(ctx, target._id);
   await writeAudit(ctx, {
     actorId: actor._id,
     action: 'revoke_ledger_editor',

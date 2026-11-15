@@ -465,6 +465,11 @@ export default defineSchema({
     /** Not a tombstone: Everyone and Newest read `eq(true)`. */
     live: v.boolean(),
     deletedAt: v.number(),
+    /**
+     * An admin who holds ledger editing (D227) — never sent to a client; it lets "is anyone else an
+     * editor" read light rows instead of every admin's profile (`lib/ledgerEditors`).
+     */
+    ledgerEditor: v.boolean(),
     /** Raw trust points, so the list can derive the trust class without reading the profile. */
     reputationPoints: v.number(),
     createdAt: v.number(),

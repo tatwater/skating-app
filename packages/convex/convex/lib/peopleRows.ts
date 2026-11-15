@@ -106,6 +106,7 @@ export function derivePersonRow(
         : 0,
     live: !deleted,
     deletedAt: deleted ? (profile.deletedAt ?? 0) : 0,
+    ledgerEditor: !deleted && profile.role === 'admin' && profile.canEditLedger === true,
     reputationPoints: profile.reputationPoints,
     createdAt: profile.createdAt,
     refreshedAt: now,
