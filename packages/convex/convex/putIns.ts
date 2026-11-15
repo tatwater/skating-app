@@ -283,8 +283,11 @@ export function directionRefusal(
   return null;
 }
 
-/** Hidden coordinates a promotion checks its launch against (a body holds a handful). */
-const SUPPRESSION_ROWS_READ = 200;
+/**
+ * Hidden coordinates a promotion checks its launch against (a body holds a handful) — and so the
+ * documents its undo's refusal reads, which People's per-row plan counts (`people.ROW_SHAPE_DOCS`).
+ */
+export const SUPPRESSION_ROWS_READ = 200;
 
 /**
  * Moderator: make a stored launch official **in place** (B01-3d, `body.access`) — the Access tab's

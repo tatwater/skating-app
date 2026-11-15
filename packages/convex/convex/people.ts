@@ -87,6 +87,7 @@ import { trustClassFor } from './lib/reputation';
 import { readTenure, rootReader, tenureCappedOf } from './lib/staffTenure';
 import { type UndoState, undoState } from './lib/undo';
 import { stands, undoneBy } from './lib/undoChains';
+import { SUPPRESSION_ROWS_READ } from './putIns';
 
 const MINUTE = 60_000;
 const DAY_MS = 86_400_000;
@@ -1359,18 +1360,28 @@ async function labelOf(
 }
 
 /**
+ * The most #127's refusal hook (`UndoHandler.refusal`) reads for one row, on each axis — a row runs
+ * one verb's hook, and the axes peak on different verbs. Calls: a feature redraw's, three (the feature
+ * and its body through `undoRead`, and the row's snapshot). Documents: a launch's, one through
+ * `undoRead` and up to {@link SUPPRESSION_ROWS_READ} hidden launches on its body (a redraw's is ten:
+ * the feature, the body, a snapshot of at most 8 chunks).
+ */
+const REFUSAL_CALLS = 3;
+const REFUSAL_DOCS = 1 + SUPPRESSION_ROWS_READ;
+
+/**
  * What shaping one History or Decisions row reads through helpers on main and in this PR — undo state
  * (the undo tagged rows ≤ 16, the newest row on the target, the content's author stamp, the person's
- * row, a rowless fallback, and #127's refusal hook: a feature and its body through `undoRead`, and the
- * row's snapshot, up to 8 chunks), the actor's and the target's names — counted ahead: calls and
- * documents. Bytes: the refusal hook's reads are charged as they really weigh (`undoRead` →
- * `requestBudget(ctx).measured`, one at a time, `undefined` past the budget, which the hook reads as
- * "checked when pressed"); a rowless profile is charged by `rowlessProfile`; the rest are **not**
- * charged — the undo engine reads audit rows and content items whose worst case is the document limit
- * (an audit row's metadata has no cap) — the phase doc's open ruling.
+ * row, a rowless fallback, and the refusal hook at its worst, {@link REFUSAL_CALLS} and
+ * {@link REFUSAL_DOCS}), the actor's and the target's names — counted ahead: calls and documents. Bytes:
+ * the hook's `undoRead` rows are charged as they really weigh (`requestBudget(ctx).measured`, one at a
+ * time, `undefined` past the budget, which the hook answers "checked when pressed"); a rowless profile
+ * is charged by `rowlessProfile`; the rest are **not** charged — the undo engine reads audit rows and
+ * content items whose worst case is the document limit (an audit row's metadata has no cap), and the
+ * hook's snapshot and hidden-launch reads are owed (the phase doc's B01-3f "Owed").
  */
-const ROW_SHAPE_CALLS = 11;
-const ROW_SHAPE_DOCS = 35;
+const ROW_SHAPE_CALLS = 8 + REFUSAL_CALLS;
+const ROW_SHAPE_DOCS = 24 + REFUSAL_DOCS;
 
 /**
  * How many of `n` rows {@link shapeRows} can shape once `calls` more calls reading `docs` documents

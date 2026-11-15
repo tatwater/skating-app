@@ -2484,14 +2484,20 @@ Every shape change is additive except where noted.
   walk's roots and the flag labels run in waves. Tests count rounds structurally. Waves are as large
   as the budget holds at the worst case, so where an item's worst case is several documents
   (staffSeason's checks, the labels) a wave is still one or two items. Making those wider needs
-  budget accounting that charges a wave its real weight, which is a design call left open.
+  budget accounting that charges a wave its real weight, which is a design call left open. One
+  exception came with #127: an undo's refusal reads (`lib/undoReads`) still run one after another
+  across a page, each waiting for the one before it to settle, so a Decisions page of body writes
+  spends up to two round trips a line on them (B01-3f's "Owed").
 - **Tagged reasons at the type.** The People writers take only a tagged reason (`writePersonAudit`):
   `typed()` (refused past the cap) or `composed` (shortened to fit), each a branded shape no literal
   can spell. The other writers keep a compatible type (a string is held to the cap as typed). The
   composed-reason guard is the backstop, and now covers the Bodies writes #126 brought.
 - **A sweep's run record carries no `ready`.** Only a backfill's does.
 - **The newest audit row on a busy target, read for undo state:** it is read whole and its bytes are
-  not charged (the undo engine counts its calls and documents only). For rows written since D261 the
+  not charged (the undo engine counts its calls and documents only — the same holds for the rows an
+  undo tagged and the content's author stamp; #127's refusal reads are the exception, charged their
+  real weight through `undoRead`, all but a snapshot and a launch's hidden neighbors, which B01-3f
+  owes). For rows written since D261 the
   reason is at most 2,000 characters, but metadata is uncapped and older rows' reasons are too, so the
   worst case is still the document limit per distinct target in a page. It is now read once per
   target per request. A fix belongs with the metadata ruling below (or a per-target "latest action"
@@ -2511,7 +2517,7 @@ from the code, not from dev; nothing capped in this PR). Every audit row passes 
 | `set_reference_links` | the links, before and after | ≤ 2 × `MAX_REFERENCE_LINKS` (8) links, labels ≤ 80 characters; URLs uncapped | only through a URL no writer caps |
 | `set_parking_area` | coord, the bodies a lot serves, its name, `prev` | the lot's body list (uncapped at the write) and an uncapped name | in theory |
 | Status writes (suspend, ban, lift, the lapse sweep's reset) | `prev` with the profile's `statusReason` | a reason from before D261 is uncapped; from now on ≤ 2,000 characters | old rows only, in theory |
-| Names (`set_water_body_name`, landmarks' create/edit, `corpusPlaceNames`) | the name, before and after | body and place names are uncapped at their writers | in theory |
+| Names (`set_water_body_name`, landmarks' create/edit, `corpusPlaceNames`) | the name, before and after; a landmark edit also its spellings, before (`prev`) and after (`aliases`, #127) | body and place names are uncapped at their writers, and a landmark's spellings in number too | in theory |
 | `suppress_recurrence` / `unsuppress_recurrence` | `prev` with the suppression reason | uncapped (as `ROW_MAX.hazardRecurrence` notes) | in theory |
 | `set_lake_depth` | the depth source's before and after | ids and numbers | no |
 
@@ -2536,8 +2542,9 @@ value passed to an audit writer. The composing writers:
 | `subAreas.ts` | auto-delist (with an actor), create (drawn and by chord), redraw, redraw by chord, rename / aliases, delist, restore, curated boost, the A02 seed, the A07a campaign | a bay's and its lake's names, the delist reason |
 | `landmarks.ts`, `lib/landmarkRows.ts` | add, edit, remove, restore; drawn as a bay; folded into / removed by a merge | a landmark's and its twin's names |
 | `corpusPlaceNames.ts` | dismiss (with the moderator's note), reopen, spelled as a landmark's alias | a place name, the dismissal reason and note |
-| `waterBodies.ts` | remove from map, merge (operator default and the catalog campaign's absorption), satellite mode, sample points, name override cleared, community name, display name, curated boost, reference links, depth override released | a body's names, a campaign id, counts and modes |
-| `putIns.ts` | set official put-in | the put-in's name |
+| `waterBodies.ts` | remove from map, merge (operator default and the catalog campaign's absorption), satellite mode, sample points, name override cleared, community name, display name, curated boost, reference links, depth override released, aliases, class, the depth source chosen or handed back | a body's names, a campaign id, counts, modes, a class and a source |
+| `putIns.ts` | set official put-in, made official in place | the put-in's name |
+| `imageryOverrides.ts` | a pass cleared, shown, hidden (the person's reason kept whole, checked first) | the pass id |
 | `corpusRequests.ts` | admit from the catalog | a catalog id |
 | `lib/requestDecisions.ts` | a request's default decision line | the decision and the request kind |
 | `postedAccess.ts` | the posted-access change, with the person's reason quoted | the change, and the typed reason (checked first) |
@@ -3174,8 +3181,12 @@ Its row reads (`lib/undoReads`) are charged at their real weight to the request'
 another, read once per query; past it the line reads *unavailable* — "This page has too much to check
 this undo here — open what it changed to undo it." — never a read past the limit. **Owed:** a
 refusal's snapshot read and a launch's hidden-neighbor read (at most 200, a handful in practice) are
-not charged, and People's per-row call plan (`ROW_SHAPE_DOCS`) doesn't count them; the landmark
-undo's refusal checks the spellings only, not the duplicate and bay-name rules its write also takes.
+not charged their bytes — People's per-row plan counts their calls and documents (`REFUSAL_CALLS`,
+`REFUSAL_DOCS`, since B01-4b's merge of this); the reads wait on each other across a page (since
+`ReadBudget.measured` holds a read's worst case in flight, that wait no longer keeps reads under the
+limit — only keeps later lines from being refused for worst cases never read — and costs up to two
+round trips a line); the landmark undo's refusal checks the spellings only, not the duplicate and
+bay-name rules its write also takes.
 
 **Held — the survey filing** (`fileBathymetrySurvey`): the board shows the field (*A survey the next
 build should load*, *Paste a link or a citation*) but not what appears once one is filed; it waits on

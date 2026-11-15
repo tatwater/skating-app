@@ -26,6 +26,8 @@ const MODULES = [
   'peopleJobs.ts',
   // A staffer's tenure, read live by the strip and stamped on the Staff lane's rows (B01-4b).
   'lib/staffTenure.ts',
+  // The rows an undo's refusal reads, which History and Decisions reach on every line (B01-3f).
+  'lib/undoReads.ts',
 ];
 
 /**

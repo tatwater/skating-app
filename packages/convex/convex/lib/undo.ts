@@ -107,8 +107,9 @@ function newestOnTarget(
 
 /**
  * Whether `row` can be undone by `viewer`, and if not, why. Bounded: two index reads (one of at most
- * {@link UNDO_TAG_READ} rows), one `get` of an item an author could have deleted, and the handful of
- * rows a verb's `refusal` reads (`lib/undoReads`).
+ * {@link UNDO_TAG_READ} rows), one `get` of an item an author could have deleted, a person's row (and
+ * their profile when they have none), and what a verb's `refusal` reads — at most two rows through
+ * `lib/undoReads`, a snapshot, and for a launch its body's hidden launches (`SUPPRESSION_ROWS_READ`).
  */
 export async function undoState(
   ctx: QueryCtx | MutationCtx,

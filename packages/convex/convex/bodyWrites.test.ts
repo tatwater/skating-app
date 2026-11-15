@@ -1490,4 +1490,36 @@ describe('undo after an un-audited change: write → change → undo → redo', 
     });
     expect(got).toEqual({ first: a, secondRead: false });
   });
+
+  test('a staffer’s Decisions (People) asks the same refusal: each axis’s worst verb answers, never throws', async () => {
+    // The redraw is the hook's most calls (feature, body, snapshot); the launch its most documents
+    // (the launch and its body's hidden ones) — the two peaks People's per-row plan counts.
+    const decisionsLine = async (who: Who, id: Id<'moderationActions'>) => {
+      const page = await who.as.query(api.people.decisions, { userId: who.id });
+      return page?.rows.find((r) => r.id === id)?.undo;
+    };
+    const t1 = harness();
+    const shaped = await feature(t1);
+    expect(await decisionsLine(shaped.admin, shaped.subject)).toMatchObject({ state: 'available' });
+    await t1.run((ctx) =>
+      ctx.db.patch(shaped.id, {
+        bbox: { minLat: 44.004, minLng: -72.006, maxLat: 44.006, maxLng: -72.004 },
+      }),
+    );
+    expect(await decisionsLine(shaped.admin, shaped.subject)).toEqual({
+      state: 'unavailable',
+      why: expect.stringMatching(/has to be on its lake/),
+    });
+
+    const t2 = harness();
+    const promoted = await launch(t2);
+    expect(await decisionsLine(promoted.admin, promoted.actionId)).toMatchObject({
+      state: 'available',
+    });
+    await t2.run((ctx) => ctx.db.patch(promoted.putInId, { status: 'hidden' }));
+    expect(await decisionsLine(promoted.admin, promoted.actionId)).toEqual({
+      state: 'unavailable',
+      why: expect.stringMatching(/hidden/),
+    });
+  });
 });
