@@ -1,5 +1,4 @@
 import { PEOPLE_LANES } from '@skating/core';
-import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -17,7 +16,6 @@ import {
 } from './peopleFixtures';
 import { lanesFor, PEOPLE_LANE_INFO } from './peopleLanes';
 import {
-  ageWords,
   endWords,
   flagWords,
   kickerText,
@@ -32,7 +30,6 @@ import {
   rowChips,
   rowView,
   STILL_PREPARING,
-  timeLeft,
   weekdayDate,
 } from './peopleModel';
 
@@ -76,9 +73,7 @@ describe('the counts: not ready, a floor, a number', () => {
   });
 
   it('heads the list with its count and order, and never a number while it isn’t ready', () => {
-    expect(kickerText('suspended', entry(LANES, 'suspended'), false)).toBe(
-      '1 · soonest to lapse first',
-    );
+    expect(kickerText('suspended', entry(LANES, 'suspended'), false)).toBe('1 · by end date');
     expect(kickerText('staff', entry(LANES, 'staff'), false)).toBe('3 · admins first');
     expect(kickerText('flagged', entry(LANES_CAPPED, 'flagged'), false)).toBe(
       '200+ · oldest first',
@@ -142,7 +137,7 @@ describe('a row', () => {
     ]);
     expect(view.sub).toBe('Until Thu 15 Oct · Restricted: comments · 1 open flag · 1 appeal');
     expect(view.reason).toBe('Reason: “Second unsafe report in a week; cooling off”');
-    expect(view.age).toBe('3 days');
+    expect(view.age).toBe('3 d');
     expect(view.name).toBe('Rob Tremblay');
     expect(view.handle).toBe('rtremblay');
   });
@@ -204,7 +199,7 @@ describe('a row', () => {
     const leaving = personRow('a', 'A', 'a', { leavingUntil: NOW + 12 * DAY });
     expect(rowView(leaving, 'leaving', NO_FACTS, NOW)).toMatchObject({
       sub: 'Deletion completes Mon 26 Oct',
-      age: '12 days left',
+      age: '12 d left',
     });
     const gone = personRow('a', 'A', 'a', {
       status: 'deleted',
@@ -213,55 +208,43 @@ describe('a row', () => {
     });
     expect(rowView(gone, 'deleted', NO_FACTS, NOW)).toMatchObject({
       sub: 'Deleted Mon 12 Oct',
-      age: '2 days',
+      age: '2 d',
     });
   });
 
   it('counts each lane’s age from its own fact, and draws none where nothing is on record', () => {
-    expect(rowAge(PAT, 'restricted', NOW)).toBe('3 days');
-    expect(rowAge(KATE, 'joined', NOW)).toBe('2 days');
+    expect(rowAge(PAT, 'restricted', NOW)).toBe('3 d');
+    expect(rowAge(KATE, 'joined', NOW)).toBe('2 d');
     expect(rowAge(personRow('a', 'A', 'a'), 'status', NOW)).toBeNull();
     expect(rowAge(personRow('a', 'A', 'a'), 'restricted', NOW)).toBeNull();
     expect(rowAge(personRow('a', 'A', 'a'), 'leaving', NOW)).toBeNull();
     expect(rowAge(KATE, 'seen', NOW)).toBeNull();
     // A search ages a row from when the account was made.
-    expect(rowView(KATE, null, NO_FACTS, NOW).age).toBe('2 days');
+    expect(rowView(KATE, null, NO_FACTS, NOW).age).toBe('2 d');
   });
 });
 
 describe('words', () => {
-  it('writes units out, rounded down', () => {
-    expect(ageWords(0)).toBe('0 minutes');
-    expect(ageWords(61_000)).toBe('1 minute');
-    expect(ageWords(5 * HOUR + 1)).toBe('5 hours');
-    expect(ageWords(DAY)).toBe('1 day');
-    expect(ageWords(59 * DAY)).toBe('59 days');
-    expect(ageWords(90 * DAY)).toBe('2 months');
-    expect(ageWords(800 * DAY)).toBe('2 years');
-    expect(ageWords(-5)).toBe('0 minutes');
-    expect(ageWords(Number.NaN)).toBe('0 minutes');
-  });
-
-  it('never goes backwards as time passes', () => {
-    const scale = (s: string) => {
-      const [n, unit] = s.split(' ') as [string, string];
-      const per = { minute: 1, hour: 60, day: 1440, month: 43_830, year: 525_960 };
-      return Number(n.replace(/,/g, '')) * per[unit.replace(/s$/, '') as keyof typeof per];
-    };
-    fc.assert(
-      fc.property(fc.nat(10 * 365 * DAY), fc.nat(30 * DAY), (a, b) => {
-        expect(scale(ageWords(a + b))).toBeGreaterThanOrEqual(scale(ageWords(a)));
-      }),
+  it('writes a row’s age in the board’s short form, never units written out', () => {
+    // Every lane's age, through the console's one list-row age.
+    const ages = PEOPLE_LANES.flatMap((lane) =>
+      [ROB, KATE, PAT, personRow('a', 'A', 'a', { leavingUntil: NOW + 30 * HOUR })].map(
+        (r) => rowView(r, lane, NO_FACTS, NOW).age,
+      ),
     );
+    for (const age of ages.filter((a): a is string => a !== null)) {
+      expect(age).toMatch(/^(\d+(\.\d)? (min|h|d)( left)?|Ends now)$/);
+    }
   });
 
-  it('says how long is left, units written out', () => {
-    expect(timeLeft(DAY + HOUR)).toBe('1 day left');
-    expect(timeLeft(5 * HOUR)).toBe('5 hours left');
-    expect(timeLeft(30_000)).toBe('1 minute left');
-    expect(timeLeft(10 * 60_000)).toBe('10 minutes left');
-    expect(timeLeft(0)).toBe('Ends now');
-    expect(timeLeft(Number.NaN)).toBe('Ends now');
+  it('says how long is left in the short form, and when the window has run out', () => {
+    const leaving = (ms: number) =>
+      rowAge(personRow('a', 'A', 'a', { leavingUntil: NOW + ms }), 'leaving', NOW);
+    expect(leaving(DAY + HOUR)).toBe('1 d left');
+    expect(leaving(5 * HOUR)).toBe('5 h left');
+    expect(leaving(10 * 60_000)).toBe('10 min left');
+    expect(leaving(0)).toBe('Ends now');
+    expect(leaving(-HOUR)).toBe('Ends now');
   });
 
   it('writes a day as the board does, and a list of words as a sentence', () => {

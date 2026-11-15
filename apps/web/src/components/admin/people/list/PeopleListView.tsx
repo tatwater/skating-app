@@ -11,7 +11,7 @@ import { countText } from '../../overview/overviewModel';
 import { ConsoleStatus } from '../../shell/ConsoleShell';
 import { SearchLane } from './kit-candidates/search-lane';
 import { PeopleList } from './PeopleList';
-import { LANES_GROUP, PEOPLE_LANE_INFO, SEARCH_INFO } from './peopleLanes';
+import { PEOPLE_LANE_INFO } from './peopleLanes';
 import {
   type Backfill,
   endWords,
@@ -27,6 +27,15 @@ import {
 } from './peopleModel';
 import type { ListStatus } from './peopleReads';
 import { isSearching, listKey, type PeopleQuery, serverSearch } from './peopleSearch';
+import {
+  appealsOpen as appealsOpenWords,
+  LANES_GROUP,
+  NO_ONE_OPEN,
+  noMatch,
+  SEARCH_LABEL,
+  SEARCH_WORDS,
+  searchListLabel,
+} from './peopleWords';
 
 /**
  * The People list (boards 8.1 and 8.2, the left two columns) as the console mounts it, from what
@@ -121,7 +130,10 @@ export function PeopleListView({
   const appeals = laneEntries?.appeals;
   const appealsOpen =
     appeals !== undefined && appeals.pending.length === 0 && appeals.count.count > 0
-      ? `${countText(appeals.count)} ${appeals.count.count === 1 && !appeals.count.capped ? 'appeal' : 'appeals'} open`
+      ? appealsOpenWords(
+          countText(appeals.count),
+          appeals.count.count === 1 && !appeals.count.capped,
+        )
       : null;
   const footNote = lanesPendingNote(entries);
 
@@ -167,7 +179,7 @@ export function PeopleListView({
       >
         <SearchLane
           value={query.q}
-          label="Search any account"
+          label={SEARCH_LABEL}
           place={JSON.stringify([lane, selectedId])}
           inputRef={search}
           onSearch={(q) => onQueryChange({ lane, q })}
@@ -224,11 +236,14 @@ export function PeopleListView({
             data-slot="page-word"
             className="m-0 text-disp leading-none font-semibold tracking-disp whitespace-nowrap text-fg uppercase"
           >
-            {searching ? SEARCH_INFO.title : info.title}
+            {searching ? SEARCH_WORDS.title : info.title}
           </h1>
+          {/* Never cut: at the list column's width a long count beside a long word takes a second
+              line, balanced, and the negative top margin keeps two lines inside the word's height,
+              so the head's rhythm holds whichever lane is open. */}
           <span
             data-slot="people-kicker"
-            className="min-w-0 truncate pb-(--space-0_5) text-kick leading-none font-medium tracking-kick text-fg3 uppercase"
+            className="-mt-(--space-0_5) min-w-0 pb-(--space-0_5) text-kick leading-none font-medium tracking-kick text-balance text-fg3 uppercase"
           >
             {kickerText(lane, entry, searching)}
           </span>
@@ -247,7 +262,7 @@ export function PeopleListView({
           </div>
         )}
         <PeopleList
-          label={searching ? `Search: ${query.q.trim()}` : info.title}
+          label={searching ? searchListLabel(query.q.trim()) : info.title}
           rows={rows}
           status={list.status}
           selectedId={selectedId}
@@ -255,7 +270,7 @@ export function PeopleListView({
           {...(onLoadMore !== undefined && { onLoadMore })}
           {...(onRetryList !== undefined && { onRetry: onRetryList })}
           retryPending={list.retryPending === true}
-          emptyWords={searching ? `No one matches “${query.q.trim()}”` : info.empty}
+          emptyWords={searching ? noMatch(query.q.trim()) : info.empty}
           doneWords={endWords(listLane, list.reasons, list.pending, list.rows.length)}
           mark={mark}
           memoryKey={listKey(query)}
@@ -270,7 +285,7 @@ export function PeopleListView({
         tabIndex={-1}
         className="flex min-h-0 min-w-0 flex-col outline-none focus-visible:shadow-[inset_0_0_0_var(--stroke-hair)_var(--fg)]"
       >
-        {detail ?? <ListEnd className="mt-(--space-3)">No one open</ListEnd>}
+        {detail ?? <ListEnd className="mt-(--space-3)">{NO_ONE_OPEN}</ListEnd>}
       </section>
     </div>
   );

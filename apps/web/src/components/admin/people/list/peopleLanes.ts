@@ -1,5 +1,7 @@
 import { PEOPLE_LANE_LABELS, PEOPLE_LANES, type PeopleLane } from '@skating/core';
 
+import { LANE_WORDS } from './peopleWords';
+
 /**
  * What the page says about each lane — its name in the sidebar (core's, so a lane can't be spelled
  * two ways), its display word, the order its list comes in (the server's: the page never re-sorts),
@@ -35,95 +37,27 @@ export interface PeopleLaneInfo {
   tone?: 'warn';
 }
 
-export const PEOPLE_LANE_INFO: Readonly<Record<PeopleLane, PeopleLaneInfo>> = {
-  everyone: {
-    id: 'everyone',
-    label: PEOPLE_LANE_LABELS.everyone,
-    title: 'Everyone',
-    order: 'by name',
-    age: 'joined',
-    empty: 'No accounts yet',
-  },
-  staff: {
-    id: 'staff',
-    label: PEOPLE_LANE_LABELS.staff,
-    title: 'Staff',
-    order: 'admins first',
-    age: 'seen',
-    empty: 'No staff yet',
-  },
-  suspended: {
-    id: 'suspended',
-    label: PEOPLE_LANE_LABELS.suspended,
-    title: 'Suspended',
-    order: 'soonest to lapse first',
-    age: 'status',
-    empty: 'No one is suspended',
-    tone: 'warn',
-  },
-  banned: {
-    id: 'banned',
-    label: PEOPLE_LANE_LABELS.banned,
-    title: 'Banned',
-    order: 'most recent first',
-    age: 'status',
-    empty: 'No one is banned',
-  },
-  restricted: {
-    id: 'restricted',
-    label: PEOPLE_LANE_LABELS.restricted,
-    title: 'Restricted',
-    order: 'most recently restricted first',
-    age: 'restricted',
-    empty: 'No one is restricted',
-  },
-  flagged: {
-    id: 'flagged',
-    label: PEOPLE_LANE_LABELS.flagged,
-    title: 'Flagged',
-    order: 'oldest first',
-    age: 'joined',
-    empty: 'No open flags on anyone or their content',
-  },
-  appeals: {
-    id: 'appeals',
-    label: PEOPLE_LANE_LABELS.appeals,
-    title: 'Appeals open',
-    order: 'oldest first',
-    age: 'joined',
-    empty: 'No appeals waiting',
-  },
-  newest: {
-    id: 'newest',
-    label: PEOPLE_LANE_LABELS.newest,
-    title: 'Newest',
-    order: 'newest first',
-    age: 'joined',
-    empty: 'No accounts made this week',
-  },
-  leaving: {
-    id: 'leaving',
-    label: PEOPLE_LANE_LABELS.leaving,
-    title: 'Leaving',
-    order: 'ending soonest first',
-    age: 'leaving',
-    empty: 'No one is leaving',
-  },
-  deleted: {
-    id: 'deleted',
-    label: PEOPLE_LANE_LABELS.deleted,
-    title: 'Deleted',
-    order: 'most recent first',
-    age: 'status',
-    empty: 'No deleted accounts',
-  },
+/** What each lane's rows age from, and the count's tone. */
+const LANE_FACTS: Readonly<Record<PeopleLane, { age: AgeFrom; tone?: 'warn' }>> = {
+  everyone: { age: 'joined' },
+  staff: { age: 'seen' },
+  suspended: { age: 'status', tone: 'warn' },
+  banned: { age: 'status' },
+  restricted: { age: 'restricted' },
+  // Until the server gives each person's oldest open flag or ticket, these age from joining.
+  flagged: { age: 'joined' },
+  appeals: { age: 'joined' },
+  newest: { age: 'joined' },
+  leaving: { age: 'leaving' },
+  deleted: { age: 'status' },
 };
 
-/** The display word and order while a search runs: it ignores the lane and ranks by match. */
-export const SEARCH_INFO = { title: 'Search', order: 'best match first' } as const;
-
-/** The sidebar's group over the lanes. */
-export const LANES_GROUP = 'Lists';
+export const PEOPLE_LANE_INFO: Readonly<Record<PeopleLane, PeopleLaneInfo>> = Object.fromEntries(
+  PEOPLE_LANES.map((id) => [
+    id,
+    { id, label: PEOPLE_LANE_LABELS[id], ...LANE_WORDS[id], ...LANE_FACTS[id] },
+  ]),
+) as Record<PeopleLane, PeopleLaneInfo>;
 
 /**
  * The lanes a viewer has, in the sidebar's order: Appeals open only with support's read (D37) —

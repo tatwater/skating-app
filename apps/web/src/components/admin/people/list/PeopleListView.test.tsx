@@ -111,7 +111,7 @@ describe('the lanes', () => {
     draw({ laneEntries: entriesOf(LANES_PREPARING) });
     expect(lanes().querySelector('[data-slot="lane-count"]')).toBeNull();
     expect(screen.getByText('Counts still being prepared')).toBeInTheDocument();
-    expect(screen.getByText(/^soonest to lapse first$/)).toBeInTheDocument();
+    expect(screen.getByText(/^by end date$/)).toBeInTheDocument();
   });
 
   it('holds back only the counts not ready, naming them', () => {
@@ -131,7 +131,7 @@ describe('the lanes', () => {
   it('draws no count at all before the lanes’ read answers', () => {
     draw({ laneEntries: null });
     expect(lanes().querySelector('[data-slot="lane-count"]')).toBeNull();
-    expect(screen.getByText('soonest to lapse first')).toBeInTheDocument();
+    expect(screen.getByText('by end date')).toBeInTheDocument();
   });
 
   it('opens another lane fresh, its search cleared; the lane on screen stays as it is', async () => {
@@ -147,7 +147,7 @@ describe('the list', () => {
   it('heads the list with the lane’s word, its count and its order', () => {
     draw();
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Suspended');
-    expect(screen.getByText('1 · soonest to lapse first')).toBeInTheDocument();
+    expect(screen.getByText('1 · by end date')).toBeInTheDocument();
     expect(screen.getByRole('listbox', { name: 'Suspended' })).toBeInTheDocument();
   });
 

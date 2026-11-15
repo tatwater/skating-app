@@ -20,6 +20,7 @@ import { withPinned } from '../../bodies/virtualRows';
 import { PersonLockup } from './kit-candidates/person-lockup';
 import type { RowView } from './peopleModel';
 import type { ListStatus } from './peopleReads';
+import { allShown, LIST_FAILED, LOADING_MORE, NOT_RECORDED, REST_FAILED } from './peopleWords';
 
 /**
  * The People list (boards 8.1, 8.2, the middle column): one row per person as the lane's read
@@ -354,16 +355,16 @@ function ListFoot({
   const words = (() => {
     switch (status) {
       case 'unread':
-        return 'Not recorded yet';
+        return NOT_RECORDED;
       case 'error':
-        return rows === 0 ? 'Couldn’t read this list' : 'Couldn’t read the rest of this list';
+        return rows === 0 ? LIST_FAILED : REST_FAILED;
       case 'loading':
       case 'more':
       case 'fetching':
-        return 'Loading more';
+        return LOADING_MORE;
       case 'done':
         if (doneWords !== null) return doneWords;
-        return rows === 0 ? emptyWords : `All ${rows.toLocaleString('en-US')}`;
+        return rows === 0 ? emptyWords : allShown(rows);
     }
   })();
   return (

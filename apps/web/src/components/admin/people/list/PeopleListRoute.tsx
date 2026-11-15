@@ -19,6 +19,7 @@ import {
   searchFor,
   serverSearch,
 } from './peopleSearch';
+import { COUNTS_FAILED } from './peopleWords';
 
 /**
  * The People list, wired: its place from the URL (validated by `validatePeopleSearch`, which the
@@ -116,7 +117,7 @@ export function PeopleListRoute({ detail }: PeopleListRouteProps = {}) {
           className="shrink-0 border-0 border-t border-solid border-line px-(--space-4_5) py-(--space-3) empty:border-0 empty:p-0"
           reads={[lanesRead.state]}
         >
-          Counts couldn’t be read
+          {COUNTS_FAILED}
         </ReadNote>
       }
     />

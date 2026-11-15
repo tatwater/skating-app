@@ -149,7 +149,7 @@ describe('the row', () => {
     const rob = within(list).getByRole('option', { name: /Rob Tremblay/ });
     expect(rob).toHaveAttribute('aria-selected', 'true');
     expect(rob.querySelector('mark')).toHaveTextContent('Trem');
-    expect(rob.querySelector('[data-slot="people-row-age"]')).toHaveTextContent('8 months');
+    expect(rob.querySelector('[data-slot="people-row-age"]')).toHaveTextContent(/^\d+ d$/);
     const stillAge = view([{ ...KATE }]).map((r) => ({ ...r, age: null }));
     draw({ rows: stillAge, label: 'Staff' });
     const staff = screen.getByRole('listbox', { name: 'Staff' });

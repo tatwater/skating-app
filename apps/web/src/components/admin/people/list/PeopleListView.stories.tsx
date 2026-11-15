@@ -1,7 +1,8 @@
+import { PEOPLE_LANES } from '@skating/core';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
-import { computedColor, sameColor } from '@/components/kit/measure';
+import { computedColor, resolvePx, sameColor } from '@/components/kit/measure';
 import { faceLoaded, must } from '@/components/kit/storyKit';
 
 import { resetScrollMemory } from './PeopleList';
@@ -9,6 +10,7 @@ import { PeopleBoard } from './peopleBoard';
 import {
   JAMIE,
   KATE,
+  LANES,
   LANES_CAPPED,
   LANES_MODERATOR,
   LANES_PREPARING,
@@ -19,6 +21,7 @@ import {
   SARAH,
   TEAGAN,
 } from './peopleFixtures';
+import { PEOPLE_LANE_INFO } from './peopleLanes';
 
 /**
  * Boards 8.1 and 8.2: the People list in the console's frame, at the boards' 1440 × 900, on the
@@ -47,15 +50,13 @@ type Story = StoryObj<typeof meta>;
 const slot = (root: ParentNode, name: string) =>
   must(root.querySelector<HTMLElement>(`[data-slot="${name}"]`));
 
-/** Board 8.1 — Suspended, soonest to lapse first; Rob open beside it. */
+/** Board 8.1 — Suspended, by end date; Rob open beside it. */
 export const Suspended: Story = {
   play: async ({ canvasElement }) => {
     const page = within(canvasElement);
     await faceLoaded(slot(canvasElement, 'page-word'));
     await expect(slot(canvasElement, 'page-word')).toHaveTextContent('Suspended');
-    await expect(slot(canvasElement, 'people-kicker')).toHaveTextContent(
-      '1 · soonest to lapse first',
-    );
+    await expect(slot(canvasElement, 'people-kicker')).toHaveTextContent('1 · by end date');
     // The lane is chosen: its count takes the lit ink, as every chosen lane's does (the board draws
     // it amber; the kit lights the chosen lane's count).
     const lane = page.getByRole('button', { name: /^Suspended/ });
@@ -74,7 +75,7 @@ export const Suspended: Story = {
     await expect(slot(row, 'people-row-reason')).toHaveTextContent(
       'Reason: “Second unsafe report in a week; cooling off”',
     );
-    await expect(slot(row, 'people-row-age')).toHaveTextContent('3 days');
+    await expect(slot(row, 'people-row-age')).toHaveTextContent('3 d');
     // The list ends in its tab; the status bar names the open appeal.
     await expect(slot(canvasElement, 'people-end')).toHaveTextContent('All 1');
   },
@@ -248,5 +249,58 @@ export const Long: Story = {
     const rendered = canvasElement.querySelectorAll('[data-slot="people-row"]').length;
     await expect(rendered).toBeGreaterThan(0);
     await expect(rendered).toBeLessThan(240);
+  },
+};
+
+/**
+ * Every list head at the list column's token width, with the longest counts a lane can show: no
+ * head is ever cut (no ellipsis, nothing past its box), a kicker takes at most a second line, and
+ * the head's height is the same whichever lane is open — the rhythm the board draws.
+ */
+export const Heads: Story = {
+  args: {
+    lanesRead: {
+      ...LANES,
+      lanes: LANES.lanes.map((l) => ({ ...l, count: { count: 1234, capped: true } })),
+    },
+    initialQuery: { lane: 'everyone', q: '' },
+    initialSelected: null,
+    list: { status: 'done', rows: [], reasons: [], pending: [] },
+  },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    await faceLoaded(slot(canvasElement, 'page-word'));
+    const column = must(canvasElement.querySelector<HTMLElement>('[data-pane="middle"]'));
+    await expect(column.getBoundingClientRect().width).toBeCloseTo(
+      resolvePx(column, 'var(--size-list)'),
+      0,
+    );
+    const heights = new Set<number>();
+    const check = async (name: string) => {
+      const head = slot(canvasElement, 'people-head');
+      const word = slot(canvasElement, 'page-word');
+      const kicker = slot(canvasElement, 'people-kicker');
+      for (const el of [head, word, kicker]) {
+        await expect(getComputedStyle(el).textOverflow, name).not.toBe('ellipsis');
+        await expect(el.scrollWidth, name).toBeLessThanOrEqual(el.clientWidth);
+      }
+      const line = Number.parseFloat(getComputedStyle(kicker).lineHeight);
+      const text =
+        kicker.getBoundingClientRect().height -
+        Number.parseFloat(getComputedStyle(kicker).paddingBottom);
+      await expect(text, name).toBeLessThanOrEqual(2 * line + 1);
+      heights.add(Math.round(head.getBoundingClientRect().height));
+    };
+    for (const lane of PEOPLE_LANES) {
+      const label = PEOPLE_LANE_INFO[lane].label;
+      await userEvent.click(page.getByRole('button', { name: (n) => n.startsWith(label) }));
+      await expect(slot(canvasElement, 'people-kicker')).toHaveTextContent('1,234+');
+      await check(lane);
+    }
+    // A search, whose head says only its order.
+    await userEvent.type(page.getByRole('searchbox', { name: 'Search any account' }), 'rob');
+    await waitFor(() => expect(slot(canvasElement, 'page-word')).toHaveTextContent('Search'));
+    await check('search');
+    await expect([...heights]).toHaveLength(1);
   },
 };

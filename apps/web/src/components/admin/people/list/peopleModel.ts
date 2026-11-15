@@ -1,9 +1,25 @@
 import type { api } from '@skating/convex/api';
-import { type PeopleLane, type Restriction, TRUST_CLASS_LABELS } from '@skating/core';
+import { type PeopleLane, TRUST_CLASS_LABELS } from '@skating/core';
 import type { FunctionReturnType } from 'convex/server';
 
-import { type Count, countText } from '../../overview/overviewModel';
-import { type AgeFrom, PEOPLE_LANE_INFO, SEARCH_INFO } from './peopleLanes';
+import { type Count, countText, shortAge } from '../../overview/overviewModel';
+import { type AgeFrom, PEOPLE_LANE_INFO } from './peopleLanes';
+import {
+  ALL_COUNTS_PREPARING,
+  CHIP_WORDS,
+  countsPreparing,
+  ENDS_NOW,
+  FLAGS_PREPARING,
+  flagPhrase,
+  left,
+  MAY_NOT_HAVE_EVERYONE,
+  REASON_WORDS,
+  ROLE_WORDS,
+  SEARCH_WORDS,
+  STILL_PREPARING,
+  SUB_WORDS,
+  someShown,
+} from './peopleWords';
 
 /**
  * The People list's words, as pure functions of what the server returned: the lanes' counts, a
@@ -24,12 +40,7 @@ export type PersonListRow = PeoplePage['rows'][number];
 export type PartialReason = PeoplePage['reasons'][number];
 export type Backfill = PeoplePage['pending'][number];
 
-const MINUTE = 60_000;
-const HOUR = 60 * MINUTE;
-const DAY = 24 * HOUR;
-
-/** The words for "a backfill hasn't finished": no number, no "+". */
-export const STILL_PREPARING = 'Still being prepared';
+export { STILL_PREPARING };
 
 // ── Counts ───────────────────────────────────────────────────────────────────────────────────
 
@@ -46,13 +57,12 @@ export function laneCount(entry: LaneEntry | undefined): Count | null {
 export function lanesPendingNote(lanes: readonly LaneEntry[]): string | null {
   const waiting = lanes.filter((l) => l.pending.length > 0);
   if (waiting.length === 0) return null;
-  if (waiting.length === lanes.length) return `Counts ${lower(STILL_PREPARING)}`;
-  const names = waiting.map((l) => PEOPLE_LANE_INFO[l.lane].title);
-  return `${listWords(names)} ${waiting.length === 1 ? 'count' : 'counts'} ${lower(STILL_PREPARING)}`;
+  if (waiting.length === lanes.length) return ALL_COUNTS_PREPARING;
+  return countsPreparing(waiting.map((l) => PEOPLE_LANE_INFO[l.lane].title));
 }
 
 /**
- * The list head's kicker: the lane's count and its order ("1 · soonest to lapse first"). While the
+ * The list head's kicker: the lane's count and its order ("1 · by end date"). While the
  * count isn't ready, or before it lands, only the order — the note over the rows says what isn't
  * ready; a search, which no read counts, says only its order.
  */
@@ -61,7 +71,7 @@ export function kickerText(
   entry: LaneEntry | undefined,
   searching: boolean,
 ): string {
-  if (searching) return SEARCH_INFO.order;
+  if (searching) return SEARCH_WORDS.order;
   const order = PEOPLE_LANE_INFO[lane].order;
   if (entry === undefined || entry.pending.length > 0) return order;
   return `${countText(entry.count)} · ${order}`;
@@ -71,24 +81,13 @@ export function kickerText(
 
 /** Why a figure is a floor, in words — one sentence per reason the server gave. */
 export function reasonWords(reason: PartialReason): string {
-  switch (reason) {
-    case 'rows_missing':
-      return 'Someone the queue names isn’t listed yet, so this list is short';
-    case 'flags_capped':
-      return 'There are more open flags than one read covers, so flag figures are floors';
-    case 'tickets_capped':
-      return 'There are more waiting tickets than one read covers, so appeal figures are floors';
-    case 'count_capped':
-      return 'The count stopped at its limit; the list goes on past it';
-  }
+  return REASON_WORDS[reason];
 }
 
 /** What a page may be missing because a backfill hasn't finished, in words; `null` if nothing. */
 export function pendingWords(lane: PeopleLane | null, pending: readonly Backfill[]): string | null {
-  if (membershipPending(lane, pending)) {
-    return `${STILL_PREPARING}: this list may not have everyone yet`;
-  }
-  if (pending.includes('flagSubjects')) return `Open flags are ${lower(STILL_PREPARING)}`;
+  if (membershipPending(lane, pending)) return MAY_NOT_HAVE_EVERYONE;
+  if (pending.includes('flagSubjects')) return FLAGS_PREPARING;
   return null;
 }
 
@@ -118,8 +117,7 @@ export function endWords(
   rows: number,
 ): string | null {
   if (membershipPending(lane, pending)) return STILL_PREPARING;
-  if (listShort(lane, reasons))
-    return rows === 0 ? 'None shown' : `${rows.toLocaleString('en-US')} shown`;
+  if (listShort(lane, reasons)) return someShown(rows);
   return null;
 }
 
@@ -166,16 +164,6 @@ export interface RowFacts {
   appealsFloor: boolean;
 }
 
-const RESTRICTION_WORDS: Record<Restriction, string> = {
-  reports: 'reports',
-  hazards: 'hazards',
-  comments: 'comments',
-  bounties: 'bounties',
-  flagging: 'flagging',
-};
-
-const ROLE_WORDS = { admin: 'Admin', moderator: 'Moderator' } as const;
-
 /** One row as the list draws it, for `lane` (`null` while a search runs). */
 export function rowView(
   row: PersonListRow,
@@ -198,12 +186,12 @@ export function rowView(
 /** The status chip (the one colored chip leads), then the trust class. */
 export function rowChips(row: PersonListRow): RowChip[] {
   const chips: RowChip[] = [];
-  if (row.status === 'banned') chips.push({ label: 'Banned', tone: 'bad' });
-  else if (row.suspension !== null) chips.push({ label: 'Suspended', tone: 'warn' });
+  if (row.status === 'banned') chips.push({ label: CHIP_WORDS.banned, tone: 'bad' });
+  else if (row.suspension !== null) chips.push({ label: CHIP_WORDS.suspended, tone: 'warn' });
   if (row.status === 'deleted' || row.status === 'deleting') {
-    chips.push({ label: 'Deleted', tone: 'dim' });
+    chips.push({ label: CHIP_WORDS.deleted, tone: 'dim' });
   } else if (row.leavingUntil !== null) {
-    chips.push({ label: 'Leaving', tone: 'dim' });
+    chips.push({ label: CHIP_WORDS.leaving, tone: 'dim' });
   }
   if (row.trustClass !== null) {
     chips.push({ label: TRUST_CLASS_LABELS[row.trustClass], tone: 'default' });
@@ -216,19 +204,20 @@ function subLine(row: PersonListRow, lane: PeopleLane | null, facts: RowFacts): 
   if (row.role === 'admin' || row.role === 'moderator') parts.push(ROLE_WORDS[row.role]);
   if (row.suspension !== null) {
     parts.push(
-      row.suspension.until === null ? 'Until lifted' : `Until ${weekdayDate(row.suspension.until)}`,
+      row.suspension.until === null
+        ? SUB_WORDS.untilLifted
+        : SUB_WORDS.until(weekdayDate(row.suspension.until)),
     );
   }
-  if (row.restrictions.length > 0) {
-    parts.push(`Restricted: ${listWords(row.restrictions.map((r) => RESTRICTION_WORDS[r]))}`);
+  if (row.restrictions.length > 0) parts.push(SUB_WORDS.restricted(row.restrictions));
+  if (row.deletedAt !== null) parts.push(SUB_WORDS.deleted(weekdayDate(row.deletedAt)));
+  else if (row.leavingUntil !== null) {
+    parts.push(SUB_WORDS.deletionCompletes(weekdayDate(row.leavingUntil)));
   }
-  if (row.deletedAt !== null) parts.push(`Deleted ${weekdayDate(row.deletedAt)}`);
-  else if (row.leavingUntil !== null)
-    parts.push(`Deletion completes ${weekdayDate(row.leavingUntil)}`);
   const flags = flagWords(row.openFlags, lane === 'flagged', facts);
   if (flags !== null) parts.push(flags);
   if (row.appeals !== null && row.appeals > 0) {
-    parts.push(`${row.appeals}${facts.appealsFloor ? '+' : ''} ${plural(row.appeals, 'appeal')}`);
+    parts.push(SUB_WORDS.appeals(row.appeals, facts.appealsFloor));
   }
   if (parts.length === 0) return null;
   const line = parts.join(' · ');
@@ -246,33 +235,32 @@ export function flagWords(
   facts: Pick<RowFacts, 'flagsPending' | 'flagsFloor'>,
 ): string | null {
   if (facts.flagsPending) return null;
-  const total = flags.onUser + flags.onContent;
-  if (total === 0) return null;
-  const plus = facts.flagsFloor ? '+' : '';
-  const head = `${total}${plus} open ${plural(total, 'flag')}`;
-  if (!split) return head;
-  if (flags.onUser === 0) return `${head} on their content`;
-  if (flags.onContent === 0) return `${head} on them`;
-  return `${head}: ${flags.onUser} on them, ${flags.onContent} on their content`;
+  if (flags.onUser + flags.onContent === 0) return null;
+  return flagPhrase(flags.onUser, flags.onContent, split, facts.flagsFloor);
 }
 
 function reasonLine(row: PersonListRow): string | null {
   const disciplined = row.status === 'banned' || row.suspension !== null;
   const reason = row.statusReason?.trim();
-  return disciplined && reason ? `Reason: “${reason}”` : null;
+  return disciplined && reason ? SUB_WORDS.reason(reason) : null;
 }
 
-/** The row's age as its lane counts it, or `null` when nothing on record gives one. */
+/**
+ * The row's age as its lane counts it, in the row's short form ("4 d", "12 min", "12 d left" — the
+ * console's list-row age, `shortAge`), or `null` when nothing on record gives one. Heads and notes
+ * write their units out; a row never does.
+ */
 export function rowAge(row: PersonListRow, from: AgeFrom, now: number): string | null {
   switch (from) {
     case 'status':
-      return row.statusSince === null ? null : ageWords(now - row.statusSince);
+      return row.statusSince === null ? null : shortAge(now - row.statusSince);
     case 'restricted':
-      return row.restrictedSince === null ? null : ageWords(now - row.restrictedSince);
+      return row.restrictedSince === null ? null : shortAge(now - row.restrictedSince);
     case 'joined':
-      return ageWords(now - row.createdAt);
+      return shortAge(now - row.createdAt);
     case 'leaving':
-      return row.leavingUntil === null ? null : timeLeft(row.leavingUntil - now);
+      if (row.leavingUntil === null) return null;
+      return row.leavingUntil <= now ? ENDS_NOW : left(shortAge(row.leavingUntil - now));
     case 'seen':
       return null;
   }
@@ -302,39 +290,4 @@ export function weekdayDate(at: number): string {
   return `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
 }
 
-/**
- * How long ago, units written out: "12 minutes", "5 hours", "4 days", "3 months", "2 years" —
- * rounded down, so a thing is "4 days" old until it is five. Never negative: a clock skew reads as
- * "0 minutes".
- */
-export function ageWords(ms: number): string {
-  const age = Number.isFinite(ms) ? Math.max(0, ms) : 0;
-  if (age < HOUR) return count(Math.floor(age / MINUTE), 'minute');
-  if (age < DAY) return count(Math.floor(age / HOUR), 'hour');
-  // Each unit takes over only once it reads two or more, so the words never go backwards: the last
-  // day before "2 months" is 60, and the last month before "2 years" is 23.
-  const days = age / DAY;
-  const years = Math.floor(days / 365.25);
-  if (years >= 2) return count(years, 'year');
-  const months = Math.floor(days / 30.4375);
-  if (months >= 2) return count(months, 'month');
-  return count(Math.floor(days), 'day');
-}
-
-/** How long is left, units written out: "1 day left", "5 hours left", "Ends now" once it's past. */
-export function timeLeft(ms: number): string {
-  if (!Number.isFinite(ms) || ms <= 0) return 'Ends now';
-  if (ms < HOUR) return `${count(Math.max(1, Math.floor(ms / MINUTE)), 'minute')} left`;
-  if (ms < DAY) return `${count(Math.floor(ms / HOUR), 'hour')} left`;
-  return `${count(Math.floor(ms / DAY), 'day')} left`;
-}
-
-const count = (n: number, unit: string) => `${n.toLocaleString('en-US')} ${plural(n, unit)}`;
-const plural = (n: number, word: string) => (n === 1 ? word : `${word}s`);
-const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
-
-/** "a", "a and b", "a, b and c". */
-export function listWords(words: readonly string[]): string {
-  if (words.length <= 1) return words[0] ?? '';
-  return `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`;
-}
+export { listWords } from './peopleWords';
