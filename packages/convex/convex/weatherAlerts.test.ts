@@ -102,7 +102,7 @@ describe('alertFromFeature', () => {
 
 describe('weatherAlerts.refreshAlerts', () => {
   /**
-   * D257: a state whose write threw used to end the tick, so the states after it went unrefreshed for
+   * D258: a state whose write threw used to end the tick, so the states after it went unrefreshed for
    * as long as that state's alert stayed live. Now it keeps what it had — like a state that did not
    * answer — the others are written, and the failure is counted until a write lands.
    */

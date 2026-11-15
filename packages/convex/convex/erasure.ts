@@ -557,7 +557,7 @@ async function eraseComment(
  * `SETTLE_CHUNK_IDS` (an insert reads nothing), and the uploader's place in the settlement queue if
  * they have none — at the back. A parked uploader stays parked: a new debt does not release them,
  * because what fails is reading their history, which a new debt does not change; their debts wait.
- * The orphan-photo walk owes through here too (D257), so a photo nothing points at is deleted by
+ * The orphan-photo walk owes through here too (D258), so a photo nothing points at is deleted by
  * the settlement's one complete check of "is this still shown anywhere".
  */
 export async function owePhotos(ctx: MutationCtx, reads: ReadBudget, work: PhotoWork, now: number) {

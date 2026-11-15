@@ -484,7 +484,7 @@ async function targetVisible(
 }
 
 /**
- * How long a notification stays worth sending (D257): **twelve hours from when it first fell due.**
+ * How long a notification stays worth sending (D258): **twelve hours from when it first fell due.**
  * Past that it is expired — deleted, counted, never delivered — because every notification is about a
  * moment (a report near you, a thumb, a comment), and one that lands a day late reads as news. The
  * clock is the row's first due time, which a failure does not move (`firstDueAt`), so retrying never

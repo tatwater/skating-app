@@ -1,5 +1,5 @@
 /**
- * **The recurring jobs' failing work, in one place** (D257, B01 §12.8): recording what an
+ * **The recurring jobs' failing work, in one place** (D258, B01 §12.8): recording what an
  * action-driven walk could not do, the daily retry of what is parked, and the one Machinery read
  * that says, per job, how much is failing or parked, since when, and with which error classes —
  * counts only, never content, names or ids.
@@ -127,7 +127,7 @@ const RETRY_ITEM: ItemBudget = {
 const DAILY_JOBS = ['prompt', 'card', 'standing'] as const;
 
 /**
- * **Parking heals itself** (D257): once a day, a few parked pieces of each job — a skater's prompt, a
+ * **Parking heals itself** (D258): once a day, a few parked pieces of each job — a skater's prompt, a
  * map card, a body the rollover could not decide — are tried again, least recently tried first, each
  * in its own nested transaction and never in the hourly walks' way. One that goes through is cleared
  * by the rule and back in its walk; one that fails again stays parked, re-stamped as just tried (so it

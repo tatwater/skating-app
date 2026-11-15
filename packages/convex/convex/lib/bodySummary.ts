@@ -231,7 +231,7 @@ async function syncSummaryRefresh(
     return;
   }
   // A recompute that got here went through: any failures the sweep counted on the row, and any
-  // parking, are cleared in the same write (D257, `lib/attempts`: progress clears).
+  // parking, are cleared in the same write (D258, `lib/attempts`: progress clears).
   const failing =
     keep !== undefined && (keep.attempts !== undefined || keep.parkedAt !== undefined);
   if (!keep) {

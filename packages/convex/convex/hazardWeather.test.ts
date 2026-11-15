@@ -155,7 +155,7 @@ describe('nearestSamplePoint', () => {
 
 describe('hazardWeather.refreshHazardWeather', () => {
   /**
-   * D257: a hazard whose refresh throws used to stay un-stamped at the front of the stalest-first
+   * D258: a hazard whose refresh throws used to stay un-stamped at the front of the stalest-first
    * read, so a thousand of them froze every tick. Now it goes to the back with its last multiplier
    * kept, the failure is counted (never parked), the rest are refreshed, and a later success clears it.
    */

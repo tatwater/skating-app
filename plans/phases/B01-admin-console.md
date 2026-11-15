@@ -1729,7 +1729,7 @@ may fail loudly and stop; each logs where to re-run from (`traced`).
 | refresh nws alerts | partially | a state whose write throws skips the states after it while that alert is live |
 | expire bounties, expire access alerts, the prune and purge jobs, roll up operator metrics, sweep water-body coverage, append daily (bay) weather archive, expire departed skaters' photos, poll for new satellite imagery, rebuild the live imagery index | no | per-item isolation, a cursor that moves past failures, deletes or status patches only, or no per-item work |
 
-**B01-1d (2026-11-14): the recurring jobs, fixed** (D257). Every job the table above marks *yes* or
+**B01-1d (2026-11-14): the recurring jobs, fixed** (D258). Every job the table above marks *yes* or
 *partially*, read against the code first, then changed so one failing item never stops, delays past
 its run, or reorders anyone else's work. The shared pieces are `lib/recurringWork` (an item in its own
 nested transaction under limits of its own, the walk asking the transaction's real metrics before each

@@ -235,7 +235,7 @@ describe('purgeLastSeasonNotifications (A08 §1.5)', () => {
   });
 });
 
-/** A lap of the orphan walk, then the photo settlement it owes to (D257). */
+/** A lap of the orphan walk, then the photo settlement it owes to (D258). */
 async function sweepOrphans(t: ReturnType<typeof convexTest>) {
   const result = await t.mutation(internal.storageHygiene.sweepOrphanPhotos, {});
   await t.mutation(internal.erasure.settleOwed, {});
@@ -270,7 +270,7 @@ async function seedHazard(
   );
 }
 
-describe('sweepOrphanPhotos (D257: a lap from a saved position, owed to the settlement)', () => {
+describe('sweepOrphanPhotos (D258: a lap from a saved position, owed to the settlement)', () => {
   test('deletes an abandoned upload past the grace window — row and both blobs', async () => {
     const t = harness();
     const userId = await seedUser(t, 'uploader');
@@ -502,7 +502,7 @@ describe('sweepOrphanPhotos (D257: a lap from a saved position, owed to the sett
   });
 });
 
-describe('sweepOrphanPhotos under failure (D257)', () => {
+describe('sweepOrphanPhotos under failure (D258)', () => {
   const RUNS = 5;
 
   test('over any photos and any that always fail: each healthy photo is examined once a lap; a failing one is counted once a lap, parked at its third, and freed by the lap after it heals', async () => {
@@ -594,7 +594,7 @@ describe('sweepExpiredExports', () => {
   });
 
   /**
-   * D257: a bundle whose blob can't be deleted keeps its row, and enough of them at the head of the
+   * D258: a bundle whose blob can't be deleted keeps its row, and enough of them at the head of the
    * oldest-first read held every tick's page. Each tick now starts after the last one stopped.
    */
   test('bundles whose blob will not delete never hold the page: the next tick starts after them', async () => {

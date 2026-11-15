@@ -7988,7 +7988,7 @@ row so far read as the founder acting by hand. The row now says both who and how
 **Related:** D37, D80, D226, [`05-accounts-and-credentials.md`](./05-accounts-and-credentials.md)
 (the seed operator row), [`phase-B01`](./phases/B01-admin-console.md).
 
-## D257 — One failing item never blocks a recurring job (B01)
+## D258 — One failing item never blocks a recurring job (B01)
 
 **2026-11-14, the server follow-up to the recurring-jobs audit** (B01 §12.8). Every cron-driven job
 that walks a queue, laps a table or pages the corpus fails the way the erasure sweep does (D248): each

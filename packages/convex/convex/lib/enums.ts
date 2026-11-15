@@ -674,7 +674,7 @@ export const WEATHER_CELL_INVALIDATING_KINDS: readonly (typeof IMPORT_RUN_KINDS)
 export const IMPORT_RUN_STATUSES = ['running', 'succeeded', 'failed'] as const;
 
 /**
- * The recurring jobs whose failing work lives in `jobFailures` (D257) — work with no row of its own
+ * The recurring jobs whose failing work lives in `jobFailures` (D258) — work with no row of its own
  * to carry its attempt state. Named for the cron each belongs to.
  *
  * - `orphanPhotos` — a photo the orphan walk could not examine (keyed by photo id).
@@ -699,7 +699,7 @@ export const FAILING_JOBS = [
 export type FailingJob = (typeof FAILING_JOBS)[number];
 
 /**
- * The walks that lap a table from a durable position (`jobPositions`, D257), so an item that keeps
+ * The walks that lap a table from a durable position (`jobPositions`, D258), so an item that keeps
  * failing or keeps being kept is passed rather than re-read at the head for ever.
  */
 export const LAPPING_JOBS = [

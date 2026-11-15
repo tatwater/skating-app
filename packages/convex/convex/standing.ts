@@ -477,7 +477,7 @@ type RolloverVerdict = 'notActive' | 'demoted' | { retained: RetentionReason };
 
 /**
  * **The rollover's rule for one body** — the one place it is decided, shared by the page and the
- * body-at-a-time path D257 added for a page that throws. Unchanged by D257.
+ * body-at-a-time path D258 added for a page that throws. Unchanged by D258.
  */
 async function rolloverBody(
   ctx: MutationCtx,
@@ -502,7 +502,7 @@ async function rolloverBody(
 
 /**
  * The ids on one page of the rollover's walk and where the next starts — what the walk reads when the
- * page itself threw (D257), to decide its bodies one at a time.
+ * page itself threw (D258), to decide its bodies one at a time.
  */
 export const rolloverPageIds = internalQuery({
   args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
@@ -517,7 +517,7 @@ export const rolloverPageIds = internalQuery({
 });
 
 /**
- * One body at the rollover, as its own transaction (D257): the walk's path for a page that threw, and
+ * One body at the rollover, as its own transaction (D258): the walk's path for a page that threw, and
  * the daily retry's for a body it could not decide. The same rule as the page (`rolloverBody`).
  */
 export const rolloverOne = internalMutation({
@@ -631,7 +631,7 @@ export const runStandingRollover = internalAction({
           retained += page.kept.retained;
           for (const r of RETENTION_REASONS) retainedBy[r] += page.retainedBy[r];
         } else {
-          // **A page that throws no longer ends the walk** (D257): its bodies are decided one at a
+          // **A page that throws no longer ends the walk** (D258): its bodies are decided one at a
           // time, each its own transaction, and a body that fails is recorded for the daily retry —
           // it stays active (shown, never hidden) until it is decided. The walk goes on.
           const listed: { ids: Id<'waterBodies'>[]; cursor: string; isDone: boolean } =

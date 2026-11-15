@@ -404,7 +404,7 @@ describe('weatherArchive: the cell registry', () => {
   });
 });
 
-/** Make `asItem` fail for the keys in `poison` (D257's one seam). */
+/** Make `asItem` fail for the keys in `poison` (D258's one seam). */
 function poisonItems(poison: (key: string) => boolean) {
   const real = recurringWork.asItem;
   return vi.spyOn(recurringWork, 'asItem').mockImplementation(async (key, work) => {
@@ -413,7 +413,7 @@ function poisonItems(poison: (key: string) => boolean) {
   });
 }
 
-describe('weatherArchive: the registry walk under failure (D257)', () => {
+describe('weatherArchive: the registry walk under failure (D258)', () => {
   afterEach(() => vi.restoreAllMocks());
 
   test('a page whose write throws is written a row at a time; the row that still fails is counted, nothing is pruned and the run is not marked complete', async () => {
@@ -618,7 +618,7 @@ describe('weatherArchive: the recovery ladder (D161)', () => {
     expect(filled?.missing).not.toBe(true);
   });
 
-  test('one cell that throws no longer ends the walk: it is counted, the cells after it are repaired, and the next run that gets through clears it (D257)', async () => {
+  test('one cell that throws no longer ends the walk: it is counted, the cells after it are repaired, and the next run that gets through clears it (D258)', async () => {
     const t = convexTest(schema, modules);
     await seedBody(t, { lat: 44.0163, lng: -72.0331 }, 338);
     await seedBody(t, { lat: 45.5, lng: -71.2 }, 200);

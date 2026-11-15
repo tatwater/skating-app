@@ -1020,7 +1020,7 @@ describe('the season rollover', () => {
   });
 
   /**
-   * D257: a page that threw used to end the walk, and the next day's run started over and died at
+   * D258: a page that threw used to end the walk, and the next day's run started over and died at
    * the same page. Now its bodies are decided one at a time; one that fails is left active (shown,
    * never hidden), counted for the daily retry, and the walk reaches its end. Who is kept or made
    * dormant is the same rule (`rolloverBody`), unchanged.

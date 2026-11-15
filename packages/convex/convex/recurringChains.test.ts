@@ -1,5 +1,5 @@
 /**
- * D257's chains on an adversarial page, under Convex's real transaction limits: every row as heavy as
+ * D258's chains on an adversarial page, under Convex's real transaction limits: every row as heavy as
  * an uncapped field lets it be. Each walk asks the transaction's real metrics before every item and
  * runs the item under limits of its own, so a pass stops and continues rather than reading past the
  * limit — no pass may throw, none may stall, and each must leave what it is for.
@@ -101,7 +101,7 @@ async function runOut(t: T, start: () => Promise<unknown>) {
   expect(failed.map((j) => j.name)).toEqual([]);
 }
 
-describe('D257 chains under real limits', () => {
+describe('D258 chains under real limits', () => {
   test('the orphan walk: thirty photos near the document limit, half in use — the lap reaches its end and the orphans go', async () => {
     const t = harness();
     const { id: uploader } = await heavyUser(t, 'uploader');

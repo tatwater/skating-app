@@ -219,7 +219,7 @@ export const refreshAlerts = internalAction({
     for (const state of KNOWN_STATE_CODES) {
       const alerts = await fetchStateAlerts(state);
       if (alerts === null) continue; // see `replaceStateAlerts` — a blip must not clear a state
-      // **One state whose write throws no longer skips the states after it** (D257): it keeps the
+      // **One state whose write throws no longer skips the states after it** (D258): it keeps the
       // alerts it had, exactly as a state that did not answer does, and the rest are written. Each
       // failure is counted (never parked: a state is polled every tick).
       try {

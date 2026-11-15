@@ -408,7 +408,7 @@ export const setPromptState = mutation({
 export const ACTIVITY_PROMPT_DELAY_MS = 3 * 60 * 60 * 1000;
 /**
  * Due activities a pass reads at most. A pass continues itself until the run's due range is done
- * (D257), and reads only while it can still afford a skater's prompt at its whole limits, so a heavy
+ * (D258), and reads only while it can still afford a skater's prompt at its whole limits, so a heavy
  * window costs a pass, not the run — it used to be one transaction of fifty rows and fifty windows,
  * which a throw (or a read past the limit) failed whole, re-reading the same rows every hour for ever.
  */
@@ -443,7 +443,7 @@ export const sweepUnpromptedActivities = internalMutation({
   args: {
     now: v.optional(v.number()),
     /**
-     * The run (D257): every pass of a run reads what was due by the moment it started, walking
+     * The run (D258): every pass of a run reads what was due by the moment it started, walking
      * forward from where the last pass stopped (`after`) — so a run tries each row once.
      */
     cutoff: v.optional(v.number()),
@@ -554,7 +554,7 @@ type PromptSweepResult = {
 type PromptCounts = { prompted: number; superseded: number; settled: number };
 
 /**
- * One skater's prompt, isolated (D257): the dedup across their candidates and the nudge — generous
+ * One skater's prompt, isolated (D258): the dedup across their candidates and the nudge — generous
  * for any real skater (a window is twenty minutes of one person's skating).
  */
 const SKATER_ITEM: ItemBudget = {
@@ -640,7 +640,7 @@ const CLEARED_PROMPT = {
 };
 
 /**
- * **One skater's due rows, prompted** — as its own nested transaction (D257). The rows are re-read: a
+ * **One skater's due rows, prompted** — as its own nested transaction (D258). The rows are re-read: a
  * row already settled (by a link, a dismissal, or this skater's prompt from another pass) is skipped.
  * What it does is the sweep's rule as it always was (A08 §2.4, §2.4a): a linked row is `converted`,
  * an already-superseded one `dismissed`; the rest are deduped against everything of the skater's

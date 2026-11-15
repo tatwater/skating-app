@@ -218,7 +218,7 @@ export const refreshHazardWeather = internalAction({
         weatherAdjustedAt: now,
       });
     }
-    // Which hazards were failing, so a success clears only those (D257).
+    // Which hazards were failing, so a success clears only those (D258).
     const { keys: failingKeys }: { keys: string[] } = await ctx.runQuery(
       internal.recurringJobs.failingKeys,
       { job: 'hazardWeather' },
@@ -248,7 +248,7 @@ export const refreshHazardWeather = internalAction({
         failed.push({ key: job.hazardId, errorClass: errorClassOf(err) });
       }
     }
-    // **A hazard whose refresh throws goes to the back** (D257). It used to stay at the front of the
+    // **A hazard whose refresh throws goes to the back** (D258). It used to stay at the front of the
     // stalest-first read, un-stamped, so enough of them would fill every tick's page. Now it is
     // stamped as tried — keeping its last good multiplier, so nothing about the hazard changes, and a
     // stale one stays exactly as it was — and comes round again after the cadence gate. Each failure
@@ -275,7 +275,7 @@ export const refreshHazardWeather = internalAction({
 
 /**
  * One hazard's weather refresh — fetched over its window, stored behind the confirmation guard. An
- * item of the hourly walk (D257): what it throws is counted, and the hazard goes to the back.
+ * item of the hourly walk (D258): what it throws is counted, and the hazard goes to the back.
  */
 async function refreshOneHazard(
   ctx: ActionCtx,

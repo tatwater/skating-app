@@ -544,7 +544,7 @@ export default defineSchema({
      */
     supersededByActivityId: v.optional(v.id('gpsActivities')),
     /**
-     * The prompt sweep's attempt state (D257, `lib/attempts`): failed attempts in a row at this
+     * The prompt sweep's attempt state (D258, `lib/attempts`): failed attempts in a row at this
      * row's prompt, the last failure's class (never its message), when it was parked (or, once the
      * daily retry has tried it, last tried), when the daily retry last tried it, and the run cutoff of
      * the last failure — so a run never tries it twice. All absent on a healthy row.
@@ -562,7 +562,7 @@ export default defineSchema({
     // fields are required, so no sparse-index trap — and the sweep flips the row to `prompted`, so a
     // row leaves this range the moment it's been asked about.
     .index('by_prompt_state_detected', ['promptState', 'detectedAt'])
-    // The sweep's due range, parked rows left out (D257): `eq('pending').eq(promptParkedAt,
+    // The sweep's due range, parked rows left out (D258): `eq('pending').eq(promptParkedAt,
     // undefined)` is the work, `eq('pending').gt(promptParkedAt, 0)` the parked — the field is
     // optional and the index not sparse, so the parked range always takes a lower bound.
     .index('by_prompt_parked_detected', ['promptState', 'promptParkedAt', 'detectedAt'])
@@ -1555,7 +1555,7 @@ export default defineSchema({
     waterBodyId: v.id('waterBodies'),
     refreshAt: v.number(),
     /**
-     * The due sweep's attempt state (D257, `lib/attempts`): failed recomputes in a row, the last
+     * The due sweep's attempt state (D258, `lib/attempts`): failed recomputes in a row, the last
      * failure's class, when it was parked (or last tried by the daily retry), and when the daily
      * retry last tried it. All absent on a healthy row; a recompute that goes through rewrites the
      * row without them.
@@ -1567,7 +1567,7 @@ export default defineSchema({
   })
     .index('by_water_body', ['waterBodyId'])
     .index('by_refresh_at', ['refreshAt'])
-    // The due range with parked cards left out (D257): `eq(parkedAt, undefined)` then the time; the
+    // The due range with parked cards left out (D258): `eq(parkedAt, undefined)` then the time; the
     // parked range is `gt(parkedAt, 0)` — the field is optional and the index not sparse.
     .index('by_parked_refresh_at', ['parkedAt', 'refreshAt']),
 
@@ -3626,7 +3626,7 @@ export default defineSchema({
     .index('by_parked_queued', ['parkedAt', 'queuedAt']),
 
   /**
-   * **A recurring job's failing work, where the work has no row of its own to carry it** (D257): a
+   * **A recurring job's failing work, where the work has no row of its own to carry it** (D258): a
    * weather cell, a body in a walk, a photo in the orphan walk, a hazard's weather, a state's NWS
    * alerts, the season watch's tick. One row per (job, key) while it keeps failing, the state
    * `lib/attempts` decides — failures in a row, the last one's class (never its message), parked
@@ -3657,7 +3657,7 @@ export default defineSchema({
     .index('by_job_last_failed', ['job', 'lastFailedAt']),
 
   /**
-   * **Where a walk that laps its table is** (D257): the orphan-photo walk, the account-deletion and
+   * **Where a walk that laps its table is** (D258): the orphan-photo walk, the account-deletion and
    * redaction turns, the expired-export sweep. A position in an index (`value` the indexed number,
    * `creationTime` the tie-break), so each run starts after where the last one stopped and an item
    * that keeps failing — or keeps being kept — is passed, never re-read at the head for ever. `run`
@@ -4428,7 +4428,7 @@ export default defineSchema({
     createdAt: v.number(),
     trigger: v.optional(notificationTrigger), // what to re-read at flush (actor kinds only)
     /**
-     * The flush's attempt state (D257, `lib/attempts`): failed deliveries in a row, the last
+     * The flush's attempt state (D258, `lib/attempts`): failed deliveries in a row, the last
      * failure's class (never its message), when it was parked (or last tried by the retry), when the
      * retry last tried it, and when it first fell due — the clock the freshness rule reads, since a
      * failure moves `flushAfter` past the run. All absent on a healthy row.
@@ -4440,14 +4440,14 @@ export default defineSchema({
     firstDueAt: v.optional(v.number()),
   })
     .index('by_flush', ['flushAfter'])
-    // The flush's due range with parked rows left out (D257): `eq(parkedAt, undefined)` then the
+    // The flush's due range with parked rows left out (D258): `eq(parkedAt, undefined)` then the
     // time; the parked range is `gt(parkedAt, 0)` — the field is optional and the index not sparse.
     .index('by_parked_flush', ['parkedAt', 'flushAfter'])
-    // The rows with failures on them, parked or not, for the Machinery read (D257): `gt(attempts,
+    // The rows with failures on them, parked or not, for the Machinery read (D258): `gt(attempts,
     // 0)` — the field is optional and the index not sparse — so the read never scans healthy rows.
     .index('by_attempts', ['attempts'])
     .index('by_coalesce', ['coalesceKey'])
-    // Where a new event coalesces (D257): the key's row that is not parked. A parked row keeps only
+    // Where a new event coalesces (D258): the key's row that is not parked. A parked row keeps only
     // what it already held — a new event never lands in it, where nothing would deliver it.
     .index('by_coalesce_parked', ['coalesceKey', 'parkedAt'])
     // Deletion erases a departing user's pending pushes (D62). Without this the finalize job would

@@ -277,7 +277,7 @@ export const finalizeDueDeletions = internalMutation({
   handler: async (ctx) => {
     const now = Date.now();
     const dueAt = now - DELETION_GRACE_MS;
-    // **A turn each, from where the last tick stopped** (D257). This read the oldest twenty due
+    // **A turn each, from where the last tick stopped** (D258). This read the oldest twenty due
     // accounts every hour, so twenty whose chains kept failing would hold every slot and no account
     // behind them would ever be finalized — a privacy promise broken by somebody else's account. Now
     // each tick takes the next twenty after the saved position and the walk wraps at the end of the
@@ -325,7 +325,7 @@ export const finalizeDueDeletions = internalMutation({
     // The remaining cap is a priority order, not a starvation: the oldest pending ghosts are the ones
     // closest to finalization, which is exactly when their content has to be clean.
     //
-    // The same turn-taking as the due accounts above (D257): two hundred ghosts whose redaction kept
+    // The same turn-taking as the due accounts above (D258): two hundred ghosts whose redaction kept
     // failing would otherwise hold the page.
     const redactLap = await lapOf(ctx, 'redactGhosts');
     const redactFrom = positionOf(redactLap);

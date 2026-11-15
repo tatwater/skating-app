@@ -1,5 +1,5 @@
 /**
- * D257: one failing item never blocks a recurring job. For each queue-shaped job — the notification
+ * D258: one failing item never blocks a recurring job. For each queue-shaped job — the notification
  * flush, the recorder's prompt sweep, the map-card sweep — a property over any set of items and any
  * subset that always fails: every healthy item goes through in its first run; a failing one is tried
  * once a run, parked after exactly three failures in a row and not tried again by the walk; and once

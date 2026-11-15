@@ -461,7 +461,7 @@ describe('maybeCheckSeasonOpen — the season lifecycle', () => {
     );
     await expect(tickNow(t)).rejects.toThrow(/Open-Meteo 503/);
     expect(await broadcasts(t)).toHaveLength(1);
-    // D257: all or nothing by design, so not isolated — but no longer silent. Each failed day is
+    // D258: all or nothing by design, so not isolated — but no longer silent. Each failed day is
     // counted with its class, never parked; Machinery reads how many in a row and since when.
     await expect(tickNow(t)).rejects.toThrow(/Open-Meteo 503/);
     const failures = await t.run((ctx) => ctx.db.query('jobFailures').collect());
@@ -474,7 +474,7 @@ describe('maybeCheckSeasonOpen — the season lifecycle', () => {
     expect(third).toMatchObject({ attempts: 3 });
     expect(third?.parkedAt).toBeUndefined(); // a third day still is not parked: the watch keeps going
   });
-  test('a tick that goes through clears the days it failed (D257)', async () => {
+  test('a tick that goes through clears the days it failed (D258)', async () => {
     vi.useFakeTimers();
     atDate(IN_SEASON);
     const t = convexTest(schema, modules);

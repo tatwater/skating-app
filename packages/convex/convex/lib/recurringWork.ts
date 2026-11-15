@@ -1,5 +1,5 @@
 /**
- * **One failing item never blocks a recurring job** (D257) — the pieces every cron-driven job shares,
+ * **One failing item never blocks a recurring job** (D258) — the pieces every cron-driven job shares,
  * so the jobs that walk a queue, lap a table or page the corpus fail the same way.
  *
  * - **Each item is its own nested transaction** ({@link runIsolated}), with limits of its own

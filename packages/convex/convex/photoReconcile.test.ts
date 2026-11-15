@@ -251,7 +251,7 @@ describe('photoReconcile — the answer the capped scan cannot give', () => {
   });
 });
 
-describe('the orphan walk no longer escalates (D257)', () => {
+describe('the orphan walk no longer escalates (D258)', () => {
   /**
    * The capped one-shot scan is gone from the orphan walk: it owes each photo nothing cheap says is
    * shown to the photo settlement, whose check reads the uploader's history a page at a time and so

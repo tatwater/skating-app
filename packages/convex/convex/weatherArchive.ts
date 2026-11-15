@@ -136,7 +136,7 @@ export const CELL_BATCH_SIZE = 40;
 
 /** Bodies per batch while materialising the cell registry. */
 export const CELL_BACKFILL_BATCH = 500;
-/** The most a registry page reads, by weight — a page of heavy outlines ends early (D257). */
+/** The most a registry page reads, by weight — a page of heavy outlines ends early (D258). */
 const PAGE_BYTES = 6 * 1024 * 1024;
 
 /** How far back the gap sweep looks. Inside the 92-day window, so step 1 of the ladder can serve it. */
@@ -543,7 +543,7 @@ export const backfillWeatherCells = internalAction({
     tier: v.optional(literals(WEATHER_TIERS)),
     /** Minted by the first batch and carried by the rest — see `weatherCells.runId`. */
     runId: v.optional(v.string()),
-    /** When the run began, carried so its last page can tell whether any page of it failed (D257). */
+    /** When the run began, carried so its last page can tell whether any page of it failed (D258). */
     startedAt: v.optional(v.number()),
   },
   handler: async (
@@ -611,7 +611,7 @@ export const backfillWeatherCells = internalAction({
       if (bays.isDone) break;
       subCursor = bays.cursor;
     }
-    // ⚠ **A run any page of which failed is not complete** (D257): a cell or membership it could not
+    // ⚠ **A run any page of which failed is not complete** (D258): a cell or membership it could not
     // write would read as vacated, and pruning it would stop the weather for a lake that is still
     // there. So the run prunes nothing and is not marked complete — the registry keeps what it had,
     // which costs a few Open-Meteo calls and loses nothing. What failed is counted (`jobFailures`,
@@ -671,7 +671,7 @@ type Failed = { key: string; errorClass: string };
 
 /**
  * Write one page of the registry walk — its cells, then its memberships — so that **one row that
- * can't be written never stops the walk** (D257). Each write goes whole first, the common path; if it
+ * can't be written never stops the walk** (D258). Each write goes whole first, the common path; if it
  * throws, each cell or membership is written alone, and the ones that still fail are recorded
  * (`jobFailures`, job `weatherCells`, never parked). The superseded check stays in every write.
  */
@@ -1015,7 +1015,7 @@ function countCell(byKey: Map<string, CellPageEntry>, cell: WeatherCell): void {
 export const pageBodyCells = internalQuery({
   args: { cursor: v.union(v.string(), v.null()), tier: literals(WEATHER_TIERS) },
   handler: async (ctx, { cursor, tier }): Promise<CellPage> => {
-    // Bounded by weight as well as rows (D257): a page of giant outlines ends early rather than
+    // Bounded by weight as well as rows (D258): a page of giant outlines ends early rather than
     // reading past the limit — which would fail the same page every run.
     const page = await ctx.db
       .query('waterBodies')
@@ -1132,7 +1132,7 @@ export const upsertWeatherCells = internalMutation({
         .unique();
       if (claim && claim.runId !== runId) return { superseded: true };
 
-      // Each cell is its own item (D257): a page whose write throws is written again a row at a time.
+      // Each cell is its own item (D258): a page whose write throws is written again a row at a time.
       for (const cell of cells)
         await asItem(cell.cellKey, () => upsertCell(ctx, tier, runId, nowMs, cell));
       return { superseded: false };
@@ -1594,7 +1594,7 @@ export const sweepWeatherDayGaps = internalAction({
     for (const cell of cells) {
       lastKey = cell.cellKey;
       const key = `${tier}:${cell.cellKey}`;
-      // **One cell that throws no longer ends the walk** (D257): it used to stop the batch, and
+      // **One cell that throws no longer ends the walk** (D258): it used to stop the batch, and
       // the next day's sweep started over and died at the same cell. Now it is recorded and the walk
       // goes on; the next daily run is its retry. A gap left unrepaired is a day the record says
       // nothing about, never a day it calls clear.

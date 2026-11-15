@@ -446,7 +446,7 @@ export const maybeCheckSeasonOpen = internalAction({
     try {
       result = await tick(ctx, nowMs);
     } catch (err) {
-      // **All or nothing, by design — so it fails loudly instead of being isolated** (D257). A tick
+      // **All or nothing, by design — so it fails loudly instead of being isolated** (D258). A tick
       // that decided on the sites that answered would shrink the sample, and a shrinking sample is how
       // one freezing pond opens a season; so there is no item to isolate. What changes is that a
       // failing tick is no longer silent past the logs: each failed day is counted with its class,
@@ -464,7 +464,7 @@ export const maybeCheckSeasonOpen = internalAction({
       // and even when the tick itself failed: a dead weather API must not hold back yesterday's news.
       await ctx.runMutation(internal.imageryIngest.sendNextEmail, { today: newYorkDate(nowMs) });
     }
-    // A tick that went through clears the count of days it failed (D257) — outside the `try`, so a
+    // A tick that went through clears the count of days it failed (D258) — outside the `try`, so a
     // failure to clear can never be counted as the tick having failed.
     await ctx.runMutation(internal.recurringJobs.settle, {
       job: 'seasonWatch',

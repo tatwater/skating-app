@@ -373,7 +373,7 @@ export const fanOutNearbyNotifications = internalMutation({
 export const flushNotificationQueue = internalMutation({
   args: {
     /**
-     * This run's cutoff (D257): every pass of a run reads what was due by the moment it started, and
+     * This run's cutoff (D258): every pass of a run reads what was due by the moment it started, and
      * a row whose delivery failed is moved just past it — so a run tries each row once.
      */
     cutoff: v.optional(v.number()),
@@ -543,7 +543,7 @@ export async function recordQueueFailure(
 const RETRY_PER_PASS = 50;
 
 /**
- * **Parked notifications, retried hourly** (D257) — hourly rather than daily, because a notification
+ * **Parked notifications, retried hourly** (D258) — hourly rather than daily, because a notification
  * is only worth sending inside its freshness window (`NOTIFICATION_FRESH_MS`): a row parked by a bad
  * deploy fixed within the morning still lands, and one past its window is expired here instead.
  * Least recently tried first, each in its own nested transaction, once a run (only what was parked or
@@ -610,7 +610,7 @@ export const retryParkedNotifications = internalMutation({
 
 /**
  * The delivery: a batch of due rows, or one row. See `flushNotificationQueue`'s notes for the
- * batching, the digest pull and the budget guard — all unchanged by D257, which only wraps this.
+ * batching, the digest pull and the budget guard — all unchanged by D258, which only wraps this.
  */
 async function flushRows(
   ctx: MutationCtx,
@@ -619,7 +619,7 @@ async function flushRows(
   // "Exactly cap rows" would be ambiguous between a complete drain and a full batch, and here that
   // decides whether to continue — the helper's cap+1 probe settles it. `paged`: a full batch is
   // paging, not an answer that came back short, so it isn't logged as a truncation. Parked rows are
-  // out of the range (D257); `only` is one row, the one-by-one path's or the retry's.
+  // out of the range (D258); `only` is one row, the one-by-one path's or the retry's.
   const onlyRow = only !== undefined ? await ctx.db.get(only) : null;
   const { rows: due, truncated: batchFull } =
     only !== undefined
@@ -704,7 +704,7 @@ async function flushRows(
       .withIndex('by_user', (q) => q.eq('userId', userId))
       .collect();
     reads += rows.length;
-    // A parked row is the retry's, never pulled into a fresh digest (D257) — unless it is the row
+    // A parked row is the retry's, never pulled into a fresh digest (D258) — unless it is the row
     // being retried; and a row past its window is expired, not sent.
     const due = rows.filter(
       (r) =>
@@ -733,7 +733,7 @@ async function flushRows(
       stoppedEarly = true;
       break;
     }
-    // Past its window: expired, never delivered late as if fresh (D257).
+    // Past its window: expired, never delivered late as if fresh (D258).
     if (isStaleQueueRow(row, now)) {
       await remove(row._id);
       expired++;

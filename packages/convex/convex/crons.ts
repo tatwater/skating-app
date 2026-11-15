@@ -108,7 +108,7 @@ crons.daily(
   {},
 );
 
-// ── D257: one failing item never blocks a recurring job ─────────────────────────────────────────
+// ── D258: one failing item never blocks a recurring job ─────────────────────────────────────────
 
 // A notification parked after three failed deliveries in a row is tried again hourly — hourly rather
 // than daily because it is only worth sending inside its twelve-hour freshness window; past that the
@@ -221,7 +221,7 @@ crons.interval(
 // Photo-orphan GC — the durable backstop behind the client's best-effort reclaim. Daily, because an
 // orphan costs only storage and the grace window before a photo is even a candidate is 30 days. Each
 // tick starts a lap (or stands down while one is running); the lap walks every photo past grace from
-// a saved position and owes the unshown ones to the photo settlement, which deletes (D257).
+// a saved position and owes the unshown ones to the photo settlement, which deletes (D258).
 crons.interval('sweep orphan photos', { hours: 24 }, internal.storageHygiene.sweepOrphanPhotos, {});
 
 /**

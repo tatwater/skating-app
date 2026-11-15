@@ -586,7 +586,7 @@ describe('the grace window', () => {
   });
 
   /**
-   * D257, a privacy promise: the sweep read the oldest twenty due accounts every hour, so twenty whose
+   * D258, a privacy promise: the sweep read the oldest twenty due accounts every hour, so twenty whose
    * chains kept failing held every slot and nobody behind them was ever finalized. Each tick now takes
    * its turn after the last one's and wraps, so every due account is queued once a lap.
    */

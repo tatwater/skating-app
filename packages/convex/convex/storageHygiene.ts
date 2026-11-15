@@ -166,7 +166,7 @@ export const pruneForecastCache = internalMutation({
 });
 
 /**
- * **The orphan-photo walk** (D257): every photo past the grace window, examined once a lap, from a
+ * **The orphan-photo walk** (D258): every photo past the grace window, examined once a lap, from a
  * durable position that advances and wraps — so a photo still in use is passed, never re-read at the
  * head of the next run.
  *
@@ -403,7 +403,7 @@ export const sweepExpiredExports = internalMutation({
   handler: async (ctx, { limit }) => {
     const now = Date.now();
     const max = Math.min(Math.max(limit ?? SWEEP_LIMIT, 1), SWEEP_LIMIT);
-    // **A turn each, from where the last tick stopped** (D257): a bundle whose blob can't be deleted
+    // **A turn each, from where the last tick stopped** (D258): a bundle whose blob can't be deleted
     // keeps its row, and five hundred of them at the head of the oldest-first read would have held
     // every tick's page. Each tick now starts after the last row it reached and wraps at the end of
     // the expired range, so a stuck bundle only ever takes its own turn.

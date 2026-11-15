@@ -6686,11 +6686,11 @@ const SUMMARY_BACKFILL_STALE_MS = 2 * 60 * 60 * 1000;
  */
 const SUMMARY_BACKFILL_RETRY_MS = 6 * 60 * 60 * 1000;
 
-/** Bodies the due sweep recomputes per transaction at most — each in its own nested one (D257). */
+/** Bodies the due sweep recomputes per transaction at most — each in its own nested one (D258). */
 const DUE_SUMMARY_BATCH = 50;
 
 /**
- * One card's recompute, isolated (D257): its body's window of Reports and active hazards. Generous
+ * One card's recompute, isolated (D258): its body's window of Reports and active hazards. Generous
  * for any real lake; a card whose recompute reads past it fails like a throw and is counted.
  */
 const CARD_ITEM: ItemBudget = {
@@ -6705,7 +6705,7 @@ const CARD_ITEM: ItemBudget = {
  * **Reads only what is due.** One range on `by_parked_refresh_at` — parked cards left out, bounded
  * below — then one body per due row. Each recompute moves its row past `now` or deletes it
  * (`summaryRefreshAt` is always later than `now`), and so does a failure: **one card that can't be
- * recomputed never holds up the rest** (D257). It is counted on its row (`lib/attempts`) and moved
+ * recomputed never holds up the rest** (D258). It is counted on its row (`lib/attempts`) and moved
  * just past the run's cutoff, so the run tries it once; three failures in a row park it — out of the
  * range, its card left as it last was (never cleared: that would drop its hazards), listed by the
  * Machinery read, tried again by the daily retry.
@@ -6752,7 +6752,7 @@ export const refreshDueBodySummaries = internalMutation({
   },
 });
 
-/** One card's recompute as its own nested transaction (D257). */
+/** One card's recompute as its own nested transaction (D258). */
 export const refreshOneBodySummary = internalMutation({
   args: { waterBodyId: v.id('waterBodies'), now: v.number() },
   handler: (ctx, { waterBodyId, now }): Promise<null> =>
@@ -6918,7 +6918,7 @@ export const sweepDueBodySummaries = internalAction({
     let refreshed = 0;
     let batches = 0;
     let more = true;
-    // The run's cutoff (D257): a card that fails is moved just past it, so the run tries it once.
+    // The run's cutoff (D258): a card that fails is moved just past it, so the run tries it once.
     const cutoff = Date.now();
     // Each batch moves every row it read past `cutoff`, so this ends; the guard is for a bug, not a
     // budget — 200 batches is 10,000 cards due in one hour, fifty times today's whole set.
