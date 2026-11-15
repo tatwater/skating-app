@@ -22,7 +22,6 @@ import {
   archivedRows,
   axisIndex,
   dayWords,
-  type HazardInput,
   hazardRows,
   wintersFrom,
   winterWindow,
@@ -70,16 +69,16 @@ describe('HazardsTabView — the default board', () => {
     // The two winters: this one bare, last one's record — its archived hazards unknown, not gone.
     expect(
       within(onLake).getByRole('img', {
-        name: /^2026–27: No hazard reports; 2025–26: \d+ days with hazard reports, \d+ with some unknown$/,
+        name: /^2026–27: No hazard reports; 2025–26: \d+ days with hazard reports, 8 first reports with no recorded end, \d+ with some unknown$/,
       }),
     ).toBeVisible();
     expect(within(onLake).getByText('Today: No hazard reports')).toBeVisible();
-    // Last winter's list isn't read beside this one: no marks, no caption, and the note says why.
-    expect(document.querySelector('[data-slot="day-strip-mark"]')).toBeNull();
-    expect(document.querySelector('[data-slot="day-strips-caption"]')).toBeNull();
+    // Last winter beside this one is marked from its own read, under the caption.
+    expect(document.querySelectorAll('[data-slot="day-strip-mark"]').length).toBeGreaterThan(0);
+    expect(document.querySelector('[data-slot="day-strips-caption"]')).not.toBeNull();
     expect(
       within(onLake).getByText(
-        '2025–26: 8 archived reports have no recorded end. Each is counted on the day it was first reported, but that day isn’t marked for this winter; from then on, every day counts them as unknown: each hazard may still have been on the lake.',
+        '2025–26: 8 archived reports have no recorded end. Each is marked on the day it was first reported; from then on, every day counts them as unknown: each hazard may still have been on the lake.',
       ),
     ).toBeVisible();
   });
@@ -324,15 +323,24 @@ describe('HazardsTabView — reads that failed', () => {
 });
 
 describe('HazardsTabView — the winters, a day at a time', () => {
-  it('before 1 October the winter is honestly empty and says when its record begins', () => {
+  it('before 1 October a new season is an honestly empty record from 1 July, today said', () => {
     const now = new Date(2026, 7, 20, 12, 0).getTime();
     const winters = wintersFrom(
-      [{ season: SEASON, days: [], unknownEnds: 0, capped: false, watchOpensOn: null }],
+      [
+        {
+          season: SEASON,
+          days: [],
+          unknownEnds: 0,
+          hazards: [],
+          capped: false,
+          watchOpensOn: null,
+        },
+      ],
       now,
     );
     render(<HazardsTabView {...base} watchOpenedAt={null} winters={winters ?? undefined} />);
-    expect(screen.getByText('The record for 2026–27 begins 1 Oct 2026.')).toBeVisible();
-    expect(screen.queryByText(/^Today:/)).toBeNull();
+    expect(screen.queryByText(/The record for 2026–27 begins/)).toBeNull();
+    expect(screen.getByText('Today: No hazard reports')).toBeVisible();
   });
 
   it('a count that stopped short is stated in words, and today reads as a floor', () => {
@@ -344,6 +352,7 @@ describe('HazardsTabView — the winters, a day at a time', () => {
           season: SEASON,
           days: [{ at: start + 2 * 86_400_000, count: 4, unknown: 0 }],
           unknownEnds: 0,
+          hazards: [],
           capped: true,
           watchOpensOn: null,
         },
@@ -380,18 +389,7 @@ describe('HazardsTabView — the winters, a day at a time', () => {
             active: e.active,
           }));
           const read = dailyFrom(season, hazards, BODY_NOW, { capped });
-          const list: HazardInput[] = hazards.map((h, i) => ({
-            _id: `h${i}`,
-            type: 'thin_ice',
-            freshness: 'stale',
-            provisional: false,
-            confirmCount: 1,
-            goneCount: 0,
-            lastConfirmedAt: h.first,
-            firstReportedAt: h.first,
-            status: h.active ? 'active' : 'archived',
-          }));
-          const winters = wintersFrom([read], BODY_NOW, [list]);
+          const winters = wintersFrom([read], BODY_NOW);
           // The tab at its lightest (a quiet past winter: the strip and its notes, no list, no
           // features), so each run renders what it checks and little else. The day-by-day
           // arithmetic is property-tested without rendering in `hazardsModel.test.ts`; this proves
@@ -423,7 +421,8 @@ describe('HazardsTabView — the winters, a day at a time', () => {
           // Each hazard with no recorded end: exactly one mark, on its first-report day.
           const expected = new Map<number, number>();
           for (const e of entries) {
-            if (e.active) continue;
+            // An active hazard is bars; one reported on the season's last day is a bar too.
+            if (e.active || e.day + 1 >= days) continue;
             const at = axisIndex(e.day, season);
             expected.set(at, (expected.get(at) ?? 0) + 1);
           }
@@ -476,25 +475,12 @@ describe('HazardsTabView — the winters, a day at a time', () => {
       ],
       BODY_NOW,
     );
-    const list = [at(3), at(9)].map(
-      (first, i): HazardInput => ({
-        _id: `a${i}`,
-        type: 'thin_ice',
-        freshness: 'stale',
-        provisional: false,
-        confirmCount: 1,
-        goneCount: 2,
-        lastConfirmedAt: first,
-        firstReportedAt: first,
-        status: 'archived',
-      }),
-    );
     const { container } = render(
       <HazardsTabView
         {...base}
         season={season}
         hazards={FEB.hazards}
-        winters={wintersFrom([read], BODY_NOW, [list]) ?? undefined}
+        winters={wintersFrom([read], BODY_NOW) ?? undefined}
       />,
     );
     const day3 = container.querySelector('[data-slot="day-strip-day"][data-day="3"]');
@@ -518,52 +504,51 @@ describe('HazardsTabView — the winters, a day at a time', () => {
     ).toBeVisible();
   });
 
-  it('never says every archived report is marked when the list holds fewer than the count', () => {
-    const season = SEASON - 1;
+  it('says every archived report is marked — but one reported today is counted without a mark yet', () => {
+    const season = SEASON;
     const { start } = winterWindow(season);
-    const at = (d: number) => start + d * 86_400_000 + 3_600_000;
-    // Two archived reports counted; the list holds one (a crossing past its window is left out).
+    const now = start + 120 * 86_400_000 + 15 * 3_600_000;
     const read = dailyFrom(
       season,
       [
-        { first: at(4), active: false },
-        { first: at(12), active: false },
+        { first: start + 4 * 86_400_000, active: false },
+        { first: now - 3_600_000, active: false },
       ],
-      BODY_NOW,
+      now,
     );
-    const archived = (first: number): HazardInput => ({
-      _id: 'a0',
-      type: 'thin_ice',
-      freshness: 'stale',
-      provisional: false,
-      confirmCount: 1,
-      goneCount: 2,
-      lastConfirmedAt: first,
-      firstReportedAt: first,
-      status: 'archived',
-    });
-    const draw = (list: HazardInput[]) =>
-      render(
-        <HazardsTabView
-          {...base}
-          season={season}
-          hazards={FEB.hazards}
-          winters={wintersFrom([read], BODY_NOW, [list]) ?? undefined}
-        />,
-      );
-    const one = draw([archived(at(4))]);
-    const note = one.container.querySelector('[data-slot="hazards-unknown-ends"]');
+    const { container, unmount } = render(
+      <HazardsTabView
+        {...base}
+        hazards={FEB.hazards}
+        winters={wintersFrom([read], now) ?? undefined}
+      />,
+    );
+    const note = container.querySelector('[data-slot="hazards-unknown-ends"]');
     expect(note?.textContent).toContain('2 archived reports have no recorded end');
     expect(note?.textContent).toContain(
       '1 is marked on the day first reported, and the rest counted that day without a mark',
     );
-    expect(note?.textContent).not.toMatch(/Each is marked/);
-    one.unmount();
-    // A list that holds none of them: nothing is marked, and the note says the days aren't.
-    const none = draw([]);
-    expect(none.container.querySelector('[data-slot="day-strip-mark"]')).toBeNull();
-    expect(none.container.querySelector('[data-slot="hazards-unknown-ends"]')).toBeNull();
-    expect(none.container.querySelector('[data-slot="hazards-unmarked"]')).not.toBeNull();
+    unmount();
+    // Once both are a day behind, each is marked.
+    const later = now + 86_400_000;
+    const both = dailyFrom(
+      season,
+      [
+        { first: start + 4 * 86_400_000, active: false },
+        { first: now - 3_600_000, active: false },
+      ],
+      later,
+    );
+    const again = render(
+      <HazardsTabView
+        {...base}
+        hazards={FEB.hazards}
+        winters={wintersFrom([both], later) ?? undefined}
+      />,
+    );
+    expect(
+      again.container.querySelector('[data-slot="hazards-unknown-ends"]')?.textContent,
+    ).toMatch(/Each is marked on the day it was first reported/);
   });
 });
 
@@ -639,10 +624,9 @@ describe('HazardsTabView — a list, and a past winter', () => {
         name: '1 skater voted it gone; 2 archive it',
       }),
     ).toBeVisible();
-    // Over a list, the winter on screen alone — not last winter beside it — and no "Today:" line
-    // that could contradict the list.
+    // Over a list, the winter on screen alone — not last winter beside it. The strip and the list
+    // cover the same span (the season, through today), so today's words stand over the list too.
     expect(screen.getByRole('img', { name: /^2026–27: [^;]+$/ })).toBeVisible();
-    expect(screen.queryByText(/^Today:/)).toBeNull();
     // The groups are closed, their counts on their heads; the known features fold into one.
     expect(screen.getByRole('button', { name: /Archived this winter/ })).toHaveTextContent('2');
     expect(screen.queryByRole('region', { name: 'Known features' })).toBeNull();

@@ -103,7 +103,6 @@ describe('the words the tab can say', () => {
         expect(HAZARDS_WORDS.quietHeadline(words)).toBe(`No open reports · ${archived} archived`);
         expect(HAZARDS_WORDS.quietDetail(words)).toContain('may still have been on the lake');
         expect(HAZARDS_WORDS.unknownEndsNote(words)).toContain('may still have been on the lake');
-        expect(HAZARDS_WORDS.unmarkedNote(words)).toContain('may still have been on the lake');
       }),
     );
   });
@@ -189,7 +188,16 @@ const STATES: Record<string, Partial<HazardsTabViewProps>> = {
     watchOpenedAt: null,
     winters:
       wintersFrom(
-        [{ season: SEASON, days: [], unknownEnds: 0, capped: false, watchOpensOn: null }],
+        [
+          {
+            season: SEASON,
+            days: [],
+            unknownEnds: 0,
+            hazards: [],
+            capped: false,
+            watchOpensOn: null,
+          },
+        ],
         new Date(2026, 7, 20, 12, 0).getTime(),
       ) ?? undefined,
   },

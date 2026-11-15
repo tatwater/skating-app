@@ -81,6 +81,7 @@ describe('StandingTab', () => {
       favorites: 4,
       favoritesCapped: false,
       savedPutIns: 2,
+      putInKeeps: true,
     });
     render(<StandingTab bodyId={BODY} />);
     expect(screen.getByRole('radio', { name: /^Active/ })).toBeChecked();
@@ -91,12 +92,30 @@ describe('StandingTab', () => {
     expect(screen.queryByText(/Not recorded yet/)).toBeNull();
   });
 
+  it('shows put-ins as a reason only when the rollover says they keep it — never from the count', () => {
+    convex.results.set('waterBodies:get', body());
+    convex.results.set('standing:retentionForBody', {
+      favorites: 0,
+      favoritesCapped: false,
+      savedPutIns: 2,
+      putInKeeps: false,
+    });
+    render(<StandingTab bodyId={BODY} />);
+    expect(screen.queryByText('2 put-ins')).toBeNull();
+    expect(
+      screen.getByText(
+        /^None of these keeps it\. The 1 Jul \d{4} rollover decides by its own count\.$/,
+      ),
+    ).toBeVisible();
+  });
+
   it('a saved put-ins count past the server’s read is a floor', () => {
     convex.results.set('waterBodies:get', body());
     convex.results.set('standing:retentionForBody', {
       favorites: 0,
       favoritesCapped: false,
       savedPutIns: 1_000,
+      putInKeeps: true,
       savedPutInsCapped: true,
     });
     render(<StandingTab bodyId={BODY} />);
@@ -110,6 +129,7 @@ describe('StandingTab', () => {
       favorites: 1_000,
       favoritesCapped: true,
       savedPutIns: 0,
+      putInKeeps: false,
     });
     const { unmount } = render(<StandingTab bodyId={BODY} />);
     expect(screen.getByText('1,000+ skaters')).toBeVisible();
@@ -118,6 +138,7 @@ describe('StandingTab', () => {
       favorites: 0,
       favoritesCapped: false,
       savedPutIns: 0,
+      putInKeeps: false,
     });
     render(<StandingTab bodyId={BODY} />);
     expect(
@@ -153,6 +174,7 @@ describe('StandingTab', () => {
       favorites: 2,
       favoritesCapped: false,
       savedPutIns: 0,
+      putInKeeps: false,
     });
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByText('2 skaters')).toBeVisible();

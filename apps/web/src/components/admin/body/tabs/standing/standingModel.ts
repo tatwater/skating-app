@@ -45,6 +45,12 @@ export type RetentionFacts = {
   savedPutIns: number | null;
   /** The saved put-ins read stopped at its most: there are at least `savedPutIns`, drawn "1,000+". */
   savedPutInsCapped?: boolean;
+  /**
+   * Whether its put-ins keep it active at the rollover — **the rollover's own answer**
+   * (`putInKeeps`), never inferred from the count above (a hidden put-in doesn't keep it; a body
+   * past the rollover's bounds is kept though this tab counts it whole). `null`: not recorded.
+   */
+  putInKeeps: boolean | null;
 };
 
 export type RetentionLane = {
@@ -142,14 +148,18 @@ export function retentionModel(facts: RetentionFacts, now: number): RetentionMod
       end: null,
     });
   }
-  if (facts.savedPutIns !== null && facts.savedPutIns > 0) {
+  // The lane stands on the rollover's own answer; the count only says how many there are.
+  if (facts.putInKeeps === true) {
     lanes.push({
       key: 'put_in',
       label: 'Saved put-ins',
       // Past the read's end the number is a floor, never presented as whole.
-      value: facts.savedPutInsCapped
-        ? `${facts.savedPutIns.toLocaleString('en-US')}+ put-ins`
-        : plural(facts.savedPutIns, 'put-in', 'put-ins'),
+      value:
+        facts.savedPutIns === null || facts.savedPutIns === 0
+          ? 'Keeps it'
+          : facts.savedPutInsCapped
+            ? `${facts.savedPutIns.toLocaleString('en-US')}+ put-ins`
+            : plural(facts.savedPutIns, 'put-in', 'put-ins'),
       end: null,
     });
   }
@@ -174,7 +184,7 @@ export function retentionModel(facts: RetentionFacts, now: number): RetentionMod
   const missing = [
     facts.curatedBoost === null && 'the map boost',
     facts.favorites === null && 'favorites',
-    facts.savedPutIns === null && 'saved put-ins',
+    facts.putInKeeps === null && 'saved put-ins',
     facts.lastActivity === null && 'the last report',
   ].filter((m): m is string => m !== false);
 

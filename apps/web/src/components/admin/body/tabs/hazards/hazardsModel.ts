@@ -6,7 +6,6 @@ import {
   type HazardFreshness,
   type HazardType,
   type Season,
-  seasonOf,
   verdictLabel,
 } from '@skating/core';
 
@@ -189,15 +188,19 @@ export function featureRows(features: readonly FeatureInput[]): FeatureRow[] {
 
 // ── The winters, a bar per day ──────────────────────────────────────────────────────────────────
 
-/** The strips' window: 1 October to 1 April of the season — the winter, as the tape draws it. */
+/**
+ * The strips' window: the whole season, 1 July to the next 1 July (UTC) — the window
+ * `bodyConsole.dailyHazards` counts over, so no hazard it counts falls off the strip. Days before 1
+ * October are drawn like any other: a hazard first reported in September is a mark in September.
+ */
 export function winterWindow(season: Season): { start: number; days: number } {
-  const start = Date.UTC(season, 9, 1);
-  return { start, days: Math.round((Date.UTC(season + 1, 3, 1) - start) / DAY) };
+  const start = Date.UTC(season, 6, 1);
+  return { start, days: Math.round((Date.UTC(season + 1, 6, 1) - start) / DAY) };
 }
 
 /** A winter that holds a 29 February (2023–24): the axis every winter is drawn on. */
 const AXIS_SEASON = 2023;
-/** Days on the winters' one axis: 1 October to 31 March, with a slot for 29 February. */
+/** Days on the winters' one axis: 1 July to 30 June, with a slot for 29 February. */
 export const AXIS_DAYS = winterWindow(AXIS_SEASON).days;
 /** The 29 February slot's index on the axis. */
 const LEAP_SLOT = Math.round(
@@ -223,16 +226,13 @@ export function onAxis<T>(days: readonly (T | null)[], season: Season): (T | nul
 }
 
 /**
- * The clock a winter's day-by-day read (`bodyConsole.dailyHazards`) is handed, from the hour the
- * tab's clock holds. The server counts a hazard through the clock it is given, the clock itself
- * excluded, so the hour's start would leave out every hazard reported since — and in a day's first
- * hour every hazard still on the lake would miss today, which would then read *None marked* (D3).
- * So it is the hour's end, whose day is still today's; and never past the winter's end, so a
- * winter that is over keeps one argument and is not asked again every hour.
+ * The clock a winter's day-by-day read (`bodyConsole.dailyHazards`) is handed: the tab's hour —
+ * the server counts through the whole of that UTC day — and never past the season's end, so a
+ * season that is over keeps one argument and is not asked again every hour.
  */
 export function dailyClock(season: Season, hour: number): number {
   const { start, days } = winterWindow(season);
-  return Math.min(hour + HOUR, start + days * DAY);
+  return Math.min(hour, start + days * DAY);
 }
 
 /** The UTC day an instant falls on, as an index into `winterWindow(season)`; out of it, `null`. */
@@ -260,30 +260,59 @@ export type DailyHazards = {
   season: Season;
   days: readonly { at: number; count: number; unknown: number }[];
   unknownEnds: number;
+  /**
+   * Each hazard counted: the day it was first reported, and whether its end is recorded — the
+   * strip's marks (one on its first-report day for each with no recorded end).
+   */
+  hazards: readonly { firstReportedDay: number; endRecorded: boolean }[];
   capped: boolean;
   watchOpensOn: number | null;
 };
 
 /**
  * One day on a strip: hazards known on the lake (`count`, the server's), how many more may have been
- * (`unknown`, the server's), and — from the archived list — how many hazards with no recorded end
- * were first reported that day (`reported`, each a mark).
+ * (`unknown`, the server's), and how many hazards with no recorded end were first reported that
+ * day (`reported`, each a mark — from the read's own `hazards`).
  */
 export type DayOnLake = { count: number; unknown: number; reported: number };
 
 /**
- * Each archived hazard's first report, as a count per day of the winter's window — the strip's
- * marks. **One mark per hazard with no recorded end, on the day it was first reported** (the
- * founder's ruling, 2026-11-14): every archived hazard today, since nothing stored says when one
- * left the lake. A hazard first reported outside the window (July to September) is on no strip.
+ * The read's first reports, as a count per day of the season's window — the strip's marks. **One
+ * mark per hazard with no recorded end, on the day it was first reported** (the founder's ruling,
+ * 2026-11-14); a hazard whose end is recorded, or that is still active (on the lake through
+ * today), is bars for its days on the lake, never a mark.
+ *
+ * The read's `hazards` give each first-report day and whether an end is recorded, but not whether a
+ * hazard is still active (an active one has no end either). The day after tells them apart: an
+ * archived hazard with no recorded end is *unknown* every day after its first, an active one is
+ * *known*. So a day's marks are its first reports with no recorded end, held to how much the
+ * unknown part grows the next day — on the day itself (today, or the season's last), nothing yet
+ * says, and they are bars: on the lake that day, which is true. (Server request: an `active` flag
+ * on each hazard, which would make this the read's word alone.)
  */
-export function firstReports(hazards: readonly HazardInput[], season: Season): number[] {
-  const out = Array.from({ length: winterWindow(season).days }, () => 0);
-  for (const h of hazards) {
-    if (h.status !== 'archived') continue;
-    const i = dayIndex(h.firstReportedAt, season);
-    if (i !== null) out[i] = (out[i] ?? 0) + 1;
+export function firstReports(
+  read: Pick<DailyHazards, 'season' | 'hazards' | 'days'>,
+  now: number,
+): number[] {
+  const { start, days } = winterWindow(read.season);
+  const out = Array.from({ length: days }, () => 0);
+  const noEnd = Array.from({ length: days }, () => 0);
+  for (const h of read.hazards) {
+    if (h.endRecorded) continue;
+    const i = dayIndex(h.firstReportedDay, read.season);
+    if (i !== null) noEnd[i] = (noEnd[i] ?? 0) + 1;
   }
+  const unknown = new Map<number, number>();
+  for (const d of read.days) {
+    const i = dayIndex(d.at, read.season);
+    if (i !== null) unknown.set(i, (unknown.get(i) ?? 0) + Math.max(0, d.unknown));
+  }
+  const today = Math.floor((now - start) / DAY);
+  noEnd.forEach((n, i) => {
+    if (n === 0 || i + 1 >= days || i + 1 > today) return;
+    const grows = (unknown.get(i + 1) ?? 0) - (unknown.get(i) ?? 0);
+    out[i] = Math.max(0, Math.min(n, grows));
+  });
   return out;
 }
 
@@ -357,7 +386,6 @@ export type WinterLine = {
    * only), the strip draws no marks — the server's count as bars, the unknown in words — and says
    * which day each archived hazard was first reported isn't read.
    */
-  marked: boolean;
 };
 
 /** The winters the tab draws: the season on screen first, then any it is set beside. */
@@ -370,20 +398,10 @@ export type Winters = {
   today: number | null;
   /** The watch's opening day's place on the axis (the first strip's), when the record says. */
   opens: number | null;
-  /** When the first strip's record begins (1 October), while that is still ahead. */
-  begins: number | null;
 };
 
-/**
- * The strips from their reads, the season on screen first. `lists[k]` is the hazards list (with
- * archived) for `reads[k]`'s winter, or `null` where the tab doesn't read one: that strip is drawn
- * without marks.
- */
-export function wintersFrom(
-  reads: readonly DailyHazards[],
-  now: number,
-  lists: readonly (readonly HazardInput[] | null)[] = [],
-): Winters | null {
+/** The strips from their reads, the season on screen first; each marks its own first reports. */
+export function wintersFrom(reads: readonly DailyHazards[], now: number): Winters | null {
   const first = reads[0];
   if (first === undefined) return null;
   const { start, days } = winterWindow(first.season);
@@ -393,22 +411,14 @@ export function wintersFrom(
   return {
     days: AXIS_DAYS,
     months: monthTicks(AXIS_SEASON),
-    lines: reads.map((r, k) => {
-      const list = lists[k] ?? null;
-      return {
-        season: r.season,
-        days: onAxis(
-          stripDays(r, now, list === null ? null : firstReports(list, r.season)),
-          r.season,
-        ),
-        capped: r.capped,
-        unknownEnds: r.unknownEnds,
-        marked: list !== null,
-      };
-    }),
+    lines: reads.map((r) => ({
+      season: r.season,
+      days: onAxis(stripDays(r, now, firstReports(r, now)), r.season),
+      capped: r.capped,
+      unknownEnds: r.unknownEnds,
+    })),
     today: today >= 0 && today < days ? axisIndex(today, first.season) : null,
     opens: opens === null ? null : axisIndex(opens, first.season),
-    begins: now < start && seasonOf(now) === first.season ? start : null,
   };
 }
 
@@ -428,17 +438,23 @@ export function lineSummary(line: WinterLine): string {
   );
 }
 
-/** The month ticks on the window: each 1st, as "OCT". */
+/**
+ * The month ticks on the window: each 1st, as "OCT". Twelve months on the strip's width: each is
+ * ticked, and the quarters' firsts are named (JUL, OCT, JAN, APR) so the labels never crowd.
+ */
 export function monthTicks(season: Season): { at: number; label: string }[] {
   const { start } = winterWindow(season);
   const out: { at: number; label: string }[] = [];
-  for (let m = 0; m < 6; m++) {
-    const at = Date.UTC(season, 9 + m, 1);
+  for (let m = 0; m < 12; m++) {
+    const at = Date.UTC(season, 6 + m, 1);
     out.push({
       at: Math.round((at - start) / DAY),
-      label: new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'UTC' })
-        .format(at)
-        .toUpperCase(),
+      label:
+        m % 3 === 0
+          ? new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'UTC' })
+              .format(at)
+              .toUpperCase()
+          : '',
     });
   }
   return out;

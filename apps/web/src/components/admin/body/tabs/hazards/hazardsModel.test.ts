@@ -9,7 +9,6 @@ import {
   FEB_HAZARDS,
   FEB_NOW,
   LAST_WINTER_DAILY,
-  LAST_WINTER_LIST,
   MASCOMA_FEATURES,
   MASCOMA_MAP_DATA,
 } from './hazardsFixtures';
@@ -17,13 +16,13 @@ import { hazardLit, hazardsMapScene, seasonOfLit, winterLit } from './hazardsMap
 import {
   ageWords,
   archivedRows,
+  axisIndex,
   dailyClock,
   dayIndex,
   dayWords,
   drawnDay,
   featureRows,
   firstReports,
-  type HazardInput,
   hazardRows,
   lineSummary,
   monthTicks,
@@ -31,6 +30,7 @@ import {
   seasonWord,
   stripDays,
   type WinterLine,
+  type Winters,
   wintersFrom,
   winterWindow,
 } from './hazardsModel';
@@ -229,15 +229,22 @@ describe('known features', () => {
 });
 
 describe('the winters, a bar per day', () => {
-  it('runs 1 October to 1 April, UTC', () => {
-    expect(winterWindow(2026)).toEqual({ start: Date.UTC(2026, 9, 1), days: 182 });
+  it('runs the whole season, 1 July to 1 July, UTC — the read’s own window', () => {
+    expect(winterWindow(2026)).toEqual({ start: Date.UTC(2026, 6, 1), days: 365 });
+    // Every month ticked; the quarters named, so twelve labels never crowd the strip.
     expect(monthTicks(2026).map((m) => [m.at, m.label])).toEqual([
-      [0, 'OCT'],
-      [31, 'NOV'],
-      [61, 'DEC'],
-      [92, 'JAN'],
-      [123, 'FEB'],
-      [151, 'MAR'],
+      [0, 'JUL'],
+      [31, ''],
+      [62, ''],
+      [92, 'OCT'],
+      [123, ''],
+      [153, ''],
+      [184, 'JAN'],
+      [215, ''],
+      [243, ''],
+      [274, 'APR'],
+      [304, ''],
+      [335, ''],
     ]);
   });
 
@@ -270,16 +277,12 @@ describe('the winters, a bar per day', () => {
       { season: 2026, days: [{ at: Date.UTC(2026, 9, 5, 3), count: 2, unknown: 1 }] },
       now,
     );
-    const none = { count: 0, unknown: 0, reported: 0 };
-    expect(days.slice(0, 5)).toEqual([
-      none,
-      none,
-      none,
-      none,
-      { count: 2, unknown: 1, reported: 0 },
-    ]);
-    expect(days.slice(5, 14).every((d) => d?.count === 0 && d.unknown === 0)).toBe(true);
-    expect(days.slice(14).every((d) => d === null)).toBe(true);
+    const at = (m: number, d: number) => dayIndex(Date.UTC(2026, m, d), 2026) as number;
+    // From 1 July to today every day is real; 5 October holds its count; after today, nothing.
+    expect(days.slice(0, at(9, 5)).every((d) => d?.count === 0 && d.unknown === 0)).toBe(true);
+    expect(days[at(9, 5)]).toEqual({ count: 2, unknown: 1, reported: 0 });
+    expect(days.slice(at(9, 6), at(9, 15)).every((d) => d?.count === 0)).toBe(true);
+    expect(days.slice(at(9, 15)).every((d) => d === null)).toBe(true);
     // Last winter, whole: every day real, the archived ones unknown to the winter's end.
     const last = stripDays(LAST_WINTER_DAILY, BODY_NOW);
     expect(last.every((d) => d !== null)).toBe(true);
@@ -292,10 +295,14 @@ describe('the winters, a bar per day', () => {
       { season: 2026, days: [{ at: Date.UTC(2026, 11, 1), count: 3, unknown: 0 }] },
       now,
     );
-    expect(days[61]).toEqual({ count: 3, unknown: 0, reported: 0 });
-    // Out of the window is out.
+    expect(days[dayIndex(Date.UTC(2026, 11, 1), 2026) as number]).toEqual({
+      count: 3,
+      unknown: 0,
+      reported: 0,
+    });
+    // Out of the season is out (June belongs to the season before).
     expect(
-      stripDays({ season: 2026, days: [{ at: Date.UTC(2026, 8, 1), count: 3, unknown: 0 }] }, now)
+      stripDays({ season: 2026, days: [{ at: Date.UTC(2026, 5, 1), count: 3, unknown: 0 }] }, now)
         .flatMap((d) => (d === null ? [] : [d.count]))
         .every((c) => c === 0),
     ).toBe(true);
@@ -337,17 +344,15 @@ describe('the winters, a bar per day', () => {
 });
 
 describe('the day-by-day read’s clock', () => {
-  it('passes every instant of the hour, and its day is still today’s (fast-check)', () => {
+  it('is the hour itself, whose day the server counts whole (fast-check)', () => {
     const { start, days } = winterWindow(2025);
     const end = start + days * DAY;
     fc.assert(
       fc.property(fc.integer({ min: start, max: end - 1 }), (at) => {
-        const clock = dailyClock(2025, Math.floor(at / HOUR) * HOUR);
-        // A hazard reported any time this hour counts, today included (the server's end is
-        // exclusive) — even in a day's first hour.
-        expect(clock).toBeGreaterThan(at);
-        // And no day past today is ever asked for.
-        expect(Math.floor((clock - 1) / DAY)).toBe(Math.floor(at / DAY));
+        const hour = Math.floor(at / HOUR) * HOUR;
+        // No end-of-hour workaround: the server counts through the whole of the clock's UTC day.
+        expect(dailyClock(2025, hour)).toBe(hour);
+        expect(Math.floor(dailyClock(2025, hour) / DAY)).toBe(Math.floor(at / DAY));
       }),
     );
   });
@@ -357,8 +362,8 @@ describe('the day-by-day read’s clock', () => {
     const end = start + days * DAY;
     expect(dailyClock(2024, end + 5 * HOUR)).toBe(end);
     expect(dailyClock(2024, end + 400 * DAY)).toBe(end);
-    // Before its window opens, the hour's end.
-    expect(dailyClock(2024, start - 10 * DAY)).toBe(start - 10 * DAY + HOUR);
+    // Before its window opens, the hour itself.
+    expect(dailyClock(2024, start - 10 * DAY)).toBe(start - 10 * DAY);
   });
 });
 
@@ -431,16 +436,27 @@ describe('a day in words', () => {
 });
 
 describe('the winters as the tab draws them', () => {
-  it('this winter before 1 October is empty, and says when its record begins', () => {
+  it('a new season before 1 October is an honestly empty record from 1 July, never a gap', () => {
     const now = Date.UTC(2026, 7, 20, 15);
     const w = wintersFrom(
-      [{ season: 2026, days: [], unknownEnds: 0, capped: false, watchOpensOn: null }],
+      [{ season: 2026, days: [], unknownEnds: 0, hazards: [], capped: false, watchOpensOn: null }],
       now,
     );
-    expect(w?.begins).toBe(Date.UTC(2026, 9, 1));
+    const today = dayIndex(now, 2026) as number;
+    // The season began on 1 July: its record runs from there to today, each day real and empty.
+    expect(w?.today).toBe(today);
+    expect(w?.lines[0]?.days.slice(0, today + 1).every((d) => d?.count === 0)).toBe(true);
+    expect(w?.lines[0]?.days.slice(today + 1).every((d) => d === null)).toBe(true);
+    expect(w && lineSummary(w.lines[0] as WinterLine)).toBe('No hazard reports');
+  });
+
+  it('draws a season that hasn’t begun as days not yet, never zeros', () => {
+    const w = wintersFrom(
+      [{ season: 2026, days: [], unknownEnds: 0, hazards: [], capped: false, watchOpensOn: null }],
+      Date.UTC(2026, 5, 20),
+    );
     expect(w?.today).toBeNull();
     expect(w?.lines[0]?.days.every((d) => d === null)).toBe(true);
-    expect(w && lineSummary(w.lines[0] as WinterLine)).toBe('No hazard reports');
   });
 
   it('marks today and the watch’s opening, and carries each strip’s floor and missing ends', () => {
@@ -450,6 +466,7 @@ describe('the winters as the tab draws them', () => {
           season: 2026,
           days: [{ at: Date.UTC(2026, 9, 5), count: 1, unknown: 0 }],
           unknownEnds: 0,
+          hazards: [],
           capped: true,
           watchOpensOn: Date.UTC(2026, 9, 3),
         },
@@ -457,35 +474,34 @@ describe('the winters as the tab draws them', () => {
       ],
       Date.UTC(2026, 9, 14, 16),
     );
-    expect(w?.today).toBe(13);
-    expect(w?.opens).toBe(2);
-    expect(w?.begins).toBeNull();
+    expect(w?.today).toBe(dayIndex(Date.UTC(2026, 9, 14), 2026));
+    expect(w?.opens).toBe(dayIndex(Date.UTC(2026, 9, 3), 2026));
     expect(w?.lines.map((l) => [l.season, l.capped, l.unknownEnds])).toEqual([
       [2026, true, 0],
       [2025, false, 8],
     ]);
     expect(lineSummary(w?.lines[0] as WinterLine)).toBe('1 day with hazard reports; each a floor');
     expect(lineSummary(w?.lines[1] as WinterLine)).toMatch(
-      /^\d+ days with hazard reports, \d+ with some unknown$/,
+      /^\d+ days with hazard reports, 8 first reports with no recorded end, \d+ with some unknown$/,
     );
     expect(wintersFrom([], 0)).toBeNull();
   });
 
-  it('lines up leap and common winters date for date, on one axis of 1 Oct to 31 Mar', () => {
+  it('lines up leap and common seasons date for date, on one axis of 1 Jul to 30 Jun', () => {
     const DAYMS = 86_400_000;
-    // A date in a winter (1 Oct – 31 Mar), as the day after 1 October it falls on.
-    const winterDay = (season: number, offset: number) => Date.UTC(season, 9, 1) + offset * DAYMS;
+    // A date in a season (1 Jul – 30 Jun), as the day after 1 July it falls on.
+    const winterDay = (season: number, offset: number) => Date.UTC(season, 6, 1) + offset * DAYMS;
     fc.assert(
       fc.property(
         fc.integer({ min: 2000, max: 2090 }),
-        fc.integer({ min: 0, max: 181 }),
+        fc.integer({ min: 0, max: 364 }),
         fc.integer({ min: 1, max: 9 }),
         (season, offset, count) => {
           const at = winterDay(season, offset);
           const date = new Date(at);
           // The same calendar date in the winter before (when it has one: 29 February may not).
           const before = Date.UTC(
-            season - 1 + (date.getUTCMonth() < 9 ? 1 : 0),
+            season - 1 + (date.getUTCMonth() < 6 ? 1 : 0),
             date.getUTCMonth(),
             date.getUTCDate(),
           );
@@ -496,6 +512,7 @@ describe('the winters as the tab draws them', () => {
                 season,
                 days: [{ at, count, unknown: 0 }],
                 unknownEnds: 0,
+                hazards: [],
                 capped: false,
                 watchOpensOn: null,
               },
@@ -503,11 +520,12 @@ describe('the winters as the tab draws them', () => {
                 season: season - 1,
                 days: sameDate ? [{ at: before, count, unknown: 0 }] : [],
                 unknownEnds: 0,
+                hazards: [],
                 capped: false,
                 watchOpensOn: null,
               },
             ],
-            Date.UTC(season + 1, 5, 1),
+            Date.UTC(season + 1, 6, 1),
           );
           if (w === null) throw new Error('no winters');
           // One axis for both, whichever holds a 29 February.
@@ -519,31 +537,25 @@ describe('the winters as the tab draws them', () => {
             const there = w.lines[1]?.days.findIndex((d) => d !== null && d.count > 0);
             expect(there).toBe(here);
           }
-          // The month ticks fall on the 1st of each month in either winter.
-          const tick = w.months.find(
-            (m) =>
-              m.label ===
-              new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'UTC' })
-                .format(at)
-                .toUpperCase(),
-          );
-          if (date.getUTCDate() === 1) expect(here).toBe(tick?.at);
+          // The month ticks fall on the 1st of each month in either season.
+          if (date.getUTCDate() === 1) expect(w.months.some((m) => m.at === here)).toBe(true);
         },
       ),
     );
-    // 31 March is the axis's last day in a leap winter and a common one alike.
+    // 30 June is the axis's last day in a leap season and a common one alike.
     for (const season of [2023, 2025]) {
       const w = wintersFrom(
         [
           {
             season,
-            days: [{ at: Date.UTC(season + 1, 2, 31), count: 1, unknown: 0 }],
+            days: [{ at: Date.UTC(season + 1, 5, 30), count: 1, unknown: 0 }],
             unknownEnds: 0,
+            hazards: [],
             capped: false,
             watchOpensOn: null,
           },
         ],
-        Date.UTC(season + 1, 5, 1),
+        Date.UTC(season + 1, 6, 1),
       );
       expect(w?.lines[0]?.days.at(-1)).toEqual({ count: 1, unknown: 0, reported: 0 });
     }
@@ -552,7 +564,6 @@ describe('the winters as the tab draws them', () => {
   it('a past winter has no today and no beginning ahead', () => {
     const w = wintersFrom([LAST_WINTER_DAILY], Date.UTC(2026, 9, 14, 16));
     expect(w?.today).toBeNull();
-    expect(w?.begins).toBeNull();
     expect(w?.opens).toBeNull();
   });
 
@@ -568,51 +579,68 @@ describe('the winters as the tab draws them', () => {
   });
 });
 
-describe('first-report marks — a hazard with no recorded end', () => {
+describe('first-report marks — from the read’s own hazards', () => {
   const season = 2025;
   const { start, days } = winterWindow(season);
-  const hazard = (first: number, active: boolean, i = 0): HazardInput => ({
-    _id: `h${i}`,
-    type: 'thin_ice',
-    freshness: 'stale',
-    provisional: false,
-    confirmCount: 1,
-    goneCount: active ? 0 : 2,
-    lastConfirmedAt: first,
-    firstReportedAt: first,
-    status: active ? 'active' : 'archived',
-  });
 
-  it('marks each archived hazard once, on the day it was first reported, and nothing else', () => {
-    const marks = firstReports(
-      [
-        hazard(start + 3 * DAY + 5 * HOUR, false),
-        hazard(start + 3 * DAY + 20 * HOUR, false),
-        hazard(start + 9 * DAY, true),
-        // First reported in September: its season, but on no strip.
-        hazard(start - 10 * DAY, false),
-      ],
+  it('marks each archived hazard with no recorded end once, on its first-report day; an ended or active one never', () => {
+    const day = (n: number) => start + n * DAY + 5 * HOUR;
+    const read = dailyFrom(
       season,
+      [
+        { first: day(3), active: false },
+        { first: day(3), active: false },
+        { first: day(3), active: true },
+        { first: day(9), active: false, ended: day(12) },
+        // First reported in September: on the strip, a mark in September.
+        { first: Date.UTC(2025, 8, 12, 5), active: false },
+      ],
+      Date.UTC(2026, 6, 1),
     );
+    const marks = firstReports(read, Date.UTC(2026, 6, 1));
     expect(marks).toHaveLength(days);
     expect(marks[3]).toBe(2);
-    expect(marks.reduce((a, b) => a + b, 0)).toBe(2);
+    expect(marks[dayIndex(Date.UTC(2025, 8, 12), season) as number]).toBe(1);
+    expect(marks.reduce((a, b) => a + b, 0)).toBe(3);
   });
 
-  it('a strip with its list draws marks, never fewer known than the count; one without draws none', () => {
-    const covered = wintersFrom([LAST_WINTER_DAILY], BODY_NOW, [LAST_WINTER_LIST]);
-    const bare = wintersFrom([LAST_WINTER_DAILY], BODY_NOW);
-    const marked = covered?.lines[0] as WinterLine;
-    const unmarked = bare?.lines[0] as WinterLine;
-    expect(marked.marked).toBe(true);
-    expect(unmarked.marked).toBe(false);
-    const total = (l: WinterLine) =>
-      l.days.reduce((n, d) => n + (d === null ? 0 : drawnDay(d).marks), 0);
-    expect(total(marked)).toBe(LAST_WINTER_LIST.filter((h) => h.status === 'archived').length);
-    expect(total(unmarked)).toBe(0);
-    // The unknown is still said for the strip.
-    expect(lineSummary(marked)).toMatch(
+  it('a hazard first reported today is a bar until the day after says whether it is still there', () => {
+    const now = start + 40 * DAY + 10 * HOUR;
+    const read = dailyFrom(season, [{ first: now - HOUR, active: false }], now);
+    expect(firstReports(read, now).reduce((a, b) => a + b, 0)).toBe(0);
+    const line = (wintersFrom([read], now) as Winters).lines[0] as WinterLine;
+    expect(line.days[40]).toMatchObject({ count: 1, reported: 0 });
+  });
+
+  it('every winter is marked from its own read — last winter beside this one too', () => {
+    const w = wintersFrom([LAST_WINTER_DAILY], BODY_NOW);
+    const line = w?.lines[0] as WinterLine;
+    const total = line.days.reduce((n, d) => n + (d === null ? 0 : drawnDay(d).marks), 0);
+    expect(total).toBe(LAST_WINTER_DAILY.unknownEnds);
+    expect(lineSummary(line)).toMatch(
       /8 first reports with no recorded end, \d+ with some unknown$/,
+    );
+  });
+
+  it('a hazard with a recorded end is bars for its days on the lake, and no mark (fast-check)', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: days - 40 }),
+        fc.integer({ min: 0, max: 30 }),
+        (first, length) => {
+          const at = start + first * DAY + 5 * HOUR;
+          const read = dailyFrom(
+            season,
+            [{ first: at, active: false, ended: at + length * DAY }],
+            Date.UTC(2026, 6, 1),
+          );
+          const line = (wintersFrom([read], Date.UTC(2026, 6, 1)) as Winters)
+            .lines[0] as WinterLine;
+          const drawn = line.days.map((d) => (d === null ? { bars: 0, marks: 0 } : drawnDay(d)));
+          expect(drawn.reduce((n, d) => n + d.marks, 0)).toBe(0);
+          expect(drawn.reduce((n, d) => n + d.bars, 0)).toBe(length + 1);
+        },
+      ),
     );
   });
 
@@ -620,46 +648,40 @@ describe('first-report marks — a hazard with no recorded end', () => {
     const entry = fc.record({
       day: fc.integer({ min: 0, max: days - 1 }),
       hour: fc.integer({ min: 0, max: 23 }),
-      active: fc.boolean(),
+      kind: fc.constantFrom('active', 'unended', 'ended'),
     });
     fc.assert(
       fc.property(
         fc.array(entry, { maxLength: 40 }),
         fc.integer({ min: start, max: start + (days + 20) * DAY }),
         (entries, now) => {
-          const firsts = entries.map((e) => start + e.day * DAY + e.hour * HOUR);
-          // Only what has been reported by now is in either read.
-          const seen = entries.filter((_, i) => (firsts[i] as number) < now);
-          const seenFirsts = firsts.filter((f) => f < now);
+          const seen = entries
+            .map((e) => ({ ...e, first: start + e.day * DAY + e.hour * HOUR }))
+            .filter((e) => e.first < now);
           const read = dailyFrom(
             season,
-            seen.map((e, i) => ({ first: seenFirsts[i] as number, active: e.active })),
+            seen.map((e) => ({
+              first: e.first,
+              active: e.kind === 'active',
+              ...(e.kind === 'ended' ? { ended: e.first + 2 * DAY } : {}),
+            })),
             now,
           );
-          const list = seen.map((e, i) => hazard(seenFirsts[i] as number, e.active, i));
-          const w = wintersFrom([read], now, [list]);
-          const line = w?.lines[0] as WinterLine;
-          const window = stripDays(read, now);
-          // Each archived hazard: one mark, on its first-report day's place on the axis.
+          const line = (wintersFrom([read], now) as Winters).lines[0] as WinterLine;
           const expected = Array.from({ length: line.days.length }, () => 0);
-          seen.forEach((e) => {
-            if (!e.active) {
-              const at = line.days.length === days ? e.day : e.day < 151 ? e.day : e.day + 1;
-              expected[at] = (expected[at] ?? 0) + 1;
-            }
-          });
+          const today = Math.floor((now - start) / DAY);
+          for (const e of seen) {
+            // Reported on its own last day (today, or the season's last): a bar until the day after.
+            if (e.kind !== 'unended' || e.day + 1 > today || e.day + 1 >= days) continue;
+            const at = axisIndex(e.day, season);
+            expected[at] = (expected[at] ?? 0) + 1;
+          }
           line.days.forEach((d, i) => {
             expect(d === null ? 0 : drawnDay(d).marks).toBe(expected[i]);
-          });
-          // No day draws fewer known hazards than the server's count.
-          let k = 0;
-          line.days.forEach((d) => {
             if (d === null) return;
             const { bars, marks } = drawnDay(d);
             expect(bars + marks).toBeGreaterThanOrEqual(d.count);
-            k++;
           });
-          expect(k).toBeGreaterThanOrEqual(window.filter((d) => d !== null).length);
         },
       ),
     );

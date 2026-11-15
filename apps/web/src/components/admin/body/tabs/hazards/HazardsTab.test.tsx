@@ -42,7 +42,7 @@ import { ConvexError } from 'convex/values';
 import { resetConsoleReads } from '@/components/admin/reads/consoleReads';
 import { HAZARDS_TAB, HazardsTab } from './HazardsTab';
 import { dailyFrom, FEB_ARCHIVED, FEB_HAZARDS, MASCOMA_FEATURES } from './hazardsFixtures';
-import { dailyClock, winterWindow } from './hazardsModel';
+import { axisIndex, dailyClock, winterWindow } from './hazardsModel';
 
 const BODY = 'k1';
 /** The line under the strips for the clock's own day (each test that reads it pins the clock). */
@@ -122,7 +122,7 @@ describe('HazardsTab', () => {
     const current = daily[0]?.season ?? Number.NaN;
     expect(new Set(daily.map((d) => d.season))).toEqual(new Set([current, current - 1]));
     expect(daily.every((d) => d.now % 3_600_000 === 0)).toBe(true);
-    // This winter's clock is past every instant of this hour; last winter's is its own end.
+    // This winter's clock is the hour (the server counts its whole day); last winter's, its end.
     const hour = Math.floor(Date.now() / 3_600_000) * 3_600_000;
     const thisWinter = daily.find((d) => d.season === current);
     expect(thisWinter?.now).toBe(dailyClock(current, hour));
@@ -323,26 +323,15 @@ describe('HazardsTab', () => {
     expect(nav.navigate).toHaveBeenCalledWith({ to: '/admin/recurrence' });
   });
 
-  it('a chosen past winter marks its archived hazards’ first reports from its list, captioned', async () => {
-    // Last winter's one archived hazard, first reported 60 days in, as its list hands it.
-    convex.results.set(
-      'hazards:listForBody',
-      (args: { season: number; includeArchived?: boolean }) => {
-        if (!args.includeArchived || args.season === seasonOf(Date.now())) return [];
-        const first = winterWindow(args.season).start + 60 * 86_400_000;
-        return [
-          {
-            ...FEB_ARCHIVED[0],
-            lastConfirmedAt: first,
-            firstReportedAt: first,
-          },
-        ];
-      },
-    );
+  it('every strip is marked from its own read — last winter beside this one, and a chosen past one', async () => {
     render(<HazardsTab bodyId={BODY} />);
-    // Beside this winter, last winter's list isn't read: no marks, and the note says so.
-    expect(document.querySelector('[data-slot="day-strip-mark"]')).toBeNull();
-    expect(document.querySelector('[data-slot="hazards-unmarked"]')).not.toBeNull();
+    // Beside this winter, last winter's archived hazard is a mark, from the day-by-day read alone.
+    expect(document.querySelectorAll('[data-slot="day-strip-mark"]')).toHaveLength(1);
+    expect(document.querySelector('[data-slot="day-strips-caption"]')).not.toBeNull();
+    // The archived list isn't what marks come from: its failure leaves the marks standing.
+    convex.results.set('hazards:listForBody', (args: { includeArchived?: boolean }) =>
+      args.includeArchived ? new Error('boom') : [],
+    );
     const first = convex.calls.find((c) => c.name === 'hazards:listForBody');
     const current = (first?.args as { season: number } | undefined)?.season ?? Number.NaN;
     await userEvent.click(
@@ -352,31 +341,10 @@ describe('HazardsTab', () => {
     );
     const marks = document.querySelectorAll('[data-slot="day-strip-mark"]');
     expect(marks).toHaveLength(1);
-    expect(marks[0]?.closest('[data-slot="day-strip-day"]')?.getAttribute('data-day')).toBe('60');
-    expect(document.querySelector('[data-slot="day-strips-caption"]')).not.toBeNull();
-    expect(document.querySelector('[data-slot="hazards-unknown-ends"]')).not.toBeNull();
-  });
-
-  it('a failed archived list leaves the winter’s strip drawn, without marks, saying so', () => {
-    vi.useFakeTimers({ now: Date.UTC(2027, 0, 16, 17, 0), toFake: ['Date', 'setInterval'] });
-    try {
-      convex.results.set('hazards:listForBody', (args: { includeArchived?: boolean }) =>
-        args.includeArchived ? new Error('boom') : FEB_HAZARDS,
-      );
-      convex.results.set('bodyConsole:dailyHazards', (args: { season: number; now: number }) =>
-        dailyFrom(
-          args.season,
-          [{ first: winterWindow(args.season).start + 10 * 86_400_000, active: false }],
-          args.now,
-        ),
-      );
-      render(<HazardsTab bodyId={BODY} />);
-      expect(document.querySelector('[data-slot="hazards-winters"]')).not.toBeNull();
-      expect(document.querySelector('[data-slot="day-strip-mark"]')).toBeNull();
-      expect(document.querySelector('[data-slot="hazards-unmarked"]')).not.toBeNull();
-    } finally {
-      vi.useRealTimers();
-    }
+    // The hazard fixture is first reported 60 days into last winter's season.
+    expect(marks[0]?.closest('[data-slot="day-strip-day"]')?.getAttribute('data-day')).toBe(
+      String(axisIndex(60, current - 1)),
+    );
   });
 
   it('without the capabilities: no tools, and the queue isn’t read', () => {

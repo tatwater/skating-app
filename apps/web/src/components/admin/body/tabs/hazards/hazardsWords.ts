@@ -48,8 +48,6 @@ export type WordsContext = {
   unsureDays: number;
   /** Two strips are drawn, so each note names its winter. */
   named: boolean;
-  /** When the record begins, while that is ahead. */
-  begins: number | null;
   /** Patterns waiting in the pre-ice pass. */
   patterns: number;
 };
@@ -71,7 +69,6 @@ export function wordsContext(over: Partial<WordsContext> = {}): WordsContext {
     markedDays: 0,
     unsureDays: 0,
     named: false,
-    begins: null,
     patterns: 0,
     ...over,
   };
@@ -164,23 +161,9 @@ export const HAZARDS_WORDS = {
     return `${lead}${n === 1 ? '1 archived report has' : `${n} archived reports have`} no recorded end. ${marked}; from then on, every day counts ${n === 1 ? 'it' : 'them'} as unknown: ${n === 1 ? 'the hazard' : 'each hazard'} may still have been on the lake.`;
   },
 
-  /**
-   * Archived reports with no recorded end, on a strip whose first reports the tab doesn't read
-   * (last winter, beside this one): no marks, and why.
-   */
-  unmarkedNote: (c: WordsContext): string => {
-    const n = c.unknownEnds;
-    const lead = c.named ? `${seasonWord(c.season)}: ` : '';
-    return `${lead}${n === 1 ? '1 archived report has' : `${n} archived reports have`} no recorded end. ${n === 1 ? 'It is' : 'Each is'} counted on the day it was first reported, but that day isn’t marked for this winter; from then on, every day counts ${n === 1 ? 'it' : 'them'} as unknown: ${n === 1 ? 'the hazard' : 'each hazard'} may still have been on the lake.`;
-  },
-
   /** A count that stopped short. */
   cappedNote: (c: WordsContext): string =>
     `${c.named ? `${seasonWord(c.season)}: ` : ''}The count stopped short of every hazard reported; each day is at least what it shows.`,
-
-  /** When the record begins, while that is ahead. */
-  beginsLine: (c: WordsContext): string =>
-    `The record for ${seasonWord(c.season)} begins ${dateWords(c.begins ?? 0)}.`,
 
   /** Today, under the strips. */
   todayLine: (c: WordsContext): string => `Today: ${HAZARDS_WORDS.day(c)}`,

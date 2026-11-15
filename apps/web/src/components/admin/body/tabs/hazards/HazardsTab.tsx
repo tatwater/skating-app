@@ -28,7 +28,6 @@ import {
   dailyClock,
   type FeatureInput,
   featureRows,
-  type HazardInput,
   hazardRows,
   type Winters,
   wintersFrom,
@@ -43,9 +42,9 @@ import {
  * - **the winters, a day at a time** (`bodyConsole.dailyHazards`): the season on screen, and last
  *   winter beside an empty current one. Each day's known count, and the archived hazards that may
  *   have been on the lake — said as *at least*, never as a smaller count or as clear — with the
- *   watch's opening day. An archived hazard, whose end isn't recorded, is one mark on the day it
- *   was first reported, taken from the archived list; that list is read for the winter on screen
- *   only, so last winter's strip beside it draws no marks and says so;
+ *   watch's opening day. A hazard whose end isn't recorded is one mark on the day it was first
+ *   reported, and one whose end is recorded is bars for its days on the lake — both from the read's
+ *   own `hazards`. The window is the season (1 July on), through the whole of today;
  * - **the known features** (`bodyFeatures.listForBody`) and the recurrence patterns still waiting
  *   (`recurrence.listForBodyAdmin`, `body.read`).
  *
@@ -120,8 +119,8 @@ function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabPr
   // turned has no entry for the new day, which this hour's clock would draw as *No hazard reports*.
   const drawnAt = heldDaily.at;
   const winters = useMemo(
-    (): Read<Winters> => wintersOf(daily, withArchived, beside ? lastWinter : null, drawnAt),
-    [daily, withArchived, lastWinter, beside, drawnAt],
+    (): Read<Winters> => wintersOf(daily, beside ? lastWinter : null, drawnAt),
+    [daily, lastWinter, beside, drawnAt],
   );
 
   const body = got.body;
@@ -202,25 +201,18 @@ function readOf<T, U>(r: Loadable<T>, map: (value: T) => U): Read<U> {
 }
 
 /**
- * The winters, once every strip's read — and the archived list its marks come from — has landed; a
- * failure in either day-by-day read fails the block. A failed archived list leaves the winter on
- * screen without marks, saying so, rather than without its strip (the list's own note says it
- * failed). Last winter beside it has no list read, so no marks.
+ * The winters, once every strip's read has landed; a failure in either fails the block. Each read
+ * carries its own first reports, so every strip — last winter's beside this one too — is marked.
  */
 export function wintersOf(
   daily: Loadable<DailyHazards>,
-  list: Loadable<readonly HazardInput[]>,
   lastWinter: Loadable<DailyHazards> | null,
   now: number,
 ): Read<Winters> {
   if (isFailed(daily) || isFailed(lastWinter)) return 'error';
-  if (daily === undefined || lastWinter === undefined || list === undefined) return undefined;
+  if (daily === undefined || lastWinter === undefined) return undefined;
   const d = daily as DailyHazards;
-  const marks = isFailed(list) ? null : (list as readonly HazardInput[]);
-  return (
-    wintersFrom(lastWinter === null ? [d] : [d, lastWinter as DailyHazards], now, [marks, null]) ??
-    undefined
-  );
+  return wintersFrom(lastWinter === null ? [d] : [d, lastWinter as DailyHazards], now) ?? undefined;
 }
 
 /** Each feature's row with its glyph, drawn from its own footprint. */

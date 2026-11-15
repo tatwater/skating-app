@@ -41,6 +41,7 @@ export function retentionFacts(r: Retention): RetentionFacts {
     favoritesCapped: r.favoritesCapped,
     savedPutIns: r.savedPutIns,
     savedPutInsCapped: r.savedPutInsCapped,
+    putInKeeps: r.putInKeeps,
   };
 }
 
@@ -49,6 +50,7 @@ const NOT_RECORDED: RetentionFacts = {
   curatedBoost: null,
   favorites: null,
   savedPutIns: null,
+  putInKeeps: null,
 };
 
 function StandingReads({ bodyId: id }: BodyTabProps) {

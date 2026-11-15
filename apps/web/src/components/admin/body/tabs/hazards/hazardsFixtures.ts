@@ -92,24 +92,29 @@ const LAST_WINTER: { m: number; d: number; active: boolean }[] = [
 const UTC_DAY = 86_400_000;
 
 /**
- * A winter's day-by-day read, built the way `bodyConsole.dailyHazards` builds it: an active hazard
- * counts from its first report through today (or the winter's end), an archived one counts on its
- * first day and is unknown after. Stories and tests only.
+ * A season's day-by-day read, built the way `bodyConsole.dailyHazards` builds it: the window is the
+ * season (1 July on), counted through the whole of the caller's UTC day. An active hazard counts
+ * from its first report through today; an archived one with a recorded end (`ended`) through its
+ * end's day; an archived one with none counts on its first day and is unknown after. Stories and
+ * tests only.
  */
 export function dailyFrom(
   season: number,
-  hazards: readonly { first: number; active: boolean }[],
+  hazards: readonly { first: number; active: boolean; ended?: number }[],
   now: number,
   extra: Partial<Pick<DailyHazards, 'capped' | 'watchOpensOn'>> = {},
 ): DailyHazards {
   const { start, days } = winterWindow(season);
-  const last = Math.min(now, start + days * UTC_DAY);
+  const last = Math.min(Math.floor(now / UTC_DAY) * UTC_DAY + UTC_DAY, start + days * UTC_DAY);
   const tally = new Map<number, { count: number; unknown: number }>();
   for (const h of hazards) {
     const firstDay = Math.floor(h.first / UTC_DAY) * UTC_DAY;
-    for (let t = Math.max(firstDay, start); t < last; t += UTC_DAY) {
+    const endDay =
+      !h.active && h.ended !== undefined ? Math.floor(h.ended / UTC_DAY) * UTC_DAY : null;
+    const through = h.active ? last : endDay === null ? last : Math.min(endDay + UTC_DAY, last);
+    for (let t = Math.max(firstDay, start); t < through; t += UTC_DAY) {
       const d = tally.get(t) ?? { count: 0, unknown: 0 };
-      if (h.active || t === firstDay) d.count++;
+      if (h.active || endDay !== null || t === firstDay) d.count++;
       else d.unknown++;
       tally.set(t, d);
     }
@@ -117,7 +122,11 @@ export function dailyFrom(
   return {
     season,
     days: [...tally].sort(([a], [b]) => a - b).map(([at, d]) => ({ at, ...d })),
-    unknownEnds: hazards.filter((h) => !h.active).length,
+    unknownEnds: hazards.filter((h) => !h.active && h.ended === undefined).length,
+    hazards: hazards.map((h) => ({
+      firstReportedDay: Math.floor(h.first / UTC_DAY) * UTC_DAY,
+      endRecorded: !h.active && h.ended !== undefined,
+    })),
     capped: extra.capped ?? false,
     watchOpensOn: extra.watchOpensOn ?? null,
   };
@@ -133,10 +142,7 @@ export const LAST_WINTER_DAILY: DailyHazards = dailyFrom(
   BODY_NOW,
 );
 
-/**
- * Last winter's hazards as `hazards.listForBody` hands them with archived — what the tab reads
- * for the winter on screen, and what its first-report marks come from.
- */
+/** Last winter's hazards as `hazards.listForBody` hands them with archived (the archived group). */
 export const LAST_WINTER_LIST: HazardInput[] = LAST_WINTER.map((h, i) => ({
   _id: `h-last-${i}`,
   type: 'pressure_ridge',
@@ -154,22 +160,14 @@ export const THIS_WINTER_DAILY: DailyHazards = dailyFrom(SEASON, [], BODY_NOW, {
   watchOpensOn: WATCH_OPENED,
 });
 
-/**
- * Last winter on its own, as a past winter is drawn when chosen: the tab reads its list, so each
- * archived hazard's first report is a mark.
- */
-export const PAST_WINTERS = wintersFrom([LAST_WINTER_DAILY], BODY_NOW, [
-  LAST_WINTER_LIST,
-]) as Winters;
+/** Last winter on its own, as a past winter is drawn when chosen: each first report a mark. */
+export const PAST_WINTERS = wintersFrom([LAST_WINTER_DAILY], BODY_NOW) as Winters;
 
-/**
- * This winter beside last winter's record, as the default board draws them: the tab reads only this
- * winter's list, so last winter's strip carries no marks and says so.
- */
-export const MASCOMA_WINTERS = wintersFrom([THIS_WINTER_DAILY, LAST_WINTER_DAILY], BODY_NOW, [
-  [],
-  null,
-]) as Winters;
+/** This winter beside last winter's record, as the default board draws them, both marked. */
+export const MASCOMA_WINTERS = wintersFrom(
+  [THIS_WINTER_DAILY, LAST_WINTER_DAILY],
+  BODY_NOW,
+) as Winters;
 
 /** 17 Feb 2026's list, for the rows (as `hazards.listForBody` hands them). */
 export const FEB_NOW = new Date(2026, 1, 17, 12, 0).getTime();

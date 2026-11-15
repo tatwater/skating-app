@@ -213,9 +213,8 @@ export function HazardsTabView({
       winters={winters}
       season={season}
       alone={listed || !current}
-      // Over a list, the list is today's word: the strip's window (from 1 October) can miss a
-      // hazard the list holds from earlier in the season, and must never read "None" beside it.
-      today={!listed}
+      // The strip and the list cover the same span (the season, through today): today's words
+      // stand over a list as beside an empty winter.
       onRetry={onRetry}
     />
   );
@@ -420,22 +419,19 @@ function QuietWinter({
 const STRIPS_ASPECT = { one: 'aspect-[340/32]', two: 'aspect-[340/62]' };
 
 /**
- * The winters' strips, the words a strip can't carry — today's count, when the record begins, an
+ * The winters' strips, the words a strip can't carry — today's count, an
  * archived hazard's missing end, a count that stopped short — and the read's own states.
  */
 function WinterBlock({
   winters,
   season,
   alone,
-  today,
   onRetry,
 }: {
   winters: Read<Winters>;
   season: Season;
   /** Draw the winter on screen only, without the one beside it. */
   alone: boolean;
-  /** Say today's count in words under the strips. */
-  today: boolean;
   onRetry: (() => void) | undefined;
 }) {
   if (winters === undefined) {
@@ -480,7 +476,7 @@ function WinterBlock({
         months={winters.months}
         days={winters.days}
       />
-      {today && first !== undefined && todayDay !== null && todayDay !== undefined && (
+      {first !== undefined && todayDay !== null && todayDay !== undefined && (
         <p data-slot="hazards-today" className="m-0 text-assist leading-(--lead-list) text-fg2">
           {HAZARDS_WORDS.todayLine(
             wordsContext({
@@ -492,11 +488,6 @@ function WinterBlock({
           )}
         </p>
       )}
-      {winters.begins !== null && first !== undefined && (
-        <p data-slot="hazards-begins" className="m-0 text-assist leading-(--lead-list) text-fg3">
-          {HAZARDS_WORDS.beginsLine(wordsContext({ season: first.season, begins: winters.begins }))}
-        </p>
-      )}
       {notes.map((n) => (
         <Note key={n.key} data-slot={n.slot}>
           {n.text}
@@ -506,19 +497,13 @@ function WinterBlock({
   );
 }
 
-/**
- * What one strip can't say in bars and marks: archived hazards with no end (and, on a strip that
- * can't mark their first reports, why), a count that stopped short.
- */
+/** What one strip can't say in bars and marks: archived hazards with no end, a short count. */
 function lineNotes(
   line: WinterLine,
   named: boolean,
 ): { key: string; slot: string; text: string }[] {
   const out: { key: string; slot: string; text: string }[] = [];
-  // The marks the strip draws: the archived list they come from may hold fewer first reports than
-  // the server counted ends, and a marked strip with none drawn is said as an unmarked one.
   const reported = line.days.reduce((n, d) => n + (d?.reported ?? 0), 0);
-  const marked = line.marked && reported > 0;
   const words = wordsContext({
     season: line.season,
     named,
@@ -529,8 +514,8 @@ function lineNotes(
   if (line.unknownEnds > 0) {
     out.push({
       key: `${line.season}.ends`,
-      slot: marked ? 'hazards-unknown-ends' : 'hazards-unmarked',
-      text: marked ? HAZARDS_WORDS.unknownEndsNote(words) : HAZARDS_WORDS.unmarkedNote(words),
+      slot: 'hazards-unknown-ends',
+      text: HAZARDS_WORDS.unknownEndsNote(words),
     });
   }
   if (line.capped) {

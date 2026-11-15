@@ -27,6 +27,7 @@ const NONE: RetentionFacts = {
   curatedBoost: undefined,
   favorites: 0,
   savedPutIns: 0,
+  putInKeeps: false,
 };
 
 describe('the activity lane agrees with the rollover rule', () => {
@@ -149,7 +150,10 @@ describe('retentionModel', () => {
       retentionModel({ ...NONE, curatedBoost: { value: -0.2, at: null } }, BODY_NOW).lanes,
     ).toEqual([]);
     expect(
-      retentionModel({ ...NONE, favorites: 1, savedPutIns: 1 }, BODY_NOW).lanes.map((l) => l.value),
+      retentionModel(
+        { ...NONE, favorites: 1, savedPutIns: 1, putInKeeps: true },
+        BODY_NOW,
+      ).lanes.map((l) => l.value),
     ).toEqual(['1 skater', '1 put-in']);
     expect(retentionModel({ ...NONE, curatedBoost: null }, BODY_NOW).notRecorded).toBe(
       'the map boost',
@@ -180,6 +184,28 @@ describe('favorites past the count', () => {
     expect(lane({ ...RETENTION_FAVORITES_FLOOR, favoritesCapped: false })).toBe('1,000 skaters');
     expect(lane({ ...MASCOMA_RETENTION, favorites: 1 })).toBe('1 skater');
     expect(FAVORITES_COUNTED).toBe(1_000);
+  });
+});
+
+describe('whether its put-ins keep it — the rollover’s own answer', () => {
+  const lanes = (facts: RetentionFacts) => retentionModel(facts, BODY_NOW).lanes.map((l) => l.key);
+
+  it('draws the put-in lane only when the rollover says its put-ins keep it, whatever the count', () => {
+    // Put-ins counted, but the rollover says they don't keep it (a hidden one, say): no lane.
+    expect(lanes({ ...NONE, savedPutIns: 3, putInKeeps: false })).toEqual([]);
+    // The rollover keeps it by its put-ins: the lane, with the count.
+    expect(lanes({ ...NONE, savedPutIns: 3, putInKeeps: true })).toEqual(['put_in']);
+    // Kept, with no count to show: the lane still stands, said plainly.
+    expect(
+      retentionModel({ ...NONE, savedPutIns: 0, putInKeeps: true }, BODY_NOW).lanes[0]?.value,
+    ).toBe('Keeps it');
+  });
+
+  it('a rollover answer nobody read is not recorded, never no', () => {
+    const model = retentionModel({ ...NONE, putInKeeps: null }, BODY_NOW);
+    expect(model.lanes).toEqual([]);
+    expect(model.notRecorded).toBe('saved put-ins');
+    expect(model.foot).toBe('');
   });
 });
 

@@ -16,6 +16,7 @@ export const MASCOMA_RETENTION: RetentionFacts = {
   curatedBoost: { value: 0.3, at: new Date(2026, 8, 19, 12, 0).getTime() },
   favorites: 9,
   savedPutIns: 3,
+  putInKeeps: true,
   lastActivity: { at: new Date(2026, 9, 10, 12, 0).getTime(), kind: 'report' },
 };
 

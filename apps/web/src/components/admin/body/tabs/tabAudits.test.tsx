@@ -301,6 +301,7 @@ const BARE: Record<string, ReactNode> = {
         curatedBoost: { value: 0.3, at: null },
         favorites: null,
         savedPutIns: null,
+        putInKeeps: null,
       }}
       now={STANDING_NOW}
       canSetStanding={false}

@@ -134,8 +134,8 @@ export const PastWinter: Story = {
 
 /**
  * As the console wires it today: the tools with no writer drawn, each saying *Not available yet*;
- * beside this winter, last winter's strip draws no first-report marks (its list isn't read) and
- * says so under the strips, its archived hazards unknown to the winter's end.
+ * beside this winter, last winter's strip marks each archived hazard's first report from its own
+ * read, under the caption, its archived hazards unknown to the season's end in words.
  */
 export const Wired: Story = {
   args: {
@@ -150,8 +150,10 @@ export const Wired: Story = {
       'true',
     );
     await expect(q.getByText(/archived reports have no recorded end/)).toBeVisible();
-    await expect(q.getByText(/that day isn’t marked for this winter/)).toBeVisible();
-    await expect(quad(canvasElement).querySelector('[data-slot="day-strip-mark"]')).toBeNull();
+    await expect(q.getByText(/Each is marked on the day it was first reported/)).toBeVisible();
+    await expect(
+      quad(canvasElement).querySelectorAll('[data-slot="day-strip-mark"]').length,
+    ).toBeGreaterThan(0);
   },
 };
 
@@ -197,10 +199,10 @@ const MARKED_WINTER = [
 ].map((h) => ({ first: FEB_START + h.day * 86_400_000, active: h.active }));
 
 /**
- * A winter's strip over its list: the two hazards still up are bars from their first report on;
- * each archived one, whose end isn't recorded, is one bright mark on the day it was first
- * reported and nothing after, under the caption that says so; the days it may still have been on
- * the lake are said in words, never drawn as a tower; and the count stopped short.
+ * A season's strip over its list, from the day-by-day read alone: the two hazards still up are bars
+ * from their first report on; each archived one, whose end isn't recorded, is one bright mark on the
+ * day it was first reported and nothing after, under the caption that says so; the days it may
+ * still have been on the lake are said in words, never drawn as a tower; the count stopped short.
  */
 export const FirstReportMarks: Story = {
   args: {
@@ -210,15 +212,6 @@ export const FirstReportMarks: Story = {
     winters: wintersFrom(
       [dailyFrom(SEASON - 1, MARKED_WINTER, FEB_NOW, { capped: true })],
       FEB_NOW,
-      [
-        MARKED_WINTER.map((h, i) => ({
-          ...(FEB_ARCHIVED[0] as (typeof FEB_ARCHIVED)[number]),
-          _id: `m${i}`,
-          firstReportedAt: h.first,
-          lastConfirmedAt: h.first,
-          status: h.active ? 'active' : 'archived',
-        })),
-      ],
     ) as NonNullable<ReturnType<typeof wintersFrom>>,
   },
   play: async ({ canvasElement }) => {
@@ -233,21 +226,28 @@ export const FirstReportMarks: Story = {
   },
 };
 
-/** Between 1 July and 1 October: this winter is honestly empty and says when its record begins. */
-export const BeforeTheRecord: Story = {
+/** Between 1 July and 1 October: a new season is an honestly empty record from 1 July to today. */
+export const EarlySeason: Story = {
   args: {
     watchOpenedAt: null,
     winters: wintersFrom(
       [
-        { season: SEASON, days: [], unknownEnds: 0, capped: false, watchOpensOn: null },
+        {
+          season: SEASON,
+          days: [],
+          unknownEnds: 0,
+          hazards: [],
+          capped: false,
+          watchOpensOn: null,
+        },
         LAST_WINTER_DAILY,
       ],
       new Date(2026, 7, 20, 12, 0).getTime(),
     ) as NonNullable<ReturnType<typeof wintersFrom>>,
   },
   play: async ({ canvasElement }) => {
-    await expect(
-      within(quad(canvasElement)).getByText('The record for 2026–27 begins 1 Oct 2026.'),
-    ).toBeVisible();
+    const q = within(quad(canvasElement));
+    await expect(q.getByText('Today: No hazard reports')).toBeVisible();
+    await expect(q.queryByText(/The record for 2026–27 begins/)).toBeNull();
   },
 };
