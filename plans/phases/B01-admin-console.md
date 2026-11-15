@@ -1736,8 +1736,10 @@ nested transaction under limits of its own, the walk asking the transaction's re
 item, `jobFailures` for work with no row of its own, `jobPositions` for a walk that laps its table) and
 `lib/attempts`, the rule the erasure already used. `recurringJobs.health` (`machinery.read`) is the one
 read Machinery will draw: per job, failing and parked counts, the oldest parked time and oldest
-failure, and the error classes — counts only, every count capped and saying so; the account deletions
-and expired exports show how much is overdue instead.
+failure, and the error classes — counts only, from small rows only (`jobFailures`, where the
+queue-shaped jobs mirror the state they keep on their own rows, and where the finalize sweep counts an
+account more than a day past its date and the export sweep a bundle whose blob would not delete),
+every count capped and saying so.
 
 **Where the audit's list was wrong or short:**
 - *Sweep orphan photos* was worse than stuck: its read of 500 photos at up to a document each (the
@@ -1792,7 +1794,37 @@ heavy one for few, and the item runs under those limits.
 | `gpsActivities.sweepUnpromptedActivities` | a skater 8 MiB · 3,000 · 300 · 300 | 1 MiB, plus 1 MiB per due row read | twelve skaters and recordings near the limit: each is asked |
 | `waterBodies.refreshDueBodySummaries` | a card 8 MiB · 2,000 · 100 · 50 | 1 MiB | cards with four Reports near the limit each: several batches, every card refreshed |
 | `recurringJobs.retryParkedDaily` | 8 MiB · 3,000 · 300 · 300 | 1 MiB | (covered by the three properties' retries) |
-| `recurringJobs.health` | heavy rows (queue, recordings, profiles, exports) to ten each, only while affordable at a document each; small rows to 200 | 3 MiB | fourteen parked rows near the limit: ten counted, capped |
+| `recurringJobs.health` | small rows only: `jobFailures`, to 200 a job | — | fourteen parked queue rows near the limit: counted from their mirrors |
+| `standing.demoteInactiveBodies` | a body 8 MiB · 2,000 · 200 · 500 | 1 MiB | twelve outlines near the limit: pages sized from them, every body decided |
+
+**First read and fallback, worst case — and a fallback never repeats the read that failed** (Greptile
+#116). Every walk with a "page failed" path, what its first read can weigh, and what its fallback reads:
+
+| Walk | First read, worst case | Fallback, worst case | Every-document-at-the-limit test |
+| --- | --- | --- | --- |
+| rollover | a page sized from the heaviest outline: each body charged at 1 MiB (`lib/readBudget`), one body's decision (9 MiB) kept back — at most three bodies; each body then decided in its own nested transaction under 8 MiB | the same page at half its size, from the same position, down to one body; one body that still fails is read alone (1 MiB, always fits), recorded and passed | twelve heavy outlines: reaches its end |
+| registry reconcile | a page of bodies (and of bays) read by `maximumBytesRead` 6 MiB — at most 6 MiB and one document past it | the page's writes a row at a time (each one small registry row); the page is never re-read | twelve heavy outlines: every body registered |
+| archive gaps | a page of registered cells by `maximumBytesRead` 6 MiB; each cell its own item | none — a cell that fails is recorded and the walk goes on | forty heavy cells: reaches its end |
+| orphan photos | one photo a step (`first()`, at most 1 MiB), each examined in its own nested transaction under 2 MiB | none — a photo that fails is recorded and the lap goes on | thirty photos with captions near the limit: the lap ends |
+| flush notification queue | a batch read by `maximumBytesRead` 2 MiB (at most 250 rows) under the batch's 8 MiB | one row at a time (`first()`, at most 1 MiB), each under 3 MiB — a smaller read than the batch, never the batch again | forty queue rows near the limit: every row lands |
+| prompt sweep | one due row at a time (`first()`, at most 1 MiB) while a skater's prompt still fits | none — a skater that fails is recorded on their rows | twelve heavy recordings and recipients: each asked |
+| card sweep | one refresh row at a time (small), each card in its own nested transaction under 8 MiB | none — a card that fails is recorded on its row | cards with heavy Reports: every card refreshed |
+
+**A dry run writes nothing** (Greptile #116). The only dry mode among these jobs is the rollover's
+(`apply` false). It now records no failure and clears none — a failure is cleared only by an applied
+decision — and the purity property found one more write: the dry run's success scheduled a weather
+registry reconcile (`importRuns.finish` fires one for `standing_rollover`); `finish` now takes
+`applied: false` and schedules nothing. The property: over any corpus, any bodies whose decision
+throws, any pages that shrink to the single-body path, and any failures already recorded (parked or
+mid-retry), every table is unchanged but for the dry run's own `-dry` run row — kept, since it is how
+a dry run's counts are read — and nothing is scheduled.
+
+**The freshness rule, by construction** (Greptile #116): a notification row's due clock (`firstDueAt`)
+is written with the row and nothing moves it; a new event joins only a row that is unparked and still
+settling, otherwise it starts a row of its own; a row written before D258 is read by its earliest clock
+(`createdAt` for an actor row, `flushAfter` for a report notice), never as fresh. The actor path's old
+"a due row takes the incoming deadline" branch was the moving deadline, and is gone: a re-thumb after a
+row fell due is its own notification.
 
 **Owed, with the reason:**
 - *Pump live satellite imagery*: a Machine that stays live keeps its granule in flight and one of a
@@ -1811,8 +1843,7 @@ heavy one for few, and the item runs under those limits.
 - *The orphan walk owes every in-use photo with no back-link every lap* (hazard photos, pre-A10 Report
   photos): the settlement then reads that uploader's history once a day. Correct and bounded; a cost
   that grows with hazard photos.
-- *Found in review and left:* the Machinery read counts prompts and cards only once parked (their
-  failing-but-not-parked rows would need an index of their own, as the queue's `by_attempts` is); a
+- *Found in review and left:* a
   hazard-weather or weather-gap failure whose work goes away (the hazard resolves, the cell leaves the
   registry) keeps its row until cleared by hand — neither walk has a complete pass that proves the work
   gone, as the orphan lap's end and the registry's complete walk do; four indexes the new ones replace
@@ -1820,6 +1851,11 @@ heavy one for few, and the item runs under those limits.
   `gpsActivities.by_prompt_state_detected`) are unread now and wait for the narrow step after deploy;
   the orphan walk reads each photo's failure row to clear it (a query a photo); and the position walk
   (same value and a later creation time, then a greater value) is written in four places.
+- *The rollover's pages are small*: sized from a heavy outline with one decision kept back, a page
+  holds at most three bodies, so a season's pass is several thousand page calls (once a year).
+- *The mirrors* (`jobFailures` rows for the queue-shaped jobs) can briefly outlive a row erased some
+  other way (an account's erasure, the season purge) until a retry's background check forgets it, a few
+  a run.
 - *A registry walk with a row that always fails* never prunes or completes until it heals: the
   registry keeps vacated cells (a few Open-Meteo calls), and the import debounce sees an hour-old
   in-flight claim as dead and walks again.

@@ -8000,10 +8000,18 @@ parked row out (the notification queue, the recorder's activities, the map-card 
 without one keeps it in `jobFailures`. A walk that laps a table keeps its place in `jobPositions`, so an
 item that keeps failing, or keeps being kept, takes only its own turn.
 
-- **A notification is sent only fresh: within twelve hours of when it first fell due.** Past that it is
-  expired — deleted, counted, never delivered — whether it was parked, retried or simply left behind
-  by a flush that was down. A parked notification is retried hourly, not daily, so a fault fixed within
-  the morning still delivers; a new event never coalesces into a parked row.
+- **A notification is sent only fresh: within twelve hours of when its row first fell due.** Past that
+  it is expired — deleted, counted, never delivered — whether it was parked, retried or simply left
+  behind by a flush that was down. The row's due clock is set once, when the row is written, and
+  nothing moves it; a new event joins only a row that is unparked and still settling, otherwise it
+  starts a row of its own, so an old row never makes a fresh event expire and a fresh event never makes
+  an old row look fresh. A row from before this rule is read by its earliest clock, never as fresh. A
+  parked notification is retried hourly, not daily, so a fault fixed within the morning still delivers.
+- **A dry run writes nothing.** A failure is recorded or cleared only by a run that applies its
+  decisions; a dry rollover's only write is its own run row, and it schedules nothing.
+- **A fallback never repeats the read that failed.** A page is sized from its worst-case row in the
+  first place (or bounded by weight); a page that still fails is retried smaller from the same place,
+  down to one document, which always fits.
 - **The orphan-photo walk owes; the photo settlement decides.** "Is this photo still shown anywhere"
   has one complete check — the settlement's (D248) — and the walk passes only what that check would
   keep without reading anyone's history (a Report's back-link, an access point).
