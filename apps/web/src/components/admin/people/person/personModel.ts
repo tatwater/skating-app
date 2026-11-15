@@ -444,9 +444,12 @@ export function weekBars(stats: StaffStatsRead, now: number): WeekBar[] {
     const end = last ? Math.min(w.from + 7 * DAY, now) - 1 : w.from + 7 * DAY - 1;
     const from = utcDayWords(w.from);
     const to = utcDayWords(end);
+    const sameMonth = new Date(w.from).getUTCMonth() === new Date(end).getUTCMonth();
     return {
       key: String(w.from),
-      title: from === to ? from : `${from}–${to}`,
+      // "13–19 Aug" within a month, "28 Sep–4 Oct" across one (the board's "12–14 Oct").
+      title:
+        from === to ? from : sameMonth ? `${new Date(w.from).getUTCDate()}–${to}` : `${from}–${to}`,
       count: w.count,
       capped: w.capped,
     };
