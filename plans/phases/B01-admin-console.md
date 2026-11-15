@@ -2930,6 +2930,12 @@ Imagery/Hazards/Standing/Links), cherry-picked serially onto `b01-3` off the kit
       whose archived list failed) draws no marks and says so; with `reported`, every winter is
       marked from its one day-by-day read. (BS15's deferred honest end — the hazard writers stamping
       when a hazard left the lake — then turns an archived hazard's mark into bars for its span.)
+      It also closes a gap the reviews found: the archived list leaves out a crossing past its
+      window, which the day-by-day count still holds, so today a strip can mark fewer archived
+      hazards than it counts (the note then says how many are marked).
+  15. **`hazards.listForBody` and `bodyConsole.dailyHazards` agreeing on an expired crossing** — the
+      list drops an active crossing past its window and the day-by-day count keeps it, so a quiet
+      winter's *No hazard reports yet* can sit beside a strip and a *Today* line that count one.
 - **Where the mock and the code differ** (each a founder call; the code stands until ruled):
   the list's state tabs carry no counts (the board's do), completeness is out of ten (the boards'
   twelve), and the ask kicker is *Bay name · Inbox* (the board's raw `name_bay`); the frame's
@@ -2971,7 +2977,8 @@ Imagery/Hazards/Standing/Links), cherry-picked serially onto `b01-3` off the kit
   reported. How long it stayed on the lake isn't recorded; the days after it are not a reading of
   the ice.*; *N archived reports have no recorded end. Each is marked on the day it was first
   reported; from then on, every day counts them as unknown: each hazard may still have been on
-  the lake.*, and on a strip without marks *… Each is counted on the day it was first reported,
+  the lake.* (or, when the list holds fewer than the count, *M are marked on the day first
+  reported, and the rest counted that day without a mark*), and on a strip without marks *… Each is counted on the day it was first reported,
   but that day isn't marked for this winter; …*; *The count stopped short of every hazard
   reported; each day is at least what it shows*, *No reports counted; the count stopped short*,
   *The record for … begins …*, *Archived this winter*, *Gone votes* and the counted, attributed
@@ -3004,6 +3011,19 @@ Imagery/Hazards/Standing/Links), cherry-picked serially onto `b01-3` off the kit
   regions, *Trying again…*, focus kept), and *Trying again…* on the tabs-b views' notes
   (Imagery's archive holds its own wait, since the registry keeps none for a reader outside
   Convex).
+- **Left by the three PRs' reviews** (each a call or a follow-up, none blocking):
+  - the map pans only within three times the body's box, which keeps the min zoom out of reach on
+    a wide pane; widening the fence changes "pans only within the body's reach" (founder call);
+  - a depth stored without a source is not drawn in Water's table, whose rows need a source; focus
+    does not return to the landmark row when the inset card closes (it would steal focus from a
+    click in the left column);
+  - archived rows' *last seen* is in the reader's zone while the strip's days are UTC; *since the
+    watch opened* scopes an archived count that runs from 1 July; Imagery builds its timeline three
+    times; an unmeasured kit `Meter` drops its passed props; the pass pager's ← → hints work only
+    from the dock's slider; a dragged staff link snaps back until its save lands;
+  - in the list: the survivor redirect (a merged body's id swapped for its survivor) moves the
+    search's place and drops typing in progress; a heading sorted while a search waits is
+    re-ranked by match when the search lands.
 - **The map contract settled before any tab landed.** Adopted from the tab builders: a `proposal`
   mark; `approach` and `dimension` lines and a `measure` label (a dimension is drawn in pixels with
   fixed ticks); a footprint's `field` — the hazard dot field, dimmed by freshness and a step further
