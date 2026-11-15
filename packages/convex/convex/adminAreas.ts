@@ -122,16 +122,19 @@ async function deleteAreaOutline(ctx: MutationCtx, adminAreaId: Id<'adminAreas'>
   if (existing !== null) await ctx.db.delete(existing._id);
 }
 
-/** Boundaries one outline backfill page reads — each is its polygon, so few. */
+/** Boundaries one outline backfill page reads at most — each is its polygon, so few. */
 const OUTLINE_PAGE = 25;
-/** Read budget an outline page keeps back before reading another boundary. */
-const OUTLINE_BYTES_RESERVE = 4 * 1024 * 1024;
+/**
+ * The page's read by weight: the read itself stops here, so a page of state and county polygons (each
+ * up to a whole document) ends early rather than reading past the transaction's limit.
+ */
+const OUTLINE_PAGE_BYTES = 8 * 1024 * 1024;
 
 /**
  * **Write the outlines of the boundaries imported before they had one** (B01-3c), a page at a time
- * from `cursor`, chaining to the end. Idempotent (an unchanged outline writes nothing), so a page
- * that runs low on read budget stops before its next boundary and is re-run from the same cursor at
- * half the size — a boundary is at most one document, so a page of one always fits.
+ * from `cursor`, chaining to the end. Idempotent (an unchanged outline writes nothing). The page is
+ * bounded by weight as well as count (`maximumBytesRead`), so a run of heavy boundaries makes a
+ * shorter page and the chain goes on from where it stopped — nothing is read twice.
  */
 export const backfillOutlines = internalMutation({
   args: { cursor: v.optional(v.string()), pageSize: v.optional(v.number()) },
@@ -140,19 +143,13 @@ export const backfillOutlines = internalMutation({
       pageSize !== undefined && Number.isFinite(pageSize)
         ? Math.min(OUTLINE_PAGE, Math.max(1, Math.floor(pageSize)))
         : OUTLINE_PAGE;
-    const page = await ctx.db
-      .query('adminAreas')
-      .paginate({ cursor: cursor ?? null, numItems: size });
+    const page = await ctx.db.query('adminAreas').paginate({
+      cursor: cursor ?? null,
+      numItems: size,
+      maximumBytesRead: OUTLINE_PAGE_BYTES,
+    });
     let written = 0;
     for (const area of page.page) {
-      const m = await ctx.meta.getTransactionMetrics();
-      if (written > 0 && m.bytesRead.remaining < OUTLINE_BYTES_RESERVE) {
-        await ctx.scheduler.runAfter(0, internal.adminAreas.backfillOutlines, {
-          ...(cursor !== undefined ? { cursor } : {}),
-          pageSize: Math.max(1, Math.floor(size / 2)),
-        });
-        return { written, isDone: false };
-      }
       await writeAreaOutline(ctx, area._id, area.polygon);
       written++;
     }

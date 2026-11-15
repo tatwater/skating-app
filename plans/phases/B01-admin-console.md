@@ -2474,11 +2474,13 @@ their own PR (they would have taken this one past its size, and two need a call;
   order, each with what became of it — `ok`, `merged` (the survivor's row), `unlisted`, `unknown` —
   and how many were dropped. A row is one indexed read; only an id with no row reads its body.
 - **A removed or rejected body's facts** (`bodyConsole.removedFacts`, `body.read`): stored name,
-  class, states and area, standing, when it left, why and who decided (its newest `remove` or
-  `reject_waterbody` row), towns, and a report count floor (200).
-- **The preview's asks** gain `askers` (distinct people with the same question open, to 50) and the
-  body's `intake` reasons, worst first, each with what is stored beside it (a duplicate's candidate
-  count, a conflict's corroboration level).
+  class, states and area, standing, when it left, why and who decided (the row its standing names:
+  the newest `remove` for a removed body, the newest `reject_waterbody` for a rejected one), towns,
+  and a report count floor (200).
+- **The preview's asks** gain `askers` (distinct people with the same question open, to 50 — the
+  asks one decision closes, `openSiblings`' rule: for a bay the same name key, for a landmark the
+  same place, as the inbox counts them) and the body's `intake` reasons, worst first, each with what
+  is stored beside it (a duplicate's candidate count, a conflict's corroboration level).
 - **Towns with their state**: the facts store each town's state and boundary (`townStates`,
   `townIds`); the preview gains `townState` and `moreTownsWithState`, the frame and Places
   `townsWithState`. **The recompute:** a row computed before is *behind* for the drift repair, so it
@@ -2504,8 +2506,10 @@ their own PR (they would have taken this one past its size, and two need a call;
   People history should use `auditTargetLabels`.
 - **The geometry walks survive a bad row**: a drift check that throws is recorded (`geoDrift`), its
   body marked for recompute and its row moved to the back; a missing-row probe that throws is
-  recorded (`geoMissing`) and passed. The computation's attempt state is mirrored into `jobFailures`
-  (`bodyGeo`), so `recurringJobs.health` counts geometry failures from small rows.
+  recorded (`geoMissing`) and passed. Each clears when its item next goes through, and a body gone
+  takes all three with its facts (no walk visits it again). The computation's attempt state is
+  mirrored into `jobFailures` (`bodyGeo`), so `recurringJobs.health` counts geometry failures from
+  small rows.
 - **Exactly at the cap** (a quick audit): accounts total, the gate scatter, the contributor trend, a
   body's recurrence denominators and a bay's mouth line read one past their caps now. Loops that
   only decide whether to run another pass (`=== PAGE`, then continue) are left: an extra empty pass,

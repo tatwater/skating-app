@@ -61,14 +61,38 @@ async function main(): Promise<void> {
   const allowEmpty = args.includes('--allow-empty');
   const campaignId = args.find((a) => a.startsWith('--campaign='))?.slice('--campaign='.length);
   // What this run searched, for the Water tab's *Searched* (B01-3c): `--searched=NAME:VT,NH`, once
-  // per contour dataset the tileset was built from.
-  const searched = args
-    .filter((a) => a.startsWith('--searched='))
-    .map((a) => {
-      const value = a.slice('--searched='.length);
-      const at = value.lastIndexOf(':');
-      return { label: value.slice(0, at), states: value.slice(at + 1).split(',') };
-    });
+  // per contour dataset the tileset was built from. Checked here, before anything is read or
+  // written (a dry run included): a malformed one refuses the run rather than failing its first
+  // batch on the server, where the loader would report a partial replacement that never happened.
+  const searchedArgs = args.filter((a) => a.startsWith('--searched='));
+  const searched = searchedArgs.map((a) => {
+    const value = a.slice('--searched='.length);
+    const at = value.lastIndexOf(':');
+    const label = at < 0 ? '' : value.slice(0, at).trim();
+    const states =
+      at < 0
+        ? []
+        : value
+            .slice(at + 1)
+            .split(',')
+            .map((s) => s.trim());
+    return { label, states };
+  });
+  const malformed = searchedArgs.filter((_, i) => {
+    const s = searched[i];
+    return (
+      s === undefined ||
+      s.label === '' ||
+      s.states.length === 0 ||
+      s.states.some((c) => !/^[A-Za-z]{2}$/.test(c))
+    );
+  });
+  if (malformed.length > 0) {
+    process.stderr.write(
+      `[coverage] refusing: ${malformed.join(' ')} — each --searched is NAME:ST[,ST…] with two-letter state codes.\n`,
+    );
+    process.exit(1);
+  }
 
   if (!existsSync(CONTOURS_FILE)) {
     process.stderr.write(
