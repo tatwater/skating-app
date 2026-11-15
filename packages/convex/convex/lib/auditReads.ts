@@ -55,13 +55,16 @@ export async function auditTargetLabels(
   ctx: QueryCtx,
   rows: readonly { targetType: ModerationTargetType; targetId: string }[],
 ): Promise<Map<string, string | null>> {
-  const out = new Map<string, string | null>();
-  for (const row of rows) {
-    const key = targetKey(row);
-    if (out.has(key)) continue;
-    out.set(key, await auditTargetLabel(ctx, row.targetType, row.targetId));
-  }
-  return out;
+  // One read per distinct target, all at once (B01-3h): a page of 100 targets is one round, not 100.
+  const distinct = new Map<string, { targetType: ModerationTargetType; targetId: string }>();
+  for (const row of rows) distinct.set(targetKey(row), row);
+  const labels = await Promise.all(
+    [...distinct].map(
+      async ([key, row]) =>
+        [key, await auditTargetLabel(ctx, row.targetType, row.targetId)] as const,
+    ),
+  );
+  return new Map(labels);
 }
 
 /** The key {@link auditTargetLabels} files a target under. */

@@ -17,13 +17,6 @@ export const UNDO_CHECKED_ELSEWHERE =
   'This page has too much to check this undo here — open what it changed to undo it.';
 
 const SEEN = new WeakMap<object, Map<string, Promise<unknown>>>();
-/**
- * The request's last refusal read. `measured` asks whether a worst case fits *before* its read and
- * charges the real weight only *after* it, so reads in flight together (`moderation.listActions`
- * shapes its lines with `Promise.all`) would each see the budget untouched and could, between them,
- * read past the transaction's limit. Each read waits for the one before it to be charged.
- */
-const TAIL = new WeakMap<object, Promise<unknown>>();
 
 /**
  * One row for an undo's refusal: the document, `null` when it is gone, or `undefined` when the
@@ -38,14 +31,9 @@ export async function undoRead<T extends TableNames>(
   const seen = isQuery ? (SEEN.get(ctx) ?? new Map<string, Promise<unknown>>()) : null;
   const known = seen?.get(id);
   if (known) return known as Promise<Doc<T> | null | undefined>;
-  const read = (TAIL.get(ctx) ?? Promise.resolve()).then(() =>
-    requestBudget(ctx).measured(kind, () => ctx.db.get(id) as Promise<Doc<T> | null>),
-  );
-  // A failed read must not stall the reads queued behind it; its own caller still sees the failure.
-  TAIL.set(
-    ctx,
-    read.catch(() => undefined),
-  );
+  // `measured` reserves the worst case before it reads, so reads of a page's rows in flight together
+  // share the budget exactly — no queue between them (B01-3h).
+  const read = requestBudget(ctx).measured(kind, () => ctx.db.get(id) as Promise<Doc<T> | null>);
   if (seen) {
     seen.set(id, read);
     SEEN.set(ctx, seen);

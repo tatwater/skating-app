@@ -17,7 +17,7 @@ import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
-import { writeAudit } from './lib/audit';
+import { type ModerationAction, type ModerationTargetType, writeAudit } from './lib/audit';
 import { auditRowsOn, auditTargetLabels, targetKey } from './lib/auditReads';
 import { requireCapability } from './lib/auth';
 import {
@@ -1379,11 +1379,13 @@ async function toActionView(
     actor = loadQueueUser(ctx, a.actorId);
     shared.actors.set(actorKey, actor);
   }
+  // The row's actor and undo state at once (B01-3h): no read of one line waits on another's.
+  const [undo, who] = await Promise.all([undoState(ctx, viewer, a), actor]);
   return {
     ...(targetLabel !== null ? { targetLabel } : {}),
     ...(a.undoesActionId !== undefined ? { undoesActionId: a.undoesActionId } : {}),
     ...(a.via !== undefined ? { via: a.via } : {}),
-    undo: await undoState(ctx, viewer, a),
+    undo,
     id: a._id,
     action: a.action,
     targetType: a.targetType,
@@ -1391,7 +1393,7 @@ async function toActionView(
     reason: a.reason,
     ...(a.metadata !== undefined ? { metadata: a.metadata } : {}),
     createdAt: a.createdAt,
-    actor: await actor,
+    actor: who,
   };
 }
 
@@ -1408,8 +1410,23 @@ export const listActions = query({
     action: v.optional(literals(MODERATION_ACTIONS)),
     limit: v.optional(v.number()),
   },
-  handler: async (ctx, args): Promise<ActionView[]> => {
-    const viewer = await requireCapability(ctx, 'audit.read');
+  handler: async (ctx, args): Promise<ActionView[]> =>
+    listActionsPage(ctx, await requireCapability(ctx, 'audit.read'), args),
+});
+
+/** `listActions`' body, for a viewer already let in. */
+export async function listActionsPage(
+  ctx: QueryCtx,
+  viewer: Doc<'profiles'>,
+  args: {
+    targetType?: ModerationTargetType;
+    targetId?: string;
+    actorId?: Id<'profiles'>;
+    action?: ModerationAction;
+    limit?: number;
+  },
+): Promise<ActionView[]> {
+  {
     const limit = Math.min(args.limit ?? QUEUE_LIMIT, QUEUE_LIMIT);
 
     const { targetType, targetId, actorId, action } = args;
@@ -1446,8 +1463,8 @@ export const listActions = query({
     // row's undo state (a few indexed reads) — a full page of 100 stays well inside 4,096 calls.
     const shared = { labels: await auditTargetLabels(ctx, visible), actors: new Map() };
     return Promise.all(visible.map((a) => toActionView(ctx, viewer, a, shared)));
-  },
-});
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // User-lifecycle + posting-permission mutations (Phase 07 write side). All moderator-level per the

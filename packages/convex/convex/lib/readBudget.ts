@@ -201,15 +201,36 @@ export class ReadBudget {
    * case below the document limit (an audit row's reason is uncapped) but which really weighs little,
    * read once per item in a loop. Returns `undefined`, reading nothing, when the worst case doesn't
    * fit: the caller stops there and says its answer is capped.
+   *
+   * **The worst case is reserved before the read starts and the difference handed back after it**
+   * (B01-3h), so reads in flight together each see the others' reservations: the accounting is exact
+   * when a page runs its rows concurrently. A read that can't be reserved while others are in flight
+   * waits for their hand-backs rather than giving up — a light row hands back nearly all of its
+   * reservation — and gives up only when nothing is in flight to hand anything back.
    */
   async measured<T>(kind: RowKind, read: () => Promise<T>): Promise<T | undefined> {
-    if (!this.affordsRead(kind)) return undefined;
+    while (!this.affordsRead(kind)) {
+      if (this.inFlight === 0) return undefined;
+      await new Promise<void>((resolve) => this.handBacks.push(resolve));
+    }
     this.call(1);
-    const row = await read();
-    const size = row === null || row === undefined ? 0 : getDocumentSize(row as never);
-    this.left -= Math.min(size, ROW_MAX[kind]);
-    return row;
+    this.left -= ROW_MAX[kind];
+    this.inFlight++;
+    let size = ROW_MAX[kind];
+    try {
+      const row = await read();
+      size = row === null || row === undefined ? 0 : getDocumentSize(row as never);
+      return row;
+    } finally {
+      this.left += ROW_MAX[kind] - Math.min(size, ROW_MAX[kind]);
+      this.inFlight--;
+      for (const wake of this.handBacks.splice(0)) wake();
+    }
   }
+
+  /** `measured` reads in flight, and the reads waiting for one of them to hand budget back. */
+  private inFlight = 0;
+  private handBacks: (() => void)[] = [];
 
   /**
    * A read under its own real-weight cap (a `paginate` with `maximumBytesRead: bytes`, at most `rows`

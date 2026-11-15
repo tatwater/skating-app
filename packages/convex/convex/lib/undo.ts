@@ -73,10 +73,41 @@ export async function undoRowOf(
   );
 }
 
+const NEWEST = new WeakMap<object, Map<string, Promise<Doc<'moderationActions'> | null>>>();
+
 /**
- * Whether `row` can be undone by `viewer`, and if not, why. Bounded: two index reads (one of at most
- * {@link UNDO_TAG_READ} rows), one `get` of an item an author could have deleted, and the handful of
- * rows a verb's `refusal` reads (`lib/undoReads`).
+ * The newest audit row on a target — read once a query however many History lines ask (a mutation
+ * reads afresh: its own writes move it).
+ */
+function newestOnTarget(
+  ctx: QueryCtx | MutationCtx,
+  targetType: Doc<'moderationActions'>['targetType'],
+  targetId: string,
+): Promise<Doc<'moderationActions'> | null> {
+  const read = () =>
+    ctx.db
+      .query('moderationActions')
+      .withIndex('by_target', (q) => q.eq('targetType', targetType).eq('targetId', targetId))
+      .order('desc')
+      .first();
+  if ('insert' in ctx.db) return read();
+  const seen = NEWEST.get(ctx) ?? new Map<string, Promise<Doc<'moderationActions'> | null>>();
+  NEWEST.set(ctx, seen);
+  const key = `${targetType}\u0001${targetId}`;
+  let found = seen.get(key);
+  if (found === undefined) {
+    found = read();
+    seen.set(key, found);
+  }
+  return found;
+}
+
+/**
+ * Whether `row` can be undone by `viewer`, and if not, why. Bounded: two index reads at once (one of
+ * at most {@link UNDO_TAG_READ} rows; the target's newest, once a query), one `get` of an item an
+ * author could have deleted, and the handful of rows a verb's `refusal` reads (`lib/undoReads`) —
+ * about three rounds. **Made to be called for a page's rows concurrently** (B01-3h): nothing in it
+ * waits on another line, and the refusal reads reserve their budget before they start.
  */
 export async function undoState(
   ctx: QueryCtx | MutationCtx,
@@ -94,14 +125,12 @@ export async function undoState(
   const handler = handlerFor(row);
   if (!handler) return { state: 'unavailable', why: 'Undo for this is not built yet.' };
 
-  const undoneBy = await undoRowOf(ctx, row);
+  // Both reads at once, and a target's newest row once a query, however many lines share it (B01-3h).
+  const [undoneBy, newest] = await Promise.all([
+    undoRowOf(ctx, row),
+    newestOnTarget(ctx, row.targetType, row.targetId),
+  ]);
   if (undoneBy) return { state: 'undone', byActionId: undoneBy._id };
-
-  const newest = await ctx.db
-    .query('moderationActions')
-    .withIndex('by_target', (q) => q.eq('targetType', row.targetType).eq('targetId', row.targetId))
-    .order('desc')
-    .first();
   if (newest && newest._id !== row._id && newest._creationTime > row._creationTime) {
     return { state: 'overtaken', byActionId: newest._id };
   }
