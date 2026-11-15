@@ -337,6 +337,22 @@ describe('a neighbor’s outline', () => {
 });
 
 describe('the drift repair', () => {
+  test('a row computed before towns carried their states is behind (B01-3c)', async () => {
+    const t = harness();
+    const id = await seedBody(t, 'Old Towns', -72);
+    await drain(t);
+    await t.run(async (ctx) => {
+      const row = await ctx.db
+        .query('bodyGeoFacts')
+        .withIndex('by_body', (q) => q.eq('waterBodyId', id))
+        .first();
+      if (row) await ctx.db.patch(row._id, { towns: ['Somewhere'], townStates: undefined });
+    });
+    vi.setSystemTime(NOW + 1_000);
+    expect(await t.mutation(internal.bodyGeo.repairDrift, {})).toMatchObject({ marked: 1 });
+    expect((await facts(t, id))?.staleAt).toBe(NOW + 1_000);
+  });
+
   test('finds an outline changed with no mark, a stale held copy, a newer places layer, a missing row', async () => {
     const t = harness();
     const a = await seedBody(t, 'A', -72);

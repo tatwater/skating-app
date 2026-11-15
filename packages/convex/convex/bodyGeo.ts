@@ -181,9 +181,11 @@ export function placesFrom(
     perPoint: { town: string[]; county: string[] }[];
     areas: { id: string; name: string; state: string; bbox: Box; polygon: unknown }[];
   },
-): { towns: string[]; counties: string[]; states: string[] } {
+): { towns: string[]; townStates: string[]; counties: string[]; states: string[] } {
   const byId = new Map(found.areas.map((a) => [a.id, a]));
   const towns: string[] = [];
+  // Each town's state, in the same order (B01-3c): a border lake's towns are in two states.
+  const townStates: string[] = [];
   const counties: string[] = [];
   const states = new Set<string>();
   points.forEach((point, i) => {
@@ -206,11 +208,14 @@ export function placesFrom(
         );
       if (hit === undefined) continue;
       const list = level === 'town' ? towns : counties;
-      if (!list.includes(hit.name)) list.push(hit.name);
+      if (!list.includes(hit.name)) {
+        list.push(hit.name);
+        if (level === 'town') townStates.push(hit.state);
+      }
       states.add(hit.state);
     }
   });
-  return { towns, counties, states: [...states] };
+  return { towns, townStates, counties, states: [...states] };
 }
 
 // ── The write ────────────────────────────────────────────────────────────────────────────────
@@ -323,6 +328,8 @@ export const store = internalMutation({
     neighbors: v.array(neighborV),
     neighborsCapped: v.boolean(),
     towns: v.array(v.string()),
+    /** Each town's state, in `towns`' order. */
+    townStates: v.optional(v.array(v.string())),
     counties: v.array(v.string()),
     states: v.array(v.string()),
     /** The places-layer mark the places were computed under (`inputs.areasAt`). */
@@ -373,6 +380,7 @@ export const store = internalMutation({
       neighbors: args.neighbors,
       neighborsCapped: args.neighborsCapped,
       towns: args.towns,
+      townStates: args.townStates ?? [],
       counties: args.counties,
       states: args.states,
       ...clear,
@@ -700,6 +708,8 @@ async function isBehind(
   if (!body || body.dedupStatus === 'merged') return true;
   if (outlineStamp(body) !== row.stamp) return true;
   if ((row.areasAt ?? 0) < areasAt) return true;
+  // Computed before towns carried their states (B01-3c): behind, so the drift fills them in.
+  if ((row.towns ?? []).length > 0 && row.townStates === undefined) return true;
   const links = await ctx.db
     .query('bodyGeoLinks')
     .withIndex('by_holder', (q) => q.eq('waterBodyId', row.waterBodyId))

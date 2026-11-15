@@ -4899,6 +4899,8 @@ export default defineSchema({
     /** More candidates than were tested, or the box past its tile bound. */
     neighborsCapped: v.optional(v.boolean()),
     towns: v.optional(v.array(v.string())),
+    /** Each town's state, in `towns`' order (B01-3c); absent on a row computed before it existed. */
+    townStates: v.optional(v.array(v.string())),
     counties: v.optional(v.array(v.string())),
     states: v.optional(v.array(v.string())),
     attempts: v.optional(v.number()),

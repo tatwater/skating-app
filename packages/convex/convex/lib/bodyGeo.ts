@@ -199,3 +199,15 @@ export async function geoFactsOf(
     .first();
   return row !== null && row.computedAt !== undefined ? row : null;
 }
+
+/**
+ * A body's towns with each one's state (B01-3c) — `state: null` on a row computed before towns
+ * carried their states (the drift repair recomputes those); `null` when nothing was computed. One
+ * rule for the preview, the frame and Places.
+ */
+export function townsWithStateOf(
+  geo: Pick<Doc<'bodyGeoFacts'>, 'towns' | 'townStates'> | null,
+): { name: string; state: string | null }[] | null {
+  if (geo === null) return null;
+  return (geo.towns ?? []).map((name, i) => ({ name, state: geo.townStates?.[i] ?? null }));
+}

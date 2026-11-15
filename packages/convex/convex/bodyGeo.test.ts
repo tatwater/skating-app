@@ -189,7 +189,12 @@ describe('pure helpers', () => {
         ],
       },
     );
-    expect(out).toEqual({ towns: ['Enfield'], counties: ['Grafton'], states: ['NH'] });
+    expect(out).toEqual({
+      towns: ['Enfield'],
+      townStates: ['NH'],
+      counties: ['Grafton'],
+      states: ['NH'],
+    });
   });
 });
 
@@ -377,10 +382,20 @@ describe('computed at the write, read without geometry', () => {
     });
     expect(await as.query(api.bodyConsole.places, { waterBodyId: id })).toEqual({
       towns: ['Enfield'],
+      townsWithState: [{ name: 'Enfield', state: 'NH' }],
       counties: ['Grafton'],
       states: ['NH'],
       computedAt: NOW,
     });
+    // Each town's state reaches the preview and the frame too (B01-3c).
+    expect(await as.query(api.bodies.preview, { waterBodyId: id })).toMatchObject({
+      town: 'Enfield',
+      townState: 'NH',
+      moreTownsWithState: [],
+    });
+    expect(
+      (await as.query(api.bodyConsole.consoleExtras, { waterBodyId: id })).townsWithState,
+    ).toEqual([{ name: 'Enfield', state: 'NH' }]);
   });
 });
 

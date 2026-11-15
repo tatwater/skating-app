@@ -20,6 +20,7 @@ import {
   archiveSeasonLabel,
   callerNow,
   currentSeason,
+  libraryStandingOf,
   resolveSeason,
   type Season,
   seasonEndMs,
@@ -31,7 +32,7 @@ import { type QueryCtx, query } from './_generated/server';
 import { auditLinksOnBody } from './lib/auditReads';
 import { requireCapability } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
-import { geoFactsOf } from './lib/bodyGeo';
+import { geoFactsOf, townsWithStateOf } from './lib/bodyGeo';
 import { hasContoursFor } from './lib/bodyLibrary';
 import { MODERATION_ACTIONS } from './lib/enums';
 import { landmarksForBody } from './lib/landmarkRows';
@@ -81,6 +82,10 @@ export const consoleExtras = query({
     const body = await bodyOrThrow(ctx, waterBodyId);
     const geo = await geoFactsOf(ctx, body._id);
     const hasBathymetry = await hasContoursFor(ctx, body);
+    const ownRow = await ctx.db
+      .query('bodyLibraryRows')
+      .withIndex('by_body', (q) => q.eq('waterBodyId', body._id).eq('scope', '*'))
+      .first();
 
     // A person vouching for the outline: a drawn body approved, the latest wins.
     const vouched = await ctx.db
@@ -133,6 +138,16 @@ export const consoleExtras = query({
       touching,
       touchingCapped: geo?.neighborsCapped ?? false,
       geoComputedAt: geo?.computedAt ?? null,
+      /** `towns`, each with its state (B01-3c); `null` until computed. */
+      townsWithState: townsWithStateOf(geo),
+      /**
+       * Completeness as the body's library row stores it (core's ten) — the frame's one field, so it
+       * no longer calls `bodies.preview` and its report scan for it (B01-3c). `null` with no row.
+       */
+      complete:
+        ownRow === null
+          ? null
+          : { have: ownRow.completeHave, of: ownRow.completeOf, missing: ownRow.missing },
     };
   },
 });
@@ -310,6 +325,8 @@ export const places = query({
     if (geo === null) return null;
     return {
       towns: geo.towns ?? [],
+      /** `towns`, each with its state (B01-3c). */
+      townsWithState: townsWithStateOf(geo) ?? [],
       counties: geo.counties ?? [],
       states: geo.states ?? [],
       computedAt: geo.computedAt as number,
@@ -504,3 +521,86 @@ export const dailyHazards = query({
     };
   },
 });
+
+// ── A body the normal reads cannot serve ─────────────────────────────────────────────────────
+
+/** Reports a removed body's facts read at most (newest first); past it, `capped`. */
+export const REMOVED_REPORT_CAP = 200;
+
+/**
+ * **A removed or rejected body's row and facts** (B01-3c) — what the list's preview and the Body
+ * console's *This body has been removed* page draw, since `waterBodies.get` serves only
+ * `{ available: false }` for one. The same capability as the list (`body.read`).
+ *
+ * - `name`, `bodyClass`, `states`, `areaSqM` — from what is stored on the body;
+ * - `standing` — the library's standing (`rejected`, `removed`, or any other, for a body that is
+ *   served normally: this read then still answers, and `left` is `null`);
+ * - `left` — when it left, why, and who decided, from its newest `remove` or `reject_waterbody`
+ *   audit row (`removalReason` from a removal's record; `reason` is the row's text);
+ * - `towns` — with their states, when computed (`null` until then);
+ * - `reports` — visible reports, newest first, counted to {@link REMOVED_REPORT_CAP} (`capped`).
+ *
+ * A merged-away id reads its survivor's, as every body read does. `null` for no body.
+ */
+export const removedFacts = query({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId: requested }) => {
+    await requireCapability(ctx, 'body.read');
+    const body = await resolveSurvivor(ctx, requested);
+    if (!body) return null;
+    const standing = libraryStandingOf(body);
+    const left = await leftRow(ctx, body._id);
+    const reports = await ctx.db
+      .query('reports')
+      .withIndex('by_water_body_skate_end_time', (q) => q.eq('waterBodyId', body._id))
+      .order('desc')
+      .take(REMOVED_REPORT_CAP + 1);
+    const geo = await geoFactsOf(ctx, body._id);
+    return {
+      id: body._id,
+      name: body.name,
+      bodyClass: body.type,
+      states: body.states ?? [],
+      areaSqM: body.surfaceAreaSqM ?? null,
+      standing,
+      left:
+        left === null || (standing !== 'rejected' && standing !== 'removed')
+          ? null
+          : {
+              action: left.action as 'remove' | 'reject_waterbody',
+              at: left.createdAt,
+              reason: left.reason,
+              removalReason:
+                standing === 'removed' && body.removalReason !== undefined
+                  ? body.removalReason
+                  : null,
+              by: await personOf(ctx, left.actorId),
+            },
+      towns: townsWithStateOf(geo),
+      reports: {
+        count: reports.slice(0, REMOVED_REPORT_CAP).filter((r) => r.moderationStatus === 'visible')
+          .length,
+        capped: reports.length > REMOVED_REPORT_CAP,
+      },
+    };
+  },
+});
+
+/** A body's newest removal or rejection audit row — two indexed reads. */
+async function leftRow(
+  ctx: QueryCtx,
+  waterBodyId: Id<'waterBodies'>,
+): Promise<Doc<'moderationActions'> | null> {
+  const rows: Doc<'moderationActions'>[] = [];
+  for (const action of ['remove', 'reject_waterbody'] as const) {
+    const row = await ctx.db
+      .query('moderationActions')
+      .withIndex('by_target_action', (q) =>
+        q.eq('targetType', 'waterbody').eq('targetId', waterBodyId).eq('action', action),
+      )
+      .order('desc')
+      .first();
+    if (row) rows.push(row);
+  }
+  return rows.sort((a, b) => b.createdAt - a.createdAt)[0] ?? null;
+}
