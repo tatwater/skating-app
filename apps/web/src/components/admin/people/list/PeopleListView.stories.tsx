@@ -57,13 +57,12 @@ export const Suspended: Story = {
     await faceLoaded(slot(canvasElement, 'page-word'));
     await expect(slot(canvasElement, 'page-word')).toHaveTextContent('Suspended');
     await expect(slot(canvasElement, 'people-kicker')).toHaveTextContent('1 · by end date');
-    // The lane is chosen: its count takes the lit ink, as every chosen lane's does (the board draws
-    // it amber; the kit lights the chosen lane's count).
+    // The lane is chosen, and its count stays amber: someone is still waited on (board 8.1).
     const lane = page.getByRole('button', { name: /^Suspended/ });
     await expect(lane).toHaveAttribute('aria-current', 'true');
     const count = slot(lane, 'lane-count');
     await expect(getComputedStyle(count).color).toEqual(
-      sameColor(computedColor(count, 'var(--fg)')),
+      sameColor(computedColor(count, 'var(--warn)')),
     );
     // Rob's row: the amber status chip first, then his class; the date, his flag and appeal; the reason.
     const row = must(page.getByRole('option', { name: /Rob Tremblay/ }));

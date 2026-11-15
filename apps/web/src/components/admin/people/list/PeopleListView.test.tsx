@@ -88,10 +88,13 @@ describe('the lanes', () => {
     expect(lane(/^Banned/)).toHaveAttribute('data-dim');
   });
 
-  it('inks Suspended amber while anyone is suspended, and quiet at none', () => {
+  it('inks Suspended amber while anyone is suspended, chosen or not, and quiet at none', () => {
     const { redraw } = draw();
     const tone = () => lane(/^Suspended/).querySelector('[data-slot="lane-count"]');
-    // The chosen lane is lit whatever its tone; the rest show theirs.
+    // Chosen (board 8.1) or not, Suspended's count stays amber while anyone is suspended.
+    expect(lane(/^Suspended/)).toHaveAttribute('aria-current', 'true');
+    expect(tone()).toHaveAttribute('data-tone', 'warn');
+    expect(tone()).toHaveTextContent('1');
     redraw({ query: { lane: 'everyone', q: '' } });
     expect(tone()).toHaveAttribute('data-tone', 'warn');
     const none = {
