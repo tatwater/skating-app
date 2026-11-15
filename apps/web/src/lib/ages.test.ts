@@ -1,6 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-
+import { assertSeeded } from '@/test/seeded';
 import { ageInWords, shortAge, timeLeftInWords } from './ages';
 
 const MIN = 60_000;
@@ -23,7 +23,7 @@ describe('shortAge — a row’s', () => {
     expect(shortAge(-5 * MIN)).toBe('0 min');
     expect(shortAge(Number.NaN)).toBe('0 min');
     expect(shortAge(Number.POSITIVE_INFINITY)).toBe('0 min');
-    fc.assert(
+    assertSeeded(
       fc.property(fc.double({ min: -100 * 365 * DAY, max: 100 * 365 * DAY }), (ms) => {
         expect(shortAge(ms)).toMatch(/^\d+(\.\d)? (min|h|d)$/u);
       }),

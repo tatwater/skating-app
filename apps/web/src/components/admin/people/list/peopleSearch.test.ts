@@ -1,7 +1,7 @@
 import { PEOPLE_LANES, PEOPLE_SEARCH_MAX_CHARS } from '@skating/core';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-
+import { assertSeeded } from '@/test/seeded';
 import {
   isSearching,
   listKey,
@@ -38,7 +38,7 @@ describe('the URL', () => {
   });
 
   it('never throws, and always yields a place the page can draw', () => {
-    fc.assert(
+    assertSeeded(
       fc.property(fc.dictionary(fc.string(), fc.anything()), (raw) => {
         const query = queryOf(validatePeopleSearch(raw));
         expect(PEOPLE_LANES).toContain(query.lane);
@@ -62,7 +62,7 @@ describe('the page’s place', () => {
   });
 
   it('round-trips every place through the URL', () => {
-    fc.assert(
+    assertSeeded(
       fc.property(
         fc.constantFrom(...PEOPLE_LANES),
         fc.string({ maxLength: PEOPLE_SEARCH_MAX_CHARS }),

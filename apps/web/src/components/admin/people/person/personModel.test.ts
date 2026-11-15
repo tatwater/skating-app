@@ -1,6 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-
+import { assertSeeded } from '@/test/seeded';
 import {
   NOW,
   ROB,
@@ -69,7 +69,7 @@ const countArb = fc.record({ count: fc.nat({ max: 5000 }), capped: fc.boolean() 
 
 describe('the three answers', () => {
   it('a count, a floor, pending and not recorded are never confused (property)', () => {
-    fc.assert(
+    assertSeeded(
       fc.property(fc.option(countArb, { nil: null }), fc.boolean(), (count, pending) => {
         const f = countFact(count, { pending });
         assertSaid(f);
@@ -135,7 +135,7 @@ describe('the three answers', () => {
         { minLength: 9, maxLength: 9 },
       ),
     });
-    fc.assert(
+    assertSeeded(
       fc.property(stats, (s) => {
         const read = s as unknown as typeof SARAH_STATS;
         for (const f of [
@@ -155,15 +155,15 @@ describe('the three answers', () => {
       overturned: fc.option(countArb, { nil: null }),
       pending: fc.constantFrom([] as const, ['undoChains'] as const),
     });
-    fc.assert(
+    assertSeeded(
       fc.property(season, (s) => assertSaid(overturnedFact(s as unknown as typeof SEASON))),
     );
-    fc.assert(
+    assertSeeded(
       fc.property(fc.option(fc.nat({ max: 99 }), { nil: null }), (c) =>
         assertSaid(contradictionsFact(c)),
       ),
     );
-    fc.assert(
+    assertSeeded(
       fc.property(countArb, countArb, fc.boolean(), (onUser, onContent, pending) =>
         assertSaid(openFlagsFact({ onUser, onContent }, pending)),
       ),

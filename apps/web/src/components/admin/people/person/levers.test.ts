@@ -1,6 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-
+import { assertSeeded } from '@/test/seeded';
 import {
   accountRows,
   allButtons,
@@ -463,7 +463,7 @@ function expected(p: PersonRead): string[] {
 
 describe('can is the law (property)', () => {
   it('no control is drawn that can forbids, and none it allows is missing', () => {
-    fc.assert(
+    assertSeeded(
       fc.property(personArb, fc.boolean(), (p, self) => {
         const rows = [...canDoRows(p), ...accountRows(p, { now: NOW, self })];
         const drawn = allButtons(rows)
