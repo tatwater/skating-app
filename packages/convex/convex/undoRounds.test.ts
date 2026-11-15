@@ -17,6 +17,7 @@ import type { Doc, Id } from './_generated/dataModel';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import { historyPage } from './bodyConsole';
 import { writeAudit, writeSnapshot } from './lib/audit';
+import { DOC_MAX, REQUEST_PROFILE_BUDGET, requestBudget } from './lib/readBudget';
 import { UNDO_NEEDS_ROWS, type UndoState, undoStates } from './lib/undo';
 import { UNDO_CHECKED_ELSEWHERE } from './lib/undoReads';
 import { listActionsPage } from './moderation';
@@ -257,14 +258,15 @@ describe('History’s rounds (B01-3h)', () => {
   test('worst case across bodies: heavy refusal reads past the budget in one feed stay inside the budget; the overflow says "check elsewhere", never a throw', async () => {
     const t = harness();
     const actorId = await admin(t);
-    // A heavy outline (≈ 0.5 MB) on each of 10 bodies — 5 MB, past the page's 4 MiB, each body's newest row a depth choice.
-    const ring = Array.from({ length: 20_000 }, (_, i) => {
-      const a = (2 * Math.PI * i) / 20_000;
+    // A heavy outline (≈ 0.2 MB) on each of 6 bodies, each body's newest row a depth choice; the page
+    // has 1.6 MiB of its budget left, so the waves spend it and the rest overflow.
+    const ring = Array.from({ length: 8_000 }, (_, i) => {
+      const a = (2 * Math.PI * i) / 8_000;
       return [-72 + 0.01 * Math.cos(a), 44 + 0.01 * Math.sin(a)];
     });
     const heavy = { type: 'Polygon' as const, coordinates: [[...ring, ring[0]]] };
     await t.mutation(internal.waterBodies.importCanonical, {
-      bodies: Array.from({ length: 10 }, (_, i) => ({
+      bodies: Array.from({ length: 6 }, (_, i) => ({
         source: 'osm',
         externalId: `way/${i}`,
         osmId: `way/${i}`,
@@ -304,8 +306,9 @@ describe('History’s rounds (B01-3h)', () => {
     const read = (ticks: number[]) =>
       t.run(async (raw) => {
         const { ctx } = counted(raw, ticks);
+        requestBudget(ctx).spend(REQUEST_PROFILE_BUDGET - 1.6 * DOC_MAX);
         const viewer = (await raw.db.get(actorId)) as Doc<'profiles'>;
-        const actions = await raw.db.query('moderationActions').order('desc').take(10);
+        const actions = await raw.db.query('moderationActions').order('desc').take(6);
         return undoStates(ctx, viewer, actions);
       });
     const rows = await read([0]);
@@ -314,8 +317,8 @@ describe('History’s rounds (B01-3h)', () => {
       (u) => u.state === 'unavailable' && u.why === UNDO_CHECKED_ELSEWHERE,
     );
     const offered = rows.filter((u) => u.state === 'available');
-    // More than one wave's four: what the first wave didn't weigh is handed back and spent again.
-    expect(offered.length).toBeGreaterThan(4);
+    // More than one wave's one: what each wave didn't weigh is handed back and spent again.
+    expect(offered.length).toBeGreaterThan(1);
     expect(elsewhere.length).toBeGreaterThan(0);
     // In page order: the checked rows first, then "check elsewhere" to the end.
     expect(rows.slice(0, offered.length)).toEqual(offered);
