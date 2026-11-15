@@ -17,10 +17,12 @@ import {
   standingOf,
 } from '@skating/core';
 import { convexTest } from 'convex-test';
+import fc from 'fast-check';
 import type { Polygon } from 'geojson';
 import { describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
+import * as recurringWork from './lib/recurringWork';
 import * as libStanding from './lib/standing';
 import schema from './schema';
 
@@ -962,14 +964,14 @@ describe('the season rollover', () => {
       });
     }
 
-    const dry = await t.mutation(internal.standing.demoteInactiveBodies, { season: SEASON });
+    // The whole walk, page by page (a page is sized from the heaviest outline, D258).
+    const dry = await t.action(internal.standing.runStandingRollover, { season: SEASON });
     expect(dry).toMatchObject({
-      applied: false,
       demoted: 3,
-      kept: { retained: 2 },
+      retained: 2,
       retainedBy: { activity: 0, curated: 0, favorited: 0, put_in: 2 },
     });
-    await t.mutation(internal.standing.demoteInactiveBodies, { season: SEASON, apply: true });
+    await t.action(internal.standing.runStandingRollover, { season: SEASON, apply: true });
     for (const id of [official, mapped]) {
       expect(standingOf((await get(t, id)) as Doc<'waterBodies'>).standing).toBe('active');
     }
@@ -1076,6 +1078,110 @@ describe('the season rollover', () => {
       vi.useRealTimers();
     }
   });
+
+  /**
+   * D258: a page that fails is retried at half its size from the same position, down to one body —
+   * it never repeats the read that failed at the size that failed — and a single body that still
+   * fails is recorded and stepped past. Here every page "cannot afford its next body" seven times in
+   * a row (100, 50, 25, 12, 6, 3, 1): the first body is recorded, the walk reaches its end.
+   */
+  test('a page that fails is retried smaller from the same place; one body that still fails is recorded and passed', async () => {
+    const t = harness();
+    const ids: Id<'waterBodies'>[] = [];
+    for (let i = 0; i < 5; i++) ids.push(await seedBody(t, `osm/shrink-${i}`));
+    const affords = vi.spyOn(recurringWork, 'affords');
+    for (let i = 0; i < 7; i++) affords.mockResolvedValueOnce(false);
+    try {
+      const result = await t.action(internal.standing.runStandingRollover, {
+        season: SEASON,
+        apply: true,
+      });
+      expect(result).toMatchObject({ scanned: 5, demoted: 4, failed: 1 });
+      const failures = await t.run((ctx) => ctx.db.query('jobFailures').collect());
+      expect(failures).toHaveLength(1);
+      expect(ids).toContain(failures[0]?.key);
+      expect(failures[0]).toMatchObject({ job: 'standingRollover', scope: String(SEASON) });
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  /**
+   * D258, the class "a dry run writes nothing": over any corpus, any bodies whose decision throws, any
+   * pages that fail and shrink to the single-body path, and any failures already recorded (parked or
+   * mid-retry), a dry run leaves every table exactly as it was — but for its own run row, under its
+   * `-dry` id, which is how its counts are read — and schedules nothing.
+   */
+  test('a dry run writes nothing: over any state, every table is unchanged but for its own run row, and nothing is scheduled', async () => {
+    const tables = Object.keys(schema.tables) as (keyof typeof schema.tables)[];
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(
+          fc.record({
+            boosted: fc.boolean(),
+            poison: fc.boolean(),
+            recorded: fc.constantFrom('none', 'failing', 'parked'),
+          }),
+          { minLength: 1, maxLength: 6 },
+        ),
+        fc.integer({ min: 0, max: 9 }),
+        async (bodies, failedPages) => {
+          vi.restoreAllMocks();
+          const t = harness();
+          const ids: Id<'waterBodies'>[] = [];
+          for (const [i, b] of bodies.entries()) {
+            const id = await seedBody(t, `osm/dry-${i}`, b.boosted ? { curatedBoost: 0.3 } : {});
+            ids.push(id);
+            if (b.recorded !== 'none') {
+              await t.run((ctx) =>
+                ctx.db.insert('jobFailures', {
+                  job: 'standingRollover',
+                  key: id,
+                  scope: String(SEASON),
+                  attempts: b.recorded === 'parked' ? 3 : 1,
+                  errorClass: 'Error',
+                  firstFailedAt: 1,
+                  lastFailedAt: 1,
+                  ...(b.recorded === 'parked' ? { parkedAt: 1 } : {}),
+                }),
+              );
+            }
+          }
+          const poison = new Set(ids.filter((_, i) => bodies[i]?.poison).map(String));
+          const real = libStanding.lastActivityAt;
+          vi.spyOn(libStanding, 'lastActivityAt').mockImplementation(async (ctx, id) => {
+            if (poison.has(id)) throw new Error('poison');
+            return real(ctx, id);
+          });
+          const affords = vi.spyOn(recurringWork, 'affords');
+          for (let i = 0; i < failedPages; i++) affords.mockResolvedValueOnce(false);
+          const snapshot = () =>
+            t.run(async (ctx) => {
+              const out: Record<string, unknown[]> = {};
+              for (const table of tables) {
+                if (table === 'importRuns') continue;
+                out[table] = await ctx.db.query(table).collect();
+              }
+              return out;
+            });
+          const scheduled = () =>
+            t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
+          const runsBefore = await t.run((ctx) => ctx.db.query('importRuns').collect());
+          const scheduledBefore = await scheduled();
+          const before = await snapshot();
+          await t.action(internal.standing.runStandingRollover, { season: SEASON });
+          expect(await snapshot()).toEqual(before);
+          const runs = await t.run((ctx) => ctx.db.query('importRuns').collect());
+          expect(runs.length).toBe(runsBefore.length + 1);
+          expect(runs.at(-1)?.campaignId).toBe(`standing-rollover-${SEASON}-dry`);
+          // Nothing new was scheduled (the seeding's own jobs are what was there before).
+          expect(await scheduled()).toEqual(scheduledBefore);
+          vi.restoreAllMocks();
+        },
+      ),
+      { numRuns: 15 },
+    );
+  }, 120_000);
 
   test('the action records a run row, and the daily gate runs it once per season', async () => {
     const t = harness();
