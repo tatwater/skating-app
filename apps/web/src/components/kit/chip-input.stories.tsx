@@ -154,11 +154,16 @@ export const Suggestions: Story = {
       'Mascoma North⏎',
       'Masc Lake⏎',
     ]);
-    // Only the selected row shows its key.
-    const caps = [
-      ...document.querySelectorAll<HTMLElement>('[data-slot="chip-input-list"] [data-slot="kbd"]'),
-    ];
-    await expect(caps.filter((c) => getComputedStyle(c).visibility === 'visible')).toHaveLength(1);
+    // Only the selected row shows its key. Retried, rows queried fresh: the auto-highlight can land
+    // a render after the rows do.
+    await waitFor(() => {
+      const caps = [
+        ...document.querySelectorAll<HTMLElement>(
+          '[data-slot="chip-input-list"] [data-slot="kbd"]',
+        ),
+      ];
+      expect(caps.filter((c) => getComputedStyle(c).visibility === 'visible')).toHaveLength(1);
+    });
     await userEvent.keyboard('{ArrowDown}');
     await waitFor(() => expect(highlighted()).toHaveTextContent('Mascoma Pond'));
     await userEvent.keyboard('{Enter}');

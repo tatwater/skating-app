@@ -210,9 +210,9 @@ export const Danger: Story = {
     // Highlight off: hover the plate's edge, not the row.
     remove.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true }));
     await waitFor(() => expect(remove).not.toHaveAttribute('data-highlighted'));
-    await expect(getComputedStyle(remove).color).toEqual(
-      sameColor(computedColor(remove, 'var(--fg1)')),
-    );
+    // A highlight that was on fades off on the row's color transition: wait for its end.
+    const rest = computedColor(remove, 'var(--fg1)'); // (a probe: never inside waitFor)
+    await waitFor(() => expect(getComputedStyle(remove).color).toEqual(sameColor(rest)));
     await userEvent.hover(remove);
     await waitFor(() => expect(remove).toHaveAttribute('data-highlighted'));
     const red = computedColor(remove, 'var(--bad)');
