@@ -1811,6 +1811,19 @@ heavy one for few, and the item runs under those limits.
 | `recurringJobs.health` | small rows only: `jobFailures`, to 200 a job | — | fourteen parked queue rows near the limit: counted from their mirrors |
 | `standing.demoteInactiveBodies` | a body 8 MiB · 2,000 · 200 · 500 | 1 MiB | twelve outlines near the limit: pages sized from them, every body decided |
 
+**The jobs #118 added (B01-3b), read against the same question** (merged into this branch 2026-11-15):
+
+| Cron | Blocks forever? | Why |
+| --- | --- | --- |
+| compute body geometry facts | no | each due body computed on its own (`Promise.allSettled`), a failure recorded on its facts row by `lib/attempts` and parked at the third; a run passes what it already tried; the unparked range leaves parked rows out |
+| retry parked body geometry | no | the same walk over parked rows, least recently tried first; a failure re-stamps the row to the back |
+| repair body geometry drift | in principle | one transaction over the 40 longest-unchecked rows, stopping by the real read budget; a row whose check *throws* (not one that is merely behind) would fail the tick, and the next tick reads the same rows. Nothing throws on valid data today; owed — isolate each row's check |
+| find bodies missing geometry | partially | a page of library rows that throws ends the chain, and the next weekly run starts over and dies at the same page — the "same page" shape; the page reads small rows and probes one index each, so nothing throws today; owed |
+
+Their parked count is not on `recurringJobs.health`: a geometry facts row carries the computed lists
+and can be heavy, so counting them would load heavy documents; owed — a small mirror, as the queues
+have, or the geometry module's own parked read.
+
 **First read and fallback, worst case — and a fallback never repeats the read that failed** (Greptile
 #116). Every walk with a "page failed" path, what its first read can weigh, and what its fallback reads:
 
