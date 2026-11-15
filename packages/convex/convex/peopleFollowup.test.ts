@@ -692,6 +692,152 @@ describe('people.person: when, the public profile, labels and appeals', () => {
   });
 });
 
+describe('a person at the worst case on every axis at once: every read answers, never throws', () => {
+  test('flags, tickets, filed flags, decisions, restrictions, right rows and asks all at their caps', async () => {
+    const t = await setup();
+    const REASON = 'r'.repeat(AUDIT_REASON_MAX);
+    await seed(t, 'adm', { role: 'admin', canEditLedger: true });
+    await seed(t, 'adm2', { role: 'admin', canEditLedger: true });
+    const big = await seed(t, 'big', {
+      role: 'admin',
+      canEditLedger: true,
+      status: 'suspended',
+      suspendedUntil: T0 + DAY,
+      statusReason: REASON,
+      canPostReports: false,
+      canPostHazards: false,
+      canPostComments: false,
+      canFlag: false,
+      activeBountyPostLimit: 0,
+    });
+    await t.run(async (ctx) => {
+      const body = await ctx.db.insert('waterBodies', {
+        name: 'B'.repeat(3_000),
+        searchText: 'b',
+        type: 'lakePond' as const,
+        source: 'osm' as const,
+        polygon: {
+          type: 'Polygon' as const,
+          coordinates: [
+            [
+              [0, 0],
+              [0, 1],
+              [1, 1],
+              [0, 0],
+            ],
+          ],
+        },
+        bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+        centroid: { lat: 0.5, lng: 0.5 },
+        dedupStatus: 'clean' as const,
+        createdAt: T0,
+      });
+      const reports: Id<'reports'>[] = [];
+      for (let i = 0; i < 25; i++) {
+        reports.push(
+          await ctx.db.insert('reports', {
+            authorId: big,
+            waterBodyId: body,
+            point: { lat: 0.5, lng: 0.5 },
+            skateEndTime: T0,
+            reportTime: T0,
+            source: 'native' as const,
+            iceTypes: [{ type: 'black_ice' as const }],
+            surfaceTags: [],
+            photoIds: [],
+            moderationStatus: 'visible' as const,
+            hazardIdsCreated: [],
+            notes: REASON,
+            createdAt: T0,
+            updatedAt: T0,
+          }),
+        );
+      }
+      for (const status of ['open', 'reviewing'] as const) {
+        for (let i = 0; i <= 50; i++) {
+          await ctx.db.insert('contentFlags', {
+            flaggerId: big,
+            targetType: 'user',
+            targetId: big,
+            reason: 'spam',
+            status,
+            subjectUserId: big,
+            createdAt: T0 - i,
+          });
+        }
+        for (let i = 0; i <= 100; i++) {
+          await ctx.db.insert('contentFlags', {
+            flaggerId: big,
+            targetType: 'report',
+            targetId: reports[i % reports.length] as string,
+            reason: 'spam',
+            status,
+            subjectUserId: big,
+            createdAt: T0 - i,
+          });
+        }
+      }
+      for (let i = 0; i <= 50; i++) {
+        await ctx.db.insert('supportTickets', {
+          userId: big,
+          clerkUserId: 'big',
+          category: 'account',
+          status: 'open',
+          body: 'b'.repeat(5_000),
+          createdAt: T0 - i,
+        });
+      }
+      for (let i = 0; i < 60; i++) {
+        await ctx.db.insert('moderationActions', {
+          actorId: big,
+          action: 'set_posting_permission',
+          targetType: 'user',
+          targetId: big,
+          reason: REASON,
+          metadata: { permission: 'comments', allowed: true, note: REASON },
+          createdAt: T0 - 10_000 - i,
+        });
+      }
+      for (let i = 0; i < 300; i++) {
+        await ctx.db.insert('moderationActions', {
+          actorId: big,
+          action: 'hide',
+          targetType: 'report',
+          targetId: reports[i % reports.length] as string,
+          reason: REASON,
+          createdAt: T0 - 1_000 - i,
+        });
+      }
+      for (let i = 0; i <= 500; i++) {
+        await ctx.db.insert('bountyGateEvents', {
+          waterBodyId: body,
+          requesterId: big,
+          decision: 'capped',
+          weatherReopened: false,
+          createdAt: T0 - i,
+        });
+      }
+    });
+    const a = as(t, 'adm');
+    const person = await a.query(api.people.person, { userId: big });
+    // The fixed parts are always there, whatever the variable parts spent.
+    expect(person?.publicProfile).toMatchObject({ opens: true });
+    expect(person?.ledger).toMatchObject({ editor: true });
+    expect(person?.can.role.member).toBeDefined();
+    expect(person?.open.flagsCapped).toBe(true);
+    expect(person?.bountySeason?.asks.capped).toBe(true);
+    // And every other read of them answers.
+    expect(await a.query(api.people.history, { userId: big })).not.toBeNull();
+    expect(await a.query(api.people.decisions, { userId: big })).not.toBeNull();
+    expect(await a.query(api.people.staffStats, { userId: big })).not.toBeNull();
+    expect(await a.query(api.people.staffSeason, { userId: big })).not.toBeNull();
+    expect(await a.query(api.people.reportTrend, { userId: big })).not.toBeNull();
+    for (const lane of ['flagged', 'appeals', 'staff', 'suspended', 'restricted']) {
+      expect((await a.query(api.people.listPage, { lane })).rows.length, lane).toBeGreaterThan(0);
+    }
+  });
+});
+
 // ── The list page ──
 
 describe('people.listPage: keys, ends, ages and the Staff lane', () => {
