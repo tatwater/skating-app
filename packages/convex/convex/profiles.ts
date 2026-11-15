@@ -218,7 +218,8 @@ export const upsertFromClerk = mutation({
         ...(renamed ? { usernameChangedAt: now } : {}),
         dateOfBirth: args.dateOfBirth,
         profileVisibility: minor ? 'private' : existing.profileVisibility,
-        ...(profileImageUrl !== undefined ? { profileImageUrl } : {}),
+        // A claim present but past the cap clears the old mirror (initials), never keeps a stale one.
+        ...(identity.pictureUrl !== undefined ? { profileImageUrl } : {}),
         ...(email !== undefined ? { email } : {}),
         riskAckVersion: args.riskAckVersion,
         // Server-stamped: freshly on a new acceptance (version bump), otherwise the
@@ -649,12 +650,11 @@ async function applyClerkMirrorsTo(
   if (claims.email !== undefined && (claims.email ?? undefined) !== profile.email) {
     patch.email = claims.email ?? undefined;
   }
-  if (
-    claims.profileImageUrl !== undefined &&
-    (claims.profileImageUrl ?? undefined) !== profile.profileImageUrl
-  ) {
-    // An over-long URL is not stored: the person shows their initials, and the sync still lands.
-    patch.profileImageUrl = storableAvatarUrl(claims.profileImageUrl ?? undefined);
+  // An over-long URL is not stored: the person shows their initials, and the sync still lands. The
+  // stored value is compared, so the same over-long claim on the next sync writes nothing.
+  const storable = storableAvatarUrl(claims.profileImageUrl ?? undefined);
+  if (claims.profileImageUrl !== undefined && storable !== profile.profileImageUrl) {
+    patch.profileImageUrl = storable;
   }
   if (Object.keys(patch).length > 0) {
     await ctx.db.patch(profile._id, patch);

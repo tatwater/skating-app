@@ -44,7 +44,7 @@ import { refreshPersonRow } from './lib/peopleRows';
 import { refreshPostLatestSkateEnd, refreshPostSearchText } from './lib/postSync';
 import { clearFailure } from './lib/recurringWork';
 import { mirrorReportSubAreas } from './lib/reportSubAreas';
-import { type UndoState, undoState } from './lib/undo';
+import { type UndoState, undoNeedsReason, undoState } from './lib/undo';
 import { literals } from './lib/validators';
 
 /** The audit action implied by a target moderation status (D37). */
@@ -1480,6 +1480,18 @@ async function clearLapseMirror(ctx: MutationCtx, userId: Id<'profiles'>): Promi
 export interface PersonWriteResult {
   userId: Id<'profiles'>;
   actionId: Id<'moderationActions'>;
+  /** Whether undoing this write will ask a reason — the undo engine's own rule (`undoNeedsReason`). */
+  undoNeedsReason: boolean;
+}
+
+/** A person write's answer: its row, and whether that row's undo asks a reason (one rule with undo). */
+export async function personWriteResult(
+  ctx: MutationCtx,
+  userId: Id<'profiles'>,
+  actionId: Id<'moderationActions'>,
+): Promise<PersonWriteResult> {
+  const row = await ctx.db.get(actionId);
+  return { userId, actionId, undoNeedsReason: row ? undoNeedsReason(row) : false };
 }
 
 async function auditUser(
@@ -1552,7 +1564,7 @@ export async function banImpl(
       clerkUserId: target.clerkUserId,
       banned: true,
     });
-    return { userId, actionId };
+    return personWriteResult(ctx, userId, actionId);
   }
 }
 
@@ -1610,7 +1622,7 @@ export async function suspendImpl(
         banned: false,
       });
     }
-    return { userId, actionId };
+    return personWriteResult(ctx, userId, actionId);
   }
 }
 
@@ -1661,7 +1673,7 @@ export async function unbanImpl(
       clerkUserId: target.clerkUserId,
       banned: false,
     });
-    return { userId, actionId };
+    return personWriteResult(ctx, userId, actionId);
   }
 }
 
@@ -1714,7 +1726,7 @@ export async function setBountyLimitImpl(
     prev: { limit: target.activeBountyPostLimit ?? null },
     ...(defaulted ? { reasonDefaulted: true } : {}),
   });
-  return { userId, actionId };
+  return personWriteResult(ctx, userId, actionId);
 }
 
 /**
@@ -1786,5 +1798,5 @@ export async function setPostingPermissionImpl(
     prev: { allowed: target[field] !== false },
     ...(defaulted ? { reasonDefaulted: true } : {}),
   });
-  return { userId, actionId };
+  return personWriteResult(ctx, userId, actionId);
 }

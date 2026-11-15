@@ -218,14 +218,14 @@ export interface AppealingPerson {
 }
 
 /**
- * Appeals are account tickets still waiting. `tickets` counts the tickets (the Overview's *open
- * appeals*); `people` lists who filed them, oldest first (the lane, which can only list a ticket with
- * a profile behind it). Both are floors whenever a status read stopped short.
+ * Appeals are account tickets still waiting: who filed them, oldest first — the Appeals open lane and
+ * the Overview's *open appeals*, which count people, not tickets ({@link laneCounter}), and can only
+ * list a ticket with a profile behind it. A floor whenever a status read stopped short (`capped`).
  */
 export function appealsFrom(
   waiting: readonly Doc<'supportTickets'>[],
   capped: boolean,
-): { tickets: Count; people: AppealingPerson[]; peopleCount: Count } {
+): { people: AppealingPerson[]; capped: boolean } {
   const appeals = waiting.filter((t) => t.category === 'account');
   const byPerson = new Map<string, AppealingPerson>();
   for (const ticket of appeals) {
@@ -242,14 +242,7 @@ export function appealsFrom(
   const people = [...byPerson.values()].sort(
     (a, b) => a.oldestAt - b.oldestAt || (a.userId < b.userId ? -1 : 1),
   );
-  return {
-    tickets: {
-      count: Math.min(appeals.length, LANE_COUNT_CAP),
-      capped: capped || appeals.length > LANE_COUNT_CAP,
-    },
-    people,
-    peopleCount: { count: people.length, capped },
-  };
+  return { people, capped };
 }
 
 // ── Every lane's count, one rule for the lanes and the Overview ──────────────────────────────

@@ -3455,7 +3455,9 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index('by_blocker', ['blockerId'])
-    .index('by_blocked', ['blockedId']),
+    .index('by_blocked', ['blockedId'])
+    // Whether one person blocked another: a point read, however long either one's list is.
+    .index('by_blocker_blocked', ['blockerId', 'blockedId']),
 
   /**
    * Corpus requests (A07b PR 2 / D106–D108, D179): a skater asking for a lake — to be activated,

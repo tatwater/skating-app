@@ -171,6 +171,10 @@ describe('every person write returns the audit row it wrote (the undo toast’s 
       const out = await write();
       const row = await t.run((ctx) => ctx.db.get(out.actionId));
       expect(row?.targetId).toBe(out.userId);
+      // Whether its undo asks a reason: the toast's lookup gives the same answer (one rule).
+      const toast = await a.query(api.undo.latestOwn, { targetType: 'user', targetId: out.userId });
+      expect(toast?.actionId).toBe(out.actionId);
+      expect(toast?.undo).toEqual({ state: 'available', needsReason: out.undoNeedsReason });
       // It is the newest row on the person: exactly the one this write made.
       const newest = await t.run((ctx) =>
         ctx.db
@@ -182,6 +186,98 @@ describe('every person write returns the audit row it wrote (the undo toast’s 
       expect(newest?._id).toBe(out.actionId);
     }
   });
+});
+
+describe('undoNeedsReason: the write, the toast and the undo agree for every person verb', () => {
+  const VERBS: Array<{
+    verb: string;
+    prep?: Partial<Doc<'profiles'>>;
+    // biome-ignore lint/suspicious/noExplicitAny: each write's own answer
+    write: (a: ReturnType<typeof as>, id: Id<'profiles'>) => Promise<any>;
+  }> = [
+    {
+      verb: 'right off',
+      write: (a, id) =>
+        a.mutation(api.moderation.setPostingPermission, {
+          userId: id,
+          permission: 'comments',
+          allowed: false,
+          reason: 'r',
+        }),
+    },
+    {
+      verb: 'right back',
+      prep: { canPostComments: false },
+      write: (a, id) =>
+        a.mutation(api.moderation.setPostingPermission, {
+          userId: id,
+          permission: 'comments',
+          allowed: true,
+        }),
+    },
+    {
+      verb: 'bounty limit lowered',
+      write: (a, id) =>
+        a.mutation(api.moderation.setBountyPostLimit, { userId: id, limit: 0, reason: 'r' }),
+    },
+    {
+      verb: 'bounty limit raised',
+      prep: { activeBountyPostLimit: 0 },
+      write: (a, id) => a.mutation(api.moderation.setBountyPostLimit, { userId: id, limit: 9 }),
+    },
+    {
+      verb: 'suspend',
+      write: (a, id) =>
+        a.mutation(api.moderation.suspendUser, {
+          userId: id,
+          reason: 'r',
+          suspendedUntil: T0 + DAY,
+        }),
+    },
+    {
+      verb: 'ban',
+      write: (a, id) => a.mutation(api.moderation.banUser, { userId: id, reason: 'r' }),
+    },
+    {
+      verb: 'lift',
+      prep: { status: 'banned' },
+      write: (a, id) => a.mutation(api.moderation.unbanUser, { userId: id }),
+    },
+    {
+      verb: 'promote',
+      write: (a, id) => a.mutation(api.admin.grantRole, { userId: id, role: 'moderator' }),
+    },
+    {
+      verb: 'demote',
+      prep: { role: 'moderator' },
+      write: (a, id) => a.mutation(api.admin.revokeRole, { userId: id, reason: 'r' }),
+    },
+    {
+      verb: 'ledger given',
+      prep: { role: 'admin' },
+      write: (a, id) => a.mutation(api.ledger.grantEditor, { userId: id }),
+    },
+    {
+      verb: 'ledger taken',
+      prep: { role: 'admin', canEditLedger: true },
+      write: (a, id) => a.mutation(api.ledger.revokeEditor, { userId: id, reason: 'r' }),
+    },
+  ];
+  for (const { verb, prep, write } of VERBS) {
+    test(verb, async () => {
+      const t = await setup();
+      await seed(t, 'adm', { role: 'admin', canEditLedger: true });
+      const id = await seed(t, 'them', prep);
+      const a = as(t, 'adm');
+      const out = await write(a, id);
+      const toast = await a.query(api.undo.latestOwn, { targetType: 'user', targetId: id });
+      expect(toast?.undo).toEqual({ state: 'available', needsReason: out.undoNeedsReason });
+      // The undo itself: refused without a reason exactly when it asks one.
+      const bare = a.mutation(api.undo.run, { actionId: out.actionId });
+      if (out.undoNeedsReason) await expect(bare).rejects.toThrow(/reason/i);
+      else await bare;
+    });
+  }
 });
 
 // ── `can`: the ledger sentence for holders only, and every give-back spelled out ──
@@ -534,6 +630,173 @@ describe('people.listPage: keys, ends, ages and the Staff lane', () => {
     const stats = await as(t, 'adm').query(api.people.staffStats, { userId: skater });
     expect(row?.roleSince).toBe(T0);
     expect(stats?.roleSince?.at).toBe(T0);
+  });
+
+  test('an admin reads a Staff lane of many staff, each seen lately, whole — not over its budget', async () => {
+    const t = await setup();
+    const ids = [await seed(t, 'adm', { role: 'admin' })];
+    for (let i = 0; i < 40; i++) ids.push(await seed(t, `m${i}`, { role: 'moderator' }));
+    await t.run(async (ctx) => {
+      for (const id of ids) await ctx.db.insert('consolePresence', { userId: id, seenAt: T0 - 1 });
+    });
+    const page = await as(t, 'adm').query(api.people.listPage, { lane: 'staff', pageSize: 100 });
+    expect(page.rows).toHaveLength(41);
+    expect(page.rows.every((r) => r.staff?.lastSeenInConsoleAt === T0 - 1)).toBe(true);
+    expect(page.rows.every((r) => r.staff?.lastSeenCapped === false)).toBe(true);
+    expect(page.rows.every((r) => r.staff?.decisionsThisWeek.capped === false)).toBe(true);
+  });
+
+  test('staff who share a name are each listed once across pages', async () => {
+    const t = await setup();
+    await seed(t, 'adm', { role: 'admin' });
+    // Created in one order, keyed (rank, name, id) in another: the page must cut by the key.
+    for (let i = 0; i < 4; i++)
+      await seed(t, `twin${i}`, { role: 'moderator', displayName: 'Sam' });
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    for (let i = 0; i < 10; i++) {
+      const page: { rows: { userId: string }[]; isDone: boolean; continueCursor: string } =
+        await as(t, 'adm').query(api.people.listPage, { lane: 'staff', pageSize: 1, cursor });
+      seen.push(...page.rows.map((r) => r.userId));
+      if (page.isDone) break;
+      cursor = page.continueCursor;
+    }
+    expect(seen).toHaveLength(5);
+    expect(new Set(seen).size).toBe(5);
+  });
+
+  test('a page read to its end keeps that end as its continue cursor when its last row leaves', async () => {
+    const t = await setup();
+    await seed(t, 'adm', { role: 'admin' });
+    const a = await seed(t, 'a', { role: 'moderator' });
+    await seed(t, 'b', { role: 'moderator' });
+    const first = await as(t, 'adm').query(api.people.listPage, { lane: 'staff', pageSize: 2 });
+    await as(t, 'adm').mutation(api.admin.revokeRole, { userId: a, reason: 'r' });
+    const again = await as(t, 'adm').query(api.people.listPage, {
+      lane: 'staff',
+      pageSize: 2,
+      endCursor: first.continueCursor,
+    });
+    expect(again.continueCursor).toBe(first.continueCursor);
+  });
+});
+
+describe('people.person under a heavy page', () => {
+  async function lake(t: T, name: string) {
+    return t.run(async (ctx) => {
+      const body = await ctx.db.insert('waterBodies', {
+        name,
+        searchText: name,
+        type: 'lakePond' as const,
+        source: 'osm' as const,
+        polygon: {
+          type: 'Polygon' as const,
+          coordinates: [
+            [
+              [0, 0],
+              [0, 1],
+              [1, 1],
+              [0, 0],
+            ],
+          ],
+        },
+        bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+        centroid: { lat: 0.5, lng: 0.5 },
+        dedupStatus: 'clean' as const,
+        createdAt: T0,
+      });
+      await rebuildBodyLibrary(ctx, body);
+      return body;
+    });
+  }
+
+  const report = (authorId: Id<'profiles'>, waterBodyId: Id<'waterBodies'>) => ({
+    authorId,
+    waterBodyId,
+    point: { lat: 0.5, lng: 0.5 },
+    skateEndTime: T0,
+    reportTime: T0,
+    source: 'native' as const,
+    iceTypes: [{ type: 'black_ice' as const }],
+    surfaceTags: [],
+    photoIds: [],
+    moderationStatus: 'visible' as const,
+    hazardIdsCreated: [],
+    createdAt: T0,
+    updatedAt: T0,
+  });
+
+  test('a dozen flagged Reports on one lake: every flag labeled, the lake read once, nothing thrown', async () => {
+    const t = await setup();
+    const adm = await seed(t, 'adm', { role: 'admin' });
+    const skater = await seed(t, 'skater');
+    const body = await lake(t, 'Mascoma Lake');
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 12; i++) {
+        const r = await ctx.db.insert('reports', report(skater, body));
+        await ctx.db.insert('contentFlags', {
+          flaggerId: adm,
+          targetType: 'report',
+          targetId: r,
+          reason: 'spam',
+          status: 'open',
+          subjectUserId: skater,
+          createdAt: T0 + i,
+        });
+      }
+    });
+    const page = await as(t, 'adm').query(api.people.person, { userId: skater });
+    expect(page?.open.flags).toHaveLength(12);
+    expect(page?.open.flags.every((f) => f.targetLabel === 'Mascoma Lake')).toBe(true);
+    expect(page?.open.flagLabelsCapped).toBe(false);
+    expect(page?.publicProfile.opens).toBe(true);
+  });
+
+  test('a flagged Post is labeled by the lake of the Report it carries, as the Inbox names it', async () => {
+    const t = await setup();
+    const adm = await seed(t, 'adm', { role: 'admin' });
+    const skater = await seed(t, 'skater');
+    const body = await lake(t, 'Sunapee');
+    await t.run(async (ctx) => {
+      const r = await ctx.db.insert('reports', report(skater, body));
+      const post = await ctx.db.insert('posts', {
+        authorId: skater,
+        reportIds: [r],
+        photoIds: [],
+        latestSkateEndTime: T0,
+        moderationStatus: 'visible',
+        createdAt: T0,
+        updatedAt: T0,
+      });
+      await ctx.db.insert('contentFlags', {
+        flaggerId: adm,
+        targetType: 'post',
+        targetId: post,
+        reason: 'spam',
+        status: 'open',
+        subjectUserId: skater,
+        createdAt: T0,
+      });
+    });
+    const page = await as(t, 'adm').query(api.people.person, { userId: skater });
+    expect(page?.open.flags[0]?.targetLabel).toBe('Sunapee');
+  });
+
+  test('a staffer whose flagging was switched off before promotion has no "off since" for it', async () => {
+    const t = await setup();
+    await seed(t, 'adm', { role: 'admin' });
+    const mod = await seed(t, 'mod');
+    await as(t, 'adm').mutation(api.moderation.setPostingPermission, {
+      userId: mod,
+      permission: 'flagging',
+      allowed: false,
+      reason: 'r',
+    });
+    await as(t, 'adm').mutation(api.admin.grantRole, { userId: mod, role: 'moderator' });
+    const page = await as(t, 'adm').query(api.people.person, { userId: mod });
+    expect(page?.rights.flagging).toBe(true);
+    expect(page?.rightsSince.flagging).toBeNull();
+    expect(page?.rightsSinceCapped).toBe(false);
   });
 });
 

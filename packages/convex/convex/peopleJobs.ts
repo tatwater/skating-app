@@ -811,11 +811,20 @@ export const backfillUndoChains = internalMutation({
             await ctx.db.patch(rootId, { undoTop: depth, undoTopActorId: row.actorId });
           }
           await ctx.db.patch(row._id, { undoRoot: rootId, undoDepth: depth });
-          placed++;
           if (roleRow) {
-            await stampTenure(ctx, row.targetId as Id<'profiles'>);
-            reads.spend(STAMP_WORK);
+            try {
+              await stampTenure(ctx, row.targetId as Id<'profiles'>);
+            } catch (err) {
+              // The same rule as the first row's stamp above: a placed row is passed over, so a stamp
+              // that failed must leave the row unplaced, or the re-run never stamps the person again.
+              await ctx.db.patch(row._id, { undoRoot: undefined, undoDepth: undefined });
+              throw err;
+            } finally {
+              // Its reads count either way; the row started only once they fit.
+              reads.spend(STAMP_WORK);
+            }
           }
+          placed++;
         } catch (err) {
           failed++;
           console.error(`peopleJobs.backfillUndoChains: ${row._id} failed (${errorClassOf(err)})`);

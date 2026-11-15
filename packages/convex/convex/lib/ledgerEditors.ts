@@ -169,15 +169,9 @@ async function readLedgerEditors(ctx: QueryCtx | MutationCtx): Promise<Set<strin
   return confirmed;
 }
 
-/** What the transaction can still read, from its real metrics (a whole budget where none are kept). */
+/** What the transaction can still read, from its real metrics (as `lib/recurringWork.affords` reads them). */
 async function bytesLeft(ctx: QueryCtx | MutationCtx): Promise<number> {
-  const meta = (
-    ctx as {
-      meta?: { getTransactionMetrics?: () => Promise<{ bytesRead: { remaining: number } }> };
-    }
-  ).meta;
-  if (meta?.getTransactionMetrics === undefined) return 16 * DOC_MAX;
-  return (await meta.getTransactionMetrics()).bytesRead.remaining;
+  return (await ctx.meta.getTransactionMetrics()).bytesRead.remaining;
 }
 
 /** Whether `target` is the only editor who can still act — taking it from them is refused. */
@@ -217,7 +211,10 @@ export async function grantLedgerEditorImpl(
   ctx: MutationCtx,
   actor: Profile | null,
   { userId, reason, seeded }: { userId: Id<'profiles'>; reason?: string; seeded?: boolean },
-): Promise<{ userId: Id<'profiles'>; actionId: Id<'moderationActions'> }> {
+): Promise<{
+  userId: Id<'profiles'>;
+  actionId: Id<'moderationActions'>;
+}> {
   const target = await ctx.db.get(userId);
   if (!target) throw new ConvexError('User not found');
   const refused = ledgerGrantRefusal(target);
@@ -244,7 +241,10 @@ export async function revokeLedgerEditorImpl(
   ctx: MutationCtx,
   actor: Profile,
   { userId, reason }: { userId: Id<'profiles'>; reason: string },
-): Promise<{ userId: Id<'profiles'>; actionId: Id<'moderationActions'> }> {
+): Promise<{
+  userId: Id<'profiles'>;
+  actionId: Id<'moderationActions'>;
+}> {
   if (reason.trim().length === 0) throw new ConvexError('A reason is required');
   const target = await ctx.db.get(userId);
   if (!target) throw new ConvexError('User not found');

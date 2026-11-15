@@ -196,10 +196,13 @@ export async function stampTenure(ctx: MutationCtx, userId: Id<'profiles'>): Pro
     row.role,
     !pending.includes('undoChains'),
   );
+  // Capped only for a read that stopped short, as the strip says it: an undo not yet placed leaves the
+  // dates `null` and the readers' `pending` naming `undoChains` — and the undo-chain backfill stamps
+  // the row again once it places that undo.
   await ctx.db.patch(row._id, {
     roleSince: read.tenure.roleSince?.at,
     staffSince: read.tenure.staffSince?.at,
-    tenureCapped: tenureCappedOf(read) || read.roleUnplaced,
+    tenureCapped: tenureCappedOf(read),
     tenureAt: Date.now(),
   });
 }

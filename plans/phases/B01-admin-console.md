@@ -2379,28 +2379,38 @@ Every shape change is additive except where noted.
   order (a JSON key: oldest open item and id; rank, name and id), so a person who leaves or joins an
   earlier page moves nothing on a later one; a bare-offset cursor from before is still read. Rows add
   `oldestOpenAt` (Flagged and Appeals: the oldest open flag or waiting ticket — the very key they sort
-  by) and `staff` (Staff lane only: `lastSeenInConsoleAt`, `roleSince`, `roleSinceCapped`,
-  `decisionsThisWeek: Count`). The Staff columns are two reads for the whole page — the presence rows,
-  and the week's audit rows under a real-weight cap (a function gets one `paginate`, which is why the
-  Staff lane is read whole) — never one a row.
+  by) and `staff` (Staff lane only: `lastSeenInConsoleAt`, `lastSeenCapped`, `roleSince`,
+  `roleSinceCapped`, `decisionsThisWeek: Count`). The Staff columns are two reads for the whole page —
+  the presence rows within the record's retention, and the week's audit rows under a one-document
+  real-weight cap (a function gets one `paginate`, which is why the Staff lane is read whole; a support
+  viewer's queues, charged ahead, leave room for no more) — never one a row. A lane read whole is cut
+  by its key, sorted by it, so a tie the index breaks by creation time can't be skipped or repeated;
+  a page given an `endCursor` returns it as its `continueCursor`. The Staff page's `pending` names
+  `undoChains` while a role since can't be told yet.
 - **Last seen in the console.** `consolePresence` keeps one row per staffer — the last instant a
   console page heartbeat, replaced in place, erased with the account — and nothing about skaters. The
   lane shows it only within the current season and the one before (`signInRetentionFromMs`, the sign-in
-  record's own rule, D254); older is `null`, not recorded. The row itself is not pruned by season (the
-  sign-in prune is another job's); it is bounded by staff, not time.
+  record's own rule, D254); older is `null`, not recorded, and a read stopped at its cap says
+  `lastSeenCapped` rather than `null`. The row itself is not pruned by season (the sign-in prune is
+  another job's); it is bounded by staff, not time.
 - **A staffer's tenure, defined once** (`lib/staffTenure`): the strip's undo-aware staff since and role
   since, now one function. `people.staffStats` reads it live; every role write stamps it on the
   person's row (`roleSince`, `staffSince`, `tenureCapped`, `tenureAt`), as do the rows backfill (in
   its own nested call, for each staffer) and the undo-chain backfill when it places a role undo; a
   refresh keeps the stamp while the role holds. The Staff lane's `roleSince` is that stamp, so the lane
-  and the strip give one date.
+  and the strip give one date — and one reason for none: `tenureCapped` only for a read that stopped
+  short; an undo not yet placed is the readers' `pending`. The undo-chain backfill un-places a role
+  undo whose stamp failed, so its re-run stamps the person again.
 - **The person page.** `person` adds: `rightsSince` (when each right now off was last turned off, from
   one capped read of the person's `set_posting_permission` rows; `rightsSinceCapped`), `ledger.since`
-  (holders only), `publicProfile: { opens, private, path }` (the profile read's own `profileAccess`),
+  (holders only), `publicProfile: { opens, private, path }` (the profile read's own `profileAccess`,
+  whose block check is now two point reads on a new `blocks.by_blocker_blocked` index, never either
+  person's whole block list),
   `bountySeason` (this season's asks, over-limit and recent-report counts from `bountyGateEvents` via a
   new `by_requester_created` index; `null` when the season began before the gate's 180-day record),
-  `open.flags[].targetLabel` (the audit feed's labels — a person, or the body a report, Post, hazard or
-  alert is about — at most 20 distinct, then `open.flagLabelsCapped`), appeals' `body` (admins only,
+  `open.flags[].targetLabel` (the person's own name, or the body the flagged thing is about by the
+  Inbox's rule, `lib/openFlags.flagBodyId` — a Post, comment or photo through its Report — each body's
+  name read once; at most 20 distinct, then `open.flagLabelsCapped`), appeals' `body` (admins only,
   as appeals already are), and explicit `can` entries for every give-back: `restore.{reports, hazards,
   comments}`, `flaggingOn`, `bountyRaise` (no reason), `bountyLower` (a reason), `extend` (a new window
   for a running suspension; refused when not suspended). Each is the write's own answer

@@ -136,7 +136,19 @@ export async function undoState(
       why: 'Your account is being deleted, so you can no longer undo.',
     };
   }
-  return { state: 'available', needsReason: handler.undoTakesAway(row) };
+  return { state: 'available', needsReason: undoNeedsReason(row) };
+}
+
+/**
+ * Whether undoing `row` will ask a reason (D226): the undo of a give-back takes something away, so it
+ * asks; the undo of a take-away gives back, so it doesn't. The one rule — `undoState` (so
+ * `undo.latestOwn` and `undo.run`) answers by it, and every person write returns it beside its row,
+ * so the console's toast needs no lookup. `false` for a row with no undo.
+ */
+export function undoNeedsReason(row: Doc<'moderationActions'>): boolean {
+  const kind = UNDO_POLICY[row.action].undo.kind;
+  if (kind === 'none' || kind === 'later') return false;
+  return handlerFor(row)?.undoTakesAway(row) ?? false;
 }
 
 /** Why an undo on someone without a People row can't be checked on this page (before the backfill). */

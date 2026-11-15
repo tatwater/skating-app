@@ -8,7 +8,7 @@
  * this when their files are next open.)
  */
 
-import type { Doc, Id } from '../_generated/dataModel';
+import type { Doc, Id, TableNames } from '../_generated/dataModel';
 import type { QueryCtx } from '../_generated/server';
 
 /** The statuses a flag waits in. `actioned` and `dismissed` are decided. */
@@ -37,17 +37,22 @@ export async function readOpenFlags(
   return { flags: rows.slice(0, cap), capped: capped || rows.length > cap };
 }
 
+/** A point read by id — `ctx.db.get`, or a caller's read that charges a budget first. */
+export type PointRead = <T extends TableNames>(id: Id<T>) => Promise<Doc<T> | null>;
+
 /**
  * The body a flag is about, for a row that names where ("Mascoma Lake"): the body itself, or the
  * body the flagged report, post, comment, photo, hazard or access alert is on. `null` for a flag on a
- * person, or on something since deleted. At most three point reads.
+ * person, or on something since deleted. At most three point reads, each through `get` (a caller
+ * that charges its reads passes its own).
  */
 export async function flagBodyId(
   ctx: QueryCtx,
   flag: Pick<Doc<'contentFlags'>, 'targetType' | 'targetId'>,
+  get: PointRead = (id) => ctx.db.get(id),
 ): Promise<Id<'waterBodies'> | null> {
   const reportBody = async (id: Id<'reports'> | null | undefined) =>
-    id ? ((await ctx.db.get(id))?.waterBodyId ?? null) : null;
+    id ? ((await get(id))?.waterBodyId ?? null) : null;
   switch (flag.targetType) {
     case 'waterbody':
       return ctx.db.normalizeId('waterBodies', flag.targetId);
@@ -55,24 +60,24 @@ export async function flagBodyId(
       return reportBody(ctx.db.normalizeId('reports', flag.targetId));
     case 'post': {
       const id = ctx.db.normalizeId('posts', flag.targetId);
-      const post = id ? await ctx.db.get(id) : null;
+      const post = id ? await get(id) : null;
       return reportBody(post?.reportIds[0]);
     }
     case 'comment': {
       const id = ctx.db.normalizeId('comments', flag.targetId);
-      return reportBody(id ? (await ctx.db.get(id))?.reportId : null);
+      return reportBody(id ? (await get(id))?.reportId : null);
     }
     case 'photo': {
       const id = ctx.db.normalizeId('photos', flag.targetId);
-      return reportBody(id ? (await ctx.db.get(id))?.reportId : null);
+      return reportBody(id ? (await get(id))?.reportId : null);
     }
     case 'hazard': {
       const id = ctx.db.normalizeId('hazards', flag.targetId);
-      return id ? ((await ctx.db.get(id))?.waterBodyId ?? null) : null;
+      return id ? ((await get(id))?.waterBodyId ?? null) : null;
     }
     case 'accessAlert': {
       const id = ctx.db.normalizeId('accessAlerts', flag.targetId);
-      return id ? ((await ctx.db.get(id))?.waterBodyId ?? null) : null;
+      return id ? ((await get(id))?.waterBodyId ?? null) : null;
     }
     case 'user':
       return null;

@@ -39,20 +39,19 @@ import {
   type UserRole,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
-import type { Doc, Id } from './_generated/dataModel';
+import type { Doc, Id, TableNames } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
 import { GATE_EVENT_RETENTION_DAYS } from './analyticsRollup';
 import { auditTargetLabel } from './lib/auditReads';
 import { hasCapability, requireCapability } from './lib/auth';
 import { readVerdictCounts, VERDICT_COUNT_CAP } from './lib/contentVerdicts';
-import { flagTargetTable } from './lib/flagSubject';
 import {
   isLastLedgerEditor,
   isLedgerEditor,
   seesLedgerGrants,
   withoutLedgerGrantsFor,
 } from './lib/ledgerEditors';
-import { OPEN_FLAG_STATUSES } from './lib/openFlags';
+import { flagBodyId, OPEN_FLAG_STATUSES } from './lib/openFlags';
 import {
   no,
   type PersonWrite,
@@ -293,12 +292,15 @@ export interface PersonListRow {
   /**
    * On the Staff lane (`null` elsewhere): when they were last seen in the console (the presence row,
    * kept one per staffer and shown only within the current season and the one before — the sign-in
-   * record's own retention, D254; `null` when not recorded); when they took the role they hold (the
-   * tenure `people.staffStats` reads, stamped on the row; `null` when not recorded, `roleSinceCapped`
-   * when its read stopped short); and their decisions this week, as `staffStats` counts them.
+   * record's own retention, D254; `null` when not recorded, `lastSeenCapped` when the presence read
+   * stopped before it could say); when they took the role they hold (the tenure `people.staffStats`
+   * reads, stamped on the row; `null` when not recorded, `roleSinceCapped` when its read stopped
+   * short, and the page's `pending` names `undoChains` while it can't be told yet); and their
+   * decisions this week, as `staffStats` counts them.
    */
   staff: {
     lastSeenInConsoleAt: number | null;
+    lastSeenCapped: boolean;
     roleSince: number | null;
     roleSinceCapped: boolean;
     decisionsThisWeek: Count;
@@ -340,9 +342,13 @@ function toListRow(
 
 /** Presence rows read at most for a Staff page: one per staffer, so the staff lane's whole size. */
 const PRESENCE_ROWS = 500;
-/** A week of audit rows read at most for the Staff lane's decision counts, and their real weight. */
+/**
+ * A week of audit rows read at most for the Staff lane's decision counts, and their real weight. One
+ * document's worth: a support viewer's queues are charged ahead (`readUpstream`) and leave about
+ * three, and the capped read is charged its cap and a document past it.
+ */
 const STAFF_WEEK_ROWS = 2_000;
-const STAFF_WEEK_BYTES = 2 * DOC_MAX;
+const STAFF_WEEK_BYTES = DOC_MAX;
 
 /**
  * The Staff lane's own columns for a page of staff rows: two reads for the whole page (presence, and
@@ -357,19 +363,24 @@ async function withStaffColumns(
   stored: Map<string, Doc<'peopleRows'>>,
 ): Promise<PersonListRow[]> {
   if (rows.length === 0) return rows;
-  const presence = await takeCapped(budget, 'small', PRESENCE_ROWS, (n) =>
-    ctx.db.query('consolePresence').take(n),
-  );
+  // Only the rows the lane may show (within the sign-in record's retention), newest first: an older
+  // row — a former staffer's, say — is never read, so it can't crowd a current one past the cap.
   const keepFrom = signInRetentionFromMs(now);
-  const seen = new Map(
-    presence.rows.filter((p) => p.seenAt >= keepFrom).map((p) => [p.userId as string, p.seenAt]),
+  const presence = await takeCapped(budget, 'presence', PRESENCE_ROWS, (n) =>
+    ctx.db
+      .query('consolePresence')
+      .withIndex('by_seen_at', (q) => q.gte('seenAt', keepFrom))
+      .order('desc')
+      .take(n),
   );
+  const seen = new Map(presence.rows.map((p) => [p.userId as string, p.seenAt]));
   const week = thisWeekOf(now);
   const ledgerVisible = seesLedgerGrants(viewer);
-  // The week's rows only while the request can still afford them whole; otherwise every count is
-  // a floor of zero, said as capped — never a number shown as whole.
+  // The week's rows only while the request can still afford them whole — the cap and the document
+  // past it that `capped` charges; otherwise every count is a floor of zero, said as capped — never
+  // a number shown as whole.
   const page =
-    budget.affords(STAFF_WEEK_BYTES) && budget.affordsCalls(1, STAFF_WEEK_ROWS)
+    budget.affords(STAFF_WEEK_BYTES + DOC_MAX) && budget.affordsCalls(1, STAFF_WEEK_ROWS)
       ? await budget.capped(STAFF_WEEK_BYTES, STAFF_WEEK_ROWS, () =>
           ctx.db
             .query('moderationActions')
@@ -394,8 +405,9 @@ async function withStaffColumns(
     return {
       ...row,
       staff: {
-        // Presence past its read is not recorded, never a guess: the lane is the staff, all of them.
+        // Not found: not recorded — unless the read stopped at its cap, when it can't say.
         lastSeenInConsoleAt: seen.get(row.userId) ?? null,
+        lastSeenCapped: presence.capped && !seen.has(row.userId),
         roleSince: light?.tenureCapped ? null : (light?.roleSince ?? null),
         roleSinceCapped: light?.tenureCapped === true,
         decisionsThisWeek: { count: decided.get(row.userId) ?? 0, capped: !page.isDone },
@@ -444,11 +456,15 @@ function sliceByKey<T>(
   endCursor: string | null,
   pageSize: number,
 ): { slice: T[]; isDone: boolean; continueCursor: string } {
+  // In the key's own order, whatever order the rows were read in (an index breaks a tie by creation
+  // time, the key by id): a page cut by position and the next found by key must agree, or a tie
+  // straddling the cut is skipped or repeated.
+  const ordered = [...rows].sort((a, b) => compareKeys(keyOf(a), keyOf(b)));
   const from = cursor === null ? null : parseKey(cursor);
   const legacy = cursor !== null && /^\d+$/.test(cursor);
   const after = legacy
-    ? rows.slice(Number(cursor))
-    : rows.filter((r) => from === null || compareKeys(keyOf(r), from) > 0);
+    ? ordered.slice(Number(cursor))
+    : ordered.filter((r) => from === null || compareKeys(keyOf(r), from) > 0);
   const to = endCursor === null ? null : parseKey(endCursor);
   const slice =
     to !== null ? after.filter((r) => compareKeys(keyOf(r), to) <= 0) : after.slice(0, pageSize);
@@ -456,7 +472,14 @@ function sliceByKey<T>(
   return {
     slice,
     isDone: slice.length === after.length,
-    continueCursor: last === undefined ? (endCursor ?? cursor ?? '') : JSON.stringify(keyOf(last)),
+    // A page bounded by its end keeps that end, as Convex's own pagination does, so the next page —
+    // asked from it — still starts where this one stops even when its last row has left.
+    continueCursor:
+      to !== null
+        ? (endCursor as string)
+        : last === undefined
+          ? (cursor ?? '')
+          : JSON.stringify(keyOf(last)),
   };
 }
 
@@ -628,9 +651,14 @@ export const listPage = query({
           slice.map((r) => toListRow(r, now, flagsBy, appealsBy)),
           new Map(slice.map((r) => [r.userId as string, r])),
         ),
-        isDone: isDone && !read.capped,
+        // The end of what was read: past the cap the page says `count_capped` rather than ask for
+        // more pages that could only come back empty.
+        isDone,
         continueCursor,
         ...truthful,
+        // Role since rests on the undo chains too: until they are placed it can't be told (`null`,
+        // not capped), as the strip says it.
+        pending: pendingOf(up, ['rows', 'flagSubjects', 'undoChains']),
         ...(read.capped
           ? { partial: true, reasons: [...truthful.reasons, 'count_capped' as const] }
           : {}),
@@ -759,11 +787,14 @@ async function rightsSinceOf(
     comments: null,
     flagging: null,
   };
+  // Off as the page's `rights` says it: staff can always flag (D222), so their flagging is never off.
+  const staff = ROLE_RANK[target.role] >= ROLE_RANK.moderator;
   const off = (Object.keys(RIGHT_FIELDS) as Right[]).filter(
-    (r) => target[RIGHT_FIELDS[r]] === false,
+    (r) => target[RIGHT_FIELDS[r]] === false && !(r === 'flagging' && staff),
   );
   if (off.length === 0) return { since, capped: false };
-  if (!budget.affords(RIGHT_ROWS_BYTES) || !budget.affordsCalls(1, RIGHT_ROWS)) {
+  // `capped` charges its cap and a document past it: asked for both, or the read would throw.
+  if (!budget.affords(RIGHT_ROWS_BYTES + DOC_MAX) || !budget.affordsCalls(1, RIGHT_ROWS)) {
     return { since, capped: true };
   }
   const page = await budget.capped(RIGHT_ROWS_BYTES, RIGHT_ROWS, () =>
@@ -811,26 +842,53 @@ async function ledgerSinceOf(
   return row?.createdAt ?? null;
 }
 
-/** Distinct flagged things the person page names, at most (each up to two reads at their worst). */
+/** Distinct flagged things the person page names, at most. */
 const FLAG_LABELS = 20;
 
-/** The row kind a flag's content target is charged as, read for its body. */
-const FLAG_TARGET_KIND = {
-  reports: 'report',
-  posts: 'post',
-  comments: 'comment',
-  hazards: 'hazard',
-  accessAlerts: 'accessAlert',
-  photos: 'photo',
-} as const;
+/** A read on the way to a flag's body the request's budget couldn't afford: the label is capped. */
+class LabelUnaffordable extends Error {}
 
 /**
  * Label each open flag's target, at most {@link FLAG_LABELS} distinct ones, through the request's
- * budget: a person or body by `auditTargetLabel`; content by the body it is about. Returns whether
- * any went unlabeled for the cap or the budget.
+ * budget: a flag on the person by their own name; anything else by the body it is about — the Inbox's
+ * own rule (`lib/openFlags.flagBodyId`: a report, Post, comment, photo, hazard or alert, through the
+ * report it hangs on), each read as it really weighs. A body's name is read once however many of
+ * its items are flagged. Returns whether any went unlabeled for the cap or the budget.
  */
-async function labelFlags(ctx: QueryCtx, budget: ReadBudget, flags: OpenFlag[]): Promise<boolean> {
+async function labelFlags(
+  ctx: QueryCtx,
+  budget: ReadBudget,
+  person: Doc<'profiles'>,
+  flags: OpenFlag[],
+): Promise<boolean> {
   const labels = new Map<string, string | null>();
+  const bodyNames = new Map<string, string | null>();
+  const personName = person.displayName.trim() || person.username;
+  // Each read on the way to the body: started only while a whole document fits, charged its weight.
+  const get = async <T extends TableNames>(id: Id<T>): Promise<Doc<T> | null> => {
+    const doc = await budget.measured('report', () => ctx.db.get(id));
+    if (doc === undefined) throw new LabelUnaffordable();
+    return doc;
+  };
+  const labelOf = async (flag: OpenFlag): Promise<string | null | undefined> => {
+    if (flag.targetType === 'user' && flag.targetId === person._id) return personName;
+    let bodyId: Id<'waterBodies'> | null;
+    try {
+      bodyId = await flagBodyId(ctx, flag, get);
+    } catch (err) {
+      if (err instanceof LabelUnaffordable) return undefined;
+      throw err;
+    }
+    if (bodyId === null) return null;
+    const known = bodyNames.get(bodyId);
+    if (known !== undefined) return known;
+    // A body's library row, whose name no writer caps.
+    if (!budget.affordsRead('bodyLibraryRow') || !budget.affordsCalls(1, 1)) return undefined;
+    budget.reserve('bodyLibraryRow', 1);
+    const name = await auditTargetLabel(ctx, 'waterbody', bodyId);
+    bodyNames.set(bodyId, name);
+    return name;
+  };
   let capped = false;
   for (const flag of flags) {
     const key = `${flag.targetType}:${flag.targetId}`;
@@ -839,7 +897,7 @@ async function labelFlags(ctx: QueryCtx, budget: ReadBudget, flags: OpenFlag[]):
         capped = true;
         continue;
       }
-      const label = await flagTargetLabel(ctx, budget, flag.targetType, flag.targetId);
+      const label = await labelOf(flag);
       if (label === undefined) {
         capped = true;
         continue;
@@ -850,31 +908,6 @@ async function labelFlags(ctx: QueryCtx, budget: ReadBudget, flags: OpenFlag[]):
     if (label) flag.targetLabel = label;
   }
   return capped;
-}
-
-/** One flag target's label; `undefined` when the budget can't afford its reads. */
-async function flagTargetLabel(
-  ctx: QueryCtx,
-  budget: ReadBudget,
-  targetType: OpenFlag['targetType'],
-  targetId: string,
-): Promise<string | null | undefined> {
-  const named = (kind: 'user' | 'waterbody', id: string) => {
-    // A person's row (a rowless one is read by `rowlessProfile`, which charges itself), or a body's
-    // library row, whose name no writer caps.
-    const row = kind === 'user' ? 'personRow' : 'bodyLibraryRow';
-    if (!budget.affordsRead(row) || !budget.affordsCalls(2, 2)) return undefined;
-    budget.reserve(row, 1);
-    return auditTargetLabel(ctx, kind, id);
-  };
-  const table = flagTargetTable(targetType);
-  if (table === null) return named(targetType === 'user' ? 'user' : 'waterbody', targetId);
-  const id = ctx.db.normalizeId(table, targetId);
-  if (id === null) return null;
-  const doc = await budget.measured(FLAG_TARGET_KIND[table], () => ctx.db.get(id));
-  if (doc === undefined) return undefined;
-  const bodyId = (doc as { waterBodyId?: Id<'waterBodies'> } | null)?.waterBodyId;
-  return bodyId === undefined ? null : named('waterbody', bodyId);
 }
 
 /**
@@ -1020,6 +1053,19 @@ export const person = query({
       capped: flaggedBy.capped,
     };
 
+    // ── Whether this viewer can open the public profile: the profile read's own rule ──
+    // Before the reads below that size themselves by what is left (the labels last of all), so
+    // neither this nor the ledger's grant time is starved — or thrown on — by them.
+    // Its block check: one point read each way (`blockedEitherWay`).
+    budget.reserve('small', 1);
+    budget.reserve('small', 1);
+    const publicAccess = await profileAccess(ctx, target, viewer);
+
+    // ── When a holder's grant was given (holders only), while the budget is whole ──
+    const ledgerVisible = target.role === 'admin' && seesLedgerGrants(viewer);
+    const ledgerSince =
+      ledgerVisible && isLedgerEditor(target) ? await ledgerSinceOf(ctx, budget, userId) : null;
+
     // ── The bounty season line: their asks this season, from the create gate's record ──
     const bountySeason = await bountySeasonOf(ctx, budget, userId, now);
 
@@ -1027,12 +1073,7 @@ export const person = query({
     const rightsSince = await rightsSinceOf(ctx, budget, target);
 
     // ── The open flags' labels, through the budget left ──
-    const flagLabelsCapped = await labelFlags(ctx, budget, openFlags);
-
-    // ── Whether this viewer can open the public profile: the profile read's own rule ──
-    budget.reserveCalls(2, 2);
-    budget.reserve('small', 64);
-    const publicAccess = await profileAccess(ctx, target, viewer);
+    const flagLabelsCapped = await labelFlags(ctx, budget, target, openFlags);
 
     // ── The levers, and whether this viewer may pull each: the write's own refusal ──
     const discipline = viewerCan(viewer, 'people.discipline');
@@ -1055,7 +1096,6 @@ export const person = query({
       lever({ kind: 'right', permission, allowed: true });
     const flaggingOff = await lever({ kind: 'right', permission: 'flagging', allowed: false });
     const roleCan = (role: UserRole) => answer({ kind: 'role', role }, roles, 'role');
-    const ledgerVisible = target.role === 'admin' && seesLedgerGrants(viewer);
     const grantWhy = ledgerVisible
       ? await writeRefusal(ctx, viewer, target, { kind: 'ledgerGrant' })
       : null;
@@ -1093,17 +1133,17 @@ export const person = query({
         trustPoints: hasCapability(viewer, 'people.trustScore') ? target.reputationPoints : null,
       },
       /**
-       * When each right now taken away was last taken (the newest `set_posting_permission` row that
-       * turned it off); `null` for a right they have, or when no row read says — `rightsSinceCapped`
-       * when the read stopped before finding one.
-       */
-      /**
        * Their bounty asks this season, from the create gate's record (`bountyGateEvents`, kept 180
        * days): every attempt, those refused for being over their limit, and those refused because the
        * lake had a recent report. `null` — not recorded — when the season began before the record's
        * window, rather than a part of the season shown as the whole.
        */
       bountySeason,
+      /**
+       * When each right now taken away was last taken (the newest `set_posting_permission` row that
+       * turned it off); `null` for a right they have, or when no row read says — `rightsSinceCapped`
+       * when the read stopped before finding one.
+       */
       rightsSince: rightsSince.since,
       rightsSinceCapped: rightsSince.capped,
       rights: {
@@ -1139,7 +1179,7 @@ export const person = query({
             /** The last editor who can act: their switch can't be turned off (D227). */
             last: await isLastLedgerEditor(ctx, target),
             /** When the grant they hold was given; `null` when not a holder, or no row says. */
-            since: isLedgerEditor(target) ? await ledgerSinceOf(ctx, budget, userId) : null,
+            since: ledgerSince,
           }
         : null,
       /**
@@ -1565,7 +1605,6 @@ const WEEK_MS = 7 * DAY_MS;
  */
 const DECISION_ROWS = 2_000;
 const DECISION_BYTES = 4 * DOC_MAX;
-/** Role rows walked at most for *staff since*. */
 
 /** The verbs that decide something a person filed, for *Time to decide*. Tickets wait on an audit. */
 const FILED_DECISIONS: ReadonlySet<string> = new Set([

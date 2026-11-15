@@ -19,7 +19,7 @@ import { refreshPersonRow } from './lib/peopleRows';
 import { trustClassFor } from './lib/reputation';
 import { stampTenure } from './lib/staffTenure';
 import { literals } from './lib/validators';
-import type { PersonWriteResult } from './moderation';
+import { type PersonWriteResult, personWriteResult } from './moderation';
 
 interface UserHit {
   userId: string;
@@ -136,7 +136,7 @@ export async function grantRoleImpl(
   await refreshPersonRow(ctx, userId);
   // The Staff lane's row carries the tenure this write just changed (`lib/staffTenure`).
   await stampTenure(ctx, userId);
-  return { userId, actionId };
+  return personWriteResult(ctx, userId, actionId);
 }
 
 /**
@@ -185,5 +185,5 @@ export async function revokeRoleImpl(
   await refreshPersonRow(ctx, userId);
   // The Staff lane's row carries the tenure this write just changed (`lib/staffTenure`).
   await stampTenure(ctx, userId);
-  return { userId, actionId };
+  return personWriteResult(ctx, userId, actionId);
 }

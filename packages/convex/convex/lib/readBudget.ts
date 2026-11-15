@@ -90,6 +90,8 @@ export const ROW_MAX = {
   small: SLACK,
   // A bounty-create attempt: ids, a decision, a few numbers and a trust class — no free text.
   gateEvent: 2 * 1024,
+  // A console presence row: a staffer's id and an instant.
+  presence: 1024,
 } as const;
 export type RowKind = keyof typeof ROW_MAX;
 
