@@ -38,6 +38,30 @@ export async function auditTargetLabel(
   return null;
 }
 
+/**
+ * **Every row's target label, one read per distinct target** — the page's rows share them, so a feed
+ * of 100 rows on a dozen bodies makes a dozen reads, and 100 rows on 100 targets at most 100 (B01-3c:
+ * a read per row cost an unfiltered 100-row page 315 ms on dev). Kinds with no label read nothing.
+ * Keyed `targetType\u0001targetId`; `null` where the target has no label or is gone.
+ */
+export async function auditTargetLabels(
+  ctx: QueryCtx,
+  rows: readonly { targetType: ModerationTargetType; targetId: string }[],
+): Promise<Map<string, string | null>> {
+  const out = new Map<string, string | null>();
+  for (const row of rows) {
+    const key = targetKey(row);
+    if (out.has(key)) continue;
+    out.set(key, await auditTargetLabel(ctx, row.targetType, row.targetId));
+  }
+  return out;
+}
+
+/** The key {@link auditTargetLabels} files a target under. */
+export function targetKey(row: { targetType: ModerationTargetType; targetId: string }): string {
+  return `${row.targetType}\u0001${row.targetId}`;
+}
+
 export function auditRowsOn(
   ctx: QueryCtx,
   target: { targetType: ModerationTargetType; targetId: string; action?: ModerationAction },
