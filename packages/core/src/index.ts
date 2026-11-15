@@ -113,6 +113,7 @@ export * from './reactions';
 export * from './recommended';
 export * from './reconcile';
 export * from './referenceLinks';
+export * from './regionReach';
 export * from './regionStats';
 export * from './regions';
 export * from './report';
