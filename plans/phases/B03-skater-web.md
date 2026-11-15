@@ -1114,12 +1114,25 @@ in another tab left this tab's resend armed with the old words, and the server's
 would have kept those and silently dropped the edit; a draft thrown away in the other tab would
 still have gone out from this one. A `storage` event now disarms the resend unless the record still
 says armed for this draft and this account (another draft of the same author's, started in the
-other tab, leaves it alone). Disarming sends nothing; *Post* stays the author's to press.
+other tab, leaves it alone). It reads what the other tab wrote (the event's new value), not the
+store, which a write of this tab's own could have overtaken. A send already out when the change
+lands comes back disarmed too: its refusal no longer re-arms the resend, and it leaves the record as
+the other tab wrote it unless the create went out, whose lock a reload must find. Disarming sends
+nothing; *Post* stays the author's to press.
 
 Every property in `sheetStore.properties.test.ts` now runs four pinned seeds (the first is this
 one) and one random seed on every build, the same policy as `erasure.test.ts` (B01 §12.8);
 `SHEET_PROPERTY_SEED` replays a seed and `SHEET_PROPERTY_RUNS` widens the run, locally. The model
 still cannot see a sign-out in one tab reaching the other through Clerk (only the record's change),
 two tabs editing the same draft at once (the record is last-writer-wins, as it was), a send already
-in flight when the other tab's change lands, or a blob store that fails while a lost photo is being
-rewritten. The other fast-check suites in the web app pin no seed (listed in the PR).
+in flight when the other tab's change lands (named cases in the same file cover it), or a blob store
+that fails while a lost photo is being rewritten. The other fast-check suites in the web app pin no
+seed (listed in the PR).
+
+**Open, for the founder:** the record is one slot per browser, last writer wins. A draft waiting to
+resend in one tab, while the author starts another draft in a second tab, stays armed (a different
+draft is not a change to this one); when it goes out, its refusal writes it back over the second
+tab's draft, and its Post clears the slot and every stored photo. The same happens today when the
+author presses *Post* in the first tab. It costs a draft's stored copy, never sends anything the
+author did not press, and predates this fix; the cure is per-draft records or one tab owning the
+resend.

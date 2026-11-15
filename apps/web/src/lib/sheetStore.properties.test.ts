@@ -16,12 +16,14 @@ import {
   clearStoredSheet,
   forgetSheet,
   getSheet,
+  getSheetAttempt,
   getSheetResend,
   type RestoredSheet,
   resendSheet,
   resetSheetStoreForTests,
   restoreStoredSheet,
   type SheetSendOutcome,
+  sendSheet,
   setSheet,
   setSheetAttempt,
   updateSheet,
@@ -64,11 +66,15 @@ const SEEDS: readonly (number | undefined)[] = REPLAYING
   ? [REPLAYED]
   : [...PINNED_SEEDS, undefined];
 
-/** One `it` per seed: `build` makes the property, `numRuns` is the random seed's share. */
+/**
+ * One `it` per seed: `build` makes the property, `numRuns` is the random seed's share. No `examples`:
+ * fast-check counts them against `numRuns`, so a named case passed in would take a random case's
+ * place on every seed — the named cases run as their own `it`s instead.
+ */
 function property<Ts>(
   name: string,
   build: () => fc.IAsyncProperty<Ts>,
-  { numRuns, examples }: { numRuns: number; examples?: Ts[] },
+  { numRuns }: { numRuns: number },
 ): void {
   const runs = RUNS_KNOB > 0 ? RUNS_KNOB : numRuns;
   for (const seed of SEEDS) {
@@ -80,7 +86,6 @@ function property<Ts>(
           // it found past the pinned seeds' half would never be reached again.
           numRuns: seed === undefined || REPLAYING ? runs : Math.ceil(runs / 2),
           ...(seed !== undefined ? { seed } : {}),
-          ...(examples !== undefined ? { examples } : {}),
         });
       },
       SLOW_TEST_MS,
@@ -717,7 +722,9 @@ const poolIds = (post: PostSheet | null) => (post?.photos ?? []).map((p) => p.id
 
 /** Another tab wrote the record (or removed it): what the browser tells every other tab. */
 function storageEventFromAnotherTab(): void {
-  window.dispatchEvent(new StorageEvent('storage', { key: KEY }));
+  window.dispatchEvent(
+    new StorageEvent('storage', { key: KEY, newValue: window.localStorage.getItem(KEY) }),
+  );
 }
 
 /**
@@ -1047,7 +1054,7 @@ describe('resending', () => {
   property(
     'only ever sends what the author pressed Post on, to the author: an edit since, and it waits for them',
     () => fc.asyncProperty(fc.array(resendOpArb, { maxLength: 24 }), (ops) => resendScenario(ops)),
-    { ...RUNS, examples: Object.values(RESEND_CASES).map((ops): [ResendOp[]] => [ops]) },
+    RUNS,
   );
 });
 
@@ -1108,5 +1115,96 @@ describe('another tab', () => {
     storageEventFromAnotherTab();
     expect(getSheetResend()).toBe('none');
     expect(getSheet()).not.toBeNull();
+  });
+
+  it('what the other tab wrote decides, even when a write of this tab’s own landed after it', async () => {
+    const sheet = await waiting();
+    // The store still holds this tab's armed copy; the event carries the other tab's edit.
+    const edited = { owner: AUTHOR, sheet: { ...sheet, title: 'Changed there' }, attempt: null };
+    window.dispatchEvent(
+      new StorageEvent('storage', { key: KEY, newValue: JSON.stringify(edited) }),
+    );
+    expect(getSheetResend()).toBe('none');
+  });
+
+  /** A send held until the test answers it. */
+  const held = () => {
+    let resolve: (outcome: SheetSendOutcome) => void = () => {};
+    const send = vi.fn(
+      (_post: PostSheet) => new Promise<SheetSendOutcome>((done) => (resolve = done)),
+    );
+    return { send, answer: (outcome: SheetSendOutcome) => resolve(outcome) };
+  };
+
+  /** The author changes this draft in another tab: new words, its record not armed. */
+  const editElsewhere = () => {
+    const record = JSON.parse(window.localStorage.getItem(KEY) as string) as Stored & {
+      resendArmed?: boolean;
+    };
+    const { resendArmed: _armed, ...rest } = record;
+    window.localStorage.setItem(
+      KEY,
+      JSON.stringify({ ...rest, sheet: { ...rest.sheet, title: 'Changed there' } }),
+    );
+    storageEventFromAnotherTab();
+  };
+
+  const stored = () =>
+    JSON.parse(window.localStorage.getItem(KEY) as string) as Stored & {
+      attempt: PostDraft | null;
+      resendArmed?: boolean;
+    };
+
+  it('a change there while the resend is out: its refusal neither re-arms it nor writes over the change', async () => {
+    const sheet = await waiting();
+    const { send, answer } = held();
+    const flight = resendSheet(send);
+    expect(getSheetResend()).toBe('sending');
+    editElsewhere();
+    const refused = attemptOf(sheet, 'pending');
+    answer({ kind: 'refused', message: 'No connection.', draft: refused });
+    await flight;
+    expect(getSheetResend()).toBe('none');
+    // Kept here for the author's next *Post*, which resumes from it.
+    expect(getSheetAttempt()).toEqual(refused);
+    expect(stored().sheet.title).toBe('Changed there');
+    expect(stored().resendArmed).toBeUndefined();
+  });
+
+  it('the same once the create went out: the lock reaches the record, and nothing re-arms', async () => {
+    const sheet = await waiting();
+    const { send, answer } = held();
+    const flight = resendSheet(send);
+    editElsewhere();
+    answer({ kind: 'refused', message: 'No answer.', draft: attemptOf(sheet, 'creating') });
+    await flight;
+    expect(getSheetResend()).toBe('none');
+    expect(stored().attempt?.status).toBe('creating');
+    expect(stored().sheet.title).toBe(sheet.title);
+    expect(stored().resendArmed).toBeUndefined();
+  });
+
+  it('a Post pressed here and changed there while it is out does not arm on its refusal', async () => {
+    await startRun();
+    bindSheetOwner(AUTHOR);
+    const sheet = openSheet();
+    setSheet(sheet);
+    const { send, answer } = held();
+    const flight = sendSheet(send);
+    editElsewhere();
+    answer({ kind: 'refused', message: 'No connection.', draft: attemptOf(sheet, 'pending') });
+    await flight;
+    expect(getSheetResend()).toBe('none');
+  });
+
+  it('an event mid-send that changes nothing of this draft leaves the refusal to re-arm it', async () => {
+    const sheet = await waiting();
+    const { send, answer } = held();
+    const flight = resendSheet(send);
+    storageEventFromAnotherTab();
+    answer({ kind: 'refused', message: 'No connection.', draft: attemptOf(sheet, 'pending') });
+    await flight;
+    expect(getSheetResend()).toBe('waiting');
+    expect(stored().resendArmed).toBe(true);
   });
 });

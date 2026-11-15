@@ -38,13 +38,16 @@
  * author writing again, and leaves it armed. A *sent* Post stays armed through both: it cannot
  * change, it may already be live, and only a retry finds out. `resendSheet` is what
  * `useResendOnReconnect` calls; the store runs the send, one at a time, and takes no change while
- * one is in flight. A change made in another tab of the same browser disarms it the same way
- * (`onStoredElsewhere`): the tabs share the record, not their memory.
+ * one is in flight. A change made in another tab of the same browser disarms it too
+ * (`onStoredElsewhere`): the tabs share the record, not their memory. That includes a sent Post,
+ * which this tab would have kept armed — the other tab's copy may predate the lock, so the safe
+ * reading is that the author is writing again; *Try again* still resumes the attempt.
  *
- * What does not disarm it: a lost blob that this tab rewrites before any reload. The reconcile
- * stores every claimed photo this tab still holds, so a blob the browser dropped comes back on the
- * next change to the set of photos, and a restore after that finds every photo — the Post is still
- * exactly what the author pressed *Post* on.
+ * What does not disarm it: a lost blob that this tab rewrote before *Post* was pressed. The
+ * reconcile stores every claimed photo this tab still holds, so a blob the browser dropped comes back
+ * on the next change to the set of photos, and a restore after that finds every photo — the Post is
+ * still exactly what the author pressed *Post* on. (That change, made after the press, is the author
+ * writing again and disarms it on its own.)
  */
 
 import {
@@ -164,6 +167,11 @@ let swept = false;
 let resendArmed = false;
 /** The send on its way, and which draft it is for: only that draft's sheet is locked by it. */
 let sending: { draftId: string } | null = null;
+/**
+ * Another tab changed this draft's record while its send was on the way (`onStoredElsewhere`): the
+ * answer that comes back must not re-arm the resend, nor write this tab's copy over that change.
+ */
+let changedWhileSending = false;
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -292,8 +300,16 @@ function persist(): void {
 function readRecord(): StoredRecord | null {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (raw === null) return null;
+    return parseRecord(window.localStorage.getItem(STORAGE_KEY));
+  } catch {
+    return null;
+  }
+}
+
+/** A record's stored text, if it has the shape of one — `readRecord`'s check, on any copy of it. */
+function parseRecord(raw: string | null): StoredRecord | null {
+  if (raw === null) return null;
+  try {
     const parsed = JSON.parse(raw) as Partial<StoredRecord> | null;
     const sheet = parsed?.sheet;
     if (
@@ -532,8 +548,13 @@ export function updateSheet(
 /** Record the attempt a failed *Post* returned (or clear it), so the retry resumes from it. */
 export function setSheetAttempt(next: PostDraft | null): void {
   if (current === null) return;
+  recordAttempt(next, true);
+}
+
+/** Record the open sheet's attempt; `mayArm` false keeps the resend disarmed whatever it says. */
+function recordAttempt(next: PostDraft | null, mayArm: boolean): void {
   attempt = next;
-  resendArmed = canResend(current, attempt);
+  resendArmed = mayArm && canResend(current, attempt);
   persist();
   emit();
 }
@@ -545,18 +566,26 @@ export function setSheetAttempt(next: PostDraft | null): void {
  * or another account writing (its owner not this one) means what this tab holds is no longer what
  * they last pressed *Post* on. Another draft of the same author's, started in the other tab, is not a
  * change to this one and leaves it alone. Disarming sends nothing, and the record stays as the other
- * tab wrote it: rewriting it from here would undo the change that disarmed it.
+ * tab wrote it: rewriting it from here would undo the change that disarmed it. A send already on its
+ * way when the change lands is told too, so the answer it brings back does not re-arm it
+ * (`sendSheet`).
  */
 function onStoredElsewhere(event: StorageEvent): void {
   // `null` is the other tab clearing the whole store.
   if (event.key !== STORAGE_KEY && event.key !== null) return;
-  if (!resendArmed || current === null) return;
-  const record = readRecord();
-  const disarm =
+  if (current === null) return;
+  const inFlight = sending?.draftId === current.draftId;
+  if (!resendArmed && !inFlight) return;
+  // What the other tab wrote, not what the store holds now: a write of this tab's own that landed
+  // before the event arrived would hide the change. A clear carries no value; the store says.
+  const record = event.key === null ? readRecord() : parseRecord(event.newValue);
+  const changed =
     record === null ||
     record.owner !== owner ||
     (record.sheet.draftId === current.draftId && record.resendArmed !== true);
-  if (!disarm) return;
+  if (!changed) return;
+  if (inFlight) changedWhileSending = true;
+  if (!resendArmed) return;
   resendArmed = false;
   emit();
 }
@@ -580,6 +609,7 @@ export async function sendSheet(send: SheetSender): Promise<SheetSendResult> {
   }
   const post = current;
   sending = { draftId: post.draftId };
+  changedWhileSending = false;
   emit();
   let outcome: SheetSendOutcome;
   try {
@@ -591,6 +621,8 @@ export async function sendSheet(send: SheetSender): Promise<SheetSendResult> {
   }
   sending = null;
   const stillOpen = current?.draftId === post.draftId;
+  const changedElsewhere = changedWhileSending;
+  changedWhileSending = false;
   if (outcome.kind === 'posted') {
     if (stillOpen) {
       releaseAllSheetPhotos();
@@ -603,8 +635,18 @@ export async function sendSheet(send: SheetSender): Promise<SheetSendResult> {
     }
     return { kind: 'posted', postId: outcome.postId, reportId: outcome.reportId, stillOpen };
   }
-  if (stillOpen) setSheetAttempt(outcome.draft);
-  else emit();
+  if (!stillOpen) emit();
+  else if (!changedElsewhere) setSheetAttempt(outcome.draft);
+  // Another tab changed it while it was out: the answer stays here for the author's next *Post*, and
+  // the resend stays disarmed. A create that went out must still reach the record — the Post may be
+  // live, and a reload has to find it locked — but short of that the record stays as the other tab
+  // wrote it.
+  else if (postCreateSent(outcome.draft)) recordAttempt(outcome.draft, false);
+  else {
+    attempt = outcome.draft;
+    resendArmed = false;
+    emit();
+  }
   return { kind: 'refused', message: outcome.message };
 }
 
@@ -701,6 +743,7 @@ export function resetSheetStoreForTests(): void {
   attempt = null;
   resendArmed = false;
   sending = null;
+  changedWhileSending = false;
   owner = null;
   persistedAt = null;
   lostPhotos = null;
