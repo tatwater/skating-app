@@ -85,6 +85,7 @@ export * from './landmarks';
 export * from './landmarkWhere';
 export * from './libraryGrid';
 export * from './mapRegion';
+export * from './mergeLists';
 export * from './metrics';
 export * from './nameClaims';
 export * from './notifications';
