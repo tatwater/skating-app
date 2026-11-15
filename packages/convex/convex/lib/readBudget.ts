@@ -120,11 +120,6 @@ export class ReadBudget {
     return this.left >= bytes;
   }
 
-  /** Database calls this budget still allows — a loop's time bound counts the calls it made. */
-  get calls(): number {
-    return this.callsLeft;
-  }
-
   /**
    * Whether `rows` more of `kind`, in one call, fit every axis the transaction is limited on: bytes
    * at their worst, the number of calls, the number of documents. A read loop asks this before each
@@ -214,12 +209,9 @@ export class ReadBudget {
   async measured<T>(kind: RowKind, read: () => Promise<T>): Promise<T | undefined> {
     if (!this.affordsRead(kind)) return undefined;
     this.call(1);
-    // The worst case is held while the read is in flight and settled to the real size after, so reads
-    // started together (`inWaves`) can never between them spend past what the budget had.
-    this.left -= ROW_MAX[kind];
     const row = await read();
     const size = row === null || row === undefined ? 0 : getDocumentSize(row as never);
-    this.left += ROW_MAX[kind] - Math.min(size, ROW_MAX[kind]);
+    this.left -= Math.min(size, ROW_MAX[kind]);
     return row;
   }
 
@@ -375,41 +367,4 @@ export function errorClassOf(err: unknown): string {
 /** Rethrow a nested call's failure with its class as data, so the caller can record it. */
 export function asFailure(err: unknown): Error {
   return new ConvexError({ failed: errorClassOf(err) });
-}
-
-/** Items one wave starts together, at most — a query's time is its slowest round, not its reads. */
-export const WAVE_MAX = 50;
-
-/**
- * Run `work` over `items` in waves of concurrent calls — a query has one second, and a per-row lookup
- * awaited row after row spends it on round trips — each wave as large as the budget can hold at its
- * worst (`perItem` bytes an item may read; at least one, at most {@link WAVE_MAX}), and no larger than
- * `room` — how many more items the caller's own bound lets start (a count of calls, say), asked before
- * each wave, so a wave never carries the walk past it. Results come back in order; the walk stops at
- * the first item whose `work` returns `undefined` (its read didn't fit), or when `room` is spent, and
- * says where (`stoppedAt`), so the caller's figure is capped rather than thrown.
- */
-export async function inWaves<T, R>(
-  budget: ReadBudget,
-  items: readonly T[],
-  perItem: number,
-  work: (item: T) => Promise<R | undefined>,
-  room: () => number = () => Number.POSITIVE_INFINITY,
-): Promise<{ results: R[]; stoppedAt: number | null }> {
-  const results: R[] = [];
-  let i = 0;
-  while (i < items.length) {
-    const may = Math.floor(room());
-    if (may < 1) return { results, stoppedAt: i };
-    const fits = Math.floor(budget.bytes / Math.max(1, perItem));
-    const size = Math.max(1, Math.min(WAVE_MAX, may, fits));
-    const wave = items.slice(i, i + size);
-    const done = await Promise.all(wave.map(work));
-    for (const [k, r] of done.entries()) {
-      if (r === undefined) return { results, stoppedAt: i + k };
-      results.push(r);
-    }
-    i += wave.length;
-  }
-  return { results, stoppedAt: null };
 }

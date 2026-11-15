@@ -47,7 +47,7 @@ function code(source: string): string {
 function chargedSpans(text: string): [number, number][] {
   const spans: [number, number][] = [];
   const opener =
-    /\b(?:reads|budget)\.(?:one|take|page|measured|capped)\(|\bdrain\(|\btakeCapped\(/g;
+    /\b(?:reads|budget|requestBudget\([^()]*\))\.(?:one|take|page|measured|capped)\(|\bdrain\(|\btakeCapped\(/g;
   for (let m = opener.exec(text); m; m = opener.exec(text)) {
     let depth = 0;
     for (let i = m.index + m[0].length - 1; i < text.length; i++) {

@@ -76,9 +76,7 @@ import { OPEN_ENDED, type PeopleBackfill, personRowOf, readPreparation } from '.
 import {
   CHARGED_QUERY_BUDGET,
   DOC_MAX,
-  inWaves,
   type ReadBudget,
-  ROW_MAX,
   type RowKind,
   requestBudget,
 } from './lib/readBudget';
@@ -923,7 +921,7 @@ async function labelFlags(
       throw err;
     }
     if (bodyId === null) return null;
-    // Each lake read once, whichever flags in the wave name it.
+    // Each lake read once, whichever flags name it.
     const known = bodyNames.get(bodyId);
     if (known !== undefined) return known;
     // A body's library row, whose name no writer caps.
@@ -933,31 +931,31 @@ async function labelFlags(
     bodyNames.set(bodyId, name);
     return name;
   };
-  // The distinct things flagged, at most `FLAG_LABELS`, labelled in waves of concurrent reads.
+  // The distinct things flagged, at most `FLAG_LABELS`, labelled one after another (at once follows
+  // with the shared reservation, B01-3i).
   const byKey = new Map<string, OpenFlag>();
   for (const flag of flags) {
     const key = `${flag.targetType}:${flag.targetId}`;
     if (!byKey.has(key) && byKey.size < FLAG_LABELS) byKey.set(key, flag);
   }
   // A flag on the person is labelled by their own name, which needs no read: labelled whatever the
-  // budget, never left behind a body the waves below stopped short of.
+  // budget, never left behind a body the reads below stopped short of.
   const labels = new Map<string, string | null>();
   const toRead: string[] = [];
   for (const [key, flag] of byKey) {
     if (flag.targetType === 'user' && flag.targetId === person._id) labels.set(key, personName);
     else toRead.push(key);
   }
-  const read = await inWaves(
-    budget,
-    toRead,
-    2 * ROW_MAX.report + ROW_MAX.bodyLibraryRow,
-    async (key) => {
-      const label = await labelOf(byKey.get(key) as OpenFlag);
-      return label === undefined ? undefined : { key, label };
-    },
-  );
-  for (const r of read.results) labels.set(r.key, r.label);
-  let capped = read.stoppedAt !== null;
+  let capped = false;
+  for (const key of toRead) {
+    const label = await labelOf(byKey.get(key) as OpenFlag);
+    // Past the budget: this one unlabelled (and said so); later ones may still fit.
+    if (label === undefined) {
+      capped = true;
+      continue;
+    }
+    labels.set(key, label);
+  }
   for (const flag of flags) {
     const key = `${flag.targetType}:${flag.targetId}`;
     if (!labels.has(key)) {
@@ -1381,7 +1379,7 @@ const REFUSAL_DOCS = 1 + SUPPRESSION_ROWS_READ;
  * hook's snapshot and hidden-launch reads are owed (the phase doc's B01-3f "Owed").
  */
 const ROW_SHAPE_CALLS = 8 + REFUSAL_CALLS;
-const ROW_SHAPE_DOCS = 24 + REFUSAL_DOCS;
+export const ROW_SHAPE_DOCS = 24 + REFUSAL_DOCS;
 
 /**
  * How many of `n` rows {@link shapeRows} can shape once `calls` more calls reading `docs` documents
@@ -1389,8 +1387,7 @@ const ROW_SHAPE_DOCS = 24 + REFUSAL_DOCS;
  * {@link ROW_SHAPE_DOCS}.
  */
 function shapeable(budget: ReadBudget, n: number, calls = 0, docs = 0): number {
-  const byCalls = Math.floor((budget.calls - calls) / ROW_SHAPE_CALLS);
-  let k = Math.max(0, Math.min(n, byCalls));
+  let k = n;
   while (k > 0 && !budget.affordsCalls(calls + ROW_SHAPE_CALLS * k, docs + ROW_SHAPE_DOCS * k)) k--;
   return k;
 }
@@ -1404,11 +1401,13 @@ export async function shapeRows(
 ): Promise<PersonActionRow[]> {
   const budget = queryBudget(ctx);
   // Every row's calls are counted before any starts (as many rows as fit; the caller says capped for
-  // the rest), and then all are shaped at once: a page of fifty is a few rounds of reads, not a
-  // hundred and fifty round trips one after another — a query has one second.
+  // the rest). Rows are shaped one after another for now; doing them at once waits on the shared
+  // reservation in flight (B01-3i) and follows in its own PR.
   const n = shapeable(budget, rows.length);
   budget.reserveCalls(ROW_SHAPE_CALLS * n, ROW_SHAPE_DOCS * n);
-  return Promise.all(rows.slice(0, n).map((row) => toRow(ctx, viewer, row, actors)));
+  const out: PersonActionRow[] = [];
+  for (const row of rows.slice(0, n)) out.push(await toRow(ctx, viewer, row, actors));
+  return out;
 }
 
 async function toRow(
@@ -1417,21 +1416,17 @@ async function toRow(
   row: Doc<'moderationActions'>,
   actors: Actors,
 ): Promise<PersonActionRow> {
-  let actorRead: Promise<PersonRef | null> = Promise.resolve(null);
+  let actor: PersonRef | null = null;
   if (row.actorId !== undefined) {
     let read = actors.get(row.actorId);
     if (read === undefined) {
       read = personRef(ctx, row.actorId);
       actors.set(row.actorId, read);
     }
-    actorRead = read;
+    actor = await read;
   }
-  // The row's three lookups at once: who, what it names, and its undo state.
-  const [actor, label, undo] = await Promise.all([
-    actorRead,
-    labelOf(ctx, row),
-    undoState(ctx, viewer, row),
-  ]);
+  const label = await labelOf(ctx, row);
+  const undo = await undoState(ctx, viewer, row);
   return {
     id: row._id,
     action: row.action,
@@ -1791,7 +1786,9 @@ export const staffStats = query({
     const oldestRead =
       page.page.length > 0 ? (page.page[page.page.length - 1] as Audit).createdAt : end;
     const readAllAfter = (t: number) => page.isDone || oldestRead < t;
-    const rootOf = rootReader(ctx, budget, page.page);
+    // The reads its per-row loops make, for the query's time bound (`STAFF_CHECKED`).
+    const counted = { reads: 0 };
+    const rootOf = rootReader(ctx, budget, page.page, counted);
 
     // ── Staff since and role since (`lib/staffTenure`, the rule the Staff lane's rows are stamped by) ──
     // Read before the per-decision loops below, which run until the budget is spent: read after them,
@@ -1822,25 +1819,18 @@ export const staffStats = query({
     // The query's time bound (Convex gives a query one second): at most `STAFF_CHECKED` database calls
     // across both loops below (a row whose answer is in hand costs none), past which each figure says
     // capped, as a budget stop does.
-    const callsAtStart = budget.calls;
-    // Each row below costs at most one call, so a wave holds no more rows than calls are left: the
-    // bound is exact, never overshot by a wave started just under it.
-    const callsLeft = () => STAFF_CHECKED - (callsAtStart - budget.calls);
+    const overTime = () => counted.reads >= STAFF_CHECKED;
     const undoers = new Map<string, number>();
-    // In waves of concurrent reads (a chain's first row each), never one row's round trip after
-    // another's: a query has one second.
-    const roots = await inWaves(
-      budget,
-      weekRows,
-      ROW_MAX.moderationAction,
-      async (r) => {
-        const root = await rootOf(r);
-        return root === undefined ? undefined : { r, root };
-      },
-      callsLeft,
-    );
-    undoShort = roots.stoppedAt !== null;
-    for (const { r, root } of roots.results) {
+    for (const r of weekRows) {
+      if (overTime()) {
+        undoShort = true;
+        break;
+      }
+      const root = await rootOf(r);
+      if (root === undefined) {
+        undoShort = true;
+        break;
+      }
       const by = undoneBy(r, root);
       if (byOther(by)) {
         undone++;
@@ -1853,18 +1843,16 @@ export const staffStats = query({
     // A filing time the budget ran out before reading is capped, not unrecorded.
     let decideShort = false;
     const filed = weekRows.filter((x) => FILED_DECISIONS.has(x.action));
-    const filings = await inWaves(
-      budget,
-      filed,
-      ROW_MAX.waterBodyRequest,
-      async (r) => {
-        const filedAt = await filedAtOf(ctx, budget, r);
-        return filedAt === undefined ? undefined : { r, filedAt };
-      },
-      callsLeft,
-    );
-    decideShort = filings.stoppedAt !== null;
-    for (const { r, filedAt } of filings.results) {
+    for (const r of filed) {
+      if (overTime()) {
+        decideShort = true;
+        break;
+      }
+      const filedAt = await filedAtOf(ctx, budget, r, counted);
+      if (filedAt === undefined) {
+        decideShort = true;
+        break;
+      }
       if (filedAt === null) unknown++;
       else durations.push(Math.max(0, r.createdAt - filedAt));
     }
@@ -1981,15 +1969,14 @@ export const staffSeason = query({
     );
     let count = 0;
     let short = !page.isDone || inSeason.length > SEASON_CHECKED;
-    // In waves of concurrent checks, each up to three audit rows and a verdict at their worst.
-    const checked = await inWaves(
-      budget,
-      inSeason.slice(0, SEASON_CHECKED),
-      3 * ROW_MAX.moderationAction + ROW_MAX.verdict,
-      (r) => reversedByOther(ctx, budget, rootOf, r, staffer),
-    );
-    if (checked.stoppedAt !== null) short = true;
-    count = checked.results.filter(Boolean).length;
+    for (const r of inSeason.slice(0, SEASON_CHECKED)) {
+      const reversed = await reversedByOther(ctx, budget, rootOf, r, staffer);
+      if (reversed === undefined) {
+        short = true;
+        break;
+      }
+      if (reversed) count++;
+    }
     return {
       ...head,
       overturned: { count, capped: short } as Count,
@@ -2046,9 +2033,11 @@ async function filedAtOf(
   ctx: QueryCtx,
   budget: ReadBudget,
   row: Audit,
+  counter: { reads: number } = { reads: 0 },
 ): Promise<number | null | undefined> {
   const recorded = (row.metadata as { filedAt?: unknown } | undefined)?.filedAt;
   if (typeof recorded === 'number') return recorded;
+  if (row.targetType === 'contentFlag' || row.targetType === 'waterBodyRequest') counter.reads++;
   if (row.targetType === 'contentFlag') {
     const id = ctx.db.normalizeId('contentFlags', row.targetId);
     if (!id) return null;
