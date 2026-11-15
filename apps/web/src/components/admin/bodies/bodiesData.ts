@@ -47,7 +47,11 @@ export const SERVES_NOTHING: ListServes = { sort: [], facets: [], states: false,
 export interface BodyGroup {
   key: string;
   label: string;
+  /** Its best matches (the server's five). */
   rows: readonly BodyRow[];
+  /** How many match in all, counted to the server's bound; `capped`: a floor ("50+"). */
+  count?: number;
+  capped?: boolean;
 }
 
 export interface BodiesListData {
@@ -59,6 +63,11 @@ export interface BodiesListData {
    * them — then neither the group nor the search's tally is drawn, never an empty one or a zero.
    */
   others: readonly BodyGroup[] | null;
+  /**
+   * The other standings' search ignores the lane's facets (`facetsIgnored`): said plainly, so a
+   * tally that counts across them is never read as filtered.
+   */
+  othersFacetsIgnored?: boolean;
   /** How many the list holds after filters, when the read says. */
   total: Count | null;
   serves: ListServes;

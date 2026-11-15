@@ -24,6 +24,7 @@ import {
   listArgsOf,
   listFrom,
   listFromOpened,
+  type OtherStandings,
   previewFrom,
   servesFrom,
 } from './bodiesReads';
@@ -91,6 +92,7 @@ export function BodiesRoute({ bodyPath = BODY_PATH, openLabel }: BodiesRouteProp
   const args = canRead ? listArgsOf(query, listNow) : null;
   // A lane no server read lists (Opened recently) still counts the others: All's summary.
   const summary = useSummary(canRead ? (args ?? { lane: 'all', now: listNow }) : null);
+  const others = useOtherStandings(args);
   const opened = useOpenedList(canRead && query.lane.read.kind === 'openedByViewer');
   const preview = usePreview(query.bodyId, canRead, can('audit.read'));
   const paged = usePaged(key);
@@ -155,7 +157,7 @@ export function BodiesRoute({ bodyPath = BODY_PATH, openLabel }: BodiesRouteProp
       >
         <PagedRead args={args} memoryKey={key} onPage={paged.put} />
       </ReadBoundary>
-      <PagedView view={view} paged={paged} summary={summary} />
+      <PagedView view={view} paged={paged} summary={summary} others={others} />
     </>
   );
 }
@@ -285,10 +287,12 @@ function PagedView({
   view,
   paged,
   summary,
+  others,
 }: {
   view: Omit<BodiesViewProps, 'list'>;
   paged: PagedState;
   summary: SummaryRead;
+  others: OtherStandings | undefined;
 }): ReactNode {
   const { page, failure, retrying } = paged;
   const { current, laneHeld } = summary;
@@ -308,8 +312,9 @@ function PagedView({
       status: page?.status ?? 'LoadingFirstPage',
       current,
       held: laneHeld,
+      others,
     });
-  }, [page, failure, retrying, current, laneHeld]);
+  }, [page, failure, retrying, current, laneHeld, others]);
   return (
     <BodiesView
       {...view}
@@ -349,6 +354,25 @@ function useSummary(args: ListArgs | null): SummaryRead {
     held: last?.value,
     laneHeld: last !== undefined && last.lane === args?.lane ? last.value : undefined,
   };
+}
+
+/**
+ * A search's matches in the other standings (`bodies.searchOtherStandings`): read only for a search
+ * in one standing's lane — *All* and *Changed* already hold every standing. `undefined` while it
+ * loads, fails or there's no search: no group is drawn then, never an empty one.
+ */
+function useOtherStandings(args: ListArgs | null): OtherStandings | undefined {
+  const asked =
+    args !== null &&
+    (args.q ?? '').trim().length >= 2 &&
+    args.lane !== 'all' &&
+    args.lane !== 'changed'
+      ? (({ sort: _sort, ...rest }) => rest)(args)
+      : null;
+  const { reads } = useConsoleReadSet({
+    others: asked === null ? null : read(api.bodies.searchOtherStandings, asked),
+  });
+  return asked === null ? undefined : loaded(reads.others);
 }
 
 /**

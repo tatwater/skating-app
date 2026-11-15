@@ -400,6 +400,24 @@ describe('the search', () => {
     expect(spy.mock.lastCall?.[0].sort).toEqual({ column: 'reports', dir: 'asc' });
   });
 
+  it('counts each other standing as the server does, a floor as “50+”, and says the facets it ignores', () => {
+    const [dormant] = LIST_SEARCH.others ?? [];
+    if (dormant === undefined) throw new Error('fixture');
+    render(
+      <Harness
+        initial={queryOf({ q: 'mor' })}
+        list={{
+          ...LIST_SEARCH,
+          others: [{ ...dormant, count: 50, capped: true }],
+          othersFacetsIgnored: true,
+        }}
+      />,
+    );
+    expect(
+      screen.getByText('2 active · 50+ dormant (other standings unfiltered)'),
+    ).toBeInTheDocument();
+  });
+
   it('draws no other-standing group and no tally while no read gives the other standings', () => {
     render(<Harness initial={queryOf({ q: 'mor' })} list={{ ...LIST_SEARCH, others: null }} />);
     expect(document.querySelector('[data-slot=search-tally]')).toBeNull();

@@ -16,6 +16,7 @@ import { dayMonth, seasonYears } from '../shell/consoleTime';
 import { askFrom } from './askWords';
 import {
   type BodiesListData,
+  type BodyGroup,
   type BodyPreviewData,
   type ListServes,
   type ListStatus,
@@ -23,7 +24,7 @@ import {
   SERVES_NOTHING,
   UNREAD_LIST,
 } from './bodiesData';
-import type { BodyRow, BodySort } from './bodiesModel';
+import { type BodyRow, type BodySort, standingGroupWord } from './bodiesModel';
 import { type BodiesQuery, listSort } from './bodiesSearch';
 import { FACET_IDS } from './bodyFacets';
 import type { BodyLane } from './bodyLanes';
@@ -40,6 +41,9 @@ import type { BodyLane } from './bodyLanes';
  *   read by `waterBodies.get` and drawn as the body carries it, newest opened first. Nothing the
  *   body alone doesn't say (completeness, asks, reports, the last change) is drawn, and nothing
  *   narrows or orders it — the page filters no list itself, and twelve rows need none.
+ * - **A search's other standings** — `bodies.searchOtherStandings`: each other standing's count
+ *   (a floor past the server's bound) and best matches, gathered under the board's dividers; the
+ *   lane's facets aren't applied there, and the tally says so.
  * - **The counts** — `bodies.listSummary`: every lane's total (*Changed this week* to a cap), the
  *   corpus, the lane's state tabs, the list's total and the facet counts the stored counts answer
  *   exactly. A count it can't answer is `null` — no number, never a zero.
@@ -168,11 +172,42 @@ export function servesFrom(summary: ListSummary | undefined): ListServes {
  * landed (what controls the read honors, and the lane's state tabs, which don't move with a
  * filter).
  */
+/** `bodies.searchOtherStandings`'s answer. */
+export type OtherStandings = FunctionReturnType<typeof api.bodies.searchOtherStandings>;
+
+/**
+ * The other standings as the board groups them ("2 active · 4 dormant"): the server's lanes gathered
+ * under their divider's word (the three dormant lanes are one *Dormant*), in the server's order.
+ * A group's count is its lanes' together, a floor ("50+") when any of them stopped at the server's
+ * bound; its rows are each lane's best, every row saying its own standing.
+ */
+export function othersFrom(others: OtherStandings): BodyGroup[] {
+  const groups: BodyGroup[] = [];
+  for (const g of others.groups) {
+    const label = standingGroupWord(g.lane);
+    const rows = g.rows.map(rowFromLibrary);
+    const at = groups.findIndex((x) => x.key === label);
+    const held = groups[at];
+    if (held === undefined) {
+      groups.push({ key: label, label, rows, count: g.count, capped: g.capped });
+    } else {
+      groups[at] = {
+        ...held,
+        rows: [...held.rows, ...rows],
+        count: (held.count ?? 0) + g.count,
+        capped: held.capped === true || g.capped,
+      };
+    }
+  }
+  return groups;
+}
+
 export function listFrom({
   rows,
   status,
   current,
   held,
+  others,
 }: {
   rows: readonly LibraryRow[];
   status: PaginationStatus;
@@ -180,13 +215,16 @@ export function listFrom({
   current: ListSummary | undefined;
   /** The last summary for this lane, if any. */
   held: ListSummary | undefined;
+  /** `bodies.searchOtherStandings` for a search, `undefined` while it loads (or none asked). */
+  others?: OtherStandings | undefined;
 }): BodiesListData {
   return {
     status: listStatusOf(status),
     rows: rows.map(rowFromLibrary),
-    // A search answers this lane only: matches in other standings need a read of their own, so
-    // none is drawn — not an empty group.
-    others: null,
+    // A search's matches in the other standings, from their own read; none while it is on its way
+    // (never an empty group or a zero).
+    others: others === undefined ? null : othersFrom(others),
+    ...(others?.facetsIgnored ? { othersFacetsIgnored: true } : {}),
     total: current?.total ?? null,
     serves: servesFrom(current ?? held),
     facetCounts: current?.facetCounts ?? null,

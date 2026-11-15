@@ -223,6 +223,34 @@ describe('the list', () => {
     expect(screen.getByText('1,412 of 24,871 in the corpus')).toBeInTheDocument();
   });
 
+  it('asks a search’s other standings in one standing’s lane — never in All — and draws them', async () => {
+    mocks.search = { lane: 'active', q: 'mor', size: '1000-up' };
+    mocks.paged = { results: [row('a', 'Lake Morey')], status: 'Exhausted' };
+    mocks.results.set(name(api.bodies.searchOtherStandings), {
+      q: 'mor',
+      groups: [
+        { lane: 'inactive', count: 3, capped: false, rows: [row('d', 'Morey Pond')] },
+        { lane: 'removed', count: 50, capped: true, rows: [] },
+      ],
+      facetsIgnored: true,
+    });
+    const { unmount } = mount();
+    expect(mocks.calls.get(name(api.bodies.searchOtherStandings))).toMatchObject({
+      lane: 'active',
+      q: 'mor',
+      facets: { size: ['1000-up'] },
+    });
+    expect(mocks.calls.get(name(api.bodies.searchOtherStandings))).not.toHaveProperty('sort');
+    expect(
+      await screen.findByText('1 active · 3 dormant · 50+ removed (other standings unfiltered)'),
+    ).toBeInTheDocument();
+    unmount();
+    mocks.calls.clear();
+    mocks.search = { lane: 'all', q: 'mor' };
+    mount();
+    expect(mocks.calls.has(name(api.bodies.searchOtherStandings))).toBe(false);
+  });
+
   it('sends every narrowing to the server — the tab, the facets, the search — and sorts nothing itself', () => {
     mocks.search = { lane: 'all', state: 'VT', size: '1000-up', class: 'bay', q: 'mor' };
     mocks.paged = {

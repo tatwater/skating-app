@@ -183,9 +183,13 @@ export function searchTally(list: BodiesListData, laneWord: string): string | nu
   const more = list.status !== 'done';
   const parts = [
     `${list.rows.length.toLocaleString('en-US')}${more ? '+' : ''} ${laneWord}`,
-    ...list.others.map((g) => `${g.rows.length} ${g.label.toLowerCase()}`),
+    ...list.others.map(
+      (g) =>
+        `${(g.count ?? g.rows.length).toLocaleString('en-US')}${g.capped ? '+' : ''} ${g.label.toLowerCase()}`,
+    ),
   ];
-  return parts.join(' · ');
+  // The other standings are counted across the lane's facets: said, never read as filtered.
+  return `${parts.join(' · ')}${list.othersFacetsIgnored ? ' (other standings unfiltered)' : ''}`;
 }
 
 function SearchField({

@@ -247,7 +247,7 @@ export function BodiesTable({
     () => [
       ...list.rows.map((row) => ({ kind: 'row' as const, row, other: false })),
       ...(list.others ?? []).flatMap((g) => [
-        { kind: 'group' as const, key: g.key, label: g.label, count: g.rows.length },
+        { kind: 'group' as const, key: g.key, label: g.label, count: g.count ?? g.rows.length },
         ...g.rows.map((row) => ({ kind: 'row' as const, row, other: true })),
       ]),
     ],

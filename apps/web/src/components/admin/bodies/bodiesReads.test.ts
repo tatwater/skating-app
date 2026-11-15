@@ -13,6 +13,8 @@ import {
   listArgsOf,
   listFrom,
   listStatusOf,
+  type OtherStandings,
+  othersFrom,
   type PreviewFacts,
   polygonsOf,
   previewFrom,
@@ -187,6 +189,44 @@ describe('the list from its pages', () => {
     const moved = listFrom({ rows, status: 'CanLoadMore', current: undefined, held: summary() });
     expect(moved).toMatchObject({ total: null, facetCounts: null, states: ['NH', 'VT'] });
     expect(moved.serves.sort).toContain('acres');
+  });
+
+  it('gathers a search’s other standings under the board’s dividers, counts and floors kept', () => {
+    const o: OtherStandings = {
+      q: 'mor',
+      groups: [
+        { lane: 'active', count: 2, capped: false, rows: [libraryRow({ id: 'a1' })] },
+        { lane: 'not_in_campaign', count: 3, capped: false, rows: [libraryRow({ id: 'd1' })] },
+        { lane: 'moderator', count: 50, capped: true, rows: [libraryRow({ id: 'd2' })] },
+        { lane: 'removed', count: 0, capped: false, rows: [] },
+      ],
+      facetsIgnored: true,
+    };
+    expect(othersFrom(o).map((g) => [g.label, g.count, g.capped, g.rows.map((r) => r.id)])).toEqual(
+      [
+        ['Active', 2, false, ['a1']],
+        ['Dormant', 53, true, ['d1', 'd2']],
+        ['Removed', 0, false, []],
+      ],
+    );
+    const list = listFrom({
+      rows: [],
+      status: 'Exhausted',
+      current: summary(),
+      held: undefined,
+      others: o,
+    });
+    expect(list.othersFacetsIgnored).toBe(true);
+    expect(list.others).toHaveLength(3);
+    // On its way: no group, never an empty one.
+    const waiting = listFrom({
+      rows: [],
+      status: 'Exhausted',
+      current: summary(),
+      held: undefined,
+    });
+    expect(waiting).toMatchObject({ others: null });
+    expect(waiting.othersFacetsIgnored).toBeUndefined();
   });
 
   it('draws no count the read can’t answer — a search, or two facets', () => {
