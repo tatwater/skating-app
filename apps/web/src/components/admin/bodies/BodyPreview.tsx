@@ -147,9 +147,11 @@ function PreviewLoading() {
 
 /** "Reservoir · Enfield, NH" with the other towns behind "+1". */
 function placeKicker(data: BodyPreviewData): ReactNode {
+  // The town with its own state when the read says; else the bare town — never a state inferred
+  // (a border body's town is in one of its states, and the read alone says which).
   const where =
     data.town !== null
-      ? `${data.town}, ${data.states.join(' · ')}`
+      ? townWords({ name: data.town, state: data.townState ?? null })
       : data.states.length > 0
         ? data.states.join(' · ')
         : null;
@@ -176,18 +178,17 @@ function placeKicker(data: BodyPreviewData): ReactNode {
 /** Other towns the tooltip names before it counts the rest — a big lake reaches into dozens. */
 export const TOOLTIP_TOWNS = 12;
 
+/** "Canaan, NH": a town with its state when the read says, the bare name when it doesn't. */
+function townWords(t: { name: string; state: string | null }): string {
+  return t.state === null ? t.name : `${t.name}, ${t.state}`;
+}
+
 /**
- * "Canaan, NH": the other towns, each with its state when the body lies in one state (a town it
- * touches is in it); a border body's towns go without, since the read doesn't say whose each is.
- * Past {@link TOOLTIP_TOWNS}, the rest are counted ("and 27 more").
+ * The other towns, each as the read gives it (its own state, or none — never inferred). Past
+ * {@link TOOLTIP_TOWNS}, the rest are counted ("and 27 more").
  */
-export function otherTowns(data: Pick<BodyPreviewData, 'states' | 'moreTowns'>): string {
-  const [only, ...more] = data.states;
-  const state = only !== undefined && more.length === 0 ? `, ${only}` : '';
-  const named = data.moreTowns
-    .slice(0, TOOLTIP_TOWNS)
-    .map((t) => `${t}${state}`)
-    .join(' · ');
+export function otherTowns(data: Pick<BodyPreviewData, 'moreTowns'>): string {
+  const named = data.moreTowns.slice(0, TOOLTIP_TOWNS).map(townWords).join(' · ');
   const rest = data.moreTowns.length - TOOLTIP_TOWNS;
   return rest > 0 ? `${named} and ${rest} more` : named;
 }
@@ -405,6 +406,20 @@ function PreviewBody({
           </div>
         )}
       </div>
+      {data.intake != null && data.intake.length > 0 && (
+        <Section title="Intake review" count={data.intake.length} className="mt-(--space-5_5)">
+          <ul data-slot="preview-intake" className="m-0 flex list-none flex-col p-0">
+            {data.intake.map((item) => (
+              <li key={item.reason} className="flex flex-col gap-(--space-1) py-(--space-2)">
+                <span className="text-body leading-list text-fg">{item.title}</span>
+                {item.sub !== null && (
+                  <span className="text-assist leading-list text-fg3">{item.sub}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
       {data.asks !== null && data.asks.length > 0 && (
         <Section
           title="Asked of this body"

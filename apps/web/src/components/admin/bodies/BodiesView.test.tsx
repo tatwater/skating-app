@@ -106,11 +106,36 @@ describe('the page', () => {
   });
 
   it('names a big lake’s other towns up to a dozen, then counts the rest', () => {
-    const many = Array.from({ length: 39 }, (_, i) => `Town ${i + 1}`);
-    const words = otherTowns({ states: ['NY', 'VT'], moreTowns: many });
+    const many = Array.from({ length: 39 }, (_, i) => ({ name: `Town ${i + 1}`, state: null }));
+    const words = otherTowns({ moreTowns: many });
     expect(words.split(' · ')).toHaveLength(TOOLTIP_TOWNS);
     expect(words.endsWith('Town 12 and 27 more')).toBe(true);
-    expect(otherTowns({ states: ['NH'], moreTowns: ['Canaan'] })).toBe('Canaan, NH');
+    expect(otherTowns({ moreTowns: [{ name: 'Canaan', state: 'NH' }] })).toBe('Canaan, NH');
+  });
+
+  it('names a border body’s town bare when the read gives no state — never one guessed', () => {
+    render(<Harness preview={{ ...PREVIEW_MASCOMA, states: ['NH', 'VT'], townState: null }} />);
+    expect(screen.getByText('Reservoir · Enfield ·')).toBeInTheDocument();
+  });
+
+  it('draws the intake review reasons, each with what is stored beside it', () => {
+    render(
+      <Harness
+        preview={{
+          ...PREVIEW_MASCOMA,
+          intake: [
+            {
+              reason: 'duplicate-candidate',
+              title: 'Possible duplicate',
+              sub: 'Overlaps 2 bodies',
+            },
+          ],
+        }}
+      />,
+    );
+    const list = document.querySelector('[data-slot=preview-intake]') as HTMLElement;
+    expect(within(list).getByText('Possible duplicate')).toBeInTheDocument();
+    expect(within(list).getByText('Overlaps 2 bodies')).toBeInTheDocument();
   });
 
   it('picks a lane as a fresh list: no body, search, tab, filter or order carried over', async () => {

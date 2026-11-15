@@ -110,6 +110,13 @@ export interface PreviewAsk {
   sub: string | null;
 }
 
+/** One intake review reason on the body, worded ("Possible duplicate", "Overlaps 2 bodies"). */
+export interface PreviewIntake {
+  reason: string;
+  title: string;
+  sub: string | null;
+}
+
 export interface PreviewHistoryRow {
   id: string;
   at: number;
@@ -135,8 +142,10 @@ export interface BodyPreviewData {
   town: string | null;
   /** The body's towns aren't computed yet (`townsComputedAt` unset): not the same as no town. */
   townsNotComputed?: boolean;
-  /** Other towns it reaches. */
-  moreTowns: readonly string[];
+  /** `town`'s state, when the read says ("NH"); `null` — not recorded, never inferred. */
+  townState?: string | null;
+  /** Other towns it reaches, each with its state when the read says. */
+  moreTowns: readonly { name: string; state: string | null }[];
   centroid: { lat: number; lng: number };
   outline: BodyOutline | null;
   putIns: readonly { lat: number; lng: number }[] | null;
@@ -163,6 +172,8 @@ export interface BodyPreviewData {
   allTime: PreviewCount | null;
   complete: Completeness | null;
   asks: readonly PreviewAsk[] | null;
+  /** The body's intake review reasons, worst first; `null` while the facts aren't in. */
+  intake?: readonly PreviewIntake[] | null;
   /** How many asks are open in all (a floor when capped); `null` while the facts aren't in. */
   askCount: Count | null;
   /** `asks` is the newest of them, not all: the list says "Newest 20 of 21", never reads whole. */

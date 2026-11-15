@@ -1,7 +1,7 @@
 import type { Doc } from '@skating/convex/dataModel';
-import type { RequestKind } from '@skating/core';
+import type { Confidence, RequestKind, ReviewReason } from '@skating/core';
 
-import type { PreviewAsk } from './bodiesData';
+import type { PreviewAsk, PreviewIntake } from './bodiesData';
 import type { PreviewFacts } from './bodiesReads';
 
 /**
@@ -55,7 +55,7 @@ export function askFrom(ask: PreviewFacts['asks'][number]): PreviewAsk {
     case 'request':
       return {
         id: ask.id,
-        kicker: `${REQUEST_WORDS[ask.requestKind]} · Inbox`,
+        kicker: `${REQUEST_WORDS[ask.requestKind]}${askersWords(ask.askers)} · Inbox`,
         title: ask.name !== null ? `“${ask.name}”` : REQUEST_ASKS[ask.requestKind],
         sub: ask.note,
       };
@@ -69,4 +69,48 @@ export function askFrom(ask: PreviewFacts['asks'][number]): PreviewAsk {
     case 'flag':
       return { id: ask.id, kicker: 'Flag · Inbox', title: FLAG_WORDS[ask.reason], sub: null };
   }
+}
+
+/**
+ * " · asked by 3": how many people have the same question open, when more than the one (a floor,
+ * "10+", past the server's count). Nothing for one asker, nor for a read that didn't count them.
+ */
+function askersWords(askers: { count: number; capped: boolean } | undefined): string {
+  if (askers === undefined || (askers.count <= 1 && !askers.capped)) return '';
+  return ` · asked by ${askers.count.toLocaleString('en-US')}${askers.capped ? '+' : ''}`;
+}
+
+/** An intake review reason, as the preview names it (one body's, so singular). */
+export const INTAKE_WORDS: Record<ReviewReason, string> = {
+  'duplicate-candidate': 'Possible duplicate',
+  'same-source-duplicate': 'One catalog lists it twice',
+  'bay-without-parent': 'A bay with no parent',
+  'class-dissent': 'A catalog says it isn’t water we cover',
+  'class-conflict': 'The catalogs disagree on its class',
+  'name-conflict': 'The catalogs disagree on its name',
+};
+
+/** How sure the record is of the contested fact, in words. */
+const CONFIDENCE_WORDS: Record<Confidence, string> = {
+  high: 'high',
+  medium: 'medium',
+  low: 'low',
+  none: 'none',
+};
+
+/** One of `bodies.preview`'s intake reasons (facts), worded: what, what's stored beside it, and
+ *  whether it's advisory (nothing wrong, only better). */
+export function intakeFrom(item: PreviewFacts['intake'][number]): PreviewIntake {
+  const detail =
+    item.detail === null
+      ? null
+      : 'candidates' in item.detail
+        ? `Overlaps ${item.detail.candidates.toLocaleString('en-US')} ${item.detail.candidates === 1 ? 'body' : 'bodies'}`
+        : `Confidence: ${CONFIDENCE_WORDS[item.detail.confidence]}`;
+  const parts = [detail, item.advisory ? 'Advisory' : null].filter((p): p is string => p !== null);
+  return {
+    reason: item.reason,
+    title: INTAKE_WORDS[item.reason],
+    sub: parts.length === 0 ? null : parts.join(' · '),
+  };
 }

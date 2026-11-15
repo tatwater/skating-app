@@ -13,7 +13,7 @@ import type { Count } from '../overview/overviewModel';
 import { isFailed, type Loadable, type ReadFailure } from '../reads/consoleReads';
 import { actionLabel, actorWords } from '../shell/actionLabels';
 import { dayMonth, seasonYears } from '../shell/consoleTime';
-import { askFrom } from './askWords';
+import { askFrom, intakeFrom } from './askWords';
 import {
   type BodiesListData,
   type BodyGroup,
@@ -372,7 +372,15 @@ export function previewFrom({
       ready.townsComputedAt === null && {
         townsNotComputed: true,
       }),
-    moreTowns: ready?.moreTowns ?? [],
+    townState: ready?.townState ?? null,
+    // Each town with its own state, as the read gives it (a name in two states is two towns);
+    // facts computed before towns carried states give the bare names — no state inferred.
+    moreTowns:
+      ready === null
+        ? []
+        : ready.moreTownsWithState.length >= ready.moreTowns.length
+          ? ready.moreTownsWithState.map((t) => ({ name: t.name, state: t.state ?? null }))
+          : ready.moreTowns.map((name) => ({ name, state: null })),
     centroid: body.centroid,
     outline: {
       polygons: polygonsOf(body.polygon),
@@ -393,6 +401,7 @@ export function previewFrom({
     // Core's rule, as the stored row holds it; a body with no row yet is not recorded.
     complete: ready?.complete ?? null,
     asks: ready === null ? null : ready.asks.map(askFrom),
+    intake: ready === null ? null : ready.intake.map(intakeFrom),
     askCount: ready === null ? null : ready.askCount,
     asksPartial: ready?.asksListCapped === true,
     history: isFailed(history)

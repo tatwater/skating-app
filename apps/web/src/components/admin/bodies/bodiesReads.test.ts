@@ -299,6 +299,9 @@ const facts = (over: Partial<PreviewFacts> = {}): PreviewFacts =>
     asksListCapped: false,
     town: 'Enfield',
     moreTowns: ['Canaan'],
+    townState: 'NH',
+    moreTownsWithState: [{ name: 'Canaan', state: 'NH' }],
+    intake: [],
     townsComputedAt: 1,
     complete: { have: 9, of: 10, missing: ['bathymetry'] },
     ...over,
@@ -408,7 +411,9 @@ describe('the preview from its reads', () => {
       maxDepthM: 24,
       elevationM: null,
       town: 'Enfield',
-      moreTowns: ['Canaan'],
+      townState: 'NH',
+      moreTowns: [{ name: 'Canaan', state: 'NH' }],
+      intake: [],
       facts: 'ready',
       season: { count: 3, capped: false, sub: '2 on the ice · 1 from shore' },
       allTime: { count: 86, capped: false, sub: 'Since 2023–24' },
@@ -419,6 +424,92 @@ describe('the preview from its reads', () => {
     expect(p.history).toEqual([
       { id: 'r1', at: 5, actor: 'Sarah', words: 'Hid a report' },
       { id: 'r2', at: 4, actor: null, words: expect.any(String) },
+    ]);
+  });
+
+  it('takes each town’s state from the read, and infers none for facts computed before states', () => {
+    const at = (over: Partial<PreviewFacts>) =>
+      previewFrom({
+        body,
+        putIns: [],
+        subAreas: [],
+        history: null,
+        facts: facts(over),
+        now: NOW,
+      });
+    expect(
+      at({
+        moreTowns: ['Canaan', 'Norwich'],
+        moreTownsWithState: [
+          { name: 'Canaan', state: 'NH' },
+          { name: 'Norwich', state: 'VT' },
+        ],
+      }).moreTowns,
+    ).toEqual([
+      { name: 'Canaan', state: 'NH' },
+      { name: 'Norwich', state: 'VT' },
+    ]);
+    const before = at({ townState: null, moreTownsWithState: [] });
+    expect(before).toMatchObject({ townState: null, moreTowns: [{ name: 'Canaan', state: null }] });
+  });
+
+  it('words the intake reasons and how many people asked the same thing', () => {
+    const p = previewFrom({
+      body,
+      putIns: [],
+      subAreas: [],
+      history: null,
+      facts: facts({
+        intake: [
+          { reason: 'duplicate-candidate', advisory: false, detail: { candidates: 2 } },
+          { reason: 'name-conflict', advisory: true, detail: { confidence: 'low' } },
+          { reason: 'bay-without-parent', advisory: false, detail: null },
+        ],
+        asks: [
+          {
+            id: 'q1',
+            kind: 'request',
+            requestKind: 'name_bay',
+            name: 'Shaker cove',
+            note: null,
+            createdAt: 1,
+            askers: { count: 3, capped: false },
+          },
+          {
+            id: 'q2',
+            kind: 'request',
+            requestKind: 'activate',
+            name: null,
+            note: null,
+            createdAt: 1,
+            askers: { count: 1, capped: false },
+          },
+          {
+            id: 'q3',
+            kind: 'request',
+            requestKind: 'restore',
+            name: null,
+            note: null,
+            createdAt: 1,
+            askers: { count: 10, capped: true },
+          },
+        ],
+      }),
+      now: NOW,
+    });
+    expect(p.intake).toEqual([
+      { reason: 'duplicate-candidate', title: 'Possible duplicate', sub: 'Overlaps 2 bodies' },
+      {
+        reason: 'name-conflict',
+        title: 'The catalogs disagree on its name',
+        sub: 'Confidence: low · Advisory',
+      },
+      { reason: 'bay-without-parent', title: 'A bay with no parent', sub: null },
+    ]);
+    expect(p.asks?.map((a) => a.kicker)).toEqual([
+      'Bay name · asked by 3 · Inbox',
+      'Activation · Inbox',
+      'Restoration · asked by 10+ · Inbox',
     ]);
   });
 

@@ -802,6 +802,9 @@ describe('the preview', () => {
     ],
     town: 'Enfield',
     moreTowns: ['Canaan'],
+    townState: 'NH',
+    moreTownsWithState: [{ name: 'Canaan', state: 'NH' }],
+    intake: [],
     complete: { have: 9, of: 10, missing: ['bathymetry'] },
   };
 
