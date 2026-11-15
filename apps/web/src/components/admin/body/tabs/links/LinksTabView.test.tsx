@@ -266,7 +266,9 @@ describe('LinksTabView — over any run of opening, typing, Done, Cancel and reo
           let row = -1;
           // Each opening's id, and the openings whose saves are on their way, oldest first.
           let opening = 0;
-          const saves: { opening: number; text: string }[] = [];
+          // The saves queued, in order; `noop` — a Done that changes nothing, waiting behind another
+          // save: it sends nothing and answers the moment the save before it lands.
+          const saves: { opening: number; text: string; noop?: boolean }[] = [];
           // Each row's label, as the Done presses left it, in order.
           const expected = [ASSOC.label, DAM.label];
           const editor = () => screen.queryByRole('textbox', { name: /Label/ });
@@ -289,8 +291,11 @@ describe('LinksTabView — over any run of opening, typing, Done, Cancel and reo
               if (changes) {
                 expected[row] = draft;
                 saves.push({ opening, text: draft });
+              } else if (editor() !== null && !saves.some((v) => v.opening === opening)) {
+                saves.push({ opening, text: draft, noop: true });
               }
-              // A change waits open for its own save; one that changes nothing closes at once.
+              // A change waits open for its own save; one that changes nothing closes at once —
+              // or, behind another save, the moment that one lands.
               if (editor() === null) draft = null;
             } else if (o.kind === 'cancel' && draft !== null) {
               await user.click(screen.getByRole('button', { name: 'Cancel' }));
@@ -298,10 +303,13 @@ describe('LinksTabView — over any run of opening, typing, Done, Cancel and reo
             } else if (o.kind === 'land' && releases.length > 0) {
               const from = saves.shift();
               await land(releases);
-              // Only the editor whose own save this was may close — and only if its draft is still
-              // what it sent; any other stands, its draft whole.
+              // The no-op Dones queued right behind it answer with it.
+              const answered = [from];
+              while (saves[0]?.noop === true) answered.push(saves.shift());
+              // Only the editor whose own save (or no-op Done) this was may close — and only if
+              // its draft is still what it sent; any other stands, its draft whole.
               if (draft !== null) {
-                if (from?.opening === opening && from.text === draft) {
+                if (answered.some((a) => a?.opening === opening && a.text === draft)) {
                   expect(editor()).toBeNull();
                   draft = null;
                 } else {
@@ -322,8 +330,20 @@ describe('LinksTabView — over any run of opening, typing, Done, Cancel and reo
       {
         numRuns: 45,
         // The review's sequence, seeded so every run covers it: a save on its way, Cancel, the
-        // same link and the other reopened, a draft typed, then the old save lands.
+        // same link and the other reopened, a draft typed, then the old save lands. And a Done that
+        // changes nothing, queued behind another link's save, answering when that one lands.
         examples: [
+          [
+            [
+              { kind: 'edit', row: 0 },
+              { kind: 'type', text: 'x' },
+              { kind: 'done' },
+              { kind: 'cancel' },
+              { kind: 'edit', row: 1 },
+              { kind: 'done' },
+              { kind: 'land' },
+            ],
+          ],
           [
             [
               { kind: 'edit', row: 1 },
