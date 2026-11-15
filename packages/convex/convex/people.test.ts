@@ -6,7 +6,7 @@
 import { MAX_OPEN_BOUNTIES_PER_DAY } from '@skating/core';
 import { convexTest } from 'convex-test';
 import fc from 'fast-check';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { api } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { markReady, refreshPersonRow } from './lib/peopleRows';
@@ -340,16 +340,23 @@ describe('people.lanes and people.listPage', () => {
     const author = await seed(t, 'author');
     await ready(t);
     const reportId = await report(t, author);
+    // Two filings a millisecond apart could share a clock reading, and then the order falls to the
+    // ids: the clock is held so the first is strictly older.
+    const at = Date.now();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(at);
     await as(t, 'filer').mutation(api.contentFlags.flag, {
       targetType: 'report',
       targetId: reportId,
       reason: 'spam',
     });
+    vi.setSystemTime(at + 1_000);
     await as(t, 'filer').mutation(api.contentFlags.flag, {
       targetType: 'user',
       targetId: target,
       reason: 'harassment',
     });
+    vi.useRealTimers();
     const page = await as(t, 'mod').query(api.people.listPage, { lane: 'flagged' });
     expect(page.rows.map((r) => r.userId)).toEqual([author, target]);
     expect(page.rows[0]?.openFlags).toEqual({ onUser: 0, onContent: 1 });

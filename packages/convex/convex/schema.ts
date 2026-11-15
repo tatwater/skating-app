@@ -492,7 +492,7 @@ export default defineSchema({
    * **The People lanes' stored counts** (B01 §5.7): one row per key — `everyone`, `admins`,
    * `moderators`, `banned`, `restricted`, `leaving`, `deleted` — moved only by the writer of
    * `peopleRows`, in the transaction that moves a row, so each is the tally of rows in its lane.
-   * Whether a backfill has finished is not here: it is `peopleBackfills`.
+   * Whether a backfill has finished is not here: it is `peopleJobRuns`.
    */
   peopleCounts: defineTable({
     key: v.string(),
@@ -500,25 +500,35 @@ export default defineSchema({
   }).index('by_key', ['key']),
 
   /**
-   * **The People backfills' state** (B01 §5.7): one row per backfill in `PEOPLE_BACKFILLS`
-   * (`lib/peopleRows`, the only reader and writer), written by every pass. The one source of what is
-   * finished: `peopleJobs.preparation` (the operator's check) and every read's `pending` are computed
-   * from these rows. No row means the backfill has never run a pass.
+   * **The People chained jobs' runs** (B01 §5.7, `lib/peopleRuns` the only reader and writer): one
+   * row per job — the three backfills, the lapsed-suspension sweep, its daily retry — holding its
+   * current run. Starting a job mints the next `run` and makes it current; a pass of any other run
+   * does nothing. For a backfill, `ready` is the conclusion of the last run to reach the end of its
+   * range, and the one source of what is finished: `peopleJobs.preparation` (the operator's check)
+   * and every read's `pending` are computed from these rows.
    */
-  peopleBackfills: defineTable({
-    backfill: v.union(v.literal('rows'), v.literal('flagSubjects'), v.literal('undoChains')),
-    /** A run reached the end with no failures. Once set, never unset: a re-run is a repair. */
+  peopleJobRuns: defineTable({
+    job: v.union(
+      v.literal('rows'),
+      v.literal('flagSubjects'),
+      v.literal('undoChains'),
+      v.literal('lapseSweep'),
+      v.literal('lapseRetry'),
+    ),
+    /** The current run's number: the only run whose passes may write. */
+    run: v.number(),
+    /** A backfill: the last run to reach the end of its range had no failures, and none since found a gap. */
     ready: v.boolean(),
-    /** A pass is scheduled or under way. */
+    /** The current run has a pass scheduled or under way. */
     running: v.boolean(),
-    /** Where the next pass resumes (`null`: from the start, or the run ended). */
+    /** Where the current run's next pass resumes (`null`: the start, or the run ended). */
     cursor: v.union(v.string(), v.null()),
-    /** Items that failed in the current (or last) run. */
+    /** The current run's failures (the last run's, once it ended). */
     failed: v.number(),
-    /** The run starts the backfills after it when it ends (not an `alone` re-run). */
+    /** The current run starts the backfills after it when it ends (not an `alone` run). */
     chains: v.boolean(),
     updatedAt: v.number(),
-  }).index('by_backfill', ['backfill']),
+  }).index('by_job', ['job']),
 
   /**
    * Short-lived OAuth `state` nonces (Phase 08, Strava).

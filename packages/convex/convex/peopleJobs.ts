@@ -31,13 +31,17 @@ import { nextAttemptState } from './lib/attempts';
 import { writeAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { flagSubjectOf } from './lib/flagSubject';
+import { refreshPersonRow } from './lib/peopleRows';
 import {
   BACKFILL_ARGS,
-  backfillFailedSoFar,
+  endRun,
+  foundGap,
+  type Lease,
+  PASS_SIZE,
   readPreparation,
-  refreshPersonRow,
-  saveBackfill,
-} from './lib/peopleRows';
+  savePass,
+  takeLease,
+} from './lib/peopleRuns';
 import { DOC_MAX, errorClassOf, ReadBudget, ROW_MAX, traced } from './lib/readBudget';
 
 const DAY = 86_400_000;
@@ -163,6 +167,11 @@ async function nextDue(
   );
 }
 
+/** A walk's position as the run's recorded cursor (for the record only; passes carry `after`). */
+function positionKey(after: Position | undefined): string | null {
+  return after === undefined ? null : `${after.at}:${after.creation}`;
+}
+
 /** One step's charge: the head (a profile), the nested reset's reads, and a failure's touch. */
 const STEP_NEED = 2 * ROW_MAX.profile + PERSON_WORK + ROW_MAX.profile;
 
@@ -201,22 +210,31 @@ async function recordLapseFailure(
  * Cron entry: reset every suspension lapsed by this run's cutoff. Self-continuing while the budget
  * ran out; each person's reset in its own transaction, so one that throws rolls back only itself and
  * the walk goes on past it (one attempt a run). A pass that moved nothing and still has work throws,
- * logged with the position to re-run from.
+ * logged with the position to re-run from. Every pass holds its run's lease (`lib/peopleRuns`): a
+ * cron tick starts a new run, and a still-scheduled pass of an older run then does nothing — so two
+ * runs never walk the due range at once, and no lapse takes two attempts in one run.
  */
 export const sweepLapsedSuspensions = internalMutation({
-  args: { cutoff: v.optional(v.number()), after: v.optional(position) },
+  args: {
+    cutoff: v.optional(v.number()),
+    after: v.optional(position),
+    run: v.optional(v.number()),
+  },
   handler: (ctx, args) =>
     traced('peopleJobs.sweepLapsedSuspensions', args, async () => {
-      const cutoff = args.cutoff ?? Date.now();
       const reads = new ReadBudget();
+      reads.reserve('small', 4);
+      const lease = await takeLease(ctx, 'lapseSweep', args);
+      if (lease === null) return { reset: 0, failed: 0, parked: 0, skipped: 0, more: false };
+      const cutoff = args.cutoff ?? Date.now();
       let after = args.after;
       let reset = 0;
       let failed = 0;
       let parked = 0;
       let skipped = 0;
       let more = false;
-      for (;;) {
-        if (!reads.affords(STEP_NEED)) {
+      for (let steps = 0; ; steps++) {
+        if (!reads.affords(STEP_NEED) || steps >= PASS_SIZE.lapseSweep) {
           more = true;
           break;
         }
@@ -254,11 +272,13 @@ export const sweepLapsedSuspensions = internalMutation({
         throw new Error('peopleJobs.sweepLapsedSuspensions: a pass made no progress');
       }
       if (more) {
+        await savePass(ctx, lease, { cursor: positionKey(after), failed: lease.failed + failed });
         await ctx.scheduler.runAfter(0, internal.peopleJobs.sweepLapsedSuspensions, {
           cutoff,
+          run: lease.run,
           ...(after !== undefined ? { after } : {}),
         });
-      }
+      } else await endRun(ctx, lease, lease.failed + failed);
       return { reset, failed, parked, skipped, more };
     }),
 });
@@ -309,19 +329,26 @@ async function nextParked(
  * tried before the run began is read, so each is tried once a run.
  */
 export const retryLapsedDaily = internalMutation({
-  args: { runStart: v.optional(v.number()), after: v.optional(position) },
+  args: {
+    runStart: v.optional(v.number()),
+    after: v.optional(position),
+    run: v.optional(v.number()),
+  },
   handler: (ctx, args) =>
     traced('peopleJobs.retryLapsedDaily', args, async () => {
+      const reads = new ReadBudget();
+      reads.reserve('small', 4);
+      const lease = await takeLease(ctx, 'lapseRetry', args);
+      if (lease === null) return { reset: 0, failed: 0, skipped: 0, more: false };
       const runStart = args.runStart ?? Date.now();
       const now = Date.now();
-      const reads = new ReadBudget();
       let after = args.after;
       let reset = 0;
       let failed = 0;
       let skipped = 0;
       let more = false;
-      for (;;) {
-        if (!reads.affords(STEP_NEED)) {
+      for (let steps = 0; ; steps++) {
+        if (!reads.affords(STEP_NEED) || steps >= PASS_SIZE.lapseRetry) {
           more = true;
           break;
         }
@@ -350,11 +377,13 @@ export const retryLapsedDaily = internalMutation({
         throw new Error('peopleJobs.retryLapsedDaily: a pass made no progress');
       }
       if (more) {
+        await savePass(ctx, lease, { cursor: positionKey(after), failed: lease.failed + failed });
         await ctx.scheduler.runAfter(0, internal.peopleJobs.retryLapsedDaily, {
           runStart,
+          run: lease.run,
           ...(after !== undefined ? { after } : {}),
         });
-      }
+      } else await endRun(ctx, lease, lease.failed + failed);
       return { reset, failed, skipped, more };
     }),
 });
@@ -403,13 +432,18 @@ export const parkedLapses = query({
 
 // ── The rows: one refresh, the drift repair, the backfill ──────────────────────────────────────
 
-/** One person's row brought in line with their profile, in its own transaction. */
+/**
+ * One person's row brought in line with their profile, in its own transaction; whether the row's facts
+ * changed (a missing or stale row — a gap, to the rows backfill).
+ */
 export const refreshOne = internalMutation({
   args: { userId: v.id('profiles'), touch: v.optional(v.boolean()) },
-  handler: async (ctx, { userId, touch }) => {
-    await refreshPersonRow(ctx, userId, { touch: touch === true });
-  },
+  handler: async (ctx, { userId, touch }): Promise<boolean> =>
+    refreshPersonRow(ctx, userId, { touch: touch === true }),
 });
+
+/** What a pass of a superseded run returns: it read its lease and did nothing else. */
+const SUPERSEDED = { done: false, superseded: true } as const;
 
 /** A refresh, its row read beside it, and a failure's touch of that row. */
 const REPAIR_STEP = ROW_MAX.small + PERSON_WORK + ROW_MAX.small;
@@ -459,15 +493,51 @@ export const repairDrift = internalMutation({
     }),
 });
 
+/** Each backfill's job, by the run it leases, and the backfill a run starts when it ends. */
+const BACKFILL_JOB = {
+  rows: { self: internal.peopleJobs.backfillRows, next: internal.peopleJobs.backfillFlagSubjects },
+  flagSubjects: {
+    self: internal.peopleJobs.backfillFlagSubjects,
+    next: internal.peopleJobs.backfillUndoChains,
+  },
+  undoChains: { self: internal.peopleJobs.backfillUndoChains, next: null },
+} as const;
+
+/** Record the pass and schedule the run's next one, carrying its run. */
+async function nextPass(
+  ctx: MutationCtx,
+  lease: Lease,
+  cursor: string | null,
+  failed: number,
+): Promise<void> {
+  await savePass(ctx, lease, { cursor, failed });
+  const job = BACKFILL_JOB[lease.job as keyof typeof BACKFILL_JOB].self;
+  await ctx.scheduler.runAfter(0, job, { run: lease.run, cursor });
+}
+
+/**
+ * The run reached the end of its range: it concludes its backfill's readiness, and — unless it was an
+ * `alone` run — starts the next backfill's new run, whatever this one's outcome.
+ */
+async function finishBackfill(ctx: MutationCtx, lease: Lease, failed: number): Promise<void> {
+  await endRun(ctx, lease, failed);
+  if (failed > 0)
+    console.error(`peopleJobs: ${lease.job} run ${lease.run}: ${failed} failed; not ready`);
+  const next = BACKFILL_JOB[lease.job as keyof typeof BACKFILL_JOB].next;
+  if (lease.chains && next !== null) await ctx.scheduler.runAfter(0, next, {});
+}
+
 /** A profile's tombstone overwritten by a status write before discipline refused it (see below). */
 function deletionOverwritten(profile: Doc<'profiles'>): boolean {
   return profile.deletedAt !== undefined && profile.status !== 'deleted';
 }
 
 /**
- * **The first People backfill, and the one command an operator runs** (`PEOPLE_BACKFILLS`): when it
+ * **The first People backfill, and the one command an operator runs** (`PEOPLE_BACKFILLS`): when a run
  * ends it starts `backfillFlagSubjects`, which starts `backfillUndoChains` — whatever each one's
- * outcome, since each marks only its own flag. `alone: true` re-runs one without the rest.
+ * outcome, since each concludes only its own readiness. Every pass holds its run's lease
+ * (`lib/peopleRuns`): a call with no `run` starts a new run and supersedes any older one, whose
+ * delayed passes then do nothing. `alone: true` starts a run that doesn't start the rest.
  *
  * Backfill: every profile's row, by creation time, a budget's worth a pass (each profile charged at
  * the document limit, its refresh nested), chained to the end. A refresh that throws is logged and
@@ -481,11 +551,13 @@ export const backfillRows = internalMutation({
   handler: (ctx, args) =>
     traced('peopleJobs.backfillRows', args, async () => {
       const reads = new ReadBudget();
-      reads.reserve('small', 2);
-      let failed = await backfillFailedSoFar(ctx, 'rows', args);
+      reads.reserve('small', 4);
+      const lease = await takeLease(ctx, 'rows', args);
+      if (lease === null) return SUPERSEDED;
+      let failed = lease.failed;
       const after = Number(args.cursor ?? 0);
       const per = ROW_MAX.profile + PERSON_WORK;
-      const n = reads.rows('profile', 50, 0, per);
+      const n = reads.rows('profile', PASS_SIZE.rows, 0, per);
       const profiles = await reads.take('profile', n, (k) =>
         ctx.db
           .query('profiles')
@@ -507,12 +579,13 @@ export const backfillRows = internalMutation({
         }
         const allowance = nestedAllowance(reads);
         try {
-          await ctx.runMutation(
+          const changed = await ctx.runMutation(
             internal.peopleJobs.refreshOne,
             { userId: profile._id },
             { transactionLimits: { bytesRead: allowance } },
           );
           reads.spend(PERSON_WORK);
+          if (changed) await foundGap(ctx, lease);
         } catch (err) {
           reads.spend(allowance);
           failed++;
@@ -521,17 +594,10 @@ export const backfillRows = internalMutation({
         last = profile;
       }
       if (last !== undefined && (stopped || profiles.length === n)) {
-        const cursor = String(last._creationTime);
-        await saveBackfill(ctx, 'rows', args, { running: true, cursor, failed });
-        await ctx.scheduler.runAfter(0, internal.peopleJobs.backfillRows, { ...args, cursor });
+        await nextPass(ctx, lease, String(last._creationTime), failed);
         return { done: false };
       }
-      await saveBackfill(ctx, 'rows', args, { running: false, cursor: null, failed });
-      if (failed > 0)
-        console.error(`peopleJobs.backfillRows: ${failed} failed; not ready — re-run it`);
-      // The next in `PEOPLE_BACKFILLS`, whatever this one's outcome: each is ready only by its own run.
-      if (!args.alone)
-        await ctx.scheduler.runAfter(0, internal.peopleJobs.backfillFlagSubjects, {});
+      await finishBackfill(ctx, lease, failed);
       return { done: true, failed };
     }),
 });
@@ -574,10 +640,12 @@ export const backfillFlagSubjects = internalMutation({
   handler: (ctx, args) =>
     traced('peopleJobs.backfillFlagSubjects', args, async () => {
       const reads = new ReadBudget();
-      reads.reserve('small', 2);
-      let failed = await backfillFailedSoFar(ctx, 'flagSubjects', args);
+      reads.reserve('small', 4);
+      const lease = await takeLease(ctx, 'flagSubjects', args);
+      if (lease === null) return SUPERSEDED;
+      let failed = lease.failed;
       const after = Number(args.cursor ?? 0);
-      const n = reads.rows('contentFlag', 200, 0, FLAG_STEP);
+      const n = reads.rows('contentFlag', PASS_SIZE.flagSubjects, 0, FLAG_STEP);
       const flags = await reads.take('contentFlag', n, (k) =>
         ctx.db
           .query('contentFlags')
@@ -591,6 +659,7 @@ export const backfillFlagSubjects = internalMutation({
           const subject = await flagSubjectOf(ctx, flag.targetType, flag.targetId);
           reads.touch('contentFlag');
           await ctx.db.patch(flag._id, { subjectUserId: subject });
+          await foundGap(ctx, lease);
         } catch (err) {
           failed++;
           console.error(
@@ -600,25 +669,15 @@ export const backfillFlagSubjects = internalMutation({
       }
       const last = flags[flags.length - 1];
       if (last !== undefined && flags.length === n) {
-        const cursor = String(last._creationTime);
-        await saveBackfill(ctx, 'flagSubjects', args, { running: true, cursor, failed });
-        await ctx.scheduler.runAfter(0, internal.peopleJobs.backfillFlagSubjects, {
-          ...args,
-          cursor,
-        });
+        await nextPass(ctx, lease, String(last._creationTime), failed);
         return { done: false };
       }
-      await saveBackfill(ctx, 'flagSubjects', args, { running: false, cursor: null, failed });
-      if (failed > 0) {
-        console.error(`peopleJobs.backfillFlagSubjects: ${failed} failed; not ready — re-run it`);
-      }
-      if (!args.alone) await ctx.scheduler.runAfter(0, internal.peopleJobs.backfillUndoChains, {});
+      await finishBackfill(ctx, lease, failed);
       return { done: true, failed };
     }),
 });
 
-/** Audit rows a pass of the undo-chain backfill reads at most, by count and by real weight. */
-const CHAIN_PAGE = 200;
+/** Audit rows a pass of the undo-chain backfill reads at most by real weight (by count: `PASS_SIZE`). */
 const CHAIN_PAGE_BYTES = 4 * DOC_MAX;
 
 /**
@@ -634,12 +693,15 @@ export const backfillUndoChains = internalMutation({
   handler: (ctx, args) =>
     traced('peopleJobs.backfillUndoChains', args, async () => {
       const reads = new ReadBudget();
-      reads.reserve('small', 2);
-      let failed = await backfillFailedSoFar(ctx, 'undoChains', args);
-      const page = await reads.capped(CHAIN_PAGE_BYTES, CHAIN_PAGE, () =>
+      reads.reserve('small', 4);
+      const lease = await takeLease(ctx, 'undoChains', args);
+      if (lease === null) return SUPERSEDED;
+      let failed = lease.failed;
+      const pageSize = PASS_SIZE.undoChains;
+      const page = await reads.capped(CHAIN_PAGE_BYTES, pageSize, () =>
         ctx.db.query('moderationActions').paginate({
           cursor: args.cursor ?? null,
-          numItems: CHAIN_PAGE,
+          numItems: pageSize,
           maximumBytesRead: CHAIN_PAGE_BYTES,
         }),
       );
@@ -671,6 +733,7 @@ export const backfillUndoChains = internalMutation({
             await ctx.db.patch(rootId, { undoTop: depth, undoTopActorId: row.actorId });
           }
           await ctx.db.patch(row._id, { undoRoot: rootId, undoDepth: depth });
+          await foundGap(ctx, lease);
           placed++;
         } catch (err) {
           failed++;
@@ -683,17 +746,10 @@ export const backfillUndoChains = internalMutation({
       }
       if (stoppedAt !== null || !page.isDone) {
         const cursor = stoppedAt !== null ? (args.cursor ?? null) : page.continueCursor;
-        await saveBackfill(ctx, 'undoChains', args, { running: true, cursor, failed });
-        await ctx.scheduler.runAfter(0, internal.peopleJobs.backfillUndoChains, {
-          ...args,
-          cursor,
-        });
+        await nextPass(ctx, lease, cursor, failed);
         return { done: false };
       }
-      await saveBackfill(ctx, 'undoChains', args, { running: false, cursor: null, failed });
-      if (failed > 0) {
-        console.error(`peopleJobs.backfillUndoChains: ${failed} failed; not ready — re-run it`);
-      }
+      await finishBackfill(ctx, lease, failed);
       return { done: true, failed };
     }),
 });
@@ -701,7 +757,7 @@ export const backfillUndoChains = internalMutation({
 /**
  * **The operator's check** (step 3 of `AFTER_MERGE_PROCEDURE`): every People backfill's state — ready,
  * running, stalled, its last recorded position and failures — the jobs to run again, and `ready` when
- * all of them are. It is `lib/peopleRows.readPreparation`, the same reading every People read's
+ * all of them are, each as its current run has it. It is `lib/peopleRuns.readPreparation`, the same reading every People read's
  * `pending` comes from, so the check and the pages can't disagree about what is finished. Internal:
  * callable only with the deployment's key (`convex run`).
  */

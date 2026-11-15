@@ -11,13 +11,14 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import * as peopleRows from './lib/peopleRows';
+import { refreshPersonRow } from './lib/peopleRows';
 import {
   AFTER_MERGE_PROCEDURE,
   BACKFILL_STALL_MS,
+  PASS_SIZE,
   PEOPLE_BACKFILLS,
   type Preparation,
-  refreshPersonRow,
-} from './lib/peopleRows';
+} from './lib/peopleRuns';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -265,7 +266,7 @@ describe('the after-merge procedure, performed as written', () => {
     expect(await t.run((ctx) => ctx.db.query('peopleRows').collect())).toHaveLength(60);
   });
 
-  test('a chain still running is not named to run again; a pass that stopped is, once stalled', async () => {
+  test('a chain still running is not named to run again; a stalled one is, and the recovery supersedes its still-scheduled pass', async () => {
     const t = convexTest(schema, modules);
     await t.run(async (ctx) => {
       for (let i = 0; i < 60; i++) await ctx.db.insert('profiles', profile(`s${i}`));
@@ -274,16 +275,28 @@ describe('the after-merge procedure, performed as written', () => {
     await run(t, START.fn, START.args);
     const running: Preparation = await run(t, CHECK.fn, CHECK.args);
     expect(running).toMatchObject({ ready: false, rerun: [] });
-    expect(running.backfills[0]).toMatchObject({ running: true, stalled: false, failed: 0 });
+    expect(running.backfills[0]).toMatchObject({
+      run: 1,
+      running: true,
+      stalled: false,
+      failed: 0,
+    });
     expect(running.backfills[0]?.cursor).not.toBeNull();
-    // That scheduled pass never runs (as when a pass throws: its write rolls back, the row stays).
+    // That scheduled pass is delayed past the stall mark (or a pass threw, leaving the last record).
     vi.setSystemTime(T0 + BACKFILL_STALL_MS + 1);
     const stalled: Preparation = await run(t, CHECK.fn, CHECK.args);
     expect(stalled.backfills[0]).toMatchObject({ running: true, stalled: true });
     expect(stalled.rerun).toEqual(PEOPLE_BACKFILLS.map((b) => b.job));
+    // The recovery, issued while the old run's pass is still scheduled: a new run, now current.
     for (const job of stalled.rerun) await run(t, RERUN.fn.replace('<job>', job), RERUN.args);
+    const recovering: Preparation = await run(t, CHECK.fn, CHECK.args);
+    expect(recovering.backfills[0]).toMatchObject({ run: 2, running: true, stalled: false });
+    // The drain runs the old pass too — superseded, it does nothing — and the new run to its end.
     await drain(t);
-    expect(await run(t, CHECK.fn, CHECK.args)).toMatchObject(ALL_READY);
+    const done: Preparation = await run(t, CHECK.fn, CHECK.args);
+    expect(done).toMatchObject(ALL_READY);
+    expect(done.backfills[0]?.run).toBe(2);
+    expect(await t.run((ctx) => ctx.db.query('peopleRows').collect())).toHaveLength(60);
   });
 });
 
@@ -313,14 +326,37 @@ test('`alone` re-runs one backfill without starting the rest', async () => {
   ]);
 });
 
-test('a ready backfill stays ready through a re-run', async () => {
+test('ready is a conclusion: a re-run that finds no gap keeps it, one that finds a gap takes it back until it ends clean', async () => {
   const t = convexTest(schema, modules);
-  await followProcedure(t, () => []);
   await t.run(async (ctx) => {
-    for (let i = 0; i < 60; i++) await ctx.db.insert('profiles', profile(`s${i}`));
+    for (let i = 0; i < 4; i++) await ctx.db.insert('profiles', profile(`s${i}`));
   });
-  await run(t, PEOPLE_BACKFILLS[0].job, RERUN.args);
-  const state: Preparation = await run(t, CHECK.fn, CHECK.args);
-  expect(state.backfills[0]).toMatchObject({ ready: true, running: true });
-  expect(state.ready).toBe(true);
+  expect(await followProcedure(t, () => [])).toMatchObject(ALL_READY);
+  const was = PASS_SIZE.rows;
+  PASS_SIZE.rows = 2;
+  try {
+    // Nothing to fix: ready throughout the run.
+    await run(t, PEOPLE_BACKFILLS[0].job, RERUN.args);
+    const clean: Preparation = await run(t, CHECK.fn, CHECK.args);
+    expect(clean.backfills[0]).toMatchObject({ ready: true, running: true });
+    await drain(t);
+    // A profile whose row went missing (as a write that skipped the writer would leave): the next
+    // run that meets it says not ready at once, and ready again only once it ends clean.
+    await t.run(async (ctx) => {
+      const first = await ctx.db.query('profiles').first();
+      const row = await ctx.db
+        .query('peopleRows')
+        .withIndex('by_user', (q) => q.eq('userId', first?._id as Id<'profiles'>))
+        .first();
+      if (row) await ctx.db.delete(row._id);
+    });
+    await run(t, PEOPLE_BACKFILLS[0].job, RERUN.args);
+    const found: Preparation = await run(t, CHECK.fn, CHECK.args);
+    expect(found).toMatchObject({ ready: false, pending: ['rows'], rerun: [] });
+    expect(found.backfills[0]).toMatchObject({ ready: false, running: true });
+    await drain(t);
+    expect(await run(t, CHECK.fn, CHECK.args)).toMatchObject(ALL_READY);
+  } finally {
+    PASS_SIZE.rows = was;
+  }
 });

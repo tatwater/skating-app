@@ -1,14 +1,17 @@
 /**
- * The People backfills' after-merge procedure is one thing (B01 §5.7). The registry
- * (`PEOPLE_BACKFILLS` in `convex/lib/peopleRows.ts`) lists the backfills in run order; every one takes
- * the same arguments (`BACKFILL_ARGS`), records each pass in `peopleBackfills` through that module, and
- * starts the next when it ends; `lib/peopleRows.readPreparation` is the only reading of that table, so
- * the operator's check (`peopleJobs.preparation`) and every read's `pending` can't disagree. The
- * procedure's text is `AFTER_MERGE_PROCEDURE` in the same module, which `packages/convex`'s
- * `peopleBackfills.test.ts` performs literally; the phase doc and the roadmap must quote it word for
- * word, and the phase doc's table must name every backfill in order.
+ * The People chained jobs and their after-merge procedure are one thing each (B01 §5.7). The registry
+ * (`PEOPLE_BACKFILLS` in `convex/lib/peopleRuns.ts`) lists the backfills in run order. Every chained
+ * job — the three backfills, the lapsed-suspension sweep, its daily retry — takes its run's lease
+ * first (`takeLease`), so a pass of a superseded run does nothing; every backfill takes the same
+ * arguments (`BACKFILL_ARGS`), concludes through `finishBackfill`, and names the next backfill in
+ * `BACKFILL_JOB`. `peopleJobRuns` is read and written only by `lib/peopleRuns`, whose
+ * `readPreparation` is the operator's check and every read's `pending`. Between runs, the writes
+ * that create what a backfill fixes do its work themselves: the profile insert refreshes its row, a
+ * flag is filed with its subject. The procedure's text is `AFTER_MERGE_PROCEDURE`, which
+ * `packages/convex`'s `peopleBackfills.test.ts` performs literally; the phase doc and the roadmap must
+ * quote it word for word, and the phase doc's table must name every backfill in order.
  *
- * A lint over the source text, not a proof.
+ * A lint over the source text, not a proof (`peopleRuns.test.ts` is the property).
  */
 
 import { readdirSync, readFileSync } from 'node:fs';
@@ -17,7 +20,7 @@ import { expect, test } from 'vitest';
 
 const REPO = resolve(__dirname, '../../..');
 const CONVEX = resolve(REPO, 'packages/convex/convex');
-const REGISTRY = join(CONVEX, 'lib/peopleRows.ts');
+const REGISTRY = join(CONVEX, 'lib/peopleRuns.ts');
 const JOBS = join(CONVEX, 'peopleJobs.ts');
 const PHASE_DOC = resolve(REPO, 'plans/phases/B01-admin-console.md');
 const ROADMAP = resolve(REPO, 'plans/07-roadmap.md');
@@ -69,17 +72,36 @@ test('the registry and the procedure parse', () => {
   expect(procedure).toContain(`\`convex run peopleJobs:${entries[0]?.job} '{}'\``);
 });
 
-test('the backfills’ state is read and written only by the registry module', () => {
+test('the runs are read and written only by the registry module', () => {
   const elsewhere = sources(CONVEX)
     .filter((p) => p !== REGISTRY && !p.endsWith('schema.ts'))
     .filter((p) =>
-      /['"`]peopleBackfills['"`]|['"`]ready:/.test(withoutComments(readFileSync(p, 'utf8'))),
+      /['"`]peopleJobRuns['"`]|['"`]ready:/.test(withoutComments(readFileSync(p, 'utf8'))),
     )
     .map((p) => relative(CONVEX, p));
   expect(elsewhere).toEqual([]);
 });
 
-test('each backfill takes the shared arguments, records its end, and starts the next; the last starts none', () => {
+test('between runs, the writes that create what a backfill fixes do its work', () => {
+  for (const p of sources(CONVEX)) {
+    const text = withoutComments(readFileSync(p, 'utf8'));
+    for (const m of text.matchAll(/insert\('profiles',/g)) {
+      const end = text.indexOf('\nexport const ', m.index);
+      const rest = text.slice(m.index, end === -1 ? undefined : end);
+      expect(rest, `${relative(CONVEX, p)}: a profile insert refreshes its row`).toMatch(
+        /refreshPersonRow\(ctx,/,
+      );
+    }
+    for (const m of text.matchAll(/insert\('contentFlags', \{/g)) {
+      const body = text.slice(m.index, text.indexOf('});', m.index));
+      expect(body, `${relative(CONVEX, p)}: a flag is filed with its subject`).toContain(
+        'subjectUserId:',
+      );
+    }
+  }
+});
+
+test('every chained job takes its lease first; each backfill takes the shared arguments, concludes, and names the next', () => {
   const jobs = withoutComments(readFileSync(JOBS, 'utf8'));
   const handler = (name: string) => {
     const start = jobs.indexOf(`export const ${name} = internalMutation(`);
@@ -87,19 +109,30 @@ test('each backfill takes the shared arguments, records its end, and starts the 
     const end = jobs.indexOf('\nexport const ', start + 1);
     return jobs.slice(start, end === -1 ? undefined : end);
   };
+  const leaseFirst = (name: string, job: string) => {
+    const body = handler(name);
+    const lease = body.indexOf(`takeLease(ctx, '${job}', args)`);
+    expect(lease, `${name} takes its lease`).toBeGreaterThan(0);
+    // Nothing is read or written before the lease but the budget's own setup.
+    expect(body.slice(0, lease), name).not.toMatch(/ctx\.db\.|ctx\.runMutation|ctx\.scheduler/);
+    expect(body.slice(lease), name).toMatch(/if \(lease === null\) return/);
+    return body;
+  };
+  const map = /const BACKFILL_JOB = \{([\s\S]*?)\} as const;/.exec(jobs)?.[1] ?? '';
   entries.forEach((entry, i) => {
-    const body = handler(entry.job);
+    const body = leaseFirst(entry.job, entry.backfill);
     expect(body, entry.job).toContain('args: BACKFILL_ARGS,');
-    expect(body, entry.job).toContain(`backfillFailedSoFar(ctx, '${entry.backfill}', args)`);
-    expect(body, entry.job).toMatch(
-      new RegExp(`saveBackfill\\(ctx, '${entry.backfill}', args, \\{ running: false,`),
-    );
+    expect(body, entry.job).toContain('await finishBackfill(ctx, lease, failed);');
     const next = entries[i + 1];
-    const starts = [
-      ...body.matchAll(/runAfter\(\s*0,\s*internal\.peopleJobs\.(\w+),\s*\{\s*\}\s*\)/g),
-    ].map((m) => m[1]);
-    expect(starts, entry.job).toEqual(next === undefined ? [] : [next.job]);
+    const row = new RegExp(
+      `${entry.backfill}: \\{\\s*self: internal\\.peopleJobs\\.${entry.job},\\s*next: ${
+        next === undefined ? 'null' : `internal\\.peopleJobs\\.${next.job}`
+      },?\\s*\\}`,
+    );
+    expect(map, `${entry.job} in BACKFILL_JOB`).toMatch(row);
   });
+  leaseFirst('sweepLapsedSuspensions', 'lapseSweep');
+  leaseFirst('retryLapsedDaily', 'lapseRetry');
   // The operator's check is the one reading.
   expect(jobs).toMatch(
     /export const preparation = internalQuery\(\{\s*args: \{\},\s*handler: \(ctx\) => readPreparation\(ctx\),/,

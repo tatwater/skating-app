@@ -198,8 +198,8 @@ describe('refreshPersonRow', () => {
       await markReady(ctx, 'rows');
     });
     expect(
-      (await t.run((ctx) => ctx.db.query('peopleBackfills').collect())).filter(
-        (c) => c.backfill === 'rows' && c.ready,
+      (await t.run((ctx) => ctx.db.query('peopleJobRuns').collect())).filter(
+        (c) => c.job === 'rows' && c.ready,
       ),
     ).toHaveLength(1);
   });

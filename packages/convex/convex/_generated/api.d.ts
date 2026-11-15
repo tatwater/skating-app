@@ -107,6 +107,7 @@ import type * as lib_openMeteoHourly from "../lib/openMeteoHourly.js";
 import type * as lib_peopleCan from "../lib/peopleCan.js";
 import type * as lib_peopleFigures from "../lib/peopleFigures.js";
 import type * as lib_peopleRows from "../lib/peopleRows.js";
+import type * as lib_peopleRuns from "../lib/peopleRuns.js";
 import type * as lib_photoAccess from "../lib/photoAccess.js";
 import type * as lib_photoOrphans from "../lib/photoOrphans.js";
 import type * as lib_postSync from "../lib/postSync.js";
@@ -285,6 +286,7 @@ declare const fullApi: ApiFromModules<{
   "lib/peopleCan": typeof lib_peopleCan;
   "lib/peopleFigures": typeof lib_peopleFigures;
   "lib/peopleRows": typeof lib_peopleRows;
+  "lib/peopleRuns": typeof lib_peopleRuns;
   "lib/photoAccess": typeof lib_photoAccess;
   "lib/photoOrphans": typeof lib_photoOrphans;
   "lib/postSync": typeof lib_postSync;
