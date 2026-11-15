@@ -11,17 +11,39 @@ import { createContext, createElement, type ReactNode, useContext, useRef, useSt
  * - **Every write names the list it was built on** (`send(next, base)`, the server's `expected`):
  *   another moderator's write that landed in between is refused by the server with the current
  *   list, and the queue re-applies the change on top and sends again; a change that no longer
- *   applies (its link was removed meanwhile) answers `null`, and the queue says so (`unapplied`)
- *   rather than dropping it quietly.
+ *   applies (its link was removed meanwhile) answers `null`, and the queue says so (`unapplied`,
+ *   `'gone'`) rather than dropping it quietly — as it does for a list that kept moving (`'moved'`).
  * - A change that changes nothing sends nothing. A refused write drops its change and nothing
  *   built on it.
- * - **The queue outlives the page that pressed it** (`bodyWrites`): a pressed save is sent to its
- *   body whatever the page does next.
+ * - **The queue outlives the page that pressed it** (`ListWritersProvider`): a pressed save is sent
+ *   to its body whatever the page does next.
  */
 export type Change<T> = (base: readonly T[]) => readonly T[] | null;
 
 /** What a send answers: landed, refused, or the server's current list (the base moved). */
 export type SendAnswer<T> = boolean | { current: readonly T[] };
+
+/**
+ * Why a change wasn't sent: `'gone'` — it no longer applies (what it changes was removed meanwhile);
+ * `'moved'` — the list kept moving under it past {@link REAPPLY} re-applications.
+ */
+export type Unapplied = 'gone' | 'moved';
+
+/**
+ * A chip field's new value as a change by item: what it added and removed since `shown` (the list
+ * the render held), applied to whatever list the queue builds on — never the whole field's value.
+ */
+export function chipChange(
+  shown: readonly string[],
+  value: readonly string[],
+): (base: readonly string[]) => string[] {
+  const added = value.filter((a) => !shown.includes(a));
+  const removed = shown.filter((a) => !value.includes(a));
+  return (base) => [
+    ...base.filter((a) => !removed.includes(a)),
+    ...added.filter((a) => !base.includes(a)),
+  ];
+}
 
 export type ListWriter<T> = {
   /** The server's list, each time a render reads it. */
@@ -40,7 +62,7 @@ export function createListWriter<T>(
   send: (next: readonly T[], base: readonly T[]) => Promise<SendAnswer<T>>,
   same: (a: readonly T[], b: readonly T[]) => boolean = sameList,
   /** Says a change can't be re-applied on the list as it now stands (or kept moving). */
-  unapplied: () => void = () => {},
+  unapplied: (why: Unapplied) => void = () => {},
 ): ListWriter<T> {
   let server: readonly T[] = [];
   /**
@@ -61,7 +83,7 @@ export function createListWriter<T>(
         for (let attempt = 0; attempt <= REAPPLY; attempt++) {
           const next = change(base);
           if (next === null) {
-            unapplied();
+            unapplied('gone');
             return false;
           }
           if (same(next, base)) return true;
@@ -78,7 +100,7 @@ export function createListWriter<T>(
           if (answer) acked = same(server, next) ? null : { list: next, seenAtAck: server };
           return answer;
         }
-        unapplied();
+        unapplied('moved');
         return false;
       });
       chain = run.catch(() => undefined);
@@ -92,7 +114,7 @@ type Entry = {
   send: {
     current: (next: readonly unknown[], base: readonly unknown[]) => Promise<SendAnswer<unknown>>;
   };
-  unapplied: { current: () => void };
+  unapplied: { current: (why: Unapplied) => void };
 };
 
 /**
@@ -119,7 +141,7 @@ export function useListWriter<T>(
   server: readonly T[],
   send: (next: readonly T[], base: readonly T[]) => Promise<SendAnswer<T>>,
   same: (a: readonly T[], b: readonly T[]) => boolean = sameList,
-  unapplied: () => void = () => {},
+  unapplied: (why: Unapplied) => void = () => {},
 ): ListWriter<T>['push'] {
   const shared = useContext(Writers);
   const own = useRef<Entry | null>(null);
@@ -133,7 +155,7 @@ export function useListWriter<T>(
     made.writer = createListWriter<unknown>(
       (next, base) => made.send.current(next, base),
       same as (a: readonly unknown[], b: readonly unknown[]) => boolean,
-      () => made.unapplied.current(),
+      (why) => made.unapplied.current(why),
     );
     if (shared !== null) shared.set(key, made);
     else own.current = made;

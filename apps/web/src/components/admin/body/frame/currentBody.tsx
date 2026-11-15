@@ -19,7 +19,7 @@ import { errorText } from '../../adminUi';
  * - **A save, once pressed, is the moderator's decision, and it is never lost.** It carries the body
  *   it was composed for and runs to its end against *that* body wherever the page goes next — a tab
  *   switch, another body, an uncached body loading, out of the Bodies area. Whole-list saves queue
- *   above the consoles (`bodyWrites`), per body, so a queued one goes out too.
+ *   above the consoles (`ListWritersProvider`), per body, so a queued one goes out too.
  * - **A result is said honestly.** A receipt always names its body ("Links saved · Mascoma Lake"),
  *   so its Undo is unambiguous on any page. A refusal is said in place while the console that sent
  *   it is on screen; once that console has gone, it is a toast naming the body and what failed —
@@ -102,12 +102,27 @@ export function listChanged(err: unknown): readonly unknown[] | null {
 export const OTHER_BODY = 'Not saved: this page now shows another body. Open it again to save.';
 
 /**
+ * A save that didn't land, said off its console: a toast naming the body ("Not saved · Mascoma
+ * Lake") with what failed. The one wording every write path and queue uses.
+ */
+export function sayNotSaved(hold: BodyHold, description: string): void {
+  toast({
+    title: hold.subject === undefined ? 'Not saved' : `Not saved · ${hold.subject}`,
+    description,
+    tone: 'bad',
+  });
+}
+
+/**
  * **The one write path.** `body` is the body the write names; `what` says what it was ("The links",
  * "The ruling"), for a refusal said off the console. Sends unless the write names another body than
  * the console's own; a refusal is thrown (in the server's words) while that console is on screen —
  * for the caller to say in place — and otherwise put in a toast naming the body; a list that moved
  * underneath is thrown as it came, for the queue to re-apply; the receipt follows a landed write
  * wherever the page is, naming its body, and its failure is never a refusal.
+ *
+ * Resolves `true` when the write landed, `false` when it was refused off its console (already said
+ * in the toast) — so a caller never takes a refused write for a landed one.
  */
 export async function sendFor(
   hold: BodyHold,
@@ -122,7 +137,7 @@ export async function sendFor(
     receipt: (subject: string | undefined) => Promise<unknown>;
     what: string;
   },
-): Promise<void> {
+): Promise<boolean> {
   if (hold.body !== null && hold.body !== body) throw new Error(OTHER_BODY);
   try {
     await write();
@@ -130,16 +145,13 @@ export async function sendFor(
     if (listChanged(err) !== null) throw err;
     const said = errorText(err);
     if (hold.here()) throw new Error(said);
-    toast({
-      title: hold.subject === undefined ? 'Not saved' : `Not saved · ${hold.subject}`,
-      description: `${what}: ${said}`,
-      tone: 'bad',
-    });
-    return;
+    sayNotSaved(hold, `${what}: ${said}`);
+    return false;
   }
   try {
     await receipt(hold.subject);
   } catch {
     // The write landed; only its receipt didn't (History keeps the row).
   }
+  return true;
 }

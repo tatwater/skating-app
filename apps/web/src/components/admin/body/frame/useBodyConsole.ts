@@ -35,6 +35,7 @@ import {
   type Removal,
   removalFromLeft,
   removalOf,
+  townWithState,
 } from './bodyModel';
 import type { BodyTabKey } from './bodySearch';
 import { neighborsOf } from './touching';
@@ -87,8 +88,9 @@ export interface BodyGoneData {
   /**
    * What the stored record still says of a body that left (`bodyConsole.removedFacts`): its name,
    * class, states and area. `null` for a merged body (the survivor's page has them), or none read.
+   * Required: `undefined` is a read on its way, so an absent one would draw a skeleton for good.
    */
-  record?: Loadable<{
+  record: Loadable<{
     name: string;
     kind: string;
     states: readonly string[];
@@ -283,9 +285,7 @@ export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleDa
             : !canRead
               ? withheld
               : mapLoadable(removed, (f) =>
-                  f === null || f.towns === null
-                    ? NOT_COMPUTED
-                    : f.towns.map((t) => (t.state === null ? t.name : `${t.name}, ${t.state}`)),
+                  f === null || f.towns === null ? NOT_COMPUTED : f.towns.map(townWithState),
                 ),
         reports:
           survivor !== null
@@ -372,10 +372,6 @@ function townsOf(e: {
   geoComputedAt: number | null;
 }): readonly string[] | typeof NOT_COMPUTED {
   if (e.geoComputedAt === null || e.towns === null) return NOT_COMPUTED;
-  // Each town with its own state, as the boundaries store it ("Franklin, VT" and "Franklin, NH" are
-  // two) — never a state inferred from the body's; a town whose state isn't stored reads bare.
-  if (e.townsWithState != null) {
-    return e.townsWithState.map((t) => (t.state === null ? t.name : `${t.name}, ${t.state}`));
-  }
-  return e.towns;
+  // Each town with its own state, as the boundaries store it — never one inferred from the body's.
+  return e.townsWithState != null ? e.townsWithState.map(townWithState) : e.towns;
 }

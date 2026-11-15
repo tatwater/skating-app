@@ -124,8 +124,14 @@ export function NamesView({
     <TabBody data-slot="names-tab">
       <ReadFailures failures={data.failures} onRetry={onRetry} pending={retryPending} />
       <NameSection data={data} lit={lit} onChoose={onChooseName} onCommunity={onCommunityName} />
-      <Section title="Aliases" count={data.aliases.length} data-slot="aliases">
-        {onAliasesChange && data.aliasesEditable ? (
+      <Section
+        title="Aliases"
+        // No count for a list that couldn't be read: never the catalogs' figure in its place.
+        count={onAliasesChange && data.aliasesFailed ? undefined : data.aliases.length}
+        data-slot="aliases"
+      >
+        {/* A failed read of the moderator's list draws no field: the tab's failure note says so. */}
+        {onAliasesChange && data.aliasesFailed ? null : onAliasesChange && data.aliasesEditable ? (
           <>
             <ChipInput
               aria-label="Aliases"

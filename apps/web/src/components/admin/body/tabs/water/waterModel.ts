@@ -7,7 +7,7 @@ import {
   spansMultipleSampleCells,
 } from '@skating/core';
 import { isFailed, type Loadable } from '@/components/admin/reads/consoleReads';
-import { dayMonth } from '../../frame/bodyModel';
+import { statusDate } from '../../frame/bodyModel';
 import type { BodyMapScene, MapItem } from '../../map/mapDescriptors';
 
 type LatLng = { lat: number; lng: number };
@@ -126,15 +126,16 @@ export function depthOf(body: WaterBody, extra: readonly DepthRung[] = []): Dept
 }
 
 /**
- * The bathymetry state from whether contours were drawn for the body (`consoleExtras`). What was
- * searched, and when, no read records yet.
+ * The bathymetry state from whether contours were drawn for the body (`consoleExtras`), and what was
+ * searched and when (`bathymetrySearched`), when a search is recorded.
  */
 export function bathymetryOf(
   hasBathymetry: boolean,
   /** `consoleExtras.bathymetrySearched`: the newest recorded contour search of the body's states. */
   searched: { label: string; at: number } | null = null,
 ): Bathymetry {
-  const when = searched === null ? null : { source: searched.label, when: dayMonth(searched.at) };
+  // A status date carries its year: a search may be seasons old, and "12 Sep" alone reads as this one.
+  const when = searched === null ? null : { source: searched.label, when: statusDate(searched.at) };
   return hasBathymetry
     ? { searched: when, found: 'Contour lines drawn', missing: false }
     : { searched: when, found: 'No contour lines', missing: true };

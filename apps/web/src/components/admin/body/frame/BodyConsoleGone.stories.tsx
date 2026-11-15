@@ -26,6 +26,7 @@ const meta = {
     },
     towns: ['Enfield, NH'],
     reports: { count: 3, capped: false },
+    record: { name: 'Shaker Pond', kind: 'Lake or pond', states: ['NH'], area: '12 ac' },
     history: {
       entries: [
         { id: 'r', at: BODY_NOW - 12 * 86_400_000, who: 'Teagan', what: 'Rejected a body' },
@@ -66,6 +67,8 @@ export const Merged: Story = {
     removal: { verb: 'Merged', when: '9 Oct 2026', who: 'Matt', reason: null },
     towns: null,
     reports: null,
+    // A merged body's record went with it to the survivor.
+    record: null,
     // biome-ignore lint/a11y/useAnchorContent: the link takes its words from what renders it.
     survivorLink: (id) => <a href={`#body-${id}`} />,
     history: CAPPED_HISTORY,

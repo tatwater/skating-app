@@ -441,6 +441,8 @@ describe('the search', () => {
     expect(
       screen.getByText('2 active · 50+ dormant (other standings unfiltered)'),
     ).toBeInTheDocument();
+    // The group's divider says the same floor, never "50" as a total.
+    expect(document.querySelector('[data-slot=table-group-count]')).toHaveTextContent(/^50\+$/);
   });
 
   it('draws no other-standing group and no tally while no read gives the other standings', () => {

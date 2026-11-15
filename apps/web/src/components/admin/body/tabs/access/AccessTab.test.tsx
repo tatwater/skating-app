@@ -142,10 +142,12 @@ describe('AccessTab', () => {
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
   });
 
-  it('makes a mapped launch official in place (`putIns.promote`), under its name', async () => {
+  it('makes a mapped launch official in place (`putIns.promote`), storing no name it shows', async () => {
     render(<AccessTab bodyId="wb1" />);
     await userEvent.click(screen.getByRole('button', { name: 'Make official' }));
-    expect(mocks.calls).toEqual([['putIns:promote', { putInId: 'pi1', name: 'NW launch' }]]);
+    // "NW launch" is the server's compass fallback (`resolvePutInName`), not the launch's own name:
+    // sending it would store it as one.
+    expect(mocks.calls).toEqual([['putIns:promote', { putInId: 'pi1' }]]);
   });
 
   it('makes an unnamed launch official without storing the tab’s placeholder as its name', async () => {

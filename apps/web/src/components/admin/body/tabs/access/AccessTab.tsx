@@ -120,18 +120,16 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
           : undefined
       }
       // `putIns.promote`: the launch made official on its own row — its point, bay, lot and walk
-      // kept; the placeholder is the tab's words, never a name, so an unnamed launch stays so.
+      // kept. No name is sent: the control asks for none, and the name the row shows may be the
+      // server's compass fallback ("NW launch", `resolvePutInName`) or the tab's placeholder —
+      // neither is the launch's own, and sending it would store it as one.
       onMakeOfficial={
         can('body.access')
           ? (p) =>
-              void act(
-                () =>
-                  promote({
-                    putInId: p.id as Id<'putIns'>,
-                    ...(p.unnamed ? {} : { name: p.name }),
-                  }),
-                { title: `Made ${p.name} official`, target },
-              )
+              void act(() => promote({ putInId: p.id as Id<'putIns'> }), {
+                title: `Made ${p.name} official`,
+                target,
+              })
           : undefined
       }
       onHide={

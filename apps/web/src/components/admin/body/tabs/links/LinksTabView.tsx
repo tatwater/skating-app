@@ -16,9 +16,8 @@ import { Button, buttonVariants } from '@/components/kit/button';
 import { Input } from '@/components/kit/input';
 import { Section } from '@/components/kit/section-slug';
 import { SortableRows } from '@/components/kit/sortable-rows';
-import { toast } from '@/components/kit/toast';
 import { cn } from '@/lib/utils';
-import { listChanged, useBodyHold } from '../../frame/currentBody';
+import { listChanged, sayNotSaved, useBodyHold } from '../../frame/currentBody';
 import { useListWriter } from '../listWriter';
 import {
   carryIds,
@@ -43,12 +42,13 @@ export type LinksTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
   now: number;
   /** The viewer holds `body.identity` (the staff links are theirs to edit). */
   canEdit: boolean;
-  /** Writes the whole staff list (add, edit, remove and reorder all land here). */
   /**
-   * Writes the whole staff list, naming the list it was built on (`expected`, the server's
-   * compare-and-set): a list that moved underneath is thrown as `list_changed` with the current one.
+   * Writes the whole staff list (add, edit, remove and reorder all land here), naming the list it
+   * was built on (`expected`, the server's compare-and-set): a list that moved underneath is thrown
+   * as `list_changed` with the current one. Resolves `false` for a write refused off its console
+   * (already said there).
    */
-  onSave?: (links: StaffLink[], expected: StaffLink[]) => Promise<void>;
+  onSave?: (links: StaffLink[], expected: StaffLink[]) => Promise<unknown>;
   /** The queue's name above the page (`links:<body>`), so a pressed save outlives the page. */
   queueKey?: string;
   /** The skater's lake sheet for this body, opened in a new tab; `null` draws no link. */
@@ -58,6 +58,10 @@ export type LinksTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
 /** A change whose link another moderator changed or removed meanwhile. */
 const NOT_APPLIED =
   'Another moderator changed these links while yours was saving, and the link you changed is gone. Your change wasn’t saved.';
+
+/** A change the list kept moving under, past the queue's re-applications. */
+const KEPT_MOVING =
+  'Another moderator kept changing these links while yours was saving. Your change wasn’t saved — try again.';
 
 type Editing = {
   /**
@@ -240,8 +244,8 @@ export function LinksTabView({
       // The list this attempt sends, keys and all: the server's echo of it takes these keys.
       unseen.current = [...unseen.current, next];
       try {
-        await onSave(words(next), words(base));
-        return true;
+        // `false`: refused off its console (said in a toast) — never taken as acknowledged.
+        return (await onSave(words(next), words(base))) !== false;
       } catch (err) {
         // Refused or moved: the server never held this list, so nothing it shows takes its keys.
         unseen.current = unseen.current.filter((s) => s !== next);
@@ -259,17 +263,13 @@ export function LinksTabView({
     },
     // The keys are the page's own: a link the queue added is the same link once its echo shows.
     sameLinks,
-    // A change that no longer applies (its link was removed meanwhile) is said, never dropped
-    // quietly: here while this page is on screen, else in a toast naming the body.
-    () => {
-      if (hold.here()) setSaveError(NOT_APPLIED);
-      else {
-        toast({
-          title: hold.subject === undefined ? 'Not saved' : `Not saved · ${hold.subject}`,
-          description: NOT_APPLIED,
-          tone: 'bad',
-        });
-      }
+    // A change that no longer applies (its link was removed meanwhile), or a list that kept moving
+    // under it, is said, never dropped quietly: here while this page is on screen, else in a toast
+    // naming the body.
+    (why) => {
+      const said = why === 'gone' ? NOT_APPLIED : KEPT_MOVING;
+      if (hold.here()) setSaveError(said);
+      else sayNotSaved(hold, said);
     },
   );
   const save = async (change: Change) => {

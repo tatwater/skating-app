@@ -17,12 +17,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/kit/select';
-import { toast } from '@/components/kit/toast';
 import { sayUnavailable, UnavailableButton } from '@/components/kit/unavailable-button';
 import { statusDate } from '../../frame/bodyModel';
-import { listChanged, useBodyHold } from '../../frame/currentBody';
+import { listChanged, sayNotSaved, useBodyHold } from '../../frame/currentBody';
 import { useTabKeys } from '../../frame/tabKeys';
-import { sameList, useListWriter } from '../listWriter';
+import { chipChange, sameList, useListWriter } from '../listWriter';
 import { BLOCK_GAP, useDraft } from '../tabParts';
 import { CouldntRead, LoadingLine, NotRecorded } from '../tabStates';
 import {
@@ -110,24 +109,15 @@ export function LandmarkCard({
       }
     },
     sameList,
-    () => {
-      // Spelling changes always re-apply; a list that keeps moving is said, never dropped quietly.
-      toast({
-        title: hold.subject === undefined ? 'Not saved' : `Not saved · ${hold.subject}`,
-        description:
-          'Another moderator kept changing these spellings; yours weren’t saved. Try again.',
-        tone: 'bad',
-      });
-    },
+    // Spelling changes always re-apply; a list that keeps moving is said, never dropped quietly.
+    () =>
+      sayNotSaved(
+        hold,
+        'Another moderator kept changing these spellings; yours weren’t saved. Try again.',
+      ),
   );
-  const editAliases = (aliases: readonly string[]) => {
-    const added = aliases.filter((a) => !l.aliases.includes(a));
-    const removed = l.aliases.filter((a) => !aliases.includes(a));
-    void pushAliases((base) => [
-      ...base.filter((a) => !removed.includes(a)),
-      ...added.filter((a) => !base.includes(a)),
-    ]);
-  };
+  const editAliases = (aliases: readonly string[]) =>
+    void pushAliases(chipChange(l.aliases, aliases));
   const promotable = PROMOTABLE.has(l.kind);
   useTabKeys(card, [
     { key: 'M', run: () => sayUnavailable(TOOLS.move), enabled: canPlace },

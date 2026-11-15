@@ -15,7 +15,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/kit/toolti
 import { LedStrip } from '@/components/kit/trace-chart';
 import { cn } from '@/lib/utils';
 import { completenessSegments, missingSentence } from '../body/completeness';
-import { IN_NO_TOWN_WORDS, NOT_COMPUTED_WORDS } from '../body/frame/bodyModel';
+import { IN_NO_TOWN_WORDS, NOT_COMPUTED_WORDS, townWithState } from '../body/frame/bodyModel';
 import { NOT_RECORDED } from '../body/tabs/tabStates';
 import { countText } from '../overview/overviewModel';
 import { isFailed, type Loadable, loaded } from '../reads/consoleReads';
@@ -165,7 +165,7 @@ function placeKicker(data: BodyPreviewData): ReactNode {
   // (a border body's town is in one of its states, and the read alone says which).
   const where =
     data.town !== null
-      ? townWords({ name: data.town, state: data.townState ?? null })
+      ? townWithState({ name: data.town, state: data.townState ?? null })
       : data.states.length > 0
         ? data.states.join(' · ')
         : null;
@@ -192,17 +192,12 @@ function placeKicker(data: BodyPreviewData): ReactNode {
 /** Other towns the tooltip names before it counts the rest — a big lake reaches into dozens. */
 export const TOOLTIP_TOWNS = 12;
 
-/** "Canaan, NH": a town with its state when the read says, the bare name when it doesn't. */
-function townWords(t: { name: string; state: string | null }): string {
-  return t.state === null ? t.name : `${t.name}, ${t.state}`;
-}
-
 /**
- * The other towns, each as the read gives it (its own state, or none — never inferred). Past
- * {@link TOOLTIP_TOWNS}, the rest are counted ("and 27 more").
+ * The other towns, each as the read gives it ("Canaan, NH", or bare when no state is stored — never
+ * inferred). Past {@link TOOLTIP_TOWNS}, the rest are counted ("and 27 more").
  */
 export function otherTowns(data: Pick<BodyPreviewData, 'moreTowns'>): string {
-  const named = data.moreTowns.slice(0, TOOLTIP_TOWNS).map(townWords).join(' · ');
+  const named = data.moreTowns.slice(0, TOOLTIP_TOWNS).map(townWithState).join(' · ');
   const rest = data.moreTowns.length - TOOLTIP_TOWNS;
   return rest > 0 ? `${named} and ${rest} more` : named;
 }

@@ -88,7 +88,7 @@ export function BodyConsoleGone({
           {towns !== null && <TownsRow towns={towns} />}
           {reports !== null && <ReportsRow reports={reports} />}
         </KeyValueList>
-        <ReadNote data-for="body-gone-facts" reads={[towns, reports, record ?? null]}>
+        <ReadNote data-for="body-gone-facts" reads={[towns, reports, record]}>
           What the record holds about it couldn’t be read
         </ReadNote>
       </div>

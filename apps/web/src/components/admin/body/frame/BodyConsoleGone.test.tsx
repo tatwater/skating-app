@@ -16,6 +16,7 @@ const REJECTED: BodyConsoleGoneProps = {
   towns: ['Enfield, NH'],
   reports: { count: 1000, capped: true },
   history: { entries: [], capped: false },
+  record: null,
   now: BODY_NOW,
 };
 

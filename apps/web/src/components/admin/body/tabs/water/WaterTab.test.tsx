@@ -239,6 +239,7 @@ describe('WaterTab', () => {
     });
     render(<WaterTab bodyId="wb1" />);
     expect(bathymetry()).toHaveTextContent('NH GRANIT lake contours');
-    expect(bathymetry()).toHaveTextContent('12 Sep');
+    // With its year: a search may be seasons old.
+    expect(bathymetry()).toHaveTextContent('12 Sep 2026');
   });
 });

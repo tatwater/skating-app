@@ -11,9 +11,9 @@ import {
 } from '@/components/admin/reads/consoleReads';
 import { useRole } from '@/lib/useRole';
 import { useUndo } from '../../../shell/undo';
-import { listChanged, sendFor, useBodyHold } from '../../frame/currentBody';
+import { listChanged, sayNotSaved, sendFor, useBodyHold } from '../../frame/currentBody';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
-import { useListWriter } from '../listWriter';
+import { chipChange, sameList, useListWriter } from '../listWriter';
 import { useTabAction } from '../useTabAction';
 import { NamesView } from './NamesView';
 import {
@@ -24,6 +24,10 @@ import {
   namesMapScene,
   type TownLinesRead,
 } from './namesModel';
+
+/** The aliases' change gave up: another moderator kept changing the list under it. */
+export const ALIASES_KEPT_MOVING =
+  'Another moderator kept changing these aliases while yours was saving. Your change wasn’t saved — try again.';
 
 /**
  * The Names tab's reads and its data: the body's record (`waterBodies.get`) and the boundaries it
@@ -105,13 +109,13 @@ export function NamesTab({ bodyId, lit = null }: BodyTabProps) {
     async (next, base) => {
       setAliasesError(null);
       try {
-        await sendFor(hold, {
+        // `false`: refused off its console (said in a toast) — never taken as acknowledged.
+        return await sendFor(hold, {
           body: bodyId,
           write: () => setAliases({ waterBodyId, aliases: [...next], expected: [...base] }),
           receipt: (subject) => announce({ title: 'Aliases saved', target, subject }),
           what: 'The aliases',
         });
-        return true;
       } catch (err) {
         const current = listChanged(err);
         if (current !== null) return { current: current as string[] };
@@ -119,15 +123,15 @@ export function NamesTab({ bodyId, lit = null }: BodyTabProps) {
         return false;
       }
     },
+    sameList,
+    // A list that kept moving under the change is said, never dropped quietly: here while this
+    // page is on screen, else in a toast naming the body.
+    () => {
+      if (hold.here()) setAliasesError(ALIASES_KEPT_MOVING);
+      else sayNotSaved(hold, ALIASES_KEPT_MOVING);
+    },
   );
-  const editAliases = (aliases: string[]) => {
-    const added = aliases.filter((a) => !shown.includes(a));
-    const removed = shown.filter((a) => !aliases.includes(a));
-    void pushAliases((base) => [
-      ...base.filter((a) => !removed.includes(a)),
-      ...added.filter((a) => !base.includes(a)),
-    ]);
-  };
+  const editAliases = (aliases: string[]) => void pushAliases(chipChange(shown, aliases));
   const classWrite = (bodyClass: WaterBodyClass | null, title: string) =>
     void act(() => setClass({ waterBodyId, bodyClass }), { title, target });
   return (

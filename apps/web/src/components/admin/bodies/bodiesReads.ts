@@ -3,7 +3,7 @@ import { currentSeason, type LibraryListLane, seasonRecordOpensMs } from '@skati
 import type { PaginationStatus } from 'convex/react';
 import type { FunctionArgs, FunctionReturnType } from 'convex/server';
 
-import { removalFromLeft } from '../body/frame/bodyModel';
+import { removalFromLeft, townWithState } from '../body/frame/bodyModel';
 import { VANTAGE_LABELS } from '../metrics/metricsModel';
 import type { Count } from '../overview/overviewModel';
 import { isFailed, type Loadable, type ReadFailure } from '../reads/consoleReads';
@@ -319,10 +319,7 @@ export function removedFrom(facts: RemovedFacts, timeZone?: string): RemovedPrev
     areaSqM: area(facts.areaSqM ?? undefined),
     standing: facts.standing,
     left: facts.left === null ? null : removalFromLeft(facts.left, timeZone),
-    towns:
-      facts.towns === null
-        ? null
-        : facts.towns.map((t) => (t.state === null ? t.name : `${t.name}, ${t.state}`)),
+    towns: facts.towns === null ? null : facts.towns.map(townWithState),
     reports: facts.reports,
   };
 }

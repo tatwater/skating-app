@@ -111,11 +111,12 @@ describe('sendFor — the one write path', () => {
 
   it('a refusal for a console that has gone is a toast naming the body and what failed', async () => {
     toasts.length = 0;
+    // Resolved `false`: said in the toast, and never taken for a landed write by its caller.
     await expect(
       send(hold(false), async () => {
         throw new ConvexError('Water body not found');
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toBe(false);
     expect(toasts).toEqual([
       {
         title: 'Not saved · Mascoma Lake',
@@ -158,6 +159,6 @@ describe('sendFor — the one write path', () => {
           throw new Error('the toast queue is gone');
         }),
       ),
-    ).resolves.toBeUndefined();
+    ).resolves.toBe(true);
   });
 });

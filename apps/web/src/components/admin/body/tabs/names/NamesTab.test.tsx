@@ -168,6 +168,17 @@ describe('NamesTab', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Water body not found');
   });
 
+  it('a failed read of the moderator’s aliases holds no place for the editor, and says so with Try again', () => {
+    mocks.results.set(getFunctionName(api.bodyConsole.identity), new Error('down'));
+    render(<NamesTab bodyId="wb1" />);
+    expect(screen.getByRole('status')).toHaveTextContent('the moderator’s aliases and class');
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+    // Never "on its way" for a read that failed, and never the catalogs' count in its place.
+    const aliases = document.querySelector('[data-slot=aliases]');
+    expect(aliases?.querySelector('[data-slot^=skeleton]')).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Aliases' })).toBeNull();
+  });
+
   it('sets the class, and puts the catalogs’ class back over a moderator’s', async () => {
     const get = getFunctionName(api.waterBodies.get);
     const identity = getFunctionName(api.bodyConsole.identity);

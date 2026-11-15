@@ -71,8 +71,6 @@ export const STANDING_NOTE_MAX = 160;
 /** "17 Sep 2026" — a status date carries its year (the frame's `statusDate`). */
 const sinceWords = (at: number): string => statusDate(at);
 
-const REMOVAL_LABEL = REMOVAL_REASON_WORDS;
-
 /** The radio a standing is drawn on (unlisted has none: it isn't a choice). */
 function currentPick(s: BodyStanding): Pick | null {
   return s.standing === 'unlisted' ? null : s.standing;
@@ -166,7 +164,7 @@ export function StandingTabView({
                 meaning="Drawn only when zoomed in on it. Never in search."
                 since={
                   standing.standing === 'removed'
-                    ? `Since ${sinceWords(standing.since)} · ${REMOVAL_LABEL[standing.reason]}`
+                    ? `Since ${sinceWords(standing.since)} · ${REMOVAL_REASON_WORDS[standing.reason]}`
                     : null
                 }
                 disabled={!reachable.removed}
@@ -360,7 +358,7 @@ function PickForm({
           // The sent reason is held while its write is out (a pick then could never be sent).
           readOnly={busy}
           onValueChange={(v) => setReason(v as RemovalReason)}
-          items={REMOVAL_REASONS.map((r) => ({ value: r, label: REMOVAL_LABEL[r] }))}
+          items={REMOVAL_REASONS.map((r) => ({ value: r, label: REMOVAL_REASON_WORDS[r] }))}
         >
           <SelectTrigger aria-label="Reason">
             <SelectValue placeholder="Choose a reason" />
@@ -368,7 +366,7 @@ function PickForm({
           <SelectContent>
             {REMOVAL_REASONS.map((r) => (
               <SelectItem key={r} value={r}>
-                {REMOVAL_LABEL[r]}
+                {REMOVAL_REASON_WORDS[r]}
               </SelectItem>
             ))}
           </SelectContent>

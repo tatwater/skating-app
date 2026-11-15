@@ -166,8 +166,8 @@ function ImageryReads(props: BodyTabProps) {
       }}
       {...(can('body.water')
         ? {
-            onSatelliteChange: (mode: SatelliteImageryMode) =>
-              sendFor(hold, {
+            onSatelliteChange: async (mode: SatelliteImageryMode) => {
+              await sendFor(hold, {
                 body: waterBodyId,
                 write: () => setMode({ waterBodyId, mode }),
                 receipt: (subject) =>
@@ -177,7 +177,8 @@ function ImageryReads(props: BodyTabProps) {
                     subject,
                   }),
                 what: 'The satellite link',
-              }),
+              });
+            },
           }
         : {})}
     />

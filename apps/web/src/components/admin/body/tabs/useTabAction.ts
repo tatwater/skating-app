@@ -23,31 +23,43 @@ export function useTabAction(bodyId: string): {
   // `bodyId`; a refusal is said here while this console is on screen, else in a toast naming the
   // body; the receipt names its body wherever it shows.
   const hold = useBodyHold();
-  const actInDialog = useCallback(
-    async (write: () => Promise<unknown>, receipt: Receipt): Promise<string | null> => {
+  // `landed`: the write landed. `refused`: the server's words, for this console to say in place;
+  // `null` when it landed, or when it was refused off its console (`sendFor` said it in a toast).
+  const run = useCallback(
+    async (
+      write: () => Promise<unknown>,
+      receipt: Receipt,
+    ): Promise<{ landed: boolean; refused: string | null }> => {
       try {
-        await sendFor(hold, {
+        const landed = await sendFor(hold, {
           body: bodyId,
           write,
           receipt: (subject) => announce({ ...receipt, subject }),
           what: typeof receipt.title === 'string' ? receipt.title : 'The change',
         });
-        return null;
+        return { landed, refused: null };
       } catch (err) {
         // A whole-list write whose base moved: its queue re-applies it, so it goes back as it came.
         if (listChanged(err) !== null) throw err;
-        return err instanceof Error ? err.message : String(err);
+        return { landed: false, refused: err instanceof Error ? err.message : String(err) };
       }
     },
     [announce, hold, bodyId],
   );
+  const actInDialog = useCallback(
+    async (write: () => Promise<unknown>, receipt: Receipt): Promise<string | null> =>
+      // A refusal off the console has no dialog left to show it: already said in its toast.
+      (await run(write, receipt)).refused,
+    [run],
+  );
   const act = useCallback(
     async (write: () => Promise<unknown>, receipt: Receipt): Promise<boolean> => {
-      const refused = await actInDialog(write, receipt);
+      const { landed, refused } = await run(write, receipt);
       if (refused !== null) toast({ title: 'Not saved', description: refused, tone: 'bad' });
-      return refused === null;
+      // Never `true` for a write refused off its console: a queue would take it as acknowledged.
+      return landed;
     },
-    [actInDialog],
+    [run],
   );
   return useMemo(() => ({ act, actInDialog }), [act, actInDialog]);
 }

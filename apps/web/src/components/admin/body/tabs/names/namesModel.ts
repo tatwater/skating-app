@@ -115,13 +115,10 @@ export function townLinesFrom(
       twice += a.lng * b.lat - b.lng * a.lat;
     }
     const ccw = twice > 0;
+    const runs: LatLng[][] = [];
     let run: LatLng[] = [];
-    let n = 0;
     const flush = () => {
-      if (run.length >= 2) {
-        const id = `${town.name}|${town.state ?? ''}|${n++}`;
-        lines.push({ id, path: run, faces: facesOf(run, ccw, town.name) });
-      }
+      if (run.length >= 2) runs.push(run);
       run = [];
     };
     for (let i = 1; i < ring.length; i++) {
@@ -132,10 +129,30 @@ export function townLinesFrom(
         run.push(b);
       } else flush();
     }
+    // A closed ring's start is an arbitrary vertex: a stretch near the body that runs through it
+    // (still going at the ring's end, and from its start) is one line with one name, never two.
+    const first = runs[0];
+    if (
+      run.length >= 2 &&
+      first !== undefined &&
+      first[0] === ring[0] &&
+      sameAt(ring[0], ring[ring.length - 1])
+    ) {
+      runs[0] = [...run, ...first.slice(1)];
+      run = [];
+    }
     flush();
+    runs.forEach((path, n) => {
+      const id = `${town.name}|${town.state ?? ''}|${n}`;
+      lines.push({ id, path, faces: facesOf(path, ccw, town.name) });
+    });
   }
   return { lines, missing };
 }
+
+/** The same point (a closed ring repeats its first vertex last). */
+const sameAt = (a: LatLng | undefined, b: LatLng | undefined): boolean =>
+  a !== undefined && b !== undefined && a.lat === b.lat && a.lng === b.lng;
 
 /**
  * Which side of a run its town is on, as {@link townNames} names the sides: the run's longest
@@ -198,6 +215,8 @@ export type NamesData = {
   aliases: string[];
   /** The aliases above are the moderator's own list (`bodyConsole.identity`), the one an edit writes. */
   aliasesEditable?: boolean;
+  /** That read failed (said in `failures`): the editor isn't on its way, so it holds no place. */
+  aliasesFailed?: boolean;
   /** A moderator set the class over the catalogs' (`moderatorClass`); `null` the import's. */
   moderatorClass?: WaterBodyClass | null;
   cls: WaterBodyClass;
@@ -303,6 +322,7 @@ export function namesFromBody(
     // the catalogs' other spellings are shown as they stand.
     aliases: identity === null ? aliasesOf(body.name, body.nameClaims) : identity.moderatorAliases,
     aliasesEditable: identity !== null,
+    ...(extras.identity !== undefined && isFailed(extras.identity) && { aliasesFailed: true }),
     moderatorClass: identity?.moderatorClass ?? null,
     cls: body.type,
     classOptions: options === null ? null : withCurrentClass(options, body.type),
@@ -376,7 +396,9 @@ export type NamesIdentity = {
 export function classOptionsOf(claims: NamesIdentity['classClaims']): ClassOption[] | null {
   if (claims === null) return null;
   const by = new Map<WaterBodyClass, string[]>();
-  for (const c of claims) by.set(c.value, [...(by.get(c.value) ?? []), c.source.toUpperCase()]);
+  // Each catalog's caps tag, as the name ladder wears it (`CATALOG_TAGS`); an unknown one as given.
+  const tag = (s: string) => CATALOG_TAGS[s as ClaimSource] ?? s.toUpperCase();
+  for (const c of claims) by.set(c.value, [...(by.get(c.value) ?? []), tag(c.source)]);
   return [...by].map(([cls, sources]) => ({ cls, sources }));
 }
 

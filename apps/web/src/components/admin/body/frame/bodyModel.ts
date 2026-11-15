@@ -518,6 +518,14 @@ export interface Removal {
   because?: string;
 }
 
+/**
+ * "Franklin, NH": a town with its own state, as the boundaries store it, the bare name when no state
+ * is stored — never one inferred from the body's ("Franklin, VT" and "Franklin, NH" are two towns).
+ */
+export function townWithState(t: { name: string; state: string | null }): string {
+  return t.state === null ? t.name : `${t.name}, ${t.state}`;
+}
+
 /** A removal's listed reason, in words — the Standing tab's choices and every page that says it. */
 export const REMOVAL_REASON_WORDS: Record<RemovalReason, string> = {
   landowner_request: 'Landowner request',

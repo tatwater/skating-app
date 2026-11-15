@@ -352,7 +352,8 @@ function useBoostCommit(bodyId: string): (value: number, hold: BodyHold) => Prom
           }),
         what: 'The map boost',
       }).then(
-        () => true,
+        // `false`: refused off its console, and said there.
+        (landed) => landed,
         (e: unknown) => {
           toast({ title: e instanceof Error ? e.message : String(e), tone: 'bad' });
           return false;

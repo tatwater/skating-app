@@ -340,6 +340,25 @@ describe('town lines from each town’s outline', () => {
     expect(townLinesFrom(null, null)).toEqual({ lines: [], missing: 0 });
   });
 
+  it('draws a stretch that runs through the ring’s start as one line, named once', () => {
+    // The square starts at its south-west corner; the body sits there, so the stretch near it is the
+    // ring's last side and its first — one line, never two pieces each named.
+    const { lines } = townLinesFrom(
+      {
+        towns: [{ name: 'Canaan', state: 'NH', ring: square(0, 43, 1, 44, true) }],
+        capped: false,
+        computedAt: 1,
+      },
+      [-0.001, 42.999, 0.001, 43.001],
+    );
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.path.map((p) => [p.lng, p.lat])).toEqual([
+      [0, 44],
+      [0, 43],
+      [1, 43],
+    ]);
+  });
+
   it('says what the map leaves out, and nothing when it leaves out nothing', () => {
     expect(townLinesShortWords(undefined)).toBeNull();
     expect(townLinesShortWords({ unstored: 0, capped: false })).toBeNull();

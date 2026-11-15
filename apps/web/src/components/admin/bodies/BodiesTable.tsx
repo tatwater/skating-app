@@ -101,7 +101,8 @@ const MONO: ReadonlySet<BodyColumnId> = new Set(['acres', 'asks', 'reports', 'ch
 
 type Entry =
   | { kind: 'row'; row: BodyRow; other: boolean }
-  | { kind: 'group'; key: string; label: string; count: number };
+  /** `count` as drawn: "50+" when the server's count stopped at its bound (a floor, never a total). */
+  | { kind: 'group'; key: string; label: string; count: string };
 
 type CellCtx = { q: string; now: number; showStanding: (row: BodyRow) => boolean };
 
@@ -247,7 +248,12 @@ export function BodiesTable({
     () => [
       ...list.rows.map((row) => ({ kind: 'row' as const, row, other: false })),
       ...(list.others ?? []).flatMap((g) => [
-        { kind: 'group' as const, key: g.key, label: g.label, count: g.count ?? g.rows.length },
+        {
+          kind: 'group' as const,
+          key: g.key,
+          label: g.label,
+          count: `${(g.count ?? g.rows.length).toLocaleString('en-US')}${g.capped ? '+' : ''}`,
+        },
         ...g.rows.map((row) => ({ kind: 'row' as const, row, other: true })),
       ]),
     ],

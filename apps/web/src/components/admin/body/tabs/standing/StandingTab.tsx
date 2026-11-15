@@ -118,13 +118,16 @@ function StandingReads({ bodyId: id }: BodyTabProps) {
   const body = result.body;
   const target = { targetType: 'waterbody' as const, targetId: bodyId };
 
-  const write = (run: () => Promise<unknown>, title: string) =>
-    sendFor(hold, {
+  // The form waits on the write; a refusal off this console (`false`) was said there, and this form
+  // went with it.
+  const write = async (run: () => Promise<unknown>, title: string): Promise<void> => {
+    await sendFor(hold, {
       body: bodyId,
       write: run,
       receipt: (subject) => announce({ title, target, subject }),
       what: title,
     });
+  };
 
   return (
     <StandingTabView
