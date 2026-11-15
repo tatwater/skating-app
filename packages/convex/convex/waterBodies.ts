@@ -6413,7 +6413,24 @@ export const searchByName = query({
      */
     bodiesOnly: v.optional(v.boolean()),
   },
-  handler: async (ctx, { query, limit, bodiesOnly }) => {
+  handler: (ctx, args) => searchByNameImpl(ctx, args),
+});
+
+/** Merged-away hits one search resolves to their survivors at most — a read of the survivor each. */
+const SURVIVOR_READS = 8;
+
+/**
+ * `searchByName`'s body. A body is found by its name, its catalogs' names and a moderator's aliases —
+ * `searchText`, built by `bodySearchTextFor`, the one rule every search reads (B01-3h). A hit says
+ * which of its other names matched (`matchedAlias`) when its shown name doesn't; how a result shows
+ * that is the clients' call. A hit on a body merged away stands for its survivor (once, if listed);
+ * a removed or rejected body is found by no name.
+ */
+export async function searchByNameImpl(
+  ctx: QueryCtx,
+  { query, limit, bodiesOnly }: { query: string; limit?: number; bodiesOnly?: boolean },
+): Promise<SearchHit[]> {
+  {
     const term = query.trim();
     if (term.length < 2) return [];
     const max = Math.min(Math.max(limit ?? 8, 1), 20);
@@ -6436,17 +6453,34 @@ export const searchByName = query({
     const bodyRoom = Math.max(1, max - bayShare);
 
     const results: SearchHit[] = [];
-    for (const body of raw) {
-      if (!isListed(body)) continue;
+    const seen = new Set<string>();
+    let survivorReads = 0;
+    for (const hit of raw) {
+      // A merged-away duplicate's names are its survivor's now: the hit stands for the survivor, the
+      // name it was found by carried as the alias that matched. One read each, a few a search.
+      let body: Doc<'waterBodies'> | null = hit;
+      let foundBy: string[] = [];
+      if (hit.dedupStatus === 'merged' && hit.mergedIntoId !== undefined) {
+        if (survivorReads >= SURVIVOR_READS) continue;
+        survivorReads++;
+        body = await ctx.db.get(hit.mergedIntoId);
+        foundBy = [hit.name, ...bodyAliasesFor(hit as BodyNames)];
+      }
+      if (!body || seen.has(body._id) || !isListed(body)) continue;
       // A removed body is map-only (founder call, 2026-09-16): findable by someone standing on it,
       // never by someone typing its name. A dormant one is searchable, badged (A07b).
       const standing = standingOf(body);
       if (standing.standing === 'removed') continue;
+      seen.add(body._id);
+      const aliases = [...bodyAliasesFor(body as BodyNames), ...foundBy].filter(
+        (a, i, all) => a.trim() !== '' && all.indexOf(a) === i && a !== body.name,
+      );
       results.push({
         kind: 'body',
         _id: body._id,
         waterBodyId: body._id,
         name: body.name,
+        ...(aliases.length > 0 ? { aliases } : {}),
         type: body.type,
         centroid: body.centroid,
         bbox: body.bbox,
@@ -6476,9 +6510,25 @@ export const searchByName = query({
       }))
       .sort((a, b) => (a.tier !== b.tier ? a.tier - b.tier : a.index - b.index))
       .slice(0, max)
-      .map(({ hit }) => hit);
-  },
-});
+      .map(({ hit }) => withMatchedAlias(hit, term));
+  }
+}
+
+/**
+ * The hit, saying which of its other names matched when its shown one doesn't (exactly or within):
+ * additive, so a client that doesn't read it is unchanged. A fuzzy match names none — the index
+ * doesn't say which token it matched, and a guess would be a wrong label.
+ */
+function withMatchedAlias(hit: SearchHit, term: string): SearchHit {
+  const needle = term.toLowerCase();
+  const name = hit.name.toLowerCase();
+  if (name === needle || name.includes(needle)) return hit;
+  const aliases = hit.aliases ?? [];
+  const match =
+    aliases.find((a) => a.toLowerCase() === needle) ??
+    aliases.find((a) => a.toLowerCase().includes(needle));
+  return match !== undefined ? { ...hit, matchedAlias: match } : hit;
+}
 
 /**
  * How closely a hit matches what was typed: `0` exact (name or alias), `1` substring, `2` fuzzy.
@@ -6506,8 +6556,14 @@ type SearchHit = {
   name: string;
   /** Set for a sub-area hit only — renders as "Malletts Bay — in Lake Champlain". */
   parentName?: string;
-  /** A bay's spelling variants, so an alias match can rank as the exact match it is. */
+  /**
+   * The row's other names — a bay's spelling variants; a body's catalog names and moderator aliases
+   * (`bodyAliasesFor`), and a merged-away duplicate's names it was found by — so an alias match
+   * ranks as the exact match it is.
+   */
   aliases?: string[];
+  /** The other name that matched what was typed, when the shown name didn't (B01-3h). Additive. */
+  matchedAlias?: string;
   /** Set when the body is dormant (A07b) — the result wears the "Inactive" badge and ranks last. */
   inactive?: boolean;
   type: Doc<'waterBodies'>['type'];
