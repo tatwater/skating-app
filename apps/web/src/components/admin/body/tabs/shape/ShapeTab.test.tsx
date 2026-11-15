@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ReadFailure } from '@/components/admin/reads/consoleReads';
 import { KeysProvider } from '@/lib/keys';
+import { expectNoBlanks } from '@/test/blanksAudit';
 import { expectKeyboardOperable } from '@/test/keyboardAudit';
 import { stubJsdomAnimations } from '../jsdomStubs';
 import { ShapeTabView, type ShapeTabViewProps } from './ShapeTab';
@@ -37,6 +38,24 @@ function view(props: Partial<ShapeTabViewProps> = {}) {
 const failure = (): ReadFailure => ({ failed: true, pending: false, retry: vi.fn() });
 
 describe('ShapeTabView', () => {
+  it('leaves nothing blank when every fact the record may lack is absent', () => {
+    const { container } = render(
+      view({
+        outline: { ...OUTLINE, lastImport: null },
+        bays: [{ id: 'bay:x', name: 'Shaker cove', acres: '0.4', sub: null, attention: null }],
+        merge: { touching: [{ id: 'k2', name: 'Unnamed body', lit: 'neighbor:k2' }], note: null },
+        bodyLink: (id) => <a href={`/admin/body/${id}`}>Open</a>,
+      }),
+    );
+    expectNoBlanks(container);
+    // A bay made with nothing recorded about how says so, rather than standing bare.
+    expect(
+      within(container.querySelector('[data-id="bay:x"]') as HTMLElement).getByText(
+        'Not recorded yet',
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('answers the keyboard wherever it answers a click: bays, touching bodies, the ways', () => {
     const onLitChange = vi.fn();
     const { container } = render(

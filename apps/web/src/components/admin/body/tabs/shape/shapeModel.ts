@@ -48,6 +48,20 @@ export interface ShapeBody {
   lastCampaignId?: string;
 }
 
+/**
+ * A bay as Shape keeps it from `subAreas.listForBody`. **What the read returns and Shape doesn't
+ * keep, and why** (nothing is dropped by accident):
+ * - `aliases`: the Names tab's (a bay's names are named there);
+ * - `polygon`, `bbox`, `centroid`: the map's, which draws every bay from the frame's own scene;
+ * - `displayScore`, `minVisibleZoom`, `curatedBoost`: how the skater map shows the bay, not part of
+ *   its shape (the frame's boost is the body's);
+ * - `fetchProfileM`, `maxDepthM`, `maxDepthSource`, `depthUnderstatesMax`, `depthDerivedAt`: the
+ *   bay as a place, for the skater's drawer; the console's depths are the body's, on Water;
+ * - `geometryUpdatedAt`: when the bay's outline last moved, which History lists as an edit;
+ * - a removed bay's reason: a removed bay is in History, not the table.
+ * `waterBodies.get`'s other fields are the frame's (identity, towns, trust); `consoleExtras` is the
+ * frame's too, except the touching ids Merge lists.
+ */
 export interface ShapeSubArea {
   _id: string;
   name: string;

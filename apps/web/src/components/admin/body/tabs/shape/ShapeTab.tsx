@@ -22,6 +22,8 @@ import { cn } from '@/lib/utils';
 import { useTabKeys } from '../../frame/tabKeys';
 import type { ShapeBay, ShapeMerge, ShapeOutline } from './shapeModel';
 
+const NOT_RECORDED = 'Not recorded yet';
+
 /**
  * The Shape tab's default view (5.4.1 Body | Shape): the **Outline** (its source written out, its
  * rings, its vertices, the last import), the **Bays** (each lights its water on the map), and
@@ -145,9 +147,10 @@ export function ShapeTabView({
                 >
                   <TableCell lead>
                     <span className="block">{b.name}</span>
-                    {b.sub !== null && (
-                      <span className="mt-(--space-1) block text-assist text-fg3">{b.sub}</span>
-                    )}
+                    {/* How, when and by whom — or that none of it is recorded, never a bare row. */}
+                    <span className="mt-(--space-1) block text-assist text-fg3">
+                      {b.sub ?? NOT_RECORDED}
+                    </span>
                     {b.attention !== null && (
                       <span className="mt-(--space-1) block text-assist text-warn">
                         {b.attention}
