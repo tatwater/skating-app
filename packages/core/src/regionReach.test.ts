@@ -365,8 +365,9 @@ describe('areasReached', () => {
     run.add(grid(S));
     expect(run.result().ids).toEqual(['B', 'A']);
     // A holds 100 + 200 + 100 m, B 600 + 200 + 600 m (each crossing adds its 2 cm on the line).
-    expect(run.shore().get('A')).toBeCloseTo(400, 0);
-    expect(run.shore().get('B')).toBeCloseTo(1_400, 0);
+    // Within 15 cm: each segment is measured at its own latitude, the fixture's meters at 44°.
+    expect(Math.abs((run.shore().get('A') as number) - 400)).toBeLessThan(0.15);
+    expect(Math.abs((run.shore().get('B') as number) - 1_400)).toBeLessThan(0.15);
   });
 
   it('does not depend on vertex order or where a ring starts', () => {

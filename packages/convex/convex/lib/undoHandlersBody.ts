@@ -503,10 +503,9 @@ const undoModeratorTowns: UndoHandler = {
     UNDO_POLICY.set_moderator_towns.takesAway(
       (meta(row).prev.moderatorTownKeys as string[] | undefined) ?? [],
     ),
-  refusal: async (ctx, row) => {
+  refusal: async (ctx, row, read) => {
     const id = ctx.db.normalizeId('waterBodies', row.targetId);
-    const body = id ? await undoRead(ctx, 'waterBody', id) : null;
-    if (body === undefined) return UNDO_CHECKED_ELSEWHERE;
+    const body = id ? await read('waterBody', id) : null;
     const refused = editRefusal(body);
     if (refused !== null || body === null) return refused;
     return listChangedRefusal(

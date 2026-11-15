@@ -407,7 +407,7 @@ export const places = query({
       townsWithState: townsWithStateOf(geo) ?? [],
       counties: geo.counties ?? [],
       states: geo.states ?? [],
-      /** The towns a moderator holds the body in (B01-3g), from `townsWithState`. */
+      /** The towns a moderator holds the body in (B01-3g), from the facts' `pinnedTowns`. */
       pinned: (geo.pinnedTowns ?? []).map(({ name, state }) => ({ name, state })),
       /** Pinned boundary keys that name no loaded town now — to show, never to drop. */
       pinnedMissing: geo.pinnedMissing ?? [],

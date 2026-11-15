@@ -28,11 +28,14 @@ import {
   cellRangeCovering,
   countyKeyOfSubdivision,
   distanceToPolygonMeters,
+  isUndefinedSubdivision,
+  stateOfSubdivision,
 } from '@skating/core';
 import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { WATER_BODY_LADDER } from './cellIndex';
+import { markGeoStale as markStale } from './geoStale';
 
 /** Two outlines this close count as touching (the stored outlines are simplified to ~5 m). */
 export const TOUCH_METERS = 30;
@@ -231,9 +234,12 @@ export function placesOf(geo: Doc<'bodyGeoFacts'> | null): Doc<'bodyGeoFacts'> |
  */
 function withPinnedTowns(geo: Doc<'bodyGeoFacts'>): Doc<'bodyGeoFacts'> {
   const pins = geo.pinnedTowns ?? [];
-  if (pins.length === 0) return geo;
+  if (pins.length === 0 && (geo.pinnedMissing ?? []).length === 0) return geo;
+  // A "not defined" water unit (an undo may restore a pin on one) is never listed as a town — the
+  // computed half's rule (`bodyGeo.placesFrom`) — but its county and state count.
+  const listed = pins.filter((p) => !isUndefinedSubdivision(p.key));
   const townEntries = [...(geo.townEntries ?? [])];
-  for (const p of pins) {
+  for (const p of listed) {
     if (!townEntries.some((e) => e.name === p.name && e.state === p.state)) {
       townEntries.push({ name: p.name, state: p.state, id: p.id });
     }
@@ -241,7 +247,7 @@ function withPinnedTowns(geo: Doc<'bodyGeoFacts'>): Doc<'bodyGeoFacts'> {
   const towns = [...(geo.towns ?? [])];
   const townStates = [...(geo.townStates ?? [])];
   const townIds = [...(geo.townIds ?? [])];
-  for (const p of pins) {
+  for (const p of listed) {
     if (towns.includes(p.name)) continue;
     towns.push(p.name);
     townStates.push(p.state);
@@ -250,14 +256,22 @@ function withPinnedTowns(geo: Doc<'bodyGeoFacts'>): Doc<'bodyGeoFacts'> {
   const counties = [...(geo.counties ?? [])];
   for (const p of pins)
     if (p.county !== undefined && !counties.includes(p.county)) counties.push(p.county);
-  const states = [...new Set([...(geo.states ?? []), ...pins.map((p) => p.state)])].sort();
+  // A pinned key whose town left the layer still names its state, as the body's own states do.
+  const missingStates = (geo.pinnedMissing ?? [])
+    .map(stateOfSubdivision)
+    .filter((code): code is string => code !== null);
+  const states = [
+    ...new Set([...(geo.states ?? []), ...pins.map((p) => p.state), ...missingStates]),
+  ].sort();
   return { ...geo, towns, townStates, townIds, townEntries, counties, states };
 }
 
 /**
  * **A moderator's pinned towns as the facts hold them** (B01-3g): each key's town row now — name,
  * state, boundary and county (from its GEOID) — and the keys no town row has now (`pinnedMissing`),
- * kept to be shown rather than dropped. At most eight keys, two indexed reads each.
+ * kept to be shown rather than dropped. At most eight keys: a town read each, and each county read
+ * once however many pinned towns share it (boundary rows carry their polygons, so every read counts
+ * against the writer's budget).
  */
 export async function pinnedFactsFor(
   ctx: QueryCtx,
@@ -268,6 +282,7 @@ export async function pinnedFactsFor(
 }> {
   const pinnedTowns: NonNullable<Doc<'bodyGeoFacts'>['pinnedTowns']> = [];
   const pinnedMissing: string[] = [];
+  const countyNames = new Map<string, string | null>();
   for (const key of keys) {
     const town = await ctx.db
       .query('adminAreas')
@@ -278,19 +293,20 @@ export async function pinnedFactsFor(
       continue;
     }
     const countyKey = countyKeyOfSubdivision(key);
-    const county =
-      countyKey === null
-        ? null
-        : await ctx.db
-            .query('adminAreas')
-            .withIndex('by_external_id', (q) => q.eq('externalId', countyKey))
-            .first();
+    if (countyKey !== null && !countyNames.has(countyKey)) {
+      const row = await ctx.db
+        .query('adminAreas')
+        .withIndex('by_external_id', (q) => q.eq('externalId', countyKey))
+        .first();
+      countyNames.set(countyKey, row !== null && row.level === 'county' ? row.name : null);
+    }
+    const county = countyKey === null ? null : (countyNames.get(countyKey) ?? null);
     pinnedTowns.push({
       key,
       name: town.name,
       state: town.state,
       id: town._id,
-      ...(county !== null && county.level === 'county' ? { county: county.name } : {}),
+      ...(county !== null ? { county } : {}),
     });
   }
   return { pinnedTowns, pinnedMissing };
@@ -310,7 +326,11 @@ export async function refreshPinnedFacts(
     .query('bodyGeoFacts')
     .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
     .first();
-  if (row === null) return;
+  // No facts row yet: owed its first computation, which builds the pinned half — queue it.
+  if (row === null) {
+    await markStale(ctx, [waterBodyId]);
+    return;
+  }
   await ctx.db.patch(row._id, await pinnedFactsFor(ctx, keys));
 }
 

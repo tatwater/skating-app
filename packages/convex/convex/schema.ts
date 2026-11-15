@@ -794,7 +794,8 @@ export default defineSchema({
      * **The region rule's states, kept apart from the pins** (B01-3g) — the import's answer, so
      * `states` (the one every reader uses) is always rebuilt from the two ingredients
      * (`regionStatesFields`): clearing a pin removes exactly the state it added and nothing the rule
-     * found. Absent on a row no pin has touched: its `states` are wholly the rule's.
+     * found. Written by every import and pin write; absent only on a row neither has touched since,
+     * whose `states` are then wholly the rule's (`ruleStatesOf`).
      */
     regionStates: v.optional(v.array(v.string())),
     /**

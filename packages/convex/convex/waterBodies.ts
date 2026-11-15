@@ -717,7 +717,8 @@ export const importCanonical = internalMutation({
           surfaceAreaSqM: item.surfaceAreaSqM,
           // Out of region: kept as stored, never relabeled out of the map (see `regionStatesOf`).
           // The rule's ingredient kept apart from the pins; out of region, the stored one stands.
-          ...regionStatesFields(outside ? ruleStatesOf(existing) : states, pins),
+          // No town holds its shore: the stored rule half stands, pinned or not.
+          ...regionStatesFields(states.length === 0 ? ruleStatesOf(existing) : states, pins),
           ...scores,
           ...shapeFields(item),
           ...mergeFields(item),

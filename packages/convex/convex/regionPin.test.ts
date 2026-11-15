@@ -11,6 +11,7 @@ import type { Polygon } from 'geojson';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
+import { PLACES_RULE, pinnedFactsFor, placesOf } from './lib/bodyGeo';
 import { syncAdminAreaCells } from './lib/cellIndex';
 import { undoState } from './lib/undo';
 import schema from './schema';
@@ -184,6 +185,44 @@ describe('setModeratorTowns', () => {
     await expect(set([SOUTHBRIDGE], [])).rejects.toMatchObject({
       data: { code: 'list_changed', current: [NORTH_EAST] },
     });
+  });
+
+  test('a pin an undo restores on a "not defined" water unit is never listed as a town — its county and state still count — and towns sharing a county read it once', async () => {
+    const t = harness();
+    await seedTowns(t);
+    const UNIT = 'tiger/3602700000';
+    await area(
+      t,
+      'County subdivisions not defined',
+      'town',
+      'NY',
+      UNIT,
+      rect(-73.7, 42.0, -73.6, 42.1),
+    );
+    const OTHER = 'tiger/3602751551';
+    await area(t, 'Amenia', 'town', 'NY', OTHER, rect(-73.6, 41.9, -73.5, 42.0));
+    const facts = await t.run((ctx) => pinnedFactsFor(ctx, [UNIT, NORTH_EAST, OTHER]));
+    expect(facts.pinnedTowns.map((p) => p.county)).toEqual(['Dutchess', 'Dutchess', 'Dutchess']);
+    const geo = placesOf({
+      _id: 'f',
+      _creationTime: 0,
+      waterBodyId: 'b',
+      placesRule: PLACES_RULE,
+      computedAt: NOW,
+      towns: [],
+      townStates: [],
+      townIds: [],
+      townEntries: [],
+      counties: [],
+      states: [],
+      ...facts,
+    } as unknown as Doc<'bodyGeoFacts'>);
+    expect(geo).toMatchObject({
+      towns: ['North East', 'Amenia'],
+      counties: ['Dutchess'],
+      states: ['NY'],
+    });
+    expect(geo?.townEntries?.map((e) => e.name)).toEqual(['North East', 'Amenia']);
   });
 
   test('a pin reaches every reader at once — the body’s states, skater search, the library, the facts — and its clear takes back only what it added (Greptile on #130)', async () => {
@@ -368,6 +407,8 @@ describe('the pin against the other writers', () => {
     });
     expect(await get(t, id)).toMatchObject({
       states: ['MA', 'NY'],
+      // No town holds its shore: the stored rule half stands, as for any stored body.
+      regionStates: ['NY'],
       moderatorTownKeys: [NORTH_EAST, SOUTHBRIDGE],
     });
     // A rule answer is unioned with the pins.
