@@ -763,17 +763,12 @@ transform/load already handle multiple states. Full runbook + rationale:
   ```
   Then run the normal filter → export → transform → load on `new-york-upstate.osm.pbf`. The 41.3°N
   cut was chosen to sit well south of every skated NY lake (Lake George ~43.4, Saranac/Placid ~44.3).
-- **Tag each load with its state:** pass `--state=XX` (2-letter code) to the loader so each body
-  records the region(s) it's in — `importCanonical` **unions** it into the body's `states`:
-  ```bash
-  pnpm --filter @skating/etl load .scratch/new-york/bodies.ndjson --state=NY
-  ```
-  This powers the map search-result location label + `curatedBoost` disambiguation (Phase 02b).
-- **Border-spanning bodies dedupe automatically** *and* accumulate states. `importCanonical` upserts
-  on `source+externalId`, so a lake in two extracts (Lake Champlain in VT *and* NY; Connecticut River
-  bays in VT *and* NH) lands as one row and its `states` unions to e.g. `["NY","VT"]` — run order
-  doesn't matter. VT can be skipped if already loaded (but re-run it with `--state=VT` to backfill
-  the state tag).
+- **States come from the merge, never a tag** (D266): the loader's old `--state=XX` flag, which
+  unioned an extract's state into every body it loaded, is retired and refused. A body's `states`
+  are the states of the loaded towns holding at least 25 m of its shoreline, computed by the merge
+  (`statesFor`) against the town layer `scripts/admin-areas` loads; a record without them refuses
+  the load, and an empty list is out of region (not inserted). Border-spanning bodies carry every
+  state whose towns hold their shore (Lake Champlain: `["NY","VT"]`).
 - **Record each extract's md5 (per state)** — now automatic, see §*Pinning the OSM snapshot* below.
   `pnpm --filter @skating/etl archive` captures the resolved dated URL, Geofabrik's md5, our sha256
   and the byte count, and prints the run-table rows already filled in. The manual version of this

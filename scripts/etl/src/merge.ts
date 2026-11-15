@@ -97,6 +97,8 @@ import {
   type RawThreeDhpFeature,
   SQ_M_PER_ACRE,
   TIDAL_MAX_ELEVATION_M,
+  type TownRow,
+  townLayerOf,
 } from './mergeRules';
 import { NHD_ID_CENSUS, NHD_SOURCES, nhdArchiveKey, normalizeGnisId } from './nhdArchive';
 
@@ -397,6 +399,37 @@ function loadBoundaries(): (Boundary & { name: string; level: string })[] {
   return out;
 }
 
+/** Where `scripts/admin-areas` writes the rows it loads into `adminAreas` (`fetch-states`). */
+const ADMIN_AREAS_RAW = join(HERE, '..', '..', 'admin-areas', '.raw');
+
+/**
+ * **The loaded towns** — the county subdivisions of each state, read from the very files
+ * `scripts/admin-areas` loads into `adminAreas`, so the region rule here and in the geometry facts
+ * tests the same polygons. A state's file missing is an error (`townLayerOf` names it); the rows
+ * carry no state field, so it comes from the file they are in.
+ */
+function loadTowns(): TownRow[] {
+  const out: TownRow[] = [];
+  for (const code of OSM_STATES) {
+    const file = join(ADMIN_AREAS_RAW, `areas-${code}.ndjson`);
+    if (!existsSync(file)) continue;
+    for (const line of readFileSync(file, 'utf8').split('\n')) {
+      const t = line.trim();
+      if (t.length === 0) continue;
+      const row = JSON.parse(t) as Omit<TownRow, 'state'> & { level: string };
+      if (row.level !== 'town') continue;
+      out.push({
+        externalId: row.externalId,
+        name: row.name,
+        state: code.toUpperCase(),
+        bbox: row.bbox,
+        polygon: row.polygon,
+      });
+    }
+  }
+  return out;
+}
+
 /**
  * New York south of I-84 — in the five states, and deliberately not in the corpus.
  *
@@ -539,31 +572,13 @@ async function main(): Promise<void> {
     }
   }
   log(`  ${boundaries.length.toLocaleString()} boundary polygons`);
-  // A second, coarser index over STATE rows only. The mask is built from counties and towns because
-  // those are the finer outlines, but a county row does not carry its state's code — so `states` has
-  // to be answered against a different set. See `statesFor`.
-  const stateGrid = new Map<string, (Boundary & { name: string })[]>();
-  const stateRows = boundaries.filter((x) => x.level === 'state');
-  for (const b of stateRows) {
-    for (const cell of cellsFor(b.bbox)) {
-      const bucket = stateGrid.get(cell);
-      if (bucket) bucket.push(b);
-      else stateGrid.set(cell, [b]);
-    }
-  }
-  const stateNames = [...new Set(stateRows.map((x) => x.name))];
-  log(`  ${stateNames.length} state outlines for the states field`);
-  // **Five, or the `states` field is quietly wrong for a whole state.** `adminAreas` carried three
-  // state rows for a year and nothing said so (the OSM relations do not close from a per-state
-  // extract), which is the entire reason the TIGER lane exists. A mask short of a state still clips
-  // fine — the counties cover it — so the only symptom would be tens of thousands of bodies with no
-  // `states` value and an empty regional filter in the app.
-  if (stateNames.length !== OSM_STATES.length) {
-    throw new Error(
-      `expected ${OSM_STATES.length} state outlines in the mask, found ${stateNames.length}: ` +
-        `${stateNames.join(', ') || '(none)'} — re-export boundaries.ndjson`,
-    );
-  }
+  // **The town layer for `states`** — the loaded county subdivisions, exactly the rows `adminAreas`
+  // holds, so the merge and the geometry facts decide region membership by one rule on one layer
+  // (D266). A layer that is missing, empty or short of a state throws here, before any body is
+  // judged: that is a run without boundaries, never a corpus out of region.
+  log('loading the town layer for the region rule…');
+  const towns = townLayerOf(loadTowns(), OSM_STATES);
+  log(`  ${towns.size.toLocaleString()} towns in ${towns.states.size} states`);
   const downstate = loadDownstate();
   log(`  ${downstate.length} downstate NY counties, refused`);
 
@@ -588,7 +603,7 @@ async function main(): Promise<void> {
   const { bodies: kept, subAreas, dropped, stats } = master;
 
   // ── The emit stage — the artifact the loader actually consumes (A07a step 5) ────────────────
-  const emit = emitCanonicalBodies(kept, stateGrid);
+  const emit = emitCanonicalBodies(kept, towns);
   const failedCount = [...emit.failures.values()].reduce((a, b) => a + b, 0);
   if (emit.emitted.length + failedCount !== kept.length) {
     throw new Error(

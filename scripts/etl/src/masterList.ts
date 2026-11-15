@@ -88,6 +88,7 @@ import {
   saltContainment,
   saltMask,
   statesFor,
+  type TownLayer,
   Union,
 } from './mergeRules';
 import { simplifyForStorage, toCanonicalBody } from './transform';
@@ -496,9 +497,9 @@ export interface MasterListInput {
    */
   elevation?: ReadonlyMap<string, number>;
   /**
-   * The **state** outlines are deliberately not here: `statesFor` runs in `emitCanonicalBodies`,
-   * where the record is built, and nothing in the admission decision reads a state code. Passing a
-   * grid this function never consults would read as though it did.
+   * The **town layer** is deliberately not here: `statesFor` runs in `emitCanonicalBodies`, where
+   * the record is built, and nothing in the admission decision reads a state code. Passing a layer
+   * this function never consults would read as though it did.
    */
   log?: (message: string) => void;
 }
@@ -1119,10 +1120,7 @@ export const EMIT_FAILURE_SAMPLE_CAP = 10;
  * exactly what the first audit found broken (`states` was emitted, declared, and absent from the
  * validator, so every batch would have been rejected).
  */
-export function emitCanonicalBodies(
-  kept: readonly KeptBody[],
-  stateGrid: Map<string, (Boundary & { name: string })[]>,
-): EmitResult {
+export function emitCanonicalBodies(kept: readonly KeptBody[], towns: TownLayer): EmitResult {
   const emitted: CanonicalBody[] = [];
   const emittedKeys = new Set<string>();
   const failures = new Map<string, number>();
@@ -1139,7 +1137,8 @@ export function emitCanonicalBodies(
           type: k.cls,
           geometry: k.polygon,
           geometrySource: k.geometrySource as 'osm' | 'nhd' | '3dhp',
-          states: statesFor(k, stateGrid),
+          // The region rule's answer (D266): `[]` is out of region, which the import refuses.
+          states: statesFor(k, towns),
           // **Measured on the source geometry, which is the number the floor was decided on.**
           sourceAreaSqM: k.areaSqM,
           inRegionFraction: k.inRegionFraction,
