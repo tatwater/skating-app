@@ -10,6 +10,7 @@ import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { MAX_FEATURE_POSITIONS } from './bodyFeatures';
 import { OVERRIDES_READ } from './imageryOverrides';
+import { savedPutInsOf } from './lib/standing';
 import schema from './schema';
 import { MAX_MODERATOR_ALIAS_CHARS, MAX_MODERATOR_ALIASES } from './waterBodies';
 
@@ -880,5 +881,132 @@ describe('whole-list writes refuse a list that moved under them (BS17)', () => {
       'The Point',
       'Longpoint',
     ]);
+  });
+});
+
+describe('putIns.promote', () => {
+  async function seedLaunch(t: T, over: Record<string, unknown> = {}) {
+    const mod = await person(t);
+    const id = await imported(t, 'way/1');
+    const { lot, putInId } = await t.run(async (ctx) => {
+      const lot = await ctx.db.insert('parkingAreas', {
+        coord: { lat: 44.012, lng: -72 },
+        source: 'osm',
+        status: 'visible',
+        amenities: [],
+        createdAt: NOW,
+      });
+      const putInId = await ctx.db.insert('putIns', {
+        waterBodyId: id,
+        coord: { lat: 44.01, lng: -72 },
+        source: 'osm',
+        status: 'visible',
+        externalId: 'node/9',
+        name: 'Town Ramp',
+        parkingAreaId: lot,
+        approachMeters: 240,
+        approachRouted: true,
+        approachAscentM: 6,
+        approachPath: [
+          { lat: 44.012, lng: -72 },
+          { lat: 44.01, lng: -72 },
+        ],
+        approachKindOverride: 'short_walk',
+        createdAt: NOW,
+        ...over,
+      } as never);
+      return { lot, putInId };
+    });
+    return { mod, id, lot, putInId };
+  }
+  const putIn = (t: T, id: Id<'putIns'>) => t.run((ctx) => ctx.db.get(id));
+
+  test('in place: the same row, point, lot, walk and override; the name only when given; undo and its undo', async () => {
+    const t = harness();
+    const { mod, lot, putInId } = await seedLaunch(t);
+    const before = await putIn(t, putInId);
+    const r = await mod.as.mutation(api.putIns.promote, { putInId, name: '  North   Ramp ' });
+    expect(r).toEqual({ putInId, actionId: expect.any(String), undoNeedsReason: true });
+    const after = await putIn(t, putInId);
+    expect(after).toMatchObject({
+      source: 'official',
+      name: 'North Ramp',
+      coord: before?.coord,
+      parkingAreaId: lot,
+      approachMeters: 240,
+      approachRouted: true,
+      approachAscentM: 6,
+      approachPath: before?.approachPath,
+      approachKindOverride: 'short_walk',
+      externalId: 'node/9',
+    });
+    expect((await t.run((ctx) => ctx.db.query('putIns').collect())).length).toBe(1);
+    await expect(mod.as.mutation(api.putIns.promote, { putInId })).rejects.toThrow(
+      /already official/,
+    );
+    // The undo takes official status away, so it asks a reason.
+    await expect(mod.as.mutation(api.undo.run, { actionId: r.actionId })).rejects.toThrow(/reason/);
+    await mod.as.mutation(api.undo.run, { actionId: r.actionId, reason: 'not the town’s ramp' });
+    expect(await putIn(t, putInId)).toMatchObject({
+      source: 'osm',
+      name: 'Town Ramp',
+      parkingAreaId: lot,
+      approachMeters: 240,
+    });
+    // Undoing the undo gives it back, and asks none.
+    await mod.as.mutation(api.undo.run, { actionId: (await lastAction(t, 'set_put_in'))._id });
+    expect(await putIn(t, putInId)).toMatchObject({ source: 'official', name: 'North Ramp' });
+  });
+
+  test('a dormant body comes back; the rollover’s put-in rule sees the launch the same before and after', async () => {
+    const t = harness();
+    const { mod, id, putInId } = await seedLaunch(t);
+    await t.run((ctx) => ctx.db.patch(id, { dormant: { since: NOW, reason: 'inactive' } }));
+    const keeps = () => t.run((ctx) => savedPutInsOf(ctx, id));
+    const before = await keeps();
+    await mod.as.mutation(api.putIns.promote, { putInId });
+    expect(await keeps()).toEqual(before);
+    expect(before.keeps).toBe(true);
+    expect((await get(t, id))?.dormant).toBeUndefined();
+  });
+
+  test('refused: hidden, suppressed, on a merged-away body, missing; an undo once the launch was renamed', async () => {
+    const t = harness();
+    const { mod, id, putInId } = await seedLaunch(t);
+    await t.run((ctx) => ctx.db.patch(putInId, { status: 'hidden' }));
+    await expect(mod.as.mutation(api.putIns.promote, { putInId })).rejects.toThrow(/hidden/);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(putInId, { status: 'visible' });
+      await ctx.db.insert('putIns', {
+        waterBodyId: id,
+        coord: { lat: 44.01, lng: -72 },
+        source: 'derived',
+        status: 'hidden',
+        createdAt: NOW,
+      });
+    });
+    await expect(mod.as.mutation(api.putIns.promote, { putInId })).rejects.toThrow(/hid a put-in/);
+    await t.run(async (ctx) => {
+      for (const r of await ctx.db.query('putIns').collect()) {
+        if (r.status === 'hidden') await ctx.db.delete(r._id);
+      }
+    });
+    const r = await mod.as.mutation(api.putIns.promote, { putInId });
+    await t.run((ctx) => ctx.db.patch(putInId, { name: 'Renamed Since' }));
+    await expect(
+      mod.as.mutation(api.undo.run, { actionId: r.actionId, reason: 'r' }),
+    ).rejects.toThrow(/changed since/);
+    const survivor = await imported(t, 'way/2');
+    await t.run(async (ctx) => {
+      await ctx.db.patch(putInId, { source: 'osm' });
+      await ctx.db.patch(id, { dedupStatus: 'merged', mergedIntoId: survivor });
+    });
+    await expect(mod.as.mutation(api.putIns.promote, { putInId })).rejects.toThrow(
+      /merged into another/,
+    );
+    await t.run((ctx) => ctx.db.delete(putInId));
+    await expect(mod.as.mutation(api.putIns.promote, { putInId })).rejects.toThrow(
+      /no longer exists/,
+    );
   });
 });

@@ -19,6 +19,7 @@ import {
   unrestoreLandmarkImpl,
   updateLandmarkImpl,
 } from '../landmarks';
+import { demotePutInImpl, promotePutInImpl } from '../putIns';
 import { setStandingImpl } from '../standing';
 import {
   type RedrawSnapshot,
@@ -521,6 +522,52 @@ const undoImageryOverride: UndoHandler = {
   },
 };
 
+/**
+ * set_put_in → a promotion undone (the source and name it replaced), or that undo undone (promoted
+ * again). A row from `setOfficial` placing a new point has no undo yet.
+ */
+const undoPutIn: UndoHandler = {
+  blocked: (row) => {
+    const direction = (meta(row) as { direction?: unknown }).direction;
+    return direction === 'promoted' || direction === 'demoted'
+      ? null
+      : 'Undoing a newly placed official put-in is not built yet.';
+  },
+  undoTakesAway: (row) =>
+    UNDO_POLICY.set_put_in.takesAway((meta(row) as { direction?: unknown }).direction),
+  run: async ({ ctx, actor, row, reason }) => {
+    const m = meta(row) as {
+      putInId: Id<'putIns'>;
+      coord: { lat: number; lng: number };
+      direction: 'promoted' | 'demoted';
+      name?: string;
+      prev: {
+        source: 'osm' | 'derived' | 'official';
+        name: string | null;
+        createdByUserId?: Id<'profiles'> | null;
+      };
+    };
+    if (m.direction === 'promoted') {
+      await demotePutInImpl(ctx, actor, {
+        putInId: m.putInId,
+        prev: {
+          source: m.prev.source as 'osm' | 'derived',
+          name: m.prev.name,
+          createdByUserId: m.prev.createdByUserId ?? null,
+        },
+        expected: { coord: m.coord, name: m.name ?? null },
+        reason,
+      });
+      return;
+    }
+    await promotePutInImpl(ctx, actor, {
+      putInId: m.putInId,
+      ...(m.prev.name !== null ? { name: m.prev.name } : {}),
+      reason,
+    });
+  },
+};
+
 /** Verb-level handlers (verbs only this area writes). */
 export const BODY_UNDO_HANDLERS: Partial<Record<ModerationAction, UndoHandler>> = {
   set_curated_boost: undoCuratedBoost,
@@ -530,6 +577,7 @@ export const BODY_UNDO_HANDLERS: Partial<Record<ModerationAction, UndoHandler>> 
   set_water_body_name: undoWaterBodyName,
   set_lake_depth: undoLakeDepth,
   choose_depth_source: undoDepthSource,
+  set_put_in: undoPutIn,
   set_imagery_override: undoImageryOverride,
   set_satellite_imagery: undoSatelliteImagery,
   set_weather_sample_points: undoWeatherSamplePoints,

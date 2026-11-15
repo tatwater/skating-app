@@ -315,12 +315,12 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
   rename_sub_area: { undo: setPrev, takesAway: never, capability: 'body.shape' },
 
   // ── Access ──────────────────────────────────────────────────────────────────────────────────────
+  // B01-3d: a promotion's undo puts the launch's source and name back (taking official status away,
+  // so it asks a reason); the undo of that undo promotes again (giving, so it asks none). A new
+  // official point placed by `setOfficial` has no undo yet (its handler refuses that row).
   set_put_in: {
-    undo: later(
-      '§3 Body console',
-      'A new put-in is hidden; an edited one gets its prior name back.',
-    ),
-    takesAway: never,
+    undo: setPrev,
+    takesAway: (direction) => direction !== 'demoted',
     capability: 'body.access',
   },
   set_parking_area: {

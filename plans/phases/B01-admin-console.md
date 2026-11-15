@@ -2942,6 +2942,22 @@ leaves a removed one editable.
   `recurrence.waitingCountForBody` → `{ count, capped }` counts by the tab's rule (`isWaitingPattern`)
   over one read one past the bound; the list's array shape is left for the page that reads it.
 
+**A launch made official in place** (`putIns.promote`, `body.access`; found by the Access tab, whose
+*Make official* called `setOfficial`, which always inserts a new point). Checked: `setOfficial` snaps
+to the shore, stamps the bay, writes `set_put_in` and recomputes access; `accessForBody` lists stored
+visible rows with no proximity merge (so the tab drew both), while the map's marker read lets an
+official marker win over others within the hide radius. `promote({ putInId, name?, reason? })` makes a
+stored `osm` or persisted `derived` launch official on the same row — point, bay, lot, walk and
+approach-kind override kept, the name set only when given — and returns `{ putInId, actionId,
+undoNeedsReason }`. A live report cluster has no row and never appears in the tab's list; making one
+official is `setOfficial` at its coordinate. Refused: official, hidden, suppressed, a merged-away
+body, missing. The undo puts the source and name back (asking a reason: it takes official status
+away) and is refused once the launch moved, was renamed, hidden or demoted; its undo promotes again.
+`setOfficial` shares the after-write steps (`afterPutInChange`: the body back if shelved, access kind,
+library row). The old lake editor places a clicked point with `setOfficial` — a moderator who clicks on
+an existing launch there gets a second row too (the map hides the first; the console lists both); the
+phone app has no caller.
+
 **Held — the survey filing** (`fileBathymetrySurvey`): the board shows the field (*A survey the next
 build should load*, *Paste a link or a citation*) but not what appears once one is filed; it waits on
 the founder's call.
