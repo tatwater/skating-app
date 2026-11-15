@@ -1463,7 +1463,13 @@ export async function listActionsPage(
   // checks in page order (`undoStates`, B01-3h) — then every row's actor at once. Both charge the
   // request's budget, so the labels' charges (a rowless person's profile) wait for the undo states:
   // run together, which refusal checks fit and who is named would turn on settling order.
-  const undoing = undoStates(ctx, viewer, visible);
+  // One landmark's own history is a view of one row in effect: its refusals run the full rule.
+  const undoing = undoStates(
+    ctx,
+    viewer,
+    visible,
+    args.targetType === 'bodyLandmark' && args.targetId !== undefined ? 'one' : 'list',
+  );
   const [labels, undos] = await Promise.all([auditTargetLabels(ctx, visible, undoing), undoing]);
   const shared = { labels, actors: new Map() };
   return Promise.all(visible.map((a, i) => toActionView(ctx, a, shared, undos[i] as UndoState)));

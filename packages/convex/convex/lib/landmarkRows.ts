@@ -12,6 +12,7 @@ import {
   type LandmarkKind,
   landmarkNameKey,
   landmarksAreSamePlace,
+  MAX_LANDMARK_EXTERNAL_IDS,
   MAX_LANDMARKS_PER_BODY,
   normalizeLandmarkNames,
   pointInPolygon,
@@ -424,7 +425,10 @@ export async function repointLandmarksOnMerge(
           point: keeper.point,
           ...(areaSqM !== undefined ? { areaSqM } : {}),
           ...(takeRow ? { moderatorEditedAt: row.moderatorEditedAt } : {}),
-          externalIds: [...new Set([...twin.externalIds, ...row.externalIds])],
+          // At most `MAX_LANDMARK_EXTERNAL_IDS`, the newest kept (B01-3h).
+          externalIds: [...new Set([...twin.externalIds, ...row.externalIds])].slice(
+            -MAX_LANDMARK_EXTERNAL_IDS,
+          ),
           aliases:
             normalizeLandmarkNames(keeper.name, [
               twin.name,
@@ -504,10 +508,39 @@ export async function assertNotABayName(
   waterBodyId: Id<'waterBodies'>,
   landmark: { point: { lat: number; lng: number }; names: readonly string[] },
 ): Promise<void> {
-  const bay = bayNaming(landmark, await liveBaysForNaming(ctx, waterBodyId));
-  if (bay) {
-    throw new ConvexError(`"${bay.names[0]}" is a bay on this lake — it is already on the map`);
-  }
+  const refused = bayNameRefusal(landmark, await liveBaysForNaming(ctx, waterBodyId));
+  if (refused !== null) throw new ConvexError(refused);
+}
+
+/** Why a landmark can't take these names here — a bay on the lake answers to one — or `null`. */
+export function bayNameRefusal(
+  landmark: { point: { lat: number; lng: number }; names: readonly string[] },
+  bays: readonly BayNaming[],
+): string | null {
+  const bay = bayNaming(landmark, bays);
+  return bay ? `"${bay.names[0]}" is a bay on this lake — it is already on the map` : null;
+}
+
+/**
+ * Why a landmark edit is refused against the body's live landmarks and bays — a landmark already
+ * there under these names, or a bay that answers to one — or `null` (B01-3h). One rule for the edit
+ * (`landmarks.update`) and for its undo where one landmark is in view.
+ */
+export function landmarkEditRefusal(
+  rows: readonly Doc<'bodyLandmarks'>[],
+  bays: readonly BayNaming[],
+  candidate: {
+    kind: LandmarkKind;
+    point: { lat: number; lng: number };
+    name: string;
+    aliases: readonly string[];
+  },
+  exceptId: Id<'bodyLandmarks'>,
+): string | null {
+  return (
+    duplicateRefusal(rows, candidate, exceptId) ??
+    bayNameRefusal({ point: candidate.point, names: [candidate.name, ...candidate.aliases] }, bays)
+  );
 }
 
 /**
@@ -615,6 +648,21 @@ export function assertNotDuplicate(
   },
   exceptId?: Id<'bodyLandmarks'>,
 ): void {
+  const refused = duplicateRefusal(rows, candidate, exceptId);
+  if (refused !== null) throw new ConvexError(refused);
+}
+
+/** Why {@link assertNotDuplicate} refuses — a live landmark already this place — or `null`. */
+export function duplicateRefusal(
+  rows: readonly Doc<'bodyLandmarks'>[],
+  candidate: {
+    kind: LandmarkKind;
+    point: { lat: number; lng: number };
+    name: string;
+    aliases: readonly string[];
+  },
+  exceptId?: Id<'bodyLandmarks'>,
+): string | null {
   const identity = identityOf(candidate);
   const clash = rows.find(
     (row) =>
@@ -622,5 +670,5 @@ export function assertNotDuplicate(
       row.removedAt === undefined &&
       landmarksAreSamePlace(identityOf(row), identity),
   );
-  if (clash) throw new ConvexError(`"${clash.name}" is already a landmark here`);
+  return clash ? `"${clash.name}" is already a landmark here` : null;
 }

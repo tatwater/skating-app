@@ -1,7 +1,10 @@
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import {
   aliasesFor,
+  bodyAliasesFor,
+  bodySearchTextFor,
   composeNameClaims,
   distinctNameClaims,
   type NameClaim,
@@ -126,5 +129,51 @@ describe('searchTextFor', () => {
   // An unnamed body still gets a row; its searchText is empty rather than whitespace.
   it('is empty for an unnamed body with nothing else to offer', () => {
     expect(searchTextFor('', [])).toBe('');
+  });
+});
+
+describe('bodyAliasesFor (B01-3h: one rule for every search)', () => {
+  it('the catalogs’ other names, then a moderator’s aliases — each once, case and space aside', () => {
+    const body = {
+      name: 'The Basin',
+      nameClaims: [claim('nhd', 'The Basin'), claim('osm', 'Lake Auburn')],
+      moderatorAliases: ['  the basin ', 'lake auburn', 'Auburn Reservoir', 'AUBURN RESERVOIR'],
+    };
+    expect(bodyAliasesFor(body)).toEqual(['Lake Auburn', 'Auburn Reservoir']);
+    expect(bodySearchTextFor(body)).toBe('The Basin Lake Auburn Auburn Reservoir');
+  });
+
+  it('with no moderator aliases it is exactly the catalogs’ rule, so an unaliased body’s text never moves', () => {
+    const value = fc.string({ maxLength: 12 });
+    const source = fc.constantFrom<NameClaim['source']>('osm', 'nhd', 'gnis', '3dhp', 'user');
+    fc.assert(
+      fc.property(
+        value,
+        fc.array(fc.record({ source, value }), { maxLength: 6 }),
+        (name, claims) => {
+          const body = { name, nameClaims: claims };
+          expect(bodyAliasesFor(body)).toEqual(aliasesFor(claims, name));
+          expect(bodySearchTextFor({ ...body, moderatorAliases: [] })).toBe(
+            searchTextFor(name, aliasesFor(claims, name)),
+          );
+        },
+      ),
+    );
+  });
+
+  it('every non-blank moderator alias is findable: its trimmed text is in the search text', () => {
+    const word = fc.string({ minLength: 1, maxLength: 10 });
+    fc.assert(
+      fc.property(word, fc.array(word, { maxLength: 6 }), (name, aliases) => {
+        const text = bodySearchTextFor({ name, moderatorAliases: aliases }).toLowerCase();
+        for (const alias of aliases) {
+          if (alias.trim()) expect(text).toContain(alias.trim().toLowerCase());
+        }
+        const out = bodyAliasesFor({ name, moderatorAliases: aliases });
+        const keys = out.map((a) => a.trim().toLowerCase());
+        expect(new Set(keys).size).toBe(keys.length);
+        expect(keys).not.toContain(name.trim().toLowerCase());
+      }),
+    );
   });
 });
