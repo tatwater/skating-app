@@ -134,28 +134,33 @@ export function PeopleListView({
   const backAsked = useRef(false);
   // A pane the narrow rule hides takes no focus with it, however it went — the page's way back,
   // the browser's, a row opened from the keys or a press, a resize: focus that sat in it (or on a
-  // control that went with it) moves to the pane now on screen, never to the page.
+  // control that went with it) moves to the pane now on screen, never to the page. With the columns
+  // side by side, a person's page closed some other way than Esc (the browser's back, a link) takes
+  // the control that held focus with it: focus goes back to the list, as Esc sends it.
   useLayoutEffect(() => {
     const asked = backAsked.current && shown === 'list';
     backAsked.current = false;
-    if (shown === 'all') return;
+    const active = document.activeElement;
+    const nowhere = active === null || active === document.body;
+    const from = held.current;
+    if (shown === 'all') {
+      if (!personOpen && nowhere && from !== null && !from.isConnected) listbox.current?.focus();
+      return;
+    }
     const hidden = (el: Element | null) => {
       const pane = el?.closest<HTMLElement>('[data-pane]')?.dataset.pane;
       return shown === 'detail' ? pane === 'lanes' || pane === 'middle' : pane === 'detail';
     };
-    const active = document.activeElement;
-    const from = held.current;
-    const lost =
-      active === null || active === document.body
-        ? from !== null && (!from.isConnected || hidden(from))
-        : page.current?.contains(active) === true && hidden(active);
+    const lost = nowhere
+      ? from !== null && (!from.isConnected || hidden(from))
+      : page.current?.contains(active) === true && hidden(active);
     if (!asked && !lost) return;
     if (shown === 'list') listbox.current?.focus();
     else
       page.current
         ?.querySelector<HTMLElement>(':scope > [data-pane="detail"]')
         ?.focus({ preventScroll: true });
-  }, [shown]);
+  }, [shown, personOpen]);
   const backToList = () => {
     if (narrow && onCloseDetail !== undefined) {
       backAsked.current = true;

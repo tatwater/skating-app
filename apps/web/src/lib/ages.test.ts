@@ -29,6 +29,20 @@ describe('shortAge — a row’s', () => {
       }),
     );
   });
+
+  it('never reads younger for an older item', () => {
+    const value = (s: string) => {
+      const [n, unit] = s.split(' ');
+      const scale = unit === 'min' ? MIN : unit === 'h' ? HOUR : DAY;
+      return Number(n) * scale;
+    };
+    assertSeeded(
+      fc.property(fc.nat(400 * DAY), fc.nat(400 * DAY), (a, b) => {
+        const [young, old] = a <= b ? [a, b] : [b, a];
+        expect(value(shortAge(old))).toBeGreaterThanOrEqual(value(shortAge(young)));
+      }),
+    );
+  });
 });
 
 describe('the written-out pair — a head’s, a note’s', () => {

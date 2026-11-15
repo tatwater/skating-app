@@ -327,7 +327,15 @@ describe('words', () => {
     expect(leaving(-HOUR)).toBe('Ends now');
   });
 
-  it('writes a day as the board does', () => {
-    expect(weekdayDate(new Date(2026, 9, 15, 19, 48).getTime())).toBe('Thu 15 Oct');
+  it('writes a day as the board does, with its year when it isn’t this year’s', () => {
+    expect(weekdayDate(new Date(2026, 9, 15, 19, 48).getTime(), NOW)).toBe('Thu 15 Oct');
+    // The person page's rule: a day from another year says which, on the row as on the page.
+    expect(weekdayDate(new Date(2025, 9, 15, 19, 48).getTime(), NOW)).toBe('Wed 15 Oct 2025');
+  });
+
+  it('says the year of a staffer’s tenure from another year, as the person page does', () => {
+    const since = new Date(2024, 2, 3, 12, 0).getTime();
+    const sarah = { ...SARAH, staff: { roleSince: since } };
+    expect(rowView(sarah, 'staff', NO_FACTS, NOW).sub).toMatch(/^Admin since 3 Mar 2024/u);
   });
 });

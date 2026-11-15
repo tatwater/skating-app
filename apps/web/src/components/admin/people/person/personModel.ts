@@ -1,5 +1,5 @@
 import type { api } from '@skating/convex/api';
-import { CONTRADICTION_FLAG_THRESHOLD } from '@skating/core';
+import { CONTRADICTION_FLAG_THRESHOLD, TRUST_CLASS_LABELS } from '@skating/core';
 import type { FunctionReturnType } from 'convex/server';
 
 import { plural, timeLeftInWords } from '@/lib/ages';
@@ -80,8 +80,7 @@ export const unrecordedFact = (sub: string = NOT_RECORDED): Fact => ({
   state: 'unrecorded',
 });
 
-/** "283", "1,204", or "200+" once the read stopped short. */
-/** A count as a cell writes it — the People pages' one form (`../answers`). */
+/** A count as a cell writes it: "283", "1,204", or "200+" — the People pages' one form. */
 export { countText };
 
 /**
@@ -205,13 +204,12 @@ export const ROLE_ARTICLE: Record<Role, string> = {
   member: 'a skater',
 };
 
-/** The trust class, capitalized (the pill sets it in caps). */
-export const TRUST_WORDS: Record<NonNullable<PersonRead['trustClass']>, string> = {
-  new: 'New',
-  trusted: 'Trusted',
-  expert: 'Expert',
-  leader: 'Leader',
-};
+/**
+ * The trust class, capitalized (the pill sets it in caps) — core's words, the ones the list's chip
+ * reads, so a class can't be spelled two ways.
+ */
+export const TRUST_WORDS: Readonly<Record<NonNullable<PersonRead['trustClass']>, string>> =
+  TRUST_CLASS_LABELS;
 
 /** A person named in a row: their name, or the handle when it is blank; `null` before the rows. */
 export function personName(ref: {

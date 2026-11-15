@@ -4,8 +4,8 @@ import type { FunctionReturnType } from 'convex/server';
 
 import { shortAge } from '@/lib/ages';
 
-import { type Count, countText, dayMonth } from '../../overview/overviewModel';
-import { shownName } from '../person/personModel';
+import { type Count, countText } from '../../overview/overviewModel';
+import { dateWords, shownName } from '../person/personModel';
 import { type AgeFrom, PEOPLE_LANE_INFO } from './peopleLanes';
 import {
   ALL_COUNTS_PREPARING,
@@ -249,7 +249,8 @@ function subLine(
     parts.push(
       since === null
         ? ROLE_WORDS[row.role]
-        : SUB_WORDS.roleSince(ROLE_WORDS[row.role], dayMonth(since)),
+        : // The person page's date rule (`dateWords`): a tenure from another year says its year.
+          SUB_WORDS.roleSince(ROLE_WORDS[row.role], dateWords(since, now)),
     );
     const decisions = decisionsCount(row.staff?.decisionsThisWeek);
     if (decisions !== null)
@@ -263,14 +264,14 @@ function subLine(
         : // The read is held at the list's clock; the row reads the live minute, so an end that has
           // passed while the list stayed open is never drawn as still ahead.
           until <= now
-          ? SUB_WORDS.ranItsCourse(weekdayDate(until))
-          : SUB_WORDS.until(weekdayDate(until)),
+          ? SUB_WORDS.ranItsCourse(weekdayDate(until, now))
+          : SUB_WORDS.until(weekdayDate(until, now)),
     );
   }
   if (row.restrictions.length > 0) parts.push(SUB_WORDS.restricted(row.restrictions));
-  if (row.deletedAt !== null) parts.push(SUB_WORDS.deleted(weekdayDate(row.deletedAt)));
+  if (row.deletedAt !== null) parts.push(SUB_WORDS.deleted(weekdayDate(row.deletedAt, now)));
   else if (row.leavingUntil !== null) {
-    parts.push(SUB_WORDS.deletionCompletes(weekdayDate(row.leavingUntil)));
+    parts.push(SUB_WORDS.deletionCompletes(weekdayDate(row.leavingUntil, now)));
   }
   const flags = flagWords(row.openFlags, lane === 'flagged', facts);
   if (flags !== null) parts.push(flags);
@@ -339,8 +340,9 @@ const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 
 /**
  * "Thu 15 Oct" — a day in the reader's zone, as the board writes a date in a sub-line: the weekday
- * before the console's own day-and-month (`dayMonth`).
+ * before the person page's own date (`dateWords`), so a day in another year than `now`'s says its
+ * year ("Thu 15 Oct 2025") on the row as it does on the page the row opens.
  */
-export function weekdayDate(at: number): string {
-  return `${WEEKDAYS[new Date(at).getDay()]} ${dayMonth(at)}`;
+export function weekdayDate(at: number, now: number): string {
+  return `${WEEKDAYS[new Date(at).getDay()]} ${dateWords(at, now)}`;
 }

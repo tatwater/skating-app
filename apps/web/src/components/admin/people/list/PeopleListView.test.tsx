@@ -16,6 +16,8 @@ vi.mock('../../shell/ConsoleShell', async (original) => ({
 const columns = vi.hoisted(() => ({ fit: true }));
 vi.mock('../../shell/columnsFit', () => ({ useColumnsFit: () => columns.fit }));
 
+import { expectNoBlanks } from '@/test/blanksAudit';
+import { expectKeyboardOperable } from '@/test/keyboardAudit';
 import { resetScrollMemory } from './PeopleList';
 import { PeopleListView, type PeopleListViewProps } from './PeopleListView';
 import {
@@ -414,6 +416,23 @@ describe('a narrow screen (the console’s master–detail rule)', () => {
     expect(screen.getByRole('listbox')).toHaveFocus();
   });
 
+  it('columns side by side: a page closed under focus (the browser’s back) hands it to the list', () => {
+    const { redraw } = draw({
+      selectedId: ROB.userId,
+      detail: <button type="button">Lift</button>,
+    });
+    act(() => screen.getByRole('button', { name: 'Lift' }).focus());
+    redraw({ selectedId: null, detail: undefined });
+    expect(screen.getByRole('listbox')).toHaveFocus();
+  });
+
+  it('columns side by side: a page closed with focus elsewhere leaves focus where it is', () => {
+    const { redraw } = draw({ selectedId: ROB.userId, detail: <p>Rob’s page</p> });
+    act(() => search().focus());
+    redraw({ selectedId: null, detail: undefined });
+    expect(search()).toHaveFocus();
+  });
+
   it('leaves / alone while the person’s page covers the search', () => {
     columns.fit = false;
     draw({ selectedId: ROB.userId, detail: <p>Rob’s page</p>, onCloseDetail: vi.fn() });
@@ -422,4 +441,25 @@ describe('a narrow screen (the console’s master–detail rule)', () => {
     expect(slash.defaultPrevented).toBe(false);
     expect(search()).not.toHaveFocus();
   });
+});
+
+describe('the house audits', () => {
+  it.each([
+    ['a lane, a person open', { selectedId: ROB.userId, detail: <p>Rob’s page</p> }],
+    [
+      'a search',
+      {
+        query: { lane: 'suspended', q: 'kat' },
+        list: { status: 'done', rows: [KATE], reasons: [], pending: [] },
+      },
+    ],
+    ['counts not ready', { laneEntries: entriesOf(LANES_PREPARING) }],
+  ] as const)(
+    '%s: every clickable thing answers the keyboard, and nothing is a blank',
+    (_name, over) => {
+      const { container } = draw(over as Partial<PeopleListViewProps>);
+      expect(expectKeyboardOperable(container).length).toBeGreaterThan(0);
+      expectNoBlanks(container);
+    },
+  );
 });

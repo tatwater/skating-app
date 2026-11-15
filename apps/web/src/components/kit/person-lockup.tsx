@@ -57,8 +57,10 @@ const NAME: Record<Size, string> = {
   md: 'text-fg2',
   // The name's ink is inherited in a row, so a selected row can brighten it.
   row: 'text-body leading-(--lead-snug) font-medium',
-  // The boards' 15 px tracked caps: the type scale's 15 px step is the logo's (no name step).
-  head: 'm-0 text-logo leading-none font-semibold tracking-rail text-fg uppercase',
+  // The boards' 15 px tracked caps: the type scale's 15 px step is the logo's (no name step). Held
+  // to its column's width (`max-w-full`): a start-aligned column sizes a child to its content, so a
+  // long name would run past the pane — and scroll it sideways at phone width — instead of truncating.
+  head: 'm-0 max-w-full text-logo leading-none font-semibold tracking-rail text-fg uppercase',
 };
 
 /** The boards' `.person .h`: mono, over a dotted rule. */

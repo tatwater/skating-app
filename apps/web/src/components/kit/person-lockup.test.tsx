@@ -36,7 +36,11 @@ describe('PersonLockup', () => {
 
   it('makes the name a heading at the level asked, for the person a page is about', () => {
     render(<PersonLockup name="Rob Tremblay" handle="rtremblay" size="head" nameAs="h2" />);
-    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Rob Tremblay');
+    const heading = screen.getByRole('heading', { level: 2 });
+    expect(heading).toHaveTextContent('Rob Tremblay');
+    // Its start-aligned column sizes it to its content: held to the column, a long name truncates
+    // rather than running past the pane (and scrolling it sideways at phone width).
+    expect(heading).toHaveClass('max-w-full', 'truncate');
   });
 
   it('takes each size’s face, and a photo when given', () => {

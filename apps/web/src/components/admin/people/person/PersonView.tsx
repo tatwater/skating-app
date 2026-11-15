@@ -65,8 +65,10 @@ export type PersonViewProps = {
   history: Loadable<HistoryRead | null> | 'not-shown';
   staffStats: Loadable<StaffStatsRead | null>;
   staffSeason: Loadable<StaffSeasonRead | null>;
-  /** `'not-shown'` for a viewer who can't read the audit. */
-  /** `null`: not staff, or no such person (the server follow-up's answer) — no feed. */
+  /**
+   * `'not-shown'` for a viewer who can't read the audit; `null`: not staff, or no such person (the
+   * server follow-up's answer) — no feed.
+   */
   decisions: Loadable<DecisionsAnswer> | 'not-shown';
   /** The clock every time on the page is read against. */
   now: number;

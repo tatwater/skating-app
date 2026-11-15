@@ -2,7 +2,10 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { expectNoBlanks } from '@/test/blanksAudit';
+import { expectKeyboardOperable } from '@/test/keyboardAudit';
 import type { ReadFailure } from '../../reads/consoleReads';
+import { stubLayout } from '../list/testLayout';
 import type { PersonAction } from './levers';
 import { PersonView, type PersonViewProps, profileOpens } from './PersonView';
 import {
@@ -34,23 +37,7 @@ import {
 } from './personFixtures';
 import { weekBars } from './personModel';
 
-beforeAll(() => {
-  for (const [name, value] of [
-    ['animate', () => ({ cancel: () => {}, finished: Promise.resolve() })],
-    ['getAnimations', () => []],
-    ['scrollIntoView', () => {}],
-  ] as const) {
-    if (!(name in Element.prototype)) {
-      Object.defineProperty(Element.prototype, name, { configurable: true, value });
-    }
-  }
-  if (!('fonts' in document)) {
-    Object.defineProperty(document, 'fonts', {
-      configurable: true,
-      value: { ready: Promise.resolve() },
-    });
-  }
-});
+beforeAll(stubLayout);
 
 const failure = (pending = false): ReadFailure => ({ failed: true, pending, retry: vi.fn() });
 
@@ -470,6 +457,38 @@ describe('staff pages', () => {
     expect(slot('person-history')).toHaveFocus();
   });
 
+  it('never pulls focus back to a feed the operator had already left', async () => {
+    const props = { person: ROB, trend: ROB_TREND, staffStats: null, staffSeason: null };
+    const { rerender, onAct, onUndo } = draw(props);
+    const undo = within(slot('person-history')).getAllByRole('button', {
+      name: 'Undo',
+    })[0] as HTMLElement;
+    act(() => undo.focus());
+    // A press on the page's blank ground: focus goes nowhere while the Undo stays.
+    act(() => undo.blur());
+    await act(async () => {});
+    expect(document.body).toHaveFocus();
+    const [first, ...rest] = ROB_HISTORY.rows;
+    if (first === undefined) throw new Error('board 8.1 has rows');
+    // Later the row is undone (someone else's Undo, a reactive read): its button goes.
+    rerender(
+      <PersonView
+        {...props}
+        history={{
+          ...ROB_HISTORY,
+          rows: [{ ...first, undo: { state: 'undone', byActionId: first.id } }, ...rest],
+        }}
+        decisions={{ rows: [], isDone: true, continueCursor: '' }}
+        now={NOW}
+        viewerId={IDS.teagan}
+        onAct={onAct}
+        onUndo={onUndo}
+      />,
+    );
+    expect(undo.isConnected).toBe(false);
+    expect(document.body).toHaveFocus();
+  });
+
   it('at the most a page holds, it says more happened before', () => {
     draw({
       person: SARAH_PAGE,
@@ -869,4 +888,36 @@ describe('accounts on their way out', () => {
     expect(profileOpens({ profileVisibility: 'private', status: 'active' })).toBe(false);
     expect(profileOpens({ profileVisibility: 'public', status: 'deleting' })).toBe(false);
   });
+});
+
+describe('the house audits', () => {
+  it.each([
+    ['a suspended skater', {}],
+    [
+      'an admin, with the staff rows',
+      {
+        person: SARAH_PAGE,
+        trend: SARAH_TREND,
+        history: SARAH_HISTORY,
+        staffStats: SARAH_STATS,
+        staffSeason: SEASON,
+        decisions: SARAH_DECISIONS,
+        onMoreDecisions: vi.fn(),
+      },
+    ],
+    [
+      'every figure not ready, not recorded or capped',
+      {
+        person: ROB_PENDING,
+        history: HISTORY_PENDING,
+      },
+    ],
+  ] as const)(
+    '%s: every clickable thing answers the keyboard, and nothing is a blank',
+    (_name, over) => {
+      const { container } = draw(over as Partial<PersonViewProps>);
+      expect(expectKeyboardOperable(container).length).toBeGreaterThan(0);
+      expectNoBlanks(container);
+    },
+  );
 });

@@ -284,8 +284,18 @@ function useFocusKept() {
     },
     onBlur: (event: FocusEvent<HTMLElement>) => {
       // Focus moved on to something else: nothing to keep. A control taken out from under focus
-      // sends it nowhere (`relatedTarget` is null), so it stays held for the effect above.
-      if (event.relatedTarget !== null) held.current = null;
+      // sends it nowhere (`relatedTarget` is null), so it stays held for the effect above — which
+      // runs in the same commit that removed it. Focus sent nowhere while the control stays (a
+      // press on the page's blank ground, the window left) is let go once that commit is past, so
+      // a later redraw that takes the control away never pulls focus back to the feed.
+      if (event.relatedTarget !== null) {
+        held.current = null;
+        return;
+      }
+      const from = event.target;
+      queueMicrotask(() => {
+        if (from.isConnected && held.current === from) held.current = null;
+      });
     },
   };
 }
