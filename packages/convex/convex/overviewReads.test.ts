@@ -1342,10 +1342,27 @@ describe('pruneSignInDays — the current season and one past', () => {
     });
     expect(await t.mutation(internal.analyticsRollup.pruneSignInDays, {})).toEqual({
       deleted: 2,
+      presenceDeleted: 0,
       keepFrom: '2025-07-01',
     });
     const left = await t.run((ctx) => ctx.db.query('signInDays').collect());
     expect(left.map((r) => r.day).sort()).toEqual(['2025-07-01', '2026-11-13']);
+  });
+
+  test('console presence follows the same rule: last seen before the previous season’s 1 July goes', async () => {
+    const t = harness();
+    const a = await seedUser(t, 'a', 'moderator');
+    const b = await seedUser(t, 'b', 'moderator');
+    const boundary = Date.UTC(2025, 6, 1);
+    await t.run(async (ctx) => {
+      await ctx.db.insert('consolePresence', { userId: a.id, seenAt: boundary - 1 });
+      await ctx.db.insert('consolePresence', { userId: b.id, seenAt: boundary });
+    });
+    expect(await t.mutation(internal.analyticsRollup.pruneSignInDays, {})).toMatchObject({
+      presenceDeleted: 1,
+    });
+    const left = await t.run((ctx) => ctx.db.query('consolePresence').collect());
+    expect(left.map((r) => r.userId)).toEqual([b.id]);
   });
 
   test('rides the daily client-signal prune', async () => {
