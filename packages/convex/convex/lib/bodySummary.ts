@@ -227,15 +227,16 @@ async function syncSummaryRefresh(
     .take(8);
   const [keep, ...extra] = rows;
   for (const row of extra) await ctx.db.delete(row._id);
+  // A recompute that got here went through: any failures the sweep counted on the row, and any
+  // parking, are cleared in the same write (D258, `lib/attempts`: progress clears) — and so is the
+  // row's mirror, whether the row is rewritten or, with nothing left to age out, deleted below.
+  const failing =
+    keep !== undefined && (keep.attempts !== undefined || keep.parkedAt !== undefined);
+  if (failing) await clearFailure(ctx, 'cards', waterBodyId);
   if (refreshAt === null) {
     if (keep) await ctx.db.delete(keep._id);
     return;
   }
-  // A recompute that got here went through: any failures the sweep counted on the row, and any
-  // parking, are cleared in the same write (D258, `lib/attempts`: progress clears).
-  const failing =
-    keep !== undefined && (keep.attempts !== undefined || keep.parkedAt !== undefined);
-  if (failing) await clearFailure(ctx, 'cards', waterBodyId);
   if (!keep) {
     await ctx.db.insert('bodySummaryRefreshes', { waterBodyId, refreshAt });
   } else if (keep.refreshAt !== refreshAt || failing) {

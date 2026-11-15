@@ -1082,27 +1082,62 @@ describe('the season rollover', () => {
   /**
    * D258: a page that fails is retried at half its size from the same position, down to one body —
    * it never repeats the read that failed at the size that failed — and a single body that still
-   * fails is recorded and stepped past. Here every page "cannot afford its next body" seven times in
-   * a row (100, 50, 25, 12, 6, 3, 1): the first body is recorded, the walk reaches its end.
+   * fails is recorded and stepped past. The halving starts from what a page really reads — three
+   * bodies, by the read budget, whatever was asked for — so a page that "cannot afford its next body"
+   * twice in a row is read at 3, then 1: the first body is recorded, the walk reaches its end, and no
+   * read is repeated at a size that already failed.
    */
   test('a page that fails is retried smaller from the same place; one body that still fails is recorded and passed', async () => {
     const t = harness();
     const ids: Id<'waterBodies'>[] = [];
     for (let i = 0; i < 5; i++) ids.push(await seedBody(t, `osm/shrink-${i}`));
     const affords = vi.spyOn(recurringWork, 'affords');
-    for (let i = 0; i < 7; i++) affords.mockResolvedValueOnce(false);
+    for (let i = 0; i < 2; i++) affords.mockResolvedValueOnce(false);
+    const pages = vi.spyOn(recurringWork, 'runItem');
     try {
       const result = await t.action(internal.standing.runStandingRollover, {
         season: SEASON,
         apply: true,
       });
       expect(result).toMatchObject({ scanned: 5, demoted: 4, failed: 1 });
+      // Each attempt at the first position asked for fewer bodies than the one before it.
+      const sizes = pages.mock.calls.map(([, , args]) => (args as { batchSize: number }).batchSize);
+      expect(sizes.slice(0, 2)).toEqual([3, 1]);
       const failures = await t.run((ctx) => ctx.db.query('jobFailures').collect());
       expect(failures).toHaveLength(1);
       expect(ids).toContain(failures[0]?.key);
       expect(failures[0]).toMatchObject({ job: 'standingRollover', scope: String(SEASON) });
     } finally {
       vi.restoreAllMocks();
+    }
+  });
+
+  test('a long pass continues itself in later invocations and records one run row at its end (D258)', async () => {
+    vi.useFakeTimers();
+    try {
+      const t = harness();
+      for (let i = 0; i < 5; i++) await seedBody(t, `osm/continue-${i}`);
+      const first = await t.action(internal.standing.runStandingRollover, {
+        season: SEASON,
+        apply: true,
+        batchSize: 1,
+        pagesPerCall: 2,
+      });
+      expect(first).toMatchObject({ continued: true });
+      await t.finishAllScheduledFunctions(vi.runAllTimers);
+      const runs = (await t.run((ctx) => ctx.db.query('importRuns').collect())).filter(
+        (r) => r.kind === 'standing_rollover',
+      );
+      expect(runs).toHaveLength(1);
+      expect(runs[0]).toMatchObject({ status: 'succeeded' });
+      expect(runs[0]?.counts).toEqual(
+        expect.arrayContaining([
+          { name: 'scanned', value: 5 },
+          { name: 'demoted', value: 5 },
+        ]),
+      );
+    } finally {
+      vi.useRealTimers();
     }
   });
 

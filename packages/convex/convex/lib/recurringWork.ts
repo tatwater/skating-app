@@ -188,10 +188,21 @@ export async function mirrorFailure(
 }
 
 /**
+ * One `stillFailing` check: a document read (at most the document limit) and a delete, with room kept
+ * past it for what the caller does after.
+ */
+const MIRROR_CHECK: ItemBudget = {
+  limits: { bytesRead: MiB, documentsRead: 4, databaseQueries: 2, documentsWritten: 1 },
+  reserve: { bytesRead: MiB, documentsRead: 100, databaseQueries: 50, documentsWritten: 50 },
+};
+
+/**
  * Forget up to `n` of a job's mirrored failures whose work is gone or no longer failing — the ones
  * the job's own writers never saw go (a row erased with its account, say). Oldest first; each is
  * checked by `stillFailing`, which may read the heavy document: this runs in a background job, a few
- * at a time, never in the Machinery read.
+ * at a time, never in the Machinery read — and only while the transaction can still afford a check at
+ * a whole document ({@link affords}), since it runs at the end of a pass that has spent its budget on
+ * its own items, and a check that read past the limit would fail that whole pass.
  */
 export async function forgetGoneMirrors(
   ctx: MutationCtx,
@@ -205,6 +216,7 @@ export async function forgetGoneMirrors(
     .take(n);
   let forgotten = 0;
   for (const row of rows) {
+    if (!(await affords(ctx, MIRROR_CHECK))) break;
     if (await stillFailing(row.key)) continue;
     await ctx.db.delete(row._id);
     forgotten++;

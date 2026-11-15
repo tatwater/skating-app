@@ -11,7 +11,7 @@ import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
-import { recordPromptFailure } from './gpsActivities';
+import { linkActivityToReport, recordPromptFailure } from './gpsActivities';
 import { MAX_ATTEMPTS } from './lib/attempts';
 import * as notificationQueue from './lib/notificationQueue';
 import { NOTIFICATION_FRESH_MS } from './lib/notificationQueue';
@@ -776,6 +776,81 @@ describe('the retries and passes at their edges', () => {
     expect(await t.run((ctx) => ctx.db.query('jobFailures').collect())).toEqual([]);
   });
 
+  test('a card that heals with nothing left to age out takes its mirror with it, though its row goes', async () => {
+    const t = harness();
+    const bodyId = await seedBody(t, 'osm/heal-empty');
+    await t.run(async (ctx) => {
+      const id = await ctx.db.insert('bodySummaryRefreshes', {
+        waterBodyId: bodyId,
+        refreshAt: T0,
+      });
+      const card = await ctx.db.get(id);
+      if (card) await recordCardFailure(ctx, card, 'Error', T0, {});
+    });
+    expect(await t.run((ctx) => ctx.db.query('jobFailures').collect())).toHaveLength(1);
+    // No Reports on the lake: the recompute goes through and there is nothing left to refresh.
+    await t.mutation(internal.waterBodies.refreshOneBodySummary, { waterBodyId: bodyId, now: T0 });
+    expect(await t.run((ctx) => ctx.db.query('bodySummaryRefreshes').collect())).toEqual([]);
+    expect(await t.run((ctx) => ctx.db.query('jobFailures').collect())).toEqual([]);
+  });
+
+  test('a failing recording its owner answers, or a report takes, takes its mirror with it', async () => {
+    const t = harness();
+    const skater = await seedUser(t, 'answers');
+    const bodyId = await seedBody(t, 'osm/answered');
+    const answered = await seedActivity(t, skater.id, 0);
+    const linked = await seedActivity(t, skater.id, 1);
+    await t.run(async (ctx) => {
+      for (const id of [answered, linked]) {
+        const a = await ctx.db.get(id);
+        if (a) await recordPromptFailure(ctx, a, 'Error', T0, {});
+      }
+    });
+    expect(await t.run((ctx) => ctx.db.query('jobFailures').collect())).toHaveLength(2);
+    await skater.as.mutation(api.gpsActivities.setPromptState, {
+      activityId: answered,
+      promptState: 'dismissed',
+    });
+    const reportId = await seedReport(t, skater.id, bodyId);
+    await t.run((ctx) => linkActivityToReport(ctx, linked, reportId, skater.id));
+    expect(await t.run((ctx) => ctx.db.query('jobFailures').collect())).toEqual([]);
+  });
+
+  test('an event due earlier than a settling row starts its own row; one due later joins — neither row clock moves', async () => {
+    const t = harness();
+    const fan = await seedUser(t, 'zone-change');
+    const bodyId = await seedBody(t, 'osm/zone-change');
+    const reportId = await seedReport(t, fan.id, bodyId);
+    const notice = (flushAfter: number) =>
+      t.run((ctx) =>
+        enqueueReportNotice(ctx, {
+          userId: fan.id,
+          waterBodyId: bodyId,
+          reportId,
+          kind: 'digest',
+          type: 'nearby_report_digest',
+          flushAfter,
+          now: Date.now(),
+        }),
+      );
+    // Tonight's digest in the old zone, then a report stamped for an hour earlier in the new one: it
+    // would be due before the row, so it is a row of its own.
+    await notice(T0 + 5 * HOUR);
+    await notice(T0 + 4 * HOUR);
+    const rows = await t.run((ctx) => ctx.db.query('notificationQueue').collect());
+    expect(rows.map((r) => [r.count, r.flushAfter, r.firstDueAt]).sort()).toEqual(
+      [
+        [1, T0 + 4 * HOUR, T0 + 4 * HOUR],
+        [1, T0 + 5 * HOUR, T0 + 5 * HOUR],
+      ].sort(),
+    );
+    // A later-stamped one joins the first row it may (the earlier-due one) and moves nothing.
+    await notice(T0 + 6 * HOUR);
+    const after = await t.run((ctx) => ctx.db.query('notificationQueue').collect());
+    expect(after.reduce((n, r) => n + r.count, 0)).toBe(3);
+    for (const r of after) expect(r.flushAfter).toBe(r.firstDueAt);
+  });
+
   test('the daily retry clears a gone body and goes on to the next failing one', async () => {
     const t = harness();
     const live = await seedBody(t, 'osm/rollover-live');
@@ -870,7 +945,7 @@ describe('the freshness rule holds at enqueue and at flush, by construction', ()
         await seedActivity(t, fan.id, 10 * u + 1),
       ]);
     }
-    const reportNotice = (u: number, b: number) =>
+    const reportNotice = (u: number, b: number, early = false) =>
       t.run((ctx) =>
         enqueueReportNotice(ctx, {
           userId: fans[u]?.id as Id<'profiles'>,
@@ -878,7 +953,8 @@ describe('the freshness rule holds at enqueue and at flush, by construction', ()
           reportId,
           kind: 'favorite',
           type: 'favorite_report',
-          flushAfter: Date.now() + DEBOUNCE,
+          // Some events are stamped due sooner than a row already settling (a zone change, say).
+          flushAfter: Date.now() + (early ? DEBOUNCE / 4 : DEBOUNCE),
           now: Date.now(),
         }),
       );
@@ -898,7 +974,7 @@ describe('the freshness rule holds at enqueue and at flush, by construction', ()
   const inboxOf = (t: T) => t.run((ctx) => ctx.db.query('notifications').collect());
 
   type Cmd =
-    | { k: 'report'; u: number; b: number }
+    | { k: 'report'; u: number; b: number; early: boolean }
     | { k: 'actor'; u: number; a: number }
     | { k: 'advance'; ms: number }
     | { k: 'flush' }
@@ -907,7 +983,12 @@ describe('the freshness rule holds at enqueue and at flush, by construction', ()
     | { k: 'retry' };
 
   const cmd: fc.Arbitrary<Cmd> = fc.oneof(
-    fc.record({ k: fc.constant('report' as const), u: fc.nat(1), b: fc.nat(1) }),
+    fc.record({
+      k: fc.constant('report' as const),
+      u: fc.nat(1),
+      b: fc.nat(1),
+      early: fc.boolean(),
+    }),
     fc.record({ k: fc.constant('actor' as const), u: fc.nat(1), a: fc.nat(1) }),
     // Outages of any length, up to most of a day.
     fc.record({ k: fc.constant('advance' as const), ms: fc.integer({ min: 0, max: 20 * HOUR }) }),
@@ -937,7 +1018,7 @@ describe('the freshness rule holds at enqueue and at flush, by construction', ()
           const sentBefore = (await inboxOf(t)).length;
           const now = Date.now();
           if (c.k === 'report' || c.k === 'actor') {
-            if (c.k === 'report') await reportNotice(c.u, c.b);
+            if (c.k === 'report') await reportNotice(c.u, c.b, c.early);
             else await actorNotice(c.u, c.a);
             const after = await rowsOf(t);
             // The event joined a row still settling, or a new one: its clock never began before it.

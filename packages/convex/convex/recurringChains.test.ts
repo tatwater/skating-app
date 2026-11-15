@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { PHOTO_ORPHAN_GRACE_MS } from './lib/photoOrphans';
+import { forgetGoneMirrors } from './lib/recurringWork';
 import { recordQueueFailure } from './notifications';
 import schema from './schema';
 
@@ -276,6 +277,45 @@ describe('D258 chains under real limits', () => {
       parked: 14,
       capped: false,
     });
+  });
+
+  test('the forget step at the end of a spent pass: ten checks of heavy rows stop at the budget, never past the limit', async () => {
+    const t = harness();
+    const { id: userId } = await heavyUser(t, 'mirrored');
+    const waterBodyId = await seedBody(t);
+    const rows: Id<'notificationQueue'>[] = [];
+    for (let i = 0; i < 20; i++) {
+      const row = await t.run((ctx) =>
+        ctx.db.insert('notificationQueue', {
+          userId,
+          waterBodyId,
+          kind: 'favorite' as const,
+          type: 'favorite_report' as const,
+          coalesceKey: HEAVY.slice(0, 900 * 1024) + i,
+          count: 1,
+          flushAfter: T0,
+          firstDueAt: T0,
+          createdAt: T0,
+        }),
+      );
+      rows.push(row);
+      await t.run(async (ctx) => {
+        const r = await ctx.db.get(row);
+        if (r) await recordQueueFailure(ctx, r, 'Error', T0, {});
+      });
+    }
+    const forgotten = await t.run(async (ctx) => {
+      // The pass's own items have spent most of its budget: ten heavy rows (about 9 MiB) read.
+      for (const id of rows.slice(10)) await ctx.db.get(id);
+      // Ten more at about 0.9 MiB each would pass the 16 MiB limit and fail the whole pass.
+      return forgetGoneMirrors(ctx, 'notifications', 10, async (key) => {
+        const id = ctx.db.normalizeId('notificationQueue', key);
+        const row = id ? await ctx.db.get(id) : null;
+        return row?.attempts !== undefined;
+      });
+    });
+    expect(forgotten).toBe(0);
+    expect(await t.run((ctx) => ctx.db.query('jobFailures').collect())).toHaveLength(20);
   });
 });
 

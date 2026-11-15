@@ -863,6 +863,32 @@ describe('the finalization lock', () => {
     expect(await t.run((ctx) => ctx.db.get(user.id))).toMatchObject({ status: 'deleted' });
   });
 
+  test('a bundle the expired-export sweep counted as stuck takes its count with it when the erasure reclaims it', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'stuck-export');
+    const exportId = await t.run(async (ctx) => {
+      const id = await ctx.db.insert('dataExports', {
+        userId: user.id,
+        status: 'ready' as const,
+        requestedAt: Date.now() - LONG_AGO,
+        expiresAt: Date.now() - 1,
+      });
+      await ctx.db.insert('jobFailures', {
+        job: 'expiredExports',
+        key: id,
+        attempts: 1,
+        errorClass: 'BlobKept',
+        firstFailedAt: Date.now() - 1,
+        lastFailedAt: Date.now() - 1,
+      });
+      return id;
+    });
+    await lockOnly(t, user.id);
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await t.run((ctx) => ctx.db.get(exportId))).toBeNull();
+    expect(await t.run((ctx) => ctx.db.query('jobFailures').collect())).toEqual([]);
+  });
+
   /**
    * The other half of making the lock safe: a `deleting` row is an unfinished job, not a finished one.
    * If the sweep skipped it the way it skips `deleted`, a chain lost to a dropped scheduler tick would

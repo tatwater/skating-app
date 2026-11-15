@@ -463,10 +463,7 @@ export const demoteInactiveBodies = internalMutation({
     // recorded for the daily retry, and stays active. A page that cannot afford its next body throws,
     // and the walk retries it smaller from the same position (`runStandingRollover`).
     const reads = new ReadBudget();
-    const numItems = sizePage(reads, 'waterBody', {
-      cap: Math.min(100, Math.max(1, batchSize ?? 100)),
-      reserve: BODY_ITEM.limits.bytesRead + BODY_ITEM.reserve.bytesRead,
-    });
+    const numItems = rolloverPageSize(reads, batchSize);
     const page = await reads.page('waterBody', numItems, (n) =>
       ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems: n }),
     );
@@ -476,6 +473,14 @@ export const demoteInactiveBodies = internalMutation({
     let failed = 0;
     const now = Date.now();
     for (const body of page.page) {
+      // Not active: nothing to decide, so no nested transaction and no second read of its outline —
+      // the rule's own first step (`rolloverBody`), taken here for most of the corpus. A failure it
+      // had is cleared as `rolloverOne` would (an applied run only).
+      if (!isActive(body)) {
+        kept.notActive++;
+        if (apply === true) await clearFailure(ctx, 'standingRollover', body._id);
+        continue;
+      }
       if (!(await affords(ctx, BODY_ITEM))) {
         throw new OverBudget('standing.demoteInactiveBodies: a page that could not finish');
       }
@@ -522,6 +527,19 @@ const BODY_ITEM: ItemBudget = {
   limits: { bytesRead: 8 * MiB, documentsRead: 2000, databaseQueries: 200, documentsWritten: 500 },
   reserve: { bytesRead: 1 * MiB, documentsRead: 100, databaseQueries: 50, documentsWritten: 100 },
 };
+
+/**
+ * How many bodies a rollover page reads for a requested `batchSize`: the request, capped by what the
+ * read budget affords at a worst-case outline each with one body's decision kept back. The walk
+ * halves from this — never from the request — so a retry is always a smaller read than the page that
+ * failed (a request of 100 reads the same three bodies as one of 3).
+ */
+export function rolloverPageSize(reads: ReadBudget, batchSize: number | undefined): number {
+  return sizePage(reads, 'waterBody', {
+    cap: Math.min(100, Math.max(1, batchSize ?? 100)),
+    reserve: BODY_ITEM.limits.bytesRead + BODY_ITEM.reserve.bytesRead,
+  });
+}
 
 /** One body's verdict at the rollover — not active, kept (and why), or made dormant. */
 type RolloverVerdict = 'notActive' | 'demoted' | { retained: RetentionReason };
@@ -637,10 +655,33 @@ const ROLLOVER_STALE_MS = 6 * 60 * 60 * 1000;
  * is also how a dry run is done (`"apply": false`) before the first live July.
  */
 export const runStandingRollover = internalAction({
-  args: { season: v.number(), apply: v.optional(v.boolean()), batchSize: v.optional(v.number()) },
+  args: {
+    season: v.number(),
+    apply: v.optional(v.boolean()),
+    batchSize: v.optional(v.number()),
+    /**
+     * Where a run that continued itself is (D258): its run row, its position and its tallies so far.
+     * A season's pass is thousands of small pages; one invocation walks at most `pagesPerCall` of
+     * them, or four minutes, then schedules the next — never near the action limit.
+     */
+    cont: v.optional(
+      v.object({
+        runId: v.id('importRuns'),
+        cursor: v.optional(v.string()),
+        scanned: v.number(),
+        demoted: v.number(),
+        retained: v.number(),
+        failed: v.number(),
+        pages: v.number(),
+        retainedBy: v.record(v.string(), v.number()),
+      }),
+    ),
+    /** Test seam: pages one invocation walks before it continues itself. */
+    pagesPerCall: v.optional(v.number()),
+  },
   handler: async (
     ctx,
-    { season, apply, batchSize },
+    { season, apply, batchSize, cont, pagesPerCall },
   ): Promise<{
     scanned: number;
     demoted: number;
@@ -648,34 +689,63 @@ export const runStandingRollover = internalAction({
     failed: number;
     retainedBy: Record<RetentionReason, number>;
     pages: number;
+    continued?: true;
   }> => {
-    const runId = await ctx.runMutation(internal.importRuns.start, {
-      kind: 'standing_rollover',
-      label: `standing rollover into ${season}${apply === true ? '' : ' (dry)'}`,
-      campaignId: rolloverCampaignId(season, apply === true),
-      deployment: process.env.CONVEX_CLOUD_URL ?? 'unknown',
-      isProd: !(process.env.CONVEX_CLOUD_URL ?? '').includes('agile-bee-397'),
-      stages: [
-        {
-          name: 'rollover',
-          detail: `demoteInactiveBodies — active bodies with nothing in the last ${INACTIVE_SEASONS} seasons and no boost, favorite or saved put-in become dormant`,
-        },
-      ],
-    });
+    const runId =
+      cont?.runId ??
+      (await ctx.runMutation(internal.importRuns.start, {
+        kind: 'standing_rollover',
+        label: `standing rollover into ${season}${apply === true ? '' : ' (dry)'}`,
+        campaignId: rolloverCampaignId(season, apply === true),
+        deployment: process.env.CONVEX_CLOUD_URL ?? 'unknown',
+        isProd: !(process.env.CONVEX_CLOUD_URL ?? '').includes('agile-bee-397'),
+        stages: [
+          {
+            name: 'rollover',
+            detail: `demoteInactiveBodies — active bodies with nothing in the last ${INACTIVE_SEASONS} seasons and no boost, favorite or saved put-in become dormant`,
+          },
+        ],
+      }));
     try {
-      let cursor: string | undefined;
+      let cursor: string | undefined = cont?.cursor;
       let isDone = false;
-      let scanned = 0;
-      let demoted = 0;
-      let retained = 0;
-      let failed = 0;
+      let scanned = cont?.scanned ?? 0;
+      let demoted = cont?.demoted ?? 0;
+      let retained = cont?.retained ?? 0;
+      let failed = cont?.failed ?? 0;
       const retainedBy = emptyRetainedBy();
-      let pages = 0;
+      for (const r of RETENTION_REASONS) retainedBy[r] = cont?.retainedBy[r] ?? 0;
+      let pages = cont?.pages ?? 0;
+      const startedAt = Date.now();
+      const perCall = Math.max(1, Math.floor(pagesPerCall ?? PAGES_PER_CALL));
+      let walked = 0;
       // **A page that fails is retried smaller, from the same position** (D258) — half its size each
       // time, down to a single body; a single body that still fails is recorded (an applied run
       // only) and stepped past. It never re-reads the page that failed at the size that failed.
-      let size = Math.min(100, Math.max(1, batchSize ?? 100));
-      while (!isDone && pages < 50_000) {
+      // The size a page really reads (`rolloverPageSize`), so every halving shrinks the read.
+      const fullSize = rolloverPageSize(new ReadBudget(), batchSize);
+      let size = fullSize;
+      while (!isDone) {
+        if (walked >= perCall || Date.now() - startedAt > CALL_MS) {
+          await ctx.scheduler.runAfter(0, internal.standing.runStandingRollover, {
+            season,
+            ...(apply !== undefined ? { apply } : {}),
+            ...(batchSize !== undefined ? { batchSize } : {}),
+            ...(pagesPerCall !== undefined ? { pagesPerCall } : {}),
+            cont: {
+              runId,
+              ...(cursor !== undefined ? { cursor } : {}),
+              scanned,
+              demoted,
+              retained,
+              failed,
+              pages,
+              retainedBy,
+            },
+          });
+          return { scanned, demoted, retained, failed, retainedBy, pages, continued: true };
+        }
+        walked++;
         pages++;
         const whole = await runItem<RolloverPage>(ctx, internal.standing.demoteInactiveBodies, {
           season,
@@ -692,7 +762,7 @@ export const runStandingRollover = internalAction({
           failed += page.failed;
           retained += page.kept.retained;
           for (const r of RETENTION_REASONS) retainedBy[r] += page.retainedBy[r];
-          size = Math.min(100, Math.max(1, batchSize ?? 100));
+          size = fullSize;
           continue;
         }
         if (size > 1) {
@@ -716,7 +786,7 @@ export const runStandingRollover = internalAction({
         }
         cursor = at.cursor;
         isDone = at.isDone;
-        size = Math.min(100, Math.max(1, batchSize ?? 100));
+        size = fullSize;
       }
       await ctx.runMutation(internal.importRuns.finish, {
         runId,
@@ -746,6 +816,11 @@ export const runStandingRollover = internalAction({
     }
   },
 });
+
+/** Pages one invocation of the rollover walks before it continues itself. */
+const PAGES_PER_CALL = 400;
+/** How long one invocation walks before it continues itself — well inside the action limit. */
+const CALL_MS = 4 * 60 * 1000;
 
 /**
  * The daily cron's entry point, gated on the season boundary.

@@ -105,12 +105,11 @@ export async function enqueueReportNotice(
 ): Promise<void> {
   const coalesceKey = `${params.userId}:${params.waterBodyId}:${params.kind}`;
   // Only a row still settling, never one already due or parked (D258): see `coalescingRow`.
-  const existing = await coalescingRow(ctx, coalesceKey, params.now);
+  const existing = await coalescingRow(ctx, coalesceKey, params.now, params.flushAfter);
   if (existing) {
     await ctx.db.patch(existing._id, {
       count: existing.count + 1,
       latestReportId: params.reportId,
-      flushAfter: Math.min(existing.flushAfter, params.flushAfter),
     });
     return;
   }

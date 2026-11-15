@@ -219,18 +219,17 @@ export async function enqueueActorNotification(
 
   const coalesceKey = actorCoalesceKey(args.recipientId, args.targetId, kind);
   const flushAfter = args.flushAfter ?? now + SETTLE_MS;
-  const existing = await coalescingRow(ctx, coalesceKey, now);
+  const existing = await coalescingRow(ctx, coalesceKey, now, flushAfter);
   if (existing) {
     const trigger = existing.trigger ? mergeTriggers(existing.trigger, args.trigger) : args.trigger;
     await ctx.db.patch(existing._id, {
       trigger,
       count: triggerCount(trigger),
-      // Keep the earliest: a burst settles from its *first* event, so a busy report can't be starved
-      // of its notification by a stream of later ones each pushing the window out. Only a row still
-      // settling is ever joined (`coalescingRow`), so this never moves a row later — a row already
-      // due is left to deliver what it holds, and the new action starts a row of its own with the
-      // whole settle window it was promised (D258: a row's due clock is set once).
-      flushAfter: Math.min(existing.flushAfter, flushAfter),
+      // The row's due time stays: a burst settles from its *first* event, so a busy report can't be
+      // starved of its notification by a stream of later ones each pushing the window out. Only a row
+      // still settling, and due no later than this event, is joined (`coalescingRow`) — a row already
+      // due delivers what it holds, and the new action starts a row of its own with the whole settle
+      // window it was promised (D258: a row's due time and clock are set once).
     });
     return true;
   }
@@ -481,11 +480,12 @@ async function targetVisible(
  * due.** Past that it is expired — deleted, counted, never delivered — because every notification is
  * about a moment (a report near you, a thumb, a comment), and one that lands a day late reads as news.
  *
- * **The clock is the row's, set once when the row is written, and nothing moves it** (`firstDueAt`):
- * not a failure, not a retry, not a later event. A later event joins a row only while that row is
- * still settling (`coalescingRow`) — so it is delivered with the row, at or before the time it would
- * have been due alone, and the row's window covers it; an event that arrives once a row is due, or
- * parked, starts a row of its own with a clock of its own. So an old row can never make a fresh event
+ * **The clock is the row's, set once when the row is written, and nothing moves it** (`firstDueAt`) —
+ * not a failure, not a retry, not a later event — **and neither does its due time**: a later event
+ * joins a row only while that row is still settling and due no later than the event would be alone
+ * (`coalescingRow`), so it is delivered with the row, never later than alone, and the row's window
+ * covers it. An event that arrives once a row is due or parked, or that would be due earlier than the
+ * row (a digest for a recipient who has since changed zone), starts a row of its own. So an old row can never make a fresh event
  * expire early, and a fresh event can never make an old row look fresh. The rule applies to every
  * row, so a flush that was down for a day expires its backlog rather than sending yesterday as today.
  */
@@ -513,19 +513,22 @@ export function isStaleQueueRow(
 }
 
 /**
- * The row a new event may coalesce into (D258): same key, not parked, and **still settling** — due
- * after `now`. A row already due, or parked, keeps only what it holds; the event gets its own row.
+ * The row a new event due at `dueAt` may coalesce into (D258): same key, not parked, **still
+ * settling** (due after `now`), and due **no later than the event** — so joining moves neither the
+ * row's due time nor its clock, and never delivers the event later than it would have been alone. A
+ * row already due or parked keeps only what it holds; the event gets its own row.
  */
 export function coalescingRow(
   ctx: MutationCtx,
   coalesceKey: string,
   now: number,
+  dueAt: number,
 ): Promise<Doc<'notificationQueue'> | null> {
   return ctx.db
     .query('notificationQueue')
     .withIndex('by_coalesce_parked', (q) =>
       q.eq('coalesceKey', coalesceKey).eq('parkedAt', undefined),
     )
-    .filter((q) => q.gt(q.field('flushAfter'), now))
+    .filter((q) => q.and(q.gt(q.field('flushAfter'), now), q.lte(q.field('flushAfter'), dueAt)))
     .first();
 }

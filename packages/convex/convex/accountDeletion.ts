@@ -753,6 +753,9 @@ async function erasePrivate(
     if (row.expiresAt > now && row.emailedAt !== undefined) continue; // still theirs to download
     if (await reclaimExportBlob(ctx, row)) {
       reclaimed.push(row);
+      // A bundle the expired-export sweep counted as stuck goes here, not there: its count goes too
+      // (D258), or nothing would ever clear it.
+      await clearFailure(ctx, 'expiredExports', row._id);
     } else if (row.expiresAt > now) {
       await ctx.db.patch(row._id, { expiresAt: now });
     }

@@ -1802,7 +1802,7 @@ heavy one for few, and the item runs under those limits.
 
 | Walk | First read, worst case | Fallback, worst case | Every-document-at-the-limit test |
 | --- | --- | --- | --- |
-| rollover | a page sized from the heaviest outline: each body charged at 1 MiB (`lib/readBudget`), one body's decision (9 MiB) kept back — at most three bodies; each body then decided in its own nested transaction under 8 MiB | the same page at half its size, from the same position, down to one body; one body that still fails is read alone (1 MiB, always fits), recorded and passed | twelve heavy outlines: reaches its end |
+| rollover | a page sized from the heaviest outline: each body charged at 1 MiB (`lib/readBudget`), one body's decision (9 MiB) kept back — at most three bodies; each body then decided in its own nested transaction under 8 MiB | the same page at half the size it really read (three, whatever was asked for — so 3, then 1), from the same position; one body that still fails is read alone (1 MiB, always fits), recorded and passed; a body that is not active is passed without a nested transaction or a second read of its outline | twelve heavy outlines: reaches its end |
 | registry reconcile | a page of bodies (and of bays) read by `maximumBytesRead` 6 MiB — at most 6 MiB and one document past it | the page's writes a row at a time (each one small registry row); the page is never re-read | twelve heavy outlines: every body registered |
 | archive gaps | a page of registered cells by `maximumBytesRead` 6 MiB; each cell its own item | none — a cell that fails is recorded and the walk goes on | forty heavy cells: reaches its end |
 | orphan photos | one photo a step (`first()`, at most 1 MiB), each examined in its own nested transaction under 2 MiB | none — a photo that fails is recorded and the lap goes on | thirty photos with captions near the limit: the lap ends |
@@ -1820,8 +1820,9 @@ mid-retry), every table is unchanged but for the dry run's own `-dry` run row �
 a dry run's counts are read — and nothing is scheduled.
 
 **The freshness rule, by construction** (Greptile #116): a notification row's due clock (`firstDueAt`)
-is written with the row and nothing moves it; a new event joins only a row that is unparked and still
-settling, otherwise it starts a row of its own; a row written before D258 is read by its earliest clock
+is written with the row and nothing moves it, nor its due time; a new event joins only a row that is
+unparked, still settling and due no later than the event would be alone (an event stamped earlier — a
+digest for a recipient who changed zone — starts a row of its own), otherwise it starts a row of its own; a row written before D258 is read by its earliest clock
 (`createdAt` for an actor row, `flushAfter` for a report notice), never as fresh. The actor path's old
 "a due row takes the incoming deadline" branch was the moving deadline, and is gone: a re-thumb after a
 row fell due is its own notification.
@@ -1852,7 +1853,14 @@ row fell due is its own notification.
   the orphan walk reads each photo's failure row to clear it (a query a photo); and the position walk
   (same value and a later creation time, then a greater value) is written in four places.
 - *The rollover's pages are small*: sized from a heavy outline with one decision kept back, a page
-  holds at most three bodies, so a season's pass is several thousand page calls (once a year).
+  holds at most three bodies, so a season's pass is several thousand page calls (once a year). The
+  action walks at most 400 of them, or four minutes, and continues itself with its position and
+  tallies, so the pass never nears the action limit; one run row records it at the end.
+- *Overdue deletions are counted by the finalize sweep itself*: if that hourly tick fails outright,
+  its count rolls back with it, and Machinery shows nothing overdue exactly when nothing is being
+  finalized. A signal that survives the sweep's own failure needs a read of its own (owed).
+- *A re-thumb after a row fell due is its own notification* (the moving deadline it replaces is
+  gone): the actor can be named twice, minutes apart.
 - *The mirrors* (`jobFailures` rows for the queue-shaped jobs) can briefly outlive a row erased some
   other way (an account's erasure, the season purge) until a retry's background check forgets it, a few
   a run.

@@ -397,6 +397,8 @@ export const setPromptState = mutation({
     if (!activity) throw new ConvexError('Activity not found');
     if (activity.userId !== profile._id) throw new ConvexError('Not your activity');
     await ctx.db.patch(args.activityId, { promptState: args.promptState });
+    // Answered by its owner: out of the sweep, so its failing prompt is no longer Machinery's (D258).
+    if (args.promptState !== 'pending') await clearPromptMirror(ctx, activity);
   },
 });
 
@@ -633,6 +635,18 @@ export async function recordPromptFailure(
   return parked ? 'parked' : 'failed';
 }
 
+/**
+ * A row that leaves `pending` some way other than its own prompt (its owner answered, a report took
+ * it, the dedup settled it as another copy's) takes its mirrored failure with it (D258), so Machinery
+ * never counts a prompt nobody will try again. A small read only for a row that had failed.
+ */
+async function clearPromptMirror(
+  ctx: MutationCtx,
+  row: Pick<Doc<'gpsActivities'>, '_id' | 'promptAttempts'>,
+): Promise<void> {
+  if (row.promptAttempts !== undefined) await clearFailure(ctx, 'prompts', row._id);
+}
+
 /** A row's attempt state, cleared: its prompt went through (`lib/attempts`, progress). */
 const CLEARED_PROMPT = {
   promptAttempts: undefined,
@@ -762,6 +776,7 @@ export const promptSkater = internalMutation({
           promptState: !moved && loserRow.linkedReportId !== undefined ? 'converted' : 'dismissed',
           ...(moved ? { linkedReportId: undefined } : {}),
         });
+        await clearPromptMirror(ctx, loserRow);
         superseded++;
       }
 
@@ -789,6 +804,8 @@ export const promptSkater = internalMutation({
         if (row?.promptState !== 'pending' || row.linkedReportId !== undefined) continue;
         if (answered !== undefined) {
           await ctx.db.patch(id, { promptState: answered });
+          // A winner outside this run's due rows (parked, say) leaves `pending` here.
+          await clearPromptMirror(ctx, row);
           continue;
         }
         await ctx.db.patch(id, { promptState: 'prompted' });
@@ -927,6 +944,7 @@ export async function linkActivityToReport(
     throw new ConvexError('This skate is already attached to another report');
   }
   await ctx.db.patch(activity._id, { linkedReportId: reportId, promptState: 'converted' });
+  await clearPromptMirror(ctx, activity);
   if (activity._id !== activityId) await ctx.db.patch(reportId, { activityId: activity._id });
 }
 
