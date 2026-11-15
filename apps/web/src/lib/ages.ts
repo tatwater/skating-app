@@ -27,7 +27,8 @@ export function shortAge(ms: number): string {
   return `${shown} d`;
 }
 
-const plural = (n: number, one: string, many: string) =>
+/** "1 day", "2 days", "1,204 reports" — a count and its word, written out. */
+export const plural = (n: number, one: string, many: string) =>
   `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
 
 /** How long ago `at` was, written out: "2 days ago", "5 hours ago", "3 minutes ago", "Just now". */

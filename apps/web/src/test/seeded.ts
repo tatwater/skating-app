@@ -7,10 +7,12 @@ import fc from 'fast-check';
  */
 export const PINNED_SEEDS = [1, 42, 20261115] as const;
 
-export function assertSeeded<Ts>(
-  property: fc.IRawProperty<Ts>,
-  params: fc.Parameters<Ts> = {},
-): void {
+/**
+ * Synchronous properties only: `fc.assert` hands an async property's verdict back as a promise,
+ * which this would drop — a failure would pass. An async property runs one `it` per seed and awaits
+ * each, as `sheetStore.properties.test.ts` does.
+ */
+export function assertSeeded<Ts>(property: fc.IProperty<Ts>, params: fc.Parameters<Ts> = {}): void {
   for (const seed of PINNED_SEEDS) fc.assert(property, { ...params, seed });
   fc.assert(property, params);
 }

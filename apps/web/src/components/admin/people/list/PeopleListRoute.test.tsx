@@ -372,6 +372,20 @@ describe('where it goes', () => {
     }
   });
 
+  it('gives the lane chosen back after a search beside an open person its own entry', async () => {
+    mocks.params = { id: ROB.userId };
+    mocks.search = { lane: 'suspended', q: 'rob' };
+    mocks.results.set(PAGE_READ, page([ROB]));
+    mount();
+    await userEvent.click(screen.getByRole('button', { name: /^Suspended/ }));
+    expect(mocks.navigate).toHaveBeenLastCalledWith({
+      to: '/admin/people/$id',
+      params: { id: ROB.userId },
+      search: { lane: 'suspended' },
+      replace: false,
+    });
+  });
+
   it('runs a search from the list at the list, replacing the entry as it is typed', () => {
     vi.useFakeTimers();
     try {

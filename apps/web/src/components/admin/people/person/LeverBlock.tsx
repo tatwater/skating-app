@@ -25,7 +25,7 @@ import type {
   ReasonAsk,
   RoleItem,
 } from './levers';
-import { type PersonRead, ROLE_ARTICLE, ROLE_WORDS } from './personModel';
+import { type PersonRead, ROLE_ARTICLE, ROLE_WORDS, shownName } from './personModel';
 import { WORDS } from './personWords';
 import { SuspendDialog } from './SuspendDialog';
 import type { useActing } from './useActing';
@@ -242,7 +242,7 @@ export function LeverBlock({ title, rows, person, acting, now, timeZone }: Lever
           key={shown.serial}
           open={open}
           onOpenChange={close}
-          title={WORDS.roleTitle(person.displayName, ROLE_ARTICLE[shown.item.role])}
+          title={WORDS.roleTitle(shownName(person), ROLE_ARTICLE[shown.item.role])}
           description={
             !shown.item.needsReason
               ? WORDS.makeAdminBody
@@ -270,7 +270,7 @@ export function LeverBlock({ title, rows, person, acting, now, timeZone }: Lever
           key={shown.serial}
           open={open}
           onOpenChange={close}
-          name={person.displayName}
+          name={shownName(person)}
           extend={shown.extend}
           until={person.statusNote?.suspendedUntil ?? null}
           replacesBan={person.status === 'banned'}
@@ -296,7 +296,7 @@ export function LeverBlock({ title, rows, person, acting, now, timeZone }: Lever
           key={shown.serial}
           open={open}
           onOpenChange={close}
-          name={person.displayName}
+          name={shownName(person)}
           current={person.rights.bountyLimit}
           defaultLimit={person.rights.defaultBountyLimit}
           onConfirm={({ limit, reason }) =>

@@ -236,6 +236,17 @@ describe('every nullable fact absent, block by block', () => {
   });
 });
 
+describe('an account with no name on it', () => {
+  it('is named by its handle in the heading and the dialogs, as the list names it', async () => {
+    draw({ person: { ...ROB, displayName: '   ' } });
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('rtremblay');
+    await userEvent.click(within(lever('reports')).getByRole('button', { name: 'Restrict' }));
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent(
+      'rtremblay won’t be able to post reports',
+    );
+  });
+});
+
 describe('each read states itself', () => {
   it('skeletons while loading', () => {
     draw({ person: undefined });
@@ -250,6 +261,37 @@ describe('each read states itself', () => {
     expect(slot('person-history')).toHaveTextContent('Suspended Rob Tremblay');
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(f.retry).toHaveBeenCalled();
+  });
+
+  it('a history answering null beside a failed person says not recorded, never a bare heading', () => {
+    draw({ person: failure(), history: null });
+    expect(slot('history-none')).toHaveTextContent('Not recorded yet');
+    expect(slot('history-error')).toBeEmptyDOMElement();
+  });
+
+  it('a person read that recovers keeps focus in its note, which stays mounted, empty', () => {
+    const f = failure();
+    const { rerender } = draw({ person: f });
+    const note = slot('person-error');
+    act(() => screen.getByRole('button', { name: 'Try again' }).focus());
+    rerender(
+      <PersonView
+        person={ROB}
+        trend={ROB_TREND}
+        history={ROB_HISTORY}
+        staffStats={null}
+        staffSeason={null}
+        decisions={{ rows: [], isDone: true, continueCursor: '' }}
+        now={NOW}
+        viewerId={IDS.teagan}
+        onAct={async () => null}
+        onUndo={() => {}}
+      />,
+    );
+    expect(slot('person-error')).toBe(note);
+    expect(note).toBeEmptyDOMElement();
+    expect(note).toHaveFocus();
+    expect(slot('person-name')).toHaveTextContent('Rob Tremblay');
   });
 
   it('a failed trend takes only its cells; a failed history only its block', () => {
@@ -292,6 +334,11 @@ describe('each read states itself', () => {
     draw({ trend: null });
     expect(fact('reports')).toHaveTextContent('Not recorded yet');
     expect(fact('reports')).not.toHaveTextContent('Couldn’t be read');
+    // The trend beside the cells says the same, never that it couldn't be read.
+    expect(document.querySelector('[data-fact="report-trend"]')).toHaveTextContent(
+      'Not recorded yet',
+    );
+    expect(screen.queryByText('Couldn’t be read')).toBeNull();
     // The note's region stays mounted (so a failure is announced), empty: nothing failed.
     expect(document.querySelector('[data-slot="trend-error"]')).toBeEmptyDOMElement();
   });

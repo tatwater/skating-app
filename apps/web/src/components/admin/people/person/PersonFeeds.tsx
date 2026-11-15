@@ -333,6 +333,9 @@ export function HistoryBlock({
         {WORDS.historyFailed}
       </ReadNote>
       {history === undefined && <FeedSkeleton />}
+      {/* A read that answered `null` has nothing on record for this id — said so, never a failure
+          and never a bare heading. */}
+      {history === null && <Note data-slot="history-none">{WORDS.notRecorded}</Note>}
       {value !== null && (
         <FeedRows
           rows={rows}

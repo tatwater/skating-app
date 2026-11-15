@@ -17,7 +17,10 @@ export type AgeFrom =
   | 'restricted'
   /** Since the account was made. */
   | 'joined'
-  /** Since the queue's oldest open item about them, when the server gives it; else since joining. */
+  /**
+   * Since the queue's oldest open item about them, when the server gives it; since joining on
+   * today's server, which has no such field; no age where the follow-up has no time on record.
+   */
   | 'oldestOpen'
   /** The time left in the deletion window. */
   | 'leaving'

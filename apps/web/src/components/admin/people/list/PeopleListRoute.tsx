@@ -94,8 +94,9 @@ export function PeopleListRoute({ detail }: PeopleListRouteProps = {}) {
       goToList(next, how?.replace === true);
       return;
     }
-    // A search typed beside an open person keeps them open; the typing replaces the entry.
-    goToPerson(selectedId, next, true);
+    // A search typed beside an open person keeps them open; the typing replaces the entry. The lane
+    // chosen back after a search is a new place, as it is with no one open: its own entry.
+    goToPerson(selectedId, next, how?.replace === true);
   };
 
   return (

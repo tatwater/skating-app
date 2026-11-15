@@ -16,10 +16,11 @@ import { receiptFor } from './receipts';
  *
  * - **Nothing optimistic**: it waits for the server, and the reads move on their own once the write
  *   lands.
- * - **The toast's Undo is the shell's**: these writes return the person's id, not the audit row's,
- *   so the receipt names its target (`user`, the person) and the shell asks the server for the
+ * - **The toast's Undo is the shell's**: the receipt names its target (`user`, the person). Today's
+ *   writes return the person's id, not the audit row's, so the shell asks the server for the
  *   caller's own newest action on it (`undo.latestOwn`), offering Undo — ⌘Z, its countdown — only
- *   while the server would accept it. History offers the same row's Undo after.
+ *   while the server would accept it; a write that answers `{ actionId, undoNeedsReason }` (the
+ *   server follow-up) is taken at its word. History offers the same row's Undo after.
  */
 export function usePersonWrites(
   person: {

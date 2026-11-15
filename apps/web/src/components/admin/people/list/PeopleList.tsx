@@ -113,6 +113,12 @@ export function PeopleList({
 
   const [cursorId, setCursorId] = useState<string | null>(null);
   const [focused, setFocused] = useState(false);
+  // A person opened from outside the list (the palette, the back button, a link) takes the cursor,
+  // so Esc or Tab back from their page lands on their row — not the row the keys left earlier.
+  // Neither moves focus nor scrolls: only coming back to the list brings the cursor into view.
+  useEffect(() => {
+    if (selectedId !== null) setCursorId(selectedId);
+  }, [selectedId]);
   const cursorIndex = rows.findIndex((r) => r.id === cursorId);
   const cursor = cursorIndex >= 0 ? cursorIndex : -1;
 

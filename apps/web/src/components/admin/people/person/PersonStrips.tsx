@@ -124,7 +124,12 @@ export function SkaterStrip({
           </span>
           {trendValue === null ? (
             <span className="text-trim text-assist leading-list text-fg3">
-              {trend === undefined ? WORDS.loading : WORDS.couldNotRead}
+              {/* A read that answered `null` has nothing on record — never a failure. */}
+              {trend === undefined
+                ? WORDS.loading
+                : trend === null
+                  ? WORDS.notRecorded
+                  : WORDS.couldNotRead}
             </span>
           ) : (
             <ReportTrend trend={trendValue} />

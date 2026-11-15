@@ -2,7 +2,7 @@ import type { api } from '@skating/convex/api';
 import { CONTRADICTION_FLAG_THRESHOLD } from '@skating/core';
 import type { FunctionReturnType } from 'convex/server';
 
-import { timeLeftInWords } from '@/lib/ages';
+import { plural, timeLeftInWords } from '@/lib/ages';
 import { floorText as countText } from '../answers';
 import { WORDS } from './personWords';
 
@@ -123,8 +123,8 @@ const MONTHS = [
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 
-export const plural = (n: number, one: string, many: string) =>
-  `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
+/** A count and its word, written out — `lib/ages`' one form, which every person-page word uses. */
+export { plural };
 
 /** One formatter a zone (`''` is the reader's own): building one is the costly part of a call. */
 const FORMATTERS = new Map<string, Intl.DateTimeFormat>();
@@ -222,6 +222,15 @@ export function personName(ref: {
   if (name !== '') return name;
   const handle = ref.username?.trim() ?? '';
   return handle === '' ? null : handle;
+}
+
+/**
+ * The name a page says for the person it is about — the head, the dialogs, the receipts — and a
+ * list row's: their real name, or the handle for an account with no name on it. One rule, so an
+ * account the list names by its handle is never an empty heading or a nameless toast.
+ */
+export function shownName(p: { displayName: string | null; username: string | null }): string {
+  return personName(p) ?? p.username ?? '';
 }
 
 /** Staff are named by first name in prose (the boards' rule). */

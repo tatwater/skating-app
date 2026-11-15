@@ -155,6 +155,18 @@ describe('the keys', () => {
     expect(active(list)).toBe(luc);
     expect(scrolled.at(-1)).toBe(luc);
   });
+
+  it('comes back on the open person’s row when they were opened from outside the list', async () => {
+    const { list, props, rerender } = draw({ selectedId: ROB.userId });
+    act(() => list.focus());
+    await userEvent.keyboard('{End}');
+    expect(active(list)).toHaveTextContent('Luc Pelletier');
+    act(() => list.blur());
+    // Kate opened by the palette or the back button: the keys come back to her row, not Luc's.
+    rerender(<PeopleList {...props} selectedId={KATE.userId} />);
+    act(() => list.focus());
+    expect(active(list)).toHaveTextContent('Kate Donovan');
+  });
 });
 
 describe('the row', () => {

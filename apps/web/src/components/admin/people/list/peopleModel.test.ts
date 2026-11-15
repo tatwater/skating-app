@@ -197,15 +197,23 @@ describe('a row', () => {
       });
     });
 
-    it('ages Flagged and Appeals open from the oldest open item, else from joining', () => {
+    it('ages Flagged and Appeals open from the oldest open item, else (today’s server) from joining', () => {
       const flagged = { ...ROB, oldestOpenAt: NOW - 5 * HOUR };
       expect(rowView(flagged, 'flagged', NO_FACTS, NOW).age).toBe('5 h');
       expect(rowView(flagged, 'appeals', NO_FACTS, NOW).age).toBe('5 h');
-      expect(rowView({ ...ROB, oldestOpenAt: null }, 'flagged', NO_FACTS, NOW).age).toBe(
-        rowView(ROB, 'everyone', NO_FACTS, NOW).age,
-      );
       expect(rowView(ROB, 'appeals', NO_FACTS, NOW).age).toBe(
         rowView(ROB, 'everyone', NO_FACTS, NOW).age,
+      );
+    });
+
+    it('draws no age for an oldest open item the follow-up has no time for — never the join age', () => {
+      expect(rowView({ ...ROB, oldestOpenAt: null }, 'flagged', NO_FACTS, NOW).age).toBeNull();
+      expect(rowView({ ...ROB, oldestOpenAt: null }, 'appeals', NO_FACTS, NOW).age).toBeNull();
+    });
+
+    it('names an account with no name on it by its handle, as the person page does', () => {
+      expect(rowView({ ...ROB, displayName: '  ' }, 'everyone', NO_FACTS, NOW).name).toBe(
+        'rtremblay',
       );
     });
   });

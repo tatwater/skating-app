@@ -5,6 +5,7 @@ import type { FunctionReturnType } from 'convex/server';
 import { shortAge } from '@/lib/ages';
 
 import { type Count, countText, dayMonth } from '../../overview/overviewModel';
+import { shownName } from '../person/personModel';
 import { type AgeFrom, PEOPLE_LANE_INFO } from './peopleLanes';
 import {
   ALL_COUNTS_PREPARING,
@@ -209,7 +210,8 @@ export function rowView(
 ): RowView {
   return {
     id: row.userId,
-    name: row.displayName.trim() || row.username,
+    // The person page's own rule, so a row and the page it opens name an account alike.
+    name: shownName(row),
     handle: row.username,
     src: row.profileImageUrl,
     chips: rowChips(row),
@@ -315,8 +317,11 @@ export function rowAge(row: PersonListRow, from: AgeFrom, now: number): string |
     case 'joined':
       return shortAge(now - row.createdAt);
     case 'oldestOpen':
-      // The queue's oldest open item when the server gives it, else (today's server) since joining.
-      return shortAge(now - (row.oldestOpenAt ?? row.createdAt));
+      // The queue's oldest open item when the server gives it; today's server, which has no such
+      // field, ages from joining. A `null` is the follow-up saying it has no time on record — no
+      // age, as a staffer's unrecorded last visit draws none — never the join age passed off as it.
+      if (row.oldestOpenAt === undefined) return shortAge(now - row.createdAt);
+      return row.oldestOpenAt === null ? null : shortAge(now - row.oldestOpenAt);
     case 'leaving':
       if (row.leavingUntil === null) return null;
       return row.leavingUntil <= now ? ENDS_NOW : left(shortAge(row.leavingUntil - now));

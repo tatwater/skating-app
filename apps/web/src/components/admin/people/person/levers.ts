@@ -6,6 +6,7 @@ import {
   plural,
   ROLE_WORDS,
   type Role,
+  shownName,
 } from './personModel';
 import { WORDS } from './personWords';
 
@@ -116,6 +117,7 @@ const LAST_EDITOR = {
 /** "Can do": the posting rights, the bounty limit and flagging. */
 export function canDoRows(p: PersonRead): LeverRow[] {
   const { rights, can } = p;
+  const name = shownName(p);
   const rows: LeverRow[] = (['reports', 'hazards', 'comments'] as const).map((permission) => {
     const w = RIGHT_WORDS[permission];
     const allowed = rights[permission];
@@ -130,7 +132,7 @@ export function canDoRows(p: PersonRead): LeverRow[] {
                 kind: 'reason',
                 ask: {
                   title: WORDS.restrictTitle(w.label.toLowerCase()),
-                  description: WORDS.restrictBody(p.displayName, w.verb),
+                  description: WORDS.restrictBody(name, w.verb),
                   confirm: 'Restrict',
                   action: (reason) => ({ kind: 'right', permission, allowed: false, reason }),
                 },
@@ -177,7 +179,7 @@ export function canDoRows(p: PersonRead): LeverRow[] {
         kind: 'reason',
         ask: {
           title: WORDS.flaggingOffTitle,
-          description: WORDS.flaggingOffBody(p.displayName),
+          description: WORDS.flaggingOffBody(name),
           confirm: 'Switch off',
           action: (reason) => ({ kind: 'right', permission: 'flagging', allowed: false, reason }),
         },
@@ -255,7 +257,7 @@ export function accountRows(p: PersonRead, opts: { now: number; self: boolean })
             kind: 'reason',
             ask: {
               title: opts.self ? WORDS.stepDownTitle : WORDS.revokeLedgerTitle,
-              description: WORDS.ledgerOffBody(p.displayName),
+              description: WORDS.ledgerOffBody(shownName(p)),
               confirm: word,
               action: (reason) => ({ kind: 'ledger', grant: false, reason }),
             },
@@ -342,7 +344,7 @@ export function accountRows(p: PersonRead, opts: { now: number; self: boolean })
           opens: {
             kind: 'reason',
             ask: {
-              title: WORDS.banTitle(p.displayName),
+              title: WORDS.banTitle(shownName(p)),
               description: WORDS.banBody,
               confirm: 'Ban',
               destructive: true,

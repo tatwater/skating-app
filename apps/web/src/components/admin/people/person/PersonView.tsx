@@ -5,11 +5,11 @@ import { Badge } from '@/components/kit/badge';
 import { Button } from '@/components/kit/button';
 import { ListEnd } from '@/components/kit/list-end';
 import { Note } from '@/components/kit/note';
-import { RetryNote } from '@/components/kit/retry-note';
 import { SkeletonBlock, SkeletonText } from '@/components/kit/skeleton';
 import { cn } from '@/lib/utils';
 
 import { isFailed, type Loadable } from '../../reads/consoleReads';
+import { ReadNote } from '../../reads/ReadNote';
 import { PersonLockup } from '../list/kit-candidates/person-lockup';
 import { SectionLevel } from './headingLevel';
 import { LeverBlock } from './LeverBlock';
@@ -34,6 +34,7 @@ import {
   personName,
   type StaffSeasonRead,
   type StaffStatsRead,
+  shownName,
   statusNoteWords,
   TRUST_WORDS,
   type TrendRead,
@@ -119,19 +120,8 @@ export function PersonView({
   } else if (person === undefined) {
     body = <PersonSkeleton />;
   } else if (isFailed(person)) {
-    body = (
-      <>
-        <RetryNote
-          data-slot="person-error"
-          className="pt-(--space-5)"
-          onRetry={person.retry}
-          pending={person.pending}
-        >
-          {WORDS.personFailed}
-        </RetryNote>
-        <HistoryBlock history={history} now={now} {...tz} onUndo={onUndo} />
-      </>
-    );
+    // The failure's words are the note above the body (mounted always); the History stays up.
+    body = <HistoryBlock history={history} now={now} {...tz} onUndo={onUndo} />;
   } else {
     const p = person as PersonRead;
     const staff = ROLE_RANK[p.role] >= ROLE_RANK.moderator;
@@ -204,6 +194,12 @@ export function PersonView({
         data-slot="person-scroll"
         className="min-h-0 flex-1 overflow-y-auto px-(--space-5) pb-(--space-14)"
       >
+        {/* Mounted in every state, as the kit's note asks: its words are announced when a failure
+            puts them in, and when the read recovers and they go, focus on *Try again* stays in
+            the region rather than dropping to the page with the unmounted button. */}
+        <ReadNote reads={[person]} data-slot="person-error" className="pt-(--space-5) empty:p-0">
+          {WORDS.personFailed}
+        </ReadNote>
         {body}
       </div>
     </article>
@@ -226,7 +222,7 @@ function PersonHead({ person }: { person: PersonRead }) {
       <PersonLockup
         size="xl"
         nameAs="h2"
-        name={person.displayName}
+        name={shownName(person)}
         handle={person.username}
         src={person.profileImageUrl}
       />

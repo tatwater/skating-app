@@ -11,7 +11,7 @@ import { useUndo } from '../../shell/undo';
 import { useClockFor } from '../clock';
 import { type LinkTo, personHref } from './PersonFeeds';
 import { PersonView } from './PersonView';
-import type { PersonRead } from './personModel';
+import { type PersonRead, shownName } from './personModel';
 import { usePersonWrites } from './usePersonWrites';
 
 /**
@@ -88,7 +88,8 @@ function PersonPage({ userId, returnTo, className }: PersonPaneProps) {
     person === undefined || person === null || isFailed(person) ? null : (person as PersonRead);
   // The write path's person, rebuilt only when what it names changes (not on every render).
   const targetId = loaded?.userId ?? null;
-  const targetName = loaded?.displayName ?? null;
+  // The receipts name them as the page does: the handle for an account with no name on it.
+  const targetName = loaded === null ? null : shownName(loaded);
   const targetDefault = loaded?.rights.defaultBountyLimit ?? null;
   const target = useMemo(
     () =>

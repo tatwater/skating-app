@@ -90,7 +90,6 @@ export const WORDS = {
     `They lose what the ${role} role gives, and ledger editing with it.`,
   makeAdminBody:
     'An admin can change anyone’s role and read support tickets straight away. An undo won’t reach what they do in the meantime.',
-  confirm: 'Make admin',
   suspendTitle: (name: string) => `Suspend ${name}?`,
   extendTitle: (name: string) => `Extend ${name}’s suspension?`,
   suspendBody:
