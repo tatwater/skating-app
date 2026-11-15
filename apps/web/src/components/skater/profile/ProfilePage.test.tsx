@@ -398,7 +398,7 @@ describe('a moderator’s view', () => {
     const tools = screen.getByRole('region', { name: 'Moderator tools' });
     expect(within(tools).getByRole('link', { name: /Console/ })).toHaveAttribute(
       'href',
-      '/admin/users/p2',
+      '/admin/people/p2',
     );
     expect(within(tools).getByText('Global cap')).toBeInTheDocument();
     expect(within(tools).getAllByRole('button', { name: 'Restrict' })).toHaveLength(2);

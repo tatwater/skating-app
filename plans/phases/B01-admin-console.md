@@ -2077,7 +2077,7 @@ one branch (`b01-3-server`).
   - `listActions`' verb filter in the index: it needs #112's `by_target_action`.
 
 **B01-4 (2026-11-14): the People server** (boards 8.1, 8.2, 8.5, 8.6; the founder's rulings of the
-same day, D257). Server only; the page is owed.
+same day, D257). Server only; the page is *The People pages (B01-4, the page)*, below.
 
 - **The list reads a stored row per person** (`peopleRows`, `lib/peopleRows`), not `profiles`: a
   profile can weigh a whole document (two cached isochrone polygons), so a page of fifty could pass
@@ -2620,6 +2620,13 @@ cap can cut an item the returned order says belongs.
 | `standing.retentionForBody`: saved put-ins | A body's stored put-ins (1,000, probing one past) | A count | **Fixed:** `savedPutInsCapped` now says when the body has more rows than the read took, so the count is of the rows read (an unread hidden coordinate could suppress one counted, so not a floor) |
 | Library row: asks, reports | Each ask source (100 each); reports newest first (300) | Counts | No: `asksCapped`, `reportsCapped` |
 | `bodyLibrary.parked` | Parked entries, oldest parked first (50) | The same | No: `capped` |
+| `recurrence.listForBodyAdmin` | **Fixed (B01-3d):** a body's patterns, highest priority first (`by_water_body_priority`, 1,000) | Highest priority first | No, after the fix: the cap keeps the top 1,000 (it read the first 1,000 stored, then sorted). The array says nothing past 1,000; `waitingCountForBody` is the figure that does |
+| `recurrence.waitingCountForBody` | A body's patterns (1,000, probing one past) | A count | No: `capped` (B01-3d) |
+| `recurrence.listForBody` (skaters) | **Fixed (B01-3d):** a body's public patterns, highest priority first (`by_water_body_public_priority`, 1,000), then those a live sighting stands down | Highest priority first | No, after the fix. **Owed:** its read of the body's active hazards is an unbounded `.collect()` |
+| `recurrence.listQueue` | The cross-lake queue by season and priority, paged | Highest priority first | No: genuinely paginated, filters per page |
+| `recurrence.recomputeBody` | A body's stored patterns to match against (1,000) | Not presented | Matching only; unreachable in practice (a body holds tens) — a body past it would re-insert its unmatched patterns |
+| `bodyFeatures` demote, `hazardWithdrawal` | A body's patterns to find a promotion's or a pin's (1,000) | Not presented | The withdrawal says `unknown` past the bound; the demote's walk-back is bounded the same way |
+| `recurrence` discovery | Stale queue rows (200 a page), and a paged body walk | Not presented | No: each re-runs until a page comes back short |
 
 **The governor's rulings on the deferred items (2026-11-14).** A moderator's aliases are their own
 bounded field on the body, `moderatorAliases` — at most 20, each at most 120 characters, trimmed,
@@ -3264,7 +3271,8 @@ their own PR (they would have taken this one past its size, and two need a call;
   its states (`importContourCoverage`'s `searched`, the loader's `--searched=NAME:VT,NH`, sent with
   the run's last batch so a run that dies records no search), one row per (dataset, state); `consoleExtras.bathymetrySearched` is the newest search of the body's states,
   `null` (*not recorded*) where none covers it.
-- **Town lines** (`bodyConsole.townLines`): each boundary's largest outer ring kept to 96 points is
+- **Town lines** (`bodyConsole.townLines`): each boundary's largest outer ring kept to 96 points (97
+  positions: a ring closes on its first point, as GeoJSON's must) is
   stored beside it at its import (`adminAreaOutlines`; `adminAreas:backfillOutlines` for the rows
   before); a body's town lines are one small row per town, at most 24.
 - **Only a geometry change marks a body** (the coordinator's ruling): the cell index marks a body
@@ -3292,6 +3300,246 @@ their own PR (they would have taken this one past its size, and two need a call;
 imagery pass override and its read; `bodyFeatures.updateShape`. Two need a call first: per-catalog
 class claims exist only at import time (the import must start storing them, and old bodies read
 *not recorded* until the next campaign), and what a survey filing records.
+
+### The Bodies writes (B01-3d, the third server follow-up)
+
+Built on B01-3c's reads; opened after #122 merges. Each write takes a capability from the map, writes
+an audit row with its verb (the script's `via` rides through `writeAudit` as on every row), has an
+undo-policy row and a handler whose undo is the forward write of the previous state (refused by the
+same function), refreshes the library row through its audit row, refuses a merged-away body and
+leaves a removed one editable.
+
+- **Aliases** (`waterBodies.setAliases`, `body.identity`): `moderatorAliases`, trimmed, collapsed,
+  de-duplicated case-insensitively against the display name and each other, refused past 20 or past
+  120 characters; folded into the library row's aliases and search text (`aliasesOf`).
+- **Class** (`waterBodies.setClass`, `body.identity`): `moderatorClass` is its own fact; `type`
+  follows it and a re-import keeps it; clearing puts back `baseClass` — the import's own ranking,
+  kept on every touch even under the override (never the first claim: the merge ranks classes by its
+  own order, so the first claim is often not the class it stored); on a body no import touched, the
+  class the first override displaced. **The import now stores each
+  catalog's class claim** (`classClaims`, one per source, at most eight; the ETL carries them through).
+  Every body on dev — all 24,961 — predates it and reads *not recorded* for the per-catalog lines
+  until its next campaign: the merge threw the claims away, so no backfill can recover them.
+  `bodyConsole.identity` serves the claims (or `null`), the moderator's class and aliases.
+- **Depth source** (`waterBodies.chooseDepthSource`, `body.water`): the ladder now keeps every
+  plausible offer as a candidate (`depthCandidates`); a candidate alone is stored but is not a changed
+  depth, so a load's counts and the library refresh are as before (tested). A choice holds its
+  source against better rungs and follows that source's fresh value; `null` hands the measure back
+  to the ladder (the best-ranked candidate the pair allows — the best-ranked alone may be the one the
+  ladder dropped for inverting it). Refused: a source with no value, a typed (operator) depth, a
+  mean left deeper than the max. `bodyConsole.depthChoices` lists what `chooseDepthSource` accepts
+  (`depthChoicesOf`).
+  **What it can affect:** the depth every read shows, the shallow classification and the decay model
+  that read a body's depth. A depth is the basin's; choosing one says nothing about ice.
+- **A known feature's shape** (`bodyFeatures.updateShape`, `corpus.preIce`, as creating one is): the
+  hazards' shape gate and its 500-position ceiling, a footprint on its lake's box. It changes the
+  feature's geometry, box and bay stamp — never the body's outline, its geometry facts or a library
+  fact (tested). The replaced shape is the audit row's snapshot.
+- **The imagery pass override** (`imageryOverrides.set` / `.clear`, `machinery.imagery` — the board's
+  *admin's override*): show a pass the gates hid (no reason, who and when recorded) or hide a shown
+  one (a reason, at most 500 characters); at most 200 calls per body and season, bound at the write
+  so the skater read is whole. `passOverrides` (public, granule and call only) and `forBody` (who,
+  when, reason; newest first). `@skating/core`'s `buildBodyTimeline` honors an `overrides` map — a
+  shown cloudy pass lends no lake to a seam, a hide is counted only where the pass would have been a
+  stop; with
+  none — the default, and what the apps pass today — the timeline is unchanged (tested). An override
+  is a statement about one pass of a satellite, never about the lake. **Owed:** the apps'
+  `useFreezeUpTimeline` passing `passOverrides` (web and mobile).
+- **Towns keyed on name and state** (the coordinator's ruling on #122): the facts store
+  `townEntries`; every read that offers a town's state reads them, so a border lake's Franklin, VT and
+  Franklin, NH are two. `towns` stays keyed on the name for the pages that read it.
+- **`rowsByIds` on merged ids (the read table):** worst case 12 merged ids, each reading its own body
+  document and up to eight merge hops, each a whole body with its outline — accepted for 12.
+
+**BS17–BS19 (the Body console pages' findings), checked against the code:**
+
+- **BS17, a whole-list write overwrote a concurrent one.** Confirmed for the two the page named
+  (`setReferenceLinks`, `landmarks.update`'s aliases) and found in three more: `setAliases`,
+  `setWeatherSamplePoints`, `subAreas.rename`'s aliases. Each takes an optional `expected`
+  (`expectedAliases` on the landmark and bay writes); a list that moved is refused with
+  `{ code: 'list_changed', message, current }` in the error's data. Without it, the later write wins as
+  before. The undo of a links or aliases write passes the list its row wrote. Left: single values (the
+  later legitimately wins), writes that name what to act on (`clearDepthOverride`,
+  `dismissDuplicates`), creation, and a lot's or a rule's record (`setOfficialParking`,
+  `setPostedAccess` — owed if the Access tab saves them whole).
+- **BS18, a reported crossing on the day strip.** Confirmed; one correction: a crossing expires 72
+  hours after its **last confirmation**, not its first report (`isPassageExpired`). A crossing is a
+  passage marker (D64), not a hazard: it leaves the day's hazard count and unknowns, and
+  `days[].crossings` counts the crossings live that day (to expiry or recorded leaving, never past the
+  caller's day). Each `hazards[]` entry carries `type` and `passage`.
+- **BS19, patterns waiting.** Confirmed, and worse than logged: `listForBodyAdmin` also sorts by
+  priority *after* its cap, so a body past 1,000 clusters can drop its highest-priority ones.
+  `recurrence.waitingCountForBody` → `{ count, capped }` counts by the tab's rule (`isWaitingPattern`)
+  over one read one past the bound; the list's array shape is left for the page that reads it.
+
+**A launch made official in place** (`putIns.promote`, `body.access`; found by the Access tab, whose
+*Make official* called `setOfficial`, which always inserts a new point). Checked: `setOfficial` snaps
+to the shore, stamps the bay, writes `set_put_in` and recomputes access; `accessForBody` lists stored
+visible rows with no proximity merge (so the tab drew both), while the map's marker read lets an
+official marker win over others within the hide radius. `promote({ putInId, name?, reason? })` makes a
+stored `osm` or persisted `derived` launch official on the same row — point, bay, lot, walk and
+approach-kind override kept, the name set only when given — and returns `{ putInId, actionId,
+undoNeedsReason }`. A live report cluster has no row and never appears in the tab's list; making one
+official is `setOfficial` at its coordinate. Refused: official, hidden, suppressed, a merged-away
+body, missing. The undo puts the source and name back (asking a reason: it takes official status
+away) and is refused once the launch moved, was renamed, hidden or demoted; its undo promotes again.
+`setOfficial` shares the after-write steps (`afterPutInChange`: the body back if shelved, access kind,
+library row). The old lake editor places a clicked point with `setOfficial` — a moderator who clicks on
+an existing launch there gets a second row too (the map hides the first; the console lists both); the
+phone app has no caller.
+
+**The sweep before re-review (B01-3f): an undo or redo over a row something un-audited changed.** An
+undo was offered whenever its row was the newest on its target; a few verbs' refusals depend on the
+row as it stands, which an import, a loader run, a merge's moves or a hide on another target change
+without a row on that target. Each undo in B01-3d was run as write → un-audited change → undo → redo
+(a table in `bodyWrites.test.ts`, every case also run without the change):
+
+- **Restored stale values — fixed:** `edit_landmark`. A merge's fold and a catalog run change a
+  landmark's spellings with no row on it, and the undo put the old list back over them. The edit now
+  records the spellings it left (`aliases`) and its undo passes them as `expectedAliases`; a row from
+  before carries none and undoes as it did. (The handler predates B01-3d; the compare-and-set came
+  with it.) A bay rename's undo passes the aliases its row wrote too — no un-audited writer moves
+  them today.
+- **Offered, then refused — fixed:** `choose_depth_source` redone after a loader run took its source
+  away; `update_body_feature_shape` after the outline moved off the shape it puts back;
+  `set_put_in` after the launch was hidden (audited on the put-in) or moved or renamed by an import;
+  `set_weather_sample_points` after the outline moved off the grid it puts back.
+- **Held:** `set_class` after a re-import (the undo puts back the newer catalog class, never the
+  recorded one); `set_aliases` and `set_reference_links` (every writer of the lists is audited on the
+  body, and a merge's row overtakes); `choose_depth_source` undone after a loader refresh (hands back
+  to the fresh value); `set_imagery_override` after its pass was recut or pruned (keyed by the pass,
+  read from nothing of it); a feature after a merge (it moves to the survivor and undoes there). Rows
+  written before B01-3d (no claims, no candidates, `undefined` lists, a feature with no bay) held
+  for every write.
+
+`UndoHandler.refusal` is the fix: an async check `undoState` asks last (after capability and an
+operator leaving), running the same function the write refuses by — `depthChoiceOutcome`,
+`shapeRefusal`, `launchRefusal` and `directionRefusal`, `samplePointsRefusal`, `listChangedRefusal`.
+Its row reads (`lib/undoReads`) are charged at their real weight to the request's budget, one after
+another, read once per query; past it the line reads *unavailable* — "This page has too much to check
+this undo here — open what it changed to undo it." — never a read past the limit. **Owed:** a
+refusal's snapshot read and a launch's hidden-neighbor read (at most 200, a handful in practice) are
+not charged, and People's per-row call plan (`ROW_SHAPE_DOCS`) doesn't count them; the landmark
+undo's refusal checks the spellings only, not the duplicate and bay-name rules its write also takes.
+
+**Held — the survey filing** (`fileBathymetrySurvey`): the board shows the field (*A survey the next
+build should load*, *Paste a link or a citation*) but not what appears once one is filed; it waits on
+the founder's call.
+
+### The People pages (B01-4, the page)
+
+People at `/admin/people` (boards 8.1, 8.2, 8.5, 8.6) on the People server's reads above, in one PR after
+that server's (#115); the rail's People mode (G then P, `people.read`) lights for the list and every person.
+
+- **One page, three columns.** `/admin/people` is a layout: the lanes, the list, and the person
+  route's page (`/admin/people/$id`) drawn in the third column through the outlet, so the list stays
+  put while people open and close. The lane and the search ride in the URL both ways (opening a
+  person carries them; the person's way back returns to them); a deep link opens the list beside the
+  person on the lane it names, Everyone when none, and an id of the wrong shape or with no account
+  is *No such person* with the list still usable. Esc or ⇧⏎ in the person's page puts focus back on
+  the list, on the person's row.
+- **The list.** A search lane over every account (`/` focuses it; the server ignores the lane while
+  a search runs and the match is marked), then the server's lanes, Appeals open only for a viewer
+  with support's read. `people.listPage` is read as a chain of cursor pages through the console's
+  one read layer — it isn't Convex's paginated contract, and each page's `partial`, `reasons` and
+  `pending` must survive. Rows in the server's order: the status chip first, the trust class, the
+  person lockup (the handle is text inside a clickable row, never a nested control), the sub-line,
+  the reason on file, and an age the lane defines (since the status, since the restriction, the
+  time left in the window, otherwise since joining). Typing pending in the search is dropped on
+  every change of place (another lane, a person opened, leaving).
+- **The person page** renders `people.person` and its five companions; every lever is drawn from
+  `can` exactly as the write would answer it, and every write goes through one action hook to the
+  shell's undo toast. The toast skips its `undo.latestOwn` lookup only when a write returns both
+  its audit row and whether undoing it asks a reason (`{ actionId, undoNeedsReason }`, asked of the
+  server follow-up); with either missing it looks, which is also how it learns that another staffer
+  acted in between (then no Undo).
+- **The three answers, every block.** *Still being prepared* while a People backfill hasn't finished
+  (no number, no "+": a lane draws no count, the lanes' foot names which, the head shows only the
+  order, a note over the rows says the list may not have everyone, the list never ends on "All";
+  the Overview's People card hides its figures while the rows are pending, and only *Flagged
+  people* while only the flag subjects are); a floor while a read stopped at its cap ("200+", and
+  why in a sentence per reason; a list short of its lane ends on "N shown"); *Not recorded yet* for
+  `null`. Empty lanes say so in plain words; a failed read says so in its own place with *Try
+  again* (a later page failing keeps the rows already in); a moderator's view simply lacks Appeals
+  open and every support fact.
+- **One of each.** `lib/ages` holds the row's short age (`shortAge`) and the written-out pair
+  (`ageInWords`, `timeLeftInWords`) for the Overview, Metrics, the list and the person page;
+  `people/answers.ts` words the three answers once; `people/clock.ts` holds the read clock both
+  pages use; `lib/routerTarget` splits a path for the router. The old `/admin/users` and
+  `/admin/users/$id` redirect; Users leaves Legacy and the old shell; a profile's moderator tools,
+  the palette and the Overview link to People.
+
+**Where the boards and the code differ** (the code stands until the founder rules):
+- The list column is the `list` token (340), not the board's 380; the kicker's orders were
+  shortened to fit it (*by end date* for *soonest to lapse first*, *latest first*), and a very long
+  count wraps to a second line inside the head's height rather than being cut.
+- A row says "4 d"; a head, a note or a status line writes its units out ("1 day left").
+- The Staff lane draws no age and no "since … · N decisions this week" — no read gives either yet;
+  Flagged and Appeals open age from joining until the server gives each person's oldest open flag
+  or ticket.
+- The staff page has no *Switch off* on flagging: the server refuses switching it off on staff.
+- Receipts carry no pronouns (none is known); *Staff since* reads "Admin since …" as the value.
+- No photos on the person page; no *Restore all*; the *On the record* row (the founder's name for it:
+  the sheet covers hidden, removed, retracted and author-deleted items) is drawn with no sheet yet.
+- *Make admin* in the role menu confirms first.
+- A narrow screen (a phone): the open person takes the page with *Back to the list*; with no one
+  open, the lanes over the list. The person page's strips wrap two to a row below an inspector and
+  a search's width, and the head's chips wrap under the name.
+- A block is left out only for a complete, genuinely empty answer (`settledEmpty`): *Open about this
+  person* stays, saying so, when its read was capped or flags are still being prepared; *On the
+  record* stays for a capped standing count.
+- One heading outline for the joined page: the lane's word is the only `h1`, the person's name an
+  `h2` in the board's look, its blocks `h3` (or `h2` when no name is drawn).
+- A capped count is plural ("1+ open flags"); Metrics' *Oldest* keeps a tenth under two days
+  ("1.5 d"), as every row does now that one formatter answers both.
+- A suspension that ends while the list is open reads *Ran its course … · lifting on its own* (the
+  person page's words) on the live minute; the list's reads stay held.
+
+**Words the boards did not supply** are each in one module for the founder to read together: the
+list's in `apps/web/src/components/admin/people/list/peopleWords.ts`, the person page's in
+`…/people/person/personWords.ts`, the three answers in `…/people/answers.ts`.
+
+**Kit.** Both pages draw the kit's `PersonLockup`, extended here: a person list's `row` and the
+page `head` sizes, a heading name (`nameAs`), the search mark, a photo, and analytics masking on
+every size (its `sm` and `md` draw as before). The *On the record* row's *Review* is the kit's
+`UnavailableButton` (its sheet isn't built); refused levers keep the lever row's own refusal
+tooltip, the server's no with its reason. Nothing on the person page is an unbuilt field, so the
+kit's `UnavailableField` has no use here. Candidates still beside their pages: `SearchLane`
+(`list/kit-candidates/`) and `LeverRow` (`person/kit-candidates/`). Two other kit changes: a lane
+count's amber or red survives selection (`Lanes`, board 8.1), and `ListEnd` draws no tab until its
+measures are numbers (an unresolved stroke token drew NaN).
+Token differences: the person page's lever key column (112 px) and feed tag column (76 px) have no
+token; the head's name is the 15 px logo step (no name step); lever rows are 32 px where the board
+draws 34; the role menu's item takes two lines.
+
+**Owed:**
+- To the server follow-up: `people.listPage` taking an `endCursor` (until then a change in an
+  earlier page drops the deeper pages while they re-read); staff rows' `lastSeenInConsoleAt`,
+  `roleSince` and `decisionsThisWeek`; each Flagged and Appeals row's oldest open flag or ticket
+  time; `lanesFor` from core (the page holds a copy of the server's rule); `{ actionId,
+  undoNeedsReason }` from every People write; `ledger.since`; `rights.since`; the bounty season
+  line; explicit `can` entries for every lever; a profile-opens flag; flag target labels and appeal
+  text; who undid a row.
+- The record sheet (verdicts and withdrawals, above; boards 8.7–8.9) is not built. The *On the
+  record* row appears today on the one count main's server supplies (the standing list); it should
+  appear whenever any of the sheet's three lists (Standing, Deleted, Reversed) has items, and its
+  rule widens when the server supplies the other two counts.
+- The kit promotions (`SearchLane`, `LeverRow`) await a kit pass.
+- One `useClockFor` and one `ID_SHAPE` across Bodies and People — each duplicated in the Bodies
+  directory, which the open Body console PRs are changing.
+- **One rule for a list that pages as it scrolls** (`lib/loadAhead`): it asks for its next page
+  only while it is in sight and measured — never from a zero-height viewport (a hidden pane, a
+  section not shown, a list not yet laid out) or a background tab, which would read as "near the
+  end" for every page — and asks again when it comes into sight. People's list reads it (the only
+  People list that pages on scroll: History is one read, Decisions pages on a press). The Bodies
+  library on main has the same trigger without the rule; it hides no list today, so it pages only
+  in a background tab, and it adopts the rule with the narrow-screen one.
+- **The console's one narrow-screen rule** (`shell/columnsFit`): below the width where a mode's
+  columns fit side by side (their size tokens summed), the open record takes the page with a way
+  back, and with none open the list does; nothing scrolls sideways. People has it; the Bodies
+  library and the Body console lay out their own columns and break the same way at phone width —
+  each adopts the rule once its open PRs land. The kit `AppShell`'s own stacking (below `lg`, for
+  pages that pass it panes) measures the same way and should read the same rule.
 
 ## Ruled out
 

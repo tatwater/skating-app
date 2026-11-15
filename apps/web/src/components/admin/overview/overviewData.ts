@@ -10,9 +10,10 @@
  */
 import type { api } from '@skating/convex/api';
 import type { FunctionReturnType } from 'convex/server';
-
+import { shortAge } from '@/lib/ages';
 import { type AuditAction, type AuditTarget, actorWords } from '../shell/actionLabels';
-import { type Count, DAY, feedWhen, shortAge, sumCounts } from './overviewModel';
+
+import { type Count, DAY, feedWhen, sumCounts } from './overviewModel';
 
 const HOUR = DAY / 24;
 
@@ -239,6 +240,12 @@ export interface PeopleCardData {
   leaving: Count;
   /** Everyone with an account (the 6-hourly rollup); `null` until it has run. */
   totalUsers: Count | null;
+  /**
+   * The People backfills not yet finished after a deploy: while `rows` is, every figure but
+   * `totalUsers` may be wrong (not merely a floor); while `flagSubjects` is, `flaggedPeople` may be.
+   * The card says so instead of a number.
+   */
+  pending: ConsoleOverview['people']['pending'];
 }
 
 export function peopleFromOverview(people: ConsoleOverview['people']): PeopleCardData {
@@ -325,6 +332,8 @@ const ACTION_WORDS: Record<AuditAction, string> = {
   reject_waterbody: 'Rejected drawn body',
   set_curated_boost: 'Set curated boost',
   set_reference_links: 'Set reference links',
+  set_aliases: 'Set aliases',
+  set_class: 'Set class',
   set_included_by_request: 'Changed kept by request',
   set_standing: 'Set standing',
   activate_body: 'Activated body',
@@ -349,6 +358,9 @@ const ACTION_WORDS: Record<AuditAction, string> = {
   promote_recurrence: 'Promoted recurring hazard',
   set_weather_sample_points: 'Set weather sample points',
   set_lake_depth: 'Set depth',
+  choose_depth_source: 'Chose depth source',
+  update_body_feature_shape: 'Redrew known feature',
+  set_imagery_override: 'Called a satellite pass',
   create_sub_area: 'Drew sub-area',
   redraw_sub_area: 'Redrew sub-area',
   rename_sub_area: 'Renamed sub-area',

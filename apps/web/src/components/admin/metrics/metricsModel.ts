@@ -105,12 +105,6 @@ export function ageParts(ms: number): AgePart[] {
       ];
 }
 
-/** An age in its largest unit, as a sub-line says it: "2 d", "5 h", "40 min". */
-export function shortAge(ms: number): string {
-  const [first] = ageParts(ms);
-  return `${first?.n ?? 0} ${first?.unit ?? 'min'}`;
-}
-
 /**
  * When the oldest open flag turns red: three days unresolved. A flag that old has outlived a weekend
  * and won't move without someone; younger, it is the queue's ordinary worst case.

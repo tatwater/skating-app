@@ -77,6 +77,7 @@ import {
   retireNamedAsBays,
   subAreaFor,
 } from './lib/landmarkRows';
+import { assertListUnchanged } from './lib/listCas';
 import { isListed } from './lib/listing';
 import { isSuppressed } from './lib/putInSuppression';
 import { syncReportSubAreas } from './lib/reportSubAreas';
@@ -1244,6 +1245,8 @@ export const rename = mutation({
     subAreaId: v.id('waterBodySubAreas'),
     name: v.optional(v.string()),
     aliases: v.optional(v.array(v.string())),
+    /** The aliases this edit was built on (B01-3d): refused, with the current ones, if they moved. */
+    expectedAliases: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const actor = await requireCapability(ctx, 'body.shape');
@@ -1259,17 +1262,20 @@ export async function renameSubAreaImpl(
     subAreaId,
     name,
     aliases,
+    expectedAliases,
     reason,
   }: {
     subAreaId: Id<'waterBodySubAreas'>;
     name?: string;
     aliases?: string[];
+    expectedAliases?: string[];
     reason?: string;
   },
 ): Promise<Id<'waterBodySubAreas'>> {
   {
     const subArea = await ctx.db.get(subAreaId);
     if (!subArea) throw new ConvexError('Sub-area not found');
+    assertListUnchanged(subArea.aliases ?? [], expectedAliases, 'this bay’s aliases');
     if (name === undefined && aliases === undefined) {
       throw new ConvexError('Nothing to change');
     }

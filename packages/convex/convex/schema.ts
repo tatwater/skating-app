@@ -753,6 +753,35 @@ export default defineSchema({
       v.array(v.object({ source: literals(CLAIM_SOURCES), value: v.string() })),
     ),
     /**
+     * **Each catalog's class for this water** (B01-3d), one per source, at most eight — stored by the
+     * import from the merge's claims, which were thrown away before it: a body imported before reads
+     * *not recorded* for the per-catalog lines until its next campaign, and no backfill can recover
+     * them. A moderator's choice is never a claim here; it is `moderatorClass`.
+     */
+    classClaims: v.optional(
+      v.array(v.object({ source: literals(CLAIM_SOURCES), value: literals(WATER_BODY_CLASSES) })),
+    ),
+    /**
+     * **A moderator's class for this water** (B01-3d, `setClass`) — its own fact, outranking the
+     * catalogs': `type` is set from it, and a re-import keeps it (a clear puts back `baseClass`).
+     * Absent when no moderator chose.
+     */
+    moderatorClass: v.optional(literals(WATER_BODY_CLASSES)),
+    /**
+     * **The class without a moderator's** (B01-3d) — the import's ranking, written on every touch
+     * even while `moderatorClass` holds `type`; on a body no import touched (a drawn one), the class
+     * a moderator's first override displaced. What `type` returns to when `moderatorClass` is
+     * cleared. Never the first class claim: the merge ranks the claims by its own order.
+     */
+    baseClass: v.optional(literals(WATER_BODY_CLASSES)),
+    /**
+     * **A moderator's own aliases** (B01-3d, `setAliases`) — at most 20, each at most 120 characters,
+     * trimmed, de-duplicated case-insensitively against the display name and each other. Never name
+     * claims (a `user` claim means a moderator picked the display name); the library row's aliases
+     * and search text fold them in.
+     */
+    moderatorAliases: v.optional(v.array(v.string())),
+    /**
      * `[name, ...aliases]` joined — **the field the search index actually covers.**
      *
      * Denormalized on every name write, never set by a client, same shape and same
@@ -1168,6 +1197,32 @@ export default defineSchema({
     // chart, max from the 2015 DEC survey") without a second field nobody fills. Cleared when no
     // operator-sourced depth remains, so a note can never outlive the claim it substantiates.
     depthSourceNote: v.optional(v.string()),
+    /**
+     * **Every source's depth offer, not only the winner's** (B01-3d) — one per (measure, source), a
+     * plausible value only, written by the depth ladder as it considers each offer; what the Water
+     * tab lists as choices. Absent on a body whose depths loaded before it (the stored winner is then
+     * the one choice known).
+     */
+    depthCandidates: v.optional(
+      v.array(
+        v.object({
+          measure: literals(['mean', 'max']),
+          source: literals(DEPTH_SOURCES),
+          valueM: v.number(),
+        }),
+      ),
+    ),
+    /**
+     * **A moderator's choice of depth source, per measure** (B01-3d, `chooseDepthSource`) — the
+     * ladder then keeps that source's value for the measure (refreshed when the source re-offers it)
+     * instead of the best-ranked one. Absent: the ladder decides.
+     */
+    depthChoice: v.optional(
+      v.object({
+        mean: v.optional(literals(DEPTH_SOURCES)),
+        max: v.optional(literals(DEPTH_SOURCES)),
+      }),
+    ),
     // Lake **surface elevation** (A06c §1.1) — a real freeze-ORDER signal: a 1,700 ft pond in the
     // Greens is skateable weeks before a valley lake twenty minutes away. One source, not a ladder
     // (see `@skating/core`'s `elevation.ts` for why depth needed five rungs and this needs one),
@@ -1569,6 +1624,24 @@ export default defineSchema({
   // One row per frame manifest found in R2 for a season (A06i §5): what the season index is composed
   // from. Rebuilt by listing — a row whose manifest is no longer listed is dropped — so the index is
   // still built from what is in the bucket, never from what was launched (A06e's rule).
+  /**
+   * **An admin's call on one satellite pass over one body** (B01-3d, `imageryOverrides`): `show` a
+   * pass the gates hid, or `hide` a shown one with a reason; who and when. One row per (body, pass);
+   * clearing deletes it. About a pass of a satellite, never about the lake.
+   */
+  imageryPassOverrides: defineTable({
+    waterBodyId: v.id('waterBodies'),
+    season: v.string(),
+    granuleId: v.string(),
+    action: literals(['show', 'hide']),
+    reason: v.optional(v.string()),
+    byUserId: v.id('profiles'),
+    at: v.number(),
+  })
+    .index('by_body_granule', ['waterBodyId', 'granuleId'])
+    // Newest call first within a season, so a capped read keeps the newest.
+    .index('by_body_season_at', ['waterBodyId', 'season', 'at']),
+
   imageryFrames: defineTable({
     season: v.string(),
     manifestKey: v.string(),
@@ -3234,7 +3307,11 @@ export default defineSchema({
     .index('by_computed_season_and_priority', ['computedForSeason', 'priority'])
     // The skater-facing read. `publiclyVisible` sits in the key so the bar is applied *at the index*
     // rather than after the read — the difference between "admin-only" and "admin-only unless you look".
-    .index('by_water_body_public', ['waterBodyId', 'publiclyVisible']),
+    .index('by_water_body_public', ['waterBodyId', 'publiclyVisible'])
+    // A body's patterns in the order its reads present them — highest priority first — so a capped
+    // read takes the top N, never the first N stored (B01-3d). `priority` is required on every row.
+    .index('by_water_body_priority', ['waterBodyId', 'priority'])
+    .index('by_water_body_public_priority', ['waterBodyId', 'publiclyVisible', 'priority']),
 
   /**
    * The recurrence job's scratch queue (A05c / §3.4).
@@ -5096,6 +5173,14 @@ export default defineSchema({
     townStates: v.optional(v.array(v.string())),
     /** Each town's boundary, in `towns`' order (B01-3c) — for its drawn outline. */
     townIds: v.optional(v.array(v.id('adminAreas'))),
+    /**
+     * The towns keyed on name **and state**, each with its boundary (B01-3d) — a border lake's
+     * Franklin, VT and Franklin, NH are two. `towns` stays keyed on the name alone for the pages that
+     * read it; every read that offers a town's state reads this.
+     */
+    townEntries: v.optional(
+      v.array(v.object({ name: v.string(), state: v.string(), id: v.id('adminAreas') })),
+    ),
     counties: v.optional(v.array(v.string())),
     states: v.optional(v.array(v.string())),
     attempts: v.optional(v.number()),

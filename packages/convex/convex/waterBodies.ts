@@ -107,6 +107,7 @@ import {
 } from './lib/enums';
 import { closeFlag } from './lib/flagResolution';
 import { landmarksForBody, repointLandmarksOnMerge } from './lib/landmarkRows';
+import { assertListUnchanged } from './lib/listCas';
 import { isListed } from './lib/listing';
 import { OPEN_FLAG_STATUSES } from './lib/openFlags';
 import {
@@ -287,6 +288,10 @@ const canonicalBody = v.object({
   reviewReasons: v.optional(v.array(literals(REVIEW_REASONS))),
   /** Every publisher's name for this water, winner included — see the schema note on `nameClaims`. */
   nameClaims: v.optional(v.array(v.object({ source: literals(CLAIM_SOURCES), value: v.string() }))),
+  /** Every catalog's class for this water (B01-3d) — see the schema note on `classClaims`. */
+  classClaims: v.optional(
+    v.array(v.object({ source: literals(CLAIM_SOURCES), value: literals(WATER_BODY_CLASSES) })),
+  ),
   // A genuinely-interior point + the D85 shape stats, measured by the ETL on the source geometry
   // before it was simplified. All optional: a body whose geometry defeats one of them still loads.
   interiorPoint: v.optional(latLng),
@@ -426,6 +431,27 @@ function nameFields(
     nameClaims: claims.length > 0 ? claims : undefined,
     searchText: searchTextFor(chosen, aliasesFor(claims, chosen)),
   };
+}
+
+/** The most class claims stored for a body — one per catalog, with room. */
+export const MAX_CLASS_CLAIMS = 8;
+
+/**
+ * Each catalog's class claim as the import carries it (B01-3d): one per source (the first kept),
+ * bounded. Omitted when the record carries none — an older loader's record, which leaves the stored
+ * claims as they were rather than erasing them.
+ */
+function classClaimFields(item: {
+  classClaims?: { source: (typeof CLAIM_SOURCES)[number]; value: Doc<'waterBodies'>['type'] }[];
+}): { classClaims?: NonNullable<Doc<'waterBodies'>['classClaims']> } {
+  if (item.classClaims === undefined) return {};
+  const seen = new Set<string>();
+  const claims = item.classClaims.filter((c) => {
+    if (seen.has(c.source)) return false;
+    seen.add(c.source);
+    return true;
+  });
+  return { classClaims: claims.slice(0, MAX_CLASS_CLAIMS) };
 }
 
 /**
@@ -653,7 +679,11 @@ export const importCanonical = internalMutation({
           // `name` + `nameClaims` + `searchText` together, because a moderator's pick outranks the
           // import and the three must never disagree. See `nameFields`.
           ...nameFields(existing, item),
-          type: item.type,
+          // A moderator's class outranks the catalogs' (B01-3d), as a moderator's name does; the
+          // import's own ranking is kept beside it, for a clear to put back.
+          type: existing.moderatorClass ?? item.type,
+          baseClass: item.type,
+          ...classClaimFields(item),
           // **`source` is deliberately NOT patched, and it is not the same question as
           // `geometrySource`** (second audit, 2026-08-06 — noted because this was "fixed" and then
           // un-fixed within the hour).
@@ -746,6 +776,8 @@ export const importCanonical = internalMutation({
         const id = await ctx.db.insert('waterBodies', {
           ...nameFields(undefined, item),
           type: item.type,
+          baseClass: item.type,
+          ...classClaimFields(item),
           source: item.source,
           externalId: item.externalId,
           // **Minted at insert, so no row is ever without one.** `mintWaterBodyKeys` exists to
@@ -3899,6 +3931,208 @@ export async function setCuratedBoostImpl(
   }
 }
 
+// ── A moderator's aliases and class (B01-3d) ───────────────────────────────────────────────────
+
+/** The most aliases a moderator adds to a body, and the longest one. */
+export const MAX_MODERATOR_ALIASES = 20;
+export const MAX_MODERATOR_ALIAS_CHARS = 120;
+
+/**
+ * A moderator's aliases, normalized once at the edge: each trimmed (inner whitespace collapsed), the
+ * empty dropped, de-duplicated case-insensitively against the display name and each other (the first
+ * spelling kept). Refused past {@link MAX_MODERATOR_ALIASES} or with one past
+ * {@link MAX_MODERATOR_ALIAS_CHARS} — never cut silently.
+ */
+export function normalizeModeratorAliases(aliases: readonly string[], name: string): string[] {
+  const seen = new Set<string>([name.trim().toLocaleLowerCase('en-US')]);
+  const out: string[] = [];
+  for (const raw of aliases) {
+    const alias = raw.replace(/\s+/g, ' ').trim();
+    if (alias === '') continue;
+    if (alias.length > MAX_MODERATOR_ALIAS_CHARS) {
+      throw new ConvexError(`An alias is at most ${MAX_MODERATOR_ALIAS_CHARS} characters`);
+    }
+    const key = alias.toLocaleLowerCase('en-US');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(alias);
+  }
+  if (out.length > MAX_MODERATOR_ALIASES) {
+    throw new ConvexError(`A body carries at most ${MAX_MODERATOR_ALIASES} moderator aliases`);
+  }
+  return out;
+}
+
+/**
+ * The body a moderator edits, refused when it was merged away (its survivor is the one to edit); a
+ * removed body stays editable. The one gate every B01-3d write on a body shares.
+ */
+export async function editableBody(
+  ctx: MutationCtx,
+  waterBodyId: Id<'waterBodies'>,
+): Promise<Doc<'waterBodies'>> {
+  const body = await ctx.db.get(waterBodyId);
+  const refused = editRefusal(body);
+  if (refused !== null || body === null) throw new ConvexError(refused ?? 'Water body not found');
+  return body;
+}
+
+/** Why {@link editableBody} refuses this body (missing, or merged away), or `null`. */
+export function editRefusal(body: Doc<'waterBodies'> | null): string | null {
+  if (!body) return 'Water body not found';
+  if (body.dedupStatus === 'merged') {
+    return 'This body was merged into another — edit the body it was merged into';
+  }
+  return null;
+}
+
+/** Moderator: set a body's own aliases (B01-3d) — an empty list clears them. */
+export const setAliases = mutation({
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    aliases: v.array(v.string()),
+    /** The list this edit was built on: refused, with the current list, if it moved. */
+    expected: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, { waterBodyId, aliases, expected }) => {
+    const actor = await requireCapability(ctx, 'body.identity');
+    return setAliasesImpl(ctx, actor, {
+      waterBodyId,
+      aliases,
+      ...(expected !== undefined ? { expected } : {}),
+    });
+  },
+});
+
+/** `setAliases`'s body, shared with its undo (D226): the undo is this write of the previous list. */
+export async function setAliasesImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    waterBodyId,
+    aliases,
+    reason,
+    expected,
+  }: {
+    waterBodyId: Id<'waterBodies'>;
+    aliases: readonly string[];
+    expected?: readonly string[];
+    reason?: string;
+  },
+): Promise<Id<'waterBodies'>> {
+  const body = await editableBody(ctx, waterBodyId);
+  assertListUnchanged(body.moderatorAliases ?? [], expected, 'this body’s aliases');
+  const next = normalizeModeratorAliases(aliases, body.name);
+  const prev = body.moderatorAliases ?? [];
+  await ctx.db.patch(waterBodyId, { moderatorAliases: next.length > 0 ? next : undefined });
+  await writeAudit(ctx, {
+    actorId: actor._id,
+    action: 'set_aliases',
+    targetType: 'waterbody',
+    targetId: waterBodyId,
+    reason:
+      reason ??
+      (next.length === 0
+        ? 'Cleared the moderator aliases'
+        : `Set ${next.length} alias${next.length === 1 ? '' : 'es'}`),
+    metadata: { moderatorAliases: next, prev: { moderatorAliases: prev } },
+    createdAt: Date.now(),
+  });
+  return waterBodyId;
+}
+
+/**
+ * The class an override set before `baseClass` was kept displaced: what the newest override's audit
+ * row recorded the body had (one bounded indexed read). `undefined` with no override to clear.
+ *
+ * Never the first class claim: the merge ranks the catalogs' classes by its own order (and demotes an
+ * unnamed bay with no parent), so the first claim is often not the class the import stored.
+ */
+async function classBeforeOverride(
+  ctx: MutationCtx,
+  body: Doc<'waterBodies'>,
+): Promise<Doc<'waterBodies'>['type'] | undefined> {
+  if (body.moderatorClass === undefined) return undefined;
+  const rows = await ctx.db
+    .query('moderationActions')
+    .withIndex('by_target_action', (q) =>
+      q.eq('targetType', 'waterbody').eq('targetId', body._id).eq('action', 'set_class'),
+    )
+    .order('desc')
+    .take(MAX_CLASS_HISTORY_READ);
+  const first = rows.find(
+    (r) =>
+      (r.metadata as { prev?: { moderatorClass?: unknown } } | undefined)?.prev?.moderatorClass ===
+      null,
+  );
+  return (first?.metadata as { prev?: { type?: Doc<'waterBodies'>['type'] } } | undefined)?.prev
+    ?.type;
+}
+
+/** `set_class` rows read back looking for the class before the override. */
+const MAX_CLASS_HISTORY_READ = 20;
+
+/** Moderator: set a body's class (B01-3d) — `null` returns it to the catalogs' ranking. */
+export const setClass = mutation({
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    bodyClass: v.union(literals(WATER_BODY_CLASSES), v.null()),
+  },
+  handler: async (ctx, { waterBodyId, bodyClass }) => {
+    const actor = await requireCapability(ctx, 'body.identity');
+    return setClassImpl(ctx, actor, { waterBodyId, bodyClass });
+  },
+});
+
+/**
+ * `setClass`'s body, shared with its undo: the moderator's class is its own fact (`moderatorClass`),
+ * never a catalog claim, and `type` follows it; clearing puts back the class without a moderator's
+ * (`baseClass` — the import's ranking, kept on every touch; on a body no import touched, the class
+ * the first override displaced, kept here). The audit row records both so the undo is this write of
+ * the previous state.
+ */
+export async function setClassImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    waterBodyId,
+    bodyClass,
+    catalogClass,
+    reason,
+  }: {
+    waterBodyId: Id<'waterBodies'>;
+    bodyClass: Doc<'waterBodies'>['type'] | null;
+    /** The class to put back on a clear, when the undo knows it (the class before the override). */
+    catalogClass?: Doc<'waterBodies'>['type'];
+    reason?: string;
+  },
+): Promise<Id<'waterBodies'>> {
+  const body = await editableBody(ctx, waterBodyId);
+  const prev = { moderatorClass: body.moderatorClass ?? null, type: body.type };
+  // With no moderator's class, `type` is the class without one — kept, so a clear can put it back
+  // even on a body no import keeps it for (a drawn one).
+  const baseClass = body.baseClass ?? (body.moderatorClass === undefined ? body.type : undefined);
+  const restored =
+    bodyClass ?? baseClass ?? catalogClass ?? (await classBeforeOverride(ctx, body)) ?? body.type;
+  await ctx.db.patch(waterBodyId, {
+    type: restored,
+    moderatorClass: bodyClass ?? undefined,
+    ...(body.baseClass === undefined && baseClass !== undefined ? { baseClass } : {}),
+  });
+  await writeAudit(ctx, {
+    actorId: actor._id,
+    action: 'set_class',
+    targetType: 'waterbody',
+    targetId: waterBodyId,
+    reason:
+      reason ??
+      (bodyClass === null ? 'Cleared the class override' : `Set the class to ${bodyClass}`),
+    metadata: { moderatorClass: bodyClass, type: restored, prev },
+    createdAt: Date.now(),
+  });
+  return waterBodyId;
+}
+
 /**
  * Moderator: set a body's operator-entered reference links (A06c Workstream §2.7).
  *
@@ -3918,10 +4152,16 @@ export const setReferenceLinks = mutation({
   args: {
     waterBodyId: v.id('waterBodies'),
     links: v.array(v.object({ label: v.string(), url: v.string() })),
+    /** The list this edit was built on (B01-3d): refused, with the current list, if it moved. */
+    expected: v.optional(v.array(v.object({ label: v.string(), url: v.string() }))),
   },
-  handler: async (ctx, { waterBodyId, links }) => {
+  handler: async (ctx, { waterBodyId, links, expected }) => {
     const actor = await requireCapability(ctx, 'body.identity');
-    return setReferenceLinksImpl(ctx, actor, { waterBodyId, links });
+    return setReferenceLinksImpl(ctx, actor, {
+      waterBodyId,
+      links,
+      ...(expected !== undefined ? { expected } : {}),
+    });
   },
 });
 
@@ -3932,16 +4172,23 @@ export async function setReferenceLinksImpl(
   {
     waterBodyId,
     links,
+    expected,
     reason,
   }: {
     waterBodyId: Id<'waterBodies'>;
     links: { label: string; url: string }[];
+    expected?: { label: string; url: string }[];
     reason?: string;
   },
 ): Promise<Id<'waterBodies'>> {
   {
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
+    assertListUnchanged(
+      (body.referenceLinks ?? []).map((l) => ({ label: l.label, url: l.url })),
+      expected,
+      'this body’s reference links',
+    );
     if (links.length > MAX_REFERENCE_LINKS) {
       throw new ConvexError(
         `A body carries at most ${MAX_REFERENCE_LINKS} reference links — this is an association or two, not a directory.`,
@@ -4066,12 +4313,37 @@ export async function setSatelliteImageryImpl(
  * avoiding. An empty array clears back to the centroid default.
  */
 export const setWeatherSamplePoints = mutation({
-  args: { waterBodyId: v.id('waterBodies'), points: v.array(latLng) },
-  handler: async (ctx, { waterBodyId, points }) => {
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    points: v.array(latLng),
+    /** The points this edit was built on: refused, with the current points, if they moved. */
+    expected: v.optional(v.array(latLng)),
+  },
+  handler: async (ctx, { waterBodyId, points, expected }) => {
     const actor = await requireCapability(ctx, 'body.water');
-    return setWeatherSamplePointsImpl(ctx, actor, { waterBodyId, points });
+    return setWeatherSamplePointsImpl(ctx, actor, {
+      waterBodyId,
+      points,
+      ...(expected !== undefined ? { expected } : {}),
+    });
   },
 });
+
+/**
+ * Why a grid of sample points is refused on this body as it stands, or `null` — one rule for the
+ * write and for whether its undo is offered (B01-3d): too many points, or one off the outline (an
+ * outline redrawn or re-imported since can leave a recorded grid on land).
+ */
+export function samplePointsRefusal(body: Doc<'waterBodies'>, points: LatLng[]): string | null {
+  if (points.length > MAX_SUGGESTED_SAMPLE_POINTS) {
+    return `A body can carry at most ${MAX_SUGGESTED_SAMPLE_POINTS} sample points — each one is a forecast fetch and a cache row.`;
+  }
+  const polygon = body.polygon as unknown as Polygon | MultiPolygon;
+  const offWater = points.findIndex((point) => !pointInPolygon(point, polygon));
+  if (offWater < 0) return null;
+  const bad = points[offWater];
+  return `Sample point ${offWater + 1} (${bad?.lat.toFixed(4)}, ${bad?.lng.toFixed(4)}) isn't on ${body.name}. A point on land returns a real forecast for the wrong surface.`;
+}
 
 /**
  * `setWeatherSamplePoints`'s body, shared with its undo (D226). The grid it replaces goes to
@@ -4084,25 +4356,19 @@ export async function setWeatherSamplePointsImpl(
     waterBodyId,
     points,
     reason,
-  }: { waterBodyId: Id<'waterBodies'>; points: LatLng[]; reason?: string },
+    expected,
+  }: { waterBodyId: Id<'waterBodies'>; points: LatLng[]; expected?: LatLng[]; reason?: string },
 ): Promise<Id<'waterBodies'>> {
   {
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
-    if (points.length > MAX_SUGGESTED_SAMPLE_POINTS) {
-      throw new ConvexError(
-        `A body can carry at most ${MAX_SUGGESTED_SAMPLE_POINTS} sample points — each one is a forecast fetch and a cache row.`,
-      );
-    }
-
-    const polygon = body.polygon as unknown as Polygon | MultiPolygon;
-    const offWater = points.findIndex((point) => !pointInPolygon(point, polygon));
-    if (offWater >= 0) {
-      const bad = points[offWater];
-      throw new ConvexError(
-        `Sample point ${offWater + 1} (${bad?.lat.toFixed(4)}, ${bad?.lng.toFixed(4)}) isn't on ${body.name}. A point on land returns a real forecast for the wrong surface.`,
-      );
-    }
+    assertListUnchanged(
+      (body.weatherSamplePoints ?? []).map((p) => ({ lat: p.lat, lng: p.lng })),
+      expected?.map((p) => ({ lat: p.lat, lng: p.lng })),
+      'this body’s weather sample points',
+    );
+    const refused = samplePointsRefusal(body, points);
+    if (refused !== null) throw new ConvexError(refused);
 
     // Empty clears the field rather than storing `[]`, so `nearestSamplePoint`'s "absent ⇒ centroid"
     // default is the one code path for "this body doesn't need a grid".
@@ -4244,6 +4510,160 @@ export const setDepth = mutation({
     return waterBodyId;
   },
 });
+
+// ── A moderator's choice of depth source (B01-3d) ──────────────────────────────────────────────
+
+/**
+ * A body's depth choices for one measure: every candidate the ladder kept, or — for a body whose
+ * depths loaded before candidates were kept — the stored winner alone. One rule for what the Water
+ * tab offers and what `chooseDepthSource` accepts.
+ */
+export function depthChoicesOf(
+  body: Doc<'waterBodies'>,
+  measure: 'mean' | 'max',
+): { source: DepthSource; valueM: number }[] {
+  const kept = (body.depthCandidates ?? []).filter((c) => c.measure === measure);
+  const stored =
+    measure === 'mean'
+      ? { source: body.meanDepthSource, valueM: body.meanDepthM }
+      : { source: body.maxDepthSource, valueM: body.maxDepthM };
+  const out = kept.map((c) => ({ source: c.source, valueM: c.valueM }));
+  if (
+    stored.source !== undefined &&
+    stored.valueM !== undefined &&
+    stored.source !== 'operator' &&
+    !out.some((c) => c.source === stored.source)
+  ) {
+    out.push({ source: stored.source, valueM: stored.valueM });
+  }
+  return out.sort((a, b) => DEPTH_SOURCE_RANK[a.source] - DEPTH_SOURCE_RANK[b.source]);
+}
+
+/**
+ * Moderator: choose which source a body's mean or max depth reads from (B01-3d, `body.water`) —
+ * `source: null` hands the measure back to the ladder (the best-ranked candidate that leaves the mean
+ * no deeper than the max; none, and the value stays until the next load decides). A depth is a fact
+ * about the lake's basin; choosing one says nothing about ice.
+ */
+export const chooseDepthSource = mutation({
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    measure: literals(['mean', 'max']),
+    source: v.union(literals(DEPTH_SOURCES), v.null()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await requireCapability(ctx, 'body.water');
+    return chooseDepthSourceImpl(ctx, actor, args);
+  },
+});
+
+/**
+ * What choosing `source` for a measure settles on the body as it stands, or why it is refused — one
+ * rule for the write and for whether its undo is offered (B01-3d): a typed (operator) depth; a source
+ * with no value for the measure (a loader run can take one away); a value that would leave the mean
+ * deeper than the max. A hand-back (`null`) takes the best-ranked candidate the pair allows, as the
+ * ladder settles it — the best-ranked alone could be the one the ladder dropped for inverting the
+ * pair, which would refuse the hand-back (and the undo of a first choice) on a body the ladder had
+ * settled.
+ */
+export function depthChoiceOutcome(
+  body: Doc<'waterBodies'>,
+  measure: 'mean' | 'max',
+  source: DepthSource | null,
+): { pick: { source: DepthSource; valueM: number } | null } | { refusal: string } {
+  const storedSource = measure === 'mean' ? body.meanDepthSource : body.maxDepthSource;
+  if (storedSource === 'operator') {
+    return { refusal: 'A moderator typed this depth — clear it before choosing a source' };
+  }
+  const choices = depthChoicesOf(body, measure);
+  const other = measure === 'mean' ? body.maxDepthM : body.meanDepthM;
+  // Whether a value keeps the pair valid — a mean never deeper than the max.
+  const pairHolds = (valueM: number) =>
+    other === undefined || (measure === 'mean' ? valueM <= other : other <= valueM);
+  const pick =
+    source === null
+      ? (choices.find((c) => pairHolds(c.valueM)) ?? null)
+      : (choices.find((c) => c.source === source) ?? null);
+  if (source !== null && pick === null)
+    return { refusal: 'That source has no depth for this body' };
+  if (pick !== null && !pairHolds(pick.valueM)) {
+    return { refusal: 'That depth would leave the mean deeper than the max' };
+  }
+  return { pick };
+}
+
+/**
+ * `chooseDepthSource`'s body, shared with its undo (the same write of the previous choice). Refused:
+ * a merged-away body; a measure an operator typed (clear it first — the operator rung outranks every
+ * source); a source with no candidate for the measure; a choice that would leave the mean deeper than
+ * the max.
+ */
+export async function chooseDepthSourceImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    waterBodyId,
+    measure,
+    source,
+    reason,
+  }: {
+    waterBodyId: Id<'waterBodies'>;
+    measure: 'mean' | 'max';
+    source: DepthSource | null;
+    reason?: string;
+  },
+): Promise<Id<'waterBodies'>> {
+  const body = await editableBody(ctx, waterBodyId);
+  const storedSource = measure === 'mean' ? body.meanDepthSource : body.maxDepthSource;
+  const settled = depthChoiceOutcome(body, measure, source);
+  if ('refusal' in settled) throw new ConvexError(settled.refusal);
+  const { pick } = settled;
+  const valueField = measure === 'mean' ? 'meanDepthM' : 'maxDepthM';
+  const sourceField = measure === 'mean' ? 'meanDepthSource' : 'maxDepthSource';
+  const prev = {
+    choice: body.depthChoice?.[measure] ?? null,
+    valueM: (measure === 'mean' ? body.meanDepthM : body.maxDepthM) ?? null,
+    source: storedSource ?? null,
+  };
+  const choice = { ...(body.depthChoice ?? {}) };
+  if (source === null) delete choice[measure];
+  else choice[measure] = source;
+  // A body whose depths loaded before candidates were kept holds its winners only on the depth
+  // fields: kept as candidates before a choice replaces one, so handing back or undoing restores
+  // them (Greptile on #126).
+  const kept = [...(body.depthCandidates ?? [])];
+  for (const m of ['mean', 'max'] as const) {
+    const storedValue = m === 'mean' ? body.meanDepthM : body.maxDepthM;
+    const stored = m === 'mean' ? body.meanDepthSource : body.maxDepthSource;
+    if (
+      stored !== undefined &&
+      stored !== 'operator' &&
+      storedValue !== undefined &&
+      !kept.some((c) => c.measure === m && c.source === stored)
+    ) {
+      kept.push({ measure: m, source: stored, valueM: storedValue });
+    }
+  }
+  await ctx.db.patch(waterBodyId, {
+    ...(kept.length > 0 ? { depthCandidates: kept } : {}),
+    ...(pick !== null ? { [valueField]: pick.valueM, [sourceField]: pick.source } : {}),
+    depthChoice: choice.mean === undefined && choice.max === undefined ? undefined : choice,
+  });
+  await writeAudit(ctx, {
+    actorId: actor._id,
+    action: 'choose_depth_source',
+    targetType: 'waterbody',
+    targetId: waterBodyId,
+    reason:
+      reason ??
+      (source === null
+        ? `Handed the ${measure} depth back to the ladder`
+        : `Chose ${source} for the ${measure} depth`),
+    metadata: { measure, choice: source, valueM: pick?.valueM ?? null, prev },
+    createdAt: Date.now(),
+  });
+  return waterBodyId;
+}
 
 /** The depth fields a `set_lake_depth` row records as `prev`, and its undo puts back. */
 export type DepthFields = Pick<
@@ -4799,6 +5219,16 @@ async function applyDepthLadder(
   const rejectedValues: string[] = [];
   const inversions: string[] = [];
   let operatorHeld = false;
+  // Every plausible offer is kept as a candidate (B01-3d), whatever the ladder does with it.
+  const candidates = [...(body.depthCandidates ?? [])];
+  const noteCandidate = (measure: 'mean' | 'max', source: DepthSource, valueM: number) => {
+    const at = candidates.findIndex((c) => c.measure === measure && c.source === source);
+    if (at >= 0) {
+      if (candidates[at]?.valueM === valueM) return;
+      candidates[at] = { measure, source, valueM };
+    } else candidates.push({ measure, source, valueM });
+    patch.depthCandidates = candidates;
+  };
 
   const consider = (
     label: 'mean' | 'max',
@@ -4807,11 +5237,20 @@ async function applyDepthLadder(
     existing: DepthSource | undefined,
   ): { valueM: number; source: DepthSource } | undefined => {
     if (value === undefined || source === undefined) return undefined;
-    if (!winsLadder(source, existing)) {
+    const plausible = Number.isFinite(value) && value > 0 && value <= MAX_PLAUSIBLE_DEPTH_M;
+    if (plausible) noteCandidate(label, source, value);
+    // A moderator chose this measure's source: only that source moves it (its fresher value), and an
+    // operator's rung still holds it — reported, and an implausible value refused, as on the ladder.
+    const chosen = body.depthChoice?.[label];
+    const admitted =
+      chosen === undefined
+        ? winsLadder(source, existing)
+        : source === chosen && existing !== 'operator';
+    if (!admitted) {
       if (existing === 'operator') operatorHeld = true;
       return undefined;
     }
-    if (!Number.isFinite(value) || value <= 0 || value > MAX_PLAUSIBLE_DEPTH_M) {
+    if (!plausible) {
       rejectedValues.push(`${label} ${value}`);
       return undefined;
     }
@@ -4849,12 +5288,15 @@ async function applyDepthLadder(
     patch.maxDepthSource = undefined;
   }
 
+  // A new candidate alone is stored, but is not a changed depth: the run's counts and the library
+  // refresh follow the depth itself, as before candidates were kept (B01-3d).
+  const depthChanged = Object.keys(patch).some((k) => k !== 'depthCandidates');
   if (Object.keys(patch).length === 0) {
     return { changed: false, operatorHeld, rejectedValues, inversions };
   }
   await ctx.db.patch(body._id, patch);
-  await queueLibraryRefresh(ctx, [body._id]);
-  return { changed: true, operatorHeld, rejectedValues, inversions };
+  if (depthChanged) await queueLibraryRefresh(ctx, [body._id]);
+  return { changed: depthChanged, operatorHeld, rejectedValues, inversions };
 }
 
 /** One measurement as the pair check sees it: what would be written, or what is already there. */

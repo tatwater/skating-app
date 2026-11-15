@@ -15,12 +15,13 @@ import type { Doc, Id } from '../_generated/dataModel';
 import { setOfficialImpl } from '../accessAlerts';
 import { setPutInAccessImpl } from '../accessPoints';
 import { type ElevatedRole, grantRoleImpl, revokeRoleImpl } from '../admin';
-import { demoteImpl } from '../bodyFeatures';
+import { demoteImpl, type FeatureShape, shapeRefusal, updateShapeImpl } from '../bodyFeatures';
 import { unmergeImpl } from '../hazards';
 import { type PostedAccessTarget, setPostedAccessImpl } from '../postedAccess';
 import { suppressImpl, unsuppressImpl } from '../recurrence';
-import type { ModerationAction, ModerationTargetType } from './audit';
+import { type ModerationAction, type ModerationTargetType, readSnapshot } from './audit';
 import { grantLedgerEditorImpl, revokeLedgerEditorImpl } from './ledgerEditors';
+import { ROW_MAX } from './readBudget';
 import { UNDO_POLICY } from './undoPolicy';
 import { meta, PREDATES, type TargetUndo, type UndoCall, type UndoHandler } from './undoTypes';
 
@@ -228,6 +229,35 @@ const undoPromotion: UndoHandler = {
     demoteImpl(ctx, actor, { bodyFeatureId: row.targetId as Id<'bodyFeatures'>, reason }),
 };
 
+/** update_body_feature_shape → the shape it replaced (the row's snapshot), through the same write. */
+const undoFeatureShape: UndoHandler = {
+  blocked: (row) => (meta(row).prev?.snapshot === true ? null : PREDATES),
+  undoTakesAway: () => UNDO_POLICY.update_body_feature_shape.takesAway(undefined),
+  // A merge moves the feature to the survivor's box, and a redrawn or re-imported outline can leave
+  // the shape it puts back off the lake — neither writes a row on the feature, so the shape is
+  // checked against the rows as they stand, by the redraw's own rule.
+  refusalCost: { bytes: ROW_MAX.bodyFeature + ROW_MAX.waterBody, reads: 2 },
+  refusal: async (ctx, row, read) => {
+    const id = ctx.db.normalizeId('bodyFeatures', row.targetId);
+    const feature = id ? await read('bodyFeature', id) : null;
+    const body = feature ? await read('waterBody', feature.waterBodyId) : null;
+    const unshaped = shapeRefusal(feature, body);
+    if (unshaped !== null) return unshaped;
+    const prev = await readSnapshot<FeatureShape>(ctx, row._id);
+    if (prev === null) return PREDATES;
+    return shapeRefusal(feature, body, prev);
+  },
+  run: async ({ ctx, actor, row, reason }) => {
+    const prev = await readSnapshot<FeatureShape>(ctx, row._id);
+    if (prev === null) throw new ConvexError(PREDATES);
+    await updateShapeImpl(ctx, actor, {
+      bodyFeatureId: row.targetId as Id<'bodyFeatures'>,
+      shape: prev,
+      reason,
+    });
+  },
+};
+
 interface SuppressionPrev {
   suppressedAt: number | null;
 }
@@ -290,6 +320,7 @@ export const CORPUS_UNDO_HANDLERS: Partial<Record<ModerationAction, UndoHandler>
   set_approach_kind: undoApproachKind,
   set_posted_access: undoPostedAccess,
   promote_body_feature: undoPromotion,
+  update_body_feature_shape: undoFeatureShape,
   promote_recurrence: undoPromotion,
   suppress_recurrence: undoSuppress,
   unsuppress_recurrence: undoUnsuppress,

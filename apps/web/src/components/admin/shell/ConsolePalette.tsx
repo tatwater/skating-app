@@ -14,8 +14,7 @@ import { CONSOLE_MODES, LEGACY_PAGES } from './consoleNav';
  * searched on the server as the operator types (nothing is filtered in the browser but the
  * console's own short list of places). Each group shows only what the viewer may open (D217).
  *
- * A body opens its Body console; until People lands, a person opens the old user page — the page
- * that holds them today.
+ * A body opens its Body console; a person opens their page in People.
  */
 
 /** How long typing rests before the server is asked. */
@@ -136,8 +135,9 @@ export function ConsolePalette({
       placeholder="Find a body, a person or a page"
       onSelect={(item) => {
         if (item.id.startsWith('body:')) onGo({ to: `/admin/body/${item.id.slice(5)}` });
-        else if (item.id.startsWith('person:')) onGo({ to: `/admin/users/${item.id.slice(7)}` });
-        else onGo({ to: item.id });
+        else if (item.id.startsWith('person:')) {
+          onGo({ to: `/admin/people/${encodeURIComponent(item.id.slice(7))}` });
+        } else onGo({ to: item.id });
         setQuery('');
       }}
     />

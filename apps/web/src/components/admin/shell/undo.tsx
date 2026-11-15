@@ -25,9 +25,10 @@ import type { AuditTarget } from './actionLabels';
  * the undo needs a reason, and "a later write means no undo" — so this is only the receipts and
  * the one question:
  *
- * - **`announce`**, after an action lands: asks the server for the caller's own newest action on
- *   the target (`undo.latestOwn`) and shows the receipt toast, with Undo (⌘Z) while the server
- *   offers one. Undo is never drawn when the server would refuse it.
+ * - **`announce`**, after an action lands: shows the receipt toast, with Undo (⌘Z) while the server
+ *   offers one. A write that answered with its own audit row and whether undoing it asks a reason
+ *   needs nothing more; otherwise the toast asks the server for the caller's own newest action on
+ *   the target (`undo.latestOwn`) first. Undo is never drawn when the server would refuse it.
  * - **`undo`**, from the toast or a History row: runs `undo.run`. When the undo takes something
  *   away from skaters it asks the reason first, in the reason dialog; restoring asks nothing.
  * - **A refusal is the server's own words.** Someone acted on the same thing since, the row was
@@ -46,6 +47,14 @@ export type Receipt = {
   description?: ReactNode;
   /** What it was done to: where the server looks for the caller's action to undo. */
   target: UndoTarget;
+  /**
+   * The write's own audit row, when the write answered with it — then the toast needs no lookup:
+   * the row is the caller's newest on the target by construction. Used only together with
+   * {@link Receipt.undoNeedsReason}; a row without it falls back to the lookup, which says both.
+   */
+  actionId?: string;
+  /** Whether undoing the write takes something away from skaters (and so asks why). */
+  undoNeedsReason?: boolean;
 };
 
 type UndoRequest = {
@@ -148,15 +157,28 @@ export function UndoProvider({
   );
 
   const announce = useCallback(
-    async ({ title, description, target }: Receipt, here?: () => boolean) => {
-      let latest: Awaited<ReturnType<UndoServer['latestOwn']>> = null;
-      try {
-        latest = await server.latestOwn(target);
-      } catch {
-        // The receipt still shows; only its Undo is left off (History keeps the row).
+    async (
+      { title, description, target, actionId, undoNeedsReason }: Receipt,
+      here?: () => boolean,
+    ) => {
+      let offered: { actionId: string; undo: { needsReason?: boolean } } | null = null;
+      if (actionId !== undefined && undoNeedsReason !== undefined) {
+        // The write named its own row and what undoing it asks: no lookup. Were someone to act on
+        // the same thing in the moment between, the undo's run refuses in the server's own words.
+        offered = { actionId, undo: { needsReason: undoNeedsReason } };
+      } else {
+        let latest: Awaited<ReturnType<UndoServer['latestOwn']>> = null;
+        try {
+          latest = await server.latestOwn(target);
+        } catch {
+          // The receipt still shows; only its Undo is left off (History keeps the row).
+        }
+        // Another staffer acting on it since leaves the caller's row overtaken: no Undo.
+        offered = latest !== null && latest.undo.state === 'available' ? latest : null;
       }
+      // The console that asked for the receipt has gone (after the lookup's round trip, or before
+      // a write's own row came back): no receipt over whatever stands there now.
       if (here !== undefined && !here()) return;
-      const offered = latest !== null && latest.undo.state === 'available' ? latest : null;
       toast(
         {
           title,

@@ -167,6 +167,56 @@ describe('the receipt toast', () => {
   });
 });
 
+describe('a receipt that names its own row', () => {
+  it('needs no lookup, and undoes that row', async () => {
+    const own = { ...receipt, actionId: 'w1', undoNeedsReason: false };
+    render(<Harness server={server} receipt={own} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Hide it' }));
+    await userEvent.click(await screen.findByRole('button', { name: /^Undo/ }));
+    expect(server.latestOwn).not.toHaveBeenCalled();
+    expect(server.run).toHaveBeenCalledWith({ actionId: 'w1' });
+  });
+
+  it('names its row and keeps the binding guard: a console already gone shows no receipt, and no lookup', async () => {
+    const own = { ...receipt, actionId: 'w1', undoNeedsReason: false };
+    render(<Harness server={server} receipt={own} here={() => false} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Hide it' }));
+    await act(async () => new Promise((r) => setTimeout(r, 0)));
+    expect(server.latestOwn).not.toHaveBeenCalled();
+    expect(screen.queryByText('Hidden · “Black ice at the beach”')).toBeNull();
+  });
+
+  it('asks the reason first when its undo takes something away', async () => {
+    const own = { ...receipt, actionId: 'w1', undoNeedsReason: true };
+    render(<Harness server={server} receipt={own} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Hide it' }));
+    await userEvent.click(await screen.findByRole('button', { name: /^Undo/ }));
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+    expect(server.latestOwn).not.toHaveBeenCalled();
+    expect(server.run).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the lookup when it names its row but not what undoing asks', async () => {
+    render(<Harness server={server} receipt={{ ...receipt, actionId: 'w1' }} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Hide it' }));
+    await userEvent.click(await screen.findByRole('button', { name: /^Undo/ }));
+    expect(server.latestOwn).toHaveBeenCalledWith(TARGET);
+    expect(server.run).toHaveBeenCalledWith({ actionId: 'a1' });
+  });
+
+  it('without its row, shows no Undo when another staffer acted in between', async () => {
+    server.latestOwn.mockResolvedValue({
+      actionId: 'a1',
+      undo: { state: 'overtaken', byActionId: 'a2' },
+    });
+    render(<Harness server={server} receipt={receipt} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Hide it' }));
+    await toastNamed('Hidden · “Black ice at the beach”');
+    expect(server.latestOwn).toHaveBeenCalledWith(TARGET);
+    expect(screen.queryByRole('button', { name: /^Undo/ })).toBeNull();
+  });
+});
+
 describe('the reason dialog', () => {
   it('waits for a reason, then undoes with it', async () => {
     render(<Harness server={server} receipt={receipt} />);

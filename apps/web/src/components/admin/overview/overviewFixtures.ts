@@ -216,6 +216,7 @@ export const HOME: OverviewHomeData = {
     appealsOpen: { count: 1, capped: false },
     leaving: { count: 0, capped: false },
     totalUsers: { count: 38, capped: false },
+    pending: [],
   },
   feed: FEED,
 };

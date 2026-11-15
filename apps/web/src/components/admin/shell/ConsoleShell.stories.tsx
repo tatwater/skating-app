@@ -209,7 +209,7 @@ export const GoMode: Story = {
     await userEvent.keyboard('g');
     await waitFor(() => expect(shell).toHaveAttribute('data-go'));
     const chips = [...shell.querySelectorAll('[data-slot="rail-go"]')].map((c) => c.textContent);
-    await expect(chips).toEqual(['GO', 'GB', 'GL', 'GA']);
+    await expect(chips).toEqual(['GO', 'GB', 'GP', 'GL', 'GA']);
     await userEvent.keyboard('l');
     const menu = await within(document.body).findByRole('menu');
     await expect(await within(menu).findAllByRole('menuitem')).toHaveLength(LEGACY_PAGES.length);

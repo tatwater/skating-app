@@ -222,15 +222,28 @@ export async function reportFactsFor(
   return { reports, reportsCapped, season, everReported, newest };
 }
 
-/** The names a body is also known by: every claim but its displayed name, once each. */
-export function aliasesOf(body: Pick<Doc<'waterBodies'>, 'name' | 'nameClaims'>): string[] {
+/**
+ * The names a body is also known by: every claim but its displayed name, then a moderator's own
+ * aliases (B01-3d), once each — a moderator's alias already a claim's (case aside) is not repeated.
+ */
+export function aliasesOf(
+  body: Pick<Doc<'waterBodies'>, 'name' | 'nameClaims' | 'moderatorAliases'>,
+): string[] {
   const seen = new Set<string>();
+  const folded = new Set<string>([body.name.trim().toLocaleLowerCase('en-US')]);
   const out: string[] = [];
   for (const claim of body.nameClaims ?? []) {
     const value = claim.value.trim();
     if (value === '' || value === body.name || seen.has(value)) continue;
     seen.add(value);
+    folded.add(value.toLocaleLowerCase('en-US'));
     out.push(value);
+  }
+  for (const alias of body.moderatorAliases ?? []) {
+    const key = alias.toLocaleLowerCase('en-US');
+    if (folded.has(key)) continue;
+    folded.add(key);
+    out.push(alias);
   }
   return out;
 }
