@@ -15,6 +15,7 @@ import { LEDGER_NEUTRAL_REFUSAL } from './lib/peopleCan';
 import { markReady, refreshPersonRow } from './lib/peopleRows';
 import { ReadBudget } from './lib/readBudget';
 import { readTenure } from './lib/staffTenure';
+import { MIRRORS_CHECKED } from './peopleJobs';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -1026,6 +1027,58 @@ describe('lib/staffTenure at its edges', () => {
   });
 });
 
+describe('a page bounded by its end holds at most the cap and says where to split, on every lane', () => {
+  test('a range holding more rows than the cap: capped, with a split signal', async () => {
+    const t = await setup();
+    await seed(t, 'adm', { role: 'admin' });
+    // 205 suspended moderators, all matching one search: in Everyone, Staff, Suspended and the search.
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 205; i++) {
+        const id = await ctx.db.insert('profiles', {
+          clerkUserId: `m${i}`,
+          displayName: `skater ${String(i).padStart(3, '0')}`,
+          username: `m${String(i).padStart(3, '0')}`,
+          driveTimePrefMinutes: 60,
+          profileVisibility: 'public' as const,
+          notificationPrefs: NOTIF_PREFS,
+          dateOfBirth: Date.UTC(1990, 0, 1),
+          reputationPoints: 0,
+          role: 'moderator' as const,
+          status: 'suspended' as const,
+          suspendedUntil: T0 + DAY + i,
+          createdAt: T0 - 30 * DAY,
+        });
+        await refreshPersonRow(ctx, id);
+      }
+    });
+    const a = as(t, 'adm');
+    const cases: Array<{ lane: string; search?: string }> = [
+      { lane: 'everyone' },
+      { lane: 'staff' },
+      { lane: 'suspended' },
+      { lane: 'everyone', search: 'skater' },
+    ];
+    for (const c of cases) {
+      // The range's end: read it through by pages of 100.
+      let cursor: string | null = null;
+      let end = '';
+      for (let i = 0; i < 4; i++) {
+        const page: { continueCursor: string; isDone: boolean } = await a.query(
+          api.people.listPage,
+          { ...c, pageSize: 100, cursor },
+        );
+        end = page.continueCursor;
+        cursor = page.continueCursor;
+        if (page.isDone) break;
+      }
+      const bounded = await a.query(api.people.listPage, { ...c, cursor: null, endCursor: end });
+      expect(bounded.rows.length, c.lane).toBeLessThanOrEqual(200);
+      expect(bounded.isDone, c.lane).toBe(false);
+      expect((bounded as { pageStatus?: string }).pageStatus, c.lane).toMatch(/^Split/);
+    }
+  });
+});
+
 // ── staffStats: who undid, and the time bound ──
 
 describe('people.staffStats', () => {
@@ -1123,6 +1176,84 @@ describe('a parked lapse is a small row Machinery counts', () => {
       parked: 0,
     });
     void adm;
+  });
+});
+
+describe('the mirror check laps: kept mirrors never hold a stale one behind them', () => {
+  test('more kept mirrors than a page, a stale one behind: reached within two daily runs', async () => {
+    const t = await setup();
+    const kept = MIRRORS_CHECKED + 5;
+    const staleKey = await t.run(async (ctx) => {
+      for (let i = 0; i < kept; i++) {
+        // Parked, but in their deletion window: the retry passes them by and the check keeps them.
+        const id = await ctx.db.insert('profiles', {
+          clerkUserId: `k${i}`,
+          displayName: `k${i}`,
+          username: `k${i}`,
+          driveTimePrefMinutes: 60,
+          profileVisibility: 'public' as const,
+          notificationPrefs: NOTIF_PREFS,
+          dateOfBirth: Date.UTC(1990, 0, 1),
+          reputationPoints: 0,
+          role: 'member' as const,
+          status: 'suspended' as const,
+          suspendedUntil: T0 - DAY,
+          deletionRequestedAt: T0 - DAY,
+          lapseAttempts: 3,
+          lapseErrorClass: 'x',
+          lapseParkedAt: T0 - 5 * DAY,
+          createdAt: T0 - 30 * DAY,
+        });
+        await ctx.db.insert('jobFailures', {
+          job: 'lapses',
+          key: id,
+          attempts: 3,
+          errorClass: 'x',
+          firstFailedAt: T0 - 9 * DAY,
+          lastFailedAt: T0 - 9 * DAY + i,
+          parkedAt: T0 - 9 * DAY,
+        });
+      }
+      // A mirror whose lapse went another way (the account is active now), newest of all.
+      const gone = await ctx.db.insert('profiles', {
+        clerkUserId: 'gone',
+        displayName: 'gone',
+        username: 'gone',
+        driveTimePrefMinutes: 60,
+        profileVisibility: 'public' as const,
+        notificationPrefs: NOTIF_PREFS,
+        dateOfBirth: Date.UTC(1990, 0, 1),
+        reputationPoints: 0,
+        role: 'member' as const,
+        status: 'active' as const,
+        createdAt: T0 - 30 * DAY,
+      });
+      await ctx.db.insert('jobFailures', {
+        job: 'lapses',
+        key: gone,
+        attempts: 3,
+        errorClass: 'x',
+        firstFailedAt: T0 - DAY,
+        lastFailedAt: T0 - DAY,
+        parkedAt: T0 - DAY,
+      });
+      return gone as string;
+    });
+    const staleLeft = async () =>
+      (await t.run((ctx) => ctx.db.query('jobFailures').collect())).some((f) => f.key === staleKey);
+    // Each run walks every parked lapse (a few a pass, chained), then checks a page of mirrors.
+    vi.useFakeTimers();
+    let runs = 0;
+    while ((await staleLeft()) && runs < 2) {
+      vi.setSystemTime(T0 + runs * DAY);
+      await t.mutation(internal.peopleJobs.retryLapsedDaily, {});
+      await t.finishAllScheduledFunctions(vi.runAllTimers, 200);
+      runs++;
+    }
+    expect(await staleLeft()).toBe(false);
+    // The kept ones are all still there.
+    const left = await t.run((ctx) => ctx.db.query('jobFailures').collect());
+    expect(left).toHaveLength(kept);
   });
 });
 

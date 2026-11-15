@@ -458,7 +458,13 @@ function sliceByKey<T>(
   cursor: string | null,
   endCursor: string | null,
   pageSize: number,
-): { slice: T[]; isDone: boolean; continueCursor: string } {
+): {
+  slice: T[];
+  isDone: boolean;
+  continueCursor: string;
+  splitCursor?: string;
+  pageStatus?: 'SplitRequired';
+} {
   // In the key's own order, whatever order the rows were read in (an index breaks a tie by creation
   // time, the key by id): a page cut by position and the next found by key must agree, or a tie
   // straddling the cut is skipped or repeated.
@@ -469,9 +475,21 @@ function sliceByKey<T>(
     ? ordered.slice(Number(cursor))
     : ordered.filter((r) => from === null || compareKeys(keyOf(r), from) > 0);
   const to = endCursor === null ? null : parseKey(endCursor);
-  const slice =
-    to !== null ? after.filter((r) => compareKeys(keyOf(r), to) <= 0) : after.slice(0, pageSize);
+  const bounded = to !== null ? after.filter((r) => compareKeys(keyOf(r), to) <= 0) : null;
+  // A bounded page that grew past the cap returns the cap and where to split it — Convex's own
+  // `SplitRequired` — so the client reads `(cursor, splitCursor]` and `(splitCursor, endCursor]`.
+  const split = bounded !== null && bounded.length > END_ROWS;
+  const slice = bounded === null ? after.slice(0, pageSize) : bounded.slice(0, END_ROWS);
   const last = slice[slice.length - 1];
+  if (split && last !== undefined) {
+    return {
+      slice,
+      isDone: false,
+      continueCursor: endCursor as string,
+      splitCursor: JSON.stringify(keyOf(last)),
+      pageStatus: 'SplitRequired',
+    };
+  }
   return {
     slice,
     isDone: slice.length === after.length,
@@ -565,6 +583,21 @@ export const listPage = query({
       ...(page.splitCursor ? { splitCursor: page.splitCursor } : {}),
       ...(page.pageStatus ? { pageStatus: page.pageStatus } : {}),
     });
+    // A bounded page holds at most `END_ROWS`, whatever the index returned (a search index does not
+    // hold `maximumRowsRead`): past it, the rows over the cap are dropped and the page says
+    // `SplitRequired` — with Convex's own `splitCursor` where it gave one; a search gives none, so the
+    // client reads that range again unbounded. Rows the index did return were read, and are charged.
+    const capped = <P extends { page: Doc<'peopleRows'>[]; splitCursor?: string | null }>(
+      page: P,
+    ): P => {
+      if (endCursor === null || page.page.length <= END_ROWS) return page;
+      return {
+        ...page,
+        page: page.page.slice(0, END_ROWS),
+        isDone: false,
+        pageStatus: 'SplitRequired',
+      };
+    };
     const up = await readUpstream(ctx, viewer);
     const { flagged, appeals } = up;
     const flagsBy = new Map(
@@ -591,12 +624,14 @@ export const listPage = query({
     };
 
     if (search !== null) {
-      const page = await budget.page('personRow', size, (n) =>
-        ctx.db
-          .query('peopleRows')
-          .withSearchIndex('search_people', (s) => s.search('searchText', search))
-          .paginate(paged(n)),
-      );
+      const page = await budget
+        .page('personRow', size, (n) =>
+          ctx.db
+            .query('peopleRows')
+            .withSearchIndex('search_people', (s) => s.search('searchText', search))
+            .paginate(paged(n)),
+        )
+        .then(capped);
       return {
         rows: shape(page.page),
         isDone: page.isDone,
@@ -616,7 +651,7 @@ export const listPage = query({
         queue.map((p) => p.userId),
       );
       // The lane's own order: their oldest open item, then id.
-      const { slice, isDone, continueCursor } = sliceByKey(
+      const { slice, isDone, continueCursor, ...splitting } = sliceByKey(
         rows,
         (r) => [oldest.get(r.userId) ?? 0, r.userId],
         cursor,
@@ -627,6 +662,7 @@ export const listPage = query({
         rows: slice.map((r) => toListRow(r, now, flagsBy, appealsBy, oldest)),
         isDone,
         continueCursor,
+        ...splitting,
         ...truth(missing),
       };
     }
@@ -637,7 +673,7 @@ export const listPage = query({
       const read = await takeCapped(budget, 'personRow', STAFF_LANE_ROWS, (n) =>
         storedRange(ctx, 'staff').take(n),
       );
-      const { slice, isDone, continueCursor } = sliceByKey(
+      const { slice, isDone, continueCursor, ...splitting } = sliceByKey(
         read.rows,
         (r) => [r.staffRank, r.nameKey, r.userId],
         cursor,
@@ -658,6 +694,7 @@ export const listPage = query({
         // more pages that could only come back empty.
         isDone,
         continueCursor,
+        ...splitting,
         ...truthful,
         // Role since rests on the undo chains too: until they are placed it can't be told (`null`,
         // not capped), as the strip says it.
@@ -672,7 +709,7 @@ export const listPage = query({
       lane === 'suspended' || lane === 'newest'
         ? laneRange(ctx, lane, now)
         : storedRange(ctx, lane);
-    const page = await budget.page('personRow', size, (n) => range.paginate(paged(n)));
+    const page = capped(await budget.page('personRow', size, (n) => range.paginate(paged(n))));
     return {
       rows: shape(page.page),
       isDone: page.isDone,
@@ -946,6 +983,24 @@ export const person = query({
     if (isLedgerEditor(target)) budget.reserve('personRow', 200);
     budget.reserve('verdict', VERDICT_COUNT_CAP + 1);
     const stored = await readStoredCounts(ctx);
+    // The status note's setter, named from their row.
+    budget.reserve('personRow', 1);
+
+    // ── Whether this viewer can open the public profile: the profile read's own rule ──
+    // Every fixed read comes before the first read that sizes itself by what is left (the flags,
+    // tickets and filed flags below, then the labels): a heavily flagged person spends the budget
+    // on those, never on these, and the page returns capped figures rather than throwing.
+    // Its block check: one point read each way (`blockedEitherWay`).
+    budget.reserve('small', 1);
+    budget.reserve('small', 1);
+    const publicAccess = await profileAccess(ctx, target, viewer);
+
+    // ── When a holder's grant was given (holders only), while the budget is whole ──
+    const ledgerVisible = target.role === 'admin' && seesLedgerGrants(viewer);
+    const ledgerSince =
+      ledgerVisible && isLedgerEditor(target)
+        ? await ledgerSinceOf(ctx, budget, userId)
+        : { at: null, capped: false };
 
     // ── The status note: who set the suspension or ban, and when ──
     let statusNote: {
@@ -1058,21 +1113,6 @@ export const person = query({
       count: flaggedBy.rows.filter((f) => f.origin === 'user').length,
       capped: flaggedBy.capped,
     };
-
-    // ── Whether this viewer can open the public profile: the profile read's own rule ──
-    // Before the reads below that size themselves by what is left (the labels last of all), so
-    // neither this nor the ledger's grant time is starved — or thrown on — by them.
-    // Its block check: one point read each way (`blockedEitherWay`).
-    budget.reserve('small', 1);
-    budget.reserve('small', 1);
-    const publicAccess = await profileAccess(ctx, target, viewer);
-
-    // ── When a holder's grant was given (holders only), while the budget is whole ──
-    const ledgerVisible = target.role === 'admin' && seesLedgerGrants(viewer);
-    const ledgerSince =
-      ledgerVisible && isLedgerEditor(target)
-        ? await ledgerSinceOf(ctx, budget, userId)
-        : { at: null, capped: false };
 
     // ── The bounty season line: their asks this season, from the create gate's record ──
     const bountySeason = await bountySeasonOf(ctx, budget, userId, now);
