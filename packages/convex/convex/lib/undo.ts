@@ -107,6 +107,9 @@ export async function undoState(
 
   const blocked = handler.blocked?.(row, viewer) ?? null;
   if (blocked) return { state: 'unavailable', why: blocked };
+  // The row as it stands now refuses this write (B01-3d): never offered, since it would be turned down.
+  const refused = (await handler.refusal?.(ctx, row)) ?? null;
+  if (refused) return { state: 'unavailable', why: refused };
   // Content its author deleted stays as the deletion left it (D248). The author's own row usually
   // overtakes the takedown above; a withdrawal stamped with no row of its own (a backfill) doesn't,
   // so the undo would be offered and then refused — read the stamp, and give the refusal here.
