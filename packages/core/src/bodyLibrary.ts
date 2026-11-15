@@ -91,6 +91,12 @@ export type CompleteOption = (typeof COMPLETE_OPTIONS)[number];
 export const OUTLINE_OPTIONS = ['catalog', 'drawn'] as const;
 export type OutlineOption = (typeof OUTLINE_OPTIONS)[number];
 
+/**
+ * The shortest search the library reads (`bodies.listPage`); shorter reads as no search. Shared so
+ * the page holds its search to the same length the server does.
+ */
+export const SEARCH_MIN_CHARS = 2;
+
 /** Every facet and its options, in the menu's order — the page's ids. */
 export const LIBRARY_FACETS = {
   class: WATER_BODY_CLASSES,

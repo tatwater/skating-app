@@ -678,6 +678,8 @@ describe('hazards.listBundleCandidates (D55)', () => {
     const loser = await t.run(async (ctx) =>
       (await ctx.db.query('hazards').collect()).find((h) => h.mergedIntoHazardId !== undefined),
     );
+    // Merged away: when it left the lake as its own pin is recorded (B01-3b).
+    expect(loser?.leftLakeAt).toEqual(expect.any(Number));
 
     const reportId = await author.as.mutation(api.reports.create, {
       ...OBSERVED,
@@ -1494,12 +1496,17 @@ describe('hazards auto-merge', () => {
       (await ctx.db.query('hazards').collect()).find((h) => h.mergedIntoHazardId !== undefined),
     );
 
+    expect(loser?.leftLakeAt).toEqual(expect.any(Number));
     await mod.as.mutation(api.hazards.unmerge, {
       hazardId: loser?._id as Id<'hazards'>,
       reason: 'These are two separate leads.',
     });
     const listed = await alex.as.query(api.hazards.listForBody, { waterBodyId });
     expect(listed).toHaveLength(2);
+    // Back on the lake as its own pin, the merge's stamp is gone: an archiving vote later records
+    // its real end, never the merge's day (D3).
+    const separated = await t.run(async (ctx) => await ctx.db.get(loser?._id as Id<'hazards'>));
+    expect(separated?.leftLakeAt).toBeUndefined();
 
     // The survivor's footprint goes back to its own shape — the merge is fully reversible, including
     // the geometry it widened.

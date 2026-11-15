@@ -313,7 +313,8 @@ export const create = mutation({
     // Recomputing `args.waterBodyId` would refresh the loser's card — a row nothing renders, since a
     // merged body is unlisted — and leave the survivor's stale until the sweep.
     const stored = await ctx.db.get(survivorId);
-    if (stored) await recomputeBodySummary(ctx, stored.waterBodyId);
+    // No library fact counts hazards: the summary only (B01-3b).
+    if (stored) await recomputeBodySummary(ctx, stored.waterBodyId, undefined, undefined, false);
     return survivorId;
   },
 });
@@ -1223,8 +1224,8 @@ export const refileToFootprintBody = internalMutation({
     await refile(hazard);
     for (const folded of chain) await refile(folded);
     // Both ends: the lake losing the pin stops counting it, the lake gaining it starts.
-    await recomputeBodySummary(ctx, was);
-    await recomputeBodySummary(ctx, matchId);
+    await recomputeBodySummary(ctx, was, undefined, undefined, false);
+    await recomputeBodySummary(ctx, matchId, undefined, undefined, false);
     // Standing (A07b), as the create path does it: the lake now carries a hazard somebody drew on
     // it, and a dormant body yields to that evidence. Gated and idempotent, so a pin that moves
     // between two active lakes changes nothing.

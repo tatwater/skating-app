@@ -782,7 +782,8 @@ describe('the list', () => {
         status: 'active',
         createdAt: NOW,
       });
-      for (let i = 0; i < REPORT_SCAN; i++) {
+      // One past each read's cap: exactly the cap is whole (B01-3b), one more is a floor.
+      for (let i = 0; i <= REPORT_SCAN; i++) {
         const at = NOW - (i + 1) * 60_000;
         await ctx.db.insert('reports', {
           authorId: author,
@@ -800,7 +801,7 @@ describe('the list', () => {
           updatedAt: at,
         });
       }
-      for (let i = 0; i < 100; i++) {
+      for (let i = 0; i <= 100; i++) {
         await ctx.db.insert('corpusPlaceNames', {
           name: `Name ${i}`,
           askKey: `name-${i}`,

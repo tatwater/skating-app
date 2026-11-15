@@ -796,7 +796,7 @@ lack of signal.*
 - The founder's device pass of the sheet on the Android preview build (every door; offline; the silhouette picker) — and `convex dev --once` before it (`contentRevisions`, `author_delete`)
 
 ## Phase B01 — The admin console: one surface, organized by what an operator is doing
-🟡 **In progress** 2026-10-14 · [plan](./phases/B01-admin-console.md) · D216 D217 D218 D219 D220 D221 D222 D223 D224 D225 D226 D227 D245 D246 D247 D248 D249 D250 D251 D252 D253 D254 D255
+🟡 **In progress** 2026-10-14 · [plan](./phases/B01-admin-console.md) · D216 D217 D218 D219 D220 D221 D222 D223 D224 D225 D226 D227 D245 D246 D247 D248 D249 D250 D251 D252 D253 D254 D255 D259
 
 Phase 07 built `/admin` as work queues plus a control room, and every phase since added a page
 for its own feature; sixteen nav items later the surface is organized by table, not by task — an
@@ -833,7 +833,8 @@ knows what needs them, does it where they found it, and watches the machinery wo
 - Retraction screens (D248, server built, no client reaches them) — **Phase B04** ([plan](./phases/B04-skater-contributions.md)) owns them: a request's *Withdraw*, a flag's and a no-public-access report's *Withdraw*, an alert author's *Retract*, a hazard's *Withdraw*, and the delete confirmations' 30 days
 - The phone's "It's open" for an alert's author on their own pinned alert (D248) — built in `AccessSection` on the shared rule, not yet on a device (no RN render harness); its pass rides **Phase B04**'s EAS preview pass (§8.4)
 - Telling people about the 30 days (D248): the app's delete confirmations, and the privacy policy (the legal checklist)
-- The Bodies list (B01-3, the first of four Bodies page PRs) needs the library backfills on dev — `bodyLibrary:backfillAll`, then `bodyLibrary:backfillChangedAt` — before it shows real rows; its server requests (a search across standings, askers and intake reasons on the preview's asks, each town's state, rows by id, `SEARCH_MIN_CHARS` in core, a rejected body's row and facts) wait on a follow-up server PR → the plan's *The Bodies list*
+- The Bodies list (B01-3, the first of four Bodies page PRs) needs the library backfills on dev — `bodyLibrary:backfillAll`, then `bodyLibrary:backfillChangedAt` — before it shows real rows; its server requests (a search across standings, askers and intake reasons on the preview's asks, each town's state, rows by id, a rejected body's row and facts) wait on the second Bodies server PR → the plan's *The Bodies list*
+- The Bodies reads made right (B01-3b) need their jobs on dev after deploy: `bodyGeo:seedAll` then `bodyGeo:computeAll` (until a body's facts are computed, its touching bodies and places read *not computed*), `auditLinks:backfill` (until it finishes, History holds only the rows linked so far), `waterBodies:retargetMergedAsks`, `bodyLibrary:requeueCapped` → the plan's *The Bodies reads made right*
 - The Body console's three PRs (the frame and Shape; Names, Places, Access and Water; Imagery, Hazards, Standing and Links), after the list — the founder's call on sizes, 2026-11-14
 
 ## Phase B03 — The skater web app

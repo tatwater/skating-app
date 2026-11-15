@@ -128,7 +128,7 @@ export const withdraw = mutation({
     // Moderation only, never the lifecycle: `status` stays as it was, so the pin is gone, not healed.
     await ctx.db.patch(hazardId, { moderationStatus: 'removed', authorDeletedAt: now });
     // It leaves the lake's card with the map (A06c §5).
-    await recomputeBodySummary(ctx, hazard.waterBodyId);
+    await recomputeBodySummary(ctx, hazard.waterBodyId, undefined, undefined, false);
     await writeAudit(ctx, {
       actorId: profile._id,
       action: 'author_delete',
