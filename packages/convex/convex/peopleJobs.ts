@@ -45,6 +45,7 @@ import {
 import { DOC_MAX, errorClassOf, ReadBudget, ROW_MAX, traced } from './lib/readBudget';
 import {
   clearFailure,
+  failureOf,
   type Position as LapPosition,
   lapOf,
   mirrorFailure,
@@ -174,6 +175,30 @@ async function nextDue(
           .lte('suspendedUntil', cutoff),
       )
       .first(),
+  );
+}
+
+/** A parked lapse's mirror, written from the profile's own state when it has none (D258). */
+async function ensureLapseMirror(
+  ctx: MutationCtx,
+  reads: ReadBudget,
+  profile: Doc<'profiles'>,
+  now: number,
+): Promise<void> {
+  reads.reserve('small', 1);
+  if (await failureOf(ctx, 'lapses', profile._id)) return;
+  reads.touch('small');
+  await mirrorFailure(
+    ctx,
+    'lapses',
+    profile._id,
+    {
+      attempts: profile.lapseAttempts,
+      errorClass: profile.lapseErrorClass,
+      parkedAt: profile.lapseParkedAt,
+      retriedAt: profile.lapseRetriedAt,
+    },
+    profile.lapseRetriedAt ?? profile.lapseParkedAt ?? now,
   );
 }
 
@@ -445,6 +470,9 @@ export const retryLapsedDaily = internalMutation({
           reads.spend(PERSON_WORK);
           if (outcome === 'reset') reset++;
           else skipped++;
+          // Still parked but passed by (in their deletion window): mirrored if it isn't yet — a lapse
+          // parked before the mirror existed gets one here, so Machinery's count heals in a day.
+          if (outcome === 'leaving') await ensureLapseMirror(ctx, reads, head, now);
         } catch (err) {
           reads.spend(allowance);
           reads.touch('profile');

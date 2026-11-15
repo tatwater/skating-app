@@ -1556,6 +1556,56 @@ describe('the mirror check laps: kept mirrors never hold a stale one behind them
   });
 });
 
+describe('a lapse parked before the mirror existed heals in one daily run', () => {
+  test('passed by (in its deletion window) or failing again, each gets its mirror; health counts them', async () => {
+    const t = await setup();
+    const adm = await seed(t, 'adm', { role: 'admin' });
+    await t.run(async (ctx) => {
+      for (const [name, leaving] of [
+        ['passed', true],
+        ['failing', false],
+      ] as const) {
+        await ctx.db.insert('profiles', {
+          clerkUserId: name,
+          displayName: name,
+          username: name,
+          driveTimePrefMinutes: 60,
+          profileVisibility: 'public' as const,
+          notificationPrefs: NOTIF_PREFS,
+          dateOfBirth: Date.UTC(1990, 0, 1),
+          reputationPoints: 0,
+          role: 'member' as const,
+          status: 'suspended' as const,
+          suspendedUntil: T0 - DAY,
+          ...(leaving ? { deletionRequestedAt: T0 - DAY } : {}),
+          lapseAttempts: 3,
+          lapseErrorClass: 'x',
+          lapseParkedAt: T0 - 5 * DAY,
+          createdAt: T0 - 30 * DAY,
+        });
+      }
+    });
+    const before = await as(t, 'adm').query(api.recurringJobs.health, {});
+    expect(before.jobs.find((j) => j.job === 'reset lapsed suspensions')).toMatchObject({
+      parked: 0,
+    });
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const rows = await import('./lib/peopleRows');
+    const poison = vi.spyOn(rows, 'refreshPersonRow').mockRejectedValue(new Error('poison'));
+    vi.useFakeTimers();
+    vi.setSystemTime(T0);
+    await t.mutation(internal.peopleJobs.retryLapsedDaily, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers, 50);
+    poison.mockRestore();
+    quiet.mockRestore();
+    const after = await as(t, 'adm').query(api.recurringJobs.health, {});
+    expect(after.jobs.find((j) => j.job === 'reset lapsed suspensions')).toMatchObject({
+      parked: 2,
+    });
+    void adm;
+  });
+});
+
 describe('a sweep’s run record carries no ready', () => {
   test('the lapse sweep and the daily retry record runs, never readiness; a backfill’s does', async () => {
     const t = await setup();
