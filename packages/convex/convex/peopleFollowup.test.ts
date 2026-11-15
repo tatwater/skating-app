@@ -1320,6 +1320,67 @@ describe('people.staffStats', () => {
     expect(s?.decisions.thisWeek).toEqual({ count: 420, capped: false });
     expect(s?.timeToDecide).toMatchObject({ medianMs: null, decided: 420, capped: true });
   });
+
+  test('the time bound counts the reads of both loops, exactly: 200 roots and 200 filings fit, one filing more is capped', async () => {
+    const week = async (filings: number) => {
+      const t = await setup();
+      const matt = await seed(t, 'matt', { role: 'moderator' });
+      const adm = await seed(t, 'adm', { role: 'admin' });
+      await t.run(async (ctx) => {
+        // Undos whose chain's first row is someone else's, outside the staffer's own read: a read each.
+        for (let i = 0; i < 200; i++) {
+          const root = await ctx.db.insert('moderationActions', {
+            actorId: adm,
+            action: 'set_posting_permission',
+            targetType: 'user',
+            targetId: `x${i}`,
+            reason: 'r',
+            undoTop: 1,
+            undoTopActorId: matt,
+            createdAt: T0 - 2 * DAY,
+          });
+          await ctx.db.insert('moderationActions', {
+            actorId: matt,
+            action: 'set_posting_permission',
+            targetType: 'user',
+            targetId: `x${i}`,
+            reason: 'r',
+            undoesActionId: root,
+            undoRoot: root,
+            undoDepth: 1,
+            createdAt: T0 - 1_000,
+          });
+        }
+        // Decisions on flags with no filing time on the row: a read each.
+        for (let i = 0; i < filings; i++) {
+          const flag = await ctx.db.insert('contentFlags', {
+            flaggerId: adm,
+            targetType: 'report',
+            targetId: `r${i}`,
+            reason: 'spam',
+            status: 'actioned',
+            subjectUserId: null,
+            createdAt: T0 - DAY,
+          });
+          await ctx.db.insert('moderationActions', {
+            actorId: matt,
+            action: 'resolve_flag',
+            targetType: 'contentFlag',
+            targetId: flag,
+            reason: 'r',
+            createdAt: T0 - 1_000,
+          });
+        }
+      });
+      return as(t, 'adm').query(api.people.staffStats, { userId: matt });
+    };
+    const at = await week(200);
+    expect(at?.decisions.undoneByOthers.capped).toBe(false);
+    expect(at?.timeToDecide).toMatchObject({ decided: 200, capped: false });
+    const past = await week(201);
+    expect(past?.decisions.undoneByOthers.capped).toBe(false);
+    expect(past?.timeToDecide).toMatchObject({ medianMs: null, decided: 201, capped: true });
+  });
 });
 
 // ── The parked-lapse mirror, counted by Machinery ──

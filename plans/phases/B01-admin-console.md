@@ -2450,8 +2450,9 @@ Every shape change is additive except where noted.
 - **The undo engine's per-row worst case** (main's, unchanged): shaping one History or Decisions row
   reads up to 16 undo-tagged audit rows, the newest row on the target, the content's author stamp, the
   person's row and a rowless profile — about 19 documents at the document limit each in theory, since
-  an audit row's reason was uncapped and its metadata still is. Its calls and documents are counted
-  ahead; its bytes are not.
+  an audit row's reason was uncapped and its metadata still is — and, since #127, its verb's refusal
+  hook (a launch's: up to 201 documents, see below). Its calls and documents are counted ahead; its
+  bytes are not.
 - **The page's two assumptions, checked.** Suspending a banned account replaces the ban (the status
   becomes `suspended` and the Clerk lock is lifted) — right. An open-ended suspension, or one that ran
   its course but isn't reset yet, can only be lifted — **wrong**: the suspend write accepts a new
@@ -2500,9 +2501,9 @@ Every shape change is additive except where noted.
   real weight through `undoRead`, all but a snapshot and a launch's hidden neighbors, which B01-3f
   owes). For rows written since D261 the
   reason is at most 2,000 characters, but metadata is uncapped and older rows' reasons are too, so the
-  worst case is still the document limit per distinct target in a page. It is now read once per
-  target per request. A fix belongs with the metadata ruling below (or a per-target "latest action"
-  row the undo engine could read instead).
+  worst case is still the document limit per line in a page (read once a line, as on main — reading it
+  once per target waits on the rounds PR). A fix belongs with the metadata ruling below (or a
+  per-target "latest action" row the undo engine could read instead).
 
 **Owed: audit metadata, writer by writer** (the coordinator's ask, 2026-11-15 — facts for the ruling,
 from the code, not from dev; nothing capped in this PR). Every audit row passes through
@@ -3183,10 +3184,10 @@ another, read once per query; past it the line reads *unavailable* — "This pag
 this undo here — open what it changed to undo it." — never a read past the limit. **Owed:** a
 refusal's snapshot read and a launch's hidden-neighbor read (at most 200, a handful in practice) are
 not charged their bytes — People's per-row plan counts their calls and documents (`REFUSAL_CALLS`,
-`REFUSAL_DOCS`, since B01-4b's merge of this); the reads wait on each other across a page (since
-`ReadBudget.measured` holds a read's worst case in flight, that wait no longer keeps reads under the
-limit — only keeps later lines from being refused for worst cases never read — and costs up to two
-round trips a line); the landmark undo's refusal checks the spellings only, not the duplicate and
+`REFUSAL_DOCS`, since B01-4b's merge of this); the reads wait on each other across a page — that wait
+is what keeps reads started together (`moderation.listActions` shapes its lines at once) under the
+limit, since `ReadBudget.measured` charges a read's real weight only after it — and it costs up to
+two round trips a line; the landmark undo's refusal checks the spellings only, not the duplicate and
 bay-name rules its write also takes.
 
 **Held — the survey filing** (`fileBathymetrySurvey`): the board shows the field (*A survey the next

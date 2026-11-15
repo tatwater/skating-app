@@ -3,8 +3,9 @@
  * (`convex/lib/readBudget.ts`), so no pass reads past Convex's limit however heavy its rows. A raw
  * read added outside a charge is the regression this catches: in the modules below, every database
  * read — `ctx.db.get`, `.first()`, `.unique()`, `.take(`, `.paginate(`, `.collect()` — must sit inside
- * the parentheses of a charging call (`reads.one/take/page/measured/capped`, the same on `budget`,
- * `drain(` — which charges what its `take` returns — or the People pages' `takeCapped(`). `.collect()` and `.unique()` are refused outright: neither
+ * the parentheses of a charging call (`reads.one/take/page/measured/capped`, the same on `budget` and
+ * on the request's budget opened in place, `requestBudget(…)`, `drain(` — which charges what its
+ * `take` returns — or the People pages' `takeCapped(`). `.collect()` and `.unique()` are refused outright: neither
  * has a bound a budget can size.
  *
  * A lint over the source text, not a proof: a read reached through a helper in another module is
@@ -96,4 +97,16 @@ test('the lint sees a raw read, and passes a charged one', () => {
   expect(unchargedReads("// ctx.db.get(id) in a comment\nconst s = 'ctx.db.get(id)';")).toEqual([]);
   // A comment marker inside a string hides nothing after it.
   expect(unchargedReads("const u = 'https://x'; const y = await ctx.db.get(id);")).toHaveLength(1);
+  // The request's own budget, opened in place (`lib/undoReads`), charges as `budget` does.
+  expect(
+    unchargedReads("await requestBudget(ctx).measured('putIn', () => ctx.db.get(id));"),
+  ).toEqual([]);
+  expect(
+    unchargedReads("await requestBudget(ctx, OPEN).one('profile', () => ctx.db.get(id));"),
+  ).toEqual([]);
+  // Opening it is no charge: a read beside it, outside a charging call, is still caught.
+  expect(unchargedReads('const b = requestBudget(ctx); await ctx.db.get(id);')).toHaveLength(1);
+  expect(
+    unchargedReads("requestBudget(ctx).spend(1); await ctx.db.query('x').take(5);"),
+  ).toHaveLength(1);
 });

@@ -1499,10 +1499,12 @@ describe('undo after an un-audited change: write → change → undo → redo', 
     expect(got).toEqual({ first: a, secondRead: false });
   });
 
-  test('the per-row plan is charged, not declared: a page of launch lines at the hidden-read peak stays in budget, and a short budget shapes fewer and says capped', async () => {
+  test('the per-row plan is charged, not declared: a page of launch lines each at the hidden-read peak reads within it, and a short budget shapes fewer and says capped', async () => {
     const t = harness();
     const promoted = await launch(t);
-    const promote = await t.run((ctx) => ctx.db.get(promoted.actionId));
+    const promote = (await t.run((ctx) =>
+      ctx.db.get(promoted.actionId),
+    )) as Doc<'moderationActions'>;
     await t.run(async (ctx) => {
       // The launch refusal's document peak: its body's hidden launches read to the cap.
       for (let i = 0; i < SUPPRESSION_ROWS_READ; i++) {
@@ -1514,12 +1516,29 @@ describe('undo after an un-audited change: write → change → undo → redo', 
           createdAt: NOW,
         });
       }
-      // A page of 99 more lines on the same launch, each answered through the same refusal.
+      // 99 more lines on that launch, each written on a body of its own: lines on one body are
+      // overtaken by its newest and never reach the refusal, so only lines on distinct targets make a
+      // page where every line reads the hidden launches.
       for (let i = 0; i < 99; i++) {
-        const { _id, _creationTime, ...row } = promote as Doc<'moderationActions'>;
+        const body = await ctx.db.insert('waterBodies', {
+          name: `Pond ${i}`,
+          searchText: 'pond',
+          type: 'lakePond',
+          source: 'osm',
+          polygon: POLYGON,
+          bbox: { minLat: 43.99, minLng: -72.01, maxLat: 44.01, maxLng: -71.99 },
+          centroid: { lat: 44, lng: -72 },
+          dedupStatus: 'clean',
+          createdAt: NOW,
+        });
+        const { _id, _creationTime, ...row } = promote;
         void _id;
         void _creationTime;
-        await ctx.db.insert('moderationActions', { ...row, createdAt: NOW - 1 - i });
+        await ctx.db.insert('moderationActions', {
+          ...row,
+          targetId: body,
+          createdAt: NOW - 1 - i,
+        });
       }
     });
     const page = await promoted.admin.as.query(api.people.decisions, {
@@ -1527,6 +1546,23 @@ describe('undo after an un-audited change: write → change → undo → redo', 
       limit: 100,
     });
     expect(page?.rows.length).toBe(100);
+    // Every line reached the refusal and passed it — none stopped short at "overtaken".
+    expect(page?.rows.every((r) => r.undo.state === 'available')).toBe(true);
+    // The documents shaping those lines really reads, measured: past the peak's floor (each line's
+    // hidden launches), and within the plan the page charged for them.
+    const read = await t.run(async (ctx) => {
+      const viewer = (await ctx.db.get(promoted.admin.id)) as Doc<'profiles'>;
+      const rows = (await ctx.db.query('moderationActions').collect()).filter(
+        (r) => r.action === promote.action,
+      );
+      const before = (await ctx.meta.getTransactionMetrics()).documentsRead.used;
+      const shaped = await shapeRows(ctx as never, viewer, rows, new Map());
+      const after = (await ctx.meta.getTransactionMetrics()).documentsRead.used;
+      return { rows: shaped.length, docs: after - before };
+    });
+    expect(read.rows).toBe(100);
+    expect(read.docs).toBeGreaterThanOrEqual(100 * SUPPRESSION_ROWS_READ);
+    expect(read.docs).toBeLessThanOrEqual(100 * ROW_SHAPE_DOCS);
     // The same rows with the documents a page had already spent leaving room for three: three are
     // shaped and the rest left for the caller to call capped — charged, never thrown.
     const shaped = await t.run(async (ctx) => {
@@ -1534,7 +1570,7 @@ describe('undo after an un-audited change: write → change → undo → redo', 
       budget.reserveCalls(0, TX_DOCS - 3 * ROW_SHAPE_DOCS - 1);
       const viewer = (await ctx.db.get(promoted.admin.id)) as Doc<'profiles'>;
       const rows = (await ctx.db.query('moderationActions').collect()).filter(
-        (r) => r.action === (promote as Doc<'moderationActions'>).action,
+        (r) => r.action === promote.action,
       );
       return (await shapeRows(ctx as never, viewer, rows, new Map())).length;
     });

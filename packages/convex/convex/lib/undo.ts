@@ -77,8 +77,10 @@ export async function undoRowOf(
 /**
  * Whether `row` can be undone by `viewer`, and if not, why. Bounded: two index reads (one of at most
  * {@link UNDO_TAG_READ} rows), one `get` of an item an author could have deleted, a person's row (and
- * their profile when they have none), and what a verb's `refusal` reads — at most two rows through
- * `lib/undoReads`, a snapshot, and for a launch its body's hidden launches (`SUPPRESSION_ROWS_READ`).
+ * their profile when they have none) with, for a change the last-editor rule weighs, the ledger
+ * editors (read once a request, `lib/ledgerEditors`), and what a verb's `refusal` reads — at most two
+ * rows through `lib/undoReads`, a snapshot, and for a launch its body's hidden launches
+ * (`SUPPRESSION_ROWS_READ`).
  */
 export async function undoState(
   ctx: QueryCtx | MutationCtx,

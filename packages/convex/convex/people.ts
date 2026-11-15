@@ -904,7 +904,7 @@ async function labelFlags(
   person: Doc<'profiles'>,
   flags: OpenFlag[],
 ): Promise<boolean> {
-  const bodyNames = new Map<string, Promise<string | null>>();
+  const bodyNames = new Map<string, string | null>();
   const personName = person.displayName.trim() || person.username;
   // Each read on the way to the body: started only while a whole document fits, charged its weight.
   const get = async <T extends TableNames>(id: Id<T>): Promise<Doc<T> | null> => {
@@ -927,7 +927,7 @@ async function labelFlags(
     // A body's library row, whose name no writer caps.
     if (!budget.affordsRead('bodyLibraryRow') || !budget.affordsCalls(1, 1)) return undefined;
     budget.reserve('bodyLibraryRow', 1);
-    const name = auditTargetLabel(ctx, 'waterbody', bodyId);
+    const name = await auditTargetLabel(ctx, 'waterbody', bodyId);
     bodyNames.set(bodyId, name);
     return name;
   };
@@ -1683,8 +1683,8 @@ export const decisions = query({
         }),
     );
     const shaped = await shapeRows(ctx, viewer, page.page, new Map());
-    // Rows the request couldn't afford to shape (only when not even one row's calls were left):
-    // `capped`, and the page isn't the end.
+    // Rows the request couldn't afford to shape (only when not even one row's calls and documents
+    // were left): `capped`, and the page isn't the end.
     const short = shaped.length < page.page.length;
     return {
       rows: shaped,
@@ -2037,16 +2037,18 @@ async function filedAtOf(
 ): Promise<number | null | undefined> {
   const recorded = (row.metadata as { filedAt?: unknown } | undefined)?.filedAt;
   if (typeof recorded === 'number') return recorded;
-  if (row.targetType === 'contentFlag' || row.targetType === 'waterBodyRequest') counter.reads++;
+  // Each read counted where it is made: an id that names nothing costs none.
   if (row.targetType === 'contentFlag') {
     const id = ctx.db.normalizeId('contentFlags', row.targetId);
     if (!id) return null;
+    counter.reads++;
     const flag = await budget.measured('contentFlag', () => ctx.db.get(id));
     return flag === undefined ? undefined : (flag?.createdAt ?? null);
   }
   if (row.targetType === 'waterBodyRequest') {
     const id = ctx.db.normalizeId('waterBodyRequests', row.targetId);
     if (!id) return null;
+    counter.reads++;
     const ask = await budget.measured('waterBodyRequest', () => ctx.db.get(id));
     return ask === undefined ? undefined : (ask?.createdAt ?? null);
   }
