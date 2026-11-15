@@ -10,6 +10,7 @@ import {
   verdictLabel,
 } from '@skating/core';
 
+import { dayMonth, statusDate } from '../../frame/bodyModel';
 import { HAZARDS_WORDS, wordsContext } from './hazardsWords';
 
 /**
@@ -119,17 +120,8 @@ export function hazardRows(hazards: readonly HazardInput[], now: number): Hazard
   });
 }
 
-/** An archived row: where it was, what, and when anyone last saw it. */
+/** An archived row: where it was, what, and when anyone last saw it ("9 Feb", a row's day-month). */
 export type ArchivedRow = { id: string; type: string; place: string | null; lastSeen: string };
-
-const DAY_MONTH = new Intl.DateTimeFormat('en-US', { day: 'numeric', month: 'short' });
-
-/** "9 Feb" — a row's day-month. */
-export function dayMonth(at: number): string {
-  const parts = DAY_MONTH.formatToParts(at);
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
-  return `${get('day')} ${get('month')}`;
-}
 
 export function archivedRows(hazards: readonly HazardInput[]): ArchivedRow[] {
   return hazards
@@ -167,18 +159,6 @@ export type FeatureRow = {
   sub: string;
 };
 
-const DAY_MONTH_YEAR = new Intl.DateTimeFormat('en-US', {
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
-});
-
-function dayMonthYear(at: number): string {
-  const parts = DAY_MONTH_YEAR.formatToParts(at);
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
-  return `${get('day')} ${get('month')} ${get('year')}`;
-}
-
 function shapeWords(f: FeatureInput): string {
   if (f.geometryKind === 'point_radius') {
     return f.radiusMeters === undefined ? 'Point' : `Point, ${Math.round(f.radiusMeters)} m`;
@@ -192,7 +172,7 @@ export function featureRows(features: readonly FeatureInput[]): FeatureRow[] {
     id: f._id,
     type: BODY_FEATURE_TYPE_LABELS[f.type as BodyFeatureType] ?? f.type.replace(/_/g, ' '),
     place: f.subAreaName ?? f.note ?? null,
-    sub: `${shapeWords(f)} · ${f.promotedFromHazardId === undefined ? 'Drawn' : 'From a pin,'} ${dayMonthYear(f.createdAt)}`,
+    sub: `${shapeWords(f)} · ${f.promotedFromHazardId === undefined ? 'Drawn' : 'From a pin,'} ${statusDate(f.createdAt)}`,
   }));
 }
 
@@ -452,6 +432,3 @@ export function monthTicks(season: Season): { at: number; label: string }[] {
   }
   return out;
 }
-
-/** Is `season` the one `now` is in — the only one the tab's tools act on? */
-export const isCurrent = (season: Season, now: number) => season === seasonOf(now);

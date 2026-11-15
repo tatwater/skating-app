@@ -46,6 +46,15 @@ describe('LinksTabView', () => {
     expect(screen.getByText('Skaters read all 2, in this order, under Elsewhere.')).toBeVisible();
   });
 
+  it('with no link at all, says the sheet has no Elsewhere — never “all 0”', () => {
+    // No point to open Windy on, no community for its state, no staff links.
+    render(<LinksTabView {...base} body={{ name: 'Nameless Pond', states: [] }} />);
+    expect(
+      screen.getByText('With no links, the lake sheet has no Elsewhere section.'),
+    ).toBeVisible();
+    expect(screen.queryByText(/all 0/)).toBeNull();
+  });
+
   it('draws no grip, Edit or Add for a viewer without the capability', () => {
     render(<LinksTabView {...base} canEdit={false} />);
     expect(screen.queryByRole('button', { name: /^Move / })).toBeNull();

@@ -1,4 +1,3 @@
-import { seasonOf } from '@skating/core';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { dayX, lastReal } from '@/components/kit/day-strips';
@@ -26,7 +25,6 @@ import {
   firstReports,
   type HazardInput,
   hazardRows,
-  isCurrent,
   lineSummary,
   monthTicks,
   seasonChoices,
@@ -673,8 +671,6 @@ describe('seasons', () => {
     expect(seasonChoices(2026)).toEqual({ bar: [2026, 2025, 2024], earlier: [2023, 2022, 2021] });
     expect(seasonWord(2026)).toBe('2026–27');
     expect(seasonWord(2099)).toBe('2099–00');
-    expect(isCurrent(seasonOf(BODY_NOW), BODY_NOW)).toBe(true);
-    expect(isCurrent(2025, BODY_NOW)).toBe(false);
   });
 });
 

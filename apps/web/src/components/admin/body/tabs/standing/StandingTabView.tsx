@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from '@/components/kit/select';
 import { cn } from '@/lib/utils';
+import { statusDate } from '../../frame/bodyModel';
 import { LoadingSection } from '../tabParts';
 import { type RetentionFacts, retentionModel } from './standingModel';
 
@@ -67,14 +68,8 @@ export type StandingTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
 /** A standing note's ceiling — the server's (`MAX_STANDING_NOTE_LENGTH`). */
 export const STANDING_NOTE_MAX = 160;
 
-const SINCE = new Intl.DateTimeFormat('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
-
-/** "17 Sep 2026" — a status date in the left panel carries its year (Review 13 #7). */
-export function sinceWords(at: number): string {
-  const parts = SINCE.formatToParts(at);
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
-  return `${get('day')} ${get('month')} ${get('year')}`;
-}
+/** "17 Sep 2026" — a status date carries its year (the frame's `statusDate`). */
+const sinceWords = (at: number): string => statusDate(at);
 
 const REMOVAL_LABEL: Record<RemovalReason, string> = {
   landowner_request: 'Landowner request',

@@ -504,6 +504,54 @@ describe('HazardsTabView — the winters, a day at a time', () => {
       screen.getByText(/A bright mark is the day a hazard with no recorded end/),
     ).toBeVisible();
   });
+
+  it('never says every archived report is marked when the list holds fewer than the count', () => {
+    const season = SEASON - 1;
+    const { start } = winterWindow(season);
+    const at = (d: number) => start + d * 86_400_000 + 3_600_000;
+    // Two archived reports counted; the list holds one (a crossing past its window is left out).
+    const read = dailyFrom(
+      season,
+      [
+        { first: at(4), active: false },
+        { first: at(12), active: false },
+      ],
+      BODY_NOW,
+    );
+    const archived = (first: number): HazardInput => ({
+      _id: 'a0',
+      type: 'thin_ice',
+      freshness: 'stale',
+      provisional: false,
+      confirmCount: 1,
+      goneCount: 2,
+      lastConfirmedAt: first,
+      firstReportedAt: first,
+      status: 'archived',
+    });
+    const draw = (list: HazardInput[]) =>
+      render(
+        <HazardsTabView
+          {...base}
+          season={season}
+          hazards={FEB.hazards}
+          winters={wintersFrom([read], BODY_NOW, [list]) ?? undefined}
+        />,
+      );
+    const one = draw([archived(at(4))]);
+    const note = one.container.querySelector('[data-slot="hazards-unknown-ends"]');
+    expect(note?.textContent).toContain('2 archived reports have no recorded end');
+    expect(note?.textContent).toContain(
+      '1 is marked on the day first reported, and the rest counted that day without a mark',
+    );
+    expect(note?.textContent).not.toMatch(/Each is marked/);
+    one.unmount();
+    // A list that holds none of them: nothing is marked, and the note says the days aren't.
+    const none = draw([]);
+    expect(none.container.querySelector('[data-slot="day-strip-mark"]')).toBeNull();
+    expect(none.container.querySelector('[data-slot="hazards-unknown-ends"]')).toBeNull();
+    expect(none.container.querySelector('[data-slot="hazards-unmarked"]')).not.toBeNull();
+  });
 });
 
 describe('HazardsTabView — tools not built yet', () => {

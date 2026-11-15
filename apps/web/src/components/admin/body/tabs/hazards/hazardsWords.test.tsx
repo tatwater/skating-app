@@ -108,6 +108,21 @@ describe('the words the tab can say', () => {
     );
   });
 
+  it('says each archived report is marked only when every one is (fast-check)', () => {
+    fc.assert(
+      fc.property(context, (c) => {
+        const note = HAZARDS_WORDS.unknownEndsNote(c);
+        if (c.reported >= c.unknownEnds) {
+          expect(note).toMatch(/(It|Each) is marked on the day it was first reported/);
+        } else {
+          expect(note).not.toMatch(/Each is marked|It is marked/);
+          expect(note).toContain(`${c.reported} ${c.reported === 1 ? 'is' : 'are'} marked`);
+          expect(note).toContain('the rest counted that day without a mark');
+        }
+      }),
+    );
+  });
+
   it('the caption says a mark is a first report, and that how long it stayed isn’t recorded', () => {
     const caption = HAZARDS_WORDS.marksCaption(wordsContext());
     expect(caption).toBe(

@@ -93,8 +93,6 @@ export type FeatureRowWithGlyph = FeatureRow & {
 /** A read as the view draws it: its value, `undefined` while on its way, or `'error'`. */
 export type Read<T> = T | undefined | 'error';
 
-/** A tool whose writer isn't built: drawn, and saying *Not available yet*. */
-
 /** Whether the tab's failed reads are being tried again: every note in the tab holds as pending. */
 const RetryPending = createContext(false);
 
@@ -517,17 +515,22 @@ function lineNotes(
   named: boolean,
 ): { key: string; slot: string; text: string }[] {
   const out: { key: string; slot: string; text: string }[] = [];
+  // The marks the strip draws: the archived list they come from may hold fewer first reports than
+  // the server counted ends, and a marked strip with none drawn is said as an unmarked one.
+  const reported = line.days.reduce((n, d) => n + (d?.reported ?? 0), 0);
+  const marked = line.marked && reported > 0;
   const words = wordsContext({
     season: line.season,
     named,
     unknownEnds: line.unknownEnds,
+    reported,
     capped: line.capped,
   });
   if (line.unknownEnds > 0) {
     out.push({
       key: `${line.season}.ends`,
-      slot: line.marked ? 'hazards-unknown-ends' : 'hazards-unmarked',
-      text: line.marked ? HAZARDS_WORDS.unknownEndsNote(words) : HAZARDS_WORDS.unmarkedNote(words),
+      slot: marked ? 'hazards-unknown-ends' : 'hazards-unmarked',
+      text: marked ? HAZARDS_WORDS.unknownEndsNote(words) : HAZARDS_WORDS.unmarkedNote(words),
     });
   }
   if (line.capped) {

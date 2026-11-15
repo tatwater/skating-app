@@ -18,7 +18,7 @@ import { useFreezeUpTimeline } from '@/components/useFreezeUpTimeline';
 import { env } from '@/lib/env';
 import { useRole } from '@/lib/useRole';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
-import { LoadingSection, TabBody } from '../tabParts';
+import { LoadingSection, TabBody, useTickingNow } from '../tabParts';
 import { ImageryDockView } from './ImageryDockView';
 import { ImageryTabView } from './ImageryTabView';
 import { type ImageryMapData, imageryMapScene } from './imageryMap';
@@ -122,7 +122,8 @@ function ImageryReads(props: BodyTabProps) {
   const setMode = useMutation(api.waterBodies.setSatelliteImagery);
   const { can } = useRole();
   const { announce } = useUndo();
-  const now = useDayClock();
+  // Copernicus' window is the last 14 days from now: moved on daily.
+  const now = useTickingNow(86_400_000);
 
   if (result === undefined) {
     return (
@@ -224,13 +225,3 @@ export const IMAGERY_TAB: BodyTabRegistration<ImageryMapData> = {
   map: { useData: useImageryMapData, describe: imageryMapScene },
   Dock: ImageryDock,
 };
-
-/** Copernicus' window is the last 14 days from now: moved on daily. */
-function useDayClock(): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 86_400_000);
-    return () => window.clearInterval(id);
-  }, []);
-  return now;
-}

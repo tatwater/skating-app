@@ -8,6 +8,7 @@ import {
 
 import { listWords } from '@/lib/words';
 import { seasonYears } from '../../../shell/consoleTime';
+import { dayMonth, statusDate } from '../../frame/bodyModel';
 
 /**
  * The Standing tab's arithmetic: what keeps an active body active at each 1 July rollover, laid on
@@ -90,28 +91,8 @@ export function rolloversBetween(start: number, end: number): number[] {
   return out;
 }
 
-const DAY_MONTH = new Intl.DateTimeFormat('en-US', { day: 'numeric', month: 'short' });
-const DAY_MONTH_YEAR = new Intl.DateTimeFormat('en-US', {
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
-  timeZone: 'UTC',
-});
-
-/** "19 Sep" — a table cell's day-month (Review 13 #7), in the reader's zone. */
-export function dayMonth(at: number): string {
-  const parts = DAY_MONTH.formatToParts(at);
-  const day = parts.find((p) => p.type === 'day')?.value ?? '';
-  const month = parts.find((p) => p.type === 'month')?.value ?? '';
-  return `${day} ${month}`;
-}
-
 /** "1 Jul 2030" — a rollover, which is a UTC instant, so it reads the same everywhere. */
-function rolloverWords(at: number): string {
-  const parts = DAY_MONTH_YEAR.formatToParts(at);
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
-  return `${get('day')} ${get('month')} ${get('year')}`;
-}
+const rolloverWords = (at: number): string => statusDate(at, 'UTC');
 
 const KIND_WORD: Record<ActivityKind, string> = {
   report: 'a report',

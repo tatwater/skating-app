@@ -3,7 +3,7 @@ import type { Id } from '@skating/convex/dataModel';
 import { type RemovalReason, standingOf } from '@skating/core';
 import { useMutation } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 
 import { errorText } from '@/components/admin/adminUi';
 import { isFailed, read, useConsoleReadSet } from '@/components/admin/reads/consoleReads';
@@ -11,7 +11,7 @@ import { ReadNote } from '@/components/admin/reads/ReadNote';
 import { useUndo } from '@/components/admin/shell/undo';
 import { useRole } from '@/lib/useRole';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
-import { LoadingSection, TabBody } from '../tabParts';
+import { LoadingSection, TabBody, useTickingNow } from '../tabParts';
 import { StandingTabView } from './StandingTabView';
 import type { RetentionFacts } from './standingModel';
 
@@ -66,7 +66,8 @@ function StandingReads({ bodyId: id }: BodyTabProps) {
   const restore = useMutation(api.waterBodies.restore);
   const { can } = useRole();
   const { announce } = useUndo();
-  const now = useHourClock();
+  // The instant the lanes start from, moved on hourly: the finest thing they draw is a day.
+  const now = useTickingNow(3_600_000);
   const retentionRead = got.retention;
   const retention = useMemo(
     () =>
@@ -163,13 +164,3 @@ function StandingReads({ bodyId: id }: BodyTabProps) {
  * (its board's one hover plate, a GNIS town, is the frame's own mark), so it has no `map`.
  */
 export const STANDING_TAB: BodyTabRegistration = { Wiring: StandingTab };
-
-/** The instant the lanes start from, moved on hourly: the coarsest thing they draw is a day. */
-function useHourClock(): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 3_600_000);
-    return () => window.clearInterval(id);
-  }, []);
-  return now;
-}

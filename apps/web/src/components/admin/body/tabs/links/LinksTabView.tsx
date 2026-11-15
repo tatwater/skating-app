@@ -200,8 +200,10 @@ export function LinksTabView({
         }
       >
         <p data-slot="links-sheet-note" className="m-0 text-assist leading-(--lead-list) text-fg3">
-          Skaters read {sheetCount === 1 ? 'this link' : `all ${sheetCount}`}, in this order, under
-          Elsewhere.
+          {/* With no link, the sheet draws no Elsewhere at all (`LinksView` returns nothing). */}
+          {sheetCount === 0
+            ? 'With no links, the lake sheet has no Elsewhere section.'
+            : `Skaters read ${sheetCount === 1 ? 'this link' : `all ${sheetCount}`}, in this order, under Elsewhere.`}
         </p>
       </Section>
     </div>

@@ -1,7 +1,7 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { useMutation } from 'convex/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 
 import { errorText } from '@/components/admin/adminUi';
 import { isFailed, read, useConsoleReadSet } from '@/components/admin/reads/consoleReads';
@@ -9,7 +9,7 @@ import { ReadNote } from '@/components/admin/reads/ReadNote';
 import { useUndo } from '@/components/admin/shell/undo';
 import { useRole } from '@/lib/useRole';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
-import { LoadingSection, TabBody } from '../tabParts';
+import { LoadingSection, TabBody, useTickingNow } from '../tabParts';
 import { LinksTabView } from './LinksTabView';
 import { linksMapScene } from './linksMap';
 
@@ -42,7 +42,8 @@ function LinksReads({ bodyId: id }: BodyTabProps) {
   const setLinks = useMutation(api.waterBodies.setReferenceLinks);
   const { can } = useRole();
   const { announce } = useUndo();
-  const now = useDayClock();
+  // Copernicus' window is the last 14 days from now: moved on daily.
+  const now = useTickingNow(86_400_000);
 
   if (result === undefined) {
     return (
@@ -108,13 +109,3 @@ export const LINKS_TAB: BodyTabRegistration<LinksMapData> = {
     describe: (data: LinksMapData, lit: string | null) => linksMapScene(data.body, lit),
   },
 };
-
-/** Copernicus' window is the last 14 days from now: moved on daily. */
-function useDayClock(): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 86_400_000);
-    return () => window.clearInterval(id);
-  }, []);
-  return now;
-}

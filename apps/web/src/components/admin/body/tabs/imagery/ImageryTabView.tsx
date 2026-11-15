@@ -41,6 +41,7 @@ import {
 } from '@/components/kit/unavailable-button';
 import { usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
+import { dayMonth } from '../../frame/bodyModel';
 import { LoadingSection } from '../tabParts';
 
 import {
@@ -97,8 +98,6 @@ export type ImageryTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
   /** Set the satellite link. Absent: the choice is drawn read-only. */
   onSatelliteChange?: (mode: SatelliteImageryMode) => Promise<void>;
 };
-
-/** A call whose writer isn't built: drawn, and saying *Not available yet*. */
 
 /** What the pass call will do, for its *Not available yet*. */
 const OVERRIDE_WHAT =
@@ -258,12 +257,14 @@ export function ImageryTabView({
                 label="Clear of cloud"
                 value={row.clearPct}
                 threshold={CLEAR_GATE_PCT}
+                blocked={row.blockedBy === 'cloud'}
                 unit="%"
               />
               <GateRow
                 label="Lake in the pass"
                 value={row.coveragePct}
                 threshold={COVERAGE_GATE_PCT}
+                blocked={row.blockedBy === 'coverage'}
                 unit="%"
               />
             </div>
@@ -452,8 +453,6 @@ function Figure({ value, failed }: { value: number | null; failed: boolean }) {
   );
 }
 
-const STAFF_DAY = new Intl.DateTimeFormat('en-US', { day: 'numeric', month: 'short' });
-
 function SeenCell({ row }: { row: PassRow }) {
   if (row.seen === 'shown') return <span>Shown</span>;
   if (row.seen === 'hidden') return <span className="text-fg3">Hidden</span>;
@@ -470,18 +469,12 @@ function SeenCell({ row }: { row: PassRow }) {
             {o.by}
           </span>
           <span className="font-(family-name:--family-mono) text-kick tracking-micro text-fg3 uppercase">
-            {formatParts(o.at)}
+            {dayMonth(o.at)}
           </span>
         </span>
       )}
     </span>
   );
-}
-
-function formatParts(at: number): string {
-  const parts = STAFF_DAY.formatToParts(at);
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
-  return `${get('day')} ${get('month')}`;
 }
 
 /**
@@ -490,20 +483,28 @@ function formatParts(at: number): string {
  * figure with its unit. A value under its gate is the bright one: the name and figure go to the
  * bright ink and the fill steps back to `dim`. **Not measured is absent, never zero**: an empty
  * track, no figure, and a reader hears *Not measured*.
+ *
+ * **The gate that hid the pass always fails here** (`blocked`, core's own verdict), whatever the
+ * figure: the figure is rounded (59.6 % clear reads "60 %" under a 60 % gate) and a pass with no
+ * manifest is hidden on the scene's cloud, so the figure alone would draw a hidden pass's gate as
+ * cleared.
  */
 function GateRow({
   label,
   value,
   threshold,
+  blocked,
   unit = '',
 }: {
   label: string;
   /** In percent; `null` when nobody measured it. */
   value: number | null;
   threshold: number;
+  /** This gate is the one core says hid the pass (`blockedBy`). */
+  blocked: boolean;
   unit?: string;
 }) {
-  const fails = value !== null && value < threshold;
+  const fails = blocked || (value !== null && value < threshold);
   return (
     <div
       data-slot="gate-row"

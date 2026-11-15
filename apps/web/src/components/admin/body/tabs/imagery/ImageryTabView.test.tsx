@@ -11,6 +11,7 @@ import {
   INFERRED_STOP,
   MASCOMA_PASSES,
   MASCOMA_SATELLITE,
+  MASCOMA_STOPS,
   SEASON,
 } from './imageryFixtures';
 import { passRows } from './imageryModel';
@@ -60,6 +61,30 @@ describe('ImageryTabView', () => {
     expect(cloud).toHaveAttribute('data-fails');
     await userEvent.click(c.getByRole('button', { name: /Show to skaters anyway/ }));
     expect(onOverride).toHaveBeenCalledWith(granuleOf(10), 'show', undefined);
+  });
+
+  it('the gate that hid a pass fails on the card, even where its rounded figure reaches the gate', () => {
+    // 59.6 % clear rounds to "60 %" under a 60 % gate, yet core hid the pass on cloud; and a pass
+    // with no manifest is hidden on the scene's own cloud, with no figure for the lake at all.
+    const [measured] = MASCOMA_STOPS;
+    const rows = passRows([
+      {
+        ...(measured as (typeof MASCOMA_STOPS)[number]),
+        landable: false,
+        blockedBy: 'cloud',
+        stats: { waterBodyId: 'mascoma', clearPct: 0.596, coveragePct: 1, pixels: 46_200 },
+      },
+      { ...INFERRED_STOP, landable: false, blockedBy: 'cloud' },
+    ]);
+    for (const row of rows) {
+      const { unmount } = render(<ImageryTabView {...base} rows={rows} lit={row.id} />);
+      expect(within(card()).getByText('Hidden from skaters')).toBeVisible();
+      const [cloud, coverage] = card().querySelectorAll('[data-slot="gate-row"]');
+      expect(cloud).toHaveAttribute('data-fails');
+      expect(coverage).not.toHaveAttribute('data-fails');
+      unmount();
+    }
+    expect(rows[0]?.clearPct).toBe(60);
   });
 
   it('hiding asks a reason first, and waits until there is one', async () => {

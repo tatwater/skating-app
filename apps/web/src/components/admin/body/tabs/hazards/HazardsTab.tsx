@@ -13,6 +13,7 @@ import {
   useConsoleReadSet,
 } from '@/components/admin/reads/consoleReads';
 import { ReadNote } from '@/components/admin/reads/ReadNote';
+import { useMinuteNow } from '@/components/admin/shell/presence';
 import { useUndo } from '@/components/admin/shell/undo';
 import { UNAVAILABLE } from '@/components/kit/unavailable-button';
 import { useRole } from '@/lib/useRole';
@@ -64,7 +65,8 @@ function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabPr
   const waterBodyId = id as Id<'waterBodies'>;
   // The reads hold their arguments for the hour; ages read the minute, so none looks an hour fresher.
   const now = useHourClock();
-  const ageNow = useMinuteClock();
+  // Since anyone last looked, to the minute: an age lags by a minute at most, never by an hour.
+  const ageNow = useMinuteNow();
   const current = seasonOf(now);
   // The lit address is the frame's when it has one (the URL keeps it), else the tab's own.
   const [own, setOwn] = useState<string | null>(null);
@@ -303,13 +305,3 @@ function useHourClock(): number {
 }
 
 const onTheHour = (at: number) => Math.floor(at / 3_600_000) * 3_600_000;
-
-/** Since anyone last looked, to the minute: an age lags by a minute at most, never by an hour. */
-function useMinuteClock(): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 60_000);
-    return () => window.clearInterval(id);
-  }, []);
-  return now;
-}

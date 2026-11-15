@@ -1,6 +1,7 @@
 import type { Season } from '@skating/core';
 
 import { seasonYears } from '../../../shell/consoleTime';
+import { statusDate } from '../../frame/bodyModel';
 
 /**
  * **Every headline, empty state, summary and note the Hazards tab can say, in one place** — so a
@@ -76,18 +77,8 @@ export function wordsContext(over: Partial<WordsContext> = {}): WordsContext {
   };
 }
 
-/* A record's day is a UTC midnight, so it is written in UTC. */
-const DAY = new Intl.DateTimeFormat('en-US', {
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
-  timeZone: 'UTC',
-});
-export function dateWords(at: number): string {
-  const parts = DAY.formatToParts(at);
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
-  return `${get('day')} ${get('month')} ${get('year')}`;
-}
+/** "3 Oct 2026": a record's day is a UTC midnight, so it is written in UTC. */
+export const dateWords = (at: number): string => statusDate(at, 'UTC');
 
 /** "2026–27": the console's one season word. */
 export const seasonWord: (season: Season) => string = seasonYears;
@@ -157,11 +148,20 @@ export const HAZARDS_WORDS = {
   marksCaption: (_c: WordsContext): string =>
     'A bright mark is the day a hazard with no recorded end was first reported. How long it stayed on the lake isn’t recorded; the days after it are not a reading of the ice.',
 
-  /** Archived reports with no recorded end, on a strip that marks their first reports. */
+  /**
+   * Archived reports with no recorded end, on a strip that marks their first reports. `reported` is
+   * the marks the strip draws in all: the archived list the marks come from can hold fewer than the
+   * day-by-day count (it leaves out a crossing past its window), so "each is marked" is said only
+   * when every one is — otherwise how many are, and that the rest are counted without one.
+   */
   unknownEndsNote: (c: WordsContext): string => {
     const n = c.unknownEnds;
     const lead = c.named ? `${seasonWord(c.season)}: ` : '';
-    return `${lead}${n === 1 ? '1 archived report has' : `${n} archived reports have`} no recorded end. ${n === 1 ? 'It is' : 'Each is'} marked on the day it was first reported; from then on, every day counts ${n === 1 ? 'it' : 'them'} as unknown: ${n === 1 ? 'the hazard' : 'each hazard'} may still have been on the lake.`;
+    const marked =
+      c.reported >= n
+        ? `${n === 1 ? 'It is' : 'Each is'} marked on the day it was first reported`
+        : `${c.reported} ${c.reported === 1 ? 'is' : 'are'} marked on the day first reported, and the rest counted that day without a mark`;
+    return `${lead}${n === 1 ? '1 archived report has' : `${n} archived reports have`} no recorded end. ${marked}; from then on, every day counts ${n === 1 ? 'it' : 'them'} as unknown: ${n === 1 ? 'the hazard' : 'each hazard'} may still have been on the lake.`;
   },
 
   /**
