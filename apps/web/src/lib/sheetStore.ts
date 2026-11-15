@@ -38,7 +38,13 @@
  * author writing again, and leaves it armed. A *sent* Post stays armed through both: it cannot
  * change, it may already be live, and only a retry finds out. `resendSheet` is what
  * `useResendOnReconnect` calls; the store runs the send, one at a time, and takes no change while
- * one is in flight.
+ * one is in flight. A change made in another tab of the same browser disarms it the same way
+ * (`onStoredElsewhere`): the tabs share the record, not their memory.
+ *
+ * What does not disarm it: a lost blob that this tab rewrites before any reload. The reconcile
+ * stores every claimed photo this tab still holds, so a blob the browser dropped comes back on the
+ * next change to the set of photos, and a restore after that finds every photo — the Post is still
+ * exactly what the author pressed *Post* on.
  */
 
 import {
@@ -531,6 +537,31 @@ export function setSheetAttempt(next: PostDraft | null): void {
   persist();
   emit();
 }
+
+/**
+ * Another tab of this browser changed the stored record. Tabs share the record but not their memory,
+ * so a resend armed here stays armed only while the record agrees: the author changing this draft in
+ * the other tab (its record no longer armed), throwing it away or posting it there (the record gone),
+ * or another account writing (its owner not this one) means what this tab holds is no longer what
+ * they last pressed *Post* on. Another draft of the same author's, started in the other tab, is not a
+ * change to this one and leaves it alone. Disarming sends nothing, and the record stays as the other
+ * tab wrote it: rewriting it from here would undo the change that disarmed it.
+ */
+function onStoredElsewhere(event: StorageEvent): void {
+  // `null` is the other tab clearing the whole store.
+  if (event.key !== STORAGE_KEY && event.key !== null) return;
+  if (!resendArmed || current === null) return;
+  const record = readRecord();
+  const disarm =
+    record === null ||
+    record.owner !== owner ||
+    (record.sheet.draftId === current.draftId && record.resendArmed !== true);
+  if (!disarm) return;
+  resendArmed = false;
+  emit();
+}
+
+if (typeof window !== 'undefined') window.addEventListener('storage', onStoredElsewhere);
 
 /** Could a retry of this attempt work? A parked refusal cannot, and an edit is never resent. */
 function canResend(post: PostSheet | null, failed: PostDraft | null): boolean {
