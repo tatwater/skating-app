@@ -2173,7 +2173,7 @@ the chain's newest depth and its writer on the first row (two point reads and a 
 that undoes). A row stands while the undos above it are even in number, so "did this stand?" is a
 property of the row and its first row, at any chain length (Greptile's P2: a ninth undo is no longer
 past a truncation). `peopleJobs.backfillUndoChains` places chains written before; until it has run
-(`ready:undoChains`) the undo figures name it in their `pending`.
+the undo figures name it in their `pending`.
 
 **Owed:** the lapsed-suspension sweep's parked count in `recurringJobs:health` (D258's one place to
 look). That read counts small `jobFailures` rows and never loads a profile; the sweep keeps its
@@ -2230,21 +2230,35 @@ names without a row is `rows_missing` in the count and on every page. The Overvi
 counts through the same function. One test at cap + 1 for each upstream
 of each lane (`peopleTruth.test.ts`).
 
-**B01-4: the backfills, and the one command that runs them** (Greptile's fourth review of #115, P2:
-the roadmap listed two of the three). Every one-time job a People read rests on is one entry in
-`PEOPLE_BACKFILLS` (`lib/peopleRows`), in run order, with the flag it sets; the operator starts the
-first and each starts the next when it ends, whatever its outcome — each marks only its own flag,
-and only by a run with no failures. On a database with nothing to backfill each finds nothing and
-sets its flag at once, so a fresh deployment needs the same one command.
+**B01-4: the backfills, and the one procedure that runs them** (Greptile's fourth and fifth reviews
+of #115: the roadmap listed two of the three backfills; then the documented recovery passed an argument
+one backfill refused, and the documented completion check left one out). Every one-time job a People
+read rests on is one entry in `PEOPLE_BACKFILLS` (`lib/peopleRows`), in run order. The operator starts
+the first and each starts the next when it ends, whatever its outcome; each is ready only by a run with
+no failures, and on a database with nothing to backfill each is ready at once, so a fresh deployment
+takes the same procedure. All three take the same arguments with the same meaning (`BACKFILL_ARGS`):
+`cursor` (where a pass resumes, opaque; left out, a new run from the start) and `alone` (don't start
+the ones after). Each pass records its state in `peopleBackfills` — ready, running, its cursor, its
+failures, whether it chains — and `lib/peopleRows.readPreparation` is the only reading of it: the
+operator's check (`peopleJobs.preparation`) is that reading, and so is every read's `pending`, so the
+check and the pages can't disagree about what is finished.
 
-| Job | Started by | Sets | Reads that say `pending` until it is set |
-| --- | --- | --- | --- |
-| `peopleJobs:backfillRows` | the operator: `convex run peopleJobs:backfillRows '{}'` | `ready:rows` | `people.lanes` (every lane, and the top level), `people.listPage` (every lane and search), `console.overview` → `people` (every figure but *N users*) |
-| `peopleJobs:backfillFlagSubjects` | `backfillRows`, when it ends | `ready:flagSubjects` | `people.lanes` (Flagged, and the top level), `people.listPage` (every page: rows carry open flags), `people.person`, `people.history`, `console.overview` → `people` |
-| `peopleJobs:backfillUndoChains` | `backfillFlagSubjects`, when it ends | `ready:undoChains` | `people.staffStats`, `people.staffSeason` |
+| Job | Started by | Reads that say `pending` until it is ready |
+| --- | --- | --- |
+| `peopleJobs:backfillRows` | the operator (step 2) | `people.lanes` (every lane, and the top level), `people.listPage` (every lane and search), `console.overview` → `people` (every figure but *N users*) |
+| `peopleJobs:backfillFlagSubjects` | `backfillRows`, when it ends | `people.lanes` (Flagged, and the top level), `people.listPage` (every page: rows carry open flags), `people.person`, `people.history`, `console.overview` → `people` |
+| `peopleJobs:backfillUndoChains` | `backfillFlagSubjects`, when it ends | `people.staffStats`, `people.staffSeason` |
 
-The ledger's "never no editor" check also reads `ready:rows`, but it isn't a figure: before the rows
-exist it reads admins' profiles under its own allowance and only ever refuses (safe).
+The ledger's "never no editor" check also reads whether the rows are ready (through the same
+reading), but it isn't a figure: before the rows exist it reads admins' profiles under its own
+allowance and only ever refuses (safe).
+
+**The check** — `peopleJobs.preparation` (internal: only the deployment's key can call it), `{}` →
+`{ ready, pending: PeopleBackfill[], rerun: string[], backfills: [{ backfill, job, ready, running,
+stalled, cursor, failed, updatedAt }] }`. `ready` is every backfill ready. `rerun` is the jobs to run
+again: not ready, not running (or running but `stalled` — nothing recorded for ten minutes, so a pass
+threw and its write rolled back, leaving the last recorded `cursor`), and not about to be started by an
+earlier backfill whose chain is still running. Once ready a backfill stays ready: a re-run is a repair.
 
 **Three answers, three fields** — for the web builders:
 
@@ -2257,26 +2271,16 @@ exist it reads admins' profiles under its own allowance and only ever refuses (s
 - **Not recorded** — `null` (`contradictions`, `timeToDecide.medianMs` with an unrecorded filing,
   `staffSince` with no role row, `overturned` in a season not yet open): nothing on record to show.
 
-A dependent figure is never folded into `capped` while a backfill is pending, and `pending` is
-computed from the registry, so a new backfill joins every read by joining the list.
-`peopleBackfills.test.ts` runs the documented step on an empty database and on one written before
-this build and holds every read to `pending: []` after; `packages/guards`' `peopleBackfills.test.ts`
-fails if a `ready:` flag is spelled outside the registry module, a `READY_*` constant is missing from
-the registry, a job doesn't mark its flag or start the next, or this table leaves a job out.
+A dependent figure is never folded into `capped` while a backfill is pending.
 
-**After merge, on dev, in order** (the same steps in the roadmap's Owed list and the PR body):
+**After merge, on dev** — word for word the same in the roadmap's Owed list and the PR body; the text
+is `AFTER_MERGE_PROCEDURE` in `lib/peopleRows`, which `peopleBackfills.test.ts` performs literally (its
+`convex run` commands parsed out of the text and run with exactly those names and argument objects) on
+an empty database and seeded ones, a failure and a stalled pass included; `packages/guards`'
+`peopleBackfills.test.ts` holds this doc and the roadmap to it, and this table to the registry. Each
+`convex` command runs as `pnpm --filter @skating/convex exec convex …` from main.
 
-1. `convex dev --once` — the schema (widen-only), the functions and the three crons.
-2. `convex run peopleJobs:backfillRows '{}'` — runs all three backfills in turn. Estimate:
-   **unmeasured** (dev's row counts weren't read for this PR). Each pass reads at most 50 profiles,
-   200 flags or 200 audit rows, so passes ≈ profiles ÷ 50 + flags ÷ 200 + audit rows ÷ 200 (pass
-   time unmeasured too).
-3. Read the logs. For each id `backfillRows` logs as a tombstone whose status was overwritten:
-   `convex run peopleJobs:restoreTombstoneStatus '{"userId":"<id>"}'`. For any backfill that logs
-   "not marked ready", fix the cause and re-run that one alone: `convex run peopleJobs:<job>
-   '{"alone":true}'`.
-4. Confirm: `peopleCounts` holds `ready:rows`, `ready:flagSubjects` and `ready:undoChains` (or
-   `people.lanes` returns `pending: []`).
+(1) `convex dev --once`. (2) `convex run peopleJobs:backfillRows '{}'` — it runs the three People backfills in turn (rows, flag subjects, undo chains). Estimate: unmeasured. (3) `convex run peopleJobs:preparation '{}'` until it returns `ready: true`. (4) For each job in its `rerun`: `convex run <job> '{"alone":true}'`, then step 3 again. (5) For each id `backfillRows` logs as an overwritten tombstone: `convex run peopleJobs:restoreTombstoneStatus '{"userId":"<id>"}'`.
 
 **B01-4: one rule for what is offered** (Greptile on #115, P2). An undo is a write of the previous
 state, so its refusal is computed by `lib/peopleCan.writeRefusal` on the write the undo's handler
