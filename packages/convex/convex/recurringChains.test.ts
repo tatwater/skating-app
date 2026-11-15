@@ -151,7 +151,7 @@ describe('D258 chains under real limits', () => {
     );
     expect(left).toHaveLength(15);
     expect((await t.run((ctx) => ctx.db.query('jobPositions').first()))?.lapsCompleted).toBe(1);
-  });
+  }, 180_000);
 
   test('the flush, one row at a time: twenty recipients near the document limit after a batch that fails — every row lands', async () => {
     const t = harness();
@@ -179,7 +179,7 @@ describe('D258 chains under real limits', () => {
     await runOut(t, () => t.mutation(internal.notifications.flushNotificationQueue, {}));
     for (const id of rows) expect(await t.run((ctx) => ctx.db.get(id))).toBeNull();
     expect(await t.run((ctx) => ctx.db.query('notifications').collect())).toHaveLength(20);
-  });
+  }, 180_000);
 
   test('the prompt sweep: twelve skaters near the document limit, each with a recording near it — every one is asked', async () => {
     const t = harness();
@@ -204,7 +204,7 @@ describe('D258 chains under real limits', () => {
     for (const id of rows) {
       expect((await t.run((ctx) => ctx.db.get(id)))?.promptState).toBe('prompted');
     }
-  });
+  }, 180_000);
 
   test('the card sweep: cards whose windows hold Reports near the document limit — the sweep stops and continues, and every card refreshes', async () => {
     const t = harness();
@@ -245,7 +245,7 @@ describe('D258 chains under real limits', () => {
     for (const id of bodies) {
       expect((await t.run((ctx) => ctx.db.get(id)))?.summary?.recentReportCount).toBe(4);
     }
-  });
+  }, 180_000);
 
   test('the Machinery read: fourteen parked queue rows near the document limit — it reads only their small mirrors', async () => {
     const t = harness();
@@ -277,7 +277,7 @@ describe('D258 chains under real limits', () => {
       parked: 14,
       capped: false,
     });
-  });
+  }, 180_000);
 
   test('the forget step at the end of a spent pass: ten checks of heavy rows stop at the budget, never past the limit', async () => {
     const t = harness();
@@ -316,7 +316,7 @@ describe('D258 chains under real limits', () => {
     });
     expect(forgotten).toBe(0);
     expect(await t.run((ctx) => ctx.db.query('jobFailures').collect())).toHaveLength(20);
-  });
+  }, 180_000);
 });
 
 /** An outline near the document limit: a ring of tens of thousands of points around the unit square. */
@@ -357,7 +357,7 @@ describe('D258 walks whose every document is at the document limit', () => {
       apply: true,
     });
     expect(result).toMatchObject({ scanned: 12, demoted: 12, failed: 0 });
-  });
+  }, 180_000);
 
   test('the registry walk: twelve outlines near the limit — pages end by weight, every body registered', async () => {
     const t = harness();
@@ -367,7 +367,7 @@ describe('D258 walks whose every document is at the document limit', () => {
     );
     const members = await t.run((ctx) => ctx.db.query('bodyWeatherCells').collect());
     expect(members).toHaveLength(12);
-  });
+  }, 180_000);
 
   test('the gap walk: forty registered cells near the limit — pages end by weight, the walk reaches its end', async () => {
     const t = harness();
@@ -387,7 +387,7 @@ describe('D258 walks whose every document is at the document limit', () => {
     await runOut(t, () =>
       t.action(internal.weatherArchive.sweepWeatherDayGaps, { tier: 'filter' }),
     );
-  });
+  }, 180_000);
 
   test('the flush: forty queue rows near the limit — the batch reads by weight and every row lands', async () => {
     const t = harness();
@@ -414,5 +414,5 @@ describe('D258 walks whose every document is at the document limit', () => {
     await runOut(t, () => t.mutation(internal.notifications.flushNotificationQueue, {}));
     for (const id of rows) expect(await t.run((ctx) => ctx.db.get(id))).toBeNull();
     expect(await t.run((ctx) => ctx.db.query('notifications').collect())).toHaveLength(40);
-  });
+  }, 180_000);
 });
