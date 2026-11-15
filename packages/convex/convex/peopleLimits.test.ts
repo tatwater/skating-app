@@ -110,7 +110,11 @@ describe('staffStats at its maximum supported input', () => {
       .query(api.people.staffStats, { userId: matt });
     expect(s?.decisions.thisWeek).toEqual({ count: 1_999, capped: false });
     expect(s?.decisions.undoneByOthers).toEqual({ count: 1_999, capped: false });
-    expect(s?.overturned).toEqual({ count: 1_999, capped: false });
+    const ss = await t
+      .withIdentity({ subject: 'adm' })
+      .query(api.people.staffSeason, { userId: matt });
+    // A season's checks stop at their time bound: past it, the count says capped.
+    expect(ss?.overturned).toEqual({ count: 600, capped: true });
   });
 
   test('a full week of takedowns whose verdicts others reversed: the budget stops it and says capped', async () => {
@@ -155,8 +159,11 @@ describe('staffStats at its maximum supported input', () => {
       .withIdentity({ subject: 'adm' })
       .query(api.people.staffStats, { userId: matt });
     expect(s?.decisions.thisWeek.count).toBe(1_900);
-    expect(s?.overturned?.capped).toBe(true);
-    expect(s?.overturned?.count).toBeGreaterThan(0);
+    const ss = await t
+      .withIdentity({ subject: 'adm' })
+      .query(api.people.staffSeason, { userId: matt });
+    expect(ss?.overturned?.capped).toBe(true);
+    expect(ss?.overturned?.count).toBeGreaterThan(0);
     // The role rows are read before the loop that ran out, so the dates aren't starved by it.
     expect(s?.tenureCapped).toBe(false);
     // Reaching the calls limit genuinely takes past 3,500 reads, so this one test carries its own
@@ -404,5 +411,48 @@ describe('the figures say capped rather than throw or mislead', () => {
       roleSince: { at: T0 - 3, role: 'moderator' },
       tenureCapped: false,
     });
+  });
+
+  test('the lanes and a lane page with every queue at its cap, every row at its heaviest', async () => {
+    const t = await setup();
+    await seed(t, 'adm', 'admin');
+    const filer = await seed(t, 'filer', 'member');
+    const people: Id<'profiles'>[] = [];
+    for (let i = 0; i < 40; i++) people.push(await seed(t, `p${i}`, 'member'));
+    await t.run(async (ctx) => {
+      for (const status of ['open', 'reviewing'] as const) {
+        for (let i = 0; i <= 200; i++) {
+          await ctx.db.insert('contentFlags', {
+            flaggerId: filer,
+            targetType: 'report',
+            targetId: `r${status}${i}`,
+            reason: 'spam',
+            note: 'n'.repeat(1_000),
+            status,
+            subjectUserId: people[i % people.length] as Id<'profiles'>,
+            createdAt: T0 - i,
+          });
+        }
+      }
+      for (const status of ['open', 'in_progress'] as const) {
+        for (let i = 0; i <= 50; i++) {
+          await ctx.db.insert('supportTickets', {
+            userId: people[i % people.length] as Id<'profiles'>,
+            clerkUserId: 'x',
+            category: 'account',
+            status,
+            body: 'b'.repeat(5_000),
+            createdAt: T0 - i,
+          });
+        }
+      }
+    });
+    const a = t.withIdentity({ subject: 'adm' });
+    const { lanes } = await a.query(api.people.lanes, {});
+    expect(lanes.find((l) => l.lane === 'flagged')?.reasons).toEqual(['flags_capped']);
+    expect(lanes.find((l) => l.lane === 'appeals')?.reasons).toEqual(['tickets_capped']);
+    const page = await a.query(api.people.listPage, { lane: 'flagged', pageSize: 100 });
+    expect(page.rows.length).toBe(40);
+    expect(page.partial).toBe(true);
   });
 });

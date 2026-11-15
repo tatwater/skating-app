@@ -271,12 +271,21 @@ describe('people.staffStats and people.decisions', () => {
     expect(s?.decisions.thisWeek).toEqual({ count: 3, capped: false });
     expect(s?.decisions.undoneByOthers).toEqual({ count: 1, capped: false });
     expect(s?.timeToDecide).toEqual({ medianMs: 60 * 60_000, decided: 1, capped: false });
-    expect(s?.overturned).toEqual({ count: 2, capped: false });
+    expect(
+      (await as(t, 'adm').query(api.people.staffSeason, { userId: matt }))?.overturned,
+    ).toEqual({
+      count: 2,
+      capped: false,
+    });
     expect(s?.staffSince).toEqual({ at: sinceAt, role: 'moderator' });
     expect(s?.roleSince).toEqual({ at: sinceAt, role: 'moderator' });
     expect(s?.weeks).toHaveLength(9);
     expect(s?.weeks[8]?.count).toBe(3);
-    expect(s?.season).toMatchObject({ season: 2026, opensOn: '2026-10-01', empty: false });
+    expect(await as(t, 'adm').query(api.people.staffSeason, { userId: matt })).toMatchObject({
+      season: 2026,
+      opensOn: '2026-10-01',
+      empty: false,
+    });
     const d = await as(t, 'adm').query(api.people.decisions, { userId: matt });
     expect(d.rows.map((r) => r.action)).not.toContain('author_delete');
     expect(d.rows).toHaveLength(3);
@@ -294,11 +303,11 @@ describe('people.staffStats and people.decisions', () => {
     vi.setSystemTime(Date.UTC(2026, 7, 15, 12));
     const { t } = await setup();
     const mod = await seed(t, 'mod', { role: 'moderator' });
-    const s = await as(t, 'mod').query(api.people.staffStats, { userId: mod });
+    const s = await as(t, 'mod').query(api.people.staffSeason, { userId: mod });
     expect(s?.overturned).toBeNull();
-    expect(s?.season).toMatchObject({ season: 2026, opensOn: '2026-10-01', empty: true });
-    // A past season, chosen.
-    const past = await as(t, 'mod').query(api.people.staffStats, { userId: mod, season: 2025 });
+    expect(s).toMatchObject({ season: 2026, opensOn: '2026-10-01', empty: true });
+    // A past season, chosen: read whole, in its own range.
+    const past = await as(t, 'mod').query(api.people.staffSeason, { userId: mod, season: 2025 });
     expect(past?.overturned).toEqual({ count: 0, capped: false });
   });
 });
@@ -428,10 +437,14 @@ describe('a decision undone and then redone stands', () => {
     await as(t, 'adm').mutation(api.undo.run, { actionId: await newest() });
     let s = await as(t, 'adm').query(api.people.staffStats, { userId: matt });
     expect(s?.decisions.undoneByOthers.count).toBe(1);
-    expect(s?.overturned?.count).toBe(1);
+    expect(
+      (await as(t, 'adm').query(api.people.staffSeason, { userId: matt }))?.overturned?.count,
+    ).toBe(1);
     await as(t, 'adm').mutation(api.undo.run, { actionId: await newest(), reason: 'r' });
     s = await as(t, 'adm').query(api.people.staffStats, { userId: matt });
     expect(s?.decisions.undoneByOthers.count).toBe(0);
-    expect(s?.overturned?.count).toBe(0);
+    expect(
+      (await as(t, 'adm').query(api.people.staffSeason, { userId: matt }))?.overturned?.count,
+    ).toBe(0);
   });
 });

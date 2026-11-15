@@ -3764,6 +3764,8 @@ export default defineSchema({
     resolvedAt: v.optional(v.number()),
   })
     .index('by_status', ['status'])
+    // The People page's Appeals open lane: a status's account tickets only (`lib/peopleFigures`).
+    .index('by_status_category', ['status', 'category'])
     // Rate-limit lookup: how many tickets this submitter filed inside the window.
     .index('by_clerk_user_created', ['clerkUserId', 'createdAt'])
     // Analytics (Phase 07-2): volume by category on a day, and resolution latency for tickets closed

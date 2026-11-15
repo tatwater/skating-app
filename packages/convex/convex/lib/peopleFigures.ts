@@ -25,6 +25,7 @@ import {
   READY_ROWS,
   type StoredCountKey,
 } from './peopleRows';
+import { requestBudget } from './readBudget';
 
 const DAY_MS = 86_400_000;
 
@@ -150,8 +151,9 @@ export async function listablePeople(
   ids: readonly Id<'profiles'>[],
 ): Promise<{ rows: Doc<'peopleRows'>[]; missing: boolean }> {
   const rows: Doc<'peopleRows'>[] = [];
+  const budget = requestBudget(ctx);
   for (const id of ids) {
-    const row = await personRowOf(ctx, id);
+    const row = await budget.one('personRow', () => personRowOf(ctx, id));
     if (row) rows.push(row);
   }
   return { rows, missing: rows.length < ids.length };
@@ -178,6 +180,30 @@ export async function readWaitingTickets(
       .take(LANE_COUNT_CAP + 1);
     capped ||= page.length > LANE_COUNT_CAP;
     tickets.push(...page);
+  }
+  return { tickets, capped };
+}
+
+/** Account tickets read per waiting status for the Appeals open lane, at most (one past it). */
+export const APPEALS_CAP = 50;
+
+/**
+ * The account tickets still waiting — the Appeals open lane's queue — each status read through its
+ * own index range to {@link APPEALS_CAP} and one past it, so the lane never reads the whole support
+ * queue's bodies. PII (D37): callers check `inbox.support.read`.
+ */
+export async function readWaitingAppeals(
+  ctx: QueryCtx,
+): Promise<{ tickets: Doc<'supportTickets'>[]; capped: boolean }> {
+  const tickets: Doc<'supportTickets'>[] = [];
+  let capped = false;
+  for (const status of ['open', 'in_progress'] as const) {
+    const page = await ctx.db
+      .query('supportTickets')
+      .withIndex('by_status_category', (q) => q.eq('status', status).eq('category', 'account'))
+      .take(APPEALS_CAP + 1);
+    capped ||= page.length > APPEALS_CAP;
+    tickets.push(...page.slice(0, APPEALS_CAP));
   }
   return { tickets, capped };
 }

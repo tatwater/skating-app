@@ -13,6 +13,7 @@
  */
 
 import {
+  COUNT_CAP,
   type Count,
   callerNow,
   DELETION_GRACE_MS,
@@ -56,6 +57,7 @@ import {
   yes,
 } from './lib/peopleCan';
 import {
+  APPEALS_CAP,
   appealsFrom,
   countTimeLane,
   flaggedPeopleFrom,
@@ -63,10 +65,10 @@ import {
   listablePeople,
   readOpenFlagQueue,
   readStoredCounts,
-  readWaitingTickets,
+  readWaitingAppeals,
 } from './lib/peopleFigures';
 import { OPEN_ENDED, personRowOf, READY_UNDO_CHAINS } from './lib/peopleRows';
-import { DOC_MAX, ReadBudget, ROW_MAX, type RowKind, TX_BUDGET } from './lib/readBudget';
+import { DOC_MAX, type ReadBudget, type RowKind, requestBudget } from './lib/readBudget';
 import { trustClassFor } from './lib/reputation';
 import { type UndoState, undoState } from './lib/undo';
 import { chainRootId, isStandingChange, stands, undoneBy } from './lib/undoChains';
@@ -99,7 +101,8 @@ async function takeCapped<T>(
 }
 
 /** A query's budget: the transaction's, less the caller's own profile (`requireCapability`). */
-const queryBudget = () => new ReadBudget(TX_BUDGET - ROW_MAX.profile);
+/** The request's one budget (`requestBudget`), shared with every helper the query calls. */
+const queryBudget = (ctx: QueryCtx) => requestBudget(ctx);
 
 // ── Lanes ──────────────────────────────────────────────────────────────────────────────────────
 
@@ -131,12 +134,21 @@ export type PartialReason =
 
 /** Every upstream read a People lane can depend on, read once for a request. */
 async function readUpstream(ctx: QueryCtx, viewer: Doc<'profiles'>) {
+  // The shared helpers' reads, charged ahead to the request's budget: the counts, each open-flag
+  // status and each waiting-ticket status read one past their cap.
+  const budget = requestBudget(ctx);
+  budget.reserve('small', 64);
   const stored = await readStoredCounts(ctx);
+  budget.reserve('contentFlag', COUNT_CAP + 1);
+  budget.reserve('contentFlag', COUNT_CAP + 1);
   const queue = await readOpenFlagQueue(ctx);
   const flagged = flaggedPeopleFrom(queue.flags, queue.capped);
-  const waiting = hasCapability(viewer, 'inbox.support.read')
-    ? await readWaitingTickets(ctx)
-    : null;
+  const support = hasCapability(viewer, 'inbox.support.read');
+  if (support) {
+    budget.reserve('supportTicket', APPEALS_CAP + 1);
+    budget.reserve('supportTicket', APPEALS_CAP + 1);
+  }
+  const waiting = support ? await readWaitingAppeals(ctx) : null;
   const appeals = waiting === null ? null : appealsFrom(waiting.tickets, waiting.capped);
   return {
     stored,
@@ -335,7 +347,7 @@ export const listPage = query({
       throw new ConvexError('Appeals are support tickets, which only an admin can read');
     }
     const cursor = args.cursor ?? null;
-    const budget = queryBudget();
+    const budget = queryBudget(ctx);
     const up = await readUpstream(ctx, viewer);
     const { flagged, appeals } = up;
     const flagsBy = new Map(
@@ -466,7 +478,7 @@ export const person = query({
   handler: async (ctx, { userId, now: asked }) => {
     const viewer = await requireCapability(ctx, 'people.read');
     const now = clock(asked);
-    const budget = queryBudget();
+    const budget = queryBudget(ctx);
     const target = await budget.one('profile', () => ctx.db.get(userId));
     if (!target) return null;
     budget.reserve('small', 64);
@@ -754,6 +766,32 @@ async function labelOf(
   return label === null ? {} : { targetLabel: label };
 }
 
+/**
+ * What shaping one History or Decisions row reads through helpers on main and in this PR — undo state
+ * (the undo tagged rows ≤ 16, the newest row on the target, the content's author stamp, the person's
+ * row, a rowless fallback), the actor's and the target's names — counted ahead: calls and documents.
+ * Their bytes are audit rows and content items read as they really weigh (an audit row's reason has
+ * no cap; the phase doc's open ruling).
+ */
+const ROW_SHAPE_CALLS = 8;
+const ROW_SHAPE_DOCS = 24;
+
+/** Rows shaped in order, each counted ahead against the request's budget (≤ 100 rows: it fits). */
+async function shapeRows(
+  ctx: QueryCtx,
+  viewer: Doc<'profiles'>,
+  rows: readonly Doc<'moderationActions'>[],
+  actors: Actors,
+): Promise<PersonActionRow[]> {
+  const budget = requestBudget(ctx);
+  const out: PersonActionRow[] = [];
+  for (const row of rows) {
+    budget.reserveCalls(ROW_SHAPE_CALLS, ROW_SHAPE_DOCS);
+    out.push(await toRow(ctx, viewer, row, actors));
+  }
+  return out;
+}
+
 async function toRow(
   ctx: QueryCtx,
   viewer: Doc<'profiles'>,
@@ -848,7 +886,7 @@ export const history = query({
   args: { userId: v.id('profiles'), limit: v.optional(v.number()) },
   handler: async (ctx, { userId, limit }) => {
     const viewer = await requireCapability(ctx, 'audit.read');
-    const budget = queryBudget();
+    const budget = queryBudget(ctx);
     const target = await budget.one('profile', () => ctx.db.get(userId));
     if (!target) return null;
     const n = clampLimit(limit);
@@ -971,7 +1009,7 @@ export const history = query({
     );
     const actors: Actors = new Map();
     return {
-      rows: await Promise.all(merged.rows.map((r) => toRow(ctx, viewer, r, actors))),
+      rows: await shapeRows(ctx, viewer, merged.rows, actors),
       // Flags older than the subject stamp aren't found by person until its backfill has run.
       capped: merged.capped || !stored.flagSubjectsReady,
       createdAt: target.createdAt,
@@ -999,7 +1037,7 @@ export const decisions = query({
   handler: async (ctx, { userId, cursor, limit }) => {
     const viewer = await requireCapability(ctx, 'audit.read');
     const ledgerVisible = seesLedgerGrants(viewer);
-    const budget = queryBudget();
+    const budget = queryBudget(ctx);
     const page = await budget.capped(DECISIONS_BYTES, DECISIONS_SCAN, () =>
       ctx.db
         .query('moderationActions')
@@ -1018,7 +1056,7 @@ export const decisions = query({
     );
     const actors: Actors = new Map();
     return {
-      rows: await Promise.all(page.page.map((r) => toRow(ctx, viewer, r, actors))),
+      rows: await shapeRows(ctx, viewer, page.page, actors),
       isDone: page.isDone,
       continueCursor: page.continueCursor,
     };
@@ -1150,11 +1188,11 @@ export function staffTenure(
  * already shows them everything it counts.
  */
 export const staffStats = query({
-  args: { userId: v.id('profiles'), season: v.optional(v.number()), ...nowArg },
+  args: { userId: v.id('profiles'), ...nowArg },
   handler: async (ctx, args) => {
     const viewer = await requireCapability(ctx, 'audit.read');
     const now = clock(args.now);
-    const budget = queryBudget();
+    const budget = queryBudget(ctx);
     const target = await budget.one('profile', () => ctx.db.get(args.userId));
     if (!target || ROLE_RANK[target.role] < ROLE_RANK.moderator) return null;
     const ledgerVisible = seesLedgerGrants(viewer);
@@ -1167,14 +1205,11 @@ export const staffStats = query({
           .first(),
       )) !== null;
 
-    // ── One read of their decisions, for the nine weeks and the season both ──
+    // ── One read of their decisions over the nine weeks ──
     const today = lastDays(now, 1);
     const end = today.to;
     const weeksFrom = end - WEEKS * WEEK_MS;
-    const season: Season =
-      args.season !== undefined && Number.isInteger(args.season) ? args.season : seasonOf(now);
-    const span = seasonRecordSpan(season, now);
-    const readFrom = Math.min(weeksFrom, span?.from ?? weeksFrom) - DAY_MS;
+    const readFrom = weeksFrom - DAY_MS;
     const page = await budget.capped(DECISION_BYTES, DECISION_ROWS, () =>
       ctx.db
         .query('moderationActions')
@@ -1198,9 +1233,11 @@ export const staffStats = query({
     // a busy staffer's dates would be starved and say capped whenever those loops ran out.
     const roleRows: Audit[] = [];
     let roleShort = false;
+    let roleFull = false;
     for (const action of ['grant_role', 'revoke_role'] as const) {
       let before = Number.POSITIVE_INFINITY;
       for (let i = 0; i < ROLE_ROWS; i++) {
+        if (i === ROLE_ROWS - 1) roleFull = true;
         const row = await budget.measured('moderationAction', () =>
           ctx.db
             .query('moderationActions')
@@ -1281,22 +1318,6 @@ export const staffStats = query({
       else durations.push(Math.max(0, r.createdAt - filedAt));
     }
 
-    // ── This season's reversals, from the same rows ──
-    let overturned: Count | null = null;
-    if (span !== null) {
-      let count = 0;
-      let short = !chainsReady || !readAllAfter(span.from);
-      for (const r of decisions.filter((x) => x.createdAt >= span.from && x.createdAt < span.to)) {
-        const reversed = await reversedByOther(ctx, budget, rootOf, r, staffer);
-        if (reversed === undefined) {
-          short = true;
-          break;
-        }
-        if (reversed) count++;
-      }
-      overturned = { count, capped: short };
-    }
-
     return {
       decisions: {
         thisWeek: { count: thisWeek.count, capped: thisWeek.capped },
@@ -1307,17 +1328,84 @@ export const staffStats = query({
         decided: filed.length,
         capped: thisWeek.capped || decideShort,
       },
-      overturned,
-      season: { season, opensOn: seasonRecordWindow(season, now).opensOn, empty: span === null },
       staffSince: tenure.staffSince,
       roleSince: tenure.roleSince,
       /**
        * The role rows couldn't all be read, or an undo among them predates the undo-chain backfill:
        * both dates are `null` for that reason, not unrecorded.
        */
-      tenureCapped: roleShort,
+      tenureCapped: roleShort || (roleFull && tenure.staffSince === null),
       weeks,
     };
+  },
+});
+
+/** A season's decisions checked for reversals at most: the query's time bound (Convex gives one second). */
+const SEASON_CHECKED = 600;
+
+/**
+ * A staffer's *Overturned this season* — their decisions in the season's record window someone else
+ * reversed on net: undid (from the stored chain facts), or ended the verdict with a restore, an
+ * overturn or an undo that still stands. Its own query, reading that season's range — so a past
+ * season, chosen, is read whole rather than behind newer rows — under one budget, checking at most
+ * {@link SEASON_CHECKED} decisions (the time bound); past any bound `overturned.capped`. Between 1
+ * July and 1 October the season is honestly empty: `overturned: null`, `empty: true`, and `opensOn`
+ * says when its record begins. `null` for anyone who isn't staff.
+ */
+export const staffSeason = query({
+  args: { userId: v.id('profiles'), season: v.optional(v.number()), ...nowArg },
+  handler: async (ctx, args) => {
+    const viewer = await requireCapability(ctx, 'audit.read');
+    const now = clock(args.now);
+    const budget = queryBudget(ctx);
+    const target = await budget.one('profile', () => ctx.db.get(args.userId));
+    if (!target || ROLE_RANK[target.role] < ROLE_RANK.moderator) return null;
+    const season: Season =
+      args.season !== undefined && Number.isInteger(args.season) ? args.season : seasonOf(now);
+    const span = seasonRecordSpan(season, now);
+    const head = { season, opensOn: seasonRecordWindow(season, now).opensOn, empty: span === null };
+    if (span === null) return { ...head, overturned: null };
+    const ledgerVisible = seesLedgerGrants(viewer);
+    const staffer = target._id;
+    const chainsReady =
+      (await budget.one('small', () =>
+        ctx.db
+          .query('peopleCounts')
+          .withIndex('by_key', (q) => q.eq('key', READY_UNDO_CHAINS))
+          .first(),
+      )) !== null;
+    const page = await budget.capped(DECISION_BYTES, DECISION_ROWS, () =>
+      ctx.db
+        .query('moderationActions')
+        .withIndex('by_actor', (q) =>
+          q
+            .eq('actorId', staffer)
+            .gte('_creationTime', span.from - DAY_MS)
+            .lt('_creationTime', span.to + DAY_MS),
+        )
+        .order('desc')
+        .paginate({
+          cursor: null,
+          numItems: DECISION_ROWS,
+          maximumRowsRead: DECISION_ROWS,
+          maximumBytesRead: DECISION_BYTES,
+        }),
+    );
+    const rootOf = rootReader(ctx, budget, page.page);
+    const inSeason = page.page.filter(
+      (r) => r.createdAt >= span.from && r.createdAt < span.to && isDecision(r, ledgerVisible),
+    );
+    let count = 0;
+    let short = !chainsReady || !page.isDone || inSeason.length > SEASON_CHECKED;
+    for (const r of inSeason.slice(0, SEASON_CHECKED)) {
+      const reversed = await reversedByOther(ctx, budget, rootOf, r, staffer);
+      if (reversed === undefined) {
+        short = true;
+        break;
+      }
+      if (reversed) count++;
+    }
+    return { ...head, overturned: { count, capped: short } as Count };
   },
 });
 
@@ -1434,7 +1522,7 @@ export const reportTrend = query({
   handler: async (ctx, args) => {
     await requireCapability(ctx, 'people.read');
     const now = clock(args.now);
-    const budget = queryBudget();
+    const budget = queryBudget(ctx);
     const target = await budget.one('profile', () => ctx.db.get(args.userId));
     if (!target) return null;
     const asked =

@@ -8,7 +8,7 @@ import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { LANE_COUNT_CAP } from './lib/peopleFigures';
+import { APPEALS_CAP, LANE_COUNT_CAP } from './lib/peopleFigures';
 import { markReady, READY_FLAG_SUBJECTS, READY_ROWS, refreshPersonRow } from './lib/peopleRows';
 import schema from './schema';
 
@@ -141,15 +141,16 @@ describe('each upstream cap or gap shows in the count and the list', () => {
     expect(page.reasons).toEqual(['flag_subjects_pending']);
   });
 
-  test('the support queue past its cap: Appeals open, count and list', async () => {
+  test('the appeals queue past its cap: Appeals open, count and list', async () => {
     const { t, adm } = await setup();
     const [skater] = await many(t, 1);
     await t.run(async (ctx) => {
-      for (let i = 0; i <= LANE_COUNT_CAP; i++) {
+      // The lane reads a status's account tickets only, to their cap and one past it.
+      for (let i = 0; i <= APPEALS_CAP; i++) {
         await ctx.db.insert('supportTickets', {
           userId: skater as Id<'profiles'>,
           clerkUserId: 'x',
-          category: i === 0 ? 'account' : 'bug',
+          category: 'account',
           status: 'open',
           body: 'b',
           createdAt: Date.now() + i,

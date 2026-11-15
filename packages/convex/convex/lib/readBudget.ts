@@ -80,7 +80,7 @@ export const ROW_MAX = {
   // A support ticket: its body is capped at 5,000 characters (`support.create`); the rest is short.
   supportTicket: 5_000 * 4 + SLACK,
   // A People row: names, a handle, an avatar URL, a reason line cut to 280 characters.
-  personRow: 16 * 1024,
+  personRow: 4 * 1024,
   // A Bodies library row carries the body's name, which no writer caps.
   bodyLibraryRow: DOC_MAX,
   // Ids, literals, numbers and a coordinate — no free text.
@@ -211,9 +211,11 @@ export class ReadBudget {
    * documents): charged its cap, so it fits by construction whatever its rows weigh.
    */
   async capped<T>(bytes: number, rows: number, read: () => Promise<T>): Promise<T> {
-    if (bytes > this.left) throw new OverBudget('read budget: a capped read past the plan');
+    // Convex stops a page once the cap is reached, so it may read one document past it: charged too.
+    const charge = bytes + DOC_MAX;
+    if (charge > this.left) throw new OverBudget('read budget: a capped read past the plan');
     this.call(rows);
-    this.left -= bytes;
+    this.left -= charge;
     return read();
   }
 
@@ -224,6 +226,20 @@ export class ReadBudget {
   reserve(kind: RowKind, rows: number): void {
     this.charge(kind, rows);
     this.call(rows);
+  }
+
+  /** Whether `calls` more calls reading `docs` documents fit (for reads a helper on main makes). */
+  affordsCalls(calls: number, docs: number): boolean {
+    return this.callsLeft >= calls && this.docsLeft >= docs;
+  }
+
+  /** Calls and documents a helper on main will make, counted ahead (its bytes are its own). */
+  reserveCalls(calls: number, docs: number): void {
+    if (!this.affordsCalls(calls, docs)) {
+      throw new OverBudget('read budget: calls or documents past the plan');
+    }
+    this.callsLeft -= calls;
+    this.docsLeft -= docs;
   }
 
   /** A patch or delete of a row already read: charged as a second touch of it. */
@@ -296,22 +312,17 @@ export async function traced<T>(
 }
 
 /**
- * A budget for one request's unplanned-for reads — the profiles a helper may load from inside a
- * paged read or a loop (the People pages' undo state for someone without a row, the ledger check
- * before the rows exist). Each such read is charged at a profile's worst case here, so a helper
- * that starts loading profiles once per row throws `OverBudget` in a test instead of passing the
- * transaction's read limit in production. One budget per request (keyed on its context).
+ * **One budget per request** (keyed on its context): a People query's own reads and every helper it
+ * calls — the undo state's facts for someone without a row, a target's name — charge the same object,
+ * so a helper that starts loading profiles once a row runs the request's budget out and stops (or
+ * throws in a test) instead of passing the transaction's read limit in production.
  */
 const REQUEST_BUDGETS = new WeakMap<object, ReadBudget>();
-/**
- * Four profiles at their worst: what a request's unplanned reads may spend, leaving the page's own
- * reads (its rows, the caller's profile) and the ledger check's own allowance well inside 16 MiB.
- */
-export const REQUEST_PROFILE_BUDGET = 4 * DOC_MAX;
 export function requestBudget(ctx: object): ReadBudget {
   let budget = REQUEST_BUDGETS.get(ctx);
   if (budget === undefined) {
-    budget = new ReadBudget(REQUEST_PROFILE_BUDGET);
+    // The transaction's budget less the caller's own profile (`requireCapability`, read first).
+    budget = new ReadBudget(TX_BUDGET - ROW_MAX.profile);
     REQUEST_BUDGETS.set(ctx, budget);
   }
   return budget;
