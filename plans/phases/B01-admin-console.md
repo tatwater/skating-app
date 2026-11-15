@@ -3081,6 +3081,68 @@ Imagery/Hazards/Standing/Links), cherry-picked serially onto `b01-3` off the kit
   (against a fake map that throws before `load`) and the palette are unit-tested. The live MapLibre
   canvas — and the imagery raster on it — can't run in the automated browser (its tiles answer only
   a local dev address) and wasn't driven.
+- **Every shown value and what qualifies it** (the review round of 2026-11-15, after Greptile
+  caught a straight-line walk drawn as a measured route on #120). For each number, distance, date
+  or count a tab shows, the server field that says how far it can be trusted, and how it is drawn.
+  Rows marked *new* were dropped on the way to the screen until this round. Each weaker state is
+  rendered by a test (`tabs/qualifiers.test.tsx` for Access and Water; the rest beside their
+  views).
+
+  | Tab | Shown | Qualified by | Drawn |
+  |---|---|---|---|
+  | Frame | Area | The outline it is computed from (`geometrySource`, the trust) | Exact for that outline; its source tag and *Trusted since* beside it |
+  | Frame | Depth avg / max | `meanDepthSource`, `maxDepthSource` | *New:* "~9.4" for a modeled source; plain when the source isn't recorded |
+  | Frame | Elevation | `elevationSource` (moderator, 3DEP, GLO-90) | Not drawn: a DEM sample is a measurement at the interior point, the skater's header draws it plainly too, and freeze order is a hundreds-of-feet question |
+  | Frame | Towns | `townsComputedAt` | *Not computed yet*, never *In no town* |
+  | Frame | Asks, History | The reads' `more`, `capped` | Never counted as whole: a note, *Latest N* |
+  | Shape | Touching bodies | `touchingComputedAt`, `touchingCapped` | *Isn't computed yet*; *smaller ones weren't checked* |
+  | Shape | Bay acres; how each bay was made | Its polygon; `createdVia`, `createdAt` | Exact; *Not recorded yet* |
+  | Names | Towns, county | `townsComputedAt`, `geoComputedAt` | *Not computed yet*; *In no town / county*; a county not found beside towns, *Not recorded yet* |
+  | Places | Asks | The reads' `more` | A floor, "2+" |
+  | Places | A proposal's nearby landmark, in meters | Point to point | A distance between two points, not a route: plain |
+  | Places | Added, edited | The provenance read | *Not recorded* when it doesn't say |
+  | Access | Walk from the lot | `approachRouted` | *New:* "at least 412 m" for a straight line (a moderator's link, until the ETL routes it); plain when routed or from before the flag, as core reads it |
+  | Access | Earlier rulings; who ruled | History `capped`; the ruling's row | "19+"; *isn't recorded* |
+  | Water | Each source's depth | Measured or modeled (core) | "~8.1" and *Modeled · an estimate* |
+  | Water | A moderator's depth | `depthSourceNote` | *New:* the note ("NH Fish & Game, 1998 chart"), or *Entered by hand · no source noted* |
+  | Water | Bathymetry | `hasBathymetry` only | What was searched isn't recorded, and says so |
+  | Imagery | Cloud, coverage | The stop's `basis` and stats | *New:* *Not measured* on screen (it was a blank cell and an empty track, which read as zero); a region-wide figure says *over the region* |
+  | Hazards | Age; state | `lastConfirmedAt`; `freshness`, `provisional` | Since anyone looked; fades, never removed; *unconfirmed* |
+  | Hazards | Day counts | `unknown`, `capped`, `unknownEnds` | The unknown part; *at least what it shows*; the notes |
+  | Hazards | A report's kind | `type` | *New:* a crossing is *Reported crossing*, its own mark, neutral (below) |
+  | Hazards | Patterns waiting | The read stops at 1,000 with no `more` | Can't be told from whole; owed (BS19) |
+  | Standing | Favorites, saved put-ins | `favoritesCapped`, `savedPutInsCapped` | "1,000+" |
+  | Standing | Last activity, boost set, put-in keeps | `at: null`, `putInKeeps: null` | *Not recorded* |
+  | Links | — | The derived links are built from the record; staff links are as entered | Nothing qualified |
+
+- **A whole-list write is one queue; a single value is the last write** (Greptile's P1 on #121,
+  Links' saves undoing each other). Two writers send a whole list: Links' staff links
+  (`setReferenceLinks`) and a landmark's other spellings (`landmarks.update`'s `aliases`). Both go
+  through `tabs/listWriter.ts`: a save path hands it a change by id, applied one write at a time to
+  the newest list the server acknowledged (its own last write until the echo is seen, else the
+  server's list, which carries another moderator's change). Chosen over blocking every control
+  while a write is pending: it is small, and a press is never refused. A fast-check property drives
+  arbitrary interleavings of presses, fast, slow and refused acknowledgements, renders and outside
+  changes, over both the generic changes and Links' own. Every other write sends one value — Names'
+  name, a landmark's name and kind, Access's ruling and its put-in levers, Standing's standing,
+  Imagery's satellite link — so a second press while the first is pending sends a second value and
+  the later wins, nothing built from a stale copy; each dialog's own busy state keeps its reason
+  from sending twice; a server change underneath moves the shown value, and an open dialog keeps
+  what was typed. The race no client can close: another moderator's whole-list write committing
+  while ours is in flight is overwritten by ours (BS17).
+- **A reported crossing, on the safety tab** (Greptile's P1 on #121). `ridge_crossing` is a report
+  that someone got across a ridge there (D51, D64), and it drew as a red danger field. `hazardKind`
+  is now an exhaustive switch over core's types (a `never` check), and it decides the map mark (the
+  kit's two-bar crossing mark, never the danger field), the row (*Reported crossing* in neutral ink,
+  its age, *Reported again N times*; no state word, since "fresh" reads as good), the archived row
+  and the words, held by a crossing claim guard (safe, passable, crossable, ok / clear / fine to
+  cross, the way across). Not copied from the skater app, and raised with the founder: its passage
+  color is a "positive-but-cautious green", and its verdict reads *Still crossable*, which trips
+  the guard. The kit's crossing mark wears the ice accent, the boards' choice — neither red nor
+  green; gray is a one-token change if the founder wants it quieter. The day strip follows the
+  server, which counts a crossing as a report on the lake (BS18). Needs eyes on a real map: a fresh
+  crossing on the preview reads as the two-bar mark, not a red field, and sits under the lit plate
+  as the marks do.
 
 ### The Bodies server register (owed to the server agent)
 
@@ -3106,6 +3168,9 @@ yet* (or the fact as unknown) until its read lands.
 | BS14 | Standing: `standing.retentionForBody` | The Standing tab's lane timeline | 🟢 server |
 | BS15 | Hazards: `hazards.dailyOnLakeForBody`; the watch's opening date | The Hazards tab's winters and day strips | 🟢 server |
 | BS16 | `bodyFeatures.updateShape` | Editing a known feature's footprint | ⚪ deferred (after #110) |
+| BS17 | A compare-and-set on the whole-list writers (`waterBodies.setReferenceLinks`, `landmarks.update`'s `aliases`): the list or version the write was built on, refused when it moved | Two moderators editing one body's links or spellings at once: today the later write silently drops the earlier | ⚪ owed |
+| BS18 | `bodyConsole.dailyHazards` counts a reported crossing (`ridge_crossing`) as a hazard on the lake, every day from its first report through today (its 72-hour expiry is applied at read, never stored), with a first-report mark, and returns no type to tell it apart: leave passage markers out, or return the type | The day strips and their counts | ⚪ owed |
+| BS19 | `recurrence.listForBodyAdmin` stops at 1,000 clusters and says nothing: a `more` | Hazards' *patterns waiting* count, today drawn as whole | ⚪ owed |
 
 ### The Bodies reads the pages asked for (B01-3c, the second server follow-up)
 
