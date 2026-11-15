@@ -88,6 +88,8 @@ export interface TimelineLadderTick {
 }
 
 export interface TimelineModel {
+  /** The zone every label is in — the lake's (the sheet's clock rule). A drag labels in it too. */
+  timeZone: string;
   fromMs: number;
   toMs: number;
   ticks: TimelineTick[];
@@ -101,6 +103,24 @@ export interface TimelineModel {
 export function floorToLocalHour(ms: number, timeZone: string): number {
   const minuteOfDay = zonedMinuteOfDay(ms, timeZone);
   return ms - (ms % MINUTE_MS) - (minuteOfDay % 60) * MINUTE_MS;
+}
+
+/**
+ * A caret's label — "END 4:12", "START 2:05" — for the minute it stands on. The one rule for the
+ * settled caret and the one being dragged, so a drag shows exactly what its release will save.
+ */
+export function caretLabel(kind: 'start' | 'end', ms: number, timeZone: string): string {
+  return `${kind === 'start' ? 'START' : 'END'} ${clockLabel(ms, timeZone)}`;
+}
+
+/** "Saturday 4:12 PM" in the zone — a caret's value for a screen reader, which sees no ruler. */
+export function caretValueText(ms: number, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour: 'numeric',
+    minute: '2-digit',
+    weekday: 'long',
+  }).format(ms);
 }
 
 /** "4:12" in the zone — the marks carry their word ("END", "SUNSET") beside it. */
@@ -245,8 +265,22 @@ export function timelineModel(input: TimelineInput): TimelineModel {
     mark('sunrise', sun.sunriseMs, 'SUNRISE');
     mark('sunset', sun.sunsetMs, 'SUNSET');
   }
-  if (startMs !== undefined) mark('start', startMs, 'START');
-  if (endMs !== undefined) mark('end', endMs, 'END');
+  if (startMs !== undefined) {
+    marks.push({
+      kind: 'start',
+      ms: startMs,
+      label: caretLabel('start', startMs, timeZone),
+      fraction: timelineFraction(model, startMs),
+    });
+  }
+  if (endMs !== undefined) {
+    marks.push({
+      kind: 'end',
+      ms: endMs,
+      label: caretLabel('end', endMs, timeZone),
+      fraction: timelineFraction(model, endMs),
+    });
+  }
   if (nowOnDay) mark('now', nowMs, 'NOW');
 
   const spans: TimelineSpan[] = [];
@@ -270,6 +304,7 @@ export function timelineModel(input: TimelineInput): TimelineModel {
   }
 
   return {
+    timeZone,
     fromMs,
     toMs,
     ticks,
