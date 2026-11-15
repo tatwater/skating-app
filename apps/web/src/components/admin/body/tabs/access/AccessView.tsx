@@ -7,8 +7,8 @@ import { EntryTile } from '@/components/kit/entry-tile';
 import { Kbd } from '@/components/kit/kbd';
 import { Section } from '@/components/kit/section-slug';
 import { sayUnavailable, UnavailableButton } from '@/components/kit/unavailable-button';
-import { usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
+import { useTabKeys } from '../../frame/tabKeys';
 import { LIT_ROW, LoadingSection, litAttr, TabBody } from '../tabParts';
 import { CouldntRead, LoadingLine, NOT_RECORDED, ReadFailures } from '../tabStates';
 import { type AccessData, earlierWords, litId, type PutInRow } from './accessModel';
@@ -86,7 +86,7 @@ export function AccessView({
   onHide,
 }: AccessViewProps) {
   const root = useRef<HTMLDivElement>(null);
-  usePaneKeys(root, [
+  useTabKeys(root, [
     { key: 'P', run: () => sayUnavailable(TOOLS.putIn), enabled: canPlace },
     { key: 'L', run: () => sayUnavailable(TOOLS.lot), enabled: canPlace },
     { key: 'R', run: () => sayUnavailable(TOOLS.rules), enabled: canPlace },

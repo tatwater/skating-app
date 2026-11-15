@@ -21,9 +21,9 @@ import { PersonLockup } from '@/components/kit/person-lockup';
 import { RadioGroup, RadioRow } from '@/components/kit/radio';
 import { Section } from '@/components/kit/section-slug';
 import { sayUnavailable, UnavailableButton } from '@/components/kit/unavailable-button';
-import { usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
 import { statusDate } from '../../frame/bodyModel';
+import { useTabKeys } from '../../frame/tabKeys';
 import { ReasonAsk } from '../access/ReasonAsk';
 import { LIT_ROW, LoadingSection, litAttr, TabBody } from '../tabParts';
 import { CouldntRead, LoadingLine, NOT_RECORDED, ReadFailures } from '../tabStates';
@@ -132,7 +132,7 @@ export function PlacesView({
   const root = useRef<HTMLDivElement>(null);
   const selected = selectedLandmark(data, lit);
   const landmarks = data === undefined ? [] : rowsOf(data.landmarks);
-  usePaneKeys(root, [
+  useTabKeys(root, [
     { key: 'L', run: () => sayUnavailable(MAP_TOOLS.drop), enabled: canPlace && selected === null },
   ]);
   if (data === undefined) {

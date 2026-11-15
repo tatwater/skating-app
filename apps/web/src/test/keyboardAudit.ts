@@ -17,7 +17,8 @@ import { fireEvent } from '@testing-library/react';
  *   focused, answer ⏎ and Space (a link: ⏎) by doing what its click does.
  *
  * Its click handler is found on React's own props record; "does what its click does" is checked as
- * the key pressing the element — a click reaching it — without knowing what the click does.
+ * the key pressing the element (a click reaching it) or its own handler taking the key (the key's
+ * default prevented), without knowing what the click does.
  * Returns the elements it checked, so a test can say it checked something.
  */
 export function expectKeyboardOperable(root: HTMLElement): HTMLElement[] {
@@ -54,7 +55,8 @@ export function expectKeyboardOperable(root: HTMLElement): HTMLElement[] {
       el.addEventListener('click', count);
       try {
         el.focus();
-        fireEvent.keyDown(el, { key });
+        // Taken: the key pressed it (a click reached it), or its own handler took the key.
+        if (!fireEvent.keyDown(el, { key })) pressed++;
       } finally {
         el.removeEventListener('click', count);
       }
