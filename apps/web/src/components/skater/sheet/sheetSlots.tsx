@@ -31,6 +31,13 @@ export interface GpxImportSlotProps {
   reportId: string;
   /** The import seeded the report; the card gives way to the instrument. */
   onImported: () => void;
+  /**
+   * Where it sits: `drop` — the *Which lake?* card's drop zone, before the Report has a lake; `link`
+   * — *Add your GPS track* on the instrument, once it has one (board 5.1's map key).
+   */
+  variant?: 'drop' | 'link';
+  /** The lake's zone, for naming a track's day against the Report's (the sheet's clock rule). */
+  timeZone?: string;
 }
 
 /** 5.19 — a photo tile's menu (which lake, place it, this is a hazard, leave it out). */

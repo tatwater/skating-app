@@ -4,7 +4,13 @@ import userEvent from '@testing-library/user-event';
 import { getFunctionName } from 'convex/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sheetPhotoPreview } from '@/lib/sheetPhotos';
-import { getSheet, setSheet, setSheetAttempt, useSheet } from '@/lib/sheetStore';
+import {
+  getSheet,
+  restoreStoredSheet,
+  setSheet,
+  setSheetAttempt,
+  useSheet,
+} from '@/lib/sheetStore';
 import {
   installFakeStore,
   openSheet,
@@ -633,6 +639,96 @@ describe('the rest of the paths', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
     rerender(<Connected />);
     expect(screen.queryByText(/couldn't be kept/)).not.toBeInTheDocument();
+  });
+
+  describe('adding a track, wherever the sheet is', () => {
+    const slots = {
+      gpxImport: (p: { reportId: string; variant?: string }) => (
+        <button type="button" data-variant={p.variant ?? 'drop'}>
+          GPX for {p.reportId}
+        </button>
+      ),
+    };
+    const gpxFor = (id: string) => screen.queryByRole('button', { name: `GPX for ${id}` });
+
+    beforeEach(() => {
+      h.flag = true;
+    });
+
+    it('before the lake, on its card; after the lake, on the instrument', () => {
+      setSheet(blank());
+      render(
+        <SheetSlotsProvider value={slots}>
+          <Connected />
+        </SheetSlotsProvider>,
+      );
+      const id = getSheet()?.reports[0]?.id as string;
+      expect(gpxFor(id)).toHaveAttribute('data-variant', 'drop');
+      act(() => setSheet(withLake(getSheet() as PostSheet)));
+      expect(gpxFor(id)).toHaveAttribute('data-variant', 'link');
+    });
+
+    it('on a second report, after a failed send, and after a reload', async () => {
+      const one = withLake(openSheet());
+      const first = one.reports[0] as PostSheet['reports'][number];
+      setSheet({ ...one, reports: [first, { ...first, id: 'second', idempotencyKey: 'k2' }] });
+      setSheetAttempt({
+        kind: 'post',
+        id: one.draftId,
+        idempotencyKey: one.idempotencyKey,
+        status: 'pending',
+        reports: [],
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      const { unmount } = render(
+        <SheetSlotsProvider value={slots}>
+          <Connected />
+        </SheetSlotsProvider>,
+      );
+      expect(gpxFor(first.id)).toBeInTheDocument();
+      fireEvent.click(screen.getAllByRole('tab')[1] as HTMLElement);
+      expect(gpxFor('second')).toBeInTheDocument();
+      unmount();
+      reloadPage('user_1');
+      const restored = await restoreStoredSheet(Date.now());
+      act(() => setSheet(restored?.sheet ?? null, restored?.attempt ?? null));
+      render(
+        <SheetSlotsProvider value={slots}>
+          <Connected />
+        </SheetSlotsProvider>,
+      );
+      expect(gpxFor(first.id)).toBeInTheDocument();
+    });
+
+    it('not once a track is on the report, nor with the flag off, nor on an edit', () => {
+      const one = withLake(openSheet());
+      const first = one.reports[0] as PostSheet['reports'][number];
+      setSheet({ ...one, reports: [{ ...first, activityId: 'act_1' }] });
+      const { unmount } = render(
+        <SheetSlotsProvider value={slots}>
+          <Connected />
+        </SheetSlotsProvider>,
+      );
+      expect(gpxFor(first.id)).not.toBeInTheDocument();
+      unmount();
+      setSheet({ ...one, mode: { kind: 'edit', reportId: 'r1' } });
+      const edit = render(
+        <SheetSlotsProvider value={slots}>
+          <Connected />
+        </SheetSlotsProvider>,
+      );
+      expect(gpxFor(first.id)).not.toBeInTheDocument();
+      edit.unmount();
+      h.flag = false;
+      setSheet(one);
+      render(
+        <SheetSlotsProvider value={slots}>
+          <Connected />
+        </SheetSlotsProvider>,
+      );
+      expect(gpxFor(first.id)).not.toBeInTheDocument();
+    });
   });
 
   it('mounts Google Photos and the second half’s flows where they belong', () => {

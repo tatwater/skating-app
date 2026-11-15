@@ -1,5 +1,11 @@
 import { api } from '@skating/convex/api';
-import { openPostSheet, type PostSheet, reportEndMs, selectedValues } from '@skating/core';
+import {
+  openPostSheet,
+  type PostSheet,
+  reportEndMs,
+  selectedValues,
+  sheetReducer,
+} from '@skating/core';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { getFunctionName } from 'convex/server';
@@ -76,7 +82,7 @@ import { HazardSheetHost } from '../actions/HazardSheetHost';
 import { AnotherReport, addAnotherVisit, addDifferentLake } from './AnotherReport';
 import { ConsoleModeProvider, useConsoleMode } from './ConsoleMode';
 import { GooglePhotosSlot } from './GooglePhotos';
-import { GpxImport, ingestMessage, seedFromTrack } from './GpxImport';
+import { GpxImport, ingestMessage, seedFromTrack, trackRefusal } from './GpxImport';
 import { HazardSheetFrame } from './HazardSheetFrame';
 import { useInstrumentHeld } from './instrumentLease';
 import { addSheetPhotos, PhotoSorter } from './PhotoSorter';
@@ -486,6 +492,81 @@ describe('GPX import (flag on)', () => {
     });
     expect(await screen.findByText('That skate is in the future.')).toBeInTheDocument();
     fireEvent.change(input, { target: { files: [] } });
+  });
+});
+
+describe('a track added after the lake (the author’s lake and day stand)', () => {
+  const ZONE = 'America/New_York';
+  const onLake = (end?: number): PostSheet['reports'][number] => {
+    const post = openPostSheet(
+      'body',
+      { waterBodyId: 'mascoma', bodyName: 'Mascoma Lake' },
+      NOW,
+      mint,
+    );
+    const r = post.reports[0] as PostSheet['reports'][number];
+    return end === undefined
+      ? r
+      : {
+          ...r,
+          sheet: sheetReducer(r.sheet, {
+            type: 'select',
+            field: 'endTime',
+            key: 'chosen',
+            value: { ms: end, precision: 'minute' },
+          }),
+        };
+  };
+  const plan = { startTime: NOW - 7_200_000, endTime: NOW - 3_600_000 };
+  const mascoma = { waterBodyId: 'mascoma', name: 'Mascoma Lake' };
+
+  it('fits on its own lake and day, and on a Report with no lake or time yet', () => {
+    expect(trackRefusal(onLake(), plan, mascoma, ZONE)).toBeNull();
+    expect(trackRefusal(onLake(NOW - 1_800_000), plan, mascoma, ZONE)).toBeNull();
+    const blank = openPostSheet('page', {}, NOW, mint).reports[0] as PostSheet['reports'][number];
+    expect(trackRefusal(blank, plan, null, ZONE)).toBeNull();
+  });
+
+  it('is refused on another lake, off every lake, or on another day — and says which', () => {
+    expect(
+      trackRefusal(onLake(), plan, { waterBodyId: 'crystal', name: 'Crystal Lake' }, ZONE),
+    ).toBe('That track is on Crystal Lake, not Mascoma Lake. Add it as another report to keep it.');
+    expect(trackRefusal(onLake(), plan, null, ZONE)).toBe(
+      "That track isn't on Mascoma Lake. Start a report from it to keep it.",
+    );
+    expect(trackRefusal(onLake(NOW - 3 * 86_400_000), plan, mascoma, ZONE)).toMatch(
+      /^That track is from \w+day, \w+ \d+, not the day of this report\.$/,
+    );
+  });
+
+  it('the import refuses it and leaves the Report as the author had it', async () => {
+    vi.useRealTimers();
+    const post = openPostSheet(
+      'body',
+      { waterBodyId: 'mascoma', bodyName: 'Mascoma Lake' },
+      Date.now(),
+      mint,
+    );
+    setSheet(post);
+    const id = post.reports[0]?.id as string;
+    fakes.mutations.set('gpsActivities:ingestTrack', vi.fn().mockResolvedValue('act_9'));
+    h.convexQuery.mockResolvedValue([
+      { activityId: 'act_9', waterBodyId: 'crystal', waterBodyName: 'Crystal Lake' },
+    ]);
+    const onImported = vi.fn();
+    render(<GpxImport reportId={id} onImported={onImported} variant="link" timeZone={ZONE} />);
+    expect(screen.getByRole('button', { name: /Add your GPS track/ })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('A GPX file'), { target: { files: [gpxFile(30, 90)] } });
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'That track is on Crystal Lake, not Mascoma Lake.',
+    );
+    expect(onImported).not.toHaveBeenCalled();
+    let sheet: PostSheet | null = null;
+    render(<SheetProbe onSheet={(p) => (sheet = p)} />);
+    const r = (sheet as PostSheet | null)?.reports[0];
+    expect(r?.activityId).toBeUndefined();
+    expect(r?.bodyName).toBe('Mascoma Lake');
+    expect(reportEndMs(r as never)).toBeUndefined();
   });
 });
 

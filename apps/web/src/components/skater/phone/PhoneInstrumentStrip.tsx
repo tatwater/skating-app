@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import { BodySilhouette } from '../../BodySilhouette';
 import { Button } from '../../kit/button';
 import { dayLabel } from '../panels/panelTime';
+import { AddTrack } from '../sheet/AddTrack';
 import type { SheetBody } from '../sheet/useSheetBody';
 
 /**
@@ -65,6 +66,7 @@ export function PhoneInstrumentStrip({
         >
           {whenLine(report, timeZone, now)}
         </span>
+        <AddTrack report={report} timeZone={timeZone} className="-ml-(--space-2)" />
       </div>
     </section>
   );
