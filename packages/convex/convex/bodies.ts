@@ -622,9 +622,10 @@ export type PreviewAsk =
       /**
        * How many distinct people have this same question open on the body — this ask and its twins
        * (the same kind and, for a named ask, the same name key), counted to {@link ASKERS_CAP}
-       * (`capped` past it). Added in B01-3c.
+       * (`capped` past it). Added in B01-3c; always present in the read, optional in the type so the
+       * pages' fixtures written before it still type.
        */
-      askers: { count: number; capped: boolean };
+      askers?: { count: number; capped: boolean };
     }
   | { id: string; kind: 'placeName'; name: string; messages: number; createdAt: number }
   | { id: string; kind: 'flag'; reason: Doc<'contentFlags'>['reason']; createdAt: number };
