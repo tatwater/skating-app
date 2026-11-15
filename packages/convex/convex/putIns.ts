@@ -302,7 +302,7 @@ export async function promotePutInImpl(
     targetId: body._id,
     reason:
       args.reason?.trim() ||
-      (after ? `Made the put-in official: ${after}` : 'Made the put-in official'),
+      (after ? composed`Made the put-in official: ${after}` : 'Made the put-in official'),
     metadata: {
       putInId: row._id,
       coord: row.coord,

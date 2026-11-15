@@ -4032,7 +4032,7 @@ export async function setAliasesImpl(
       reason ??
       (next.length === 0
         ? 'Cleared the moderator aliases'
-        : `Set ${next.length} alias${next.length === 1 ? '' : 'es'}`),
+        : composed`Set ${next.length} alias${next.length === 1 ? '' : 'es'}`),
     metadata: { moderatorAliases: next, prev: { moderatorAliases: prev } },
     createdAt: Date.now(),
   });
@@ -4124,7 +4124,7 @@ export async function setClassImpl(
     targetId: waterBodyId,
     reason:
       reason ??
-      (bodyClass === null ? 'Cleared the class override' : `Set the class to ${bodyClass}`),
+      (bodyClass === null ? 'Cleared the class override' : composed`Set the class to ${bodyClass}`),
     metadata: { moderatorClass: bodyClass, type: restored, prev },
     createdAt: Date.now(),
   });
@@ -4634,8 +4634,8 @@ export async function chooseDepthSourceImpl(
     reason:
       reason ??
       (source === null
-        ? `Handed the ${measure} depth back to the ladder`
-        : `Chose ${source} for the ${measure} depth`),
+        ? composed`Handed the ${measure} depth back to the ladder`
+        : composed`Chose ${source} for the ${measure} depth`),
     metadata: { measure, choice: source, valueM: pick?.valueM ?? null, prev },
     createdAt: Date.now(),
   });
