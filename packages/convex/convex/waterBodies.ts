@@ -44,12 +44,15 @@ import {
   isWetlandClass,
   KNOWN_STATE_CODES,
   type LatLng,
+  MAX_MODERATOR_ALIASES,
+  MAX_MODERATOR_TOWNS,
   MAX_PLAUSIBLE_DEPTH_M,
   MAX_REFERENCE_LINKS,
   MAX_SUGGESTED_SAMPLE_POINTS,
   MIN_FETCH_CLAUSE_M,
   MIN_VISIBLE_ZOOM_FLOOR,
   matchDepthSource,
+  mergedModeratorLists,
   type NameClaim,
   nearestBodyForPoint,
   pathToBody,
@@ -3299,6 +3302,11 @@ export interface MergeChangeSet {
   }[];
   /** Both bodies' pinned towns before the merge folded the loser's into the survivor (B01-3g). */
   pinsBefore?: { survivor: string[]; loser: string[] };
+  /** Both bodies' moderator-held lists before the merge took their union (B01-3g), for the unmerge. */
+  listsBefore?: Record<
+    'survivor' | 'loser',
+    { pins: string[]; aliases: string[]; links: { label: string; url: string }[] }
+  >;
 }
 
 function dedupFieldsOf(body: Doc<'waterBodies'>): MergeChangeSet['dedupBefore'][number] {
@@ -3451,6 +3459,11 @@ export async function mergeBodyInto(
 ): Promise<{ repointed: Record<string, number> }> {
   const survivorId = survivor._id;
   const loserId = loser._id;
+  // The survivor holds the union of both bodies' moderator-held lists, or the merge does not happen
+  // (B01-3g): refused before any write, never truncated. The caller that offers or runs a merge asks
+  // the same function first (`mergedModeratorLists`).
+  const lists = mergedModeratorLists(survivor, [loser]);
+  if (lists.refusal !== null) throw new ConvexError(lists.refusal);
   {
     // Re-point every child from loser → survivor. Merge is a rare manual action on a typically-small
     // dedup loser, so a bounded `collect()` per child table is acceptable (cf. `listPendingReview`).
@@ -3570,22 +3583,36 @@ export async function mergeBodyInto(
       landmarksRetiredAsBay: landmarks.retiredAsBay,
     };
 
-    // A moderator's pinned towns move to the survivor (B01-3g): the union, the survivor's first,
-    // within the cap — a merged-away body carries none.
-    const pinsBefore = {
-      survivor: survivor.moderatorTownKeys ?? [],
-      loser: loser.moderatorTownKeys ?? [],
+    // A moderator's lists move to the survivor (B01-3g): each the union, the survivor's own first —
+    // the pins with the states they feed, and its facts' pinned half, in this transaction. The
+    // loser's pins go with them (a merged-away body carries none); its aliases and links stay on the
+    // tombstone as they were, for the unmerge. Recorded in the change set either way.
+    const listsBefore = {
+      survivor: {
+        pins: survivor.moderatorTownKeys ?? [],
+        aliases: survivor.moderatorAliases ?? [],
+        links: survivor.referenceLinks ?? [],
+      },
+      loser: {
+        pins: loser.moderatorTownKeys ?? [],
+        aliases: loser.moderatorAliases ?? [],
+        links: loser.referenceLinks ?? [],
+      },
     };
-    const pins = [...new Set([...pinsBefore.survivor, ...pinsBefore.loser])].slice(
-      0,
-      MAX_MODERATOR_TOWNS,
-    );
+    const pinsBefore = { survivor: listsBefore.survivor.pins, loser: listsBefore.loser.pins };
+    const pins = lists.pins;
     if (pinsBefore.loser.length > 0) {
       await ctx.db.patch(survivorId, {
         moderatorTownKeys: pins,
         ...regionStatesFields(ruleStatesOf(survivor), pins),
       });
       await refreshPinnedFacts(ctx, survivorId, pins);
+    }
+    if (listsBefore.loser.aliases.length > 0) {
+      await ctx.db.patch(survivorId, { moderatorAliases: lists.aliases });
+    }
+    if (listsBefore.loser.links.length > 0) {
+      await ctx.db.patch(survivorId, { referenceLinks: lists.links });
     }
 
     // Soft-tombstone the loser: reads chase `mergedIntoId` to the survivor; `isListed` treats
@@ -3666,6 +3693,7 @@ export async function mergeBodyInto(
       landmarksBefore: landmarksBefore.map(snapshotDoc),
       landmarksAfter: [],
       ...(pinsBefore.survivor.length > 0 || pinsBefore.loser.length > 0 ? { pinsBefore } : {}),
+      listsBefore,
     };
     for (const before of subAreasBefore) {
       const after = await ctx.db.get(before._id);
@@ -3871,6 +3899,12 @@ export const retireAbsorbedBodies = internalMutation({
         skip('already retired by an earlier pair in this pass', label);
         continue;
       }
+      // A merge that can't hold both bodies' moderator-set lists is a person's call, never a
+      // truncation: the pair is skipped and named, and the batch goes on (B01-3g).
+      if (mergedModeratorLists(survivor, [absorbed]).refusal !== null) {
+        skip('their moderator-set lists together pass a cap, so a person merges them', label);
+        continue;
+      }
       handled.add(absorbed._id);
       handledKeys.add(keyOf(absorbed));
       retired.push({
@@ -4010,8 +4044,8 @@ export async function setCuratedBoostImpl(
 // ── A moderator's aliases and class (B01-3d) ───────────────────────────────────────────────────
 
 /** The most aliases a moderator adds to a body, and the longest one. */
-export const MAX_MODERATOR_ALIASES = 20;
 export const MAX_MODERATOR_ALIAS_CHARS = 120;
+export { MAX_MODERATOR_ALIASES, MAX_MODERATOR_TOWNS };
 
 /**
  * A moderator's aliases, normalized once at the edge: each trimmed (inner whitespace collapsed), the
@@ -4116,9 +4150,6 @@ export async function setAliasesImpl(
   });
   return waterBodyId;
 }
-
-/** The most towns a moderator may pin one body in (B01-3g). */
-export const MAX_MODERATOR_TOWNS = 8;
 
 /** The region rule's states as a body stores them: `regionStates`, else (no pin ever) `states`. */
 export function ruleStatesOf(body: Pick<Doc<'waterBodies'>, 'regionStates' | 'states'>): string[] {

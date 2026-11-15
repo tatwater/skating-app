@@ -7,6 +7,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { convexTest } from 'convex-test';
+import fc from 'fast-check';
 import type { Polygon } from 'geojson';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
@@ -449,6 +450,153 @@ describe('the pin against the other writers', () => {
         .first(),
     );
     expect(JSON.stringify(snap ?? {})).toContain('pinsBefore');
+  });
+
+  test('a merge that cannot hold both bodies’ pins is refused, with a sentence, and changes nothing (Greptile on #130)', async () => {
+    const t = harness();
+    await seedTowns(t);
+    const admin = await person(t);
+    const survivor = await imported(t, 'way/1');
+    const loser = await imported(t, 'way/2');
+    const keys = (from: number, n: number) =>
+      Array.from({ length: n }, (_, i) => `tiger/36027${String(10_000 + from + i)}`);
+    // Pinned directly: the keys stand for nine distinct towns between them.
+    await t.run(async (ctx) => {
+      await ctx.db.patch(survivor, { moderatorTownKeys: keys(0, 6) });
+      await ctx.db.patch(loser, { moderatorTownKeys: keys(6, 3), dedupStatus: 'near_certain' });
+    });
+    await expect(
+      admin.as.mutation(api.waterBodies.merge, { survivorId: survivor, loserId: loser }),
+    ).rejects.toThrow(
+      /together the bodies hold 9 pinned towns, more than the 8 one body can\. Clear some first\./,
+    );
+    expect((await get(t, survivor))?.moderatorTownKeys).toEqual(keys(0, 6));
+    expect(await get(t, loser)).toMatchObject({
+      moderatorTownKeys: keys(6, 3),
+      dedupStatus: 'near_certain',
+    });
+    // The automated merge skips the pair and names it; the batch goes on.
+    const res = await t.mutation(internal.waterBodies.retireAbsorbedBodies, {
+      pairs: [
+        {
+          survivor: { source: 'osm', externalId: 'way/1' },
+          absorbed: { source: 'osm', externalId: 'way/2' },
+        },
+      ],
+      apply: true,
+    });
+    expect(res).toMatchObject({
+      retired: 0,
+      skippedSamples: [{ why: expect.stringMatching(/a person merges them/) }],
+    });
+    expect((await get(t, loser))?.dedupStatus).toBe('near_certain');
+  });
+
+  test('a merge carries the loser’s aliases and reference links too: the survivor holds both bodies’ lists', async () => {
+    const t = harness();
+    await seedTowns(t);
+    const admin = await person(t);
+    const survivor = await imported(t, 'way/1');
+    const loser = await imported(t, 'way/2');
+    await t.run(async (ctx) => {
+      await ctx.db.patch(survivor, {
+        moderatorAliases: ['The Mirror'],
+        referenceLinks: [{ label: 'Association', url: 'https://example.org/a' }],
+      });
+      await ctx.db.patch(loser, {
+        moderatorAliases: ['the mirror', 'Glass Pond'],
+        referenceLinks: [
+          { label: 'Same', url: 'https://example.org/a' },
+          { label: 'Town page', url: 'https://example.org/b' },
+        ],
+        dedupStatus: 'near_certain',
+      });
+    });
+    await admin.as.mutation(api.waterBodies.merge, { survivorId: survivor, loserId: loser });
+    expect(await get(t, survivor)).toMatchObject({
+      moderatorAliases: ['The Mirror', 'Glass Pond'],
+      referenceLinks: [
+        { label: 'Association', url: 'https://example.org/a' },
+        { label: 'Town page', url: 'https://example.org/b' },
+      ],
+    });
+  });
+
+  test('property: no merge, by hand or by import, ends with less than the union of both bodies’ lists — and a refused one writes nothing', async () => {
+    const side = fc.record({
+      pins: fc.uniqueArray(fc.integer({ min: 0, max: 11 }), { maxLength: 6 }),
+      aliases: fc.uniqueArray(fc.integer({ min: 0, max: 30 }), { maxLength: 12 }),
+      links: fc.uniqueArray(fc.integer({ min: 0, max: 11 }), { maxLength: 5 }),
+    });
+    const prop = fc.asyncProperty(side, side, fc.boolean(), async (s, l, byImport) => {
+      const t = harness();
+      const admin = await person(t);
+      const survivor = await imported(t, 'way/1');
+      const loser = await imported(t, 'way/2');
+      const lists = (x: typeof s) => ({
+        moderatorTownKeys: x.pins.map((n) => `tiger/36027${String(10_000 + n)}`),
+        moderatorAliases: x.aliases.map((n) => `Alias ${n}`),
+        referenceLinks: x.links.map((n) => ({ label: `L${n}`, url: `https://example.org/${n}` })),
+      });
+      await t.run(async (ctx) => {
+        await ctx.db.patch(survivor, lists(s));
+        await ctx.db.patch(loser, { ...lists(l), dedupStatus: 'near_certain' });
+      });
+      const before = await t.run(async (ctx) => [
+        await ctx.db.get(survivor),
+        await ctx.db.get(loser),
+      ]);
+      let merged: boolean;
+      if (byImport) {
+        const res = await t.mutation(internal.waterBodies.retireAbsorbedBodies, {
+          pairs: [
+            {
+              survivor: { source: 'osm', externalId: 'way/1' },
+              absorbed: { source: 'osm', externalId: 'way/2' },
+            },
+          ],
+          apply: true,
+        });
+        merged = res.retired === 1;
+      } else {
+        merged = await admin.as
+          .mutation(api.waterBodies.merge, { survivorId: survivor, loserId: loser })
+          .then(() => true)
+          .catch(() => false);
+      }
+      const union = (pick: (x: ReturnType<typeof lists>) => unknown[], key: (v: never) => string) =>
+        new Set([...pick(lists(s)), ...pick(lists(l))].map((v) => key(v as never)));
+      const after = await t.run(async (ctx) => [
+        await ctx.db.get(survivor),
+        await ctx.db.get(loser),
+      ]);
+      if (merged) {
+        const got = after[0] as Doc<'waterBodies'>;
+        expect(new Set(got.moderatorTownKeys ?? [])).toEqual(
+          union(
+            (x) => x.moderatorTownKeys,
+            (k: string) => k,
+          ),
+        );
+        expect(new Set((got.moderatorAliases ?? []).map((a) => a.toLowerCase()))).toEqual(
+          union(
+            (x) => x.moderatorAliases,
+            (a: string) => a.toLowerCase(),
+          ),
+        );
+        expect(new Set((got.referenceLinks ?? []).map((x) => x.url))).toEqual(
+          union(
+            (x) => x.referenceLinks,
+            (x: { url: string }) => x.url,
+          ),
+        );
+      } else {
+        // Refused (or skipped): neither body changed at all.
+        expect(after).toEqual(before);
+      }
+    });
+    for (const seed of [7, 2026]) await fc.assert(prop, { seed, numRuns: 6 });
+    await fc.assert(prop, { numRuns: 6 });
   });
 
   test('a removal leaves the pin, so undoing the removal brings the body back pinned', async () => {
