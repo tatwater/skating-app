@@ -2129,6 +2129,33 @@ The console's reads do no work that grows with an outline: the largest-lake test
 simulated backend (warm, best of three; each takes ~20–35 ms locally, and the touching test took 1.4 s
 before it moved).
 
+**When the stored geometry goes stale** (after Greptile on #118: an admitted body was never
+computed, and a neighbor's held ring never followed its outline). The rule is the library row's: a
+stored, derived fact is invalidated by every write that can change it, found by enumeration. Every
+input, every writer, and the mark:
+
+| Input | Writer | How it is marked |
+| --- | --- | --- |
+| A body is created | `waterBodies.importCanonical` (insert), `waterBodies.create` (a drawn body), `corpusRequests` admit (`admitCandidate`) | **The choke point:** `syncWaterBodyCells` marks a body whose cells changed or that has no facts row. Every creation re-cells the body, so none can skip it (the admit did, before: Greptile's P1) |
+| A body is admitted that already exists (its twin) | `activateBody` → `transitionStanding` | Re-celled when its listing or zoom rung changes; it already has a row otherwise |
+| A body's box moves | `importCanonical` (patch) | The choke point (the cell set moved), and the import's own `footprintMoved` mark |
+| An outline moves inside its box | `importCanonical` (`footprintMoved`) | `markGeoStale` explicitly; no other writer moves an outline (D221) — the drift repair compares stamps for one that ever does |
+| A listing changes | approve, reject, merge (the loser), removal, restore, every standing transition | The choke point when the cell set moves; a merge and the two prune deletions also mark explicitly |
+| A body is deleted or merged away | `resolveIncomingMergeDuplicates`, `resolveCampaignDuplicates`, `mergeBodyInto` | Marked, then `bodyGeo.store` drops its facts and links and marks every body holding its outline |
+| An unmerge | none yet (§4 Corpus) | It will re-cell the body: the choke point |
+| A neighbor's outline | any write above, on the neighbor | **The fan-out:** each stored neighbor carries its outline's stamp, and `bodyGeoLinks` indexes who holds whose. When a body's own stamp changes, `store` marks every holder — 25 inline, a chained job past that. Only a body's own stamp moving fans out, so it ends (Greptile's P2) |
+| A neighbor's relation (touching or not) | the neighbor's recompute | `store` marks the bodies whose ids entered or left the list |
+| A neighbor's name or standing | rename, reject, merge, delete | Not stored for display: `consoleExtras` reads the name and drops a merged, rejected or gone neighbor from the library row at read time |
+| The places layer | `adminAreas.importCanonical` | `noteAdminAreasChanged` inserts a mark; a row computed under an older mark is behind |
+| Anything the above missed | — | **The drift repair:** `bodyGeo.repairDrift` every 5 minutes checks the 40 rows checked longest ago (the body's stamp, the places mark, each held neighbor's stamp against that neighbor's answer) within the read budget — the whole table in about two days; `bodyGeo.repairMissing` daily finds library bodies with no row |
+
+The guard (`packages/guards/src/geoStaleWriters.test.ts`) finds every insert of a body and every
+write whose literal names a `polygon` or `bbox`, and fails when the enclosing function doesn't call
+the matching mark. It can't see a write whose fields come through a variable or a spread, a write in
+a helper whose caller holds the mark, or one outside `convex/`; the drift repair is the net. **The
+library row has no such gap:** the admit's `set_included_by_request` audit row refreshes it
+(`writeAudit`), and a twin's activation queues it (`transitionStanding`); the admit test checks both.
+
 **Compute cost, before and after.** Dev's numbers are user execution time on the largest lake
 (the Convex limit is 1 s); the synthetic numbers are wall time in `convex-test` on the same
 outline size, warm. They are different clocks; the point is the column of timeouts going away.
