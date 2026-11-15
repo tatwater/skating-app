@@ -2152,7 +2152,8 @@ outline size, warm. They are different clocks; the point is the column of timeou
   (`auditBodyLinks`, written by `writeAudit`; `auditLinks:backfill` for the rows before). A body's
   History reads its own links and those of every body merged into it, newest first. `capped` means
   only that more rows exist than returned (or the merge chain ran past 50). `bodyOnly` narrows to
-  rows on the body itself, and those equal `moderation.listActions`' rows for it (tested).
+  rows on the body itself (and on each body merged into it); for a body nothing was merged into, those
+  equal `moderation.listActions`' rows for it (tested).
 - **A merge moves what was asked of the merged-away body**: its requests of every kind and status
   (the founder's ruling), and — the coordinator's extension — its open place names and its open or
   reviewing flags (a flagger's flag stays where it is when they already have an open one on the

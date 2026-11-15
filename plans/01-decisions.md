@@ -8006,8 +8006,9 @@ can't resolve counted and skipped. History is one indexed range per body in the 
 merged newest first; `capped` means only that more rows exist than returned.
 
 **Why:** the read's cost is now the page it returns, and a lot's row is in every body's history it
-concerns. `moderation.listActions` keeps reading `moderationActions` by target; its rows for a body
-equal History's body-only rows (tested).
+concerns. `moderation.listActions` keeps reading `moderationActions` by target; for a body nothing was
+merged into, its rows equal History's body-only rows (tested) — History also holds the merged-away
+bodies' own rows.
 
 **Related:** D226, D256, [`phase-B01`](./phases/B01-admin-console.md) §12.8.
 
