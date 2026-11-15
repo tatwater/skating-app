@@ -128,6 +128,20 @@ describe('the words', () => {
 });
 
 describe('placeAsks', () => {
+  it('carries when each proposal was first asked, and says when the read doesn’t', () => {
+    const at = new Date(2026, 10, 3, 12).getTime();
+    const asks = placeAsks(
+      [],
+      [
+        { requestId: 'r1', name: 'the flats', coord: { lat: 1, lng: 2 }, askers: 1, createdAt: at },
+        { requestId: 'r2', name: 'Pier', coord: { lat: 1, lng: 2 }, askers: 1 },
+      ],
+      'hidden',
+    );
+    expect(asks[0]).toMatchObject({ asked: at });
+    expect(asks[1]).toMatchObject({ asked: null });
+  });
+
   it('puts the most-mentioned emailed names first, then the proposals with what they may be', () => {
     const asks = placeAsks(
       [

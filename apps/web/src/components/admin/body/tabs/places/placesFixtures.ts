@@ -163,6 +163,8 @@ export const MASCOMA_PLACES: PlacesData = {
       name: 'the flats by the dam',
       point: { lat: 43.6468, lng: -72.1787 },
       askers: 1,
+      // First asked at local midday, so the date reads the same in every zone.
+      asked: new Date(2026, 9, 11, 12).getTime(),
       asker: { name: 'Kate Donovan', handle: 'kdonovan', href: '/admin/users/u-kdonovan' },
       existingLandmarkId: null,
       similar: {

@@ -56,6 +56,8 @@ export type ProposalAsk = {
   name: string;
   point: LatLng;
   askers: number;
+  /** When it was first asked (the read's `createdAt`); `null` when the read doesn't say. */
+  asked: number | null;
   /**
    * Who asked first: a person; `erased` for an account since erased; `null` when the askers' read
    * holds no row for this ask — it covers the same proposals as the proposals' read (the newest
@@ -179,6 +181,7 @@ export function placeAsks(
     name: string;
     coord: LatLng;
     askers: number;
+    createdAt?: number;
     existingLandmarkId?: string;
     similarLandmark?: { landmarkId: string; name: string; point: LatLng; meters: number };
   }>,
@@ -204,6 +207,7 @@ export function placeAsks(
         name: p.name,
         point: p.coord,
         askers: p.askers,
+        asked: p.createdAt ?? null,
         asker: askers === 'hidden' ? 'hidden' : lookUp(askers, p.requestId, null),
         existingLandmarkId: p.existingLandmarkId ?? null,
         similar: p.similarLandmark ?? null,

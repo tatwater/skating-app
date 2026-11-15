@@ -23,6 +23,7 @@ import { Section } from '@/components/kit/section-slug';
 import { sayUnavailable, UnavailableButton } from '@/components/kit/unavailable-button';
 import { usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
+import { statusDate } from '../../frame/bodyModel';
 import { ReasonAsk } from '../access/ReasonAsk';
 import { LIT_ROW, LoadingSection, litAttr, TabBody } from '../tabParts';
 import { CouldntRead, LoadingLine, NOT_RECORDED, ReadFailures } from '../tabStates';
@@ -334,7 +335,12 @@ function AskRow({
           Possibly {ask.similar.name}, {formatDistance(ask.similar.meters)} away
         </span>
       )}
-      {ask.kind === 'proposal' && <AskerLine asker={ask.asker} />}
+      {ask.kind === 'proposal' && (
+        <span className="flex flex-wrap items-baseline gap-x-(--space-2) gap-y-(--space-1)">
+          <AskerLine asker={ask.asker} />
+          <AskedLine at={ask.asked} />
+        </span>
+      )}
       <AskActions
         ask={ask}
         landmarks={landmarks}
@@ -365,6 +371,15 @@ function AskerLine({ asker }: { asker: Asker }) {
       handle={asker.handle}
       {...(asker.href !== undefined ? { href: asker.href } : {})}
     />
+  );
+}
+
+/** When it was first asked, beside who asked — or that the read doesn't say. */
+function AskedLine({ at }: { at: number | null }) {
+  return (
+    <span data-slot="ask-asked" className={ASSIST}>
+      {at === null ? `Asked: ${NOT_RECORDED}` : `Asked ${statusDate(at)}`}
+    </span>
   );
 }
 

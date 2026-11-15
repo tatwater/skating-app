@@ -97,6 +97,7 @@ beforeEach(() => {
         name: 'the flats by the dam',
         coord: { lat: 43.6468, lng: -72.1787 },
         askers: 1,
+        createdAt: new Date(2026, 9, 11, 12).getTime(),
         similarLandmark: {
           landmarkId: 'lm-dam',
           name: 'Mascoma Lake Dam',
@@ -271,6 +272,21 @@ describe('PlacesTab', () => {
       'href',
       '/admin/users/u1',
     );
+  });
+
+  it('says when each proposal was first asked, beside who asked — or that the read doesn’t say', () => {
+    const { unmount } = render(<PlacesTab bodyId="wb1" />);
+    const ask = () => screen.getAllByText(/the flats by the dam/)[0]?.closest('[data-slot="ask"]');
+    expect(ask()).toHaveTextContent('Asked 11 Oct 2026');
+    unmount();
+    mocks.results.set(fn(api.corpusRequests.openLandmarkRequestsForBody), {
+      proposals: [
+        { requestId: 'rq1', name: 'the flats by the dam', coord: { lat: 1, lng: 2 }, askers: 1 },
+      ],
+      more: false,
+    });
+    render(<PlacesTab bodyId="wb1" />);
+    expect(ask()).toHaveTextContent('Asked: Not recorded yet');
   });
 
   it('reads no askers for a viewer without inbox.read, and draws no blank where one would be', () => {
