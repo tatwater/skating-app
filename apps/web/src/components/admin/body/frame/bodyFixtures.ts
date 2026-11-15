@@ -58,6 +58,8 @@ export const MASCOMA_RECORD: BodyRecord = {
   shorelineM: 18_301,
   meanDepthM: 9.36,
   maxDepthM: 24.08,
+  meanDepthSource: 'state_agency',
+  maxDepthSource: 'state_agency',
   elevationM: 227.93,
   windRose: [0.1, 0.1, 0.1, 0.2, 0.2, 0.1, 0.1, 0.1],
   fetchProfileM: [3200, 2100, 900, 600],

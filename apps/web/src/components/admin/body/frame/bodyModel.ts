@@ -1,6 +1,7 @@
 import type { Doc } from '@skating/convex/dataModel';
 import {
   type CompletenessField,
+  isMeasuredDepthSource,
   sqMetersToAcres,
   standingOf,
   standingReasonLabel,
@@ -38,6 +39,8 @@ export type BodyRecord = Pick<
   | 'shorelineM'
   | 'meanDepthM'
   | 'maxDepthM'
+  | 'meanDepthSource'
+  | 'maxDepthSource'
   | 'elevationM'
   | 'windRose'
   | 'fetchProfileM'
@@ -172,13 +175,20 @@ export interface Figure {
 }
 
 export function bodyFigures(b: BodyRecord): Figure[] {
+  // A depth reads plainly only when a measured source vouches for it; a modeled one, or one whose
+  // source isn't recorded, reads as an estimate ("~8.1") — a global model's guess must never look
+  // like a sounding (D3), and core's `lakeCaption` reads an unrecorded source the same way.
+  const depthOf = (m: number, source: BodyRecord['meanDepthSource']) =>
+    `${source !== undefined && isMeasuredDepthSource(source) ? '' : '~'}${meters(m)}`;
+  const mean = b.meanDepthM === undefined ? null : depthOf(b.meanDepthM, b.meanDepthSource);
+  const max = b.maxDepthM === undefined ? null : depthOf(b.maxDepthM, b.maxDepthSource);
   const depth =
-    b.meanDepthM !== undefined && b.maxDepthM !== undefined
-      ? { label: 'Depth avg / max', value: `${meters(b.meanDepthM)} / ${meters(b.maxDepthM)} m` }
-      : b.maxDepthM !== undefined
-        ? { label: 'Depth max', value: `${meters(b.maxDepthM)} m` }
-        : b.meanDepthM !== undefined
-          ? { label: 'Depth avg', value: `${meters(b.meanDepthM)} m` }
+    mean !== null && max !== null
+      ? { label: 'Depth avg / max', value: `${mean} / ${max} m` }
+      : max !== null
+        ? { label: 'Depth max', value: `${max} m` }
+        : mean !== null
+          ? { label: 'Depth avg', value: `${mean} m` }
           : { label: 'Depth', value: null };
   return [
     { label: 'Area', value: b.surfaceAreaSqM === undefined ? null : acresText(b.surfaceAreaSqM) },

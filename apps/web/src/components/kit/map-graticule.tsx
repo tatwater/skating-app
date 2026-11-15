@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import type { GraticuleLayout } from './graticule';
 
 /**
- * **Kit candidate** — the map's graticule: true parallels and meridians at a round step, faint, with
+ * The map's graticule: true parallels and meridians at a round step, faint, with
  * their labels at the pane's edges (`43.66°N` at the right, `72.20°W` along the foot). Pure SVG, no
  * map library: the pane computes the layout (`graticuleLayout`, from its size and its map's
  * projection) and this draws it, so a story's still and a live MapLibre pane draw the same thing.

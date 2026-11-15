@@ -16,11 +16,27 @@ import { fireEvent } from '@testing-library/react';
  *   from the keyboard (a tab stop, or one of a roving set whose current stop is a sibling) and,
  *   focused, answer ⏎ and Space (a link: ⏎) by doing what its click does.
  *
- * Its click handler is found on React's own props record; "does what its click does" is checked as
- * the key pressing the element — a click reaching it — without knowing what the click does.
+ * Its click handler is found on React's own props record. **"Does what its click does" is proven
+ * by the action running**, never by the key's default being prevented (a handler that only
+ * prevents ⏎ and Space, or a no-op under an ancestor that prevents them, would pass that and do
+ * nothing): the element's own click handler is wrapped for the press, and the key must run it — or,
+ * where a control's key runs its action without a click (its own key handler calling it straight),
+ * the effect the calling test names (`ran`: how many times the element's action has run, read
+ * before and after the key) must move.
  * Returns the elements it checked, so a test can say it checked something.
  */
-export function expectKeyboardOperable(root: HTMLElement): HTMLElement[] {
+export function expectKeyboardOperable(
+  root: HTMLElement,
+  {
+    ran,
+  }: {
+    /**
+     * How many times `el`'s action has run so far (a mock's call count, a state the click sets), or
+     * `undefined` for an element the test names no effect for (then its click handler must run).
+     */
+    ran?: (el: HTMLElement) => number | undefined;
+  } = {},
+): HTMLElement[] {
   const checked: HTMLElement[] = [];
   for (const el of root.querySelectorAll<HTMLElement>('*')) {
     const props = reactProps(el);
@@ -47,23 +63,60 @@ export function expectKeyboardOperable(root: HTMLElement): HTMLElement[] {
       throw new Error(`${nameOf(el)} answers a click but takes no focus`);
     }
     for (const key of role === 'link' ? ['Enter'] : ['Enter', ' ']) {
-      let pressed = 0;
-      const count = () => {
-        pressed++;
-      };
-      el.addEventListener('click', count);
-      try {
-        el.focus();
-        fireEvent.keyDown(el, { key });
-      } finally {
-        el.removeEventListener('click', count);
-      }
-      if (pressed === 0) {
-        throw new Error(`${nameOf(el)} answers a click but not ${key === ' ' ? 'Space' : key}`);
+      if (!pressRuns(el, key, ran)) {
+        throw new Error(
+          `${nameOf(el)} answers a click but ${key === ' ' ? 'Space' : key} doesn’t run its action`,
+        );
       }
     }
   }
   return checked;
+}
+
+/**
+ * Does `key`, pressed on the focused `el`, run its action? Its click handler is wrapped on React's
+ * props record for the press (React reads that record when it dispatches, so a click the key causes
+ * runs the wrapper); the test's own effect, when it names one, counts too.
+ */
+function pressRuns(
+  el: HTMLElement,
+  key: string,
+  ran: ((el: HTMLElement) => number | undefined) | undefined,
+): boolean {
+  // React freezes a props record, so each event gets a copy with the click wrapped, put where React
+  // reads it; the record goes back after, unless a render during the event already replaced it. The
+  // wrap is put in place per event, not once for the press: a render flushed after ⏎/Space goes down
+  // (a pressed face) replaces the record, and a click the key's release causes must still count.
+  const node = el as unknown as Record<string, Record<string, unknown>>;
+  const slot = Object.keys(el).find((k) => k.startsWith('__reactProps$')) as string;
+  let clicked = 0;
+  const wrappedFor = (fire: () => void) => {
+    const record = node[slot];
+    const original = record?.onClick;
+    if (record === undefined || typeof original !== 'function') {
+      fire();
+      return;
+    }
+    const wrapped = {
+      ...record,
+      onClick: (...args: unknown[]) => {
+        clicked++;
+        return original(...args);
+      },
+    };
+    node[slot] = wrapped;
+    try {
+      fire();
+    } finally {
+      if (node[slot] === wrapped) node[slot] = record;
+    }
+  };
+  const before = ran?.(el);
+  el.focus();
+  wrappedFor(() => fireEvent.keyDown(el, { key }));
+  wrappedFor(() => fireEvent.keyUp(el, { key }));
+  const after = ran?.(el);
+  return clicked > 0 || (before !== undefined && after !== undefined && after > before);
 }
 
 /** React's props record on a DOM node (`__reactProps$…`), which its event system reads. */

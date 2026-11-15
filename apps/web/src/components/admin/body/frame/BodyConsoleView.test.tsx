@@ -5,6 +5,7 @@ import { useRef } from 'react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ReadFailure } from '@/components/admin/reads/consoleReads';
 import { KeysProvider } from '@/lib/keys';
+import { ARRIVALS as CONSOLE_ARRIVALS } from '@/test/consoleArrivals';
 import { expectKeyboardOperable } from '@/test/keyboardAudit';
 import { stubJsdomAnimations } from '../tabs/jsdomStubs';
 import { ShapeTabView } from '../tabs/shape/ShapeTab';
@@ -15,12 +16,14 @@ import {
   CAPPED_HISTORY,
   MASCOMA_ASKS,
   MASCOMA_COMPLETENESS,
+  MASCOMA_HISTORY,
   MASCOMA_HISTORY_ENTRIES,
   MASCOMA_IDENTITY,
+  MASCOMA_RECORD,
   MASCOMA_TOWNS,
   MASCOMA_TRUST,
 } from './bodyFixtures';
-import { attentionTabs } from './bodyModel';
+import { attentionTabs, bodyIdentity } from './bodyModel';
 import { NotBuiltTab } from './NotBuiltTab';
 import { useTabKeys } from './tabKeys';
 
@@ -62,27 +65,9 @@ function KeyedTab({ onKey }: { onKey: () => void }) {
   );
 }
 
-/** Each way a tab is reached, and where focus is left by it. */
-const ARRIVALS: [string, (user: ReturnType<typeof userEvent.setup>) => Promise<void>][] = [
-  // The list's Open and a deep link both mount the console with nothing focused.
-  ['the list’s Open or a deep link', async () => {}],
-  ['a press on the tab strip', (user) => user.click(screen.getByRole('tab', { name: /Names/ }))],
-  [
-    'the tab strip’s arrows and ⏎ (the arrows alone only move focus along the strip)',
-    async (user) => {
-      screen.getByRole('tab', { name: /Shape/ }).focus();
-      await user.keyboard('{ArrowRight}{Enter}');
-      expect(screen.getByRole('tab', { name: /Names/ })).toHaveFocus();
-    },
-  ],
-  [
-    'an ask',
-    async (user) => {
-      screen.getByRole('listbox', { name: 'Asked of this body' }).focus();
-      await user.keyboard('{Enter}');
-      await waitFor(() => expect(screen.getByRole('tabpanel')).toHaveFocus());
-    },
-  ],
+/** Each way a tab is reached (the tabs' audit's, shared), and focus already in the tab. */
+const ARRIVALS: typeof CONSOLE_ARRIVALS = [
+  ...CONSOLE_ARRIVALS,
   [
     'focus already in the tab',
     async () => screen.getByRole('button', { name: 'In the tab' }).focus(),
@@ -284,6 +269,17 @@ describe('BodyConsoleView', () => {
     expect(screen.getByText('More is asked of this body than is shown here.')).toBeInTheDocument();
     const slug = screen.getByRole('heading', { name: 'Asked of this body' }).parentElement;
     expect(slug?.textContent).not.toMatch(/3/);
+  });
+
+  it('draws a modeled depth as an estimate in the figures, never as a sounding', () => {
+    const modeled = bodyIdentity(
+      { ...MASCOMA_RECORD, meanDepthSource: 'globathy', maxDepthSource: 'hydrolakes_modeled' },
+      { history: MASCOMA_HISTORY },
+    );
+    render(<Page identity={modeled} />);
+    const figures = document.querySelector('[data-slot="body-figures"]');
+    expect(figures).toHaveTextContent('~9.4 / ~24 m');
+    expect(figures).not.toHaveTextContent(/(^|[^~])9\.4 \//);
   });
 
   it('never draws a capped history as whole', () => {
