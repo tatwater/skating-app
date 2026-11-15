@@ -1010,3 +1010,52 @@ describe('putIns.promote', () => {
     );
   });
 });
+
+describe('Greptile on #126', () => {
+  test('a body loaded before candidates keeps its stored depth when a choice replaces it', async () => {
+    const t = harness();
+    const mod = await person(t);
+    const id = await imported(t, 'way/1');
+    // The winner as a load before this PR left it: on the depth fields, no candidates.
+    await t.run((ctx) => ctx.db.patch(id, { maxDepthM: 24, maxDepthSource: 'state_agency' }));
+    await t.mutation(internal.waterBodies.importDepths, {
+      depths: [{ source: 'osm', externalId: 'way/1', maxDepthM: 23, maxDepthSource: 'lagos_us' }],
+    } as never);
+    const choose = (source: string | null) =>
+      mod.as.mutation(api.waterBodies.chooseDepthSource, {
+        waterBodyId: id,
+        measure: 'max',
+        source: source as never,
+      });
+    await choose('lagos_us');
+    expect(await get(t, id)).toMatchObject({ maxDepthM: 23 });
+    await choose(null);
+    expect(await get(t, id)).toMatchObject({ maxDepthM: 24, maxDepthSource: 'state_agency' });
+  });
+
+  test('re-promoting through an undo refuses a launch an import moved or renamed since', async () => {
+    const t = harness();
+    const mod = await person(t);
+    const id = await imported(t, 'way/1');
+    const putInId = await t.run((ctx) =>
+      ctx.db.insert('putIns', {
+        waterBodyId: id,
+        coord: { lat: 44.01, lng: -72 },
+        source: 'osm',
+        status: 'visible',
+        name: 'Town Ramp',
+        createdAt: NOW,
+      }),
+    );
+    const r = await mod.as.mutation(api.putIns.promote, { putInId });
+    await mod.as.mutation(api.undo.run, { actionId: r.actionId, reason: 'r' });
+    // An import moves and renames the launch, writing no audit row.
+    await t.run((ctx) =>
+      ctx.db.patch(putInId, { coord: { lat: 44.0101, lng: -72 }, name: 'Ramp Road' }),
+    );
+    await expect(
+      mod.as.mutation(api.undo.run, { actionId: (await lastAction(t, 'set_put_in'))._id }),
+    ).rejects.toThrow(/changed since/);
+    expect((await t.run((ctx) => ctx.db.get(putInId)))?.source).toBe('osm');
+  });
+});

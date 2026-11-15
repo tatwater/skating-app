@@ -4600,7 +4600,24 @@ export async function chooseDepthSourceImpl(
   const choice = { ...(body.depthChoice ?? {}) };
   if (source === null) delete choice[measure];
   else choice[measure] = source;
+  // A body whose depths loaded before candidates were kept holds its winners only on the depth
+  // fields: kept as candidates before a choice replaces one, so handing back or undoing restores
+  // them (Greptile on #126).
+  const kept = [...(body.depthCandidates ?? [])];
+  for (const m of ['mean', 'max'] as const) {
+    const storedValue = m === 'mean' ? body.meanDepthM : body.maxDepthM;
+    const stored = m === 'mean' ? body.meanDepthSource : body.maxDepthSource;
+    if (
+      stored !== undefined &&
+      stored !== 'operator' &&
+      storedValue !== undefined &&
+      !kept.some((c) => c.measure === m && c.source === stored)
+    ) {
+      kept.push({ measure: m, source: stored, valueM: storedValue });
+    }
+  }
   await ctx.db.patch(waterBodyId, {
+    ...(kept.length > 0 ? { depthCandidates: kept } : {}),
     ...(pick !== null ? { [valueField]: pick.valueM, [sourceField]: pick.source } : {}),
     depthChoice: choice.mean === undefined && choice.max === undefined ? undefined : choice,
   });

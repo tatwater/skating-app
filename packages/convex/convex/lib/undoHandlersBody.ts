@@ -560,10 +560,13 @@ const undoPutIn: UndoHandler = {
       });
       return;
     }
+    // The demotion recorded where the launch was and what it was called once demoted: re-promoting
+    // a launch an import moved or renamed since is refused, as the other direction is (Greptile).
     await promotePutInImpl(ctx, actor, {
       putInId: m.putInId,
       ...(m.prev.name !== null ? { name: m.prev.name } : {}),
       reason,
+      expected: { coord: m.coord, name: m.name ?? null },
     });
   },
 };

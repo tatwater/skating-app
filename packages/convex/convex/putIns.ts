@@ -264,10 +264,24 @@ export const promote = mutation({
 export async function promotePutInImpl(
   ctx: MutationCtx,
   actor: Doc<'profiles'>,
-  args: { putInId: Id<'putIns'>; name?: string | undefined; reason?: string | undefined },
+  args: {
+    putInId: Id<'putIns'>;
+    name?: string | undefined;
+    reason?: string | undefined;
+    /** The launch as the undo it redoes left it — refused if it moved or was renamed since. */
+    expected?: { coord: { lat: number; lng: number }; name: string | null };
+  },
 ): Promise<{ putInId: Id<'putIns'>; actionId: Id<'moderationActions'>; undoNeedsReason: boolean }> {
   const { row, body } = await promotableRow(ctx, args.putInId);
   if (row.source === 'official') throw new ConvexError('That put-in is already official');
+  if (
+    args.expected !== undefined &&
+    (row.coord.lat !== args.expected.coord.lat ||
+      row.coord.lng !== args.expected.coord.lng ||
+      (row.name ?? null) !== args.expected.name)
+  ) {
+    throw new ConvexError('That put-in changed since — undo is not safe now');
+  }
   const name = putInName(args.name);
   const prev: PromotionPrev = {
     source: row.source,
