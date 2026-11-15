@@ -32,6 +32,7 @@ import {
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
+import type { ModerationAction } from './lib/audit';
 import { auditLinksOnBody } from './lib/auditReads';
 import { requireCapability } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
@@ -40,7 +41,8 @@ import { hasContoursFor } from './lib/bodyLibrary';
 import { MODERATION_ACTIONS } from './lib/enums';
 import { landmarksForBody } from './lib/landmarkRows';
 import { QUEUE_CAP } from './lib/requestDecisions';
-import { undoState } from './lib/undo';
+import { type UndoState, undoStates } from './lib/undo';
+import type { UndoViewer } from './lib/undoTypes';
 import { literals } from './lib/validators';
 import { subAreasForBody } from './subAreas';
 import { depthChoicesOf } from './waterBodies';
@@ -288,19 +290,38 @@ export const history = query({
     bodyOnly: v.optional(v.boolean()),
     limit: v.optional(v.number()),
   },
-  handler: async (ctx, { waterBodyId, action, bodyOnly, limit }) => {
-    const viewer = await requireCapability(ctx, 'audit.read');
-    // Held to one row and the most; a missing or non-finite limit is the default.
-    const n = Number.isFinite(limit)
-      ? Math.min(HISTORY_MAX, Math.max(1, Math.floor(limit as number)))
-      : 50;
-    const body = await bodyOrThrow(ctx, waterBodyId);
-    const absorbed = await absorbedInto(ctx, body._id);
-    let capped = absorbed.truncated;
-    const links = new Map<string, { actionId: Id<'moderationActions'>; createdAt: number }>();
-    for (const id of [body._id, ...absorbed.ids]) {
+  handler: async (ctx, args) => historyPage(ctx, await requireCapability(ctx, 'audit.read'), args),
+});
+
+/** `history`'s body, for a viewer already let in. */
+export async function historyPage(
+  ctx: QueryCtx,
+  viewer: UndoViewer,
+  {
+    waterBodyId,
+    action,
+    bodyOnly,
+    limit,
+  }: {
+    waterBodyId: Id<'waterBodies'>;
+    action?: ModerationAction;
+    bodyOnly?: boolean;
+    limit?: number;
+  },
+) {
+  // Held to one row and the most; a missing or non-finite limit is the default.
+  const n = Number.isFinite(limit)
+    ? Math.min(HISTORY_MAX, Math.max(1, Math.floor(limit as number)))
+    : 50;
+  const body = await bodyOrThrow(ctx, waterBodyId);
+  const absorbed = await absorbedInto(ctx, body._id);
+  let capped = absorbed.truncated;
+  const links = new Map<string, { actionId: Id<'moderationActions'>; createdAt: number }>();
+  // Every body in the chain at once — one round, not one per body (B01-3h).
+  const reads = await Promise.all(
+    [body._id, ...absorbed.ids].map((id) =>
       // The same range `moderation.listActions` reads for a body (`lib/auditReads`): one rule.
-      const read = await auditLinksOnBody(
+      auditLinksOnBody(
         ctx,
         {
           waterBodyId: id,
@@ -308,36 +329,60 @@ export const history = query({
           ...(bodyOnly === true ? { bodyOnly } : {}),
         },
         n + 1,
-      );
-      if (read.length > n) capped = true;
-      for (const l of read) links.set(l.actionId, l);
+      ),
+    ),
+  );
+  for (const read of reads) {
+    if (read.length > n) capped = true;
+    for (const l of read) links.set(l.actionId, l);
+  }
+  const newest = [...links.values()].sort(
+    (a, b) => b.createdAt - a.createdAt || (a.actionId < b.actionId ? 1 : -1),
+  );
+  if (newest.length > n) capped = true;
+  // **The page's rows at once, never one after another** (B01-3h): every row's reads — its actor
+  // (once a page per person), its undo state's few indexed reads and any refusal check — run
+  // concurrently, so the page costs a few rounds whatever its length. The refusal checks share the
+  // request's budget by reserving before they read, in page order (`undoStates`), so running them
+  // together keeps the accounting exact; the actors' reads charge nothing.
+  const people = new Map<string, Promise<PersonView>>();
+  const actorOf = (id: Id<'profiles'> | undefined) => {
+    const key = id ?? '';
+    let found = people.get(key);
+    if (found === undefined) {
+      found = personOf(ctx, id);
+      people.set(key, found);
     }
-    const newest = [...links.values()].sort(
-      (a, b) => b.createdAt - a.createdAt || (a.actionId < b.actionId ? 1 : -1),
-    );
-    if (newest.length > n) capped = true;
-    const entries = [];
-    for (const link of newest.slice(0, n)) {
-      const row = await ctx.db.get(link.actionId);
-      if (!row) continue;
-      entries.push({
-        id: row._id,
-        action: row.action,
-        targetType: row.targetType,
-        targetId: row.targetId,
-        reason: row.reason,
-        ...(row.metadata !== undefined ? { metadata: row.metadata } : {}),
-        createdAt: row.createdAt,
-        actor: await personOf(ctx, row.actorId),
-        ...(row.undoesActionId !== undefined ? { undoesActionId: row.undoesActionId } : {}),
-        // What the actor made the write through (D256), as History reads it everywhere.
-        ...(row.via !== undefined ? { via: row.via } : {}),
-        undo: await undoState(ctx, viewer, row),
-      });
-    }
-    return { entries, capped };
-  },
-});
+    return found;
+  };
+  const rows = (
+    await Promise.all(newest.slice(0, n).map((link) => ctx.db.get(link.actionId)))
+  ).filter((row): row is Doc<'moderationActions'> => row !== null);
+  // The page's undo states in one reading (`undoStates`): its refusal checks in page order.
+  const [actors, undos] = await Promise.all([
+    Promise.all(rows.map((row) => actorOf(row.actorId))),
+    undoStates(ctx, viewer, rows),
+  ]);
+  const entries = rows.map((row, i) => {
+    const actor = actors[i] as PersonView;
+    const undo = undos[i] as UndoState;
+    return {
+      id: row._id,
+      action: row.action,
+      targetType: row.targetType,
+      targetId: row.targetId,
+      reason: row.reason,
+      ...(row.metadata !== undefined ? { metadata: row.metadata } : {}),
+      createdAt: row.createdAt,
+      actor,
+      ...(row.undoesActionId !== undefined ? { undoesActionId: row.undoesActionId } : {}),
+      // What the actor made the write through (D256), as History reads it everywhere.
+      ...(row.via !== undefined ? { via: row.via } : {}),
+      undo,
+    };
+  });
+  return { entries, capped };
+}
 
 // ── Places ───────────────────────────────────────────────────────────────────────────────────
 

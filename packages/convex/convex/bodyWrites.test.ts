@@ -19,7 +19,7 @@ import {
 } from './lib/readBudget';
 import { savedPutInsOf } from './lib/standing';
 import { undoState } from './lib/undo';
-import { UNDO_CHECKED_ELSEWHERE, undoRead } from './lib/undoReads';
+import { UNDO_CHECKED_ELSEWHERE } from './lib/undoReads';
 import { ROW_SHAPE_DOCS, shapeRows } from './people';
 import { SUPPRESSION_ROWS_READ } from './putIns';
 import schema from './schema';
@@ -1483,20 +1483,41 @@ describe('undo after an un-audited change: write → change → undo → redo', 
     expect(state).toEqual({ state: 'unavailable', why: UNDO_CHECKED_ELSEWHERE });
   });
 
-  test('reads in flight together are charged one after another: the second waits for the first’s weight', async () => {
+  test('a page’s reads go in waves in page order: the second waits for the first’s hand-back; none fits, all overflow', async () => {
     const t = harness();
     const a = await imported(t, 'way/1');
     const b = await imported(t, 'way/2');
-    const got = await t.run(async (ctx) => {
-      // Room for one body's worst case and a byte: the first read leaves less than that for the second.
-      requestBudget(ctx).spend(REQUEST_PROFILE_BUDGET - DOC_MAX - 1);
-      const [first, second] = await Promise.all([
-        undoRead(ctx, 'waterBody', a),
-        undoRead(ctx, 'waterBody', b),
-      ]);
-      return { first: first?._id ?? null, secondRead: second !== undefined };
-    });
-    expect(got).toEqual({ first: a, secondRead: false });
+    const run = (left: number) =>
+      t.run(async (ctx) => {
+        const budget = requestBudget(ctx);
+        budget.spend(REQUEST_PROFILE_BUDGET - left);
+        const started: string[] = [];
+        const got = await budget.waves(
+          [a, b],
+          () => ({ bytes: DOC_MAX, reads: 1 }),
+          async (id: Id<'waterBodies'>, share) => {
+            started.push(`${id}@${budget.bytes}`);
+            return ((await share.read('waterBody', () => ctx.db.get(id)))?._id ?? 'overflow') as
+              | Id<'waterBodies'>
+              | 'overflow';
+          },
+          (): Id<'waterBodies'> | 'overflow' => 'overflow',
+        );
+        return { got, started: started.length, left: budget.bytes };
+      });
+    // Room for one worst case and a little: the first is read, hands back what it didn't weigh, and
+    // the second is read in the next wave.
+    const one = await run(DOC_MAX + 100_000);
+    expect(one).toMatchObject({ got: [a, b], started: 2 });
+    // Everything handed back: what remains is what was left, less what the two really weighed.
+    expect(one.left).toBeLessThan(DOC_MAX + 100_000);
+    expect(one.left).toBeGreaterThan(DOC_MAX);
+    // Room for one worst case and a byte: after the first's hand-back the second's worst case still
+    // doesn't fit — it overflows, whatever order anything settled in.
+    expect((await run(DOC_MAX + 1)).got).toEqual([a, 'overflow']);
+    // Less than one worst case: nothing is read, both overflow, nothing is charged.
+    const none = await run(DOC_MAX - 1);
+    expect(none).toEqual({ got: ['overflow', 'overflow'], started: 0, left: DOC_MAX - 1 });
   });
 
   test('the per-row plan is charged, not declared: a page of launch lines each at the hidden-read peak reads within it, and a short budget shapes fewer and says capped', async () => {

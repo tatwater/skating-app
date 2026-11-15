@@ -1358,25 +1358,24 @@ async function labelOf(
 }
 
 /**
- * The most #127's refusal hook (`UndoHandler.refusal`) reads for one row, on each axis — a row runs
- * one verb's hook, and the axes peak on different verbs. Calls: a feature redraw's, three (the feature
- * and its body through `undoRead`, and the row's snapshot). Documents: a launch's, one through
- * `undoRead` and up to {@link SUPPRESSION_ROWS_READ} hidden launches on its body (a redraw's is ten:
- * the feature, the body, a snapshot of at most 8 chunks).
+ * What a row's refusal hook (`UndoHandler.refusal`) reads **outside** the share `undoStates` reserves
+ * for it through `ReadBudget.waves` (B01-3h) — the rows it reads through its share are reserved there,
+ * on this same budget, so they aren't counted here again. Outside it: a launch's body's hidden
+ * launches (`launchRefusal`, up to {@link SUPPRESSION_ROWS_READ}) and a row's snapshot (one call, at
+ * most 8 chunks) — calls and documents the per-row plan has to count itself.
  */
-const REFUSAL_CALLS = 3;
-const REFUSAL_DOCS = 1 + SUPPRESSION_ROWS_READ;
+const REFUSAL_CALLS = 2;
+const REFUSAL_DOCS = SUPPRESSION_ROWS_READ + 8;
 
 /**
- * What shaping one History or Decisions row reads through helpers on main and in this PR — undo state
- * (the undo tagged rows ≤ 16, the newest row on the target, the content's author stamp, the person's
- * row, a rowless fallback, and the refusal hook at its worst, {@link REFUSAL_CALLS} and
- * {@link REFUSAL_DOCS}), the actor's and the target's names — counted ahead: calls and documents. Bytes:
- * the hook's `undoRead` rows are charged as they really weigh (`requestBudget(ctx).measured`, one at a
- * time, `undefined` past the budget, which the hook answers "checked when pressed"); a rowless profile
- * is charged by `rowlessProfile`; the rest are **not** charged — the undo engine reads audit rows and
- * content items whose worst case is the document limit (an audit row's metadata has no cap), and the
- * hook's snapshot and hidden-launch reads are owed (the phase doc's B01-3f "Owed").
+ * What shaping one History or Decisions row reads through helpers on main and in this PR, counted
+ * ahead: calls and documents — undo state (the undo tagged rows ≤ 16, the newest row on the target,
+ * the content's author stamp, the person's row, a rowless fallback, and the refusal hook's reads
+ * outside its share, {@link REFUSAL_CALLS} and {@link REFUSAL_DOCS}), the actor's and the target's
+ * names. Bytes: the hook's share reads are reserved and charged by `ReadBudget.waves`; a rowless
+ * profile is charged by `rowlessProfile`; the rest are **not** charged — the undo engine reads audit
+ * rows and content items whose worst case is the document limit (an audit row's metadata has no cap),
+ * and the hook's snapshot and hidden-launch bytes are owed (the phase doc's B01-3f "Owed").
  */
 const ROW_SHAPE_CALLS = 8 + REFUSAL_CALLS;
 export const ROW_SHAPE_DOCS = 24 + REFUSAL_DOCS;

@@ -22,6 +22,16 @@ export async function auditTargetLabel(
   targetType: ModerationTargetType,
   targetId: string,
 ): Promise<string | null> {
+  const light = await lightLabel(ctx, targetType, targetId);
+  return typeof light === 'object' && light !== null ? rowlessLabel(ctx, light.rowless) : light;
+}
+
+/** A target's label from its light row — or, for a person with no People row yet, whose profile. */
+async function lightLabel(
+  ctx: QueryCtx,
+  targetType: ModerationTargetType,
+  targetId: string,
+): Promise<string | null | { rowless: Id<'profiles'> }> {
   if (targetType === 'waterbody') {
     const id = ctx.db.normalizeId('waterBodies', targetId);
     if (id === null) return null;
@@ -33,16 +43,22 @@ export async function auditTargetLabel(
   }
   if (targetType === 'user') {
     // The person's light People row, never their profile: a feed or History names a person once a
-    // row, and a profile can weigh a whole document. Someone with no row yet (before the People rows
-    // backfill) is read in full while the request's profile budget lasts, then left unnamed.
+    // row, and a profile can weigh a whole document.
     const id = ctx.db.normalizeId('profiles', targetId);
     if (id === null) return null;
     const row = await personRowOf(ctx, id);
-    if (row) return row.displayName.trim() || row.username;
-    const person = await rowlessProfile(ctx, id);
-    return person ? person.displayName.trim() || person.username : null;
+    return row ? row.displayName.trim() || row.username : { rowless: id };
   }
   return null;
+}
+
+/**
+ * Someone with no People row yet (before the backfill) is read in full while the request's profile
+ * budget lasts, then left unnamed. `rowlessProfile` charges as it starts.
+ */
+async function rowlessLabel(ctx: QueryCtx, id: Id<'profiles'>): Promise<string | null> {
+  const person = await rowlessProfile(ctx, id);
+  return person ? person.displayName.trim() || person.username : null;
 }
 
 /**
@@ -50,18 +66,28 @@ export async function auditTargetLabel(
  * of 100 rows on a dozen bodies makes a dozen reads, and 100 rows on 100 targets at most 100 (B01-3c:
  * a read per row cost an unfiltered 100-row page 315 ms on dev). Kinds with no label read nothing.
  * Keyed `targetType\u0001targetId`; `null` where the target has no label or is gone.
+ *
+ * The light reads go all at once (B01-3h): a page of 100 targets is one round, not 100. The profiles
+ * of people with no row yet, charged to the request's budget, are read only once `after` settles
+ * (the page's other charges: its undo states), and started in page order — so which people the
+ * budget reaches is the same every time, whatever order anything settled in.
  */
 export async function auditTargetLabels(
   ctx: QueryCtx,
   rows: readonly { targetType: ModerationTargetType; targetId: string }[],
+  after?: Promise<unknown>,
 ): Promise<Map<string, string | null>> {
-  const out = new Map<string, string | null>();
-  for (const row of rows) {
-    const key = targetKey(row);
-    if (out.has(key)) continue;
-    out.set(key, await auditTargetLabel(ctx, row.targetType, row.targetId));
-  }
-  return out;
+  const distinct = new Map<string, { targetType: ModerationTargetType; targetId: string }>();
+  for (const row of rows) distinct.set(targetKey(row), row);
+  const keys = [...distinct.keys()];
+  const light = await Promise.all(
+    [...distinct.values()].map((row) => lightLabel(ctx, row.targetType, row.targetId)),
+  );
+  await after;
+  const labels = await Promise.all(
+    light.map((l) => (typeof l === 'object' && l !== null ? rowlessLabel(ctx, l.rowless) : l)),
+  );
+  return new Map(keys.map((key, i) => [key, labels[i] ?? null]));
 }
 
 /** The key {@link auditTargetLabels} files a target under. */

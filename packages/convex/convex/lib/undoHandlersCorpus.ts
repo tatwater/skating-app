@@ -21,8 +21,8 @@ import { type PostedAccessTarget, setPostedAccessImpl } from '../postedAccess';
 import { suppressImpl, unsuppressImpl } from '../recurrence';
 import { type ModerationAction, type ModerationTargetType, readSnapshot } from './audit';
 import { grantLedgerEditorImpl, revokeLedgerEditorImpl } from './ledgerEditors';
+import { ROW_MAX } from './readBudget';
 import { UNDO_POLICY } from './undoPolicy';
-import { UNDO_CHECKED_ELSEWHERE, undoRead } from './undoReads';
 import { meta, PREDATES, type TargetUndo, type UndoCall, type UndoHandler } from './undoTypes';
 
 // ── Roles ─────────────────────────────────────────────────────────────────────────────────────────
@@ -238,12 +238,11 @@ const undoFeatureShape: UndoHandler = {
   // A merge moves the feature to the survivor's box, and a redrawn or re-imported outline can leave
   // the shape it puts back off the lake — neither writes a row on the feature, so the shape is
   // checked against the rows as they stand, by the redraw's own rule.
-  refusal: async (ctx, row) => {
+  refusalCost: { bytes: ROW_MAX.bodyFeature + ROW_MAX.waterBody, reads: 2 },
+  refusal: async (ctx, row, read) => {
     const id = ctx.db.normalizeId('bodyFeatures', row.targetId);
-    const feature = id ? await undoRead(ctx, 'bodyFeature', id) : null;
-    if (feature === undefined) return UNDO_CHECKED_ELSEWHERE;
-    const body = feature ? await undoRead(ctx, 'waterBody', feature.waterBodyId) : null;
-    if (body === undefined) return UNDO_CHECKED_ELSEWHERE;
+    const feature = id ? await read('bodyFeature', id) : null;
+    const body = feature ? await read('waterBody', feature.waterBodyId) : null;
     const unshaped = shapeRefusal(feature, body);
     if (unshaped !== null) return unshaped;
     const prev = await readSnapshot<FeatureShape>(ctx, row._id);
