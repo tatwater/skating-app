@@ -241,6 +241,19 @@ describe('NamesTab', () => {
     expect(location()).toHaveTextContent('CountiesGrand IsleClinton');
   });
 
+  it('reads the town lines and says the towns whose line isn’t stored yet', () => {
+    mocks.results.set(getFunctionName(api.bodyConsole.townLines), {
+      towns: [
+        { name: 'Auburn', state: 'ME', ring: null },
+        { name: 'Lewiston', state: 'ME', ring: null },
+      ],
+      capped: false,
+      computedAt: 1,
+    });
+    render(<NamesTab bodyId="wb1" />);
+    expect(location()).toHaveTextContent('On the map, 2 towns’ lines aren’t stored yet');
+  });
+
   it('says the towns aren’t computed yet before the geometry is, never a blank', () => {
     mocks.results.set(getFunctionName(api.bodyConsole.places), null);
     render(<NamesTab bodyId="wb1" />);

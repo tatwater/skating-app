@@ -59,6 +59,99 @@ export type ClassOption = {
   note?: string;
 };
 
+/**
+ * `bodyConsole.townLines`' answer: each town the body lies in with its state and its boundary's
+ * stored outline (`ring`, ≤96 points; `null` while not stored). `null` until the places are computed.
+ */
+export type TownLinesRead = {
+  towns: { name: string; state: string | null; ring: number[][] | null }[];
+  capped: boolean;
+  computedAt: number;
+} | null;
+
+/** The body's extent, `[minLng, minLat, maxLng, maxLat]`. */
+export type Extent = readonly [number, number, number, number];
+
+/**
+ * **The town lines near the body, from each town's outline.** The read gives each town's own ring,
+ * not the borders between towns, so each ring is drawn where it passes the body's view (the extent
+ * grown by its own size on each side) and named on its inside only: where two towns meet, the two
+ * rings run side by side, each naming its own town — the board's line with a town either side. A
+ * town whose outline isn't stored draws nothing (`missing` counts it, for the tab to say).
+ */
+export function townLinesFrom(
+  read: TownLinesRead,
+  extent: Extent | null,
+): { lines: TownLine[]; missing: number } {
+  if (read === null) return { lines: [], missing: 0 };
+  const view =
+    extent === null
+      ? null
+      : (() => {
+          const [w, s, e, n] = extent;
+          const dx = e - w;
+          const dy = n - s;
+          return [w - dx, s - dy, e + dx, n + dy] as const;
+        })();
+  const near = (a: LatLng, b: LatLng) =>
+    view === null ||
+    (Math.max(a.lng, b.lng) >= view[0] &&
+      Math.min(a.lng, b.lng) <= view[2] &&
+      Math.max(a.lat, b.lat) >= view[1] &&
+      Math.min(a.lat, b.lat) <= view[3]);
+  const lines: TownLine[] = [];
+  let missing = 0;
+  for (const town of read.towns) {
+    if (town.ring === null || town.ring.length < 2) {
+      missing += 1;
+      continue;
+    }
+    const ring = town.ring.map(([lng, lat]) => ({ lng: lng ?? 0, lat: lat ?? 0 }));
+    // Counter-clockwise (positive area) keeps the inside on a run's left as drawn.
+    let twice = 0;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i] as LatLng;
+      const b = ring[(i + 1) % ring.length] as LatLng;
+      twice += a.lng * b.lat - b.lng * a.lat;
+    }
+    const ccw = twice > 0;
+    let run: LatLng[] = [];
+    let n = 0;
+    const flush = () => {
+      if (run.length >= 2) {
+        const id = `${town.name}|${town.state ?? ''}|${n++}`;
+        lines.push({ id, path: run, faces: facesOf(run, ccw, town.name) });
+      }
+      run = [];
+    };
+    for (let i = 1; i < ring.length; i++) {
+      const a = ring[i - 1] as LatLng;
+      const b = ring[i] as LatLng;
+      if (near(a, b)) {
+        if (run.length === 0) run.push(a);
+        run.push(b);
+      } else flush();
+    }
+    flush();
+  }
+  return { lines, missing };
+}
+
+/**
+ * Which side of a run its town is on, as {@link townNames} names the sides: the run's longest
+ * segment read west to east, its left (north) first.
+ */
+function facesOf(run: LatLng[], ccw: boolean, name: string): [string, string] {
+  // The same segment `townNames` names the sides across.
+  const best = longestRun(run);
+  if (best === null) return [name, ''];
+  const [a, b] = best;
+  const flipped = b.lng - a.lng < 0 || (b.lng === a.lng && b.lat - a.lat < 0);
+  // Inside is on the drawn run's left for a counter-clockwise ring; reading it the other way round
+  // swaps the sides.
+  return ccw !== flipped ? [name, ''] : ['', name];
+}
+
 /** A town line crossing the body, as the boundary read returns it. */
 export type TownLine = { id: string; path: LatLng[]; faces: [string, string] };
 
@@ -75,6 +168,11 @@ export type Place = {
   states: string[];
   /** The boundary lines that cross the map's view of the body, `null` until a read serves them. */
   townLines: TownLine[] | null;
+  /**
+   * What the map's town lines leave out, said under the towns: towns whose outline isn't stored
+   * yet, and towns past what one read returns. Absent when nothing is left out.
+   */
+  townLinesShort?: { unstored: number; capped: boolean };
 };
 
 /**
@@ -120,6 +218,8 @@ export type NamesData = {
 /** What the model reads off the body's record. */
 export type NamesBody = {
   name: string;
+  /** Its extent, for the town lines near it. */
+  bbox?: { minLng: number; minLat: number; maxLng: number; maxLat: number };
   type: WaterBodyClass;
   nameClaims?: ReadonlyArray<{ source: ClaimSource; value: string }>;
   states?: readonly string[];
@@ -180,6 +280,8 @@ export function namesFromBody(
   extras: {
     classOptions?: ClassOption[] | null;
     townLines?: TownLine[] | null;
+    /** `bodyConsole.townLines`: drawn into `townLines`, near the body's extent, when given. */
+    townLinesRead?: Loadable<TownLinesRead>;
     /** `bodyConsole.identity`: the moderator's aliases and class (the aliases are what's edited). */
     identity?: Loadable<NamesIdentity>;
   } = {},
@@ -209,15 +311,56 @@ export function namesFromBody(
       admin: adminOf(places),
       // The record's states; a body across a state line names each.
       states: [...(body.states ?? [])],
-      townLines: extras.townLines ?? null,
+      ...townLinesPart({
+        ...extras,
+        extent:
+          body.bbox === undefined
+            ? null
+            : [body.bbox.minLng, body.bbox.minLat, body.bbox.maxLng, body.bbox.maxLat],
+      }),
     },
     failures: [
       ...(isFailed(places) ? ['the towns and county'] : []),
       ...(extras.identity !== undefined && isFailed(extras.identity)
         ? ['the moderator’s aliases and class']
         : []),
+      ...(extras.townLinesRead !== undefined && isFailed(extras.townLinesRead)
+        ? ['the town lines']
+        : []),
     ],
   };
+}
+
+/** The map's town lines and what they leave out, from the read when one is given. */
+function townLinesPart(extras: {
+  townLines?: TownLine[] | null;
+  townLinesRead?: Loadable<TownLinesRead>;
+  extent?: Extent | null;
+}): Pick<Place, 'townLines' | 'townLinesShort'> {
+  const got = extras.townLinesRead;
+  if (got === undefined || isFailed(got) || got === null) {
+    return { townLines: extras.townLines ?? null };
+  }
+  const { lines, missing } = townLinesFrom(got, extras.extent ?? null);
+  return {
+    townLines: lines,
+    ...((missing > 0 || got.capped) && {
+      townLinesShort: { unstored: missing, capped: got.capped },
+    }),
+  };
+}
+
+/** "1 town’s line isn’t stored yet": what the map's town lines leave out. */
+export function townLinesShortWords(short: Place['townLinesShort']): string | null {
+  if (short === undefined) return null;
+  const parts = [
+    short.unstored > 0 &&
+      `${short.unstored} ${short.unstored === 1 ? 'town’s line isn’t' : 'towns’ lines aren’t'} stored yet`,
+    short.capped && 'more towns than one read returns: some lines aren’t drawn',
+  ].filter((p): p is string => p !== false);
+  if (parts.length === 0) return null;
+  const said = parts.join('; ');
+  return `On the map, ${said}`;
 }
 
 /** `bodyConsole.identity`'s answer. */
@@ -290,14 +433,8 @@ export const TOWN_NAME_OFFSET_M = 140;
 
 const M_PER_DEG = 111_320;
 
-/**
- * Where a line's two towns are named: facing each other across the middle of its longest run, each
- * {@link TOWN_NAME_OFFSET_M} off the line, the text along the run (degrees clockwise from east,
- * turned to read left to right). The first town is on the run's left (its north or west side).
- */
-export function townNames(
-  path: readonly LatLng[],
-): { left: LngLat; right: LngLat; angle: number } | null {
+/** A path's longest segment on the ground (east–west shrunk by latitude); `null` for none. */
+function longestRun(path: readonly LatLng[]): [LatLng, LatLng] | null {
   let best: [LatLng, LatLng] | null = null;
   let bestLen = 0;
   for (let i = 1; i < path.length; i++) {
@@ -310,7 +447,19 @@ export function townNames(
       best = [a, b];
     }
   }
-  if (best === null || bestLen === 0) return null;
+  return best;
+}
+
+/**
+ * Where a line's two towns are named: facing each other across the middle of its longest run, each
+ * {@link TOWN_NAME_OFFSET_M} off the line, the text along the run (degrees clockwise from east,
+ * turned to read left to right). The first town is on the run's left (its north or west side).
+ */
+export function townNames(
+  path: readonly LatLng[],
+): { left: LngLat; right: LngLat; angle: number } | null {
+  const best = longestRun(path);
+  if (best === null) return null;
   const [a, b] = best;
   // Measured at the run's middle, so the run reads the same whichever end it was drawn from.
   const cos = Math.cos((((a.lat + b.lat) / 2) * Math.PI) / 180);
@@ -358,6 +507,8 @@ export function namesMapScene(data: NamesData, lit: string | null): BodyMapScene
       ['l', names.left, line.faces[0]],
       ['r', names.right, line.faces[1]],
     ] as const) {
+      // A side no town is named on (a town's own outline names its inside only).
+      if (text === '') continue;
       items.push({
         kind: 'label',
         id: `townName:${line.id}.${side}`,

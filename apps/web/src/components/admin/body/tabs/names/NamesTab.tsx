@@ -22,6 +22,7 @@ import {
   type NamesIdentity,
   namesFromBody,
   namesMapScene,
+  type TownLinesRead,
 } from './namesModel';
 
 /**
@@ -40,15 +41,19 @@ export function useNamesRead(bodyId: string): {
     body: read(api.waterBodies.get, { waterBodyId }),
     places: read(api.bodyConsole.places, { waterBodyId }),
     identity: read(api.bodyConsole.identity, { waterBodyId }),
+    townLines: read(api.bodyConsole.townLines, { waterBodyId }),
   });
-  const { body: got, places, identity } = reads;
+  const { body: got, places, identity, townLines } = reads;
   const body = isFailed(got) ? got : got?.available ? got.body : undefined;
   const data = useMemo<Loadable<NamesData>>(
     () =>
       body === undefined || isFailed(body)
         ? body
-        : namesFromBody(body, places, { identity: identity as Loadable<NamesIdentity> }),
-    [body, places, identity],
+        : namesFromBody(body, places, {
+            identity: identity as Loadable<NamesIdentity>,
+            townLinesRead: townLines as Loadable<TownLinesRead>,
+          }),
+    [body, places, identity, townLines],
   );
   return { data, retry, pending };
 }
@@ -64,7 +69,7 @@ export function useNamesData(bodyId: string): NamesData | undefined {
  * server has today, `waterBodies.setWaterBodyName` (`body.identity`), with its undo. What no read
  * or mutation serves yet is drawn and says so — the aliases' editor and the class's change are
  * *Not available yet* for a viewer who could use them, each catalog's own claims *Not recorded yet*
- * — and the town lines on the map wait on a read of their own (the B01-3 server register).
+ * — and the town lines on the map, from each town's stored outline (`bodyConsole.townLines`).
  */
 export function NamesTab({ bodyId, lit = null }: BodyTabProps) {
   const waterBodyId = bodyId as Id<'waterBodies'>;

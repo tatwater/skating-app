@@ -32,6 +32,7 @@ import {
   type NamesData,
   otherClasses,
   stateName,
+  townLinesShortWords,
 } from './namesModel';
 
 /**
@@ -444,6 +445,7 @@ function LocationSection({ data }: { data: NamesData }) {
       fact(admin)
     );
   const known = typeof admin === 'object' && !isFailed(admin);
+  const short = townLinesShortWords(data.place.townLinesShort);
   return (
     <Section title="Location" data-slot="location">
       <KeyValueList keyWidth="6.5rem">
@@ -463,6 +465,11 @@ function LocationSection({ data }: { data: NamesData }) {
             ) : (
               <span className="text-fg3">{IN_NO_TOWN_WORDS}</span>
             ),
+          )}
+          {short !== null && (
+            <span data-slot="town-lines-short" className="mt-(--space-1_5) block text-fg3">
+              {short}
+            </span>
           )}
         </KeyValueRow>
         <KeyValueRow
