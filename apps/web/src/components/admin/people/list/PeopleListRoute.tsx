@@ -4,7 +4,6 @@ import { type ReactNode, useRef, useState } from 'react';
 
 import { useRole } from '@/lib/useRole';
 
-import { isFailed } from '../../reads/consoleReads';
 import { ReadNote } from '../../reads/ReadNote';
 import { useMinuteNow } from '../../shell/presence';
 import { PeopleListView } from './PeopleListView';
@@ -66,7 +65,8 @@ export function PeopleListRoute({ detail }: PeopleListRouteProps = {}) {
       : null,
   );
 
-  // A failed or retrying count read shows no count at all — never a zero, never the last one held.
+  // A failed or retrying count read shows no count at all — never a zero, never the last one held
+  // (`usePeopleLanes` shows nothing past a failure).
   const laneEntries: Partial<Record<PeopleLane, LaneEntry>> | null =
     lanesRead.shown === undefined
       ? null
@@ -86,7 +86,7 @@ export function PeopleListRoute({ detail }: PeopleListRouteProps = {}) {
   return (
     <PeopleListView
       lanes={lanes}
-      laneEntries={isFailed(lanesRead.state) ? null : laneEntries}
+      laneEntries={laneEntries}
       query={query}
       onQueryChange={onQueryChange}
       list={{
@@ -126,6 +126,7 @@ export function PeopleListRoute({ detail }: PeopleListRouteProps = {}) {
 /**
  * The minute a list was opened at, held while it stays open: the clock its reads are asked
  * against, so the clock moving on never restarts the paging. A new `key` reads the clock again.
+ * (The Bodies library holds the same rule; one shared hook is owed once both have landed.)
  */
 function useClockFor(key: string): number {
   const [clock, setClock] = useState(() => ({ key, at: minute(Date.now()) }));

@@ -117,6 +117,25 @@ describe('OverviewHome', () => {
     expect(within(card).getByText('38 users')).toBeInTheDocument();
   });
 
+  it('holds back only the flagged figure while the flags’ subjects are still being prepared', () => {
+    const people = must(HOME.people);
+    render(
+      <OverviewHome
+        data={{ ...HOME, people: { ...people, pending: ['flagSubjects'] } }}
+        now={NOW}
+      />,
+    );
+    const flagged = must(
+      screen.getByText('Flagged people').closest<HTMLElement>('[data-slot="count-row"]'),
+    );
+    expect(within(flagged).getByText('Still being prepared')).toBeInTheDocument();
+    expect(flagged.querySelector('[data-slot="count-value"]')?.textContent).toBe('');
+    // The rest of the card rests on the rows alone, which are ready: their figures stand.
+    const card = must(flagged.closest<HTMLElement>('[data-slot="count-card"]'));
+    expect(within(card).getByText('Staff')).toBeInTheDocument();
+    expect(within(card).getByText('Suspended')).toBeInTheDocument();
+  });
+
   it('says when the appeals count stopped at its bound, as every other count does', () => {
     const people = must(HOME.people);
     render(

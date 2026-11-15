@@ -1,6 +1,6 @@
 import { api } from '@skating/convex/api';
 import { PEOPLE_PAGE_MAX, PEOPLE_PAGE_SIZE, type PeopleLane } from '@skating/core';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import {
   isFailed,
@@ -11,6 +11,7 @@ import {
   read,
   useConsoleReadSet,
 } from '../../reads/consoleReads';
+import { useHeldRead } from '../../shell/presence';
 import type { Backfill, LanesRead, PartialReason, PeoplePage, PersonListRow } from './peopleModel';
 
 /**
@@ -42,11 +43,8 @@ export function usePeopleLanes(now: number, enabled: boolean): LanesState {
     lanes: enabled ? read(api.people.lanes, { now }) : null,
   });
   const state = reads.lanes;
-  const current = loaded(state);
-  const held = useRef<LanesRead | undefined>(undefined);
-  if (current !== undefined) held.current = current;
-  if (isFailed(state)) held.current = undefined;
-  return { state, shown: current ?? (state === undefined ? held.current : undefined) };
+  // A failure (or a read no longer asked for) forgets what was held, so nothing past it shows.
+  return { state, shown: useHeldRead(loaded(state), !enabled || isFailed(state)) };
 }
 
 // ── The list ─────────────────────────────────────────────────────────────────────────────────

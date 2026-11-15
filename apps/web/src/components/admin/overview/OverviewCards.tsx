@@ -221,8 +221,11 @@ export function PeopleCard({ data, ...props }: CardProps<PeopleCardData>) {
     data.totalUsers != null ? (
       <SectionNote>{countText(data.totalUsers)} users</SectionNote>
     ) : undefined;
-  // A backfill not yet finished: the figures may be wrong, so none is drawn — never a number.
-  if (data.pending.length > 0) {
+  // A backfill not yet finished: the figures resting on it may be wrong, so none is drawn — never a
+  // number. Every figure rests on the rows; only Flagged people rests on the flags' subjects too (as
+  // the People lanes' own counts say it).
+  const flagsPending = data.pending.includes('flagSubjects');
+  if (data.pending.includes('rows')) {
     return (
       <CountCard title="People" end={end} {...props}>
         <CountRow label="Still being prepared" value="" tone="dim" to={{ kind: 'people' }} />
@@ -259,9 +262,15 @@ export function PeopleCard({ data, ...props }: CardProps<PeopleCardData>) {
       />
       <CountRow
         label="Flagged people"
-        detail={<RowLink to={{ kind: 'inbox', lane: 'contentFlags' }}>Inbox</RowLink>}
-        value={countText(data.flaggedPeople)}
-        tone={countTone(data.flaggedPeople)}
+        detail={
+          flagsPending ? (
+            'Still being prepared'
+          ) : (
+            <RowLink to={{ kind: 'inbox', lane: 'contentFlags' }}>Inbox</RowLink>
+          )
+        }
+        value={flagsPending ? '' : countText(data.flaggedPeople)}
+        tone={flagsPending ? 'dim' : countTone(data.flaggedPeople)}
       />
       {data.appealsOpen !== null && (
         <CountRow

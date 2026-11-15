@@ -1,22 +1,10 @@
 import type { FeedTarget } from './overviewData';
-import type { OverviewTarget } from './overviewLinks';
+import { type OverviewTarget, PEOPLE_LANE_OF } from './overviewLinks';
 
 /** A body's console: the Bodies mode's page for one body. */
 function bodyConsolePath(id: string): string {
   return `/admin/body/${encodeURIComponent(id)}`;
 }
-
-/** Home's People lists, as People's lanes name them. */
-const PEOPLE_LANE_OF: Record<
-  NonNullable<Extract<OverviewTarget, { kind: 'people' }>['list']>,
-  string
-> = {
-  staff: 'staff',
-  new: 'newest',
-  suspended: 'suspended',
-  banned: 'banned',
-  leaving: 'leaving',
-};
 
 /**
  * A path as the router takes it: the path, and its query as a search object (a link through the

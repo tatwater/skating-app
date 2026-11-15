@@ -1,3 +1,4 @@
+import type { PeopleLane } from '@skating/core';
 import { createContext, type ReactElement, type ReactNode, useContext } from 'react';
 
 import type { CorpusTask, InboxLane } from './overviewData';
@@ -19,6 +20,17 @@ export type OverviewTarget =
 /** Turns a target into the element a link renders as (its props and children are merged in). */
 export type LinkTo = (to: OverviewTarget) => ReactElement;
 
+/** Home's People lists, as People's lanes name them. */
+export const PEOPLE_LANE_OF: Readonly<
+  Record<NonNullable<Extract<OverviewTarget, { kind: 'people' }>['list']>, PeopleLane>
+> = {
+  staff: 'staff',
+  new: 'newest',
+  suspended: 'suspended',
+  banned: 'banned',
+  leaving: 'leaving',
+};
+
 /** The console's routes (the phase plan's table), for a page that isn't handed a router. */
 export function overviewHref(to: OverviewTarget): string {
   switch (to.kind) {
@@ -29,9 +41,7 @@ export function overviewHref(to: OverviewTarget): string {
     case 'machinery':
       return '/admin/machinery';
     case 'people':
-      return to.list
-        ? `/admin/people?lane=${to.list === 'new' ? 'newest' : to.list}`
-        : '/admin/people';
+      return to.list ? `/admin/people?lane=${PEOPLE_LANE_OF[to.list]}` : '/admin/people';
     case 'ledger':
       return '/admin/machinery/ledger';
     case 'body':

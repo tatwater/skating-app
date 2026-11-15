@@ -127,6 +127,19 @@ describe('the keys', () => {
     await userEvent.click(within(list).getByText('Luc Pelletier'));
     expect(props.onOpen).toHaveBeenCalledWith(LUC.userId, 'press');
     expect(active(list)).toHaveTextContent('Luc Pelletier');
+    // The press focused the list without sending the cursor to the first row and scrolling it into
+    // view first, which would slide another row under the pointer before the click.
+    expect(scrolled).toHaveLength(0);
+  });
+
+  it('still starts the cursor when the keys focus the list after a press that never focused it', async () => {
+    const { list } = draw();
+    // A touch that turned into a scroll: the press is cancelled, focus never came.
+    fireEvent.pointerDown(list);
+    fireEvent.pointerCancel(list);
+    await userEvent.tab();
+    expect(list).toHaveFocus();
+    expect(active(list)).toHaveTextContent('Rob Tremblay');
   });
 });
 

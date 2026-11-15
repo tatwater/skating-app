@@ -16,6 +16,7 @@ import { SkeletonText } from '@/components/kit/skeleton';
 import { KEYS_PASS_THROUGH } from '@/lib/keys';
 import { cn } from '@/lib/utils';
 
+import { withPinned } from '../../bodies/virtualRows';
 import { PersonLockup } from './kit-candidates/person-lockup';
 import type { RowView } from './peopleModel';
 import type { ListStatus } from './peopleReads';
@@ -121,16 +122,9 @@ export function PeopleList({
     estimateSize: () => 64,
     getItemKey: (i) => rows[i]?.id ?? i,
     overscan: 8,
-    rangeExtractor: (range) => {
-      const out = defaultRangeExtractor(range);
-      // The cursor's row stays in the page wherever the list has scrolled, so
-      // `aria-activedescendant` always names a real element.
-      if (cursor >= 0 && !out.includes(cursor)) {
-        out.push(cursor);
-        out.sort((a, b) => a - b);
-      }
-      return out;
-    },
+    // The cursor's row stays in the page wherever the list has scrolled, so
+    // `aria-activedescendant` always names a real element.
+    rangeExtractor: (range) => withPinned(defaultRangeExtractor(range), [cursor]),
   });
 
   // Come back where you were: the remembered scroll once rows are in, else the open row in view.
@@ -229,9 +223,15 @@ export function PeopleList({
     }
   };
 
+  // A press focuses the list on its way to the row under the pointer (focus comes on the press,
+  // the click after it). That row takes the cursor itself, so focus from a press neither moves the
+  // cursor nor scrolls: scrolling here would slide another row under the pointer and lose the click.
+  const pressing = useRef(false);
   const onFocus = () => {
     setFocused(true);
-    if (cursor >= 0 || rows.length === 0) return;
+    const pressed = pressing.current;
+    pressing.current = false;
+    if (pressed || cursor >= 0 || rows.length === 0) return;
     const open = rows.findIndex((r) => r.id === selectedId);
     moveTo(open >= 0 ? open : 0);
   };
@@ -282,8 +282,17 @@ export function PeopleList({
         data-slot="people-list"
         {...{ [KEYS_PASS_THROUGH]: '' }}
         onKeyDown={onKeyDown}
+        onPointerDown={() => {
+          pressing.current = true;
+        }}
+        onPointerCancel={() => {
+          pressing.current = false;
+        }}
         onFocus={onFocus}
-        onBlur={() => setFocused(false)}
+        onBlur={() => {
+          pressing.current = false;
+          setFocused(false);
+        }}
         className="outline-none focus-visible:shadow-[inset_0_0_0_var(--stroke-hair)_var(--fg)]"
       >
         {loading ? (
