@@ -498,7 +498,14 @@ export async function setContentStatus(
         targetType: args.targetType,
         targetId: args.targetId,
         reason: args.reason,
-        metadata: { priorStatus, newStatus: priorStatus, onAuthorDeleted: true },
+        metadata: {
+          priorStatus,
+          newStatus: priorStatus,
+          onAuthorDeleted: true,
+          // Whose record the verdict is on, kept with the action (D248: a verdict outlives its
+          // content, and a rebuild after the erasure must still name them).
+          subjectUserId: subjectOf(args.targetType, typedTarget),
+        },
         createdAt: now,
       });
       await recordVerdict(ctx, {
@@ -605,6 +612,10 @@ export async function setContentStatus(
       metadata: {
         priorStatus,
         newStatus: args.status,
+        // Whose record a verdict is on, kept with the action (D248): a Post a moderator removed and
+        // its author then emptied Report by Report leaves no row of the author's on the Post, so
+        // without it a rebuild after the Post's erasure could not name them.
+        subjectUserId: subjectOf(args.targetType, typedTarget),
         ...(args.targetType === 'post' ? { cascaded } : {}),
         ...(clearsDerivedFromReportId !== undefined ? { clearsDerivedFromReportId } : {}),
       },
@@ -671,7 +682,13 @@ async function moveMember(
     targetType: 'report',
     targetId: report._id,
     reason: audit.reason,
-    metadata: { priorStatus: from, newStatus: to, cascadedFromPostId: postId, ...mark },
+    metadata: {
+      priorStatus: from,
+      newStatus: to,
+      cascadedFromPostId: postId,
+      subjectUserId: report.authorId,
+      ...mark,
+    },
     createdAt: audit.now,
   });
   if (chosen && to === 'visible') {
@@ -775,6 +792,7 @@ export async function revertPostVerdict(
     metadata: {
       priorStatus: post.moderationStatus,
       newStatus: priorStatus,
+      subjectUserId: post.authorId,
       cascaded: reverted,
       // Undoing a restore of a Post its Reports took down puts it back down the same way, marked as
       // `derivePostVisibility` reads it, so restoring a member later brings the Post back.

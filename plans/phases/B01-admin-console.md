@@ -1442,6 +1442,20 @@ the phase branch at `519cc1c8`.
 **B01-1b (2026-11-13): what a person can take back, and what stays on record** (D248). Server only;
 the People page and the skater screens that reach it are owed (the roadmap's register).
 
+- **A verdict outlives its content (D248's heading; found by the erasure property on CI, #114, seed
+  1947312279).** Erasure takes the author's item and leaves every verdict row on it — a standing one
+  can't be there (it would hold the item), and an ended one stays on the person's record as history,
+  pointing at an id that no longer resolves, the way other people's votes on an erased item do. The
+  backfill follows the same rule for every kind: it replays an item that is gone like any other, and
+  names the person from a verdict row the item left, its author's own deletion in the history, or the
+  person the action recorded. Every moderator action that can put a verdict on the record now records
+  it: an author's retraction of their alert leaves no row of their own, and neither does a Post a
+  moderator removed and its author then emptied one Report at a time, since the clients delete Reports,
+  never a whole Post (found by the code review, 2026-11-14). An item whose history names nobody, on
+  rows from before that record, is left unrebuilt and logged (on each page that skipped one), never
+  guessed. The property runs four pinned seeds and one random seed on
+  every build, its found counterexamples run first as examples and as named cases, and
+  `ERASURE_PROPERTY_RUNS` / `ERASURE_PROPERTY_SEED` widen or replay it locally.
 - **The verdict record (Part B).** `contentVerdicts`, one row per top-level hide or remove, naming
   whose content it was, written beside the audit row by `lib/contentVerdicts` and ended only by a
   moderator — a restore (a Post restore's chosen member included), an undo, or `overturnVerdict` on
