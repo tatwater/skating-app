@@ -101,10 +101,12 @@ export function trackRefusal(
     return dayKey(end, timeZone) !== dayKey(plan.endTime, timeZone) ? otherDay : null;
   }
   // The track's times will replace a missing or defaulted end; a start the author chose stays, so
-  // it has to fit them — else the Report would hold a start after its end, locked by the track.
+  // it has to fit them by Post's own rule — strictly before the end (`resolveSkateWindow`), else the
+  // Report would hold a start after its end, locked by the track. A start the night before a track
+  // that runs past midnight fits; one more than a day before the track's end is another day's.
   const start = report.sheet.scalars.skateStartTime;
   if (start !== undefined) {
-    if (dayKey(start, timeZone) !== dayKey(plan.endTime, timeZone)) return otherDay;
+    if (plan.endTime - start > DAY_MS) return otherDay;
     if (start >= plan.endTime) {
       const at = new Intl.DateTimeFormat('en-US', {
         timeZone,
@@ -116,6 +118,8 @@ export function trackRefusal(
   }
   return null;
 }
+
+const DAY_MS = 24 * 3_600_000;
 
 function longDay(ms: number, timeZone: string): string {
   return new Intl.DateTimeFormat('en-US', {

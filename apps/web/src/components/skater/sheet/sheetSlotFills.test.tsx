@@ -584,7 +584,16 @@ describe('a track added after the lake (the author’s lake and day stand)', () 
     expect(trackRefusal(withStart(plan.endTime + 600_000), plan, mascoma, ZONE)).toMatch(
       /^That track ends at \d{1,2}:\d{2} [AP]M, before the start you chose\.$/,
     );
-    // On another day than the track: refused as the day it is from.
+    // The night before a track that runs past midnight: it fits (the picker offers last night's
+    // starts, and Post's rule is only that the start comes first).
+    const overnight = {
+      startTime: Date.UTC(2026, 0, 11, 4, 30),
+      endTime: Date.UTC(2026, 0, 11, 5, 30),
+    };
+    expect(
+      trackRefusal(withStart(Date.UTC(2026, 0, 11, 4, 40)), overnight, mascoma, ZONE),
+    ).toBeNull();
+    // More than a day before the track's end: refused as the day it is from.
     expect(trackRefusal(withStart(plan.endTime - 2 * 86_400_000), plan, mascoma, ZONE)).toMatch(
       /^That track is from .+, not the day of this report\.$/,
     );
