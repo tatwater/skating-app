@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   can: new Set<string>(),
   roleLoading: false,
   announce: vi.fn(async () => {}),
+  /** The server's own effect of a write on the reads, applied when the write is called. */
+  server: null as ((name: string, args: Record<string, unknown>) => void) | null,
 }));
 
 vi.mock('convex/react', async () => {
@@ -29,6 +31,7 @@ vi.mock('convex/react', async () => {
       ),
     useMutation: (ref: Parameters<typeof getFunctionName>[0]) => async (args: unknown) => {
       mocks.calls.push([getFunctionName(ref), args]);
+      mocks.server?.(getFunctionName(ref), args as Record<string, unknown>);
     },
   };
 });
@@ -57,6 +60,7 @@ beforeEach(() => {
   mocks.can = new Set(['access.rule', 'body.access', 'audit.read']);
   mocks.roleLoading = false;
   mocks.announce.mockClear();
+  mocks.server = null;
   const set = (ref: Parameters<typeof getFunctionName>[0], value: unknown) =>
     mocks.results.set(getFunctionName(ref), value);
   set(api.waterBodies.get, {
@@ -134,30 +138,15 @@ describe('AccessTab', () => {
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
   });
 
-  it('makes a mapped launch official at its point, under its name', async () => {
+  it('draws Make official as not available yet, and never inserts a second put-in beside the launch', async () => {
+    // `putIns.setOfficial` inserts a new official row at the point (no parking, no walk) and
+    // leaves the launch visible, so a press would show it twice; there is no promote in place.
     render(<AccessTab bodyId="wb1" />);
-    await userEvent.click(screen.getByRole('button', { name: 'Make official' }));
-    expect(mocks.calls).toEqual([
-      [
-        'putIns:setOfficial',
-        { waterBodyId: 'wb1', coord: { lat: 43.6489, lng: -72.1793 }, name: 'NW launch' },
-      ],
-    ]);
-  });
-
-  it('makes an unnamed launch official without storing the tab’s placeholder as its name', async () => {
-    mocks.results.set(getFunctionName(api.accessPoints.accessForBody), {
-      putIns: [{ id: 'pi2', coord: { lat: 43.6489, lng: -72.1793 }, source: 'derived' }],
-      parking: [],
-      blockedIds: [],
-      alerts: [],
-    });
-    render(<AccessTab bodyId="wb1" />);
-    expect(screen.getByText('Unnamed put-in')).toBeTruthy();
-    await userEvent.click(screen.getByRole('button', { name: 'Make official' }));
-    expect(mocks.calls).toEqual([
-      ['putIns:setOfficial', { waterBodyId: 'wb1', coord: { lat: 43.6489, lng: -72.1793 } }],
-    ]);
+    const lever = screen.getByRole('button', { name: 'Make official' });
+    expect(lever).toHaveAttribute('aria-disabled', 'true');
+    await userEvent.click(lever);
+    await userEvent.click(lever);
+    expect(mocks.calls).toEqual([]);
   });
 
   it('hides a launch with its reason', async () => {
@@ -294,5 +283,99 @@ describe('AccessTab', () => {
       'Couldn’t read this body’s record or its access.',
     );
     expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+  });
+
+  /**
+   * Each write control, once the read returns what the server answers for that write (built from
+   * the mutation's own source, `waterBodies.setPublicAccess` and `putIns.hide`): the lever is gone
+   * or inert, and a second press writes nothing.
+   */
+  describe('after the server answers, a write control is gone and a second press writes nothing', () => {
+    const body = getFunctionName(api.waterBodies.get);
+    const access = getFunctionName(api.accessPoints.accessForBody);
+    const ruled = (verdict: 'open' | 'none' | null) => {
+      const prior = mocks.results.get(body) as { body: Record<string, unknown> };
+      const next = { ...prior.body };
+      // `setPublicAccess` patches the body's ruling (absent when cleared), stamped now.
+      if (verdict === null) delete next.publicAccess;
+      else next.publicAccess = { verdict, decidedAt: Date.now(), decidedByUserId: 'p1' };
+      mocks.results.set(body, { available: true, body: next });
+    };
+    beforeEach(() => {
+      mocks.server = (name, args) => {
+        if (name === 'waterBodies:setPublicAccess') ruled(args.verdict as 'open' | 'none' | null);
+        if (name === 'putIns:hide') {
+          // `hide` inserts a hidden row at the point; `accessForBody` drops every visible launch
+          // within 150 m of it (`visibleAfterHides`).
+          const prior = mocks.results.get(access) as { putIns: { coord: { lat: number } }[] };
+          mocks.results.set(access, {
+            ...prior,
+            putIns: prior.putIns.filter(
+              (p) => Math.abs(p.coord.lat - (args.coord as { lat: number }).lat) > 0.0014,
+            ),
+          });
+        }
+      };
+    });
+
+    it('Rule no public access', async () => {
+      const { rerender } = render(<AccessTab bodyId="wb1" />);
+      await userEvent.click(screen.getByRole('button', { name: 'Rule no public access' }));
+      const dialog = await screen.findByRole('alertdialog');
+      await userEvent.type(within(dialog).getByRole('textbox'), 'Posted all round');
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Rule no public access' }));
+      await waitFor(() => expect(mocks.calls).toHaveLength(1));
+      rerender(<AccessTab bodyId="wb1" />);
+      await waitFor(() =>
+        expect(screen.queryByRole('button', { name: 'Rule no public access' })).toBeNull(),
+      );
+      expect(screen.getByRole('button', { name: 'Rule accessible' })).toBeTruthy();
+      expect(mocks.calls).toHaveLength(1);
+    });
+
+    it('Rule accessible', async () => {
+      ruled('none');
+      const { rerender } = render(<AccessTab bodyId="wb1" />);
+      await userEvent.click(screen.getByRole('button', { name: 'Rule accessible' }));
+      await waitFor(() => expect(mocks.calls).toHaveLength(1));
+      rerender(<AccessTab bodyId="wb1" />);
+      await waitFor(() =>
+        expect(screen.queryByRole('button', { name: 'Rule accessible' })).toBeNull(),
+      );
+      expect(mocks.calls).toHaveLength(1);
+    });
+
+    it('Clear the ruling', async () => {
+      const { rerender } = render(<AccessTab bodyId="wb1" />);
+      await userEvent.click(screen.getByRole('button', { name: 'Clear the ruling' }));
+      await waitFor(() => expect(mocks.calls).toHaveLength(1));
+      rerender(<AccessTab bodyId="wb1" />);
+      await waitFor(() =>
+        expect(screen.queryByRole('button', { name: 'Clear the ruling' })).toBeNull(),
+      );
+      expect(mocks.calls).toEqual([
+        ['waterBodies:setPublicAccess', { waterBodyId: 'wb1', verdict: null }],
+      ]);
+    });
+
+    it('Hide', async () => {
+      const { rerender } = render(<AccessTab bodyId="wb1" />);
+      await userEvent.click(screen.getByRole('button', { name: 'Hide' }));
+      const dialog = await screen.findByRole('alertdialog');
+      await userEvent.type(within(dialog).getByRole('textbox'), 'A private dock');
+      await userEvent.click(within(dialog).getByRole('button', { name: /^Hide/ }));
+      await waitFor(() => expect(mocks.calls).toHaveLength(1));
+      rerender(<AccessTab bodyId="wb1" />);
+      // The launch is gone, and its Hide with it.
+      await waitFor(() => expect(screen.queryByText('NW launch')).toBeNull());
+      expect(screen.queryByRole('button', { name: 'Hide' })).toBeNull();
+      expect(mocks.calls).toHaveLength(1);
+    });
+
+    it('Make official writes nothing at all (not available yet)', async () => {
+      render(<AccessTab bodyId="wb1" />);
+      await userEvent.click(screen.getByRole('button', { name: 'Make official' }));
+      expect(mocks.calls).toEqual([]);
+    });
   });
 });

@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => ({
   roleLoading: false,
   /** A write held on its way until the test lets it land. */
   gate: null as Promise<void> | null,
+  /** The server's own effect of a write on the reads, applied when the write lands. */
+  server: null as ((name: string, args: Record<string, unknown>) => void) | null,
 }));
 
 vi.mock('convex/react', async () => {
@@ -36,6 +38,7 @@ vi.mock('convex/react', async () => {
         const { ConvexError } = await import('convex/values');
         throw new ConvexError(mocks.refuse);
       }
+      mocks.server?.(getFunctionName(ref), args as Record<string, unknown>);
     },
   };
 });
@@ -73,6 +76,7 @@ beforeEach(() => {
   mocks.refuse = null;
   mocks.roleLoading = false;
   mocks.gate = null;
+  mocks.server = null;
   toasts.length = 0;
   const set = (ref: Parameters<typeof getFunctionName>[0], value: unknown) =>
     mocks.results.set(getFunctionName(ref), value);
@@ -417,5 +421,125 @@ describe('PlacesTab', () => {
     expect(
       container.querySelector('[data-slot="asks"] [data-slot="section-count"]'),
     ).toHaveTextContent('1+');
+  });
+
+  /**
+   * Each write control, once the reads return what the server answers for that write (from each
+   * mutation's source): `approve` and `decline` decide the request (the open-requests read drops
+   * it), `dismiss` and `fileAsSpelling` close the emailed name (the open-names read drops it; filing
+   * also adds the name to the landmark's spellings), `update` patches the landmark in place. The
+   * lever is gone or inert, and a second press writes nothing.
+   */
+  describe('after the server answers, a write control is gone and a second press writes nothing', () => {
+    const names = fn(api.corpusPlaceNames.openForBody);
+    const requests = fn(api.corpusRequests.openLandmarkRequestsForBody);
+    const landmarks = fn(api.landmarks.listForEditor);
+    beforeEach(() => {
+      mocks.server = (name, args) => {
+        if (name === 'corpusRequests:approve' || name === 'corpusRequests:decline') {
+          const prior = mocks.results.get(requests) as { proposals: { requestId: string }[] };
+          mocks.results.set(requests, {
+            ...prior,
+            proposals: prior.proposals.filter((p) => p.requestId !== args.requestId),
+          });
+        }
+        if (name === 'corpusPlaceNames:dismiss' || name === 'corpusPlaceNames:fileAsSpelling') {
+          const prior = mocks.results.get(names) as { names: { _id: string; name: string }[] };
+          const filed = prior.names.find((n) => n._id === args.id);
+          mocks.results.set(names, {
+            ...prior,
+            names: prior.names.filter((n) => n._id !== args.id),
+          });
+          if (name === 'corpusPlaceNames:fileAsSpelling' && filed) {
+            const rows = mocks.results.get(landmarks) as { _id: string; aliases: string[] }[];
+            mocks.results.set(
+              landmarks,
+              rows.map((l) =>
+                l._id === args.landmarkId ? { ...l, aliases: [...l.aliases, filed.name] } : l,
+              ),
+            );
+          }
+        }
+        if (name === 'landmarks:update') {
+          const rows = mocks.results.get(landmarks) as Record<string, unknown>[];
+          const { landmarkId, ...edit } = args;
+          mocks.results.set(
+            landmarks,
+            rows.map((l) => (l._id === landmarkId ? { ...l, ...edit } : l)),
+          );
+        }
+      };
+    });
+
+    it('Same place', async () => {
+      const { rerender } = render(<PlacesTab bodyId="wb1" />);
+      await userEvent.click(screen.getByRole('button', { name: 'Same place' }));
+      await waitFor(() => expect(mocks.calls).toHaveLength(1));
+      rerender(<PlacesTab bodyId="wb1" />);
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Same place' })).toBeNull());
+      expect(mocks.calls).toHaveLength(1);
+    });
+
+    it('Decline', async () => {
+      const { rerender } = render(<PlacesTab bodyId="wb1" />);
+      await userEvent.click(screen.getByRole('button', { name: 'Decline' }));
+      const dialog = await screen.findByRole('alertdialog');
+      await userEvent.type(within(dialog).getByRole('textbox'), 'Already on the map');
+      await userEvent.click(within(dialog).getByRole('button', { name: /^Decline/ }));
+      await waitFor(() => expect(mocks.calls).toHaveLength(1));
+      rerender(<PlacesTab bodyId="wb1" />);
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Decline' })).toBeNull());
+      expect(mocks.calls).toHaveLength(1);
+    });
+
+    it('Dismiss', async () => {
+      const { rerender } = render(<PlacesTab bodyId="wb1" />);
+      await userEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+      const dialog = await screen.findByRole('alertdialog');
+      await userEvent.click(within(dialog).getByRole('radio', { name: /Too vague|vague/i }));
+      await userEvent.click(within(dialog).getByRole('button', { name: /^Dismiss/ }));
+      await waitFor(() => expect(mocks.calls).toHaveLength(1));
+      rerender(<PlacesTab bodyId="wb1" />);
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Dismiss' })).toBeNull());
+      expect(screen.queryByText('the Narrows')).toBeNull();
+      expect(mocks.calls).toHaveLength(1);
+    });
+
+    it('Already here (file as a spelling)', async () => {
+      const { rerender } = render(<PlacesTab bodyId="wb1" />);
+      await userEvent.click(screen.getByRole('button', { name: /Already here/ }));
+      await userEvent.click(await screen.findByRole('menuitem', { name: /Mascoma Lake Dam/ }));
+      await waitFor(() => expect(mocks.calls).toHaveLength(1));
+      rerender(<PlacesTab bodyId="wb1" />);
+      await waitFor(() =>
+        expect(screen.queryByRole('button', { name: /Already here/ })).toBeNull(),
+      );
+      expect(mocks.calls).toEqual([
+        ['corpusPlaceNames:fileAsSpelling', { id: 'pn1', landmarkId: 'lm-dam' }],
+      ]);
+    });
+
+    it('A landmark’s kind', async () => {
+      const { rerender } = render(<PlacesTab bodyId="wb1" lit="landmark:lm-dam" />);
+      await userEvent.click(screen.getByRole('combobox', { name: 'Kind' }));
+      await userEvent.click(await screen.findByRole('option', { name: 'Island' }));
+      await waitFor(() => expect(mocks.calls).toHaveLength(1));
+      rerender(<PlacesTab bodyId="wb1" lit="landmark:lm-dam" />);
+      // The record holds the kind now: choosing it again writes nothing.
+      await userEvent.click(screen.getByRole('combobox', { name: 'Kind' }));
+      await userEvent.click(await screen.findByRole('option', { name: 'Island' }));
+      expect(mocks.calls).toEqual([['landmarks:update', { landmarkId: 'lm-dam', kind: 'island' }]]);
+    });
+
+    it('A landmark’s name', async () => {
+      const { rerender } = render(<PlacesTab bodyId="wb1" lit="landmark:lm-dam" />);
+      const name = screen.getByRole('textbox', { name: 'Name' });
+      await userEvent.clear(name);
+      await userEvent.type(name, 'Mascoma Dam{Enter}');
+      await waitFor(() => expect(mocks.calls).toHaveLength(1));
+      rerender(<PlacesTab bodyId="wb1" lit="landmark:lm-dam" />);
+      await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), '{Enter}');
+      expect(mocks.calls).toHaveLength(1);
+    });
   });
 });

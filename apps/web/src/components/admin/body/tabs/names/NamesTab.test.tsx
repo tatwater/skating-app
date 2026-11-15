@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => ({
   can: new Set<string>(['body.identity']),
   announce: vi.fn(async () => {}),
   fail: false,
+  /** The server's own effect of a write on the reads, applied when the write is called. */
+  server: null as ((name: string, args: Record<string, unknown>) => void) | null,
 }));
 
 vi.mock('convex/react', async () => {
@@ -28,6 +30,7 @@ vi.mock('convex/react', async () => {
       ),
     useMutation: (ref: Parameters<typeof getFunctionName>[0]) => async (args: unknown) => {
       mocks.calls.push([getFunctionName(ref), args]);
+      if (!mocks.fail) mocks.server?.(getFunctionName(ref), args as Record<string, unknown>);
       if (mocks.fail) {
         const { ConvexError } = await import('convex/values');
         throw new ConvexError('Water body not found');
@@ -72,6 +75,7 @@ beforeEach(() => {
   mocks.can = new Set(['body.identity']);
   mocks.announce.mockClear();
   mocks.fail = false;
+  mocks.server = null;
   toasts.length = 0;
   mocks.results.set(getFunctionName(api.waterBodies.get), { available: true, body: BODY });
   mocks.results.set(getFunctionName(api.bodyConsole.places), {
@@ -255,5 +259,83 @@ describe('NamesTab', () => {
     mocks.results.set(getFunctionName(api.waterBodies.get), { available: false });
     rerender(<NamesTab bodyId="wb1" />);
     expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
+  });
+
+  /**
+   * Each write control, once the read returns what `setWaterBodyName` answers (from its source: a
+   * chosen name becomes the record's name with a `user` claim over the catalogs'; `null` puts the
+   * catalogs' first back and drops the `user` claim): the lever is gone or inert, and a second
+   * press writes nothing.
+   */
+  describe('after the server answers, a write control is gone and a second press writes nothing', () => {
+    const get = getFunctionName(api.waterBodies.get);
+    beforeEach(() => {
+      mocks.server = (_name, args) => {
+        const prior = (mocks.results.get(get) as { body: typeof BODY }).body;
+        const catalog = prior.nameClaims.filter((c) => c.source !== 'user');
+        const chosen = args.name as string | null;
+        mocks.results.set(get, {
+          available: true,
+          body:
+            chosen === null
+              ? { ...prior, name: catalog[0]?.value ?? prior.name, nameClaims: catalog }
+              : {
+                  ...prior,
+                  name: chosen,
+                  nameClaims: [{ source: 'user', value: chosen }, ...catalog],
+                },
+        });
+      };
+    });
+    const rowOf = (text: string) =>
+      screen
+        .getAllByText(text)
+        .map((el) => el.closest('li, [data-slot="name-rung"], tr'))
+        .find((el): el is HTMLElement => el instanceof HTMLElement);
+
+    it('Display this', async () => {
+      const { rerender } = render(<NamesTab bodyId="wb1" />);
+      await userEvent.click(screen.getByRole('button', { name: 'Display this' }));
+      rerender(<NamesTab bodyId="wb1" />);
+      await waitFor(() =>
+        expect(
+          within(rowOf('The Basin') as HTMLElement).queryByRole('button', { name: 'Display this' }),
+        ).toBeNull(),
+      );
+      expect(mocks.calls).toEqual([
+        ['waterBodies:setWaterBodyName', { waterBodyId: 'wb1', name: 'The Basin' }],
+      ]);
+    });
+
+    it('Back to the catalogs’ ranking', async () => {
+      const { rerender } = render(<NamesTab bodyId="wb1" />);
+      await userEvent.click(screen.getByRole('button', { name: 'Back to the catalogs’ ranking' }));
+      rerender(<NamesTab bodyId="wb1" />);
+      await waitFor(() =>
+        expect(screen.queryByRole('button', { name: 'Back to the catalogs’ ranking' })).toBeNull(),
+      );
+      expect(mocks.calls).toHaveLength(1);
+    });
+
+    it('A community name, and Clear the name', async () => {
+      mocks.results.set(get, {
+        available: true,
+        body: {
+          ...BODY,
+          name: 'Low Plains',
+          nameClaims: [{ source: 'user', value: 'Low Plains' }],
+        },
+      });
+      const { rerender } = render(<NamesTab bodyId="wb1" />);
+      const field = screen.getByRole('textbox', { name: 'Community name' });
+      await userEvent.clear(field);
+      await userEvent.type(field, 'Low Plains Pond{Enter}');
+      rerender(<NamesTab bodyId="wb1" />);
+      // The record now holds the name: ⏎ again on it writes nothing.
+      await userEvent.type(screen.getByRole('textbox', { name: 'Community name' }), '{Enter}');
+      expect(mocks.calls).toEqual([
+        ['waterBodies:setWaterBodyName', { waterBodyId: 'wb1', name: 'Low Plains Pond' }],
+      ]);
+    });
   });
 });

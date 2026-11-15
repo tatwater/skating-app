@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
@@ -601,5 +601,35 @@ describe('BodyConsoleRoute', () => {
     );
     expect(screen.queryByText('The map couldn’t be drawn')).toBeNull();
     expect(screen.getByTestId('ground')).toBeInTheDocument();
+  });
+
+  it('the map boost, once the record holds the value it sent, follows it and sends nothing more', async () => {
+    // `setCuratedBoost` patches the body's boost (reactivating a dormant body when it rises above
+    // zero): the record answers with the new value.
+    const get = getFunctionName(api.waterBodies.get);
+    const answer = async (args: { curatedBoost: number }) => {
+      const prior = mocks.results.get(get) as { body: Record<string, unknown> };
+      mocks.results.set(get, {
+        available: true,
+        body: { ...prior.body, curatedBoost: args.curatedBoost },
+      });
+    };
+    mocks.mutate.mockImplementation(answer as never);
+    const { rerender } = render(<Mounted />);
+    const slider = screen.getByRole('slider', { name: 'Map boost' });
+    slider.focus();
+    await userEvent.keyboard('{ArrowRight}');
+    await waitFor(() => expect(mocks.mutate).toHaveBeenCalledTimes(1));
+    expect(mocks.mutate).toHaveBeenLastCalledWith({ waterBodyId: MASCOMA_ID, curatedBoost: 0.4 });
+    rerender(<Mounted />);
+    await waitFor(() =>
+      expect(screen.getByRole('slider', { name: 'Map boost' })).toHaveAttribute(
+        'aria-valuenow',
+        '0.4',
+      ),
+    );
+    // Letting go where the record already stands sends nothing (`boostToSend`, above).
+    expect(mocks.mutate).toHaveBeenCalledTimes(1);
+    mocks.mutate.mockImplementation(() => Promise.resolve());
   });
 });

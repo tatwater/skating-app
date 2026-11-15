@@ -6,7 +6,11 @@ import { Button } from '@/components/kit/button';
 import { EntryTile } from '@/components/kit/entry-tile';
 import { Kbd } from '@/components/kit/kbd';
 import { Section } from '@/components/kit/section-slug';
-import { sayUnavailable, UnavailableButton } from '@/components/kit/unavailable-button';
+import {
+  sayUnavailable,
+  UNAVAILABLE,
+  UnavailableButton,
+} from '@/components/kit/unavailable-button';
 import { cn } from '@/lib/utils';
 import { useTabKeys } from '../../frame/tabKeys';
 import { LIT_ROW, LoadingSection, litAttr, TabBody } from '../tabParts';
@@ -44,8 +48,12 @@ export type AccessViewProps = {
   onRule?: (verdict: PublicAccessVerdict | null, reason?: string) => Promise<string | null>;
   /** The viewer may place put-ins and lots (`body.access`): the map tools' entry points are drawn. */
   canPlace?: boolean;
-  /** Make a mapped launch an official put-in. */
-  onMakeOfficial?: (putIn: PutInRow) => void;
+  /**
+   * Make a mapped launch an official put-in, in place. `UNAVAILABLE` draws the lever and says it
+   * isn't available yet: the server's only official write inserts a second put-in beside the
+   * launch (without its parking or walk) rather than promoting it, so it is never called from here.
+   */
+  onMakeOfficial?: ((putIn: PutInRow) => void) | typeof UNAVAILABLE;
   /** Hide a put-in, with the reason. Resolves the refusal, or `null`. */
   onHide?: (putIn: PutInRow, reason: string) => Promise<string | null>;
 };
@@ -55,6 +63,8 @@ const TOOLS = {
   lot: 'Placing a lot on the map comes with the map’s parking and put-in tools.',
   link: 'Linking a lot to a put-in comes with the map’s parking and put-in tools.',
   rules: 'Writing what a sign says comes with the posted-rules editor.',
+  official:
+    'Making a launch official in place, keeping its parking and walk, waits on the server’s promote.',
 };
 
 /**
@@ -360,10 +370,16 @@ function PutInItem({
     ) : null;
   const actions = p.source !== 'official' && (onMakeOfficial || onHide) && (
     <span className="flex gap-(--space-1_5)">
-      {onMakeOfficial && (
-        <Button size="xs" onClick={() => onMakeOfficial(p)}>
+      {onMakeOfficial === UNAVAILABLE ? (
+        <UnavailableButton size="xs" what={TOOLS.official}>
           Make official
-        </Button>
+        </UnavailableButton>
+      ) : (
+        onMakeOfficial && (
+          <Button size="xs" onClick={() => onMakeOfficial(p)}>
+            Make official
+          </Button>
+        )
       )}
       {onHide && (
         <ReasonAsk
