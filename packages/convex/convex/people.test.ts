@@ -10,7 +10,8 @@ import { describe, expect, test, vi } from 'vitest';
 import { api } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { markReady, refreshPersonRow } from './lib/peopleRows';
-import { lowerMedian, mergeSources, monthsBetween, staffTenure } from './people';
+import { staffTenure } from './lib/staffTenure';
+import { lowerMedian, mergeSources, monthsBetween } from './people';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -432,11 +433,8 @@ describe('people.person', () => {
     expect(
       (await as(t, 'mod').query(api.people.person, { userId: never }))?.strip.contradictions,
     ).toBeNull();
-    expect(
-      await as(t, 'mod')
-        .query(api.people.person, { userId: 'x' as unknown as Id<'profiles'> })
-        .catch(() => 'refused'),
-    ).toBe('refused');
+    // Not a profile id: no such person, not a validator error.
+    expect(await as(t, 'mod').query(api.people.person, { userId: 'x' })).toBeNull();
   });
 
   test('open flags on the person and on their content, and the hidden content counts', async () => {
@@ -509,7 +507,7 @@ describe('people.person', () => {
     const other = await seed(t, 'other', { role: 'admin' });
     await ready(t);
     const seen = await as(t, 'holder').query(api.people.person, { userId: other });
-    expect(seen?.ledger).toEqual({ editor: false, last: false });
+    expect(seen?.ledger).toEqual({ editor: false, last: false, since: null });
     expect(seen?.can.ledger?.grant).toEqual({ ok: true, needsReason: false });
     expect(seen?.can.ledger?.revoke.ok).toBe(false);
     expect((await as(t, 'plain').query(api.people.person, { userId: other }))?.ledger).toBeNull();

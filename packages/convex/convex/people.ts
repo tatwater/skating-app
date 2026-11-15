@@ -23,8 +23,8 @@ import {
   lastDays,
   MAX_OPEN_BOUNTIES_PER_DAY,
   normalizePeopleListArgs,
-  PEOPLE_LANES,
   type PeopleLane,
+  peopleLanesFor,
   type Restriction,
   ROLE_RANK,
   resolveSeason,
@@ -33,15 +33,19 @@ import {
   seasonOf,
   seasonRecordSpan,
   seasonRecordWindow,
+  seasonStartMs,
+  signInRetentionFromMs,
   type TrustClass,
   type UserRole,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
+import { GATE_EVENT_RETENTION_DAYS } from './analyticsRollup';
 import { auditTargetLabel } from './lib/auditReads';
 import { hasCapability, requireCapability } from './lib/auth';
 import { readVerdictCounts, VERDICT_COUNT_CAP } from './lib/contentVerdicts';
+import { flagTargetTable } from './lib/flagSubject';
 import {
   isLastLedgerEditor,
   isLedgerEditor,
@@ -52,6 +56,7 @@ import { OPEN_FLAG_STATUSES } from './lib/openFlags';
 import {
   no,
   type PersonWrite,
+  refusalFor,
   viewerCan,
   writeRefusal,
   writeTakesAway,
@@ -60,9 +65,8 @@ import {
 import {
   APPEALS_CAP,
   appealsFrom,
-  countTimeLane,
   flaggedPeopleFrom,
-  LANE_COUNT_CAP,
+  laneCounter,
   laneRange,
   listablePeople,
   readOpenFlagQueue,
@@ -77,9 +81,11 @@ import {
   type RowKind,
   requestBudget,
 } from './lib/readBudget';
+import { profileAccess } from './lib/reportVisibility';
 import { trustClassFor } from './lib/reputation';
+import { readTenure, rootReader, tenureCappedOf } from './lib/staffTenure';
 import { type UndoState, undoState } from './lib/undo';
-import { chainRootId, isStandingChange, stands, undoneBy } from './lib/undoChains';
+import { stands, undoneBy } from './lib/undoChains';
 
 const MINUTE = 60_000;
 const DAY_MS = 86_400_000;
@@ -117,6 +123,15 @@ const queryBudget = (ctx: QueryCtx) => requestBudget(ctx, CHARGED_QUERY_BUDGET);
 
 // ── Lanes ──────────────────────────────────────────────────────────────────────────────────────
 
+/**
+ * A person's id as the page passes it, normalized once at the edge: a well-formed id of another table,
+ * or anything else, is `null` — no such person — rather than a validator error the page can only show
+ * as "couldn't be read".
+ */
+function profileIdOf(ctx: QueryCtx, raw: string): Id<'profiles'> | null {
+  return ctx.db.normalizeId('profiles', raw.trim());
+}
+
 /** The backfills' state (`lib/peopleRows.readPreparation`, the one reading), its rows charged ahead. */
 function preparationOf(budget: ReadBudget, ctx: QueryCtx) {
   budget.reserve('small', 4);
@@ -125,8 +140,7 @@ function preparationOf(budget: ReadBudget, ctx: QueryCtx) {
 
 /** The lanes a viewer gets: every lane but Appeals open, which needs support's PII read (D37). */
 function lanesFor(viewer: Doc<'profiles'>): PeopleLane[] {
-  const support = hasCapability(viewer, 'inbox.support.read');
-  return PEOPLE_LANES.filter((lane) => lane !== 'appeals' || support);
+  return peopleLanesFor(hasCapability(viewer, 'inbox.support.read'));
 }
 
 /**
@@ -218,36 +232,7 @@ export const lanes = query({
     const viewer = await requireCapability(ctx, 'people.read');
     const now = clock(args.now);
     const up = await readUpstream(ctx, viewer);
-    const budget = queryBudget(ctx);
-    const { stored } = up;
-    const admins = stored.count('admins');
-    const moderators = stored.count('moderators');
-    const time = async (lane: 'suspended' | 'newest') => {
-      // The lane's own range, read to its cap and one past it: charged ahead, as the queues' are.
-      budget.reserve('personRow', LANE_COUNT_CAP + 1);
-      const { count } = await countTimeLane(ctx, lane, now);
-      return { count: count.count, over: count.capped };
-    };
-    // A queue lane counts the people its list can show: those with a row (light reads, ≤ 200).
-    const listable = async (ids: Id<'profiles'>[]) => {
-      const { rows, missing } = await listablePeople(ctx, ids);
-      return { count: rows.length, over: false, missing };
-    };
-    const counts: Record<
-      PeopleLane,
-      () => Promise<{ count: number; over: boolean; missing?: boolean }>
-    > = {
-      everyone: async () => ({ count: stored.count('everyone').count, over: false }),
-      staff: async () => ({ count: admins.count + moderators.count, over: false }),
-      suspended: () => time('suspended'),
-      banned: async () => ({ count: stored.count('banned').count, over: false }),
-      restricted: async () => ({ count: stored.count('restricted').count, over: false }),
-      flagged: () => listable(up.flagged.people.map((p) => p.userId)),
-      appeals: () => listable((up.appeals?.people ?? []).map((p) => p.userId)),
-      newest: () => time('newest'),
-      leaving: async () => ({ count: stored.count('leaving').count, over: false }),
-      deleted: async () => ({ count: stored.count('deleted').count, over: false }),
-    };
+    const counts = laneCounter(ctx, now, up.stored, up.flagged.people, up.appeals?.people ?? null);
     const out: Array<{
       lane: PeopleLane;
       count: Count;
@@ -255,7 +240,7 @@ export const lanes = query({
       pending: PeopleBackfill[];
     }> = [];
     for (const lane of lanesFor(viewer)) {
-      const { count, over, missing = false } = await counts[lane]();
+      const { count, over, missing } = await counts(lane);
       const reasons: PartialReason[] = [
         ...reasonsOf(up, LANE_DEPENDS[lane]),
         ...(missing ? (['rows_missing'] as const) : []),
@@ -300,6 +285,24 @@ export interface PersonListRow {
   openFlags: { onUser: number; onContent: number };
   /** Appeals still waiting — admins only (`null` for a viewer without support). */
   appeals: number | null;
+  /**
+   * On the Flagged and Appeals lanes, when their oldest open flag or oldest waiting ticket was filed —
+   * the very key those lanes sort by, so the order and the age are one rule. `null` on other lanes.
+   */
+  oldestOpenAt: number | null;
+  /**
+   * On the Staff lane (`null` elsewhere): when they were last seen in the console (the presence row,
+   * kept one per staffer and shown only within the current season and the one before — the sign-in
+   * record's own retention, D254; `null` when not recorded); when they took the role they hold (the
+   * tenure `people.staffStats` reads, stamped on the row; `null` when not recorded, `roleSinceCapped`
+   * when its read stopped short); and their decisions this week, as `staffStats` counts them.
+   */
+  staff: {
+    lastSeenInConsoleAt: number | null;
+    roleSince: number | null;
+    roleSinceCapped: boolean;
+    decisionsThisWeek: Count;
+  } | null;
 }
 
 function toListRow(
@@ -307,6 +310,7 @@ function toListRow(
   now: number,
   flags: Map<string, { onUser: number; onContent: number }>,
   appeals: Map<string, number> | null,
+  oldest: Map<string, number> | null = null,
 ): PersonListRow {
   const live = row.suspendedUntil > now;
   return {
@@ -329,8 +333,142 @@ function toListRow(
     createdAt: row.createdAt,
     openFlags: flags.get(row.userId) ?? { onUser: 0, onContent: 0 },
     appeals: appeals === null ? null : (appeals.get(row.userId) ?? 0),
+    oldestOpenAt: oldest?.get(row.userId) ?? null,
+    staff: null,
   };
 }
+
+/** Presence rows read at most for a Staff page: one per staffer, so the staff lane's whole size. */
+const PRESENCE_ROWS = 500;
+/** A week of audit rows read at most for the Staff lane's decision counts, and their real weight. */
+const STAFF_WEEK_ROWS = 2_000;
+const STAFF_WEEK_BYTES = 2 * DOC_MAX;
+
+/**
+ * The Staff lane's own columns for a page of staff rows: two reads for the whole page (presence, and
+ * the week's audit rows), never one a row.
+ */
+async function withStaffColumns(
+  ctx: QueryCtx,
+  budget: ReadBudget,
+  viewer: Doc<'profiles'>,
+  now: number,
+  rows: PersonListRow[],
+  stored: Map<string, Doc<'peopleRows'>>,
+): Promise<PersonListRow[]> {
+  if (rows.length === 0) return rows;
+  const presence = await takeCapped(budget, 'small', PRESENCE_ROWS, (n) =>
+    ctx.db.query('consolePresence').take(n),
+  );
+  const keepFrom = signInRetentionFromMs(now);
+  const seen = new Map(
+    presence.rows.filter((p) => p.seenAt >= keepFrom).map((p) => [p.userId as string, p.seenAt]),
+  );
+  const week = thisWeekOf(now);
+  const ledgerVisible = seesLedgerGrants(viewer);
+  // The week's rows only while the request can still afford them whole; otherwise every count is
+  // a floor of zero, said as capped — never a number shown as whole.
+  const page =
+    budget.affords(STAFF_WEEK_BYTES) && budget.affordsCalls(1, STAFF_WEEK_ROWS)
+      ? await budget.capped(STAFF_WEEK_BYTES, STAFF_WEEK_ROWS, () =>
+          ctx.db
+            .query('moderationActions')
+            .withIndex('by_created_at', (q) =>
+              q.gte('createdAt', week.from).lt('createdAt', week.to),
+            )
+            .paginate({
+              cursor: null,
+              numItems: STAFF_WEEK_ROWS,
+              maximumRowsRead: STAFF_WEEK_ROWS,
+              maximumBytesRead: STAFF_WEEK_BYTES,
+            }),
+        )
+      : { page: [] as Doc<'moderationActions'>[], isDone: false };
+  const decided = new Map<string, number>();
+  for (const r of page.page) {
+    if (!isDecision(r, ledgerVisible)) continue;
+    decided.set(r.actorId as string, (decided.get(r.actorId as string) ?? 0) + 1);
+  }
+  return rows.map((row) => {
+    const light = stored.get(row.userId);
+    return {
+      ...row,
+      staff: {
+        // Presence past its read is not recorded, never a guess: the lane is the staff, all of them.
+        lastSeenInConsoleAt: seen.get(row.userId) ?? null,
+        roleSince: light?.tenureCapped ? null : (light?.roleSince ?? null),
+        roleSinceCapped: light?.tenureCapped === true,
+        decisionsThisWeek: { count: decided.get(row.userId) ?? 0, capped: !page.isDone },
+      },
+    };
+  });
+}
+
+/** This week, as the staff strip counts it: the seven days to the end of today. */
+function thisWeekOf(now: number): { from: number; to: number } {
+  const to = lastDays(now, 1).to;
+  return { from: to - WEEK_MS, to };
+}
+
+/**
+ * A lane read whole (≤ a few hundred light rows) and paged by key: a row's place is a tuple of its
+ * lane's order — a queue lane's oldest open item and id, the Staff lane's rank, name and id — written
+ * as JSON, so a person who leaves or joins an earlier page moves nothing on a later one, and a page
+ * given an `endCursor` reads exactly `(cursor, endCursor]`. A cursor from before (a bare offset) is
+ * still read as one.
+ */
+type LaneKey = readonly (number | string)[];
+
+function compareKeys(a: LaneKey, b: LaneKey): number {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = a[i] ?? '';
+    const y = b[i] ?? '';
+    if (x !== y) return x < y ? -1 : 1;
+  }
+  return 0;
+}
+
+function parseKey(cursor: string): LaneKey | null {
+  try {
+    const key = JSON.parse(cursor);
+    return Array.isArray(key) ? key : null;
+  } catch {
+    return null;
+  }
+}
+
+function sliceByKey<T>(
+  rows: readonly T[],
+  keyOf: (row: T) => LaneKey,
+  cursor: string | null,
+  endCursor: string | null,
+  pageSize: number,
+): { slice: T[]; isDone: boolean; continueCursor: string } {
+  const from = cursor === null ? null : parseKey(cursor);
+  const legacy = cursor !== null && /^\d+$/.test(cursor);
+  const after = legacy
+    ? rows.slice(Number(cursor))
+    : rows.filter((r) => from === null || compareKeys(keyOf(r), from) > 0);
+  const to = endCursor === null ? null : parseKey(endCursor);
+  const slice =
+    to !== null ? after.filter((r) => compareKeys(keyOf(r), to) <= 0) : after.slice(0, pageSize);
+  const last = slice[slice.length - 1];
+  return {
+    slice,
+    isDone: slice.length === after.length,
+    continueCursor: last === undefined ? (endCursor ?? cursor ?? '') : JSON.stringify(keyOf(last)),
+  };
+}
+
+/** Staff read whole for their lane, at most: admins and moderators are a few dozen, not thousands. */
+const STAFF_LANE_ROWS = 500;
+
+/**
+ * Rows a page given an `endCursor` reads at most: the page it was, grown by whatever was inserted
+ * into its range since — past that it returns `pageStatus: 'SplitRequired'` and a `splitCursor`, as
+ * Convex's own pagination does, and the client splits it.
+ */
+const END_ROWS = 200;
 
 /** The stored lanes' index ranges, in each lane's order — mirroring `storedLanesOf`. */
 function storedRange(
@@ -370,6 +508,12 @@ export const listPage = query({
     lane: v.string(),
     search: v.optional(v.string()),
     cursor: v.optional(v.union(v.string(), v.null())),
+    /**
+     * Where the page ended when it was first read (its `continueCursor`): the page then reads exactly
+     * `(cursor, endCursor]`, so a change to an earlier page never drops or repeats a row on a later
+     * one — Convex's own reactive pagination.
+     */
+    endCursor: v.optional(v.union(v.string(), v.null())),
     pageSize: v.optional(v.number()),
     ...nowArg,
   },
@@ -383,7 +527,18 @@ export const listPage = query({
       throw new ConvexError('Appeals are support tickets, which only an admin can read');
     }
     const cursor = args.cursor ?? null;
+    const endCursor = args.endCursor ?? null;
     const budget = queryBudget(ctx);
+    // A page bounded by its end reads up to `END_ROWS` and says when it must be split.
+    const paged = (n: number) =>
+      endCursor === null
+        ? { cursor, numItems: n }
+        : { cursor, numItems: n, endCursor, maximumRowsRead: n };
+    const size = endCursor === null ? pageSize : END_ROWS;
+    const tail = (page: { splitCursor?: string | null; pageStatus?: string | null }) => ({
+      ...(page.splitCursor ? { splitCursor: page.splitCursor } : {}),
+      ...(page.pageStatus ? { pageStatus: page.pageStatus } : {}),
+    });
     const up = await readUpstream(ctx, viewer);
     const { flagged, appeals } = up;
     const flagsBy = new Map(
@@ -410,35 +565,75 @@ export const listPage = query({
     };
 
     if (search !== null) {
-      const page = await budget.page('personRow', pageSize, (n) =>
+      const page = await budget.page('personRow', size, (n) =>
         ctx.db
           .query('peopleRows')
           .withSearchIndex('search_people', (s) => s.search('searchText', search))
-          .paginate({ cursor, numItems: n }),
+          .paginate(paged(n)),
       );
       return {
         rows: shape(page.page),
         isDone: page.isDone,
         continueCursor: page.continueCursor,
+        ...tail(page),
         ...truth(false),
       };
     }
 
     if (lane === 'flagged' || lane === 'appeals') {
-      const ids =
-        lane === 'flagged'
-          ? flagged.people.map((p) => p.userId)
-          : (appeals?.people ?? []).map((p) => p.userId);
+      const queue = lane === 'flagged' ? flagged.people : (appeals?.people ?? []);
+      const oldest = new Map(queue.map((p) => [p.userId as string, p.oldestAt]));
       // The whole lane's rows (≤ 200 light reads), so a person missing on any page is said on every
       // page, as the lane's count says it; the page is a slice of the people the list can show.
-      const { rows, missing } = await listablePeople(ctx, ids);
-      const start = cursor === null ? 0 : Math.max(0, Number.parseInt(cursor, 10) || 0);
-      const end = Math.min(rows.length, start + pageSize);
+      const { rows, missing } = await listablePeople(
+        ctx,
+        queue.map((p) => p.userId),
+      );
+      // The lane's own order: their oldest open item, then id.
+      const { slice, isDone, continueCursor } = sliceByKey(
+        rows,
+        (r) => [oldest.get(r.userId) ?? 0, r.userId],
+        cursor,
+        endCursor,
+        pageSize,
+      );
       return {
-        rows: shape(rows.slice(start, end)),
-        isDone: end >= rows.length,
-        continueCursor: String(end),
+        rows: slice.map((r) => toListRow(r, now, flagsBy, appealsBy, oldest)),
+        isDone,
+        continueCursor,
         ...truth(missing),
+      };
+    }
+
+    if (lane === 'staff') {
+      // Read whole (a function gets one `paginate`, which the week's decisions below need), and
+      // paged by its own order: admins first, then moderators, each by name.
+      const read = await takeCapped(budget, 'personRow', STAFF_LANE_ROWS, (n) =>
+        storedRange(ctx, 'staff').take(n),
+      );
+      const { slice, isDone, continueCursor } = sliceByKey(
+        read.rows,
+        (r) => [r.staffRank, r.nameKey, r.userId],
+        cursor,
+        endCursor,
+        pageSize,
+      );
+      const truthful = truth(false);
+      return {
+        rows: await withStaffColumns(
+          ctx,
+          budget,
+          viewer,
+          now,
+          slice.map((r) => toListRow(r, now, flagsBy, appealsBy)),
+          new Map(slice.map((r) => [r.userId as string, r])),
+        ),
+        isDone: isDone && !read.capped,
+        continueCursor,
+        ...truthful,
+        ...(read.capped
+          ? { partial: true, reasons: [...truthful.reasons, 'count_capped' as const] }
+          : {}),
       };
     }
 
@@ -446,13 +641,12 @@ export const listPage = query({
       lane === 'suspended' || lane === 'newest'
         ? laneRange(ctx, lane, now)
         : storedRange(ctx, lane);
-    const page = await budget.page('personRow', pageSize, (n) =>
-      range.paginate({ cursor, numItems: n }),
-    );
+    const page = await budget.page('personRow', size, (n) => range.paginate(paged(n)));
     return {
       rows: shape(page.page),
       isDone: page.isDone,
       continueCursor: page.continueCursor,
+      ...tail(page),
       ...truth(false),
     };
   },
@@ -498,6 +692,189 @@ interface OpenFlag {
   targetId: string;
   status: Doc<'contentFlags'>['status'];
   createdAt: number;
+  /**
+   * The flagged thing's label, by the audit feed's rule (`auditTargetLabel`): a person's name, or the
+   * body a body, report, Post, hazard or alert is about ("on his Mascoma report"). Absent when there is
+   * none, or past `open.flagLabelsCapped`.
+   */
+  targetLabel?: string;
+}
+
+/** A person's bounty asks read for the season line, at most (one past it to tell). */
+const SEASON_ASKS = 500;
+
+async function bountySeasonOf(
+  ctx: QueryCtx,
+  budget: ReadBudget,
+  userId: Id<'profiles'>,
+  now: number,
+): Promise<{ since: number; asks: Count; overLimit: Count; hadRecentReport: Count } | null> {
+  const since = seasonStartMs(seasonOf(now));
+  if (since < now - GATE_EVENT_RETENTION_DAYS * DAY_MS) return null;
+  // Past the request's budget: a floor of zero, said as capped — never "not recorded", never whole.
+  const read = !budget.affordsRead('gateEvent', SEASON_ASKS + 1)
+    ? { rows: [] as Doc<'bountyGateEvents'>[], capped: true }
+    : await takeCapped(budget, 'gateEvent', SEASON_ASKS, (n) =>
+        ctx.db
+          .query('bountyGateEvents')
+          .withIndex('by_requester_created', (q) =>
+            q.eq('requesterId', userId).gte('createdAt', since),
+          )
+          .take(n),
+      );
+  const count = (keep: (d: Doc<'bountyGateEvents'>['decision']) => boolean): Count => ({
+    count: read.rows.filter((e) => keep(e.decision)).length,
+    capped: read.capped,
+  });
+  return {
+    since,
+    asks: count(() => true),
+    overLimit: count((d) => d === 'capped'),
+    hadRecentReport: count((d) => d === 'suppressed'),
+  };
+}
+
+/** A person's posting-right rows read at most, newest first, and their real weight at most. */
+const RIGHT_ROWS = 50;
+const RIGHT_ROWS_BYTES = DOC_MAX;
+
+/** The person's rights, as `set_posting_permission` names them, and the profile field of each. */
+const RIGHT_FIELDS = {
+  reports: 'canPostReports',
+  hazards: 'canPostHazards',
+  comments: 'canPostComments',
+  flagging: 'canFlag',
+} as const;
+type Right = keyof typeof RIGHT_FIELDS;
+
+/** When each right now off was last turned off, from one capped read of the person's right rows. */
+async function rightsSinceOf(
+  ctx: QueryCtx,
+  budget: ReadBudget,
+  target: Doc<'profiles'>,
+): Promise<{ since: Record<Right, number | null>; capped: boolean }> {
+  const since: Record<Right, number | null> = {
+    reports: null,
+    hazards: null,
+    comments: null,
+    flagging: null,
+  };
+  const off = (Object.keys(RIGHT_FIELDS) as Right[]).filter(
+    (r) => target[RIGHT_FIELDS[r]] === false,
+  );
+  if (off.length === 0) return { since, capped: false };
+  if (!budget.affords(RIGHT_ROWS_BYTES) || !budget.affordsCalls(1, RIGHT_ROWS)) {
+    return { since, capped: true };
+  }
+  const page = await budget.capped(RIGHT_ROWS_BYTES, RIGHT_ROWS, () =>
+    ctx.db
+      .query('moderationActions')
+      .withIndex('by_target_action', (q) =>
+        q
+          .eq('targetType', 'user')
+          .eq('targetId', target._id)
+          .eq('action', 'set_posting_permission'),
+      )
+      .order('desc')
+      .paginate({
+        cursor: null,
+        numItems: RIGHT_ROWS,
+        maximumRowsRead: RIGHT_ROWS,
+        maximumBytesRead: RIGHT_ROWS_BYTES,
+      }),
+  );
+  for (const row of page.page) {
+    const m = (row.metadata ?? {}) as { permission?: string; allowed?: boolean };
+    const right = m.permission as Right | undefined;
+    if (right && off.includes(right) && m.allowed === false && since[right] === null) {
+      since[right] = row.createdAt;
+    }
+  }
+  return { since, capped: !page.isDone && off.some((r) => since[r] === null) };
+}
+
+/** When a holder's ledger grant was given: the newest `grant_ledger_editor` row on them. */
+async function ledgerSinceOf(
+  ctx: QueryCtx,
+  budget: ReadBudget,
+  userId: Id<'profiles'>,
+): Promise<number | null> {
+  const row = await budget.measured('moderationAction', () =>
+    ctx.db
+      .query('moderationActions')
+      .withIndex('by_target_action', (q) =>
+        q.eq('targetType', 'user').eq('targetId', userId).eq('action', 'grant_ledger_editor'),
+      )
+      .order('desc')
+      .first(),
+  );
+  return row?.createdAt ?? null;
+}
+
+/** Distinct flagged things the person page names, at most (each up to two reads at their worst). */
+const FLAG_LABELS = 20;
+
+/** The row kind a flag's content target is charged as, read for its body. */
+const FLAG_TARGET_KIND = {
+  reports: 'report',
+  posts: 'post',
+  comments: 'comment',
+  hazards: 'hazard',
+  accessAlerts: 'accessAlert',
+  photos: 'photo',
+} as const;
+
+/**
+ * Label each open flag's target, at most {@link FLAG_LABELS} distinct ones, through the request's
+ * budget: a person or body by `auditTargetLabel`; content by the body it is about. Returns whether
+ * any went unlabeled for the cap or the budget.
+ */
+async function labelFlags(ctx: QueryCtx, budget: ReadBudget, flags: OpenFlag[]): Promise<boolean> {
+  const labels = new Map<string, string | null>();
+  let capped = false;
+  for (const flag of flags) {
+    const key = `${flag.targetType}:${flag.targetId}`;
+    if (!labels.has(key)) {
+      if (labels.size >= FLAG_LABELS) {
+        capped = true;
+        continue;
+      }
+      const label = await flagTargetLabel(ctx, budget, flag.targetType, flag.targetId);
+      if (label === undefined) {
+        capped = true;
+        continue;
+      }
+      labels.set(key, label);
+    }
+    const label = labels.get(key);
+    if (label) flag.targetLabel = label;
+  }
+  return capped;
+}
+
+/** One flag target's label; `undefined` when the budget can't afford its reads. */
+async function flagTargetLabel(
+  ctx: QueryCtx,
+  budget: ReadBudget,
+  targetType: OpenFlag['targetType'],
+  targetId: string,
+): Promise<string | null | undefined> {
+  const named = (kind: 'user' | 'waterbody', id: string) => {
+    // A person's row (a rowless one is read by `rowlessProfile`, which charges itself), or a body's
+    // library row, whose name no writer caps.
+    const row = kind === 'user' ? 'personRow' : 'bodyLibraryRow';
+    if (!budget.affordsRead(row) || !budget.affordsCalls(2, 2)) return undefined;
+    budget.reserve(row, 1);
+    return auditTargetLabel(ctx, kind, id);
+  };
+  const table = flagTargetTable(targetType);
+  if (table === null) return named(targetType === 'user' ? 'user' : 'waterbody', targetId);
+  const id = ctx.db.normalizeId(table, targetId);
+  if (id === null) return null;
+  const doc = await budget.measured(FLAG_TARGET_KIND[table], () => ctx.db.get(id));
+  if (doc === undefined) return undefined;
+  const bodyId = (doc as { waterBodyId?: Id<'waterBodies'> } | null)?.waterBodyId;
+  return bodyId === undefined ? null : named('waterbody', bodyId);
 }
 
 /**
@@ -512,9 +889,11 @@ interface OpenFlag {
  * answers with a different contract (counts that can say *not recorded* or *capped*).
  */
 export const person = query({
-  args: { userId: v.id('profiles'), ...nowArg },
-  handler: async (ctx, { userId, now: asked }) => {
+  args: { userId: v.string(), ...nowArg },
+  handler: async (ctx, { userId: raw, now: asked }) => {
     const viewer = await requireCapability(ctx, 'people.read');
+    const userId = profileIdOf(ctx, raw);
+    if (userId === null) return null;
     const now = clock(asked);
     const budget = queryBudget(ctx);
     const target = await budget.one('profile', () => ctx.db.get(userId));
@@ -607,6 +986,8 @@ export const person = query({
       ticketId: Id<'supportTickets'>;
       status: string;
       createdAt: number;
+      /** What they wrote — support's to read (PII, D37), and only ever sent to a viewer who may. */
+      body: string;
     }> | null = null;
     let appealsCapped = false;
     if (hasCapability(viewer, 'inbox.support.read')) {
@@ -620,7 +1001,7 @@ export const person = query({
       appealsCapped = tickets.capped;
       appeals = tickets.rows
         .filter((t) => t.category === 'account' && t.status !== 'resolved')
-        .map((t) => ({ ticketId: t._id, status: t.status, createdAt: t.createdAt }))
+        .map((t) => ({ ticketId: t._id, status: t.status, createdAt: t.createdAt, body: t.body }))
         .reverse();
     }
 
@@ -639,16 +1020,39 @@ export const person = query({
       capped: flaggedBy.capped,
     };
 
+    // ── The bounty season line: their asks this season, from the create gate's record ──
+    const bountySeason = await bountySeasonOf(ctx, budget, userId, now);
+
+    // ── When each right was last taken away, from the audit rows by verb (`set_posting_permission`) ──
+    const rightsSince = await rightsSinceOf(ctx, budget, target);
+
+    // ── The open flags' labels, through the budget left ──
+    const flagLabelsCapped = await labelFlags(ctx, budget, openFlags);
+
+    // ── Whether this viewer can open the public profile: the profile read's own rule ──
+    budget.reserveCalls(2, 2);
+    budget.reserve('small', 64);
+    const publicAccess = await profileAccess(ctx, target, viewer);
+
     // ── The levers, and whether this viewer may pull each: the write's own refusal ──
     const discipline = viewerCan(viewer, 'people.discipline');
     const roles = viewerCan(viewer, 'people.role');
-    const answer = async (write: PersonWrite, allowed: boolean, family: 'discipline' | 'role') => {
+    const seesLedger = seesLedgerGrants(viewer);
+    const answer = async (
+      write: PersonWrite,
+      allowed: boolean,
+      family: 'discipline' | 'role',
+      needsReason = writeTakesAway(target, write),
+    ) => {
       if (!allowed) return no(cannotUse(viewer, family));
       const why = await writeRefusal(ctx, viewer, target, write);
-      return why === null ? yes(writeTakesAway(target, write)) : no(why);
+      // The last-editor sentence names who holds the ledger: a holder's to read, no one else's.
+      return why === null ? yes(needsReason) : no(refusalFor(why, seesLedger));
     };
     const lever = (write: PersonWrite) => answer(write, discipline, 'discipline');
     const restrict = await lever({ kind: 'right', permission: 'reports', allowed: false });
+    const giveBack = (permission: 'reports' | 'hazards' | 'comments' | 'flagging') =>
+      lever({ kind: 'right', permission, allowed: true });
     const flaggingOff = await lever({ kind: 'right', permission: 'flagging', allowed: false });
     const roleCan = (role: UserRole) => answer({ kind: 'role', role }, roles, 'role');
     const ledgerVisible = target.role === 'admin' && seesLedgerGrants(viewer);
@@ -688,6 +1092,20 @@ export const person = query({
         /** Raw trust points: admins only (`people.trustScore`, D50); `null` for anyone else. */
         trustPoints: hasCapability(viewer, 'people.trustScore') ? target.reputationPoints : null,
       },
+      /**
+       * When each right now taken away was last taken (the newest `set_posting_permission` row that
+       * turned it off); `null` for a right they have, or when no row read says — `rightsSinceCapped`
+       * when the read stopped before finding one.
+       */
+      /**
+       * Their bounty asks this season, from the create gate's record (`bountyGateEvents`, kept 180
+       * days): every attempt, those refused for being over their limit, and those refused because the
+       * lake had a recent report. `null` — not recorded — when the season began before the record's
+       * window, rather than a part of the season shown as the whole.
+       */
+      bountySeason,
+      rightsSince: rightsSince.since,
+      rightsSinceCapped: rightsSince.capped,
       rights: {
         reports: target.canPostReports !== false,
         hazards: target.canPostHazards !== false,
@@ -709,6 +1127,8 @@ export const person = query({
       open: {
         flags: openFlags,
         flagsCapped: userCapped || contentCapped,
+        /** Some open flags carry no `targetLabel`: past the label cap or the budget, not unnamed. */
+        flagLabelsCapped,
         appeals,
         appealsCapped,
       },
@@ -718,14 +1138,38 @@ export const person = query({
             editor: isLedgerEditor(target),
             /** The last editor who can act: their switch can't be turned off (D227). */
             last: await isLastLedgerEditor(ctx, target),
+            /** When the grant they hold was given; `null` when not a holder, or no row says. */
+            since: isLedgerEditor(target) ? await ledgerSinceOf(ctx, budget, userId) : null,
           }
         : null,
+      /**
+       * Whether this viewer can open the person's public profile — the profile read's own rule
+       * (`profileAccess`): not deleted, not leaving, not blocked either way. `private` when it opens
+       * to their name and avatar only.
+       */
+      publicProfile: {
+        opens: publicAccess !== 'hidden',
+        private: publicAccess === 'private',
+        path: `/u/${target.username}`,
+      },
       can: {
         restrict,
         flaggingOff,
         suspend: await lever({ kind: 'suspend' }),
         ban: await lever({ kind: 'ban' }),
         lift: await lever({ kind: 'lift' }),
+        /** A new window for a running suspension (the suspend write); refused when not suspended. */
+        extend: await lever({ kind: 'extend' }),
+        /** Each give-back, as the write answers it: no reason asked (D226). */
+        restore: {
+          reports: await giveBack('reports'),
+          hazards: await giveBack('hazards'),
+          comments: await giveBack('comments'),
+        },
+        flaggingOn: await giveBack('flagging'),
+        /** The bounty limit: raising or clearing asks no reason, lowering asks one (D226). */
+        bountyRaise: await answer({ kind: 'bountyLimit' }, discipline, 'discipline', false),
+        bountyLower: await answer({ kind: 'bountyLimit' }, discipline, 'discipline', true),
         role: {
           admin: await roleCan('admin'),
           moderator: await roleCan('moderator'),
@@ -924,9 +1368,11 @@ function isDecision(row: Doc<'moderationActions'>, ledgerVisible: boolean): bool
  * last line. `null` for an id with no profile.
  */
 export const history = query({
-  args: { userId: v.id('profiles'), limit: v.optional(v.number()) },
-  handler: async (ctx, { userId, limit }) => {
+  args: { userId: v.string(), limit: v.optional(v.number()) },
+  handler: async (ctx, { userId: raw, limit }) => {
     const viewer = await requireCapability(ctx, 'audit.read');
+    const userId = profileIdOf(ctx, raw);
+    if (userId === null) return null;
     const budget = queryBudget(ctx);
     const target = await budget.one('profile', () => ctx.db.get(userId));
     if (!target) return null;
@@ -1072,12 +1518,14 @@ const DECISIONS_BYTES = 2 * DOC_MAX;
  */
 export const decisions = query({
   args: {
-    userId: v.id('profiles'),
+    userId: v.string(),
     cursor: v.optional(v.union(v.string(), v.null())),
     limit: v.optional(v.number()),
   },
-  handler: async (ctx, { userId, cursor, limit }) => {
+  handler: async (ctx, { userId: raw, cursor, limit }) => {
     const viewer = await requireCapability(ctx, 'audit.read');
+    const userId = profileIdOf(ctx, raw);
+    if (userId === null) return null;
     const ledgerVisible = seesLedgerGrants(viewer);
     const budget = queryBudget(ctx);
     const page = await budget.capped(DECISIONS_BYTES, DECISIONS_SCAN, () =>
@@ -1118,7 +1566,6 @@ const WEEK_MS = 7 * DAY_MS;
 const DECISION_ROWS = 2_000;
 const DECISION_BYTES = 4 * DOC_MAX;
 /** Role rows walked at most for *staff since*. */
-const ROLE_ROWS = 50;
 
 /** The verbs that decide something a person filed, for *Time to decide*. Tickets wait on an audit. */
 const FILED_DECISIONS: ReadonlySet<string> = new Set([
@@ -1142,78 +1589,12 @@ export function lowerMedian(values: readonly number[]): number | null {
 type Audit = Doc<'moderationActions'>;
 
 /**
- * Chain roots for a read: from the rows already in hand, else read once each as they really weigh
- * (`ReadBudget.measured`). `undefined` when the budget can't afford the read — the caller's figure is
- * then capped.
- */
-function rootReader(ctx: QueryCtx, budget: ReadBudget, known: readonly Audit[]) {
-  const byId = new Map<string, Audit>(known.map((r) => [r._id, r]));
-  return async (row: Audit): Promise<Audit | undefined> => {
-    const id = chainRootId(row);
-    // A row no undo is its own first row: already in hand, never read again.
-    if (id === row._id) return row;
-    const have = byId.get(id);
-    if (have) return have;
-    const read = await budget.measured('moderationAction', () => ctx.db.get(id));
-    if (read === undefined) return undefined;
-    // The first row is gone: judge the row on its own — nothing known above it, so it stands.
-    if (read === null) return { ...row, undoTop: row.undoDepth ?? 0, undoTopActorId: undefined };
-    byId.set(id, read);
-    return read;
-  };
-}
-
-/** What a role row says: the role it gave and the one it replaced (absent on rows from before). */
-function roleMove(row: Audit): { to: UserRole; from: UserRole | undefined } {
-  const m = (row.metadata ?? {}) as { role?: UserRole; priorRole?: UserRole };
-  return { to: row.action === 'revoke_role' ? 'member' : (m.role ?? 'member'), from: m.priorRole };
-}
-
-/**
- * When a staffer became staff, and when they took the role they hold — each `null` (not recorded)
- * unless a row on record says so:
- * - only **standing changes** count (`lib/undoChains`): an undo is no change of its own, and a change
- *   undone on net is gone — undone twice, it is back with its own time;
- * - **staff since** is the grant that moved them *in* from member (`priorRole: 'member'`) after the
- *   latest revoke. A move between moderator and admin is not an entry, and a grant with no
- *   `priorRole` (a row from before it was recorded) can't be told from one — so when the entering
- *   grant isn't on record, the answer is `null`, never a later move's date;
- * - **role since** is the newest standing change, when the role it gave is the one held now; else the
- *   move to the present role was never recorded: `null`.
- */
-export function staffTenure(
-  rows: readonly Audit[],
-  rootOf: (row: Audit) => Audit,
-  role: UserRole,
-): {
-  staffSince: { at: number; role: UserRole } | null;
-  roleSince: { at: number; role: UserRole } | null;
-} {
-  const changes = rows
-    .filter((r) => isStandingChange(r, rootOf(r)))
-    .sort((x, y) => y.createdAt - x.createdAt);
-  const lastRevoke = changes.find((r) => r.action === 'revoke_role');
-  const entry = changes.find(
-    (g) =>
-      g.action === 'grant_role' &&
-      (lastRevoke === undefined || g.createdAt > lastRevoke.createdAt) &&
-      roleMove(g).from === 'member',
-  );
-  const newest = changes[0];
-  return {
-    staffSince: entry === undefined ? null : { at: entry.createdAt, role: roleMove(entry).to },
-    roleSince:
-      newest !== undefined && roleMove(newest).to === role ? { at: newest.createdAt, role } : null,
-  };
-}
-
-/**
  * A staffer's strip (the founder's definitions, 2026-11-14):
  * - **decisions** this week — the rows they made, minus their own skater actions, and how many
  *   someone else undid on net (`lib/undoChains`);
  * - **timeToDecide** — the lower median, over this week's decisions on filed items (flags, requests,
  *   drawn bodies), of filed to decided; `null` when none, or when any one's filing time isn't known;
- * - **staffSince** and **roleSince** — {@link staffTenure}; `null` when no row on record says so;
+ * - **staffSince** and **roleSince** — `lib/staffTenure.staffTenure`; `null` when no row on record says so;
  * - **weeks** — decisions in each of the last nine weeks, oldest first.
  *
  * *Overturned this season* is its own query, {@link staffSeason}.
@@ -1230,20 +1611,22 @@ export function staffTenure(
  * already shows them everything it counts.
  */
 export const staffStats = query({
-  args: { userId: v.id('profiles'), ...nowArg },
+  args: { userId: v.string(), ...nowArg },
   handler: async (ctx, args) => {
     const viewer = await requireCapability(ctx, 'audit.read');
     const now = clock(args.now);
     const budget = queryBudget(ctx);
-    const target = await budget.one('profile', () => ctx.db.get(args.userId));
+    const userId = profileIdOf(ctx, args.userId);
+    if (userId === null) return null;
+    const target = await budget.one('profile', () => ctx.db.get(userId));
     if (!target || ROLE_RANK[target.role] < ROLE_RANK.moderator) return null;
     const ledgerVisible = seesLedgerGrants(viewer);
     const staffer = target._id;
     const chainsReady = (await preparationOf(budget, ctx)).pending.includes('undoChains') === false;
 
     // ── One read of their decisions over the nine weeks ──
-    const today = lastDays(now, 1);
-    const end = today.to;
+    // The week the Staff lane's column counts too (`thisWeekOf`): one window for one figure.
+    const end = thisWeekOf(now).to;
     const weeksFrom = end - WEEKS * WEEK_MS;
     const readFrom = weeksFrom - DAY_MS;
     const page = await budget.capped(DECISION_BYTES, DECISION_ROWS, () =>
@@ -1264,57 +1647,16 @@ export const staffStats = query({
     const readAllAfter = (t: number) => page.isDone || oldestRead < t;
     const rootOf = rootReader(ctx, budget, page.page);
 
-    // ── Staff since and role since, from the role rows, walked newest first ──
+    // ── Staff since and role since (`lib/staffTenure`, the rule the Staff lane's rows are stamped by) ──
     // Read before the per-decision loops below, which run until the budget is spent: read after them,
     // a busy staffer's dates would be starved and say capped whenever those loops ran out.
-    const roleRows: Audit[] = [];
-    let roleShort = false;
-    let roleFull = false;
-    for (const action of ['grant_role', 'revoke_role'] as const) {
-      let before = Number.POSITIVE_INFINITY;
-      for (let i = 0; i < ROLE_ROWS; i++) {
-        const row = await budget.measured('moderationAction', () =>
-          ctx.db
-            .query('moderationActions')
-            .withIndex('by_target_action', (q) =>
-              q
-                .eq('targetType', 'user')
-                .eq('targetId', staffer)
-                .eq('action', action)
-                .lt('_creationTime', before),
-            )
-            .order('desc')
-            .first(),
-        );
-        if (row === undefined) {
-          roleShort = true;
-          break;
-        }
-        if (row === null) break;
-        roleRows.push(row);
-        before = row._creationTime;
-        // The walk's last row read: older ones may lie past it (one that found its end is whole).
-        if (i === ROLE_ROWS - 1) roleFull = true;
-      }
-    }
-    // Before the undo-chain backfill, an undo written before chains were kept carries no place, and
-    // the change it undid still reads as standing: the dates can't be told yet — `pending`, not capped.
-    const roleUnplaced =
-      !chainsReady && roleRows.some((r) => r.undoesActionId !== undefined && !r.undoRoot);
-    const roleRoot = rootReader(ctx, budget, roleRows);
-    const roots = new Map<string, Audit>();
-    for (const r of roleShort || roleUnplaced ? [] : roleRows) {
-      const root = await roleRoot(r);
-      if (root === undefined) {
-        roleShort = true;
-        break;
-      }
-      roots.set(r._id, root);
-    }
-    const tenure =
-      roleShort || roleUnplaced
-        ? { staffSince: null, roleSince: null }
-        : staffTenure(roleRows, (r) => roots.get(r._id) ?? r, target.role);
+    const { tenure, roleShort, roleFull, roleUnplaced } = await readTenure(
+      ctx,
+      budget,
+      staffer,
+      target.role,
+      chainsReady,
+    );
 
     const weeks = Array.from({ length: WEEKS }, (_, i) => {
       const start = end - (WEEKS - i) * WEEK_MS;
@@ -1331,13 +1673,27 @@ export const staffStats = query({
       by !== null && by !== undefined && by !== staffer;
     let undone = 0;
     let undoShort = false;
+    // The query's time bound (Convex gives a query one second): at most `STAFF_CHECKED` database calls
+    // across both loops below (a row whose answer is in hand costs none), past which each figure says
+    // capped, as a budget stop does.
+    const callsAtStart = budget.calls;
+    const overTime = () => callsAtStart - budget.calls >= STAFF_CHECKED;
+    const undoers = new Map<string, number>();
     for (const r of weekRows) {
+      if (overTime()) {
+        undoShort = true;
+        break;
+      }
       const root = await rootOf(r);
       if (root === undefined) {
         undoShort = true;
         break;
       }
-      if (byOther(undoneBy(r, root))) undone++;
+      const by = undoneBy(r, root);
+      if (byOther(by)) {
+        undone++;
+        undoers.set(by as string, (undoers.get(by as string) ?? 0) + 1);
+      }
     }
 
     const durations: number[] = [];
@@ -1346,6 +1702,10 @@ export const staffStats = query({
     let decideShort = false;
     const filed = weekRows.filter((x) => FILED_DECISIONS.has(x.action));
     for (const r of filed) {
+      if (overTime()) {
+        decideShort = true;
+        break;
+      }
       const filedAt = await filedAtOf(ctx, budget, r);
       if (filedAt === undefined) {
         decideShort = true;
@@ -1358,7 +1718,11 @@ export const staffStats = query({
     return {
       decisions: {
         thisWeek: { count: thisWeek.count, capped: thisWeek.capped },
-        undoneByOthers: { count: undone, capped: thisWeek.capped || undoShort },
+        undoneByOthers: {
+          count: undone,
+          capped: thisWeek.capped || undoShort,
+          ...(await undoneByWhom(ctx, budget, undoers)),
+        },
       },
       timeToDecide: {
         medianMs: unknown > 0 || thisWeek.capped || decideShort ? null : lowerMedian(durations),
@@ -1368,7 +1732,7 @@ export const staffStats = query({
       staffSince: tenure.staffSince,
       roleSince: tenure.roleSince,
       /** The role rows couldn't all be read: both dates are `null` for that reason, not unrecorded. */
-      tenureCapped: roleShort || (!roleUnplaced && roleFull && tenure.staffSince === null),
+      tenureCapped: tenureCappedOf({ tenure, roleShort, roleFull, roleUnplaced }),
       /**
        * Backfills not yet run that a figure here rests on — distinct from `capped` (a read stopped
        * short) and from `null` (nothing on record): until `undoChains` is done, `undoneByOthers` and
@@ -1379,6 +1743,36 @@ export const staffStats = query({
     };
   },
 });
+
+/** Undoers a staffer's strip names at most ("2 later undone by ‹name›"); the rest are counted. */
+const UNDOERS_NAMED = 3;
+
+/**
+ * Who undid a staffer's decisions this week, most first: up to {@link UNDOERS_NAMED} named from their
+ * light rows (staff all — only staff undo), and how many more there were. A name the budget can't
+ * afford is left out and counted with the rest.
+ */
+async function undoneByWhom(
+  ctx: QueryCtx,
+  budget: ReadBudget,
+  undoers: Map<string, number>,
+): Promise<{ by: Array<PersonRef & { count: number }>; byMore: number }> {
+  const ranked = [...undoers.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+  const by: Array<PersonRef & { count: number }> = [];
+  for (const [id, count] of ranked.slice(0, UNDOERS_NAMED)) {
+    if (!budget.affordsRead('personRow')) break;
+    const ref = await budget.one('personRow', () => personRef(ctx, id as Id<'profiles'>));
+    if (ref) by.push({ ...ref, count });
+  }
+  return { by, byMore: ranked.length - by.length };
+}
+
+/**
+ * Database calls a staffer's week may make, row by row, for undos and filing times together: the
+ * query's time bound. A busy week past it reads as capped; the counts themselves come from the one
+ * page read and stay whole.
+ */
+const STAFF_CHECKED = 400;
 
 /** A season's decisions checked for reversals at most: the query's time bound (Convex gives one second). */
 const SEASON_CHECKED = 600;
@@ -1393,12 +1787,14 @@ const SEASON_CHECKED = 600;
  * says when its record begins. `null` for anyone who isn't staff.
  */
 export const staffSeason = query({
-  args: { userId: v.id('profiles'), season: v.optional(v.number()), ...nowArg },
+  args: { userId: v.string(), season: v.optional(v.number()), ...nowArg },
   handler: async (ctx, args) => {
     const viewer = await requireCapability(ctx, 'audit.read');
     const now = clock(args.now);
     const budget = queryBudget(ctx);
-    const target = await budget.one('profile', () => ctx.db.get(args.userId));
+    const userId = profileIdOf(ctx, args.userId);
+    if (userId === null) return null;
+    const target = await budget.one('profile', () => ctx.db.get(userId));
     if (!target || ROLE_RANK[target.role] < ROLE_RANK.moderator) return null;
     // A season no one can name (`NaN`, a fraction, a year past what a date can hold) is this season.
     const season: Season = resolveSeason(args.season, seasonOf(now));
@@ -1557,12 +1953,14 @@ export function monthsBetween(fromMs: number, toMs: number): string[] {
  * says `capped` when the read stopped short.
  */
 export const reportTrend = query({
-  args: { userId: v.id('profiles'), months: v.optional(v.number()), ...nowArg },
+  args: { userId: v.string(), months: v.optional(v.number()), ...nowArg },
   handler: async (ctx, args) => {
     await requireCapability(ctx, 'people.read');
     const now = clock(args.now);
     const budget = queryBudget(ctx);
-    const target = await budget.one('profile', () => ctx.db.get(args.userId));
+    const userId = profileIdOf(ctx, args.userId);
+    if (userId === null) return null;
+    const target = await budget.one('profile', () => ctx.db.get(userId));
     if (!target) return null;
     const asked =
       args.months !== undefined && Number.isFinite(args.months)

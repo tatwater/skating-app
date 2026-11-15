@@ -75,3 +75,11 @@ export function flagSubject(
   if (flag.targetType === 'waterbody') return null;
   return flag.subjectUserId;
 }
+
+/**
+ * The table a flag's content target lives in, for a reader that names it (the person page's open
+ * flags): `null` for a person or a body, which have their own labels (`auditTargetLabel`).
+ */
+export function flagTargetTable(targetType: FlagTargetType) {
+  return targetType === 'user' || targetType === 'waterbody' ? null : TABLE[targetType];
+}

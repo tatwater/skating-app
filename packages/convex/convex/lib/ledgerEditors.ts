@@ -136,10 +136,11 @@ function ledgerEditorsNow(ctx: QueryCtx | MutationCtx): Promise<Set<string>> {
 async function readLedgerEditors(ctx: QueryCtx | MutationCtx): Promise<Set<string>> {
   const { pending } = await readPreparation(ctx);
   if (pending.includes('rows')) {
-    // Its own allowance (never shared with another helper's, so it can't be starved): as many admins
-    // as six profiles at their worst; past that the count is short, which refuses (safe). Only until
-    // the rows backfill has run.
-    const budget = new ReadBudget(PRE_ROWS_ADMIN_BUDGET);
+    // Its own allowance: as many admins as six profiles at their worst — and never more than the
+    // transaction really has left, less a document for whatever the caller does after; past that the
+    // count is short, which refuses (safe). Only until the rows backfill has run.
+    const left = (await bytesLeft(ctx)) - DOC_MAX;
+    const budget = new ReadBudget(Math.max(0, Math.min(PRE_ROWS_ADMIN_BUDGET, left)));
     const admins = await budget.take('profile', budget.rows('profile', ADMIN_READ_LIMIT), (n) =>
       ctx.db
         .query('profiles')
@@ -159,10 +160,24 @@ async function readLedgerEditors(ctx: QueryCtx | MutationCtx): Promise<Set<strin
   if (!('insert' in ctx.db)) return new Set(counted.map((r) => r.userId));
   const confirmed = new Set<string>();
   for (const row of counted.slice(0, CONFIRM_IN_WRITES)) {
+    // Each confirmation only while a whole profile still fits the transaction: one left unread is
+    // left unconfirmed, which undercounts and refuses (safe), never a write that passes the limit.
+    if ((await bytesLeft(ctx)) < 2 * DOC_MAX) break;
     const profile = await ctx.db.get(row.userId);
     if (profile && canStillEdit(profile)) confirmed.add(profile._id);
   }
   return confirmed;
+}
+
+/** What the transaction can still read, from its real metrics (a whole budget where none are kept). */
+async function bytesLeft(ctx: QueryCtx | MutationCtx): Promise<number> {
+  const meta = (
+    ctx as {
+      meta?: { getTransactionMetrics?: () => Promise<{ bytesRead: { remaining: number } }> };
+    }
+  ).meta;
+  if (meta?.getTransactionMetrics === undefined) return 16 * DOC_MAX;
+  return (await meta.getTransactionMetrics()).bytesRead.remaining;
 }
 
 /** Whether `target` is the only editor who can still act — taking it from them is refused. */
@@ -202,7 +217,7 @@ export async function grantLedgerEditorImpl(
   ctx: MutationCtx,
   actor: Profile | null,
   { userId, reason, seeded }: { userId: Id<'profiles'>; reason?: string; seeded?: boolean },
-): Promise<void> {
+): Promise<{ userId: Id<'profiles'>; actionId: Id<'moderationActions'> }> {
   const target = await ctx.db.get(userId);
   if (!target) throw new ConvexError('User not found');
   const refused = ledgerGrantRefusal(target);
@@ -210,7 +225,7 @@ export async function grantLedgerEditorImpl(
 
   await ctx.db.patch(userId, { canEditLedger: true });
   await refreshPersonRow(ctx, userId);
-  await writeAudit(ctx, {
+  const actionId = await writeAudit(ctx, {
     ...(actor ? { actorId: actor._id } : {}),
     action: 'grant_ledger_editor',
     targetType: 'user',
@@ -218,6 +233,7 @@ export async function grantLedgerEditorImpl(
     reason: reason?.trim() || 'Can edit the ledger',
     ...(seeded ? { metadata: { seeded: true } } : {}),
   });
+  return { userId, actionId };
 }
 
 /**
@@ -228,14 +244,15 @@ export async function revokeLedgerEditorImpl(
   ctx: MutationCtx,
   actor: Profile,
   { userId, reason }: { userId: Id<'profiles'>; reason: string },
-): Promise<void> {
+): Promise<{ userId: Id<'profiles'>; actionId: Id<'moderationActions'> }> {
   if (reason.trim().length === 0) throw new ConvexError('A reason is required');
   const target = await ctx.db.get(userId);
   if (!target) throw new ConvexError('User not found');
   const refused = await ledgerRevokeRefusal(ctx, target);
   if (refused !== null) throw new ConvexError(refused);
-  await takeLedgerGrant(ctx, actor, target, reason.trim(), {});
+  const actionId = await takeLedgerGrant(ctx, actor, target, reason.trim(), {});
   await refreshPersonRow(ctx, userId);
+  return { userId, actionId };
 }
 
 /**
@@ -264,10 +281,10 @@ async function takeLedgerGrant(
   target: Profile,
   reason: string,
   metadata: Record<string, unknown>,
-): Promise<void> {
+): Promise<Id<'moderationActions'>> {
   if (await isLastLedgerEditor(ctx, target)) throw new ConvexError(LAST_EDITOR_MESSAGE);
   await ctx.db.patch(target._id, { canEditLedger: undefined });
-  await writeAudit(ctx, {
+  return writeAudit(ctx, {
     actorId: actor._id,
     action: 'revoke_ledger_editor',
     targetType: 'user',

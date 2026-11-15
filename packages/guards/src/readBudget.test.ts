@@ -24,6 +24,8 @@ const MODULES = [
   // The People pages (B01-4): every public read and job, each read charged on every axis.
   'people.ts',
   'peopleJobs.ts',
+  // A staffer's tenure, read live by the strip and stamped on the Staff lane's rows (B01-4b).
+  'lib/staffTenure.ts',
 ];
 
 /**

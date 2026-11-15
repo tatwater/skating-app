@@ -42,6 +42,7 @@ import { withoutLedgerGrantsFor } from './lib/ledgerEditors';
 import { assertWrite, DISCIPLINE_REFUSALS, type PersonWrite, reasonFor } from './lib/peopleCan';
 import { refreshPersonRow } from './lib/peopleRows';
 import { refreshPostLatestSkateEnd, refreshPostSearchText } from './lib/postSync';
+import { clearFailure } from './lib/recurringWork';
 import { mirrorReportSubAreas } from './lib/reportSubAreas';
 import { type UndoState, undoState } from './lib/undo';
 import { literals } from './lib/validators';
@@ -1467,6 +1468,20 @@ const LAPSE_CLEARED = {
   lapseRetriedAt: undefined,
 } as const;
 
+/** A status write that clears the sweep's attempt state clears its Machinery mirror with it (D258). */
+async function clearLapseMirror(ctx: MutationCtx, userId: Id<'profiles'>): Promise<void> {
+  await clearFailure(ctx, 'lapses', userId);
+}
+
+/**
+ * What a person write returns: the person, and the audit row it wrote — the undo toast's handle on
+ * exactly this write, so a colleague's write to the same person in between can't take it away (H3).
+ */
+export interface PersonWriteResult {
+  userId: Id<'profiles'>;
+  actionId: Id<'moderationActions'>;
+}
+
 async function auditUser(
   ctx: MutationCtx,
   actorId: Id<'profiles'>,
@@ -1474,9 +1489,9 @@ async function auditUser(
   userId: Id<'profiles'>,
   reason: string,
   metadata?: Record<string, unknown>,
-): Promise<void> {
+): Promise<Id<'moderationActions'>> {
   await refreshPersonRow(ctx, userId);
-  await writeAudit(ctx, {
+  return writeAudit(ctx, {
     actorId,
     action,
     targetType: 'user',
@@ -1514,7 +1529,7 @@ export async function banImpl(
   ctx: MutationCtx,
   actor: Doc<'profiles'>,
   { userId, reason }: { userId: Id<'profiles'>; reason: string },
-): Promise<Id<'profiles'>> {
+): Promise<PersonWriteResult> {
   {
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     // Refused on an account in or past its deletion, and for the last ledger editor (D252), here and
@@ -1528,13 +1543,16 @@ export async function banImpl(
       moderatedByUserId: actor._id,
       ...LAPSE_CLEARED,
     });
-    await auditUser(ctx, actor._id, 'ban', userId, reason, { prev: statusPrev(target) });
+    await clearLapseMirror(ctx, userId);
+    const actionId = await auditUser(ctx, actor._id, 'ban', userId, reason, {
+      prev: statusPrev(target),
+    });
     // Fire-and-forget: a mutation can't fetch. Permanent bans only touch Clerk (founder decision).
     await ctx.scheduler.runAfter(0, internal.clerkAdmin.setBanned, {
       clerkUserId: target.clerkUserId,
       banned: true,
     });
-    return userId;
+    return { userId, actionId };
   }
 }
 
@@ -1561,7 +1579,7 @@ export async function suspendImpl(
     reason,
     suspendedUntil,
   }: { userId: Id<'profiles'>; reason: string; suspendedUntil: number },
-): Promise<Id<'profiles'>> {
+): Promise<PersonWriteResult> {
   {
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     if (suspendedUntil <= Date.now()) {
@@ -1578,7 +1596,8 @@ export async function suspendImpl(
       moderatedByUserId: actor._id,
       ...LAPSE_CLEARED,
     });
-    await auditUser(ctx, actor._id, 'suspend', userId, reason, {
+    await clearLapseMirror(ctx, userId);
+    const actionId = await auditUser(ctx, actor._id, 'suspend', userId, reason, {
       suspendedUntil,
       prev: statusPrev(target),
     });
@@ -1591,7 +1610,7 @@ export async function suspendImpl(
         banned: false,
       });
     }
-    return userId;
+    return { userId, actionId };
   }
 }
 
@@ -1619,7 +1638,7 @@ export async function unbanImpl(
   ctx: MutationCtx,
   actor: Doc<'profiles'>,
   { userId, reason: given }: { userId: Id<'profiles'>; reason?: string },
-): Promise<Id<'profiles'>> {
+): Promise<PersonWriteResult> {
   {
     const { reason, defaulted } = reasonFor(given, false, 'Lifted');
     // A lift puts the account back to `active`, which would bring a deleted one back and let a
@@ -1633,7 +1652,8 @@ export async function unbanImpl(
       moderatedByUserId: actor._id,
       ...LAPSE_CLEARED,
     });
-    await auditUser(ctx, actor._id, 'unban', userId, reason, {
+    await clearLapseMirror(ctx, userId);
+    const actionId = await auditUser(ctx, actor._id, 'unban', userId, reason, {
       prev: statusPrev(target),
       ...(defaulted ? { reasonDefaulted: true } : {}),
     });
@@ -1641,7 +1661,7 @@ export async function unbanImpl(
       clerkUserId: target.clerkUserId,
       banned: false,
     });
-    return userId;
+    return { userId, actionId };
   }
 }
 
@@ -1675,7 +1695,7 @@ export async function setBountyLimitImpl(
   ctx: MutationCtx,
   actor: Doc<'profiles'>,
   { userId, limit, reason: given }: { userId: Id<'profiles'>; limit?: number; reason?: string },
-): Promise<Id<'profiles'>> {
+): Promise<PersonWriteResult> {
   if (limit !== undefined && (!Number.isInteger(limit) || limit < 0)) {
     throw new ConvexError('A bounty limit has to be a whole number, zero or more');
   }
@@ -1688,13 +1708,13 @@ export async function setBountyLimitImpl(
   );
 
   await ctx.db.patch(userId, { activeBountyPostLimit: limit });
-  await auditUser(ctx, actor._id, 'set_posting_permission', userId, reason, {
+  const actionId = await auditUser(ctx, actor._id, 'set_posting_permission', userId, reason, {
     permission: 'bounties',
     limit: limit ?? null,
     prev: { limit: target.activeBountyPostLimit ?? null },
     ...(defaulted ? { reasonDefaulted: true } : {}),
   });
-  return userId;
+  return { userId, actionId };
 }
 
 /**
@@ -1748,7 +1768,7 @@ export async function setPostingPermissionImpl(
     allowed,
     reason: given,
   }: { userId: Id<'profiles'>; permission: PostingPermission; allowed: boolean; reason?: string },
-): Promise<Id<'profiles'>> {
+): Promise<PersonWriteResult> {
   const { reason, defaulted } = reasonFor(given, !allowed, RESTORED_REASON[permission]);
   // Flagging off on a staffer is refused here too: the one rule (`lib/peopleCan`).
   const target = await loadModeratableUser(ctx, actor, userId, {
@@ -1759,12 +1779,12 @@ export async function setPostingPermissionImpl(
 
   const field = POSTING_PERMISSION_FIELD[permission];
   await ctx.db.patch(userId, { [field]: allowed });
-  await auditUser(ctx, actor._id, 'set_posting_permission', userId, reason, {
+  const actionId = await auditUser(ctx, actor._id, 'set_posting_permission', userId, reason, {
     permission,
     allowed,
     // Missing means allowed (D57), so the prior value is always a boolean.
     prev: { allowed: target[field] !== false },
     ...(defaulted ? { reasonDefaulted: true } : {}),
   });
-  return userId;
+  return { userId, actionId };
 }

@@ -20,6 +20,7 @@ import type { Doc, Id } from './_generated/dataModel';
 import { rollupDay, rollupPulseDay } from './analyticsRollup';
 import { contributorsBetween } from './lib/contributions';
 import { flagBodyId } from './lib/openFlags';
+import { refreshPersonRow } from './lib/peopleRows';
 import { cardRows, type JobRow } from './machinery';
 import schema from './schema';
 import { BODY_CAP, emptyTally, mostReported, SET_ID_CAP, unpack } from './seasonReach';
@@ -415,22 +416,19 @@ describe('console.overview — the Inbox foot and the People total', () => {
     expect(o.inbox.medianOpenedAt).toBeNull();
   });
 
-  test('total users comes from the rollup — not recorded until it runs, a floor when capped', async () => {
+  test('total users is the Everyone lane: the live rows, as People counts them (one rule)', async () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');
     await seedUser(t, 'a');
     await seedUser(t, 'gone', 'member', { status: 'deleted' });
-    expect((await mod.as.query(api.console.overview, {})).people.totalUsers).toBeNull();
-    await t.mutation(internal.analyticsRollup.rollupDistributionsJob, {});
-    expect((await mod.as.query(api.console.overview, {})).people.totalUsers).toEqual({
-      count: 2,
-      capped: false,
+    await t.run(async (ctx) => {
+      for (const p of await ctx.db.query('profiles').collect()) await refreshPersonRow(ctx, p._id);
     });
-    await snapshot(t, 'accounts_total', '2026-11-14', { scalar: 5000, meta: { capped: true } });
-    expect((await mod.as.query(api.console.overview, {})).people.totalUsers).toEqual({
-      count: 5000,
-      capped: true,
-    });
+    const o = await mod.as.query(api.console.overview, {});
+    const lanes = await mod.as.query(api.people.lanes, {});
+    // The tombstone is not a user; the 6-hourly rollup (Metrics' history) is not read here.
+    expect(o.people.totalUsers).toEqual({ count: 2, capped: false });
+    expect(lanes.lanes.find((l) => l.lane === 'everyone')?.count).toEqual(o.people.totalUsers);
   });
 });
 

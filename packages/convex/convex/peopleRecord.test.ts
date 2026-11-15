@@ -188,11 +188,11 @@ describe('people.history', () => {
       (p) => p.username === 'holder',
     )?._id as Id<'profiles'>;
     expect(
-      (await as(t, 'holder').query(api.people.decisions, { userId: holderId })).rows.map(
+      (await as(t, 'holder').query(api.people.decisions, { userId: holderId }))?.rows.map(
         (r) => r.action,
       ),
     ).toEqual(['grant_ledger_editor']);
-    expect((await as(t, 'plain').query(api.people.decisions, { userId: holderId })).rows).toEqual(
+    expect((await as(t, 'plain').query(api.people.decisions, { userId: holderId }))?.rows).toEqual(
       [],
     );
     const stats = await as(t, 'plain').query(api.people.staffStats, { userId: holderId });
@@ -263,7 +263,7 @@ describe('people.staffStats and people.decisions', () => {
 
     const s = await as(t, 'adm').query(api.people.staffStats, { userId: matt });
     expect(s?.decisions.thisWeek).toEqual({ count: 3, capped: false });
-    expect(s?.decisions.undoneByOthers).toEqual({ count: 1, capped: false });
+    expect(s?.decisions.undoneByOthers).toMatchObject({ count: 1, capped: false });
     expect(s?.timeToDecide).toEqual({ medianMs: 60 * 60_000, decided: 1, capped: false });
     expect(
       (await as(t, 'adm').query(api.people.staffSeason, { userId: matt }))?.overturned,
@@ -281,6 +281,7 @@ describe('people.staffStats and people.decisions', () => {
       empty: false,
     });
     const d = await as(t, 'adm').query(api.people.decisions, { userId: matt });
+    if (!d) throw new Error('no such person');
     expect(d.rows.map((r) => r.action)).not.toContain('author_delete');
     expect(d.rows).toHaveLength(3);
     // Not staff: no strip. The first admin, with no grant row: not recorded.

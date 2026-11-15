@@ -55,7 +55,21 @@ export const DISCIPLINE_REFUSALS = {
   statusDeleted: 'This account is deleted, so it can’t be suspended or banned.',
   restrictGone: 'This account is deleted, so there is nothing to restrict.',
   staffFlagging: 'Staff can always flag, so flagging can’t be switched off for them.',
+  notSuspended: 'They aren’t suspended, so there is no suspension to extend.',
 } as const;
+
+/**
+ * What a viewer who doesn't hold ledger editing reads in place of the last-editor refusal (D252,
+ * D227): who holds the grant is the holders' to know. The write's own refusal still names it when
+ * someone presses the lever (accepted by the founder); a read handing it to everyone who opens the
+ * page would be wider.
+ */
+export const LEDGER_NEUTRAL_REFUSAL = 'This isn’t available for this account right now.';
+
+/** A refusal as `viewer` may read it: the last-editor sentence only for a holder. */
+export function refusalFor(why: string, viewerSeesLedger: boolean): string {
+  return why === LAST_EDITOR_MESSAGE && !viewerSeesLedger ? LEDGER_NEUTRAL_REFUSAL : why;
+}
 
 export const ROLE_REFUSALS = {
   self: 'You cannot change your own role',
@@ -100,6 +114,8 @@ export type PersonWrite =
   | { kind: 'right'; permission: 'reports' | 'hazards' | 'comments' | 'flagging'; allowed: boolean }
   | { kind: 'bountyLimit' }
   | { kind: 'suspend' }
+  /** A new window for a suspension already running — the suspend write, offered on a suspended account. */
+  | { kind: 'extend' }
   | { kind: 'ban' }
   | { kind: 'lift' }
   | { kind: 'role'; role: Profile['role'] }
@@ -125,6 +141,11 @@ export async function writeRefusal(
     case 'ban':
     case 'lift':
       return disciplineRefusal(ctx, actor, target, write.kind);
+    case 'extend':
+      return (
+        (await disciplineRefusal(ctx, actor, target, 'suspend')) ??
+        (target.status === 'suspended' ? null : DISCIPLINE_REFUSALS.notSuspended)
+      );
     case 'role':
       return roleRefusal(ctx, actor, target, write.role);
     case 'ledgerGrant':

@@ -88,6 +88,8 @@ export const ROW_MAX = {
   // Ids, literals, numbers and a coordinate — no free text.
   verdict: SLACK,
   small: SLACK,
+  // A bounty-create attempt: ids, a decision, a few numbers and a trust class — no free text.
+  gateEvent: 2 * 1024,
 } as const;
 export type RowKind = keyof typeof ROW_MAX;
 
@@ -111,6 +113,11 @@ export class ReadBudget {
 
   affords(bytes: number): boolean {
     return this.left >= bytes;
+  }
+
+  /** Database calls this budget still allows — a loop's time bound counts the calls it made. */
+  get calls(): number {
+    return this.callsLeft;
   }
 
   /**

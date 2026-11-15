@@ -77,7 +77,7 @@ const PROFILE_SCAN_CAP = 5_000;
 const WINDOW_SCAN_CAP = 10_000;
 
 /** How long a `bountyGateEvents` row is kept. Long enough to tune a season; short enough not to be a record. */
-const GATE_EVENT_RETENTION_DAYS = 180;
+export const GATE_EVENT_RETENTION_DAYS = 180;
 
 /** Trailing window for the bounty outcome funnel — long enough to include expiries at a 30d lifetime. */
 const BOUNTY_FUNNEL_DAYS = 90;

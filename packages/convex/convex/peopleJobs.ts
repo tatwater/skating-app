@@ -25,7 +25,7 @@
 
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
-import type { Doc } from './_generated/dataModel';
+import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, internalQuery, type MutationCtx, query } from './_generated/server';
 import { nextAttemptState } from './lib/attempts';
 import { writeAudit } from './lib/audit';
@@ -43,6 +43,8 @@ import {
   takeLease,
 } from './lib/peopleRuns';
 import { DOC_MAX, errorClassOf, ReadBudget, ROW_MAX, traced } from './lib/readBudget';
+import { clearFailure, forgetGoneMirrors, mirrorFailure } from './lib/recurringWork';
+import { STAMP_WORK, stampTenure } from './lib/staffTenure';
 
 const DAY = 86_400_000;
 
@@ -101,6 +103,7 @@ export const lapseOne = internalMutation({
       lapseParkedAt: undefined,
       lapseRetriedAt: undefined,
     });
+    await clearFailure(ctx, 'lapses', userId);
     await writeAudit(ctx, {
       action: 'unban',
       targetType: 'user',
@@ -167,6 +170,9 @@ async function nextDue(
   );
 }
 
+/** Mirrored lapse failures the daily retry re-checks at its end, at most. */
+const MIRRORS_CHECKED = 20;
+
 /** A walk's position as the run's recorded cursor (for the record only; passes carry `after`). */
 function positionKey(after: Position | undefined): string | null {
   return after === undefined ? null : `${after.at}:${after.creation}`;
@@ -203,6 +209,8 @@ async function recordLapseFailure(
     lapseParkedAt: next.parkedAt,
     lapseRetriedAt: next.retriedAt,
   });
+  // Machinery's count reads this small mirror, never the profile (D258).
+  await mirrorFailure(ctx, 'lapses', profile._id, next, now);
   return next.parkedAt !== undefined;
 }
 
@@ -391,7 +399,19 @@ export const retryLapsedDaily = internalMutation({
           ...next,
           ...(after !== undefined ? { after } : {}),
         });
-      } else await endRun(ctx, lease, lease.failed + failed);
+      } else {
+        await endRun(ctx, lease, lease.failed + failed);
+        // Mirrors whose lapse went another way — the account erased, or its status changed by a
+        // writer outside this module — are forgotten a few a day, only while the pass can afford it.
+        await forgetGoneMirrors(ctx, 'lapses', MIRRORS_CHECKED, async (key) => {
+          const id = ctx.db.normalizeId('profiles', key);
+          if (id === null) return false;
+          const p = await reads.measured('profile', () => ctx.db.get(id));
+          // Past the budget, kept: unread is not gone.
+          if (p === undefined) return true;
+          return p !== null && p.status === 'suspended' && p.lapseAttempts !== undefined;
+        });
+      }
       return { reset, failed, skipped, more };
     }),
 });
@@ -448,6 +468,12 @@ export const refreshOne = internalMutation({
   args: { userId: v.id('profiles'), touch: v.optional(v.boolean()) },
   handler: async (ctx, { userId, touch }): Promise<boolean> =>
     refreshPersonRow(ctx, userId, { touch: touch === true }),
+});
+
+/** A staffer's tenure stamped on their row, in its own transaction (`lib/staffTenure`). */
+export const stampOne = internalMutation({
+  args: { userId: v.id('profiles') },
+  handler: (ctx, { userId }) => stampTenure(ctx, userId),
 });
 
 /** What a pass of a superseded run returns: it read its lease and did nothing else. */
@@ -590,7 +616,10 @@ export const backfillRows = internalMutation({
       let stopped = false;
       let gap = false;
       for (const profile of profiles) {
-        if (!reads.affords(NESTED_NEED)) {
+        // A staffer's row also carries their tenure (the Staff lane's dates), stamped by the rule
+        // the strip reads (`lib/staffTenure`): the item starts only when both fit.
+        const staff = profile.role !== 'member' && profile.status !== 'deleted';
+        if (!reads.affords(NESTED_NEED + (staff ? STAMP_WORK + ROW_MAX.profile : 0))) {
           stopped = true;
           break;
         }
@@ -612,6 +641,23 @@ export const backfillRows = internalMutation({
           reads.spend(allowance);
           failed++;
           console.error(`peopleJobs.backfillRows: ${profile._id} failed (${errorClassOf(err)})`);
+          last = profile;
+          continue;
+        }
+        if (staff) {
+          const stampAllowance = nestedAllowance(reads);
+          try {
+            await ctx.runMutation(
+              internal.peopleJobs.stampOne,
+              { userId: profile._id },
+              { transactionLimits: { bytesRead: stampAllowance } },
+            );
+            reads.spend(STAMP_WORK);
+          } catch (err) {
+            reads.spend(stampAllowance);
+            failed++;
+            console.error(`peopleJobs.backfillRows: ${profile._id} tenure (${errorClassOf(err)})`);
+          }
         }
         last = profile;
       }
@@ -732,6 +778,15 @@ export const backfillUndoChains = internalMutation({
       let placed = 0;
       for (const [i, row] of page.page.entries()) {
         if (row.undoesActionId === undefined || row.undoRoot !== undefined) continue;
+        // A role undo changes the person's tenure: their row is stamped again once it is placed —
+        // so the row starts only when that walk fits too (a placed row is passed over next time).
+        const roleRow =
+          row.targetType === 'user' &&
+          (row.action === 'grant_role' || row.action === 'revoke_role');
+        if (roleRow && !reads.affords(STAMP_WORK + 2 * ROW_MAX.moderationAction)) {
+          stoppedAt = i;
+          break;
+        }
         const parentId = row.undoesActionId;
         const parent = await reads.measured('moderationAction', () => ctx.db.get(parentId));
         if (parent === undefined) {
@@ -757,6 +812,10 @@ export const backfillUndoChains = internalMutation({
           }
           await ctx.db.patch(row._id, { undoRoot: rootId, undoDepth: depth });
           placed++;
+          if (roleRow) {
+            await stampTenure(ctx, row.targetId as Id<'profiles'>);
+            reads.spend(STAMP_WORK);
+          }
         } catch (err) {
           failed++;
           console.error(`peopleJobs.backfillUndoChains: ${row._id} failed (${errorClassOf(err)})`);

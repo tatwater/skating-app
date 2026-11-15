@@ -17,7 +17,9 @@ import { clearLedgerGrantOnDemotion } from './lib/ledgerEditors';
 import { reasonFor, roleChangeTakesAway, writeRefusal } from './lib/peopleCan';
 import { refreshPersonRow } from './lib/peopleRows';
 import { trustClassFor } from './lib/reputation';
+import { stampTenure } from './lib/staffTenure';
 import { literals } from './lib/validators';
+import type { PersonWriteResult } from './moderation';
 
 interface UserHit {
   userId: string;
@@ -107,7 +109,7 @@ export async function grantRoleImpl(
   ctx: MutationCtx,
   actor: Doc<'profiles'>,
   { userId, role, reason: given }: { userId: Id<'profiles'>; role: ElevatedRole; reason?: string },
-): Promise<Id<'profiles'>> {
+): Promise<PersonWriteResult> {
   const target = await ctx.db.get(userId);
   if (!target) throw new ConvexError('User not found');
   // The rule the People page's role menu reads (`lib/peopleCan`).
@@ -122,7 +124,7 @@ export async function grantRoleImpl(
   // An admin moved down to moderator loses ledger editing with the role (D227), audited first.
   await clearLedgerGrantOnDemotion(ctx, actor, target, role);
   await ctx.db.patch(userId, { role });
-  await writeAudit(ctx, {
+  const actionId = await writeAudit(ctx, {
     actorId: actor._id,
     action: 'grant_role',
     targetType: 'user',
@@ -132,7 +134,9 @@ export async function grantRoleImpl(
     createdAt: Date.now(),
   });
   await refreshPersonRow(ctx, userId);
-  return userId;
+  // The Staff lane's row carries the tenure this write just changed (`lib/staffTenure`).
+  await stampTenure(ctx, userId);
+  return { userId, actionId };
 }
 
 /**
@@ -154,7 +158,7 @@ export async function revokeRoleImpl(
   ctx: MutationCtx,
   actor: Doc<'profiles'>,
   { userId, reason: given }: { userId: Id<'profiles'>; reason?: string },
-): Promise<Id<'profiles'>> {
+): Promise<PersonWriteResult> {
   if (userId === actor._id) throw new ConvexError('You cannot revoke your own role');
   const target = await ctx.db.get(userId);
   if (!target) throw new ConvexError('User not found');
@@ -169,7 +173,7 @@ export async function revokeRoleImpl(
   // Leaving admin takes ledger editing with it (D227), audited first; refused for the last editor.
   await clearLedgerGrantOnDemotion(ctx, actor, target, 'member');
   await ctx.db.patch(userId, { role: 'member' });
-  await writeAudit(ctx, {
+  const actionId = await writeAudit(ctx, {
     actorId: actor._id,
     action: 'revoke_role',
     targetType: 'user',
@@ -179,5 +183,7 @@ export async function revokeRoleImpl(
     createdAt: Date.now(),
   });
   await refreshPersonRow(ctx, userId);
-  return userId;
+  // The Staff lane's row carries the tenure this write just changed (`lib/staffTenure`).
+  await stampTenure(ctx, userId);
+  return { userId, actionId };
 }

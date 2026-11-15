@@ -8,7 +8,8 @@
  * sources to this file being the only writer.
  */
 
-import { isAuditVia } from '@skating/core';
+import { AUDIT_REASON_MAX, AUDIT_REASON_TOO_LONG, isAuditVia } from '@skating/core';
+import { ConvexError } from 'convex/values';
 import type { Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { noteAuditedAction } from './bodyLibrary';
@@ -38,6 +39,9 @@ export async function writeAudit(
   entry: AuditEntry,
 ): Promise<Id<'moderationActions'>> {
   const { createdAt, ...row } = entry;
+  // The one place a reason enters the log (D261): past the cap the whole write is refused, so no
+  // writer — a lever, an undo, a script, a job — can store a longer one.
+  if (row.reason.length > AUDIT_REASON_MAX) throw new ConvexError(AUDIT_REASON_TOO_LONG);
   const undoesActionId = row.undoesActionId ?? UNDOING.get(ctx);
   const at = createdAt ?? Date.now();
   const via = row.actorId !== undefined ? await viaOf(ctx) : undefined;

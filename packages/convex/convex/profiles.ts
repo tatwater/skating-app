@@ -31,6 +31,7 @@ import {
   type PostCardData,
   PROFILE_VISIBILITIES,
   sanitizeFeedFilters,
+  storableAvatarUrl,
   TRAVEL_BASE_MAX_MS,
   type TrustClass,
 } from '@skating/core';
@@ -132,7 +133,7 @@ export const upsertFromClerk = mutation({
     // Avatar is Clerk-managed for v1 (Phase 03 decision #2): mirror the OIDC `picture` claim into
     // `profileImageUrl` — no upload pipeline. Absent if the Clerk `convex` JWT template doesn't map
     // `picture`; when absent we leave any existing mirror untouched rather than clearing it.
-    const profileImageUrl = identity.pictureUrl;
+    const profileImageUrl = storableAvatarUrl(identity.pictureUrl);
     // The email, likewise mirrored from the `email` claim (A08 PR 3 / D174) so a notification email is
     // not a Clerk API call per recipient. Same absence rule: an unmapped claim leaves the mirror alone.
     // Both mirrors are *refreshed* on every later app open by `syncFromClerk` below — this mutation
@@ -652,7 +653,8 @@ async function applyClerkMirrorsTo(
     claims.profileImageUrl !== undefined &&
     (claims.profileImageUrl ?? undefined) !== profile.profileImageUrl
   ) {
-    patch.profileImageUrl = claims.profileImageUrl ?? undefined;
+    // An over-long URL is not stored: the person shows their initials, and the sync still lands.
+    patch.profileImageUrl = storableAvatarUrl(claims.profileImageUrl ?? undefined);
   }
   if (Object.keys(patch).length > 0) {
     await ctx.db.patch(profile._id, patch);

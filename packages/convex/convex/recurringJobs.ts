@@ -398,4 +398,5 @@ const CRON_OF: Record<FailingJob, string> = {
   cards: 'sweep body summaries',
   finalizeDeletions: 'finalize account deletions',
   expiredExports: 'sweep expired exports',
+  lapses: 'reset lapsed suspensions',
 };

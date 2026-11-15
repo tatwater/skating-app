@@ -132,6 +132,7 @@ import type * as lib_seasonWatchEmails from "../lib/seasonWatchEmails.js";
 import type * as lib_seasonWatchValidators from "../lib/seasonWatchValidators.js";
 import type * as lib_sightingHazards from "../lib/sightingHazards.js";
 import type * as lib_signInDays from "../lib/signInDays.js";
+import type * as lib_staffTenure from "../lib/staffTenure.js";
 import type * as lib_standing from "../lib/standing.js";
 import type * as lib_storageBlobs from "../lib/storageBlobs.js";
 import type * as lib_textLengths from "../lib/textLengths.js";
@@ -311,6 +312,7 @@ declare const fullApi: ApiFromModules<{
   "lib/seasonWatchValidators": typeof lib_seasonWatchValidators;
   "lib/sightingHazards": typeof lib_sightingHazards;
   "lib/signInDays": typeof lib_signInDays;
+  "lib/staffTenure": typeof lib_staffTenure;
   "lib/standing": typeof lib_standing;
   "lib/storageBlobs": typeof lib_storageBlobs;
   "lib/textLengths": typeof lib_textLengths;

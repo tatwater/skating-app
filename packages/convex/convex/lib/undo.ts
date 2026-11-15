@@ -22,7 +22,8 @@ import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { asUndoOf } from './audit';
 import { hasCapability } from './auth';
 import { authorDeletedAtOn, authorDeletedRefusal } from './authorDeletion';
-import { type PersonFacts, writeRefusal } from './peopleCan';
+import { seesLedgerGrants } from './ledgerEditors';
+import { type PersonFacts, refusalFor, writeRefusal } from './peopleCan';
 import { factsOfRow, personRowOf, rowlessProfile } from './peopleRows';
 import { UNDO_HANDLERS } from './undoHandlers';
 import { UNDO_POLICY, undoCapability, WORKSTREAM_MODE } from './undoPolicy';
@@ -81,6 +82,8 @@ export async function undoState(
   ctx: QueryCtx | MutationCtx,
   viewer: UndoViewer,
   row: Doc<'moderationActions'>,
+  /** `write`: the undo itself, whose refusal says why in full (the write's own words, D252). */
+  audience: 'read' | 'write' = 'read',
 ): Promise<UndoState> {
   const rule = UNDO_POLICY[row.action];
   if (rule.undo.kind === 'none') return { state: 'unavailable', why: rule.undo.why };
@@ -117,7 +120,11 @@ export async function undoState(
   // an account being deleted, or deleted, can't be disciplined back or forth — so History never
   // offers an undo the write would turn down.
   const refusal = await personUndoRefusal(ctx, viewer, row, handler);
-  if (refusal !== null) return { state: 'unavailable', why: refusal };
+  // The last-editor sentence names who holds the ledger: a holder's to read (as on the person page).
+  if (refusal !== null) {
+    const seesLedger = audience === 'write' || seesLedgerGrants(viewer);
+    return { state: 'unavailable', why: refusalFor(refusal, seesLedger) };
+  }
   if (!hasCapability(viewer, undoCapability(rule, row.targetType))) {
     return { state: 'unavailable', why: 'Undoing this takes a role you do not hold.' };
   }
@@ -172,7 +179,7 @@ export async function runUndo(
 ): Promise<void> {
   const row = await ctx.db.get(actionId);
   if (!row) throw new ConvexError('That action no longer exists');
-  const state = await undoState(ctx, actor, row);
+  const state = await undoState(ctx, actor, row, 'write');
   switch (state.state) {
     case 'undone':
       throw new ConvexError('That action has already been undone');

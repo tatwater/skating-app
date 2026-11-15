@@ -118,6 +118,19 @@ export function derivePersonRow(
     reputationPoints: profile.reputationPoints,
     createdAt: profile.createdAt,
     refreshedAt: now,
+    // A tenure stamp outlives a refresh while the role holds; a role change voids it until the role
+    // write stamps it again (`lib/staffTenure.stampTenure`).
+    ...(prev !== null && prev.role === profile.role && !deleted ? tenureOf(prev) : {}),
+  };
+}
+
+/** The tenure stamp's fields on a row, as present. */
+function tenureOf(row: PersonRowFields): Partial<PersonRowFields> {
+  return {
+    ...(row.roleSince !== undefined ? { roleSince: row.roleSince } : {}),
+    ...(row.staffSince !== undefined ? { staffSince: row.staffSince } : {}),
+    ...(row.tenureCapped !== undefined ? { tenureCapped: row.tenureCapped } : {}),
+    ...(row.tenureAt !== undefined ? { tenureAt: row.tenureAt } : {}),
   };
 }
 

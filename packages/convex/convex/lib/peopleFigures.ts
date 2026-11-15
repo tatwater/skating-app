@@ -12,11 +12,10 @@
  *   person *or their content* (the founder, 2026-11-14), through each flag's stamped subject.
  */
 
-import { COUNT_CAP, type Count, cappedCount, NEWEST_DAYS } from '@skating/core';
+import { COUNT_CAP, type Count, cappedCount, NEWEST_DAYS, type PeopleLane } from '@skating/core';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { QueryCtx } from '../_generated/server';
 import { flagSubject } from './flagSubject';
-import { accountsTotal } from './metricReads';
 import { readOpenFlags } from './openFlags';
 import {
   OPEN_ENDED,
@@ -253,46 +252,103 @@ export function appealsFrom(
   };
 }
 
+// ── Every lane's count, one rule for the lanes and the Overview ──────────────────────────────
+
+/** A lane's count: the number, whether its own read stopped at its cap, whether a row was missing. */
+export interface LaneCount {
+  count: number;
+  over: boolean;
+  missing: boolean;
+  /** A time lane's first row (Suspended's soonest to lapse). */
+  first?: Doc<'peopleRows'> | null;
+}
+
+/**
+ * Each lane's count as its own list is read (D257): the stored lanes from `peopleCounts`, the time
+ * lanes from their index range to {@link LANE_COUNT_CAP} (charged ahead), the queue lanes as the people
+ * their list can show (those with a row). `people.lanes` and the Overview's People card both count
+ * through this, so the two can't give two numbers for one lane. `appealing` is `null` for a viewer
+ * who may not read support (PII, D37).
+ */
+export function laneCounter(
+  ctx: QueryCtx,
+  now: number,
+  stored: StoredCounts,
+  flagged: readonly { userId: Id<'profiles'> }[],
+  appealing: readonly { userId: Id<'profiles'> }[] | null,
+): (lane: PeopleLane) => Promise<LaneCount> {
+  const budget = requestBudget(ctx);
+  const of = (count: number): LaneCount => ({ count, over: false, missing: false });
+  const time = async (lane: 'suspended' | 'newest') => {
+    // The lane's own range, read to its cap and one past it: charged ahead, as the queues' are.
+    budget.reserve('personRow', LANE_COUNT_CAP + 1);
+    const { count, first } = await countTimeLane(ctx, lane, now);
+    return { count: count.count, over: count.capped, missing: false, first };
+  };
+  const listable = async (people: readonly { userId: Id<'profiles'> }[]) => {
+    const { rows, missing } = await listablePeople(
+      ctx,
+      people.map((p) => p.userId),
+    );
+    return { count: rows.length, over: false, missing };
+  };
+  return async (lane) => {
+    switch (lane) {
+      case 'staff':
+        return of(stored.count('admins').count + stored.count('moderators').count);
+      case 'suspended':
+      case 'newest':
+        return time(lane);
+      case 'flagged':
+        return listable(flagged);
+      case 'appeals':
+        return listable(appealing ?? []);
+      default:
+        return of(stored.count(lane).count);
+    }
+  };
+}
+
 // ── The Overview's People card ─────────────────────────────────────────────────────────────────
 
 /**
- * The Overview's People column, from the lanes' own reads. `flags` is the open queue the Overview
- * already read for its Inbox card; `tickets` the waiting support tickets, or `null` for a viewer who
- * may not see support (PII).
+ * The Overview's People column, through the lanes' own counter ({@link laneCounter}) — every figure is
+ * the number its People lane shows: *N users* is Everyone (live, from the rows), staff and the
+ * stored lanes their stored counts, Suspended and Newest their ranges, Flagged and *open appeals* the
+ * people their lists can show (appeals as people, not tickets). `flags` is the open queue the Overview
+ * already read for its Inbox card; appeals are read here, and only for a viewer who may read support
+ * (PII, D37) — `null` otherwise.
  */
 export async function peopleCardFigures(
   ctx: QueryCtx,
   now: number,
   flags: { flags: Doc<'contentFlags'>[]; capped: boolean },
-  tickets: { tickets: Doc<'supportTickets'>[]; capped: boolean } | null,
+  readsSupport: boolean,
 ) {
   const stored = await readStoredCounts(ctx);
-  const suspended = await countTimeLane(ctx, 'suspended', now);
-  const newest = await countTimeLane(ctx, 'newest', now);
   const flagged = flaggedPeopleFrom(flags.flags, flags.capped);
+  const waiting = readsSupport ? await readWaitingAppeals(ctx) : null;
+  const appealing = waiting === null ? null : appealsFrom(waiting.tickets, waiting.capped);
+  const counts = laneCounter(ctx, now, stored, flagged.people, appealing?.people ?? null);
+  const stamp = (lane: LaneCount, capped = false): Count => ({
+    count: lane.count,
+    capped: capped || lane.over || lane.missing,
+  });
+  const suspended = await counts('suspended');
   return {
     moderators: stored.count('moderators'),
     admins: stored.count('admins'),
-    newThisWeek: newest.count,
-    suspended: suspended.count,
-    nextSuspensionEnds: soonestLapse(suspended.first),
+    newThisWeek: stamp(await counts('newest')),
+    suspended: stamp(suspended),
+    nextSuspensionEnds: soonestLapse(suspended.first ?? null),
     banned: stored.count('banned'),
-    // The Flagged lane's own count (`people.lanes`): the people its list can show, a floor whenever
-    // the queue was read to its cap or a person it names has no row.
-    flaggedPeople: await (async () => {
-      const { rows, missing } = await listablePeople(
-        ctx,
-        flagged.people.map((p) => p.userId),
-      );
-      return { count: rows.length, capped: flagged.count.capped || missing };
-    })(),
-    appealsOpen: tickets === null ? null : appealsFrom(tickets.tickets, tickets.capped).tickets,
+    flaggedPeople: stamp(await counts('flagged'), flagged.count.capped),
+    appealsOpen: appealing === null ? null : stamp(await counts('appeals'), waiting?.capped),
     leaving: stored.count('leaving'),
-    // The 6-hourly rollup, as Metrics' total reads it, so the two figures stay one number.
-    totalUsers: await accountsTotal(ctx),
+    totalUsers: stamp(await counts('everyone')) as Count | null,
     /**
-     * Backfills not yet finished that the card rests on — every figure but `totalUsers` may be wrong
-     * until they are, which `capped` doesn't say (it's only a read that stopped at its cap).
+     * Backfills not yet finished that the card rests on — every figure may be wrong until they are,
+     * which `capped` doesn't say (it's only a read that stopped at its cap).
      */
     pending: [
       ...stored.pending.filter((b) => b === 'rows'),

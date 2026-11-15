@@ -18,7 +18,7 @@ export const grantEditor = mutation({
   args: { userId: v.id('profiles'), reason: v.optional(v.string()) },
   handler: async (ctx, { userId, reason }) => {
     const actor = await requireCapability(ctx, 'machinery.ledger');
-    await grantLedgerEditorImpl(ctx, actor, { userId, ...(reason ? { reason } : {}) });
+    return grantLedgerEditorImpl(ctx, actor, { userId, ...(reason ? { reason } : {}) });
   },
 });
 
@@ -30,7 +30,7 @@ export const revokeEditor = mutation({
   args: { userId: v.id('profiles'), reason: v.string() },
   handler: async (ctx, { userId, reason }) => {
     const actor = await requireCapability(ctx, 'machinery.ledger');
-    await revokeLedgerEditorImpl(ctx, actor, { userId, reason });
+    return revokeLedgerEditorImpl(ctx, actor, { userId, reason });
   },
 });
 

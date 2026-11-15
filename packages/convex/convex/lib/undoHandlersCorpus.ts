@@ -79,8 +79,9 @@ const undoRoleChange: UndoHandler = {
 const undoLedgerGrant: UndoHandler = {
   undoTakesAway: () => UNDO_POLICY.revoke_ledger_editor.takesAway(),
   personWrite: () => ({ kind: 'ledgerRevoke' }),
-  run: ({ ctx, actor, row, reason }) =>
-    revokeLedgerEditorImpl(ctx, actor, { userId: row.targetId as Id<'profiles'>, reason }),
+  run: async ({ ctx, actor, row, reason }) => {
+    await revokeLedgerEditorImpl(ctx, actor, { userId: row.targetId as Id<'profiles'>, reason });
+  },
 };
 
 /** revoke_ledger_editor → given back, unless it went with a demotion (undo that instead). */
@@ -91,8 +92,9 @@ const undoLedgerRevoke: UndoHandler = {
       : null,
   undoTakesAway: () => UNDO_POLICY.grant_ledger_editor.takesAway(),
   personWrite: () => ({ kind: 'ledgerGrant' }),
-  run: ({ ctx, actor, row, reason }) =>
-    grantLedgerEditorImpl(ctx, actor, { userId: row.targetId as Id<'profiles'>, reason }),
+  run: async ({ ctx, actor, row, reason }) => {
+    await grantLedgerEditorImpl(ctx, actor, { userId: row.targetId as Id<'profiles'>, reason });
+  },
 };
 
 // ── Access alerts: pin ↔ unpin ────────────────────────────────────────────────────────────────────

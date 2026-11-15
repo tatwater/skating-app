@@ -476,6 +476,16 @@ export default defineSchema({
     reputationPoints: v.number(),
     createdAt: v.number(),
     refreshedAt: v.number(),
+    /**
+     * A staffer's tenure (`lib/staffTenure`, the rule `people.staffStats` reads live), stamped at each
+     * role write: when they took the role they hold and when they became staff — absent when no row on
+     * record says so. `tenureAt` is when it was stamped (absent: never, or not staff); `tenureCapped`
+     * when the read stopped before it could say.
+     */
+    roleSince: v.optional(v.number()),
+    staffSince: v.optional(v.number()),
+    tenureCapped: v.optional(v.boolean()),
+    tenureAt: v.optional(v.number()),
   })
     .index('by_user', ['userId'])
     .index('by_live_name', ['live', 'nameKey'])
@@ -4708,7 +4718,9 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index('by_created_at', ['createdAt']) // the charts' bounded window read + the retention prune
-    .index('by_water_body', ['waterBodyId']),
+    .index('by_water_body', ['waterBodyId'])
+    // A person's asks over the window still kept — the People page's bounty season line (B01).
+    .index('by_requester_created', ['requesterId', 'createdAt']),
 
   /**
    * Per-user rate-limit bookkeeping for the client analytics signal (Phase 07-2). `recordClientSignal`
