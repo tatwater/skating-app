@@ -107,7 +107,8 @@ function newestOnTarget(
 
 /**
  * Whether `row` can be undone by `viewer`, and if not, why. Bounded: two index reads (one of at most
- * {@link UNDO_TAG_READ} rows), and one `get` of an item an author could have deleted.
+ * {@link UNDO_TAG_READ} rows), one `get` of an item an author could have deleted, and the handful of
+ * rows a verb's `refusal` reads (`lib/undoReads`).
  */
 export async function undoState(
   ctx: QueryCtx | MutationCtx,
@@ -163,6 +164,11 @@ export async function undoState(
       why: 'Your account is being deleted, so you can no longer undo.',
     };
   }
+  // The row as it stands now refuses this write (B01-3d): never offered, since it would be turned
+  // down. Asked last — it reads a body's outline at worst, from the page's shared budget, which a line
+  // this viewer could never undo anyway should not spend.
+  const refused = (await handler.refusal?.(ctx, row)) ?? null;
+  if (refused) return { state: 'unavailable', why: refused };
   return { state: 'available', needsReason: undoNeedsReason(row) };
 }
 

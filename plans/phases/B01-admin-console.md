@@ -3026,7 +3026,8 @@ their own PR (they would have taken this one past its size, and two need a call;
   its states (`importContourCoverage`'s `searched`, the loader's `--searched=NAME:VT,NH`, sent with
   the run's last batch so a run that dies records no search), one row per (dataset, state); `consoleExtras.bathymetrySearched` is the newest search of the body's states,
   `null` (*not recorded*) where none covers it.
-- **Town lines** (`bodyConsole.townLines`): each boundary's largest outer ring kept to 96 points is
+- **Town lines** (`bodyConsole.townLines`): each boundary's largest outer ring kept to 96 points (97
+  positions: a ring closes on its first point, as GeoJSON's must) is
   stored beside it at its import (`adminAreaOutlines`; `adminAreas:backfillOutlines` for the rows
   before); a body's town lines are one small row per town, at most 24.
 - **Only a geometry change marks a body** (the coordinator's ruling): the cell index marks a body
@@ -3141,6 +3142,40 @@ away) and is refused once the launch moved, was renamed, hidden or demoted; its 
 library row). The old lake editor places a clicked point with `setOfficial` — a moderator who clicks on
 an existing launch there gets a second row too (the map hides the first; the console lists both); the
 phone app has no caller.
+
+**The sweep before re-review (B01-3f): an undo or redo over a row something un-audited changed.** An
+undo was offered whenever its row was the newest on its target; a few verbs' refusals depend on the
+row as it stands, which an import, a loader run, a merge's moves or a hide on another target change
+without a row on that target. Each undo in B01-3d was run as write → un-audited change → undo → redo
+(a table in `bodyWrites.test.ts`, every case also run without the change):
+
+- **Restored stale values — fixed:** `edit_landmark`. A merge's fold and a catalog run change a
+  landmark's spellings with no row on it, and the undo put the old list back over them. The edit now
+  records the spellings it left (`aliases`) and its undo passes them as `expectedAliases`; a row from
+  before carries none and undoes as it did. (The handler predates B01-3d; the compare-and-set came
+  with it.) A bay rename's undo passes the aliases its row wrote too — no un-audited writer moves
+  them today.
+- **Offered, then refused — fixed:** `choose_depth_source` redone after a loader run took its source
+  away; `update_body_feature_shape` after the outline moved off the shape it puts back;
+  `set_put_in` after the launch was hidden (audited on the put-in) or moved or renamed by an import;
+  `set_weather_sample_points` after the outline moved off the grid it puts back.
+- **Held:** `set_class` after a re-import (the undo puts back the newer catalog class, never the
+  recorded one); `set_aliases` and `set_reference_links` (every writer of the lists is audited on the
+  body, and a merge's row overtakes); `choose_depth_source` undone after a loader refresh (hands back
+  to the fresh value); `set_imagery_override` after its pass was recut or pruned (keyed by the pass,
+  read from nothing of it); a feature after a merge (it moves to the survivor and undoes there). Rows
+  written before B01-3d (no claims, no candidates, `undefined` lists, a feature with no bay) held
+  for every write.
+
+`UndoHandler.refusal` is the fix: an async check `undoState` asks last (after capability and an
+operator leaving), running the same function the write refuses by — `depthChoiceOutcome`,
+`shapeRefusal`, `launchRefusal` and `directionRefusal`, `samplePointsRefusal`, `listChangedRefusal`.
+Its row reads (`lib/undoReads`) are charged at their real weight to the request's budget, one after
+another, read once per query; past it the line reads *unavailable* — "This page has too much to check
+this undo here — open what it changed to undo it." — never a read past the limit. **Owed:** a
+refusal's snapshot read and a launch's hidden-neighbor read (at most 200, a handful in practice) are
+not charged, and People's per-row call plan (`ROW_SHAPE_DOCS`) doesn't count them; the landmark
+undo's refusal checks the spellings only, not the duplicate and bay-name rules its write also takes.
 
 **Held — the survey filing** (`fileBathymetrySurvey`): the board shows the field (*A survey the next
 build should load*, *Paste a link or a citation*) but not what appears once one is filed; it waits on

@@ -3977,11 +3977,18 @@ export async function editableBody(
   waterBodyId: Id<'waterBodies'>,
 ): Promise<Doc<'waterBodies'>> {
   const body = await ctx.db.get(waterBodyId);
-  if (!body) throw new ConvexError('Water body not found');
-  if (body.dedupStatus === 'merged') {
-    throw new ConvexError('This body was merged into another — edit the body it was merged into');
-  }
+  const refused = editRefusal(body);
+  if (refused !== null || body === null) throw new ConvexError(refused ?? 'Water body not found');
   return body;
+}
+
+/** Why {@link editableBody} refuses this body (missing, or merged away), or `null`. */
+export function editRefusal(body: Doc<'waterBodies'> | null): string | null {
+  if (!body) return 'Water body not found';
+  if (body.dedupStatus === 'merged') {
+    return 'This body was merged into another — edit the body it was merged into';
+  }
+  return null;
 }
 
 /** Moderator: set a body's own aliases (B01-3d) — an empty list clears them. */
@@ -4328,6 +4335,22 @@ export const setWeatherSamplePoints = mutation({
 });
 
 /**
+ * Why a grid of sample points is refused on this body as it stands, or `null` — one rule for the
+ * write and for whether its undo is offered (B01-3d): too many points, or one off the outline (an
+ * outline redrawn or re-imported since can leave a recorded grid on land).
+ */
+export function samplePointsRefusal(body: Doc<'waterBodies'>, points: LatLng[]): string | null {
+  if (points.length > MAX_SUGGESTED_SAMPLE_POINTS) {
+    return `A body can carry at most ${MAX_SUGGESTED_SAMPLE_POINTS} sample points — each one is a forecast fetch and a cache row.`;
+  }
+  const polygon = body.polygon as unknown as Polygon | MultiPolygon;
+  const offWater = points.findIndex((point) => !pointInPolygon(point, polygon));
+  if (offWater < 0) return null;
+  const bad = points[offWater];
+  return `Sample point ${offWater + 1} (${bad?.lat.toFixed(4)}, ${bad?.lng.toFixed(4)}) isn't on ${body.name}. A point on land returns a real forecast for the wrong surface.`;
+}
+
+/**
  * `setWeatherSamplePoints`'s body, shared with its undo (D226). The grid it replaces goes to
  * `auditSnapshots` rather than the audit row — a list of points is the row's whole budget twice over.
  */
@@ -4349,20 +4372,8 @@ export async function setWeatherSamplePointsImpl(
       expected?.map((p) => ({ lat: p.lat, lng: p.lng })),
       'this body’s weather sample points',
     );
-    if (points.length > MAX_SUGGESTED_SAMPLE_POINTS) {
-      throw new ConvexError(
-        `A body can carry at most ${MAX_SUGGESTED_SAMPLE_POINTS} sample points — each one is a forecast fetch and a cache row.`,
-      );
-    }
-
-    const polygon = body.polygon as unknown as Polygon | MultiPolygon;
-    const offWater = points.findIndex((point) => !pointInPolygon(point, polygon));
-    if (offWater >= 0) {
-      const bad = points[offWater];
-      throw new ConvexError(
-        `Sample point ${offWater + 1} (${bad?.lat.toFixed(4)}, ${bad?.lng.toFixed(4)}) isn't on ${body.name}. A point on land returns a real forecast for the wrong surface.`,
-      );
-    }
+    const refused = samplePointsRefusal(body, points);
+    if (refused !== null) throw new ConvexError(refused);
 
     // Empty clears the field rather than storing `[]`, so `nearestSamplePoint`'s "absent ⇒ centroid"
     // default is the one code path for "this body doesn't need a grid".
@@ -4552,6 +4563,41 @@ export const chooseDepthSource = mutation({
 });
 
 /**
+ * What choosing `source` for a measure settles on the body as it stands, or why it is refused — one
+ * rule for the write and for whether its undo is offered (B01-3d): a typed (operator) depth; a source
+ * with no value for the measure (a loader run can take one away); a value that would leave the mean
+ * deeper than the max. A hand-back (`null`) takes the best-ranked candidate the pair allows, as the
+ * ladder settles it — the best-ranked alone could be the one the ladder dropped for inverting the
+ * pair, which would refuse the hand-back (and the undo of a first choice) on a body the ladder had
+ * settled.
+ */
+export function depthChoiceOutcome(
+  body: Doc<'waterBodies'>,
+  measure: 'mean' | 'max',
+  source: DepthSource | null,
+): { pick: { source: DepthSource; valueM: number } | null } | { refusal: string } {
+  const storedSource = measure === 'mean' ? body.meanDepthSource : body.maxDepthSource;
+  if (storedSource === 'operator') {
+    return { refusal: 'A moderator typed this depth — clear it before choosing a source' };
+  }
+  const choices = depthChoicesOf(body, measure);
+  const other = measure === 'mean' ? body.maxDepthM : body.meanDepthM;
+  // Whether a value keeps the pair valid — a mean never deeper than the max.
+  const pairHolds = (valueM: number) =>
+    other === undefined || (measure === 'mean' ? valueM <= other : other <= valueM);
+  const pick =
+    source === null
+      ? (choices.find((c) => pairHolds(c.valueM)) ?? null)
+      : (choices.find((c) => c.source === source) ?? null);
+  if (source !== null && pick === null)
+    return { refusal: 'That source has no depth for this body' };
+  if (pick !== null && !pairHolds(pick.valueM)) {
+    return { refusal: 'That depth would leave the mean deeper than the max' };
+  }
+  return { pick };
+}
+
+/**
  * `chooseDepthSource`'s body, shared with its undo (the same write of the previous choice). Refused:
  * a merged-away body; a measure an operator typed (clear it first — the operator rung outranks every
  * source); a source with no candidate for the measure; a choice that would leave the mean deeper than
@@ -4574,29 +4620,11 @@ export async function chooseDepthSourceImpl(
 ): Promise<Id<'waterBodies'>> {
   const body = await editableBody(ctx, waterBodyId);
   const storedSource = measure === 'mean' ? body.meanDepthSource : body.maxDepthSource;
-  if (storedSource === 'operator') {
-    throw new ConvexError('A moderator typed this depth — clear it before choosing a source');
-  }
-  const choices = depthChoicesOf(body, measure);
-  const other = measure === 'mean' ? body.maxDepthM : body.meanDepthM;
-  // Whether a value keeps the pair valid — a mean never deeper than the max.
-  const pairHolds = (valueM: number) =>
-    other === undefined || (measure === 'mean' ? valueM <= other : other <= valueM);
-  // Handed back: the best-ranked candidate the pair allows, as the ladder settles it — the
-  // best-ranked alone could be the one the ladder dropped for inverting the pair, which would refuse
-  // the hand-back (and the undo of a first choice) on a body the ladder had settled.
-  const pick =
-    source === null
-      ? (choices.find((c) => pairHolds(c.valueM)) ?? null)
-      : (choices.find((c) => c.source === source) ?? null);
-  if (source !== null && pick === null) {
-    throw new ConvexError('That source has no depth for this body');
-  }
+  const settled = depthChoiceOutcome(body, measure, source);
+  if ('refusal' in settled) throw new ConvexError(settled.refusal);
+  const { pick } = settled;
   const valueField = measure === 'mean' ? 'meanDepthM' : 'maxDepthM';
   const sourceField = measure === 'mean' ? 'meanDepthSource' : 'maxDepthSource';
-  if (pick !== null && !pairHolds(pick.valueM)) {
-    throw new ConvexError('That depth would leave the mean deeper than the max');
-  }
   const prev = {
     choice: body.depthChoice?.[measure] ?? null,
     valueM: (measure === 'mean' ? body.meanDepthM : body.maxDepthM) ?? null,

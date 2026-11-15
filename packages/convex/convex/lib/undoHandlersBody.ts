@@ -19,7 +19,7 @@ import {
   unrestoreLandmarkImpl,
   updateLandmarkImpl,
 } from '../landmarks';
-import { demotePutInImpl, promotePutInImpl } from '../putIns';
+import { demotePutInImpl, directionRefusal, launchRefusal, promotePutInImpl } from '../putIns';
 import { setStandingImpl } from '../standing';
 import {
   type RedrawSnapshot,
@@ -32,9 +32,12 @@ import {
 import {
   chooseDepthSourceImpl,
   type DepthFields,
+  depthChoiceOutcome,
+  editRefusal,
   removeBodyImpl,
   restoreBodyImpl,
   restoreDepthImpl,
+  samplePointsRefusal,
   setAliasesImpl,
   setClassImpl,
   setCuratedBoostImpl,
@@ -46,7 +49,9 @@ import {
   setWeatherSamplePointsImpl,
 } from '../waterBodies';
 import { type ModerationAction, type ModerationTargetType, readSnapshot } from './audit';
+import { listChangedRefusal } from './listCas';
 import { UNDO_POLICY } from './undoPolicy';
+import { UNDO_CHECKED_ELSEWHERE, undoRead } from './undoReads';
 import { meta, PREDATES, type TargetUndo, type UndoCall, type UndoHandler } from './undoTypes';
 
 /** Rows that recorded no `prev` predate undo (D226); everything here needs one. */
@@ -171,6 +176,19 @@ const undoSatelliteImagery: UndoHandler = {
 const undoWeatherSamplePoints: UndoHandler = {
   blocked: (row) => (meta(row).prev?.snapshot === true ? null : PREDATES),
   undoTakesAway: () => UNDO_POLICY.set_weather_sample_points.takesAway(),
+  // The grid it puts back has to be on the outline as it stands: a redraw or a re-import moves it.
+  refusal: async (ctx, row) => {
+    const id = ctx.db.normalizeId('waterBodies', row.targetId);
+    const body = id ? await undoRead(ctx, 'waterBody', id) : null;
+    if (body === undefined) return UNDO_CHECKED_ELSEWHERE;
+    if (body === null) return 'Water body not found';
+    const prev = await readSnapshot<{ weatherSamplePoints: { lat: number; lng: number }[] }>(
+      ctx,
+      row._id,
+    );
+    if (prev === null) return PREDATES;
+    return samplePointsRefusal(body, prev.weatherSamplePoints);
+  },
   run: async (call) => {
     const { weatherSamplePoints } = await snapshotOf<{
       weatherSamplePoints: { lat: number; lng: number }[];
@@ -321,10 +339,13 @@ const undoRenameSubArea: UndoHandler = {
   undoTakesAway: (row) => UNDO_POLICY.rename_sub_area.takesAway(meta(row).prev),
   run: async ({ ctx, actor, row, reason }) => {
     const prev = meta(row).prev as { name: string; aliases: string[] };
+    const after = meta(row).aliases as string[] | undefined;
     await renameSubAreaImpl(ctx, actor, {
       subAreaId: subAreaId(row),
       name: prev.name,
       aliases: prev.aliases,
+      // The same compare-and-set as the edit: refused if the bay's aliases moved since.
+      ...(after !== undefined ? { expectedAliases: after } : {}),
       reason,
     });
   },
@@ -372,8 +393,22 @@ const undoEditLandmark: UndoHandler = {
     return needsPrev(row);
   },
   undoTakesAway: (row) => UNDO_POLICY.edit_landmark.takesAway(meta(row).prev),
+  // A merge's fold and a catalog run change a landmark's spellings with no row on it: the undo
+  // compares the spellings the edit left with the landmark as it stands (B01-3d).
+  refusal: async (ctx, row) => {
+    const id = ctx.db.normalizeId('bodyLandmarks', row.targetId);
+    const current = id ? await undoRead(ctx, 'landmark', id) : null;
+    if (current === undefined) return UNDO_CHECKED_ELSEWHERE;
+    if (current === null) return 'That landmark no longer exists';
+    return listChangedRefusal(
+      current.aliases,
+      meta(row).aliases as string[] | undefined,
+      'this landmark’s other spellings',
+    );
+  },
   run: async ({ ctx, actor, row, reason }) => {
     const prev = meta(row).prev as LandmarkEditPrev;
+    const after = meta(row).aliases as string[] | undefined;
     const current = await ctx.db.get(landmarkId(row));
     if (!current) throw new ConvexError('That landmark no longer exists');
     const moved = current.point.lat !== prev.point.lat || current.point.lng !== prev.point.lng;
@@ -381,6 +416,7 @@ const undoEditLandmark: UndoHandler = {
       landmarkId: landmarkId(row),
       name: prev.name,
       aliases: prev.aliases,
+      ...(after !== undefined ? { expectedAliases: after } : {}),
       kind: prev.kind,
       // Only a point that moved goes back, so an unmoved one keeps its bay stamp and its row says so.
       ...(moved ? { point: prev.point } : {}),
@@ -480,6 +516,18 @@ const undoClass: UndoHandler = {
 const undoDepthSource: UndoHandler = {
   blocked: needsPrev,
   undoTakesAway: () => UNDO_POLICY.choose_depth_source.takesAway(undefined),
+  // A loader run changes a body's candidates with no row: the choice it puts back has to still be
+  // there, and still leave the mean no deeper than the max — the write's own rule, on the body now.
+  refusal: async (ctx, row) => {
+    const m = meta(row) as { measure: 'mean' | 'max'; prev: { choice: DepthSource | null } };
+    const id = ctx.db.normalizeId('waterBodies', row.targetId);
+    const body = id ? await undoRead(ctx, 'waterBody', id) : null;
+    if (body === undefined) return UNDO_CHECKED_ELSEWHERE;
+    const refused = editRefusal(body);
+    if (refused !== null || body === null) return refused;
+    const settled = depthChoiceOutcome(body, m.measure, m.prev.choice);
+    return 'refusal' in settled ? settled.refusal : null;
+  },
   run: ({ ctx, actor, row, reason }) => {
     const m = meta(row) as { measure: 'mean' | 'max'; prev: { choice: DepthSource | null } };
     return chooseDepthSourceImpl(ctx, actor, {
@@ -535,6 +583,24 @@ const undoPutIn: UndoHandler = {
   },
   undoTakesAway: (row) =>
     UNDO_POLICY.set_put_in.takesAway((meta(row) as { direction?: unknown }).direction),
+  // A hide is audited on the put-in and an import moves or drops a launch with no row, so neither
+  // overtakes this body's row: the launch is read as it stands, by the write's own checks.
+  refusal: async (ctx, row) => {
+    const m = meta(row) as {
+      putInId: Id<'putIns'>;
+      coord: { lat: number; lng: number };
+      direction: 'promoted' | 'demoted';
+      name?: string;
+    };
+    const launch = await undoRead(ctx, 'putIn', m.putInId);
+    if (launch === undefined) return UNDO_CHECKED_ELSEWHERE;
+    const refused = await launchRefusal(ctx, launch);
+    if (refused !== null || launch === null) return refused;
+    return directionRefusal(launch, m.direction === 'promoted' ? 'demote' : 'promote', {
+      coord: m.coord,
+      name: m.name ?? null,
+    });
+  },
   run: async ({ ctx, actor, row, reason }) => {
     const m = meta(row) as {
       putInId: Id<'putIns'>;

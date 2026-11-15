@@ -83,6 +83,9 @@ export const ROW_MAX = {
   supportTicket: 5_000 * 4 + SLACK,
   // A People row: names, a handle, an avatar URL, a reason line cut to 280 characters.
   personRow: 4 * 1024,
+  // A landmark's name and spellings, and a known feature's other fields, no writer caps.
+  landmark: DOC_MAX,
+  bodyFeature: DOC_MAX,
   // A Bodies library row carries the body's name, which no writer caps.
   bodyLibraryRow: DOC_MAX,
   // Ids, literals, numbers and a coordinate — no free text.

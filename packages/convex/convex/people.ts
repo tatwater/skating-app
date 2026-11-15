@@ -1361,13 +1361,16 @@ async function labelOf(
 /**
  * What shaping one History or Decisions row reads through helpers on main and in this PR — undo state
  * (the undo tagged rows ≤ 16, the newest row on the target, the content's author stamp, the person's
- * row, a rowless fallback), the actor's and the target's names — counted ahead: calls and documents.
- * Their bytes are **not** charged (only a rowless profile is, by `rowlessProfile`): the undo engine
- * reads audit rows and content items whose worst case is the document limit (an audit row's reason
- * has no cap) — the phase doc's open ruling.
+ * row, a rowless fallback, and #127's refusal hook: a feature and its body through `undoRead`, and the
+ * row's snapshot, up to 8 chunks), the actor's and the target's names — counted ahead: calls and
+ * documents. Bytes: the refusal hook's reads are charged as they really weigh (`undoRead` →
+ * `requestBudget(ctx).measured`, one at a time, `undefined` past the budget, which the hook reads as
+ * "checked when pressed"); a rowless profile is charged by `rowlessProfile`; the rest are **not**
+ * charged — the undo engine reads audit rows and content items whose worst case is the document limit
+ * (an audit row's metadata has no cap) — the phase doc's open ruling.
  */
-const ROW_SHAPE_CALLS = 8;
-const ROW_SHAPE_DOCS = 24;
+const ROW_SHAPE_CALLS = 11;
+const ROW_SHAPE_DOCS = 35;
 
 /**
  * How many of `n` rows {@link shapeRows} can shape once `calls` more calls reading `docs` documents
