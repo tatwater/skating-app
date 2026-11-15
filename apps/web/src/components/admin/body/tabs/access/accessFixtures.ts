@@ -16,12 +16,13 @@ const putIn = (
   at: [number, number],
   walkM: number | null,
   where: string | null = null,
+  atLeast = false,
 ): PutInRow => ({
   id,
   source,
   name,
   at: { lat: at[0], lng: at[1] },
-  walkM,
+  walk: walkM === null ? null : { meters: walkM, atLeast },
   approach: null,
   where,
 });

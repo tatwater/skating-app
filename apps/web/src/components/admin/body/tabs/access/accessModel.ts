@@ -46,8 +46,13 @@ export type PutInRow = {
   unnamed?: boolean;
   source: 'official' | 'osm' | 'derived';
   at: LatLng;
-  /** The walk from its lot, in meters; `null` with no lot linked. */
-  walkM: number | null;
+  /**
+   * The walk from its lot, whole meters; `null` with no lot linked. `atLeast`: a straight line from
+   * the lot (`approachRouted: false` — what a moderator's link stores until the ETL routes it).
+   * Trails weave, so the real walk is at least this and can be much longer; it is never drawn as a
+   * measured route.
+   */
+  walk: { meters: number; atLeast: boolean } | null;
   /** The routed walk, to draw. */
   approach: LatLng[] | null;
   /** Where it is, by the nearest landmark's name; `null` when none is close. */
@@ -69,7 +74,7 @@ export type AlertRow = {
  * The Access tab's data. **What its reads return and the tab doesn't keep, and why** (nothing is
  * dropped by accident):
  * - `accessPoints.accessForBody`: a lot's `amenities`, `capacity` and `fee`, and a put-in's
- *   `approachAscentM`, `approachRouted`, `approachKindOverride` and `postedAccess`: the skater's
+ *   `approachAscentM`, `approachKindOverride` and `postedAccess`: the skater's
  *   sheet says these; the console's tab is about who rules and who vouches, and the board draws
  *   none of them. `blockedIds` is drawn through the alerts that block.
  * - `landmarks.listForBody`: only the name and point, for where each launch is.
@@ -229,6 +234,8 @@ export type AccessInput = {
     source: string;
     parkingAreaId?: string | undefined;
     approachMeters?: number | undefined;
+    /** `false`: `approachMeters` is a straight line, a floor. */
+    approachRouted?: boolean | undefined;
     approachPath?: LatLng[] | undefined;
   }>;
   parking: ReadonlyArray<{ id: string; coord: LatLng; name?: string | undefined }>;
@@ -260,9 +267,11 @@ export function accessFrom(
         ...(p.name === undefined ? { unnamed: true } : {}),
         source,
         at: p.coord,
-        walkM:
+        walk:
           p.parkingAreaId !== undefined && p.approachMeters !== undefined
-            ? Math.round(p.approachMeters)
+            ? // Only `false` is a straight line: a row from before the flag held a routed walk, as
+              // core's `describeApproach` reads it.
+              { meters: Math.round(p.approachMeters), atLeast: p.approachRouted === false }
             : null,
         approach: p.approachPath && p.approachPath.length > 1 ? p.approachPath : null,
         where: source === 'official' ? null : whereOf(p.coord, landmarks),

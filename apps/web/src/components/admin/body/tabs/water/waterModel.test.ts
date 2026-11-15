@@ -59,9 +59,32 @@ describe('the words', () => {
     });
     expect(sourceWords('hydrolakes_reported', null).note).toBe('From its reported volume');
     expect(sourceWords('globathy', null).note).toBe('Modeled · an estimate');
-    expect(sourceWords('operator', null)).toEqual({ name: 'A moderator', note: 'Entered by hand' });
+    // A moderator's depth carries its evidence, or says it has none — never a bare hand entry.
+    expect(sourceWords('operator', null)).toEqual({
+      name: 'A moderator',
+      note: 'Entered by hand · no source noted',
+    });
+    expect(sourceWords('operator', null, 'NH Fish & Game, 1998 chart').note).toBe(
+      'NH Fish & Game, 1998 chart',
+    );
     expect(sourceWords('lagos_us', null).name).toBe('LAGOS-US DEPTH');
     expect(sourceWords('osm_tag', null).name).toBe('OpenStreetMap');
+  });
+
+  it('keeps the note a moderator gave for a hand-entered depth, trimmed; blank is none', () => {
+    const at = (depthSourceNote?: string) =>
+      waterFrom(
+        {
+          name: 'x',
+          maxDepthM: 7,
+          maxDepthSource: 'operator',
+          ...(depthSourceNote === undefined ? {} : { depthSourceNote }),
+        },
+        { hasBathymetry: false },
+      ).depthNote;
+    expect(at(' NH Fish & Game, 1998 chart ')).toBe('NH Fish & Game, 1998 chart');
+    expect(at('  ')).toBeNull();
+    expect(at()).toBeNull();
   });
 
   it('reads a modeled source as an estimate, a measured one plainly', () => {

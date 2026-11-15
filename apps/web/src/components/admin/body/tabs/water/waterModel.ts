@@ -64,14 +64,17 @@ export type Bathymetry = {
  * The Water tab's data. **What its reads return and the tab doesn't keep, and why**:
  * - `bodyConsole.consoleExtras`: only `hasBathymetry`; the towns, the outline's trust and the touching
  *   bodies are the frame's.
- * - `waterBodies.get`: the depths, their sources, the interior and weather sample points, the box and
- *   the states are kept; everything else is the frame's or another tab's.
+ * - `waterBodies.get`: the depths, their sources and a moderator's note on where a depth came from,
+ *   the interior and weather sample points, the box and the states are kept; everything else is the
+ *   frame's or another tab's.
  */
 export type WaterData = {
   name: string;
   /** The body's (first) state, for a state survey's name. */
   state: string | null;
   depth: Depth;
+  /** The evidence behind a moderator's depth (`depthSourceNote`); `null` when none was noted. */
+  depthNote: string | null;
   sampling: Sampling;
   /** The bathymetry state, in its read's state (`bodyConsole.consoleExtras`). */
   bathymetry: Loadable<Bathymetry>;
@@ -88,6 +91,8 @@ export type WaterBody = {
   maxDepthM?: number;
   meanDepthSource?: DepthSource;
   maxDepthSource?: DepthSource;
+  /** What a moderator's depth was read off ("NH Fish & Game, 1998 chart"), when one was noted. */
+  depthSourceNote?: string;
   interiorPoint?: LatLng;
   weatherSamplePoints?: readonly LatLng[];
   bbox?: BBox;
@@ -133,6 +138,8 @@ export function bathymetryOf(hasBathymetry: boolean): Bathymetry {
 export function sourceWords(
   source: DepthSource,
   state: string | null,
+  /** The record's `depthSourceNote`: the evidence behind a moderator's depth. */
+  depthNote: string | null = null,
 ): { name: string; note: string | null } {
   switch (source) {
     case 'state_agency':
@@ -144,7 +151,9 @@ export function sourceWords(
     case 'globathy':
       return { name: 'GLOBathy', note: 'Modeled · an estimate' };
     case 'operator':
-      return { name: 'A moderator', note: 'Entered by hand' };
+      // The record's evidence for a hand-entered depth ("NH Fish & Game, 1998 chart") is what makes
+      // it checkable; without one, the number is a moderator's word alone, and says so.
+      return { name: 'A moderator', note: depthNote ?? 'Entered by hand · no source noted' };
     default: {
       const label = DEPTH_SOURCE_LABELS[source];
       return { name: label.charAt(0).toUpperCase() + label.slice(1), note: null };
@@ -193,6 +202,7 @@ export function waterFrom(
     name: body.name,
     state: body.states?.[0] ?? null,
     depth: depthOf(body, extras.candidates),
+    depthNote: body.depthSourceNote?.trim() || null,
     sampling: {
       interior: body.interiorPoint ?? null,
       points:

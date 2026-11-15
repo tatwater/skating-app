@@ -138,7 +138,7 @@ function DepthSection({
   const [mean, setMean] = useDraft<DepthSource | null>(meanFrom);
   const [max, setMax] = useDraft<DepthSource | null>(maxFrom);
   const height = (r: DepthRung) =>
-    sourceWords(r.source, data.state).note !== null ? ROW_NOTED : ROW;
+    sourceWords(r.source, data.state, data.depthNote).note !== null ? ROW_NOTED : ROW;
   const rule = 'border-0 border-b border-dotted border-line last:border-b-0';
 
   const column = (
@@ -169,7 +169,7 @@ function DepthSection({
                 unit="m"
                 estimate={isEstimate(r.source)}
                 now={now === r.source}
-                aria-label={`${sourceWords(r.source, data.state).name}, ${depthFigure(value)} m`}
+                aria-label={`${sourceWords(r.source, data.state, data.depthNote).name}, ${depthFigure(value)} m`}
               />
             )}
           </div>
@@ -192,7 +192,7 @@ function DepthSection({
           <div className="flex">
             <ul className="flex min-w-0 flex-1 flex-col">
               {rungs.map((r, i) => {
-                const words = sourceWords(r.source, data.state);
+                const words = sourceWords(r.source, data.state, data.depthNote);
                 return (
                   <li
                     key={r.source}

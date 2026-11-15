@@ -15,6 +15,7 @@ export const MASCOMA_BBOX = {
 export const MASCOMA_WATER: WaterData = {
   name: 'Mascoma Lake',
   state: 'NH',
+  depthNote: null,
   depth: {
     rungs: [
       { source: 'state_agency', mean: 9.4, max: 24 },
@@ -47,6 +48,7 @@ export const MASCOMA_WATER: WaterData = {
  */
 export const MASCOMA_WATER_AS_READ: WaterData = {
   ...MASCOMA_WATER,
+  depthNote: null,
   depth: {
     rungs: [{ source: 'state_agency', mean: 9.4, max: 24 }],
     meanFrom: 'state_agency',
@@ -60,6 +62,7 @@ export const MASCOMA_WATER_AS_READ: WaterData = {
 export const CHAMPLAIN_WATER: WaterData = {
   name: 'Lake Champlain',
   state: 'VT',
+  depthNote: null,
   depth: { rungs: [], meanFrom: null, maxFrom: null, others: null },
   sampling: {
     interior: { lat: 44.5, lng: -73.3 },

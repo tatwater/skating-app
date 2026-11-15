@@ -57,6 +57,16 @@ const TOOLS = {
   rules: 'Writing what a sign says comes with the posted-rules editor.',
 };
 
+/**
+ * A walk a moderator's lot link stored: a straight line from the lot, until the ETL routes it.
+ * Trails weave, so it is a floor — written as one, never as a measured route. Distances only: no
+ * word here says the way or the ice is safe (D3).
+ */
+export const WALK_WORDS = {
+  atLeast: 'at least',
+  why: 'A straight line from the lot. The walk is at least this, and can be much longer.',
+};
+
 /** The group heads' sub-heading row (the thresholds sheet's): 13 px sentence case over a rule. */
 const GROUP =
   'flex items-baseline justify-between border-0 border-b border-solid border-line2 pt-(--space-2_5) pb-(--space-1_5) first:pt-(--space-1)';
@@ -329,10 +339,17 @@ function PutInItem({
   lit: string | null;
 } & Pick<AccessViewProps, 'canPlace' | 'onMakeOfficial' | 'onHide'>) {
   const walk =
-    p.walkM !== null ? (
-      <span className="flex items-baseline justify-end gap-(--space-2) justify-self-end">
+    p.walk !== null ? (
+      <span
+        data-slot="put-in-walk"
+        title={p.walk.atLeast ? WALK_WORDS.why : undefined}
+        className="flex items-baseline justify-end gap-(--space-2) justify-self-end"
+      >
+        {p.walk.atLeast && (
+          <span className="text-kick whitespace-nowrap text-fg3">{WALK_WORDS.atLeast}</span>
+        )}
         <span className="font-(family-name:--family-mono) text-mono-sm font-medium text-fg1 tabular-nums">
-          {p.walkM.toLocaleString('en-US')}
+          {p.walk.meters.toLocaleString('en-US')}
         </span>
         <span className="w-(--space-3) font-(family-name:--family-mono) text-kick text-fg3">m</span>
       </span>

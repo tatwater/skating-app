@@ -104,9 +104,9 @@ describe('accessFrom', () => {
       undefined,
       landmarks,
     );
-    expect(data.putIns.map((p) => [p.id, p.source, p.walkM, p.where])).toEqual([
+    expect(data.putIns.map((p) => [p.id, p.source, p.walk, p.where])).toEqual([
       ['f', 'official', null, null],
-      ['o', 'osm', 715, 'Mascoma Lake Dam'],
+      ['o', 'osm', { meters: 715, atLeast: false }, 'Mascoma Lake Dam'],
       ['d', 'derived', null, null],
     ]);
     expect(data.putIns[0]?.name).toBe('Unnamed put-in');
@@ -120,6 +120,34 @@ describe('accessFrom', () => {
     ]);
     expect(data.postedRule).toBeNull();
     expect(data.lots).toEqual([{ id: 'lot', name: 'Dam lot', at: { lat: 3, lng: 3 } }]);
+  });
+
+  it('keeps a straight-line walk a floor: a lot a moderator linked is at least that far', () => {
+    const walkOf = (approachRouted: boolean | undefined) =>
+      accessFrom(
+        {
+          putIns: [
+            {
+              id: 'o',
+              coord: { lat: 43.6489, lng: -72.1793 },
+              source: 'official',
+              parkingAreaId: 'lot',
+              approachMeters: 412.4,
+              ...(approachRouted === undefined ? {} : { approachRouted }),
+            },
+          ],
+          parking: [{ id: 'lot', coord: { lat: 3, lng: 3 } }],
+          alerts: [],
+        },
+        rulingFrom(undefined, 'wb1', 'hidden'),
+        undefined,
+        [],
+      ).putIns[0]?.walk;
+    // `linkLot` stores the crow-flies leg with `approachRouted: false`; trails weave, so it's a floor.
+    expect(walkOf(false)).toEqual({ meters: 412, atLeast: true });
+    expect(walkOf(true)).toEqual({ meters: 412, atLeast: false });
+    // A row from before the flag existed: the ETL only ever stored routed walks, as core reads it.
+    expect(walkOf(undefined)).toEqual({ meters: 412, atLeast: false });
   });
 
   it('says the posted rule in words, and nothing for a rule with nothing to say', () => {
