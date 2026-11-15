@@ -1,0 +1,368 @@
+import {
+  countText,
+  type PersonRead,
+  plural,
+  ROLE_WORDS,
+  type Role,
+  timeLeftWords,
+} from './personModel';
+
+/**
+ * The page's levers, from the person read — pure. **`can` is the law**: a control the server would
+ * refuse is never drawn as available, and nothing here decides a permission of its own. Where
+ * `can` has no entry of its own for a write, the entry the server computes by the same rule is
+ * read (`lib/peopleCan.writeRefusal`): every posting right given back, flagging switched back on and
+ * the bounty limit are refused exactly when *Restrict* is (`can.restrict`), and a give-back never
+ * asks a reason. The one control drawn though refused is the board's: the last ledger editor's
+ * *Step down* / *Revoke*, disabled, with why.
+ *
+ * Rows hold facts and say what may be done; a row with nothing to say and nothing to do is left out
+ * (a page about yourself shows its facts, and no levers on yourself).
+ */
+
+export type LeverTone = 'quiet' | 'ok' | 'warn' | 'bad';
+
+export type Permission = 'reports' | 'hazards' | 'comments' | 'flagging';
+
+/** What a lever's button does, as the page asks it of the server. */
+export type PersonAction =
+  | { kind: 'right'; permission: Permission; allowed: boolean; reason?: string }
+  | { kind: 'bountyLimit'; limit: number | null; reason?: string }
+  | { kind: 'suspend'; until: number; reason: string; extend: boolean }
+  | { kind: 'lift' }
+  | { kind: 'ban'; reason: string }
+  | { kind: 'role'; role: Role; reason?: string }
+  | { kind: 'ledger'; grant: boolean; reason?: string };
+
+/** One button on a lever row. */
+export type LeverButton =
+  | {
+      id: string;
+      label: string;
+      /** How pressing it proceeds: a write at once, or a dialog. */
+      opens:
+        | { kind: 'now'; action: PersonAction }
+        | { kind: 'reason'; ask: ReasonAsk }
+        | { kind: 'suspend'; extend: boolean }
+        | { kind: 'bounty' }
+        | { kind: 'roleMenu'; items: RoleItem[] };
+      danger?: boolean;
+    }
+  | {
+      id: string;
+      label: string;
+      /** Drawn, but refused: the board's tooltip says why. */
+      refused: { title: string; body: string };
+    };
+
+/** A take-away asked in the reason dialog. */
+export type ReasonAsk = {
+  title: string;
+  description: string;
+  confirm: string;
+  /** The write, given the reason typed. */
+  action: (reason: string) => PersonAction;
+  destructive?: boolean;
+};
+
+export type RoleItem = {
+  role: Role;
+  label: string;
+  /** A demotion asks a reason; a promotion asks none. */
+  needsReason: boolean;
+  /** "Also revokes ledger editing", where the read says it applies. */
+  note: string | null;
+};
+
+export type LeverRow = {
+  key: string;
+  label: string;
+  status: string;
+  tone: LeverTone;
+  /** A second line under the row. */
+  second?: string;
+  buttons: LeverButton[];
+  /** Two buttons drawn as one joined group (Extend | Lift). */
+  joined?: boolean;
+  /** The row's action slot holds the "Not available yet" mark. */
+  unavailable?: boolean;
+};
+
+const RIGHT_WORDS: Record<Exclude<Permission, 'flagging'>, { label: string; verb: string }> = {
+  reports: { label: 'Reports', verb: 'post reports' },
+  hazards: { label: 'Hazards', verb: 'mark hazards' },
+  comments: { label: 'Comments', verb: 'comment' },
+};
+
+const LAST_EDITOR = {
+  title: 'Give it to another admin first',
+  body: 'The ledger always keeps an editor.',
+};
+
+/** "Can do": the posting rights, the bounty limit and flagging. */
+export function canDoRows(p: PersonRead): LeverRow[] {
+  const { rights, can } = p;
+  const rows: LeverRow[] = (['reports', 'hazards', 'comments'] as const).map((permission) => {
+    const w = RIGHT_WORDS[permission];
+    const allowed = rights[permission];
+    const buttons: LeverButton[] = [];
+    if (can.restrict.ok) {
+      buttons.push(
+        allowed
+          ? {
+              id: `${permission}-restrict`,
+              label: 'Restrict',
+              opens: {
+                kind: 'reason',
+                ask: {
+                  title: `Restrict ${w.label.toLowerCase()}?`,
+                  description: `${p.displayName} won’t be able to ${w.verb} until it’s restored. Everything else they can do stays as it is.`,
+                  confirm: 'Restrict',
+                  action: (reason) => ({ kind: 'right', permission, allowed: false, reason }),
+                },
+              },
+            }
+          : {
+              id: `${permission}-restrict`,
+              label: 'Restore',
+              opens: { kind: 'now', action: { kind: 'right', permission, allowed: true } },
+            },
+      );
+    }
+    return {
+      key: permission,
+      label: w.label,
+      status: allowed ? 'Allowed' : 'Restricted',
+      tone: allowed ? 'ok' : 'bad',
+      buttons,
+    };
+  });
+
+  const limit = rights.bountyLimit;
+  const below = limit !== null && limit < rights.defaultBountyLimit;
+  rows.push({
+    key: 'bounties',
+    label: 'Bounties',
+    status:
+      limit === null
+        ? `Limit ${rights.defaultBountyLimit} · the default`
+        : `Limit ${limit} (default ${rights.defaultBountyLimit})`,
+    tone: below ? 'warn' : 'ok',
+    buttons: can.restrict.ok
+      ? [{ id: 'bounties-set', label: 'Set limit', opens: { kind: 'bounty' } }]
+      : [],
+  });
+
+  const filed = `${countText(rights.flagsFiled)} filed`;
+  const flagButtons: LeverButton[] = [];
+  if (rights.flagging && can.flaggingOff.ok) {
+    flagButtons.push({
+      id: 'flagging-switch',
+      label: 'Switch off',
+      opens: {
+        kind: 'reason',
+        ask: {
+          title: 'Switch off flagging?',
+          description: `${p.displayName}’s flags will be refused until it’s switched back on. What they already filed stays in the queue.`,
+          confirm: 'Switch off',
+          action: (reason) => ({ kind: 'right', permission: 'flagging', allowed: false, reason }),
+        },
+      },
+    });
+  } else if (!rights.flagging && can.restrict.ok) {
+    flagButtons.push({
+      id: 'flagging-switch',
+      label: 'Switch on',
+      opens: { kind: 'now', action: { kind: 'right', permission: 'flagging', allowed: true } },
+    });
+  }
+  rows.push({
+    key: 'flagging',
+    label: 'Flagging',
+    status: rights.flagging ? `Allowed · ${filed}` : `Switched off · ${filed}`,
+    tone: rights.flagging ? 'ok' : 'bad',
+    buttons: flagButtons,
+  });
+  return rows;
+}
+
+/** The role menu's choices: every role `can` allows but the one held. */
+export function roleItems(p: PersonRead): RoleItem[] {
+  const revokesLedger = p.ledger?.editor === true;
+  return (['admin', 'moderator', 'member'] as const)
+    .filter((role) => role !== p.role && p.can.role[role].ok)
+    .map((role) => {
+      const verdict = p.can.role[role];
+      return {
+        role,
+        label: role === 'member' ? 'Make skater' : `Make ${role}`,
+        needsReason: verdict.ok && verdict.needsReason,
+        note: revokesLedger && role !== 'admin' ? 'Also revokes ledger editing' : null,
+      };
+    });
+}
+
+/** "Account": the role, ledger editing, the suspension, the ban, and hidden content. */
+export function accountRows(p: PersonRead, opts: { now: number; self: boolean }): LeverRow[] {
+  const { can } = p;
+  const rows: LeverRow[] = [];
+
+  const items = roleItems(p);
+  rows.push({
+    key: 'role',
+    label: 'Role',
+    status: ROLE_WORDS[p.role],
+    tone: p.role === 'member' ? 'quiet' : 'ok',
+    buttons:
+      items.length > 0
+        ? [{ id: 'role-menu', label: 'Change role', opens: { kind: 'roleMenu', items } }]
+        : [],
+  });
+
+  if (p.ledger !== null && can.ledger !== null) {
+    const { editor, last } = p.ledger;
+    const word = opts.self ? 'Step down' : 'Revoke';
+    let buttons: LeverButton[] = [];
+    if (!editor && can.ledger.grant.ok) {
+      buttons = [
+        {
+          id: 'ledger',
+          label: 'Grant',
+          opens: { kind: 'now', action: { kind: 'ledger', grant: true } },
+        },
+      ];
+    } else if (editor && can.ledger.revoke.ok) {
+      buttons = [
+        {
+          id: 'ledger',
+          label: word,
+          opens: {
+            kind: 'reason',
+            ask: {
+              title: opts.self ? 'Step down from ledger editing?' : 'Revoke ledger editing?',
+              description: opts.self
+                ? 'You won’t be able to edit the ledger or give it to anyone. Another admin can give it back.'
+                : `${p.displayName} won’t be able to edit the ledger or give it to anyone.`,
+              confirm: word,
+              action: (reason) => ({ kind: 'ledger', grant: false, reason }),
+            },
+          },
+        },
+      ];
+    } else if (editor && last) {
+      buttons = [{ id: 'ledger', label: word, refused: LAST_EDITOR }];
+    }
+    rows.push({
+      key: 'ledger',
+      label: 'Ledger editing',
+      status: editor ? (last ? 'On · the only editor' : 'On') : 'Off',
+      tone: editor ? 'ok' : 'quiet',
+      buttons,
+    });
+  }
+
+  const note = p.statusNote;
+  const suspended = p.status === 'suspended';
+  if (suspended) {
+    const until = note?.suspendedUntil ?? null;
+    const lapsed = note?.lapsed === true;
+    const buttons: LeverButton[] = [];
+    if (can.suspend.ok && !lapsed) {
+      buttons.push({ id: 'suspend', label: 'Extend', opens: { kind: 'suspend', extend: true } });
+    }
+    if (can.lift.ok) {
+      buttons.push({ id: 'lift', label: 'Lift', opens: { kind: 'now', action: { kind: 'lift' } } });
+    }
+    rows.push({
+      key: 'suspension',
+      label: 'Suspension',
+      status: lapsed
+        ? 'Ran its course'
+        : until === null
+          ? 'Until lifted'
+          : timeLeftWords(until, opts.now),
+      tone: lapsed ? 'quiet' : 'warn',
+      buttons,
+      joined: buttons.length > 1,
+    });
+  } else if (can.suspend.ok) {
+    rows.push({
+      key: 'suspension',
+      label: 'Suspension',
+      status: 'Not suspended',
+      tone: 'quiet',
+      buttons: [{ id: 'suspend', label: 'Suspend', opens: { kind: 'suspend', extend: false } }],
+    });
+  }
+
+  if (p.status === 'banned') {
+    rows.push({
+      key: 'ban',
+      label: 'Ban',
+      status: 'Banned · account kept for appeal',
+      tone: 'bad',
+      buttons: can.lift.ok
+        ? [{ id: 'lift', label: 'Lift', opens: { kind: 'now', action: { kind: 'lift' } } }]
+        : [],
+    });
+  } else if (can.ban.ok) {
+    rows.push({
+      key: 'ban',
+      label: 'Ban',
+      status: 'Account kept for appeal',
+      tone: 'quiet',
+      buttons: [
+        {
+          id: 'ban',
+          label: 'Ban',
+          danger: true,
+          opens: {
+            kind: 'reason',
+            ask: {
+              title: `Ban ${p.displayName}?`,
+              description:
+                'They’re signed out and can’t sign in again until the ban is lifted. The account and everything they posted are kept for an appeal.',
+              confirm: 'Ban',
+              destructive: true,
+              action: (reason) => ({ kind: 'ban', reason }),
+            },
+          },
+        },
+      ],
+    });
+  }
+
+  if (p.hidden.total > 0) {
+    rows.push({
+      key: 'hidden',
+      label: 'Hidden content',
+      status: `${countText({ count: p.hidden.total, capped: p.hidden.capped })} ${p.hidden.total === 1 && !p.hidden.capped ? 'item' : 'items'}`,
+      tone: 'quiet',
+      second: hiddenKinds(p.hidden),
+      buttons: [],
+      unavailable: true,
+    });
+  }
+  return rows;
+}
+
+const KIND_WORDS: Record<keyof PersonRead['hidden']['byKind'], [string, string]> = {
+  report: ['report', 'reports'],
+  post: ['post', 'posts'],
+  comment: ['comment', 'comments'],
+  hazard: ['hazard', 'hazards'],
+  accessAlert: ['access alert', 'access alerts'],
+};
+
+/** "2 reports · 2 comments": each kind with any, in a fixed order. No photos: they have no verdicts. */
+export function hiddenKinds(hidden: PersonRead['hidden']): string {
+  return (Object.keys(KIND_WORDS) as Array<keyof typeof KIND_WORDS>)
+    .filter((k) => hidden.byKind[k] > 0)
+    .map((k) => plural(hidden.byKind[k], ...KIND_WORDS[k]))
+    .join(' · ');
+}
+
+/** Every button a set of rows draws, menu items included — for the property tests. */
+export function allButtons(rows: readonly LeverRow[]): LeverButton[] {
+  return rows.flatMap((r) => r.buttons);
+}
