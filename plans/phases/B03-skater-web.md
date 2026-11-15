@@ -1138,3 +1138,43 @@ tab's draft, and its Post clears the slot and every stored photo. The same happe
 author presses *Post* in the first tab. It costs a draft's stored copy, never sends anything the
 author did not press, and predates this fix; the cure is per-draft records or one tab owning the
 resend.
+
+### 8.8 A lake's X removed it, and the photo sort put it back
+
+The founder (2026-11-15): the X on a lake's tab didn't remove it, so a tab opened by accident could not
+be closed. The X did remove it — `removeLake` takes the Report out and moves its photos to the Post's
+pool, unplaced, as the dialog says — and then `PhotoSorter` opened it again. The sort remembered only
+the ids the pool held, so a removed Report's photos looked new; it looked their place up and laid them
+onto a tab for their lake and day. Every lake whose photos have a place came back, which is every tab
+the sort opens on its own. The sort's memory now notes every photo the sheet has shown on a Report
+(`photoSort.openSortMemory` / `photosToSort`): a photo is sorted once, when it first reaches the pool,
+and a removed lake stays removed across closing the sheet and reloading — unless the author picks a
+new photo there, which opens a tab for that photo alone.
+
+The class, checked: a removed lake's photos go back to the Post, where the day's rule may put one on
+another lake already on the sheet whose visit holds its time (`removeLake`'s written design, unpinned)
+and the rest wait in the pool, which the flush refuses until each is placed or left out — so none
+posts as a Report of its own, and the dialog now says exactly this; removing the only lake starts it over on *Which lake?* with its photos kept; a photo's X and
+its menu's *Leave out* release the file only once the sheet has taken the removal (a sent Post refuses
+it, and the photo kept its record but lost its file). `sheetRemoval.properties.test.ts` drives picks,
+removals, reopens and reloads against the real store and blob store, on the shared seed policy now in
+`sheetStore.propertyRuns.ts`; with the fix taken out it fails on the founder's sequence.
+
+### 8.9 A track after the lake, and a caret that says its minute
+
+**No track could be added once a lake was chosen** (founder, 2026-11-15). The console B03 replaced drew
+*+ Add your track* on the instrument, and board 5.1 draws *Add your GPS track* at the end of the map
+key (9.8 in the phone's strip); the re-skin mounted the GPX import only on the *Which lake?* card, which
+gives way to the instrument the moment a lake is picked. `AddTrack` puts the same import back on the
+instrument and the phone strip for every create Report without a track — a second Report, after a
+failed send, after a reload — behind the same `gpx-import` flag. The docs seed a track's lake and
+times only where the sheet is blank (`seedFromTrack`) and do not say what a track that disagrees should
+do, so the conservative reading: a track on another lake, off every known lake, or from another day
+than the author's chosen end is refused with a sentence and not linked (`trackRefusal`); the author's
+lake and day stand and nothing is re-sorted. The track stays in their activities (the server ingested
+it to resolve its lake). Garmin is not built anywhere — the card and Settings say *Coming soon* (D24) —
+so there is no Garmin connection to restore, before the lake or after.
+
+**A dragged caret read "END …" until it settled.** It now shows the minute a release would save, by
+core's `caretLabel` — the settled caret's own rule, in the lake's zone — in a fixed box of tabular
+figures; each caret is a slider with arrow, page and Home/End steps and an `aria-valuetext`.

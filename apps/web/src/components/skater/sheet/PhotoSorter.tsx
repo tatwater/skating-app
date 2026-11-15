@@ -8,7 +8,10 @@ import { useBodyOutlines } from '@/lib/bodyOutlines';
 import { updateSheet } from '@/lib/sheetStore';
 import {
   addPhotosByLakeAndDay,
-  applyPhotoTabs,
+  applySortedPool,
+  openSortMemory,
+  photosToSort,
+  rememberReportPhotos,
   type SortLake,
   sortNote,
   sortPhotosIntoTabs,
@@ -72,10 +75,9 @@ export function PhotoSorter({
   }, []);
   const creating = post.mode.kind === 'create';
   const pool = creating ? unassignedPhotos(post) : [];
-  // What the pool already held when the sheet opened (a restored draft's `?` photos) is the
-  // author's to place: only photos that arrive while the sheet is open are sorted.
-  const seen = useRef<Set<string> | null>(null);
-  if (seen.current === null) seen.current = new Set(pool.map((p) => p.id));
+  // Each photo is sorted once, when it first reaches the pool while the sheet is open (`openSortMemory`).
+  const [seen] = useState(() => openSortMemory(post));
+  rememberReportPhotos(seen, post);
   const mounted = useRef(true);
   useEffect(
     () => () => {
@@ -91,10 +93,8 @@ export function PhotoSorter({
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the pool's ids; the photos ride `pool`.
   useEffect(() => {
-    const known = seen.current ?? new Set<string>();
-    const fresh = pool.filter((p) => !known.has(p.id));
+    const fresh = photosToSort(seen, post);
     if (fresh.length === 0) return;
-    for (const p of fresh) known.add(p.id);
     if (!fresh.some((p) => p.coord !== undefined)) return;
     const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     void (async () => {
@@ -121,19 +121,14 @@ export function PhotoSorter({
       if (tabs.length === 0) return;
       let first: string | null = null;
       updateSheet((current) => {
-        // Only what is still in the pool: the author may have placed some while we looked.
-        const pooled = new Set(unassignedPhotos(current).map((p) => p.id));
-        const still = tabs
-          .map((t) => ({ ...t, photoIds: t.photoIds.filter((id) => pooled.has(id)) }))
-          .filter((t) => t.photoIds.length > 0);
-        if (still.length === 0) return current;
-        const out = applyPhotoTabs(current, still, {
+        const out = applySortedPool(current, tabs, {
           activeId: latest.current.activeId,
           timeZone,
           now: Date.now(),
           mint,
           outlines: latest.current.outlines,
         });
+        if (out === null) return current;
         first = out.firstReportId;
         return out.post;
       });

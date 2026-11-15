@@ -133,6 +133,16 @@ Each entry: the date, where it was found, what is wrong or missing, and where th
   the doc and the output should agree. *Not yet planned.*
 - **2026-11-14 · checked by** the B01-1c follow-up — the delete confirmations' 30-day statement is
   already owed above (§0.1, and board 14 of §5); nothing new to add.
+- **2026-11-15 · found by** the B01 build — a reported ridge crossing reads "Still crossable", in green,
+  in the skater apps: worded as the app's claim, not the reporter's. The founder proposes "Reported
+  crossable", so the claim stays the reporter's (D3); the color and the final wording are still open
+  with him. *Not yet planned.*
+- **2026-11-15 · found by** the B01 Bodies writes (B01-3d) — moderator aliases will be searchable by
+  skaters (the server side is being built separately); how a result shows that it matched an alias
+  rather than the lake's name is a skater-UI question. *Not yet planned.*
+- **2026-11-15 · found by** the B01 Bodies writes (B01-3d) — a moderator's imagery pass override (a
+  satellite pass shown or hidden) must be honored by the web and phone timelines; neither passes it
+  yet. Its own PR, soon. *Not yet planned.*
 
 ---
 
