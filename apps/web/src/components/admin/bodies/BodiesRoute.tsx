@@ -28,7 +28,6 @@ import {
   UNREAD_LIST,
 } from './bodiesData';
 import {
-  type GetResult,
   type LibraryRow,
   type ListArgs,
   type ListSummary,

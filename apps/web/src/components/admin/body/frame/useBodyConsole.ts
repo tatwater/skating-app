@@ -27,7 +27,6 @@ import {
   bodyAsks,
   bodyHistory,
   bodyIdentity,
-  firstName,
   type HistoryAction,
   latestOnBody,
   NOT_COMPUTED,
@@ -36,7 +35,6 @@ import {
   type Removal,
   removalFromLeft,
   removalOf,
-  statusDate,
 } from './bodyModel';
 import type { BodyTabKey } from './bodySearch';
 import { neighborsOf } from './touching';

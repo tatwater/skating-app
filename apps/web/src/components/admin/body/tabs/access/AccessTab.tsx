@@ -2,7 +2,7 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import type { PublicAccessVerdict } from '@skating/core';
 import { useMutation } from 'convex/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import {
   isFailed,
   type Loadable,
