@@ -1,3 +1,4 @@
+import { HAZARD_TYPE_LABELS, HAZARD_TYPES } from '@skating/core';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { dayX, lastReal } from '@/components/kit/day-strips';
@@ -23,7 +24,9 @@ import {
   drawnDay,
   featureRows,
   firstReports,
+  hazardKind,
   hazardRows,
+  kindOf,
   lineSummary,
   monthTicks,
   seasonChoices,
@@ -34,7 +37,7 @@ import {
   wintersFrom,
   winterWindow,
 } from './hazardsModel';
-import { LAKE_CLAIM } from './hazardsWords';
+import { CROSSING_CLAIM, CROSSING_WORDS, LAKE_CLAIM } from './hazardsWords';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -705,6 +708,7 @@ describe('the map', () => {
         hazards: [
           {
             _id: 'h-slush',
+            type: 'slush_hole',
             geometryKind: 'point_radius',
             geometry: { type: 'Point', coordinates: [-72.1757, 43.644] },
             radiusMeters: 40,
@@ -801,6 +805,7 @@ describe('the winter in the lit address', () => {
         hazards: [
           {
             _id: 'h1',
+            type: 'thin_ice',
             geometryKind: 'point_radius',
             geometry: { type: 'Point', coordinates: [-72.15, 43.63] },
             radiusMeters: 40,
@@ -817,5 +822,108 @@ describe('the winter in the lit address', () => {
       id: 'hazard:2023.h1',
       field: { freshness: 'stale', provisional: true },
     });
+  });
+});
+
+describe('every hazard type maps to a deliberate mark and wording — none by default', () => {
+  const at = (type: string) => ({
+    _id: `h-${type}`,
+    type,
+    geometryKind: 'point_radius' as const,
+    geometry: { type: 'Point', coordinates: [-72.15, 43.63] as [number, number] },
+    radiusMeters: 40,
+    freshness: 'fresh' as const,
+    provisional: false,
+  });
+  const row = (type: string) =>
+    hazardRows(
+      [
+        {
+          _id: `h-${type}`,
+          type,
+          freshness: 'fresh',
+          provisional: false,
+          confirmCount: 2,
+          goneCount: 0,
+          lastConfirmedAt: 0,
+          firstReportedAt: 0,
+          status: 'active',
+        },
+      ],
+      2 * 86_400_000,
+    )[0];
+
+  it.each(HAZARD_TYPES)('%s', (type) => {
+    const kind = hazardKind(type);
+    const scene = hazardsMapScene(
+      { season: 2025, current: 2025, hazards: [at(type)], features: [] },
+      null,
+    );
+    const [item] = scene.items;
+    const r = row(type);
+    if (kind === 'crossing') {
+      // Its own mark — never the danger field — named plainly.
+      expect(item).toMatchObject({ kind: 'point', mark: 'passage', name: CROSSING_WORDS.label });
+      expect(item).not.toHaveProperty('field');
+      expect(r).toMatchObject({ kind: 'crossing', type: CROSSING_WORDS.label });
+      expect(r?.sub).toBe('Reported again 2 times');
+      expect(`${r?.type} ${r?.sub}`).not.toMatch(CROSSING_CLAIM);
+      expect(`${r?.type} ${r?.sub}`).not.toMatch(LAKE_CLAIM);
+    } else {
+      expect(kind).toBe('danger');
+      expect(item).toMatchObject({ kind: 'outline', field: { tone: 'hazard' } });
+      expect(r).toMatchObject({ kind: 'danger', type: HAZARD_TYPE_LABELS[type] });
+    }
+  });
+
+  it('only ridge_crossing is a crossing', () => {
+    expect(HAZARD_TYPES.filter((t) => hazardKind(t) === 'crossing')).toEqual(['ridge_crossing']);
+  });
+
+  it('a type this build doesn’t know is read as a danger — the conservative reading', () => {
+    expect(kindOf('frazil_field')).toBe('danger');
+    expect(row('frazil_field')).toMatchObject({ kind: 'danger', type: 'frazil field' });
+  });
+
+  it('a crossing whose skaters say it looks dicey keeps its own mark and plain words', () => {
+    const scene = hazardsMapScene(
+      {
+        season: 2025,
+        current: 2025,
+        hazards: [{ ...at('ridge_crossing'), healingState: 'healing_unsafe' }],
+        features: [],
+      },
+      null,
+    );
+    expect(scene.items[0]).toMatchObject({ kind: 'point', mark: 'passage' });
+  });
+
+  it('a crossing drawn as a line or an area marks the middle of its footprint', () => {
+    const scene = hazardsMapScene(
+      {
+        season: 2025,
+        current: 2025,
+        hazards: [
+          {
+            ...at('ridge_crossing'),
+            geometryKind: 'line' as const,
+            geometry: {
+              type: 'LineString',
+              coordinates: [
+                [-72.16, 43.63],
+                [-72.14, 43.63],
+              ],
+            },
+            radiusMeters: undefined,
+            bufferMeters: 10,
+          },
+        ],
+        features: [],
+      },
+      null,
+    );
+    const item = scene.items[0] as { at: [number, number] };
+    expect(item.at[0]).toBeCloseTo(-72.15, 2);
+    expect(item.at[1]).toBeCloseTo(43.63, 2);
   });
 });

@@ -180,6 +180,26 @@ export const HAZARDS_WORDS = {
 } as const satisfies Record<string, (c: WordsContext) => string>;
 
 /**
+ * Words that would make a reported crossing read as a recommendation — that the ridge is safe,
+ * passable or fine to cross here. A crossing is a report that someone crossed there, with its age,
+ * and nothing more (D3; `ridge_crossing` is a passage marker, never an all-clear).
+ */
+export const CROSSING_CLAIM =
+  /\b(safe|safely|passable|crossable|ok|okay|fine|good|recommended|go|clear|open)\b|(ok|okay|clear|safe|fine|good) to cross|way across/i;
+
+/**
+ * **A reported crossing, in plain words** — never the skater app's "Still crossable" or its
+ * positive green: the console says someone crossed there, how many said so again, and how long ago.
+ */
+export const CROSSING_WORDS = {
+  /** The row's kicker and the map mark's name. */
+  label: 'Reported crossing',
+  /** How many more skaters reported the same crossing. */
+  again: (n: number): string =>
+    n === 0 ? 'No other report' : `Reported again ${n === 1 ? 'once' : `${n} times`}`,
+} as const;
+
+/**
  * The one place "gone" may appear: the votes people cast on one report, counted and attributed —
  * a hazard row's gone-vote squares, and their column.
  */

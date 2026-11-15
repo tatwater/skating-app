@@ -1,3 +1,4 @@
+import { verdictLabel } from '@skating/core';
 import { cleanup, render } from '@testing-library/react';
 import fc from 'fast-check';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -17,6 +18,8 @@ import {
 } from './hazardsFixtures';
 import { archivedRows, hazardRows, wintersFrom, winterWindow } from './hazardsModel';
 import {
+  CROSSING_CLAIM,
+  CROSSING_WORDS,
   HAZARDS_WORDS,
   LAKE_CLAIM,
   VOTE_WORDS,
@@ -69,6 +72,38 @@ describe('the words the tab can say', () => {
     }
     // "unsafe" is a skater's warning, not an all-clear.
     expect('healing, still unsafe'.replace('healing', '')).not.toMatch(LAKE_CLAIM);
+  });
+
+  it('a crossing’s recommendation words are caught too, so its guard is not vacuous', () => {
+    for (const claim of [
+      'Safe to cross',
+      'Safe here',
+      'Passable',
+      'Still crossable',
+      'OK to cross',
+      'Okay to cross',
+      'Clear to cross',
+      'Fine to cross',
+      'Good to cross',
+      'The way across',
+      'Open crossing',
+    ]) {
+      expect(claim).toMatch(CROSSING_CLAIM);
+    }
+    // The skater app's own verdict wording reads as a recommendation: the console never copies it.
+    expect(verdictLabel('still_there', 'ridge_crossing')).toMatch(CROSSING_CLAIM);
+  });
+
+  it('a reported crossing is worded plainly — never safe, passable or clear (fast-check)', () => {
+    expect(CROSSING_WORDS.label).not.toMatch(CROSSING_CLAIM);
+    expect(CROSSING_WORDS.label).not.toMatch(LAKE_CLAIM);
+    fc.assert(
+      fc.property(fc.nat(500), (n) => {
+        const said = CROSSING_WORDS.again(n);
+        expect(said).not.toMatch(CROSSING_CLAIM);
+        expect(said).not.toMatch(LAKE_CLAIM);
+      }),
+    );
   });
 
   it('no headline, empty state, summary or note claims anything about the lake (fast-check)', () => {
@@ -204,6 +239,47 @@ const STATES: Record<string, Partial<HazardsTabViewProps>> = {
   'every read failed': { hazards: 'error', features: 'error', patternsWaiting: 'error' },
   loading: { hazards: undefined, archived: undefined, winters: undefined },
 };
+
+const CROSSING = hazardRows(
+  [
+    {
+      _id: 'h-cross',
+      type: 'ridge_crossing',
+      subAreaName: 'Black Point to Wood Island',
+      freshness: 'fresh',
+      provisional: false,
+      confirmCount: 1,
+      goneCount: 0,
+      lastConfirmedAt: FEB_NOW - 2 * 86_400_000,
+      firstReportedAt: FEB_NOW - 2 * 86_400_000,
+      status: 'active',
+    },
+  ],
+  FEB_NOW,
+);
+
+describe('a reported crossing in the list', () => {
+  it('reads "Reported crossing · 2 d" in neutral ink — not a danger, not a recommendation', () => {
+    const { container } = render(
+      <HazardsTabView {...base} hazards={[...CROSSING, ...hazardRows(FEB_HAZARDS, FEB_NOW)]} />,
+    );
+    const row = container.querySelector<HTMLElement>('[data-slot="hazard-row"]');
+    const kicker = row?.querySelector('[data-slot="hazard-kicker"]');
+    expect(kicker).toHaveTextContent(/^Reported crossing$/);
+    expect(kicker).toHaveAttribute('data-kind', 'crossing');
+    // Neither the warning red nor the amber, and never a positive tone.
+    expect(kicker?.className).toMatch(/\btext-fg2\b/);
+    expect(kicker?.className).not.toMatch(/text-(bad|warn|good|ok|acc)\b/);
+    expect(row).toHaveTextContent('2 d');
+    expect(row).toHaveTextContent('Reported again once');
+    expect(row?.textContent).not.toMatch(CROSSING_CLAIM);
+    // A danger beside it keeps its red.
+    const danger = container.querySelectorAll('[data-slot="hazard-kicker"]')[1];
+    expect(danger).toHaveAttribute('data-kind', 'danger');
+    expect(danger?.className).toMatch(/text-(bad|warn)\b/);
+    cleanup();
+  });
+});
 
 describe('the rendered tab', () => {
   it.each(Object.entries(STATES))('%s claims nothing about the lake', (_name, props) => {

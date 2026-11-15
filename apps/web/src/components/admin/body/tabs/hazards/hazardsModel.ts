@@ -3,6 +3,7 @@ import {
   type BodyFeatureType,
   DEFAULT_REMOVAL_THRESHOLD,
   HAZARD_TYPE_LABELS,
+  HAZARD_TYPES,
   type HazardFreshness,
   type HazardType,
   type Season,
@@ -12,7 +13,7 @@ import {
 } from '@skating/core';
 
 import { dayMonth, statusDate } from '../../frame/bodyModel';
-import { HAZARDS_WORDS, wordsContext } from './hazardsWords';
+import { CROSSING_WORDS, HAZARDS_WORDS, wordsContext } from './hazardsWords';
 
 /**
  * Body › Hazards' arithmetic. Pure, with `now` passed in.
@@ -82,9 +83,60 @@ export type HazardInput = {
   status: string;
 };
 
+// ── What each type is ───────────────────────────────────────────────────────────────────────
+
+/**
+ * What a report of each hazard type is on the console: a **danger** (drawn as a dot field in the
+ * warning tone, its row in red) or a **crossing** — `ridge_crossing`, a report that someone got
+ * across a ridge there (D51/D64), drawn as its own mark and worded plainly, never as a danger and
+ * never as a recommendation. Decided per type, never by a default: a type added to core fails to
+ * compile here until someone says which it is.
+ */
+export type HazardKind = 'danger' | 'crossing';
+
+export function hazardKind(type: HazardType): HazardKind {
+  switch (type) {
+    case 'ridge_crossing':
+      return 'crossing';
+    case 'open_water':
+    case 'thin_ice':
+    case 'overflow_slush':
+    case 'drain_hole':
+    case 'wind_hole':
+    case 'slush_hole':
+    case 'thawed_rotten':
+    case 'wet_crack':
+    case 'drilled_hole':
+    case 'shell_area':
+    case 'air_pockets':
+    case 'pressure_ridge':
+    case 'ice_heave':
+    case 'spring_current':
+    case 'gas_hole':
+    case 'reef_hole':
+      return 'danger';
+    default: {
+      const unhandled: never = type;
+      return unhandled;
+    }
+  }
+}
+
+/**
+ * A row's type as the read sends it (a string). A type this build doesn't know — the server ahead
+ * of the client — is a danger: the conservative reading for a report on the ice (D3).
+ */
+export function kindOf(type: string): HazardKind {
+  return (HAZARD_TYPES as readonly string[]).includes(type)
+    ? hazardKind(type as HazardType)
+    : 'danger';
+}
+
 export type HazardRow = {
   id: string;
-  /** "Pressure ridge". */
+  /** A danger, or a reported crossing (`hazardKind`): its row's words and tone follow. */
+  kind: HazardKind;
+  /** "Pressure ridge"; "Reported crossing". */
   type: string;
   /** "fresh", "aging", "stale", or "unconfirmed" while no second skater has said it's there. */
   state: HazardFreshness | 'unconfirmed';
@@ -101,7 +153,10 @@ export type HazardRow = {
   goneOf: number;
 };
 
-const typeLabel = (t: string) => HAZARD_TYPE_LABELS[t as HazardType] ?? t.replace(/_/g, ' ');
+const typeLabel = (t: string) =>
+  kindOf(t) === 'crossing'
+    ? CROSSING_WORDS.label
+    : (HAZARD_TYPE_LABELS[t as HazardType] ?? t.replace(/_/g, ' '));
 
 /**
  * The rows, freshest first (the server's order). **Every hazard keeps its row**, stale included:
@@ -112,14 +167,20 @@ export function hazardRows(hazards: readonly HazardInput[], now: number): Hazard
     const still = h.clusterConfirmCount ?? h.confirmCount;
     // Only "healing, still unsafe" is amber; `none` and `disputed` are not a healing word.
     const healing = h.healingState === 'healing_unsafe';
+    const kind = kindOf(h.type);
     return {
       id: h._id,
+      kind,
       type: typeLabel(h.type),
       state: h.provisional ? 'unconfirmed' : h.freshness,
       healing,
       place: h.subAreaName ?? null,
       sub: [
-        still === 0 ? 'No other sighting' : `${still} “still there”`,
+        kind === 'crossing'
+          ? CROSSING_WORDS.again(still)
+          : still === 0
+            ? 'No other sighting'
+            : `${still} “still there”`,
         // The skaters' whole verdict, never a bare "healing": the word without "still unsafe"
         // reads as the hazard going away (D3), and a crossing's verdict is its own.
         ...(healing ? [`“${verdictLabel('healing_unsafe', h.type as HazardType)}”`] : []),

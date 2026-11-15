@@ -52,6 +52,7 @@ describe('Hazards’ scene keeps its fields visible', () => {
         hazards: [
           {
             _id: 'h1',
+            type: 'open_water',
             geometryKind: 'point_radius',
             geometry: { type: 'Point', coordinates: [-72.15, 43.63] },
             radiusMeters: 60,

@@ -594,14 +594,15 @@ function HazardList({
   return (
     <div data-slot="hazard-list" className="flex flex-col">
       <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-(--space-3) border-0 border-b border-solid border-line2 pb-(--space-2) text-kick leading-none font-medium tracking-kick text-fg3 uppercase">
-        <span>Hazard</span>
+        {/* A row may be a reported crossing, which is not a hazard: the column names reports. */}
+        <span>Report</span>
         <span className="text-right">Seen</span>
         {/* The vote's name, the one place "gone" is said: a count of skaters' votes on a report. */}
         <span data-slot="gone-votes-head" className="text-right">
           {VOTE_WORDS.column}
         </span>
       </div>
-      <ul aria-label="Hazards on the lake" className="m-0 flex list-none flex-col p-0">
+      <ul aria-label="Reports on the lake" className="m-0 flex list-none flex-col p-0">
         {rows.map((h) => {
           const id = litOf(h.id);
           const on = lit === id;
@@ -621,12 +622,17 @@ function HazardList({
               >
                 <span className="flex min-w-0 flex-col gap-px">
                   <span
+                    data-slot="hazard-kicker"
+                    data-kind={h.kind}
                     className={cn(
                       'text-kick leading-(--lead-snug) font-semibold tracking-kick uppercase',
-                      h.healing ? 'text-warn' : 'text-bad',
+                      // A reported crossing is neither a danger nor a recommendation: neutral ink.
+                      h.kind === 'crossing' ? 'text-fg2' : h.healing ? 'text-warn' : 'text-bad',
                     )}
                   >
-                    {h.type} · {STATE_WORD[h.state]}
+                    {/* A crossing says what it is and nothing about its state: "fresh" would read
+                        as good; its age stands in the Seen column. */}
+                    {h.kind === 'crossing' ? h.type : `${h.type} · ${STATE_WORD[h.state]}`}
                   </span>
                   <span
                     className={cn(

@@ -1,6 +1,8 @@
 import { type HazardShape, hazardFootprint, isBrowsableSeason, type Season } from '@skating/core';
 
-import type { BodyMapScene, MapOutline } from '../../map/mapDescriptors';
+import type { BodyMapScene, LngLat, MapOutline, MapPoint } from '../../map/mapDescriptors';
+import { kindOf } from './hazardsModel';
+import { CROSSING_WORDS } from './hazardsWords';
 
 /**
  * What the Hazards tab asks the frame's map to draw (board 5.4.7): every hazard's footprint and
@@ -26,6 +28,8 @@ export type HazardsMapData = {
   season: Season;
   current: Season;
   hazards: readonly (Shaped & {
+    /** Core's hazard type: a crossing draws its own mark, never a danger field (`hazardKind`). */
+    type: string;
     freshness: 'fresh' | 'aging' | 'stale';
     provisional: boolean;
     healingState?: string | undefined;
@@ -50,6 +54,21 @@ function footprintOf(s: Shaped): Area | null {
     // row still stands, so it is never silently gone.
     return null;
   }
+}
+
+/** Where a crossing's mark goes: its point, or the middle of its footprint's outer ring. */
+function crossingAt(s: Shaped, area: Area): LngLat {
+  const g = s.geometry as { type?: string; coordinates?: unknown };
+  if (g?.type === 'Point' && Array.isArray(g.coordinates)) {
+    const [lng, lat] = g.coordinates as [number, number];
+    return [lng, lat];
+  }
+  const ring = (area.type === 'Polygon' ? area.coordinates[0] : area.coordinates[0]?.[0]) ?? [];
+  const n = Math.max(1, ring.length);
+  return [
+    ring.reduce((t, p) => t + (p[0] ?? 0), 0) / n,
+    ring.reduce((t, p) => t + (p[1] ?? 0), 0) / n,
+  ];
 }
 
 /**
@@ -82,7 +101,7 @@ export function seasonOfLit(lit: string | null | undefined, current: Season): Se
 }
 
 export function hazardsMapScene(data: HazardsMapData, lit: string | null): BodyMapScene {
-  const items: MapOutline[] = [];
+  const items: (MapOutline | MapPoint)[] = [];
   for (const f of data.features) {
     const geometry = footprintOf(f);
     if (geometry === null) continue;
@@ -98,6 +117,19 @@ export function hazardsMapScene(data: HazardsMapData, lit: string | null): BodyM
   for (const h of data.hazards) {
     const geometry = footprintOf(h);
     if (geometry === null) continue;
+    if (kindOf(h.type) === 'crossing') {
+      // A report that someone crossed there: its own mark (two bars, never the danger triangle or
+      // field), named plainly — never as a way across that is safe (D3).
+      items.push({
+        kind: 'point',
+        id: hazardLit(h._id, data.season, data.current),
+        layer: 'hazards',
+        at: crossingAt(h, geometry),
+        mark: 'passage',
+        name: CROSSING_WORDS.label,
+      });
+      continue;
+    }
     items.push({
       kind: 'outline',
       id: hazardLit(h._id, data.season, data.current),
