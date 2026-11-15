@@ -35,9 +35,11 @@
  * pond) is a two-centimeter covered interval like any other; nothing depends on a vertex landing in
  * the right place.
  *
- * Lengths are measured in a local equirectangular frame (meters), centered on the body's latitude
- * rounded to {@link FRAME_STEP_DEG}. Across the half-degree a frame serves the east-west scale drifts
- * under 0.5% (about 12 cm on 25 m), and the frame step lets a long run share prepared towns.
+ * **Lengths owe nothing to vertex order.** Each shoreline segment's ground length is measured from its
+ * own endpoints at its own mid-latitude ({@link groundLength}); a piece of a segment is that share of
+ * it. A local equirectangular frame is used only to tell which side of a line a piece is on, and is
+ * chosen from the body's latitude range (rounded to {@link FRAME_STEP_DEG}, so a long run shares
+ * prepared towns) — never from its vertices' order, a ring's start, or its closing vertex.
  */
 
 import type { MultiPolygon, Polygon, Position } from 'geojson';
@@ -127,6 +129,16 @@ interface Bands {
   height: number;
   rows: number[][];
   edges: Float64Array;
+}
+
+/**
+ * A short segment's length on the ground, in meters, from its endpoints alone: equirectangular at the
+ * segment's own mid-latitude, so it is the same however the ring around it is ordered or started.
+ * Within 1 mm per kilometer of the great-circle length for the segments a ~5 m outline holds.
+ */
+export function groundLength(lng0: number, lat0: number, lng1: number, lat1: number): number {
+  const k = Math.cos((((lat0 + lat1) / 2) * Math.PI) / 180);
+  return Math.hypot((lng1 - lng0) * k * M_PER_DEG, (lat1 - lat0) * M_PER_DEG);
 }
 
 function frameFor(lat: number): { kx: number; ky: number; lat0: number } {
@@ -381,24 +393,30 @@ export function createReach(body: Geom, opts: { shoreM?: number; cache?: ReachCa
   const need = opts.shoreM ?? REGION_SHORE_M;
   const cache = opts.cache;
   const r = REACH_TOUCH_M;
-  let sumLat = 0;
-  let nLat = 0;
+  // The frame is for topology only (which side of a line a piece is on); it comes from the body's
+  // latitude *range*, which no vertex order, ring start or closing vertex can move.
+  let minLat = Number.POSITIVE_INFINITY;
+  let maxLat = Number.NEGATIVE_INFINITY;
   for (const ring of ringsOf(body)) {
     for (const p of ring) {
-      sumLat += p[1] as number;
-      nLat++;
+      const lat = p[1] as number;
+      if (lat < minLat) minLat = lat;
+      if (lat > maxLat) maxLat = lat;
     }
   }
-  const frame = frameFor(nLat > 0 ? sumLat / nLat : 0);
+  const frame = frameFor(minLat <= maxLat ? (minLat + maxLat) / 2 : 0);
   const shape = project(body, frame.kx, frame.ky);
   const edges = edgesOf(shape);
   const edgeCount = edges.length / 4;
+  // Each edge's ground length from its own endpoints, at its own mid-latitude — no frame in it.
   const lengths = new Float64Array(edgeCount);
   let total = 0;
   for (let i = 0; i < edgeCount; i++) {
-    lengths[i] = Math.hypot(
-      (edges[i * 4 + 2] as number) - (edges[i * 4] as number),
-      (edges[i * 4 + 3] as number) - (edges[i * 4 + 1] as number),
+    lengths[i] = groundLength(
+      (edges[i * 4] as number) / frame.kx,
+      (edges[i * 4 + 1] as number) / frame.ky,
+      (edges[i * 4 + 2] as number) / frame.kx,
+      (edges[i * 4 + 3] as number) / frame.ky,
     );
     total += lengths[i] as number;
   }
@@ -570,4 +588,19 @@ const STATE_BY_FIPS: Readonly<Record<string, string>> = {
 export function stateOfSubdivision(externalId: string): string | null {
   const g = geoidOf(externalId);
   return g !== null && g.length === 10 ? (STATE_BY_FIPS[g.slice(0, 2)] ?? null) : null;
+}
+
+/**
+ * **A body's states, from their two ingredients** (D266) — the region rule's answer and the states of
+ * a moderator's pinned towns, unioned and sorted. The one builder every writer of either ingredient
+ * uses, so the two never drift and clearing a pin removes exactly what it added.
+ */
+export function effectiveStates(
+  regionStates: readonly string[],
+  pinnedTownKeys: readonly string[],
+): string[] {
+  const pinned = pinnedTownKeys
+    .map(stateOfSubdivision)
+    .filter((code): code is string => code !== null);
+  return [...new Set([...regionStates, ...pinned])].sort();
 }

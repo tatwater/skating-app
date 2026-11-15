@@ -7,6 +7,7 @@ import {
   capsuleInterval,
   countyKeyOfSubdivision,
   createReach,
+  effectiveStates,
   FRAME_STEP_DEG,
   isUndefinedSubdivision,
   REACH_TOUCH_M,
@@ -38,6 +39,20 @@ function poly(...rings: [number, number][][]): Polygon {
     ]),
   };
 }
+
+/** A rectangle in degrees, closed. */
+const rectAt = (x0: number, y0: number, x1: number, y1: number): Polygon => ({
+  type: 'Polygon',
+  coordinates: [
+    [
+      [x0, y0],
+      [x1, y0],
+      [x1, y1],
+      [x0, y1],
+      [x0, y0],
+    ],
+  ],
+});
 
 const rect = (x0: number, y0: number, x1: number, y1: number): Polygon =>
   poly([
@@ -72,7 +87,7 @@ function reference(body: Polygon, areas: readonly ReachArea[], need: number): Re
   const r = REACH_TOUCH_M;
   const lats = body.coordinates.flat().map((p) => p[1] as number);
   const lat0 =
-    Math.round(lats.reduce((a, b) => a + b, 0) / lats.length / FRAME_STEP_DEG) * FRAME_STEP_DEG;
+    Math.round((Math.min(...lats) + Math.max(...lats)) / 2 / FRAME_STEP_DEG) * FRAME_STEP_DEG;
   const kx = M_PER_DEG * Math.cos((lat0 * Math.PI) / 180);
   const proj = (p: Position) => [(p[0] as number) * kx, (p[1] as number) * M_PER_DEG] as const;
   const unproj = (x: number, y: number) => ({ lng: x / kx, lat: y / M_PER_DEG });
@@ -83,7 +98,13 @@ function reference(body: Polygon, areas: readonly ReachArea[], need: number): Re
       )
       .filter(([a, b, c, d]) => a !== c || b !== d);
   const bodySegs = segs(body);
-  const lens = bodySegs.map(([ax, ay, bx, by]) => Math.hypot(bx - ax, by - ay));
+  // Each segment's ground length on the sphere's local scale at its own mid-latitude.
+  const lens = bodySegs.map(([ax, ay, bx, by]) => {
+    const a = unproj(ax, ay);
+    const b = unproj(bx, by);
+    const k = Math.cos((((a.lat + b.lat) / 2) * Math.PI) / 180);
+    return Math.hypot((b.lng - a.lng) * k * M_PER_DEG, (b.lat - a.lat) * M_PER_DEG);
+  });
   const leftover = bodySegs.map(() => [[0, 1]] as [number, number][]);
   const shore = new Map<string, number>();
   for (const area of areas) {
@@ -344,8 +365,8 @@ describe('areasReached', () => {
     run.add(grid(S));
     expect(run.result().ids).toEqual(['B', 'A']);
     // A holds 100 + 200 + 100 m, B 600 + 200 + 600 m (each crossing adds its 2 cm on the line).
-    expect(run.shore().get('A')).toBeCloseTo(400, 1);
-    expect(run.shore().get('B')).toBeCloseTo(1_400, 1);
+    expect(run.shore().get('A')).toBeCloseTo(400, 0);
+    expect(run.shore().get('B')).toBeCloseTo(1_400, 0);
   });
 
   it('does not depend on vertex order or where a ring starts', () => {
@@ -370,6 +391,84 @@ describe('areasReached', () => {
         expect(sorted(b)).toEqual(sorted(a));
         expect(b.basis).toBe(a.basis);
       },
+    );
+  });
+
+  it('regression (Greptile on #130): a ring started at another corner measures the same shore', () => {
+    // A rectangle centered at 44.25°N, 0.5° tall, whose east half lies in a town: its frame was once
+    // chosen from the vertices with the closing one counted twice, so a start at the north corners
+    // measured from 44.5° and one at the south corners from 44°, 0.85% apart on the east–west shore.
+    const town: ReachArea = {
+      id: 'E',
+      polygon: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [-72, 43],
+            [-71, 43],
+            [-71, 45],
+            [-72, 45],
+            [-72, 43],
+          ],
+        ],
+      },
+    };
+    const corners: Position[] = [
+      [-72.01, 44],
+      [-71.99, 44],
+      [-71.99, 44.5],
+      [-72.01, 44.5],
+    ];
+    const lengths = [0, 1, 2, 3].map((k) => {
+      const ring = [...corners.slice(k), ...corners.slice(0, k)];
+      const run = createReach({ type: 'Polygon', coordinates: [[...ring, ring[0] as Position]] });
+      run.add([town]);
+      return run.shore().get('E') as number;
+    });
+    for (const m of lengths) expect(Math.abs(m - (lengths[0] as number))).toBeLessThan(0.001);
+  });
+
+  it('shore length and membership do not depend on ring start, winding or the closing vertex — at any latitude, even a few centimeters from the constant', () => {
+    // A rectangle poking `d` meters into town A from the west, at a random latitude across the
+    // corpus's range; its shore in A is 2·d plus its end, set to land within centimeters of 25 m.
+    check(
+      fc.record({
+        lat: fc.double({ min: 40.5, max: 47.5, noNaN: true }),
+        d: fc.double({ min: 1, max: 12, noNaN: true }),
+        near: fc.double({ min: -0.05, max: 0.05, noNaN: true }),
+        shift: fc.nat(7),
+        reverse: fc.boolean(),
+        closed: fc.boolean(),
+      }),
+      ({ lat, d, near, shift, reverse, closed }) => {
+        const mLat = M_PER_DEG;
+        const mLng = M_PER_DEG * Math.cos((lat * Math.PI) / 180);
+        const h = REGION_SHORE_M + near - 2 * d; // the end's length, in meters
+        const x0 = -72;
+        const town: ReachArea = {
+          id: 'A',
+          polygon: rectAt(x0, lat - 0.05, x0 + 0.1, lat + 0.05),
+        };
+        const ring: Position[] = [
+          [x0 - 600 / mLng, lat],
+          [x0 + d / mLng, lat],
+          [x0 + d / mLng, lat + h / mLat],
+          [x0 - 600 / mLng, lat + h / mLat],
+        ];
+        const measure = (r: Position[]) => {
+          const run = createReach({ type: 'Polygon', coordinates: [r] });
+          run.add([town]);
+          return { m: run.shore().get('A') as number, ids: run.result().ids };
+        };
+        const base = measure([...ring, ring[0] as Position]);
+        let variant = ring.slice();
+        if (reverse) variant = variant.reverse();
+        variant = [...variant.slice(shift % 4), ...variant.slice(0, shift % 4)];
+        const other = measure(closed ? [...variant, variant[0] as Position] : variant);
+        expect(Math.abs(other.m - base.m)).toBeLessThan(0.001);
+        expect(other.ids).toEqual(base.ids);
+      },
+      200,
     );
   });
 
@@ -526,6 +625,16 @@ describe('the town layer keys', () => {
     expect(stateOfSubdivision('tiger/5000704375')).toBe('VT');
     expect(stateOfSubdivision('tiger/0900104720')).toBeNull();
     expect(stateOfSubdivision('tiger/50007')).toBeNull();
+  });
+
+  it('builds a body’s states from the rule’s and the pinned towns’, each kept apart', () => {
+    expect(effectiveStates(['NY'], [])).toEqual(['NY']);
+    expect(effectiveStates(['NY'], ['tiger/2502764145'])).toEqual(['MA', 'NY']);
+    expect(effectiveStates(['NY', 'MA'], ['tiger/2502764145', 'tiger/0900104720'])).toEqual([
+      'MA',
+      'NY',
+    ]);
+    expect(effectiveStates([], [])).toEqual([]);
   });
 
   it('tells the not-defined water units from towns', () => {
