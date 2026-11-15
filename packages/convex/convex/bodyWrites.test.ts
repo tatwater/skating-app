@@ -672,3 +672,61 @@ describe('the imagery pass overrides', () => {
     await expect(set({})).rejects.toThrow(/merged into another/);
   });
 });
+
+describe('recurrence.waitingCountForBody (BS19)', () => {
+  test('counts the waiting patterns by the tab’s rule; exactly the bound is whole, one more is capped', async () => {
+    const t = harness();
+    const mod = await person(t);
+    const id = await imported(t, 'way/1');
+    const hazardId = await t.run((ctx) =>
+      ctx.db.insert('hazards', {
+        waterBodyId: id,
+        type: 'pressure_ridge',
+        geometryKind: 'point_radius',
+        geometry: { type: 'Point', coordinates: [-72, 44] },
+        radiusMeters: 20,
+        bbox: { minLat: 43.99, minLng: -72.01, maxLat: 44.01, maxLng: -71.99 },
+        createdByUserId: mod.id,
+        photoIds: [],
+        moderationStatus: 'visible',
+        confirmCount: 0,
+        goneCount: 0,
+        createdAt: NOW,
+        firstReportedAt: NOW,
+        lastConfirmedAt: NOW,
+        status: 'active',
+      }),
+    );
+    const insert = (n: number, over: Record<string, unknown> = {}) =>
+      t.run(async (ctx) => {
+        for (let i = 0; i < n; i++) {
+          await ctx.db.insert('hazardRecurrence', {
+            waterBodyId: id,
+            family: 'ridge',
+            geometryKind: 'point_radius',
+            geometry: { type: 'Point', coordinates: [-72, 44] },
+            radiusMeters: 30,
+            bbox: { minLat: 43.99, minLng: -72.01, maxLat: 44.01, maxLng: -71.99 },
+            memberHazardIds: [hazardId],
+            representativeHazardId: hazardId,
+            seasonsObserved: [2024, 2025],
+            windowSeasons: 5,
+            firstReportedDayOfSeasonP25: 180,
+            firstReportedDayOfSeasonP75: 200,
+            distinctAuthorCount: 1,
+            priority: i,
+            publiclyVisible: true,
+            computedAt: NOW,
+            computedForSeason: 2026,
+            ...over,
+          } as never);
+        }
+      });
+    await insert(998);
+    await insert(2, { suppressedAt: NOW });
+    const count = () => mod.as.query(api.recurrence.waitingCountForBody, { waterBodyId: id });
+    expect(await count()).toEqual({ count: 998, capped: false });
+    await insert(1);
+    expect(await count()).toMatchObject({ capped: true });
+  });
+});

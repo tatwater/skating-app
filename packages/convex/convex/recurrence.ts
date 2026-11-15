@@ -562,6 +562,36 @@ export const listForBodyAdmin = query({
   },
 });
 
+/** A pattern still waiting in the pre-ice pass: neither suppressed nor promoted to a known feature. */
+export function isWaitingPattern(
+  c: Pick<Doc<'hazardRecurrence'>, 'suppressedAt' | 'promotedToFeatureId'>,
+): boolean {
+  return c.suppressedAt === undefined && c.promotedToFeatureId === undefined;
+}
+
+/**
+ * **How many patterns wait on a body** (B01-3d, BS19) — the Hazards tab's *patterns waiting*, by the
+ * rule the tab counts (`isWaitingPattern`), over one read one past {@link MAX_BODY_CLUSTERS}: `capped`
+ * when the body holds more clusters than that, and the count is then a floor. `listForBodyAdmin`
+ * stops at the same bound and cannot say so; this is the figure to draw.
+ */
+export const waitingCountForBody = query({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }) => {
+    await requireCapability(ctx, 'body.read');
+    const body = await resolveSurvivor(ctx, waterBodyId);
+    if (!body) return { count: 0, capped: false };
+    const rows = await ctx.db
+      .query('hazardRecurrence')
+      .withIndex('by_water_body', (q) => q.eq('waterBodyId', body._id))
+      .take(MAX_BODY_CLUSTERS + 1);
+    return {
+      count: rows.slice(0, MAX_BODY_CLUSTERS).filter(isWaitingPattern).length,
+      capped: rows.length > MAX_BODY_CLUSTERS,
+    };
+  },
+});
+
 /**
  * The cross-lake pre-first-ice queue (§7.2) — every cluster, ranked, paginated.
  *
