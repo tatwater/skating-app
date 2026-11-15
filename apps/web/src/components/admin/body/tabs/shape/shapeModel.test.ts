@@ -7,7 +7,7 @@ import {
   CAPPED_NONE,
   CAPPED_SOME,
   campaignText,
-  NOT_CHECKED,
+  NOT_COMPUTED_YET,
   shapeBays,
   shapeMapScene,
   shapeMerge,
@@ -137,28 +137,62 @@ describe('the bays', () => {
 
 describe('merge', () => {
   const failure: ReadFailure = { failed: true, pending: false, retry: () => {} };
-  const pond = { id: 'k1', name: 'Crystal Lake', polygon: MASCOMA_POLYGON };
+  const pond = {
+    id: 'k1',
+    name: 'Crystal Lake',
+    polygon: {
+      type: 'Polygon' as const,
+      coordinates: [
+        [
+          [0, 0],
+          [1, 0],
+          [1, 1],
+          [0, 0],
+        ],
+      ],
+    },
+  };
 
   it('shows no block only when the test ran over everything near and found nothing', () => {
-    expect(shapeMerge({ touchingBodyIds: [], touchingCapped: false }, [])).toBeNull();
+    expect(
+      shapeMerge(
+        { touchingBodyIds: [], touching: [], touchingCapped: false, geoComputedAt: 1 },
+        [],
+      ),
+    ).toBeNull();
   });
 
-  it('keeps the block, and says so, when the test couldn’t run or stopped short', () => {
-    expect(shapeMerge({ touchingBodyIds: null, touchingCapped: false }, undefined)).toEqual({
+  it('keeps the block, and says so, when the geometry isn’t computed yet or the test stopped short', () => {
+    expect(
+      shapeMerge(
+        { touchingBodyIds: null, touching: null, touchingCapped: false, geoComputedAt: null },
+        undefined,
+      ),
+    ).toEqual({
       touching: [],
-      note: NOT_CHECKED,
+      note: NOT_COMPUTED_YET,
     });
-    expect(shapeMerge({ touchingBodyIds: [], touchingCapped: true }, [])).toEqual({
+    expect(
+      shapeMerge({ touchingBodyIds: [], touching: [], touchingCapped: true, geoComputedAt: 1 }, []),
+    ).toEqual({
       touching: [],
       note: CAPPED_NONE,
     });
-    expect(shapeMerge({ touchingBodyIds: ['k1'], touchingCapped: true }, [pond])?.note).toBe(
-      CAPPED_SOME,
-    );
+    expect(
+      shapeMerge(
+        { touchingBodyIds: ['k1'], touching: [], touchingCapped: true, geoComputedAt: 1 },
+        [pond],
+      )?.note,
+    ).toBe(CAPPED_SOME);
   });
 
   it('lists each touching body, addressed for ?lit=, as its reads land', () => {
-    const facts = { touchingBodyIds: ['k1'], touchingCapped: false };
+    const facts = {
+      touchingBodyIds: ['k1'],
+      touching: [],
+      touchingCapped: false,
+      geoComputedAt: 1,
+    };
     expect(shapeMerge(facts, [pond])).toEqual({
       touching: [{ lit: 'neighbor:k1', id: 'k1', name: 'Crystal Lake' }],
       note: null,

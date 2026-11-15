@@ -148,7 +148,9 @@ export const MASCOMA_EXTRAS = {
   outlineTrustedSince: on(10, 12),
   outlineTrustedVia: 'campaign' as const,
   touchingBodyIds: [] as string[],
+  touching: [] as { waterBodyId: string; name: string; ring: number[][] }[],
   touchingCapped: false,
+  geoComputedAt: on(10, 12),
 };
 
 export const MASCOMA_TRUST: OutlineTrust | null = outlineTrust(MASCOMA_EXTRAS);

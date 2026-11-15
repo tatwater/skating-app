@@ -195,8 +195,8 @@ export interface ShapeMerge {
 }
 
 /** For an outline too large to test, the read says it didn't run: not computed, never "none". */
-export const NOT_CHECKED =
-  'Whether another body touches this one isn’t checked for an outline this large.';
+/** The body's geometry isn't computed yet, so neither is what touches it. */
+export const NOT_COMPUTED_YET = 'Whether another body touches this one isn’t computed yet.';
 /** More bodies stood nearby than the test read. */
 export const CAPPED_NONE =
   'None of the most prominent bodies nearby touches it; smaller ones weren’t checked.';
@@ -211,7 +211,9 @@ export function shapeMerge(
   facts: TouchingFacts,
   neighbors: Loadable<readonly Neighbor[]>,
 ): ShapeMerge | null {
-  if (facts.touchingBodyIds === null) return { touching: [], note: NOT_CHECKED };
+  if (facts.geoComputedAt === null || facts.touchingBodyIds === null) {
+    return { touching: [], note: NOT_COMPUTED_YET };
+  }
   if (facts.touchingBodyIds.length === 0) {
     return facts.touchingCapped ? { touching: [], note: CAPPED_NONE } : null;
   }

@@ -7,7 +7,7 @@ import { expectNoBlanks } from '@/test/blanksAudit';
 import { expectKeyboardOperable } from '@/test/keyboardAudit';
 import { stubJsdomAnimations } from '../jsdomStubs';
 import { ShapeTabView, type ShapeTabViewProps } from './ShapeTab';
-import { CAPPED_SOME, NOT_CHECKED, BAY_NOT_RECORDED as NOT_RECORDED } from './shapeModel';
+import { CAPPED_SOME, NOT_COMPUTED_YET, BAY_NOT_RECORDED as NOT_RECORDED } from './shapeModel';
 
 beforeAll(stubJsdomAnimations);
 
@@ -196,8 +196,8 @@ describe('Merge into another body', () => {
   });
 
   it('says what the touching test couldn’t check, never that nothing touches', () => {
-    const { rerender } = render(view({ merge: { touching: [], note: NOT_CHECKED } }));
-    expect(screen.getByText(NOT_CHECKED)).toBeInTheDocument();
+    const { rerender } = render(view({ merge: { touching: [], note: NOT_COMPUTED_YET } }));
+    expect(screen.getByText(NOT_COMPUTED_YET)).toBeInTheDocument();
     rerender(view({ merge: { touching: neighbors, note: CAPPED_SOME } }));
     expect(screen.getByText(CAPPED_SOME)).toBeInTheDocument();
   });

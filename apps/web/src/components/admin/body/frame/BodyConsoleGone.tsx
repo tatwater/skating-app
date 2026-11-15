@@ -10,6 +10,7 @@ import { usePaneKeys } from '@/lib/keys';
 import { ConsoleTopStart } from '../../shell/ConsoleShell';
 import { BodyHistorySection } from './BodyLeftColumn';
 import type { Removal } from './bodyModel';
+import { NOT_COMPUTED, NOT_COMPUTED_WORDS } from './bodyModel';
 import type { BodyGoneData } from './useBodyConsole';
 
 /**
@@ -141,7 +142,7 @@ function RemovalRow({ removal, merged }: { removal: Loadable<Removal | null>; me
   );
 }
 
-function TownsRow({ towns }: { towns: Loadable<readonly string[] | null> }) {
+function TownsRow({ towns }: { towns: Loadable<readonly string[] | typeof NOT_COMPUTED | null> }) {
   if (isFailed(towns) || towns === null) return null;
   if (towns === undefined) {
     return (
@@ -150,7 +151,15 @@ function TownsRow({ towns }: { towns: Loadable<readonly string[] | null> }) {
       </KeyValueRow>
     );
   }
-  if (towns.length === 0) return null;
+  if (towns === NOT_COMPUTED || towns.length === 0) {
+    return (
+      <KeyValueRow label="Towns">
+        <span className="text-fg3">
+          {towns === NOT_COMPUTED ? NOT_COMPUTED_WORDS : 'In no town'}
+        </span>
+      </KeyValueRow>
+    );
+  }
   return (
     <KeyValueRow label="Towns">
       <span className="flex flex-col gap-(--space-1_5)">

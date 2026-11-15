@@ -11,15 +11,15 @@ import {
 } from '@/components/admin/reads/consoleReads';
 import { useRole } from '@/lib/useRole';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
-import { useNeighbors } from '../../frame/touching';
+import { neighborsOf } from '../../frame/touching';
 import { ShapeTabView } from './ShapeTab';
 import { shapeBays, shapeMapScene, shapeMerge, shapeOutline } from './shapeModel';
 
 /**
  * The Shape tab, wired: the body (`waterBodies.get`), its bays (`subAreas.listForBody`, with when
  * each was made) and how each was made (`bodyConsole.bayProvenance`), and the bodies that touch it
- * (`bodyConsole.consoleExtras`, each read by id) — the frame reads the same, so the client shares
- * each subscription. Adding a bay hands off to the old editor, which has the chord, freehand and
+ * (`bodyConsole.consoleExtras`, with each neighbor's name) — the frame reads the same, so the
+ * client shares each subscription. Adding a bay hands off to the old editor, which has the chord, freehand and
  * paste tools, until the console's bay mode lands (map modes wait, the founder's Review 12 call).
  */
 export function ShapeTabRoute({ bodyId, lit = null, onLitChange }: BodyTabProps) {
@@ -34,7 +34,6 @@ export function ShapeTabRoute({ bodyId, lit = null, onLitChange }: BodyTabProps)
     made: canRead ? read(api.bodyConsole.bayProvenance, { waterBodyId }) : null,
     extras: canRead ? read(api.bodyConsole.consoleExtras, { waterBodyId }) : null,
   });
-  const neighbors = useNeighbors(loaded(r.extras));
   const navigate = useNavigate();
   const { from } = useSearch({ strict: false }) as { from?: string };
   const made = loaded(r.made);
@@ -57,7 +56,7 @@ export function ShapeTabRoute({ bodyId, lit = null, onLitChange }: BodyTabProps)
       )}
       bays={mapLoadable(r.subAreas, (rows) => shapeBays(rows, made))}
       baysMadeFailed={isFailed(r.made) ? r.made : null}
-      merge={mapLoadable(r.extras, (facts) => shapeMerge(facts, neighbors))}
+      merge={mapLoadable(r.extras, (facts) => shapeMerge(facts, neighborsOf(facts)))}
       // A neighbor opens with the same way back as this body: to the list the operator came from.
       bodyLink={(id) => (
         <Link to="/admin/body/$id" params={{ id }} search={from === undefined ? {} : { from }} />

@@ -183,10 +183,13 @@ beforeEach(() => {
     blockedIds: [],
     alerts: [],
   });
-  set(api.corpusRequests.openBayRequestsForBody, [
-    { requestId: 'r1', name: 'Shaker cove', askers: 3, createdAt: 1, notes: [], aliases: [] },
-  ]);
-  set(api.corpusPlaceNames.openForBody, []);
+  set(api.corpusRequests.openBayRequestsForBody, {
+    bays: [
+      { requestId: 'r1', name: 'Shaker cove', askers: 3, createdAt: 1, notes: [], aliases: [] },
+    ],
+    more: false,
+  });
+  set(api.corpusPlaceNames.openForBody, { names: [], more: false });
   set(api.corpusRequests.openLandmarkRequestsForBody, { proposals: [], more: false });
   set(api.bodyConsole.consoleExtras, MASCOMA_EXTRAS);
   set(api.bodies.preview, {
@@ -241,13 +244,18 @@ describe('BodyConsoleRoute', () => {
     expect(screen.queryByText('Missing something')).toBeNull();
   });
 
-  it('never draws a capped history as whole, and reads the ruling’s verb alone when it fell off', () => {
+  it('never draws a capped history as whole, and reads who ruled on the body alone when it fell off', () => {
     const boost = MASCOMA_HISTORY.find((h) => h.action === 'set_curated_boost');
     set(api.bodyConsole.history, {
       entries: [historyRow(MASCOMA_HISTORY[0] as never), historyRow(boost as never)],
       capped: true,
     });
-    const rulingArgs = { waterBodyId: MASCOMA_ID, action: 'set_public_access', limit: 10 };
+    const rulingArgs = {
+      waterBodyId: MASCOMA_ID,
+      action: 'set_public_access',
+      bodyOnly: true,
+      limit: 1,
+    };
     set(
       api.bodyConsole.history,
       {
@@ -264,11 +272,11 @@ describe('BodyConsoleRoute', () => {
     render(<Mounted />);
     expect(screen.getByText('Latest 2')).toBeInTheDocument();
     expect(screen.getByText('More history exists than is shown here.')).toBeInTheDocument();
-    // The ruling's row fell off the capped read: its own verb's read names who ruled.
+    // Who ruled is the body's own latest ruling, read on the body alone (`bodyOnly`).
     expect(askedFor(api.bodyConsole.history)).toContain(JSON.stringify(rulingArgs));
     expect(screen.getByText('Sarah')).toBeInTheDocument();
     // The boost's row was in the main read: no read of that verb.
-    expect(askedFor(api.bodyConsole.history).some((a) => a.includes('set_curated_boost'))).toBe(
+    expect(askedFor(api.bodyConsole.history).some((x) => x.includes('set_curated_boost'))).toBe(
       false,
     );
   });
@@ -384,27 +392,21 @@ describe('BodyConsoleRoute', () => {
     );
   });
 
-  it('offers the merge when another body touches this one, and reads that body for its name', () => {
-    set(api.bodyConsole.consoleExtras, { ...MASCOMA_EXTRAS, touchingBodyIds: [NEIGHBOR_ID] });
-    set(
-      api.waterBodies.get,
-      {
-        available: true,
-        body: {
-          ...MASCOMA_RECORD,
-          _id: NEIGHBOR_ID,
-          name: 'Crystal Lake',
-          polygon: NEIGHBOR_POLYGON,
-        },
-      },
-      { waterBodyId: NEIGHBOR_ID },
-    );
+  it('offers the merge when another body touches this one, named from the extras — no read of its own', () => {
+    set(api.bodyConsole.consoleExtras, {
+      ...MASCOMA_EXTRAS,
+      touchingBodyIds: [NEIGHBOR_ID],
+      touching: [
+        { waterBodyId: NEIGHBOR_ID, name: 'Crystal Lake', ring: NEIGHBOR_POLYGON.coordinates[0] },
+      ],
+    });
     mocks.search = { from: '/admin/bodies?lane=inactive' };
     render(<Mounted />);
     const merge = screen.getByRole('region', { name: 'Merge into another body' });
     expect(within(merge).getByText('Crystal Lake')).toBeInTheDocument();
     const open = within(merge).getByRole('link', { name: 'Open →' });
     expect(open).toHaveAttribute('href', `/admin/body/${NEIGHBOR_ID}`);
+    expect(askedFor(api.waterBodies.get).some((a) => a.includes(NEIGHBOR_ID))).toBe(false);
     // The neighbor opens with this body's way back: to the list the operator came from.
     expect(open).toHaveAttribute('data-from', '/admin/bodies?lane=inactive');
   });
@@ -514,13 +516,40 @@ describe('BodyConsoleRoute', () => {
     expect(screen.getByRole('heading', { name: 'History' })).toBeInTheDocument();
   });
 
-  it('never counts the asks as whole when a read without a flag came back full', () => {
-    set(
-      api.corpusPlaceNames.openForBody,
-      Array.from({ length: 400 }, (_, i) => ({ _id: `pn${i}`, name: `Name ${i}`, messages: 1 })),
-    );
+  it.each([
+    ['the place names', api.corpusPlaceNames.openForBody, { names: [], more: true }],
+    ['the bay requests', api.corpusRequests.openBayRequestsForBody, { bays: [], more: true }],
+    [
+      'the landmark proposals',
+      api.corpusRequests.openLandmarkRequestsForBody,
+      { proposals: [], more: true },
+    ],
+  ])('never counts the asks as whole when %s say more exist', (_what, fn, answer) => {
+    set(fn, answer);
     const { container } = render(<Mounted />);
     expect(container.querySelector('[data-slot="body-asks-more"]')).not.toBeNull();
+  });
+
+  it('counts the asks as whole when every read says it holds them all', () => {
+    const { container } = render(<Mounted />);
+    expect(container.querySelector('[data-slot="body-asks-more"]')).toBeNull();
+  });
+
+  it('says the towns aren’t computed yet before the geometry is, and that a body is in no town', () => {
+    set(api.bodyConsole.consoleExtras, {
+      ...MASCOMA_EXTRAS,
+      towns: null,
+      touchingBodyIds: null,
+      touching: null,
+      geoComputedAt: null,
+    });
+    const { unmount } = render(<Mounted />);
+    expect(screen.getByText('Not computed yet')).toBeInTheDocument();
+    expect(screen.queryByText('Not recorded yet')).toBeNull();
+    unmount();
+    set(api.bodyConsole.consoleExtras, { ...MASCOMA_EXTRAS, towns: [] });
+    render(<Mounted />);
+    expect(screen.getByText('In no town')).toBeInTheDocument();
   });
 
   it('draws the map again on another tab when the open tab’s drawing threw', async () => {

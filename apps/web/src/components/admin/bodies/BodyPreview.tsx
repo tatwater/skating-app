@@ -157,6 +157,7 @@ function placeKicker(data: BodyPreviewData): ReactNode {
     <>
       {waterBodyClassLabel(data.bodyClass)}
       {where !== null && ` · ${where}`}
+      {data.townsNotComputed === true && ' · Towns not computed yet'}
       {data.moreTowns.length > 0 && (
         <>
           {' · '}

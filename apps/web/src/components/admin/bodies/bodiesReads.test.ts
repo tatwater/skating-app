@@ -244,6 +244,7 @@ const facts = (over: Partial<PreviewFacts> = {}): PreviewFacts =>
     asksListCapped: false,
     town: 'Enfield',
     moreTowns: ['Canaan'],
+    townsComputedAt: 1,
     complete: { have: 9, of: 10, missing: ['bathymetry'] },
     ...over,
   }) as PreviewFacts;
@@ -492,6 +493,15 @@ describe('the preview from its reads', () => {
       now: NOW,
     });
     expect(p).toMatchObject({ complete: null, history: null, town: null, putIns: [], bays: 0 });
+  });
+
+  it('says a body’s towns aren’t computed yet — never that it is in no town — until they are', () => {
+    const at = (over: Partial<PreviewFacts>) =>
+      previewFrom({ body, putIns: [], subAreas: [], history: null, facts: facts(over), now: NOW });
+    expect(at({ town: null, moreTowns: [], townsComputedAt: null }).townsNotComputed).toBe(true);
+    // Computed, and in no town: nothing claimed about computing.
+    expect(at({ town: null, moreTowns: [], townsComputedAt: 1 }).townsNotComputed).toBeUndefined();
+    expect(at({}).townsNotComputed).toBeUndefined();
   });
 
   it('reads polygons and multipolygons, nothing else', () => {

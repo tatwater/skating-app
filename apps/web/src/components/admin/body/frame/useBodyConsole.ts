@@ -17,7 +17,6 @@ import { useRole } from '@/lib/useRole';
 import type { Completeness } from '../completeness';
 import { type BodyMapBaseInput, bodyMapBase } from '../map/bodyMapBase';
 import type { BodyMapScene } from '../map/mapDescriptors';
-import { BAY_REQUESTS_READ_CAP, PLACE_NAMES_READ_CAP } from '../readCaps';
 import {
   attentionTabs,
   type BodyAsk,
@@ -28,13 +27,14 @@ import {
   bodyIdentity,
   type HistoryAction,
   latestOnBody,
+  NOT_COMPUTED,
   type OutlineTrust,
   outlineTrust,
   type Removal,
   removalOf,
 } from './bodyModel';
 import { type BodyTabKey, ID_SHAPE } from './bodySearch';
-import { useNeighbors } from './touching';
+import { neighborsOf } from './touching';
 
 /**
  * **The Body console's reads.** The body (`waterBodies.get`) decides which page this is; around it,
@@ -48,8 +48,10 @@ import { useNeighbors } from './touching';
  * - **The identity list's towns and the outline's trust** — `bodyConsole.consoleExtras`.
  * - **Asked of this body** — bay requests, the email place names, landmark proposals.
  * - **History** — `bodyConsole.history`: the body's whole family (bays, landmarks, put-ins, lots,
- *   absorbed bodies…), newest first. It can come back `capped` (on a very large lake, always), and
- *   is never drawn as whole when it is.
+ *   bodies merged into it), newest first, each row naming its target (`targetLabel`). `capped`
+ *   means only that more rows exist than were returned, and then it is never drawn as whole. When
+ *   it stopped short of who ruled on access or who set the boost, that verb is read on the body
+ *   alone (`bodyOnly`), its latest row.
  *
  * **A body the reads can't serve** — rejected, or merged into another — is its own page: it says the
  * body has been removed (or merged, and into which) and what the record still holds. **`null` is
@@ -58,8 +60,8 @@ import { useNeighbors } from './touching';
 
 /** How many history rows the frame reads (the server's most is 100). */
 export const HISTORY_LIMIT = 50;
-/** Rows of one verb read to find the body's own latest, when the main history stopped short. */
-const VERB_LIMIT = 10;
+/** The body's own latest row of one verb: who ruled on access, who set the boost. */
+const VERB_LIMIT = 1;
 
 /** A body the console can't open, and what the record still says about it. */
 export interface BodyGoneData {
@@ -70,8 +72,8 @@ export interface BodyGoneData {
    * viewer reads the audit trail (`history` isn't `null`).
    */
   removal: Loadable<Removal | null>;
-  /** The towns it lies in (`null`: no boundary contains it), for a rejected body. */
-  towns: Loadable<readonly string[] | null> | null;
+  /** The towns it lies in (empty: in no town), for a rejected body; not computed yet, said so. */
+  towns: Loadable<readonly string[] | typeof NOT_COMPUTED | null> | null;
   /** Its reports since the record began, for a rejected body; `null`: the read found no body. */
   reports: Loadable<{ count: number; capped: boolean } | null> | null;
   history: Loadable<BodyHistoryView> | null;
@@ -95,10 +97,11 @@ export type BodyConsoleData =
       state: 'ready';
       identity: BodyIdentity;
       completeness: Loadable<Completeness | null>;
-      towns: Loadable<readonly string[] | null>;
+      /** The towns it lies in: empty when in no town; not computed yet until its geometry is. */
+      towns: Loadable<readonly string[] | typeof NOT_COMPUTED | null>;
       trust: Loadable<OutlineTrust | null>;
       asks: Loadable<readonly BodyAsk[]>;
-      /** More landmark proposals wait than the read returned. */
+      /** More is asked than the reads returned (their own `more`): the list is a floor. */
       asksMore: boolean;
       /** `null` when the viewer can't read the audit trail: the section isn't drawn. */
       history: Loadable<BodyHistoryView> | null;
@@ -154,37 +157,32 @@ export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleDa
   const historyRows = loaded(r.history);
   const rows = (historyRows?.entries ?? []) as readonly HistoryAction[];
 
-  // The main history read stopped short of the body's own ruling or boost: read that verb alone.
-  const needs = (verb: 'set_public_access' | 'set_curated_boost', recorded: boolean) =>
+  // Who ruled on access and who set the boost: the main read's rows when they hold the body's own;
+  // else, when that read stopped short, the body's own latest row of the verb (`bodyOnly`).
+  const verb = (action: 'set_public_access' | 'set_curated_boost', recorded: boolean) =>
     body !== null &&
     recorded &&
     historyRows?.capped === true &&
-    latestOnBody(rows, bodyId, verb) === null;
+    latestOnBody(rows, bodyId, action) === null
+      ? read(api.bodyConsole.history, { waterBodyId, action, bodyOnly: true, limit: VERB_LIMIT })
+      : null;
   const verbs = useConsoleReads({
-    ruling: needs('set_public_access', body?.publicAccess !== undefined)
-      ? read(api.bodyConsole.history, {
-          waterBodyId,
-          action: 'set_public_access',
-          limit: VERB_LIMIT,
-        })
-      : null,
-    boost: needs('set_curated_boost', body?.curatedBoost !== undefined)
-      ? read(api.bodyConsole.history, {
-          waterBodyId,
-          action: 'set_curated_boost',
-          limit: VERB_LIMIT,
-        })
-      : null,
+    ruling: verb('set_public_access', body?.publicAccess !== undefined),
+    boost: verb('set_curated_boost', body?.curatedBoost !== undefined),
   });
 
   const extras = r.extras;
-  const neighbors = useNeighbors(body === null ? undefined : loaded(extras));
+  // The neighbors come with the extras (their names and simplified rings): no read of their own.
+  const extrasValue = loaded(extras);
+  const neighborList = useMemo(
+    () => (extrasValue === undefined ? undefined : neighborsOf(extrasValue)),
+    [extrasValue],
+  );
 
   const subAreas = loaded(r.subAreas);
   const landmarks = loaded(r.landmarks);
   const putIns = loaded(r.putIns);
   const access = loaded(r.access);
-  const neighborList = loaded(neighbors);
   const scene = useMemo<BodyMapScene | null>(() => {
     if (!body) return null;
     const input: BodyMapBaseInput = {
@@ -247,8 +245,7 @@ export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleDa
           removalOf(h.entries as readonly HistoryAction[], bodyId, timeZone),
         ),
         // A merged body's facts went with it to the survivor; a rejected one's are still its own.
-        towns:
-          survivor !== null ? null : !canRead ? withheld : mapLoadable(r.extras, (e) => e.towns),
+        towns: survivor !== null ? null : !canRead ? withheld : mapLoadable(r.extras, townsOf),
         reports:
           survivor !== null
             ? null
@@ -283,14 +280,17 @@ export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleDa
       ? retryAll(askFailures)
       : bayAsks === undefined || placeNames === undefined || landmarkAsks === undefined
         ? undefined
-        : bodyAsks({ bays: bayAsks, placeNames, landmarks: landmarkAsks.proposals });
+        : bodyAsks({
+            bays: bayAsks.bays,
+            placeNames: placeNames.names,
+            landmarks: landmarkAsks.proposals,
+          });
 
   const mapReads: [Loadable<unknown>, string][] = [
     [r.subAreas, 'the bays'],
     [r.landmarks, 'the landmarks'],
     [r.putIns, 'the put-ins'],
     [r.access, 'the lots'],
-    [neighbors, 'the bodies that touch it'],
   ];
   const mapFailed = mapReads.filter(([v]) => isFailed(v)) as [ReadFailure, string][];
   const mapFailures: MapFailures | null =
@@ -305,14 +305,11 @@ export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleDa
     state: 'ready',
     identity,
     completeness,
-    towns: !canRead ? withheld : mapLoadable(extras, (e) => e.towns),
+    towns: !canRead ? withheld : mapLoadable(extras, townsOf),
     trust: !canRead ? withheld : mapLoadable(extras, (e) => outlineTrust(e, timeZone)),
     asks,
-    // Only the proposals' read says it stopped short; the other two are full at their cap.
-    asksMore:
-      landmarkAsks?.more === true ||
-      (placeNames?.length ?? 0) >= PLACE_NAMES_READ_CAP ||
-      (bayAsks ?? []).reduce((n, b) => n + b.askers, 0) >= BAY_REQUESTS_READ_CAP,
+    // Each read says itself when it stopped short (`more`): no cap mirrored here.
+    asksMore: landmarkAsks?.more === true || placeNames?.more === true || bayAsks?.more === true,
     history,
     attention: attentionTabs(done?.missing ?? []),
     bbox: polygonBBox(body.polygon as GeoJSON.Polygon | GeoJSON.MultiPolygon),
@@ -321,4 +318,12 @@ export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleDa
     lastCampaign: body.lastCampaignId ?? null,
     canSetBoost: can('body.identity'),
   };
+}
+
+/** The towns from the extras: not computed yet until the body's geometry is; empty is no town. */
+function townsOf(e: {
+  towns: readonly string[] | null;
+  geoComputedAt: number | null;
+}): readonly string[] | typeof NOT_COMPUTED {
+  return e.geoComputedAt === null || e.towns === null ? NOT_COMPUTED : e.towns;
 }

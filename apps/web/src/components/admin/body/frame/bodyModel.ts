@@ -68,6 +68,11 @@ export interface HistoryAction {
   reason?: string;
 }
 
+/** The geometry facts (towns, touching bodies) aren't computed for the body yet. */
+export const NOT_COMPUTED = 'not-computed' as const;
+/** How a fact not computed yet reads — never *Not recorded yet*, which says the record lacks it. */
+export const NOT_COMPUTED_WORDS = 'Not computed yet';
+
 // ── Formats ──────────────────────────────────────────────────────────────────────────────────
 
 const int = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });

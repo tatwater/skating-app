@@ -15,7 +15,7 @@ import { LedStrip } from '@/components/kit/trace-chart';
 import { cn } from '@/lib/utils';
 import { type Completeness, completenessSegments, missingSentence } from '../completeness';
 import type { BodyAsk, BodyHistoryView, BodyIdentity, OutlineTrust } from './bodyModel';
-import { historyHead, historyTime } from './bodyModel';
+import { historyHead, historyTime, NOT_COMPUTED, NOT_COMPUTED_WORDS } from './bodyModel';
 
 /**
  * The Body console's left column (§5.4): the body's lockup, its figures, how complete its record
@@ -36,8 +36,11 @@ export interface BodyLeftColumnProps {
    * body yet (*Not recorded yet*).
    */
   completeness: Loadable<Completeness | null>;
-  /** The towns the body lies in; `null` when no boundary contains it (the row is left out). */
-  towns: Loadable<readonly string[] | null>;
+  /**
+   * The towns the body lies in: empty when it is in no town, *not computed yet* until its geometry
+   * is; `null` when the viewer's role withholds the read (the row is left out).
+   */
+  towns: Loadable<readonly string[] | typeof NOT_COMPUTED | null>;
   /** When the outline was last vouched for; `null` when nothing is recorded. */
   trust: Loadable<OutlineTrust | null>;
   asks: Loadable<readonly BodyAsk[]>;
@@ -394,7 +397,7 @@ function Identity({
   trust,
 }: {
   identity: BodyIdentity;
-  towns: Loadable<readonly string[] | null>;
+  towns: Loadable<readonly string[] | typeof NOT_COMPUTED | null>;
   trust: Loadable<OutlineTrust | null>;
 }) {
   // One read (the frame's extras) serves the towns and the outline's trust: one note if it failed.
@@ -449,14 +452,19 @@ function Identity({
           </KeyValueRow>
         ) : (
           !isFailed(towns) &&
-          towns !== null &&
-          towns.length > 0 && (
+          towns !== null && (
             <KeyValueRow label="Towns">
-              <Stack>
-                {towns.map((t) => (
-                  <span key={t}>{t}</span>
-                ))}
-              </Stack>
+              {towns === NOT_COMPUTED ? (
+                <Faint>{NOT_COMPUTED_WORDS}</Faint>
+              ) : towns.length === 0 ? (
+                <Faint>In no town</Faint>
+              ) : (
+                <Stack>
+                  {towns.map((t) => (
+                    <span key={t}>{t}</span>
+                  ))}
+                </Stack>
+              )}
             </KeyValueRow>
           )
         )}
