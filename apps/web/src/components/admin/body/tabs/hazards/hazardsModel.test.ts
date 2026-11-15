@@ -2,6 +2,7 @@ import { HAZARD_TYPE_LABELS, HAZARD_TYPES, isPassageMarker } from '@skating/core
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { dayX, lastReal } from '@/components/kit/day-strips';
+import { dayMonth } from '../../frame/bodyModel';
 import { FIELD_LEVELS, featureGlyph } from './featureGlyph';
 import {
   BODY_NOW,
@@ -15,8 +16,10 @@ import {
 } from './hazardsFixtures';
 import { hazardLit, hazardsMapScene, seasonOfLit, winterLit } from './hazardsMap';
 import {
+  AXIS_DAYS,
   ageWords,
   archivedRows,
+  axisDayLabel,
   axisIndex,
   dailyClock,
   dayIndex,
@@ -27,8 +30,11 @@ import {
   hazardKind,
   hazardRows,
   kindOf,
+  lineDayWords,
   lineSummary,
   monthTicks,
+  noSuchDay,
+  onAxis,
   seasonChoices,
   seasonWord,
   stripDays,
@@ -435,6 +441,52 @@ describe('a day in words', () => {
         expect(words).not.toMatch(LAKE_CLAIM);
       }),
     );
+  });
+});
+
+describe('the axis’s days by date', () => {
+  const slot = Array.from({ length: AXIS_DAYS }, (_, i) => i).find(
+    (i) => axisDayLabel(i) === '29 Feb',
+  ) as number;
+
+  it('names every axis day by its date, for a leap winter and a common one alike', () => {
+    expect(axisDayLabel(0)).toBe('1 Jul');
+    expect(axisDayLabel(AXIS_DAYS - 1)).toBe('30 Jun');
+    for (const season of [2023, 2024, 2026]) {
+      const { start, days } = winterWindow(season);
+      for (let i = 0; i < days; i++) {
+        expect(axisDayLabel(axisIndex(i, season))).toBe(dayMonth(start + i * DAY, 'UTC'));
+      }
+    }
+  });
+
+  it('a winter without a 29 February says so on its slot — never “not yet”', () => {
+    expect(noSuchDay(slot, 2024)).toBe(true);
+    expect(noSuchDay(slot, 2023)).toBe(false);
+    expect(noSuchDay(slot - 1, 2024)).toBe(false);
+    expect(noSuchDay(slot + 1, 2024)).toBe(false);
+    const empty = { count: 0, unknown: 0, reported: 0 };
+    const common = {
+      season: 2024,
+      days: onAxis(
+        Array.from({ length: winterWindow(2024).days }, () => empty),
+        2024,
+      ),
+      capped: false,
+    };
+    expect(common.days[slot]).toBeNull();
+    expect(lineDayWords(common, slot)).toBe('No 29 February this winter');
+    expect(lineDayWords(common, slot + 1)).toBe('No hazard reports');
+    // A leap winter's 29 February is a day like any other.
+    const leap = { ...common, season: 2023, days: common.days.map(() => empty) };
+    expect(lineDayWords(leap, slot)).toBe('No hazard reports');
+    // A day this winter hasn't reached yet is still not yet.
+    const current = {
+      ...common,
+      season: 2027,
+      days: common.days.map((d, i) => (i < 10 ? d : null)),
+    };
+    expect(lineDayWords(current, 200)).toBe('Not yet');
   });
 });
 

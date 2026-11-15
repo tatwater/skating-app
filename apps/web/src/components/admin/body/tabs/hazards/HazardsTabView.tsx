@@ -53,11 +53,11 @@ import { featureLit, hazardLit, winterLit } from './hazardsMap';
 import {
   type ArchivedRow,
   axisDayLabel,
-  dayWords,
   drawnDay,
   type FeatureRow,
   type HazardRow,
   knownOn,
+  lineDayWords,
   lineSummary,
   seasonChoices,
   seasonWord,
@@ -472,7 +472,7 @@ function WinterBlock({
           ...(k === 0 && winters.today !== null ? { today: winters.today } : {}),
           ...(k === 0 && winters.opens !== null ? { opens: winters.opens } : {}),
           summary: lineSummary(line),
-          dayTitle: (i: number) => dayWords(line.days[i] ?? null, line.capped),
+          dayTitle: (i: number) => lineDayWords(line, i),
         }))}
         months={winters.months}
         days={winters.days}

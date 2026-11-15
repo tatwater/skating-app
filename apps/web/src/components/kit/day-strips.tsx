@@ -189,13 +189,19 @@ function DayStrips({
   ...props
 }: DayStripsProps) {
   const tableId = useId();
-  // The keyboard's cursor: a strip and a day, opening on today (else the first strip's last day).
+  // The keyboard's cursor: a strip and a day, opening on today (else the first strip's last day) —
+  // and opening there again when the strips become another set (another winter on screen).
   const first = strips[0];
   const opening = first === undefined ? 0 : (first.today ?? Math.max(0, lastReal(first.values)));
   const [cursor, setCursor] = useState({ strip: 0, day: opening });
+  const [openedOn, setOpenedOn] = useState(first?.key);
+  if (openedOn !== first?.key) {
+    setOpenedOn(first?.key);
+    setCursor({ strip: 0, day: opening });
+  }
   const [focused, setFocused] = useState(false);
   const at = {
-    strip: Math.min(cursor.strip, Math.max(0, strips.length - 1)),
+    strip: Math.max(0, Math.min(cursor.strip, strips.length - 1)),
     day: Math.min(Math.max(0, cursor.day), Math.max(0, days - 1)),
   };
   const onStrip = strips[at.strip];
@@ -212,6 +218,8 @@ function DayStrips({
       ArrowUp: () => ({ ...at, strip: Math.max(0, at.strip - 1) }),
       ArrowDown: () => ({ ...at, strip: Math.min(strips.length - 1, at.strip + 1) }),
     };
+    // A chord (⌥← back, ⌘→ and the like) is the browser's, never a step.
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
     const next = move[event.key];
     if (next === undefined) return;
     event.preventDefault();

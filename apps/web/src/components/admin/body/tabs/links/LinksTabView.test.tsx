@@ -725,4 +725,23 @@ describe('LinksTabView — a finished save never discards what was typed since i
     expect(screen.queryByRole('textbox', { name: 'Label' })).toBeNull();
     expect(screen.getAllByText(/^Town page/)).toHaveLength(1);
   });
+
+  it('an add: the editor moving into its row keeps the field being typed in, never the Label', async () => {
+    const user = userEvent.setup();
+    const sent: StaffLink[][] = [];
+    const answers: ((refusal?: Error) => void)[] = [];
+    render(<Answerable sent={sent} answers={answers} />);
+    await user.click(screen.getByRole('button', { name: 'Add a link' }));
+    await user.type(label(), 'Town page');
+    const address = () => screen.getByRole('textbox', { name: 'Address' });
+    await user.type(address(), 'https://enfield.nh.gov');
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    // Back in the address, typing on, as the save lands and the editor takes the added row.
+    await user.type(address(), '/beach');
+    await answer(answers);
+    expect(address()).toHaveFocus();
+    await user.keyboard('es');
+    expect(address()).toHaveValue('https://enfield.nh.gov/beaches');
+    expect(label()).toHaveValue('Town page');
+  });
 });

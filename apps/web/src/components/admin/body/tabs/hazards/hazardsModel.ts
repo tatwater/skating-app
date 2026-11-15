@@ -278,6 +278,11 @@ export function axisIndex(i: number, season: Season): number {
   return winterWindow(season).days === AXIS_DAYS || i < LEAP_SLOT ? i : i + 1;
 }
 
+/** The axis's 29 February slot, in a winter that has none: a day that never comes for it. */
+export function noSuchDay(i: number, season: Season): boolean {
+  return i === LEAP_SLOT && winterWindow(season).days !== AXIS_DAYS;
+}
+
 /** An axis day's date in words ("12 Jan"), the same for every winter set on the axis. */
 export function axisDayLabel(i: number): string {
   return dayMonth(winterWindow(AXIS_SEASON).start + i * DAY, 'UTC');
@@ -440,6 +445,18 @@ export function dayWords(day: DayOnLake | null, capped: boolean): string {
   return HAZARDS_WORDS.day(
     wordsContext({ count: knownOn(day), unknown: day.unknown, reported: day.reported, capped }),
   );
+}
+
+/**
+ * A strip's day on the axis in words, as its title, its table row and the keyboard say it: the
+ * day's own words, except the 29 February slot of a winter without one, which is no day at all.
+ */
+export function lineDayWords(
+  line: Pick<WinterLine, 'season' | 'days' | 'capped'>,
+  i: number,
+): string {
+  if (noSuchDay(i, line.season)) return HAZARDS_WORDS.noSuchDay(wordsContext());
+  return dayWords(line.days[i] ?? null, line.capped);
 }
 
 /** One winter's strip as the tab draws it. */

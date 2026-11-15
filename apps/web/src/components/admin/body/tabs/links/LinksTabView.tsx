@@ -60,6 +60,11 @@ type Editing = {
    * editor takes over once the echo shows — so the next Done edits it, never adds a second.
    */
   adopt?: StaffLink;
+  /**
+   * The field that takes focus when the editor mounts. An adopted editor moves from the list's foot
+   * into its row (a new mount), so it keeps the field the moderator was typing in. Absent: Label.
+   */
+  focus?: 'url';
 };
 
 export function LinksTabView({
@@ -123,12 +128,15 @@ export function LinksTabView({
     refocus.current = key;
     setEditing(null);
   };
-  // An added link's editor takes over the added link's row once its echo shows.
+  // An added link's editor takes over the added link's row once its echo shows — remounted there,
+  // so the keys still being typed land in the field they were going to, never the Label.
   useEffect(() => {
     const adopt = editing?.adopt;
     if (editing === null || editing.key !== 'new' || adopt === undefined) return;
     const found = [...staff].reverse().find((l) => l.label === adopt.label && l.url === adopt.url);
-    if (found !== undefined) setEditing({ ...editing, key: found.key, adopt: undefined });
+    if (found === undefined) return;
+    const inUrl = document.activeElement?.getAttribute('data-link-field') === 'url';
+    setEditing({ ...editing, key: found.key, adopt: undefined, focus: inUrl ? 'url' : undefined });
   }, [staff, editing]);
   // The openings with a save on its way: an opening's own Done and Remove don't send twice (a ref,
   // so two presses in one frame see it); a reopened editor isn't held by the old one's save.
@@ -473,7 +481,7 @@ function LinkEditor({
       </label>
       <Input
         id={labelId}
-        autoFocus
+        autoFocus={editing.focus !== 'url'}
         value={editing.label}
         placeholder="What the link is, as skaters read it"
         onChange={(e) => onChange({ ...editing, label: e.target.value, error: null })}
@@ -485,6 +493,8 @@ function LinkEditor({
       </label>
       <Input
         id={urlId}
+        data-link-field="url"
+        autoFocus={editing.focus === 'url'}
         value={editing.url}
         placeholder="https://"
         className="font-(family-name:--family-mono) text-mono-sm"

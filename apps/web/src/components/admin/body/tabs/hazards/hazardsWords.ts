@@ -140,6 +140,8 @@ export const HAZARDS_WORDS = {
 
   /** What the winters' strips count, for their keyboard stop and their table of days. */
   stripsName: (_c: WordsContext): string => 'Hazard reports on the lake',
+  /** The axis's 29 February in a winter without one: never "not yet", a day that never comes. */
+  noSuchDay: (_c: WordsContext): string => 'No 29 February this winter',
   /**
    * The strips' caption, drawn whenever a mark is: what a mark is, and that the days after it say
    * nothing about the lake.

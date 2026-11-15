@@ -7,6 +7,7 @@ import {
   type DayStrip,
   DayStrips,
   dayParts,
+  dayReadout,
   MIN_MARK,
   roomAbove,
   stripStep,
@@ -268,5 +269,52 @@ describe('DayStrips — every day a pointer can read, readable without one', () 
     expect(slider).toHaveAttribute('aria-valuenow', '3');
     fireEvent.keyDown(slider, { key: 'ArrowUp' });
     expect(slider).toHaveAttribute('aria-valuetext', '4 Oct, 2026–27: Not yet');
+  });
+
+  it('a chord is the browser’s, never a step', () => {
+    render(view());
+    const slider = screen.getByRole('slider', { name: 'Hazard reports' });
+    for (const chord of [{ altKey: true }, { metaKey: true }, { ctrlKey: true }]) {
+      fireEvent.keyDown(slider, { key: 'ArrowLeft', ...chord });
+      expect(slider).toHaveAttribute('aria-valuenow', '2');
+    }
+  });
+
+  it('opens on today again when the strips become another set', () => {
+    const { rerender } = render(view());
+    const slider = screen.getByRole('slider', { name: 'Hazard reports' });
+    fireEvent.keyDown(slider, { key: 'Home' });
+    fireEvent.keyDown(slider, { key: 'ArrowDown' });
+    // The same set, drawn again: the cursor stays where the keys put it.
+    rerender(view());
+    expect(slider).toHaveAttribute('aria-valuetext', '1 Oct, 2025–26: 1 reported on the lake');
+    // Another winter on screen: the cursor opens on its today, on the first strip.
+    const other = { ...(strips[0] as DayStrip), key: 'other', label: '2027–28', today: 1 };
+    rerender(
+      <DayStrips strips={[other]} months={[]} days={4} dayLabel={label} name="Hazard reports" />,
+    );
+    expect(slider).toHaveAttribute(
+      'aria-valuetext',
+      '2 Oct, 2027–28: At least 50 reported on the lake',
+    );
+  });
+
+  it('a strip without its own words says its counts — never a zero for a day not yet recorded', () => {
+    const s: DayStrip = {
+      key: 'a',
+      label: 'A',
+      values: [0, 2, 0, 1, null],
+      marks: [0, 1, 0, 0, 0],
+      unknown: [0, 0, 3, 1, 0],
+    };
+    expect([0, 1, 2, 3, 4].map((i) => dayReadout(s, i))).toEqual([
+      'None',
+      '3 known',
+      '0 known, 3 unknown',
+      '1 known, 1 unknown',
+      'Not recorded',
+    ]);
+    // Its own words, when it has them, are what it says.
+    expect(dayReadout({ ...s, dayTitle: () => 'Own words' }, 4)).toBe('Own words');
   });
 });

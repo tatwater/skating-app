@@ -388,9 +388,8 @@ export function ImageryTabView({
           variant="well"
           value={sat.shown}
           disabled={onSatelliteChange === undefined}
-          onValueChange={(v) => {
-            if (onSatelliteChange !== undefined && v !== '') sat.press(v as SatelliteImageryMode);
-          }}
+          // The kit's group never hands over nothing chosen, and is inert without a writer.
+          onValueChange={(v) => sat.press(v as SatelliteImageryMode)}
           className="flex w-full [&>*]:flex-1"
         >
           {SATELLITE_CHOICES.map((c) => (
