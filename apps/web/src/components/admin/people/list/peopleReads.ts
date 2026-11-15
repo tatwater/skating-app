@@ -1,6 +1,6 @@
 import { api } from '@skating/convex/api';
 import { PEOPLE_PAGE_MAX, PEOPLE_PAGE_SIZE, type PeopleLane } from '@skating/core';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   isFailed,
@@ -150,34 +150,13 @@ export function usePeoplePages(args: PagesArgs | null): PagesState {
     }
   }, [endsKey, key]);
 
-  const rows: PersonListRow[] = [];
-  const seen = new Set<string>();
-  const reasons = new Set<PartialReason>();
-  const pendingSet = new Set<Backfill>();
-  let status: ListStatus = args === null ? 'unread' : 'done';
-  let failure: ReadFailure | null = null;
-  if (args !== null) {
-    for (const [i, page] of pages.entries()) {
-      if (isFailed(page)) {
-        status = 'error';
-        failure = { failed: true, pending: retrying, retry };
-        break;
-      }
-      if (page === undefined) {
-        status = i === 0 ? 'loading' : 'fetching';
-        break;
-      }
-      for (const row of page.rows) {
-        // A row a re-anchoring page still holds while the next re-reads is drawn once.
-        if (seen.has(row.userId)) continue;
-        seen.add(row.userId);
-        rows.push(row);
-      }
-      for (const r of page.reasons) reasons.add(r);
-      for (const b of page.pending) pendingSet.add(b);
-      if (i === pages.length - 1) status = page.isDone ? 'done' : 'more';
-    }
-  }
+  // Joined once per change of a page, so the rows (and the list drawn from them) keep their
+  // identity through every render that changes no page — a minute's tick, a registry emit.
+  const joined = useJoined(args === null ? null : pages);
+  const { rows } = joined;
+  const failure: ReadFailure | null = joined.failed
+    ? { failed: true, pending: retrying, retry }
+    : null;
 
   useEffect(() => {
     if (key !== '' && rows.length > 0) shownMemory.set(key, rows.length);
@@ -191,11 +170,81 @@ export function usePeoplePages(args: PagesArgs | null): PagesState {
   };
 
   return {
+    status: joined.status,
+    rows,
+    reasons: joined.reasons,
+    pending: joined.pending,
+    failure,
+    loadMore,
+  };
+}
+
+type Joined = {
+  status: ListStatus;
+  rows: PersonListRow[];
+  reasons: PartialReason[];
+  pending: Backfill[];
+  failed: boolean;
+};
+
+/** The pages joined into one list — recomputed only when a page itself changed. */
+function useJoined(pages: readonly Loadable<PeoplePage>[] | null): Joined {
+  const cache = useRef<{ pages: readonly Loadable<PeoplePage>[] | null; value: Joined } | null>(
+    null,
+  );
+  const last = cache.current;
+  if (last !== null && samePages(last.pages, pages)) return last.value;
+  const value = joinPages(pages);
+  cache.current = { pages, value };
+  return value;
+}
+
+function samePages(
+  a: readonly Loadable<PeoplePage>[] | null,
+  b: readonly Loadable<PeoplePage>[] | null,
+): boolean {
+  if (a === null || b === null) return a === b;
+  return a.length === b.length && a.every((p, i) => p === b[i]);
+}
+
+/**
+ * The chain's rows in order, each person once (a re-anchoring page can still hold a row the next
+ * page holds), what every page read says it may be missing, and where the chain stops: a failed
+ * page (the rows before it stand), a page on its way, or the last page's end.
+ */
+export function joinPages(pages: readonly Loadable<PeoplePage>[] | null): Joined {
+  if (pages === null)
+    return { status: 'unread', rows: [], reasons: [], pending: [], failed: false };
+  const rows: PersonListRow[] = [];
+  const seen = new Set<string>();
+  const reasons = new Set<PartialReason>();
+  const pending = new Set<Backfill>();
+  let status: ListStatus = 'done';
+  let failed = false;
+  for (const [i, page] of pages.entries()) {
+    if (isFailed(page)) {
+      status = 'error';
+      failed = true;
+      break;
+    }
+    if (page === undefined) {
+      status = i === 0 ? 'loading' : 'fetching';
+      break;
+    }
+    for (const row of page.rows) {
+      if (seen.has(row.userId)) continue;
+      seen.add(row.userId);
+      rows.push(row);
+    }
+    for (const r of page.reasons) reasons.add(r);
+    for (const b of page.pending) pending.add(b);
+    if (i === pages.length - 1) status = page.isDone ? 'done' : 'more';
+  }
+  return {
     status,
     rows,
     reasons: [...reasons],
-    pending: BACKFILL_ORDER.filter((b) => pendingSet.has(b)),
-    failure,
-    loadMore,
+    pending: BACKFILL_ORDER.filter((b) => pending.has(b)),
+    failed,
   };
 }

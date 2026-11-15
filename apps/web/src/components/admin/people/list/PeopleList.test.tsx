@@ -221,6 +221,44 @@ describe('paging and scrolling', () => {
     expect((screen.getByRole('listbox').parentElement as HTMLElement).scrollTop).toBe(120);
   });
 
+  it('holds a remembered place past the rows in so far until the next pages reach it', () => {
+    // The browser clamps a scroll to what the rows fill; jsdom doesn't, so clamp it here.
+    let limit = Number.POSITIVE_INFINITY;
+    const store = new WeakMap<Element, number>();
+    const get = vi.spyOn(Element.prototype, 'scrollTop', 'get').mockImplementation(function (
+      this: Element,
+    ) {
+      return store.get(this) ?? 0;
+    });
+    const set = vi.spyOn(Element.prototype, 'scrollTop', 'set').mockImplementation(function (
+      this: Element,
+      value: number,
+    ) {
+      store.set(this, Math.min(value, limit));
+    });
+    try {
+      const { unmount } = draw();
+      const first = screen.getByRole('listbox').parentElement as HTMLElement;
+      first.scrollTop = 4_000;
+      fireEvent.scroll(first);
+      unmount();
+
+      limit = 300;
+      const { rerender, props } = draw({ status: 'more', onLoadMore: vi.fn() });
+      const scroller = screen.getByRole('listbox').parentElement as HTMLElement;
+      expect(scroller.scrollTop).toBe(300);
+      // The clamped scroll is not saved over the remembered place…
+      fireEvent.scroll(scroller);
+      // …so once the pages that follow make room, the list lands where it was left.
+      limit = Number.POSITIVE_INFINITY;
+      rerender(<PeopleList {...props} status="done" />);
+      expect(scroller.scrollTop).toBe(4_000);
+    } finally {
+      get.mockRestore();
+      set.mockRestore();
+    }
+  });
+
   it('brings the open person into view coming back to a list it hasn’t scrolled', () => {
     draw({ selectedId: LUC.userId });
     expect(scrolled.at(-1)).toHaveTextContent('Luc Pelletier');

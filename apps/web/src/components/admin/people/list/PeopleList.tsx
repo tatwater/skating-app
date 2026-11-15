@@ -132,12 +132,17 @@ export function PeopleList({
   useLayoutEffect(() => {
     const el = scroller.current;
     if (el === null || restored.current === memoryKey || rows.length === 0) return;
-    restored.current = memoryKey;
     const top = scrollMemory.get(memoryKey);
     if (top !== undefined) {
       el.scrollTop = top;
+      // A first page holds at most a hundred rows, so the place may lie past the rows in so far:
+      // hold it (the scroll the browser clamps to is not saved over it) until the pages that
+      // follow reach it, or the list ends short of it.
+      const reached = el.scrollTop >= top - 1;
+      if (reached || status === 'done' || status === 'error') restored.current = memoryKey;
       return;
     }
+    restored.current = memoryKey;
     el.scrollTop = 0;
     const open = rows.findIndex((r) => r.id === selectedId);
     if (open >= 0) bringIntoView(open);
