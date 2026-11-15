@@ -355,9 +355,12 @@ export const OTHER_STANDING_COUNT_CAP = 50;
  * "2 active · 4 dormant": for each standing lane but the one searched, how many bodies match (to
  * {@link OTHER_STANDING_COUNT_CAP}, `capped` past it) and the best {@link OTHER_STANDING_ROWS} of them
  * in the list's row shape. The same arguments as `listPage`, normalized the same way
- * (`listQueryOf`), so the search, the state tab and the facets mean what the lane's page means. No
- * groups for no search, nor for *All* or *Changed* (every standing is already in them). Each lane is
- * one search-index read, ranked by the match: the shown rows are the best, never a cap's leftovers.
+ * (`listQueryOf`): the search and the state tab mean what the lane's page means. **Facets are not
+ * applied here**, deliberately: a search query considers only its top results, so a facet filtered
+ * over them would count a partial set as whole; the scope and lane are the index's own filters, so
+ * each count below the cap is exact. `facetsIgnored` says when the lane's facets were set. No groups
+ * for no search, nor for *All* or *Changed* (every standing is already in them). Each lane is one
+ * search-index read, ranked by the match: the shown rows are the best, never a cap's leftovers.
  */
 export const searchOtherStandings = query({
   args: listArgs,
@@ -365,6 +368,7 @@ export const searchOtherStandings = query({
     await requireCapability(ctx, 'body.read');
     const { now, q, scope, selection } = listQueryOf(args);
     const season = currentSeason(now);
+    const facetsIgnored = appliedFacets(selection).length > 0;
     const others =
       q === '' || args.lane === 'all' || args.lane === 'changed'
         ? []
@@ -376,7 +380,6 @@ export const searchOtherStandings = query({
         .withSearchIndex('search_text', (s) =>
           s.search('searchText', q).eq('scope', scope).eq('lane', lane),
         )
-        .filter((f) => facetFilter(f, selection, season))
         .take(OTHER_STANDING_COUNT_CAP + 1);
       groups.push({
         lane,
@@ -385,7 +388,7 @@ export const searchOtherStandings = query({
         rows: found.slice(0, OTHER_STANDING_ROWS).map((row) => rowView(row, season, q)),
       });
     }
-    return { q, groups };
+    return { q, groups, facetsIgnored: facetsIgnored && others.length > 0 };
   },
 });
 

@@ -1319,7 +1319,7 @@ export default defineSchema({
   /**
    * **What a contour search covered, and when** (B01-3c): one row per (contour dataset, state) a
    * coverage run searched — the dataset's name as the Water tab shows it — written by the run that
-   * replaces `bathymetryCoverage` (`importContourCoverage`, its first batch). A body reads the newest
+   * replaces `bathymetryCoverage` (`importContourCoverage`, the run's last batch). A body reads the newest
    * search of each of its states, by index; one no recorded search covers reads *not recorded*.
    */
   bathymetrySearches: defineTable({

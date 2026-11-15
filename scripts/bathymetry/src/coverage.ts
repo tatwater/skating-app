@@ -165,7 +165,8 @@ async function main(): Promise<void> {
           externalIds: batch,
           // Only the first batch clears, which is what makes the whole run a replacement.
           ...(i === 0 ? { clearFirst: true } : {}),
-          ...(i === 0 && searched.length > 0 ? { searched } : {}),
+          // Recorded with the last batch, so a replacement that dies partway records no search.
+          ...(i === batches.length - 1 && searched.length > 0 ? { searched } : {}),
         },
       );
       cleared += parsed.cleared ?? 0;

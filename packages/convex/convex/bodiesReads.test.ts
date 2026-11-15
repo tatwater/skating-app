@@ -99,6 +99,15 @@ describe('searchOtherStandings', () => {
     const r = await as.query(api.bodies.searchOtherStandings, { lane: 'active', q: ' mirror ' });
     // Normalized at the edge as the list's search is.
     expect(r.q).toBe('mirror');
+    expect(r.facetsIgnored).toBe(false);
+    // The lane's facets don't narrow the other standings' counts, and the read says so.
+    const faceted = await as.query(api.bodies.searchOtherStandings, {
+      lane: 'active',
+      q: 'mirror',
+      facets: { size: ['1000-up'] },
+    });
+    expect(faceted.facetsIgnored).toBe(true);
+    expect(faceted.groups.find((g) => g.lane === 'inactive')?.count).toBe(OTHER_STANDING_ROWS + 2);
     const byLane = Object.fromEntries(r.groups.map((g) => [g.lane, g]));
     expect(byLane.active).toBeUndefined();
     expect(byLane.inactive).toMatchObject({ count: OTHER_STANDING_ROWS + 2, capped: false });
@@ -352,13 +361,14 @@ describe('the bathymetry search record', () => {
       at: expect.any(Number),
     });
     expect((await extras(me)).bathymetrySearched).toBeNull();
-    // A later batch (no clear) records nothing; a dataset with no state is refused.
+    // The loader sends it with its last batch, which need not clear; a dataset with no state is
+    // refused.
     await t.mutation(internal.waterBodies.importContourCoverage, {
       source: 'osm',
       externalIds: [],
-      searched: [{ label: 'Ignored', states: ['ME'] }],
+      searched: [{ label: 'ME lake contours', states: ['ME'] }],
     });
-    expect((await extras(me)).bathymetrySearched).toBeNull();
+    expect((await extras(me)).bathymetrySearched).toMatchObject({ label: 'ME lake contours' });
     await expect(
       t.mutation(internal.waterBodies.importContourCoverage, {
         source: 'osm',

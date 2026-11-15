@@ -2470,6 +2470,8 @@ their own PR (they would have taken this one past its size, and two need a call;
 - **A search across standings** (`bodies.searchOtherStandings`, the list's arguments): beside a
   lane's search, each other standing's matches counted to 50 (`capped` past it) with the best five
   rows. None for no search, *All* or *Changed*. One search read per lane, ranked by the match.
+  **The lane's facets are not applied** (`facetsIgnored` says when set): a search considers only its
+  top results, so a facet filtered over them would count a partial set as whole.
 - **Rows by id** (`bodies.rowsByIds`, *Opened recently*): up to 12 ids, trimmed and de-duplicated in
   order, each with what became of it — `ok`, `merged` (the survivor's row), `unlisted`, `unknown` —
   and how many were dropped. A row is one indexed read; only an id with no row reads its body.
@@ -2489,8 +2491,8 @@ their own PR (they would have taken this one past its size, and two need a call;
 - **Completeness on the frame** (`consoleExtras.complete`, the library row's), so the frame stops
   calling `bodies.preview` and its 1,000-report scan for one field.
 - **The bathymetry search record**: the coverage run records each contour dataset it searched and
-  its states (`importContourCoverage`'s `searched`, the loader's `--searched=NAME:VT,NH`), one row per
-  (dataset, state); `consoleExtras.bathymetrySearched` is the newest search of the body's states,
+  its states (`importContourCoverage`'s `searched`, the loader's `--searched=NAME:VT,NH`, sent with
+  the run's last batch so a run that dies records no search), one row per (dataset, state); `consoleExtras.bathymetrySearched` is the newest search of the body's states,
   `null` (*not recorded*) where none covers it.
 - **Town lines** (`bodyConsole.townLines`): each boundary's largest outer ring kept to 96 points is
   stored beside it at its import (`adminAreaOutlines`; `adminAreas:backfillOutlines` for the rows

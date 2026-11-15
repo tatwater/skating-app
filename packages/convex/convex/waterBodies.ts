@@ -2056,14 +2056,15 @@ export const importContourCoverage = internalMutation({
     externalIds: v.array(v.string()),
     clearFirst: v.optional(v.boolean()),
     /**
-     * The contour datasets this run searched (B01-3c), recorded on its first batch: each one's name
+     * The contour datasets this run searched (B01-3c), recorded by the batch that carries it — the
+     * loader sends it with its **last** batch, so a run that dies partway records nothing: each one's name
      * (at most 120 characters) and the states it covers (two-letter codes, at most ten).
      */
     searched: v.optional(v.array(v.object({ label: v.string(), states: v.array(v.string()) }))),
   },
   handler: async (ctx, { source, externalIds, clearFirst, searched }) => {
     let cleared = 0;
-    if (clearFirst && searched !== undefined) {
+    if (searched !== undefined) {
       const at = Date.now();
       for (const s of searched.slice(0, BATHYMETRY_SEARCHES_PER_RUN)) {
         const label = s.label.trim().slice(0, 120);
