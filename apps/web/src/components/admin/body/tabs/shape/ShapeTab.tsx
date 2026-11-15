@@ -18,8 +18,8 @@ import {
   TableRow,
 } from '@/components/kit/table';
 import { UnavailableButton } from '@/components/kit/unavailable-button';
-import { usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
+import { useTabKeys } from '../../frame/tabKeys';
 import type { ShapeBay, ShapeMerge, ShapeOutline } from './shapeModel';
 
 /**
@@ -29,7 +29,8 @@ import type { ShapeBay, ShapeMerge, ShapeOutline } from './shapeModel';
  *
  * Props only. The ways to draw are the bay mode's to build (task and map modes wait, the founder's
  * Review 12 call); until then the caller passes `onAddBay` to hand each way to the tool that has it,
- * or leaves it out and the ways rest disabled. Their keys act only while this pane has focus.
+ * or leaves it out and the ways rest disabled. Their keys act wherever focus is in the inspector
+ * (`useTabKeys`); outside the console, while this pane has focus.
  *
  * **Merge into another body** shows only when another body touches this one (Review 13 #8), or when
  * the touching test couldn't say: each touching body is listed (a press lights it on the map), and
@@ -77,7 +78,7 @@ export function ShapeTabView({
 }: ShapeTabViewProps) {
   const readyBays = bays === undefined || isFailed(bays) ? undefined : bays;
   const root = useRef<HTMLDivElement | null>(null);
-  usePaneKeys(
+  useTabKeys(
     root,
     WAYS.map((w) => ({
       key: w.key,

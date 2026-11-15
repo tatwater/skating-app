@@ -1,10 +1,13 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
+import { useRef } from 'react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ReadFailure } from '@/components/admin/reads/consoleReads';
 import { KeysProvider } from '@/lib/keys';
+import { expectKeyboardOperable } from '@/test/keyboardAudit';
 import { stubJsdomAnimations } from '../tabs/jsdomStubs';
+import { ShapeTabView } from '../tabs/shape/ShapeTab';
 import { BodyConsoleMissing, BodyConsoleView } from './BodyConsoleView';
 import { boostToSend } from './BodyLeftColumn';
 import {
@@ -19,6 +22,7 @@ import {
 } from './bodyFixtures';
 import { attentionTabs } from './bodyModel';
 import { NotBuiltTab } from './NotBuiltTab';
+import { useTabKeys } from './tabKeys';
 
 beforeAll(stubJsdomAnimations);
 
@@ -47,7 +51,104 @@ function Page(props: Partial<Parameters<typeof BodyConsoleView>[0]> & { panel?: 
   );
 }
 
+/** A tab with one key, C, as every tab binds its keys. */
+function KeyedTab({ onKey }: { onKey: () => void }) {
+  const own = useRef<HTMLDivElement | null>(null);
+  useTabKeys(own, [{ key: 'C', label: 'Chord', run: onKey }]);
+  return (
+    <div ref={own}>
+      <button type="button">In the tab</button>
+    </div>
+  );
+}
+
+/** Each way a tab is reached, and where focus is left by it. */
+const ARRIVALS: [string, (user: ReturnType<typeof userEvent.setup>) => Promise<void>][] = [
+  // The list's Open and a deep link both mount the console with nothing focused.
+  ['the list’s Open or a deep link', async () => {}],
+  ['a press on the tab strip', (user) => user.click(screen.getByRole('tab', { name: /Names/ }))],
+  [
+    'the tab strip’s arrows',
+    async (user) => {
+      screen.getByRole('tab', { name: /Shape/ }).focus();
+      await user.keyboard('{ArrowRight}');
+    },
+  ],
+  [
+    'an ask',
+    async (user) => {
+      screen.getByRole('listbox', { name: 'Asked of this body' }).focus();
+      await user.keyboard('{Enter}');
+      await waitFor(() => expect(screen.getByRole('tabpanel')).toHaveFocus());
+    },
+  ],
+  [
+    'focus already in the tab',
+    async () => screen.getByRole('button', { name: 'In the tab' }).focus(),
+  ],
+];
+
+describe('a tab’s keys, however the tab is reached', () => {
+  it.each(ARRIVALS)('work after %s', async (_name, arrive) => {
+    const user = userEvent.setup();
+    const onKey = vi.fn();
+    render(<Page bodyKey="k1" panel={<KeyedTab onKey={onKey} />} />);
+    await arrive(user);
+    await user.keyboard('c');
+    expect(onKey).toHaveBeenCalledTimes(1);
+  });
+
+  it('Shape’s ways answer their keys right after an ask hands focus over', async () => {
+    const user = userEvent.setup();
+    const onAddBay = vi.fn();
+    render(
+      <Page
+        bodyKey="k1"
+        panel={
+          <ShapeTabView
+            outline={undefined}
+            bays={[]}
+            lit={null}
+            onLitChange={() => {}}
+            onAddBay={onAddBay}
+          />
+        }
+      />,
+    );
+    screen.getByRole('listbox', { name: 'Asked of this body' }).focus();
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(screen.getByRole('tabpanel')).toHaveFocus());
+    await user.keyboard('c');
+    expect(onAddBay).toHaveBeenCalledWith('chord');
+  });
+
+  it('arriving with nothing focused puts focus in the panel; arriving with focus leaves it', () => {
+    const { rerender } = render(<Page bodyKey="k1" />);
+    expect(screen.getByRole('tabpanel')).toHaveFocus();
+    const strip = screen.getByRole('tab', { name: /Names/ });
+    strip.focus();
+    rerender(<Page bodyKey="k2" />);
+    expect(strip).toHaveFocus();
+  });
+
+  it('a tab change or a new body opens the panel at its top, never at the last tab’s scroll', () => {
+    const { rerender } = render(<Page bodyKey="k1" tab="shape" />);
+    const panel = screen.getByRole('tabpanel');
+    panel.scrollTop = 400;
+    rerender(<Page bodyKey="k1" tab="names" />);
+    expect(screen.getByRole('tabpanel').scrollTop).toBe(0);
+    screen.getByRole('tabpanel').scrollTop = 400;
+    rerender(<Page bodyKey="k2" tab="names" />);
+    expect(screen.getByRole('tabpanel').scrollTop).toBe(0);
+  });
+});
+
 describe('BodyConsoleView', () => {
+  it('answers the keyboard wherever it answers a click: the asks, the history, the boost, the tabs', () => {
+    const { container } = render(<Page onReturn={() => {}} onBoostCommit={() => {}} />);
+    expect(expectKeyboardOperable(container).length).toBeGreaterThan(0);
+  });
+
   it('opens an ask from the keyboard and moves focus into the inspector', async () => {
     const user = userEvent.setup();
     const onOpenAsk = vi.fn();

@@ -21,6 +21,8 @@ export interface BodyInspectorProps {
   children: ReactNode;
   /** The panel: where focus lands when an item on the left opens a tab. */
   panelRef?: Ref<HTMLDivElement>;
+  /** The whole inspector, tab strip and panel: where the open tab's keys listen. */
+  inspectorRef?: Ref<HTMLDivElement>;
   className?: string;
 }
 
@@ -30,10 +32,12 @@ export function BodyInspector({
   attention,
   children,
   panelRef,
+  inspectorRef,
   className,
 }: BodyInspectorProps) {
   return (
     <Tabs
+      ref={inspectorRef}
       value={tab}
       onValueChange={(v) => onTabChange(v as BodyTabKey)}
       data-slot="body-inspector"

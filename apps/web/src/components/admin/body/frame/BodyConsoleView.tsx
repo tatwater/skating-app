@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/kit/button';
 import { Note } from '@/components/kit/note';
@@ -10,6 +10,7 @@ import { BodyInspector } from './BodyInspector';
 import { BodyLeftColumn, type BodyLeftColumnProps } from './BodyLeftColumn';
 import type { BodyAsk } from './bodyModel';
 import type { BodyTabKey } from './bodySearch';
+import { TabKeysProvider } from './tabKeys';
 
 /**
  * The Body console (`/admin/body/$id`, §5.4), drawn from props: the left column (the body), the map
@@ -18,7 +19,9 @@ import type { BodyTabKey } from './bodySearch';
  *
  * - **Keys** (Round 3): Tab moves between the three panes; ↑↓ move within one (the asks list),
  *   typing jumps; ⏎ or Space on an ask opens its tab with the ask lit and **moves focus into the
- *   inspector**, where the tab's single-letter actions listen. ⇧⏎ goes back to the list the
+ *   inspector**, where the tab's single-letter actions listen — on the whole inspector, so they
+ *   work from the tab strip too (`tabKeys`). Arriving at a body with nothing focused puts focus
+ *   in the panel. ⇧⏎ goes back to the list the
  *   operator came from. ⌘K and G-then-a-letter are the shell's.
  * - **The status bar** says when the record was last re-affirmed by a campaign; **the top bar**
  *   carries the way back to the list.
@@ -39,6 +42,11 @@ export type BodyConsoleViewProps = Omit<BodyLeftColumnProps, 'onOpenAsk' | 'clas
   onReturn?: () => void;
   /** The status bar's line ("Last campaign 12 Oct"); none when there is nothing to say. */
   status?: string | null;
+  /**
+   * The body on screen: a new one is an arrival (the list's Open, a deep link, a neighbor's link),
+   * and the open tab's keys must work from it.
+   */
+  bodyKey?: string;
   className?: string;
 };
 
@@ -51,11 +59,27 @@ export function BodyConsoleView({
   map,
   onReturn,
   status = null,
+  bodyKey,
   className,
   ...left
 }: BodyConsoleViewProps) {
   const root = useRef<HTMLDivElement | null>(null);
   const panel = useRef<HTMLDivElement | null>(null);
+  const inspector = useRef<HTMLDivElement | null>(null);
+  // Arriving at a body with nothing focused (the list's Open, a deep link): focus goes to the
+  // panel, so the open tab's keys work at once. Focus somewhere already (a neighbor's link pressed
+  // in a tab) stays where it is.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: an arrival is a new body
+  useEffect(() => {
+    const active = document.activeElement;
+    if (active === null || active === document.body) panel.current?.focus({ preventScroll: true });
+  }, [bodyKey]);
+  // **A tab change, or a new body, restores the panel's defaults**: it opens at its top, never at
+  // the last tab's scroll. (The map's switches follow the same rule, in `BodyMap`.)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the scroll belongs to the tab and body
+  useLayoutEffect(() => {
+    if (panel.current !== null) panel.current.scrollTop = 0;
+  }, [tab, bodyKey]);
   // A press on an ask asks for focus in the inspector; it moves once the tab has rendered.
   const [focusRight, setFocusRight] = useState(0);
   useEffect(() => {
@@ -90,8 +114,14 @@ export function BodyConsoleView({
       <div data-slot="body-map-column" className="relative min-h-0 min-w-0">
         {map}
       </div>
-      <BodyInspector tab={tab} onTabChange={onTabChange} attention={attention} panelRef={panel}>
-        {tabPanel}
+      <BodyInspector
+        tab={tab}
+        onTabChange={onTabChange}
+        attention={attention}
+        panelRef={panel}
+        inspectorRef={inspector}
+      >
+        <TabKeysProvider inspector={inspector}>{tabPanel}</TabKeysProvider>
       </BodyInspector>
       {onReturn !== undefined && (
         <ConsoleTopStart>

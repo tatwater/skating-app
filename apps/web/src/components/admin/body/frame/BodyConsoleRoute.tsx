@@ -137,6 +137,7 @@ export function BodyConsoleRoute({ registry = BODY_TAB_REGISTRY }: { registry?: 
 
   return (
     <BodyConsoleView
+      bodyKey={bodyId}
       {...(data.state === 'ready'
         ? {
             identity: data.identity,
