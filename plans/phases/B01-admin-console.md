@@ -2125,8 +2125,9 @@ the outline it was computed for is still the body's. A body that fails three tim
 (`lib/attempts.ts`) and waits for the daily retry; one failure never blocks the rest. A body never
 computed reads `null` — *not computed* — and a body computed in no boundary reads empty lists.
 The console's reads do no work that grows with an outline: the largest-lake test seeds a
-14,151-vertex body with twelve 3,000-vertex neighbors and holds every Body read under 250 ms in the
-simulated backend.
+14,151-vertex body with twelve 3,000-vertex neighbors and holds every Body read under 800 ms in the
+simulated backend (warm, best of three; each takes ~20–35 ms locally, and the touching test took 1.4 s
+before it moved).
 
 **Compute cost, before and after.** Dev's numbers are user execution time on the largest lake
 (the Convex limit is 1 s); the synthetic numbers are wall time in `convex-test` on the same
