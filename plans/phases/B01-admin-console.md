@@ -3017,6 +3017,11 @@ that server's (#115); the rail's People mode (G then P, `people.read`) lights fo
 - Receipts carry no pronouns (none is known); *Staff since* reads "Admin since …" as the value.
 - No photos on the person page; no *Restore all*; the hidden-content row is drawn with no sheet yet.
 - *Make admin* in the role menu confirms first.
+- A narrow screen (a phone): the open person takes the page with *Back to the list*; with no one
+  open, the lanes over the list. The person page's strips wrap two to a row below an inspector and
+  a search's width, and the head's chips wrap under the name.
+- A block is left out only for a complete, genuinely empty answer (`settledEmpty`): *Open about this
+  person* stays, saying so, when its read was capped or flags are still being prepared.
 - One heading outline for the joined page: the lane's word is the only `h1`, the person's name an
   `h2` in the board's look, its blocks `h3` (or `h2` when no name is drawn).
 - A capped count is plural ("1+ open flags"); Metrics' *Oldest* keeps a tenth under two days
@@ -3049,6 +3054,12 @@ draws 34; the role menu's item takes two lines.
 - The kit promotions (`SearchLane`, `PersonLockup`, `LeverRow`) await the Body console's kit PRs.
 - One `useClockFor` and one `ID_SHAPE` across Bodies and People — each duplicated in the Bodies
   directory, which the open Body console PRs are changing.
+- **The console's one narrow-screen rule** (`shell/columnsFit`): below the width where a mode's
+  columns fit side by side (their size tokens summed), the open record takes the page with a way
+  back, and with none open the list does; nothing scrolls sideways. People has it; the Bodies
+  library and the Body console lay out their own columns and break the same way at phone width —
+  each adopts the rule once its open PRs land. The kit `AppShell`'s own stacking (below `lg`, for
+  pages that pass it panes) measures the same way and should read the same rule.
 
 ## Ruled out
 

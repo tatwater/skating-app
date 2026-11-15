@@ -1,4 +1,4 @@
-import { render } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 import { useRef } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -60,5 +60,40 @@ describe('useColumnsFit', () => {
     measure(326, {});
     render(<Probe onFits={(f) => (fits = f)} />);
     expect(fits).toBe(true);
+  });
+
+  it('measures again as the box resizes, either way, and stops when it goes', () => {
+    let resized: (() => void) | undefined;
+    const disconnect = vi.fn();
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: () => void) {
+          resized = callback;
+        }
+        observe() {}
+        disconnect = disconnect;
+      },
+    );
+    try {
+      measure(576, TOKENS);
+      let fits: boolean | undefined;
+      const { unmount } = render(<Probe onFits={(f) => (fits = f)} />);
+      expect(fits).toBe(true);
+      vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockReturnValue({
+        width: 575,
+      } as DOMRect);
+      act(() => resized?.());
+      expect(fits).toBe(false);
+      vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockReturnValue({
+        width: 1024,
+      } as DOMRect);
+      act(() => resized?.());
+      expect(fits).toBe(true);
+      unmount();
+      expect(disconnect).toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

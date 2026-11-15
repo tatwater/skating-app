@@ -76,16 +76,17 @@ function factOf<T>(read: Loadable<T | null>, make: (value: T) => Fact): Fact | u
 }
 
 /**
- * A strip keeps the board's one row while its pane is at least a list and an inspector wide; on a
- * narrower one (a phone, where the person takes the page) its cells wrap two to a row rather than
- * crowd — the console's narrow-screen rule (`useColumnsFit`), measured on the strip itself.
+ * A strip keeps the board's one row while its pane is at least an inspector and a search wide (a
+ * laptop's narrowest three-column page included); on a narrower one (a phone, where the person
+ * takes the page) its cells wrap two to a row rather than crowd — the console's narrow-screen rule
+ * (`useColumnsFit`), measured on the strip itself.
  */
 function useStripFits() {
   const ref = useRef<HTMLDivElement>(null);
   const fits = useColumnsFit(ref, STRIP_TOKENS);
   return { ref, fits };
 }
-const STRIP_TOKENS = ['--size-list', '--size-inspector'] as const;
+const STRIP_TOKENS = ['--size-inspector', '--size-search'] as const;
 
 /** The columns: the stat cells, then the trend a quarter wider (the boards' strip). */
 const columns = (cells: number) => `repeat(${cells}, minmax(0, 1fr)) minmax(0, 1.25fr)`;
@@ -202,23 +203,31 @@ function ReportTrend({ trend }: { trend: TrendRead }) {
 
 // ── The staff strip ──────────────────────────────────────────────────────────────────────────
 
-export function StaffStrip({
-  person,
-  stats,
-  season,
-  now,
-  timeZone,
-}: {
+type StaffStripProps = {
   person: PersonRead;
   stats: Loadable<StaffStatsRead | null>;
   season: Loadable<StaffSeasonRead | null>;
   now: number;
   timeZone?: string;
-}) {
+};
+
+export function StaffStrip(props: StaffStripProps) {
   // Not staff after all (the role moved under the page): either staff read answering `null` says
   // so — the staff reads answer `null` for someone not on staff, never for a failure — so no strip.
+  // The strip itself mounts only past this, so its width is measured whenever it is drawn — also
+  // when a role moved the other way and the reads stop answering `null`.
+  if (props.stats === null || props.season === null) return null;
+  return <StaffStripCells {...props} stats={props.stats} season={props.season} />;
+}
+
+function StaffStripCells({
+  person,
+  stats,
+  season,
+  now,
+  timeZone,
+}: StaffStripProps & { stats: Loadable<StaffStatsRead>; season: Loadable<StaffSeasonRead> }) {
   const strip = useStripFits();
-  if (stats === null || season === null) return null;
   const value = stats === undefined || isFailed(stats) ? null : stats;
   const bars = value === null ? [] : weekBars(value, now);
   return (

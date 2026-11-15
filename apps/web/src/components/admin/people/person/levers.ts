@@ -384,11 +384,18 @@ const KIND_WORDS: Record<keyof PersonRead['hidden']['byKind'], [string, string]>
   accessAlert: ['access alert', 'access alerts'],
 };
 
-/** "2 reports · 2 comments": each kind with any, in a fixed order. No photos: they have no verdicts. */
+/**
+ * "2 reports · 2 comments": each kind with any, in a fixed order. No photos: they have no verdicts.
+ * Under a cap each kind's count is a floor too ("300+ reports"), never an exact number.
+ */
 export function hiddenKinds(hidden: PersonRead['hidden']): string {
   return (Object.keys(KIND_WORDS) as Array<keyof typeof KIND_WORDS>)
     .filter((k) => hidden.byKind[k] > 0)
-    .map((k) => plural(hidden.byKind[k], ...KIND_WORDS[k]))
+    .map((k) =>
+      hidden.capped
+        ? `${countText({ count: hidden.byKind[k], capped: true })} ${KIND_WORDS[k][1]}`
+        : plural(hidden.byKind[k], ...KIND_WORDS[k]),
+    )
     .join(' · ');
 }
 

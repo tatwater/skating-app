@@ -327,11 +327,23 @@ const robPage = (
   />
 );
 
-/** Nothing on the page wider than its box: no sideways scroll anywhere in it. */
+/**
+ * Nothing on the page wider than its box: no sideways scroll anywhere in it — the page, its panes,
+ * and every scroller inside them (the list's, the person page's: a box that scrolls one way scrolls
+ * the other too, so their overflow stays inside them, out of the panes' measure).
+ */
 async function expectNoSidewaysScroll(root: HTMLElement) {
-  for (const el of [root, ...root.querySelectorAll<HTMLElement>('[data-pane]')]) {
-    if (getComputedStyle(el).display === 'none') continue;
-    await expect(el.scrollWidth, el.dataset.pane ?? 'page').toBeLessThanOrEqual(el.clientWidth + 1);
+  const boxes = [root, ...root.querySelectorAll<HTMLElement>('*')].filter((el) => {
+    if (el === root || el.dataset.pane !== undefined) return true;
+    const { overflowX } = getComputedStyle(el);
+    return overflowX === 'auto' || overflowX === 'scroll';
+  });
+  for (const el of boxes) {
+    // Not drawn: hidden itself, or inside a pane that is.
+    if (el.getClientRects().length === 0) continue;
+    await expect(el.scrollWidth, el.dataset.pane ?? el.dataset.slot ?? 'page').toBeLessThanOrEqual(
+      el.clientWidth + 1,
+    );
   }
 }
 

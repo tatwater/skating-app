@@ -357,4 +357,69 @@ describe('a narrow screen (the console’s master–detail rule)', () => {
     redraw({ selectedId: null, detail: undefined, onCloseDetail });
     expect(screen.getByRole('listbox')).toHaveFocus();
   });
+
+  it('a person opened from the list takes focus with the page, the list being hidden', () => {
+    columns.fit = false;
+    const { redraw } = draw();
+    act(() => screen.getByRole('listbox').focus());
+    // The route's own focus lands on a pane not yet drawn; the person's page, once it is, has it.
+    redraw({ selectedId: ROB.userId, detail: <p>Rob’s page</p> });
+    expect(pane('detail')).toHaveFocus();
+  });
+
+  it('closed some other way (the browser’s back), focus in their page goes to the list', () => {
+    columns.fit = false;
+    const { redraw } = draw({
+      selectedId: ROB.userId,
+      detail: <button type="button">Lift</button>,
+    });
+    act(() => screen.getByRole('button', { name: 'Lift' }).focus());
+    redraw({ selectedId: null, detail: undefined });
+    expect(screen.getByRole('listbox')).toHaveFocus();
+  });
+
+  it('a person opened from elsewhere (a link, the palette) takes focus from the search', () => {
+    columns.fit = false;
+    const { redraw } = draw();
+    act(() => search().focus());
+    redraw({ selectedId: ROB.userId, detail: <p>Rob’s page</p> });
+    expect(pane('detail')).toHaveFocus();
+  });
+
+  it('never pulls back focus that had left the page', () => {
+    columns.fit = false;
+    const outside = document.body.appendChild(document.createElement('button'));
+    try {
+      const { redraw } = draw();
+      act(() => screen.getByRole('listbox').focus());
+      act(() => outside.focus());
+      redraw({ selectedId: ROB.userId, detail: <p>Rob’s page</p> });
+      expect(outside).toHaveFocus();
+    } finally {
+      outside.remove();
+    }
+  });
+
+  it('moves no focus that wasn’t in a pane it hides', () => {
+    columns.fit = false;
+    const { redraw } = draw({ selectedId: ROB.userId, detail: <p>Rob’s page</p> });
+    redraw({ selectedId: null, detail: undefined });
+    expect(document.body).toHaveFocus();
+  });
+
+  it('keeps every pane and focus where they are while the columns fit', () => {
+    const { redraw } = draw();
+    act(() => screen.getByRole('listbox').focus());
+    redraw({ selectedId: ROB.userId, detail: <p>Rob’s page</p> });
+    expect(screen.getByRole('listbox')).toHaveFocus();
+  });
+
+  it('leaves / alone while the person’s page covers the search', () => {
+    columns.fit = false;
+    draw({ selectedId: ROB.userId, detail: <p>Rob’s page</p>, onCloseDetail: vi.fn() });
+    const slash = new KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true });
+    screen.getByText('Rob’s page').dispatchEvent(slash);
+    expect(slash.defaultPrevented).toBe(false);
+    expect(search()).not.toHaveFocus();
+  });
 });

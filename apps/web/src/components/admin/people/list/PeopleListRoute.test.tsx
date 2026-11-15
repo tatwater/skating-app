@@ -254,6 +254,27 @@ describe('the chain of pages', () => {
   });
 });
 
+describe('a narrow screen', () => {
+  it('goes back to the list in place of the person’s entry, so the back gesture never reopens them', async () => {
+    mocks.params = { id: ROB.userId };
+    mocks.search = { lane: 'suspended' };
+    mocks.results.set(PAGE_READ, page([ROB]));
+    const columns = await import('../../shell/columnsFit');
+    const fit = vi.spyOn(columns, 'useColumnsFit').mockReturnValue(false);
+    try {
+      render(<PeopleListRoute detail={<p>Rob’s page</p>} />);
+      await userEvent.click(screen.getByRole('button', { name: 'Back to the list' }));
+      expect(mocks.navigate).toHaveBeenLastCalledWith({
+        to: '/admin/people',
+        search: { lane: 'suspended' },
+        replace: true,
+      });
+    } finally {
+      fit.mockRestore();
+    }
+  });
+});
+
 describe('the server follow-up’s page', () => {
   it('reads a page carrying splitCursor and pageStatus as before, and sends no endCursor', () => {
     mocks.results.set(PAGE_READ, {

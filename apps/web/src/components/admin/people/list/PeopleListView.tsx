@@ -1,5 +1,5 @@
 import type { PeopleLane } from '@skating/core';
-import { type ReactNode, type Ref, useEffect, useMemo, useRef } from 'react';
+import { type ReactNode, type Ref, useLayoutEffect, useMemo, useRef } from 'react';
 
 import { Button } from '@/components/kit/button';
 import { Lanes } from '@/components/kit/lanes';
@@ -126,16 +126,39 @@ export function PeopleListView({
   const fits = useColumnsFit(page, COLUMNS);
   const personOpen = selectedId !== null && detail !== undefined;
   const narrow = !fits;
+  // Which panes are on screen: all three, or — narrow — the person's page, or the lanes and list.
+  const shown = !narrow ? 'all' : personOpen ? 'detail' : 'list';
+  // Where focus last sat in the page, kept when it went nowhere (its control hidden or gone).
+  const held = useRef<HTMLElement | null>(null);
   // Back to the list from a person on a narrow screen: focus goes to the list once it is drawn.
-  const focusListWhenShown = useRef(false);
-  useEffect(() => {
-    if (personOpen || !focusListWhenShown.current) return;
-    focusListWhenShown.current = false;
-    listbox.current?.focus();
-  }, [personOpen]);
+  const backAsked = useRef(false);
+  // A pane the narrow rule hides takes no focus with it, however it went — the page's way back,
+  // the browser's, a row opened from the keys or a press, a resize: focus that sat in it (or on a
+  // control that went with it) moves to the pane now on screen, never to the page.
+  useLayoutEffect(() => {
+    const asked = backAsked.current && shown === 'list';
+    backAsked.current = false;
+    if (shown === 'all') return;
+    const hidden = (el: Element | null) => {
+      const pane = el?.closest<HTMLElement>('[data-pane]')?.dataset.pane;
+      return shown === 'detail' ? pane === 'lanes' || pane === 'middle' : pane === 'detail';
+    };
+    const active = document.activeElement;
+    const from = held.current;
+    const lost =
+      active === null || active === document.body
+        ? from !== null && (!from.isConnected || hidden(from))
+        : page.current?.contains(active) === true && hidden(active);
+    if (!asked && !lost) return;
+    if (shown === 'list') listbox.current?.focus();
+    else
+      page.current
+        ?.querySelector<HTMLElement>(':scope > [data-pane="detail"]')
+        ?.focus({ preventScroll: true });
+  }, [shown]);
   const backToList = () => {
     if (narrow && onCloseDetail !== undefined) {
-      focusListWhenShown.current = true;
+      backAsked.current = true;
       onCloseDetail();
       return;
     }
@@ -180,12 +203,23 @@ export function PeopleListView({
       ref={page}
       data-slot="people-page"
       data-narrow={narrow ? '' : undefined}
+      onFocus={(event) => {
+        held.current = event.target as HTMLElement;
+      }}
+      onBlur={(event) => {
+        // Focus moved on out of the page: nothing to keep. Taken out from under focus (hidden or
+        // unmounted), it goes nowhere (`relatedTarget` is null) and stays held for the effect above.
+        const next = event.relatedTarget;
+        if (next !== null && !event.currentTarget.contains(next)) held.current = null;
+      }}
       onKeyDown={(event) => {
         // / goes to the search from anywhere on the page but a field (which types it) — and never
         // from a dialog or a menu the page opened: a portal's keys bubble here through React, but
-        // its focus belongs to it, not to the search behind it.
+        // its focus belongs to it, not to the search behind it. Narrow, with the person's page
+        // over the lanes, the search isn't on screen: the key is left alone.
         if (
           event.key !== '/' ||
+          shown === 'detail' ||
           event.defaultPrevented ||
           event.ctrlKey ||
           event.metaKey ||
@@ -358,7 +392,7 @@ export function PeopleListView({
         }}
         className={cn(
           'flex min-h-0 min-w-0 flex-col outline-none focus-visible:shadow-[inset_0_0_0_var(--stroke-hair)_var(--fg)]',
-          narrow && (personOpen ? 'flex-1' : 'hidden'),
+          shown === 'detail' ? 'flex-1' : shown === 'list' && 'hidden',
         )}
       >
         {narrow && personOpen && onCloseDetail !== undefined && (

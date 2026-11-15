@@ -125,7 +125,8 @@ export function PeopleListRoute({ detail }: PeopleListRouteProps = {}) {
       now={now}
       detail={selectedId === null ? undefined : (detail ?? <Outlet />)}
       detailRef={detailPane}
-      onCloseDetail={() => goToList(query, false)}
+      // In place of the person's entry, so the back gesture after it never reopens them.
+      onCloseDetail={() => goToList(query, true)}
       countsNote={
         // Mounted whatever the counts' state, so its words are announced when they come.
         <ReadNote

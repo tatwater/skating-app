@@ -123,7 +123,7 @@ export const WORDS = {
   showMore: 'Show more',
   flagsPending: 'Flags on their content are still being prepared',
   hiddenUncounted: 'More than one read covers',
-  openCapped: 'More may be open than one read covers; the oldest may not be listed',
+  openCapped: 'More may be open than one read covers',
   verdictsPending: 'Decisions on flags about their content are still being prepared',
   accountCreated: 'Account created',
   system: 'System',

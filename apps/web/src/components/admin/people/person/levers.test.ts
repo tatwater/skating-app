@@ -359,6 +359,15 @@ describe('Account', () => {
       { now: NOW, self: false },
     );
     expect(row(many, 'hidden')?.status).toBe('500+ items');
+    // Under the cap every kind's count is a floor as well, never an exact number.
+    expect(row(many, 'hidden')?.second).toBe('500+ reports');
+    expect(
+      hiddenKinds({
+        total: 500,
+        capped: true,
+        byKind: { report: 299, post: 0, comment: 200, hazard: 1, accessAlert: 0 },
+      }),
+    ).toBe('299+ reports · 200+ comments · 1+ hazards');
   });
 });
 
