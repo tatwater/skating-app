@@ -10,7 +10,10 @@ import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { MAX_FEATURE_POSITIONS } from './bodyFeatures';
 import { OVERRIDES_READ } from './imageryOverrides';
+import { DOC_MAX, REQUEST_PROFILE_BUDGET, requestBudget } from './lib/readBudget';
 import { savedPutInsOf } from './lib/standing';
+import { undoState } from './lib/undo';
+import { UNDO_CHECKED_ELSEWHERE } from './lib/undoReads';
 import schema from './schema';
 import { MAX_MODERATOR_ALIAS_CHARS, MAX_MODERATOR_ALIASES } from './waterBodies';
 
@@ -1057,5 +1060,418 @@ describe('Greptile on #126', () => {
       mod.as.mutation(api.undo.run, { actionId: (await lastAction(t, 'set_put_in'))._id }),
     ).rejects.toThrow(/changed since/);
     expect((await t.run((ctx) => ctx.db.get(putInId)))?.source).toBe('osm');
+  });
+});
+
+/**
+ * The sweep before re-review: every undo in this PR, after a change no audit row records (an import, a
+ * loader run, a merge's moves, an outline recomputed, a hide on another target). Each case runs twice:
+ * without the change the undo is offered and runs; with it, History never offers it (the query's own
+ * undo state, as History reads it) and running it is refused with the same plain message, leaving the
+ * row as it was. "Holds" cases follow: the undo is offered and puts back the newer value, never the
+ * stale one.
+ */
+describe('undo after an un-audited change: write → change → undo → redo', () => {
+  type Who = Awaited<ReturnType<typeof person>>;
+  interface Setup {
+    admin: Who;
+    /** The row whose undo is tested (an undo's own row, for a redo). */
+    subject: Id<'moderationActions'>;
+    reason?: string;
+    /** The change no audit row records (or, for a merge, records on another target). */
+    drift: () => Promise<unknown>;
+    /** What a refused undo must leave exactly as it is. */
+    state: () => Promise<unknown>;
+  }
+  const offered = async (t: T, admin: Who, id: Id<'moderationActions'>) => {
+    const row = await t.run((ctx) => ctx.db.get(id));
+    if (!row) throw new Error('no row');
+    const rows = await admin.as.query(api.moderation.listActions, {
+      targetType: row.targetType,
+      targetId: row.targetId,
+    });
+    const line = rows.find((r) => r.id === id);
+    if (!line) throw new Error('not in History');
+    return line.undo;
+  };
+  const S = 'winter-2026-27';
+  const G = 'S2C_18TXP_20261215_0_L2A';
+  const depthLoad = (t: T, max: [string, number][]) =>
+    t.mutation(internal.waterBodies.importDepths, {
+      depths: max.map(([source, m]) => ({
+        source: 'osm',
+        externalId: 'way/1',
+        maxDepthM: m,
+        maxDepthSource: source,
+      })),
+    } as never);
+  const undo = (who: Who, actionId: Id<'moderationActions'>, reason?: string) =>
+    who.as.mutation(api.undo.run, { actionId, ...(reason !== undefined ? { reason } : {}) });
+  async function feature(t: T) {
+    const admin = await person(t, 'admin' as never);
+    const id = await imported(t, 'way/1');
+    const featureId = await admin.as.mutation(api.bodyFeatures.create, {
+      waterBodyId: id,
+      type: 'recurring_pressure_ridge',
+      geometryKind: 'point_radius',
+      geometry: { type: 'Point', coordinates: [-72, 44] },
+      radiusMeters: 30,
+      reason: 'seed',
+    });
+    await admin.as.mutation(api.bodyFeatures.updateShape, {
+      bodyFeatureId: featureId,
+      geometryKind: 'point_radius',
+      geometry: { type: 'Point', coordinates: [-72.005, 44.005] },
+      radiusMeters: 20,
+      reason: 'moved to the ridge',
+    });
+    const subject = (await lastAction(t, 'update_body_feature_shape'))._id;
+    return { admin, id, featureId, subject };
+  }
+  async function launch(t: T) {
+    const admin = await person(t, 'admin' as never);
+    const id = await imported(t, 'way/1');
+    const putInId = await t.run((ctx) =>
+      ctx.db.insert('putIns', {
+        waterBodyId: id,
+        coord: { lat: 44.01, lng: -72 },
+        source: 'osm',
+        status: 'visible',
+        name: 'Town Ramp',
+        createdAt: NOW,
+      }),
+    );
+    const r = await admin.as.mutation(api.putIns.promote, { putInId });
+    return { admin, id, putInId, actionId: r.actionId };
+  }
+
+  const CASES: { name: string; refused: RegExp | 'overtaken'; setup: (t: T) => Promise<Setup> }[] =
+    [
+      {
+        name: 'choose_depth_source, redone after a loader run took its source away',
+        refused: /no depth for this body/,
+        setup: async (t) => {
+          const admin = await person(t, 'admin' as never);
+          const id = await imported(t, 'way/1');
+          await depthLoad(t, [
+            ['state_agency', 24],
+            ['lagos_us', 23],
+          ]);
+          await admin.as.mutation(api.waterBodies.chooseDepthSource, {
+            waterBodyId: id,
+            measure: 'max',
+            source: 'lagos_us',
+          });
+          await undo(admin, (await lastAction(t, 'choose_depth_source'))._id);
+          return {
+            admin,
+            subject: (await lastAction(t, 'choose_depth_source'))._id,
+            drift: () =>
+              t.run(async (ctx) => {
+                const body = await ctx.db.get(id);
+                await ctx.db.patch(id, {
+                  depthCandidates: body?.depthCandidates?.filter((c) => c.source !== 'lagos_us'),
+                });
+              }),
+            state: async () => {
+              const b = await get(t, id);
+              return [b?.maxDepthM, b?.maxDepthSource, b?.depthChoice, b?.depthCandidates];
+            },
+          };
+        },
+      },
+      {
+        name: 'update_body_feature_shape, after the outline was re-imported away from the shape it puts back',
+        refused: /has to be on its lake/,
+        setup: async (t) => {
+          const { admin, id, featureId, subject } = await feature(t);
+          return {
+            admin,
+            subject,
+            drift: () =>
+              t.run((ctx) =>
+                ctx.db.patch(id, {
+                  bbox: { minLat: 44.004, minLng: -72.006, maxLat: 44.006, maxLng: -72.004 },
+                }),
+              ),
+            state: () => t.run((ctx) => ctx.db.get(featureId)),
+          };
+        },
+      },
+      {
+        name: 'set_put_in, after the launch was hidden (audited on the put-in, not the body)',
+        refused: /hidden/,
+        setup: async (t) => {
+          const { admin, putInId, actionId } = await launch(t);
+          return {
+            admin,
+            subject: actionId,
+            reason: 'not the town’s ramp',
+            drift: () => t.run((ctx) => ctx.db.patch(putInId, { status: 'hidden' })),
+            state: () => t.run((ctx) => ctx.db.get(putInId)),
+          };
+        },
+      },
+      {
+        name: 'set_put_in, redone after an import moved the launch',
+        refused: /changed since/,
+        setup: async (t) => {
+          const { admin, putInId, actionId } = await launch(t);
+          await undo(admin, actionId, 'not the town’s ramp');
+          return {
+            admin,
+            subject: (await lastAction(t, 'set_put_in'))._id,
+            drift: () =>
+              t.run((ctx) => ctx.db.patch(putInId, { coord: { lat: 44.0101, lng: -72 } })),
+            state: () => t.run((ctx) => ctx.db.get(putInId)),
+          };
+        },
+      },
+      {
+        name: 'edit_landmark, after a merge’s fold or a catalog run moved its spellings',
+        refused: /other spellings/,
+        setup: async (t) => {
+          const admin = await person(t, 'admin' as never);
+          const id = await imported(t, 'way/1');
+          const landmarkId = await t.run((ctx) =>
+            ctx.db.insert('bodyLandmarks', {
+              waterBodyId: id,
+              name: 'Long Point',
+              kind: 'point',
+              point: { lat: 44, lng: -72 },
+              aliases: ['The Point'],
+              source: 'gnis',
+              externalIds: ['gnis:lp'],
+              createdAt: NOW,
+              updatedAt: NOW,
+            } as never),
+          );
+          await admin.as.mutation(api.landmarks.update, {
+            landmarkId,
+            aliases: ['The Point', 'Longpoint'],
+          });
+          return {
+            admin,
+            subject: (await lastAction(t, 'edit_landmark'))._id,
+            drift: () =>
+              t.run((ctx) =>
+                ctx.db.patch(landmarkId, { aliases: ['The Point', 'Longpoint', 'Lone Point'] }),
+              ),
+            state: () => t.run((ctx) => ctx.db.get(landmarkId)),
+          };
+        },
+      },
+      {
+        name: 'set_weather_sample_points, after the outline moved off the grid it puts back',
+        refused: /isn't on/,
+        setup: async (t) => {
+          const admin = await person(t, 'admin' as never);
+          const id = await imported(t, 'way/1');
+          const set = (points: { lat: number; lng: number }[]) =>
+            admin.as.mutation(api.waterBodies.setWeatherSamplePoints, { waterBodyId: id, points });
+          await set([{ lat: 43.995, lng: -72 }]);
+          await set([{ lat: 44.005, lng: -72 }]);
+          return {
+            admin,
+            subject: (await lastAction(t, 'set_weather_sample_points'))._id,
+            drift: () =>
+              t.run((ctx) =>
+                ctx.db.patch(id, {
+                  polygon: {
+                    type: 'Polygon',
+                    coordinates: [
+                      [
+                        [-72.01, 44],
+                        [-71.99, 44],
+                        [-71.99, 44.01],
+                        [-72.01, 44.01],
+                        [-72.01, 44],
+                      ],
+                    ],
+                  } as never,
+                }),
+              ),
+            state: async () => (await get(t, id))?.weatherSamplePoints,
+          };
+        },
+      },
+      {
+        name: 'set_aliases, after a merge moved the body (the merge’s row overtakes it)',
+        refused: 'overtaken',
+        setup: async (t) => {
+          const admin = await person(t, 'admin' as never);
+          const id = await imported(t, 'way/1');
+          const survivor = await imported(t, 'way/2');
+          await admin.as.mutation(api.waterBodies.setAliases, {
+            waterBodyId: id,
+            aliases: ['The Mirror'],
+          });
+          return {
+            admin,
+            subject: (await lastAction(t, 'set_aliases'))._id,
+            drift: () =>
+              admin.as.mutation(api.waterBodies.merge, { survivorId: survivor, loserId: id }),
+            state: async () => (await get(t, id))?.moderatorAliases,
+          };
+        },
+      },
+    ];
+
+  for (const c of CASES) {
+    test(`${c.name}: offered and run without the change; with it, never offered and refused`, async () => {
+      const t = harness();
+      const control = await c.setup(t);
+      const before = await control.state();
+      expect(await offered(t, control.admin, control.subject)).toMatchObject({
+        state: 'available',
+      });
+      await undo(control.admin, control.subject, control.reason);
+      expect(await control.state()).not.toEqual(before);
+
+      const t2 = harness();
+      const s = await c.setup(t2);
+      await s.drift();
+      const state = await s.state();
+      const undoState = await offered(t2, s.admin, s.subject);
+      if (c.refused === 'overtaken') {
+        expect(undoState.state).toBe('overtaken');
+        await expect(undo(s.admin, s.subject, s.reason)).rejects.toThrow(/changed this since/);
+      } else {
+        expect(undoState).toMatchObject({
+          state: 'unavailable',
+          why: expect.stringMatching(c.refused),
+        });
+        await expect(undo(s.admin, s.subject, s.reason)).rejects.toThrow(c.refused);
+      }
+      expect(await s.state()).toEqual(state);
+    });
+  }
+
+  test('set_class, after a re-import changed the catalog class: the undo puts back the newer class, and its undo the moderator’s', async () => {
+    const t = harness();
+    const admin = await person(t, 'admin' as never);
+    const id = await imported(t, 'way/1', { type: 'reservoir' });
+    await admin.as.mutation(api.waterBodies.setClass, { waterBodyId: id, bodyClass: 'wetland' });
+    const set = (await lastAction(t, 'set_class'))._id;
+    await imported(t, 'way/1', { type: 'river' });
+    expect(await offered(t, admin, set)).toMatchObject({ state: 'available' });
+    await undo(admin, set);
+    const undone = await get(t, id);
+    expect(undone?.type).toBe('river');
+    expect(undone?.moderatorClass).toBeUndefined();
+    await undo(admin, (await lastAction(t, 'set_class'))._id);
+    expect(await get(t, id)).toMatchObject({ type: 'wetland', moderatorClass: 'wetland' });
+  });
+
+  test('choose_depth_source, after a loader run refreshed the ladder: the undo hands back to the fresh value, not the recorded one', async () => {
+    const t = harness();
+    const admin = await person(t, 'admin' as never);
+    const id = await imported(t, 'way/1');
+    await depthLoad(t, [
+      ['state_agency', 24],
+      ['lagos_us', 23],
+    ]);
+    await admin.as.mutation(api.waterBodies.chooseDepthSource, {
+      waterBodyId: id,
+      measure: 'max',
+      source: 'lagos_us',
+    });
+    await depthLoad(t, [['state_agency', 25]]);
+    expect((await get(t, id))?.maxDepthM).toBe(23);
+    await undo(admin, (await lastAction(t, 'choose_depth_source'))._id);
+    expect(await get(t, id)).toMatchObject({ maxDepthM: 25, maxDepthSource: 'state_agency' });
+  });
+
+  test('set_imagery_override, after its pass was recut or pruned: the call is keyed by the pass, so its undo still clears it', async () => {
+    const t = harness();
+    const admin = await person(t, 'admin' as never);
+    const id = await imported(t, 'way/1');
+    await admin.as.mutation(api.imageryOverrides.set, {
+      waterBodyId: id,
+      season: S,
+      granuleId: G,
+      action: 'hide',
+      reason: 'smoke',
+    });
+    // The pass is gone from the pipeline's tables; nothing of it was ever read by the override.
+    await t.run(async (ctx) => {
+      for (const g of await ctx.db.query('imageryGranules').collect()) await ctx.db.delete(g._id);
+    });
+    const row = (await lastAction(t, 'set_imagery_override'))._id;
+    expect(await offered(t, admin, row)).toMatchObject({ state: 'available' });
+    await undo(admin, row);
+    expect(
+      await t.query(api.imageryOverrides.passOverrides, { waterBodyId: id, season: S }),
+    ).toEqual([]);
+  });
+
+  test('update_body_feature_shape, after a merge moved the feature to the survivor: offered, and the shape goes back on the survivor', async () => {
+    const t = harness();
+    const { admin, id, featureId, subject } = await feature(t);
+    const survivor = await imported(t, 'way/2');
+    await admin.as.mutation(api.waterBodies.merge, { survivorId: survivor, loserId: id });
+    // The merge's row is on the body, not the feature; the geometry it moved is the moderator's own.
+    expect((await t.run((ctx) => ctx.db.get(featureId)))?.waterBodyId).toBe(survivor);
+    expect(await offered(t, admin, subject)).toMatchObject({ state: 'available' });
+    await undo(admin, subject);
+    expect(await t.run((ctx) => ctx.db.get(featureId))).toMatchObject({
+      waterBodyId: survivor,
+      geometry: { type: 'Point', coordinates: [-72, 44] },
+      radiusMeters: 30,
+    });
+  });
+
+  test('a landmark edit recorded before its spellings were: undone as before, with no compare', async () => {
+    const t = harness();
+    const admin = await person(t, 'admin' as never);
+    const id = await imported(t, 'way/1');
+    const landmarkId = await t.run((ctx) =>
+      ctx.db.insert('bodyLandmarks', {
+        waterBodyId: id,
+        name: 'Long Point',
+        kind: 'point',
+        point: { lat: 44, lng: -72 },
+        aliases: ['The Point'],
+        source: 'gnis',
+        externalIds: ['gnis:lp'],
+        createdAt: NOW,
+        updatedAt: NOW,
+      } as never),
+    );
+    await admin.as.mutation(api.landmarks.update, { landmarkId, aliases: ['Longpoint'] });
+    const row = await lastAction(t, 'edit_landmark');
+    const { aliases: _aliases, ...older } = row.metadata as Record<string, unknown>;
+    await t.run(async (ctx) => {
+      await ctx.db.patch(row._id, { metadata: older });
+      await ctx.db.patch(landmarkId, { aliases: ['Longpoint', 'Lone Point'] });
+    });
+    expect(await offered(t, admin, row._id)).toMatchObject({ state: 'available' });
+    await undo(admin, row._id);
+    expect((await t.run((ctx) => ctx.db.get(landmarkId)))?.aliases).toEqual(['The Point']);
+  });
+
+  test('past the page’s read budget the check is not guessed: the undo says to open what it changed', async () => {
+    const t = harness();
+    const admin = await person(t, 'admin' as never);
+    const id = await imported(t, 'way/1');
+    await depthLoad(t, [
+      ['state_agency', 24],
+      ['lagos_us', 23],
+    ]);
+    await admin.as.mutation(api.waterBodies.chooseDepthSource, {
+      waterBodyId: id,
+      measure: 'max',
+      source: 'lagos_us',
+    });
+    const rowId = (await lastAction(t, 'choose_depth_source'))._id;
+    const state = await t.run(async (ctx) => {
+      // Everything but less than one body's worst case already spent by the page.
+      requestBudget(ctx).spend(REQUEST_PROFILE_BUDGET - DOC_MAX + 1);
+      const viewer = await ctx.db.get(admin.id);
+      const row = await ctx.db.get(rowId);
+      if (!viewer || !row) throw new Error('missing');
+      return undoState(ctx, viewer, row);
+    });
+    expect(state).toEqual({ state: 'unavailable', why: UNDO_CHECKED_ELSEWHERE });
   });
 });

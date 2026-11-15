@@ -785,6 +785,9 @@ export async function updateLandmarkImpl(
         ...(names.name !== row.name ? { from: row.name } : {}),
         ...(moved ? { moved: true } : {}),
         ...(args.kind !== undefined && args.kind !== row.kind ? { kind: args.kind } : {}),
+        // The spellings it left, so its undo can refuse when a merge's fold or a catalog run moved
+        // them since (B01-3d) — rows from before this carry none and undo as they did.
+        aliases: names.aliases,
         prev,
       },
     );

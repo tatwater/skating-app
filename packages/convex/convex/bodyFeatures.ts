@@ -325,6 +325,30 @@ function checkedShape(
 }
 
 /**
+ * Why a redraw of this feature is refused as the rows stand, or `null` — one rule for the write and
+ * for whether its undo is offered (B01-3d): a feature gone or demoted, a lake merged away (a merge
+ * leaves its features on the loser), and — given a `shape` — a shape the write would turn down, which
+ * includes one an outline redrawn or re-imported since has left off the lake.
+ */
+export function shapeRefusal(
+  feature: Doc<'bodyFeatures'> | null,
+  body: Doc<'waterBodies'> | null,
+  shape?: FeatureShape,
+): string | null {
+  if (!feature) return 'Known feature not found';
+  if (!feature.active) return 'This feature was demoted — restore it before redrawing';
+  if (!body || body.dedupStatus === 'merged') return 'This feature’s lake was merged into another';
+  if (shape === undefined) return null;
+  try {
+    checkedShape(shape, body.bbox);
+    return null;
+  } catch (error) {
+    if (error instanceof ConvexError && typeof error.data === 'string') return error.data;
+    throw error;
+  }
+}
+
+/**
  * Moderator: redraw a known feature (B01-3d, `corpus.preIce`, as creating one is). What it changes:
  * the feature's geometry, its box, and the bay it is stamped into — never the body's outline or its
  * geometry facts, and no library fact counts a feature's shape. A demoted feature, or one on a body
@@ -358,13 +382,10 @@ export async function updateShapeImpl(
   }: { bodyFeatureId: Id<'bodyFeatures'>; shape: FeatureShape; reason: string },
 ): Promise<Id<'bodyFeatures'>> {
   const feature = await ctx.db.get(bodyFeatureId);
-  if (!feature) throw new ConvexError('Known feature not found');
-  if (!feature.active)
-    throw new ConvexError('This feature was demoted — restore it before redrawing');
-  const body = await ctx.db.get(feature.waterBodyId);
-  if (!body || body.dedupStatus === 'merged') {
-    throw new ConvexError('This feature’s lake was merged into another');
-  }
+  const body = feature ? await ctx.db.get(feature.waterBodyId) : null;
+  const refused = shapeRefusal(feature, body);
+  if (refused !== null || !feature || !body)
+    throw new ConvexError(refused ?? 'Known feature not found');
   const { bbox } = checkedShape(shape, body.bbox);
   const subArea = await resolveSubAreaForPoint(ctx, feature.waterBodyId, hazardCenter({ bbox }));
   const prev: FeatureShape = {

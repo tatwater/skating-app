@@ -15,13 +15,14 @@ import type { Doc, Id } from '../_generated/dataModel';
 import { setOfficialImpl } from '../accessAlerts';
 import { setPutInAccessImpl } from '../accessPoints';
 import { type ElevatedRole, grantRoleImpl, revokeRoleImpl } from '../admin';
-import { demoteImpl, type FeatureShape, updateShapeImpl } from '../bodyFeatures';
+import { demoteImpl, type FeatureShape, shapeRefusal, updateShapeImpl } from '../bodyFeatures';
 import { unmergeImpl } from '../hazards';
 import { type PostedAccessTarget, setPostedAccessImpl } from '../postedAccess';
 import { suppressImpl, unsuppressImpl } from '../recurrence';
 import { type ModerationAction, type ModerationTargetType, readSnapshot } from './audit';
 import { grantLedgerEditorImpl, revokeLedgerEditorImpl } from './ledgerEditors';
 import { UNDO_POLICY } from './undoPolicy';
+import { UNDO_CHECKED_ELSEWHERE, undoRead } from './undoReads';
 import { meta, PREDATES, type TargetUndo, type UndoCall, type UndoHandler } from './undoTypes';
 
 // ── Roles ─────────────────────────────────────────────────────────────────────────────────────────
@@ -232,6 +233,21 @@ const undoPromotion: UndoHandler = {
 const undoFeatureShape: UndoHandler = {
   blocked: (row) => (meta(row).prev?.snapshot === true ? null : PREDATES),
   undoTakesAway: () => UNDO_POLICY.update_body_feature_shape.takesAway(undefined),
+  // A merge leaves the feature on the lake it merged away, and a redrawn or re-imported outline can
+  // leave the shape it puts back off the lake — neither writes a row on the feature, so the shape is
+  // checked against the rows as they stand, by the redraw's own rule.
+  refusal: async (ctx, row) => {
+    const id = ctx.db.normalizeId('bodyFeatures', row.targetId);
+    const feature = id ? await undoRead(ctx, 'bodyFeature', id) : null;
+    if (feature === undefined) return UNDO_CHECKED_ELSEWHERE;
+    const body = feature ? await undoRead(ctx, 'waterBody', feature.waterBodyId) : null;
+    if (body === undefined) return UNDO_CHECKED_ELSEWHERE;
+    const unshaped = shapeRefusal(feature, body);
+    if (unshaped !== null) return unshaped;
+    const prev = await readSnapshot<FeatureShape>(ctx, row._id);
+    if (prev === null) return PREDATES;
+    return shapeRefusal(feature, body, prev);
+  },
   run: async ({ ctx, actor, row, reason }) => {
     const prev = await readSnapshot<FeatureShape>(ctx, row._id);
     if (prev === null) throw new ConvexError(PREDATES);
