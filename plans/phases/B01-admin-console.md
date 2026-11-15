@@ -1837,6 +1837,22 @@ have, or the geometry module's own parked read.
 | prompt sweep | one due row at a time (`first()`, at most 1 MiB) while a skater's prompt still fits | none — a skater that fails is recorded on their rows | twelve heavy recordings and recipients: each asked |
 | card sweep | one refresh row at a time (small), each card in its own nested transaction under 8 MiB | none — a card that fails is recorded on its row | cards with heavy Reports: every card refreshed |
 
+**What "latest" means, and every comparison that orders by a timestamp** (Greptile #116, P2: the
+digest picked its report by a row's `createdAt`, which a later event joining the row does not move —
+after a zone change and back, two rows flushed together and the older report won). The class is a
+decision made from a proxy timestamp the thing it stands for can drift from. Each comparison, its
+field, and why:
+
+| Where | Decides | Field | Why it is the right one |
+| --- | --- | --- | --- |
+| the digest (`flushRows`) | which report a lake's line links | `latestAt` (when the row's report last changed; `createdAt` on a pre-D258 row, never newer than the truth) | follows the content; the fix |
+| freshness (`isStaleQueueRow`) | expire or deliver | `dueClockOf`: `firstDueAt`, or a pre-D258 row's earliest clock | a deadline, and it must never move |
+| joining (`coalescingRow`) | whether an event may join a row | `firstDueAt` after now; `flushAfter` after now and no later than the event's | the row's clock has not started, and joining never delays the event |
+| a failure (`recordQueueFailure`) | when the row is tried next | `flushAfter` moved past the run's cutoff | delivery time only; the clock (`firstDueAt`) is left alone |
+| the flush and retry order | which row first | `flushAfter`; `parkedAt` (least recently tried) | order only — no decision about content |
+| the Machinery read | oldest failure, oldest parked | `firstFailedAt`, `parkedAt` | facts about the failure, written once each |
+| the lap walks | where to resume | photo `createdAt`, export `expiresAt`, account `deletionRequestedAt`, recording `detectedAt` | positions in an index; a value that changes (a re-requested deletion) only moves an item within the lap, which wraps |
+
 **A dry run writes nothing** (Greptile #116). The only dry mode among these jobs is the rollover's
 (`apply` false). It now records no failure and clears none — a failure is cleared only by an applied
 decision — and the purity property found one more write: the dry run's success scheduled a weather

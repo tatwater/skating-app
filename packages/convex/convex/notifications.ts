@@ -110,6 +110,8 @@ export async function enqueueReportNotice(
     await ctx.db.patch(existing._id, {
       count: existing.count + 1,
       latestReportId: params.reportId,
+      // The report moved on: "newest" follows it, not the row's creation time (D258).
+      latestAt: params.now,
     });
     return;
   }
@@ -120,6 +122,7 @@ export async function enqueueReportNotice(
     type: params.type,
     coalesceKey,
     latestReportId: params.reportId,
+    latestAt: params.now,
     count: 1,
     flushAfter: params.flushAfter,
     // The row's due clock, set once, here (D258).
@@ -794,14 +797,17 @@ async function flushRows(
             waterBodyId: r.waterBodyId,
             reportId: r.latestReportId,
             count: r.count,
-            at: r.createdAt,
+            at: r.latestAt ?? r.createdAt,
           });
           continue;
         }
         seen.count += r.count;
-        if (r.createdAt >= seen.at) {
+        // The newest report by when each row's report last changed (`latestAt`), never by the row's
+        // creation time, which a later event joining the row does not move (D258, Greptile #116).
+        const at = r.latestAt ?? r.createdAt;
+        if (at >= seen.at) {
           seen.reportId = r.latestReportId;
-          seen.at = r.createdAt;
+          seen.at = at;
         }
       }
       const bodies = [...byBody.values()].map(({ at: _at, ...b }) => b);

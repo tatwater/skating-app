@@ -1269,3 +1269,73 @@ describe('the freshness rule holds at enqueue and at flush, by construction', ()
     expect(await t.run((ctx) => ctx.db.get(row))).toBeNull();
   });
 });
+
+// ── "Latest" follows the content, never a row's creation time (D258, Greptile P2) ───────────────
+
+describe('a digest links the newest report it counts', () => {
+  async function digestSetup() {
+    const t = harness();
+    const fan = await seedUser(t, 'tz-fan');
+    await t.run((ctx) =>
+      ctx.db.patch(fan.id, { notificationPrefs: { ...NOTIF_PREFS, nearbyReportDigest: true } }),
+    );
+    const bodyId = await seedBody(t, 'osm/tz');
+    const notice = async (flushAfter: number) => {
+      const reportId = await seedReport(t, fan.id, bodyId);
+      await t.run((ctx) =>
+        enqueueReportNotice(ctx, {
+          userId: fan.id,
+          waterBodyId: bodyId,
+          reportId,
+          kind: 'digest',
+          type: 'nearby_report_digest',
+          flushAfter,
+          now: Date.now(),
+        }),
+      );
+      return reportId;
+    };
+    return { t, fan, bodyId, notice };
+  }
+
+  test('the timezone sequence (Greptile): tonight in the old zone, an earlier-due report after a zone change, then a later one after switching back — both rows flush together and the digest links the newest', async () => {
+    const { t, fan, bodyId, notice } = await digestSetup();
+    await notice(T0 + 5 * HOUR); // the old zone's 8 pm
+    vi.setSystemTime(Date.now() + MINUTE);
+    await notice(T0 + 4 * HOUR); // a zone an hour east: due earlier, a row of its own
+    vi.setSystemTime(Date.now() + MINUTE);
+    const newest = await notice(T0 + 5 * HOUR); // back again: joins the first row
+    vi.setSystemTime(T0 + 5 * HOUR + MINUTE);
+    await t.mutation(internal.notifications.flushNotificationQueue, {});
+    const [digest] = await inbox(t, fan.id);
+    expect(digest?.payload.bodies).toEqual([{ waterBodyId: bodyId, reportId: newest, count: 3 }]);
+  });
+
+  test('over any sequence of zone changes, the one digest counts every event and links the newest report', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(fc.integer({ min: -2, max: 2 }), { minLength: 1, maxLength: 6 }),
+        async (zones) => {
+          vi.setSystemTime(T0);
+          const { t, fan, notice } = await digestSetup();
+          let newest: Id<'reports'> | undefined;
+          for (const z of zones) {
+            newest = await notice(T0 + (5 + z) * HOUR);
+            vi.setSystemTime(Date.now() + MINUTE);
+          }
+          vi.setSystemTime(T0 + 8 * HOUR);
+          await t.mutation(internal.notifications.flushNotificationQueue, {});
+          const sent = await inbox(t, fan.id);
+          expect(sent).toHaveLength(1);
+          expect(sent[0]?.payload.bodies).toHaveLength(1);
+          expect(sent[0]?.payload.bodies[0]).toMatchObject({
+            reportId: newest,
+            count: zones.length,
+          });
+          expect(sent[0]?.payload.totalCount).toBe(zones.length);
+        },
+      ),
+      { numRuns: 15 },
+    );
+  }, 60_000);
+});
