@@ -233,7 +233,29 @@ describe('ImageryTabView', () => {
     expect(screen.getByRole('button', { name: 'Never' })).toHaveAttribute('data-disabled');
   });
 
-  it('an earlier satellite choice refused late never shows under a choice made since', async () => {
+  it('Auto → Never → Auto before the first answer ends on Auto: the latest press always wins', async () => {
+    const answers: ((refusal?: Error) => void)[] = [];
+    const onSatelliteChange = vi.fn(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          answers.push((refusal) => (refusal === undefined ? resolve() : reject(refusal)));
+        }),
+    );
+    render(<ImageryTabView {...base} onSatelliteChange={onSatelliteChange} />);
+    const pressed = (name: string) =>
+      expect(screen.getByRole('button', { name })).toHaveAttribute('aria-pressed', 'true');
+    await userEvent.click(screen.getByRole('button', { name: 'Never' }));
+    pressed('Never');
+    // Back to Auto before the server has answered: shown at once, and sent.
+    await userEvent.click(screen.getByRole('button', { name: 'Auto' }));
+    pressed('Auto');
+    await act(async () => answers[0]?.());
+    await act(async () => answers[1]?.());
+    expect(onSatelliteChange.mock.calls.map((c) => (c as unknown[])[0])).toEqual(['off', 'auto']);
+    pressed('Auto');
+  });
+
+  it('a refused choice says which, under any choice made since, and the control takes the server back', async () => {
     const answers: ((refusal?: Error) => void)[] = [];
     const onSatelliteChange = vi.fn(
       () =>
@@ -243,11 +265,10 @@ describe('ImageryTabView', () => {
     );
     render(<ImageryTabView {...base} onSatelliteChange={onSatelliteChange} />);
     await userEvent.click(screen.getByRole('button', { name: 'Never' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Always offer' }));
-    expect(onSatelliteChange).toHaveBeenCalledTimes(2);
-    await act(async () => answers[0]?.(new Error('Not saved: the first choice')));
-    await act(async () => answers[1]?.());
-    expect(screen.queryByText('Not saved: the first choice')).toBeNull();
+    await act(async () => answers[0]?.(new Error('Not allowed')));
+    expect(screen.getByRole('alert')).toHaveTextContent('“Never” wasn’t saved: Not allowed');
+    // The server still holds Auto: the control shows it.
+    expect(screen.getByRole('button', { name: 'Auto' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('a refused call says why', async () => {

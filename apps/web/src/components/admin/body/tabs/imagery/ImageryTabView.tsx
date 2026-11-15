@@ -42,6 +42,7 @@ import {
 import { cn } from '@/lib/utils';
 import { dayMonth } from '../../frame/bodyModel';
 import { useTabKeys } from '../../frame/tabKeys';
+import { useLatestPick } from '../latestPick';
 import { LoadingSection } from '../tabParts';
 
 import {
@@ -109,6 +110,13 @@ const SATELLITE_CHOICES: ReadonlyArray<{ value: SatelliteImageryMode; label: str
   { value: 'off', label: 'Never' },
 ];
 
+/** A satellite choice in the control's words. */
+const choiceLabel = (mode: SatelliteImageryMode): string =>
+  SATELLITE_CHOICES.find((c) => c.value === mode)?.label ?? mode;
+
+/** A refused choice, named, so it never reads as a later choice's refusal. */
+const notSavedChoice = (label: string, why: string): string => `“${label}” wasn’t saved: ${why}`;
+
 export function ImageryTabView({
   season,
   rows,
@@ -168,21 +176,11 @@ export function ImageryTabView({
     setError(null);
     setAsking(true);
   };
-  const [satError, setSatError] = useState<string | null>(null);
-  // Only the latest choice's refusal is said: an earlier one refused late never shows under a
-  // choice made since.
-  const satChoices = useRef(0);
-  const setSatellite = async (mode: SatelliteImageryMode) => {
-    if (!onSatelliteChange) return;
-    const mine = ++satChoices.current;
-    setSatError(null);
-    try {
-      await onSatelliteChange(mode);
-    } catch (err) {
-      if (satChoices.current === mine)
-        setSatError(err instanceof Error ? err.message : String(err));
-    }
-  };
+  // The satellite link: the latest press always wins — shown at once, each press sent in order,
+  // the server's answer drawn again once every write has answered (`useLatestPick`).
+  const sat = useLatestPick<SatelliteImageryMode>(satellite.mode, async (mode) =>
+    onSatelliteChange?.(mode),
+  );
   const go = (to: number) => {
     const next = passes[to];
     if (next !== undefined) onLitChange(next.id);
@@ -388,9 +386,11 @@ export function ImageryTabView({
         <ToggleGroup
           aria-label="Satellite link"
           variant="well"
-          value={satellite.mode}
+          value={sat.shown}
           disabled={onSatelliteChange === undefined}
-          onValueChange={(v) => void setSatellite(v as SatelliteImageryMode)}
+          onValueChange={(v) => {
+            if (onSatelliteChange !== undefined && v !== '') sat.press(v as SatelliteImageryMode);
+          }}
           className="flex w-full [&>*]:flex-1"
         >
           {SATELLITE_CHOICES.map((c) => (
@@ -400,11 +400,11 @@ export function ImageryTabView({
           ))}
         </ToggleGroup>
         <p className="m-0 text-assist leading-(--lead-list) text-fg3">
-          {satelliteAssist(satellite.name, satellite.areaSqM, satellite.mode)}
+          {satelliteAssist(satellite.name, satellite.areaSqM, sat.shown)}
         </p>
-        {satError !== null && (
+        {sat.error !== null && (
           <p role="alert" className="m-0 text-assist text-bad">
-            {satError}
+            {notSavedChoice(choiceLabel(sat.error.value), sat.error.why)}
           </p>
         )}
       </Section>
