@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { faceLoaded, must } from '@/components/kit/storyKit';
@@ -105,5 +105,55 @@ export const ReadOnly: Story = {
     await expect(quad(canvasElement).querySelectorAll('[data-slot="sortable-grip"]')).toHaveLength(
       0,
     );
+  },
+};
+
+/** The links as a server keeps them: each save answers after a beat, and the list echoes it. */
+function Saving() {
+  const [links, setLinks] = useState(MASCOMA.referenceLinks ?? []);
+  return (
+    <LinksTabView
+      body={{ ...MASCOMA, referenceLinks: links }}
+      now={BODY_NOW}
+      canEdit
+      lakeSheetHref="/water/k1"
+      onSave={async (next) => {
+        await new Promise((r) => setTimeout(r, 400));
+        setLinks([...next]);
+      }}
+    />
+  );
+}
+
+/**
+ * An added link typed on while it saves: the editor is the same one, the caret where it was —
+ * the keys typed after the save lands go where the moderator put them.
+ */
+export const AddTypedOnWhileSaving: Story = {
+  render: () => (
+    <Inspector>
+      <Saving />
+    </Inspector>
+  ),
+  play: async ({ canvasElement }) => {
+    const q = within(quad(canvasElement));
+    await userEvent.click(q.getByRole('button', { name: 'Add a link' }));
+    await userEvent.type(q.getByRole('textbox', { name: 'Label' }), 'Town page');
+    const url = q.getByRole('textbox', { name: 'Address' }) as HTMLInputElement;
+    await userEvent.type(url, 'https://enfield.nh.gov');
+    await userEvent.click(q.getByRole('button', { name: 'Done' }));
+    url.focus();
+    url.setSelectionRange(8, 8);
+    await userEvent.keyboard('x');
+    // Settled: the add has landed (the saved link can now be removed from this editor).
+    await waitFor(() => expect(q.getByRole('button', { name: 'Remove' })).toBeVisible(), {
+      timeout: 3000,
+    });
+    const after = q.getByRole('textbox', { name: 'Address' }) as HTMLInputElement;
+    await expect(after).toBe(url);
+    await expect(after).toHaveFocus();
+    await expect([after.selectionStart, after.selectionEnd]).toEqual([9, 9]);
+    await userEvent.keyboard('y');
+    await expect(after).toHaveValue('https://xyenfield.nh.gov');
   },
 };

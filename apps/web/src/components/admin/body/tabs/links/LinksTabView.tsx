@@ -49,23 +49,26 @@ export type LinksTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
 };
 
 type Editing = {
-  key: string | 'new';
+  /**
+   * The link this editor is bound to, by identity: a row's key, or — for a link being added — the
+   * key the page minted for it when Add was pressed, which its row carries once saved. Never
+   * matched by its words: two links may say the same.
+   */
+  key: string;
+  /** Opened by Add: drawn at the list's foot for its whole life, never remounted into a row. */
+  added: boolean;
+  /** An added link not saved yet: its Done adds it; once saved, Done edits it. */
+  unsaved: boolean;
   label: string;
   url: string;
   error: string | null;
   /** This opening of the editor: a save it sent closes it, and nothing it didn't send does. */
   opening: number;
-  /**
-   * An added link whose draft moved on while its save was out: the link it saved, whose row the
-   * editor takes over once the echo shows — so the next Done edits it, never adds a second.
-   */
-  adopt?: StaffLink;
-  /**
-   * The field that takes focus when the editor mounts. An adopted editor moves from the list's foot
-   * into its row (a new mount), so it keeps the field the moderator was typing in. Absent: Label.
-   */
-  focus?: 'url';
 };
+
+/** Said when an added link's row can't be told from the list any more (another write moved it). */
+const LOST_ADD =
+  'The list changed while this link was saving, so this editor can’t tell which row it is. Cancel, then edit the link from its row.';
 
 export function LinksTabView({
   body,
@@ -81,8 +84,17 @@ export function LinksTabView({
   const minted = useRef(0);
   const ids = useRef<KeyedLink[]>([]);
   const links = body.referenceLinks;
+  // **The rows' identities come from the page's own writes where it can tell**: a list the server
+  // shows that is exactly the one this page last sent takes that list's keys, row for row — so a
+  // link this page added carries the key it was minted with, even beside a duplicate of its words.
+  // Any other list carries ids by their words (`carryIds`).
+  const lastSent = useRef<readonly KeyedLink[] | null>(null);
   const staff = useMemo(() => {
-    const next = carryIds(ids.current, links ?? [], () => `link-${++minted.current}`);
+    const sent = lastSent.current;
+    const next =
+      sent !== null && sameLinks(sent, links ?? [])
+        ? sent.map((l) => ({ ...l }))
+        : carryIds(ids.current, links ?? [], () => `link-${++minted.current}`);
     ids.current = next;
     return next;
   }, [links]);
@@ -107,7 +119,13 @@ export function LinksTabView({
   // stands in that place now. Each opening has its own id: after Cancel and Edit on the same link
   // (or another), a late save closes nothing, takes no focus and discards nothing typed since.
   const openings = useRef(0);
-  const open = (e: Omit<Editing, 'opening'>) => setEditing({ ...e, opening: ++openings.current });
+  const open = (e: Omit<Editing, 'opening' | 'added' | 'unsaved'> & { added?: boolean }) =>
+    setEditing({
+      ...e,
+      added: e.added === true,
+      unsaved: e.added === true,
+      opening: ++openings.current,
+    });
   const openNow = useRef<Editing | null>(null);
   openNow.current = editing;
   // **A finished save closes its editor only if the draft is still what it sent.** Typed on since,
@@ -119,32 +137,19 @@ export function LinksTabView({
     if (now !== null && sent !== null) {
       const draft = { label: now.label.trim(), url: now.url.trim() };
       if (draft.label !== sent.label || draft.url !== sent.url) {
-        if (key === 'new') {
-          setEditing((e) => (e !== null && e.opening === opening ? { ...e, adopt: sent } : e));
-        }
+        // Saved, and typed on since: the same editor, still mounted, now edits what it saved.
+        setEditing((e) => (e !== null && e.opening === opening ? { ...e, unsaved: false } : e));
         return;
       }
     }
     refocus.current = key;
     setEditing(null);
   };
-  // An added link's editor takes over the added link's row once its echo shows — remounted there,
-  // so the keys still being typed land in the field they were going to, never the Label.
-  useEffect(() => {
-    const adopt = editing?.adopt;
-    if (editing === null || editing.key !== 'new' || adopt === undefined) return;
-    const found = [...staff].reverse().find((l) => l.label === adopt.label && l.url === adopt.url);
-    if (found === undefined) return;
-    const inUrl = document.activeElement?.getAttribute('data-link-field') === 'url';
-    setEditing({ ...editing, key: found.key, adopt: undefined, focus: inUrl ? 'url' : undefined });
-  }, [staff, editing]);
   // The openings with a save on its way: an opening's own Done and Remove don't send twice (a ref,
   // so two presses in one frame see it); a reopened editor isn't held by the old one's save.
   const sending = useRef(new Set<number>());
   const [busyOpenings, setBusyOpenings] = useState<ReadonlySet<number>>(new Set());
-  // Busy while its own save is out, or while an added link's echo is still on its way.
-  const editorBusy =
-    editing !== null && (busyOpenings.has(editing.opening) || editing.adopt !== undefined);
+  const editorBusy = editing !== null && busyOpenings.has(editing.opening);
   const editorSave = async (
     opening: number,
     change: (base: readonly KeyedLink[]) => readonly KeyedLink[],
@@ -171,10 +176,14 @@ export function LinksTabView({
     async (next) => {
       if (!onSave) return false;
       setSaveError(null);
+      // The list this attempt sends, keys and all: the server's echo of it takes these keys.
+      lastSent.current = next;
       try {
         await onSave(next.map(({ label, url }) => ({ label, url })));
         return true;
       } catch (err) {
+        // Refused: the server holds no list of ours to carry keys from.
+        lastSent.current = null;
         setSaveError(err instanceof Error ? err.message : String(err));
         return false;
       }
@@ -194,7 +203,11 @@ export function LinksTabView({
   };
 
   const commitEdit = async () => {
-    if (editing === null || sending.current.has(editing.opening) || editing.adopt !== undefined) {
+    if (editing === null || sending.current.has(editing.opening)) return;
+    // A saved add whose row the page can no longer tell (another write moved the list): say so,
+    // never guess by its words.
+    if (editing.added && !editing.unsaved && !staff.some((l) => l.key === editing.key)) {
+      setEditing({ ...editing, error: LOST_ADD });
       return;
     }
     const draft = { label: editing.label, url: editing.url };
@@ -204,18 +217,16 @@ export function LinksTabView({
       return;
     }
     const clean = { label: draft.label.trim(), url: draft.url.trim() };
-    const { key, opening } = editing;
+    const { key, opening, unsaved } = editing;
     const ok = await editorSave(
       opening,
-      key === 'new'
-        ? linkChanges.add({ ...clean, key: `link-${++minted.current}` })
-        : linkChanges.edit(key, clean),
+      unsaved ? linkChanges.add({ ...clean, key }) : linkChanges.edit(key, clean),
     );
     if (ok) landed(opening, key, clean);
   };
 
   const removeEdited = async () => {
-    if (editing === null || editing.key === 'new') {
+    if (editing === null || editing.unsaved) {
       setEditing(null);
       return;
     }
@@ -252,7 +263,15 @@ export function LinksTabView({
             <Button
               size="xs"
               data-slot="link-add"
-              onClick={() => open({ key: 'new', label: '', url: '', error: null })}
+              onClick={() =>
+                open({
+                  key: `link-${++minted.current}`,
+                  added: true,
+                  label: '',
+                  url: '',
+                  error: null,
+                })
+              }
             >
               Add a link
             </Button>
@@ -262,7 +281,9 @@ export function LinksTabView({
         {staff.length > 0 && (
           <SortableRows<KeyedLink>
             aria-label="Links added by staff"
-            items={staff}
+            // An added link's editor stays at the foot until it closes: its saved row isn't drawn
+            // twice meanwhile.
+            items={editing?.added ? staff.filter((l) => l.key !== editing.key) : staff}
             idOf={(l) => l.key}
             labelOf={(l) => l.label}
             // Editing takes the grips away (the lift is put down); a save keeps them, inert.
@@ -270,7 +291,7 @@ export function LinksTabView({
             pending={inFlight > 0}
             onReorder={(keys) => void save(linkChanges.order(keys))}
             renderRow={(link, { grip }) =>
-              editing?.key === link.key ? (
+              editing !== null && !editing.added && editing.key === link.key ? (
                 <LinkEditor
                   editing={editing}
                   busy={editorBusy}
@@ -299,8 +320,11 @@ export function LinksTabView({
             }
           />
         )}
-        {editing?.key === 'new' && (
+        {editing?.added && (
           <LinkEditor
+            // One instance for the add's whole life — saved or not — so focus, caret, selection
+            // and an IME's composition are never touched by a save.
+            key={editing.opening}
             editing={editing}
             busy={editorBusy}
             onChange={setEditing}
@@ -474,6 +498,7 @@ function LinkEditor({
   return (
     <div
       data-slot="link-editor"
+      data-editing-key={editing.key}
       className="flex flex-col gap-(--space-2) border-0 border-b border-dotted border-line py-(--space-2_5) last:border-b-0 in-[li:last-child]:border-b-0"
     >
       <label htmlFor={labelId} className="sr-only">
@@ -481,7 +506,7 @@ function LinkEditor({
       </label>
       <Input
         id={labelId}
-        autoFocus={editing.focus !== 'url'}
+        autoFocus
         value={editing.label}
         placeholder="What the link is, as skaters read it"
         onChange={(e) => onChange({ ...editing, label: e.target.value, error: null })}
@@ -494,7 +519,6 @@ function LinkEditor({
       <Input
         id={urlId}
         data-link-field="url"
-        autoFocus={editing.focus === 'url'}
         value={editing.url}
         placeholder="https://"
         className="font-(family-name:--family-mono) text-mono-sm"
@@ -514,7 +538,7 @@ function LinkEditor({
         <Button size="xs" variant="bare" onClick={onCancel}>
           Cancel
         </Button>
-        {editing.key !== 'new' && (
+        {!editing.unsaved && (
           <Button size="xs" variant="danger" className="ms-auto" onClick={onRemove}>
             Remove
           </Button>

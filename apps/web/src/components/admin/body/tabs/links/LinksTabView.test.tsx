@@ -745,3 +745,215 @@ describe('LinksTabView — a finished save never discards what was typed since i
     expect(label()).toHaveValue('Town page');
   });
 });
+
+describe('LinksTabView — an added link’s editor is bound to the link it added, by identity', () => {
+  /** A held save; its echo shows `before` or `after` the save's answer, when the test says. */
+  function Echoing({
+    sent,
+    answers,
+    echo,
+  }: {
+    sent: StaffLink[][];
+    answers: (() => void)[];
+    echo: 'before' | 'after';
+  }) {
+    const [links, setLinks] = useState<readonly StaffLink[]>(MASCOMA.referenceLinks ?? []);
+    return (
+      <LinksTabView
+        {...base}
+        body={{ ...MASCOMA, referenceLinks: links }}
+        onSave={async (next) => {
+          sent.push(next);
+          if (echo === 'before') setLinks(next);
+          await new Promise<void>((r) => answers.push(r));
+          if (echo === 'after') setTimeout(() => setLinks(next), 0);
+        }}
+      />
+    );
+  }
+  const answer = async (answers: (() => void)[]) => {
+    await act(async () => answers.shift()?.());
+    await act(async () => new Promise((r) => setTimeout(r, 5)));
+  };
+  const field = (name: string) => screen.getByRole('textbox', { name }) as HTMLInputElement;
+
+  it.each(['before', 'after'] as const)(
+    'a duplicate of an existing link, typed on while saving (echo %s the answer): the next Done edits the new one',
+    async (echo) => {
+      const user = userEvent.setup();
+      const sent: StaffLink[][] = [];
+      const answers: (() => void)[] = [];
+      render(<Echoing sent={sent} answers={answers} echo={echo} />);
+      await user.click(screen.getByRole('button', { name: 'Add a link' }));
+      await user.type(field('Label'), ASSOC.label);
+      await user.type(field('Address'), ASSOC.url);
+      await user.click(screen.getByRole('button', { name: 'Done' }));
+      await user.type(field('Label'), ' (lake)');
+      await answer(answers);
+      expect(field('Label').value).toBe(`${ASSOC.label} (lake)`);
+      await user.click(screen.getByRole('button', { name: 'Done' }));
+      // The older duplicate is untouched; the one this editor added carries the newer words.
+      expect(sent.at(-1)).toEqual([ASSOC, DAM, { label: `${ASSOC.label} (lake)`, url: ASSOC.url }]);
+    },
+  );
+
+  it.each(['before', 'after'] as const)(
+    'the caret, the selection and focus are untouched when the add lands (echo %s the answer)',
+    async (echo) => {
+      const user = userEvent.setup();
+      const sent: StaffLink[][] = [];
+      const answers: (() => void)[] = [];
+      render(<Echoing sent={sent} answers={answers} echo={echo} />);
+      await user.click(screen.getByRole('button', { name: 'Add a link' }));
+      await user.type(field('Label'), 'Town page');
+      await user.type(field('Address'), 'https://enfield.nh.gov');
+      await user.click(screen.getByRole('button', { name: 'Done' }));
+      const url = field('Address');
+      url.focus();
+      url.setSelectionRange(8, 8);
+      await user.keyboard('x');
+      const before = { el: url, start: url.selectionStart, end: url.selectionEnd };
+      await answer(answers);
+      const after = field('Address');
+      expect(after).toBe(before.el);
+      expect(document.activeElement).toBe(before.el);
+      expect([after.selectionStart, after.selectionEnd]).toEqual([before.start, before.end]);
+      await user.keyboard('y');
+      expect(after.value).toBe('https://xyenfield.nh.gov');
+    },
+  );
+});
+
+describe('LinksTabView — over any run of adds (duplicates allowed), edits, removes, reorders, late answers and refusals (fast-check)', () => {
+  type Op =
+    | { kind: 'add'; dup: number | null }
+    | { kind: 'edit'; row: number }
+    | { kind: 'type'; text: string }
+    | { kind: 'done' }
+    | { kind: 'cancel' }
+    | { kind: 'remove' }
+    | { kind: 'reorder' }
+    | { kind: 'answer'; ok: boolean };
+  const op: fc.Arbitrary<Op> = fc.oneof(
+    fc.record({ kind: fc.constant('add' as const), dup: fc.option(fc.nat(3), { nil: null }) }),
+    fc.record({ kind: fc.constant('edit' as const), row: fc.nat(3) }),
+    fc.record({ kind: fc.constant('type' as const), text: fc.constantFrom('a', 'b') }),
+    fc.constant({ kind: 'done' as const }),
+    fc.constant({ kind: 'cancel' as const }),
+    fc.constant({ kind: 'remove' as const }),
+    fc.constant({ kind: 'reorder' as const }),
+    fc.record({ kind: fc.constant('answer' as const), ok: fc.boolean() }),
+  );
+
+  function Server({ sent, answers }: { sent: StaffLink[][]; answers: ((ok: boolean) => void)[] }) {
+    const [links, setLinks] = useState<readonly StaffLink[]>(MASCOMA.referenceLinks ?? []);
+    return (
+      <LinksTabView
+        {...base}
+        body={{ ...MASCOMA, referenceLinks: links }}
+        onSave={async (next) => {
+          sent.push(next);
+          const ok = await new Promise<boolean>((r) => answers.push(r));
+          if (!ok) throw new Error('refused');
+          setTimeout(() => setLinks(next), 0);
+        }}
+      />
+    );
+  }
+
+  it('an editor is never bound to another link than the one it was opened for or added', async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.array(op, { maxLength: 12 }), async (ops) => {
+        const user = userEvent.setup({ delay: null });
+        const sent: StaffLink[][] = [];
+        const answers: ((ok: boolean) => void)[] = [];
+        const { unmount } = render(<Server sent={sent} answers={answers} />);
+        try {
+          const editor = () => document.querySelector<HTMLElement>('[data-slot="link-editor"]');
+          const rowsNow = () =>
+            [...document.querySelectorAll<HTMLElement>('[data-link-key]')].map(
+              (r) => r.dataset.linkKey,
+            );
+          // The identity the open editor was opened with.
+          let bound: string | null = null;
+          for (const o of ops) {
+            const ed = editor();
+            if (ed === null) bound = null;
+            if (o.kind === 'add' && ed === null) {
+              const add = screen.queryByRole('button', { name: 'Add a link' });
+              if (add === null) continue;
+              await user.click(add);
+              bound = editor()?.dataset.editingKey ?? null;
+              const rows = screen.queryAllByText(/^(Mascoma|Lake level)/);
+              const dup = o.dup === null ? null : rows[o.dup % Math.max(1, rows.length)];
+              const label = dup?.textContent ?? 'Town page';
+              await user.type(screen.getByRole('textbox', { name: 'Label' }), label);
+              await user.type(
+                screen.getByRole('textbox', { name: 'Address' }),
+                label.startsWith('Mascoma')
+                  ? ASSOC.url
+                  : label.startsWith('Lake')
+                    ? DAM.url
+                    : 'https://t.example',
+              );
+            } else if (o.kind === 'edit' && ed === null) {
+              const keys = rowsNow();
+              const key = keys[o.row % Math.max(1, keys.length)];
+              const button =
+                key === undefined
+                  ? null
+                  : document.querySelector<HTMLElement>(
+                      `[data-link-key="${key}"] [data-slot="link-edit"]`,
+                    );
+              if (button === null) continue;
+              await user.click(button);
+              bound = key ?? null;
+            } else if (o.kind === 'type' && ed !== null) {
+              await user.type(screen.getByRole('textbox', { name: 'Label' }), o.text);
+            } else if (o.kind === 'done' && ed !== null) {
+              await user.click(screen.getByRole('button', { name: 'Done' }));
+            } else if (o.kind === 'cancel' && ed !== null) {
+              await user.click(screen.getByRole('button', { name: 'Cancel' }));
+            } else if (o.kind === 'remove' && ed !== null) {
+              const remove = screen.queryByRole('button', { name: 'Remove' });
+              if (remove !== null) await user.click(remove);
+            } else if (o.kind === 'reorder' && ed === null) {
+              const g = document.querySelector<HTMLElement>('[data-slot="sortable-grip"]');
+              if (g === null || g.getAttribute('aria-disabled') === 'true') continue;
+              g.focus();
+              await user.keyboard(' {ArrowDown} ');
+            } else if (o.kind === 'answer') {
+              await act(async () => answers.shift()?.(o.ok));
+              await act(async () => new Promise((r) => setTimeout(r, 2)));
+            }
+            const now = editor();
+            // The open editor is still bound to what it was opened with or added.
+            if (now !== null && bound !== null) expect(now.dataset.editingKey).toBe(bound);
+          }
+        } finally {
+          for (let i = 0; i < 30 && answers.length > 0; i++) {
+            await act(async () => answers.shift()?.(true));
+            await act(async () => new Promise((r) => setTimeout(r, 2)));
+          }
+          unmount();
+        }
+      }),
+      {
+        numRuns: 30,
+        // The review's case: a duplicate of an existing link added, typed on before the answer.
+        examples: [
+          [
+            [
+              { kind: 'add', dup: 0 },
+              { kind: 'done' },
+              { kind: 'type', text: 'a' },
+              { kind: 'answer', ok: true },
+              { kind: 'done' },
+              { kind: 'answer', ok: true },
+            ],
+          ],
+        ],
+      },
+    );
+  });
+});
