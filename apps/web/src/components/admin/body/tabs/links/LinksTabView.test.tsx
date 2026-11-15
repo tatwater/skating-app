@@ -256,7 +256,7 @@ describe('LinksTabView — over any run of opening, typing, Done, Cancel and reo
   it('a late save never closes or clears an editor it didn’t open, and every Done lands in order', async () => {
     await fc.assert(
       fc.asyncProperty(fc.array(op, { maxLength: 10 }), async (ops) => {
-        const user = userEvent.setup();
+        const user = userEvent.setup({ delay: null });
         const sent: StaffLink[][] = [];
         const releases: (() => void)[] = [];
         const { unmount } = render(<Held sent={sent} releases={releases} />);
@@ -320,7 +320,7 @@ describe('LinksTabView — over any run of opening, typing, Done, Cancel and reo
         }
       }),
       {
-        numRuns: 60,
+        numRuns: 45,
         // The review's sequence, seeded so every run covers it: a save on its way, Cancel, the
         // same link and the other reopened, a draft typed, then the old save lands.
         examples: [

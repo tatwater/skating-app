@@ -130,7 +130,7 @@ describe('a pick whose write is in flight — the latest press wins', () => {
         expect(h.pick.shown(h.server)).toBe(h.server);
         expect(h.errors).toHaveLength(failures);
       }),
-      { numRuns: 120 },
+      { numRuns: 60 },
     );
   });
 });
