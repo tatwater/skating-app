@@ -202,6 +202,13 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
   set_reference_links: { undo: setPrev, takesAway: never, capability: 'body.identity' },
   set_aliases: { undo: setPrev, takesAway: never, capability: 'body.identity' },
   set_class: { undo: setPrev, takesAway: never, capability: 'body.identity' },
+  // Pinning gives; clearing every pin can take a body out of a state's filter — as clearing
+  // `includedByRequest` takes a body out of the corpus — so an undo that clears asks a reason.
+  set_moderator_towns: {
+    undo: setPrev,
+    takesAway: (keys) => Array.isArray(keys) && keys.length === 0,
+    capability: 'body.identity',
+  },
   set_water_body_name: { undo: setPrev, takesAway: never, capability: 'body.identity' },
   set_included_by_request: {
     undo: setPrev,

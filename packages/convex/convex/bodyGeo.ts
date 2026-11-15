@@ -90,6 +90,8 @@ export const inputs = internalQuery({
       areasAt: await latestAreasMark(ctx),
       polygon: body.polygon,
       bbox: body.bbox,
+      /** A moderator's pinned towns (B01-3g), listed whatever the rule says. */
+      pins: body.moderatorTownKeys ?? [],
     };
   },
 });
@@ -224,6 +226,25 @@ export const countyPage = internalQuery({
   },
 });
 
+/** Pinned towns by key — at most {@link TOWN_PAGE}; a key no town row has now is left out. */
+export const townsByKey = internalQuery({
+  args: { keys: v.array(v.string()) },
+  handler: async (ctx, { keys }) => {
+    if (keys.length > TOWN_PAGE) throw new ConvexError(`at most ${TOWN_PAGE} towns a page`);
+    const out: ReachedTown[] = [];
+    for (const key of keys) {
+      const a = await ctx.db
+        .query('adminAreas')
+        .withIndex('by_external_id', (q) => q.eq('externalId', key))
+        .first();
+      if (a !== null && a.level === 'town') {
+        out.push({ id: a._id, name: a.name, state: a.state, externalId: a.externalId });
+      }
+    }
+    return out;
+  },
+});
+
 // ── The pure work the action does ────────────────────────────────────────────────────────────
 
 /** A town the rule placed the body in, as {@link townPage} returned it (its polygon no longer needed). */
@@ -240,11 +261,12 @@ export type ReachedTown = { id: Id<'adminAreas'>; name: string; state: string; e
 export function placesFrom(
   reached: readonly ReachedTown[],
   countyNames: ReadonlyMap<string, string>,
+  pinnedKeys: ReadonlySet<string> = new Set(),
 ): {
   towns: string[];
   townStates: string[];
   townIds: Id<'adminAreas'>[];
-  townEntries: { name: string; state: string; id: Id<'adminAreas'> }[];
+  townEntries: { name: string; state: string; id: Id<'adminAreas'>; pinned?: boolean }[];
   counties: string[];
   states: string[];
 } {
@@ -254,7 +276,7 @@ export function placesFrom(
   const townIds: Id<'adminAreas'>[] = [];
   // Keyed on name and state (B01-3d): a border lake's Franklin, VT and Franklin, NH are two towns.
   // `towns` stays keyed on the name alone, as the pages written before read it.
-  const townEntries: { name: string; state: string; id: Id<'adminAreas'> }[] = [];
+  const townEntries: { name: string; state: string; id: Id<'adminAreas'>; pinned?: boolean }[] = [];
   const counties: string[] = [];
   const states = new Set<string>();
   for (const area of reached) {
@@ -264,7 +286,12 @@ export function placesFrom(
     if (county !== undefined && !counties.includes(county)) counties.push(county);
     if (isUndefinedSubdivision(area.externalId)) continue;
     if (!townEntries.some((e) => e.name === area.name && e.state === area.state)) {
-      townEntries.push({ name: area.name, state: area.state, id: area.id });
+      townEntries.push({
+        name: area.name,
+        state: area.state,
+        id: area.id,
+        ...(pinnedKeys.has(area.externalId) ? { pinned: true } : {}),
+      });
     }
     if (!towns.includes(area.name)) {
       towns.push(area.name);
@@ -293,7 +320,8 @@ async function placesOf(
   ctx: ActionCtx,
   geom: Geom,
   bbox: Box,
-): Promise<ReturnType<typeof placesFrom>> {
+  pins: readonly string[] = [],
+): Promise<ReturnType<typeof placesFrom> & { pinnedMissing: string[] }> {
   const box = {
     minLat: bbox.minLat - REACH_PAD_DEG,
     maxLat: bbox.maxLat + REACH_PAD_DEG,
@@ -327,6 +355,21 @@ async function placesOf(
     for (const { polygon: _, ...town } of rows) byId.set(town.id, town);
   }
   const reached = run.result().ids.map((id) => byId.get(id) as ReachedTown);
+  // A moderator's pinned towns outrank the rule (B01-3g): listed after its own, never twice; a key
+  // whose town is gone is kept as missing, for the page to show.
+  const held = new Set(reached.map((t) => t.externalId));
+  const owed = pins.filter((k) => !held.has(k));
+  const pinnedMissing: string[] = [];
+  for (let k = 0; k < owed.length; k += TOWN_PAGE) {
+    const page = owed.slice(k, k + TOWN_PAGE);
+    const found = await ctx.runQuery(internal.bodyGeo.townsByKey, { keys: page });
+    const byKey = new Map(found.map((t) => [t.externalId, t]));
+    for (const key of page) {
+      const town = byKey.get(key);
+      if (town) reached.push(town);
+      else pinnedMissing.push(key);
+    }
+  }
   const keys = [
     ...new Set(
       reached
@@ -342,7 +385,7 @@ async function placesOf(
       countyNames.set(c.key, c.name);
     }
   }
-  return placesFrom(reached, countyNames);
+  return { ...placesFrom(reached, countyNames, new Set(pins)), pinnedMissing };
 }
 
 // ── The write ────────────────────────────────────────────────────────────────────────────────
@@ -461,8 +504,17 @@ export const store = internalMutation({
     townIds: v.optional(v.array(v.id('adminAreas'))),
     /** The towns keyed on name and state, each with its boundary. */
     townEntries: v.optional(
-      v.array(v.object({ name: v.string(), state: v.string(), id: v.id('adminAreas') })),
+      v.array(
+        v.object({
+          name: v.string(),
+          state: v.string(),
+          id: v.id('adminAreas'),
+          pinned: v.optional(v.boolean()),
+        }),
+      ),
     ),
+    /** Pinned keys that name no loaded town now (B01-3g). */
+    pinnedMissing: v.optional(v.array(v.string())),
     counties: v.array(v.string()),
     states: v.array(v.string()),
     /** The places-layer mark the places were computed under (`inputs.areasAt`). */
@@ -521,6 +573,7 @@ export const store = internalMutation({
       townStates: args.townStates ?? [],
       townIds: args.townIds ?? [],
       townEntries: args.townEntries ?? [],
+      pinnedMissing: args.pinnedMissing ?? [],
       counties: args.counties,
       states: args.states,
       ...clear,
@@ -645,7 +698,7 @@ async function computeOne(ctx: ActionCtx, waterBodyId: Id<'waterBodies'>): Promi
       touches(geom, (b.polygon ?? { type: 'Polygon', coordinates: [b.ring] }) as Geom, b.whole),
     )
     .map((b) => ({ waterBodyId: b.id, name: b.name, ring: b.ring, stamp: b.stamp }));
-  const places = await placesOf(ctx, geom, input.bbox);
+  const places = await placesOf(ctx, geom, input.bbox, input.pins);
   await ctx.runMutation(internal.bodyGeo.store, {
     waterBodyId,
     stamp: input.stamp,

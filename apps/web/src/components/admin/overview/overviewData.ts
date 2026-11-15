@@ -327,6 +327,7 @@ const ACTION_WORDS: Record<AuditAction, string> = {
   set_reference_links: 'Set reference links',
   set_aliases: 'Set aliases',
   set_class: 'Set class',
+  set_moderator_towns: 'Pinned towns',
   set_included_by_request: 'Changed kept by request',
   set_standing: 'Set standing',
   activate_body: 'Activated body',

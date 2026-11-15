@@ -42,6 +42,7 @@ import {
   setClassImpl,
   setCuratedBoostImpl,
   setIncludedByRequestImpl,
+  setModeratorTownsImpl,
   setPublicAccessImpl,
   setReferenceLinksImpl,
   setSatelliteImageryImpl,
@@ -494,6 +495,39 @@ const undoAliases: UndoHandler = {
     }).then(() => undefined),
 };
 
+/**
+ * set_moderator_towns → the pinned towns it replaced, through the same write. Refused (never offered)
+ * when the body was merged away or its pins moved since — a merge folds a loser's pins into its
+ * survivor with no row on the survivor, so the list it would put back may no longer follow.
+ */
+const undoModeratorTowns: UndoHandler = {
+  blocked: needsPrev,
+  undoTakesAway: (row) =>
+    UNDO_POLICY.set_moderator_towns.takesAway(
+      (meta(row).prev.moderatorTownKeys as string[] | undefined) ?? [],
+    ),
+  refusal: async (ctx, row) => {
+    const id = ctx.db.normalizeId('waterBodies', row.targetId);
+    const body = id ? await undoRead(ctx, 'waterBody', id) : null;
+    if (body === undefined) return UNDO_CHECKED_ELSEWHERE;
+    const refused = editRefusal(body);
+    if (refused !== null || body === null) return refused;
+    return listChangedRefusal(
+      body.moderatorTownKeys ?? [],
+      (meta(row).moderatorTownKeys as string[] | undefined) ?? [],
+      'this body’s pinned towns',
+    );
+  },
+  run: ({ ctx, actor, row, reason }) =>
+    setModeratorTownsImpl(ctx, actor, {
+      waterBodyId: row.targetId as Id<'waterBodies'>,
+      townKeys: (meta(row).prev.moderatorTownKeys as string[] | undefined) ?? [],
+      expected: (meta(row).moderatorTownKeys as string[] | undefined) ?? [],
+      reason,
+      restoring: true,
+    }).then(() => undefined),
+};
+
 /** set_class → the class it replaced: the moderator's, or the catalogs' class it displaced. */
 const undoClass: UndoHandler = {
   blocked: needsPrev,
@@ -642,6 +676,7 @@ export const BODY_UNDO_HANDLERS: Partial<Record<ModerationAction, UndoHandler>> 
   set_curated_boost: undoCuratedBoost,
   set_reference_links: undoReferenceLinks,
   set_aliases: undoAliases,
+  set_moderator_towns: undoModeratorTowns,
   set_class: undoClass,
   set_water_body_name: undoWaterBodyName,
   set_lake_depth: undoLakeDepth,

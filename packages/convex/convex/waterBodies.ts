@@ -68,6 +68,7 @@ import {
   satelliteImageryAvailable,
   searchTextFor,
   standingOf,
+  stateOfSubdivision,
   tooLongMessage,
   WATER_BODY_CLASSES,
 } from '@skating/core';
@@ -595,6 +596,7 @@ export const importCanonical = internalMutation({
     // Out of region (D266): new bodies not inserted, stored ones kept as they are — both named.
     let outOfRegion = 0;
     let outOfRegionKept = 0;
+    let keptByPin = 0;
     const outsideRegion: { externalId: string; waterBodyId: Id<'waterBodies'> | null }[] = [];
     const unresolved: { externalId: string; action: string; reason: string }[] = [];
 
@@ -643,7 +645,13 @@ export const importCanonical = internalMutation({
       }
 
       const existing = verdict.action === 'patch' ? await ctx.db.get(verdict.key) : null;
-      const outside = states.length === 0;
+      // A moderator's pinned towns outrank the rule (B01-3g): their states are the body's too, and a
+      // pinned body is never read as out of region.
+      const pinnedStates = (existing?.moderatorTownKeys ?? [])
+        .map(stateOfSubdivision)
+        .filter((code): code is string => code !== null);
+      const outside = states.length === 0 && pinnedStates.length === 0;
+      if (states.length === 0 && pinnedStates.length > 0) keptByPin++;
       if (outside) {
         outsideRegion.push({ externalId: item.externalId, waterBodyId: existing?._id ?? null });
         console.log(
@@ -707,7 +715,7 @@ export const importCanonical = internalMutation({
           representativePoint: item.centroid,
           surfaceAreaSqM: item.surfaceAreaSqM,
           // Out of region: kept as stored, never relabeled out of the map (see `regionStatesOf`).
-          states: outside ? existing.states : states,
+          states: outside ? existing.states : [...new Set([...states, ...pinnedStates])].sort(),
           ...scores,
           ...shapeFields(item),
           ...mergeFields(item),
@@ -831,6 +839,8 @@ export const importCanonical = internalMutation({
       outOfRegion,
       /** Stored bodies a re-import places in no loaded town: patched, their states kept (D266). */
       outOfRegionKept,
+      /** Stored bodies the rule places in no town, held in region by a moderator's pin. */
+      keptByPin,
       /** Both, named — capped as `unresolved` is. */
       outsideRegion: outsideRegion.slice(0, 20),
       unresolved: unresolved.slice(0, 20),
@@ -3284,6 +3294,8 @@ export interface MergeChangeSet {
     removed: boolean;
     mergedIntoId?: Id<'bodyLandmarks'>;
   }[];
+  /** Both bodies' pinned towns before the merge folded the loser's into the survivor (B01-3g). */
+  pinsBefore?: { survivor: string[]; loser: string[] };
 }
 
 function dedupFieldsOf(body: Doc<'waterBodies'>): MergeChangeSet['dedupBefore'][number] {
@@ -3555,9 +3567,28 @@ export async function mergeBodyInto(
       landmarksRetiredAsBay: landmarks.retiredAsBay,
     };
 
+    // A moderator's pinned towns move to the survivor (B01-3g): the union, the survivor's first,
+    // within the cap — a merged-away body carries none.
+    const pinsBefore = {
+      survivor: survivor.moderatorTownKeys ?? [],
+      loser: loser.moderatorTownKeys ?? [],
+    };
+    const pins = [...new Set([...pinsBefore.survivor, ...pinsBefore.loser])].slice(
+      0,
+      MAX_MODERATOR_TOWNS,
+    );
+    if (pinsBefore.loser.length > 0) {
+      await ctx.db.patch(survivorId, { moderatorTownKeys: pins });
+      await markGeoStale(ctx, [survivorId]);
+    }
+
     // Soft-tombstone the loser: reads chase `mergedIntoId` to the survivor; `isListed` treats
     // `merged` as unlisted, so drop its cell rows too.
-    await ctx.db.patch(loserId, { dedupStatus: 'merged', mergedIntoId: survivorId });
+    await ctx.db.patch(loserId, {
+      dedupStatus: 'merged',
+      mergedIntoId: survivorId,
+      moderatorTownKeys: undefined,
+    });
     // …and clear the flag at the **other end of the pair**, which nothing used to do. A07a's
     // reconciliation flags every member of a duplicate group mutually, so the survivor is normally
     // itself `near_certain` naming the body just merged — a candidate `merge` would now refuse as
@@ -3626,6 +3657,7 @@ export async function mergeBodyInto(
       subAreasDelisted: [],
       landmarksBefore: landmarksBefore.map(snapshotDoc),
       landmarksAfter: [],
+      ...(pinsBefore.survivor.length > 0 || pinsBefore.loser.length > 0 ? { pinsBefore } : {}),
     };
     for (const before of subAreasBefore) {
       const after = await ctx.db.get(before._id);
@@ -4072,6 +4104,93 @@ export async function setAliasesImpl(
         ? 'Cleared the moderator aliases'
         : `Set ${next.length} alias${next.length === 1 ? '' : 'es'}`),
     metadata: { moderatorAliases: next, prev: { moderatorAliases: prev } },
+    createdAt: Date.now(),
+  });
+  return waterBodyId;
+}
+
+/** The most towns a moderator may pin one body in (B01-3g). */
+export const MAX_MODERATOR_TOWNS = 8;
+
+/**
+ * Moderator: **hold a body in region, in the towns named** (B01-3g, D266) — the founder's
+ * determination where the shoreline rule alone would put a body out (two bodies kept by hand sit
+ * just under its 25 m). Stable boundary keys (`tiger/<GEOID>` of a county subdivision); an empty list
+ * clears the pin. A whole-list write: `expected` is the list the edit was built on.
+ */
+export const setModeratorTowns = mutation({
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    townKeys: v.array(v.string()),
+    /** The list this edit was built on: refused, with the current list, if it moved. */
+    expected: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, { waterBodyId, townKeys, expected }) => {
+    const actor = await requireCapability(ctx, 'body.identity');
+    return setModeratorTownsImpl(ctx, actor, {
+      waterBodyId,
+      townKeys,
+      ...(expected !== undefined ? { expected } : {}),
+    });
+  },
+});
+
+/**
+ * `setModeratorTowns`'s body, shared with its undo (D226). A key must name a county subdivision of a
+ * loaded state, and — for a person's pick — a town row loaded now; an undo puts back exactly the list
+ * it replaced (`restoring`), even a key whose town has since gone, which the facts then show as
+ * missing rather than dropping it. Marks the body's facts stale: its towns are recomputed.
+ */
+export async function setModeratorTownsImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    waterBodyId,
+    townKeys,
+    expected,
+    reason,
+    restoring = false,
+  }: {
+    waterBodyId: Id<'waterBodies'>;
+    townKeys: readonly string[];
+    expected?: readonly string[];
+    reason?: string;
+    restoring?: boolean;
+  },
+): Promise<Id<'waterBodies'>> {
+  const body = await editableBody(ctx, waterBodyId);
+  const prev = body.moderatorTownKeys ?? [];
+  assertListUnchanged(prev, expected, 'this body’s pinned towns');
+  const next = [...new Set(townKeys.map((k) => k.trim()).filter((k) => k !== ''))];
+  if (next.length > MAX_MODERATOR_TOWNS) {
+    throw new ConvexError(`A body is pinned in at most ${MAX_MODERATOR_TOWNS} towns`);
+  }
+  for (const key of next) {
+    if (stateOfSubdivision(key) === null) {
+      throw new ConvexError(`${key} is not a town of a loaded state`);
+    }
+    if (restoring || prev.includes(key)) continue;
+    const town = await ctx.db
+      .query('adminAreas')
+      .withIndex('by_external_id', (q) => q.eq('externalId', key))
+      .first();
+    if (town === null || town.level !== 'town') {
+      throw new ConvexError(`No loaded town has the key ${key}`);
+    }
+  }
+  await ctx.db.patch(waterBodyId, { moderatorTownKeys: next.length > 0 ? next : undefined });
+  await markGeoStale(ctx, [waterBodyId]);
+  await writeAudit(ctx, {
+    actorId: actor._id,
+    action: 'set_moderator_towns',
+    targetType: 'waterbody',
+    targetId: waterBodyId,
+    reason:
+      reason ??
+      (next.length === 0
+        ? 'Cleared the pinned towns'
+        : `Pinned in ${next.length} town${next.length === 1 ? '' : 's'}`),
+    metadata: { moderatorTownKeys: next, prev: { moderatorTownKeys: prev } },
     createdAt: Date.now(),
   });
   return waterBodyId;

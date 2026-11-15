@@ -478,6 +478,8 @@ describe('computed at the write, read without geometry', () => {
       townsWithState: [{ name: 'Enfield', state: 'NH' }],
       counties: ['Grafton'],
       states: ['NH'],
+      pinned: [],
+      pinnedMissing: [],
       computedAt: NOW,
     });
     expect((await facts(t, id))?.placesRule).toBe(PLACES_RULE);
@@ -527,6 +529,8 @@ describe('computed at the write, read without geometry', () => {
       townsWithState: [],
       counties: [],
       states: [],
+      pinned: [],
+      pinnedMissing: [],
       computedAt: NOW,
     });
   });

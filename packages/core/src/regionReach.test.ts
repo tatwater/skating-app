@@ -14,6 +14,7 @@ import {
   type ReachArea,
   type ReachCache,
   type ReachResult,
+  stateOfSubdivision,
 } from './regionReach';
 
 // ── A frame in meters around (44°N, 72°W), the same one the rule measures in ─────────────────
@@ -518,6 +519,13 @@ describe('the town layer keys', () => {
     expect(countyKeyOfSubdivision('tiger/5000704375')).toBe('tiger/50007');
     expect(countyKeyOfSubdivision('tiger/50007')).toBeNull();
     expect(countyKeyOfSubdivision('relation/123')).toBeNull();
+  });
+
+  it('reads a subdivision’s state from its GEOID, for the five loaded states only', () => {
+    expect(stateOfSubdivision('tiger/3607500000')).toBe('NY');
+    expect(stateOfSubdivision('tiger/5000704375')).toBe('VT');
+    expect(stateOfSubdivision('tiger/0900104720')).toBeNull();
+    expect(stateOfSubdivision('tiger/50007')).toBeNull();
   });
 
   it('tells the not-defined water units from towns', () => {

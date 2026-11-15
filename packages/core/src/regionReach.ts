@@ -549,3 +549,18 @@ export function isUndefinedSubdivision(externalId: string): boolean {
   const g = geoidOf(externalId);
   return g !== null && g.length === 10 && g.endsWith('00000');
 }
+
+/** The loaded states, by the FIPS code a TIGER GEOID starts with. */
+const STATE_BY_FIPS: Readonly<Record<string, string>> = {
+  '23': 'ME',
+  '25': 'MA',
+  '33': 'NH',
+  '36': 'NY',
+  '50': 'VT',
+};
+
+/** A county subdivision's state (from its GEOID's first two digits), or `null` outside the five. */
+export function stateOfSubdivision(externalId: string): string | null {
+  const g = geoidOf(externalId);
+  return g !== null && g.length === 10 ? (STATE_BY_FIPS[g.slice(0, 2)] ?? null) : null;
+}

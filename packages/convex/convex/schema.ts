@@ -782,6 +782,15 @@ export default defineSchema({
      */
     moderatorAliases: v.optional(v.array(v.string())),
     /**
+     * **The towns a moderator holds this body in** (B01-3g, D266) — stable boundary keys
+     * (`tiger/<GEOID>`, so a boundary reload never orphans them), at most eight. The founder's
+     * determination outranks the region rule: the facts list these towns whatever the shoreline
+     * measure says, and an import adds their states and never reads the body as out of region.
+     * Written only by `setModeratorTowns`, its undo, and a merge (which moves them to the survivor);
+     * an import, the facts computation and the drift repair never touch it.
+     */
+    moderatorTownKeys: v.optional(v.array(v.string())),
+    /**
      * `[name, ...aliases]` joined — **the field the search index actually covers.**
      *
      * Denormalized on every name write, never set by a client, same shape and same
@@ -5180,8 +5189,18 @@ export default defineSchema({
      * read it; every read that offers a town's state reads this.
      */
     townEntries: v.optional(
-      v.array(v.object({ name: v.string(), state: v.string(), id: v.id('adminAreas') })),
+      v.array(
+        v.object({
+          name: v.string(),
+          state: v.string(),
+          id: v.id('adminAreas'),
+          /** Held there by a moderator (`waterBodies.moderatorTownKeys`), not only computed. */
+          pinned: v.optional(v.boolean()),
+        }),
+      ),
     ),
+    /** Keys a moderator pinned that name no loaded town now — shown, never silently dropped. */
+    pinnedMissing: v.optional(v.array(v.string())),
     counties: v.optional(v.array(v.string())),
     states: v.optional(v.array(v.string())),
     attempts: v.optional(v.number()),

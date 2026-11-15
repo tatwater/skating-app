@@ -306,6 +306,8 @@ describe('consoleExtras', () => {
       townsWithState: [],
       counties: [],
       states: [],
+      pinned: [],
+      pinnedMissing: [],
       computedAt: expect.any(Number),
     });
   });
