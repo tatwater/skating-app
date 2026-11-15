@@ -8,11 +8,11 @@ vi.mock('@/components/kit/toast', async (original) => ({
   toast: (t: { title: string; description?: string; tone?: string }) => toasts.push(t),
 }));
 
+import { OTHER_BODY } from '../consoleWords';
 import {
   BodyBindingProvider,
   type BodyHold,
   listChanged,
-  OTHER_BODY,
   sendFor,
   useBodyHold,
 } from './currentBody';

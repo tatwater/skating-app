@@ -1,6 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { FAILED_READ } from '@/components/admin/reads/readFailureFixtures';
+import { townLinesShortWords } from '../../consoleWords';
 import { MASCOMA_NAMES } from './namesFixtures';
 import {
   aliasesOf,
@@ -11,7 +12,6 @@ import {
   otherClasses,
   stateName,
   townLinesFrom,
-  townLinesShortWords,
   townNames,
 } from './namesModel';
 

@@ -8,6 +8,7 @@ import { Note } from '@/components/kit/note';
 import { SkeletonText } from '@/components/kit/skeleton';
 import { usePaneKeys } from '@/lib/keys';
 import { ConsoleTopStart } from '../../shell/ConsoleShell';
+import { LEFT_NOT_SAID } from '../consoleWords';
 import { NOT_RECORDED } from '../tabs/tabStates';
 import { BodyHistorySection } from './BodyLeftColumn';
 import type { Removal } from './bodyModel';
@@ -126,11 +127,7 @@ function RemovalRow({ removal, merged }: { removal: Loadable<Removal | null>; me
   if (removal === null) {
     return (
       <KeyValueRow label={merged ? 'Merged' : 'Removed'}>
-        <Faint>
-          {merged
-            ? 'The history read doesn’t say when or by whom'
-            : 'The record doesn’t say when it left'}
-        </Faint>
+        <Faint>{merged ? 'The history read doesn’t say when or by whom' : LEFT_NOT_SAID}</Faint>
       </KeyValueRow>
     );
   }

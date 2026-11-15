@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from '@/components/kit/select';
 import { sayUnavailable, UnavailableButton } from '@/components/kit/unavailable-button';
+import { SPELLINGS_KEPT_MOVING } from '../../consoleWords';
 import { statusDate } from '../../frame/bodyModel';
 import { listChanged, sayNotSaved, useBodyHold } from '../../frame/currentBody';
 import { useTabKeys } from '../../frame/tabKeys';
@@ -110,11 +111,7 @@ export function LandmarkCard({
     },
     sameList,
     // Spelling changes always re-apply; a list that keeps moving is said, never dropped quietly.
-    () =>
-      sayNotSaved(
-        hold,
-        'Another moderator kept changing these spellings; yours weren’t saved. Try again.',
-      ),
+    () => sayNotSaved(hold, SPELLINGS_KEPT_MOVING),
   );
   const editAliases = (aliases: readonly string[]) =>
     void pushAliases(chipChange(l.aliases, aliases));

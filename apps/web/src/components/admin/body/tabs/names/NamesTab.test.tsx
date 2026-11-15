@@ -52,10 +52,10 @@ vi.mock('@/components/kit/toast', async (original) => ({
 import { api } from '@skating/convex/api';
 import { getFunctionName } from 'convex/server';
 import { resetConsoleReads } from '@/components/admin/reads/consoleReads';
+import { CLASS_CLAIMS_NOT_RECORDED } from '../../consoleWords';
 import { BodyTabHost } from '../../frame/BodyConsoleRoute';
 import { stubJsdomAnimations } from '../jsdomStubs';
 import { NamesTab } from './NamesTab';
-import { CLASS_CLAIMS_NOT_RECORDED } from './NamesView';
 
 beforeAll(stubJsdomAnimations);
 

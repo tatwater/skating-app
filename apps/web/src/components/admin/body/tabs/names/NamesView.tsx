@@ -18,6 +18,7 @@ import { Section } from '@/components/kit/section-slug';
 import { UnavailableButton } from '@/components/kit/unavailable-button';
 import { UnavailableField } from '@/components/kit/unavailable-field';
 import { cn } from '@/lib/utils';
+import { CLASS_CLAIMS_NOT_RECORDED, townLinesShortWords } from '../../consoleWords';
 import { IN_NO_TOWN_WORDS, NOT_COMPUTED, NOT_COMPUTED_WORDS } from '../../frame/bodyModel';
 import { LIT_ROW, LoadingSection, litAttr, TabBody, useDraft } from '../tabParts';
 import { CouldntRead, LoadingLine, NOT_RECORDED, ReadFailures } from '../tabStates';
@@ -32,7 +33,6 @@ import {
   type NamesData,
   otherClasses,
   stateName,
-  townLinesShortWords,
 } from './namesModel';
 
 /**
@@ -48,9 +48,6 @@ import {
 const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 /** What the unbuilt controls will do, in the operator's words. */
-/** Each catalog's class: stored by the import from now, so an older body has none until then. */
-export const CLASS_CLAIMS_NOT_RECORDED =
-  'Each catalog’s class: not recorded until this body’s next import campaign';
 
 const NOT_YET = {
   aliases: 'Adding and removing the names skaters use comes with the aliases editor.',

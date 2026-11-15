@@ -3,8 +3,9 @@ import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 import { FAILED_READ } from '@/components/admin/reads/readFailureFixtures';
 import { computedColor, JUNCTION_TOLERANCE_PX, sameColor } from '@/components/kit/measure';
 import { faceLoaded, must } from '@/components/kit/storyKit';
+import { CLASS_CLAIMS_NOT_RECORDED } from '../../consoleWords';
 import { InspectorFrame } from '../tabStoryFrame';
-import { CLASS_CLAIMS_NOT_RECORDED, NamesView } from './NamesView';
+import { NamesView } from './NamesView';
 import {
   AUBURN_NAMES,
   LOW_PLAINS_NAMES,

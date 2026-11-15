@@ -6,6 +6,7 @@ import {
   type WaterBodyClass,
 } from '@skating/core';
 import { isFailed, type Loadable } from '@/components/admin/reads/consoleReads';
+import { NAMES_READ_PARTS } from '../../consoleWords';
 import { NOT_COMPUTED } from '../../frame/bodyModel';
 import type { BodyMapScene, LngLat, MapItem } from '../../map/mapDescriptors';
 
@@ -342,10 +343,10 @@ export function namesFromBody(
     failures: [
       ...(isFailed(places) ? ['the towns and county'] : []),
       ...(extras.identity !== undefined && isFailed(extras.identity)
-        ? ['the moderator’s aliases and class']
+        ? [NAMES_READ_PARTS.identity]
         : []),
       ...(extras.townLinesRead !== undefined && isFailed(extras.townLinesRead)
-        ? ['the town lines']
+        ? [NAMES_READ_PARTS.townLines]
         : []),
     ],
   };
@@ -368,19 +369,6 @@ function townLinesPart(extras: {
       townLinesShort: { unstored: missing, capped: got.capped },
     }),
   };
-}
-
-/** "1 town’s line isn’t stored yet": what the map's town lines leave out. */
-export function townLinesShortWords(short: Place['townLinesShort']): string | null {
-  if (short === undefined) return null;
-  const parts = [
-    short.unstored > 0 &&
-      `${short.unstored} ${short.unstored === 1 ? 'town’s line isn’t' : 'towns’ lines aren’t'} stored yet`,
-    short.capped && 'more towns than one read returns: some lines aren’t drawn',
-  ].filter((p): p is string => p !== false);
-  if (parts.length === 0) return null;
-  const said = parts.join('; ');
-  return `On the map, ${said}`;
 }
 
 /** `bodyConsole.identity`'s answer. */

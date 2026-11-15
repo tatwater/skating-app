@@ -10,6 +10,7 @@ import {
 
 import { toast } from '@/components/kit/toast';
 import { errorText } from '../../adminUi';
+import { notSavedTitle, notSavedWhat, OTHER_BODY } from '../consoleWords';
 
 /**
  * **A pressed save completes against the body it was composed for; a result names its body.**
@@ -98,16 +99,13 @@ export function listChanged(err: unknown): readonly unknown[] | null {
     : null;
 }
 
-/** Refused: the subtree's own body is not the one the write names (a missed reset). */
-export const OTHER_BODY = 'Not saved: this page now shows another body. Open it again to save.';
-
 /**
  * A save that didn't land, said off its console: a toast naming the body ("Not saved · Mascoma
  * Lake") with what failed. The one wording every write path and queue uses.
  */
 export function sayNotSaved(hold: BodyHold, description: string): void {
   toast({
-    title: hold.subject === undefined ? 'Not saved' : `Not saved · ${hold.subject}`,
+    title: notSavedTitle(hold.subject),
     description,
     tone: 'bad',
   });
@@ -145,7 +143,7 @@ export async function sendFor(
     if (listChanged(err) !== null) throw err;
     const said = errorText(err);
     if (hold.here()) throw new Error(said);
-    sayNotSaved(hold, `${what}: ${said}`);
+    sayNotSaved(hold, notSavedWhat(what, said));
     return false;
   }
   try {

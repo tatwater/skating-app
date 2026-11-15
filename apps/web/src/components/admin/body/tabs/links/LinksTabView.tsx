@@ -17,6 +17,7 @@ import { Input } from '@/components/kit/input';
 import { Section } from '@/components/kit/section-slug';
 import { SortableRows } from '@/components/kit/sortable-rows';
 import { cn } from '@/lib/utils';
+import { LINKS_GONE, LINKS_KEPT_MOVING } from '../../consoleWords';
 import { listChanged, sayNotSaved, useBodyHold } from '../../frame/currentBody';
 import { useListWriter } from '../listWriter';
 import {
@@ -54,14 +55,6 @@ export type LinksTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
   /** The skater's lake sheet for this body, opened in a new tab; `null` draws no link. */
   lakeSheetHref: string | null;
 };
-
-/** A change whose link another moderator changed or removed meanwhile. */
-const NOT_APPLIED =
-  'Another moderator changed these links while yours was saving, and the link you changed is gone. Your change wasn’t saved.';
-
-/** A change the list kept moving under, past the queue's re-applications. */
-const KEPT_MOVING =
-  'Another moderator kept changing these links while yours was saving. Your change wasn’t saved — try again.';
 
 type Editing = {
   /**
@@ -267,7 +260,7 @@ export function LinksTabView({
     // under it, is said, never dropped quietly: here while this page is on screen, else in a toast
     // naming the body.
     (why) => {
-      const said = why === 'gone' ? NOT_APPLIED : KEPT_MOVING;
+      const said = why === 'gone' ? LINKS_GONE : LINKS_KEPT_MOVING;
       if (hold.here()) setSaveError(said);
       else sayNotSaved(hold, said);
     },

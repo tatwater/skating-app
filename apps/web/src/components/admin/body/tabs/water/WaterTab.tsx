@@ -10,6 +10,7 @@ import {
   useConsoleReadSet,
 } from '@/components/admin/reads/consoleReads';
 import { useRole } from '@/lib/useRole';
+import { RECEIPTS } from '../../consoleWords';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { useTabAction } from '../useTabAction';
 import { WaterView } from './WaterView';
@@ -93,7 +94,7 @@ export function WaterTab({ bodyId, lit = null }: BodyTabProps) {
               void act(
                 () => choose({ waterBodyId: bodyId as Id<'waterBodies'>, measure, source }),
                 {
-                  title: `${measure === 'mean' ? 'Mean' : 'Max'} depth from ${sourceWords(source, state).name}`,
+                  title: RECEIPTS.depthFrom(measure, sourceWords(source, state).name),
                   target: { targetType: 'waterbody', targetId: bodyId },
                 },
               ),

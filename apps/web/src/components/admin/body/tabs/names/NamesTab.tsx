@@ -11,6 +11,7 @@ import {
 } from '@/components/admin/reads/consoleReads';
 import { useRole } from '@/lib/useRole';
 import { useUndo } from '../../../shell/undo';
+import { ALIASES_KEPT_MOVING, RECEIPTS } from '../../consoleWords';
 import { listChanged, sayNotSaved, sendFor, useBodyHold } from '../../frame/currentBody';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { chipChange, sameList, useListWriter } from '../listWriter';
@@ -24,10 +25,6 @@ import {
   namesMapScene,
   type TownLinesRead,
 } from './namesModel';
-
-/** The aliases' change gave up: another moderator kept changing the list under it. */
-export const ALIASES_KEPT_MOVING =
-  'Another moderator kept changing these aliases while yours was saving. Your change wasn’t saved — try again.';
 
 /**
  * The Names tab's reads and its data: the body's record (`waterBodies.get`) and the boundaries it
@@ -113,7 +110,7 @@ export function NamesTab({ bodyId, lit = null }: BodyTabProps) {
         return await sendFor(hold, {
           body: bodyId,
           write: () => setAliases({ waterBodyId, aliases: [...next], expected: [...base] }),
-          receipt: (subject) => announce({ title: 'Aliases saved', target, subject }),
+          receipt: (subject) => announce({ title: RECEIPTS.aliasesSaved, target, subject }),
           what: 'The aliases',
         });
       } catch (err) {
@@ -149,8 +146,8 @@ export function NamesTab({ bodyId, lit = null }: BodyTabProps) {
             onAliasesChange: editAliases,
             aliasesError,
             onClassChange: (cls: WaterBodyClass) =>
-              classWrite(cls, `Class set to ${classLabel(cls)}`),
-            onClassClear: () => classWrite(null, 'Back to the catalogs’ class'),
+              classWrite(cls, RECEIPTS.classSet(classLabel(cls))),
+            onClassClear: () => classWrite(null, RECEIPTS.classCleared),
           }
         : {})}
     />
