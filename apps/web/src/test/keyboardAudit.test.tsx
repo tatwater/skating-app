@@ -41,7 +41,7 @@ describe('expectKeyboardOperable', () => {
     expect(expectKeyboardOperable(container)).toHaveLength(6);
   });
 
-  it('passes an element whose own handler takes ⏎ and Space (their default prevented)', () => {
+  it('fails an element whose key handler only prevents ⏎ and Space — nothing runs', () => {
     const take = (e: KeyboardEvent<HTMLElement>) => {
       if (e.key === 'Enter' || e.key === ' ') e.preventDefault();
     };
@@ -50,7 +50,51 @@ describe('expectKeyboardOperable', () => {
         Taken
       </div>,
     );
-    expect(expectKeyboardOperable(container)).toHaveLength(1);
+    expect(() => expectKeyboardOperable(container)).toThrow('Enter doesn’t run its action');
+  });
+
+  it('fails an element whose key handler is a no-op', () => {
+    const { container } = render(
+      <div role="button" tabIndex={0} onClick={() => {}} onKeyDown={() => {}}>
+        Dead
+      </div>,
+    );
+    expect(() => expectKeyboardOperable(container)).toThrow('Enter doesn’t run its action');
+  });
+
+  it('fails a no-op key handler under an ancestor that prevents the keys', () => {
+    const take = (e: KeyboardEvent<HTMLElement>) => {
+      if (e.key === 'Enter' || e.key === ' ') e.preventDefault();
+    };
+    const { container } = render(
+      <div onKeyDown={take}>
+        <div role="button" tabIndex={0} onClick={() => {}} onKeyDown={() => {}}>
+          Dead
+        </div>
+      </div>,
+    );
+    expect(() => expectKeyboardOperable(container)).toThrow('Enter doesn’t run its action');
+  });
+
+  it('passes a key that runs the action without a click, when the test names its effect', () => {
+    let opened = 0;
+    const open = () => {
+      opened++;
+    };
+    const keys = (e: KeyboardEvent<HTMLElement>) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        open();
+      }
+    };
+    const { container } = render(
+      <div role="button" tabIndex={0} onClick={open} onKeyDown={keys}>
+        Straight
+      </div>,
+    );
+    // Unnamed, the audit can't see the effect, and says so.
+    expect(() => expectKeyboardOperable(container)).toThrow('doesn’t run its action');
+    expect(expectKeyboardOperable(container, { ran: () => opened })).toHaveLength(1);
   });
 
   it('never counts a key a container took as the element’s own', () => {
@@ -64,7 +108,7 @@ describe('expectKeyboardOperable', () => {
         </div>
       </div>,
     );
-    expect(() => expectKeyboardOperable(container)).toThrow('not Enter');
+    expect(() => expectKeyboardOperable(container)).toThrow('Enter doesn’t run its action');
   });
 
   it('fails an element that takes no focus', () => {
@@ -78,7 +122,7 @@ describe('expectKeyboardOperable', () => {
         Mute
       </div>,
     );
-    expect(() => expectKeyboardOperable(container)).toThrow('not Enter');
+    expect(() => expectKeyboardOperable(container)).toThrow('Enter doesn’t run its action');
   });
 
   it('fails a hand-rolled role="button" that answers no key, as it would any element', () => {
@@ -87,7 +131,7 @@ describe('expectKeyboardOperable', () => {
         Custom
       </div>,
     );
-    expect(() => expectKeyboardOperable(container)).toThrow('not Enter');
+    expect(() => expectKeyboardOperable(container)).toThrow('Enter doesn’t run its action');
   });
 
   it('fails an element that answers ⏎ but not Space', () => {
@@ -99,7 +143,7 @@ describe('expectKeyboardOperable', () => {
         Half
       </div>,
     );
-    expect(() => expectKeyboardOperable(container)).toThrow('not Space');
+    expect(() => expectKeyboardOperable(container)).toThrow('Space doesn’t run its action');
   });
 
   it('fails an element no Tab reaches: tabindex -1 with no roving stop beside it', () => {

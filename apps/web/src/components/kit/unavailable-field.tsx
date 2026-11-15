@@ -50,7 +50,8 @@ function UnavailableField({ what, children, label, manager, className }: Unavail
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
-                say();
+                // The press's own path, so ⏎, Space and a click can't say different things.
+                e.currentTarget.click();
               }
             }}
             className={cn(
