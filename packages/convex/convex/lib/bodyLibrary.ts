@@ -660,15 +660,23 @@ export const changesTheBody = (targetType: ModerationTargetType): boolean =>
 
 /** The most bodies one lot's audit row refreshes. */
 const LOT_BODY_CAP = 16;
+/**
+ * The most bodies one lot's audit row is linked to (`auditBodyLinks`). Wider than the refresh's cap:
+ * a refresh is a budget, but a link is the row's place in a body's History, and a body the link
+ * misses never shows the row. History once read up to 64 lots per body; this keeps that reach.
+ */
+export const LOT_LINK_CAP = 64;
 
 /**
  * The bodies an audited action's target belongs to, and whether it counts as a change to them.
- * A target that is not about a body (a person, a report, a comment) belongs to none.
+ * A target that is not about a body (a person, a report, a comment) belongs to none. A lot belongs
+ * to the first `lotCap` bodies it serves.
  */
 export async function bodiesOfTarget(
   ctx: QueryCtx,
   targetType: ModerationTargetType,
   targetId: string,
+  lotCap: number = LOT_BODY_CAP,
 ): Promise<{ bodies: Id<'waterBodies'>[]; changes: boolean }> {
   const changes = CHANGES_THE_BODY.has(targetType);
   const one = (id: Id<'waterBodies'> | undefined | null) => ({
@@ -716,7 +724,7 @@ export async function bodiesOfTarget(
       const links = await ctx.db
         .query('parkingAreaBodies')
         .withIndex('by_parking_area', (q) => q.eq('parkingAreaId', id))
-        .take(LOT_BODY_CAP);
+        .take(lotCap);
       return { bodies: [...new Set(links.map((l) => l.waterBodyId))], changes };
     }
     default:
@@ -744,7 +752,7 @@ export async function linkAuditRow(
   const existing = await ctx.db
     .query('auditBodyLinks')
     .withIndex('by_action', (q) => q.eq('actionId', row.actionId))
-    .take(LOT_BODY_CAP + 1);
+    .take(LOT_LINK_CAP + 1);
   const have = new Set(existing.map((l) => l.waterBodyId as string));
   let written = 0;
   for (const waterBodyId of new Set(bodies)) {
@@ -790,7 +798,13 @@ export async function noteAuditedAction(
     createdAt: number;
   },
 ): Promise<void> {
-  const { bodies, changes } = await bodiesOfTarget(ctx, entry.targetType, entry.targetId);
+  // Linked to every body it concerns (to the link cap); refreshed for the first of them only.
+  const { bodies: concerned, changes } = await bodiesOfTarget(
+    ctx,
+    entry.targetType,
+    entry.targetId,
+    LOT_LINK_CAP,
+  );
   if (entry.actionId !== undefined && entry.action !== undefined) {
     await linkAuditRow(
       ctx,
@@ -801,9 +815,10 @@ export async function noteAuditedAction(
         targetId: entry.targetId,
         createdAt: entry.createdAt,
       },
-      bodies,
+      concerned,
     );
   }
+  const bodies = concerned.slice(0, LOT_BODY_CAP);
   const stamp = changes && entry.actorId !== undefined;
   for (const id of bodies) {
     const used = auditRefreshes.get(ctx) ?? 0;

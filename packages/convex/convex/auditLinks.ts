@@ -12,7 +12,7 @@
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import { internalMutation } from './_generated/server';
-import { bodiesOfTarget, linkAuditRow } from './lib/bodyLibrary';
+import { bodiesOfTarget, LOT_LINK_CAP, linkAuditRow } from './lib/bodyLibrary';
 
 /** Audit rows one page links at most. */
 const PAGE = 100;
@@ -56,7 +56,7 @@ export const backfill = internalMutation({
         return { linked: 0, unresolved: 0, isDone: false, rerunAt: Math.floor(size / 2) };
       }
       try {
-        const { bodies } = await bodiesOfTarget(ctx, row.targetType, row.targetId);
+        const { bodies } = await bodiesOfTarget(ctx, row.targetType, row.targetId, LOT_LINK_CAP);
         resolved.push({ row, bodies });
       } catch (err) {
         unresolved++;

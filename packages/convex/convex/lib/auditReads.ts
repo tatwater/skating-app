@@ -1,8 +1,10 @@
 /**
- * One target's audit rows, newest first — **one rule for every reader** of a target's history
- * (`moderation.listActions` and the Body console's `bodyConsole.history`): with a verb, the
- * `by_target_action` range, so the filter is in the index rather than over a page already capped;
- * without one, `by_target`. Both readers ask for the same rows the same way, and get the same answer.
+ * The audit log's reads, one rule each. {@link auditRowsOn} — one target's rows, newest first
+ * (`moderation.listActions`): with a verb, the `by_target_action` range, so the filter is in the index
+ * rather than over a page already capped; without one, `by_target`. {@link auditLinksOnBody} — the
+ * rows that concern one body (`bodyConsole.history`), through `auditBodyLinks`; its body-only rows
+ * are the ones `auditRowsOn` reads for that `waterbody` target. {@link auditTargetLabel} — the name a
+ * row's target goes by, for the feed.
  */
 import { SCOPE_ALL } from '@skating/core';
 import type { Doc, Id } from '../_generated/dataModel';
@@ -70,6 +72,15 @@ export function auditLinksOnBody(
   take: number,
 ): Promise<Doc<'auditBodyLinks'>[]> {
   const { waterBodyId, action, bodyOnly } = body;
+  if (action !== undefined && bodyOnly === true) {
+    return ctx.db
+      .query('auditBodyLinks')
+      .withIndex('by_body_self_action_time', (q) =>
+        q.eq('waterBodyId', waterBodyId).eq('self', true).eq('action', action),
+      )
+      .order('desc')
+      .take(take);
+  }
   if (action !== undefined) {
     return ctx.db
       .query('auditBodyLinks')
@@ -77,7 +88,6 @@ export function auditLinksOnBody(
         q.eq('waterBodyId', waterBodyId).eq('action', action),
       )
       .order('desc')
-      .filter((f) => (bodyOnly === true ? f.eq(f.field('self'), true) : true))
       .take(take);
   }
   if (bodyOnly === true) {

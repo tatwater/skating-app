@@ -4764,7 +4764,9 @@ export default defineSchema({
     .index('by_action', ['actionId'])
     .index('by_body_time', ['waterBodyId', 'createdAt'])
     .index('by_body_action_time', ['waterBodyId', 'action', 'createdAt'])
-    .index('by_body_self_time', ['waterBodyId', 'self', 'createdAt']),
+    .index('by_body_self_time', ['waterBodyId', 'self', 'createdAt'])
+    // A verb among the body's own rows — `bodyOnly` with `action`, in the index, never a filter.
+    .index('by_body_self_action_time', ['waterBodyId', 'self', 'action', 'createdAt']),
 
   // ── B01-3b: a body's geometry facts, computed at the write ──
   /**

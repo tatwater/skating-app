@@ -181,6 +181,50 @@ describe('links written at the write', () => {
       capped: true,
     });
   });
+
+  test('a lot serving more bodies than one refresh takes is in every one of their histories', async () => {
+    const t = harness();
+    const { mod, lot } = await seed(t);
+    const as = t.withIdentity({ subject: 'links-mod' });
+    // Twenty more bodies on the lot (twenty-two in all), past the sixteen a refresh takes.
+    const served = await t.run(async (ctx) => {
+      const ids: Id<'waterBodies'>[] = [];
+      for (let i = 0; i < 20; i++) {
+        const id = await ctx.db.insert('waterBodies', {
+          name: `Pond ${i}`,
+          searchText: `pond ${i}`,
+          type: 'lakePond',
+          source: 'osm',
+          polygon: square,
+          bbox: { minLat: 43.99, minLng: -72.01, maxLat: 44.01, maxLng: -71.99 },
+          centroid: { lat: 44, lng: -72 },
+          dedupStatus: 'clean',
+          createdAt: NOW,
+        });
+        await ctx.db.insert('parkingAreaBodies', {
+          parkingAreaId: lot,
+          waterBodyId: id,
+          inferred: true,
+          createdAt: NOW,
+        });
+        ids.push(id);
+      }
+      await writeAudit(ctx, {
+        actorId: mod,
+        action: 'set_parking_area',
+        targetType: 'parkingArea',
+        targetId: lot,
+        reason: 'r',
+        createdAt: NOW - 1000,
+      });
+      return ids;
+    });
+    const last = served[served.length - 1] as Id<'waterBodies'>;
+    const h = await as.query(api.bodyConsole.history, { waterBodyId: last });
+    expect(h.entries.map((e) => e.action)).toEqual(['set_parking_area']);
+    const links = await t.run((ctx) => ctx.db.query('auditBodyLinks').collect());
+    expect(links).toHaveLength(22);
+  });
 });
 
 describe('the backfill', () => {
