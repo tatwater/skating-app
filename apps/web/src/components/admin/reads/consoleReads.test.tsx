@@ -354,3 +354,36 @@ describe('a loadable', () => {
     expect(isFailed(null)).toBe(false);
   });
 });
+
+describe('a retry on a slow render', () => {
+  it('holds the pause until a mounted holder has dropped the read, however late its render', async () => {
+    resetConsoleReads();
+    mocks.calls.length = 0;
+    mocks.results.set(getFunctionName(api.waterBodies.get), new Error('down'));
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      const { result } = renderHook(() =>
+        useConsoleReads({ body: read(api.waterBodies.get, { waterBodyId: ID }) }),
+      );
+      const failure = result.current.body as ReadFailure;
+      const before = mocks.calls.length;
+      // Try again, and the holder's render of the drop is slower than the pause's own limit (a
+      // loaded page, a slow device): the limit's timer runs before React gets to the holder.
+      failure.retry();
+      vi.advanceTimersByTime(1_500);
+      // React gets to the holder: it renders the drop, then takes the read back a task later.
+      await act(async () => {
+        vi.advanceTimersByTime(0);
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(0);
+      });
+      // The holder still dropped the read for a render and took it back: the server ran it again.
+      const after = mocks.calls.slice(before);
+      expect(after.some((names) => !names.includes('body'))).toBe(true);
+      expect(after.at(-1)).toContain('body');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
