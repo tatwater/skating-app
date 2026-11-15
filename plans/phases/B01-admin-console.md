@@ -2462,6 +2462,41 @@ Every shape change is additive except where noted.
   (tested literally in `peopleBackfills.test.ts`). The two new indexes (`blocks.by_blocker_blocked`,
   `bountyGateEvents.by_requester_created`) build with the deploy.
 
+**B01-4b, after Greptile's review of #125** (each fixed as its class):
+- **Fixed needs before variable reads.** The person page takes its fixed reads (the public profile's
+  block checks, the ledger grant time, the status setter's row) before the first read that sizes
+  itself by what is left; a test holds every People read to an answer for one person at the cap on
+  every axis at once.
+- **A bounded page holds the cap.** `listPage` with `endCursor`, on every lane, returns and charges at
+  most 200 rows and says `SplitRequired`, with a `splitCursor` where one can be made (the keyed lanes,
+  and Convex's own on paginated lanes; a search index gives none, so the client re-reads that range
+  unbounded).
+- **Walks lap.** The parked-lapse mirror check laps from a saved place (`jobPositions`, job
+  `lapseMirrors`), so kept mirrors never hold a stale one behind them; the daily retry mirrors a lapse
+  parked before the mirror existed, so Machinery's count is whole within a day of deploy. The other
+  walks this PR adds were checked: the presence prune deletes what it reads (no kept rows), the sweep
+  and the retry walk their whole range a run.
+- **Concurrent lookups, the time axis.** A query has one second: per-row lookups run in waves
+  (`readBudget.inWaves`), never one round trip after another. `ReadBudget.measured` holds the worst
+  case while a read is in flight and settles to the real size, so reads started together can't
+  overspend. Decisions and History shape every row at once (rows on one target share the
+  newest-on-target read), a queue lane's rows are one round, and staffStats, staffSeason, the role
+  walk's roots and the flag labels run in waves. Tests count rounds structurally. Waves are as large
+  as the budget holds at the worst case, so where an item's worst case is several documents
+  (staffSeason's checks, the labels) a wave is still one or two items. Making those wider needs
+  budget accounting that charges a wave its real weight, which is a design call left open.
+- **Tagged reasons at the type.** The People writers take only a tagged reason (`writePersonAudit`):
+  `typed()` (refused past the cap) or `composed` (shortened to fit), each a branded shape no literal
+  can spell. The other writers keep a compatible type (a string is held to the cap as typed). The
+  composed-reason guard is the backstop, and now covers the Bodies writes #126 brought.
+- **A sweep's run record carries no `ready`.** Only a backfill's does.
+- **The newest audit row on a busy target, read for undo state:** it is read whole and its bytes are
+  not charged (the undo engine counts its calls and documents only). For rows written since D261 the
+  reason is at most 2,000 characters, but metadata is uncapped and older rows' reasons are too, so the
+  worst case is still the document limit per distinct target in a page. It is now read once per
+  target per request. A fix belongs with the metadata ruling below (or a per-target "latest action"
+  row the undo engine could read instead).
+
 **Owed: audit metadata, writer by writer** (the coordinator's ask, 2026-11-15 — facts for the ruling,
 from the code, not from dev; nothing capped in this PR). Every audit row passes through
 `lib/audit.writeAudit`; its `metadata` is free-form. By the largest each writer can produce today:
