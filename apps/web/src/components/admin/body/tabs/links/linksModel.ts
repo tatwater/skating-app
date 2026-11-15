@@ -76,16 +76,33 @@ export type StaffLink = { label: string; url: string };
 export type KeyedLink = StaffLink & { key: string };
 
 /**
- * Each staff link with a key that survives a reorder: its label and address, and which repeat of
- * that pair it is (links are never deduplicated, so two rows may be the same pair).
+ * **Each link's id, kept across an edit.** The record's links carry no id of their own, and a key
+ * made from a link's words changes when its words do — so an edited link would look like a new row
+ * (and a lift or a focus held on it would lose it). `carryIds` gives the new list the ids of the
+ * old one: a link with the same words keeps its id (a reorder); a link whose words changed takes
+ * the id of the link that stood in its place (an edit); anything else is new. Pure; `fresh` mints
+ * an id.
  */
-export function keyedLinks(links: readonly StaffLink[]): KeyedLink[] {
-  const seen = new Map<string, number>();
-  return links.map((link) => {
-    const pair = `${link.label}\u0000${link.url}`;
-    const n = seen.get(pair) ?? 0;
-    seen.set(pair, n + 1);
-    return { ...link, key: `${pair}\u0000${n}` };
+export function carryIds(
+  prev: readonly KeyedLink[],
+  next: readonly StaffLink[],
+  fresh: () => string,
+): KeyedLink[] {
+  const used = new Set<string>();
+  const ids: (string | null)[] = next.map((link) => {
+    const same = prev.find((p) => !used.has(p.key) && p.label === link.label && p.url === link.url);
+    if (same === undefined) return null;
+    used.add(same.key);
+    return same.key;
+  });
+  return next.map((link, i) => {
+    let id = ids[i] ?? null;
+    if (id === null) {
+      const inPlace = prev[i];
+      id = inPlace !== undefined && !used.has(inPlace.key) ? inPlace.key : fresh();
+      used.add(id);
+    }
+    return { label: link.label, url: link.url, key: id };
   });
 }
 

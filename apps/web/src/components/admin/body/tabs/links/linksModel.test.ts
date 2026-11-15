@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { dropIndex, moveId } from '@/components/kit/sortable-rows';
 import { BODY_NOW, MASCOMA, SMALL_POND } from './linksFixtures';
 import { INTERIOR_POINT_ID, linksMapScene } from './linksMap';
-import { coordWords, derivedRows, inKeyOrder, keyedLinks } from './linksModel';
+import { carryIds, coordWords, derivedRows, inKeyOrder } from './linksModel';
 
 describe('derivedRows', () => {
   it('draws the board: Windy, Copernicus and the NH group, each with what it is built from', () => {
@@ -47,7 +47,8 @@ describe('derivedRows', () => {
 describe('the staff links’ keys', () => {
   it('survive a reorder and tell repeats apart', () => {
     const a = { label: 'A', url: 'https://a.org' };
-    const keyed = keyedLinks([a, { label: 'B', url: 'https://b.org' }, a]);
+    let n = 0;
+    const keyed = carryIds([], [a, { label: 'B', url: 'https://b.org' }, a], () => `id${++n}`);
     expect(new Set(keyed.map((k) => k.key)).size).toBe(3);
     const reversed = [...keyed].reverse().map((k) => k.key);
     expect(inKeyOrder(keyed, reversed).map((l) => l.label)).toEqual(['A', 'B', 'A']);
@@ -66,7 +67,8 @@ describe('the staff links’ keys', () => {
         fc.nat(),
         fc.nat(),
         (links, from, to) => {
-          const keyed = keyedLinks(links);
+          let n = 0;
+          const keyed = carryIds([], links, () => `id${++n}`);
           const keys = keyed.map((k) => k.key);
           const moved = moveId(keys, from % Math.max(1, keys.length), to % (keys.length + 1));
           const out = inKeyOrder(keyed, moved);
@@ -133,5 +135,63 @@ describe('the map', () => {
 
   it('writes either hemisphere', () => {
     expect(coordWords({ lat: -33.5, lng: 151.25 })).toBe('33.5000°S 151.2500°E');
+  });
+});
+
+describe('carryIds — a link keeps its id across an edit', () => {
+  const link = fc.record({
+    label: fc.constantFrom('A', 'B', 'C', 'D'),
+    url: fc.constantFrom('https://a.org', 'https://b.org'),
+  });
+
+  it('an edit keeps the edited link’s id; a reorder keeps every id; an add is new', () => {
+    let n = 0;
+    const fresh = () => `id${++n}`;
+    const first = carryIds(
+      [],
+      [
+        { label: 'A', url: 'https://a.org' },
+        { label: 'B', url: 'https://b.org' },
+      ],
+      fresh,
+    );
+    const edited = carryIds(
+      first,
+      [
+        { label: 'A', url: 'https://a.org' },
+        { label: 'B2', url: 'https://b.org' },
+      ],
+      fresh,
+    );
+    expect(edited.map((l) => l.key)).toEqual(first.map((l) => l.key));
+    const swapped = carryIds(edited, [edited[1] as never, edited[0] as never], fresh);
+    expect(swapped.map((l) => l.key)).toEqual([edited[1]?.key, edited[0]?.key]);
+    const added = carryIds(swapped, [...swapped, { label: 'C', url: 'https://a.org' }], fresh);
+    expect(added[2]?.key).toBe('id3');
+  });
+
+  it('ids are unique, and a link whose words didn’t change keeps its id (fast-check)', () => {
+    fc.assert(
+      fc.property(fc.array(link, { maxLength: 6 }), fc.array(link, { maxLength: 6 }), (a, b) => {
+        let n = 0;
+        const fresh = () => `id${++n}`;
+        const before = carryIds([], a, fresh);
+        const after = carryIds(before, b, fresh);
+        expect(new Set(after.map((l) => l.key)).size).toBe(after.length);
+        expect(after.map(({ label, url }) => ({ label, url }))).toEqual(b);
+        // A link in both lists with the same words keeps one of the ids its words had.
+        for (const l of after) {
+          const had = before
+            .filter((p) => p.label === l.label && p.url === l.url)
+            .map((p) => p.key);
+          if (
+            had.length > 0 &&
+            b.filter((x) => x.label === l.label && x.url === l.url).length <= had.length
+          ) {
+            expect(had).toContain(l.key);
+          }
+        }
+      }),
+    );
   });
 });

@@ -1,10 +1,12 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { SortableRows } from '@/components/kit/sortable-rows';
 import { LinksTabView, type LinksTabViewProps } from './LinksTabView';
 import { BODY_NOW, MASCOMA, SMALL_POND } from './linksFixtures';
+import type { StaffLink } from './linksModel';
 
 const base: LinksTabViewProps = {
   body: MASCOMA,
@@ -20,6 +22,83 @@ const rows = () =>
   [...document.querySelectorAll('[data-slot="sortable-row"]')].map(
     (r) => r.querySelector('.text-body')?.textContent,
   );
+
+/** The view over a body whose links a save really changes, the way the console's read would. */
+function Saving({ hold }: { hold?: Promise<void> }) {
+  const [links, setLinks] = useState<readonly StaffLink[]>(MASCOMA.referenceLinks ?? []);
+  return (
+    <LinksTabView
+      {...base}
+      body={{ ...MASCOMA, referenceLinks: links }}
+      onSave={async (next) => {
+        await hold;
+        setLinks(next);
+      }}
+    />
+  );
+}
+
+describe('LinksTabView — a save never loses a link or the keyboard', () => {
+  it('a link edited while another is lifted is still there once saved (the review’s case)', async () => {
+    const user = userEvent.setup();
+    render(<Saving />);
+    // Lift the first link with Space, then edit the second and save it.
+    grip('Mascoma Lake Association').focus();
+    await user.keyboard(' ');
+    const second = screen.getAllByRole('button', { name: 'Edit' })[1] as HTMLElement;
+    await user.click(second);
+    const label = screen.getByRole('textbox', { name: /Label/ });
+    await user.clear(label);
+    await user.type(label, 'Dam level');
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    expect(rows()).toEqual(['Mascoma Lake Association', 'Dam level']);
+  });
+
+  it('a drop from the keyboard keeps focus on its grip through the save and after it', async () => {
+    const user = userEvent.setup();
+    let release = () => {};
+    const hold = new Promise<void>((r) => {
+      release = r;
+    });
+    render(<Saving hold={hold} />);
+    grip('Lake level at Mascoma Lake Dam').focus();
+    await user.keyboard(' {ArrowUp} ');
+    // Saving: the grip stays, focusable and inert, where it was dropped.
+    const g = grip('Lake level at Mascoma Lake Dam');
+    expect(g).toHaveAttribute('aria-disabled', 'true');
+    expect(g).toHaveFocus();
+    expect(rows()).toEqual(['Lake level at Mascoma Lake Dam', 'Mascoma Lake Association']);
+    await act(async () => {
+      release();
+      await hold;
+    });
+    expect(grip('Lake level at Mascoma Lake Dam')).toHaveFocus();
+    expect(grip('Lake level at Mascoma Lake Dam')).not.toHaveAttribute('aria-disabled');
+  });
+
+  it('after an edit is saved, focus is on that link’s Edit again — never the page', async () => {
+    const user = userEvent.setup();
+    render(<Saving />);
+    await user.click(screen.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
+    const label = screen.getByRole('textbox', { name: /Label/ });
+    await user.clear(label);
+    await user.type(label, 'The association{Enter}');
+    const row = screen
+      .getByText('The association')
+      .closest('[data-slot="link-row"]') as HTMLElement;
+    expect(within(row).getByRole('button', { name: 'Edit' })).toHaveFocus();
+  });
+
+  it('after a link is removed, focus stays in the section', async () => {
+    const user = userEvent.setup();
+    render(<Saving />);
+    await user.click(screen.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
+    await user.click(screen.getByRole('button', { name: /Remove/ }));
+    const added = screen.getByRole('region', { name: 'Added by staff' });
+    expect(added.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).not.toBe(document.body);
+  });
+});
 
 describe('LinksTabView', () => {
   it('draws the board: three built from the lake, two added by staff, each opening a new tab', () => {

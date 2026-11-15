@@ -1,7 +1,16 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faArrowUpRightFromSquare } from '@fortawesome/sharp-regular-svg-icons';
 import { type ReferenceLinkBody, referenceLinkError } from '@skating/core';
-import { type ComponentProps, type KeyboardEvent, type ReactNode, useId, useState } from 'react';
+import {
+  type ComponentProps,
+  type KeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import { Button, buttonVariants } from '@/components/kit/button';
 import { Input } from '@/components/kit/input';
@@ -9,11 +18,11 @@ import { Section } from '@/components/kit/section-slug';
 import { SortableRows } from '@/components/kit/sortable-rows';
 import { cn } from '@/lib/utils';
 import {
+  carryIds,
   type DerivedRow,
   derivedRows,
   inKeyOrder,
   type KeyedLink,
-  keyedLinks,
   type StaffLink,
 } from './linksModel';
 
@@ -48,7 +57,30 @@ export function LinksTabView({
   ...props
 }: LinksTabViewProps) {
   const derived = derivedRows(body, now);
-  const staff = keyedLinks(body.referenceLinks ?? []);
+  // Each link keeps its id across an edit (its words change, its id doesn't): `carryIds`.
+  const minted = useRef(0);
+  const ids = useRef<KeyedLink[]>([]);
+  const links = body.referenceLinks;
+  const staff = useMemo(() => {
+    const next = carryIds(ids.current, links ?? [], () => `link-${++minted.current}`);
+    ids.current = next;
+    return next;
+  }, [links]);
+  const section = useRef<HTMLDivElement | null>(null);
+  // **Focus is never taken from the keyboard by a save**: after an edit lands, the link's own Edit
+  // takes focus back (its id survives the edit); after a remove or an add, the section's next stop.
+  const refocus = useRef<string | null>(null);
+  useEffect(() => {
+    const key = refocus.current;
+    if (key === null) return;
+    refocus.current = null;
+    const root = section.current;
+    const target =
+      root?.querySelector<HTMLElement>(
+        `[data-link-key="${CSS.escape(key)}"] [data-slot="link-edit"]`,
+      ) ?? root?.querySelector<HTMLElement>('[data-slot="link-edit"], [data-slot="link-add"]');
+    target?.focus();
+  });
   const editable = canEdit && onSave !== undefined;
   const [editing, setEditing] = useState<Editing | null>(null);
   const [busy, setBusy] = useState(false);
@@ -82,7 +114,10 @@ export function LinksTabView({
       editing.key === 'new'
         ? [...staff, clean]
         : staff.map((l) => (l.key === editing.key ? clean : { label: l.label, url: l.url }));
-    if (await save(next.map(({ label, url }) => ({ label, url })))) setEditing(null);
+    if (await save(next.map(({ label, url }) => ({ label, url })))) {
+      refocus.current = editing.key;
+      setEditing(null);
+    }
   };
 
   const removeEdited = async () => {
@@ -92,7 +127,10 @@ export function LinksTabView({
     }
     const key = editing.key;
     const next = staff.filter((l) => l.key !== key).map(({ label, url }) => ({ label, url }));
-    if (await save(next)) setEditing(null);
+    if (await save(next)) {
+      refocus.current = key;
+      setEditing(null);
+    }
   };
 
   const offeredCount = derived.filter((d) => d.offered).length;
@@ -113,12 +151,14 @@ export function LinksTabView({
       </Section>
 
       <Section
+        ref={section}
         title="Added by staff"
         count={staff.length}
         end={
           editable && editing === null ? (
             <Button
               size="xs"
+              data-slot="link-add"
               onClick={() => setEditing({ key: 'new', label: '', url: '', error: null })}
             >
               Add a link
@@ -132,7 +172,9 @@ export function LinksTabView({
             items={staff}
             idOf={(l) => l.key}
             labelOf={(l) => l.label}
-            disabled={!editable || editing !== null || busy}
+            // Editing takes the grips away (the lift is put down); a save keeps them, inert.
+            disabled={!editable || editing !== null}
+            pending={busy}
             onReorder={(keys) => void save(inKeyOrder(staff, keys))}
             renderRow={(link, { grip }) =>
               editing?.key === link.key ? (
@@ -280,6 +322,7 @@ function StaffLinkRow({
   return (
     <div
       data-slot="link-row"
+      data-link-key={link.key}
       className={cn(
         STAFF_ROW,
         grip === null
@@ -296,7 +339,7 @@ function StaffLinkRow({
       </span>
       <span className="flex items-center gap-(--space-2)">
         {onEdit !== undefined && (
-          <Button size="xs" onClick={onEdit}>
+          <Button size="xs" data-slot="link-edit" onClick={onEdit}>
             Edit
           </Button>
         )}

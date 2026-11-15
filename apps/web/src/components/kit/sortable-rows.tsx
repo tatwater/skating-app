@@ -23,6 +23,12 @@ import { cn } from '@/lib/utils';
  * - **Nothing is written until the drop**: the order a move draws is a preview; `onReorder` gets
  *   the new order of ids once, on the drop, and only if it changed.
  * - A lifted row rises a step (the lift wash) and its grip lights; every other row stays put.
+ * - **The lift never outlives its rows**: when the set of rows changes under it (one is edited
+ *   under a new id, added, removed) or the grips are turned off, the lift is put down and the
+ *   preview dropped, so a row is never hidden behind an id the preview still holds. Every row in
+ *   `items` is drawn exactly once, whatever the preview says.
+ * - **`pending`** (a save on its way) keeps every grip mounted and focusable, `aria-disabled`, and
+ *   inert — the grip under the keyboard is never taken away from it.
  *
  * Tokens only; the rows' content is the caller's (`renderRow`).
  */
@@ -40,6 +46,8 @@ export type SortableRowsProps<T> = {
   'aria-label': string;
   /** Turn the grips off (a viewer who can't reorder): no handle is drawn. */
   disabled?: boolean;
+  /** A reorder is being saved: the grips stay, focusable and `aria-disabled`, and do nothing. */
+  pending?: boolean;
   className?: string;
 };
 
@@ -70,6 +78,7 @@ export function SortableRows<T>({
   onReorder,
   renderRow,
   disabled = false,
+  pending,
   className,
   'aria-label': ariaLabel,
 }: SortableRowsProps<T>) {
@@ -78,10 +87,37 @@ export function SortableRows<T>({
   // The preview order while a row is lifted; `null` at rest.
   const [draft, setDraft] = useState<string[] | null>(null);
   const [lifted, setLifted] = useState<string | null>(null);
+  // The lift is put down when the rows it describes change under it, or the grips go off: during
+  // the render that sees it, so no frame draws a preview of rows that aren't there.
+  const keys = [...committed].sort().join('\u0000');
+  const [liftedOver, setLiftedOver] = useState(keys);
+  if ((draft !== null || lifted !== null) && (keys !== liftedOver || disabled)) {
+    setDraft(null);
+    setLifted(null);
+  }
+  if (liftedOver !== keys) setLiftedOver(keys);
+  // **A drop holds its order while it is saved** (when the caller says so, through `pending`): the
+  // rows stay where they were dropped until the new order arrives, so nothing jumps back for the
+  // round trip and the grip under the keyboard isn't moved out from under it. A save that ends
+  // without the rows moving (it failed) puts them back.
+  const saving = pending === true;
+  const joined = committed.join('\u0000');
+  const [held, setHeld] = useState<{ order: string[]; from: string; saw: boolean } | null>(null);
+  if (held !== null) {
+    if (joined !== held.from || disabled) setHeld(null);
+    else if (saving && !held.saw) setHeld({ ...held, saw: true });
+    else if (!saving && held.saw) setHeld(null);
+  }
   const [message, setMessage] = useState('');
   const rowRefs = useRef(new Map<string, HTMLElement>());
   const gripRefs = useRef(new Map<string, HTMLButtonElement>());
-  const order = draft ?? committed;
+  // Every row in `items` exactly once: the preview's order for the rows it holds, any it doesn't
+  // after them (a belt to the reset above's braces).
+  const shown = draft ?? held?.order ?? null;
+  const order =
+    shown === null
+      ? committed
+      : [...shown.filter((id) => byId.has(id)), ...committed.filter((id) => !shown.includes(id))];
   const n = order.length;
   const nameOf = (id: string) => {
     const item = byId.get(id);
@@ -104,7 +140,9 @@ export function SortableRows<T>({
     setLifted(null);
     setDraft(null);
     setMessage(`Dropped ${nameOf(id)} at ${finalOrder.indexOf(id) + 1} of ${n}.`);
-    if (!sameOrder(finalOrder, committed)) onReorder(finalOrder);
+    if (sameOrder(finalOrder, committed)) return;
+    if (pending !== undefined) setHeld({ order: finalOrder, from: joined, saw: false });
+    onReorder(finalOrder);
   };
   const cancel = (id: string) => {
     setLifted(null);
@@ -123,6 +161,11 @@ export function SortableRows<T>({
   };
 
   const onGripKey = (id: string) => (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (saving) {
+      // A save is on its way: the grip keeps focus and takes its keys, and does nothing with them.
+      if ([' ', 'Enter', 'ArrowUp', 'ArrowDown'].includes(event.key)) event.preventDefault();
+      return;
+    }
     const up = event.key === 'ArrowUp';
     const down = event.key === 'ArrowDown';
     if (event.key === ' ' || event.key === 'Enter') {
@@ -144,14 +187,16 @@ export function SortableRows<T>({
     } else if (event.altKey) {
       // ⌥↑↓: one place, lifted and dropped in one stroke.
       const next = step(id, up ? -1 : 1, committed);
-      if (!sameOrder(next, committed)) onReorder(next);
+      if (sameOrder(next, committed)) return;
+      if (pending !== undefined) setHeld({ order: next, from: joined, saw: false });
+      onReorder(next);
     }
   };
 
   // ── The pointer ─────────────────────────────────────────────────────────────────────────────
   const drag = useRef<{ id: string; pointerId: number } | null>(null);
   const onPointerDown = (id: string) => (event: PointerEvent<HTMLButtonElement>) => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || saving) return;
     event.currentTarget.setPointerCapture?.(event.pointerId);
     drag.current = { id, pointerId: event.pointerId };
     lift(id);
@@ -197,6 +242,7 @@ export function SortableRows<T>({
               data-slot="sortable-grip"
               aria-label={`Move ${labelOf(item)}`}
               aria-pressed={isLifted}
+              aria-disabled={saving || undefined}
               onKeyDown={onGripKey(id)}
               onPointerDown={onPointerDown(id)}
               onPointerMove={onPointerMove}
