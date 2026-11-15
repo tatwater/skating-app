@@ -42,7 +42,11 @@ export interface AuditEntry {
  * A reason the system composes from fixed words and stored names or text — built with the
  * {@link composed} tag, so the writer says which parts are its own words and which it quoted.
  */
+/** Made only here: a reason shape a writer can't spell as a literal around `typed` or `composed`. */
+declare const TAGGED: unique symbol;
+
 export interface ComposedReason {
+  readonly [TAGGED]: 'composed';
   readonly composed: true;
   readonly fixed: readonly string[];
   readonly values: readonly string[];
@@ -53,6 +57,7 @@ export interface ComposedReason {
  * made by {@link typed}, which refuses it past {@link AUDIT_REASON_MAX} (D261).
  */
 export interface TypedReason {
+  readonly [TAGGED]: 'typed';
   readonly typed: string;
 }
 
@@ -67,8 +72,7 @@ export type AuditReasonOrText = AuditReason | string;
 
 /** A reason as written, refused past the cap with its plain message (D261). */
 export function typed(text: string): TypedReason {
-  if (text.length > AUDIT_REASON_MAX) throw new ConvexError(AUDIT_REASON_TOO_LONG);
-  return { typed: text };
+  return { typed: checkedReason(text) } as TypedReason;
 }
 
 /**
@@ -77,7 +81,18 @@ export function typed(text: string): TypedReason {
  * (D261's cap is for what a person types; a composed reason never makes its own write fail).
  */
 export function composed(fixed: TemplateStringsArray, ...values: unknown[]): ComposedReason {
-  return { composed: true, fixed: [...fixed], values: values.map((v) => String(v)) };
+  return composedOf(
+    [...fixed],
+    values.map((v) => String(v)),
+  );
+}
+
+/**
+ * A composed reason from its parts — for a writer whose fixed words aren't a template (a person's
+ * checked words kept whole, a system line shortened around them).
+ */
+export function composedOf(fixed: readonly string[], values: readonly string[]): ComposedReason {
+  return { composed: true, fixed, values } as unknown as ComposedReason;
 }
 
 /** A person's typed reason, refused past the cap (D261) — for a writer that quotes it in a composed one. */

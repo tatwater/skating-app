@@ -18,7 +18,7 @@ import { ConvexError, type Infer, v } from 'convex/values';
 import type { Doc } from './_generated/dataModel';
 import type { MutationCtx } from './_generated/server';
 import { mutation } from './_generated/server';
-import { type AuditReasonOrText, checkedReason, writeAudit } from './lib/audit';
+import { type AuditReasonOrText, checkedReason, composedOf, writeAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { postedAccess as postedAccessValidator } from './lib/validators';
 
@@ -132,7 +132,7 @@ export async function setPostedAccessImpl(
   // fixed part, and the line the system puts before it is the value shortened around it — so a reason
   // at the cap still fits once the change is described, and never loses its own words to it.
   const auditReason: AuditReasonOrText = reason
-    ? { composed: true, fixed: ['', checkedReason(reason)], values: [`${describeChange(next)} — `] }
+    ? composedOf(['', checkedReason(reason)], [`${describeChange(next)} — `])
     : describeChange(next);
   await writeAudit(ctx, {
     actorId: actor._id,

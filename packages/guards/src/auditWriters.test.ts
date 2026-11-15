@@ -31,7 +31,10 @@ test('only lib/audit.ts inserts into moderationActions', () => {
  * template with a value, passed to an audit writer, would be refused on a long name instead.
  */
 test('every reason an audit writer composes is tagged composed', () => {
-  const writers = /\b(?:writeAudit|audit|auditLandmark|auditUser|writeDepth|mergeBodyInto)\(/g;
+  // The People entry and the ledger's own writer too: `typed(...)` takes any string, so a raw template
+  // passed through it would compile, and be refused on a long name.
+  const writers =
+    /\b(?:writeAudit|writePersonAudit|takeLedgerGrant|audit|auditLandmark|auditUser|writeDepth|mergeBodyInto)\(/g;
   const raw: string[] = [];
   for (const p of sources(CONVEX)) {
     const text = readFileSync(p, 'utf8');
