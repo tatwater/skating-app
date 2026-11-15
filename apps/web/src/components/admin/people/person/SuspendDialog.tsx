@@ -39,7 +39,11 @@ export type SuspendDialogProps = {
   now: number;
   timeZone?: string;
   /** Runs the write; resolves to the server's refusal, or `null`. */
-  onConfirm: (args: { until: number; reason: string }) => Promise<string | null>;
+  onConfirm: (args: {
+    until: number;
+    reason: string;
+    shape: ReturnType<typeof shapeOf>;
+  }) => Promise<string | null>;
 };
 
 /**
@@ -96,7 +100,7 @@ export function SuspendDialog({
       description={words.body}
       confirm={words.confirm}
       reason
-      onConfirm={(reason) => onConfirm({ until: liftsAt(ms, now, from), reason })}
+      onConfirm={(reason) => onConfirm({ until: liftsAt(ms, now, from), reason, shape })}
     >
       <RadioGroup
         aria-label={shape === 'extend' ? WORDS.extendBy : WORDS.forHowLong}

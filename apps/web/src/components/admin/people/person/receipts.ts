@@ -32,7 +32,15 @@ export function receiptFor(
         : { title: WORDS.bountyIs(name, action.limit) };
     case 'suspend':
       return {
-        title: action.extend ? WORDS.extended(name) : WORDS.suspended(name),
+        // What happened, by the dialog's mode: more time on a running end, an end set on an
+        // open-ended one, or a new window on one that ran its course.
+        title: !action.extend
+          ? WORDS.suspended(name)
+          : action.shape === 'setEnd'
+            ? WORDS.endSet(name)
+            : action.shape === 'renew'
+              ? WORDS.suspendedAgain(name)
+              : WORDS.extended(name),
         description: WORDS.liftsOnItsOwnReceipt(momentWords(action.until, now, timeZone)),
       };
     case 'lift':

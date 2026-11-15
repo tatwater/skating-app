@@ -30,7 +30,14 @@ export type Permission = 'reports' | 'hazards' | 'comments' | 'flagging';
 export type PersonAction =
   | { kind: 'right'; permission: Permission; allowed: boolean; reason?: string }
   | { kind: 'bountyLimit'; limit: number | null; reason?: string }
-  | { kind: 'suspend'; until: number; reason: string; extend: boolean }
+  | {
+      kind: 'suspend';
+      until: number;
+      reason: string;
+      extend: boolean;
+      /** What a new window did, for its receipt: more time, an end set, or a new window from now. */
+      shape?: 'extend' | 'setEnd' | 'renew';
+    }
   | { kind: 'lift' }
   | { kind: 'ban'; reason: string }
   | { kind: 'role'; role: Role; reason?: string }

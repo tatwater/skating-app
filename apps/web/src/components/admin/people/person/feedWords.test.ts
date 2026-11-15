@@ -147,6 +147,21 @@ describe('the receipt', () => {
     expect(say({ kind: 'suspend', until: local(10, 21), reason: 'x', extend: true }).title).toBe(
       'Sarah Berman’s suspension is extended',
     );
+    // Each new window says what it did, and when it lifts.
+    const window = (shape: 'extend' | 'setEnd' | 'renew') =>
+      say({ kind: 'suspend', until: local(10, 21), reason: 'x', extend: true, shape });
+    expect(window('extend')).toEqual({
+      title: 'Sarah Berman’s suspension is extended',
+      description: 'It lifts on its own Wed 21 Oct 12:00',
+    });
+    expect(window('setEnd')).toEqual({
+      title: 'Sarah Berman’s suspension now has an end',
+      description: 'It lifts on its own Wed 21 Oct 12:00',
+    });
+    expect(window('renew')).toEqual({
+      title: 'Sarah Berman is suspended again',
+      description: 'It lifts on its own Wed 21 Oct 12:00',
+    });
     expect(say({ kind: 'lift' })).toEqual({ title: 'Sarah Berman can sign in again' });
     expect(say({ kind: 'ban', reason: 'x' })).toEqual({
       title: 'Sarah Berman is banned',

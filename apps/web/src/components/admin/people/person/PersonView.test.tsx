@@ -568,7 +568,13 @@ describe('writes', () => {
     await userEvent.type(within(dialog).getByRole('textbox'), 'Again');
     await userEvent.click(within(dialog).getByRole('button', { name: /Extend/ }));
     const until = new Date(2026, 9, 15, 19, 48).getTime() + 7 * 86_400_000;
-    expect(onAct).toHaveBeenCalledWith({ kind: 'suspend', until, reason: 'Again', extend: true });
+    expect(onAct).toHaveBeenCalledWith({
+      kind: 'suspend',
+      until,
+      reason: 'Again',
+      extend: true,
+      shape: 'extend',
+    });
   });
 
   it('an open-ended suspension gets an end, from now, saying when it will lift', async () => {
@@ -589,6 +595,7 @@ describe('writes', () => {
       until: NOW + 3 * 86_400_000,
       reason: 'Settled',
       extend: true,
+      shape: 'setEnd',
     });
   });
 
@@ -608,6 +615,7 @@ describe('writes', () => {
       until: NOW + 7 * 86_400_000,
       reason: 'Again',
       extend: true,
+      shape: 'renew',
     });
   });
 

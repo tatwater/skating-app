@@ -276,8 +276,18 @@ export function LeverBlock({ title, rows, person, acting, now, timeZone }: Lever
           replacesBan={person.status === 'banned'}
           now={now}
           {...(timeZone !== undefined && { timeZone })}
-          onConfirm={({ until, reason }) =>
-            run(shown.id, { kind: 'suspend', until, reason, extend: shown.extend }, false)
+          onConfirm={({ until, reason, shape }) =>
+            run(
+              shown.id,
+              {
+                kind: 'suspend',
+                until,
+                reason,
+                extend: shown.extend,
+                ...(shape !== 'suspend' && { shape }),
+              },
+              false,
+            )
           }
         />
       )}
