@@ -495,7 +495,13 @@ export const NOTIFICATION_FRESH_MS = 12 * 60 * 60 * 1000;
  * A row's due clock. Every row written since D258 carries it (`firstDueAt`). A row written before
  * carries none, and is read by the earliest clock it does carry — its `createdAt` for an actor row
  * (whose `flushAfter` a later event could push out), its `flushAfter` for a report notice (which only
- * ever moved earlier) — so an old row is never read as fresher than it is.
+ * ever moved earlier) — so an old row is never read as fresher than it is. Such a row never takes a
+ * new event (`coalescingRow`): a fresh event gets a row and a clock of its own, so it can never expire
+ * with the old one. The first failure stamps the old clock onto the row, so it never moves after.
+ *
+ * (Why not a one-time backfill instead: it could only stamp the same guess — an actor row's first due
+ * time was overwritten by the old "a due row takes the incoming deadline" rule — and until it finished
+ * the code would need this branch anyway. Old rows drain within a day; the branch costs nothing after.)
  */
 export function dueClockOf(
   row: Pick<Doc<'notificationQueue'>, 'flushAfter' | 'firstDueAt' | 'createdAt' | 'trigger'>,
@@ -513,8 +519,9 @@ export function isStaleQueueRow(
 }
 
 /**
- * The row a new event due at `dueAt` may coalesce into (D258): same key, not parked, **still
- * settling** (due after `now`), and due **no later than the event** — so joining moves neither the
+ * The row a new event due at `dueAt` may coalesce into (D258): same key, not parked, written with a
+ * clock of its own (never a row from before D258), **still settling** (due after `now`), and due
+ * **no later than the event** — so joining moves neither the
  * row's due time nor its clock, and never delivers the event later than it would have been alone. A
  * row already due or parked keeps only what it holds; the event gets its own row.
  */
@@ -529,6 +536,14 @@ export function coalescingRow(
     .withIndex('by_coalesce_parked', (q) =>
       q.eq('coalesceKey', coalesceKey).eq('parkedAt', undefined),
     )
-    .filter((q) => q.and(q.gt(q.field('flushAfter'), now), q.lte(q.field('flushAfter'), dueAt)))
+    .filter((q) =>
+      q.and(
+        // A row written before D258 carries no clock of its own and is never joined: its only clock
+        // is an old one (`dueClockOf`), and a fresh event on it would expire with it, undelivered.
+        q.neq(q.field('firstDueAt'), undefined),
+        q.gt(q.field('flushAfter'), now),
+        q.lte(q.field('flushAfter'), dueAt),
+      ),
+    )
     .first();
 }

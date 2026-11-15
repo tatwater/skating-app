@@ -320,7 +320,9 @@ describe('D258 chains under real limits', () => {
 });
 
 /** An outline near the document limit: a ring of tens of thousands of points around the unit square. */
+let heavyRing: { type: 'Polygon'; coordinates: [number, number][][] } | undefined;
 function heavyPolygon() {
+  if (heavyRing) return heavyRing;
   const n = 40_000;
   const ring: [number, number][] = [];
   for (let i = 0; i < n; i++) {
@@ -328,7 +330,8 @@ function heavyPolygon() {
     ring.push([0.5 + 0.4 * Math.cos(a), 0.5 + 0.4 * Math.sin(a)]);
   }
   ring.push(ring[0] as [number, number]);
-  return { type: 'Polygon' as const, coordinates: [ring] };
+  heavyRing = { type: 'Polygon' as const, coordinates: [ring] };
+  return heavyRing;
 }
 
 async function heavyBody(t: T, i: number): Promise<Id<'waterBodies'>> {
@@ -348,25 +351,27 @@ async function heavyBody(t: T, i: number): Promise<Id<'waterBodies'>> {
 }
 
 describe('D258 walks whose every document is at the document limit', () => {
-  test('the rollover: twelve outlines near the limit — pages sized from the heaviest, the walk reaches its end', async () => {
+  test('the rollover: seven outlines near the limit — pages sized from the heaviest, the walk reaches its end', async () => {
     const t = harness();
     const ids: Id<'waterBodies'>[] = [];
-    for (let i = 0; i < 12; i++) ids.push(await heavyBody(t, i));
+    // Seven: more than two of the three-body pages the heaviest outline sizes a page to.
+    for (let i = 0; i < 7; i++) ids.push(await heavyBody(t, i));
     const result = await t.action(internal.standing.runStandingRollover, {
       season: 2029,
       apply: true,
     });
-    expect(result).toMatchObject({ scanned: 12, demoted: 12, failed: 0 });
+    expect(result).toMatchObject({ scanned: 7, demoted: 7, failed: 0 });
   }, 180_000);
 
-  test('the registry walk: twelve outlines near the limit — pages end by weight, every body registered', async () => {
+  test('the registry walk: ten outlines near the limit — pages end by weight, every body registered', async () => {
     const t = harness();
-    for (let i = 0; i < 12; i++) await heavyBody(t, i);
+    // Ten: more than one 6 MiB page of them.
+    for (let i = 0; i < 10; i++) await heavyBody(t, i);
     await runOut(t, () =>
       t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' }),
     );
     const members = await t.run((ctx) => ctx.db.query('bodyWeatherCells').collect());
-    expect(members).toHaveLength(12);
+    expect(members).toHaveLength(10);
   }, 180_000);
 
   test('the gap walk: forty registered cells near the limit — pages end by weight, the walk reaches its end', async () => {

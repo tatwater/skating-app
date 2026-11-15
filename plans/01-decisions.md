@@ -8005,7 +8005,11 @@ item that keeps failing, or keeps being kept, takes only its own turn.
   behind by a flush that was down. The row's due clock is set once, when the row is written, and
   nothing moves it, nor its due time; a new event joins only a row that is unparked, still settling and
   due no later than the event would be alone, otherwise it starts a row of its own, so an old row never makes a fresh event expire and a fresh event never makes
-  an old row look fresh. A row from before this rule is read by its earliest clock, never as fresh. A
+  an old row look fresh. A row from before this rule has no clock of its own: it is read by its
+  earliest one (`createdAt` for an actor row, `flushAfter` for a report notice), never as fresh, and
+  never takes a new event — a fresh event on it would expire with it — so the event gets its own row.
+  (Not a one-time backfill: it could only stamp the same guess, and the code would need the branch until
+  it finished; old rows drain within a day.) A
   parked notification is retried hourly, not daily, so a fault fixed within the morning still delivers.
 - **A dry run writes nothing.** A failure is recorded or cleared only by a run that applies its
   decisions; a dry rollover's only write is its own run row, and it schedules nothing.

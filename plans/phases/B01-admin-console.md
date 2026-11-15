@@ -1823,7 +1823,10 @@ a dry run's counts are read — and nothing is scheduled.
 is written with the row and nothing moves it, nor its due time; a new event joins only a row that is
 unparked, still settling and due no later than the event would be alone (an event stamped earlier — a
 digest for a recipient who changed zone — starts a row of its own), otherwise it starts a row of its own; a row written before D258 is read by its earliest clock
-(`createdAt` for an actor row, `flushAfter` for a report notice), never as fresh. The actor path's old
+(`createdAt` for an actor row, `flushAfter` for a report notice), never as fresh, and never takes a new
+event — a fresh event on it gets its own row, so it can never expire undelivered with the old one
+(Greptile #116's legacy-row case; a backfill would only stamp the same guess, and old rows drain
+within a day). The actor path's old
 "a due row takes the incoming deadline" branch was the moving deadline, and is gone: a re-thumb after a
 row fell due is its own notification.
 

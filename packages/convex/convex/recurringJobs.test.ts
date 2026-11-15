@@ -967,7 +967,37 @@ describe('the freshness rule holds at enqueue and at flush, by construction', ()
           now: Date.now(),
         }),
       );
-    return { t, reportNotice, actorNotice };
+    /** A row as the code before D258 wrote it, under the same key a new event would use. */
+    const seedLegacy = (l: Legacy) =>
+      t.run((ctx) => {
+        const userId = fans[l.u]?.id as Id<'profiles'>;
+        const base = {
+          userId,
+          count: 1,
+          flushAfter: Date.now() + l.dueInMs,
+          createdAt: Date.now() - l.ageMs,
+        };
+        if (l.k === 'report') {
+          const waterBodyId = bodies[l.x] as Id<'waterBodies'>;
+          return ctx.db.insert('notificationQueue', {
+            ...base,
+            waterBodyId,
+            kind: 'favorite' as const,
+            type: 'favorite_report' as const,
+            coalesceKey: `${userId}:${waterBodyId}:favorite`,
+            latestReportId: reportId,
+          });
+        }
+        const activityId = activities[l.u]?.[l.x] as Id<'gpsActivities'>;
+        return ctx.db.insert('notificationQueue', {
+          ...base,
+          kind: 'activity' as const,
+          type: 'activity_detected' as const,
+          coalesceKey: notificationQueue.actorCoalesceKey(userId, activityId, 'activity'),
+          trigger: { kind: 'activity' as const, activityId },
+        });
+      });
+    return { t, reportNotice, actorNotice, seedLegacy };
   }
 
   const rowsOf = (t: T) => t.run((ctx) => ctx.db.query('notificationQueue').collect());
@@ -981,6 +1011,16 @@ describe('the freshness rule holds at enqueue and at flush, by construction', ()
     | { k: 'poison'; u: number }
     | { k: 'heal' }
     | { k: 'retry' };
+
+  /** A row written before D258: no clock of its own, any age, due any time around now. */
+  type Legacy = { k: 'actor' | 'report'; u: number; x: number; ageMs: number; dueInMs: number };
+  const legacy: fc.Arbitrary<Legacy> = fc.record({
+    k: fc.constantFrom('actor' as const, 'report' as const),
+    u: fc.nat(1),
+    x: fc.nat(1),
+    ageMs: fc.integer({ min: 0, max: 30 * HOUR }),
+    dueInMs: fc.integer({ min: -2 * HOUR, max: 2 * HOUR }),
+  });
 
   const cmd: fc.Arbitrary<Cmd> = fc.oneof(
     fc.record({
@@ -1000,64 +1040,72 @@ describe('the freshness rule holds at enqueue and at flush, by construction', ()
 
   test('over any interleaving of both enqueue paths, flushes, outages, parking and the retry: nothing past its window is sent, nothing fresh is lost to an older clock, no clock moves, nothing is sent twice', async () => {
     await fc.assert(
-      fc.asyncProperty(fc.array(cmd, { minLength: 1, maxLength: 24 }), async (cmds) => {
-        vi.restoreAllMocks();
-        vi.setSystemTime(T0);
-        const { t, reportNotice, actorNotice } = await freshnessSetup();
-        const users = (await t.run((ctx) => ctx.db.query('profiles').collect())).map((p) => p._id);
-        const poisoned = new Set<string>();
-        const real = notificationQueue.isStaleQueueRow;
-        vi.spyOn(notificationQueue, 'isStaleQueueRow').mockImplementation((row, now) => {
-          if (poisoned.has((row as unknown as { userId: string }).userId))
-            throw new Error('poison');
-          return real(row, now);
-        });
-        const clocks = new Map<string, number>();
-        for (const c of cmds) {
-          const before = await rowsOf(t);
-          const sentBefore = (await inboxOf(t)).length;
-          const now = Date.now();
-          if (c.k === 'report' || c.k === 'actor') {
-            if (c.k === 'report') await reportNotice(c.u, c.b, c.early);
-            else await actorNotice(c.u, c.a);
-            const after = await rowsOf(t);
-            // The event joined a row still settling, or a new one: its clock never began before it.
-            const touched = after.filter((r) => {
-              const was = before.find((b) => b._id === r._id);
-              return !was || JSON.stringify(was) !== JSON.stringify(r);
-            });
-            for (const r of touched) expect(r.firstDueAt).toBeGreaterThan(now);
-          } else if (c.k === 'advance') vi.setSystemTime(now + c.ms);
-          else if (c.k === 'poison') poisoned.add(users[c.u] as string);
-          else if (c.k === 'heal') poisoned.clear();
-          else {
-            if (c.k === 'flush')
-              await t.mutation(internal.notifications.flushNotificationQueue, {});
-            else await t.mutation(internal.notifications.retryParkedNotifications, {});
-            await t.finishInProgressScheduledFunctions();
-            const after = await rowsOf(t);
-            const gone = before.filter((b) => !after.some((a) => a._id === b._id));
-            const sent = (await inboxOf(t)).slice(sentBefore);
-            // (a) and (b): a row that left was sent exactly when it was inside its window.
-            const freshGone = gone.filter(
-              (g) => now - (g.firstDueAt as number) <= NOTIFICATION_FRESH_MS,
-            );
-            const keys = (rows: { coalesceKey?: string; payload?: { coalesceKey?: string } }[]) =>
-              rows.map((r) => r.coalesceKey ?? r.payload?.coalesceKey).sort();
-            expect(keys(sent)).toEqual(keys(freshGone));
+      fc.asyncProperty(
+        fc.array(legacy, { maxLength: 3 }),
+        fc.array(cmd, { minLength: 1, maxLength: 14 }),
+        async (legacyRows, cmds) => {
+          vi.restoreAllMocks();
+          vi.setSystemTime(T0);
+          const { t, reportNotice, actorNotice, seedLegacy } = await freshnessSetup();
+          for (const l of legacyRows) await seedLegacy(l);
+          const users = (await t.run((ctx) => ctx.db.query('profiles').collect())).map(
+            (p) => p._id,
+          );
+          const poisoned = new Set<string>();
+          const real = notificationQueue.isStaleQueueRow;
+          vi.spyOn(notificationQueue, 'isStaleQueueRow').mockImplementation((row, now) => {
+            if (poisoned.has((row as unknown as { userId: string }).userId))
+              throw new Error('poison');
+            return real(row, now);
+          });
+          const clocks = new Map<string, number>();
+          for (const c of cmds) {
+            const before = await rowsOf(t);
+            const sentBefore = (await inboxOf(t)).length;
+            const now = Date.now();
+            if (c.k === 'report' || c.k === 'actor') {
+              if (c.k === 'report') await reportNotice(c.u, c.b, c.early);
+              else await actorNotice(c.u, c.a);
+              const after = await rowsOf(t);
+              // The event joined a row still settling, or a new one — never a row from before the rule
+              // (it has no clock of its own): its clock never began before it.
+              const touched = after.filter((r) => {
+                const was = before.find((b) => b._id === r._id);
+                return !was || JSON.stringify(was) !== JSON.stringify(r);
+              });
+              for (const r of touched) expect(r.firstDueAt).toBeGreaterThan(now);
+            } else if (c.k === 'advance') vi.setSystemTime(now + c.ms);
+            else if (c.k === 'poison') poisoned.add(users[c.u] as string);
+            else if (c.k === 'heal') poisoned.clear();
+            else {
+              if (c.k === 'flush')
+                await t.mutation(internal.notifications.flushNotificationQueue, {});
+              else await t.mutation(internal.notifications.retryParkedNotifications, {});
+              await t.finishInProgressScheduledFunctions();
+              const after = await rowsOf(t);
+              const gone = before.filter((b) => !after.some((a) => a._id === b._id));
+              const sent = (await inboxOf(t)).slice(sentBefore);
+              // (a) and (b): a row that left was sent exactly when it was inside its window.
+              const freshGone = gone.filter(
+                (g) => now - notificationQueue.dueClockOf(g) <= NOTIFICATION_FRESH_MS,
+              );
+              const keys = (rows: { coalesceKey?: string; payload?: { coalesceKey?: string } }[]) =>
+                rows.map((r) => r.coalesceKey ?? r.payload?.coalesceKey).sort();
+              expect(keys(sent)).toEqual(keys(freshGone));
+            }
+            // (c): every row's clock — its own, or a pre-rule row's earliest — never changes.
+            for (const r of await rowsOf(t)) {
+              const clock = notificationQueue.dueClockOf(r);
+              const seen = clocks.get(r._id);
+              if (seen !== undefined) expect(clock).toBe(seen);
+              clocks.set(r._id, clock);
+            }
           }
-          // (c): every row has its clock, and it never changes.
-          for (const r of await rowsOf(t)) {
-            expect(r.firstDueAt).toBeDefined();
-            const seen = clocks.get(r._id);
-            if (seen !== undefined) expect(r.firstDueAt).toBe(seen);
-            clocks.set(r._id, r.firstDueAt as number);
-          }
-        }
-        // (d): never more inbox rows than rows ever written.
-        expect((await inboxOf(t)).length).toBeLessThanOrEqual(clocks.size);
-      }),
-      { numRuns: 25 },
+          // (d): never more inbox rows than rows ever written.
+          expect((await inboxOf(t)).length).toBeLessThanOrEqual(clocks.size);
+        },
+      ),
+      { numRuns: 30 },
     );
   }, 180_000);
 
@@ -1090,6 +1138,22 @@ describe('the freshness rule holds at enqueue and at flush, by construction', ()
     await t.mutation(internal.notifications.flushNotificationQueue, {});
     expect(await t.run((ctx) => ctx.db.get(old?._id as Id<'notificationQueue'>))).toBeNull();
     expect(await inboxOf(t)).toHaveLength(0);
+  });
+
+  test('a pre-rule actor row, then a fresh actor event, then a flush (Greptile): the fresh event gets its own row and is sent; the old row expires', async () => {
+    const { t, actorNotice, seedLegacy } = await freshnessSetup();
+    // Created a day ago, its flush time pushed to a minute from now by the old moving-deadline rule.
+    const legacyRow = await seedLegacy({ k: 'actor', u: 0, x: 0, ageMs: DAY, dueInMs: MINUTE });
+    await actorNotice(0, 0);
+    const rows = await rowsOf(t);
+    expect(rows).toHaveLength(2);
+    expect(rows.find((r) => r._id === legacyRow)?.count).toBe(1); // not joined
+    vi.setSystemTime(Date.now() + 2 * MINUTE);
+    expect(await t.mutation(internal.notifications.flushNotificationQueue, {})).toMatchObject({
+      delivered: 1,
+      expired: 1,
+    });
+    expect(await rowsOf(t)).toEqual([]);
   });
 
   test('a row written before the rule (no clock of its own) is read by its earliest clock, never as fresh', async () => {
