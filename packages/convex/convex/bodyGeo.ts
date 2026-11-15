@@ -696,7 +696,7 @@ async function isBehind(
 /**
  * **Bodies with no facts row at all** — a creation path the cell index's mark didn't see. One page of
  * the body-wide library rows, each probed for its facts row and marked when it has none, chaining to
- * the end; the daily cron starts it.
+ * the end; the weekly cron starts it.
  */
 export const repairMissing = internalMutation({
   args: { cursor: v.optional(v.string()) },

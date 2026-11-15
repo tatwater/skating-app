@@ -367,9 +367,13 @@ crons.interval('compute body geometry facts', { minutes: 5 }, internal.bodyGeo.c
 crons.interval('retry parked body geometry', { hours: 24 }, internal.bodyGeo.computeDue, {
   parked: true,
 });
-/** The drift repair: computed facts checked against their inputs, the longest-unchecked first. */
-crons.interval('repair body geometry drift', { minutes: 5 }, internal.bodyGeo.repairDrift, {});
-/** Bodies with no geometry facts row at all, found from the library and marked. */
-crons.interval('find bodies missing geometry', { hours: 24 }, internal.bodyGeo.repairMissing, {});
+/**
+ * The drift repair: computed facts checked against their inputs, the longest-unchecked first — a net
+ * for marks a writer missed, so slow on purpose (40 rows a half hour, the corpus in about two weeks;
+ * each check reads a body's outline, so a faster sweep costs reads every day for rare misses).
+ */
+crons.interval('repair body geometry drift', { minutes: 30 }, internal.bodyGeo.repairDrift, {});
+/** Bodies with no geometry facts row at all, found from the library and marked — weekly. */
+crons.interval('find bodies missing geometry', { hours: 168 }, internal.bodyGeo.repairMissing, {});
 
 export default crons;
