@@ -11,7 +11,7 @@ import fc from 'fast-check';
 import type { Polygon } from 'geojson';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { internal } from './_generated/api';
-import type { Id } from './_generated/dataModel';
+import type { Doc, Id } from './_generated/dataModel';
 import { FANOUT_INLINE } from './bodyGeo';
 import { markGeoStale, outlineStamp, simplifiedRing } from './lib/bodyGeo';
 import { rebuildBodyLibrary } from './lib/bodyLibrary';
@@ -339,18 +339,27 @@ describe('a neighbor’s outline', () => {
 describe('the drift repair', () => {
   test('a row computed before towns carried their states is behind (B01-3c)', async () => {
     const t = harness();
-    const id = await seedBody(t, 'Old Towns', -72);
+    const old = await seedBody(t, 'Old Towns', -72);
+    // Stored without them (a store from an older action, mid-deploy): empty lists beside a town.
+    const bare = await seedBody(t, 'Bare Towns', -60);
     await drain(t);
     await t.run(async (ctx) => {
-      const row = await ctx.db
-        .query('bodyGeoFacts')
-        .withIndex('by_body', (q) => q.eq('waterBodyId', id))
-        .first();
-      if (row) await ctx.db.patch(row._id, { towns: ['Somewhere'], townStates: undefined });
+      const cases: [Id<'waterBodies'>, Partial<Doc<'bodyGeoFacts'>>][] = [
+        [old, { townStates: undefined }],
+        [bare, { townStates: [], townIds: [] }],
+      ];
+      for (const [id, lists] of cases) {
+        const row = await ctx.db
+          .query('bodyGeoFacts')
+          .withIndex('by_body', (q) => q.eq('waterBodyId', id))
+          .first();
+        if (row) await ctx.db.patch(row._id, { towns: ['Somewhere'], ...lists });
+      }
     });
     vi.setSystemTime(NOW + 1_000);
-    expect(await t.mutation(internal.bodyGeo.repairDrift, {})).toMatchObject({ marked: 1 });
-    expect((await facts(t, id))?.staleAt).toBe(NOW + 1_000);
+    expect(await t.mutation(internal.bodyGeo.repairDrift, {})).toMatchObject({ marked: 2 });
+    expect((await facts(t, old))?.staleAt).toBe(NOW + 1_000);
+    expect((await facts(t, bare))?.staleAt).toBe(NOW + 1_000);
   });
 
   test('finds an outline changed with no mark, a stale held copy, a newer places layer, a missing row', async () => {

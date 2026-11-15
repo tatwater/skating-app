@@ -14,8 +14,9 @@
  * ## How it stays current
  *
  * A body's facts are marked stale where any input of theirs changes (`lib/geoStale.ts` lists the
- * marks; the cell index is the choke point for creations, moved boxes and listing changes), where a
- * neighbor's relation or stored outline moves, and by a drift repair for whatever those miss. The
+ * marks; the cell index marks a new body, and an outline or box write marks its own — since B01-3c a
+ * standing, listing or prominence change marks nothing), where a neighbor's relation or stored
+ * outline moves, and by a drift repair for whatever those miss. The
  * `bodyGeo` jobs
  * recompute stale bodies in an action, where the geometry has room, and store the answer through a
  * mutation that keeps it only if the outline it was computed for is still the body's. A body never

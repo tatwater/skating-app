@@ -10,6 +10,7 @@ import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+import type { MutationCtx } from './_generated/server';
 import { errorClassOf, SEED_PAGE } from './bodyGeo';
 import { markGeoStale } from './lib/bodyGeo';
 import { rebuildBodyLibrary } from './lib/bodyLibrary';
@@ -233,6 +234,70 @@ describe('the drift repair', () => {
     vi.setSystemTime(NOW + 2_000);
     await t.mutation(internal.bodyGeo.repairDrift, {});
     expect(await geoFailures(t, 'geoDrift')).toEqual([]);
+  });
+
+  test('past the failures read up front, a row that goes through is still cleared', async () => {
+    const t = harness();
+    const id = await seedBody(t, 'Fine', -72);
+    await t.run((ctx) => markGeoStale(ctx, [id]));
+    await t.action(internal.bodyGeo.computeDue, {});
+    // More failing keys than one read takes, every one sorting before the body's own.
+    await t.run(async (ctx) => {
+      for (let i = 0; i <= 200; i++)
+        await failure(ctx, 'geoDrift', `!${String(i).padStart(3, '0')}`);
+      await failure(ctx, 'geoDrift', id);
+    });
+    vi.setSystemTime(NOW + 1_000);
+    await t.mutation(internal.bodyGeo.repairDrift, {});
+    const left = await geoFailures(t, 'geoDrift');
+    expect(left).toHaveLength(201);
+    expect(left.some((f) => f.key === id)).toBe(false);
+  });
+});
+
+/** A walk's failure on file for `key`, as `recordFailure` leaves one. */
+function failure(ctx: MutationCtx, job: 'geoDrift' | 'geoMissing', key: string) {
+  return ctx.db.insert('jobFailures', {
+    job,
+    key,
+    attempts: 1,
+    errorClass: 'RangeError',
+    firstFailedAt: NOW,
+    lastFailedAt: NOW,
+  });
+}
+
+describe('the missing-row walk and a body that goes', () => {
+  test('a probe that goes through clears its earlier failure; a body gone clears every walk’s', async () => {
+    const t = harness();
+    const kept = await seedBody(t, 'Kept', -72);
+    const gone = await seedBody(t, 'Gone', -60);
+    await t.run((ctx) => markGeoStale(ctx, [kept, gone]));
+    await t.action(internal.bodyGeo.computeDue, {});
+    await t.run(async (ctx) => {
+      await failure(ctx, 'geoMissing', kept);
+      await failure(ctx, 'geoDrift', gone);
+      await failure(ctx, 'geoMissing', gone);
+    });
+    // The weekly walk is the missing-row probe's retry, and what says it worked.
+    await t.mutation(internal.bodyGeo.repairMissing, {});
+    await t.finishAllScheduledFunctions(() => {});
+    expect((await geoFailures(t, 'geoMissing')).map((f) => f.key)).toEqual([]);
+    // A body gone: no walk visits it again, so its store takes every failure on it with its facts.
+    await t.run(async (ctx) => {
+      await failure(ctx, 'geoMissing', gone);
+      const row = await ctx.db
+        .query('bodyLibraryRows')
+        .withIndex('by_body', (q) => q.eq('waterBodyId', gone).eq('scope', '*'))
+        .first();
+      if (row) await ctx.db.delete(row._id);
+      await ctx.db.delete(gone);
+      await markGeoStale(ctx, [gone]);
+    });
+    await t.action(internal.bodyGeo.computeDue, {});
+    expect(await facts(t, gone)).toBeNull();
+    expect(await geoFailures(t, 'geoDrift')).toEqual([]);
+    expect(await geoFailures(t, 'geoMissing')).toEqual([]);
   });
 });
 

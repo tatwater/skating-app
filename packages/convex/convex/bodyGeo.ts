@@ -38,6 +38,7 @@ import {
   vertexCount,
 } from './lib/bodyGeo';
 import { ADMIN_AREA_LADDER } from './lib/cellIndex';
+import type { FailingJob } from './lib/enums';
 import {
   clearFailure,
   mirrorFailure,
@@ -363,9 +364,13 @@ export const store = internalMutation({
         );
         await ctx.db.delete(row._id);
       }
-      // Gone: its links go, and every body holding its outline drops it on recompute.
+      // Gone: its links go, and every body holding its outline drops it on recompute. Its failures
+      // go too — no walk visits a body with no facts row or library row again, so a drift check or
+      // a missing-row probe that failed on it would otherwise be counted by Machinery forever.
       await writeLinks(ctx, args.waterBodyId, []);
-      await clearFailure(ctx, 'bodyGeo', args.waterBodyId);
+      for (const job of ['bodyGeo', 'geoDrift', 'geoMissing'] as const) {
+        await clearFailure(ctx, job, args.waterBodyId);
+      }
       await markHolders(ctx, args.waterBodyId, now);
       return { stored: false };
     }
@@ -644,8 +649,28 @@ export const seedAll = internalMutation({
 
 // ── The drift repair ─────────────────────────────────────────────────────────────────────────
 
-/** Earlier drift failures one tick reads, to clear the rows that now go through. */
-const DRIFT_FAILURES_READ = 200;
+/** A walk's earlier failures one pass reads up front, to clear the items that now go through. */
+const WALK_FAILURES_READ = 200;
+
+/**
+ * Clears a walk's item that went through, if it had been failing — from one read of the job's
+ * failures up front rather than a read per item; past {@link WALK_FAILURES_READ} of them that read is
+ * partial, so each item is then looked up on its own (a capped read never decides "not failing").
+ */
+async function failureClearer(
+  ctx: MutationCtx,
+  job: FailingJob,
+): Promise<(key: string) => Promise<void>> {
+  const rows = await ctx.db
+    .query('jobFailures')
+    .withIndex('by_job_key', (q) => q.eq('job', job))
+    .take(WALK_FAILURES_READ + 1);
+  if (rows.length > WALK_FAILURES_READ) return (key) => clearFailure(ctx, job, key);
+  const failing = new Set(rows.map((f) => f.key));
+  return async (key) => {
+    if (failing.has(key)) await clearFailure(ctx, job, key);
+  };
+}
 /** Facts rows one drift tick checks at most. */
 export const DRIFT_BATCH = 40;
 /** Read budget a drift tick keeps back: each check reads a body, up to its 1 MiB outline. */
@@ -670,15 +695,8 @@ export const repairDrift = internalMutation({
     // sorts first) is either owed its first computation (skipped below, then stamped) or was computed
     // before the links and marks existed — behind by construction (`isBehind`).
     const rows = await ctx.db.query('bodyGeoFacts').withIndex('by_checked').take(DRIFT_BATCH);
-    // The rows failing before, so one that goes through clears its failure without a read per row.
-    const failedKeys = new Set(
-      (
-        await ctx.db
-          .query('jobFailures')
-          .withIndex('by_job_key', (q) => q.eq('job', 'geoDrift'))
-          .take(DRIFT_FAILURES_READ)
-      ).map((f) => f.key),
-    );
+    // The rows failing before, so one that goes through clears its failure.
+    const cleared = await failureClearer(ctx, 'geoDrift');
     let checked = 0;
     let marked = 0;
     let failed = 0;
@@ -691,7 +709,7 @@ export const repairDrift = internalMutation({
       let behind: boolean;
       try {
         behind = row.staleAt === undefined && (await isBehind(ctx, row, areasAt));
-        if (failedKeys.has(row.waterBodyId)) await clearFailure(ctx, 'geoDrift', row.waterBodyId);
+        await cleared(row.waterBodyId);
       } catch (err) {
         await recordJobFailure(ctx, 'geoDrift', row.waterBodyId, errorClassOf(err), now, {
           park: false,
@@ -721,8 +739,13 @@ async function isBehind(
   if (!body || body.dedupStatus === 'merged') return true;
   if (outlineStamp(body) !== row.stamp) return true;
   if ((row.areasAt ?? 0) < areasAt) return true;
-  // Computed before towns carried their states (B01-3c): behind, so the drift fills them in.
-  if ((row.towns ?? []).length > 0 && (row.townStates === undefined || row.townIds === undefined)) {
+  // Computed before towns carried their states and boundaries (B01-3c) — or stored without them —
+  // is behind, so the drift fills them in: the lists must run beside `towns`, one entry per town.
+  const townCount = (row.towns ?? []).length;
+  if (
+    townCount > 0 &&
+    ((row.townStates ?? []).length !== townCount || (row.townIds ?? []).length !== townCount)
+  ) {
     return true;
   }
   const links = await ctx.db
@@ -772,6 +795,9 @@ export const repairMissing = internalMutation({
     const missing: Id<'waterBodies'>[] = [];
     let failed = 0;
     const now = Date.now();
+    // The probes failing on an earlier walk: one that goes through now clears its failure (the
+    // weekly walk is the retry, so it is also what says the retry worked).
+    const cleared = await failureClearer(ctx, 'geoMissing');
     for (const r of page.page) {
       // One row that throws is recorded and passed; the page and the walk go on (B01-3c).
       try {
@@ -780,6 +806,7 @@ export const repairMissing = internalMutation({
           .withIndex('by_body', (q) => q.eq('waterBodyId', r.waterBodyId))
           .first();
         if (row === null) missing.push(r.waterBodyId);
+        await cleared(r.waterBodyId);
       } catch (err) {
         await recordJobFailure(ctx, 'geoMissing', r.waterBodyId, errorClassOf(err), now, {
           park: false,
