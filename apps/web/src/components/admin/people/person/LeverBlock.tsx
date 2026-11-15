@@ -55,12 +55,13 @@ type Open =
 
 export function LeverBlock({ title, rows, person, acting, now, timeZone }: LeverBlockProps) {
   const region = useRef<HTMLElement>(null);
-  const [open, setOpen] = useState<Open | null>(null);
-  // The dialog stays drawn while it closes, so its words don't blank mid-fade.
-  const [shown, setShown] = useState<Open | null>(null);
+  const [open, setOpen] = useState(false);
+  // The dialog stays drawn while it closes, so its words don't blank mid-fade; each opening is a
+  // fresh mount (its `serial`), so nothing typed or chosen last time carries over.
+  const [shown, setShown] = useState<(Open & { serial: number }) | null>(null);
   const show = (next: Open) => {
-    setShown(next);
-    setOpen(next);
+    setShown((prev) => ({ ...next, serial: (prev?.serial ?? 0) + 1 }));
+    setOpen(true);
   };
 
   const run = (id: string, action: PersonAction, inline: boolean) =>
@@ -166,7 +167,7 @@ export function LeverBlock({ title, rows, person, acting, now, timeZone }: Lever
   };
 
   const close = (o: boolean) => {
-    if (!o) setOpen(null);
+    if (!o) setOpen(false);
   };
 
   return (
@@ -219,7 +220,8 @@ export function LeverBlock({ title, rows, person, acting, now, timeZone }: Lever
 
       {shown?.kind === 'reason' && (
         <AskDialog
-          open={open?.id === shown.id && open.kind === 'reason'}
+          key={shown.serial}
+          open={open}
           onOpenChange={close}
           title={shown.ask.title}
           description={shown.ask.description}
@@ -231,7 +233,8 @@ export function LeverBlock({ title, rows, person, acting, now, timeZone }: Lever
       )}
       {shown?.kind === 'demote' && (
         <AskDialog
-          open={open?.kind === 'demote'}
+          key={shown.serial}
+          open={open}
           onOpenChange={close}
           title={`Make ${person.displayName} ${shown.item.role === 'member' ? 'a skater' : `a ${shown.item.role}`}?`}
           description={
@@ -248,7 +251,8 @@ export function LeverBlock({ title, rows, person, acting, now, timeZone }: Lever
       )}
       {shown?.kind === 'suspend' && (
         <SuspendDialog
-          open={open?.kind === 'suspend'}
+          key={shown.serial}
+          open={open}
           onOpenChange={close}
           name={person.displayName}
           extend={shown.extend}
@@ -263,7 +267,8 @@ export function LeverBlock({ title, rows, person, acting, now, timeZone }: Lever
       )}
       {shown?.kind === 'bounty' && (
         <BountyDialog
-          open={open?.kind === 'bounty'}
+          key={shown.serial}
+          open={open}
           onOpenChange={close}
           name={person.displayName}
           current={person.rights.bountyLimit}

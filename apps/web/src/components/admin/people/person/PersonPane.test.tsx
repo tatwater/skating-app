@@ -131,6 +131,15 @@ describe('the reads', () => {
     );
   });
 
+  it('a new person is read at the minute it opened', () => {
+    answer();
+    const { rerender } = render(<PersonPane userId={ROB_ID} />);
+    vi.setSystemTime(NOW + 5 * 60_000);
+    const other = 'other'.padEnd(32, '0');
+    rerender(<PersonPane userId={other} />);
+    expect(mocks.calls.get('people:person')).toEqual({ userId: other, now: NOW + 5 * 60_000 });
+  });
+
   it('an id with no account is no such person', () => {
     answer({ 'people:person': null, 'people:reportTrend': null, 'people:history': null });
     render(<PersonPane userId={ROB_ID} />);

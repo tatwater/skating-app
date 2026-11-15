@@ -63,10 +63,7 @@ export function SuspendDialog({
   return (
     <AskDialog
       open={open}
-      onOpenChange={(next) => {
-        if (next) setChoice(SUSPEND_DURATIONS[0].id);
-        onOpenChange(next);
-      }}
+      onOpenChange={onOpenChange}
       title={extend ? `Extend ${name}’s suspension?` : `Suspend ${name}?`}
       description={
         extend

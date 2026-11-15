@@ -547,6 +547,60 @@ describe('writes', () => {
   });
 });
 
+describe('dialogs and plates', () => {
+  it('each opening of a dialog starts clean', async () => {
+    draw();
+    await userEvent.click(within(lever('suspension')).getByRole('button', { name: 'Extend' }));
+    let dialog = await screen.findByRole('alertdialog');
+    await userEvent.click(within(dialog).getByRole('radio', { name: /30 days more/ }));
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Half a thought');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    await userEvent.click(within(lever('suspension')).getByRole('button', { name: 'Extend' }));
+    dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByRole('textbox')).toHaveValue('');
+    expect(within(dialog).getByRole('radio', { name: /1 day more/ })).toBeChecked();
+  });
+
+  it('a suspension replacing a ban says so', async () => {
+    draw({ person: { ...ROB, status: 'banned', statusNote: null } });
+    await userEvent.click(within(lever('suspension')).getByRole('button', { name: 'Suspend' }));
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('This replaces the ban');
+  });
+
+  it('a demotion to skater asks why, naming the role it takes', async () => {
+    const { onAct } = draw({ person: SARAH_PAGE, staffStats: SARAH_STATS, staffSeason: SEASON });
+    await userEvent.click(within(lever('role')).getByRole('button', { name: /Change role/ }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: /Make skater/ }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent('Make Sarah Berman a skater?');
+    expect(dialog).toHaveTextContent('They lose what the admin role gives.');
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Done for the season');
+    await userEvent.click(within(dialog).getByRole('button', { name: /Make skater/ }));
+    expect(onAct).toHaveBeenCalledWith({
+      kind: 'role',
+      role: 'member',
+      reason: 'Done for the season',
+    });
+  });
+
+  it('the trends read a month and a week at a time from the keyboard', async () => {
+    draw({ person: SARAH_PAGE, trend: ROB_TREND, staffStats: SARAH_STATS, staffSeason: SEASON });
+    const [months, weeks] = screen.getAllByRole('slider');
+    (months as HTMLElement).focus();
+    await userEvent.keyboard('{End}');
+    const plate = await screen.findByText('Oct 2026');
+    expect(plate.parentElement).toHaveTextContent('Kept3Hidden1');
+    (weeks as HTMLElement).focus();
+    await userEvent.keyboard('{End}');
+    await waitFor(() =>
+      expect(
+        fact('decision-weeks').querySelector('[data-slot="sparkbar-set-plate"]'),
+      ).toHaveTextContent('8–14 OctDecisions18'),
+    );
+  });
+});
+
 describe('accounts on their way out', () => {
   it('leaving: a note with the day the account goes', () => {
     draw({ person: ROB_LEAVING, history: ROB_HISTORY });

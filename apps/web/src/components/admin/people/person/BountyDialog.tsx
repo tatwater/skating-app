@@ -45,13 +45,7 @@ export function BountyDialog({
   return (
     <AskDialog
       open={open}
-      onOpenChange={(o) => {
-        if (o) {
-          setMode(current === null ? 'default' : 'own');
-          setValue(current);
-        }
-        onOpenChange(o);
-      }}
+      onOpenChange={onOpenChange}
       title={`Set ${name}’s bounty limit?`}
       description="How many open bounties they can post in a day. Zero stops bounties and leaves everything else as it is."
       confirm="Set limit"
