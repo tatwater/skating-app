@@ -77,8 +77,6 @@ export type PersonViewProps = {
   onUndo: (row: ActionRow) => void;
   /** Asks for more decisions, while the read says there are more. */
   onMoreDecisions?: () => void;
-  /** Opens the role menu on mount (a board's drawn state). */
-  defaultMenuOpen?: boolean;
   className?: string;
 };
 
@@ -96,7 +94,6 @@ export function PersonView({
   onAct,
   onUndo,
   onMoreDecisions,
-  defaultMenuOpen = false,
   className,
 }: PersonViewProps) {
   const acting = useActing(onAct);
@@ -169,7 +166,6 @@ export function PersonView({
               acting={acting}
               now={now}
               {...tz}
-              defaultMenuOpen={defaultMenuOpen}
             />
             {staff ? (
               <DecisionsBlock

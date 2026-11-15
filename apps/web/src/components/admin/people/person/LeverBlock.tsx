@@ -45,8 +45,6 @@ export type LeverBlockProps = {
   acting: Acting;
   now: number;
   timeZone?: string;
-  /** Opens the role menu on mount (a board's drawn state). */
-  defaultMenuOpen?: boolean;
 };
 
 type Open =
@@ -55,15 +53,7 @@ type Open =
   | { id: string; kind: 'bounty' }
   | { id: string; kind: 'demote'; item: RoleItem };
 
-export function LeverBlock({
-  title,
-  rows,
-  person,
-  acting,
-  now,
-  timeZone,
-  defaultMenuOpen = false,
-}: LeverBlockProps) {
+export function LeverBlock({ title, rows, person, acting, now, timeZone }: LeverBlockProps) {
   const region = useRef<HTMLElement>(null);
   const [open, setOpen] = useState<Open | null>(null);
   // The dialog stays drawn while it closes, so its words don't blank mid-fade.
@@ -102,7 +92,7 @@ export function LeverBlock({
     const opens = b.opens;
     if (opens.kind === 'roleMenu') {
       return (
-        <DropdownMenu key={b.id} defaultOpen={defaultMenuOpen}>
+        <DropdownMenu key={b.id}>
           <DropdownMenuTrigger
             render={
               <Button {...common} loading={busy}>
