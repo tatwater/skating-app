@@ -2914,6 +2914,27 @@ leaves a removed one editable.
 - **`rowsByIds` on merged ids (the read table):** worst case 12 merged ids, each reading its own body
   document and up to eight merge hops, each a whole body with its outline — accepted for 12.
 
+**BS17–BS19 (the Body console pages' findings), checked against the code:**
+
+- **BS17, a whole-list write overwrote a concurrent one.** Confirmed for the two the page named
+  (`setReferenceLinks`, `landmarks.update`'s aliases) and found in three more: `setAliases`,
+  `setWeatherSamplePoints`, `subAreas.rename`'s aliases. Each takes an optional `expected`
+  (`expectedAliases` on the landmark and bay writes); a list that moved is refused with
+  `{ code: 'list_changed', message, current }` in the error's data. Without it, the later write wins as
+  before. The undo of a links or aliases write passes the list its row wrote. Left: single values (the
+  later legitimately wins), writes that name what to act on (`clearDepthOverride`,
+  `dismissDuplicates`), creation, and a lot's or a rule's record (`setOfficialParking`,
+  `setPostedAccess` — owed if the Access tab saves them whole).
+- **BS18, a reported crossing on the day strip.** Confirmed; one correction: a crossing expires 72
+  hours after its **last confirmation**, not its first report (`isPassageExpired`). A crossing is a
+  passage marker (D64), not a hazard: it leaves the day's hazard count and unknowns, and
+  `days[].crossings` counts the crossings live that day (to expiry or recorded leaving, never past the
+  caller's day). Each `hazards[]` entry carries `type` and `passage`.
+- **BS19, patterns waiting.** Confirmed, and worse than logged: `listForBodyAdmin` also sorts by
+  priority *after* its cap, so a body past 1,000 clusters can drop its highest-priority ones.
+  `recurrence.waitingCountForBody` → `{ count, capped }` counts by the tab's rule (`isWaitingPattern`)
+  over one read one past the bound; the list's array shape is left for the page that reads it.
+
 **Held — the survey filing** (`fileBathymetrySurvey`): the board shows the field (*A survey the next
 build should load*, *Paste a link or a citation*) but not what appears once one is filed; it waits on
 the founder's call.
