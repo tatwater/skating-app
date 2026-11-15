@@ -52,9 +52,9 @@ export function lanesPendingNote(lanes: readonly LaneEntry[]): string | null {
 }
 
 /**
- * The list head's kicker: the lane's count and its order ("1 · soonest to lapse first"); while the
- * count isn't ready it says so instead of a number; a search, which no read counts, says only its
- * order.
+ * The list head's kicker: the lane's count and its order ("1 · soonest to lapse first"). While the
+ * count isn't ready, or before it lands, only the order — the note over the rows says what isn't
+ * ready; a search, which no read counts, says only its order.
  */
 export function kickerText(
   lane: PeopleLane,
@@ -63,8 +63,7 @@ export function kickerText(
 ): string {
   if (searching) return SEARCH_INFO.order;
   const order = PEOPLE_LANE_INFO[lane].order;
-  if (entry === undefined) return order;
-  if (entry.pending.length > 0) return `${STILL_PREPARING} · ${order}`;
+  if (entry === undefined || entry.pending.length > 0) return order;
   return `${countText(entry.count)} · ${order}`;
 }
 
@@ -90,6 +89,37 @@ export function pendingWords(lane: PeopleLane | null, pending: readonly Backfill
     return `${STILL_PREPARING}: this list may not have everyone yet`;
   }
   if (pending.includes('flagSubjects')) return `Open flags are ${lower(STILL_PREPARING)}`;
+  return null;
+}
+
+/**
+ * Whether the list on screen is short of the lane — not just its rows' figures: someone the queue
+ * names has no row yet, or the queue the lane lists (Flagged's open flags, Appeals open's waiting
+ * tickets) was read to its cap. A search (`lane` `null`) lists rows only, so is never short.
+ */
+export function listShort(lane: PeopleLane | null, reasons: readonly PartialReason[]): boolean {
+  if (lane === null) return false;
+  return (
+    reasons.includes('rows_missing') ||
+    (lane === 'flagged' && reasons.includes('flags_capped')) ||
+    (lane === 'appeals' && reasons.includes('tickets_capped'))
+  );
+}
+
+/**
+ * What the list's end says once every row it can read is in, when that isn't "All N": still being
+ * prepared while who is in it may be wrong, "N shown" while it's short of the lane; `null` for a
+ * whole list (the end says "All N", or the lane's empty words).
+ */
+export function endWords(
+  lane: PeopleLane | null,
+  reasons: readonly PartialReason[],
+  pending: readonly Backfill[],
+  rows: number,
+): string | null {
+  if (membershipPending(lane, pending)) return STILL_PREPARING;
+  if (listShort(lane, reasons))
+    return rows === 0 ? 'None shown' : `${rows.toLocaleString('en-US')} shown`;
   return null;
 }
 
@@ -281,11 +311,14 @@ export function ageWords(ms: number): string {
   const age = Number.isFinite(ms) ? Math.max(0, ms) : 0;
   if (age < HOUR) return count(Math.floor(age / MINUTE), 'minute');
   if (age < DAY) return count(Math.floor(age / HOUR), 'hour');
-  const days = Math.floor(age / DAY);
-  if (days < 60) return count(days, 'day');
+  // Each unit takes over only once it reads two or more, so the words never go backwards: the last
+  // day before "2 months" is 60, and the last month before "2 years" is 23.
+  const days = age / DAY;
+  const years = Math.floor(days / 365.25);
+  if (years >= 2) return count(years, 'year');
   const months = Math.floor(days / 30.4375);
-  if (months < 24) return count(months, 'month');
-  return count(Math.floor(days / 365.25), 'year');
+  if (months >= 2) return count(months, 'month');
+  return count(Math.floor(days), 'day');
 }
 
 /** How long is left, units written out: "1 day left", "5 hours left", "Ends now" once it's past. */

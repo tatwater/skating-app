@@ -72,6 +72,11 @@ export type PeopleListProps = {
   retryPending?: boolean;
   /** What an empty list says. */
   emptyWords: string;
+  /**
+   * What the end says, every row in, when the list isn't the whole lane (not ready, or short) —
+   * in place of "All N" and the empty words.
+   */
+  doneWords?: string | null;
   /** What was searched: marked in each row's name and handle. */
   mark?: string;
   /** This list, as it stands — the scroll is remembered under it. */
@@ -92,6 +97,7 @@ export function PeopleList({
   onRetry,
   retryPending = false,
   emptyWords,
+  doneWords = null,
   mark = '',
   memoryKey,
   onSearchKey,
@@ -197,7 +203,8 @@ export function PeopleList({
       onOpen((rows[at] as RowView).id);
       return;
     }
-    if (event.key === '/' && !running) {
+    // No name holds a slash, so / goes to the search even mid-run.
+    if (event.key === '/') {
       event.preventDefault();
       onSearchKey?.();
       return;
@@ -305,6 +312,7 @@ export function PeopleList({
         status={status}
         rows={rows.length}
         emptyWords={emptyWords}
+        doneWords={doneWords}
         onRetry={onRetry}
         retryPending={retryPending}
       />
@@ -317,12 +325,14 @@ function ListFoot({
   status,
   rows,
   emptyWords,
+  doneWords,
   onRetry,
   retryPending,
 }: {
   status: ListStatus;
   rows: number;
   emptyWords: string;
+  doneWords: string | null;
   onRetry: (() => void) | undefined;
   retryPending: boolean;
 }) {
@@ -338,6 +348,7 @@ function ListFoot({
       case 'fetching':
         return 'Loading more';
       case 'done':
+        if (doneWords !== null) return doneWords;
         return rows === 0 ? emptyWords : `All ${rows.toLocaleString('en-US')}`;
     }
   })();

@@ -14,6 +14,7 @@ import { PeopleList } from './PeopleList';
 import { LANES_GROUP, PEOPLE_LANE_INFO, SEARCH_INFO } from './peopleLanes';
 import {
   type Backfill,
+  endWords,
   kickerText,
   type LaneEntry,
   laneCount,
@@ -130,7 +131,14 @@ export function PeopleListView({
       data-slot="people-page"
       onKeyDown={(event) => {
         // / goes to the search from anywhere on the page but a field (which types it).
-        if (event.key !== '/' || event.defaultPrevented || isTextEntry(event.target as Element)) {
+        if (
+          event.key !== '/' ||
+          event.defaultPrevented ||
+          event.ctrlKey ||
+          event.metaKey ||
+          event.altKey ||
+          isTextEntry(event.target as Element)
+        ) {
           return;
         }
         event.preventDefault();
@@ -248,6 +256,7 @@ export function PeopleListView({
           {...(onRetryList !== undefined && { onRetry: onRetryList })}
           retryPending={list.retryPending === true}
           emptyWords={searching ? `No one matches “${query.q.trim()}”` : info.empty}
+          doneWords={endWords(listLane, list.reasons, list.pending, list.rows.length)}
           mark={mark}
           memoryKey={listKey(query)}
           onSearchKey={() => search.current?.focus()}
