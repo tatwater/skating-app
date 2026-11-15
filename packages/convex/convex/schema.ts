@@ -1616,6 +1616,23 @@ export default defineSchema({
   // One row per frame manifest found in R2 for a season (A06i §5): what the season index is composed
   // from. Rebuilt by listing — a row whose manifest is no longer listed is dropped — so the index is
   // still built from what is in the bucket, never from what was launched (A06e's rule).
+  /**
+   * **An admin's call on one satellite pass over one body** (B01-3d, `imageryOverrides`): `show` a
+   * pass the gates hid, or `hide` a shown one with a reason; who and when. One row per (body, pass);
+   * clearing deletes it. About a pass of a satellite, never about the lake.
+   */
+  imageryPassOverrides: defineTable({
+    waterBodyId: v.id('waterBodies'),
+    season: v.string(),
+    granuleId: v.string(),
+    action: literals(['show', 'hide']),
+    reason: v.optional(v.string()),
+    byUserId: v.id('profiles'),
+    at: v.number(),
+  })
+    .index('by_body_granule', ['waterBodyId', 'granuleId'])
+    .index('by_body_season', ['waterBodyId', 'season']),
+
   imageryFrames: defineTable({
     season: v.string(),
     manifestKey: v.string(),

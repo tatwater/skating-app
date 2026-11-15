@@ -50,6 +50,7 @@ import type * as iceCalibration from "../iceCalibration.js";
 import type * as imageryIngest from "../imageryIngest.js";
 import type * as imageryLive from "../imageryLive.js";
 import type * as imageryMasks from "../imageryMasks.js";
+import type * as imageryOverrides from "../imageryOverrides.js";
 import type * as importRuns from "../importRuns.js";
 import type * as isochrones from "../isochrones.js";
 import type * as landmarks from "../landmarks.js";
@@ -229,6 +230,7 @@ declare const fullApi: ApiFromModules<{
   imageryIngest: typeof imageryIngest;
   imageryLive: typeof imageryLive;
   imageryMasks: typeof imageryMasks;
+  imageryOverrides: typeof imageryOverrides;
   importRuns: typeof importRuns;
   isochrones: typeof isochrones;
   landmarks: typeof landmarks;

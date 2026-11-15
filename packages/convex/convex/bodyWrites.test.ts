@@ -460,3 +460,99 @@ describe('bodyFeatures.updateShape', () => {
     await expect(redraw(ridge)).rejects.toThrow(/demoted/);
   });
 });
+
+describe('the imagery pass overrides', () => {
+  const S = 'winter-2026-27';
+  const G = 'S2C_18TXP_20261215_0_L2A';
+
+  test('show anyway, hide with a reason, clear; the skater read carries no person; undo and its undo', async () => {
+    const t = harness();
+    const admin = await person(t, 'admin' as never);
+    const id = await imported(t, 'way/1');
+    await admin.as.mutation(api.imageryOverrides.set, {
+      waterBodyId: id,
+      season: S,
+      granuleId: G,
+      action: 'show',
+    });
+    expect(
+      await t.query(api.imageryOverrides.passOverrides, { waterBodyId: id, season: S }),
+    ).toEqual([{ granuleId: G, action: 'show' }]);
+    await admin.as.mutation(api.imageryOverrides.set, {
+      waterBodyId: id,
+      season: S,
+      granuleId: G,
+      action: 'hide',
+      reason: '  a  smoke plume over the north basin ',
+    });
+    const admin1 = await admin.as.query(api.imageryOverrides.forBody, {
+      waterBodyId: id,
+      season: S,
+    });
+    expect(admin1).toMatchObject({
+      capped: false,
+      overrides: [
+        {
+          granuleId: G,
+          action: 'hide',
+          reason: 'a smoke plume over the north basin',
+          by: { userId: admin.id },
+        },
+      ],
+    });
+    // Undo the hide: shown again; undo that undo: hidden again.
+    await admin.as.mutation(api.undo.run, {
+      actionId: (await lastAction(t, 'set_imagery_override'))._id,
+      reason: 'the plume was a cloud',
+    });
+    expect(
+      (await t.query(api.imageryOverrides.passOverrides, { waterBodyId: id, season: S }))[0]
+        ?.action,
+    ).toBe('show');
+    // Hiding again takes a pass from skaters, so that undo asks a reason, as a hide does.
+    await expect(
+      admin.as.mutation(api.undo.run, {
+        actionId: (await lastAction(t, 'set_imagery_override'))._id,
+      }),
+    ).rejects.toThrow(/needs a reason/);
+    await admin.as.mutation(api.undo.run, {
+      actionId: (await lastAction(t, 'set_imagery_override'))._id,
+      reason: 'it was smoke after all',
+    });
+    expect(
+      (await t.query(api.imageryOverrides.passOverrides, { waterBodyId: id, season: S }))[0]
+        ?.action,
+    ).toBe('hide');
+    await admin.as.mutation(api.imageryOverrides.clear, {
+      waterBodyId: id,
+      season: S,
+      granuleId: G,
+    });
+    expect(
+      await t.query(api.imageryOverrides.passOverrides, { waterBodyId: id, season: S }),
+    ).toEqual([]);
+  });
+
+  test('refused: a hide without a reason, a long reason, a malformed pass, a moderator, a merged-away body', async () => {
+    const t = harness();
+    const admin = await person(t, 'admin' as never);
+    const mod = await person(t);
+    const id = await imported(t, 'way/1');
+    const set = (over: Record<string, unknown>, as = admin.as) =>
+      as.mutation(api.imageryOverrides.set, {
+        waterBodyId: id,
+        season: S,
+        granuleId: G,
+        action: 'hide',
+        reason: 'r',
+        ...over,
+      } as never);
+    await expect(set({ reason: '   ' })).rejects.toThrow(/takes a reason/);
+    await expect(set({ reason: 'x'.repeat(501) })).rejects.toThrow(/at most 500/);
+    await expect(set({ granuleId: 'two words' })).rejects.toThrow(/not a satellite pass/);
+    await expect(set({}, mod.as)).rejects.toThrow();
+    const survivor = await imported(t, 'way/2');
+    await t.run((ctx) => ctx.db.patch(id, { dedupStatus: 'merged', mergedIntoId: survivor }));
+    await expect(set({})).rejects.toThrow(/merged into another/);
+  });
+});

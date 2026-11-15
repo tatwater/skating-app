@@ -227,6 +227,12 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
   set_weather_sample_points: { undo: setPrev, takesAway: never, capability: 'body.water' },
   set_lake_depth: { undo: setPrev, takesAway: never, capability: 'body.water' },
   choose_depth_source: { undo: setPrev, takesAway: never, capability: 'body.water' },
+  // Undoing a show takes a pass from skaters again; undoing a hide gives it back.
+  set_imagery_override: {
+    undo: setPrev,
+    takesAway: (action) => action === 'hide',
+    capability: 'machinery.imagery',
+  },
   set_satellite_imagery: {
     undo: setPrev,
     // `off` withholds the link (D70/D75); `auto` and `on` give it.

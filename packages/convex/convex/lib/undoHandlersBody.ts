@@ -10,6 +10,7 @@
 import { type BodyStanding, type DepthSource, standingOf } from '@skating/core';
 import { ConvexError } from 'convex/values';
 import type { Doc, Id } from '../_generated/dataModel';
+import { setOverrideImpl } from '../imageryOverrides';
 import {
   type LandmarkEditPrev,
   type LandmarkRestorePrev,
@@ -486,6 +487,28 @@ const undoDepthSource: UndoHandler = {
   },
 };
 
+/** set_imagery_override → the call it replaced (or none), through the same write. */
+const undoImageryOverride: UndoHandler = {
+  blocked: needsPrev,
+  undoTakesAway: (row) =>
+    UNDO_POLICY.set_imagery_override.takesAway((meta(row).prev as { action: unknown }).action),
+  run: ({ ctx, actor, row, reason }) => {
+    const m = meta(row) as {
+      season: string;
+      granuleId: string;
+      prev: { action: 'show' | 'hide' | null; reason: string | null };
+    };
+    return setOverrideImpl(ctx, actor, {
+      waterBodyId: row.targetId as Id<'waterBodies'>,
+      season: m.season,
+      granuleId: m.granuleId,
+      action: m.prev.action,
+      ...(m.prev.reason !== null ? { reason: m.prev.reason } : {}),
+      ...(reason !== undefined ? { undoReason: reason } : {}),
+    }).then(() => undefined);
+  },
+};
+
 /** Verb-level handlers (verbs only this area writes). */
 export const BODY_UNDO_HANDLERS: Partial<Record<ModerationAction, UndoHandler>> = {
   set_curated_boost: undoCuratedBoost,
@@ -495,6 +518,7 @@ export const BODY_UNDO_HANDLERS: Partial<Record<ModerationAction, UndoHandler>> 
   set_water_body_name: undoWaterBodyName,
   set_lake_depth: undoLakeDepth,
   choose_depth_source: undoDepthSource,
+  set_imagery_override: undoImageryOverride,
   set_satellite_imagery: undoSatelliteImagery,
   set_weather_sample_points: undoWeatherSamplePoints,
   set_public_access: undoPublicAccess,

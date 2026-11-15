@@ -304,6 +304,8 @@ export const MODERATION_ACTIONS = [
   'choose_depth_source',
   // B01-3d: a known feature redrawn (its geometry, box and bay; never the body's outline).
   'update_body_feature_shape',
+  // B01-3d: an admin's call on one satellite pass over a body (show anyway, hide, or clear).
+  'set_imagery_override',
   // Operator-entered reference links — a lake association's URL (A06c §2.7). The only *stored* link in
   // the phase; every other one in the drawer is derived from the row at render time (P2/D71), so
   // this is the only link surface with a writer to audit at all.

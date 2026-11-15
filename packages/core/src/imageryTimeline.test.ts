@@ -422,6 +422,54 @@ describe('buildBodyTimeline — the gates, once they are per-body', () => {
   });
 });
 
+describe('buildBodyTimeline — an admin’s pass overrides (B01-3d)', () => {
+  const G = 'S2C_18TXP_20260215_0_L2A';
+  const cloudy = statsFor(G, [{ waterBodyId: 'champlain', clearPct: 0.1 }]);
+  const sliver = statsFor(G, [{ waterBodyId: 'champlain', coveragePct: 0.15 }]);
+  const clear = statsFor(G, [{ waterBodyId: 'champlain', clearPct: 0.97 }]);
+
+  it('changes nothing with no overrides, or with an empty map', () => {
+    for (const stats of [cloudy, sliver, clear]) {
+      const plain = buildBodyTimeline(season([frame()]), CHAMPLAIN, { stats });
+      const empty = buildBodyTimeline(season([frame()]), CHAMPLAIN, {
+        stats,
+        overrides: new Map(),
+      });
+      expect(empty).toEqual(plain);
+      expect(plain.hiddenByOverride).toBe(0);
+    }
+  });
+
+  it('shows a pass the cloud or coverage gate hid, saying which gate it failed', () => {
+    for (const [stats, gate] of [
+      [cloudy, 'cloud'],
+      [sliver, 'coverage'],
+    ] as const) {
+      const t = buildBodyTimeline(season([frame()]), CHAMPLAIN, {
+        stats,
+        overrides: new Map([[G, 'show' as const]]),
+      });
+      expect(t.stops[0]).toMatchObject({ landable: true, shownAnyway: gate });
+      expect(t.stops[0]?.blockedBy).toBeUndefined();
+      expect(t.landableCount).toBe(1);
+    }
+    // A pass the gates already land is unchanged by a show.
+    const shownClear = buildBodyTimeline(season([frame()]), CHAMPLAIN, {
+      stats: clear,
+      overrides: new Map([[G, 'show' as const]]),
+    });
+    expect(shownClear.stops[0]?.shownAnyway).toBeUndefined();
+  });
+
+  it('hides a pass from the timeline and counts it', () => {
+    const t = buildBodyTimeline(season([frame()]), CHAMPLAIN, {
+      stats: clear,
+      overrides: new Map([[G, 'hide' as const]]),
+    });
+    expect(t).toMatchObject({ stops: [], landableCount: 0, hiddenByOverride: 1 });
+  });
+});
+
 describe('candidateFramesFor — what to fetch manifests for', () => {
   it('narrows a season to the frames whose footprint reaches this lake', () => {
     const frames = candidateFramesFor(
