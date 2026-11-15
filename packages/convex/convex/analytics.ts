@@ -348,11 +348,13 @@ export const bountyGateScatter = query({
     const window = Math.min(Math.max(1, days ?? DEFAULT_SERIES_DAYS), MAX_SERIES_DAYS);
     const since = metricDayStart(metricDay(now - (window - 1) * 24 * 60 * 60 * 1000));
 
-    const events = await ctx.db
+    // One past the cap, so a window holding exactly the cap is whole (B01-3c).
+    const read = await ctx.db
       .query('bountyGateEvents')
       .withIndex('by_created_at', (q) => q.gte('createdAt', since))
-      .take(GATE_EVENT_SCAN_CAP);
-    const truncated = events.length === GATE_EVENT_SCAN_CAP;
+      .take(GATE_EVENT_SCAN_CAP + 1);
+    const truncated = read.length > GATE_EVENT_SCAN_CAP;
+    const events = read.slice(0, GATE_EVENT_SCAN_CAP);
     if (truncated) {
       // Never a silent cap (D5): the chart is told, and says so, rather than quietly plotting a slice.
       console.warn(
@@ -417,12 +419,13 @@ export const contributorTrend = query({
     const target = await ctx.db.get(userId);
     if (!target) return null;
 
-    const reports = await ctx.db
+    const read = await ctx.db
       .query('reports')
       .withIndex('by_author_skate_end_time', (q) => q.eq('authorId', userId))
       .order('desc')
-      .take(TREND_REPORT_CAP);
-    let truncated = reports.length === TREND_REPORT_CAP;
+      .take(TREND_REPORT_CAP + 1);
+    let truncated = read.length > TREND_REPORT_CAP;
+    const reports = read.slice(0, TREND_REPORT_CAP);
     if (truncated) {
       console.warn(
         `analytics.contributorTrend walked the ${TREND_REPORT_CAP}-report cap for ${userId}; the trend covers their most recent history only.`,

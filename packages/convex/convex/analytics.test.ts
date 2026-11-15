@@ -356,6 +356,19 @@ describe('analytics.contributorTrend', () => {
     expect(trend?.accountCreatedAt).toBeGreaterThan(0); // the tenure half of "tenure-aware" (D57)
   });
 
+  test('exactly the report cap is the whole history; one more is truncated (B01-3c)', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const subject = await seedUser(t, 'subject');
+    const body = await seedBody(t);
+    for (let i = 0; i < 300; i++)
+      await seedReport(t, subject.id, body, Date.now() - DAY - i * 60_000);
+    const trend = () => mod.as.query(api.analytics.contributorTrend, { userId: subject.id });
+    expect((await trend())?.truncated).toBe(false);
+    await seedReport(t, subject.id, body, Date.now() - 2 * DAY);
+    expect((await trend())?.truncated).toBe(true);
+  });
+
   test('counts only an UPHELD safety flag — an open accusation is not a finding', async () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');
