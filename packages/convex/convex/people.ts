@@ -803,8 +803,31 @@ async function bountySeasonOf(
   };
 }
 
-/** A status verb's rows a status note walks back at most, looking for the write that began it. */
+/**
+ * A status verb's rows a status note walks back at most, looking for the write that began it, and
+ * their real weight at most (as the rights read is held to one document's worth).
+ */
 const STATUS_ROWS = 10;
+const STATUS_ROWS_BYTES = DOC_MAX;
+
+/**
+ * The status a ban or suspension row found, as a status note's start weighs it (`lib/stateSince`):
+ * a suspension whose window had run out by the write was over — it lapses at read time, and the sweep
+ * may not have reset the stored status yet — so a suspension after it begins a new one.
+ */
+function statusFound(row: Doc<'moderationActions'>): string | undefined {
+  const prev = (
+    row.metadata as { prev?: { status?: string; suspendedUntil?: number | null } } | undefined
+  )?.prev;
+  if (
+    prev?.status === 'suspended' &&
+    typeof prev.suspendedUntil === 'number' &&
+    prev.suspendedUntil <= row.createdAt
+  ) {
+    return 'lapsed';
+  }
+  return prev?.status;
+}
 
 /** A person's posting-right rows read at most, newest first, and their real weight at most. */
 const RIGHT_ROWS = 50;
@@ -1053,11 +1076,15 @@ export const person = query({
       const verb = target.status === 'banned' ? 'ban' : 'suspend';
       // When the status began, and who began it (`lib/stateSince`): a ban of a banned account, or a
       // suspension's new window, changed nothing about the status, so the walk passes over it to the
-      // write that did. A few rows of the verb, newest first, each read as it weighs.
+      // write that did. A few rows of the verb, newest first, each read as it weighs — a suspension
+      // that had run out before the next one is no run of it (`statusFound`).
       const seen: Doc<'moderationActions'>[] = [];
       let complete = false;
       let before = Number.POSITIVE_INFINITY;
+      const walkFrom = budget.bytes;
       for (let i = 0; i < STATUS_ROWS; i++) {
+        // Held to its weight too: past it, the start is "can't say", never the budget's last bytes.
+        if (walkFrom - budget.bytes >= STATUS_ROWS_BYTES) break;
         const next = await budget.measured('moderationAction', () =>
           ctx.db
             .query('moderationActions')
@@ -1078,16 +1105,13 @@ export const person = query({
         }
         seen.push(next);
         before = next._creationTime;
-        const prev = (next.metadata as { prev?: { status?: string } } | undefined)?.prev?.status;
-        if (prev === undefined || prev !== target.status) break;
+        // A real change ends the walk — the same test `startOfCurrentState` makes below.
+        const found = statusFound(next);
+        if (found === undefined || found !== target.status) break;
       }
       const start = startOfCurrentState(
         seen,
-        (r) => ({
-          at: r.createdAt,
-          after: target.status as string,
-          before: (r.metadata as { prev?: { status?: string } } | undefined)?.prev?.status,
-        }),
+        (r) => ({ at: r.createdAt, after: target.status as string, before: statusFound(r) }),
         target.status as string,
         complete,
       );

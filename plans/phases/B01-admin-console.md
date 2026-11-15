@@ -2496,8 +2496,12 @@ Every shape change is additive except where noted.
   passed over, and the answer is the first real change if it led to the current state; if the rows read
   end first, "can't say" (`capped`) when more were unread, "not recorded" when the record ends. It
   serves each right's restriction (`rightsSince`) and the status note's start (`statusNote.at`, with
-  `atCapped`, walking up to ten rows of the verb). The ledger grant and the tenure dates were already
-  starts: a grant to a holder and a move to the role held are refused, so no row there is a no-op. A
+  `atCapped`, walking up to ten rows of the verb and one document's weight; a suspension whose window
+  had run out before the next one, which the sweep hadn't reset yet, counts as over, so the next one
+  starts a new run). The ledger grant and the tenure dates were already starts: a grant to a holder
+  is refused (since the grant was built, #108), and so is a move to the role held — but only since
+  #115; before that `grantRole` recorded a regrant, so dev's older role rows can hold a no-op that
+  `staffTenure`'s role since would take as the move (prod has none). A
   fast-check property holds the rule over random sequences of real changes and repeats by different
   staff. Person writes that accept a no-op and still write a row (for the founder's call on whether
   they should): a right set to the value it has (`setPostingPermission`), a bounty limit set to the one

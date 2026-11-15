@@ -1035,6 +1035,59 @@ describe('a “since” is the start of the current unbroken state (lib/stateSin
     // Twelve new windows after the start: past the ten rows the note walks back, so it can't say.
     expect(p?.statusNote).toMatchObject({ at: null, atCapped: true });
   });
+
+  test('a suspension after one that had run out (before the sweep reset it) begins a new one', async () => {
+    const t = await setup();
+    await seed(t, 'mod', { role: 'moderator' });
+    await seed(t, 'mod2', { role: 'moderator' });
+    const skater = await seed(t, 'skater');
+    vi.setSystemTime(T0 - 20 * DAY);
+    await as(t, 'mod').mutation(api.moderation.suspendUser, {
+      userId: skater,
+      reason: 'first',
+      suspendedUntil: T0 - 10 * DAY,
+    });
+    // The window ran out; no sweep ran, so the stored status still says suspended.
+    vi.setSystemTime(T0 - 5 * DAY);
+    await as(t, 'mod2').mutation(api.moderation.suspendUser, {
+      userId: skater,
+      reason: 'second',
+      suspendedUntil: T0 + 10 * DAY,
+    });
+    vi.setSystemTime(T0);
+    const p = await as(t, 'mod').query(api.people.person, { userId: skater });
+    expect(p?.statusNote).toMatchObject({ at: T0 - 5 * DAY, atCapped: false });
+    expect(p?.statusNote?.by?.username).toBe('mod2');
+  });
+
+  test('the walk is held to its weight: heavy repeats past one document say can’t say, before the row count', async () => {
+    const t = await setup();
+    const mod = await seed(t, 'mod', { role: 'moderator' });
+    const skater = await seed(t, 'skater');
+    vi.setSystemTime(T0 - 10 * DAY);
+    await as(t, 'mod').mutation(api.moderation.banUser, { userId: skater, reason: 'first' });
+    await t.run(async (ctx) => {
+      // Three repeats of the ban, each weighing over a third of a document.
+      for (let i = 0; i < 3; i++) {
+        await ctx.db.insert('moderationActions', {
+          actorId: mod,
+          action: 'ban',
+          targetType: 'user',
+          targetId: skater,
+          reason: 'again',
+          metadata: {
+            prev: { status: 'banned', statusReason: 'first', suspendedUntil: null },
+            note: 'n'.repeat(400_000),
+          },
+          createdAt: T0 - 5 * DAY + i,
+        });
+      }
+    });
+    vi.setSystemTime(T0);
+    const p = await as(t, 'mod').query(api.people.person, { userId: skater });
+    // Within ten rows, but past the walk's weight: the start lies past it, so it can't say.
+    expect(p?.statusNote).toMatchObject({ at: null, atCapped: true });
+  });
 });
 
 // ── The list page ──

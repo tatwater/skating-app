@@ -1515,10 +1515,6 @@ async function clearLapseMirror(ctx: MutationCtx, userId: Id<'profiles'>): Promi
 }
 
 /**
- * What a person write returns: the person, and the audit row it wrote — the undo toast's handle on
- * exactly this write, so a colleague's write to the same person in between can't take it away (H3).
- */
-/**
  * What a person write returns (H3): the person, and — only when this viewer can undo the row it wrote
  * right now (`undoState` says available) — that row and whether its undo asks a reason, so the
  * console's toast offers Undo without a second read and never offers one the undo would refuse.
