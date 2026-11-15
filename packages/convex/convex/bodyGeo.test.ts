@@ -141,6 +141,17 @@ describe('pure helpers', () => {
     expect(ring.length).toBe(49);
     expect(ring[0]).toEqual(ring[48]);
   });
+  test('the kept ring is the largest by area, not the most detailed (Greptile on #122)', () => {
+    const island = ellipse(5, 5, 0.01, 0.01, 400);
+    const mainland = ellipse(0, 0, 1, 1, 20);
+    const multi = {
+      type: 'MultiPolygon' as const,
+      coordinates: [island.coordinates, mainland.coordinates],
+    };
+    const ring = simplifiedRing(multi, 200);
+    expect(ring).toHaveLength(21);
+    expect(ring[0]).toEqual(mainland.coordinates[0]?.[0]);
+  });
   test('a multipolygon counts every ring, and keeps its largest outer ring', () => {
     const small = ellipse(5, 5, 0.1, 0.1, 10);
     const big = ellipse(0, 0, 1, 1, 100);
@@ -189,7 +200,13 @@ describe('pure helpers', () => {
         ],
       },
     );
-    expect(out).toEqual({ towns: ['Enfield'], counties: ['Grafton'], states: ['NH'] });
+    expect(out).toEqual({
+      towns: ['Enfield'],
+      townStates: ['NH'],
+      townIds: [expect.any(String)],
+      counties: ['Grafton'],
+      states: ['NH'],
+    });
   });
 });
 
@@ -377,10 +394,33 @@ describe('computed at the write, read without geometry', () => {
     });
     expect(await as.query(api.bodyConsole.places, { waterBodyId: id })).toEqual({
       towns: ['Enfield'],
+      townsWithState: [{ name: 'Enfield', state: 'NH' }],
       counties: ['Grafton'],
       states: ['NH'],
       computedAt: NOW,
     });
+    // Each town's state reaches the preview and the frame too (B01-3c).
+    expect(await as.query(api.bodies.preview, { waterBodyId: id })).toMatchObject({
+      town: 'Enfield',
+      townState: 'NH',
+      moreTownsWithState: [],
+    });
+    expect(
+      (await as.query(api.bodyConsole.consoleExtras, { waterBodyId: id })).townsWithState,
+    ).toEqual([{ name: 'Enfield', state: 'NH' }]);
+    // Town lines: no outline stored for a boundary loaded before them, until the backfill writes it.
+    expect(await as.query(api.bodyConsole.townLines, { waterBodyId: id })).toEqual({
+      towns: [{ name: 'Enfield', state: 'NH', ring: null }],
+      capped: false,
+      computedAt: NOW,
+    });
+    expect(await t.mutation(internal.adminAreas.backfillOutlines, {})).toMatchObject({
+      written: 2,
+      isDone: true,
+    });
+    const lines = await as.query(api.bodyConsole.townLines, { waterBodyId: id });
+    expect(lines?.towns[0]?.ring?.length).toBeGreaterThan(3);
+    expect(lines?.towns[0]?.ring?.length).toBeLessThanOrEqual(97);
   });
 });
 
@@ -423,6 +463,14 @@ describe('no read does geometry that grows with an outline', () => {
       ],
       ['listSummary', () => as.query(api.bodies.listSummary, { lane: 'all' })],
       ['history', () => as.query(api.bodyConsole.history, { waterBodyId: giant })],
+      // The reads B01-3c added.
+      ['townLines', () => as.query(api.bodyConsole.townLines, { waterBodyId: giant })],
+      ['removedFacts', () => as.query(api.bodyConsole.removedFacts, { waterBodyId: giant })],
+      ['rowsByIds', () => as.query(api.bodies.rowsByIds, { ids: [giant] })],
+      [
+        'searchOtherStandings',
+        () => as.query(api.bodies.searchOtherStandings, { lane: 'active', q: 'largest' }),
+      ],
     ];
     // The bound: under a query's one second, in this simulated backend — the touching test alone
     // took 1.4 s here before it moved to the write, and every read now takes ~20–35 ms locally. Each

@@ -102,9 +102,10 @@ export async function syncWaterBodyCells(
     .collect();
 
   const { insert, remove } = diffCells(desired, stored);
-  // The geometry facts' choke point (B01-3b): every creation, moved box and listing change re-cells
-  // the body, so a changed cell set (or a body with no facts row yet) marks its facts stale here.
-  await markGeoStaleOnRecell(ctx, waterBodyId, insert.length > 0 || remove.length > 0);
+  // The geometry facts' choke point for a new body (B01-3b; narrowed in B01-3c): a body with no facts
+  // row is owed its first computation. A moved cell set alone marks nothing — standing and
+  // prominence move cells, not geometry.
+  await markGeoStaleOnRecell(ctx, waterBodyId);
   for (const row of remove) await ctx.db.delete(row._id);
   for (const cell of insert) {
     await ctx.db.insert('waterBodyCells', {

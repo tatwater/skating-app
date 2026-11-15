@@ -182,19 +182,20 @@ export async function computeClustersForBody(
   // so bounding four winters there meant reading every hazard the lake has ever held and dropping the
   // old ones in memory — a read that grows for the life of the app. Descending, so the ceiling below
   // drops the oldest sightings rather than the most recent ones.
-  const rows = await ctx.db
+  const read = await ctx.db
     .query('hazards')
     .withIndex('by_water_body_first_reported', (q) =>
       q.eq('waterBodyId', body._id).gte('firstReportedAt', from),
     )
     .order('desc')
-    .take(MAX_BODY_HAZARDS);
+    .take(MAX_BODY_HAZARDS + 1);
+  const rows = read.slice(0, MAX_BODY_HAZARDS);
   if (rows.length >= NOISY_BODY_HAZARD_COUNT) {
     console.warn(
       `recurrence: ${body._id} holds ${rows.length} hazards in the window — worth watching`,
     );
   }
-  const truncated = rows.length === MAX_BODY_HAZARDS;
+  const truncated = read.length > MAX_BODY_HAZARDS;
   if (truncated) {
     // Loud, because §11's "no silent caps" rule is the reason a ceiling is tolerable here at all: a
     // denominator computed over a partial history has to say so, and it does — on every row, through

@@ -19,6 +19,9 @@
  * | refresh hazard weather | a hazard | `jobFailures` | never parked: rotated to the back, retried after the cadence gate |
  * | refresh nws alerts | a state | `jobFailures` | never parked: polled every tick |
  * | watch for the imagery season to open | the tick | `jobFailures` | never parked: all-or-nothing by design, counted |
+ * | compute body geometry facts | a body | on `bodyGeoFacts`, mirrored | out of the due range; retried daily (`bodyGeo.computeDue` parked) |
+ * | repair body geometry drift | a facts row | `jobFailures` | never parked: the row goes to the back and the body is marked for recompute |
+ * | find bodies missing geometry | a library row | `jobFailures` | never parked: the weekly walk is the retry |
  */
 
 import { v } from 'convex/values';
@@ -398,5 +401,8 @@ const CRON_OF: Record<FailingJob, string> = {
   cards: 'sweep body summaries',
   finalizeDeletions: 'finalize account deletions',
   expiredExports: 'sweep expired exports',
+  bodyGeo: 'compute body geometry facts',
+  geoDrift: 'repair body geometry drift',
+  geoMissing: 'find bodies missing geometry',
   lapses: 'reset lapsed suspensions',
 };

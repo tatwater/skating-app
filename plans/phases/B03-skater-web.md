@@ -1090,3 +1090,51 @@ the first non-zero exit):
 Both are the same lesson as the one above in a different register: a test that reads a clock, or a
 flag, from somewhere other than the thing it is asserting about will be right until something else
 decides the timing.
+
+### 8.7 The resend property's red was the model; its neighbors found a second tab
+
+CI's third web run on an unrelated server-only PR failed *only ever sends what the author pressed
+Post on* (seed 1236490619, path `21:3:12:16`): pick a photo, the browser drops its blob, pick a second,
+a send fails offline, a visitor reloads, the author comes back, the connection returns. The model
+said the first photo was lost for good, so the Post must wait; the store had it waiting to send.
+The rule is the store's header (§5's resend, built at Review 3): a resend goes out only while the
+author still wants exactly what they pressed *Post* on, and a restore that **lost** a photo disarms
+it. Nothing was lost. Picking the second photo changed the claim, and the reconcile writes every
+claimed photo the tab still holds (`sheetPhotos.reconcile`), so the dropped blob was back before the
+reload and the restore found both. The model was too strict; it now clears its lost-blob flag on
+that rewrite and checks the restore's own count against it. Zone and hour play no part — the seed
+replays the same failure in every zone, and the random seed is the only reason it surfaced on that
+run.
+
+Walking the rule through its neighbors — a visitor at the reconnect, another account signing in on
+the tab (and while the resend is out), a lapsed session and the author's return, the sign-out,
+blobs lost before and after the failed send, an edit since, the tab reopened — found the store
+right in each, and one gap: **two tabs**. They share the record, not their memory, so an edit made
+in another tab left this tab's resend armed with the old words, and the server's idempotent create
+would have kept those and silently dropped the edit; a draft thrown away in the other tab would
+still have gone out from this one. A `storage` event now disarms the resend unless the record still
+says armed for this draft and this account (another draft of the same author's, started in the
+other tab, leaves it alone). It reads what the other tab wrote (the event's new value), not the
+store, which a write of this tab's own could have overtaken. A send already out when the change
+lands comes back disarmed too: its refusal no longer re-arms the resend, and it leaves the record as
+the other tab wrote it unless the create went out, whose lock a reload must find — and so do the
+checkpoints the send saves on its way. A reload still reading its photos back when the other tab's
+change lands returns the words without the resend. Disarming sends nothing; *Post* stays the
+author's to press.
+
+Every property in `sheetStore.properties.test.ts` now runs four pinned seeds (the first is this
+one) and one random seed on every build, the same policy as `erasure.test.ts` (B01 §12.8);
+`SHEET_PROPERTY_SEED` replays a seed and `SHEET_PROPERTY_RUNS` widens the run, locally. The model
+still cannot see a sign-out in one tab reaching the other through Clerk (only the record's change),
+two tabs editing the same draft at once (the record is last-writer-wins, as it was), a send already
+in flight when the other tab's change lands (named cases in the same file cover it), or a blob store
+that fails while a lost photo is being rewritten. The other fast-check suites in the web app pin no
+seed (listed in the PR).
+
+**Open, for the founder:** the record is one slot per browser, last writer wins. A draft waiting to
+resend in one tab, while the author starts another draft in a second tab, stays armed (a different
+draft is not a change to this one); when it goes out, its refusal writes it back over the second
+tab's draft, and its Post clears the slot and every stored photo. The same happens today when the
+author presses *Post* in the first tab. It costs a draft's stored copy, never sends anything the
+author did not press, and predates this fix; the cure is per-draft records or one tab owning the
+resend.

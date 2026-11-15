@@ -20,6 +20,7 @@ import {
   archiveSeasonLabel,
   callerNow,
   currentSeason,
+  libraryStandingOf,
   resolveSeason,
   type Season,
   seasonEndMs,
@@ -31,7 +32,7 @@ import { type QueryCtx, query } from './_generated/server';
 import { auditLinksOnBody } from './lib/auditReads';
 import { requireCapability } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
-import { geoFactsOf } from './lib/bodyGeo';
+import { geoFactsOf, townsWithStateOf } from './lib/bodyGeo';
 import { hasContoursFor } from './lib/bodyLibrary';
 import { MODERATION_ACTIONS } from './lib/enums';
 import { landmarksForBody } from './lib/landmarkRows';
@@ -81,6 +82,10 @@ export const consoleExtras = query({
     const body = await bodyOrThrow(ctx, waterBodyId);
     const geo = await geoFactsOf(ctx, body._id);
     const hasBathymetry = await hasContoursFor(ctx, body);
+    const ownRow = await ctx.db
+      .query('bodyLibraryRows')
+      .withIndex('by_body', (q) => q.eq('waterBodyId', body._id).eq('scope', '*'))
+      .first();
 
     // A person vouching for the outline: a drawn body approved, the latest wins.
     const vouched = await ctx.db
@@ -133,9 +138,44 @@ export const consoleExtras = query({
       touching,
       touchingCapped: geo?.neighborsCapped ?? false,
       geoComputedAt: geo?.computedAt ?? null,
+      /** `towns`, each with its state (B01-3c); `null` until computed. */
+      townsWithState: townsWithStateOf(geo),
+      /**
+       * Completeness as the body's library row stores it (core's ten) — the frame's one field, so it
+       * no longer calls `bodies.preview` and its report scan for it (B01-3c). `null` with no row.
+       */
+      complete:
+        ownRow === null
+          ? null
+          : { have: ownRow.completeHave, of: ownRow.completeOf, missing: ownRow.missing },
+      /**
+       * The newest recorded contour search covering one of the body's states — the dataset's name
+       * and when (B01-3c); `null` when no recorded search covers it (*not recorded*).
+       */
+      bathymetrySearched: await bathymetrySearchFor(ctx, body.states ?? []),
     };
   },
 });
+
+/** The states a body's newest contour search is looked up for, at most (a body touches a few). */
+const BATHYMETRY_STATES_READ = 8;
+
+/** The newest recorded contour search of any of `states` — one indexed read each — or `null`. */
+async function bathymetrySearchFor(
+  ctx: QueryCtx,
+  states: readonly string[],
+): Promise<{ label: string; at: number } | null> {
+  let newest: Doc<'bathymetrySearches'> | null = null;
+  for (const state of states.slice(0, BATHYMETRY_STATES_READ)) {
+    const row = await ctx.db
+      .query('bathymetrySearches')
+      .withIndex('by_state_searched', (q) => q.eq('state', state))
+      .order('desc')
+      .first();
+    if (row !== null && (newest === null || row.searchedAt > newest.searchedAt)) newest = row;
+  }
+  return newest === null ? null : { label: newest.label, at: newest.searchedAt };
+}
 
 // ── Bays ─────────────────────────────────────────────────────────────────────────────────────
 
@@ -310,6 +350,8 @@ export const places = query({
     if (geo === null) return null;
     return {
       towns: geo.towns ?? [],
+      /** `towns`, each with its state (B01-3c). */
+      townsWithState: townsWithStateOf(geo) ?? [],
       counties: geo.counties ?? [],
       states: geo.states ?? [],
       computedAt: geo.computedAt as number,
@@ -501,6 +543,144 @@ export const dailyHazards = query({
       hazards: listed,
       capped: hazards.length > DAILY_HAZARD_CAP,
       watchOpensOn: opens === undefined ? null : Date.parse(`${opens}T00:00:00Z`),
+    };
+  },
+});
+
+// ── A body the normal reads cannot serve ─────────────────────────────────────────────────────
+
+/** Visible reports a removed body's facts count at most (newest first); past it, `capped`. */
+export const REMOVED_REPORT_CAP = 200;
+/** Reports, visible or hidden, that count scans at most. */
+export const REMOVED_REPORT_SCAN = 1_000;
+
+/**
+ * **A removed or rejected body's row and facts** (B01-3c) — what the list's preview and the Body
+ * console's *This body has been removed* page draw, since `waterBodies.get` serves only
+ * `{ available: false }` for one. The same capability as the list (`body.read`).
+ *
+ * - `name`, `bodyClass`, `states`, `areaSqM` — from what is stored on the body;
+ * - `standing` — the library's standing (`rejected`, `removed`, or any other, for a body that is
+ *   served normally: this read then still answers, and `left` is `null`);
+ * - `left` — when it left, why, and who decided, from the audit row its standing names: the newest
+ *   `remove` for a removed body, the newest `reject_waterbody` for a rejected one (`removalReason`
+ *   from a removal's record; `reason` is the row's text);
+ * - `towns` — with their states, when computed (`null` until then);
+ * - `reports` — visible reports, newest first, counted to {@link REMOVED_REPORT_CAP} (`capped`).
+ *
+ * A merged-away id reads its survivor's, as every body read does. `null` for no body.
+ */
+export const removedFacts = query({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId: requested }) => {
+    await requireCapability(ctx, 'body.read');
+    const body = await resolveSurvivor(ctx, requested);
+    if (!body) return null;
+    const standing = libraryStandingOf(body);
+    const left =
+      standing === 'removed' || standing === 'rejected'
+        ? await leftRow(ctx, body._id, standing)
+        : null;
+    // Visible reports, counted to the cap — hidden ones never use it up (Greptile on #122). The scan
+    // is bounded by rows read, not matches: a body with more hidden reports than that reads `capped`.
+    const visible = await ctx.db
+      .query('reports')
+      .withIndex('by_water_body_skate_end_time', (q) => q.eq('waterBodyId', body._id))
+      .order('desc')
+      .filter((q) => q.eq(q.field('moderationStatus'), 'visible'))
+      .paginate({
+        cursor: null,
+        numItems: REMOVED_REPORT_CAP + 1,
+        maximumRowsRead: REMOVED_REPORT_SCAN,
+      });
+    const geo = await geoFactsOf(ctx, body._id);
+    return {
+      id: body._id,
+      name: body.name,
+      bodyClass: body.type,
+      states: body.states ?? [],
+      areaSqM: body.surfaceAreaSqM ?? null,
+      standing,
+      left:
+        left === null
+          ? null
+          : {
+              action: left.action as 'remove' | 'reject_waterbody',
+              at: left.createdAt,
+              reason: left.reason,
+              removalReason:
+                standing === 'removed' && body.removalReason !== undefined
+                  ? body.removalReason
+                  : null,
+              by: await personOf(ctx, left.actorId),
+            },
+      towns: townsWithStateOf(geo),
+      reports: {
+        count: Math.min(visible.page.length, REMOVED_REPORT_CAP),
+        // More visible reports than the cap, or the scan stopped before the body's last report.
+        capped: visible.page.length > REMOVED_REPORT_CAP || !visible.isDone,
+      },
+    };
+  },
+});
+
+/**
+ * The audit row of the leaving the body's standing says — its newest `remove` for a removed body, its
+ * newest `reject_waterbody` for a rejected one — one indexed read. Chosen by the standing, never the
+ * newer of the two: a rejected body removed later still reads as rejected (`standingOf` ranks the
+ * rejection first), and its page must not pair that with the removal's row.
+ */
+async function leftRow(
+  ctx: QueryCtx,
+  waterBodyId: Id<'waterBodies'>,
+  standing: 'removed' | 'rejected',
+): Promise<Doc<'moderationActions'> | null> {
+  const action = standing === 'removed' ? 'remove' : 'reject_waterbody';
+  return ctx.db
+    .query('moderationActions')
+    .withIndex('by_target_action', (q) =>
+      q.eq('targetType', 'waterbody').eq('targetId', waterBodyId).eq('action', action),
+    )
+    .order('desc')
+    .first();
+}
+
+// ── Town lines ───────────────────────────────────────────────────────────────────────────────
+
+/** Towns whose lines one read returns at most (a body lies in a few; the largest in 13 on dev). */
+export const TOWN_LINES_MAX = 24;
+
+/**
+ * **The Names map's town lines** (B01-3c) — each town the body lies in, with its state and its
+ * boundary's outline as stored at the boundary's import (`adminAreaOutlines`, at most 96 points), so
+ * the read is one small row per town, never a boundary's polygon. `ring: null` for a town whose
+ * outline isn't stored yet (`adminAreas:backfillOutlines`) or on facts computed before towns carried
+ * their boundary (the drift repair recomputes those). At most {@link TOWN_LINES_MAX} towns (`capped`
+ * past it). `null` until the body's places are computed.
+ */
+export const townLines = query({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }) => {
+    await requireCapability(ctx, 'body.read');
+    const geo = await geoFactsOf(ctx, (await bodyOrThrow(ctx, waterBodyId))._id);
+    if (geo === null) return null;
+    const towns = townsWithStateOf(geo) ?? [];
+    const out: { name: string; state: string | null; ring: number[][] | null }[] = [];
+    for (const [i, town] of towns.slice(0, TOWN_LINES_MAX).entries()) {
+      const areaId = geo.townIds?.[i];
+      const outline =
+        areaId === undefined
+          ? null
+          : await ctx.db
+              .query('adminAreaOutlines')
+              .withIndex('by_area', (q) => q.eq('adminAreaId', areaId))
+              .first();
+      out.push({ ...town, ring: outline?.ring ?? null });
+    }
+    return {
+      towns: out,
+      capped: towns.length > TOWN_LINES_MAX,
+      computedAt: geo.computedAt as number,
     };
   },
 });

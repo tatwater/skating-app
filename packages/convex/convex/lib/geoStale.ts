@@ -4,11 +4,14 @@
  *
  * The marks, and where they come from (the phase doc's table has every writer):
  *
- * - `syncWaterBodyCells` — **the choke point**: a body's creation, a box that moved, a listing that
- *   changed (approve, reject, merge, delete) all re-cell the body, and a changed cell set, or a body
- *   with no facts row yet, marks it here;
- * - `importCanonical` — an outline that moved inside the same box (`footprintMoved`), or a moved
- *   interior point (`placePointMoved`);
+ * - `syncWaterBodyCells` — **the choke point for a new body**: every creation re-cells the body, and
+ *   one with no facts row yet is marked here. Nothing else is marked by a re-cell (B01-3c, the
+ *   coordinator's ruling): a standing, listing or prominence change moves cells, not geometry, so a
+ *   rollover never sends an unchanged body back;
+ * - `importCanonical` — an outline whose stamp changed (`outlineStamp`), or a moved interior point
+ *   (`placePointMoved`);
+ * - a merge and a deletion (`mergeBodyInto`, the two campaign prunes) — the merged-away or deleted
+ *   body, whose facts the store then drops, fanning out to every body holding its outline;
  * - `noteAdminAreasChanged` — the places layer: `adminAreas.importCanonical` when a boundary is new
  *   or changed, and the two boundary deletes;
  * - `bodyGeo.store` — the bodies whose relation to a recomputed body moved, and every body that holds
@@ -42,22 +45,18 @@ export async function markGeoStale(
 }
 
 /**
- * The cell index's mark: a body whose cells changed (created, moved, listed or unlisted) — or one
- * with no facts row at all — is owed a recompute. One indexed read when nothing changed.
+ * The cell index's mark: a body with no facts row at all — a new body — is owed its first
+ * computation. One indexed read; a body that has a row is left alone, whatever its cells did.
  */
 export async function markGeoStaleOnRecell(
   ctx: MutationCtx,
   waterBodyId: Id<'waterBodies'>,
-  cellsChanged: boolean,
 ): Promise<void> {
-  if (!cellsChanged) {
-    const row = await ctx.db
-      .query('bodyGeoFacts')
-      .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
-      .first();
-    if (row !== null) return;
-  }
-  await markGeoStale(ctx, [waterBodyId]);
+  const row = await ctx.db
+    .query('bodyGeoFacts')
+    .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
+    .first();
+  if (row === null) await markGeoStale(ctx, [waterBodyId]);
 }
 
 /**

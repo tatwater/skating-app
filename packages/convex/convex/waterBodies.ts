@@ -92,7 +92,7 @@ import {
   requireProfile,
 } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
-import { markGeoStale } from './lib/bodyGeo';
+import { markGeoStale, outlineStamp } from './lib/bodyGeo';
 import { queueLibraryRefresh, stampChanged } from './lib/bodyLibrary';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
@@ -711,7 +711,12 @@ export const importCanonical = internalMutation({
         // and identical geodesic area means OSM handed us the same shoreline, and a containment
         // answer that was true a moment ago is still true.
         const outlineMoved = footprintMoved(existing, item);
-        if (outlineMoved || placePointMoved(existing, item)) {
+        // The geometry facts' rule is the outline stamp (every coordinate), not the clip's cheaper
+        // check: a reshape at the same vertex count, box and area still moves them (B01-3c).
+        const stampMoved =
+          outlineStamp(existing) !==
+          outlineStamp({ polygon: item.polygon as never, bbox: item.bbox });
+        if (stampMoved || placePointMoved(existing, item)) {
           // Its touching bodies and places were computed for the old outline — or its places at the
           // old interior point, which the same patch rewrites (`shapeFields`) (B01-3b).
           await markGeoStale(ctx, [existing._id]);
@@ -2042,14 +2047,51 @@ const SHORELINE_CROSS_CHECK_RATIO = 2;
  * — silently, since nothing on the map would look different. `clearFirst` on the opening batch is
  * what makes the whole operation a replacement rather than an accumulation.
  */
+/** Contour datasets one coverage run records at most. */
+export const BATHYMETRY_SEARCHES_PER_RUN = 20;
+
 export const importContourCoverage = internalMutation({
   args: {
     source: literals(CANONICAL_SOURCES),
     externalIds: v.array(v.string()),
     clearFirst: v.optional(v.boolean()),
+    /**
+     * The contour datasets this run searched (B01-3c), recorded by the batch that carries it — the
+     * loader sends it with its **last** batch, so a run that dies partway records nothing: each one's name
+     * (at most 120 characters) and the states it covers (two-letter codes, at most ten).
+     */
+    searched: v.optional(v.array(v.object({ label: v.string(), states: v.array(v.string()) }))),
   },
-  handler: async (ctx, { source, externalIds, clearFirst }) => {
+  handler: async (ctx, { source, externalIds, clearFirst, searched }) => {
     let cleared = 0;
+    if (searched !== undefined) {
+      const at = Date.now();
+      // Refused past the bounds, never silently cut (Greptile on #122).
+      if (searched.length > BATHYMETRY_SEARCHES_PER_RUN) {
+        throw new ConvexError(
+          `A run records at most ${BATHYMETRY_SEARCHES_PER_RUN} searched datasets`,
+        );
+      }
+      for (const s of searched) {
+        const label = s.label.trim();
+        const states = [
+          ...new Set(
+            s.states.map((c) => c.trim().toUpperCase()).filter((c) => /^[A-Z]{2}$/.test(c)),
+          ),
+        ];
+        if (label === '' || states.length === 0) {
+          throw new ConvexError('A searched dataset needs a name and at least one state');
+        }
+        if (label.length > 120 || states.length > 10) {
+          throw new ConvexError(
+            'A searched dataset’s name is at most 120 characters, and it covers at most 10 states',
+          );
+        }
+        for (const state of states) {
+          await ctx.db.insert('bathymetrySearches', { label, state, searchedAt: at });
+        }
+      }
+    }
     // The Bodies library's bathymetry fact moves only for a body whose coverage changed: one cleared
     // (of any source) and not re-imported here, or one newly covered.
     type CoverageRef = Pick<Doc<'bathymetryCoverage'>, 'source' | 'externalId'>;

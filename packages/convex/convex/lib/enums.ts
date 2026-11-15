@@ -708,6 +708,11 @@ export const FAILING_JOBS = [
   'cards',
   'finalizeDeletions',
   'expiredExports',
+  // B01-3c: the geometry facts — the computation (mirrored from `bodyGeoFacts`, so Machinery counts
+  // small rows), the drift repair's checks and the missing-row walk's probes.
+  'bodyGeo',
+  'geoDrift',
+  'geoMissing',
   'lapses',
 ] as const;
 export type FailingJob = (typeof FAILING_JOBS)[number];

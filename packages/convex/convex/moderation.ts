@@ -18,7 +18,7 @@ import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
 import { writeAudit } from './lib/audit';
-import { auditRowsOn, auditTargetLabel } from './lib/auditReads';
+import { auditRowsOn, auditTargetLabels, targetKey } from './lib/auditReads';
 import { requireCapability } from './lib/auth';
 import {
   AUTHOR_DELETE_REASON,
@@ -1367,8 +1367,19 @@ async function toActionView(
   ctx: QueryCtx,
   viewer: Doc<'profiles'>,
   a: Doc<'moderationActions'>,
+  shared: {
+    labels: Map<string, string | null>;
+    actors: Map<string, Promise<QueueUser | null>>;
+  },
 ): Promise<ActionView> {
-  const targetLabel = await auditTargetLabel(ctx, a.targetType, a.targetId);
+  // Labels and actors are read once per distinct target and person across the page (B01-3c).
+  const targetLabel = shared.labels.get(targetKey(a)) ?? null;
+  const actorKey = a.actorId ?? '';
+  let actor = shared.actors.get(actorKey);
+  if (actor === undefined) {
+    actor = loadQueueUser(ctx, a.actorId);
+    shared.actors.set(actorKey, actor);
+  }
   return {
     ...(targetLabel !== null ? { targetLabel } : {}),
     ...(a.undoesActionId !== undefined ? { undoesActionId: a.undoesActionId } : {}),
@@ -1381,7 +1392,7 @@ async function toActionView(
     reason: a.reason,
     ...(a.metadata !== undefined ? { metadata: a.metadata } : {}),
     createdAt: a.createdAt,
-    actor: await loadQueueUser(ctx, a.actorId),
+    actor: await actor,
   };
 }
 
@@ -1432,7 +1443,10 @@ export const listActions = query({
 
     // Who holds ledger editing is for holders only (D227), in History as on the People row.
     const visible = withoutLedgerGrantsFor(viewer, rows);
-    return Promise.all(visible.map((a) => toActionView(ctx, viewer, a)));
+    // At most one label read per distinct target and one profile read per distinct actor, plus each
+    // row's undo state (a few indexed reads) — a full page of 100 stays well inside 4,096 calls.
+    const shared = { labels: await auditTargetLabels(ctx, visible), actors: new Map() };
+    return Promise.all(visible.map((a) => toActionView(ctx, viewer, a, shared)));
   },
 });
 

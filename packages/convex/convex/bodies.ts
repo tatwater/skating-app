@@ -15,6 +15,7 @@
  */
 
 import {
+  ADVISORY_REVIEW_REASONS,
   ALL_LANE,
   appliedFacets,
   callerNow,
@@ -28,9 +29,12 @@ import {
   type LibraryFacet,
   type LibraryFacetSelection,
   type LibraryListLane,
+  landmarkAsksAreSamePlace,
   matchedAlias,
   type OBSERVED_FROM,
   REQUEST_KINDS,
+  REVIEW_REASON_PRIORITY,
+  type ReviewReason,
   SCOPE_ALL,
   SEARCH_MIN_CHARS,
   seasonOf,
@@ -45,10 +49,11 @@ import type { Doc, Id } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
 import { requireCapability } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
-import { geoFactsOf } from './lib/bodyGeo';
+import { geoFactsOf, townsWithStateOf } from './lib/bodyGeo';
 import { type LibraryRow, openAsksFor, readCount } from './lib/bodyLibrary';
 import { FLAG_REASONS } from './lib/enums';
 import { OPEN_FLAG_STATUSES } from './lib/openFlags';
+import { landmarkAskOf, openSiblings, QUEUE_CAP, requestKeyOf } from './lib/requestDecisions';
 import { literals } from './lib/validators';
 
 /** How long the caller's clock may drift from the server's. */
@@ -338,6 +343,133 @@ export const listPage = query({
   },
 });
 
+// ── A search across standings ──────────────────────────────────────────────────────────────────
+
+/** Matches each other standing shows at most. */
+export const OTHER_STANDING_ROWS = 5;
+/** Matches each other standing counts at most; past it the count is a floor (`capped`). */
+export const OTHER_STANDING_COUNT_CAP = 50;
+
+/**
+ * **A search's matches in the other standings** (B01-3c) — beside a lane's search, the board's
+ * "2 active · 4 dormant": for each standing lane but the one searched, how many bodies match (to
+ * {@link OTHER_STANDING_COUNT_CAP}, `capped` past it) and the best {@link OTHER_STANDING_ROWS} of them
+ * in the list's row shape. The same arguments as `listPage`, normalized the same way
+ * (`listQueryOf`): the search and the state tab mean what the lane's page means. **Facets are not
+ * applied here**, deliberately: a search query considers only its top results, so a facet filtered
+ * over them would count a partial set as whole; the scope and lane are the index's own filters, so
+ * each count below the cap is exact. `facetsIgnored` says when the lane's facets were set. No groups
+ * for no search, nor for *All* or *Changed* (every standing is already in them). Each lane is one
+ * search-index read, ranked by the match: the shown rows are the best, never a cap's leftovers.
+ */
+export const searchOtherStandings = query({
+  args: listArgs,
+  handler: async (ctx, args) => {
+    await requireCapability(ctx, 'body.read');
+    const { now, q, scope, selection } = listQueryOf(args);
+    const season = currentSeason(now);
+    const facetsIgnored = appliedFacets(selection).length > 0;
+    const others =
+      q === '' || args.lane === 'all' || args.lane === 'changed'
+        ? []
+        : LIBRARY_LANES.filter((lane) => lane !== args.lane);
+    const groups = [];
+    for (const lane of others) {
+      const found = await ctx.db
+        .query('bodyLibraryRows')
+        .withSearchIndex('search_text', (s) =>
+          s.search('searchText', q).eq('scope', scope).eq('lane', lane),
+        )
+        .take(OTHER_STANDING_COUNT_CAP + 1);
+      groups.push({
+        lane,
+        count: Math.min(found.length, OTHER_STANDING_COUNT_CAP),
+        capped: found.length > OTHER_STANDING_COUNT_CAP,
+        rows: found.slice(0, OTHER_STANDING_ROWS).map((row) => rowView(row, season, q)),
+      });
+    }
+    return { q, groups, facetsIgnored: facetsIgnored && others.length > 0 };
+  },
+});
+
+// ── Rows by id ─────────────────────────────────────────────────────────────────────────────────
+
+/** The most ids one `rowsByIds` call reads — *Opened recently* holds 12. */
+export const ROWS_BY_IDS_MAX = 12;
+
+/** What became of one requested id. */
+export type RowByIdEntry = {
+  /** The id as asked (trimmed). */
+  requested: string;
+  /**
+   * `ok` — the row; `merged` — the row of the body it was merged into (`survivorId`); `unlisted` —
+   * a body with no library row (or a merged one whose survivor has none); `unknown` — not a body id,
+   * or no such body.
+   */
+  status: 'ok' | 'merged' | 'unlisted' | 'unknown';
+  row: LibraryRowView | null;
+  survivorId?: Id<'waterBodies'>;
+};
+
+/**
+ * **The list's rows for a handful of ids** (B01-3c) — *Opened recently*. Ids are trimmed and
+ * de-duplicated in the order given, then held to {@link ROWS_BY_IDS_MAX} (`dropped` counts the rest,
+ * duplicates included); every id kept comes back in order with what became of it, never silently
+ * left out. A row is one indexed read; only an id with no row reads its body (to follow a merge from
+ * its pointer, hop-capped as every body read is).
+ */
+export const rowsByIds = query({
+  args: { ids: v.array(v.string()), now: v.optional(v.number()) },
+  handler: async (ctx, { ids, now: asked }) => {
+    await requireCapability(ctx, 'body.read');
+    const season = currentSeason(callerNow(asked, Date.now(), CLOCK_SLACK_MS));
+    const distinct = [...new Set(ids.map((id) => id.trim()).filter((id) => id !== ''))];
+    const kept = distinct.slice(0, ROWS_BY_IDS_MAX);
+    const rowOf = (waterBodyId: Id<'waterBodies'>) =>
+      ctx.db
+        .query('bodyLibraryRows')
+        .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId).eq('scope', SCOPE_ALL))
+        .first();
+    const entries: RowByIdEntry[] = [];
+    for (const requested of kept) {
+      const id = ctx.db.normalizeId('waterBodies', requested);
+      if (id === null) {
+        entries.push({ requested, status: 'unknown', row: null });
+        continue;
+      }
+      const own = await rowOf(id);
+      if (own !== null) {
+        entries.push({ requested, status: 'ok', row: rowView(own, season, '') });
+        continue;
+      }
+      const body = await ctx.db.get(id);
+      if (body === null) {
+        entries.push({ requested, status: 'unknown', row: null });
+        continue;
+      }
+      if (body.dedupStatus !== 'merged') {
+        entries.push({ requested, status: 'unlisted', row: null });
+        continue;
+      }
+      // Walked on from the pointer already in hand: the body, with its outline, is read once.
+      const survivor =
+        body.mergedIntoId === undefined ? null : await resolveSurvivor(ctx, body.mergedIntoId);
+      const row = survivor === null ? null : await rowOf(survivor._id);
+      entries.push(
+        row === null
+          ? { requested, status: 'unlisted', row: null }
+          : {
+              requested,
+              status: 'merged',
+              row: rowView(row, season, ''),
+              survivorId: row.waterBodyId,
+            },
+      );
+    }
+    return { entries, dropped: ids.length - kept.length };
+  },
+});
+
 // ── The summary: counts and what the read honors ─────────────────────────────────────────────
 
 type Count = { count: number; capped: boolean };
@@ -450,6 +582,40 @@ export const listSummary = query({
 const PREVIEW_REPORT_CAP = 1_000;
 /** The most open asks the preview lists. */
 const PREVIEW_ASK_CAP = 20;
+/** The most open twins of one ask the askers count reads; past it, `capped`. */
+export const ASKERS_CAP = 50;
+
+/** An intake review reason and the facts stored with it (B01-3c). The page words it. */
+export interface PreviewIntake {
+  reason: ReviewReason;
+  /** Nothing is wrong, the body could be better (`ADVISORY_REVIEW_REASONS`). */
+  advisory: boolean;
+  /**
+   * What is stored beside the reason: a duplicate candidate's count of overlapping bodies, a class
+   * or name conflict's corroboration level — `null` when nothing is stored for it.
+   */
+  detail:
+    | { candidates: number }
+    | { confidence: NonNullable<Doc<'waterBodies'>['confidence']>['cls'] }
+    | null;
+}
+
+/** A body's intake review reasons, worst first, each with what is stored for it. */
+function intakeOf(body: Doc<'waterBodies'>): PreviewIntake[] {
+  const reasons = body.reviewReasons ?? [];
+  return REVIEW_REASON_PRIORITY.filter((r) => reasons.includes(r)).map((reason) => ({
+    reason,
+    advisory: ADVISORY_REVIEW_REASONS.includes(reason),
+    detail:
+      reason === 'duplicate-candidate' && body.duplicateCandidateIds !== undefined
+        ? { candidates: body.duplicateCandidateIds.length }
+        : (reason === 'class-conflict' || reason === 'class-dissent') && body.confidence
+          ? { confidence: body.confidence.cls }
+          : reason === 'name-conflict' && body.confidence
+            ? { confidence: body.confidence.name }
+            : null,
+  }));
+}
 
 /** An open ask of a body, as facts — the page words it. */
 export type PreviewAsk =
@@ -460,6 +626,14 @@ export type PreviewAsk =
       name: string | null;
       note: string | null;
       createdAt: number;
+      /**
+       * How many distinct people have this same question open on the body — this ask and the open
+       * asks one decision on it closes (`openSiblings`, the inbox's rule: the same kind; for a bay
+       * the same name key, for a landmark the same place), counted to {@link ASKERS_CAP} (`capped`
+       * past it). Added in B01-3c; always present in the read, optional in the type so the pages'
+       * fixtures written before it still type.
+       */
+      askers?: { count: number; capped: boolean };
     }
   | { id: string; kind: 'placeName'; name: string; messages: number; createdAt: number }
   | { id: string; kind: 'flag'; reason: Doc<'contentFlags'>['reason']; createdAt: number };
@@ -518,6 +692,7 @@ export const preview = query({
     // The places stored at the write (`lib/bodyGeo.ts`) — no geometry in this read.
     const geo = await geoFactsOf(ctx, body._id);
     const towns = geo === null ? [] : (geo.towns ?? []);
+    const withState = townsWithStateOf(geo) ?? [];
 
     return {
       season: {
@@ -541,6 +716,12 @@ export const preview = query({
       asksListCapped: openAsks.capped || openAsks.count > asks.length,
       town: towns[0] ?? null,
       moreTowns: towns.slice(1),
+      /** `town`'s state; `null` with no town, or on facts computed before towns carried states. */
+      townState: withState[0]?.state ?? null,
+      /** `moreTowns`, each with its state (B01-3c). */
+      moreTownsWithState: withState.slice(1),
+      /** The body's intake review reasons, worst first (B01-3c). */
+      intake: intakeOf(body),
       /** When the towns were computed (`lib/bodyGeo.ts`); `null` until they are — not "no town". */
       townsComputedAt: geo?.computedAt ?? null,
       complete:
@@ -556,7 +737,8 @@ export const preview = query({
  * cap never drops an ask the newest-first order says belongs on the list.
  */
 async function previewAsks(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>): Promise<PreviewAsk[]> {
-  const out: PreviewAsk[] = [];
+  // A request carries its row until its askers are counted, then sheds it.
+  const out: (PreviewAsk & { source?: Doc<'waterBodyRequests'> })[] = [];
   for (const kind of REQUEST_KINDS) {
     const requests = await ctx.db
       .query('waterBodyRequests')
@@ -573,6 +755,8 @@ async function previewAsks(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>): Promi
         name: r.name ?? null,
         note: r.note ?? null,
         createdAt: r.createdAt,
+        askers: { count: 1, capped: false },
+        source: r,
       });
     }
   }
@@ -609,5 +793,81 @@ async function previewAsks(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>): Promi
       createdAt: n.createdAt,
     });
   }
-  return out.sort((a, b) => b.createdAt - a.createdAt).slice(0, PREVIEW_ASK_CAP);
+  const shown = out.sort((a, b) => b.createdAt - a.createdAt).slice(0, PREVIEW_ASK_CAP);
+  // The askers of each shown request, one bounded read per distinct question (at most 20). A
+  // landmark's question is its place, which no key names: the lake's open landmark asks are read
+  // once and each landmark ask counted from them.
+  const askers = new Map<string, { count: number; capped: boolean }>();
+  let landmarkAsks: { rows: Doc<'waterBodyRequests'>[]; capped: boolean } | null = null;
+  for (const ask of shown) {
+    if (ask.kind !== 'request' || ask.source === undefined) continue;
+    const r = ask.source;
+    const key =
+      r.kind === 'name_landmark'
+        ? r._id
+        : `${r.kind}\u0001${r.kind === 'name_bay' ? requestKeyOf(r) : ''}`;
+    let counted = askers.get(key);
+    if (counted === undefined) {
+      if (r.kind === 'name_landmark') {
+        landmarkAsks ??= await openLandmarkAsks(ctx, waterBodyId);
+        counted = landmarkAskersOf(r, landmarkAsks);
+      } else {
+        counted = await askersOf(ctx, r);
+      }
+      askers.set(key, counted);
+    }
+    ask.askers = counted;
+  }
+  return shown.map(({ source: _row, ...ask }) => ask as PreviewAsk);
+}
+
+/** Distinct people, counted to {@link ASKERS_CAP} — `capped` past it, or when the read stopped short. */
+function peopleCount(
+  requesterIds: readonly Id<'profiles'>[],
+  readCapped: boolean,
+): { count: number; capped: boolean } {
+  const people = new Set(requesterIds).size;
+  return { count: Math.min(people, ASKERS_CAP), capped: readCapped || people > ASKERS_CAP };
+}
+
+/**
+ * The distinct people with one question open on a body — the ask and the open asks a decision on it
+ * closes (`openSiblings`, the inbox's and the decision's one rule), counted to {@link ASKERS_CAP}.
+ * Never for a landmark ask: `openSiblings` pages for one, and a query may page only once.
+ */
+async function askersOf(
+  ctx: QueryCtx,
+  request: Doc<'waterBodyRequests'>,
+): Promise<{ count: number; capped: boolean }> {
+  const siblings = await openSiblings(ctx, request, ASKERS_CAP);
+  return peopleCount(
+    [request.requesterId, ...siblings.rows.map((r) => r.requesterId)],
+    siblings.capped,
+  );
+}
+
+/** A lake's open landmark asks, read once for every landmark ask the preview shows. */
+async function openLandmarkAsks(
+  ctx: QueryCtx,
+  waterBodyId: Id<'waterBodies'>,
+): Promise<{ rows: Doc<'waterBodyRequests'>[]; capped: boolean }> {
+  const rows = await ctx.db
+    .query('waterBodyRequests')
+    .withIndex('by_water_body', (q) =>
+      q.eq('waterBodyId', waterBodyId).eq('kind', 'name_landmark').eq('status', 'open'),
+    )
+    .take(QUEUE_CAP + 1);
+  return { rows: rows.slice(0, QUEUE_CAP), capped: rows.length > QUEUE_CAP };
+}
+
+/** A landmark ask's askers: the open asks for the same place (`openSiblings`' rule for a landmark). */
+function landmarkAskersOf(
+  request: Doc<'waterBodyRequests'>,
+  lake: { rows: Doc<'waterBodyRequests'>[]; capped: boolean },
+): { count: number; capped: boolean } {
+  const asked = landmarkAskOf(request);
+  const same = lake.rows.filter(
+    (r) => r._id !== request._id && landmarkAsksAreSamePlace(asked, landmarkAskOf(r)),
+  );
+  return peopleCount([request.requesterId, ...same.map((r) => r.requesterId)], lake.capped);
 }

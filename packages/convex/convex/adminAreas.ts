@@ -12,8 +12,16 @@
 import { allLevels, bboxIntersects, cellForPoint, pointInPolygon } from '@skating/core';
 import { v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
+import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { internalMutation, internalQuery, type QueryCtx, query } from './_generated/server';
+import {
+  internalMutation,
+  internalQuery,
+  type MutationCtx,
+  type QueryCtx,
+  query,
+} from './_generated/server';
+import { simplifiedRing } from './lib/bodyGeo';
 import { ADMIN_AREA_LADDER, syncAdminAreaCells } from './lib/cellIndex';
 import { ADMIN_AREA_LEVELS } from './lib/enums';
 import { noteAdminAreasChanged } from './lib/geoStale';
@@ -80,10 +88,77 @@ export const importCanonical = internalMutation({
       // Re-cell the boundary in one place for both paths (A01). The sync diffs desired cells against
       // stored ones, so a re-import moves a redrawn boundary rather than stacking duplicate rows.
       await syncAdminAreaCells(ctx, id, { bbox: item.bbox, level: item.level });
+      // Its drawn outline, simplified at the write (B01-3c, the Names map's town lines).
+      await writeAreaOutline(ctx, id, item.polygon);
     }
     // The places layer moved: facts computed before this are behind (B01-3b, the drift repair).
     if (inserted > 0 || placesMoved) await noteAdminAreasChanged(ctx);
     return { inserted, updated };
+  },
+});
+
+/** Points a stored boundary outline keeps — enough to draw a town line at a body's scale. */
+export const AREA_OUTLINE_POINTS = 96;
+
+/** Write (or rewrite) a boundary's simplified outline beside it. */
+async function writeAreaOutline(ctx: MutationCtx, adminAreaId: Id<'adminAreas'>, polygon: unknown) {
+  const ring = simplifiedRing(polygon as Polygon | MultiPolygon, AREA_OUTLINE_POINTS);
+  const existing = await ctx.db
+    .query('adminAreaOutlines')
+    .withIndex('by_area', (q) => q.eq('adminAreaId', adminAreaId))
+    .first();
+  if (existing === null) await ctx.db.insert('adminAreaOutlines', { adminAreaId, ring });
+  else if (JSON.stringify(existing.ring) !== JSON.stringify(ring)) {
+    await ctx.db.patch(existing._id, { ring });
+  }
+}
+
+/** A boundary's outline goes with it. */
+async function deleteAreaOutline(ctx: MutationCtx, adminAreaId: Id<'adminAreas'>) {
+  const existing = await ctx.db
+    .query('adminAreaOutlines')
+    .withIndex('by_area', (q) => q.eq('adminAreaId', adminAreaId))
+    .first();
+  if (existing !== null) await ctx.db.delete(existing._id);
+}
+
+/** Boundaries one outline backfill page reads at most — each is its polygon, so few. */
+const OUTLINE_PAGE = 25;
+/**
+ * The page's read by weight: the read itself stops here, so a page of state and county polygons (each
+ * up to a whole document) ends early rather than reading past the transaction's limit.
+ */
+const OUTLINE_PAGE_BYTES = 8 * 1024 * 1024;
+
+/**
+ * **Write the outlines of the boundaries imported before they had one** (B01-3c), a page at a time
+ * from `cursor`, chaining to the end. Idempotent (an unchanged outline writes nothing). The page is
+ * bounded by weight as well as count (`maximumBytesRead`), so a run of heavy boundaries makes a
+ * shorter page and the chain goes on from where it stopped — nothing is read twice.
+ */
+export const backfillOutlines = internalMutation({
+  args: { cursor: v.optional(v.string()), pageSize: v.optional(v.number()) },
+  handler: async (ctx, { cursor, pageSize }) => {
+    const size =
+      pageSize !== undefined && Number.isFinite(pageSize)
+        ? Math.min(OUTLINE_PAGE, Math.max(1, Math.floor(pageSize)))
+        : OUTLINE_PAGE;
+    const page = await ctx.db.query('adminAreas').paginate({
+      cursor: cursor ?? null,
+      numItems: size,
+      maximumBytesRead: OUTLINE_PAGE_BYTES,
+    });
+    let written = 0;
+    for (const area of page.page) {
+      await writeAreaOutline(ctx, area._id, area.polygon);
+      written++;
+    }
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, internal.adminAreas.backfillOutlines, {
+        cursor: page.continueCursor,
+      });
+    }
+    return { written, isDone: page.isDone };
   },
 });
 
@@ -356,6 +431,7 @@ export const deleteByExternalIds = internalMutation({
         await ctx.db.delete(cell._id);
         cellsDeleted++;
       }
+      await deleteAreaOutline(ctx, row._id);
       await ctx.db.delete(row._id);
       deleted++;
     }
@@ -421,6 +497,7 @@ export const retireOsmSourcedAreas = internalMutation({
         await ctx.db.delete(cell._id);
         cellsDeleted++;
       }
+      await deleteAreaOutline(ctx, row._id);
       await ctx.db.delete(row._id);
       deleted++;
     }

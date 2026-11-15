@@ -303,6 +303,7 @@ describe('consoleExtras', () => {
     });
     expect(await as.query(api.bodyConsole.places, { waterBodyId: none })).toEqual({
       towns: [],
+      townsWithState: [],
       counties: [],
       states: [],
       computedAt: expect.any(Number),
