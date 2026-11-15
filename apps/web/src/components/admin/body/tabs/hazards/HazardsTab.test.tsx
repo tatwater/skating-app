@@ -44,6 +44,7 @@ import { BodyTabHost } from '../../frame/BodyConsoleRoute';
 import { HAZARDS_TAB, HazardsTab } from './HazardsTab';
 import { dailyFrom, FEB_ARCHIVED, FEB_HAZARDS, MASCOMA_FEATURES } from './hazardsFixtures';
 import { axisIndex, dailyClock, winterWindow } from './hazardsModel';
+import { CROSSING_CLAIM } from './hazardsWords';
 
 const BODY = 'k1';
 /** The line under the strips for the clock's own day (each test that reads it pins the clock). */
@@ -75,12 +76,8 @@ beforeEach(() => {
           args.now,
         ),
   );
-  convex.results.set('recurrence:listForBodyAdmin', [
-    { _id: 'r1' },
-    { _id: 'r2' },
-    { _id: 'r3', suppressedAt: 1 },
-    { _id: 'r4', promotedToFeatureId: 'f' },
-  ]);
+  // The server's own count (`isWaitingPattern`), never a figure taken from a capped list.
+  convex.results.set('recurrence:waitingCountForBody', { count: 2, capped: false });
 });
 
 describe('HazardsTab', () => {
@@ -355,7 +352,7 @@ describe('HazardsTab', () => {
       screen.queryByRole('button', { name: /Demote|Mark a hazard|Add a feature|Edit shape/ }),
     ).toBeNull();
     expect(screen.queryByText('Promotion')).toBeNull();
-    expect(convex.calls.find((c) => c.name === 'recurrence:listForBodyAdmin')).toBeUndefined();
+    expect(convex.calls.find((c) => c.name === 'recurrence:waitingCountForBody')).toBeUndefined();
   });
 
   it('a body that isn’t listed draws nothing', () => {
@@ -468,5 +465,49 @@ describe('HazardsTab', () => {
     );
     expect(screen.queryByText('Mascoma River inlet')).toBeNull();
     expect(convex.mutations.get('bodyFeatures:demote')).toHaveBeenCalledTimes(1);
+  });
+
+  it('a waiting count that stopped short is said as a floor, never as whole', () => {
+    convex.results.set('recurrence:waitingCountForBody', { count: 1000, capped: true });
+    render(<HazardsTab bodyId={BODY} />);
+    expect(
+      screen.getByText(
+        'At least 1,000 patterns on Mascoma wait in the pre-ice pass; the count stopped short',
+      ),
+    ).toBeVisible();
+  });
+
+  it('a reported crossing on a day is said on its own, and never marked as a hazard’s first report', () => {
+    const now = Date.now();
+    const season = seasonOf(now);
+    const day = Math.floor(now / 86_400_000) * 86_400_000;
+    convex.results.set('bodyConsole:dailyHazards', (args: { season: number }) =>
+      args.season === season
+        ? {
+            season,
+            days: [{ at: day, count: 0, unknown: 0, crossings: 1 }],
+            unknownEnds: 0,
+            hazards: [
+              { firstReportedDay: day, endRecorded: false, type: 'ridge_crossing', passage: true },
+            ],
+            capped: false,
+            watchOpensOn: null,
+          }
+        : {
+            season: args.season,
+            days: [],
+            unknownEnds: 0,
+            hazards: [],
+            capped: false,
+            watchOpensOn: null,
+          },
+    );
+    render(<HazardsTab bodyId={BODY} />);
+    const today = document.querySelector('[data-slot="hazards-today"]')?.textContent ?? '';
+    expect(today).toContain('1 reported crossing');
+    expect(today).not.toMatch(CROSSING_CLAIM);
+    expect(
+      document.querySelectorAll('[data-slot="strip-mark"], [data-slot="day-mark"]'),
+    ).toHaveLength(0);
   });
 });

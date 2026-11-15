@@ -37,7 +37,7 @@ const base: HazardsTabViewProps = {
   archived: [],
   features: MASCOMA_FEATURE_ROWS,
   winters: MASCOMA_WINTERS,
-  patternsWaiting: 2,
+  patternsWaiting: { count: 2, capped: false },
   onOpenRecurrence: vi.fn(),
   onDemote: vi.fn(async () => {}),
   onRetry: vi.fn(),

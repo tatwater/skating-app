@@ -64,7 +64,7 @@ import {
   type WinterLine,
   type Winters,
 } from './hazardsModel';
-import { HAZARDS_WORDS, VOTE_WORDS, wordsContext } from './hazardsWords';
+import { CROSSING_WORDS, HAZARDS_WORDS, VOTE_WORDS, wordsContext } from './hazardsWords';
 
 /**
  * Board 5.4.7, Body › Hazards, the default view: the winters as a bar over the tab, this winter's
@@ -117,7 +117,8 @@ export type HazardsTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
   /** Hazards on the lake each day: the season on screen, and last winter beside an empty one. */
   winters: Read<Winters>;
   /** Patterns waiting in the pre-ice pass; `null` when the viewer can't read the queue. */
-  patternsWaiting: Read<number> | null;
+  /** `recurrence.waitingCountForBody`: how many wait, and whether the count stopped short. */
+  patternsWaiting: Read<{ count: number; capped: boolean }> | null;
   /** Run every failed read again. Absent: no *Try again*. */
   onRetry?: () => void;
   /** The failed reads were tried again; their fresh answers aren't in (the notes say so). */
@@ -327,7 +328,11 @@ export function HazardsTabView({
             ) : (
               <p className="m-0 text-row leading-(--lead-list) text-fg1">
                 {HAZARDS_WORDS.patternsLine(
-                  wordsContext({ body: bodyName, patterns: patternsWaiting }),
+                  wordsContext({
+                    body: bodyName,
+                    patterns: patternsWaiting.count,
+                    patternsCapped: patternsWaiting.capped,
+                  }),
                 )}
               </p>
             )}
@@ -489,6 +494,10 @@ function WinterBlock({
               capped: first.capped,
             }),
           )}
+          {/* The day's reported crossings, said on their own — never a hazard, never a safer day. */}
+          {todayDay.crossings !== undefined && todayDay.crossings > 0
+            ? ` · ${CROSSING_WORDS.live(todayDay.crossings)}`
+            : null}
         </p>
       )}
       {notes.map((n) => (

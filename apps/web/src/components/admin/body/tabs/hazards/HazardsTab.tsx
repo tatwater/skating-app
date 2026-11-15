@@ -84,7 +84,8 @@ function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabPr
     hazards: read(api.hazards.listForBody, { waterBodyId, season }),
     withArchived: read(api.hazards.listForBody, { waterBodyId, season, includeArchived: true }),
     features: read(api.bodyFeatures.listForBody, { waterBodyId }),
-    clusters: can('body.read') ? read(api.recurrence.listForBodyAdmin, { waterBodyId }) : null,
+    // The server's own count of patterns waiting (`isWaitingPattern`), and whether it stopped short.
+    waiting: can('body.read') ? read(api.recurrence.waitingCountForBody, { waterBodyId }) : null,
     daily: read(api.bodyConsole.dailyHazards, {
       waterBodyId,
       season,
@@ -107,7 +108,7 @@ function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabPr
 
   const features = got.features;
   const featureView = useMemo(() => readOf(features, (f) => withGlyphs(f)), [features]);
-  const { hazards, withArchived, clusters } = got;
+  const { hazards, withArchived, waiting } = got;
   // The day-by-day reads take the hour: a new hour is a new read, which keeps the winter it had
   // until its fresh answer lands rather than going back to a skeleton once an hour.
   const heldDaily = useHeldThroughClock(got.daily, `daily:${id}:${season}`, now);
@@ -157,16 +158,7 @@ function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabPr
       archived={readOf(withArchived, archivedRows)}
       features={featureView}
       winters={winters}
-      patternsWaiting={
-        can('body.read')
-          ? readOf(
-              clusters,
-              (c) =>
-                c.filter((x) => x.suppressedAt === undefined && x.promotedToFeatureId === undefined)
-                  .length,
-            )
-          : null
-      }
+      patternsWaiting={can('body.read') ? readOf(waiting, (w) => w) : null}
       onRetry={retry}
       retryPending={pending}
       onOpenRecurrence={() => void navigate({ to: '/admin/recurrence' })}

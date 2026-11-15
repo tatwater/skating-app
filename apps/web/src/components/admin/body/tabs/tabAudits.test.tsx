@@ -147,7 +147,7 @@ const LEVERS: Record<string, ReactNode> = {
       archived={archivedRows(FEB_ARCHIVED)}
       features={MASCOMA_FEATURE_ROWS}
       winters={MASCOMA_WINTERS}
-      patternsWaiting={2}
+      patternsWaiting={{ count: 2, capped: false }}
       onOpenRecurrence={() => {}}
       onDemote={async () => {}}
       onRetry={() => {}}
@@ -381,7 +381,7 @@ const KEYED: [string, () => ReactNode, string, () => boolean][] = [
         archived={[]}
         features={MASCOMA_FEATURE_ROWS}
         winters={MASCOMA_WINTERS}
-        patternsWaiting={2}
+        patternsWaiting={{ count: 2, capped: false }}
         onMarkHazard={marked}
         lit={null}
         onLitChange={() => {}}
