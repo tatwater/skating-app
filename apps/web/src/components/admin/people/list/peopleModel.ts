@@ -344,5 +344,3 @@ const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 export function weekdayDate(at: number): string {
   return `${WEEKDAYS[new Date(at).getDay()]} ${dayMonth(at)}`;
 }
-
-export { listWords } from './peopleWords';

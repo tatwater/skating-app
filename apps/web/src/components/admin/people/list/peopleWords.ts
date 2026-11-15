@@ -1,5 +1,7 @@
 import type { PeopleLane, Restriction } from '@skating/core';
 
+import { listWords } from '@/lib/words';
+
 import { NOT_RECORDED, ranItsCourse, STILL_PREPARING } from '../answers';
 
 /**
@@ -161,9 +163,3 @@ export const ENDS_NOW = 'Ends now';
  * the status bar's "1+ appeals open" and the person page's "1+ items" say it.
  */
 const plural = (n: number, word: string, floor = false) => (n === 1 && !floor ? word : `${word}s`);
-
-/** "a", "a and b", "a, b and c". */
-export function listWords(words: readonly string[]): string {
-  if (words.length <= 1) return words[0] ?? '';
-  return `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`;
-}

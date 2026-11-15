@@ -5,12 +5,12 @@ import { Badge } from '@/components/kit/badge';
 import { Button } from '@/components/kit/button';
 import { ListEnd } from '@/components/kit/list-end';
 import { Note } from '@/components/kit/note';
+import { PersonLockup } from '@/components/kit/person-lockup';
 import { SkeletonBlock, SkeletonText } from '@/components/kit/skeleton';
 import { cn } from '@/lib/utils';
 
 import { isFailed, type Loadable } from '../../reads/consoleReads';
 import { ReadNote } from '../../reads/ReadNote';
-import { PersonLockup } from '../list/kit-candidates/person-lockup';
 import { SectionLevel } from './headingLevel';
 import { LeverBlock } from './LeverBlock';
 import { accountRows, canDoRows, type PersonAction } from './levers';
@@ -221,7 +221,7 @@ function PersonHead({ person }: { person: PersonRead }) {
       className="flex flex-wrap items-center gap-x-(--space-3_5) gap-y-(--space-2_5) border-0 border-b border-solid border-line py-(--space-3_5)"
     >
       <PersonLockup
-        size="xl"
+        size="head"
         nameAs="h2"
         name={shownName(person)}
         handle={person.username}

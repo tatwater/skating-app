@@ -11,6 +11,7 @@ import {
 import { Button, buttonVariants } from '@/components/kit/button';
 import { GridList, HistoryRow } from '@/components/kit/grid-list';
 import { Note } from '@/components/kit/note';
+import { PersonLockup } from '@/components/kit/person-lockup';
 import { Section } from '@/components/kit/section-slug';
 import { SkeletonRow } from '@/components/kit/skeleton';
 import { ageInWords } from '@/lib/ages';
@@ -20,7 +21,6 @@ import { isFailed, type Loadable } from '../../reads/consoleReads';
 import { ReadNote } from '../../reads/ReadNote';
 import { historyWhen } from '../../shell/consoleTime';
 import { settledEmpty } from '../answers';
-import { PersonLockup } from '../list/kit-candidates/person-lockup';
 import { rowActor, rowReason, rowSentence, undoneWords } from './feedWords';
 import { useSectionLevel } from './headingLevel';
 import {

@@ -22,7 +22,6 @@ import {
   laneCount,
   lanesPendingNote,
   listShort,
-  listWords,
   membershipPending,
   pendingWords,
   reasonWords,
@@ -328,10 +327,7 @@ describe('words', () => {
     expect(leaving(-HOUR)).toBe('Ends now');
   });
 
-  it('writes a day as the board does, and a list of words as a sentence', () => {
+  it('writes a day as the board does', () => {
     expect(weekdayDate(new Date(2026, 9, 15, 19, 48).getTime())).toBe('Thu 15 Oct');
-    expect(listWords([])).toBe('');
-    expect(listWords(['a'])).toBe('a');
-    expect(listWords(['a', 'b', 'c'])).toBe('a, b and c');
   });
 });

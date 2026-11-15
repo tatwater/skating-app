@@ -11,13 +11,13 @@ import {
 
 import { Badge } from '@/components/kit/badge';
 import { ListEnd } from '@/components/kit/list-end';
+import { PersonLockup } from '@/components/kit/person-lockup';
 import { RetryNote } from '@/components/kit/retry-note';
 import { SkeletonText } from '@/components/kit/skeleton';
 import { KEYS_PASS_THROUGH } from '@/lib/keys';
 import { cn } from '@/lib/utils';
 
 import { withPinned } from '../../bodies/virtualRows';
-import { PersonLockup } from './kit-candidates/person-lockup';
 import type { RowView } from './peopleModel';
 import type { ListStatus } from './peopleReads';
 import { allShown, LIST_FAILED, LOADING_MORE, NOT_RECORDED, REST_FAILED } from './peopleWords';
@@ -467,6 +467,7 @@ function PersonRow({
         </span>
       )}
       <PersonLockup
+        size="row"
         data-slot="people-row-title"
         className="col-start-1 row-start-2 text-fg1 in-data-selected:text-fg"
         name={row.name}
