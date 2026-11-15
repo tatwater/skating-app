@@ -2037,8 +2037,8 @@ same day, D257). Server only; the page is owed.
   "restriction marker on profiles" became the row's `restricted`).
 - **Counts, one rule per lane** (`lib/peopleFigures`, read by `people.lanes` and the Overview's
   People card alike): Everyone, Staff (admins + moderators), Banned, Restricted, Leaving and Deleted
-  are `peopleCounts`, moved by the row writer in the row's own transaction — exact, and a floor
-  (`capped`) until the rows backfill marks itself done; Suspended (still running at the page's clock)
+  are `peopleCounts`, moved by the row writer in the row's own transaction — exact once the rows
+  backfill marks itself done, and until then named in the read's `pending` (never `capped`); Suspended (still running at the page's clock)
   and Newest (the last seven days) are counted from the very index range the list pages, to 200;
   Flagged and Appeals open group the open queue their list pages (open flags; waiting account
   tickets), to 200. A property test drives random histories of writes and holds every lane's count
@@ -2061,8 +2061,8 @@ same day, D257). Server only; the page is owed.
   finalization sweep re-drives any account past its window that isn't deleted, and re-locks it.
 - **Flagged means the person or their content** (D257): `contentFlags.subjectUserId`, stamped at
   filing by both writers (a person's flag, `lib/autoFlag`), `null` for a body; `by_subject_status`
-  reads a person's flags; `backfillFlagSubjects` stamps the rest. Until it has run, a content flag
-  without a subject makes the flagged figures floors.
+  reads a person's flags; `backfillFlagSubjects` stamps the rest. Until it has run, the flagged
+  figures name it in their `pending`.
 - **Give-backs ask no reason** (D226 at the writes): a lift, a restored right (flagging included), a
   raised or cleared bounty limit and a promotion take an optional reason and otherwise get a default,
   marked `reasonDefaulted` so History can leave it out (`reasonGiven: false` on the row); a demotion
@@ -2173,7 +2173,7 @@ the chain's newest depth and its writer on the first row (two point reads and a 
 that undoes). A row stands while the undos above it are even in number, so "did this stand?" is a
 property of the row and its first row, at any chain length (Greptile's P2: a ninth undo is no longer
 past a truncation). `peopleJobs.backfillUndoChains` places chains written before; until it has run
-(`ready:undoChains`) the undo figures say capped.
+(`ready:undoChains`) the undo figures name it in their `pending`.
 
 **Owed:** the lapsed-suspension sweep's parked count in `recurringJobs:health` (D258's one place to
 look). That read counts small `jobFailures` rows and never loads a profile; the sweep keeps its
@@ -2210,24 +2210,73 @@ History rows by thirty heavy moderators and a holder banned and lifted twenty ti
 decisions and figures, and the per-row cases below.
 
 **B01-4: what each lane depends on, and how a cap shows** (Greptile on #115, P2). A lane's count and
-its list read the same upstreams, and any cap or gap among them is named in both: `lanes` returns each
+its list read the same upstreams, and any cap among them is named in both: `lanes` returns each
 count with `reasons` (and `capped` exactly when there are any), `listPage` returns `partial` and the
 same `reasons`. A list also carries every row's open flags and appeals, so a list's `reasons` include
-the flag and ticket queues whatever the lane.
+the flag and ticket queues whatever the lane. A backfill not yet finished is not a cap: it is the
+lane's and the page's `pending` (round 4, below).
 
-| Lane | Upstream reads and their caps | Reasons |
-| --- | --- | --- |
-| Everyone, Staff, Banned, Restricted, Leaving, Deleted | `peopleCounts` (exact once `ready:rows`); the lane's `peopleRows` range | `rows_backfill` |
-| Suspended, Newest | the lane's range, counted to 200 | `rows_backfill`, `count_capped` (the count only; the list pages on) |
-| Flagged | open flags · `by_status` per status to 200 (+1); each flag's subject; each person's row | `flags_capped`, `flag_subjects_pending`, `rows_backfill`, `rows_missing` |
-| Appeals open (admins) | waiting tickets · `by_status` per status to 200 (+1); each person's row | `tickets_capped`, `rows_backfill`, `rows_missing` |
-| Search | `search_people` | `rows_backfill` |
+| Lane | Upstream reads and their caps | Reasons | Pending |
+| --- | --- | --- | --- |
+| Everyone, Staff, Banned, Restricted, Leaving, Deleted | `peopleCounts`; the lane's `peopleRows` range | — | `rows` |
+| Suspended, Newest | the lane's range, counted to 200 | `count_capped` (the count only; the list pages on) | `rows` |
+| Flagged | open flags · `by_status` per status to 200 (+1); each flag's subject; each person's row | `flags_capped`, `rows_missing` | `rows`, `flagSubjects` |
+| Appeals open (admins) | waiting tickets · `by_status` per status to 200 (+1); each person's row | `tickets_capped`, `rows_missing` | `rows` |
+| Search | `search_people` | — | `rows` (and `flagSubjects`, as every list's rows carry open flags) |
 
 A queue lane's count is the people its list can show — those with a row (`listablePeople`, ≤ 200 light
 reads, read whole by the count and by every page) — so the two never disagree, and someone the queue
 names without a row is `rows_missing` in the count and on every page. The Overview's flagged figure
 counts through the same function. One test at cap + 1 for each upstream
 of each lane (`peopleTruth.test.ts`).
+
+**B01-4: the backfills, and the one command that runs them** (Greptile's fourth review of #115, P2:
+the roadmap listed two of the three). Every one-time job a People read rests on is one entry in
+`PEOPLE_BACKFILLS` (`lib/peopleRows`), in run order, with the flag it sets; the operator starts the
+first and each starts the next when it ends, whatever its outcome — each marks only its own flag,
+and only by a run with no failures. On a database with nothing to backfill each finds nothing and
+sets its flag at once, so a fresh deployment needs the same one command.
+
+| Job | Started by | Sets | Reads that say `pending` until it is set |
+| --- | --- | --- | --- |
+| `peopleJobs:backfillRows` | the operator: `convex run peopleJobs:backfillRows '{}'` | `ready:rows` | `people.lanes` (every lane, and the top level), `people.listPage` (every lane and search), `console.overview` → `people` (every figure but *N users*) |
+| `peopleJobs:backfillFlagSubjects` | `backfillRows`, when it ends | `ready:flagSubjects` | `people.lanes` (Flagged, and the top level), `people.listPage` (every page: rows carry open flags), `people.person`, `people.history`, `console.overview` → `people` |
+| `peopleJobs:backfillUndoChains` | `backfillFlagSubjects`, when it ends | `ready:undoChains` | `people.staffStats`, `people.staffSeason` |
+
+The ledger's "never no editor" check also reads `ready:rows`, but it isn't a figure: before the rows
+exist it reads admins' profiles under its own allowance and only ever refuses (safe).
+
+**Three answers, three fields** — for the web builders:
+
+- **Not ready** — `pending: ('rows' | 'flagSubjects' | 'undoChains')[]`, on `people.lanes` (top level
+  and each lane), `people.listPage`, `people.person`, `people.history`, `people.staffStats`,
+  `people.staffSeason` and the Overview's `people` card. Non-empty means the figures resting on it may
+  be *wrong*, not merely short: say "still being prepared", never a number with a "+".
+- **Capped** — `capped: true` on a `Count` (and `tenureCapped`, `flagsCapped`, `appealsCapped`), or a
+  lane's `reasons` / a page's `partial`: a read stopped at its cap, so the figure is a floor ("200+").
+- **Not recorded** — `null` (`contradictions`, `timeToDecide.medianMs` with an unrecorded filing,
+  `staffSince` with no role row, `overturned` in a season not yet open): nothing on record to show.
+
+A dependent figure is never folded into `capped` while a backfill is pending, and `pending` is
+computed from the registry, so a new backfill joins every read by joining the list.
+`peopleBackfills.test.ts` runs the documented step on an empty database and on one written before
+this build and holds every read to `pending: []` after; `packages/guards`' `peopleBackfills.test.ts`
+fails if a `ready:` flag is spelled outside the registry module, a `READY_*` constant is missing from
+the registry, a job doesn't mark its flag or start the next, or this table leaves a job out.
+
+**After merge, on dev, in order** (the same steps in the roadmap's Owed list and the PR body):
+
+1. `convex dev --once` — the schema (widen-only), the functions and the three crons.
+2. `convex run peopleJobs:backfillRows '{}'` — runs all three backfills in turn. Estimate:
+   **unmeasured** (dev's row counts weren't read for this PR). Each pass reads at most 50 profiles,
+   200 flags or 200 audit rows, so passes ≈ profiles ÷ 50 + flags ÷ 200 + audit rows ÷ 200 (pass
+   time unmeasured too).
+3. Read the logs. For each id `backfillRows` logs as a tombstone whose status was overwritten:
+   `convex run peopleJobs:restoreTombstoneStatus '{"userId":"<id>"}'`. For any backfill that logs
+   "not marked ready", fix the cause and re-run that one alone: `convex run peopleJobs:<job>
+   '{"alone":true}'`.
+4. Confirm: `peopleCounts` holds `ready:rows`, `ready:flagSubjects` and `ready:undoChains` (or
+   `people.lanes` returns `pending: []`).
 
 **B01-4: one rule for what is offered** (Greptile on #115, P2). An undo is a write of the previous
 state, so its refusal is computed by `lib/peopleCan.writeRefusal` on the write the undo's handler
