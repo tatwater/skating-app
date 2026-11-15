@@ -4,7 +4,7 @@ import { FAILED_READ } from '@/components/admin/reads/readFailureFixtures';
 import { computedColor, JUNCTION_TOLERANCE_PX, sameColor } from '@/components/kit/measure';
 import { faceLoaded, must } from '@/components/kit/storyKit';
 import { InspectorFrame } from '../tabStoryFrame';
-import { NamesView } from './NamesView';
+import { CLASS_CLAIMS_NOT_RECORDED, NamesView } from './NamesView';
 import {
   AUBURN_NAMES,
   LOW_PLAINS_NAMES,
@@ -93,16 +93,14 @@ export const ReadOnly: Story = {
     await expect(location).toHaveTextContent('Enfield');
     await expect(location).toHaveTextContent('Grafton County');
     await expect(location).toHaveTextContent('New Hampshire');
-    await expect(slot(canvasElement, 'class-claims')).toHaveTextContent(
-      'Each catalog’s class: Not recorded yet',
-    );
+    await expect(slot(canvasElement, 'class-claims')).toHaveTextContent(CLASS_CLAIMS_NOT_RECORDED);
     await expect(slot(canvasElement, 'per-catalog-claims')).toHaveTextContent('Not recorded yet');
   },
 };
 
 /**
- * The tab as the app draws it for a moderator today: the aliases' editor and the class change have
- * no server write yet, so each is drawn where the board draws it and says *Not available yet*.
+ * A moderator before the body's identity read lands (or with no write wired): the aliases' editor
+ * and the class change are drawn where the board draws them and say *Not available yet*.
  */
 export const AsTheAppDrawsIt: Story = {
   args: {
