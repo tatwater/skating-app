@@ -1913,7 +1913,7 @@ row is *S* (its reason line is cut to 280 characters).
 | --- | --- | --- | --- | --- |
 | `people.lanes` | `peopleCounts`; `peopleRows` ranges; open flags · `by_status` ×2; tickets · `by_status` ×2; a queue lane's rows (`by_user`, one per person it names) | 64; 201 ×2; 201 ×2; 201 ×2; one each | S, S, F, S, S | `reasons` (the table below); `capped` exactly when there are any |
 | `people.listPage` | one lane's range (`paginate`), or `search_people`; the queues as above; a queue lane's rows | ≤ 100 a page | S | `partial` and `reasons` (the table below) |
-| `people.person` | the profile; `by_target_action` 1 row (its actor from the People row); flags · `by_target_status_reason` and `by_subject_status`; tickets · `by_clerk_user_created`; `by_flagger`; verdict counts; the last-editor check (admins' rows, ≤ 3 profiles, once a read) | 51 / 101 a status; 201; 201; 501; 200 rows + 3 | P, R, F, S, F, S, S + P | `onUser`, `onContent` (also before the subject backfill), `flagsFiled`, `appealsCapped`, `hidden.capped` |
+| `people.person` | the profile; `by_target_action` 1 row (its actor from the People row); flags · `by_target_status_reason` and `by_subject_status`; tickets · `by_clerk_user_created`; `by_flagger`; verdict counts; the last-editor check (admins' rows, once a request) | 51 / 101 a status; 201; 201; 501; 200 rows | P, R, F, S, F, S, S | `onUser`, `onContent` (also before the subject backfill), `flagsFiled`, `appealsCapped`, `hidden.capped` |
 | `people.history` | `by_target` (user); verdicts · `by_subject_standing` ×2 and `by_subject_ended`, each its action row; flags · `by_subject_status` ×2, each its decision rows | `limit + 1` each (≤ 101) | R | a capped source keeps only rows newer than what it didn't read; `capped` |
 | `people.decisions` | `by_actor`, filtered in the query, `paginate` | 100 a page, 2,000 scanned | R | `isDone` |
 | `people.staffStats` | `by_actor` + `_creationTime` (`paginate`, nine weeks); `by_undoes` per row this week; the season `by_actor` range, each with `by_undoes` and its verdict; grant rows; the latest revoke | 2,000; 16 each; 301; 50; 1 | R | a week the read didn't cover; `overturned.capped`; `staffSince` / `roleSince` `null` when the row that says so isn't among those read |
@@ -1930,7 +1930,7 @@ caller's own profile (`requireCapability`) is one more in every row.
 | --- | --- | --- | --- |
 | `people.lanes`, `people.listPage` (and search) | none | — | light `peopleRows` only |
 | Overview's People card (`lib/peopleFigures`) | none (the `accounts_total` snapshot aside) | — | counts, light rows, the queues |
-| `people.person` | the target; the last-editor check's ≤ 3 holders (once a read, memoized) | 4 MiB | **reshaped:** the status note's actor from the People row; the last-editor check reads admins' light rows (`ledgerEditor`) and confirms ≤ 3 profiles, where it read every admin's profile once per lever |
+| `people.person` | the target | 1 MiB | **reshaped:** the status note's actor from the People row; the last-editor check reads admins' light rows once a request, where it read every admin's profile once per lever |
 | `people.history` | none | — | **reshaped:** each row's actor from the People row (`PersonRef`, names `null` only before the rows backfill); undo state reads the target's light row (and at most the last-editor check above, once a read) — it read one profile per row |
 | `people.decisions` | none | — | **reshaped:** as History |
 | `people.staffStats`, `people.reportTrend` | the target | 1 MiB | one `get` |
@@ -1939,12 +1939,44 @@ caller's own profile (`requireCapability`) is one more in every row.
 | `backfillRows`, `repairDrift` | a profile and its nested refresh (two reads) a step | charged per step | as the sweep |
 | `backfillFlagSubjects` | a flag's target when it is a person | charged at the limit | one at a time within the budget |
 | `restoreTombstoneStatus`, `lapseOne` | one (read twice) | 2 MiB | one person |
-| `lib/ledgerEditors.otherLedgerEditors` (every revoke, demotion, suspension or ban of a holder) | ≤ 3 holders once the rows exist; every admin (≤ 500) before the rows backfill, as before | 3 MiB after the backfill | **reshaped:** light-row candidates, each confirmed from its profile; a stale row can only undercount, which refuses rather than allows (never no editor) |
+| `lib/ledgerEditors.otherLedgerEditors` (every revoke, demotion, suspension or ban of a holder, and every question about one) | none once the rows exist; before the rows backfill, as many admins as the request's budget affords (≤ 12), charged | 0 after the backfill | **reshaped twice:** read from admins' light rows — role, grant, status, suspension and window are all on the row — **once per request** and shared by every question, forgotten when the request writes a People row |
+
+**Per-row callers** (Greptile's second review of #115: a helper that loads profiles, called once a
+row inside a paged read, had escaped the table above). Every helper here that can load a profile, and
+each caller that runs it per row:
+
+| Helper | Loads | Per-row callers | Worst case per page |
+| --- | --- | --- | --- |
+| `isLastLedgerEditor` / `otherLedgerEditors` | no profile once the rows exist (the editors set, light rows, once a request) | `writeRefusal` for suspend, ban, a demotion and a ledger revoke — so `people.person`'s `can`, and undo state on every History and Decisions row | one light read of ≤ 200 admin rows a page, however many rows ask |
+| `writeRefusal` (the `can` helper, `loadModeratableUser`, undo's refusal) | none of its own; the target's facts come from the caller (a profile in a write; the light row in undo state) | undo state per History / Decisions row | as above |
+| undo state's person facts (`lib/undo`) | the People row; a person without one (before the backfill) read once per request, charged to `requestBudget` | every History and Decisions row on a person | ≤ 12 profiles, then the undo says it can't be checked yet (`UNDO_NEEDS_ROWS`) |
+| History and Decisions actor naming (`personRef`) | the People row only | every row | none |
+| `withoutLedgerGrantsFor` | none (the viewer's own profile, already read) | every row | none |
+| main's `undoState` → `authorDeletedAtOn` | the content item a row is on | every content row in History | pre-existing engine behavior; a content row's weight is its own (a report's notes capped at 5,000 characters) |
+| main's `moderation.listActions` → `toActionView` | each row's actor's profile | every audit-feed row | **outside this PR** and unchanged: up to 100 actor profiles a page; worth moving onto People rows when the feed is next open |
+
+`requestBudget` (`lib/readBudget`) is the guard: the helpers above that can still load a profile
+charge it at a profile's worst, so a helper that starts loading profiles once a row throws in a test.
+Worst-case tests under Convex's real limits (`peopleHeavy.test.ts`): a Decisions page where every row
+is a ban or a lift of a different ledger holder at the document limit, and a Decisions page of rows
+on sixteen heavy people without rows.
+
+**One reading of undo chains** (`lib/undoChains`, Greptile's second review). An undo can be undone, so a
+chain is change → undo → undo of the undo → … . Its net effect: pairs cancel from the newest end, so a
+change undone once is gone and undone twice is back, with its own time. Every reader that asks "did
+this stand?" asks it: staff tenure (`cancelledRows` over the role rows), "later undone by someone
+else" and "overturned this season" (`standingUndoOf`, which reads the chain forward from a row; a
+restore that ended a verdict and was itself undone no longer counts). History's undo state is main's
+engine (an undone row shows *undone*, an undo shows its own state) and the status note names whoever
+wrote the row that set the status — both read the newest row, not a chain. A fast-check property
+replays arbitrary grants, revokes, moves and undos of any depth through the real writes and holds the
+reported dates to a plain replay (`peopleTenure.test.ts`); grant, undo, undo-the-undo is its first
+shrunk counterexample under the old reading.
 
 Each reshaped read has a test at the worst a profile weighs, under Convex's real limits
 (`peopleHeavy.test.ts`): twenty heavy parked profiles, twenty heavy admins five of them holders, sixty
 History rows by thirty heavy moderators and a holder banned and lifted twenty times, a heavy staffer's
-decisions and figures.
+decisions and figures, and the per-row cases below.
 
 **B01-4: what each lane depends on, and how a cap shows** (Greptile on #115, P2). A lane's count and
 its list read the same upstreams, and any cap or gap among them is named in both: `lanes` returns each
@@ -1980,9 +2012,8 @@ member's flagging off, promoted, flagging given back, its undo — is pinned as 
 admin, so *staff since* is the grant that moved them in from member (`priorRole: 'member'`) after the
 latest revoke; when that entry isn't on record the answer is `null`, never a later move's date. A grant
 with no `priorRole` — rows from before it was recorded — can't be told from an entry and counts as not
-recorded. *Role since* is the newest role row when it gave the role held now, else `null`. A role
-change and its undo cancel out for both (a revoke undone a minute later never ended their time on
-staff).
+recorded. *Role since* is the newest role row when it gave the role held now, else `null`. Undo
+chains read as `lib/undoChains` reads them (below).
 
 Reads whose rows are audit rows (*R*) are bounded by count, not charged: an audit row's reason and
 metadata are uncapped, so a page of them is weighed by its real size where a `paginate` can say so

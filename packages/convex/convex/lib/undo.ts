@@ -24,6 +24,7 @@ import { hasCapability } from './auth';
 import { authorDeletedAtOn, authorDeletedRefusal } from './authorDeletion';
 import { type PersonFacts, writeRefusal } from './peopleCan';
 import { factsOfRow, personRowOf } from './peopleRows';
+import { ROW_MAX, requestBudget } from './readBudget';
 import { UNDO_HANDLERS } from './undoHandlers';
 import { UNDO_POLICY, undoCapability, WORKSTREAM_MODE } from './undoPolicy';
 import { meta, type UndoHandler, type UndoViewer } from './undoTypes';
@@ -137,6 +138,10 @@ export async function undoState(
  * The person's facts come from their light People row (a profile can weigh a whole document, and
  * History asks once a line); a person with no row yet is read in full.
  */
+/** Why an undo on someone without a People row can't be checked on this page (before the backfill). */
+export const UNDO_NEEDS_ROWS =
+  'This can be checked once the People rows are built; open the person to undo it.';
+
 async function personUndoRefusal(
   ctx: QueryCtx | MutationCtx,
   viewer: UndoViewer,
@@ -147,9 +152,36 @@ async function personUndoRefusal(
   const id = ctx.db.normalizeId('profiles', row.targetId);
   if (!id) return 'This account no longer exists.';
   const light = await personRowOf(ctx, id);
-  const target: PersonFacts | null = light ? factsOfRow(light) : await ctx.db.get(id);
+  // Someone with no row yet (before the rows backfill) is read in full, charged to the request's
+  // budget; once a page of such rows has spent it, the rest say so rather than read past the limit.
+  // A query reads each such person once, however many rows name them.
+  const target: PersonFacts | null | undefined = light
+    ? factsOfRow(light)
+    : await fallbackProfile(ctx, id);
+  if (target === undefined) return UNDO_NEEDS_ROWS;
   if (!target) return 'This account no longer exists.';
   return writeRefusal(ctx, viewer, target, handler.personWrite(row));
+}
+
+const FALLBACK = new WeakMap<object, Map<string, Promise<Doc<'profiles'> | null>>>();
+
+/** A person's profile for undo state, charged to the request; `undefined` once the budget is spent. */
+async function fallbackProfile(
+  ctx: QueryCtx | MutationCtx,
+  id: Id<'profiles'>,
+): Promise<Doc<'profiles'> | null | undefined> {
+  const isQuery = !('insert' in ctx.db);
+  const seen = isQuery ? (FALLBACK.get(ctx) ?? new Map()) : null;
+  const known = seen?.get(id);
+  if (known) return known;
+  const budget = requestBudget(ctx);
+  if (!budget.affords(ROW_MAX.profile)) return undefined;
+  const read = budget.one('profile', () => ctx.db.get(id));
+  if (seen) {
+    seen.set(id, read);
+    FALLBACK.set(ctx, seen);
+  }
+  return read;
 }
 
 /** Undo `actionId` as `actor` (already gated by the caller), with `reason` when one is needed. */

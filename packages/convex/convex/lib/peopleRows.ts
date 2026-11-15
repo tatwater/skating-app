@@ -173,6 +173,19 @@ export function factsOfRow(
   };
 }
 
+/**
+ * The request's read of who can edit the ledger (`lib/ledgerEditors`), kept here beside the one
+ * writer of the rows it is read from, which forgets it whenever it writes a row — so a mutation's own
+ * write is seen, and a query reads it once however many people it asks about.
+ */
+const LEDGER_EDITORS = new WeakMap<object, Promise<Set<string>>>();
+export function rememberedLedgerEditors(ctx: object): Promise<Set<string>> | undefined {
+  return LEDGER_EDITORS.get(ctx);
+}
+export function rememberLedgerEditors(ctx: object, read: Promise<Set<string>>): void {
+  LEDGER_EDITORS.set(ctx, read);
+}
+
 export function personRowOf(
   ctx: QueryCtx,
   userId: Id<'profiles'>,
@@ -232,6 +245,7 @@ export async function refreshPersonRow(
     if (!existing) return false;
     await moveCounts(ctx, storedLanesOf(existing), new Set());
     await ctx.db.delete(existing._id);
+    LEDGER_EDITORS.delete(ctx);
     return true;
   }
   const next = derivePersonRow(profile, existing, now);
@@ -244,6 +258,7 @@ export async function refreshPersonRow(
   } else {
     await ctx.db.insert('peopleRows', next);
   }
+  LEDGER_EDITORS.delete(ctx);
   await moveCounts(ctx, storedLanesOf(existing), storedLanesOf(next));
   return true;
 }

@@ -152,4 +152,75 @@ describe('no People read loads profiles past the read limit', () => {
     const stats = await s.query(api.people.staffStats, { userId: staffer as Id<'profiles'> });
     expect(stats?.decisions.thisWeek.count).toBe(30);
   });
+
+  test('Decisions where every row is a discipline action on a different heavy ledger holder', async () => {
+    const t = await setup();
+    await heavy(t, 'adm', { role: 'admin', canEditLedger: true });
+    for (let i = 0; i < 12; i++) await heavy(t, `h${i}`, { role: 'admin', canEditLedger: true });
+    const adm = t.withIdentity({ subject: 'adm' });
+    const ids = (await t.run((ctx) => ctx.db.query('profiles').collect()))
+      .filter((p) => p.username.startsWith('h'))
+      .map((p) => p._id);
+    for (const id of ids) {
+      await adm.mutation(api.moderation.banUser, { userId: id, reason: 'r' });
+      await adm.mutation(api.moderation.unbanUser, { userId: id });
+    }
+    const admId = (await t.run((ctx) => ctx.db.query('profiles').collect())).find(
+      (p) => p.username === 'adm',
+    )?._id as Id<'profiles'>;
+    const d = await adm.query(api.people.decisions, { userId: admId, limit: 100 });
+    expect(d.rows).toHaveLength(24);
+    // Every lift's undo would ban a holder: each asks the last-editor check, read once for the page.
+    expect(
+      d.rows.filter((r) => r.action === 'unban').every((r) => r.undo.state === 'available'),
+    ).toBe(true);
+  });
+
+  test('before the rows exist, undo state reads each person once and then says it can’t check', async () => {
+    const t = convexTest({ schema, modules, transactionLimits: true });
+    const adm = await heavy(t, 'adm', { role: 'admin' });
+    const rowless: Id<'profiles'>[] = [];
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 16; i++) {
+        rowless.push(
+          await ctx.db.insert('profiles', {
+            clerkUserId: `r${i}`,
+            displayName: `r${i}`,
+            username: `r${i}`,
+            driveTimePrefMinutes: 60,
+            profileVisibility: 'public' as const,
+            notificationPrefs: NOTIF_PREFS,
+            dateOfBirth: 0,
+            reputationPoints: 0,
+            role: 'member' as const,
+            status: 'active' as const,
+            createdAt: 0,
+            bio: HEAVY,
+          }),
+        );
+      }
+    });
+    const a = t.withIdentity({ subject: 'adm' });
+    for (const id of rowless) {
+      await a.mutation(api.moderation.setPostingPermission, {
+        userId: id,
+        permission: 'reports',
+        allowed: false,
+        reason: 'r',
+      });
+    }
+    // The writes made their rows; take them away again, as before the backfill.
+    await t.run(async (ctx) => {
+      for (const id of rowless) {
+        const row = await ctx.db
+          .query('peopleRows')
+          .withIndex('by_user', (q) => q.eq('userId', id))
+          .first();
+        if (row) await ctx.db.delete(row._id);
+      }
+    });
+    const d = await a.query(api.people.decisions, { userId: adm, limit: 100 });
+    expect(d.rows).toHaveLength(16);
+    expect(d.rows.some((r) => r.undo.state === 'unavailable')).toBe(true);
+  });
 });

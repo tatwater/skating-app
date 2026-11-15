@@ -216,6 +216,23 @@ export async function traced<T>(
   }
 }
 
+/**
+ * A budget for one request's unplanned-for reads — the profiles a helper may load from inside a
+ * paged read or a loop (the People pages' undo state for someone without a row, the ledger check
+ * before the rows exist). Each such read is charged at a profile's worst case here, so a helper
+ * that starts loading profiles once per row throws `OverBudget` in a test instead of passing the
+ * transaction's read limit in production. One budget per request (keyed on its context).
+ */
+const REQUEST_BUDGETS = new WeakMap<object, ReadBudget>();
+export function requestBudget(ctx: object): ReadBudget {
+  let budget = REQUEST_BUDGETS.get(ctx);
+  if (budget === undefined) {
+    budget = new ReadBudget();
+    REQUEST_BUDGETS.set(ctx, budget);
+  }
+  return budget;
+}
+
 /** Photo ids per debt row, and so per settlement the queue carries: an erased item's list is chunked. */
 export const SETTLE_CHUNK_IDS = 500;
 

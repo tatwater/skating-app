@@ -26,7 +26,14 @@ import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { writeAudit } from './audit';
 import { hasCapability, isLockedOut, isSuspendedNow } from './auth';
-import { factsOfRow, READY_ROWS, refreshPersonRow } from './peopleRows';
+import {
+  factsOfRow,
+  READY_ROWS,
+  refreshPersonRow,
+  rememberedLedgerEditors,
+  rememberLedgerEditors,
+} from './peopleRows';
+import { requestBudget } from './readBudget';
 
 type Profile = Doc<'profiles'>;
 
@@ -92,73 +99,67 @@ function canStillEdit(profile: LedgerFacts): boolean {
 
 /** Admins' People rows read at most when looking for another editor. */
 const ADMIN_ROWS = 200;
-/** Candidate editors whose profiles are read to confirm them, at most — a "select few" (D227). */
-const VERIFY_PROFILES = 3;
 
 /**
- * Editors who can still act, other than `exceptId` — counted far enough to answer "any?".
+ * Editors who can still act, other than `exceptId` (D227's "never no editor").
  *
- * Once the People rows exist (`ready:rows`), the candidates come from admins' light rows
- * (`peopleRows.ledgerEditor`) and at most {@link VERIFY_PROFILES} of their profiles are read to confirm
- * each can still act — so the read is a few profiles, never every admin's (a profile can weigh a
- * whole document). A holder the row already shows can't act (banned, suspended, on their way out) is
- * passed over without a read, so it never takes one of the few confirmations from a holder who can.
- * A stale row can only undercount (a holder it misses, or one it names that the profile no longer
- * confirms), which refuses a revoke rather than allowing one: never no editor. Before the rows exist,
- * the admins' profiles are read as they always were.
+ * Once the People rows exist (`ready:rows`), the editors are read from admins' light rows — role,
+ * grant (`ledgerEditor`), status, suspension and deletion window are all on the row, written by the
+ * same writes that change them on the profile — so the check loads no profile at all. Before the rows
+ * exist, the admins' profiles are read as they always were, each charged to the request's budget
+ * (`requestBudget`). Either way the set is read **once per request** and shared by every question —
+ * the person page asks for several levers, History and Decisions once a row — and dropped the moment
+ * the request writes a People row (the row writer forgets it, `lib/peopleRows`), so a mutation's
+ * own write is seen.
  */
 export async function otherLedgerEditors(
   ctx: QueryCtx | MutationCtx,
   exceptId: Id<'profiles'>,
 ): Promise<number> {
+  const editors = await ledgerEditorsNow(ctx);
+  return [...editors].filter((id) => id !== exceptId).length;
+}
+
+function ledgerEditorsNow(ctx: QueryCtx | MutationCtx): Promise<Set<string>> {
+  let read = rememberedLedgerEditors(ctx);
+  if (read === undefined) {
+    read = readLedgerEditors(ctx);
+    rememberLedgerEditors(ctx, read);
+  }
+  return read;
+}
+
+async function readLedgerEditors(ctx: QueryCtx | MutationCtx): Promise<Set<string>> {
   const ready = await ctx.db
     .query('peopleCounts')
     .withIndex('by_key', (q) => q.eq('key', READY_ROWS))
     .first();
   if (ready === null) {
-    const admins = await ctx.db
-      .query('profiles')
-      .withIndex('by_role', (q) => q.eq('role', 'admin'))
-      .take(ADMIN_READ_LIMIT);
-    return admins.filter((p) => p._id !== exceptId && canStillEdit(p)).length;
+    // As many as the request's budget affords; past that the count is short, which refuses (safe).
+    const budget = requestBudget(ctx);
+    const admins = await budget.take('profile', budget.rows('profile', ADMIN_READ_LIMIT), (n) =>
+      ctx.db
+        .query('profiles')
+        .withIndex('by_role', (q) => q.eq('role', 'admin'))
+        .take(n),
+    );
+    return new Set(admins.filter(canStillEdit).map((p) => p._id));
   }
   const rows = await ctx.db
     .query('peopleRows')
     .withIndex('by_staff', (q) => q.eq('staffRank', 0))
     .take(ADMIN_ROWS);
-  let confirmed = 0;
-  let read = 0;
-  for (const row of rows) {
-    if (!row.ledgerEditor || row.userId === exceptId || !canStillEdit(factsOfRow(row))) continue;
-    if (read >= VERIFY_PROFILES) break;
-    read++;
-    const profile = await ctx.db.get(row.userId);
-    if (profile && canStillEdit(profile)) confirmed++;
-  }
-  return confirmed;
+  return new Set(
+    rows.filter((r) => r.ledgerEditor && canStillEdit(factsOfRow(r))).map((r) => r.userId),
+  );
 }
-
-/**
- * One answer per person per read: a query asks it for several levers and History rows, and the
- * answer can't change inside a query. A mutation always asks afresh, since its own writes can.
- */
-const LAST_MEMO = new WeakMap<object, Map<string, boolean>>();
 
 /** Whether `target` is the only editor who can still act — taking it from them is refused. */
 export async function isLastLedgerEditor(
   ctx: QueryCtx | MutationCtx,
   target: LedgerFacts,
 ): Promise<boolean> {
-  if (!canStillEdit(target)) return false;
-  const isQuery = !('insert' in ctx.db);
-  const memo = isQuery ? (LAST_MEMO.get(ctx) ?? new Map<string, boolean>()) : null;
-  if (memo?.has(target._id)) return memo.get(target._id) as boolean;
-  const last = (await otherLedgerEditors(ctx, target._id)) === 0;
-  if (memo) {
-    memo.set(target._id, last);
-    LAST_MEMO.set(ctx, memo);
-  }
-  return last;
+  return canStillEdit(target) && (await otherLedgerEditors(ctx, target._id)) === 0;
 }
 
 export const LAST_EDITOR_MESSAGE =
