@@ -753,6 +753,27 @@ export default defineSchema({
       v.array(v.object({ source: literals(CLAIM_SOURCES), value: v.string() })),
     ),
     /**
+     * **Each catalog's class for this water** (B01-3d), one per source, at most eight — stored by the
+     * import from the merge's claims, which were thrown away before it: a body imported before reads
+     * *not recorded* for the per-catalog lines until its next campaign, and no backfill can recover
+     * them. A moderator's choice is never a claim here; it is `moderatorClass`.
+     */
+    classClaims: v.optional(
+      v.array(v.object({ source: literals(CLAIM_SOURCES), value: literals(WATER_BODY_CLASSES) })),
+    ),
+    /**
+     * **A moderator's class for this water** (B01-3d, `setClass`) — its own fact, outranking the
+     * catalogs': `type` is set from it, and a re-import keeps it. Absent when no moderator chose.
+     */
+    moderatorClass: v.optional(literals(WATER_BODY_CLASSES)),
+    /**
+     * **A moderator's own aliases** (B01-3d, `setAliases`) — at most 20, each at most 120 characters,
+     * trimmed, de-duplicated case-insensitively against the display name and each other. Never name
+     * claims (a `user` claim means a moderator picked the display name); the library row's aliases
+     * and search text fold them in.
+     */
+    moderatorAliases: v.optional(v.array(v.string())),
+    /**
      * `[name, ...aliases]` joined — **the field the search index actually covers.**
      *
      * Denormalized on every name write, never set by a client, same shape and same

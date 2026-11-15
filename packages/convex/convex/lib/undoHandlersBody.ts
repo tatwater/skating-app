@@ -32,6 +32,8 @@ import {
   removeBodyImpl,
   restoreBodyImpl,
   restoreDepthImpl,
+  setAliasesImpl,
+  setClassImpl,
   setCuratedBoostImpl,
   setIncludedByRequestImpl,
   setPublicAccessImpl,
@@ -438,10 +440,42 @@ const WATER_BODY: TargetUndo = {
   },
 };
 
+/** set_aliases → the list it replaced, through the same write (and its refusals). */
+const undoAliases: UndoHandler = {
+  blocked: needsPrev,
+  undoTakesAway: () => UNDO_POLICY.set_aliases.takesAway(undefined),
+  run: ({ ctx, actor, row, reason }) =>
+    setAliasesImpl(ctx, actor, {
+      waterBodyId: row.targetId as Id<'waterBodies'>,
+      aliases: (meta(row).prev.moderatorAliases as string[] | undefined) ?? [],
+      reason,
+    }).then(() => undefined),
+};
+
+/** set_class → the class it replaced: the moderator's, or the catalogs' class it displaced. */
+const undoClass: UndoHandler = {
+  blocked: needsPrev,
+  undoTakesAway: () => UNDO_POLICY.set_class.takesAway(undefined),
+  run: ({ ctx, actor, row, reason }) => {
+    const prev = meta(row).prev as {
+      moderatorClass: Doc<'waterBodies'>['type'] | null;
+      type: Doc<'waterBodies'>['type'];
+    };
+    return setClassImpl(ctx, actor, {
+      waterBodyId: row.targetId as Id<'waterBodies'>,
+      bodyClass: prev.moderatorClass,
+      catalogClass: prev.type,
+      reason,
+    }).then(() => undefined);
+  },
+};
+
 /** Verb-level handlers (verbs only this area writes). */
 export const BODY_UNDO_HANDLERS: Partial<Record<ModerationAction, UndoHandler>> = {
   set_curated_boost: undoCuratedBoost,
   set_reference_links: undoReferenceLinks,
+  set_aliases: undoAliases,
+  set_class: undoClass,
   set_water_body_name: undoWaterBodyName,
   set_lake_depth: undoLakeDepth,
   set_satellite_imagery: undoSatelliteImagery,

@@ -200,6 +200,8 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
   // undoing that boost shelves it again — the handler asks a reason in that case (undoHandlersBody).
   set_curated_boost: { undo: setPrev, takesAway: never, capability: 'body.identity' },
   set_reference_links: { undo: setPrev, takesAway: never, capability: 'body.identity' },
+  set_aliases: { undo: setPrev, takesAway: never, capability: 'body.identity' },
+  set_class: { undo: setPrev, takesAway: never, capability: 'body.identity' },
   set_water_body_name: { undo: setPrev, takesAway: never, capability: 'body.identity' },
   set_included_by_request: {
     undo: setPrev,

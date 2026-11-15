@@ -103,6 +103,8 @@ export interface CanonicalBody {
    * needs to know, and because a moderator's own choice is stored as one with `source: 'user'`.
    */
   nameClaims?: { source: string; value: string }[];
+  /** Every catalog's class for this water (B01-3d), stored for the Names tab's per-catalog lines. */
+  classClaims?: { source: string; value: string }[];
   /**
    * A point genuinely inside the water (A06c) — see `waterBodies.interiorPoint`. Absent only when
    * the geometry has no locatable interior, which is a body the transform is about to skip anyway.

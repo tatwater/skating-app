@@ -297,6 +297,9 @@ export const MODERATION_ACTIONS = [
   'approve_waterbody',
   'reject_waterbody',
   'set_curated_boost', // adjust a body's D49 display prominence (admin, Phase 02a)
+  // B01-3d: a moderator's own aliases for a body, and its class (each its own fact, never a claim).
+  'set_aliases',
+  'set_class',
   // Operator-entered reference links — a lake association's URL (A06c §2.7). The only *stored* link in
   // the phase; every other one in the drawer is derived from the row at render time (P2/D71), so
   // this is the only link surface with a writer to audit at all.

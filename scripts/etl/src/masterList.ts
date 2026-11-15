@@ -108,6 +108,8 @@ export type KeptBody = Merged & {
   duplicateOf?: string[] | undefined;
   /** Every publisher's name for this water, winner first — see `nameClaimsOf`. */
   nameClaims: { source: ClaimSource; value: string }[];
+  /** Every catalog's class for this water (B01-3d): what the Names tab shows per catalog. */
+  classClaims: { source: string; value: string }[];
 };
 
 /**
@@ -993,6 +995,7 @@ export function buildMasterList(input: MasterListInput): MasterList {
       // The losing names, kept. `namedByGnis` rather than `name`, so the gazetteer is only credited
       // where it actually supplied the name rather than where it merely agreed with a catalog.
       nameClaims: nameClaimsOf(group.members, namedByGnis ? name : undefined),
+      classClaims,
       inRegionFraction: inRegionFraction(group, boundaryGrid),
     });
     pending.set(group.key, {
@@ -1143,6 +1146,7 @@ export function emitCanonicalBodies(
           confidence: k.confidence as never,
           reviewReasons: k.reviewReasons,
           nameClaims: k.nameClaims,
+          classClaims: k.classClaims,
           ...catalogIdsOf(k.members, k.gnisIdFromGazetteer),
         }),
       );

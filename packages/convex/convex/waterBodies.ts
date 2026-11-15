@@ -287,6 +287,10 @@ const canonicalBody = v.object({
   reviewReasons: v.optional(v.array(literals(REVIEW_REASONS))),
   /** Every publisher's name for this water, winner included — see the schema note on `nameClaims`. */
   nameClaims: v.optional(v.array(v.object({ source: literals(CLAIM_SOURCES), value: v.string() }))),
+  /** Every catalog's class for this water (B01-3d) — see the schema note on `classClaims`. */
+  classClaims: v.optional(
+    v.array(v.object({ source: literals(CLAIM_SOURCES), value: literals(WATER_BODY_CLASSES) })),
+  ),
   // A genuinely-interior point + the D85 shape stats, measured by the ETL on the source geometry
   // before it was simplified. All optional: a body whose geometry defeats one of them still loads.
   interiorPoint: v.optional(latLng),
@@ -426,6 +430,27 @@ function nameFields(
     nameClaims: claims.length > 0 ? claims : undefined,
     searchText: searchTextFor(chosen, aliasesFor(claims, chosen)),
   };
+}
+
+/** The most class claims stored for a body — one per catalog, with room. */
+export const MAX_CLASS_CLAIMS = 8;
+
+/**
+ * Each catalog's class claim as the import carries it (B01-3d): one per source (the first kept),
+ * bounded. Omitted when the record carries none — an older loader's record, which leaves the stored
+ * claims as they were rather than erasing them.
+ */
+function classClaimFields(item: {
+  classClaims?: { source: (typeof CLAIM_SOURCES)[number]; value: Doc<'waterBodies'>['type'] }[];
+}): { classClaims?: NonNullable<Doc<'waterBodies'>['classClaims']> } {
+  if (item.classClaims === undefined) return {};
+  const seen = new Set<string>();
+  const claims = item.classClaims.filter((c) => {
+    if (seen.has(c.source)) return false;
+    seen.add(c.source);
+    return true;
+  });
+  return { classClaims: claims.slice(0, MAX_CLASS_CLAIMS) };
 }
 
 /**
@@ -653,7 +678,9 @@ export const importCanonical = internalMutation({
           // `name` + `nameClaims` + `searchText` together, because a moderator's pick outranks the
           // import and the three must never disagree. See `nameFields`.
           ...nameFields(existing, item),
-          type: item.type,
+          // A moderator's class outranks the catalogs' (B01-3d), as a moderator's name does.
+          type: existing.moderatorClass ?? item.type,
+          ...classClaimFields(item),
           // **`source` is deliberately NOT patched, and it is not the same question as
           // `geometrySource`** (second audit, 2026-08-06 — noted because this was "fixed" and then
           // un-fixed within the hour).
@@ -746,6 +773,7 @@ export const importCanonical = internalMutation({
         const id = await ctx.db.insert('waterBodies', {
           ...nameFields(undefined, item),
           type: item.type,
+          ...classClaimFields(item),
           source: item.source,
           externalId: item.externalId,
           // **Minted at insert, so no row is ever without one.** `mintWaterBodyKeys` exists to
@@ -3897,6 +3925,176 @@ export async function setCuratedBoostImpl(
     });
     return waterBodyId;
   }
+}
+
+// ── A moderator's aliases and class (B01-3d) ───────────────────────────────────────────────────
+
+/** The most aliases a moderator adds to a body, and the longest one. */
+export const MAX_MODERATOR_ALIASES = 20;
+export const MAX_MODERATOR_ALIAS_CHARS = 120;
+
+/**
+ * A moderator's aliases, normalized once at the edge: each trimmed (inner whitespace collapsed), the
+ * empty dropped, de-duplicated case-insensitively against the display name and each other (the first
+ * spelling kept). Refused past {@link MAX_MODERATOR_ALIASES} or with one past
+ * {@link MAX_MODERATOR_ALIAS_CHARS} — never cut silently.
+ */
+export function normalizeModeratorAliases(aliases: readonly string[], name: string): string[] {
+  const seen = new Set<string>([name.trim().toLocaleLowerCase('en-US')]);
+  const out: string[] = [];
+  for (const raw of aliases) {
+    const alias = raw.replace(/\s+/g, ' ').trim();
+    if (alias === '') continue;
+    if (alias.length > MAX_MODERATOR_ALIAS_CHARS) {
+      throw new ConvexError(`An alias is at most ${MAX_MODERATOR_ALIAS_CHARS} characters`);
+    }
+    const key = alias.toLocaleLowerCase('en-US');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(alias);
+  }
+  if (out.length > MAX_MODERATOR_ALIASES) {
+    throw new ConvexError(`A body carries at most ${MAX_MODERATOR_ALIASES} moderator aliases`);
+  }
+  return out;
+}
+
+/** The body a moderator edits, refused when it was merged away (its survivor is the one to edit). */
+async function editableBody(
+  ctx: MutationCtx,
+  waterBodyId: Id<'waterBodies'>,
+): Promise<Doc<'waterBodies'>> {
+  const body = await ctx.db.get(waterBodyId);
+  if (!body) throw new ConvexError('Water body not found');
+  if (body.dedupStatus === 'merged') {
+    throw new ConvexError('This body was merged into another — edit the body it was merged into');
+  }
+  return body;
+}
+
+/** Moderator: set a body's own aliases (B01-3d) — an empty list clears them. */
+export const setAliases = mutation({
+  args: { waterBodyId: v.id('waterBodies'), aliases: v.array(v.string()) },
+  handler: async (ctx, { waterBodyId, aliases }) => {
+    const actor = await requireCapability(ctx, 'body.identity');
+    return setAliasesImpl(ctx, actor, { waterBodyId, aliases });
+  },
+});
+
+/** `setAliases`'s body, shared with its undo (D226): the undo is this write of the previous list. */
+export async function setAliasesImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    waterBodyId,
+    aliases,
+    reason,
+  }: { waterBodyId: Id<'waterBodies'>; aliases: readonly string[]; reason?: string },
+): Promise<Id<'waterBodies'>> {
+  const body = await editableBody(ctx, waterBodyId);
+  const next = normalizeModeratorAliases(aliases, body.name);
+  const prev = body.moderatorAliases ?? [];
+  await ctx.db.patch(waterBodyId, { moderatorAliases: next.length > 0 ? next : undefined });
+  await writeAudit(ctx, {
+    actorId: actor._id,
+    action: 'set_aliases',
+    targetType: 'waterbody',
+    targetId: waterBodyId,
+    reason:
+      reason ??
+      (next.length === 0
+        ? 'Cleared the moderator aliases'
+        : `Set ${next.length} alias${next.length === 1 ? '' : 'es'}`),
+    metadata: { moderatorAliases: next, prev: { moderatorAliases: prev } },
+    createdAt: Date.now(),
+  });
+  return waterBodyId;
+}
+
+/**
+ * The class a body had before a moderator's class displaced it: the catalogs' first stored claim, else
+ * what the newest override's audit row recorded it had (one indexed read). `undefined` with no
+ * override to undo.
+ */
+async function classBeforeOverride(
+  ctx: MutationCtx,
+  body: Doc<'waterBodies'>,
+): Promise<Doc<'waterBodies'>['type'] | undefined> {
+  if (body.moderatorClass === undefined) return undefined;
+  const claimed = body.classClaims?.[0]?.value;
+  if (claimed !== undefined) return claimed;
+  const rows = await ctx.db
+    .query('moderationActions')
+    .withIndex('by_target_action', (q) =>
+      q.eq('targetType', 'waterbody').eq('targetId', body._id).eq('action', 'set_class'),
+    )
+    .order('desc')
+    .take(MAX_CLASS_HISTORY_READ);
+  const first = rows.find(
+    (r) =>
+      (r.metadata as { prev?: { moderatorClass?: unknown } } | undefined)?.prev?.moderatorClass ===
+      null,
+  );
+  return (first?.metadata as { prev?: { type?: Doc<'waterBodies'>['type'] } } | undefined)?.prev
+    ?.type;
+}
+
+/** `set_class` rows read back looking for the class before the override. */
+const MAX_CLASS_HISTORY_READ = 20;
+
+/** Moderator: set a body's class (B01-3d) — `null` returns it to the catalogs' ranking. */
+export const setClass = mutation({
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    bodyClass: v.union(literals(WATER_BODY_CLASSES), v.null()),
+  },
+  handler: async (ctx, { waterBodyId, bodyClass }) => {
+    const actor = await requireCapability(ctx, 'body.identity');
+    return setClassImpl(ctx, actor, { waterBodyId, bodyClass });
+  },
+});
+
+/**
+ * `setClass`'s body, shared with its undo: the moderator's class is its own fact (`moderatorClass`),
+ * never a catalog claim, and `type` follows it; clearing puts back the class the catalogs ranked
+ * first (the first stored claim, else the class the body has, for a body with no claims recorded).
+ * The audit row records both so the undo is this write of the previous state.
+ */
+export async function setClassImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    waterBodyId,
+    bodyClass,
+    catalogClass,
+    reason,
+  }: {
+    waterBodyId: Id<'waterBodies'>;
+    bodyClass: Doc<'waterBodies'>['type'] | null;
+    /** The class to put back on a clear, when the undo knows it (the class before the override). */
+    catalogClass?: Doc<'waterBodies'>['type'];
+    reason?: string;
+  },
+): Promise<Id<'waterBodies'>> {
+  const body = await editableBody(ctx, waterBodyId);
+  const prev = { moderatorClass: body.moderatorClass ?? null, type: body.type };
+  const restored = bodyClass ?? catalogClass ?? (await classBeforeOverride(ctx, body)) ?? body.type;
+  await ctx.db.patch(waterBodyId, {
+    type: restored,
+    moderatorClass: bodyClass ?? undefined,
+  });
+  await writeAudit(ctx, {
+    actorId: actor._id,
+    action: 'set_class',
+    targetType: 'waterbody',
+    targetId: waterBodyId,
+    reason:
+      reason ??
+      (bodyClass === null ? 'Cleared the class override' : `Set the class to ${bodyClass}`),
+    metadata: { moderatorClass: bodyClass, type: restored, prev },
+    createdAt: Date.now(),
+  });
+  return waterBodyId;
 }
 
 /**
