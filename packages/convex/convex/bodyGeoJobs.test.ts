@@ -19,7 +19,22 @@ import schema from './schema';
 const hooks = vi.hoisted(() => ({
   throwWestOf: null as number | null,
   slowWestOf: null as number | null,
+  /** A body whose outline stamp throws (the drift repair's check), by name. */
+  stampThrowsFor: null as string | null,
 }));
+
+vi.mock('./lib/bodyGeo', async (importOriginal) => {
+  const geo = await importOriginal<typeof import('./lib/bodyGeo')>();
+  return {
+    ...geo,
+    outlineStamp: (body: Parameters<typeof geo.outlineStamp>[0] & { name?: string }) => {
+      if (hooks.stampThrowsFor !== null && body.name === hooks.stampThrowsFor) {
+        throw new RangeError('stamp failed');
+      }
+      return geo.outlineStamp(body);
+    },
+  };
+});
 
 vi.mock('@skating/core', async (importOriginal) => {
   const core = await importOriginal<typeof import('@skating/core')>();
@@ -47,6 +62,7 @@ beforeEach(() => {
   vi.setSystemTime(NOW);
   hooks.throwWestOf = null;
   hooks.slowWestOf = null;
+  hooks.stampThrowsFor = null;
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -82,6 +98,17 @@ async function seedBody(t: T, name: string, lng: number): Promise<Id<'waterBodie
     return id;
   });
 }
+
+/** A geometry job's `jobFailures` rows, as Machinery's health read counts them. */
+const geoFailures = (t: T, job: 'bodyGeo' | 'geoDrift' | 'geoMissing') =>
+  t.run(async (ctx) =>
+    (
+      await ctx.db
+        .query('jobFailures')
+        .withIndex('by_job_key', (q) => q.eq('job', job))
+        .collect()
+    ).map((f) => ({ key: f.key, parked: f.parkedAt !== undefined, errorClass: f.errorClass })),
+  );
 
 const facts = (t: T, id: Id<'waterBodies'>) =>
   t.run((ctx) =>
@@ -132,6 +159,14 @@ describe('computeDue', () => {
       parkedAt: NOW + 86_400_000,
       retriedAt: NOW + 86_400_000,
     });
+    // Machinery counts it from a small mirrored row (B01-3c): parked, by class.
+    expect(await geoFailures(t, 'bodyGeo')).toEqual([
+      { key: bad, parked: true, errorClass: 'TypeError' },
+    ]);
+    // A success clears the mirror with the row's own record.
+    hooks.throwWestOf = null;
+    await t.action(internal.bodyGeo.computeDue, { parked: true });
+    expect(await geoFailures(t, 'bodyGeo')).toEqual([]);
   });
 
   test('the daily retry walks every parked body, past the cron’s batch', async () => {
@@ -170,6 +205,34 @@ describe('computeDue', () => {
     expect(await t.action(internal.bodyGeo.computeAll, {})).toEqual({ started: true });
     await t.finishAllScheduledFunctions(() => {});
     for (const id of ids) expect((await facts(t, id))?.computedAt).toEqual(expect.any(Number));
+  });
+});
+
+describe('the drift repair', () => {
+  test('a row whose check throws is recorded, marked for recompute and passed; the rest are checked', async () => {
+    const t = harness();
+    const bad = await seedBody(t, 'Throws', -72);
+    const good = await seedBody(t, 'Fine', -60);
+    await t.run((ctx) => markGeoStale(ctx, [bad, good]));
+    await t.action(internal.bodyGeo.computeDue, {});
+    vi.setSystemTime(NOW + 1_000);
+    hooks.stampThrowsFor = 'Throws';
+    expect(await t.mutation(internal.bodyGeo.repairDrift, {})).toMatchObject({
+      checked: 2,
+      failed: 1,
+      marked: 1,
+    });
+    expect(await facts(t, bad)).toMatchObject({ staleAt: NOW + 1_000, checkedAt: NOW + 1_000 });
+    expect((await facts(t, good))?.staleAt).toBeUndefined();
+    expect(await geoFailures(t, 'geoDrift')).toEqual([
+      { key: bad, parked: false, errorClass: 'RangeError' },
+    ]);
+    // Once its check goes through, its failure clears.
+    hooks.stampThrowsFor = null;
+    await t.action(internal.bodyGeo.computeDue, {});
+    vi.setSystemTime(NOW + 2_000);
+    await t.mutation(internal.bodyGeo.repairDrift, {});
+    expect(await geoFailures(t, 'geoDrift')).toEqual([]);
   });
 });
 
