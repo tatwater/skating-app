@@ -19,7 +19,6 @@ import {
   perThousand,
   pulseSub,
   pulseTicks,
-  shortAge,
   stateInk,
   sumBuckets,
   vantageSegments,
@@ -102,8 +101,6 @@ describe('ages', () => {
     expect(ageParts(2 * DAY)).toEqual([{ n: 2, unit: 'd' }]);
     expect(ageParts(5 * HOUR + 59 * MINUTE)).toEqual([{ n: 5, unit: 'h' }]);
     expect(ageParts(40 * MINUTE)).toEqual([{ n: 40, unit: 'min' }]);
-    expect(shortAge(2 * DAY + 3 * HOUR)).toBe('2 d');
-    expect(shortAge(-5 * MINUTE)).toBe('0 min');
   });
 
   it('never reads older than it is, nor more than one unit younger', () => {

@@ -100,7 +100,7 @@ describe('ConsolePalette', () => {
     expect(onGo.mock.calls.map(([t]) => t.to)).toEqual([
       '/admin/flags',
       '/admin/body/b1',
-      '/admin/users/u1',
+      '/admin/people/u1',
     ]);
   });
 

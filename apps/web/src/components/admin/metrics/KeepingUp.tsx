@@ -15,8 +15,8 @@ import {
 import { ChartLegend, ChartNote, type LegendItem } from '@/components/kit/chart-legend';
 import { Section } from '@/components/kit/section-slug';
 import { StatGrid, StatTile } from '@/components/kit/stat-tile';
+import { shortAge } from '@/lib/ages';
 import { cn } from '@/lib/utils';
-
 import {
   ageParts,
   axisTicks,
@@ -33,7 +33,6 @@ import {
   RESOLVE_BUCKETS,
   SUPPORT_CATEGORIES,
   type SupportCategory,
-  shortAge,
 } from './metricsModel';
 import { AgeValue, ColumnHead, DayTick, UnrecordedTile, useRecordBegins } from './metricsParts';
 

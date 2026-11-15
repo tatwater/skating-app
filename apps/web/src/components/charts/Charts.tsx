@@ -416,57 +416,6 @@ export function DiagonalScatter({
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Grouped/stacked month bars — the contributor good-vs-bad trend
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * The tenure-aware good-vs-bad trend (D57). Stacked bars per month — good below, bad above — so the
- * ratio at a glance is the shape, and a `sinceLabel` marker anchors when the account was created, which
- * is the tenure half of "tenure-aware": the same raw bad count reads very differently against a long
- * green history than against a one-month bar.
- */
-export function TrendBars({
-  data,
-  height = 220,
-}: {
-  data: Array<{ month: string; good: number; bad: number }>;
-  height?: number;
-}) {
-  const { dark } = useChartTheme();
-  return (
-    <>
-      <ChartLegend
-        items={[
-          { label: 'Good (corroborated / net-helpful)', color: statusColor('good', dark) },
-          { label: 'Bad (contradiction / upheld flag)', color: statusColor('bad', dark) },
-        ]}
-      />
-      <ResponsiveContainer width="100%" height={height}>
-        <BarChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
-          <CartesianGrid stroke={CHART_TOKENS.grid} strokeDasharray="2 4" vertical={false} />
-          <XAxis dataKey="month" {...axisProps} minTickGap={16} />
-          <YAxis {...axisProps} width={36} allowDecimals={false} />
-          <Tooltip contentStyle={tooltipStyle} cursor={{ fill: 'var(--color-surface-muted)' }} />
-          <Bar
-            dataKey="good"
-            stackId="trend"
-            fill={statusColor('good', dark)}
-            isAnimationActive={false}
-          />
-          <Bar
-            dataKey="bad"
-            stackId="trend"
-            fill={statusColor('bad', dark)}
-            radius={[4, 4, 0, 0]}
-            isAnimationActive={false}
-          />
-        </BarChart>
-      </ResponsiveContainer>
-    </>
-  );
-}
-
 /** A short `YYYY-MM-DD` → `M/D` for a dense date axis. */
 function shortDate(date: string): string {
   const parts = date.split('-');

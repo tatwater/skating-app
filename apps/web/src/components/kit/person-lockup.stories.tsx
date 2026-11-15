@@ -39,3 +39,36 @@ export const Lockups: Story = {
     await expect(staff?.querySelector('[data-slot="person-handle"]')).toBeNull();
   },
 };
+
+/** A person list's row (`row`), and the person a page is about (`head`, its name an `h2`). */
+export const RowAndHead: Story = {
+  parameters: { fourUp: true },
+  render: () => (
+    <div className="flex w-[22rem] flex-col items-start gap-(--space-4) text-fg1">
+      <PersonLockup name="Rob Tremblay" handle="rtremblay" size="row" />
+      <PersonLockup name="Jamie Moreau" handle="jm_ice" size="row" mark="mor" />
+      <PersonLockup name="Rob Tremblay" handle="rtremblay" size="head" nameAs="h2" />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const quad = must(canvasElement.querySelector('[data-theme-scope]'));
+    const [row, marked, head] = [
+      ...quad.querySelectorAll<HTMLElement>('[data-slot="person-lockup"]'),
+    ].map(must);
+    // The row's face is the lockup's own; the head's, the head's.
+    await expect(must(row?.querySelector('[data-slot="avatar"]'))).toHaveAttribute(
+      'data-size',
+      'md',
+    );
+    await expect(must(head?.querySelector('[data-slot="avatar"]'))).toHaveAttribute(
+      'data-size',
+      'xl',
+    );
+    // The search is marked in place; the head's name is its page's heading.
+    await expect(must(marked?.querySelector('mark'))).toHaveTextContent('Mor');
+    await expect(must(head?.querySelector('h2'))).toHaveTextContent('Rob Tremblay');
+    // Its handle in mono, over a dotted rule.
+    const handle = must(row?.querySelector<HTMLElement>('[data-slot="person-handle"]'));
+    await expect(getComputedStyle(handle).borderBottomStyle).toBe('dotted');
+  },
+};

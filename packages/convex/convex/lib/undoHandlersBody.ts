@@ -52,7 +52,6 @@ import {
 import { type ModerationAction, type ModerationTargetType, readSnapshot } from './audit';
 import { listChangedRefusal } from './listCas';
 import { UNDO_POLICY } from './undoPolicy';
-import { UNDO_CHECKED_ELSEWHERE, undoRead } from './undoReads';
 import { meta, PREDATES, type TargetUndo, type UndoCall, type UndoHandler } from './undoTypes';
 
 /** Rows that recorded no `prev` predate undo (D226); everything here needs one. */
@@ -178,10 +177,9 @@ const undoWeatherSamplePoints: UndoHandler = {
   blocked: (row) => (meta(row).prev?.snapshot === true ? null : PREDATES),
   undoTakesAway: () => UNDO_POLICY.set_weather_sample_points.takesAway(),
   // The grid it puts back has to be on the outline as it stands: a redraw or a re-import moves it.
-  refusal: async (ctx, row) => {
+  refusal: async (ctx, row, read) => {
     const id = ctx.db.normalizeId('waterBodies', row.targetId);
-    const body = id ? await undoRead(ctx, 'waterBody', id) : null;
-    if (body === undefined) return UNDO_CHECKED_ELSEWHERE;
+    const body = id ? await read('waterBody', id) : null;
     if (body === null) return 'Water body not found';
     const prev = await readSnapshot<{ weatherSamplePoints: { lat: number; lng: number }[] }>(
       ctx,
@@ -396,10 +394,9 @@ const undoEditLandmark: UndoHandler = {
   undoTakesAway: (row) => UNDO_POLICY.edit_landmark.takesAway(meta(row).prev),
   // A merge's fold and a catalog run change a landmark's spellings with no row on it: the undo
   // compares the spellings the edit left with the landmark as it stands (B01-3d).
-  refusal: async (ctx, row) => {
+  refusal: async (ctx, row, read) => {
     const id = ctx.db.normalizeId('bodyLandmarks', row.targetId);
-    const current = id ? await undoRead(ctx, 'landmark', id) : null;
-    if (current === undefined) return UNDO_CHECKED_ELSEWHERE;
+    const current = id ? await read('landmark', id) : null;
     if (current === null) return 'That landmark no longer exists';
     return listChangedRefusal(
       current.aliases,
@@ -552,11 +549,10 @@ const undoDepthSource: UndoHandler = {
   undoTakesAway: () => UNDO_POLICY.choose_depth_source.takesAway(undefined),
   // A loader run changes a body's candidates with no row: the choice it puts back has to still be
   // there, and still leave the mean no deeper than the max — the write's own rule, on the body now.
-  refusal: async (ctx, row) => {
+  refusal: async (ctx, row, read) => {
     const m = meta(row) as { measure: 'mean' | 'max'; prev: { choice: DepthSource | null } };
     const id = ctx.db.normalizeId('waterBodies', row.targetId);
-    const body = id ? await undoRead(ctx, 'waterBody', id) : null;
-    if (body === undefined) return UNDO_CHECKED_ELSEWHERE;
+    const body = id ? await read('waterBody', id) : null;
     const refused = editRefusal(body);
     if (refused !== null || body === null) return refused;
     const settled = depthChoiceOutcome(body, m.measure, m.prev.choice);
@@ -619,15 +615,14 @@ const undoPutIn: UndoHandler = {
     UNDO_POLICY.set_put_in.takesAway((meta(row) as { direction?: unknown }).direction),
   // A hide is audited on the put-in and an import moves or drops a launch with no row, so neither
   // overtakes this body's row: the launch is read as it stands, by the write's own checks.
-  refusal: async (ctx, row) => {
+  refusal: async (ctx, row, read) => {
     const m = meta(row) as {
       putInId: Id<'putIns'>;
       coord: { lat: number; lng: number };
       direction: 'promoted' | 'demoted';
       name?: string;
     };
-    const launch = await undoRead(ctx, 'putIn', m.putInId);
-    if (launch === undefined) return UNDO_CHECKED_ELSEWHERE;
+    const launch = await read('putIn', m.putInId);
     const refused = await launchRefusal(ctx, launch);
     if (refused !== null || launch === null) return refused;
     return directionRefusal(launch, m.direction === 'promoted' ? 'demote' : 'promote', {

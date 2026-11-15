@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 
 import { useOverviewMetrics } from '@/components/admin/metrics/useOverviewMetrics';
+import { routerTarget } from '@/lib/routerTarget';
 import { useConnection } from '@/lib/useConnection';
 import { useRole } from '@/lib/useRole';
 import { useMinuteNow } from '../shell/presence';
@@ -25,7 +26,7 @@ import { useOverviewHome } from './useOverviewHome';
 /** A link through the router to the old page that does the work, or plain text where none does. */
 const linkTo: LinkTo = (to) => {
   const path = consolePathFor(to);
-  return path === null ? <span /> : <Link to={path} />;
+  return path === null ? <span /> : <Link {...routerTarget(path)} />;
 };
 
 export function OverviewRoute() {
@@ -53,7 +54,7 @@ export function OverviewRoute() {
       linkTo={linkTo}
       onOpenTarget={(target) => {
         const path = feedTargetPath(target);
-        if (path !== null) void navigate({ to: path });
+        if (path !== null) void navigate(routerTarget(path));
       }}
       onOpenBody={(id) => {
         const path = consolePathFor({ kind: 'body', id });
