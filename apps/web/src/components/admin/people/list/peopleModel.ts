@@ -41,17 +41,21 @@ export type LaneEntry = LanesRead['lanes'][number];
 type ServerPage = FunctionReturnType<typeof api.people.listPage>;
 
 /**
- * A list row as the web reads it from either server. The server follow-up adds, where it knows them,
- * a staffer's facts and a queue row's oldest open item; today's server has neither, and every use
- * falls back to today's behavior when they're absent.
+ * A list row as the web reads it from either server. The server follow-up (B01-4b) supplies, where it
+ * knows them, a staffer's facts and a queue row's oldest open item; a server from before it has
+ * neither, and every use falls back to that server's behavior when they're absent.
  */
 export type PersonListRow = Omit<ServerPage['rows'][number], 'staff' | 'oldestOpenAt'> & {
   /** A staffer's facts (the server follow-up); `null` on a row that isn't staff. */
   staff?: {
     /** When they were last in the console; `null` when never recorded. */
     lastSeenInConsoleAt?: number | null;
+    /** The presence read stopped short: a `null` last visit is "can't say" (not drawn yet). */
+    lastSeenCapped?: boolean;
     /** When they took the role they hold; `null` when no row records it. */
     roleSince?: number | null;
+    /** The tenure read stopped short, or isn't stamped yet: a `null` is "can't say" (not drawn yet). */
+    roleSinceCapped?: boolean;
     /** Decisions this week, a floor when capped; `null` when not recorded. */
     decisionsThisWeek?: Count | number | null;
   } | null;

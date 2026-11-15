@@ -45,8 +45,9 @@ type CanBase = Omit<
 
 /**
  * `can` with the levers a fixture derives rather than spells out: a new window answers as `suspend`
- * does, the give-backs as `restrict` (or `flaggingOff`) does but ask no reason (D226), and lowering
- * the bounty limit asks one where raising it doesn't.
+ * does, every give-back — flagging switched back on included — as `restrict` does but asks no reason
+ * (D226; the server's rule, `lib/peopleCan.writeRefusal`: only switching flagging *off* has a staff
+ * refusal of its own), and lowering the bounty limit asks one where raising it doesn't.
  */
 export function canOf(base: CanBase): PersonRead['can'] {
   const giveBack = base.restrict.ok ? yes(false) : base.restrict;
@@ -54,7 +55,7 @@ export function canOf(base: CanBase): PersonRead['can'] {
     ...base,
     extend: base.suspend,
     restore: { reports: giveBack, hazards: giveBack, comments: giveBack },
-    flaggingOn: base.flaggingOff.ok ? yes(false) : base.flaggingOff,
+    flaggingOn: giveBack,
     bountyRaise: giveBack,
     bountyLower: base.restrict,
   };
@@ -73,10 +74,11 @@ const CAN_ALL: PersonRead['can'] = canOf({
 
 /** A person read, from a member's defaults. */
 export function personOf(over: Partial<PersonRead> = {}): PersonRead {
+  const username = over.username ?? 'rtremblay';
   return {
     userId: IDS.rob,
     displayName: 'Rob Tremblay',
-    username: 'rtremblay',
+    username,
     profileImageUrl: null,
     profileVisibility: 'public',
     role: 'member',
@@ -89,7 +91,8 @@ export function personOf(over: Partial<PersonRead> = {}): PersonRead {
     bountySeason: null,
     rightsSince: { reports: null, hazards: null, comments: null, flagging: null },
     rightsSinceCapped: false,
-    publicProfile: { opens: true, private: false, path: '/u/rtremblay' },
+    // The profile read's own path: the person's handle.
+    publicProfile: { opens: true, private: false, path: `/u/${username}` },
     strip: {
       contradictions: 0,
       openFlags: { onUser: { count: 0, capped: false }, onContent: { count: 0, capped: false } },

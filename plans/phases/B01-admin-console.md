@@ -2498,12 +2498,13 @@ Every shape change is additive except where noted.
   serves each right's restriction (`rightsSince`) and the status note's start (`statusNote.at`, with
   `atCapped`, walking up to ten rows of the verb and one document's weight; a suspension whose window
   had run out before the next one, which the sweep hadn't reset yet, counts as over, so the next one
-  starts a new run). The ledger grant and the tenure dates were already starts: a grant to a holder
-  is refused (since the grant was built, #108), and so is a move to the role held — but only since
-  #115; before that `grantRole` recorded a regrant, so dev's older role rows can hold a no-op that
-  `staffTenure`'s role since would take as the move (prod has none). A
-  fast-check property holds the rule over random sequences of real changes and repeats by different
-  staff. Person writes that accept a no-op and still write a row (for the founder's call on whether
+  starts a new run, and the list row's `statusSince` counts it the same way; the note's who, via and
+  reason stay the newest write's — the one whose window and words it shows — so only its date
+  moved). The ledger grant and the tenure dates were already starts: a grant to a holder is refused
+  (since the grant was built, #108), and so is a move to the role held — but only since #115; before
+  that `grantRole` recorded a regrant, so dev's older role rows can hold a no-op that `staffTenure`'s
+  role since would take as the move (prod has none). A fast-check property holds the rule over
+  random sequences of real changes and repeats by different staff. Person writes that accept a no-op and still write a row (for the founder's call on whether
   they should): a right set to the value it has (`setPostingPermission`), a bounty limit set to the one
   in force (`setBountyPostLimit`, recorded with the give-back's default reason), a ban of a banned
   account (`banUser`), a lift of an active account (`unbanUser`), and a suspension of a suspended
@@ -3307,9 +3308,9 @@ draws 34; the role menu's item takes two lines.
   explicit `can` entries for every lever; a profile-opens flag; flag target labels and appeal text;
   who undid a row — and the capped answers beside them the page doesn't draw yet
   (`statusNote.atCapped`, `decisions.capped`, `open.flagLabelsCapped`, `ledger.sinceCapped`,
-  `rightsSinceCapped`), so a capped start still reads as not recorded. The merge filled the
-  fixtures with the new fields and made the list row's staff overlay take `null`; `lanesFor` now
-  reads core's `peopleLanesFor`.
+  `rightsSinceCapped`, and a staff row's `staff.lastSeenCapped` and `staff.roleSinceCapped`), so a
+  capped start still reads as not recorded. The merge filled the fixtures with the new fields and
+  made the list row's staff overlay take `null`; `lanesFor` now reads core's `peopleLanesFor`.
 - The record sheet (verdicts and withdrawals, above; boards 8.7–8.9) is not built. The *On the
   record* row appears today on the one count main's server supplies (the standing list); it should
   appear whenever any of the sheet's three lists (Standing, Deleted, Reversed) has items, and its

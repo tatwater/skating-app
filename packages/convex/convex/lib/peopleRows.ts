@@ -58,9 +58,9 @@ export {
 /**
  * The row a profile reads as, given the row it had (`prev`, for the times a change is first seen):
  *
- * - `statusSince` and `restrictedSince` are when *this writer* saw the status change or the first
- *   restriction land — 0 (not recorded) for a row first written by the backfill, except a tombstone,
- *   which knows when it was made.
+ * - `statusSince` and `restrictedSince` are when *this writer* saw the status change (a suspension
+ *   over one that had run out counts as one) or the first restriction land — 0 (not recorded) for a
+ *   row first written by the backfill, except a tombstone, which knows when it was made.
  * - A tombstone is in no lane but Deleted: not staff (a deleted admin keeps its `role`), not
  *   restricted, not leaving.
  */
@@ -70,7 +70,17 @@ export function derivePersonRow(
   now: number,
 ): PersonRowFields {
   const deleted = profile.status === 'deleted';
-  const statusChanged = prev !== null && prev.status !== profile.status;
+  const suspendedUntil =
+    profile.status === 'suspended' ? (profile.suspendedUntil ?? OPEN_ENDED) : 0;
+  // A suspension written over one whose window had run out (the sweep hadn't reset it yet) is a new
+  // run, not the old one going on — the person page's status note reads its rows the same way.
+  const newRun =
+    prev !== null &&
+    prev.status === 'suspended' &&
+    profile.status === 'suspended' &&
+    prev.suspendedUntil <= now &&
+    suspendedUntil !== prev.suspendedUntil;
+  const statusChanged = prev !== null && (prev.status !== profile.status || newRun);
   const statusSince = deleted
     ? (profile.deletedAt ?? (statusChanged ? now : (prev?.statusSince ?? 0)))
     : prev === null
@@ -103,7 +113,7 @@ export function derivePersonRow(
     staffRank: deleted ? 2 : profile.role === 'admin' ? 0 : profile.role === 'moderator' ? 1 : 2,
     status: profile.status,
     statusSince,
-    suspendedUntil: profile.status === 'suspended' ? (profile.suspendedUntil ?? OPEN_ENDED) : 0,
+    suspendedUntil,
     ...(reason !== undefined ? { statusReason: reason } : {}),
     restricted,
     restrictions,

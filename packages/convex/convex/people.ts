@@ -1064,7 +1064,7 @@ export const person = query({
         ? await ledgerSinceOf(ctx, budget, userId)
         : { at: null, capped: false };
 
-    // ── The status note: who set the suspension or ban, and when ──
+    // ── The status note: when the suspension or ban began, and who last set it ──
     let statusNote: {
       action: 'ban' | 'suspend';
       at: number | null;
@@ -1077,7 +1077,7 @@ export const person = query({
     } | null = null;
     if (target.status === 'suspended' || target.status === 'banned') {
       const verb = target.status === 'banned' ? 'ban' : 'suspend';
-      // When the status began, and who began it (`lib/stateSince`): a ban of a banned account, or a
+      // When the status began (`lib/stateSince`): a ban of a banned account, or a
       // suspension's new window, changed nothing about the status, so the walk passes over it to the
       // write that did. A few rows of the verb, newest first, each read as it weighs — a suspension
       // that had run out before the next one is no run of it (`statusFound`).
@@ -1108,9 +1108,9 @@ export const person = query({
         }
         seen.push(next);
         before = next._creationTime;
-        // A real change ends the walk — the same test `startOfCurrentState` makes below.
-        const found = statusFound(next);
-        if (found === undefined || found !== target.status) break;
+        // A real change ends the walk — the same test `startOfCurrentState` makes below (a row
+        // with no `prev` is taken as one, and `undefined` is never the current status).
+        if (statusFound(next) !== target.status) break;
       }
       const start = startOfCurrentState(
         seen,
@@ -1118,14 +1118,19 @@ export const person = query({
         target.status as string,
         complete,
       );
-      const row = start.row;
+      // Who and why come from one write — the newest of the verb, which set the reason and window
+      // the note shows — so a second moderator's words are never credited to the first. Only the
+      // date is the start's.
+      const newest = seen[0];
       statusNote = {
         action: verb,
-        at: row?.createdAt ?? null,
+        /** When the status began (`lib/stateSince`), not when it was last set. */
+        at: start.since,
         /** The status began before the rows read: `at` is "can't say", not "not recorded". */
         atCapped: start.capped,
-        by: await personRef(ctx, row?.actorId),
-        via: row?.via ?? null,
+        /** Who last set it — the write whose reason and window these are. */
+        by: await personRef(ctx, newest?.actorId),
+        via: newest?.via ?? null,
         reason: target.statusReason ?? null,
         suspendedUntil: target.status === 'suspended' ? (target.suspendedUntil ?? null) : null,
         lapsed:
@@ -1214,7 +1219,7 @@ export const person = query({
     // ── The bounty season line: their asks this season, from the create gate's record ──
     const bountySeason = await bountySeasonOf(ctx, budget, userId, now);
 
-    // ── When each right was last taken away, from the audit rows by verb (`set_posting_permission`) ──
+    // ── When each right now off was taken away, from its `set_posting_permission` rows ──
     const rightsSince = await rightsSinceOf(ctx, budget, target);
 
     // ── The open flags' labels, through the budget left ──

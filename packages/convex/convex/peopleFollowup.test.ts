@@ -987,6 +987,55 @@ describe('a “since” is the start of the current unbroken state (lib/stateSin
     );
   });
 
+  test('rows about something else are passed over; a row with no prev is a change; a change that led elsewhere says not recorded', () => {
+    type Row = { at: number; after?: string; before?: string };
+    const since = (rows: Row[], complete: boolean) =>
+      startOfCurrentState(
+        rows,
+        (r) => ({ at: r.at, after: r.after, before: r.before }),
+        'off',
+        complete,
+      );
+    // A row that isn't about this state (another right's, a bounty limit's) is skipped.
+    expect(
+      since(
+        [{ at: 3 }, { at: 2, after: 'off', before: 'off' }, { at: 1, after: 'off', before: 'on' }],
+        true,
+      ),
+    ).toMatchObject({ since: 1, capped: false });
+    // A row from before `prev` was recorded is taken as the change, though it may have repeated.
+    expect(
+      since(
+        [
+          { at: 2, after: 'off' },
+          { at: 1, after: 'off', before: 'on' },
+        ],
+        true,
+      ),
+    ).toEqual({
+      since: 2,
+      row: { at: 2, after: 'off' },
+      capped: false,
+    });
+    // The newest real change led elsewhere: the record and the state disagree — not recorded, never
+    // capped, and never an older row's date.
+    expect(
+      since(
+        [
+          { at: 2, after: 'on', before: 'off' },
+          { at: 1, after: 'off', before: 'on' },
+        ],
+        false,
+      ),
+    ).toEqual({ since: null, row: null, capped: false });
+    // Only repeats and unrelated rows: capped exactly when rows were left unread.
+    expect(since([{ at: 2 }, { at: 1, after: 'off', before: 'off' }], false)).toMatchObject({
+      since: null,
+      capped: true,
+    });
+    expect(since([], true)).toEqual({ since: null, row: null, capped: false });
+  });
+
   test('a second moderator restricting a right already off, or banning a banned account, moves no date', async () => {
     const t = await setup();
     await seed(t, 'mod', { role: 'moderator' });
@@ -1009,7 +1058,9 @@ describe('a “since” is the start of the current unbroken state (lib/stateSin
     const p = await as(t, 'mod').query(api.people.person, { userId: skater });
     expect(p?.rightsSince.comments).toBe(T0 - 3 * DAY);
     expect(p?.statusNote).toMatchObject({ action: 'ban', at: T0 - 3 * DAY, atCapped: false });
-    expect(p?.statusNote?.by?.username).toBe('mod');
+    // The date is the start's; who and why are the newest write's, never one's words on the other.
+    expect(p?.statusNote).toMatchObject({ reason: 'again' });
+    expect(p?.statusNote?.by?.username).toBe('mod2');
   });
 
   test('a suspension’s new window keeps its start; a walk that runs out of rows says can’t say', async () => {
@@ -1029,6 +1080,11 @@ describe('a “since” is the start of the current unbroken state (lib/stateSin
         reason: 'r',
         suspendedUntil: T0 + 31 * DAY + i,
       });
+      if (i === 1) {
+        // Two new windows in: the walk reaches the start, which they didn't move.
+        const early = await as(t, 'mod').query(api.people.person, { userId: skater });
+        expect(early?.statusNote).toMatchObject({ at: T0 - 20 * DAY, atCapped: false });
+      }
     }
     vi.setSystemTime(T0);
     const p = await as(t, 'mod').query(api.people.person, { userId: skater });
