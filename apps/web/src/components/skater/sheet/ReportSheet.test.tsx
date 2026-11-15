@@ -3,8 +3,21 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import { getFunctionName } from 'convex/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { setSheet, setSheetAttempt, useSheet } from '@/lib/sheetStore';
-import { installFakeStore, openSheet, reloadPage, stubObjectUrls } from '@/lib/sheetStore.fixtures';
+import { sheetPhotoPreview } from '@/lib/sheetPhotos';
+import {
+  getSheet,
+  restoreStoredSheet,
+  setSheet,
+  setSheetAttempt,
+  useSheet,
+} from '@/lib/sheetStore';
+import {
+  installFakeStore,
+  openSheet,
+  pickPhoto,
+  reloadPage,
+  stubObjectUrls,
+} from '@/lib/sheetStore.fixtures';
 import { NAME_SEARCH_DEBOUNCE_MS } from './LakeNameSearch';
 import { ReportSheet } from './ReportSheet';
 import { SheetSlotsProvider } from './sheetSlots';
@@ -21,6 +34,8 @@ const h = vi.hoisted(() => ({
   lost: 0,
   notKept: false,
   phone: false,
+  /** What `convex.query` answers — the photo sort's lake lookup. Unset: it throws, as `{}` did. */
+  lakeAt: null as null | { waterBodyId: string; name: string },
 }));
 vi.mock('@/lib/usePhoneLayout', () => ({ useIsPhone: () => h.phone }));
 
@@ -36,8 +51,16 @@ vi.mock('@/lib/sheetStore', async (importOriginal) => ({
 vi.mock('@/lib/analytics', () => ({ useAnalytics: () => ({ capture: h.capture }) }));
 vi.mock('@/lib/featureFlags', () => ({ useFeatureFlag: () => h.flag }));
 vi.mock('@/lib/useConnection', () => ({ useConnection: () => ({ status: h.status }) }));
+// One client for every render, as `useConvex` hands back: a fresh object each time would re-run
+// every effect keyed on it (the photo sort's) on every render, which the app never does.
+const convexClient = vi.hoisted(() => ({
+  query: async () => {
+    if (h.lakeAt === null) throw new Error('No lookup in this test');
+    return h.lakeAt;
+  },
+}));
 vi.mock('convex/react', () => ({
-  useConvex: () => ({}),
+  useConvex: () => convexClient,
   useMutation: () => vi.fn(),
   useQuery: (ref: unknown, args: unknown) =>
     args === 'skip' ? undefined : h.queries.get(getFunctionName(ref as never)),
@@ -144,6 +167,7 @@ beforeEach(() => {
   h.lost = 0;
   h.notKept = false;
   h.phone = false;
+  h.lakeAt = null;
   for (const f of Object.values(exits)) f.mockReset();
 });
 afterEach(() => setSheet(null));
@@ -411,6 +435,58 @@ describe('leaving and removing (5.4.1, 5.31)', () => {
     expect(exits.onDiscard).toHaveBeenCalledTimes(1);
   });
 
+  it('the X on a lake whose photos have a place removes it, and the photo sort does not open it again', async () => {
+    // Two lakes, the second holding a photo with a place — sorted onto it as it was added, or
+    // restored that way. Its lake lookup answers Crystal Lake.
+    const one = withLake(openSheet());
+    setSheet(one);
+    const first = one.reports[0] as PostSheet['reports'][number];
+    const photo = await pickPhoto(
+      { pool: true },
+      { coord: { lat: 43.65, lng: -72.15 }, takenAtMs: Date.now() - 3_600_000 },
+    );
+    const second = {
+      ...first,
+      id: 'second',
+      idempotencyKey: 'k2',
+      bodyName: 'Crystal Lake',
+      sheet: { ...first.sheet, waterBodyId: 'b2' },
+      photos: [photo],
+    };
+    setSheet({ ...one, photos: [], reports: [first, second] });
+    h.lakeAt = { waterBodyId: 'b2', name: 'Crystal Lake' };
+    render(<Connected />);
+    expect(screen.getAllByRole('tab')).toHaveLength(2);
+
+    // The author removes it: the dialog says where its photo goes, and the tab goes.
+    fireEvent.click(screen.getByRole('tab', { name: /Crystal Lake/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Crystal Lake from the report' }));
+    expect(
+      await screen.findByText(
+        /Its photos stay in this post: one taken during another lake’s visit moves there/,
+      ),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    await waitFor(() => expect(getSheet()?.reports).toHaveLength(1));
+    // Give the sort every chance to look the photo up and lay it back onto a tab.
+    for (let i = 0; i < 5; i++) await act(() => new Promise((r) => setTimeout(r, 0)));
+    expect(screen.getAllByRole('tab')).toHaveLength(1);
+    const after = getSheet();
+    expect(after?.reports).toHaveLength(1);
+    expect(after?.photos?.map((p) => [p.id, p.placeOnMap])).toEqual([[photo.id, false]]);
+  });
+
+  it('the X on an edit’s new photo removes it, and then lets its file go', async () => {
+    setSheet({ ...withLake(openSheet()), mode: { kind: 'edit', reportId: 'r1' } });
+    render(<Connected />);
+    const reportId = getSheet()?.reports[0]?.id as string;
+    const photo = await act(() => pickPhoto({ reportId }));
+    expect(sheetPhotoPreview(photo.id)).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove this photo' }));
+    expect(getSheet()?.reports[0]?.photos).toEqual([]);
+    expect(sheetPhotoPreview(photo.id)).toBeNull();
+  });
+
   it('removing the only lake asks, then starts over on Which lake?', async () => {
     setSheet(withLake(openSheet()));
     render(<Connected />);
@@ -563,6 +639,96 @@ describe('the rest of the paths', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
     rerender(<Connected />);
     expect(screen.queryByText(/couldn't be kept/)).not.toBeInTheDocument();
+  });
+
+  describe('adding a track, wherever the sheet is', () => {
+    const slots = {
+      gpxImport: (p: { reportId: string; variant?: string }) => (
+        <button type="button" data-variant={p.variant ?? 'drop'}>
+          GPX for {p.reportId}
+        </button>
+      ),
+    };
+    const gpxFor = (id: string) => screen.queryByRole('button', { name: `GPX for ${id}` });
+
+    beforeEach(() => {
+      h.flag = true;
+    });
+
+    it('before the lake, on its card; after the lake, on the instrument', () => {
+      setSheet(blank());
+      render(
+        <SheetSlotsProvider value={slots}>
+          <Connected />
+        </SheetSlotsProvider>,
+      );
+      const id = getSheet()?.reports[0]?.id as string;
+      expect(gpxFor(id)).toHaveAttribute('data-variant', 'drop');
+      act(() => setSheet(withLake(getSheet() as PostSheet)));
+      expect(gpxFor(id)).toHaveAttribute('data-variant', 'link');
+    });
+
+    it('on a second report, after a failed send, and after a reload', async () => {
+      const one = withLake(openSheet());
+      const first = one.reports[0] as PostSheet['reports'][number];
+      setSheet({ ...one, reports: [first, { ...first, id: 'second', idempotencyKey: 'k2' }] });
+      setSheetAttempt({
+        kind: 'post',
+        id: one.draftId,
+        idempotencyKey: one.idempotencyKey,
+        status: 'pending',
+        reports: [],
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      const { unmount } = render(
+        <SheetSlotsProvider value={slots}>
+          <Connected />
+        </SheetSlotsProvider>,
+      );
+      expect(gpxFor(first.id)).toBeInTheDocument();
+      fireEvent.click(screen.getAllByRole('tab')[1] as HTMLElement);
+      expect(gpxFor('second')).toBeInTheDocument();
+      unmount();
+      reloadPage('user_1');
+      const restored = await restoreStoredSheet(Date.now());
+      act(() => setSheet(restored?.sheet ?? null, restored?.attempt ?? null));
+      render(
+        <SheetSlotsProvider value={slots}>
+          <Connected />
+        </SheetSlotsProvider>,
+      );
+      expect(gpxFor(first.id)).toBeInTheDocument();
+    });
+
+    it('not once a track is on the report, nor with the flag off, nor on an edit', () => {
+      const one = withLake(openSheet());
+      const first = one.reports[0] as PostSheet['reports'][number];
+      setSheet({ ...one, reports: [{ ...first, activityId: 'act_1' }] });
+      const { unmount } = render(
+        <SheetSlotsProvider value={slots}>
+          <Connected />
+        </SheetSlotsProvider>,
+      );
+      expect(gpxFor(first.id)).not.toBeInTheDocument();
+      unmount();
+      setSheet({ ...one, mode: { kind: 'edit', reportId: 'r1' } });
+      const edit = render(
+        <SheetSlotsProvider value={slots}>
+          <Connected />
+        </SheetSlotsProvider>,
+      );
+      expect(gpxFor(first.id)).not.toBeInTheDocument();
+      edit.unmount();
+      h.flag = false;
+      setSheet(one);
+      render(
+        <SheetSlotsProvider value={slots}>
+          <Connected />
+        </SheetSlotsProvider>,
+      );
+      expect(gpxFor(first.id)).not.toBeInTheDocument();
+    });
   });
 
   it('mounts Google Photos and the second half’s flows where they belong', () => {

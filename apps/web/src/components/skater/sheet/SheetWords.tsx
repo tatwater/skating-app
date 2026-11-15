@@ -10,6 +10,7 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
   type DraftPhoto,
+  dropPhoto,
   POST_TITLE_MAX_CHARS,
   type PostSheet,
   type SheetReport,
@@ -22,10 +23,11 @@ import { Textarea } from '@/components/kit/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/kit/tooltip';
 import { useAnalytics } from '@/lib/analytics';
 import { useBodyOutlines } from '@/lib/bodyOutlines';
-import { addSheetPhoto, releaseSheetPhoto, sheetPhotoPreview } from '@/lib/sheetPhotos';
+import { addSheetPhoto, sheetPhotoPreview } from '@/lib/sheetPhotos';
 import { updateSheet } from '@/lib/sheetStore';
 import { cn } from '@/lib/utils';
 import { addSheetPhotos } from './PhotoSorter';
+import { releaseIfDropped } from './photoRelease';
 import { useSheetSlots } from './sheetSlots';
 
 /**
@@ -177,13 +179,11 @@ function PhotoStrip({
       );
       return;
     }
-    releaseSheetPhoto(tile.photo.id);
-    updateSheet((p) =>
-      updateReport(p, tile.reportId ?? activeReport.id, (r) => ({
-        ...r,
-        photos: r.photos.filter((ph) => ph.id !== tile.photo.id),
-      })),
-    );
+    // Wherever it sits — a Report or the Post's pool — and its blob only once the sheet let it go:
+    // a sheet that refuses the change (a Post on its way, or already sent) keeps the photo, and the
+    // photo keeps its file.
+    updateSheet((p) => dropPhoto(p, tile.photo.id));
+    releaseIfDropped(tile.photo.id);
   };
 
   return (

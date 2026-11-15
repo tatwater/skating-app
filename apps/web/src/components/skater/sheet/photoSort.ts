@@ -30,6 +30,7 @@ import {
   reportEndMs,
   type SheetReport,
   sheetReducer,
+  unassignedPhotos,
 } from '@skating/core';
 import type { MultiPolygon, Polygon } from 'geojson';
 
@@ -347,4 +348,50 @@ export function addPhotosByLakeAndDay(
   // author's to fill.
   const out = applyPhotoTabs(added, tabs, { ...opts, activeId: '' });
   return { post: out.post, tabs };
+}
+
+/**
+ * What the pool's sort has already seen on one open sheet (`PhotoSorter`, one per mount). A photo is
+ * sorted once, when it first arrives in the pool while the sheet is open:
+ *
+ * - what the pool held when the sheet opened (a restored draft's `?` photos) is the author's to
+ *   place, never sorted;
+ * - a photo the sheet has shown on a Report is never new — when its tab is removed it waits in the
+ *   pool, unplaced, and sorting it again would open a tab for its lake and day: the removed tab,
+ *   straight back.
+ */
+export function openSortMemory(post: PostSheet): Set<string> {
+  const memory = new Set((post.photos ?? []).map((p) => p.id));
+  rememberReportPhotos(memory, post);
+  return memory;
+}
+
+/** Note every photo on a Report. Runs on every render, so a photo is seen before it can move. */
+export function rememberReportPhotos(memory: Set<string>, post: PostSheet): void {
+  for (const r of post.reports) for (const p of r.photos) memory.add(p.id);
+}
+
+/** The pool photos to sort now — the ones never seen — and remembered from here on. */
+export function photosToSort(memory: Set<string>, post: PostSheet): DraftPhoto[] {
+  if (post.mode.kind !== 'create') return [];
+  rememberReportPhotos(memory, post);
+  const fresh = unassignedPhotos(post).filter((p) => !memory.has(p.id));
+  for (const p of fresh) memory.add(p.id);
+  return fresh;
+}
+
+/**
+ * Lay sorted tabs onto the Post as it stands when the lookups come back: only the photos still in
+ * the pool (the author may have placed or removed some meanwhile). `null` when none are.
+ */
+export function applySortedPool(
+  post: PostSheet,
+  tabs: readonly PhotoTab[],
+  opts: Parameters<typeof applyPhotoTabs>[2],
+): { post: PostSheet; firstReportId: string | null } | null {
+  const pooled = new Set(unassignedPhotos(post).map((p) => p.id));
+  const still = tabs
+    .map((t) => ({ ...t, photoIds: t.photoIds.filter((id) => pooled.has(id)) }))
+    .filter((t) => t.photoIds.length > 0);
+  return still.length === 0 ? null : applyPhotoTabs(post, still, opts);
 }

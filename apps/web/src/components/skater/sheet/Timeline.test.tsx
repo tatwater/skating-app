@@ -1,6 +1,9 @@
-import { timelineModel } from '@skating/core';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { caretLabel, timelineModel } from '@skating/core';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import fc from 'fast-check';
+import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { property } from '@/lib/sheetStore.propertyRuns';
 import { Timeline } from './Timeline';
 
 const TZ = 'America/New_York';
@@ -20,8 +23,12 @@ describe('Timeline', () => {
     expect(screen.getByText('SUNRISE 7:12')).toBeInTheDocument();
     expect(screen.getByText('SUNSET 4:31')).toBeInTheDocument();
     expect(screen.getByText('NOW 6:40')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'END 4:12, drag to change' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'START 2:05, drag to change' })).toBeInTheDocument();
+    expect(screen.getByRole('slider', { name: 'End time' })).toHaveTextContent('END 4:12');
+    expect(screen.getByRole('slider', { name: 'Start time' })).toHaveTextContent('START 2:05');
+    expect(screen.getByRole('slider', { name: 'End time' })).toHaveAttribute(
+      'aria-valuetext',
+      'Saturday 4:12 PM',
+    );
     expect(screen.getByText('NOON')).toBeInTheDocument();
   });
 
@@ -70,7 +77,7 @@ describe('Timeline', () => {
       const onSetEnd = vi.fn();
       const onSetStart = vi.fn();
       render(<Timeline model={model} onSetEnd={onSetEnd} onSetStart={onSetStart} />);
-      const end = screen.getByRole('button', { name: /^END 4:12/ });
+      const end = screen.getByRole('slider', { name: 'End time' });
       fireEvent.pointerDown(end, { clientX: 640, pointerId: 1 });
       fireEvent.pointerUp(end, { clientX: 640, pointerId: 1 });
       expect(onSetEnd).not.toHaveBeenCalled();
@@ -82,13 +89,14 @@ describe('Timeline', () => {
       const onSetEnd = vi.fn();
       const onSetStart = vi.fn();
       render(<Timeline model={model} onSetEnd={onSetEnd} onSetStart={onSetStart} />);
-      const start = screen.getByRole('button', { name: /^START 2:05/ });
+      const start = screen.getByRole('slider', { name: 'Start time' });
       fireEvent.pointerDown(start, { clientX: 100, pointerId: 1 });
       fireEvent.pointerMove(start, { clientX: 1000, pointerId: 1 });
-      expect(screen.getByRole('button', { name: /^START …/ })).toBeInTheDocument();
+      // The label follows the handle with the minute a release there saves.
+      expect(start).toHaveTextContent('START 4:11');
       fireEvent.pointerUp(start, { clientX: 1000, pointerId: 1 });
       expect(onSetStart).toHaveBeenCalledWith(local(16, 11));
-      const end = screen.getByRole('button', { name: /^END 4:12/ });
+      const end = screen.getByRole('slider', { name: 'End time' });
       fireEvent.pointerDown(end, { clientX: 600, pointerId: 1 });
       fireEvent.pointerMove(end, { clientX: 1000, pointerId: 1 });
       fireEvent.pointerUp(end, { clientX: 1000, pointerId: 1 });
@@ -99,7 +107,7 @@ describe('Timeline', () => {
       rulerOf();
       const onSetEnd = vi.fn();
       render(<Timeline model={model} onSetEnd={onSetEnd} onSetStart={() => {}} />);
-      const end = screen.getByRole('button', { name: /^END 4:12/ });
+      const end = screen.getByRole('slider', { name: 'End time' });
       fireEvent.pointerDown(end, { clientX: 600, pointerId: 1 });
       fireEvent.pointerMove(end, { clientX: 0, pointerId: 1 });
       fireEvent.pointerUp(end, { clientX: 0, pointerId: 1 });
@@ -119,13 +127,14 @@ describe('Timeline', () => {
       rulerOf();
       const onSetStart = vi.fn();
       render(<Timeline model={model} onSetEnd={() => {}} onSetStart={onSetStart} />);
-      const ghost = screen.getByRole('button', { name: 'Place the start, drag to set' });
+      const ghost = screen.getByRole('slider', { name: 'Place the start, drag to set' });
       fireEvent.pointerDown(ghost, { clientX: 500, pointerId: 1 });
       fireEvent.pointerMove(ghost, { clientX: 300, pointerId: 1 });
-      expect(screen.getByText('START …')).toBeInTheDocument();
+      const shown = ghost.textContent;
       fireEvent.pointerUp(ghost, { clientX: 300, pointerId: 1 });
       expect(onSetStart).toHaveBeenCalledTimes(1);
       const placed = onSetStart.mock.calls[0]?.[0] as number;
+      expect(shown).toBe(caretLabel('start', placed, TZ));
       expect(placed).toBeLessThan(local(16, 12));
       expect(placed % 60_000).toBe(0);
     });
@@ -134,7 +143,7 @@ describe('Timeline', () => {
       rulerOf();
       const onSetStart = vi.fn();
       render(<Timeline model={model} onSetEnd={() => {}} onSetStart={onSetStart} />);
-      const ghost = screen.getByRole('button', { name: 'Place the start, drag to set' });
+      const ghost = screen.getByRole('slider', { name: 'Place the start, drag to set' });
       fireEvent.pointerDown(ghost, { clientX: 500, pointerId: 1 });
       fireEvent.pointerUp(ghost, { clientX: 500, pointerId: 1 });
       expect(onSetStart).not.toHaveBeenCalled();
@@ -152,12 +161,12 @@ describe('Timeline', () => {
         <Timeline model={withStart} onSetEnd={() => {}} onSetStart={() => {}} />,
       );
       const name = 'Place the start, drag to set';
-      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+      expect(screen.queryByRole('slider', { name })).not.toBeInTheDocument();
       rerender(<Timeline model={model} onSetEnd={() => {}} />);
-      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+      expect(screen.queryByRole('slider', { name })).not.toBeInTheDocument();
       const noEnd = timelineModel({ timeZone: TZ, nowMs: local(18, 40), sun });
       rerender(<Timeline model={noEnd} onSetEnd={() => {}} onSetStart={() => {}} />);
-      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+      expect(screen.queryByRole('slider', { name })).not.toBeInTheDocument();
     });
   });
 
@@ -193,5 +202,198 @@ describe('Timeline', () => {
     });
     render(<Timeline model={model} />);
     expect(screen.getByText('1 · MASCOMA')).toBeInTheDocument();
+  });
+
+  describe('the label follows the handle', () => {
+    afterEach(() => vi.restoreAllMocks());
+    const rulerOf = () =>
+      vi
+        .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+        .mockReturnValue({ left: 0, width: 1000 } as DOMRect);
+
+    /** The sheet's loop: a commit rebuilds the model, as `InstrumentPane` does through the store. */
+    function Live({
+      zone,
+      endMs,
+      startMs,
+      nowMs,
+    }: {
+      zone: string;
+      endMs: number;
+      startMs?: number;
+      nowMs: number;
+    }) {
+      const [end, setEnd] = useState(endMs);
+      const [start, setStart] = useState(startMs);
+      const model = timelineModel({
+        timeZone: zone,
+        nowMs,
+        endMs: end,
+        ...(start !== undefined ? { startMs: start } : {}),
+        sun: null,
+      });
+      return <Timeline model={model} onSetEnd={setEnd} onSetStart={setStart} />;
+    }
+
+    it('a pointer drag shows each minute as it passes, the one its release saves', () => {
+      rulerOf();
+      render(<Live zone={TZ} endMs={local(16, 12)} startMs={local(14, 5)} nowMs={local(18, 40)} />);
+      const end = screen.getByRole('slider', { name: 'End time' });
+      fireEvent.pointerDown(end, { clientX: 600, pointerId: 1 });
+      for (const x of [610, 655, 702, 731]) {
+        fireEvent.pointerMove(end, { clientX: x, pointerId: 1 });
+        const during = end.textContent;
+        const valuetext = end.getAttribute('aria-valuetext');
+        expect(during).toMatch(/^END \d{1,2}:\d{2}$/);
+        expect(valuetext).toContain(during?.slice(4) ?? '');
+      }
+      const during = end.textContent;
+      fireEvent.pointerUp(end, { clientX: 731, pointerId: 1 });
+      expect(screen.getByRole('slider', { name: 'End time' }).textContent).toBe(during);
+    });
+
+    it('arrows step a minute, pages a quarter hour, Home and End go to the bounds — the label each step', () => {
+      render(<Live zone={TZ} endMs={local(16, 12)} startMs={local(14, 5)} nowMs={local(18, 40)} />);
+      const end = () => screen.getByRole('slider', { name: 'End time' });
+      fireEvent.keyDown(end(), { key: 'ArrowRight' });
+      expect(end()).toHaveTextContent('END 4:13');
+      expect(end()).toHaveAttribute('aria-valuetext', 'Saturday 4:13 PM');
+      fireEvent.keyDown(end(), { key: 'ArrowDown' });
+      fireEvent.keyDown(end(), { key: 'ArrowLeft' });
+      expect(end()).toHaveTextContent('END 4:11');
+      fireEvent.keyDown(end(), { key: 'PageUp' });
+      expect(end()).toHaveTextContent('END 4:26');
+      fireEvent.keyDown(end(), { key: 'PageDown' });
+      fireEvent.keyDown(end(), { key: 'ArrowUp' });
+      expect(end()).toHaveTextContent('END 4:12');
+      fireEvent.keyDown(end(), { key: 'End' });
+      expect(end()).toHaveTextContent('END 6:40');
+      fireEvent.keyDown(end(), { key: 'Home' });
+      expect(end()).toHaveTextContent('END 2:06');
+      fireEvent.keyDown(end(), { key: 'Tab' });
+      expect(end()).toHaveTextContent('END 2:06');
+      const start = screen.getByRole('slider', { name: 'Start time' });
+      fireEvent.keyDown(start, { key: 'ArrowRight' });
+      // A minute before the end at most: the step that would cross it stays put.
+      expect(screen.getByRole('slider', { name: 'Start time' })).toHaveTextContent('START 2:05');
+    });
+
+    it('the ghost start steps from where it waits, and a locked end takes no keys', () => {
+      const onSetStart = vi.fn();
+      const onSetEnd = vi.fn();
+      const model = timelineModel({
+        timeZone: TZ,
+        nowMs: local(18, 40),
+        endMs: local(16, 12),
+        sun,
+      });
+      const { rerender } = render(
+        <Timeline model={model} onSetEnd={onSetEnd} onSetStart={onSetStart} />,
+      );
+      fireEvent.keyDown(screen.getByRole('slider', { name: 'Place the start, drag to set' }), {
+        key: 'ArrowLeft',
+      });
+      expect(onSetStart).toHaveBeenCalledWith(local(15, 11));
+      rerender(<Timeline model={model} onSetEnd={onSetEnd} endLocked />);
+      const locked = screen.getByRole('button', { name: 'END 4:12' });
+      fireEvent.keyDown(locked, { key: 'ArrowLeft' });
+      expect(onSetEnd).not.toHaveBeenCalled();
+    });
+
+    it('the ghost start says it is not set, and a key that places it hands the focus to the caret', () => {
+      render(<Live zone={TZ} endMs={local(16, 12)} nowMs={local(18, 40)} />);
+      const ghost = screen.getByRole('slider', { name: 'Place the start, drag to set' });
+      expect(ghost).toHaveAttribute('aria-valuetext', 'Not set yet');
+      ghost.focus();
+      fireEvent.keyDown(ghost, { key: 'ArrowLeft' });
+      const start = screen.getByRole('slider', { name: 'Start time' });
+      expect(start).toHaveTextContent('START 3:11');
+      expect(start).toHaveFocus();
+      fireEvent.keyDown(start, { key: 'ArrowLeft' });
+      expect(screen.getByRole('slider', { name: 'Start time' })).toHaveTextContent('START 3:10');
+    });
+
+    it('a dimmed ruler takes no keys: it is inert while a sub-mode has the map', () => {
+      const model = timelineModel({
+        timeZone: TZ,
+        nowMs: local(18, 40),
+        endMs: local(16, 12),
+        sun,
+      });
+      const { container, rerender } = render(<Timeline model={model} onSetEnd={() => {}} dim />);
+      expect(container.querySelector('fieldset')).toHaveAttribute('inert');
+      rerender(<Timeline model={model} onSetEnd={() => {}} />);
+      expect(container.querySelector('fieldset')).not.toHaveAttribute('inert');
+    });
+
+    it('the label sits in a fixed box of tabular figures, so changing digits shift nothing', () => {
+      render(<Live zone={TZ} endMs={local(9, 59)} nowMs={local(18, 40)} />);
+      const label = screen.getByRole('slider', { name: 'End time' }).firstElementChild;
+      expect(label?.className).toMatch(/tabular-nums/);
+      expect(label?.className).toMatch(/min-w-\[11ch\]/);
+    });
+
+    /** Days where the clock does something: an ordinary one, a DST change, and a ruler over midnight. */
+    const DAYS = [
+      {
+        zone: 'America/New_York',
+        end: Date.UTC(2026, 0, 10, 21, 12),
+        now: Date.UTC(2026, 0, 10, 23, 40),
+      },
+      // Spring forward: 2 AM local does not exist on 8 March 2026.
+      {
+        zone: 'America/New_York',
+        end: Date.UTC(2026, 2, 8, 8, 10),
+        now: Date.UTC(2026, 2, 8, 9, 30),
+      },
+      // Near midnight at both ends of the date line.
+      {
+        zone: 'Etc/GMT-14',
+        end: Date.UTC(2026, 0, 10, 10, 20),
+        now: Date.UTC(2026, 0, 10, 10, 50),
+      },
+      {
+        zone: 'Etc/GMT+11',
+        end: Date.UTC(2026, 0, 11, 10, 40),
+        now: Date.UTC(2026, 0, 11, 11, 30),
+      },
+    ];
+
+    property(
+      'the label during a drag is the label after release at the same position, in any zone',
+      () =>
+        fc.asyncProperty(
+          fc.constantFrom(...DAYS),
+          fc.constantFrom<'end' | 'start'>('end', 'start'),
+          fc.integer({ min: 0, max: 1000 }),
+          async (day, kind, x) => {
+            cleanup();
+            vi.restoreAllMocks();
+            rulerOf();
+            render(
+              <Live
+                zone={day.zone}
+                endMs={day.end}
+                startMs={day.end - 3_600_000}
+                nowMs={day.now}
+              />,
+            );
+            const caret = screen.getByRole('slider', {
+              name: kind === 'end' ? 'End time' : 'Start time',
+            });
+            fireEvent.pointerDown(caret, { clientX: 500, pointerId: 1 });
+            fireEvent.pointerMove(caret, { clientX: x, pointerId: 1 });
+            const during = caret.textContent;
+            const valuetext = caret.getAttribute('aria-valuetext');
+            fireEvent.pointerUp(caret, { clientX: x, pointerId: 1 });
+            const after = screen.getByRole('slider', {
+              name: kind === 'end' ? 'End time' : 'Start time',
+            });
+            expect(after.textContent).toBe(during);
+            expect(after.getAttribute('aria-valuetext')).toBe(valuetext);
+          },
+        ),
+      { numRuns: 40, timeoutMs: 20_000 },
+    );
   });
 });

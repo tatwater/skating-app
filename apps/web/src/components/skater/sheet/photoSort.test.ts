@@ -1,6 +1,7 @@
 import {
   addPostPhotos,
   assignCandidates,
+  type DraftPhoto,
   openPostSheet,
   type PostSheet,
   reportEndMs,
@@ -11,7 +12,11 @@ import { describe, expect, it } from 'vitest';
 import {
   addPhotosByLakeAndDay,
   applyPhotoTabs,
+  applySortedPool,
   dayKey,
+  openSortMemory,
+  photosToSort,
+  rememberReportPhotos,
   type SortablePhoto,
   type SortLake,
   sortNote,
@@ -237,6 +242,78 @@ describe('applyPhotoTabs', () => {
     });
     expect(out.post.reports).toHaveLength(2);
     expect(dayKey(reportEndMs(out.post.reports[1] as never) as number, NH)).toBe('2027-01-14');
+  });
+});
+
+describe('the pool sort’s memory', () => {
+  let n = 0;
+  const mint = () => `mem-${++n}`;
+  const photo = (id: string, extra: Partial<DraftPhoto> = {}): DraftPhoto => ({
+    id,
+    fullUri: `${id}:full`,
+    thumbUri: `${id}:thumb`,
+    takenAtMs: SAT_10,
+    placeOnMap: false,
+    ...extra,
+  });
+  const opts = (post: PostSheet) => ({
+    activeId: post.reports[0]?.id as string,
+    timeZone: NH,
+    now: SAT_10,
+    mint,
+    outlines: {},
+  });
+
+  it('never sorts what the sheet opened with, nor a photo it has shown on a Report', () => {
+    const open = openPostSheet('page', {}, SAT_10, mint);
+    const first = open.reports[0] as PostSheet['reports'][number];
+    const post: PostSheet = {
+      ...open,
+      reports: [{ ...first, photos: [photo('on')] }],
+      photos: [photo('restored'), photo('bound', { attachTo: { kind: 'put_in', id: 'pi1' } })],
+    };
+    const memory = openSortMemory(post);
+    expect([...memory].sort()).toEqual(['bound', 'on', 'restored']);
+    // The Report's photo moves to the pool (its tab removed), and a new one arrives: only it is new.
+    const later: PostSheet = {
+      ...post,
+      reports: [{ ...first, photos: [] }],
+      photos: [...(post.photos ?? []), photo('on'), photo('new')],
+    };
+    expect(photosToSort(memory, later).map((p) => p.id)).toEqual(['new']);
+    expect(photosToSort(memory, later)).toEqual([]);
+  });
+
+  it('notes a photo on a Report as it is seen, so its removal later is not an arrival', () => {
+    const open = openPostSheet('page', {}, SAT_10, mint);
+    const first = open.reports[0] as PostSheet['reports'][number];
+    const memory = openSortMemory(open);
+    rememberReportPhotos(memory, { ...open, reports: [{ ...first, photos: [photo('p')] }] });
+    expect(photosToSort(memory, { ...open, photos: [photo('p')] })).toEqual([]);
+  });
+
+  it('sorts nothing on an edit', () => {
+    const open = openPostSheet('page', {}, SAT_10, mint);
+    const edit: PostSheet = {
+      ...open,
+      mode: { kind: 'edit', reportId: open.reports[0]?.id as string },
+      photos: [photo('e')],
+    };
+    expect(photosToSort(new Set(), edit)).toEqual([]);
+  });
+
+  it('lays only what is still in the pool, and nothing when the author placed it all meanwhile', () => {
+    const open = openPostSheet('page', {}, SAT_10, mint);
+    const post: PostSheet = { ...open, photos: [photo('m1'), photo('m2')] };
+    const tabs = sortPhotosIntoTabs(
+      (post.photos ?? []).map((p) => ({ ...p, coord: at(MASCOMA) })),
+      lakeOf,
+      NH,
+    );
+    // `m2` left the pool while the lookup was out.
+    const out = applySortedPool({ ...post, photos: [photo('m1')] }, tabs, opts(post));
+    expect(out?.post.reports.map((r) => r.photos.map((p) => p.id))).toEqual([['m1']]);
+    expect(applySortedPool({ ...post, photos: [] }, tabs, opts(post))).toBeNull();
   });
 });
 

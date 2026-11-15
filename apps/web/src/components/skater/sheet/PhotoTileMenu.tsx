@@ -24,10 +24,11 @@ import {
 } from '@/components/kit/dropdown-menu';
 import { useAnalytics } from '@/lib/analytics';
 import { useBodyOutlines } from '@/lib/bodyOutlines';
-import { releaseSheetPhoto, sheetPhotoBlob } from '@/lib/sheetPhotos';
+import { sheetPhotoBlob } from '@/lib/sheetPhotos';
 import { updateSheet, useSheet } from '@/lib/sheetStore';
 import { cn } from '@/lib/utils';
 import { useConsoleMode } from './ConsoleMode';
+import { releaseIfDropped } from './photoRelease';
 import { StackedHazard } from './StackedHazard';
 import { type PhotoTileMenuSlotProps, useSheetContainer } from './sheetSlots';
 
@@ -75,7 +76,7 @@ export function PhotoTileMenu({ photo, reportId, trigger }: PhotoTileMenuSlotPro
   };
   const leaveOut = () => {
     updateSheet((p) => dropPhoto(p, photo.id));
-    releaseSheetPhoto(photo.id);
+    releaseIfDropped(photo.id);
   };
   const asHazard = () => {
     if (lake === undefined || reportId === null) return;
