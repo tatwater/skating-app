@@ -3063,6 +3063,13 @@ draws 34; the role menu's item takes two lines.
 - The kit promotions (`SearchLane`, `LeverRow`) await a kit pass.
 - One `useClockFor` and one `ID_SHAPE` across Bodies and People — each duplicated in the Bodies
   directory, which the open Body console PRs are changing.
+- **One rule for a list that pages as it scrolls** (`lib/loadAhead`): it asks for its next page
+  only while it is in sight and measured — never from a zero-height viewport (a hidden pane, a
+  section not shown, a list not yet laid out) or a background tab, which would read as "near the
+  end" for every page — and asks again when it comes into sight. People's list reads it (the only
+  People list that pages on scroll: History is one read, Decisions pages on a press). The Bodies
+  library on main has the same trigger without the rule; it hides no list today, so it pages only
+  in a background tab, and it adopts the rule with the narrow-screen one.
 - **The console's one narrow-screen rule** (`shell/columnsFit`): below the width where a mode's
   columns fit side by side (their size tokens summed), the open record takes the page with a way
   back, and with none open the list does; nothing scrolls sideways. People has it; the Bodies

@@ -20,3 +20,34 @@ export function stubLayout(): void {
     });
   }
 }
+
+/**
+ * Test support: a list viewport as tall as `height` — jsdom lays nothing out, so every scroller
+ * measures zero, which the load-ahead rule reads as out of sight. `show(h)` changes the height and
+ * tells every observer, as a browser does when a hidden pane is shown. Call in `beforeEach`; it
+ * restores itself through `vi.restoreAllMocks`.
+ */
+export function measureViewports(
+  spyOn: typeof import('vitest').vi.spyOn,
+  height = 600,
+): { show: (h: number) => void } {
+  let current = height;
+  spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(() => current);
+  const observers = new Set<() => void>();
+  spyOn(globalThis, 'ResizeObserver').mockImplementation(function (
+    this: unknown,
+    callback: ResizeObserverCallback,
+  ) {
+    return {
+      observe: () => observers.add(() => callback([], {} as ResizeObserver)),
+      unobserve: () => {},
+      disconnect: () => {},
+    } as unknown as ResizeObserver;
+  } as never);
+  return {
+    show: (h: number) => {
+      current = h;
+      for (const notify of [...observers]) notify();
+    },
+  };
+}

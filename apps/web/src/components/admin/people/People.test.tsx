@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * The two People pages joined as the app mounts them: the list's layout with the person's page in
@@ -73,14 +73,18 @@ import { PeopleListRoute } from './list/PeopleListRoute';
 import { KATE, LANES, page, ROB as ROB_ROW, SARAH as SARAH_ROW } from './list/peopleFixtures';
 import { resetShownMemory } from './list/peopleReads';
 import { peopleListHref, queryOf } from './list/peopleSearch';
-import { stubLayout } from './list/testLayout';
+import { measureViewports, stubLayout } from './list/testLayout';
 import { PersonPane } from './person/PersonPane';
 import { ROB, ROB_HISTORY, ROB_TREND } from './person/personFixtures';
 
 const PAGE_READ = getFunctionName(api.people.listPage);
 
+afterEach(() => vi.restoreAllMocks());
+
 beforeAll(stubLayout);
 beforeEach(() => {
+  // A measured viewport: jsdom lays nothing out, and an unmeasured list asks for no page.
+  measureViewports(vi.spyOn);
   resetConsoleReads();
   resetScrollMemory();
   resetShownMemory();

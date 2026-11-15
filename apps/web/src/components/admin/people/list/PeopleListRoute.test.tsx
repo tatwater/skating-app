@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * The People list as the app mounts it: its place from the URL, the People server's reads (mocked
@@ -59,7 +59,7 @@ import { resetScrollMemory } from './PeopleList';
 import { PeopleListRoute } from './PeopleListRoute';
 import { KATE, LANES, LUC, MATT, page, ROB, SARAH, TEAGAN } from './peopleFixtures';
 import { resetShownMemory, startingPageSize } from './peopleReads';
-import { stubLayout } from './testLayout';
+import { measureViewports, stubLayout } from './testLayout';
 
 const LANES_READ = getFunctionName(api.people.lanes);
 const PAGE_READ = getFunctionName(api.people.listPage);
@@ -71,8 +71,12 @@ type PageArgs = {
   now: number;
 };
 
+let viewports: ReturnType<typeof measureViewports>;
+afterEach(() => vi.restoreAllMocks());
+
 beforeAll(stubLayout);
 beforeEach(() => {
+  viewports = measureViewports(vi.spyOn);
   resetScrollMemory();
   resetShownMemory();
   resetConsoleReads();
@@ -272,6 +276,32 @@ describe('a narrow screen', () => {
     } finally {
       fit.mockRestore();
     }
+  });
+});
+
+describe('a list out of sight', () => {
+  it('reads no page past the first while hidden, behind a lane that goes on, and one more once shown', () => {
+    viewports.show(0);
+    mocks.search = { lane: 'flagged' };
+    mocks.results.set(PAGE_READ, (args: PageArgs) =>
+      args.cursor === null
+        ? {
+            ...page([KATE], { isDone: false }),
+            continueCursor: 'c1',
+            reasons: ['flags_capped'],
+            partial: true,
+          }
+        : page([LUC]),
+    );
+    mount();
+    expect(pageCalls().filter((a) => a.cursor !== null)).toHaveLength(0);
+    act(() => viewports.show(600));
+    const next = new Set(
+      pageCalls()
+        .filter((a) => a.cursor !== null)
+        .map((a) => a.cursor),
+    );
+    expect([...next]).toEqual(['c1']);
   });
 });
 

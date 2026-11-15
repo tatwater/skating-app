@@ -1,11 +1,11 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PeopleList, type PeopleListProps, resetScrollMemory } from './PeopleList';
 import { KATE, LUC, manyPeople, NOW, ROB } from './peopleFixtures';
 import { rowView } from './peopleModel';
-import { stubLayout } from './testLayout';
+import { measureViewports, stubLayout } from './testLayout';
 
 /**
  * The list's own behavior, on props: the keys (one tab stop, ↑↓, type-ahead, ⏎ and Space, `/`, G
@@ -17,6 +17,9 @@ const FACTS = { flagsPending: false, flagsFloor: false, appealsFloor: false };
 const view = (rows = [ROB, KATE, LUC]) => rows.map((r) => rowView(r, 'everyone', FACTS, NOW));
 
 const scrolled: Element[] = [];
+let viewports: ReturnType<typeof measureViewports>;
+afterEach(() => vi.restoreAllMocks());
+
 beforeAll(() => {
   Object.defineProperty(Element.prototype, 'scrollIntoView', {
     configurable: true,
@@ -27,6 +30,7 @@ beforeAll(() => {
   stubLayout();
 });
 beforeEach(() => {
+  viewports = measureViewports(vi.spyOn);
   resetScrollMemory();
   scrolled.length = 0;
 });
@@ -242,13 +246,35 @@ describe('how it ends', () => {
 });
 
 describe('paging and scrolling', () => {
-  it('asks for no page while it is out of sight, and picks up again once shown', () => {
+  it('asks for no page while out of sight (a zero-height viewport), and exactly one once shown', () => {
+    viewports.show(0);
+    const onLoadMore = vi.fn();
+    draw({ status: 'more', onLoadMore });
+    fireEvent.scroll(screen.getByRole('listbox').parentElement as HTMLElement);
+    expect(onLoadMore).not.toHaveBeenCalled();
+    act(() => viewports.show(600));
+    expect(onLoadMore).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks for no page while paused (a narrow screen gives the page to the person)', () => {
     const onLoadMore = vi.fn();
     const { rerender, props } = draw({ status: 'more', onLoadMore, paused: true });
     fireEvent.scroll(screen.getByRole('listbox').parentElement as HTMLElement);
     expect(onLoadMore).not.toHaveBeenCalled();
     rerender(<PeopleList {...props} paused={false} />);
-    expect(onLoadMore).toHaveBeenCalled();
+    expect(onLoadMore).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks for no page while the browser tab is in the background, and one when it comes back', () => {
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    const onLoadMore = vi.fn();
+    draw({ status: 'more', onLoadMore });
+    expect(onLoadMore).not.toHaveBeenCalled();
+    visibility.mockReturnValue('visible');
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(onLoadMore).toHaveBeenCalledTimes(1);
   });
 
   it('asks for the next page at once when what came back doesn’t fill the list', () => {

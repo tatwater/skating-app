@@ -16,6 +16,7 @@ import { PersonLockup } from '@/components/kit/person-lockup';
 import { RetryNote } from '@/components/kit/retry-note';
 import { SkeletonText } from '@/components/kit/skeleton';
 import { KEYS_PASS_THROUGH } from '@/lib/keys';
+import { useLoadAhead } from '@/lib/loadAhead';
 import { cn } from '@/lib/utils';
 
 import { withPinned } from '../../bodies/virtualRows';
@@ -46,8 +47,6 @@ import { allShown, LIST_FAILED, LOADING_MORE, NOT_RECORDED, REST_FAILED } from '
 
 /** Rows above this virtualize. */
 const VIRTUALIZE_ABOVE = 100;
-/** Ask for the next page this far (px) from the end. */
-const LOAD_AHEAD_PX = 640;
 const TYPE_AHEAD_MS = 500;
 
 /** Where each list was scrolled to, this tab. */
@@ -175,14 +174,15 @@ export function PeopleList({
     bringIntoView(cursor);
   });
 
-  const maybeLoadMore = () => {
-    const el = scroller.current;
-    if (el === null || paused || status !== 'more' || onLoadMore === undefined) return;
-    if (el.scrollHeight - el.scrollTop - el.clientHeight < LOAD_AHEAD_PX) onLoadMore();
-  };
-  // A page shorter than the viewport (or cut short by the server) asks for the next at once.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: re-check whenever a page lands.
-  useEffect(maybeLoadMore, [rows.length, status, paused]);
+  // The next page, only while the list is in sight and measured (`useLoadAhead`): a page shorter
+  // than the viewport (or cut short by the server) asks for the next at once; a list out of sight
+  // asks for nothing, and picks up when it is shown.
+  const maybeLoadMore = useLoadAhead(
+    scroller,
+    !paused && status === 'more',
+    onLoadMore,
+    rows.length,
+  );
 
   const moveTo = (index: number) => {
     const row = rows[index];

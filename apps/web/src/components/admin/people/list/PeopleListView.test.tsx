@@ -32,7 +32,7 @@ import {
 } from './peopleFixtures';
 import { lanesFor } from './peopleLanes';
 import type { LanesRead } from './peopleModel';
-import { stubLayout } from './testLayout';
+import { measureViewports, stubLayout } from './testLayout';
 
 /**
  * The page on props: the lanes and their three answers (not ready, a floor, a number), the list's
@@ -40,8 +40,12 @@ import { stubLayout } from './testLayout';
  * in), and the keys that move between them.
  */
 
+afterEach(() => vi.restoreAllMocks());
+
 beforeAll(stubLayout);
 beforeEach(() => {
+  // A measured viewport: jsdom lays nothing out, and an unmeasured list asks for no page.
+  measureViewports(vi.spyOn);
   resetScrollMemory();
   columns.fit = true;
 });
