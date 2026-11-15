@@ -302,6 +302,8 @@ export const MODERATION_ACTIONS = [
   'set_class',
   // B01-3d: a moderator's choice of the source a body's mean or max depth reads from.
   'choose_depth_source',
+  // B01-3d: a known feature redrawn (its geometry, box and bay; never the body's outline).
+  'update_body_feature_shape',
   // Operator-entered reference links — a lake association's URL (A06c §2.7). The only *stored* link in
   // the phase; every other one in the drawer is derived from the row at render time (P2/D71), so
   // this is the only link surface with a writer to audit at all.

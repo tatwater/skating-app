@@ -365,3 +365,98 @@ describe('chooseDepthSource and the depth candidates', () => {
     await expect(choose('mean', 'hydrolakes_modeled')).rejects.toThrow(/merged into another/);
   });
 });
+
+describe('bodyFeatures.updateShape', () => {
+  const ridge = {
+    type: 'LineString' as const,
+    coordinates: [
+      [-72.005, 44],
+      [-71.995, 44],
+    ],
+  };
+  async function seedFeature(t: T) {
+    const admin = await person(t, 'admin' as never);
+    const id = await imported(t, 'way/1');
+    const featureId = await admin.as.mutation(api.bodyFeatures.create, {
+      waterBodyId: id,
+      type: 'recurring_pressure_ridge',
+      geometryKind: 'point_radius',
+      geometry: { type: 'Point', coordinates: [-72, 44] },
+      radiusMeters: 30,
+      reason: 'seed',
+    });
+    return { admin, id, featureId };
+  }
+
+  test('redrawn: geometry, box and bay move; the body’s geometry facts are untouched; undo and its undo', async () => {
+    const t = harness();
+    const { admin, id, featureId } = await seedFeature(t);
+    const facts = () =>
+      t.run((ctx) =>
+        ctx.db
+          .query('bodyGeoFacts')
+          .withIndex('by_body', (q) => q.eq('waterBodyId', id))
+          .first(),
+      );
+    const before = await facts();
+    await admin.as.mutation(api.bodyFeatures.updateShape, {
+      bodyFeatureId: featureId,
+      geometryKind: 'line',
+      geometry: ridge,
+      bufferMeters: 15,
+      reason: 'the ridge runs east–west',
+    });
+    const redrawn = await t.run((ctx) => ctx.db.get(featureId));
+    expect(redrawn).toMatchObject({ geometryKind: 'line', bufferMeters: 15, geometry: ridge });
+    expect(redrawn?.radiusMeters).toBeUndefined();
+    expect(redrawn?.bbox.minLng).toBeLessThan(-72.004);
+    expect(await facts()).toEqual(before);
+    await admin.as.mutation(api.undo.run, {
+      actionId: (await lastAction(t, 'update_body_feature_shape'))._id,
+    });
+    expect(await t.run((ctx) => ctx.db.get(featureId))).toMatchObject({
+      geometryKind: 'point_radius',
+      radiusMeters: 30,
+    });
+    await admin.as.mutation(api.undo.run, {
+      actionId: (await lastAction(t, 'update_body_feature_shape'))._id,
+    });
+    expect(await t.run((ctx) => ctx.db.get(featureId))).toMatchObject({ geometryKind: 'line' });
+  });
+
+  test('refused: too many points, off its lake, no reason, a member, a demoted feature, a merged-away lake', async () => {
+    const t = harness();
+    const { admin, id, featureId } = await seedFeature(t);
+    const member = await person(t, 'member');
+    const redraw = (geometry: unknown, as = admin.as, reason = 'r') =>
+      as.mutation(api.bodyFeatures.updateShape, {
+        bodyFeatureId: featureId,
+        geometryKind: 'line',
+        geometry: geometry as never,
+        bufferMeters: 10,
+        reason,
+      });
+    const long = {
+      type: 'LineString',
+      coordinates: Array.from({ length: 2_001 }, (_, i) => [-72 + i * 1e-6, 44]),
+    };
+    await expect(redraw(long)).rejects.toThrow(/at most 2000/);
+    await expect(
+      redraw({
+        type: 'LineString',
+        coordinates: [
+          [-60, 40],
+          [-60.01, 40],
+        ],
+      }),
+    ).rejects.toThrow(/on its lake/);
+    await expect(redraw(ridge, admin.as, '  ')).rejects.toThrow(/reason/);
+    await expect(redraw(ridge, member.as)).rejects.toThrow();
+    const survivor = await imported(t, 'way/2');
+    await t.run((ctx) => ctx.db.patch(id, { dedupStatus: 'merged', mergedIntoId: survivor }));
+    await expect(redraw(ridge)).rejects.toThrow(/merged into another/);
+    await t.run((ctx) => ctx.db.patch(id, { dedupStatus: 'clean', mergedIntoId: undefined }));
+    await admin.as.mutation(api.bodyFeatures.demote, { bodyFeatureId: featureId, reason: 'gone' });
+    await expect(redraw(ridge)).rejects.toThrow(/demoted/);
+  });
+});

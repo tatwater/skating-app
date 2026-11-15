@@ -268,6 +268,7 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
     takesAway: never,
     capability: 'corpus.preIce',
   },
+  update_body_feature_shape: { undo: setPrev, takesAway: never, capability: 'corpus.preIce' },
   demote_body_feature: {
     undo: later('§3 Body console', 'Reactivate the feature and re-supersede its source hazard.'),
     takesAway: always,

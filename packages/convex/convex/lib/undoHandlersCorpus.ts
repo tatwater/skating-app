@@ -15,11 +15,11 @@ import type { Doc, Id } from '../_generated/dataModel';
 import { setOfficialImpl } from '../accessAlerts';
 import { setPutInAccessImpl } from '../accessPoints';
 import { type ElevatedRole, grantRoleImpl, revokeRoleImpl } from '../admin';
-import { demoteImpl } from '../bodyFeatures';
+import { demoteImpl, type FeatureShape, updateShapeImpl } from '../bodyFeatures';
 import { unmergeImpl } from '../hazards';
 import { type PostedAccessTarget, setPostedAccessImpl } from '../postedAccess';
 import { suppressImpl, unsuppressImpl } from '../recurrence';
-import type { ModerationAction, ModerationTargetType } from './audit';
+import { type ModerationAction, type ModerationTargetType, readSnapshot } from './audit';
 import { grantLedgerEditorImpl, revokeLedgerEditorImpl } from './ledgerEditors';
 import { UNDO_POLICY } from './undoPolicy';
 import { meta, PREDATES, type TargetUndo, type UndoCall, type UndoHandler } from './undoTypes';
@@ -228,6 +228,21 @@ const undoPromotion: UndoHandler = {
     demoteImpl(ctx, actor, { bodyFeatureId: row.targetId as Id<'bodyFeatures'>, reason }),
 };
 
+/** update_body_feature_shape → the shape it replaced (the row's snapshot), through the same write. */
+const undoFeatureShape: UndoHandler = {
+  blocked: (row) => (meta(row).prev?.snapshot === true ? null : PREDATES),
+  undoTakesAway: () => UNDO_POLICY.update_body_feature_shape.takesAway(undefined),
+  run: async ({ ctx, actor, row, reason }) => {
+    const prev = await readSnapshot<FeatureShape>(ctx, row._id);
+    if (prev === null) throw new ConvexError(PREDATES);
+    await updateShapeImpl(ctx, actor, {
+      bodyFeatureId: row.targetId as Id<'bodyFeatures'>,
+      shape: prev,
+      reason,
+    });
+  },
+};
+
 interface SuppressionPrev {
   suppressedAt: number | null;
 }
@@ -290,6 +305,7 @@ export const CORPUS_UNDO_HANDLERS: Partial<Record<ModerationAction, UndoHandler>
   set_approach_kind: undoApproachKind,
   set_posted_access: undoPostedAccess,
   promote_body_feature: undoPromotion,
+  update_body_feature_shape: undoFeatureShape,
   promote_recurrence: undoPromotion,
   suppress_recurrence: undoSuppress,
   unsuppress_recurrence: undoUnsuppress,
