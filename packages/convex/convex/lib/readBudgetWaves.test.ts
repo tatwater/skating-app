@@ -3,12 +3,12 @@
  * weight, up to a document's), a random budget and a random order in which the reads settle —
  * the budget never goes below zero, nothing is read that wasn't reserved, every item gets an answer
  * (its read rows or the overflow), and the answer is the same whatever order the reads settle in.
- * Pinned seeds, plus one random run. `measured`'s serial behaviour is `readBudget.test.ts`'s, unchanged.
+ * Pinned seeds, plus one random run. `measured`'s serial behavior is tested in `readBudget.test.ts`.
  */
 
 import fc from 'fast-check';
 import { describe, expect, test } from 'vitest';
-import { DOC_MAX, ReadBudget } from './readBudget';
+import { DOC_MAX, OverBudget, ReadBudget, type Share, TX_CALLS } from './readBudget';
 
 /** A row that weighs about `bytes` (a string field of that length). */
 const rowOf = (bytes: number) => ({ text: 'x'.repeat(Math.max(0, bytes - 64)) });
@@ -115,5 +115,52 @@ describe('ReadBudget.waves', () => {
       ),
     ).rejects.toThrow(/declared/);
     expect(budget.bytes).toBeGreaterThan(2 * DOC_MAX - 1024);
+  });
+
+  test('a read that throws is handed back whole', async () => {
+    const budget = new ReadBudget(2 * DOC_MAX);
+    await expect(
+      budget.waves(
+        [1],
+        () => ({ bytes: DOC_MAX, reads: 1 }),
+        (_n, share) =>
+          share.read('waterBody', async () => {
+            throw new Error('gone');
+          }),
+        () => null,
+      ),
+    ).rejects.toThrow('gone');
+    expect(budget.bytes).toBe(2 * DOC_MAX);
+  });
+
+  test('the calls an item didn’t make are handed back with its bytes', async () => {
+    const budget = new ReadBudget(4 * DOC_MAX);
+    // Declared two reads; made one (the other row already in hand).
+    await budget.waves(
+      [1],
+      () => ({ bytes: 2 * DOC_MAX, reads: 2 }),
+      (_n, share) => share.read('waterBody', () => settleAfter(0, rowOf(10))),
+      () => null,
+    );
+    expect(budget.affordsCalls(TX_CALLS - 1, TX_CALLS - 1)).toBe(true);
+    expect(budget.affordsCalls(TX_CALLS, 1)).toBe(false);
+  });
+
+  test('a share reads only while its item runs: a read after its answer is a plan error', async () => {
+    const budget = new ReadBudget(2 * DOC_MAX);
+    let kept: Share | undefined;
+    await budget.waves(
+      [1],
+      () => ({ bytes: DOC_MAX, reads: 1 }),
+      async (n, share) => {
+        kept = share;
+        return n;
+      },
+      () => 0,
+    );
+    await expect(
+      (kept as Share).read('waterBody', () => settleAfter(0, rowOf(10))),
+    ).rejects.toThrow(OverBudget);
+    expect(budget.bytes).toBe(2 * DOC_MAX);
   });
 });

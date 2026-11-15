@@ -12,12 +12,12 @@
 
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
-import { internal } from './_generated/api';
+import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import { historyPage } from './bodyConsole';
 import { writeAudit, writeSnapshot } from './lib/audit';
-import { undoState } from './lib/undo';
+import { UNDO_NEEDS_ROWS, type UndoState, undoStates } from './lib/undo';
 import { UNDO_CHECKED_ELSEWHERE } from './lib/undoReads';
 import { listActionsPage } from './moderation';
 import schema from './schema';
@@ -29,15 +29,23 @@ const NOW = Date.now();
 
 /**
  * A query's view of `ctx` whose database calls are counted: `calls`, and `rounds` — a call started
- * with none in flight begins a round. No `insert`, so the reads take their query paths.
+ * with none in flight begins a round. No `insert`, so the reads take their query paths. With
+ * `ticks`, the n-th call settles that many extra microtask turns late — a different order reads
+ * settle in, for a page that must not depend on it.
  */
-function counted(ctx: MutationCtx) {
+function counted(ctx: MutationCtx, ticks: readonly number[] = [0]) {
   const stats = { calls: 0, rounds: 0, inFlight: 0 };
+  const late = async <R>(p: Promise<R>, n: number): Promise<R> => {
+    const value = await p;
+    for (let i = 0; i < n; i++) await Promise.resolve();
+    return value;
+  };
   const track = <R>(p: Promise<R>): Promise<R> => {
     if (stats.inFlight === 0) stats.rounds++;
+    const n = ticks[stats.calls % ticks.length] ?? 0;
     stats.calls++;
     stats.inFlight++;
-    return p.finally(() => {
+    return late(p, n).finally(() => {
       stats.inFlight--;
     });
   };
@@ -291,24 +299,99 @@ describe('History’s rounds (B01-3h)', () => {
         });
       }
     });
-    const rows = await t.run(async (raw) => {
-      const { ctx } = counted(raw);
-      const viewer = (await raw.db.get(actorId)) as Doc<'profiles'>;
-      const actions = await raw.db.query('moderationActions').order('desc').take(10);
-      return Promise.all(actions.map((row) => undoState(ctx, viewer, row)));
-    });
+    // One page's reading (`undoStates`), as History and the feed take it — not ten readings racing on
+    // one budget — under two settling orders.
+    const read = (ticks: number[]) =>
+      t.run(async (raw) => {
+        const { ctx } = counted(raw, ticks);
+        const viewer = (await raw.db.get(actorId)) as Doc<'profiles'>;
+        const actions = await raw.db.query('moderationActions').order('desc').take(10);
+        return undoStates(ctx, viewer, actions);
+      });
+    const rows = await read([0]);
+    expect(await read([5, 0, 3, 6, 1, 4, 2])).toEqual(rows);
     const elsewhere = rows.filter(
       (u) => u.state === 'unavailable' && u.why === UNDO_CHECKED_ELSEWHERE,
     );
     const offered = rows.filter((u) => u.state === 'available');
-    expect(offered.length).toBeGreaterThan(0);
+    // More than one wave's four: what the first wave didn't weigh is handed back and spent again.
+    expect(offered.length).toBeGreaterThan(4);
     expect(elsewhere.length).toBeGreaterThan(0);
-    expect(offered.length + elsewhere.length).toBe(10);
+    // In page order: the checked rows first, then "check elsewhere" to the end.
+    expect(rows.slice(0, offered.length)).toEqual(offered);
+    expect(rows.slice(offered.length)).toEqual(elsewhere);
+  });
+
+  test('people with no People row yet are read in page order, whatever order reads settle in', async () => {
+    const t = harness();
+    const actorId = await admin(t);
+    const subject = await t.run(
+      async (ctx) => ((await ctx.db.get(actorId)) as Doc<'profiles'>).clerkUserId,
+    );
+    const people: Id<'profiles'>[] = [];
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 6; i++) {
+        const profile = (await ctx.db.get(actorId)) as Doc<'profiles'>;
+        const { _id, _creationTime, ...fields } = profile;
+        people.push(
+          await ctx.db.insert('profiles', {
+            ...fields,
+            clerkUserId: `rowless-${i}`,
+            displayName: `Rowless ${i}`,
+            username: `rowless-${i}`,
+            role: 'member',
+          }),
+        );
+      }
+    });
+    const as = t.withIdentity({ subject });
+    for (const userId of people) {
+      await as.mutation(api.moderation.setPostingPermission, {
+        userId,
+        permission: 'reports',
+        allowed: false,
+        reason: 'r',
+      });
+    }
+    // The writes made their rows; take them away again, as before the backfill.
+    await t.run(async (ctx) => {
+      for (const id of people) {
+        const row = await ctx.db
+          .query('peopleRows')
+          .withIndex('by_user', (q) => q.eq('userId', id))
+          .first();
+        if (row) await ctx.db.delete(row._id);
+      }
+    });
+    const read = (ticks: number[]) =>
+      t.run(async (raw) => {
+        const viewer = (await raw.db.get(actorId)) as Doc<'profiles'>;
+        const rows = await raw.db.query('moderationActions').order('desc').take(6);
+        const states = await undoStates(counted(raw, ticks).ctx, viewer, rows);
+        const feed = await listActionsPage(counted(raw, ticks).ctx, viewer, { limit: 6 });
+        return { states, feed: feed.map((r) => ({ label: r.targetLabel ?? null, undo: r.undo })) };
+      });
+    const calm = await read([0]);
+    expect(await read([6, 0, 3, 5, 1, 4, 2])).toEqual(calm);
+    expect(await read([0, 4, 0, 7, 2])).toEqual(calm);
+    // The request's 4 MiB reaches four profiles at their worst: the newest four rows, in page order;
+    // the feed names the same four (read once a request) and leaves the rest unnamed.
+    const unchecked = (u: UndoState) => u.state === 'unavailable' && u.why === UNDO_NEEDS_ROWS;
+    expect(calm.states.map(unchecked)).toEqual([false, false, false, false, true, true]);
+    expect(calm.feed.map((r) => unchecked(r.undo))).toEqual([
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+    ]);
+    expect(calm.feed.map((r) => r.label !== null)).toEqual([true, true, true, true, false, false]);
   });
 });
 
 describe('the audit feed’s rounds (the Overview’s recent actions, B01-3h)', () => {
-  test('a feed of 50 rows over 50 targets costs the same few rounds as one of 10', async () => {
+  test('a feed of 50 rows over 50 targets stays within the worst page’s bound', async () => {
     const feed = async (rows: number) => {
       const t = harness();
       const { actorId } = await busyBody(t, rows);
@@ -332,7 +415,9 @@ describe('the audit feed’s rounds (the Overview’s recent actions, B01-3h)', 
 /** The rounds a page of History costs when its rows share their targets (stated, B01-3h). */
 const PAGE_ROUNDS = 8;
 /**
- * The rounds the worst page costs: 45 distinct targets each reading a row of at most a document's
- * weight, four reservations at a time inside the page's 4 MiB — `PAGE_ROUNDS` plus one per wave.
+ * The rounds the worst page costs: 46 refusals (45 distinct landmarks and the body), each reading a
+ * row of at most a document's weight — `PAGE_ROUNDS` plus one per wave. The first wave reserves four
+ * worst cases inside the page's 4 MiB; every later one three, since what the earlier waves really
+ * read stays spent.
  */
-const WORST_PAGE_ROUNDS = PAGE_ROUNDS + Math.ceil(46 / 4);
+const WORST_PAGE_ROUNDS = PAGE_ROUNDS + 1 + Math.ceil((46 - 4) / 3);

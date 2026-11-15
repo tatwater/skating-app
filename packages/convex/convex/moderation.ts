@@ -1425,50 +1425,48 @@ export async function listActionsPage(
     limit?: number;
   },
 ): Promise<ActionView[]> {
-  {
-    const limit = Math.min(args.limit ?? QUEUE_LIMIT, QUEUE_LIMIT);
+  const limit = Math.min(args.limit ?? QUEUE_LIMIT, QUEUE_LIMIT);
 
-    const { targetType, targetId, actorId, action } = args;
-    // Normalized at the edge: a target is both halves or neither, and a verb filter is read in the
-    // index, which only a target's history has (`by_target_action`) — never filtered over a page
-    // already capped, which would hand back a short list as if it were whole.
-    if ((targetType === undefined) !== (targetId === undefined)) {
-      throw new ConvexError('A target needs both its type and its id');
-    }
-    if (action !== undefined && targetType === undefined) {
-      throw new ConvexError('Filtering by action needs a target');
-    }
-    let rows: Doc<'moderationActions'>[];
-    if (targetType !== undefined && targetId !== undefined) {
-      // The same read the Body console's history makes for a target (`lib/auditReads`): one rule.
-      rows = await auditRowsOn(
-        ctx,
-        { targetType, targetId, ...(action !== undefined ? { action } : {}) },
-        limit,
-      );
-    } else if (actorId !== undefined) {
-      rows = await ctx.db
-        .query('moderationActions')
-        .withIndex('by_actor', (q) => q.eq('actorId', actorId))
-        .order('desc')
-        .take(limit);
-    } else {
-      rows = await ctx.db.query('moderationActions').order('desc').take(limit);
-    }
-
-    // Who holds ledger editing is for holders only (D227), in History as on the People row.
-    const visible = withoutLedgerGrantsFor(viewer, rows);
-    // At most one label read per distinct target and one profile read per distinct actor, plus each
-    // row's undo state (a few indexed reads) — a full page of 100 stays well inside 4,096 calls.
-    // The labels and the page's undo states at once — the undo states in one reading, their refusal
-    // checks in page order (`undoStates`, B01-3h) — then every row's actor at once.
-    const [labels, undos] = await Promise.all([
-      auditTargetLabels(ctx, visible),
-      undoStates(ctx, viewer, visible),
-    ]);
-    const shared = { labels, actors: new Map() };
-    return Promise.all(visible.map((a, i) => toActionView(ctx, a, shared, undos[i] as UndoState)));
+  const { targetType, targetId, actorId, action } = args;
+  // Normalized at the edge: a target is both halves or neither, and a verb filter is read in the
+  // index, which only a target's history has (`by_target_action`) — never filtered over a page
+  // already capped, which would hand back a short list as if it were whole.
+  if ((targetType === undefined) !== (targetId === undefined)) {
+    throw new ConvexError('A target needs both its type and its id');
   }
+  if (action !== undefined && targetType === undefined) {
+    throw new ConvexError('Filtering by action needs a target');
+  }
+  let rows: Doc<'moderationActions'>[];
+  if (targetType !== undefined && targetId !== undefined) {
+    // The same read the Body console's history makes for a target (`lib/auditReads`): one rule.
+    rows = await auditRowsOn(
+      ctx,
+      { targetType, targetId, ...(action !== undefined ? { action } : {}) },
+      limit,
+    );
+  } else if (actorId !== undefined) {
+    rows = await ctx.db
+      .query('moderationActions')
+      .withIndex('by_actor', (q) => q.eq('actorId', actorId))
+      .order('desc')
+      .take(limit);
+  } else {
+    rows = await ctx.db.query('moderationActions').order('desc').take(limit);
+  }
+
+  // Who holds ledger editing is for holders only (D227), in History as on the People row.
+  const visible = withoutLedgerGrantsFor(viewer, rows);
+  // At most one label read per distinct target and one profile read per distinct actor, plus each
+  // row's undo state (a few indexed reads) — a full page of 100 stays well inside 4,096 calls.
+  // The labels and the page's undo states at once — the undo states in one reading, their refusal
+  // checks in page order (`undoStates`, B01-3h) — then every row's actor at once. Both charge the
+  // request's budget, so the labels' charges (a rowless person's profile) wait for the undo states:
+  // run together, which refusal checks fit and who is named would turn on settling order.
+  const undoing = undoStates(ctx, viewer, visible);
+  const [labels, undos] = await Promise.all([auditTargetLabels(ctx, visible, undoing), undoing]);
+  const shared = { labels, actors: new Map() };
+  return Promise.all(visible.map((a, i) => toActionView(ctx, a, shared, undos[i] as UndoState)));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

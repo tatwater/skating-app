@@ -309,81 +309,79 @@ export async function historyPage(
     limit?: number;
   },
 ) {
-  {
-    // Held to one row and the most; a missing or non-finite limit is the default.
-    const n = Number.isFinite(limit)
-      ? Math.min(HISTORY_MAX, Math.max(1, Math.floor(limit as number)))
-      : 50;
-    const body = await bodyOrThrow(ctx, waterBodyId);
-    const absorbed = await absorbedInto(ctx, body._id);
-    let capped = absorbed.truncated;
-    const links = new Map<string, { actionId: Id<'moderationActions'>; createdAt: number }>();
-    // Every body in the chain at once — one round, not one per body (B01-3h).
-    const reads = await Promise.all(
-      [body._id, ...absorbed.ids].map((id) =>
-        // The same range `moderation.listActions` reads for a body (`lib/auditReads`): one rule.
-        auditLinksOnBody(
-          ctx,
-          {
-            waterBodyId: id,
-            ...(action !== undefined ? { action } : {}),
-            ...(bodyOnly === true ? { bodyOnly } : {}),
-          },
-          n + 1,
-        ),
+  // Held to one row and the most; a missing or non-finite limit is the default.
+  const n = Number.isFinite(limit)
+    ? Math.min(HISTORY_MAX, Math.max(1, Math.floor(limit as number)))
+    : 50;
+  const body = await bodyOrThrow(ctx, waterBodyId);
+  const absorbed = await absorbedInto(ctx, body._id);
+  let capped = absorbed.truncated;
+  const links = new Map<string, { actionId: Id<'moderationActions'>; createdAt: number }>();
+  // Every body in the chain at once — one round, not one per body (B01-3h).
+  const reads = await Promise.all(
+    [body._id, ...absorbed.ids].map((id) =>
+      // The same range `moderation.listActions` reads for a body (`lib/auditReads`): one rule.
+      auditLinksOnBody(
+        ctx,
+        {
+          waterBodyId: id,
+          ...(action !== undefined ? { action } : {}),
+          ...(bodyOnly === true ? { bodyOnly } : {}),
+        },
+        n + 1,
       ),
-    );
-    for (const read of reads) {
-      if (read.length > n) capped = true;
-      for (const l of read) links.set(l.actionId, l);
-    }
-    const newest = [...links.values()].sort(
-      (a, b) => b.createdAt - a.createdAt || (a.actionId < b.actionId ? 1 : -1),
-    );
-    if (newest.length > n) capped = true;
-    // **The page's rows at once, never one after another** (B01-3h): every row's reads — its actor
-    // (once a page per person), its undo state's few indexed reads and any refusal check — run
-    // concurrently, so the page costs a few rounds whatever its length. The refusal checks share the
-    // request's budget by reserving before they read (`lib/undoReads`), so running them together
-    // keeps the accounting exact.
-    const people = new Map<string, Promise<PersonView>>();
-    const actorOf = (id: Id<'profiles'> | undefined) => {
-      const key = id ?? '';
-      let found = people.get(key);
-      if (found === undefined) {
-        found = personOf(ctx, id);
-        people.set(key, found);
-      }
-      return found;
-    };
-    const rows = (
-      await Promise.all(newest.slice(0, n).map((link) => ctx.db.get(link.actionId)))
-    ).filter((row): row is Doc<'moderationActions'> => row !== null);
-    // The page's undo states in one reading (`undoStates`): its refusal checks in page order.
-    const [actors, undos] = await Promise.all([
-      Promise.all(rows.map((row) => actorOf(row.actorId))),
-      undoStates(ctx, viewer, rows),
-    ]);
-    const entries = rows.map((row, i) => {
-      const actor = actors[i] as PersonView;
-      const undo = undos[i] as UndoState;
-      return {
-        id: row._id,
-        action: row.action,
-        targetType: row.targetType,
-        targetId: row.targetId,
-        reason: row.reason,
-        ...(row.metadata !== undefined ? { metadata: row.metadata } : {}),
-        createdAt: row.createdAt,
-        actor,
-        ...(row.undoesActionId !== undefined ? { undoesActionId: row.undoesActionId } : {}),
-        // What the actor made the write through (D256), as History reads it everywhere.
-        ...(row.via !== undefined ? { via: row.via } : {}),
-        undo,
-      };
-    });
-    return { entries, capped };
+    ),
+  );
+  for (const read of reads) {
+    if (read.length > n) capped = true;
+    for (const l of read) links.set(l.actionId, l);
   }
+  const newest = [...links.values()].sort(
+    (a, b) => b.createdAt - a.createdAt || (a.actionId < b.actionId ? 1 : -1),
+  );
+  if (newest.length > n) capped = true;
+  // **The page's rows at once, never one after another** (B01-3h): every row's reads — its actor
+  // (once a page per person), its undo state's few indexed reads and any refusal check — run
+  // concurrently, so the page costs a few rounds whatever its length. The refusal checks share the
+  // request's budget by reserving before they read, in page order (`undoStates`), so running them
+  // together keeps the accounting exact; the actors' reads charge nothing.
+  const people = new Map<string, Promise<PersonView>>();
+  const actorOf = (id: Id<'profiles'> | undefined) => {
+    const key = id ?? '';
+    let found = people.get(key);
+    if (found === undefined) {
+      found = personOf(ctx, id);
+      people.set(key, found);
+    }
+    return found;
+  };
+  const rows = (
+    await Promise.all(newest.slice(0, n).map((link) => ctx.db.get(link.actionId)))
+  ).filter((row): row is Doc<'moderationActions'> => row !== null);
+  // The page's undo states in one reading (`undoStates`): its refusal checks in page order.
+  const [actors, undos] = await Promise.all([
+    Promise.all(rows.map((row) => actorOf(row.actorId))),
+    undoStates(ctx, viewer, rows),
+  ]);
+  const entries = rows.map((row, i) => {
+    const actor = actors[i] as PersonView;
+    const undo = undos[i] as UndoState;
+    return {
+      id: row._id,
+      action: row.action,
+      targetType: row.targetType,
+      targetId: row.targetId,
+      reason: row.reason,
+      ...(row.metadata !== undefined ? { metadata: row.metadata } : {}),
+      createdAt: row.createdAt,
+      actor,
+      ...(row.undoesActionId !== undefined ? { undoesActionId: row.undoesActionId } : {}),
+      // What the actor made the write through (D256), as History reads it everywhere.
+      ...(row.via !== undefined ? { via: row.via } : {}),
+      undo,
+    };
+  });
+  return { entries, capped };
 }
 
 // ── Places ───────────────────────────────────────────────────────────────────────────────────

@@ -108,6 +108,13 @@ export interface Share {
 /** Thrown when a transaction reads past what it planned: a bug in the plan, never a data condition. */
 export class OverBudget extends Error {}
 
+/** What a row read as `kind` is charged: its real size, at most its kind's worst case; 0 if gone. */
+function weighed(kind: RowKind, row: unknown): number {
+  return row === null || row === undefined
+    ? 0
+    : Math.min(getDocumentSize(row as never), ROW_MAX[kind]);
+}
+
 /**
  * One transaction's read budget. `charge` before a read; a read it cannot afford throws. `rows` asks
  * how many of a kind are affordable while keeping `reserve` bytes back for what must follow.
@@ -214,22 +221,23 @@ export class ReadBudget {
    * fit: the caller stops there and says its answer is capped.
    *
    * The worst case is reserved before the read starts and the difference handed back after it, in a
-   * `finally` (B01-3h): a serial caller sees exactly what it always did, and reads in flight together
-   * never pass the limit between them. Which of several concurrent reads are refused would depend on
-   * the order they reach here, though — a page that reads per row concurrently takes its rows in
-   * {@link ReadBudget.waves} instead, whose answer is the same whatever the order promises resolve in.
+   * `finally` (B01-3h): a serial caller sees exactly what it always did — a read that throws is
+   * charged nothing, as before — and reads in flight together never pass the limit between them.
+   * Which of several concurrent reads are refused would depend on the order they reach here, though —
+   * a page that reads per row concurrently takes its rows in {@link ReadBudget.waves} instead, whose
+   * answer is the same whatever the order promises resolve in.
    */
   async measured<T>(kind: RowKind, read: () => Promise<T>): Promise<T | undefined> {
     if (!this.affordsRead(kind)) return undefined;
     this.call(1);
     this.left -= ROW_MAX[kind];
-    let size = ROW_MAX[kind];
+    let charged = 0;
     try {
       const row = await read();
-      size = row === null || row === undefined ? 0 : getDocumentSize(row as never);
+      charged = weighed(kind, row);
       return row;
     } finally {
-      this.left += ROW_MAX[kind] - Math.min(size, ROW_MAX[kind]);
+      this.left += ROW_MAX[kind] - charged;
     }
   }
 
@@ -238,9 +246,10 @@ export class ReadBudget {
    * order**, a wave at a time: the longest run from the next item whose declared worst cases
    * (`costOf`: bytes and reads) the budget can reserve now. A wave's items run concurrently, each
    * reading through its own {@link Share} of what was reserved for it; when the whole wave is done,
-   * what each didn't use is handed back (in a `finally`, so a throw hands it back too) and the next
-   * wave is admitted. When not even the next item fits, it and every item after it get `overflow` —
-   * the page's "check elsewhere".
+   * what each didn't use — bytes, and the calls it didn't make (a read another item already had in
+   * hand) — is handed back (in a `finally`, so a throw hands it back too) and the next wave is
+   * admitted. When not even the next item fits, it and every item after it get `overflow` — the
+   * page's "check elsewhere". A share reads only while its item runs.
    *
    * So which items are read and which overflow depends only on the items' order and what the earlier
    * waves really weighed — never on the order their promises resolve in: the same data gives the same
@@ -274,8 +283,11 @@ export class ReadBudget {
         wave.map(async ({ index, cost }) => {
           let spent = 0;
           let reads = 0;
+          let answered = false;
           const share: Share = {
             read: async <D>(kind: RowKind, get: () => Promise<D>): Promise<D> => {
+              // Its reservation is already handed back: a read now would be charged to nothing.
+              if (answered) throw new OverBudget('read budget: an item read after its answer');
               if (spent + ROW_MAX[kind] > cost.bytes || reads + 1 > cost.reads) {
                 throw new OverBudget(
                   `read budget: an item read past the ${cost.bytes} it declared`,
@@ -283,20 +295,23 @@ export class ReadBudget {
               }
               reads++;
               spent += ROW_MAX[kind];
-              let size = ROW_MAX[kind];
+              let charged = 0;
               try {
                 const row = await get();
-                size = row === null || row === undefined ? 0 : getDocumentSize(row as never);
+                charged = weighed(kind, row);
                 return row;
               } finally {
-                spent -= ROW_MAX[kind] - Math.min(size, ROW_MAX[kind]);
+                spent -= ROW_MAX[kind] - charged;
               }
             },
           };
           try {
             out[index] = await run(items[index] as T, share);
           } finally {
+            answered = true;
             this.left += cost.bytes - spent;
+            this.callsLeft += cost.reads - reads;
+            this.docsLeft += cost.reads - reads;
           }
         }),
       );

@@ -1,7 +1,9 @@
 /**
  * The runtime checks every continuing job leans on: `ReadBudget.row` holds a row to the worst case
- * its page was sized for, `sizePage` sizes that page, and `traced` never lets a failed pass go quiet.
+ * its page was sized for, `measured` charges a read as it really weighs, `sizePage` sizes that page,
+ * and `traced` never lets a failed pass go quiet.
  */
+import { getDocumentSize } from 'convex/values';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import {
   DOC_MAX,
@@ -44,6 +46,62 @@ describe('ReadBudget.row', () => {
     const work = vi.fn(async () => undefined);
     await expect(reads.row(DOC_MAX, work)).rejects.toThrow(OverBudget);
     expect(work).not.toHaveBeenCalled();
+  });
+});
+
+describe('ReadBudget.measured', () => {
+  /** A row that weighs about `bytes`. */
+  const rowOf = (bytes: number) => ({ text: 'x'.repeat(bytes) });
+
+  test('a serial read is charged its real weight, a missing row nothing', async () => {
+    const reads = new ReadBudget();
+    const row = rowOf(10_000);
+    expect(await reads.measured('waterBody', async () => row)).toBe(row);
+    expect(reads.bytes).toBe(TX_BUDGET - getDocumentSize(row));
+    expect(await reads.measured('waterBody', async () => null)).toBeNull();
+    expect(reads.bytes).toBe(TX_BUDGET - getDocumentSize(row));
+  });
+
+  test('a row past its kind’s worst case is charged the worst case', async () => {
+    const reads = new ReadBudget();
+    await reads.measured('verdict', async () => rowOf(ROW_MAX.verdict * 2));
+    expect(reads.bytes).toBe(TX_BUDGET - ROW_MAX.verdict);
+  });
+
+  test('when the worst case doesn’t fit it reads nothing and says so', async () => {
+    const reads = new ReadBudget(DOC_MAX - 1);
+    const read = vi.fn(async () => rowOf(10));
+    expect(await reads.measured('waterBody', read)).toBeUndefined();
+    expect(read).not.toHaveBeenCalled();
+    expect(reads.bytes).toBe(DOC_MAX - 1);
+  });
+
+  test('a read that throws is charged nothing, and the failure is the caller’s', async () => {
+    const reads = new ReadBudget();
+    await expect(
+      reads.measured('waterBody', async () => {
+        throw new Error('gone');
+      }),
+    ).rejects.toThrow('gone');
+    expect(reads.bytes).toBe(TX_BUDGET);
+  });
+
+  test('reads in flight together each hold their worst case until they settle', async () => {
+    const reads = new ReadBudget(DOC_MAX + 1);
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const row = rowOf(10);
+    const first = reads.measured('waterBody', async () => {
+      await held;
+      return row;
+    });
+    // The first's worst case is out of the budget while it reads: a second can't start beside it.
+    expect(await reads.measured('waterBody', async () => row)).toBeUndefined();
+    release();
+    expect(await first).toBe(row);
+    expect(reads.bytes).toBe(DOC_MAX + 1 - getDocumentSize(row));
   });
 });
 
