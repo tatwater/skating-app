@@ -3748,7 +3748,11 @@ reads and B01-3d's writes, the save rule the stack's last P1 asked for, and the 
     `names-aliases:<body>`), so a queued save goes out after its console has gone. Each sends the
     list it was built on (`expected` / `expectedAliases`); on `list_changed` it re-applies the change
     on top of the current list and sends again (three times at most), and says plainly when the change
-    no longer applies (*Not saved*, naming the body).
+    no longer applies (*Not saved*, naming the body). **What the shell keeps per list it has seen**
+    (accepted, not evicted): when idle, a settled queue, the last server list it observed, an
+    acknowledged list only if the page left before the server's list showed it, and the last
+    page's send and refusal callbacks (closures over that page's hold and mutation) — not an empty
+    queue alone; a few small objects per list visited, until the shell remounts.
   - **A result is said honestly, wherever the page is.** A receipt names its body ("Links saved ·
     Mascoma Lake": a `subject` on the shared undo `Receipt`, composed once in `announce`), so its Undo
     is unambiguous on any page — this settles the call the stack left open (close receipts on a
@@ -3772,7 +3776,13 @@ reads and B01-3d's writes, the save rule the stack's last P1 asked for, and the 
   and the console's page (`removedFacts`: area, how it left — when, who, the listed reason, the
   row's words — towns, the report floor, by one rule `removalFromLeft`); completeness from
   `consoleExtras.complete` (the frame no longer reads `bodies.preview`); `bathymetrySearched`;
-  the Names map's town lines (`townLines`).
+  the Names map's town lines (`townLines`). A failed other-standings read is said in the groups'
+  place (*Other standings couldn't be checked*, with *Try again*, through the shared read layer) —
+  never drawn as no matches there.
+- **How a removed body left: one rule, the server's.** The console's page draws exactly what
+  `bodyConsole.removedFacts` serves the viewer — the same as the preview — with or without
+  `audit.read` (that capability gates History alone); a `left.by` the server withholds is simply not
+  drawn, never *not recorded*. A merged body's merge row still comes from History.
 - **The town lines are each town's outline, not the borders between towns.** The read gives one
   ring per town; the page draws each ring where it passes the body's view and names it on its inside
   only, so where two towns meet two lines run side by side, each naming its own town — the board's
@@ -3801,18 +3811,29 @@ reads and B01-3d's writes, the save rule the stack's last P1 asked for, and the 
   their words (announced, and focus kept when they go — the list's and console's rule); Access's
   clock on the tabs' `useTickingNow`; one list of removal reasons' words (`REMOVAL_REASON_WORDS`,
   shared by Standing and both removed pages).
-- **Wording the mock did not supply:** *asked by N*; the intake reasons — *Possible duplicate*,
+- **Wording the mock did not supply** (each new string in a words module, standing until the
+  founder reviews it: `body/consoleWords.ts` — the save results, the queue's refusals, the new
+  receipts, Names' not-recorded and town-line words, the removed page's *The record doesn't say when
+  it left*; `bodies/listWords.ts` — the other standings, Opened recently's ids, the removed
+  preview; `bodies/askWords.ts` — askers and intake; `tabs/hazards/hazardsWords.ts` — crossings
+  and the patterns floor): *asked by N*; the intake reasons — *Possible duplicate*,
   *One catalog lists it twice*, *A bay with no parent*, *A catalog says it isn't water we cover*,
   *The catalogs disagree on its class*, *The catalogs disagree on its name*, with *Overlaps N
   bodies*, *Confidence: low*, *Advisory*; *(other standings unfiltered)*; *N opened isn't in the
   library*, *N is no longer a body*, *N older not read*; *What its record still holds couldn't be
   read*, *N since the record began*; *On the map, N town's line isn't stored yet*, *more towns than
   one read returns: some lines aren't drawn*; *Each catalog's class: not recorded until this body's
-  next import campaign*; *Not saved · {body}*, *{what}: {the server's words}*.
+  next import campaign*; *Not saved · {body}*, *{what}: {the server's words}*; *Other standings
+  couldn't be checked*; *The record doesn't say when it left*; *Another moderator changed these
+  links while yours was saving, and the link you changed is gone. Your change wasn't saved.*;
+  *Another moderator kept changing these links / aliases while yours was saving. Your change wasn't
+  saved — try again.*; *Another moderator kept changing these spellings; yours weren't saved. Try
+  again.*; *Aliases saved*, *Class set to {class}*, *Back to the catalogs' class*, *{Mean / Max}
+  depth from {source}*; *1 reported crossing*.
 - **What the server still lacks:** names for an unlisted or unknown id in `rowsByIds`
-  (`entries[].name`, so the list can say *which* opened body isn't listed); the borders between
-  towns near a body (`townLines` with `{ faces: [town, town], path }` segments, so a shared border
-  is one line); per-catalog name claims unfolded (BS9's last part: the Names ladder still says
+  (`entries[].name`, so the list can say *which* opened body isn't listed); **low priority** — the
+  borders between towns near a body (`townLines` with `{ faces: [town, town], path }` segments, so
+  a shared border is one line; the doubled lines are accepted for now); per-catalog name claims unfolded (BS9's last part: the Names ladder still says
   *Other catalogs that gave the same spelling: not recorded*).
 
 ## Ruled out
