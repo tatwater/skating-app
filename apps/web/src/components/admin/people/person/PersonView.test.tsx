@@ -305,6 +305,12 @@ describe('each read states itself', () => {
     expect(screen.getAllByRole('button', { name: 'Try again' }).length).toBeGreaterThan(1);
   });
 
+  it('decisions answering null (the server follow-up: not staff) draw no feed and no error', () => {
+    draw({ person: SARAH_PAGE, staffStats: SARAH_STATS, staffSeason: SEASON, decisions: null });
+    expect(document.querySelector('[data-slot="person-decisions"]')).toBeNull();
+    expect(screen.queryByText('The decisions couldn’t be read')).toBeNull();
+  });
+
   it('loading staff and feed reads hold their shapes', () => {
     draw({
       person: SARAH_PAGE,

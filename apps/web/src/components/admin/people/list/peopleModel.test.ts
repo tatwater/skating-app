@@ -152,6 +152,64 @@ describe('a row', () => {
     }
   });
 
+  describe('the server follow-up’s row facts, present or absent', () => {
+    const at = (m: number, d: number, h = 12, min = 0) =>
+      new Date(2026, m - 1, d, h, min).getTime();
+    const sarah = {
+      ...SARAH,
+      staff: {
+        lastSeenInConsoleAt: NOW - 2 * 60_000,
+        roleSince: at(3, 3),
+        decisionsThisWeek: { count: 18, capped: false },
+      },
+    };
+
+    it('draws board 8.2’s staff row when the server gives it', () => {
+      expect(rowView(sarah, 'staff', NO_FACTS, NOW)).toMatchObject({
+        sub: 'Admin since 3 Mar · 18 decisions this week · 1 open flag',
+        age: '2 min',
+      });
+    });
+
+    it('takes a plain number, a floor, one, or nothing for the week’s decisions', () => {
+      const sub = (decisionsThisWeek: unknown) =>
+        rowView(
+          { ...sarah, staff: { ...sarah.staff, decisionsThisWeek } } as typeof sarah,
+          'staff',
+          NO_FACTS,
+          NOW,
+        ).sub;
+      expect(sub(7)).toContain('7 decisions this week');
+      expect(sub({ count: 200, capped: true })).toContain('200+ decisions this week');
+      expect(sub(1)).toContain('1 decision this week');
+      expect(sub(null)).toBe('Admin since 3 Mar · 1 open flag');
+    });
+
+    it('falls back to today’s row without them: the role alone, no age', () => {
+      expect(rowView(SARAH, 'staff', NO_FACTS, NOW)).toMatchObject({
+        sub: 'Admin · 1 open flag',
+        age: null,
+      });
+      const unseen = { ...sarah, staff: { lastSeenInConsoleAt: null, roleSince: null } };
+      expect(rowView(unseen, 'staff', NO_FACTS, NOW)).toMatchObject({
+        sub: 'Admin · 1 open flag',
+        age: null,
+      });
+    });
+
+    it('ages Flagged and Appeals open from the oldest open item, else from joining', () => {
+      const flagged = { ...ROB, oldestOpenAt: NOW - 5 * HOUR };
+      expect(rowView(flagged, 'flagged', NO_FACTS, NOW).age).toBe('5 h');
+      expect(rowView(flagged, 'appeals', NO_FACTS, NOW).age).toBe('5 h');
+      expect(rowView({ ...ROB, oldestOpenAt: null }, 'flagged', NO_FACTS, NOW).age).toBe(
+        rowView(ROB, 'everyone', NO_FACTS, NOW).age,
+      );
+      expect(rowView(ROB, 'appeals', NO_FACTS, NOW).age).toBe(
+        rowView(ROB, 'everyone', NO_FACTS, NOW).age,
+      );
+    });
+  });
+
   it('names staff by role, and gives a staffer no age: no read says when they were last here', () => {
     expect(rowView(MATT, 'staff', NO_FACTS, NOW)).toMatchObject({
       sub: 'Moderator',

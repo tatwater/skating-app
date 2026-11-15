@@ -122,6 +122,11 @@ const RESTRICTION_WORDS: Record<Restriction, string> = {
 export const SUB_WORDS = {
   until: (date: string) => `Until ${date}`,
   untilLifted: 'Until lifted',
+  /** "Admin since 3 Mar" — a staffer's role and when they took it (board 8.2). */
+  roleSince: (role: string, date: string) => `${role} since ${date}`,
+  /** "18 decisions this week" (board 8.2). */
+  decisionsThisWeek: (count: string, n: { count: number; capped: boolean }) =>
+    `${count} ${n.count === 1 && !n.capped ? 'decision' : 'decisions'} this week`,
   /** Its end has passed on the page's clock; the sweep lifts it within minutes. */
   ranItsCourse,
   restricted: (rights: readonly Restriction[]) =>

@@ -17,9 +17,11 @@ export type AgeFrom =
   | 'restricted'
   /** Since the account was made. */
   | 'joined'
+  /** Since the queue's oldest open item about them, when the server gives it; else since joining. */
+  | 'oldestOpen'
   /** The time left in the deletion window. */
   | 'leaving'
-  /** When they were last seen in the console — no read gives it yet, so no age is drawn. */
+  /** When they were last seen in the console; no age when the read doesn't give it. */
   | 'seen';
 
 export interface PeopleLaneInfo {
@@ -44,9 +46,9 @@ const LANE_FACTS: Readonly<Record<PeopleLane, { age: AgeFrom; tone?: 'warn' }>> 
   suspended: { age: 'status', tone: 'warn' },
   banned: { age: 'status' },
   restricted: { age: 'restricted' },
-  // Until the server gives each person's oldest open flag or ticket, these age from joining.
-  flagged: { age: 'joined' },
-  appeals: { age: 'joined' },
+  // The oldest open flag or ticket (the server follow-up); since joining until a read gives it.
+  flagged: { age: 'oldestOpen' },
+  appeals: { age: 'oldestOpen' },
   newest: { age: 'joined' },
   leaving: { age: 'leaving' },
   deleted: { age: 'status' },

@@ -26,7 +26,7 @@ import { SkaterStrip, StaffStrip } from './PersonStrips';
 import {
   type ActionRow,
   countText,
-  type DecisionsRead,
+  type DecisionsAnswer,
   dateWords,
   type HistoryRead,
   momentWords,
@@ -65,7 +65,8 @@ export type PersonViewProps = {
   staffStats: Loadable<StaffStatsRead | null>;
   staffSeason: Loadable<StaffSeasonRead | null>;
   /** `'not-shown'` for a viewer who can't read the audit. */
-  decisions: Loadable<DecisionsRead> | 'not-shown';
+  /** `null`: not staff, or no such person (the server follow-up's answer) — no feed. */
+  decisions: Loadable<DecisionsAnswer> | 'not-shown';
   /** The clock every time on the page is read against. */
   now: number;
   /** The zone times are written in; the reader's own when absent. */
@@ -171,7 +172,8 @@ export function PersonView({
               {...tz}
             />
             {staff
-              ? decisions !== 'not-shown' && (
+              ? decisions !== 'not-shown' &&
+                decisions !== null && (
                   <DecisionsBlock
                     decisions={decisions}
                     thisWeek={

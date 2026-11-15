@@ -37,8 +37,36 @@ import {
 
 export type LanesRead = FunctionReturnType<typeof api.people.lanes>;
 export type LaneEntry = LanesRead['lanes'][number];
-export type PeoplePage = FunctionReturnType<typeof api.people.listPage>;
-export type PersonListRow = PeoplePage['rows'][number];
+type ServerPage = FunctionReturnType<typeof api.people.listPage>;
+
+/**
+ * A list row as the web reads it from either server. The server follow-up adds, where it knows them,
+ * a staffer's facts and a queue row's oldest open item; today's server has neither, and every use
+ * falls back to today's behavior when they're absent.
+ */
+export type PersonListRow = ServerPage['rows'][number] & {
+  /** A staffer's facts (the server follow-up). */
+  staff?: {
+    /** When they were last in the console; `null` when never recorded. */
+    lastSeenInConsoleAt?: number | null;
+    /** When they took the role they hold; `null` when no row records it. */
+    roleSince?: number | null;
+    /** Decisions this week, a floor when capped; `null` when not recorded. */
+    decisionsThisWeek?: Count | number | null;
+  };
+  /** A Flagged or Appeals open row's oldest open flag or ticket (the server follow-up). */
+  oldestOpenAt?: number | null;
+};
+
+/**
+ * A page as the web reads it from either server: its rows, and — from the server follow-up — a
+ * `splitCursor` and `pageStatus` this page doesn't use yet (the paging stays as it is).
+ */
+export type PeoplePage = Omit<ServerPage, 'rows'> & {
+  rows: PersonListRow[];
+  splitCursor?: string | null;
+  pageStatus?: string | null;
+};
 export type PartialReason = PeoplePage['reasons'][number];
 export type Backfill = PeoplePage['pending'][number];
 
@@ -166,6 +194,12 @@ export interface RowFacts {
   appealsFloor: boolean;
 }
 
+/** A decisions figure as either server writes it: a count, a capped count, or none. */
+function decisionsCount(value: Count | number | null | undefined): Count | null {
+  if (value === undefined || value === null) return null;
+  return typeof value === 'number' ? { count: value, capped: false } : value;
+}
+
 /** One row as the list draws it, for `lane` (`null` while a search runs). */
 export function rowView(
   row: PersonListRow,
@@ -208,7 +242,17 @@ function subLine(
   now: number,
 ): string | null {
   const parts: string[] = [];
-  if (row.role === 'admin' || row.role === 'moderator') parts.push(ROLE_WORDS[row.role]);
+  if (row.role === 'admin' || row.role === 'moderator') {
+    const since = row.staff?.roleSince ?? null;
+    parts.push(
+      since === null
+        ? ROLE_WORDS[row.role]
+        : SUB_WORDS.roleSince(ROLE_WORDS[row.role], dayMonth(since)),
+    );
+    const decisions = decisionsCount(row.staff?.decisionsThisWeek);
+    if (decisions !== null)
+      parts.push(SUB_WORDS.decisionsThisWeek(countText(decisions), decisions));
+  }
   if (row.suspension !== null) {
     const { until } = row.suspension;
     parts.push(
@@ -270,11 +314,17 @@ export function rowAge(row: PersonListRow, from: AgeFrom, now: number): string |
       return row.restrictedSince === null ? null : shortAge(now - row.restrictedSince);
     case 'joined':
       return shortAge(now - row.createdAt);
+    case 'oldestOpen':
+      // The queue's oldest open item when the server gives it, else (today's server) since joining.
+      return shortAge(now - (row.oldestOpenAt ?? row.createdAt));
     case 'leaving':
       if (row.leavingUntil === null) return null;
       return row.leavingUntil <= now ? ENDS_NOW : left(shortAge(row.leavingUntil - now));
-    case 'seen':
-      return null;
+    case 'seen': {
+      // Last in the console, when the server gives it; nothing on record draws no age.
+      const seen = row.staff?.lastSeenInConsoleAt ?? null;
+      return seen === null ? null : shortAge(now - seen);
+    }
   }
 }
 

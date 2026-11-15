@@ -254,6 +254,20 @@ describe('the chain of pages', () => {
   });
 });
 
+describe('the server follow-up’s page', () => {
+  it('reads a page carrying splitCursor and pageStatus as before, and sends no endCursor', () => {
+    mocks.results.set(PAGE_READ, {
+      ...page([KATE, LUC]),
+      splitCursor: 'split',
+      pageStatus: 'SplitRecommended',
+    });
+    mount();
+    expect(screen.getAllByRole('option')).toHaveLength(2);
+    expect(screen.getByText('All 2')).toBeInTheDocument();
+    expect(pageCalls().every((a) => !('endCursor' in a))).toBe(true);
+  });
+});
+
 describe('failures', () => {
   it('says a failed list in its own place, and tries it again', async () => {
     mocks.results.set(PAGE_READ, new Error('boom'));

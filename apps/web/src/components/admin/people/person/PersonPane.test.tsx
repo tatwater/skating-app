@@ -426,6 +426,17 @@ describe('the write hook', () => {
     );
   });
 
+  it('reads the follow-up’s answer — the person, the row and what undoing asks — into the toast', async () => {
+    mocks.mutations.set(
+      'moderation:unbanUser',
+      vi.fn(async () => ({ userId: ROB_ID, actionId: 'row2', undoNeedsReason: false })),
+    );
+    await hook()({ kind: 'lift' });
+    expect(mocks.announce).toHaveBeenLastCalledWith(
+      expect.objectContaining({ actionId: 'row2', undoNeedsReason: false }),
+    );
+  });
+
   it('carries what undoing the write asks, when the write says', async () => {
     mocks.mutations.set(
       'moderation:unbanUser',

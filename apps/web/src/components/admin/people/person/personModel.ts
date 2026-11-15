@@ -32,7 +32,12 @@ export type Can = PersonRead['can']['suspend'];
 export type PersonCan = PersonRead['can'] & { extend?: Can };
 export type HistoryRead = NonNullable<FunctionReturnType<typeof api.people.history>>;
 export type ActionRow = HistoryRead['rows'][number];
-export type DecisionsRead = FunctionReturnType<typeof api.people.decisions>;
+/**
+ * `people.decisions`, as the web reads it from either server: today's always answers a page; the
+ * server follow-up answers `null` for someone not on staff or with no account — no feed, not an error.
+ */
+export type DecisionsRead = NonNullable<FunctionReturnType<typeof api.people.decisions>>;
+export type DecisionsAnswer = DecisionsRead | null;
 export type StaffStatsRead = NonNullable<FunctionReturnType<typeof api.people.staffStats>>;
 export type StaffSeasonRead = NonNullable<FunctionReturnType<typeof api.people.staffSeason>>;
 export type TrendRead = NonNullable<FunctionReturnType<typeof api.people.reportTrend>>;
