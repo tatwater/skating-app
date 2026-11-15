@@ -17,12 +17,13 @@ import { Input } from '@/components/kit/input';
 import { Section } from '@/components/kit/section-slug';
 import { SortableRows } from '@/components/kit/sortable-rows';
 import { cn } from '@/lib/utils';
+import { useListWriter } from '../listWriter';
 import {
   carryIds,
   type DerivedRow,
   derivedRows,
-  inKeyOrder,
   type KeyedLink,
+  linkChanges,
   type StaffLink,
 } from './linksModel';
 
@@ -83,26 +84,49 @@ export function LinksTabView({
   });
   const editable = canEdit && onSave !== undefined;
   const [editing, setEditing] = useState<Editing | null>(null);
-  const [busy, setBusy] = useState(false);
+  // The open editor's own save on its way: its Done and Remove don't send twice (a ref, so two
+  // presses in one frame see it).
+  const [editorBusy, setEditorBusy] = useState(false);
+  const editorSending = useRef(false);
+  const editorSave = async (change: (base: readonly KeyedLink[]) => readonly KeyedLink[]) => {
+    editorSending.current = true;
+    setEditorBusy(true);
+    try {
+      return await save(change);
+    } finally {
+      editorSending.current = false;
+      setEditorBusy(false);
+    }
+  };
+  // Writes in flight: the grips hold a dropped order until the server's echo moves the rows.
+  const [inFlight, setInFlight] = useState(0);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const save = async (next: StaffLink[]) => {
+  // **Every save goes through one queue** (`listWriter`): reorder, add, edit and remove each hand
+  // it a change by link id, applied to the newest list the server acknowledged — so a remove
+  // pressed while a reorder saves can't put the old order back, and two saves never overlap.
+  const push = useListWriter<KeyedLink>(staff, async (next) => {
     if (!onSave) return false;
-    setBusy(true);
     setSaveError(null);
     try {
-      await onSave(next);
+      await onSave(next.map(({ label, url }) => ({ label, url })));
       return true;
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : String(err));
       return false;
+    }
+  });
+  const save = async (change: (base: readonly KeyedLink[]) => readonly KeyedLink[]) => {
+    setInFlight((n) => n + 1);
+    try {
+      return await push(change);
     } finally {
-      setBusy(false);
+      setInFlight((n) => n - 1);
     }
   };
 
   const commitEdit = async () => {
-    if (editing === null) return;
+    if (editing === null || editorSending.current) return;
     const draft = { label: editing.label, url: editing.url };
     const error = referenceLinkError(draft);
     if (error !== null) {
@@ -110,12 +134,14 @@ export function LinksTabView({
       return;
     }
     const clean = { label: draft.label.trim(), url: draft.url.trim() };
-    const next =
-      editing.key === 'new'
-        ? [...staff, clean]
-        : staff.map((l) => (l.key === editing.key ? clean : { label: l.label, url: l.url }));
-    if (await save(next.map(({ label, url }) => ({ label, url })))) {
-      refocus.current = editing.key;
+    const key = editing.key;
+    const ok = await editorSave(
+      key === 'new'
+        ? linkChanges.add({ ...clean, key: `link-${++minted.current}` })
+        : linkChanges.edit(key, clean),
+    );
+    if (ok) {
+      refocus.current = key;
       setEditing(null);
     }
   };
@@ -125,9 +151,10 @@ export function LinksTabView({
       setEditing(null);
       return;
     }
+    if (editorSending.current) return;
     const key = editing.key;
-    const next = staff.filter((l) => l.key !== key).map(({ label, url }) => ({ label, url }));
-    if (await save(next)) {
+    const ok = await editorSave(linkChanges.remove(key));
+    if (ok) {
       refocus.current = key;
       setEditing(null);
     }
@@ -174,13 +201,13 @@ export function LinksTabView({
             labelOf={(l) => l.label}
             // Editing takes the grips away (the lift is put down); a save keeps them, inert.
             disabled={!editable || editing !== null}
-            pending={busy}
-            onReorder={(keys) => void save(inKeyOrder(staff, keys))}
+            pending={inFlight > 0}
+            onReorder={(keys) => void save(linkChanges.order(keys))}
             renderRow={(link, { grip }) =>
               editing?.key === link.key ? (
                 <LinkEditor
                   editing={editing}
-                  busy={busy}
+                  busy={editorBusy}
                   onChange={setEditing}
                   onDone={() => void commitEdit()}
                   onCancel={() => setEditing(null)}
@@ -209,7 +236,7 @@ export function LinksTabView({
         {editing?.key === 'new' && (
           <LinkEditor
             editing={editing}
-            busy={busy}
+            busy={editorBusy}
             onChange={setEditing}
             onDone={() => void commitEdit()}
             onCancel={() => setEditing(null)}

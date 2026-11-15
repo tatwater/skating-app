@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { dropIndex, moveId } from '@/components/kit/sortable-rows';
 import { BODY_NOW, MASCOMA, SMALL_POND } from './linksFixtures';
 import { INTERIOR_POINT_ID, linksMapScene } from './linksMap';
-import { carryIds, coordWords, derivedRows, inKeyOrder } from './linksModel';
+import { carryIds, coordWords, derivedRows, type KeyedLink, linkChanges } from './linksModel';
 
 describe('derivedRows', () => {
   it('draws the board: Windy, Copernicus and the NH group, each with what it is built from', () => {
@@ -43,6 +43,12 @@ describe('derivedRows', () => {
     ]);
   });
 });
+
+/** A reorder by keys, as the record stores it (no keys). */
+const inKeyOrder = (keyed: readonly KeyedLink[], keys: readonly string[]) =>
+  linkChanges
+    .order(keys)(keyed)
+    .map(({ label, url }) => ({ label, url }));
 
 describe('the staff links’ keys', () => {
   it('survive a reorder and tell repeats apart', () => {

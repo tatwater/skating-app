@@ -113,6 +113,8 @@ describe('LinksTab', () => {
     );
     render(<LinksTab bodyId={BODY} />);
     await userEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
+    // A change to send (Done on an unchanged link sends nothing).
+    await userEvent.type(screen.getByPlaceholderText('What the link is, as skaters read it'), '!');
     await userEvent.click(screen.getByRole('button', { name: 'Done' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('at most 8');
     expect(undo.announce).not.toHaveBeenCalled();

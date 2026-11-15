@@ -38,6 +38,103 @@ function Saving({ hold }: { hold?: Promise<void> }) {
   );
 }
 
+/**
+ * The view over a body whose saves land one at a time, when the test says: each save waits for
+ * its own release and resolves; the links change (the echo) a beat later — the window where an
+ * acknowledged write isn't on the page yet, and a list built from the page would be stale.
+ */
+function Held({ sent, releases }: { sent: StaffLink[][]; releases: (() => void)[] }) {
+  const [links, setLinks] = useState<readonly StaffLink[]>(MASCOMA.referenceLinks ?? []);
+  return (
+    <LinksTabView
+      {...base}
+      body={{ ...MASCOMA, referenceLinks: links }}
+      onSave={async (next) => {
+        sent.push(next);
+        await new Promise<void>((r) => releases.push(r));
+        setTimeout(() => setLinks(next), 0);
+      }}
+    />
+  );
+}
+
+/** Lets the held save land, then its echo. */
+const land = async (releases: (() => void)[]) => {
+  await act(async () => releases.shift()?.());
+  await act(async () => new Promise((r) => setTimeout(r, 5)));
+};
+
+const ASSOC = { label: 'Mascoma Lake Association', url: 'https://mascomalake.org' };
+const DAM = { label: 'Lake level at Mascoma Lake Dam', url: 'https://des.nh.gov/dams' };
+
+describe('LinksTabView — saves queue: none is built from a list older than the last one saved', () => {
+  /** Drops the first link below the second from the keyboard: a reorder save starts. */
+  async function reorder(user: ReturnType<typeof userEvent.setup>) {
+    grip(ASSOC.label).focus();
+    await user.keyboard(' ');
+    await user.keyboard('{ArrowDown}');
+    grip(ASSOC.label).focus();
+    await user.keyboard(' ');
+  }
+
+  it('an edit saved while a reorder is saving keeps the new order (Greptile’s P1)', async () => {
+    const user = userEvent.setup();
+    const sent: StaffLink[][] = [];
+    const releases: (() => void)[] = [];
+    render(<Held sent={sent} releases={releases} />);
+    await reorder(user);
+    expect(sent).toEqual([[DAM, ASSOC]]);
+    // The reorder hasn't landed: edit the dam's link and press ⏎.
+    const editDam = within(
+      screen.getByText(DAM.label).closest('[data-slot="sortable-row"]') as HTMLElement,
+    ).getByRole('button', { name: 'Edit' });
+    await user.click(editDam);
+    const label = screen.getByRole('textbox', { name: /Label/ });
+    await user.clear(label);
+    await user.type(label, 'Dam level{Enter}');
+    // Queued behind the reorder: nothing sent yet, and nothing built from the old order.
+    expect(sent).toHaveLength(1);
+    await land(releases);
+    expect(sent[1]).toEqual([{ label: 'Dam level', url: DAM.url }, ASSOC]);
+    await land(releases);
+    expect(rows()).toEqual(['Dam level', ASSOC.label]);
+  });
+
+  it('a remove pressed while a reorder is saving removes from the new order', async () => {
+    const user = userEvent.setup();
+    const sent: StaffLink[][] = [];
+    const releases: (() => void)[] = [];
+    render(<Held sent={sent} releases={releases} />);
+    await reorder(user);
+    const editAssoc = within(
+      screen.getByText(ASSOC.label).closest('[data-slot="sortable-row"]') as HTMLElement,
+    ).getByRole('button', { name: 'Edit' });
+    await user.click(editAssoc);
+    await user.click(screen.getByRole('button', { name: 'Remove' }));
+    await land(releases);
+    expect(sent[1]).toEqual([DAM]);
+    await land(releases);
+    expect(rows()).toEqual([DAM.label]);
+  });
+
+  it('a second ⏎ in the open editor never sends its save twice', async () => {
+    const user = userEvent.setup();
+    const sent: StaffLink[][] = [];
+    const releases: (() => void)[] = [];
+    render(<Held sent={sent} releases={releases} />);
+    await user.click(screen.getByRole('button', { name: 'Add a link' }));
+    await user.type(screen.getByRole('textbox', { name: /Label/ }), 'Town beach');
+    await user.type(
+      screen.getByRole('textbox', { name: /Address/ }),
+      'https://enfield.nh.us{Enter}{Enter}',
+    );
+    await land(releases);
+    await land(releases);
+    expect(sent).toEqual([[ASSOC, DAM, { label: 'Town beach', url: 'https://enfield.nh.us' }]]);
+    expect(rows()).toEqual([ASSOC.label, DAM.label, 'Town beach']);
+  });
+});
+
 describe('LinksTabView — a save never loses a link or the keyboard', () => {
   it('a link edited while another is lifted is still there once saved (the review’s case)', async () => {
     const user = userEvent.setup();
@@ -200,6 +297,8 @@ describe('LinksTabView', () => {
     });
     render(<LinksTabView {...base} onSave={onSave} />);
     await userEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
+    // A change to send (Done on an unchanged link sends nothing).
+    await userEvent.type(screen.getByPlaceholderText('What the link is, as skaters read it'), '!');
     await userEvent.click(screen.getByRole('button', { name: 'Done' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('at most 8');
   });

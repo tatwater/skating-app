@@ -1,5 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { type KeyedLink, linkChanges } from './links/linksModel';
 import { createListWriter, sameList } from './listWriter';
 
 type Item = { id: string; label: string };
@@ -26,6 +27,20 @@ const CHANGES = {
       const named = ids.flatMap((id) => (byId.has(id) ? [byId.get(id) as Item] : []));
       return [...named, ...base.filter((x) => !ids.includes(x.id))];
     },
+};
+
+/** Links' changes over the same items: a link keyed by the item's id, its words the label. */
+const toLink = ({ id, label }: Item): KeyedLink => ({ key: id, label, url: `https://${label}` });
+const toItem = ({ key, label }: KeyedLink): Item => ({ id: key, label });
+const lift =
+  (change: (base: readonly KeyedLink[]) => readonly KeyedLink[]): Change =>
+  (base) =>
+    change(base.map(toLink)).map(toItem);
+const LINK_CHANGES: typeof CHANGES = {
+  add: (id) => lift(linkChanges.add(toLink({ id, label: id }))),
+  remove: (id) => lift(linkChanges.remove(id)),
+  edit: (id, label) => lift(linkChanges.edit(id, { label, url: `https://${label}` })),
+  order: (ids) => lift(linkChanges.order(ids)),
 };
 
 const settle = async () => {
@@ -201,67 +216,76 @@ describe('createListWriter', () => {
   });
 
   it('over any interleaving: the saved list is every change in press order, none lost or doubled, none built on a stale list', async () => {
-    await fc.assert(
-      fc.asyncProperty(fc.array(op, { maxLength: 40 }), async (ops) => {
-        const initial = [
-          { id: 'a', label: 'A' },
-          { id: 'b', label: 'B' },
-        ];
-        const w = world(initial);
-        let minted = 0;
-        // The replay: each event's change, in event order, kept unless its write is refused.
-        const replay: { change: Change; ok: boolean | null; ours: boolean }[] = [];
-        for (const o of ops) {
-          if (o.kind === 'press') {
-            const ids = w.shown.map((x) => x.id);
-            const id = ids[o.pick % Math.max(1, ids.length)];
-            let change: Change;
-            if (o.what === 'add' || id === undefined) change = CHANGES.add(`n${++minted}`);
-            else if (o.what === 'remove') change = CHANGES.remove(id);
-            else if (o.what === 'edit') change = CHANGES.edit(id, `${id}${o.seed % 9}`);
-            else {
-              const shuffled = [...ids].sort(
-                (x, y) =>
-                  ((x + o.seed).length % 3) - ((y + o.seed).length % 3) ||
-                  (o.seed % 2 ? x.localeCompare(y) : y.localeCompare(x)),
-              );
-              change = CHANGES.order(shuffled);
-            }
-            // `ok` stays null for a change that changed nothing (it sent nothing, owes no answer).
-            replay.push({ change, ok: null, ours: true });
-            w.press(change, replay.length - 1);
-            await settle();
-          } else if (o.kind === 'answer') {
-            const i = w.answer(o.ok, o.echoFirst);
-            if (i !== undefined) (replay[i] as { ok: boolean | null }).ok = o.ok;
-            await settle();
-          } else if (o.kind === 'render') {
-            w.render();
-          } else if (w.idle) {
-            // Another moderator: only between our writes (the race the server must close).
-            const change = CHANGES.add(`x${++minted}`);
-            replay.push({ change, ok: true, ours: false });
-            w.external(change);
-            await settle();
-          }
-        }
-        // Drain: every write answered yes, and a render.
-        while (!w.idle) {
-          const i = w.answer(true);
-          if (i !== undefined) (replay[i] as { ok: boolean | null }).ok = true;
-          await settle();
-        }
-        w.render();
-        let expected: readonly Item[] = initial;
-        for (const r of replay) if (r.ok !== false) expected = r.change(expected);
-        expect(w.server).toEqual(expected);
-        // Nothing doubled.
-        expect(new Set(w.server.map((x) => x.id)).size).toBe(w.server.length);
-        // Every write was built on the server's list as it stood: never older than the last
-        // acknowledgment.
-        for (const { base, server } of w.bases) expect(sameList(base, server)).toBe(true);
-      }),
-      { numRuns: 300 },
-    );
+    await everyInterleaving(CHANGES);
+  });
+
+  it('Links’ own changes, over any interleaving of reorder, add, edit, remove and another moderator', async () => {
+    await everyInterleaving(LINK_CHANGES);
   });
 });
+
+/** The property, over one tab's changes. */
+async function everyInterleaving(changes: typeof CHANGES) {
+  await fc.assert(
+    fc.asyncProperty(fc.array(op, { maxLength: 40 }), async (ops) => {
+      const initial = [
+        { id: 'a', label: 'A' },
+        { id: 'b', label: 'B' },
+      ];
+      const w = world(initial);
+      let minted = 0;
+      // The replay: each event's change, in event order, kept unless its write is refused.
+      const replay: { change: Change; ok: boolean | null; ours: boolean }[] = [];
+      for (const o of ops) {
+        if (o.kind === 'press') {
+          const ids = w.shown.map((x) => x.id);
+          const id = ids[o.pick % Math.max(1, ids.length)];
+          let change: Change;
+          if (o.what === 'add' || id === undefined) change = changes.add(`n${++minted}`);
+          else if (o.what === 'remove') change = changes.remove(id);
+          else if (o.what === 'edit') change = changes.edit(id, `${id}${o.seed % 9}`);
+          else {
+            const shuffled = [...ids].sort(
+              (x, y) =>
+                ((x + o.seed).length % 3) - ((y + o.seed).length % 3) ||
+                (o.seed % 2 ? x.localeCompare(y) : y.localeCompare(x)),
+            );
+            change = changes.order(shuffled);
+          }
+          // `ok` stays null for a change that changed nothing (it sent nothing, owes no answer).
+          replay.push({ change, ok: null, ours: true });
+          w.press(change, replay.length - 1);
+          await settle();
+        } else if (o.kind === 'answer') {
+          const i = w.answer(o.ok, o.echoFirst);
+          if (i !== undefined) (replay[i] as { ok: boolean | null }).ok = o.ok;
+          await settle();
+        } else if (o.kind === 'render') {
+          w.render();
+        } else if (w.idle) {
+          // Another moderator: only between our writes (the race the server must close).
+          const change = changes.add(`x${++minted}`);
+          replay.push({ change, ok: true, ours: false });
+          w.external(change);
+          await settle();
+        }
+      }
+      // Drain: every write answered yes, and a render.
+      while (!w.idle) {
+        const i = w.answer(true);
+        if (i !== undefined) (replay[i] as { ok: boolean | null }).ok = true;
+        await settle();
+      }
+      w.render();
+      let expected: readonly Item[] = initial;
+      for (const r of replay) if (r.ok !== false) expected = r.change(expected);
+      expect(w.server).toEqual(expected);
+      // Nothing doubled.
+      expect(new Set(w.server.map((x) => x.id)).size).toBe(w.server.length);
+      // Every write was built on the server's list as it stood: never older than the last
+      // acknowledgment.
+      for (const { base, server } of w.bases) expect(sameList(base, server)).toBe(true);
+    }),
+    { numRuns: 300 },
+  );
+}

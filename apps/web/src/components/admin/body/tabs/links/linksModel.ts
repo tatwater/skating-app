@@ -119,16 +119,35 @@ export function carryIds(
   });
 }
 
-/** `links` in the order `keys` names. Keys it doesn't hold are skipped; rows `keys` misses stay last. */
-export function inKeyOrder(links: readonly KeyedLink[], keys: readonly string[]): StaffLink[] {
-  const byKey = new Map(links.map((l) => [l.key, l]));
-  const ordered = keys.flatMap((k) => {
-    const l = byKey.get(k);
-    return l === undefined ? [] : [l];
-  });
-  const rest = links.filter((l) => !keys.includes(l.key));
-  return [...ordered, ...rest].map(({ label, url }) => ({ label, url }));
-}
+/**
+ * **The staff list's changes, by id** — what each save path hands the tab's write queue
+ * (`listWriter`), applied there to the newest acknowledged list, never to the one a render held.
+ * A change to a link that is gone (another moderator removed it) changes nothing.
+ */
+export const linkChanges = {
+  /** `keys` first, in that order; links it doesn't name (added since) stay last, in theirs. */
+  order:
+    (keys: readonly string[]) =>
+    (base: readonly KeyedLink[]): KeyedLink[] => {
+      const byKey = new Map(base.map((l) => [l.key, l]));
+      const named = keys.flatMap((k) => {
+        const l = byKey.get(k);
+        return l === undefined ? [] : [l];
+      });
+      return [...named, ...base.filter((l) => !keys.includes(l.key))];
+    },
+  add:
+    (link: KeyedLink) =>
+    (base: readonly KeyedLink[]): KeyedLink[] => [...base, link],
+  edit:
+    (key: string, link: StaffLink) =>
+    (base: readonly KeyedLink[]): KeyedLink[] =>
+      base.map((l) => (l.key === key ? { label: link.label, url: link.url, key } : l)),
+  remove:
+    (key: string) =>
+    (base: readonly KeyedLink[]): KeyedLink[] =>
+      base.filter((l) => l.key !== key),
+};
 
 /** "43.6174°N 72.1360°W" — the interior point as the map's plate reads it. */
 export function coordWords(c: LatLng): string {
