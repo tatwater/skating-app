@@ -131,8 +131,7 @@ export async function recomputeBodySummary(
    * ever reported, and the put-ins its reports derive. On for every report write that calls this;
    * the summary sweeps pass `false` — the passage of time moves none of those figures inside a
    * season, and their pages are sized for the card alone. No library fact counts hazards, so the
-   * hazard writes could pass `false` too; their call sites are in files the author-deletion PR is
-   * rewriting, so until it lands they pay a refresh that writes nothing.
+   * hazard writes pass `false` too (B01-3b).
    */
   library = true,
 ): Promise<void> {

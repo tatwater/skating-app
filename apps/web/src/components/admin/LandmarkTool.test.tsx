@@ -732,18 +732,27 @@ describe('LandmarkTool', () => {
   });
 
   it('places a corpus name with its spellings, or files it as another spelling', async () => {
-    queryResults.openForBody = [
-      { _id: 'cn1', name: 'Apple Island', aliases: ['Apple Is'], messages: 24, skatedMessages: 11 },
-      { _id: 'cn2', name: 'Isle LaMotte', aliases: [], messages: 4, skatedMessages: 3 },
-      {
-        _id: 'cn3',
-        name: 'Cedar Island',
-        aliases: [],
-        messages: 9,
-        skatedMessages: 5,
-        alreadyNamed: true,
-      },
-    ];
+    queryResults.openForBody = {
+      more: false,
+      names: [
+        {
+          _id: 'cn1',
+          name: 'Apple Island',
+          aliases: ['Apple Is'],
+          messages: 24,
+          skatedMessages: 11,
+        },
+        { _id: 'cn2', name: 'Isle LaMotte', aliases: [], messages: 4, skatedMessages: 3 },
+        {
+          _id: 'cn3',
+          name: 'Cedar Island',
+          aliases: [],
+          messages: 9,
+          skatedMessages: 5,
+          alreadyNamed: true,
+        },
+      ],
+    };
     const onArm = vi.fn();
     const { rerender } = renderTool({ onArm });
     expect(screen.getByText(/24 mentions · also Apple Is/)).toBeInTheDocument();

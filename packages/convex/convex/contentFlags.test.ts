@@ -133,6 +133,78 @@ describe('contentFlags.flag', () => {
     expect(rows[0]?.status).toBe('open');
   });
 
+  test('a flag on a body queues its library row; a flag on a report does not', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'a');
+    const flagger = await seedUser(t, 'f');
+    const reportId = await seedReport(t, author.id);
+    const body = await t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        name: 'Flagged',
+        searchText: 'flagged',
+        type: 'lakePond',
+        source: 'osm',
+        polygon: { type: 'Polygon', coordinates: [] },
+        bbox: { minLat: 0, minLng: 0, maxLat: 0.01, maxLng: 0.01 },
+        centroid: { lat: 0.005, lng: 0.005 },
+        dedupStatus: 'clean',
+        createdAt: Date.now(),
+      }),
+    );
+    await flagger.as.mutation(api.contentFlags.flag, {
+      targetType: 'report',
+      targetId: reportId,
+      reason: 'spam',
+    });
+    const queue = () => t.run((ctx) => ctx.db.query('bodyLibraryQueue').collect());
+    expect(await queue()).toHaveLength(0);
+    await flagger.as.mutation(api.contentFlags.flag, {
+      targetType: 'waterbody',
+      targetId: body,
+      reason: 'no_public_access',
+    });
+    expect((await queue()).map((r) => r.waterBodyId)).toEqual([body]);
+  });
+
+  test('a flag through a merged-away body’s id lands on its survivor, and dedupes there', async () => {
+    const t = convexTest(schema, modules);
+    const flagger = await seedUser(t, 'f');
+    const lake = (name: string) =>
+      t.run((ctx) =>
+        ctx.db.insert('waterBodies', {
+          name,
+          searchText: name,
+          type: 'lakePond',
+          source: 'osm',
+          polygon: { type: 'Polygon', coordinates: [] },
+          bbox: { minLat: 0, minLng: 0, maxLat: 0.01, maxLng: 0.01 },
+          centroid: { lat: 0.005, lng: 0.005 },
+          dedupStatus: 'clean',
+          createdAt: Date.now(),
+        }),
+      );
+    const survivor = await lake('Survivor');
+    const loser = await lake('Loser');
+    await t.run((ctx) => ctx.db.patch(loser, { dedupStatus: 'merged', mergedIntoId: survivor }));
+    const flagId = await flagger.as.mutation(api.contentFlags.flag, {
+      targetType: 'waterbody',
+      targetId: loser,
+      reason: 'no_public_access',
+    });
+    const row = await t.run((ctx) => ctx.db.get(flagId));
+    expect(row?.targetId).toBe(survivor);
+    // The same person flagging the survivor itself is the repeat it is.
+    expect(
+      await flagger.as.mutation(api.contentFlags.flag, {
+        targetType: 'waterbody',
+        targetId: survivor,
+        reason: 'no_public_access',
+      }),
+    ).toBe(flagId);
+    const queued = await t.run((ctx) => ctx.db.query('bodyLibraryQueue').collect());
+    expect(queued.map((r) => r.waterBodyId)).toEqual([survivor]);
+  });
+
   test('two different flaggers each get their own row', async () => {
     const t = convexTest(schema, modules);
     const author = await seedUser(t, 'a');

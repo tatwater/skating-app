@@ -10,6 +10,9 @@
  *    Re-running is safe: a refresh writes only what changed and moves the counts by the difference.
  * 2. `bodyLibrary:backfillChangedAt` — *Changed* from the audit log, oldest first, paged and
  *    resumable the same way. Needs the rows from step 1.
+ *
+ * B01-3b: `bodyLibrary:requeueCapped` once — the rows whose stored `asksCapped` or `reportsCapped`
+ * was written when exactly the cap read as capped, queued for the minute cron to re-count.
  */
 
 import { currentSeason, SCOPE_ALL } from '@skating/core';
@@ -223,6 +226,34 @@ export const backfillChangedAt = internalMutation({
       continueCursor: page.continueCursor,
       rerunAt: null,
     };
+  },
+});
+
+/** Library rows a {@link requeueCapped} page reads — small documents, no polygon. */
+const REQUEUE_PAGE = 1_000;
+
+/**
+ * **Re-count the rows a cap may have mislabeled** (B01-3b): the asks and reports reads once called
+ * a source holding exactly its cap "capped"; they now read one past it. A page of the body-wide rows
+ * queues every body whose row says `asksCapped` or `reportsCapped` for the minute cron's refresh
+ * (which re-counts both and writes only what changed), chaining itself to the end. Idempotent.
+ */
+export const requeueCapped = internalMutation({
+  args: { cursor: v.optional(v.string()), chain: v.optional(v.boolean()) },
+  handler: async (ctx, { cursor, chain = true }) => {
+    const page = await ctx.db
+      .query('bodyLibraryRows')
+      .withIndex('by_scope_name', (q) => q.eq('scope', SCOPE_ALL))
+      .paginate({ cursor: cursor ?? null, numItems: REQUEUE_PAGE });
+    const ids = page.page.filter((r) => r.asksCapped || r.reportsCapped).map((r) => r.waterBodyId);
+    await queueLibraryRefresh(ctx, ids);
+    if (!page.isDone && chain) {
+      await ctx.scheduler.runAfter(0, internal.bodyLibrary.requeueCapped, {
+        cursor: page.continueCursor,
+        chain,
+      });
+    }
+    return { queued: ids.length, isDone: page.isDone, continueCursor: page.continueCursor };
   },
 });
 

@@ -48,8 +48,7 @@ import {
   query,
 } from './_generated/server';
 import { requireCapability } from './lib/auth';
-import { loadPutInRows } from './lib/putInMarkers';
-import { isSuppressed } from './lib/putInSuppression';
+import { resolveSurvivor } from './lib/bodies';
 import { OverBudget, ReadBudget, sizePage } from './lib/readBudget';
 import {
   affords,
@@ -69,6 +68,8 @@ import {
   hasSavedPutIn,
   lastActivityAt,
   lastActivityOf,
+  SAVED_PUT_IN_TAB_READ,
+  savedPutInsOf,
 } from './lib/standing';
 import { literals } from './lib/validators';
 import { bodyAttachmentKind } from './waterBodies';
@@ -310,10 +311,12 @@ const FAVORITES_CAP = 1_000;
  */
 export const retentionForBody = query({
   args: { waterBodyId: v.id('waterBodies') },
-  handler: async (ctx, { waterBodyId }) => {
+  handler: async (ctx, { waterBodyId: requested }) => {
     await requireCapability(ctx, 'body.read');
-    const body = await ctx.db.get(waterBodyId);
+    // A merged-away id reads its survivor's, as `waterBodies.get` follows it.
+    const body = await resolveSurvivor(ctx, requested);
     if (!body) return null;
+    const waterBodyId = body._id;
     const lastActivity = await lastActivityOf(ctx, waterBodyId);
     let curatedBoost: { value: number; at: number | null } | undefined;
     // A boost set to zero is no boost — the rollover's rule (`retentionReason`) and the library's.
@@ -334,19 +337,25 @@ export const retentionForBody = query({
       .query('waterBodyFavorites')
       .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
       .take(FAVORITES_CAP + 1);
-    const { official, osm, persisted, hidden, capped } = await loadPutInRows(ctx, waterBodyId);
-    const saved = [...official, ...osm, ...persisted].filter((r) => !isSuppressed(r.coord, hidden));
+    // The rollover's own rule, so the tab and the walk cannot disagree about a launch.
+    const putIns = await savedPutInsOf(ctx, waterBodyId, SAVED_PUT_IN_TAB_READ);
     return {
       ...(lastActivity !== undefined ? { lastActivity } : {}),
       ...(curatedBoost !== undefined ? { curatedBoost } : {}),
       favorites: Math.min(favorites.length, FAVORITES_CAP),
       favoritesCapped: favorites.length > FAVORITES_CAP,
-      savedPutIns: saved.length,
+      savedPutIns: putIns.saved,
       /**
-       * The body has more stored put-ins than the read takes: `savedPutIns` counts only the rows read
-       * (an unread row may be another launch, or a hidden coordinate that suppresses one counted).
+       * The body has more visible rows or hidden coordinates than the rule reads: `savedPutIns`
+       * counts only the rows read (an unread row may be another launch, or a hidden coordinate that
+       * suppresses one counted).
        */
-      savedPutInsCapped: capped,
+      savedPutInsCapped: putIns.capped,
+      /**
+       * Whether its put-ins keep it active at the rollover — the rollover's own read, not the wider
+       * one above: a body past the rollover's bounds is kept there though this tab counts it whole.
+       */
+      putInKeeps: await hasSavedPutIn(ctx, waterBodyId),
     };
   },
 });

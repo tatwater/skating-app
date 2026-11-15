@@ -238,7 +238,8 @@ describe('the triage page', () => {
     const [row] = (await mod.as.query(api.corpusPlaceNames.listQueue, {})).rows;
     if (!row) throw new Error('not loaded');
     await mod.as.mutation(api.corpusPlaceNames.setLake, { id: row._id, waterBodyId: lake });
-    const onLake = await mod.as.query(api.corpusPlaceNames.openForBody, { waterBodyId: lake });
+    const onLake = (await mod.as.query(api.corpusPlaceNames.openForBody, { waterBodyId: lake }))
+      .names;
     expect(onLake.map((r) => r.name)).toEqual(['Hero’s Welcome']);
 
     await mod.as.mutation(api.corpusPlaceNames.dismiss, {
@@ -306,7 +307,8 @@ describe('placing a name', () => {
     const other = await seedBody(t, 'Lake George');
     const mod = await seedUser(t, 'mod');
     await load(t, [name('Apple Island', { messages: 24, waterBodyId: lake })]);
-    const [row] = await mod.as.query(api.corpusPlaceNames.openForBody, { waterBodyId: lake });
+    const [row] = (await mod.as.query(api.corpusPlaceNames.openForBody, { waterBodyId: lake }))
+      .names;
     if (!row) throw new Error('not loaded');
     // Not on another lake:
     await expect(
@@ -331,7 +333,9 @@ describe('placing a name', () => {
     });
     const stored = await t.run((ctx) => ctx.db.get(row._id));
     expect(stored).toMatchObject({ status: 'placed', landmarkId });
-    expect(await mod.as.query(api.corpusPlaceNames.openForBody, { waterBodyId: lake })).toEqual([]);
+    expect(
+      (await mod.as.query(api.corpusPlaceNames.openForBody, { waterBodyId: lake })).names,
+    ).toEqual([]);
     await expect(
       mod.as.mutation(api.landmarks.create, {
         waterBodyId: lake,
@@ -363,7 +367,8 @@ describe('placing a name', () => {
     await load(t, [
       name('Isle LaMotte', { messages: 4, waterBodyId: lake, aliases: ['Isle of La Motte'] }),
     ]);
-    const [row] = await mod.as.query(api.corpusPlaceNames.openForBody, { waterBodyId: lake });
+    const [row] = (await mod.as.query(api.corpusPlaceNames.openForBody, { waterBodyId: lake }))
+      .names;
     if (!row) throw new Error('not loaded');
     await expect(
       mod.as.mutation(api.corpusPlaceNames.fileAsSpelling, { id: row._id, landmarkId: elsewhere }),
@@ -408,7 +413,8 @@ describe('placing a name', () => {
       name('Hawk Shoal', { waterBodyId: lake, aliases: ['Hawks Shoal'] }),
       name('Hawk Light', { waterBodyId: lake, aliases: ['H'.repeat(81)] }),
     ]);
-    const open = await mod.as.query(api.corpusPlaceNames.openForBody, { waterBodyId: lake });
+    const open = (await mod.as.query(api.corpusPlaceNames.openForBody, { waterBodyId: lake }))
+      .names;
     const bay = open.find((r) => r.name === 'Kingsland Bay');
     const hawk = open.find((r) => r.name === 'The Hawk');
     const shoal = open.find((r) => r.name === 'Hawk Shoal');
@@ -467,7 +473,8 @@ describe('placing a name', () => {
       point: { lat: 44.9, lng: -72.6 },
     });
     await load(t, [name('Mud Bay', { waterBodyId: lake })]);
-    const [row] = await mod.as.query(api.corpusPlaceNames.openForBody, { waterBodyId: lake });
+    const [row] = (await mod.as.query(api.corpusPlaceNames.openForBody, { waterBodyId: lake }))
+      .names;
     if (!row) throw new Error('not loaded');
     await mod.as.mutation(api.corpusPlaceNames.fileAsSpelling, { id: row._id, landmarkId: far });
     expect((await t.run((ctx) => ctx.db.get(far)))?.aliases).toEqual(['Mud Bay']);
@@ -481,7 +488,8 @@ describe('placing a name', () => {
       names: [{ ...name('Cedar Island', { waterBodyId: lake }), alreadyNamed: true }],
       dryRun: false,
     });
-    const [row] = await mod.as.query(api.corpusPlaceNames.openForBody, { waterBodyId: lake });
+    const [row] = (await mod.as.query(api.corpusPlaceNames.openForBody, { waterBodyId: lake }))
+      .names;
     expect(row).toMatchObject({ name: 'Cedar Island', alreadyNamed: true });
   });
 
@@ -497,7 +505,8 @@ describe('placing a name', () => {
     });
     await mod.as.mutation(api.landmarks.remove, { landmarkId: gone });
     await load(t, [name('The Old Pier', { waterBodyId: lake })]);
-    const [row] = await mod.as.query(api.corpusPlaceNames.openForBody, { waterBodyId: lake });
+    const [row] = (await mod.as.query(api.corpusPlaceNames.openForBody, { waterBodyId: lake }))
+      .names;
     if (!row) throw new Error('not loaded');
     await expect(
       mod.as.mutation(api.corpusPlaceNames.fileAsSpelling, { id: row._id, landmarkId: gone }),

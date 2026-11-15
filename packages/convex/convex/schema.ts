@@ -2848,6 +2848,12 @@ export default defineSchema({
     snowHidden: v.optional(v.boolean()),
     weatherAdjustedAt: v.optional(v.number()),
     /**
+     * When the pin left the lake — archived by the vote that healed it, or merged into another — set
+     * once and never moved (B01-3b). Absent on a pin still active, and on every pin archived before
+     * it existed: the winters' strip reads those as an end not recorded, never a guessed one.
+     */
+    leftLakeAt: v.optional(v.number()),
+    /**
      * When its author withdrew it — "this was never here", the D65 sense, not "it healed" (D248,
      * founder ruling 2026-11-13). Allowed only while no other skater has said it is there. The pin
      * leaves as if never posted: `moderationStatus` becomes `removed` and the lifecycle `status` is
@@ -3267,7 +3273,10 @@ export default defineSchema({
   })
     .index('by_ask_key', ['askKey'])
     .index('by_status_messages', ['status', 'messages'])
-    .index('by_water_body_status', ['waterBodyId', 'status']),
+    .index('by_water_body_status', ['waterBodyId', 'status'])
+    // One lake's names, most discussed first — its open list is the top of this range, never a
+    // capped page sorted after (`openForBody`).
+    .index('by_water_body_status_messages', ['waterBodyId', 'status', 'messages']),
 
   /**
    * What each catalog source read on the complete landmark loads this deployment accepted (D202) —
@@ -4064,6 +4073,9 @@ export default defineSchema({
     subAreaId: v.optional(v.id('waterBodySubAreas')),
   })
     .index('by_water_body', ['waterBodyId'])
+    // A body's visible launches apart from its hidden coordinates — the saved-put-in rule's two
+    // bounded reads (B01-3b, `savedPutInsOf`).
+    .index('by_water_body_status', ['waterBodyId', 'status'])
     // Idempotent OSM upsert (A06d §2.3), mirroring `waterBodies.by_external_id`.
     .index('by_external_id', ['externalId'])
     // A bay's own launches (A09) — the drive-time coordinate and the bay view's access list. `eq()`
@@ -4827,6 +4839,100 @@ export default defineSchema({
     .index('by_lane_scope_key', ['lane', 'scope', 'key'])
     // A lane's state tabs: every scope's total.
     .index('by_lane_key_scope', ['lane', 'key', 'scope']),
+
+  // ── B01-3b: which bodies an audit row concerns ──
+  /**
+   * **One row per (audit row, body it concerns)** — written by `writeAudit` with the resolver the
+   * library refresh uses (`bodiesOfTarget`): the body itself, or the body a bay, landmark, put-in,
+   * feature, request, place name or flag belongs to, or every body a lot serves. A link table rather
+   * than a field on the audit row because a lot's row concerns every body it serves, and an array
+   * can't be indexed. A body's History is then one indexed range per body in its merge chain.
+   * `self` is a row on the body itself (its own `waterbody` target).
+   */
+  auditBodyLinks: defineTable({
+    actionId: v.id('moderationActions'),
+    waterBodyId: v.id('waterBodies'),
+    action: literals(MODERATION_ACTIONS),
+    self: v.boolean(),
+    createdAt: v.number(),
+  })
+    .index('by_action', ['actionId'])
+    .index('by_body_time', ['waterBodyId', 'createdAt'])
+    .index('by_body_action_time', ['waterBodyId', 'action', 'createdAt'])
+    .index('by_body_self_time', ['waterBodyId', 'self', 'createdAt'])
+    // A verb among the body's own rows — `bodyOnly` with `action`, in the index, never a filter.
+    .index('by_body_self_action_time', ['waterBodyId', 'self', 'action', 'createdAt']),
+
+  // ── B01-3b: a body's geometry facts, computed at the write ──
+  /**
+   * **A body's touching bodies and the places it lies in**, computed by the `bodyGeo` jobs (in an
+   * action, where geometry whose cost grows with an outline has room) and stored, so the console's
+   * reads do no geometry. `staleAt` marks a body owed a recompute (its outline, or a neighbor's
+   * relation, moved); `computedAt` absent is "not computed" — the reads say `null`, never "none".
+   * `stamp` is the outline the answer was computed for. The attempt fields are `lib/attempts.ts`'s.
+   */
+  bodyGeoFacts: defineTable({
+    waterBodyId: v.id('waterBodies'),
+    staleAt: v.optional(v.number()),
+    computedAt: v.optional(v.number()),
+    stamp: v.optional(v.string()),
+    /** The touching bodies, each with its name and a simplified outer ring. */
+    neighbors: v.optional(
+      v.array(
+        v.object({
+          waterBodyId: v.id('waterBodies'),
+          name: v.string(),
+          ring: v.array(v.array(v.number())),
+          /** The neighbor's outline stamp the ring was cut from (`outlineStamp`). */
+          stamp: v.optional(v.string()),
+        }),
+      ),
+    ),
+    /** More candidates than were tested, or the box past its tile bound. */
+    neighborsCapped: v.optional(v.boolean()),
+    towns: v.optional(v.array(v.string())),
+    counties: v.optional(v.array(v.string())),
+    states: v.optional(v.array(v.string())),
+    attempts: v.optional(v.number()),
+    errorClass: v.optional(v.string()),
+    parkedAt: v.optional(v.number()),
+    retriedAt: v.optional(v.number()),
+    /** The newest places-layer mark (`geoInputMarks`) the places were computed under. */
+    areasAt: v.optional(v.number()),
+    /** When the drift repair last checked this row's inputs against the stored answer. */
+    checkedAt: v.optional(v.number()),
+  })
+    .index('by_body', ['waterBodyId'])
+    // The drift repair: the rows checked longest ago — never-checked rows (absent) first, on purpose.
+    .index('by_checked', ['checkedAt'])
+    // The work: unparked bodies owed a recompute, oldest first (`eq(undefined)` then `gt(0)`).
+    .index('by_parked_stale', ['parkedAt', 'staleAt'])
+    // The daily retry: parked bodies, least recently tried first (`gt(0)`).
+    .index('by_parked', ['parkedAt']),
+
+  /**
+   * **Who holds a copy of whose outline** (B01-3b): one row per (body, touching body it stored), with
+   * the stamp of the outline its ring was cut from — so when an outline's stamp changes, every body
+   * that stored it is found by index and marked stale (`bodyGeo.store`), and the drift repair can tell
+   * a held copy that is behind. Written only by `bodyGeo.store`, at most twelve per body.
+   */
+  bodyGeoLinks: defineTable({
+    waterBodyId: v.id('waterBodies'),
+    neighborId: v.id('waterBodies'),
+    neighborStamp: v.string(),
+  })
+    .index('by_holder', ['waterBodyId'])
+    .index('by_neighbor', ['neighborId']),
+
+  /**
+   * **When an input of the geometry facts outside the bodies changed** (B01-3b) — today the places
+   * layer (`adminAreas`): one row per load batch, inserted and never read in the write, so parallel
+   * loads never contend. The newest `at` is the bar a body's `areasAt` is checked against.
+   */
+  geoInputMarks: defineTable({
+    input: v.literal('adminAreas'),
+    at: v.number(),
+  }).index('by_input_at', ['input', 'at']),
 
   /**
    * **Bodies whose library row is owed a refresh** — queued by the machine's bulk writes that leave

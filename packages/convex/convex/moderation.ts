@@ -18,7 +18,7 @@ import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
 import { writeAudit } from './lib/audit';
-import { auditRowsOn } from './lib/auditReads';
+import { auditRowsOn, auditTargetLabel } from './lib/auditReads';
 import { requireCapability } from './lib/auth';
 import {
   AUTHOR_DELETE_REASON,
@@ -498,7 +498,14 @@ export async function setContentStatus(
         targetType: args.targetType,
         targetId: args.targetId,
         reason: args.reason,
-        metadata: { priorStatus, newStatus: priorStatus, onAuthorDeleted: true },
+        metadata: {
+          priorStatus,
+          newStatus: priorStatus,
+          onAuthorDeleted: true,
+          // Whose record the verdict is on, kept with the action (D248: a verdict outlives its
+          // content, and a rebuild after the erasure must still name them).
+          subjectUserId: subjectOf(args.targetType, typedTarget),
+        },
         createdAt: now,
       });
       await recordVerdict(ctx, {
@@ -592,7 +599,14 @@ export async function setContentStatus(
       }
       // A hidden hazard must leave the map card too (A06c §5).
       if (args.targetType === 'hazard') {
-        await recomputeBodySummary(ctx, (target as Doc<'hazards'>).waterBodyId);
+        // No library fact counts hazards: the summary only (B01-3b).
+        await recomputeBodySummary(
+          ctx,
+          (target as Doc<'hazards'>).waterBodyId,
+          undefined,
+          undefined,
+          false,
+        );
       }
     }
 
@@ -605,6 +619,10 @@ export async function setContentStatus(
       metadata: {
         priorStatus,
         newStatus: args.status,
+        // Whose record a verdict is on, kept with the action (D248): a Post a moderator removed and
+        // its author then emptied Report by Report leaves no row of the author's on the Post, so
+        // without it a rebuild after the Post's erasure could not name them.
+        subjectUserId: subjectOf(args.targetType, typedTarget),
         ...(args.targetType === 'post' ? { cascaded } : {}),
         ...(clearsDerivedFromReportId !== undefined ? { clearsDerivedFromReportId } : {}),
       },
@@ -671,7 +689,13 @@ async function moveMember(
     targetType: 'report',
     targetId: report._id,
     reason: audit.reason,
-    metadata: { priorStatus: from, newStatus: to, cascadedFromPostId: postId, ...mark },
+    metadata: {
+      priorStatus: from,
+      newStatus: to,
+      cascadedFromPostId: postId,
+      subjectUserId: report.authorId,
+      ...mark,
+    },
     createdAt: audit.now,
   });
   if (chosen && to === 'visible') {
@@ -775,6 +799,7 @@ export async function revertPostVerdict(
     metadata: {
       priorStatus: post.moderationStatus,
       newStatus: priorStatus,
+      subjectUserId: post.authorId,
       cascaded: reverted,
       // Undoing a restore of a Post its Reports took down puts it back down the same way, marked as
       // `derivePostVisibility` reads it, so restoring a member later brings the Post back.
@@ -1326,6 +1351,11 @@ interface ActionView {
   via?: string;
   /** Whether the viewer can undo this row now, and if not, why (D226). */
   undo: UndoState;
+  /**
+   * The name the target goes by — a body's (its stored library row) or a person's (S5). Absent for
+   * other kinds, and for a body or person no longer there (or a body whose row isn't built yet).
+   */
+  targetLabel?: string;
 }
 
 async function toActionView(
@@ -1333,7 +1363,9 @@ async function toActionView(
   viewer: Doc<'profiles'>,
   a: Doc<'moderationActions'>,
 ): Promise<ActionView> {
+  const targetLabel = await auditTargetLabel(ctx, a.targetType, a.targetId);
   return {
+    ...(targetLabel !== null ? { targetLabel } : {}),
     ...(a.undoesActionId !== undefined ? { undoesActionId: a.undoesActionId } : {}),
     ...(a.via !== undefined ? { via: a.via } : {}),
     undo: await undoState(ctx, viewer, a),

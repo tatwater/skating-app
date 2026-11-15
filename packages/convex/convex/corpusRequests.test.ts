@@ -145,6 +145,14 @@ describe('create — the five kinds and their guards', () => {
       status: 'open',
       note: 'We skate it every January.',
     });
+    // A new ask queues the body's library row for the minute cron (B01-3b).
+    const queued = await t.run((ctx) =>
+      ctx.db
+        .query('bodyLibraryQueue')
+        .withIndex('by_body', (q) => q.eq('waterBodyId', id))
+        .first(),
+    );
+    expect(queued).not.toBeNull();
     await expect(
       skater.as.mutation(api.corpusRequests.create, {
         kind: 'activate',
@@ -611,6 +619,24 @@ describe('decide — what approving performs', () => {
     });
     expect(standingOf(body).standing).toBe('active');
     expect(body.activatedAt).toBeDefined();
+    // Its library row is written by the admit's audit row, and its geometry is computed by the next
+    // run with no other write (B01-3b: the admit re-cells the body, which marks its facts).
+    const libraryRow = await t.run((ctx) =>
+      ctx.db
+        .query('bodyLibraryRows')
+        .withIndex('by_body', (q) => q.eq('waterBodyId', body._id).eq('scope', '*'))
+        .first(),
+    );
+    expect(libraryRow).not.toBeNull();
+    await t.action(internal.bodyGeo.computeDue, {});
+    const facts = await t.run((ctx) =>
+      ctx.db
+        .query('bodyGeoFacts')
+        .withIndex('by_body', (q) => q.eq('waterBodyId', body._id))
+        .first(),
+    );
+    expect(facts).toMatchObject({ computedAt: expect.any(Number) });
+    expect(facts?.staleAt).toBeUndefined();
     // Reachable on the map at once.
     const res2 = await t.query(api.waterBodies.resolveBodyForCoord, { coord: FAR });
     expect(res2?.waterBodyId).toEqual(body._id);
@@ -954,7 +980,9 @@ describe('name_bay — the sub-area queue', () => {
     await expect(
       one.as.query(api.corpusRequests.openBayRequestsForBody, { waterBodyId: id }),
     ).rejects.toThrow();
-    const rows = await mod.as.query(api.corpusRequests.openBayRequestsForBody, { waterBodyId: id });
+    const rows = (
+      await mod.as.query(api.corpusRequests.openBayRequestsForBody, { waterBodyId: id })
+    ).bays;
     expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({
       requestId: first,
@@ -1095,7 +1123,9 @@ describe('name_bay — the sub-area queue', () => {
         createdAt: Date.now(),
       }),
     );
-    const rows = await mod.as.query(api.corpusRequests.openBayRequestsForBody, { waterBodyId: id });
+    const rows = (
+      await mod.as.query(api.corpusRequests.openBayRequestsForBody, { waterBodyId: id })
+    ).bays;
     expect(rows[0]?.drawnSubAreaId).toBeDefined();
     await mod.as.mutation(api.corpusRequests.approve, { requestId });
     expect((await t.run((ctx) => ctx.db.get(requestId)))?.status).toBe('approved');
@@ -1113,7 +1143,8 @@ describe('name_bay — the sub-area queue', () => {
       waterBodyId: id,
       name: 'Corner Bay',
     });
-    let rows = await mod.as.query(api.corpusRequests.openBayRequestsForBody, { waterBodyId: id });
+    let rows = (await mod.as.query(api.corpusRequests.openBayRequestsForBody, { waterBodyId: id }))
+      .bays;
     expect(rows[0]?.coord).toBeUndefined();
     // A later ask for the same bay with a real point supplies one.
     const two = await seedUser(t, 'two');
@@ -1123,7 +1154,8 @@ describe('name_bay — the sub-area queue', () => {
       waterBodyId: id,
       name: 'corner bay',
     });
-    rows = await mod.as.query(api.corpusRequests.openBayRequestsForBody, { waterBodyId: id });
+    rows = (await mod.as.query(api.corpusRequests.openBayRequestsForBody, { waterBodyId: id }))
+      .bays;
     expect(rows[0]?.coord).toEqual(NOTCH);
     expect(rows[0]?.askers).toBe(2);
   });

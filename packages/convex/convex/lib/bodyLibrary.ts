@@ -54,7 +54,7 @@ import { internal } from '../_generated/api';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { MAX_ACCESS_ROWS_PER_BODY } from './accessLimits';
-import type { ModerationTargetType } from './audit';
+import type { ModerationAction, ModerationTargetType } from './audit';
 import { OPEN_FLAG_STATUSES } from './openFlags';
 import { PUT_IN_REPORT_SCAN, putInMarkersForBody } from './putInMarkers';
 
@@ -140,9 +140,9 @@ export async function openAsksFor(
       .withIndex('by_water_body', (q) =>
         q.eq('waterBodyId', waterBodyId).eq('kind', kind).eq('status', 'open'),
       )
-      .take(ASK_CAP);
-    if (rows.length >= ASK_CAP) capped = true;
-    requests += rows.length;
+      .take(ASK_CAP + 1);
+    if (rows.length > ASK_CAP) capped = true;
+    requests += Math.min(rows.length, ASK_CAP);
   }
   let flags = 0;
   for (const status of OPEN_FLAG_STATUSES) {
@@ -151,17 +151,22 @@ export async function openAsksFor(
       .withIndex('by_target_status_reason', (q) =>
         q.eq('targetType', 'waterbody').eq('targetId', waterBodyId).eq('status', status),
       )
-      .take(ASK_CAP);
-    if (rows.length >= ASK_CAP) capped = true;
-    flags += rows.length;
+      .take(ASK_CAP + 1);
+    if (rows.length > ASK_CAP) capped = true;
+    flags += Math.min(rows.length, ASK_CAP);
   }
   const names = await ctx.db
     .query('corpusPlaceNames')
     .withIndex('by_water_body_status', (q) => q.eq('waterBodyId', waterBodyId).eq('status', 'open'))
-    .take(ASK_CAP);
-  if (names.length >= ASK_CAP) capped = true;
-  // `capped`: some kind reached its cap, so `count` is a floor, never presented as whole.
-  return { count: requests + flags + names.length, waiting: requests + flags > 0, capped };
+    .take(ASK_CAP + 1);
+  if (names.length > ASK_CAP) capped = true;
+  // `capped`: some source holds more than its cap (each read probes one past it, so exactly the cap
+  // is whole), and `count` is a floor, never presented as whole.
+  return {
+    count: requests + flags + Math.min(names.length, ASK_CAP),
+    waiting: requests + flags > 0,
+    capped,
+  };
 }
 
 /**
@@ -183,24 +188,25 @@ export async function reportFactsFor(
 }> {
   const season = currentSeason(now);
   const span = seasonRecordSpan(season, now);
-  const newest = await ctx.db
+  // One past the scan, so a body with exactly that many reports is not read as capped.
+  const read = await ctx.db
     .query('reports')
     .withIndex('by_water_body_skate_end_time', (q) => q.eq('waterBodyId', waterBodyId))
     .order('desc')
-    .take(REPORT_SCAN);
+    .take(REPORT_SCAN + 1);
+  const more = read.length > REPORT_SCAN;
+  const newest = read.slice(0, REPORT_SCAN);
+  // The first report the scan left unread: the count is a floor only when it is inside the record.
+  const unread = read[REPORT_SCAN];
   const visible = newest.filter((r) => r.moderationStatus === 'visible');
   const reports =
     span === null
       ? 0
       : visible.filter((r) => r.skateEndTime >= span.from && r.skateEndTime < span.to).length;
   const oldest = newest[newest.length - 1];
-  const reportsCapped =
-    span !== null &&
-    newest.length === REPORT_SCAN &&
-    oldest !== undefined &&
-    oldest.skateEndTime >= span.from;
+  const reportsCapped = span !== null && unread !== undefined && unread.skateEndTime >= span.from;
   let everReported = visible.length > 0;
-  if (!everReported && oldest !== undefined && newest.length === REPORT_SCAN) {
+  if (!everReported && oldest !== undefined && more) {
     // Every newest report is hidden: an older visible one still counts. Read one bounded window
     // further back; a body with more hidden reports than that reads as not reported (the facet's
     // "never reported" is about visible reports, and this is the rare edge of an edge).
@@ -655,15 +661,23 @@ export const changesTheBody = (targetType: ModerationTargetType): boolean =>
 
 /** The most bodies one lot's audit row refreshes. */
 const LOT_BODY_CAP = 16;
+/**
+ * The most bodies one lot's audit row is linked to (`auditBodyLinks`). Wider than the refresh's cap:
+ * a refresh is a budget, but a link is the row's place in a body's History, and a body the link
+ * misses never shows the row. History once read up to 64 lots per body; this keeps that reach.
+ */
+export const LOT_LINK_CAP = 64;
 
 /**
  * The bodies an audited action's target belongs to, and whether it counts as a change to them.
- * A target that is not about a body (a person, a report, a comment) belongs to none.
+ * A target that is not about a body (a person, a report, a comment) belongs to none. A lot belongs
+ * to the first `lotCap` bodies it serves.
  */
 export async function bodiesOfTarget(
   ctx: QueryCtx,
   targetType: ModerationTargetType,
   targetId: string,
+  lotCap: number = LOT_BODY_CAP,
 ): Promise<{ bodies: Id<'waterBodies'>[]; changes: boolean }> {
   const changes = CHANGES_THE_BODY.has(targetType);
   const one = (id: Id<'waterBodies'> | undefined | null) => ({
@@ -711,12 +725,49 @@ export async function bodiesOfTarget(
       const links = await ctx.db
         .query('parkingAreaBodies')
         .withIndex('by_parking_area', (q) => q.eq('parkingAreaId', id))
-        .take(LOT_BODY_CAP);
+        .take(lotCap);
       return { bodies: [...new Set(links.map((l) => l.waterBodyId))], changes };
     }
     default:
       return { bodies: [], changes: false };
   }
+}
+
+/**
+ * Link an audit row to every body it concerns (`auditBodyLinks`) — written beside the row, from the
+ * same resolution the library refresh makes, so a body's History is an indexed range. Idempotent: a
+ * row already linked to a body is not linked again.
+ */
+export async function linkAuditRow(
+  ctx: MutationCtx,
+  row: {
+    actionId: Id<'moderationActions'>;
+    action: ModerationAction;
+    targetType: ModerationTargetType;
+    targetId: string;
+    createdAt: number;
+  },
+  bodies: readonly Id<'waterBodies'>[],
+): Promise<number> {
+  if (bodies.length === 0) return 0;
+  const existing = await ctx.db
+    .query('auditBodyLinks')
+    .withIndex('by_action', (q) => q.eq('actionId', row.actionId))
+    .take(LOT_LINK_CAP + 1);
+  const have = new Set(existing.map((l) => l.waterBodyId as string));
+  let written = 0;
+  for (const waterBodyId of new Set(bodies)) {
+    if (have.has(waterBodyId)) continue;
+    await ctx.db.insert('auditBodyLinks', {
+      actionId: row.actionId,
+      waterBodyId,
+      action: row.action,
+      self: row.targetType === 'waterbody' && row.targetId === waterBodyId,
+      createdAt: row.createdAt,
+    });
+    written++;
+  }
+  return written;
 }
 
 /**
@@ -740,13 +791,35 @@ const auditRefreshes = new WeakMap<object, number>();
 export async function noteAuditedAction(
   ctx: MutationCtx,
   entry: {
+    actionId?: Id<'moderationActions'>;
+    action?: ModerationAction;
     actorId?: Id<'profiles'>;
     targetType: ModerationTargetType;
     targetId: string;
     createdAt: number;
   },
 ): Promise<void> {
-  const { bodies, changes } = await bodiesOfTarget(ctx, entry.targetType, entry.targetId);
+  // Linked to every body it concerns (to the link cap); refreshed for the first of them only.
+  const { bodies: concerned, changes } = await bodiesOfTarget(
+    ctx,
+    entry.targetType,
+    entry.targetId,
+    LOT_LINK_CAP,
+  );
+  if (entry.actionId !== undefined && entry.action !== undefined) {
+    await linkAuditRow(
+      ctx,
+      {
+        actionId: entry.actionId,
+        action: entry.action,
+        targetType: entry.targetType,
+        targetId: entry.targetId,
+        createdAt: entry.createdAt,
+      },
+      concerned,
+    );
+  }
+  const bodies = concerned.slice(0, LOT_BODY_CAP);
   const stamp = changes && entry.actorId !== undefined;
   for (const id of bodies) {
     const used = auditRefreshes.get(ctx) ?? 0;
