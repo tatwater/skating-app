@@ -37,6 +37,16 @@ import { DOC_MAX, errorClassOf, ReadBudget, ROW_MAX, traced } from './lib/readBu
 const DAY = 86_400_000;
 
 /**
+ * The read limit a nested per-person call runs under: what this transaction's budget has left, less a
+ * failure's record — the erasure sweep's rule. A nested call's limit counts against the same
+ * transaction (its reads are the caller's too), so it is the remaining budget, never a fixed figure: a
+ * fixed one is measured from what the caller already read, and a heavy head would leave it nothing.
+ */
+function nestedAllowance(reads: ReadBudget): number {
+  return Math.max(0, reads.bytes - ROW_MAX.profile);
+}
+
+/**
  * What a nested per-person write may read: the profile at its worst, twice (the writer checks it, and
  * the row's refresh re-reads it after the patch), and the small rows beside it.
  */
@@ -199,7 +209,7 @@ export const sweepLapsedSuspensions = internalMutation({
           outcome = await ctx.runMutation(
             internal.peopleJobs.lapseOne,
             { userId: head._id, now: cutoff },
-            { transactionLimits: { bytesRead: PERSON_WORK } },
+            { transactionLimits: { bytesRead: nestedAllowance(reads) } },
           );
         } catch (err) {
           reads.spend(PERSON_WORK);
@@ -296,7 +306,7 @@ export const retryLapsedDaily = internalMutation({
           const outcome = await ctx.runMutation(
             internal.peopleJobs.lapseOne,
             { userId: head._id, now },
-            { transactionLimits: { bytesRead: PERSON_WORK } },
+            { transactionLimits: { bytesRead: nestedAllowance(reads) } },
           );
           reads.spend(PERSON_WORK);
           if (outcome === 'reset') reset++;
@@ -321,20 +331,30 @@ export const retryLapsedDaily = internalMutation({
     }),
 });
 
-/** At most this many parked lapses listed. */
-const PARKED_LIST = 50;
+/** Parked lapses a page lists at most, and the bytes of profiles it reads at most, as they weigh. */
+const PARKED_PAGE = 50;
+const PARKED_PAGE_BYTES = 8 * DOC_MAX;
 
-/** The lapses the sweep parked, oldest parked first, each with its attempts and last error class. */
+/**
+ * The lapses the sweep parked, oldest parked first, each with its attempts and last error class — a
+ * page at a time. The rows are profiles (the parking lives on them), which can weigh a whole document
+ * each, so a page stops at {@link PARKED_PAGE_BYTES} of them as they really weigh and says where the
+ * next begins: a short page is not the end, `isDone` is.
+ */
 export const parkedLapses = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { cursor: v.optional(v.union(v.string(), v.null())) },
+  handler: async (ctx, { cursor }) => {
     await requireCapability(ctx, 'machinery.read');
-    const rows = await ctx.db
+    const page = await ctx.db
       .query('profiles')
       .withIndex('by_suspension_parked', (q) => q.eq('status', 'suspended').gt('lapseParkedAt', 0))
-      .take(PARKED_LIST + 1);
+      .paginate({
+        cursor: cursor ?? null,
+        numItems: PARKED_PAGE,
+        maximumBytesRead: PARKED_PAGE_BYTES,
+      });
     return {
-      parked: rows.slice(0, PARKED_LIST).map((p) => ({
+      parked: page.page.map((p) => ({
         userId: p._id,
         suspendedUntil: p.suspendedUntil ?? null,
         attempts: p.lapseAttempts ?? 0,
@@ -342,7 +362,8 @@ export const parkedLapses = query({
         parkedAt: p.lapseParkedAt ?? null,
         retriedAt: p.lapseRetriedAt ?? null,
       })),
-      capped: rows.length > PARKED_LIST,
+      isDone: page.isDone,
+      continueCursor: page.continueCursor,
     };
   },
 });
@@ -387,7 +408,7 @@ export const repairDrift = internalMutation({
           await ctx.runMutation(
             internal.peopleJobs.refreshOne,
             { userId: row.userId, touch: true },
-            { transactionLimits: { bytesRead: PERSON_WORK } },
+            { transactionLimits: { bytesRead: nestedAllowance(reads) } },
           );
           repaired++;
         } catch (err) {
@@ -439,7 +460,7 @@ export const backfillRows = internalMutation({
           await ctx.runMutation(
             internal.peopleJobs.refreshOne,
             { userId: profile._id },
-            { transactionLimits: { bytesRead: PERSON_WORK } },
+            { transactionLimits: { bytesRead: nestedAllowance(reads) } },
           );
         } catch (err) {
           failed++;

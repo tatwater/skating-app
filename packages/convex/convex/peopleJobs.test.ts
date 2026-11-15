@@ -42,11 +42,12 @@ const NOTIF_PREFS = {
   greatReportNearby: false,
 };
 
-/** Near the document limit: what a profile's cached isochrones can weigh. */
-const HEAVY_POLYGON = {
-  type: 'Polygon' as const,
-  coordinates: [Array.from({ length: 30_000 }, (_, i) => [i / 1e4, (i % 7) / 1e4])],
-};
+/**
+ * Near the document limit, in a profile's one free-text field: what a profile can weigh (its cached
+ * isochrones can too, but a megabyte of polygon coordinates is slow to encode, and the read budget
+ * charges a profile at the limit whatever makes it heavy).
+ */
+const HEAVY_BIO = 'h'.repeat(1000 * 1024);
 
 async function seed(t: T, subject: string, over: Partial<Doc<'profiles'>> = {}, row = true) {
   return t.run(async (ctx) => {
@@ -284,26 +285,25 @@ describe('the lapsed-suspension sweep', () => {
   test('a chain of heavy profiles finishes under the real limits', async () => {
     const t = convexTest({ schema, modules, transactionLimits: true });
     const ids: Id<'profiles'>[] = [];
-    // Three people a pass at the worst a profile weighs: seven take three passes.
+    // Two people a pass at the worst a profile weighs (its head, its nested reset, a failure's record): seven take four passes.
     for (let i = 0; i < 7; i++) {
       ids.push(
         await seed(t, `h${i}`, {
           status: 'suspended',
           suspendedUntil: T0 - MIN,
-          cachedIsochrones: { band30: HEAVY_POLYGON },
+          bio: HEAVY_BIO,
         }),
       );
     }
     await sweep(t);
     for (const id of ids) expect((await get(t, id))?.status).toBe('active');
-  }, 120_000);
+  });
 });
 
 describe('the rows: backfill, drift repair, a tombstone put back', () => {
   test('the backfill writes every heavy profile’s row, reports an overwritten tombstone, and marks ready', async () => {
     const t = convexTest({ schema, modules, transactionLimits: true });
-    for (let i = 0; i < 12; i++)
-      await seed(t, `h${i}`, { cachedIsochrones: { band30: HEAVY_POLYGON } }, false);
+    for (let i = 0; i < 12; i++) await seed(t, `h${i}`, { bio: HEAVY_BIO }, false);
     const broken = await seed(t, 'broken', { status: 'banned', deletedAt: T0 - DAY }, false);
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
     await t.mutation(internal.peopleJobs.backfillRows, {});
@@ -320,7 +320,7 @@ describe('the rows: backfill, drift repair, a tombstone put back', () => {
     ).toEqual({
       restored: false,
     });
-  }, 120_000);
+  });
 
   test('a backfill with a failure is not marked ready', async () => {
     const t = convexTest(schema, modules);
@@ -361,7 +361,7 @@ describe('the rows: backfill, drift repair, a tombstone put back', () => {
 
   test('the flag-subject backfill stamps every older flag over heavy targets, then marks ready', async () => {
     const t = convexTest({ schema, modules, transactionLimits: true });
-    const author = await seed(t, 'author', { cachedIsochrones: { band30: HEAVY_POLYGON } });
+    const author = await seed(t, 'author', { bio: HEAVY_BIO });
     const filer = await seed(t, 'filer');
     for (let i = 0; i < 14; i++) {
       await t.run((ctx) =>
@@ -392,5 +392,5 @@ describe('the rows: backfill, drift repair, a tombstone put back', () => {
     expect(flags.filter((f) => f.subjectUserId === null)).toHaveLength(1);
     const counts = await t.run((ctx) => ctx.db.query('peopleCounts').collect());
     expect(counts.some((c) => c.key === READY_FLAG_SUBJECTS)).toBe(true);
-  }, 120_000);
+  });
 });
