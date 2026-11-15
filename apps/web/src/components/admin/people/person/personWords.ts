@@ -1,3 +1,5 @@
+import { NOT_RECORDED, STILL_PREPARING } from '../answers';
+
 /**
  * **Every word the person page coined** — each string the boards (8.1, 8.2, 8.5, 8.6) did not
  * supply, in one place, so the founder reads them together and the integrator can merge them with
@@ -10,8 +12,8 @@
  */
 export const WORDS = {
   // ── The three answers that are not numbers ──
-  pending: 'Still being prepared',
-  notRecorded: 'Not recorded yet',
+  pending: STILL_PREPARING,
+  notRecorded: NOT_RECORDED,
   couldNotRead: 'Couldn’t be read',
   loading: 'Loading',
 

@@ -1,11 +1,12 @@
 import type { PeopleLane } from '@skating/core';
 import { Outlet, useNavigate, useParams, useSearch } from '@tanstack/react-router';
-import { type ReactNode, useRef, useState } from 'react';
+import { type ReactNode, useRef } from 'react';
 
 import { useRole } from '@/lib/useRole';
 
 import { ReadNote } from '../../reads/ReadNote';
 import { useMinuteNow } from '../../shell/presence';
+import { useClockFor } from '../clock';
 import { PeopleListView } from './PeopleListView';
 import { lanesFor } from './peopleLanes';
 import type { LaneEntry } from './peopleModel';
@@ -123,20 +124,3 @@ export function PeopleListRoute({ detail }: PeopleListRouteProps = {}) {
     />
   );
 }
-
-/**
- * The minute a list was opened at, held while it stays open: the clock its reads are asked
- * against, so the clock moving on never restarts the paging. A new `key` reads the clock again.
- * (The Bodies library holds the same rule; one shared hook is owed once both have landed.)
- */
-function useClockFor(key: string): number {
-  const [clock, setClock] = useState(() => ({ key, at: minute(Date.now()) }));
-  if (clock.key !== key) {
-    const next = { key, at: minute(Date.now()) };
-    setClock(next);
-    return next.at;
-  }
-  return clock.at;
-}
-
-const minute = (at: number) => Math.floor(at / 60_000) * 60_000;

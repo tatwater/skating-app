@@ -2,13 +2,12 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { Link } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
-
 import { useRole } from '@/lib/useRole';
-
 import { isFailed, read, useConsoleReadSet } from '../../reads/consoleReads';
 import { actionLabel } from '../../shell/actionLabels';
 import { useHeldRead, useMinuteNow } from '../../shell/presence';
 import { useUndo } from '../../shell/undo';
+import { useClockFor } from '../clock';
 import { type LinkTo, personHref } from './PersonFeeds';
 import { PersonView } from './PersonView';
 import type { PersonRead } from './personModel';
@@ -58,7 +57,7 @@ function PersonPage({ userId, returnTo, className }: PersonPaneProps) {
   const { can, userId: viewerId } = useRole();
   const live = useMinuteNow();
   // The minute this person was opened, held while the page stays open.
-  const [held] = useState(() => minute(Date.now()));
+  const held = useClockFor(userId);
   const [decisionRows, setDecisionRows] = useState(DECISIONS_FIRST);
   const valid = ID_SHAPE.test(userId);
   const id = userId as Id<'profiles'>;
@@ -131,5 +130,3 @@ function PersonPage({ userId, returnTo, className }: PersonPaneProps) {
     />
   );
 }
-
-const minute = (at: number) => Math.floor(at / 60_000) * 60_000;

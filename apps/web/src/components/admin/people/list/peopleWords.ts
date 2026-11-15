@@ -1,5 +1,7 @@
 import type { PeopleLane, Restriction } from '@skating/core';
 
+import { NOT_RECORDED, STILL_PREPARING } from '../answers';
+
 /**
  * **Every word the People list says that the boards didn't supply** — in one place, so the founder
  * can read and change them together (the Bodies list keeps its ask words the same way). The lanes'
@@ -54,8 +56,8 @@ export const searchListLabel = (q: string) => `Search: ${q}`;
 export const LANES_GROUP = 'Lists';
 export const SEARCH_LABEL = 'Search any account';
 
-/** The words for "a backfill hasn't finished": no number, no "+". */
-export const STILL_PREPARING = 'Still being prepared';
+/** The three answers that aren't a number, shared with the person page. */
+export { NOT_RECORDED, STILL_PREPARING };
 
 /** The lanes' foot while every count, or some lanes' counts, aren't ready. */
 export const ALL_COUNTS_PREPARING = 'Counts still being prepared';
@@ -90,7 +92,6 @@ export const allShown = (n: number) => `All ${n.toLocaleString('en-US')}`;
 export const someShown = (n: number) =>
   n === 0 ? 'None shown' : `${n.toLocaleString('en-US')} shown`;
 export const LOADING_MORE = 'Loading more';
-export const NOT_RECORDED = 'Not recorded yet';
 export const LIST_FAILED = 'Couldn’t read this list';
 export const REST_FAILED = 'Couldn’t read the rest of this list';
 

@@ -3,6 +3,7 @@ import { CONTRADICTION_FLAG_THRESHOLD } from '@skating/core';
 import type { FunctionReturnType } from 'convex/server';
 
 import { timeLeftInWords } from '@/lib/ages';
+import { floorText as countText } from '../answers';
 import { WORDS } from './personWords';
 
 /**
@@ -69,9 +70,8 @@ export const unrecordedFact = (sub: string = NOT_RECORDED): Fact => ({
 });
 
 /** "283", "1,204", or "200+" once the read stopped short. */
-export function countText({ count, capped }: Count): string {
-  return `${count.toLocaleString('en-US')}${capped ? '+' : ''}`;
-}
+/** A count as a cell writes it — the People pages' one form (`../answers`). */
+export { countText };
 
 /**
  * A count as a cell draws it. Pending wins over everything (the figure may be wrong, not merely
