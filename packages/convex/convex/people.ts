@@ -69,7 +69,7 @@ import {
   readStoredCounts,
   readWaitingAppeals,
 } from './lib/peopleFigures';
-import { OPEN_ENDED, personRowOf, READY_UNDO_CHAINS } from './lib/peopleRows';
+import { OPEN_ENDED, type PeopleBackfill, personRowOf, READY_UNDO_CHAINS } from './lib/peopleRows';
 import {
   CHARGED_QUERY_BUDGET,
   DOC_MAX,
@@ -124,24 +124,15 @@ function lanesFor(viewer: Doc<'profiles'>): PeopleLane[] {
 }
 
 /**
- * Why a lane's count or list may not be whole — each the cap or the gap of one read it depends on,
- * so the page can word it:
- * - `rows_backfill` — the People rows backfill hasn't finished: a stored count and a list may miss
- *   people;
+ * Why a lane's count or list may be short — each the cap of one read it depends on, so the page can
+ * word it (a backfill not yet finished is not a cap: it's the read's `pending`):
  * - `rows_missing` — a queue lane named someone who has no row yet, so the list left them out;
  * - `flags_capped` — the open flag queue was read to its cap (Flagged, and every row's open flags);
- * - `flag_subjects_pending` — an open content flag predates its subject stamp (the same);
  * - `tickets_capped` — a waiting support status was read to its cap (Appeals open, and every row's
  *   appeals);
  * - `count_capped` — a time-bound lane's count stopped at its cap (its list pages on).
  */
-export type PartialReason =
-  | 'rows_backfill'
-  | 'rows_missing'
-  | 'flags_capped'
-  | 'flag_subjects_pending'
-  | 'tickets_capped'
-  | 'count_capped';
+export type PartialReason = 'rows_missing' | 'flags_capped' | 'tickets_capped' | 'count_capped';
 
 /** Every upstream read a People lane can depend on, read once for a request. */
 async function readUpstream(ctx: QueryCtx, viewer: Doc<'profiles'>) {
@@ -167,11 +158,14 @@ async function readUpstream(ctx: QueryCtx, viewer: Doc<'profiles'>) {
     appeals,
     /** What each upstream read leaves out, by reason. */
     gaps: {
-      rows_backfill: !stored.rowsReady,
       flags_capped: queue.capped,
-      flag_subjects_pending: flagged.unknown,
       tickets_capped: waiting?.capped === true,
     },
+    /** The backfills not yet finished — a flag read without its subject counts as one. */
+    pending: new Set<PeopleBackfill>([
+      ...stored.pending,
+      ...(flagged.unknown ? (['flagSubjects'] as const) : []),
+    ]),
   };
 }
 type Upstream = Awaited<ReturnType<typeof readUpstream>>;
@@ -181,19 +175,31 @@ function reasonsOf(up: Upstream, keys: readonly (keyof Upstream['gaps'])[]): Par
   return keys.filter((k) => up.gaps[k]);
 }
 
-/** The upstream reads each lane's own membership depends on (its count and its list alike). */
+/** The capped reads each lane's own membership depends on (its count and its list alike). */
 const LANE_DEPENDS: Record<PeopleLane, readonly (keyof Upstream['gaps'])[]> = {
-  everyone: ['rows_backfill'],
-  staff: ['rows_backfill'],
-  suspended: ['rows_backfill'],
-  banned: ['rows_backfill'],
-  restricted: ['rows_backfill'],
-  flagged: ['flags_capped', 'flag_subjects_pending', 'rows_backfill'],
-  appeals: ['tickets_capped', 'rows_backfill'],
-  newest: ['rows_backfill'],
-  leaving: ['rows_backfill'],
-  deleted: ['rows_backfill'],
+  everyone: [],
+  staff: [],
+  suspended: [],
+  banned: [],
+  restricted: [],
+  flagged: ['flags_capped'],
+  appeals: ['tickets_capped'],
+  newest: [],
+  leaving: [],
+  deleted: [],
 };
+
+/** The backfills each lane's membership rests on: every lane reads the rows; Flagged, the subjects. */
+function lanePending(lane: PeopleLane | null): readonly PeopleBackfill[] {
+  return lane === 'flagged' ? ['rows', 'flagSubjects'] : ['rows'];
+}
+
+/** The backfills among `deps` not yet finished, in the registry's order. */
+function pendingOf(up: Upstream, deps: readonly PeopleBackfill[]): PeopleBackfill[] {
+  return (['rows', 'flagSubjects', 'undoChains'] as const).filter(
+    (b) => deps.includes(b) && up.pending.has(b),
+  );
+}
 
 /**
  * The sidebar: each lane the viewer has, in the board's order, with its count — read the way the
@@ -213,7 +219,7 @@ export const lanes = query({
     const time = async (lane: 'suspended' | 'newest') => {
       // The lane's own range, read to its cap and one past it: charged ahead, as the queues' are.
       budget.reserve('personRow', LANE_COUNT_CAP + 1);
-      const { count } = await countTimeLane(ctx, lane, now, true);
+      const { count } = await countTimeLane(ctx, lane, now);
       return { count: count.count, over: count.capped };
     };
     // A queue lane counts the people its list can show: those with a row (light reads, ≤ 200).
@@ -236,7 +242,12 @@ export const lanes = query({
       leaving: async () => ({ count: stored.count('leaving').count, over: false }),
       deleted: async () => ({ count: stored.count('deleted').count, over: false }),
     };
-    const out: Array<{ lane: PeopleLane; count: Count; reasons: PartialReason[] }> = [];
+    const out: Array<{
+      lane: PeopleLane;
+      count: Count;
+      reasons: PartialReason[];
+      pending: PeopleBackfill[];
+    }> = [];
     for (const lane of lanesFor(viewer)) {
       const { count, over, missing = false } = await counts[lane]();
       const reasons: PartialReason[] = [
@@ -244,9 +255,14 @@ export const lanes = query({
         ...(missing ? (['rows_missing'] as const) : []),
         ...(over ? (['count_capped'] as const) : []),
       ];
-      out.push({ lane, count: { count, capped: reasons.length > 0 }, reasons });
+      out.push({
+        lane,
+        count: { count, capped: reasons.length > 0 },
+        reasons,
+        pending: pendingOf(up, lanePending(lane)),
+      });
     }
-    return { lanes: out, ready: stored.rowsReady };
+    return { lanes: out, pending: pendingOf(up, ['rows', 'flagSubjects']) };
   },
 });
 
@@ -273,7 +289,7 @@ export interface PersonListRow {
   createdAt: number;
   /**
    * Open flags on them and on their content, from the open queue — a floor when the page's `reasons`
-   * name `flags_capped` or `flag_subjects_pending`.
+   * name `flags_capped`, or its `pending` names `flagSubjects`.
    */
   openFlags: { onUser: number; onContent: number };
   /** Appeals still waiting — admins only (`null` for a viewer without support). */
@@ -373,16 +389,18 @@ export const listPage = query({
       rows.map((r) => toListRow(r, now, flagsBy, appealsBy));
     // What this page may be missing: the lane's own reads (a search reads only the rows), and the
     // queues every row's open flags and appeals come from.
-    const own = search !== null ? (['rows_backfill'] as const) : LANE_DEPENDS[lane];
+    const own = search !== null ? [] : LANE_DEPENDS[lane];
+    // Every row's open flags rest on the subjects as well as the lane's own reads.
+    const pending = pendingOf(up, ['rows', 'flagSubjects']);
     const truth = (missing: boolean) => {
       const reasons = [
         ...new Set<PartialReason>([
           ...reasonsOf(up, own),
-          ...reasonsOf(up, ['flags_capped', 'flag_subjects_pending', 'tickets_capped']),
+          ...reasonsOf(up, ['flags_capped', 'tickets_capped']),
           ...(missing ? (['rows_missing'] as const) : []),
         ]),
       ];
-      return { partial: reasons.length > 0, reasons };
+      return { partial: reasons.length > 0, reasons, pending };
     };
 
     if (search !== null) {
@@ -544,7 +562,7 @@ export const person = query({
     const onUser: Doc<'contentFlags'>[] = [];
     const onContent: Doc<'contentFlags'>[] = [];
     let userCapped = false;
-    let contentCapped = !stored.flagSubjectsReady;
+    let contentCapped = false;
     for (const status of OPEN_FLAG_STATUSES) {
       const userRows = await takeCapped(budget, 'contentFlag', PERSON_FLAG_CAP, (n) =>
         ctx.db
@@ -676,6 +694,11 @@ export const person = query({
         restrictions: target.status === 'deleted' ? [] : restrictionsOf(target),
         flagsFiled,
       },
+      /**
+       * Backfills not yet finished that this page rests on: until `flagSubjects` is done, flags on
+       * their content filed before the stamp aren't found (`strip.openFlags.onContent`, `open.flags`).
+       */
+      pending: (stored.flagSubjectsReady ? [] : ['flagSubjects']) as PeopleBackfill[],
       open: {
         flags: openFlags,
         flagsCapped: userCapped || contentCapped,
@@ -1021,8 +1044,9 @@ export const history = query({
     const actors: Actors = new Map();
     return {
       rows: await shapeRows(ctx, viewer, merged.rows, actors),
-      // Flags older than the subject stamp aren't found by person until its backfill has run.
-      capped: merged.capped || !stored.flagSubjectsReady,
+      capped: merged.capped,
+      /** Flags older than the subject stamp aren't found by person until its backfill has run. */
+      pending: (stored.flagSubjectsReady ? [] : ['flagSubjects']) as PeopleBackfill[],
       createdAt: target.createdAt,
     };
   },
@@ -1192,8 +1216,8 @@ export function staffTenure(
  * counts bytes, calls and documents and is asked before each read; when it runs out the loop stops
  * and the figure says `capped` (the median reading `null` as well). The role rows are read before
  * those loops, so they can't starve the dates; a walk that reads its last allowed row without finding
- * the entering grant says `tenureCapped`. Before the undo-chain backfill has run, the undo figures say
- * `capped`, and so do the dates when an undo among the role rows predates it.
+ * the entering grant says `tenureCapped`. Before the undo-chain backfill has run, `pending` names it:
+ * the undo figures may be wrong, and the dates are `null` when an undo among the role rows predates it.
  *
  * `null` for anyone who isn't staff. Moderators read it on an admin's page too: the audit feed
  * already shows them everything it counts.
@@ -1273,13 +1297,12 @@ export const staffStats = query({
       }
     }
     // Before the undo-chain backfill, an undo written before chains were kept carries no place, and
-    // the change it undid still reads as standing: the dates can't be told, so they say so.
-    if (!chainsReady && roleRows.some((r) => r.undoesActionId !== undefined && !r.undoRoot)) {
-      roleShort = true;
-    }
+    // the change it undid still reads as standing: the dates can't be told yet — `pending`, not capped.
+    const roleUnplaced =
+      !chainsReady && roleRows.some((r) => r.undoesActionId !== undefined && !r.undoRoot);
     const roleRoot = rootReader(ctx, budget, roleRows);
     const roots = new Map<string, Audit>();
-    for (const r of roleShort ? [] : roleRows) {
+    for (const r of roleShort || roleUnplaced ? [] : roleRows) {
       const root = await roleRoot(r);
       if (root === undefined) {
         roleShort = true;
@@ -1287,9 +1310,10 @@ export const staffStats = query({
       }
       roots.set(r._id, root);
     }
-    const tenure = roleShort
-      ? { staffSince: null, roleSince: null }
-      : staffTenure(roleRows, (r) => roots.get(r._id) ?? r, target.role);
+    const tenure =
+      roleShort || roleUnplaced
+        ? { staffSince: null, roleSince: null }
+        : staffTenure(roleRows, (r) => roots.get(r._id) ?? r, target.role);
 
     const weeks = Array.from({ length: WEEKS }, (_, i) => {
       const start = end - (WEEKS - i) * WEEK_MS;
@@ -1305,7 +1329,7 @@ export const staffStats = query({
     const byOther = (by: Id<'profiles'> | undefined | null) =>
       by !== null && by !== undefined && by !== staffer;
     let undone = 0;
-    let undoShort = !chainsReady;
+    let undoShort = false;
     for (const r of weekRows) {
       const root = await rootOf(r);
       if (root === undefined) {
@@ -1342,11 +1366,14 @@ export const staffStats = query({
       },
       staffSince: tenure.staffSince,
       roleSince: tenure.roleSince,
+      /** The role rows couldn't all be read: both dates are `null` for that reason, not unrecorded. */
+      tenureCapped: roleShort || (!roleUnplaced && roleFull && tenure.staffSince === null),
       /**
-       * The role rows couldn't all be read, or an undo among them predates the undo-chain backfill:
-       * both dates are `null` for that reason, not unrecorded.
+       * Backfills not yet run that a figure here rests on — distinct from `capped` (a read stopped
+       * short) and from `null` (nothing on record): until `undoChains` is done, `undoneByOthers` and
+       * the tenure dates may be wrong, not merely short.
        */
-      tenureCapped: roleShort || (roleFull && tenure.staffSince === null),
+      pending: (chainsReady ? [] : ['undoChains']) as PeopleBackfill[],
       weeks,
     };
   },
@@ -1376,7 +1403,7 @@ export const staffSeason = query({
     const season: Season = resolveSeason(args.season, seasonOf(now));
     const span = seasonRecordSpan(season, now);
     const head = { season, opensOn: seasonRecordWindow(season, now).opensOn, empty: span === null };
-    if (span === null) return { ...head, overturned: null };
+    if (span === null) return { ...head, overturned: null, pending: [] as PeopleBackfill[] };
     const ledgerVisible = seesLedgerGrants(viewer);
     const staffer = target._id;
     const chainsReady =
@@ -1408,7 +1435,7 @@ export const staffSeason = query({
       (r) => r.createdAt >= span.from && r.createdAt < span.to && isDecision(r, ledgerVisible),
     );
     let count = 0;
-    let short = !chainsReady || !page.isDone || inSeason.length > SEASON_CHECKED;
+    let short = !page.isDone || inSeason.length > SEASON_CHECKED;
     for (const r of inSeason.slice(0, SEASON_CHECKED)) {
       const reversed = await reversedByOther(ctx, budget, rootOf, r, staffer);
       if (reversed === undefined) {
@@ -1417,7 +1444,12 @@ export const staffSeason = query({
       }
       if (reversed) count++;
     }
-    return { ...head, overturned: { count, capped: short } as Count };
+    return {
+      ...head,
+      overturned: { count, capped: short } as Count,
+      /** Backfills not yet run that `overturned` rests on (see `staffStats.pending`). */
+      pending: (chainsReady ? [] : ['undoChains']) as PeopleBackfill[],
+    };
   },
 });
 

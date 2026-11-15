@@ -373,12 +373,14 @@ describe('people.lanes and people.listPage', () => {
     void filer;
   });
 
-  test('before the rows backfill finishes, every stored count says it is a floor', async () => {
+  test('before the rows backfill finishes, every lane says not ready — not capped', async () => {
     const t = convexTest(schema, modules);
     await seed(t, 'mod', { role: 'moderator' });
-    const { lanes, ready: isReady } = await as(t, 'mod').query(api.people.lanes, {});
-    expect(isReady).toBe(false);
-    expect(lanes.find((l) => l.lane === 'everyone')?.count).toEqual({ count: 1, capped: true });
+    const { lanes, pending } = await as(t, 'mod').query(api.people.lanes, {});
+    expect(pending).toEqual(['rows', 'flagSubjects']);
+    const everyone = lanes.find((l) => l.lane === 'everyone');
+    expect(everyone).toMatchObject({ count: { count: 1, capped: false }, pending: ['rows'] });
+    expect(everyone?.reasons).toEqual([]);
   });
 });
 

@@ -216,7 +216,7 @@ describe('staffStats at its maximum supported input', () => {
     expect(s?.decisions.undoneByOthers).toEqual({ count: 1, capped: false });
   });
 
-  test('before the undo-chain backfill, the undo figures say they may be short; the backfill places old chains', async () => {
+  test('before the undo-chain backfill, the undo figures say not ready (not capped); the backfill places old chains', async () => {
     const t = await setup(false);
     const matt = await seed(t, 'matt', 'moderator');
     const adm = await seed(t, 'adm', 'admin');
@@ -246,13 +246,15 @@ describe('staffStats at its maximum supported input', () => {
     const before = await t
       .withIdentity({ subject: 'adm' })
       .query(api.people.staffStats, { userId: matt });
-    expect(before?.decisions.undoneByOthers).toEqual({ count: 0, capped: true });
+    expect(before?.decisions.undoneByOthers).toEqual({ count: 0, capped: false });
+    expect(before?.pending).toEqual(['undoChains']);
     await t.mutation(internal.peopleJobs.backfillUndoChains, {});
     await t.finishAllScheduledFunctions(vi.runAllTimers, 1_000);
     const after = await t
       .withIdentity({ subject: 'adm' })
       .query(api.people.staffStats, { userId: matt });
     expect(after?.decisions.undoneByOthers).toEqual({ count: 1, capped: false });
+    expect(after?.pending).toEqual([]);
   });
 });
 
@@ -372,7 +374,7 @@ describe('the figures say capped rather than throw or mislead', () => {
     expect(s?.decisions.undoneByOthers).toEqual({ count: 0, capped: false });
   });
 
-  test('before the backfill, a role undo from before the chains makes the dates capped, never wrong', async () => {
+  test('before the backfill, a role undo from before the chains makes the dates not ready, never wrong', async () => {
     const t = await setup(false);
     const matt = await seed(t, 'matt', 'moderator');
     const adm = await seed(t, 'adm', 'admin');
@@ -402,7 +404,12 @@ describe('the figures say capped rather than throw or mislead', () => {
     });
     const stats = () =>
       t.withIdentity({ subject: 'adm' }).query(api.people.staffStats, { userId: matt });
-    expect(await stats()).toMatchObject({ staffSince: null, roleSince: null, tenureCapped: true });
+    expect(await stats()).toMatchObject({
+      staffSince: null,
+      roleSince: null,
+      tenureCapped: false,
+      pending: ['undoChains'],
+    });
     await t.mutation(internal.peopleJobs.backfillUndoChains, {});
     await t.finishAllScheduledFunctions(vi.runAllTimers, 1_000);
     // Undone twice, the grant is back with its own time.
@@ -410,6 +417,7 @@ describe('the figures say capped rather than throw or mislead', () => {
       staffSince: { at: T0 - 3, role: 'moderator' },
       roleSince: { at: T0 - 3, role: 'moderator' },
       tenureCapped: false,
+      pending: [],
     });
   });
 

@@ -465,6 +465,10 @@ function deletionOverwritten(profile: Doc<'profiles'>): boolean {
 }
 
 /**
+ * **The first People backfill, and the one command an operator runs** (`PEOPLE_BACKFILLS`): when it
+ * ends it starts `backfillFlagSubjects`, which starts `backfillUndoChains` — whatever each one's
+ * outcome, since each marks only its own flag. `alone: true` re-runs one without the rest.
+ *
  * Backfill: every profile's row, by creation time, a budget's worth a pass (each profile charged at
  * the document limit, its refresh nested), chained to the end. A refresh that throws is logged and
  * the walk goes on; the rows are marked ready — the stored counts exact — only by a run with no
@@ -477,6 +481,8 @@ export const backfillRows = internalMutation({
     after: v.optional(v.number()),
     failed: v.optional(v.number()),
     overwritten: v.optional(v.array(v.id('profiles'))),
+    /** Run this backfill only, not the ones after it (a re-run after a fix). */
+    alone: v.optional(v.boolean()),
   },
   handler: (ctx, args) =>
     traced('peopleJobs.backfillRows', args, async () => {
@@ -520,6 +526,7 @@ export const backfillRows = internalMutation({
           after: last._creationTime,
           failed,
           overwritten,
+          ...(args.alone ? { alone: true } : {}),
         });
         return { done: false };
       }
@@ -530,6 +537,9 @@ export const backfillRows = internalMutation({
       }
       if (failed === 0) await markReady(ctx, READY_ROWS);
       else console.error(`peopleJobs.backfillRows: ${failed} failed; not marked ready — re-run it`);
+      // The next in `PEOPLE_BACKFILLS`, whatever this one's outcome: each marks only its own flag.
+      if (!args.alone)
+        await ctx.scheduler.runAfter(0, internal.peopleJobs.backfillFlagSubjects, {});
       return { done: true, failed, overwritten };
     }),
 });
@@ -568,7 +578,11 @@ const FLAG_STEP = ROW_MAX.contentFlag + DOC_MAX + ROW_MAX.contentFlag;
  * throws is logged and skipped; the subjects are marked ready only by a run with no failures.
  */
 export const backfillFlagSubjects = internalMutation({
-  args: { after: v.optional(v.number()), failed: v.optional(v.number()) },
+  args: {
+    after: v.optional(v.number()),
+    failed: v.optional(v.number()),
+    alone: v.optional(v.boolean()),
+  },
   handler: (ctx, args) =>
     traced('peopleJobs.backfillFlagSubjects', args, async () => {
       const reads = new ReadBudget();
@@ -599,6 +613,7 @@ export const backfillFlagSubjects = internalMutation({
         await ctx.scheduler.runAfter(0, internal.peopleJobs.backfillFlagSubjects, {
           after: last._creationTime,
           failed,
+          ...(args.alone ? { alone: true } : {}),
         });
         return { done: false };
       }
@@ -607,6 +622,7 @@ export const backfillFlagSubjects = internalMutation({
         console.error(
           `peopleJobs.backfillFlagSubjects: ${failed} failed; not marked ready — re-run it`,
         );
+      if (!args.alone) await ctx.scheduler.runAfter(0, internal.peopleJobs.backfillUndoChains, {});
       return { done: true, failed };
     }),
 });

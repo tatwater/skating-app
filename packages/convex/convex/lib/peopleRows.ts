@@ -50,6 +50,31 @@ export const READY_FLAG_SUBJECTS = 'ready:flagSubjects';
 export const READY_UNDO_CHAINS = 'ready:undoChains';
 
 /**
+ * **Every one-time job the People reads rest on, in the order they run, and the flag each sets** —
+ * the registry the after-merge steps are written from. The operator starts the first
+ * (`peopleJobs:backfillRows`); each starts the next when it ends, whatever its outcome, and marks only
+ * its own flag, and only by a run with no failures. On a database with nothing to backfill each finds
+ * nothing and sets its flag at once. `peopleBackfills.test.ts` holds every `READY_*` flag here to an
+ * entry, and `packages/guards` holds `ready:` flags to this module.
+ */
+export const PEOPLE_BACKFILLS = [
+  { backfill: 'rows', job: 'peopleJobs:backfillRows', flag: READY_ROWS },
+  { backfill: 'flagSubjects', job: 'peopleJobs:backfillFlagSubjects', flag: READY_FLAG_SUBJECTS },
+  { backfill: 'undoChains', job: 'peopleJobs:backfillUndoChains', flag: READY_UNDO_CHAINS },
+] as const;
+
+/**
+ * A backfill not yet finished, as a read names it in its `pending` — the figures resting on it may be
+ * wrong, not merely short (`capped`) or unrecorded (`null`).
+ */
+export type PeopleBackfill = (typeof PEOPLE_BACKFILLS)[number]['backfill'];
+
+/** The backfills whose flag is not among `keys` (the `peopleCounts` keys read), in the registry's order. */
+export function pendingBackfills(keys: ReadonlySet<string>): PeopleBackfill[] {
+  return PEOPLE_BACKFILLS.filter((b) => !keys.has(b.flag)).map((b) => b.backfill);
+}
+
+/**
  * The row a profile reads as, given the row it had (`prev`, for the times a change is first seen):
  *
  * - `statusSince` and `restrictedSince` are when *this writer* saw the status change or the first

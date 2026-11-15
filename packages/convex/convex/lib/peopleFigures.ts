@@ -20,6 +20,8 @@ import { accountsTotal } from './metricReads';
 import { readOpenFlags } from './openFlags';
 import {
   OPEN_ENDED,
+  type PeopleBackfill,
+  pendingBackfills,
   personRowOf,
   READY_FLAG_SUBJECTS,
   READY_ROWS,
@@ -35,22 +37,25 @@ export const LANE_COUNT_CAP = COUNT_CAP;
 // ── Stored counts ──────────────────────────────────────────────────────────────────────────────
 
 export interface StoredCounts {
+  /** A stored count — never `capped`: until the rows backfill is done it may be wrong (`pending`). */
   count: (key: StoredCountKey) => Count;
-  /** Every profile has a row: the stored counts are exact, not floors. */
+  /** Every profile has a row: the stored counts are exact. */
   rowsReady: boolean;
   /** Every flag carries its subject: a person's content flags are all found. */
   flagSubjectsReady: boolean;
+  /** Every People backfill not yet finished (`PEOPLE_BACKFILLS`). */
+  pending: PeopleBackfill[];
 }
 
 /** The stored counts and markers — a handful of tiny rows. */
 export async function readStoredCounts(ctx: QueryCtx): Promise<StoredCounts> {
   const rows = await ctx.db.query('peopleCounts').take(64);
   const byKey = new Map(rows.map((r) => [r.key, r.count]));
-  const rowsReady = byKey.has(READY_ROWS);
   return {
-    count: (key) => ({ count: Math.max(0, byKey.get(key) ?? 0), capped: !rowsReady }),
-    rowsReady,
+    count: (key) => ({ count: Math.max(0, byKey.get(key) ?? 0), capped: false }),
+    rowsReady: byKey.has(READY_ROWS),
     flagSubjectsReady: byKey.has(READY_FLAG_SUBJECTS),
+    pending: pendingBackfills(new Set(byKey.keys())),
   };
 }
 
@@ -83,11 +88,9 @@ export async function countTimeLane(
   ctx: QueryCtx,
   lane: 'suspended' | 'newest',
   now: number,
-  rowsReady: boolean,
 ): Promise<{ count: Count; first: Doc<'peopleRows'> | null }> {
   const rows = await laneRange(ctx, lane, now).take(LANE_COUNT_CAP + 1);
-  const counted = cappedCount(rows.length, LANE_COUNT_CAP);
-  return { count: { ...counted, capped: counted.capped || !rowsReady }, first: rows[0] ?? null };
+  return { count: cappedCount(rows.length, LANE_COUNT_CAP), first: rows[0] ?? null };
 }
 
 /** When the soonest running suspension lapses, from Suspended's first row; `null` for none or open-ended. */
@@ -107,8 +110,9 @@ export interface FlaggedPerson {
 }
 
 /**
- * The people the open flags are about, oldest open flag first. The count is exact when the flags read
- * was whole and every content flag carried its subject; otherwise it is a floor (`capped`).
+ * The people the open flags are about, oldest open flag first. The count is a floor (`capped`) when
+ * the flags read stopped at its cap; `unknown` when a flag carries no subject yet — the flag-subject
+ * backfill is pending, which a read says as `pending`, not as a cap.
  */
 export function flaggedPeopleFrom(
   flags: readonly Doc<'contentFlags'>[],
@@ -137,7 +141,7 @@ export function flaggedPeopleFrom(
   const people = [...byPerson.values()].sort(
     (a, b) => a.oldestAt - b.oldestAt || (a.userId < b.userId ? -1 : 1),
   );
-  return { people, count: { count: people.length, capped: flagsCapped || unknown }, unknown };
+  return { people, count: { count: people.length, capped: flagsCapped }, unknown };
 }
 
 /**
@@ -264,8 +268,9 @@ export async function peopleCardFigures(
   tickets: { tickets: Doc<'supportTickets'>[]; capped: boolean } | null,
 ) {
   const stored = await readStoredCounts(ctx);
-  const suspended = await countTimeLane(ctx, 'suspended', now, stored.rowsReady);
-  const newest = await countTimeLane(ctx, 'newest', now, stored.rowsReady);
+  const suspended = await countTimeLane(ctx, 'suspended', now);
+  const newest = await countTimeLane(ctx, 'newest', now);
+  const flagged = flaggedPeopleFrom(flags.flags, flags.capped);
   return {
     moderators: stored.count('moderators'),
     admins: stored.count('admins'),
@@ -274,21 +279,25 @@ export async function peopleCardFigures(
     nextSuspensionEnds: soonestLapse(suspended.first),
     banned: stored.count('banned'),
     // The Flagged lane's own count (`people.lanes`): the people its list can show, a floor whenever
-    // the queue, a flag's subject, the rows backfill or a person's row is missing.
+    // the queue was read to its cap or a person it names has no row.
     flaggedPeople: await (async () => {
-      const flagged = flaggedPeopleFrom(flags.flags, flags.capped);
       const { rows, missing } = await listablePeople(
         ctx,
         flagged.people.map((p) => p.userId),
       );
-      return {
-        count: rows.length,
-        capped: flagged.count.capped || missing || !stored.rowsReady,
-      };
+      return { count: rows.length, capped: flagged.count.capped || missing };
     })(),
     appealsOpen: tickets === null ? null : appealsFrom(tickets.tickets, tickets.capped).tickets,
     leaving: stored.count('leaving'),
     // The 6-hourly rollup, as Metrics' total reads it, so the two figures stay one number.
     totalUsers: await accountsTotal(ctx),
+    /**
+     * Backfills not yet finished that the card rests on — every figure but `totalUsers` may be wrong
+     * until they are, which `capped` doesn't say (it's only a read that stopped at its cap).
+     */
+    pending: [
+      ...stored.pending.filter((b) => b === 'rows'),
+      ...(!stored.flagSubjectsReady || flagged.unknown ? (['flagSubjects'] as const) : []),
+    ] as PeopleBackfill[],
   };
 }

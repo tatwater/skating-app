@@ -2,7 +2,7 @@ import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api } from './_generated/api';
 import type { Id } from './_generated/dataModel';
-import { markReady, READY_ROWS, refreshPersonRow } from './lib/peopleRows';
+import { markReady, READY_FLAG_SUBJECTS, READY_ROWS, refreshPersonRow } from './lib/peopleRows';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -129,11 +129,13 @@ describe('console.overview (B01 §5.1)', () => {
     await seedFlag(t, filer.id, 'spam', 'report', 'r1', author.id);
     await seedFlag(t, filer.id, 'unsafe_false_report', 'report', 'r2', author.id);
     await syncPeople(t);
+    await t.run((ctx) => markReady(ctx, READY_FLAG_SUBJECTS));
     const o = await mod.as.query(api.console.overview, {});
     expect(o.people.flaggedPeople).toEqual({ count: 2, capped: false });
+    expect(o.people.pending).toEqual([]);
     const lanes = await mod.as.query(api.people.lanes, {});
     expect(lanes.lanes.find((l) => l.lane === 'flagged')?.count).toEqual(o.people.flaggedPeople);
-    // A content flag the subject backfill hasn't reached makes the figure a floor.
+    // A content flag the subject backfill hasn't reached: the card says not ready, not capped.
     await t.run((ctx) =>
       ctx.db.insert('contentFlags', {
         flaggerId: filer.id,
@@ -144,10 +146,9 @@ describe('console.overview (B01 §5.1)', () => {
         createdAt: Date.now(),
       }),
     );
-    expect((await mod.as.query(api.console.overview, {})).people.flaggedPeople).toEqual({
-      count: 2,
-      capped: true,
-    });
+    const later = (await mod.as.query(api.console.overview, {})).people;
+    expect(later.flaggedPeople).toEqual({ count: 2, capped: false });
+    expect(later.pending).toEqual(['flagSubjects']);
   });
 
   test('support is counted only for a viewer who may open it (PII, D37)', async () => {

@@ -82,20 +82,22 @@ describe('each upstream cap or gap shows in the count and the list', () => {
     const { adm } = await setup();
     for (const l of (await adm.query(api.people.lanes, {})).lanes) {
       expect(l.reasons, l.lane).toEqual([]);
+      expect(l.pending, l.lane).toEqual([]);
       expect(l.count.capped, l.lane).toBe(false);
       const page = await adm.query(api.people.listPage, { lane: l.lane });
-      expect(page, l.lane).toMatchObject({ partial: false, reasons: [] });
+      expect(page, l.lane).toMatchObject({ partial: false, reasons: [], pending: [] });
     }
   });
 
-  test('the rows backfill not finished: every lane, count and list', async () => {
+  test('the rows backfill not finished: every lane and list says not ready, distinct from capped', async () => {
     const { adm } = await setup({ ready: false });
     for (const l of (await adm.query(api.people.lanes, {})).lanes) {
-      expect(l.reasons, l.lane).toContain('rows_backfill');
-      expect(l.count.capped).toBe(true);
+      expect(l.pending, l.lane).toContain('rows');
+      expect(l.reasons, l.lane).toEqual([]);
+      expect(l.count.capped).toBe(false);
       const page = await adm.query(api.people.listPage, { lane: l.lane });
-      expect(page.reasons, l.lane).toContain('rows_backfill');
-      expect(page.partial).toBe(true);
+      expect(page.pending, l.lane).toContain('rows');
+      expect(page).toMatchObject({ partial: false, reasons: [] });
     }
   });
 
@@ -136,9 +138,10 @@ describe('each upstream cap or gap shows in the count and the list', () => {
         createdAt: Date.now(),
       }),
     );
-    expect((await lane(t, 'flagged'))?.reasons).toEqual(['flag_subjects_pending']);
+    expect(await lane(t, 'flagged')).toMatchObject({ reasons: [], pending: ['flagSubjects'] });
+    expect((await lane(t, 'everyone'))?.pending).toEqual([]);
     const page = await adm.query(api.people.listPage, { lane: 'flagged' });
-    expect(page.reasons).toEqual(['flag_subjects_pending']);
+    expect(page).toMatchObject({ partial: false, reasons: [], pending: ['flagSubjects'] });
   });
 
   test('the appeals queue past its cap: Appeals open, count and list', async () => {

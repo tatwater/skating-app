@@ -492,8 +492,8 @@ export default defineSchema({
    * **The People lanes' stored counts** (B01 §5.7): one row per key — `everyone`, `admins`,
    * `moderators`, `banned`, `restricted`, `leaving`, `deleted` — moved only by the writer of
    * `peopleRows`, in the transaction that moves a row, so each is the tally of rows in its lane.
-   * Two marker keys say a backfill has finished (`ready:rows`, `ready:flagSubjects`): until then a
-   * count is a floor and says so.
+   * A marker key per People backfill says it has finished (`PEOPLE_BACKFILLS` in `lib/peopleRows`):
+   * until then a read resting on it names the backfill in its `pending`.
    */
   peopleCounts: defineTable({
     key: v.string(),

@@ -45,6 +45,7 @@ const OVERVIEW: ConsoleOverview = {
     appealsOpen: null,
     leaving: c(0),
     totalUsers: null,
+    pending: [],
   },
 };
 
