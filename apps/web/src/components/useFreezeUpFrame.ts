@@ -124,7 +124,11 @@ export function freezeUpLaneIds(
  *
  * So the order is stated rather than inherited: companion under primary, primary under the seam.
  */
-function frameAnchorId(map: maplibregl.Map, slot: FreezeUpSlot): string | undefined {
+function frameAnchorId(
+  map: maplibregl.Map,
+  slot: FreezeUpSlot,
+  anchor?: (map: maplibregl.Map) => string | undefined,
+): string | undefined {
   if (slot === 'companion') {
     // The lowest primary lane currently in the style — read from the style rather than from lane
     // indices, because lane order is eviction order and says nothing about z.
@@ -136,7 +140,9 @@ function frameAnchorId(map: maplibregl.Map, slot: FreezeUpSlot): string | undefi
     if (lowestPrimary) return lowestPrimary.id;
   }
   if (map.getLayer(FREEZE_UP_SEAM_LAYER_ID)) return FREEZE_UP_SEAM_LAYER_ID;
-  return insertBeforeLayerId(map);
+  // A host with its own layer order (the admin console) says where a pass goes; the skater map
+  // keeps it under the basemap's roads.
+  return anchor?.(map) ?? insertBeforeLayerId(map);
 }
 
 /** Long enough to read as a cross-fade, short enough not to feel like latency. */
@@ -181,6 +187,7 @@ export function useFreezeUpFrame({
   frame,
   season,
   slot = 'primary',
+  anchor,
 }: {
   mapRef: { current: maplibregl.Map | null };
   loaded: boolean;
@@ -188,9 +195,14 @@ export function useFreezeUpFrame({
   frame: Pick<IndexedFrame, 'key'> | null;
   season: string | null;
   slot?: FreezeUpSlot;
+  /** Where the host's own layer order puts a pass; absent, under the basemap's roads. */
+  anchor?: (map: maplibregl.Map) => string | undefined;
 }): void {
   const baseUrl = env.imageryArchiveUrl;
   const key = frame?.key ?? null;
+  // The host's anchor, read when a pass is placed (never a dependency of the lanes' effects).
+  const anchorRef = useRef(anchor);
+  anchorRef.current = anchor;
 
   // Imperative bookkeeping, deliberately outside React's tree. The whole point is that a lane
   // OUTLIVES the render that mounted it — tying either lane's lifetime to an effect's cleanup is the
@@ -253,7 +265,7 @@ export function useFreezeUpFrame({
       // Raise it, because a re-shown lane is *underneath* the one it is replacing — it was added
       // first. Without this the outgoing frame stays on top and the fade happens invisibly.
       // ⚠ To the top of *this slot's* band, never to the shared anchor — see `frameAnchorId`.
-      map.moveLayer(mounted.layerId, frameAnchorId(map, slot));
+      map.moveLayer(mounted.layerId, frameAnchorId(map, slot, anchorRef.current));
       map.setPaintProperty(mounted.layerId, 'raster-opacity', 1);
 
       // Only the lane being replaced needs hiding; every other mounted lane is already dark, held
@@ -360,7 +372,7 @@ export function useFreezeUpFrame({
           'raster-fade-duration': 0,
         },
       },
-      frameAnchorId(map, slot),
+      frameAnchorId(map, slot, anchorRef.current),
     );
 
     // And ask once directly, for the case where it loaded between `addSource` and here. The event is

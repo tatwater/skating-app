@@ -7,7 +7,16 @@ import {
   OUTLINE_STYLES,
   tokenVar,
 } from './bodyMapPalette';
-import { DOT_SOURCE, glLayerIds, glLayers, LINE_SOURCE, OUTLINE_SOURCE } from './glLayers';
+import {
+  bandOf,
+  DOT_SOURCE,
+  glLayerIds,
+  glLayers,
+  LINE_SOURCE,
+  MAP_BANDS,
+  OUTLINE_SOURCE,
+  rasterAnchor,
+} from './glLayers';
 import { BODY_MAP_LAYERS } from './mapDescriptors';
 
 describe('glLayers', () => {
@@ -92,5 +101,67 @@ describe('the palette', () => {
 describe('the rack', () => {
   it('holds every layer the map draws, in the rack’s order', () => {
     expect(BODY_MAP_LAYERS).toHaveLength(10);
+  });
+});
+
+describe('the layer contract — one order for the frame and every tab’s scene', () => {
+  const ids = glLayerIds();
+  const at = (id: string) => ids.indexOf(id);
+  const band = (b: string) => MAP_BANDS.indexOf(b as never);
+
+  it('adds every layer in its band’s place, bands in MAP_BANDS order, nothing outside a band', () => {
+    const bands = ids.map((id) => bandOf(id));
+    expect(bands.every((b) => b !== null)).toBe(true);
+    for (let i = 1; i < bands.length; i++) {
+      expect(band(bands[i] as string)).toBeGreaterThanOrEqual(band(bands[i - 1] as string));
+    }
+  });
+
+  it('a pass (raster) lands over the body’s fill and under the fields, the shore and every line', () => {
+    // As the map holds the console's layers: the pass is inserted before the first layer above it.
+    const anchor = rasterAnchor(ids);
+    expect(anchor).toBe('body-console-field-dots');
+    expect(at(anchor as string)).toBeGreaterThan(at('body-console-fill-body'));
+    expect(at(anchor as string)).toBeLessThanOrEqual(at('body-console-outline-body'));
+    expect(at(anchor as string)).toBeLessThan(at('body-console-line-approach'));
+    // Before the console's layers are in, no anchor of its own: the reveal's fallback stands.
+    expect(rasterAnchor(['water', 'roads_minor'])).toBeUndefined();
+    // Without the fields layer (a map mid-build), the next band's first layer still holds the line.
+    expect(rasterAnchor(ids.filter((id) => id !== 'body-console-field-dots'))).toBe(
+      'body-console-outline-bay',
+    );
+  });
+
+  it.each([
+    ['a hazard field', 'body-console-field-dots'],
+    ['a footprint’s outline', 'body-console-outline-footprint'],
+    ['a dimmed neighbor’s outline', 'body-console-outline-neighbor'],
+    ['a bay’s outline', 'body-console-outline-bay'],
+    ['the shore', 'body-console-outline-body'],
+    ['an approach line', 'body-console-line-approach'],
+    ['a town line', 'body-console-line-townLine'],
+  ])('%s lands over the body’s opaque fill', (_kind, id) => {
+    expect(at(id)).toBeGreaterThan(at('body-console-fill-body'));
+    expect(at(id)).toBeGreaterThan(at('body-console-fill-footprint'));
+  });
+
+  it('a footprint’s fill shares the fills band, under every line and field', () => {
+    expect(bandOf('body-console-fill-footprint')).toBe('fills');
+    expect(at('body-console-fill-footprint')).toBeLessThan(at('body-console-field-dots'));
+  });
+
+  it('the lit item is over every other GL layer; points and labels are the DOM’s, over the canvas', () => {
+    expect(ids.slice(-3).every((id) => bandOf(id) === 'lit')).toBe(true);
+    expect(MAP_BANDS.at(-1)).toBe('marks');
+  });
+
+  it('paints the body’s fill opaque — which is why a pass must sit above it, never under', () => {
+    const fill = glLayers(bodyMapPalette('dark')).find(
+      (l) => l.id === 'body-console-fill-body',
+    ) as {
+      paint: Record<string, unknown>;
+    };
+    expect(fill.paint['fill-color']).toBeDefined();
+    expect(fill.paint['fill-opacity']).toBeUndefined();
   });
 });

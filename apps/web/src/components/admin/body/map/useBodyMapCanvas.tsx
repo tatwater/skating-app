@@ -9,7 +9,7 @@ import { type BBoxLike, fitCamera, type MapSurface, type Padding } from '@/lib/m
 import { DEMO_PMTILES_URL, MAP_FLAVORS } from '@/lib/waterMap';
 import { type BodyMapMode, bodyMapPalette } from './bodyMapPalette';
 import type { DrawnScene } from './bodyScene';
-import { DOT_SOURCE, glLayers, LINE_SOURCE, OUTLINE_SOURCE } from './glLayers';
+import { DOT_SOURCE, glLayers, LINE_SOURCE, OUTLINE_SOURCE, rasterAnchor } from './glLayers';
 
 /**
  * The console map's own MapLibre instance (B03's recorded call: the skater map and the console map
@@ -163,7 +163,8 @@ export function useBodyMapCanvas({
 /**
  * The imagery pass (Imagery's lit pass) on the live map: the skater app's own reveal
  * (`useFreezeUpFrame` — two-lane leapfrog, no blank between dates, gated on its source's own
- * tiles), anchored under the basemap's roads and so under every line the console draws. The ref
+ * tiles), placed by the console's layer order (`MAP_BANDS`): over the body's fill, under the hazard
+ * fields and every line — the photograph inside the shore, the shore drawn over it. The ref
  * it reads is the live map or nothing, re-read every render, so a re-created map is never written
  * to before it can take a write; while the map is down the hook forgets its lanes.
  */
@@ -176,6 +177,7 @@ function useRaster(liveMap: () => maplibregl.Map | null, raster: DrawnScene['ras
     loaded: live !== null,
     frame: raster === null ? null : { key: raster.key },
     season: raster?.season ?? null,
+    anchor: consoleRasterAnchor,
   });
 }
 
@@ -224,4 +226,9 @@ function useLiveSurface(liveMap: () => maplibregl.Map | null): MapSurface | null
     };
   }, [liveMap]);
   return surface;
+}
+
+/** Where a pass goes on the console's map: the layer contract's raster band. */
+function consoleRasterAnchor(map: maplibregl.Map): string | undefined {
+  return rasterAnchor((map.getStyle()?.layers ?? []).map((l) => l.id));
 }

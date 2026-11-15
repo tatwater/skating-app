@@ -26,6 +26,8 @@ const frame = (over: Partial<IndexedFrame> = {}): IndexedFrame => ({
 function fakeMap() {
   const sources = new Map<string, { type: string; url: string; tileSize?: number }>();
   const layers = new Map<string, unknown>();
+  /** The `beforeId` each layer was added with. */
+  const befores = new Map<string, string | undefined>();
   const handlers = new Map<string, ((event: unknown) => void)[]>();
   /** Paint per layer, because two lanes are live at once and the whole design is which is visible. */
   const paint = new Map<string, Record<string, unknown>>();
@@ -37,6 +39,7 @@ function fakeMap() {
   return {
     sources,
     layers,
+    befores,
     paint,
     ops,
     loadedSources,
@@ -52,8 +55,9 @@ function fakeMap() {
         sources.set(id, spec);
         ops.push(`+source:${id}`);
       },
-      addLayer: (spec: { id: string }) => {
+      addLayer: (spec: { id: string }, before?: string) => {
         layers.set(spec.id, spec);
+        befores.set(spec.id, before);
         ops.push(`+layer:${spec.id}`);
       },
       removeLayer: (id: string) => {
@@ -133,6 +137,23 @@ describe('useFreezeUpFrame — mounting a pass', () => {
     const harness = fakeMap();
     mount(harness, frame());
     expect(harness.sources.get(LANE0.sourceId)?.tileSize).toBe(512);
+  });
+
+  it('places a pass where the host’s layer order says, and under the roads without one', () => {
+    const skater = fakeMap();
+    mount(skater, frame());
+    expect(skater.befores.get(LANE0.layerId)).toBe('roads_minor');
+    const consoleMap = fakeMap();
+    renderHook(() =>
+      useFreezeUpFrame({
+        mapRef: { current: consoleMap.map },
+        loaded: true,
+        frame: frame(),
+        season: 'winter-2025-26',
+        anchor: () => 'body-console-field-dots',
+      }),
+    );
+    expect(consoleMap.befores.get(LANE0.layerId)).toBe('body-console-field-dots');
   });
 
   it('does nothing at all when there is no frame to show', () => {
