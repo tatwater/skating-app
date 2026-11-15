@@ -8012,9 +8012,11 @@ item that keeps failing, or keeps being kept, takes only its own turn.
   (Not a one-time backfill: it could only stamp the same guess, and the code would need the branch until
   it finished; old rows drain within a day.) A
   parked notification is retried hourly, not daily, so a fault fixed within the morning still delivers.
-- **"Newest" follows the content, not the row.** A digest links, for each lake, the report whose row
-  changed its report last (`latestAt`, the event's own time) — never by a row's creation time, which a
-  later event joining the row does not move. A deadline never moves; which report is newest does.
+- **"Newest" follows the content, not the row.** A digest links, for each lake, the report created
+  last (`latestAt`, the report's own time) — never by a row's creation time, which a later event
+  joining the row does not move, nor by when a notice arrived, since a fan-out page for an older
+  report can land after a newer one's (a join moves a row's report only forward). A deadline never
+  moves; which report is newest does.
 - **A dry run writes nothing.** A failure is recorded or cleared only by a run that applies its
   decisions; a dry rollover's only write is its own run row, and it schedules nothing.
 - **A fallback never repeats the read that failed.** A page is sized from its worst-case row in the

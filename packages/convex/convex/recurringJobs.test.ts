@@ -831,6 +831,7 @@ describe('the retries and passes at their edges', () => {
           type: 'nearby_report_digest',
           flushAfter,
           now: Date.now(),
+          reportAt: Date.now(),
         }),
       );
     // Tonight's digest in the old zone, then a report stamped for an hour earlier in the new one: it
@@ -956,6 +957,7 @@ describe('the freshness rule holds at enqueue and at flush, by construction', ()
           // Some events are stamped due sooner than a row already settling (a zone change, say).
           flushAfter: Date.now() + (early ? DEBOUNCE / 4 : DEBOUNCE),
           now: Date.now(),
+          reportAt: Date.now(),
         }),
       );
     const actorNotice = (u: number, a: number) =>
@@ -1225,6 +1227,7 @@ describe('the freshness rule holds at enqueue and at flush, by construction', ()
           type: 'nearby_report_digest',
           flushAfter: tonight,
           now: Date.now(),
+          reportAt: Date.now(),
         }),
       );
     // A report on body a since the rule: never joined to the old row, so a row of its own.
@@ -1280,7 +1283,8 @@ describe('a digest links the newest report it counts', () => {
       ctx.db.patch(fan.id, { notificationPrefs: { ...NOTIF_PREFS, nearbyReportDigest: true } }),
     );
     const bodyId = await seedBody(t, 'osm/tz');
-    const notice = async (flushAfter: number) => {
+    /** One report's notice, arriving now; the report itself created at `reportAt`. */
+    const notice = async (flushAfter: number, reportAt = Date.now()) => {
       const reportId = await seedReport(t, fan.id, bodyId);
       await t.run((ctx) =>
         enqueueReportNotice(ctx, {
@@ -1291,12 +1295,63 @@ describe('a digest links the newest report it counts', () => {
           type: 'nearby_report_digest',
           flushAfter,
           now: Date.now(),
+          reportAt,
         }),
       );
       return reportId;
     };
     return { t, fan, bodyId, notice };
   }
+
+  test('a late-arriving older report is counted but never linked over a newer one — on a join, or from a row of its own', async () => {
+    const { t, fan, bodyId, notice } = await digestSetup();
+    // Fan-out pages can land out of order: the newer report's first.
+    const newest = await notice(T0 + 5 * HOUR, T0 - MINUTE);
+    vi.setSystemTime(Date.now() + MINUTE);
+    await notice(T0 + 5 * HOUR, T0 - 2 * MINUTE); // older, joins the row
+    const [row] = await t.run((ctx) => ctx.db.query('notificationQueue').collect());
+    expect(row).toMatchObject({ count: 2, latestReportId: newest, latestAt: T0 - MINUTE });
+    vi.setSystemTime(Date.now() + MINUTE);
+    await notice(T0 + 4 * HOUR, T0 - 3 * MINUTE); // older still, due earlier: a row of its own
+    vi.setSystemTime(T0 + 5 * HOUR + MINUTE);
+    await t.mutation(internal.notifications.flushNotificationQueue, {});
+    const [digest] = await inbox(t, fan.id);
+    expect(digest?.payload.bodies).toEqual([{ waterBodyId: bodyId, reportId: newest, count: 3 }]);
+  });
+
+  test('in any arrival order over any zone changes, the digest links the report created last', async () => {
+    const events = fc
+      .array(fc.integer({ min: -2, max: 2 }), { minLength: 1, maxLength: 6 })
+      .chain((zones) =>
+        fc.tuple(
+          fc.constant(zones),
+          fc.shuffledSubarray(
+            zones.map((_, i) => i),
+            { minLength: zones.length, maxLength: zones.length },
+          ),
+        ),
+      );
+    await fc.assert(
+      fc.asyncProperty(events, async ([zones, arrival]) => {
+        vi.setSystemTime(T0);
+        const { t, fan, notice } = await digestSetup();
+        // Report `i` was created `i` minutes past an hour ago; their notices arrive in `arrival`.
+        const ids = new Map<number, Id<'reports'>>();
+        for (const i of arrival) {
+          ids.set(i, await notice(T0 + (5 + (zones[i] ?? 0)) * HOUR, T0 - HOUR + i * MINUTE));
+          vi.setSystemTime(Date.now() + MINUTE);
+        }
+        vi.setSystemTime(T0 + 8 * HOUR);
+        await t.mutation(internal.notifications.flushNotificationQueue, {});
+        const sent = await inbox(t, fan.id);
+        expect(sent).toHaveLength(1);
+        expect(sent[0]?.payload.bodies).toEqual([
+          expect.objectContaining({ reportId: ids.get(zones.length - 1), count: zones.length }),
+        ]);
+      }),
+      { numRuns: 15 },
+    );
+  }, 60_000);
 
   test('the timezone sequence (Greptile): tonight in the old zone, an earlier-due report after a zone change, then a later one after switching back — both rows flush together and the digest links the newest', async () => {
     const { t, fan, bodyId, notice } = await digestSetup();

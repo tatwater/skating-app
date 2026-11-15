@@ -101,17 +101,23 @@ export async function enqueueReportNotice(
     type: NotificationType;
     flushAfter: number;
     now: number;
+    /**
+     * When the report itself was created — what "newest" is decided by (D258), never when this
+     * enqueue ran: a fan-out page for an older report can land after a newer report's.
+     */
+    reportAt: number;
   },
 ): Promise<void> {
   const coalesceKey = `${params.userId}:${params.waterBodyId}:${params.kind}`;
   // Only a row still settling, never one already due or parked (D258): see `coalescingRow`.
   const existing = await coalescingRow(ctx, coalesceKey, params.now, params.flushAfter);
   if (existing) {
+    // The row links its newest report by the report's own time, so a late-arriving older report is
+    // counted but never replaces a newer one (D258). A row with no `latestAt` takes it, as it did.
+    const newer = existing.latestAt === undefined || params.reportAt >= existing.latestAt;
     await ctx.db.patch(existing._id, {
       count: existing.count + 1,
-      latestReportId: params.reportId,
-      // The report moved on: "newest" follows it, not the row's creation time (D258).
-      latestAt: params.now,
+      ...(newer ? { latestReportId: params.reportId, latestAt: params.reportAt } : {}),
     });
     return;
   }
@@ -122,7 +128,7 @@ export async function enqueueReportNotice(
     type: params.type,
     coalesceKey,
     latestReportId: params.reportId,
-    latestAt: params.now,
+    latestAt: params.reportAt,
     count: 1,
     flushAfter: params.flushAfter,
     // The row's due clock, set once, here (D258).
@@ -210,6 +216,7 @@ export async function enqueueReportNotifications(
       type: 'favorite_report',
       flushAfter: now + DEBOUNCE_MS,
       now,
+      reportAt: report.createdAt,
     });
   }
 
@@ -299,6 +306,7 @@ export const fanOutNearbyNotifications = internalMutation({
           type: 'nearby_report_digest',
           flushAfter: digestFlushAfterIn(p.timezone ?? DIGEST_TIMEZONE),
           now,
+          reportAt: report.createdAt,
         });
         enqueued++;
       }
@@ -317,6 +325,7 @@ export const fanOutNearbyNotifications = internalMutation({
           type: 'great_report_nearby',
           flushAfter: now + DEBOUNCE_MS,
           now,
+          reportAt: report.createdAt,
         });
         enqueued++;
       }
@@ -791,20 +800,21 @@ async function flushRows(
       >();
       for (const r of rows) {
         if (r.waterBodyId === undefined || r.latestReportId === undefined) continue;
+        // The newest report by its own time (`latestAt`), never by the row's creation time, which a
+        // later event joining the row does not move (D258, Greptile #116). A row from before D258
+        // has only its `createdAt`, and is never joined since, so it drains within the day.
+        const at = r.latestAt ?? r.createdAt;
         const seen = byBody.get(r.waterBodyId);
         if (!seen) {
           byBody.set(r.waterBodyId, {
             waterBodyId: r.waterBodyId,
             reportId: r.latestReportId,
             count: r.count,
-            at: r.latestAt ?? r.createdAt,
+            at,
           });
           continue;
         }
         seen.count += r.count;
-        // The newest report by when each row's report last changed (`latestAt`), never by the row's
-        // creation time, which a later event joining the row does not move (D258, Greptile #116).
-        const at = r.latestAt ?? r.createdAt;
         if (at >= seen.at) {
           seen.reportId = r.latestReportId;
           seen.at = at;

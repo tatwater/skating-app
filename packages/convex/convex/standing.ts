@@ -452,9 +452,10 @@ export const seedStanding = internalMutation({
  * window, no standing human decision and no saved put-in becomes dormant (`inactive`).
  *
  * `season` is the season being rolled *into*; the window is the `INACTIVE_SEASONS` before it — see
- * `inactivityCutoffMs`. Five index reads per active body (three for `lastActivityAt`, one for a
- * favorite, one bounded read of its put-ins) plus the demotion's own, so a page of 100 all-demoted
- * sits around 3,000 reads. `retainedBy` names what kept each retained body, first reason first (see
+ * `inactivityCutoffMs`. Up to six index reads per active body (three for `lastActivityAt`, one for a
+ * favorite, and the saved-put-in rule's two bounded reads — its visible rows, then its hidden
+ * coordinates only when it has any: `savedPutInsOf`) plus the demotion's own, each body in its own
+ * nested transaction (below). `retainedBy` names what kept each retained body, first reason first (see
  * `retentionReason`): its `put_in` count is the bodies only a put-in kept (D245).
  */
 export const demoteInactiveBodies = internalMutation({

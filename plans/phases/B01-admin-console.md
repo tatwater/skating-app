@@ -1811,7 +1811,7 @@ heavy one for few, and the item runs under those limits.
 | `recurringJobs.health` | small rows only: `jobFailures`, to 200 a job | — | fourteen parked queue rows near the limit: counted from their mirrors |
 | `standing.demoteInactiveBodies` | a body 8 MiB · 2,000 · 200 · 500 | 1 MiB | twelve outlines near the limit: pages sized from them, every body decided |
 
-**The jobs #118 added (B01-3b), read against the same question** (merged into this branch 2026-11-15):
+**The jobs #118 added (B01-3b), read against the same question** (merged into this branch 2026-11-14):
 
 | Cron | Blocks forever? | Why |
 | --- | --- | --- |
@@ -1845,12 +1845,13 @@ field, and why:
 
 | Where | Decides | Field | Why it is the right one |
 | --- | --- | --- | --- |
-| the digest (`flushRows`) | which report a lake's line links | `latestAt` (when the row's report last changed; `createdAt` on a pre-D258 row, never newer than the truth) | follows the content; the fix |
+| the digest (`flushRows`) | which report a lake's line links | `latestAt`: the linked report's own creation time, moved only forward by a join (`createdAt` on a pre-D258 row, which is never joined and drains within the day) | follows the content, not arrival order — a fan-out page for an older report can land after a newer one's; the fix |
 | freshness (`isStaleQueueRow`) | expire or deliver | `dueClockOf`: `firstDueAt`, or a pre-D258 row's earliest clock | a deadline, and it must never move |
 | joining (`coalescingRow`) | whether an event may join a row | `firstDueAt` after now; `flushAfter` after now and no later than the event's | the row's clock has not started, and joining never delays the event |
 | a failure (`recordQueueFailure`) | when the row is tried next | `flushAfter` moved past the run's cutoff | delivery time only; the clock (`firstDueAt`) is left alone |
 | the flush and retry order | which row first | `flushAfter`; `parkedAt` (least recently tried) | order only — no decision about content |
-| the Machinery read | oldest failure, oldest parked | `firstFailedAt`, `parkedAt` | facts about the failure, written once each |
+| the Machinery read | oldest failure, oldest parked | `firstFailedAt`, `parkedAt` | `firstFailedAt` is written once per failing stretch, so it is how long something has been stuck; `parkedAt` is re-stamped by every retry that fails (`lib/attempts`), so "oldest parked" reads as least recently tried, never as how long parked |
+| forgetting a failure, "failed since" (`forgetFailuresBefore`, `failedSinceAt`) | whether a walk saw a failure again | `lastFailedAt` against the walk's or lap's start | re-written on every failure, so one from before the walk began is one the complete walk did not see fail again |
 | the lap walks | where to resume | photo `createdAt`, export `expiresAt`, account `deletionRequestedAt`, recording `detectedAt` | positions in an index; a value that changes (a re-requested deletion) only moves an item within the lap, which wraps |
 
 **A dry run writes nothing** (Greptile #116). The only dry mode among these jobs is the rollover's

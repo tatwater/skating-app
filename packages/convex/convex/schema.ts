@@ -4436,9 +4436,11 @@ export default defineSchema({
     coalesceKey: v.string(), // `${userId}:${target}:${kind}` — collapse-id / tag seed
     latestReportId: v.optional(v.id('reports')),
     /**
-     * When `latestReportId` last changed — the event's own time (D258). "Which report is newest" is
-     * decided by this, never by `createdAt`: a row joined by later events keeps its creation time but
-     * its report moves on. Absent on a row written before D258, which falls back to `createdAt`.
+     * When the report `latestReportId` names was created — the report's own time (D258), never when
+     * it was enqueued: a fan-out page for an older report can land after a newer one's. "Which report
+     * is newest" is decided by this, never by `createdAt`: a row joined by later events keeps its
+     * creation time but its report moves on — and a join moves it only forward. Absent on a row
+     * written before D258, which falls back to `createdAt`.
      */
     latestAt: v.optional(v.number()),
     count: v.number(), // how many events coalesced into this pending notification
