@@ -305,13 +305,15 @@ describe('seedAll', () => {
   test('pages the library to the end, chaining', async () => {
     const t = harness();
     // Past one page.
-    for (let i = 0; i <= SEED_PAGE; i++) await seedBody(t, `B${i}`, -72 + i * 0.001);
-    expect(await t.mutation(internal.bodyGeo.seedAll, {})).toEqual({
-      marked: SEED_PAGE,
+    // A page of two over five bodies: the chain, at the cost of five bodies rather than 251.
+    for (let i = 0; i < 5; i++) await seedBody(t, `B${i}`, -72 + i * 0.001);
+    expect(await t.mutation(internal.bodyGeo.seedAll, { pageSize: 2 })).toEqual({
+      marked: 2,
       isDone: false,
     });
     await t.finishAllScheduledFunctions(() => {});
     const rows = await t.run((ctx) => ctx.db.query('bodyGeoFacts').collect());
-    expect(rows).toHaveLength(SEED_PAGE + 1);
+    expect(rows).toHaveLength(5);
+    expect(SEED_PAGE).toBe(250);
   });
 });

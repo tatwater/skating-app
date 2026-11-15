@@ -646,18 +646,29 @@ export const SEED_PAGE = 250;
 
 /** Mark every library body stale, a page at a time, chaining itself — the backfill's first step. */
 export const seedAll = internalMutation({
-  args: { cursor: v.optional(v.string()) },
-  handler: async (ctx, { cursor }) => {
+  args: {
+    cursor: v.optional(v.string()),
+    /** A smaller page (at most {@link SEED_PAGE}) — for a test to reach the chain cheaply. */
+    pageSize: v.optional(v.number()),
+  },
+  handler: async (ctx, { cursor, pageSize }) => {
+    const size =
+      pageSize !== undefined && Number.isFinite(pageSize)
+        ? Math.min(SEED_PAGE, Math.max(1, Math.floor(pageSize)))
+        : SEED_PAGE;
     const page = await ctx.db
       .query('bodyLibraryRows')
       .withIndex('by_scope_name', (q) => q.eq('scope', '*'))
-      .paginate({ cursor: cursor ?? null, numItems: SEED_PAGE });
+      .paginate({ cursor: cursor ?? null, numItems: size });
     await markGeoStale(
       ctx,
       page.page.map((r) => r.waterBodyId),
     );
     if (!page.isDone) {
-      await ctx.scheduler.runAfter(0, internal.bodyGeo.seedAll, { cursor: page.continueCursor });
+      await ctx.scheduler.runAfter(0, internal.bodyGeo.seedAll, {
+        cursor: page.continueCursor,
+        ...(pageSize !== undefined ? { pageSize: size } : {}),
+      });
     }
     return { marked: page.page.length, isDone: page.isDone };
   },

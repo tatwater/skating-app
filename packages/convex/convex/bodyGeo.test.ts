@@ -464,20 +464,44 @@ describe('no read does geometry that grows with an outline', () => {
   test('every Body read completes within its bound on an outline the size of the largest dev lake', async () => {
     const t = harness();
     const as = await seedModerator(t);
-    // 14,151 vertices — the largest outline on dev — with a dozen neighbors around it.
+    // 14,151 vertices — the largest outline on dev — with a dozen neighbors around it. Their facts
+    // are stored directly as the computation would leave them: this test is about the reads, and the
+    // computation's own cost (an action, seconds here) is not what it bounds.
     const giant = await seedBody(t, 'Largest', [-73.3, 44.5], [0.6, 0.4], { n: 14_151 });
+    const neighbors: {
+      waterBodyId: Id<'waterBodies'>;
+      name: string;
+      ring: number[][];
+      stamp: string;
+    }[] = [];
     for (let i = 0; i < 12; i++) {
       const a = (2 * Math.PI * i) / 12;
-      await seedBody(
-        t,
-        `Near ${i}`,
-        [-73.3 + 0.62 * Math.cos(a), 44.5 + 0.42 * Math.sin(a)],
-        [0.03, 0.02],
-        { n: 3000 },
-      );
+      const center: [number, number] = [-73.3 + 0.62 * Math.cos(a), 44.5 + 0.42 * Math.sin(a)];
+      const id = await seedBody(t, `Near ${i}`, center, [0.03, 0.02], { n: 400 });
+      neighbors.push({
+        waterBodyId: id,
+        name: `Near ${i}`,
+        ring: simplifiedRing(ellipse(center[0], center[1], 0.03, 0.02, 400)),
+        stamp: `stamp-${i}`,
+      });
     }
-    await stale(t, [giant]);
-    await compute(t);
+    await t.run((ctx) =>
+      ctx.db.insert('bodyGeoFacts', {
+        waterBodyId: giant,
+        computedAt: NOW,
+        checkedAt: NOW,
+        stamp: 'giant',
+        neighbors,
+        neighborsCapped: false,
+        towns: [],
+        townStates: [],
+        townIds: [],
+        townEntries: [],
+        counties: [],
+        states: ['VT'],
+        areasAt: 0,
+      }),
+    );
     const reads: [string, () => Promise<unknown>][] = [
       ['preview', () => as.query(api.bodies.preview, { waterBodyId: giant })],
       ['consoleExtras', () => as.query(api.bodyConsole.consoleExtras, { waterBodyId: giant })],
@@ -510,20 +534,19 @@ describe('no read does geometry that grows with an outline', () => {
     ];
     // The bound: under a query's one second, in this simulated backend — the touching test alone
     // took 1.4 s here before it moved to the write, and every read now takes ~20–35 ms locally. Each
-    // read is warmed once and timed as the best of three, so a CI runner's GC pause or coverage
+    // read is warmed once and timed as the best of two, so a CI runner's GC pause or coverage
     // instrumentation can't fail it; a read that does per-vertex work again still can.
     for (const [name, read] of reads) {
       await read();
       let best = Number.POSITIVE_INFINITY;
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < 2; i++) {
         const t0 = performance.now();
         await read();
         best = Math.min(best, performance.now() - t0);
       }
       expect([name, best < 800]).toEqual([name, true]);
     }
-    // The setup is the heavy part — the action computes the giant against twelve 3,000-vertex
-    // neighbors (5–6 s locally, several times that on a CI runner with coverage) — so the test has
-    // its own timeout; the bound under test is the per-read one above.
-  }, 180_000);
+    // ~1.5 s locally; a CI runner with coverage is several times slower, so the test keeps a timeout of
+    // its own — the bound under test is the per-read one above.
+  }, 60_000);
 });
