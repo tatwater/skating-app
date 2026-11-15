@@ -22,7 +22,7 @@ import { ConvexError } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
-import { type AuditReason, composed, writeAudit } from './audit';
+import { type AuditReasonOrText, composed, writeAudit } from './audit';
 
 type BayCandidates = readonly (SubAreaCandidate<Doc<'waterBodySubAreas'>> & {
   bbox?: Doc<'waterBodySubAreas'>['bbox'];
@@ -220,7 +220,7 @@ export async function auditLandmark(
   actorId: Id<'profiles'> | undefined,
   action: 'create_landmark' | 'edit_landmark' | 'promote_landmark' | 'remove' | 'restore',
   landmarkId: Id<'bodyLandmarks'>,
-  reason: AuditReason,
+  reason: AuditReasonOrText,
   metadata?: Record<string, unknown>,
 ): Promise<void> {
   await writeAudit(ctx, {

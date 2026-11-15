@@ -29,7 +29,7 @@ export interface AuditEntry {
    * {@link AUDIT_REASON_MAX} (D261); a reason the system builds from stored names or text is a
    * {@link composed} one, shortened to fit and never refused.
    */
-  reason: AuditReason;
+  reason: AuditReasonOrText;
   /** Prior and new state, and whatever the verb's undo needs (B01 §11). */
   metadata?: Record<string, unknown>;
   /** Set when this row is the undo of an earlier one (D226). */
@@ -48,7 +48,28 @@ export interface ComposedReason {
   readonly values: readonly string[];
 }
 
-export type AuditReason = string | ComposedReason;
+/**
+ * A reason held to the cap exactly as written — a person's words, or a fixed sentence of ours —
+ * made by {@link typed}, which refuses it past {@link AUDIT_REASON_MAX} (D261).
+ */
+export interface TypedReason {
+  readonly typed: string;
+}
+
+/** A reason the audit writer can take: typed (refused past the cap) or composed (shortened to fit). */
+export type AuditReason = TypedReason | ComposedReason;
+
+/**
+ * What the other writers still pass (compatible): a tagged reason, or a plain string held to the cap
+ * as typed. The People writers take {@link AuditReason} only (`writePersonAudit`).
+ */
+export type AuditReasonOrText = AuditReason | string;
+
+/** A reason as written, refused past the cap with its plain message (D261). */
+export function typed(text: string): TypedReason {
+  if (text.length > AUDIT_REASON_MAX) throw new ConvexError(AUDIT_REASON_TOO_LONG);
+  return { typed: text };
+}
 
 /**
  * Tag a reason the system builds itself: `composed\`Drew "${name}" on ${body.name}\``. The audit
@@ -98,6 +119,19 @@ function trimTo(text: string, max: number): string {
   return `${cut}…`;
 }
 
+/**
+ * The People writers' entry (B01-4b): an audit entry whose reason is tagged — typed or composed — so
+ * a bare string, built in a variable and quoting stored text, can't compile into a person write. The
+ * other writers still pass strings to {@link writeAudit} (compatible: a string is held to the cap as
+ * typed); `packages/guards` holds the People modules to this entry.
+ */
+export function writePersonAudit(
+  ctx: MutationCtx,
+  entry: Omit<AuditEntry, 'reason'> & { reason: AuditReason },
+): Promise<Id<'moderationActions'>> {
+  return writeAudit(ctx, entry);
+}
+
 export async function writeAudit(
   ctx: MutationCtx,
   entry: AuditEntry,
@@ -106,7 +140,8 @@ export async function writeAudit(
   // The one place a reason enters the log (D261). What a person typed is refused past the cap, the
   // whole write with it; a reason the system composed is shortened to fit — its names trimmed, its
   // fixed words kept — so no job or lever ever fails on a name it quoted.
-  const reason = typeof given === 'string' ? given : fitComposed(given);
+  const reason =
+    typeof given === 'string' ? given : 'typed' in given ? given.typed : fitComposed(given);
   if (reason.length > AUDIT_REASON_MAX) throw new ConvexError(AUDIT_REASON_TOO_LONG);
   const row = { ...rest, reason };
   const undoesActionId = row.undoesActionId ?? UNDOING.get(ctx);

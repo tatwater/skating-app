@@ -53,3 +53,23 @@ test('every reason an audit writer composes is tagged composed', () => {
   }
   expect(raw).toEqual([]);
 });
+
+/**
+ * The People writers take a tagged reason only (`writePersonAudit`, B01-4b): a bare string — built in
+ * a variable, quoting stored text — can't compile into a person write. The type is the fence; this is
+ * the backstop that the People modules don't reach around it.
+ */
+test('the People writers go through writePersonAudit, never writeAudit', () => {
+  const PEOPLE_MODULES = ['admin.ts', 'peopleJobs.ts', join('lib', 'ledgerEditors.ts')];
+  const direct = PEOPLE_MODULES.filter((p) =>
+    /\bwriteAudit\(/.test(readFileSync(join(CONVEX, p), 'utf8')),
+  );
+  expect(direct).toEqual([]);
+  const moderation = readFileSync(join(CONVEX, 'moderation.ts'), 'utf8');
+  const auditUser = moderation.slice(
+    moderation.indexOf('async function auditUser('),
+    moderation.indexOf('\n}\n', moderation.indexOf('async function auditUser(')),
+  );
+  expect(auditUser).toContain('writePersonAudit(ctx');
+  expect(auditUser).toContain('reason: AuditReason,');
+});

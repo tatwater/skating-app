@@ -28,7 +28,7 @@ import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, internalQuery, type MutationCtx, query } from './_generated/server';
 import { nextAttemptState } from './lib/attempts';
-import { writeAudit } from './lib/audit';
+import { typed, writePersonAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { flagSubjectOf } from './lib/flagSubject';
 import { refreshPersonRow } from './lib/peopleRows';
@@ -111,11 +111,11 @@ export const lapseOne = internalMutation({
       lapseRetriedAt: undefined,
     });
     await clearFailure(ctx, 'lapses', userId);
-    await writeAudit(ctx, {
+    await writePersonAudit(ctx, {
       action: 'unban',
       targetType: 'user',
       targetId: userId,
-      reason: LAPSED_REASON,
+      reason: typed(LAPSED_REASON),
       metadata: {
         lapsed: true,
         prev: {

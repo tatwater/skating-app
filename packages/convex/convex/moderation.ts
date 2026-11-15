@@ -17,7 +17,7 @@ import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
-import { writeAudit } from './lib/audit';
+import { type AuditReason, typed, writeAudit, writePersonAudit } from './lib/audit';
 import { auditRowsOn, auditTargetLabels, targetKey } from './lib/auditReads';
 import { requireCapability } from './lib/auth';
 import {
@@ -1513,11 +1513,11 @@ async function auditUser(
   actorId: Id<'profiles'>,
   action: 'ban' | 'suspend' | 'unban' | 'set_posting_permission',
   userId: Id<'profiles'>,
-  reason: string,
+  reason: AuditReason,
   metadata?: Record<string, unknown>,
 ): Promise<Id<'moderationActions'>> {
   await refreshPersonRow(ctx, userId);
-  return writeAudit(ctx, {
+  return writePersonAudit(ctx, {
     actorId,
     action,
     targetType: 'user',
@@ -1570,7 +1570,7 @@ export async function banImpl(
       ...LAPSE_CLEARED,
     });
     await clearLapseMirror(ctx, userId);
-    const actionId = await auditUser(ctx, actor._id, 'ban', userId, reason, {
+    const actionId = await auditUser(ctx, actor._id, 'ban', userId, typed(reason), {
       prev: statusPrev(target),
     });
     // Fire-and-forget: a mutation can't fetch. Permanent bans only touch Clerk (founder decision).
@@ -1623,7 +1623,7 @@ export async function suspendImpl(
       ...LAPSE_CLEARED,
     });
     await clearLapseMirror(ctx, userId);
-    const actionId = await auditUser(ctx, actor._id, 'suspend', userId, reason, {
+    const actionId = await auditUser(ctx, actor._id, 'suspend', userId, typed(reason), {
       suspendedUntil,
       prev: statusPrev(target),
     });
@@ -1679,7 +1679,7 @@ export async function unbanImpl(
       ...LAPSE_CLEARED,
     });
     await clearLapseMirror(ctx, userId);
-    const actionId = await auditUser(ctx, actor._id, 'unban', userId, reason, {
+    const actionId = await auditUser(ctx, actor._id, 'unban', userId, typed(reason), {
       prev: statusPrev(target),
       ...(defaulted ? { reasonDefaulted: true } : {}),
     });
@@ -1734,12 +1734,19 @@ export async function setBountyLimitImpl(
   );
 
   await ctx.db.patch(userId, { activeBountyPostLimit: limit });
-  const actionId = await auditUser(ctx, actor._id, 'set_posting_permission', userId, reason, {
-    permission: 'bounties',
-    limit: limit ?? null,
-    prev: { limit: target.activeBountyPostLimit ?? null },
-    ...(defaulted ? { reasonDefaulted: true } : {}),
-  });
+  const actionId = await auditUser(
+    ctx,
+    actor._id,
+    'set_posting_permission',
+    userId,
+    typed(reason),
+    {
+      permission: 'bounties',
+      limit: limit ?? null,
+      prev: { limit: target.activeBountyPostLimit ?? null },
+      ...(defaulted ? { reasonDefaulted: true } : {}),
+    },
+  );
   return personWriteResult(ctx, userId, actionId);
 }
 
@@ -1805,12 +1812,19 @@ export async function setPostingPermissionImpl(
 
   const field = POSTING_PERMISSION_FIELD[permission];
   await ctx.db.patch(userId, { [field]: allowed });
-  const actionId = await auditUser(ctx, actor._id, 'set_posting_permission', userId, reason, {
-    permission,
-    allowed,
-    // Missing means allowed (D57), so the prior value is always a boolean.
-    prev: { allowed: target[field] !== false },
-    ...(defaulted ? { reasonDefaulted: true } : {}),
-  });
+  const actionId = await auditUser(
+    ctx,
+    actor._id,
+    'set_posting_permission',
+    userId,
+    typed(reason),
+    {
+      permission,
+      allowed,
+      // Missing means allowed (D57), so the prior value is always a boolean.
+      prev: { allowed: target[field] !== false },
+      ...(defaulted ? { reasonDefaulted: true } : {}),
+    },
+  );
   return personWriteResult(ctx, userId, actionId);
 }

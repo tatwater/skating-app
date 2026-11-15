@@ -15,7 +15,7 @@ import {
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, mutation, type QueryCtx, query } from './_generated/server';
-import { type AuditReason, composed, writeAudit } from './lib/audit';
+import { type AuditReasonOrText, composed, writeAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { queueLibraryRefresh, refreshBodyLibrary } from './lib/bodyLibrary';
@@ -53,7 +53,7 @@ async function audit(
   actorId: Id<'profiles'>,
   action: 'remove' | 'restore',
   row: Doc<'corpusPlaceNames'>,
-  reason: AuditReason,
+  reason: AuditReasonOrText,
   extra: Record<string, unknown> = {},
 ): Promise<void> {
   await writeAudit(ctx, {

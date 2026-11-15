@@ -84,7 +84,13 @@ import {
   query,
 } from './_generated/server';
 import { failedAttempt } from './lib/attempts';
-import { type AuditReason, composed, snapshotDoc, writeAudit, writeSnapshot } from './lib/audit';
+import {
+  type AuditReasonOrText,
+  composed,
+  snapshotDoc,
+  writeAudit,
+  writeSnapshot,
+} from './lib/audit';
 import {
   getCurrentProfile,
   requireCapability,
@@ -3363,7 +3369,7 @@ export async function mergeBodyInto(
     survivor: Doc<'waterBodies'>;
     loser: Doc<'waterBodies'>;
     actorId?: Id<'profiles'>;
-    reason: AuditReason;
+    reason: AuditReasonOrText;
   },
 ): Promise<{ repointed: Record<string, number> }> {
   const survivorId = survivor._id;
@@ -4287,7 +4293,7 @@ export async function writeDepth(
   }: {
     body: Doc<'waterBodies'>;
     patch: Partial<DepthFields>;
-    reason: AuditReason;
+    reason: AuditReasonOrText;
     metadata: Record<string, unknown>;
   },
 ): Promise<void> {

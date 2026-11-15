@@ -11,7 +11,7 @@ import { normalizeUsername, type TrustClass, type UserStatus } from '@skating/co
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, query } from './_generated/server';
-import { writeAudit } from './lib/audit';
+import { typed, writePersonAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { clearLedgerGrantOnDemotion } from './lib/ledgerEditors';
 import { reasonFor, roleChangeTakesAway, writeRefusal } from './lib/peopleCan';
@@ -124,12 +124,12 @@ export async function grantRoleImpl(
   // An admin moved down to moderator loses ledger editing with the role (D227), audited first.
   await clearLedgerGrantOnDemotion(ctx, actor, target, role);
   await ctx.db.patch(userId, { role });
-  const actionId = await writeAudit(ctx, {
+  const actionId = await writePersonAudit(ctx, {
     actorId: actor._id,
     action: 'grant_role',
     targetType: 'user',
     targetId: userId,
-    reason,
+    reason: typed(reason),
     metadata: { role, priorRole: target.role, ...(defaulted ? { reasonDefaulted: true } : {}) },
     createdAt: Date.now(),
   });
@@ -173,12 +173,12 @@ export async function revokeRoleImpl(
   // Leaving admin takes ledger editing with it (D227), audited first; refused for the last editor.
   await clearLedgerGrantOnDemotion(ctx, actor, target, 'member');
   await ctx.db.patch(userId, { role: 'member' });
-  const actionId = await writeAudit(ctx, {
+  const actionId = await writePersonAudit(ctx, {
     actorId: actor._id,
     action: 'revoke_role',
     targetType: 'user',
     targetId: userId,
-    reason,
+    reason: typed(reason),
     metadata: { priorRole: target.role, ...(defaulted ? { reasonDefaulted: true } : {}) },
     createdAt: Date.now(),
   });

@@ -24,7 +24,7 @@ import { isLeaving } from '@skating/core';
 import { ConvexError } from 'convex/values';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
-import { writeAudit } from './audit';
+import { type AuditReason, composed, typed, writePersonAudit } from './audit';
 import { hasCapability, isLockedOut, isSuspendedNow } from './auth';
 import {
   factsOfRow,
@@ -222,12 +222,12 @@ export async function grantLedgerEditorImpl(
 
   await ctx.db.patch(userId, { canEditLedger: true });
   await refreshPersonRow(ctx, userId);
-  const actionId = await writeAudit(ctx, {
+  const actionId = await writePersonAudit(ctx, {
     ...(actor ? { actorId: actor._id } : {}),
     action: 'grant_ledger_editor',
     targetType: 'user',
     targetId: userId,
-    reason: reason?.trim() || 'Can edit the ledger',
+    reason: typed(reason?.trim() || 'Can edit the ledger'),
     ...(seeded ? { metadata: { seeded: true } } : {}),
   });
   return { userId, actionId };
@@ -250,7 +250,7 @@ export async function revokeLedgerEditorImpl(
   if (!target) throw new ConvexError('User not found');
   const refused = await ledgerRevokeRefusal(ctx, target);
   if (refused !== null) throw new ConvexError(refused);
-  const actionId = await takeLedgerGrant(ctx, actor, target, reason.trim(), {});
+  const actionId = await takeLedgerGrant(ctx, actor, target, typed(reason.trim()), {});
   await refreshPersonRow(ctx, userId);
   return { userId, actionId };
 }
@@ -269,7 +269,7 @@ export async function clearLedgerGrantOnDemotion(
   newRole: Profile['role'],
 ): Promise<void> {
   if (target.canEditLedger !== true || newRole === 'admin') return;
-  await takeLedgerGrant(ctx, actor, target, `No longer an admin (now ${newRole})`, {
+  await takeLedgerGrant(ctx, actor, target, composed`No longer an admin (now ${newRole})`, {
     cause: 'role_change',
     role: newRole,
   });
@@ -279,12 +279,12 @@ async function takeLedgerGrant(
   ctx: MutationCtx,
   actor: Profile,
   target: Profile,
-  reason: string,
+  reason: AuditReason,
   metadata: Record<string, unknown>,
 ): Promise<Id<'moderationActions'>> {
   if (await isLastLedgerEditor(ctx, target)) throw new ConvexError(LAST_EDITOR_MESSAGE);
   await ctx.db.patch(target._id, { canEditLedger: undefined });
-  return writeAudit(ctx, {
+  return writePersonAudit(ctx, {
     actorId: actor._id,
     action: 'revoke_ledger_editor',
     targetType: 'user',

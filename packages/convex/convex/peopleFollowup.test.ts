@@ -8,7 +8,7 @@ import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { composed, fitComposed, writeAudit } from './lib/audit';
+import { composed, fitComposed, typed, writeAudit, writePersonAudit } from './lib/audit';
 import { rebuildBodyLibrary } from './lib/bodyLibrary';
 import { LAST_EDITOR_MESSAGE } from './lib/ledgerEditors';
 import { LEDGER_NEUTRAL_REFUSAL } from './lib/peopleCan';
@@ -280,6 +280,21 @@ describe('a reason the system composes is shortened to fit, never refused (D261)
       ),
     ).rejects.toThrow(AUDIT_REASON_TOO_LONG);
   });
+});
+
+test('the People entry takes only a tagged reason (a type check, never run)', () => {
+  const never = (ctx: Parameters<typeof writePersonAudit>[0]) => {
+    // @ts-expect-error A bare string can't be a person write's reason: it must be typed or composed.
+    void writePersonAudit(ctx, { action: 'ban', targetType: 'user', targetId: 'x', reason: 'r' });
+    void writePersonAudit(ctx, {
+      action: 'ban',
+      targetType: 'user',
+      targetId: 'x',
+      reason: typed('r'),
+    });
+  };
+  expect(typeof never).toBe('function');
+  expect(() => typed('x'.repeat(AUDIT_REASON_MAX + 1))).toThrow(AUDIT_REASON_TOO_LONG);
 });
 
 // ── Ids at the edge ──

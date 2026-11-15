@@ -66,7 +66,7 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
-import { type AuditReason, composed, writeAudit, writeSnapshot } from './lib/audit';
+import { type AuditReasonOrText, composed, writeAudit, writeSnapshot } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { syncSubAreaCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { rankCandidates, scanCells } from './lib/cellScan';
@@ -945,7 +945,7 @@ async function audit(
   actorId: Id<'profiles'>,
   action: 'create_sub_area' | 'redraw_sub_area' | 'rename_sub_area' | 'remove' | 'restore',
   subAreaId: Id<'waterBodySubAreas'>,
-  reason: AuditReason,
+  reason: AuditReasonOrText,
   metadata?: Record<string, unknown>,
 ): Promise<Id<'moderationActions'>> {
   return writeAudit(ctx, {
