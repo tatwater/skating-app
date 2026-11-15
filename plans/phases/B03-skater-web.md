@@ -1117,8 +1117,10 @@ says armed for this draft and this account (another draft of the same author's, 
 other tab, leaves it alone). It reads what the other tab wrote (the event's new value), not the
 store, which a write of this tab's own could have overtaken. A send already out when the change
 lands comes back disarmed too: its refusal no longer re-arms the resend, and it leaves the record as
-the other tab wrote it unless the create went out, whose lock a reload must find. Disarming sends
-nothing; *Post* stays the author's to press.
+the other tab wrote it unless the create went out, whose lock a reload must find — and so do the
+checkpoints the send saves on its way. A reload still reading its photos back when the other tab's
+change lands returns the words without the resend. Disarming sends nothing; *Post* stays the
+author's to press.
 
 Every property in `sheetStore.properties.test.ts` now runs four pinned seeds (the first is this
 one) and one random seed on every build, the same policy as `erasure.test.ts` (B01 §12.8);

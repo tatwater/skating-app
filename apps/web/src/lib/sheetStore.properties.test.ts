@@ -1207,4 +1207,63 @@ describe('another tab', () => {
     expect(getSheetResend()).toBe('waiting');
     expect(stored().resendArmed).toBe(true);
   });
+
+  it('a checkpoint the send writes after a change there neither re-arms it nor writes over the change', async () => {
+    const sheet = await waiting();
+    const { send, answer } = held();
+    const flight = resendSheet(send);
+    editElsewhere();
+    // `flushPost` saving a checkpoint on its way, as `webPostDeps.persist` does.
+    const checkpoint = attemptOf(sheet, 'pending');
+    setSheetAttempt(checkpoint);
+    expect(getSheetAttempt()).toEqual(checkpoint);
+    expect(stored().sheet.title).toBe('Changed there');
+    answer({ kind: 'refused', message: 'No connection.', draft: checkpoint });
+    await flight;
+    expect(getSheetResend()).toBe('none');
+    expect(stored().sheet.title).toBe('Changed there');
+    expect(stored().resendArmed).toBeUndefined();
+    // Reopened, the tab finds the other tab's words, waiting for the author.
+    reloadPage(AUTHOR);
+    const restored = await restoreStoredSheet(Date.now());
+    expect(restored?.sheet.title).toBe('Changed there');
+    expect(restored?.resendArmed).toBe(false);
+  });
+
+  /** The author's draft with a photo, waiting to resend, stored; then a reload starts reading it back. */
+  const restoringWaiting = async () => {
+    await startRun();
+    bindSheetOwner(AUTHOR);
+    const sheet = openSheet();
+    setSheet(sheet);
+    await pickPhoto({ pool: true });
+    setSheetAttempt(attemptOf(sheet, 'pending'));
+    await whenSheetPhotosSettled();
+    reloadPage(AUTHOR);
+    // Wrapped, so awaiting the setup does not await the read it starts.
+    return { pending: restoreStoredSheet(Date.now()) };
+  };
+
+  it('a change there while a reload reads the photos back: the words return, the resend does not', async () => {
+    const { pending } = await restoringWaiting();
+    editElsewhere();
+    const restored = await pending;
+    expect(restored?.photosLost).toBe(0);
+    expect(restored?.resendArmed).toBe(false);
+    setSheet(restored?.sheet ?? null, restored?.attempt ?? null, restored?.resendArmed);
+    expect(getSheetResend()).toBe('none');
+  });
+
+  it('a discard there while a reload reads the photos back: nothing is armed', async () => {
+    const { pending } = await restoringWaiting();
+    window.localStorage.removeItem(KEY);
+    storageEventFromAnotherTab();
+    await expect(pending).resolves.toMatchObject({ resendArmed: false });
+  });
+
+  it('an event during the read that changes nothing of this draft leaves the restore armed', async () => {
+    const { pending } = await restoringWaiting();
+    storageEventFromAnotherTab();
+    await expect(pending).resolves.toMatchObject({ resendArmed: true, photosLost: 0 });
+  });
 });

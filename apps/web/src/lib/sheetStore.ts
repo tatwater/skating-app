@@ -172,6 +172,9 @@ let sending: { draftId: string } | null = null;
  * answer that comes back must not re-arm the resend, nor write this tab's copy over that change.
  */
 let changedWhileSending = false;
+/** The draft a restore is reading photos for, and whether another tab changed it meanwhile. */
+let restoringDraft: string | null = null;
+let changedWhileRestoring = false;
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -255,6 +258,7 @@ function cancelRestore(): void {
   restoreToken++;
   restoreInFlight = null;
   restoring = false;
+  restoringDraft = null;
 }
 
 function persist(): void {
@@ -431,10 +435,16 @@ async function runRestore(now: number): Promise<RestoredSheet | null> {
 
   const token = ++restoreToken;
   restoring = true;
+  restoringDraft = record.sheet.draftId;
+  changedWhileRestoring = false;
   emit();
   const rows = await readSheetPhotos(claim);
   // The sheet, the account or the store moved on while this read: it answers nobody now.
   if (token !== restoreToken) return null;
+  restoringDraft = null;
+  // Another tab changed this draft while the photos were read: the words still come back, but what
+  // the record said about resending is no longer the author's last word (`onStoredElsewhere`).
+  const changedElsewhere = changedWhileRestoring;
   adoptSheetPhotos(rows);
 
   const found = new Set(rows.map((row) => row.photoId));
@@ -456,7 +466,7 @@ async function runRestore(now: number): Promise<RestoredSheet | null> {
     ...words,
     sheet,
     photosLost,
-    resendArmed: staysArmed(record, words.attempt, photosLost),
+    resendArmed: !changedElsewhere && staysArmed(record, words.attempt, photosLost),
   };
 }
 
@@ -545,10 +555,31 @@ export function updateSheet(
   emit();
 }
 
-/** Record the attempt a failed *Post* returned (or clear it), so the retry resumes from it. */
+/**
+ * Record the attempt a failed *Post* returned (or clear it), so the retry resumes from it. A
+ * checkpoint the send writes on its way (`webPostDeps.persist`) after another tab changed this draft
+ * is kept the way the send's own answer is (`keepAfterElsewhere`): it must not re-arm the resend.
+ */
 export function setSheetAttempt(next: PostDraft | null): void {
   if (current === null) return;
-  recordAttempt(next, true);
+  if (changedWhileSending && sending?.draftId === current.draftId) keepAfterElsewhere(next);
+  else recordAttempt(next, true);
+}
+
+/**
+ * An attempt for a draft another tab changed while its send was out: kept here for the author's next
+ * *Post*, the resend left disarmed. A create that went out must still reach the record — the Post may
+ * be live, and a reload has to find it locked — but short of that the record stays as the other tab
+ * wrote it.
+ */
+function keepAfterElsewhere(next: PostDraft | null): void {
+  if (postCreateSent(next)) {
+    recordAttempt(next, false);
+    return;
+  }
+  attempt = next;
+  resendArmed = false;
+  emit();
 }
 
 /** Record the open sheet's attempt; `mayArm` false keeps the resend disarmed whatever it says. */
@@ -573,17 +604,19 @@ function recordAttempt(next: PostDraft | null, mayArm: boolean): void {
 function onStoredElsewhere(event: StorageEvent): void {
   // `null` is the other tab clearing the whole store.
   if (event.key !== STORAGE_KEY && event.key !== null) return;
-  if (current === null) return;
-  const inFlight = sending?.draftId === current.draftId;
-  if (!resendArmed && !inFlight) return;
   // What the other tab wrote, not what the store holds now: a write of this tab's own that landed
   // before the event arrived would hide the change. A clear carries no value; the store says.
   const record = event.key === null ? readRecord() : parseRecord(event.newValue);
-  const changed =
+  const changes = (draftId: string) =>
     record === null ||
     record.owner !== owner ||
-    (record.sheet.draftId === current.draftId && record.resendArmed !== true);
-  if (!changed) return;
+    (record.sheet.draftId === draftId && record.resendArmed !== true);
+  // A restore still reading photos answers with what the record said when it started; it must not
+  // hand back a resend the author has since taken back.
+  if (restoringDraft !== null && changes(restoringDraft)) changedWhileRestoring = true;
+  if (current === null) return;
+  const inFlight = sending?.draftId === current.draftId;
+  if ((!resendArmed && !inFlight) || !changes(current.draftId)) return;
   if (inFlight) changedWhileSending = true;
   if (!resendArmed) return;
   resendArmed = false;
@@ -636,17 +669,8 @@ export async function sendSheet(send: SheetSender): Promise<SheetSendResult> {
     return { kind: 'posted', postId: outcome.postId, reportId: outcome.reportId, stillOpen };
   }
   if (!stillOpen) emit();
-  else if (!changedElsewhere) setSheetAttempt(outcome.draft);
-  // Another tab changed it while it was out: the answer stays here for the author's next *Post*, and
-  // the resend stays disarmed. A create that went out must still reach the record — the Post may be
-  // live, and a reload has to find it locked — but short of that the record stays as the other tab
-  // wrote it.
-  else if (postCreateSent(outcome.draft)) recordAttempt(outcome.draft, false);
-  else {
-    attempt = outcome.draft;
-    resendArmed = false;
-    emit();
-  }
+  else if (changedElsewhere) keepAfterElsewhere(outcome.draft);
+  else setSheetAttempt(outcome.draft);
   return { kind: 'refused', message: outcome.message };
 }
 
@@ -744,6 +768,8 @@ export function resetSheetStoreForTests(): void {
   resendArmed = false;
   sending = null;
   changedWhileSending = false;
+  restoringDraft = null;
+  changedWhileRestoring = false;
   owner = null;
   persistedAt = null;
   lostPhotos = null;
