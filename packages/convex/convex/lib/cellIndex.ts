@@ -27,6 +27,7 @@ import {
 } from '@skating/core';
 import type { Id } from '../_generated/dataModel';
 import type { MutationCtx } from '../_generated/server';
+import { markGeoStaleOnRecell } from './geoStale';
 
 /**
  * The water-body ladder. Its rungs are D49's zoom bounds *exactly* — the coarsest is the widest
@@ -101,6 +102,9 @@ export async function syncWaterBodyCells(
     .collect();
 
   const { insert, remove } = diffCells(desired, stored);
+  // The geometry facts' choke point (B01-3b): every creation, moved box and listing change re-cells
+  // the body, so a changed cell set (or a body with no facts row yet) marks its facts stale here.
+  await markGeoStaleOnRecell(ctx, waterBodyId, insert.length > 0 || remove.length > 0);
   for (const row of remove) await ctx.db.delete(row._id);
   for (const cell of insert) {
     await ctx.db.insert('waterBodyCells', {

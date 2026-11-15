@@ -803,7 +803,17 @@ describe('never_existed (D65)', () => {
       ...VIA,
     });
 
-    expect((await t.run((ctx) => ctx.db.get(hazardId)))?.status).toBe('archived');
+    const archived = await t.run((ctx) => ctx.db.get(hazardId));
+    expect(archived?.status).toBe('archived');
+    // The vote that archived it records when it left the lake, once: a later vote never moves it.
+    expect(archived?.leftLakeAt).toEqual(expect.any(Number));
+    const c = await seedUser(t, 'c');
+    await c.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId,
+      verdict: 'fully_healed',
+      ...VIA,
+    });
+    expect((await t.run((ctx) => ctx.db.get(hazardId)))?.leftLakeAt).toBe(archived?.leftLakeAt);
     // …but only one of them is a claim about the report, and a mixed pair is not the pattern the
     // flag exists to surface.
     expect((await t.run((ctx) => ctx.db.query('contentFlags').collect())).length).toBe(0);

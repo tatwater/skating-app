@@ -7,10 +7,13 @@
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { api } from './_generated/api';
+import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { bayViaOf, daysCovered, historyTargets, winterWindow } from './bodyConsole';
+import { bayViaOf, daysCovered, winterWindow } from './bodyConsole';
+import { markGeoStale } from './lib/bodyGeo';
+import { rebuildBodyLibrary } from './lib/bodyLibrary';
 import { syncAdminAreaCells, syncWaterBodyCells } from './lib/cellIndex';
+import { SAVED_PUT_IN_HIDDEN_READ } from './lib/standing';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -114,6 +117,39 @@ async function seedBody(
   });
 }
 
+/** Build every body's library row, then compute every body's geometry facts (as the jobs would). */
+async function computeGeo(t: T) {
+  await t.run(async (ctx) => {
+    for (const b of await ctx.db.query('waterBodies').collect()) {
+      await rebuildBodyLibrary(ctx, b._id);
+      await markGeoStale(ctx, [b._id]);
+    }
+  });
+  await t.action(internal.bodyGeo.computeDue, {});
+}
+
+/** Link every audit row to its bodies (rows inserted directly bypass `writeAudit`), then read History. */
+async function historyOf(
+  t: T,
+  as: ReturnType<T['withIdentity']>,
+  args: {
+    waterBodyId: Id<'waterBodies'>;
+    action?: Doc<'moderationActions'>['action'];
+    bodyOnly?: boolean;
+    limit?: number;
+  },
+) {
+  for (let cursor: string | undefined, i = 0; i < 1000; i++) {
+    const page = await t.mutation(internal.auditLinks.backfill, {
+      chain: false,
+      ...(cursor !== undefined ? { cursor } : {}),
+    });
+    if (page.isDone) break;
+    cursor = page.continueCursor ?? undefined;
+  }
+  return as.query(api.bodyConsole.history, args);
+}
+
 describe('pure helpers', () => {
   test('a bay’s way is its via, or its words for rows written before', () => {
     expect(bayViaOf({ metadata: { via: 'chord' }, reason: 'x' })).toBe('chord');
@@ -123,7 +159,8 @@ describe('pure helpers', () => {
   });
   test('a span counts on every day it overlaps inside the winter', () => {
     const w = winterWindow(2026);
-    expect(w.start).toBe(Date.UTC(2026, 9, 1));
+    // The season's span, as the Hazards tab's list covers it: 1 July to the next 1 July.
+    expect(w).toEqual({ start: Date.UTC(2026, 6, 1), end: Date.UTC(2027, 6, 1) });
     expect(daysCovered(w.start - DAY, w.start + DAY / 2, w)).toEqual([w.start]);
     expect(daysCovered(w.start + DAY / 2, w.start + 2 * DAY + 1, w)).toHaveLength(3);
     expect(daysCovered(w.end, w.end + DAY, w)).toEqual([]);
@@ -163,7 +200,19 @@ describe('consoleExtras', () => {
         createdAt: NOW - DAY,
       });
     });
+    // Not computed yet: the stored answers read null, never "none".
+    expect(await as.query(api.bodyConsole.consoleExtras, { waterBodyId: id })).toMatchObject({
+      towns: null,
+      touchingBodyIds: null,
+      touching: null,
+      geoComputedAt: null,
+    });
+    expect(await as.query(api.bodyConsole.places, { waterBodyId: id })).toBeNull();
+    await computeGeo(t);
     const x = await as.query(api.bodyConsole.consoleExtras, { waterBodyId: id });
+    expect(x.touching).toEqual([
+      { waterBodyId: touching, name: 'Neighbor', ring: expect.any(Array) },
+    ]);
     expect(x).toMatchObject({
       towns: ['Enfield'],
       hasBathymetry: false,
@@ -173,7 +222,13 @@ describe('consoleExtras', () => {
       touchingCapped: false,
     });
     const places = await as.query(api.bodyConsole.places, { waterBodyId: id });
-    expect(places).toEqual({ towns: ['Enfield'], counties: [], states: ['NH'] });
+    expect(places).toMatchObject({ towns: ['Enfield'], counties: [], states: ['NH'] });
+    // A merged-away id reads its survivor's extras, the vouching included.
+    const gone = await seedBody(t, { name: 'Merged Away', at: [-70, 42] });
+    await t.run((ctx) => ctx.db.patch(gone, { dedupStatus: 'merged', mergedIntoId: id }));
+    expect(await as.query(api.bodyConsole.consoleExtras, { waterBodyId: gone })).toEqual(
+      await as.query(api.bodyConsole.consoleExtras, { waterBodyId: id }),
+    );
   });
 
   test('a pond beside a large lake touches it, though the lake’s sampled ring passes it by', async () => {
@@ -202,6 +257,7 @@ describe('consoleExtras', () => {
       polygon: { type: 'Polygon', coordinates: [ring] },
     });
     const pond = await seedBody(t, { name: 'Side Pond', at: [e + 0.0011, 44.0035], half: 0.001 });
+    await computeGeo(t);
     const x = await as.query(api.bodyConsole.consoleExtras, { waterBodyId: pond });
     expect(x.touchingBodyIds).toEqual([lake]);
   });
@@ -230,20 +286,27 @@ describe('consoleExtras', () => {
       });
       await ctx.db.insert('bathymetryCoverage', { source: 'osm', externalId: 'way/2' });
     });
+    const none = await seedBody(t, { name: 'Unstamped', at: [-71, 43] });
+    await computeGeo(t);
     const x = await as.query(api.bodyConsole.consoleExtras, { waterBodyId: id });
+    // Computed, and in no town: an empty list, not "not computed".
     expect(x).toMatchObject({
-      towns: null,
+      towns: [],
       hasBathymetry: true,
       outlineTrustedSince: NOW - 10 * DAY,
       outlineTrustedVia: 'campaign',
       touchingBodyIds: [],
     });
-    const none = await seedBody(t, { name: 'Unstamped' });
     expect(await as.query(api.bodyConsole.consoleExtras, { waterBodyId: none })).toMatchObject({
       outlineTrustedSince: null,
       outlineTrustedVia: null,
     });
-    expect(await as.query(api.bodyConsole.places, { waterBodyId: none })).toBeNull();
+    expect(await as.query(api.bodyConsole.places, { waterBodyId: none })).toEqual({
+      towns: [],
+      counties: [],
+      states: [],
+      computedAt: expect.any(Number),
+    });
   });
 
   test('a member is refused; a missing body says so', async () => {
@@ -346,7 +409,7 @@ describe('bays, landmarks and history', () => {
   test('the history spans the body, its bays and its landmarks, newest first, and filters by verb', async () => {
     const t = harness();
     const { mod, id } = await scene(t);
-    const all = await mod.as.query(api.bodyConsole.history, { waterBodyId: id });
+    const all = await historyOf(t, mod.as, { waterBodyId: id });
     expect(all.entries.map((e) => e.action)).toEqual([
       'set_curated_boost',
       'create_landmark',
@@ -357,7 +420,7 @@ describe('bays, landmarks and history', () => {
     expect(all.capped).toBe(false);
     expect(all.entries[0]?.actor?.userId).toBe(mod.id);
     expect(all.entries[0]?.undo).toBeDefined();
-    const boosts = await mod.as.query(api.bodyConsole.history, {
+    const boosts = await historyOf(t, mod.as, {
       waterBodyId: id,
       action: 'set_curated_boost',
       limit: 1,
@@ -368,7 +431,7 @@ describe('bays, landmarks and history', () => {
     await expect(member.as.query(api.bodyConsole.history, { waterBodyId: id })).rejects.toThrow();
   });
 
-  test('a body with more put-ins than the history reads says it is capped', async () => {
+  test('a body with hundreds of put-ins is not capped when its rows fit', async () => {
     const t = harness();
     const { mod, id } = await scene(t);
     await t.run(async (ctx) => {
@@ -382,10 +445,10 @@ describe('bays, landmarks and history', () => {
         });
       }
     });
-    const all = await mod.as.query(api.bodyConsole.history, { waterBodyId: id });
-    // Every row read fits the page, but a put-in's history was never read.
+    const all = await historyOf(t, mod.as, { waterBodyId: id });
+    // Every row fits the page: a large family is no longer capped for its size alone.
     expect(all.entries).toHaveLength(5);
-    expect(all.capped).toBe(true);
+    expect(all.capped).toBe(false);
   });
 
   test('a catalog landmark folded by a merge keeps its receipt in the history', async () => {
@@ -405,7 +468,7 @@ describe('bays, landmarks and history', () => {
         createdAt: NOW - DAY / 4,
       });
     });
-    const all = await mod.as.query(api.bodyConsole.history, { waterBodyId: id });
+    const all = await historyOf(t, mod.as, { waterBodyId: id });
     expect(all.entries[0]).toMatchObject({ targetId: landmarks.catalog, action: 'remove' });
   });
 
@@ -486,7 +549,7 @@ describe('bays, landmarks and history', () => {
         .sort((a, b) => b.createdAt - a.createdAt)
         .map((r) => r._id as string);
     });
-    const read = await mod.as.query(api.bodyConsole.history, { waterBodyId: id, limit: 100 });
+    const read = await historyOf(t, mod.as, { waterBodyId: id, limit: 100 });
     expect(read.capped).toBe(false);
     expect(read.entries.map((e) => e.id)).toEqual(family);
     expect(read.entries.map((e) => e.targetType)).toEqual(
@@ -582,62 +645,21 @@ describe('bays, landmarks and history', () => {
       }
       return ids;
     });
-    const read = await mod.as.query(api.bodyConsole.history, { waterBodyId: id, limit: 100 });
+    const read = await historyOf(t, mod.as, { waterBodyId: id, limit: 100 });
     expect(read.capped).toBe(false);
     expect(read.entries.map((e) => e.id)).toEqual(expect.arrayContaining(family));
     // Access's rulings: one verb, as an index range on the request.
-    const rulings = await mod.as.query(api.bodyConsole.history, {
+    const rulings = await historyOf(t, mod.as, {
       waterBodyId: id,
       action: 'approve_request',
     });
     expect(rulings.entries.map((e) => e.id)).toEqual([family[2]]);
   });
 
-  test('a read short of bytes stops walking the absorbed bodies, and says so', async () => {
+  test('the absorbed walk stops at its count and says so', async () => {
     const t = harness();
-    const { id } = await scene(t);
-    const read = await t.run(async (ctx) => {
-      for (const name of ['One', 'Two']) {
-        await ctx.db.insert('waterBodies', {
-          name,
-          searchText: name,
-          type: 'lakePond',
-          source: 'osm',
-          polygon: square(-72, 44, 0.002),
-          bbox: boxOf(-72, 44, 0.002),
-          centroid: { lat: 44, lng: -72 },
-          dedupStatus: 'merged',
-          mergedIntoId: id,
-          createdAt: NOW,
-        });
-      }
-      const spent = { used: 0, remaining: 0 };
-      const low = Object.fromEntries(
-        [
-          'bytesRead',
-          'bytesWritten',
-          'databaseQueries',
-          'documentsRead',
-          'documentsWritten',
-          'functionsScheduled',
-          'scheduledFunctionArgsBytes',
-        ].map((k) => [k, spent]),
-      );
-      const short = { ...ctx, meta: { ...ctx.meta, getTransactionMetrics: async () => low } };
-      return historyTargets(short as unknown as typeof ctx, id);
-    });
-    expect(read.truncated).toBe(true);
-    // The body's own family is read, and the first absorbed body itself (its rows cost one query);
-    // the walk stops before another polygon, and no absorbed family is taken in on a spent read.
-    const bodies = read.targets.filter((x) => x.targetType === 'waterbody');
-    expect(bodies).toHaveLength(2);
-    expect(bodies[0]).toEqual({ targetType: 'waterbody', targetId: id });
-  });
-
-  test('the absorbed walk stops at its count and says so; a loop back to the body is read once', async () => {
-    const t = harness();
-    const { id } = await scene(t);
-    const read = await t.run(async (ctx) => {
+    const { mod, id } = await scene(t);
+    await t.run(async (ctx) => {
       let first: Id<'waterBodies'> | undefined;
       for (let i = 0; i <= 50; i++) {
         const name = `Absorbed ${i}`;
@@ -655,14 +677,11 @@ describe('bays, landmarks and history', () => {
         });
         first ??= b;
       }
-      // A record no merge writes: the body pointing back at one merged into it.
-      await ctx.db.patch(id, { mergedIntoId: first });
-      return historyTargets(ctx, id);
     });
-    expect(read.truncated).toBe(true);
-    const bodies = read.targets.filter((x) => x.targetType === 'waterbody').map((x) => x.targetId);
-    expect(bodies).toHaveLength(51);
-    expect(new Set(bodies).size).toBe(51);
+    const read = await historyOf(t, mod.as, { waterBodyId: id, limit: 100 });
+    // Fifty-one merged into it: past the chain's bound, so the read says it may be incomplete.
+    expect(read.capped).toBe(true);
+    expect(new Set(read.entries.map((e) => e.id)).size).toBe(read.entries.length);
   });
 
   test('a limit that is missing, zero, huge or not a number is held to the read’s bounds', async () => {
@@ -675,7 +694,7 @@ describe('bays, landmarks and history', () => {
       [Number.NaN, 5],
       [2.7, 2],
     ] as const) {
-      const res = await mod.as.query(api.bodyConsole.history, {
+      const res = await historyOf(t, mod.as, {
         waterBodyId: id,
         ...(limit !== undefined ? { limit } : {}),
       });
@@ -778,6 +797,73 @@ describe('dailyHazards', () => {
     expect(r.days.every((d) => d.at <= NOW)).toBe(true);
   });
 
+  test('a recorded end counts through its day; days run through the caller’s whole day; the season opens in July', async () => {
+    const t = harness();
+    const { as, id: mod } = await seedUser(t);
+    const id = await seedBody(t, { name: 'Stamped' });
+    const today = Math.floor(NOW / DAY) * DAY;
+    const ids = await t.run(async (ctx) => {
+      const pin = (at: number, extra: Partial<Doc<'hazards'>>) =>
+        ctx.db.insert('hazards', {
+          waterBodyId: id,
+          type: 'pressure_ridge',
+          geometryKind: 'point_radius',
+          geometry: { type: 'Point' as const, coordinates: [-72, 44] },
+          radiusMeters: 20,
+          bbox: boxOf(-72, 44, 0.001),
+          createdByUserId: mod,
+          photoIds: [],
+          moderationStatus: 'visible',
+          confirmCount: 0,
+          goneCount: 0,
+          createdAt: at,
+          firstReportedAt: at,
+          lastConfirmedAt: at,
+          status: 'active',
+          ...extra,
+        });
+      return {
+        // Archived three days after its first report, the end recorded.
+        ended: await pin(today - 6 * DAY, { status: 'archived', leftLakeAt: today - 3 * DAY + 5 }),
+        // Reported later today than the caller's clock: still today's count.
+        late: await pin(NOW + 3_600_000, {}),
+        // Reported in July, before the old October window opened.
+        july: await pin(Date.UTC(2026, 6, 15), { status: 'archived' }),
+      };
+    });
+    const r = await as.query(api.bodyConsole.dailyHazards, { waterBodyId: id, now: NOW });
+    const day = (at: number) => r.days.find((x) => x.at === at) ?? { count: 0, unknown: 0 };
+    // The recorded end: counted from its first report through the day it left, and no further.
+    expect(day(today - 6 * DAY)).toMatchObject({ count: 1 });
+    expect(day(today - 3 * DAY)).toMatchObject({ count: 1, unknown: 1 });
+    expect(day(today - 2 * DAY)).toMatchObject({ count: 0, unknown: 1 });
+    // Today counts the pin reported later today.
+    expect(day(today)).toMatchObject({ count: 1 });
+    expect(r.days.some((d) => d.at > today)).toBe(false);
+    // The July pin is in the season: its first day counted, every day after unknown.
+    expect(day(Date.UTC(2026, 6, 15))).toMatchObject({ count: 1, unknown: 0 });
+    expect(day(Date.UTC(2026, 6, 16))).toMatchObject({ count: 0, unknown: 1 });
+    expect(r.unknownEnds).toBe(1);
+    expect(r.hazards).toEqual(
+      expect.arrayContaining([
+        {
+          hazardId: ids.ended,
+          firstReportedDay: today - 6 * DAY,
+          endRecorded: true,
+          endDay: today - 3 * DAY,
+        },
+        { hazardId: ids.late, firstReportedDay: today, endRecorded: false, endDay: null },
+        {
+          hazardId: ids.july,
+          firstReportedDay: Date.UTC(2026, 6, 15),
+          endRecorded: false,
+          endDay: null,
+        },
+      ]),
+    );
+    expect(r.hazards).toHaveLength(3);
+  });
+
   test('a season or clock out of range reads as this season, at the server’s day', async () => {
     const t = harness();
     const { as } = await seedUser(t);
@@ -871,6 +957,7 @@ describe('standing.retentionForBody', () => {
       favoritesCapped: false,
       savedPutIns: 1,
       savedPutInsCapped: false,
+      putInKeeps: true,
     });
     // A boost set to zero is no boost: absent, as the rollover reads it.
     const bare = await seedBody(t, { name: 'Bare', curatedBoost: 0 });
@@ -879,9 +966,45 @@ describe('standing.retentionForBody', () => {
       favoritesCapped: false,
       savedPutIns: 0,
       savedPutInsCapped: false,
+      putInKeeps: false,
     });
     await t.run((ctx) => ctx.db.delete(bare));
     expect(await as.query(api.standing.retentionForBody, { waterBodyId: bare })).toBeNull();
+  });
+
+  test('putInKeeps is the rollover’s answer, though the tab’s wider read counts the body whole', async () => {
+    const t = harness();
+    const { as } = await seedUser(t);
+    const id = await seedBody(t, { name: 'Many Hides' });
+    // One launch, suppressed only by a hide past the rollover's read of hidden coordinates.
+    await t.run(async (ctx) => {
+      await ctx.db.insert('putIns', {
+        waterBodyId: id,
+        coord: { lat: 44.05, lng: -72 },
+        source: 'osm',
+        status: 'visible',
+        createdAt: NOW,
+      });
+      for (let i = 0; i <= SAVED_PUT_IN_HIDDEN_READ; i++) {
+        await ctx.db.insert('putIns', {
+          waterBodyId: id,
+          coord:
+            i === SAVED_PUT_IN_HIDDEN_READ
+              ? { lat: 44.05, lng: -72 }
+              : { lat: 44, lng: -72 + i * 0.005 },
+          source: 'derived',
+          status: 'hidden',
+          createdAt: NOW,
+        });
+      }
+    });
+    // The tab reads every hide: no launch, counted whole. The rollover can't see the last hide, so
+    // it keeps the body — and the tab says so.
+    expect(await as.query(api.standing.retentionForBody, { waterBodyId: id })).toMatchObject({
+      savedPutIns: 0,
+      savedPutInsCapped: false,
+      putInKeeps: true,
+    });
   });
 
   test('saved put-ins by the rollover’s rule: a persisted derived row counts, a hidden coord does not', async () => {
@@ -1052,7 +1175,7 @@ describe('a merge chain’s history', () => {
         .sort((a, b) => b.createdAt - a.createdAt)
         .map((r) => r._id as string),
     );
-    const read = await as.query(api.bodyConsole.history, { waterBodyId: survivor, limit: 100 });
+    const read = await historyOf(t, as, { waterBodyId: survivor, limit: 100 });
     expect(read.capped).toBe(false);
     expect(read.entries.map((e) => e.id)).toEqual(expected);
   });
@@ -1092,18 +1215,18 @@ describe('a merge chain’s history', () => {
         }),
       ];
     });
-    const read = await as.query(api.bodyConsole.history, { waterBodyId: survivor, limit: 100 });
+    const read = await historyOf(t, as, { waterBodyId: survivor, limit: 100 });
     expect(read.capped).toBe(false);
     expect(read.entries.map((e) => e.id)).toEqual(expected);
   });
 
   test('the survivor’s untouched landmarks never crowd out a body merged into it', async () => {
     const t = harness();
-    const { id: mod } = await seedUser(t);
+    const { as, id: mod } = await seedUser(t);
     const survivor = await seedBody(t, { name: 'Survivor' });
     const absorbed = await seedBody(t, { name: 'Duplicate', at: [-71.9, 44] });
     const family = await relatives(t, absorbed, mod, NOW - DAY);
-    const read = await t.run(async (ctx) => {
+    await t.run(async (ctx) => {
       // More catalog labels than the bound holds, none a person touched.
       for (let i = 0; i < 1_250; i++) {
         await ctx.db.insert('bodyLandmarks', {
@@ -1119,12 +1242,11 @@ describe('a merge chain’s history', () => {
         });
       }
       await ctx.db.patch(absorbed, { dedupStatus: 'merged', mergedIntoId: survivor });
-      return historyTargets(ctx, survivor);
     });
-    expect(read.truncated).toBe(true);
-    expect(read.targets.length).toBeLessThanOrEqual(1_200);
-    // The absorbed body and its whole family, its removed landmark among them, all made the cut.
-    const held = new Set(read.targets.map((x) => x.targetId));
+    const read = await historyOf(t, as, { waterBodyId: survivor, limit: 100 });
+    // The survivor's 1,250 labels cost History nothing: the absorbed body's family is all there.
+    expect(read.capped).toBe(false);
+    const held = new Set(read.entries.map((e) => e.targetId));
     for (const id of family) expect(held.has(id)).toBe(true);
   });
 
@@ -1139,7 +1261,7 @@ describe('a merge chain’s history', () => {
       await t.run((ctx) => ctx.db.patch(child, { dedupStatus: 'merged', mergedIntoId: parent }));
       parent = child;
     }
-    const read = await as.query(api.bodyConsole.history, { waterBodyId: survivor, limit: 100 });
+    const read = await historyOf(t, as, { waterBodyId: survivor, limit: 100 });
     // Fifty-one bodies deep: past the chain's bound, so the read says it may be incomplete.
     expect(read.capped).toBe(true);
     // A full page of the families it did take in, each row once.
@@ -1257,7 +1379,7 @@ describe('one rule for a target’s history: the Body console and listActions ag
         targetId: body,
         action,
       });
-      const { entries } = await mod.as.query(api.bodyConsole.history, {
+      const { entries } = await historyOf(t, mod.as, {
         waterBodyId: body,
         action,
       });

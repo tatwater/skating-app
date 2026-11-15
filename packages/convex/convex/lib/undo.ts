@@ -23,8 +23,7 @@ import { asUndoOf } from './audit';
 import { hasCapability } from './auth';
 import { authorDeletedAtOn, authorDeletedRefusal } from './authorDeletion';
 import { type PersonFacts, writeRefusal } from './peopleCan';
-import { factsOfRow, personRowOf } from './peopleRows';
-import { ROW_MAX, requestBudget } from './readBudget';
+import { factsOfRow, personRowOf, rowlessProfile } from './peopleRows';
 import { UNDO_HANDLERS } from './undoHandlers';
 import { UNDO_POLICY, undoCapability, WORKSTREAM_MODE } from './undoPolicy';
 import { meta, type UndoHandler, type UndoViewer } from './undoTypes';
@@ -158,31 +157,10 @@ async function personUndoRefusal(
   // A query reads each such person once, however many rows name them.
   const target: PersonFacts | null | undefined = light
     ? factsOfRow(light)
-    : await fallbackProfile(ctx, id);
+    : await rowlessProfile(ctx, id);
   if (target === undefined) return UNDO_NEEDS_ROWS;
   if (!target) return 'This account no longer exists.';
   return writeRefusal(ctx, viewer, target, handler.personWrite(row));
-}
-
-const FALLBACK = new WeakMap<object, Map<string, Promise<Doc<'profiles'> | null>>>();
-
-/** A person's profile for undo state, charged to the request; `undefined` once the budget is spent. */
-async function fallbackProfile(
-  ctx: QueryCtx | MutationCtx,
-  id: Id<'profiles'>,
-): Promise<Doc<'profiles'> | null | undefined> {
-  const isQuery = !('insert' in ctx.db);
-  const seen = isQuery ? (FALLBACK.get(ctx) ?? new Map()) : null;
-  const known = seen?.get(id);
-  if (known) return known;
-  const budget = requestBudget(ctx);
-  if (!budget.affords(ROW_MAX.profile)) return undefined;
-  const read = budget.one('profile', () => ctx.db.get(id));
-  if (seen) {
-    seen.set(id, read);
-    FALLBACK.set(ctx, seen);
-  }
-  return read;
 }
 
 /** Undo `actionId` as `actor` (already gated by the caller), with `reason` when one is needed. */

@@ -24,6 +24,7 @@
 import { DELETION_GRACE_MS, restrictionsOf } from '@skating/core';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
+import { ROW_MAX, requestBudget } from './readBudget';
 
 /** A suspension with no end, as its sort key: last in "soonest to lapse first". */
 export const OPEN_ENDED = Number.MAX_SAFE_INTEGER;
@@ -184,6 +185,32 @@ export function rememberedLedgerEditors(ctx: object): Promise<Set<string>> | und
 }
 export function rememberLedgerEditors(ctx: object, read: Promise<Set<string>>): void {
   LEDGER_EDITORS.set(ctx, read);
+}
+
+const ROWLESS = new WeakMap<object, Map<string, Promise<Doc<'profiles'> | null>>>();
+
+/**
+ * The profile of someone with no People row yet (before the rows backfill), for a read that would have
+ * used the row — a History line's target name, undo state's facts. Charged to the request's budget
+ * (`requestBudget`) and read once a request whoever asks; `undefined` once the budget is spent, so the
+ * caller says it can't tell rather than read past the limit. A mutation reads afresh.
+ */
+export async function rowlessProfile(
+  ctx: QueryCtx | MutationCtx,
+  id: Id<'profiles'>,
+): Promise<Doc<'profiles'> | null | undefined> {
+  const isQuery = !('insert' in ctx.db);
+  const seen = isQuery ? (ROWLESS.get(ctx) ?? new Map()) : null;
+  const known = seen?.get(id);
+  if (known) return known;
+  const budget = requestBudget(ctx);
+  if (!budget.affords(ROW_MAX.profile)) return undefined;
+  const read = budget.one('profile', () => ctx.db.get(id));
+  if (seen) {
+    seen.set(id, read);
+    ROWLESS.set(ctx, seen);
+  }
+  return read;
 }
 
 export function personRowOf(

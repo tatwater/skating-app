@@ -37,7 +37,7 @@ import {
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
-import { auditRowsOn } from './lib/auditReads';
+import { auditRowsOn, auditTargetLabel } from './lib/auditReads';
 import { hasCapability, requireCapability } from './lib/auth';
 import { readVerdictCounts } from './lib/contentVerdicts';
 import {
@@ -666,6 +666,8 @@ export interface PersonActionRow {
   createdAt: number;
   /** Who acted, from their People row; `null` for the system. */
   actor: PersonRef | null;
+  /** The target's name — a body's or a person's — as the audit feed labels it (`auditTargetLabel`). */
+  targetLabel?: string;
   /** Set on the row an undo wrote: the row it undid (D226). */
   undoesActionId?: Id<'moderationActions'>;
   /** The script or agent the actor made the write through (D256). */
@@ -680,6 +682,25 @@ export interface PersonActionRow {
  * row had already started its own read.
  */
 type Actors = Map<string, Promise<PersonRef | null>>;
+
+/** Target names a request has read, once each (many rows name the same person or body). */
+const LABELS = new WeakMap<object, Map<string, Promise<string | null>>>();
+
+async function labelOf(
+  ctx: QueryCtx,
+  row: Doc<'moderationActions'>,
+): Promise<{ targetLabel?: string }> {
+  const seen = LABELS.get(ctx) ?? new Map<string, Promise<string | null>>();
+  LABELS.set(ctx, seen);
+  const key = `${row.targetType}:${row.targetId}`;
+  let read = seen.get(key);
+  if (read === undefined) {
+    read = auditTargetLabel(ctx, row.targetType, row.targetId);
+    seen.set(key, read);
+  }
+  const label = await read;
+  return label === null ? {} : { targetLabel: label };
+}
 
 async function toRow(
   ctx: QueryCtx,
@@ -709,6 +730,7 @@ async function toRow(
     actor,
     ...(row.undoesActionId !== undefined ? { undoesActionId: row.undoesActionId } : {}),
     ...(row.via !== undefined ? { via: row.via } : {}),
+    ...(await labelOf(ctx, row)),
     undo: await undoState(ctx, viewer, row),
   };
 }

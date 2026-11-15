@@ -18,6 +18,8 @@ import { internal } from './_generated/api';
 import type { Doc, Id, TableNames } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
 import { getCurrentProfile, requireProfile } from './lib/auth';
+import { resolveSurvivor } from './lib/bodies';
+import { queueLibraryRefresh } from './lib/bodyLibrary';
 import { FLAG_REASONS, FLAG_TARGET_TYPES } from './lib/enums';
 import { holdMoved, refreshEraseClock } from './lib/eraseClock';
 import { subjectOfTarget } from './lib/flagSubject';
@@ -69,10 +71,19 @@ export const flag = mutation({
 
     // Validate the target exists (and that targetId is a real id for its table).
     const table = TARGET_TABLE[args.targetType];
-    const targetId = ctx.db.normalizeId(table, args.targetId);
-    if (!targetId) throw new ConvexError('Target not found');
-    const target = await ctx.db.get(targetId as Id<TableNames>);
+    const normalized = ctx.db.normalizeId(table, args.targetId);
+    if (!normalized) throw new ConvexError('Target not found');
+    let target = await ctx.db.get(normalized as Id<TableNames>);
     if (!target) throw new ConvexError('Target not found');
+    // A merged-away body's asks are its survivor's (a merge moves them), so a flag filed through a
+    // stale id lands there too — normalized here, once, for every write below.
+    let targetId: string = normalized;
+    if (args.targetType === 'waterbody') {
+      const survivor = await resolveSurvivor(ctx, normalized as Id<'waterBodies'>);
+      if (!survivor) throw new ConvexError('Target not found');
+      target = survivor;
+      targetId = survivor._id;
+    }
     // An erased comment's placeholder is nobody's words any more (D248): there is nothing to report.
     if ('erasedAt' in target && target.erasedAt !== undefined) {
       throw new ConvexError('Target not found');
@@ -96,9 +107,7 @@ export const flag = mutation({
     // Dedupe: one *open* flag per (flagger, target). A repeat flag is a no-op that returns the row.
     const existing = await ctx.db
       .query('contentFlags')
-      .withIndex('by_target', (q) =>
-        q.eq('targetType', args.targetType).eq('targetId', args.targetId),
-      )
+      .withIndex('by_target', (q) => q.eq('targetType', args.targetType).eq('targetId', targetId))
       .filter((q) => q.eq(q.field('flaggerId'), profile._id))
       .filter((q) => q.eq(q.field('status'), 'open'))
       .first();
@@ -107,7 +116,7 @@ export const flag = mutation({
     const flagId = await ctx.db.insert('contentFlags', {
       flaggerId: profile._id,
       targetType: args.targetType,
-      targetId: args.targetId,
+      targetId,
       reason: args.reason,
       ...(args.note !== undefined ? { note: args.note } : {}),
       status: 'open',
@@ -116,10 +125,14 @@ export const flag = mutation({
       origin: 'user', // a person pressed "report" — the one origin `content_flag_resolved` notifies
       createdAt: Date.now(),
     });
+    // A flag on a body is one of its asks: its library row moves with the minute cron (B01-3b).
+    if (args.targetType === 'waterbody') {
+      await queueLibraryRefresh(ctx, [targetId as Id<'waterBodies'>]);
+    }
     // How long the note is, for the cap's record (counts only; a repeat flag above wrote nothing).
     await recordTextLength(ctx, 'flag_note', args.note);
     // An open complaint holds withdrawn content back from erasure (D248).
-    await holdMoved(ctx, args.targetType, args.targetId);
+    await holdMoved(ctx, args.targetType, targetId);
 
     // Safety-priority alert (D38/D3): a dangerously-false "ice is great" flag is a safety incident, not
     // FIFO spam — email the founder to the priority lane. Fire-and-forget; no-ops without Resend keys.

@@ -8027,3 +8027,28 @@ has to be the same number its list or its write would give.
 
 **Related:** D3, D37, D50, D57, D62, D222, D226, D227, D248, D251, D252,
 [`phase-B01`](./phases/B01-admin-console.md) §12.8.
+
+## D259 — The audit log reaches its bodies through a link table, not a field on the row (B01)
+
+**2026-11-14, built in B01-3b.** A body's History read every target related to the body (each bay,
+landmark, put-in, request, flag, lot) and their audit rows, one range each, then merged them: the read
+grew with the body's relatives and was capped by how many targets it could visit, not by how many rows
+the page asked for. The brief asked for an optional `waterBodyId` on each audit row. One row can
+concern **several** bodies — an audit row on a lot concerns every body the lot serves — and a Convex
+index can't range over an array, so a single field would drop all but one of them.
+
+**The rule.** `auditBodyLinks` holds one row per (audit row, body it concerns), with the verb, whether
+the row is on the body itself (`self`), and the row's time. `lib/audit.ts`'s `writeAudit` writes the
+links beside the row, from the same resolver the library refresh uses (`bodiesOfTarget`); the
+`auditLinks:backfill` job links the rows written before, oldest first, chained and budgeted, a row it
+can't resolve counted and skipped. History is one indexed range per body in the merge chain
+(`by_body_time`, `by_body_action_time` for a verb, `by_body_self_time` for the body's own rows),
+merged newest first; `capped` means only that more rows exist than returned.
+
+**Why:** the read's cost is now the page it returns, and a lot's row is in every body's history it
+concerns. `moderation.listActions` keeps reading `moderationActions` by target; for a body nothing was
+merged into, its rows equal History's body-only rows (tested) — History also holds the merged-away
+bodies' own rows.
+
+**Related:** D226, D256, [`phase-B01`](./phases/B01-admin-console.md) §12.8.
+

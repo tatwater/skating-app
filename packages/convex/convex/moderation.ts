@@ -18,7 +18,7 @@ import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
 import { writeAudit } from './lib/audit';
-import { auditRowsOn } from './lib/auditReads';
+import { auditRowsOn, auditTargetLabel } from './lib/auditReads';
 import { requireCapability } from './lib/auth';
 import {
   AUTHOR_DELETE_REASON,
@@ -601,7 +601,14 @@ export async function setContentStatus(
       }
       // A hidden hazard must leave the map card too (A06c §5).
       if (args.targetType === 'hazard') {
-        await recomputeBodySummary(ctx, (target as Doc<'hazards'>).waterBodyId);
+        // No library fact counts hazards: the summary only (B01-3b).
+        await recomputeBodySummary(
+          ctx,
+          (target as Doc<'hazards'>).waterBodyId,
+          undefined,
+          undefined,
+          false,
+        );
       }
     }
 
@@ -1348,6 +1355,11 @@ interface ActionView {
   via?: string;
   /** Whether the viewer can undo this row now, and if not, why (D226). */
   undo: UndoState;
+  /**
+   * The name the target goes by — a body's (its stored library row) or a person's (S5). Absent for
+   * other kinds, and for a body or person no longer there (or a body whose row isn't built yet).
+   */
+  targetLabel?: string;
 }
 
 async function toActionView(
@@ -1355,7 +1367,9 @@ async function toActionView(
   viewer: Doc<'profiles'>,
   a: Doc<'moderationActions'>,
 ): Promise<ActionView> {
+  const targetLabel = await auditTargetLabel(ctx, a.targetType, a.targetId);
   return {
+    ...(targetLabel !== null ? { targetLabel } : {}),
     ...(a.undoesActionId !== undefined ? { undoesActionId: a.undoesActionId } : {}),
     ...(a.via !== undefined ? { via: a.via } : {}),
     undo: await undoState(ctx, viewer, a),

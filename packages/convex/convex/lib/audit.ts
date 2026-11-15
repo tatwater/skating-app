@@ -50,6 +50,8 @@ export async function writeAudit(
   // The Bodies library (B01-3): an action on a body, or on something that belongs to one, refreshes
   // that body's library row in this transaction — and a moderator's stamps *Changed*.
   await noteAuditedAction(ctx, {
+    actionId: id,
+    action: row.action,
     ...(row.actorId !== undefined ? { actorId: row.actorId } : {}),
     targetType: row.targetType,
     targetId: row.targetId,

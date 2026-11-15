@@ -1378,7 +1378,7 @@ function SubAreaTool({
       </div>
 
       <BayRequestQueue
-        rows={queue ?? []}
+        rows={queue?.bays ?? []}
         busy={chordRequest}
         onDraw={drawFromQueue}
         onApprove={async (row) => {

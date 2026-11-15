@@ -128,44 +128,82 @@ export async function anyFavorite(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>)
 }
 
 /**
- * Rows of a body's `putIns` the rollover reads to answer `hasSavedPutIn` — a read bound, not a
- * claim about the world. A body with more stored rows than this is a body people plainly get onto,
- * and is treated as having one (below).
+ * Visible `putIns` rows the saved-put-in rule reads per body — a read bound, not a claim about the
+ * world (the busiest bodies carry a few dozen launches; the season cron asks this of every active
+ * body, so it stays near the 25 rows the rule read before).
  */
-const PUT_IN_ROWS_READ = 25;
+export const SAVED_PUT_IN_VISIBLE_READ = 25;
+/** Hidden coordinates the rule reads per body, to test the visible rows against. */
+export const SAVED_PUT_IN_HIDDEN_READ = 25;
+/**
+ * The Standing tab's wider reads of the same rule, for one body: its count stays whole on any real
+ * body. Hidden coordinates stay fewer, since each visible row is tested against each of them.
+ */
+export const SAVED_PUT_IN_TAB_READ = { visible: 1_000, hidden: 200 } as const;
 
 /**
- * Does this body have a **saved put-in** — a stored launch the map would draw (D245)?
+ * **A body's saved put-ins** (D245) — the stored launches the map would draw: `visible` rows (an
+ * operator's `official` marker, an `osm` launch from the access pass, a persisted `derived` one) that
+ * no moderator's `hidden` coordinate suppresses. The hide is read the way every other reader of
+ * put-ins reads it (`isSuppressed`): **a hide is a coordinate, not a status**, so filtering on
+ * `status` alone would keep a body on a launch a moderator has said is not a way in.
  *
- * A `visible` `putIns` row (an operator's `official` marker, an `osm` launch from the access pass, a
- * persisted `derived` one) that no moderator's `hidden` coordinate suppresses. The hide is read the
- * way every other reader of put-ins reads it (`isSuppressed`): **a hide is a coordinate, not a
- * status**, so filtering on `status` alone would keep a body on a launch a moderator has said is not
- * a way in.
+ * Two bounded index reads (`by_water_body_status`): the visible rows, then — only when there are
+ * any — the hidden coordinates. The rollover reads the default bounds; the Standing tab reads
+ * {@link SAVED_PUT_IN_TAB_READ}, so its count is whole on any real body and its `keeps` the same
+ * answer wherever the rollover's is exact. `keeps` is the rollover's answer and is exact whenever both reads
+ * are whole; when they are not, it **fails toward keeping**:
  *
- * **The seed counted any `putIns` row** (`bodyAttachmentKind`), including those hidden rows. The
- * difference is deliberate and small: a hidden row is a moderator's "not a put-in", and the only
- * bodies it changes are ones whose every stored launch a moderator has hidden. Report-derived
- * markers are not *saved* — `listForBody` clusters them from reports at read time — and a body
- * whose only way in is a derived marker is retained by those reports for as long as they are inside
- * the window, like any other use.
+ * - more hidden coordinates than the read takes: an unread one may suppress a launch counted, so the
+ *   answer is undecidable and the body is kept (`capped`);
+ * - more visible rows than the read takes, every one read suppressed: an unread one may be a launch,
+ *   so the body is kept (`capped`).
  *
- * One index read of at most `PUT_IN_ROWS_READ` rows, so the cost per body is constant — the season
- * cron asks this of every active body. A body that fills the read is answered `true`: past that many
- * rows, there is a launch somewhere, and retaining is the cheap direction to be wrong in (a person
- * shelves it by hand; a wrongly shelved lake waits for a report).
+ * `saved` counts the unsuppressed launches among the rows read; `capped` says it may be short (or,
+ * past the hidden read, long). A body with no visible row is answered `false` exactly, whatever its
+ * hidden rows — the rule before this read 25 rows of any status and answered `true` when they filled,
+ * so a body with 25 or more stored rows and no unsuppressed launch was kept by a launch it doesn't
+ * have (B01-3b).
+ *
+ * Report-derived markers are not *saved* — `listForBody` clusters them from reports at read time —
+ * and a body whose only way in is a derived marker is retained by those reports for as long as they
+ * are inside the window, like any other use.
  */
+export async function savedPutInsOf(
+  ctx: QueryCtx,
+  waterBodyId: Id<'waterBodies'>,
+  read: { visible: number; hidden: number } = {
+    visible: SAVED_PUT_IN_VISIBLE_READ,
+    hidden: SAVED_PUT_IN_HIDDEN_READ,
+  },
+): Promise<{ saved: number; capped: boolean; keeps: boolean }> {
+  const visible = await ctx.db
+    .query('putIns')
+    .withIndex('by_water_body_status', (q) =>
+      q.eq('waterBodyId', waterBodyId).eq('status', 'visible'),
+    )
+    .take(read.visible + 1);
+  if (visible.length === 0) return { saved: 0, capped: false, keeps: false };
+  const hidden = await ctx.db
+    .query('putIns')
+    .withIndex('by_water_body_status', (q) =>
+      q.eq('waterBodyId', waterBodyId).eq('status', 'hidden'),
+    )
+    .take(read.hidden + 1);
+  const hiddenCapped = hidden.length > read.hidden;
+  const visibleCapped = visible.length > read.visible;
+  const coords = hidden.slice(0, read.hidden);
+  const saved = visible.slice(0, read.visible).filter((r) => !isSuppressed(r.coord, coords)).length;
+  const capped = hiddenCapped || visibleCapped;
+  return { saved, capped, keeps: saved > 0 || capped };
+}
+
+/** Does this body have a saved put-in? The rollover's question — {@link savedPutInsOf}'s `keeps`. */
 export async function hasSavedPutIn(
   ctx: QueryCtx,
   waterBodyId: Id<'waterBodies'>,
 ): Promise<boolean> {
-  const rows = await ctx.db
-    .query('putIns')
-    .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
-    .take(PUT_IN_ROWS_READ);
-  if (rows.length === PUT_IN_ROWS_READ) return true;
-  const hidden = rows.filter((r) => r.status === 'hidden');
-  return rows.some((r) => r.status === 'visible' && !isSuppressed(r.coord, hidden));
+  return (await savedPutInsOf(ctx, waterBodyId)).keeps;
 }
 
 // ── The shared write ───────────────────────────────────────────────────────────────────────────
