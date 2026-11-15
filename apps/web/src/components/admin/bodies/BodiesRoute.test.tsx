@@ -962,6 +962,49 @@ describe('the preview', () => {
     expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
+  it('draws what a removed body’s record still holds — area, how it left, towns, reports', async () => {
+    mocks.search = { lane: 'removed', body: ID };
+    mocks.paged = { results: [row(ID, 'Echo Lake', { standing: 'removed' })], status: 'Exhausted' };
+    mocks.results.set(name(api.waterBodies.get), { available: false });
+    const facts = {
+      id: ID,
+      name: 'Echo Lake',
+      bodyClass: 'lakePond',
+      states: ['NH', 'VT'],
+      areaSqM: null,
+      standing: 'removed',
+      left: {
+        action: 'remove',
+        at: Date.UTC(2026, 9, 12, 15),
+        reason: 'Posted by the owner',
+        removalReason: 'landowner_request',
+        by: { displayName: 'Sarah Berman' },
+      },
+      towns: [
+        { name: 'Canaan', state: 'NH' },
+        { name: 'Norwich', state: null },
+      ],
+      reports: { count: 200, capped: true },
+    };
+    mocks.results.set(name(api.bodyConsole.removedFacts), new Error('nope'));
+    mount();
+    // Asked only once the body's read says it can't be served.
+    expect(mocks.calls.get(name(api.bodyConsole.removedFacts))).toEqual({ waterBodyId: ID });
+    expect(
+      within(pane()).getByText('What its record still holds couldn’t be read'),
+    ).toBeInTheDocument();
+    mocks.results.set(name(api.bodyConsole.removedFacts), facts);
+    await userEvent.click(within(pane()).getByRole('button', { name: 'Try again' }));
+    const record = pane().querySelector('[data-slot=preview-removed]') as HTMLElement;
+    expect(record).toHaveTextContent('Not recorded');
+    expect(record).toHaveTextContent('12 Oct 2026 · Sarah');
+    expect(record).toHaveTextContent('Landowner request');
+    expect(record).toHaveTextContent('“Posted by the owner”');
+    expect(record).toHaveTextContent('Canaan, NH · Norwich');
+    expect(record).toHaveTextContent('200+ since the record began');
+    expect(within(pane()).queryByText(/Open in Body/)).toBeNull();
+  });
+
   it('says plainly what it can’t show for an unlisted body the list doesn’t hold', () => {
     mocks.search = { body: ID };
     mocks.results.set(name(api.waterBodies.get), { available: false });

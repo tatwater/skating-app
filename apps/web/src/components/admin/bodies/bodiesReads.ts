@@ -8,6 +8,7 @@ import {
 import type { PaginationStatus } from 'convex/react';
 import type { FunctionArgs, FunctionReturnType } from 'convex/server';
 
+import { removalFromLeft } from '../body/frame/bodyModel';
 import { VANTAGE_LABELS } from '../metrics/metricsModel';
 import type { Count } from '../overview/overviewModel';
 import { isFailed, type Loadable, type ReadFailure } from '../reads/consoleReads';
@@ -21,6 +22,7 @@ import {
   type ListServes,
   type ListStatus,
   type PreviewCount,
+  type RemovedPreviewData,
   SERVES_NOTHING,
   UNREAD_LIST,
 } from './bodiesData';
@@ -306,6 +308,29 @@ export function polygonsOf(
 
 /** A recorded area; a body never measured reads `0` or nothing. */
 const area = (sqm: number | undefined) => (sqm === undefined || sqm <= 0 ? null : sqm);
+
+/** `bodyConsole.removedFacts`' answer. */
+export type RemovedFacts = NonNullable<FunctionReturnType<typeof api.bodyConsole.removedFacts>>;
+
+/**
+ * A removed or rejected body's record, as the preview draws it: how it left by the shared rule
+ * (`removalFromLeft`), each town with its state when recorded (never inferred).
+ */
+export function removedFrom(facts: RemovedFacts, timeZone?: string): RemovedPreviewData {
+  return {
+    name: facts.name,
+    bodyClass: facts.bodyClass,
+    states: facts.states,
+    areaSqM: area(facts.areaSqM ?? undefined),
+    standing: facts.standing,
+    left: facts.left === null ? null : removalFromLeft(facts.left, timeZone),
+    towns:
+      facts.towns === null
+        ? null
+        : facts.towns.map((t) => (t.state === null ? t.name : `${t.name}, ${t.state}`)),
+    reports: facts.reports,
+  };
+}
 
 /** "2 on the ice · 1 from shore": how the season's reports were made, the kinds with any. */
 export function vantageWords(byVantage: PreviewFacts['season']['byVantage']): string | null {

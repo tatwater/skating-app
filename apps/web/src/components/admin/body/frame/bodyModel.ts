@@ -2,6 +2,7 @@ import type { Doc } from '@skating/convex/dataModel';
 import {
   type CompletenessField,
   isMeasuredDepthSource,
+  type RemovalReason,
   sqMetersToAcres,
   standingOf,
   standingReasonLabel,
@@ -513,6 +514,42 @@ export interface Removal {
   who: string | null;
   /** The reason the row gives, as written; `null` when it gives none. */
   reason: string | null;
+  /** Why it was removed, from the listed reasons ("Not skateable"); a removal's only. */
+  because?: string;
+}
+
+/** A removal's listed reason, in words — the Standing tab's choices and every page that says it. */
+export const REMOVAL_REASON_WORDS: Record<RemovalReason, string> = {
+  landowner_request: 'Landowner request',
+  unskateable: 'Not skateable',
+  junk: 'Not a real body of water',
+  duplicate: 'Duplicate',
+  other: 'Other',
+};
+
+/** `bodyConsole.removedFacts`' `left`: the row the body's standing names. */
+export type LeftRow = {
+  action: 'remove' | 'reject_waterbody';
+  at: number;
+  reason?: string | null;
+  removalReason: RemovalReason | null;
+  by: { displayName: string } | null;
+};
+
+/**
+ * How a removed or rejected body left, from the row its standing names (`removedFacts.left`) —
+ * the one rule the console's page and the list's preview share: when, who decided (first name),
+ * the listed reason for a removal, and the row's own words.
+ */
+export function removalFromLeft(left: LeftRow, timeZone?: string): Removal {
+  const reason = left.reason?.trim() ?? '';
+  return {
+    verb: left.action === 'remove' ? 'Removed' : 'Rejected',
+    when: statusDate(left.at, timeZone),
+    who: left.by === null ? null : firstName(left.by.displayName),
+    reason: reason === '' ? null : reason,
+    ...(left.removalReason !== null && { because: REMOVAL_REASON_WORDS[left.removalReason] }),
+  };
 }
 
 /**

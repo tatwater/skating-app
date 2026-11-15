@@ -1,4 +1,5 @@
 import type { DepthSource } from '@skating/core';
+import type { Removal } from '../body/frame/bodyModel';
 import type { Count } from '../overview/overviewModel';
 import type { BodyColumnId, BodyRow, Completeness } from './bodiesModel';
 import type { FacetCounts, FacetId } from './bodyFacets';
@@ -108,6 +109,26 @@ export interface PreviewAsk {
   /** The ask itself ("“Shaker cove”"). */
   title: string;
   sub: string | null;
+}
+
+/**
+ * What a removed or rejected body's record still holds (`bodyConsole.removedFacts`), for the
+ * preview's page in place of the full preview.
+ */
+export interface RemovedPreviewData {
+  name: string;
+  bodyClass: string;
+  states: readonly string[];
+  /** `null` — not recorded. */
+  areaSqM: number | null;
+  /** `null` — the library files it under no standing. */
+  standing: BodyRow['standing'] | null;
+  /** How it left (when, who, why); `null` when no row says. */
+  left: Removal | null;
+  /** Its towns, each with its state when recorded; `null` — not computed yet. */
+  towns: readonly string[] | null;
+  /** Visible reports, a floor when capped. */
+  reports: Count;
 }
 
 /** One intake review reason on the body, worded ("Possible duplicate", "Overlaps 2 bodies"). */

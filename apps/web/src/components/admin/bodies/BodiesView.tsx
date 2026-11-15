@@ -5,10 +5,16 @@ import { isTextEntry, usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
 
 import { type Count, countText } from '../overview/overviewModel';
+import { type Loadable, loaded } from '../reads/consoleReads';
 import { ConsoleStatus } from '../shell/ConsoleShell';
 import { BodiesTable } from './BodiesTable';
 import { BodyPreview, OPEN_LABEL } from './BodyPreview';
-import { allRows, type BodiesListData, type BodyPreviewData } from './bodiesData';
+import {
+  allRows,
+  type BodiesListData,
+  type BodyPreviewData,
+  type RemovedPreviewData,
+} from './bodiesData';
 import { laneKicker, nextSort } from './bodiesModel';
 import { type BodiesQuery, listKey, listSort } from './bodiesSearch';
 import { appliedOptions, chipWords, toggleOption } from './bodyFacets';
@@ -56,6 +62,8 @@ export type BodiesViewProps = {
    * `'unavailable'` for a body the reads can't serve (a rejected one) — drawn from its list row.
    */
   preview: BodyPreviewData | null | undefined | 'error' | 'unavailable';
+  /** For an `'unavailable'` preview: what its record still holds, on its way or failed. */
+  previewRemoved?: Loadable<RemovedPreviewData | null> | null;
   /** The instant ages are read against. */
   now: number;
   /** The open action's words (where it opens the body). */
@@ -86,6 +94,7 @@ export function BodiesView({
   laneCounts,
   corpus,
   preview,
+  previewRemoved = null,
   now,
   bodyLink,
   openLabel = OPEN_LABEL,
@@ -109,12 +118,15 @@ export function BodiesView({
   // the pane holds its shape rather than saying the list doesn't hold it.
   const unavailableRow =
     preview === 'unavailable' ? (allRows(list).find((r) => r.id === query.bodyId) ?? null) : null;
+  // Its record, once read, names it without the row.
   const previewData =
     preview !== 'unavailable'
       ? preview
-      : unavailableRow === null && list.status === 'loading'
+      : unavailableRow === null &&
+          list.status === 'loading' &&
+          loaded(previewRemoved ?? undefined) == null
         ? undefined
-        : { unavailable: unavailableRow };
+        : { unavailable: unavailableRow, removed: previewRemoved };
 
   // F opens the filter from the list's tools (the tabs, the buttons, the chips) — not from the
   // search, which types it, nor from the rows, whose letters type ahead.

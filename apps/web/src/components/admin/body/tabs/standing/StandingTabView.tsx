@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from '@/components/kit/select';
 import { cn } from '@/lib/utils';
-import { statusDate } from '../../frame/bodyModel';
+import { REMOVAL_REASON_WORDS, statusDate } from '../../frame/bodyModel';
 import { LoadingSection } from '../tabParts';
 import { type RetentionFacts, retentionModel } from './standingModel';
 
@@ -71,13 +71,7 @@ export const STANDING_NOTE_MAX = 160;
 /** "17 Sep 2026" — a status date carries its year (the frame's `statusDate`). */
 const sinceWords = (at: number): string => statusDate(at);
 
-const REMOVAL_LABEL: Record<RemovalReason, string> = {
-  landowner_request: 'Landowner request',
-  unskateable: 'Not skateable',
-  junk: 'Not a real body of water',
-  duplicate: 'Duplicate',
-  other: 'Other',
-};
+const REMOVAL_LABEL = REMOVAL_REASON_WORDS;
 
 /** The radio a standing is drawn on (unlisted has none: it isn't a choice). */
 function currentPick(s: BodyStanding): Pick | null {

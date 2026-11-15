@@ -33,6 +33,7 @@ import {
   type OutlineTrust,
   outlineTrust,
   type Removal,
+  removalFromLeft,
   removalOf,
   statusDate,
 } from './bodyModel';
@@ -244,14 +245,7 @@ export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleDa
 
   const facts = loaded(removed);
   const removedLeft: Removal | null =
-    facts?.left == null
-      ? null
-      : {
-          verb: facts.left.action === 'remove' ? 'Removed' : 'Rejected',
-          when: statusDate(facts.left.at, timeZone),
-          who: facts.left.by === null ? null : firstName(facts.left.by.displayName),
-          reason: facts.left.reason === '' ? null : facts.left.reason,
-        };
+    facts?.left == null ? null : removalFromLeft(facts.left, timeZone);
   if (body === null || scene === null) {
     const survivor = r.body.available
       ? { id: r.body.body._id, name: waterBodyDisplayName(r.body.body.name) }

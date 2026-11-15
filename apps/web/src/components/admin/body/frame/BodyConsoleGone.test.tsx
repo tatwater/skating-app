@@ -39,6 +39,22 @@ describe('BodyConsoleGone', () => {
     expect(screen.getByText('1,000+ since the record began')).toBeInTheDocument();
   });
 
+  it('says a removal’s listed reason beside the row’s own words', () => {
+    render(
+      page({
+        removal: {
+          verb: 'Removed',
+          when: '2 Oct 2026',
+          who: 'Teagan',
+          reason: 'Posted by the owner',
+          because: 'Landowner request',
+        },
+      }),
+    );
+    expect(screen.getByText('Landowner request')).toBeInTheDocument();
+    expect(screen.getByText('“Posted by the owner”')).toBeInTheDocument();
+  });
+
   it('holds each fact’s place while its read is on its way', () => {
     const { container } = render(
       page({ removal: undefined, towns: undefined, reports: undefined, history: undefined }),

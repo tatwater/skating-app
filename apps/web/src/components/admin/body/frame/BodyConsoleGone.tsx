@@ -139,6 +139,7 @@ function RemovalRow({ removal, merged }: { removal: Loadable<Removal | null>; me
             {removal.who}
           </span>
         )}
+        {removal.because !== undefined && <span>{removal.because}</span>}
         {removal.reason !== null && <Faint>“{removal.reason}”</Faint>}
       </span>
     </KeyValueRow>

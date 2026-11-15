@@ -9,12 +9,24 @@ import { ReadBoundary } from '@/components/kit/read-boundary';
 import { useRole } from '@/lib/useRole';
 import { ID_SHAPE } from '../body/frame/bodySearch';
 
-import { isFailed, type Loadable, loaded, read, useConsoleReadSet } from '../reads/consoleReads';
+import {
+  isFailed,
+  type Loadable,
+  loaded,
+  mapLoadable,
+  read,
+  useConsoleReadSet,
+} from '../reads/consoleReads';
 import { ReadNote } from '../reads/ReadNote';
 
 import { useMinuteNow } from '../shell/presence';
 import { BodiesView, type BodiesViewProps } from './BodiesView';
-import { type BodiesListData, type BodyPreviewData, UNREAD_LIST } from './bodiesData';
+import {
+  type BodiesListData,
+  type BodyPreviewData,
+  type RemovedPreviewData,
+  UNREAD_LIST,
+} from './bodiesData';
 import {
   type GetResult,
   type LibraryRow,
@@ -26,6 +38,7 @@ import {
   listFromOpened,
   type OtherStandings,
   previewFrom,
+  removedFrom,
   servesFrom,
 } from './bodiesReads';
 import { type BodiesQuery, type BodiesSearch, listKey, queryOf, searchFor } from './bodiesSearch';
@@ -126,6 +139,7 @@ export function BodiesRoute({ bodyPath = BODY_PATH, openLabel }: BodiesRouteProp
     },
     corpus: counted?.corpus ?? null,
     preview: preview.data,
+    previewRemoved: preview.removed,
     onRetryPreview: preview.retry,
     previewPending: preview.pending,
     now,
@@ -429,6 +443,8 @@ function usePreview(
   pending: boolean;
   /** The body `bodyId` was merged into, which `waterBodies.get` serves in its place; else `null`. */
   survivor: string | null;
+  /** A body the reads can't serve: what its record still holds (`bodyConsole.removedFacts`). */
+  removed: Loadable<RemovedPreviewData | null> | null;
 } {
   const id =
     canRead && bodyId !== null && ID_SHAPE.test(bodyId) ? (bodyId as Id<'waterBodies'>) : null;
@@ -444,8 +460,23 @@ function usePreview(
         ? null
         : read(api.bodyConsole.history, { waterBodyId, limit: HISTORY_ROWS }),
   });
-  if (id === null) return { data: null, retry, pending, survivor: null };
   const body = reads.body;
+  // A body the reads can't serve (removed or rejected): its record, read only for such a body.
+  const unserved = body != null && !isFailed(body) && !body.available;
+  const gone = useConsoleReadSet({
+    removed: id !== null && unserved ? read(api.bodyConsole.removedFacts, { waterBodyId }) : null,
+  });
+  const removed =
+    id !== null && unserved
+      ? mapLoadable(gone.reads.removed, (f) => (f === null ? null : removedFrom(f)))
+      : null;
+  const retryAll = () => {
+    retry();
+    gone.retry();
+  };
+  const pendingAny = pending || gone.pending;
+  if (id === null)
+    return { data: null, retry: retryAll, pending: pendingAny, survivor: null, removed: null };
   // `waterBodies.get` follows a merge to the survivor; the other reads are of the id asked. The
   // pane never draws the one's outline over the other's facts: it holds while the place moves on.
   const survivor =
@@ -469,7 +500,7 @@ function usePreview(
       now,
     });
   }
-  return { data, retry, pending, survivor };
+  return { data, retry: retryAll, pending: pendingAny, survivor, removed };
 }
 
 /** How many of a body's latest changes the preview lists. */

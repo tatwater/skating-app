@@ -19,6 +19,7 @@ import {
   latestOnBody,
   lengthText,
   outlineTrust,
+  removalFromLeft,
   removalOf,
   ringsText,
   statusDate,
@@ -383,6 +384,32 @@ describe('a body that left', () => {
     expect(
       removalOf([{ ...base, action: 'merge_waterbody', actor: null, reason: ' ' }], MASCOMA_ID),
     ).toEqual({ verb: 'Merged', when: '2 Oct 2026', who: null, reason: null });
+  });
+
+  it('from the row its standing names: the listed reason for a removal, the row’s words, who decided', () => {
+    const left = {
+      action: 'remove' as const,
+      at: on(10, 2),
+      reason: ' ',
+      removalReason: 'unskateable' as const,
+      by: { displayName: 'Teagan Atwater' },
+    };
+    expect(removalFromLeft(left)).toEqual({
+      verb: 'Removed',
+      when: '2 Oct 2026',
+      who: 'Teagan',
+      reason: null,
+      because: 'Not skateable',
+    });
+    expect(
+      removalFromLeft({
+        ...left,
+        action: 'reject_waterbody',
+        reason: 'Drawn over the beach',
+        removalReason: null,
+        by: null,
+      }),
+    ).toEqual({ verb: 'Rejected', when: '2 Oct 2026', who: null, reason: 'Drawn over the beach' });
   });
 
   it('finds nothing in another body’s rows, or in rows of other verbs', () => {
