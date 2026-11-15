@@ -7,7 +7,13 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { writeAudit } from './lib/audit';
-import { markReady, READY_FLAG_SUBJECTS, READY_ROWS, refreshPersonRow } from './lib/peopleRows';
+import {
+  markReady,
+  READY_FLAG_SUBJECTS,
+  READY_ROWS,
+  READY_UNDO_CHAINS,
+  refreshPersonRow,
+} from './lib/peopleRows';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -63,6 +69,7 @@ async function setup() {
   await t.run(async (ctx) => {
     await markReady(ctx, READY_ROWS);
     await markReady(ctx, READY_FLAG_SUBJECTS);
+    await markReady(ctx, READY_UNDO_CHAINS);
   });
   const bodyId = await t.run((ctx) =>
     ctx.db.insert('waterBodies', {

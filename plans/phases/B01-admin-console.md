@@ -1961,6 +1961,48 @@ Worst-case tests under Convex's real limits (`peopleHeavy.test.ts`): a Decisions
 is a ban or a lift of a different ledger holder at the document limit, and a Decisions page of rows
 on sixteen heavy people without rows.
 
+**B01-4: every read of every People query and job, on every limit** (Greptile's third review of #115:
+the count of reads per row, the third axis in three reviews). Convex limits a transaction to 16 MiB
+read, 32,000 documents, 4,096 database calls, and a query to one second; `lib/readBudget` now counts
+calls and documents beside bytes (`TX_CALLS` 3,500, `TX_DOCS` 28,000, `TX_BUDGET` 12 MiB, headroom
+left for what no helper charges) and every People query and job reads through one budget, asked
+before each read (`affordsRead`); a row with no worst case below the document limit (an audit row, a
+request) is read **as it really weighs** with its worst case reserved first (`measured`), and a
+paged read under its own real-weight cap is charged that cap (`capped`). `packages/guards`'
+read-budget lint now covers `people.ts` and `peopleJobs.ts`: a read there outside a charging call
+fails the build.
+
+| Function | Reads (direct and through helpers) | Loop · bound | Worst calls · documents | Worst bytes | When a bound is hit |
+| --- | --- | --- | --- | --- | --- |
+| `people.lanes` | counts (64); open flags ×2 (201); tickets ×2 (201); two lane ranges (201); each queue lane's People rows | per person a queue names · ≤ 200 + 200 | ≈ 410 · ≈ 1,500 | ≈ 9 MiB at the flag and ticket caps | `count.capped` with `reasons` |
+| `people.listPage` | as above for the queues; one lane page (`page`, ≤ 100 rows) or search | per queue person · ≤ 200 | ≈ 410 · ≈ 1,400 | ≈ 9 MiB | `partial` with `reasons` |
+| `people.person` | target; counts; status row (`measured`); flags ×4 (`takeCapped`, 51/101); tickets (51); filed (101); verdict counts (501, reserved); editors (200 rows, reserved, once) | none per row | ≈ 15 · ≈ 1,200 | ≤ 12 MiB by the budget | each figure's `capped`; a take the budget can't afford reads fewer and says capped |
+| `people.history` | target; counts; the person's rows (`capped` 2 MiB real); verdicts ×3 (`takeCapped`), each its action row (`measured`); flags ×2, each its deciding row (`measured`); per merged row: actor and target name (People rows, memoized), undo state (main's engine: `undoRowOf` ≤ 16, the newest row, the content's author stamp, the person's row) | per item · ≤ `limit` (≤ 100) a source; per merged row ≤ 100 | sources ≤ 7 + 500 measured; rows ≈ 6 a row → ≤ 1,100 · ≤ 3,000 | sources within the budget; **the undo engine's per-row reads are main's, unbudgeted** (audit rows uncapped; a report at its worst) | a source cut keeps its horizon; `capped` |
+| `people.decisions` | one `paginate` (`capped` 2 MiB real, 2,000 scanned); per row as History | per row · ≤ 100 | ≤ 700 · ≤ 3,600 | the page within its cap; the engine's per-row reads as above | `isDone: false` |
+| `people.staffStats` | target; marker; **one** `paginate` of their decisions for the weeks and the season both (`capped` 4 MiB real, 2,000); per decision its chain's first row when not in the page (`measured`); per filed decision its filing (`measured`, older rows only); per season takedown its verdict, the ending row and that row's chain (`measured`); role rows walked one at a time (`measured`, ≤ 50 a verb) | per decision · ≤ 2,000, budget-stopped | ≤ 3,500 · ≤ 28,000 by the budget | ≤ 12 MiB by the budget | `undoneByOthers.capped`, `overturned.capped`, `timeToDecide.medianMs: null`, `tenureCapped` — never a throw. **Reshaped:** chains are read from stored facts (no walk); one shared read |
+| `people.reportTrend` | target; one `paginate` (`capped` 8 MiB real, 3,000) | none | 2 · 3,001 | 9 MiB | `capped`, `monthsCapped` |
+| `contentRecord.personVerdicts` | as before (charged by `lib/readBudget`, guarded) | — | — | — | a short page is not the end |
+| `peopleJobs.parkedLapses` | one `paginate` (`capped` 8 MiB real) | none | 1 · 50 | 8 MiB | `isDone: false` |
+| sweep / retry | per step: due head (≤ 2 `one`), nested reset (its own transaction under the budget left) | steps while `STEP_NEED` fits | per pass ≤ 10 calls | ≤ 12 MiB | the pass ends and reschedules from its position |
+| `backfillRows` / `repairDrift` / `backfillFlagSubjects` | as before, each step charged | steps while a step fits | — | ≤ 12 MiB | reschedules; not ready after a failure |
+| `backfillUndoChains` (new) | one `paginate` (`capped` 4 MiB real, 200); per undo row its parent and first row (`measured`) | per row · ≤ 200, budget-stopped | ≤ 401 · ≤ 600 | ≤ 12 MiB | the page again from its start (placed rows passed over); not ready after a failure |
+
+**Undo chains are stored, not walked.** `lib/audit.ts` — the one writer of audit rows, which already
+tags every row an undo writes — now also records each undo row's chain first row and depth and stamps
+the chain's newest depth and its writer on the first row (two point reads and a patch in the write
+that undoes). A row stands while the undos above it are even in number, so "did this stand?" is a
+property of the row and its first row, at any chain length (Greptile's P2: a ninth undo is no longer
+past a truncation). `peopleJobs.backfillUndoChains` places chains written before; until it has run
+(`ready:undoChains`) the undo figures say capped.
+
+**Open for a ruling:** an audit row's `reason` and `metadata` are uncapped, so no audit read has a
+worst case below the document limit; everything here reads them by count and by real weight. The undo
+engine's per-row reads on main (History and Decisions shape each row through `undoState`, and
+`moderation.listActions` does the same for the feed) can't be held to a budget until audit rows have
+one. Recommendation: cap `reason` at the write (2,000 characters, refused past it, like the other text
+caps) and make the engine's per-row reads part of a budget — a change to main's audit writer and undo
+engine, so it waits for the founder's word.
+
 **One reading of undo chains** (`lib/undoChains`, Greptile's second review). An undo can be undone, so a
 chain is change → undo → undo of the undo → … . Its net effect: pairs cancel from the newest end, so a
 change undone once is gone and undone twice is back, with its own time — decided by the chain's links,

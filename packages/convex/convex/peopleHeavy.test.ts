@@ -7,7 +7,13 @@ import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { markReady, READY_FLAG_SUBJECTS, READY_ROWS, refreshPersonRow } from './lib/peopleRows';
+import {
+  markReady,
+  READY_FLAG_SUBJECTS,
+  READY_ROWS,
+  READY_UNDO_CHAINS,
+  refreshPersonRow,
+} from './lib/peopleRows';
 import { UNDO_NEEDS_ROWS } from './lib/undo';
 import schema from './schema';
 
@@ -57,6 +63,7 @@ async function setup() {
   await t.run(async (ctx) => {
     await markReady(ctx, READY_ROWS);
     await markReady(ctx, READY_FLAG_SUBJECTS);
+    await markReady(ctx, READY_UNDO_CHAINS);
   });
   return t;
 }
