@@ -1,3 +1,4 @@
+import { ConvexError } from 'convex/values';
 import {
   createContext,
   type ReactNode,
@@ -7,38 +8,52 @@ import {
   useState,
 } from 'react';
 
+import { toast } from '@/components/kit/toast';
 import { errorText } from '../../adminUi';
 
 /**
- * **A write lands on the body it was composed for, while that body's console is on screen — or
- * nowhere.** The frame keys every body-scoped subtree by body, so a draft dies with its body; and,
- * in case a reset is ever missed, every write also asks its **binding**.
+ * **A pressed save completes against the body it was composed for; a result names its body.**
  *
- * **One lifetime, explicit.** A binding is one console's hold on one body. `BodyBindingProvider`
- * creates it for its body and it is alive from that render's commit until the console goes away
- * for any reason: the body changes (a new binding is made, the old one dies at that commit), the
- * page shows a loading or failed state instead (the provider unmounts), the tab host unmounts, the
- * route is left, the shell remounts. Unmount invalidates — nothing else revives it: a new console
- * for the same body is a new binding, so coming back to a body never resurrects its old queue.
+ * - **Drafts die with their console.** The frame keys every body-scoped subtree by body (and tab),
+ *   so a draft, a pick, an open dialog and its typed reason never travel to another body.
+ * - **A save, once pressed, is the moderator's decision, and it is never lost.** It carries the body
+ *   it was composed for and runs to its end against *that* body wherever the page goes next — a tab
+ *   switch, another body, an uncached body loading, out of the Bodies area. Whole-list saves queue
+ *   above the consoles (`bodyWrites`), per body, so a queued one goes out too.
+ * - **A result is said honestly.** A receipt always names its body ("Links saved · Mascoma Lake"),
+ *   so its Undo is unambiguous on any page. A refusal is said in place while the console that sent
+ *   it is on screen; once that console has gone, it is a toast naming the body and what failed —
+ *   never swallowed.
+ * - **A missed reset still can't write.** A subtree holds the binding of the console it mounted
+ *   under; a write that names another body than that one (a subtree that kept a draft across a body
+ *   change) is refused, loudly.
  *
- * A consumer holds the binding that was current when it mounted (`useBodyBound`), never a later
- * one: a subtree that missed its reset still holds its own body's binding, now dead, and sends
- * nothing. A write checks it before it sends, and again before it surfaces anything (a refusal, a
- * receipt and its Undo): a write already on its way lands (it was the right body when sent), but
- * says nothing over another body's console — History keeps the row.
+ * The binding is alive from its console's commit until that console goes away; it only decides
+ * *where* a result is said, never *whether* a pressed save is sent.
  */
-type Binding = { readonly body: string; alive: boolean };
+type Binding = { readonly body: string; name: string | undefined; alive: boolean };
 
 const BindingContext = createContext<Binding | null>(null);
 
-export function BodyBindingProvider({ bodyId, children }: { bodyId: string; children: ReactNode }) {
-  // A fresh binding for this mount and this body; it comes alive at commit, so a navigation that
-  // is still rendering (in a transition) leaves the body on screen bound until it commits. Held in
-  // state, not a memo: a memo is a cache React may drop (Fast Refresh does), and a dropped one
-  // would mint a new binding and kill the one every mounted consumer holds — its writes then
-  // silently sending nothing. A new body replaces it during render, before the children see it.
-  const [binding, setBinding] = useState<Binding>(() => ({ body: bodyId, alive: false }));
-  if (binding.body !== bodyId) setBinding({ body: bodyId, alive: false });
+export function BodyBindingProvider({
+  bodyId,
+  name,
+  children,
+}: {
+  bodyId: string;
+  /** The body's name, for every result said off its console ("· Mascoma Lake"). */
+  name?: string | undefined;
+  children: ReactNode;
+}) {
+  // A fresh binding for this console and this body, alive at commit (a navigation still rendering
+  // leaves the body on screen bound) and dead the moment the console goes. Held in state, not a
+  // memo (a cache React may drop); a new body replaces it during render.
+  const [binding, setBinding] = useState<Binding>(() => ({ body: bodyId, name, alive: false }));
+  if (binding.body !== bodyId) setBinding({ body: bodyId, name, alive: false });
+  // The name is the body's, and may land after the console does: kept current on the same
+  // binding, never a new one (that would leave every mounted consumer holding a dead binding) —
+  // and only while it is the same body (never the last body's binding taking the next one's name).
+  else binding.name = name;
   useLayoutEffect(() => {
     binding.alive = true;
     return () => {
@@ -48,38 +63,83 @@ export function BodyBindingProvider({ bodyId, children }: { bodyId: string; chil
   return <BindingContext.Provider value={binding}>{children}</BindingContext.Provider>;
 }
 
-/**
- * Is the console this subtree mounted under still the one on screen? The binding is the one current
- * at mount. Outside a frame (a story, a test of one view) there is no other console, so it is.
- */
-export function useBodyBound(): () => boolean {
+/** What a write needs to know about where it was composed. */
+export type BodyHold = {
+  /** Is the console it was composed on still the one on screen? Decides where a result is said. */
+  here: () => boolean;
+  /** The body that console is for; `null` outside a frame (a story, a test of one view). */
+  body: string | null;
+  /** The body's name, for a result said anywhere else. */
+  subject: string | undefined;
+};
+
+/** The binding current when the subtree mounted — never a later one. */
+export function useBodyHold(): BodyHold {
   const current = useContext(BindingContext);
   const [held] = useState(current);
-  return useMemo(() => () => held === null || held.alive, [held]);
+  return useMemo(
+    () => ({
+      here: () => held === null || held.alive,
+      body: held?.body ?? null,
+      get subject() {
+        return held?.name;
+      },
+    }),
+    [held],
+  );
 }
 
+/** A whole-list write refused because the list moved underneath (`{ code: 'list_changed', current }`). */
+export function listChanged(err: unknown): readonly unknown[] | null {
+  if (!(err instanceof ConvexError)) return null;
+  const data = err.data as { code?: unknown; current?: unknown } | null;
+  return data !== null && data.code === 'list_changed' && Array.isArray(data.current)
+    ? (data.current as unknown[])
+    : null;
+}
+
+/** Refused: the subtree's own body is not the one the write names (a missed reset). */
+export const OTHER_BODY = 'Not saved: this page now shows another body. Open it again to save.';
+
 /**
- * A write, bound: nothing is sent unless the binding is alive; a refusal is thrown (in the
- * server's words) only while it still is; the receipt is put up only then too, and its failure is
- * never a refusal (the write landed; History keeps the row). A receipt with a round trip of its own
- * (`announce` asks the server for the Undo first) takes `here` too, and asks again before it shows.
+ * **The one write path.** `body` is the body the write names; `what` says what it was ("The links",
+ * "The ruling"), for a refusal said off the console. Sends unless the write names another body than
+ * the console's own; a refusal is thrown (in the server's words) while that console is on screen —
+ * for the caller to say in place — and otherwise put in a toast naming the body; a list that moved
+ * underneath is thrown as it came, for the queue to re-apply; the receipt follows a landed write
+ * wherever the page is, naming its body, and its failure is never a refusal.
  */
 export async function sendFor(
-  here: () => boolean,
-  write: () => Promise<unknown>,
-  receipt: () => Promise<unknown>,
+  hold: BodyHold,
+  {
+    body,
+    write,
+    receipt,
+    what,
+  }: {
+    body: string;
+    write: () => Promise<unknown>;
+    receipt: (subject: string | undefined) => Promise<unknown>;
+    what: string;
+  },
 ): Promise<void> {
-  if (!here()) return;
+  if (hold.body !== null && hold.body !== body) throw new Error(OTHER_BODY);
   try {
     await write();
   } catch (err) {
-    if (here()) throw new Error(errorText(err));
+    if (listChanged(err) !== null) throw err;
+    const said = errorText(err);
+    if (hold.here()) throw new Error(said);
+    toast({
+      title: hold.subject === undefined ? 'Not saved' : `Not saved · ${hold.subject}`,
+      description: `${what}: ${said}`,
+      tone: 'bad',
+    });
     return;
   }
-  if (!here()) return;
   try {
-    await receipt();
+    await receipt(hold.subject);
   } catch {
-    // The write landed; only its receipt didn't.
+    // The write landed; only its receipt didn't (History keeps the row).
   }
 }

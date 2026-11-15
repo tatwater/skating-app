@@ -87,7 +87,7 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
   const { data, retry, pending } = useAccessRead(bodyId);
   const setPublicAccess = useMutation(api.waterBodies.setPublicAccess);
   const hide = useMutation(api.putIns.hide);
-  const { act, actInDialog } = useTabAction();
+  const { act, actInDialog } = useTabAction(bodyId);
   const now = useDayClock();
 
   const target = { targetType: 'waterbody' as const, targetId: bodyId };

@@ -99,13 +99,10 @@ describe('NamesTab', () => {
     expect(mocks.calls).toEqual([
       ['waterBodies:setWaterBodyName', { waterBodyId: 'wb1', name: 'The Basin' }],
     ]);
-    expect(mocks.announce).toHaveBeenCalledWith(
-      {
-        title: 'Displaying “The Basin”',
-        target: { targetType: 'waterbody', targetId: 'wb1' },
-      },
-      expect.any(Function),
-    );
+    expect(mocks.announce).toHaveBeenCalledWith({
+      title: 'Displaying “The Basin”',
+      target: { targetType: 'waterbody', targetId: 'wb1' },
+    });
     await userEvent.click(screen.getByRole('button', { name: 'Back to the catalogs’ ranking' }));
     expect(mocks.calls[1]).toEqual([
       'waterBodies:setWaterBodyName',
@@ -236,7 +233,6 @@ describe('NamesTab', () => {
     await userEvent.type(field, 'Low Plains Pond{Enter}');
     expect(mocks.announce).toHaveBeenLastCalledWith(
       expect.objectContaining({ title: 'Named “Low Plains Pond”' }),
-      expect.any(Function),
     );
     await userEvent.click(screen.getByRole('button', { name: 'Clear the name' }));
     expect(mocks.calls.at(-1)).toEqual([
@@ -245,7 +241,6 @@ describe('NamesTab', () => {
     ]);
     expect(mocks.announce).toHaveBeenLastCalledWith(
       expect.objectContaining({ title: 'Cleared the name' }),
-      expect.any(Function),
     );
   });
 
@@ -382,18 +377,24 @@ describe('NamesTab', () => {
       expect(mocks.calls).toEqual([]);
     });
 
-    it('a name started on one body that lands after the switch puts up no receipt over the next', async () => {
+    it('a write started on one body still lands after the switch, and its receipt names that body', async () => {
       let land: () => void = () => {};
       mocks.hold = new Promise<void>((r) => {
         land = r;
       });
-      const { rerender } = render(<BodyTabHost Wiring={NamesTab} bodyId="wb1" />);
+      const { rerender } = render(
+        <BodyTabHost Wiring={NamesTab} name="Mascoma Lake" bodyId="wb1" />,
+      );
       await userEvent.click(screen.getByRole('button', { name: 'Display this' }));
       community('wb2', 'High Meadow');
-      rerender(<BodyTabHost Wiring={NamesTab} bodyId="wb2" />);
+      rerender(<BodyTabHost Wiring={NamesTab} name="Crystal Lake" bodyId="wb2" />);
       land();
       await new Promise((r) => setTimeout(r, 0));
-      expect(mocks.announce).not.toHaveBeenCalled();
+      // Pressed is committed: it lands on its own body, and its receipt says whose it was.
+      expect(mocks.announce).toHaveBeenCalledTimes(1);
+      expect(mocks.announce).toHaveBeenCalledWith(
+        expect.objectContaining({ subject: 'Mascoma Lake' }),
+      );
       expect(toasts).toEqual([]);
       expect(mocks.calls).toEqual([
         ['waterBodies:setWaterBodyName', { waterBodyId: 'wb1', name: 'The Basin' }],

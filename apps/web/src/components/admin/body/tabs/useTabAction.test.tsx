@@ -27,9 +27,9 @@ beforeEach(() => {
 
 describe('useTabAction', () => {
   it('announces a landed write, and says a refusal in the server’s words', async () => {
-    const { result } = renderHook(() => useTabAction());
+    const { result } = renderHook(() => useTabAction('wb1'));
     await expect(result.current.act(async () => {}, RECEIPT)).resolves.toBe(true);
-    expect(mocks.announce).toHaveBeenCalledWith(RECEIPT, expect.any(Function));
+    expect(mocks.announce).toHaveBeenCalledWith(expect.objectContaining(RECEIPT));
     await expect(
       result.current.actInDialog(async () => {
         throw new ConvexError('This request has been decided');
@@ -42,7 +42,7 @@ describe('useTabAction', () => {
     mocks.announce.mockImplementation(async () => {
       throw new Error('the toast queue is gone');
     });
-    const { result } = renderHook(() => useTabAction());
+    const { result } = renderHook(() => useTabAction('wb1'));
     await expect(result.current.actInDialog(async () => {}, RECEIPT)).resolves.toBeNull();
     await expect(result.current.act(async () => {}, RECEIPT)).resolves.toBe(true);
     expect(toasts).toEqual([]);

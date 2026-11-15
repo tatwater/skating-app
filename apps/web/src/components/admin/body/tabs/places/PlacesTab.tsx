@@ -68,7 +68,7 @@ export function PlacesTab({ bodyId, lit = null, onLitChange }: BodyTabProps) {
   const dismiss = useMutation(api.corpusPlaceNames.dismiss);
   const approve = useMutation(api.corpusRequests.approve);
   const decline = useMutation(api.corpusRequests.decline);
-  const { act, actInDialog } = useTabAction();
+  const { act, actInDialog } = useTabAction(bodyId);
   const { can } = useRole();
 
   const nameOf = (id: string) =>

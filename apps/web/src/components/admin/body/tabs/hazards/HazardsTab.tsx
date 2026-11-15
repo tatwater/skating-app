@@ -16,7 +16,7 @@ import { useMinuteNow } from '@/components/admin/shell/presence';
 import { useUndo } from '@/components/admin/shell/undo';
 import { UNAVAILABLE } from '@/components/kit/unavailable-button';
 import { useRole } from '@/lib/useRole';
-import { sendFor, useBodyBound } from '../../frame/currentBody';
+import { sendFor, useBodyHold } from '../../frame/currentBody';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { LoadingSection, TabBody } from '../tabParts';
 import { featureGlyph } from './featureGlyph';
@@ -102,7 +102,7 @@ function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabPr
   });
   const demote = useMutation(api.bodyFeatures.demote);
   const { announce } = useUndo();
-  const here = useBodyBound();
+  const hold = useBodyHold();
   const navigate = useNavigate();
 
   const features = got.features;
@@ -176,18 +176,17 @@ function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabPr
             onAddFeature: UNAVAILABLE,
             onEditShape: UNAVAILABLE,
             onDemote: (featureId: string, reason: string) =>
-              sendFor(
-                here,
-                () => demote({ bodyFeatureId: featureId as Id<'bodyFeatures'>, reason }),
-                () =>
-                  announce(
-                    {
-                      title: 'Known feature demoted',
-                      target: { targetType: 'bodyFeature', targetId: featureId },
-                    },
-                    here,
-                  ),
-              ),
+              sendFor(hold, {
+                body: waterBodyId,
+                write: () => demote({ bodyFeatureId: featureId as Id<'bodyFeatures'>, reason }),
+                receipt: (subject) =>
+                  announce({
+                    title: 'Known feature demoted',
+                    target: { targetType: 'bodyFeature', targetId: featureId },
+                    subject,
+                  }),
+                what: 'The demotion',
+              }),
           }
         : {})}
       lit={lit}

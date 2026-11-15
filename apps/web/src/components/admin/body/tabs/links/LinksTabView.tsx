@@ -16,8 +16,9 @@ import { Button, buttonVariants } from '@/components/kit/button';
 import { Input } from '@/components/kit/input';
 import { Section } from '@/components/kit/section-slug';
 import { SortableRows } from '@/components/kit/sortable-rows';
+import { toast } from '@/components/kit/toast';
 import { cn } from '@/lib/utils';
-import { useBodyBound } from '../../frame/currentBody';
+import { listChanged, useBodyHold } from '../../frame/currentBody';
 import { useListWriter } from '../listWriter';
 import {
   carryIds,
@@ -43,10 +44,20 @@ export type LinksTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
   /** The viewer holds `body.identity` (the staff links are theirs to edit). */
   canEdit: boolean;
   /** Writes the whole staff list (add, edit, remove and reorder all land here). */
-  onSave?: (links: StaffLink[]) => Promise<void>;
+  /**
+   * Writes the whole staff list, naming the list it was built on (`expected`, the server's
+   * compare-and-set): a list that moved underneath is thrown as `list_changed` with the current one.
+   */
+  onSave?: (links: StaffLink[], expected: StaffLink[]) => Promise<void>;
+  /** The queue's name above the page (`links:<body>`), so a pressed save outlives the page. */
+  queueKey?: string;
   /** The skater's lake sheet for this body, opened in a new tab; `null` draws no link. */
   lakeSheetHref: string | null;
 };
+
+/** A change whose link another moderator changed or removed meanwhile. */
+const NOT_APPLIED =
+  'Another moderator changed these links while yours was saving, and the link you changed is gone. Your change wasn’t saved.';
 
 type Editing = {
   /**
@@ -83,13 +94,15 @@ const LOST_ADD =
   'The list changed while this link was saving, so this editor can’t tell which row it is. Cancel, then edit the link from its row.';
 
 /** A change to the staff list, by link id: what the write queue applies to its newest list. */
-type Change = (base: readonly KeyedLink[]) => readonly KeyedLink[];
+/** `null`: the change no longer applies (what it changes was removed meanwhile). */
+type Change = (base: readonly KeyedLink[]) => readonly KeyedLink[] | null;
 
 export function LinksTabView({
   body,
   now,
   canEdit,
   onSave,
+  queueKey = 'links',
   lakeSheetHref,
   className,
   ...props
@@ -216,28 +229,48 @@ export function LinksTabView({
   // **Every save goes through one queue** (`listWriter`): reorder, add, edit and remove each hand
   // it a change by link id, applied to the newest list the server acknowledged — so a remove
   // pressed while a reorder saves can't put the old order back, and two saves never overlap.
-  const here = useBodyBound();
+  const hold = useBodyHold();
+  const words = (l: readonly KeyedLink[]) => l.map(({ label, url }) => ({ label, url }));
   const push = useListWriter<KeyedLink>(
+    queueKey,
     staff,
-    async (next) => {
+    async (next, base) => {
       if (!onSave) return false;
       setSaveError(null);
       // The list this attempt sends, keys and all: the server's echo of it takes these keys.
       unseen.current = [...unseen.current, next];
       try {
-        await onSave(next.map(({ label, url }) => ({ label, url })));
+        await onSave(words(next), words(base));
         return true;
       } catch (err) {
-        // Refused: the server never held this list, so nothing it shows takes its keys.
+        // Refused or moved: the server never held this list, so nothing it shows takes its keys.
         unseen.current = unseen.current.filter((s) => s !== next);
+        const current = listChanged(err);
+        if (current !== null) {
+          // Moved underneath: the queue re-applies the change on the list as it now stands, keyed as
+          // the page keys it (a link with the same words keeps its id).
+          return {
+            current: carryIds(base, current as StaffLink[], () => `link-${++minted.current}`),
+          };
+        }
         setSaveError(err instanceof Error ? err.message : String(err));
         return false;
       }
     },
     // The keys are the page's own: a link the queue added is the same link once its echo shows.
     sameLinks,
-    // The console's binding: a queue whose console has gone takes up nothing more.
-    here,
+    // A change that no longer applies (its link was removed meanwhile) is said, never dropped
+    // quietly: here while this page is on screen, else in a toast naming the body.
+    () => {
+      if (hold.here()) setSaveError(NOT_APPLIED);
+      else {
+        toast({
+          title: hold.subject === undefined ? 'Not saved' : `Not saved · ${hold.subject}`,
+          description: NOT_APPLIED,
+          tone: 'bad',
+        });
+      }
+    },
   );
   const save = async (change: Change) => {
     setInFlight((n) => n + 1);

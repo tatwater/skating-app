@@ -285,13 +285,10 @@ describe('HazardsTab', () => {
       bodyFeatureId: 'f-spring',
       reason: 'Not a spring',
     });
-    expect(undo.announce).toHaveBeenCalledWith(
-      {
-        title: 'Known feature demoted',
-        target: { targetType: 'bodyFeature', targetId: 'f-spring' },
-      },
-      expect.any(Function),
-    );
+    expect(undo.announce).toHaveBeenCalledWith({
+      title: 'Known feature demoted',
+      target: { targetType: 'bodyFeature', targetId: 'f-spring' },
+    });
   });
 
   it('a refused demotion says why and announces nothing', async () => {
@@ -415,7 +412,7 @@ describe('HazardsTab', () => {
       expect(convex.mutations.get('bodyFeatures:demote')).not.toHaveBeenCalled();
     });
 
-    it('a demotion started on one body that lands after the switch puts up no receipt over the next', async () => {
+    it('a write started on one body still lands after the switch, and its receipt names that body', async () => {
       let land: () => void = () => {};
       convex.mutations.set(
         'bodyFeatures:demote',
@@ -426,17 +423,23 @@ describe('HazardsTab', () => {
             }),
         ),
       );
-      const { rerender } = render(<BodyTabHost Wiring={HazardsTab} bodyId={BODY} />);
+      const { rerender } = render(
+        <BodyTabHost Wiring={HazardsTab} name="Mascoma Lake" bodyId={BODY} />,
+      );
       await userEvent.click(screen.getAllByRole('button', { name: 'Demote' })[0] as HTMLElement);
       const dialog = await screen.findByRole('alertdialog');
       await userEvent.type(within(dialog).getByRole('textbox'), 'Not a spring');
       await userEvent.click(within(dialog).getByRole('button', { name: /Demote/ }));
       await userEvent.click(within(dialog).getByRole('button', { name: /again/ }));
       toOther();
-      rerender(<BodyTabHost Wiring={HazardsTab} bodyId={OTHER} />);
+      rerender(<BodyTabHost Wiring={HazardsTab} name="Crystal Lake" bodyId={OTHER} />);
       land();
       await new Promise((r) => setTimeout(r, 0));
-      expect(undo.announce).not.toHaveBeenCalled();
+      // Pressed is committed: it lands on its own body, and its receipt says whose it was.
+      expect(undo.announce).toHaveBeenCalledTimes(1);
+      expect(undo.announce).toHaveBeenCalledWith(
+        expect.objectContaining({ subject: 'Mascoma Lake' }),
+      );
       expect(screen.queryByRole('alertdialog')).toBeNull();
     });
   });

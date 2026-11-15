@@ -7,6 +7,7 @@ import { Toaster } from '@/components/kit/toast';
 import { useConnection } from '@/lib/useConnection';
 import { useRole } from '@/lib/useRole';
 import { Splash } from '../../Splash';
+import { ListWritersProvider } from '../body/tabs/listWriter';
 import { liveStateOf, OverviewLamp } from '../overview/overviewStatus';
 import { ConsolePalette } from './ConsolePalette';
 import { ConsoleShell, type RailMode } from './ConsoleShell';
@@ -88,39 +89,44 @@ export function ConsoleLayout() {
 
   return (
     <UndoProvider server={server}>
-      <ConsoleShell
-        modes={modes}
-        legacy={legacy}
-        onLegacy={(page) => void navigate({ to: page.to })}
-        linkFor={(to) => <Link to={to} />}
-        {...(profile != null
-          ? {
-              viewer: {
-                name: profile.displayName,
-                ...(profile.profileImageUrl !== undefined ? { src: profile.profileImageUrl } : {}),
-              },
-            }
-          : {})}
-        {...(userId !== undefined ? { viewerId: userId } : {})}
-        tape={tape}
-        colleagues={colleagues}
-        onSearch={() => setPaletteOpen(true)}
-        onCommandKey={() => setPaletteOpen((o) => !o)}
-        lamp={<ConnectionLamp />}
-        overlays={
-          <>
-            <ConsolePalette
-              open={paletteOpen}
-              onOpenChange={setPaletteOpen}
-              can={can}
-              onGo={({ to }) => void navigate({ to })}
-            />
-            <Toaster />
-          </>
-        }
-      >
-        {outlet}
-      </ConsoleShell>
+      {/* The whole-list save queues live here, above every page: a pressed save outlives its page. */}
+      <ListWritersProvider>
+        <ConsoleShell
+          modes={modes}
+          legacy={legacy}
+          onLegacy={(page) => void navigate({ to: page.to })}
+          linkFor={(to) => <Link to={to} />}
+          {...(profile != null
+            ? {
+                viewer: {
+                  name: profile.displayName,
+                  ...(profile.profileImageUrl !== undefined
+                    ? { src: profile.profileImageUrl }
+                    : {}),
+                },
+              }
+            : {})}
+          {...(userId !== undefined ? { viewerId: userId } : {})}
+          tape={tape}
+          colleagues={colleagues}
+          onSearch={() => setPaletteOpen(true)}
+          onCommandKey={() => setPaletteOpen((o) => !o)}
+          lamp={<ConnectionLamp />}
+          overlays={
+            <>
+              <ConsolePalette
+                open={paletteOpen}
+                onOpenChange={setPaletteOpen}
+                can={can}
+                onGo={({ to }) => void navigate({ to })}
+              />
+              <Toaster />
+            </>
+          }
+        >
+          {outlet}
+        </ConsoleShell>
+      </ListWritersProvider>
     </UndoProvider>
   );
 }

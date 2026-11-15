@@ -121,13 +121,10 @@ describe('AccessTab', () => {
     expect(mocks.calls).toEqual([
       ['waterBodies:setPublicAccess', { waterBodyId: 'wb1', verdict: null }],
     ]);
-    expect(mocks.announce).toHaveBeenCalledWith(
-      {
-        title: 'Cleared the ruling',
-        target: { targetType: 'waterbody', targetId: 'wb1' },
-      },
-      expect.any(Function),
-    );
+    expect(mocks.announce).toHaveBeenCalledWith({
+      title: 'Cleared the ruling',
+      target: { targetType: 'waterbody', targetId: 'wb1' },
+    });
   });
 
   it('asks the reason before ruling no public access, and sends it', async () => {
@@ -412,18 +409,24 @@ describe('AccessTab', () => {
       expect(mocks.calls).toEqual([]);
     });
 
-    it('a ruling started on one body that lands after the switch puts up no receipt over the next', async () => {
+    it('a write started on one body still lands after the switch, and its receipt names that body', async () => {
       let land: () => void = () => {};
       mocks.hold = new Promise<void>((r) => {
         land = r;
       });
-      const { rerender } = render(<BodyTabHost Wiring={AccessTab} bodyId="wb1" />);
+      const { rerender } = render(
+        <BodyTabHost Wiring={AccessTab} name="Mascoma Lake" bodyId="wb1" />,
+      );
       await userEvent.click(screen.getByRole('button', { name: 'Clear the ruling' }));
       toOther();
-      rerender(<BodyTabHost Wiring={AccessTab} bodyId="wb2" />);
+      rerender(<BodyTabHost Wiring={AccessTab} name="Crystal Lake" bodyId="wb2" />);
       land();
       await new Promise((r) => setTimeout(r, 0));
-      expect(mocks.announce).not.toHaveBeenCalled();
+      // Pressed is committed: it lands on its own body, and its receipt says whose it was.
+      expect(mocks.announce).toHaveBeenCalledTimes(1);
+      expect(mocks.announce).toHaveBeenCalledWith(
+        expect.objectContaining({ subject: 'Mascoma Lake' }),
+      );
       expect(mocks.calls).toEqual([
         ['waterBodies:setPublicAccess', { waterBodyId: 'wb1', verdict: null }],
       ]);

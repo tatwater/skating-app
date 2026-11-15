@@ -17,9 +17,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/kit/select';
+import { toast } from '@/components/kit/toast';
 import { sayUnavailable, UnavailableButton } from '@/components/kit/unavailable-button';
 import { statusDate } from '../../frame/bodyModel';
-import { useBodyBound } from '../../frame/currentBody';
+import { listChanged, useBodyHold } from '../../frame/currentBody';
 import { useTabKeys } from '../../frame/tabKeys';
 import { sameList, useListWriter } from '../listWriter';
 import { BLOCK_GAP, useDraft } from '../tabParts';
@@ -42,7 +43,11 @@ import {
  */
 
 /** One edit to a landmark: its name, its other spellings, or its kind. */
-export type LandmarkEdit = { name: string } | { aliases: string[] } | { kind: LandmarkKind };
+export type LandmarkEdit =
+  | { name: string }
+  /** The whole list, and the list it was built on (the server's compare-and-set). */
+  | { aliases: string[]; expectedAliases?: string[] }
+  | { kind: LandmarkKind };
 
 const TOOLS = {
   move: 'Moving a landmark on the map comes with the map’s landmark tools.',
@@ -88,21 +93,32 @@ export function LandmarkCard({
   }
   // The other spellings are a whole list: a second chip added while the first is saving is
   // applied to the list the server acknowledged, never the one this render holds (`listWriter`).
-  const here = useBodyBound();
-  const pushAliases = useListWriter(
+  const hold = useBodyHold();
+  const pushAliases = useListWriter<string>(
+    `aliases:${l.id}`,
     l.aliases,
-    async (next) => {
+    async (next, base) => {
       try {
-        const landing = onEdit?.({ aliases: [...next] });
+        const landing = onEdit?.({ aliases: [...next], expectedAliases: [...base] });
         return landing instanceof Promise ? (await landing) !== false : true;
-      } catch {
-        // A write that throws (the tab's `act` never does) is a refusal, never an unhandled one.
+      } catch (err) {
+        // Moved underneath: the queue re-applies the change on the list as it now stands.
+        const current = listChanged(err);
+        if (current !== null) return { current: current as string[] };
+        // Any other throw (the tab's `act` says its own refusals) is a refusal, never unhandled.
         return false;
       }
     },
     sameList,
-    // The console's binding: a queue whose console has gone takes up nothing more.
-    here,
+    () => {
+      // Spelling changes always re-apply; a list that keeps moving is said, never dropped quietly.
+      toast({
+        title: hold.subject === undefined ? 'Not saved' : `Not saved · ${hold.subject}`,
+        description:
+          'Another moderator kept changing these spellings; yours weren’t saved. Try again.',
+        tone: 'bad',
+      });
+    },
   );
   const editAliases = (aliases: readonly string[]) => {
     const added = aliases.filter((a) => !l.aliases.includes(a));

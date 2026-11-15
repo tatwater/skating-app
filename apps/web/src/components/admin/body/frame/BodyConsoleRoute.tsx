@@ -42,7 +42,7 @@ import {
   searchFor,
   validateBodySearch,
 } from './bodySearch';
-import { BodyBindingProvider, sendFor } from './currentBody';
+import { BodyBindingProvider, type BodyHold, sendFor } from './currentBody';
 import { NotBuiltTab } from './NotBuiltTab';
 import {
   type BodyTabProps,
@@ -143,6 +143,8 @@ export function BodyConsoleRoute({ registry = BODY_TAB_REGISTRY }: { registry?: 
     data.state === 'ready' && data.lastCampaign !== null
       ? `Last campaign ${campaignText(data.lastCampaign).replace(/ campaign$/, '')}`
       : null;
+  // The body's name as the lockup draws it, for a result said off its console.
+  const bodyName = data.state === 'ready' ? data.identity.name : undefined;
   const tabPanel =
     data.state === 'loading' ? (
       <Skeleton className="h-(--space-20)" />
@@ -150,6 +152,7 @@ export function BodyConsoleRoute({ registry = BODY_TAB_REGISTRY }: { registry?: 
       <TabBoundary bodyId={bodyId} tab={slot.key} label={slot.label}>
         <BodyTabHost
           key={slot.key}
+          name={bodyName}
           Wiring={slot.Wiring as ComponentType<BodyTabProps>}
           bodyId={bodyId}
           lit={lit}
@@ -163,7 +166,7 @@ export function BodyConsoleRoute({ registry = BODY_TAB_REGISTRY }: { registry?: 
   return (
     // The console's binding (`currentBody`), above its loading and tab branches: the left column's
     // writes hold it; a tab holds its own host's, which dies no later.
-    <BodyBindingProvider bodyId={bodyId}>
+    <BodyBindingProvider bodyId={bodyId} name={bodyName}>
       <BodyConsoleView
         bodyKey={bodyId}
         {...(data.state === 'ready'
@@ -228,6 +231,7 @@ export function BodyConsoleRoute({ registry = BODY_TAB_REGISTRY }: { registry?: 
                   slot.Dock === undefined ? null : (
                     <BodyTabHost
                       key={slot.key}
+                      name={bodyName}
                       Wiring={slot.Dock}
                       bodyId={bodyId}
                       lit={lit}
@@ -283,10 +287,15 @@ function mapFoot(failures: MapFailures | null, dock: ReactNode): ReactNode {
  */
 export function BodyTabHost({
   Wiring,
+  name,
   ...props
-}: BodyTabProps & { Wiring: ComponentType<BodyTabProps> }) {
+}: BodyTabProps & {
+  Wiring: ComponentType<BodyTabProps>;
+  /** The body's name, for a result said off its console ("· Mascoma Lake"). */
+  name?: string | undefined;
+}) {
   return (
-    <BodyBindingProvider bodyId={props.bodyId}>
+    <BodyBindingProvider bodyId={props.bodyId} name={name}>
       <Wiring key={props.bodyId} {...props} />
     </BodyBindingProvider>
   );
@@ -324,28 +333,26 @@ function TabSceneProbe({
  * Sets the map boost and puts its receipt (with Undo) in the toast. Resolves whether the change
  * landed, so the slider can go back to the record when it didn't.
  */
-function useBoostCommit(bodyId: string): (value: number, here: () => boolean) => Promise<boolean> {
+function useBoostCommit(bodyId: string): (value: number, hold: BodyHold) => Promise<boolean> {
   const set = useMutation(api.waterBodies.setCuratedBoost);
   const { announce } = useUndo();
   return useCallback(
-    (value: number, here: () => boolean) => {
+    (value: number, hold: BodyHold) => {
       const rounded = Math.round(value * 10) / 10;
-      // The left column's binding (`currentBody`), the one check every write makes: nothing is
-      // sent once its console has gone, and nothing is said after.
-      return sendFor(
-        here,
-        () => set({ waterBodyId: bodyId as Id<'waterBodies'>, curatedBoost: rounded }),
-        () =>
-          announce(
-            {
-              title: `Map boost · ${rounded.toFixed(1)}`,
-              target: { targetType: 'waterbody', targetId: bodyId },
-            },
-            here,
-          ),
-      ).then(
+      // The one write path (`currentBody`): the boost runs to its end against this body; its
+      // receipt names the body; a refusal is said here while the console is on screen.
+      return sendFor(hold, {
+        body: bodyId,
+        write: () => set({ waterBodyId: bodyId as Id<'waterBodies'>, curatedBoost: rounded }),
+        receipt: (subject) =>
+          announce({
+            title: `Map boost · ${rounded.toFixed(1)}`,
+            target: { targetType: 'waterbody', targetId: bodyId },
+            subject,
+          }),
+        what: 'The map boost',
+      }).then(
         () => true,
-        // `sendFor` throws only while the binding holds: the refusal is this console's to say.
         (e: unknown) => {
           toast({ title: e instanceof Error ? e.message : String(e), tone: 'bad' });
           return false;

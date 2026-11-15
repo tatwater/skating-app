@@ -139,10 +139,13 @@ export const linkChanges = {
   add:
     (link: KeyedLink) =>
     (base: readonly KeyedLink[]): KeyedLink[] => [...base, link],
+  /** `null` when the link is no longer there (another moderator removed it): nothing to edit. */
   edit:
     (key: string, link: StaffLink) =>
-    (base: readonly KeyedLink[]): KeyedLink[] =>
-      base.map((l) => (l.key === key ? { label: link.label, url: link.url, key } : l)),
+    (base: readonly KeyedLink[]): KeyedLink[] | null =>
+      base.some((l) => l.key === key)
+        ? base.map((l) => (l.key === key ? { label: link.label, url: link.url, key } : l))
+        : null,
   remove:
     (key: string) =>
     (base: readonly KeyedLink[]): KeyedLink[] =>

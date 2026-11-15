@@ -484,10 +484,13 @@ describe('LinksTabView', () => {
     const label = screen.getByRole('textbox', { name: 'Label' });
     await userEvent.clear(label);
     await userEvent.type(label, 'The Association{Enter}');
-    expect(onSave).toHaveBeenCalledWith([
-      { label: 'The Association', url: 'https://mascomalake.org' },
-      { label: 'Lake level at Mascoma Lake Dam', url: 'https://des.nh.gov/dams' },
-    ]);
+    expect(onSave).toHaveBeenCalledWith(
+      [
+        { label: 'The Association', url: 'https://mascomalake.org' },
+        { label: 'Lake level at Mascoma Lake Dam', url: 'https://des.nh.gov/dams' },
+      ],
+      MASCOMA.referenceLinks,
+    );
   });
 
   it('refuses a bad address before the round trip, in core’s words', async () => {
@@ -505,10 +508,10 @@ describe('LinksTabView', () => {
       ' https://enfield.nh.gov ',
     );
     await userEvent.click(screen.getByRole('button', { name: 'Done' }));
-    expect(onSave).toHaveBeenLastCalledWith([
-      ...(MASCOMA.referenceLinks ?? []),
-      { label: 'Town page', url: 'https://enfield.nh.gov' },
-    ]);
+    expect(onSave).toHaveBeenLastCalledWith(
+      [...(MASCOMA.referenceLinks ?? []), { label: 'Town page', url: 'https://enfield.nh.gov' }],
+      MASCOMA.referenceLinks,
+    );
   });
 
   it('Remove is inside the row; Esc and Cancel put it back unchanged', async () => {
@@ -519,7 +522,7 @@ describe('LinksTabView', () => {
     expect(screen.queryByRole('textbox')).toBeNull();
     await userEvent.click(screen.getAllByRole('button', { name: 'Edit' })[1] as HTMLElement);
     await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
-    expect(onSave).toHaveBeenCalledWith([MASCOMA.referenceLinks?.[0]]);
+    expect(onSave).toHaveBeenCalledWith([MASCOMA.referenceLinks?.[0]], MASCOMA.referenceLinks);
   });
 
   it('a new row has no Remove; canceling it drops it', async () => {
@@ -555,10 +558,13 @@ describe('LinksTabView', () => {
     grip('Mascoma Lake Association').focus();
     await userEvent.keyboard(' ');
     expect(status()).toBe('Dropped Mascoma Lake Association at 2 of 2.');
-    expect(onSave).toHaveBeenCalledWith([
-      { label: 'Lake level at Mascoma Lake Dam', url: 'https://des.nh.gov/dams' },
-      { label: 'Mascoma Lake Association', url: 'https://mascomalake.org' },
-    ]);
+    expect(onSave).toHaveBeenCalledWith(
+      [
+        { label: 'Lake level at Mascoma Lake Dam', url: 'https://des.nh.gov/dams' },
+        { label: 'Mascoma Lake Association', url: 'https://mascomalake.org' },
+      ],
+      MASCOMA.referenceLinks,
+    );
   });
 });
 

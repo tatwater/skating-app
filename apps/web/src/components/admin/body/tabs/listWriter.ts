@@ -1,48 +1,46 @@
-import { useRef } from 'react';
+import { createContext, createElement, type ReactNode, useContext, useRef, useState } from 'react';
 
 /**
- * **One queue for a tab's whole-list writes** (Links' staff links, a landmark's other spellings).
- * A whole-list write built from the list a render held can undo a write still on its way: a
- * reorder saving while Remove is pressed, the remove built from the old order, lands second and
- * puts the old order back. So a tab never builds the list itself. It hands the queue a *change* —
- * "this link goes", "these keys in this order" — and the queue applies it, one write at a time, to
- * the newest list the server has acknowledged:
+ * **One queue for a whole-list write** (Links' staff links, a landmark's or a body's other
+ * spellings). A whole-list write built from the list a render held can undo a write still on its
+ * way. So a tab never builds the list itself: it hands the queue a *change* — "this link goes",
+ * "these keys in this order" — and the queue applies it, one write at a time, to the newest list
+ * the server has acknowledged (its own last acknowledged write until the server's echo of it has
+ * been seen, else the server's list as last seen, which carries any other moderator's change).
  *
- * - the queue's own last acknowledged write, until the server's echo of it has been seen (an
- *   acknowledgment can land a beat before the render that shows it);
- * - otherwise the server's list as last seen, which carries any other moderator's change — and
- *   always once that list already shows the write when it is acknowledged (the console's usual
- *   order: Convex shows a write before its promise resolves, and the receipt is a further round
- *   trip), so a tab's own ids for the rows it draws are the ones its next change names.
- *
- * A change that changes nothing sends nothing. A refused write drops its change and nothing built
- * on it — the next change applies to what the server holds.
- *
- * **The one race it can't close.** Another moderator's write that commits while one of ours is in
- * flight is overwritten by ours, which was built before it: the server's writers take whole lists
- * and no version to compare against. That is the server's to close (a compare-and-set), and the
- * phase doc's server register asks for it.
+ * - **Every write names the list it was built on** (`send(next, base)`, the server's `expected`):
+ *   another moderator's write that landed in between is refused by the server with the current
+ *   list, and the queue re-applies the change on top and sends again; a change that no longer
+ *   applies (its link was removed meanwhile) answers `null`, and the queue says so (`unapplied`)
+ *   rather than dropping it quietly.
+ * - A change that changes nothing sends nothing. A refused write drops its change and nothing
+ *   built on it.
+ * - **The queue outlives the page that pressed it** (`bodyWrites`): a pressed save is sent to its
+ *   body whatever the page does next.
  */
+export type Change<T> = (base: readonly T[]) => readonly T[] | null;
+
+/** What a send answers: landed, refused, or the server's current list (the base moved). */
+export type SendAnswer<T> = boolean | { current: readonly T[] };
+
 export type ListWriter<T> = {
   /** The server's list, each time a render reads it. */
   observe: (server: readonly T[]) => void;
   /**
-   * Queue a change; resolves `true` once it is saved (or changed nothing), `false` if refused or
-   * dropped because its console went away (`alive`).
+   * Queue a change; resolves `true` once it is saved (or changed nothing), `false` if refused or no
+   * longer applicable (after `unapplied` was called).
    */
-  push: (change: (base: readonly T[]) => readonly T[]) => Promise<boolean>;
+  push: (change: Change<T>) => Promise<boolean>;
 };
 
+/** How many times a change is re-applied on a list that keeps moving before the queue gives up. */
+const REAPPLY = 3;
+
 export function createListWriter<T>(
-  send: (next: readonly T[]) => Promise<boolean>,
+  send: (next: readonly T[], base: readonly T[]) => Promise<SendAnswer<T>>,
   same: (a: readonly T[], b: readonly T[]) => boolean = sameList,
-  /**
-   * The console's binding (`frame/currentBody`): checked as a queued change is taken up (and so
-   * before it is sent: nothing async runs between the two) and again before its answer is taken
-   * in, so a queue whose console has gone sends nothing more and says nothing. The binding never
-   * revives.
-   */
-  alive: () => boolean = () => true,
+  /** Says a change can't be re-applied on the list as it now stands (or kept moving). */
+  unapplied: () => void = () => {},
 ): ListWriter<T> {
   let server: readonly T[] = [];
   /**
@@ -59,17 +57,29 @@ export function createListWriter<T>(
     },
     push(change) {
       const run = chain.then(async () => {
-        if (!alive()) return false;
-        const base = acked?.list ?? server;
-        const next = change(base);
-        if (same(next, base)) return true;
-        const ok = await send(next);
-        if (!alive()) return false;
-        // Already on screen (the echo rendered before the acknowledgment): the server's list is the
-        // newest, and its rows carry the ids the page draws. Holding `next` instead would keep
-        // building on ids no row has — a row added here, then edited, would change nothing.
-        if (ok) acked = same(server, next) ? null : { list: next, seenAtAck: server };
-        return ok;
+        let base = acked?.list ?? server;
+        for (let attempt = 0; attempt <= REAPPLY; attempt++) {
+          const next = change(base);
+          if (next === null) {
+            unapplied();
+            return false;
+          }
+          if (same(next, base)) return true;
+          const answer = await send(next, base);
+          if (typeof answer === 'object') {
+            // Moved underneath: the server's list is the truth now; apply the change on top of it.
+            base = answer.current;
+            acked = null;
+            server = answer.current;
+            continue;
+          }
+          // Already on screen (the echo rendered before the acknowledgment): the server's list is
+          // the newest, and its rows carry the ids the page draws.
+          if (answer) acked = same(server, next) ? null : { list: next, seenAtAck: server };
+          return answer;
+        }
+        unapplied();
+        return false;
       });
       chain = run.catch(() => undefined);
       return run;
@@ -77,25 +87,62 @@ export function createListWriter<T>(
   };
 }
 
+type Entry = {
+  writer: ListWriter<unknown>;
+  send: {
+    current: (next: readonly unknown[], base: readonly unknown[]) => Promise<SendAnswer<unknown>>;
+  };
+  unapplied: { current: () => void };
+};
+
 /**
- * The hook: one writer for the component's life, shown the server's list on every render. `same`
- * says when two lists save the same (Links' rows carry page-only ids, which it must ignore).
+ * **Where the queues live: above the consoles** (the admin shell mounts it), one per list — keyed by
+ * its body (and, for a landmark's spellings, its landmark) — so a save pressed on a page that has
+ * since gone (another tab, another body, out of the Bodies area) is still sent, and coming back
+ * finds the same queue, never a second one that would send it twice.
+ */
+const Writers = createContext<Map<string, Entry> | null>(null);
+
+export function ListWritersProvider({ children }: { children: ReactNode }) {
+  const [writers] = useState(() => new Map<string, Entry>());
+  return createElement(Writers.Provider, { value: writers }, children);
+}
+
+/**
+ * The queue for one list: `key` names it ("links:<body>", "aliases:<landmark>"), shown the
+ * server's list on every render. `send` and `unapplied` are the latest the page gave (their
+ * closures name the body and say a result in its words); once the page has gone, the last ones
+ * stand. Outside a `ListWritersProvider` (a story, a test of one view) the queue is the component's.
  */
 export function useListWriter<T>(
+  key: string,
   server: readonly T[],
-  send: (next: readonly T[]) => Promise<boolean>,
+  send: (next: readonly T[], base: readonly T[]) => Promise<SendAnswer<T>>,
   same: (a: readonly T[], b: readonly T[]) => boolean = sameList,
-  alive: () => boolean = () => true,
+  unapplied: () => void = () => {},
 ): ListWriter<T>['push'] {
-  // The latest `send` (its closure holds the latest props), reached through a ref so the writer
-  // and its queue outlive renders.
-  const sendRef = useRef(send);
-  sendRef.current = send;
-  const writer = useRef<ListWriter<T> | null>(null);
-  if (writer.current === null)
-    writer.current = createListWriter<T>((next) => sendRef.current(next), same, alive);
-  writer.current.observe(server);
-  return writer.current.push;
+  const shared = useContext(Writers);
+  const own = useRef<Entry | null>(null);
+  let entry = shared?.get(key) ?? own.current;
+  if (entry === null || entry === undefined) {
+    const made: Entry = {
+      send: { current: send as Entry['send']['current'] },
+      unapplied: { current: unapplied },
+      writer: undefined as unknown as ListWriter<unknown>,
+    };
+    made.writer = createListWriter<unknown>(
+      (next, base) => made.send.current(next, base),
+      same as (a: readonly unknown[], b: readonly unknown[]) => boolean,
+      () => made.unapplied.current(),
+    );
+    if (shared !== null) shared.set(key, made);
+    else own.current = made;
+    entry = made;
+  }
+  entry.send.current = send as Entry['send']['current'];
+  entry.unapplied.current = unapplied;
+  entry.writer.observe(server);
+  return entry.writer.push as ListWriter<T>['push'];
 }
 
 /** Same length, same items in the same order (`===`, or the same words for plain records). */

@@ -1,159 +1,163 @@
-import { act, render } from '@testing-library/react';
+import { render } from '@testing-library/react';
 import { ConvexError } from 'convex/values';
-import { Suspense, startTransition, use } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { BodyBindingProvider, sendFor, useBodyBound } from './currentBody';
+const toasts = vi.hoisted(() => [] as { title: string; description?: string; tone?: string }[]);
+vi.mock('@/components/kit/toast', async (original) => ({
+  ...(await original<typeof import('@/components/kit/toast')>()),
+  toast: (t: { title: string; description?: string; tone?: string }) => toasts.push(t),
+}));
 
-/** A subtree that is *not* keyed by its body: the missed reset the second layer exists for. */
-function Probe({ seen }: { seen: (here: () => boolean) => void }) {
-  seen(useBodyBound());
+import {
+  BodyBindingProvider,
+  type BodyHold,
+  listChanged,
+  OTHER_BODY,
+  sendFor,
+  useBodyHold,
+} from './currentBody';
+
+function Probe({ seen }: { seen: (hold: BodyHold) => void }) {
+  seen(useBodyHold());
   return null;
 }
 
-describe('useBodyBound — one console, one body, one lifetime', () => {
-  const holder = () => {
-    let here: () => boolean = () => true;
-    return {
-      seen: (h: () => boolean) => {
-        here = h;
-      },
-      here: () => here(),
-    };
+const holder = () => {
+  let hold: BodyHold = { here: () => true, body: null, subject: undefined };
+  return {
+    seen: (h: BodyHold) => {
+      hold = h;
+    },
+    get: () => hold,
   };
+};
 
-  it('holds the binding it mounted under: a missed reset, now under another body, sends nothing', () => {
+describe('useBodyHold — the console a subtree mounted under', () => {
+  it('holds the binding it mounted under, its body and its name, never a later one', () => {
     const h = holder();
     const { rerender } = render(
-      <BodyBindingProvider bodyId="wb1">
+      <BodyBindingProvider bodyId="wb1" name="Mascoma Lake">
         <Probe seen={h.seen} />
       </BodyBindingProvider>,
     );
-    expect(h.here()).toBe(true);
+    expect(h.get()).toMatchObject({ body: 'wb1', subject: 'Mascoma Lake' });
+    expect(h.get().here()).toBe(true);
     rerender(
-      <BodyBindingProvider bodyId="wb2">
+      <BodyBindingProvider bodyId="wb2" name="Crystal Lake">
         <Probe seen={h.seen} />
       </BodyBindingProvider>,
     );
-    expect(h.here()).toBe(false);
+    // The subtree missed its reset: it still holds wb1's binding, no longer on screen.
+    expect(h.get()).toMatchObject({ body: 'wb1', subject: 'Mascoma Lake' });
+    expect(h.get().here()).toBe(false);
   });
 
-  it('dies when its console goes away — a loading state for another body, a route left (Greptile’s P1)', () => {
+  it('is off screen once its console goes, and coming back is a new console', () => {
     const h = holder();
     const { rerender } = render(
       <BodyBindingProvider bodyId="wb1">
         <Probe seen={h.seen} />
       </BodyBindingProvider>,
     );
-    // An uncached body: the page draws its loading state, and the console with its provider is gone.
+    const first = h.get();
     rerender(<p>Loading</p>);
-    expect(h.here()).toBe(false);
-  });
-
-  it('coming back to the same body is a new console: the old binding never revives', () => {
-    const h = holder();
-    const { rerender } = render(
-      <BodyBindingProvider bodyId="wb1">
-        <Probe seen={h.seen} />
-      </BodyBindingProvider>,
-    );
-    rerender(<p>Away</p>);
-    // Back to the same body: a new console, a new binding; the first console's stays dead.
+    expect(first.here()).toBe(false);
     rerender(
       <BodyBindingProvider bodyId="wb1">
         <Probe seen={() => {}} />
       </BodyBindingProvider>,
     );
-    expect(h.here()).toBe(false);
+    expect(first.here()).toBe(false);
   });
 
-  it('a navigation still rendering (a transition) leaves the body on screen bound until it commits', async () => {
-    const h = holder();
-    // The next body's console holds its transition open until its read lands.
-    let land: () => void = () => {};
-    const read = new Promise<void>((resolve) => {
-      land = resolve;
-    });
-    function Waits() {
-      use(read);
-      return null;
-    }
-    const { rerender } = render(
-      <Suspense fallback={null}>
-        <BodyBindingProvider bodyId="wb1">
-          <Probe seen={h.seen} />
-        </BodyBindingProvider>
-      </Suspense>,
-    );
-    await act(async () => {
-      startTransition(() => {
-        rerender(
-          <Suspense fallback={null}>
-            <BodyBindingProvider bodyId="wb2">
-              <Probe seen={() => {}} />
-              <Waits />
-            </BodyBindingProvider>
-          </Suspense>,
-        );
-      });
-    });
-    // wb1's console is still the one on screen, and still takes presses.
-    expect(h.here()).toBe(true);
-    await act(async () => {
-      land();
-      await read;
-      await new Promise((r) => setTimeout(r, 0));
-    });
-    expect(h.here()).toBe(false);
-  });
-
-  it('outside a frame there is no other console to move to', () => {
+  it('outside a frame there is no other console', () => {
     const h = holder();
     render(<Probe seen={h.seen} />);
-    expect(h.here()).toBe(true);
+    expect(h.get()).toMatchObject({ body: null, subject: undefined });
+    expect(h.get().here()).toBe(true);
   });
 });
 
-describe('sendFor', () => {
-  it('sends nothing once the page has moved on', async () => {
+describe('sendFor — the one write path', () => {
+  const hold = (here: boolean, body: string | null = 'wb1'): BodyHold => ({
+    here: () => here,
+    body,
+    subject: 'Mascoma Lake',
+  });
+  const send = (h: BodyHold, write: () => Promise<unknown>, receipt = vi.fn(async () => {})) =>
+    sendFor(h, { body: 'wb1', write, receipt, what: 'The links' });
+
+  it('a pressed write is sent whether or not its console is still on screen', async () => {
     const write = vi.fn(async () => {});
-    const receipt = vi.fn(async () => {});
-    await sendFor(() => false, write, receipt);
-    expect(write).not.toHaveBeenCalled();
-    expect(receipt).not.toHaveBeenCalled();
+    await send(hold(false), write);
+    expect(write).toHaveBeenCalledTimes(1);
   });
 
-  it('says a refusal in the server’s words while the page is still there, and drops it after', async () => {
-    const refuse = async () => {
-      throw new ConvexError('Water body not found');
-    };
+  it('its receipt names its body, wherever the page is', async () => {
+    const receipt = vi.fn(async () => {});
+    await send(hold(false), async () => {}, receipt);
+    expect(receipt).toHaveBeenCalledWith('Mascoma Lake');
+  });
+
+  it('a refusal is thrown for the console to say in place while it is on screen', async () => {
+    toasts.length = 0;
     await expect(
-      sendFor(
-        () => true,
-        refuse,
-        async () => {},
-      ),
+      send(hold(true), async () => {
+        throw new ConvexError('Water body not found');
+      }),
     ).rejects.toThrow('Water body not found');
-    let still = true;
-    const refuseLate = async () => {
-      still = false;
-      throw new ConvexError('Water body not found');
-    };
+    expect(toasts).toEqual([]);
+  });
+
+  it('a refusal for a console that has gone is a toast naming the body and what failed', async () => {
+    toasts.length = 0;
     await expect(
-      sendFor(
-        () => still,
-        refuseLate,
-        async () => {},
-      ),
+      send(hold(false), async () => {
+        throw new ConvexError('Water body not found');
+      }),
     ).resolves.toBeUndefined();
+    expect(toasts).toEqual([
+      {
+        title: 'Not saved · Mascoma Lake',
+        description: 'The links: Water body not found',
+        tone: 'bad',
+      },
+    ]);
+  });
+
+  it('a list that moved underneath goes back as it came, for its queue to re-apply', async () => {
+    const moved = new ConvexError({ code: 'list_changed', message: 'moved', current: ['a'] });
+    await expect(
+      send(hold(false), async () => {
+        throw moved;
+      }),
+    ).rejects.toBe(moved);
+    expect(listChanged(moved)).toEqual(['a']);
+    expect(listChanged(new Error('x'))).toBeNull();
+  });
+
+  it('a write naming another body than its console’s own (a missed reset) is refused, loudly', async () => {
+    const write = vi.fn(async () => {});
+    await expect(
+      sendFor(hold(true, 'wb2'), {
+        body: 'wb1',
+        write,
+        receipt: async () => {},
+        what: 'The links',
+      }),
+    ).rejects.toThrow(OTHER_BODY);
+    expect(write).not.toHaveBeenCalled();
   });
 
   it('a landed write whose receipt fails is never a refusal', async () => {
-    const write = vi.fn(async () => {});
-    const receipt = async () => {
-      throw new Error('the toast queue is gone');
-    };
-    await expect(sendFor(() => true, write, receipt)).resolves.toBeUndefined();
-    expect(write).toHaveBeenCalledTimes(1);
+    await expect(
+      send(
+        hold(true),
+        async () => {},
+        vi.fn(async () => {
+          throw new Error('the toast queue is gone');
+        }),
+      ),
+    ).resolves.toBeUndefined();
   });
 });
