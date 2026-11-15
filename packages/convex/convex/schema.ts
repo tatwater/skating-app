@@ -5117,6 +5117,14 @@ export default defineSchema({
     townStates: v.optional(v.array(v.string())),
     /** Each town's boundary, in `towns`' order (B01-3c) — for its drawn outline. */
     townIds: v.optional(v.array(v.id('adminAreas'))),
+    /**
+     * The towns keyed on name **and state**, each with its boundary (B01-3d) — a border lake's
+     * Franklin, VT and Franklin, NH are two. `towns` stays keyed on the name alone for the pages that
+     * read it; every read that offers a town's state reads this.
+     */
+    townEntries: v.optional(
+      v.array(v.object({ name: v.string(), state: v.string(), id: v.id('adminAreas') })),
+    ),
     counties: v.optional(v.array(v.string())),
     states: v.optional(v.array(v.string())),
     attempts: v.optional(v.number()),

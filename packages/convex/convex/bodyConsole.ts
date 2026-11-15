@@ -665,9 +665,12 @@ export const townLines = query({
     const geo = await geoFactsOf(ctx, (await bodyOrThrow(ctx, waterBodyId))._id);
     if (geo === null) return null;
     const towns = townsWithStateOf(geo) ?? [];
+    // The boundary beside each town, in the same order as `townsWithStateOf` lists them.
+    const keyed =
+      geo.townEntries !== undefined && geo.townEntries.length >= (geo.towns ?? []).length;
     const out: { name: string; state: string | null; ring: number[][] | null }[] = [];
     for (const [i, town] of towns.slice(0, TOWN_LINES_MAX).entries()) {
-      const areaId = geo.townIds?.[i];
+      const areaId = keyed ? geo.townEntries?.[i]?.id : geo.townIds?.[i];
       const outline =
         areaId === undefined
           ? null

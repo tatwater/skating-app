@@ -220,8 +220,12 @@ export async function geoFactsOf(
  * rule for the preview, the frame and Places.
  */
 export function townsWithStateOf(
-  geo: Pick<Doc<'bodyGeoFacts'>, 'towns' | 'townStates'> | null,
+  geo: Pick<Doc<'bodyGeoFacts'>, 'towns' | 'townStates' | 'townEntries'> | null,
 ): { name: string; state: string | null }[] | null {
   if (geo === null) return null;
+  // Keyed on name and state where stored (B01-3d); else the name-keyed lists before it.
+  if (geo.townEntries !== undefined && geo.townEntries.length >= (geo.towns ?? []).length) {
+    return geo.townEntries.map((e) => ({ name: e.name, state: e.state }));
+  }
   return (geo.towns ?? []).map((name, i) => ({ name, state: geo.townStates?.[i] ?? null }));
 }

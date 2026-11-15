@@ -16,6 +16,7 @@ import {
   samplePoints,
   simplifiedRing,
   touches,
+  townsWithStateOf,
   vertexCount,
 } from './lib/bodyGeo';
 import { rebuildBodyLibrary } from './lib/bodyLibrary';
@@ -204,9 +205,44 @@ describe('pure helpers', () => {
       towns: ['Enfield'],
       townStates: ['NH'],
       townIds: [expect.any(String)],
+      townEntries: [{ name: 'Enfield', state: 'NH', id: 't1' }],
       counties: ['Grafton'],
       states: ['NH'],
     });
+  });
+  test('a border lake’s same-named towns in two states are two entries; `towns` keeps one name (B01-3d)', () => {
+    const square = ellipse(0, 0, 1, 1, 4);
+    const out = placesFrom(
+      [
+        { lat: 0, lng: 0 },
+        { lat: 0.5, lng: 0 },
+      ],
+      {
+        perPoint: [
+          { town: ['vt'], county: [] },
+          { town: ['nh'], county: [] },
+        ],
+        areas: [
+          { id: 'vt', name: 'Franklin', state: 'VT', bbox: boxOf(0, 0, 1, 1), polygon: square },
+          { id: 'nh', name: 'Franklin', state: 'NH', bbox: boxOf(0, 0, 1, 1), polygon: square },
+        ],
+      },
+    );
+    expect(out.towns).toEqual(['Franklin']);
+    expect(out.townEntries).toEqual([
+      { name: 'Franklin', state: 'VT', id: 'vt' },
+      { name: 'Franklin', state: 'NH', id: 'nh' },
+    ]);
+    expect(
+      townsWithStateOf({
+        towns: out.towns,
+        townStates: out.townStates,
+        townEntries: out.townEntries as never,
+      }),
+    ).toEqual([
+      { name: 'Franklin', state: 'VT' },
+      { name: 'Franklin', state: 'NH' },
+    ]);
   });
 });
 
