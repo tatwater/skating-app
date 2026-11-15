@@ -21,14 +21,16 @@ type LatLng = { lat: number; lng: number };
 export type Person = { name: string; handle: string; href?: string };
 
 /**
- * When a landmark was added, and by whom or by what; and when staff last edited or moved it
- * (`null` when the provenance read records neither — never read as "never").
+ * When a landmark was added, and by whom or by what; when a moderator last edited it (its name,
+ * spellings, kind or point — a moved point is an edit); and when a lake merge last changed what it
+ * stands for (`movedAt`: moved onto this body, or a twin folded into it — never a moved point).
+ * `null` when the provenance read records neither — never read as "never".
  */
 export type Added = {
   at: number;
   by: Person | string;
   edited?: number | null;
-  moved?: number | null;
+  merged?: number | null;
 };
 
 export type LandmarkRow = {
@@ -263,7 +265,8 @@ export const ADDED_BY: Readonly<Record<string, string>> = {
 
 /**
  * `bodyConsole.landmarkProvenance`'s row. Every field is kept: when and by whom it was added (the
- * card's *Added*) and when staff last edited or moved it (the card's *Changed*).
+ * card's *Added*), and when a moderator last edited it and a merge last changed it (the card's
+ * *Changed*).
  */
 export type ProvenanceInput = {
   landmarkId: string;
@@ -282,8 +285,13 @@ export function addedByLandmark(rows: readonly ProvenanceInput[]): Map<string, A
       {
         at: r.createdAt,
         by: r.createdBy !== null ? personFrom(r.createdBy) : (ADDED_BY[r.source] ?? r.source),
-        edited: r.moderatorEditedAt ?? null,
-        moved: r.movedAt ?? null,
+        // A moderator's own landmark is stamped edited as it is made: that stamp is the adding,
+        // which *Added* already says — never an edit.
+        edited:
+          r.moderatorEditedAt != null && r.moderatorEditedAt !== r.createdAt
+            ? r.moderatorEditedAt
+            : null,
+        merged: r.movedAt ?? null,
       },
     ]),
   );

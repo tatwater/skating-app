@@ -52,10 +52,12 @@ export const ARRIVALS: [string, (user: User) => Promise<void>][] = [
   ['the list’s Open or a deep link', async () => {}],
   ['a press on the tab strip', (user) => user.click(screen.getByRole('tab', { name: /Names/ }))],
   [
-    'the tab strip’s arrows',
+    // The arrows move focus along the strip; ⏎ opens the tab they reached.
+    'the tab strip’s arrows and ⏎',
     async (user) => {
       screen.getByRole('tab', { name: /Shape/ }).focus();
-      await user.keyboard('{ArrowRight}');
+      await user.keyboard('{ArrowRight}{Enter}');
+      expect(screen.getByRole('tab', { name: /Names/ })).toHaveFocus();
     },
   ],
   [

@@ -315,7 +315,7 @@ describe('PlacesTab', () => {
     expect(ask?.querySelector('[data-slot="skeleton"]')).not.toBeNull();
   });
 
-  it('says when staff last edited or moved the selected landmark, or that neither is recorded', () => {
+  it('says when a moderator last edited the selected landmark and a merge last changed it, or that neither is recorded', () => {
     const { unmount } = render(<PlacesTab bodyId="wb1" lit="landmark:lm-dam" />);
     const changed = () =>
       [...document.querySelectorAll('[data-slot="key-value-row"]')].find((r) =>
@@ -334,7 +334,8 @@ describe('PlacesTab', () => {
       },
     ]);
     render(<PlacesTab bodyId="wb1" lit="landmark:lm-dam" />);
-    expect(changed()).toHaveTextContent('Edited 5 Oct 2026 · Moved 7 Oct 2026');
+    // A merge is said as one: "Moved" would read as the card's Move, a moved point.
+    expect(changed()).toHaveTextContent('Edited 5 Oct 2026 · By a merge 7 Oct 2026');
   });
 
   it('says when and by what the selected landmark was added', () => {

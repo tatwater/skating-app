@@ -41,6 +41,32 @@ describe('expectKeyboardOperable', () => {
     expect(expectKeyboardOperable(container)).toHaveLength(6);
   });
 
+  it('passes an element whose own handler takes ⏎ and Space (their default prevented)', () => {
+    const take = (e: KeyboardEvent<HTMLElement>) => {
+      if (e.key === 'Enter' || e.key === ' ') e.preventDefault();
+    };
+    const { container } = render(
+      <div role="group" tabIndex={0} onClick={() => {}} onKeyDown={take}>
+        Taken
+      </div>,
+    );
+    expect(expectKeyboardOperable(container)).toHaveLength(1);
+  });
+
+  it('never counts a key a container took as the element’s own', () => {
+    const take = (e: KeyboardEvent<HTMLElement>) => {
+      if (e.key === 'Enter' || e.key === ' ') e.preventDefault();
+    };
+    const { container } = render(
+      <div onKeyDown={take}>
+        <div tabIndex={0} onClick={() => {}}>
+          Mute
+        </div>
+      </div>,
+    );
+    expect(() => expectKeyboardOperable(container)).toThrow('not Enter');
+  });
+
   it('fails an element that takes no focus', () => {
     const { container } = render(<div onClick={() => {}}>Bare</div>);
     expect(() => expectKeyboardOperable(container)).toThrow('answers a click but takes no focus');

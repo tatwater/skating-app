@@ -73,8 +73,9 @@ export type AlertRow = {
  *   sheet says these; the console's tab is about who rules and who vouches, and the board draws
  *   none of them. `blockedIds` is drawn through the alerts that block.
  * - `landmarks.listForBody`: only the name and point, for where each launch is.
- * - `bodyConsole.history`: each row's `reason` and `id`: the ruling's statement is the record's own,
- *   and the full rows are History's, on the left.
+ * - `bodyConsole.history`: each row's `id`, `action` (the read asks for rulings only), `reason`,
+ *   `via`, `undoesActionId` and `undo`: the ruling's statement is the record's own, and the full
+ *   rows — what made each write, its undo — are History's, on the left.
  * - `waterBodies.get`: everything but `publicAccess` is the frame's or another tab's.
  */
 export type AccessData = {

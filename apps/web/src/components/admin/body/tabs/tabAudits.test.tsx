@@ -1,8 +1,9 @@
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { FAILED_READ } from '@/components/admin/reads/readFailureFixtures';
 import { KeysProvider } from '@/lib/keys';
 import { expectNoBlanks } from '@/test/blanksAudit';
 import { ARRIVALS, InConsole } from '@/test/consoleArrivals';
@@ -47,7 +48,7 @@ beforeEach(() => {
 });
 
 const inKeys = (node: ReactNode) => <KeysProvider>{node}</KeysProvider>;
-const async = vi.fn(async () => null);
+const settle = async () => null;
 
 // ── The tabs with every lever ─────────────────────────────────────────────────────────────────
 
@@ -69,9 +70,9 @@ const LEVERS: Record<string, ReactNode> = {
       canPlace
       onLitChange={() => {}}
       onFileAsSpelling={() => {}}
-      onDismissName={async}
+      onDismissName={settle}
       onSamePlace={() => {}}
-      onDecline={async}
+      onDecline={settle}
       onEditLandmark={() => {}}
     />
   ),
@@ -83,9 +84,9 @@ const LEVERS: Record<string, ReactNode> = {
       data={MASCOMA_ACCESS}
       now={BOARD_TODAY}
       canPlace
-      onRule={async}
+      onRule={settle}
       onMakeOfficial={() => {}}
-      onHide={async}
+      onHide={settle}
     />
   ),
   Water: <WaterView data={MASCOMA_WATER} onChooseDepth={() => {}} canChooseDepth canFileSurvey />,
@@ -181,6 +182,11 @@ describe('every tab answers the keyboard wherever it answers a click', () => {
 });
 
 describe('no tab draws an absent fact as a blank', () => {
+  it('a launch with no landmark near it says so, not an empty line', () => {
+    render(inKeys(BARE.Access));
+    expect(screen.getByText('No landmark near it')).toBeInTheDocument();
+  });
+
   it.each(Object.entries(BARE))('%s', (_tab, node) => {
     const { container } = render(inKeys(node));
     expectNoBlanks(container);
@@ -189,20 +195,68 @@ describe('no tab draws an absent fact as a blank', () => {
 
 // ── Each tab's keys, every way it is reached ──────────────────────────────────────────────────
 
-const KEYED: [string, ReactNode, string][] = [
-  ['Access', LEVERS.Access, 'p'],
-  ['Places', LEVERS['Places, the list'], 'l'],
-  ['a landmark’s card in Places', LEVERS.Places, 'm'],
+/** Each tab's key, and the words its tool says when pressed: the right tool spoke, and only it. */
+const KEYED: [string, ReactNode, string, RegExp][] = [
+  ['Access', LEVERS.Access, 'p', /Placing a put-in/],
+  ['Places', LEVERS['Places, the list'], 'l', /Dropping a landmark/],
+  ['a landmark’s card in Places', LEVERS.Places, 'm', /Moving a landmark/],
 ];
 
+/** What each toast said, as its description. */
+const said = () => toasts.said.map((t) => String((t as { description?: unknown }).description));
+
 describe('a tab’s keys work however the tab is reached', () => {
-  for (const [tab, node, key] of KEYED) {
+  for (const [tab, node, key, words] of KEYED) {
     it.each(ARRIVALS)(`${tab}: ${key.toUpperCase()} after %s`, async (_way, arrive) => {
       const user = userEvent.setup();
       render(<InConsole panel={node} />);
       await arrive(user);
       await user.keyboard(key);
-      expect(toasts.said).toHaveLength(1);
+      expect(said()).toEqual([expect.stringMatching(words)]);
     });
   }
+});
+
+describe('a tab’s key answers only while its control is drawn', () => {
+  // The inspector listens whatever the tab draws, so a key must rest with its control.
+  it.each<[string, ReactNode, string]>([
+    ['Access, loading', <AccessView key="a" data={undefined} now={BOARD_TODAY} canPlace />, 'p'],
+    [
+      'Access, its read failed',
+      <AccessView key="a" data={FAILED_READ} now={BOARD_TODAY} canPlace />,
+      'l',
+    ],
+    [
+      'Access, a posted rule already written',
+      <AccessView
+        key="a"
+        data={{ ...MASCOMA_ACCESS, postedRule: 'Open sunrise to sunset' }}
+        now={BOARD_TODAY}
+        canPlace
+      />,
+      'r',
+    ],
+    ['Places, loading', <PlacesView key="p" data={undefined} canPlace />, 'l'],
+  ])('%s', async (_case, node, key) => {
+    const user = userEvent.setup();
+    render(<InConsole panel={node} />);
+    await user.keyboard(key);
+    expect(toasts.said).toEqual([]);
+  });
+});
+
+describe('a landmark’s card hands focus back to its row', () => {
+  function PlacesLit() {
+    const [lit, setLit] = useState<string | null>(SELECTED_UPPER);
+    return <PlacesView data={MASCOMA_PLACES} lit={lit} canPlace onLitChange={setLit} />;
+  }
+
+  it('so the tab’s keys answer once the card is gone', async () => {
+    const user = userEvent.setup();
+    render(<InConsole panel={<PlacesLit />} />);
+    await user.keyboard('{Escape}');
+    expect(document.activeElement).toHaveAttribute('data-landmark-id', 'lm-upper');
+    await user.keyboard('l');
+    expect(said()).toEqual([expect.stringMatching(/Dropping a landmark/)]);
+  });
 });

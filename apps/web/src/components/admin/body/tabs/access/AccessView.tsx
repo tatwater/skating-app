@@ -86,10 +86,17 @@ export function AccessView({
   onHide,
 }: AccessViewProps) {
   const root = useRef<HTMLDivElement>(null);
+  // A key answers only while its control is drawn: none while the tab loads or its read failed
+  // (the inspector listens then too), and R only while the posted rules' tile is there.
+  const ready = data !== undefined && !isFailed(data) ? data : null;
   useTabKeys(root, [
-    { key: 'P', run: () => sayUnavailable(TOOLS.putIn), enabled: canPlace },
-    { key: 'L', run: () => sayUnavailable(TOOLS.lot), enabled: canPlace },
-    { key: 'R', run: () => sayUnavailable(TOOLS.rules), enabled: canPlace },
+    { key: 'P', run: () => sayUnavailable(TOOLS.putIn), enabled: canPlace && ready !== null },
+    { key: 'L', run: () => sayUnavailable(TOOLS.lot), enabled: canPlace && ready !== null },
+    {
+      key: 'R',
+      run: () => sayUnavailable(TOOLS.rules),
+      enabled: canPlace && ready?.postedRule === null,
+    },
   ]);
   if (data === undefined) {
     return (
@@ -374,7 +381,8 @@ function PutInItem({
             ) : isFailed(p.where) ? (
               <CouldntRead />
             ) : (
-              (p.where ?? '')
+              // No landmark close enough to name it by: said, never an empty line.
+              (p.where ?? 'No landmark near it')
             )}
           </span>
           {actions || <span />}

@@ -5,6 +5,7 @@ import { useRef } from 'react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ReadFailure } from '@/components/admin/reads/consoleReads';
 import { KeysProvider } from '@/lib/keys';
+import { ARRIVALS as CONSOLE_ARRIVALS } from '@/test/consoleArrivals';
 import { expectKeyboardOperable } from '@/test/keyboardAudit';
 import { stubJsdomAnimations } from '../tabs/jsdomStubs';
 import { ShapeTabView } from '../tabs/shape/ShapeTab';
@@ -64,27 +65,9 @@ function KeyedTab({ onKey }: { onKey: () => void }) {
   );
 }
 
-/** Each way a tab is reached, and where focus is left by it. */
-const ARRIVALS: [string, (user: ReturnType<typeof userEvent.setup>) => Promise<void>][] = [
-  // The list's Open and a deep link both mount the console with nothing focused.
-  ['the list’s Open or a deep link', async () => {}],
-  ['a press on the tab strip', (user) => user.click(screen.getByRole('tab', { name: /Names/ }))],
-  [
-    'the tab strip’s arrows and ⏎ (the arrows alone only move focus along the strip)',
-    async (user) => {
-      screen.getByRole('tab', { name: /Shape/ }).focus();
-      await user.keyboard('{ArrowRight}{Enter}');
-      expect(screen.getByRole('tab', { name: /Names/ })).toHaveFocus();
-    },
-  ],
-  [
-    'an ask',
-    async (user) => {
-      screen.getByRole('listbox', { name: 'Asked of this body' }).focus();
-      await user.keyboard('{Enter}');
-      await waitFor(() => expect(screen.getByRole('tabpanel')).toHaveFocus());
-    },
-  ],
+/** Each way a tab is reached (the tabs' audit's, shared), and focus already in the tab. */
+const ARRIVALS: typeof CONSOLE_ARRIVALS = [
+  ...CONSOLE_ARRIVALS,
   [
     'focus already in the tab',
     async () => screen.getByRole('button', { name: 'In the tab' }).focus(),

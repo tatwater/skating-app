@@ -270,13 +270,17 @@ export function LandmarkCard({
   );
 }
 
-/** When staff last edited or moved a landmark, in the read's state — or that neither is recorded. */
+/**
+ * When a moderator last edited a landmark and a lake merge last changed it, in the read's state —
+ * or that neither is recorded. A merge is said as one, never as "Moved": the card's Move is a moved
+ * point, which the read records as an edit.
+ */
 function ChangedValue({ added }: { added: Loadable<Added | null> }) {
   if (added === undefined) return <LoadingLine width="7rem" />;
   if (isFailed(added)) return <CouldntRead />;
   const parts = [
     added?.edited != null ? `Edited ${statusDate(added.edited)}` : null,
-    added?.moved != null ? `Moved ${statusDate(added.moved)}` : null,
+    added?.merged != null ? `By a merge ${statusDate(added.merged)}` : null,
   ].filter((p): p is string => p !== null);
   if (parts.length === 0) return <NotRecorded />;
   return <span>{parts.join(' · ')}</span>;

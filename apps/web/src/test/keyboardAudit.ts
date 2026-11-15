@@ -47,6 +47,9 @@ export function expectKeyboardOperable(root: HTMLElement): HTMLElement[] {
     if (!reachable(el)) {
       throw new Error(`${nameOf(el)} answers a click but takes no focus`);
     }
+    // Only the element's own key handler can take a key for it: a container (or the page's keys)
+    // preventing ⏎ or Space says nothing about this element.
+    const ownKeys = typeof props.onKeyDown === 'function';
     for (const key of role === 'link' ? ['Enter'] : ['Enter', ' ']) {
       let pressed = 0;
       const count = () => {
@@ -56,7 +59,7 @@ export function expectKeyboardOperable(root: HTMLElement): HTMLElement[] {
       try {
         el.focus();
         // Taken: the key pressed it (a click reached it), or its own handler took the key.
-        if (!fireEvent.keyDown(el, { key })) pressed++;
+        if (!fireEvent.keyDown(el, { key }) && ownKeys) pressed++;
       } finally {
         el.removeEventListener('click', count);
       }

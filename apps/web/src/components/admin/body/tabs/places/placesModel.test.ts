@@ -257,13 +257,13 @@ describe('people and provenance', () => {
       { landmarkId: 'c', source: 'corpus', createdAt: PASS, createdBy: null },
       { landmarkId: 'd', source: 'someday', createdAt: PASS, createdBy: null },
     ]);
-    expect(added.get('a')).toEqual({ at: PASS, by: personFrom(KATE), edited: null, moved: null });
+    expect(added.get('a')).toEqual({ at: PASS, by: personFrom(KATE), edited: null, merged: null });
     expect(added.get('b')?.by).toBe(ADDED_BY.osm);
     expect(added.get('c')?.by).toBe('From the community’s emails');
     expect(added.get('d')?.by).toBe('someday');
   });
 
-  it('keeps when staff last edited or moved each landmark — nothing the read returns is dropped', () => {
+  it('keeps when a moderator last edited and a merge last changed each landmark — nothing the read returns is dropped', () => {
     const added = addedByLandmark([
       {
         landmarkId: 'a',
@@ -274,7 +274,21 @@ describe('people and provenance', () => {
         movedAt: PASS + 2,
       },
     ]);
-    expect(added.get('a')).toMatchObject({ edited: PASS + 1, moved: PASS + 2 });
+    expect(added.get('a')).toMatchObject({ edited: PASS + 1, merged: PASS + 2 });
+  });
+
+  it('never reads the edit stamp a moderator’s landmark gets as it is made as an edit', () => {
+    const added = addedByLandmark([
+      {
+        landmarkId: 'a',
+        source: 'moderator',
+        createdAt: PASS,
+        createdBy: KATE,
+        moderatorEditedAt: PASS,
+        movedAt: null,
+      },
+    ]);
+    expect(added.get('a')).toMatchObject({ edited: null, merged: null });
   });
 
   it('marks an erased asker as erased, never as nobody', () => {

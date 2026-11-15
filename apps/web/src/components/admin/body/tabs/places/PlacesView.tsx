@@ -4,7 +4,7 @@ import {
   type CorpusNameDismissReason,
   type LandmarkKind,
 } from '@skating/core';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { isFailed } from '@/components/admin/reads/consoleReads';
 import { Tag, TagRun } from '@/components/kit/badge';
 import { Button } from '@/components/kit/button';
@@ -133,8 +133,24 @@ export function PlacesView({
   const selected = selectedLandmark(data, lit);
   const landmarks = data === undefined ? [] : rowsOf(data.landmarks);
   useTabKeys(root, [
-    { key: 'L', run: () => sayUnavailable(MAP_TOOLS.drop), enabled: canPlace && selected === null },
+    {
+      key: 'L',
+      run: () => sayUnavailable(MAP_TOOLS.drop),
+      // Only while Drop a landmark is drawn: never while the tab loads (the inspector listens then
+      // too), never under a landmark's card.
+      enabled: canPlace && data !== undefined && selected === null,
+    },
   ]);
+  // The card's way back hands focus to the row that opened it: the card leaving with focus inside
+  // would drop it to the page, where none of the tab's keys answer.
+  const returnTo = useRef<string | null>(null);
+  const selectedId = selected?.id ?? null;
+  useEffect(() => {
+    if (selectedId !== null || returnTo.current === null) return;
+    const id = returnTo.current;
+    returnTo.current = null;
+    root.current?.querySelector<HTMLElement>(`[data-landmark-id="${CSS.escape(id)}"]`)?.focus();
+  }, [selectedId]);
   if (data === undefined) {
     return (
       <TabBody aria-busy="true" data-slot="places-tab">
@@ -225,7 +241,10 @@ export function PlacesView({
           key={selected.id}
           landmark={selected}
           canPlace={canPlace}
-          onBack={() => onLitChange?.(null)}
+          onBack={() => {
+            returnTo.current = selected.id;
+            onLitChange?.(null);
+          }}
           onEdit={onEditLandmark ? (edit) => onEditLandmark(selected.id, edit) : undefined}
         />
       )}
@@ -276,6 +295,7 @@ function LandmarkListRow({
         <button
           type="button"
           data-slot="landmark-row"
+          data-landmark-id={l.id}
           data-hovered={hovered ? '' : undefined}
           data-selected={selected ? '' : undefined}
           aria-pressed={selected}
