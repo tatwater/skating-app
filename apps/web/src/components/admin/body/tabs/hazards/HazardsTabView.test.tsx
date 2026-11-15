@@ -718,3 +718,37 @@ describe('HazardsTabView — a list, and a past winter', () => {
     expect(BODY_NOW).toBeGreaterThan(FEB_NOW);
   });
 });
+
+describe('HazardsTabView — each failure note is a region mounted before its words', () => {
+  // Each read's note: its words, the props that fail it, and the state that brings it back.
+  const notes: [string, Partial<HazardsTabViewProps>][] = [
+    ['The hazards on the lake couldn’t be read', { hazards: 'error' }],
+    ['The pre-ice pass couldn’t be read', { patternsWaiting: 'error' }],
+    ['The archived hazards couldn’t be read', { archived: 'error' }],
+    ['The winter’s day-by-day count couldn’t be read', { winters: 'error' }],
+    ['The known features couldn’t be read', { features: 'error' }],
+  ];
+
+  it.each(notes)(
+    '“%s” is announced as it comes, and focus stays when it goes',
+    async (words, failed) => {
+      const { rerender } = render(<HazardsTabView {...base} {...failed} />);
+      const region = screen.getByText(words).closest('[role="status"]') as HTMLElement;
+      await userEvent.click(within(region).getByRole('button', { name: 'Try again' }));
+      rerender(<HazardsTabView {...base} />);
+      // The same region, still in the page, empty — and focus kept on it, never dropped to the page.
+      expect(region).toBeInTheDocument();
+      expect(region).toHaveTextContent('');
+      expect(region).toHaveFocus();
+      cleanup();
+      // Mounted before any failure: the region is there, empty, while the read is on its way.
+      render(
+        <HazardsTabView
+          {...base}
+          {...Object.fromEntries(Object.keys(failed).map((k) => [k, undefined]))}
+        />,
+      );
+      expect(screen.queryByText(words)).toBeNull();
+    },
+  );
+});

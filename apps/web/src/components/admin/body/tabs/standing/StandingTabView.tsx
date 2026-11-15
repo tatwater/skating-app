@@ -199,20 +199,23 @@ export function StandingTabView({
         )}
       </Section>
 
-      {standing.standing === 'active' &&
-        (retention === undefined ? (
-          <Section title="What keeps it active" data-slot="standing-retention" aria-busy="true">
+      {standing.standing === 'active' && (
+        <Section
+          title="What keeps it active"
+          data-slot="standing-retention"
+          aria-busy={retention === undefined || undefined}
+        >
+          {/* Mounted in every state: a failure's words are announced, and focus stays when they go. */}
+          <RetryNote onRetry={onRetry} pending={retryPending}>
+            {retention === 'error' ? 'What keeps it active couldn’t be read' : null}
+          </RetryNote>
+          {retention === undefined ? (
             <LoadingSection lines={3} />
-          </Section>
-        ) : retention === 'error' ? (
-          <Section title="What keeps it active" data-slot="standing-retention">
-            <RetryNote onRetry={onRetry} pending={retryPending}>
-              What keeps it active couldn’t be read
-            </RetryNote>
-          </Section>
-        ) : (
-          <Retention facts={retention} now={now} />
-        ))}
+          ) : retention === 'error' ? null : (
+            <Retention facts={retention} now={now} />
+          )}
+        </Section>
+      )}
     </div>
   );
 }
@@ -420,7 +423,7 @@ function FormError({ error }: { error: string | null }) {
 function Retention({ facts, now }: { facts: RetentionFacts; now: number }) {
   const model = retentionModel(facts, now);
   return (
-    <Section title="What keeps it active" data-slot="standing-retention">
+    <>
       {model.lanes.length > 0 && (
         <LaneTimeline
           start={model.start}
@@ -443,6 +446,6 @@ function Retention({ facts, now }: { facts: RetentionFacts; now: number }) {
           Not recorded yet: {model.notRecorded}.
         </p>
       )}
-    </Section>
+    </>
   );
 }

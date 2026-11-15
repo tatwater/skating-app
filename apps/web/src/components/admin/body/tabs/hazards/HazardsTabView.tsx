@@ -241,13 +241,13 @@ export function HazardsTabView({
           end={current ? undefined : <Badge tone="lit">Read-only</Badge>}
           aria-busy={hazards === undefined || undefined}
         >
+          {/* Mounted in every state: a failure's words are announced, and focus stays when they go. */}
+          <TabRetryNote data-slot="hazards-failed" onRetry={onRetry}>
+            {hazards === 'error' ? 'The hazards on the lake couldn’t be read' : null}
+          </TabRetryNote>
           {hazards === undefined ? (
             <LoadingSection lines={3} />
-          ) : hazards === 'error' ? (
-            <TabRetryNote data-slot="hazards-failed" onRetry={onRetry}>
-              The hazards on the lake couldn’t be read
-            </TabRetryNote>
-          ) : listed ? (
+          ) : hazards === 'error' ? null : listed ? (
             <>
               {strips}
               <HazardList
@@ -321,11 +321,12 @@ export function HazardsTabView({
               )
             }
           >
+            <TabRetryNote data-slot="patterns-failed" onRetry={onRetry}>
+              {patternsWaiting === 'error' ? 'The pre-ice pass couldn’t be read' : null}
+            </TabRetryNote>
             {patternsWaiting === undefined ? (
               <LoadingSection lines={1} />
-            ) : patternsWaiting === 'error' ? (
-              <TabRetryNote onRetry={onRetry}>The pre-ice pass couldn’t be read</TabRetryNote>
-            ) : (
+            ) : patternsWaiting === 'error' ? null : (
               <p className="m-0 text-row leading-(--lead-list) text-fg1">
                 {HAZARDS_WORDS.patternsLine(
                   wordsContext({
@@ -388,13 +389,23 @@ function QuietWinter({
   onRetry: (() => void) | undefined;
   strips: ReactNode;
 }) {
-  if (archived === undefined) return <LoadingSection lines={2} />;
+  const note = (
+    <TabRetryNote data-slot="archived-failed" onRetry={onRetry}>
+      {archived === 'error' ? 'The archived hazards couldn’t be read' : null}
+    </TabRetryNote>
+  );
+  if (archived === undefined) {
+    return (
+      <>
+        {note}
+        <LoadingSection lines={2} />
+      </>
+    );
+  }
   if (archived === 'error') {
     return (
       <>
-        <TabRetryNote data-slot="archived-failed" onRetry={onRetry}>
-          The archived hazards couldn’t be read
-        </TabRetryNote>
+        {note}
         {strips}
       </>
     );
@@ -408,6 +419,7 @@ function QuietWinter({
   });
   return (
     <>
+      {note}
       <div data-slot="hazards-empty" className="flex flex-col gap-(--space-1_5)">
         <span className="text-body leading-(--lead-snug) text-fg">
           {HAZARDS_WORDS.quietHeadline(words)}
@@ -428,11 +440,22 @@ const STRIPS_ASPECT = { one: 'aspect-[340/32]', two: 'aspect-[340/62]' };
  * The winters' strips, the words a strip can't carry — today's count, an
  * archived hazard's missing end, a count that stopped short — and the read's own states.
  */
-function WinterBlock({
+function WinterBlock(props: Parameters<typeof WinterBody>[0]) {
+  // Mounted in every state: a failure's words are announced, and focus stays when they go.
+  return (
+    <>
+      <TabRetryNote data-slot="hazards-winters-failed" onRetry={props.onRetry}>
+        {props.winters === 'error' ? 'The winter’s day-by-day count couldn’t be read' : null}
+      </TabRetryNote>
+      <WinterBody {...props} />
+    </>
+  );
+}
+
+function WinterBody({
   winters,
   season,
   alone,
-  onRetry,
 }: {
   winters: Read<Winters>;
   season: Season;
@@ -449,13 +472,7 @@ function WinterBlock({
       />
     );
   }
-  if (winters === 'error') {
-    return (
-      <TabRetryNote data-slot="hazards-winters-failed" onRetry={onRetry}>
-        The winter’s day-by-day count couldn’t be read
-      </TabRetryNote>
-    );
-  }
+  if (winters === 'error') return null;
   const lines = alone ? winters.lines.slice(0, 1) : winters.lines;
   const first = lines[0];
   const todayDay = first !== undefined && winters.today !== null ? first.days[winters.today] : null;
@@ -698,21 +715,25 @@ function GoneSlots({ n, of }: { n: number; of: number }) {
   );
 }
 
-function ArchivedList({
+function ArchivedList(props: Parameters<typeof ArchivedListBody>[0]) {
+  return (
+    <>
+      <TabRetryNote data-slot="archived-failed" onRetry={props.onRetry}>
+        {props.rows === 'error' ? 'The archived hazards couldn’t be read' : null}
+      </TabRetryNote>
+      <ArchivedListBody {...props} />
+    </>
+  );
+}
+
+function ArchivedListBody({
   rows,
-  onRetry,
 }: {
   rows: Read<readonly ArchivedRow[]>;
   onRetry: (() => void) | undefined;
 }) {
   if (rows === undefined) return <LoadingSection lines={2} />;
-  if (rows === 'error') {
-    return (
-      <TabRetryNote data-slot="archived-failed" onRetry={onRetry}>
-        The archived hazards couldn’t be read
-      </TabRetryNote>
-    );
-  }
+  if (rows === 'error') return null;
   if (rows.length === 0) return null;
   return (
     <ul className="m-0 flex list-none flex-col p-0">
@@ -735,9 +756,19 @@ function ArchivedList({
   );
 }
 
-function FeatureList({
+function FeatureList(props: Parameters<typeof FeatureListBody>[0]) {
+  return (
+    <>
+      <TabRetryNote data-slot="features-failed" onRetry={props.onRetry}>
+        {props.features === 'error' ? 'The known features couldn’t be read' : null}
+      </TabRetryNote>
+      <FeatureListBody {...props} />
+    </>
+  );
+}
+
+function FeatureListBody({
   features,
-  onRetry,
   lit,
   onLitChange,
   litOf,
@@ -759,13 +790,7 @@ function FeatureList({
   onAsk: (f: FeatureRowWithGlyph) => void;
 }) {
   if (features === undefined) return <LoadingSection lines={2} />;
-  if (features === 'error') {
-    return (
-      <TabRetryNote data-slot="features-failed" onRetry={onRetry}>
-        The known features couldn’t be read
-      </TabRetryNote>
-    );
-  }
+  if (features === 'error') return null;
   if (features.length === 0) return null;
   return (
     <ul aria-label="Known features" className="m-0 flex list-none flex-col p-0">
