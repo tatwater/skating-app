@@ -3170,9 +3170,12 @@ Imagery/Hazards/Standing/Links), cherry-picked serially onto `b01-3` off the kit
   | Places | Decline | `corpusRequests.decline` (the request, a note) | Decides it as declined with the note the asker reads | The ask leaves the list | Later (Inbox) |
   | Access | Rule accessible; Rule no public access; Clear the ruling | `waterBodies.setPublicAccess` (the body, a verdict or `null`) | Sets the ruling; *accessible* brings a listed body back; closes open *no public access* flags | The lever for the ruling now standing goes | Set back |
   | Access | Hide | `putIns.hide` (the body, the launch's point, a reason) | Inserts a hidden row there, which hides every launch within 150 m (the dialog says "with every launch close by") | The launch leaves the list | Not built for a body target |
-  | Access | **Make official** | `putIns.setOfficial` | **Inserts a second, official put-in** at the point (no parking, no walk) and leaves the launch | **Mismatch → *Not available yet*** (BS20) | — |
+  | Access | **Make official** | ~~`putIns.setOfficial`~~ `putIns.promote` (the launch, a name only when given) — B01-3e | Makes the stored launch official on its own row: point, bay, lot and walk kept | The row reads *official*, its walk kept; the lever goes | Puts the source and name back (asks a reason) |
+  | Names | Aliases (add, remove) — B01-3e | `waterBodies.setAliases` (the body, the whole list, `expected`) | Replaces the moderator's aliases; refuses past 20 or 120 characters, in place | Through the one queue; a moved list re-applied on top | Set back |
+  | Names | Another class; Back to the catalogs' class — B01-3e | `waterBodies.setClass` (the body, a class or `null`) | Sets `moderatorClass` (the class follows); `null` puts back the import's own ranking | The chosen class holds; Back goes with no override | Set back |
+  | Water | A depth's source — B01-3e | `waterBodies.chooseDepthSource` (the body, mean or max, a source or `null`) | Holds the measure on that source's value; refuses a source with no value or a mean deeper than the max | The chosen source wears its mark; pressing it again sends nothing | Set back |
   | Imagery | Satellite link | `waterBodies.setSatelliteImagery` (the body, a mode) | Patches the mode | The chosen mode holds; pressing it again sends nothing | Set back |
-  | Imagery | Show anyway; Hide from skaters | — | No writer on the server (BS13) | *Not available yet* | — |
+  | Imagery | Show anyway; Hide from skaters | (`imageryOverrides.set`, B01-3d, not wired) | — | *Not available yet*: the apps don't honor an override yet (B01-3e) | — |
   | Hazards | Demote | `bodyFeatures.demote` (the feature, a reason) | Sets the feature inactive; the active read drops it; frees its source hazard | The feature leaves the list | Later |
   | Standing | Set dormant; Bring back | `standing.setStanding` (the body, a standing, a note) | Sets the standing with the note; refuses a move it can't make | The pick follows the record; the form goes | Set back |
   | Standing | Remove from the map; Restore | `waterBodies.remove` / `restore` (the body) | Stamps or clears `removedAt` and its reason | The form goes; Restore is picked from Active | Each other |
@@ -3184,26 +3187,10 @@ Imagery/Hazards/Standing/Links), cherry-picked serially onto `b01-3` off the kit
   switch to another body already read, and its save targeted the new body). One place keys a body's
   subtree: `BodyTabHost` mounts every tab and its dock keyed by body and tab; the map's drawing
   probe, the left column and the list's preview are keyed by body too. Kept across bodies on
-  purpose: nothing. And every write is bound (`frame/currentBody.tsx`), with one explicit
-  lifetime: a binding is one console's hold on one body, made by `BodyBindingProvider` (above the
-  console's loading and tab branches, and in each tab host), alive from its commit until that
-  console goes away for any reason — the body changes, a loading or failed state takes its place,
-  the tab host unmounts, the route is left, the shell remounts — and never revived (coming back is
-  a new console). A consumer holds the binding current at its mount; every write goes through
-  `sendFor`, and the list queue checks the binding before taking up, sending and taking in each
-  save. So nothing is sent once its console has gone (a save already pressed and queued is
-  dropped), and a write already on its way lands but its refusal and receipt are dropped (History
-  keeps the row). Proved by a model-based test (`bodyBinding.model.test.tsx`, fast-check over
-  opening cached, uncached and failing bodies, tab switches, single and queued saves answered late,
-  leaving and returning, remounts — on the real provider, host, queue and `sendFor`), and by named
-  examples in the real route (Links, Standing, Access's Hide). Each tab
-  and the preview have a switch test. **Open (a founder call):** a receipt toast already showing
-  when the page switches stays its ten seconds over the next body, its title unnamed ("Links
-  saved") and its Undo for the body it came from — close receipts on a switch, or name the body in
-  them. The People pages
-  (the `b01-4-people-person` branch, read, not changed) already remount the person's page by user
-  id, and their receipts name the person; a late one still shows after a switch, under that
-  person's name.
+  purpose: nothing — every draft, pick, open dialog and typed reason dies with its console. **A
+  save, once pressed, is not a draft:** it completes against the body it was composed for, wherever
+  the page goes next — the rule as built in the follow-up, *The save lifetime* under B01-3e below
+  (it replaced the first rule, which dropped a save whose console had gone).
 - **A write's completion acts only on the attempt that started it** (Greptile's P2 on #121). Links'
   editor openings each have an id; the reason dialog, Hazards' demote, Imagery's hide ask, Standing's
   form and the map boost tie their answers to their own opening or commit. The dialogs refuse to
@@ -3225,18 +3212,18 @@ yet* (or the fact as unknown) until its read lands.
 | BS6 | The starting page size | The list | 🟢 server |
 | BS7 | `waterBodies.consoleExtras` — towns, `hasBathymetry`, `outlineTrustedSince`, `touchingBodyIds` | The console's identity list, completeness's bathymetry, neighbors on the map | 🟢 server |
 | BS8 | `subAreas.listForBody` with `createdAt` / `createdVia`; a body-scoped history read that includes its sub-areas, landmarks and put-ins | Shape's bays; the console's history; *Changed this week* | 🟢 server |
-| BS9 | Names: `setAliases`, `setClass` and class claims, per-catalog name claims unfolded | The Names tab's writes | ⚪ deferred (after #110) |
+| BS9 | Names: `setAliases`, `setClass` and class claims, per-catalog name claims unfolded | The Names tab's writes | 🟢 server (B01-3d) and page (B01-3e): `setAliases`, `setClass`, `bodyConsole.identity`; class claims stored from each body's next campaign. Per-catalog *name* claims unfolded still owed |
 | BS10 | Places: `adminAreas.placesForBody`; the asker on landmark requests; a landmark's `createdAt` / `createdBy` | The Places tab | 🟢 server |
-| BS11 | Water: `depthCandidates` + `chooseDepthSource`; `bathymetryState` + `fileBathymetrySurvey` | The Water tab | 🟡 server: `hasBathymetry` only; the rest deferred (after #110) |
+| BS11 | Water: `depthCandidates` + `chooseDepthSource`; `bathymetryState` + `fileBathymetrySurvey` | The Water tab | 🟢 `depthChoices` + `chooseDepthSource`, `bathymetrySearched` (B01-3c/3d, adopted in B01-3e); 🟡 the survey filing held for the founder's call |
 | BS12 | `listActions` filtered by action, indexed | Access's ruling history, the tabs' receipts | 🟡 server: the index and `bodyConsole.history`; `listActions` deferred |
-| BS13 | Imagery: `imagery.setPassOverride` + `overridesForBody` | The Imagery tab's call on a pass | ⚪ deferred (after #110) |
+| BS13 | Imagery: `imagery.setPassOverride` + `overridesForBody` | The Imagery tab's call on a pass | 🟡 server built (`imageryOverrides`, B01-3d); the page leaves it *Not available yet* until the apps honor overrides (B01-3e) |
 | BS14 | Standing: `standing.retentionForBody` | The Standing tab's lane timeline | 🟢 server |
 | BS15 | Hazards: `hazards.dailyOnLakeForBody`; the watch's opening date | The Hazards tab's winters and day strips | 🟢 server |
-| BS16 | `bodyFeatures.updateShape` | Editing a known feature's footprint | ⚪ deferred (after #110) |
-| BS17 | A compare-and-set on the whole-list writers (`waterBodies.setReferenceLinks`, `landmarks.update`'s `aliases`): the list or version the write was built on, refused when it moved | Two moderators editing one body's links or spellings at once: today the later write silently drops the earlier | ⚪ owed |
-| BS18 | `bodyConsole.dailyHazards` counts a reported crossing (`ridge_crossing`) as a hazard on the lake, every day from its first report through today (its 72-hour expiry is applied at read, never stored), with a first-report mark, and returns no type to tell it apart: leave passage markers out, or return the type | The day strips and their counts | ⚪ owed |
-| BS19 | `recurrence.listForBodyAdmin` stops at 1,000 clusters and says nothing: a `more` | Hazards' *patterns waiting* count, today drawn as whole | ⚪ owed |
-| BS20 | `putIns.promote({ putInId, name?, reason? })`, `body.access`: makes the selected visible `osm` or `derived` row `official` **in place** — its id, point, bay, `parkingAreaId`, `approachMeters`, `approachRouted`, `approachAscentM`, `approachPath` and `approachKindOverride` kept; the name set only when given; a `set_put_in` audit row with `metadata.prev` (source, name), `accessKind` recomputed, the standing rule `setOfficial` applies (an official put-in brings a dormant body back) kept. Undo puts the source and name back, leaving the row and its walk. `setOfficial` stays for placing a new point. | Access's *Make official*, drawn *Not available yet* until then | ⚪ owed |
+| BS16 | `bodyFeatures.updateShape` | Editing a known feature's footprint | 🟡 server built (B01-3d); the page leaves it *Not available yet*: the map contract has no edit mode (B01-3e) |
+| BS17 | A compare-and-set on the whole-list writers (`waterBodies.setReferenceLinks`, `landmarks.update`'s `aliases`): the list or version the write was built on, refused when it moved | Two moderators editing one body's links or spellings at once: today the later write silently drops the earlier | 🟢 `expected` / `list_changed` (B01-3d); the queue re-applies on top (B01-3e) |
+| BS18 | `bodyConsole.dailyHazards` counts a reported crossing (`ridge_crossing`) as a hazard on the lake, every day from its first report through today (its 72-hour expiry is applied at read, never stored), with a first-report mark, and returns no type to tell it apart: leave passage markers out, or return the type | The day strips and their counts | 🟢 `days[].crossings`, `hazards[].type`/`passage` (B01-3d, drawn in B01-3e) |
+| BS19 | `recurrence.listForBodyAdmin` stops at 1,000 clusters and says nothing: a `more` | Hazards' *patterns waiting* count, today drawn as whole | 🟢 `recurrence.waitingCountForBody` `{ count, capped }` (B01-3d, drawn in B01-3e) |
+| BS20 | `putIns.promote({ putInId, name?, reason? })`, `body.access`: makes the selected visible `osm` or `derived` row `official` **in place** — its id, point, bay, `parkingAreaId`, `approachMeters`, `approachRouted`, `approachAscentM`, `approachPath` and `approachKindOverride` kept; the name set only when given; a `set_put_in` audit row with `metadata.prev` (source, name), `accessKind` recomputed, the standing rule `setOfficial` applies (an official put-in brings a dormant body back) kept. Undo puts the source and name back, leaving the row and its walk. `setOfficial` stays for placing a new point. | Access's *Make official*, drawn *Not available yet* until then | 🟢 `putIns.promote` (B01-3d, wired in B01-3e) |
 
 ### The Bodies reads the pages asked for (B01-3c, the second server follow-up)
 
@@ -3295,9 +3282,10 @@ their own PR (they would have taken this one past its size, and two need a call;
   only decide whether to run another pass (`=== PAGE`, then continue) are left: an extra empty pass,
   never a wrong count.
 
-**Owed — the writes PR:** `setAliases` (`moderatorAliases`, folded into the library row) and
-`setClass`; `chooseDepthSource` with every source's candidate kept, and `fileBathymetrySurvey`; the
-imagery pass override and its read; `bodyFeatures.updateShape`. Two need a call first: per-catalog
+**Owed — the writes PR:** ~~`setAliases` (`moderatorAliases`, folded into the library row) and
+`setClass`~~; ~~`chooseDepthSource` with every source's candidate kept~~, and `fileBathymetrySurvey`;
+~~the imagery pass override and its read~~; ~~`bodyFeatures.updateShape`~~ (all but the survey
+filing built in B01-3d; what the page made of each is under B01-3e). Two need a call first: per-catalog
 class claims exist only at import time (the import must start storing them, and old bodies read
 *not recorded* until the next campaign), and what a survey filing records.
 
@@ -3743,6 +3731,89 @@ draws 34; the role menu's item takes two lines.
   library and the Body console lay out their own columns and break the same way at phone width —
   each adopts the rule once its open PRs land. The kit `AppShell`'s own stacking (below `lg`, for
   pages that pass it panes) measures the same way and should read the same rule.
+
+### The Body console follow-up (B01-3e, local, on the stack)
+
+Built on #121's head with B01-3d merged in as its first commit; what the pages made of B01-3c's
+reads and B01-3d's writes, the save rule the stack's last P1 asked for, and the owed small items.
+
+- **The save lifetime** (the stack's last P1: *saves outlive the body*). A draft dies with its
+  console; a pressed save never does.
+  - **A save carries the body it was composed for** and completes against that body whatever the
+    page does next — a tab switch, another body, an uncached body loading, leaving the Bodies area.
+    Every write goes through `sendFor` (`frame/currentBody.tsx`): it always sends; a write naming
+    another body than its console's own (a subtree that missed its reset) is refused loudly.
+  - **Whole-list saves queue above the consoles**, per body, in the admin shell
+    (`ListWritersProvider` in `ConsoleLayout`, keyed `links:<body>`, `aliases:<landmark>`,
+    `names-aliases:<body>`), so a queued save goes out after its console has gone. Each sends the
+    list it was built on (`expected` / `expectedAliases`); on `list_changed` it re-applies the change
+    on top of the current list and sends again (three times at most), and says plainly when the change
+    no longer applies (*Not saved*, naming the body).
+  - **A result is said honestly, wherever the page is.** A receipt names its body ("Links saved ·
+    Mascoma Lake": a `subject` on the shared undo `Receipt`, composed once in `announce`), so its Undo
+    is unambiguous on any page — this settles the call the stack left open (close receipts on a
+    switch, or name the body). A refusal is said in place while
+    the console that sent it is on screen; once that console has gone it is a toast naming the body
+    and what failed ("Not saved · Mascoma Lake — The links: …"), never swallowed.
+  - **Proved** by the model test (`bodyBinding.model.test.tsx`, fast-check over opening cached,
+    uncached and failing bodies, tab switches, typing, single and queued saves answered late, another
+    moderator's write, leaving and returning, remounts): every pressed save is sent exactly once to
+    its body; none is dropped; no draft travels; no result is unnamed off its console; nothing is
+    resurrected. Mutation-checked (dropping a save when its console goes, an unnamed receipt, a
+    swallowed refusal, the queue held in the tab: each red). The named examples stand, rewritten to
+    the rule.
+- **Reads adopted.** The search's other standings (`searchOtherStandings`: counted to the server's
+  bound, a floor past it, gathered under the board's dividers — the three dormant lanes are one
+  *Dormant* — and *(other standings unfiltered)* when the lane's facets are set); *Opened recently*
+  on `rowsByIds` (the library's own rows, one read; a merged id listed once as its survivor;
+  unlisted and unknown ids said at the list's end); the preview's `askers` (*asked by 3*, *10+*),
+  `intake` (its own section) and each town's own state (`townState`, `moreTownsWithState`: a border
+  body's town goes bare rather than take a guessed state); a removed body's record on the preview
+  and the console's page (`removedFacts`: area, how it left — when, who, the listed reason, the
+  row's words — towns, the report floor, by one rule `removalFromLeft`); completeness from
+  `consoleExtras.complete` (the frame no longer reads `bodies.preview`); `bathymetrySearched`;
+  the Names map's town lines (`townLines`).
+- **The town lines are each town's outline, not the borders between towns.** The read gives one
+  ring per town; the page draws each ring where it passes the body's view and names it on its inside
+  only, so where two towns meet two lines run side by side, each naming its own town — the board's
+  line with a town either side, drawn twice. A town whose outline isn't stored is said under the
+  towns (*On the map, 1 town's line isn't stored yet*), a failed read in the tab's failures.
+- **Writes turned on** (the table above): Names' aliases and class (with `bodyConsole.identity`; each
+  catalog's class reads *not recorded until this body's next import campaign*), Water's depth
+  source (`depthChoices`), Access's *Make official* (`promote`). Each is on the one write path with
+  a receipt naming its body, and tested for the lever gone after the server's real answer, a second
+  press writing nothing, the keyboard, focus, and an undo only when it would succeed.
+- **Hazards**: a day's live crossings (*1 reported crossing*, never a hazard and never a way across),
+  passage markers out of the first reports, and *patterns waiting* from `waitingCountForBody`
+  (*At least 1,000 … the count stopped short* past its bound).
+- **Controls still unavailable, and why:**
+  - *Show anyway* / *Hide from skaters* (Imagery): the server's override exists, but neither app's
+    `useFreezeUpTimeline` passes `passOverrides`, so a call made here would change nothing a skater
+    sees while the console said it had.
+  - *Edit shape* (Hazards' known features): `bodyFeatures.updateShape` exists, but the map contract
+    (`map/`) has no edit mode — no way to hand a feature's geometry to the map, let a moderator move
+    its vertices, and take the edited geometry back. It needs that mode (draw and edit on
+    `BodyMap`, with its own undo of a vertex move) before the control can be honest.
+  - *File a survey* (Water): what a filing records is the founder's call (held above).
+- **Small items:** one clock and one id shape for every read (`reads/readArgs.ts`: `useClockFor`,
+  `minuteOf`, `ID_SHAPE`; the People branch keeps its own copies in `people/clock.ts` and
+  `PersonPane`, to fold in when it lands); the Hazards, Imagery and Standing notes mounted before
+  their words (announced, and focus kept when they go — the list's and console's rule); Access's
+  clock on the tabs' `useTickingNow`; one list of removal reasons' words (`REMOVAL_REASON_WORDS`,
+  shared by Standing and both removed pages).
+- **Wording the mock did not supply:** *asked by N*; the intake reasons — *Possible duplicate*,
+  *One catalog lists it twice*, *A bay with no parent*, *A catalog says it isn't water we cover*,
+  *The catalogs disagree on its class*, *The catalogs disagree on its name*, with *Overlaps N
+  bodies*, *Confidence: low*, *Advisory*; *(other standings unfiltered)*; *N opened isn't in the
+  library*, *N is no longer a body*, *N older not read*; *What its record still holds couldn't be
+  read*, *N since the record began*; *On the map, N town's line isn't stored yet*, *more towns than
+  one read returns: some lines aren't drawn*; *Each catalog's class: not recorded until this body's
+  next import campaign*; *Not saved · {body}*, *{what}: {the server's words}*.
+- **What the server still lacks:** names for an unlisted or unknown id in `rowsByIds`
+  (`entries[].name`, so the list can say *which* opened body isn't listed); the borders between
+  towns near a body (`townLines` with `{ faces: [town, town], path }` segments, so a shared border
+  is one line); per-catalog name claims unfolded (BS9's last part: the Names ladder still says
+  *Other catalogs that gave the same spelling: not recorded*).
 
 ## Ruled out
 
