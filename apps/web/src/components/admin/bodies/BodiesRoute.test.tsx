@@ -618,28 +618,33 @@ describe('the counts', () => {
 describe('Opened recently, this browser’s own', () => {
   const A = 'k17aaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
   const B = 'k17bbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
-  const body = (id: string, bodyName: string) => ({
-    available: true,
-    body: { _id: id, name: bodyName, type: 'lakePond', states: ['NH'], surfaceAreaSqM: 10 * ACRE },
+  const C = 'k17ccccccccccccccccccccccccccccc';
+  const ok = (id: string, bodyName: string, over: Record<string, unknown> = {}) => ({
+    requested: id,
+    status: 'ok',
+    row: row(id, bodyName, over),
   });
+  const answer = (entries: unknown[], dropped = 0) => ({ entries, dropped });
+  const names = () =>
+    [...grid().querySelectorAll('[data-slot=body-name]')].map((n) => n.textContent);
 
-  it('lists the bodies this browser opened, newest first, each read by id — no server lane', () => {
+  it('lists the bodies this browser opened, newest first, as the library lists them — one read', () => {
     rememberOpened(A);
     rememberOpened(B);
     mocks.search = { lane: 'opened' };
-    const bodies: Record<string, unknown> = {
-      [A]: body(A, 'Mascoma Lake'),
-      [B]: body(B, 'Lake Morey'),
-    };
     mocks.results.set(
-      name(api.waterBodies.get),
-      (a: { waterBodyId: string }) => bodies[a.waterBodyId],
+      name(api.bodies.rowsByIds),
+      answer([ok(B, 'Lake Morey', { reports: 4 }), ok(A, 'Mascoma Lake')]),
     );
     mount();
     expect(mocks.pagedCalls).toHaveLength(0);
-    expect([...grid().querySelectorAll('[data-slot=body-name]')].map((n) => n.textContent)).toEqual(
-      ['Lake Morey', 'Mascoma Lake'],
-    );
+    expect(mocks.calls.get(name(api.bodies.rowsByIds))).toEqual({
+      ids: [B, A],
+      now: expect.any(Number),
+    });
+    expect(names()).toEqual(['Lake Morey', 'Mascoma Lake']);
+    // The library's own row: its reports are drawn, not "not recorded".
+    expect(within(grid()).getAllByRole('row')[0]).toHaveTextContent('4');
     expect(within(lanes()).getByRole('button', { name: /^Opened recently/ })).toHaveTextContent(
       '2',
     );
@@ -648,70 +653,72 @@ describe('Opened recently, this browser’s own', () => {
     expect(screen.queryByRole('button', { name: 'Acres' })).toBeNull();
   });
 
-  it('holds while a body loads, and leaves out one that can’t be opened', () => {
+  it('holds while the read is on its way', () => {
+    rememberOpened(A);
+    mocks.search = { lane: 'opened' };
+    mount();
+    expect(grid()).toHaveAttribute('aria-busy', 'true');
+  });
+
+  it('says the ids the library didn’t list, never leaving one out unsaid', () => {
     rememberOpened(A);
     rememberOpened(B);
+    rememberOpened(C);
     mocks.search = { lane: 'opened' };
-    const bodies: Record<string, unknown> = { [A]: body(A, 'Mascoma Lake') };
     mocks.results.set(
-      name(api.waterBodies.get),
-      (a: { waterBodyId: string }) => bodies[a.waterBodyId],
+      name(api.bodies.rowsByIds),
+      answer([
+        { requested: C, status: 'unknown', row: null },
+        { requested: B, status: 'unlisted', row: null },
+        ok(A, 'Mascoma Lake'),
+      ]),
     );
-    const { rerender } = mount();
-    expect(grid()).toHaveAttribute('aria-busy', 'true');
-    bodies[B] = { available: false };
-    rerender(view());
-    expect([...grid().querySelectorAll('[data-slot=body-name]')].map((n) => n.textContent)).toEqual(
-      ['Mascoma Lake'],
-    );
-    expect(screen.getByText('All 1')).toBeInTheDocument();
+    mount();
+    expect(names()).toEqual(['Mascoma Lake']);
+    expect(
+      screen.getByText('All 1 · 1 opened isn’t in the library · 1 is no longer a body'),
+    ).toBeInTheDocument();
   });
 
   it('says a failed read failed — never a body quietly left out — and tries it again', async () => {
     rememberOpened(A);
-    rememberOpened(B);
     mocks.search = { lane: 'opened' };
-    const bodies: Record<string, unknown> = {
-      [A]: body(A, 'Mascoma Lake'),
-      [B]: new Error('nope'),
-    };
-    mocks.results.set(
-      name(api.waterBodies.get),
-      (a: { waterBodyId: string }) => bodies[a.waterBodyId],
-    );
+    mocks.results.set(name(api.bodies.rowsByIds), new Error('nope'));
     mount();
     expect(screen.getByText('Couldn’t read this list')).toBeInTheDocument();
     expect(
       within(lanes()).getByRole('button', { name: /^Opened recently/ }).textContent,
     ).not.toMatch(/\d/);
-    bodies[B] = body(B, 'Lake Morey');
+    mocks.results.set(name(api.bodies.rowsByIds), answer([ok(A, 'Mascoma Lake')]));
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
-    expect([...grid().querySelectorAll('[data-slot=body-name]')].map((n) => n.textContent)).toEqual(
-      ['Lake Morey', 'Mascoma Lake'],
-    );
+    expect(names()).toEqual(['Mascoma Lake']);
   });
 
   it('marks no search it doesn’t answer, and never says nothing matches it', () => {
     rememberOpened(A);
     // A name the search would match: nothing is marked, since the lane's read doesn't search.
     mocks.search = { lane: 'opened', q: 'mas' };
-    mocks.results.set(name(api.waterBodies.get), () => body(A, 'Mascoma Lake'));
+    mocks.results.set(name(api.bodies.rowsByIds), answer([ok(A, 'Mascoma Lake')]));
     mount();
     expect(grid().querySelector('mark')).toBeNull();
     expect(screen.queryByText(/Nothing matches/)).toBeNull();
     expect(document.querySelector('[data-slot=search-tally]')).toBeNull();
   });
 
-  it('lists a merged body once, as the survivor its read follows', () => {
+  it('lists a merged body once, as the survivor the read follows', () => {
     rememberOpened(A);
     rememberOpened(B);
     mocks.search = { lane: 'opened' };
-    // B was merged into A: its read follows the merge and returns A.
-    mocks.results.set(name(api.waterBodies.get), () => body(A, 'Mascoma Lake'));
-    mount();
-    expect([...grid().querySelectorAll('[data-slot=body-name]')].map((n) => n.textContent)).toEqual(
-      ['Mascoma Lake'],
+    // B was merged into A: the read follows the merge and returns A's row for it.
+    mocks.results.set(
+      name(api.bodies.rowsByIds),
+      answer([
+        { requested: B, status: 'merged', row: row(A, 'Mascoma Lake'), survivorId: A },
+        ok(A, 'Mascoma Lake'),
+      ]),
     );
+    mount();
+    expect(names()).toEqual(['Mascoma Lake']);
     expect(screen.getByText('All 1')).toBeInTheDocument();
   });
 
@@ -723,6 +730,7 @@ describe('Opened recently, this browser’s own', () => {
     mount();
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Opened recently');
     expect(screen.queryAllByRole('row').filter((r) => r.querySelector('td') !== null)).toEqual([]);
+    expect(mocks.calls.has(name(api.bodies.rowsByIds))).toBe(false);
     get.mockRestore();
   });
 });

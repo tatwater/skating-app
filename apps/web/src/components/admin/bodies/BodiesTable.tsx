@@ -526,6 +526,21 @@ export function BodiesTable({
   );
 }
 
+/**
+ * "1 opened isn’t in the library · 1 is no longer a body": Opened recently's ids the library
+ * didn't list, said rather than dropped.
+ */
+export function notListedWords(n: BodiesListData['notListed']): string | null {
+  if (n === undefined) return null;
+  const parts = [
+    n.unlisted > 0 &&
+      `${n.unlisted} opened ${n.unlisted === 1 ? 'isn’t' : 'aren’t'} in the library`,
+    n.unknown > 0 && `${n.unknown} ${n.unknown === 1 ? 'is' : 'are'} no longer a body`,
+    n.dropped > 0 && `${n.dropped} older not read`,
+  ].filter((p): p is string => p !== false);
+  return parts.length === 0 ? null : parts.join(' · ');
+}
+
 /** The list-end tab: what the list is, or why it stops where it does. */
 function ListFoot({
   list,
@@ -557,6 +572,7 @@ function ListFoot({
         return `All ${list.total !== null && !list.total.capped ? countText(list.total) : rows.toLocaleString('en-US')}`;
     }
   })();
+  const notListed = list.status === 'done' ? notListedWords(list.notListed) : null;
   return (
     <>
       {/* Mounted in every state, so a failure's words are announced as they come, Try again holds
@@ -571,7 +587,7 @@ function ListFoot({
       </RetryNote>
       {list.status !== 'error' && list.status !== 'loading' && (
         <ListEnd data-slot="bodies-end" data-status={list.status}>
-          {words}
+          {notListed === null ? words : `${words} · ${notListed}`}
         </ListEnd>
       )}
     </>

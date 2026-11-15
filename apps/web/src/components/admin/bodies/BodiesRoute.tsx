@@ -93,7 +93,7 @@ export function BodiesRoute({ bodyPath = BODY_PATH, openLabel }: BodiesRouteProp
   // A lane no server read lists (Opened recently) still counts the others: All's summary.
   const summary = useSummary(canRead ? (args ?? { lane: 'all', now: listNow }) : null);
   const others = useOtherStandings(args);
-  const opened = useOpenedList(canRead && query.lane.read.kind === 'openedByViewer');
+  const opened = useOpenedList(canRead && query.lane.read.kind === 'openedByViewer', listNow);
   const preview = usePreview(query.bodyId, canRead, can('audit.read'));
   const paged = usePaged(key);
 
@@ -398,20 +398,18 @@ const minute = (at: number) => Math.floor(at / 60_000) * 60_000;
  * on screen (and nothing is read). The reads are keyed on the ids' value, so a render with the same
  * list keeps its subscriptions.
  */
-function useOpenedList(on: boolean): { list: BodiesListData; retry: () => void } | null {
+function useOpenedList(
+  on: boolean,
+  now: number,
+): { list: BodiesListData; retry: () => void } | null {
   const ids = useOpenedBodies();
-  // Through the read layer, keyed on the ids' value: Try again re-runs only the failed reads, and
-  // a body the preview also reads is one read, retried once.
-  const { reads, retry, pending } = useConsoleReadSet(
-    Object.fromEntries(
-      (on ? ids : []).map((id) => [
-        id,
-        read(api.waterBodies.get, { waterBodyId: id as Id<'waterBodies'> }),
-      ]),
-    ),
-  );
+  // One read for the lane, through the read layer: Try again re-runs it.
+  const asked = on && ids.length > 0;
+  const { reads, retry, pending } = useConsoleReadSet({
+    rows: asked ? read(api.bodies.rowsByIds, { ids: [...ids], now }) : null,
+  });
   if (!on) return null;
-  const list = listFromOpened(ids, reads as Record<string, Loadable<GetResult>>);
+  const list = listFromOpened(asked ? reads.rows : null);
   return { list: list.status === 'error' ? { ...list, retryPending: pending } : list, retry };
 }
 

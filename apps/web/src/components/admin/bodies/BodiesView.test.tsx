@@ -5,7 +5,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 
 import { KeysProvider } from '@/lib/keys';
 import { expectKeyboardOperable } from '@/test/keyboardAudit';
-import { BodiesTable, resetScrollMemory } from './BodiesTable';
+import { BodiesTable, notListedWords, resetScrollMemory } from './BodiesTable';
 import { BodiesView, type BodiesViewProps } from './BodiesView';
 import { otherTowns, TOOLTIP_TOWNS } from './BodyPreview';
 import { type BodiesListData, UNREAD_LIST } from './bodiesData';
@@ -681,5 +681,15 @@ describe('the list’s place', () => {
     fireEvent.scroll(scroller());
     rerender(table(LIST_ACTIVE, 'b'));
     expect(scroller().scrollTop).toBe(500);
+  });
+});
+
+describe('Opened recently’s ids the library didn’t list', () => {
+  it('says each kind in its count, and nothing when there is none', () => {
+    expect(notListedWords(undefined)).toBeNull();
+    expect(notListedWords({ unlisted: 0, unknown: 0, dropped: 0 })).toBeNull();
+    expect(notListedWords({ unlisted: 2, unknown: 3, dropped: 1 })).toBe(
+      '2 opened aren’t in the library · 3 are no longer a body · 1 older not read',
+    );
   });
 });

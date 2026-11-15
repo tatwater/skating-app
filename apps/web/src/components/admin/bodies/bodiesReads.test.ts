@@ -195,9 +195,24 @@ describe('the list from its pages', () => {
     const o: OtherStandings = {
       q: 'mor',
       groups: [
-        { lane: 'active', count: 2, capped: false, rows: [libraryRow({ id: 'a1' })] },
-        { lane: 'not_in_campaign', count: 3, capped: false, rows: [libraryRow({ id: 'd1' })] },
-        { lane: 'moderator', count: 50, capped: true, rows: [libraryRow({ id: 'd2' })] },
+        {
+          lane: 'active',
+          count: 2,
+          capped: false,
+          rows: [libraryRow({ id: 'a1' } as Partial<LibraryRow>)],
+        },
+        {
+          lane: 'not_in_campaign',
+          count: 3,
+          capped: false,
+          rows: [libraryRow({ id: 'd1' } as Partial<LibraryRow>)],
+        },
+        {
+          lane: 'moderator',
+          count: 50,
+          capped: true,
+          rows: [libraryRow({ id: 'd2' } as Partial<LibraryRow>)],
+        },
         { lane: 'removed', count: 0, capped: false, rows: [] },
       ],
       facetsIgnored: true,

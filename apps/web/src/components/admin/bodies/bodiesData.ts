@@ -77,6 +77,11 @@ export interface BodiesListData {
   facetCounts: FacetCounts | null;
   /** The state tabs, in order (All is always first and is not here). */
   states: readonly string[];
+  /**
+   * Opened recently's ids the library didn't list: `unlisted` — a body with no library row;
+   * `unknown` — no such body; `dropped` — past what one read takes. Said at the list's end.
+   */
+  notListed?: { unlisted: number; unknown: number; dropped: number };
 }
 
 export const UNREAD_LIST: BodiesListData = {
