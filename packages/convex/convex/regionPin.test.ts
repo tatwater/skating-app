@@ -176,6 +176,8 @@ describe('setModeratorTowns', () => {
     await expect(set(['tiger/3602799999'])).rejects.toThrow(/No loaded town/);
     await expect(set(['tiger/0900104720'])).rejects.toThrow(/not a town of a loaded state/);
     await expect(set([DUTCHESS])).rejects.toThrow(/not a town of a loaded state/);
+    // A "not defined" water unit is never listed as a town, so a pin on one would vanish.
+    await expect(set(['tiger/3602700000'])).rejects.toThrow(/open water between towns/);
     await expect(
       set(Array.from({ length: MAX_MODERATOR_TOWNS + 1 }, (_, i) => `tiger/36027${10000 + i}`)),
     ).rejects.toThrow(/at most 8/);

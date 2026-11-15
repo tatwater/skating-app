@@ -15,6 +15,13 @@
 # loader yourself if you mean production, which this script deliberately does not plumb through.
 set -euo pipefail
 
+# **Retired by D266.** A per-state OSM load carries no region answer — the merge's `statesFor` is the
+# only producer of a record's `states` — and the loader refuses both a record without them and the
+# old `--state=` tag. The corpus loads through `run-corpus.sh` (the merge). Kept, refusing, so a
+# typed command fails here with the reason rather than five FAILED loads.
+echo "run-canonical.sh is retired (D266): load the corpus through ./run-corpus.sh — the merge computes each body's states" >&2
+exit 1
+
 cd "$(dirname "$0")"
 
 CAMPAIGN="${1:?usage: ./run-canonical.sh <campaign-id> [state ...]}"
@@ -55,7 +62,6 @@ for state in "${STATES[@]}"; do
   # `|| failed+=` rather than `set -e` doing it: one state failing should not abandon the other
   # four, and the run row for the failure survives either way.
   if pnpm --filter @skating/etl load "${SCRATCH}/${state}-bodies.ndjson" \
-    --state="$(echo "$state" | tr '[:lower:]' '[:upper:]')" \
     --campaign="$CAMPAIGN" \
     --label="$(echo "$state" | tr '[:lower:]' '[:upper:]') canonical water" \
     --manifest="$manifest" \

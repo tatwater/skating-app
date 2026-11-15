@@ -39,6 +39,7 @@ import {
   isPlausibleMeanWindMps,
   isPlausibleStrongWindHours,
   isPlausibleWindRose,
+  isUndefinedSubdivision,
   isWetlandClass,
   KNOWN_STATE_CODES,
   type LatLng,
@@ -4170,6 +4171,11 @@ export async function setModeratorTownsImpl(
       throw new ConvexError(`${key} is not a town of a loaded state`);
     }
     if (restoring || prev.includes(key)) continue;
+    // A "not defined" water unit is never listed as a town (`bodyGeo.placesFrom`), so a pin on one
+    // would show neither as pinned nor as missing — refused, as a person's pick.
+    if (isUndefinedSubdivision(key)) {
+      throw new ConvexError(`${key} is open water between towns, not a town`);
+    }
     const town = await ctx.db
       .query('adminAreas')
       .withIndex('by_external_id', (q) => q.eq('externalId', key))

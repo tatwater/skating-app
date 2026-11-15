@@ -62,6 +62,13 @@ export const REACH_TOUCH_M = 0.01;
 /** The latitude step the measuring frame snaps to (see the module note). */
 export const FRAME_STEP_DEG = 0.5;
 
+/**
+ * How far a body's box is padded, in degrees (about 40 m), before its candidate towns are read — by
+ * every reader of the rule, so the merge and the geometry facts test the same towns. Generous: only a
+ * town within {@link REACH_TOUCH_M} of the box can hold any of the shore.
+ */
+export const REACH_PAD_DEG = 0.0005;
+
 /** Meters per degree of latitude on the WGS84 mean sphere (as `haversineMeters` measures). */
 const M_PER_DEG = 6_371_008.8 * (Math.PI / 180);
 

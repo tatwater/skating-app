@@ -1,9 +1,9 @@
 /**
  * The pilot region's admin areas — the set of 2-letter US state codes a body's `states` field may
- * hold (Phase 02b). Single-sourced here so both the ETL loader (which tags a batch via `--state=XX`)
- * and `waterBodies.importCanonical` (which unions the tag into `states`) reject the same typos,
- * rather than silently persisting a bad code into every body's `states`. Widen when a new region's
- * extract is added.
+ * hold (Phase 02b). Single-sourced here so `waterBodies.importCanonical` refuses any code outside
+ * it in a record's `states` (the merge's region rule, D266), and the admin-areas loader any typo in
+ * its `--state=XX`, rather than silently persisting a bad code. Widen when a new region's extract is
+ * added.
  */
 
 /** The Northeast lake-skating pilot states (Phase 02b): NY, VT, NH, ME, MA. */

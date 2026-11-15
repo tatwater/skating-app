@@ -43,6 +43,7 @@ import {
   pointInPolygon,
   polygonBBox,
   polygonIoU,
+  REACH_PAD_DEG,
   RECONCILE_MIN_IOU_WITH_GNIS,
   type ReachCache,
   surfaceAreaSqM,
@@ -2294,12 +2295,6 @@ export interface TownLayer {
 }
 
 /**
- * The town padding a body's box gets before its candidates are read — about 40 m, so a town whose
- * edge the shore runs along, a few meters off the body's box, is still tested.
- */
-const TOWN_PAD_DEG = 0.0005;
-
-/**
  * **Index the loaded towns — and refuse a layer that cannot answer.** No towns at all is not "every
  * body is out of region": it is a run without boundaries, and it throws before a single body is
  * judged (D266). A layer short of one of `expectStates` throws too: every body in the missing state
@@ -2337,10 +2332,10 @@ export function statesFor(
 ): string[] {
   if (layer.size === 0) throw new Error('no town boundaries loaded');
   const box = {
-    minLng: body.bbox.minLng - TOWN_PAD_DEG,
-    maxLng: body.bbox.maxLng + TOWN_PAD_DEG,
-    minLat: body.bbox.minLat - TOWN_PAD_DEG,
-    maxLat: body.bbox.maxLat + TOWN_PAD_DEG,
+    minLng: body.bbox.minLng - REACH_PAD_DEG,
+    maxLng: body.bbox.maxLng + REACH_PAD_DEG,
+    minLat: body.bbox.minLat - REACH_PAD_DEG,
+    maxLat: body.bbox.maxLat + REACH_PAD_DEG,
   };
   const candidates = new Map<string, TownRow>();
   for (const cell of cellsFor(box)) {

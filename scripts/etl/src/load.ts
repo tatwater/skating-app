@@ -102,6 +102,8 @@ interface ImportResult {
   outOfRegion: number;
   /** Stored bodies a re-import places in no loaded town: patched, their states kept (D266). */
   outOfRegionKept: number;
+  /** Stored bodies the rule places in no town, held in region by a moderator's pin. */
+  keptByPin: number;
   outsideRegion: { externalId: string; waterBodyId: string | null }[];
   unresolved: { externalId: string; action: string; reason: string }[];
 }
@@ -134,6 +136,7 @@ function runImport(bodies: unknown[], campaignId: string | undefined): ImportRes
     conflicts: r.conflicts ?? 0,
     outOfRegion: r.outOfRegion ?? 0,
     outOfRegionKept: r.outOfRegionKept ?? 0,
+    keptByPin: r.keptByPin ?? 0,
     outsideRegion: r.outsideRegion ?? [],
     unresolved: r.unresolved ?? [],
   };
@@ -367,6 +370,7 @@ function main(): void {
   let conflicts = 0;
   let outOfRegion = 0;
   let outOfRegionKept = 0;
+  let keptByPin = 0;
   let applied = 0;
   let failedBatches = 0;
   let bodiesInFailedBatches = 0;
@@ -385,6 +389,7 @@ function main(): void {
       conflicts += result.conflicts;
       outOfRegion += result.outOfRegion;
       outOfRegionKept += result.outOfRegionKept;
+      keptByPin += result.keptByPin;
       // **Out of region, named** (D266): a new body not inserted, or a stored one the rule now places
       // in no loaded town — kept with its states, for a person to decide.
       for (const o of result.outsideRegion) {
@@ -463,6 +468,7 @@ function main(): void {
   logger.count('conflicts', conflicts);
   logger.count('outOfRegion', outOfRegion);
   logger.count('outOfRegionKept', outOfRegionKept);
+  logger.count('keptByPin', keptByPin);
   // The denominator is the *polygon features the filter emitted*, not the bodies the transform
   // kept — otherwise "dropped as a river" disappears from the ledger and the pass looks perfect.
   const featuresIn = transform?.total ?? lines.length;

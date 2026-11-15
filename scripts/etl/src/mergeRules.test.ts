@@ -81,12 +81,12 @@ import {
 // Fixtures
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** An axis-aligned square, given its south-west corner and side length in degrees. */
 /** A loaded town for the region rule. */
 function town(state: string, externalId: string, polygon: Polygon): TownRow {
   return { state, externalId, name: externalId, polygon, bbox: bboxOf(polygon) };
 }
 
+/** An axis-aligned square, given its south-west corner and side length in degrees. */
 function square(lng: number, lat: number, side: number): Polygon {
   return {
     type: 'Polygon',

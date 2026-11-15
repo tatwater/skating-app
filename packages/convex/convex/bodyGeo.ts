@@ -18,6 +18,7 @@ import {
   countyKeyOfSubdivision,
   createReach,
   isUndefinedSubdivision,
+  REACH_PAD_DEG,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
@@ -140,11 +141,6 @@ export const CANDIDATE_CELL_READS = 2_000;
 export const TOWN_PAGE = 11;
 /** County rows one page reads — charged as {@link TOWN_PAGE}'s are. */
 export const COUNTY_PAGE = 11;
-/**
- * The candidates' box is the body's padded by this many degrees (about 40 m) — so a town whose edge
- * the shore runs along, a few meters off its box, is still tested.
- */
-export const REACH_PAD_DEG = 0.0005;
 
 const cursorV = v.object({ z: v.number(), i: v.number() });
 
@@ -316,7 +312,7 @@ export function movedOn(
  * rule, then the counties of the towns it placed the body in. Nothing here holds more than one page of town
  * polygons at once.
  */
-async function placesOf(
+async function computePlaces(
   ctx: ActionCtx,
   geom: Geom,
   bbox: Box,
@@ -698,7 +694,7 @@ async function computeOne(ctx: ActionCtx, waterBodyId: Id<'waterBodies'>): Promi
       touches(geom, (b.polygon ?? { type: 'Polygon', coordinates: [b.ring] }) as Geom, b.whole),
     )
     .map((b) => ({ waterBodyId: b.id, name: b.name, ring: b.ring, stamp: b.stamp }));
-  const places = await placesOf(ctx, geom, input.bbox, input.pins);
+  const places = await computePlaces(ctx, geom, input.bbox, input.pins);
   await ctx.runMutation(internal.bodyGeo.store, {
     waterBodyId,
     stamp: input.stamp,

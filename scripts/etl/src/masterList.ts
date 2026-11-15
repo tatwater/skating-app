@@ -1127,28 +1127,33 @@ export function emitCanonicalBodies(kept: readonly KeptBody[], towns: TownLayer)
   const failureKeys: string[] = [];
   for (const k of kept) {
     try {
-      emitted.push(
-        toCanonicalBody({
-          source: k.geometrySource as 'osm' | 'nhd' | '3dhp',
-          // The arrival key stays the id of whichever catalog drew the outline, so the existing
-          // contour tile stamps keep resolving through one more campaign (D93).
-          externalId: idFromKey(k.key),
-          name: k.name,
-          type: k.cls,
-          geometry: k.polygon,
-          geometrySource: k.geometrySource as 'osm' | 'nhd' | '3dhp',
-          // The region rule's answer (D266): `[]` is out of region, which the import refuses.
-          states: statesFor(k, towns),
-          // **Measured on the source geometry, which is the number the floor was decided on.**
-          sourceAreaSqM: k.areaSqM,
-          inRegionFraction: k.inRegionFraction,
-          confidence: k.confidence as never,
-          reviewReasons: k.reviewReasons,
-          nameClaims: k.nameClaims,
-          classClaims: k.classClaims,
-          ...catalogIdsOf(k.members, k.gnisIdFromGazetteer),
-        }),
-      );
+      const record = toCanonicalBody({
+        source: k.geometrySource as 'osm' | 'nhd' | '3dhp',
+        // The arrival key stays the id of whichever catalog drew the outline, so the existing
+        // contour tile stamps keep resolving through one more campaign (D93).
+        externalId: idFromKey(k.key),
+        name: k.name,
+        type: k.cls,
+        geometry: k.polygon,
+        geometrySource: k.geometrySource as 'osm' | 'nhd' | '3dhp',
+        // **Measured on the source geometry, which is the number the floor was decided on.**
+        sourceAreaSqM: k.areaSqM,
+        inRegionFraction: k.inRegionFraction,
+        confidence: k.confidence as never,
+        reviewReasons: k.reviewReasons,
+        nameClaims: k.nameClaims,
+        classClaims: k.classClaims,
+        ...catalogIdsOf(k.members, k.gnisIdFromGazetteer),
+      });
+      emitted.push({
+        ...record,
+        // **The region rule's answer (D266), on the outline the import stores** — the one the
+        // geometry facts measure, so the record's states and the console's towns come from the same
+        // shoreline (the source outline can put a near-threshold body on the other side of 25 m).
+        // Always present: `[]` is out of region, which the import refuses to insert, and
+        // `toCanonicalBody` drops an empty list — which the loader would refuse as "no states".
+        states: statesFor({ polygon: record.polygon, bbox: record.bbox }, towns),
+      });
       emittedKeys.add(k.key);
     } catch (err) {
       // A body whose geometry defeats the transform is one body, not the run.

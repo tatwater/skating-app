@@ -3028,7 +3028,7 @@ inside the towns is never none). Its readers:
 
 | Reader | Layer | What it decides |
 |---|---|---|
-| The merge's `statesFor` (`scripts/etl`) | The rows `scripts/admin-areas` loads into `adminAreas` (`.raw/areas-*.ndjson`), read directly | A record's `states`; `[]` is out of region |
+| The merge's `statesFor` (`scripts/etl`) | The rows `scripts/admin-areas` loads into `adminAreas` (`.raw/areas-*.ndjson`), read directly | A record's `states`, measured on the outline the import stores (the one the facts read); `[]` is out of region, always emitted |
 | The geometry facts (`bodyGeo`) | `adminAreas` towns, paged by cell | A body's towns, counties, states (`placesRule: 2`) |
 
 **The import.** `importCanonical` has no `state` argument any more (the exact validator refuses the
@@ -3077,7 +3077,7 @@ raw TIGER (within 0.2 m of the raw line). Two kept bodies sit just under the con
 22.8 m). The constant is the founder's and is not tuned to these.
 
 **Readers of the towns.** Console only: the preview's place line and its "+N" (the tooltip now names
-a dozen and counts the rest), the frame's towns, Names (every county, labelled *Counties* when more than
+a dozen and counts the rest), the frame's towns, Names (every county, labeled *Counties* when more than
 one), Places, and town lines (cap raised from 24 to 48: Champlain is 40). The skater apps read only
 `waterBodies.states` (the import's) — the search sub-lines, the lake kicker, the region filters; no
 skater screen lists towns, and body search is by name only, so no skater wording changes until a

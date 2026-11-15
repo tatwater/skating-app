@@ -314,8 +314,7 @@ re-derivable, and they are kilobytes.
 >
 > ```bash
 > ./run-corpus.sh n7-20260807            # A07a: three catalogs → the master list → the corpus → its landmarks
-> ./run-canonical.sh n6c-20260802        # OSM-only, per state, from the archived .raw/ extracts
-> ./run-canonical.sh n6c-20260802 vt nh  # …or just some
+> ./run-canonical.sh …                   # retired (D266): an OSM-only load carries no states; it refuses
 > ```
 > `run-corpus.sh` ends with the landmark stage (D202): it re-exports the loaded bodies, matches OSM +
 > GNIS to them, loads the landmarks and the corpus's unplaced names — all applied, all idempotent.
