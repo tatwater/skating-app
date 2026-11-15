@@ -551,8 +551,8 @@ describe('a track added after the lake (the author’s lake and day stand)', () 
         defaulted: true,
       }),
     };
-    const yesterday = { startTime: NOW - 26 * 3_600_000, endTime: NOW - 25 * 3_600_000 };
-    expect(trackRefusal(defaulted, yesterday, mascoma, ZONE)).toBeNull();
+    const dayBefore = { startTime: NOW - 26 * 3_600_000, endTime: NOW - 25 * 3_600_000 };
+    expect(trackRefusal(defaulted, dayBefore, mascoma, ZONE)).toBeNull();
     const post = openPostSheet(
       'body',
       { waterBodyId: 'mascoma', bodyName: 'Mascoma Lake' },
@@ -563,13 +563,13 @@ describe('a track added after the lake (the author’s lake and day stand)', () 
       { ...post, reports: [defaulted] },
       defaulted.id,
       'a1',
-      yesterday,
+      dayBefore,
       mascoma,
     ).reports[0];
     expect(selectedValues(seeded?.sheet as never, 'endTime')).toEqual([
-      { ms: yesterday.endTime, precision: 'gps' },
+      { ms: dayBefore.endTime, precision: 'gps' },
     ]);
-    expect(seeded?.sheet.scalars.skateStartTime).toBe(yesterday.startTime);
+    expect(seeded?.sheet.scalars.skateStartTime).toBe(dayBefore.startTime);
   });
 
   it('the import refuses it and leaves the Report as the author had it', async () => {
