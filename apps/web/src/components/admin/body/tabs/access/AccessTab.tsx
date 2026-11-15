@@ -12,6 +12,7 @@ import {
 } from '@/components/admin/reads/consoleReads';
 import { useRole } from '@/lib/useRole';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
+import { useTickingNow } from '../tabParts';
 import { useTabAction } from '../useTabAction';
 import { AccessView } from './AccessView';
 import {
@@ -88,7 +89,7 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
   const hide = useMutation(api.putIns.hide);
   const promote = useMutation(api.putIns.promote);
   const { act, actInDialog } = useTabAction(bodyId);
-  const now = useDayClock();
+  const now = useTickingNow(3_600_000);
 
   const target = { targetType: 'waterbody' as const, targetId: bodyId };
   const ruled = (v: PublicAccessVerdict | null) =>
@@ -144,16 +145,6 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
       }
     />
   );
-}
-
-/** The day a ruling's age is counted to, moved on once an hour (a day count is the finest it says). */
-function useDayClock(): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 3_600_000);
-    return () => window.clearInterval(id);
-  }, []);
-  return now;
 }
 
 /** The Access tab's registration in the frame's registry. */
