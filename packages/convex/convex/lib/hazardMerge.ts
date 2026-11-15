@@ -227,6 +227,10 @@ export async function unmergeHazard(
   await ctx.db.patch(loser._id, {
     mergedIntoHazardId: undefined,
     noMergeWith: [...(loser.noMergeWith ?? []), survivorId],
+    // Back on the lake as its own pin: the merge's stamp is not when it left (D3). Kept only on a pin
+    // archived before the merge — votes land on the survivor while merged, so an archived pin's stamp
+    // is its archiving vote's. Cleared, the vote that archives it later stamps its real end.
+    ...(loser.status !== 'archived' ? { leftLakeAt: undefined } : {}),
   });
   // The other writer, and the direction that is easy to miss: un-merging puts a hazard *back* into
   // the card's count. `hazards.unmerge` is a moderator action with no report or hazard *creation* to

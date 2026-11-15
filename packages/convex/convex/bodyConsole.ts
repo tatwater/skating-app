@@ -468,7 +468,7 @@ export const dailyHazards = query({
       const active = h.status === 'active';
       const firstDay = Math.floor(h.firstReportedAt / DAY_MS) * DAY_MS;
       // A recorded end counts through its day; a pin still active is on the lake today, whatever any
-      // stamp says (an unmerged pin keeps its first stamp).
+      // stamp says (an unmerge clears the merge's stamp, but an active pin never reads one).
       const endDay =
         !active && h.leftLakeAt !== undefined ? Math.floor(h.leftLakeAt / DAY_MS) * DAY_MS : null;
       if (!active && endDay === null) unknownEnds++;
