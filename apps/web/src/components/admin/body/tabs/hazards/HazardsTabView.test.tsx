@@ -392,18 +392,30 @@ describe('HazardsTabView — the winters, a day at a time', () => {
             status: h.active ? 'active' : 'archived',
           }));
           const winters = wintersFrom([read], BODY_NOW, [list]);
+          // The tab at its lightest (a quiet past winter: the strip and its notes, no list, no
+          // features), so each run renders what it checks and little else. The day-by-day
+          // arithmetic is property-tested without rendering in `hazardsModel.test.ts`; this proves
+          // the strip draws it.
           const { container } = render(
             <HazardsTabView
               {...base}
               season={season}
-              hazards={FEB.hazards}
+              hazards={[]}
+              archived={[]}
+              features={[]}
+              patternsWaiting={null}
               winters={winters ?? undefined}
             />,
           );
           const line = winters?.lines[0];
           if (line === undefined) throw new Error('no strip');
-          const g = (i: number) =>
-            container.querySelector<SVGGElement>(`[data-slot="day-strip-day"][data-day="${i}"]`);
+          // One pass over the drawn days, not a query per day of the winter.
+          const byDay = new Map(
+            [...container.querySelectorAll<SVGGElement>('[data-slot="day-strip-day"]')].map(
+              (el) => [Number(el.dataset.day), el],
+            ),
+          );
+          const g = (i: number) => byDay.get(i) ?? null;
           const marksOn = (el: SVGGElement | null) =>
             [
               ...(el?.querySelectorAll<SVGRectElement>('[data-slot="day-strip-mark"]') ?? []),
@@ -445,7 +457,8 @@ describe('HazardsTabView — the winters, a day at a time', () => {
           cleanup();
         },
       ),
-      { numRuns: 40 },
+      // Each run renders the tab; the arithmetic's breadth is the model test's.
+      { numRuns: 12 },
     );
   });
 
