@@ -726,7 +726,7 @@ describe('LinksTabView — a finished save never discards what was typed since i
     expect(screen.getAllByText(/^Town page/)).toHaveLength(1);
   });
 
-  it('an add: the editor moving into its row keeps the field being typed in, never the Label', async () => {
+  it('an add: typed on in the address as the save lands, the keys go on into the address, never the Label', async () => {
     const user = userEvent.setup();
     const sent: StaffLink[][] = [];
     const answers: ((refusal?: Error) => void)[] = [];
@@ -822,6 +822,110 @@ describe('LinksTabView — an added link’s editor is bound to the link it adde
       expect(after.value).toBe('https://xyenfield.nh.gov');
     },
   );
+
+  /**
+   * Saves answered and shown apart, each when the test says: the queue's acknowledgment can land a
+   * beat before the render that shows its write (`listWriter`), and another moderator's write can
+   * fold into what the server shows.
+   */
+  function Lagging({
+    sent,
+    answers,
+    show,
+  }: {
+    sent: StaffLink[][];
+    answers: ((refusal?: Error) => void)[];
+    show: { current: (links: StaffLink[]) => void };
+  }) {
+    const [links, setLinks] = useState<readonly StaffLink[]>(MASCOMA.referenceLinks ?? []);
+    show.current = setLinks;
+    return (
+      <LinksTabView
+        {...base}
+        body={{ ...MASCOMA, referenceLinks: links }}
+        onSave={async (next) => {
+          sent.push(next);
+          await new Promise<void>((resolve, reject) =>
+            answers.push((refusal) => (refusal === undefined ? resolve() : reject(refusal))),
+          );
+        }}
+      />
+    );
+  }
+  const LOST = /can’t tell which row/;
+  const town = (label: string) => ({ label, url: 'https://enfield.nh.gov' });
+  /** An add typed on while it saves, then acknowledged — not yet shown. */
+  async function addedAndAcked() {
+    const user = userEvent.setup();
+    const sent: StaffLink[][] = [];
+    const answers: ((refusal?: Error) => void)[] = [];
+    const show = { current: (_: StaffLink[]) => {} };
+    render(<Lagging sent={sent} answers={answers} show={show} />);
+    await user.click(screen.getByRole('button', { name: 'Add a link' }));
+    await user.type(field('Label'), 'Town page');
+    await user.type(field('Address'), 'https://enfield.nh.gov');
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    await user.type(field('Label'), 's');
+    await act(async () => answers.shift()?.());
+    return { user, sent, answers, show };
+  }
+
+  it('a saved add edited before its echo shows: Done edits it, and the late echo draws it once', async () => {
+    const { user, sent, answers, show } = await addedAndAcked();
+    // Acknowledged, not on the page yet: the queue holds the add, so Done edits it.
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    expect(screen.queryByText(LOST)).toBeNull();
+    expect(sent).toEqual([
+      [ASSOC, DAM, town('Town page')],
+      [ASSOC, DAM, town('Town pages')],
+    ]);
+    // The add's echo shows while the edit is out: its row is the open editor's, drawn once.
+    await act(async () => show.current(sent[0] as StaffLink[]));
+    expect(rows()).toEqual([ASSOC.label, DAM.label]);
+    // The edit refused: the next Done still edits the link it added.
+    await act(async () => answers.shift()?.(new Error('Not now')));
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    expect(screen.queryByText(LOST)).toBeNull();
+    expect(sent).toHaveLength(3);
+    expect(sent.at(-1)).toEqual([ASSOC, DAM, town('Town pages')]);
+  });
+
+  it('a saved add the list has lost: Remove says so and sends nothing — never closes as if removed', async () => {
+    const { user, sent, show } = await addedAndAcked();
+    // Shown with another moderator's reorder folded in: no list this page sent.
+    await act(async () => show.current([DAM, ASSOC, town('Town page')]));
+    await user.click(screen.getByRole('button', { name: 'Remove' }));
+    expect(screen.getByText(LOST)).toBeVisible();
+    expect(sent).toHaveLength(1);
+    expect(field('Label')).toHaveValue('Town pages');
+  });
+
+  it('a list that only reads like one this page sent long ago takes no keys from it', async () => {
+    // The page's edit is shown, then others undo it, add the same words back as a new link and
+    // remove the link between: the list reads like the edit again, but the open editor's link is
+    // the new one, and it keeps its row.
+    const user = userEvent.setup();
+    const view = (links: StaffLink[]) => (
+      <LinksTabView
+        {...base}
+        body={{ ...MASCOMA, referenceLinks: links }}
+        onSave={async () => {}}
+      />
+    );
+    const { rerender } = render(view([ASSOC, DAM]));
+    await user.click(screen.getAllByRole('button', { name: 'Edit' })[1] as HTMLElement);
+    await user.clear(field('Label'));
+    await user.type(field('Label'), 'Town page');
+    await user.clear(field('Address'));
+    await user.type(field('Address'), 'https://enfield.nh.gov{Enter}');
+    rerender(view([ASSOC, town('Town page')]));
+    rerender(view([ASSOC, DAM]));
+    rerender(view([ASSOC, DAM, town('Town page')]));
+    await user.click(screen.getAllByRole('button', { name: 'Edit' })[2] as HTMLElement);
+    await user.type(field('Label'), ' (beach)');
+    rerender(view([ASSOC, town('Town page')]));
+    expect(field('Label')).toHaveValue('Town page (beach)');
+  });
 });
 
 describe('LinksTabView — over any run of adds (duplicates allowed), edits, removes, reorders, late answers and refusals (fast-check)', () => {
@@ -929,6 +1033,10 @@ describe('LinksTabView — over any run of adds (duplicates allowed), edits, rem
             const now = editor();
             // The open editor is still bound to what it was opened with or added.
             if (now !== null && bound !== null) expect(now.dataset.editingKey).toBe(bound);
+            // Its link is drawn once — as the editor, never also as a row beside it.
+            if (now !== null) expect(rowsNow()).not.toContain(now.dataset.editingKey);
+            // This page is the server's only writer: an added link is never lost to it.
+            expect(screen.queryByText(/can’t tell which row/)).toBeNull();
           }
         } finally {
           for (let i = 0; i < 30 && answers.length > 0; i++) {
