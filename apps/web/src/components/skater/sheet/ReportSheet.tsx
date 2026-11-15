@@ -371,7 +371,12 @@ function Sheet({ post, exits }: { post: PostSheet; exits: ReportSheetExits }) {
           <AlertDialogBody>
             <p className="m-0 text-row text-fg1">
               Its answers go with it: how it was, the ice, when, where you got on, and the hazards
-              you answered. Your words and photos stay.
+              you answered. Your words stay.
+              {removing !== null && removing.photos.length > 0
+                ? post.reports.length > 1
+                  ? ' Its photos stay in this post, unplaced: put each on another lake or remove it before you post.'
+                  : ' Its photos stay, unplaced, for the lake you pick next.'
+                : ''}
             </p>
           </AlertDialogBody>
           <AlertDialogFooter>
