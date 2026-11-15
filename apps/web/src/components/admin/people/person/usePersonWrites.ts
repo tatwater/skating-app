@@ -98,10 +98,14 @@ export function usePersonWrites(
       // its undo lookup returns (a moment), with Undo while the server offers one; a lookup that
       // fails leaves the receipt without Undo (History keeps the row). It never holds this result.
       const actionId = actionIdOf(answered);
-      const receipt: Receipt & { actionId?: string } = {
+      const receipt: Receipt = {
         ...receiptFor(action, person, now),
         target: { targetType: 'user', targetId: userId },
         ...(actionId !== null && { actionId }),
+        ...(actionId !== null &&
+          undoNeedsReasonOf(answered) !== null && {
+            undoNeedsReason: undoNeedsReasonOf(answered) === true,
+          }),
       };
       void announce(receipt).catch(() => {});
       return null;
@@ -131,4 +135,14 @@ export function actionIdOf(answered: unknown): string | null {
   if (typeof answered !== 'object' || answered === null) return null;
   const id = (answered as { actionId?: unknown }).actionId;
   return typeof id === 'string' ? id : null;
+}
+
+/**
+ * Whether undoing the write takes something away, when the write answers it beside its row
+ * (`{ actionId, undoNeedsReason }`); `null` when it doesn't say — then the toast asks the server.
+ */
+export function undoNeedsReasonOf(answered: unknown): boolean | null {
+  if (typeof answered !== 'object' || answered === null) return null;
+  const needs = (answered as { undoNeedsReason?: unknown }).undoNeedsReason;
+  return typeof needs === 'boolean' ? needs : null;
 }

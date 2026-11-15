@@ -70,7 +70,7 @@ vi.mock('../../shell/undo', () => ({
 import { resetConsoleReads } from '../../reads/consoleReads';
 import { PersonPane } from './PersonPane';
 import { NOW, ROB, ROB_HISTORY, ROB_TREND, SARAH_STATS, SEASON } from './personFixtures';
-import { actionIdOf, usePersonWrites } from './usePersonWrites';
+import { actionIdOf, undoNeedsReasonOf, usePersonWrites } from './usePersonWrites';
 
 const ROB_ID = ROB.userId;
 
@@ -420,6 +420,23 @@ describe('the write hook', () => {
     expect(actionIdOf(ROB_ID)).toBeNull();
     expect(actionIdOf(null)).toBeNull();
     expect(actionIdOf({ actionId: 3 })).toBeNull();
+    // Without what its undo asks, the toast looks it up.
+    expect(mocks.announce).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ undoNeedsReason: expect.anything() }),
+    );
+  });
+
+  it('carries what undoing the write asks, when the write says', async () => {
+    mocks.mutations.set(
+      'moderation:unbanUser',
+      vi.fn(async () => ({ actionId: 'row1', undoNeedsReason: true })),
+    );
+    await hook()({ kind: 'lift' });
+    expect(mocks.announce).toHaveBeenLastCalledWith(
+      expect.objectContaining({ actionId: 'row1', undoNeedsReason: true }),
+    );
+    expect(undoNeedsReasonOf({ undoNeedsReason: 'yes' })).toBeNull();
+    expect(undoNeedsReasonOf(null)).toBeNull();
   });
 
   it('says so when there is no person to write to, and when the network fails', async () => {
