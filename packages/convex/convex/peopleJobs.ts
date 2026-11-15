@@ -658,12 +658,13 @@ export const backfillUndoChains = internalMutation({
         }
         try {
           const depth = (parent.undoDepth ?? 0) + 1;
-          await ctx.db.patch(row._id, { undoRoot: rootId, undoDepth: depth });
-          placed++;
-          placed++;
+          // The first row's stamp before the row's place: a row once placed is passed over, so a
+          // failure between the two must leave the row unplaced (re-run places it, the stamp holds).
           if (root !== null && (root.undoTop ?? 0) < depth) {
             await ctx.db.patch(rootId, { undoTop: depth, undoTopActorId: row.actorId });
           }
+          await ctx.db.patch(row._id, { undoRoot: rootId, undoDepth: depth });
+          placed++;
         } catch (err) {
           failed++;
           console.error(`peopleJobs.backfillUndoChains: ${row._id} failed (${errorClassOf(err)})`);

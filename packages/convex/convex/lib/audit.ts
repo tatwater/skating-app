@@ -64,27 +64,45 @@ export async function writeAudit(
   return id;
 }
 
+/** How many unplaced undos (from before chains were kept) one write places above the row it undoes. */
+const LEGACY_HOPS = 32;
+
 /**
  * An undo of `undoneId`: its chain's first row and its depth, and the first row stamped with the
  * chain's new newest depth and who wrote it — two point reads at most, one patch. Every row an undo
  * writes is tagged with the row it undoes (a cascade's member rows too), so they share the depth and
  * the stamp is written once.
+ *
+ * An undone row that is itself an undo written before chains were kept, and not yet placed by
+ * `peopleJobs.backfillUndoChains`, is placed first (its own undone row the same way, up to
+ * {@link LEGACY_HOPS}): otherwise it would be taken for a chain's first row, and since the backfill
+ * passes over a row already placed, this row's place would stay wrong once the backfill had run.
  */
 async function placeInUndoChain(
   ctx: MutationCtx,
   undoneId: Id<'moderationActions'>,
   actorId: Id<'profiles'> | undefined,
+  legacyHops = LEGACY_HOPS,
 ): Promise<{ undoRoot?: Id<'moderationActions'>; undoDepth?: number }> {
-  const undone = await ctx.db.get(undoneId);
+  let undone = await ctx.db.get(undoneId);
   if (!undone) return {};
+  if (undone.undoesActionId !== undefined && undone.undoRoot === undefined && legacyHops > 0) {
+    const place = await placeInUndoChain(
+      ctx,
+      undone.undoesActionId,
+      undone.actorId,
+      legacyHops - 1,
+    );
+    if (place.undoRoot !== undefined) {
+      await ctx.db.patch(undone._id, place);
+      undone = { ...undone, ...place };
+    }
+  }
   const rootId = undone.undoRoot ?? undone._id;
   const depth = (undone.undoDepth ?? 0) + 1;
   const root = rootId === undone._id ? undone : await ctx.db.get(rootId);
   if (root && (root.undoTop ?? 0) < depth) {
-    await ctx.db.patch(rootId, {
-      undoTop: depth,
-      ...(actorId !== undefined ? { undoTopActorId: actorId } : { undoTopActorId: undefined }),
-    });
+    await ctx.db.patch(rootId, { undoTop: depth, undoTopActorId: actorId });
   }
   return { undoRoot: rootId, undoDepth: depth };
 }

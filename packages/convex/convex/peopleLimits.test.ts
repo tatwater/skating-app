@@ -7,6 +7,7 @@ import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
+import { asUndoOf, writeAudit } from './lib/audit';
 import {
   markReady,
   READY_FLAG_SUBJECTS,
@@ -117,9 +118,9 @@ describe('staffStats at its maximum supported input', () => {
     const matt = await seed(t, 'matt', 'moderator');
     const adm = await seed(t, 'adm', 'admin');
     await t.run(async (ctx) => {
-      // Three reads a row (its verdict, the row that ended it, that row's chain): past the calls a
-      // transaction allows well before the last row.
-      for (let i = 0; i < 1_300; i++) {
+      // Two reads a row (its verdict, the row that ended it — a restore is its own chain's first
+      // row, never read again): past the calls a transaction allows before the last row.
+      for (let i = 0; i < 1_900; i++) {
         const at = T0 - i * 60_000;
         const restore = await ctx.db.insert('moderationActions', {
           actorId: adm,
@@ -153,9 +154,11 @@ describe('staffStats at its maximum supported input', () => {
     const s = await t
       .withIdentity({ subject: 'adm' })
       .query(api.people.staffStats, { userId: matt });
-    expect(s?.decisions.thisWeek.count).toBe(1_300);
+    expect(s?.decisions.thisWeek.count).toBe(1_900);
     expect(s?.overturned?.capped).toBe(true);
     expect(s?.overturned?.count).toBeGreaterThan(0);
+    // The role rows are read before the loop that ran out, so the dates aren't starved by it.
+    expect(s?.tenureCapped).toBe(false);
     // Reaching the calls limit genuinely takes past 3,500 reads, so this one test carries its own
     // bound: about 2.7 s here with coverage, several times that on CI's runner.
   }, 60_000);
@@ -243,5 +246,163 @@ describe('staffStats at its maximum supported input', () => {
       .withIdentity({ subject: 'adm' })
       .query(api.people.staffStats, { userId: matt });
     expect(after?.decisions.undoneByOthers).toEqual({ count: 1, capped: false });
+  });
+});
+
+describe('the figures say capped rather than throw or mislead', () => {
+  test('a heavily flagged person’s page: the helpers’ reads are reserved first, so the flags cap instead of throwing', async () => {
+    const t = await setup();
+    const adm = await seed(t, 'adm', 'admin');
+    const spam = await seed(t, 'spam', 'member');
+    await t.run(async (ctx) => {
+      const flag = (over: Partial<Doc<'contentFlags'>>) =>
+        ctx.db.insert('contentFlags', {
+          flaggerId: adm,
+          targetType: 'user',
+          targetId: spam,
+          reason: 'spam',
+          status: 'open',
+          origin: 'user',
+          createdAt: T0,
+          ...over,
+        });
+      for (const status of ['open', 'reviewing'] as const) {
+        for (let i = 0; i < 51; i++) await flag({ status });
+        for (let i = 0; i < 101; i++) {
+          await flag({ status, targetType: 'report', targetId: `r${i}`, subjectUserId: spam });
+        }
+      }
+      for (let i = 0; i < 101; i++) {
+        await flag({
+          flaggerId: spam,
+          targetType: 'report',
+          targetId: `f${i}`,
+          status: 'dismissed',
+        });
+      }
+    });
+    const page = await t
+      .withIdentity({ subject: 'adm' })
+      .query(api.people.person, { userId: spam });
+    expect(page?.open.flagsCapped).toBe(true);
+    expect(page?.rights.flagsFiled.capped).toBe(true);
+  });
+
+  test('time to decide says capped, not unrecorded, when the budget runs out reading filings', async () => {
+    const t = await setup();
+    const matt = await seed(t, 'matt', 'moderator');
+    const adm = await seed(t, 'adm', 'admin');
+    await t.run(async (ctx) => {
+      // Decisions from before the row recorded its filing: each reads its flag, and every flag
+      // weighs its worst, so the budget is spent long before the last.
+      for (let i = 0; i < 1_000; i++) {
+        const flagId = await ctx.db.insert('contentFlags', {
+          flaggerId: adm,
+          targetType: 'report',
+          targetId: `r${i}`,
+          reason: 'spam',
+          note: 'n'.repeat(13_000),
+          status: 'actioned',
+          origin: 'user',
+          createdAt: T0 - 3_600_000,
+        });
+        await ctx.db.insert('moderationActions', {
+          actorId: matt,
+          action: 'resolve_flag',
+          targetType: 'contentFlag',
+          targetId: flagId,
+          reason: 'r',
+          createdAt: T0 - i * 60_000,
+        });
+      }
+    });
+    const s = await t
+      .withIdentity({ subject: 'adm' })
+      .query(api.people.staffStats, { userId: matt });
+    expect(s?.timeToDecide).toEqual({ medianMs: null, decided: 1_000, capped: true });
+  }, 60_000);
+
+  test('an undo of an undo written before chains were kept places that undo first', async () => {
+    const t = await setup(false);
+    const matt = await seed(t, 'matt', 'moderator');
+    const adm = await seed(t, 'adm', 'admin');
+    const base = {
+      action: 'set_posting_permission' as const,
+      targetType: 'user' as const,
+      targetId: 'x',
+      reason: 'r',
+    };
+    const ids = await t.run(async (ctx) => {
+      await markReady(ctx, READY_ROWS);
+      const change = await ctx.db.insert('moderationActions', {
+        ...base,
+        actorId: matt,
+        createdAt: T0,
+      });
+      const legacy = await ctx.db.insert('moderationActions', {
+        ...base,
+        actorId: adm,
+        undoesActionId: change,
+        createdAt: T0 + 1,
+      });
+      const redo = await asUndoOf(ctx, legacy, () =>
+        writeAudit(ctx, { ...base, actorId: adm, createdAt: T0 + 2 }),
+      );
+      return { change, legacy, redo };
+    });
+    const [change, legacy, redo] = await t.run((ctx) =>
+      Promise.all([ids.change, ids.legacy, ids.redo].map((id) => ctx.db.get(id))),
+    );
+    expect(legacy).toMatchObject({ undoRoot: ids.change, undoDepth: 1 });
+    expect(redo).toMatchObject({ undoRoot: ids.change, undoDepth: 2 });
+    expect(change).toMatchObject({ undoTop: 2, undoTopActorId: adm });
+    // The backfill leaves the chain as the write placed it: the change, undone twice, stands.
+    await t.mutation(internal.peopleJobs.backfillUndoChains, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers, 1_000);
+    const s = await t
+      .withIdentity({ subject: 'adm' })
+      .query(api.people.staffStats, { userId: matt });
+    expect(s?.decisions.undoneByOthers).toEqual({ count: 0, capped: false });
+  });
+
+  test('before the backfill, a role undo from before the chains makes the dates capped, never wrong', async () => {
+    const t = await setup(false);
+    const matt = await seed(t, 'matt', 'moderator');
+    const adm = await seed(t, 'adm', 'admin');
+    await t.run(async (ctx) => {
+      await markReady(ctx, READY_ROWS);
+      const role = { actorId: adm, targetType: 'user' as const, targetId: matt, reason: 'r' };
+      const grant = await ctx.db.insert('moderationActions', {
+        ...role,
+        action: 'grant_role',
+        metadata: { role: 'moderator', priorRole: 'member' },
+        createdAt: T0 - 3,
+      });
+      const undo = await ctx.db.insert('moderationActions', {
+        ...role,
+        action: 'revoke_role',
+        metadata: { priorRole: 'moderator' },
+        undoesActionId: grant,
+        createdAt: T0 - 2,
+      });
+      await ctx.db.insert('moderationActions', {
+        ...role,
+        action: 'grant_role',
+        metadata: { role: 'moderator', priorRole: 'member' },
+        undoesActionId: undo,
+        createdAt: T0 - 1,
+      });
+    });
+    const stats = () =>
+      t.withIdentity({ subject: 'adm' }).query(api.people.staffStats, { userId: matt });
+    expect(await stats()).toMatchObject({ staffSince: null, roleSince: null, tenureCapped: true });
+    await t.mutation(internal.peopleJobs.backfillUndoChains, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers, 1_000);
+    // Undone twice, the grant is back with its own time.
+    expect(await stats()).toMatchObject({
+      staffSince: { at: T0 - 3, role: 'moderator' },
+      roleSince: { at: T0 - 3, role: 'moderator' },
+      tenureCapped: false,
+    });
   });
 });

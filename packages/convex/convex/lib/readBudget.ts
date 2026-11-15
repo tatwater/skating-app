@@ -131,9 +131,14 @@ export class ReadBudget {
     this.docsLeft -= rows;
   }
 
-  /** Rows of `kind` affordable after keeping `reserve` back, each costing `perRow` (default: its weight). */
+  /**
+   * Rows of `kind` affordable in one call after keeping `reserve` back, each costing `perRow` (default:
+   * its weight) — and no more than the documents left, and none once the calls are spent, so a `take`
+   * sized by it never trips the calls or documents limit.
+   */
   rows(kind: RowKind, cap = Number.POSITIVE_INFINITY, reserve = 0, perRow = ROW_MAX[kind]): number {
-    return Math.max(0, Math.min(cap, Math.floor((this.left - reserve) / perRow)));
+    if (this.callsLeft < 1) return 0;
+    return Math.max(0, Math.min(cap, this.docsLeft, Math.floor((this.left - reserve) / perRow)));
   }
 
   charge(kind: RowKind, rows = 1): void {

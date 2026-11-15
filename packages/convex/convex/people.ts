@@ -470,6 +470,12 @@ export const person = query({
     const target = await budget.one('profile', () => ctx.db.get(userId));
     if (!target) return null;
     budget.reserve('small', 64);
+    // The helpers' reads are reserved before the page's own: each `takeCapped` below sizes itself by
+    // what is left, so a reserve after them could find a heavily flagged person's reads had spent it,
+    // and throw. The ledger check reads admins' People rows once for every lever, and only for a
+    // holder (`lib/ledgerEditors`, behind `isLastLedgerEditor`).
+    if (isLedgerEditor(target)) budget.reserve('personRow', 200);
+    budget.reserve('verdict', VERDICT_COUNT_CAP + 1);
     const stored = await readStoredCounts(ctx);
 
     // ── The status note: who set the suspension or ban, and when ──
@@ -583,8 +589,6 @@ export const person = query({
     };
 
     // ── The levers, and whether this viewer may pull each: the write's own refusal ──
-    // The ledger check reads admins' People rows once for every lever (`lib/ledgerEditors`).
-    budget.reserve('personRow', 200);
     const discipline = viewerCan(viewer, 'people.discipline');
     const roles = viewerCan(viewer, 'people.role');
     const answer = async (write: PersonWrite, allowed: boolean, family: 'discipline' | 'role') => {
@@ -604,7 +608,6 @@ export const person = query({
       ? await writeRefusal(ctx, viewer, target, { kind: 'ledgerRevoke' })
       : null;
 
-    budget.reserve('verdict', VERDICT_COUNT_CAP + 1);
     const hidden = await readVerdictCounts(ctx, userId);
     const contradictions = target.contradictionCount;
 
@@ -1067,11 +1070,14 @@ function rootReader(ctx: QueryCtx, budget: ReadBudget, known: readonly Audit[]) 
   const byId = new Map<string, Audit>(known.map((r) => [r._id, r]));
   return async (row: Audit): Promise<Audit | undefined> => {
     const id = chainRootId(row);
+    // A row no undo is its own first row: already in hand, never read again.
+    if (id === row._id) return row;
     const have = byId.get(id);
     if (have) return have;
     const read = await budget.measured('moderationAction', () => ctx.db.get(id));
     if (read === undefined) return undefined;
-    if (read === null) return row; // the first row is gone: judge the row on its own
+    // The first row is gone: judge the row on its own — nothing known above it, so it stands.
+    if (read === null) return { ...row, undoTop: row.undoDepth ?? 0, undoTopActorId: undefined };
     byId.set(id, read);
     return read;
   };
@@ -1136,8 +1142,9 @@ export function staffTenure(
  * **Fits by construction**: one read of the staffer's decisions serves both windows (real-weight
  * capped), and every further read — a chain's first row, a verdict, the row that ended it, a filing
  * — goes through one budget that counts bytes, calls and documents and is asked before each read; when
- * it runs out the loop stops and the figure says `capped` (or reads `null`, for the median). Before
- * the undo-chain backfill has run, the undo figures say `capped`.
+ * it runs out the loop stops and the figure says `capped` (the median reading `null` as well). The
+ * role rows are read first, so those loops can't starve the dates. Before the undo-chain backfill has
+ * run, the undo figures say `capped`, and so do the dates when an undo among the role rows predates it.
  *
  * `null` for anyone who isn't staff. Moderators read it on an admin's page too: the audit feed
  * already shows them everything it counts.
@@ -1147,7 +1154,7 @@ export const staffStats = query({
   handler: async (ctx, args) => {
     const viewer = await requireCapability(ctx, 'audit.read');
     const now = clock(args.now);
-    const budget = new ReadBudget(TX_BUDGET - ROW_MAX.profile);
+    const budget = queryBudget();
     const target = await budget.one('profile', () => ctx.db.get(args.userId));
     if (!target || ROLE_RANK[target.role] < ROLE_RANK.moderator) return null;
     const ledgerVisible = seesLedgerGrants(viewer);
@@ -1186,55 +1193,9 @@ export const staffStats = query({
     const readAllAfter = (t: number) => page.isDone || oldestRead < t;
     const rootOf = rootReader(ctx, budget, page.page);
 
-    const weeks = Array.from({ length: WEEKS }, (_, i) => {
-      const start = end - (WEEKS - i) * WEEK_MS;
-      const count = decisions.filter(
-        (r) => r.createdAt >= start && r.createdAt < start + WEEK_MS,
-      ).length;
-      return { from: start, count, capped: !readAllAfter(start) };
-    });
-    const thisWeek = weeks[WEEKS - 1] as { from: number; count: number; capped: boolean };
-    const weekRows = decisions.filter((r) => r.createdAt >= thisWeek.from && r.createdAt < end);
-
-    // Undone on net by someone else: from the row and its chain's first row, no chain walked.
-    const byOther = (by: Id<'profiles'> | undefined | null) =>
-      by !== null && by !== undefined && by !== staffer;
-    let undone = 0;
-    let undoShort = !chainsReady;
-    for (const r of weekRows) {
-      const root = await rootOf(r);
-      if (root === undefined) {
-        undoShort = true;
-        break;
-      }
-      if (byOther(undoneBy(r, root))) undone++;
-    }
-
-    const durations: number[] = [];
-    let unknown = 0;
-    for (const r of weekRows.filter((x) => FILED_DECISIONS.has(x.action))) {
-      const filedAt = await filedAtOf(ctx, budget, r);
-      if (filedAt === null) unknown++;
-      else durations.push(Math.max(0, r.createdAt - filedAt));
-    }
-
-    // ── This season's reversals, from the same rows ──
-    let overturned: Count | null = null;
-    if (span !== null) {
-      let count = 0;
-      let short = !chainsReady || !readAllAfter(span.from);
-      for (const r of decisions.filter((x) => x.createdAt >= span.from && x.createdAt < span.to)) {
-        const reversed = await reversedByOther(ctx, budget, rootOf, r, staffer);
-        if (reversed === undefined) {
-          short = true;
-          break;
-        }
-        if (reversed) count++;
-      }
-      overturned = { count, capped: short };
-    }
-
     // ── Staff since and role since, from the role rows, walked newest first ──
+    // Read before the per-decision loops below, which run until the budget is spent: read after them,
+    // a busy staffer's dates would be starved and say capped whenever those loops ran out.
     const roleRows: Audit[] = [];
     let roleShort = false;
     for (const action of ['grant_role', 'revoke_role'] as const) {
@@ -1262,9 +1223,14 @@ export const staffStats = query({
         before = row._creationTime;
       }
     }
+    // Before the undo-chain backfill, an undo written before chains were kept carries no place, and
+    // the change it undid still reads as standing: the dates can't be told, so they say so.
+    if (!chainsReady && roleRows.some((r) => r.undoesActionId !== undefined && !r.undoRoot)) {
+      roleShort = true;
+    }
     const roleRoot = rootReader(ctx, budget, roleRows);
     const roots = new Map<string, Audit>();
-    for (const r of roleRows) {
+    for (const r of roleShort ? [] : roleRows) {
       const root = await roleRoot(r);
       if (root === undefined) {
         roleShort = true;
@@ -1276,21 +1242,79 @@ export const staffStats = query({
       ? { staffSince: null, roleSince: null }
       : staffTenure(roleRows, (r) => roots.get(r._id) ?? r, target.role);
 
+    const weeks = Array.from({ length: WEEKS }, (_, i) => {
+      const start = end - (WEEKS - i) * WEEK_MS;
+      const count = decisions.filter(
+        (r) => r.createdAt >= start && r.createdAt < start + WEEK_MS,
+      ).length;
+      return { from: start, count, capped: !readAllAfter(start) };
+    });
+    const thisWeek = weeks[WEEKS - 1] as { from: number; count: number; capped: boolean };
+    const weekRows = decisions.filter((r) => r.createdAt >= thisWeek.from && r.createdAt < end);
+
+    // Undone on net by someone else: from the row and its chain's first row, no chain walked.
+    const byOther = (by: Id<'profiles'> | undefined | null) =>
+      by !== null && by !== undefined && by !== staffer;
+    let undone = 0;
+    let undoShort = !chainsReady;
+    for (const r of weekRows) {
+      const root = await rootOf(r);
+      if (root === undefined) {
+        undoShort = true;
+        break;
+      }
+      if (byOther(undoneBy(r, root))) undone++;
+    }
+
+    const durations: number[] = [];
+    let unknown = 0;
+    // A filing time the budget ran out before reading is capped, not unrecorded.
+    let decideShort = false;
+    const filed = weekRows.filter((x) => FILED_DECISIONS.has(x.action));
+    for (const r of filed) {
+      const filedAt = await filedAtOf(ctx, budget, r);
+      if (filedAt === undefined) {
+        decideShort = true;
+        break;
+      }
+      if (filedAt === null) unknown++;
+      else durations.push(Math.max(0, r.createdAt - filedAt));
+    }
+
+    // ── This season's reversals, from the same rows ──
+    let overturned: Count | null = null;
+    if (span !== null) {
+      let count = 0;
+      let short = !chainsReady || !readAllAfter(span.from);
+      for (const r of decisions.filter((x) => x.createdAt >= span.from && x.createdAt < span.to)) {
+        const reversed = await reversedByOther(ctx, budget, rootOf, r, staffer);
+        if (reversed === undefined) {
+          short = true;
+          break;
+        }
+        if (reversed) count++;
+      }
+      overturned = { count, capped: short };
+    }
+
     return {
       decisions: {
         thisWeek: { count: thisWeek.count, capped: thisWeek.capped },
         undoneByOthers: { count: undone, capped: thisWeek.capped || undoShort },
       },
       timeToDecide: {
-        medianMs: unknown > 0 || thisWeek.capped ? null : lowerMedian(durations),
-        decided: durations.length + unknown,
-        capped: thisWeek.capped,
+        medianMs: unknown > 0 || thisWeek.capped || decideShort ? null : lowerMedian(durations),
+        decided: filed.length,
+        capped: thisWeek.capped || decideShort,
       },
       overturned,
       season: { season, opensOn: seasonRecordWindow(season, now).opensOn, empty: span === null },
       staffSince: tenure.staffSince,
       roleSince: tenure.roleSince,
-      /** The role rows couldn't all be read: both dates are `null` for that reason, not unrecorded. */
+      /**
+       * The role rows couldn't all be read, or an undo among them predates the undo-chain backfill:
+       * both dates are `null` for that reason, not unrecorded.
+       */
       tenureCapped: roleShort,
       weeks,
     };
@@ -1337,20 +1361,27 @@ async function reversedByOther(
 
 /**
  * When the item a filed decision decided was filed: from the row, or (older rows) the flag or ask,
- * read as it really weighs within the budget. `null` when it can't be told.
+ * read as it really weighs within the budget. `null` when it can't be told; `undefined` when the
+ * budget ran out before the read.
  */
-async function filedAtOf(ctx: QueryCtx, budget: ReadBudget, row: Audit): Promise<number | null> {
+async function filedAtOf(
+  ctx: QueryCtx,
+  budget: ReadBudget,
+  row: Audit,
+): Promise<number | null | undefined> {
   const recorded = (row.metadata as { filedAt?: unknown } | undefined)?.filedAt;
   if (typeof recorded === 'number') return recorded;
   if (row.targetType === 'contentFlag') {
     const id = ctx.db.normalizeId('contentFlags', row.targetId);
     if (!id) return null;
-    return (await budget.measured('contentFlag', () => ctx.db.get(id)))?.createdAt ?? null;
+    const flag = await budget.measured('contentFlag', () => ctx.db.get(id));
+    return flag === undefined ? undefined : (flag?.createdAt ?? null);
   }
   if (row.targetType === 'waterBodyRequest') {
     const id = ctx.db.normalizeId('waterBodyRequests', row.targetId);
     if (!id) return null;
-    return (await budget.measured('waterBodyRequest', () => ctx.db.get(id)))?.createdAt ?? null;
+    const ask = await budget.measured('waterBodyRequest', () => ctx.db.get(id));
+    return ask === undefined ? undefined : (ask?.createdAt ?? null);
   }
   // A drawn body's decision from before the row recorded it: reading the body means its outline.
   return null;

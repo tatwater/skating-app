@@ -19,7 +19,7 @@ import type { Doc, Id } from '../_generated/dataModel';
 
 type ChainRow = Pick<
   Doc<'moderationActions'>,
-  '_id' | 'undoRoot' | 'undoDepth' | 'undoTop' | 'undoTopActorId'
+  '_id' | 'undoesActionId' | 'undoRoot' | 'undoDepth' | 'undoTop' | 'undoTopActorId'
 >;
 
 /** The id of the chain's first row a row belongs to (itself, when it is no undo). */
@@ -40,7 +40,10 @@ export function undoneBy(row: ChainRow, root: ChainRow): Id<'profiles'> | undefi
   return stands(row, root) ? null : root.undoTopActorId;
 }
 
-/** Whether `row` is a change in its own right that stands: no undo, and not undone on net. */
+/**
+ * Whether `row` is a change in its own right that stands: no undo, and not undone on net. An undo
+ * not yet placed (written before chains were kept) is still an undo — never a change of its own.
+ */
 export function isStandingChange(row: ChainRow, root: ChainRow): boolean {
-  return row.undoRoot === undefined && stands(row, root);
+  return row.undoRoot === undefined && row.undoesActionId === undefined && stands(row, root);
 }
