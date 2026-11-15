@@ -29,6 +29,7 @@ import { Route as AdminFeaturesRouteImport } from './routes/admin.features'
 import { Route as AdminFlagsRouteImport } from './routes/admin.flags'
 import { Route as AdminIceCalibrationRouteImport } from './routes/admin.ice-calibration'
 import { Route as AdminImportsRouteImport } from './routes/admin.imports'
+import { Route as AdminPeopleRouteImport } from './routes/admin.people'
 import { Route as AdminRecurrenceRouteImport } from './routes/admin.recurrence'
 import { Route as AdminSeasonsRouteImport } from './routes/admin.seasons'
 import { Route as AdminSupportRouteImport } from './routes/admin.support'
@@ -148,6 +149,11 @@ const AdminIceCalibrationRoute = AdminIceCalibrationRouteImport.update({
 const AdminImportsRoute = AdminImportsRouteImport.update({
   id: '/imports',
   path: '/imports',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminPeopleRoute = AdminPeopleRouteImport.update({
+  id: '/people',
+  path: '/people',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminRecurrenceRoute = AdminRecurrenceRouteImport.update({
@@ -275,6 +281,7 @@ export interface FileRoutesByFullPath {
   '/admin/flags': typeof AdminFlagsRoute
   '/admin/ice-calibration': typeof AdminIceCalibrationRoute
   '/admin/imports': typeof AdminImportsRoute
+  '/admin/people': typeof AdminPeopleRoute
   '/admin/recurrence': typeof AdminRecurrenceRoute
   '/admin/seasons': typeof AdminSeasonsRoute
   '/admin/support': typeof AdminSupportRoute
@@ -314,6 +321,7 @@ export interface FileRoutesByTo {
   '/admin/flags': typeof AdminFlagsRoute
   '/admin/ice-calibration': typeof AdminIceCalibrationRoute
   '/admin/imports': typeof AdminImportsRoute
+  '/admin/people': typeof AdminPeopleRoute
   '/admin/recurrence': typeof AdminRecurrenceRoute
   '/admin/seasons': typeof AdminSeasonsRoute
   '/admin/support': typeof AdminSupportRoute
@@ -358,6 +366,7 @@ export interface FileRoutesById {
   '/admin/flags': typeof AdminFlagsRoute
   '/admin/ice-calibration': typeof AdminIceCalibrationRoute
   '/admin/imports': typeof AdminImportsRoute
+  '/admin/people': typeof AdminPeopleRoute
   '/admin/recurrence': typeof AdminRecurrenceRoute
   '/admin/seasons': typeof AdminSeasonsRoute
   '/admin/support': typeof AdminSupportRoute
@@ -403,6 +412,7 @@ export interface FileRouteTypes {
     | '/admin/flags'
     | '/admin/ice-calibration'
     | '/admin/imports'
+    | '/admin/people'
     | '/admin/recurrence'
     | '/admin/seasons'
     | '/admin/support'
@@ -442,6 +452,7 @@ export interface FileRouteTypes {
     | '/admin/flags'
     | '/admin/ice-calibration'
     | '/admin/imports'
+    | '/admin/people'
     | '/admin/recurrence'
     | '/admin/seasons'
     | '/admin/support'
@@ -485,6 +496,7 @@ export interface FileRouteTypes {
     | '/admin/flags'
     | '/admin/ice-calibration'
     | '/admin/imports'
+    | '/admin/people'
     | '/admin/recurrence'
     | '/admin/seasons'
     | '/admin/support'
@@ -664,6 +676,13 @@ declare module '@tanstack/react-router' {
       path: '/imports'
       fullPath: '/admin/imports'
       preLoaderRoute: typeof AdminImportsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/people': {
+      id: '/admin/people'
+      path: '/people'
+      fullPath: '/admin/people'
+      preLoaderRoute: typeof AdminPeopleRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/recurrence': {
@@ -862,6 +881,7 @@ interface AdminRouteChildren {
   AdminFlagsRoute: typeof AdminFlagsRoute
   AdminIceCalibrationRoute: typeof AdminIceCalibrationRoute
   AdminImportsRoute: typeof AdminImportsRoute
+  AdminPeopleRoute: typeof AdminPeopleRoute
   AdminRecurrenceRoute: typeof AdminRecurrenceRoute
   AdminSeasonsRoute: typeof AdminSeasonsRoute
   AdminSupportRoute: typeof AdminSupportRoute
@@ -885,6 +905,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminFlagsRoute: AdminFlagsRoute,
   AdminIceCalibrationRoute: AdminIceCalibrationRoute,
   AdminImportsRoute: AdminImportsRoute,
+  AdminPeopleRoute: AdminPeopleRoute,
   AdminRecurrenceRoute: AdminRecurrenceRoute,
   AdminSeasonsRoute: AdminSeasonsRoute,
   AdminSupportRoute: AdminSupportRoute,
