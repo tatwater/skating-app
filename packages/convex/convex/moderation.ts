@@ -44,7 +44,7 @@ import { refreshPersonRow } from './lib/peopleRows';
 import { refreshPostLatestSkateEnd, refreshPostSearchText } from './lib/postSync';
 import { clearFailure } from './lib/recurringWork';
 import { mirrorReportSubAreas } from './lib/reportSubAreas';
-import { type UndoState, undoNeedsReason, undoState } from './lib/undo';
+import { type UndoState, undoState } from './lib/undo';
 import { literals } from './lib/validators';
 
 /** The audit action implied by a target moderation status (D37). */
