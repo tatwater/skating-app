@@ -315,6 +315,28 @@ describe('PlacesTab', () => {
     expect(ask?.querySelector('[data-slot="skeleton"]')).not.toBeNull();
   });
 
+  it('says when staff last edited or moved the selected landmark, or that neither is recorded', () => {
+    const { unmount } = render(<PlacesTab bodyId="wb1" lit="landmark:lm-dam" />);
+    const changed = () =>
+      [...document.querySelectorAll('[data-slot="key-value-row"]')].find((r) =>
+        r.textContent?.startsWith('Changed'),
+      );
+    expect(changed()).toHaveTextContent('Changed' + 'Not recorded yet');
+    unmount();
+    mocks.results.set(fn(api.bodyConsole.landmarkProvenance), [
+      {
+        landmarkId: 'lm-dam',
+        source: 'osm',
+        createdAt: PASS,
+        createdBy: null,
+        moderatorEditedAt: new Date(2026, 9, 5, 12).getTime(),
+        movedAt: new Date(2026, 9, 7, 12).getTime(),
+      },
+    ]);
+    render(<PlacesTab bodyId="wb1" lit="landmark:lm-dam" />);
+    expect(changed()).toHaveTextContent('Edited 5 Oct 2026 · Moved 7 Oct 2026');
+  });
+
   it('says when and by what the selected landmark was added', () => {
     render(<PlacesTab bodyId="wb1" lit="landmark:lm-dam" />);
     expect(screen.getByText('29 Sep 2026')).toBeTruthy();

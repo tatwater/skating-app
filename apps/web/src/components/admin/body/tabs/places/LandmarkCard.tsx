@@ -18,8 +18,8 @@ import {
   SelectValue,
 } from '@/components/kit/select';
 import { sayUnavailable, UnavailableButton } from '@/components/kit/unavailable-button';
-import { usePaneKeys } from '@/lib/keys';
 import { statusDate } from '../../frame/bodyModel';
+import { useTabKeys } from '../../frame/tabKeys';
 import { BLOCK_GAP, useDraft } from '../tabParts';
 import { CouldntRead, LoadingLine, NotRecorded } from '../tabStates';
 import {
@@ -85,7 +85,7 @@ export function LandmarkCard({
     sent.current = null;
   }
   const promotable = PROMOTABLE.has(l.kind);
-  usePaneKeys(card, [
+  useTabKeys(card, [
     { key: 'M', run: () => sayUnavailable(TOOLS.move), enabled: canPlace },
     { key: 'B', run: () => sayUnavailable(TOOLS.bay), enabled: canPlace && promotable },
   ]);
@@ -260,11 +260,26 @@ export function LandmarkCard({
             <KeyValueRow label="Added">
               <AddedValue added={l.added} />
             </KeyValueRow>
+            <KeyValueRow label="Changed">
+              <ChangedValue added={l.added} />
+            </KeyValueRow>
           </KeyValueList>
         </Section>
       </div>
     </InsetCard>
   );
+}
+
+/** When staff last edited or moved a landmark, in the read's state — or that neither is recorded. */
+function ChangedValue({ added }: { added: Loadable<Added | null> }) {
+  if (added === undefined) return <LoadingLine width="7rem" />;
+  if (isFailed(added)) return <CouldntRead />;
+  const parts = [
+    added?.edited != null ? `Edited ${statusDate(added.edited)}` : null,
+    added?.moved != null ? `Moved ${statusDate(added.moved)}` : null,
+  ].filter((p): p is string => p !== null);
+  if (parts.length === 0) return <NotRecorded />;
+  return <span>{parts.join(' · ')}</span>;
 }
 
 /** When and by whom a landmark was added, in the read's state. */

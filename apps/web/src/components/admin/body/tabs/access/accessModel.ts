@@ -65,6 +65,18 @@ export type AlertRow = {
   official: boolean;
 };
 
+/**
+ * The Access tab's data. **What its reads return and the tab doesn't keep, and why** (nothing is
+ * dropped by accident):
+ * - `accessPoints.accessForBody`: a lot's `amenities`, `capacity` and `fee`, and a put-in's
+ *   `approachAscentM`, `approachRouted`, `approachKindOverride` and `postedAccess`: the skater's
+ *   sheet says these; the console's tab is about who rules and who vouches, and the board draws
+ *   none of them. `blockedIds` is drawn through the alerts that block.
+ * - `landmarks.listForBody`: only the name and point, for where each launch is.
+ * - `bodyConsole.history`: each row's `reason` and `id`: the ruling's statement is the record's own,
+ *   and the full rows are History's, on the left.
+ * - `waterBodies.get`: everything but `publicAccess` is the frame's or another tab's.
+ */
 export type AccessData = {
   ruling: Ruling;
   putIns: PutInRow[];

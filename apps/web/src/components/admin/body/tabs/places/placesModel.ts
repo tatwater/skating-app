@@ -20,8 +20,16 @@ type LatLng = { lat: number; lng: number };
 /** A person as a lockup names them: their real name, the handle as the link to their page. */
 export type Person = { name: string; handle: string; href?: string };
 
-/** When a landmark was added, and by whom or by what. */
-export type Added = { at: number; by: Person | string };
+/**
+ * When a landmark was added, and by whom or by what; and when staff last edited or moved it
+ * (`null` when the provenance read records neither — never read as "never").
+ */
+export type Added = {
+  at: number;
+  by: Person | string;
+  edited?: number | null;
+  moved?: number | null;
+};
 
 export type LandmarkRow = {
   id: string;
@@ -75,6 +83,17 @@ export type Asker = Loadable<Person | 'erased' | null> | 'hidden';
 
 export type PlaceAsk = PlaceNameAsk | ProposalAsk;
 
+/**
+ * The Places tab's data. **What its reads return and the tab doesn't keep, and why**:
+ * - `corpusPlaceNames.openForBody`: a name's `aliases` and `skatedMessages`: the emails' other
+ *   spellings and how many of the messages were from skated days; the ask says how many emails use
+ *   the name, the board's one figure.
+ * - `corpusRequests.openLandmarkRequestsForBody`: a proposal's `reportIds`: the reports it came
+ *   with, which the Inbox opens; the ask links to its place on the map instead.
+ * - `landmarks.listForEditor`: a removed landmark (`removedAt` and its reason), which is History's.
+ * - `bodyConsole.landmarkProvenance`: every field kept (the card's *Added* and *Changed*).
+ * - `subAreas.listForBody`: only each bay's name, for the bay a landmark falls in.
+ */
 export type PlacesData = {
   asks: Loadable<PlaceAsk[]>;
   /** More is asked than the reads returned: the asks' count is a floor. */
@@ -242,12 +261,17 @@ export const ADDED_BY: Readonly<Record<string, string>> = {
   moderator: 'By a moderator',
 };
 
-/** `bodyConsole.landmarkProvenance`'s row, trimmed to what the card reads. */
+/**
+ * `bodyConsole.landmarkProvenance`'s row. Every field is kept: when and by whom it was added (the
+ * card's *Added*) and when staff last edited or moved it (the card's *Changed*).
+ */
 export type ProvenanceInput = {
   landmarkId: string;
   source: string;
   createdAt: number;
   createdBy: PersonInput | null;
+  moderatorEditedAt?: number | null;
+  movedAt?: number | null;
 };
 
 /** When each landmark was added, and by whom: the moderator who placed it, else its source. */
@@ -258,6 +282,8 @@ export function addedByLandmark(rows: readonly ProvenanceInput[]): Map<string, A
       {
         at: r.createdAt,
         by: r.createdBy !== null ? personFrom(r.createdBy) : (ADDED_BY[r.source] ?? r.source),
+        edited: r.moderatorEditedAt ?? null,
+        moved: r.movedAt ?? null,
       },
     ]),
   );

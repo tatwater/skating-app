@@ -60,6 +60,13 @@ export type Bathymetry = {
   missing: boolean;
 };
 
+/**
+ * The Water tab's data. **What its reads return and the tab doesn't keep, and why**:
+ * - `bodyConsole.consoleExtras`: only `hasBathymetry`; the towns, the outline's trust and the touching
+ *   bodies are the frame's.
+ * - `waterBodies.get`: the depths, their sources, the interior and weather sample points, the box and
+ *   the states are kept; everything else is the frame's or another tab's.
+ */
 export type WaterData = {
   name: string;
   /** The body's (first) state, for a state survey's name. */

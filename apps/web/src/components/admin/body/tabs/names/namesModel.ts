@@ -73,6 +73,13 @@ export type Place = {
   townLines: TownLine[] | null;
 };
 
+/**
+ * The Names tab's data. **What its reads return and the tab doesn't keep, and why**:
+ * - `bodyConsole.places`: `counties` past the first, read at the interior point only (a body rarely
+ *   spans two), and `states`, since the record's own states are what the location shows.
+ * - `waterBodies.get`: everything but the name, the class, the name claims and the states is the
+ *   frame's or another tab's.
+ */
 export type NamesData = {
   name: string;
   /** The catalogs' spellings, ranked. Empty for a body no catalog named. */
