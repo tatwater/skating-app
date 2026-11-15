@@ -80,7 +80,7 @@ export function seedFromTrack(
  * lake we know, or from another day than the one the author chose, is not linked to this Report and
  * nothing on it moves (the track is in their activities either way, for a Report of its own). A
  * Report with no lake yet takes the track's; one with no end time yet — or only the sheet's
- * defaulted "now" — takes the track's times.
+ * defaulted "now" — takes the track's times, if a start the author chose fits them.
  */
 export function trackRefusal(
   report: SheetReport,
@@ -96,8 +96,23 @@ export function trackRefusal(
       : `That track is on ${lake.name}, not ${here}. Add it as another report to keep it.`;
   }
   const end = authoredEndMs(report);
-  if (end !== undefined && dayKey(end, timeZone) !== dayKey(plan.endTime, timeZone)) {
-    return `That track is from ${longDay(plan.endTime, timeZone)}, not the day of this report.`;
+  const otherDay = `That track is from ${longDay(plan.endTime, timeZone)}, not the day of this report.`;
+  if (end !== undefined) {
+    return dayKey(end, timeZone) !== dayKey(plan.endTime, timeZone) ? otherDay : null;
+  }
+  // The track's times will replace a missing or defaulted end; a start the author chose stays, so
+  // it has to fit them — else the Report would hold a start after its end, locked by the track.
+  const start = report.sheet.scalars.skateStartTime;
+  if (start !== undefined) {
+    if (dayKey(start, timeZone) !== dayKey(plan.endTime, timeZone)) return otherDay;
+    if (start >= plan.endTime) {
+      const at = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        hour: 'numeric',
+        minute: '2-digit',
+      }).format(plan.endTime);
+      return `That track ends at ${at}, before the start you chose.`;
+    }
   }
   return null;
 }

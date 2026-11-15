@@ -572,6 +572,24 @@ describe('a track added after the lake (the author’s lake and day stand)', () 
     expect(seeded?.sheet.scalars.skateStartTime).toBe(dayBefore.startTime);
   });
 
+  it('a start the author chose has to fit the track that would replace a missing or defaulted end', () => {
+    const r = onLake();
+    const withStart = (start: number) => ({
+      ...r,
+      sheet: sheetReducer(r.sheet, { type: 'setScalar', key: 'skateStartTime', value: start }),
+    });
+    // Inside the track's day and before its end: it fits, and the start stays the author's.
+    expect(trackRefusal(withStart(plan.endTime - 600_000), plan, mascoma, ZONE)).toBeNull();
+    // After the track's end: refused, so the Report never holds a start after its end.
+    expect(trackRefusal(withStart(plan.endTime + 600_000), plan, mascoma, ZONE)).toMatch(
+      /^That track ends at \d{1,2}:\d{2} [AP]M, before the start you chose\.$/,
+    );
+    // On another day than the track: refused as the day it is from.
+    expect(trackRefusal(withStart(plan.endTime - 2 * 86_400_000), plan, mascoma, ZONE)).toMatch(
+      /^That track is from .+, not the day of this report\.$/,
+    );
+  });
+
   it('the import refuses it and leaves the Report as the author had it', async () => {
     vi.useRealTimers();
     const post = openPostSheet(
