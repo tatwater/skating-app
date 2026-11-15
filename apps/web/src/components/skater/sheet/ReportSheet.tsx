@@ -374,8 +374,8 @@ function Sheet({ post, exits }: { post: PostSheet; exits: ReportSheetExits }) {
               you answered. Your words stay.
               {removing !== null && removing.photos.length > 0
                 ? post.reports.length > 1
-                  ? ' Its photos stay in this post, unplaced: put each on another lake or remove it before you post.'
-                  : ' Its photos stay, unplaced, for the lake you pick next.'
+                  ? ' Its photos stay in this post: one taken during another lake’s visit moves there, and the rest wait for you to put them on a lake or leave them out before you post.'
+                  : ' Its photos stay, for the lake you pick next.'
                 : ''}
             </p>
           </AlertDialogBody>

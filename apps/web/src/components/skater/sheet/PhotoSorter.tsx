@@ -76,9 +76,8 @@ export function PhotoSorter({
   const creating = post.mode.kind === 'create';
   const pool = creating ? unassignedPhotos(post) : [];
   // Each photo is sorted once, when it first reaches the pool while the sheet is open (`openSortMemory`).
-  const seen = useRef<Set<string> | null>(null);
-  if (seen.current === null) seen.current = openSortMemory(post);
-  rememberReportPhotos(seen.current, post);
+  const [seen] = useState(() => openSortMemory(post));
+  rememberReportPhotos(seen, post);
   const mounted = useRef(true);
   useEffect(
     () => () => {
@@ -94,7 +93,7 @@ export function PhotoSorter({
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the pool's ids; the photos ride `pool`.
   useEffect(() => {
-    const fresh = photosToSort(seen.current ?? openSortMemory(post), post);
+    const fresh = photosToSort(seen, post);
     if (fresh.length === 0) return;
     if (!fresh.some((p) => p.coord !== undefined)) return;
     const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;

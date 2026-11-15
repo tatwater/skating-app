@@ -1,6 +1,13 @@
+import { dropPhoto } from '@skating/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sheetPhotoPreview } from '@/lib/sheetPhotos';
-import { getSheet, resetSheetStoreForTests, setSheet, setSheetAttempt } from '@/lib/sheetStore';
+import {
+  getSheet,
+  resetSheetStoreForTests,
+  setSheet,
+  setSheetAttempt,
+  updateSheet,
+} from '@/lib/sheetStore';
 import {
   installFakeStore,
   openSheet,
@@ -40,12 +47,22 @@ describe('releaseIfDropped', () => {
       createdAt: 1,
       updatedAt: 1,
     });
+    updateSheet((p) => dropPhoto(p, photo.id));
     releaseIfDropped(photo.id);
     expect(getSheet()?.photos?.[0]?.id).toBe(photo.id);
     expect(sheetPhotoPreview(photo.id)).not.toBeNull();
   });
 
-  it('lets the file go once the sheet no longer holds the photo, or no sheet is open', async () => {
+  it('lets the file go once the sheet took the removal', async () => {
+    setSheet(openSheet());
+    const photo = await pickPhoto({ pool: true });
+    updateSheet((p) => dropPhoto(p, photo.id));
+    releaseIfDropped(photo.id);
+    expect(getSheet()?.photos).toEqual([]);
+    expect(sheetPhotoPreview(photo.id)).toBeNull();
+  });
+
+  it('lets the file go when no sheet is open', async () => {
     setSheet(openSheet());
     const photo = await pickPhoto({ pool: true });
     setSheet(null);

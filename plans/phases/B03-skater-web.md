@@ -1151,9 +1151,10 @@ the sort opens on its own. The sort's memory now notes every photo the sheet has
 and a removed lake stays removed across closing the sheet and reloading — unless the author picks a
 new photo there, which opens a tab for that photo alone.
 
-The class, checked: a removed lake's photos wait in the pool and the flush refuses an unplaced pool
-photo, so they never post on their own (the dialog now says so — place each or remove it before
-posting); removing the only lake starts it over on *Which lake?* with its photos kept; a photo's X and
+The class, checked: a removed lake's photos go back to the Post, where the day's rule may put one on
+another lake already on the sheet whose visit holds its time (`removeLake`'s written design, unpinned)
+and the rest wait in the pool, which the flush refuses until each is placed or left out — so none
+posts as a Report of its own, and the dialog now says exactly this; removing the only lake starts it over on *Which lake?* with its photos kept; a photo's X and
 its menu's *Leave out* release the file only once the sheet has taken the removal (a sent Post refuses
 it, and the photo kept its record but lost its file). `sheetRemoval.properties.test.ts` drives picks,
 removals, reopens and reloads against the real store and blob store, on the shared seed policy now in

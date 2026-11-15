@@ -10,7 +10,14 @@
  * pool's real sort memory, as `PhotoSorter` runs it.
  */
 
-import { type DraftPhoto, dropPhoto, type PostSheet, toPostDraft } from '@skating/core';
+import {
+  assignCandidates,
+  type DraftPhoto,
+  dropPhoto,
+  type PostSheet,
+  reassignPool,
+  toPostDraft,
+} from '@skating/core';
 import fc from 'fast-check';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { whenSheetPhotosSettled } from '@/lib/sheetPhotos';
@@ -113,11 +120,39 @@ function current(): PostSheet {
   return post;
 }
 
+/** `PhotoSorter`'s turn against `memory`, with the lookup answered at once. */
+function sortPool(memory: Set<string>): void {
+  const fresh = photosToSort(memory, current());
+  if (fresh.length === 0) return;
+  const tabs = sortPhotosIntoTabs(fresh, lakeOf, ZONE);
+  if (tabs.length === 0) return;
+  updateSheet(
+    (p) =>
+      applySortedPool(p, tabs, {
+        activeId: p.reports[0]?.id ?? '',
+        timeZone: ZONE,
+        now: Date.now(),
+        mint,
+        outlines: {},
+      })?.post ?? p,
+  );
+}
+
+/**
+ * The sheet's own pool rule (`ReportSheet`'s effect on the pool): the day puts a pool photo on the
+ * Report whose window holds its time. It may take a removed lake's photo to another lake already on
+ * the sheet — the designed rule (`removeLake`: "for the day, or the author, to put them on another")
+ * — but it never opens a Report, and with no outline known it never pins one.
+ */
+function dayRule(): void {
+  updateSheet((p) => reassignPool(p, assignCandidates(p, {})), { quiet: true });
+}
+
 type Fake = ReturnType<typeof installFakeStore>;
 
 /**
  * One sheet's life. After every move: Reports appear only when the author picked a photo; a removed
- * Report's photos wait in the pool, unplaced, until the author removes them; the stored draft and the
+ * Report's photos are never pinned and never open a Report of their own; the stored draft and the
  * Post that would go out hold exactly the sheet; and once storage settles, every photo has its file
  * and every file its photo.
  */
@@ -135,24 +170,6 @@ async function scenario(ops: readonly Op[]): Promise<void> {
   /** Photos whose Report the author removed, still on the sheet. */
   const orphaned = new Set<string>();
 
-  /** `PhotoSorter`'s turn, with the lookup answered at once. */
-  const sort = () => {
-    const fresh = photosToSort(memory, current());
-    if (fresh.length === 0) return;
-    const tabs = sortPhotosIntoTabs(fresh, lakeOf, ZONE);
-    if (tabs.length === 0) return;
-    updateSheet(
-      (p) =>
-        applySortedPool(p, tabs, {
-          activeId: p.reports[0]?.id ?? '',
-          timeZone: ZONE,
-          now: Date.now(),
-          mint,
-          outlines: {},
-        })?.post ?? p,
-    );
-  };
-
   const photo = (lake: number, day: number) => ({
     coord: LAKES[lake]?.coord,
     takenAtMs: BASE_TIME - day * DAY_MS - 3_600_000,
@@ -162,11 +179,11 @@ async function scenario(ops: readonly Op[]): Promise<void> {
     const post = current();
     // A Post always has a Report.
     expect(post.reports.length).toBeGreaterThan(0);
-    // A removed Report's photos never reach a Report on their own: they wait in the pool, unplaced.
+    // A removed Report's photos are never pinned on their own: they wait in the pool, or the day's
+    // rule put them on a lake already here — unplaced either way, never on a Report of their own.
     for (const id of orphaned) {
-      expect(post.reports.some((r) => r.photos.some((p) => p.id === id))).toBe(false);
-      const pooled = post.photos?.find((p) => p.id === id);
-      expect(pooled?.placeOnMap).toBe(false);
+      const found = photosOf(post).find((p) => p.id === id);
+      expect(found?.placeOnMap).toBe(false);
     }
     // The stored draft is the sheet.
     const record = stored();
@@ -253,7 +270,8 @@ async function scenario(ops: readonly Op[]): Promise<void> {
         break;
       }
     }
-    sort();
+    sortPool(memory);
+    dayRule();
     const after = current().reports.map((r) => r.id);
     if (op.t !== 'pickToPool' && op.t !== 'pickOntoReport') {
       // Nothing but a picked photo opens a Report — a removed one least of all.
@@ -335,18 +353,7 @@ describe('removing what the author added', () => {
     await scenario([{ t: 'pickOntoReport', pick: 0, lake: 0, day: 0 }]);
     await pickPhoto({ pool: true }, { coord: LAKES[1]?.coord, takenAtMs: BASE_TIME - 3_600_000 });
     const memory = openSortMemory({ ...current(), photos: [] });
-    const fresh = photosToSort(memory, current());
-    const tabs = sortPhotosIntoTabs(fresh, lakeOf, ZONE);
-    updateSheet(
-      (p) =>
-        applySortedPool(p, tabs, {
-          activeId: p.reports[0]?.id ?? '',
-          timeZone: ZONE,
-          now: Date.now(),
-          mint,
-          outlines: {},
-        })?.post ?? p,
-    );
+    sortPool(memory);
     const opened = current().reports.find((r) => r.bodyName === 'Crystal Lake');
     expect(opened).toBeDefined();
     updateSheet((p) => removeLake(p, opened?.id ?? '', Date.now(), mint));

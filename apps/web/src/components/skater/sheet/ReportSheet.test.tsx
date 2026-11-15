@@ -45,13 +45,16 @@ vi.mock('@/lib/sheetStore', async (importOriginal) => ({
 vi.mock('@/lib/analytics', () => ({ useAnalytics: () => ({ capture: h.capture }) }));
 vi.mock('@/lib/featureFlags', () => ({ useFeatureFlag: () => h.flag }));
 vi.mock('@/lib/useConnection', () => ({ useConnection: () => ({ status: h.status }) }));
+// One client for every render, as `useConvex` hands back: a fresh object each time would re-run
+// every effect keyed on it (the photo sort's) on every render, which the app never does.
+const convexClient = vi.hoisted(() => ({
+  query: async () => {
+    if (h.lakeAt === null) throw new Error('No lookup in this test');
+    return h.lakeAt;
+  },
+}));
 vi.mock('convex/react', () => ({
-  useConvex: () => ({
-    query: async () => {
-      if (h.lakeAt === null) throw new Error('No lookup in this test');
-      return h.lakeAt;
-    },
-  }),
+  useConvex: () => convexClient,
   useMutation: () => vi.fn(),
   useQuery: (ref: unknown, args: unknown) =>
     args === 'skip' ? undefined : h.queries.get(getFunctionName(ref as never)),
@@ -453,7 +456,9 @@ describe('leaving and removing (5.4.1, 5.31)', () => {
     fireEvent.click(screen.getByRole('tab', { name: /Crystal Lake/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Remove Crystal Lake from the report' }));
     expect(
-      await screen.findByText(/Its photos stay in this post, unplaced: put each on another lake/),
+      await screen.findByText(
+        /Its photos stay in this post: one taken during another lake’s visit moves there/,
+      ),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
     await waitFor(() => expect(getSheet()?.reports).toHaveLength(1));

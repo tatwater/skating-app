@@ -30,6 +30,7 @@ import {
   reportEndMs,
   type SheetReport,
   sheetReducer,
+  unassignedPhotos,
 } from '@skating/core';
 import type { MultiPolygon, Polygon } from 'geojson';
 
@@ -374,7 +375,7 @@ export function rememberReportPhotos(memory: Set<string>, post: PostSheet): void
 export function photosToSort(memory: Set<string>, post: PostSheet): DraftPhoto[] {
   if (post.mode.kind !== 'create') return [];
   rememberReportPhotos(memory, post);
-  const fresh = (post.photos ?? []).filter((p) => p.attachTo === undefined && !memory.has(p.id));
+  const fresh = unassignedPhotos(post).filter((p) => !memory.has(p.id));
   for (const p of fresh) memory.add(p.id);
   return fresh;
 }
@@ -388,9 +389,7 @@ export function applySortedPool(
   tabs: readonly PhotoTab[],
   opts: Parameters<typeof applyPhotoTabs>[2],
 ): { post: PostSheet; firstReportId: string | null } | null {
-  const pooled = new Set(
-    (post.photos ?? []).filter((p) => p.attachTo === undefined).map((p) => p.id),
-  );
+  const pooled = new Set(unassignedPhotos(post).map((p) => p.id));
   const still = tabs
     .map((t) => ({ ...t, photoIds: t.photoIds.filter((id) => pooled.has(id)) }))
     .filter((t) => t.photoIds.length > 0);
