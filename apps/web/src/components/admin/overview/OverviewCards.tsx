@@ -217,16 +217,20 @@ export function PeopleCard({ data, ...props }: CardProps<PeopleCardData>) {
   if (data === undefined) return <CountCard title="People" loadingRows={7} {...props} />;
   const staff = sumCounts([data.admins, data.moderators]);
   const suspension = suspensionDetail(data.suspended, data.nextSuspensionEnds, dayMonth);
+  const end =
+    data.totalUsers != null ? (
+      <SectionNote>{countText(data.totalUsers)} users</SectionNote>
+    ) : undefined;
+  // A backfill not yet finished: the figures may be wrong, so none is drawn — never a number.
+  if (data.pending.length > 0) {
+    return (
+      <CountCard title="People" end={end} {...props}>
+        <CountRow label="Still being prepared" value="" tone="dim" to={{ kind: 'people' }} />
+      </CountCard>
+    );
+  }
   return (
-    <CountCard
-      title="People"
-      end={
-        data.totalUsers != null ? (
-          <SectionNote>{countText(data.totalUsers)} users</SectionNote>
-        ) : undefined
-      }
-      {...props}
-    >
+    <CountCard title="People" end={end} {...props}>
       <CountRow
         label="Staff"
         detail={`${countText(data.admins)} admin · ${countText(data.moderators)} mod`}

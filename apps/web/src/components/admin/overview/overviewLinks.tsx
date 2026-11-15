@@ -29,7 +29,9 @@ export function overviewHref(to: OverviewTarget): string {
     case 'machinery':
       return '/admin/machinery';
     case 'people':
-      return to.list ? `/admin/people?list=${to.list}` : '/admin/people';
+      return to.list
+        ? `/admin/people?lane=${to.list === 'new' ? 'newest' : to.list}`
+        : '/admin/people';
     case 'ledger':
       return '/admin/machinery/ledger';
     case 'body':

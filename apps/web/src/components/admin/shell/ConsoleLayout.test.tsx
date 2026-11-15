@@ -149,6 +149,20 @@ describe('the rail', () => {
     expect(within(rail()).getByRole('button', { name: /Legacy/ })).toBeInTheDocument();
   });
 
+  it('lists People after Bodies, current on the list and on a person’s page', () => {
+    mocks.pathname = '/admin/people/k17abc';
+    render(<ConsoleLayout />);
+    const names = within(rail())
+      .getAllByRole('link')
+      .map((l) => l.textContent ?? '');
+    expect(names.findIndex((n) => n.includes('People'))).toBe(
+      names.findIndex((n) => n.includes('Bodies')) + 1,
+    );
+    const people = within(rail()).getByRole('link', { name: /People/ });
+    expect(people).toHaveAttribute('href', '/admin/people');
+    expect(people).toHaveAttribute('aria-current', 'page');
+  });
+
   it('shows a moderator only the old pages a moderator can use', async () => {
     render(<ConsoleLayout />);
     await userEvent.click(within(rail()).getByRole('button', { name: /Legacy/ }));
@@ -168,7 +182,9 @@ describe('the rail', () => {
     render(<ConsoleLayout />);
     await userEvent.click(within(rail()).getByRole('button', { name: /Legacy/ }));
     const menu = await screen.findByRole('menu');
-    expect(within(menu).getAllByRole('menuitem')).toHaveLength(15);
+    // Every old page still standing: Users left the menu when People landed.
+    expect(within(menu).getAllByRole('menuitem')).toHaveLength(14);
+    expect(within(menu).queryByRole('menuitem', { name: 'Users' })).toBeNull();
     await userEvent.click(within(menu).getByRole('menuitem', { name: 'Imports' }));
     expect(mocks.navigate).toHaveBeenCalledWith({ to: '/admin/imports' });
   });

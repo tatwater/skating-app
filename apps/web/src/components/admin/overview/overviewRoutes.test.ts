@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { modeAt, usesOldShell } from '../shell/consoleNav';
 import { type ActionRow, CORPUS_TASKS, INBOX_LANES } from './overviewData';
 import type { OverviewTarget } from './overviewLinks';
-import { consolePathFor, feedTargetPath } from './overviewRoutes';
+import { consolePathFor, feedTargetPath, routerTarget } from './overviewRoutes';
 
 /** Every target type the audit trail writes — the compile fails if the server adds one. */
 const TARGET_TYPES = [
@@ -38,8 +38,6 @@ describe('Home’s links, until the new modes land', () => {
     { kind: 'corpus' },
     ...CORPUS_TASKS.map((task) => ({ kind: 'corpus', task }) as const),
     { kind: 'machinery' },
-    { kind: 'people' },
-    ...PEOPLE_LISTS.map((list) => ({ kind: 'people', list }) as const),
     { kind: 'body', id: 'k1/7' },
   ];
 
@@ -52,6 +50,28 @@ describe('Home’s links, until the new modes land', () => {
       else expect(usesOldShell(path)).toBe(true);
     },
   );
+
+  it.each([
+    { kind: 'people' },
+    ...PEOPLE_LISTS.map((list) => ({ kind: 'people', list }) as const),
+  ] as const)('sends %o to People, which has landed', (target) => {
+    const { to } = routerTarget(consolePathFor(target) as string);
+    expect(modeAt(to)?.id).toBe('people');
+  });
+
+  it('opens each People list as its lane, the default as no param', () => {
+    expect(consolePathFor({ kind: 'people' })).toBe('/admin/people');
+    expect(consolePathFor({ kind: 'people', list: 'new' })).toBe('/admin/people?lane=newest');
+    expect(consolePathFor({ kind: 'people', list: 'staff' })).toBe('/admin/people?lane=staff');
+  });
+
+  it('hands the router a path and its query apart', () => {
+    expect(routerTarget('/admin/flags')).toEqual({ to: '/admin/flags' });
+    expect(routerTarget('/admin/people?lane=banned')).toEqual({
+      to: '/admin/people',
+      search: { lane: 'banned' },
+    });
+  });
 
   it('sends the lanes to the pages that work them', () => {
     expect(consolePathFor({ kind: 'inbox', lane: 'safety' })).toBe('/admin/flags');
@@ -81,6 +101,7 @@ describe('the audit feed’s rows', () => {
       const path = feedTargetPath({ type, id: 'k1/7', label: 'x' }) as string;
       expect(path).not.toBeNull();
       if (type === 'waterbody') expect(modeAt(path)?.id).toBe('bodies');
+      else if (type === 'user') expect(modeAt(path)?.id).toBe('people');
       else expect(usesOldShell(path)).toBe(true);
     },
   );
@@ -89,7 +110,7 @@ describe('the audit feed’s rows', () => {
     expect(feedTargetPath({ type: 'waterbody', id: 'k1/7', label: 'Lake' })).toBe(
       '/admin/body/k1%2F7',
     );
-    expect(feedTargetPath({ type: 'user', id: 'u1', label: 'Rob' })).toBe('/admin/users/u1');
+    expect(feedTargetPath({ type: 'user', id: 'k1/7', label: 'Rob' })).toBe('/admin/people/k1%2F7');
   });
 
   it('opens nothing for a type the trail doesn’t write', () => {

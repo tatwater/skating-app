@@ -239,6 +239,11 @@ export interface PeopleCardData {
   leaving: Count;
   /** Everyone with an account (the 6-hourly rollup); `null` until it has run. */
   totalUsers: Count | null;
+  /**
+   * The People backfills not yet finished after a deploy: while any is, every figure but
+   * `totalUsers` may be wrong (not merely a floor), so the card says so instead of a number.
+   */
+  pending: ConsoleOverview['people']['pending'];
 }
 
 export function peopleFromOverview(people: ConsoleOverview['people']): PeopleCardData {

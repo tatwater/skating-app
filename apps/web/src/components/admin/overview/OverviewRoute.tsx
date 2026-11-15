@@ -9,7 +9,7 @@ import { useMinuteNow } from '../shell/presence';
 import { OverviewView } from './OverviewView';
 import type { LinkTo } from './overviewLinks';
 import type { LiveState } from './overviewModel';
-import { consolePathFor, feedTargetPath } from './overviewRoutes';
+import { consolePathFor, feedTargetPath, routerTarget } from './overviewRoutes';
 import { type OverviewSearch, overviewTabOf, searchForTab, seasonOfSearch } from './overviewSearch';
 import { liveStateOf } from './overviewStatus';
 import { useOverviewHome } from './useOverviewHome';
@@ -25,7 +25,7 @@ import { useOverviewHome } from './useOverviewHome';
 /** A link through the router to the old page that does the work, or plain text where none does. */
 const linkTo: LinkTo = (to) => {
   const path = consolePathFor(to);
-  return path === null ? <span /> : <Link to={path} />;
+  return path === null ? <span /> : <Link {...routerTarget(path)} />;
 };
 
 export function OverviewRoute() {
@@ -53,7 +53,7 @@ export function OverviewRoute() {
       linkTo={linkTo}
       onOpenTarget={(target) => {
         const path = feedTargetPath(target);
-        if (path !== null) void navigate({ to: path });
+        if (path !== null) void navigate(routerTarget(path));
       }}
       onOpenBody={(id) => {
         const path = consolePathFor({ kind: 'body', id });

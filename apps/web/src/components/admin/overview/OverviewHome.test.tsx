@@ -100,6 +100,23 @@ describe('OverviewHome', () => {
     expect(screen.getByText('17 open')).toBeInTheDocument();
   });
 
+  it('draws no People figure while its backfills are still being prepared', () => {
+    const people = must(HOME.people);
+    render(<OverviewHome data={{ ...HOME, people: { ...people, pending: ['rows'] } }} now={NOW} />);
+    const card = must(
+      screen.getByText('Still being prepared').closest<HTMLElement>('[data-slot="count-card"]'),
+    );
+    // One row, linking to People, with no number in it; the account total (a rollup no backfill
+    // touches) still stands at the rule's end.
+    expect(within(card).queryByText('Staff')).toBeNull();
+    expect(within(card).queryByText('Suspended')).toBeNull();
+    const rows = [...card.querySelectorAll('[data-slot="count-row"]')];
+    expect(rows.map((r) => r.querySelector('[data-slot="count-value"]')?.textContent)).toEqual([
+      '',
+    ]);
+    expect(within(card).getByText('38 users')).toBeInTheDocument();
+  });
+
   it('says when the appeals count stopped at its bound, as every other count does', () => {
     const people = must(HOME.people);
     render(
@@ -170,7 +187,8 @@ describe('overviewHref', () => {
     );
     expect(overviewHref({ kind: 'corpus' })).toBe('/admin/corpus');
     expect(overviewHref({ kind: 'people' })).toBe('/admin/people');
-    expect(overviewHref({ kind: 'people', list: 'banned' })).toBe('/admin/people?list=banned');
+    expect(overviewHref({ kind: 'people', list: 'banned' })).toBe('/admin/people?lane=banned');
+    expect(overviewHref({ kind: 'people', list: 'new' })).toBe('/admin/people?lane=newest');
     expect(overviewHref({ kind: 'audit', type: 'waterbody', id: 'w 1' })).toBe('/admin/body/w%201');
     expect(overviewHref({ kind: 'audit', type: 'user', id: 'u' })).toBe('/admin/people/u');
     expect(overviewHref({ kind: 'audit', type: 'comment', id: 'c' })).toBe('/admin/reports?item=c');

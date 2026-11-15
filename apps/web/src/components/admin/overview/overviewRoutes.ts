@@ -6,14 +6,40 @@ function bodyConsolePath(id: string): string {
   return `/admin/body/${encodeURIComponent(id)}`;
 }
 
+/** Home's People lists, as People's lanes name them. */
+const PEOPLE_LANE_OF: Record<
+  NonNullable<Extract<OverviewTarget, { kind: 'people' }>['list']>,
+  string
+> = {
+  staff: 'staff',
+  new: 'newest',
+  suspended: 'suspended',
+  banned: 'banned',
+  leaving: 'leaving',
+};
+
+/**
+ * A path as the router takes it: the path, and its query as a search object (a link through the
+ * router names its search apart from its path).
+ */
+export function routerTarget(path: string): { to: string; search?: Record<string, string> } {
+  const at = path.indexOf('?');
+  if (at === -1) return { to: path };
+  return {
+    to: path.slice(0, at),
+    search: Object.fromEntries(new URLSearchParams(path.slice(at + 1))),
+  };
+}
+
 /**
  * Where Home's links go in the app as it stands: the old pages, until each target's mode lands
- * (the same rule as the palette, which opens a body in its Body console and a person in the old
- * user page). Bodies has landed, so a body opens in its Body console. `overviewHref` names the console's own routes; this names the pages that exist.
+ * (the same rule as the palette, which opens a body in its Body console and a person in People).
+ * Bodies has landed, so a body opens in its Body console. `overviewHref` names the console's own routes; this names the pages that exist.
  *
- * Every Inbox lane, Corpus task and People list lands on the old page that does that work; the old
- * pages take no filter, so the lane or list is the page, not a preset on it. `null` is a target
- * with no page yet — the caller draws it as text, never a link to a page that 404s.
+ * Every Inbox lane and Corpus task lands on the old page that does that work; the old pages take no
+ * filter, so the lane is the page, not a preset on it. People has landed, so its lists open as its
+ * lanes and a person on their own page. `null` is a target with no page yet — the caller draws it
+ * as text, never a link to a page that 404s.
  */
 export function consolePathFor(to: OverviewTarget): string | null {
   switch (to.kind) {
@@ -42,7 +68,10 @@ export function consolePathFor(to: OverviewTarget): string | null {
     case 'machinery':
       return '/admin/imports';
     case 'people':
-      return '/admin/users';
+      // People has landed: its lanes are the lists, the default (Everyone) written as no param.
+      return to.list === undefined
+        ? '/admin/people'
+        : `/admin/people?lane=${PEOPLE_LANE_OF[to.list]}`;
     case 'body':
       // A most-reported row opens that body's Body console (the governor's ruling at B01-2).
       return bodyConsolePath(to.id);
@@ -55,7 +84,7 @@ export function consolePathFor(to: OverviewTarget): string | null {
 }
 
 /**
- * A feed row's target: the thing's own old page where one opens it by id (a body, a person), else
+ * A feed row's target: the thing's own page where one opens it by id (a body, a person), else
  * the old page where that kind of thing is worked — a hidden report on the flag queue, a landmark
  * or a put-in from the water bodies, whose editor holds them. Every type the audit trail writes has
  * one; `null` only for a type it doesn't write.
@@ -65,7 +94,7 @@ function auditPath(type: string, id: string): string | null {
     case 'waterbody':
       return bodyConsolePath(id);
     case 'user':
-      return `/admin/users/${encodeURIComponent(id)}`;
+      return `/admin/people/${encodeURIComponent(id)}`;
     case 'report':
     case 'post':
     case 'comment':
