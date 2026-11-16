@@ -243,8 +243,14 @@ async function main(): Promise<void> {
   }
 
   const started = Date.now();
-  const { byBody, counts } = placeLandmarks(candidates, index);
+  const { byBody, counts, overIdTotal } = placeLandmarks(candidates, index);
   log(`placed in ${((Date.now() - started) / 1000).toFixed(1)} s`);
+  // Checked at the source: a stitched waterway whose ids pass what a landmark keeps (B01-3j).
+  for (const l of overIdTotal) {
+    log(
+      `ids past the total: "${l.name}" on ${l.waterBodyId} — ${l.ids} ids, ${l.chars} characters (the load keeps the newest that fit)`,
+    );
+  }
 
   let corpus: ReturnType<typeof applyCorpus> | undefined;
   if (mentionsPath) {

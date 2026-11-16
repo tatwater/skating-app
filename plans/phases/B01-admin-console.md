@@ -3440,7 +3440,8 @@ and the answer the same whatever order reads settle in. Reserve, never queue.
   alias text. An alias is a name a skater might type, never a claim about the ice.
 - **The text caps** (`@skating/core`'s `textCaps`): a place's name and each alias at 200 characters,
   a URL at 2,048, a catalog's machine id at 128 (every format ingested is under 40), a landmark's ids
-  at 32, a launch's walk at 256 points (thinned, its ends kept). A moderator's write past a cap is
+  by their total length (see *B01-3j* below — the 32 first written here froze 18 stitched waterways
+  on dev), a launch's walk at 256 points (thinned, its ends kept). A moderator's write past a cap is
   refused with a plain message; an import skips the row and counts it (`tooLong`), never the campaign.
   Stricter caps stand: a landmark's name at 80, a launch's at 60, a request's at 80, a link's label at
   80, a moderator's alias at 120. The apps' `maxLength`s match the request and landmark caps; the
@@ -3466,6 +3467,24 @@ and the answer the same whatever order reads settle in. Reserve, never queue.
   `externalIds` and a launch's id are now capped; what stays uncapped after this PR is a bay's outline
   and a landmark's corpus fields. People's per-row read plan needn't count the refusal reads: they
   reserve through `ReadBudget.waves` on the same budget, and a page past it reads "check elsewhere".
+
+**B01-3j: a landmark's catalog ids are bounded by their total length, never their count.** The post-
+deploy count of #131 found 18 landmarks on dev past the 32-id cap it introduced — waterways the ETL
+stitches from many OSM ways (142, 120, 64, 56, 54, 53, 47, 46, 44, 44, 42, 40, 40, 38, 37, 36, 34, 34
+ids; Monument Brook the largest, about 3,550 characters). The load skipped each one (`tooLong`), so
+every one was frozen at its last load, and a merge's fold cut a union to 32 silently. Nothing read is
+bounded by that count: no landmark read multiplies its worst case by it, and no audit row records the
+ids. Now `MAX_LANDMARK_EXTERNAL_ID_CHARS` (16,384, the sum of the ids' lengths — over four times the
+largest measured) bounds them through one rule, `landmarkIdsToKeep`, which both writers use: every id
+kept while the total fits; past it, the newest that fit, the oldest dropped. The load never skips or
+freezes a row for its ids — past the total it counts `idsTrimmed` and names the row in its `notes`;
+`tooLong` now means only a single id past 128 characters. The fold keeps the union whole under the
+total; past it, the merge's audit row counts `landmarkIdsTrimmed` and names the twins
+(`landmarkIdsTrimmedOn`). The ETL's placement reports any stitched landmark past the total
+(`overIdTotal`), so the number is checked at the source. With each id at most 128 characters, a
+landmark's ids now weigh at most 16,384 characters (64 KiB at four bytes each) — the bound a later
+`ROW_MAX.landmark` can claim for that field, beside its name (80) and aliases (12 × 80).
+
 
 
 **Held — the survey filing** (`fileBathymetrySurvey`): the board shows the field (*A survey the next

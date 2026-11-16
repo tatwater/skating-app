@@ -38,6 +38,7 @@ import {
   haversineMeters,
   landmarkNameKey,
   landmarksAreSamePlace,
+  MAX_LANDMARK_EXTERNAL_ID_CHARS,
   pointInPolygon,
 } from '@skating/core';
 import type { MultiPolygon, Polygon } from 'geojson';
@@ -507,6 +508,12 @@ export interface PlacementResult {
     merged: number;
     landmarks: number;
   };
+  /**
+   * Landmarks whose catalog ids, stitched from many ways, pass the total a landmark keeps
+   * (`MAX_LANDMARK_EXTERNAL_ID_CHARS`, B01-3j) — checked here at the source; the load keeps the
+   * newest that fit and names each row it trims.
+   */
+  overIdTotal: { waterBodyId: string; name: string; ids: number; chars: number }[];
 }
 
 /**
@@ -534,12 +541,19 @@ export function placeLandmarks(
   }
   const bodies = new Map(index.bodies.map((b) => [b.id, b]));
   const byBody = new Map<string, PlacedLandmark[]>();
+  const overIdTotal: PlacementResult['overIdTotal'] = [];
   let landmarks = 0;
   for (const [id, list] of raw) {
     const body = bodies.get(id) as MatchBody;
     const merged = mergeSamePlace(list, body);
     landmarks += merged.length;
     byBody.set(id, merged);
+    for (const l of merged) {
+      const chars = l.externalIds.reduce((sum, x) => sum + x.length, 0);
+      if (chars > MAX_LANDMARK_EXTERNAL_ID_CHARS) {
+        overIdTotal.push({ waterBodyId: id, name: l.name, ids: l.externalIds.length, chars });
+      }
+    }
   }
   return {
     byBody,
@@ -551,5 +565,6 @@ export function placeLandmarks(
       merged: placements - landmarks,
       landmarks,
     },
+    overIdTotal,
   };
 }
