@@ -5,8 +5,8 @@ import { type ReactNode, useRef } from 'react';
 import { useRole } from '@/lib/useRole';
 
 import { ReadNote } from '../../reads/ReadNote';
+import { useClockFor } from '../../reads/readArgs';
 import { useMinuteNow } from '../../shell/presence';
-import { useClockFor } from '../clock';
 import { PeopleListView } from './PeopleListView';
 import { lanesFor } from './peopleLanes';
 import type { LaneEntry } from './peopleModel';
