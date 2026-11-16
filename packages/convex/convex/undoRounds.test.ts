@@ -11,6 +11,7 @@
  */
 
 import { convexTest } from 'convex-test';
+import fc from 'fast-check';
 import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
@@ -21,6 +22,7 @@ import { DOC_MAX, REQUEST_PROFILE_BUDGET, requestBudget } from './lib/readBudget
 import { UNDO_NEEDS_ROWS, type UndoState, undoStates } from './lib/undo';
 import { UNDO_CHECKED_ELSEWHERE } from './lib/undoReads';
 import { listActionsPage } from './moderation';
+import { decisionsPage, shapeRows } from './people';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -418,6 +420,113 @@ describe('the audit feed’s rounds (the Overview’s recent actions, B01-3h)', 
   });
 });
 
+describe('People’s Decisions rounds (B01-4c)', () => {
+  const decisions = async (rows: number, landmarks = true) => {
+    const t = harness();
+    const { actorId } = await busyBody(t, rows, landmarks);
+    return t.run(async (raw) => {
+      const viewer = (await raw.db.get(actorId)) as Doc<'profiles'>;
+      const { ctx, stats } = counted(raw);
+      const page = await decisionsPage(ctx, viewer, { userId: actorId, limit: rows });
+      return { page, stats };
+    });
+  };
+
+  test('a page of 50 on one target costs the same few rounds as a page of 10', async () => {
+    const fifty = await decisions(50, false);
+    const ten = await decisions(10, false);
+    console.log(
+      `Decisions rounds (one target): 50 rows ${fifty.stats.rounds} rounds / ${fifty.stats.calls} calls; 10 rows ${ten.stats.rounds} / ${ten.stats.calls}`,
+    );
+    expect(fifty.page?.rows).toHaveLength(50);
+    expect(fifty.stats.rounds).toBeLessThanOrEqual(DECISIONS_PAGE_ROUNDS);
+    expect(fifty.stats.rounds).toBe(ten.stats.rounds);
+  });
+
+  test('the worst page — 45 targets each asking its refusal — stays within its stated bound, every check made', async () => {
+    const { page, stats } = await decisions(50);
+    console.log(`Decisions rounds (45 refusals): ${stats.rounds} rounds / ${stats.calls} calls`);
+    expect(page?.rows).toHaveLength(50);
+    expect(page?.rows.filter((r) => r.undo.state === 'available')).toHaveLength(46);
+    expect(page?.rows.every((r) => r.actor !== null)).toBe(true);
+    expect(stats.rounds).toBeLessThanOrEqual(DECISIONS_WORST_ROUNDS);
+  });
+
+  test('the same page whatever order its reads settle in — what the budget reaches is page-ordered', async () => {
+    const t = harness();
+    const actorId = await admin(t);
+    const subject = await t.run(
+      async (ctx) => ((await ctx.db.get(actorId)) as Doc<'profiles'>).clerkUserId,
+    );
+    // Eight people with no People row yet, each restricted by the staffer: their profiles are read
+    // in full, charged to the request's budget, which reaches four at their worst.
+    const people: Id<'profiles'>[] = [];
+    await t.run(async (ctx) => {
+      const { _id, _creationTime, ...fields } = (await ctx.db.get(actorId)) as Doc<'profiles'>;
+      for (let i = 0; i < 8; i++) {
+        people.push(
+          await ctx.db.insert('profiles', {
+            ...fields,
+            clerkUserId: `decided-${i}`,
+            displayName: `Decided ${i}`,
+            username: `decided-${i}`,
+            role: 'member',
+          }),
+        );
+      }
+    });
+    const as = t.withIdentity({ subject });
+    for (const userId of people) {
+      await as.mutation(api.moderation.setPostingPermission, {
+        userId,
+        permission: 'reports',
+        allowed: false,
+        reason: 'r',
+      });
+    }
+    await t.run(async (ctx) => {
+      for (const id of people) {
+        const row = await ctx.db
+          .query('peopleRows')
+          .withIndex('by_user', (q) => q.eq('userId', id))
+          .first();
+        if (row) await ctx.db.delete(row._id);
+      }
+    });
+    const read = (ticks: number[]) =>
+      t.run(async (raw) => {
+        const viewer = (await raw.db.get(actorId)) as Doc<'profiles'>;
+        const rows = await raw.db
+          .query('moderationActions')
+          .withIndex('by_actor', (q) => q.eq('actorId', actorId))
+          .order('desc')
+          .take(8);
+        const { ctx } = counted(raw, ticks);
+        // A page with a profile budget's worth left (4 MiB), as History opens with.
+        requestBudget(ctx);
+        return shapeRows(ctx, viewer, rows, new Map());
+      });
+    const calm = await read([0]);
+    // The newest four rows are checked and named; the rest are not — in page order.
+    const unchecked = (u: UndoState) => u.state === 'unavailable' && u.why === UNDO_NEEDS_ROWS;
+    expect(calm.map((r) => unchecked(r.undo))).toEqual([
+      ...Array(4).fill(false),
+      ...Array(4).fill(true),
+    ]);
+    expect(calm.map((r) => r.targetLabel !== undefined)).toEqual([
+      ...Array(4).fill(true),
+      ...Array(4).fill(false),
+    ]);
+    const ticks = fc.array(fc.nat(7), { minLength: 1, maxLength: 9 });
+    const same = fc.asyncProperty(ticks, async (order) => {
+      expect(await read(order)).toEqual(calm);
+    });
+    // Pinned seeds, so a failure replays; then one run on a fresh seed.
+    for (const seed of [20261115, 4242]) await fc.assert(same, { seed, numRuns: 3 });
+    await fc.assert(same, { numRuns: 1 });
+  });
+});
+
 /** The rounds a page of History costs when its rows share their targets (stated, B01-3h). */
 const PAGE_ROUNDS = 8;
 /**
@@ -427,3 +536,11 @@ const PAGE_ROUNDS = 8;
  * read stays spent.
  */
 const WORST_PAGE_ROUNDS = PAGE_ROUNDS + 1 + Math.ceil((46 - 4) / 3);
+
+/**
+ * The rounds a page of People's Decisions costs when its rows share their target: History's, since
+ * its rows are shaped the same way — the page's own read before them adds no round of its own.
+ */
+const DECISIONS_PAGE_ROUNDS = PAGE_ROUNDS;
+/** The worst Decisions page: the worst History page's rounds (46 refusals, in waves). */
+const DECISIONS_WORST_ROUNDS = WORST_PAGE_ROUNDS;

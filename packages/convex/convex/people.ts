@@ -42,7 +42,7 @@ import { ConvexError, v } from 'convex/values';
 import type { Doc, Id, TableNames } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
 import { GATE_EVENT_RETENTION_DAYS } from './analyticsRollup';
-import { auditTargetLabel } from './lib/auditReads';
+import { auditTargetLabel, auditTargetLabels, targetKey } from './lib/auditReads';
 import { hasCapability, isSuspendedNow, requireCapability } from './lib/auth';
 import { readVerdictCounts, VERDICT_COUNT_CAP } from './lib/contentVerdicts';
 import {
@@ -84,7 +84,7 @@ import { profileAccess } from './lib/reportVisibility';
 import { trustClassFor } from './lib/reputation';
 import { readTenure, rootReader, tenureCappedOf } from './lib/staffTenure';
 import { startOfCurrentState } from './lib/stateSince';
-import { type UndoState, undoState } from './lib/undo';
+import { type UndoState, undoStates } from './lib/undo';
 import { stands, undoneBy } from './lib/undoChains';
 
 const MINUTE = 60_000;
@@ -1426,25 +1426,6 @@ export interface PersonActionRow {
 /** Each actor's row read once a page (the memo holds the read itself, so a repeat waits on it). */
 type Actors = Map<string, Promise<PersonRef | null>>;
 
-/** Target names a request has read, once each (many rows name the same person or body). */
-const LABELS = new WeakMap<object, Map<string, Promise<string | null>>>();
-
-async function labelOf(
-  ctx: QueryCtx,
-  row: Doc<'moderationActions'>,
-): Promise<{ targetLabel?: string }> {
-  const seen = LABELS.get(ctx) ?? new Map<string, Promise<string | null>>();
-  LABELS.set(ctx, seen);
-  const key = `${row.targetType}:${row.targetId}`;
-  let read = seen.get(key);
-  if (read === undefined) {
-    read = auditTargetLabel(ctx, row.targetType, row.targetId);
-    seen.set(key, read);
-  }
-  const label = await read;
-  return label === null ? {} : { targetLabel: label };
-}
-
 /**
  * What shaping one History or Decisions row reads through helpers on main and in this PR, counted
  * ahead: calls and documents — undo state (the undo tagged rows ≤ 16, the newest row on the target,
@@ -1480,49 +1461,56 @@ export async function shapeRows(
 ): Promise<PersonActionRow[]> {
   const budget = queryBudget(ctx);
   // Every row's calls are counted before any starts (as many rows as fit; the caller says capped for
-  // the rest). Rows are shaped one after another for now, each asking `undoState` alone; B01-3i's
-  // page reading (`undoStates`, in waves) has landed, and shaping them at once on it follows in its
-  // own PR (`b01-4c-people-rounds`).
+  // the rest).
   const n = shapeable(budget, rows.length);
   budget.reserveCalls(ROW_SHAPE_CALLS * n, ROW_SHAPE_DOCS * n);
-  const out: PersonActionRow[] = [];
-  for (const row of rows.slice(0, n)) out.push(await toRow(ctx, viewer, row, actors));
-  return out;
+  const page = rows.slice(0, n);
+  // The page in a handful of rounds, not a few per row (B01-4c), as History and the feed take theirs
+  // (`moderation.listActions`): the undo states in one reading (`undoStates` — its refusal checks
+  // reserve their reads in page order, in waves), the target labels once per distinct target and the
+  // actors once per person, all at once. Only the undo states and a rowless person's label charge
+  // the budget, and the labels' charges wait for the undo states and start in page order
+  // (`auditTargetLabels`), so which rows the budget reaches never turns on settling order.
+  const undoing = undoStates(ctx, viewer, page);
+  const [labels, undos, named] = await Promise.all([
+    auditTargetLabels(ctx, page, undoing),
+    undoing,
+    Promise.all(page.map((row) => actorOf(ctx, row, actors))),
+  ]);
+  return page.map((row, i) => {
+    const label = labels.get(targetKey(row)) ?? null;
+    return {
+      id: row._id,
+      action: row.action,
+      targetType: row.targetType,
+      targetId: row.targetId,
+      reason: row.reason,
+      reasonGiven:
+        (row.metadata as { reasonDefaulted?: boolean } | undefined)?.reasonDefaulted !== true,
+      ...(row.metadata !== undefined ? { metadata: row.metadata } : {}),
+      createdAt: row.createdAt,
+      actor: named[i] ?? null,
+      ...(row.undoesActionId !== undefined ? { undoesActionId: row.undoesActionId } : {}),
+      ...(row.via !== undefined ? { via: row.via } : {}),
+      ...(label === null ? {} : { targetLabel: label }),
+      undo: undos[i] as UndoState,
+    };
+  });
 }
 
-async function toRow(
+/** A row's actor, read once a page (the memo holds the read itself, so a repeat waits on it). */
+function actorOf(
   ctx: QueryCtx,
-  viewer: Doc<'profiles'>,
   row: Doc<'moderationActions'>,
   actors: Actors,
-): Promise<PersonActionRow> {
-  let actor: PersonRef | null = null;
-  if (row.actorId !== undefined) {
-    let read = actors.get(row.actorId);
-    if (read === undefined) {
-      read = personRef(ctx, row.actorId);
-      actors.set(row.actorId, read);
-    }
-    actor = await read;
+): Promise<PersonRef | null> {
+  if (row.actorId === undefined) return Promise.resolve(null);
+  let read = actors.get(row.actorId);
+  if (read === undefined) {
+    read = personRef(ctx, row.actorId);
+    actors.set(row.actorId, read);
   }
-  const label = await labelOf(ctx, row);
-  const undo = await undoState(ctx, viewer, row);
-  return {
-    id: row._id,
-    action: row.action,
-    targetType: row.targetType,
-    targetId: row.targetId,
-    reason: row.reason,
-    reasonGiven:
-      (row.metadata as { reasonDefaulted?: boolean } | undefined)?.reasonDefaulted !== true,
-    ...(row.metadata !== undefined ? { metadata: row.metadata } : {}),
-    createdAt: row.createdAt,
-    actor,
-    ...(row.undoesActionId !== undefined ? { undoesActionId: row.undoesActionId } : {}),
-    ...(row.via !== undefined ? { via: row.via } : {}),
-    ...label,
-    undo,
-  };
+  return read;
 }
 
 /** One source of a merged history: rows in the order of `at`, and how far back it read when capped. */
@@ -1737,43 +1725,50 @@ export const decisions = query({
     cursor: v.optional(v.union(v.string(), v.null())),
     limit: v.optional(v.number()),
   },
-  handler: async (ctx, { userId: raw, cursor, limit }) => {
-    const viewer = await requireCapability(ctx, 'audit.read');
-    const userId = profileIdOf(ctx, raw);
-    if (userId === null) return null;
-    const ledgerVisible = seesLedgerGrants(viewer);
-    const budget = queryBudget(ctx);
-    // A page asks only for the rows it can shape after its own read: a row read but not shaped would
-    // lie behind the page's cursor, and the next page would start past it — never shown.
-    const size = Math.max(1, shapeable(budget, clampLimit(limit), 1, DECISIONS_SCAN));
-    const page = await budget.capped(DECISIONS_BYTES, DECISIONS_SCAN, () =>
-      ctx.db
-        .query('moderationActions')
-        .withIndex('by_actor', (q) => q.eq('actorId', userId))
-        .order('desc')
-        .filter((q) => {
-          const hidden = [...SKATER_ACTIONS, ...(ledgerVisible ? [] : [...LEDGER_ACTIONS])];
-          return q.and(...hidden.map((a) => q.neq(q.field('action'), a)));
-        })
-        .paginate({
-          cursor: cursor ?? null,
-          numItems: size,
-          maximumRowsRead: DECISIONS_SCAN,
-          maximumBytesRead: DECISIONS_BYTES,
-        }),
-    );
-    const shaped = await shapeRows(ctx, viewer, page.page, new Map());
-    // Rows the request couldn't afford to shape (only when not even one row's calls and documents
-    // were left): `capped`, and the page isn't the end.
-    const short = shaped.length < page.page.length;
-    return {
-      rows: shaped,
-      isDone: page.isDone && !short,
-      capped: short,
-      continueCursor: page.continueCursor,
-    };
-  },
+  handler: async (ctx, args) =>
+    decisionsPage(ctx, await requireCapability(ctx, 'audit.read'), args),
 });
+
+/** `people.decisions` for a viewer already let in — the page itself, for the round counts' tests. */
+export async function decisionsPage(
+  ctx: QueryCtx,
+  viewer: Doc<'profiles'>,
+  { userId: raw, cursor, limit }: { userId: string; cursor?: string | null; limit?: number },
+) {
+  const userId = profileIdOf(ctx, raw);
+  if (userId === null) return null;
+  const ledgerVisible = seesLedgerGrants(viewer);
+  const budget = queryBudget(ctx);
+  // A page asks only for the rows it can shape after its own read: a row read but not shaped would
+  // lie behind the page's cursor, and the next page would start past it — never shown.
+  const size = Math.max(1, shapeable(budget, clampLimit(limit), 1, DECISIONS_SCAN));
+  const page = await budget.capped(DECISIONS_BYTES, DECISIONS_SCAN, () =>
+    ctx.db
+      .query('moderationActions')
+      .withIndex('by_actor', (q) => q.eq('actorId', userId))
+      .order('desc')
+      .filter((q) => {
+        const hidden = [...SKATER_ACTIONS, ...(ledgerVisible ? [] : [...LEDGER_ACTIONS])];
+        return q.and(...hidden.map((a) => q.neq(q.field('action'), a)));
+      })
+      .paginate({
+        cursor: cursor ?? null,
+        numItems: size,
+        maximumRowsRead: DECISIONS_SCAN,
+        maximumBytesRead: DECISIONS_BYTES,
+      }),
+  );
+  const shaped = await shapeRows(ctx, viewer, page.page, new Map());
+  // Rows the request couldn't afford to shape (only when not even one row's calls and documents
+  // were left): `capped`, and the page isn't the end.
+  const short = shaped.length < page.page.length;
+  return {
+    rows: shaped,
+    isDone: page.isDone && !short,
+    capped: short,
+    continueCursor: page.continueCursor,
+  };
+}
 
 // ── A staffer's figures ────────────────────────────────────────────────────────────────────────
 
