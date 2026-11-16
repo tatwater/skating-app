@@ -1,4 +1,4 @@
-import { render, renderHook, screen, waitFor, within } from '@testing-library/react';
+import { act, render, renderHook, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ConvexError } from 'convex/values';
 import type { ReactNode } from 'react';
@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   results: new Map<string, unknown>(),
   calls: new Map<string, unknown>(),
   mutations: new Map<string, ReturnType<typeof vi.fn>>(),
+  toast: vi.fn(),
   denied: new Set<string>(),
   announce: vi.fn(async () => {}),
   undo: vi.fn(),
@@ -66,6 +67,10 @@ vi.mock('@/lib/useRole', () => ({
 vi.mock('../../shell/undo', () => ({
   useUndo: () => ({ announce: mocks.announce, undo: mocks.undo }),
 }));
+vi.mock('@/components/kit/toast', async (original) => ({
+  ...(await original<typeof import('@/components/kit/toast')>()),
+  toast: mocks.toast,
+}));
 
 import { resetConsoleReads } from '../../reads/consoleReads';
 import { PersonPane } from './PersonPane';
@@ -101,6 +106,7 @@ beforeEach(() => {
   mocks.denied.clear();
   mocks.announce.mockClear();
   mocks.undo.mockClear();
+  mocks.toast.mockClear();
 });
 afterEach(() => vi.useRealTimers());
 
@@ -332,6 +338,37 @@ describe('the writes', () => {
       'This account is being deleted, so its suspension or ban can’t be lifted.',
     );
     expect(mocks.announce).not.toHaveBeenCalled();
+  });
+
+  it('a refusal that comes after the person’s page has gone is said once, in a toast naming them', async () => {
+    answer();
+    let refuse: () => void = () => {};
+    mocks.mutations.set(
+      'moderation:unbanUser',
+      vi.fn(
+        () =>
+          new Promise((_, reject) => {
+            refuse = () => reject(new ConvexError('This account is being deleted.'));
+          }),
+      ),
+    );
+    const view = render(<PersonPane userId={ROB_ID} />);
+    const user = userEvent.setup({ advanceTimers: () => {} });
+    await user.click(within(lever('suspension')).getByRole('button', { name: 'Lift' }));
+    // The moderator goes on to another section before the server answers.
+    view.unmount();
+    await act(async () => {
+      refuse();
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(mocks.toast).toHaveBeenCalledWith({
+        title: 'Not changed · Rob Tremblay',
+        description: 'This account is being deleted.',
+        tone: 'bad',
+      }),
+    );
+    expect(mocks.toast).toHaveBeenCalledTimes(1);
   });
 
   it('each lever reaches its own write with its own arguments', async () => {

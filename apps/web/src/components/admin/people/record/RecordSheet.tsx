@@ -303,9 +303,8 @@ function SheetSitting({
         });
       }}
       onLateRefusal={(text) => {
-        // Said once, out of the way, naming the person — and never over another person's page
-        // (main's binding: this sheet's page still mounted).
-        if (!here()) return;
+        // Said once, out of the way, naming the person — wherever the moderator has gone since
+        // (another person, the list, another section): a refusal is never buried by navigation.
         toast({ title: W.lateRefusalOf(subjectName(subject)), description: text, tone: 'bad' });
       }}
     />

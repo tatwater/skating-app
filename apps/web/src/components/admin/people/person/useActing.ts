@@ -1,4 +1,6 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
+
+import type { Asker } from '../../body/tabs/latestPick';
 
 import type { PersonAction } from './levers';
 import { WORDS } from './personWords';
@@ -15,12 +17,21 @@ import { WORDS } from './personWords';
  *   before (the button, or a dialog's trigger); if that is gone, to the same lever's button, else to
  *   the block itself — never to the page.
  */
-export function useActing(onAct: (action: PersonAction) => Promise<string | null>) {
+export function useActing(onAct: (action: PersonAction, asker?: Asker) => Promise<string | null>) {
   const [busy, setBusy] = useState<string | null>(null);
   const [refusals, setRefusals] = useState<Readonly<Record<string, string>>>({});
   const running = useRef<string | null>(null);
   /** Controls told "another change is on its way": their note goes when that change settles. */
   const held = useRef(new Set<string>());
+  // The page that asked: while it is mounted a refusal is said in its place (the control, or the
+  // dialog over it); once it has gone, the write path says it in a toast naming the person.
+  const mounted = useRef(false);
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const act = useCallback(
     async (
@@ -42,7 +53,7 @@ export function useActing(onAct: (action: PersonAction) => Promise<string | null
       setRefusals(({ [id]: _gone, ...rest }) => rest);
       let refused: string | null;
       try {
-        refused = await onAct(action);
+        refused = await onAct(action, { here: () => mounted.current });
       } catch {
         refused = WORDS.somethingWrong;
       }

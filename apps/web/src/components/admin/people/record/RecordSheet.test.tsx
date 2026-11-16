@@ -313,7 +313,7 @@ describe('the writes', () => {
     expect(here()).toBe(false);
   });
 
-  it('a refusal while the sheet slides closed goes to the toast, naming the person; none once the page has gone', async () => {
+  it('a refusal while the sheet slides closed goes to the toast, naming the person; and once the page has gone too', async () => {
     let refuse: (e: Error) => void = () => {};
     const view = draw();
     await waitFor(() => expect(lever()).toHaveTextContent('Restore'));
@@ -346,7 +346,8 @@ describe('the writes', () => {
       }),
     );
     expect(mocks.announce).not.toHaveBeenCalled();
-    // Again, but the person's page goes (another person opened): no toast over it.
+    // Again, but the person's page goes (another person opened): said all the same, naming the
+    // person — a refusal is never buried by where the moderator went.
     mocks.toast.mockClear();
     view.unmount();
     const again = draw();
@@ -357,7 +358,14 @@ describe('the writes', () => {
       refuse(new ConvexError('This is already up.'));
       await Promise.resolve();
     });
-    expect(mocks.toast).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(mocks.toast).toHaveBeenCalledWith({
+        title: 'Not changed · Rob Tremblay',
+        description: 'This is already up.',
+        tone: 'bad',
+      }),
+    );
+    expect(mocks.toast).toHaveBeenCalledTimes(1);
   });
 
   it('a restore that lands while the sheet slides closed keeps no row in it; its receipt still says it', async () => {

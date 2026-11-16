@@ -3,8 +3,12 @@ import type { Id } from '@skating/convex/dataModel';
 import { useMutation } from 'convex/react';
 import { useCallback } from 'react';
 
+import { toast } from '@/components/kit/toast';
+
 import { errorText } from '../../adminUi';
+import type { Asker } from '../../body/tabs/latestPick';
 import { type Receipt, useUndo } from '../../shell/undo';
+import { RECORD_WORDS } from '../record/recordWords';
 import type { PersonAction } from './levers';
 import { WORDS } from './personWords';
 import { receiptFor } from './receipts';
@@ -42,8 +46,20 @@ export function usePersonWrites(
   const { announce } = useUndo();
 
   return useCallback(
-    async (action: PersonAction): Promise<string | null> => {
+    async (action: PersonAction, asker?: Asker): Promise<string | null> => {
       if (person === null) return WORDS.personFailed;
+      // **A refusal is said where it was asked while that place is there; else in a toast naming
+      // the person** — wherever the moderator has gone since (another person, the list, another
+      // section): never buried by navigation (the console's late-answer rule).
+      const refused = (why: string): string | null => {
+        if (asker === undefined || asker.here()) return why;
+        toast({
+          title: RECORD_WORDS.lateRefusalOf(person.displayName),
+          description: why,
+          tone: 'bad',
+        });
+        return null;
+      };
       const userId = person.userId as Id<'profiles'>;
       // What the write answered: today the person's id (or nothing); once each write returns
       // `{ actionId }`, the receipt carries it (below) and the toast needs no lookup.
@@ -93,7 +109,7 @@ export function usePersonWrites(
             break;
         }
       } catch (err) {
-        return errorText(err);
+        return refused(errorText(err));
       }
       // The write landed: say so now. The receipt follows on its own — the shell's toast shows once
       // its undo lookup returns (a moment), with Undo while the server offers one; a lookup that
