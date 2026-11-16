@@ -13,6 +13,7 @@ import {
 import { useRole } from '@/lib/useRole';
 import { RECEIPTS } from '../../consoleWords';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
+import { useLatestPick } from '../latestPick';
 import { useTabAction } from '../useTabAction';
 import { WaterView } from './WaterView';
 import {
@@ -78,9 +79,26 @@ export function WaterTab({ bodyId, lit = null }: BodyTabProps) {
   const choose = useMutation(api.waterBodies.chooseDepthSource);
   const { act } = useTabAction(bodyId);
   const state = data !== undefined && !isFailed(data) ? data.state : null;
+  const depth = data !== undefined && !isFailed(data) ? data.depth : null;
+  // **The latest press wins** (`useLatestPick`): each measure's source shows the latest one chosen
+  // at once, each choice is sent in press order, and the server's answer is drawn again once every
+  // choice has been answered — a second choice is never compared with a stale record and dropped.
+  const choose1 = (measure: 'mean' | 'max') => async (source: DepthSource | null) => {
+    if (source === null) return;
+    await act(() => choose({ waterBodyId: bodyId as Id<'waterBodies'>, measure, source }), {
+      title: RECEIPTS.depthFrom(measure, sourceWords(source, state).name),
+      target: { targetType: 'waterbody', targetId: bodyId },
+    });
+  };
+  const mean = useLatestPick<DepthSource | null>(depth?.meanFrom ?? null, choose1('mean'));
+  const max = useLatestPick<DepthSource | null>(depth?.maxFrom ?? null, choose1('max'));
+  const shown =
+    data === undefined || isFailed(data) || depth === null
+      ? data
+      : { ...data, depth: { ...depth, meanFrom: mean.shown, maxFrom: max.shown } };
   return (
     <WaterView
-      data={data}
+      data={shown}
       onRetry={retry}
       retryPending={pending}
       lit={lit}
@@ -92,13 +110,7 @@ export function WaterTab({ bodyId, lit = null }: BodyTabProps) {
             // nothing about ice). The server refuses a source with no value or a mean deeper than
             // the max, said in a toast in its words.
             onChooseDepth: (measure: 'mean' | 'max', source: DepthSource) =>
-              void act(
-                () => choose({ waterBodyId: bodyId as Id<'waterBodies'>, measure, source }),
-                {
-                  title: RECEIPTS.depthFrom(measure, sourceWords(source, state).name),
-                  target: { targetType: 'waterbody', targetId: bodyId },
-                },
-              ),
+              (measure === 'mean' ? mean : max).press(source),
           }
         : {})}
     />
