@@ -14,8 +14,9 @@ import { RECORD_WORDS as W } from './recordWords';
  *   kept, until the server answers.
  * - **A refusal stands in its place**, in the server's own words — when the write came from the
  *   foot (`inline`). A dialog keeps its own refusal over the kept reason.
- * - **A late refusal** — the item no longer open — is said once, out of the way (`onLateRefusal`,
- *   the console's toast), never on another item.
+ * - **A late refusal** — the item no longer open, or its place leaving (the sheet sliding closed,
+ *   the narrow layout's list) — is said once, out of the way (`onLateRefusal`, the console's
+ *   toast), never on another item.
  * - **Focus stays in the item** when the write settles and the item is still the one open: back to
  *   what held it, else the lever, else the pane — never to the page, and never after it moved on.
  */
@@ -24,8 +25,15 @@ export type RecordActing = {
   busyOn: (target: Target) => RecordAction | null;
   /** The refusal standing on this item's lever, if any. */
   refusalOn: (target: Target) => string | null;
+  /** Whether the item's place is on screen and staying — the one rule every answer asks. */
+  stillHere: (target: Target) => boolean;
   /** Say something in the item's place (a dialog closed under a change), as a refusal stands. */
   say: (target: Target, text: string) => void;
+  /**
+   * The write, tied to its attempt. Resolves to the server's refusal while the item's place is
+   * still there; once leaving has begun, to `null` — a refusal has gone to `onLateRefusal`, so to
+   * the caller (a dialog, the chooser) the answer is settled either way, never "landed" for sure.
+   */
   run: (
     target: Target,
     write: RecordWrite,
@@ -48,7 +56,7 @@ export function useRecordActing({
   present: boolean;
   /** The write; resolves to the server's refusal, or `null` once it landed. */
   onAct: (target: Target, write: RecordWrite) => Promise<string | null>;
-  /** A refusal for an item no longer open. */
+  /** A refusal for an item no longer open, or whose place is leaving. */
   onLateRefusal: (text: string) => void;
 }): RecordActing {
   const [busy, setBusy] = useState<ReadonlyMap<string, RecordAction>>(new Map());
@@ -128,7 +136,15 @@ export function useRecordActing({
   );
 
   return {
-    say: useCallback((t: Target, text: string) => setRefusal({ key: targetKey(t), text }), []),
+    // The same rule as every answer: nothing is said into a place that is leaving.
+    say: useCallback(
+      (t: Target, text: string) => {
+        const key = targetKey(t);
+        if (stillHere(key)) setRefusal({ key, text });
+      },
+      [stillHere],
+    ),
+    stillHere: (t) => stillHere(targetKey(t)),
     busyOn: (t) => busy.get(targetKey(t)) ?? null,
     refusalOn: (t) => (refusal !== null && refusal.key === targetKey(t) ? refusal.text : null),
     run,

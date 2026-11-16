@@ -218,6 +218,8 @@ function Board({
   const keepRestored = state.keepRestored;
   const onRestored = useCallback(
     (target: Target, result: RecordWriteResult) => {
+      // As the console's sheet: a restore landing while it slides closed keeps no row in it.
+      if (!open) return;
       const k = targetKey(target);
       const row = (lists.standing?.rows as StandingRow[] | undefined)?.find(
         (r) => targetKey(r) === k,
@@ -228,7 +230,7 @@ function Board({
       const after = restoredItems[k];
       if (after !== undefined) setOver((o) => ({ ...o, [k]: after }));
     },
-    [lists, keepRestored, restoredItems, now],
+    [open, lists, keepRestored, restoredItems, now],
   );
   const comesBackOf = useCallback(
     (target: Target) => {

@@ -95,7 +95,7 @@ export type RecordSheetViewProps = {
   onAct: (target: Target, write: RecordWrite) => Promise<string | null>;
   onUndoRestored: (restored: Restored) => void;
   onUndoEnd: (row: ReversedRow) => void;
-  /** A refusal that came back for an item no longer open. */
+  /** A refusal that came back for an item no longer open, or once leaving had begun. */
   onLateRefusal: (text: string) => void;
   /** Force one column (a story's phone); measured otherwise. */
   narrow?: boolean;
@@ -171,6 +171,12 @@ function SheetBodyView({
   const fits = useColumnsFit(body, ['--size-list', '--size-inspector']);
   const narrow = forced ?? !fits;
   const [shown, setShown] = useState<'list' | 'item'>('list');
+  // The window narrowing under an open item keeps its place: the item, not the list.
+  const [wasNarrow, setWasNarrow] = useState(narrow);
+  if (narrow !== wasNarrow) {
+    setWasNarrow(narrow);
+    if (narrow && selected !== null) setShown('item');
+  }
   const keys = keysProp ?? finePointer();
 
   // The item's place is on screen and staying: the sheet open (not sliding closed), and its pane
@@ -244,7 +250,8 @@ function SheetBodyView({
 
   const press = (lever: Extract<Lever, { ok: true }>, v: ItemView) => {
     const target = v.target;
-    if (acting.busyOn(target) !== null) return;
+    // Leaving has begun (the sheet sliding out, the pane gone): no new write starts from it.
+    if (!acting.stillHere(target) || acting.busyOn(target) !== null) return;
     if (lever.action === 'restore') {
       if (lever.needsChoice) onChooser(target);
       else void acting.run(target, { kind: 'restore' }, { region: pane.current, inline: true });

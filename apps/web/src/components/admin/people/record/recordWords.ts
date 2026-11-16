@@ -278,7 +278,7 @@ export const RECORD_WORDS = {
   keptReceiptBody: 'Kept until the decision is overturned',
   withReports: (n: number) =>
     `${n.toLocaleString('en-US')} ${n === 1 ? 'report' : 'reports'} came back with it`,
-  lateRefusal: 'Not changed',
+  /** A refusal said out of the way (the toast), naming whose it is — as a receipt does. */
   lateRefusalOf: (name: string) => (name === '' ? 'Not changed' : `Not changed · ${name}`),
   cameBackReceipt: (what: string) => `Its ${what} came back with it`,
 } as const;

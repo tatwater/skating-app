@@ -360,6 +360,41 @@ describe('the writes', () => {
     expect(mocks.toast).not.toHaveBeenCalled();
   });
 
+  it('a restore that lands while the sheet slides closed keeps no row in it; its receipt still says it', async () => {
+    let land: (result: unknown) => void = () => {};
+    const view = draw();
+    await waitFor(() => expect(lever()).toHaveTextContent('Restore'));
+    mocks.mutations.get('moderation:setModerationStatus')?.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          land = resolve;
+        }),
+    );
+    await userEvent.click(lever() as HTMLElement);
+    view.rerender(
+      <RecordSheet
+        open={false}
+        onOpenChange={() => {}}
+        subject={SUBJECT}
+        standing={HIDDEN}
+        pending={false}
+      />,
+    );
+    await act(async () => {
+      // The server lists it no longer: a row kept for the sitting would be drawn lit.
+      mocks.results.set('contentRecord:personVerdicts', page(STANDING.slice(1)));
+      land({ targetId: 'r4oct', actionId: 'a1', undoable: true, undoNeedsReason: true });
+      await Promise.resolve();
+    });
+    // Still sliding out, its rows drawn: none is kept lit for a sitting on its way out.
+    expect(document.querySelector('[data-slot="record-sheet"]')).not.toBeNull();
+    expect(document.querySelector('[data-slot="record-row"][data-back]')).toBeNull();
+    expect(mocks.announce).toHaveBeenCalledWith(
+      expect.objectContaining({ actionId: 'a1', undoNeedsReason: true }),
+      expect.any(Function),
+    );
+  });
+
   it('a refusal is the server’s own words, in place, and no toast', async () => {
     draw();
     await waitFor(() => expect(lever()).toHaveTextContent('Restore'));

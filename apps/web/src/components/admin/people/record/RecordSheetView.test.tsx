@@ -325,6 +325,56 @@ describe('a write that comes back after the operator moved on', () => {
     }
   }
 
+  for (const outcome of ['landed', 'refused'] as const) {
+    it(`the chooser's restore, ${outcome}, leaving by close: nothing said into the closing chooser`, async () => {
+      const user = userEvent.setup();
+      const write = deferred();
+      const onLateRefusal = vi.fn();
+      const post = targetOf(ITEM_POST);
+      const base = {
+        selected: post,
+        item: ITEM_POST,
+        chooser: post,
+        choices: CHOICES,
+        onAct: vi.fn(() => write.promise),
+        onLateRefusal,
+      };
+      const view = render(<RecordSheetView {...props(base)} />);
+      const chooser = document.querySelector('[data-slot="post-chooser"]') as HTMLElement;
+      await user.click(within(chooser).getAllByRole('checkbox')[0] as HTMLElement);
+      await user.click(within(chooser).getByRole('button', { name: /Restore with 1 report/ }));
+      view.rerender(<RecordSheetView {...props({ ...base, open: false })} />);
+      await act(async () => {
+        write.settle(outcome === 'refused' ? 'Someone changed this since.' : null);
+        await write.promise;
+      });
+      expect(document.querySelector('[data-slot="alert-dialog-error"]')).toBeNull();
+      if (outcome === 'refused')
+        expect(onLateRefusal).toHaveBeenCalledWith('Someone changed this since.');
+      else expect(onLateRefusal).not.toHaveBeenCalled();
+    });
+  }
+
+  it('the window narrowing under an open item keeps its place: the item, not the list', () => {
+    const view = render(<RecordSheetView {...props()} />);
+    expect(document.querySelector('[data-slot="record-list"]')).not.toBeNull();
+    view.rerender(<RecordSheetView {...props({ narrow: true })} />);
+    expect(document.querySelector('[data-slot="record-item"]')).not.toBeNull();
+    expect(document.querySelector('[data-slot="record-list"]')).toBeNull();
+  });
+
+  it('a lever pressed once leaving has begun starts no write', async () => {
+    const onAct = vi.fn(async () => null);
+    const view = render(<RecordSheetView {...props({ keys: true, onAct })} />);
+    const pane = document.querySelector('[data-slot="record-pane"]') as HTMLElement;
+    view.rerender(<RecordSheetView {...props({ keys: true, onAct, open: false })} />);
+    // The key reaches the sheet while it slides out (its content still mounted, focus still in it).
+    expect(pane.isConnected).toBe(true);
+    pane.focus();
+    fireEvent.keyDown(pane, { key: 'r' });
+    expect(onAct).not.toHaveBeenCalled();
+  });
+
   it('one still open gets its refusal in place, and focus stays in the item', async () => {
     const user = userEvent.setup();
     const write = deferred();
@@ -999,25 +1049,6 @@ describe('an open dialog follows the live answer', () => {
       await write.promise;
     });
     expect(onChooser).toHaveBeenCalledWith(null);
-    expect(document.querySelector('[data-slot="record-refusal"]')).toBeNull();
-  });
-});
-
-describe('a write that comes back once leaving has begun', () => {
-  it('Restore refused while the sheet slides closed: the toast says it, nothing in the closing sheet', async () => {
-    const user = userEvent.setup();
-    const write = deferred();
-    const onLateRefusal = vi.fn();
-    const onAct = vi.fn(() => write.promise);
-    const view = render(<RecordSheetView {...props({ onAct, onLateRefusal })} />);
-    await user.click(lever() as HTMLElement);
-    // Close pressed: the sheet is on its way out (its content stays mounted while it slides).
-    view.rerender(<RecordSheetView {...props({ open: false, onAct, onLateRefusal })} />);
-    await act(async () => {
-      write.settle('This is already up.');
-      await write.promise;
-    });
-    expect(onLateRefusal).toHaveBeenCalledWith('This is already up.');
     expect(document.querySelector('[data-slot="record-refusal"]')).toBeNull();
   });
 });
