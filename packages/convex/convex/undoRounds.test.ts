@@ -667,6 +667,75 @@ describe('a staffer’s season’s rounds (B01-4c)', () => {
     expect(calm.stats.rounds).toBeLessThanOrEqual(SEASON_ROUNDS);
     expect((await read([5, 0, 3, 6, 1, 4, 2])).season).toEqual(calm.season);
   });
+
+  test('a season of 100 hides the staffer restored themselves: the restores are in hand, never read again', async () => {
+    const t = harness();
+    const viewerId = await admin(t);
+    const staffer = await admin(t);
+    const now = Date.now();
+    await t.run(async (ctx) => {
+      await ctx.db.patch(staffer, { role: 'moderator' });
+      for (let i = 0; i < 100; i++) {
+        const hide = await ctx.db.insert('moderationActions', {
+          actorId: staffer,
+          action: 'hide',
+          targetType: 'report',
+          targetId: `r${i}`,
+          reason: 'r',
+          createdAt: now - 2_000,
+        });
+        const restore = await ctx.db.insert('moderationActions', {
+          actorId: staffer,
+          action: 'restore',
+          targetType: 'report',
+          targetId: `r${i}`,
+          reason: 'r',
+          createdAt: now - 1_000,
+        });
+        await ctx.db.insert('contentVerdicts', {
+          subjectUserId: viewerId,
+          targetType: 'report',
+          targetId: `r${i}`,
+          actionId: hide,
+          kind: 'hidden',
+          at: now - 2_000,
+          standing: false,
+          endedAt: now - 1_000,
+          endedByActionId: restore,
+        });
+      }
+      // And one undo whose chain's first row is someone else's: its root is read, and kept.
+      const root = await ctx.db.insert('moderationActions', {
+        actorId: viewerId,
+        action: 'set_posting_permission',
+        targetType: 'user',
+        targetId: 'x',
+        reason: 'r',
+        undoTop: 1,
+        undoTopActorId: staffer,
+        createdAt: now - 3_000,
+      });
+      await ctx.db.insert('moderationActions', {
+        actorId: staffer,
+        action: 'set_posting_permission',
+        targetType: 'user',
+        targetId: 'x',
+        reason: 'r',
+        undoesActionId: root,
+        undoRoot: root,
+        undoDepth: 1,
+        createdAt: now - 500,
+      });
+    });
+    const { season, stats } = await t.run(async (raw) => {
+      const viewer = (await raw.db.get(viewerId)) as Doc<'profiles'>;
+      const { ctx, stats } = counted(raw);
+      return { season: await staffSeasonPage(ctx, viewer, { userId: staffer, now }), stats };
+    });
+    expect(season?.overturned).toEqual({ count: 0, capped: false });
+    // The reads before them, the one root, the verdicts: no wave of restores read a second time.
+    expect(stats.rounds).toBeLessThanOrEqual(SEASON_ROUNDS - Math.ceil(100 / 4));
+  });
 });
 
 describe('a queue lane’s people’s rounds (B01-4c)', () => {
@@ -697,7 +766,7 @@ describe('a queue lane’s people’s rounds (B01-4c)', () => {
 });
 
 describe('the person page’s flag labels’ rounds (B01-4c)', () => {
-  test('twenty flagged Reports on twenty lakes: every one labelled, in a stated few rounds', async () => {
+  test('twenty flagged Reports on twenty lakes: every one labeled, in a stated few rounds', async () => {
     const t = harness();
     const viewerId = await admin(t);
     const skater = await admin(t);
@@ -778,6 +847,127 @@ describe('the person page’s flag labels’ rounds (B01-4c)', () => {
       capped: calm.capped,
       labels: calm.labels,
     });
+  });
+
+  test('every kind of flagged thing finds its lake within its declared reads — even a lake named “over”', async () => {
+    const t = harness();
+    const viewerId = await admin(t);
+    const skater = await admin(t);
+    const flags = await t.run(async (ctx) => {
+      const body = await ctx.db.insert('waterBodies', {
+        name: 'over',
+        searchText: 'over',
+        type: 'lakePond',
+        source: 'osm',
+        polygon: POLYGON,
+        bbox: { minLat: 43.99, minLng: -72.01, maxLat: 44.01, maxLng: -71.99 },
+        centroid: { lat: 44, lng: -72 },
+        dedupStatus: 'clean',
+        createdAt: NOW,
+      });
+      await rebuildBodyLibrary(ctx, body);
+      const report = await ctx.db.insert('reports', {
+        authorId: skater,
+        waterBodyId: body,
+        point: { lat: 44, lng: -72 },
+        skateEndTime: NOW,
+        reportTime: NOW,
+        source: 'native',
+        iceTypes: [{ type: 'black_ice' }],
+        surfaceTags: [],
+        photoIds: [],
+        moderationStatus: 'visible',
+        hazardIdsCreated: [],
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+      const comment = await ctx.db.insert('comments', {
+        reportId: report,
+        authorId: skater,
+        body: 'a comment',
+        source: 'native',
+        moderationStatus: 'visible',
+        createdAt: NOW,
+      });
+      const photo = await ctx.db.insert('photos', {
+        storageId: 'full',
+        thumbStorageId: 'thumb',
+        uploaderId: skater,
+        placeOnMap: false,
+        reportId: report,
+        createdAt: NOW,
+      });
+      const hazard = await ctx.db.insert('hazards', {
+        waterBodyId: body,
+        type: 'pressure_ridge',
+        geometryKind: 'point_radius',
+        geometry: { type: 'Point', coordinates: [-72, 44] },
+        radiusMeters: 30,
+        bbox: { minLat: 43.99, minLng: -72.01, maxLat: 44.01, maxLng: -71.99 },
+        createdByUserId: skater,
+        description: 'a ridge',
+        photoIds: [],
+        status: 'active',
+        moderationStatus: 'visible',
+        firstReportedAt: NOW,
+        lastConfirmedAt: NOW,
+        confirmCount: 0,
+        goneCount: 0,
+        createdAt: NOW,
+      });
+      const alert = await ctx.db.insert('accessAlerts', {
+        targetType: 'put_in',
+        waterBodyId: body,
+        reason: 'not_plowed',
+        kind: 'blocker',
+        createdByUserId: skater,
+        createdAt: NOW,
+        season: 2026,
+        status: 'expired',
+        confirmCount: 0,
+        denyCount: 0,
+      });
+      const targets = [
+        ['waterbody', body],
+        ['report', report],
+        ['comment', comment],
+        ['photo', photo],
+        ['hazard', hazard],
+        ['accessAlert', alert],
+      ] as const;
+      const out = [];
+      for (const [i, [targetType, targetId]] of targets.entries()) {
+        const flagId = await ctx.db.insert('contentFlags', {
+          flaggerId: viewerId,
+          targetType,
+          targetId,
+          reason: 'spam',
+          status: 'open',
+          subjectUserId: skater,
+          createdAt: NOW + i,
+        });
+        out.push({
+          flagId,
+          reason: 'spam' as const,
+          targetType,
+          targetId: targetId as string,
+          status: 'open' as const,
+          createdAt: NOW + i,
+        });
+      }
+      return out;
+    });
+    const { capped, labels } = await t.run(async (raw) => {
+      const person = (await raw.db.get(skater)) as Doc<'profiles'>;
+      const { ctx } = counted(raw);
+      const mine: Array<(typeof flags)[number] & { targetLabel?: string }> = flags.map((f) => ({
+        ...f,
+      }));
+      const capped = await labelFlags(ctx, requestBudget(ctx, CHARGED_QUERY_BUDGET), person, mine);
+      return { capped, labels: mine.map((f) => f.targetLabel ?? null) };
+    });
+    expect(capped).toBe(false);
+    expect(labels).toEqual(flags.map(() => 'over'));
   });
 });
 

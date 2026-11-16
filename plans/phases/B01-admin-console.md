@@ -2640,7 +2640,7 @@ the hazard auto-merge and the erasure write fixed reasons; the auto-delist and t
 that do compose run from the ETL and operator writes. A composed reason can't fail its write, so none
 could be parked by it.
 
-**B01-4c (2026-11-16): the People reads in rounds, not rows** (stacked on #125, after B01-3i's
+**B01-4c (2026-11-15): the People reads in rounds, not rows** (stacked on #125, after B01-3i's
 `undoStates` and `ReadBudget.waves`; no new concurrency primitive — `lib/readBudget.ts` is main's).
 Every People read that awaited its rows one after another now reads a step for all of them at once,
 in page order, in waves over the request's budget: what the budget reaches depends only on the page's

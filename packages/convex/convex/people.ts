@@ -982,11 +982,11 @@ export async function labelFlags(
     if (flag.targetType === 'user' && flag.targetId === person._id) labels.set(key, personName);
     else toRead.push(key);
   }
-  const OVER = 'over' as const;
   // Each lake's name read once, whichever flags name it: the first flag to reach it reads it through
-  // its own share; a later one waits on that read and hands its reservation back.
+  // its own share; a later one waits on that read and hands its reservation back. A flag past the
+  // budget is `undefined` — never a string, which a lake's name could be.
   const names = new Map<string, Promise<string | null>>();
-  const read = await budget.waves<string, string | null | typeof OVER>(
+  const read = await budget.waves<string, string | null | undefined>(
     toRead,
     (key) => {
       const steps = FLAG_BODY_READS[(byKey.get(key) as OpenFlag).targetType];
@@ -1018,13 +1018,13 @@ export async function labelFlags(
       }
       return name;
     },
-    () => OVER,
+    () => undefined,
   );
   let capped = false;
   for (const [i, key] of toRead.entries()) {
     const label = read[i];
-    // Past the budget: this one unlabelled, and said so — and, in page order, every one after it.
-    if (label === OVER || label === undefined) {
+    // Past the budget: this one unlabeled, and said so — and, in page order, every one after it.
+    if (label === undefined) {
       capped = true;
       continue;
     }
@@ -2008,9 +2008,9 @@ async function undoneByWhom(
 }
 
 /**
- * Database calls a staffer's week may make, row by row, for undos and filing times together: the
- * query's time bound. A busy week past it reads as capped; the counts themselves come from the one
- * page read and stay whole.
+ * Database calls a staffer's week may make for undos and filing times together (read in waves, not
+ * row by row): the query's time bound. A busy week past it reads as capped; the counts themselves
+ * come from the one page read and stay whole.
  */
 const STAFF_CHECKED = 400;
 
@@ -2095,8 +2095,10 @@ export async function staffSeasonPage(
  * Whether someone else reversed each of `rows` on net — undid it, or ended the verdict it recorded
  * with a restore, an overturn or an undo that still stands — read **at once** (B01-4c): each step's
  * reads for every row together, in page order, in waves over the budget (`ReadBudget.waves`) — the
- * chain roots not in hand, the verdicts, the rows that ended them, and those rows' roots. `undefined`
- * for a row a read it needed didn't fit; which rows those are depends only on the page's order.
+ * chain roots not in hand, the verdicts, the rows that ended them (unless in hand), and those rows'
+ * roots (unless in hand or read already). `undefined` for a row a read it needed didn't fit, and for
+ * any row after the first such that still needed one — the caller stops at the first, so nothing is
+ * read for the rows after it. Which rows those are depends only on the page's order.
  */
 async function reversedByOthers(
   ctx: QueryCtx,
@@ -2116,7 +2118,10 @@ async function reversedByOthers(
     if (byOther(undoneBy(row, root))) return true;
     return VERDICT_ACTIONS.has(row.action) ? 'verdict' : false;
   });
-  const asked = rows.filter((_, i) => first[i] === 'verdict');
+  // The caller stops at the first row it can't answer: the steps below read only for rows before it.
+  const cut = first.indexOf(undefined);
+  const live = cut < 0 ? rows.length : cut;
+  const asked = rows.slice(0, live).filter((_, i) => first[i] === 'verdict');
   const verdicts = await budget.waves<Audit, Doc<'contentVerdicts'> | null | typeof OVER>(
     asked,
     () => ({ bytes: ROW_MAX.verdict, reads: 1 }),
@@ -2130,7 +2135,9 @@ async function reversedByOthers(
     () => OVER,
   );
   const verdictOf = new Map(asked.map((row, i) => [row._id as string, verdicts[i]]));
-  // The rows that ended a verdict, once each.
+  // The rows that ended a verdict, once each: from the rows in hand when they hold it (a staffer's
+  // own restore of their own hide, say), else read.
+  const inHand = new Map<string, Audit>(known.map((r) => [r._id, r]));
   const endedBy = [
     ...new Set(
       verdicts.flatMap((v) =>
@@ -2140,30 +2147,40 @@ async function reversedByOthers(
       ),
     ),
   ];
+  const toRead = endedBy.filter((id) => !inHand.has(id));
   const endings = await budget.waves<Id<'moderationActions'>, Audit | null | typeof OVER>(
-    endedBy,
+    toRead,
     () => ({ bytes: ROW_MAX.moderationAction, reads: 1 }),
     (id, share) => share.read('moderationAction', () => ctx.db.get(id)),
     () => OVER,
   );
-  const endingOf = new Map(endedBy.map((id, i) => [id as string, endings[i]]));
+  const readEndings = new Map(toRead.map((id, i) => [id as string, endings[i]]));
+  const endingOf = (id: string) => inHand.get(id) ?? readEndings.get(id);
   const reversing = (ending: Audit) =>
     ending.action === 'restore' ||
     ending.action === 'overturn_verdict' ||
     ending.undoesActionId !== undefined;
-  const ends = endings.filter(
-    (e): e is Audit =>
-      e !== null &&
-      e !== OVER &&
-      e !== undefined &&
-      e.actorId !== undefined &&
-      e.actorId !== staffer &&
-      reversing(e),
-  );
+  const ends = endedBy
+    .map(endingOf)
+    .filter(
+      (e): e is Audit =>
+        e !== null &&
+        e !== OVER &&
+        e !== undefined &&
+        e.actorId !== undefined &&
+        e.actorId !== staffer &&
+        reversing(e),
+    );
+  // Their roots: in hand, read for the rows above (the old shared reader kept those), or read now.
+  const rootsRead = rows.slice(0, live).flatMap((row) => {
+    const root = roots.rootOf(row);
+    // A row that is its own first row, or whose first row is gone, adds nothing to look up.
+    return root !== undefined && root._id !== row._id ? [root] : [];
+  });
   const endingRoots = await readRoots(
     ctx,
     budget,
-    [...known, ...ends],
+    [...known, ...rootsRead, ...ends],
     ends,
     Number.POSITIVE_INFINITY,
   );
@@ -2173,7 +2190,7 @@ async function reversedByOthers(
     const verdict = verdictOf.get(row._id);
     if (verdict === OVER || verdict === undefined) return undefined;
     if (verdict === null || verdict.standing || verdict.endedByActionId === undefined) return false;
-    const ending = endingOf.get(verdict.endedByActionId);
+    const ending = endingOf(verdict.endedByActionId);
     if (ending === OVER || ending === undefined) return undefined;
     if (ending === null || ending.actorId === undefined || ending.actorId === staffer) return false;
     if (!reversing(ending)) return false;

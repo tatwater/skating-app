@@ -19,6 +19,11 @@ type Audit = Doc<'moderationActions'>;
 /** Role rows walked at most, of each verb, newest first. */
 export const ROLE_ROWS = 50;
 
+/** A row whose chain's first row is gone, judged on its own: nothing known above it, so it stands. */
+function aloneRoot(row: Audit): Audit {
+  return { ...row, undoTop: row.undoDepth ?? 0, undoTopActorId: undefined };
+}
+
 /**
  * Chain roots for a read: from the rows already in hand, else read once each as they really weigh
  * (`ReadBudget.measured`). `undefined` when the budget can't afford the read — the caller's figure is
@@ -41,8 +46,7 @@ export function rootReader(
     counter.reads++;
     const read = await budget.measured('moderationAction', () => ctx.db.get(id));
     if (read === undefined) return undefined;
-    // The first row is gone: judge the row on its own — nothing known above it, so it stands.
-    if (read === null) return { ...row, undoTop: row.undoDepth ?? 0, undoTopActorId: undefined };
+    if (read === null) return aloneRoot(row);
     byId.set(id, read);
     return read;
   };
@@ -92,9 +96,7 @@ export async function readRoots(
       if (have) return have;
       const found = read.get(id);
       if (found === undefined || found === 'over') return undefined;
-      // The first row is gone: judge the row on its own — nothing known above it, so it stands.
-      if (found === null) return { ...row, undoTop: row.undoDepth ?? 0, undoTopActorId: undefined };
-      return found;
+      return found === null ? aloneRoot(row) : found;
     },
   };
 }
