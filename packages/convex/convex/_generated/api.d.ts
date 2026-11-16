@@ -106,6 +106,7 @@ import type * as lib_notificationQueue from "../lib/notificationQueue.js";
 import type * as lib_notificationResolve from "../lib/notificationResolve.js";
 import type * as lib_openFlags from "../lib/openFlags.js";
 import type * as lib_openMeteoHourly from "../lib/openMeteoHourly.js";
+import type * as lib_ownContent from "../lib/ownContent.js";
 import type * as lib_peopleCan from "../lib/peopleCan.js";
 import type * as lib_peopleFigures from "../lib/peopleFigures.js";
 import type * as lib_peopleRows from "../lib/peopleRows.js";
@@ -293,6 +294,7 @@ declare const fullApi: ApiFromModules<{
   "lib/notificationResolve": typeof lib_notificationResolve;
   "lib/openFlags": typeof lib_openFlags;
   "lib/openMeteoHourly": typeof lib_openMeteoHourly;
+  "lib/ownContent": typeof lib_ownContent;
   "lib/peopleCan": typeof lib_peopleCan;
   "lib/peopleFigures": typeof lib_peopleFigures;
   "lib/peopleRows": typeof lib_peopleRows;
