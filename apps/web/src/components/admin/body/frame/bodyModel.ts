@@ -539,8 +539,11 @@ export const REMOVAL_REASON_WORDS: Record<RemovalReason, string> = {
 export type LeftRow = {
   action: 'remove' | 'reject_waterbody';
   at: number;
+  /** The audit row's sentence — composed, and shortened under the reason cap (D261). */
   reason?: string | null;
   removalReason: RemovalReason | null;
+  /** What the moderator typed, whole (the row's `metadata.note`); `null` when nothing was typed. */
+  note?: string | null;
   by: { displayName: string } | null;
 };
 
@@ -550,7 +553,10 @@ export type LeftRow = {
  * the listed reason for a removal, and the row's own words.
  */
 export function removalFromLeft(left: LeftRow, timeZone?: string): Removal {
-  const reason = left.reason?.trim() ?? '';
+  // The moderator's own words, whole, before the audit sentence that quotes them — which may have
+  // been shortened under the reason cap.
+  const note = left.note?.trim() ?? '';
+  const reason = note !== '' ? note : (left.reason?.trim() ?? '');
   return {
     verb: left.action === 'remove' ? 'Removed' : 'Rejected',
     when: statusDate(left.at, timeZone),

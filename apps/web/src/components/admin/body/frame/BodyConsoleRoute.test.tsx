@@ -125,6 +125,9 @@ import {
 import type { HistoryAction } from './bodyModel';
 import { registerBodyTabs } from './tabRegistry';
 
+/** A removal's note far longer than the audit sentence that quotes it can carry. */
+const LONG_NOTE = `The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. `;
+
 type Ref = Parameters<typeof getFunctionName>[0];
 const set = (ref: Ref, value: unknown, args?: unknown) =>
   mocks.results.set(
@@ -508,7 +511,9 @@ describe('BodyConsoleRoute', () => {
     left: {
       action: 'remove',
       at: on(10, 2),
-      reason: 'Posted by the owner',
+      // The composed sentence, shortened under the cap; the note is what was typed, whole.
+      reason: 'Removed from map (landowner request): Posted by the owner…',
+      note: LONG_NOTE,
       removalReason: 'landowner_request',
       by,
     },
@@ -531,7 +536,7 @@ describe('BodyConsoleRoute', () => {
       expect(row).toHaveTextContent('2 Oct 2026');
       expect(row).toHaveTextContent('Teagan');
       expect(row).toHaveTextContent('Landowner request');
-      expect(row).toHaveTextContent('“Posted by the owner”');
+      expect(row).toHaveTextContent(`“${LONG_NOTE.trim()}”`);
       // History is the audit trail's alone.
       expect(screen.queryByRole('heading', { name: 'History' }) === null).toBe(denied.size > 0);
     },

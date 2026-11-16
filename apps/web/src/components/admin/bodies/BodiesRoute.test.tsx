@@ -107,6 +107,9 @@ import { resetScrollMemory } from './BodiesTable';
 import { listKey, queryOf } from './bodiesSearch';
 import { rememberOpened } from './openedRecently';
 
+/** A removal's note far longer than the audit sentence that quotes it can carry. */
+const LONG_NOTE = `The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. `;
+
 const ACRE = 4046.8564224;
 const ID = 'k17abcdefghijklmnopqrstuvwxyz012';
 const MINUTE = 60_000;
@@ -997,7 +1000,9 @@ describe('the preview', () => {
       left: {
         action: 'remove',
         at: Date.UTC(2026, 9, 12, 15),
-        reason: 'Posted by the owner',
+        // The composed sentence, shortened under the cap; the note is what was typed, whole.
+        reason: 'Removed from map (landowner request): Posted by the owner…',
+        note: LONG_NOTE,
         removalReason: 'landowner_request',
         by: { displayName: 'Sarah Berman' },
       },
@@ -1021,7 +1026,7 @@ describe('the preview', () => {
     // The date as the page's own zone reads the instant (it is said where the moderator is).
     expect(record).toHaveTextContent(`${statusDate(Date.UTC(2026, 9, 12, 15))} · Sarah`);
     expect(record).toHaveTextContent('Landowner request');
-    expect(record).toHaveTextContent('“Posted by the owner”');
+    expect(record).toHaveTextContent(`“${LONG_NOTE.trim()}”`);
     expect(record).toHaveTextContent('Canaan, NH · Norwich');
     expect(record).toHaveTextContent('200+ since the record began');
     expect(within(pane()).queryByText(/Open in Body/)).toBeNull();

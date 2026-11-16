@@ -412,6 +412,23 @@ describe('a body that left', () => {
     ).toEqual({ verb: 'Rejected', when: '2 Oct 2026', who: null, reason: 'Drawn over the beach' });
   });
 
+  it('a removal says the moderator’s own words whole — never the composed audit sentence that may be shortened', () => {
+    const note = `${'The landowner asked us to take it off the map; '.repeat(60)}posted gates.`;
+    const left = {
+      action: 'remove' as const,
+      at: on(10, 2),
+      // The composed sentence, shortened under the reason cap.
+      reason: 'Removed from map (landowner request): The landowner asked us…',
+      removalReason: 'landowner_request' as const,
+      note,
+      by: { displayName: 'Teagan Atwater' },
+    };
+    expect(removalFromLeft(left).reason).toBe(note);
+    // No note: the row's reason stands in.
+    expect(removalFromLeft({ ...left, note: null }).reason).toBe(left.reason);
+    expect(removalFromLeft({ ...left, note: '  ' }).reason).toBe(left.reason);
+  });
+
   it('finds nothing in another body’s rows, or in rows of other verbs', () => {
     expect(removalOf([{ ...base, targetId: 'other' }], MASCOMA_ID)).toBeNull();
     expect(removalOf([{ ...base, action: 'remove' }], MASCOMA_ID)).toBeNull();
