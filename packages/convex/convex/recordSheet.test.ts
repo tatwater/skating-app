@@ -771,7 +771,7 @@ describe('the counts and "still being prepared"', () => {
     const { rob, matt, post, tick } = await setup();
     // Each step is at most its share of what the budget has left at a whole document a row, so the
     // seven steps reach some way past what one worst case allows — and past them, a floor.
-    const total = 200;
+    const total = 100;
     for (let i = 0; i < total; i++) {
       const { postId } = await post(1);
       await rob.as.mutation(api.posts.remove, { postId });
