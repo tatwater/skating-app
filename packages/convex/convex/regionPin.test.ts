@@ -315,6 +315,27 @@ describe('setModeratorTowns', () => {
     });
   });
 
+  test('an undo offered without a reason runs even when the row’s reason sits at the cap — the cap is on the person’s words, not the undo’s', async () => {
+    const t = harness();
+    await seedTowns(t);
+    const admin = await person(t);
+    const id = await imported(t, 'way/1');
+    await admin.as.mutation(api.waterBodies.setModeratorTowns, {
+      waterBodyId: id,
+      townKeys: [NORTH_EAST, SOUTHBRIDGE],
+    });
+    await admin.as.mutation(api.waterBodies.setModeratorTowns, {
+      waterBodyId: id,
+      townKeys: [NORTH_EAST],
+      reason: 'x'.repeat(AUDIT_REASON_MAX_CHARS),
+    });
+    // The undo only adds, so it asks none; its own reason quotes the row's, past the cap.
+    await admin.as.mutation(api.undo.run, {
+      actionId: (await lastAction(t, 'set_moderator_towns'))._id,
+    });
+    expect((await get(t, id))?.moderatorTownKeys).toEqual([NORTH_EAST, SOUTHBRIDGE]);
+  });
+
   test('a pin reaches every reader at once — the body’s states, skater search, the library, the facts — and its clear takes back only what it added (Greptile on #130)', async () => {
     const t = harness();
     await seedTowns(t);
@@ -826,29 +847,77 @@ describe('the pin against the other writers', () => {
     expect((await retireInBatches(t, pairs, 1, true)).retired).toEqual(['osm:way/2']);
   });
 
-  test('property: for any pairs, lists and batch size, the dry run’s merged and refused sets equal the apply’s', async () => {
+  test('the dry run predicts the apply through a chain: a survivor absorbed earlier in the pass takes nothing more, and an alias matching a body’s own name is dropped as the merge drops it', async () => {
+    const pond = (n: number) => ({ source: 'osm', externalId: `way/${n}` });
+    for (const batch of [1, 2, 3]) {
+      // Body 1 folds into 0, then 2 into 1 — which the apply has tombstoned by then.
+      const t = harness();
+      for (const n of [0, 1, 2]) await imported(t, `way/${n}`);
+      const pairs = [
+        { survivor: pond(0), absorbed: pond(1) },
+        { survivor: pond(1), absorbed: pond(2) },
+      ];
+      const dry = await retireInBatches(t, pairs, batch, false);
+      expect(dry.retired).toEqual(['osm:way/1']);
+      expect((await retireInBatches(t, pairs, batch, true)).retired).toEqual(dry.retired);
+    }
+    for (const batch of [1, 2]) {
+      // Body 1 takes body 2's alias for its own name, which the merge drops; body 0, at the alias cap,
+      // then takes body 1 with nothing new.
+      const t = harness();
+      const s = await imported(t, 'way/0');
+      await imported(t, 'way/1');
+      const b = await imported(t, 'way/2');
+      await t.run(async (ctx) => {
+        await ctx.db.patch(s, {
+          moderatorAliases: Array.from({ length: MAX_MODERATOR_ALIASES }, (_, i) => `Alias ${i}`),
+        });
+        await ctx.db.patch(b, { moderatorAliases: ['pond way/1'] });
+      });
+      const pairs = [
+        { survivor: pond(1), absorbed: pond(2) },
+        { survivor: pond(0), absorbed: pond(1) },
+      ];
+      const dry = await retireInBatches(t, pairs, batch, false);
+      expect(dry).toEqual({ retired: ['osm:way/2', 'osm:way/1'], refused: [] });
+      expect(await retireInBatches(t, pairs, batch, true)).toEqual(dry);
+    }
+  });
+
+  test('property: for any pairs — chains and cycles too — lists and batch size, the dry run’s merged and refused sets equal the apply’s', async () => {
+    const BODIES = 6;
     const prop = fc.asyncProperty(
-      fc.array(fc.uniqueArray(fc.integer({ min: 0, max: 9 }), { maxLength: 5 }), {
-        minLength: 5,
-        maxLength: 7,
-      }),
-      fc.array(fc.integer({ min: 0, max: 2 }), { minLength: 4, maxLength: 4 }),
+      fc.array(
+        fc.record({
+          pins: fc.uniqueArray(fc.integer({ min: 0, max: 9 }), { maxLength: 5 }),
+          // Some aliases are another body's name, which a merge into that body drops.
+          aliases: fc.uniqueArray(fc.integer({ min: 0, max: 30 + BODIES - 1 }), { maxLength: 12 }),
+        }),
+        { minLength: BODIES, maxLength: BODIES },
+      ),
+      fc.array(
+        fc.tuple(fc.integer({ min: 0, max: BODIES - 1 }), fc.integer({ min: 0, max: BODIES - 1 })),
+        { minLength: 2, maxLength: 6 },
+      ),
       fc.integer({ min: 1, max: 4 }),
-      async (pinSets, survivorOf, batch) => {
+      async (lists, drawn, batch) => {
         const t = harness();
         const ids: Id<'waterBodies'>[] = [];
-        for (let i = 0; i < pinSets.length; i++) ids.push(await imported(t, `way/${i}`));
+        for (let i = 0; i < BODIES; i++) ids.push(await imported(t, `way/${i}`));
         await t.run(async (ctx) => {
-          for (const [i, set] of pinSets.entries()) {
+          for (const [i, l] of lists.entries()) {
             await ctx.db.patch(ids[i] as Id<'waterBodies'>, {
-              moderatorTownKeys: set.map((n) => `tiger/36027${String(10_000 + n)}`),
+              moderatorTownKeys: l.pins.map((n) => `tiger/36027${String(10_000 + n)}`),
+              // Never the body's own name: the aliases writer refuses that.
+              moderatorAliases: l.aliases
+                .filter((n) => n !== 30 + i)
+                .map((n) => (n >= 30 ? `Pond way/${n - 30}` : `Alias ${n}`)),
             });
           }
         });
-        // Bodies 0–2 survive; 3 onward are absorbed, each into the survivor it drew.
-        const pairs = survivorOf.slice(0, pinSets.length - 3).map((si, k) => ({
+        const pairs = drawn.map(([si, ai]) => ({
           survivor: { source: 'osm', externalId: `way/${si}` },
-          absorbed: { source: 'osm', externalId: `way/${k + 3}` },
+          absorbed: { source: 'osm', externalId: `way/${ai}` },
         }));
         const dry = await retireInBatches(t, pairs, batch, false);
         const applied = await retireInBatches(t, pairs, batch, true);

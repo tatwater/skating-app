@@ -83,7 +83,7 @@ import {
   tooLongMessage,
   WATER_BODY_CLASSES,
 } from '@skating/core';
-import { ConvexError, v } from 'convex/values';
+import { ConvexError, type Infer, v } from 'convex/values';
 import type { LineString, MultiPolygon, Polygon } from 'geojson';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
@@ -138,6 +138,7 @@ import { mirrorReportSubAreas } from './lib/reportSubAreas';
 import { takeCapped } from './lib/scan';
 import { richnessFor, scoreFields, zoomSortKey } from './lib/scoring';
 import { activateBody, demoteBody, transitionStanding } from './lib/standing';
+import { UNDO_POLICY } from './lib/undoPolicy';
 import { bbox, geoJson, latLng, literals } from './lib/validators';
 import {
   reclipSubAreasToParent,
@@ -3870,6 +3871,15 @@ export async function mergeBodyInto(
   }
 }
 
+/** One survivor's moderator-held lists as they stand by now in a retire pass, merges included. */
+const takenListsV = v.object({
+  key: v.string(),
+  pins: v.array(v.string()),
+  aliases: v.array(v.string()),
+  links: v.array(v.object({ label: v.string(), url: v.string() })),
+});
+type TakenLists = Infer<typeof takenListsV>;
+
 /**
  * Retire the rows the merge absorbed — **the half of `osm→osm` that was missing** (A07a-3, D136).
  *
@@ -3912,20 +3922,6 @@ export async function mergeBodyInto(
  * `apply` defaults to **false**: this reports what it would do and changes nothing, like every other
  * destructive pass in the campaign.
  */
-/** One survivor's moderator-held lists taken from absorbed rows so far in a retire pass. */
-const takenListsV = v.object({
-  key: v.string(),
-  pins: v.array(v.string()),
-  aliases: v.array(v.string()),
-  links: v.array(v.object({ label: v.string(), url: v.string() })),
-});
-type TakenLists = {
-  key: string;
-  pins: string[];
-  aliases: string[];
-  links: { label: string; url: string }[];
-};
-
 export const retireAbsorbedBodies = internalMutation({
   args: {
     pairs: v.array(
@@ -3952,12 +3948,13 @@ export const retireAbsorbedBodies = internalMutation({
      */
     alreadyRetired: v.optional(v.array(v.string())),
     /**
-     * **The moderator-held lists each survivor has taken so far in this pass** (B01-3g), keyed on the
-     * resolved row's `source:externalId` — fed back from the last batch's `taken`, so the cap check
-     * reads the lists a survivor would hold by now whatever the batch boundaries: a dry run, where
-     * nothing merged and the survivor re-reads as it was, then predicts the apply exactly. Under
-     * `--apply` the survivor already holds them, and a union is idempotent. Only non-empty lists are
-     * carried; an empty one adds nothing to a union.
+     * **The moderator-held lists each survivor holds by now in this pass** (B01-3g) — its own and
+     * every absorbed row's, merged as the merge itself merges them — keyed on the resolved row's
+     * `source:externalId` and fed back from the last batch's `taken`, so the cap check reads the
+     * lists a survivor would hold by now whatever the batch boundaries: a dry run, where nothing
+     * merged and the survivor re-reads as it was, then predicts the apply exactly. Under `--apply`
+     * the survivor already holds them, and a union is idempotent. Only non-empty lists are carried;
+     * an empty one adds nothing to a union.
      */
     taken: v.optional(v.array(takenListsV)),
   },
@@ -4030,7 +4027,7 @@ export const retireAbsorbedBodies = internalMutation({
     const handled = new Set<Id<'waterBodies'>>();
     const handledKeys = new Set<string>(alreadyRetired ?? []);
     const keyOf = (b: Doc<'waterBodies'>) => `${b.source}:${b.externalId}`;
-    // The lists each survivor took earlier in this pass — across the caller's batches (`taken`), so
+    // The lists each survivor holds by now in this pass — across the caller's batches (`taken`), so
     // the cap check reads what it would hold by then, in a dry run too (see the argument's note).
     const takenBy = new Map<string, TakenLists>((carriedIn ?? []).map((t) => [t.key, t] as const));
     const sideOf = (key: string): MergeListSide => {
@@ -4066,7 +4063,14 @@ export const retireAbsorbedBodies = internalMutation({
         skip('survivor and absorbed are the same row', label);
         continue;
       }
-      if (survivor.mergedIntoId !== undefined) {
+      // A survivor retired by an earlier pair of this pass is merged by now under `--apply`; the dry
+      // run, where it re-reads unmerged, reads the same off the pass's own record, or it would fold
+      // a row into a body the apply has already tombstoned.
+      if (
+        survivor.mergedIntoId !== undefined ||
+        handled.has(survivor._id) ||
+        handledKeys.has(keyOf(survivor))
+      ) {
         skip('survivor is itself merged', label);
         continue;
       }
@@ -4076,23 +4080,28 @@ export const retireAbsorbedBodies = internalMutation({
       }
       // A merge that can't hold both bodies' moderator-set lists is a person's call, never a
       // truncation: the pair is skipped and named, and the batch goes on (B01-3g).
-      const taken = [sideOf(keyOf(survivor)), sideOf(keyOf(absorbed)), absorbed];
-      if (mergedModeratorLists(survivor, taken).refusal !== null) {
+      const held = mergedModeratorLists(survivor, [
+        sideOf(keyOf(survivor)),
+        sideOf(keyOf(absorbed)),
+        absorbed,
+      ]);
+      if (held.refusal !== null) {
         skip('their moderator-set lists together pass a cap, so a person merges them', label);
         // Put the pair in front of that person: the duplicate queue, where the card shows why it
         // can't merge as it stands (applied runs only; a dry run writes nothing).
         if (apply === true) await flagAsDuplicates(ctx, [survivor._id, absorbed._id]);
         continue;
       }
-      // What the survivor holds of others' lists now: the union of what it and the absorbed row took
-      // before, and the absorbed row's own.
-      const held = mergedModeratorLists({ name: '' }, taken);
+      // What the survivor holds now — merged under its own name, as the merge merges, so an alias
+      // the merge drops for matching that name is never carried into a later cap check. The absorbed
+      // row's lists live on in the survivor's; it is never a side of a pair again this pass.
       takenBy.set(keyOf(survivor), {
         key: keyOf(survivor),
         pins: held.pins,
         aliases: held.aliases,
         links: held.links,
       });
+      takenBy.delete(keyOf(absorbed));
       handled.add(absorbed._id);
       handledKeys.add(keyOf(absorbed));
       retired.push({
@@ -4389,11 +4398,17 @@ export const setModeratorTowns = mutation({
   },
   handler: async (ctx, { waterBodyId, townKeys, expected, reason }) => {
     const actor = await requireCapability(ctx, 'body.identity');
+    // The person's words are capped here, not in the shared body: an undo passes its own reason —
+    // `Undid …: <this row's reason>`, which can run past the cap when the row's reason is near it —
+    // and an undo offered must not then refuse on words nobody typed (`remove` caps the same way).
+    const trimmed = reason?.trim();
+    const tooLong = tooLongMessage('The reason', trimmed, AUDIT_REASON_MAX_CHARS);
+    if (tooLong !== null) throw new ConvexError(tooLong);
     return setModeratorTownsImpl(ctx, actor, {
       waterBodyId,
       townKeys,
       ...(expected !== undefined ? { expected } : {}),
-      ...(reason !== undefined ? { reason } : {}),
+      ...(trimmed !== undefined ? { reason: trimmed } : {}),
     });
   },
 });
@@ -4449,14 +4464,11 @@ export async function setModeratorTownsImpl(
   }
   // Removing any pin takes a body out of a town (and maybe a state's filter): a takeaway, so it asks
   // why (D226) — the same refusal every reason-required write gives. Only adding is a give: the
-  // reason is optional, defaulted and marked so (History leaves a defaulted line out).
-  const trimmed = reason?.trim();
-  const tooLong = tooLongMessage('The reason', trimmed, AUDIT_REASON_MAX_CHARS);
-  if (tooLong !== null) throw new ConvexError(tooLong);
-  const removes = prev.some((k) => !next.includes(k));
+  // reason is optional, defaulted and marked so (History leaves a defaulted line out). The rule is
+  // the undo policy's, so the write and its undo give one answer.
   const said = reasonFor(
-    trimmed,
-    removes,
+    reason,
+    UNDO_POLICY.set_moderator_towns.takesAway({ from: prev, to: next }),
     next.length === 0
       ? 'Cleared the pinned towns'
       : `Pinned in ${next.length} town${next.length === 1 ? '' : 's'}`,

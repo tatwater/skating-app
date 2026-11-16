@@ -3155,11 +3155,12 @@ holds a body in region in the towns named. `setModeratorTowns` is a whole-list w
 `list_changed`), audited (`set_moderator_towns`) and undone through the same write. **A write that
 removes any pin is a takeaway** and refuses without a nonblank reason ("A reason is required", as
 every reason-required write says); a write that only adds takes an optional reason, defaulted ("Pinned
-in N towns") and marked `reasonDefaulted` in the audit row. Reasons are trimmed and refused past
-`AUDIT_REASON_MAX_CHARS` (1,000 — main has no general audit-reason cap yet; #125 brings one). Its undo
-follows the same rule on the list it puts back: undoing an add removes pins and asks a reason;
-undoing a removal only adds and asks none. The undo is refused, so never offered, when a merge moved
-the list since its row. A body's states are built from two ingredients kept apart —
+in N towns") and marked `reasonDefaulted` in the audit row. The person's reason is trimmed and
+refused past `AUDIT_REASON_MAX_CHARS` (1,000 — main has no general audit-reason cap yet; #125 brings
+one), in the mutation and not the shared body, since an undo's own reason quotes the row's and can
+run past it. Its undo follows the same rule on the list it puts back (one rule, the undo policy's
+`{ from, to }`): undoing an add removes pins and asks a reason; undoing a removal only adds and asks
+none. The undo is refused, so never offered, when a merge moved the list since its row. A body's states are built from two ingredients kept apart —
 the rule's (`regionStates`) and the pinned towns' — by one builder (`regionStatesFields`), which
 the pin's write, its undo, a merge and the import all patch through, so skater search, the library
 and the console read a pin's state in the write's own transaction, and clearing a pin removes exactly
@@ -3175,9 +3176,10 @@ refusal in a sentence (which list, how many, the cap, clear some first) — neve
 duplicate card never offers that merge and shows the sentence; the import's automated merge skips
 the pair, names it and flags it into the duplicate queue on an applied run. Its dry run predicts
 the apply exactly whatever the batch boundaries (Greptile on #130): each call returns `taken`, every
-survivor's union of what it absorbed this pass, and the script feeds it to the next batch — chosen
-over keeping a survivor's pairs in one batch because it holds for any batch size, order and chained
-absorption. Weather sample points are not carried: each lies on its own body's outline.
+survivor's lists as they stand by now in this pass, merged under its own name as the merge merges
+them, and the script feeds it to the next batch — chosen over keeping a survivor's pairs in one batch
+because it holds for any batch size, order and chained absorption. A survivor the pass retired earlier
+is skipped as merged in the dry run too, as the apply skips its tombstone. Weather sample points are not carried: each lies on its own body's outline.
 The merge's change set keeps both bodies' lists as they were, for the unmerge (not built yet). A
 guard reads the functions' source: nothing else writes the pins.
 

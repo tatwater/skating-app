@@ -86,6 +86,12 @@ function roleDown(value?: unknown): boolean {
 }
 const never = () => false;
 
+/** Whether a pin list moving `{ from, to }` drops any pin `from` held. */
+function pinRemoved(value?: unknown): boolean {
+  const { from, to } = (value ?? {}) as { from?: readonly string[]; to?: readonly string[] };
+  return Array.isArray(from) && from.some((k) => !(to ?? []).includes(k));
+}
+
 const inverse = (verb: ModerationAction | 'priorStatus'): UndoKind => ({
   kind: 'inverse',
   inverse: verb,
@@ -203,13 +209,9 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
   set_aliases: { undo: setPrev, takesAway: never, capability: 'body.identity' },
   set_class: { undo: setPrev, takesAway: never, capability: 'body.identity' },
   // Removing any pin takes a body out of a town (and maybe a state's filter); only adding gives. The
-  // value alone can't tell which, so the write and its undo handler compare it with the list before;
-  // as a value, an empty list (every pin cleared) is the one that surely takes away.
-  set_moderator_towns: {
-    undo: setPrev,
-    takesAway: (keys) => Array.isArray(keys) && keys.length === 0,
-    capability: 'body.identity',
-  },
+  // list alone can't tell which, so the value is the move `{ from, to }` — the one rule the forward
+  // write and its undo handler both ask, as a role change is.
+  set_moderator_towns: { undo: setPrev, takesAway: pinRemoved, capability: 'body.identity' },
   set_water_body_name: { undo: setPrev, takesAway: never, capability: 'body.identity' },
   set_included_by_request: {
     undo: setPrev,

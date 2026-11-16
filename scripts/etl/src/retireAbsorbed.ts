@@ -117,8 +117,8 @@ function main(): void {
   // These are the RESOLVED row keys the mutation returns, not the input refs, which is what lets two
   // differing keys collapse to one string.
   const retiredKeys: string[] = [];
-  // **And the moderator-held lists each survivor has taken** (B01-3g): the cap check reads what a
-  // survivor would hold by now, so the dry run predicts the apply across any batch boundary.
+  // **And the moderator-held lists each survivor holds by now** (B01-3g): the cap check reads them,
+  // so the dry run predicts the apply across any batch boundary.
   let taken: {
     key: string;
     pins: string[];
