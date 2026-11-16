@@ -79,5 +79,12 @@ export const meta = (row: Doc<'moderationActions'>): Meta => (row.metadata ?? {}
 
 export const PREDATES = 'This was done before undo existed, and nothing records what it replaced.';
 
+/**
+ * A write that changed nothing — a row written before D270, when a repeat still recorded one (its
+ * `prev` equals what it set). There is nothing to put back, and the write an undo would run would
+ * change nothing either, so it is never offered.
+ */
+export const NOTHING_TO_UNDO = 'Nothing changed, so there is nothing to undo.';
+
 /** The undo for each shared verb (`hide`, `remove`, `restore`) on one kind of target. */
 export type TargetUndo = Partial<Record<'hide' | 'remove' | 'restore', UndoHandler>>;

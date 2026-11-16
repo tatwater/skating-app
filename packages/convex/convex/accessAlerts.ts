@@ -73,6 +73,7 @@ import {
   ACCESS_REASONS,
 } from './lib/enums';
 import { authorRetracted, refreshClockOf, refreshEraseClock } from './lib/eraseClock';
+import { ownContentRefusal } from './lib/ownContent';
 import { DOC_MAX, ReadBudget } from './lib/readBudget';
 import { literals } from './lib/validators';
 
@@ -530,6 +531,9 @@ export async function setOfficialImpl(
 ): Promise<void> {
   const alert = await ctx.db.get(accessAlertId);
   if (!alert) throw new ConvexError('Access alert not found');
+  // Pinning or releasing an alert is a decision on it, never its author's (D269).
+  const own = ownContentRefusal(actor, alert.createdByUserId);
+  if (own !== null) throw new ConvexError(own);
   if (reason.trim().length === 0) throw new ConvexError('A reason is required');
   // The author's retraction is final (D248): no moderator puts a withdrawn claim back up — not by
   // pinning it, and not by releasing it, which would put it back in the community lifecycle.

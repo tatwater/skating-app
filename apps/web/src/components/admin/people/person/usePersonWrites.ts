@@ -98,6 +98,15 @@ export function usePersonWrites(
       // The write landed: say so now. The receipt follows on its own — the shell's toast shows once
       // its undo lookup returns (a moment), with Undo while the server offers one; a lookup that
       // fails leaves the receipt without Undo (History keeps the row). It never holds this result.
+      // Nothing changed, so nothing was written: say that, with no Undo and no lookup.
+      if (changedOf(answered) === false) {
+        void announce({
+          title: WORDS.alreadySo(person.displayName),
+          target: { targetType: 'user', targetId: userId },
+          undoable: false,
+        }).catch(() => {});
+        return null;
+      }
       const actionId = actionIdOf(answered);
       const undoNeedsReason = undoNeedsReasonOf(answered);
       const receipt: Receipt = {
@@ -144,4 +153,14 @@ export function undoNeedsReasonOf(answered: unknown): boolean | null {
   if (typeof answered !== 'object' || answered === null) return null;
   const needs = (answered as { undoNeedsReason?: unknown }).undoNeedsReason;
   return typeof needs === 'boolean' ? needs : null;
+}
+
+/**
+ * Whether the write changed the person, when it says (`changed`): `false` when it would have left
+ * them exactly as they were, so the server wrote nothing; `null` when the answer doesn't say.
+ */
+export function changedOf(answered: unknown): boolean | null {
+  if (typeof answered !== 'object' || answered === null) return null;
+  const changed = (answered as { changed?: unknown }).changed;
+  return typeof changed === 'boolean' ? changed : null;
 }

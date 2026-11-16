@@ -21,6 +21,7 @@ import type { Doc, Id } from './_generated/dataModel';
 import { PLACES_RULE, pinnedFactsFor, placesOf } from './lib/bodyGeo';
 import { syncAdminAreaCells } from './lib/cellIndex';
 import { undoState } from './lib/undo';
+import { NOTHING_TO_UNDO } from './lib/undoTypes';
 import schema from './schema';
 import { MAX_MODERATOR_ALIASES, MAX_MODERATOR_TOWNS } from './waterBodies';
 
@@ -276,12 +277,13 @@ describe('setModeratorTowns', () => {
         ...(reason !== undefined ? { reason } : {}),
       });
     // Only adding: no reason needed; the default is recorded and marked defaulted.
-    await set([NORTH_EAST, SOUTHBRIDGE]);
+    await set([NORTH_EAST]);
     expect(await lastAction(t, 'set_moderator_towns')).toMatchObject({
-      reason: 'Pinned in 2 towns',
+      reason: 'Pinned in 1 town',
       metadata: { reasonDefaulted: true },
     });
-    // Adding with a reason: kept, trimmed, not defaulted.
+    // Adding with a reason: kept, trimmed, not defaulted. (The same towns again would change
+    // nothing, so write nothing — D270.)
     await set([NORTH_EAST, SOUTHBRIDGE], '  Public launch on the in-state shore  ');
     const given = await lastAction(t, 'set_moderator_towns');
     expect(given.reason).toBe('Public launch on the in-state shore');
@@ -318,6 +320,58 @@ describe('setModeratorTowns', () => {
       state: 'available',
       needsReason: true,
     });
+  });
+
+  test('the same towns again change nothing, so nothing is written — no audit row, no undo (D270)', async () => {
+    const t = harness();
+    await seedTowns(t);
+    const admin = await person(t);
+    const id = await imported(t, 'way/1');
+    await admin.as.mutation(api.waterBodies.setModeratorTowns, {
+      waterBodyId: id,
+      townKeys: [NORTH_EAST],
+    });
+    const rows = async () =>
+      (await t.run((ctx) => ctx.db.query('moderationActions').collect())).filter(
+        (r) => r.action === 'set_moderator_towns',
+      );
+    const before = await rows();
+    await admin.as.mutation(api.waterBodies.setModeratorTowns, {
+      waterBodyId: id,
+      townKeys: [NORTH_EAST],
+      expected: [NORTH_EAST],
+    });
+    expect(await rows()).toEqual(before);
+    expect((await get(t, id))?.moderatorTownKeys).toEqual([NORTH_EAST]);
+  });
+
+  test('a towns row written before D270 that changed nothing offers no undo', async () => {
+    const t = harness();
+    await seedTowns(t);
+    const admin = await person(t);
+    const id = await imported(t, 'way/1');
+    await admin.as.mutation(api.waterBodies.setModeratorTowns, {
+      waterBodyId: id,
+      townKeys: [NORTH_EAST],
+    });
+    const row = await t.run((ctx) =>
+      ctx.db.insert('moderationActions', {
+        actorId: admin.id,
+        action: 'set_moderator_towns',
+        targetType: 'waterbody',
+        targetId: id,
+        reason: 'Pinned in 1 town',
+        metadata: { moderatorTownKeys: [NORTH_EAST], prev: { moderatorTownKeys: [NORTH_EAST] } },
+        createdAt: Date.now(),
+      }),
+    );
+    const fresh = await t.run(async (ctx) => {
+      const viewer = await ctx.db.get(admin.id);
+      const r = await ctx.db.get(row);
+      if (!viewer || !r) throw new Error('missing');
+      return undoState(ctx, viewer, r);
+    });
+    expect(fresh).toEqual({ state: 'unavailable', why: NOTHING_TO_UNDO });
   });
 
   test('a Bodies write accepted with the person’s words at or near the cap has an undo that runs — never refused for length', async () => {

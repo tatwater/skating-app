@@ -11,6 +11,7 @@ import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+import { OWN_CONTENT_REFUSAL } from './lib/ownContent';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -351,6 +352,18 @@ describe('accessAlerts.setOfficial — the founder exemption', () => {
         reason: 'x',
       }),
     ).rejects.toThrow();
+  });
+
+  test('a moderator cannot pin or release their own alert; another moderator can (D269)', async () => {
+    const { t, putInId } = await setup();
+    const mod = await seedUser(t, 'own-mod', 'moderator');
+    const other = await seedUser(t, 'other-mod', 'moderator');
+    const id = await mod.as.mutation(api.accessAlerts.create, { ...ALERT, putInId });
+    const pin = (who: typeof mod, official: boolean) =>
+      who.as.mutation(api.accessAlerts.setOfficial, { accessAlertId: id, official, reason: 'x' });
+    await expect(pin(mod, true)).rejects.toThrow(OWN_CONTENT_REFUSAL);
+    await pin(other, true);
+    await expect(pin(mod, false)).rejects.toThrow(OWN_CONTENT_REFUSAL);
   });
 
   test('pinning clears the expiry entirely, and audits', async () => {

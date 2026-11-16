@@ -22,10 +22,11 @@
  * and never an operator on their way out (D62) — the words the person page uses.
  */
 import { canUse, isLeaving } from '@skating/core';
-import type { Doc } from '../_generated/dataModel';
+import type { Doc, Id } from '../_generated/dataModel';
 import { AUTHOR_DELETED_RESTORE, authorDeletedAtOf } from './authorDeletion';
 import type { VerdictTargetType } from './contentVerdicts';
 import { authorRetracted } from './eraseClock';
+import { authorOf, ownContentRefusal } from './ownContent';
 
 /** Anything a moderator tries on an item the sweep erased. */
 export const ERASED_ALREADY = 'This was erased, so there is nothing left to act on.';
@@ -99,6 +100,8 @@ export interface RecordFacts {
   standing: boolean;
   /** A Post's restore plan, when its members were read; absent otherwise. */
   post?: PostRestoreFacts;
+  /** Who wrote it (a hazard's or alert's filer); `null` when gone. A moderator never decides their own (D269). */
+  authorId: Id<'profiles'> | null;
 }
 
 /** The write capability a lever on this kind takes. */
@@ -151,7 +154,19 @@ export function recordRefusal(facts: RecordFacts, action: RecordAction): string 
 }
 
 /** The viewer as the rule reads them: their role, their grant, whether they are on their way out. */
-export type RecordViewer = Pick<Doc<'profiles'>, 'role' | 'canEditLedger' | 'deletionRequestedAt'>;
+export type RecordViewer = Pick<
+  Doc<'profiles'>,
+  '_id' | 'role' | 'canEditLedger' | 'deletionRequestedAt'
+>;
+
+/**
+ * **Why `viewer` may not decide on this item at all** — before the item's own state is asked: the
+ * lever's capability and leaving ({@link viewerRefusal}), then their own content (D269,
+ * `lib/ownContent`). The levers ({@link recordCan}) and the writes refuse by this one function.
+ */
+export function recordActorRefusal(viewer: RecordViewer, facts: RecordFacts): string | null {
+  return viewerRefusal(viewer, facts.targetType) ?? ownContentRefusal(viewer, facts.authorId);
+}
 
 /** Whether `viewer` holds the lever at all, and if not why — before the item is asked. */
 export function viewerRefusal(viewer: RecordViewer, targetType: VerdictTargetType): string | null {
@@ -165,7 +180,7 @@ export function recordCan(
   facts: RecordFacts,
   action: RecordAction,
 ): RecordCan {
-  const who = viewerRefusal(viewer, facts.targetType);
+  const who = recordActorRefusal(viewer, facts);
   if (who !== null) return { ok: false, why: who };
   const why = recordRefusal(facts, action);
   if (why === POST_RESTORE_NEEDS_A_CHOICE) {
@@ -226,6 +241,7 @@ export function recordFactsOf(
       withdrawn: false,
       status: null,
       standing,
+      authorId: null,
     };
   }
   if (targetType === 'accessAlert') {
@@ -237,6 +253,7 @@ export function recordFactsOf(
       withdrawn: retracted,
       status: null,
       standing,
+      authorId: authorOf(doc),
     };
   }
   const content = doc as ContentDoc;
@@ -251,6 +268,7 @@ export function recordFactsOf(
     withdrawn,
     status: content.moderationStatus,
     standing,
+    authorId: authorOf(content),
     ...(members?.plan !== undefined && targetType === 'post' ? { post: members.plan } : {}),
   };
 }

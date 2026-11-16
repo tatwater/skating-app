@@ -49,8 +49,17 @@ import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import { MODERATION_ACTIONS, MODERATION_STATUSES, MODERATION_TARGET_TYPES } from './lib/enums';
 import { ERASABLE, refreshEraseClock } from './lib/eraseClock';
 import { closeFlag } from './lib/flagResolution';
+import { flagSubject, flagSubjectOf } from './lib/flagSubject';
 import { withoutLedgerGrantsFor } from './lib/ledgerEditors';
-import { assertWrite, DISCIPLINE_REFUSALS, type PersonWrite, reasonFor } from './lib/peopleCan';
+import { ownContentRefusal } from './lib/ownContent';
+import {
+  assertWrite,
+  DISCIPLINE_REFUSALS,
+  type PersonWrite,
+  reasonFor,
+  sameStatusTerms,
+  statusTermsOf,
+} from './lib/peopleCan';
 import { refreshPersonRow } from './lib/peopleRows';
 import { refreshPostLatestSkateEnd, refreshPostSearchText } from './lib/postSync';
 import {
@@ -61,6 +70,7 @@ import {
   OVERTURN_NOTHING_STANDING,
   POST_RESTORE_NEEDS_A_CHOICE,
   POST_UNRESTORABLE,
+  recordActorRefusal,
   recordFactsOf,
   recordRefusal,
   UNDO_LEAVES_POST_EMPTY,
@@ -594,6 +604,9 @@ export async function setContentStatus(
     // choice, not by undo — and nothing else moves it either: it stays as the deletion left it. The
     // standing verdict is not read: neither refusal here rests on it.
     const facts = recordFactsOf(args.targetType, typedTarget, false);
+    // Never on their own content (D269) — a forward write or an undo: the lever's one rule.
+    const own = recordActorRefusal(actor, facts);
+    if (own !== null) throw new ConvexError(own);
     if (facts.erased) throw new ConvexError(ERASED_ALREADY);
     if (facts.authorDeleted) {
       if (asUndo) throw new ConvexError(authorDeletedRefusal(args.status, true));
@@ -1066,7 +1079,8 @@ export const overturnVerdict = mutation({
       standing,
       post,
     );
-    const why = recordRefusal(facts, 'overturn');
+    // Their own content first (D269), then the item: the lever's one rule (`lib/recordRules`).
+    const why = recordActorRefusal(actor, facts) ?? recordRefusal(facts, 'overturn');
     if (why !== null) throw new ConvexError(why);
     const now = Date.now();
     const actionId = await writeAudit(ctx, {
@@ -1126,7 +1140,9 @@ export const keepOnRecord = mutation({
       | Doc<'comments'>
       | Doc<'hazards'>
       | Doc<'accessAlerts'>;
-    const why = recordRefusal(recordFactsOf(args.targetType, doc, standing), 'keep');
+    const keepFacts = recordFactsOf(args.targetType, doc, standing);
+    // Their own content first (D269), then the item: the lever's one rule (`lib/recordRules`).
+    const why = recordActorRefusal(actor, keepFacts) ?? recordRefusal(keepFacts, 'keep');
     if (why !== null) throw new ConvexError(why);
     const now = Date.now();
     const actionId =
@@ -1164,6 +1180,14 @@ export const resolveFlag = mutation({
 
     const flag = await ctx.db.get(args.flagId);
     if (!flag) throw new ConvexError('Flag not found');
+    // A flag about them, or about their content, is decided by someone else (D269). A flag on a
+    // person names them by its target; a content flag the subjects backfill hasn't stamped yet is
+    // read from its target, so an unstamped flag is never the way around the rule.
+    const known = flagSubject(flag);
+    const subject =
+      known === undefined ? await flagSubjectOf(ctx, flag.targetType, flag.targetId) : known;
+    const own = ownContentRefusal(actor, subject);
+    if (own !== null) throw new ConvexError(own);
     // Resolution is terminal and single-shot. Guard it so a stale queue view — two moderators acting
     // on the same open flag, or a re-submit of an already-closed one — can't patch it twice, write a
     // second audit row, or (worse) double-count the disposition metric below and even record the flag
@@ -1758,12 +1782,24 @@ async function clearLapseMirror(ctx: MutationCtx, userId: Id<'profiles'>): Promi
  * right now (`undoState` says available) — that row and whether its undo asks a reason, so the
  * console's toast offers Undo without a second read and never offers one the undo would refuse.
  * `undoable: false` when it can't be undone now (a lift of a suspension that had already run out, a
- * lift of an account already active, a suspension replacing one that had run out).
+ * suspension replacing one that had run out). `changed: false` when the write would have changed
+ * nothing, so it wrote nothing ({@link unchanged}).
  */
 export type PersonWriteResult = { userId: Id<'profiles'> } & (
-  | { undoable: true; actionId: Id<'moderationActions'>; undoNeedsReason: boolean }
-  | { undoable: false }
+  | ({ changed: true } & (
+      | { undoable: true; actionId: Id<'moderationActions'>; undoNeedsReason: boolean }
+      | { undoable: false }
+    ))
+  | { changed: false; undoable: false }
 );
+
+/**
+ * A person write that would leave the person exactly as they were (D270): nothing is written — no
+ * audit row, no undo — and the answer says so, so the console tells the operator nothing changed.
+ */
+function unchanged(userId: Id<'profiles'>): PersonWriteResult {
+  return { userId, changed: false, undoable: false };
+}
 
 /**
  * A person write's answer, from the undo engine's own reading of the row for this viewer — in the
@@ -1781,7 +1817,9 @@ export async function personWriteResult(
   actionId: Id<'moderationActions'>,
 ): Promise<PersonWriteResult> {
   const offer = await undoOfferAfterWrite(ctx, actorId, actionId);
-  return offer.undoable ? { userId, actionId, ...offer } : { userId, undoable: false };
+  return offer.undoable
+    ? { userId, changed: true, actionId, ...offer }
+    : { userId, changed: true, undoable: false };
 }
 
 /**
@@ -1811,7 +1849,9 @@ async function auditUser(
   reason: AuditReason,
   metadata?: Record<string, unknown>,
 ): Promise<Id<'moderationActions'>> {
-  await refreshPersonRow(ctx, userId);
+  // A status write is written only when it sets new terms (D270), so it dates the row's status
+  // anew (`lib/statusTerms`); a posting right leaves it alone.
+  await refreshPersonRow(ctx, userId, { termsSet: action !== 'set_posting_permission' });
   return writePersonAudit(ctx, {
     actorId,
     action,
@@ -1837,14 +1877,11 @@ export const banUser = mutation({
   },
 });
 
-/** What a lifecycle action replaced — the whole status, so its undo puts back exactly that (D226). */
-function statusPrev(target: Doc<'profiles'>) {
-  return {
-    status: target.status,
-    statusReason: target.statusReason ?? null,
-    suspendedUntil: target.suspendedUntil ?? null,
-  };
-}
+/**
+ * What a lifecycle action replaced — the person's whole terms, so its undo puts back exactly that
+ * (D226): the reading the no-op test and `lib/statusTerms` make, never a second copy of it.
+ */
+const statusPrev = statusTermsOf;
 
 export async function banImpl(
   ctx: MutationCtx,
@@ -1856,6 +1893,8 @@ export async function banImpl(
     // Refused on an account in or past its deletion, and for the last ledger editor (D252), here and
     // in an undo that puts a ban back, which comes through this same writer.
     const target = await loadModeratableUser(ctx, actor, userId, { kind: 'ban' });
+    const terms = { status: 'banned' as const, statusReason: reason, suspendedUntil: null };
+    if (sameStatusTerms(statusTermsOf(target), terms)) return unchanged(userId);
 
     await ctx.db.patch(userId, {
       status: 'banned',
@@ -1909,6 +1948,8 @@ export async function suspendImpl(
     // The same rule for a suspension: a suspended editor can't edit or pass the grant on (D252),
     // and a suspension that later lapsed would unlock an account partway through its deletion.
     const target = await loadModeratableUser(ctx, actor, userId, { kind: 'suspend' });
+    const terms = { status: 'suspended' as const, statusReason: reason, suspendedUntil };
+    if (sameStatusTerms(statusTermsOf(target), terms)) return unchanged(userId);
 
     await ctx.db.patch(userId, {
       status: 'suspended',
@@ -1938,7 +1979,7 @@ export async function suspendImpl(
 /**
  * Lift a ban or suspension (D37) — returns the account to `active`, clears the suspension window +
  * reason, audits `unban`, and unlocks the Clerk user (reverses a prior ban; harmless if they were only
- * suspended). Idempotent: unbanning an already-active account still records the moderator's decision.
+ * suspended). A lift of an account already active changes nothing, so it writes nothing (D270).
  */
 export const unbanUser = mutation({
   // Giving back asks no reason (D226): one typed is kept, and none gets a default.
@@ -1965,6 +2006,8 @@ export async function unbanImpl(
     // A lift puts the account back to `active`, which would bring a deleted one back and let a
     // departing one write again (D33, D62). Refused here, so an undo that lifts is refused too.
     const target = await loadModeratableUser(ctx, actor, userId, { kind: 'lift' });
+    const terms = { status: 'active' as const, statusReason: null, suspendedUntil: null };
+    if (sameStatusTerms(statusTermsOf(target), terms)) return unchanged(userId);
 
     await ctx.db.patch(userId, {
       status: 'active',
@@ -2021,6 +2064,7 @@ export async function setBountyLimitImpl(
     throw new ConvexError('A bounty limit has to be a whole number, zero or more');
   }
   const target = await loadModeratableUser(ctx, actor, userId, { kind: 'bountyLimit' });
+  if ((target.activeBountyPostLimit ?? null) === (limit ?? null)) return unchanged(userId);
   // Lowering the limit in force takes something away and asks why; raising or clearing it does not.
   const { reason, defaulted } = reasonFor(
     given,
@@ -2097,15 +2141,17 @@ export async function setPostingPermissionImpl(
     reason: given,
   }: { userId: Id<'profiles'>; permission: PostingPermission; allowed: boolean; reason?: string },
 ): Promise<PersonWriteResult> {
-  const { reason, defaulted } = reasonFor(given, !allowed, RESTORED_REASON[permission]);
   // Flagging off on a staffer is refused here too: the one rule (`lib/peopleCan`).
   const target = await loadModeratableUser(ctx, actor, userId, {
     kind: 'right',
     permission,
     allowed,
   });
-
   const field = POSTING_PERMISSION_FIELD[permission];
+  // Missing means allowed (D57). Nothing to change, nothing asked: as the bounty limit answers.
+  if ((target[field] !== false) === allowed) return unchanged(userId);
+  const { reason, defaulted } = reasonFor(given, !allowed, RESTORED_REASON[permission]);
+
   await ctx.db.patch(userId, { [field]: allowed });
   const actionId = await auditUser(
     ctx,

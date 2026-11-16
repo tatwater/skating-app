@@ -14,10 +14,12 @@
  * say which workstream owes them.
  */
 
+import { ConvexError } from 'convex/values';
 import type { Doc, Id } from '../_generated/dataModel';
 import {
   banImpl,
   type ContentTargetType,
+  type PersonWriteResult,
   type PostCascade,
   type PostingPermission,
   revertPostVerdict,
@@ -29,11 +31,19 @@ import {
 } from '../moderation';
 import type { ModerationAction, ModerationTargetType } from './audit';
 import { AUTHOR_DELETED_OVERTURN } from './authorDeletion';
-import type { PersonWrite } from './peopleCan';
+import { type PersonWrite, type StatusTerms, sameStatusTerms } from './peopleCan';
+import { termsSetBy } from './statusTerms';
 import { BODY_TARGET_UNDO, BODY_UNDO_HANDLERS } from './undoHandlersBody';
 import { CORPUS_TARGET_UNDO, CORPUS_UNDO_HANDLERS } from './undoHandlersCorpus';
 import { UNDO_POLICY } from './undoPolicy';
-import { meta, PREDATES, type TargetUndo, type UndoCall, type UndoHandler } from './undoTypes';
+import {
+  meta,
+  NOTHING_TO_UNDO,
+  PREDATES,
+  type TargetUndo,
+  type UndoCall,
+  type UndoHandler,
+} from './undoTypes';
 
 // ── Content: reports, posts, comments, hazards ────────────────────────────────────────────────────
 
@@ -128,11 +138,8 @@ const contentUndoRestore: UndoHandler = {
 
 // ── People: lifecycle and posting rights ──────────────────────────────────────────────────────────
 
-interface StatusPrev {
-  status: Doc<'profiles'>['status'];
-  statusReason: string | null;
-  suspendedUntil: number | null;
-}
+/** What a lifecycle row replaced: the person's terms as they stood (`lib/peopleCan`). */
+type StatusPrev = StatusTerms;
 
 /** The write that puts a lifecycle back to `prev`: a ban, a suspension (with its end), or a lift. */
 function statusWrite(prev: StatusPrev): PersonWrite {
@@ -141,21 +148,31 @@ function statusWrite(prev: StatusPrev): PersonWrite {
   return { kind: 'lift' };
 }
 
+/**
+ * An undo whose write changed nothing wrote no row (D270), so nothing is tagged as undoing the row and
+ * History would keep offering it: refused instead, rolled back, in the write's own words.
+ */
+function assertChanged(result: PersonWriteResult): void {
+  if (!result.changed) throw new ConvexError(NOTHING_TO_UNDO);
+}
+
 /** Put a person's lifecycle back to `prev` through the verb that produces it ({@link statusWrite}). */
 async function restoreStatus(call: UndoCall, prev: StatusPrev): Promise<void> {
   const userId = call.row.targetId as Id<'profiles'>;
   const reason = call.reason;
   const write = statusWrite(prev);
   if (write.kind === 'ban') {
-    await banImpl(call.ctx, call.actor, { userId, reason });
+    assertChanged(await banImpl(call.ctx, call.actor, { userId, reason }));
   } else if (write.kind === 'suspend') {
-    await suspendImpl(call.ctx, call.actor, {
-      userId,
-      reason,
-      suspendedUntil: prev.suspendedUntil as number,
-    });
+    assertChanged(
+      await suspendImpl(call.ctx, call.actor, {
+        userId,
+        reason,
+        suspendedUntil: prev.suspendedUntil as number,
+      }),
+    );
   } else {
-    await unbanImpl(call.ctx, call.actor, { userId, reason });
+    assertChanged(await unbanImpl(call.ctx, call.actor, { userId, reason }));
   }
 }
 
@@ -181,7 +198,11 @@ function statusPrevBlocked(prev: StatusPrev | undefined, now: number): string | 
 
 /** ban / suspend → whatever the person was before (rows from before undo assume active). */
 const undoDiscipline: UndoHandler = {
-  blocked: (row) => statusPrevBlocked(meta(row).prev as StatusPrev | undefined, Date.now()),
+  blocked: (row) => {
+    const prev = meta(row).prev as StatusPrev | undefined;
+    if (prev !== undefined && sameStatusTerms(prev, termsSetBy(row))) return NOTHING_TO_UNDO;
+    return statusPrevBlocked(prev, Date.now());
+  },
   undoTakesAway: (row) => {
     const prev = meta(row).prev as StatusPrev | undefined;
     return prev !== undefined && prev.status !== 'active';
@@ -205,7 +226,15 @@ const undoLift: UndoHandler = {
 
 /** set_posting_permission → the right or the bounty limit it replaced. */
 const undoPostingPermission: UndoHandler = {
-  blocked: (row) => (meta(row).prev === undefined ? PREDATES : null),
+  blocked: (row) => {
+    const { prev, permission, allowed, limit } = meta(row);
+    if (prev === undefined) return PREDATES;
+    const same =
+      permission === 'bounties'
+        ? (prev.limit ?? null) === (limit ?? null)
+        : prev.allowed === allowed;
+    return same ? NOTHING_TO_UNDO : null;
+  },
   undoTakesAway: (row) => {
     const { prev, permission, limit } = meta(row);
     return UNDO_POLICY.set_posting_permission.takesAway(
@@ -226,14 +255,18 @@ const undoPostingPermission: UndoHandler = {
     const { prev, permission } = meta(row);
     const userId = row.targetId as Id<'profiles'>;
     if (permission === 'bounties') {
-      await setBountyLimitImpl(ctx, actor, { userId, limit: prev.limit ?? undefined, reason });
+      assertChanged(
+        await setBountyLimitImpl(ctx, actor, { userId, limit: prev.limit ?? undefined, reason }),
+      );
     } else {
-      await setPostingPermissionImpl(ctx, actor, {
-        userId,
-        permission: permission as PostingPermission,
-        allowed: prev.allowed as boolean,
-        reason,
-      });
+      assertChanged(
+        await setPostingPermissionImpl(ctx, actor, {
+          userId,
+          permission: permission as PostingPermission,
+          allowed: prev.allowed as boolean,
+          reason,
+        }),
+      );
     }
   },
 };

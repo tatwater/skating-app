@@ -89,7 +89,7 @@ describe('derivePersonRow', () => {
     expect(later.statusReason).toBeUndefined();
   });
 
-  test('a suspension over one that had run out (unswept) is a new run, as the person page says', () => {
+  test('new terms date the status anew when the write says it set them; a refresh alone keeps the date', () => {
     const first = derivePersonRow(profileDoc(), null, 0);
     const susp = derivePersonRow(
       profileDoc({ status: 'suspended', suspendedUntil: 10 * DAY }),
@@ -97,27 +97,21 @@ describe('derivePersonRow', () => {
       DAY,
     );
     expect(susp.statusSince).toBe(DAY);
-    // A new window on a running suspension keeps its start.
-    const extended = derivePersonRow(
+    // A refresh that sees a new end but wasn't told new terms were set (the drift repair) keeps it.
+    const seen = derivePersonRow(
       profileDoc({ status: 'suspended', suspendedUntil: 12 * DAY }),
       susp,
       5 * DAY,
     );
-    expect(extended.statusSince).toBe(DAY);
-    // A refresh of the run-out one, nothing written, keeps it too.
-    const stale = derivePersonRow(
-      profileDoc({ status: 'suspended', suspendedUntil: 12 * DAY }),
-      extended,
-      14 * DAY,
-    );
-    expect(stale.statusSince).toBe(DAY);
-    // Re-suspended after the window ran out, before the sweep reset it: a new run from here.
-    const again = derivePersonRow(
+    expect(seen.statusSince).toBe(DAY);
+    // The status write that set them dates them (lib/statusTerms), as the person page does.
+    const set = derivePersonRow(
       profileDoc({ status: 'suspended', suspendedUntil: 30 * DAY }),
-      stale,
+      seen,
       15 * DAY,
+      true,
     );
-    expect(again.statusSince).toBe(15 * DAY);
+    expect(set.statusSince).toBe(15 * DAY);
   });
 
   test('a long reason is cut to a line, never through a surrogate pair', () => {
