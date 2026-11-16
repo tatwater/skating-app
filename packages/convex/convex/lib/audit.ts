@@ -252,6 +252,15 @@ async function viaOf(ctx: MutationCtx): Promise<string | undefined> {
  */
 const UNDOING = new WeakMap<object, Id<'moderationActions'>>();
 
+/**
+ * Whether this write is an undo putting back what a row recorded (B01-3h) — the text caps hold what a
+ * write introduces, never a value the row already had, so an undo of a row written before the caps
+ * still runs.
+ */
+export function isUndoing(ctx: object): boolean {
+  return UNDOING.has(ctx);
+}
+
 export async function asUndoOf<T>(
   ctx: MutationCtx,
   actionId: Id<'moderationActions'>,

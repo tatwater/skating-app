@@ -32,6 +32,7 @@ import {
   MAX_PLAUSIBLE_DEPTH_M,
   memberSubAreaIds,
   minVisibleZoom,
+  nameTooLong,
   polygonBBox,
   polygonIoU,
   type RederivedChord,
@@ -66,7 +67,13 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
-import { type AuditReasonOrText, composed, writeAudit, writeSnapshot } from './lib/audit';
+import {
+  type AuditReasonOrText,
+  composed,
+  isUndoing,
+  writeAudit,
+  writeSnapshot,
+} from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { syncSubAreaCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { rankCandidates, scanCells } from './lib/cellScan';
@@ -129,6 +136,15 @@ export const SUB_AREA_TRACK_SAMPLE_POINTS = 64;
  * and two tables silently sharing a rule is worth one line to make visible.
  */
 export const subAreaSearchText = searchTextFor;
+
+/** Why a bay's name or one of its aliases is past the cap (B01-3h), or `null`. */
+function bayNamesTooLong(name: string, aliases: readonly string[]): string | null {
+  return (
+    nameTooLong(name, 'A bay’s name') ??
+    aliases.map((a) => nameTooLong(a, 'A bay’s alias')).find((m) => m !== null) ??
+    null
+  );
+}
 
 /** Trim, drop blanks, dedupe case-insensitively, and keep the operator's casing for the survivor. */
 function normalizeAliases(aliases: readonly string[] | undefined): string[] {
@@ -998,6 +1014,8 @@ export const create = mutation({
     if (!name) throw new ConvexError('A sub-area needs a name');
     const parent = await requireParent(ctx, args.waterBodyId);
     const aliases = normalizeAliases(args.aliases);
+    const tooLong = bayNamesTooLong(name, aliases);
+    if (tooLong !== null) throw new ConvexError(tooLong);
     await assertNameFree(ctx, args.waterBodyId, [name, ...aliases]);
 
     const geometry = deriveGeometry(args.polygon as unknown as Polygon | MultiPolygon, parent);
@@ -1170,6 +1188,8 @@ export const createFromChord = mutation({
     if (!name) throw new ConvexError('A sub-area needs a name');
     const parent = await requireParent(ctx, args.waterBodyId);
     const aliases = normalizeAliases(args.aliases);
+    const tooLong = bayNamesTooLong(name, aliases);
+    if (tooLong !== null) throw new ConvexError(tooLong);
     await assertNameFree(ctx, args.waterBodyId, [name, ...aliases]);
 
     const geometry = deriveChordGeometry(args.mouth, parent);
@@ -1307,6 +1327,17 @@ export async function renameSubAreaImpl(
       await assertNameFree(ctx, subArea.waterBodyId, [nextName], subAreaId);
     }
     const nextAliases = aliases === undefined ? (subArea.aliases ?? []) : normalizeAliases(aliases);
+    // Only what this edit introduces is held to the cap: a stored name past it, and an undo putting
+    // one back, keep working (B01-3h).
+    const tooLong = isUndoing(ctx)
+      ? null
+      : bayNamesTooLong(
+          name === undefined || nextName === subArea.name ? '' : nextName,
+          aliases === undefined
+            ? []
+            : nextAliases.filter((a) => !(subArea.aliases ?? []).includes(a)),
+        );
+    if (tooLong !== null) throw new ConvexError(tooLong);
 
     await ctx.db.patch(subAreaId, {
       name: nextName,
@@ -2109,6 +2140,11 @@ export const importSeed = internalMutation({
         results.push({ ...summary, ok: false, reason: 'name_taken' });
         continue;
       }
+      // A name past the cap skips this bay, never the session (B01-3h).
+      if (bayNamesTooLong(row.name.trim(), normalizeAliases(row.aliases)) !== null) {
+        results.push({ ...summary, ok: false, reason: 'name_too_long' });
+        continue;
+      }
 
       const now = Date.now();
       const subAreaId = await insertSubArea(ctx, {
@@ -2298,6 +2334,11 @@ export const importBaySubAreas = internalMutation({
       const name = bay.name.trim();
       if (name.length === 0) {
         results.push({ name: bay.name, ok: false, reason: 'unnamed' });
+        continue;
+      }
+      // A name past the cap skips this bay, never the campaign (B01-3h).
+      if (bayNamesTooLong(name, []) !== null) {
+        results.push({ name, ok: false, reason: 'name_too_long' });
         continue;
       }
       const parent = await resolveParentByCatalogIds(ctx, bay.parentIds);

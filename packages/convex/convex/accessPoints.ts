@@ -32,12 +32,14 @@
 import {
   bodyAccessKind,
   distanceToPolygonMeters,
+  externalIdFits,
   HIKE_IN_ASSERT_M,
   haversineMeters,
   isAccessCondition,
   isMinor,
   type LatLng,
   MAX_ACCESS_PHOTOS,
+  nameTooLong,
   PARKING_INFER_RADIUS_M,
   type PostedAccess,
   PUTIN_SHORE_RADIUS_M,
@@ -45,6 +47,7 @@ import {
   resolveApproachKind,
   resolvePutInName,
   straightLineApproach,
+  thinPath,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
@@ -247,9 +250,15 @@ export const matchAndImportParking = internalMutation({
     let linksPromoted = 0;
     let withoutBody = 0;
     let notNearWater = 0;
+    let tooLong = 0;
     const notes: { key: string; reason: string }[] = [];
 
     for (const lot of lots) {
+      // A name or catalog id past its cap (B01-3h) skips the lot, counted — never the run.
+      if (!externalIdFits(lot.externalId) || nameTooLong(lot.name ?? '', '') !== null) {
+        tooLong++;
+        continue;
+      }
       // The gate. Resolved before the upsert so an unpaired supermarket never becomes a row at all —
       // not even a row we later ignore, since a row is a thing an operator has to look at.
       const nearby = await bodiesWithin(ctx, lot.point, PARKING_INFER_RADIUS_M);
@@ -319,6 +328,8 @@ export const matchAndImportParking = internalMutation({
       linksPromoted,
       withoutBody,
       notNearWater,
+      /** Lots skipped for a name or catalog id past its cap (B01-3h). */
+      tooLong,
       notes,
     };
   },
@@ -354,13 +365,24 @@ export const matchAndImportPutIns = internalMutation({
     let operatorHeld = 0;
     let noBodyNearby = 0;
     let moderatorSuppressed = 0;
+    let tooLong = 0;
     let parkingLinked = 0;
     let parkingMissing = 0;
     const notes: { key: string; reason: string }[] = [];
     const touchedBodies = new Set<Id<'waterBodies'>>();
     const newlyAccessible = new Set<Id<'waterBodies'>>();
 
-    for (const candidate of putIns) {
+    for (const raw of putIns) {
+      // A name or catalog id past its cap (B01-3h) skips the launch, counted — never the run; a walk
+      // past its cap is thinned (a drawing, kept), so a launch row is bounded (`ROW_MAX.launch`).
+      if (!externalIdFits(raw.externalId) || nameTooLong(raw.name ?? '', '') !== null) {
+        tooLong++;
+        continue;
+      }
+      const candidate = {
+        ...raw,
+        ...(raw.approachPath !== undefined ? { approachPath: thinPath(raw.approachPath) } : {}),
+      };
       const nearby = await bodiesWithin(ctx, candidate.point, PUTIN_SHORE_RADIUS_M);
       const nearest = nearby[0];
       if (!nearest) {
@@ -474,6 +496,8 @@ export const matchAndImportPutIns = internalMutation({
       moderatorSuppressed,
       parkingLinked,
       parkingMissing,
+      /** Launches skipped for a name or catalog id past its cap (B01-3h). */
+      tooLong,
       notes,
     };
   },
@@ -847,6 +871,9 @@ export const accessForBody = query({
 // The operator write path — where D72's amendment actually lives
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
+/** The most lakes one lot's record names (B01-3h) — bounds its audit row; real lots serve a few. */
+export const MAX_LOT_LAKES = 50;
+
 /**
  * Create or update an `official` parking area (moderator).
  *
@@ -874,13 +901,22 @@ export const setOfficialParking = mutation({
     const actor = await requireCapability(ctx, 'body.access');
     const now = Date.now();
     const name = args.name?.trim() || undefined;
+    if (args.waterBodyIds.length > MAX_LOT_LAKES) {
+      throw new ConvexError(`A lot serves at most ${MAX_LOT_LAKES} lakes`);
+    }
 
     let parkingAreaId = args.parkingAreaId;
+    const existing = parkingAreaId ? await ctx.db.get(parkingAreaId) : null;
+    if (parkingAreaId && !existing) throw new ConvexError('Parking area not found');
+    // Only a name this edit introduces is held to the cap: an edit around a lot's name stored past
+    // it keeps that name (B01-3h).
+    if (name === undefined || name !== existing?.name?.trim()) {
+      const tooLong = nameTooLong(name ?? '', 'A lot’s name');
+      if (tooLong !== null) throw new ConvexError(tooLong);
+    }
     // What an edit replaced, for the Access tab's undo (D226, §3); a new lot replaced nothing.
     let prev: Record<string, unknown> | null = null;
-    if (parkingAreaId) {
-      const existing = await ctx.db.get(parkingAreaId);
-      if (!existing) throw new ConvexError('Parking area not found');
+    if (parkingAreaId && existing) {
       prev = {
         coord: existing.coord,
         name: existing.name ?? null,

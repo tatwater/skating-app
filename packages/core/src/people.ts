@@ -7,6 +7,7 @@
 
 import { DELETION_GRACE_DAYS } from './profile';
 import { MAX_OPEN_BOUNTIES_PER_DAY } from './reputationConfig';
+import { MAX_URL_CHARS } from './textCaps';
 
 /**
  * The lanes, in the order the sidebar draws them. `appeals` reads support tickets (PII, D37), so a
@@ -140,11 +141,13 @@ export function effectiveBountyLimitOf(limit: number | undefined | null): number
 }
 
 /**
- * The longest avatar URL a profile mirrors from Clerk, in UTF-8 bytes. Clerk's image URLs run to a few
+ * The longest avatar URL a profile mirrors from Clerk: the URL cap every writer holds a link to
+ * ({@link MAX_URL_CHARS}), counted in UTF-8 bytes — an encoded URL is ASCII, so its bytes are its
+ * characters, and a raw non-ASCII one can't weigh more than it says. Clerk's image URLs run to a few
  * hundred; past this one is not stored (the person shows their initials) rather than refusing the
  * sync, so a People row — which carries the URL beside the names — stays a light row.
  */
-export const AVATAR_URL_MAX_BYTES = 2_048;
+export const AVATAR_URL_MAX_BYTES = MAX_URL_CHARS;
 
 /** `url` if a profile may store it as an avatar, else `undefined` ({@link AVATAR_URL_MAX_BYTES}). */
 export function storableAvatarUrl(url: string | undefined): string | undefined {

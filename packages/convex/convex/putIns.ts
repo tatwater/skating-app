@@ -237,18 +237,32 @@ export async function launchRefusal(
   row: Doc<'putIns'> | null,
 ): Promise<string | null> {
   if (!row) return 'That put-in no longer exists';
+  return launchRefusalOf(
+    row,
+    await hiddenLaunches(ctx, row.waterBodyId).take(SUPPRESSION_ROWS_READ),
+  );
+}
+
+/** {@link launchRefusal} on the hidden launches its caller read — one rule, however they're read. */
+export function launchRefusalOf(
+  row: Doc<'putIns'>,
+  hidden: readonly { coord: { lat: number; lng: number } }[],
+): string | null {
   if (row.status !== 'visible')
     return 'That put-in is hidden — a moderator said it is not a way in';
-  const hidden = await ctx.db
-    .query('putIns')
-    .withIndex('by_water_body_status', (q) =>
-      q.eq('waterBodyId', row.waterBodyId).eq('status', 'hidden'),
-    )
-    .take(SUPPRESSION_ROWS_READ);
   if (isSuppressed(row.coord, hidden)) {
     return 'A moderator hid a put-in at this spot — it is not a way in';
   }
   return null;
+}
+
+/** A body's hidden launches, as the suppression check reads them. */
+export function hiddenLaunches(ctx: QueryCtx | MutationCtx, waterBodyId: Id<'waterBodies'>) {
+  return ctx.db
+    .query('putIns')
+    .withIndex('by_water_body_status', (q) =>
+      q.eq('waterBodyId', waterBodyId).eq('status', 'hidden'),
+    );
 }
 
 /** A launch as an undo recorded it: where it was and what it was called. */

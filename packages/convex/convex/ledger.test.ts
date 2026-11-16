@@ -588,7 +588,7 @@ describe('discipline never leaves the ledger without an editor (the governor’s
           // The same page, read by a holder: the sentence is theirs to read.
           holder: await undoState(ctx, { ...viewer, canEditLedger: true }, row),
           // The undo's own write keeps its words for whoever presses it.
-          write: await undoState(ctx, viewer, row, 'write'),
+          write: await undoState(ctx, viewer, row, 'one', 'write'),
         };
       });
     const want = {

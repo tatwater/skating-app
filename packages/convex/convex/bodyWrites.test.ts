@@ -1520,7 +1520,7 @@ describe('undo after an un-audited change: write → change → undo → redo', 
     expect(none).toEqual({ got: ['overflow', 'overflow'], started: 0, left: DOC_MAX - 1 });
   });
 
-  test('the per-row plan is charged, not declared: a page of launch lines each at the hidden-read peak reads within it, and a short budget shapes fewer and says capped', async () => {
+  test('the per-row plan and the refusal shares are charged, not declared: a page of launch lines each at the hidden-read peak reads within them, and a short budget shapes fewer and says capped', async () => {
     const t = harness();
     const promoted = await launch(t);
     const promote = (await t.run((ctx) =>
@@ -1570,7 +1570,8 @@ describe('undo after an un-audited change: write → change → undo → redo', 
     // Every line reached the refusal and passed it — none stopped short at "overtaken".
     expect(page?.rows.every((r) => r.undo.state === 'available')).toBe(true);
     // The documents shaping those lines really reads, measured: past the peak's floor (each line's
-    // hidden launches), and within the plan the page charged for them.
+    // hidden launches), and within what the page charged for them — the per-row plan, and each
+    // line's refusal share (`undoStates` reserves the launch and its hidden ones on the same budget).
     const read = await t.run(async (ctx) => {
       const viewer = (await ctx.db.get(promoted.admin.id)) as Doc<'profiles'>;
       const rows = (await ctx.db.query('moderationActions').collect()).filter(
@@ -1583,9 +1584,10 @@ describe('undo after an un-audited change: write → change → undo → redo', 
     });
     expect(read.rows).toBe(100);
     expect(read.docs).toBeGreaterThanOrEqual(100 * SUPPRESSION_ROWS_READ);
-    expect(read.docs).toBeLessThanOrEqual(100 * ROW_SHAPE_DOCS);
-    // The same rows with the documents a page had already spent leaving room for three: three are
-    // shaped and the rest left for the caller to call capped — charged, never thrown.
+    expect(read.docs).toBeLessThanOrEqual(100 * (ROW_SHAPE_DOCS + 1 + SUPPRESSION_ROWS_READ));
+    // The same rows with the documents a page had already spent leaving room for three rows' plans:
+    // three are shaped and the rest left for the caller to call capped, and with no room left for a
+    // refusal's share, those three say "check elsewhere" — charged, never thrown, never over-read.
     const shaped = await t.run(async (ctx) => {
       const budget = requestBudget(ctx, CHARGED_QUERY_BUDGET);
       budget.reserveCalls(0, TX_DOCS - 3 * ROW_SHAPE_DOCS - 1);
@@ -1593,14 +1595,17 @@ describe('undo after an un-audited change: write → change → undo → redo', 
       const rows = (await ctx.db.query('moderationActions').collect()).filter(
         (r) => r.action === promote.action,
       );
-      return (await shapeRows(ctx as never, viewer, rows, new Map())).length;
+      return (await shapeRows(ctx as never, viewer, rows, new Map())).map((r) => r.undo);
     });
-    expect(shaped).toBe(3);
+    expect(shaped).toHaveLength(3);
+    expect(shaped.every((u) => u.state === 'unavailable' && u.why === UNDO_CHECKED_ELSEWHERE)).toBe(
+      true,
+    );
   });
 
   test('a staffer’s Decisions (People) asks the same refusal: each axis’s worst verb answers, never throws', async () => {
     // The redraw is the hook's most calls (feature, body, snapshot); the launch its most documents
-    // (the launch and its body's hidden ones) — the two peaks People's per-row plan counts.
+    // (the launch and its body's hidden ones) — the two peaks a refusal's share reserves.
     const decisionsLine = async (who: Who, id: Id<'moderationActions'>) => {
       const page = await who.as.query(api.people.decisions, { userId: who.id });
       return page?.rows.find((r) => r.id === id)?.undo;

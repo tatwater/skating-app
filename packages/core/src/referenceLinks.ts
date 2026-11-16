@@ -18,6 +18,7 @@
 
 import type { LatLng } from './geometry';
 import { isKnownStateCode } from './regions';
+import { MAX_URL_CHARS } from './textCaps';
 
 /** A link the lake drawer can render. `id` is stable so a client can key or order on it. */
 export interface ReferenceLink {
@@ -272,11 +273,17 @@ export const MAX_REFERENCE_LINKS = 8;
  * mutation can refuse it again at the trust boundary. The client check is courtesy; the server one
  * is the guarantee.
  */
-export function referenceLinkError(link: { label: string; url: string }): string | null {
+export function referenceLinkError(
+  link: { label: string; url: string },
+  { capUrl = true }: { capUrl?: boolean } = {},
+): string | null {
   const label = link.label.trim();
   if (label.length === 0) return 'A link needs a label.';
   if (label.length > MAX_REFERENCE_LINK_LABEL) {
     return `A label is at most ${MAX_REFERENCE_LINK_LABEL} characters.`;
+  }
+  if (capUrl && link.url.trim().length > MAX_URL_CHARS) {
+    return `A link is at most ${MAX_URL_CHARS} characters.`;
   }
   let parsed: URL;
   try {

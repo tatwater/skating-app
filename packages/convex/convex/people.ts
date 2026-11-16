@@ -86,7 +86,6 @@ import { readTenure, rootReader, tenureCappedOf } from './lib/staffTenure';
 import { startOfCurrentState } from './lib/stateSince';
 import { type UndoState, undoState } from './lib/undo';
 import { stands, undoneBy } from './lib/undoChains';
-import { SUPPRESSION_ROWS_READ } from './putIns';
 
 const MINUTE = 60_000;
 const DAY_MS = 86_400_000;
@@ -1449,28 +1448,19 @@ async function labelOf(
 }
 
 /**
- * What a row's refusal hook (`UndoHandler.refusal`) reads **outside** the share `undoStates` reserves
- * for it through `ReadBudget.waves` (B01-3h) — the rows it reads through its share are reserved there,
- * on this same budget, so they aren't counted here again: when the plan has used the budget up, those
- * rows say "check elsewhere" (`UNDO_CHECKED_ELSEWHERE`), and nothing over-reads. Outside it: a
- * launch's body's hidden launches (`launchRefusal`, up to {@link SUPPRESSION_ROWS_READ}) and a row's
- * snapshot (one call, at most 8 chunks) — calls and documents the per-row plan has to count itself.
- */
-const REFUSAL_CALLS = 2;
-const REFUSAL_DOCS = SUPPRESSION_ROWS_READ + 8;
-
-/**
  * What shaping one History or Decisions row reads through helpers on main and in this PR, counted
  * ahead: calls and documents — undo state (the undo tagged rows ≤ 16, the newest row on the target,
- * the content's author stamp, the person's row, a rowless fallback, and the refusal hook's reads
- * outside its share, {@link REFUSAL_CALLS} and {@link REFUSAL_DOCS}), the actor's and the target's
- * names. Bytes: the hook's share reads are reserved and charged by `ReadBudget.waves`; a rowless
+ * the content's author stamp, the person's row, a rowless fallback), the actor's and the target's
+ * names. **Not** the row's refusal hook: in a page's scope (`list`) everything it reads — the row as
+ * it stands, a snapshot, a launch's body's hidden launches — goes through the share `undoStates`
+ * reserves for it through `ReadBudget.waves` on this same budget, so it isn't counted here again;
+ * when the plan has used the budget up, those rows say "check elsewhere" (`UNDO_CHECKED_ELSEWHERE`),
+ * and nothing over-reads. Bytes: the hook's reads are reserved and charged by its share; a rowless
  * profile is charged by `rowlessProfile`; the rest are **not** charged — the undo engine reads audit
- * rows and content items whose worst case is the document limit (an audit row's metadata has no cap),
- * and the hook's snapshot and hidden-launch bytes are owed (the phase doc's B01-3f "Owed").
+ * rows and content items whose worst case is the document limit (an audit row's metadata has no cap).
  */
-const ROW_SHAPE_CALLS = 8 + REFUSAL_CALLS;
-export const ROW_SHAPE_DOCS = 24 + REFUSAL_DOCS;
+const ROW_SHAPE_CALLS = 8;
+export const ROW_SHAPE_DOCS = 24;
 
 /**
  * How many of `n` rows {@link shapeRows} can shape once `calls` more calls reading `docs` documents
