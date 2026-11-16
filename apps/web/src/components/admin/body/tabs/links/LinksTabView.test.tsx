@@ -1,14 +1,35 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ConvexError } from 'convex/values';
 import fc from 'fast-check';
 import { useState } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SortableRows } from '@/components/kit/sortable-rows';
 import { LinksTabView, type LinksTabViewProps } from './LinksTabView';
 import { BODY_NOW, MASCOMA, SMALL_POND } from './linksFixtures';
 import { type StaffLink, sameLinks } from './linksModel';
+
+/**
+ * **Each test is its own.** A rendered property that a timeout cut short keeps running after its
+ * test has ended — rendering into the next test's page and answering its saves. Each test bumps
+ * the run; a property's loop stops the moment the run isn't its own, and every page and timer is
+ * torn down after each test.
+ */
+let run = 0;
+beforeEach(() => {
+  run++;
+});
+afterEach(() => {
+  run++;
+  cleanup();
+  vi.useRealTimers();
+});
+/** The run this loop belongs to, and whether it still is the test's. */
+const thisRun = () => {
+  const mine = run;
+  return () => mine === run;
+};
 
 const base: LinksTabViewProps = {
   body: MASCOMA,
@@ -254,124 +275,134 @@ describe('LinksTabView — over any run of opening, typing, Done, Cancel and reo
     fc.record({ kind: fc.constant('land' as const) }),
   );
 
-  it('a late save never closes or clears an editor it didn’t open, and every Done lands in order', async () => {
-    await fc.assert(
-      fc.asyncProperty(fc.array(op, { maxLength: 10 }), async (ops) => {
-        const user = userEvent.setup({ delay: null });
-        const sent: StaffLink[][] = [];
-        const releases: (() => void)[] = [];
-        const { unmount } = render(<Held sent={sent} releases={releases} />);
-        try {
-          // What the open editor's label must read, or null with none open.
-          let draft: string | null = null;
-          let row = -1;
-          // Each opening's id, and the openings whose saves are on their way, oldest first.
-          let opening = 0;
-          // The saves queued, in order; `noop` — a Done that changes nothing, waiting behind another
-          // save: it sends nothing and answers the moment the save before it lands.
-          const saves: { opening: number; text: string; noop?: boolean }[] = [];
-          // Each row's label, as the Done presses left it, in order.
-          const expected = [ASSOC.label, DAM.label];
-          const editor = () => screen.queryByRole('textbox', { name: /Label/ });
-          for (const o of ops) {
-            if (o.kind === 'edit' && draft === null) {
-              const edits = screen.queryAllByRole('button', { name: 'Edit' });
-              const button = edits[o.row];
-              if (button === undefined) continue;
-              await user.click(button);
-              opening++;
-              row = o.row;
-              draft = (editor() as HTMLInputElement).value;
-            } else if (o.kind === 'type' && draft !== null) {
-              await user.type(editor() as HTMLElement, o.text);
-              draft += o.text;
-            } else if (o.kind === 'done' && draft !== null) {
-              const changes = draft !== expected[row] && !saves.some((v) => v.opening === opening);
-              await user.click(screen.getByRole('button', { name: 'Done' }));
-              // A Done that changes the link queues a save (it may wait behind another).
-              if (changes) {
-                expected[row] = draft;
-                saves.push({ opening, text: draft });
-              } else if (editor() !== null && !saves.some((v) => v.opening === opening)) {
-                saves.push({ opening, text: draft, noop: true });
-              }
-              // A change waits open for its own save; one that changes nothing closes at once —
-              // or, behind another save, the moment that one lands.
-              if (editor() === null) draft = null;
-            } else if (o.kind === 'cancel' && draft !== null) {
-              await user.click(screen.getByRole('button', { name: 'Cancel' }));
+  /** One run of opening, typing, Done, Cancel and late answers, checked against the model. */
+  async function runOps(ops: readonly Op[]) {
+    const user = userEvent.setup({ delay: null });
+    const sent: StaffLink[][] = [];
+    const releases: (() => void)[] = [];
+    const { unmount } = render(<Held sent={sent} releases={releases} />);
+    try {
+      // What the open editor's label must read, or null with none open.
+      let draft: string | null = null;
+      let row = -1;
+      // Each opening's id, and the openings whose saves are on their way, oldest first.
+      let opening = 0;
+      // The saves queued, in order; `noop` — a Done that changes nothing, waiting behind another
+      // save: it sends nothing and answers the moment the save before it lands.
+      const saves: { opening: number; text: string; noop?: boolean }[] = [];
+      // Each row's label, as the Done presses left it, in order.
+      const expected = [ASSOC.label, DAM.label];
+      const editor = () => screen.queryByRole('textbox', { name: /Label/ });
+      const live = thisRun();
+      for (const o of ops) {
+        if (!live()) return;
+        if (o.kind === 'edit' && draft === null) {
+          const edits = screen.queryAllByRole('button', { name: 'Edit' });
+          const button = edits[o.row];
+          if (button === undefined) continue;
+          await user.click(button);
+          opening++;
+          row = o.row;
+          draft = (editor() as HTMLInputElement).value;
+        } else if (o.kind === 'type' && draft !== null) {
+          await user.type(editor() as HTMLElement, o.text);
+          draft += o.text;
+        } else if (o.kind === 'done' && draft !== null) {
+          const changes = draft !== expected[row] && !saves.some((v) => v.opening === opening);
+          await user.click(screen.getByRole('button', { name: 'Done' }));
+          // A Done that changes the link queues a save (it may wait behind another).
+          if (changes) {
+            expected[row] = draft;
+            saves.push({ opening, text: draft });
+          } else if (editor() !== null && !saves.some((v) => v.opening === opening)) {
+            saves.push({ opening, text: draft, noop: true });
+          }
+          // A change waits open for its own save; one that changes nothing closes at once —
+          // or, behind another save, the moment that one lands.
+          if (editor() === null) draft = null;
+        } else if (o.kind === 'cancel' && draft !== null) {
+          await user.click(screen.getByRole('button', { name: 'Cancel' }));
+          draft = null;
+        } else if (o.kind === 'land' && releases.length > 0) {
+          const from = saves.shift();
+          await land(releases);
+          // The no-op Dones queued right behind it answer with it.
+          const answered = [from];
+          while (saves[0]?.noop === true) answered.push(saves.shift());
+          // Only the editor whose own save (or no-op Done) this was may close — and only if
+          // its draft is still what it sent; any other stands, its draft whole.
+          if (draft !== null) {
+            if (answered.some((a) => a?.opening === opening && a.text === draft)) {
+              expect(editor()).toBeNull();
               draft = null;
-            } else if (o.kind === 'land' && releases.length > 0) {
-              const from = saves.shift();
-              await land(releases);
-              // The no-op Dones queued right behind it answer with it.
-              const answered = [from];
-              while (saves[0]?.noop === true) answered.push(saves.shift());
-              // Only the editor whose own save (or no-op Done) this was may close — and only if
-              // its draft is still what it sent; any other stands, its draft whole.
-              if (draft !== null) {
-                if (answered.some((a) => a?.opening === opening && a.text === draft)) {
-                  expect(editor()).toBeNull();
-                  draft = null;
-                } else {
-                  expect((editor() as HTMLInputElement | null)?.value).toBe(draft);
-                }
-              }
+            } else {
+              expect((editor() as HTMLInputElement | null)?.value).toBe(draft);
             }
           }
-          // Drain every save.
-          for (let i = 0; i < 20 && releases.length > 0; i++) await land(releases);
-          if (sent.length > 0) {
-            expect((sent.at(-1) as StaffLink[]).map((l) => l.label)).toEqual(expected);
-          }
-        } finally {
-          unmount();
         }
-      }),
-      {
-        numRuns: 30,
-        // The review's sequence, seeded so every run covers it: a save on its way, Cancel, the
-        // same link and the other reopened, a draft typed, then the old save lands. And a Done that
-        // changes nothing, queued behind another link's save, answering when that one lands.
-        examples: [
-          [
-            [
-              { kind: 'edit', row: 0 },
-              { kind: 'type', text: 'x' },
-              { kind: 'done' },
-              { kind: 'cancel' },
-              { kind: 'edit', row: 1 },
-              { kind: 'done' },
-              { kind: 'land' },
-            ],
-          ],
-          [
-            [
-              { kind: 'edit', row: 1 },
-              { kind: 'type', text: 'x' },
-              { kind: 'done' },
-              { kind: 'cancel' },
-              { kind: 'edit', row: 1 },
-              { kind: 'type', text: 'yz' },
-              { kind: 'land' },
-              { kind: 'done' },
-              { kind: 'land' },
-            ],
-          ],
-          [
-            [
-              { kind: 'edit', row: 0 },
-              { kind: 'type', text: 'x' },
-              { kind: 'done' },
-              { kind: 'cancel' },
-              { kind: 'edit', row: 1 },
-              { kind: 'type', text: 'x' },
-              { kind: 'land' },
-            ],
-          ],
-        ],
-      },
-    );
+      }
+      // Drain every save.
+      for (let i = 0; i < 20 && releases.length > 0; i++) await land(releases);
+      if (sent.length > 0) {
+        expect((sent.at(-1) as StaffLink[]).map((l) => l.label)).toEqual(expected);
+      }
+    } finally {
+      unmount();
+    }
+  }
+
+  // The sequences that found bugs, as plain cases: every run covers them. (The review's sequence:
+  // a save on its way, Cancel, the same link and the other reopened, a draft typed, then the old
+  // save lands; and a Done that changes nothing, queued behind another link's save.)
+  const PINNED_RUNS: [Op[]][] = [
+    [
+      [
+        { kind: 'edit', row: 0 },
+        { kind: 'type', text: 'x' },
+        { kind: 'done' },
+        { kind: 'cancel' },
+        { kind: 'edit', row: 1 },
+        { kind: 'done' },
+        { kind: 'land' },
+      ],
+    ],
+    [
+      [
+        { kind: 'edit', row: 1 },
+        { kind: 'type', text: 'x' },
+        { kind: 'done' },
+        { kind: 'cancel' },
+        { kind: 'edit', row: 1 },
+        { kind: 'type', text: 'yz' },
+        { kind: 'land' },
+        { kind: 'done' },
+        { kind: 'land' },
+      ],
+    ],
+    [
+      [
+        { kind: 'edit', row: 0 },
+        { kind: 'type', text: 'x' },
+        { kind: 'done' },
+        { kind: 'cancel' },
+        { kind: 'edit', row: 1 },
+        { kind: 'type', text: 'x' },
+        { kind: 'land' },
+      ],
+    ],
+  ];
+
+  const PINNED = PINNED_RUNS.map(([ops]) => ops);
+
+  it.each(PINNED.map((ops, i) => [i + 1, ops] as const))(
+    'a late save never closes or clears an editor it didn’t open — pinned sequence %i',
+    async (_, ops) => {
+      await runOps(ops);
+    },
+  );
+
+  it('a late save never closes or clears an editor it didn’t open — a few random runs (fast-check)', async () => {
+    await fc.assert(fc.asyncProperty(fc.array(op, { maxLength: 6 }), runOps), { numRuns: 4 });
   });
 });
 
@@ -1007,7 +1038,9 @@ describe('LinksTabView — over any run of adds (duplicates allowed), edits, rem
             );
           // The identity the open editor was opened with.
           let bound: string | null = null;
+          const live = thisRun();
           for (const o of ops) {
+            if (!live()) return;
             const ed = editor();
             if (ed === null) bound = null;
             if (o.kind === 'add' && ed === null) {
@@ -1316,7 +1349,9 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
         // Links another moderator put in and still means to keep.
         const theirs = new Set<string>();
         try {
+          const live = thisRun();
           for (const o of ops) {
+            if (!live()) return;
             if (screen.queryByRole('textbox', { name: 'Label' }) !== null) {
               await user.click(screen.getByRole('button', { name: 'Cancel' }));
             }
