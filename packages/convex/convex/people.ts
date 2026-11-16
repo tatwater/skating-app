@@ -29,6 +29,7 @@ import {
   ROLE_RANK,
   resolveSeason,
   restrictionsOf,
+  SCOPE_ALL,
   type Season,
   seasonOf,
   seasonRecordSpan,
@@ -39,10 +40,10 @@ import {
   type UserRole,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
-import type { Doc, Id, TableNames } from './_generated/dataModel';
+import type { Doc, Id } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
 import { GATE_EVENT_RETENTION_DAYS } from './analyticsRollup';
-import { auditTargetLabel } from './lib/auditReads';
+import { auditTargetLabels, targetKey } from './lib/auditReads';
 import { hasCapability, isSuspendedNow, requireCapability } from './lib/auth';
 import { readVerdictCounts, VERDICT_COUNT_CAP } from './lib/contentVerdicts';
 import {
@@ -77,14 +78,15 @@ import {
   CHARGED_QUERY_BUDGET,
   DOC_MAX,
   type ReadBudget,
+  ROW_MAX,
   type RowKind,
   requestBudget,
 } from './lib/readBudget';
 import { profileAccess } from './lib/reportVisibility';
 import { trustClassFor } from './lib/reputation';
-import { readTenure, rootReader, tenureCappedOf } from './lib/staffTenure';
+import { readRoots, readTenure, tenureCappedOf } from './lib/staffTenure';
 import { startOfCurrentState } from './lib/stateSince';
-import { type UndoState, undoState } from './lib/undo';
+import { type UndoState, undoStates } from './lib/undo';
 import { stands, undoneBy } from './lib/undoChains';
 
 const MINUTE = 60_000;
@@ -937,51 +939,38 @@ async function ledgerSinceOf(
 /** Distinct flagged things the person page names, at most. */
 const FLAG_LABELS = 20;
 
-/** A read on the way to a flag's body the request's budget couldn't afford: the label is capped. */
-class LabelUnaffordable extends Error {}
+/** The reads on the way from a flagged thing to its body, in order (`lib/openFlags.flagBodyId`). */
+const FLAG_BODY_READS: Record<OpenFlag['targetType'], RowKind[]> = {
+  waterbody: [],
+  report: ['report'],
+  post: ['post', 'report'],
+  comment: ['comment', 'report'],
+  photo: ['photo', 'report'],
+  hazard: ['hazard'],
+  accessAlert: ['accessAlert'],
+  user: [],
+};
 
 /**
  * Label each open flag's target, at most {@link FLAG_LABELS} distinct ones, through the request's
  * budget: a flag on the person by their own name; anything else by the body it is about — the Inbox's
  * own rule (`lib/openFlags.flagBodyId`: a report, Post, comment, photo, hazard or alert, through the
- * report it hangs on), each read as it really weighs. A body's name is read once however many of
- * its items are flagged. Returns whether any went unlabeled for the cap or the budget.
+ * report it hangs on) and that body's name, read once however many of its items are flagged. The
+ * reads go **at once** (B01-4c), in two passes of waves over the budget (`ReadBudget.waves`, each
+ * item reserving its worst cases and handing back what they didn't weigh): every flag's way to its
+ * lake, in page order; then each lake's name, in the order the flags first reach it. A lake's name is
+ * reserved once, not once a flag, so as many flags go to a wave as the budget left holds their
+ * steps. Returns whether any went unlabeled for the cap or the budget — which ones depends only on
+ * the flags' order, never on settling order.
  */
-async function labelFlags(
+export async function labelFlags(
   ctx: QueryCtx,
   budget: ReadBudget,
   person: Doc<'profiles'>,
   flags: OpenFlag[],
 ): Promise<boolean> {
-  const bodyNames = new Map<string, string | null>();
   const personName = person.displayName.trim() || person.username;
-  // Each read on the way to the body: started only while a whole document fits, charged its weight.
-  const get = async <T extends TableNames>(id: Id<T>): Promise<Doc<T> | null> => {
-    const doc = await budget.measured('report', () => ctx.db.get(id));
-    if (doc === undefined) throw new LabelUnaffordable();
-    return doc;
-  };
-  const labelOf = async (flag: OpenFlag): Promise<string | null | undefined> => {
-    let bodyId: Id<'waterBodies'> | null;
-    try {
-      bodyId = await flagBodyId(ctx, flag, get);
-    } catch (err) {
-      if (err instanceof LabelUnaffordable) return undefined;
-      throw err;
-    }
-    if (bodyId === null) return null;
-    // Each lake read once, whichever flags name it.
-    const known = bodyNames.get(bodyId);
-    if (known !== undefined) return known;
-    // A body's library row, whose name no writer caps.
-    if (!budget.affordsRead('bodyLibraryRow') || !budget.affordsCalls(1, 1)) return undefined;
-    budget.reserve('bodyLibraryRow', 1);
-    const name = await auditTargetLabel(ctx, 'waterbody', bodyId);
-    bodyNames.set(bodyId, name);
-    return name;
-  };
-  // The distinct things flagged, at most `FLAG_LABELS`, labelled one after another (at once follows
-  // with the shared reservation, B01-3i).
+  // The distinct things flagged, at most `FLAG_LABELS`.
   const byKey = new Map<string, OpenFlag>();
   for (const flag of flags) {
     const key = `${flag.targetType}:${flag.targetId}`;
@@ -995,10 +984,48 @@ async function labelFlags(
     if (flag.targetType === 'user' && flag.targetId === person._id) labels.set(key, personName);
     else toRead.push(key);
   }
+  // Each flag's way to its lake, every flag at once, each read charged to the flag's share as the
+  // step it is (one past them is a plan error). A flag past the budget is `undefined`.
+  const bodies = await budget.waves<string, Id<'waterBodies'> | null | undefined>(
+    toRead,
+    (key) => {
+      const steps = FLAG_BODY_READS[(byKey.get(key) as OpenFlag).targetType];
+      return { bytes: steps.reduce((sum, kind) => sum + ROW_MAX[kind], 0), reads: steps.length };
+    },
+    (key, share) => {
+      const flag = byKey.get(key) as OpenFlag;
+      const steps = FLAG_BODY_READS[flag.targetType];
+      let step = 0;
+      return flagBodyId(ctx, flag, (id) =>
+        share.read(steps[step++] ?? 'report', () => ctx.db.get(id) as Promise<never>),
+      );
+    },
+    () => undefined,
+  );
+  // Then each lake's name once, whichever flags name it, in the order they first reach it: a body's
+  // library row, whose name no writer caps (the label `auditTargetLabel` reads). A lake past the
+  // budget is `undefined` — never a string, which a lake's name could be.
+  const lakes = [...new Set(bodies.filter((b): b is Id<'waterBodies'> => typeof b === 'string'))];
+  const named = await budget.waves<Id<'waterBodies'>, string | null | undefined>(
+    lakes,
+    () => ({ bytes: ROW_MAX.bodyLibraryRow, reads: 1 }),
+    async (bodyId, share) => {
+      const row = await share.read('bodyLibraryRow', () =>
+        ctx.db
+          .query('bodyLibraryRows')
+          .withIndex('by_body', (q) => q.eq('waterBodyId', bodyId).eq('scope', SCOPE_ALL))
+          .first(),
+      );
+      return row?.name ?? null;
+    },
+    () => undefined,
+  );
+  const nameOf = new Map<string, string | null | undefined>(lakes.map((id, i) => [id, named[i]]));
   let capped = false;
-  for (const key of toRead) {
-    const label = await labelOf(byKey.get(key) as OpenFlag);
-    // Past the budget: this one unlabelled (and said so); later ones may still fit.
+  for (const [i, key] of toRead.entries()) {
+    const body = bodies[i];
+    const label = body === undefined ? undefined : body === null ? null : nameOf.get(body);
+    // Past the budget, on the way to its lake or at the lake's name: unlabeled, and said so.
     if (label === undefined) {
       capped = true;
       continue;
@@ -1431,25 +1458,6 @@ export interface PersonActionRow {
 /** Each actor's row read once a page (the memo holds the read itself, so a repeat waits on it). */
 type Actors = Map<string, Promise<PersonRef | null>>;
 
-/** Target names a request has read, once each (many rows name the same person or body). */
-const LABELS = new WeakMap<object, Map<string, Promise<string | null>>>();
-
-async function labelOf(
-  ctx: QueryCtx,
-  row: Doc<'moderationActions'>,
-): Promise<{ targetLabel?: string }> {
-  const seen = LABELS.get(ctx) ?? new Map<string, Promise<string | null>>();
-  LABELS.set(ctx, seen);
-  const key = `${row.targetType}:${row.targetId}`;
-  let read = seen.get(key);
-  if (read === undefined) {
-    read = auditTargetLabel(ctx, row.targetType, row.targetId);
-    seen.set(key, read);
-  }
-  const label = await read;
-  return label === null ? {} : { targetLabel: label };
-}
-
 /**
  * What shaping one History or Decisions row reads through helpers on main and in this PR, counted
  * ahead: calls and documents — undo state (the undo tagged rows ≤ 16, the newest row on the target,
@@ -1476,7 +1484,10 @@ function shapeable(budget: ReadBudget, n: number, calls = 0, docs = 0): number {
   return k;
 }
 
-/** Rows shaped in order, each counted ahead against the request's budget (≤ 100 rows: it fits). */
+/**
+ * Rows shaped at once, in page order, each counted ahead against the request's budget (≤ 100 rows:
+ * it fits).
+ */
 export async function shapeRows(
   ctx: QueryCtx,
   viewer: Doc<'profiles'>,
@@ -1485,49 +1496,56 @@ export async function shapeRows(
 ): Promise<PersonActionRow[]> {
   const budget = queryBudget(ctx);
   // Every row's calls are counted before any starts (as many rows as fit; the caller says capped for
-  // the rest). Rows are shaped one after another for now, each asking `undoState` alone; B01-3i's
-  // page reading (`undoStates`, in waves) has landed, and shaping them at once on it follows in its
-  // own PR (`b01-4c-people-rounds`).
+  // the rest).
   const n = shapeable(budget, rows.length);
   budget.reserveCalls(ROW_SHAPE_CALLS * n, ROW_SHAPE_DOCS * n);
-  const out: PersonActionRow[] = [];
-  for (const row of rows.slice(0, n)) out.push(await toRow(ctx, viewer, row, actors));
-  return out;
+  const page = rows.slice(0, n);
+  // The page in a handful of rounds, not a few per row (B01-4c), as History and the feed take theirs
+  // (`moderation.listActions`): the undo states in one reading (`undoStates` — its refusal checks
+  // reserve their reads in page order, in waves), the target labels once per distinct target and the
+  // actors once per person, all at once. Only the undo states and a rowless person's label charge
+  // the budget, and the labels' charges wait for the undo states and start in page order
+  // (`auditTargetLabels`), so which rows the budget reaches never turns on settling order.
+  const undoing = undoStates(ctx, viewer, page);
+  const [labels, undos, named] = await Promise.all([
+    auditTargetLabels(ctx, page, undoing),
+    undoing,
+    Promise.all(page.map((row) => actorOf(ctx, row, actors))),
+  ]);
+  return page.map((row, i) => {
+    const label = labels.get(targetKey(row)) ?? null;
+    return {
+      id: row._id,
+      action: row.action,
+      targetType: row.targetType,
+      targetId: row.targetId,
+      reason: row.reason,
+      reasonGiven:
+        (row.metadata as { reasonDefaulted?: boolean } | undefined)?.reasonDefaulted !== true,
+      ...(row.metadata !== undefined ? { metadata: row.metadata } : {}),
+      createdAt: row.createdAt,
+      actor: named[i] ?? null,
+      ...(row.undoesActionId !== undefined ? { undoesActionId: row.undoesActionId } : {}),
+      ...(row.via !== undefined ? { via: row.via } : {}),
+      ...(label === null ? {} : { targetLabel: label }),
+      undo: undos[i] as UndoState,
+    };
+  });
 }
 
-async function toRow(
+/** A row's actor, read once a page (the memo holds the read itself, so a repeat waits on it). */
+function actorOf(
   ctx: QueryCtx,
-  viewer: Doc<'profiles'>,
   row: Doc<'moderationActions'>,
   actors: Actors,
-): Promise<PersonActionRow> {
-  let actor: PersonRef | null = null;
-  if (row.actorId !== undefined) {
-    let read = actors.get(row.actorId);
-    if (read === undefined) {
-      read = personRef(ctx, row.actorId);
-      actors.set(row.actorId, read);
-    }
-    actor = await read;
+): Promise<PersonRef | null> {
+  if (row.actorId === undefined) return Promise.resolve(null);
+  let read = actors.get(row.actorId);
+  if (read === undefined) {
+    read = personRef(ctx, row.actorId);
+    actors.set(row.actorId, read);
   }
-  const label = await labelOf(ctx, row);
-  const undo = await undoState(ctx, viewer, row);
-  return {
-    id: row._id,
-    action: row.action,
-    targetType: row.targetType,
-    targetId: row.targetId,
-    reason: row.reason,
-    reasonGiven:
-      (row.metadata as { reasonDefaulted?: boolean } | undefined)?.reasonDefaulted !== true,
-    ...(row.metadata !== undefined ? { metadata: row.metadata } : {}),
-    createdAt: row.createdAt,
-    actor,
-    ...(row.undoesActionId !== undefined ? { undoesActionId: row.undoesActionId } : {}),
-    ...(row.via !== undefined ? { via: row.via } : {}),
-    ...label,
-    undo,
-  };
+  return read;
 }
 
 /** One source of a merged history: rows in the order of `at`, and how far back it read when capped. */
@@ -1742,43 +1760,50 @@ export const decisions = query({
     cursor: v.optional(v.union(v.string(), v.null())),
     limit: v.optional(v.number()),
   },
-  handler: async (ctx, { userId: raw, cursor, limit }) => {
-    const viewer = await requireCapability(ctx, 'audit.read');
-    const userId = profileIdOf(ctx, raw);
-    if (userId === null) return null;
-    const ledgerVisible = seesLedgerGrants(viewer);
-    const budget = queryBudget(ctx);
-    // A page asks only for the rows it can shape after its own read: a row read but not shaped would
-    // lie behind the page's cursor, and the next page would start past it — never shown.
-    const size = Math.max(1, shapeable(budget, clampLimit(limit), 1, DECISIONS_SCAN));
-    const page = await budget.capped(DECISIONS_BYTES, DECISIONS_SCAN, () =>
-      ctx.db
-        .query('moderationActions')
-        .withIndex('by_actor', (q) => q.eq('actorId', userId))
-        .order('desc')
-        .filter((q) => {
-          const hidden = [...SKATER_ACTIONS, ...(ledgerVisible ? [] : [...LEDGER_ACTIONS])];
-          return q.and(...hidden.map((a) => q.neq(q.field('action'), a)));
-        })
-        .paginate({
-          cursor: cursor ?? null,
-          numItems: size,
-          maximumRowsRead: DECISIONS_SCAN,
-          maximumBytesRead: DECISIONS_BYTES,
-        }),
-    );
-    const shaped = await shapeRows(ctx, viewer, page.page, new Map());
-    // Rows the request couldn't afford to shape (only when not even one row's calls and documents
-    // were left): `capped`, and the page isn't the end.
-    const short = shaped.length < page.page.length;
-    return {
-      rows: shaped,
-      isDone: page.isDone && !short,
-      capped: short,
-      continueCursor: page.continueCursor,
-    };
-  },
+  handler: async (ctx, args) =>
+    decisionsPage(ctx, await requireCapability(ctx, 'audit.read'), args),
 });
+
+/** `people.decisions` for a viewer already let in — the page itself, for the round counts' tests. */
+export async function decisionsPage(
+  ctx: QueryCtx,
+  viewer: Doc<'profiles'>,
+  { userId: raw, cursor, limit }: { userId: string; cursor?: string | null; limit?: number },
+) {
+  const userId = profileIdOf(ctx, raw);
+  if (userId === null) return null;
+  const ledgerVisible = seesLedgerGrants(viewer);
+  const budget = queryBudget(ctx);
+  // A page asks only for the rows it can shape after its own read: a row read but not shaped would
+  // lie behind the page's cursor, and the next page would start past it — never shown.
+  const size = Math.max(1, shapeable(budget, clampLimit(limit), 1, DECISIONS_SCAN));
+  const page = await budget.capped(DECISIONS_BYTES, DECISIONS_SCAN, () =>
+    ctx.db
+      .query('moderationActions')
+      .withIndex('by_actor', (q) => q.eq('actorId', userId))
+      .order('desc')
+      .filter((q) => {
+        const hidden = [...SKATER_ACTIONS, ...(ledgerVisible ? [] : [...LEDGER_ACTIONS])];
+        return q.and(...hidden.map((a) => q.neq(q.field('action'), a)));
+      })
+      .paginate({
+        cursor: cursor ?? null,
+        numItems: size,
+        maximumRowsRead: DECISIONS_SCAN,
+        maximumBytesRead: DECISIONS_BYTES,
+      }),
+  );
+  const shaped = await shapeRows(ctx, viewer, page.page, new Map());
+  // Rows the request couldn't afford to shape (only when not even one row's calls and documents
+  // were left): `capped`, and the page isn't the end.
+  const short = shaped.length < page.page.length;
+  return {
+    rows: shaped,
+    isDone: page.isDone && !short,
+    capped: short,
+    continueCursor: page.continueCursor,
+  };
+}
 
 // ── A staffer's figures ────────────────────────────────────────────────────────────────────────
 
@@ -1838,138 +1863,137 @@ type Audit = Doc<'moderationActions'>;
  */
 export const staffStats = query({
   args: { userId: v.string(), ...nowArg },
-  handler: async (ctx, args) => {
-    const viewer = await requireCapability(ctx, 'audit.read');
-    const now = clock(args.now);
-    const budget = queryBudget(ctx);
-    const userId = profileIdOf(ctx, args.userId);
-    if (userId === null) return null;
-    const target = await budget.one('profile', () => ctx.db.get(userId));
-    if (!target || ROLE_RANK[target.role] < ROLE_RANK.moderator) return null;
-    const ledgerVisible = seesLedgerGrants(viewer);
-    const staffer = target._id;
-    const chainsReady = (await preparationOf(budget, ctx)).pending.includes('undoChains') === false;
-
-    // ── One read of their decisions over the nine weeks ──
-    // The week the Staff lane's column counts too (`thisWeekOf`): one window for one figure.
-    const end = thisWeekOf(now).to;
-    const weeksFrom = end - WEEKS * WEEK_MS;
-    const readFrom = weeksFrom - DAY_MS;
-    const page = await budget.capped(DECISION_BYTES, DECISION_ROWS, () =>
-      ctx.db
-        .query('moderationActions')
-        .withIndex('by_actor', (q) => q.eq('actorId', staffer).gte('_creationTime', readFrom))
-        .order('desc')
-        .paginate({
-          cursor: null,
-          numItems: DECISION_ROWS,
-          maximumRowsRead: DECISION_ROWS,
-          maximumBytesRead: DECISION_BYTES,
-        }),
-    );
-    const decisions = page.page.filter((r) => isDecision(r, ledgerVisible));
-    const oldestRead =
-      page.page.length > 0 ? (page.page[page.page.length - 1] as Audit).createdAt : end;
-    const readAllAfter = (t: number) => page.isDone || oldestRead < t;
-    // The reads its per-row loops make, for the query's time bound (`STAFF_CHECKED`).
-    const counted = { reads: 0 };
-    const rootOf = rootReader(ctx, budget, page.page, counted);
-
-    // ── Staff since and role since (`lib/staffTenure`, the rule the Staff lane's rows are stamped by) ──
-    // Read before the per-decision loops below, which run until the budget is spent: read after them,
-    // a busy staffer's dates would be starved and say capped whenever those loops ran out.
-    const { tenure, roleShort, roleFull, roleUnplaced } = await readTenure(
-      ctx,
-      budget,
-      staffer,
-      target.role,
-      chainsReady,
-    );
-
-    const weeks = Array.from({ length: WEEKS }, (_, i) => {
-      const start = end - (WEEKS - i) * WEEK_MS;
-      const count = decisions.filter(
-        (r) => r.createdAt >= start && r.createdAt < start + WEEK_MS,
-      ).length;
-      return { from: start, count, capped: !readAllAfter(start) };
-    });
-    const thisWeek = weeks[WEEKS - 1] as { from: number; count: number; capped: boolean };
-    const weekRows = decisions.filter((r) => r.createdAt >= thisWeek.from && r.createdAt < end);
-
-    // Undone on net by someone else: from the row and its chain's first row, no chain walked.
-    const byOther = (by: Id<'profiles'> | undefined | null) =>
-      by !== null && by !== undefined && by !== staffer;
-    let undone = 0;
-    let undoShort = false;
-    // The query's time bound (Convex gives a query one second): at most `STAFF_CHECKED` database calls
-    // across both loops below (a row whose answer is in hand costs none), past which each figure says
-    // capped, as a budget stop does.
-    const overTime = () => counted.reads >= STAFF_CHECKED;
-    const undoers = new Map<string, number>();
-    for (const r of weekRows) {
-      if (overTime()) {
-        undoShort = true;
-        break;
-      }
-      const root = await rootOf(r);
-      if (root === undefined) {
-        undoShort = true;
-        break;
-      }
-      const by = undoneBy(r, root);
-      if (byOther(by)) {
-        undone++;
-        undoers.set(by as string, (undoers.get(by as string) ?? 0) + 1);
-      }
-    }
-
-    const durations: number[] = [];
-    let unknown = 0;
-    // A filing time the budget ran out before reading is capped, not unrecorded.
-    let decideShort = false;
-    const filed = weekRows.filter((x) => FILED_DECISIONS.has(x.action));
-    for (const r of filed) {
-      if (overTime()) {
-        decideShort = true;
-        break;
-      }
-      const filedAt = await filedAtOf(ctx, budget, r, counted);
-      if (filedAt === undefined) {
-        decideShort = true;
-        break;
-      }
-      if (filedAt === null) unknown++;
-      else durations.push(Math.max(0, r.createdAt - filedAt));
-    }
-
-    return {
-      decisions: {
-        thisWeek: { count: thisWeek.count, capped: thisWeek.capped },
-        undoneByOthers: {
-          count: undone,
-          capped: thisWeek.capped || undoShort,
-          ...(await undoneByWhom(ctx, budget, undoers)),
-        },
-      },
-      timeToDecide: {
-        medianMs: unknown > 0 || thisWeek.capped || decideShort ? null : lowerMedian(durations),
-        decided: filed.length,
-        capped: thisWeek.capped || decideShort,
-      },
-      staffSince: tenure.staffSince,
-      roleSince: tenure.roleSince,
-      /** The role rows couldn't all be read: both dates are `null` for that reason, not unrecorded. */
-      tenureCapped: tenureCappedOf({ tenure, roleShort, roleFull, roleUnplaced }),
-      /**
-       * Backfills not yet run that a figure here rests on — distinct from `capped` (a read stopped
-       * short) and from `null` (nothing on record): until `undoChains` is done, `undoneByOthers` and
-       * the tenure dates may be wrong, not merely short.
-       */
-      pending: (chainsReady ? [] : ['undoChains']) as PeopleBackfill[],
-      weeks,
-    };
-  },
+  handler: async (ctx, args) =>
+    staffStatsPage(ctx, await requireCapability(ctx, 'audit.read'), args),
 });
+
+/** `people.staffStats` for a viewer already let in — the figures themselves, for the round counts. */
+export async function staffStatsPage(
+  ctx: QueryCtx,
+  viewer: Doc<'profiles'>,
+  args: { userId: string; now?: number },
+) {
+  const now = clock(args.now);
+  const budget = queryBudget(ctx);
+  const userId = profileIdOf(ctx, args.userId);
+  if (userId === null) return null;
+  const target = await budget.one('profile', () => ctx.db.get(userId));
+  if (!target || ROLE_RANK[target.role] < ROLE_RANK.moderator) return null;
+  const ledgerVisible = seesLedgerGrants(viewer);
+  const staffer = target._id;
+  const chainsReady = (await preparationOf(budget, ctx)).pending.includes('undoChains') === false;
+
+  // ── One read of their decisions over the nine weeks ──
+  // The week the Staff lane's column counts too (`thisWeekOf`): one window for one figure.
+  const end = thisWeekOf(now).to;
+  const weeksFrom = end - WEEKS * WEEK_MS;
+  const readFrom = weeksFrom - DAY_MS;
+  const page = await budget.capped(DECISION_BYTES, DECISION_ROWS, () =>
+    ctx.db
+      .query('moderationActions')
+      .withIndex('by_actor', (q) => q.eq('actorId', staffer).gte('_creationTime', readFrom))
+      .order('desc')
+      .paginate({
+        cursor: null,
+        numItems: DECISION_ROWS,
+        maximumRowsRead: DECISION_ROWS,
+        maximumBytesRead: DECISION_BYTES,
+      }),
+  );
+  const decisions = page.page.filter((r) => isDecision(r, ledgerVisible));
+  const oldestRead =
+    page.page.length > 0 ? (page.page[page.page.length - 1] as Audit).createdAt : end;
+  const readAllAfter = (t: number) => page.isDone || oldestRead < t;
+
+  // ── Staff since and role since (`lib/staffTenure`, the rule the Staff lane's rows are stamped by) ──
+  // Read before the per-decision loops below, which run until the budget is spent: read after them,
+  // a busy staffer's dates would be starved and say capped whenever those loops ran out.
+  const { tenure, roleShort, roleFull, roleUnplaced } = await readTenure(
+    ctx,
+    budget,
+    staffer,
+    target.role,
+    chainsReady,
+  );
+
+  const weeks = Array.from({ length: WEEKS }, (_, i) => {
+    const start = end - (WEEKS - i) * WEEK_MS;
+    const count = decisions.filter(
+      (r) => r.createdAt >= start && r.createdAt < start + WEEK_MS,
+    ).length;
+    return { from: start, count, capped: !readAllAfter(start) };
+  });
+  const thisWeek = weeks[WEEKS - 1] as { from: number; count: number; capped: boolean };
+  const weekRows = decisions.filter((r) => r.createdAt >= thisWeek.from && r.createdAt < end);
+
+  // Undone on net by someone else: from the row and its chain's first row, no chain walked.
+  const byOther = (by: Id<'profiles'> | undefined | null) =>
+    by !== null && by !== undefined && by !== staffer;
+  let undone = 0;
+  let undoShort = false;
+  // The query's time bound (Convex gives a query one second): at most `STAFF_CHECKED` database calls
+  // for the undos and the filing times together (a row whose answer is in hand costs none), past
+  // which a figure says capped, as a budget stop does. Each set is read at once, in page order, in
+  // waves (`readRoots`, `readFiledAts`) — a round per four or five roots (each reserves an audit
+  // row's worst case, a document) and a wave or two of filings, not a round per row.
+  const roots = await readRoots(ctx, budget, page.page, weekRows, STAFF_CHECKED);
+  const undoers = new Map<string, number>();
+  for (const r of weekRows) {
+    const root = roots.rootOf(r);
+    if (root === undefined) {
+      undoShort = true;
+      break;
+    }
+    const by = undoneBy(r, root);
+    if (byOther(by)) {
+      undone++;
+      undoers.set(by as string, (undoers.get(by as string) ?? 0) + 1);
+    }
+  }
+
+  const durations: number[] = [];
+  let unknown = 0;
+  // A filing time the budget ran out before reading is capped, not unrecorded.
+  let decideShort = false;
+  const filed = weekRows.filter((x) => FILED_DECISIONS.has(x.action));
+  const filedAtOf = await readFiledAts(ctx, budget, filed, STAFF_CHECKED - roots.reads);
+  for (const r of filed) {
+    const filedAt = filedAtOf(r);
+    if (filedAt === undefined) {
+      decideShort = true;
+      break;
+    }
+    if (filedAt === null) unknown++;
+    else durations.push(Math.max(0, r.createdAt - filedAt));
+  }
+
+  return {
+    decisions: {
+      thisWeek: { count: thisWeek.count, capped: thisWeek.capped },
+      undoneByOthers: {
+        count: undone,
+        capped: thisWeek.capped || undoShort,
+        ...(await undoneByWhom(ctx, budget, undoers)),
+      },
+    },
+    timeToDecide: {
+      medianMs: unknown > 0 || thisWeek.capped || decideShort ? null : lowerMedian(durations),
+      decided: filed.length,
+      capped: thisWeek.capped || decideShort,
+    },
+    staffSince: tenure.staffSince,
+    roleSince: tenure.roleSince,
+    /** The role rows couldn't all be read: both dates are `null` for that reason, not unrecorded. */
+    tenureCapped: tenureCappedOf({ tenure, roleShort, roleFull, roleUnplaced }),
+    /**
+     * Backfills not yet run that a figure here rests on — distinct from `capped` (a read stopped
+     * short) and from `null` (nothing on record): until `undoChains` is done, `undoneByOthers` and
+     * the tenure dates may be wrong, not merely short.
+     */
+    pending: (chainsReady ? [] : ['undoChains']) as PeopleBackfill[],
+    weeks,
+  };
+}
 
 /** Undoers a staffer's strip names at most ("2 later undone by ‹name›"); the rest are counted. */
 const UNDOERS_NAMED = 3;
@@ -1995,9 +2019,9 @@ async function undoneByWhom(
 }
 
 /**
- * Database calls a staffer's week may make, row by row, for undos and filing times together: the
- * query's time bound. A busy week past it reads as capped; the counts themselves come from the one
- * page read and stay whole.
+ * Database calls a staffer's week may make for undos and filing times together (read in waves, not
+ * row by row): the query's time bound. A busy week past it reads as capped; the counts themselves
+ * come from the one page read and stay whole.
  */
 const STAFF_CHECKED = 400;
 
@@ -2015,130 +2039,235 @@ const SEASON_CHECKED = 600;
  */
 export const staffSeason = query({
   args: { userId: v.string(), season: v.optional(v.number()), ...nowArg },
-  handler: async (ctx, args) => {
-    const viewer = await requireCapability(ctx, 'audit.read');
-    const now = clock(args.now);
-    const budget = queryBudget(ctx);
-    const userId = profileIdOf(ctx, args.userId);
-    if (userId === null) return null;
-    const target = await budget.one('profile', () => ctx.db.get(userId));
-    if (!target || ROLE_RANK[target.role] < ROLE_RANK.moderator) return null;
-    // A season no one can name (`NaN`, a fraction, a year past what a date can hold) is this season.
-    const season: Season = resolveSeason(args.season, seasonOf(now));
-    const span = seasonRecordSpan(season, now);
-    const head = { season, opensOn: seasonRecordWindow(season, now).opensOn, empty: span === null };
-    if (span === null) return { ...head, overturned: null, pending: [] as PeopleBackfill[] };
-    const ledgerVisible = seesLedgerGrants(viewer);
-    const staffer = target._id;
-    const chainsReady = (await preparationOf(budget, ctx)).pending.includes('undoChains') === false;
-    const page = await budget.capped(DECISION_BYTES, DECISION_ROWS, () =>
-      ctx.db
-        .query('moderationActions')
-        .withIndex('by_actor', (q) =>
-          q
-            .eq('actorId', staffer)
-            .gte('_creationTime', span.from - DAY_MS)
-            .lt('_creationTime', span.to + DAY_MS),
-        )
-        .order('desc')
-        .paginate({
-          cursor: null,
-          numItems: DECISION_ROWS,
-          maximumRowsRead: DECISION_ROWS,
-          maximumBytesRead: DECISION_BYTES,
-        }),
-    );
-    const rootOf = rootReader(ctx, budget, page.page);
-    const inSeason = page.page.filter(
-      (r) => r.createdAt >= span.from && r.createdAt < span.to && isDecision(r, ledgerVisible),
-    );
-    let count = 0;
-    let short = !page.isDone || inSeason.length > SEASON_CHECKED;
-    for (const r of inSeason.slice(0, SEASON_CHECKED)) {
-      const reversed = await reversedByOther(ctx, budget, rootOf, r, staffer);
-      if (reversed === undefined) {
-        short = true;
-        break;
-      }
-      if (reversed) count++;
-    }
-    return {
-      ...head,
-      overturned: { count, capped: short } as Count,
-      /** Backfills not yet run that `overturned` rests on (see `staffStats.pending`). */
-      pending: (chainsReady ? [] : ['undoChains']) as PeopleBackfill[],
-    };
-  },
+  handler: async (ctx, args) =>
+    staffSeasonPage(ctx, await requireCapability(ctx, 'audit.read'), args),
 });
 
-/**
- * Whether someone else reversed `row` on net — undid it, or ended the verdict it recorded with a
- * restore, an overturn or an undo that still stands. `undefined` when the budget ran out first.
- */
-async function reversedByOther(
+/** `people.staffSeason` for a viewer already let in — the figure itself, for the round counts. */
+export async function staffSeasonPage(
   ctx: QueryCtx,
-  budget: ReadBudget,
-  rootOf: (row: Audit) => Promise<Audit | undefined>,
-  row: Audit,
-  staffer: Id<'profiles'>,
-): Promise<boolean | undefined> {
-  const root = await rootOf(row);
-  if (root === undefined) return undefined;
-  const by = undoneBy(row, root);
-  if (by !== null && by !== undefined && by !== staffer) return true;
-  if (!VERDICT_ACTIONS.has(row.action)) return false;
-  const verdict = await budget.measured('verdict', () =>
+  viewer: Doc<'profiles'>,
+  args: { userId: string; season?: number; now?: number },
+) {
+  const now = clock(args.now);
+  const budget = queryBudget(ctx);
+  const userId = profileIdOf(ctx, args.userId);
+  if (userId === null) return null;
+  const target = await budget.one('profile', () => ctx.db.get(userId));
+  if (!target || ROLE_RANK[target.role] < ROLE_RANK.moderator) return null;
+  // A season no one can name (`NaN`, a fraction, a year past what a date can hold) is this season.
+  const season: Season = resolveSeason(args.season, seasonOf(now));
+  const span = seasonRecordSpan(season, now);
+  const head = { season, opensOn: seasonRecordWindow(season, now).opensOn, empty: span === null };
+  if (span === null) return { ...head, overturned: null, pending: [] as PeopleBackfill[] };
+  const ledgerVisible = seesLedgerGrants(viewer);
+  const staffer = target._id;
+  const chainsReady = (await preparationOf(budget, ctx)).pending.includes('undoChains') === false;
+  const page = await budget.capped(DECISION_BYTES, DECISION_ROWS, () =>
     ctx.db
-      .query('contentVerdicts')
-      .withIndex('by_action', (q) => q.eq('actionId', row._id))
-      .first(),
+      .query('moderationActions')
+      .withIndex('by_actor', (q) =>
+        q
+          .eq('actorId', staffer)
+          .gte('_creationTime', span.from - DAY_MS)
+          .lt('_creationTime', span.to + DAY_MS),
+      )
+      .order('desc')
+      .paginate({
+        cursor: null,
+        numItems: DECISION_ROWS,
+        maximumRowsRead: DECISION_ROWS,
+        maximumBytesRead: DECISION_BYTES,
+      }),
   );
-  if (verdict === undefined) return undefined;
-  if (verdict === null || verdict.standing || verdict.endedByActionId === undefined) return false;
-  const endedBy = verdict.endedByActionId;
-  const ending = await budget.measured('moderationAction', () => ctx.db.get(endedBy));
-  if (ending === undefined) return undefined;
-  if (ending === null || ending.actorId === undefined || ending.actorId === staffer) return false;
-  const reverses =
-    ending.action === 'restore' ||
-    ending.action === 'overturn_verdict' ||
-    ending.undoesActionId !== undefined;
-  if (!reverses) return false;
-  const endingRoot = await rootOf(ending);
-  if (endingRoot === undefined) return undefined;
-  return stands(ending, endingRoot);
+  const inSeason = page.page.filter(
+    (r) => r.createdAt >= span.from && r.createdAt < span.to && isDecision(r, ledgerVisible),
+  );
+  const checked = inSeason.slice(0, SEASON_CHECKED);
+  const reversed = await reversedByOthers(ctx, budget, page.page, checked, staffer);
+  let count = 0;
+  let short = !page.isDone || inSeason.length > SEASON_CHECKED;
+  for (const r of reversed) {
+    if (r === undefined) {
+      short = true;
+      break;
+    }
+    if (r) count++;
+  }
+  return {
+    ...head,
+    overturned: { count, capped: short } as Count,
+    /** Backfills not yet run that `overturned` rests on (see `staffStats.pending`). */
+    pending: (chainsReady ? [] : ['undoChains']) as PeopleBackfill[],
+  };
 }
 
 /**
- * When the item a filed decision decided was filed: from the row, or (older rows) the flag or ask,
- * read as it really weighs within the budget. `null` when it can't be told; `undefined` when the
- * budget ran out before the read.
+ * Whether someone else reversed each of `rows` on net — undid it, or ended the verdict it recorded
+ * with a restore, an overturn or an undo that still stands — read **at once** (B01-4c): each step's
+ * reads for every row together, in page order, in waves over the budget (`ReadBudget.waves`) — the
+ * chain roots not in hand, the verdicts, the rows that ended them (unless in hand), and those rows'
+ * roots (unless in hand or read already). `undefined` for a row a read it needed didn't fit, and for
+ * any row after the first such that still needed one — the caller stops at the first, so nothing is
+ * read for the rows after it. Which rows those are depends only on the page's order.
  */
-async function filedAtOf(
+async function reversedByOthers(
   ctx: QueryCtx,
   budget: ReadBudget,
+  known: readonly Audit[],
+  rows: readonly Audit[],
+  staffer: Id<'profiles'>,
+): Promise<Array<boolean | undefined>> {
+  const OVER = 'over' as const;
+  const roots = await readRoots(ctx, budget, known, rows, Number.POSITIVE_INFINITY);
+  const byOther = (by: Id<'profiles'> | null | undefined) =>
+    by !== null && by !== undefined && by !== staffer;
+  // Undone by someone else, from the row and its first row; else a verdict to look at.
+  const first = rows.map((row): boolean | undefined | 'verdict' => {
+    const root = roots.rootOf(row);
+    if (root === undefined) return undefined;
+    if (byOther(undoneBy(row, root))) return true;
+    return VERDICT_ACTIONS.has(row.action) ? 'verdict' : false;
+  });
+  // The caller stops at the first row it can't answer: the steps below read only for rows before it.
+  const cut = first.indexOf(undefined);
+  const live = cut < 0 ? rows.length : cut;
+  const asked = rows.slice(0, live).filter((_, i) => first[i] === 'verdict');
+  const verdicts = await budget.waves<Audit, Doc<'contentVerdicts'> | null | typeof OVER>(
+    asked,
+    () => ({ bytes: ROW_MAX.verdict, reads: 1 }),
+    (row, share) =>
+      share.read('verdict', () =>
+        ctx.db
+          .query('contentVerdicts')
+          .withIndex('by_action', (q) => q.eq('actionId', row._id))
+          .first(),
+      ),
+    () => OVER,
+  );
+  const verdictOf = new Map(asked.map((row, i) => [row._id as string, verdicts[i]]));
+  // The rows that ended a verdict, once each: from the rows in hand when they hold it (a staffer's
+  // own restore of their own hide, say), else read.
+  const inHand = new Map<string, Audit>(known.map((r) => [r._id, r]));
+  const endedBy = [
+    ...new Set(
+      verdicts.flatMap((v) =>
+        v && v !== OVER && !v.standing && v.endedByActionId !== undefined
+          ? [v.endedByActionId]
+          : [],
+      ),
+    ),
+  ];
+  const toRead = endedBy.filter((id) => !inHand.has(id));
+  const endings = await budget.waves<Id<'moderationActions'>, Audit | null | typeof OVER>(
+    toRead,
+    () => ({ bytes: ROW_MAX.moderationAction, reads: 1 }),
+    (id, share) => share.read('moderationAction', () => ctx.db.get(id)),
+    () => OVER,
+  );
+  const readEndings = new Map(toRead.map((id, i) => [id as string, endings[i]]));
+  const endingOf = (id: string) => inHand.get(id) ?? readEndings.get(id);
+  const reversing = (ending: Audit) =>
+    ending.action === 'restore' ||
+    ending.action === 'overturn_verdict' ||
+    ending.undoesActionId !== undefined;
+  const ends = endedBy
+    .map(endingOf)
+    .filter(
+      (e): e is Audit =>
+        e !== null &&
+        e !== OVER &&
+        e !== undefined &&
+        e.actorId !== undefined &&
+        e.actorId !== staffer &&
+        reversing(e),
+    );
+  // Their roots: in hand, read for the rows above (the old shared reader kept those), or read now.
+  const rootsRead = rows.slice(0, live).flatMap((row) => {
+    const root = roots.rootOf(row);
+    // A row that is its own first row, or whose first row is gone, adds nothing to look up.
+    return root !== undefined && root._id !== row._id ? [root] : [];
+  });
+  const endingRoots = await readRoots(
+    ctx,
+    budget,
+    [...known, ...rootsRead, ...ends],
+    ends,
+    Number.POSITIVE_INFINITY,
+  );
+  return rows.map((row, i) => {
+    const step = first[i];
+    if (step !== 'verdict') return step;
+    const verdict = verdictOf.get(row._id);
+    if (verdict === OVER || verdict === undefined) return undefined;
+    if (verdict === null || verdict.standing || verdict.endedByActionId === undefined) return false;
+    const ending = endingOf(verdict.endedByActionId);
+    if (ending === OVER || ending === undefined) return undefined;
+    if (ending === null || ending.actorId === undefined || ending.actorId === staffer) return false;
+    if (!reversing(ending)) return false;
+    const endingRoot = endingRoots.rootOf(ending);
+    if (endingRoot === undefined) return undefined;
+    return stands(ending, endingRoot);
+  });
+}
+
+/** The item a filed decision decided, when its filing time has to be read (older rows). */
+function filedItemOf(
+  ctx: QueryCtx,
   row: Audit,
-  counter: { reads: number } = { reads: 0 },
-): Promise<number | null | undefined> {
+):
+  | { kind: 'contentFlag'; id: Id<'contentFlags'> }
+  | { kind: 'waterBodyRequest'; id: Id<'waterBodyRequests'> }
+  | number
+  | null {
   const recorded = (row.metadata as { filedAt?: unknown } | undefined)?.filedAt;
   if (typeof recorded === 'number') return recorded;
-  // Each read counted where it is made: an id that names nothing costs none.
   if (row.targetType === 'contentFlag') {
     const id = ctx.db.normalizeId('contentFlags', row.targetId);
-    if (!id) return null;
-    counter.reads++;
-    const flag = await budget.measured('contentFlag', () => ctx.db.get(id));
-    return flag === undefined ? undefined : (flag?.createdAt ?? null);
+    return id ? { kind: 'contentFlag', id } : null;
   }
   if (row.targetType === 'waterBodyRequest') {
     const id = ctx.db.normalizeId('waterBodyRequests', row.targetId);
-    if (!id) return null;
-    counter.reads++;
-    const ask = await budget.measured('waterBodyRequest', () => ctx.db.get(id));
-    return ask === undefined ? undefined : (ask?.createdAt ?? null);
+    return id ? { kind: 'waterBodyRequest', id } : null;
   }
   // A drawn body's decision from before the row recorded it: reading the body means its outline.
   return null;
+}
+
+/**
+ * When the items filed decisions decided were filed: from the row, or (older rows) the flag or ask,
+ * read **at once** — once each, in page order, in waves over the budget (`ReadBudget.waves`), at most
+ * `limit` reads (an id that names nothing costs none). The lookup gives `null` when it can't be told,
+ * `undefined` for a row past the limit or the budget — the same rows whatever order reads settle in.
+ */
+async function readFiledAts(
+  ctx: QueryCtx,
+  budget: ReadBudget,
+  rows: readonly Audit[],
+  limit: number,
+): Promise<(row: Audit) => number | null | undefined> {
+  // Each row's item once, kept for the lookup.
+  const itemOf = new Map(rows.map((row) => [row._id as string, filedItemOf(ctx, row)]));
+  const items = new Map<string, Exclude<ReturnType<typeof filedItemOf>, number | null>>();
+  for (const item of itemOf.values()) {
+    if (typeof item === 'object' && item !== null && !items.has(item.id)) items.set(item.id, item);
+  }
+  const wanted = [...items.values()].slice(0, Math.max(0, limit));
+  const got = await budget.waves(
+    wanted,
+    (item) => ({ bytes: ROW_MAX[item.kind], reads: 1 }),
+    async (item, share): Promise<number | null> => {
+      const doc = await share.read(item.kind, () => ctx.db.get(item.id));
+      return doc?.createdAt ?? null;
+    },
+    (): undefined => undefined,
+  );
+  const at = new Map<string, number | null | undefined>(wanted.map((item, i) => [item.id, got[i]]));
+  return (row) => {
+    // A row not asked about is `undefined`, as one past the limit is: never a guess.
+    const item = itemOf.get(row._id);
+    return typeof item === 'object' && item !== null ? at.get(item.id) : item;
+  };
 }
 
 // ── Their reports ──────────────────────────────────────────────────────────────────────────────
