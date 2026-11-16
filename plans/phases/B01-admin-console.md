@@ -2993,6 +2993,63 @@ refusal's snapshot read and a launch's hidden-neighbor read (at most 200, a hand
 not charged, and People's per-row call plan (`ROW_SHAPE_DOCS`) doesn't count them; the landmark
 undo's refusal checks the spellings only, not the duplicate and bay-name rules its write also takes.
 
+**A page of History in a handful of rounds (B01-3i).** After #127 deployed, one busy body's first
+page of History took 803 and 710 ms uncached on dev. Counted structurally (a round: a database call
+started with none in flight) on a 50-row page: 203 sequential rounds before #126 and after it, 249
+after #127 — `bodyConsole.history` awaited every read row by row, and #127 added the refusal reads.
+Now 6 for a page whose rows share a target, 20 for the worst page (45 refusals), 18 for a 50-row feed
+over 50 targets. The rule: a page's undo states are one reading (`undoStates`) — every row at once up
+to its refusal, then the refusals **in page order** through `ReadBudget.waves`, each reserving its
+declared worst case before it reads and handing back the difference after, so the accounting is exact
+and the answer the same whatever order reads settle in. Reserve, never queue.
+
+**B01-3h: aliases in skater search, the text caps, and the gaps #127 left.**
+
+- **One rule for every search.** `@skating/core`'s `bodyAliasesFor` — the catalogs' other names, then
+  a moderator's aliases, each once — builds `waterBodies.searchText` (`bodySearchTextFor`), the
+  console's library aliases, and a search hit's `aliases`. Every skater search (the map box, Explore,
+  the sheet's "Which lake?", web and phone) reads `searchByName`, which now finds a body by a
+  moderator's alias and says which other name matched (`matchedAlias`, additive — how a result shows
+  it is B04's). A merged-away duplicate's names find its survivor (at most eight survivor reads a
+  search); a removed or rejected body is found by no name. Every writer of an ingredient rebuilds the
+  text through the builder (`searchTextWriters.test.ts` inventories them: the import, a drawn body,
+  `setAliases` and its undo, the name override and its undo, an admitted catalog body, the repair
+  pass); a merge moves no names, a removal leaves them. No backfill: with no moderator aliases the
+  rule gives today's string, and dev carries none. The repair pass (`backfillSearchText`) reads the
+  builder; dry by default, one page a call or `chain`, each stale body its own nested write.
+  The search read, measured worst case (a full page of heavy outlines, every alias at its bound, half
+  the hits merged): 164,648 bytes before, 255,522 after — the same page, plus the survivors and the
+  alias text. An alias is a name a skater might type, never a claim about the ice.
+- **The text caps** (`@skating/core`'s `textCaps`): a place's name and each alias at 200 characters,
+  a URL at 2,048, a catalog's machine id at 128 (every format ingested is under 40), a landmark's ids
+  at 32, a launch's walk at 256 points (thinned, its ends kept). A moderator's write past a cap is
+  refused with a plain message; an import skips the row and counts it (`tooLong`), never the campaign.
+  Stricter caps stand: a landmark's name at 80, a launch's at 60, a request's at 80, a link's label at
+  80, a moderator's alias at 120. The apps' `maxLength`s match the request and landmark caps; the
+  console's name and link inputs set none yet (owed with their pages). A cap holds what a
+  write introduces: a stored value past it keeps working, and an undo putting one back runs. Audit
+  metadata from these writers is at most 160 KiB (fast-checked; the reference links' eight labels and
+  URLs, before and after, are the largest). **Owed:** counting the rows written before the caps that
+  exceed one (the dev agent's read); a read charges such a row its real size and carries on.
+- **The gaps #127 left.** The weather-grid and feature-shape snapshots are charged through the row's
+  share (each one document, bounded by its writer). A launch row is bounded at its writers
+  (`ROW_MAX.launch`, 12 KiB: 8,852 bytes measured at the caps), so the put-in refusal reserves the
+  launch and the body's hidden launches (200 × 12 KiB) and hands back the difference; a page that
+  can't reserve them answers "check elsewhere". **A deliberate exception, on cost:** the landmark
+  undo's duplicate-name and bay-name rule (`landmarkEditRefusal`, shared with the edit) runs where one
+  landmark is in view — the toast, one landmark's own history, `runUndo` — and a list page checks the
+  spellings only, because that rule reads the body's whole landmark list (up to 1,500 rows) and its
+  bays' outlines, about 3.5–4 MiB at worst against a page's 4 MiB. Where it bites, it says so: `runUndo` answers
+  "…, so this undo can't bring the old name back — a list of changes can't check that in advance.",
+  and the single views say the first half before it is offered. Those
+  list reads are uncharged in the one-landmark views (the forward write reads the same lists under the
+  mutation's own limits). **Owed:** a stored light list of a body's bay and landmark names, kept by
+  every writer of either, would let a page check it — a derived fact, not this PR's. A landmark's
+  `externalIds` and a launch's id are now capped; what stays uncapped after this PR is a bay's outline
+  and a landmark's corpus fields. People's per-row read plan needn't count the refusal reads: they
+  reserve through `ReadBudget.waves` on the same budget, and a page past it reads "check elsewhere".
+
+
 **Held — the survey filing** (`fileBathymetrySurvey`): the board shows the field (*A survey the next
 build should load*, *Paste a link or a citation*) but not what appears once one is filed; it waits on
 the founder's call.

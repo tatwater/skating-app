@@ -83,6 +83,18 @@ export const ROW_MAX = {
   supportTicket: 5_000 * 4 + SLACK,
   // A People row: names, a handle, an avatar URL, a reason line cut to 280 characters.
   personRow: 4 * 1024,
+  // A body's previous weather grid as its snapshot stores it: at most `MAX_SUGGESTED_SAMPLE_POINTS`
+  // (25) points, each a latitude and a longitude — well inside this, with the row's own fields.
+  pointsSnapshot: 16 * 1024,
+  // A feature's previous shape as its snapshot stores it: at most `MAX_FEATURE_POSITIONS` (500)
+  // positions (an array of two numbers each, about 30 bytes stored), a kind and two numbers.
+  shapeSnapshot: 64 * 1024,
+  // A launch, every field bounded at its writers (B01-3h): a name of at most 200 characters, a catalog
+  // id of 128, a posted note of 160 (each up to four bytes a character), a walk of at most 256 points,
+  // and ids, numbers and literals — 8,852 bytes measured at those bounds in two-byte characters, so
+  // 12 KiB holds four-byte ones. (`putIn` stays at the document limit for the reads whose plans
+  // predate the caps, until the old rows are counted.)
+  launch: 12 * 1024,
   // A landmark's name and spellings, and a known feature's other fields, no writer caps.
   landmark: DOC_MAX,
   bodyFeature: DOC_MAX,
@@ -98,21 +110,28 @@ export type RowKind = keyof typeof ROW_MAX;
 export interface WaveCost {
   bytes: number;
   reads: number;
+  /** Documents those reads scan at worst (a `take` scans up to its `n`); absent: one a read. */
+  docs?: number;
 }
 
 /** One item's reservation in {@link ReadBudget.waves}: each read is charged against it. */
 export interface Share {
   read<D>(kind: RowKind, get: () => Promise<D>): Promise<D>;
+  /** Up to `n` rows of `kind` in one read: `n` worst cases reserved, the difference handed back. */
+  take<D>(kind: RowKind, n: number, read: () => Promise<D[]>): Promise<D[]>;
 }
 
 /** Thrown when a transaction reads past what it planned: a bug in the plan, never a data condition. */
 export class OverBudget extends Error {}
 
-/** What a row read as `kind` is charged: its real size, at most its kind's worst case; 0 if gone. */
-function weighed(kind: RowKind, row: unknown): number {
-  return row === null || row === undefined
-    ? 0
-    : Math.min(getDocumentSize(row as never), ROW_MAX[kind]);
+/** What a row read is charged: its real size; 0 if gone. */
+function weighed(row: unknown): number {
+  // The real size, even past the kind's bound: a row written before its writers' caps (B01-3h) is
+  // charged what it weighs and the read carries on — the bound is the plan, never a reason to throw.
+  // So a plan check counts each read at most its bound, and what a row weighs past it is charged to
+  // the budget as a whole, exactly — the balance may go below zero, and then nothing more is read.
+  // Never floored: a floor would make the balance depend on the order reads settle in.
+  return row === null || row === undefined ? 0 : getDocumentSize(row as never);
 }
 
 /**
@@ -234,9 +253,12 @@ export class ReadBudget {
     let charged = 0;
     try {
       const row = await read();
-      charged = weighed(kind, row);
+      charged = weighed(row);
       return row;
     } finally {
+      // A row past its bound (written before its caps) is charged exactly what it weighs, even past
+      // an empty budget: a sum, so the balance is the same whatever order reads settle in (Greptile
+      // on #131), and what follows sees no room and stops — every check asks `left >= bytes`.
       this.left += ROW_MAX[kind] - charged;
     }
   }
@@ -254,7 +276,7 @@ export class ReadBudget {
    * So which items are read and which overflow depends only on the items' order and what the earlier
    * waves really weighed — never on the order their promises resolve in: the same data gives the same
    * page, as a query must. Nothing is read that wasn't reserved (a read past its item's share is a
-   * plan error, thrown), and the budget never goes below zero. A wave costs one round per read in its
+   * plan error, thrown); with every row within its bound the budget never goes below zero. A wave costs one round per read in its
    * longest item; the page, one wave per budget's worth of worst cases.
    */
   async waves<T, R>(
@@ -266,13 +288,14 @@ export class ReadBudget {
     const out = new Array<R>(items.length);
     let next = 0;
     while (next < items.length) {
-      const wave: { index: number; cost: WaveCost }[] = [];
+      const wave: { index: number; cost: WaveCost; docs: number }[] = [];
       for (; next < items.length; next++) {
         const cost = costOf(items[next] as T);
-        if (cost.bytes > this.left || !this.affordsCalls(cost.reads, cost.reads)) break;
+        const docs = cost.docs ?? cost.reads;
+        if (cost.bytes > this.left || !this.affordsCalls(cost.reads, docs)) break;
         this.left -= cost.bytes;
-        this.reserveCalls(cost.reads, cost.reads);
-        wave.push({ index: next, cost });
+        this.reserveCalls(cost.reads, docs);
+        wave.push({ index: next, cost, docs });
       }
       if (wave.length === 0) {
         for (; next < items.length; next++) out[next] = overflow(items[next] as T);
@@ -280,28 +303,59 @@ export class ReadBudget {
       }
       // Settled, not raced: every item's hand-back lands before the next wave, or the throw.
       const settled = await Promise.allSettled(
-        wave.map(async ({ index, cost }) => {
+        wave.map(async ({ index, cost, docs }) => {
+          // Against the plan, each read at most its kind's worst case; what a row weighs past that
+          // (written before its writers' caps) is `excess`, charged to the budget as a whole — so a
+          // heavy old row never makes the item's next read look like a plan error.
           let spent = 0;
+          let excess = 0;
           let reads = 0;
+          let scanned = 0;
           let answered = false;
+          const charge = (kind: RowKind, rows: readonly unknown[]) => {
+            let plan = 0;
+            for (const row of rows) {
+              const weight = weighed(row);
+              plan += Math.min(weight, ROW_MAX[kind]);
+              excess += Math.max(0, weight - ROW_MAX[kind]);
+            }
+            return plan;
+          };
+          const admit = (bytes: number, n: number) => {
+            // Its reservation is already handed back: a read now would be charged to nothing.
+            if (answered) throw new OverBudget('read budget: an item read after its answer');
+            if (spent + bytes > cost.bytes || reads + 1 > cost.reads || scanned + n > docs) {
+              throw new OverBudget(`read budget: an item read past the ${cost.bytes} it declared`);
+            }
+            reads++;
+            scanned += n;
+            spent += bytes;
+          };
           const share: Share = {
             read: async <D>(kind: RowKind, get: () => Promise<D>): Promise<D> => {
-              // Its reservation is already handed back: a read now would be charged to nothing.
-              if (answered) throw new OverBudget('read budget: an item read after its answer');
-              if (spent + ROW_MAX[kind] > cost.bytes || reads + 1 > cost.reads) {
-                throw new OverBudget(
-                  `read budget: an item read past the ${cost.bytes} it declared`,
-                );
-              }
-              reads++;
-              spent += ROW_MAX[kind];
+              admit(ROW_MAX[kind], 1);
               let charged = 0;
               try {
                 const row = await get();
-                charged = weighed(kind, row);
+                charged = charge(kind, [row]);
                 return row;
               } finally {
                 spent -= ROW_MAX[kind] - charged;
+              }
+            },
+            take: async <D>(kind: RowKind, n: number, read: () => Promise<D[]>): Promise<D[]> => {
+              const reserve = n * ROW_MAX[kind];
+              admit(reserve, n);
+              let charged = 0;
+              let got = n;
+              try {
+                const rows = await read();
+                charged = charge(kind, rows);
+                got = rows.length;
+                return rows;
+              } finally {
+                spent -= reserve - charged;
+                scanned -= n - got;
               }
             },
           };
@@ -309,9 +363,10 @@ export class ReadBudget {
             out[index] = await run(items[index] as T, share);
           } finally {
             answered = true;
-            this.left += cost.bytes - spent;
+            // Exact, never floored: a sum, so the same whatever order the wave's items finish in.
+            this.left += cost.bytes - spent - excess;
             this.callsLeft += cost.reads - reads;
-            this.docsLeft += cost.reads - reads;
+            this.docsLeft += docs - scanned;
           }
         }),
       );

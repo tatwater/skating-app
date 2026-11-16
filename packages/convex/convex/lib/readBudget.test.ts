@@ -62,10 +62,20 @@ describe('ReadBudget.measured', () => {
     expect(reads.bytes).toBe(TX_BUDGET - getDocumentSize(row));
   });
 
-  test('a row past its kind’s worst case is charged the worst case', async () => {
+  test('a row past its kind’s worst case (written before its caps) is charged what it weighs, never thrown', async () => {
     const reads = new ReadBudget();
-    await reads.measured('verdict', async () => rowOf(ROW_MAX.verdict * 2));
-    expect(reads.bytes).toBe(TX_BUDGET - ROW_MAX.verdict);
+    const row = rowOf(ROW_MAX.verdict * 2);
+    await expect(reads.measured('verdict', async () => row)).resolves.toBe(row);
+    expect(reads.bytes).toBe(TX_BUDGET - getDocumentSize(row as never));
+  });
+
+  test('a row past its worst case near the end of the budget is charged exactly; what follows stops', async () => {
+    const reads = new ReadBudget(ROW_MAX.verdict);
+    const row = rowOf(ROW_MAX.verdict * 2);
+    await expect(reads.measured('verdict', async () => row)).resolves.toBe(row);
+    expect(reads.bytes).toBe(ROW_MAX.verdict - getDocumentSize(row as never));
+    // What follows sees nothing left and stops.
+    expect(await reads.measured('verdict', async () => row)).toBeUndefined();
   });
 
   test('when the worst case doesn’t fit it reads nothing and says so', async () => {

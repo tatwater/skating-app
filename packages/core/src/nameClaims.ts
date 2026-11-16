@@ -121,3 +121,37 @@ export function searchTextFor(name: string, aliases: readonly string[] | undefin
     .filter(Boolean)
     .join(' ');
 }
+
+/** What a body is found by: its displayed name, the catalogs' claims and a moderator's aliases. */
+export interface BodyNames {
+  readonly name: string;
+  readonly nameClaims?: readonly NameClaim[] | undefined;
+  readonly moderatorAliases?: readonly string[] | undefined;
+}
+
+/**
+ * **Every name a body is found by besides the one it shows — one rule for every search** (B01-3h):
+ * the catalogs' other names ({@link aliasesFor}), then a moderator's own aliases, each once, case and
+ * surrounding space aside. Skater search (`waterBodies.searchText`), the console's library rows and
+ * a search result's alias match all read this, so a name findable in one is findable in all.
+ *
+ * With no moderator aliases it is exactly {@link aliasesFor} — so a body nobody aliased keeps the
+ * search text it had. An alias is a name a skater might type, never a claim about the ice.
+ */
+export function bodyAliasesFor(body: BodyNames): string[] {
+  const out = aliasesFor(body.nameClaims ?? [], body.name);
+  const seen = new Set([key(body.name), ...out.map(key)]);
+  for (const raw of body.moderatorAliases ?? []) {
+    const alias = raw.trim();
+    const k = key(alias);
+    if (alias.length === 0 || seen.has(k)) continue;
+    seen.add(k);
+    out.push(alias);
+  }
+  return out;
+}
+
+/** The one string a body's search index covers: {@link searchTextFor} over {@link bodyAliasesFor}. */
+export function bodySearchTextFor(body: BodyNames): string {
+  return searchTextFor(body.name, bodyAliasesFor(body));
+}

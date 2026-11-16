@@ -48,7 +48,7 @@ export const latestOwn = query({
     return {
       actionId: newest._id,
       action: newest.action,
-      undo: await undoState(ctx, viewer, newest),
+      undo: await undoState(ctx, viewer, newest, 'one'),
     };
   },
 });

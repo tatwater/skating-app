@@ -28,7 +28,7 @@ import { ROW_MAX, requestBudget } from './readBudget';
 import { UNDO_HANDLERS } from './undoHandlers';
 import { UNDO_POLICY, type UndoRule, undoCapability, WORKSTREAM_MODE } from './undoPolicy';
 import { UNDO_CHECKED_ELSEWHERE, undoReader } from './undoReads';
-import { meta, type UndoHandler, type UndoViewer } from './undoTypes';
+import { meta, type UndoHandler, type UndoScope, type UndoViewer } from './undoTypes';
 
 /** How long after acting the toast offers its undo (D226). History has no limit. */
 export const TOAST_UNDO_MS = 10_000;
@@ -104,13 +104,18 @@ function newestOnTarget(
   return found;
 }
 
-/** Whether `row` can be undone by `viewer`, and if not, why — {@link undoStates} for one row. */
+/**
+ * Whether `row` can be undone by `viewer`, and if not, why — {@link undoStates} for one row. `list`
+ * unless the caller says the row is the one in view (`one`: the toast, `runUndo`) — so a page that
+ * still asks row by row (People's) never runs a refusal only a single view can afford.
+ */
 export async function undoState(
   ctx: QueryCtx | MutationCtx,
   viewer: UndoViewer,
   row: Doc<'moderationActions'>,
+  scope: UndoScope = 'list',
 ): Promise<UndoState> {
-  return (await undoStates(ctx, viewer, [row]))[0] as UndoState;
+  return (await undoStates(ctx, viewer, [row], scope))[0] as UndoState;
 }
 
 /**
@@ -133,6 +138,8 @@ export async function undoStates(
   ctx: QueryCtx | MutationCtx,
   viewer: UndoViewer,
   rows: readonly Doc<'moderationActions'>[],
+  /** `one` where a single target is in view (its refusals may read more); a page is a `list`. */
+  scope: UndoScope = 'list',
 ): Promise<UndoState[]> {
   const before = await Promise.all(rows.map((row) => stateBeforeRefusal(ctx, viewer, row)));
   // Started in page order, all at once: `rowlessProfile` charges as it starts, so the same page
@@ -151,9 +158,9 @@ export async function undoStates(
   });
   const checked = await requestBudget(ctx).waves(
     pending,
-    ({ handler }) => handler.refusalCost ?? { bytes: ROW_MAX.waterBody, reads: 1 },
+    ({ handler }) => handler.refusalCost?.(scope) ?? { bytes: ROW_MAX.waterBody, reads: 1 },
     async ({ row, handler }, share): Promise<UndoState> => {
-      const why = (await handler.refusal?.(ctx, row, undoReader(ctx, share))) ?? null;
+      const why = (await handler.refusal?.(ctx, row, undoReader(ctx, share, scope))) ?? null;
       return why
         ? { state: 'unavailable', why }
         : { state: 'available', needsReason: handler.undoTakesAway(row) };
@@ -296,7 +303,7 @@ export async function runUndo(
 ): Promise<void> {
   const row = await ctx.db.get(actionId);
   if (!row) throw new ConvexError('That action no longer exists');
-  const state = await undoState(ctx, actor, row);
+  const state = await undoState(ctx, actor, row, 'one');
   switch (state.state) {
     case 'undone':
       throw new ConvexError('That action has already been undone');

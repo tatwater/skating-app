@@ -1,11 +1,28 @@
 import {
+  caretLabel,
+  caretValueText,
   type TimelineModel,
   timelineCaretBounds,
   timelineFraction,
   timelineMsAt,
 } from '@skating/core';
-import { type PointerEvent as ReactPointerEvent, useRef, useState } from 'react';
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { cn } from '@/lib/utils';
+
+const MINUTE_MS = 60_000;
+const QUARTER_MS = 15 * MINUTE_MS;
+/**
+ * A caret's label: tabular figures in a box as wide as its longest form ("START 12:59"), so a drag
+ * that changes its digits never moves the box (no layout shift as it follows the handle).
+ */
+const CARET_LABEL =
+  'inline-block min-w-[11ch] whitespace-nowrap text-center font-semibold text-[10px] tabular-nums';
 
 /**
  * The timeline (A10-6 / D206): core's `timelineModel` drawn as a ruler. Hour ticks with their
@@ -21,6 +38,13 @@ import { cn } from '@/lib/utils';
  * label is not an edit. A tap on a ladder tick chooses that half-hour as the end. With an end but
  * no start yet, a dimmed START? caret waits an hour before the end — dragging it places the start,
  * the same gesture that moves it (founder, 2026-11-07). Nothing here is a safety claim (D3).
+ *
+ * **A dragged caret says its minute as it goes** (founder, 2026-11-15): the label follows the handle
+ * with exactly what a release there would save — `caretLabel` on the dragged minute, in the lake's
+ * zone, the one rule the settled caret uses — so the author drags to the time rather than until it
+ * looks right. The label's box is a fixed width of tabular figures, so nothing shifts as the digits
+ * change. Each caret is a slider: arrows step a minute (Page Up / Page Down a quarter hour, Home /
+ * End to the bounds) and commit each step, and its `aria-valuetext` is the minute and its day.
  */
 export function Timeline({
   model,
@@ -70,11 +94,68 @@ export function Timeline({
     }
     setDrag(null);
   };
+  // The waiting START? is its own element: once a key places the start, the real caret replaces it
+  // on the render the commit brings, so the focus follows to the caret and the next key keeps
+  // stepping it. One shot: a commit that brings no caret leaves nothing armed for a later render.
+  const focusStart = useRef(false);
+  useEffect(() => {
+    if (!focusStart.current) return;
+    focusStart.current = false;
+    ref.current?.querySelector<HTMLElement>('[data-caret="start"]')?.focus();
+  });
+  /** The keyboard's drag: a step per key, committed at once, clamped as a drag is. */
+  const key =
+    (kind: 'start' | 'end', fromMs: number, placing = false) =>
+    (e: ReactKeyboardEvent<HTMLButtonElement>) => {
+      const commit = kind === 'end' ? (endLocked ? undefined : onSetEnd) : onSetStart;
+      if (!commit) return;
+      const { min, max } = timelineCaretBounds(model, kind);
+      const by: Record<string, number> = {
+        ArrowLeft: -MINUTE_MS,
+        ArrowDown: -MINUTE_MS,
+        ArrowRight: MINUTE_MS,
+        ArrowUp: MINUTE_MS,
+        PageDown: -QUARTER_MS,
+        PageUp: QUARTER_MS,
+      };
+      const to =
+        e.key === 'Home'
+          ? min
+          : e.key === 'End'
+            ? max
+            : by[e.key] !== undefined
+              ? fromMs + (by[e.key] as number)
+              : null;
+      if (to === null) return;
+      e.preventDefault();
+      const next = Math.min(max, Math.max(min, to));
+      if (next === fromMs) return;
+      if (placing) focusStart.current = true;
+      commit(next);
+    };
+  /** A draggable caret's slider semantics, at the minute it stands on now (dragged or not). */
+  const slider = (kind: 'start' | 'end', ms: number) => {
+    const { min, max } = timelineCaretBounds(model, kind);
+    return {
+      role: 'slider' as const,
+      'aria-label': kind === 'end' ? 'End time' : 'Start time',
+      'aria-valuemin': min,
+      'aria-valuemax': max,
+      'aria-valuenow': ms,
+      'aria-valuetext': caretValueText(ms, model.timeZone),
+      'aria-orientation': 'horizontal' as const,
+    };
+  };
 
   const pct = (fraction: number) => `${fraction * 100}%`;
   const marks = model.marks.map((m) =>
-    drag && m.kind === drag.kind
-      ? { ...m, fraction: timelineFraction(model, drag.ms), label: `${m.label.split(' ')[0]} …` }
+    drag && m.kind === drag.kind && (m.kind === 'start' || m.kind === 'end')
+      ? {
+          ...m,
+          ms: drag.ms,
+          fraction: timelineFraction(model, drag.ms),
+          label: caretLabel(m.kind, drag.ms, model.timeZone),
+        }
       : m,
   );
   const endBounds = timelineCaretBounds(model, 'end');
@@ -85,6 +166,8 @@ export function Timeline({
   return (
     <fieldset
       ref={ref}
+      // Stepped back in a sub-mode: `sheet-dim` stops the pointer, `inert` the keyboard.
+      inert={dim || undefined}
       className={cn(
         'relative mx-9 h-[72px] select-none border-0 p-0 font-mono',
         dim && 'sheet-dim',
@@ -176,7 +259,11 @@ export function Timeline({
             return (
               <button
                 type="button"
+                {...slider('start', ms)}
                 aria-label="Place the start, drag to set"
+                // No start yet: the minute it waits at is not a value the author gave.
+                {...(drag?.kind === 'start' ? {} : { 'aria-valuetext': 'Not set yet' })}
+                onKeyDown={key('start', restMs, true)}
                 onPointerDown={begin('start', restMs)}
                 onPointerMove={move}
                 onPointerUp={end}
@@ -184,8 +271,8 @@ export function Timeline({
                 className="-translate-x-1/2 absolute top-3 flex h-10 w-6 cursor-ew-resize flex-col items-center focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 style={{ left: pct(timelineFraction(model, ms)) }}
               >
-                <span className="whitespace-nowrap font-semibold text-[10px] text-foreground-muted">
-                  {drag?.kind === 'start' ? 'START …' : 'START?'}
+                <span className={cn(CARET_LABEL, 'text-foreground-muted')}>
+                  {drag?.kind === 'start' ? caretLabel('start', drag.ms, model.timeZone) : 'START?'}
                 </span>
                 <span
                   aria-hidden
@@ -230,7 +317,9 @@ export function Timeline({
           <button
             key={m.kind}
             type="button"
-            aria-label={`${m.label}${draggable ? ', drag to change' : ''}`}
+            data-caret={m.kind}
+            {...(draggable ? slider(m.kind, m.ms) : { 'aria-label': m.label })}
+            {...(draggable ? { onKeyDown: key(m.kind, m.ms) } : {})}
             onPointerDown={begin(m.kind, m.ms)}
             onPointerMove={move}
             onPointerUp={end}
@@ -241,9 +330,7 @@ export function Timeline({
             )}
             style={{ left: pct(m.fraction) }}
           >
-            <span className="whitespace-nowrap font-semibold text-[10px] text-foreground">
-              {m.label}
-            </span>
+            <span className={cn(CARET_LABEL, 'text-foreground')}>{m.label}</span>
             <span
               className={cn(
                 'mt-0.5 size-0 border-x-[5px] border-x-transparent border-t-[7px]',

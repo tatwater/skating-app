@@ -150,6 +150,7 @@ export * from './subArea';
 export * from './subAreaChord';
 export * from './subAreaPlace';
 export * from './subAreaSpread';
+export * from './textCaps';
 export * from './textLengths';
 export * from './tileSurvey';
 export * from './track';

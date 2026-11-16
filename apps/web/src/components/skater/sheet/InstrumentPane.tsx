@@ -17,6 +17,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { updateSheet } from '@/lib/sheetStore';
 import { useCoarsePointer } from '@/lib/useCoarsePointer';
 import { cn } from '@/lib/utils';
+import { AddTrack } from './AddTrack';
 import { useConsoleMode } from './ConsoleMode';
 import { InstrumentMap } from './InstrumentMap';
 import { InstrumentOverlay } from './InstrumentOverlay';
@@ -221,6 +222,13 @@ export function InstrumentPane({
         ) : (
           <p className="m-0 pt-(--space-6) text-assist text-fg3">Drawing the lake…</p>
         )}
+        {mode === null ? (
+          <AddTrack
+            report={report}
+            timeZone={timeZone}
+            className="absolute right-0 bottom-0 z-[calc(var(--z-map-control)+1)] flex min-h-7.5 items-end pr-(--space-1_5)"
+          />
+        ) : null}
       </div>
       <div className={cn('border-0 border-t border-solid border-line', mode && 'opacity-30')}>
         <Timeline
