@@ -129,6 +129,11 @@ export const WORDS = {
   flagsPending: 'Flags on their content are still being prepared',
   recordUncounted: 'More than one read covers',
   openCapped: 'More may be open than one read covers',
+  /** Some open flags carry no body's name: past what one read names (`open.flagLabelsCapped`). */
+  flagLabelsCapped: 'Some flags here don’t say which body they’re on: more than one read names',
+  /** A person's own words bounded to a few lines: the press that shows them all, and back. */
+  showAll: 'Show all',
+  showLess: 'Show less',
   verdictsPending: 'Decisions on flags about their content are still being prepared',
   accountCreated: 'Account created',
   system: 'System',

@@ -4,8 +4,10 @@ import {
   type FocusEvent,
   type ReactElement,
   type ReactNode,
+  useId,
   useLayoutEffect,
   useRef,
+  useState,
 } from 'react';
 
 import { Button, buttonVariants } from '@/components/kit/button';
@@ -21,7 +23,7 @@ import { isFailed, type Loadable } from '../../reads/consoleReads';
 import { ReadNote } from '../../reads/ReadNote';
 import { historyWhen } from '../../shell/consoleTime';
 import { settledEmpty } from '../answers';
-import { rowActor, rowReason, rowSentence, undoneWords } from './feedWords';
+import { boundedWords, rowActor, rowReason, rowSentence, undoneWords } from './feedWords';
 import { useSectionLevel } from './headingLevel';
 import {
   type ActionRow,
@@ -97,9 +99,51 @@ export function GoLink({
 // ── Open about this person ───────────────────────────────────────────────────────────────────
 
 /**
+ * What a person wrote, as their words — quoted, never reworded — bounded to its first few lines
+ * (`boundedWords`): a cut ends on an ellipsis with *Show all* beside it, which shows every word.
+ */
+function TheirWords({ text }: { text: string }) {
+  const [whole, setWhole] = useState(false);
+  const id = useId();
+  const words = boundedWords(text);
+  if (words === null) return null;
+  return (
+    <span
+      data-slot="their-words"
+      className="mt-(--space-0_5) block text-fg2 whitespace-pre-line [overflow-wrap:anywhere]"
+    >
+      <span id={id} data-slot="their-words-text">
+        “{whole || !words.cut ? words.whole : `${words.shown}…`}”
+      </span>
+      {words.cut && (
+        <>
+          {' '}
+          <Button
+            variant="link"
+            size="xs"
+            aria-expanded={whole}
+            aria-controls={id}
+            onClick={() => setWhole((w) => !w)}
+          >
+            {whole ? WORDS.showLess : WORDS.showAll}
+          </Button>
+        </>
+      )}
+    </span>
+  );
+}
+
+/** The body a flag is on, as the server named it — never for a flag on the person, whose page it is. */
+function flagLabel(flag: PersonRead['open']['flags'][number]): string | null {
+  if (flag.targetType === 'user') return null;
+  const label = flag.targetLabel?.trim() ?? '';
+  return label === '' ? null : label;
+}
+
+/**
  * Open flags on them or their content, and appeals for a viewer the read gives them to — drawn only
  * when something is open (or while flags on their content are still being prepared, which may hide
- * some).
+ * some). A flag names the body it is on; an appeal shows what the person wrote.
  */
 export function OpenAbout({
   person,
@@ -111,7 +155,7 @@ export function OpenAbout({
   linkTo: LinkTo;
 }) {
   const level = useSectionLevel();
-  const { flags, appeals, flagsCapped, appealsCapped } = person.open;
+  const { flags, appeals, flagsCapped, appealsCapped, flagLabelsCapped } = person.open;
   const pending = person.pending.includes('flagSubjects');
   const count = flags.length + (appeals?.length ?? 0);
   const capped = flagsCapped || appealsCapped;
@@ -141,22 +185,31 @@ export function OpenAbout({
     >
       {count > 0 && (
         <GridList columns={FEED_COLUMNS} data-variant="history">
-          {flags.map((f) => (
-            <HistoryRow
-              key={f.flagId}
-              data-slot="open-flag"
-              when={<Tag>Inbox</Tag>}
-              who={ageInWords(f.createdAt, now)}
-              action={
-                <GoLink to={{ kind: 'flags' }} linkTo={linkTo}>
-                  Handle
-                </GoLink>
-              }
-            >
-              <b className="font-medium text-fg">{FLAG_WORDS[f.reason]} flag</b> on{' '}
-              {WORDS.flagOn[f.targetType] ?? WORDS.flagOnUnknown}
-            </HistoryRow>
-          ))}
+          {flags.map((f) => {
+            const label = flagLabel(f);
+            return (
+              <HistoryRow
+                key={f.flagId}
+                data-slot="open-flag"
+                when={<Tag>Inbox</Tag>}
+                who={ageInWords(f.createdAt, now)}
+                action={
+                  <GoLink to={{ kind: 'flags' }} linkTo={linkTo}>
+                    Handle
+                  </GoLink>
+                }
+              >
+                <b className="font-medium text-fg">{FLAG_WORDS[f.reason]} flag</b> on{' '}
+                {WORDS.flagOn[f.targetType] ?? WORDS.flagOnUnknown}
+                {label !== null && (
+                  <>
+                    {' · '}
+                    <span data-slot="open-flag-label">{label}</span>
+                  </>
+                )}
+              </HistoryRow>
+            );
+          })}
           {(appeals ?? []).map((a) => (
             <HistoryRow
               key={a.ticketId}
@@ -171,12 +224,15 @@ export function OpenAbout({
             >
               <b className="font-medium text-fg">Appeal</b> ·{' '}
               {a.status === 'open' ? WORDS.appealWaiting : a.status.replace(/_/g, ' ')}
+              {/* What they wrote is support's to read (D37): the read sends it only to a viewer who may. */}
+              <TheirWords text={a.body} />
             </HistoryRow>
           ))}
         </GridList>
       )}
       {pending && <Note data-slot="open-pending">{WORDS.flagsPending}</Note>}
       {capped && <Note data-slot="open-capped">{WORDS.openCapped}</Note>}
+      {flagLabelsCapped && <Note data-slot="open-labels-capped">{WORDS.flagLabelsCapped}</Note>}
     </Section>
   );
 }

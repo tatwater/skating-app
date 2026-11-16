@@ -33,6 +33,7 @@ const APPEAL = (i: number) => ({
   ticketId: `t${i}` as never,
   status: 'open' as const,
   createdAt: NOW - i * 60_000,
+  body: `Appeal number ${i}`,
 });
 
 describe('the one rule', () => {
