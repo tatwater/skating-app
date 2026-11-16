@@ -9,7 +9,6 @@ import {
 } from '@skating/core';
 import type { FunctionReturnType } from 'convex/server';
 
-import { shortAge } from '@/lib/ages';
 import { historyWhen, seasonYears } from '../../shell/consoleTime';
 import { settledEmpty } from '../answers';
 import { dateWords, firstName, momentWords, personName } from '../person/personModel';
@@ -252,7 +251,7 @@ export function standingRowView(row: StandingRow, now: number, tz?: string): Row
       },
       reasonLine(row.reason),
     ],
-    meta: shortAge(now - row.at),
+    meta: W.rowAge(now - row.at),
   };
 }
 
@@ -274,7 +273,7 @@ export function deletedRowView(row: DeletedRow, now: number, tz?: string): RowVi
         }`,
       },
     ],
-    meta: shortAge(now - row.deletedAt),
+    meta: W.rowAge(now - row.deletedAt),
   };
 }
 
@@ -307,7 +306,7 @@ export function reversedRowView(row: ReversedRow, now: number, tz?: string): Row
           ? { text: W.whoEndedUnrecorded }
           : { text: `${who} ${W.endedBy[how]}` },
     ],
-    meta: shortAge(now - row.endedAt),
+    meta: W.rowAge(now - row.endedAt),
   };
 }
 

@@ -3,8 +3,6 @@ import userEvent from '@testing-library/user-event';
 import fc from 'fast-check';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { assertSeeded } from '@/test/seeded';
-
 import type { ReadFailure } from '../../reads/consoleReads';
 import { RecordSheetView, type RecordSheetViewProps } from './RecordSheetView';
 import {
@@ -104,45 +102,74 @@ const foot = () => document.querySelector<HTMLElement>('[data-slot="record-foot"
 const lever = () => document.querySelector<HTMLElement>('[data-slot="record-lever"]');
 
 describe('the lever is exactly the server’s', () => {
-  const answer = fc.oneof(
-    fc.record(
-      { ok: fc.constant(true as const), needsReason: fc.boolean(), needsChoice: fc.boolean() },
-      { requiredKeys: ['ok', 'needsReason'] },
-    ),
-    fc.record({ ok: fc.constant(false as const), why: fc.stringMatching(/^[A-Z][a-z ]{3,30}\.$/) }),
-  );
-  const levers = fc.record(
-    Object.fromEntries(ACTION_ORDER.map((a) => [a, answer])) as Record<RecordAction, typeof answer>,
-    { requiredKeys: [] },
-  ) as fc.Arbitrary<RecordLevers>;
-
-  it('for any `can`: one button at most, the one offered, never one refused; else the server’s why', () => {
-    assertSeeded(
-      fc.property(levers, (can) => {
-        render(<RecordSheetView {...props({ item: { ...ITEM_HIDDEN, can } })} />);
-        try {
-          const drawn = document.querySelectorAll('[data-slot="record-lever"]');
-          const expected = leverOf(can);
-          expect(drawn.length).toBe(expected?.ok === true ? 1 : 0);
-          if (drawn.length === 1) {
-            const action = (drawn[0] as HTMLElement).dataset.action as RecordAction;
-            expect(can[action]?.ok).toBe(true);
-            expect(action).toBe(expected?.action);
-          }
-          const say = document.querySelector('[data-slot="record-say"]');
-          if (expected !== null && !expected.ok) {
-            const why = can[expected.action];
-            expect(say?.textContent).toBe(why !== undefined && !why.ok ? why.why : '');
-          } else {
-            expect(say).toBeNull();
-          }
-        } finally {
-          cleanup();
-        }
-      }),
-      // Each run draws the whole sheet; the model's own property (`recordModel.test`) runs 200.
-      { numRuns: 8 },
+  /** Draw the item's foot for `can`, and hold it to `leverOf`: one button at most, never a refusal. */
+  function checkDrawn(can: RecordLevers) {
+    // No rows: the foot is what is under test, and each draw stays cheap.
+    render(
+      <RecordSheetView
+        {...props({ list: { ...LIST, rows: [] }, item: { ...ITEM_HIDDEN, can } })}
+      />,
     );
+    try {
+      const drawn = document.querySelectorAll('[data-slot="record-lever"]');
+      const expected = leverOf(can);
+      expect(drawn.length).toBe(expected?.ok === true ? 1 : 0);
+      if (drawn.length === 1) {
+        const action = (drawn[0] as HTMLElement).dataset.action as RecordAction;
+        expect(can[action]?.ok).toBe(true);
+        expect(action).toBe(expected?.action);
+      }
+      const say = document.querySelector('[data-slot="record-say"]');
+      if (expected !== null && !expected.ok) {
+        const why = can[expected.action];
+        expect(say?.textContent).toBe(why !== undefined && !why.ok ? why.why : '');
+      } else {
+        expect(say).toBeNull();
+      }
+    } finally {
+      cleanup();
+    }
+  }
+
+  const yes = { ok: true, needsReason: false } as const;
+  const no = (why: string) => ({ ok: false, why }) as const;
+
+  // Every shape `can` takes, pinned: the drawn check is a few renders, not a search. The search over
+  // every `can` is the model's (`recordModel.test`, 200 runs a seed); the draw follows `leverOf`.
+  it.each<[string, RecordLevers]>([
+    ['nothing to offer', {}],
+    ['Restore', { restore: yes }],
+    ['Restore needing a choice', { restore: { ok: true, needsReason: false, needsChoice: true } }],
+    ['Hide again', { hideAgain: { ok: true, needsReason: true } }],
+    ['Overturn', { overturn: yes }],
+    ['Keep on the record', { keep: { ok: true, needsReason: true } }],
+    ['a refusal', { restore: no('Your account is being deleted.') }],
+    ['an offer beside a refusal', { restore: no('No.'), overturn: yes }],
+    ['two refusals', { keep: no('First.'), overturn: no('Second.') }],
+    ['two offers', { hideAgain: yes, keep: yes }],
+  ])('%s: the foot draws exactly the server’s lever', (_, can) => {
+    checkDrawn(can);
+  });
+
+  it('and a short random run over any `can`', () => {
+    const answer = fc.oneof(
+      fc.record(
+        { ok: fc.constant(true as const), needsReason: fc.boolean(), needsChoice: fc.boolean() },
+        { requiredKeys: ['ok', 'needsReason'] },
+      ),
+      fc.record({
+        ok: fc.constant(false as const),
+        why: fc.stringMatching(/^[A-Z][a-z ]{3,30}\.$/),
+      }),
+    );
+    const levers = fc.record(
+      Object.fromEntries(ACTION_ORDER.map((a) => [a, answer])) as Record<
+        RecordAction,
+        typeof answer
+      >,
+      { requiredKeys: [] },
+    ) as fc.Arbitrary<RecordLevers>;
+    fc.assert(fc.property(levers, checkDrawn), { numRuns: 4 });
   });
 });
 

@@ -46,45 +46,71 @@ describe('the one rule', () => {
 });
 
 describe('Open about this person, over every state of its read', () => {
-  it('is drawn unless the answer is complete and empty, and never says zero', () => {
-    assertSeeded(
+  type State = [
+    flags: number,
+    appeals: number | null,
+    flagsCapped: boolean,
+    appealsCapped: boolean,
+    pending: boolean,
+  ];
+  /** Draw the block for one state of its read, and hold it to the one rule. */
+  function check(...[flags, appeals, flagsCapped, appealsCapped, pending]: State) {
+    const person = {
+      ...ROB,
+      pending: pending ? (['flagSubjects'] as const) : ([] as const),
+      open: {
+        flags: Array.from({ length: flags }, (_, i) => FLAG(i)),
+        flagsCapped,
+        appeals: appeals === null ? null : Array.from({ length: appeals }, (_, i) => APPEAL(i)),
+        appealsCapped: appeals !== null && appealsCapped,
+      },
+    } as unknown as typeof ROB;
+    const { container, unmount } = render(<OpenAbout person={person} now={NOW} linkTo={linkTo} />);
+    try {
+      const block = container.querySelector('[data-slot="open-about"]');
+      const count = flags + (appeals ?? 0);
+      const capped = flagsCapped || (appeals !== null && appealsCapped);
+      expect(block === null).toBe(count === 0 && !capped && !pending);
+      if (block !== null) {
+        // A floor or a figure not ready says so in words; a zero is never drawn.
+        if (capped) expect(block.querySelector('[data-slot="open-capped"]')).not.toBeNull();
+        if (pending) expect(block.querySelector('[data-slot="open-pending"]')).not.toBeNull();
+        expect(block.querySelector('[data-slot="section-count"]')?.textContent ?? '').not.toMatch(
+          /^0\+?$/,
+        );
+      }
+    } finally {
+      unmount();
+    }
+  }
+
+  // Each way the block can answer, pinned — a few renders, not a search (the rule itself is
+  // searched above, as pure code).
+  it.each<State>([
+    [0, null, false, false, false],
+    [0, 0, false, false, false],
+    [1, null, false, false, false],
+    [0, 2, false, false, false],
+    [0, 0, true, false, false],
+    [0, 0, false, true, false],
+    [0, null, false, true, false],
+    [0, 0, false, false, true],
+    [2, 1, true, true, true],
+  ])('flags %i, appeals %s, capped %s/%s, pending %s', (...state) => {
+    check(...state);
+  });
+
+  it('and a short random run over every state', () => {
+    fc.assert(
       fc.property(
         fc.nat(2),
         fc.option(fc.nat(2), { nil: null }),
         fc.boolean(),
         fc.boolean(),
         fc.boolean(),
-        (flags, appeals, flagsCapped, appealsCapped, pending) => {
-          const person = {
-            ...ROB,
-            pending: pending ? (['flagSubjects'] as const) : ([] as const),
-            open: {
-              flags: Array.from({ length: flags }, (_, i) => FLAG(i)),
-              flagsCapped,
-              appeals:
-                appeals === null ? null : Array.from({ length: appeals }, (_, i) => APPEAL(i)),
-              appealsCapped: appeals !== null && appealsCapped,
-            },
-          } as unknown as typeof ROB;
-          const { container, unmount } = render(
-            <OpenAbout person={person} now={NOW} linkTo={linkTo} />,
-          );
-          const block = container.querySelector('[data-slot="open-about"]');
-          const count = flags + (appeals ?? 0);
-          const capped = flagsCapped || (appeals !== null && appealsCapped);
-          expect(block === null).toBe(count === 0 && !capped && !pending);
-          if (block !== null) {
-            // A floor or a figure not ready says so in words; a zero is never drawn.
-            if (capped) expect(block.querySelector('[data-slot="open-capped"]')).not.toBeNull();
-            if (pending) expect(block.querySelector('[data-slot="open-pending"]')).not.toBeNull();
-            expect(
-              block.querySelector('[data-slot="section-count"]')?.textContent ?? '',
-            ).not.toMatch(/^0\+?$/);
-          }
-          unmount();
-        },
+        (...state) => check(...state),
       ),
-      { numRuns: 40 },
+      { numRuns: 6 },
     );
   });
 });

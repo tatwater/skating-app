@@ -1,3 +1,5 @@
+import { shortAge } from '@/lib/ages';
+
 import { floorText, NOT_RECORDED, STILL_PREPARING } from '../answers';
 
 /**
@@ -79,6 +81,11 @@ export const RECORD_WORDS = {
   listLabel: (tab: string) => `${tab} items`,
 
   // ── A row ──
+  /**
+   * A row's age at its right: the console's short form ("4 d", "209 d"). The boards draw months
+   * past a few weeks ("7 mo"); that is the founder's call, and this is the one place it changes.
+   */
+  rowAge: (ms: number) => shortAge(ms),
   /** A decision's word, as its chip and its place line say it. */
   verdict: { hidden: 'hidden', removed: 'removed', retracted: 'retracted' } as const,
   /** The author's own withdrawal: a deletion, an alert's retraction. */
