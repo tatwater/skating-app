@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DeploymentTarget } from './deployment';
-import { MAX_FORWARDED_FAILURES, RunLogger } from './runLogger';
+import { DRY_RUN_NOTE, MAX_FORWARDED_FAILURES, RunLogger } from './runLogger';
 
 const DEV: DeploymentTarget = { label: 'dev:agile-bee-397', isDev: true, isProd: false };
 
@@ -180,5 +180,50 @@ describe('RunLogger', () => {
     logger.count('inserted', 5);
     expect(() => logger.flush()).not.toThrow();
     expect(rec.warnings.join()).toContain('progress failed');
+  });
+
+  describe('a dry run’s row always says it wrote nothing', () => {
+    /** The notes the row holds once closed: the finish's when it sent any, else the start's. */
+    const stored = (rec: ReturnType<typeof recorder>) => {
+      const finish = rec.calls.find((c) => c.fn === 'importRuns:finish')?.args;
+      return (finish?.notes ?? rec.calls[0]?.args.notes) as string[] | undefined;
+    };
+
+    it.each([
+      ['no notes at its close', undefined],
+      ['an empty list of notes', []],
+      ['trimmed-id notes', ['osm/node/1: 12 catalog ids, the oldest 2 dropped']],
+    ])('closed with %s, it ends with the label, and is not applied', (_, notes) => {
+      const rec = recorder();
+      const logger = makeLogger(rec, { dryRun: true, notes: ['Matched offline.'] });
+      logger.start();
+      logger.succeed(notes);
+      expect(stored(rec)?.at(-1)).toBe(DRY_RUN_NOTE);
+      for (const note of notes ?? []) expect(stored(rec)).toContain(note);
+      expect(rec.calls.find((c) => c.fn === 'importRuns:finish')?.args.applied).toBe(false);
+    });
+
+    it('a failed dry run says it too', () => {
+      const rec = recorder();
+      const logger = makeLogger(rec, { dryRun: true });
+      logger.start();
+      logger.failed(new Error('2 batch(es) failed'), ['a note']);
+      expect(stored(rec)?.at(-1)).toBe(DRY_RUN_NOTE);
+    });
+
+    it('an applied run never carries it, and says nothing of applied', () => {
+      for (const dryRun of [false, undefined]) {
+        const rec = recorder();
+        const logger = makeLogger(rec, { ...(dryRun === false && { dryRun }), notes: ['x'] });
+        logger.start();
+        logger.succeed(['y']);
+        expect(
+          rec.calls.flatMap((c) => (c.args.notes as string[] | undefined) ?? []),
+        ).not.toContain(DRY_RUN_NOTE);
+        expect(rec.calls.find((c) => c.fn === 'importRuns:finish')?.args).not.toHaveProperty(
+          'applied',
+        );
+      }
+    });
   });
 });

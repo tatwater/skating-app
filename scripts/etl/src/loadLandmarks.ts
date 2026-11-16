@@ -112,8 +112,9 @@ function main(): void {
     stages: [],
     notes: [
       'Matched to bodies offline against landmarks:listBodyGeometry; written per body by landmarks:importBatch.',
-      apply ? 'applied' : 'dry run — nothing written',
     ],
+    // The row says it wrote nothing however it closes — its trimmed-id notes replace these.
+    dryRun: !apply,
   });
   logger.start();
   activeLogger = logger;

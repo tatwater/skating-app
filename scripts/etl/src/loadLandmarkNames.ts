@@ -50,7 +50,7 @@ function main(): void {
     target,
     call: convexRun,
     stages: [],
-    notes: [apply ? 'applied' : 'dry run — nothing written'],
+    dryRun: !apply,
   });
   logger.start();
   const totals: Counts = { created: 0, refreshed: 0, unchanged: 0, decidedHeld: 0 };
