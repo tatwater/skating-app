@@ -231,8 +231,8 @@ export function placesOf(geo: Doc<'bodyGeoFacts'> | null): Doc<'bodyGeoFacts'> |
 
 /**
  * The computed places with a moderator's pinned towns merged in (B01-3g) — after the computed ones,
- * never twice (keyed on name and state), their counties and states added. Kept apart in storage, so a
- * pin's write and a recompute each rebuild only their own half.
+ * never twice (keyed by boundary, B01-3l), their counties and states added. Kept apart in storage,
+ * so a pin's write and a recompute each rebuild only their own half.
  */
 function withPinnedTowns(geo: Doc<'bodyGeoFacts'>): Doc<'bodyGeoFacts'> {
   const pins = geo.pinnedTowns ?? [];
@@ -275,12 +275,33 @@ function withPinnedTowns(geo: Doc<'bodyGeoFacts'>): Doc<'bodyGeoFacts'> {
   return { ...geo, towns, townStates, townIds, townEntries, counties, states };
 }
 
+/** Subdivisions of one name in one state a kind check reads at most — real states hold two or three. */
+export const NAMESAKES_READ = 8;
+
+/**
+ * Whether the loaded subdivisions of `state` named `name` carry more than one kind (B01-3l) — the one
+ * rule for when a town's label shows its kind. Two of one kind (New York's two Clinton towns) gain
+ * nothing from it and read as before; Plattsburgh city and town do. Reads at most
+ * {@link NAMESAKES_READ} boundaries (each its polygon) on `by_level_state_name`.
+ */
+export async function kindsDiffer(ctx: QueryCtx, state: string, name: string): Promise<boolean> {
+  const namesakes = await ctx.db
+    .query('adminAreas')
+    .withIndex('by_level_state_name', (q) =>
+      q.eq('level', 'town').eq('state', state).eq('name', name),
+    )
+    .take(NAMESAKES_READ);
+  const kinds = new Set(namesakes.map((a) => townKindOf(a.name, a.fullName) ?? ''));
+  return namesakes.length > 1 && kinds.size > 1;
+}
+
 /**
  * **A moderator's pinned towns as the facts hold them** (B01-3g): each key's town row now — name,
  * state, boundary and county (from its GEOID) — and the keys no town row has now (`pinnedMissing`),
- * kept to be shown rather than dropped. At most eight keys: a town read each, and each county read
- * once however many pinned towns share it (boundary rows carry their polygons, so every read counts
- * against the writer's budget).
+ * kept to be shown rather than dropped. At most eight keys: a town read each, each county read once
+ * however many pinned towns share it, and — for a town whose full name gives a kind — up to two
+ * namesake rows once per name (B01-3l). Boundary rows carry their polygons, so every read counts
+ * against the writer's budget.
  */
 export async function pinnedFactsFor(
   ctx: QueryCtx,
@@ -292,6 +313,7 @@ export async function pinnedFactsFor(
   const pinnedTowns: NonNullable<Doc<'bodyGeoFacts'>['pinnedTowns']> = [];
   const pinnedMissing: string[] = [];
   const countyNames = new Map<string, string | null>();
+  const sharedNames = new Map<string, boolean>();
   for (const key of keys) {
     const town = await ctx.db
       .query('adminAreas')
@@ -311,14 +333,19 @@ export async function pinnedFactsFor(
     }
     const county = countyKey === null ? null : (countyNames.get(countyKey) ?? null);
     // Its kind when another subdivision of its state shares its name (B01-3l), as the computed
-    // half's entries carry it — one label for a pinned town and a computed one.
-    const namesakes = await ctx.db
-      .query('adminAreas')
-      .withIndex('by_level_state_name', (q) =>
-        q.eq('level', 'town').eq('state', town.state).eq('name', town.name),
-      )
-      .take(2);
-    const kind = namesakes.length > 1 ? townKindOf(town.name, town.fullName) : undefined;
+    // half's entries carry it — one label for a pinned town and a computed one. The namesakes are
+    // read only when its full name gives a kind (none: nothing to show), and once per name.
+    const candidate = townKindOf(town.name, town.fullName);
+    let kind: string | undefined;
+    if (candidate !== undefined) {
+      const nameKey = JSON.stringify([town.state, town.name]);
+      let shared = sharedNames.get(nameKey);
+      if (shared === undefined) {
+        shared = await kindsDiffer(ctx, town.state, town.name);
+        sharedNames.set(nameKey, shared);
+      }
+      if (shared) kind = candidate;
+    }
     pinnedTowns.push({
       key,
       name: town.name,
@@ -384,7 +411,17 @@ export function townsWithStateOf(
 export function townNamesOf(
   geo: Pick<Doc<'bodyGeoFacts'>, 'towns' | 'townStates' | 'townIds' | 'townEntries'> | null,
 ): string[] | null {
-  return townRowsOf(geo)?.map(({ name }) => name) ?? null;
+  const rows = townRowsOf(geo);
+  if (rows === null) return null;
+  // A list of names carries no state: a border lake's Franklin, VT and Franklin, NH would read the
+  // same, so a name two states share in this list shows its state — and nothing else changes.
+  const statesOf = new Map<string, Set<string | null>>();
+  for (const { name, state } of rows) {
+    statesOf.set(name, (statesOf.get(name) ?? new Set()).add(state));
+  }
+  return rows.map(({ name, state }) =>
+    (statesOf.get(name)?.size ?? 0) > 1 && state !== null ? `${name}, ${state}` : name,
+  );
 }
 
 /**
@@ -397,9 +434,10 @@ export function hasTownEntries(geo: Pick<Doc<'bodyGeoFacts'>, 'towns' | 'townEnt
 }
 
 /**
- * A body's towns, each with its state and its boundary, in one order — keyed on name and state where
- * stored ({@link hasTownEntries}), else the name-keyed lists before it (`null` state or boundary on a
- * row computed before towns carried them). `null` when nothing was computed.
+ * A body's towns, each with its state and its boundary, in one order — one per boundary where the
+ * entries are stored ({@link hasTownEntries}), each named by `townName`; else the name-keyed lists
+ * before them (`null` state or boundary on a row computed before towns carried them). `null` when
+ * nothing was computed.
  */
 export function townRowsOf(
   geo: Pick<Doc<'bodyGeoFacts'>, 'towns' | 'townStates' | 'townIds' | 'townEntries'> | null,

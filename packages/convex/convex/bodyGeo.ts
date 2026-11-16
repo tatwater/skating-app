@@ -37,6 +37,7 @@ import { nextAttemptState } from './lib/attempts';
 import {
   coverTiles,
   hasTownEntries,
+  kindsDiffer,
   markGeoStale,
   outlineStamp,
   PLACES_RULE,
@@ -207,28 +208,23 @@ export const townPage = internalQuery({
   },
 });
 
-/** Town names one sharing page asks about — each reads at most two boundaries, charged as a town page. */
-export const SHARING_PAGE = 5;
+/**
+ * Town names one sharing page asks about — each reads at most {@link NAMESAKES_READ} boundaries, so a
+ * page is one name: charged as a town page, inside its eleven documents.
+ */
+export const SHARING_PAGE = 1;
 
 /**
- * Which of these town names another loaded subdivision of the same state shares (B01-3l) — an
- * equality on `by_level_state_name`, two rows at most each. What decides whether a town's label shows
- * its kind ("Plattsburgh (city)").
+ * Which of these town names its state's subdivisions share **with a kind of their own** (B01-3l) —
+ * `kindsDiffer` on `by_level_state_name`. What decides whether a town's label shows its kind
+ * ("Plattsburgh (city)"): only where a kind tells the namesakes apart.
  */
 export const townNamesShared = internalQuery({
   args: { towns: v.array(v.object({ state: v.string(), name: v.string() })) },
   handler: async (ctx, { towns }) => {
     if (towns.length > SHARING_PAGE) throw new ConvexError(`at most ${SHARING_PAGE} names a page`);
     const out: boolean[] = [];
-    for (const { state, name } of towns) {
-      const rows = await ctx.db
-        .query('adminAreas')
-        .withIndex('by_level_state_name', (q) =>
-          q.eq('level', 'town').eq('state', state).eq('name', name),
-        )
-        .take(2);
-      out.push(rows.length > 1);
-    }
+    for (const { state, name } of towns) out.push(await kindsDiffer(ctx, state, name));
     return out;
   },
 });
@@ -373,16 +369,31 @@ async function computePlaces(
     for (const { polygon: _, ...town } of rows) byId.set(town.id, town);
   }
   const reached = run.result().ids.map((id) => byId.get(id) as ReachedTown);
-  // Whether each reached town's name is shared in its state (B01-3l): a page of names at a time.
-  for (let k = 0; k < reached.length; k += SHARING_PAGE) {
-    const page = reached.slice(k, k + SHARING_PAGE);
+  // Whether each reached town's name is shared in its state (B01-3l): a page of names at a time, each
+  // asked once, and only of a listed town whose full name gives a kind — with none there is nothing
+  // to show, so its two boundary reads would be wasted (every town, before the full names load).
+  const nameKey = (t: { state: string; name: string }) => JSON.stringify([t.state, t.name]);
+  const asks = [
+    ...new Map(
+      reached
+        .filter(
+          (t) =>
+            !isUndefinedSubdivision(t.externalId) && townKindOf(t.name, t.fullName) !== undefined,
+        )
+        .map((t) => [nameKey(t), { state: t.state, name: t.name }] as const),
+    ).values(),
+  ];
+  const sharedNames = new Set<string>();
+  for (let k = 0; k < asks.length; k += SHARING_PAGE) {
+    const page = asks.slice(k, k + SHARING_PAGE);
     const shared: boolean[] = await ctx.runQuery(internal.bodyGeo.townNamesShared, {
-      towns: page.map((t) => ({ state: t.state, name: t.name })),
+      towns: page,
     });
     page.forEach((t, i) => {
-      if (shared[i] === true) t.shared = true;
+      if (shared[i] === true) sharedNames.add(nameKey(t));
     });
   }
+  for (const t of reached) if (sharedNames.has(nameKey(t))) t.shared = true;
   const keys = [
     ...new Set(
       reached

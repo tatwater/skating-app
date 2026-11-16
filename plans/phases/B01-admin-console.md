@@ -4008,15 +4008,22 @@ Now a town entry is keyed by its boundary (`placesFrom`, the pins' merge), and t
 state with one name are told apart by their kind — TIGER's legal class, the suffix of its full name
 (`NAMELSAD`, "Plattsburgh city") past its name, read by `townKindOf`, never guessed. `adminAreas` keeps
 the full name (`fullName`, optional, written by the loader on upsert; a re-load that only gains it marks
-nothing), an index (`by_level_state_name`) says whether a state has two towns of a name, and an entry
-carries its `kind` only then. One function names a town for every reader (`townName` / `townLabel`):
+nothing), an index (`by_level_state_name`) finds a town's namesakes in its state, and an entry carries its `kind`
+only where they carry more than one kind (`kindsDiffer`) — two Clinton towns gain nothing from
+"(town)" and read as before. One function names a town for every reader (`townName` / `townLabel`):
 "Plattsburgh (city), NY" and "Plattsburgh (town), NY"; every other town reads as before. The lists the
 console reads (the frame, Places, the preview, town lines, a removed body's towns, the pins) take their
-names from the entries, one per boundary; the facts' name-keyed `towns` stays for the pages written
-before. Before the re-load brings the full names, the two Plattsburghs are two entries reading the
-same — the count right, the label not yet. There is no town filter: the Bodies list filters by state;
-were one added, picking one Plattsburgh would match only its own bodies. The web keys its town lists by
-place, not name. **Left keyed by name:** two same-kind subdivisions of one state with one name (TIGER
+names from the entries, one per boundary (`townNamesOf`; a name two states share in one list shows its
+state there — Franklin, VT and Franklin, NH — and nothing else changes); the facts' name-keyed `towns`
+stays for the pages written before. Before the re-load brings the full names, the two Plattsburghs are two entries reading the
+same — the count right, the label not yet. **The recompute is a step, not the sweep:** a row stored
+before keeps its folded entries (B01-3d's entries still pass the drift repair's `hasTownEntries`), and
+the re-load that brings the full names marks nothing, so after the TIGER re-fetch and each state's
+load, run `bodyGeo:seedAll` then `bodyGeo:computeAll`. A town's namesakes are read (at most eight
+boundary rows, polygons and all, one name a query) only when its full name gives a kind, once per name. There is no town filter: the
+Bodies list filters by state; were one added, picking one Plattsburgh would match only its own bodies.
+The web keys its town lists by name and occurrence (the reads return names, not boundaries), so two
+reading the same never share a key. **Left keyed by name:** two same-kind subdivisions of one state with one name (TIGER
 has same-named towns in different counties) would still read the same — the county, which a pinned
 town carries and a computed entry does not, would tell them apart; whether any pair touches one body
 is not counted yet (owed).
