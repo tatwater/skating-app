@@ -2698,6 +2698,18 @@ only; the sheet itself is the web's next pass. Every shape change is additive ex
   verdict or set a clock found a gap. A run by hand without a lease still works and concludes nothing.
   The two-runs property (`peopleRuns.test.ts`) covers it; the procedure's step 2 now runs four.
 
+**B01-4d: a page always moves on** (Greptile on #134, each as its class). A page that says
+`isDone: false` has returned a row or moved its cursor: its first row is read whole — every stage, on
+its own — before any other row is admitted (`headFirst`; its worst case fits what the rows leave of a
+fresh budget, which `recordRounds.test.ts` holds for every list), and a document many rows share is
+read once a page (`PageCache`: each Report a comment or a Post names its body through, each library
+row, each People row) — fifty deleted comments on one ~250 KiB Report once returned the same empty
+page for ever. A property drives any mix of kinds and sizes to their worst through every list (each
+pages to its end, every item once). And a window is selected in the order it is shown: the pane's
+decisions come newest first by when they were made (`contentVerdicts.by_target_at`, on the required
+`at`) beside the standing one, never fifty by insertion time sorted afterward; the lists already
+range over the times they show (`at`, `endedAt`, the withdrawal time).
+
 **B01-4d: every read, weighed.** Each page reserves its rows' worst cases in waves (`ReadBudget.waves`)
 over the request's budget (11 MiB after the caller's profile) and hands back what didn't come; a row
 whose reads the budget can't reserve ends the page there. Rounds measured on fifty rows of the dearest
@@ -2705,9 +2717,9 @@ kind (`recordRounds.test.ts`, which states each worst case from the budget):
 
 | Read | Rows · documents per row (declared worst) | Rows a wave | Worst rounds, a page of 50 |
 | --- | --- | --- | --- |
-| `personVerdicts` | 51 verdicts; decision R + item (≤ 1 MiB); comment/Post → its Report; library row and People rows once a page | 5 (a Report) | 13 |
-| `personReversed` | 51 verdicts; decision R + ending R + item; a gone item → its erasure row; then the undo engine's first step (main's: calls and documents counted, bytes not) | 3 | 23 |
-| `personDeleted` | report 2, post 1, comment 50, hazard 1, alert 50 a merged page (narrowed to one kind: 4, 2, 50, 4, 50); each row's hold check and Report | 10 | 8 |
+| `personVerdicts` | 51 verdicts; decision R + item (≤ 1 MiB); comment/Post → its Report; library row and People rows once a page | 5 (a Report) | 17 |
+| `personReversed` | 51 verdicts; decision R + ending R + item; a gone item → its erasure row; then the undo engine's first step (main's: calls and documents counted, bytes not) | 3 | 27 |
+| `personDeleted` | report 2, post 1, comment 50, hazard 1, alert 50 a merged page (narrowed to one kind: 4, 2, 50, 4, 50); each row's hold check and Report | 10 | 9 |
 | `recordCounts` | Reversed 501, Reports by real weight (512 KiB, one `paginate`), comments 30 and alerts 30, together; then Posts and hazards by real weight in steps (each its share of what is left, at most 7); each row's hold check | — | 11 |
 | `item` | the item, ≤ 51 decisions (each R, ending R), its Report, a Post's ≤ 10 members (Report + newest row) | — | a fixed few |
 
@@ -2742,8 +2754,8 @@ refusal in `setModerationStatus`.
 **After merge, on dev:** the People procedure above. Where its backfills already ran before this
 deployed, the check names `peopleJobs:backfillVerdicts` in `rerun` (step 4 runs it alone); until it
 concludes, the record's reads say `pending: ['verdicts']`. The new indexes (`contentVerdicts`
-`by_subject_reversed`, `by_subject_reversed_type`, `by_target_superseded`; `accessAlerts`
-`by_author_retracted`) build with the deploy.
+`by_subject_reversed`, `by_subject_reversed_type`, `by_target_superseded`, `by_target_at`;
+`accessAlerts` `by_author_retracted`) build with the deploy.
 
 ### The B01-2 server register (owed to the server agent)
 
