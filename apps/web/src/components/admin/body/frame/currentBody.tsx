@@ -76,19 +76,31 @@ export type BodyHold = {
   subject: string | undefined;
 };
 
-/** The binding current when the subtree mounted — never a later one. */
+/**
+ * The binding current when the subtree mounted — never a later one. **Here** is the console alive
+ * *and* the holder still mounted: a tab another tab replaced, a card closed, a dialog's page gone
+ * can't say a result in place, so a refusal for it is said in a toast naming the body — never set
+ * on a page no one can see.
+ */
 export function useBodyHold(): BodyHold {
   const current = useContext(BindingContext);
   const [held] = useState(current);
+  const [mounted] = useState(() => ({ now: false }));
+  useLayoutEffect(() => {
+    mounted.now = true;
+    return () => {
+      mounted.now = false;
+    };
+  }, [mounted]);
   return useMemo(
     () => ({
-      here: () => held === null || held.alive,
+      here: () => mounted.now && (held === null || held.alive),
       body: held?.body ?? null,
       get subject() {
         return held?.name;
       },
     }),
-    [held],
+    [held, mounted],
   );
 }
 

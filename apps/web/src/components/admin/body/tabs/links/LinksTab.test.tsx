@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { stubJsdomAnimations } from '../jsdomStubs';
@@ -28,6 +28,11 @@ const role = vi.hoisted(() => ({ caps: new Set<string>() }));
 vi.mock('@/lib/useRole', () => ({ useRole: () => ({ can: (c: string) => role.caps.has(c) }) }));
 const undo = vi.hoisted(() => ({ announce: vi.fn(async () => {}) }));
 vi.mock('@/components/admin/shell/undo', () => ({ useUndo: () => undo }));
+const toasts = vi.hoisted(() => [] as { title: string; description?: string }[]);
+vi.mock('@/components/kit/toast', async (original) => ({
+  ...(await original<typeof import('@/components/kit/toast')>()),
+  toast: (t: { title: string; description?: string }) => toasts.push(t),
+}));
 
 import type { Id } from '@skating/convex/dataModel';
 import { ConvexError } from 'convex/values';
@@ -46,6 +51,7 @@ beforeEach(() => {
   convex.results.clear();
   convex.mutations.clear();
   undo.announce.mockClear();
+  toasts.length = 0;
   role.caps = new Set(['body.identity']);
 });
 
@@ -121,6 +127,33 @@ describe('LinksTab', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Done' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('at most 8');
     expect(undo.announce).not.toHaveBeenCalled();
+  });
+
+  it('a refusal that lands after its tab has gone is said once, in a toast naming what — never on a page no one sees', async () => {
+    convex.results.set('waterBodies:get', { available: true, body: { _id: BODY, ...MASCOMA } });
+    let refuse: () => void = () => {};
+    convex.mutations.set(
+      'waterBodies:setReferenceLinks',
+      vi.fn(
+        () =>
+          new Promise((_, reject) => {
+            refuse = () => reject(new ConvexError('A body carries at most 8 reference links'));
+          }),
+      ),
+    );
+    const { rerender } = render(<LinksTab bodyId={BODY} />);
+    await userEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
+    await userEvent.type(screen.getByPlaceholderText('What the link is, as skaters read it'), '!');
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }));
+    // Another tab: the Links page goes while its save is out.
+    rerender(<div />);
+    await act(async () => refuse());
+    await act(async () => new Promise((r) => setTimeout(r, 0)));
+    expect(toasts).toEqual([
+      expect.objectContaining({
+        description: 'The links: A body carries at most 8 reference links',
+      }),
+    ]);
   });
 
   it('an editor open on one body never opens on the next body’s link', async () => {
