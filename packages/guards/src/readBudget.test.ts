@@ -123,9 +123,9 @@ test('the lint sees a raw read, and passes a charged one', () => {
     unchargedReads("await requestBudget(ctx, OPEN).one('profile', () => ctx.db.get(id));"),
   ).toEqual([]);
   // The record sheet's two-part read charges each part through `reads.take`.
-  expect(
-    unchargedReads("await takeAfter(reads, 'verdict', n, null, (m) => q().take(m));"),
-  ).toEqual([]);
+  expect(unchargedReads("await takeAfter(reads, 'verdict', n, null, (m) => q().take(m));")).toEqual(
+    [],
+  );
   expect(unchargedReads('takeAfter(reads, k, n, a, b); await q().take(5);')).toHaveLength(1);
   // Opening it is no charge: a read beside it, outside a charging call, is still caught.
   expect(unchargedReads('const b = requestBudget(ctx); await ctx.db.get(id);')).toHaveLength(1);
