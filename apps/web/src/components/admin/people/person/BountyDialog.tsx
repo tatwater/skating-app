@@ -5,6 +5,7 @@ import { NumberField } from '@/components/kit/number-field';
 import { RadioGroup, RadioRow } from '@/components/kit/radio';
 
 import { AskDialog } from './AskDialog';
+import type { ActOutcome } from './useActing';
 import { WORDS } from './personWords';
 
 /**
@@ -22,7 +23,7 @@ export type BountyDialogProps = {
   current: number | null;
   /** The default every account has. */
   defaultLimit: number;
-  onConfirm: (args: { limit: number | null; reason: string }) => Promise<string | null>;
+  onConfirm: (args: { limit: number | null; reason: string }) => Promise<ActOutcome>;
 };
 
 /** Whether moving from `current` to `next` lowers the limit in force — and so asks why. */

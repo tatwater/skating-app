@@ -2,7 +2,7 @@ import { useMutation } from 'convex/react';
 import type { FunctionReference } from 'convex/server';
 import { useCallback } from 'react';
 
-import { toast } from '@/components/kit/toast';
+import { type ToastManager, toast, toastManager } from '@/components/kit/toast';
 
 import { errorText } from './adminUi';
 
@@ -30,13 +30,20 @@ export type RefusalWords = { title: string; description?: string };
  * Says a refusal: a toast in the failure's tone that never times out (its *Dismiss* closes it), with
  * no Undo — a refusal changed nothing, so there is nothing to undo.
  */
-export function sayRefusal({ title, description }: RefusalWords): void {
-  toast({
-    title,
-    ...(description !== undefined && description !== '' && { description }),
-    tone: 'bad',
-    timeout: 0,
-  });
+export function sayRefusal(
+  { title, description }: RefusalWords,
+  /** The app's one queue, unless a story or a test draws its own. */
+  manager: ToastManager = toastManager,
+): void {
+  toast(
+    {
+      title,
+      ...(description !== undefined && description !== '' && { description }),
+      tone: 'bad',
+      timeout: 0,
+    },
+    manager,
+  );
 }
 
 /**
@@ -48,13 +55,13 @@ export function sayRefusal({ title, description }: RefusalWords): void {
 export async function said<T>(
   write: () => Promise<T>,
   words: (why: string) => RefusalWords,
-  passOn?: (err: unknown) => boolean,
+  { passOn, manager }: { passOn?: (err: unknown) => boolean; manager?: ToastManager } = {},
 ): Promise<Said<T>> {
   try {
     return { landed: true, value: await write() };
   } catch (err) {
     if (passOn?.(err) === true) throw err;
-    sayRefusal(words(errorText(err)));
+    sayRefusal(words(errorText(err)), manager);
     return { landed: false };
   }
 }

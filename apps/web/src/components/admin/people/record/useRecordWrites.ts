@@ -1,7 +1,7 @@
 import type { Id } from '@skating/convex/dataModel';
 import { useCallback } from 'react';
 
-import { errorText } from '../../adminUi';
+import { said } from '../../said';
 import type { Receipt } from '../../shell/undo';
 import {
   type ItemRead,
@@ -17,8 +17,9 @@ import { RECORD_WORDS as W } from './recordWords';
 /**
  * **The record sheet's one write path.** Each lever goes to its server write — Restore and Hide
  * again (`moderation.setModerationStatus`), Overturn (`overturnVerdict`), Keep on the record
- * (`keepOnRecord`) — and on success the shell's toast shows the receipt; on refusal the server's own
- * words come back to the control that asked.
+ * (`keepOnRecord`) — and on success the shell's toast shows the receipt; a refusal is a toast naming
+ * the person, in the server's own words (D268), and the control that asked learns only that it
+ * didn't land.
  *
  * - **Nothing optimistic**: it waits for the server; the reads move on their own once it lands.
  * - **Undo only when the write says so**: a write that answers `undoable: true` names its row and
@@ -83,43 +84,42 @@ export function useRecordWrites({
   now: number;
 }) {
   return useCallback(
-    async (target: Target, write: RecordWrite): Promise<string | null> => {
+    async (target: Target, write: RecordWrite): Promise<boolean> => {
       const { targetType, targetId } = target;
-      let answered: RecordWriteResult | { actionId: string; eraseAt: number | null };
-      try {
-        switch (write.kind) {
-          case 'restore':
-          case 'hideAgain': {
-            // Only a moderator's status levers reach here, and an alert has none (its axis is its
-            // retraction): the server's `can` never offers Restore or Hide again on one.
-            /* v8 ignore next */
-            if (targetType === 'accessAlert') return W.somethingWrong;
-            answered = await server.setStatus({
-              targetType,
-              targetId,
-              status: write.kind === 'restore' ? 'visible' : 'hidden',
-              ...(write.kind === 'hideAgain' && { reason: write.reason }),
-              ...(write.kind === 'restore' &&
-                write.withReportIds !== undefined && {
-                  withReportIds: write.withReportIds as Id<'reports'>[],
-                }),
-            });
-            break;
+      const sent = await said(
+        async (): Promise<RecordWriteResult | { actionId: string; eraseAt: number | null }> => {
+          switch (write.kind) {
+            case 'restore':
+            case 'hideAgain': {
+              // Only a moderator's status levers reach here, and an alert has none (its axis is its
+              // retraction): the server's `can` never offers Restore or Hide again on one.
+              /* v8 ignore next */
+              if (targetType === 'accessAlert') throw new Error(W.somethingWrong);
+              return server.setStatus({
+                targetType,
+                targetId,
+                status: write.kind === 'restore' ? 'visible' : 'hidden',
+                ...(write.kind === 'hideAgain' && { reason: write.reason }),
+                ...(write.kind === 'restore' &&
+                  write.withReportIds !== undefined && {
+                    withReportIds: write.withReportIds as Id<'reports'>[],
+                  }),
+              });
+            }
+            case 'overturn':
+              return server.overturn({
+                targetType,
+                targetId,
+                ...(write.reason !== undefined && { reason: write.reason }),
+              });
+            case 'keep':
+              return server.keep({ targetType, targetId, reason: write.reason });
           }
-          case 'overturn':
-            answered = await server.overturn({
-              targetType,
-              targetId,
-              ...(write.reason !== undefined && { reason: write.reason }),
-            });
-            break;
-          case 'keep':
-            answered = await server.keep({ targetType, targetId, reason: write.reason });
-            break;
-        }
-      } catch (err) {
-        return errorText(err);
-      }
+        },
+        (why) => ({ title: W.refusalOf(subjectName(subject)), description: why }),
+      );
+      if (!sent.landed) return false;
+      const answered = sent.value;
       const words = receiptWords(
         write,
         {
@@ -150,7 +150,7 @@ export function useRecordWrites({
         here,
       ).catch(() => {});
       if (write.kind === 'restore' && 'undoable' in answered) onRestored(target, answered);
-      return null;
+      return true;
     },
     [server, announce, subject, placeOf, comesBackOf, onRestored, now, here],
   );

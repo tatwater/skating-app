@@ -16,8 +16,11 @@ import { receiptFor } from './receipts';
 
 export type PersonBoardProps = Omit<PersonViewProps, 'onAct' | 'onUndo' | 'now'> & {
   now?: number;
-  /** Heard on every write, for a story's assertions; resolves to a refusal, or `null`. */
-  onWrite?: (action: PersonAction) => Promise<string | null> | string | null | undefined;
+  /**
+   * Heard on every write, for a story's assertions; `false` (or a promise of it) is a refusal —
+   * said in the app's toast, as the console's write path says one — anything else landed.
+   */
+  onWrite?: (action: PersonAction) => Promise<boolean | undefined> | boolean | undefined;
   /** Heard on every Undo pressed (a row's, or the toast's). */
   onUndone?: (actionId: string) => void;
 };
@@ -69,8 +72,8 @@ function Wired({
       {...view}
       now={now}
       onAct={async (action) => {
-        const refused = (await onWrite?.(action)) ?? null;
-        if (refused !== null || person === null) return refused;
+        const landed = (await onWrite?.(action)) !== false;
+        if (!landed || person === null) return landed;
         await announce({
           ...receiptFor(
             action,
@@ -82,7 +85,7 @@ function Wired({
           ),
           target: { targetType: 'user', targetId: person.userId },
         });
-        return null;
+        return true;
       }}
       onUndo={(row) => onUndone?.(row.id)}
       // The board draws Review; its sheet is the record sheet's own story.

@@ -121,7 +121,9 @@ export async function sendFor(
     sayNotSaved(hold, OTHER_BODY);
     return false;
   }
-  const answer = await said(write, notSavedWords(hold, what), (err) => listChanged(err) !== null);
+  const answer = await said(write, notSavedWords(hold, what), {
+    passOn: (err) => listChanged(err) !== null,
+  });
   if (!answer.landed) return false;
   try {
     await receipt(hold.subject);

@@ -812,8 +812,8 @@ describe('receipts', () => {
   });
 
   it('a late refusal names the person after its title, and only a name it has', () => {
-    expect(RECORD_WORDS.lateRefusalOf('Rob Tremblay')).toBe('Not changed · Rob Tremblay');
-    expect(RECORD_WORDS.lateRefusalOf('')).toBe('Not changed');
+    expect(RECORD_WORDS.refusalOf('Rob Tremblay')).toBe('Not changed · Rob Tremblay');
+    expect(RECORD_WORDS.refusalOf('')).toBe('Not changed');
   });
 });
 

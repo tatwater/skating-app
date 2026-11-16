@@ -18,14 +18,13 @@ import {
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
-  AlertDialogError,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogReason,
   AlertDialogTitle,
 } from '@/components/kit/alert-dialog';
 import { type ToastManager, toast, toastManager } from '@/components/kit/toast';
-import { errorText } from '../adminUi';
+import { said, sayRefusal } from '../said';
 import type { AuditTarget } from './actionLabels';
 
 /**
@@ -42,14 +41,18 @@ import type { AuditTarget } from './actionLabels';
  *   refuse it.
  * - **`undo`**, from the toast or a History row: runs `undo.run`. When the undo takes something
  *   away from skaters it asks the reason first, in the reason dialog; restoring asks nothing.
- * - **A refusal is the server's own words.** Someone acted on the same thing since, the row was
- *   already undone, the role isn't held: the message the server wrote is what the operator reads
- *   (a red toast, or the dialog's error over the kept reason).
+ * - **A refusal is the server's own words, in a toast** ("Not undone", D268) that stays until it
+ *   is dismissed. Someone acted on the same thing since, the row was already undone, the role isn't
+ *   held: the message the server wrote is what the operator reads. The reason dialog stays open over
+ *   the kept reason, to correct and send again.
  *
  * Mounted once, in the console's shell (`ConsoleLayout`).
  */
 
 export type UndoTarget = { targetType: AuditTarget; targetId: string };
+
+/** An undo's refusal, its title: the server's words follow it. */
+const NOT_UNDONE = 'Not undone';
 
 export type Receipt = {
   /** What was done, from the operator's side ("Hidden · “Black ice at the beach”"). */
@@ -144,11 +147,9 @@ export function UndoProvider({
 }) {
   const [asking, setAsking] = useState<UndoRequest | null>(null);
   const [reason, setReason] = useState('');
-  const [refusal, setRefusal] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  // The dialog's opening: its answer is said over the kept reason while the console that asked is
-  // still here; once it has gone (the viewer left, or was turned away), in a toast — never into a
-  // dialog no one can see.
+  // Whether this provider — and so its reason dialog — is there to ask: a receipt outlives the
+  // console in the app's one dock, and its Undo can be pressed after the console has gone.
   const mounted = useRef(false);
   useLayoutEffect(() => {
     mounted.current = true;
@@ -158,17 +159,19 @@ export function UndoProvider({
   }, []);
 
   const run = useCallback(
-    async (actionId: string, why?: string): Promise<string | null> => {
-      try {
-        await server.run({ actionId, ...(why !== undefined ? { reason: why } : {}) });
+    async (actionId: string, why?: string): Promise<boolean> => {
+      const sent = await said(
+        () => server.run({ actionId, ...(why !== undefined ? { reason: why } : {}) }),
+        (words) => ({ title: NOT_UNDONE, description: words }),
+        { manager },
+      );
+      if (sent.landed) {
         toast(
           { title: 'Undone', description: 'Both rows stay in the audit log', tone: 'lit' },
           manager,
         );
-        return null;
-      } catch (err) {
-        return errorText(err);
       }
+      return sent.landed;
     },
     [server, manager],
   );
@@ -179,25 +182,20 @@ export function UndoProvider({
         // A receipt outlives the console in the app's one dock: pressed after the console has gone,
         // its reason dialog has nowhere to open — say so, never a press that does nothing.
         if (!mounted.current) {
-          toast(
+          sayRefusal(
             {
-              title: 'Not undone',
+              title: NOT_UNDONE,
               description: 'Undoing it needs a reason: undo it from History in the console',
-              tone: 'bad',
             },
             manager,
           );
           return;
         }
         setReason('');
-        setRefusal(null);
         setAsking(request);
         return;
       }
-      void run(request.actionId).then((refused) => {
-        if (refused !== null)
-          toast({ title: 'Not undone', description: refused, tone: 'bad' }, manager);
-      });
+      void run(request.actionId);
     },
     [run, manager],
   );
@@ -290,7 +288,6 @@ export function UndoProvider({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogBody>
-            {refusal !== null && <AlertDialogError title="Not undone.">{refusal}</AlertDialogError>}
             {/* A sent reason is held while the undo is out (it lands once, closing the dialog). */}
             <AlertDialogReason
               value={reason}
@@ -306,16 +303,10 @@ export function UndoProvider({
                 const request = asking;
                 if (request === null) return;
                 setBusy(true);
-                void run(request.actionId, trimmed).then((refused) => {
-                  if (!mounted.current) {
-                    if (refused !== null) {
-                      toast({ title: 'Not undone', description: refused, tone: 'bad' }, manager);
-                    }
-                    return;
-                  }
+                // Refused: said in its toast; the dialog stays open over the kept reason.
+                void run(request.actionId, trimmed).then((landed) => {
                   setBusy(false);
-                  if (refused === null) setAsking(null);
-                  else setRefusal(refused);
+                  if (landed) setAsking(null);
                 });
               }}
             >

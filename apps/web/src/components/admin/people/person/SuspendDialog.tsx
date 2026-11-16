@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { RadioGroup, RadioRow } from '@/components/kit/radio';
 
 import { AskDialog } from './AskDialog';
+import type { ActOutcome } from './useActing';
 import { momentWords } from './personModel';
 import { WORDS } from './personWords';
 
@@ -38,12 +39,12 @@ export type SuspendDialogProps = {
   /** The clock the ends are read from. */
   now: number;
   timeZone?: string;
-  /** Runs the write; resolves to the server's refusal, or `null`. */
+  /** Runs the write; resolves what it came to (the dialog closes once it landed). */
   onConfirm: (args: {
     until: number;
     reason: string;
     shape: ReturnType<typeof shapeOf>;
-  }) => Promise<string | null>;
+  }) => Promise<ActOutcome>;
 };
 
 /**

@@ -282,12 +282,6 @@ function Board({
         row.undo?.state === 'available' &&
         undo({ actionId: row.endActionId, needsReason: row.undo.needsReason })
       }
-      onLateRefusal={(text) =>
-        toast(
-          { title: W.lateRefusalOf(subjectName(subject)), description: text, tone: 'bad' },
-          manager,
-        )
-      }
       {...(narrow !== undefined && { narrow })}
       {...(keys !== undefined && { keys })}
     />

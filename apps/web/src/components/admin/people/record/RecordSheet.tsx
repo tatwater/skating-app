@@ -3,7 +3,6 @@ import type { Id } from '@skating/convex/dataModel';
 import { useMutation } from 'convex/react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
-import { toast } from '@/components/kit/toast';
 
 import { loaded, read, readState, useConsoleReadSet } from '../../reads/consoleReads';
 import { useMinuteNow } from '../../shell/presence';
@@ -301,11 +300,6 @@ function SheetSitting({
             now,
           ).title,
         });
-      }}
-      onLateRefusal={(text) => {
-        // Said once, out of the way, naming the person — wherever the moderator has gone since
-        // (another person, the list, another section): a refusal is never buried by navigation.
-        toast({ title: W.lateRefusalOf(subjectName(subject)), description: text, tone: 'bad' });
       }}
     />
   );
