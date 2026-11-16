@@ -5253,6 +5253,11 @@ export default defineSchema({
           id: v.id('adminAreas'),
           /** The town's kind ("city"), only when another subdivision of its state shares its name. */
           kind: v.optional(v.string()),
+          /**
+           * Its county ("Clinton County"), only when another subdivision of its state shares its name
+           * *and* its kind (B01-3m): the county its boundary key names, as loaded.
+           */
+          inCounty: v.optional(v.string()),
         }),
       ),
     ),
@@ -5271,6 +5276,11 @@ export default defineSchema({
           county: v.optional(v.string()),
           /** The town's kind ("city"), only when another subdivision of its state shares its name. */
           kind: v.optional(v.string()),
+          /**
+           * Its county ("Clinton County"), only when another subdivision of its state shares its name
+           * *and* its kind (B01-3m): the county its boundary key names, as loaded.
+           */
+          inCounty: v.optional(v.string()),
         }),
       ),
     ),
