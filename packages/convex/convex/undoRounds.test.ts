@@ -22,7 +22,7 @@ import { DOC_MAX, REQUEST_PROFILE_BUDGET, requestBudget } from './lib/readBudget
 import { UNDO_NEEDS_ROWS, type UndoState, undoStates } from './lib/undo';
 import { UNDO_CHECKED_ELSEWHERE } from './lib/undoReads';
 import { listActionsPage } from './moderation';
-import { decisionsPage, shapeRows } from './people';
+import { decisionsPage, shapeRows, staffStatsPage } from './people';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -527,6 +527,85 @@ describe('People’s Decisions rounds (B01-4c)', () => {
   });
 });
 
+describe('a staffer’s figures’ rounds (B01-4c)', () => {
+  /**
+   * A busy week: `roots` undos whose chain's first row lies outside the staffer's own read, and
+   * `filings` decisions on flags whose row records no filing time — a read each, all at once.
+   */
+  const week = async (roots: number, filings: number) => {
+    const t = harness();
+    const viewerId = await admin(t);
+    const staffer = await admin(t);
+    const now = Date.now();
+    await t.run(async (ctx) => {
+      await ctx.db.patch(staffer, { role: 'moderator' });
+      for (let i = 0; i < roots; i++) {
+        const root = await ctx.db.insert('moderationActions', {
+          actorId: viewerId,
+          action: 'set_posting_permission',
+          targetType: 'user',
+          targetId: `x${i}`,
+          reason: 'r',
+          undoTop: 1,
+          undoTopActorId: staffer,
+          createdAt: now - 20 * 86_400_000,
+        });
+        await ctx.db.insert('moderationActions', {
+          actorId: staffer,
+          action: 'set_posting_permission',
+          targetType: 'user',
+          targetId: `x${i}`,
+          reason: 'r',
+          undoesActionId: root,
+          undoRoot: root,
+          undoDepth: 1,
+          createdAt: now - 1_000,
+        });
+      }
+      for (let i = 0; i < filings; i++) {
+        const flag = await ctx.db.insert('contentFlags', {
+          flaggerId: viewerId,
+          targetType: 'report',
+          targetId: `r${i}`,
+          reason: 'spam',
+          status: 'actioned',
+          subjectUserId: null,
+          createdAt: now - 86_400_000,
+        });
+        await ctx.db.insert('moderationActions', {
+          actorId: staffer,
+          action: 'resolve_flag',
+          targetType: 'contentFlag',
+          targetId: flag,
+          reason: 'r',
+          createdAt: now - 1_000,
+        });
+      }
+    });
+    const read = (ticks: number[] = [0]) =>
+      t.run(async (raw) => {
+        const viewer = (await raw.db.get(viewerId)) as Doc<'profiles'>;
+        const { ctx, stats } = counted(raw, ticks);
+        const figures = await staffStatsPage(ctx, viewer, { userId: staffer, now });
+        return { figures, stats };
+      });
+    return { ...(await read()), read };
+  };
+
+  test('a week of 200 undos and 200 filings to read costs a stated number of rounds, not one per row', async () => {
+    const busy = await week(200, 200);
+    const quiet = await week(20, 20);
+    console.log(
+      `Staff figures rounds: 200+200 reads ${busy.stats.rounds} rounds / ${busy.stats.calls} calls; 20+20 ${quiet.stats.rounds} / ${quiet.stats.calls}`,
+    );
+    expect(busy.figures?.decisions.undoneByOthers.capped).toBe(false);
+    expect(busy.figures?.timeToDecide).toMatchObject({ decided: 200, capped: false });
+    expect(busy.stats.rounds).toBeLessThanOrEqual(STAFF_FIGURES_ROUNDS);
+    // The same figures whatever order the reads settle in.
+    expect((await busy.read([6, 0, 3, 5, 1, 4, 2])).figures).toEqual(busy.figures);
+  });
+});
+
 /** The rounds a page of History costs when its rows share their targets (stated, B01-3h). */
 const PAGE_ROUNDS = 8;
 /**
@@ -544,3 +623,12 @@ const WORST_PAGE_ROUNDS = PAGE_ROUNDS + 1 + Math.ceil((46 - 4) / 3);
 const DECISIONS_PAGE_ROUNDS = PAGE_ROUNDS;
 /** The worst Decisions page: the worst History page's rounds (46 refusals, in waves). */
 const DECISIONS_WORST_ROUNDS = WORST_PAGE_ROUNDS;
+
+/**
+ * The rounds a staffer's figures cost on a week of 200 undos whose first rows lie outside the week's
+ * read and 200 filings to look up (the time bound's 400 reads): the reads before them, then the roots
+ * in waves — each an audit row, reserved at a document's worth, four to a wave in what the week's own
+ * read (4 MiB and a document) and the staffer's profile leave — then the filings, small enough to go
+ * in a wave or two. Read one after another, the same week was over 400 rounds.
+ */
+const STAFF_FIGURES_ROUNDS = 8 + Math.ceil(200 / 4);
