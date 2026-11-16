@@ -5,11 +5,12 @@
  */
 
 import { convexTest } from 'convex-test';
+import fc from 'fast-check';
 import type { Polygon } from 'geojson';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { bayViaOf, daysCovered, winterWindow } from './bodyConsole';
+import { bayViaOf, daysCovered, hazardDays, stillOnLake, winterWindow } from './bodyConsole';
 import { markGeoStale } from './lib/bodyGeo';
 import { rebuildBodyLibrary } from './lib/bodyLibrary';
 import { syncAdminAreaCells, syncWaterBodyCells } from './lib/cellIndex';
@@ -854,6 +855,7 @@ describe('dailyHazards', () => {
           firstReportedDay: today - 6 * DAY,
           endRecorded: true,
           endDay: today - 3 * DAY,
+          active: false,
           type: 'pressure_ridge',
           passage: false,
         },
@@ -862,6 +864,7 @@ describe('dailyHazards', () => {
           firstReportedDay: today,
           endRecorded: false,
           endDay: null,
+          active: true,
           type: 'pressure_ridge',
           passage: false,
         },
@@ -870,6 +873,7 @@ describe('dailyHazards', () => {
           firstReportedDay: Date.UTC(2026, 6, 15),
           endRecorded: false,
           endDay: null,
+          active: false,
           type: 'pressure_ridge',
           passage: false,
         },
@@ -920,6 +924,8 @@ describe('dailyHazards', () => {
           firstReportedDay: start,
           endRecorded: true,
           endDay: start + 3 * DAY,
+          // Its 72 hours are over: no longer live, though its record still reads active.
+          active: false,
           type: 'ridge_crossing',
           passage: true,
         },
@@ -1472,5 +1478,77 @@ describe('one rule for a target’s history: the Body console and listActions ag
     await expect(
       mod.as.query(api.moderation.listActions, { targetType: 'waterbody' }),
     ).rejects.toThrow('A target needs both its type and its id');
+  });
+});
+
+describe('one hazard on a season’s days (fast-check, B01-3n)', () => {
+  const season = 2026;
+  const window = winterWindow(season);
+  const HOUR = 3_600_000;
+  // A status the read doesn't know stands for a record it can't read: it must read as still there.
+  const STATUSES = ['active', 'archived', 'mystery'] as const;
+  const hazard = fc.record({
+    type: fc.constantFrom('pressure_ridge', 'open_water', 'thin_ice', 'ridge_crossing'),
+    status: fc.constantFrom(...STATUSES),
+    first: fc.integer({ min: 0, max: 364 * 24 }),
+    confirmedAfter: fc.integer({ min: 0, max: 400 }),
+    leftAfter: fc.option(fc.integer({ min: 0, max: 2_000 }), { nil: undefined }),
+  });
+  const property = fc.property(
+    hazard,
+    fc.integer({ min: 0, max: 400 * 24 }),
+    ({ type, status, first, confirmedAfter, leftAfter }, nowAfter) => {
+      const firstReportedAt = window.start + first * HOUR;
+      const now = firstReportedAt + nowAfter * HOUR;
+      const lastDay = Math.min(Math.floor(now / DAY) * DAY + DAY, window.end);
+      const h = {
+        type,
+        status,
+        firstReportedAt,
+        lastConfirmedAt: firstReportedAt + confirmedAfter * HOUR,
+        ...(leftAfter === undefined ? {} : { leftLakeAt: firstReportedAt + leftAfter * HOUR }),
+      } as unknown as Parameters<typeof hazardDays>[0];
+      const r = hazardDays(h, window, lastDay, now);
+      const expectedDays = daysCovered(firstReportedAt, lastDay, window);
+      if (r.passage) {
+        // A crossing is never a hazard: no day counts it as one, or as unknown.
+        expect(r.days.every((d) => d.as === 'crossings')).toBe(true);
+        expect(r.unknownEnd).toBe(false);
+        if (r.active) expect(status).not.toBe('archived');
+        return;
+      }
+      // **Archived only on a recorded fact**: not active only when the record says archived.
+      expect(r.active).toBe(status !== 'archived');
+      // An end only on a recorded fact: an archived pin with its leaving stamped.
+      expect(r.endRecorded).toBe(status === 'archived' && leftAfter !== undefined);
+      expect(r.unknownEnd).toBe(!r.active && !r.endRecorded);
+      if (!r.endRecorded) {
+        // **No recorded end never reads as ended or gone**: every day from its first report through
+        // the caller's day counts it, as established or as unknown — never absent, never clear.
+        expect(r.days.map((d) => d.at)).toEqual(expectedDays);
+        for (const d of r.days) {
+          expect(d.as === 'count' || d.as === 'unknown').toBe(true);
+          // Still active, or its first day: established.
+          if (r.active || d.at === r.firstReportedDay) expect(d.as).toBe('count');
+        }
+      } else {
+        // A recorded end: established every day through the day it left, and nothing unknown.
+        expect(r.days.every((d) => d.as === 'count')).toBe(true);
+        expect(r.days.map((d) => d.at)).toEqual(
+          expectedDays.filter((at) => at <= (r.endDay as number)),
+        );
+      }
+    },
+  );
+
+  test('a hazard with no recorded end, or an unreadable state, never reads as ended, archived or gone', () => {
+    for (const pinned of [20261116, 3, 271]) fc.assert(property, { seed: pinned, numRuns: 300 });
+    fc.assert(property, { numRuns: 300 });
+  });
+
+  test('an unreadable status is still on the lake; only a recorded archive is not', () => {
+    expect(stillOnLake('active')).toBe(true);
+    expect(stillOnLake('archived')).toBe(false);
+    expect(stillOnLake('')).toBe(true);
   });
 });
