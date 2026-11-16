@@ -248,7 +248,12 @@ export function UndoProvider({
           </AlertDialogHeader>
           <AlertDialogBody>
             {refusal !== null && <AlertDialogError title="Not undone.">{refusal}</AlertDialogError>}
-            <AlertDialogReason value={reason} onChange={(e) => setReason(e.target.value)} />
+            {/* A sent reason is held while the undo is out (it lands once, closing the dialog). */}
+            <AlertDialogReason
+              value={reason}
+              readOnly={busy}
+              onChange={(e) => setReason(e.target.value)}
+            />
           </AlertDialogBody>
           <AlertDialogFooter>
             <AlertDialogCancel />

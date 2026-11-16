@@ -244,6 +244,29 @@ describe('the reason dialog', () => {
     );
     expect(within(dialog).getByRole('textbox')).toHaveValue('Asked by email');
   });
+
+  it('holds the sent reason while the undo is out — never typed into and then thrown away', async () => {
+    let refuse: (why: Error) => void = () => {};
+    server.run.mockImplementation(
+      () =>
+        new Promise<void>((_, reject) => {
+          refuse = reject;
+        }),
+    );
+    render(<Harness server={server} receipt={receipt} />);
+    await userEvent.click(screen.getByRole('button', { name: 'History row' }));
+    const dialog = await screen.findByRole('alertdialog');
+    const field = within(dialog).getByRole('textbox');
+    await userEvent.type(field, 'Asked by email');
+    await userEvent.click(within(dialog).getByRole('button', { name: /^Undo/ }));
+    expect(field).toHaveAttribute('readonly');
+    await userEvent.type(field, ' twice');
+    expect(field).toHaveValue('Asked by email');
+    await act(async () => refuse(new ConvexError('That action has already been undone')));
+    expect(field).not.toHaveAttribute('readonly');
+    await userEvent.type(field, ' twice');
+    expect(field).toHaveValue('Asked by email twice');
+  });
 });
 
 describe('useUndo', () => {
