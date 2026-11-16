@@ -17,11 +17,14 @@ const mocks = vi.hoisted(() => ({
   results: new Map<string, unknown>(),
   calls: [] as Array<[string, Record<string, unknown>]>,
   answers: [] as (() => void)[],
+  /** Beside each answer, its refusal: the server's words thrown back instead. */
+  refusals: [] as (() => void)[],
   server: null as ((name: string, args: Record<string, unknown>) => void) | null,
 }));
 
 vi.mock('convex/react', async () => {
   const { getFunctionName } = await import('convex/server');
+  const { ConvexError } = await import('convex/values');
   return {
     useQueries: (queries: Record<string, { query: never; args: unknown }>) =>
       Object.fromEntries(
@@ -33,7 +36,10 @@ vi.mock('convex/react', async () => {
     useMutation: (ref: Parameters<typeof getFunctionName>[0]) => async (args: unknown) => {
       const name = getFunctionName(ref);
       mocks.calls.push([name, args as Record<string, unknown>]);
-      await new Promise<void>((r) => mocks.answers.push(r));
+      await new Promise<void>((resolve, reject) => {
+        mocks.answers.push(resolve);
+        mocks.refusals.push(() => reject(new ConvexError('Not allowed')));
+      });
       mocks.server?.(name, args as Record<string, unknown>);
     },
   };
@@ -42,10 +48,29 @@ vi.mock('@/lib/useRole', () => ({
   useRole: () => ({ can: () => true, isLoading: false }),
 }));
 vi.mock('../../shell/undo', () => ({ useUndo: () => ({ announce: async () => {} }) }));
+const toasts = vi.hoisted(() => [] as { title: string; description?: string }[]);
+vi.mock('@/components/kit/toast', async (original) => ({
+  ...(await original<typeof import('@/components/kit/toast')>()),
+  toast: (t: { title: string; description?: string }) => toasts.push(t),
+}));
 
 import { api } from '@skating/convex/api';
+import { useMutation } from 'convex/react';
 import { getFunctionName } from 'convex/server';
 import { resetConsoleReads } from '@/components/admin/reads/consoleReads';
+import { toast } from '@/components/kit/toast';
+import { KeysProvider } from '@/lib/keys';
+import { BodyConsoleView } from '../frame/BodyConsoleView';
+import {
+  BODY_NOW,
+  MASCOMA_ASKS,
+  MASCOMA_COMPLETENESS,
+  MASCOMA_HISTORY_ENTRIES,
+  MASCOMA_IDENTITY,
+  MASCOMA_TOWNS,
+  MASCOMA_TRUST,
+} from '../frame/bodyFixtures';
+import { attentionTabs } from '../frame/bodyModel';
 import { AccessTab } from './access/AccessTab';
 import { stubJsdomAnimations } from './jsdomStubs';
 import { NamesTab } from './names/NamesTab';
@@ -113,6 +138,8 @@ type Case = {
   /** What the control shows with A, or B, the latest press. */
   showsA: () => void;
   showsB: () => void;
+  /** What the control shows with nothing pressed: the record as it was. */
+  showsServer: () => void;
   /** Each write's value, as sent. */
   sent: () => unknown[];
   a: unknown;
@@ -135,6 +162,7 @@ const CASES: Case[] = [
     pressB: (user) => user.click(screen.getByRole('button', { name: 'Display this' })),
     showsA: () => rungNow(0),
     showsB: () => rungNow(1),
+    showsServer: () => rungNow(1),
     sent: () => mocks.calls.map(([, a]) => a.name),
     a: 'The Basin',
     b: 'Lake Auburn',
@@ -158,6 +186,7 @@ const CASES: Case[] = [
     pressB: (user) => anotherClass(user, /Wetland/),
     showsA: () => checked('Class', /Reservoir/),
     showsB: () => checked('Class', /Wetland/),
+    showsServer: () => checked('Class', /Lake or pond/),
     sent: () => mocks.calls.map(([, a]) => a.bodyClass),
     a: 'reservoir',
     b: 'wetland',
@@ -191,6 +220,10 @@ const CASES: Case[] = [
       expect(screen.getByRole('button', { name: 'Rule accessible' })).toBeTruthy();
     },
     showsB: () => {
+      expect(screen.queryByRole('button', { name: 'Rule accessible' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Clear the ruling' })).toBeTruthy();
+    },
+    showsServer: () => {
       expect(screen.queryByRole('button', { name: 'Rule accessible' })).toBeNull();
       expect(screen.getByRole('button', { name: 'Clear the ruling' })).toBeTruthy();
     },
@@ -231,11 +264,88 @@ const CASES: Case[] = [
     },
     showsA: () => checked('Mean depth', /HydroLAKES/),
     showsB: () => checked('Mean depth', /state survey/),
+    showsServer: () => checked('Mean depth', /state survey/),
     sent: () => mocks.calls.map(([, a]) => a.source),
     a: 'hydrolakes_modeled',
     b: 'state_agency',
   },
+  {
+    name: 'the frame: the map boost',
+    setup: () => {
+      mocks.results.set(GET, { available: true, body: { _id: 'wb1', curatedBoost: 0.3 } });
+      mocks.server = (_name, args) => setRecord({ curatedBoost: args.curatedBoost });
+    },
+    render: () => <BoostHost />,
+    pressA: async (user) => {
+      act(() => slider().focus());
+      await user.keyboard('{ArrowRight}');
+    },
+    pressB: async (user) => {
+      act(() => slider().focus());
+      await user.keyboard('{ArrowRight}');
+    },
+    showsA: () => expect(slider()).toHaveAttribute('aria-valuenow', '0.4'),
+    showsB: () => expect(slider()).toHaveAttribute('aria-valuenow', '0.5'),
+    showsServer: () => expect(slider()).toHaveAttribute('aria-valuenow', '0.3'),
+    sent: () => mocks.calls.map(([, a]) => a.curatedBoost),
+    a: 0.4,
+    b: 0.5,
+  },
 ];
+
+const slider = () => screen.getByRole('slider', { name: 'Map boost' });
+
+/**
+ * The console's left column as the route mounts it, its boost written as `useBoostCommit` writes
+ * it: the mutation, and a refusal said in a toast and answered `false`.
+ */
+function BoostHost() {
+  const set = useMutation(api.waterBodies.setCuratedBoost);
+  return (
+    <KeysProvider>
+      <BodyConsoleView
+        identity={{
+          ...MASCOMA_IDENTITY,
+          id: 'wb1',
+          boost: { value: record().curatedBoost as number, note: null },
+        }}
+        completeness={MASCOMA_COMPLETENESS}
+        towns={MASCOMA_TOWNS}
+        trust={MASCOMA_TRUST}
+        asks={MASCOMA_ASKS}
+        history={MASCOMA_HISTORY_ENTRIES}
+        lit={null}
+        now={BODY_NOW}
+        tab="shape"
+        onTabChange={() => {}}
+        onOpenAsk={() => {}}
+        attention={attentionTabs(MASCOMA_COMPLETENESS.missing)}
+        tabPanel={<p>Shape</p>}
+        map={<div>map</div>}
+        onBoostCommit={async (value) => {
+          try {
+            await set({ waterBodyId: 'wb1' as never, curatedBoost: value });
+            return true;
+          } catch (err) {
+            toast({ title: 'Not saved', description: (err as Error).message, tone: 'bad' });
+            return false;
+          }
+        }}
+      />
+    </KeysProvider>
+  );
+}
+
+/** The oldest write out lands. */
+const land = () => {
+  mocks.refusals.shift();
+  mocks.answers.shift()?.();
+};
+/** The oldest write out is refused, in the server's words. */
+const refuse = () => {
+  mocks.answers.shift();
+  mocks.refusals.shift()?.();
+};
 
 function Elsewhere({ children }: { children: ReactNode }) {
   return (
@@ -255,7 +365,9 @@ beforeEach(() => {
   mocks.results.clear();
   mocks.calls.length = 0;
   mocks.answers.length = 0;
+  mocks.refusals.length = 0;
   mocks.server = null;
+  toasts.length = 0;
 });
 
 describe('a late answer to a pick', () => {
@@ -271,12 +383,12 @@ describe('a late answer to a pick', () => {
       c.showsB();
       // One write at a time: B waits for A's answer.
       expect(c.sent()).toEqual([c.a]);
-      await act(async () => mocks.answers.shift()?.());
+      await act(async () => land());
       await settle();
       rerender(<Elsewhere>{c.render()}</Elsewhere>);
       c.showsB();
       expect(c.sent()).toEqual([c.a, c.b]);
-      await act(async () => mocks.answers.shift()?.());
+      await act(async () => land());
       await settle();
       rerender(<Elsewhere>{c.render()}</Elsewhere>);
       c.showsB();
@@ -291,11 +403,57 @@ describe('a late answer to a pick', () => {
     await c.pressA(user);
     const elsewhere = screen.getByRole('textbox', { name: 'Somewhere else' });
     await user.click(elsewhere);
-    await act(async () => mocks.answers.shift()?.());
+    await act(async () => land());
     await settle();
     rerender(<Elsewhere>{c.render()}</Elsewhere>);
     expect(elsewhere).toHaveFocus();
     c.showsA();
+    expect(c.sent()).toEqual([c.a]);
+  });
+});
+
+/**
+ * **Left and returned while a write waits** (Greptile on #136): the control's queue lives outside
+ * it, so the control that comes back joins it — showing the press on its way, never the record's
+ * older value — and a press made then waits behind it. A landed write needs nothing more; a refused
+ * one is said (a toast, the console's words for a write refused while its page is gone or here) and
+ * the control shows the record again.
+ */
+describe('left and returned while a write waits', () => {
+  it.each(CASES)('$name: A lands, and B pressed on return is stored after it', async (c) => {
+    const user = userEvent.setup();
+    c.setup();
+    const { rerender } = render(<Elsewhere>{c.render()}</Elsewhere>);
+    await c.pressA(user);
+    rerender(<Elsewhere>{null}</Elsewhere>);
+    rerender(<Elsewhere>{c.render()}</Elsewhere>);
+    c.showsA();
+    await c.pressB(user);
+    c.showsB();
+    expect(c.sent()).toEqual([c.a]);
+    await act(async () => land());
+    await settle();
+    rerender(<Elsewhere>{c.render()}</Elsewhere>);
+    c.showsB();
+    expect(c.sent()).toEqual([c.a, c.b]);
+    await act(async () => land());
+    await settle();
+    rerender(<Elsewhere>{c.render()}</Elsewhere>);
+    c.showsB();
+    expect(toasts).toEqual([]);
+  });
+
+  it.each(CASES)('$name: A is refused while away — said, and the record shows again', async (c) => {
+    const user = userEvent.setup();
+    c.setup();
+    const { rerender } = render(<Elsewhere>{c.render()}</Elsewhere>);
+    await c.pressA(user);
+    rerender(<Elsewhere>{null}</Elsewhere>);
+    await act(async () => refuse());
+    await settle();
+    expect(toasts).toEqual([expect.objectContaining({ description: 'Not allowed' })]);
+    rerender(<Elsewhere>{c.render()}</Elsewhere>);
+    c.showsServer();
     expect(c.sent()).toEqual([c.a]);
   });
 });
@@ -331,7 +489,7 @@ describe('Access: a reason’s dialog', () => {
         { waterBodyId: 'wb1', verdict: 'none', reason: 'Posted all round' },
       ],
     ]);
-    await act(async () => mocks.answers.shift()?.());
+    await act(async () => land());
     await settle();
     expect(screen.queryByRole('alertdialog')).toBeNull();
   });
@@ -345,7 +503,7 @@ describe('Access: a reason’s dialog', () => {
     const dialog = await screen.findByRole('alertdialog');
     await user.type(within(dialog).getByRole('textbox'), 'Posted all round');
     await user.click(within(dialog).getByRole('button', { name: 'Rule no public access' }));
-    await act(async () => mocks.answers.shift()?.());
+    await act(async () => land());
     await settle();
     rerender(<AccessTab bodyId="wb1" />);
     // The clear landed; the ruling the dialog confirmed still shows, its dialog still waiting.
@@ -353,7 +511,7 @@ describe('Access: a reason’s dialog', () => {
       /found no public access/,
     );
     expect(screen.getByRole('alertdialog')).toBeTruthy();
-    await act(async () => mocks.answers.shift()?.());
+    await act(async () => land());
     await settle();
     rerender(<AccessTab bodyId="wb1" />);
     expect(mocks.calls.map(([, a]) => a.verdict)).toEqual([null, 'none']);
