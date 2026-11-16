@@ -3677,8 +3677,8 @@ that server's (#115); the rail's People mode (G then P, `people.read`) lights fo
   open and every support fact.
 - **One of each.** `lib/ages` holds the row's short age (`shortAge`) and the written-out pair
   (`ageInWords`, `timeLeftInWords`) for the Overview, Metrics, the list and the person page;
-  `people/answers.ts` words the three answers once; `people/clock.ts` holds the read clock both
-  pages use; `lib/routerTarget` splits a path for the router. The old `/admin/users` and
+  `people/answers.ts` words the three answers once; the read clock both pages use is the
+  console's one (`reads/readArgs.ts`, since B01-3e); `lib/routerTarget` splits a path for the router. The old `/admin/users` and
   `/admin/users/$id` redirect; Users leaves Legacy and the old shell; a profile's moderator tools,
   the palette and the Overview link to People.
 
@@ -3754,10 +3754,17 @@ draws 34; the role menu's item takes two lines.
   each adopts the rule once its open PRs land. The kit `AppShell`'s own stacking (below `lg`, for
   pages that pass it panes) measures the same way and should read the same rule.
 
-### The Body console follow-up (B01-3e, local, on the stack)
+### The Body console follow-up (B01-3e)
 
-Built on #121's head with B01-3d merged in as its first commit; what the pages made of B01-3c's
-reads and B01-3d's writes, the save rule the stack's last P1 asked for, and the owed small items.
+Built on #121's head with B01-3d merged in, then rebased onto main once #121 and #126 merged; what
+the pages made of B01-3c's reads and B01-3d's writes, the save rule the stack's last P1 asked for,
+and the owed small items. It carries B01-3j (the landmark id total, below) as its own commits.
+**The second PR (B01-3k)** carries what this one leaves, so the two stay reviewable: the latest-press
+rule on main's own controls (Names' *Display this* and class pick, Water's depth source, Access's
+ruling buttons, the frame's boost) with a late-completion table test over main's tabs; the day
+strips' neighbors in the kit (`LedStrip`, the matrix chart) read without a pointer; `lib/loadAhead`
+and the narrow layout for the Bodies list; and a test settling whether Places' other spellings and
+Names' aliases can bind an edit to the wrong entry by its text.
 
 - **The save lifetime (D265)** (the stack's last P1: *saves outlive the body*). A draft dies with its
   console; a pressed save never does.
@@ -3828,8 +3835,9 @@ reads and B01-3d's writes, the save rule the stack's last P1 asked for, and the 
     `BodyMap`, with its own undo of a vertex move) before the control can be honest.
   - *File a survey* (Water): what a filing records is the founder's call (held above).
 - **Small items:** one clock and one id shape for every read (`reads/readArgs.ts`: `useClockFor`,
-  `minuteOf`, `ID_SHAPE`; the People branch keeps its own copies in `people/clock.ts` and
-  `PersonPane`, to fold in when it lands); the Hazards, Imagery and Standing notes mounted before
+  `minuteOf`, `ID_SHAPE`; People's own copies, `people/clock.ts` and `PersonPane`'s, folded in once
+  it landed); the reason dialogs on main's tabs — Access and Places' ask, Undo's — hold a sent reason
+  while its one-shot write is out, as #121's do (a reason typed then could never be recorded); the Hazards, Imagery and Standing notes mounted before
   their words (announced, and focus kept when they go — the list's and console's rule); Access's
   clock on the tabs' `useTickingNow`; one list of removal reasons' words (`REMOVAL_REASON_WORDS`,
   shared by Standing and both removed pages).
