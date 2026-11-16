@@ -6,7 +6,8 @@
  * the parentheses of a charging call (`reads.one/take/page/measured/capped`, the same on `budget` and
  * on the request's budget opened in place, `requestBudget(…)`, a wave item's `share.read(` and
  * `share.take(` — charged to what `ReadBudget.waves` reserved for it — `drain(` — which charges what
- * its `take` returns — or the People pages' `takeCapped(`). `.collect()` and `.unique()` are refused
+ * its `take` returns — the People pages' `takeCapped(`, or the record sheet's `takeAfter(`, whose two
+ * parts each go through `reads.take`). `.collect()` and `.unique()` are refused
  * outright: neither has a bound a budget can size.
  *
  * A lint over the source text, not a proof: a read reached through a helper in another module is
@@ -30,6 +31,8 @@ const MODULES = [
   'lib/staffTenure.ts',
   // The rows an undo's refusal reads, which History and Decisions reach on every line (B01-3f).
   'lib/undoReads.ts',
+  // The People record sheet's lists, counts and pane (B01-4d).
+  'lib/recordReads.ts',
 ];
 
 /**
@@ -49,7 +52,7 @@ function code(source: string): string {
 function chargedSpans(text: string): [number, number][] {
   const spans: [number, number][] = [];
   const opener =
-    /\b(?:reads|budget|requestBudget\([^()]*\))\.(?:one|take|page|measured|capped)\(|\bshare\.(?:read|take)\(|\bdrain\(|\btakeCapped\(/g;
+    /\b(?:reads|budget|requestBudget\([^()]*\))\.(?:one|take|page|measured|capped)\(|\bshare\.(?:read|take)\(|\bdrain\(|\btakeCapped\(|\btakeAfter\(/g;
   for (let m = opener.exec(text); m; m = opener.exec(text)) {
     let depth = 0;
     for (let i = m.index + m[0].length - 1; i < text.length; i++) {
@@ -119,6 +122,11 @@ test('the lint sees a raw read, and passes a charged one', () => {
   expect(
     unchargedReads("await requestBudget(ctx, OPEN).one('profile', () => ctx.db.get(id));"),
   ).toEqual([]);
+  // The record sheet's two-part read charges each part through `reads.take`.
+  expect(unchargedReads("await takeAfter(reads, 'verdict', n, null, (m) => q().take(m));")).toEqual(
+    [],
+  );
+  expect(unchargedReads('takeAfter(reads, k, n, a, b); await q().take(5);')).toHaveLength(1);
   // Opening it is no charge: a read beside it, outside a charging call, is still caught.
   expect(unchargedReads('const b = requestBudget(ctx); await ctx.db.get(id);')).toHaveLength(1);
   expect(

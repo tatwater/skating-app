@@ -1,6 +1,6 @@
 /**
- * Two runs of the same chained job, alive at once (B01 §5.7, `lib/peopleRuns`). For each of the five
- * chained People jobs — the three backfills, the lapsed-suspension sweep, its daily retry — a property
+ * Two runs of the same chained job, alive at once (B01 §5.7, `lib/peopleRuns`). For each of the six
+ * chained People jobs — the four backfills, the lapsed-suspension sweep, its daily retry — a property
  * drives run A (whose passes are delayed) and run B (a recovery, or the next cron tick, started once
  * the old run reads as stalled) through arbitrary interleavings of their passes, with failures and
  * items added mid-run. It holds that a superseded run's pass changes nothing and schedules nothing,
@@ -90,6 +90,56 @@ interface Spec {
   tables: readonly string[];
   /** The conclusion holds, for the run that is current at the end. */
   holds: (row: Doc<'peopleJobRuns'>, remaining: string[], beganWith: Set<string>) => boolean;
+  /**
+   * The other functions a run's passes are (the content record's walk, replays and clocks), by the
+   * scheduler's name — each carries its run's lease as `lease` rather than at the top level.
+   */
+  // biome-ignore lint/suspicious/noExplicitAny: each job's own argument shape
+  chain?: Record<string, FunctionReference<'mutation', 'internal', any>>;
+  /** Runs of the property, when the job's passes are many (the content record's clocks walk seven kinds). */
+  runs?: number;
+}
+
+/** A Report by `authorId` on a body (the record's replay reads only the Report). */
+async function reportRow(ctx: MutationCtx, authorId: Id<'profiles'>) {
+  const waterBodyId =
+    (await ctx.db.query('waterBodies').first())?._id ??
+    (await ctx.db.insert('waterBodies', {
+      name: 'Lake Morey',
+      searchText: 'Lake Morey',
+      type: 'lakePond' as const,
+      source: 'osm' as const,
+      polygon: {
+        type: 'Polygon' as const,
+        coordinates: [
+          [
+            [0, 0],
+            [0, 1],
+            [1, 1],
+            [0, 0],
+          ],
+        ],
+      },
+      bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+      centroid: { lat: 0.5, lng: 0.5 },
+      dedupStatus: 'clean' as const,
+      createdAt: T0,
+    }));
+  return {
+    authorId,
+    waterBodyId,
+    point: { lat: 0, lng: 0 },
+    skateEndTime: T0,
+    reportTime: T0,
+    source: 'native' as const,
+    iceTypes: [],
+    surfaceTags: [],
+    photoIds: [],
+    moderationStatus: 'hidden' as const,
+    hazardIdsCreated: [],
+    createdAt: T0,
+    updatedAt: T0,
+  };
 }
 
 async function filer(ctx: MutationCtx): Promise<Id<'profiles'>> {
@@ -221,6 +271,71 @@ const SPECS: Spec[] = [
     holds: backfillHolds,
   },
   {
+    // The content record (B01-4d): one run across the walk, each item's replay and the clocks.
+    job: 'verdicts',
+    name: 'peopleJobs:backfillVerdicts',
+    ref: internal.peopleJobs.backfillVerdicts,
+    restart: { alone: true },
+    // A moderator's hide recorded before the record existed: its verdict is the backfill's to make.
+    seed: async (ctx, i) => {
+      const author = await filer(ctx);
+      const reportId = await ctx.db.insert('reports', await reportRow(ctx, author));
+      await ctx.db.insert('moderationActions', {
+        actorId: author,
+        action: 'hide',
+        targetType: 'report',
+        targetId: reportId,
+        reason: `seed ${i}`,
+        metadata: { priorStatus: 'visible', newStatus: 'hidden' },
+        createdAt: T0 - 5_000 + i,
+      });
+    },
+    // The live writers record a verdict as they hide: nothing for the backfill to fix.
+    add: async (ctx, i) => {
+      const author = await filer(ctx);
+      const reportId = await ctx.db.insert('reports', await reportRow(ctx, author));
+      const actionId = await ctx.db.insert('moderationActions', {
+        actorId: author,
+        action: 'hide',
+        targetType: 'report',
+        targetId: reportId,
+        reason: `added ${i}`,
+        metadata: { priorStatus: 'visible', newStatus: 'hidden' },
+        createdAt: Date.now(),
+      });
+      await ctx.db.insert('contentVerdicts', {
+        subjectUserId: author,
+        targetType: 'report',
+        targetId: reportId,
+        actionId,
+        kind: 'hidden',
+        at: Date.now(),
+        standing: true,
+        superseded: false,
+      });
+    },
+    remaining: async (ctx) => {
+      const made = new Set(
+        (await ctx.db.query('contentVerdicts').collect())
+          .filter((v) => v.superseded === false)
+          .map((v) => v.actionId as string),
+      );
+      return (await ctx.db.query('moderationActions').collect())
+        .filter((r) => r.action === 'hide' && !made.has(r._id))
+        .map((r) => r._id);
+    },
+    // A pass that throws stalls its run (the recovery's case); no item fails on its own.
+    failOnce: null,
+    tables: ['contentVerdicts', 'reports', 'peopleJobRuns'],
+    holds: backfillHolds,
+    runs: 7,
+    chain: {
+      'contentRecord:backfillVerdicts': internal.contentRecord.backfillVerdicts,
+      'contentRecord:replayVerdictHistory': internal.contentRecord.replayVerdictHistory,
+      'erasure:backfillClocks': internal.erasure.backfillClocks,
+    },
+  },
+  {
     job: 'lapseSweep',
     name: 'peopleJobs:sweepLapsedSuspensions',
     ref: internal.peopleJobs.sweepLapsedSuspensions,
@@ -256,16 +371,35 @@ const SPECS: Spec[] = [
 
 interface Pending {
   id: Id<'_scheduled_functions'>;
+  name: string;
   run: number;
   // biome-ignore lint/suspicious/noExplicitAny: the job's own arguments, passed through
   args: any;
 }
 
+/** A pass's run and token: at the top level, or — a chained function's pass — in its `lease`. */
+function leaseOf(args: { run?: number; pass?: number; lease?: { run: number; pass: number } }) {
+  return args.lease ?? { run: args.run, pass: args.pass };
+}
+
 async function pendingPasses(t: T, spec: Spec): Promise<Pending[]> {
   const all = await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
   return all
-    .filter((f) => f.name === spec.name && f.state.kind === 'pending')
-    .map((f) => ({ id: f._id, run: (f.args[0] as { run: number }).run, args: f.args[0] }));
+    .filter(
+      (f) =>
+        (f.name === spec.name || (spec.chain !== undefined && f.name in spec.chain)) &&
+        f.state.kind === 'pending',
+    )
+    .map((f) => ({
+      id: f._id,
+      name: f.name,
+      run: leaseOf(f.args[0] as Parameters<typeof leaseOf>[0]).run as number,
+      args: f.args[0],
+    }));
+}
+
+function refOf(spec: Spec, name: string) {
+  return name === spec.name ? spec.ref : (spec.chain?.[name] ?? spec.ref);
 }
 
 async function runRow(t: T, job: PeopleJob): Promise<Doc<'peopleJobRuns'> | null> {
@@ -289,26 +423,33 @@ async function snapshot(t: T, spec: Spec): Promise<string> {
 /** Run one scheduled pass by hand; a superseded one must change nothing and schedule nothing. */
 async function runPass(t: T, spec: Spec, pass: Pending): Promise<void> {
   await t.run((ctx) => ctx.scheduler.cancel(pass.id));
-  await runArgs(t, spec, pass.args);
+  await runArgs(t, spec, pass.args, pass.name);
 }
 
 /**
  * Run a pass's arguments: a pass of a run that isn't current — or whose token was already used, as
  * when its arguments are replayed by hand — must change nothing and schedule nothing.
  */
-// biome-ignore lint/suspicious/noExplicitAny: the job's own arguments, passed through
-async function runArgs(t: T, spec: Spec, args: any): Promise<void> {
+async function runArgs(
+  t: T,
+  spec: Spec,
+  // biome-ignore lint/suspicious/noExplicitAny: the job's own arguments, passed through
+  args: any,
+  name: string = spec.name,
+): Promise<void> {
   const row = await runRow(t, spec.job);
-  const holds = row?.running === true && row.run === args.run && row.pass === args.pass;
+  const lease = leaseOf(args);
+  const holds = row?.running === true && row.run === lease.run && row.pass === lease.pass;
+  const ref = refOf(spec, name);
   if (!holds) {
     const before = await snapshot(t, spec);
     const scheduledBefore = (await pendingPasses(t, spec)).length;
-    await t.mutation(spec.ref, args);
+    await t.mutation(ref, args);
     expect(await snapshot(t, spec), 'a stale pass changed nothing').toBe(before);
     expect((await pendingPasses(t, spec)).length, 'and scheduled nothing').toBe(scheduledBefore);
     return;
   }
-  await t.mutation(spec.ref, args);
+  await t.mutation(ref, args);
 }
 
 type Op =
@@ -363,12 +504,12 @@ async function drive(spec: Spec, seeded: number, ops: Op[]) {
       const pass = (await pendingPasses(t, spec)).find((p) => p.run === want);
       if (pass) {
         await runPass(t, spec, pass);
-        ran.push(pass.args);
+        ran.push(pass);
       }
     }
     // A pass's arguments run again by hand: its token is spent, so it does nothing.
     const last = ran[ran.length - 1];
-    if (op.kind === 'replay' && last !== undefined) await runArgs(t, spec, last);
+    if (op.kind === 'replay' && last !== undefined) await runArgs(t, spec, last.args, last.name);
   }
   // Every pass left runs, in any order: the job must terminate.
   for (let i = 0; ; i++) {
@@ -394,7 +535,7 @@ describe.each(SPECS)('$job: two runs at once', (spec) => {
           expect(spec.holds(row, remaining, beganWith)).toBe(true);
         },
       ),
-      { numRuns: 12 },
+      { numRuns: spec.runs ?? 12 },
     );
   });
 });

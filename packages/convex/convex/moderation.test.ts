@@ -2,6 +2,7 @@ import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+import { RESTORE_ALREADY_UP } from './lib/recordRules';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -143,13 +144,21 @@ describe('moderation.setModerationStatus', () => {
     });
     expect(await countOf()).toBe(1); // restore increments
 
-    await mod.as.mutation(api.moderation.setModerationStatus, {
-      targetType: 'report',
-      targetId: reportId,
-      status: 'visible',
-      reason: 'reaffirm',
-    });
-    expect(await countOf()).toBe(1); // visible → visible is a no-op for the counter
+    // Visible → visible changes nothing, so it writes nothing (B01-4d: a restore needs no reason, so
+    // a second press would otherwise write a second row) — refused in the record's words.
+    const rows = async () =>
+      (await t.run((ctx) => ctx.db.query('moderationActions').collect())).length;
+    const before = await rows();
+    await expect(
+      mod.as.mutation(api.moderation.setModerationStatus, {
+        targetType: 'report',
+        targetId: reportId,
+        status: 'visible',
+        reason: 'reaffirm',
+      }),
+    ).rejects.toThrow(RESTORE_ALREADY_UP);
+    expect(await countOf()).toBe(1);
+    expect(await rows()).toBe(before);
   });
 
   test('hides a report and writes exactly one hide audit row; restore writes one restore row', async () => {

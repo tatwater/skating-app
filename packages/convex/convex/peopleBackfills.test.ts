@@ -369,6 +369,7 @@ test('`alone` re-runs one backfill without starting the rest', async () => {
   expect(((await run(t, CHECK.fn, CHECK.args)) as Preparation).pending).toEqual([
     'flagSubjects',
     'undoChains',
+    'verdicts',
   ]);
 });
 

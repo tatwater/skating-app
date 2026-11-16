@@ -57,6 +57,11 @@ export function verdictKindOf(action: string): 'hidden' | 'removed' | 'retracted
 /** A person's standing verdicts counted at most, for the People page's Hidden content row. */
 export const VERDICT_COUNT_CAP = 500;
 
+/** Each kind's count, every one zero — the record's counts by kind start here. */
+export function zeroByKind(): Record<VerdictTargetType, number> {
+  return { report: 0, post: 0, comment: 0, hazard: 0, accessAlert: 0 };
+}
+
 /**
  * How much of a person's content stands under a verdict, by kind — the People page's *Hidden
  * content* row ("5 items · 2 reports · 2 comments"). Read from the same range `personVerdicts` pages
@@ -74,13 +79,7 @@ export async function readVerdictCounts(
     )
     .take(VERDICT_COUNT_CAP + 1);
   const counted = rows.slice(0, VERDICT_COUNT_CAP);
-  const byKind: Record<VerdictTargetType, number> = {
-    report: 0,
-    post: 0,
-    comment: 0,
-    hazard: 0,
-    accessAlert: 0,
-  };
+  const byKind = zeroByKind();
   for (const row of counted) byKind[row.targetType]++;
   return { total: counted.length, byKind, capped: rows.length > VERDICT_COUNT_CAP };
 }
@@ -105,22 +104,68 @@ export function standingVerdictsOn(
 /**
  * End **every** standing verdict on an item, without touching its clock (the callers below do). Read
  * a page at a time until none is left — each one ended leaves the range, so this ends — never "the
- * first few": a verdict a reversal missed would stay on the person's record.
+ * first few": a verdict a reversal missed would stay on the person's record. `superseded`: ended by a
+ * later verdict (it leaves the record sheet), or by a reversal (it is the item's newest, Reversed).
  */
 async function endStanding(
   ctx: MutationCtx,
   targetType: VerdictTargetType,
   targetId: string,
   { actionId, at }: { actionId: Id<'moderationActions'>; at: number },
+  superseded: boolean,
 ): Promise<number> {
   let ended = 0;
   for (;;) {
     const standing = await standingVerdictsOn(ctx, targetType, targetId);
     if (standing.length === 0) return ended;
     for (const verdict of standing) {
-      await ctx.db.patch(verdict._id, { standing: false, endedAt: at, endedByActionId: actionId });
+      await ctx.db.patch(verdict._id, {
+        standing: false,
+        endedAt: at,
+        endedByActionId: actionId,
+        superseded,
+      });
     }
     ended += standing.length;
+  }
+}
+
+/**
+ * Whether an ended verdict shows on the record sheet's Reversed list — **the one predicate** (D267): a
+ * decision a moderator ended, shown once, as the item's newest decision. A hide that later became a
+ * removal is the removal, and never also a Reversed hide; an item restored, hidden again and restored
+ * again shows its last restore. `contentRecord`'s Reversed reads take exactly these rows by index
+ * (`by_subject_reversed`, `by_subject_reversed_type`), and `recordSheet.test.ts` holds every row the
+ * range yields to this predicate and every row it holds to the range. Showing superseded decisions
+ * too (the founder's open question) changes this predicate and that range together — over every
+ * ended verdict, which wants a kind index of its own.
+ */
+export function isReversed(
+  verdict: Pick<Doc<'contentVerdicts'>, 'standing' | 'endedAt' | 'superseded'>,
+): boolean {
+  if (verdict.standing || verdict.endedAt === undefined) return false;
+  return verdict.superseded === false;
+}
+
+/**
+ * Mark an item's newest verdict — standing or ended — superseded, as a later one is about to be
+ * minted: the writers keep at most one unsuperseded verdict on an item, so a page at a time until
+ * none is left (each one marked leaves the range).
+ */
+async function supersedeNewest(
+  ctx: MutationCtx,
+  targetType: VerdictTargetType,
+  targetId: string,
+): Promise<void> {
+  for (;;) {
+    const newest = await ctx.db
+      .query('contentVerdicts')
+      .withIndex('by_target_superseded', (q) =>
+        q.eq('targetType', targetType).eq('targetId', targetId).eq('superseded', false),
+      )
+      .take(STANDING_PAGE);
+    if (newest.length === 0) return;
+    for (const verdict of newest) await ctx.db.patch(verdict._id, { superseded: true });
   }
 }
 
@@ -134,7 +179,7 @@ export async function endVerdicts(
   targetId: string,
   ended: { actionId: Id<'moderationActions'>; at: number },
 ): Promise<number> {
-  const count = await endStanding(ctx, targetType, targetId, ended);
+  const count = await endStanding(ctx, targetType, targetId, ended, false);
   if (count > 0) await holdMoved(ctx, targetType, targetId, ended.at);
   return count;
 }
@@ -150,11 +195,16 @@ export interface VerdictEntry {
 
 /** Put a moderator's hide or remove on the person's record, superseding any standing verdict. */
 export async function recordVerdict(ctx: MutationCtx, entry: VerdictEntry): Promise<void> {
-  await endStanding(ctx, entry.targetType, entry.targetId, {
-    actionId: entry.actionId,
-    at: entry.at,
-  });
-  await ctx.db.insert('contentVerdicts', { ...entry, standing: true });
+  await endStanding(
+    ctx,
+    entry.targetType,
+    entry.targetId,
+    { actionId: entry.actionId, at: entry.at },
+    true,
+  );
+  // An earlier decision a moderator reversed is no longer the item's newest either.
+  await supersedeNewest(ctx, entry.targetType, entry.targetId);
+  await ctx.db.insert('contentVerdicts', { ...entry, standing: true, superseded: false });
   await holdMoved(ctx, entry.targetType, entry.targetId, entry.at);
 }
 
@@ -202,6 +252,17 @@ export interface ReplayedVerdict {
   standing: boolean;
   endedAt?: number;
   endedByActionId?: Id<'moderationActions'>;
+  /** A later verdict on the item was minted (see the schema's `superseded`). */
+  superseded: boolean;
+}
+
+/** The item's newest verdict when a moderator reversed it: ended, and not yet superseded. */
+export interface ReplayReversed {
+  actionId: Id<'moderationActions'>;
+  kind: 'hidden' | 'removed' | 'retracted';
+  at: number;
+  endedAt: number;
+  endedByActionId: Id<'moderationActions'>;
 }
 
 /**
@@ -217,33 +278,73 @@ export interface ReplayState {
     at: number;
   } | null;
   previousEnded: boolean;
+  /**
+   * The item's newest verdict when a moderator reversed it — never beside a standing one — so the row
+   * that mints the next verdict can mark it superseded. Absent in a state carried from before the
+   * flag existed: read as none.
+   */
+  reversed?: ReplayReversed | null;
 }
 
-export const REPLAY_START: ReplayState = { standing: null, previousEnded: false };
+export const REPLAY_START: ReplayState = { standing: null, previousEnded: false, reversed: null };
 
-/** What one audit row does to the replay: the verdict it ends, the one it mints, and the state after. */
+/**
+ * What one audit row does to the replay: the verdict it ends, the one it mints, an earlier reversed
+ * verdict it supersedes (written again, marked), and the state after.
+ */
 export function replayStep(
   state: ReplayState,
   row: Doc<'moderationActions'>,
-): { state: ReplayState; ended: ReplayedVerdict | null; minted: boolean } {
+): {
+  state: ReplayState;
+  ended: ReplayedVerdict | null;
+  minted: boolean;
+  superseding: ReplayedVerdict | null;
+} {
   if (!movesVerdict(row))
-    return { state: { ...state, previousEnded: false }, ended: null, minted: false };
+    return {
+      state: { ...state, previousEnded: false },
+      ended: null,
+      minted: false,
+      superseding: null,
+    };
   const takedown =
     row.action === 'hide' || row.action === 'remove' || row.action === 'retract_access_alert';
   const meta = (row.metadata ?? {}) as Record<string, unknown>;
   const forward = row.undoesActionId === undefined && meta.cascadedFromPostId === undefined;
   const minted = takedown && (forward || state.previousEnded);
   const ended: ReplayedVerdict | null = state.standing
-    ? { ...state.standing, standing: false, endedAt: row.createdAt, endedByActionId: row._id }
+    ? {
+        ...state.standing,
+        standing: false,
+        endedAt: row.createdAt,
+        endedByActionId: row._id,
+        superseded: minted,
+      }
     : null;
+  const reversed = state.reversed ?? null;
+  const superseding: ReplayedVerdict | null =
+    minted && reversed ? { ...reversed, standing: false, superseded: true } : null;
   return {
     state: {
       standing: minted
         ? { actionId: row._id, kind: verdictKindOf(row.action), at: row.createdAt }
         : null,
       previousEnded: ended !== null,
+      reversed: minted
+        ? null
+        : ended
+          ? {
+              actionId: ended.actionId,
+              kind: ended.kind,
+              at: ended.at,
+              endedAt: row.createdAt,
+              endedByActionId: row._id,
+            }
+          : reversed,
     },
     ended,
     minted,
+    superseding,
   };
 }

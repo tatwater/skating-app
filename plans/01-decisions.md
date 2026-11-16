@@ -8164,3 +8164,39 @@ set the measure as shoreline, not reach; one rule on one layer means the merge, 
 console cannot disagree; a missing answer must fail loudly, never read as a corpus out of region.
 
 **Related:** D48, D226, [`phase-B01`](./phases/B01-admin-console.md) *The region rule (B01-3g)*.
+
+
+
+## D267 — The record sheet's levers and lists: one rule, each item once (B01)
+
+**2026-11-15, the coordinator's rulings on the People record sheet's server (B01-4d).** The sheet's
+four levers and three lists follow these rules, decided once in `lib/recordRules` (the writes refuse by
+it; every read's `can` answers by it):
+
+- **Restore** takes a reason only if one is given — a give-back (D226) — otherwise a default the row
+  marks `reasonDefaulted`, on every row the restore writes. **Restoring what is already up is refused**
+  and writes nothing — unless a decision still stands on it (a history rebuilt from before the record
+  can leave one), which the restore ends: with no reason asked, a second press would otherwise write a
+  second row.
+- **Overturn** takes a reason only if one is given (the same default and mark), and returns when the
+  words are now due to be erased. It is the one lever an erased comment's shell still offers: its
+  words are gone, but a decision standing on it can come off the record.
+- **Keep on the record** is its own write (`moderation.keepOnRecord`): a removal on the person's record
+  (an alert's, a retraction), marked `keptOnRecord`, holding the content from erasure until a moderator
+  overturns it. A takeaway, so a reason is required; refused on content its author still has up, and on
+  content a decision already holds (nothing would change).
+- **Reversed shows each item once, as its newest ended decision**: a hide that later became a removal
+  is the removal, never also a Reversed hide. It rests on a stored flag, `contentVerdicts.superseded`,
+  kept by every verdict writer and the replay. The founder has not yet ruled whether superseded
+  decisions should also show; the predicate `isReversed` in `lib/contentVerdicts` is the one place that
+  changes, with the index the reads range over beside it.
+- **A Post its author didn't delete** answers Restore with *Open it to see what can be done with it* on
+  a list row — its Reports decide between Restore and Overturn, and a page can't read ten Reports a row
+  — and exactly in the item pane, which reads them.
+- **The counts are their own read** (`contentRecord.recordCounts`); Standing stays the person page's
+  `hidden`. A count that couldn't read every row is a floor (`capped`), never a guess.
+
+**Why:** a lever drawn that its write refuses is a lie the page tells (D217); an item listed twice, or a
+number that guesses, is the same lie in the lists.
+
+**Related:** D3, D217, D226, D248, [`phase-B01`](./phases/B01-admin-console.md) §12.8.

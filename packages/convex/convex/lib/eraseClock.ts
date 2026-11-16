@@ -133,16 +133,20 @@ async function directHold(
   budget: ReadBudget,
   targetType: Doc<'contentVerdicts'>['targetType'],
   targetId: string,
+  /** As if its own standing verdicts were ended (an overturn's answer, asked before it runs). */
+  releasing = false,
 ): Promise<boolean> {
-  const verdict = await budget.one('verdict', () =>
-    ctx.db
-      .query('contentVerdicts')
-      .withIndex('by_target_standing', (q) =>
-        q.eq('targetType', targetType).eq('targetId', targetId).eq('standing', true),
-      )
-      .first(),
-  );
-  if (verdict) return true;
+  if (!releasing) {
+    const verdict = await budget.one('verdict', () =>
+      ctx.db
+        .query('contentVerdicts')
+        .withIndex('by_target_standing', (q) =>
+          q.eq('targetType', targetType).eq('targetId', targetId).eq('standing', true),
+        )
+        .first(),
+    );
+    if (verdict) return true;
+  }
   for (const status of ['open', 'reviewing'] as const) {
     const flag = await budget.one('contentFlag', () =>
       ctx.db
@@ -167,14 +171,15 @@ export async function isHeld(
   budget: ReadBudget,
   type: Erasable,
   doc: ErasableDoc,
-  known: { postHeld?: boolean } = {},
+  known: Known = {},
 ): Promise<boolean> {
+  const releasing = known.releasing === true;
   switch (type) {
     case 'post': {
       // A Post goes after its members: one still listed is held by its own clock, and the Post's
       // words wait for it (the member's erasure refreshes the Post's clock).
       if ((doc as Doc<'posts'>).reportIds.length > 0) return true;
-      return directHold(ctx, budget, 'post', doc._id);
+      return directHold(ctx, budget, 'post', doc._id, releasing);
     }
     case 'report': {
       // A verdict or a complaint on its Post is about what the Post shows — this Report's words and
@@ -185,12 +190,12 @@ export async function isHeld(
         const postHeld = known.postHeld ?? (await directHold(ctx, budget, 'post', postId));
         if (postHeld) return true;
       }
-      return directHold(ctx, budget, 'report', doc._id);
+      return directHold(ctx, budget, 'report', doc._id, releasing);
     }
     case 'comment':
     case 'hazard':
     case 'accessAlert':
-      return directHold(ctx, budget, type, doc._id);
+      return directHold(ctx, budget, type, doc._id, releasing);
     case 'contentFlag':
     case 'waterBodyRequest':
       // Nothing files a verdict or a flag on a flag or a request.
@@ -203,6 +208,13 @@ export function postHoldOf(ctx: QueryCtx, budget: ReadBudget, postId: Id<'posts'
   return directHold(ctx, budget, 'post', postId);
 }
 
+/**
+ * What a caller already knows of an item's holds: its Post's (a Report's caller may have read it), and
+ * `releasing` — answer as if the item's own standing verdicts were ended, as an overturn ends them
+ * (its Post's verdict and every open flag still hold it).
+ */
+type Known = { postHeld?: boolean; releasing?: boolean };
+
 /** The clock `doc` should carry now, given what holds it. Writes nothing. */
 export async function clockOf(
   ctx: QueryCtx,
@@ -210,7 +222,7 @@ export async function clockOf(
   type: Erasable,
   doc: ErasableDoc,
   now: number,
-  known: { postHeld?: boolean } = {},
+  known: Known = {},
 ): Promise<number | undefined> {
   // Parked after failing too often: off the clock whatever its holds do meanwhile, so only the
   // daily retry (`erasure.retryParkedDaily`) or a manual release (`erasure.retryParked`) tries it.
@@ -224,7 +236,8 @@ export async function clockOf(
  * Bring one item's clock (as `doc` holds it, read in this transaction) to what its withdrawal and its
  * holds say now, and return it. Idempotent: a running clock is never pushed later, and a write happens
  * only when the value changes. `alongside` rides in the same patch — a caller re-deriving the row's
- * other fields writes once.
+ * other fields writes once. Never `releasing`: that is a question asked before an overturn, and a
+ * clock written from it would run while a decision still holds the item.
  */
 export async function refreshClockOf(
   ctx: MutationCtx,
@@ -232,10 +245,11 @@ export async function refreshClockOf(
   type: Erasable,
   doc: ErasableDoc,
   now: number,
-  known: { postHeld?: boolean } = {},
+  known: Omit<Known, 'releasing'> = {},
   alongside?: Record<string, unknown>,
 ): Promise<number | undefined> {
-  const next = await clockOf(ctx, budget, type, doc, now, known);
+  // Only what it may pass on: a `Known` value carrying `releasing` would still be assignable here.
+  const next = await clockOf(ctx, budget, type, doc, now, { postHeld: known.postHeld });
   if (next !== doc.eraseAt || alongside !== undefined) {
     budget.touch(type);
     await ctx.db.patch(doc._id as Id<(typeof ERASABLE)[Erasable]>, {

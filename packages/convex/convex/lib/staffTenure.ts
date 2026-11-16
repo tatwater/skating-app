@@ -11,7 +11,7 @@ import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { personRowOf } from './peopleRows';
 import { readPreparation } from './peopleRuns';
-import { DOC_MAX, ReadBudget } from './readBudget';
+import { DOC_MAX, ReadBudget, ROW_MAX } from './readBudget';
 import { chainRootId, isStandingChange } from './undoChains';
 
 type Audit = Doc<'moderationActions'>;
@@ -19,18 +19,17 @@ type Audit = Doc<'moderationActions'>;
 /** Role rows walked at most, of each verb, newest first. */
 export const ROLE_ROWS = 50;
 
+/** A row whose chain's first row is gone, judged on its own: nothing known above it, so it stands. */
+function aloneRoot(row: Audit): Audit {
+  return { ...row, undoTop: row.undoDepth ?? 0, undoTopActorId: undefined };
+}
+
 /**
  * Chain roots for a read: from the rows already in hand, else read once each as they really weigh
  * (`ReadBudget.measured`). `undefined` when the budget can't afford the read — the caller's figure is
  * then capped.
  */
-export function rootReader(
-  ctx: QueryCtx,
-  budget: ReadBudget,
-  known: readonly Audit[],
-  /** Counts the reads it makes, for a caller's time bound (a row whose root is in hand costs none). */
-  counter: { reads: number } = { reads: 0 },
-) {
+export function rootReader(ctx: QueryCtx, budget: ReadBudget, known: readonly Audit[]) {
   const byId = new Map<string, Audit>(known.map((r) => [r._id, r]));
   return async (row: Audit): Promise<Audit | undefined> => {
     const id = chainRootId(row);
@@ -38,13 +37,61 @@ export function rootReader(
     if (id === row._id) return row;
     const have = byId.get(id);
     if (have) return have;
-    counter.reads++;
     const read = await budget.measured('moderationAction', () => ctx.db.get(id));
     if (read === undefined) return undefined;
-    // The first row is gone: judge the row on its own — nothing known above it, so it stands.
-    if (read === null) return { ...row, undoTop: row.undoDepth ?? 0, undoTopActorId: undefined };
+    if (read === null) return aloneRoot(row);
     byId.set(id, read);
     return read;
+  };
+}
+
+/**
+ * The chain roots a page of rows needs, read **at once** (B01-4c): those not in hand (`known`) read
+ * once each, in page order, in waves over the request's budget (`ReadBudget.waves`, each reserving
+ * an audit row's worst case), at most `limit` of them. The lookup it returns gives each row's root,
+ * or `undefined` for one past the limit or the budget — the caller's figure is then capped. Which
+ * rows those are depends only on the page's order, never on the order reads settle in. `reads` is how
+ * many it read, for a caller's time bound.
+ */
+export async function readRoots(
+  ctx: QueryCtx,
+  budget: ReadBudget,
+  known: readonly Audit[],
+  rows: readonly Audit[],
+  limit: number,
+): Promise<{ rootOf: (row: Audit) => Audit | undefined; reads: number }> {
+  const byId = new Map<string, Audit>(known.map((r) => [r._id, r]));
+  const ids: Id<'moderationActions'>[] = [];
+  const asked = new Set<string>();
+  for (const row of rows) {
+    const id = chainRootId(row);
+    if (id === row._id || byId.has(id) || asked.has(id)) continue;
+    asked.add(id);
+    ids.push(id as Id<'moderationActions'>);
+  }
+  const wanted = ids.slice(0, Math.max(0, limit));
+  const got = await budget.waves<Id<'moderationActions'>, Audit | null | 'over'>(
+    wanted,
+    () => ({ bytes: ROW_MAX.moderationAction, reads: 1 }),
+    (id, share) => share.read('moderationAction', () => ctx.db.get(id)),
+    () => 'over',
+  );
+  // Every item is answered: its row, `null` (gone) or `'over'` (past the budget).
+  const read = new Map<string, Audit | null | 'over'>(
+    wanted.map((id, i) => [id, got[i] as Audit | null | 'over']),
+  );
+  return {
+    reads: got.filter((g) => g !== 'over').length,
+    rootOf: (row) => {
+      const id = chainRootId(row);
+      // A row no undo is its own first row: already in hand, never read again.
+      if (id === row._id) return row;
+      const have = byId.get(id);
+      if (have) return have;
+      const found = read.get(id);
+      if (found === undefined || found === 'over') return undefined;
+      return found === null ? aloneRoot(row) : found;
+    },
   };
 }
 
