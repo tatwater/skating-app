@@ -4377,13 +4377,35 @@ town entry per boundary, above) as its own commits.
   shell's splash while the viewer's role reloads unmounts the provider, so a write out then has no
   queue on return (the list queues share it); the store's own refusal toast names neither the body
   nor what (a sender carrying its own words is a design change).
+- **A pick's answer reaches exactly one audience still there** (Greptile's second P1 on #136).
+  Clear the ruling, confirm no public access behind it, Back and Forward before the clear answers;
+  the ruling is refused — and no one was told. Two faults met: a refusal *returned* as a value (the
+  dialog's string) was invisible to the store, which spoke only for thrown ones; and the answer went
+  through the sender the store had handed to the returning tab, to a dialog that had gone. Now every
+  write answers the store in one shape (`PickOutcome`: landed; refused, in the server's words; or
+  refused and already said by its write path) — a sender that answers anything else doesn't
+  compile — and a press carries its asker (a reason dialog's opening, ended when it closes or
+  goes). A refusal goes to the asker while it is there (said over the kept reason); else to a
+  control that says refusals in place (the satellite link); else the page's words — a toast naming
+  the body and what wasn't saved ("Not saved · Mascoma Lake" / "The ruling: …", `PICK_WHAT` beside
+  `notSavedWhat`, the shape of #135's late-refusal toast). The same fault outside the store: a
+  result was said "here" whenever its console was on screen, even when the page that sent it had
+  gone, so the Links queue set its error on a page no one saw; `useBodyHold().here()` is now the
+  console alive *and* the holder mounted, and the one-shot reason dialogs (Hide, Dismiss, Decline)
+  hand their opening to `actInDialog`, which says a refusal once when it has gone. **Left:**
+  Standing's and Hazards' forms keep a refusal in the form's own state while their tab's hold
+  decides "here" — a form that unmounts under a mounted tab could still lose one (outside the
+  pick and list mechanism; owed); Undo's reason dialog, in the shell, is untouched.
 - **A late answer never acts on moved UI** — a table over the wired tabs and the boost
   (`tabs/latestPress.test.tsx`): A pressed and held, then B before A's answer (A landing shows B
   still, B stored), a move outside the tab (A lands taking no focus), or the control left and
   returned while A waits (landed: it joins, and B pressed then is stored after; refused: said, and
-  the record shows); Access's dialog canceled is no press. The store has a model test over two
+  the record shows), and who hears the answer — every control × still there / tab away / tab
+  returned / another body shown × landed / refused, and the reason dialog in flight and waiting ×
+  its four places; Access's dialog canceled is no press. The store has a model test over two
   bodies — presses, leaving, returning, answers landed and refused (three pinned seeds, one
-  random) — and a remount that must join its queue, the guard that no queue lives in a component
+  random; askers, closings, and answers landed, returned, thrown and already said, with every refusal
+  said exactly once by an audience still there) — and a remount that must join its queue, the guard that no queue lives in a component
   again. Mutation-checked.
 - **The Bodies library reads the narrow rule and `lib/loadAhead`** (above). Back to the list is a
   button and ⇧⏎ (it replaces the place, as opening a row does).
