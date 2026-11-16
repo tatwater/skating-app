@@ -55,6 +55,11 @@ export type Receipt = {
   actionId?: string;
   /** Whether undoing the write takes something away from skaters (and so asks why). */
   undoNeedsReason?: boolean;
+  /**
+   * `false` when the write itself said it can't be undone now (`undoable: false`): the receipt
+   * shows with no Undo, and nothing is looked up.
+   */
+  undoable?: false;
 };
 
 type UndoRequest = {
@@ -158,11 +163,14 @@ export function UndoProvider({
 
   const announce = useCallback(
     async (
-      { title, description, target, actionId, undoNeedsReason }: Receipt,
+      { title, description, target, actionId, undoNeedsReason, undoable }: Receipt,
       here?: () => boolean,
     ) => {
       let offered: { actionId: string; undo: { needsReason?: boolean } } | null = null;
-      if (actionId !== undefined && undoNeedsReason !== undefined) {
+      if (undoable === false) {
+        // The write said so: no Undo to offer, and no lookup that could disagree with it.
+        offered = null;
+      } else if (actionId !== undefined && undoNeedsReason !== undefined) {
         // The write named its own row and what undoing it asks: no lookup. Were someone to act on
         // the same thing in the moment between, the undo's run refuses in the server's own words.
         offered = { actionId, undo: { needsReason: undoNeedsReason } };

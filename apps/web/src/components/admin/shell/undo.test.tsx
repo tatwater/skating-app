@@ -131,6 +131,14 @@ describe('the receipt toast', () => {
     await toastNamed('Hidden · “Black ice at the beach”');
   });
 
+  it('draws no Undo, and asks nothing, when the write said it can’t be undone', async () => {
+    render(<Harness server={server} receipt={{ ...receipt, actionId: 'a1', undoable: false }} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Hide it' }));
+    await toastNamed('Hidden · “Black ice at the beach”');
+    expect(screen.queryByRole('button', { name: /^Undo/ })).toBeNull();
+    expect(server.latestOwn).not.toHaveBeenCalled();
+  });
+
   it('still shows the receipt when the undo lookup fails', async () => {
     server.latestOwn.mockRejectedValue(new Error('offline'));
     render(<Harness server={server} receipt={receipt} />);

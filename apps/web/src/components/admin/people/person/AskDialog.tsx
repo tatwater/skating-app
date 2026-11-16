@@ -24,7 +24,8 @@ import { WORDS } from './personWords';
  *   mounted, so focus stays on it); on success the dialog closes and focus goes back to the row's
  *   button (Base UI's return focus); on refusal the server's own words stand over the kept reason.
  * - **A reason is asked only when `reason` is set** — a give-back passes `reason={false}` and the
- *   dialog asks nothing but the choice in its body.
+ *   dialog asks nothing but the choice in its body; `'optional'` offers the field without
+ *   requiring it (the record sheet's Overturn: a give-back that may take one).
  * - `destructive` (a ban) takes two presses, the kit's armed step.
  */
 export type AskDialogProps = {
@@ -34,8 +35,11 @@ export type AskDialogProps = {
   description: ReactNode;
   /** The action's label ("Restrict"). */
   confirm: ReactNode;
-  /** Ask a reason (a take-away). */
-  reason: boolean;
+  /** Ask a reason (a take-away); `'optional'` offers one without asking. */
+  reason: boolean | 'optional';
+  /** The reason field's kicker and placeholder, where the page words them its own way. */
+  reasonLabel?: ReactNode;
+  reasonPlaceholder?: string;
   /** The body's own choices (a duration, a limit), above the reason. */
   children?: ReactNode;
   /** Whatever the body chose is complete (a limit typed); the reason is checked here. */
@@ -55,6 +59,8 @@ export function AskDialog({
   description,
   confirm,
   reason,
+  reasonLabel,
+  reasonPlaceholder,
   children,
   ready = true,
   destructive = false,
@@ -78,6 +84,8 @@ export function AskDialog({
           description={description}
           confirm={confirm}
           reason={reason}
+          {...(reasonLabel !== undefined && { reasonLabel })}
+          {...(reasonPlaceholder !== undefined && { reasonPlaceholder })}
           ready={ready}
           destructive={destructive}
           onConfirm={onConfirm}
@@ -99,6 +107,8 @@ function AskBody({
   description,
   confirm,
   reason,
+  reasonLabel,
+  reasonPlaceholder,
   ready,
   destructive,
   onConfirm,
@@ -114,7 +124,7 @@ function AskBody({
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const trimmed = text.trim();
-  const waiting = !ready || (reason && trimmed.length === 0);
+  const waiting = !ready || (reason === true && trimmed.length === 0);
   return (
     <>
       <AlertDialogHeader>
@@ -124,9 +134,10 @@ function AskBody({
       <AlertDialogBody>
         {refusal !== null && <AlertDialogError>{refusal}</AlertDialogError>}
         {children}
-        {reason && (
+        {reason !== false && (
           <AlertDialogReason
-            label={WORDS.reasonLabel}
+            label={reasonLabel ?? WORDS.reasonLabel}
+            {...(reasonPlaceholder !== undefined && { placeholder: reasonPlaceholder })}
             value={text}
             onChange={(e) => setText(e.target.value)}
           />
@@ -142,7 +153,7 @@ function AskBody({
             if (busy) return;
             setBusy(true);
             onBusy(true);
-            void onConfirm(reason ? trimmed : '').then((refused) => {
+            void onConfirm(reason !== false ? trimmed : '').then((refused) => {
               setBusy(false);
               onBusy(false);
               if (refused === null) onDone();

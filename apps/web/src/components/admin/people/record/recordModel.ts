@@ -519,6 +519,14 @@ export type ItemView = {
   /** What the lever would do (*If overturned*, *If kept*), as label-and-words rows. */
   would: { title: string; rows: Array<{ label: string; text: string }> } | null;
   lever: Lever | null;
+  /**
+   * When its words would be erased were nothing to hold it — core's rule (`nextEraseAt`) over its
+   * deletion; an open flag the pane can't see may still hold it, so a receipt says only the
+   * server's date.
+   */
+  erasesOn: string | null;
+  /** The place a receipt names: the body, or a comment's Report. */
+  place: string | null;
 };
 
 /** The words an item holds, from the whole document the pane reads (`published`). */
@@ -749,6 +757,9 @@ export function itemView(
     }),
     would,
     lever,
+    erasesOn:
+      releasedAt === null ? null : momentWords(releasedAt, now, tz).replace(/ \d\d:\d\d$/, ''),
+    place,
   };
 }
 
