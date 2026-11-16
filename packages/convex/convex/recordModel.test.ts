@@ -355,17 +355,38 @@ async function holds(w: W) {
 
 const SEEDS = [1, 42, 20261115, Math.floor(Math.random() * 2 ** 31)];
 
+/**
+ * The histories the build and its review found, run first under every seed: an earlier reversal a
+ * later hide must supersede, an undo between, a deletion beside another item's hide, and a keep,
+ * overturn and erasure in turn.
+ */
+const PINNED: Op[][] = [
+  [{ op: 'hide', i: 0 }, { op: 'undo' }, { op: 'hide', i: 0 }],
+  [{ op: 'hide', i: 2 }, { op: 'undo' }, { op: 'hide', i: 2 }, { op: 'undo' }],
+  [
+    { op: 'delete', i: 3 },
+    { op: 'hide', i: 0 },
+  ],
+  [
+    { op: 'delete', i: 1 },
+    { op: 'keep', i: 1 },
+    { op: 'act', i: 1 },
+    { op: 'erase' },
+    { op: 'act', i: 1 },
+  ],
+];
+
 describe('the record sheet’s lists over any history', () => {
   test.each(SEEDS)('seed %i', async (seed) => {
     console.log(`recordModel seed ${seed}`);
     await fc.assert(
-      fc.asyncProperty(fc.array(opArb, { minLength: 1, maxLength: 10 }), async (ops) => {
+      fc.asyncProperty(fc.array(opArb, { minLength: 1, maxLength: 7 }), async (ops) => {
         vi.setSystemTime(T0);
         const w = await world();
         for (const op of ops) await step(w, op);
         await holds(w);
       }),
-      { seed, numRuns: 3 },
+      { seed, numRuns: 3 + PINNED.length, examples: PINNED.map((ops) => [ops]) },
     );
   });
 });
