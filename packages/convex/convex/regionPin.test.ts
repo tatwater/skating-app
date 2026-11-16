@@ -6,6 +6,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { MAX_REFERENCE_LINKS } from '@skating/core';
 import { convexTest } from 'convex-test';
 import fc from 'fast-check';
 import type { Polygon } from 'geojson';
@@ -16,7 +17,7 @@ import { PLACES_RULE, pinnedFactsFor, placesOf } from './lib/bodyGeo';
 import { syncAdminAreaCells } from './lib/cellIndex';
 import { undoState } from './lib/undo';
 import schema from './schema';
-import { MAX_MODERATOR_TOWNS } from './waterBodies';
+import { MAX_MODERATOR_ALIASES, MAX_MODERATOR_TOWNS } from './waterBodies';
 
 const modules = import.meta.glob('./**/*.*s');
 const harness = () => convexTest(schema, modules);
@@ -421,7 +422,7 @@ describe('the pin against the other writers', () => {
     expect((await get(t, id))?.moderatorTownKeys).toEqual([NORTH_EAST, SOUTHBRIDGE]);
   });
 
-  test('a merge folds the loser’s pins into the survivor, within the cap; the loser carries none', async () => {
+  test('a merge folds the loser’s pins into the survivor; the loser carries none', async () => {
     const t = harness();
     await seedTowns(t);
     const admin = await person(t);
@@ -490,6 +491,39 @@ describe('the pin against the other writers', () => {
       skippedSamples: [{ why: expect.stringMatching(/a person merges them/) }],
     });
     expect((await get(t, loser))?.dedupStatus).toBe('near_certain');
+  });
+
+  test('the import’s dry run predicts its apply when one survivor takes two rows that fit only one at a time', async () => {
+    const t = harness();
+    const keys = (from: number, n: number) =>
+      Array.from({ length: n }, (_, i) => `tiger/36027${String(10_000 + from + i)}`);
+    const survivor = await imported(t, 'way/1');
+    const first = await imported(t, 'way/2');
+    const second = await imported(t, 'way/3');
+    // 4 + 3 fits, 4 + 3 + 3 doesn't.
+    await t.run(async (ctx) => {
+      await ctx.db.patch(survivor, { moderatorTownKeys: keys(0, 4) });
+      await ctx.db.patch(first, { moderatorTownKeys: keys(4, 3) });
+      await ctx.db.patch(second, { moderatorTownKeys: keys(7, 3) });
+    });
+    const pairs = ['way/2', 'way/3'].map((externalId) => ({
+      survivor: { source: 'osm', externalId: 'way/1' },
+      absorbed: { source: 'osm', externalId },
+    }));
+    const dry = await t.mutation(internal.waterBodies.retireAbsorbedBodies, { pairs });
+    const applied = await t.mutation(internal.waterBodies.retireAbsorbedBodies, {
+      pairs,
+      apply: true,
+    });
+    for (const res of [dry, applied]) {
+      expect(res).toMatchObject({
+        retired: 1,
+        retiredKeys: ['osm:way/2'],
+        skippedSamples: [{ pair: expect.stringContaining('way/3'), why: expect.any(String) }],
+      });
+    }
+    expect((await get(t, survivor))?.moderatorTownKeys).toEqual(keys(0, 7));
+    expect((await get(t, second))?.moderatorTownKeys).toEqual(keys(7, 3));
   });
 
   test('a merge carries the loser’s aliases and reference links too: the survivor holds both bodies’ lists', async () => {
@@ -562,37 +596,57 @@ describe('the pin against the other writers', () => {
         merged = await admin.as
           .mutation(api.waterBodies.merge, { survivorId: survivor, loserId: loser })
           .then(() => true)
-          .catch(() => false);
+          // Only the cap's refusal counts as a refusal: any other error fails the property.
+          .catch((e: unknown) => {
+            expect(String(e)).toMatch(/Can't merge into .*Clear some first\./);
+            return false;
+          });
       }
       const union = (pick: (x: ReturnType<typeof lists>) => unknown[], key: (v: never) => string) =>
         new Set([...pick(lists(s)), ...pick(lists(l))].map((v) => key(v as never)));
+      const pins = union(
+        (x) => x.moderatorTownKeys,
+        (k: string) => k,
+      );
+      const aliases = union(
+        (x) => x.moderatorAliases,
+        (a: string) => a.toLowerCase(),
+      );
+      const links = union(
+        (x) => x.referenceLinks,
+        (x: { url: string }) => x.url,
+      );
+      // A merge happens exactly when every union fits its cap — never refused short of one.
+      expect(merged).toBe(
+        pins.size <= MAX_MODERATOR_TOWNS &&
+          aliases.size <= MAX_MODERATOR_ALIASES &&
+          links.size <= MAX_REFERENCE_LINKS,
+      );
       const after = await t.run(async (ctx) => [
         await ctx.db.get(survivor),
         await ctx.db.get(loser),
       ]);
       if (merged) {
         const got = after[0] as Doc<'waterBodies'>;
-        expect(new Set(got.moderatorTownKeys ?? [])).toEqual(
-          union(
-            (x) => x.moderatorTownKeys,
-            (k: string) => k,
-          ),
-        );
-        expect(new Set((got.moderatorAliases ?? []).map((a) => a.toLowerCase()))).toEqual(
-          union(
-            (x) => x.moderatorAliases,
-            (a: string) => a.toLowerCase(),
-          ),
-        );
-        expect(new Set((got.referenceLinks ?? []).map((x) => x.url))).toEqual(
-          union(
-            (x) => x.referenceLinks,
-            (x: { url: string }) => x.url,
-          ),
-        );
+        expect(new Set(got.moderatorTownKeys ?? [])).toEqual(pins);
+        expect(new Set((got.moderatorAliases ?? []).map((a) => a.toLowerCase()))).toEqual(aliases);
+        expect(new Set((got.referenceLinks ?? []).map((x) => x.url))).toEqual(links);
       } else {
-        // Refused (or skipped): neither body changed at all.
-        expect(after).toEqual(before);
+        // Refused by hand: neither body changed at all. Skipped by the import: the same, except the
+        // pair now waits in the duplicate queue for a person.
+        const listsOf = (b: Doc<'waterBodies'> | null) => ({
+          pins: b?.moderatorTownKeys,
+          aliases: b?.moderatorAliases,
+          links: b?.referenceLinks,
+          states: b?.states,
+          merged: b?.mergedIntoId,
+        });
+        if (byImport) {
+          expect(after.map(listsOf)).toEqual(before.map(listsOf));
+          expect(after.map((b) => b?.dedupStatus)).toEqual(['near_certain', 'near_certain']);
+        } else {
+          expect(after).toEqual(before);
+        }
       }
     });
     for (const seed of [7, 2026]) await fc.assert(prop, { seed, numRuns: 6 });

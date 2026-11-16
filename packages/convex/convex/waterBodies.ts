@@ -3609,7 +3609,10 @@ export async function mergeBodyInto(
       await refreshPinnedFacts(ctx, survivorId, pins);
     }
     if (listsBefore.loser.aliases.length > 0) {
-      await ctx.db.patch(survivorId, { moderatorAliases: lists.aliases });
+      // Absent when empty, as `setAliasesImpl` stores it.
+      await ctx.db.patch(survivorId, {
+        moderatorAliases: lists.aliases.length > 0 ? lists.aliases : undefined,
+      });
     }
     if (listsBefore.loser.links.length > 0) {
       await ctx.db.patch(survivorId, { referenceLinks: lists.links });
@@ -3867,6 +3870,10 @@ export const retireAbsorbedBodies = internalMutation({
     const handled = new Set<Id<'waterBodies'>>();
     const handledKeys = new Set<string>(alreadyRetired ?? []);
     const keyOf = (b: Doc<'waterBodies'>) => `${b.source}:${b.externalId}`;
+    // The rows each survivor took earlier in this pass, so the cap check below reads the lists it
+    // would hold by then — in a dry run too, where nothing was merged and the survivor re-reads
+    // as it was. Under `--apply` the survivor already holds them, and a union is idempotent.
+    const absorbedInto = new Map<Id<'waterBodies'>, Doc<'waterBodies'>[]>();
 
     for (const pair of pairs) {
       const label = `${pair.absorbed.source}:${pair.absorbed.externalId} → ${pair.survivor.source}:${pair.survivor.externalId}`;
@@ -3901,10 +3908,19 @@ export const retireAbsorbedBodies = internalMutation({
       }
       // A merge that can't hold both bodies' moderator-set lists is a person's call, never a
       // truncation: the pair is skipped and named, and the batch goes on (B01-3g).
-      if (mergedModeratorLists(survivor, [absorbed]).refusal !== null) {
+      const taken = [
+        ...(absorbedInto.get(survivor._id) ?? []),
+        ...(absorbedInto.get(absorbed._id) ?? []),
+        absorbed,
+      ];
+      if (mergedModeratorLists(survivor, taken).refusal !== null) {
         skip('their moderator-set lists together pass a cap, so a person merges them', label);
+        // Put the pair in front of that person: the duplicate queue, where the card shows why it
+        // can't merge as it stands (applied runs only; a dry run writes nothing).
+        if (apply === true) await flagAsDuplicates(ctx, [survivor._id, absorbed._id]);
         continue;
       }
+      absorbedInto.set(survivor._id, taken);
       handled.add(absorbed._id);
       handledKeys.add(keyOf(absorbed));
       retired.push({

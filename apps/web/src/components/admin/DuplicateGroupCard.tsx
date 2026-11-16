@@ -45,8 +45,10 @@ import { ReasonDialog } from './ReasonDialog';
  * a page of tables cost megabytes of polygon.
  */
 
-/** One member of a flagged group, as the queue query returns it (everything but the outline). */
-/** A member as the queue returns it — with its moderator-held lists, which decide whether a merge fits. */
+/**
+ * One member of a flagged group, as the queue query returns it (everything but the outline) — with
+ * its moderator-held lists, which decide whether a merge fits.
+ */
 export type DuplicateMember = ComparableBody &
   Pick<MergeListSide, 'moderatorTownKeys' | 'moderatorAliases' | 'referenceLinks'> & {
     _id: Id<'waterBodies'>;
@@ -220,7 +222,12 @@ export function DuplicateGroupCard({
                   live.filter((m) => m._id !== survivor._id),
                 ).refusal;
                 const button = (
-                  <Button variant="outline" size="sm" disabled={refusal !== null}>
+                  <Button
+                    key={survivor._id}
+                    variant="outline"
+                    size="sm"
+                    disabled={refusal !== null}
+                  >
                     <span
                       className="mr-1 inline-block size-2 rounded-full"
                       style={{ backgroundColor: colorFor(i) }}

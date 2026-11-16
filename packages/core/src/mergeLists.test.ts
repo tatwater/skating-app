@@ -81,10 +81,7 @@ describe('mergedModeratorLists', () => {
         { name: 'B', moderatorTownKeys: many(6, 4) },
       ]).refusal,
     ).toBe(
-      'Can’t merge into “Mirror Lake”: together the bodies hold 10 pinned towns, more than the 8 one body can. Clear some first.'.replace(
-        'Can’t',
-        "Can't",
-      ),
+      "Can't merge into “Mirror Lake”: together the bodies hold 10 pinned towns, more than the 8 one body can. Clear some first.",
     );
     expect(
       mergedModeratorLists({ name: '' }, [
@@ -93,7 +90,7 @@ describe('mergedModeratorLists', () => {
           referenceLinks: Array.from({ length: 9 }, (_, i) => ({ label: `${i}`, url: `u${i}` })),
         },
       ]).refusal,
-    ).toMatch(/“Unnamed body”.*9 reference links, more than the 8/);
+    ).toMatch(/“\(unnamed\)”.*9 reference links, more than the 8/);
     expect(
       mergedModeratorLists(
         { name: 'A', moderatorAliases: Array.from({ length: 21 }, (_, i) => `x${i}`) },
@@ -102,7 +99,37 @@ describe('mergedModeratorLists', () => {
     ).toMatch(/21 moderator aliases/);
   });
 
-  it('caps the links as the reference-links writer does', () => {
-    expect(MAX_REFERENCE_LINKS).toBe(8);
+  it('keeps the survivor’s own lists exactly as they stand: two links to one URL both stay', () => {
+    const m = mergedModeratorLists(
+      {
+        name: ' Mirror Lake ',
+        moderatorAliases: ['Glass'],
+        referenceLinks: [
+          { label: 'Association', url: 'https://example.org/a' },
+          { label: 'Association (events)', url: 'https://example.org/a' },
+        ],
+      },
+      [
+        {
+          name: 'Other',
+          moderatorAliases: ['mirror lake', 'glass', 'Still'],
+          referenceLinks: [
+            { label: 'Same', url: 'https://example.org/a' },
+            { label: 'Town page', url: 'https://example.org/b' },
+          ],
+        },
+      ],
+    );
+    expect(m).toEqual({
+      pins: [],
+      // The survivor's name is matched trimmed, as the alias writer matches it.
+      aliases: ['Glass', 'Still'],
+      links: [
+        { label: 'Association', url: 'https://example.org/a' },
+        { label: 'Association (events)', url: 'https://example.org/a' },
+        { label: 'Town page', url: 'https://example.org/b' },
+      ],
+      refusal: null,
+    });
   });
 });

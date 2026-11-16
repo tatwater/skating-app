@@ -3109,8 +3109,10 @@ the loser's pins into the survivor and records both in its change set; a removal
 both bodies' pins, aliases and reference links (`mergedModeratorLists`), and a union past a cap is a
 refusal in a sentence (which list, how many, the cap, clear some first) — never a truncation. The
 duplicate card never offers that merge and shows the sentence; the import's automated merge skips
-the pair and names it. Weather sample points are not carried: each lies on its own body's outline.
-The merge's change set keeps both bodies' lists as they were, for the unmerge (not built yet). A guard reads the functions' source: nothing else writes the field.
+the pair and names it (its dry run counting what each survivor took earlier in the pass, so it
+predicts the apply). Weather sample points are not carried: each lies on its own body's outline.
+The merge's change set keeps both bodies' lists as they were, for the unmerge (not built yet). A
+guard reads the functions' source: nothing else writes the pins.
 
 **The founder's determinations (2026-11-15), by hand, after the PR deploys.** Of the seven: keep the
 Sterling Forest body (Warwick, NY; inside the state park), remove the other six with notes. Of the
