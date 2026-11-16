@@ -175,6 +175,27 @@ describe('NamesTab', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Water body not found');
   });
 
+  it('an aliases refusal that comes once the field isn’t drawn (its read failed, the tab still mounted) is a toast', async () => {
+    const identity = getFunctionName(api.bodyConsole.identity);
+    mocks.results.set(identity, identityOf({ moderatorAliases: ['The Basin'] }));
+    let land: () => void = () => {};
+    mocks.hold = new Promise<void>((r) => {
+      land = r;
+    });
+    mocks.fail = true;
+    const { rerender } = render(<NamesTab bodyId="wb1" />);
+    await userEvent.type(screen.getByRole('combobox', { name: 'Aliases' }), 'Big Pond{Enter}');
+    mocks.results.set(identity, new Error('down'));
+    rerender(<NamesTab bodyId="wb1" />);
+    expect(screen.queryByRole('combobox', { name: 'Aliases' })).toBeNull();
+    await act(async () => land());
+    await waitFor(() =>
+      expect(toasts).toEqual([
+        expect.objectContaining({ description: 'The aliases: Water body not found' }),
+      ]),
+    );
+  });
+
   it('a failed read of the moderator’s aliases holds no place for the editor, and says so with Try again', () => {
     mocks.results.set(getFunctionName(api.bodyConsole.identity), new Error('down'));
     render(<NamesTab bodyId="wb1" />);

@@ -11,12 +11,12 @@ import {
   useRef,
   useState,
 } from 'react';
-
 import { Button, buttonVariants } from '@/components/kit/button';
 import { Input } from '@/components/kit/input';
 import { Section } from '@/components/kit/section-slug';
 import { SortableRows } from '@/components/kit/sortable-rows';
 import { cn } from '@/lib/utils';
+import { usePlace } from '../../../place';
 import {
   LINK_EDITED_AWAY,
   LINKS_GONE,
@@ -24,7 +24,7 @@ import {
   LINKS_WHAT,
   notSavedWhat,
 } from '../../consoleWords';
-import { listChanged, sayNotSaved, useBodyHold } from '../../frame/currentBody';
+import { holdFor, listChanged, sayNotSaved, useBodyHold } from '../../frame/currentBody';
 import { useListMemory, useListWriter } from '../listWriter';
 import {
   carryIds,
@@ -270,7 +270,10 @@ export function LinksTabView({
   // **Every save goes through one queue** (`listWriter`): reorder, add, edit and remove each hand
   // it a change by link id, applied to the newest list the server acknowledged — so a remove
   // pressed while a reorder saves can't put the old order back, and two saves never overlap.
-  const hold = useBodyHold();
+  const tabHold = useBodyHold();
+  // Here only while the line that says a save's refusal is drawn, not merely while this view is mounted.
+  const savePlace = usePlace();
+  const hold = holdFor(tabHold, savePlace);
   const words = (l: readonly KeyedLink[]) => l.map(({ label, url }) => ({ label, url }));
   const push = useListWriter<KeyedLink>(
     queueKey,
@@ -463,11 +466,14 @@ export function LinksTabView({
             onRemove={() => void removeEdited()}
           />
         )}
-        {saveError !== null && (
-          <p role="alert" className="m-0 text-assist text-bad">
-            {saveError}
-          </p>
-        )}
+        {/* The save's place: drawn or not when an answer comes (a refusal is said here only then). */}
+        <p
+          ref={savePlace.ref}
+          {...(saveError !== null && { role: 'alert' })}
+          className="m-0 text-assist text-bad empty:hidden"
+        >
+          {saveError}
+        </p>
       </Section>
 
       <Section

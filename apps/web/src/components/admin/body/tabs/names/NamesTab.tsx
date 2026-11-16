@@ -10,9 +10,10 @@ import {
   useConsoleReadSet,
 } from '@/components/admin/reads/consoleReads';
 import { useRole } from '@/lib/useRole';
+import { usePlace } from '../../../place';
 import { useUndo } from '../../../shell/undo';
 import { ALIASES_KEPT_MOVING, PICK_WHAT, RECEIPTS } from '../../consoleWords';
-import { listChanged, sayNotSaved, sendFor, useBodyHold } from '../../frame/currentBody';
+import { holdFor, listChanged, sayNotSaved, sendFor, useBodyHold } from '../../frame/currentBody';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { useLatestPick } from '../latestPick';
 import { chipChange, sameList, useListWriter } from '../listWriter';
@@ -120,7 +121,10 @@ export function NamesTab({ bodyId, lit = null }: BodyTabProps) {
   // a list another moderator moved is re-applied on top. The server's refusals are said in place.
   const setAliases = useMutation(api.waterBodies.setAliases);
   const setClass = useMutation(api.waterBodies.setClass);
-  const hold = useBodyHold();
+  const tabHold = useBodyHold();
+  // Here only while the aliases' refusal line is drawn (a failed read draws no field).
+  const aliasesPlace = usePlace();
+  const hold = holdFor(tabHold, aliasesPlace);
   const { announce } = useUndo();
   const [aliasesError, setAliasesError] = useState<string | null>(null);
   const shown = data !== undefined && !isFailed(data) ? data.aliases : [];
@@ -188,6 +192,7 @@ export function NamesTab({ bodyId, lit = null }: BodyTabProps) {
         ? {
             onAliasesChange: editAliases,
             aliasesError,
+            aliasesPlace: aliasesPlace.ref,
             onClassChange: (cls: WaterBodyClass) => classPick.press(cls),
             onClassClear: () => classPick.press(null),
           }

@@ -75,6 +75,8 @@ export type NamesViewProps = {
   onClassClear?: () => void;
   /** The server's refusal of the last aliases save, said under the field (`null` none). */
   aliasesError?: string | null;
+  /** The line that says the aliases' refusal, by ref: a refusal is said there only while it is drawn. */
+  aliasesPlace?: (el: HTMLElement | null) => void;
   /** The viewer could edit the aliases: with no `onAliasesChange` yet, the field says so. */
   canEditAliases?: boolean;
   /** The viewer could change the class: with no `onClassChange` yet, the control says so. */
@@ -92,6 +94,7 @@ export function NamesView({
   onClassChange,
   onClassClear,
   aliasesError = null,
+  aliasesPlace,
   canEditAliases = false,
   canEditClass = false,
 }: NamesViewProps) {
@@ -136,11 +139,14 @@ export function NamesView({
               onValueChange={onAliasesChange}
               placeholder="Add a name skaters use"
             />
-            {aliasesError !== null && (
-              <p role="alert" data-slot="aliases-refused" className="m-0 text-assist text-bad">
-                {aliasesError}
-              </p>
-            )}
+            <p
+              ref={aliasesPlace}
+              {...(aliasesError !== null && { role: 'alert' })}
+              data-slot="aliases-refused"
+              className="m-0 text-assist text-bad empty:hidden"
+            >
+              {aliasesError}
+            </p>
           </>
         ) : onAliasesChange ? (
           // The moderator's own list is on its way: the field holds its place, not the catalogs'.
