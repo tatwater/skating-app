@@ -19,9 +19,13 @@ export const OTHER_BODY = 'Not saved: this page now shows another body. Open it 
 
 // ── The whole-list queue gave up ──────────────────────────────────────────────────────────────
 
-/** A links change whose link another moderator changed or removed meanwhile. */
+/** A links change (an edit, a remove, an order) whose links another moderator changed meanwhile. */
 export const LINKS_GONE =
-  'Another moderator changed these links while yours was saving, and the link you changed is gone. Your change wasn’t saved.';
+  'Another moderator changed these links while yours was saving, so your change no longer applies to them. It wasn’t saved.';
+
+/** In an open link editor whose link another write changed or removed: its edit can't be saved. */
+export const LINK_EDITED_AWAY =
+  'This link was changed or removed while you were editing it, so this edit can’t be saved. Cancel to see the list as it is now.';
 
 /** A links change the list kept moving under, past the queue's re-applications. */
 export const LINKS_KEPT_MOVING =

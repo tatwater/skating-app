@@ -119,15 +119,17 @@ export function carryIds(
  * A change to a link that is gone (another moderator removed it) changes nothing.
  */
 export const linkChanges = {
-  /** `keys` first, in that order; links it doesn't name (added since) stay last, in theirs. */
+  /**
+   * `keys` first, in that order; links it doesn't name (added since) stay last, in theirs. `null`
+   * when a link it orders is no longer there (removed, or replaced — a new link): the order was
+   * made for a list that has moved, and is refused rather than moving a link it never addressed.
+   */
   order:
     (keys: readonly string[]) =>
-    (base: readonly KeyedLink[]): KeyedLink[] => {
+    (base: readonly KeyedLink[]): KeyedLink[] | null => {
       const byKey = new Map(base.map((l) => [l.key, l]));
-      const named = keys.flatMap((k) => {
-        const l = byKey.get(k);
-        return l === undefined ? [] : [l];
-      });
+      if (keys.some((k) => !byKey.has(k))) return null;
+      const named = keys.map((k) => byKey.get(k) as KeyedLink);
       return [...named, ...base.filter((l) => !keys.includes(l.key))];
     },
   add:
@@ -140,10 +142,11 @@ export const linkChanges = {
       base.some((l) => l.key === key)
         ? base.map((l) => (l.key === key ? { label: link.label, url: link.url, key } : l))
         : null,
+  /** `null` when the link is no longer there: nothing to remove (said, never a quiet success). */
   remove:
     (key: string) =>
-    (base: readonly KeyedLink[]): KeyedLink[] =>
-      base.filter((l) => l.key !== key),
+    (base: readonly KeyedLink[]): KeyedLink[] | null =>
+      base.some((l) => l.key === key) ? base.filter((l) => l.key !== key) : null,
 };
 
 /**

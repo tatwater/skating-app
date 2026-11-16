@@ -17,7 +17,7 @@ import { Input } from '@/components/kit/input';
 import { Section } from '@/components/kit/section-slug';
 import { SortableRows } from '@/components/kit/sortable-rows';
 import { cn } from '@/lib/utils';
-import { LINKS_GONE, LINKS_KEPT_MOVING } from '../../consoleWords';
+import { LINK_EDITED_AWAY, LINKS_GONE, LINKS_KEPT_MOVING } from '../../consoleWords';
 import { listChanged, sayNotSaved, useBodyHold } from '../../frame/currentBody';
 import { useListWriter } from '../listWriter';
 import {
@@ -118,7 +118,8 @@ export function LinksTabView({
   ...props
 }: LinksTabViewProps) {
   const derived = derivedRows(body, now);
-  // Each link keeps its id across an edit (its words change, its id doesn't): `carryIds`.
+  // Each link's id: the page's own sends name it exactly; any other list carries it only to a link
+  // with exactly its words (`carryIds`).
   const ids = useRef<KeyedLink[]>(lastIds.get(queueKey) ?? []);
   const links = body.referenceLinks;
   // **The rows' identities come from the page's own writes where it can tell**: a list the server
@@ -134,8 +135,12 @@ export function LinksTabView({
     while (at >= 0 && !sameLinks(unseen.current[at] ?? [], list)) at--;
     const sent = unseen.current[at];
     if (sent !== undefined) unseen.current = unseen.current.slice(at + 1);
-    const next =
-      sent !== undefined ? sent.map((l) => ({ ...l })) : carryIds(ids.current, list, mintLink);
+    // Otherwise ids carry by exact words (`carryIds`), from what the page drew and from the newest
+    // list it sent — so its own edit keeps its id when its echo arrives beside another moderator's
+    // change, and nothing is ever inferred from a place.
+    const newest = unseen.current.at(-1) ?? [];
+    const prev = [...newest, ...ids.current.filter((l) => !newest.some((n) => n.key === l.key))];
+    const next = sent !== undefined ? sent.map((l) => ({ ...l })) : carryIds(prev, list, mintLink);
     ids.current = next;
     lastIds.set(queueKey, next);
     return next;
@@ -201,6 +206,21 @@ export function LinksTabView({
   const sending = useRef(new Set<number>());
   const [busyOpenings, setBusyOpenings] = useState<ReadonlySet<number>>(new Set());
   const editorBusy = editing !== null && busyOpenings.has(editing.opening);
+  // **A row's editor whose link is no longer in the list** (changed or removed by another write) is
+  // drawn at the foot, holding what was typed and saying why — never bound to no row, which would
+  // hide it and, while it stays open, every Edit and Add with it. Not while its own save is out
+  // (that save closes it, or is refused and it shows then); its Done and Remove send nothing, the
+  // link they would change being gone.
+  const orphaned =
+    editing !== null &&
+    !editing.added &&
+    !busyOpenings.has(editing.opening) &&
+    !staff.some((l) => l.key === editing.key);
+  // It takes focus only if focus fell with its row — never from where the moderator moved since.
+  useEffect(() => {
+    if (!orphaned || !focusIsLost(section.current)) return;
+    section.current?.querySelector<HTMLElement>('[data-slot="link-editor"] input')?.focus();
+  }, [orphaned]);
   const editorSave = async (opening: number, change: Change) => {
     sending.current.add(opening);
     setBusyOpenings(new Set(sending.current));
@@ -253,13 +273,16 @@ export function LinksTabView({
       } catch (err) {
         // Refused or moved: the server never held this list, so nothing it shows takes its keys.
         unseen.current = unseen.current.filter((s) => s !== next);
-        const current = listChanged(err);
+        const current = listChanged(err) as StaffLink[] | null;
         if (current !== null) {
           // Moved underneath: the queue re-applies the change on the list as it now stands, keyed as
-          // the page keys it (a link with the same words keeps its id).
-          return {
-            current: carryIds(base, current as StaffLink[], mintLink),
-          };
+          // the rows key it — never a second minting of the same list, under which an edit opened
+          // from a row would find nothing to change. Already drawn: the rows' own keys. Not drawn
+          // yet: carried by words from the base, and held for the render that shows it.
+          if (sameLinks(ids.current, current)) return { current: ids.current };
+          const rebuilt = carryIds(base, current, mintLink);
+          unseen.current = [...unseen.current, rebuilt];
+          return { current: rebuilt };
         }
         setSaveError(err instanceof Error ? err.message : String(err));
         return false;
@@ -287,6 +310,10 @@ export function LinksTabView({
 
   const commitEdit = async () => {
     if (editing === null || sending.current.has(editing.opening)) return;
+    if (orphaned) {
+      setEditing({ ...editing, error: LINK_EDITED_AWAY });
+      return;
+    }
     const draft = { label: editing.label, url: editing.url };
     const error = referenceLinkError(draft);
     if (error !== null) {
@@ -308,6 +335,10 @@ export function LinksTabView({
       return;
     }
     if (sending.current.has(editing.opening)) return;
+    if (orphaned) {
+      setEditing({ ...editing, error: LINK_EDITED_AWAY });
+      return;
+    }
     const { key, opening } = editing;
     const ok = await editorChange(editing, linkChanges.remove(key));
     // A removed link has no row left to edit: its editor goes whatever was typed.
@@ -398,12 +429,16 @@ export function LinksTabView({
             }
           />
         )}
-        {editing?.added && (
+        {editing !== null && (editing.added || orphaned) && (
           <LinkEditor
             // One instance for the add's whole life — saved or not — so focus, caret, selection
-            // and an IME's composition are never touched by a save.
+            // and an IME's composition are never touched by a save. (An orphaned row's editor
+            // mounts here once its row has gone, and takes focus only if focus fell with it.)
             key={editing.opening}
-            editing={editing}
+            autoFocus={editing.added}
+            editing={
+              orphaned && editing.error === null ? { ...editing, error: LINK_EDITED_AWAY } : editing
+            }
             busy={editorBusy}
             onChange={setEditing}
             onDone={() => void commitEdit()}
@@ -548,6 +583,7 @@ function StaffLinkRow({
 function LinkEditor({
   editing,
   busy,
+  autoFocus = true,
   onChange,
   onDone,
   onCancel,
@@ -555,6 +591,8 @@ function LinkEditor({
 }: {
   editing: Editing;
   busy: boolean;
+  /** The label takes focus as it mounts: an editor the moderator opened. */
+  autoFocus?: boolean;
   onChange: (next: Editing) => void;
   onDone: () => void;
   onCancel: () => void;
@@ -584,7 +622,7 @@ function LinkEditor({
       </label>
       <Input
         id={labelId}
-        autoFocus
+        autoFocus={autoFocus}
         value={editing.label}
         placeholder="What the link is, as skaters read it"
         onChange={(e) => onChange({ ...editing, label: e.target.value, error: null })}

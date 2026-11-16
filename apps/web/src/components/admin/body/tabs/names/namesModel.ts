@@ -5,7 +5,7 @@ import {
   WATER_BODY_CLASSES,
   type WaterBodyClass,
 } from '@skating/core';
-import { isFailed, type Loadable } from '@/components/admin/reads/consoleReads';
+import { isFailed, type Loadable, readState } from '@/components/admin/reads/consoleReads';
 import { NAMES_READ_PARTS } from '../../consoleWords';
 import { NOT_COMPUTED } from '../../frame/bodyModel';
 import type { BodyMapScene, LngLat, MapItem } from '../../map/mapDescriptors';
@@ -358,13 +358,12 @@ function townLinesPart(extras: {
   townLinesRead?: Loadable<TownLinesRead>;
   extent?: Extent | null;
 }): Pick<Place, 'townLines' | 'townLinesShort'> {
-  const got = extras.townLinesRead;
-  // The read's own answers, apart: on its way or failed draws no lines (`null`; a failure is in
-  // the tab's note); settled with the places not computed is no lines at all (`[]`).
-  if (got === null && 'townLinesRead' in extras) return { townLines: [] };
-  if (got === undefined || isFailed(got) || got === null) {
-    return { townLines: extras.townLines ?? null };
-  }
+  // The read's own answers, apart (`readState`): on its way or failed draws no lines (`null`; a
+  // failure is in the tab's note); settled with the places not computed is no lines at all (`[]`).
+  const read = readState(extras.townLinesRead);
+  if (read.kind === 'none') return { townLines: [] };
+  if (read.kind !== 'value') return { townLines: extras.townLines ?? null };
+  const got = read.value;
   const { lines, missing } = townLinesFrom(got, extras.extent ?? null);
   return {
     townLines: lines,

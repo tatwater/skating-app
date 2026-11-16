@@ -132,6 +132,8 @@ describe('a secondary read’s four answers are never folded', () => {
     const none = row.answer('none');
     expect(none.failed).toBe(false);
     expect(none.loading).toBe(false);
+    // Not recorded comes from a settled nothing — and from it, it does come.
+    expect(none.notRecorded).toBe(true);
   });
 
   it('readState keeps them apart: on its way, failed, settled with nothing, a value', () => {

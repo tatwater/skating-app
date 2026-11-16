@@ -46,9 +46,7 @@ describe('derivedRows', () => {
 
 /** A reorder by keys, as the record stores it (no keys). */
 const inKeyOrder = (keyed: readonly KeyedLink[], keys: readonly string[]) =>
-  linkChanges
-    .order(keys)(keyed)
-    .map(({ label, url }) => ({ label, url }));
+  (linkChanges.order(keys)(keyed) ?? []).map(({ label, url }) => ({ label, url }));
 
 describe('the staff links’ keys', () => {
   it('survive a reorder and tell repeats apart', () => {
@@ -63,7 +61,8 @@ describe('the staff links’ keys', () => {
       a,
       a,
     ]);
-    expect(inKeyOrder(keyed, ['missing']).map((l) => l.label)).toEqual(['A', 'B', 'A']);
+    // An order naming a link the list no longer has is refused (`null`).
+    expect(linkChanges.order(['missing'])(keyed)).toBeNull();
   });
 
   it('a reorder by keys is a permutation of the list', () => {
@@ -252,5 +251,24 @@ describe('carryIds — a key carries only to the same link, never to whatever st
       }),
       { numRuns: 300 },
     );
+  });
+});
+
+describe('linkChanges — a change whose links moved is refused, never re-aimed', () => {
+  const a = { label: 'A', url: 'https://a.org', key: 'kA' };
+  const b = { label: 'B', url: 'https://b.org', key: 'kB' };
+  const c = { label: 'C', url: 'https://c.org', key: 'kC' };
+  const d = { label: 'D', url: 'https://d.org', key: 'kD' };
+
+  it('a remove whose link is gone finds nothing to remove', () => {
+    expect(linkChanges.remove('kA')([c, b])).toBeNull();
+    expect(linkChanges.remove('kA')([a, b])).toEqual([b]);
+  });
+
+  it('a reorder of links that are no longer the list’s is refused, never moving a replacement', () => {
+    // I put D first over [A, B, D]; another moderator replaced A with C meanwhile.
+    expect(linkChanges.order(['kD', 'kA', 'kB'])([c, b, d])).toBeNull();
+    // A link added since doesn't stop the order: it keeps its place after the ones I ordered.
+    expect(linkChanges.order(['kD', 'kA', 'kB'])([a, b, d, c])).toEqual([d, a, b, c]);
   });
 });

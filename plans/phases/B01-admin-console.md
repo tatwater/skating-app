@@ -3266,8 +3266,9 @@ Imagery/Hazards/Standing/Links), cherry-picked serially onto `b01-3` off the kit
     recorded about its making.
   - **A write that settles never drops the keyboard to the page** (`frame/keepFocus` on the panel;
     Links returns focus to the link's own Edit, and a saved drop keeps its grip). A kit draft never
-    outlives its items: SortableRows puts a lift down when its rows change, and links keep ids
-    across an edit (`carryIds`).
+    outlives its items: SortableRows puts a lift down when its rows change, and a link keeps its id
+    across the page's own edit (the list it sent), otherwise only to a link with exactly its words
+    (`carryIds`).
 - **Left by the three PRs' reviews** (each a call or a follow-up, none blocking):
   - the map pans only within three times the body's box, which keeps the min zoom out of reach on
     a wide pane; widening the fence changes "pans only within the body's reach" (founder call);
@@ -3281,8 +3282,9 @@ Imagery/Hazards/Standing/Links), cherry-picked serially onto `b01-3` off the kit
   - in the list: the survivor redirect (a merged body's id swapped for its survivor) moves the
     search's place and drops typing in progress; a heading sorted while a search waits is
     re-ranked by match when the search lands;
-  - staff links have no id on the server: the console carries ids across an edit on the client
-    (`carryIds`), which holds for one operator; a stored id per link would hold across operators.
+  - staff links have no id on the server: the console keeps a link's id across its own edits on the
+    client and carries one otherwise only to a link with exactly its words (`carryIds`), so another
+    operator's edit reads as a new link; a stored id per link would hold across operators.
 - **The map contract settled before any tab landed.** Adopted from the tab builders: a `proposal`
   mark; `approach` and `dimension` lines and a `measure` label (a dimension is drawn in pixels with
   fixed ticks); a footprint's `field` — the hazard dot field, dimmed by freshness and a step further
@@ -4028,6 +4030,15 @@ Names' aliases can bind an edit to the wrong entry by its text.
     resurrected. Mutation-checked (dropping a save when its console goes, an unnamed receipt, a
     swallowed refusal, the queue held in the tab: each red). The named examples stand, rewritten to
     the rule.
+  - **A link's id carries only to the same link** (Greptile on #132). A link whose words changed
+    was given the id of the link in its place, so a retry after another moderator replaced A with C
+    overwrote C with the edit meant for A. Now an id carries only to exactly its words; the page's
+    own edits keep theirs through the list it sent; the retry and the rows key a moved list once
+    between them; and an open editor whose link is gone stays at the list's foot, saying so.
+- **A secondary read's four answers are never folded** (Greptile on #132): on its way, failed (in
+  the tab's note, with *Try again*), settled with nothing (*Not recorded yet*), or a value —
+  `readState` in the read layer. Water's other sources' depths were the case (a failed read drew
+  *Not recorded yet*); Names' town lines go through it too.
 - **Reads adopted.** The search's other standings (`searchOtherStandings`: counted to the server's
   bound, a floor past it, gathered under the board's dividers — the three dormant lanes are one
   *Dormant* — and *(other standings unfiltered)* when the lane's facets are set); *Opened recently*
@@ -4089,6 +4100,8 @@ Names' aliases can bind an edit to the wrong entry by its text.
   next import campaign*; *Not saved · {body}*, *{what}: {the server's words}*; *Other standings
   couldn't be checked*; *The record doesn't say when it left*; *Another moderator changed these
   links while yours was saving, and the link you changed is gone. Your change wasn't saved.*;
+  *This link was changed or removed while you were editing it, so this edit can't be saved. Cancel
+  to see the list as it is now.*; *Couldn't read the other sources' depths*;
   *Another moderator kept changing these links / aliases while yours was saving. Your change wasn't
   saved — try again.*; *Another moderator kept changing these spellings; yours weren't saved. Try
   again.*; *Aliases saved*, *Class set to {class}*, *Back to the catalogs' class*, *{Mean / Max}

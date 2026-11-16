@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { SortableRows } from '@/components/kit/sortable-rows';
 import { LinksTabView, type LinksTabViewProps } from './LinksTabView';
 import { BODY_NOW, MASCOMA, SMALL_POND } from './linksFixtures';
-import type { StaffLink } from './linksModel';
+import { type StaffLink, sameLinks } from './linksModel';
 
 const base: LinksTabViewProps = {
   body: MASCOMA,
@@ -919,8 +919,8 @@ describe('LinksTabView — an added link’s editor is bound to the link it adde
 
   it('a saved add the list has lost: Remove says so and sends nothing — never closes as if removed', async () => {
     const { user, sent, show } = await addedAndAcked();
-    // Shown with another moderator's reorder folded in: no list this page sent.
-    await act(async () => show.current([DAM, ASSOC, town('Town page')]));
+    // Shown with another moderator's edit of it folded in: no link with the words this page sent.
+    await act(async () => show.current([DAM, ASSOC, town('Town hall')]));
     await user.click(screen.getByRole('button', { name: 'Remove' }));
     expect(screen.getByText(LOST)).toBeVisible();
     expect(sent).toHaveLength(1);
@@ -1131,21 +1131,24 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
   /** A server that keeps the list, refuses a save built on a list that moved, and lets another moderator write. */
   function makeServer(initial: StaffLink[]) {
     const state = { links: initial, answers: [] as (() => void)[], set: (_: StaffLink[]) => {} };
-    const same = (a: readonly StaffLink[], b: readonly StaffLink[]) =>
-      a.length === b.length && a.every((l, i) => l.label === b[i]?.label && l.url === b[i]?.url);
     const onSave = async (next: StaffLink[], expected: StaffLink[]) => {
       await new Promise<void>((r) => state.answers.push(r));
-      if (!same(expected, state.links)) {
+      if (!sameLinks(expected, state.links)) {
         throw new ConvexError({ code: 'list_changed', message: 'moved', current: state.links });
       }
       state.links = next;
       state.set(next);
     };
-    const other = (next: StaffLink[]) => {
+    /** Another moderator's write, held by the server before the page is shown it (`show`). */
+    const move = (next: StaffLink[]) => {
       state.links = next;
-      state.set(next);
     };
-    return { state, onSave, other };
+    const show = () => state.set(state.links);
+    const other = (next: StaffLink[]) => {
+      move(next);
+      show();
+    };
+    return { state, onSave, other, move, show };
   }
   let keyN = 0;
   function Page({ server }: { server: ReturnType<typeof makeServer> }) {
@@ -1182,8 +1185,106 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
     act(() => server.other([C, DAM]));
     await answerAll(server);
     expect(server.state.links).toEqual([C, DAM]);
-    expect(screen.getByText(/the link you changed is gone/)).toBeInTheDocument();
+    expect(screen.getByText(/your change no longer applies/)).toBeInTheDocument();
+    // The editor is still there, holding what was typed and saying why — never bound to no row
+    // with every Edit and Add hidden behind it.
+    expect(screen.getByRole('textbox', { name: 'Label' })).toHaveValue('The Association');
+    expect(screen.getByRole('textbox', { name: 'Label' })).toHaveFocus();
+    expect(screen.getByText(/changed or removed while you were editing it/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getAllByRole('button', { name: 'Edit' })).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Add a link' })).toBeInTheDocument();
   });
+
+  it('a link another moderator edits while its editor is open: the editor stays, says why, and Cancel frees the page', async () => {
+    const user = userEvent.setup();
+    const server = makeServer([ASSOC, DAM]);
+    render(<Page server={server} />);
+    await user.click(screen.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
+    await user.type(screen.getByRole('textbox', { name: 'Label' }), ' (lake)');
+    act(() => server.other([{ ...ASSOC, url: 'https://mascomalake.org/news' }, DAM]));
+    const label = screen.getByRole('textbox', { name: 'Label' });
+    expect(label).toHaveValue(`${ASSOC.label} (lake)`);
+    // Focus fell with its row: the editor takes it back, and typing goes on.
+    expect(label).toHaveFocus();
+    expect(screen.getByText(/changed or removed while you were editing it/)).toBeInTheDocument();
+    // Done and Remove send nothing — never re-aimed at the other moderator's link — and say why.
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    await user.click(screen.getByRole('button', { name: 'Remove' }));
+    expect(server.state.answers).toHaveLength(0);
+    expect(server.state.links).toEqual([{ ...ASSOC, url: 'https://mascomalake.org/news' }, DAM]);
+    expect(screen.getByText(/changed or removed while you were editing it/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('textbox', { name: 'Label' })).toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Edit' })).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Add a link' })).toBeInTheDocument();
+  });
+
+  it('an editor orphaned after its save was refused takes no focus from where the moderator moved', async () => {
+    const user = userEvent.setup();
+    const server = makeServer([ASSOC, DAM]);
+    render(
+      <>
+        <Page server={server} />
+        <input aria-label="Somewhere else" />
+      </>,
+    );
+    await user.click(screen.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
+    await user.type(screen.getByRole('textbox', { name: 'Label' }), ' (lake)');
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    act(() => server.other([C, DAM]));
+    const elsewhere = screen.getByRole('textbox', { name: 'Somewhere else' });
+    await user.click(elsewhere);
+    await answerAll(server);
+    expect(screen.getByText(/your change no longer applies/)).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Label' })).toHaveValue(`${ASSOC.label} (lake)`);
+    expect(elsewhere).toHaveFocus();
+  });
+
+  it.each(['shown before the refusal', 'refused before it is shown'] as const)(
+    'a reorder over another moderator’s replacement is refused, and the replacement is editable from its row (%s)',
+    async (order) => {
+      // The retry and the rows key the moved list once between them: an edit opened from C's row
+      // finds C in the list the queue builds on, never "gone".
+      const user = userEvent.setup();
+      const server = makeServer([ASSOC, DAM]);
+      render(<Page server={server} />);
+      grip(ASSOC.label).focus();
+      await user.keyboard(' ');
+      await user.keyboard('{ArrowDown}');
+      grip(ASSOC.label).focus();
+      await user.keyboard(' ');
+      expect(server.state.answers).toHaveLength(1);
+      // The reorder is refused (the list moved) and re-applied on top.
+      const refuse = async () => {
+        await act(async () => server.state.answers.shift()?.());
+        await act(async () => new Promise((r) => setTimeout(r, 0)));
+      };
+      if (order === 'shown before the refusal') {
+        act(() => server.other([C, DAM]));
+        await refuse();
+      } else {
+        server.move([C, DAM]);
+        await refuse();
+        act(() => server.show());
+      }
+      // The order was made for [A, B]; A is gone (C is a new link): refused in words, never
+      // re-aimed to move C, and nothing more sent.
+      expect(screen.getByText(/your change no longer applies/)).toBeInTheDocument();
+      expect(server.state.answers).toHaveLength(0);
+      expect(server.state.links).toEqual([C, DAM]);
+      const editC = within(
+        screen.getByText(C.label).closest('[data-slot="sortable-row"]') as HTMLElement,
+      ).getByRole('button', { name: 'Edit' });
+      await user.click(editC);
+      const label = screen.getByRole('textbox', { name: 'Label' });
+      await user.clear(label);
+      await user.type(label, 'Town hall');
+      await user.click(screen.getByRole('button', { name: 'Done' }));
+      await answerAll(server);
+      expect(server.state.links).toEqual([{ label: 'Town hall', url: C.url }, DAM]);
+    },
+  );
 
   type Op =
     | { kind: 'edit'; row: number }
@@ -1210,8 +1311,8 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
         const server = makeServer([ASSOC, DAM]);
         const { unmount } = render(<Page server={server} />);
         let minted = 0;
-        // The words each of my saves addressed, and what it would make of them.
-        const mine: { from: string; to: string | null }[] = [];
+        // The link each of my saves addressed (its words), and what it would make of them.
+        const mine: { from: string; fromUrl: string; to: string | null }[] = [];
         // Links another moderator put in and still means to keep.
         const theirs = new Set<string>();
         try {
@@ -1225,17 +1326,18 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
               const edit = row?.querySelector<HTMLElement>('[data-slot="link-edit"]');
               if (row === undefined || edit == null) continue;
               const from = row.querySelector('.text-body')?.textContent ?? '';
+              const fromUrl = row.querySelector('a[href]')?.getAttribute('href') ?? '';
               await user.click(edit);
               if (o.kind === 'remove') {
                 await user.click(screen.getByRole('button', { name: 'Remove' }));
-                mine.push({ from, to: null });
+                mine.push({ from, fromUrl, to: null });
               } else {
                 const to = `${from} (${++minted})`;
                 const label = screen.getByRole('textbox', { name: 'Label' });
                 await user.clear(label);
                 await user.type(label, to);
                 await user.click(screen.getByRole('button', { name: 'Done' }));
-                mine.push({ from, to });
+                mine.push({ from, fromUrl, to });
               }
             } else if (o.kind === 'answer') {
               await act(async () => server.state.answers.shift()?.());
@@ -1267,28 +1369,34 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
             if (others(l) || l.label === ASSOC.label || l.label === DAM.label) continue;
             const edit = mine.find((m) => m.to === l.label);
             expect(edit).toBeDefined();
-            // My edit's words keep the address of the link they were made from.
-            expect(l.url).toBe(
-              edit?.from === ASSOC.label ? ASSOC.url : edit?.from === DAM.label ? DAM.url : l.url,
-            );
+            // My edit's words keep the address of the link they were made from — another
+            // moderator's link included, when I opened its row myself.
+            expect(l.url).toBe(edit?.fromUrl);
           }
-          // Every link another moderator kept is still there unless I addressed it myself.
+          // Every link another moderator kept is still there unless I addressed it myself — so no
+          // edit or remove of mine landed on one I didn't open.
           for (const label of theirs) {
             if (mine.some((m) => m.from === label)) continue;
             expect(server.state.links.map((l) => l.label)).toContain(label);
           }
-          // No link of another moderator's ever carries my words.
-          for (const l of server.state.links)
-            if (/\(\d+\)$/.test(l.label)) expect(l.url).not.toMatch(/x\.org|y\.org/);
         } finally {
           unmount();
         }
       }),
       {
         numRuns: 12,
-        // Pinned: Greptile's sequence, a remove whose link another moderator replaced, and an edit
-        // across another's reorder and insert; the rest random.
+        // Pinned: Greptile's sequence, a remove whose link another moderator replaced, an edit
+        // across another's reorder and insert, and an edit of another moderator's link opened from
+        // its own row (it keeps that link's address); the rest random.
         examples: [
+          [
+            [
+              { kind: 'otherReplace', row: 0 },
+              { kind: 'otherReorder' },
+              { kind: 'edit', row: 1 },
+              { kind: 'answer' },
+            ],
+          ],
           [
             [
               { kind: 'edit', row: 0 },
@@ -1317,5 +1425,61 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
         ],
       },
     );
+  });
+});
+
+describe('LinksTabView — my edit keeps its id when its echo arrives with another moderator’s change', () => {
+  it('typed on after Done, then my echo and another’s insert land together: the editor still edits my link', async () => {
+    const user = userEvent.setup();
+    const answers: (() => void)[] = [];
+    const sent: StaffLink[][] = [];
+    // The server, with its compare-and-set: a save built on a list that moved is refused.
+    const server = { links: [ASSOC, DAM] as StaffLink[], set: (_: StaffLink[]) => {} };
+    function Mixed() {
+      const [links, setLinks] = useState<readonly StaffLink[]>(server.links);
+      server.set = setLinks;
+      return (
+        <LinksTabView
+          {...base}
+          queueKey="links:mixed-echo"
+          body={{ ...MASCOMA, referenceLinks: links }}
+          onSave={async (next, expected) => {
+            sent.push(next);
+            await new Promise<void>((r) => answers.push(r));
+            if (!sameLinks(expected, server.links)) {
+              throw new ConvexError({
+                code: 'list_changed',
+                message: 'moved',
+                current: server.links,
+              });
+            }
+            // My write and another moderator's insert reach the page in one update.
+            server.links = [...next, { label: 'Y1', url: 'https://y.org' }];
+            server.set(server.links);
+          }}
+        />
+      );
+    }
+    render(<Mixed />);
+    await user.click(screen.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
+    const label = screen.getByRole('textbox', { name: 'Label' });
+    await user.clear(label);
+    await user.type(label, 'The Association');
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    await user.type(label, ' of Mascoma');
+    await act(async () => answers.shift()?.());
+    await act(async () => new Promise((r) => setTimeout(r, 0)));
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    for (let i = 0; i < 4 && answers.length > 0; i++) {
+      await act(async () => answers.shift()?.());
+      await act(async () => new Promise((r) => setTimeout(r, 0)));
+    }
+    // My second edit landed on my link — the one my first edit made — beside the insert.
+    expect(server.links.slice(0, 2)).toEqual([
+      { label: 'The Association of Mascoma', url: ASSOC.url },
+      DAM,
+    ]);
+    expect(server.links.map((l) => l.label)).toContain('Y1');
+    expect(screen.queryByText(/your change no longer applies/)).toBeNull();
   });
 });

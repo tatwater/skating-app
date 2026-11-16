@@ -51,10 +51,7 @@ export function useWaterRead(bodyId: string): {
           waterFrom(
             body,
             extras,
-            readState(
-              choices as Loadable<DepthChoicesRead & { recorded: boolean }>,
-              (c) => !c.recorded,
-            ),
+            readState(choices as Loadable<DepthChoicesRead>, (c) => !c.recorded),
           ),
     [body, extras, choices],
   );
