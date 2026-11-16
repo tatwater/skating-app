@@ -2488,9 +2488,10 @@ Every shape change is additive except where noted.
   `staffStats` keeps its time bound in the meantime: at most 400 reads across its per-row loops, counted
   as they are made.
   The per-row plan is charged, not just declared: Decisions and History count each row's calls and
-  documents ahead, #127's refusal hook included (a launch reads up to 200 hidden launches), and a page
-  the budget can't shape whole shapes fewer and says capped (a test runs a page of launch lines at
-  that peak).
+  documents ahead, and a page the budget can't shape whole shapes fewer and says capped. #127's
+  refusal hook (a launch reads up to 200 hidden launches) is not in that plan since #131: it reads
+  through the share `undoStates` reserves for its row, and a row with no room for one says "check
+  elsewhere" (a test runs a page of launch lines at that peak).
 - **A "since" is the start of the current unbroken state** (Greptile's 5/5 note on 88c0cdd6:
   "repeated restrictions reset their date"). One rule, `lib/stateSince.startOfCurrentState`: walking
   a run of audit rows newest first, a write that changed nothing (its `prev` equals what it set) is
@@ -3363,10 +3364,11 @@ draws 34; the role menu's item takes two lines.
   undoNeedsReason }` from every People write; `ledger.since`; `rightsSince`; the bounty season line;
   explicit `can` entries for every lever; a profile-opens flag; flag target labels and appeal text;
   who undid a row — and the capped answers beside them the page doesn't draw yet
-  (`statusNote.atCapped`, `decisions.capped`, `open.flagLabelsCapped`, `ledger.sinceCapped`,
-  `rightsSinceCapped`, and a staff row's `staff.lastSeenCapped` and `staff.roleSinceCapped`), so a
-  capped start still reads as not recorded. The merge filled the fixtures with the new fields and
-  made the list row's staff overlay take `null`; `lanesFor` now reads core's `peopleLanesFor`.
+  (`decisions.capped`, `open.flagLabelsCapped`, `ledger.sinceCapped`, `rightsSinceCapped`, and a
+  staff row's `staff.lastSeenCapped` and `staff.roleSinceCapped`), so a capped date there still reads
+  as not recorded. The merge filled the fixtures with the new fields and made the list row's staff
+  overlay take `null`; `lanesFor` now reads core's `peopleLanesFor`; the status note's who-and-when
+  line tells a start past the read (`statusNote.atCapped`) from one not recorded.
 - The record sheet (verdicts and withdrawals, above; boards 8.7–8.9) is not built. The *On the
   record* row appears today on the one count main's server supplies (the standing list); it should
   appear whenever any of the sheet's three lists (Standing, Deleted, Reversed) has items, and its

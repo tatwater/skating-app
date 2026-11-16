@@ -1066,7 +1066,7 @@ export const person = query({
         ? await ledgerSinceOf(ctx, budget, userId)
         : { at: null, capped: false };
 
-    // ── The status note: when the suspension or ban began, and who last set it ──
+    // ── The status note: when the suspension or ban began, and who began it ──
     let statusNote: {
       action: 'ban' | 'suspend';
       at: number | null;
@@ -1136,10 +1136,8 @@ export const person = query({
         /** The reason that write gave; the one on file when no start was found. */
         reason: (row === null ? target.statusReason : row.reason) ?? null,
         suspendedUntil: target.status === 'suspended' ? (target.suspendedUntil ?? null) : null,
-        lapsed:
-          target.status === 'suspended' &&
-          target.suspendedUntil !== undefined &&
-          target.suspendedUntil <= now,
+        // The gate's own rule, as `statusFound` asks it.
+        lapsed: target.status === 'suspended' && !isSuspendedNow(target, now),
       };
     }
 

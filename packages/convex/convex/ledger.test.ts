@@ -583,8 +583,10 @@ describe('discipline never leaves the ledger without an editor (the governor’s
         const row = await ctx.db.get(unban._id as Id<'moderationActions'>);
         if (!viewer || !row) throw new Error('seeded rows missing');
         return {
-          // History, Decisions and the toast, read by an admin who doesn't hold the grant.
+          // History and Decisions (`list`), read by an admin who doesn't hold the grant.
           page: await undoState(ctx, viewer, row),
+          // The toast, in its own scope (`one`): masked the same.
+          toast: await undoState(ctx, viewer, row, 'one'),
           // The same page, read by a holder: the sentence is theirs to read.
           holder: await undoState(ctx, { ...viewer, canEditLedger: true }, row),
           // The undo's own write keeps its words for whoever presses it.
@@ -593,6 +595,7 @@ describe('discipline never leaves the ledger without an editor (the governor’s
       });
     const want = {
       page: { state: 'unavailable', why: LEDGER_NEUTRAL_REFUSAL },
+      toast: { state: 'unavailable', why: LEDGER_NEUTRAL_REFUSAL },
       holder: { state: 'unavailable', why: LAST_EDITOR_MESSAGE },
       write: { state: 'unavailable', why: LAST_EDITOR_MESSAGE },
     };

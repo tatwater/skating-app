@@ -299,7 +299,7 @@ export function directionRefusal(
 
 /**
  * Hidden coordinates a promotion checks its launch against (a body holds a handful) — and so the
- * documents its undo's refusal reads, which People's per-row plan counts (`people.ROW_SHAPE_DOCS`).
+ * documents its undo's refusal reads, which its share reserves (`refusalCost`, `lib/undoHandlersBody`).
  */
 export const SUPPRESSION_ROWS_READ = 200;
 

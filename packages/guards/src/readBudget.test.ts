@@ -4,10 +4,10 @@
  * read added outside a charge is the regression this catches: in the modules below, every database
  * read — `ctx.db.get`, `.first()`, `.unique()`, `.take(`, `.paginate(`, `.collect()` — must sit inside
  * the parentheses of a charging call (`reads.one/take/page/measured/capped`, the same on `budget` and
- * on the request's budget opened in place, `requestBudget(…)`, a wave item's `share.read(` — charged
- * to what `ReadBudget.waves` reserved for it — `drain(` — which charges what its `take` returns — or
- * the People pages' `takeCapped(`). `.collect()` and `.unique()` are refused outright: neither has a
- * bound a budget can size.
+ * on the request's budget opened in place, `requestBudget(…)`, a wave item's `share.read(` and
+ * `share.take(` — charged to what `ReadBudget.waves` reserved for it — `drain(` — which charges what
+ * its `take` returns — or the People pages' `takeCapped(`). `.collect()` and `.unique()` are refused
+ * outright: neither has a bound a budget can size.
  *
  * A lint over the source text, not a proof: a read reached through a helper in another module is
  * the helper's to charge (`lib/eraseClock` is in the list for that reason).
@@ -49,7 +49,7 @@ function code(source: string): string {
 function chargedSpans(text: string): [number, number][] {
   const spans: [number, number][] = [];
   const opener =
-    /\b(?:reads|budget|requestBudget\([^()]*\))\.(?:one|take|page|measured|capped)\(|\bshare\.read\(|\bdrain\(|\btakeCapped\(/g;
+    /\b(?:reads|budget|requestBudget\([^()]*\))\.(?:one|take|page|measured|capped)\(|\bshare\.(?:read|take)\(|\bdrain\(|\btakeCapped\(/g;
   for (let m = opener.exec(text); m; m = opener.exec(text)) {
     let depth = 0;
     for (let i = m.index + m[0].length - 1; i < text.length; i++) {
@@ -71,7 +71,8 @@ function unchargedReads(source: string): string[] {
   const out: string[] = [];
   for (let m = read.exec(text); m; m = read.exec(text)) {
     const at = m.index;
-    const isBudgetCall = /\b(?:reads|budget)$/.test(text.slice(Math.max(0, at - 7), at));
+    // The charging call itself (`budget.take(`, a wave item's `share.take(`), not a read it wraps.
+    const isBudgetCall = /\b(?:reads|budget|share)$/.test(text.slice(Math.max(0, at - 7), at));
     if (isBudgetCall) continue;
     const unbounded = m[0] === '.collect()' || m[0] === '.unique()';
     const inside = spans.some(([open, close]) => at > open && at < close);
@@ -103,6 +104,14 @@ test('the lint sees a raw read, and passes a charged one', () => {
     unchargedReads('const r = share.read(kind, () => ctx.db.get(id) as Promise<Doc<T> | null>);'),
   ).toEqual([]);
   expect(unchargedReads('share.read(kind, get); const x = await ctx.db.get(id);')).toHaveLength(1);
+  // Its `take` charges the rows its read returns, as `budget.take` does.
+  expect(unchargedReads('take: (kind, n, read) => share.take(kind, n, read),')).toEqual([]);
+  expect(unchargedReads("await share.take('launch', n, () => ctx.db.query('x').take(n));")).toEqual(
+    [],
+  );
+  expect(
+    unchargedReads("share.take(kind, n, read); await ctx.db.query('x').take(5);"),
+  ).toHaveLength(1);
   // The request's own budget, opened in place, charges as `budget` does.
   expect(
     unchargedReads("await requestBudget(ctx).measured('putIn', () => ctx.db.get(id));"),

@@ -153,6 +153,14 @@ describe('every nullable fact absent, block by block', () => {
     expect(fact('contradictions')).toHaveTextContent('—Not recorded yet');
   });
 
+  it('a status that began before the rows one read walks says so, never "not recorded"', () => {
+    const note = ROB_UNRECORDED.statusNote;
+    if (note === null) throw new Error('fixture');
+    draw({ person: { ...ROB_UNRECORDED, statusNote: { ...note, atCapped: true } } });
+    expect(slot('status-by')).toHaveTextContent('Who and when: older than what one read covers');
+    expect(slot('status-by')).not.toHaveTextContent('not recorded');
+  });
+
   it('the staff strip says not recorded, and an empty season when its record begins', () => {
     draw({ person: SARAH_PAGE, staffStats: STATS_UNRECORDED, staffSeason: SEASON_EMPTY });
     expect(fact('time-to-decide')).toHaveTextContent('No filed items decided this week');

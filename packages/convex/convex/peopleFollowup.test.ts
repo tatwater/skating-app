@@ -1088,8 +1088,15 @@ describe('a “since” is the start of the current unbroken state (lib/stateSin
     }
     vi.setSystemTime(T0);
     const p = await as(t, 'mod').query(api.people.person, { userId: skater });
-    // Twelve new windows after the start: past the ten rows the note walks back, so it can't say.
-    expect(p?.statusNote).toMatchObject({ at: null, atCapped: true });
+    // Twelve new windows after the start: past the ten rows the note walks back, so it can't say —
+    // and with no start found, the reason on file stands alone, credited to no one.
+    expect(p?.statusNote).toMatchObject({
+      at: null,
+      atCapped: true,
+      by: null,
+      via: null,
+      reason: 'r',
+    });
   });
 
   test('a suspension after one that had run out (before the sweep reset it) begins a new one', async () => {
