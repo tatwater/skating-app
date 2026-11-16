@@ -2893,6 +2893,40 @@ on the person page).
   table as it was (`peopleRefusals.test`); `packages/guards`' `writersDecideFirst` holds every People,
   record and alert writer to deciding before it writes the log. An undo whose write would change
   nothing is refused (`NOTHING_TO_UNDO`), never an empty success.
+- **One reason after a repeat ban.** A person's terms are their status, its reason and a suspension's
+  end (`lib/peopleCan.StatusTerms`). The person page's status note and the list row answer from one
+  reading (`lib/statusTerms`): the write that set the terms as they stand — its date, who and through
+  what on the note, its reason (the one on file) on both, and its time as the row's `statusSince`
+  (the status writers say they set terms: `termsSet`). A repeat that changed nothing is passed over. A
+  suspension's new end is new terms, so it dates the note and the row anew (before, the note kept the
+  status's start). **Rollout, for the dev agent:** after the deploy, `convex run
+  peopleJobs:backfillRows '{"alone":true}'` once — it stamps each suspended or banned person's row by
+  the same reading (`stampStatusTerms`; a reading that can't say leaves the row as it was, one that
+  finds nothing on record stamps 0, "not recorded", as the note says) — then
+  `convex run peopleJobs:preparation '{}'` until `ready: true` (step 6 of the procedure above). Not run
+  by the build.
+- **A moderator may not act on their own content (D269).** The inventory of decisions on authored
+  content: the record sheet's writes (`setModerationStatus` hide, remove and restore; `overturnVerdict`;
+  `keepOnRecord` — through `lib/recordRules.recordActorRefusal`, which `can` asks too); the Inbox's
+  `resolveFlag` on a flag whose subject is the moderator; `accessAlerts.setOfficial` (pin, release) on
+  their own alert; and every undo of one (the undo engine reads the author with the deletion stamp). A
+  moderator's own retraction of their alert is an author's act, unchanged. Person writes aimed at
+  oneself were already refused — discipline and roles by `lib/peopleCan`, a ledger grant to a holder —
+  except stepping down from the ledger, which another holder makes safe. The record sheet shows the
+  write's own sentence where the lever is (*This is yours, so another moderator decides on it.*); the
+  web needed no change. Rows written before the rule, where a moderator acted on their own content:
+  their undo is refused to that moderator and open to any other — an undo is a decision on the
+  content too. **Default and what it strands:** every role is bound (`OWN_CONTENT_EXEMPT_ROLES = []`).
+  A staffer's own content, and flags about them, are cleared by any other holder of the capability
+  (`content.moderate`, `inbox.flag`, `access.alert` — moderators and admins); nothing is stuck while a
+  second staffer exists. With one admin and no moderator, that admin's flagged content (Inbox *Flags*,
+  the record sheet's levers on their own record) and their alerts' pins have no one to decide them.
+
+**B01-4g (2026-11-16): the follow-ons to B01-4f** (D270 refined; server only). Rollout: nothing new
+for dev — the rows backfill writes what it wrote under B01-4f (`termsSetBy` reads a row's
+`metadata.statusReason` where it has one, which only writes from this change carry), so #137's
+rollout stands and needs no re-run.
+
 - **The Clerk mirror.** Clerk's side of a ban is a lock on new sign-ins: a banned person whose Clerk
   was never told can still sign in, but every Convex function refuses them (the status gate is the
   boundary). After a lift, a Clerk still locked keeps an active person out. A suspension never locks
@@ -2922,35 +2956,9 @@ on the person page).
   before `prev` has no reason to restore: none on file, *not recorded* on the page. A redo is the same
   path; each dates the terms anew (undo then redo starts a fresh *since*, as the founder ruled).
 - **One normalizer at the write.** `lib/audit.checkedReason` trims, then holds to the cap; `typed`
-  and the ban and suspension writers compare and keep through it.
-- **One reason after a repeat ban.** A person's terms are their status, its reason and a suspension's
-  end (`lib/peopleCan.StatusTerms`). The person page's status note and the list row answer from one
-  reading (`lib/statusTerms`): the write that set the terms as they stand — its date, who and through
-  what on the note, its reason (the one on file) on both, and its time as the row's `statusSince`
-  (the status writers say they set terms: `termsSet`). A repeat that changed nothing is passed over. A
-  suspension's new end is new terms, so it dates the note and the row anew (before, the note kept the
-  status's start). **Rollout, for the dev agent:** after the deploy, `convex run
-  peopleJobs:backfillRows '{"alone":true}'` once — it stamps each suspended or banned person's row by
-  the same reading (`stampStatusTerms`; a reading that can't say leaves the row as it was, one that
-  finds nothing on record stamps 0, "not recorded", as the note says) — then
-  `convex run peopleJobs:preparation '{}'` until `ready: true` (step 6 of the procedure above). Not run
-  by the build.
-- **A moderator may not act on their own content (D269).** The inventory of decisions on authored
-  content: the record sheet's writes (`setModerationStatus` hide, remove and restore; `overturnVerdict`;
-  `keepOnRecord` — through `lib/recordRules.recordActorRefusal`, which `can` asks too); the Inbox's
-  `resolveFlag` on a flag whose subject is the moderator; `accessAlerts.setOfficial` (pin, release) on
-  their own alert; and every undo of one (the undo engine reads the author with the deletion stamp). A
-  moderator's own retraction of their alert is an author's act, unchanged. Person writes aimed at
-  oneself were already refused — discipline and roles by `lib/peopleCan`, a ledger grant to a holder —
-  except stepping down from the ledger, which another holder makes safe. The record sheet shows the
-  write's own sentence where the lever is (*This is yours, so another moderator decides on it.*); the
-  web needed no change. Rows written before the rule, where a moderator acted on their own content:
-  their undo is refused to that moderator and open to any other — an undo is a decision on the
-  content too. **Default and what it strands:** every role is bound (`OWN_CONTENT_EXEMPT_ROLES = []`).
-  A staffer's own content, and flags about them, are cleared by any other holder of the capability
-  (`content.moderate`, `inbox.flag`, `access.alert` — moderators and admins); nothing is stuck while a
-  second staffer exists. With one admin and no moderator, that admin's flagged content (Inbox *Flags*,
-  the record sheet's levers on their own record) and their alerts' pins have no one to decide them.
+  and the ban and suspension writers compare and keep through it. A reason kept with spaces before this (only a
+  raw call could send one) compares unequal to its trimmed repeat once, which writes one row and keeps
+  the trimmed reason from then on.
 
 ### The B01-2 server register (owed to the server agent)
 
