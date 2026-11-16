@@ -12,6 +12,7 @@ import { internalMutation, type QueryCtx, query } from './_generated/server';
 import { requireCapability } from './lib/auth';
 import { authorDeletedAtOf } from './lib/authorDeletion';
 import {
+  isReversed,
   REPLAY_START,
   type ReplayedVerdict,
   type ReplayState,
@@ -21,7 +22,7 @@ import {
   type VerdictTargetType,
   zeroByKind,
 } from './lib/contentVerdicts';
-import { ERASABLE, HOLD_COST, holdMoved } from './lib/eraseClock';
+import { clockOf, ERASABLE, HOLD_COST, holdMoved } from './lib/eraseClock';
 import {
   chainedLease,
   handOn,
@@ -481,6 +482,18 @@ export async function reversedPage(
   );
 }
 
+/**
+ * **The Deleted list's one filter, before the hold check**: their own withdrawal (an alert, their
+ * own retraction), and not an erased comment's placeholder — read by the list, its count and the
+ * presence check alike; a decision holding it then sends it to Standing.
+ */
+function listedWithdrawal(kind: VerdictTargetType, doc: RecordContentDoc): boolean {
+  return (
+    withdrawnAt(kind, doc) !== null &&
+    !(kind === 'comment' && (doc as Doc<'comments'>).erasedAt !== undefined)
+  );
+}
+
 /** Rows of one kind a page asks for when the Deleted list is narrowed to it. */
 export const DELETED_ALONE: Record<VerdictTargetType, number> = {
   report: 4,
@@ -551,10 +564,7 @@ export async function deletedPage(
   type Candidate = (typeof candidates)[number];
   type Checked = Candidate & { held: boolean; report: Doc<'reports'> | null };
   const cache = newPageCache();
-  const listed = (c: Candidate, held: boolean) =>
-    !held &&
-    withdrawnAt(c.kind, c.doc) !== null &&
-    !(c.kind === 'comment' && (c.doc as Doc<'comments'>).erasedAt !== undefined);
+  const listed = (c: Candidate, held: boolean) => !held && listedWithdrawal(c.kind, c.doc);
   const reportOfRow = (c: Candidate, held: boolean) =>
     listed(c, held) ? reportIdOf(c.kind, c.doc) : null;
   const bodyOfRow = (c: Checked) => (listed(c, c.held) ? [bodyIdOf(c.kind, c.doc, c.report)] : []);
@@ -827,13 +837,7 @@ export async function countsOf(ctx: QueryCtx, { userId }: { userId: Id<'profiles
     ...others,
   ];
   const withdrawn = all.flatMap(({ kind, rows }) =>
-    rows
-      .filter(
-        (doc) =>
-          withdrawnAt(kind, doc) !== null &&
-          !(kind === 'comment' && (doc as Doc<'comments'>).erasedAt !== undefined),
-      )
-      .map((doc) => ({ kind, doc })),
+    rows.filter((doc) => listedWithdrawal(kind, doc)).map((doc) => ({ kind, doc })),
   );
   const held = await reads.waves(
     withdrawn,
@@ -856,10 +860,119 @@ export async function countsOf(ctx: QueryCtx, { userId }: { userId: Id<'profiles
   return { reversed, deleted, pending };
 }
 
+/**
+ * Rows of each kind the presence check looks at, at most: the Deleted list's first page leaves out
+ * a row a decision holds and an erased comment's placeholder, so the check looks a little past them;
+ * the heavy kinds (a whole document each at worst) one or two.
+ */
+const PRESENCE_LOOK: Record<VerdictTargetType, number> = {
+  report: 2,
+  post: 1,
+  comment: 8,
+  hazard: 1,
+  accessAlert: 8,
+};
+
+/**
+ * **Whether the person page draws *On the record*** — cheap enough to stay live on every person page,
+ * where `recordCounts` is read only once the sheet is open: `{deleted, reversed, pending}`, whether
+ * the Deleted list and the Reversed list would show at least one item. Reversed reads the first row of
+ * the very range its list reads (`isReversed`'s rows); Deleted looks at the first few rows of each of
+ * the five ranges its list merges, through the list's own filter (a decision holds it, an erased
+ * placeholder, a moderator's retraction). When a range has more rows than it looked at and none it
+ * read would show, the answer is `true`: the row appearing over an empty tab is honest, a missing row
+ * is not. Never false while the list's first page has a row (a property holds that). Staff only.
+ */
+export const recordPresence = query({
+  args: { userId: v.id('profiles') },
+  handler: async (ctx, { userId }) => {
+    await requireCapability(ctx, 'people.read');
+    return presenceOf(ctx, { userId });
+  },
+});
+
+/** `recordPresence`' answer, for a viewer already let in (the rounds test drives it). */
+export async function presenceOf(ctx: QueryCtx, { userId }: { userId: Id<'profiles'> }) {
+  const reads = sheetBudget(ctx);
+  const pending = await recordPending(ctx, reads);
+  const [reversedRows, ...ranges] = await Promise.all([
+    reads.take('verdict', 1, (n) => reversedQuery(ctx, userId, undefined, undefined, null).take(n)),
+    ...DELETED_KINDS.map((kind) =>
+      deletedRange(ctx, reads, kind, userId, null, PRESENCE_LOOK[kind]).then((rows) => ({
+        kind,
+        rows,
+        full: rows.length >= PRESENCE_LOOK[kind],
+      })),
+    ),
+  ]);
+  const candidates = ranges.flatMap(({ kind, rows }) =>
+    rows.filter((doc) => listedWithdrawal(kind, doc)).map((doc) => ({ kind, doc })),
+  );
+  const held = await reads.waves(
+    candidates,
+    () => ({ bytes: ROW_MAX.verdict, reads: 1 }),
+    ({ kind, doc }, share) =>
+      share.read('verdict', () =>
+        ctx.db
+          .query('contentVerdicts')
+          .withIndex('by_target_standing', (q) =>
+            q.eq('targetType', kind).eq('targetId', doc._id).eq('standing', true),
+          )
+          .first(),
+      ),
+    (): Doc<'contentVerdicts'> | null | undefined => undefined,
+  );
+  // Shown: read, and no decision holds it. Unknown (a hold the budget couldn't check, or a range
+  // with more rows than it looked at): true, never a missing row.
+  const deleted =
+    held.some((h) => h === null) || held.some((h) => h === undefined) || ranges.some((r) => r.full);
+  return {
+    deleted,
+    reversed: reversedRows.some((r) => isReversed(r)),
+    pending,
+  };
+}
+
 /** Decisions on one item the pane reads at most (an item gathers few; more says `decisionsCapped`). */
 const ITEM_DECISIONS = 50;
 /** Standing verdicts read on one item, at most (the writers keep one). */
 const STANDING_ON_ITEM = 4;
+
+/** Comments on a Report counted at most (what comes back with it), and its ratings. */
+const COMES_BACK_COMMENTS = 50;
+const COMES_BACK_RATINGS = 200;
+
+/**
+ * What a Report's restore brings back with it (boards 8.7–8.8): its comments still up — a hidden
+ * Report hides its comments at read time, so they return with it — and its ratings, each counted to
+ * its cap (a floor past it), both reads at once.
+ */
+async function comesBackWith(ctx: QueryCtx, reads: ReadBudget, reportId: Id<'reports'>) {
+  const [comments, ratings] = await Promise.all([
+    reads.take('comment', COMES_BACK_COMMENTS + 1, (n) =>
+      ctx.db
+        .query('comments')
+        .withIndex('by_report', (q) => q.eq('reportId', reportId))
+        .take(n),
+    ),
+    reads.take('small', COMES_BACK_RATINGS + 1, (n) =>
+      ctx.db
+        .query('reportRatings')
+        .withIndex('by_target', (q) => q.eq('targetType', 'report').eq('targetId', reportId))
+        .take(n),
+    ),
+  ]);
+  const up = comments
+    .slice(0, COMES_BACK_COMMENTS)
+    .filter((c) => c.moderationStatus === 'visible' && c.authorDeletedAt === undefined);
+  return {
+    comments: { count: up.length, capped: comments.length > COMES_BACK_COMMENTS },
+    ratings: {
+      count: Math.min(ratings.length, COMES_BACK_RATINGS),
+      capped: ratings.length > COMES_BACK_RATINGS,
+    },
+  };
+}
 
 /**
  * A Post's members as its restore reads them — each Report and, for one that is down, the newest row
@@ -1008,11 +1121,34 @@ export const item = query({
       target !== null &&
       targetType === 'comment' &&
       (target as Doc<'comments'>).erasedAt !== undefined;
+    // "If overturned": the clock the overturn would leave — the same `clockOf` the write's own clock
+    // refresh runs, asked as if the item's standing verdicts were ended (its Post's and an open flag
+    // still hold it, and then there is no date). Only while a decision stands to overturn.
+    const eraseAtIfReleased =
+      standing && target !== null && !erasedComment
+        ? ((await clockOf(ctx, reads, targetType, target, Date.now(), { releasing: true })) ?? null)
+        : null;
+    // What a Report's restore brings back with it: its comments still up and its ratings, counted
+    // (no documents returned) to their caps.
+    const comesBack =
+      targetType === 'report' && target !== null
+        ? await comesBackWith(ctx, reads, target._id as Id<'reports'>)
+        : null;
     return {
       targetType,
       targetId,
       /** The item as published — the whole document, read by staff — or `null` once erased. */
       published: target === null || erasedComment ? null : target,
+      /** Its words, as every record row shows them (`contentOf`); `null` once erased. */
+      content: target === null || erasedComment ? null : contentOf(targetType, target),
+      /**
+       * When it would be erased if its standing decision were overturned now — what the overturn
+       * itself would return; `null` when nothing stands, it isn't withdrawn, or something else
+       * (its Post's decision, an open flag) would still hold it.
+       */
+      eraseAtIfReleased,
+      /** A Report's: what a restore brings back with it — counts and floors; `null` for other kinds. */
+      comesBack,
       erasedAt: erasedComment
         ? ((target as Doc<'comments'>).erasedAt as number)
         : target === null

@@ -1432,6 +1432,8 @@ export interface PostRestoreMember {
   /** Why it is down: the last word on it. Absent for a visible member. */
   down?: { action: string; by: QueueUser | null; at: number; reason: string };
   standing: PostRestoreStanding;
+  /** When its author deleted it (then it can never come back with the Post); `null` if they didn't. */
+  authorDeletedAt: number | null;
 }
 
 /**
@@ -1458,6 +1460,7 @@ export const postRestoreChoices = query({
         status: report.moderationStatus,
         waterBodyName: body?.name ?? null,
         skateEndTime: report.skateEndTime,
+        authorDeletedAt: report.authorDeletedAt ?? null,
         ...(last
           ? {
               down: {

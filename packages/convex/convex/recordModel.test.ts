@@ -338,6 +338,10 @@ async function holds(w: W) {
     reversed: ids(reversed),
     deleted: ids(deleted),
   }).toEqual(want);
+  // Presence is never false while its list shows a row (true over an empty list is allowed).
+  const presence = await w.mod.query(api.contentRecord.recordPresence, { userId });
+  if (deleted.length > 0) expect(presence.deleted, 'presence: deleted').toBe(true);
+  if (reversed.length > 0) expect(presence.reversed, 'presence: reversed').toBe(true);
   const counts = await w.mod.query(api.contentRecord.recordCounts, { userId });
   expect(counts.reversed).toMatchObject({ count: reversed.length, capped: false });
   expect(counts.deleted).toMatchObject({ count: deleted.length, capped: false });

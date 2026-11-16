@@ -18,6 +18,7 @@ import {
   DELETED_ALONE,
   deletedPage,
   HEAVY_STEPS,
+  presenceOf,
   reversedPage,
   standingPage,
 } from './contentRecord';
@@ -259,6 +260,27 @@ const DELETED_ROUNDS = 2 + HEAD_ROUNDS + waves(ROW_MAX.verdict) + waves(ROW_MAX.
 const COUNT_ROUNDS = 2 + HEAVY_STEPS + 2;
 /** The same with no Post or hazard deleted: the heavy kinds end on their first step. */
 const COUNT_ROUNDS_LIGHT = 2 + 1 + 2;
+
+/** Presence: the check, then Reversed's first row and the five Deleted ranges together, then holds. */
+const PRESENCE_ROUNDS = 3;
+
+describe('presence is a handful of small reads (B01-4d)', () => {
+  test('the person page’s presence check costs three rounds, whatever the record holds', async () => {
+    const t = convexTest(schema, modules);
+    const { rob } = await record(t, 50);
+    const { out, stats } = await t.run(async (ctx) => {
+      const { ctx: c, stats } = counted(ctx);
+      return { out: await presenceOf(c, { userId: rob }), stats };
+    });
+    console.log(
+      `Presence: ${stats.rounds} rounds / ${stats.calls} calls (worst ${PRESENCE_ROUNDS})`,
+    );
+    expect(out).toMatchObject({ deleted: true, reversed: true });
+    expect(stats.rounds).toBeLessThanOrEqual(PRESENCE_ROUNDS);
+    // At most: Reversed's one row, each range's look, each looked-at row's hold — a few calls.
+    expect(stats.calls).toBeLessThanOrEqual(1 + 4 + 5 + 20);
+  });
+});
 
 describe('a page’s first row always fits (B01-4d)', () => {
   test('every list’s first row, read whole at its worst, fits what its rows leave of a fresh budget', () => {

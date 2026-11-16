@@ -2710,6 +2710,25 @@ decisions come newest first by when they were made (`contentVerdicts.by_target_a
 `at`) beside the standing one, never fifty by insertion time sorted afterward; the lists already
 range over the times they show (`at`, `endedAt`, the withdrawal time).
 
+**B01-4d: what the web sheet asked for** (all additive). `contentRecord.recordPresence({userId})`
+→ `{deleted, reversed, pending}`, cheap enough to stay live on every person page (three rounds: the
+first row of Reversed's own range, a few rows of each Deleted range through the list's own filter,
+their holds; `true` when a range has more rows than it looked at and none would show — the row over an
+empty tab is honest, a missing row is not; a property holds it never false while a list shows a row);
+the counts are read once the sheet opens. The pane adds `content` (the rows' `contentOf`),
+`eraseAtIfReleased` (the clock an overturn would leave — the write's own `clockOf`, asked as if the
+item's standing verdicts were ended, so a Post's decision or an open flag still holding it gives
+`null`, as the overturn then returns; a test holds the two equal) and `comesBack` for a Report (its
+comments still up, to 50, and its ratings, to 200: counts and floors, no documents). The Post chooser's
+members add `authorDeletedAt`.
+
+**Two changes the web saw, both intended.** An access alert never offers Restore — no write restores
+one (`setModerationStatus` takes no alert); an alert's one verdict is on an alert its author retracted,
+which offers Overturn (`lib/recordRules.test.ts`, *a standing alert its author didn't retract offers
+nothing*). An erased comment's shell offers Overturn for a decision standing on it — its words are
+gone, but the decision must still be able to come off the record (D267; `recordSheet.test.ts`, *an
+overturn … on an erased shell*).
+
 **B01-4d: every read, weighed.** Each page reserves its rows' worst cases in waves (`ReadBudget.waves`)
 over the request's budget (11 MiB after the caller's profile) and hands back what didn't come; a row
 whose reads the budget can't reserve ends the page there. Rounds measured on fifty rows of the dearest
@@ -2721,7 +2740,8 @@ kind (`recordRounds.test.ts`, which states each worst case from the budget):
 | `personReversed` | 51 verdicts; decision R + ending R + item; a gone item → its erasure row; then the undo engine's first step (main's: calls and documents counted, bytes not) | 3 | 27 |
 | `personDeleted` | report 2, post 1, comment 50, hazard 1, alert 50 a merged page (narrowed to one kind: 4, 2, 50, 4, 50); each row's hold check; each distinct Report once a page (none for a row the list leaves out) | 10 (a Report) | 13 |
 | `recordCounts` | Reversed 501, Reports by real weight (512 KiB, one `paginate`), comments 30 and alerts 30, together; then Posts and hazards by real weight in steps (each its share of what is left, at most 7); each row's hold check | — | 11 |
-| `item` | the item, its 51 newest decisions and the standing one (each R, ending R), its Report, a Post's ≤ 10 members (Report + newest row) | — | a fixed few |
+| `item` | the item, its 51 newest decisions and the standing one (each R, ending R), its Report, a Post's ≤ 10 members (Report + newest row); while a decision stands, its clock (≤ 6 hold checks, `HOLD_COST`); a Report's comments (51) and ratings (201) together | — | a fixed few |
+| `recordPresence` | Reversed's first row; each Deleted range's first 1–8 rows; each looked-at row's hold | — | 3 |
 
 **The undo engine's reads on Reversed rows are counted, not weighed.** Each Reversed row's undo state
 is main's engine (`lib/undo.undoStates`): its first step reads the row's undoing row (up to 16 tagged),

@@ -308,6 +308,10 @@ describe('a page always moves on', () => {
               const { ids } = await walk(w, list);
               expect([...ids].sort(), list).toEqual([...want[key]].sort());
             }
+            // Presence is never false while its list shows a row.
+            const presence = await w.mod.query(api.contentRecord.recordPresence, { userId: w.rob });
+            if (want.deleted.length > 0) expect(presence.deleted).toBe(true);
+            if (want.reversed.length > 0) expect(presence.reversed).toBe(true);
           },
         ),
         { seed, numRuns: 3 },

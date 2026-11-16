@@ -855,6 +855,140 @@ describe('a reason at the cap (D261)', () => {
   });
 });
 
+describe('the pane’s words, its "If overturned" date, what comes back, and presence', () => {
+  test('the pane carries its words as the rows do, and what a restore brings back', async () => {
+    const { t, rob, kate, matt, report, comment, set } = await setup();
+    const r = await report(rob.id, { notes: 'Thin at the inlet' });
+    await set('report', r, 'hidden', 'unsafe');
+    const up = await t.run((ctx) =>
+      ctx.db.insert('comments', {
+        reportId: r,
+        authorId: kate.id,
+        body: 'agreed',
+        moderationStatus: 'visible' as const,
+        source: 'native' as const,
+        createdAt: Date.now(),
+      } as never),
+    );
+    await t.run((ctx) =>
+      ctx.db.insert('comments', {
+        reportId: r,
+        authorId: kate.id,
+        body: 'hidden on its own',
+        moderationStatus: 'hidden' as const,
+        source: 'native' as const,
+        createdAt: Date.now(),
+      } as never),
+    );
+    for (const raterId of [kate.id, matt.id]) {
+      await t.run((ctx) =>
+        ctx.db.insert('reportRatings', {
+          targetType: 'report',
+          targetId: r,
+          raterId,
+          verdict: 'helpful',
+          createdAt: Date.now(),
+        } as never),
+      );
+    }
+    const pane = await matt.as.query(api.contentRecord.item, { targetType: 'report', targetId: r });
+    const [row] = (await standingOf(matt.as, rob.id)).rows;
+    expect(pane?.content).toEqual(row?.content);
+    expect(pane?.content).toMatchObject({ text: 'Thin at the inlet' });
+    expect(pane?.comesBack).toEqual({
+      comments: { count: 1, capped: false },
+      ratings: { count: 2, capped: false },
+    });
+    expect(up).toBeDefined();
+    // Nothing comes back with a comment.
+    const c = await comment(await report(kate.id));
+    const cpane = await matt.as.query(api.contentRecord.item, {
+      targetType: 'comment',
+      targetId: c,
+    });
+    expect(cpane?.comesBack).toBeNull();
+  });
+
+  test('"If overturned" is the date the overturn then returns — and null while a flag still holds it', async () => {
+    const { t, rob, kate, matt, report, comment, set, tick } = await setup();
+    const on = await report(kate.id);
+    const held = await comment(on, 'held by a flag too');
+    const free = await comment(on, 'held by its decision alone');
+    for (const c of [held, free]) {
+      await set('comment', c, 'hidden', 'hostile');
+      tick();
+      await rob.as.mutation(api.comments.remove, { commentId: c });
+      tick();
+    }
+    await t.run((ctx) =>
+      ctx.db.insert('contentFlags', {
+        flaggerId: kate.id,
+        targetType: 'comment',
+        targetId: held,
+        reason: 'spam',
+        status: 'open',
+        origin: 'user',
+        createdAt: Date.now(),
+      } as never),
+    );
+    for (const [c, expectNull] of [
+      [free, false],
+      [held, true],
+    ] as const) {
+      const pane = await matt.as.query(api.contentRecord.item, {
+        targetType: 'comment',
+        targetId: c,
+      });
+      expect(pane?.eraseAtIfReleased === null).toBe(expectNull);
+      const out = await matt.as.mutation(api.moderation.overturnVerdict, {
+        targetType: 'comment',
+        targetId: c,
+      });
+      expect(out.eraseAt).toBe(pane?.eraseAtIfReleased);
+      // Nothing stands now: no date to ask after.
+      const after = await matt.as.query(api.contentRecord.item, {
+        targetType: 'comment',
+        targetId: c,
+      });
+      expect(after?.eraseAtIfReleased).toBeNull();
+    }
+  });
+
+  test('presence: cheap, and never false while the list shows a row', async () => {
+    const { t, rob, kate, matt, report, comment, set, tick } = await setup();
+    const presence = () => matt.as.query(api.contentRecord.recordPresence, { userId: rob.id });
+    expect(await presence()).toEqual({ deleted: false, reversed: false, pending: [] });
+    // A deletion a decision holds is Standing's, not Deleted's.
+    const on = await report(kate.id);
+    const c = await comment(on);
+    await set('comment', c, 'hidden', 'hostile');
+    tick();
+    await rob.as.mutation(api.comments.remove, { commentId: c });
+    expect(await presence()).toMatchObject({ deleted: false, reversed: false });
+    // Overturned: Reversed shows it, and Deleted (its clock runs again).
+    tick();
+    await matt.as.mutation(api.moderation.overturnVerdict, { targetType: 'comment', targetId: c });
+    expect(await presence()).toMatchObject({ deleted: true, reversed: true });
+    expect((await deletedOf(matt.as, rob.id)).rows).toHaveLength(1);
+    expect((await reversedOf(matt.as, rob.id)).rows).toHaveLength(1);
+    void t;
+  });
+
+  test('the Post chooser says when a Report’s author deleted it', async () => {
+    const { t, rob, matt, post, set, tick } = await setup();
+    const { postId, reportIds } = await post(2);
+    await set('report', reportIds[0] as Id<'reports'>, 'hidden', 'own');
+    tick();
+    await rob.as.mutation(api.reports.remove, { reportId: reportIds[1] as Id<'reports'> });
+    const deletedAt = (await t.run((ctx) => ctx.db.get(reportIds[1] as Id<'reports'>)))
+      ?.authorDeletedAt;
+    const choices = await matt.as.query(api.moderation.postRestoreChoices, { postId });
+    const byId = new Map(choices?.members.map((m) => [m.reportId, m.authorDeletedAt]));
+    expect(byId.get(reportIds[0] as Id<'reports'>)).toBeNull();
+    expect(byId.get(reportIds[1] as Id<'reports'>)).toBe(deletedAt);
+  });
+});
+
 describe('who may act', () => {
   test('a member reads nothing; a moderator without the alert lever is told so', async () => {
     const { t, rob, kate, report, set } = await setup();

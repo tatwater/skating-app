@@ -34,6 +34,7 @@ export const PLAIN: PostRestoreChoices = {
       skateEndTime: JAN(14),
       down: { action: 'hide', by: MOD, at: JAN(15), reason: 'Second unsafe claim' },
       standing: 'returns',
+      authorDeletedAt: null,
     },
   ],
 };
@@ -52,6 +53,7 @@ export const MIXED: PostRestoreChoices = {
       skateEndTime: JAN(14),
       down: { action: 'hide', by: MOD, at: JAN(15), reason: 'Thickness looks mistyped' },
       standing: 'choose',
+      authorDeletedAt: null,
     },
     {
       reportId: id('r_removed'),
@@ -60,6 +62,7 @@ export const MIXED: PostRestoreChoices = {
       skateEndTime: JAN(13),
       down: { action: 'remove', by: MOD, at: JAN(15, 13), reason: 'Photo shows a license plate' },
       standing: 'choose',
+      authorDeletedAt: null,
     },
     {
       reportId: id('r_withdrawn'),
@@ -68,6 +71,7 @@ export const MIXED: PostRestoreChoices = {
       skateEndTime: JAN(12),
       down: { action: 'author_delete', by: null, at: JAN(13), reason: 'Deleted by the author' },
       standing: 'author_deleted',
+      authorDeletedAt: JAN(9),
     },
   ],
 };
@@ -86,6 +90,7 @@ export const NOTHING: PostRestoreChoices = {
       skateEndTime: JAN(12),
       down: { action: 'author_delete', by: null, at: JAN(13), reason: 'Deleted by the author' },
       standing: 'author_deleted',
+      authorDeletedAt: JAN(9),
     },
     {
       reportId: id('r_gone2'),
@@ -94,6 +99,7 @@ export const NOTHING: PostRestoreChoices = {
       skateEndTime: JAN(12, 15),
       down: { action: 'author_delete', by: null, at: JAN(13), reason: 'Deleted by the author' },
       standing: 'author_deleted',
+      authorDeletedAt: JAN(9),
     },
   ],
 };
