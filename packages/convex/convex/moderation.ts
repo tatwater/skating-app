@@ -1936,14 +1936,30 @@ const statusPrev = statusTermsOf;
 export async function banImpl(
   ctx: MutationCtx,
   actor: Doc<'profiles'>,
-  { userId, reason }: { userId: Id<'profiles'>; reason: string },
+  {
+    userId,
+    reason: given,
+    statusReason: kept,
+  }: {
+    userId: Id<'profiles'>;
+    reason: string;
+    /**
+     * The person's reason to put on file, when it isn't this write's own: an undo puts back the
+     * terms it undoes — their reason too — and audits its own reason for the undo (`null`: none
+     * was recorded).
+     */
+    statusReason?: string | null;
+  },
 ): Promise<PersonWriteResult> {
+  // The one normalizer (`lib/audit.checkedReason`): compared and kept trimmed, refused past the cap.
+  const reason = checkedReason(given);
   {
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     // Refused on an account in or past its deletion, and for the last ledger editor (D252), here and
     // in an undo that puts a ban back, which comes through this same writer.
     const target = await loadModeratableUser(ctx, actor, userId, { kind: 'ban' });
-    const terms = { status: 'banned' as const, statusReason: reason, suspendedUntil: null };
+    const onFile = kept === undefined ? reason : kept;
+    const terms = { status: 'banned' as const, statusReason: onFile, suspendedUntil: null };
     if (sameStatusTerms(statusTermsOf(target), terms)) {
       // The terms stand, but the Clerk lock is a mirror no one tracks: if its sync gave up, pressing
       // again is how it is repaired — so it is sent again, and nothing else is written (D270).
@@ -1953,13 +1969,15 @@ export async function banImpl(
 
     await ctx.db.patch(userId, {
       status: 'banned',
-      statusReason: reason,
+      statusReason: onFile ?? undefined,
       suspendedUntil: undefined,
       moderatedByUserId: actor._id,
       ...LAPSE_CLEARED,
     });
     await clearLapseMirror(ctx, userId);
     const actionId = await auditUser(ctx, actor._id, 'ban', userId, typed(reason), {
+      // The terms it set (`lib/statusTerms`): its reason on file may not be the row's own.
+      statusReason: onFile,
       prev: statusPrev(target),
     });
     // Fire-and-forget: a mutation can't fetch. Permanent bans only touch Clerk (founder decision).
@@ -1991,10 +2009,19 @@ export async function suspendImpl(
   actor: Doc<'profiles'>,
   {
     userId,
-    reason,
+    reason: given,
     suspendedUntil,
-  }: { userId: Id<'profiles'>; reason: string; suspendedUntil: number },
+    statusReason: kept,
+  }: {
+    userId: Id<'profiles'>;
+    reason: string;
+    suspendedUntil: number;
+    /** As `banImpl`'s: the person's reason to put on file when it isn't this write's own. */
+    statusReason?: string | null;
+  },
 ): Promise<PersonWriteResult> {
+  // The one normalizer (`lib/audit.checkedReason`): compared and kept trimmed, refused past the cap.
+  const reason = checkedReason(given);
   {
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     if (suspendedUntil <= Date.now()) {
@@ -2003,12 +2030,13 @@ export async function suspendImpl(
     // The same rule for a suspension: a suspended editor can't edit or pass the grant on (D252),
     // and a suspension that later lapsed would unlock an account partway through its deletion.
     const target = await loadModeratableUser(ctx, actor, userId, { kind: 'suspend' });
-    const terms = { status: 'suspended' as const, statusReason: reason, suspendedUntil };
+    const onFile = kept === undefined ? reason : kept;
+    const terms = { status: 'suspended' as const, statusReason: onFile, suspendedUntil };
     if (sameStatusTerms(statusTermsOf(target), terms)) return unchanged(userId);
 
     await ctx.db.patch(userId, {
       status: 'suspended',
-      statusReason: reason,
+      statusReason: onFile ?? undefined,
       suspendedUntil,
       moderatedByUserId: actor._id,
       ...LAPSE_CLEARED,
@@ -2016,6 +2044,7 @@ export async function suspendImpl(
     await clearLapseMirror(ctx, userId);
     const actionId = await auditUser(ctx, actor._id, 'suspend', userId, typed(reason), {
       suspendedUntil,
+      statusReason: onFile,
       prev: statusPrev(target),
     });
     // A suspension that replaces a ban — softened on appeal, or a ban's undo back to the suspension

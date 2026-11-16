@@ -33,9 +33,12 @@ export const STATUS_ROWS_BYTES = DOC_MAX;
 /** The terms a ban, suspension or lift row set. */
 export function termsSetBy(row: Audit): StatusTerms {
   if (row.action === 'unban') return { status: 'active', statusReason: null, suspendedUntil: null };
+  // The reason it put on file, where it says (an undo puts back the prior one and audits its own);
+  // else the row's own, as every ban and suspension kept before.
+  const onFile = (row.metadata as { statusReason?: string | null } | undefined)?.statusReason;
   return {
     status: row.action === 'ban' ? 'banned' : 'suspended',
-    statusReason: row.reason,
+    statusReason: onFile !== undefined ? onFile : row.reason,
     suspendedUntil:
       row.action === 'suspend'
         ? (((row.metadata as { suspendedUntil?: number } | undefined)?.suspendedUntil ?? null) as

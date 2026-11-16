@@ -161,14 +161,19 @@ async function restoreStatus(call: UndoCall, prev: StatusPrev): Promise<void> {
   const userId = call.row.targetId as Id<'profiles'>;
   const reason = call.reason;
   const write = statusWrite(prev);
+  // The prior terms whole — their reason too, kept on file; the undo's own reason is its audit row's.
+  // A row from before `prev` recorded one has none to put back: `null`, "not recorded", as the page
+  // then says.
+  const statusReason = prev.statusReason;
   if (write.kind === 'ban') {
-    assertChanged(await banImpl(call.ctx, call.actor, { userId, reason }));
+    assertChanged(await banImpl(call.ctx, call.actor, { userId, reason, statusReason }));
   } else if (write.kind === 'suspend') {
     assertChanged(
       await suspendImpl(call.ctx, call.actor, {
         userId,
         reason,
         suspendedUntil: prev.suspendedUntil as number,
+        statusReason,
       }),
     );
   } else {
