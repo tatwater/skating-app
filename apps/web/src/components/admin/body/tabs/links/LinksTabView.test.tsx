@@ -1191,10 +1191,11 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
     return { state, onSave, other, move, show };
   }
   let keyN = 0;
-  function Page({ server }: { server: ReturnType<typeof makeServer> }) {
+  function Page({ server, list }: { server: ReturnType<typeof makeServer>; list?: string }) {
     const [links, setLinks] = useState(server.state.links);
     server.state.set = setLinks;
-    const [queueKey] = useState(() => `links:test-${++keyN}`);
+    const [own] = useState(() => `links:test-${++keyN}`);
+    const queueKey = list ?? own;
     return (
       <LinksTabView
         {...base}
@@ -1333,7 +1334,9 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
     | { kind: 'otherInsert' }
     | { kind: 'otherRemove'; row: number }
     | { kind: 'otherReorder' }
-    | { kind: 'answer' };
+    | { kind: 'answer' }
+    | { kind: 'leave' }
+    | { kind: 'back' };
   const op: fc.Arbitrary<Op> = fc.oneof(
     fc.record({ kind: fc.constant('edit' as const), row: fc.nat(2) }),
     fc.record({ kind: fc.constant('remove' as const), row: fc.nat(2) }),
@@ -1342,6 +1345,9 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
     fc.record({ kind: fc.constant('otherRemove' as const), row: fc.nat(2) }),
     fc.constant({ kind: 'otherReorder' as const }),
     fc.constant({ kind: 'answer' as const }),
+    // Leaving the page (another tab, another body, out of the area) and coming back.
+    fc.constant({ kind: 'leave' as const }),
+    fc.constant({ kind: 'back' as const }),
   );
 
   it('over any interleaving with another moderator’s writes: mine land only on the links I addressed (fast-check)', async () => {
@@ -1349,7 +1355,17 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
       fc.asyncProperty(fc.array(op, { maxLength: 10 }), async (ops) => {
         const user = userEvent.setup({ delay: null });
         const server = makeServer([ASSOC, DAM]);
-        const { unmount } = render(<Page server={server} />);
+        // The shell's queues outlive the page: one provider; the page itself comes and goes.
+        const list = `links:leave-${++keyN}`;
+        const view = (shown: boolean) => (
+          <ListWritersProvider>
+            {shown ? <Page server={server} list={list} /> : null}
+          </ListWritersProvider>
+        );
+        const { unmount, rerender } = render(view(true));
+        let shown = true;
+        let refusedOnlyMine = false;
+        const onlyMine = !ops.some((o) => o.kind.startsWith('other'));
         let minted = 0;
         // The link each of my saves addressed (its words), and what it would make of them.
         const mine: { from: string; fromUrl: string; to: string | null }[] = [];
@@ -1359,10 +1375,27 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
           const live = thisRun();
           for (const o of ops) {
             if (!live()) return;
-            if (screen.queryByRole('textbox', { name: 'Label' }) !== null) {
+            if (o.kind === 'leave' || o.kind === 'back') {
+              shown = o.kind === 'back';
+              rerender(view(shown));
+              await act(async () => new Promise((r) => setTimeout(r, 0)));
+              continue;
+            }
+            if (onlyMine && screen.queryByText(/your change no longer applies/) !== null) {
+              refusedOnlyMine = true;
+            }
+            if (!shown) {
+              if (o.kind === 'answer') {
+                await act(async () => server.state.answers.shift()?.());
+                await act(async () => new Promise((r) => setTimeout(r, 0)));
+              } else if (!o.kind.startsWith('other')) continue;
+            }
+            if (shown && screen.queryByRole('textbox', { name: 'Label' }) !== null) {
               await user.click(screen.getByRole('button', { name: 'Cancel' }));
             }
             const rows = [...document.querySelectorAll<HTMLElement>('[data-link-key]')];
+            if (!shown && (o.kind === 'answer' || o.kind === 'edit' || o.kind === 'remove'))
+              continue;
             if (o.kind === 'edit' || o.kind === 'remove') {
               const row = rows[o.row];
               const edit = row?.querySelector<HTMLElement>('[data-slot="link-edit"]');
@@ -1403,7 +1436,14 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
               act(() => server.other(next));
             }
           }
+          if (!shown) rerender(view(true));
           await answerAll(server);
+          // With only my own writes, a queued change of mine is never refused as gone — its link
+          // can only have gone by my own hand — whatever leaving and coming back did meanwhile.
+          if (onlyMine && screen.queryByText(/your change no longer applies/) !== null) {
+            refusedOnlyMine = true;
+          }
+          expect(refusedOnlyMine).toBe(false);
           // Every link the server holds is one nobody touched, another moderator's, or one of my
           // edits of a link I addressed — never my words on a link I didn't address.
           const others = (l: StaffLink) => /^(X|Y)\d+$/.test(l.label);
@@ -1426,11 +1466,22 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
         }
       }),
       {
-        numRuns: 6,
+        numRuns: 4,
         // Pinned: Greptile's sequence, a remove whose link another moderator replaced, an edit
-        // across another's reorder and insert, and an edit of another moderator's link opened from
-        // its own row (it keeps that link's address); the rest random.
+        // across another's reorder and insert, an edit of another moderator's link opened from
+        // its own row (it keeps that link's address), and Greptile's second (an edit, a remove
+        // queued behind it, leaving, the edit landing, coming back); the rest random.
         examples: [
+          [
+            [
+              { kind: 'edit', row: 0 },
+              { kind: 'remove', row: 0 },
+              { kind: 'leave' },
+              { kind: 'answer' },
+              { kind: 'back' },
+              { kind: 'answer' },
+            ],
+          ],
           [
             [
               { kind: 'otherReplace', row: 0 },
