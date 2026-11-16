@@ -595,6 +595,16 @@ export async function setContentStatus(
       return { targetId, actionId };
     }
 
+    // A restore of what is already up changes nothing, so it writes nothing (a Post given a choice
+    // says why its own way, below).
+    if (
+      !asUndo &&
+      args.status === 'visible' &&
+      priorStatus === 'visible' &&
+      !args.withReportIds?.length
+    ) {
+      throw new ConvexError(recordRefusal(facts, 'restore') as string);
+    }
     const audit = { actorId: actor._id, reason: args.reason, now };
     // Every member a Post's verdict moved, and from what to what — on the Post's own row, so its undo
     // can put each member back to its own prior status (founder call, 2026-11-13).

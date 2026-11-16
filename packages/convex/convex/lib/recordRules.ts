@@ -33,6 +33,8 @@ export const ERASED_ALREADY = 'This was erased, so there is nothing left to act 
 export const OVERTURN_NOT_DELETED =
   'Its author still has this up. Restore it to take the verdict off their record.';
 export const OVERTURN_NOTHING_STANDING = 'There is no standing verdict on this to overturn.';
+/** A restore of what is already up: nothing would change, so nothing is written. */
+export const RESTORE_ALREADY_UP = 'This is already up.';
 /** A keep on content its author hasn't taken back: that is an ordinary hide or removal. */
 export const KEEP_NOT_DELETED =
   'Its author hasn’t deleted this. Hide or remove it to put it on their record.';
@@ -124,6 +126,7 @@ export function recordRefusal(facts: RecordFacts, action: RecordAction): string 
   switch (action) {
     case 'restore': {
       if (facts.authorDeleted) return AUTHOR_DELETED_RESTORE;
+      if (facts.status === 'visible') return RESTORE_ALREADY_UP;
       if (facts.targetType !== 'post') return null;
       if (facts.post === undefined) return RECORD_CHECK_ON_ITEM;
       if (facts.post.visibleAfter > 0) return null;

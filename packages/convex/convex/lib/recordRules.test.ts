@@ -19,6 +19,7 @@ import {
   RECORD_LEAVING,
   RECORD_NEEDS_REASON,
   RECORD_NOT_STAFF,
+  RESTORE_ALREADY_UP,
   type RecordAction,
   type RecordFacts,
   type RecordViewer,
@@ -110,6 +111,7 @@ describe('lib/recordRules', () => {
     expect(recordRefusal({ ...base, authorDeleted: true, withdrawn: true }, 'restore')).toBe(
       AUTHOR_DELETED_RESTORE,
     );
+    expect(recordRefusal({ ...base, status: 'visible' }, 'restore')).toBe(RESTORE_ALREADY_UP);
     expect(recordRefusal(base, 'overturn')).toBe(OVERTURN_NOT_DELETED);
     expect(recordRefusal({ ...base, withdrawn: true, standing: false }, 'overturn')).toBe(
       OVERTURN_NOTHING_STANDING,
