@@ -402,6 +402,62 @@ describe('the writes', () => {
     expect(mocks.toast).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    ['nothing changed', { landed: { userId: ROB_ID, changed: false } }],
+    [
+      'refused as their own content',
+      { refused: 'This is yours, so another moderator decides on it.' },
+    ],
+  ] as const)(
+    'an answer after the page has gone — %s — is said once, naming the person',
+    async (_, how) => {
+      answer();
+      let settle: () => void = () => {};
+      mocks.mutations.set(
+        'moderation:unbanUser',
+        vi.fn(
+          () =>
+            new Promise((resolve, reject) => {
+              settle = () =>
+                'refused' in how ? reject(new ConvexError(how.refused)) : resolve(how.landed);
+            }),
+        ),
+      );
+      const view = render(<PersonPane userId={ROB_ID} />);
+      const user = userEvent.setup({ advanceTimers: () => {} });
+      await user.click(within(lever('suspension')).getByRole('button', { name: 'Lift' }));
+      view.unmount();
+      await act(async () => {
+        settle();
+        await Promise.resolve();
+      });
+      if ('refused' in how) {
+        // A refusal like any other: a toast, in the server's words, naming the person.
+        await waitFor(() =>
+          expect(mocks.toast).toHaveBeenCalledWith(
+            expect.objectContaining({
+              title: 'Not changed · Rob Tremblay',
+              description: how.refused,
+            }),
+          ),
+        );
+        expect(mocks.toast).toHaveBeenCalledTimes(1);
+        expect(mocks.announce).not.toHaveBeenCalled();
+      } else {
+        // Said as a landed write is: its receipt, wherever the moderator has gone, with no Undo.
+        await waitFor(() =>
+          expect(mocks.announce).toHaveBeenCalledWith(
+            expect.objectContaining({
+              title: 'Nothing changed — Rob Tremblay was already set that way',
+              undoable: false,
+            }),
+          ),
+        );
+        expect(mocks.toast).not.toHaveBeenCalled();
+      }
+    },
+  );
+
   it('each lever reaches its own write with its own arguments', async () => {
     answer();
     render(<PersonPane userId={ROB_ID} />);
