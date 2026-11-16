@@ -47,9 +47,9 @@ import {
   isWetlandClass,
   KNOWN_STATE_CODES,
   type LatLng,
+  MAX_EXTERNAL_ID_CHARS,
   MAX_MODERATOR_ALIASES,
   MAX_MODERATOR_TOWNS,
-  MAX_EXTERNAL_ID_CHARS,
   MAX_PLAUSIBLE_DEPTH_M,
   MAX_REFERENCE_LINKS,
   MAX_SUGGESTED_SAMPLE_POINTS,
@@ -3707,8 +3707,8 @@ export async function mergeBodyInto(
 
     // A moderator's lists move to the survivor (B01-3g): each the union, the survivor's own first —
     // the pins with the states they feed, and its facts' pinned half, in this transaction. The
-    // loser's pins go with them (a merged-away body carries none); its aliases and links stay on the
-    // tombstone as they were, for the unmerge. Recorded in the change set either way.
+    // loser's pins and aliases go with them (a merged-away body carries neither; its links stay on the
+    // tombstone, which nothing reads), all kept in the change set for the unmerge. Recorded in the change set either way.
     const listsBefore = {
       survivor: {
         pins: survivor.moderatorTownKeys ?? [],
@@ -3750,6 +3750,15 @@ export async function mergeBodyInto(
       mergedIntoId: survivorId,
       ...(pinsBefore.loser.length > 0
         ? { moderatorTownKeys: undefined, ...regionStatesFields(ruleStatesOf(loser), []) }
+        : {}),
+      // Its aliases moved to the survivor too: off the tombstone, whose search text a hit follows to
+      // the survivor — else a carried alias the survivor's moderator removes would still find it.
+      // The change set keeps them, for the unmerge.
+      ...(listsBefore.loser.aliases.length > 0
+        ? {
+            moderatorAliases: undefined,
+            searchText: bodySearchTextFor({ ...loser, moderatorAliases: undefined }),
+          }
         : {}),
     });
     // …and clear the flag at the **other end of the pair**, which nothing used to do. A07a's

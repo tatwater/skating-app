@@ -126,6 +126,19 @@ const undoCuratedBoost: UndoHandler = {
 const undoReferenceLinks: UndoHandler = {
   blocked: needsPrev,
   undoTakesAway: (row) => UNDO_POLICY.set_reference_links.takesAway(meta(row).prev.referenceLinks),
+  // A merge carries a loser's list to its survivor with no row on the survivor: an undo that would put
+  // back a list that has moved since is refused, so never offered (B01-3g).
+  refusal: async (ctx, row, read) => {
+    const id = ctx.db.normalizeId('waterBodies', row.targetId);
+    const body = id ? await read.row('waterBody', id) : null;
+    const refused = editRefusal(body);
+    if (refused !== null || body === null) return refused;
+    return listChangedRefusal(
+      body.referenceLinks ?? [],
+      meta(row).referenceLinks ?? [],
+      'this body’s reference links',
+    );
+  },
   run: ({ ctx, actor, row, reason }) =>
     setReferenceLinksImpl(ctx, actor, {
       waterBodyId: row.targetId as Id<'waterBodies'>,
@@ -530,6 +543,19 @@ const WATER_BODY: TargetUndo = {
 const undoAliases: UndoHandler = {
   blocked: needsPrev,
   undoTakesAway: () => UNDO_POLICY.set_aliases.takesAway(undefined),
+  // A merge carries a loser's list to its survivor with no row on the survivor: an undo that would put
+  // back a list that has moved since is refused, so never offered (B01-3g).
+  refusal: async (ctx, row, read) => {
+    const id = ctx.db.normalizeId('waterBodies', row.targetId);
+    const body = id ? await read.row('waterBody', id) : null;
+    const refused = editRefusal(body);
+    if (refused !== null || body === null) return refused;
+    return listChangedRefusal(
+      body.moderatorAliases ?? [],
+      meta(row).moderatorAliases ?? [],
+      'this body’s aliases',
+    );
+  },
   run: ({ ctx, actor, row, reason }) =>
     setAliasesImpl(ctx, actor, {
       waterBodyId: row.targetId as Id<'waterBodies'>,

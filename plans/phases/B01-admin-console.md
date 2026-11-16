@@ -3014,7 +3014,8 @@ and the answer the same whatever order reads settle in. Reserve, never queue.
   search); a removed or rejected body is found by no name. Every writer of an ingredient rebuilds the
   text through the builder (`searchTextWriters.test.ts` inventories them: the import, a drawn body,
   `setAliases` and its undo, the name override and its undo, an admitted catalog body, the repair
-  pass); a merge moves no names, a removal leaves them. No backfill: with no moderator aliases the
+  pass, and — since B01-3g — a merge, which carries a loser's aliases to its survivor); a merge moves
+  no catalog names, a removal leaves them. No backfill: with no moderator aliases the
   rule gives today's string, and dev carries none. The repair pass (`backfillSearchText`) reads the
   builder; dry by default, one page a call or `chain`, each stale body its own nested write.
   The search read, measured worst case (a full page of heavy outlines, every alias at its bound, half
@@ -3163,7 +3164,8 @@ in, so no reader shows the pins as they were; a key whose town is gone is kept i
 import adds pinned states and never reads a pinned body as out of region (`keptByPin`). A merge folds
 the loser's pins into the survivor and records both in its change set; a removal leaves them.
 **Nothing a moderator set is dropped by a merge** (Greptile on #130): the survivor takes the union of
-both bodies' pins, aliases and reference links (`mergedModeratorLists`), and a union past a cap is a
+both bodies' pins, aliases and reference links (`mergedModeratorLists`) — the aliases with the
+survivor's search text, rebuilt in the same patch (`bodySearchTextFor`) — and a union past a cap is a
 refusal in a sentence (which list, how many, the cap, clear some first) — never a truncation. The
 duplicate card never offers that merge and shows the sentence; the import's automated merge skips
 the pair and names it (its dry run counting what each survivor took earlier in the pass, so it

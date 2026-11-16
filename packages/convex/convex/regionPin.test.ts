@@ -6,7 +6,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { MAX_REFERENCE_LINKS } from '@skating/core';
+import { bodySearchTextFor, MAX_REFERENCE_LINKS } from '@skating/core';
 import { convexTest } from 'convex-test';
 import fc from 'fast-check';
 import type { Polygon } from 'geojson';
@@ -549,6 +549,9 @@ describe('the pin against the other writers', () => {
     await admin.as.mutation(api.waterBodies.merge, { survivorId: survivor, loserId: loser });
     // Its search text carries the alias it took, in the merge's own transaction.
     expect((await get(t, survivor))?.searchText.toLowerCase()).toContain('glass pond');
+    // The alias moved: off the tombstone, so a moderator who removes it from the survivor removes it.
+    expect((await get(t, loser))?.moderatorAliases).toBeUndefined();
+    expect((await get(t, loser))?.searchText.toLowerCase()).not.toContain('glass pond');
     expect(await get(t, survivor)).toMatchObject({
       moderatorAliases: ['The Mirror', 'Glass Pond'],
       referenceLinks: [
@@ -577,6 +580,11 @@ describe('the pin against the other writers', () => {
       await t.run(async (ctx) => {
         await ctx.db.patch(survivor, lists(s));
         await ctx.db.patch(loser, { ...lists(l), dedupStatus: 'near_certain' });
+        // Each body's search text with its aliases, as `setAliases` keeps it.
+        for (const id of [survivor, loser]) {
+          const doc = await ctx.db.get(id);
+          if (doc) await ctx.db.patch(id, { searchText: bodySearchTextFor(doc) });
+        }
       });
       const before = await t.run(async (ctx) => [
         await ctx.db.get(survivor),
@@ -633,6 +641,8 @@ describe('the pin against the other writers', () => {
         expect(new Set(got.moderatorTownKeys ?? [])).toEqual(pins);
         expect(new Set((got.moderatorAliases ?? []).map((a) => a.toLowerCase()))).toEqual(aliases);
         expect(new Set((got.referenceLinks ?? []).map((x) => x.url))).toEqual(links);
+        // Findable by every alias it now holds: its search text rebuilt in the merge's transaction.
+        expect(got.searchText).toBe(bodySearchTextFor(got));
       } else {
         // Refused by hand: neither body changed at all. Skipped by the import: the same, except the
         // pair now waits in the duplicate queue for a person.
@@ -653,6 +663,47 @@ describe('the pin against the other writers', () => {
     });
     for (const seed of [7, 2026]) await fc.assert(prop, { seed, numRuns: 6 });
     await fc.assert(prop, { numRuns: 6 });
+  });
+
+  test('a merge that changes the survivor’s aliases or links takes back their older undo, which would be refused', async () => {
+    const t = harness();
+    const admin = await person(t);
+    const survivor = await imported(t, 'way/1');
+    const loser = await imported(t, 'way/2');
+    await admin.as.mutation(api.waterBodies.setAliases, {
+      waterBodyId: survivor,
+      aliases: ['The Mirror'],
+    });
+    await admin.as.mutation(api.waterBodies.setReferenceLinks, {
+      waterBodyId: survivor,
+      links: [{ label: 'Association', url: 'https://example.org/a' }],
+    });
+    const aliasRow = await lastAction(t, 'set_aliases');
+    const linkRow = await lastAction(t, 'set_reference_links');
+    const stateOf = (row: Doc<'moderationActions'>) =>
+      t.run(async (ctx) => {
+        const viewer = await ctx.db.get(admin.id);
+        const fresh = await ctx.db.get(row._id);
+        if (!viewer || !fresh) throw new Error('missing');
+        return undoState(ctx, viewer, fresh);
+      });
+    expect(await stateOf(linkRow)).toMatchObject({ state: 'available' });
+    await t.run((ctx) =>
+      ctx.db.patch(loser, {
+        moderatorAliases: ['Glass Pond'],
+        referenceLinks: [{ label: 'Town page', url: 'https://example.org/b' }],
+        dedupStatus: 'near_certain',
+      }),
+    );
+    await admin.as.mutation(api.waterBodies.merge, { survivorId: survivor, loserId: loser });
+    // The merge's row is on the loser, so neither older row is overtaken: the refusal answers.
+    expect(await stateOf(aliasRow)).toMatchObject({
+      state: expect.stringMatching(/unavailable|overtaken/),
+    });
+    expect(await stateOf(linkRow)).toMatchObject({
+      state: 'unavailable',
+      why: expect.stringMatching(/reference links/),
+    });
   });
 
   test('a removal leaves the pin, so undoing the removal brings the body back pinned', async () => {
