@@ -3,7 +3,15 @@ import type { Id } from '@skating/convex/dataModel';
 import { clampPageSize, LIBRARY_PAGE_SIZE } from '@skating/core';
 import { Link, useNavigate, useRouterState, useSearch } from '@tanstack/react-router';
 import { type PaginationStatus, usePaginatedQuery } from 'convex/react';
-import { type ReactElement, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type ReactElement,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import { ReadBoundary } from '@/components/kit/read-boundary';
 import { useRole } from '@/lib/useRole';
@@ -342,14 +350,11 @@ function PagedView({
       ...(othersPending !== null && { othersFailed: { pending: othersPending } }),
     });
   }, [page, failure, retrying, current, laneHeld, others, othersPending]);
-  return (
-    <BodiesView
-      {...view}
-      list={list}
-      onLoadMore={() => page?.loadMore(LIBRARY_PAGE_SIZE)}
-      onRetryList={paged.retry}
-    />
-  );
+  // Kept while the page is: the list's load-ahead (`useLoadAhead`) re-checks and re-observes its
+  // viewport whenever this changes, so a new one each render (a minute's tick, a row selected)
+  // would re-run it on every render.
+  const loadMore = useCallback(() => page?.loadMore(LIBRARY_PAGE_SIZE), [page]);
+  return <BodiesView {...view} list={list} onLoadMore={loadMore} onRetryList={paged.retry} />;
 }
 
 // ── The counts ───────────────────────────────────────────────────────────────────────────────

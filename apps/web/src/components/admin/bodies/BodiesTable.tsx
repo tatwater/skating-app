@@ -313,6 +313,17 @@ export function BodiesTable({
     }
     el.scrollTop = 0;
   }, [memoryKey, entries.length]);
+  // Shown again after a narrow screen hid it (`paused`): a hidden scroller loses its offset, and
+  // no scroll says so, so the place it remembers is put back — Back to the list lands where it was.
+  const wasPaused = useRef(paused);
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (wasPaused.current && !paused && el !== null && restored.current === memoryKey) {
+      const top = scrollMemory.get(memoryKey);
+      if (top !== undefined) el.scrollTop = top;
+    }
+    wasPaused.current = paused;
+  }, [paused, memoryKey]);
 
   const status = list.status;
   // A first page shorter than the viewport asks for the next straight away — while in sight.

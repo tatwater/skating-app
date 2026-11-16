@@ -1,4 +1,9 @@
-import { LANDMARK_KIND_LABELS, LANDMARK_KINDS, type LandmarkKind } from '@skating/core';
+import {
+  LANDMARK_KIND_LABELS,
+  LANDMARK_KINDS,
+  type LandmarkKind,
+  landmarkNameKey,
+} from '@skating/core';
 import { type ReactNode, useRef, useState } from 'react';
 import { isFailed, type Loadable } from '@/components/admin/reads/consoleReads';
 import { Tag, TagRun } from '@/components/kit/badge';
@@ -113,8 +118,10 @@ export function LandmarkCard({
     // Spelling changes always re-apply; a list that keeps moving is said, never dropped quietly.
     () => sayNotSaved(hold, SPELLINGS_KEPT_MOVING),
   );
+  // A landmark's spellings fold as the server keeps them (`normalizeLandmarkNames`): "The Gut" and
+  // "Gut" are one.
   const editAliases = (aliases: readonly string[]) =>
-    void pushAliases(chipChange(l.aliases, aliases));
+    void pushAliases(chipChange(l.aliases, aliases, landmarkNameKey));
   const promotable = PROMOTABLE.has(l.kind);
   useTabKeys(card, [
     { key: 'M', run: () => sayUnavailable(TOOLS.move), enabled: canPlace },

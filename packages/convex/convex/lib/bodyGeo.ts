@@ -299,9 +299,9 @@ export async function kindsDiffer(ctx: QueryCtx, state: string, name: string): P
  * **A moderator's pinned towns as the facts hold them** (B01-3g): each key's town row now — name,
  * state, boundary and county (from its GEOID) — and the keys no town row has now (`pinnedMissing`),
  * kept to be shown rather than dropped. At most eight keys: a town read each, each county read once
- * however many pinned towns share it, and — for a town whose full name gives a kind — up to two
- * namesake rows once per name (B01-3l). Boundary rows carry their polygons, so every read counts
- * against the writer's budget.
+ * however many pinned towns share it, and — for a town whose full name gives a kind — its namesakes
+ * once per name, at most {@link NAMESAKES_READ} (B01-3l; real states hold two or three). Boundary rows
+ * carry their polygons, so every read counts against the writer's budget.
  */
 export async function pinnedFactsFor(
   ctx: QueryCtx,

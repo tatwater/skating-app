@@ -313,6 +313,29 @@ describe('Access: a reason’s dialog', () => {
     expect(screen.getByRole('button', { name: 'Clear the ruling' })).toBeTruthy();
   });
 
+  it('confirmed after another moderator already ruled the same, its reason is still sent', async () => {
+    const user = userEvent.setup();
+    CASES[2]?.setup();
+    const { rerender } = render(<AccessTab bodyId="wb1" />);
+    await user.click(screen.getByRole('button', { name: 'Rule no public access' }));
+    const dialog = await screen.findByRole('alertdialog');
+    await user.type(within(dialog).getByRole('textbox'), 'Posted all round');
+    // Another moderator's ruling lands while the dialog is open.
+    setRecord({ publicAccess: { verdict: 'none', decidedAt: Date.now() } });
+    rerender(<AccessTab bodyId="wb1" />);
+    await user.click(within(dialog).getByRole('button', { name: 'Rule no public access' }));
+    // Never closed as saved with nothing sent: the reason typed is recorded.
+    expect(mocks.calls).toEqual([
+      [
+        'waterBodies:setPublicAccess',
+        { waterBodyId: 'wb1', verdict: 'none', reason: 'Posted all round' },
+      ],
+    ]);
+    await act(async () => mocks.answers.shift()?.());
+    await settle();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
   it('confirmed behind a press on its way, it is sent after it, and the last press stands', async () => {
     const user = userEvent.setup();
     CASES[2]?.setup();

@@ -104,15 +104,16 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
   // **The latest press wins** (`useLatestPick`): the ruling pressed shows at once, each press is
   // sent in press order, and the record is drawn again once every press has been answered. Ruling
   // no public access is a press once its reason is confirmed; its dialog waits on its own answer.
+  const send = (verdict: PublicAccessVerdict | null, reason: string | undefined) => {
+    const write = () => setPublicAccess({ waterBodyId, verdict, ...(reason ? { reason } : {}) });
+    const receipt = { title: ruled(verdict), target };
+    return reason !== undefined
+      ? actInDialog(write, receipt)
+      : act(write, receipt).then((ok) => (ok ? null : 'Not saved'));
+  };
   const rule = useLatestPick<PublicAccessVerdict | null, string | null, string>(
     loaded?.ruling.verdict ?? null,
-    (verdict, reason) => {
-      const write = () => setPublicAccess({ waterBodyId, verdict, ...(reason ? { reason } : {}) });
-      const receipt = { title: ruled(verdict), target };
-      return reason !== undefined
-        ? actInDialog(write, receipt)
-        : act(write, receipt).then((ok) => (ok ? null : 'Not saved'));
-    },
+    send,
   );
   const shown = useMemo(() => {
     if (data === undefined || isFailed(data)) return data;
@@ -130,7 +131,13 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
       canPlace={can('body.access')}
       onRule={
         can('access.rule')
-          ? async (verdict, reason) => (await rule.press(verdict, reason)) ?? null
+          ? async (verdict, reason) => {
+              const sent = rule.press(verdict, reason);
+              if (sent !== null) return (await sent) ?? null;
+              // The verdict already shows (another moderator's ruling landed while the dialog was
+              // open): a confirmed reason is still sent, never dropped as though it were saved.
+              return reason === undefined ? null : send(verdict, reason);
+            }
           : undefined
       }
       // `putIns.promote`: the launch made official on its own row — its point, bay, lot and walk

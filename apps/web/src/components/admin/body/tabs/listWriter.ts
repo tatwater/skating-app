@@ -32,15 +32,16 @@ export type Unapplied = 'gone' | 'moved';
 /**
  * A chip field's new value as a change by item: what it added and removed since `shown` (the list
  * the render held), applied to whatever list the queue builds on — never the whole field's value.
- * A word is matched as the server folds it (trimmed, any case: one alias per word), so a word taken
- * off goes even if another moderator stored it in another case since, and one put on isn't added
- * twice; a recased word (one off, one on) takes the new case.
+ * A word is matched as the server folds it (`fold`; a body's aliases by default — spaces run
+ * together, trimmed, any case: one alias per word), so a word taken off goes even if another
+ * moderator stored it in another spelling the server takes for the same since, and one put on isn't
+ * added twice; a recased word (one off, one on) takes the new case.
  */
 export function chipChange(
   shown: readonly string[],
   value: readonly string[],
+  fold: (word: string) => string = aliasFold,
 ): (base: readonly string[]) => string[] {
-  const fold = (a: string) => a.trim().toLowerCase();
   const added = value.filter((a) => !shown.includes(a));
   const removed = shown.filter((a) => !value.includes(a));
   return (base) => {
@@ -52,6 +53,10 @@ export function chipChange(
     return [...base.filter((a) => !out.has(fold(a)) || added.includes(a)), ...fresh];
   };
 }
+
+/** A body alias as `setAliases` keys it (`normalizeModeratorAliases`): spaces run together, any case. */
+export const aliasFold = (word: string): string =>
+  word.replace(/\s+/g, ' ').trim().toLocaleLowerCase('en-US');
 
 export type ListWriter<T> = {
   /** The server's list, each time a render reads it. */

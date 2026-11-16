@@ -1,3 +1,4 @@
+import { landmarkNameKey } from '@skating/core';
 import { render, renderHook } from '@testing-library/react';
 import fc from 'fast-check';
 import { createElement } from 'react';
@@ -442,5 +443,15 @@ describe('chipChange — the named cases', () => {
     expect(chipChange([], ['cove'])(['Cove', 'Narrows'])).toEqual(['Narrows', 'cove']);
     // A word recased on purpose takes the new case.
     expect(chipChange(['basin'], ['Basin'])(['basin', 'Cove'])).toEqual(['Cove', 'Basin']);
+  });
+
+  it('matches as each server folds: an alias’s spaces run together, a landmark’s “the” and marks', () => {
+    // `setAliases` takes "Big  Pond" and "Big Pond" for one alias.
+    expect(chipChange(['Big Pond'], [])(['Big  Pond', 'Cove'])).toEqual(['Cove']);
+    // A landmark's spellings fold as `landmarkNameKey` does: "The Gut" and "Gut" are one.
+    expect(chipChange(['Gut'], [], landmarkNameKey)(['The Gut', 'Narrows'])).toEqual(['Narrows']);
+    expect(chipChange([], ["Mallett's Bay"], landmarkNameKey)(['Malletts Bay'])).toEqual([
+      "Mallett's Bay",
+    ]);
   });
 });

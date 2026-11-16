@@ -341,6 +341,23 @@ describe('town lines from each town’s outline', () => {
     expect(townLinesFrom(null, null)).toEqual({ lines: [], missing: 0 });
   });
 
+  it('gives two towns that read the same lines of their own ids', () => {
+    const { lines } = townLinesFrom(
+      {
+        towns: [
+          { name: 'Clinton', state: 'NY', ring: square(0, 43, 1, 44, true) },
+          { name: 'Clinton', state: 'NY', ring: square(1, 43, 2, 44, true) },
+        ],
+        capped: false,
+        computedAt: 1,
+      },
+      null,
+    );
+    const ids = lines.map((l) => l.id);
+    expect(ids).toContain('Clinton|NY|0');
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
   it('draws a stretch that runs through the ring’s start as one line, named once', () => {
     // The square starts at its south-west corner; the body sits there, so the stretch near it is the
     // ring's last side and its first — one line, never two pieces each named.

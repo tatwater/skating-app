@@ -717,7 +717,9 @@ export const preview = query({
       askCount: { count: openAsks.count, capped: openAsks.capped },
       /** `asks` is not every open ask: show it as "N of the count". */
       asksListCapped: openAsks.capped || openAsks.count > asks.length,
-      town: towns[0] ?? null,
+      // The lead town by its own name, never the names list's "Franklin, VT": `townState` goes beside
+      // it, and the page joins the two (a name two states share would read "Franklin, VT, VT").
+      town: withState[0]?.name ?? null,
       moreTowns: towns.slice(1),
       /** `town`'s state; `null` with no town, or on facts computed before towns carried states. */
       townState: withState[0]?.state ?? null,

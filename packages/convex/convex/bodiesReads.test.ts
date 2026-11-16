@@ -9,6 +9,7 @@ import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { ASKERS_CAP, OTHER_STANDING_ROWS, ROWS_BY_IDS_MAX } from './bodies';
 import { REMOVED_REPORT_CAP } from './bodyConsole';
+import { PLACES_RULE } from './lib/bodyGeo';
 import { rebuildBodyLibrary } from './lib/bodyLibrary';
 import schema from './schema';
 import { removeBodyImpl } from './waterBodies';
@@ -343,6 +344,64 @@ describe('the preview and the frame', () => {
     const extras = await mod.as.query(api.bodyConsole.consoleExtras, { waterBodyId: id });
     expect(extras.complete).toEqual(p?.complete);
     expect(extras.complete).not.toBeNull();
+  });
+
+  test('a lead town whose name two states share is named once, its state beside it', async () => {
+    const t = harness();
+    const mod = await person(t, 'moderator');
+    const id = await body(t, 'Border Pond', { states: ['NH', 'VT'] });
+    await t.run(async (ctx) => {
+      const town = (state: string, geoid: string) =>
+        ctx.db.insert('adminAreas', {
+          name: 'Franklin',
+          level: 'town',
+          state,
+          externalId: `tiger/${geoid}`,
+          polygon: {
+            type: 'Polygon',
+            coordinates: [
+              [
+                [-72.1, 43.9],
+                [-71.9, 43.9],
+                [-71.9, 44.1],
+                [-72.1, 43.9],
+              ],
+            ],
+          },
+          bbox: { minLat: 43.9, minLng: -72.1, maxLat: 44.1, maxLng: -71.9 },
+          centroid: { lat: 44, lng: -72 },
+          createdAt: NOW,
+        });
+      const vt = await town('VT', '5001126800');
+      const nh = await town('NH', '3301327380');
+      for (const r of await ctx.db
+        .query('bodyGeoFacts')
+        .withIndex('by_body', (q) => q.eq('waterBodyId', id))
+        .collect()) {
+        await ctx.db.delete(r._id);
+      }
+      await ctx.db.insert('bodyGeoFacts', {
+        waterBodyId: id,
+        computedAt: NOW,
+        checkedAt: NOW,
+        placesRule: PLACES_RULE,
+        towns: ['Franklin'],
+        townStates: ['VT'],
+        townIds: [vt],
+        townEntries: [
+          { name: 'Franklin', state: 'VT', id: vt },
+          { name: 'Franklin', state: 'NH', id: nh },
+        ],
+        counties: [],
+        states: ['NH', 'VT'],
+      });
+    });
+    // The page joins `town` and `townState`: "Franklin, VT", never "Franklin, VT, VT".
+    expect(await mod.as.query(api.bodies.preview, { waterBodyId: id })).toMatchObject({
+      town: 'Franklin',
+      townState: 'VT',
+      moreTownsWithState: [{ name: 'Franklin', state: 'NH' }],
+    });
   });
 
   test('a landmark ask’s askers are the asks for the same place, as the inbox counts them', async () => {

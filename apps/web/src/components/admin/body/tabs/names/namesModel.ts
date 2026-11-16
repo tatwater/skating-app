@@ -102,7 +102,15 @@ export function townLinesFrom(
       Math.min(a.lat, b.lat) <= view[3]);
   const lines: TownLine[] = [];
   let missing = 0;
+  // Two towns can read the same (one per boundary since B01-3l: New York's two Clintons, or two
+  // Plattsburghs before their kinds load), so a repeat's lines carry how many came before — never
+  // two lines with one id. The first keeps the id it always had.
+  const seen = new Map<string, number>();
   for (const town of read.towns) {
+    const key = `${town.name}|${town.state ?? ''}`;
+    const repeat = seen.get(key) ?? 0;
+    seen.set(key, repeat + 1);
+    const prefix = repeat === 0 ? key : `${key}#${repeat}`;
     if (town.ring === null || town.ring.length < 2) {
       missing += 1;
       continue;
@@ -144,7 +152,7 @@ export function townLinesFrom(
     }
     flush();
     runs.forEach((path, n) => {
-      const id = `${town.name}|${town.state ?? ''}|${n}`;
+      const id = `${prefix}|${n}`;
       lines.push({ id, path, faces: facesOf(path, ccw, town.name) });
     });
   }

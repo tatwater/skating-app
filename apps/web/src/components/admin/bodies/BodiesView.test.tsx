@@ -656,6 +656,23 @@ describe('a narrow screen (the console’s master–detail rule)', () => {
     expect(onLoadMore).toHaveBeenCalled();
   });
 
+  it('back on the list, it lands where it was scrolled to', async () => {
+    columns.fit = false;
+    const { container } = render(<Harness initial={queryOf({})} />);
+    const scroller = () => container.querySelector('[data-slot=bodies-scroll]') as HTMLElement;
+    scroller().scrollTop = 500;
+    fireEvent.scroll(scroller());
+    const grid = screen.getByRole('grid');
+    act(() => grid.focus());
+    await userEvent.keyboard('{Enter}');
+    expect(pane('middle')).toHaveClass('hidden');
+    // A hidden scroller loses its offset, as a browser drops it.
+    scroller().scrollTop = 0;
+    await userEvent.click(screen.getByRole('button', { name: 'Back to the list' }));
+    expect(pane('middle')).not.toHaveClass('hidden');
+    expect(scroller().scrollTop).toBe(500);
+  });
+
   it('a row opened takes the page, and focus goes with it', async () => {
     columns.fit = false;
     render(<Harness initial={queryOf({})} />);
