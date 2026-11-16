@@ -27,7 +27,9 @@ import {
   RECURRENCE_MATCH_METERS,
   RECURRENCE_WINDOW_SEASONS,
   type Season,
+  seasonEndMs,
   seasonOf,
+  seasonStartMs,
 } from '@skating/core';
 import { paginationOptsValidator } from 'convex/server';
 import { ConvexError, v } from 'convex/values';
@@ -440,6 +442,12 @@ export const enqueueBody = internalMutation({
 export { RECURRENCE_WINDOW_SEASONS };
 
 /**
+ * The most of this season's pins on one body `listForBody` reads to decide which advisories yield.
+ * Past it, every advisory stands down (B01-3n): none is claimed clear of a pin the read didn't see.
+ */
+export const LIVE_SIGHTINGS_READ = 500;
+
+/**
  * What a skater may see about a lake's history (D78) — **nothing at all until the flag flips.**
  *
  * The bar is applied at the index rather than after the read, which is the difference between
@@ -472,19 +480,28 @@ export const listForBody = query({
     // **Live information wins** (§9.3). A pin reported this season inside a cluster's footprint has a
     // date, a reporter and a confirm loop, and is better than history in every respect — so the
     // advisory for that cluster stands down rather than competing with it.
+    //
+    // **Bounded** (B01-3n): this season's pins on the body, by first report, at most
+    // `LIVE_SIGHTINGS_READ` (one more read only to know). Past it, an unread pin could sit inside any
+    // pattern's footprint, and an advisory returned would claim "no live pin here" from a partial
+    // read — so every advisory stands down, the yield rule's conservative answer. The pins
+    // themselves never come from this read: each app draws them from its own.
     const thisSeason = seasonOf(Date.now());
-    const live = (
-      await ctx.db
-        .query('hazards')
-        .withIndex('by_water_body_status', (q) =>
-          q.eq('waterBodyId', body._id).eq('status', 'active'),
-        )
-        .collect()
-    ).filter(
+    const seasonPins = await ctx.db
+      .query('hazards')
+      .withIndex('by_water_body_first_reported', (q) =>
+        q
+          .eq('waterBodyId', body._id)
+          .gte('firstReportedAt', seasonStartMs(thisSeason))
+          .lt('firstReportedAt', seasonEndMs(thisSeason)),
+      )
+      .take(LIVE_SIGHTINGS_READ + 1);
+    if (seasonPins.length > LIVE_SIGHTINGS_READ) return [];
+    const live = seasonPins.filter(
       (h) =>
+        h.status === 'active' &&
         h.moderationStatus === 'visible' &&
-        h.mergedIntoHazardId === undefined &&
-        seasonOf(h.firstReportedAt) === thisSeason,
+        h.mergedIntoHazardId === undefined,
     );
 
     return rows
