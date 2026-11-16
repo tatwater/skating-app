@@ -247,6 +247,8 @@ export const HideALaunch: Story = {
     await expect(args.onHide).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'pi-dam' }),
       'A private dock',
+      // The dialog's opening, for an answer that comes after it has gone.
+      expect.anything(),
     );
   },
 };
