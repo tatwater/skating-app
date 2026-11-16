@@ -22,8 +22,32 @@ export const MAX_URL_CHARS = 2_048;
  */
 export const MAX_EXTERNAL_ID_CHARS = 128;
 
-/** How many catalog ids one landmark carries — one per catalog row merged into it, with room. */
-export const MAX_LANDMARK_EXTERNAL_IDS = 32;
+/**
+ * The total length of one landmark's catalog ids (the sum of their characters) — bounded by length,
+ * never by count: a waterway the ETL stitches from many ways carries one id per way (the largest
+ * measured on dev, 142 ids, is about 3,550 characters; this is over four times that). With each id at
+ * most {@link MAX_EXTERNAL_ID_CHARS}, a landmark's ids weigh at most this many characters.
+ */
+export const MAX_LANDMARK_EXTERNAL_ID_CHARS = 16_384;
+
+/**
+ * The catalog ids a landmark keeps, oldest first as given: every one while their total length fits
+ * {@link MAX_LANDMARK_EXTERNAL_ID_CHARS}; past it, the newest that fit — an id the catalogs still use
+ * outranks one that left them — and how many were dropped. Repeats are folded first. One rule for
+ * every writer of a landmark's ids (the load, a merge's fold).
+ */
+export function landmarkIdsToKeep(ids: readonly string[]): { kept: string[]; dropped: number } {
+  const distinct = [...new Set(ids)];
+  let total = 0;
+  let from = distinct.length;
+  while (from > 0) {
+    const next = total + (distinct[from - 1] as string).length;
+    if (next > MAX_LANDMARK_EXTERNAL_ID_CHARS) break;
+    total = next;
+    from--;
+  }
+  return { kept: distinct.slice(from), dropped: from };
+}
 
 /**
  * Points a launch's walk keeps — a route from a lot to the shore; a longer one is thinned to this,
