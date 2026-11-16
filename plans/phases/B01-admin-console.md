@@ -2709,6 +2709,14 @@ kind (`recordRounds.test.ts`, which states each worst case from the budget):
 | `recordCounts` | Reversed 501; Reports by real weight (512 KiB, one `paginate`); comments 30, alerts 30; Posts and hazards by real weight in doubling steps (1, 2, 4, … rows, each step its share of what is left, at most 7); each row's hold check | — | 13 |
 | `item` | the item, ≤ 51 decisions (each R, ending R), its Report, a Post's ≤ 10 members (Report + newest row) | — | a fixed few |
 
+**The undo engine's reads on Reversed rows are counted, not weighed.** Each Reversed row's undo state
+is main's engine (`lib/undo.undoStates`): its first step reads the row's undoing row (up to 16 tagged),
+the target's newest row and the author's stamp. Their calls and documents are reserved ahead
+(`reserveCalls`, 3 and 18 a row); their bytes are not charged — the same as History today (*B01-4b*:
+"the undo engine counts its calls and documents only"). **Owed with History's:** a budget for the
+engine's per-row reads, which waits on audit rows having a worst case below the document limit (the
+metadata ruling above); nothing in the engine changed here.
+
 **What the budget can't count.** Convex has no index-only count. Reports count by their real weight
 (the read's one `paginate`, 512 KiB); Posts and hazards — a whole document each at their declared
 worst, a few KB in fact — count in doubling steps (`countHeavy`: 1 row, then 2, 4, … after the last,
