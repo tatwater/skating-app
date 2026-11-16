@@ -577,17 +577,17 @@ describe('the counts and "still being prepared"', () => {
       expect((await matt.as.query(q, { userId: rob.id })).pending).toEqual(['verdicts']);
     }
     await t.run((ctx) => markReady(ctx, 'verdicts'));
-    // Two Posts deleted: the count reads one Post at most, so it is a floor.
-    for (const _ of [0, 1]) {
+    // Three Posts deleted: the count reads two Posts at most, so it is a floor.
+    for (const _ of [0, 1, 2]) {
       const { postId } = await post(1);
       await rob.as.mutation(api.posts.remove, { postId });
     }
     const floor = await matt.as.query(api.contentRecord.recordCounts, { userId: rob.id });
     expect(floor.pending).toEqual([]);
     expect(floor.deleted.capped).toBe(true);
-    expect(floor.deleted.byKind.post).toBe(1);
+    expect(floor.deleted.byKind.post).toBe(2);
     const listed = await deletedOf(matt.as, rob.id);
-    expect(listed.rows.filter((d) => d.targetType === 'post')).toHaveLength(2);
+    expect(listed.rows.filter((d) => d.targetType === 'post')).toHaveLength(3);
   });
 });
 

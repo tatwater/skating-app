@@ -2302,6 +2302,7 @@ read.
 | `peopleJobs:backfillRows` | the operator (step 2) | `people.lanes` (every lane, and the top level), `people.listPage` (every lane and search), `console.overview` → `people` (every figure but *N users*) |
 | `peopleJobs:backfillFlagSubjects` | `backfillRows`, when a run ends | `people.lanes` (Flagged, and the top level), `people.listPage` (every page: rows carry open flags), `people.person`, `people.history`, `console.overview` → `people` |
 | `peopleJobs:backfillUndoChains` | `backfillFlagSubjects`, when a run ends | `people.staffStats`, `people.staffSeason` |
+| `peopleJobs:backfillVerdicts` | `backfillUndoChains`, when a run ends | `people.person`, `contentRecord.personVerdicts`, `personReversed`, `personDeleted`, `recordCounts`, `item` (B01-4d) |
 
 The ledger's "never no editor" check also reads whether the rows are ready (through the same
 reading), but it isn't a figure: before the rows exist it reads admins' profiles under its own
@@ -2347,7 +2348,7 @@ supersedes any old one.
 
 **Three answers, three fields** — for the web builders:
 
-- **Not ready** — `pending: ('rows' | 'flagSubjects' | 'undoChains')[]`, on `people.lanes` (top level
+- **Not ready** — `pending: ('rows' | 'flagSubjects' | 'undoChains' | 'verdicts')[]`, on `people.lanes` (top level
   and each lane), `people.listPage`, `people.person`, `people.history`, `people.staffStats`,
   `people.staffSeason` and the Overview's `people` card. Non-empty means the figures resting on it may
   be *wrong*, not merely short: say "still being prepared", never a number with a "+".
@@ -2374,7 +2375,7 @@ objects, on an empty database and on seeded ones, a failure and a stalled run in
 `packages/guards`' `peopleBackfills.test.ts` holds this doc and the roadmap to it, and this table to
 the registry. Each `convex` command runs as `pnpm --filter @skating/convex exec convex …` from main.
 
-(1) `convex dev --once`. (2) `convex run peopleJobs:backfillRows '{}'` — it runs the three People backfills in turn (rows, flag subjects, undo chains). Estimate: unmeasured. (3) `convex run peopleJobs:preparation '{}'` until it returns `ready: true`. (4) For each job in its `rerun`: `convex run <job> '{"alone":true}'` (a new run, which supersedes any older one), then step 3 again. (5) For each id `backfillRows` logs as an overwritten tombstone: `convex run peopleJobs:restoreTombstoneStatus '{"userId":"<id>"}'`. (6) Only if steps 2–5 ran before the People follow-up (B01-4b) was deployed: `convex run peopleJobs:backfillRows '{"alone":true}'` once, which stamps each staffer's tenure on their row, then step 3 again.
+(1) `convex dev --once`. (2) `convex run peopleJobs:backfillRows '{}'` — it runs the four People backfills in turn (rows, flag subjects, undo chains, the content record — which ends by giving withdrawn content its erasure clocks). Estimate: unmeasured. (3) `convex run peopleJobs:preparation '{}'` until it returns `ready: true`. (4) For each job in its `rerun`: `convex run <job> '{"alone":true}'` (a new run, which supersedes any older one), then step 3 again. (5) For each id `backfillRows` logs as an overwritten tombstone: `convex run peopleJobs:restoreTombstoneStatus '{"userId":"<id>"}'`. (6) Only if steps 2–5 ran before the People follow-up (B01-4b) was deployed: `convex run peopleJobs:backfillRows '{"alone":true}'` once, which stamps each staffer's tenure on their row, then step 3 again.
 
 **B01-4: one rule for what is offered** (Greptile on #115, P2). An undo is a write of the previous
 state, so its refusal is computed by `lib/peopleCan.writeRefusal` on the write the undo's handler
@@ -2639,6 +2640,82 @@ No recurring job composes a reason from stored text today: the lapse sweep, the 
 the hazard auto-merge and the erasure write fixed reasons; the auto-delist and the catalog absorption
 that do compose run from the ETL and operator writes. A composed reason can't fail its write, so none
 could be parked by it.
+
+**B01-4d (2026-11-15): the People record sheet's server** (boards 8.7–8.9; stacked on #125). Server
+only; the sheet itself is the web's next pass. Every shape change is additive except where noted.
+
+- **One rule for the four levers** (`lib/recordRules`): Restore (`setModerationStatus`, `visible`),
+  Hide again (`hidden`), Overturn (`overturnVerdict`) and Keep on the record (`keepOnRecord`, new).
+  Each write refuses through `recordRefusal` over the item as it read it, and every read's `can` is
+  `recordLevers` — the capability (`content.moderate`, `access.alert` for an alert) and the viewer's
+  own deletion window first, then the same function — so a lever is never drawn that its write turns
+  down. An item offers one lever at most: a decision standing on content still its author's →
+  Restore; on content they deleted since → Overturn; content they deleted that nothing holds → Keep;
+  content that is up → Hide again; erased → none. A Post whose author didn't delete it answers
+  Restore with *Open it to see what can be done with it* on a list (its members decide between
+  Restore and Overturn, and a page can't read ten Reports a row); the item pane reads them and answers
+  exactly, `needsChoice` when its Reports each went down on their own. A pure fast-check property holds
+  the rule over every state and viewer; a model property (below) holds the writes to it.
+- **The rules this build set** (for a ruling, if the founder wants one): Restore and Overturn take a
+  reason only if one is given — otherwise a default the row marks `reasonDefaulted`, which the sheet
+  shows as no reason (D226's give-back); Keep on the record is a removal on the record (an alert's,
+  a retraction) marked `keptOnRecord`, a takeaway with a required reason, refused on an item a decision
+  already holds (no second row for nothing); Reversed shows each item once, as its newest decision.
+- **Each item once, by a stored flag.** `contentVerdicts.superseded` is `false` on an item's newest
+  verdict and `true` once a later one is minted — a hide that became a removal is the removal, never
+  also a Reversed hide; restored, hidden again and restored again, the item shows its last restore.
+  Every writer keeps it (`lib/contentVerdicts`, and the replay, which `contentVerdicts.test.ts` now
+  compares flag for flag against the live writers); `packages/guards`' `verdictWriters.test.ts` holds
+  every verdict insert and ending to it. `isReversed` is the one predicate and
+  `REVERSED_SHOWS_SUPERSEDED` its one-line flip (the index the reads range over follows it).
+- **The reads** — `contentRecord.personVerdicts` (Standing, widened: `decidedBy`, `can`,
+  `reportAuthor`, `postReportCount`, `pending`), `personReversed`, `personDeleted` (all five kinds,
+  merged), `recordCounts` and `item`. Cursors are positions in the list's order (JSON), not Convex
+  page cursors: a page reads its rows by index with `take` (two parts after a cursor inside a tie) and
+  can end anywhere the budget does. People are named from their People rows (`RecordPerson`, the shape
+  of `people.PersonRef`). A short page is not the end; `isDone` is.
+- **Counts are a sibling read**, not `people.person.record`: Reversed to 500 (4 MiB of verdict rows
+  at their declared worst) and Deleted beside it don't fit in the person page's budget without
+  shrinking its other figures. Standing stays `person.hidden`. `person.pending` now names `verdicts`.
+- **The content record is a People backfill** (`peopleJobs:backfillVerdicts`, fourth in
+  `PEOPLE_BACKFILLS`): its run's lease rides the walk (`contentRecord.backfillVerdicts`), every item's
+  replay and the clocks (`erasure.backfillClocks`), each pass taking the lease and moving the token
+  (`chainedLease`, `handOn`); the clocks' last pass hands it back to conclude. A pass that rewrote a
+  verdict or set a clock found a gap. A run by hand without a lease still works and concludes nothing.
+  The two-runs property (`peopleRuns.test.ts`) covers it; the procedure's step 2 now runs four.
+
+**B01-4d: every read, weighed.** Each page reserves its rows' worst cases in waves (`ReadBudget.waves`)
+over the request's budget (11 MiB after the caller's profile) and hands back what didn't come; a row
+whose reads the budget can't reserve ends the page there. Rounds measured on fifty rows of the dearest
+kind (`recordRounds.test.ts`, which states each worst case from the budget):
+
+| Read | Rows · documents per row (declared worst) | Rows a wave | Worst rounds, a page of 50 |
+| --- | --- | --- | --- |
+| `personVerdicts` | 51 verdicts; decision R + item (≤ 1 MiB); comment/Post → its Report; library row and People rows once a page | 5 (a Report) | 13 |
+| `personReversed` | 51 verdicts; decision R + ending R + item; a gone item → its erasure row; then the undo engine's first step (main's: calls and documents counted, bytes not) | 3 | 23 |
+| `personDeleted` | report 2, post 1, comment 50, hazard 1, alert 50 a merged page (narrowed to one kind: 4, 2, 50, 4, 50); each row's hold check and Report | 10 | 8 |
+| `recordCounts` | Reversed 501; Reports by real weight (512 KiB, one `paginate`); posts 2, hazards 2, comments 30, alerts 30; each row's hold check | — | 6 |
+| `item` | the item, ≤ 51 decisions (each R, ending R), its Report, a Post's ≤ 10 members (Report + newest row) | — | a fixed few |
+
+**What the budget can't count.** Convex has no index-only count, and a withdrawn Report, Post or
+hazard is a whole document at its declared worst, so `deleted` is exact only while a person has
+deleted (and nothing holds) fewer than 100 Reports within 512 KiB, one Post, one hazard, 29 comments and
+29 alerts not yet erased; past any of those it says `capped` (a floor). The Deleted list pages on
+regardless, a heavy kind a few rows a page. **Recommendation:** a small stored row per withdrawal
+(ids and times, written by the clock's one writer, removed by the eraser), which would make the list
+one range and the count exact to 500 at 4 MiB — not built here (a new stored fact, its writers and a
+backfill).
+
+**Open for the founder:** nothing refuses a moderator acting on their own record (restoring their
+own hidden report, overturning a decision on their own content) — not before this build, and not now;
+the levers only follow the writes. A self rule would belong in `lib/recordRules`, beside a matching
+refusal in `setModerationStatus`.
+
+**After merge, on dev:** the People procedure above. Where its backfills already ran before this
+deployed, the check names `peopleJobs:backfillVerdicts` in `rerun` (step 4 runs it alone); until it
+concludes, the record's reads say `pending: ['verdicts']`. The new indexes (`contentVerdicts`
+`by_subject_reversed`, `by_subject_reversed_type`, `by_target_superseded`; `accessAlerts`
+`by_author_retracted`) build with the deploy.
 
 ### The B01-2 server register (owed to the server agent)
 
@@ -3956,10 +4033,9 @@ draws 34; the role menu's item takes two lines.
   as not recorded. The merge filled the fixtures with the new fields and made the list row's staff
   overlay take `null`; `lanesFor` now reads core's `peopleLanesFor`; the status note's who-and-when
   line tells a start past the read (`statusNote.atCapped`) from one not recorded.
-- The record sheet (verdicts and withdrawals, above; boards 8.7–8.9) is not built. The *On the
-  record* row appears today on the one count main's server supplies (the standing list); it should
-  appear whenever any of the sheet's three lists (Standing, Deleted, Reversed) has items, and its
-  rule widens when the server supplies the other two counts.
+- The record sheet (boards 8.7–8.9) is not built on the web. Its server is (*B01-4d*, above): the
+  *On the record* row should appear whenever any of the three lists has items, is capped, or is still
+  being prepared — `people.person.hidden` for Standing, `contentRecord.recordCounts` for the other two.
 - The kit promotions (`SearchLane`, `LeverRow`) await a kit pass.
 - One `useClockFor` and one `ID_SHAPE` across Bodies and People — each duplicated in the Bodies
   directory, which the open Body console PRs are changing.

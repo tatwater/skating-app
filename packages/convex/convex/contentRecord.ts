@@ -116,16 +116,16 @@ async function recordPending(ctx: QueryCtx, reads: ReadBudget): Promise<PeopleBa
   return pending.filter((b) => b === 'verdicts');
 }
 
-/** Standing, by its index: the person's standing verdicts after `key` (and its tie). */
-function standingRange(
+/** Standing, by its index: the person's standing verdicts after `key` (its tie, with `tieCt`). */
+function standingQuery(
   ctx: QueryCtx,
   userId: Id<'profiles'>,
   targetType: VerdictTargetType | undefined,
   key: number | undefined,
   tieCt: number | null,
 ) {
-  return (m: number) =>
-    (targetType === undefined
+  return (
+    targetType === undefined
       ? ctx.db.query('contentVerdicts').withIndex('by_subject_standing', (q) => {
           const b = q.eq('subjectUserId', userId).eq('standing', true);
           if (key === undefined) return b;
@@ -136,68 +136,65 @@ function standingRange(
           if (key === undefined) return b;
           return tieCt !== null ? b.eq('at', key).lt('_creationTime', tieCt) : b.lt('at', key);
         })
-    )
-      .order('desc')
-      .take(m);
+  ).order('desc');
 }
 
 /**
  * Reversed, by its index: each item's newest decision once ended (`lib/contentVerdicts.isReversed`,
  * and its one-line flip, `REVERSED_INDEX`). Every range keeps its lower bound — a standing verdict
- * lacks `endedAt`, which sorts first.
+ * lacks `endedAt`, which sorts first. Over `by_subject_ended` a kind is filtered after the read
+ * ({@link reversedKind}); the flag's own index has the kind in it.
  */
-function reversedRange(
+function reversedQuery(
   ctx: QueryCtx,
   userId: Id<'profiles'>,
   targetType: VerdictTargetType | undefined,
   key: number | undefined,
   tieCt: number | null,
 ) {
-  return async (m: number): Promise<Doc<'contentVerdicts'>[]> => {
-    const verdicts = () => ctx.db.query('contentVerdicts');
-    if (REVERSED_INDEX === 'by_subject_ended') {
-      const rows = await verdicts()
-        .withIndex('by_subject_ended', (q) => {
-          const b = q.eq('subjectUserId', userId);
-          if (key === undefined) return b.gt('endedAt', 0);
-          return tieCt !== null
-            ? b.eq('endedAt', key).lt('_creationTime', tieCt)
-            : b.gt('endedAt', 0).lt('endedAt', key);
-        })
-        .order('desc')
-        .take(m);
-      return targetType === undefined ? rows : rows.filter((r) => r.targetType === targetType);
-    }
-    if (targetType === undefined) {
-      return verdicts()
-        .withIndex('by_subject_reversed', (q) => {
-          const b = q.eq('subjectUserId', userId).eq('superseded', false);
-          if (key === undefined) return b.gt('endedAt', 0);
-          return tieCt !== null
-            ? b.eq('endedAt', key).lt('_creationTime', tieCt)
-            : b.gt('endedAt', 0).lt('endedAt', key);
-        })
-        .order('desc')
-        .take(m);
-    }
-    return verdicts()
-      .withIndex('by_subject_reversed_type', (q) => {
-        const b = q
-          .eq('subjectUserId', userId)
-          .eq('superseded', false)
-          .eq('targetType', targetType);
+  const verdicts = ctx.db.query('contentVerdicts');
+  if (REVERSED_INDEX === 'by_subject_ended') {
+    return verdicts
+      .withIndex('by_subject_ended', (q) => {
+        const b = q.eq('subjectUserId', userId);
         if (key === undefined) return b.gt('endedAt', 0);
         return tieCt !== null
           ? b.eq('endedAt', key).lt('_creationTime', tieCt)
           : b.gt('endedAt', 0).lt('endedAt', key);
       })
-      .order('desc')
-      .take(m);
-  };
+      .order('desc');
+  }
+  if (targetType === undefined) {
+    return verdicts
+      .withIndex('by_subject_reversed', (q) => {
+        const b = q.eq('subjectUserId', userId).eq('superseded', false);
+        if (key === undefined) return b.gt('endedAt', 0);
+        return tieCt !== null
+          ? b.eq('endedAt', key).lt('_creationTime', tieCt)
+          : b.gt('endedAt', 0).lt('endedAt', key);
+      })
+      .order('desc');
+  }
+  return verdicts
+    .withIndex('by_subject_reversed_type', (q) => {
+      const b = q.eq('subjectUserId', userId).eq('superseded', false).eq('targetType', targetType);
+      if (key === undefined) return b.gt('endedAt', 0);
+      return tieCt !== null
+        ? b.eq('endedAt', key).lt('_creationTime', tieCt)
+        : b.gt('endedAt', 0).lt('endedAt', key);
+    })
+    .order('desc');
 }
 
+/** The rows of one kind among a Reversed read (only over `by_subject_ended`, which has no kind). */
+const reversedKind =
+  (targetType: VerdictTargetType | undefined) => (rows: Doc<'contentVerdicts'>[]) =>
+    targetType === undefined || REVERSED_INDEX !== 'by_subject_ended'
+      ? rows
+      : rows.filter((r) => r.targetType === targetType);
+
 /** A Standing or Reversed page's rows: the cursor's two-part read over one index range. */
-function verdictRange(
+async function verdictRange(
   ctx: QueryCtx,
   reads: ReadBudget,
   list: 'standing' | 'reversed',
@@ -206,15 +203,24 @@ function verdictRange(
   after: Position | null,
   n: number,
 ): Promise<Doc<'contentVerdicts'>[]> {
-  const range = list === 'standing' ? standingRange : reversedRange;
+  const range = list === 'standing' ? standingQuery : reversedQuery;
   const key = after?.key;
-  return takeAfter(
+  const tie = after?.ct ?? null;
+  const rows = await takeAfter(
     reads,
     'verdict',
     n,
-    after === null ? null : range(ctx, userId, targetType, key, after.ct),
-    range(ctx, userId, targetType, key, null),
+    tie === null ? null : (m) => range(ctx, userId, targetType, key, tie).take(m),
+    (m) => range(ctx, userId, targetType, key, null).take(m),
   );
+  return list === 'reversed' ? reversedKind(targetType)(rows) : rows;
+}
+
+/** A record list's arguments: whose record, one kind or all, and where the last page ended. */
+interface ListArgs {
+  userId: Id<'profiles'>;
+  targetType?: VerdictTargetType;
+  cursor?: string | null;
 }
 
 /** The levers on an item as a list row sees it (its members unread: `lib/recordRules`). */
@@ -316,43 +322,52 @@ export const personVerdicts = query({
   },
   handler: async (ctx, { userId, targetType, cursor }) => {
     const viewer = await requireCapability(ctx, 'people.read');
-    const reads = sheetBudget(ctx);
-    const pending = await recordPending(ctx, reads);
-    const after = decodePosition(cursor);
-    const found = await verdictRange(
-      ctx,
-      reads,
-      'standing',
-      userId,
-      targetType,
-      after,
-      RECORD_PAGE + 1,
-    );
-    const verdicts = found.slice(0, RECORD_PAGE);
-    const { rows, names, cut } = await shapeVerdictPage(ctx, reads, verdicts, false);
-    const page = rows.map((l) => {
-      const { verdict, decision, target } = l;
-      return {
-        targetType: verdict.targetType,
-        targetId: verdict.targetId,
-        kind: verdict.kind,
-        at: verdict.at,
-        reason: decision?.reason ?? null,
-        byUserId: decision?.actorId ?? null,
-        decidedBy: names.person(decision?.actorId),
-        content: target ? contentOf(verdict.targetType, target) : null,
-        authorDeletedAt: target ? withdrawnAt(verdict.targetType, target) : null,
-        ...placeOf(l, verdict.targetType, names),
-        can: rowLevers(viewer, l, true),
-      };
-    });
-    return pageOf(
-      page,
-      rows.map((l) => ({ key: l.verdict.at, ct: l.verdict._creationTime })),
-      { more: cut || found.length > RECORD_PAGE, after, pending },
-    );
+    return standingPage(ctx, viewer, { userId, targetType, cursor });
   },
 });
+
+/** `personVerdicts`'s page, for a viewer already let in (the rounds test drives it on a counted context). */
+export async function standingPage(
+  ctx: QueryCtx,
+  viewer: Doc<'profiles'>,
+  { userId, targetType, cursor }: ListArgs,
+) {
+  const reads = sheetBudget(ctx);
+  const pending = await recordPending(ctx, reads);
+  const after = decodePosition(cursor);
+  const found = await verdictRange(
+    ctx,
+    reads,
+    'standing',
+    userId,
+    targetType,
+    after,
+    RECORD_PAGE + 1,
+  );
+  const verdicts = found.slice(0, RECORD_PAGE);
+  const { rows, names, cut } = await shapeVerdictPage(ctx, reads, verdicts, false);
+  const page = rows.map((l) => {
+    const { verdict, decision, target } = l;
+    return {
+      targetType: verdict.targetType,
+      targetId: verdict.targetId,
+      kind: verdict.kind,
+      at: verdict.at,
+      reason: decision?.reason ?? null,
+      byUserId: decision?.actorId ?? null,
+      decidedBy: names.person(decision?.actorId),
+      content: target ? contentOf(verdict.targetType, target) : null,
+      authorDeletedAt: target ? withdrawnAt(verdict.targetType, target) : null,
+      ...placeOf(l, verdict.targetType, names),
+      can: rowLevers(viewer, l, true),
+    };
+  });
+  return pageOf(
+    page,
+    rows.map((l) => ({ key: l.verdict.at, ct: l.verdict._creationTime })),
+    { more: cut || found.length > RECORD_PAGE, after, pending },
+  );
+}
 
 /**
  * **Reversed** — decisions a moderator ended (restored, undone or overturned), newest ended first, each
@@ -371,64 +386,73 @@ export const personReversed = query({
   },
   handler: async (ctx, { userId, targetType, cursor }) => {
     const viewer = await requireCapability(ctx, 'people.read');
-    const reads = sheetBudget(ctx);
-    const pending = await recordPending(ctx, reads);
-    const after = decodePosition(cursor);
-    // The undo engine's first step for each row (main's, `undoStates`): its calls and documents
-    // counted ahead — the undoing row (up to 16 tagged), the target's newest, the author stamp.
-    reads.reserveCalls(3 * RECORD_PAGE, 18 * RECORD_PAGE);
-    const found = await verdictRange(
-      ctx,
-      reads,
-      'reversed',
-      userId,
-      targetType,
-      after,
-      RECORD_PAGE + 1,
-    );
-    const verdicts = found.slice(0, RECORD_PAGE);
-    const { rows, names, cut } = await shapeVerdictPage(ctx, reads, verdicts, true);
-    const endings = rows.flatMap((l) => (l.ending ? [l.ending] : []));
-    const states = await undoStates(ctx, viewer, endings);
-    const undoOf = new Map(endings.map((e, i) => [e._id as string, states[i] as UndoState]));
-    const page = rows.map((l) => {
-      const { verdict, decision, ending, target, erase } = l;
-      const erasedComment =
-        target !== null &&
-        verdict.targetType === 'comment' &&
-        (target as Doc<'comments'>).erasedAt !== undefined;
-      return {
-        targetType: verdict.targetType,
-        targetId: verdict.targetId,
-        kind: verdict.kind,
-        decidedAt: verdict.at,
-        decidedBy: names.person(decision?.actorId),
-        reason: decision?.reason ?? null,
-        endedAt: verdict.endedAt as number,
-        endedBy: names.person(ending?.actorId),
-        endedHow: ending ? endedHowOf(ending) : null,
-        endedReason: shownReason(ending),
-        endActionId: verdict.endedByActionId ?? null,
-        undo: ending ? (undoOf.get(ending._id) ?? null) : null,
-        /** When its words were erased; `null` while they are kept (or no erasure row says when). */
-        erasedAt: erasedComment
-          ? ((target as Doc<'comments'>).erasedAt as number)
-          : target === null
-            ? (erase?.createdAt ?? null)
-            : null,
-        content: target === null || erasedComment ? null : contentOf(verdict.targetType, target),
-        authorDeletedAt: target ? withdrawnAt(verdict.targetType, target) : null,
-        ...placeOf(l, verdict.targetType, names),
-        can: rowLevers(viewer, l, false),
-      };
-    });
-    return pageOf(
-      page,
-      rows.map((l) => ({ key: l.verdict.endedAt as number, ct: l.verdict._creationTime })),
-      { more: cut || found.length > RECORD_PAGE, after, pending },
-    );
+    return reversedPage(ctx, viewer, { userId, targetType, cursor });
   },
 });
+
+/** `personReversed`'s page, for a viewer already let in (the rounds test drives it on a counted context). */
+export async function reversedPage(
+  ctx: QueryCtx,
+  viewer: Doc<'profiles'>,
+  { userId, targetType, cursor }: ListArgs,
+) {
+  const reads = sheetBudget(ctx);
+  const pending = await recordPending(ctx, reads);
+  const after = decodePosition(cursor);
+  // The undo engine's first step for each row (main's, `undoStates`): its calls and documents
+  // counted ahead — the undoing row (up to 16 tagged), the target's newest, the author stamp.
+  reads.reserveCalls(3 * RECORD_PAGE, 18 * RECORD_PAGE);
+  const found = await verdictRange(
+    ctx,
+    reads,
+    'reversed',
+    userId,
+    targetType,
+    after,
+    RECORD_PAGE + 1,
+  );
+  const verdicts = found.slice(0, RECORD_PAGE);
+  const { rows, names, cut } = await shapeVerdictPage(ctx, reads, verdicts, true);
+  const endings = rows.flatMap((l) => (l.ending ? [l.ending] : []));
+  const states = await undoStates(ctx, viewer, endings);
+  const undoOf = new Map(endings.map((e, i) => [e._id as string, states[i] as UndoState]));
+  const page = rows.map((l) => {
+    const { verdict, decision, ending, target, erase } = l;
+    const erasedComment =
+      target !== null &&
+      verdict.targetType === 'comment' &&
+      (target as Doc<'comments'>).erasedAt !== undefined;
+    return {
+      targetType: verdict.targetType,
+      targetId: verdict.targetId,
+      kind: verdict.kind,
+      decidedAt: verdict.at,
+      decidedBy: names.person(decision?.actorId),
+      reason: decision?.reason ?? null,
+      endedAt: verdict.endedAt as number,
+      endedBy: names.person(ending?.actorId),
+      endedHow: ending ? endedHowOf(ending) : null,
+      endedReason: shownReason(ending),
+      endActionId: verdict.endedByActionId ?? null,
+      undo: ending ? (undoOf.get(ending._id) ?? null) : null,
+      /** When its words were erased; `null` while they are kept (or no erasure row says when). */
+      erasedAt: erasedComment
+        ? ((target as Doc<'comments'>).erasedAt as number)
+        : target === null
+          ? (erase?.createdAt ?? null)
+          : null,
+      content: target === null || erasedComment ? null : contentOf(verdict.targetType, target),
+      authorDeletedAt: target ? withdrawnAt(verdict.targetType, target) : null,
+      ...placeOf(l, verdict.targetType, names),
+      can: rowLevers(viewer, l, false),
+    };
+  });
+  return pageOf(
+    page,
+    rows.map((l) => ({ key: l.verdict.endedAt as number, ct: l.verdict._creationTime })),
+    { more: cut || found.length > RECORD_PAGE, after, pending },
+  );
+}
 
 /** Rows of one kind a page asks for when the Deleted list is narrowed to it. */
 const DELETED_ALONE: Record<VerdictTargetType, number> = {
@@ -456,108 +480,126 @@ export const personDeleted = query({
   },
   handler: async (ctx, { userId, targetType, cursor }) => {
     const viewer = await requireCapability(ctx, 'people.read');
-    const reads = sheetBudget(ctx);
-    const pending = await recordPending(ctx, reads);
-    const after = decodePosition(cursor);
-    const kinds: readonly VerdictTargetType[] =
-      targetType === undefined ? DELETED_KINDS : [targetType];
-    const asks = kinds.map((kind) =>
-      targetType === undefined ? DELETED_TAKE[kind] : DELETED_ALONE[kind],
-    );
-    const ranges = await Promise.all(
-      kinds.map((kind, i) => deletedRange(ctx, reads, kind, userId, after, asks[i] as number)),
-    );
-    // Every row up to the first place a full range might still hold one before it: the earliest, in
-    // the merged order, of the full ranges' last rows.
-    let fence: Position | null = null;
-    ranges.forEach((rows, i) => {
-      const last = rows[rows.length - 1];
-      if (last === undefined || rows.length < (asks[i] as number)) return;
-      const key = deletedKey(kinds[i] as VerdictTargetType, last);
-      if (fence === null || before(key, fence)) fence = key;
-    });
-    const limit = fence as Position | null;
-    const candidates = ranges
-      .flatMap((rows, i) => rows.map((doc) => ({ kind: kinds[i] as VerdictTargetType, doc })))
-      .map((c) => ({ ...c, key: deletedKey(c.kind, c.doc) }))
-      .filter((c) => limit === null || !before(limit, c.key))
-      .sort((a, b) => (before(a.key, b.key) ? -1 : before(b.key, a.key) ? 1 : 0));
-    const considered = candidates.slice(0, RECORD_PAGE);
-    // Each row: whether a decision holds it (then it is Standing's, not here), and the Report a
-    // comment or a Post names its body through.
-    const checked = await reads.waves(
-      considered,
-      (c) => ({
-        bytes: ROW_MAX.verdict + (reportIdOf(c.kind, c.doc) !== null ? ROW_MAX.report : 0),
-        reads: reportIdOf(c.kind, c.doc) !== null ? 2 : 1,
-      }),
-      async (c, share) => {
-        const reportId = reportIdOf(c.kind, c.doc);
-        const [held, report] = await Promise.all([
-          share.read('verdict', () =>
-            ctx.db
-              .query('contentVerdicts')
-              .withIndex('by_target_standing', (q) =>
-                q.eq('targetType', c.kind).eq('targetId', c.doc._id).eq('standing', true),
-              )
-              .first(),
-          ),
-          reportId !== null
-            ? share.read('report', () => ctx.db.get(reportId))
-            : Promise.resolve(null),
-        ]);
-        return { ...c, held: held !== null, report };
-      },
-      () => null,
-    );
-    const read = takeUntilNull(checked);
-    const bodyOfRow = (c: (typeof read)[number]) => [bodyIdOf(c.kind, c.doc, c.report)];
-    const personOfRow = (c: (typeof read)[number]) => [
-      c.kind === 'comment' ? c.report?.authorId : undefined,
-    ];
-    const names = await readNames(ctx, reads, read.flatMap(bodyOfRow), read.flatMap(personOfRow));
-    const whole: typeof read = [];
-    for (const c of read) {
-      if (names.missed(bodyOfRow(c), personOfRow(c))) break;
-      whole.push(c);
-    }
-    const shown = whole.filter(
-      (c) =>
-        !c.held &&
-        withdrawnAt(c.kind, c.doc) !== null &&
-        !(c.kind === 'comment' && (c.doc as Doc<'comments'>).erasedAt !== undefined),
-    );
-    const page = shown.map((c) => ({
-      targetType: c.kind,
-      targetId: c.doc._id as string,
-      deletedAt: withdrawnAt(c.kind, c.doc) as number,
-      /** When it is due to be erased; `null` while something holds it or no clock is set yet. */
-      eraseAt: c.doc.eraseAt ?? null,
-      content: contentOf(c.kind, c.doc),
-      ...placeOf({ target: c.doc, report: c.report }, c.kind, names),
-      can: recordLevers(viewer, recordFactsOf(c.kind, c.doc, false)),
-    }));
-    return pageOf(
-      page,
-      whole.map((c) => c.key),
-      { more: whole.length < candidates.length || limit !== null, after, pending },
-    );
+    return deletedPage(ctx, viewer, { userId, targetType, cursor });
   },
 });
+
+/** `personDeleted`'s page, for a viewer already let in (the rounds test drives it on a counted context). */
+export async function deletedPage(
+  ctx: QueryCtx,
+  viewer: Doc<'profiles'>,
+  { userId, targetType, cursor }: ListArgs,
+) {
+  const reads = sheetBudget(ctx);
+  const pending = await recordPending(ctx, reads);
+  const after = decodePosition(cursor);
+  const kinds: readonly VerdictTargetType[] =
+    targetType === undefined ? DELETED_KINDS : [targetType];
+  const asks = kinds.map((kind) =>
+    targetType === undefined ? DELETED_TAKE[kind] : DELETED_ALONE[kind],
+  );
+  const ranges = await Promise.all(
+    kinds.map((kind, i) => deletedRange(ctx, reads, kind, userId, after, asks[i] as number)),
+  );
+  // Every row up to the first place a full range might still hold one before it: the earliest, in
+  // the merged order, of the full ranges' last rows.
+  let fence: Position | null = null;
+  ranges.forEach((rows, i) => {
+    const last = rows[rows.length - 1];
+    if (last === undefined || rows.length < (asks[i] as number)) return;
+    const key = deletedKey(kinds[i] as VerdictTargetType, last);
+    if (fence === null || before(key, fence)) fence = key;
+  });
+  const limit = fence as Position | null;
+  const candidates = ranges
+    .flatMap((rows, i) => rows.map((doc) => ({ kind: kinds[i] as VerdictTargetType, doc })))
+    .map((c) => ({ ...c, key: deletedKey(c.kind, c.doc) }))
+    .filter((c) => limit === null || !before(limit, c.key))
+    .sort((a, b) => (before(a.key, b.key) ? -1 : before(b.key, a.key) ? 1 : 0));
+  const considered = candidates.slice(0, RECORD_PAGE);
+  // Each row: whether a decision holds it (then it is Standing's, not here), and the Report a
+  // comment or a Post names its body through.
+  const checked = await reads.waves(
+    considered,
+    (c) => ({
+      bytes: ROW_MAX.verdict + (reportIdOf(c.kind, c.doc) !== null ? ROW_MAX.report : 0),
+      reads: reportIdOf(c.kind, c.doc) !== null ? 2 : 1,
+    }),
+    async (c, share) => {
+      const reportId = reportIdOf(c.kind, c.doc);
+      const [held, report] = await Promise.all([
+        share.read('verdict', () =>
+          ctx.db
+            .query('contentVerdicts')
+            .withIndex('by_target_standing', (q) =>
+              q.eq('targetType', c.kind).eq('targetId', c.doc._id).eq('standing', true),
+            )
+            .first(),
+        ),
+        reportId !== null
+          ? share.read('report', () => ctx.db.get(reportId))
+          : Promise.resolve(null),
+      ]);
+      return { ...c, held: held !== null, report };
+    },
+    () => null,
+  );
+  const read = takeUntilNull(checked);
+  const bodyOfRow = (c: (typeof read)[number]) => [bodyIdOf(c.kind, c.doc, c.report)];
+  const personOfRow = (c: (typeof read)[number]) => [
+    c.kind === 'comment' ? c.report?.authorId : undefined,
+  ];
+  const names = await readNames(ctx, reads, read.flatMap(bodyOfRow), read.flatMap(personOfRow));
+  const whole: typeof read = [];
+  for (const c of read) {
+    if (names.missed(bodyOfRow(c), personOfRow(c))) break;
+    whole.push(c);
+  }
+  const shown = whole.filter(
+    (c) =>
+      !c.held &&
+      withdrawnAt(c.kind, c.doc) !== null &&
+      !(c.kind === 'comment' && (c.doc as Doc<'comments'>).erasedAt !== undefined),
+  );
+  const page = shown.map((c) => ({
+    targetType: c.kind,
+    targetId: c.doc._id as string,
+    deletedAt: withdrawnAt(c.kind, c.doc) as number,
+    /** When it is due to be erased; `null` while something holds it or no clock is set yet. */
+    eraseAt: c.doc.eraseAt ?? null,
+    content: contentOf(c.kind, c.doc),
+    ...placeOf({ target: c.doc, report: c.report }, c.kind, names),
+    can: recordLevers(viewer, recordFactsOf(c.kind, c.doc, false)),
+  }));
+  return pageOf(
+    page,
+    whole.map((c) => c.key),
+    { more: whole.length < candidates.length || limit !== null, after, pending },
+  );
+}
 
 /** A count to its cap: a floor when `capped`. */
 type Count = { count: number; capped: boolean };
 
-/** Withdrawn Reports counted by real weight, at most this many bytes (one `paginate` a function). */
-const DELETED_REPORT_BYTES = DOC_MAX;
+/**
+ * Withdrawn Reports counted by real weight, at most this many bytes (the count's one `paginate`,
+ * charged its cap and a document past it): a Report is a whole document at worst, a couple of KB in
+ * fact, so the real weight reaches every Report a person deletes in a month.
+ */
+const DELETED_REPORT_BYTES = DOC_MAX / 2;
 /** Withdrawn Reports the count reads at most (within {@link DELETED_REPORT_BYTES}). */
 const DELETED_REPORT_ROWS = 100;
-/** Rows of each other kind the Deleted count reads, at most (a heavy kind's row is a whole document). */
+/**
+ * Rows of each other kind the Deleted count reads, at most — a Post or a hazard is a whole document at
+ * worst, so two (one withdrawn is exact; two or more, a floor). With the Reversed count's 501 rows and
+ * the Reports' cap, the reads take about 10.7 MiB of the budget's 11; each row's hold check takes what
+ * is left, and a row it can't reach makes the count a floor.
+ */
 const DELETED_COUNT_TAKE: Record<Exclude<VerdictTargetType, 'report'>, number> = {
-  post: 1,
-  hazard: 1,
-  comment: 45,
-  accessAlert: 45,
+  post: 2,
+  hazard: 2,
+  comment: 30,
+  accessAlert: 30,
 };
 
 /** A count by kind: the total, each kind's, and whether every figure is a floor. */
@@ -593,70 +635,75 @@ export const recordCounts = query({
   args: { userId: v.id('profiles') },
   handler: async (ctx, { userId }) => {
     await requireCapability(ctx, 'people.read');
-    const reads = sheetBudget(ctx);
-    const pending = await recordPending(ctx, reads);
-    const reversedRows = await reads.take('verdict', VERDICT_COUNT_CAP + 1, (n) =>
-      reversedRange(ctx, userId, undefined, undefined, null)(n),
-    );
-    const reversed = byKindCount(
-      reversedRows.slice(0, VERDICT_COUNT_CAP).map((r) => r.targetType),
-      reversedRows.length > VERDICT_COUNT_CAP,
-    );
-    // Each kind's withdrawn rows, then which a decision holds (those are Standing's, not Deleted's).
-    const reports = await reads.capped(DELETED_REPORT_BYTES, DELETED_REPORT_ROWS, () =>
-      ctx.db
-        .query('reports')
-        .withIndex('by_author_deleted', (q) => q.eq('authorId', userId).gt('authorDeletedAt', 0))
-        .order('desc')
-        .paginate({
-          cursor: null,
-          numItems: DELETED_REPORT_ROWS,
-          maximumBytesRead: DELETED_REPORT_BYTES,
-        }),
-    );
-    const others = await Promise.all(
-      (['post', 'comment', 'hazard', 'accessAlert'] as const).map((kind) =>
-        deletedRange(ctx, reads, kind, userId, null, DELETED_COUNT_TAKE[kind]).then((rows) => ({
-          kind,
-          rows,
-          full: rows.length >= DELETED_COUNT_TAKE[kind],
-        })),
-      ),
-    );
-    const all: { kind: VerdictTargetType; rows: RecordContentDoc[]; full: boolean }[] = [
-      { kind: 'report', rows: reports.page, full: !reports.isDone },
-      ...others,
-    ];
-    const withdrawn = all.flatMap(({ kind, rows }) =>
-      rows
-        .filter(
-          (doc) =>
-            withdrawnAt(kind, doc) !== null &&
-            !(kind === 'comment' && (doc as Doc<'comments'>).erasedAt !== undefined),
-        )
-        .map((doc) => ({ kind, doc })),
-    );
-    const held = await reads.waves(
-      withdrawn,
-      () => ({ bytes: ROW_MAX.verdict, reads: 1 }),
-      ({ kind, doc }, share) =>
-        share.read('verdict', () =>
-          ctx.db
-            .query('contentVerdicts')
-            .withIndex('by_target_standing', (q) =>
-              q.eq('targetType', kind).eq('targetId', doc._id).eq('standing', true),
-            )
-            .first(),
-        ),
-      (): Doc<'contentVerdicts'> | null | undefined => undefined,
-    );
-    const deleted = byKindCount(
-      withdrawn.filter((_, i) => held[i] === null).map((w) => w.kind),
-      held.some((h) => h === undefined) || all.some((a) => a.full),
-    );
-    return { reversed, deleted, pending };
+    return countsOf(ctx, { userId });
   },
 });
+
+/** `recordCounts`' answer, for a viewer already let in (the rounds test drives it on a counted context). */
+export async function countsOf(ctx: QueryCtx, { userId }: { userId: Id<'profiles'> }) {
+  const reads = sheetBudget(ctx);
+  const pending = await recordPending(ctx, reads);
+  const reversedRows = await reads.take('verdict', VERDICT_COUNT_CAP + 1, (n) =>
+    reversedQuery(ctx, userId, undefined, undefined, null).take(n),
+  );
+  const reversed = byKindCount(
+    reversedRows.slice(0, VERDICT_COUNT_CAP).map((r) => r.targetType),
+    reversedRows.length > VERDICT_COUNT_CAP,
+  );
+  // Each kind's withdrawn rows, then which a decision holds (those are Standing's, not Deleted's).
+  const reports = await reads.capped(DELETED_REPORT_BYTES, DELETED_REPORT_ROWS, () =>
+    ctx.db
+      .query('reports')
+      .withIndex('by_author_deleted', (q) => q.eq('authorId', userId).gt('authorDeletedAt', 0))
+      .order('desc')
+      .paginate({
+        cursor: null,
+        numItems: DELETED_REPORT_ROWS,
+        maximumBytesRead: DELETED_REPORT_BYTES,
+      }),
+  );
+  const others = await Promise.all(
+    (['post', 'comment', 'hazard', 'accessAlert'] as const).map((kind) =>
+      deletedRange(ctx, reads, kind, userId, null, DELETED_COUNT_TAKE[kind]).then((rows) => ({
+        kind,
+        rows,
+        full: rows.length >= DELETED_COUNT_TAKE[kind],
+      })),
+    ),
+  );
+  const all: { kind: VerdictTargetType; rows: RecordContentDoc[]; full: boolean }[] = [
+    { kind: 'report', rows: reports.page, full: !reports.isDone },
+    ...others,
+  ];
+  const withdrawn = all.flatMap(({ kind, rows }) =>
+    rows
+      .filter(
+        (doc) =>
+          withdrawnAt(kind, doc) !== null &&
+          !(kind === 'comment' && (doc as Doc<'comments'>).erasedAt !== undefined),
+      )
+      .map((doc) => ({ kind, doc })),
+  );
+  const held = await reads.waves(
+    withdrawn,
+    () => ({ bytes: ROW_MAX.verdict, reads: 1 }),
+    ({ kind, doc }, share) =>
+      share.read('verdict', () =>
+        ctx.db
+          .query('contentVerdicts')
+          .withIndex('by_target_standing', (q) =>
+            q.eq('targetType', kind).eq('targetId', doc._id).eq('standing', true),
+          )
+          .first(),
+      ),
+    (): Doc<'contentVerdicts'> | null | undefined => undefined,
+  );
+  const deleted = byKindCount(
+    withdrawn.filter((_, i) => held[i] === null).map((w) => w.kind),
+    held.some((h) => h === undefined) || all.some((a) => a.full),
+  );
+  return { reversed, deleted, pending };
+}
 
 /** Decisions on one item the pane reads at most (an item gathers few; more says `decisionsCapped`). */
 const ITEM_DECISIONS = 50;
