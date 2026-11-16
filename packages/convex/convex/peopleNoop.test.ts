@@ -365,3 +365,40 @@ describe('a person first given a row by a status write', () => {
     expect(row?.statusSince).toBe(T0);
   });
 });
+
+describe('the Clerk mirror: nothing changed must be true of the whole effect', () => {
+  /** The Clerk syncs scheduled so far, as `{ banned }` each. */
+  const syncs = (t: T) =>
+    t.run(async (ctx) =>
+      (await ctx.db.system.query('_scheduled_functions').collect())
+        .filter((j) => j.name.includes('clerkAdmin') && j.name.includes('setBanned'))
+        .map((j) => (j.args[0] as { banned: boolean }).banned),
+    );
+
+  test('a ban that lands, then the same ban again: the sync is sent again — no second audit row, no undo', async () => {
+    const t = await setup();
+    await seed(t, 'adm', { role: 'admin' });
+    const id = await seed(t, 'them');
+    const a = as(t, 'adm');
+    await a.mutation(api.moderation.banUser, { userId: id, reason: 'spam' });
+    expect(await syncs(t)).toEqual([true]);
+    // Say the sync gave up: the mirror isn't known to be in step, and pressing again is how an
+    // operator repairs it — so the same ban sends it again, and writes nothing else.
+    const rows = await auditRows(t);
+    const out = await a.mutation(api.moderation.banUser, { userId: id, reason: 'spam' });
+    expect(out).toEqual({ userId: id, changed: false, undoable: false });
+    expect(await auditRows(t)).toBe(rows);
+    expect(await syncs(t)).toEqual([true, true]);
+  });
+
+  test('a lift of an active account sends the unlock again, and writes nothing else', async () => {
+    const t = await setup();
+    await seed(t, 'adm', { role: 'admin' });
+    const id = await seed(t, 'them');
+    const rows = await auditRows(t);
+    const out = await as(t, 'adm').mutation(api.moderation.unbanUser, { userId: id });
+    expect(out).toEqual({ userId: id, changed: false, undoable: false });
+    expect(await auditRows(t)).toBe(rows);
+    expect(await syncs(t)).toEqual([false]);
+  });
+});

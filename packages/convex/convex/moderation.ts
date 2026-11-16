@@ -1764,6 +1764,22 @@ async function loadModeratableUser(
   return target;
 }
 
+/**
+ * Mirror a ban, or its lift, to Clerk (fire and forget: a mutation can't fetch). The Convex status
+ * gate is the boundary; Clerk's lock only stops new sign-ins, and `clerkAdmin.setBanned` retries,
+ * then pages a human. Idempotent on Clerk's side, so a repeat press resends it safely.
+ */
+async function syncClerkBan(
+  ctx: MutationCtx,
+  target: Doc<'profiles'>,
+  banned: boolean,
+): Promise<void> {
+  await ctx.scheduler.runAfter(0, internal.clerkAdmin.setBanned, {
+    clerkUserId: target.clerkUserId,
+    banned,
+  });
+}
+
 /** A status write starts the lapsed-suspension sweep's record over (`peopleJobs`). */
 const LAPSE_CLEARED = {
   lapseAttempts: undefined,
@@ -1894,7 +1910,12 @@ export async function banImpl(
     // in an undo that puts a ban back, which comes through this same writer.
     const target = await loadModeratableUser(ctx, actor, userId, { kind: 'ban' });
     const terms = { status: 'banned' as const, statusReason: reason, suspendedUntil: null };
-    if (sameStatusTerms(statusTermsOf(target), terms)) return unchanged(userId);
+    if (sameStatusTerms(statusTermsOf(target), terms)) {
+      // The terms stand, but the Clerk lock is a mirror no one tracks: if its sync gave up, pressing
+      // again is how it is repaired — so it is sent again, and nothing else is written (D270).
+      await syncClerkBan(ctx, target, true);
+      return unchanged(userId);
+    }
 
     await ctx.db.patch(userId, {
       status: 'banned',
@@ -2007,7 +2028,11 @@ export async function unbanImpl(
     // departing one write again (D33, D62). Refused here, so an undo that lifts is refused too.
     const target = await loadModeratableUser(ctx, actor, userId, { kind: 'lift' });
     const terms = { status: 'active' as const, statusReason: null, suspendedUntil: null };
-    if (sameStatusTerms(statusTermsOf(target), terms)) return unchanged(userId);
+    if (sameStatusTerms(statusTermsOf(target), terms)) {
+      // The same for the unlock: an active account left locked in Clerk is repaired by a lift.
+      await syncClerkBan(ctx, target, false);
+      return unchanged(userId);
+    }
 
     await ctx.db.patch(userId, {
       status: 'active',
