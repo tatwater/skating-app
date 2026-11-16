@@ -8235,7 +8235,8 @@ changed nothing offer no undo, and an undo whose write would change nothing is r
 
 **The whole effect, the mirror included.** A ban, suspension or lift with unchanged terms still
 resends Clerk's lock or unlock (the mirror isn't tracked), with no audit row and no undo; and every
-Clerk sync sends what Convex says when it runs, never a stale value it was scheduled with.
+Clerk sync reads what Convex says before each request and after each answer, sending again when it
+moved, so overlapping syncs end where Convex is.
 
 **Content writes too** (as D267's restore of what is up): a hide or removal of what a decision of
 that kind already holds, a pin of a pinned alert and a release of one that isn't pinned are refused

@@ -2935,10 +2935,27 @@ rollout stands and needs no re-run.
   dashboard; there is no `jobFailures` row and no reconcile job. No screen offers Ban on a banned
   person or Lift on an active one, so pressing again was never an operator's repair — only a raw call
   or a double submit reached it. What #137 dropped was that resend; it is back for a ban, a
-  suspension and a lift whose terms stand (no audit row, no undo), and `setBanned` now asks Convex
-  for the person's status each time it runs (`lockWanted`) and sends that — so a retry still in
-  flight after a later write converges on it, never locking an active person out. A reconcile job
-  over every account was the larger alternative; it would need the mirror's state tracked.
+  suspension and a lift whose terms stand (no audit row, no undo). **The syncs converge** (Greptile
+  on #139): every run of `setBanned` reads what Convex wants (`lockWanted`) before its request and
+  again after every answer — success, or a failure it would give up on — and sends again when it
+  moved: at most three sends a run, then the retry schedule (which reads afresh), and past its budget
+  the operator, never a silent stop. Clerk answers a request only after applying it, so the sender of
+  the last request applied reads Convex after it, and either Convex still wants that or a further
+  request lands later; any later change schedules its own run. So once everything has answered and
+  no retry is pending, Clerk's lock is Convex's status — a suspension replacing a ban, an undo and a
+  redo in quick succession and the retry schedule's delayed runs included (a model test drives random
+  status changes, answer orders and failures). **Left:** a run that dies between an answer and its
+  read, and a request whose answer is lost but which Clerk applies later than the retry that follows
+  it, leave the last applied value until the next status write; a reconcile over every account (the
+  mirror's state tracked) would close both.
+- **The sweep for the same shape** — outbound writes that mirror a Convex value and can be sent by
+  more than one action for the same subject: `clerkAdmin.setBanned` (fixed above);
+  `clerkAdmin.deleteUser` (account deletion's last step — one-way, a 404 is success, so any order
+  ends deleted); `lib/clerkEmail` (a read); no Clerk role or metadata write exists. Outside Clerk:
+  `imageryLive.buildIndex`'s R2 season index and `latest.json` (under its own lease — one builder at a
+  time); the Fly pump (under its lease); Resend and Expo pushes (sends, not mirrors); Strava uploads
+  and Google Photos picker sessions (per-request, not a mirrored value). Only the ban lock had the
+  shape.
 - **Content writes under the same rule.** The inventory:
 
   | Write | Changes nothing when | Now |
