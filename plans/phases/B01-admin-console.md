@@ -4373,8 +4373,8 @@ town entry per boundary, above) as its own commits.
   applied. The run logger owns the label (`dryRun`): the row's notes end with *dry run — nothing
   written* from start to close, and the close says `applied: false`, so a dry run schedules no
   weather-cell reconcile. Landmark names, the bays loader (whose dry run never said so),
-  reconciliation, the 3DHP measure and retire-absorbed (whose dry run, a `canonical_water` row,
-  scheduled a reconcile) pass it too.
+  reconciliation, the 3DHP measure, retire-absorbed and resolve-merge-duplicates (whose dry runs,
+  `canonical_water` and `dedup_resolve` rows, scheduled a reconcile) pass it too.
 - **The two server asks.** A removal's typed note on History's rows was already served:
   `bodyConsole.history` returns each row's `metadata`, `note` included (and the frame's History
   draws no reasons). A removal's reason that is a person's own words — a restore's undo — is marked
