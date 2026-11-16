@@ -576,6 +576,33 @@ describe('Access: a reason’s dialog', () => {
     expect(screen.getByRole('button', { name: 'Rule accessible' })).toBeTruthy();
   });
 
+  it('a one-shot reason (Hide) refused after its dialog went with its row, the tab still here: said once', async () => {
+    const user = userEvent.setup();
+    CASES[2]?.setup();
+    const access = fn(api.accessPoints.accessForBody);
+    const launch = {
+      id: 'pi1',
+      coord: { lat: 43.6489, lng: -72.1793 },
+      name: 'NW launch',
+      source: 'osm',
+    };
+    mocks.results.set(access, { putIns: [launch], parking: [], blockedIds: [], alerts: [] });
+    const { rerender } = render(<AccessTab bodyId="wb1" />);
+    await user.click(screen.getByRole('button', { name: 'Hide' }));
+    const dialog = await screen.findByRole('alertdialog');
+    await user.type(within(dialog).getByRole('textbox'), 'A private dock');
+    await user.click(within(dialog).getByRole('button', { name: /^Hide/ }));
+    // Another moderator's change takes the launch, and its dialog, away; the tab stays.
+    mocks.results.set(access, { putIns: [], parking: [], blockedIds: [], alerts: [] });
+    rerender(<AccessTab bodyId="wb1" />);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    await act(async () => refuse());
+    await settle();
+    expect(toasts).toEqual([
+      expect.objectContaining({ description: expect.stringMatching(/NW launch: Not allowed$/) }),
+    ]);
+  });
+
   it('canceled, is no press: nothing is sent and the ruling stands', async () => {
     const user = userEvent.setup();
     CASES[2]?.setup();

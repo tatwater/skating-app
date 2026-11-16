@@ -5,7 +5,7 @@ import { toast } from '@/components/kit/toast';
 import { type Receipt, useUndo } from '../../shell/undo';
 import { notSavedWhat } from '../consoleWords';
 import { listChanged, sayNotSaved, sendFor, useBodyHold } from '../frame/currentBody';
-import { type PickOutcome, SAID } from './latestPick';
+import { type Asker, type PickOutcome, SAID } from './latestPick';
 
 /**
  * How the Body console's tabs run a write: the mutation, then the receipt toast with Undo while the
@@ -20,7 +20,11 @@ import { type PickOutcome, SAID } from './latestPick';
  */
 export function useTabAction(bodyId: string): {
   act: (write: () => Promise<unknown>, receipt: Receipt) => Promise<boolean>;
-  actInDialog: (write: () => Promise<unknown>, receipt: Receipt) => Promise<string | null>;
+  actInDialog: (
+    write: () => Promise<unknown>,
+    receipt: Receipt,
+    asker?: Asker,
+  ) => Promise<string | null>;
   attempt: (write: () => Promise<unknown>, receipt: Receipt, what: string) => Promise<PickOutcome>;
   sayRefused: (what: string) => (why: string) => void;
 } {
@@ -55,10 +59,20 @@ export function useTabAction(bodyId: string): {
     [announce, hold, bodyId],
   );
   const actInDialog = useCallback(
-    async (write: () => Promise<unknown>, receipt: Receipt): Promise<string | null> =>
-      // A refusal off the console has no dialog left to show it: already said in its toast.
-      (await run(write, receipt)).refused,
-    [run],
+    async (
+      write: () => Promise<unknown>,
+      receipt: Receipt,
+      asker?: Asker,
+    ): Promise<string | null> => {
+      // A refusal off its page has no dialog left to show it: already said in its toast.
+      const { refused } = await run(write, receipt);
+      if (refused === null || asker === undefined || asker.here()) return refused;
+      // Its page still here but the dialog that asked gone (its row went): said once, by the page.
+      const what = typeof receipt.title === 'string' ? receipt.title : 'The change';
+      sayNotSaved(hold, notSavedWhat(what, refused));
+      return null;
+    },
+    [run, hold],
   );
   const act = useCallback(
     async (write: () => Promise<unknown>, receipt: Receipt): Promise<boolean> => {

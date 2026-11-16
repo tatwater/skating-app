@@ -170,11 +170,12 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
       }
       onHide={
         can('body.access')
-          ? (p, reason) =>
-              actInDialog(() => hide({ waterBodyId, coord: p.at, reason }), {
-                title: `Hid ${p.name}`,
-                target,
-              })
+          ? (p, reason, asker) =>
+              actInDialog(
+                () => hide({ waterBodyId, coord: p.at, reason }),
+                { title: `Hid ${p.name}`, target },
+                asker,
+              )
           : undefined
       }
     />

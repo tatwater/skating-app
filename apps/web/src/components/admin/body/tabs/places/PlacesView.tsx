@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils';
 import { statusDate } from '../../frame/bodyModel';
 import { useTabKeys } from '../../frame/tabKeys';
 import { ReasonAsk } from '../access/ReasonAsk';
+import type { Asker as Opening } from '../latestPick';
 import { LIT_ROW, LoadingSection, litAttr, TabBody } from '../tabParts';
 import { CouldntRead, LoadingLine, NOT_RECORDED, ReadFailures } from '../tabStates';
 import { LandmarkCard, type LandmarkEdit } from './LandmarkCard';
@@ -78,11 +79,13 @@ export type PlacesViewProps = {
     askId: string,
     reason: CorpusNameDismissReason,
     note: string,
+    /** The dialog's opening, for an answer that comes after it has gone. */
+    asker?: Opening,
   ) => Promise<string | null>;
   /** Answer a proposal with the landmark already there. */
   onSamePlace?: (ask: ProposalAsk) => void;
   /** Decline a proposal; the skaters read the note. Resolves the refusal, or `null`. */
-  onDecline?: (askId: string, note: string) => Promise<string | null>;
+  onDecline?: (askId: string, note: string, asker?: Opening) => Promise<string | null>;
   /**
    * Save one change to a landmark (its card's fields save as they change); a promise, when given,
    * settles once the server has answered.
@@ -463,7 +466,7 @@ function AskActions({
                   ))}
                 </RadioGroup>
               }
-              onConfirm={(note) => onDismissName(ask.id, why, note)}
+              onConfirm={(note, asker) => onDismissName(ask.id, why, note, asker)}
             />
           ),
         ]
@@ -486,7 +489,7 @@ function AskActions({
               description="The skaters who named it read your note."
               confirm="Decline"
               label="Note · the skaters read it"
-              onConfirm={(note) => onDecline(ask.id, note)}
+              onConfirm={(note, asker) => onDecline(ask.id, note, asker)}
             />
           ),
         ];
