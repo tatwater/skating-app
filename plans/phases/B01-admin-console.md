@@ -4538,44 +4538,68 @@ town entry per boundary, above) as its own commits.
 ### Late answers are never buried (B01-3m, D268)
 
 The founder's call of 2026-11-16: a server's refusal or error reaches the moderator wherever they are
-when it comes. While the place that asked is open, it is said there, once; everywhere else it is a
-toast naming its subject and what was not changed (D268).
+when it comes — and, asked again once the first footing had failed, **always a toast**. Every admin
+write the server refuses, that throws, or whose send fails is one toast naming its subject and what was
+not changed, in the server's own words, held until dismissed; it is never also printed in place
+(D268). A dialog refused stays open with what was typed; one that landed closes.
 
-- **One dock at the app's root** (`AppToaster`). The console's only toaster sat inside its shell,
-  after the loading splash, and the skater app had none: an answer during a role reload, or after
-  leaving the console (or being turned away), had nowhere to be drawn. It is placed by surface (past
-  the rail in the console, in from the corner elsewhere). Whether the skater surface draws toasts is
-  one switch, `SKATER_SURFACE_TOASTS` — `all` for now, the founder's call pending; `refusals` draws
-  only tone-`bad` toasts there (the console's late answers), `none` nothing. With it on, the skater
-  app's own three toasts start to show (the map's location button): *Your location isn't available
-  in this browser.*, *You're outside the area Gli covers, so the map stayed put.*, *Couldn't get your
+- **One write helper** (`said`, `components/admin/said.ts`). It runs the write, says a refusal in its
+  toast (`sayRefusal`: the failure's tone, `timeout: 0`, no Undo) and answers its caller `{ landed:
+  false }` — never the words. `errorText`, the server's sentence out of a `ConvexError`, is private to
+  it. Every path is built on it: `sendFor` (the Body console, resolving `false` for a refusal and
+  passing on only a list that moved, for its queue), the pick store (`PickOutcome` is `{ landed }`,
+  its `why` typed `never`; a sender that throws is said by the store through the helper, in the page's
+  words), the list queues (their sends answer `false`), the People write paths (`usePersonWrites`,
+  `useRecordWrites`), Undo, and the Legacy net (`useSaidMutation`, which then throws a word-less
+  `Refused`, so a page's `try` still skips what follows and a reason dialog stays open).
+- **What a component hears.** The person page's `useActing` and the record sheet's `useRecordActing`
+  answer `'landed' | 'refused' | 'waiting'`; `AskDialog`, `PostChooser`, `ReasonAsk`, Hazards' demote
+  dialog, Undo's dialog, Standing's form and `ReasonDialog` close on a landing and otherwise stay as
+  they were. The pages' own notes stay in place because they never reached the server: "another
+  change is still on its way" (a press while another is out), the record sheet's "This changed while
+  it was open" (said only when no refusal of the dialog's own write was just said), the link editor's
+  own checks, a form's required reason.
+- **Gone:** the drawn place (`usePlace`, `drawn`), the dialog's asking place (`askFrom`,
+  `keepAsking`), the page's place (`PagePlace`, `refusalOnPage`), the hold's `here` and `holdFor`, the
+  pick store's asker and in-place control, `useRecordActing`'s `onLateRefusal`, the person page's
+  mounted guard, and every inline refusal line (the lever rows, the sheet's foot, the aliases and
+  links lines, the satellite link's line, the reason dialogs, the old editor's banner and restore gate).
+- **The toast.** Drawn over every overlay (`--z-toast` 20 → 60, above the scrim, a sheet and a viewer),
+  outside anything inert (Base UI leaves an `aria-live` region unhidden), reached by `F6` from inside a
+  dialog and tabbed through, announced once (Base UI's alert for a `high` toast), dismissed by its own
+  *Dismiss* — or Esc inside it, which the toast keeps to itself so the dialog under it stays open. The
+  dock still draws one plate at a time: several refusals wait behind the front one, inert, and each is
+  drawn once the one in front is dismissed; a receipt in front of a refusal times out and the refusal
+  comes back. No new bound: the limit on what is drawn is the dock's own.
+- **One dock at the app's root** (`AppToaster`), placed by surface, so the console's loading splash
+  and the skater app draw an answer; the skater surface draws its own toasts too
+  (`SKATER_SURFACE_TOASTS` stays `all`, the founder's call of 2026-11-16). With it on, the skater
+  app's own three toasts show (the map's location button): *Your location isn't available in this
+  browser.*, *You're outside the area Gli covers, so the map stayed put.*, *Couldn't get your
   location.*
 - **The queues' owners outlive the splash.** The pick store, the list writers and Undo sit above the
-  console's splash, so a write out while the viewer's role reloads keeps its queue. A reload that
-  turns the viewer away takes them with the console: a write still out says its answer through its
-  own sender and words, in the root dock on whatever page the viewer landed (the store's model holds
-  "the owner remounts mid-flight": every refusal still said once, every store drained).
-- **People.** The record sheet said a late refusal only while the person's page was mounted; the
-  person page's levers kept theirs in their own state. Both now say it once their place has gone,
-  in a toast naming the person ("Not changed · …").
-- **Undo's reason dialog**: its opening is its asker — over the kept reason while the console is
-  there, else "Not undone" in a toast. A receipt outlives the console in the root dock: its Undo
-  pressed after the console has gone, when undoing needs a reason, says in a toast that it needs
-  the console's History — never a press that does nothing.
-- **Standing's form and Hazards' demote dialog**: their writes pass the place that asked, and
-  `holdFor` narrows the tab's hold to it, so a form that went while its tab stayed never takes a
-  refusal with it.
-- **The Legacy pages' net** (`useSaidMutation`). `always` (said in a toast in the server's words,
-  rethrown) where the page says nothing — only Support's buttons and the water list's *Approve* have
-  no `catch`; `inPlace` (said only once the component that asked has gone) where it says one in
-  place — every other Legacy write, the reason dialogs among them (`ReasonDialog` says its refusal
-  under the reason, so `always` there would say it twice). The four the coordinator named (the old
-  editor, RestorePost, ModeratorActions, SeasonWatch's run) each could lose a refusal once their
-  page had gone; each takes `inPlace`. `ReasonDialog` and ModeratorActions' dialog hold open while
-  their write is out (Esc and Cancel alike), so a refusal is never said into one that has closed. A
-  Legacy toast names only the server's words, not its subject (owed with each page's retirement).
-- **The guard** (`packages/guards/src/adminWriters.test.ts`): every console file that reaches a
-  mutation directly is in an inventory naming the write path that says its refusals.
+  console's splash, so a write out while the viewer's role reloads keeps its queue; leaving the
+  console takes them with it, and a write still out says its answer through its own write path, in the
+  root dock, on whatever page the viewer landed.
+- **The Legacy pages.** Every write is the net's (`always`; the old `inPlace` mode is gone). The two
+  Legacy dialogs that hold open while their write is out (`ReasonDialog`, ModeratorActions') still
+  do. The old editor's banner keeps only landed outcomes and its own checks (about thirty `catch`es,
+  each a line or two, mechanical); its reason dialogs now let the net's `Refused` through, so they stay
+  open; the requests page, place names, seasons (`SeasonWatch`'s buttons), RestorePost, the posted-
+  access form and the dismiss dialog print nothing a server said. Support's buttons and the water
+  list's *Approve*, which have no `catch`, now catch the `Refused` (no unhandled rejection).
+- **The guard** (`packages/guards/src/adminWriters.test.ts`): a console file that reaches a mutation
+  directly is in an inventory naming its write path; no other file than the helper calls `errorText`,
+  reads an error's `message`, tells a `ConvexError` apart (but `listChanged`, which reads a moved
+  list's `code` and `current`), or draws a toast in the failure's tone; and the prediction machinery's
+  names stay gone.
+- **The table** (`components/admin/lateAnswers.test.tsx`): twenty-five write paths from the inventory
+  below × three answers (the server's refusal, a server error, a failed send) × six places (the same,
+  another tab, another body or person, another section, the splash, the skater app) — every pair of
+  dimensions in full: in every cell one toast, nothing printed, and a dialog or form still open with
+  what was typed where the operator stayed. A returned refusal (a sender answering `false`) is the
+  pick store's and list queues' model cell. Greptile's case (a Restore refused after the person was
+  promoted, the row's buttons gone) is its own test on the person page, red before this build.
 - **Namesakes of one kind** (the two Clintons): a subdivision's boundary key carries TIGER's GEOID,
   whose first five digits are its county's, and the recompute already reads each loaded county's
   name — so no new data was needed, only a widen-only field (`inCounty` on the facts' town entries
@@ -4584,56 +4608,55 @@ toast naming its subject and what was not changed (D268).
   dev:** `convex dev --once`, then `bodyGeo:seedAll` and `bodyGeo:computeAll` (the B01-3l timing,
   about 32 minutes); no boundary re-load.
 
-**Every admin write, and where its refusal is said:**
+**Every admin write, the toast it says, and what its dialog does on refusal:**
 
-| Write | Its place open | Its place gone | What stops its place being drawn while mounted, and the place it asks |
-|---|---|---|---|
-| Names: *Display this*, the class (pick store) | a toast naming body and what | the same toast | nothing to draw: said by toast either way |
-| Names: aliases (list queue) | under the field | a toast naming the body | the identity read failing (no field): the refusal line, by ref (tested) |
-| Names: a community name (`act`) | a toast | a toast naming the body (`sendFor`) | nothing to draw: a toast either way |
-| Water: depth source (pick store) | a toast naming body and what | the same toast | nothing to draw: a toast either way |
-| Access: ruling buttons (pick store) | a toast naming body and what | the same toast | nothing to draw: a toast either way |
-| Access: *Rule no public access* (pick store, asker) | the dialog, over the reason | a toast naming body and what | its permission flipping, its row going: the dialog's body, by ref |
-| Access: *Make official* (`act`) / *Hide* (`actInDialog`, asker) | a toast / the dialog | a toast naming the body | the launch's row going (tested): the dialog's body, by ref |
-| Places: landmark card and spellings (list queue) | a toast (the tab's `act`) | a toast naming the body | nothing to draw: its refusals are the tab's `act` toasts, nothing said in place |
-| Places: *Dismiss*, *Decline* (`actInDialog`, asker) / *Same place* (`act`) | the dialog / a toast | a toast naming the body | the ask's row going: the dialog's body, by ref |
-| Links (list queue) | the section's note | a toast naming the body | the view drawing something else: the refusal line, by ref |
-| Imagery: satellite link (pick store, in place) / pass override | under the control / the dialog | a toast naming the body | the section not drawn: the control's assist line, by ref (store tested) |
-| Hazards: demote (`holdFor` the dialog) | the dialog | a toast naming the body | the feature going, the season moving: the dialog's body, by ref |
-| Standing: dormant, active, remove, restore (`holdFor` the form) | the form | a toast naming the body | another standing picked (tested): the form, by ref, on its pick |
-| The frame: map boost (pick store) | a toast naming the body | the same toast | nothing to draw: a toast either way |
-| People: a person's levers (asker: the page) | the lever, or its dialog | a toast naming the person | the person read failing or going (tested), a permission flipping: the lever block, by ref |
-| People: a lever's write that changed nothing | the receipt "Nothing changed — … was already set that way" | the same receipt | said as a landed write is, wherever the moderator is (tested) |
-| People: a decision on one's own content | a refusal like any other, where it was asked | a toast naming the person | as the levers (tested) |
-| People: the record sheet's levers (`useRecordActing`) | the item, or its dialog | a toast naming the person | the sheet closing, another item, the narrow list: its "still here" rule and the item region, by ref |
-| Undo: from a toast or History (no reason) | a toast | the same toast | nothing to draw |
-| Undo: with a reason (asker: the dialog) | the dialog | a toast | nothing can: the dialog is drawn by the provider whenever it asks, over the splash too; gone with the console (tested) |
-| The shell: presence heartbeat | — no one asked | — | — |
-| The Bodies list, People list, Overview | no writes | — | — |
-| Legacy, no `catch` (Support's buttons, the water list's *Approve*) | a toast in the server's words | the same | nothing to draw |
-| Legacy, behind a reason dialog (flags, recurrence, features, the water list, place-name dismiss, the hazard controls) | the dialog | a toast in the server's words | the permission flipping (tested on the hazard controls), the row going: the dialog's refusal line, by ref (`askFrom`) |
-| Legacy: moderator actions | its dialog | a toast in the server's words | the permission flipping (tested): its refusal line, by ref |
-| Legacy, said on the page (old editor's banner, seasons, requests, place names; the old editor's and requests' reason dialogs whose confirm says it on the banner, `refusalOnPage`) | on the page | a toast in the server's words | the page's read failing or loading: the banner or the page's root, by ref; a dialog gone with its row leaves the page's place standing |
-| Legacy: the old editor's restore gate (drawn instead of the editor) | under its button | a toast in the server's words | the body coming back: the gate, by ref |
+| Write | The toast | Its dialog or form, refused |
+|---|---|---|
+| Names: *Display this*, the class (pick store) | "Not saved · ‹body›" — "The displayed name: …" / "The class: …" | no dialog; the control goes back to the server's value |
+| Names: aliases (list queue) | "The aliases: …"; a list that kept moving, "Another moderator kept changing these aliases…" | no dialog; the chips are the server's list |
+| Names: a community name (`act`) | "Named “…”: …" | no dialog |
+| Water: a depth source (pick store) | "The mean depth's source: …" / "The max depth's source: …" | no dialog; goes back |
+| Access: ruling buttons (pick store) | "The ruling: …" | no dialog; goes back |
+| Access: *Rule no public access* (pick store, its reason dialog) | "The ruling: …" | stays open over its reason |
+| Access: *Make official* / *Hide* (`act`) | "Made … official: …" / "Hid …: …" | *Hide*'s dialog stays open over its reason |
+| Places: landmark card and spellings (list queue) | "Saved · ‹name›: …"; spellings that kept moving, "Another moderator kept changing these spellings…" | no dialog; the field is the server's |
+| Places: *Dismiss*, *Decline* (their dialogs) / *Same place* (`act`) | "Dismissed “…”: …" / "Declined “…”: …" / "Answered “…” with the landmark already there: …" | the dialogs stay open over their note |
+| Links (list queue) | "The links: …"; a change that no longer applies or kept moving, its own sentence | the editor stays open with what was typed |
+| Imagery: satellite link (pick store) / pass override | "The satellite link: …" | no dialog; goes back. The override's dialog would stay open (no writer on the server yet) |
+| Hazards: demote | "The demotion: …" | its dialog stays open over its reason |
+| Standing: dormant, active, remove, restore | "Set dormant: …" / "Back on the active map: …" / "Removed from the map: …" / "Restored to the map: …" | the form keeps its note or reason |
+| The frame: map boost (pick store) | "The map boost: …" | the slider goes back to the record |
+| People: a person's levers | "Not changed · ‹person›" — the server's words | a lever's dialog stays open over its reason; a press behind another change says the page's own "Another change is still on its way" |
+| People: a lever's write that changed nothing | the receipt "Nothing changed — … was already set that way" (not a refusal) | closes, as a landed write's |
+| People: the record sheet's levers and the Post's chooser | "Not changed · ‹person›" | the dialog or chooser stays open; one the live answer closes says nothing more of a refusal just said |
+| Undo: from a toast or History (no reason) | "Not undone" — the server's words | — |
+| Undo: with a reason | "Not undone" | its dialog stays open over its reason; pressed after the console has gone, "Not undone" — "Undoing it needs a reason: undo it from History in the console" |
+| The shell: presence heartbeat | — no one asked | — |
+| The Bodies list, People list, Overview | no writes | — |
+| Legacy, every write (the net) | "Not saved" — the server's words | a reason dialog (`ReasonDialog`, ModeratorActions') stays open over its reason; a page's banner keeps only landed outcomes |
+
+**What this build found.**
+- **Three predictions, three defects.** The first footing said a refusal in place while the place that
+  asked was still there; each fix of Greptile's findings on #138 sharpened the prediction (a mounted
+  hook, then a drawn element) and the third finding was one the drawn element could not see: a row's
+  buttons gone under a new read, its block still drawn. The founder's call removes the prediction.
+- **A toast was drawn under every dialog.** `--z-toast` (20) sat below the scrim (40): a refusal said
+  while a reason dialog was open would have shown behind its scrim. Now 60.
+- **Esc in a toast closed the dialog under it** — the dialog listens on the document, and Base UI's
+  toast closes on a React handler that does not stop it. The toast now catches its own Esc.
+- **No toast could be dismissed by a button** — every one timed out. A toast that never times out
+  carries *Dismiss*.
+- **Base UI keeps a limited toast in its queue**, its timer running: a refusal behind a newer receipt
+  is drawn again once the receipt times out; nothing was lost, and no bound was needed.
+- **Copy owed to the founder's pass:** the missed-reset refusal ("Not saved: this page now shows
+  another body…") repeats "Not saved" under the toast's own title; a Legacy toast names only the
+  server's words.
 
 **Left:** a Legacy toast names the server's words, not its subject — owed with each page's
-retirement; across a full remount of the console (leaving it), a write from each store can be out
-at once (the accepted limit, said in the model); a namesake pair in one county with one kind would
-still read the same (TIGER holds none we know of; not counted on dev); a Legacy page whose refusal is
-said in a card inside the page (seasons' cards) asks the page's root, not the card.
-
-**The drawn place (Greptile on #138).** "Its place is still there" was answered by a mounted
-component — and a mounted component is not a drawn place: a moderator who lost a permission while a
-takedown was out saw nothing (the control returned null, its hook stayed mounted, the error went into
-a dialog no longer drawn). A place now registers itself by being rendered — a ref on the element that
-says the refusal (`usePlace`; drawn = in the document and not inside anything hidden or inert), asked
-when the answer comes. The reason dialogs hand theirs to every write their confirm starts (`askFrom`),
-so no caller remembers to — synchronously only: a confirm that sends a later write after an `await`
-(the water list's merges) keeps the dialog's place for it (`keepAsking`); a confirm that says its
-refusal on the page's banner instead keeps the page's place (`refusalOnPage`), or a refusal answered
-after its dialog went would be said twice. A Legacy page that says refusals on the page hands its
-banner or root (`PagePlace`). The pick store's in-place control takes its place (`inPlace: Place`).
-A guard holds that no console place, Legacy routes included, says it is drawn without asking.
+retirement; across a full remount of the console (leaving it), a write from each store can be out at
+once (the accepted limit, said in the model); a namesake pair in one county with one kind would still
+read the same (TIGER holds none we know of; not counted on dev); the founder's copy pass on the
+refusal words.
 
 ## Ruled out
 

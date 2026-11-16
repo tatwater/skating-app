@@ -4,8 +4,8 @@ import { isConsolePath, usesOldShell } from '@/components/admin/shell/consoleNav
 import { Toaster, type ToastManager, type ToastTone } from '@/components/kit/toast';
 
 /**
- * **Whether the skater surface draws toasts** — one switch, on for now (the founder's call is
- * pending). `all`: every toast, the skater app's own included. `refusals`: only a refusal or an
+ * **Whether the skater surface draws toasts** — one switch, `all` (the founder's call of 2026-11-16:
+ * the skater app shows toasts). `all`: every toast, the skater app's own included. `refusals`: only a refusal or an
  * error (tone `bad`) — the console's late answers, said after the moderator has left it; the skater
  * app's own toasts are not drawn. `none`: nothing on the skater surface. The console always draws
  * every toast.
