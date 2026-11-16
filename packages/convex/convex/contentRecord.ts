@@ -53,10 +53,12 @@ import {
   encodePosition,
   loadVerdicts,
   type Names,
+  newPageCache,
   type Position,
   RECORD_PAGE,
   type RecordContentDoc,
   readNames,
+  readReports,
   reportIdOf,
   takeAfter,
   takeUntilNull,
@@ -251,6 +253,27 @@ function placeOf(
   };
 }
 
+/** A page's first row couldn't be read whole on a fresh budget: a plan error, never a data condition. */
+export class RecordPlanError extends Error {}
+
+/**
+ * **A page always moves on.** Its first row is read whole — every stage, by itself — before any other
+ * row is admitted (its worst case fits a fresh budget, `recordRounds.test.ts` holds that), so a page
+ * that says `isDone: false` has returned a row or moved its cursor, whatever its other rows weigh;
+ * the rest follow in waves with what is left, sharing what the first already read (`PageCache`).
+ */
+export async function headFirst<R>(
+  rows: readonly R[],
+  shape: (some: readonly R[]) => Promise<R[]>,
+): Promise<R[]> {
+  if (rows.length === 0) return [];
+  const head = await shape(rows.slice(0, 1));
+  if (head.length === 0) {
+    throw new RecordPlanError('record: a page’s first row did not fit a fresh budget');
+  }
+  return rows.length === 1 ? head : [...head, ...(await shape(rows.slice(1)))];
+}
+
 /** A page's verdicts, read whole as far as the budget reaches, and named. */
 async function shapeVerdictPage(
   ctx: QueryCtx,
@@ -258,25 +281,38 @@ async function shapeVerdictPage(
   verdicts: Doc<'contentVerdicts'>[],
   ended: boolean,
 ) {
-  const loaded = await loadVerdicts(ctx, reads, verdicts, { ended });
+  const cache = newPageCache();
   const bodiesOf = (l: VerdictLoad) => [bodyIdOf(l.verdict.targetType, l.target, l.report)];
   const peopleOf = (l: VerdictLoad) => [
     l.decision?.actorId,
     l.ending?.actorId,
     l.verdict.targetType === 'comment' ? l.report?.authorId : undefined,
   ];
-  const names = await readNames(
-    ctx,
-    reads,
-    loaded.rows.flatMap(bodiesOf),
-    loaded.rows.flatMap(peopleOf),
-  );
-  const whole: VerdictLoad[] = [];
-  for (const l of loaded.rows) {
-    if (names.missed(bodiesOf(l), peopleOf(l))) break;
-    whole.push(l);
-  }
-  return { rows: whole, names, cut: whole.length < verdicts.length };
+  let names: Names | null = null;
+  const loads = new Map<Doc<'contentVerdicts'>, VerdictLoad>();
+  const shape = async (some: readonly Doc<'contentVerdicts'>[]) => {
+    const loaded = await loadVerdicts(ctx, reads, some, { ended, cache });
+    names = await readNames(
+      ctx,
+      reads,
+      loaded.rows.flatMap(bodiesOf),
+      loaded.rows.flatMap(peopleOf),
+      cache,
+    );
+    const whole: Doc<'contentVerdicts'>[] = [];
+    for (const l of loaded.rows) {
+      if (names.missed(bodiesOf(l), peopleOf(l))) break;
+      loads.set(l.verdict, l);
+      whole.push(l.verdict);
+    }
+    return whole;
+  };
+  const read = await headFirst(verdicts, shape);
+  return {
+    rows: read.map((v) => loads.get(v) as VerdictLoad),
+    names: names as unknown as Names,
+    cut: read.length < verdicts.length,
+  };
 }
 
 /** A page's answer: its rows, whether more follow, the cursor after its last row, and `pending`. */
@@ -515,44 +551,65 @@ export async function deletedPage(
     .filter((c) => limit === null || !before(limit, c.key))
     .sort((a, b) => (before(a.key, b.key) ? -1 : before(b.key, a.key) ? 1 : 0));
   const considered = candidates.slice(0, RECORD_PAGE);
-  // Each row: whether a decision holds it (then it is Standing's, not here), and the Report a
-  // comment or a Post names its body through.
-  const checked = await reads.waves(
-    considered,
-    (c) => ({
-      bytes: ROW_MAX.verdict + (reportIdOf(c.kind, c.doc) !== null ? ROW_MAX.report : 0),
-      reads: reportIdOf(c.kind, c.doc) !== null ? 2 : 1,
-    }),
-    async (c, share) => {
+  // Each row: whether a decision holds it (then it is Standing's, not here); the Report a comment or
+  // a Post names its body through, once a page; then the names — the first row whole before the rest.
+  type Candidate = (typeof candidates)[number];
+  type Checked = Candidate & { held: boolean; report: Doc<'reports'> | null };
+  const cache = newPageCache();
+  const checkedOf = new Map<Candidate, Checked>();
+  const bodyOfRow = (c: Checked) => [bodyIdOf(c.kind, c.doc, c.report)];
+  const personOfRow = (c: Checked) => [c.kind === 'comment' ? c.report?.authorId : undefined];
+  let names: Names | null = null;
+  const shape = async (some: readonly Candidate[]): Promise<Candidate[]> => {
+    const held = takeUntilNull(
+      await reads.waves(
+        some,
+        () => ({ bytes: ROW_MAX.verdict, reads: 1 }),
+        async (c, share) => ({
+          c,
+          held:
+            (await share.read('verdict', () =>
+              ctx.db
+                .query('contentVerdicts')
+                .withIndex('by_target_standing', (q) =>
+                  q.eq('targetType', c.kind).eq('targetId', c.doc._id).eq('standing', true),
+                )
+                .first(),
+            )) !== null,
+        }),
+        () => null,
+      ),
+    );
+    const missed = await readReports(
+      ctx,
+      reads,
+      held.map(({ c }) => reportIdOf(c.kind, c.doc)),
+      cache,
+    );
+    const reached: { from: Candidate; row: Checked }[] = [];
+    for (const { c, held: h } of held) {
       const reportId = reportIdOf(c.kind, c.doc);
-      const [held, report] = await Promise.all([
-        share.read('verdict', () =>
-          ctx.db
-            .query('contentVerdicts')
-            .withIndex('by_target_standing', (q) =>
-              q.eq('targetType', c.kind).eq('targetId', c.doc._id).eq('standing', true),
-            )
-            .first(),
-        ),
-        reportId !== null
-          ? share.read('report', () => ctx.db.get(reportId))
-          : Promise.resolve(null),
-      ]);
-      return { ...c, held: held !== null, report };
-    },
-    () => null,
-  );
-  const read = takeUntilNull(checked);
-  const bodyOfRow = (c: (typeof read)[number]) => [bodyIdOf(c.kind, c.doc, c.report)];
-  const personOfRow = (c: (typeof read)[number]) => [
-    c.kind === 'comment' ? c.report?.authorId : undefined,
-  ];
-  const names = await readNames(ctx, reads, read.flatMap(bodyOfRow), read.flatMap(personOfRow));
-  const whole: typeof read = [];
-  for (const c of read) {
-    if (names.missed(bodyOfRow(c), personOfRow(c))) break;
-    whole.push(c);
-  }
+      if (reportId !== null && missed.has(reportId)) break;
+      const report = reportId !== null ? (cache.reports.get(reportId) ?? null) : null;
+      reached.push({ from: c, row: { ...c, held: h, report } });
+    }
+    const named = await readNames(
+      ctx,
+      reads,
+      reached.flatMap(({ row }) => bodyOfRow(row)),
+      reached.flatMap(({ row }) => personOfRow(row)),
+      cache,
+    );
+    names = named;
+    const done: Candidate[] = [];
+    for (const { from, row } of reached) {
+      if (named.missed(bodyOfRow(row), personOfRow(row))) break;
+      checkedOf.set(from, row);
+      done.push(from);
+    }
+    return done;
+  };
+  const whole = (await headFirst(considered, shape)).map((c) => checkedOf.get(c) as Checked);
   const shown = whole.filter(
     (c) =>
       !c.held &&
@@ -566,7 +623,7 @@ export async function deletedPage(
     /** When it is due to be erased; `null` while something holds it or no clock is set yet. */
     eraseAt: c.doc.eraseAt ?? null,
     content: contentOf(c.kind, c.doc),
-    ...placeOf({ target: c.doc, report: c.report }, c.kind, names),
+    ...placeOf({ target: c.doc, report: c.report }, c.kind, names as unknown as Names),
     can: recordLevers(viewer, recordFactsOf(c.kind, c.doc, false)),
   }));
   return pageOf(
@@ -808,6 +865,8 @@ export async function countsOf(ctx: QueryCtx, { userId }: { userId: Id<'profiles
 
 /** Decisions on one item the pane reads at most (an item gathers few; more says `decisionsCapped`). */
 const ITEM_DECISIONS = 50;
+/** Standing verdicts read on one item, at most (the writers keep one). */
+const STANDING_ON_ITEM = 4;
 
 /**
  * A Post's members as its restore reads them — each Report and, for one that is down, the newest row
@@ -871,23 +930,33 @@ export const item = query({
     const pending = await recordPending(ctx, reads);
     const id = targetIdOf(ctx, targetType, targetId);
     if (id === null) return null;
-    const [target, verdicts] = await Promise.all([
+    // The decisions newest first by when they were made — selected in the order they are shown
+    // (`by_target_at`, on the required `at`), never a window by insertion time sorted afterward — and,
+    // beside them, the one that stands, however old (the writers keep at most one).
+    const [target, newest, standingRows] = await Promise.all([
       reads.one(targetType, () => ctx.db.get(id)) as Promise<ContentDoc | null>,
-      // Descending: the standing verdict first (`true` sorts after `false`), then the newest ended —
-      // so a long history cut at the cap still says whether a decision stands, and keeps the newest.
       reads.take('verdict', ITEM_DECISIONS + 1, (n) =>
         ctx.db
           .query('contentVerdicts')
-          .withIndex('by_target_standing', (q) =>
-            q.eq('targetType', targetType).eq('targetId', targetId),
-          )
+          .withIndex('by_target_at', (q) => q.eq('targetType', targetType).eq('targetId', targetId))
           .order('desc')
           .take(n),
       ),
+      reads.take('verdict', STANDING_ON_ITEM, (n) =>
+        ctx.db
+          .query('contentVerdicts')
+          .withIndex('by_target_standing', (q) =>
+            q.eq('targetType', targetType).eq('targetId', targetId).eq('standing', true),
+          )
+          .take(n),
+      ),
     ]);
-    const decisions = verdicts
-      .slice(0, ITEM_DECISIONS)
-      .sort((a, b) => b.at - a.at || b._creationTime - a._creationTime);
+    const shownIds = new Set(newest.slice(0, ITEM_DECISIONS).map((d) => d._id as string));
+    const decisions = [
+      ...newest.slice(0, ITEM_DECISIONS),
+      ...standingRows.filter((d) => !shownIds.has(d._id)),
+    ].sort((a, b) => b.at - a.at || b._creationTime - a._creationTime);
+    const verdicts = newest;
     // Never anything on the record, and no item: nothing to show.
     if (target === null && decisions.length === 0) return null;
     const standing = decisions.some((d) => d.standing);

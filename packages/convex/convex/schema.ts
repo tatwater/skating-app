@@ -3898,6 +3898,9 @@ export default defineSchema({
     // An item's newest verdict, to mark it superseded when a later one is minted (equality reads only).
     .index('by_target_superseded', ['targetType', 'targetId', 'superseded'])
     .index('by_target_standing', ['targetType', 'targetId', 'standing'])
+    // An item's decisions by when they were made (the record sheet's pane, B01-4d): `at` is required,
+    // so the range needs no lower bound.
+    .index('by_target_at', ['targetType', 'targetId', 'at'])
     .index('by_action', ['actionId'])
     // What an action ended, for its undo (`lib/contentVerdicts.recordUndoneVerdict`). Equality reads
     // only, so the unset value on every standing row never matches (no sparse-index trap).

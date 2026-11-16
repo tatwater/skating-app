@@ -217,14 +217,59 @@ function readErase(ctx: QueryCtx, share: Share, targetType: VerdictTargetType, t
 }
 
 /**
- * Phases 2 and 3 of a page's reads for each row: the decision (and its ending), the item; then the
- * Report or the erasure row. Rows after the first the budget couldn't reserve are dropped (`cut`).
+ * What a page has already read, kept across its stages so a shared document is read once a page,
+ * never once a row: each Report a comment or a Post names its body through (fifty comments on one
+ * Report read it once), each body's library row and each person's People row.
+ */
+export interface PageCache {
+  reports: Map<string, Doc<'reports'> | null>;
+  names: Map<string, string | null>;
+  persons: Map<string, RecordPerson>;
+}
+
+export function newPageCache(): PageCache {
+  return { reports: new Map(), names: new Map(), persons: new Map() };
+}
+
+/**
+ * The distinct Reports `ids` names that the page hasn't read yet, each read once, in waves; returns
+ * the ids the budget couldn't reach (their rows end the page).
+ */
+export async function readReports(
+  ctx: QueryCtx,
+  reads: ReadBudget,
+  ids: readonly (Id<'reports'> | null)[],
+  cache: PageCache,
+): Promise<Set<string>> {
+  const wanted: Id<'reports'>[] = [];
+  for (const id of ids) {
+    if (id !== null && !cache.reports.has(id) && !wanted.includes(id)) wanted.push(id);
+  }
+  const read = await reads.waves(
+    wanted,
+    () => ({ bytes: ROW_MAX.report, reads: 1 }),
+    async (id, share) => ({ id, report: await share.read('report', () => ctx.db.get(id)) }),
+    () => null,
+  );
+  const missed = new Set<string>();
+  wanted.forEach((id, i) => {
+    const r = read[i];
+    if (r === null || r === undefined) missed.add(id);
+    else cache.reports.set(id, r.report);
+  });
+  return missed;
+}
+
+/**
+ * Stages 2 and 3 of a page's reads for each row: the decision (and its ending), the item; then the
+ * Report it names its body through (once a page, `cache`) or its erasure row. Rows after the first the
+ * budget couldn't reserve are dropped (`cut`).
  */
 export async function loadVerdicts(
   ctx: QueryCtx,
   reads: ReadBudget,
   verdicts: readonly Doc<'contentVerdicts'>[],
-  { ended }: { ended: boolean },
+  { ended, cache }: { ended: boolean; cache: PageCache },
 ): Promise<Loaded<VerdictLoad>> {
   const first = await reads.waves(
     verdicts,
@@ -246,39 +291,35 @@ export async function loadVerdicts(
     () => null,
   );
   const whole = takeUntilNull(first);
+  // The Reports, each once a page; then, for an item that is gone, its erasure row.
+  const missed = await readReports(
+    ctx,
+    reads,
+    whole.map((row) => reportIdOf(row.verdict.targetType, row.target)),
+    cache,
+  );
+  const reached: VerdictLoad[] = [];
+  for (const row of whole) {
+    const reportId = reportIdOf(row.verdict.targetType, row.target);
+    if (reportId !== null && missed.has(reportId)) break;
+    reached.push({
+      ...row,
+      report: reportId !== null ? (cache.reports.get(reportId) ?? null) : null,
+    });
+  }
   const second = await reads.waves(
-    whole,
-    (row) => ({
-      bytes:
-        row.target === null
-          ? ended
-            ? ROW_MAX.moderationAction
-            : 0
-          : reportIdOf(row.verdict.targetType, row.target) !== null
-            ? ROW_MAX.report
-            : 0,
-      reads:
-        row.target === null
-          ? ended
-            ? 1
-            : 0
-          : reportIdOf(row.verdict.targetType, row.target)
-            ? 1
-            : 0,
-    }),
-    async (row, share): Promise<VerdictLoad | null> => {
-      const reportId = reportIdOf(row.verdict.targetType, row.target);
-      if (reportId !== null) {
-        return { ...row, report: await share.read('report', () => ctx.db.get(reportId)) };
-      }
-      if (row.target === null && ended) {
-        return {
-          ...row,
-          erase: await readErase(ctx, share, row.verdict.targetType, row.verdict.targetId),
-        };
-      }
-      return row;
+    reached,
+    (row) => {
+      const gone = row.target === null && ended;
+      return { bytes: gone ? ROW_MAX.moderationAction : 0, reads: gone ? 1 : 0 };
     },
+    async (row, share): Promise<VerdictLoad | null> =>
+      row.target === null && ended
+        ? {
+            ...row,
+            erase: await readErase(ctx, share, row.verdict.targetType, row.verdict.targetId),
+          }
+        : row,
     () => null,
   );
   const rows = takeUntilNull(second);
@@ -314,10 +355,12 @@ export async function readNames(
   reads: ReadBudget,
   bodies: readonly (Id<'waterBodies'> | null)[],
   people: readonly (Id<'profiles'> | null | undefined)[],
+  cache: PageCache = newPageCache(),
 ): Promise<Names> {
   type Want = { body: Id<'waterBodies'> } | { person: Id<'profiles'> };
   const wants: Want[] = [];
-  const seen = new Set<string>();
+  // What the page has read already is not read again.
+  const seen = new Set<string>([...cache.names.keys(), ...cache.persons.keys()]);
   for (const b of bodies) {
     if (b !== null && !seen.has(b)) {
       seen.add(b);
@@ -361,8 +404,7 @@ export async function readNames(
     },
     () => null,
   );
-  const names = new Map<string, string | null>();
-  const persons = new Map<string, RecordPerson>();
+  const { names, persons } = cache;
   for (const f of found) {
     if (f === null) continue;
     if ('person' in f && f.person) persons.set(f.key, f.person);

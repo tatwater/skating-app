@@ -16,7 +16,7 @@ import type { MutationCtx, QueryCtx } from './_generated/server';
 import { countsOf, deletedPage, HEAVY_STEPS, reversedPage, standingPage } from './contentRecord';
 import { markReady, refreshPersonRow } from './lib/peopleRows';
 import { CHARGED_QUERY_BUDGET, ROW_MAX } from './lib/readBudget';
-import { RECORD_PAGE } from './lib/recordReads';
+import { DELETED_TAKE, RECORD_PAGE } from './lib/recordReads';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -226,15 +226,21 @@ const perWave = (rowCost: number) =>
 const waves = (rowCost: number) => Math.ceil(RECORD_PAGE / perWave(rowCost));
 
 /**
- * The worst rounds a page of fifty costs: the backfill check and the rows (two), the documents' waves
+ * The worst rounds a page of fifty costs: the backfill check and the rows (two), the first row whole
+ * ({@link HEAD_ROUNDS}), the rest's documents in waves
  * (a Standing Report: its decision beside the item; a Reversed one, the action that ended it too), the
  * names (one wave: one body, a few people) — and on Reversed the undo engine's first step (main's,
  * three rounds: the undoing row and the newest together, then the author's stamp).
  */
-const STANDING_ROUNDS = 2 + waves(2 * ROW_MAX.report) + 1;
-const REVERSED_ROUNDS = 2 + waves(3 * ROW_MAX.report) + 1 + 3;
-/** Deleted: the five ranges together, each comment's hold and Report in waves, then the names. */
-const DELETED_ROUNDS = 2 + waves(ROW_MAX.verdict + ROW_MAX.report) + 1;
+/**
+ * A page's first row, read whole on its own before any other is admitted (so a page always moves on):
+ * its documents, its Report, its erasure row, its names — four rounds at most.
+ */
+const HEAD_ROUNDS = 4;
+const STANDING_ROUNDS = 2 + HEAD_ROUNDS + waves(2 * ROW_MAX.report) + 1;
+const REVERSED_ROUNDS = 2 + HEAD_ROUNDS + waves(3 * ROW_MAX.report) + 1 + 3;
+/** Deleted: the five ranges together, each row's hold, the Reports once a page, then the names. */
+const DELETED_ROUNDS = 2 + HEAD_ROUNDS + 3;
 /**
  * The counts: the check, then Reversed's range, the Reports' range and the light kinds' ranges together,
  * then the heavy kinds' steps (one round each, at most `HEAVY_STEPS`), then the holds (two waves at
@@ -243,6 +249,27 @@ const DELETED_ROUNDS = 2 + waves(ROW_MAX.verdict + ROW_MAX.report) + 1;
 const COUNT_ROUNDS = 2 + HEAVY_STEPS + 2;
 /** The same with no Post or hazard deleted: the heavy kinds end on their first step. */
 const COUNT_ROUNDS_LIGHT = 2 + 1 + 2;
+
+describe('a page’s first row always fits (B01-4d)', () => {
+  test('every list’s first row, read whole at its worst, fits what its rows leave of a fresh budget', () => {
+    const prep = 4 * ROW_MAX.small;
+    const verdictRows = (RECORD_PAGE + 1) * 2 * ROW_MAX.verdict; // a cursor's two parts
+    const names = ROW_MAX.bodyLibraryRow + 3 * ROW_MAX.personRow;
+    const item = Math.max(ROW_MAX.report, ROW_MAX.post, ROW_MAX.hazard, ROW_MAX.comment);
+    // Reversed is the dearest verdict list: its decision, the action that ended it, the item, then
+    // the Report a comment names its body through (or a gone item's erasure row), then the names.
+    const reversedHead = 2 * ROW_MAX.moderationAction + item + ROW_MAX.report + names;
+    expect(prep + verdictRows + reversedHead).toBeLessThanOrEqual(CHARGED_QUERY_BUDGET);
+    // Deleted: its five ranges, and the tie part of the one kind the cursor sits in (the dearest),
+    // then one row's hold, Report and names.
+    const parts = Object.entries(DELETED_TAKE).map(
+      ([kind, n]) => n * ROW_MAX[kind as keyof typeof DELETED_TAKE],
+    );
+    const ranges = parts.reduce((a, b) => a + b, 0) + Math.max(...parts);
+    const deletedHead = ROW_MAX.verdict + ROW_MAX.report + names;
+    expect(prep + ranges + deletedHead).toBeLessThanOrEqual(CHARGED_QUERY_BUDGET);
+  });
+});
 
 describe('the record sheet’s rounds (B01-4d)', () => {
   test('Standing: a page of fifty costs its waves, not a round a row', async () => {
