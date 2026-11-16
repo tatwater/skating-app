@@ -6,7 +6,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { bodySearchTextFor, MAX_REFERENCE_LINKS } from '@skating/core';
+import { AUDIT_REASON_MAX_CHARS, bodySearchTextFor, MAX_REFERENCE_LINKS } from '@skating/core';
 import { convexTest } from 'convex-test';
 import fc from 'fast-check';
 import type { Polygon } from 'geojson';
@@ -259,6 +259,62 @@ describe('setModeratorTowns', () => {
     expect(geo?.townEntries?.map((e) => e.name)).toEqual(['North East', 'Amenia']);
   });
 
+  test('a pin write that removes any pin asks why — trimmed, capped, audited; one that only adds is defaulted and marked so', async () => {
+    const t = harness();
+    await seedTowns(t);
+    const admin = await person(t);
+    const id = await imported(t, 'way/1');
+    const set = (townKeys: string[], reason?: string) =>
+      admin.as.mutation(api.waterBodies.setModeratorTowns, {
+        waterBodyId: id,
+        townKeys,
+        ...(reason !== undefined ? { reason } : {}),
+      });
+    // Only adding: no reason needed; the default is recorded and marked defaulted.
+    await set([NORTH_EAST, SOUTHBRIDGE]);
+    expect(await lastAction(t, 'set_moderator_towns')).toMatchObject({
+      reason: 'Pinned in 2 towns',
+      metadata: { reasonDefaulted: true },
+    });
+    // Adding with a reason: kept, trimmed, not defaulted.
+    await set([NORTH_EAST, SOUTHBRIDGE], '  Public launch on the in-state shore  ');
+    const given = await lastAction(t, 'set_moderator_towns');
+    expect(given.reason).toBe('Public launch on the in-state shore');
+    expect(given.metadata.reasonDefaulted).toBeUndefined();
+    // Removing one pin without a reason (or with only spaces) is refused, as every takeaway is.
+    await expect(set([NORTH_EAST])).rejects.toThrow('A reason is required');
+    await expect(set([NORTH_EAST], '   ')).rejects.toThrow('A reason is required');
+    await expect(set([NORTH_EAST], 'x'.repeat(AUDIT_REASON_MAX_CHARS + 1))).rejects.toThrow(
+      /Shorten it to 1,000 or fewer/,
+    );
+    expect((await get(t, id))?.moderatorTownKeys).toEqual([NORTH_EAST, SOUTHBRIDGE]);
+    await set([NORTH_EAST], 'Southbridge holds none of the shore');
+    expect(await lastAction(t, 'set_moderator_towns')).toMatchObject({
+      reason: 'Southbridge holds none of the shore',
+      metadata: {
+        moderatorTownKeys: [NORTH_EAST],
+        prev: { moderatorTownKeys: [NORTH_EAST, SOUTHBRIDGE] },
+      },
+    });
+    // Its undo puts Southbridge back — a give, so it asks no reason; undoing that removes it again
+    // — a takeaway, so it does.
+    const removal = await lastAction(t, 'set_moderator_towns');
+    const stateOf = (row: Doc<'moderationActions'>) =>
+      t.run(async (ctx) => {
+        const viewer = await ctx.db.get(admin.id);
+        const fresh = await ctx.db.get(row._id);
+        if (!viewer || !fresh) throw new Error('missing');
+        return undoState(ctx, viewer, fresh);
+      });
+    expect(await stateOf(removal)).toMatchObject({ state: 'available', needsReason: false });
+    await admin.as.mutation(api.undo.run, { actionId: removal._id });
+    expect((await get(t, id))?.moderatorTownKeys).toEqual([NORTH_EAST, SOUTHBRIDGE]);
+    expect(await stateOf(await lastAction(t, 'set_moderator_towns'))).toMatchObject({
+      state: 'available',
+      needsReason: true,
+    });
+  });
+
   test('a pin reaches every reader at once — the body’s states, skater search, the library, the facts — and its clear takes back only what it added (Greptile on #130)', async () => {
     const t = harness();
     await seedTowns(t);
@@ -313,7 +369,11 @@ describe('setModeratorTowns', () => {
       'Southbridge Town',
     ]);
     // Clearing the pins takes back Massachusetts and leaves the rule's New York.
-    await admin.as.mutation(api.waterBodies.setModeratorTowns, { waterBodyId: id, townKeys: [] });
+    await admin.as.mutation(api.waterBodies.setModeratorTowns, {
+      waterBodyId: id,
+      townKeys: [],
+      reason: 'Pinned by mistake',
+    });
     expect(await get(t, id)).toMatchObject({ states: ['NY'], regionStates: ['NY'] });
     expect(await admin.as.query(api.bodyConsole.places, { waterBodyId: id })).toMatchObject({
       towns: [],
@@ -849,11 +909,12 @@ describe('the pin against the other writers', () => {
     const pinWrites = source
       .map((l, i) => ({ l, i }))
       .filter(
-        ({ l }) =>
+        ({ l, i }) =>
           /moderatorTownKeys\s*:/.test(l) &&
           // A schema line, an audit row's metadata, and the retire pass's in-memory list of what a
           // survivor took (no write) are not writes of the field.
-          !/metadata:|v\.optional|t\?\.pins/.test(l),
+          !/metadata:|v\.optional|t\?\.pins|prev: \{ moderatorTownKeys/.test(l) &&
+          !/metadata: \{$/.test(source[i - 1] ?? ''),
       );
     expect(pinWrites).toHaveLength(3);
     for (const { i } of pinWrites) {

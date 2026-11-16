@@ -202,8 +202,9 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
   set_reference_links: { undo: setPrev, takesAway: never, capability: 'body.identity' },
   set_aliases: { undo: setPrev, takesAway: never, capability: 'body.identity' },
   set_class: { undo: setPrev, takesAway: never, capability: 'body.identity' },
-  // Pinning gives; clearing every pin can take a body out of a state's filter — as clearing
-  // `includedByRequest` takes a body out of the corpus — so an undo that clears asks a reason.
+  // Removing any pin takes a body out of a town (and maybe a state's filter); only adding gives. The
+  // value alone can't tell which, so the write and its undo handler compare it with the list before;
+  // as a value, an empty list (every pin cleared) is the one that surely takes away.
   set_moderator_towns: {
     undo: setPrev,
     takesAway: (keys) => Array.isArray(keys) && keys.length === 0,

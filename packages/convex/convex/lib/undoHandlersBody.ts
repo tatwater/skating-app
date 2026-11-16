@@ -572,10 +572,13 @@ const undoAliases: UndoHandler = {
  */
 const undoModeratorTowns: UndoHandler = {
   blocked: needsPrev,
-  undoTakesAway: (row) =>
-    UNDO_POLICY.set_moderator_towns.takesAway(
-      (meta(row).prev.moderatorTownKeys as string[] | undefined) ?? [],
-    ),
+  // The undo puts back the list this row replaced: it takes away when it removes a pin this row
+  // added — the forward write's own rule (any pin removed asks why), never "only when it clears".
+  undoTakesAway: (row) => {
+    const prev = (meta(row).prev.moderatorTownKeys as string[] | undefined) ?? [];
+    const set = (meta(row).moderatorTownKeys as string[] | undefined) ?? [];
+    return set.some((k) => !prev.includes(k));
+  },
   refusal: async (ctx, row, read) => {
     const id = ctx.db.normalizeId('waterBodies', row.targetId);
     const body = id ? await read.row('waterBody', id) : null;

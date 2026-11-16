@@ -3152,9 +3152,14 @@ exactly the old removal; the undo is unchanged.
 **A moderator's pin outranks the rule.** `waterBodies.moderatorTownKeys` — stable `tiger/<GEOID>`
 keys (a boundary reload keeps the document, and a key survives even a delete and reload), at most 8 —
 holds a body in region in the towns named. `setModeratorTowns` is a whole-list write (`expected`,
-`list_changed`), audited (`set_moderator_towns`) and undone through the same write; its undo is
-refused, so never offered, when a merge moved the list, and asks a reason when it clears every pin
-(the `set_included_by_request` rule). A body's states are built from two ingredients kept apart —
+`list_changed`), audited (`set_moderator_towns`) and undone through the same write. **A write that
+removes any pin is a takeaway** and refuses without a nonblank reason ("A reason is required", as
+every reason-required write says); a write that only adds takes an optional reason, defaulted ("Pinned
+in N towns") and marked `reasonDefaulted` in the audit row. Reasons are trimmed and refused past
+`AUDIT_REASON_MAX_CHARS` (1,000 — main has no general audit-reason cap yet; #125 brings one). Its undo
+follows the same rule on the list it puts back: undoing an add removes pins and asks a reason;
+undoing a removal only adds and asks none. The undo is refused, so never offered, when a merge moved
+the list since its row. A body's states are built from two ingredients kept apart —
 the rule's (`regionStates`) and the pinned towns' — by one builder (`regionStatesFields`), which
 the pin's write, its undo, a merge and the import all patch through, so skater search, the library
 and the console read a pin's state in the write's own transaction, and clearing a pin removes exactly
@@ -3168,8 +3173,11 @@ both bodies' pins, aliases and reference links (`mergedModeratorLists`) — the 
 survivor's search text, rebuilt in the same patch (`bodySearchTextFor`) — and a union past a cap is a
 refusal in a sentence (which list, how many, the cap, clear some first) — never a truncation. The
 duplicate card never offers that merge and shows the sentence; the import's automated merge skips
-the pair and names it (its dry run counting what each survivor took earlier in the pass, so it
-predicts the apply). Weather sample points are not carried: each lies on its own body's outline.
+the pair, names it and flags it into the duplicate queue on an applied run. Its dry run predicts
+the apply exactly whatever the batch boundaries (Greptile on #130): each call returns `taken`, every
+survivor's union of what it absorbed this pass, and the script feeds it to the next batch — chosen
+over keeping a survivor's pairs in one batch because it holds for any batch size, order and chained
+absorption. Weather sample points are not carried: each lies on its own body's outline.
 The merge's change set keeps both bodies' lists as they were, for the unmerge (not built yet). A
 guard reads the functions' source: nothing else writes the pins.
 

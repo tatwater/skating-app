@@ -11,6 +11,7 @@
  */
 
 import {
+  AUDIT_REASON_MAX_CHARS,
   type BodyNames,
   bboxIntersects,
   belongsInCorpus,
@@ -123,6 +124,7 @@ import { landmarksForBody, repointLandmarksOnMerge } from './lib/landmarkRows';
 import { assertListUnchanged } from './lib/listCas';
 import { isListed } from './lib/listing';
 import { OPEN_FLAG_STATUSES } from './lib/openFlags';
+import { reasonFor } from './lib/peopleCan';
 import { ReadBudget } from './lib/readBudget';
 import {
   affords,
@@ -4379,13 +4381,19 @@ export const setModeratorTowns = mutation({
     townKeys: v.array(v.string()),
     /** The list this edit was built on: refused, with the current list, if it moved. */
     expected: v.optional(v.array(v.string())),
+    /**
+     * Why. Required (nonblank) when the write removes any pin — a takeaway (D226); optional when it
+     * only adds, defaulted then and marked so. Trimmed; refused past `AUDIT_REASON_MAX_CHARS`.
+     */
+    reason: v.optional(v.string()),
   },
-  handler: async (ctx, { waterBodyId, townKeys, expected }) => {
+  handler: async (ctx, { waterBodyId, townKeys, expected, reason }) => {
     const actor = await requireCapability(ctx, 'body.identity');
     return setModeratorTownsImpl(ctx, actor, {
       waterBodyId,
       townKeys,
       ...(expected !== undefined ? { expected } : {}),
+      ...(reason !== undefined ? { reason } : {}),
     });
   },
 });
@@ -4439,6 +4447,20 @@ export async function setModeratorTownsImpl(
       throw new ConvexError(`No loaded town has the key ${key}`);
     }
   }
+  // Removing any pin takes a body out of a town (and maybe a state's filter): a takeaway, so it asks
+  // why (D226) — the same refusal every reason-required write gives. Only adding is a give: the
+  // reason is optional, defaulted and marked so (History leaves a defaulted line out).
+  const trimmed = reason?.trim();
+  const tooLong = tooLongMessage('The reason', trimmed, AUDIT_REASON_MAX_CHARS);
+  if (tooLong !== null) throw new ConvexError(tooLong);
+  const removes = prev.some((k) => !next.includes(k));
+  const said = reasonFor(
+    trimmed,
+    removes,
+    next.length === 0
+      ? 'Cleared the pinned towns'
+      : `Pinned in ${next.length} town${next.length === 1 ? '' : 's'}`,
+  );
   // The pins and the states they feed, together; the facts' pinned half in the same transaction.
   await ctx.db.patch(waterBodyId, {
     moderatorTownKeys: next.length > 0 ? next : undefined,
@@ -4450,12 +4472,12 @@ export async function setModeratorTownsImpl(
     action: 'set_moderator_towns',
     targetType: 'waterbody',
     targetId: waterBodyId,
-    reason:
-      reason ??
-      (next.length === 0
-        ? 'Cleared the pinned towns'
-        : `Pinned in ${next.length} town${next.length === 1 ? '' : 's'}`),
-    metadata: { moderatorTownKeys: next, prev: { moderatorTownKeys: prev } },
+    reason: said.reason,
+    metadata: {
+      moderatorTownKeys: next,
+      prev: { moderatorTownKeys: prev },
+      ...(said.defaulted ? { reasonDefaulted: true } : {}),
+    },
     createdAt: Date.now(),
   });
   return waterBodyId;
