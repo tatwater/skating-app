@@ -2212,8 +2212,8 @@ fails the build.
 | `people.person` | target; counts; status row (`measured`); flags ×4 (`takeCapped`, 51/101); tickets (51); filed (101); verdict counts (501, reserved); editors (200 rows, reserved, once) | none per row | ≈ 15 · ≈ 1,200 | ≤ 12 MiB by the budget | each figure's `capped`; a take the budget can't afford reads fewer and says capped |
 | `people.history` | target; counts; the person's rows (`capped` 2 MiB real); verdicts ×3 (`takeCapped`), each its action row (`measured`); flags ×2, each its deciding row (`measured`); per merged row: actor and target name (People rows, memoized), undo state (main's engine: `undoRowOf` ≤ 16, the newest row, the content's author stamp, the person's row) | per item · ≤ `limit` (≤ 100) a source; per merged row ≤ 100 | sources ≤ 7 + 500 measured; rows ≈ 6 a row → ≤ 1,100 · ≤ 3,000 | sources within the budget; **the undo engine's per-row reads are main's, unbudgeted** (audit rows uncapped; a report at its worst) | a source cut keeps its horizon; `capped` |
 | `people.decisions` | one `paginate` (`capped` 2 MiB real, 2,000 scanned); per row as History | per row · ≤ 100 | ≤ 700 · ≤ 3,600 | the page within its cap; the engine's per-row reads as above | `isDone: false` |
-| `people.staffStats` | target; marker; role rows walked one at a time first (`measured`, ≤ 50 a verb); one `paginate` of the nine weeks' decisions (`capped` 4 MiB real, 2,000); per decision its chain's first row when not in the page (`measured`); per filed decision its filing (`measured`, older rows only) | per decision · ≤ 2,000, budget-stopped | ≤ 3,500 · ≤ 28,000 by the budget | ≤ 12 MiB by the budget | `undoneByOthers.capped`, `timeToDecide.capped` / `medianMs: null`, `tenureCapped` — never a throw. **Reshaped:** chains are read from stored facts (no walk); the season moved to its own query |
-| `people.staffSeason` (new) | target; marker; one `paginate` of the season's own range (`capped` 4 MiB real, 2,000); per decision its chain's first row when not in the page; per takedown its verdict, the ending row and that row's chain (`measured`) | per decision · ≤ 600 checked (the query's time bound), budget-stopped | ≤ 2,403 · ≤ 4,402 | ≤ 12 MiB by the budget | `overturned.capped` — never a throw; a season no one can name is this season (`resolveSeason`) |
+| `people.staffStats` | target; marker; role rows walked one at a time first (`measured`, ≤ 50 a verb); one `paginate` of the nine weeks' decisions (`capped` 4 MiB real, 2,000); per decision its chain's first row when not in the page, then per filed decision its filing (older rows only) — each set in page order, in waves (`ReadBudget.waves`, B01-4c), ≤ 400 reads together | per decision · ≤ 2,000, budget-stopped | ≤ 3,500 · ≤ 28,000 by the budget | ≤ 12 MiB by the budget | `undoneByOthers.capped`, `timeToDecide.capped` / `medianMs: null`, `tenureCapped` — never a throw. **Reshaped:** chains are read from stored facts (no walk); the season moved to its own query |
+| `people.staffSeason` (new) | target; marker; one `paginate` of the season's own range (`capped` 4 MiB real, 2,000); per decision its chain's first row when not in the page; per takedown its verdict, the ending row and that row's chain — each step for every row in page order, in waves (`ReadBudget.waves`, B01-4c) | per decision · ≤ 600 checked (the query's time bound), budget-stopped | ≤ 2,403 · ≤ 4,402 | ≤ 12 MiB by the budget | `overturned.capped` — never a throw; a season no one can name is this season (`resolveSeason`) |
 | `people.reportTrend` | target; one `paginate` (`capped` 8 MiB real, 3,000) | none | 2 · 3,001 | 9 MiB | `capped`, `monthsCapped` |
 | `contentRecord.personVerdicts` | as before (charged by `lib/readBudget`, guarded) | — | — | — | a short page is not the end |
 | `peopleJobs.parkedLapses` | one `paginate` (`capped` 8 MiB real) | none | 1 · 50 | 8 MiB | `isDone: false` |
@@ -2540,9 +2540,9 @@ Every shape change is additive except where noted.
   parked before the mirror existed, so Machinery's count is whole within a day of deploy. The other
   walks this PR adds were checked: the presence prune deletes what it reads (no kept rows), the sweep
   and the retry walk their whole range a run.
-- **The time axis is owed, in its own PR.** A query has one second, and `people.decisions` still awaits
-  its rows one after another: about 480 ms for a page of 50, measured on dev, from roughly three point
-  reads a row. So do History, the person page's flag labels, staffStats' and staffSeason's per-row
+- **The time axis is owed, in its own PR** (landed in B01-4c, below). A query has one second, and
+  `people.decisions` awaited its rows one after another: about 480 ms for a page of 50, measured on
+  dev, from roughly three point reads a row. So do History, the person page's flag labels, staffStats' and staffSeason's per-row
   checks and a queue lane's rows. The fix builds on the shared reservation B01-3i landed (#128:
   `ReadBudget.measured` reserving a read's worst case and handing back the difference, and
   `undoStates` reading a page's undo states in waves), so one budget has one rule. It comes next as
@@ -2639,6 +2639,54 @@ No recurring job composes a reason from stored text today: the lapse sweep, the 
 the hazard auto-merge and the erasure write fixed reasons; the auto-delist and the catalog absorption
 that do compose run from the ETL and operator writes. A composed reason can't fail its write, so none
 could be parked by it.
+
+**B01-4c (2026-11-15): the People reads in rounds, not rows** (after #125, on B01-3i's
+`undoStates` and `ReadBudget.waves`; no new concurrency primitive — `lib/readBudget.ts` is main's).
+Every People read that awaited its rows one after another now reads a step for all of them at once,
+in page order, in waves over the request's budget: what the budget reaches depends only on the page's
+order, never on the order reads settle in. Counted structurally in `undoRounds.test.ts` (a round is
+a database call started with none in flight), each against a stated bound; *before* is the serial
+reads the old loops made for the same data:
+
+| Read | Before | Now | Bound |
+| --- | --- | --- | --- |
+| A Decisions page of 50 on one target (History shapes the same way) | a few a row | 3 | History's `PAGE_ROUNDS` (8) |
+| The worst Decisions page: 46 refusals on distinct targets | a few a row | 9 | History's worst (`WORST_PAGE_ROUNDS`) |
+| A staffer's week: 200 undo roots outside the read, 200 filing times | over 400 | 56 | 58 |
+| A staffer's season: 100 hides each restored by someone else | over 200 | 29 | 34 |
+| The person page's labels: 20 flagged Reports on 20 lakes, on a whole request budget | 40 | 4 | 4 |
+| A queue lane's people: 200 | 200 | 1 | 1 |
+
+- **Decisions and History** (`shapeRows`): the undo states in one `undoStates` reading, the labels
+  once per target through `auditTargetLabels` (a rowless person's charge waits for the undo states),
+  the actors once per person — all at once, as `moderation.listActions` takes its page.
+- **A staffer's week** (`staffStats`): the chain roots not in hand (`lib/staffTenure.readRoots`) and
+  the older rows' filing times (`readFiledAts`), each a page read in waves; the 400-read time bound
+  stays, now as a cap on what is read. A row with its answer in hand is never capped by it.
+- **A staffer's season** (`staffSeason`): the reversals a step at a time for every row — roots,
+  verdicts (small: one wave), the rows that ended them, their roots.
+- **The person page's flag labels**: two passes of waves — every flag's way to its lake, in page
+  order, then each lake's name once, in the order the flags first reach it. A name is reserved once
+  a lake, never once a flag, so a wave holds as many flags as the budget left holds their steps (one
+  wave item carrying both was two rounds a wave at half the width: on what the person page leaves,
+  a flag or two a wave, hardly faster than the loop it replaced). The name is now charged its real
+  weight and handed back, where a fixed reservation per lake held a document each, so twenty lakes
+  are all named where about ten were. Past the budget, a flag is unlabeled when its way or its lake's
+  name didn't fit: a later flag on a lake already named still is.
+- **A queue lane's people** (`listablePeople`): one wave of light rows.
+- The labels' bound is measured on a whole request budget; on the person page they run after its
+  other reads (about 3.5 to 5.5 MiB left in the People tests), so three to five go to a wave there —
+  still a round a wave.
+- A wave reserves each item's worst case, so a page of audit-row reads (a document's worth each) goes
+  four or five to a wave in what a page leaves; the steps that read small rows take one.
+- Each test also reads its page under a different settling order and expects the same answer;
+  Decisions' takes pinned fast-check seeds plus one fresh run over a page whose budget reaches only
+  some rows. The past-budget answers — the roots, a season's endings, the labels, a queue's people —
+  are tested to stop in page order the same way, and a first row since gone (an undo's, or a
+  reversal's) to be judged on its own.
+- **Owed:** the wall-clock check on dev (Decisions at 50 rows was about 480 ms; History, on the same
+  shape, 110–200 ms) waits for dev access. Still serial, and small: the status note's walk (at most
+  ten rows) and the tenure walk (`readTenure`, its role rows).
 
 ### The B01-2 server register (owed to the server agent)
 
