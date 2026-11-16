@@ -33,14 +33,13 @@ import { createFileRoute, Link } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import type maplibregl from 'maplibre-gl';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AdminEmpty, AdminPageHeader, errorText, ToolCard } from '../components/admin/adminUi';
+import { AdminEmpty, AdminPageHeader, ToolCard } from '../components/admin/adminUi';
 import { BayRequestQueue, type BayRequestRow } from '../components/admin/BayRequestQueue';
 import { LakeEditorMap } from '../components/admin/LakeEditorMap';
 import { type EditorLandmark, LandmarkTool } from '../components/admin/LandmarkTool';
 import { PostedAccessTool } from '../components/admin/PostedAccessEditor';
-import { PagePlace, usePlace } from '../components/admin/place';
 import { ReasonDialog } from '../components/admin/ReasonDialog';
-import { useSaidMutation } from '../components/admin/saidMutation';
+import { useSaidMutation } from '../components/admin/said';
 import { WaterBodyTimeline } from '../components/admin/WaterBodyTimeline';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -93,8 +92,9 @@ function LakeEditor() {
 
   const [draft, setDraft] = useState<GeoJSON.Polygon | GeoJSON.MultiPolygon | null>(null);
   const [suggested, setSuggested] = useState<LatLng[]>([]);
+  // The editor's banner: a landed write's outcome, and the page's own checks. A server's refusal is
+  // never said here — it is the net's toast (D268), wherever the moderator is when it comes.
   const [banner, setBanner] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
-  const pagePlace = usePlace();
   const [editorImagery, setEditorImagery] = useState(false);
   // The live map handle, so the lazily-created draw control can attach to the canvas. A ref on the
   // component rather than a module-level object: a module singleton outlives the route, holding a
@@ -139,211 +139,207 @@ function LakeEditor() {
   if (!result.available) return <RestoreGate waterBodyId={waterBodyId} />;
 
   return (
-    // The page's place: its banner says every tool's refusal while the editor is drawn; once it
-    // isn't (a read failing, the body going), the net says it in a toast.
-    <PagePlace.Provider value={pagePlace}>
-      <div ref={pagePlace.ref} className="flex flex-col gap-4">
-        <AdminPageHeader
-          title={body.name}
-          subtitle={`${body.type}${body.states?.length ? ` · ${body.states.join(', ')}` : ''} — every per-body lever, on one canvas.`}
-        />
-        <Link
-          to="/admin/water"
-          className="text-foreground-muted text-sm underline underline-offset-2"
+    <div className="flex flex-col gap-4">
+      <AdminPageHeader
+        title={body.name}
+        subtitle={`${body.type}${body.states?.length ? ` · ${body.states.join(', ')}` : ''} — every per-body lever, on one canvas.`}
+      />
+      <Link
+        to="/admin/water"
+        className="text-foreground-muted text-sm underline underline-offset-2"
+      >
+        ← Back to the water queues
+      </Link>
+
+      {banner ? (
+        <p
+          className={`rounded-md border px-3 py-2 text-sm ${
+            banner.tone === 'ok'
+              ? 'border-border bg-surface-muted text-foreground'
+              : 'border-danger/40 bg-danger/10 text-danger'
+          }`}
+          role={banner.tone === 'error' ? 'alert' : 'status'}
         >
-          ← Back to the water queues
-        </Link>
+          {banner.text}
+        </p>
+      ) : null}
 
-        {banner ? (
-          <p
-            className={`rounded-md border px-3 py-2 text-sm ${
-              banner.tone === 'ok'
-                ? 'border-border bg-surface-muted text-foreground'
-                : 'border-danger/40 bg-danger/10 text-danger'
-            }`}
-            role={banner.tone === 'error' ? 'alert' : 'status'}
-          >
-            {banner.text}
-          </p>
-        ) : null}
-
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
-          <div className="relative h-[70vh] min-h-96 overflow-hidden rounded-lg border border-border">
-            {/* Unmasked aerial under the editor (A06e Workstream 5). Off by default: tracing against
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="relative h-[70vh] min-h-96 overflow-hidden rounded-lg border border-border">
+          {/* Unmasked aerial under the editor (A06e Workstream 5). Off by default: tracing against
               the vector map is the ordinary case, and a photograph is what you reach for when the
               stored shoreline and the real one disagree. */}
-            <label className="absolute top-2 right-2 z-10 flex cursor-pointer items-center gap-2 rounded-md bg-background/95 px-2 py-1 text-xs shadow-lg">
-              <input
-                type="checkbox"
-                checked={editorImagery}
-                onChange={(event) => setEditorImagery(event.target.checked)}
-                className="size-3.5"
-              />
-              Aerial
-            </label>
-            <LakeEditorMap
-              imagery={editorImagery}
-              data={{
-                body: {
-                  _id: body._id,
-                  name: body.name,
-                  type: body.type,
-                  polygon: body.polygon as GeoJSON.Geometry,
-                  bbox: body.bbox,
-                },
-                subAreas: (subAreas ?? [])
-                  .filter((s) => !s.removed)
-                  .map((s) => ({
-                    _id: s._id,
-                    waterBodyId: body._id,
-                    name: s.name,
-                    polygon: s.polygon as GeoJSON.Geometry,
-                    centroid: s.centroid,
-                    // A stale mouth is not the bay's edge any more — drawing it would say it was. Nor,
-                    // until a moderator checks it, is the mouth of a bay whose old outline was kept
-                    // (D215): it describes the re-fit, not the edge it would be drawn on.
-                    ...(s.mouth && !s.mouthStale && s.mouthReview?.outcome !== 'kept'
-                      ? { mouth: s.mouth }
-                      : {}),
-                  })),
-                putIns: putIns ?? [],
-                parkingAreas: access?.parking ?? [],
-                samplePoints: body.weatherSamplePoints ?? [],
-                // One draft slot on the map, shared by the two tools that produce a shape. They can't
-                // both be armed — arming either clears the other — so there is never a shape on screen
-                // whose owner is ambiguous.
-                draftPolygon: draft ?? featureDraft,
-                // Every pending point, drawn hollow — the canvas's existing "unsaved proposal"
-                // convention. Which tool owns which is answered by the card holding it, each of which
-                // prints its own coordinate; the map's job here is only to say "not saved yet".
-                landmarks: liveLandmarks,
-                review,
-                suggestedPoints: [suggested, featurePoint, putInPoint, parkingPoint, landmarkPoint]
-                  .flat()
-                  .filter((p): p is LatLng => p !== null),
-              }}
-              onMapClick={(coord) => {
-                // One-shot: consume the click and disarm, so a stray second click can't move the point
-                // an operator has already started filling a form around.
-                if (placing === 'feature') setFeaturePoint(coord);
-                // **Snapped in the preview, not just on save** (A06f). The server snaps a put-in to the
-                // shoreline before storing it, so a raw click drawn on the canvas would promise a pin
-                // where one is never going to be — and the gap is most visible for the mid-lake click
-                // that most needs snapping. What you see hollow is where it lands.
-                else if (placing === 'put_in')
-                  setPutInPoint(snapToEdge(coord, body.polygon as unknown as GeoJSON.Polygon));
-                else if (placing === 'parking') setParkingPoint(coord);
-                // A landmark sits where its label should: an island's middle, a point's tip — never
-                // snapped, since half of them are on the water and half on the land beside it.
-                else if (placing === 'landmark') setLandmarkPoint(coord);
-                else return;
-                setPlacing(null);
-              }}
-              onReady={(map) => {
-                drawTargetRef.current = map;
-              }}
+          <label className="absolute top-2 right-2 z-10 flex cursor-pointer items-center gap-2 rounded-md bg-background/95 px-2 py-1 text-xs shadow-lg">
+            <input
+              type="checkbox"
+              checked={editorImagery}
+              onChange={(event) => setEditorImagery(event.target.checked)}
+              className="size-3.5"
             />
-          </div>
+            Aerial
+          </label>
+          <LakeEditorMap
+            imagery={editorImagery}
+            data={{
+              body: {
+                _id: body._id,
+                name: body.name,
+                type: body.type,
+                polygon: body.polygon as GeoJSON.Geometry,
+                bbox: body.bbox,
+              },
+              subAreas: (subAreas ?? [])
+                .filter((s) => !s.removed)
+                .map((s) => ({
+                  _id: s._id,
+                  waterBodyId: body._id,
+                  name: s.name,
+                  polygon: s.polygon as GeoJSON.Geometry,
+                  centroid: s.centroid,
+                  // A stale mouth is not the bay's edge any more — drawing it would say it was. Nor,
+                  // until a moderator checks it, is the mouth of a bay whose old outline was kept
+                  // (D215): it describes the re-fit, not the edge it would be drawn on.
+                  ...(s.mouth && !s.mouthStale && s.mouthReview?.outcome !== 'kept'
+                    ? { mouth: s.mouth }
+                    : {}),
+                })),
+              putIns: putIns ?? [],
+              parkingAreas: access?.parking ?? [],
+              samplePoints: body.weatherSamplePoints ?? [],
+              // One draft slot on the map, shared by the two tools that produce a shape. They can't
+              // both be armed — arming either clears the other — so there is never a shape on screen
+              // whose owner is ambiguous.
+              draftPolygon: draft ?? featureDraft,
+              // Every pending point, drawn hollow — the canvas's existing "unsaved proposal"
+              // convention. Which tool owns which is answered by the card holding it, each of which
+              // prints its own coordinate; the map's job here is only to say "not saved yet".
+              landmarks: liveLandmarks,
+              review,
+              suggestedPoints: [suggested, featurePoint, putInPoint, parkingPoint, landmarkPoint]
+                .flat()
+                .filter((p): p is LatLng => p !== null),
+            }}
+            onMapClick={(coord) => {
+              // One-shot: consume the click and disarm, so a stray second click can't move the point
+              // an operator has already started filling a form around.
+              if (placing === 'feature') setFeaturePoint(coord);
+              // **Snapped in the preview, not just on save** (A06f). The server snaps a put-in to the
+              // shoreline before storing it, so a raw click drawn on the canvas would promise a pin
+              // where one is never going to be — and the gap is most visible for the mid-lake click
+              // that most needs snapping. What you see hollow is where it lands.
+              else if (placing === 'put_in')
+                setPutInPoint(snapToEdge(coord, body.polygon as unknown as GeoJSON.Polygon));
+              else if (placing === 'parking') setParkingPoint(coord);
+              // A landmark sits where its label should: an island's middle, a point's tip — never
+              // snapped, since half of them are on the water and half on the land beside it.
+              else if (placing === 'landmark') setLandmarkPoint(coord);
+              else return;
+              setPlacing(null);
+            }}
+            onReady={(map) => {
+              drawTargetRef.current = map;
+            }}
+          />
+        </div>
 
-          <div className="flex flex-col gap-4 overflow-y-auto">
-            <NameTool body={body} onResult={setBanner} />
-            <ProminenceTool body={body} onResult={setBanner} />
-            <SubAreaTool
-              waterBodyId={waterBodyId}
-              parentPolygon={body.polygon as unknown as GeoJSON.Polygon | GeoJSON.MultiPolygon}
-              subAreas={subAreas ?? []}
-              draft={draft}
-              setDraft={setDraft}
-              mapRef={drawTargetRef}
-              promotion={promotion}
-              onPromotionTaken={() => setPromotion(null)}
-              onResult={setBanner}
-            />
-            <LandmarkTool
-              waterBodyId={waterBodyId}
-              landmarks={landmarks}
-              armed={placing === 'landmark'}
-              onArm={(on) => setPlacing(on ? 'landmark' : null)}
-              point={landmarkPoint}
-              onClearPoint={() => setLandmarkPoint(null)}
-              onFocus={(l) =>
-                drawTargetRef.current?.flyTo({
-                  center: [l.point.lng, l.point.lat],
-                  zoom: Math.max(drawTargetRef.current.getZoom(), 13),
-                })
-              }
-              onPromote={setPromotion}
-              onPlacePoint={(point) => {
-                setPlacing(null);
-                setLandmarkPoint(point);
-                drawTargetRef.current?.flyTo({ center: [point.lng, point.lat], zoom: 14 });
-              }}
-              onReview={setReview}
-              onResult={setBanner}
-            />
-            <DepthTool body={body} onResult={setBanner} />
-            <SamplePointTool
-              body={body}
-              suggested={suggested}
-              setSuggested={setSuggested}
-              onResult={setBanner}
-            />
-            {/* The three placement tools each read the one `placing` slot, so arming any of them is
+        <div className="flex flex-col gap-4 overflow-y-auto">
+          <NameTool body={body} onResult={setBanner} />
+          <ProminenceTool body={body} onResult={setBanner} />
+          <SubAreaTool
+            waterBodyId={waterBodyId}
+            parentPolygon={body.polygon as unknown as GeoJSON.Polygon | GeoJSON.MultiPolygon}
+            subAreas={subAreas ?? []}
+            draft={draft}
+            setDraft={setDraft}
+            mapRef={drawTargetRef}
+            promotion={promotion}
+            onPromotionTaken={() => setPromotion(null)}
+            onResult={setBanner}
+          />
+          <LandmarkTool
+            waterBodyId={waterBodyId}
+            landmarks={landmarks}
+            armed={placing === 'landmark'}
+            onArm={(on) => setPlacing(on ? 'landmark' : null)}
+            point={landmarkPoint}
+            onClearPoint={() => setLandmarkPoint(null)}
+            onFocus={(l) =>
+              drawTargetRef.current?.flyTo({
+                center: [l.point.lng, l.point.lat],
+                zoom: Math.max(drawTargetRef.current.getZoom(), 13),
+              })
+            }
+            onPromote={setPromotion}
+            onPlacePoint={(point) => {
+              setPlacing(null);
+              setLandmarkPoint(point);
+              drawTargetRef.current?.flyTo({ center: [point.lng, point.lat], zoom: 14 });
+            }}
+            onReview={setReview}
+            onResult={setBanner}
+          />
+          <DepthTool body={body} onResult={setBanner} />
+          <SamplePointTool
+            body={body}
+            suggested={suggested}
+            setSuggested={setSuggested}
+            onResult={setBanner}
+          />
+          {/* The three placement tools each read the one `placing` slot, so arming any of them is
               also what disarms the other two — there is no state in which a click is ambiguous. */}
-            <PutInTool
-              waterBodyId={waterBodyId}
-              putIns={putIns ?? []}
-              armed={placing === 'put_in'}
-              onArm={(on) => setPlacing(on ? 'put_in' : null)}
-              point={putInPoint}
-              onClearPoint={() => setPutInPoint(null)}
-              onResult={setBanner}
-            />
-            <AccessTool
-              waterBodyId={waterBodyId}
-              armed={placing === 'parking'}
-              onArm={(on) => setPlacing(on ? 'parking' : null)}
-              point={parkingPoint}
-              onClearPoint={() => setParkingPoint(null)}
-              onResult={setBanner}
-            />
-            <BodyFeatureTool
-              waterBodyId={waterBodyId}
-              features={features ?? []}
-              draft={featureDraft}
-              setDraft={setFeatureDraft}
-              point={featurePoint}
-              setPoint={setFeaturePoint}
-              arming={placing === 'feature'}
-              setArming={(on) => setPlacing(on ? 'feature' : null)}
-              mapRef={drawTargetRef}
-              onResult={setBanner}
-            />
-            <HazardTool hazards={hazards ?? []} />
-            <RecurrenceTool waterBodyId={waterBodyId} onResult={setBanner} />
-            <PromotionTool waterBodyId={waterBodyId} onResult={setBanner} />
-            <TrackTool tracks={Array.isArray(tracks) ? [] : (tracks?.tracks ?? [])} />
-            {/* What the sign says (A06e) — beside the reference links, because both are things a human
+          <PutInTool
+            waterBodyId={waterBodyId}
+            putIns={putIns ?? []}
+            armed={placing === 'put_in'}
+            onArm={(on) => setPlacing(on ? 'put_in' : null)}
+            point={putInPoint}
+            onClearPoint={() => setPutInPoint(null)}
+            onResult={setBanner}
+          />
+          <AccessTool
+            waterBodyId={waterBodyId}
+            armed={placing === 'parking'}
+            onArm={(on) => setPlacing(on ? 'parking' : null)}
+            point={parkingPoint}
+            onClearPoint={() => setParkingPoint(null)}
+            onResult={setBanner}
+          />
+          <BodyFeatureTool
+            waterBodyId={waterBodyId}
+            features={features ?? []}
+            draft={featureDraft}
+            setDraft={setFeatureDraft}
+            point={featurePoint}
+            setPoint={setFeaturePoint}
+            arming={placing === 'feature'}
+            setArming={(on) => setPlacing(on ? 'feature' : null)}
+            mapRef={drawTargetRef}
+            onResult={setBanner}
+          />
+          <HazardTool hazards={hazards ?? []} />
+          <RecurrenceTool waterBodyId={waterBodyId} onResult={setBanner} />
+          <PromotionTool waterBodyId={waterBodyId} onResult={setBanner} />
+          <TrackTool tracks={Array.isArray(tracks) ? [] : (tracks?.tracks ?? [])} />
+          {/* What the sign says (A06e) — beside the reference links, because both are things a human
               read somewhere and typed in, and neither is derivable from the row. */}
-            <ToolCard title="Posted rules">
-              <PostedAccessTool body={body} onResult={setBanner} />
-            </ToolCard>
-            {/* Beside the links because that is what it governs: the Copernicus row in the drawer's
+          <ToolCard title="Posted rules">
+            <PostedAccessTool body={body} onResult={setBanner} />
+          </ToolCard>
+          {/* Beside the links because that is what it governs: the Copernicus row in the drawer's
               link list, not the aerial reveal on the map. */}
-            <SatelliteTool body={body} onResult={setBanner} />
-            <ReferenceLinkTool body={body} onResult={setBanner} />
-            {/* The one lever here that removes rather than refines, so it sits below all of them and
+          <SatelliteTool body={body} onResult={setBanner} />
+          <ReferenceLinkTool body={body} onResult={setBanner} />
+          {/* The one lever here that removes rather than refines, so it sits below all of them and
               above only the log that records it. */}
-            <RemovalTool body={body} onResult={setBanner} />
-            {/* Last in the column (A06c §6.1): the log answers "what happened to this lake", which is a
+          <RemovalTool body={body} onResult={setBanner} />
+          {/* Last in the column (A06c §6.1): the log answers "what happened to this lake", which is a
               question you ask after looking at the levers, not before. */}
-            <ToolCard title="History">
-              <WaterBodyTimeline waterBodyId={waterBodyId} />
-            </ToolCard>
-          </div>
+          <ToolCard title="History">
+            <WaterBodyTimeline waterBodyId={waterBodyId} />
+          </ToolCard>
         </div>
       </div>
-    </PagePlace.Provider>
+    </div>
   );
 }
 
@@ -432,8 +428,8 @@ function NameTool({
                     try {
                       await setName({ waterBodyId: body._id as Id<'waterBodies'>, name: value });
                       onResult({ tone: 'ok', text: `Now displaying "${value}".` });
-                    } catch (err) {
-                      onResult({ tone: 'error', text: errorText(err) });
+                    } catch {
+                      // Refused: said in its toast (the net, D268).
                     }
                   }}
                 >
@@ -457,8 +453,8 @@ function NameTool({
                 try {
                   await setName({ waterBodyId: body._id as Id<'waterBodies'>, name: null });
                   onResult({ tone: 'ok', text: 'Back to the catalog ranking.' });
-                } catch (err) {
-                  onResult({ tone: 'error', text: errorText(err) });
+                } catch {
+                  // Refused: said in its toast (the net, D268).
                 }
               }}
             >
@@ -505,8 +501,8 @@ function CommunityNameTool({
             try {
               await setName({ waterBodyId: body._id as Id<'waterBodies'>, name: trimmed });
               onResult({ tone: 'ok', text: `Named "${trimmed}".` });
-            } catch (err) {
-              onResult({ tone: 'error', text: errorText(err) });
+            } catch {
+              // Refused: said in its toast (the net, D268).
             }
           }}
         >
@@ -527,8 +523,8 @@ function CommunityNameTool({
                   await setName({ waterBodyId: body._id as Id<'waterBodies'>, name: null });
                   setDraft('');
                   onResult({ tone: 'ok', text: 'Back to unnamed.' });
-                } catch (err) {
-                  onResult({ tone: 'error', text: errorText(err) });
+                } catch {
+                  // Refused: said in its toast (the net, D268).
                 }
               }}
             >
@@ -586,8 +582,8 @@ function ProminenceTool({
                 curatedBoost: parsed,
               });
               onResult({ tone: 'ok', text: 'Prominence saved.' });
-            } catch (err) {
-              onResult({ tone: 'error', text: errorText(err) });
+            } catch {
+              // Refused: said in its toast (the net, D268).
             }
           }}
         >
@@ -711,8 +707,8 @@ function DepthTool({ body, onResult }: { body: DepthBody; onResult: SetBanner })
     try {
       await run();
       onResult({ tone: 'ok', text });
-    } catch (err) {
-      onResult({ tone: 'error', text: errorText(err) });
+    } catch {
+      // Refused: said in its toast (the net, D268).
     }
   };
 
@@ -1131,8 +1127,8 @@ function SubAreaTool({
         setAliases('');
       }
       disarmAll();
-    } catch (err) {
-      onResult({ tone: 'error', text: errorText(err) });
+    } catch {
+      // Refused: said in its toast (the net, D268).
     }
   };
 
@@ -1170,8 +1166,8 @@ function SubAreaTool({
       setDraft(null);
       setRedrawTarget(null);
       controlRef.current?.clear();
-    } catch (err) {
-      onResult({ tone: 'error', text: errorText(err) });
+    } catch {
+      // Refused: said in its toast (the net, D268).
     }
   };
 
@@ -1242,8 +1238,8 @@ function SubAreaTool({
                     try {
                       await rename({ subAreaId: bay._id as Id<'waterBodySubAreas'>, name: next });
                       onResult({ tone: 'ok', text: 'Renamed. Labels are being re-stamped.' });
-                    } catch (err) {
-                      onResult({ tone: 'error', text: errorText(err) });
+                    } catch {
+                      // Refused: said in its toast (the net, D268).
                     }
                   }}
                 >
@@ -1259,8 +1255,8 @@ function SubAreaTool({
                       } else {
                         await remove({ subAreaId: bay._id as Id<'waterBodySubAreas'> });
                       }
-                    } catch (err) {
-                      onResult({ tone: 'error', text: errorText(err) });
+                    } catch {
+                      // Refused: said in its toast (the net, D268).
                     }
                   }}
                 >
@@ -1392,18 +1388,14 @@ function SubAreaTool({
           try {
             await approveRequest({ requestId: row.requestId as Id<'waterBodyRequests'> });
             onResult({ tone: 'ok', text: `Approved — “${row.name}” answers the ask.` });
-          } catch (err) {
-            onResult({ tone: 'error', text: errorText(err) });
+          } catch {
+            // Refused: said in its toast (the net, D268).
           }
         }}
         onDecline={async (row, note) => {
-          try {
-            await declineRequest({ requestId: row.requestId as Id<'waterBodyRequests'>, note });
-            onResult({ tone: 'ok', text: `Declined — “${row.name}” stays a reference point.` });
-          } catch (err) {
-            onResult({ tone: 'error', text: errorText(err) });
-            throw err;
-          }
+          // Refused: the net says it in a toast and rejects, so the dialog stays open.
+          await declineRequest({ requestId: row.requestId as Id<'waterBodyRequests'>, note });
+          onResult({ tone: 'ok', text: `Declined — “${row.name}” stays a reference point.` });
         }}
       />
     </ToolCard>
@@ -1481,8 +1473,8 @@ function SamplePointTool({
                 await save({ waterBodyId: body._id as Id<'waterBodies'>, points: suggested });
                 setSuggested([]);
                 onResult({ tone: 'ok', text: 'Sample points saved.' });
-              } catch (err) {
-                onResult({ tone: 'error', text: errorText(err) });
+              } catch {
+                // Refused: said in its toast (the net, D268).
               }
             }}
           >
@@ -1501,8 +1493,8 @@ function SamplePointTool({
             try {
               await save({ waterBodyId: body._id as Id<'waterBodies'>, points: [] });
               onResult({ tone: 'ok', text: 'Cleared — back to the centroid default.' });
-            } catch (err) {
-              onResult({ tone: 'error', text: errorText(err) });
+            } catch {
+              // Refused: said in its toast (the net, D268).
             }
           }}
         >
@@ -1521,30 +1513,24 @@ function SamplePointTool({
  * screen would be editing a lake that draws nowhere.
  */
 function RestoreGate({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
-  // Its place: the gate, which says its own refusal — it is drawn instead of the editor, outside
-  // the editor's page place, so without one the net would say every refusal a second time.
-  const place = usePlace();
-  const restore = useSaidMutation(api.waterBodies.restore, place);
-  const [error, setError] = useState<string | null>(null);
+  // A refusal is the net's toast (D268): a `reject`ed or `merge`d body lands there too, and the
+  // server's refusal says which — "not removed" is the honest answer for a body unlisted otherwise.
+  const restore = useSaidMutation(api.waterBodies.restore);
 
   return (
-    <div ref={place.ref} className="flex flex-col items-start gap-3">
+    <div className="flex flex-col items-start gap-3">
       <AdminEmpty>
         This body isn’t on the map (removed, rejected or merged). Restore it before editing — a
         sub-area drawn on an unlisted lake would have nowhere to render.
       </AdminEmpty>
-      {error ? <p className="text-danger text-sm">{error}</p> : null}
       <Button
         size="sm"
         variant="outline"
         onClick={async () => {
-          setError(null);
           try {
             await restore({ waterBodyId });
-          } catch (err) {
-            // A `reject`ed or `merge`d body lands here too, and the server's refusal says which —
-            // "not removed" is the honest answer for a body that is unlisted for another reason.
-            setError(errorText(err));
+          } catch {
+            // Refused: said in its toast.
           }
         }}
       >
@@ -1621,8 +1607,8 @@ function RemovalTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult: S
             try {
               await restore({ waterBodyId: body._id as Id<'waterBodies'> });
               onResult({ tone: 'ok', text: 'Restored — active again, and re-scored.' });
-            } catch (err) {
-              onResult({ tone: 'error', text: errorText(err) });
+            } catch {
+              // Refused: said in its toast (the net, D268).
             }
           }}
         >
@@ -1646,8 +1632,8 @@ function RemovalTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult: S
             try {
               await setStanding({ waterBodyId: body._id as Id<'waterBodies'>, standing: 'active' });
               onResult({ tone: 'ok', text: 'Back on the active map.' });
-            } catch (err) {
-              onResult({ tone: 'error', text: errorText(err) });
+            } catch {
+              // Refused: said in its toast (the net, D268).
             }
           }}
         >
@@ -1677,21 +1663,16 @@ function RemovalTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult: S
             confirmVariant="secondary"
             requireReason={false}
             reasonPlaceholder="Optional note for the audit log"
-            // Its refusal is the page's banner, not the dialog's.
-            refusalOnPage
             onConfirm={async (auditReason) => {
-              try {
-                await setStanding({
-                  waterBodyId: body._id as Id<'waterBodies'>,
-                  standing: 'dormant',
-                  ...(note.trim() ? { note: note.trim() } : {}),
-                  ...(auditReason?.trim() ? { reason: auditReason.trim() } : {}),
-                });
-                setNote('');
-                onResult({ tone: 'ok', text: 'Set dormant.' });
-              } catch (err) {
-                onResult({ tone: 'error', text: errorText(err) });
-              }
+              // Refused: the net says it in a toast and rejects, so the dialog stays open.
+              await setStanding({
+                waterBodyId: body._id as Id<'waterBodies'>,
+                standing: 'dormant',
+                ...(note.trim() ? { note: note.trim() } : {}),
+                ...(auditReason?.trim() ? { reason: auditReason.trim() } : {}),
+              });
+              setNote('');
+              onResult({ tone: 'ok', text: 'Set dormant.' });
             }}
           />
         </div>
@@ -1723,17 +1704,13 @@ function RemovalTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult: S
             confirmVariant="secondary"
             requireReason={false}
             reasonPlaceholder="Optional note for the audit log"
-            refusalOnPage
             onConfirm={async () => {
-              try {
-                await remove({
-                  waterBodyId: body._id as Id<'waterBodies'>,
-                  reason: reason as 'landowner_request',
-                });
-                onResult({ tone: 'ok', text: 'Taken off the map.' });
-              } catch (err) {
-                onResult({ tone: 'error', text: errorText(err) });
-              }
+              // Refused: the net says it in a toast and rejects, so the dialog stays open.
+              await remove({
+                waterBodyId: body._id as Id<'waterBodies'>,
+                reason: reason as 'landowner_request',
+              });
+              onResult({ tone: 'ok', text: 'Taken off the map.' });
             }}
           />
           <p className="text-foreground-muted text-xs">
@@ -1801,8 +1778,8 @@ function PutInTool({
       onClearPoint();
       setName('');
       onResult({ tone: 'ok', text: 'Official put-in placed.' });
-    } catch (err) {
-      onResult({ tone: 'error', text: errorText(err) });
+    } catch {
+      // Refused: said in its toast (the net, D268).
     } finally {
       setBusy(false);
     }
@@ -1834,14 +1811,10 @@ function PutInTool({
                 description="Writes a suppression row at this coordinate, so it stays hidden even after the derived clusters are recomputed. Reversible only by an admin."
                 confirmLabel="Hide"
                 confirmVariant="secondary"
-                refusalOnPage
                 onConfirm={async (reason) => {
-                  try {
-                    await hide({ waterBodyId, coord: p.coord, reason });
-                    onResult({ tone: 'ok', text: 'Put-in hidden.' });
-                  } catch (err) {
-                    onResult({ tone: 'error', text: errorText(err) });
-                  }
+                  // Refused: the net says it in a toast and rejects, so the dialog stays open.
+                  await hide({ waterBodyId, coord: p.coord, reason });
+                  onResult({ tone: 'ok', text: 'Put-in hidden.' });
                 }}
               />
             </li>
@@ -1958,8 +1931,8 @@ function AccessTool({
       onClearPoint();
       setName('');
       onResult({ tone: 'ok', text: 'Parking area saved at the operator rung.' });
-    } catch (err) {
-      onResult({ tone: 'error', text: errorText(err) });
+    } catch {
+      // Refused: said in its toast (the net, D268).
     } finally {
       setBusy(false);
     }
@@ -1976,9 +1949,9 @@ function AccessTool({
         ...(kind ? { approachKindOverride: kind as 'hike_in' } : {}),
       });
       onResult({ tone: 'ok', text: 'Access updated.' });
-    } catch (err) {
+    } catch {
       // The D144 refusal lands here verbatim — the server writes the operator-facing sentence.
-      onResult({ tone: 'error', text: errorText(err) });
+      // Refused: said in its toast (the net, D268).
     } finally {
       setBusy(false);
     }
@@ -2208,8 +2181,8 @@ function BodyFeatureTool({
       setNote('');
       setArming(false);
       controlRef.current?.clear();
-    } catch (err) {
-      onResult({ tone: 'error', text: errorText(err) });
+    } catch {
+      // Refused: said in its toast (the net, D268).
     }
   };
 
@@ -2432,8 +2405,8 @@ function RecurrenceTool({
     try {
       await recompute({ waterBodyId });
       onResult({ tone: 'ok', text: 'Recomputed from this lake’s hazards.' });
-    } catch (err) {
-      onResult({ tone: 'error', text: errorText(err) });
+    } catch {
+      // Refused: said in its toast (the net, D268).
     } finally {
       setBusy(false);
     }
@@ -2615,8 +2588,8 @@ function PromotionTool({
         reason: `Recurring ${candidate.type.replace(/_/g, ' ')} — promoted in the pre-season pass.`,
       });
       onResult({ tone: 'ok', text: 'Promoted to a permanent body feature.' });
-    } catch (err) {
-      onResult({ tone: 'error', text: errorText(err) });
+    } catch {
+      // Refused: said in its toast (the net, D268).
     } finally {
       setBusyId(null);
     }
@@ -2712,8 +2685,8 @@ function SatelliteTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult:
     try {
       await setMode({ waterBodyId: body._id, mode: next });
       onResult({ tone: 'ok', text: `Satellite link set to ${next}.` });
-    } catch (err) {
-      onResult({ tone: 'error', text: errorText(err) });
+    } catch {
+      // Refused: said in its toast (the net, D268).
     } finally {
       setBusy(false);
     }
@@ -2787,8 +2760,8 @@ function ReferenceLinkTool({ body, onResult }: { body: Doc<'waterBodies'>; onRes
     try {
       await setLinks({ waterBodyId: body._id, links });
       onResult({ tone: 'ok', text: 'Reference links saved.' });
-    } catch (err) {
-      onResult({ tone: 'error', text: errorText(err) });
+    } catch {
+      // Refused: said in its toast (the net, D268).
     } finally {
       setBusy(false);
     }

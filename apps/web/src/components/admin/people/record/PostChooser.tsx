@@ -18,8 +18,8 @@ import {
 import { SkeletonText } from '@/components/kit/skeleton';
 
 import { type Loadable, readState } from '../../reads/consoleReads';
-import { type ChoicesRead, chooserMembers } from './recordModel';
 import type { ActOutcome } from '../person/useActing';
+import { type ChoicesRead, chooserMembers } from './recordModel';
 import { RECORD_WORDS as W } from './recordWords';
 
 /**

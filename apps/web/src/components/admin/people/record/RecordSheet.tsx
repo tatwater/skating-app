@@ -3,7 +3,6 @@ import type { Id } from '@skating/convex/dataModel';
 import { useMutation } from 'convex/react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
-
 import { loaded, read, readState, useConsoleReadSet } from '../../reads/consoleReads';
 import { useMinuteNow } from '../../shell/presence';
 import { useUndo } from '../../shell/undo';
@@ -20,7 +19,6 @@ import {
   receiptWords,
   type StandingCount,
   type StandingRow,
-  subjectName,
   type Target,
   targetKey,
 } from './recordModel';

@@ -13,8 +13,7 @@ import { Button } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
-import { errorText } from './adminUi';
-import { useSaidMutation } from './saidMutation';
+import { useSaidMutation } from './said';
 
 type Banner = { tone: 'ok' | 'error'; text: string } | null;
 
@@ -133,8 +132,8 @@ export function PostedAccessTool({
                 tone: 'ok',
                 text: rule ? `Posted rules saved for ${target.label}.` : 'Posted rules cleared.',
               });
-            } catch (err) {
-              onResult({ tone: 'error', text: errorText(err) });
+            } catch {
+              // Refused: said in its toast (the net, D268); the form keeps what was entered.
             } finally {
               setBusy(false);
             }

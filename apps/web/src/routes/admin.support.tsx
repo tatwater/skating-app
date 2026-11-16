@@ -4,7 +4,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { useState } from 'react';
 import { AdminEmpty, AdminPageHeader } from '../components/admin/adminUi';
-import { useSaidMutation } from '../components/admin/saidMutation';
+import { useSaidMutation } from '../components/admin/said';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
@@ -87,14 +87,19 @@ function AdminSupport() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => assign({ ticketId: t.id as Id<'supportTickets'> })}
+                    // Refused: said in its toast (the net); nothing else to do here.
+                    onClick={() =>
+                      void assign({ ticketId: t.id as Id<'supportTickets'> }).catch(() => {})
+                    }
                   >
                     Assign to me
                   </Button>
                   <Button
                     variant="secondary"
                     size="sm"
-                    onClick={() => resolve({ ticketId: t.id as Id<'supportTickets'> })}
+                    onClick={() =>
+                      void resolve({ ticketId: t.id as Id<'supportTickets'> }).catch(() => {})
+                    }
                   >
                     Resolve
                   </Button>

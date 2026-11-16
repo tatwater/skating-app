@@ -5,9 +5,8 @@ import { useQuery } from 'convex/react';
 import { useState } from 'react';
 import { AdminEmpty, AdminPageHeader, Table, Td, Th } from '../components/admin/adminUi';
 import { DuplicateGroupCard } from '../components/admin/DuplicateGroupCard';
-import { keepAsking } from '../components/admin/place';
 import { ReasonDialog } from '../components/admin/ReasonDialog';
-import { useSaidMutation } from '../components/admin/saidMutation';
+import { useSaidMutation } from '../components/admin/said';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -142,7 +141,8 @@ function AdminWater() {
                   <Button
                     variant="secondary"
                     size="sm"
-                    onClick={() => approve({ waterBodyId: body._id })}
+                    // Refused: said in its toast (the net).
+                    onClick={() => void approve({ waterBodyId: body._id }).catch(() => {})}
                   >
                     Approve
                   </Button>
@@ -197,20 +197,16 @@ function AdminWater() {
               // schedules a re-stamp, and two of them racing onto the same survivor is not a thing
               // worth finding out about from a queue page.
               onMerge={async (survivorId, reason) => {
-                // Every merge is the Keep dialog's, not only the first: one sent after an `await`
-                // asks the dialog's place too, so its refusal is said there (or, gone, in a toast),
-                // never in both.
-                const asked = keepAsking();
+                // A refused merge is said in its toast and stops the rest (the net rejects), so the
+                // Keep dialog stays open over its reason.
                 for (const loser of group.members) {
                   // A tombstone is already merged; the card never offers it either way.
                   if (loser._id === survivorId || loser.dedupStatus === 'merged') continue;
-                  await asked(() =>
-                    merge({
-                      survivorId,
-                      loserId: loser._id,
-                      ...(reason ? { reason } : {}),
-                    }),
-                  );
+                  await merge({
+                    survivorId,
+                    loserId: loser._id,
+                    ...(reason ? { reason } : {}),
+                  });
                 }
               }}
               onDismiss={(reason) =>

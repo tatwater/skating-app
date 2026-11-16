@@ -5,13 +5,7 @@ import {
   type RemovalReason,
   standingReasonLabel,
 } from '@skating/core';
-import {
-  type ComponentProps,
-  type FormEvent,
-  useId,
-  useRef,
-  useState,
-} from 'react';
+import { type ComponentProps, type FormEvent, useId, useRef, useState } from 'react';
 import { Badge } from '@/components/kit/badge';
 import { Button } from '@/components/kit/button';
 import { Input, InputGroup, InputGroupKbd } from '@/components/kit/input';
@@ -310,11 +304,7 @@ function PickForm({
       void run(() => onSetDormant(note.trim()));
     };
     return (
-      <form
-        data-slot="standing-form"
-        onSubmit={submit}
-        className="flex flex-col gap-(--space-2)"
-      >
+      <form data-slot="standing-form" onSubmit={submit} className="flex flex-col gap-(--space-2)">
         <span className="flex items-baseline justify-between">
           <label
             htmlFor={noteId}

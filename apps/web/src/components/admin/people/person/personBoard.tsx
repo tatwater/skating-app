@@ -7,7 +7,9 @@ import { useState } from 'react';
 
 import { createToastManager, Toaster } from '@/components/kit/toast';
 
+import { sayRefusal } from '../../said';
 import { UndoProvider, type UndoServer, useUndo } from '../../shell/undo';
+import { RECORD_WORDS } from '../record/recordWords';
 import type { PersonAction } from './levers';
 import { PersonView, type PersonViewProps } from './PersonView';
 import { NOW } from './personFixtures';
@@ -44,7 +46,7 @@ export function PersonBoard({ now = NOW, onWrite, onUndone, ...view }: PersonBoa
         data-slot="person-board"
         className="relative h-[56.25rem] w-[47.5rem] overflow-hidden border-0 border-l border-solid border-line bg-bg"
       >
-        <Wired now={now} onWrite={onWrite} onUndone={onUndone} view={view} />
+        <Wired now={now} onWrite={onWrite} onUndone={onUndone} view={view} manager={manager} />
         {box !== null && <Toaster manager={manager} contained container={box} />}
       </div>
     </UndoProvider>
@@ -56,7 +58,9 @@ function Wired({
   onWrite,
   onUndone,
   view,
+  manager,
 }: {
+  manager: ReturnType<typeof createToastManager>;
   now: number;
   onWrite: PersonBoardProps['onWrite'];
   onUndone: PersonBoardProps['onUndone'];
@@ -73,6 +77,9 @@ function Wired({
       now={now}
       onAct={async (action) => {
         const landed = (await onWrite?.(action)) !== false;
+        // Refused: said as the console's write path says one, in the board's own dock.
+        if (!landed)
+          sayRefusal({ title: RECORD_WORDS.refusalOf(person?.displayName ?? '') }, manager);
         if (!landed || person === null) return landed;
         await announce({
           ...receiptFor(

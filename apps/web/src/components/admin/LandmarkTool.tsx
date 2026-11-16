@@ -15,12 +15,12 @@ import { landmarkDrifted, locksRow, type PickedReview, pickReview } from '../../
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { errorText, ToolCard } from './adminUi';
+import { ToolCard } from './adminUi';
 import { DismissPlaceNameDialog } from './DismissPlaceNameDialog';
 import { GoogleMapsLink, PossibleDuplicate } from './PossibleDuplicate';
 import { ReasonDialog } from './ReasonDialog';
 import { ReviewClosedNotice } from './ReviewClosedNotice';
-import { useSaidMutation } from './saidMutation';
+import { useSaidMutation } from './said';
 import { useReviewWatch } from './useReviewWatch';
 
 export type EditorLandmark = FunctionReturnType<typeof api.landmarks.listForEditor>[number];
@@ -191,9 +191,8 @@ export function LandmarkTool({
   };
 
   /**
-   * A write, held (`busy`) while in flight, its outcome on the banner. `rethrow` hands a refusal on to
-   * a dialog that stays open to show it — as the server's own sentence, since the dialog shows an
-   * error's `message` and a ConvexError's is the transport's.
+   * A write, held (`busy`) while in flight; landed, its outcome on the banner. A refusal is the net's
+   * toast (D268); `rethrow` hands it on to a dialog, which stays open over what was typed.
    */
   const run = async (
     write: () => Promise<unknown>,
@@ -206,9 +205,7 @@ export function LandmarkTool({
       onResult({ tone: 'ok', text: ok });
       return true;
     } catch (err) {
-      const text = errorText(err);
-      onResult({ tone: 'error', text });
-      if (rethrow) throw new Error(text);
+      if (rethrow) throw err;
       return false;
     } finally {
       setBusy(false);
@@ -376,10 +373,11 @@ export function LandmarkTool({
                       description="Takes the label off the map and out of the report sheet. A re-run of the import will not bring it back; Restore will."
                       confirmLabel="Remove"
                       confirmVariant="secondary"
-                      // `run` says its refusal in the editor's banner, not the dialog.
-                      refusalOnPage
                       onConfirm={async (reason) => {
-                        await run(() => remove({ landmarkId: l._id, reason }), 'Removed.');
+                        // Rethrown: refused, the dialog stays open over its reason.
+                        await run(() => remove({ landmarkId: l._id, reason }), 'Removed.', {
+                          rethrow: true,
+                        });
                       }}
                     />
                   </>
@@ -595,11 +593,12 @@ export function LandmarkTool({
                     description="The skaters who named it read your note."
                     confirmLabel="Decline"
                     confirmVariant="secondary"
-                    refusalOnPage
                     onConfirm={async (note) => {
+                      // Rethrown: refused, the dialog stays open over its note.
                       await run(
                         () => declineRequest({ requestId: p.requestId, note }),
                         'Declined.',
+                        { rethrow: true },
                       );
                     }}
                   />

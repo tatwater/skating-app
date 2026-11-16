@@ -1,6 +1,8 @@
 import type { Id } from '@skating/convex/dataModel';
 import { useCallback } from 'react';
 
+import type { ToastManager } from '@/components/kit/toast';
+
 import { said } from '../../said';
 import type { Receipt } from '../../shell/undo';
 import {
@@ -66,6 +68,7 @@ export function useRecordWrites({
   onRestored,
   now,
   here,
+  manager,
 }: {
   server: RecordServer;
   announce: (receipt: Receipt, here?: () => boolean) => Promise<void>;
@@ -82,6 +85,8 @@ export function useRecordWrites({
   /** A restore landed: keep its row in Standing for the sitting. */
   onRestored: (target: Target, result: RecordWriteResult) => void;
   now: number;
+  /** The toast queue a refusal is said in: the app's, unless a story draws its own. */
+  manager?: ToastManager;
 }) {
   return useCallback(
     async (target: Target, write: RecordWrite): Promise<boolean> => {
@@ -117,6 +122,7 @@ export function useRecordWrites({
           }
         },
         (why) => ({ title: W.refusalOf(subjectName(subject)), description: why }),
+        { ...(manager !== undefined && { manager }) },
       );
       if (!sent.landed) return false;
       const answered = sent.value;
@@ -152,6 +158,6 @@ export function useRecordWrites({
       if (write.kind === 'restore' && 'undoable' in answered) onRestored(target, answered);
       return true;
     },
-    [server, announce, subject, placeOf, comesBackOf, onRestored, now, here],
+    [server, announce, subject, placeOf, comesBackOf, onRestored, now, here, manager],
   );
 }

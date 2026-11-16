@@ -117,10 +117,6 @@ export function PossibleDuplicate({
             }
             title={`Answer with “${landmark.name}”?`}
             description={`The skaters who named this spot read that it is the landmark “${landmark.name}”, ${formatDistanceMiles(landmark.meters)} away. Show both first if you have not looked.`}
-            // Both callers (the request queue, the lake editor) say a refusal in their page's
-            // banner as well: the write keeps the page's place, so one answered after this row has
-            // gone is said there once, never in a toast too.
-            refusalOnPage
             confirmLabel="Answer with this landmark"
             confirmVariant="default"
             requireReason={false}

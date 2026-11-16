@@ -9,15 +9,13 @@ import {
 } from '@skating/core';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
-import { ConvexError } from 'convex/values';
 import { useEffect, useState } from 'react';
 import { AdminEmpty, AdminPageHeader } from '../components/admin/adminUi';
 import { GoogleMapsLink, PossibleDuplicate } from '../components/admin/PossibleDuplicate';
-import { usePlace } from '../components/admin/place';
 import { ReasonDialog } from '../components/admin/ReasonDialog';
 import { RequestPreviewMap } from '../components/admin/RequestPreviewMap';
 import { ReviewClosedNotice } from '../components/admin/ReviewClosedNotice';
-import { useSaidMutation } from '../components/admin/saidMutation';
+import { useSaidMutation } from '../components/admin/said';
 import { useReviewWatch } from '../components/admin/useReviewWatch';
 import { Button, buttonVariants } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
@@ -45,25 +43,16 @@ import { landmarkDrifted, locksRow, type PickedReview, pickReview } from '../lib
  */
 export const Route = createFileRoute('/admin/water/requests')({ component: RequestQueue });
 
-function messageOf(err: unknown): string {
-  if (err instanceof ConvexError) {
-    const data = err.data as { message?: string } | string;
-    return typeof data === 'string' ? data : (data.message ?? 'Something went wrong.');
-  }
-  return err instanceof Error ? err.message : 'Something went wrong.';
-}
-
 function RequestQueue() {
-  // Its place: the page, drawn or not when an answer comes. Its banner says every refusal, its
-  // reason dialogs' too (`refusalOnPage`), so those writes keep this place.
-  const place = usePlace();
   const [status, setStatus] = useState<'open' | 'approved' | 'declined'>('open');
   const rows = useQuery(api.corpusRequests.listQueue, { status });
   const count = useQuery(api.corpusRequests.queueCount, {});
-  const approve = useSaidMutation(api.corpusRequests.approve, place);
-  const decline = useSaidMutation(api.corpusRequests.decline, place);
-  const reresolve = useSaidMutation(api.corpusRequests.reresolve, place);
-  const [banner, setBanner] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  const approve = useSaidMutation(api.corpusRequests.approve);
+  const decline = useSaidMutation(api.corpusRequests.decline);
+  const reresolve = useSaidMutation(api.corpusRequests.reresolve);
+  // A landed write's outcome. A refusal is the net's toast (D268), never said here; a dialog that
+  // was refused stays open over its note.
+  const [banner, setBanner] = useState<string | null>(null);
   /**
    * The row on the map, frozen at the click (`pickReview`). A colleague deciding what it is about says
    * so over the map and locks its rows (`useReviewWatch`) until the moderator goes *Back to queue* —
@@ -85,7 +74,7 @@ function RequestQueue() {
   const locked = (id: string) => locksRow(picked, watch, id);
 
   return (
-    <div ref={place.ref} className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <AdminPageHeader
         title="Requests"
         subtitle={`Skaters asking for lakes — ${count ? `${count.count}${count.capped ? '+' : ''} open` : '…'}.`}
@@ -109,12 +98,8 @@ function RequestQueue() {
       </div>
 
       {banner ? (
-        <p
-          className={
-            banner.tone === 'ok' ? 'text-foreground-muted text-sm' : 'text-destructive text-sm'
-          }
-        >
-          {banner.text}
+        <p role="status" className="text-foreground-muted text-sm">
+          {banner}
         </p>
       ) : null}
 
@@ -256,16 +241,7 @@ function RequestQueue() {
                             sameAs,
                             ...(note ? { note } : {}),
                           });
-                          setBanner({
-                            tone: 'ok',
-                            text: 'Answered with the landmark already there.',
-                          });
-                        } catch (err) {
-                          const text = messageOf(err);
-                          setBanner({ tone: 'error', text });
-                          // The dialog stays open on the refusal and shows `message` — the server's
-                          // own sentence, not the transport's.
-                          throw new Error(text);
+                          setBanner('Answered with the landmark already there.');
                         } finally {
                           setAnswering(false);
                         }
@@ -328,20 +304,12 @@ function RequestQueue() {
                         confirmLabel="Approve"
                         requireReason={false}
                         reasonPlaceholder="Optional note the skater will read"
-                        // Said in the page's banner too: a refusal answered after a colleague's
-                        // decision took this row's dialog away is said there, never in a toast too.
-                        refusalOnPage
                         onConfirm={async (note) => {
-                          try {
-                            await approve({
-                              requestId: row._id as Id<'waterBodyRequests'>,
-                              ...(note ? { note } : {}),
-                            });
-                            setBanner({ tone: 'ok', text: 'Approved.' });
-                          } catch (err) {
-                            setBanner({ tone: 'error', text: messageOf(err) });
-                            throw err;
-                          }
+                          await approve({
+                            requestId: row._id as Id<'waterBodyRequests'>,
+                            ...(note ? { note } : {}),
+                          });
+                          setBanner('Approved.');
                         }}
                       />
                       <ReasonDialog
@@ -356,18 +324,9 @@ function RequestQueue() {
                         confirmVariant="secondary"
                         requireReason={true}
                         reasonPlaceholder="Why not — what they can do instead"
-                        refusalOnPage
                         onConfirm={async (note) => {
-                          try {
-                            await decline({
-                              requestId: row._id as Id<'waterBodyRequests'>,
-                              note,
-                            });
-                            setBanner({ tone: 'ok', text: 'Declined.' });
-                          } catch (err) {
-                            setBanner({ tone: 'error', text: messageOf(err) });
-                            throw err;
-                          }
+                          await decline({ requestId: row._id as Id<'waterBodyRequests'>, note });
+                          setBanner('Declined.');
                         }}
                       />
                       {row.kind === 'admit' ? (
@@ -377,9 +336,9 @@ function RequestQueue() {
                           onClick={async () => {
                             try {
                               await reresolve({ requestId: row._id as Id<'waterBodyRequests'> });
-                              setBanner({ tone: 'ok', text: 'Asked the catalog again.' });
-                            } catch (err) {
-                              setBanner({ tone: 'error', text: messageOf(err) });
+                              setBanner('Asked the catalog again.');
+                            } catch {
+                              // Refused: said in its toast.
                             }
                           }}
                         >

@@ -5,8 +5,8 @@ import { NumberField } from '@/components/kit/number-field';
 import { RadioGroup, RadioRow } from '@/components/kit/radio';
 
 import { AskDialog } from './AskDialog';
-import type { ActOutcome } from './useActing';
 import { WORDS } from './personWords';
+import type { ActOutcome } from './useActing';
 
 /**
  * Set a person's bounty limit: the default, or a limit of their own (zero stops bounties outright and

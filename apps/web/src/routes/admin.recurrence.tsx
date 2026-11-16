@@ -6,7 +6,7 @@ import { usePaginatedQuery, useQuery } from 'convex/react';
 import { useState } from 'react';
 import { AdminEmpty, AdminPageHeader } from '../components/admin/adminUi';
 import { ReasonDialog } from '../components/admin/ReasonDialog';
-import { useSaidMutation } from '../components/admin/saidMutation';
+import { useSaidMutation } from '../components/admin/said';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';

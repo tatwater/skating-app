@@ -3,9 +3,9 @@ import { useState } from 'react';
 import { RadioGroup, RadioRow } from '@/components/kit/radio';
 
 import { AskDialog } from './AskDialog';
-import type { ActOutcome } from './useActing';
 import { momentWords } from './personModel';
 import { WORDS } from './personWords';
+import type { ActOutcome } from './useActing';
 
 /**
  * Suspend, or extend a suspension: how long, then why. A suspension lifts on its own when it runs

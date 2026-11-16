@@ -119,7 +119,6 @@ const SATELLITE_CHOICES: ReadonlyArray<{ value: SatelliteImageryMode; label: str
   { value: 'off', label: 'Never' },
 ];
 
-
 export function ImageryTabView({
   season,
   rows,

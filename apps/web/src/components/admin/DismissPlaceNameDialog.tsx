@@ -8,9 +8,8 @@ import {
 import { type ReactElement, useState } from 'react';
 import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { errorText } from './adminUi';
 import { ReasonDialog } from './ReasonDialog';
-import { useSaidMutation } from './saidMutation';
+import { useSaidMutation } from './said';
 
 /**
  * Dismiss a corpus place name (D202's queue): a reason from the short list, and a note if the
@@ -59,12 +58,8 @@ export function DismissPlaceNameDialog({
         </div>
       }
       onConfirm={async (note) => {
-        try {
-          await dismiss({ id, reason, ...(note ? { note } : {}) });
-        } catch (err) {
-          // The dialog shows `message`; give it the server's own sentence, not the transport's.
-          throw new Error(errorText(err));
-        }
+        // Refused: the net says it in a toast and rejects, so the dialog stays open.
+        await dismiss({ id, reason, ...(note ? { note } : {}) });
         onDone?.();
       }}
     />

@@ -359,9 +359,7 @@ export function HazardsTabView({
           <DemoteDialog
             feature={demoting}
             onClose={() => setDemoting(null)}
-            onDemote={async (reason) =>
-              demoting === null ? true : demote(demoting.id, reason)
-            }
+            onDemote={async (reason) => (demoting === null ? true : demote(demoting.id, reason))}
           />
         )}
       </div>
