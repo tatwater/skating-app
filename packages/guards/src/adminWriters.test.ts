@@ -75,3 +75,18 @@ test('a console file reaches a mutation directly only through a write path that 
   });
   expect(direct.sort()).toEqual(Object.keys(INVENTORY).sort());
 });
+
+/**
+ * **A place is a drawn element, never a claim** (Greptile on #138): an in-place answer is handed a
+ * place that asks, when the answer comes, whether the element that would say it is drawn (`usePlace`,
+ * `drawn`). A place that answers "here" without asking — `here: () => true` — or that stands on a
+ * mounted flag alone would bring back the refusal said into nothing drawn.
+ */
+test('no console place says it is drawn without asking', () => {
+  const all = ROOTS.flatMap(files).filter((f) => SOURCE.test(f) && !NOT_CODE.test(f));
+  const claims = all.filter((f) => {
+    const text = readFileSync(join(WEB, f), 'utf8');
+    return /here:\s*\(\)\s*=>\s*(true|mounted\.current\s*[,}\n])/.test(text);
+  });
+  expect(claims).toEqual([]);
+});
