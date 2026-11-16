@@ -301,6 +301,38 @@ describe('the reason dialog', () => {
 });
 
 describe('useUndo', () => {
+  it('a reasoned undo refused after the console has gone (the viewer turned away): said in a toast, never in a gone dialog', async () => {
+    const manager = createToastManager();
+    const added = vi.spyOn(manager, 'add');
+    let refuse: () => void = () => {};
+    server.run.mockImplementation(
+      () =>
+        new Promise((_, reject) => {
+          refuse = () => reject(new ConvexError('A later change stands on it.'));
+        }),
+    );
+    const view = render(
+      <UndoProvider server={server} manager={manager}>
+        <Act receipt={receipt} />
+      </UndoProvider>,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'History row' }));
+    const dialog = await screen.findByRole('alertdialog');
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Wrong report');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Undo' }));
+    view.unmount();
+    await act(async () => refuse());
+    await waitFor(() =>
+      expect(added).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Not undone',
+          description: 'A later change stands on it.',
+        }),
+      ),
+    );
+    expect(added).toHaveBeenCalledTimes(1);
+  });
+
   it('says what it needs outside the provider', () => {
     const Orphan = () => {
       useUndo();

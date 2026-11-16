@@ -1,7 +1,16 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { useConvex } from 'convex/react';
-import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from 'react';
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -137,6 +146,16 @@ export function UndoProvider({
   const [reason, setReason] = useState('');
   const [refusal, setRefusal] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // The dialog's opening: its answer is said over the kept reason while the console that asked is
+  // still here; once it has gone (the viewer left, or was turned away), in a toast — never into a
+  // dialog no one can see.
+  const mounted = useRef(false);
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const run = useCallback(
     async (actionId: string, why?: string): Promise<string | null> => {
@@ -275,6 +294,12 @@ export function UndoProvider({
                 if (request === null) return;
                 setBusy(true);
                 void run(request.actionId, trimmed).then((refused) => {
+                  if (!mounted.current) {
+                    if (refused !== null) {
+                      toast({ title: 'Not undone', description: refused, tone: 'bad' }, manager);
+                    }
+                    return;
+                  }
                   setBusy(false);
                   if (refused === null) setAsking(null);
                   else setRefusal(refused);
