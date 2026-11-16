@@ -49,7 +49,6 @@ import { withoutLedgerGrantsFor } from './lib/ledgerEditors';
 import { assertWrite, DISCIPLINE_REFUSALS, type PersonWrite, reasonFor } from './lib/peopleCan';
 import { refreshPersonRow } from './lib/peopleRows';
 import { refreshPostLatestSkateEnd, refreshPostSearchText } from './lib/postSync';
-import { requestBudget } from './lib/readBudget';
 import { clearFailure } from './lib/recurringWork';
 import { mirrorReportSubAreas } from './lib/reportSubAreas';
 import { type UndoState, undoState, undoStates } from './lib/undo';
@@ -1538,7 +1537,9 @@ export type PersonWriteResult = { userId: Id<'profiles'> } & (
  * toast's scope (`one`, as `undo.latestOwn` reads it), so what the write offers is what the toast does.
  * The viewer is read **as the write left them**, never the copy loaded before it: a write can change
  * its own caller's standing (a holder stepping down loses the grant its undo needs), and the toast
- * and the undo reload the caller. Read here, once, so no write can forget it.
+ * and the undo reload the caller. Read here, once, so no write can forget it — the write's own read,
+ * uncharged like the row's: a mutation's request budget (`lib/readBudget.requestBudget`) is its
+ * helpers' allowance, and a charge that could throw would undo a write that already succeeded.
  */
 export async function personWriteResult(
   ctx: MutationCtx,
@@ -1546,7 +1547,7 @@ export async function personWriteResult(
   userId: Id<'profiles'>,
   actionId: Id<'moderationActions'>,
 ): Promise<PersonWriteResult> {
-  const actor = await requestBudget(ctx).one('profile', () => ctx.db.get(actorId));
+  const actor = await ctx.db.get(actorId);
   const row = actor ? await ctx.db.get(actionId) : null;
   const state = actor && row ? await undoState(ctx, actor, row, 'one') : null;
   return state?.state === 'available'

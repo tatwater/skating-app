@@ -2420,7 +2420,8 @@ Every shape change is additive except where noted.
   viewer who doesn't hold ledger editing `This isn’t available for this account right now.` where it
   gave `They are the last person who can edit the ledger; give another admin ledger editing first`;
   holders still read the sentence, and the write's own refusal is unchanged.
-- **Every person write returns its audit row** (H3): `{ userId, actionId, undoNeedsReason }` from the
+- **Every person write returns its audit row** (H3): `{ userId, undoable: true, actionId,
+  undoNeedsReason }` — or `{ userId, undoable: false }` when the caller can't undo it now — from the
   five discipline writes, the two role writes and the two ledger writes (they returned the id, or
   nothing; no client read it). `undoNeedsReason` is `lib/undo.undoNeedsReason` — the rule `undoState`,
   and so `undo.latestOwn` and `undo.run`, answers by: the undo of a give-back takes something away and
@@ -2431,8 +2432,9 @@ Every shape change is additive except where noted.
   refused on the caller themselves — the discipline writes and the role writes by their own rules, a
   ledger grant because the caller already holds it — so stepping down is the one write that changes
   its own caller's standing. A property holds "what a write returns is what `undo.latestOwn` and
-  `undo.run` give that caller right after" over every state, every write, the caller themselves, and
-  one or two holders.
+  `undo.run` give that caller right after" over sampled states, writes, targets (the caller included)
+  and one or two holders (pinned seeds plus a fresh one); every write on the caller, with one holder
+  and with two, is checked by name.
 - **Ids at the edge.** The People queries take the person's id as a string and normalize it once:
   anything that isn't a profile id is `null` — no such person — rather than a validator error.
   `people.decisions` can now return `null` for that case.

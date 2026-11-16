@@ -3,6 +3,7 @@
  * for the Overview and the lanes, the audit-reason cap (D261), the parked-lapse mirror, and the bounds.
  */
 import { AUDIT_REASON_MAX, AUDIT_REASON_TOO_LONG } from '@skating/core';
+import { ConvexError } from 'convex/values';
 import { convexTest } from 'convex-test';
 import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -546,14 +547,17 @@ describe('a person write offers its undo only when the undo is available to this
     const id = self ? adm : await seed(t, 'them', STATES[state]);
     const a = as(t, 'adm');
     const at = `${self ? 'self' : state}/${write}/${otherHolder ? 'two holders' : 'one holder'}`;
-    // A write the server refuses offers nothing: there is no answer to read.
+    // A write the server refuses offers nothing: there is no answer to read. Only a refusal — a
+    // crash (a budget overrun, a type error) is a failure, never a pass.
     const out = await (WRITES[write] as NonNullable<(typeof WRITES)[string]>)(a, id).catch(
-      () => null,
+      (err: unknown) => {
+        if (err instanceof ConvexError) return null;
+        throw err;
+      },
     );
     if (out === null) return;
-    const toast = await a
-      .query(api.undo.latestOwn, { targetType: 'user', targetId: id })
-      .catch(() => null);
+    // The caller is still staff after every write that runs, so the toast always answers.
+    const toast = await a.query(api.undo.latestOwn, { targetType: 'user', targetId: id });
     if (out.undoable) {
       expect(toast?.actionId, at).toBe(out.actionId);
       expect(toast?.undo, at).toEqual({ state: 'available', needsReason: out.undoNeedsReason });
@@ -564,7 +568,10 @@ describe('a person write offers its undo only when the undo is available to this
       expect(toast?.undo.state, at).not.toBe('available');
       if (toast) {
         await expect(
-          a.mutation(api.undo.run, { actionId: toast.actionId as never, reason: 'r' }),
+          a.mutation(api.undo.run, {
+            actionId: toast.actionId as Id<'moderationActions'>,
+            reason: 'r',
+          }),
           at,
         ).rejects.toThrow();
       }
@@ -581,11 +588,14 @@ describe('a person write offers its undo only when the undo is available to this
       fc.boolean(),
       check,
     );
-    // Pinned seeds, so a failure replays; then one run on a fresh seed.
+    // Pinned seeds, so a failure replays; then one run on a fresh seed. The reported case (a holder
+    // stepping down beside another) is pinned in the two tests below, whatever the seeds draw.
     for (const seed of [20261116, 77]) await fc.assert(same, { seed, numRuns: 12 });
     await fc.assert(same, { numRuns: 6 });
   });
 
+  // On the caller — a write that can change its own caller's standing. Their state is the seeded
+  // holder's, so each write runs once per holder count.
   test('every write on the caller themselves, with and without another holder: refused, or offered only what runs', async () => {
     for (const write of Object.keys(WRITES)) {
       for (const otherHolder of [false, true]) await check('active', write, true, otherHolder);
@@ -605,7 +615,10 @@ describe('a person write offers its undo only when the undo is available to this
     expect(toast?.undo.state).not.toBe('available');
     if (toast)
       await expect(
-        a.mutation(api.undo.run, { actionId: toast.actionId as never, reason: 'r' }),
+        a.mutation(api.undo.run, {
+          actionId: toast.actionId as Id<'moderationActions'>,
+          reason: 'r',
+        }),
       ).rejects.toThrow();
   });
 
