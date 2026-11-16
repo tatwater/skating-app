@@ -467,6 +467,8 @@ async function importOneBody(
   // campaign would grow every mouth's ids run after run.
   // Bounded by their total length, never their count (`landmarkIdsToKeep`, B01-3j): past it the
   // newest are kept — an id the catalogs still use outranks one that left them — counted and named.
+  // It counts, so it runs once per row the run would patch or create, and never inside a `write`
+  // gate: a dry run's `idsTrimmed` is the applied run's.
   const idsOf = (members: readonly Incoming[], also: readonly string[] = []) => {
     const { kept, dropped } = landmarkIdsToKeep([
       ...also.filter((id) => !id.includes('#')),
@@ -476,7 +478,7 @@ async function importOneBody(
       counts.idsTrimmed++;
       notes.push({
         key: kept.at(-1) ?? '',
-        reason: `${dropped} of the oldest catalog ids dropped — a landmark's ids keep ${MAX_LANDMARK_EXTERNAL_ID_CHARS} characters`,
+        reason: `"${members[0]?.name ?? ''}": ${dropped} of the oldest catalog ids dropped — a landmark keeps at most ${MAX_LANDMARK_EXTERNAL_ID_CHARS} characters of them`,
       });
     }
     return kept;
@@ -564,9 +566,11 @@ async function importOneBody(
       }
       live++;
       counts.returned++;
+      // Outside the gate: it counts trimmed ids, which a dry run reports too.
+      const patch = catalogPatch(existing, members);
       if (write) {
         await ctx.db.patch(existing._id, {
-          ...catalogPatch(existing, members),
+          ...patch,
           removedAt: undefined,
           catalogDroppedAt: undefined,
           ...stamp,
@@ -613,6 +617,8 @@ async function importOneBody(
     counts.created++;
     const first = members[0] as Incoming;
     const corpusMessages = corpusOf(members);
+    // Before the gate: it counts trimmed ids, which a dry run reports too.
+    const externalIds = idsOf(members);
     if (!write) continue;
     await ctx.db.insert('bodyLandmarks', {
       waterBodyId,
@@ -622,7 +628,7 @@ async function importOneBody(
       ...(first.areaSqM !== undefined ? { areaSqM: first.areaSqM } : {}),
       ...(subAreaFor(first.point, candidates) ?? {}),
       source: first.source,
-      externalIds: idsOf(members),
+      externalIds,
       aliases: normalizeLandmarkNames(first.name, spellingsOf(members))?.aliases ?? [],
       ...(corpusMessages !== undefined ? { corpusMessages } : {}),
       ...stamp,

@@ -81,6 +81,7 @@ const load = (
   waterBodyId: Id<'waterBodies'>,
   externalIds: string[],
   name = 'Monument Brook',
+  dryRun = false,
 ) =>
   t.mutation(internal.landmarks.importBatch, {
     bodies: [
@@ -98,7 +99,7 @@ const load = (
         ],
       },
     ],
-    dryRun: false,
+    dryRun,
   } as never);
 
 describe('the landmark load and a waterway stitched from many ways', () => {
@@ -120,6 +121,10 @@ describe('the landmark load and a waterway stitched from many ways', () => {
     const id = await body(t, 'way/1');
     const ids = longIds(0, 200);
     expect(total(ids)).toBeGreaterThan(MAX_LANDMARK_EXTERNAL_ID_CHARS);
+    // The dry run says what the applied run will: the same row, counted and named.
+    const dry = await load(t, id, ids, 'Monument Brook', true);
+    expect(dry).toMatchObject({ created: 1, idsTrimmed: 1 });
+    expect(dry.notes).toHaveLength(1);
     const out = await load(t, id, ids);
     expect(out).toMatchObject({ created: 1, tooLong: 0, idsTrimmed: 1 });
     expect(out.notes).toEqual([
@@ -130,6 +135,18 @@ describe('the landmark load and a waterway stitched from many ways', () => {
     )[0] as Doc<'bodyLandmarks'>;
     expect(total(row.externalIds)).toBeLessThanOrEqual(MAX_LANDMARK_EXTERNAL_ID_CHARS);
     expect(row.externalIds).toEqual(ids.slice(ids.length - row.externalIds.length));
+    // The next run of the same catalogs leaves the row as it is — the same newest ids, not a
+    // different slice each run.
+    const again = await load(t, id, ids);
+    expect(again).toMatchObject({ unchanged: 1, updated: 0 });
+    expect((await t.run((ctx) => ctx.db.get(row._id)))?.externalIds).toEqual(row.externalIds);
+  });
+
+  test('one catalog id past its 128 characters still skips the candidate', async () => {
+    const t = harness();
+    const id = await body(t, 'way/1');
+    const out = await load(t, id, [...ways(0, 3), `osm:way/${'9'.repeat(121)}`]);
+    expect(out).toMatchObject({ created: 0, tooLong: 1, idsTrimmed: 0 });
   });
 });
 
@@ -174,23 +191,26 @@ describe('a merge folding one waterway into its twin', () => {
     const audit = (await t.run((ctx) => ctx.db.query('moderationActions').collect())).find(
       (r) => r.action === 'merge_waterbody',
     );
-    return { kept, metadata: audit?.metadata as Record<string, unknown> };
+    return { kept, twin, metadata: audit?.metadata as Record<string, unknown> };
   }
 
   test('two big rows: every id kept under the total', async () => {
     const { kept, metadata } = await merged(ways(0, 120), ways(1_000, 142));
     expect(kept).toHaveLength(262);
-    expect(JSON.stringify(metadata)).toContain('"landmarkIdsTrimmed":0');
+    expect(metadata).toMatchObject({ repointed: { landmarkIdsTrimmed: 0 } });
+    expect(metadata).not.toHaveProperty('landmarkIdsTrimmedOn');
   });
 
   test('over the total: the oldest dropped, counted and named in the merge’s row', async () => {
     const survivorIds = longIds(0, 100);
     const loserIds = longIds(1_000, 100);
-    const { kept, metadata } = await merged(loserIds, survivorIds);
+    const { kept, twin, metadata } = await merged(loserIds, survivorIds);
     expect(total(kept)).toBeLessThanOrEqual(MAX_LANDMARK_EXTERNAL_ID_CHARS);
     const union = [...survivorIds, ...loserIds];
     expect(kept).toEqual(union.slice(union.length - kept.length));
-    expect(JSON.stringify(metadata)).toContain('"landmarkIdsTrimmed":1');
-    expect(metadata.landmarkIdsTrimmedOn).toHaveLength(1);
+    expect(metadata).toMatchObject({
+      repointed: { landmarkIdsTrimmed: 1 },
+      landmarkIdsTrimmedOn: [twin],
+    });
   });
 });

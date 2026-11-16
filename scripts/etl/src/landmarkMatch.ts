@@ -36,9 +36,9 @@ import {
   expandBBox,
   filledPolygon,
   haversineMeters,
+  landmarkIdsToKeep,
   landmarkNameKey,
   landmarksAreSamePlace,
-  MAX_LANDMARK_EXTERNAL_ID_CHARS,
   pointInPolygon,
 } from '@skating/core';
 import type { MultiPolygon, Polygon } from 'geojson';
@@ -548,11 +548,11 @@ export function placeLandmarks(
     const merged = mergeSamePlace(list, body);
     landmarks += merged.length;
     byBody.set(id, merged);
+    // The load's own rule (`landmarkIdsToKeep`), so the two never disagree on what is past it.
     for (const l of merged) {
+      if (landmarkIdsToKeep(l.externalIds).dropped === 0) continue;
       const chars = l.externalIds.reduce((sum, x) => sum + x.length, 0);
-      if (chars > MAX_LANDMARK_EXTERNAL_ID_CHARS) {
-        overIdTotal.push({ waterBodyId: id, name: l.name, ids: l.externalIds.length, chars });
-      }
+      overIdTotal.push({ waterBodyId: id, name: l.name, ids: l.externalIds.length, chars });
     }
   }
   return {

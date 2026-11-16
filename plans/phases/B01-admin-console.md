@@ -3473,18 +3473,21 @@ deploy count of #131 found 18 landmarks on dev past the 32-id cap it introduced 
 stitches from many OSM ways (142, 120, 64, 56, 54, 53, 47, 46, 44, 44, 42, 40, 40, 38, 37, 36, 34, 34
 ids; Monument Brook the largest, about 3,550 characters). The load skipped each one (`tooLong`), so
 every one was frozen at its last load, and a merge's fold cut a union to 32 silently. Nothing read is
-bounded by that count: no landmark read multiplies its worst case by it, and no audit row records the
-ids. Now `MAX_LANDMARK_EXTERNAL_ID_CHARS` (16,384, the sum of the ids' lengths — over four times the
+bounded by that count: no landmark read multiplies its worst case by it, and no audit row's size
+depends on it (a merge's snapshot of the rows it changes carries their ids, but is split into parts).
+Now `MAX_LANDMARK_EXTERNAL_ID_CHARS` (16,384, the sum of the ids' lengths — over four times the
 largest measured) bounds them through one rule, `landmarkIdsToKeep`, which both writers use: every id
-kept while the total fits; past it, the newest that fit, the oldest dropped. The load never skips or
-freezes a row for its ids — past the total it counts `idsTrimmed` and names the row in its `notes`;
+kept while the total fits; past it, the newest that fit, the oldest dropped. A repeat counts at its
+newest place — a stored id this run's catalogs still carry is this run's — so a row past the total
+keeps the same ids run after run, and a still-used id never goes before one that left the catalogs.
+The load never skips or freezes a row for its ids — past the total it counts `idsTrimmed` (a dry run
+too) and names the row in its `notes`, which the loader prints and keeps in the run's record;
 `tooLong` now means only a single id past 128 characters. The fold keeps the union whole under the
 total; past it, the merge's audit row counts `landmarkIdsTrimmed` and names the twins
 (`landmarkIdsTrimmedOn`). The ETL's placement reports any stitched landmark past the total
-(`overIdTotal`), so the number is checked at the source. With each id at most 128 characters, a
-landmark's ids now weigh at most 16,384 characters (64 KiB at four bytes each) — the bound a later
-`ROW_MAX.landmark` can claim for that field, beside its name (80) and aliases (12 × 80).
-
+(`overIdTotal`), so the number is checked at the source. Whatever their count, a landmark's ids now
+weigh at most 16,384 characters (64 KiB at four bytes each) — the bound a later `ROW_MAX.landmark`
+can claim for that field, beside its name (80) and aliases (12 × 80).
 
 
 **Held — the survey filing** (`fileBathymetrySurvey`): the board shows the field (*A survey the next
