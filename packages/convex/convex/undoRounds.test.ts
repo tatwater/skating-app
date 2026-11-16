@@ -766,7 +766,7 @@ describe('a queue lane’s people’s rounds (B01-4c)', () => {
 });
 
 describe('the person page’s flag labels’ rounds (B01-4c)', () => {
-  test('twenty flagged Reports on twenty lakes: every one labeled, in a stated few rounds', async () => {
+  test('twenty flagged Reports on twenty lakes, on a whole request budget: every one labeled, in a stated few rounds', async () => {
     const t = harness();
     const viewerId = await admin(t);
     const skater = await admin(t);
@@ -841,7 +841,7 @@ describe('the person page’s flag labels’ rounds (B01-4c)', () => {
     );
     expect(calm.capped).toBe(false);
     expect(calm.labels).toEqual(flags.map((_, i) => `Lake ${i}`));
-    expect(calm.stats.rounds).toBeLessThanOrEqual(FLAG_LABEL_ROUNDS);
+    expect(calm.stats.rounds).toBeLessThanOrEqual(FLAG_LABEL_ROUNDS_WHOLE_BUDGET);
     const shuffled = await read([5, 0, 3, 6, 1, 4, 2]);
     expect({ capped: shuffled.capped, labels: shuffled.labels }).toEqual({
       capped: calm.capped,
@@ -999,12 +999,14 @@ const DECISIONS_WORST_ROUNDS = WORST_PAGE_ROUNDS;
 const STAFF_FIGURES_ROUNDS = 8 + Math.ceil(200 / 4);
 
 /**
- * The rounds the person page's flag labels cost for twenty flagged Reports on twenty lakes: each flag
- * reserves its Report and its lake's library row at a document's worth apiece, so five go in a wave
- * of the request's 11 MiB, and each wave is two rounds (the Report, then the name). One after
- * another it was forty.
+ * The rounds `labelFlags` costs for twenty flagged Reports on twenty lakes **on a whole request
+ * budget** (the 11 MiB a People query opens with): each flag reserves its Report and its lake's
+ * library row at a document's worth apiece, so five go in a wave, and each wave is two rounds (the
+ * Report, then the name). One after another it was forty. On the person page `labelFlags` runs after
+ * the page's other reads, so fewer flags fit a wave and the rounds can be more — still two a wave,
+ * never two a flag; this bound claims only the whole-budget case it measures.
  */
-const FLAG_LABEL_ROUNDS = 2 * Math.ceil(20 / 5);
+const FLAG_LABEL_ROUNDS_WHOLE_BUDGET = 2 * Math.ceil(20 / 5);
 
 /**
  * The rounds a staffer's season costs when 100 of its decisions were each reversed by someone else:

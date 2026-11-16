@@ -2640,7 +2640,7 @@ the hazard auto-merge and the erasure write fixed reasons; the auto-delist and t
 that do compose run from the ETL and operator writes. A composed reason can't fail its write, so none
 could be parked by it.
 
-**B01-4c (2026-11-15): the People reads in rounds, not rows** (stacked on #125, after B01-3i's
+**B01-4c (2026-11-15): the People reads in rounds, not rows** (after #125, on B01-3i's
 `undoStates` and `ReadBudget.waves`; no new concurrency primitive — `lib/readBudget.ts` is main's).
 Every People read that awaited its rows one after another now reads a step for all of them at once,
 in page order, in waves over the request's budget: what the budget reaches depends only on the page's
@@ -2654,7 +2654,7 @@ reads the old loops made for the same data:
 | The worst Decisions page: 46 refusals on distinct targets | a few a row | 9 | History's worst (`WORST_PAGE_ROUNDS`) |
 | A staffer's week: 200 undo roots outside the read, 200 filing times | over 400 | 56 | 58 |
 | A staffer's season: 100 hides each restored by someone else | over 300 | 29 | 34 |
-| The person page's labels: 20 flagged Reports on 20 lakes | 40 | 8 | 8 |
+| The person page's labels: 20 flagged Reports on 20 lakes, on a whole request budget | 40 | 8 | 8 |
 | A queue lane's people: 200 | 200 | 1 | 1 |
 
 - **Decisions and History** (`shapeRows`): the undo states in one `undoStates` reading, the labels
@@ -2669,6 +2669,8 @@ reads the old loops made for the same data:
   item, the name once a lake. The name is now charged its real weight and handed back, where a fixed
   reservation per lake held a document each, so twenty lakes are all named where about ten were.
 - **A queue lane's people** (`listablePeople`): one wave of light rows.
+- The labels' bound is measured on a whole request budget; on the person page they run after its
+  other reads, so fewer go to a wave — still two rounds a wave, never two a flag.
 - A wave reserves each item's worst case, so a page of audit-row reads (a document's worth each) goes
   four or five to a wave in what a page leaves; the steps that read small rows take one.
 - Each test also reads its page under a different settling order and expects the same answer;
