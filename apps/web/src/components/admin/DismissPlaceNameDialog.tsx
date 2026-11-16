@@ -27,7 +27,7 @@ export function DismissPlaceNameDialog({
   trigger: ReactElement;
   onDone?: () => void;
 }) {
-  const dismiss = useSaidMutation(api.corpusPlaceNames.dismiss, 'inPlace');
+  const dismiss = useSaidMutation(api.corpusPlaceNames.dismiss);
   const [reason, setReason] = useState<CorpusNameDismissReason>('not_a_place');
   return (
     <ReasonDialog

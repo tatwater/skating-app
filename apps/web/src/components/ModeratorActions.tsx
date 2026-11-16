@@ -4,6 +4,7 @@ import { api } from '@skating/convex/api';
 import { useQuery } from 'convex/react';
 import { useState } from 'react';
 import { useRole } from '@/lib/useRole';
+import { usePlace } from './admin/place';
 import { useSaidMutation } from './admin/saidMutation';
 import { Button } from './ui/button';
 import {
@@ -42,7 +43,10 @@ export function ModeratorActions({
   label?: string;
 }) {
   const { canModerate } = useRole();
-  const setStatus = useSaidMutation(api.moderation.setModerationStatus, 'inPlace');
+  // Its place: the element that shows its refusal — drawn or not when the answer comes. A viewer
+  // who lost the permission meanwhile has no dialog drawn: the net says it in a toast.
+  const place = usePlace();
+  const setStatus = useSaidMutation(api.moderation.setModerationStatus, place);
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
   // While a takedown is out the dialog holds open, so its refusal is said here and never into a
@@ -98,7 +102,9 @@ export function ModeratorActions({
             placeholder="Why is this being taken down?"
           />
         </div>
-        {error ? <p className="text-destructive text-sm">{error}</p> : null}
+        <p ref={place.ref} className="text-destructive text-sm empty:hidden">
+          {error}
+        </p>
         <DialogFooter>
           <DialogClose render={<Button variant="outline" disabled={busy} />}>Cancel</DialogClose>
           <Button

@@ -38,6 +38,7 @@ import { BayRequestQueue, type BayRequestRow } from '../components/admin/BayRequ
 import { LakeEditorMap } from '../components/admin/LakeEditorMap';
 import { type EditorLandmark, LandmarkTool } from '../components/admin/LandmarkTool';
 import { PostedAccessTool } from '../components/admin/PostedAccessEditor';
+import { PagePlace, usePlace } from '../components/admin/place';
 import { ReasonDialog } from '../components/admin/ReasonDialog';
 import { useSaidMutation } from '../components/admin/saidMutation';
 import { WaterBodyTimeline } from '../components/admin/WaterBodyTimeline';
@@ -93,6 +94,7 @@ function LakeEditor() {
   const [draft, setDraft] = useState<GeoJSON.Polygon | GeoJSON.MultiPolygon | null>(null);
   const [suggested, setSuggested] = useState<LatLng[]>([]);
   const [banner, setBanner] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  const pagePlace = usePlace();
   const [editorImagery, setEditorImagery] = useState(false);
   // The live map handle, so the lazily-created draw control can attach to the canvas. A ref on the
   // component rather than a module-level object: a module singleton outlives the route, holding a
@@ -137,207 +139,211 @@ function LakeEditor() {
   if (!result.available) return <RestoreGate waterBodyId={waterBodyId} />;
 
   return (
-    <div className="flex flex-col gap-4">
-      <AdminPageHeader
-        title={body.name}
-        subtitle={`${body.type}${body.states?.length ? ` · ${body.states.join(', ')}` : ''} — every per-body lever, on one canvas.`}
-      />
-      <Link
-        to="/admin/water"
-        className="text-foreground-muted text-sm underline underline-offset-2"
-      >
-        ← Back to the water queues
-      </Link>
-
-      {banner ? (
-        <p
-          className={`rounded-md border px-3 py-2 text-sm ${
-            banner.tone === 'ok'
-              ? 'border-border bg-surface-muted text-foreground'
-              : 'border-danger/40 bg-danger/10 text-danger'
-          }`}
-          role={banner.tone === 'error' ? 'alert' : 'status'}
+    // The page's place: its banner says every tool's refusal while the editor is drawn; once it
+    // isn't (a read failing, the body going), the net says it in a toast.
+    <PagePlace.Provider value={pagePlace}>
+      <div ref={pagePlace.ref} className="flex flex-col gap-4">
+        <AdminPageHeader
+          title={body.name}
+          subtitle={`${body.type}${body.states?.length ? ` · ${body.states.join(', ')}` : ''} — every per-body lever, on one canvas.`}
+        />
+        <Link
+          to="/admin/water"
+          className="text-foreground-muted text-sm underline underline-offset-2"
         >
-          {banner.text}
-        </p>
-      ) : null}
+          ← Back to the water queues
+        </Link>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
-        <div className="relative h-[70vh] min-h-96 overflow-hidden rounded-lg border border-border">
-          {/* Unmasked aerial under the editor (A06e Workstream 5). Off by default: tracing against
+        {banner ? (
+          <p
+            className={`rounded-md border px-3 py-2 text-sm ${
+              banner.tone === 'ok'
+                ? 'border-border bg-surface-muted text-foreground'
+                : 'border-danger/40 bg-danger/10 text-danger'
+            }`}
+            role={banner.tone === 'error' ? 'alert' : 'status'}
+          >
+            {banner.text}
+          </p>
+        ) : null}
+
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="relative h-[70vh] min-h-96 overflow-hidden rounded-lg border border-border">
+            {/* Unmasked aerial under the editor (A06e Workstream 5). Off by default: tracing against
               the vector map is the ordinary case, and a photograph is what you reach for when the
               stored shoreline and the real one disagree. */}
-          <label className="absolute top-2 right-2 z-10 flex cursor-pointer items-center gap-2 rounded-md bg-background/95 px-2 py-1 text-xs shadow-lg">
-            <input
-              type="checkbox"
-              checked={editorImagery}
-              onChange={(event) => setEditorImagery(event.target.checked)}
-              className="size-3.5"
+            <label className="absolute top-2 right-2 z-10 flex cursor-pointer items-center gap-2 rounded-md bg-background/95 px-2 py-1 text-xs shadow-lg">
+              <input
+                type="checkbox"
+                checked={editorImagery}
+                onChange={(event) => setEditorImagery(event.target.checked)}
+                className="size-3.5"
+              />
+              Aerial
+            </label>
+            <LakeEditorMap
+              imagery={editorImagery}
+              data={{
+                body: {
+                  _id: body._id,
+                  name: body.name,
+                  type: body.type,
+                  polygon: body.polygon as GeoJSON.Geometry,
+                  bbox: body.bbox,
+                },
+                subAreas: (subAreas ?? [])
+                  .filter((s) => !s.removed)
+                  .map((s) => ({
+                    _id: s._id,
+                    waterBodyId: body._id,
+                    name: s.name,
+                    polygon: s.polygon as GeoJSON.Geometry,
+                    centroid: s.centroid,
+                    // A stale mouth is not the bay's edge any more — drawing it would say it was. Nor,
+                    // until a moderator checks it, is the mouth of a bay whose old outline was kept
+                    // (D215): it describes the re-fit, not the edge it would be drawn on.
+                    ...(s.mouth && !s.mouthStale && s.mouthReview?.outcome !== 'kept'
+                      ? { mouth: s.mouth }
+                      : {}),
+                  })),
+                putIns: putIns ?? [],
+                parkingAreas: access?.parking ?? [],
+                samplePoints: body.weatherSamplePoints ?? [],
+                // One draft slot on the map, shared by the two tools that produce a shape. They can't
+                // both be armed — arming either clears the other — so there is never a shape on screen
+                // whose owner is ambiguous.
+                draftPolygon: draft ?? featureDraft,
+                // Every pending point, drawn hollow — the canvas's existing "unsaved proposal"
+                // convention. Which tool owns which is answered by the card holding it, each of which
+                // prints its own coordinate; the map's job here is only to say "not saved yet".
+                landmarks: liveLandmarks,
+                review,
+                suggestedPoints: [suggested, featurePoint, putInPoint, parkingPoint, landmarkPoint]
+                  .flat()
+                  .filter((p): p is LatLng => p !== null),
+              }}
+              onMapClick={(coord) => {
+                // One-shot: consume the click and disarm, so a stray second click can't move the point
+                // an operator has already started filling a form around.
+                if (placing === 'feature') setFeaturePoint(coord);
+                // **Snapped in the preview, not just on save** (A06f). The server snaps a put-in to the
+                // shoreline before storing it, so a raw click drawn on the canvas would promise a pin
+                // where one is never going to be — and the gap is most visible for the mid-lake click
+                // that most needs snapping. What you see hollow is where it lands.
+                else if (placing === 'put_in')
+                  setPutInPoint(snapToEdge(coord, body.polygon as unknown as GeoJSON.Polygon));
+                else if (placing === 'parking') setParkingPoint(coord);
+                // A landmark sits where its label should: an island's middle, a point's tip — never
+                // snapped, since half of them are on the water and half on the land beside it.
+                else if (placing === 'landmark') setLandmarkPoint(coord);
+                else return;
+                setPlacing(null);
+              }}
+              onReady={(map) => {
+                drawTargetRef.current = map;
+              }}
             />
-            Aerial
-          </label>
-          <LakeEditorMap
-            imagery={editorImagery}
-            data={{
-              body: {
-                _id: body._id,
-                name: body.name,
-                type: body.type,
-                polygon: body.polygon as GeoJSON.Geometry,
-                bbox: body.bbox,
-              },
-              subAreas: (subAreas ?? [])
-                .filter((s) => !s.removed)
-                .map((s) => ({
-                  _id: s._id,
-                  waterBodyId: body._id,
-                  name: s.name,
-                  polygon: s.polygon as GeoJSON.Geometry,
-                  centroid: s.centroid,
-                  // A stale mouth is not the bay's edge any more — drawing it would say it was. Nor,
-                  // until a moderator checks it, is the mouth of a bay whose old outline was kept
-                  // (D215): it describes the re-fit, not the edge it would be drawn on.
-                  ...(s.mouth && !s.mouthStale && s.mouthReview?.outcome !== 'kept'
-                    ? { mouth: s.mouth }
-                    : {}),
-                })),
-              putIns: putIns ?? [],
-              parkingAreas: access?.parking ?? [],
-              samplePoints: body.weatherSamplePoints ?? [],
-              // One draft slot on the map, shared by the two tools that produce a shape. They can't
-              // both be armed — arming either clears the other — so there is never a shape on screen
-              // whose owner is ambiguous.
-              draftPolygon: draft ?? featureDraft,
-              // Every pending point, drawn hollow — the canvas's existing "unsaved proposal"
-              // convention. Which tool owns which is answered by the card holding it, each of which
-              // prints its own coordinate; the map's job here is only to say "not saved yet".
-              landmarks: liveLandmarks,
-              review,
-              suggestedPoints: [suggested, featurePoint, putInPoint, parkingPoint, landmarkPoint]
-                .flat()
-                .filter((p): p is LatLng => p !== null),
-            }}
-            onMapClick={(coord) => {
-              // One-shot: consume the click and disarm, so a stray second click can't move the point
-              // an operator has already started filling a form around.
-              if (placing === 'feature') setFeaturePoint(coord);
-              // **Snapped in the preview, not just on save** (A06f). The server snaps a put-in to the
-              // shoreline before storing it, so a raw click drawn on the canvas would promise a pin
-              // where one is never going to be — and the gap is most visible for the mid-lake click
-              // that most needs snapping. What you see hollow is where it lands.
-              else if (placing === 'put_in')
-                setPutInPoint(snapToEdge(coord, body.polygon as unknown as GeoJSON.Polygon));
-              else if (placing === 'parking') setParkingPoint(coord);
-              // A landmark sits where its label should: an island's middle, a point's tip — never
-              // snapped, since half of them are on the water and half on the land beside it.
-              else if (placing === 'landmark') setLandmarkPoint(coord);
-              else return;
-              setPlacing(null);
-            }}
-            onReady={(map) => {
-              drawTargetRef.current = map;
-            }}
-          />
-        </div>
+          </div>
 
-        <div className="flex flex-col gap-4 overflow-y-auto">
-          <NameTool body={body} onResult={setBanner} />
-          <ProminenceTool body={body} onResult={setBanner} />
-          <SubAreaTool
-            waterBodyId={waterBodyId}
-            parentPolygon={body.polygon as unknown as GeoJSON.Polygon | GeoJSON.MultiPolygon}
-            subAreas={subAreas ?? []}
-            draft={draft}
-            setDraft={setDraft}
-            mapRef={drawTargetRef}
-            promotion={promotion}
-            onPromotionTaken={() => setPromotion(null)}
-            onResult={setBanner}
-          />
-          <LandmarkTool
-            waterBodyId={waterBodyId}
-            landmarks={landmarks}
-            armed={placing === 'landmark'}
-            onArm={(on) => setPlacing(on ? 'landmark' : null)}
-            point={landmarkPoint}
-            onClearPoint={() => setLandmarkPoint(null)}
-            onFocus={(l) =>
-              drawTargetRef.current?.flyTo({
-                center: [l.point.lng, l.point.lat],
-                zoom: Math.max(drawTargetRef.current.getZoom(), 13),
-              })
-            }
-            onPromote={setPromotion}
-            onPlacePoint={(point) => {
-              setPlacing(null);
-              setLandmarkPoint(point);
-              drawTargetRef.current?.flyTo({ center: [point.lng, point.lat], zoom: 14 });
-            }}
-            onReview={setReview}
-            onResult={setBanner}
-          />
-          <DepthTool body={body} onResult={setBanner} />
-          <SamplePointTool
-            body={body}
-            suggested={suggested}
-            setSuggested={setSuggested}
-            onResult={setBanner}
-          />
-          {/* The three placement tools each read the one `placing` slot, so arming any of them is
+          <div className="flex flex-col gap-4 overflow-y-auto">
+            <NameTool body={body} onResult={setBanner} />
+            <ProminenceTool body={body} onResult={setBanner} />
+            <SubAreaTool
+              waterBodyId={waterBodyId}
+              parentPolygon={body.polygon as unknown as GeoJSON.Polygon | GeoJSON.MultiPolygon}
+              subAreas={subAreas ?? []}
+              draft={draft}
+              setDraft={setDraft}
+              mapRef={drawTargetRef}
+              promotion={promotion}
+              onPromotionTaken={() => setPromotion(null)}
+              onResult={setBanner}
+            />
+            <LandmarkTool
+              waterBodyId={waterBodyId}
+              landmarks={landmarks}
+              armed={placing === 'landmark'}
+              onArm={(on) => setPlacing(on ? 'landmark' : null)}
+              point={landmarkPoint}
+              onClearPoint={() => setLandmarkPoint(null)}
+              onFocus={(l) =>
+                drawTargetRef.current?.flyTo({
+                  center: [l.point.lng, l.point.lat],
+                  zoom: Math.max(drawTargetRef.current.getZoom(), 13),
+                })
+              }
+              onPromote={setPromotion}
+              onPlacePoint={(point) => {
+                setPlacing(null);
+                setLandmarkPoint(point);
+                drawTargetRef.current?.flyTo({ center: [point.lng, point.lat], zoom: 14 });
+              }}
+              onReview={setReview}
+              onResult={setBanner}
+            />
+            <DepthTool body={body} onResult={setBanner} />
+            <SamplePointTool
+              body={body}
+              suggested={suggested}
+              setSuggested={setSuggested}
+              onResult={setBanner}
+            />
+            {/* The three placement tools each read the one `placing` slot, so arming any of them is
               also what disarms the other two — there is no state in which a click is ambiguous. */}
-          <PutInTool
-            waterBodyId={waterBodyId}
-            putIns={putIns ?? []}
-            armed={placing === 'put_in'}
-            onArm={(on) => setPlacing(on ? 'put_in' : null)}
-            point={putInPoint}
-            onClearPoint={() => setPutInPoint(null)}
-            onResult={setBanner}
-          />
-          <AccessTool
-            waterBodyId={waterBodyId}
-            armed={placing === 'parking'}
-            onArm={(on) => setPlacing(on ? 'parking' : null)}
-            point={parkingPoint}
-            onClearPoint={() => setParkingPoint(null)}
-            onResult={setBanner}
-          />
-          <BodyFeatureTool
-            waterBodyId={waterBodyId}
-            features={features ?? []}
-            draft={featureDraft}
-            setDraft={setFeatureDraft}
-            point={featurePoint}
-            setPoint={setFeaturePoint}
-            arming={placing === 'feature'}
-            setArming={(on) => setPlacing(on ? 'feature' : null)}
-            mapRef={drawTargetRef}
-            onResult={setBanner}
-          />
-          <HazardTool hazards={hazards ?? []} />
-          <RecurrenceTool waterBodyId={waterBodyId} onResult={setBanner} />
-          <PromotionTool waterBodyId={waterBodyId} onResult={setBanner} />
-          <TrackTool tracks={Array.isArray(tracks) ? [] : (tracks?.tracks ?? [])} />
-          {/* What the sign says (A06e) — beside the reference links, because both are things a human
+            <PutInTool
+              waterBodyId={waterBodyId}
+              putIns={putIns ?? []}
+              armed={placing === 'put_in'}
+              onArm={(on) => setPlacing(on ? 'put_in' : null)}
+              point={putInPoint}
+              onClearPoint={() => setPutInPoint(null)}
+              onResult={setBanner}
+            />
+            <AccessTool
+              waterBodyId={waterBodyId}
+              armed={placing === 'parking'}
+              onArm={(on) => setPlacing(on ? 'parking' : null)}
+              point={parkingPoint}
+              onClearPoint={() => setParkingPoint(null)}
+              onResult={setBanner}
+            />
+            <BodyFeatureTool
+              waterBodyId={waterBodyId}
+              features={features ?? []}
+              draft={featureDraft}
+              setDraft={setFeatureDraft}
+              point={featurePoint}
+              setPoint={setFeaturePoint}
+              arming={placing === 'feature'}
+              setArming={(on) => setPlacing(on ? 'feature' : null)}
+              mapRef={drawTargetRef}
+              onResult={setBanner}
+            />
+            <HazardTool hazards={hazards ?? []} />
+            <RecurrenceTool waterBodyId={waterBodyId} onResult={setBanner} />
+            <PromotionTool waterBodyId={waterBodyId} onResult={setBanner} />
+            <TrackTool tracks={Array.isArray(tracks) ? [] : (tracks?.tracks ?? [])} />
+            {/* What the sign says (A06e) — beside the reference links, because both are things a human
               read somewhere and typed in, and neither is derivable from the row. */}
-          <ToolCard title="Posted rules">
-            <PostedAccessTool body={body} onResult={setBanner} />
-          </ToolCard>
-          {/* Beside the links because that is what it governs: the Copernicus row in the drawer's
+            <ToolCard title="Posted rules">
+              <PostedAccessTool body={body} onResult={setBanner} />
+            </ToolCard>
+            {/* Beside the links because that is what it governs: the Copernicus row in the drawer's
               link list, not the aerial reveal on the map. */}
-          <SatelliteTool body={body} onResult={setBanner} />
-          <ReferenceLinkTool body={body} onResult={setBanner} />
-          {/* The one lever here that removes rather than refines, so it sits below all of them and
+            <SatelliteTool body={body} onResult={setBanner} />
+            <ReferenceLinkTool body={body} onResult={setBanner} />
+            {/* The one lever here that removes rather than refines, so it sits below all of them and
               above only the log that records it. */}
-          <RemovalTool body={body} onResult={setBanner} />
-          {/* Last in the column (A06c §6.1): the log answers "what happened to this lake", which is a
+            <RemovalTool body={body} onResult={setBanner} />
+            {/* Last in the column (A06c §6.1): the log answers "what happened to this lake", which is a
               question you ask after looking at the levers, not before. */}
-          <ToolCard title="History">
-            <WaterBodyTimeline waterBodyId={waterBodyId} />
-          </ToolCard>
+            <ToolCard title="History">
+              <WaterBodyTimeline waterBodyId={waterBodyId} />
+            </ToolCard>
+          </div>
         </div>
       </div>
-    </div>
+    </PagePlace.Provider>
   );
 }
 
@@ -376,7 +382,7 @@ function NameTool({
   };
   onResult: SetBanner;
 }) {
-  const setName = useSaidMutation(api.waterBodies.setWaterBodyName, 'inPlace');
+  const setName = useSaidMutation(api.waterBodies.setWaterBodyName);
   const claims = body.nameClaims ?? [];
   const overridden = claims.some((c) => c.source === 'user');
   // One row per distinct name, carrying every publisher that asserted it — the dedupe is here rather
@@ -474,7 +480,7 @@ function CommunityNameTool({
   body: { _id: string; name: string };
   onResult: SetBanner;
 }) {
-  const setName = useSaidMutation(api.waterBodies.setWaterBodyName, 'inPlace');
+  const setName = useSaidMutation(api.waterBodies.setWaterBodyName);
   const [draft, setDraft] = useState(body.name);
   const trimmed = draft.trim();
   const unchanged = trimmed === body.name;
@@ -548,7 +554,7 @@ function ProminenceTool({
   body: { _id: string; surfaceAreaSqM?: number; curatedBoost?: number; minVisibleZoom?: number };
   onResult: SetBanner;
 }) {
-  const setCuratedBoost = useSaidMutation(api.waterBodies.setCuratedBoost, 'inPlace');
+  const setCuratedBoost = useSaidMutation(api.waterBodies.setCuratedBoost);
   const [boost, setBoost] = useState(String(body.curatedBoost ?? 0));
   const parsed = Number(boost);
   const preview = Number.isFinite(parsed)
@@ -630,8 +636,8 @@ interface DepthBody {
  * bathymetry chart in our region is in feet: that echo is the real units guard, not the 400 m ceiling.
  */
 function DepthTool({ body, onResult }: { body: DepthBody; onResult: SetBanner }) {
-  const setDepth = useSaidMutation(api.waterBodies.setDepth, 'inPlace');
-  const clearOverride = useSaidMutation(api.waterBodies.clearDepthOverride, 'inPlace');
+  const setDepth = useSaidMutation(api.waterBodies.setDepth);
+  const clearOverride = useSaidMutation(api.waterBodies.clearDepthOverride);
 
   // Only an `operator` value belongs in an editable box — see the note above.
   const operatorValue = (source: DepthSource | undefined, value: number | undefined) =>
@@ -890,15 +896,15 @@ function SubAreaTool({
   onPromotionTaken: () => void;
   onResult: SetBanner;
 }) {
-  const create = useSaidMutation(api.subAreas.create, 'inPlace');
-  const createFromChord = useSaidMutation(api.subAreas.createFromChord, 'inPlace');
-  const updateChord = useSaidMutation(api.subAreas.updateChord, 'inPlace');
-  const redraw = useSaidMutation(api.subAreas.redraw, 'inPlace');
-  const rename = useSaidMutation(api.subAreas.rename, 'inPlace');
-  const remove = useSaidMutation(api.subAreas.remove, 'inPlace');
-  const restore = useSaidMutation(api.subAreas.restore, 'inPlace');
-  const approveRequest = useSaidMutation(api.corpusRequests.approve, 'inPlace');
-  const declineRequest = useSaidMutation(api.corpusRequests.decline, 'inPlace');
+  const create = useSaidMutation(api.subAreas.create);
+  const createFromChord = useSaidMutation(api.subAreas.createFromChord);
+  const updateChord = useSaidMutation(api.subAreas.updateChord);
+  const redraw = useSaidMutation(api.subAreas.redraw);
+  const rename = useSaidMutation(api.subAreas.rename);
+  const remove = useSaidMutation(api.subAreas.remove);
+  const restore = useSaidMutation(api.subAreas.restore);
+  const approveRequest = useSaidMutation(api.corpusRequests.approve);
+  const declineRequest = useSaidMutation(api.corpusRequests.decline);
   // Per-bay evidence beside the redraw control (A09): the mouth-line count and the depth's currency.
   const stats = useQuery(api.subAreas.adminStatsForBody, { waterBodyId });
   // The lake's open bay asks (D201) — the queue the moderator works down.
@@ -1422,7 +1428,7 @@ function SamplePointTool({
   setSuggested: (points: LatLng[]) => void;
   onResult: SetBanner;
 }) {
-  const save = useSaidMutation(api.waterBodies.setWeatherSamplePoints, 'inPlace');
+  const save = useSaidMutation(api.waterBodies.setWeatherSamplePoints);
   const [spacing, setSpacing] = useState(String(DEFAULT_SAMPLE_SPACING_KM));
   const saved = body.weatherSamplePoints ?? [];
 
@@ -1515,7 +1521,7 @@ function SamplePointTool({
  * screen would be editing a lake that draws nowhere.
  */
 function RestoreGate({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
-  const restore = useSaidMutation(api.waterBodies.restore, 'inPlace');
+  const restore = useSaidMutation(api.waterBodies.restore);
   const [error, setError] = useState<string | null>(null);
 
   return (
@@ -1579,9 +1585,9 @@ const REMOVAL_REASON_LABELS: Record<string, string> = {
  * rather than refines, and nothing that refines should sit below it.
  */
 function RemovalTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult: SetBanner }) {
-  const remove = useSaidMutation(api.waterBodies.remove, 'inPlace');
-  const restore = useSaidMutation(api.waterBodies.restore, 'inPlace');
-  const setStanding = useSaidMutation(api.standing.setStanding, 'inPlace');
+  const remove = useSaidMutation(api.waterBodies.remove);
+  const restore = useSaidMutation(api.waterBodies.restore);
+  const setStanding = useSaidMutation(api.standing.setStanding);
   const [reason, setReason] = useState('landowner_request');
   const [note, setNote] = useState('');
   const standing = standingOf(body);
@@ -1768,8 +1774,8 @@ function PutInTool({
   onClearPoint: () => void;
   onResult: SetBanner;
 }) {
-  const setOfficial = useSaidMutation(api.putIns.setOfficial, 'inPlace');
-  const hide = useSaidMutation(api.putIns.hide, 'inPlace');
+  const setOfficial = useSaidMutation(api.putIns.setOfficial);
+  const hide = useSaidMutation(api.putIns.hide);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -1913,8 +1919,8 @@ function AccessTool({
   onResult: SetBanner;
 }) {
   const access = useQuery(api.accessPoints.accessForBody, { waterBodyId });
-  const setParking = useSaidMutation(api.accessPoints.setOfficialParking, 'inPlace');
-  const setPutInAccess = useSaidMutation(api.accessPoints.setPutInAccess, 'inPlace');
+  const setParking = useSaidMutation(api.accessPoints.setOfficialParking);
+  const setPutInAccess = useSaidMutation(api.accessPoints.setPutInAccess);
 
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -2125,8 +2131,8 @@ function BodyFeatureTool({
   mapRef: { current: maplibregl.Map | null };
   onResult: SetBanner;
 }) {
-  const create = useSaidMutation(api.bodyFeatures.create, 'inPlace');
-  const demote = useSaidMutation(api.bodyFeatures.demote, 'inPlace');
+  const create = useSaidMutation(api.bodyFeatures.create);
+  const demote = useSaidMutation(api.bodyFeatures.demote);
   const [type, setType] = useState<BodyFeatureType>('spring_current');
   const [radius, setRadius] = useState(30);
   const [note, setNote] = useState('');
@@ -2408,10 +2414,10 @@ function RecurrenceTool({
   onResult: SetBanner;
 }) {
   const clusters = useQuery(api.recurrence.listForBodyAdmin, { waterBodyId });
-  const promote = useSaidMutation(api.recurrence.promoteFromRecurrence, 'inPlace');
-  const suppress = useSaidMutation(api.recurrence.suppress, 'inPlace');
-  const unsuppress = useSaidMutation(api.recurrence.unsuppress, 'inPlace');
-  const recompute = useSaidMutation(api.recurrence.recomputeForBody, 'inPlace');
+  const promote = useSaidMutation(api.recurrence.promoteFromRecurrence);
+  const suppress = useSaidMutation(api.recurrence.suppress);
+  const unsuppress = useSaidMutation(api.recurrence.unsuppress);
+  const recompute = useSaidMutation(api.recurrence.recomputeForBody);
   const [busy, setBusy] = useState(false);
 
   const onRecompute = async () => {
@@ -2581,7 +2587,7 @@ function PromotionTool({
   onResult: (banner: { tone: 'ok' | 'error'; text: string }) => void;
 }) {
   const candidates = useQuery(api.hazards.listPromotionCandidates, { waterBodyId });
-  const promote = useSaidMutation(api.bodyFeatures.promote, 'inPlace');
+  const promote = useSaidMutation(api.bodyFeatures.promote);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const lastSeason = seasonOf(Date.now()) - 1;
@@ -2682,7 +2688,7 @@ function PromotionTool({
  * first and labeled with its consequence, since it is both the default and the undo.
  */
 function SatelliteTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult: SetBanner }) {
-  const setMode = useSaidMutation(api.waterBodies.setSatelliteImagery, 'inPlace');
+  const setMode = useSaidMutation(api.waterBodies.setSatelliteImagery);
   const [busy, setBusy] = useState(false);
   const mode: SatelliteImageryMode = body.satelliteImagery ?? 'auto';
 
@@ -2761,7 +2767,7 @@ function SatelliteTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult:
  * thousands. That is the exception proving the rule, not a coverage gap.
  */
 function ReferenceLinkTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult: SetBanner }) {
-  const setLinks = useSaidMutation(api.waterBodies.setReferenceLinks, 'inPlace');
+  const setLinks = useSaidMutation(api.waterBodies.setReferenceLinks);
   const [links, setLinks_] = useState<{ label: string; url: string }[]>(body.referenceLinks ?? []);
   const [busy, setBusy] = useState(false);
 

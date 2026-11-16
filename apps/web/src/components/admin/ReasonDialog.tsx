@@ -11,6 +11,7 @@ import {
 } from '../ui/dialog';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
+import { askFrom, usePlace } from './place';
 
 /**
  * A reusable "collect a reason, then confirm" dialog for audited operator actions (D37). Every
@@ -54,6 +55,9 @@ export function ReasonDialog({
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Its place: the element that shows its refusal, drawn or not when the answer comes. A write its
+  // confirm starts belongs to it (`askFrom`) — gone, the Legacy net says the refusal in a toast.
+  const place = usePlace();
 
   const blocked = requireReason && !reason.trim();
 
@@ -65,7 +69,7 @@ export function ReasonDialog({
     setBusy(true);
     setError(null);
     try {
-      await onConfirm(reason.trim());
+      await askFrom(place, () => onConfirm(reason.trim()));
       setOpen(false);
       setReason('');
     } catch (e) {
@@ -101,7 +105,9 @@ export function ReasonDialog({
             placeholder={reasonPlaceholder}
           />
         </div>
-        {error ? <p className="text-destructive text-sm">{error}</p> : null}
+        <p ref={place.ref} className="text-destructive text-sm empty:hidden">
+          {error}
+        </p>
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)} disabled={busy}>
             Cancel

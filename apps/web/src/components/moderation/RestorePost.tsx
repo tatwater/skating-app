@@ -16,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/kit/dialog';
+import { usePlace } from '../admin/place';
 import { useSaidMutation } from '../admin/saidMutation';
 
 /** What `moderation.postRestoreChoices` returns for a Post that exists. */
@@ -186,20 +187,24 @@ export function RestorePostView({
  */
 export function RestorePost({ postId, reason }: { postId: Id<'posts'>; reason: string }) {
   const choices = useQuery(api.moderation.postRestoreChoices, { postId });
-  const setStatus = useSaidMutation(api.moderation.setModerationStatus, 'inPlace');
+  // Its place: the chooser that shows its refusal, drawn or not when the answer comes.
+  const place = usePlace();
+  const setStatus = useSaidMutation(api.moderation.setModerationStatus, place);
   if (!choices) return null;
   return (
-    <RestorePostView
-      choices={choices}
-      onRestore={async (reportIds) => {
-        await setStatus({
-          targetType: 'post',
-          targetId: postId,
-          status: 'visible',
-          reason,
-          ...(reportIds.length > 0 ? { withReportIds: reportIds } : {}),
-        });
-      }}
-    />
+    <div ref={place.ref} className="contents">
+      <RestorePostView
+        choices={choices}
+        onRestore={async (reportIds) => {
+          await setStatus({
+            targetType: 'post',
+            targetId: postId,
+            status: 'visible',
+            reason,
+            ...(reportIds.length > 0 ? { withReportIds: reportIds } : {}),
+          });
+        }}
+      />
+    </div>
   );
 }

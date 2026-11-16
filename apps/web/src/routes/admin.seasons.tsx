@@ -10,6 +10,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { useEffect, useMemo, useState } from 'react';
 import { AdminEmpty, AdminPageHeader } from '../components/admin/adminUi';
+import { usePlace } from '../components/admin/place';
 import {
   FieldDates,
   historyFillHint,
@@ -82,20 +83,22 @@ function RosterPicker({ onPick }: { onPick: (entry: RosterEntry) => void }) {
 }
 
 function AdminSeasons() {
+  // Its place: the page, drawn or not when an answer comes (the reason dialogs ask for their own).
+  const place = usePlace();
   const overview = useQuery(api.seasonWatch.overview, {});
   const series = useQuery(api.seasonWatch.series, { current: archiveSeasonAt(Date.now()) }) as
     | SeriesDoc[]
     | undefined;
   const activity = useQuery(api.imageryLive.activity, {});
-  const saveSettings = useSaidMutation(api.seasonWatch.saveSettings, 'inPlace');
-  const resetSeason = useSaidMutation(api.seasonWatch.resetSeason, 'inPlace');
-  const startImagery = useSaidMutation(api.seasonWatch.startImagery, 'inPlace');
-  const pauseImagery = useSaidMutation(api.seasonWatch.pauseImagery, 'inPlace');
-  const addFieldDate = useSaidMutation(api.seasonWatch.addFieldDate, 'inPlace');
-  const removeFieldDate = useSaidMutation(api.seasonWatch.removeFieldDate, 'inPlace');
-  const requestHistoryFill = useSaidMutation(api.seasonWatch.requestHistoryFill, 'inPlace');
-  const retryFailed = useSaidMutation(api.imageryLive.retryFailed, 'inPlace');
-  const tryAgainNow = useSaidMutation(api.imageryLive.tryAgainNow, 'inPlace');
+  const saveSettings = useSaidMutation(api.seasonWatch.saveSettings, place);
+  const resetSeason = useSaidMutation(api.seasonWatch.resetSeason, place);
+  const startImagery = useSaidMutation(api.seasonWatch.startImagery, place);
+  const pauseImagery = useSaidMutation(api.seasonWatch.pauseImagery, place);
+  const addFieldDate = useSaidMutation(api.seasonWatch.addFieldDate, place);
+  const removeFieldDate = useSaidMutation(api.seasonWatch.removeFieldDate, place);
+  const requestHistoryFill = useSaidMutation(api.seasonWatch.requestHistoryFill, place);
+  const retryFailed = useSaidMutation(api.imageryLive.retryFailed, place);
+  const tryAgainNow = useSaidMutation(api.imageryLive.tryAgainNow, place);
   const fill = useAction();
 
   const season = archiveSeasonAt(Date.now());
@@ -192,7 +195,7 @@ function AdminSeasons() {
   const missing = (preview ?? overview).missing;
 
   return (
-    <div className="flex flex-col gap-10">
+    <div ref={place.ref} className="flex flex-col gap-10">
       <AdminPageHeader
         title="Seasons"
         subtitle="The ice watch: when it opens, what it measured, and the settings that decide it. Every number here is an overnight air low at a coordinate — never a reading of ice."

@@ -13,6 +13,7 @@ import { BodyPicker } from '../sheet/BodyPicker';
 import { Button, buttonVariants } from '../ui/button';
 import { AdminEmpty, AdminPageHeader, errorText, Table, Td, Th } from './adminUi';
 import { DismissPlaceNameDialog } from './DismissPlaceNameDialog';
+import { usePlace } from './place';
 import { useSaidMutation } from './saidMutation';
 
 const TABS: readonly { status: CorpusNameStatus; label: string }[] = [
@@ -35,6 +36,8 @@ type Row = FunctionReturnType<typeof api.corpusPlaceNames.listQueue>['rows'][num
  * phrase, a lake, somewhere outside the five states — is dismissed with a reason, and can be reopened.
  */
 export function PlaceNameQueue() {
+  // Its place: the page, drawn or not when an answer comes (the reason dialogs ask for their own).
+  const place = usePlace();
   const [status, setStatus] = useState<CorpusNameStatus>('open');
   // One email's passing mention is most of the list; the names skaters use again are the work.
   const [recurringOnly, setRecurringOnly] = useState(true);
@@ -42,8 +45,8 @@ export function PlaceNameQueue() {
     status,
     ...(recurringOnly ? { minMessages: 2 } : {}),
   });
-  const setLake = useSaidMutation(api.corpusPlaceNames.setLake, 'inPlace');
-  const reopen = useSaidMutation(api.corpusPlaceNames.reopen, 'inPlace');
+  const setLake = useSaidMutation(api.corpusPlaceNames.setLake, place);
+  const reopen = useSaidMutation(api.corpusPlaceNames.reopen, place);
   const [picking, setPicking] = useState<Row | null>(null);
   const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
 
@@ -57,7 +60,7 @@ export function PlaceNameQueue() {
   };
 
   return (
-    <div className="flex flex-col gap-4">
+    <div ref={place.ref} className="flex flex-col gap-4">
       <AdminPageHeader
         title="Place names"
         subtitle="Places the community's emails name that no landmark took. Give each a lake, then place it from that lake's editor — or dismiss it."

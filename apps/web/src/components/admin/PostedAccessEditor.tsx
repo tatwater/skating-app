@@ -68,7 +68,7 @@ export function PostedAccessTool({
   onResult: (banner: Banner) => void;
 }) {
   const access = useQuery(api.accessPoints.accessForBody, { waterBodyId: body._id });
-  const setPostedAccess = useSaidMutation(api.postedAccess.setPostedAccess, 'inPlace');
+  const setPostedAccess = useSaidMutation(api.postedAccess.setPostedAccess);
   const [targetKey, setTargetKey] = useState<TargetKey>('body');
   const [busy, setBusy] = useState(false);
 

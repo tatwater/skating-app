@@ -117,18 +117,18 @@ export function LandmarkTool({
   onReview: (review: ReviewPoints | null) => void;
   onResult: SetBanner;
 }) {
-  const create = useSaidMutation(api.landmarks.create, 'inPlace');
-  const update = useSaidMutation(api.landmarks.update, 'inPlace');
-  const remove = useSaidMutation(api.landmarks.remove, 'inPlace');
-  const restore = useSaidMutation(api.landmarks.restore, 'inPlace');
-  const approveRequest = useSaidMutation(api.corpusRequests.approve, 'inPlace');
-  const declineRequest = useSaidMutation(api.corpusRequests.decline, 'inPlace');
+  const create = useSaidMutation(api.landmarks.create);
+  const update = useSaidMutation(api.landmarks.update);
+  const remove = useSaidMutation(api.landmarks.remove);
+  const restore = useSaidMutation(api.landmarks.restore);
+  const approveRequest = useSaidMutation(api.corpusRequests.approve);
+  const declineRequest = useSaidMutation(api.corpusRequests.decline);
   // What skaters have named on this lake that no map has (D202's proposal lane).
   const proposalQueue = useQuery(api.corpusRequests.openLandmarkRequestsForBody, { waterBodyId });
   const proposals = proposalQueue?.proposals;
   // What the community's emails name on this lake that no landmark took (the Place names queue).
   const corpusNames = useQuery(api.corpusPlaceNames.openForBody, { waterBodyId })?.names;
-  const fileAsSpelling = useSaidMutation(api.corpusPlaceNames.fileAsSpelling, 'inPlace');
+  const fileAsSpelling = useSaidMutation(api.corpusPlaceNames.fileAsSpelling);
 
   const [filter, setFilter] = useState('');
   const [showRemoved, setShowRemoved] = useState(false);

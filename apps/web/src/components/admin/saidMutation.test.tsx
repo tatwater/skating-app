@@ -20,6 +20,7 @@ vi.mock('@/components/kit/toast', async (original) => ({
 }));
 
 import { api } from '@skating/convex/api';
+import { drawn } from './place';
 import { useSaidMutation } from './saidMutation';
 
 beforeEach(() => {
@@ -27,32 +28,59 @@ beforeEach(() => {
   mocks.toasts.length = 0;
 });
 
-/** A Legacy page's write, refused: said once, in a toast in the server's words. */
-async function refused(mode: 'always' | 'inPlace', leave: boolean) {
-  const { result, unmount } = renderHook(() => useSaidMutation(api.waterBodies.restore, mode));
+/** A Legacy page's write, refused; its place drawn or not when the answer comes. */
+async function refused(place: { drawn: boolean } | null) {
+  const where = place === null ? null : { here: () => place.drawn };
+  const { result } = renderHook(() => useSaidMutation(api.waterBodies.restore, where));
   const sent = result.current({ waterBodyId: 'k1' as never });
-  if (leave) unmount();
-  await act(async () => {
-    mocks.refuse?.();
-    await sent.catch(() => {});
-  });
+  return async (drawnAtAnswer: boolean) => {
+    if (place !== null) place.drawn = drawnAtAnswer;
+    await act(async () => {
+      mocks.refuse?.();
+      await sent.catch(() => {});
+    });
+  };
 }
 
 describe('the Legacy pages’ net', () => {
   it('a page that says nothing of its own: the net says the refusal, and the page still sees it', async () => {
-    await refused('always', false);
+    await (await refused(null))(true);
     expect(mocks.toasts).toEqual([
       expect.objectContaining({ title: 'Not saved', description: 'Not allowed' }),
     ]);
   });
 
-  it('a page that says it in place: the net is quiet while the page is there', async () => {
-    await refused('inPlace', false);
+  it('a page that says it in place: the net is quiet while that place is drawn', async () => {
+    await (await refused({ drawn: true }))(true);
     expect(mocks.toasts).toEqual([]);
   });
 
-  it('a page that says it in place, gone before the answer: the net says it, once', async () => {
-    await refused('inPlace', true);
+  /**
+   * The place asked when the answer comes, never when the write was sent: a component that stays
+   * mounted but stops drawing its error slot (a permission flipping, a read failing, a pane hidden)
+   * has no place — the net says it, once.
+   */
+  it('a place no longer drawn when the answer comes — mounted or not: the net says it, once', async () => {
+    await (await refused({ drawn: true }))(false);
     expect(mocks.toasts).toHaveLength(1);
+  });
+});
+
+describe('a drawn place', () => {
+  it('is drawn only in the document and outside anything hidden or inert', () => {
+    const outer = document.body.appendChild(document.createElement('div'));
+    const el = outer.appendChild(document.createElement('p'));
+    expect(drawn(el)).toBe(true);
+    outer.hidden = true;
+    expect(drawn(el)).toBe(false);
+    outer.hidden = false;
+    outer.className = 'hidden';
+    expect(drawn(el)).toBe(false);
+    outer.className = '';
+    outer.setAttribute('inert', '');
+    expect(drawn(el)).toBe(false);
+    outer.remove();
+    expect(drawn(el)).toBe(false);
+    expect(drawn(null)).toBe(false);
   });
 });

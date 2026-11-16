@@ -13,6 +13,7 @@ import { ConvexError } from 'convex/values';
 import { useEffect, useState } from 'react';
 import { AdminEmpty, AdminPageHeader } from '../components/admin/adminUi';
 import { GoogleMapsLink, PossibleDuplicate } from '../components/admin/PossibleDuplicate';
+import { usePlace } from '../components/admin/place';
 import { ReasonDialog } from '../components/admin/ReasonDialog';
 import { RequestPreviewMap } from '../components/admin/RequestPreviewMap';
 import { ReviewClosedNotice } from '../components/admin/ReviewClosedNotice';
@@ -53,12 +54,14 @@ function messageOf(err: unknown): string {
 }
 
 function RequestQueue() {
+  // Its place: the page, drawn or not when an answer comes (the reason dialogs ask for their own).
+  const place = usePlace();
   const [status, setStatus] = useState<'open' | 'approved' | 'declined'>('open');
   const rows = useQuery(api.corpusRequests.listQueue, { status });
   const count = useQuery(api.corpusRequests.queueCount, {});
-  const approve = useSaidMutation(api.corpusRequests.approve, 'inPlace');
-  const decline = useSaidMutation(api.corpusRequests.decline, 'inPlace');
-  const reresolve = useSaidMutation(api.corpusRequests.reresolve, 'inPlace');
+  const approve = useSaidMutation(api.corpusRequests.approve, place);
+  const decline = useSaidMutation(api.corpusRequests.decline, place);
+  const reresolve = useSaidMutation(api.corpusRequests.reresolve, place);
   const [banner, setBanner] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   /**
    * The row on the map, frozen at the click (`pickReview`). A colleague deciding what it is about says
@@ -81,7 +84,7 @@ function RequestQueue() {
   const locked = (id: string) => locksRow(picked, watch, id);
 
   return (
-    <div className="flex flex-col gap-6">
+    <div ref={place.ref} className="flex flex-col gap-6">
       <AdminPageHeader
         title="Requests"
         subtitle={`Skaters asking for lakes — ${count ? `${count.count}${count.capped ? '+' : ''} open` : '…'}.`}

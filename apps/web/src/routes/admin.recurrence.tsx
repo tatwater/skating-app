@@ -33,7 +33,7 @@ const QUEUE_PAGE_SIZE = 50;
 
 function AdminRecurrence() {
   const merges = useQuery(api.hazards.listRecentMerges, {});
-  const unmerge = useSaidMutation(api.hazards.unmerge, 'inPlace');
+  const unmerge = useSaidMutation(api.hazards.unmerge);
   const [minSeasons, setMinSeasons] = useState(1);
   // A suppression is reversible by design (§7.3), which means it has to be reversible *from a
   // surface*. Hidden by default because the queue's job is what still needs deciding — but one
@@ -50,8 +50,8 @@ function AdminRecurrence() {
     { minSeasons, includeSuppressed: showSuppressed },
     { initialNumItems: QUEUE_PAGE_SIZE },
   );
-  const suppress = useSaidMutation(api.recurrence.suppress, 'inPlace');
-  const unsuppress = useSaidMutation(api.recurrence.unsuppress, 'inPlace');
+  const suppress = useSaidMutation(api.recurrence.suppress);
+  const unsuppress = useSaidMutation(api.recurrence.unsuppress);
 
   return (
     <div className="flex flex-col gap-4">
